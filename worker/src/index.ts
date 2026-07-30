@@ -36,6 +36,7 @@ async function handleTask(task: Awaited<ReturnType<typeof claimNextTask>>): Prom
 
     const planningResult = await runPlanningPhase(task);
     if (planningResult.aborted) {
+      log("info", "task cancelled", { worker: WORKER_NAME, taskId: task.id, phase: "planning" });
       await setTaskStatus(task.id, "cancelled");
       await appendJournal(task.repo, WORKER_NAME, "task.cancelled", { taskId: task.id, phase: "planning" });
       if (task.discord_thread_id) {
@@ -50,6 +51,7 @@ async function handleTask(task: Awaited<ReturnType<typeof claimNextTask>>): Prom
 
     const implResult = await runImplementationPhase(task, planningResult.proposerSessionId);
     if (implResult.aborted) {
+      log("info", "task cancelled", { worker: WORKER_NAME, taskId: task.id, phase: "implementation" });
       await setTaskStatus(task.id, "cancelled");
       await appendJournal(task.repo, WORKER_NAME, "task.cancelled", { taskId: task.id, phase: "implementation" });
       if (task.discord_thread_id) {
