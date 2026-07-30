@@ -12,10 +12,18 @@ const PLANNING_TIMEOUT_MS = Number(process.env.PLANNING_TIMEOUT_MS ?? 0); // 0 =
 // Guardrails. Defaults are deliberately tight — cheaper to make Mohammad ask
 // for another round than to let two agents debate unsupervised for an hour.
 const MAX_PLANNING_ROUNDS = Number(process.env.MAX_PLANNING_ROUNDS ?? 1);
-const MAX_TURNS_PLANNING = Number(process.env.MAX_TURNS_PLANNING ?? 15);
-const MAX_TURNS_IMPLEMENTATION = Number(process.env.MAX_TURNS_IMPLEMENTATION ?? 40);
-const MAX_BUDGET_USD_PLANNING = Number(process.env.MAX_BUDGET_USD_PLANNING ?? 2);
-const MAX_BUDGET_USD_IMPLEMENTATION = Number(process.env.MAX_BUDGET_USD_IMPLEMENTATION ?? 5);
+// No default cap — fixed defaults (15, then 40, then 100) all turned out too
+// tight for genuine exploration of an unfamiliar codebase (confirmed live:
+// the proposer burned 15 turns tracing a real Prisma panic across 4+ files
+// and never even reached send_message). maxTurns is opt-in now: unset envs
+// mean unbounded, set one only if a specific run needs capping.
+const MAX_TURNS_PLANNING = process.env.MAX_TURNS_PLANNING ? Number(process.env.MAX_TURNS_PLANNING) : undefined;
+const MAX_TURNS_IMPLEMENTATION = process.env.MAX_TURNS_IMPLEMENTATION
+  ? Number(process.env.MAX_TURNS_IMPLEMENTATION)
+  : undefined;
+// No maxBudgetUsd either: Claude Code auths via CLAUDE_CODE_OAUTH_TOKEN
+// (subscription), not metered API billing — total_cost_usd is a notional
+// figure the SDK still computes for reporting, not a real charge.
 
 function redisClient(): Redis {
   return new Redis({
@@ -212,8 +220,15 @@ async function logResult(
 // into permission denials (the actual cause of the mcp__agent-fleet-redis
 // tools-not-allowed bug — would have shown up here immediately as
 // "tool_result" entries with isError: true instead of being diagnosed after
-// the fact from cost/turn-count/timing).
-function logSdkMessage(actor: string, msg: { type: string; [key: string]: unknown }): void {
+// the fact from cost/turn-count/timing). Also relays the assistant's own
+// text (its reasoning, not just its formal send_message posts) to Discord
+// as it's generated — this is the raw thinking-out-loud, quoted to visually
+// separate it from the proposer/critic's deliberate transcript messages.
+async function logSdkMessage(
+  actor: string,
+  msg: { type: string; [key: string]: unknown },
+  discordThreadId: string | null,
+): Promise<void> {
   if (msg.type === "system" && msg.subtype === "init") {
     log("info", `${actor} session started`, {
       model: msg.model,
@@ -225,7 +240,12 @@ function logSdkMessage(actor: string, msg: { type: string; [key: string]: unknow
   if (msg.type === "assistant") {
     const content = (msg.message as { content?: { type: string; [k: string]: unknown }[] })?.content ?? [];
     for (const block of content) {
-      if (block.type === "text") log("info", `${actor} text`, { text: block.text });
+      if (block.type === "text") {
+        log("info", `${actor} text`, { text: block.text });
+        if (discordThreadId && typeof block.text === "string" && block.text.trim()) {
+          await postReply(discordThreadId, `> **${actor}:** ${block.text}`);
+        }
+      }
       if (block.type === "tool_use") log("info", `${actor} tool_use`, { tool: block.name, input: block.input });
     }
     return;
@@ -278,12 +298,11 @@ export async function runPlanningPhase(
             allowedTools: ["Read", "Glob", "Grep", "Bash", ...REDIS_MCP_TOOLS],
             mcpServers: { "agent-fleet-redis": mcpServer() },
             maxTurns: MAX_TURNS_PLANNING,
-            maxBudgetUsd: MAX_BUDGET_USD_PLANNING,
             abortController: proposerAbort,
           },
         })) {
           if (!proposerSessionId && "session_id" in msg) proposerSessionId = msg.session_id;
-          logSdkMessage("proposer", msg);
+          await logSdkMessage("proposer", msg, task.discord_thread_id);
           if (msg.type === "result") await logResult("proposer", task.repo, msg);
         }
       } catch {
@@ -306,12 +325,11 @@ export async function runPlanningPhase(
             allowedTools: ["Read", "Glob", "Grep", "Bash", ...REDIS_MCP_TOOLS],
             mcpServers: { "agent-fleet-redis": mcpServer() },
             maxTurns: MAX_TURNS_PLANNING,
-            maxBudgetUsd: MAX_BUDGET_USD_PLANNING,
             abortController: criticAbort,
           },
         })) {
           if (!criticSessionId && "session_id" in msg) criticSessionId = msg.session_id;
-          logSdkMessage("critic", msg);
+          await logSdkMessage("critic", msg, task.discord_thread_id);
           if (msg.type === "result") await logResult("critic", task.repo, msg);
         }
       } catch {
@@ -397,11 +415,10 @@ End your final message with a line exactly: PR_READY: <one-paragraph summary for
         allowedTools: ["Read", "Glob", "Grep", "Bash", "Write", "Edit"],
         mcpServers: { "agent-fleet-redis": mcpServer() },
         maxTurns: MAX_TURNS_IMPLEMENTATION,
-        maxBudgetUsd: MAX_BUDGET_USD_IMPLEMENTATION,
         abortController,
       },
     })) {
-      logSdkMessage("proposer", msg);
+      await logSdkMessage("proposer", msg, task.discord_thread_id);
       if (msg.type === "assistant") {
         const textBlock = msg.message?.content?.find((b: { type: string }) => b.type === "text");
         if (textBlock) finalText = textBlock.text;
