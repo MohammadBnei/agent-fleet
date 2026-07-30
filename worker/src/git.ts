@@ -22,11 +22,16 @@ export async function ensureRepoCloned(repoUrl: string): Promise<void> {
   }
 }
 
+// Some target repos don't develop off `main` (e.g. vos-monolith's default
+// branch is `dev` — `main` only receives prod tag bumps, see
+// gitops/apps/registry.yaml's comment) — configurable per worker deployment.
+const BASE_BRANCH = process.env.BASE_BRANCH ?? "main";
+
 export async function createWorktree(taskId: string): Promise<{ path: string; branch: string }> {
   const branch = `agent/${taskId}`;
   const path = `${WORKTREES_ROOT}/${taskId}`;
   await mkdir(WORKTREES_ROOT, { recursive: true });
-  await git(["worktree", "add", "-b", branch, path, "origin/main"]);
+  await git(["worktree", "add", "-b", branch, path, `origin/${BASE_BRANCH}`]);
   return { path, branch };
 }
 
@@ -51,7 +56,7 @@ export async function pushAndOpenPr(
   await run("git", ["push", "-u", "origin", branch], { cwd: worktreePath });
   const { stdout } = await run(
     "gh",
-    ["pr", "create", "--title", title, "--body", body, "--head", branch],
+    ["pr", "create", "--title", title, "--body", body, "--head", branch, "--base", BASE_BRANCH],
     { cwd: worktreePath },
   );
   const match = stdout.match(/https:\/\/github\.com\/\S+/);
