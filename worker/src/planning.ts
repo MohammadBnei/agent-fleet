@@ -412,7 +412,7 @@ End your final message with a line exactly: PR_READY: <one-paragraph summary for
         model: MODEL,
         cwd: worktreePath,
         permissionMode: "default",
-        allowedTools: ["Read", "Glob", "Grep", "Bash", "Write", "Edit", "WebSearch", "WebFetch"],
+        allowedTools: ["Read", "Glob", "Grep", "Bash", "Write", "Edit", "WebSearch", "WebFetch", ...REDIS_MCP_TOOLS],
         mcpServers: { "agent-fleet-redis": mcpServer() },
         maxTurns: MAX_TURNS_IMPLEMENTATION,
         abortController,
