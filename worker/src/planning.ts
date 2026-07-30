@@ -212,8 +212,15 @@ async function logResult(
 // into permission denials (the actual cause of the mcp__agent-fleet-redis
 // tools-not-allowed bug — would have shown up here immediately as
 // "tool_result" entries with isError: true instead of being diagnosed after
-// the fact from cost/turn-count/timing).
-function logSdkMessage(actor: string, msg: { type: string; [key: string]: unknown }): void {
+// the fact from cost/turn-count/timing). Also relays the assistant's own
+// text (its reasoning, not just its formal send_message posts) to Discord
+// as it's generated — this is the raw thinking-out-loud, quoted to visually
+// separate it from the proposer/critic's deliberate transcript messages.
+async function logSdkMessage(
+  actor: string,
+  msg: { type: string; [key: string]: unknown },
+  discordThreadId: string | null,
+): Promise<void> {
   if (msg.type === "system" && msg.subtype === "init") {
     log("info", `${actor} session started`, {
       model: msg.model,
@@ -225,7 +232,12 @@ function logSdkMessage(actor: string, msg: { type: string; [key: string]: unknow
   if (msg.type === "assistant") {
     const content = (msg.message as { content?: { type: string; [k: string]: unknown }[] })?.content ?? [];
     for (const block of content) {
-      if (block.type === "text") log("info", `${actor} text`, { text: block.text });
+      if (block.type === "text") {
+        log("info", `${actor} text`, { text: block.text });
+        if (discordThreadId && typeof block.text === "string" && block.text.trim()) {
+          await postReply(discordThreadId, `> **${actor}:** ${block.text}`);
+        }
+      }
       if (block.type === "tool_use") log("info", `${actor} tool_use`, { tool: block.name, input: block.input });
     }
     return;
@@ -283,7 +295,7 @@ export async function runPlanningPhase(
           },
         })) {
           if (!proposerSessionId && "session_id" in msg) proposerSessionId = msg.session_id;
-          logSdkMessage("proposer", msg);
+          await logSdkMessage("proposer", msg, task.discord_thread_id);
           if (msg.type === "result") await logResult("proposer", task.repo, msg);
         }
       } catch {
@@ -311,7 +323,7 @@ export async function runPlanningPhase(
           },
         })) {
           if (!criticSessionId && "session_id" in msg) criticSessionId = msg.session_id;
-          logSdkMessage("critic", msg);
+          await logSdkMessage("critic", msg, task.discord_thread_id);
           if (msg.type === "result") await logResult("critic", task.repo, msg);
         }
       } catch {
@@ -401,7 +413,7 @@ End your final message with a line exactly: PR_READY: <one-paragraph summary for
         abortController,
       },
     })) {
-      logSdkMessage("proposer", msg);
+      await logSdkMessage("proposer", msg, task.discord_thread_id);
       if (msg.type === "assistant") {
         const textBlock = msg.message?.content?.find((b: { type: string }) => b.type === "text");
         if (textBlock) finalText = textBlock.text;
