@@ -12,9 +12,14 @@ const PLANNING_TIMEOUT_MS = Number(process.env.PLANNING_TIMEOUT_MS ?? 0); // 0 =
 // Guardrails. Defaults are deliberately tight — cheaper to make Mohammad ask
 // for another round than to let two agents debate unsupervised for an hour.
 const MAX_PLANNING_ROUNDS = Number(process.env.MAX_PLANNING_ROUNDS ?? 1);
-const MAX_TURNS_PLANNING = Number(process.env.MAX_TURNS_PLANNING ?? 15);
+// 15/$2 was too tight — confirmed live: the proposer burned all 15 turns on
+// genuine exploration of a real, unfamiliar codebase (locate files, trace a
+// Prisma panic across 4+ files, check schema/version) and never even reached
+// send_message. Matching implementation's budget — exploring is comparable
+// effort to implementing.
+const MAX_TURNS_PLANNING = Number(process.env.MAX_TURNS_PLANNING ?? 40);
 const MAX_TURNS_IMPLEMENTATION = Number(process.env.MAX_TURNS_IMPLEMENTATION ?? 40);
-const MAX_BUDGET_USD_PLANNING = Number(process.env.MAX_BUDGET_USD_PLANNING ?? 2);
+const MAX_BUDGET_USD_PLANNING = Number(process.env.MAX_BUDGET_USD_PLANNING ?? 5);
 const MAX_BUDGET_USD_IMPLEMENTATION = Number(process.env.MAX_BUDGET_USD_IMPLEMENTATION ?? 5);
 
 function redisClient(): Redis {
