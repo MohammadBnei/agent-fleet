@@ -12,18 +12,18 @@ const PLANNING_TIMEOUT_MS = Number(process.env.PLANNING_TIMEOUT_MS ?? 0); // 0 =
 // Guardrails. Defaults are deliberately tight — cheaper to make Mohammad ask
 // for another round than to let two agents debate unsupervised for an hour.
 const MAX_PLANNING_ROUNDS = Number(process.env.MAX_PLANNING_ROUNDS ?? 1);
-// 15/$2 was too tight — confirmed live: the proposer burned all 15 turns on
-// genuine exploration of a real, unfamiliar codebase (locate files, trace a
-// Prisma panic across 4+ files, check schema/version) and never even reached
-// send_message. 40 still wasn't enough headroom either — bumped both to 100;
-// implementation (code + tests + fixing failures + commit) needs at least as
-// much room as exploration does.
-const MAX_TURNS_PLANNING = Number(process.env.MAX_TURNS_PLANNING ?? 100);
-const MAX_TURNS_IMPLEMENTATION = Number(process.env.MAX_TURNS_IMPLEMENTATION ?? 100);
-// No maxBudgetUsd: Claude Code auths via CLAUDE_CODE_OAUTH_TOKEN (subscription),
-// not metered API billing — total_cost_usd is a notional figure the SDK
-// still computes for reporting, not a real charge, so capping on it doesn't
-// protect anything. maxTurns is the real guardrail.
+// No default cap — fixed defaults (15, then 40, then 100) all turned out too
+// tight for genuine exploration of an unfamiliar codebase (confirmed live:
+// the proposer burned 15 turns tracing a real Prisma panic across 4+ files
+// and never even reached send_message). maxTurns is opt-in now: unset envs
+// mean unbounded, set one only if a specific run needs capping.
+const MAX_TURNS_PLANNING = process.env.MAX_TURNS_PLANNING ? Number(process.env.MAX_TURNS_PLANNING) : undefined;
+const MAX_TURNS_IMPLEMENTATION = process.env.MAX_TURNS_IMPLEMENTATION
+  ? Number(process.env.MAX_TURNS_IMPLEMENTATION)
+  : undefined;
+// No maxBudgetUsd either: Claude Code auths via CLAUDE_CODE_OAUTH_TOKEN
+// (subscription), not metered API billing — total_cost_usd is a notional
+// figure the SDK still computes for reporting, not a real charge.
 
 function redisClient(): Redis {
   return new Redis({
