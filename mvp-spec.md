@@ -1,6 +1,6 @@
 # Spec: Agent Fleet MVP — Golden Path
 
-**Status:** Draft v1 (spec phase — no code yet)
+**Status:** Draft v2 (spec phase — no code yet; adds the interactive planning phase)
 **Supersedes for active work:** [`design-v0.md`](./design-v0.md) (full v2 vision, parked)
 **Cluster:** `ukubi-cluster` (self-hosted Kubernetes, see `infra-bootstrap`)
 
@@ -11,10 +11,13 @@
 Prove the fleet's core loop works, end to end, before building any of the
 surrounding platform:
 
-> A message in Discord triggers exactly one isolated Claude Code worker,
-> which plans, codes, tests, and documents a feature against a disposable
-> sandbox repo, opens a PR, and replies in the Discord thread with a summary
-> and a link.
+> A message in Discord triggers exactly one isolated Claude Code worker Job.
+> Inside it, a proposer and a critic Claude Code process debate an
+> architecture/plan against the real sandbox repo — Mohammad can join the
+> conversation at any point — until Mohammad gives explicit approval
+> (Claude Code's own plan-mode pattern: read-only until approved). The same
+> proposer session then codes, tests, and documents the feature, opens a
+> PR, and replies in the Discord thread with a summary and a link.
 
 This is `design-v0.md`'s §10 Phase 0+1, deliberately trimmed further:
 
@@ -23,13 +26,16 @@ This is `design-v0.md`'s §10 Phase 0+1, deliberately trimmed further:
 - **No bug-handling loop** (`design-v0.md` §4, §10 Phase 4) — out of scope
   until the golden path has run for real.
 - **No orchestration layer** (`design-v0.md` §11.1) — Hermes and OpenClaw are
-  both excluded. The doc itself notes "Claude Code's own AgentTool primitives
-  may be sufficient... without Hermes or OpenClaw at all" — this MVP is the
-  test of that claim.
-- **No platform services beyond secrets** — LiteLLM, Redis, the Postgres
+  both excluded. Coordination between the in-Job proposer, critic, and
+  Mohammad's Discord replies runs over Redis pub/sub via an MCP server
+  wrapping it, not a coordinator framework — this MVP is the test of
+  whether that's sufficient without Hermes or OpenClaw at all.
+- **No platform services beyond secrets and Redis** — LiteLLM, the Postgres
   ledger, MinIO, and Prometheus/Grafana/Loki (`design-v0.md` §6, §10 Phase 0)
-  are all deferred. Visibility is `kubectl logs` plus the Discord thread
-  itself — not a dashboard.
+  stay deferred. Redis pub/sub returns for this MVP — not a new deployment,
+  but reusing the instance already running in `pigsty/` — as the transport
+  for the proposer/critic/human planning conversation. Visibility beyond
+  that is `kubectl logs` plus the Discord thread itself — not a dashboard.
 - **Target repo is a disposable sandbox**, not `voc`/`dreamer` — plumbing
   bugs (worktree isolation, PVC lifecycle, PR flow) get caught somewhere
   low-stakes first.
@@ -49,17 +55,20 @@ point before any further investment.
 
 | Layer | Choice | Notes |
 |---|---|---|
-| Worker runtime | Claude Code, headless (`claude -p` / SDK), one Kubernetes Job per task | Own PVC + git worktree/branch per task. No shared writable repo PVC. |
-| Orchestration | None — a thin trigger spawns the Job directly | Hermes/OpenClaw excluded for MVP; revisit only when N agents must run concurrently (`design-v0.md` §11.1). |
-| Discord ingress + callback | Minimal custom bot (not OpenClaw) | Watches a channel/thread for trigger messages, calls the k8s API to create the Job, and posts the reply when the worker calls back. |
-| Secrets | External Secrets Operator, existing SOPS/age backend (already used by `infra-bootstrap`'s `gitops/`) | Three secrets only: Discord bot token, Anthropic API key, git host token (PAT) for the sandbox repo. |
+| Worker runtime | Claude Code, **Agent SDK** (`ClaudeSDKClient` — not `claude -p` headless), one Kubernetes Job per task | Two long-lived SDK sessions inside the Job — proposer and critic — sharing one PVC + git worktree/branch. No shared writable repo PVC across tasks. |
+| Planning coordination | Redis pub/sub (reusing the existing instance in `pigsty/`, not a new deployment) via an MCP server both SDK sessions are configured to use | Transport for the proposer ↔ critic ↔ Mohammad's Discord replies conversation during planning. New component: a small MCP server wrapping Redis publish/subscribe (TBD, see Project Structure). |
+| Orchestration | None — a thin trigger spawns the Job directly | Hermes/OpenClaw excluded for MVP; revisit only when N agents must run concurrently (`design-v0.md` §11.1). In-Job coordination is Redis pub/sub, not a coordinator framework. |
+| Discord ingress + callback | Minimal custom bot (not OpenClaw) | Watches a channel/thread for trigger messages, calls the k8s API to create the Job, relays live thread replies into Redis during planning, and posts the reply when the worker calls back at the end. |
+| Secrets | External Secrets Operator, existing SOPS/age backend (already used by `infra-bootstrap`'s `gitops/`) | Three secrets: Discord bot token, Anthropic API key, git host token (PAT) for the sandbox repo. Whether connecting to Pigsty's Redis needs its own credential is open (see Open Questions). |
 | Output | Git branch + PR on the sandbox repo | No MinIO, no artifact store — the PR itself is the artifact. |
 | Visibility | `kubectl logs` + Discord thread | No Postgres ledger, no Prometheus/Grafana/Loki. |
 
 **Explicitly not used in this spec:** Hermes, OpenClaw, LiteLLM/OpenRouter
-gateway, Redis pub/sub, Postgres task ledger, MinIO, Prometheus, Grafana,
-Loki, ClickHouse. Each may return once the golden path has run and the next
-`design-v0.md` phase is greenlit.
+gateway, Postgres task ledger, MinIO, Prometheus, Grafana, Loki, ClickHouse.
+Each may return once the golden path has run and the next `design-v0.md`
+phase is greenlit. Redis pub/sub is the one exception — reinstated for this
+MVP as the planning-phase transport, reusing the instance already deployed
+in `pigsty/`.
 
 ---
 
@@ -90,9 +99,15 @@ implementation starts:
 agent-fleet/
   design-v0.md       → parked full-vision doc (context, not active spec)
   mvp-spec.md         → this file
-  bot/                 → Discord bot source (TBD — not built yet)
-  worker/              → Claude Code worker Job template/Dockerfile (TBD)
-  manifests/           → k8s manifests for the above (TBD)
+  bot/                 → Discord bot source (TBD — not built yet). Also
+                          relays live Discord thread replies into Redis
+                          during the planning phase.
+  worker/              → Claude Code worker Job template/Dockerfile (TBD).
+                          Runs two Agent SDK sessions (proposer + critic).
+  worker/mcp-redis/    → MCP server wrapping Redis publish/subscribe (TBD,
+                          new — no off-the-shelf one confirmed yet)
+  manifests/           → k8s manifests for the above (TBD). No new Redis
+                          manifest — reuses the instance in `pigsty/`.
 ```
 
 Deployment onto `ukubi-cluster` follows `infra-bootstrap`'s existing GitOps
@@ -122,12 +137,24 @@ test suite for the fleet plumbing at this size:
 2. Confirm exactly one Kubernetes Job spawns (`kubectl get jobs -n agent-fleet`).
 3. Confirm the worker gets an isolated PVC + git worktree/branch — not a
    shared repo checkout.
-4. Confirm the worker's own plan → code → tests → docs cycle runs, and the
-   sandbox repo's own test suite passes inside the Job before it opens a PR.
-5. Confirm a PR opens on the sandbox repo with the resulting code, tests, and
-   docs.
-6. Confirm the Discord thread receives a reply with a summary and the PR
-   link, within the task timeout.
+4. Confirm the proposer opens with an architecture/plan (or picks up an
+   idea Mohammad started the thread with instead), and the critic
+   challenges it with real objections/alternatives grounded in the actual
+   repo — not a rubber-stamp pass.
+5. Confirm Mohammad can join the conversation at any point via a Discord
+   reply, and that both processes stay read/bash-only (no writes) until he
+   gives explicit approval.
+6. Confirm write/edit tools unlock only after that explicit approval, and
+   that the same proposer session — not a fresh one — continues straight
+   into code/test/docs.
+7. Confirm the sandbox repo's own test suite passes inside the Job before
+   it opens a PR.
+8. Confirm a PR opens on the sandbox repo with the resulting code, tests,
+   and docs.
+9. Confirm the Discord thread receives a reply with a summary and the PR
+   link. Only the post-approval implementation phase is bound by the task
+   timeout (1800s default) — planning itself is unbounded, paced by
+   Mohammad.
 
 If the sandbox repo has no test suite yet, one must be added first — a
 worker that "passes tests" against an empty test suite proves nothing.
@@ -139,6 +166,10 @@ worker that "passes tests" against an empty test suite proves nothing.
 - **Always:**
   - Worker tools limited to `bash`, `read`, `write`, `edit`. Deny `browser`
     and `deploy` (per `design-v0.md`'s task envelope, §8).
+  - Proposer and critic are `read`/`bash`-only during planning — `write`
+    and `edit` unlock only after Mohammad's explicit approval.
+  - Planning never self-concludes without that explicit approval — never
+    inferred from silence or a vague positive reply.
   - Every result is a PR. No auto-merge, ever.
   - Secrets only via External Secrets — never committed, never passed as
     plain env vars in a manifest.
@@ -148,9 +179,9 @@ worker that "passes tests" against an empty test suite proves nothing.
 - **Ask first:**
   - Pointing the worker at real `voc` or `dreamer` repos (MVP targets a
     disposable sandbox only).
-  - Adding back any deferred platform service (LiteLLM, Redis, Postgres
-    ledger, MinIO, Prometheus/Grafana/Loki) before the golden path has
-    actually run.
+  - Adding back any deferred platform service (LiteLLM, Postgres ledger,
+    MinIO, Prometheus/Grafana/Loki) before the golden path has actually
+    run. Redis pub/sub is no longer on this list — already reinstated.
   - Reintroducing Hermes or OpenClaw before the single-worker MVP is proven.
 
 - **Never:**
@@ -172,15 +203,25 @@ worker that "passes tests" against an empty test suite proves nothing.
       one per message.
 - [ ] The worker Job runs in an isolated workspace (its own PVC and git
       worktree/branch) against the disposable sandbox repo.
-- [ ] The worker completes plan → code → tests → docs and opens a PR against
-      the sandbox repo, with the sandbox repo's own tests passing inside the
+- [ ] Inside the Job, a proposer and a critic Claude Code process (Agent
+      SDK, not `claude -p`) run a live planning conversation over Redis
+      pub/sub, with Mohammad able to join at any point via Discord.
+- [ ] Both processes stay read/bash-only until Mohammad gives explicit
+      approval in the thread; write/edit tools unlock only after that.
+- [ ] The same proposer session — no restart, no handoff — continues
+      straight into code/test/docs once approved.
+- [ ] The worker completes code, tests, and docs and opens a PR against the
+      sandbox repo, with the sandbox repo's own tests passing inside the
       Job.
 - [ ] The originating Discord thread receives a reply containing a summary
-      and the PR link, within the task timeout (1800s default, per
-      `design-v0.md` §8).
-- [ ] None of the deferred components (Hermes, OpenClaw, LiteLLM, Redis,
-      Postgres ledger, MinIO, Prometheus/Grafana/Loki, staging deploy, bug
-      loop) are required for any of the above to be true.
+      and the PR link. The 1800s default task timeout (per `design-v0.md`
+      §8) applies only to this post-approval implementation phase —
+      planning itself is unbounded, paced by Mohammad.
+- [ ] None of the deferred components (Hermes, OpenClaw, LiteLLM, Postgres
+      ledger, MinIO, Prometheus/Grafana/Loki, staging deploy, bug loop) are
+      required for any of the above to be true. Redis pub/sub is the one
+      exception — required, reusing the instance already deployed in
+      `pigsty/`.
 
 ---
 
@@ -191,11 +232,23 @@ worker that "passes tests" against an empty test suite proves nothing.
    `design-v0.md` §3) vs. something simpler run outside the cluster.
 2. **Git host / token scope for PR creation** — a personal access token
    scoped to the sandbox repo only (proposed default) vs. a GitHub App.
-3. **Callback wiring** — the worker Job calls the Discord webhook directly on
-   completion (proposed default, no extra moving part) vs. a small poller
-   service watching Job status.
+3. ~~Callback wiring~~ — resolved/superseded: the bot relays live Discord
+   replies into Redis during planning, and the worker still posts the
+   final summary + PR link on completion, same as before.
 4. **Sandbox repo** — create a fresh disposable repo for this, or reuse an
    existing throwaway one. Not yet decided.
+5. **MCP-Redis bridge implementation** — hand-roll a small stdio MCP server
+   wrapping Redis publish/subscribe, or adopt an existing OSS one if a
+   suitable first-party option turns up. Not yet decided.
+6. **Redis pub/sub channel/message schema** — likely namespaced by
+   `task_id` (matching `design-v0.md` §8's task envelope), exact shape not
+   decided.
+7. **Mechanical trigger for "explicit approval"** — a parsed keyword or a
+   reaction in the thread, mirroring the ✅/❌ approval-reaction pattern in
+   `design-v0.md` §7. Not yet decided.
+8. **Connecting to Pigsty's Redis from `agent-fleet`** — whether it needs
+   its own credential or NetworkPolicy carve-out. Not yet decided; check
+   `pigsty/`'s own docs at implementation time.
 
 ---
 
