@@ -2,8 +2,8 @@ name: Release It
 
 # Adapted from dream-analyst's release.yml — same release-it +
 # conventional-changelog shape, run from the repo root (this repo has one
-# version/CHANGELOG for the whole fleet, not a per-package split) and with
-# npm instead of bun, matching every package.json already in this repo.
+# version/CHANGELOG for the whole fleet, not a per-package split). Bun
+# instead of npm, matching the rest of this repo's JS runtime choice.
 
 on:
   workflow_dispatch:
@@ -23,13 +23,11 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.PAT }}
 
-      - name: Set up Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
 
       - name: Install dependencies
-        run: npm install
+        run: bun install
 
       - name: git config
         run: |
@@ -37,6 +35,6 @@ jobs:
           git config user.email "${GITHUB_ACTOR}@users.noreply.github.com"
 
       - name: Run release-it
-        run: git update-index --refresh && git diff-index --quiet HEAD || git reset --hard && npm run release
+        run: git update-index --refresh && git diff-index --quiet HEAD || git reset --hard && bun run release
         env:
           GITHUB_TOKEN: ${{ secrets.PAT }}

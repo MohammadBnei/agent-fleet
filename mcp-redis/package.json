@@ -4,11 +4,11 @@
   "private": true,
   "type": "module",
   "bin": {
-    "mcp-redis": "./dist/index.js"
+    "mcp-redis": "./src/index.ts"
   },
   "scripts": {
-    "build": "tsc -p .",
-    "start": "node dist/index.js"
+    "typecheck": "tsc --noEmit",
+    "start": "bun run src/index.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.11.0",

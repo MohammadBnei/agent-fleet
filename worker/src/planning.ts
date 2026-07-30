@@ -2,14 +2,14 @@ import { query } from "@anthropic-ai/claude-agent-sdk";
 import { Redis } from "ioredis";
 import type { Task } from "./db.js";
 
-const MCP_REDIS_ENTRY = process.env.MCP_REDIS_ENTRY ?? "/app/mcp-redis/dist/index.js";
+const MCP_REDIS_ENTRY = process.env.MCP_REDIS_ENTRY ?? "/app/mcp-redis/src/index.ts";
 const MODEL = process.env.CLAUDE_MODEL ?? "claude-opus-4-8";
 const PLANNING_TIMEOUT_MS = Number(process.env.PLANNING_TIMEOUT_MS ?? 0); // 0 = unbounded
 
 const redisMcpServer = {
   type: "stdio" as const,
-  command: "node",
-  args: [MCP_REDIS_ENTRY],
+  command: "bun",
+  args: ["run", MCP_REDIS_ENTRY],
   env: {
     REDIS_HOST: process.env.REDIS_HOST ?? "redis.bnei.lan",
     REDIS_PORT: process.env.REDIS_PORT ?? "6379",
@@ -69,6 +69,7 @@ Stop and end your turn once a message from "human" contains explicit approval.`;
     for await (const msg of query({
       prompt: proposerPrompt,
       options: {
+        executable: "bun",
         model: MODEL,
         cwd: `/workspace/worktrees/${task.id}`,
         permissionMode: "plan",
@@ -87,6 +88,7 @@ Stop and end your turn once a message from "human" contains explicit approval.`;
     for await (const msg of query({
       prompt: criticPrompt,
       options: {
+        executable: "bun",
         model: MODEL,
         cwd: `/workspace/worktrees/${task.id}`,
         permissionMode: "plan",
@@ -133,6 +135,7 @@ End your final message with a line exactly: PR_READY: <one-paragraph summary for
   for await (const msg of query({
     prompt: implementPrompt,
     options: {
+      executable: "bun",
       resume: proposerSessionId,
       model: MODEL,
       cwd: worktreePath,
