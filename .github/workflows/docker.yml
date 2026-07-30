@@ -122,7 +122,8 @@ jobs:
       # k8s/*.yaml (image.tag, agent-fleet-bot.yaml's hooks.migrate.image.tag)
       # is genuinely an image tag, nothing else uses that key shape.
       - name: Bump pinned image tags
-        run: sed -i -E "s/^(\s*tag: \")[^\"]+(\")/\1${GITHUB_REF_NAME}\2/" k8s/*.yaml
+        run: |
+          sed -i -E "s/^(\s*tag: \")[^\"]+(\")/\1${GITHUB_REF_NAME}\2/" k8s/*.yaml
 
       # Pushing with the default GITHUB_TOKEN (via actions/checkout's
       # auto-configured credential) deliberately does NOT trigger other
