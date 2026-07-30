@@ -28,6 +28,17 @@ function planningKey(taskId: string): string {
   return `agentfleet:planning:${taskId}`;
 }
 
+// allowedTools only *auto-approves* — tools missing from it still exist but
+// get their permission request silently denied in a headless query() (no
+// canUseTool handler, no TTY to prompt). Without these, the critic/proposer
+// can never actually call send_message/wait_for_messages: confirmed live —
+// burned all 15 turns on denied calls in under a minute, $1.1+, zero
+// transcript entries either side.
+const REDIS_MCP_TOOLS = [
+  "mcp__agent-fleet-redis__send_message",
+  "mcp__agent-fleet-redis__wait_for_messages",
+];
+
 function mcpServer() {
   return {
     type: "stdio" as const,
@@ -218,7 +229,7 @@ export async function runPlanningPhase(
             model: MODEL,
             cwd: `/workspace/worktrees/${task.id}`,
             permissionMode: "plan",
-            allowedTools: ["Read", "Glob", "Grep", "Bash"],
+            allowedTools: ["Read", "Glob", "Grep", "Bash", ...REDIS_MCP_TOOLS],
             mcpServers: { "agent-fleet-redis": mcpServer() },
             maxTurns: MAX_TURNS_PLANNING,
             maxBudgetUsd: MAX_BUDGET_USD_PLANNING,
@@ -245,7 +256,7 @@ export async function runPlanningPhase(
             model: MODEL,
             cwd: `/workspace/worktrees/${task.id}`,
             permissionMode: "plan",
-            allowedTools: ["Read", "Glob", "Grep", "Bash"],
+            allowedTools: ["Read", "Glob", "Grep", "Bash", ...REDIS_MCP_TOOLS],
             mcpServers: { "agent-fleet-redis": mcpServer() },
             maxTurns: MAX_TURNS_PLANNING,
             maxBudgetUsd: MAX_BUDGET_USD_PLANNING,
