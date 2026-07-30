@@ -15,7 +15,7 @@ image:
   repository: mohammaddocker/agent-fleet-worker
   # Pinned, bumped automatically by .github/workflows/docker.yml's deploy
   # job on every release tag.
-  tag: "0.2.1"
+  tag: "0.2.2"
 
 service:
   port: 8080 # unused (no HTTP server), required by the chart schema
