@@ -6,8 +6,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   repo              TEXT NOT NULL,           -- 'dream-analyst' | 'vos-monolith'
   description       TEXT NOT NULL,
-  status            TEXT NOT NULL DEFAULT 'pending'
-                      CHECK (status IN ('pending', 'claimed', 'planning', 'done', 'failed')),
+  status            TEXT NOT NULL DEFAULT 'pending',
   discord_channel_id TEXT NOT NULL,
   discord_thread_id  TEXT,
   claimed_by        TEXT,
@@ -18,6 +17,14 @@ CREATE TABLE IF NOT EXISTS tasks (
 );
 
 CREATE INDEX IF NOT EXISTS tasks_repo_status_idx ON tasks (repo, status);
+
+-- Named + re-applied via DROP/ADD (not inline on the column) so adding a new
+-- status later — like 'cancelled' below, for the round-cap/kill-switch
+-- guardrails — is a safe re-run against the already-live table, not just
+-- future fresh creates.
+ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_status_check;
+ALTER TABLE tasks ADD CONSTRAINT tasks_status_check
+  CHECK (status IN ('pending', 'claimed', 'planning', 'done', 'failed', 'cancelled'));
 
 -- Append-only fleet knowledge journal (mirrors ai-devkit's JSON-event pattern,
 -- see agent-fleet reference-check memory: avoids write-conflict issues that a

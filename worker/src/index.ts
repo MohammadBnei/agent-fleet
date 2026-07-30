@@ -33,14 +33,30 @@ async function handleTask(task: Awaited<ReturnType<typeof claimNextTask>>): Prom
       );
     }
 
-    const { proposerSessionId } = await runPlanningPhase(task);
+    const planningResult = await runPlanningPhase(task);
+    if (planningResult.aborted) {
+      await setTaskStatus(task.id, "cancelled");
+      await appendJournal(task.repo, WORKER_NAME, "task.cancelled", { taskId: task.id, phase: "planning" });
+      if (task.discord_thread_id) {
+        await postReply(task.discord_thread_id, "Cancelled — stopped during planning, no changes made.");
+      }
+      return;
+    }
 
     if (task.discord_thread_id) {
       await postReply(task.discord_thread_id, "Approved — implementing now.");
     }
 
-    const finalText = await runImplementationPhase(task, proposerSessionId);
-    const summary = finalText.split("PR_READY:")[1]?.trim() ?? finalText;
+    const implResult = await runImplementationPhase(task, planningResult.proposerSessionId);
+    if (implResult.aborted) {
+      await setTaskStatus(task.id, "cancelled");
+      await appendJournal(task.repo, WORKER_NAME, "task.cancelled", { taskId: task.id, phase: "implementation" });
+      if (task.discord_thread_id) {
+        await postReply(task.discord_thread_id, "Cancelled — stopped during implementation. Any local changes are being discarded (no PR opened).");
+      }
+      return;
+    }
+    const summary = implResult.summary.split("PR_READY:")[1]?.trim() ?? implResult.summary;
 
     const prUrl = await pushAndOpenPr(
       `/workspace/worktrees/${task.id}`,
