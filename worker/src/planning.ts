@@ -15,10 +15,11 @@ const MAX_PLANNING_ROUNDS = Number(process.env.MAX_PLANNING_ROUNDS ?? 1);
 // 15/$2 was too tight — confirmed live: the proposer burned all 15 turns on
 // genuine exploration of a real, unfamiliar codebase (locate files, trace a
 // Prisma panic across 4+ files, check schema/version) and never even reached
-// send_message. Matching implementation's budget — exploring is comparable
-// effort to implementing.
-const MAX_TURNS_PLANNING = Number(process.env.MAX_TURNS_PLANNING ?? 40);
-const MAX_TURNS_IMPLEMENTATION = Number(process.env.MAX_TURNS_IMPLEMENTATION ?? 40);
+// send_message. 40 still wasn't enough headroom either — bumped both to 100;
+// implementation (code + tests + fixing failures + commit) needs at least as
+// much room as exploration does.
+const MAX_TURNS_PLANNING = Number(process.env.MAX_TURNS_PLANNING ?? 100);
+const MAX_TURNS_IMPLEMENTATION = Number(process.env.MAX_TURNS_IMPLEMENTATION ?? 100);
 // No maxBudgetUsd: Claude Code auths via CLAUDE_CODE_OAUTH_TOKEN (subscription),
 // not metered API billing — total_cost_usd is a notional figure the SDK
 // still computes for reporting, not a real charge, so capping on it doesn't
