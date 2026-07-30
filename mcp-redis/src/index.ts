@@ -10,7 +10,7 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import Redis from "ioredis";
+import { Redis } from "ioredis";
 
 const redis = new Redis({
   host: process.env.REDIS_HOST ?? "redis.bnei.lan",
@@ -35,7 +35,7 @@ async function waitForMessages(taskId: string, sinceIndex: number, timeoutMs: nu
     const raw = await redis.lrange(key, sinceIndex, -1);
     if (raw.length > 0) {
       return {
-        messages: raw.map((r) => JSON.parse(r)),
+        messages: raw.map((r: string) => JSON.parse(r)),
         nextIndex: sinceIndex + raw.length,
       };
     }

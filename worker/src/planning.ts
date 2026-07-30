@@ -1,5 +1,5 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
-import Redis from "ioredis";
+import { Redis } from "ioredis";
 import type { Task } from "./db.js";
 
 const MCP_REDIS_ENTRY = process.env.MCP_REDIS_ENTRY ?? "/app/mcp-redis/dist/index.js";
@@ -51,8 +51,7 @@ async function waitForHumanApproval(taskId: string): Promise<void> {
 // into the same transcript by the bot). Returns the proposer's session id so
 // implementation can resume the SAME session per mvp-spec's requirement.
 export async function runPlanningPhase(task: Task): Promise<{ proposerSessionId: string }> {
-  const proposerSessionId = `proposer-${task.id}`;
-  const criticSessionId = `critic-${task.id}`;
+  let proposerSessionId = "";
 
   const proposerPrompt = `You are the PROPOSER for task ${task.id} in repo ${task.repo}.
 Task: ${task.description}
@@ -70,7 +69,6 @@ Stop and end your turn once a message from "human" contains explicit approval.`;
     for await (const msg of query({
       prompt: proposerPrompt,
       options: {
-        sessionId: proposerSessionId,
         model: MODEL,
         cwd: `/workspace/worktrees/${task.id}`,
         permissionMode: "plan",
@@ -78,6 +76,9 @@ Stop and end your turn once a message from "human" contains explicit approval.`;
         mcpServers: { "agent-fleet-redis": redisMcpServer },
       },
     })) {
+      // Every SDKMessage variant carries session_id; grab it as soon as the
+      // first one arrives so we can `resume` this exact session in phase 2.
+      if (!proposerSessionId && "session_id" in msg) proposerSessionId = msg.session_id;
       if (msg.type === "result") break;
     }
   })();
@@ -86,7 +87,6 @@ Stop and end your turn once a message from "human" contains explicit approval.`;
     for await (const msg of query({
       prompt: criticPrompt,
       options: {
-        sessionId: criticSessionId,
         model: MODEL,
         cwd: `/workspace/worktrees/${task.id}`,
         permissionMode: "plan",
