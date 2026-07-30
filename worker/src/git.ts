@@ -19,6 +19,14 @@ async function git(args: string[], cwd = REPO_ROOT): Promise<string> {
 export async function configureGitAuth(): Promise<void> {
   if (!process.env.GH_TOKEN) return; // falls back to whatever ambient git auth is configured
   await run("gh", ["auth", "setup-git"]);
+
+  // git commit has no identity by default in a fresh container — derive it
+  // from the actual authenticated bot account rather than hardcoding a
+  // guess, so it stays correct if the bot account ever changes. users.noreply
+  // works regardless of whether the account's real email is public.
+  const login = (await run("gh", ["api", "user", "--jq", ".login"])).stdout.trim();
+  await run("git", ["config", "--global", "user.name", login]);
+  await run("git", ["config", "--global", "user.email", `${login}@users.noreply.github.com`]);
 }
 
 export async function ensureRepoCloned(repoUrl: string): Promise<void> {
