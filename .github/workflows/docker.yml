@@ -1,11 +1,11 @@
 name: Build, Test and Deploy
 
 # Adapted from dream-analyst's docker.yml — same Docker Hub build/push/scan
-# shape, matrixed across this repo's two images (worker, bot) instead of one.
-# No "deploy" job: unlike dream-analyst, this repo's deployment config
-# (image.tag) lives in a different repo (infra-bootstrap's
-# gitops/platform/values/{dream-analyst-worker,vos-monolith-worker,agent-fleet-bot}/values.yaml),
-# not a k8s/ dir here — bumping it is a manual step for now.
+# shape, matrixed across this repo's two images (worker, bot) instead of one,
+# plus a deploy job (below) that bumps k8s/*.yaml's pinned image.tag on every
+# release so ArgoCD (two-source Application, values pulled straight from
+# this repo — see infra-bootstrap's gitops/bootstrap/apps.applicationset.yaml)
+# actually redeploys instead of silently building an image nobody picks up.
 #
 # DOCKERHUB_USERNAME/DOCKERHUB_TOKEN live in Infisical (agent-fleet-nygh
 # project, per Mohammad's request to centralize CI secrets there instead of
@@ -104,3 +104,39 @@ jobs:
           vuln-type: 'os,library'
           ignore-unfixed: true
           cache-dir: ${{ github.workspace }}/.cache/trivy
+
+  deploy:
+    needs: build-push
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      # Blanket `tag: "..."` replace is safe here — every occurrence across
+      # k8s/*.yaml (image.tag, agent-fleet-bot.yaml's hooks.migrate.image.tag)
+      # is genuinely an image tag, nothing else uses that key shape.
+      - name: Bump pinned image tags
+        run: sed -i -E "s/^(\s*tag: \")[^\"]+(\")/\1${GITHUB_REF_NAME}\2/" k8s/*.yaml
+
+      # Pushing with the default GITHUB_TOKEN (via actions/checkout's
+      # auto-configured credential) deliberately does NOT trigger other
+      # workflow runs — this commit won't re-enter release.yml's push-to-main
+      # trigger, avoiding the release-it self-triggering loop hit earlier.
+      - name: Commit and push
+        run: |
+          set -euo pipefail
+          git config user.name "agent-fleet-ci"
+          git config user.email "noreply@bnei.dev"
+          git add k8s/
+          if git diff --cached --quiet; then
+            echo "no tag changes to commit"
+            exit 0
+          fi
+          git commit -m "chore(deploy): bump image tag to ${GITHUB_REF_NAME}"
+          git push origin HEAD:main

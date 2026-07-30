@@ -12,6 +12,7 @@ on:
       - main
     paths-ignore:
       - '**.md'
+      - 'k8s/*'
       - 'package.json'
 
 jobs:

@@ -1,0 +1,72 @@
+# dream-analyst-worker — persistent Claude Code worker pod scoped to the
+# dream-analyst repo (github.com/MohammadBnei/dream-analyst.git, same repo
+# already onboarded as its own deployed app in infra-bootstrap's
+# gitops/apps/registry.yaml — this is a separate thing: a dev worker that
+# opens PRs against it, not that app's runtime deployment).
+#
+# Polls the shared `tasks` table for repo='dream-analyst', creates a git
+# worktree per task, runs a proposer+critic Agent SDK planning phase gated on
+# Mohammad's explicit approval in Discord, then continues the same proposer
+# session into implementation and opens a PR. No k8s API access needed.
+# Always-on for now (replicaCount: 1) — KEDA scale-to-0 deferred, see
+# agent-fleet/README.md.
+
+image:
+  repository: mohammaddocker/agent-fleet-worker
+  # Pinned, bumped automatically by .github/workflows/docker.yml's deploy
+  # job on every release tag.
+  tag: "0.1.5"
+
+service:
+  port: 8080 # unused (no HTTP server), required by the chart schema
+
+podLabels:
+  app.kubernetes.io/part-of: agent-fleet
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 512Mi
+  limits:
+    cpu: 2000m
+    memory: 2Gi
+
+env:
+  - name: TARGET_REPO
+    value: "dream-analyst"
+  - name: TARGET_REPO_URL
+    value: "https://github.com/MohammadBnei/dream-analyst.git"
+  - name: WORKER_NAME
+    value: "dream-analyst-worker"
+
+# Own git checkout + per-task worktrees — Longhorn default (replicated),
+# never shared with the other worker or the bot.
+persistence:
+  enabled: true
+  size: 10Gi
+  mountPath: /workspace
+  accessMode: ReadWriteOnce
+
+# Shared fleet-wide PVC, owned by agent-fleet-bot's Application — see that
+# app's values.yaml comment. Same namespace (agent-fleet) so the claim name
+# resolves.
+extraVolumes:
+  - name: fleet-shared
+    persistentVolumeClaim:
+      claimName: agent-fleet-shared-pvc
+
+extraVolumeMounts:
+  - name: fleet-shared
+    mountPath: /mnt/fleet-shared
+
+# Same dedicated Infisical project as agent-fleet-bot (infra-bootstrap
+# docs/secrets.md) — CLAUDE_CODE_OAUTH_TOKEN (Claude Code auths via OAuth
+# token, not a raw Anthropic API key — minted with `claude setup-token`),
+# GH_TOKEN (dedicated bot GitHub account, collaborator on
+# dream-analyst/vos-monolith — `gh auth setup-git` wires it into git's
+# credential helper for push, and gh CLI reads it directly for
+# `gh pr create`), DISCORD_BOT_TOKEN, AGENTFLEET_DB_*, REDIS_MAIN_PASSWORD.
+infisical:
+  enabled: true
+  projectSlug: "agent-fleet-nygh"
+  envSlug: dev
