@@ -66,20 +66,32 @@ type WatchOutcome =
   | { type: "approved" }
   | { type: "aborted" }
   | { type: "round_cap"; nextIndex: number }
+  | { type: "session_ended"; nextIndex: number }
   | { type: "timeout" };
+
+// Set by runPlanningPhase's finally blocks when a proposer/critic query()
+// loop exits — for any reason (normal completion, error_max_turns, crash).
+// Lets watchBatch stop waiting on a round that can now never complete,
+// instead of polling forever (PLANNING_TIMEOUT_MS defaults to 0/unbounded).
+type SessionFlags = { proposerEnded: boolean; criticEnded: boolean };
 
 // Polls the shared transcript for the duration of one proposer/critic batch.
 // Returns as soon as any of: explicit human approval, explicit human
 // stop/abort, the round cap is hit (maxRounds exchanges with no verdict from
-// Mohammad), or the overall wall-clock budget (if set) runs out.
+// Mohammad), either session ends without reaching that cap (crash/turn
+// limit/early return — the round can't complete on its own anymore), or the
+// overall wall-clock budget (if set) runs out. Also relays every
+// proposer/critic message to Discord as it lands, so the debate is visible
+// live instead of only at round checkpoints.
 async function watchBatch(
-  taskId: string,
+  task: Task,
   sinceIndex: number,
   maxRounds: number,
   timeoutMs: number,
+  flags: SessionFlags,
 ): Promise<WatchOutcome> {
   const redis = redisClient();
-  const key = planningKey(taskId);
+  const key = planningKey(task.id);
   const deadline = timeoutMs > 0 ? Date.now() + timeoutMs : Infinity;
   let cursor = sinceIndex;
   let proposerCount = 0;
@@ -92,11 +104,19 @@ async function watchBatch(
         const msg = JSON.parse(r) as TranscriptEntry;
         if (msg.from === "human" && isAbort(msg)) return { type: "aborted" };
         if (msg.from === "human" && isApproval(msg)) return { type: "approved" };
-        if (msg.from === "proposer") proposerCount++;
-        if (msg.from === "critic") criticCount++;
+        if (msg.from === "proposer" || msg.from === "critic") {
+          if (msg.from === "proposer") proposerCount++;
+          else criticCount++;
+          if (task.discord_thread_id) {
+            await postReply(task.discord_thread_id, `**${msg.from}:** ${msg.text}`);
+          }
+        }
       }
       if (Math.min(proposerCount, criticCount) >= maxRounds) {
         return { type: "round_cap", nextIndex: cursor };
+      }
+      if (flags.proposerEnded || flags.criticEnded) {
+        return { type: "session_ended", nextIndex: cursor };
       }
       await new Promise((r) => setTimeout(r, 1000));
     }
@@ -186,6 +206,7 @@ export async function runPlanningPhase(
     const resuming = batch > 1;
     const proposerAbort = new AbortController();
     const criticAbort = new AbortController();
+    const flags: SessionFlags = { proposerEnded: false, criticEnded: false };
 
     const proposerRun = (async () => {
       try {
@@ -209,6 +230,8 @@ export async function runPlanningPhase(
         }
       } catch {
         // Expected when we abort on round-cap/kill-switch — nothing to do.
+      } finally {
+        flags.proposerEnded = true;
       }
     })();
 
@@ -234,10 +257,12 @@ export async function runPlanningPhase(
         }
       } catch {
         // Expected when we abort.
+      } finally {
+        flags.criticEnded = true;
       }
     })();
 
-    const outcome = await watchBatch(task.id, cursor, MAX_PLANNING_ROUNDS, PLANNING_TIMEOUT_MS);
+    const outcome = await watchBatch(task, cursor, MAX_PLANNING_ROUNDS, PLANNING_TIMEOUT_MS, flags);
     proposerAbort.abort();
     criticAbort.abort();
     await Promise.allSettled([proposerRun, criticRun]);
@@ -246,13 +271,14 @@ export async function runPlanningPhase(
     if (outcome.type === "aborted") return { proposerSessionId, aborted: true };
     if (outcome.type === "timeout") throw new Error("planning timed out waiting for a verdict");
 
-    // round_cap: checkpoint with Mohammad before spending anything further.
+    // round_cap or session_ended: checkpoint with Mohammad before spending anything further.
     cursor = outcome.nextIndex;
     if (task.discord_thread_id) {
-      await postReply(
-        task.discord_thread_id,
-        `Round ${batch} done (${MAX_PLANNING_ROUNDS} proposer<->critic exchange${MAX_PLANNING_ROUNDS === 1 ? "" : "s"}) with no verdict yet. Reply to keep going, say "approved" to proceed with the current plan, or "stop" to cancel this task.`,
-      );
+      const checkpointMsg =
+        outcome.type === "session_ended"
+          ? `A planning session ended without reaching a decision (crashed, hit its turn/budget limit, or returned early). Reply to retry another round, say "approved" to proceed with whatever plan exists so far, or "stop" to cancel.`
+          : `Round ${batch} done (${MAX_PLANNING_ROUNDS} proposer<->critic exchange${MAX_PLANNING_ROUNDS === 1 ? "" : "s"}) with no verdict yet. Reply to keep going, say "approved" to proceed with the current plan, or "stop" to cancel this task.`;
+      await postReply(task.discord_thread_id, checkpointMsg);
     }
     const reply = await waitForCheckpointReply(task.id, cursor, PLANNING_TIMEOUT_MS);
     if (reply === "aborted") return { proposerSessionId, aborted: true };
