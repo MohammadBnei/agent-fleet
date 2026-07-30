@@ -13,7 +13,7 @@ image:
   repository: mohammaddocker/agent-fleet-bot
   # Pinned, bumped automatically by .github/workflows/docker.yml's deploy
   # job on every release tag — no more "images built but never deployed".
-  tag: "0.3.0"
+  tag: "0.4.0"
 
 service:
   port: 8080 # unused (no HTTP server), required by the chart schema
@@ -75,7 +75,7 @@ hooks:
     type: PreSync
     image:
       repository: mohammaddocker/agent-fleet-bot
-      tag: "0.3.0"
+      tag: "0.4.0"
     command: ["sh", "-c"]
     args:
       - "PGPASSWORD=$AGENTFLEET_DB_PASSWORD psql -h $AGENTFLEET_DB_HOST -p $AGENTFLEET_DB_PORT -U $AGENTFLEET_DB_USER -d $AGENTFLEET_DB_NAME -f /app/db/schema.sql"
