@@ -12,6 +12,7 @@ on:
       - main
     paths-ignore:
       - '**.md'
+      - 'package.json'
 
 jobs:
   release:
