@@ -1,0 +1,32 @@
+{
+  "name": "agent-fleet",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "release": "release-it"
+  },
+  "devDependencies": {
+    "@release-it/conventional-changelog": "^10.0.4",
+    "release-it": "^19.2.4"
+  },
+  "release-it": {
+    "$schema": "https://unpkg.com/release-it@19/schema/release-it.json",
+    "git": {
+      "commitMessage": "chore: release v${version}"
+    },
+    "github": {
+      "release": false
+    },
+    "npm": {
+      "publish": false
+    },
+    "plugins": {
+      "@release-it/conventional-changelog": {
+        "preset": {
+          "name": "angular"
+        },
+        "infile": "CHANGELOG.md"
+      }
+    }
+  }
+}

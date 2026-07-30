@@ -1,0 +1,69 @@
+name: Build, Test and Deploy
+
+# Adapted from dream-analyst's docker.yml — same Docker Hub build/push/scan
+# shape, matrixed across this repo's two images (worker, bot) instead of one.
+# No "deploy" job: unlike dream-analyst, this repo's deployment config
+# (image.tag) lives in a different repo (infra-bootstrap's
+# gitops/platform/values/{dream-analyst-worker,vos-monolith-worker,agent-fleet-bot}/values.yaml),
+# not a k8s/ dir here — bumping it is a manual step for now.
+
+on:
+  pull_request:
+  push:
+    tags:
+      - '*'
+
+env:
+  PLATFORMS: linux/amd64
+
+jobs:
+  build-push:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        component: [worker, bot]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Docker Login
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: package.json info
+        id: info
+        uses: jaywcjlove/github-action-package@v2.0.0
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          platforms: ${{ env.PLATFORMS }}
+          push: ${{ github.event_name == 'push' }}
+          context: .
+          file: ${{ matrix.component }}/Dockerfile
+          tags: >-
+            ${{ secrets.DOCKERHUB_USERNAME }}/agent-fleet-${{ matrix.component }}:${{ steps.info.outputs.version }},
+            ${{ secrets.DOCKERHUB_USERNAME }}/agent-fleet-${{ matrix.component }}:latest
+          cache-from: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/agent-fleet-${{ matrix.component }}:buildcache
+          cache-to: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/agent-fleet-${{ matrix.component }}:buildcache,mode=max
+
+      - name: Scan Docker image
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ secrets.DOCKERHUB_USERNAME }}/agent-fleet-${{ matrix.component }}:${{ steps.info.outputs.version }}
+          format: 'sarif'
+          output: 'trivy-results-${{ matrix.component }}.sarif'
+          severity: 'CRITICAL,HIGH,MEDIUM'
+          vuln-type: 'os,library'
+          ignore-unfixed: true
+          cache-dir: ${{ github.workspace }}/.cache/trivy

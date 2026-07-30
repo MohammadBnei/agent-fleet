@@ -1,0 +1,42 @@
+name: Release It
+
+# Adapted from dream-analyst's release.yml — same release-it +
+# conventional-changelog shape, run from the repo root (this repo has one
+# version/CHANGELOG for the whole fleet, not a per-package split) and with
+# npm instead of bun, matching every package.json already in this repo.
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - '**.md'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.PAT }}
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: git config
+        run: |
+          git config user.name "${GITHUB_ACTOR}"
+          git config user.email "${GITHUB_ACTOR}@users.noreply.github.com"
+
+      - name: Run release-it
+        run: git update-index --refresh && git diff-index --quiet HEAD || git reset --hard && npm run release
+        env:
+          GITHUB_TOKEN: ${{ secrets.PAT }}
