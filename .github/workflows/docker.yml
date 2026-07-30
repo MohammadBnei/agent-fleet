@@ -29,6 +29,7 @@ jobs:
   build-push:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false # one image's build/scan failure shouldn't hide the other's status
       matrix:
         component: [worker, bot]
     steps:
@@ -82,6 +83,9 @@ jobs:
         with:
           platforms: ${{ env.PLATFORMS }}
           push: ${{ github.event_name == 'push' }}
+          load: true # single-platform build — makes the image visible to the
+                     # local docker daemon for the Trivy scan step below,
+                     # regardless of whether this run also pushed it
           context: .
           file: ${{ matrix.component }}/Dockerfile
           tags: >-
