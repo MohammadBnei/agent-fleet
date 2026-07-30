@@ -1,5 +1,11 @@
 import { claimNextTask, setTaskStatus, appendJournal } from "./db.js";
-import { ensureRepoCloned, createWorktree, removeWorktree, pushAndOpenPr } from "./git.js";
+import {
+  configureGitAuth,
+  ensureRepoCloned,
+  createWorktree,
+  removeWorktree,
+  pushAndOpenPr,
+} from "./git.js";
 import { postReply } from "./discord.js";
 import { runPlanningPhase, runImplementationPhase } from "./planning.js";
 
@@ -64,6 +70,7 @@ async function handleTask(task: Awaited<ReturnType<typeof claimNextTask>>): Prom
 }
 
 async function main(): Promise<void> {
+  await configureGitAuth();
   await ensureRepoCloned(TARGET_REPO_URL as string);
   console.log(`[${WORKER_NAME}] ready, polling for ${TARGET_REPO} tasks`);
   for (;;) {

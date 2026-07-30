@@ -12,6 +12,15 @@ async function git(args: string[], cwd = REPO_ROOT): Promise<string> {
   return stdout.trim();
 }
 
+// One bot-account PAT (GH_TOKEN, Infisical) covers everything: `gh auth
+// setup-git` wires it into git's credential helper for HTTPS push/clone, and
+// gh CLI itself already reads GH_TOKEN for the REST/GraphQL calls behind
+// `gh pr create`. Needs the token in the env before this runs.
+export async function configureGitAuth(): Promise<void> {
+  if (!process.env.GH_TOKEN) return; // falls back to whatever ambient git auth is configured
+  await run("gh", ["auth", "setup-git"]);
+}
+
 export async function ensureRepoCloned(repoUrl: string): Promise<void> {
   try {
     await run("git", ["rev-parse", "--is-inside-work-tree"], { cwd: REPO_ROOT });
@@ -45,8 +54,9 @@ export async function removeWorktree(taskId: string, branch: string): Promise<vo
   await git(["branch", "-D", branch]).catch(() => {});
 }
 
-// Pushes the branch and opens a PR via the `gh` CLI (already authenticated
-// through GIT_PAT / gh's GITHUB_TOKEN env var — see the worker Dockerfile).
+// Pushes the branch and opens a PR — both authenticated via GH_TOKEN
+// (configureGitAuth wired it into git's credential helper; gh CLI reads it
+// directly for the PR-create API call).
 export async function pushAndOpenPr(
   worktreePath: string,
   branch: string,
