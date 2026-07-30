@@ -8,9 +8,17 @@ const redis = new Redis({
 
 // Same key/shape as mcp-redis's send_message tool — the bot writes directly
 // with ioredis instead of going through MCP (it isn't a Claude Code agent).
-export async function relayHumanMessage(taskId: string, text: string): Promise<void> {
+// `type` distinguishes an explicit /approve or /stop slash command from
+// ordinary discussion text — planning.ts checks `type` first (unambiguous)
+// and falls back to matching words in `text` for anyone who just types
+// "approved" instead of using the command.
+export async function relayHumanMessage(
+  taskId: string,
+  text: string,
+  type: "discussion" | "approve" | "abort" = "discussion",
+): Promise<void> {
   await redis.rpush(
     `agentfleet:planning:${taskId}`,
-    JSON.stringify({ from: "human", text, ts: new Date().toISOString() }),
+    JSON.stringify({ from: "human", text, type, ts: new Date().toISOString() }),
   );
 }

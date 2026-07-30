@@ -41,15 +41,25 @@ function mcpServer() {
   };
 }
 
-function isApproval(text: string): boolean {
-  return /\bapprove(d)?\b|\blgtm\b|\bship it\b|\bgo ahead\b/i.test(text);
+type TranscriptEntry = { from: string; text: string; type?: "discussion" | "approve" | "abort" };
+
+// /approve and /stop are unambiguous — checked first. The word-matching
+// fallback is only for anyone who types "approved"/"stop" as plain text
+// instead of using the slash command.
+function isApproval(msg: TranscriptEntry): boolean {
+  if (msg.type === "approve") return true;
+  if (msg.type === "abort") return false;
+  return /\bapprove(d)?\b|\blgtm\b|\bship it\b|\bgo ahead\b/i.test(msg.text);
 }
 
 // The manual kill switch: works at any point in planning OR implementation,
-// not just at a round-cap checkpoint. Mohammad types it in the thread; the
-// bot relays it into the transcript exactly like any other reply.
-function isAbort(text: string): boolean {
-  return /\b(stop|abort|cancel|kill)\b/i.test(text);
+// not just at a round-cap checkpoint. Mohammad types it (or uses /stop) in
+// the thread; the bot relays it into the transcript exactly like any other
+// reply.
+function isAbort(msg: TranscriptEntry): boolean {
+  if (msg.type === "abort") return true;
+  if (msg.type === "approve") return false;
+  return /\b(stop|abort|cancel|kill)\b/i.test(msg.text);
 }
 
 type WatchOutcome =
@@ -79,9 +89,9 @@ async function watchBatch(
       const raw = await redis.lrange(key, cursor, -1);
       for (const r of raw) {
         cursor++;
-        const msg = JSON.parse(r) as { from: string; text: string };
-        if (msg.from === "human" && isAbort(msg.text)) return { type: "aborted" };
-        if (msg.from === "human" && isApproval(msg.text)) return { type: "approved" };
+        const msg = JSON.parse(r) as TranscriptEntry;
+        if (msg.from === "human" && isAbort(msg)) return { type: "aborted" };
+        if (msg.from === "human" && isApproval(msg)) return { type: "approved" };
         if (msg.from === "proposer") proposerCount++;
         if (msg.from === "critic") criticCount++;
       }
@@ -113,8 +123,8 @@ async function waitForCheckpointReply(
       const raw = await redis.lrange(key, cursor, -1);
       for (const r of raw) {
         cursor++;
-        const msg = JSON.parse(r) as { from: string; text: string };
-        if (msg.from === "human") return isAbort(msg.text) ? "aborted" : "continue";
+        const msg = JSON.parse(r) as TranscriptEntry;
+        if (msg.from === "human") return isAbort(msg) ? "aborted" : "continue";
       }
       await new Promise((r) => setTimeout(r, 1000));
     }
