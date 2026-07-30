@@ -3,6 +3,7 @@ import { Redis } from "ioredis";
 import type { Task } from "./db.js";
 import { appendJournal } from "./db.js";
 import { postReply } from "./discord.js";
+import { log } from "./log.js";
 
 const MCP_REDIS_ENTRY = process.env.MCP_REDIS_ENTRY ?? "/app/mcp-redis/src/index.ts";
 const MODEL = process.env.CLAUDE_MODEL ?? "claude-opus-4-8";
@@ -113,7 +114,10 @@ async function watchBatch(
       for (const r of raw) {
         cursor++;
         const msg = JSON.parse(r) as TranscriptEntry;
-        if (msg.from === "human" && isAbort(msg)) return { type: "aborted" };
+        if (msg.from === "human" && isAbort(msg)) {
+          log("info", "human abort received during planning batch", { taskId: task.id, text: msg.text });
+          return { type: "aborted" };
+        }
         if (msg.from === "human" && isApproval(msg)) return { type: "approved" };
         if (msg.from === "proposer" || msg.from === "critic") {
           if (msg.from === "proposer") proposerCount++;
@@ -155,7 +159,11 @@ async function waitForCheckpointReply(
       for (const r of raw) {
         cursor++;
         const msg = JSON.parse(r) as TranscriptEntry;
-        if (msg.from === "human") return isAbort(msg) ? "aborted" : "continue";
+        if (msg.from === "human") {
+          const abort = isAbort(msg);
+          if (abort) log("info", "human abort received", { taskId, text: msg.text });
+          return abort ? "aborted" : "continue";
+        }
       }
       await new Promise((r) => setTimeout(r, 1000));
     }
@@ -188,13 +196,51 @@ Read the actual repository (read-only) and call wait_for_messages (taskId="${tas
 async function logResult(
   actor: string,
   repo: string,
-  msg: { subtype?: string; num_turns?: number; total_cost_usd?: number },
+  msg: { subtype?: string; num_turns?: number; total_cost_usd?: number; permission_denials?: unknown[] },
 ): Promise<void> {
   await appendJournal(repo, actor, "session.result", {
     subtype: msg.subtype,
     numTurns: msg.num_turns,
     totalCostUsd: msg.total_cost_usd,
+    permissionDenials: msg.permission_denials?.length ?? 0,
   });
+}
+
+// Streams every SDK message to stdout as it arrives (not just the final
+// result) — `kubectl logs -f` otherwise goes silent for minutes at a time
+// while a session is actually working, and previously gave zero visibility
+// into permission denials (the actual cause of the mcp__agent-fleet-redis
+// tools-not-allowed bug — would have shown up here immediately as
+// "tool_result" entries with isError: true instead of being diagnosed after
+// the fact from cost/turn-count/timing).
+function logSdkMessage(actor: string, msg: { type: string; [key: string]: unknown }): void {
+  if (msg.type === "system" && msg.subtype === "init") {
+    log("info", `${actor} session started`, {
+      model: msg.model,
+      mcpServers: msg.mcp_servers,
+      permissionMode: msg.permissionMode,
+    });
+    return;
+  }
+  if (msg.type === "assistant") {
+    const content = (msg.message as { content?: { type: string; [k: string]: unknown }[] })?.content ?? [];
+    for (const block of content) {
+      if (block.type === "text") log("info", `${actor} text`, { text: block.text });
+      if (block.type === "tool_use") log("info", `${actor} tool_use`, { tool: block.name, input: block.input });
+    }
+    return;
+  }
+  if (msg.type === "user") {
+    const content = (msg.message as { content?: { type: string; [k: string]: unknown }[] })?.content ?? [];
+    for (const block of content) {
+      if (block.type === "tool_result") {
+        log(block.is_error ? "error" : "info", `${actor} tool_result`, {
+          isError: block.is_error ?? false,
+          content: typeof block.content === "string" ? block.content.slice(0, 2000) : block.content,
+        });
+      }
+    }
+  }
 }
 
 // Runs the proposer + critic as independent Claude Code agentic sessions
@@ -237,6 +283,7 @@ export async function runPlanningPhase(
           },
         })) {
           if (!proposerSessionId && "session_id" in msg) proposerSessionId = msg.session_id;
+          logSdkMessage("proposer", msg);
           if (msg.type === "result") await logResult("proposer", task.repo, msg);
         }
       } catch {
@@ -264,6 +311,7 @@ export async function runPlanningPhase(
           },
         })) {
           if (!criticSessionId && "session_id" in msg) criticSessionId = msg.session_id;
+          logSdkMessage("critic", msg);
           if (msg.type === "result") await logResult("critic", task.repo, msg);
         }
       } catch {
@@ -353,6 +401,7 @@ End your final message with a line exactly: PR_READY: <one-paragraph summary for
         abortController,
       },
     })) {
+      logSdkMessage("proposer", msg);
       if (msg.type === "assistant") {
         const textBlock = msg.message?.content?.find((b: { type: string }) => b.type === "text");
         if (textBlock) finalText = textBlock.text;
