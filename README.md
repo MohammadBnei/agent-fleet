@@ -41,9 +41,13 @@ pod-lifecycle level:
   `knowledge_journal` table, both in the fleet-wide `agentfleetdb` Postgres
   database (Pigsty).
 
-Deployment config (Helm values, ApplicationSet entries) lives in
-`infra-bootstrap`'s `gitops/platform/`, not in this repo — see that repo's
-`gitops/README.md`.
+Deployment config (Helm values) lives in `k8s/` in this repo — a two-source
+ArgoCD Application (chart from `infra-bootstrap`, values from here, see
+`infra-bootstrap`'s `gitops/apps/registry.yaml`) so `docker.yml`'s deploy job
+can bump the pinned image tag on release without a cross-repo commit.
+
+Only the Application/ApplicationSet registration itself lives in
+`infra-bootstrap`'s `gitops/` — see that repo's `gitops/README.md`.
 
 **[`design-v0.md`](./design-v0.md)** is the original, broader v2 design doc
 (first draft) — full fleet vision including staging/production gating, a
