@@ -19,8 +19,10 @@ const MAX_PLANNING_ROUNDS = Number(process.env.MAX_PLANNING_ROUNDS ?? 1);
 // effort to implementing.
 const MAX_TURNS_PLANNING = Number(process.env.MAX_TURNS_PLANNING ?? 40);
 const MAX_TURNS_IMPLEMENTATION = Number(process.env.MAX_TURNS_IMPLEMENTATION ?? 40);
-const MAX_BUDGET_USD_PLANNING = Number(process.env.MAX_BUDGET_USD_PLANNING ?? 5);
-const MAX_BUDGET_USD_IMPLEMENTATION = Number(process.env.MAX_BUDGET_USD_IMPLEMENTATION ?? 5);
+// No maxBudgetUsd: Claude Code auths via CLAUDE_CODE_OAUTH_TOKEN (subscription),
+// not metered API billing — total_cost_usd is a notional figure the SDK
+// still computes for reporting, not a real charge, so capping on it doesn't
+// protect anything. maxTurns is the real guardrail.
 
 function redisClient(): Redis {
   return new Redis({
@@ -295,7 +297,6 @@ export async function runPlanningPhase(
             allowedTools: ["Read", "Glob", "Grep", "Bash", ...REDIS_MCP_TOOLS],
             mcpServers: { "agent-fleet-redis": mcpServer() },
             maxTurns: MAX_TURNS_PLANNING,
-            maxBudgetUsd: MAX_BUDGET_USD_PLANNING,
             abortController: proposerAbort,
           },
         })) {
@@ -323,7 +324,6 @@ export async function runPlanningPhase(
             allowedTools: ["Read", "Glob", "Grep", "Bash", ...REDIS_MCP_TOOLS],
             mcpServers: { "agent-fleet-redis": mcpServer() },
             maxTurns: MAX_TURNS_PLANNING,
-            maxBudgetUsd: MAX_BUDGET_USD_PLANNING,
             abortController: criticAbort,
           },
         })) {
@@ -414,7 +414,6 @@ End your final message with a line exactly: PR_READY: <one-paragraph summary for
         allowedTools: ["Read", "Glob", "Grep", "Bash", "Write", "Edit"],
         mcpServers: { "agent-fleet-redis": mcpServer() },
         maxTurns: MAX_TURNS_IMPLEMENTATION,
-        maxBudgetUsd: MAX_BUDGET_USD_IMPLEMENTATION,
         abortController,
       },
     })) {
