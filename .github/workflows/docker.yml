@@ -1,0 +1,106 @@
+name: Build, Test and Deploy
+
+# Adapted from dream-analyst's docker.yml — same Docker Hub build/push/scan
+# shape, matrixed across this repo's two images (worker, bot) instead of one.
+# No "deploy" job: unlike dream-analyst, this repo's deployment config
+# (image.tag) lives in a different repo (infra-bootstrap's
+# gitops/platform/values/{dream-analyst-worker,vos-monolith-worker,agent-fleet-bot}/values.yaml),
+# not a k8s/ dir here — bumping it is a manual step for now.
+#
+# DOCKERHUB_USERNAME/DOCKERHUB_TOKEN live in Infisical (agent-fleet-nygh
+# project, per Mohammad's request to centralize CI secrets there instead of
+# duplicating them as native GitHub secrets) — pulled in via a read-only,
+# project-scoped Infisical service token. INFISICAL_TOKEN is the one
+# necessary native GitHub secret: bootstrapping trust into Infisical needs
+# some credential, and a repo secret is where every other workflow already
+# keeps that kind of thing.
+
+on:
+  pull_request:
+  push:
+    tags:
+      - '*'
+
+env:
+  PLATFORMS: linux/amd64
+  INFISICAL_PROJECT_ID: ae771c2c-5115-452a-8f1c-1e03fa0e2b9a
+
+jobs:
+  build-push:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false # one image's build/scan failure shouldn't hide the other's status
+      matrix:
+        component: [worker, bot]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Infisical CLI
+        run: |
+          curl -1sLf 'https://artifacts-cli.infisical.com/setup.deb.sh' | sudo -E bash
+          sudo apt-get update && sudo apt-get install -y infisical
+
+      - name: Load secrets from Infisical
+        run: |
+          set -euo pipefail
+          # GitHub only auto-masks values that came from `secrets.*` in this
+          # workflow — anything pulled from an external system (Infisical)
+          # is invisible to that redaction engine until explicitly
+          # registered with `::add-mask::`. Skipping that step is what
+          # leaked DOCKERHUB_TOKEN in cleartext in a prior run (it showed up
+          # in the *next* step's "env:" group header). --format=dotenv
+          # (not dotenv-export, which prefixes "export " onto the key and
+          # broke $GITHUB_ENV parsing — that's also why the job failed).
+          while IFS='=' read -r key raw_value; do
+            [ -z "$key" ] && continue
+            value="${raw_value%\'}"
+            value="${value#\'}"
+            echo "::add-mask::$value"
+            echo "$key=$value" >> "$GITHUB_ENV"
+          done < <(infisical export --domain=https://infisical.bnei.dev/api --token="${{ secrets.INFISICAL_TOKEN }}" --projectId="$INFISICAL_PROJECT_ID" --env=dev --format=dotenv | grep -E '^DOCKERHUB_')
+
+      - name: Docker Login
+        uses: docker/login-action@v3
+        with:
+          username: ${{ env.DOCKERHUB_USERNAME }}
+          password: ${{ env.DOCKERHUB_TOKEN }}
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: package.json info
+        id: info
+        uses: jaywcjlove/github-action-package@v2.0.0
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          platforms: ${{ env.PLATFORMS }}
+          push: ${{ github.event_name == 'push' }}
+          load: true # single-platform build — makes the image visible to the
+                     # local docker daemon for the Trivy scan step below,
+                     # regardless of whether this run also pushed it
+          context: .
+          file: ${{ matrix.component }}/Dockerfile
+          tags: >-
+            ${{ env.DOCKERHUB_USERNAME }}/agent-fleet-${{ matrix.component }}:${{ steps.info.outputs.version }},
+            ${{ env.DOCKERHUB_USERNAME }}/agent-fleet-${{ matrix.component }}:latest
+          cache-from: type=registry,ref=${{ env.DOCKERHUB_USERNAME }}/agent-fleet-${{ matrix.component }}:buildcache
+          cache-to: type=registry,ref=${{ env.DOCKERHUB_USERNAME }}/agent-fleet-${{ matrix.component }}:buildcache,mode=max
+
+      - name: Scan Docker image
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.DOCKERHUB_USERNAME }}/agent-fleet-${{ matrix.component }}:${{ steps.info.outputs.version }}
+          format: 'sarif'
+          output: 'trivy-results-${{ matrix.component }}.sarif'
+          severity: 'CRITICAL,HIGH,MEDIUM'
+          vuln-type: 'os,library'
+          ignore-unfixed: true
+          cache-dir: ${{ github.workspace }}/.cache/trivy
