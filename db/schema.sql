@@ -12,11 +12,16 @@ CREATE TABLE IF NOT EXISTS tasks (
   claimed_by        TEXT,
   pr_url            TEXT,
   notes             TEXT,
+  skip_critique     BOOLEAN NOT NULL DEFAULT false,
   created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS tasks_repo_status_idx ON tasks (repo, status);
+
+-- CREATE TABLE IF NOT EXISTS above is a no-op against the already-live
+-- table, so new columns need their own idempotent statement here too.
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS skip_critique BOOLEAN NOT NULL DEFAULT false;
 
 -- Named + re-applied via DROP/ADD (not inline on the column) so adding a new
 -- status later — like 'cancelled' below, for the round-cap/kill-switch

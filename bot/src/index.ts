@@ -37,6 +37,12 @@ const commands = [
     )
     .addStringOption((opt) =>
       opt.setName("description").setDescription("What should the worker do?").setRequired(true),
+    )
+    .addBooleanOption((opt) =>
+      opt
+        .setName("skip_critique")
+        .setDescription("Skip the critic session for this task (default: critique runs)")
+        .setRequired(false),
     ),
   new SlashCommandBuilder()
     .setName("approve")
@@ -52,13 +58,17 @@ async function queueTask(
   description: string,
   channelId: string,
   startThread: (name: string) => Promise<{ id: string; send: (c: string) => Promise<unknown> }>,
+  skipCritique = false,
 ): Promise<void> {
   const thread = await startThread(`${repo}: ${description.slice(0, 80)}`);
-  const taskId = await createTask(repo, description, channelId, thread.id);
+  const taskId = await createTask(repo, description, channelId, thread.id, skipCritique);
+  const planningNote = skipCritique
+    ? "The worker will pick this up shortly and start planning here (critique skipped for this task)"
+    : "The worker will pick this up shortly and start a proposer/critic planning discussion here";
   await thread.send(
-    `Queued for **${repo}**. The worker will pick this up shortly and start a proposer/critic planning discussion here — reply to join in, use \`/approve\` once you're happy with the plan, or \`/stop\` to cancel.`,
+    `Queued for **${repo}**. ${planningNote} — reply to join in, use \`/approve\` once you're happy with the plan, or \`/stop\` to cancel.`,
   );
-  log("info", "task created", { taskId, repo, threadId: thread.id });
+  log("info", "task created", { taskId, repo, threadId: thread.id, skipCritique });
 }
 
 client.once(Events.ClientReady, async (c) => {
@@ -96,9 +106,14 @@ client.on(Events.InteractionCreate, async (interaction) => {
     }
     const repo = interaction.options.getString("repo", true);
     const description = interaction.options.getString("description", true);
+    const skipCritique = interaction.options.getBoolean("skip_critique") ?? false;
     await interaction.reply({ content: `Queuing for **${repo}**...`, flags: MessageFlags.Ephemeral });
-    await queueTask(repo, description, interaction.channelId, (name) =>
-      channel.threads.create({ name, autoArchiveDuration: 1440 }),
+    await queueTask(
+      repo,
+      description,
+      interaction.channelId,
+      (name) => channel.threads.create({ name, autoArchiveDuration: 1440 }),
+      skipCritique,
     );
     return;
   }

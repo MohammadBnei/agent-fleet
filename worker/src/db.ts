@@ -17,6 +17,7 @@ export interface Task {
   discord_thread_id: string | null;
   claimed_by: string | null;
   pr_url: string | null;
+  skip_critique: boolean;
 }
 
 // Atomic claim: SKIP LOCKED means two worker pods for the same repo (or a
