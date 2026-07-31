@@ -20,3 +20,4 @@ Decisions with no real alternative ever on the table live in
 | [0008](0008-unbounded-guardrail-defaults.md) | Guardrail defaults are unbounded, capped only opt-in | Accepted |
 | [0009](0009-rtk-ponytail-baked-into-worker-image.md) | `rtk` + `ponytail` baked into the worker image | Accepted |
 | [0010](0010-shared-rwx-pvc-across-apps.md) | Shared `ReadWriteMany` PVC across bot + both workers | Accepted |
+| [0011](0011-critic-opt-out-and-context-handoff.md) | Critic session is opt-out (human-only), plus proposer→critic context handoff | Accepted |

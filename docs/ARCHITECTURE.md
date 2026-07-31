@@ -60,6 +60,15 @@ transcript and checked first, before the word-match approval fallback.
 
 ## 3. Planning-phase guardrails
 
+- **Critic is opt-out, human-only.** Critique runs by default; a
+  `skip_critique` boolean on `/task` (default false) skips spawning the
+  critic session entirely for that task — round-cap math then counts
+  proposer turns alone. The proposer never decides this for itself — see
+  [`adr/0011-critic-opt-out-and-context-handoff.md`](adr/0011-critic-opt-out-and-context-handoff.md).
+- **Proposer→critic context handoff.** The proposer cites the files/paths
+  it read in its plan message; the critic starts from those instead of
+  re-reading the repo cold, only exploring further to verify a claim or
+  cover a gap (same ADR).
 - **Round cap:** every `MAX_PLANNING_ROUNDS` (default 1) proposer↔critic
   exchanges without a verdict from Mohammad, both sessions are aborted and
   a checkpoint posts to Discord: reply to continue, `/approve`, or `/stop`.
