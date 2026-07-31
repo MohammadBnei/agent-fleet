@@ -84,9 +84,11 @@ worker pod (`k8s/dream-analyst-worker.yaml`, `k8s/vos-monolith-worker.yaml`).
 - Secrets never committed; always fetched from Infisical at run time.
 - Commit messages follow Conventional Commits — `release.yml` runs
   `release-it` off them to bump version/CHANGELOG on every push to `main`.
-- No test framework exists for `bot/`/`worker`/`mcp-redis` — the golden
-  path itself is the test (see `docs/ARCHITECTURE.md`). Each package does
-  have `bun run typecheck`.
+- `worker/` has `bun:test` coverage (`bun run test`) for coordination logic
+  that's cheap to mock — the SDK's `query()` and the Redis transcript — run
+  in CI ahead of the Docker build. `bot/`/`mcp-redis` still have no test
+  framework; the golden path itself is the test there (see
+  `docs/ARCHITECTURE.md`). Each package does have `bun run typecheck`.
 
 ## Skills
 
