@@ -61,6 +61,32 @@ function mcpServer() {
   };
 }
 
+// Implementation-phase only (see runImplementationPhase) — e2e testing only
+// makes sense once code changes exist, not during planning. request_e2e_env
+// and kill_env are always present; Playwright's own tool names (e.g.
+// mcp__agent-fleet-e2e__browser_navigate) aren't listed individually here —
+// they only exist once request_e2e_env has actually created a pod, so
+// enumerating them upfront isn't possible. Allowing the whole
+// "mcp__agent-fleet-e2e__*" prefix is required for those to work at all;
+// same silent-permission-denial trap as REDIS_MCP_TOOLS above (ADR-0008) —
+// verify this prefix form is actually honored by the SDK during real e2e
+// testing, don't assume it from this comment alone.
+const E2E_MCP_TOOLS = [
+  "mcp__agent-fleet-e2e__request_e2e_env",
+  "mcp__agent-fleet-e2e__kill_env",
+  "mcp__agent-fleet-e2e__*",
+];
+
+const E2E_PROVISIONER_URL =
+  process.env.E2E_PROVISIONER_URL ?? "http://e2e-provisioner.agent-fleet.svc.cluster.local:8080";
+
+function e2eMcpServer(task: Task) {
+  return {
+    type: "http" as const,
+    url: `${E2E_PROVISIONER_URL}/mcp/${task.id}`,
+  };
+}
+
 type TranscriptEntry = { from: string; text: string; type?: "discussion" | "approve" | "abort" };
 
 // /approve and /stop are unambiguous — checked first. The word-matching
@@ -384,8 +410,9 @@ export async function runImplementationPhase(
   const implementPrompt = `Mohammad approved the plan. Implement it now in this worktree:
 1. Write the code, following the plan you and the critic settled on.
 2. Add or update tests; run the repo's test suite and make it pass. If there is no test suite, add one first.
-3. Update docs if relevant.
-4. Commit your changes.
+3. If the task calls for e2e/browser/behavioral verification, call request_e2e_env to get a live pod running this branch plus Playwright browser-automation tools — use it, then call kill_env when you're done with it (it also gets torn down automatically once this task finishes). Mention the preview URL it returns in your reply so Mohammad can check it himself.
+4. Update docs if relevant.
+5. Commit your changes.
 End your final message with a line exactly: PR_READY: <one-paragraph summary for the PR description>`;
 
   const abortController = new AbortController();
@@ -420,8 +447,12 @@ End your final message with a line exactly: PR_READY: <one-paragraph summary for
         model: MODEL,
         cwd: worktreePath,
         permissionMode: "default",
-        allowedTools: ["Read", "Glob", "Grep", "Bash", "Write", "Edit", "WebSearch", "WebFetch", ...REDIS_MCP_TOOLS],
-        mcpServers: { "agent-fleet-redis": mcpServer() },
+        allowedTools: [
+          "Read", "Glob", "Grep", "Bash", "Write", "Edit", "WebSearch", "WebFetch",
+          ...REDIS_MCP_TOOLS,
+          ...E2E_MCP_TOOLS,
+        ],
+        mcpServers: { "agent-fleet-redis": mcpServer(), "agent-fleet-e2e": e2eMcpServer(task) },
         maxTurns: MAX_TURNS_IMPLEMENTATION,
         abortController,
       },

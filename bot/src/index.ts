@@ -6,7 +6,7 @@ import {
   SlashCommandBuilder,
   MessageFlags,
 } from "discord.js";
-import { createTask, findTaskIdByThread, KNOWN_REPOS } from "./db.js";
+import { createTask, findTaskIdByThread, requestE2eKill, KNOWN_REPOS } from "./db.js";
 import { relayHumanMessage } from "./redis.js";
 import { log } from "./log.js";
 
@@ -51,6 +51,9 @@ const commands = [
     .setName("stop")
     .setDescription("Cancel this task immediately (use inside a task thread)")
     .addStringOption((opt) => opt.setName("reason").setDescription("Why (optional)")),
+  new SlashCommandBuilder()
+    .setName("e2e-kill")
+    .setDescription("Tear down this task's e2e preview environment now (use inside a task thread)"),
 ];
 
 async function queueTask(
@@ -118,7 +121,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
     return;
   }
 
-  if (interaction.commandName === "approve" || interaction.commandName === "stop") {
+  if (interaction.commandName === "approve" || interaction.commandName === "stop" || interaction.commandName === "e2e-kill") {
     const taskId = await findTaskIdByThread(interaction.channelId);
     if (!taskId) {
       await interaction.reply({ content: "This isn't a task thread.", flags: MessageFlags.Ephemeral });
@@ -127,10 +130,13 @@ client.on(Events.InteractionCreate, async (interaction) => {
     if (interaction.commandName === "approve") {
       await relayHumanMessage(taskId, "approved", "approve");
       await interaction.reply("Approved.");
-    } else {
+    } else if (interaction.commandName === "stop") {
       const reason = interaction.options.getString("reason") ?? "stop";
       await relayHumanMessage(taskId, reason, "abort");
       await interaction.reply(`Stopping — ${reason}`);
+    } else {
+      const killed = await requestE2eKill(taskId);
+      await interaction.reply(killed ? "Kill requested." : "No active e2e session for this task.");
     }
   }
 });

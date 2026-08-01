@@ -33,7 +33,7 @@ jobs:
     strategy:
       fail-fast: false # one image's test/build failure shouldn't hide the other's status
       matrix:
-        component: [worker, bot]
+        component: [worker, bot, e2e-provisioner]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -107,7 +107,9 @@ jobs:
           load: true # single-platform build — was needed to make the image
                      # visible to the local docker daemon for the (now
                      # disabled) Trivy scan step; harmless to leave
-          context: .
+          # worker/bot need the repo root as context (their Dockerfiles COPY
+          # mcp-redis in as a sibling); e2e-provisioner is standalone.
+          context: ${{ matrix.component == 'e2e-provisioner' && 'e2e-provisioner' || '.' }}
           file: ${{ matrix.component }}/Dockerfile
           tags: >-
             ${{ env.DOCKERHUB_USERNAME }}/agent-fleet-${{ matrix.component }}:${{ steps.info.outputs.version }},
@@ -127,6 +129,70 @@ jobs:
       #     vuln-type: 'os,library'
       #     ignore-unfixed: true
       #     cache-dir: ${{ github.workspace }}/.cache/trivy
+
+  # Separate job rather than folding into the matrix above: e2e-runner has
+  # no package.json/tests, it's a plain image build — a few duplicated
+  # steps here are cheaper than conditional-skip logic in the shared job.
+  build-push-e2e-runner:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Infisical CLI
+        run: |
+          curl -1sLf 'https://artifacts-cli.infisical.com/setup.deb.sh' | sudo -E bash
+          sudo apt-get update && sudo apt-get install -y infisical
+
+      - name: Load secrets from Infisical
+        run: |
+          set -euo pipefail
+          while IFS='=' read -r key raw_value; do
+            [ -z "$key" ] && continue
+            value="${raw_value%\'}"
+            value="${value#\'}"
+            echo "::add-mask::$value"
+            echo "$key=$value" >> "$GITHUB_ENV"
+          done < <(infisical export --domain=https://infisical.bnei.dev/api --token="${{ secrets.INFISICAL_TOKEN }}" --projectId="$INFISICAL_PROJECT_ID" --env=dev --format=dotenv | grep -E '^DOCKERHUB_')
+
+      - name: Docker Login
+        uses: docker/login-action@v3
+        with:
+          username: ${{ env.DOCKERHUB_USERNAME }}
+          password: ${{ env.DOCKERHUB_TOKEN }}
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # github.ref_name is "<PR#>/merge" on pull_request events — an invalid
+      # Docker tag (contains a slash). No package.json here to read a
+      # version from (unlike the matrix job's steps.info), so compute a safe
+      # tag directly: the pushed tag name on a real release, "pr-<number>"
+      # otherwise.
+      - name: Compute image tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "value=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=pr-${{ github.event.pull_request.number }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          platforms: ${{ env.PLATFORMS }}
+          push: ${{ github.event_name == 'push' }}
+          context: e2e-runner
+          file: e2e-runner/Dockerfile
+          tags: >-
+            ${{ env.DOCKERHUB_USERNAME }}/agent-fleet-e2e-runner:${{ steps.tag.outputs.value }},
+            ${{ env.DOCKERHUB_USERNAME }}/agent-fleet-e2e-runner:latest
+          cache-from: type=registry,ref=${{ env.DOCKERHUB_USERNAME }}/agent-fleet-e2e-runner:buildcache
+          cache-to: type=registry,ref=${{ env.DOCKERHUB_USERNAME }}/agent-fleet-e2e-runner:buildcache,mode=max
 
   deploy:
     needs: build-push

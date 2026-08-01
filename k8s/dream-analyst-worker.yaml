@@ -15,7 +15,16 @@ image:
   repository: mohammaddocker/agent-fleet-worker
   # Pinned, bumped automatically by .github/workflows/docker.yml's deploy
   # job on every release tag.
-  tag: "0.6.0"
+  tag: "0.5.0"
+
+# Originally required to avoid a RollingUpdate deadlock against a dedicated
+# RWO Longhorn PVC (new pod can't attach while the old pod still holds it).
+# The PVC below is now RWX (see accessMode comment) so that deadlock no
+# longer applies, but Recreate is left as-is — still correct, and changing
+# deploy strategy wasn't part of the RWX migration this file's history is
+# tracking.
+strategy:
+  type: Recreate
 
 # RollingUpdate deadlocks forever against a dedicated RWO Longhorn PVC: the
 # new pod can't attach `data` while the old pod (same PVC, ReadWriteOnce)
@@ -50,12 +59,20 @@ env:
     value: "dream-analyst-worker"
 
 # Own git checkout + per-task worktrees — Longhorn default (replicated),
-# never shared with the other worker or the bot.
+# never shared with the other worker or the bot as a whole PVC. RWX (not
+# RWO) so the e2e-provisioner can also mount this same PVC into an
+# ephemeral e2e pod via a per-task subPath (worktrees/<taskId>) — see
+# docs/adr/0012. Migrating an existing bound PVC's access mode isn't a live
+# in-place op: this requires `kubectl delete pvc dream-analyst-worker -n
+# agent-fleet` before ArgoCD recreates it RWX on next sync. Low actual risk
+# — git.ts re-clones the repo from scratch if the checkout is missing, and
+# worktrees are always per-task and disposable — but it's a real
+# delete/recreate, not a quiet reconcile, so do it deliberately.
 persistence:
   enabled: true
   size: 10Gi
   mountPath: /workspace
-  accessMode: ReadWriteOnce
+  accessMode: ReadWriteMany
 
 # Shared fleet-wide PVC, owned by agent-fleet-bot's Application — see that
 # app's values.yaml comment. Same namespace (agent-fleet) so the claim name

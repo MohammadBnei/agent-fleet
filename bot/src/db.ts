@@ -31,3 +31,19 @@ export async function findTaskIdByThread(threadId: string): Promise<string | nul
   ]);
   return rows[0]?.id ?? null;
 }
+
+// Writes directly to e2e_sessions rather than relaying through Redis like
+// relayHumanMessage — a kill needs to work even if the worker's own
+// session/transcript-watch loop is no longer running (today's /stop only
+// works because something is actively polling Redis; an e2e session can
+// outlive that). e2e-provisioner's own reconcile loop picks this up
+// independently, on its own poll interval.
+export async function requestE2eKill(taskId: string): Promise<boolean> {
+  const { rows } = await pool.query(
+    `UPDATE e2e_sessions SET kill_requested = true, updated_at = now()
+     WHERE task_id = $1 AND status IN ('requested', 'running')
+     RETURNING id`,
+    [taskId],
+  );
+  return rows.length > 0;
+}

@@ -13,8 +13,10 @@ from, what's below reflects the actual implementation.
 | `bot/` | Discord ingress. Watches a trigger channel for `/task` (or legacy `!task repo: desc`), opens a thread, inserts a row into Postgres `tasks`, and relays every subsequent thread reply into that task's Redis planning transcript. |
 | `worker/` | The Claude Code worker. One persistent pod per target repo. Polls `tasks` for its repo, creates a git worktree per claimed task, runs the planning phase then the implementation phase, opens a PR, replies in the Discord thread. |
 | `mcp-redis/` | Stdio MCP server wrapping the shared Redis planning transcript as two tools (`send_message`, `wait_for_messages`) so proposer/critic Agent SDK sessions can read and write it. |
-| `db/schema.sql` | Shared Postgres schema (`agentfleetdb`, Pigsty-managed): `tasks` queue + append-only `knowledge_journal`. |
+| `db/schema.sql` | Shared Postgres schema (`agentfleetdb`, Pigsty-managed): `tasks` queue, append-only `knowledge_journal`, and `e2e_sessions` (on-demand e2e environment lifecycle). |
 | `k8s/` | Helm values for three deployed apps (`agent-fleet-bot`, `dream-analyst-worker`, `vos-monolith-worker`), consumed by two-source ArgoCD Applications defined in `infra-bootstrap`. |
+| `e2e-provisioner/` | The only component in the fleet with Kubernetes RBAC (namespaced `Role`, never a `ClusterRole`) to create/delete Pods/Services/IngressRoutes/Middlewares. Exposes an MCP server per task (`/mcp/:taskId`) that the worker calls to request/kill an on-demand e2e environment, and proxies Playwright MCP tool calls to whichever e2e pod is live for that task. Deployed as a standalone plain-manifest ArgoCD Application in `infra-bootstrap` (`gitops/platform/e2e-provisioner/`), not via `k8s/` here — see [`adr/0012`](adr/0012-e2e-provisioner-standalone-app.md). |
+| `e2e-runner/` | One generic pod image (code-server + the target app + a Playwright MCP server, CPU-only headless Chromium for v1) that `e2e-provisioner` spins up per task, parametrized by env vars the same way `worker/`'s single image is parametrized by `TARGET_REPO`. |
 
 ## 2. End-to-end flow
 
@@ -57,6 +59,16 @@ sequenceDiagram
 `/stop` (or "stop"/"abort"/"cancel"/"kill" in a reply) aborts at any point
 in either phase, not just at a checkpoint — relayed into the same Redis
 transcript and checked first, before the word-match approval fallback.
+
+During the implementation phase, the proposer session can also call
+`request_e2e_env`/`kill_env` (an MCP server proxied through
+`e2e-provisioner`, not the redis one above) to spin up a live preview pod
+and drive Playwright browser tests against it — see
+[`adr/0012`](adr/0012-e2e-provisioner-standalone-app.md) for the full
+design and why the worker itself never gets Kubernetes RBAC to do this
+directly. Teardown happens on the task reaching a terminal status or an
+explicit kill from either Mohammad (`/e2e-kill`) or the agent — never
+merely because a PR was opened.
 
 ## 3. Planning-phase guardrails
 
@@ -111,6 +123,11 @@ transcript and checked first, before the word-match approval fallback.
   session results) — a shared fleet-wide record, avoiding the
   write-conflict issues a mutable shared doc would hit across concurrent
   worker pods.
+- On-demand e2e test environments during implementation: a live preview pod
+  (app + code-server + Playwright MCP) the agent can request, drive
+  browser/API tests against, and share a preview URL for — see
+  [`adr/0012`](adr/0012-e2e-provisioner-standalone-app.md). CPU-only for
+  now; GPU-accelerated Chromium is a deferred fast-follow.
 
 ## 5. Deployment shape
 
@@ -124,8 +141,16 @@ long-lived pod instead of at the pod-lifecycle level (see
 
 Both worker apps and the bot mount a shared `ReadWriteMany` PVC
 (`agent-fleet-shared-pvc`, owned by the bot's Application) at
-`/mnt/fleet-shared`, alongside their own per-repo `ReadWriteOnce` workspace
-PVC at `/workspace` for the git checkout + per-task worktrees.
+`/mnt/fleet-shared`, alongside their own per-repo workspace PVC at
+`/workspace` for the git checkout + per-task worktrees — also
+`ReadWriteMany` (not `ReadWriteOnce`, as of `adr/0012`) so `e2e-provisioner`
+can mount the same PVC into an ephemeral e2e pod via a per-task `subPath`.
+
+`e2e-provisioner` itself is **not** deployed from this repo's `k8s/` — it's
+a standalone plain-manifest ArgoCD Application living in `infra-bootstrap`
+(`gitops/platform/e2e-provisioner/`), since it needs Kubernetes RBAC that
+`common-app-chart` has no way to express. See
+[`adr/0012`](adr/0012-e2e-provisioner-standalone-app.md).
 
 ### Deploy pipeline
 
@@ -170,12 +195,27 @@ erDiagram
         jsonb payload
         timestamptz created_at
     }
+    e2e_sessions {
+        uuid id PK
+        uuid task_id FK
+        text status "requested|running|failed|torn_down"
+        text pod_name
+        text ingress_path
+        boolean kill_requested
+        timestamptz created_at
+        timestamptz updated_at
+    }
+    tasks ||--o{ e2e_sessions : "task_id"
 ```
 
 `tasks` is the mutable queue (`db/schema.sql`); `knowledge_journal` is
 append-only, written by both `bot/` and `worker/` (`appendJournal()` in
 each package's own `db.ts`) — no foreign key between them, joined only by
-`repo`/timing when reading.
+`repo`/timing when reading. `e2e_sessions` **does** have a real FK to
+`tasks` — it's the single coordination point between the worker's tool
+calls, `e2e-provisioner`'s reconcile loop, and the bot's `/e2e-kill`
+command, none of which talk to each other directly (see
+[`adr/0012`](adr/0012-e2e-provisioner-standalone-app.md)).
 
 ## 7. Environment variables
 
@@ -192,6 +232,7 @@ each package's own `db.ts`) — no foreign key between them, joined only by
 | `MAX_TURNS_PLANNING`, `MAX_TURNS_IMPLEMENTATION` | unbounded | opt-in caps |
 | `PLANNING_TIMEOUT_MS` | `0` (unbounded) | |
 | `MCP_REDIS_ENTRY` | `/app/mcp-redis/src/index.ts` | |
+| `E2E_PROVISIONER_URL` | `http://e2e-provisioner.agent-fleet.svc.cluster.local:8080` | in-cluster MCP endpoint for `request_e2e_env`/`kill_env` |
 | `REDIS_HOST`/`REDIS_PORT`/`REDIS_MAIN_PASSWORD` | `redis.bnei.lan`/`6379`/– | |
 | `AGENTFLEET_DB_HOST`/`PORT`/`NAME`/`USER`/`PASSWORD` | `postgres.bnei.lan`/`5432`/`agentfleetdb`/`dbuser_agentfleet`/– | |
 | `GH_TOKEN` | – | bot GitHub account PAT; wired into `git`'s credential helper via `gh auth setup-git` |
@@ -205,6 +246,18 @@ each package's own `db.ts`) — no foreign key between them, joined only by
 
 All of the above flow through Infisical (project `agent-fleet-nygh`,
 env `dev`) — never committed, never in a manifest as plain text.
+
+### `e2e-provisioner/`
+
+| Var | Default | Notes |
+|---|---|---|
+| `NAMESPACE` | `agent-fleet` | where it creates/deletes e2e Pods/Services/IngressRoutes |
+| `E2E_RUNNER_IMAGE` | `mohammaddocker/agent-fleet-e2e-runner:latest` | floating tag for v1, see `adr/0012` |
+| `E2E_HOST` | `e2e.bnei.dev` | static host, path-routed per task — no wildcard DNS exists in this cluster |
+| `E2E_START_CMD_DREAM_ANALYST`, `E2E_START_CMD_VOS_MONOLITH` | `bun install && bun run dev` | per-repo build/run command |
+| `PORT` | `8080` | its own MCP HTTP server |
+| `RECONCILE_INTERVAL_MS` | `10000` | teardown/orphan-cleanup poll loop |
+| `AGENTFLEET_DB_*` | same convention as `worker/`/`bot/` | |
 
 ## 8. Current targets
 
