@@ -167,6 +167,20 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      # github.ref_name is "<PR#>/merge" on pull_request events — an invalid
+      # Docker tag (contains a slash). No package.json here to read a
+      # version from (unlike the matrix job's steps.info), so compute a safe
+      # tag directly: the pushed tag name on a real release, "pr-<number>"
+      # otherwise.
+      - name: Compute image tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "value=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=pr-${{ github.event.pull_request.number }}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
@@ -175,7 +189,7 @@ jobs:
           context: e2e-runner
           file: e2e-runner/Dockerfile
           tags: >-
-            ${{ env.DOCKERHUB_USERNAME }}/agent-fleet-e2e-runner:${{ github.ref_name }},
+            ${{ env.DOCKERHUB_USERNAME }}/agent-fleet-e2e-runner:${{ steps.tag.outputs.value }},
             ${{ env.DOCKERHUB_USERNAME }}/agent-fleet-e2e-runner:latest
           cache-from: type=registry,ref=${{ env.DOCKERHUB_USERNAME }}/agent-fleet-e2e-runner:buildcache
           cache-to: type=registry,ref=${{ env.DOCKERHUB_USERNAME }}/agent-fleet-e2e-runner:buildcache,mode=max
