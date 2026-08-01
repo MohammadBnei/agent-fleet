@@ -9,6 +9,11 @@ image:
   # job on every release tag.
   tag: "0.6.0"
 
+# Recreate, not RollingUpdate — same dedicated RWO PVC deadlock as
+# dream-analyst-worker.yaml, see that file's comment.
+strategy:
+  type: Recreate
+
 service:
   port: 8080 # unused (no HTTP server), required by the chart schema
 
