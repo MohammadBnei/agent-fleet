@@ -1,5 +1,12 @@
 # Changelog
 
+# [0.6.0](https://github.com/MohammadBnei/agent-fleet/compare/0.5.0...0.6.0) (2026-08-01)
+
+
+### Features
+
+* opt-out critic session + proposer/critic context handoff ([f49ebf3](https://github.com/MohammadBnei/agent-fleet/commit/f49ebf307b5a701348a00fc9587dcbfa6cff4bd1))
+
 # [0.5.0](https://github.com/MohammadBnei/agent-fleet/compare/0.4.0...0.5.0) (2026-07-30)
 
 
