@@ -1,5 +1,18 @@
 # Changelog
 
+# [0.7.0](https://github.com/MohammadBnei/agent-fleet/compare/0.6.0...0.7.0) (2026-08-01)
+
+
+### Bug Fixes
+
+* **ci:** use a PR-safe image tag for build-push-e2e-runner ([be044fe](https://github.com/MohammadBnei/agent-fleet/commit/be044fece4ca2ed5d154e04f10b25335a123dcba))
+* **k8s:** use Recreate strategy for RWO-PVC worker pods ([f2d94f6](https://github.com/MohammadBnei/agent-fleet/commit/f2d94f6dfbadca4da3067e59d51da957c88ee6c7))
+
+
+### Features
+
+* on-demand e2e test environments for the implementation phase ([4317d37](https://github.com/MohammadBnei/agent-fleet/commit/4317d37f69515f93d53599b5bb821f63b91ce20e))
+
 # [0.6.0](https://github.com/MohammadBnei/agent-fleet/compare/0.5.0...0.6.0) (2026-08-01)
 
 
