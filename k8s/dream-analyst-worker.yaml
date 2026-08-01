@@ -17,6 +17,16 @@ image:
   # job on every release tag.
   tag: "0.6.0"
 
+# RollingUpdate deadlocks forever against a dedicated RWO Longhorn PVC: the
+# new pod can't attach `data` while the old pod (same PVC, ReadWriteOnce)
+# still holds it, and the old pod never terminates because the rollout
+# waits for the new one to go Ready first. Recreate avoids the deadlock by
+# tearing down the old pod (and releasing the volume) before starting the
+# new one — costs a short outage per deploy, worth it for a single-replica
+# worker.
+strategy:
+  type: Recreate
+
 service:
   port: 8080 # unused (no HTTP server), required by the chart schema
 
