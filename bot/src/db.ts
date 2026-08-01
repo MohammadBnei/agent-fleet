@@ -15,11 +15,12 @@ export async function createTask(
   description: string,
   channelId: string,
   threadId: string,
+  skipCritique = false,
 ): Promise<string> {
   const { rows } = await pool.query(
-    `INSERT INTO tasks (repo, description, discord_channel_id, discord_thread_id)
-     VALUES ($1, $2, $3, $4) RETURNING id`,
-    [repo, description, channelId, threadId],
+    `INSERT INTO tasks (repo, description, discord_channel_id, discord_thread_id, skip_critique)
+     VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+    [repo, description, channelId, threadId, skipCritique],
   );
   return rows[0].id as string;
 }

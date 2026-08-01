@@ -109,6 +109,7 @@ async function watchBatch(
   maxRounds: number,
   timeoutMs: number,
   flags: SessionFlags,
+  criticEnabled: boolean,
 ): Promise<WatchOutcome> {
   const redis = redisClient();
   const key = planningKey(task.id);
@@ -135,10 +136,11 @@ async function watchBatch(
           }
         }
       }
-      if (Math.min(proposerCount, criticCount) >= maxRounds) {
+      const roundsSoFar = criticEnabled ? Math.min(proposerCount, criticCount) : proposerCount;
+      if (roundsSoFar >= maxRounds) {
         return { type: "round_cap", nextIndex: cursor };
       }
-      if (flags.proposerEnded || flags.criticEnded) {
+      if (flags.proposerEnded || (criticEnabled && flags.criticEnded)) {
         return { type: "session_ended", nextIndex: cursor };
       }
       await new Promise((r) => setTimeout(r, 1000));
@@ -186,7 +188,7 @@ function proposerPrompt(task: Task, resuming: boolean): string {
     return `You are the PROPOSER for task ${task.id} in repo ${task.repo}.
 Task: ${task.description}
 
-Read the actual repository (you are in a fresh git worktree on branch agent/${task.id}) and post an architecture/implementation plan using the send_message tool (taskId="${task.id}", from="proposer"). Then call wait_for_messages (taskId="${task.id}") to read replies from the CRITIC and from Mohammad, and respond to what you find. Do not loop indefinitely — you'll be re-invoked for the next round automatically, so it's fine to end your turn after one exchange.
+Read the actual repository (you are in a fresh git worktree on branch agent/${task.id}) and post an architecture/implementation plan using the send_message tool (taskId="${task.id}", from="proposer"). Cite the specific files/paths you read and relied on so the critic can start from your findings instead of re-reading the repo cold. Then call wait_for_messages (taskId="${task.id}") to read replies from the CRITIC and from Mohammad, and respond to what you find. Do not loop indefinitely — you'll be re-invoked for the next round automatically, so it's fine to end your turn after one exchange.
 
 You are READ-ONLY and BASH-ONLY right now — do not write or edit any files.`;
   }
@@ -196,7 +198,7 @@ You are READ-ONLY and BASH-ONLY right now — do not write or edit any files.`;
 function criticPrompt(task: Task, resuming: boolean): string {
   if (!resuming) {
     return `You are the CRITIC for task ${task.id} in repo ${task.repo}.
-Read the actual repository (read-only) and call wait_for_messages (taskId="${task.id}") to see the PROPOSER's plan. Challenge it with real objections and alternatives grounded in the actual code — not a rubber-stamp pass. Post via send_message (taskId="${task.id}", from="critic"), then end your turn.`;
+Call wait_for_messages (taskId="${task.id}") to read the PROPOSER's plan — it should cite the files/paths it relied on. Start from those instead of re-reading the repo cold; only Read/Glob/Grep further to verify a specific claim or cover something the proposer didn't address. Challenge the plan with real objections and alternatives grounded in the actual code — not a rubber-stamp pass. Post via send_message (taskId="${task.id}", from="critic"), then end your turn.`;
   }
   return `Continue reviewing task ${task.id}. Call wait_for_messages (taskId="${task.id}") to see what's new, respond via send_message (taskId="${task.id}", from="critic") — either push back further or say plainly that you're satisfied — then end your turn.`;
 }
@@ -273,6 +275,7 @@ async function logSdkMessage(
 export async function runPlanningPhase(
   task: Task,
 ): Promise<{ proposerSessionId: string; aborted: boolean }> {
+  const criticEnabled = !task.skip_critique;
   let proposerSessionId = "";
   let criticSessionId = "";
   let cursor = 0;
@@ -312,34 +315,39 @@ export async function runPlanningPhase(
       }
     })();
 
-    const criticRun = (async () => {
-      try {
-        for await (const msg of query({
-          prompt: criticPrompt(task, resuming),
-          options: {
-            executable: "bun",
-            ...(resuming ? { resume: criticSessionId } : {}),
-            model: MODEL,
-            cwd: `/workspace/worktrees/${task.id}`,
-            permissionMode: "plan",
-            allowedTools: ["Read", "Glob", "Grep", "Bash", "WebSearch", "WebFetch", ...REDIS_MCP_TOOLS],
-            mcpServers: { "agent-fleet-redis": mcpServer() },
-            maxTurns: MAX_TURNS_PLANNING,
-            abortController: criticAbort,
-          },
-        })) {
-          if (!criticSessionId && "session_id" in msg) criticSessionId = msg.session_id;
-          await logSdkMessage("critic", msg, task.discord_thread_id);
-          if (msg.type === "result") await logResult("critic", task.repo, msg);
-        }
-      } catch {
-        // Expected when we abort.
-      } finally {
-        flags.criticEnded = true;
-      }
-    })();
+    // Skipped entirely (not just fast-forwarded) when task.skip_critique is
+    // set — Mohammad's explicit opt-out on /task, never inferred from task
+    // size by the proposer itself (see ADR-0011).
+    const criticRun = !criticEnabled
+      ? Promise.resolve()
+      : (async () => {
+          try {
+            for await (const msg of query({
+              prompt: criticPrompt(task, resuming),
+              options: {
+                executable: "bun",
+                ...(resuming ? { resume: criticSessionId } : {}),
+                model: MODEL,
+                cwd: `/workspace/worktrees/${task.id}`,
+                permissionMode: "plan",
+                allowedTools: ["Read", "Glob", "Grep", "Bash", "WebSearch", "WebFetch", ...REDIS_MCP_TOOLS],
+                mcpServers: { "agent-fleet-redis": mcpServer() },
+                maxTurns: MAX_TURNS_PLANNING,
+                abortController: criticAbort,
+              },
+            })) {
+              if (!criticSessionId && "session_id" in msg) criticSessionId = msg.session_id;
+              await logSdkMessage("critic", msg, task.discord_thread_id);
+              if (msg.type === "result") await logResult("critic", task.repo, msg);
+            }
+          } catch {
+            // Expected when we abort.
+          } finally {
+            flags.criticEnded = true;
+          }
+        })();
 
-    const outcome = await watchBatch(task, cursor, MAX_PLANNING_ROUNDS, PLANNING_TIMEOUT_MS, flags);
+    const outcome = await watchBatch(task, cursor, MAX_PLANNING_ROUNDS, PLANNING_TIMEOUT_MS, flags, criticEnabled);
     proposerAbort.abort();
     criticAbort.abort();
     await Promise.allSettled([proposerRun, criticRun]);
@@ -354,7 +362,7 @@ export async function runPlanningPhase(
       const checkpointMsg =
         outcome.type === "session_ended"
           ? `A planning session ended without reaching a decision (crashed, hit its turn/budget limit, or returned early). Reply to retry another round, say "approved" to proceed with whatever plan exists so far, or "stop" to cancel.`
-          : `Round ${batch} done (${MAX_PLANNING_ROUNDS} proposer<->critic exchange${MAX_PLANNING_ROUNDS === 1 ? "" : "s"}) with no verdict yet. Reply to keep going, say "approved" to proceed with the current plan, or "stop" to cancel this task.`;
+          : `Round ${batch} done (${MAX_PLANNING_ROUNDS} ${criticEnabled ? "proposer<->critic exchange" : "proposer turn"}${MAX_PLANNING_ROUNDS === 1 ? "" : "s"}) with no verdict yet. Reply to keep going, say "approved" to proceed with the current plan, or "stop" to cancel this task.`;
       await postReply(task.discord_thread_id, checkpointMsg);
     }
     const reply = await waitForCheckpointReply(task.id, cursor, PLANNING_TIMEOUT_MS);
