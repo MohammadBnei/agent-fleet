@@ -42,3 +42,25 @@ CREATE TABLE IF NOT EXISTS knowledge_journal (
   payload    JSONB NOT NULL DEFAULT '{}',
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- On-demand e2e test environments: one row per requested/live/torn-down e2e
+-- pod for a task. The single coordination point between the worker's tool
+-- calls, the e2e-provisioner's reconcile loop, and the bot's /e2e-kill
+-- command — none of them talk to each other directly, only through this
+-- table (+ tasks.status for the terminal-state teardown trigger).
+CREATE TABLE IF NOT EXISTS e2e_sessions (
+  id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  task_id        UUID NOT NULL REFERENCES tasks(id),
+  status         TEXT NOT NULL DEFAULT 'requested',
+  pod_name       TEXT,
+  ingress_path   TEXT,
+  kill_requested BOOLEAN NOT NULL DEFAULT false,
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS e2e_sessions_task_idx ON e2e_sessions (task_id);
+
+ALTER TABLE e2e_sessions DROP CONSTRAINT IF EXISTS e2e_sessions_status_check;
+ALTER TABLE e2e_sessions ADD CONSTRAINT e2e_sessions_status_check
+  CHECK (status IN ('requested', 'running', 'failed', 'torn_down'));

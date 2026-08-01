@@ -7,7 +7,13 @@ image:
   repository: mohammaddocker/agent-fleet-worker
   # Pinned, bumped automatically by .github/workflows/docker.yml's deploy
   # job on every release tag.
-  tag: "0.6.0"
+  tag: "0.5.0"
+
+# Recreate, not RollingUpdate — see dream-analyst-worker.yaml's comment
+# (originally an RWO-PVC deadlock avoidance; PVC below is now RWX but
+# Recreate is kept as-is, still correct).
+strategy:
+  type: Recreate
 
 service:
   port: 8080 # unused (no HTTP server), required by the chart schema
@@ -33,11 +39,15 @@ env:
   - name: BASE_BRANCH
     value: "dev" # vos-monolith's actual default/dev branch — main only gets prod tag bumps, see infra-bootstrap's gitops/apps/registry.yaml comment
 
+# RWX (not RWO) — see dream-analyst-worker.yaml's comment: lets
+# e2e-provisioner mount this same PVC into an ephemeral e2e pod via a
+# per-task subPath. Migration is a real delete/recreate, not a quiet
+# reconcile — same low-risk reasoning as that file.
 persistence:
   enabled: true
   size: 10Gi
   mountPath: /workspace
-  accessMode: ReadWriteOnce
+  accessMode: ReadWriteMany
 
 extraVolumes:
   - name: fleet-shared
