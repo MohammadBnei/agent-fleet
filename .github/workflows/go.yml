@@ -14,6 +14,8 @@ on:
 
 env:
   BUF_VERSION: '1.55.1'
+  PROTOC_GEN_GO_VERSION: 'v1.36.1'
+  PROTOC_GEN_GO_GRPC_VERSION: 'v1.3.0'
 
 jobs:
   buf:
@@ -33,15 +35,43 @@ jobs:
         working-directory: proto
         run: buf lint
 
+      # actions/checkout only creates a remote-tracking ref
+      # (origin/main), never a local branch literally named "main" — buf's
+      # git input needs `ref=`, not `branch=`, to resolve that. Skipped
+      # gracefully on the PR that first introduces proto/ at all, since
+      # there's genuinely nothing on main yet to compare against.
       - name: buf breaking (against main)
         if: github.event_name == 'pull_request'
         working-directory: proto
-        run: buf breaking --against '../.git#branch=main,subdir=proto'
+        run: |
+          if git cat-file -e origin/main:proto 2>/dev/null; then
+            buf breaking --against '../.git#ref=origin/main,subdir=proto'
+          else
+            echo "no proto/ on origin/main yet — nothing to break against"
+          fi
 
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
           go-version-file: go.work
+
+      # setup-go's own module/build cache (keyed on go.sum, enabled by
+      # default) doesn't cover `go install`'d binaries under $GOBIN — cache
+      # those separately, keyed on the pinned plugin versions above, so a
+      # version bump invalidates the cache instead of silently reusing a
+      # stale binary.
+      - name: Cache protoc-gen-go / protoc-gen-go-grpc binaries
+        id: protoc-gen-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/go/bin
+          key: protoc-gen-${{ runner.os }}-${{ env.PROTOC_GEN_GO_VERSION }}-${{ env.PROTOC_GEN_GO_GRPC_VERSION }}
+
+      - name: Install protoc-gen-go / protoc-gen-go-grpc
+        if: steps.protoc-gen-cache.outputs.cache-hit != 'true'
+        run: |
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@${{ env.PROTOC_GEN_GO_VERSION }}
+          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@${{ env.PROTOC_GEN_GO_GRPC_VERSION }}
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
@@ -53,6 +83,7 @@ jobs:
       - name: buf generate drift check
         working-directory: proto
         run: |
+          export PATH="$HOME/go/bin:$PATH"
           buf generate
           git diff --exit-code -- gen ../worker/src/gen
 
