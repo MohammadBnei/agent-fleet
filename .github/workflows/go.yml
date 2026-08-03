@@ -122,10 +122,17 @@ jobs:
         run: go vet ./...
 
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v9
         with:
           working-directory: ${{ matrix.module }}
-          version: latest
+          # Pinned, not `latest` — go.mod declares go 1.26.5 (this repo's
+          # local toolchain), and golangci-lint refuses to analyze a
+          # module targeting a newer Go than it was itself built with.
+          # v2.9.0+ is the first line built with go1.26; v2.12.2 matches
+          # what's verified working locally (`golangci-lint version`).
+          # golangci-lint-action v7+ is required for golangci-lint v2.x
+          # (v6 only supports v1.x).
+          version: v2.12.2
 
       - name: go test
         working-directory: ${{ matrix.module }}
