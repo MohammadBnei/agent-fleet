@@ -1,0 +1,111 @@
+name: Go and Proto
+
+# Correctness gate for the Go side of the fleet (fleet-core, e2e-provisioner)
+# and the buf-managed proto schema they + worker's ts-proto codegen share —
+# see docs/adr/0013. Kept separate from docker.yml: this checks code
+# quality/correctness, docker.yml handles image packaging/push/deploy (same
+# division dream-analyst's/this repo's existing workflows already draw
+# between "tests" and "build+push").
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+env:
+  BUF_VERSION: '1.55.1'
+
+jobs:
+  buf:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup buf
+        uses: bufbuild/buf-setup-action@v1
+        with:
+          version: ${{ env.BUF_VERSION }}
+
+      - name: buf lint
+        working-directory: proto
+        run: buf lint
+
+      - name: buf breaking (against main)
+        if: github.event_name == 'pull_request'
+        working-directory: proto
+        run: buf breaking --against '../.git#branch=main,subdir=proto'
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.work
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install ts-proto (buf generate's local TS plugin)
+        working-directory: worker
+        run: bun install --frozen-lockfile
+
+      - name: buf generate drift check
+        working-directory: proto
+        run: |
+          buf generate
+          git diff --exit-code -- gen ../worker/src/gen
+
+  go:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        module: [fleet-core, e2e-provisioner]
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: agentfleet
+          POSTGRES_PASSWORD: agentfleet
+          POSTGRES_DB: agentfleetdb
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.work
+
+      - name: go vet
+        working-directory: ${{ matrix.module }}
+        run: go vet ./...
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          working-directory: ${{ matrix.module }}
+          version: latest
+
+      - name: go test
+        working-directory: ${{ matrix.module }}
+        run: go test ./... -race -cover
+
+      - name: go test (integration, real Postgres)
+        working-directory: ${{ matrix.module }}
+        env:
+          AGENTFLEET_DB_HOST: localhost
+          AGENTFLEET_DB_PORT: '5432'
+          AGENTFLEET_DB_NAME: agentfleetdb
+          AGENTFLEET_DB_USER: agentfleet
+          AGENTFLEET_DB_PASSWORD: agentfleet
+        run: go test -tags=integration ./...

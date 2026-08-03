@@ -1,0 +1,43 @@
+syntax = "proto3";
+package agentfleet.v1;
+option go_package = "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1;agentfleetv1";
+
+// Message shapes only — no service here. This data travels over MCP
+// (fleet-core's send_message/wait_for_messages tools), never gRPC; these
+// types exist so fleet-core (Go) and worker (TS, via ts-proto types-only
+// codegen) agree on one schema for the MCP tool JSON payloads instead of
+// each side hand-maintaining an implicit shape (see docs/adr/0013).
+
+enum TranscriptEntryType {
+  TRANSCRIPT_ENTRY_TYPE_UNSPECIFIED = 0;
+  TRANSCRIPT_ENTRY_TYPE_DISCUSSION = 1;
+  TRANSCRIPT_ENTRY_TYPE_APPROVE = 2;
+  TRANSCRIPT_ENTRY_TYPE_ABORT = 3;
+}
+
+message TranscriptEntry {
+  string task_id = 1;
+  int64 seq = 2;
+  string from = 3; // "proposer" | "critic" | "human"
+  string text = 4;
+  TranscriptEntryType type = 5;
+}
+
+message AppendTranscriptEntryRequest {
+  string task_id = 1;
+  string from = 2;
+  string text = 3;
+  TranscriptEntryType type = 4;
+  string idempotency_key = 5; // required; fleet-core mints one server-side if empty
+}
+
+message ReadTranscriptSinceRequest {
+  string task_id = 1;
+  int64 since_seq = 2;
+  int32 timeout_ms = 3;
+}
+
+message ReadTranscriptSinceResponse {
+  repeated TranscriptEntry entries = 1;
+  int64 next_seq = 2;
+}
