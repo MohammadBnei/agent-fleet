@@ -325,7 +325,21 @@ jobs:
 
   deploy:
     needs: [build-push, build-push-go]
-    if: github.event_name == 'push'
+    # always() + an explicit needs.*.result check, not just
+    # `if: github.event_name == 'push'` — confirmed live on the v1.1.0
+    # release run: build-push and build-push-go both genuinely succeeded
+    # (images for 1.1.0 exist on Docker Hub), but deploy was still skipped
+    # with zero steps run. A job's implicit default condition is
+    # success()-on-needs, and something in this matrix + upstream-skipped-
+    # job (changes, gated to pull_request only) graph shape was tripping
+    # that default even though the direct needs were all green. always()
+    # bypasses the implicit check entirely, so the explicit result
+    # comparisons below are what actually guards against deploying a tag
+    # whose build genuinely failed.
+    if: >-
+      always() && github.event_name == 'push' &&
+      needs.build-push.result == 'success' &&
+      needs.build-push-go.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: write
