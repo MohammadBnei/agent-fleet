@@ -1,2 +1,7 @@
 node_modules/
 dist/
+# Exception: fleet-core/internal/webui/dist/ needs a tracked placeholder —
+# go:embed all:dist fails on a truly empty/nonexistent directory, and a
+# fresh CI checkout has no built SPA output sitting there yet.
+!fleet-core/internal/webui/dist/
+!fleet-core/internal/webui/dist/.gitkeep

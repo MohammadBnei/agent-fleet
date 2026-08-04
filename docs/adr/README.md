@@ -23,3 +23,4 @@ Decisions with no real alternative ever on the table live in
 | [0011](0011-critic-opt-out-and-context-handoff.md) | Critic session is opt-out (human-only), plus proposer→critic context handoff | Accepted |
 | [0012](0012-e2e-provisioner-standalone-app.md) | On-demand e2e test environments via a standalone e2e-provisioner | Accepted |
 | [0013](0013-go-fleet-core-and-e2e-provisioner-rewrite.md) | Go `fleet-core` replaces Redis coordination; `e2e-provisioner`/`bot` rewritten in Go | Accepted |
+| [0014](0014-fleet-core-dashboard-backend.md) | fleet-core as the web dashboard's backend | Accepted |

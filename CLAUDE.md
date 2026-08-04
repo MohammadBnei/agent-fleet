@@ -38,7 +38,8 @@ secrets backend); this repo owns the fleet's own source and deploy config.
 | `docs/ARCHITECTURE.md` | Canonical topology + current features (the WHAT) |
 | `docs/DECISIONS.md` | Canonical settled decisions, forbidden patterns (the WHY, short form) |
 | `docs/adr/` | One Architecture Decision Record per real decision |
-| `fleet-core/` | Go — Discord ingress + planning-transcript coordination + Loki queries, one binary, no cluster RBAC |
+| `fleet-core/` | Go — Discord ingress + planning-transcript coordination + Loki queries + the web dashboard's REST/SSE API and static SPA, one binary, no cluster RBAC |
+| `dashboard/` | React + Vite + TypeScript + Tailwind/DaisyUI SPA, built into `fleet-core`'s binary — not deployed on its own |
 | `worker/` | The Claude Code worker (TS/Bun) — polls tasks, runs planning + implementation phases |
 | `proto/` | buf-managed `.proto` schema shared by `fleet-core`/`e2e-provisioner` (Go codegen) and `worker` (TS codegen) |
 | `db/schema.sql` | Shared `tasks`/`knowledge_journal`/`planning_transcript`/`e2e_sessions` tables (`agentfleetdb`) |

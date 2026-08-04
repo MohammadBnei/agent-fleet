@@ -10,10 +10,11 @@ from, what's below reflects the actual implementation.
 
 | Component | Role |
 |---|---|
-| `fleet-core/` | Go service: Discord ingress (`/task`/`/approve`/`/stop`/`/e2e-kill`, legacy `!task repo: desc`) + planning-transcript coordination (replaces `mcp-redis`'s role — exposes `send_message`/`wait_for_messages` over a persistent MCP HTTP server) + Loki log/introspection queries, as internal packages in one binary — no cluster RBAC, folded per [`adr/0013`](adr/0013-go-fleet-core-and-e2e-provisioner-rewrite.md)'s decomposition rule (split only on RBAC/trust boundaries). Calls `e2e-provisioner`'s gRPC service for `/e2e-kill` rather than writing `e2e_sessions` directly. |
+| `fleet-core/` | Go service: Discord ingress (`/task`/`/approve`/`/stop`/`/e2e-kill`, legacy `!task repo: desc`) + planning-transcript coordination (replaces `mcp-redis`'s role — exposes `send_message`/`wait_for_messages` over a persistent MCP HTTP server) + Loki log/introspection queries + the web dashboard's REST/SSE API and static SPA (`dashboard/`, see [`adr/0014`](adr/0014-fleet-core-dashboard-backend.md)), as internal packages in one binary — no cluster RBAC, folded per [`adr/0013`](adr/0013-go-fleet-core-and-e2e-provisioner-rewrite.md)'s decomposition rule (split only on RBAC/trust boundaries). Calls `e2e-provisioner`'s gRPC service for `/e2e-kill` rather than writing `e2e_sessions` directly. |
 | `worker/` | The Claude Code worker (TS/Bun — the only remaining JS runtime in the fleet, since it's the sole host of `@anthropic-ai/claude-agent-sdk`'s `query()`). One persistent pod per target repo. Polls `tasks` for its repo, creates a git worktree per claimed task, runs the planning phase then the implementation phase, opens a PR, replies in the Discord thread. Talks to `fleet-core` and `e2e-provisioner` only via MCP over HTTP — never gRPC. |
 | `proto/` | buf-managed `.proto` schema (lint + breaking-change CI + generate/drift check): the `E2eProvisionerService` gRPC contract (`fleet-core` → `e2e-provisioner`, the one real gRPC call in the fleet) and message shapes documenting the MCP transcript payload. Generates Go (`proto/gen/go`, own module) and TS types (`worker/src/gen`, `ts-proto`, types-only). |
 | `db/schema.sql` | Shared Postgres schema (`agentfleetdb`, Pigsty-managed): `tasks` queue, append-only `knowledge_journal`, `planning_transcript` (the durable planning transcript, replacing the old Redis list — pull/cursor reads, per-task idempotency-keyed appends), and `e2e_sessions` (on-demand e2e environment lifecycle). |
+| `dashboard/` | React + Vite + TypeScript + Tailwind/DaisyUI SPA — task list, task detail (live transcript via SSE, approve/stop/kill-e2e buttons, code-server link). Built by `fleet-core/Dockerfile`'s `spa` stage and embedded into the `fleet-core` binary — not deployed on its own, see [`adr/0014`](adr/0014-fleet-core-dashboard-backend.md). |
 | `k8s/` | Helm values for three deployed apps (`fleet-core`, `dream-analyst-worker`, `vos-monolith-worker`), consumed by two-source ArgoCD Applications defined in `infra-bootstrap`. |
 | `e2e-provisioner/` | Go service (`client-go`) — the only component in the fleet with Kubernetes RBAC (namespaced `Role`, never a `ClusterRole`) to create/delete Pods/Services/IngressRoutes/Middlewares. Exposes an MCP server per task (`/mcp/:taskId`) that the worker calls to request/kill an on-demand e2e environment, proxies Playwright MCP tool calls to whichever e2e pod is live for that task, and exposes a small gRPC service `fleet-core` calls for `/e2e-kill`. Deployed as a standalone plain-manifest ArgoCD Application in `infra-bootstrap` (`gitops/platform/e2e-provisioner/`), not via `k8s/` here — unchanged RBAC/placement from [`adr/0012`](adr/0012-e2e-provisioner-standalone-app.md), rewritten Go per [`adr/0013`](adr/0013-go-fleet-core-and-e2e-provisioner-rewrite.md). |
 | `e2e-runner/` | One generic pod image (code-server + the target app + a Playwright MCP server, CPU-only headless Chromium for v1) that `e2e-provisioner` spins up per task, parametrized by env vars the same way `worker/`'s single image is parametrized by `TARGET_REPO`. |
@@ -155,6 +156,18 @@ e2e pod via a per-task `subPath`.
 `fleet-core` needs **zero cluster RBAC**, so unlike `e2e-provisioner` it
 deploys via this repo's own `k8s/fleet-core.yaml` through
 `common-app-chart` — no standalone-Application escape hatch needed.
+
+`fleet-core` is this repo's first app with a real listening `service.port`
+(`8080`, now publicly reachable) and a public `IngressRoute` — the two
+worker apps' `service.port` is unused. Its ingress is gated behind the
+shared `basic-admin-auth` Traefik Middleware (already gating pgweb/
+Alertmanager); the hostname itself lives in `infra-bootstrap`'s
+`gitops/apps/registry.yaml` entry, not `k8s/fleet-core.yaml` (the
+ApplicationSet template's Helm `parameters` override always wins over a
+values-file setting of the same key). `common-app-chart`'s `IngressRoute`
+has no path-scoped routing, so `/mcp`/`/healthz` become reachable through
+that same public, BasicAuth-gated host too — an accepted limitation, see
+[`adr/0014`](adr/0014-fleet-core-dashboard-backend.md).
 `e2e-provisioner` itself is still **not** deployed from this repo's `k8s/`
 — it's a standalone plain-manifest ArgoCD Application living in
 `infra-bootstrap` (`gitops/platform/e2e-provisioner/`), since it needs

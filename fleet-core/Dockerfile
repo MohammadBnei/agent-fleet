@@ -1,10 +1,22 @@
 # Build context must be the agent-fleet/ repo root (not fleet-core/), since
 # this needs go.work + proto/gen/go as siblings:
 #   docker build -f fleet-core/Dockerfile -t <tag> .
+
+# Built ahead of the Go stage: go:embed reads internal/webui/dist at Go
+# build time, so the SPA's output has to exist before `go build` runs (see
+# docs/adr/0014).
+FROM oven/bun:1-slim AS spa
+WORKDIR /app/dashboard
+COPY dashboard/package.json dashboard/bun.lock ./
+RUN bun install --frozen-lockfile
+COPY dashboard/ ./
+RUN bun run build
+
 FROM golang:1.26 AS build
 WORKDIR /app
 COPY proto/gen/go ./proto/gen/go
 COPY fleet-core ./fleet-core
+COPY --from=spa /app/dashboard/dist ./fleet-core/internal/webui/dist
 # db/schema.sql copied in as a build-time embed source — go:embed can't
 # reach outside its own package directory, so the canonical file
 # (db/schema.sql) stays the single source of truth; this copy is what

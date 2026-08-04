@@ -16,13 +16,17 @@ import (
 // KnownRepos mirrors bot/src/db.ts's KNOWN_REPOS.
 var KnownRepos = []string{"dream-analyst", "vos-monolith"}
 
+// JSON tags: this struct is now also serialized directly by the dashboard
+// API (internal/dashboard, see docs/adr/0014) — Discord never serialized
+// it to JSON before, so these tags are new but don't change any existing
+// behavior.
 type Task struct {
-	ID          string
-	Repo        string
-	Description string
-	Status      string
-	ThreadID    *string
-	PrURL       *string
+	ID          string  `json:"id"`
+	Repo        string  `json:"repo"`
+	Description string  `json:"description"`
+	Status      string  `json:"status"`
+	ThreadID    *string `json:"threadId,omitempty"`
+	PrURL       *string `json:"prUrl,omitempty"`
 }
 
 type Store struct {
@@ -82,7 +86,10 @@ func (s *Store) ListRecentTasks(ctx context.Context, limit int) ([]Task, error) 
 	}
 	defer rows.Close()
 
-	var out []Task
+	// []Task{}, not var out []Task — a nil slice marshals to JSON `null`,
+	// which the dashboard API now serializes directly (docs/adr/0014); an
+	// empty task list should read as [], not crash a client's .map().
+	out := []Task{}
 	for rows.Next() {
 		var t Task
 		if err := rows.Scan(&t.ID, &t.Repo, &t.Description, &t.Status, &t.ThreadID, &t.PrURL); err != nil {

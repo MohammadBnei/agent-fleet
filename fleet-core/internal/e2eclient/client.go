@@ -47,3 +47,16 @@ func (c *Client) KillSession(ctx context.Context, taskID, idempotencyKey string)
 	}
 	return resp.GetKilled(), nil
 }
+
+// GetSessionStatus reports the current e2e session status/preview URL for
+// taskID (status is "" when no session exists). Used by the dashboard
+// (docs/adr/0014) to decide whether a task's code-server link should show.
+func (c *Client) GetSessionStatus(ctx context.Context, taskID string) (status, previewURL string, err error) {
+	resp, err := c.rpc.GetE2ESessionStatus(ctx, &agentfleetv1.GetE2ESessionStatusRequest{
+		TaskId: taskID,
+	})
+	if err != nil {
+		return "", "", fmt.Errorf("GetE2ESessionStatus: %w", err)
+	}
+	return resp.GetStatus(), resp.GetPreviewUrl(), nil
+}
