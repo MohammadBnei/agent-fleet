@@ -1,5 +1,12 @@
 # Changelog
 
+# [1.2.0](https://github.com/MohammadBnei/agent-fleet/compare/1.1.1...1.2.0) (2026-08-04)
+
+
+### Features
+
+* **fleet-core,dashboard:** replace REST+SSE dashboard API with ConnectRPC ([d9da126](https://github.com/MohammadBnei/agent-fleet/commit/d9da1267e79a4e7c1472a576fa41ae985081422f))
+
 ## [1.1.1](https://github.com/MohammadBnei/agent-fleet/compare/1.1.0...1.1.1) (2026-08-04)
 
 
