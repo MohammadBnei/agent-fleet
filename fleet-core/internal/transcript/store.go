@@ -7,12 +7,15 @@ package transcript
 
 import "context"
 
-// Entry is one planning-transcript message, seq-ordered per task.
+// Entry is one planning-transcript message, seq-ordered per task. JSON
+// tags: also serialized directly by the dashboard API (internal/dashboard,
+// see docs/adr/0014), the first direct-JSON consumer — the MCP server
+// builds its own map[string]any instead of encoding this struct.
 type Entry struct {
-	Seq  int64
-	From string
-	Text string
-	Type string // "" | "discussion" | "approve" | "abort"
+	Seq  int64  `json:"seq"`
+	From string `json:"from"`
+	Text string `json:"text"`
+	Type string `json:"type"` // "" | "discussion" | "approve" | "abort"
 }
 
 // Store is the durable, per-task append/read-since transcript.

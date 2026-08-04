@@ -1,10 +1,12 @@
 # fleet-core — Discord ingress + planning-transcript coordination +
-# log/introspection queries, folded into one Go binary (see docs/adr/0013,
-# which supersedes docs/adr/0001's Redis-list design and replaces this
-# repo's former agent-fleet-bot.yaml + the mcp-redis/ package). Deployed via
-# infra-bootstrap's common-app-chart as a two-source Application (chart from
-# infra-bootstrap, these values from this repo) — see this repo's own
-# README.md and infra-bootstrap's gitops/README.md.
+# log/introspection queries + the web dashboard's REST/SSE API and static
+# SPA, folded into one Go binary (see docs/adr/0013, which supersedes
+# docs/adr/0001's Redis-list design and replaces this repo's former
+# agent-fleet-bot.yaml + the mcp-redis/ package; docs/adr/0014 adds the
+# dashboard on top). Deployed via infra-bootstrap's common-app-chart as a
+# two-source Application (chart from infra-bootstrap, these values from
+# this repo) — see this repo's own README.md and infra-bootstrap's
+# gitops/README.md.
 #
 # Needs zero cluster RBAC (same invariant e2e-provisioner's ADR-0012
 # established for the worker pods) — common-app-chart is sufficient here,
@@ -18,7 +20,20 @@ image:
   tag: "1.0.1"
 
 service:
-  port: 8080 # now genuinely serves the MCP HTTP endpoint (worker's send_message/wait_for_messages) + /healthz
+  port: 8080 # MCP HTTP endpoint (worker's send_message/wait_for_messages), /healthz, and the dashboard's /api/* + SSE + static SPA
+
+# This app's first public-facing surface (the dashboard) — hostname itself
+# is driven by infra-bootstrap's gitops/apps/registry.yaml entry (its
+# `hostname:` field is templated into a Helm `parameters` override that
+# always wins over a values-file setting of the same key), so it isn't set
+# here. middlewares: isn't part of that templated parameter set, so it has
+# to live here — reuses the same shared basic-admin-auth Middleware
+# already gating pgweb/Alertmanager (see docs/adr/0014).
+ingress:
+  enabled: true
+  middlewares:
+    - name: basic-admin-auth
+      namespace: default
 
 env:
   - name: FLEET_CORE_PORT

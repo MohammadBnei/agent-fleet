@@ -89,7 +89,10 @@ func (s *PostgresStore) ReadSince(ctx context.Context, taskID string, sinceSeq i
 	}
 	defer rows.Close()
 
-	var entries []Entry
+	// []Entry{}, not var entries []Entry — see tasks.Store.ListRecentTasks's
+	// identical fix: a nil slice marshals to JSON `null`, which the
+	// dashboard API now serializes directly (docs/adr/0014).
+	entries := []Entry{}
 	nextSeq := sinceSeq
 	for rows.Next() {
 		var e Entry

@@ -10,11 +10,13 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/MohammadBnei/agent-fleet/fleet-core/internal/config"
+	"github.com/MohammadBnei/agent-fleet/fleet-core/internal/dashboard"
 	"github.com/MohammadBnei/agent-fleet/fleet-core/internal/discord"
 	"github.com/MohammadBnei/agent-fleet/fleet-core/internal/e2eclient"
 	"github.com/MohammadBnei/agent-fleet/fleet-core/internal/mcpserver"
 	"github.com/MohammadBnei/agent-fleet/fleet-core/internal/tasks"
 	"github.com/MohammadBnei/agent-fleet/fleet-core/internal/transcript"
+	"github.com/MohammadBnei/agent-fleet/fleet-core/internal/webui"
 )
 
 func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool) error {
@@ -38,9 +40,14 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool) error {
 
 	go transcript.RelayLoop(ctx, pool, dc, 2*time.Second)
 
+	hub := dashboard.NewHub()
+	go hub.PollLoop(ctx, store, 2*time.Second)
+
 	mux := http.NewServeMux()
 	mux.Handle("/mcp", mcpserver.New(store))
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
+	dashboard.Register(mux, taskStore, store, e2eClient, hub)
+	mux.Handle("/", webui.Handler())
 	httpServer := &http.Server{Addr: ":" + cfg.Port, Handler: mux}
 
 	errCh := make(chan error, 1)
