@@ -15,7 +15,7 @@ image:
   repository: mohammaddocker/agent-fleet-worker
   # Pinned, bumped automatically by .github/workflows/docker.yml's deploy
   # job on every release tag.
-  tag: "1.0.1"
+  tag: "1.1.0"
 
 # Originally required to avoid a RollingUpdate deadlock against a dedicated
 # RWO Longhorn PVC (new pod can't attach while the old pod still holds it).
