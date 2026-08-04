@@ -21,7 +21,14 @@ func newTestPool(t *testing.T) *pgxpool.Pool {
 		postgres.WithDatabase("agentfleettest"),
 		postgres.WithUsername("test"),
 		postgres.WithPassword("test"),
-		testcontainers.WithWaitStrategy(wait.ForListeningPort("5432/tcp").WithStartupTimeout(30*time.Second)),
+		// See fleet-core/internal/transcript/postgres_test.go's identical
+		// comment — waiting on the port alone races the image's internal
+		// initdb restart and can hand back a connection that resets.
+		testcontainers.WithWaitStrategy(
+			wait.ForLog("database system is ready to accept connections").
+				WithOccurrence(2).
+				WithStartupTimeout(60 * time.Second),
+		),
 	)
 	if err != nil {
 		t.Fatalf("start postgres container: %v", err)

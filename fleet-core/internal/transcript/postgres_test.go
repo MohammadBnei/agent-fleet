@@ -28,7 +28,16 @@ func newTestPool(t *testing.T) *pgxpool.Pool {
 		postgres.WithDatabase("agentfleettest"),
 		postgres.WithUsername("test"),
 		postgres.WithPassword("test"),
-		testcontainers.WithWaitStrategy(wait.ForListeningPort("5432/tcp").WithStartupTimeout(30*time.Second)),
+		// The official postgres image logs "database system is ready to
+		// accept connections" twice — once before an internal restart
+		// during initdb, once after. Waiting on the port alone (as this
+		// used to) lets a connection land in that gap and get a "connection
+		// reset by peer" (hit in CI, not locally — timing-dependent).
+		testcontainers.WithWaitStrategy(
+			wait.ForLog("database system is ready to accept connections").
+				WithOccurrence(2).
+				WithStartupTimeout(60 * time.Second),
+		),
 	)
 	if err != nil {
 		t.Fatalf("start postgres container: %v", err)
