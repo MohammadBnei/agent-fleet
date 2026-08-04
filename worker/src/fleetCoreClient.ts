@@ -1,6 +1,6 @@
 // worker's own orchestration code (watchBatch/waitForCheckpointReply) needs
-// to read the planning transcript the same way the proposer/critic agent
-// sessions do — via fleet-core's wait_for_messages MCP tool, over HTTP.
+// to read the planning transcript the same way the planner agent session
+// does — via fleet-core's wait_for_messages MCP tool, over HTTP.
 // This is a raw MCP client for that one purpose; it is NOT a second API —
 // same tool, same server, one more caller (see docs/adr/0013). Mirrors
 // e2e-provisioner/src/mcpProxy.ts's client-caching shape.
@@ -22,9 +22,9 @@ async function getClient(): Promise<Client> {
 
 // readSince mirrors today's redis.lrange(key, cursor, -1): every entry with
 // seq >= sinceIndex, plus the next cursor to poll from. Calls the same
-// wait_for_messages tool the proposer/critic sessions call, with
-// timeoutMs=0 (no long poll) — worker's own watch loops do their own 1s
-// sleep between polls, they don't need the server to block too.
+// wait_for_messages tool the planner session calls, with timeoutMs=0 (no
+// long poll) — worker's own watch loops do their own 1s sleep between
+// polls, they don't need the server to block too.
 export async function readSince(
   taskId: string,
   sinceIndex: number,

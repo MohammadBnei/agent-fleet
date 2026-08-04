@@ -5,9 +5,10 @@
 # opens PRs against it, not that app's runtime deployment).
 #
 # Polls the shared `tasks` table for repo='dream-analyst', creates a git
-# worktree per task, runs a proposer+critic Agent SDK planning phase gated on
-# Mohammad's explicit approval in Discord, then continues the same proposer
-# session into implementation and opens a PR. No k8s API access needed.
+# worktree per task, runs a single-session Agent SDK planning phase (see
+# docs/adr/0017) gated on Mohammad's explicit approval in Discord, then
+# continues the same planner session into implementation and opens a PR.
+# No k8s API access needed.
 # Always-on for now (replicaCount: 1) — KEDA scale-to-0 deferred, see
 # agent-fleet/README.md.
 
@@ -57,6 +58,8 @@ env:
     value: "https://github.com/MohammadBnei/dream-analyst.git"
   - name: WORKER_NAME
     value: "dream-analyst-worker"
+  - name: CLAUDE_CONFIG_DIR
+    value: "/workspace/.claude-home" # relocate ~/.claude (session transcripts, credentials cache) onto the same RWX PVC as the git worktrees, so a crash-restarted pod can actually resume a session — see docs/adr/0016
 
 # Own git checkout + per-task worktrees — Longhorn default (replicated),
 # never shared with the other worker or the bot as a whole PVC. RWX (not

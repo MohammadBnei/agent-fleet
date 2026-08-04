@@ -6,7 +6,7 @@
 
 /* eslint-disable */
 import { Observable } from "rxjs";
-import { ReadTranscriptSinceRequest, ReadTranscriptSinceResponse, TranscriptEntry } from "./transcript";
+import { ReadTranscriptSinceRequest, ReadTranscriptSinceResponse, TranscriptEntry } from "./transcript.js";
 
 export const protobufPackage = "agentfleet.v1";
 
@@ -77,6 +77,26 @@ export interface KillE2eRequest {
 
 export interface KillE2eResponse {
   killed: boolean;
+}
+
+/**
+ * Answers a pending QUESTION-type transcript entry (posted by the planner's
+ * AskUserQuestion MCP tool call, see docs/adr/0018). `seq` is that entry's
+ * own seq — carried for the dashboard's own bookkeeping/idempotency, not
+ * required for correlation server-side (only one question is ever pending
+ * per task at a time, since the planner's tool call blocks on it).
+ * `answers_json` is a JSON-encoded {"answers": {"<question>": "<label>"}}
+ * payload, opaque to fleet-core — it's appended verbatim as the answer
+ * entry's `text` and returned verbatim to the blocked MCP tool call.
+ */
+export interface AnswerQuestionRequest {
+  taskId: string;
+  seq: number;
+  answersJson: string;
+}
+
+export interface AnswerQuestionResponse {
+  status: string;
 }
 
 function createBaseTask(): Task {
@@ -547,6 +567,80 @@ export const KillE2eResponse: MessageFns<KillE2eResponse> = {
   },
 };
 
+function createBaseAnswerQuestionRequest(): AnswerQuestionRequest {
+  return { taskId: "", seq: 0, answersJson: "" };
+}
+
+export const AnswerQuestionRequest: MessageFns<AnswerQuestionRequest> = {
+  fromJSON(object: any): AnswerQuestionRequest {
+    return {
+      taskId: isSet(object.taskId)
+        ? globalThis.String(object.taskId)
+        : isSet(object.task_id)
+        ? globalThis.String(object.task_id)
+        : "",
+      seq: isSet(object.seq) ? globalThis.Number(object.seq) : 0,
+      answersJson: isSet(object.answersJson)
+        ? globalThis.String(object.answersJson)
+        : isSet(object.answers_json)
+        ? globalThis.String(object.answers_json)
+        : "",
+    };
+  },
+
+  toJSON(message: AnswerQuestionRequest): unknown {
+    const obj: any = {};
+    if (message.taskId !== "") {
+      obj.taskId = message.taskId;
+    }
+    if (message.seq !== 0) {
+      obj.seq = Math.round(message.seq);
+    }
+    if (message.answersJson !== "") {
+      obj.answersJson = message.answersJson;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<AnswerQuestionRequest>, I>>(base?: I): AnswerQuestionRequest {
+    return AnswerQuestionRequest.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<AnswerQuestionRequest>, I>>(object: I): AnswerQuestionRequest {
+    const message = createBaseAnswerQuestionRequest();
+    message.taskId = object.taskId ?? "";
+    message.seq = object.seq ?? 0;
+    message.answersJson = object.answersJson ?? "";
+    return message;
+  },
+};
+
+function createBaseAnswerQuestionResponse(): AnswerQuestionResponse {
+  return { status: "" };
+}
+
+export const AnswerQuestionResponse: MessageFns<AnswerQuestionResponse> = {
+  fromJSON(object: any): AnswerQuestionResponse {
+    return { status: isSet(object.status) ? globalThis.String(object.status) : "" };
+  },
+
+  toJSON(message: AnswerQuestionResponse): unknown {
+    const obj: any = {};
+    if (message.status !== "") {
+      obj.status = message.status;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<AnswerQuestionResponse>, I>>(base?: I): AnswerQuestionResponse {
+    return AnswerQuestionResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<AnswerQuestionResponse>, I>>(object: I): AnswerQuestionResponse {
+    const message = createBaseAnswerQuestionResponse();
+    message.status = object.status ?? "";
+    return message;
+  },
+};
+
 export interface DashboardService {
   ListTasks(request: ListTasksRequest): Promise<ListTasksResponse>;
   GetTask(request: GetTaskRequest): Promise<GetTaskResponse>;
@@ -567,6 +661,7 @@ export interface DashboardService {
   Approve(request: ApproveRequest): Promise<ApproveResponse>;
   Stop(request: StopRequest): Promise<StopResponse>;
   KillE2e(request: KillE2eRequest): Promise<KillE2eResponse>;
+  AnswerQuestion(request: AnswerQuestionRequest): Promise<AnswerQuestionResponse>;
 }
 
 type Builtin = Date | Function | Uint8Array | string | number | boolean | undefined;

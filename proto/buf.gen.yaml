@@ -25,3 +25,8 @@ plugins:
       - outputEncodeMethods=false
       - outputClientImpl=false
       - useOptionals=messages
+      # worker/'s tsconfig uses moduleResolution: nodenext, which requires
+      # explicit extensions on relative ESM imports — without this, ts-proto's
+      # generated cross-file imports (e.g. dashboard.ts importing transcript.ts)
+      # fail tsc with TS2835.
+      - importSuffix=.js

@@ -1,6 +1,6 @@
 // Package transcript replaces the Redis list (agentfleet:planning:<taskId>)
-// as the durable store for the proposer/critic/human planning conversation.
-// See docs/adr/0013: reads are pull/cursor-based (mirroring LRANGE from an
+// as the durable store for the planner/human planning conversation. See
+// docs/adr/0013: reads are pull/cursor-based (mirroring LRANGE from an
 // index), never a bare streaming-watch RPC, so a client reconnect can't
 // silently drop messages the way pub/sub could.
 package transcript
@@ -15,7 +15,7 @@ type Entry struct {
 	Seq  int64  `json:"seq"`
 	From string `json:"from"`
 	Text string `json:"text"`
-	Type string `json:"type"` // "" | "discussion" | "approve" | "abort"
+	Type string `json:"type"` // "" | "discussion" | "approve" | "abort" | "question" | "answer"
 }
 
 // Store is the durable, per-task append/read-since transcript.

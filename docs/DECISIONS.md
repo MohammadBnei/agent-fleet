@@ -63,9 +63,11 @@ Any doc, code, comment, or memory that contradicts this file or an
   planning transcript.** Pull/cursor reads only — see `adr/0013`
   (successor to the same message-loss concern `adr/0001` raised about
   Redis pub/sub, now against a gRPC/Postgres backend instead of Redis).
-- **An orchestration framework (Hermes, OpenClaw, or similar).** Plain
-  parallel Agent SDK sessions coordinating over the shared transcript —
-  see `adr/0002`.
+- **An orchestration framework (Hermes, OpenClaw, or similar).** A single
+  Agent SDK planning session, using real Claude Code skills
+  (doubt-driven-development, architecture-interview) for structured
+  review/elicitation instead of a second independent session or an
+  external orchestrator — see `adr/0002` (superseded) and `adr/0017`.
 - **Fleet-managed `infra-bootstrap` cluster ops.** That repo's own
   `CLAUDE.md` states a human runs kubespray/ansible/pigsty personally;
   this fleet does not touch that, full stop, until that decision is

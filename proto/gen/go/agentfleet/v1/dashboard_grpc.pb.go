@@ -27,6 +27,7 @@ const (
 	DashboardService_Approve_FullMethodName          = "/agentfleet.v1.DashboardService/Approve"
 	DashboardService_Stop_FullMethodName             = "/agentfleet.v1.DashboardService/Stop"
 	DashboardService_KillE2E_FullMethodName          = "/agentfleet.v1.DashboardService/KillE2e"
+	DashboardService_AnswerQuestion_FullMethodName   = "/agentfleet.v1.DashboardService/AnswerQuestion"
 )
 
 // DashboardServiceClient is the client API for DashboardService service.
@@ -48,6 +49,7 @@ type DashboardServiceClient interface {
 	Approve(ctx context.Context, in *ApproveRequest, opts ...grpc.CallOption) (*ApproveResponse, error)
 	Stop(ctx context.Context, in *StopRequest, opts ...grpc.CallOption) (*StopResponse, error)
 	KillE2E(ctx context.Context, in *KillE2ERequest, opts ...grpc.CallOption) (*KillE2EResponse, error)
+	AnswerQuestion(ctx context.Context, in *AnswerQuestionRequest, opts ...grpc.CallOption) (*AnswerQuestionResponse, error)
 }
 
 type dashboardServiceClient struct {
@@ -147,6 +149,16 @@ func (c *dashboardServiceClient) KillE2E(ctx context.Context, in *KillE2ERequest
 	return out, nil
 }
 
+func (c *dashboardServiceClient) AnswerQuestion(ctx context.Context, in *AnswerQuestionRequest, opts ...grpc.CallOption) (*AnswerQuestionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AnswerQuestionResponse)
+	err := c.cc.Invoke(ctx, DashboardService_AnswerQuestion_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // DashboardServiceServer is the server API for DashboardService service.
 // All implementations must embed UnimplementedDashboardServiceServer
 // for forward compatibility.
@@ -166,6 +178,7 @@ type DashboardServiceServer interface {
 	Approve(context.Context, *ApproveRequest) (*ApproveResponse, error)
 	Stop(context.Context, *StopRequest) (*StopResponse, error)
 	KillE2E(context.Context, *KillE2ERequest) (*KillE2EResponse, error)
+	AnswerQuestion(context.Context, *AnswerQuestionRequest) (*AnswerQuestionResponse, error)
 	mustEmbedUnimplementedDashboardServiceServer()
 }
 
@@ -199,6 +212,9 @@ func (UnimplementedDashboardServiceServer) Stop(context.Context, *StopRequest) (
 }
 func (UnimplementedDashboardServiceServer) KillE2E(context.Context, *KillE2ERequest) (*KillE2EResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method KillE2E not implemented")
+}
+func (UnimplementedDashboardServiceServer) AnswerQuestion(context.Context, *AnswerQuestionRequest) (*AnswerQuestionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method AnswerQuestion not implemented")
 }
 func (UnimplementedDashboardServiceServer) mustEmbedUnimplementedDashboardServiceServer() {}
 func (UnimplementedDashboardServiceServer) testEmbeddedByValue()                          {}
@@ -358,6 +374,24 @@ func _DashboardService_KillE2E_Handler(srv interface{}, ctx context.Context, dec
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DashboardService_AnswerQuestion_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AnswerQuestionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DashboardServiceServer).AnswerQuestion(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DashboardService_AnswerQuestion_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DashboardServiceServer).AnswerQuestion(ctx, req.(*AnswerQuestionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // DashboardService_ServiceDesc is the grpc.ServiceDesc for DashboardService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -392,6 +426,10 @@ var DashboardService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "KillE2e",
 			Handler:    _DashboardService_KillE2E_Handler,
+		},
+		{
+			MethodName: "AnswerQuestion",
+			Handler:    _DashboardService_AnswerQuestion_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

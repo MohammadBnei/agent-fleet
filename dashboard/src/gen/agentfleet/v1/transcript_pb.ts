@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file agentfleet/v1/transcript.proto.
  */
 export const file_agentfleet_v1_transcript: GenFile = /*@__PURE__*/
-  fileDesc("Ch5hZ2VudGZsZWV0L3YxL3RyYW5zY3JpcHQucHJvdG8SDWFnZW50ZmxlZXQudjEifQoPVHJhbnNjcmlwdEVudHJ5Eg8KB3Rhc2tfaWQYASABKAkSCwoDc2VxGAIgASgDEgwKBGZyb20YAyABKAkSDAoEdGV4dBgEIAEoCRIwCgR0eXBlGAUgASgOMiIuYWdlbnRmbGVldC52MS5UcmFuc2NyaXB0RW50cnlUeXBlIpYBChxBcHBlbmRUcmFuc2NyaXB0RW50cnlSZXF1ZXN0Eg8KB3Rhc2tfaWQYASABKAkSDAoEZnJvbRgCIAEoCRIMCgR0ZXh0GAMgASgJEjAKBHR5cGUYBCABKA4yIi5hZ2VudGZsZWV0LnYxLlRyYW5zY3JpcHRFbnRyeVR5cGUSFwoPaWRlbXBvdGVuY3lfa2V5GAUgASgJIlQKGlJlYWRUcmFuc2NyaXB0U2luY2VSZXF1ZXN0Eg8KB3Rhc2tfaWQYASABKAkSEQoJc2luY2Vfc2VxGAIgASgDEhIKCnRpbWVvdXRfbXMYAyABKAUiYAobUmVhZFRyYW5zY3JpcHRTaW5jZVJlc3BvbnNlEi8KB2VudHJpZXMYASADKAsyHi5hZ2VudGZsZWV0LnYxLlRyYW5zY3JpcHRFbnRyeRIQCghuZXh0X3NlcRgCIAEoAyqmAQoTVHJhbnNjcmlwdEVudHJ5VHlwZRIlCiFUUkFOU0NSSVBUX0VOVFJZX1RZUEVfVU5TUEVDSUZJRUQQABIkCiBUUkFOU0NSSVBUX0VOVFJZX1RZUEVfRElTQ1VTU0lPThABEiEKHVRSQU5TQ1JJUFRfRU5UUllfVFlQRV9BUFBST1ZFEAISHwobVFJBTlNDUklQVF9FTlRSWV9UWVBFX0FCT1JUEANCTVpLZ2l0aHViLmNvbS9Nb2hhbW1hZEJuZWkvYWdlbnQtZmxlZXQvcHJvdG8vZ2VuL2dvL2FnZW50ZmxlZXQvdjE7YWdlbnRmbGVldHYxYgZwcm90bzM");
+  fileDesc("Ch5hZ2VudGZsZWV0L3YxL3RyYW5zY3JpcHQucHJvdG8SDWFnZW50ZmxlZXQudjEifQoPVHJhbnNjcmlwdEVudHJ5Eg8KB3Rhc2tfaWQYASABKAkSCwoDc2VxGAIgASgDEgwKBGZyb20YAyABKAkSDAoEdGV4dBgEIAEoCRIwCgR0eXBlGAUgASgOMiIuYWdlbnRmbGVldC52MS5UcmFuc2NyaXB0RW50cnlUeXBlIpYBChxBcHBlbmRUcmFuc2NyaXB0RW50cnlSZXF1ZXN0Eg8KB3Rhc2tfaWQYASABKAkSDAoEZnJvbRgCIAEoCRIMCgR0ZXh0GAMgASgJEjAKBHR5cGUYBCABKA4yIi5hZ2VudGZsZWV0LnYxLlRyYW5zY3JpcHRFbnRyeVR5cGUSFwoPaWRlbXBvdGVuY3lfa2V5GAUgASgJIlQKGlJlYWRUcmFuc2NyaXB0U2luY2VSZXF1ZXN0Eg8KB3Rhc2tfaWQYASABKAkSEQoJc2luY2Vfc2VxGAIgASgDEhIKCnRpbWVvdXRfbXMYAyABKAUiYAobUmVhZFRyYW5zY3JpcHRTaW5jZVJlc3BvbnNlEi8KB2VudHJpZXMYASADKAsyHi5hZ2VudGZsZWV0LnYxLlRyYW5zY3JpcHRFbnRyeRIQCghuZXh0X3NlcRgCIAEoAyrsAQoTVHJhbnNjcmlwdEVudHJ5VHlwZRIlCiFUUkFOU0NSSVBUX0VOVFJZX1RZUEVfVU5TUEVDSUZJRUQQABIkCiBUUkFOU0NSSVBUX0VOVFJZX1RZUEVfRElTQ1VTU0lPThABEiEKHVRSQU5TQ1JJUFRfRU5UUllfVFlQRV9BUFBST1ZFEAISHwobVFJBTlNDUklQVF9FTlRSWV9UWVBFX0FCT1JUEAMSIgoeVFJBTlNDUklQVF9FTlRSWV9UWVBFX1FVRVNUSU9OEAQSIAocVFJBTlNDUklQVF9FTlRSWV9UWVBFX0FOU1dFUhAFQk1aS2dpdGh1Yi5jb20vTW9oYW1tYWRCbmVpL2FnZW50LWZsZWV0L3Byb3RvL2dlbi9nby9hZ2VudGZsZWV0L3YxO2FnZW50ZmxlZXR2MWIGcHJvdG8z");
 
 /**
  * @generated from message agentfleet.v1.TranscriptEntry
@@ -27,7 +27,7 @@ export type TranscriptEntry = Message<"agentfleet.v1.TranscriptEntry"> & {
   seq: bigint;
 
   /**
-   * "proposer" | "critic" | "human"
+   * "planner" | "human"
    *
    * @generated from field: string from = 3;
    */
@@ -162,6 +162,22 @@ export enum TranscriptEntryType {
    * @generated from enum value: TRANSCRIPT_ENTRY_TYPE_ABORT = 3;
    */
   ABORT = 3,
+
+  /**
+   * Structured multiple-choice question(s) posted by the planner via the
+   * AskUserQuestion MCP tool — `text` is a JSON payload, not prose. Answered
+   * via the dashboard (not Discord), see docs/adr/0018.
+   *
+   * @generated from enum value: TRANSCRIPT_ENTRY_TYPE_QUESTION = 4;
+   */
+  QUESTION = 4,
+
+  /**
+   * The human's answer to a QUESTION entry — `text` is a JSON payload.
+   *
+   * @generated from enum value: TRANSCRIPT_ENTRY_TYPE_ANSWER = 5;
+   */
+  ANSWER = 5,
 }
 
 /**

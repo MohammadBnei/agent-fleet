@@ -704,6 +704,118 @@ func (x *KillE2EResponse) GetKilled() bool {
 	return false
 }
 
+// Answers a pending QUESTION-type transcript entry (posted by the planner's
+// AskUserQuestion MCP tool call, see docs/adr/0018). `seq` is that entry's
+// own seq — carried for the dashboard's own bookkeeping/idempotency, not
+// required for correlation server-side (only one question is ever pending
+// per task at a time, since the planner's tool call blocks on it).
+// `answers_json` is a JSON-encoded {"answers": {"<question>": "<label>"}}
+// payload, opaque to fleet-core — it's appended verbatim as the answer
+// entry's `text` and returned verbatim to the blocked MCP tool call.
+type AnswerQuestionRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TaskId        string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	Seq           int64                  `protobuf:"varint,2,opt,name=seq,proto3" json:"seq,omitempty"`
+	AnswersJson   string                 `protobuf:"bytes,3,opt,name=answers_json,json=answersJson,proto3" json:"answers_json,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AnswerQuestionRequest) Reset() {
+	*x = AnswerQuestionRequest{}
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AnswerQuestionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AnswerQuestionRequest) ProtoMessage() {}
+
+func (x *AnswerQuestionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AnswerQuestionRequest.ProtoReflect.Descriptor instead.
+func (*AnswerQuestionRequest) Descriptor() ([]byte, []int) {
+	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *AnswerQuestionRequest) GetTaskId() string {
+	if x != nil {
+		return x.TaskId
+	}
+	return ""
+}
+
+func (x *AnswerQuestionRequest) GetSeq() int64 {
+	if x != nil {
+		return x.Seq
+	}
+	return 0
+}
+
+func (x *AnswerQuestionRequest) GetAnswersJson() string {
+	if x != nil {
+		return x.AnswersJson
+	}
+	return ""
+}
+
+type AnswerQuestionResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Status        string                 `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AnswerQuestionResponse) Reset() {
+	*x = AnswerQuestionResponse{}
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AnswerQuestionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AnswerQuestionResponse) ProtoMessage() {}
+
+func (x *AnswerQuestionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AnswerQuestionResponse.ProtoReflect.Descriptor instead.
+func (*AnswerQuestionResponse) Descriptor() ([]byte, []int) {
+	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *AnswerQuestionResponse) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
 var File_agentfleet_v1_dashboard_proto protoreflect.FileDescriptor
 
 const file_agentfleet_v1_dashboard_proto_rawDesc = "" +
@@ -749,7 +861,13 @@ const file_agentfleet_v1_dashboard_proto_rawDesc = "" +
 	"\x0eKillE2eRequest\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\tR\x06taskId\")\n" +
 	"\x0fKillE2eResponse\x12\x16\n" +
-	"\x06killed\x18\x01 \x01(\bR\x06killed2\xa0\x05\n" +
+	"\x06killed\x18\x01 \x01(\bR\x06killed\"e\n" +
+	"\x15AnswerQuestionRequest\x12\x17\n" +
+	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x10\n" +
+	"\x03seq\x18\x02 \x01(\x03R\x03seq\x12!\n" +
+	"\fanswers_json\x18\x03 \x01(\tR\vanswersJson\"0\n" +
+	"\x16AnswerQuestionResponse\x12\x16\n" +
+	"\x06status\x18\x01 \x01(\tR\x06status2\xff\x05\n" +
 	"\x10DashboardService\x12N\n" +
 	"\tListTasks\x12\x1f.agentfleet.v1.ListTasksRequest\x1a .agentfleet.v1.ListTasksResponse\x12H\n" +
 	"\aGetTask\x12\x1d.agentfleet.v1.GetTaskRequest\x1a\x1e.agentfleet.v1.GetTaskResponse\x12f\n" +
@@ -758,7 +876,8 @@ const file_agentfleet_v1_dashboard_proto_rawDesc = "" +
 	"\fGetE2eStatus\x12\".agentfleet.v1.GetE2eStatusRequest\x1a#.agentfleet.v1.GetE2eStatusResponse\x12H\n" +
 	"\aApprove\x12\x1d.agentfleet.v1.ApproveRequest\x1a\x1e.agentfleet.v1.ApproveResponse\x12?\n" +
 	"\x04Stop\x12\x1a.agentfleet.v1.StopRequest\x1a\x1b.agentfleet.v1.StopResponse\x12H\n" +
-	"\aKillE2e\x12\x1d.agentfleet.v1.KillE2eRequest\x1a\x1e.agentfleet.v1.KillE2eResponseBMZKgithub.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1;agentfleetv1b\x06proto3"
+	"\aKillE2e\x12\x1d.agentfleet.v1.KillE2eRequest\x1a\x1e.agentfleet.v1.KillE2eResponse\x12]\n" +
+	"\x0eAnswerQuestion\x12$.agentfleet.v1.AnswerQuestionRequest\x1a%.agentfleet.v1.AnswerQuestionResponseBMZKgithub.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1;agentfleetv1b\x06proto3"
 
 var (
 	file_agentfleet_v1_dashboard_proto_rawDescOnce sync.Once
@@ -772,7 +891,7 @@ func file_agentfleet_v1_dashboard_proto_rawDescGZIP() []byte {
 	return file_agentfleet_v1_dashboard_proto_rawDescData
 }
 
-var file_agentfleet_v1_dashboard_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
+var file_agentfleet_v1_dashboard_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
 var file_agentfleet_v1_dashboard_proto_goTypes = []any{
 	(*Task)(nil),                        // 0: agentfleet.v1.Task
 	(*ListTasksRequest)(nil),            // 1: agentfleet.v1.ListTasksRequest
@@ -788,31 +907,35 @@ var file_agentfleet_v1_dashboard_proto_goTypes = []any{
 	(*StopResponse)(nil),                // 11: agentfleet.v1.StopResponse
 	(*KillE2ERequest)(nil),              // 12: agentfleet.v1.KillE2eRequest
 	(*KillE2EResponse)(nil),             // 13: agentfleet.v1.KillE2eResponse
-	(*ReadTranscriptSinceRequest)(nil),  // 14: agentfleet.v1.ReadTranscriptSinceRequest
-	(*ReadTranscriptSinceResponse)(nil), // 15: agentfleet.v1.ReadTranscriptSinceResponse
-	(*TranscriptEntry)(nil),             // 16: agentfleet.v1.TranscriptEntry
+	(*AnswerQuestionRequest)(nil),       // 14: agentfleet.v1.AnswerQuestionRequest
+	(*AnswerQuestionResponse)(nil),      // 15: agentfleet.v1.AnswerQuestionResponse
+	(*ReadTranscriptSinceRequest)(nil),  // 16: agentfleet.v1.ReadTranscriptSinceRequest
+	(*ReadTranscriptSinceResponse)(nil), // 17: agentfleet.v1.ReadTranscriptSinceResponse
+	(*TranscriptEntry)(nil),             // 18: agentfleet.v1.TranscriptEntry
 }
 var file_agentfleet_v1_dashboard_proto_depIdxs = []int32{
 	0,  // 0: agentfleet.v1.ListTasksResponse.tasks:type_name -> agentfleet.v1.Task
 	0,  // 1: agentfleet.v1.GetTaskResponse.task:type_name -> agentfleet.v1.Task
 	1,  // 2: agentfleet.v1.DashboardService.ListTasks:input_type -> agentfleet.v1.ListTasksRequest
 	3,  // 3: agentfleet.v1.DashboardService.GetTask:input_type -> agentfleet.v1.GetTaskRequest
-	14, // 4: agentfleet.v1.DashboardService.GetTranscript:input_type -> agentfleet.v1.ReadTranscriptSinceRequest
+	16, // 4: agentfleet.v1.DashboardService.GetTranscript:input_type -> agentfleet.v1.ReadTranscriptSinceRequest
 	5,  // 5: agentfleet.v1.DashboardService.StreamTranscript:input_type -> agentfleet.v1.StreamTranscriptRequest
 	6,  // 6: agentfleet.v1.DashboardService.GetE2eStatus:input_type -> agentfleet.v1.GetE2eStatusRequest
 	8,  // 7: agentfleet.v1.DashboardService.Approve:input_type -> agentfleet.v1.ApproveRequest
 	10, // 8: agentfleet.v1.DashboardService.Stop:input_type -> agentfleet.v1.StopRequest
 	12, // 9: agentfleet.v1.DashboardService.KillE2e:input_type -> agentfleet.v1.KillE2eRequest
-	2,  // 10: agentfleet.v1.DashboardService.ListTasks:output_type -> agentfleet.v1.ListTasksResponse
-	4,  // 11: agentfleet.v1.DashboardService.GetTask:output_type -> agentfleet.v1.GetTaskResponse
-	15, // 12: agentfleet.v1.DashboardService.GetTranscript:output_type -> agentfleet.v1.ReadTranscriptSinceResponse
-	16, // 13: agentfleet.v1.DashboardService.StreamTranscript:output_type -> agentfleet.v1.TranscriptEntry
-	7,  // 14: agentfleet.v1.DashboardService.GetE2eStatus:output_type -> agentfleet.v1.GetE2eStatusResponse
-	9,  // 15: agentfleet.v1.DashboardService.Approve:output_type -> agentfleet.v1.ApproveResponse
-	11, // 16: agentfleet.v1.DashboardService.Stop:output_type -> agentfleet.v1.StopResponse
-	13, // 17: agentfleet.v1.DashboardService.KillE2e:output_type -> agentfleet.v1.KillE2eResponse
-	10, // [10:18] is the sub-list for method output_type
-	2,  // [2:10] is the sub-list for method input_type
+	14, // 10: agentfleet.v1.DashboardService.AnswerQuestion:input_type -> agentfleet.v1.AnswerQuestionRequest
+	2,  // 11: agentfleet.v1.DashboardService.ListTasks:output_type -> agentfleet.v1.ListTasksResponse
+	4,  // 12: agentfleet.v1.DashboardService.GetTask:output_type -> agentfleet.v1.GetTaskResponse
+	17, // 13: agentfleet.v1.DashboardService.GetTranscript:output_type -> agentfleet.v1.ReadTranscriptSinceResponse
+	18, // 14: agentfleet.v1.DashboardService.StreamTranscript:output_type -> agentfleet.v1.TranscriptEntry
+	7,  // 15: agentfleet.v1.DashboardService.GetE2eStatus:output_type -> agentfleet.v1.GetE2eStatusResponse
+	9,  // 16: agentfleet.v1.DashboardService.Approve:output_type -> agentfleet.v1.ApproveResponse
+	11, // 17: agentfleet.v1.DashboardService.Stop:output_type -> agentfleet.v1.StopResponse
+	13, // 18: agentfleet.v1.DashboardService.KillE2e:output_type -> agentfleet.v1.KillE2eResponse
+	15, // 19: agentfleet.v1.DashboardService.AnswerQuestion:output_type -> agentfleet.v1.AnswerQuestionResponse
+	11, // [11:20] is the sub-list for method output_type
+	2,  // [2:11] is the sub-list for method input_type
 	2,  // [2:2] is the sub-list for extension type_name
 	2,  // [2:2] is the sub-list for extension extendee
 	0,  // [0:2] is the sub-list for field type_name
@@ -832,7 +955,7 @@ func file_agentfleet_v1_dashboard_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_agentfleet_v1_dashboard_proto_rawDesc), len(file_agentfleet_v1_dashboard_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   14,
+			NumMessages:   16,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -13,6 +13,14 @@ export enum TranscriptEntryType {
   TRANSCRIPT_ENTRY_TYPE_DISCUSSION = 1,
   TRANSCRIPT_ENTRY_TYPE_APPROVE = 2,
   TRANSCRIPT_ENTRY_TYPE_ABORT = 3,
+  /**
+   * TRANSCRIPT_ENTRY_TYPE_QUESTION - Structured multiple-choice question(s) posted by the planner via the
+   * AskUserQuestion MCP tool — `text` is a JSON payload, not prose. Answered
+   * via the dashboard (not Discord), see docs/adr/0018.
+   */
+  TRANSCRIPT_ENTRY_TYPE_QUESTION = 4,
+  /** TRANSCRIPT_ENTRY_TYPE_ANSWER - The human's answer to a QUESTION entry — `text` is a JSON payload. */
+  TRANSCRIPT_ENTRY_TYPE_ANSWER = 5,
   UNRECOGNIZED = -1,
 }
 
@@ -30,6 +38,12 @@ export function transcriptEntryTypeFromJSON(object: any): TranscriptEntryType {
     case 3:
     case "TRANSCRIPT_ENTRY_TYPE_ABORT":
       return TranscriptEntryType.TRANSCRIPT_ENTRY_TYPE_ABORT;
+    case 4:
+    case "TRANSCRIPT_ENTRY_TYPE_QUESTION":
+      return TranscriptEntryType.TRANSCRIPT_ENTRY_TYPE_QUESTION;
+    case 5:
+    case "TRANSCRIPT_ENTRY_TYPE_ANSWER":
+      return TranscriptEntryType.TRANSCRIPT_ENTRY_TYPE_ANSWER;
     case -1:
     case "UNRECOGNIZED":
     default:
@@ -47,6 +61,10 @@ export function transcriptEntryTypeToJSON(object: TranscriptEntryType): string {
       return "TRANSCRIPT_ENTRY_TYPE_APPROVE";
     case TranscriptEntryType.TRANSCRIPT_ENTRY_TYPE_ABORT:
       return "TRANSCRIPT_ENTRY_TYPE_ABORT";
+    case TranscriptEntryType.TRANSCRIPT_ENTRY_TYPE_QUESTION:
+      return "TRANSCRIPT_ENTRY_TYPE_QUESTION";
+    case TranscriptEntryType.TRANSCRIPT_ENTRY_TYPE_ANSWER:
+      return "TRANSCRIPT_ENTRY_TYPE_ANSWER";
     case TranscriptEntryType.UNRECOGNIZED:
     default:
       return "UNRECOGNIZED";
@@ -56,7 +74,7 @@ export function transcriptEntryTypeToJSON(object: TranscriptEntryType): string {
 export interface TranscriptEntry {
   taskId: string;
   seq: number;
-  /** "proposer" | "critic" | "human" */
+  /** "planner" | "human" */
   from: string;
   text: string;
   type: TranscriptEntryType;

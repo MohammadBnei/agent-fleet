@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file agentfleet/v1/dashboard.proto.
  */
 export const file_agentfleet_v1_dashboard: GenFile = /*@__PURE__*/
-  fileDesc("Ch1hZ2VudGZsZWV0L3YxL2Rhc2hib2FyZC5wcm90bxINYWdlbnRmbGVldC52MSKLAQoEVGFzaxIKCgJpZBgBIAEoCRIMCgRyZXBvGAIgASgJEhMKC2Rlc2NyaXB0aW9uGAMgASgJEg4KBnN0YXR1cxgEIAEoCRIWCgl0aHJlYWRfaWQYBSABKAlIAIgBARITCgZwcl91cmwYBiABKAlIAYgBAUIMCgpfdGhyZWFkX2lkQgkKB19wcl91cmwiIQoQTGlzdFRhc2tzUmVxdWVzdBINCgVsaW1pdBgBIAEoBSI3ChFMaXN0VGFza3NSZXNwb25zZRIiCgV0YXNrcxgBIAMoCzITLmFnZW50ZmxlZXQudjEuVGFzayIcCg5HZXRUYXNrUmVxdWVzdBIKCgJpZBgBIAEoCSI0Cg9HZXRUYXNrUmVzcG9uc2USIQoEdGFzaxgBIAEoCzITLmFnZW50ZmxlZXQudjEuVGFzayI9ChdTdHJlYW1UcmFuc2NyaXB0UmVxdWVzdBIPCgd0YXNrX2lkGAEgASgJEhEKCXNpbmNlX3NlcRgCIAEoAyImChNHZXRFMmVTdGF0dXNSZXF1ZXN0Eg8KB3Rhc2tfaWQYASABKAkiOwoUR2V0RTJlU3RhdHVzUmVzcG9uc2USDgoGc3RhdHVzGAEgASgJEhMKC3ByZXZpZXdfdXJsGAIgASgJIiEKDkFwcHJvdmVSZXF1ZXN0Eg8KB3Rhc2tfaWQYASABKAkiIQoPQXBwcm92ZVJlc3BvbnNlEg4KBnN0YXR1cxgBIAEoCSI+CgtTdG9wUmVxdWVzdBIPCgd0YXNrX2lkGAEgASgJEhMKBnJlYXNvbhgCIAEoCUgAiAEBQgkKB19yZWFzb24iHgoMU3RvcFJlc3BvbnNlEg4KBnN0YXR1cxgBIAEoCSIhCg5LaWxsRTJlUmVxdWVzdBIPCgd0YXNrX2lkGAEgASgJIiEKD0tpbGxFMmVSZXNwb25zZRIOCgZraWxsZWQYASABKAgyoAUKEERhc2hib2FyZFNlcnZpY2USTgoJTGlzdFRhc2tzEh8uYWdlbnRmbGVldC52MS5MaXN0VGFza3NSZXF1ZXN0GiAuYWdlbnRmbGVldC52MS5MaXN0VGFza3NSZXNwb25zZRJICgdHZXRUYXNrEh0uYWdlbnRmbGVldC52MS5HZXRUYXNrUmVxdWVzdBoeLmFnZW50ZmxlZXQudjEuR2V0VGFza1Jlc3BvbnNlEmYKDUdldFRyYW5zY3JpcHQSKS5hZ2VudGZsZWV0LnYxLlJlYWRUcmFuc2NyaXB0U2luY2VSZXF1ZXN0GiouYWdlbnRmbGVldC52MS5SZWFkVHJhbnNjcmlwdFNpbmNlUmVzcG9uc2USXAoQU3RyZWFtVHJhbnNjcmlwdBImLmFnZW50ZmxlZXQudjEuU3RyZWFtVHJhbnNjcmlwdFJlcXVlc3QaHi5hZ2VudGZsZWV0LnYxLlRyYW5zY3JpcHRFbnRyeTABElcKDEdldEUyZVN0YXR1cxIiLmFnZW50ZmxlZXQudjEuR2V0RTJlU3RhdHVzUmVxdWVzdBojLmFnZW50ZmxlZXQudjEuR2V0RTJlU3RhdHVzUmVzcG9uc2USSAoHQXBwcm92ZRIdLmFnZW50ZmxlZXQudjEuQXBwcm92ZVJlcXVlc3QaHi5hZ2VudGZsZWV0LnYxLkFwcHJvdmVSZXNwb25zZRI/CgRTdG9wEhouYWdlbnRmbGVldC52MS5TdG9wUmVxdWVzdBobLmFnZW50ZmxlZXQudjEuU3RvcFJlc3BvbnNlEkgKB0tpbGxFMmUSHS5hZ2VudGZsZWV0LnYxLktpbGxFMmVSZXF1ZXN0Gh4uYWdlbnRmbGVldC52MS5LaWxsRTJlUmVzcG9uc2VCTVpLZ2l0aHViLmNvbS9Nb2hhbW1hZEJuZWkvYWdlbnQtZmxlZXQvcHJvdG8vZ2VuL2dvL2FnZW50ZmxlZXQvdjE7YWdlbnRmbGVldHYxYgZwcm90bzM", [file_agentfleet_v1_transcript]);
+  fileDesc("Ch1hZ2VudGZsZWV0L3YxL2Rhc2hib2FyZC5wcm90bxINYWdlbnRmbGVldC52MSKLAQoEVGFzaxIKCgJpZBgBIAEoCRIMCgRyZXBvGAIgASgJEhMKC2Rlc2NyaXB0aW9uGAMgASgJEg4KBnN0YXR1cxgEIAEoCRIWCgl0aHJlYWRfaWQYBSABKAlIAIgBARITCgZwcl91cmwYBiABKAlIAYgBAUIMCgpfdGhyZWFkX2lkQgkKB19wcl91cmwiIQoQTGlzdFRhc2tzUmVxdWVzdBINCgVsaW1pdBgBIAEoBSI3ChFMaXN0VGFza3NSZXNwb25zZRIiCgV0YXNrcxgBIAMoCzITLmFnZW50ZmxlZXQudjEuVGFzayIcCg5HZXRUYXNrUmVxdWVzdBIKCgJpZBgBIAEoCSI0Cg9HZXRUYXNrUmVzcG9uc2USIQoEdGFzaxgBIAEoCzITLmFnZW50ZmxlZXQudjEuVGFzayI9ChdTdHJlYW1UcmFuc2NyaXB0UmVxdWVzdBIPCgd0YXNrX2lkGAEgASgJEhEKCXNpbmNlX3NlcRgCIAEoAyImChNHZXRFMmVTdGF0dXNSZXF1ZXN0Eg8KB3Rhc2tfaWQYASABKAkiOwoUR2V0RTJlU3RhdHVzUmVzcG9uc2USDgoGc3RhdHVzGAEgASgJEhMKC3ByZXZpZXdfdXJsGAIgASgJIiEKDkFwcHJvdmVSZXF1ZXN0Eg8KB3Rhc2tfaWQYASABKAkiIQoPQXBwcm92ZVJlc3BvbnNlEg4KBnN0YXR1cxgBIAEoCSI+CgtTdG9wUmVxdWVzdBIPCgd0YXNrX2lkGAEgASgJEhMKBnJlYXNvbhgCIAEoCUgAiAEBQgkKB19yZWFzb24iHgoMU3RvcFJlc3BvbnNlEg4KBnN0YXR1cxgBIAEoCSIhCg5LaWxsRTJlUmVxdWVzdBIPCgd0YXNrX2lkGAEgASgJIiEKD0tpbGxFMmVSZXNwb25zZRIOCgZraWxsZWQYASABKAgiSwoVQW5zd2VyUXVlc3Rpb25SZXF1ZXN0Eg8KB3Rhc2tfaWQYASABKAkSCwoDc2VxGAIgASgDEhQKDGFuc3dlcnNfanNvbhgDIAEoCSIoChZBbnN3ZXJRdWVzdGlvblJlc3BvbnNlEg4KBnN0YXR1cxgBIAEoCTL/BQoQRGFzaGJvYXJkU2VydmljZRJOCglMaXN0VGFza3MSHy5hZ2VudGZsZWV0LnYxLkxpc3RUYXNrc1JlcXVlc3QaIC5hZ2VudGZsZWV0LnYxLkxpc3RUYXNrc1Jlc3BvbnNlEkgKB0dldFRhc2sSHS5hZ2VudGZsZWV0LnYxLkdldFRhc2tSZXF1ZXN0Gh4uYWdlbnRmbGVldC52MS5HZXRUYXNrUmVzcG9uc2USZgoNR2V0VHJhbnNjcmlwdBIpLmFnZW50ZmxlZXQudjEuUmVhZFRyYW5zY3JpcHRTaW5jZVJlcXVlc3QaKi5hZ2VudGZsZWV0LnYxLlJlYWRUcmFuc2NyaXB0U2luY2VSZXNwb25zZRJcChBTdHJlYW1UcmFuc2NyaXB0EiYuYWdlbnRmbGVldC52MS5TdHJlYW1UcmFuc2NyaXB0UmVxdWVzdBoeLmFnZW50ZmxlZXQudjEuVHJhbnNjcmlwdEVudHJ5MAESVwoMR2V0RTJlU3RhdHVzEiIuYWdlbnRmbGVldC52MS5HZXRFMmVTdGF0dXNSZXF1ZXN0GiMuYWdlbnRmbGVldC52MS5HZXRFMmVTdGF0dXNSZXNwb25zZRJICgdBcHByb3ZlEh0uYWdlbnRmbGVldC52MS5BcHByb3ZlUmVxdWVzdBoeLmFnZW50ZmxlZXQudjEuQXBwcm92ZVJlc3BvbnNlEj8KBFN0b3ASGi5hZ2VudGZsZWV0LnYxLlN0b3BSZXF1ZXN0GhsuYWdlbnRmbGVldC52MS5TdG9wUmVzcG9uc2USSAoHS2lsbEUyZRIdLmFnZW50ZmxlZXQudjEuS2lsbEUyZVJlcXVlc3QaHi5hZ2VudGZsZWV0LnYxLktpbGxFMmVSZXNwb25zZRJdCg5BbnN3ZXJRdWVzdGlvbhIkLmFnZW50ZmxlZXQudjEuQW5zd2VyUXVlc3Rpb25SZXF1ZXN0GiUuYWdlbnRmbGVldC52MS5BbnN3ZXJRdWVzdGlvblJlc3BvbnNlQk1aS2dpdGh1Yi5jb20vTW9oYW1tYWRCbmVpL2FnZW50LWZsZWV0L3Byb3RvL2dlbi9nby9hZ2VudGZsZWV0L3YxO2FnZW50ZmxlZXR2MWIGcHJvdG8z", [file_agentfleet_v1_transcript]);
 
 /**
  * @generated from message agentfleet.v1.Task
@@ -297,6 +297,59 @@ export const KillE2eResponseSchema: GenMessage<KillE2eResponse> = /*@__PURE__*/
   messageDesc(file_agentfleet_v1_dashboard, 13);
 
 /**
+ * Answers a pending QUESTION-type transcript entry (posted by the planner's
+ * AskUserQuestion MCP tool call, see docs/adr/0018). `seq` is that entry's
+ * own seq — carried for the dashboard's own bookkeeping/idempotency, not
+ * required for correlation server-side (only one question is ever pending
+ * per task at a time, since the planner's tool call blocks on it).
+ * `answers_json` is a JSON-encoded {"answers": {"<question>": "<label>"}}
+ * payload, opaque to fleet-core — it's appended verbatim as the answer
+ * entry's `text` and returned verbatim to the blocked MCP tool call.
+ *
+ * @generated from message agentfleet.v1.AnswerQuestionRequest
+ */
+export type AnswerQuestionRequest = Message<"agentfleet.v1.AnswerQuestionRequest"> & {
+  /**
+   * @generated from field: string task_id = 1;
+   */
+  taskId: string;
+
+  /**
+   * @generated from field: int64 seq = 2;
+   */
+  seq: bigint;
+
+  /**
+   * @generated from field: string answers_json = 3;
+   */
+  answersJson: string;
+};
+
+/**
+ * Describes the message agentfleet.v1.AnswerQuestionRequest.
+ * Use `create(AnswerQuestionRequestSchema)` to create a new message.
+ */
+export const AnswerQuestionRequestSchema: GenMessage<AnswerQuestionRequest> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_dashboard, 14);
+
+/**
+ * @generated from message agentfleet.v1.AnswerQuestionResponse
+ */
+export type AnswerQuestionResponse = Message<"agentfleet.v1.AnswerQuestionResponse"> & {
+  /**
+   * @generated from field: string status = 1;
+   */
+  status: string;
+};
+
+/**
+ * Describes the message agentfleet.v1.AnswerQuestionResponse.
+ * Use `create(AnswerQuestionResponseSchema)` to create a new message.
+ */
+export const AnswerQuestionResponseSchema: GenMessage<AnswerQuestionResponse> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_dashboard, 15);
+
+/**
  * @generated from service agentfleet.v1.DashboardService
  */
 export const DashboardService: GenService<{
@@ -372,6 +425,14 @@ export const DashboardService: GenService<{
     methodKind: "unary";
     input: typeof KillE2eRequestSchema;
     output: typeof KillE2eResponseSchema;
+  },
+  /**
+   * @generated from rpc agentfleet.v1.DashboardService.AnswerQuestion
+   */
+  answerQuestion: {
+    methodKind: "unary";
+    input: typeof AnswerQuestionRequestSchema;
+    output: typeof AnswerQuestionResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_agentfleet_v1_dashboard, 0);

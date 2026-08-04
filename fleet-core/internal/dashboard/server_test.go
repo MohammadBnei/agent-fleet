@@ -78,3 +78,22 @@ func TestServer_Stop_CustomReason(t *testing.T) {
 		t.Errorf("text = %q, want %q", store.lastText, "wrong direction")
 	}
 }
+
+func TestServer_AnswerQuestion(t *testing.T) {
+	store := &recordingStore{}
+	s := NewServer(nil, store, nil, nil)
+
+	answersJSON := `{"answers":{"Which quality attribute wins?":"Latency"}}`
+	req := connect.NewRequest(&agentfleetv1.AnswerQuestionRequest{TaskId: "task-1", Seq: 3, AnswersJson: answersJSON})
+	resp, err := s.AnswerQuestion(context.Background(), req)
+	if err != nil {
+		t.Fatalf("AnswerQuestion: %v", err)
+	}
+	if resp.Msg.GetStatus() != "answered" {
+		t.Errorf("status = %q, want %q", resp.Msg.GetStatus(), "answered")
+	}
+	if store.lastTaskID != "task-1" || store.lastFrom != "human" || store.lastText != answersJSON || store.lastType != "answer" {
+		t.Errorf("Append(%q, %q, %q, %q), want (task-1, human, %s, answer)",
+			store.lastTaskID, store.lastFrom, store.lastText, store.lastType, answersJSON)
+	}
+}

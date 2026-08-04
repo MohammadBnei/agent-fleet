@@ -1,6 +1,6 @@
 // Package mcpserver exposes the planning transcript over MCP
 // (send_message/wait_for_messages) — the same tool contract
-// worker/src/planning.ts's proposer/critic sessions already call today
+// worker/src/planning.ts's planner session already calls today
 // against mcp-redis, preserved verbatim to minimize prompt churn (see
 // docs/adr/0013). This is the only transport worker ever speaks to
 // fleet-core: never gRPC.
@@ -27,9 +27,9 @@ func New(store transcript.Store) http.Handler {
 	s := server.NewMCPServer("agent-fleet-core", "0.1.0")
 
 	s.AddTool(mcp.NewTool("send_message",
-		mcp.WithDescription("Append a message to this task's shared planning transcript (visible to proposer, critic, and the human via Discord relay)."),
+		mcp.WithDescription("Append a message to this task's shared planning transcript (visible to the planner and the human via Discord relay)."),
 		mcp.WithString("taskId", mcp.Required()),
-		mcp.WithString("from", mcp.Required(), mcp.Description("'proposer' | 'critic' | 'human'")),
+		mcp.WithString("from", mcp.Required(), mcp.Description("'planner' | 'human'")),
 		mcp.WithString("text", mcp.Required()),
 		mcp.WithString("type", mcp.Description("'discussion' | 'approve' | 'abort'")),
 		mcp.WithString("idempotencyKey"),
@@ -41,6 +41,11 @@ func New(store transcript.Store) http.Handler {
 		mcp.WithNumber("sinceIndex"),
 		mcp.WithNumber("timeoutMs"),
 	), waitForMessagesHandler(store))
+
+	s.AddTool(mcp.NewTool("AskUserQuestion",
+		mcp.WithDescription("Ask the human one or more structured multiple-choice questions. Answered via the web dashboard, not Discord — this call blocks (up to timeoutMs) until answered, or returns {\"status\":\"pending\"} if it times out first (call again with the same questions to keep waiting). See docs/adr/0018."),
+		mcp.WithInputSchema[AskUserQuestionArgs](),
+	), askUserQuestionHandler(store))
 
 	return server.NewStreamableHTTPServer(s)
 }

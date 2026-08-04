@@ -135,6 +135,20 @@ func (s *Server) KillE2E(ctx context.Context, req *connect.Request[agentfleetv1.
 	return connect.NewResponse(&agentfleetv1.KillE2EResponse{Killed: killed}), nil
 }
 
+// AnswerQuestion appends the human's answer to a pending QUESTION-type
+// transcript entry (posted by the planner's AskUserQuestion MCP tool call,
+// see docs/adr/0018) — the same Append() call Approve/Stop above make, just
+// with an opaque JSON payload instead of a fixed string. `req.Msg.Seq` isn't
+// used server-side for correlation (only one question is ever pending per
+// task at a time); it's carried through for the dashboard's own bookkeeping.
+func (s *Server) AnswerQuestion(ctx context.Context, req *connect.Request[agentfleetv1.AnswerQuestionRequest]) (*connect.Response[agentfleetv1.AnswerQuestionResponse], error) {
+	taskID := req.Msg.GetTaskId()
+	if _, err := s.transcr.Append(ctx, taskID, "human", req.Msg.GetAnswersJson(), "answer", uuid.NewString()); err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	return connect.NewResponse(&agentfleetv1.AnswerQuestionResponse{Status: "answered"}), nil
+}
+
 func taskToProto(t tasks.Task) *agentfleetv1.Task {
 	return &agentfleetv1.Task{
 		Id:          t.ID,
@@ -157,9 +171,9 @@ func entryToProto(taskID string, e transcript.Entry) *agentfleetv1.TranscriptEnt
 }
 
 // stringToProtoType maps the MCP wire's plain-string transcript type
-// ("" | "discussion" | "approve" | "abort") to the enum this proto message
-// uses — one direction only, nothing in this service ever needs
-// enum->string.
+// ("" | "discussion" | "approve" | "abort" | "question" | "answer") to the
+// enum this proto message uses — one direction only, nothing in this
+// service ever needs enum->string.
 func stringToProtoType(s string) agentfleetv1.TranscriptEntryType {
 	switch s {
 	case "discussion":
@@ -168,6 +182,10 @@ func stringToProtoType(s string) agentfleetv1.TranscriptEntryType {
 		return agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_APPROVE
 	case "abort":
 		return agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_ABORT
+	case "question":
+		return agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_QUESTION
+	case "answer":
+		return agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_ANSWER
 	default:
 		return agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_UNSPECIFIED
 	}

@@ -37,13 +37,13 @@ func NewStore(pool *pgxpool.Pool) *Store {
 	return &Store{pool: pool}
 }
 
-func (s *Store) CreateTask(ctx context.Context, repo, description, channelID, threadID string, skipCritique bool) (string, error) {
+func (s *Store) CreateTask(ctx context.Context, repo, description, channelID, threadID string) (string, error) {
 	var id string
 	err := s.pool.QueryRow(ctx, `
-		INSERT INTO tasks (repo, description, discord_channel_id, discord_thread_id, skip_critique)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO tasks (repo, description, discord_channel_id, discord_thread_id)
+		VALUES ($1, $2, $3, $4)
 		RETURNING id
-	`, repo, description, channelID, threadID, skipCritique).Scan(&id)
+	`, repo, description, channelID, threadID).Scan(&id)
 	if err != nil {
 		return "", fmt.Errorf("create task: %w", err)
 	}

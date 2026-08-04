@@ -34,7 +34,9 @@ double-claim the same task row.
   happen once per worker lifetime, not once per task.
 - A worker pod crash mid-task leaves that task `claimed`/`planning` in
   Postgres with no automatic requeue — currently a manual fix (see
-  `/fleet-debug`), not yet automated.
+  `/fleet-debug`), not yet automated. **Closed by
+  [0016](0016-task-crash-recovery-and-retry.md):** heartbeat-staleness reclaim
+  now automates this.
 - Adding a new target repo means adding a new worker deployment
   (`k8s/<repo>-worker.yaml`), not just a queue entry — see `/fleet-ops`.
 - `mvp-spec.md`'s Success Criteria describing "exactly one Kubernetes Job

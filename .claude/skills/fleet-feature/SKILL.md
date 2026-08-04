@@ -29,7 +29,7 @@ against a target repo. See `docs/ARCHITECTURE.md` for the full flow and
 3. Check whether the tool is needed in **both** planning and implementation
    phases — `REDIS_MCP_TOOLS` is shared across both `query()` calls in
    `runPlanningPhase`/`runImplementationPhase`, but if you ever split tool
-   sets per phase, don't forget the phase where the resumed proposer
+   sets per phase, don't forget the phase where the resumed planner
    session still needs it.
 
 ## Adding a new Discord slash command
@@ -54,11 +54,23 @@ every sync, see `k8s/agent-fleet-bot.yaml`), not just on fresh creates.
 Read `worker/src/planning.ts` in full first — `runPlanningPhase`'s loop
 structure (batch → `watchBatch` → checkpoint-or-return) and the
 `WatchOutcome`/`SessionFlags` types are the load-bearing state machine.
-Prefer extending `WatchOutcome`'s variants over adding parallel ad-hoc
-booleans. Any new guardrail should default to **unbounded/opt-in**, not a
-fixed cap — `docs/adr/0008` documents why fixed defaults (15, 40, 100
-turns) were all tried and repeatedly proved too tight for genuine
-exploration.
+`SessionFlags` is single-flag (`{ sessionEnded: boolean }`) as of
+`docs/adr/0017` — planning is one `query()` session (`from: "planner"`),
+not a proposer/critic pair. Prefer extending `WatchOutcome`'s variants over
+adding parallel ad-hoc booleans. Any new guardrail should default to
+**unbounded/opt-in**, not a fixed cap — `docs/adr/0008` documents why fixed
+defaults (15, 40, 100 turns) were all tried and repeatedly proved too tight
+for genuine exploration.
+
+**Interview/doubt gating logic belongs in `plannerPrompt`, not
+`watchBatch`.** Whether `architecture-interview`/`doubt-driven-development`
+run is the planner's own judgment call, described in its prompt text —
+`watchBatch` only sees `PLAN_READY:`-prefixed `send_message` posts (the
+round-cap counting convention) and has no visibility into which pipeline
+stages actually ran for a given round. Don't add a new boolean/env flag to
+gate this — `docs/adr/0017` deliberately dropped the old `skip_critique`
+`/task`-time knob in favor of the planner deciding per task, with Mohammad
+able to interject live in the thread instead.
 
 ## Before committing
 

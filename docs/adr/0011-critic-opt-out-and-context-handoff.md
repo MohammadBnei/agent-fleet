@@ -1,6 +1,6 @@
 # ADR-0011: Critic session is opt-out (human-only), plus proposer→critic context handoff
 
-**Status:** Accepted
+**Status:** Superseded by [0017](0017-single-session-planning-pipeline.md)
 **Date:** 2026-07-31
 
 ## Context

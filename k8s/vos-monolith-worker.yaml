@@ -43,6 +43,8 @@ env:
     value: "vos-monolith-worker"
   - name: BASE_BRANCH
     value: "dev" # vos-monolith's actual default/dev branch — main only gets prod tag bumps, see infra-bootstrap's gitops/apps/registry.yaml comment
+  - name: CLAUDE_CONFIG_DIR
+    value: "/workspace/.claude-home" # relocate ~/.claude (session transcripts, credentials cache) onto the same RWX PVC as the git worktrees, so a crash-restarted pod can actually resume a session — see docs/adr/0016
 
 # RWX (not RWO) — see dream-analyst-worker.yaml's comment: lets
 # e2e-provisioner mount this same PVC into an ephemeral e2e pod via a
