@@ -1,5 +1,27 @@
 # Changelog
 
+# [1.0.0](https://github.com/MohammadBnei/agent-fleet/compare/0.7.0...1.0.0) (2026-08-04)
+
+
+* feat!: replace Redis coordination with Go fleet-core; rewrite e2e-provisioner and bot in Go ([56d1b09](https://github.com/MohammadBnei/agent-fleet/commit/56d1b09ba6565a587e15ad443cb454686aaecb9e))
+
+
+### Bug Fixes
+
+* **ci:** buf breaking git ref, missing protoc-gen plugin installs, caching ([943b963](https://github.com/MohammadBnei/agent-fleet/commit/943b9630348b48b59118213717a53ea4431dd59f))
+* **ci:** pin golangci-lint v2.12.2 + action v9 for go1.26 support ([354a884](https://github.com/MohammadBnei/agent-fleet/commit/354a88435fd528c80ffb9e154a4996687a599ba6))
+* **test:** use a log-occurrence wait strategy for testcontainers postgres ([1e883a2](https://github.com/MohammadBnei/agent-fleet/commit/1e883a2809063eabc299f49d3359b7c8c76f3d19))
+
+
+### BREAKING CHANGES
+
+* bot/ and mcp-redis/ no longer exist; REDIS_* env vars are
+no longer read by any component. Requires a coordinated redeploy (new
+fleet-core.yaml, e2e-provisioner Deployment env/port changes in
+infra-bootstrap) and an empty task queue at cutover time.
+
+Co-Authored-By: ukubi-claude-macbook <noreply@bnei.dev>
+
 # [0.7.0](https://github.com/MohammadBnei/agent-fleet/compare/0.6.0...0.7.0) (2026-08-01)
 
 
