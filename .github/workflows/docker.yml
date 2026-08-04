@@ -28,7 +28,60 @@ env:
   INFISICAL_PROJECT_ID: ae771c2c-5115-452a-8f1c-1e03fa0e2b9a
 
 jobs:
+  # Precise CI on pull_request: only build/test the image(s) whose files
+  # actually changed in this PR — nothing is pushed on a PR anyway
+  # (`push: false` below), so this is pure CI-time cost, safe to skip.
+  # On a real release (push: tags), this filtering is bypassed entirely —
+  # every image always builds+pushes, full stop. A release tag has to
+  # produce a complete, consistent set of images; skipping one because its
+  # dir "didn't change since this PR's diff" would leave deploy's
+  # k8s/*.yaml tag-bump pointing at a tag some image was never actually
+  # pushed under.
+  changes:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    # Setting ANY permissions here resets every other permission to `none`
+    # for this job's GITHUB_TOKEN (not just the ones listed) — contents:
+    # read must be explicit or actions/checkout's own clone fails.
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      worker: ${{ steps.filter.outputs.worker }}
+      e2e-runner: ${{ steps.filter.outputs.e2e-runner }}
+      go-components: ${{ steps.components.outputs.result }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v4
+        id: filter
+        with:
+          filters: |
+            worker:
+              - 'worker/**'
+            e2e-runner:
+              - 'e2e-runner/**'
+            proto:
+              - 'proto/**'
+            fleet-core:
+              - 'fleet-core/**'
+            e2e-provisioner:
+              - 'e2e-provisioner/**'
+      - name: Compute go-components matrix
+        id: components
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const proto = ${{ steps.filter.outputs.proto }};
+            const fleetCore = ${{ steps.filter.outputs.fleet-core }};
+            const e2eProvisioner = ${{ steps.filter.outputs.e2e-provisioner }};
+            const components = [];
+            if (proto || fleetCore) components.push('fleet-core');
+            if (proto || e2eProvisioner) components.push('e2e-provisioner');
+            return components;
+
   build-push:
+    needs: changes
+    if: always() && (github.event_name == 'push' || needs.changes.outputs.worker == 'true')
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false # one image's test/build failure shouldn't hide the other's status
@@ -132,6 +185,8 @@ jobs:
   # no package.json/tests, it's a plain image build — a few duplicated
   # steps here are cheaper than conditional-skip logic in the shared job.
   build-push-e2e-runner:
+    needs: changes
+    if: always() && (github.event_name == 'push' || needs.changes.outputs.e2e-runner == 'true')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -198,11 +253,17 @@ jobs:
   # this job's job is just the Docker packaging step, same division of
   # labor and same PR-safe tag computation as build-push-e2e-runner.
   build-push-go:
+    needs: changes
+    # On push (release), always the full set — go-components is only
+    # computed on pull_request (see the changes job's own `if`), so
+    # fall back to the complete list explicitly here rather than reading
+    # an output that job never produced.
+    if: always() && (github.event_name == 'push' || needs.changes.outputs.go-components != '[]')
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        component: [fleet-core, e2e-provisioner]
+        component: ${{ github.event_name == 'push' && fromJSON('["fleet-core","e2e-provisioner"]') || fromJSON(needs.changes.outputs.go-components) }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
