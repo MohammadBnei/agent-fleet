@@ -75,11 +75,15 @@ jobs:
         with:
           script: |
             const proto = ${{ steps.filter.outputs.proto }};
-            const core = ${{ steps.filter.outputs.core }};
+            // Not named `core` — actions/github-script already injects its
+            // own `core` (the @actions/core toolkit) into this scope;
+            // shadowing it throws "Identifier 'core' has already been
+            // declared".
+            const coreChanged = ${{ steps.filter.outputs.core }};
             const provisioner = ${{ steps.filter.outputs.provisioner }};
             const sidecar = ${{ steps.filter.outputs.sidecar }};
             const components = [];
-            if (proto || core) components.push('core');
+            if (proto || coreChanged) components.push('core');
             if (proto || provisioner) components.push('provisioner');
             if (proto || sidecar) components.push('sidecar');
             return components;
