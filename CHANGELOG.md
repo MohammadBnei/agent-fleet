@@ -1,5 +1,17 @@
 # Changelog
 
+# [1.1.0](https://github.com/MohammadBnei/agent-fleet/compare/1.0.2...1.1.0) (2026-08-04)
+
+
+### Bug Fixes
+
+* **ci:** track a dist/.gitkeep placeholder for fleet-core's webui embed ([f40ad31](https://github.com/MohammadBnei/agent-fleet/commit/f40ad3194cc24d63856866ec5249a8bb616ef26b))
+
+
+### Features
+
+* add web dashboard backend + SPA to fleet-core ([6d2c920](https://github.com/MohammadBnei/agent-fleet/commit/6d2c920ffd640aa458bc93309b74a4ce2b64a98f))
+
 ## [1.0.2](https://github.com/MohammadBnei/agent-fleet/compare/1.0.1...1.0.2) (2026-08-04)
 
 
