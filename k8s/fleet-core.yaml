@@ -17,7 +17,7 @@ image:
   repository: mohammaddocker/agent-fleet-fleet-core
   # Pinned, bumped automatically by .github/workflows/docker.yml's deploy
   # job on every release tag.
-  tag: "1.1.0"
+  tag: "1.1.1"
 
 service:
   port: 8080 # MCP HTTP endpoint (worker's send_message/wait_for_messages), /healthz, and the dashboard's /api/* + SSE + static SPA
@@ -99,5 +99,5 @@ hooks:
     type: PreSync
     image:
       repository: mohammaddocker/agent-fleet-fleet-core
-      tag: "1.1.0"
+      tag: "1.1.1"
     command: ["/fleet-core", "migrate"]
