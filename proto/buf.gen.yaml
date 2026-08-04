@@ -6,6 +6,17 @@ plugins:
   - local: protoc-gen-go-grpc
     out: gen/go
     opt: paths=source_relative
+  - local: protoc-gen-connect-go
+    out: gen/go
+    opt: paths=source_relative
+  # Connect-ES v2: protoc-gen-es alone generates both messages and service
+  # descriptors (GenService, consumed directly by @connectrpc/connect's
+  # createClient) — the separate protoc-gen-connect-es plugin is for the
+  # older v1 API and produces an incompatible descriptor shape, so it's
+  # deliberately not listed here.
+  - local: ../dashboard/node_modules/.bin/protoc-gen-es
+    out: ../dashboard/src/gen
+    opt: target=ts
   - local: ../worker/node_modules/.bin/protoc-gen-ts_proto
     out: ../worker/src/gen
     opt:

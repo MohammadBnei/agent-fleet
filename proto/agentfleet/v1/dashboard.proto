@@ -1,0 +1,99 @@
+syntax = "proto3";
+package agentfleet.v1;
+option go_package = "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1;agentfleetv1";
+
+import "agentfleet/v1/transcript.proto";
+
+// The web dashboard's API (see docs/adr/0015) — served over ConnectRPC by
+// fleet-core, consumed by a generated connect-web client in dashboard/.
+// Reuses transcript.proto's TranscriptEntry/ReadTranscriptSinceRequest/
+// ReadTranscriptSinceResponse rather than redefining them: that message
+// set was placed there anticipating exactly this "non-MCP client" (see
+// transcript.proto's own comment, docs/adr/0013). Field names are
+// snake_case here per proto convention; generated TS/JS renders them
+// camelCase (e.g. thread_id -> threadId).
+
+message Task {
+  string id = 1;
+  string repo = 2;
+  string description = 3;
+  string status = 4;
+  optional string thread_id = 5;
+  optional string pr_url = 6;
+}
+
+message ListTasksRequest {
+  int32 limit = 1;
+}
+
+message ListTasksResponse {
+  repeated Task tasks = 1;
+}
+
+message GetTaskRequest {
+  string id = 1;
+}
+
+message GetTaskResponse {
+  Task task = 1;
+}
+
+// Streamed directly as `stream TranscriptEntry` on the RPC below — no
+// wrapper response message, unlike the unary GetTranscript (which reuses
+// transcript.proto's ReadTranscriptSinceResponse).
+message StreamTranscriptRequest {
+  string task_id = 1;
+  int64 since_seq = 2;
+}
+
+message GetE2eStatusRequest {
+  string task_id = 1;
+}
+
+message GetE2eStatusResponse {
+  string status = 1;
+  string preview_url = 2;
+}
+
+message ApproveRequest {
+  string task_id = 1;
+}
+
+message ApproveResponse {
+  string status = 1;
+}
+
+message StopRequest {
+  string task_id = 1;
+  optional string reason = 2;
+}
+
+message StopResponse {
+  string status = 1;
+}
+
+message KillE2eRequest {
+  string task_id = 1;
+}
+
+message KillE2eResponse {
+  bool killed = 1;
+}
+
+service DashboardService {
+  rpc ListTasks(ListTasksRequest) returns (ListTasksResponse);
+  rpc GetTask(GetTaskRequest) returns (GetTaskResponse);
+  // Reuses transcript.proto's ReadTranscriptSinceRequest/Response rather
+  // than duplicating a byte-identical message pair.
+  // buf:lint:ignore RPC_REQUEST_STANDARD_NAME
+  // buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+  rpc GetTranscript(ReadTranscriptSinceRequest) returns (ReadTranscriptSinceResponse);
+  // Streams transcript.proto's TranscriptEntry directly rather than
+  // wrapping it in a redundant StreamTranscriptResponse.
+  // buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+  rpc StreamTranscript(StreamTranscriptRequest) returns (stream TranscriptEntry);
+  rpc GetE2eStatus(GetE2eStatusRequest) returns (GetE2eStatusResponse);
+  rpc Approve(ApproveRequest) returns (ApproveResponse);
+  rpc Stop(StopRequest) returns (StopResponse);
+  rpc KillE2e(KillE2eRequest) returns (KillE2eResponse);
+}

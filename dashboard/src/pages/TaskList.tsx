@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { listTasks, type Task } from "../api";
+import { client } from "../connectClient";
+import type { Task } from "../gen/agentfleet/v1/dashboard_pb";
 
 const STATUS_BADGE: Record<string, string> = {
   pending: "badge-neutral",
@@ -10,9 +11,9 @@ const STATUS_BADGE: Record<string, string> = {
   cancelled: "badge-warning",
 };
 
-// Plain polling, not SSE — a second global live feed just for the list is
-// unjustified scope for v1 (see docs/adr/0013); the detail view's SSE
-// stream is where "live" actually matters.
+// Plain polling, not a stream — a second live feed just for the list is
+// unjustified scope for v1 (see docs/adr/0014); the detail view's
+// StreamTranscript RPC is where "live" actually matters.
 const POLL_INTERVAL_MS = 5000;
 
 export function TaskList({
@@ -28,9 +29,10 @@ export function TaskList({
   useEffect(() => {
     let cancelled = false;
     const load = () => {
-      listTasks()
-        .then((list) => {
-          if (!cancelled) setTasks(list);
+      client
+        .listTasks({})
+        .then((res) => {
+          if (!cancelled) setTasks(res.tasks);
         })
         .catch((err: Error) => {
           if (!cancelled) setError(err.message);

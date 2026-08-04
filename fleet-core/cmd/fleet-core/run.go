@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"connectrpc.com/connect"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/MohammadBnei/agent-fleet/fleet-core/internal/config"
@@ -17,6 +18,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/fleet-core/internal/tasks"
 	"github.com/MohammadBnei/agent-fleet/fleet-core/internal/transcript"
 	"github.com/MohammadBnei/agent-fleet/fleet-core/internal/webui"
+	"github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1/agentfleetv1connect"
 )
 
 func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool) error {
@@ -46,7 +48,12 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool) error {
 	mux := http.NewServeMux()
 	mux.Handle("/mcp", mcpserver.New(store))
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
-	dashboard.Register(mux, taskStore, store, e2eClient, hub)
+	dashboardSvc := dashboard.NewServer(taskStore, store, e2eClient, hub)
+	dashboardPath, dashboardHandler := agentfleetv1connect.NewDashboardServiceHandler(
+		dashboardSvc,
+		connect.WithInterceptors(dashboard.NewCSRFInterceptor()),
+	)
+	mux.Handle(dashboardPath, dashboardHandler)
 	mux.Handle("/", webui.Handler())
 	httpServer := &http.Server{Addr: ":" + cfg.Port, Handler: mux}
 

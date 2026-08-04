@@ -22,5 +22,6 @@ Decisions with no real alternative ever on the table live in
 | [0010](0010-shared-rwx-pvc-across-apps.md) | Shared `ReadWriteMany` PVC across bot + both workers | Accepted |
 | [0011](0011-critic-opt-out-and-context-handoff.md) | Critic session is opt-out (human-only), plus proposer→critic context handoff | Accepted |
 | [0012](0012-e2e-provisioner-standalone-app.md) | On-demand e2e test environments via a standalone e2e-provisioner | Accepted |
-| [0013](0013-go-fleet-core-and-e2e-provisioner-rewrite.md) | Go `fleet-core` replaces Redis coordination; `e2e-provisioner`/`bot` rewritten in Go | Accepted |
+| [0013](0013-go-fleet-core-and-e2e-provisioner-rewrite.md) | Go `fleet-core` replaces Redis coordination; `e2e-provisioner`/`bot` rewritten in Go | Accepted (two lines on gRPC/connect-es superseded by [0015](0015-connectrpc-dashboard-api.md)) |
 | [0014](0014-fleet-core-dashboard-backend.md) | fleet-core as the web dashboard's backend | Accepted |
+| [0015](0015-connectrpc-dashboard-api.md) | ConnectRPC replaces the dashboard's REST+SSE API | Accepted |

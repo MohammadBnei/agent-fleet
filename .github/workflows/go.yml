@@ -13,9 +13,10 @@ on:
     branches: [main]
 
 env:
-  BUF_VERSION: '1.55.1'
-  PROTOC_GEN_GO_VERSION: 'v1.36.1'
-  PROTOC_GEN_GO_GRPC_VERSION: 'v1.3.0'
+  BUF_VERSION: '1.72.0'
+  PROTOC_GEN_GO_VERSION: 'v1.36.11'
+  PROTOC_GEN_GO_GRPC_VERSION: 'v1.6.2'
+  PROTOC_GEN_CONNECT_GO_VERSION: 'v1.20.0'
 
 jobs:
   # Precise CI: only run a module's vet/lint/test against what actually
@@ -114,24 +115,34 @@ jobs:
       # those separately, keyed on the pinned plugin versions above, so a
       # version bump invalidates the cache instead of silently reusing a
       # stale binary.
-      - name: Cache protoc-gen-go / protoc-gen-go-grpc binaries
+      - name: Cache protoc-gen-go / protoc-gen-go-grpc / protoc-gen-connect-go binaries
         id: protoc-gen-cache
         uses: actions/cache@v4
         with:
           path: ~/go/bin
-          key: protoc-gen-${{ runner.os }}-${{ env.PROTOC_GEN_GO_VERSION }}-${{ env.PROTOC_GEN_GO_GRPC_VERSION }}
+          key: protoc-gen-${{ runner.os }}-${{ env.PROTOC_GEN_GO_VERSION }}-${{ env.PROTOC_GEN_GO_GRPC_VERSION }}-${{ env.PROTOC_GEN_CONNECT_GO_VERSION }}
 
-      - name: Install protoc-gen-go / protoc-gen-go-grpc
+      - name: Install protoc-gen-go / protoc-gen-go-grpc / protoc-gen-connect-go
         if: steps.protoc-gen-cache.outputs.cache-hit != 'true'
         run: |
           go install google.golang.org/protobuf/cmd/protoc-gen-go@${{ env.PROTOC_GEN_GO_VERSION }}
           go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@${{ env.PROTOC_GEN_GO_GRPC_VERSION }}
+          go install connectrpc.com/connect/cmd/protoc-gen-connect-go@${{ env.PROTOC_GEN_CONNECT_GO_VERSION }}
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
 
-      - name: Install ts-proto (buf generate's local TS plugin)
+      - name: Install ts-proto (worker's local TS plugin)
         working-directory: worker
+        run: bun install --frozen-lockfile
+
+      # protoc-gen-es (dashboard's local TS plugin, Connect-ES v2 — see
+      # docs/adr/0015: no separate protoc-gen-connect-es needed, protoc-gen-es
+      # alone generates both messages and service descriptors) — version
+      # pinned via dashboard/package.json/bun.lock, no separate env var
+      # needed, same convention as ts-proto above.
+      - name: Install protoc-gen-es (dashboard's local TS plugin)
+        working-directory: dashboard
         run: bun install --frozen-lockfile
 
       - name: buf generate drift check
@@ -139,7 +150,7 @@ jobs:
         run: |
           export PATH="$HOME/go/bin:$PATH"
           buf generate
-          git diff --exit-code -- gen ../worker/src/gen
+          git diff --exit-code -- gen ../worker/src/gen ../dashboard/src/gen
 
   go:
     needs: changes

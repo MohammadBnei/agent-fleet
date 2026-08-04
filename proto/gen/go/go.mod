@@ -3,6 +3,7 @@ module github.com/MohammadBnei/agent-fleet/proto/gen/go
 go 1.26.5
 
 require (
+	connectrpc.com/connect v1.20.0
 	google.golang.org/grpc v1.83.0
 	google.golang.org/protobuf v1.36.11
 )

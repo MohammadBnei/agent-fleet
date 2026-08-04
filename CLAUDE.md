@@ -25,7 +25,7 @@ secrets backend); this repo owns the fleet's own source and deploy config.
 | Discord | `discordgo` (Go, in `fleet-core/`) |
 | Coordination | Postgres `planning_transcript` — pull/cursor reads via `fleet-core`'s MCP server, real idempotency-keyed dedup, not pub/sub (see `docs/adr/0013`) |
 | MCP | `mark3labs/mcp-go` HTTP server (Go, `fleet-core/`/`e2e-provisioner/`), `@modelcontextprotocol/sdk` HTTP client (TS, `worker/`) |
-| gRPC/proto | `buf`-managed `.proto` schema (`proto/`) — the one real gRPC call in the fleet: `fleet-core` → `e2e-provisioner` |
+| gRPC/proto | `buf`-managed `.proto` schema (`proto/`) — the one real internal gRPC call in the fleet (`fleet-core` → `e2e-provisioner`), plus the dashboard's ConnectRPC API (`fleet-core` ↔ `dashboard/`, `connect-go`/`connect-web`, see `adr/0015`) |
 | Kubernetes client | `client-go` (`e2e-provisioner/`) |
 | Database | `pg` (`worker/`), `jackc/pgx/v5` (Go services) against `agentfleetdb` (Pigsty-managed Postgres, shared with the rest of the homelab) |
 | Deploy | Docker (`worker/Dockerfile`, `fleet-core/Dockerfile`, `e2e-provisioner/Dockerfile`), two-source ArgoCD Application (chart from `infra-bootstrap`, values from `k8s/` here) |
@@ -38,10 +38,10 @@ secrets backend); this repo owns the fleet's own source and deploy config.
 | `docs/ARCHITECTURE.md` | Canonical topology + current features (the WHAT) |
 | `docs/DECISIONS.md` | Canonical settled decisions, forbidden patterns (the WHY, short form) |
 | `docs/adr/` | One Architecture Decision Record per real decision |
-| `fleet-core/` | Go — Discord ingress + planning-transcript coordination + Loki queries + the web dashboard's REST/SSE API and static SPA, one binary, no cluster RBAC |
-| `dashboard/` | React + Vite + TypeScript + Tailwind/DaisyUI SPA, built into `fleet-core`'s binary — not deployed on its own |
+| `fleet-core/` | Go — Discord ingress + planning-transcript coordination + Loki queries + the web dashboard's ConnectRPC API and static SPA, one binary, no cluster RBAC |
+| `dashboard/` | React + Vite + TypeScript + Tailwind/DaisyUI SPA, talks to `fleet-core` via a generated ConnectRPC client, built into `fleet-core`'s binary — not deployed on its own |
 | `worker/` | The Claude Code worker (TS/Bun) — polls tasks, runs planning + implementation phases |
-| `proto/` | buf-managed `.proto` schema shared by `fleet-core`/`e2e-provisioner` (Go codegen) and `worker` (TS codegen) |
+| `proto/` | buf-managed `.proto` schema shared by `fleet-core`/`e2e-provisioner` (Go codegen) and `worker`/`dashboard` (TS codegen) |
 | `db/schema.sql` | Shared `tasks`/`knowledge_journal`/`planning_transcript`/`e2e_sessions` tables (`agentfleetdb`) |
 | `k8s/` | Helm values consumed by `infra-bootstrap`'s two-source ArgoCD Applications |
 | `e2e-provisioner/` | Go — the only fleet component with cluster RBAC, provisions on-demand e2e pods |

@@ -1,9 +1,10 @@
 # fleet-core — Discord ingress + planning-transcript coordination +
-# log/introspection queries + the web dashboard's REST/SSE API and static
+# log/introspection queries + the web dashboard's ConnectRPC API and static
 # SPA, folded into one Go binary (see docs/adr/0013, which supersedes
 # docs/adr/0001's Redis-list design and replaces this repo's former
-# agent-fleet-bot.yaml + the mcp-redis/ package; docs/adr/0014 adds the
-# dashboard on top). Deployed via infra-bootstrap's common-app-chart as a
+# agent-fleet-bot.yaml + the mcp-redis/ package; docs/adr/0014 added the
+# dashboard, docs/adr/0015 replaced its REST/SSE transport with
+# ConnectRPC). Deployed via infra-bootstrap's common-app-chart as a
 # two-source Application (chart from infra-bootstrap, these values from
 # this repo) — see this repo's own README.md and infra-bootstrap's
 # gitops/README.md.
@@ -20,7 +21,7 @@ image:
   tag: "1.1.1"
 
 service:
-  port: 8080 # MCP HTTP endpoint (worker's send_message/wait_for_messages), /healthz, and the dashboard's /api/* + SSE + static SPA
+  port: 8080 # MCP HTTP endpoint (worker's send_message/wait_for_messages), /healthz, the dashboard's ConnectRPC API + static SPA
 
 # This app's first public-facing surface (the dashboard) — hostname itself
 # is driven by infra-bootstrap's gitops/apps/registry.yaml entry (its
