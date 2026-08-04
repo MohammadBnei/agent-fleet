@@ -18,7 +18,57 @@ env:
   PROTOC_GEN_GO_GRPC_VERSION: 'v1.3.0'
 
 jobs:
+  # Precise CI: only run a module's vet/lint/test against what actually
+  # changed. proto/ changes count as a change for every consumer (Go
+  # codegen + worker's ts-proto codegen both come from it). This job never
+  # gates a push/deploy step (go.yml only checks correctness, doesn't
+  # build/push images), so it's safe to apply on every trigger, unlike
+  # docker.yml's equivalent (see that file's comment on why its filtering
+  # is pull_request-only).
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    outputs:
+      proto: ${{ steps.filter.outputs.proto }}
+      go-modules: ${{ steps.modules.outputs.result }}
+    steps:
+      # fetch-depth: 0 (not the default shallow 1) — this job also runs on
+      # push-to-main, where paths-filter needs to diff against the
+      # previous commit; the default single-commit checkout wouldn't have
+      # it. pull_request events don't need this (paths-filter uses the API
+      # there) but it's harmless either way.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dorny/paths-filter@v4
+        id: filter
+        with:
+          filters: |
+            proto:
+              - 'proto/**'
+            fleet-core:
+              - 'fleet-core/**'
+            e2e-provisioner:
+              - 'e2e-provisioner/**'
+      # A proto/ change affects every Go module's generated code, so it
+      # counts as a change for both, on top of each module's own filter.
+      - name: Compute go-modules matrix
+        id: modules
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const proto = ${{ steps.filter.outputs.proto }};
+            const fleetCore = ${{ steps.filter.outputs.fleet-core }};
+            const e2eProvisioner = ${{ steps.filter.outputs.e2e-provisioner }};
+            const modules = [];
+            if (proto || fleetCore) modules.push('fleet-core');
+            if (proto || e2eProvisioner) modules.push('e2e-provisioner');
+            return modules;
+
   buf:
+    needs: changes
+    if: needs.changes.outputs.proto == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -88,11 +138,13 @@ jobs:
           git diff --exit-code -- gen ../worker/src/gen
 
   go:
+    needs: changes
+    if: needs.changes.outputs.go-modules != '[]'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        module: [fleet-core, e2e-provisioner]
+        module: ${{ fromJSON(needs.changes.outputs.go-modules) }}
     services:
       postgres:
         image: postgres:16
