@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1](https://github.com/MohammadBnei/agent-fleet/compare/1.0.0...1.0.1) (2026-08-04)
+
+
+### Bug Fixes
+
+* **logs:** use JSON structured logging, not slog's default text handler ([68ea8b8](https://github.com/MohammadBnei/agent-fleet/commit/68ea8b8110b804267a0382b640da4c306081bd82))
+
 # [1.0.0](https://github.com/MohammadBnei/agent-fleet/compare/0.7.0...1.0.0) (2026-08-04)
 
 
