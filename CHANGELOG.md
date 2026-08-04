@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.2](https://github.com/MohammadBnei/agent-fleet/compare/1.0.1...1.0.2) (2026-08-04)
+
+
+### Bug Fixes
+
+* **ci:** contents: read alongside pull-requests: read on the changes job ([9eeb9f4](https://github.com/MohammadBnei/agent-fleet/commit/9eeb9f4015b37d7a46d4daf1b2aa4aad555b1d41))
+
 ## [1.0.1](https://github.com/MohammadBnei/agent-fleet/compare/1.0.0...1.0.1) (2026-08-04)
 
 
