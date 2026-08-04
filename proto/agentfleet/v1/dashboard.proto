@@ -105,10 +105,12 @@ service DashboardService {
   // than duplicating a byte-identical message pair.
   // buf:lint:ignore RPC_REQUEST_STANDARD_NAME
   // buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+  // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
   rpc GetTranscript(ReadTranscriptSinceRequest) returns (ReadTranscriptSinceResponse);
   // Streams transcript.proto's TranscriptEntry directly rather than
   // wrapping it in a redundant StreamTranscriptResponse.
   // buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+  // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
   rpc StreamTranscript(StreamTranscriptRequest) returns (stream TranscriptEntry);
   rpc GetE2eStatus(GetE2eStatusRequest) returns (GetE2eStatusResponse);
   rpc Approve(ApproveRequest) returns (ApproveResponse);

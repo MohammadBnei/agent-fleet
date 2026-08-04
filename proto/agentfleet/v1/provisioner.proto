@@ -1,0 +1,141 @@
+syntax = "proto3";
+package agentfleet.v1;
+option go_package = "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1;agentfleetv1";
+
+// provisioner is the gRPC server, core is the client — the same direction
+// this service has always had (see docs/adr/0013), just renamed and grown.
+// Originally e2e-only ("e2e-provisioner" / "E2eProvisionerService"); as of
+// docs/adr/0019 the provisioner also spawns and tears down worker pods, so
+// this service grew CreateWorkerPod/TearDownSession alongside the
+// unchanged e2e-session RPCs. Per docs/adr/0020's hub-and-spoke rule, core
+// is the *only* client of this service — no worker pod or sidecar ever
+// calls it directly, including for e2e requests (those are proxied through
+// core.proto's CoreService instead).
+
+message KillE2eSessionRequest {
+  string task_id = 1;
+  string idempotency_key = 2;
+}
+
+message KillE2eSessionResponse {
+  bool killed = 1; // false = no active session for this task
+}
+
+message GetE2eSessionStatusRequest {
+  string task_id = 1;
+}
+
+message GetE2eSessionStatusResponse {
+  string status = 1; // "requested"|"running"|"failed"|"torn_down"|"" (none)
+  string preview_url = 2;
+}
+
+// Requests an on-demand e2e preview pod for taskId (mounts the same
+// worktree the task's worker pod is using, docs/adr/0012). Was previously
+// triggered by the worker calling e2e-provisioner's /mcp/:taskId directly;
+// under docs/adr/0020's hub-and-spoke rule the request now routes
+// sidecar -> core (CoreService.RequestE2eEnv) -> provisioner (this RPC) —
+// core is the only caller.
+message CreateE2eSessionRequest {
+  string task_id = 1;
+  string repo = 2;
+}
+
+message CreateE2eSessionResponse {
+  string status = 1;
+  string preview_url = 2;
+}
+
+// Which kind of session/pod an operation targets — worker pods and e2e
+// preview pods share the provisioner's reconcile/teardown machinery
+// (docs/adr/0019) but are tracked and torn down independently.
+enum SessionKind {
+  SESSION_KIND_UNSPECIFIED = 0;
+  SESSION_KIND_WORKER = 1;
+  SESSION_KIND_E2E = 2;
+}
+
+// Provisioner does the clone/fetch/worktree-add (docs/adr/0019 point 2 —
+// the provisioner owns the entire git lifecycle on the shared PVC, worker
+// pods never touch git themselves) and the two-container pod creation
+// (worker + sidecar, docs/adr/0020 point 5) synchronously, returning once
+// the pod is scheduled. core calls this from its own dispatch loop after
+// claiming a task — the provisioner never claims tasks itself
+// (docs/adr/0020 point 2, correcting docs/adr/0019 points 4-5).
+message CreateWorkerPodRequest {
+  string task_id = 1;
+  string repo = 2;
+  string repo_url = 3;
+  string base_branch = 4;
+  // description and lease_id are handed straight through to the worker
+  // pod's env — the worker no longer fetches its own task row at all
+  // (docs/adr/0020 point 1: it holds no DB credentials, direct or
+  // otherwise), so whatever it needs has to arrive at pod creation time.
+  string description = 5;
+  string lease_id = 6;
+}
+
+message CreateWorkerPodResponse {
+  string pod_name = 1;
+}
+
+// core owns `tasks` and therefore decides when a session should tear
+// down (task reached done/failed/cancelled, or an explicit kill) —
+// the provisioner no longer polls/joins against `tasks.status` itself
+// (docs/adr/0020 point 1: it holds no DB credentials at all). The
+// provisioner's own reconcile loop keeps doing pure-k8s orphan detection
+// independently of this RPC.
+message TearDownSessionRequest {
+  string task_id = 1;
+  SessionKind kind = 2;
+}
+
+message TearDownSessionResponse {
+  bool torn_down = 1; // false = nothing to tear down
+}
+
+// The e2e pod's own MCP server (Playwright automation) exposes a tool set
+// discovered at runtime, not a fixed enumerable list — these two RPCs are
+// a generic passthrough, mirroring what today's mcpproxy.Proxy already
+// does in-process. Proxied sidecar -> core -> provisioner -> e2e pod,
+// same hub-and-spoke rule as everything else (docs/adr/0020) — the extra
+// hop's latency cost was already named and accepted in that ADR's
+// Alternatives, not an oversight here.
+message ListE2eToolsRequest {
+  string task_id = 1;
+}
+
+message E2eToolDescriptor {
+  string name = 1;
+  string description = 2;
+  string input_schema_json = 3;
+}
+
+message ListE2eToolsResponse {
+  repeated E2eToolDescriptor tools = 1;
+}
+
+message CallE2eToolRequest {
+  string task_id = 1;
+  string tool_name = 2;
+  string arguments_json = 3;
+}
+
+message CallE2eToolResponse {
+  string result_json = 1;
+  bool is_error = 2;
+}
+
+service ProvisionerService {
+  rpc KillE2eSession(KillE2eSessionRequest) returns (KillE2eSessionResponse);
+  rpc GetE2eSessionStatus(GetE2eSessionStatusRequest) returns (GetE2eSessionStatusResponse);
+  rpc CreateE2eSession(CreateE2eSessionRequest) returns (CreateE2eSessionResponse);
+  // Reused by core.proto's own ListE2eTools/CallE2eTool one hop further
+  // down the passthrough chain (see that file's comment).
+  // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+  rpc ListE2eTools(ListE2eToolsRequest) returns (ListE2eToolsResponse);
+  // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+  rpc CallE2eTool(CallE2eToolRequest) returns (CallE2eToolResponse);
+  rpc CreateWorkerPod(CreateWorkerPodRequest) returns (CreateWorkerPodResponse);
+  rpc TearDownSession(TearDownSessionRequest) returns (TearDownSessionResponse);
+}

@@ -69,10 +69,12 @@ type DashboardServiceClient interface {
 	// than duplicating a byte-identical message pair.
 	// buf:lint:ignore RPC_REQUEST_STANDARD_NAME
 	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	GetTranscript(context.Context, *connect.Request[v1.ReadTranscriptSinceRequest]) (*connect.Response[v1.ReadTranscriptSinceResponse], error)
 	// Streams transcript.proto's TranscriptEntry directly rather than
 	// wrapping it in a redundant StreamTranscriptResponse.
 	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	StreamTranscript(context.Context, *connect.Request[v1.StreamTranscriptRequest]) (*connect.ServerStreamForClient[v1.TranscriptEntry], error)
 	GetE2EStatus(context.Context, *connect.Request[v1.GetE2EStatusRequest]) (*connect.Response[v1.GetE2EStatusResponse], error)
 	Approve(context.Context, *connect.Request[v1.ApproveRequest]) (*connect.Response[v1.ApproveResponse], error)
@@ -215,10 +217,12 @@ type DashboardServiceHandler interface {
 	// than duplicating a byte-identical message pair.
 	// buf:lint:ignore RPC_REQUEST_STANDARD_NAME
 	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	GetTranscript(context.Context, *connect.Request[v1.ReadTranscriptSinceRequest]) (*connect.Response[v1.ReadTranscriptSinceResponse], error)
 	// Streams transcript.proto's TranscriptEntry directly rather than
 	// wrapping it in a redundant StreamTranscriptResponse.
 	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	StreamTranscript(context.Context, *connect.Request[v1.StreamTranscriptRequest], *connect.ServerStream[v1.TranscriptEntry]) error
 	GetE2EStatus(context.Context, *connect.Request[v1.GetE2EStatusRequest]) (*connect.Response[v1.GetE2EStatusResponse], error)
 	Approve(context.Context, *connect.Request[v1.ApproveRequest]) (*connect.Response[v1.ApproveResponse], error)

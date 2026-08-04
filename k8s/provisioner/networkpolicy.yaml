@@ -1,0 +1,50 @@
+# First NetworkPolicy anywhere in this cluster (Cilium enforces it with no
+# extra setup — see docs/adr/0012). Targets e2e-runner pods only; worker
+# pods (docs/adr/0019/0020) aren't selected by any NetworkPolicy and stay
+# default-allow, same as every other pod in the cluster — their traffic is
+# either localhost-only (sidecar's MCP/API ports, same pod) or outbound
+# gRPC to core, neither of which an ingress-only policy needs to gate.
+#
+# Three separate ingress rules, not one combined rule, because each source
+# is allowed a different port subset:
+#   - Traefik (human preview, gated by basic-admin-auth at L7): app + code-server
+#   - worker pods (curl for API/backend testing): app port only, never code-server
+#   - provisioner itself (Playwright MCP proxying): playwright port only
+# The worker pod's own code-server access is the thing this exists to deny —
+# code-server is a full IDE/terminal, a human-review-only surface, not
+# something the agent should ever be able to reach.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: e2e-runner
+  namespace: agent-fleet
+spec:
+  podSelector:
+    matchLabels:
+      agent-fleet.dev/component: e2e-runner
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: traefik
+    ports:
+    - protocol: TCP
+      port: 3000
+    - protocol: TCP
+      port: 8080
+  - from:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/part-of: agent-fleet
+    ports:
+    - protocol: TCP
+      port: 3000
+  - from:
+    - podSelector:
+        matchLabels:
+          app: provisioner
+    ports:
+    - protocol: TCP
+      port: 8931

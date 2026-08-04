@@ -2,12 +2,13 @@ name: Build, Test and Deploy
 
 # Adapted from dream-analyst's docker.yml — same Docker Hub build/push shape
 # (the Trivy scan step is disabled below — SARIF output went nowhere), now
-# matrixed across this repo's two images (worker, bot) instead of one, with
-# a bun test run per component ahead of the build, plus a deploy job (below)
-# that bumps k8s/*.yaml's pinned image.tag on every release so ArgoCD
-# (two-source Application, values pulled straight from this repo — see
-# infra-bootstrap's gitops/bootstrap/apps.applicationset.yaml) actually
-# redeploys instead of silently building an image nobody picks up.
+# matrixed across this repo's images (worker, core, provisioner, sidecar)
+# instead of one, with a bun test run per Bun component ahead of the build,
+# plus a deploy job (below) that bumps k8s/**/*.yaml's pinned image tags on
+# every release so ArgoCD (core via a two-source Application, values pulled
+# straight from this repo; provisioner via its own standalone plain-manifest
+# Application, see k8s/provisioner/README.md) actually redeploys instead of
+# silently building an image nobody picks up.
 #
 # DOCKERHUB_USERNAME/DOCKERHUB_TOKEN live in Infisical (agent-fleet-nygh
 # project, per Mohammad's request to centralize CI secrets there instead of
@@ -62,21 +63,25 @@ jobs:
               - 'e2e-runner/**'
             proto:
               - 'proto/**'
-            fleet-core:
-              - 'fleet-core/**'
-            e2e-provisioner:
-              - 'e2e-provisioner/**'
+            core:
+              - 'core/**'
+            provisioner:
+              - 'provisioner/**'
+            sidecar:
+              - 'sidecar/**'
       - name: Compute go-components matrix
         id: components
         uses: actions/github-script@v7
         with:
           script: |
             const proto = ${{ steps.filter.outputs.proto }};
-            const fleetCore = ${{ steps.filter.outputs.fleet-core }};
-            const e2eProvisioner = ${{ steps.filter.outputs.e2e-provisioner }};
+            const core = ${{ steps.filter.outputs.core }};
+            const provisioner = ${{ steps.filter.outputs.provisioner }};
+            const sidecar = ${{ steps.filter.outputs.sidecar }};
             const components = [];
-            if (proto || fleetCore) components.push('fleet-core');
-            if (proto || e2eProvisioner) components.push('e2e-provisioner');
+            if (proto || core) components.push('core');
+            if (proto || provisioner) components.push('provisioner');
+            if (proto || sidecar) components.push('sidecar');
             return components;
 
   build-push:
@@ -263,7 +268,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        component: ${{ github.event_name == 'push' && fromJSON('["fleet-core","e2e-provisioner"]') || fromJSON(needs.changes.outputs.go-components) }}
+        component: ${{ github.event_name == 'push' && fromJSON('["core","provisioner","sidecar"]') || fromJSON(needs.changes.outputs.go-components) }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -350,12 +355,18 @@ jobs:
           ref: main
           fetch-depth: 0
 
-      # Blanket `tag: "..."` replace is safe here — every occurrence across
-      # k8s/*.yaml (image.tag, agent-fleet-bot.yaml's hooks.migrate.image.tag)
-      # is genuinely an image tag, nothing else uses that key shape.
       - name: Bump pinned image tags
         run: |
+          # Helm-values shape (k8s/core.yaml): image.tag / hooks.migrate.image.tag.
+          # Blanket `tag: "..."` replace is safe here — every occurrence in
+          # this file shape is genuinely an image tag, nothing else uses it.
           sed -i -E "s/^(\s*tag: \")[^\"]+(\")/\1${GITHUB_REF_NAME}\2/" k8s/*.yaml
+
+          # Plain-manifest shape (k8s/provisioner/deployment.yaml): image
+          # refs embed repo:tag as one combined string — only bump this
+          # repo's own built images (core/provisioner/worker/sidecar),
+          # never e2e-runner's deliberately floating :latest.
+          sed -i -E "s#(mohammaddocker/agent-fleet-(core|provisioner|worker|sidecar)):[^[:space:]\"]+#\1:${GITHUB_REF_NAME}#g" k8s/provisioner/*.yaml
 
       # Pushing with the default GITHUB_TOKEN (via actions/checkout's
       # auto-configured credential) deliberately does NOT trigger other

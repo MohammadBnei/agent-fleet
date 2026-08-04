@@ -1,0 +1,239 @@
+// Package grpcserver implements ProvisionerService — renamed and grown
+// from E2eProvisionerService (docs/adr/0019/0020). The provisioner holds no
+// Postgres credentials at all: every method here treats Kubernetes itself
+// as the durable source of truth for session/pod state (pod existence and
+// phase), never a database row. core is the only caller (docs/adr/0020's
+// hub-and-spoke rule) — no worker pod or sidecar ever reaches this service
+// directly, including for e2e requests.
+package grpcserver
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+
+	corev1 "k8s.io/api/core/v1"
+
+	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
+
+	"github.com/MohammadBnei/agent-fleet/provisioner/internal/git"
+	"github.com/MohammadBnei/agent-fleet/provisioner/internal/k8s"
+	"github.com/MohammadBnei/agent-fleet/provisioner/internal/mcpproxy"
+)
+
+// EventReporter is the narrow slice of coreclient.Client this server
+// needs — a hand-written fake satisfies it in tests, no live gRPC
+// connection to core required.
+type EventReporter interface {
+	ReportEvent(ctx context.Context, event *agentfleetv1.PodEvent)
+}
+
+type Server struct {
+	agentfleetv1.UnimplementedProvisionerServiceServer
+	k8sc    *k8s.Client
+	git     *git.Manager
+	proxy   *mcpproxy.Proxy
+	core    EventReporter
+	e2eHost string
+}
+
+func New(k8sc *k8s.Client, gitMgr *git.Manager, proxy *mcpproxy.Proxy, core EventReporter, e2eHost string) *Server {
+	return &Server{k8sc: k8sc, git: gitMgr, proxy: proxy, core: core, e2eHost: e2eHost}
+}
+
+// --- e2e sessions (unchanged behavior, k8s-backed instead of Postgres-backed) ---
+
+func (s *Server) KillE2ESession(ctx context.Context, req *agentfleetv1.KillE2ESessionRequest) (*agentfleetv1.KillE2ESessionResponse, error) {
+	_, exists, err := s.k8sc.GetPod(ctx, k8s.ResourceName(req.GetTaskId()))
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
+		return &agentfleetv1.KillE2ESessionResponse{Killed: false}, nil
+	}
+	if err := s.k8sc.DeleteAll(ctx, req.GetTaskId()); err != nil {
+		return nil, err
+	}
+	s.proxy.DropClient(req.GetTaskId())
+	return &agentfleetv1.KillE2ESessionResponse{Killed: true}, nil
+}
+
+func (s *Server) GetE2ESessionStatus(ctx context.Context, req *agentfleetv1.GetE2ESessionStatusRequest) (*agentfleetv1.GetE2ESessionStatusResponse, error) {
+	phase, exists, err := s.k8sc.GetPod(ctx, k8s.ResourceName(req.GetTaskId()))
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
+		return &agentfleetv1.GetE2ESessionStatusResponse{}, nil
+	}
+	return &agentfleetv1.GetE2ESessionStatusResponse{
+		Status:     e2eStatusFromPhase(phase),
+		PreviewUrl: k8s.PreviewURLFor(s.e2eHost, req.GetTaskId()),
+	}, nil
+}
+
+// CreateE2ESession is idempotent — "safe to call again if one is already
+// running" (today's mcpserver docstring, preserved): a GET before create,
+// not a create-and-handle-AlreadyExists, since it also needs to report the
+// existing session's own status/URL, not just "yes it exists."
+func (s *Server) CreateE2ESession(ctx context.Context, req *agentfleetv1.CreateE2ESessionRequest) (*agentfleetv1.CreateE2ESessionResponse, error) {
+	phase, exists, err := s.k8sc.GetPod(ctx, k8s.ResourceName(req.GetTaskId()))
+	if err != nil {
+		return nil, err
+	}
+	if exists {
+		return &agentfleetv1.CreateE2ESessionResponse{
+			Status:     e2eStatusFromPhase(phase),
+			PreviewUrl: k8s.PreviewURLFor(s.e2eHost, req.GetTaskId()),
+		}, nil
+	}
+
+	taskRef := k8s.TaskRef{ID: req.GetTaskId(), Repo: req.GetRepo()}
+	if err := s.k8sc.CreatePod(ctx, taskRef); err != nil {
+		return nil, fmt.Errorf("create e2e pod: %w", err)
+	}
+	if err := s.k8sc.CreateService(ctx, req.GetTaskId()); err != nil {
+		return nil, fmt.Errorf("create e2e service: %w", err)
+	}
+	if err := s.k8sc.CreateMiddleware(ctx, req.GetTaskId()); err != nil {
+		return nil, fmt.Errorf("create e2e middleware: %w", err)
+	}
+	if err := s.k8sc.CreateIngressRoute(ctx, s.e2eHost, req.GetTaskId()); err != nil {
+		return nil, fmt.Errorf("create e2e ingressroute: %w", err)
+	}
+	return &agentfleetv1.CreateE2ESessionResponse{
+		Status:     "running",
+		PreviewUrl: k8s.PreviewURLFor(s.e2eHost, req.GetTaskId()),
+	}, nil
+}
+
+func e2eStatusFromPhase(phase corev1.PodPhase) string {
+	switch phase {
+	case corev1.PodPending:
+		return "requested"
+	case corev1.PodRunning:
+		return "running"
+	case corev1.PodFailed:
+		return "failed"
+	default:
+		return "running"
+	}
+}
+
+// --- Playwright tool passthrough (docs/adr/0020's third hop) ---
+
+func (s *Server) ListE2ETools(ctx context.Context, req *agentfleetv1.ListE2EToolsRequest) (*agentfleetv1.ListE2EToolsResponse, error) {
+	tools := s.proxy.ProxiedTools(ctx, req.GetTaskId())
+	out := make([]*agentfleetv1.E2EToolDescriptor, len(tools))
+	for i, t := range tools {
+		schemaJSON, err := json.Marshal(t.InputSchema)
+		if err != nil {
+			return nil, fmt.Errorf("marshal input schema for tool %s: %w", t.Name, err)
+		}
+		out[i] = &agentfleetv1.E2EToolDescriptor{
+			Name:            t.Name,
+			Description:     t.Description,
+			InputSchemaJson: string(schemaJSON),
+		}
+	}
+	return &agentfleetv1.ListE2EToolsResponse{Tools: out}, nil
+}
+
+func (s *Server) CallE2ETool(ctx context.Context, req *agentfleetv1.CallE2EToolRequest) (*agentfleetv1.CallE2EToolResponse, error) {
+	var args map[string]any
+	if req.GetArgumentsJson() != "" {
+		if err := json.Unmarshal([]byte(req.GetArgumentsJson()), &args); err != nil {
+			return nil, fmt.Errorf("unmarshal tool arguments: %w", err)
+		}
+	}
+	result, err := s.proxy.CallTool(ctx, req.GetTaskId(), req.GetToolName(), args)
+	if err != nil {
+		return nil, err
+	}
+	resultJSON, err := json.Marshal(result)
+	if err != nil {
+		return nil, fmt.Errorf("marshal tool result: %w", err)
+	}
+	return &agentfleetv1.CallE2EToolResponse{ResultJson: string(resultJSON), IsError: result.IsError}, nil
+}
+
+// --- worker pods (new, docs/adr/0019/0020) ---
+
+func (s *Server) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWorkerPodRequest) (*agentfleetv1.CreateWorkerPodResponse, error) {
+	if err := s.git.EnsureRepoCloned(ctx, req.GetRepo(), req.GetRepoUrl()); err != nil {
+		s.reportEvent(ctx, req.GetTaskId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_CRASHED, "", "clone/fetch failed: "+err.Error())
+		return nil, fmt.Errorf("ensure repo cloned: %w", err)
+	}
+	if _, _, err := s.git.CreateWorktree(ctx, req.GetRepo(), req.GetTaskId(), req.GetBaseBranch()); err != nil {
+		s.reportEvent(ctx, req.GetTaskId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_CRASHED, "", "worktree add failed: "+err.Error())
+		return nil, fmt.Errorf("create worktree: %w", err)
+	}
+	s.reportEvent(ctx, req.GetTaskId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_CREATED, "", "")
+
+	if err := s.k8sc.CreateWorkerPod(ctx, req.GetTaskId(), req.GetRepo(), req.GetDescription(), req.GetLeaseId(), req.GetBaseBranch()); err != nil {
+		s.reportEvent(ctx, req.GetTaskId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_CRASHED, "", "pod create failed: "+err.Error())
+		return nil, fmt.Errorf("create worker pod: %w", err)
+	}
+
+	podName := k8s.WorkerResourceName(req.GetTaskId())
+	s.reportEvent(ctx, req.GetTaskId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_SCHEDULED, podName, "")
+	return &agentfleetv1.CreateWorkerPodResponse{PodName: podName}, nil
+}
+
+// TearDownSession is opportunistic by design (docs/adr/0020's Consequences
+// — core calls this unconditionally on every terminal task status, for
+// both kinds, and "nothing to tear down" is a correct, expected no-op, not
+// an error).
+func (s *Server) TearDownSession(ctx context.Context, req *agentfleetv1.TearDownSessionRequest) (*agentfleetv1.TearDownSessionResponse, error) {
+	switch req.GetKind() {
+	case agentfleetv1.SessionKind_SESSION_KIND_WORKER:
+		return s.tearDownWorker(ctx, req.GetTaskId())
+	case agentfleetv1.SessionKind_SESSION_KIND_E2E:
+		return s.tearDownE2e(ctx, req.GetTaskId())
+	default:
+		return nil, fmt.Errorf("TearDownSession: unspecified session kind")
+	}
+}
+
+func (s *Server) tearDownWorker(ctx context.Context, taskID string) (*agentfleetv1.TearDownSessionResponse, error) {
+	repo, exists, err := s.k8sc.GetWorkerPodRepo(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
+		return &agentfleetv1.TearDownSessionResponse{TornDown: false}, nil
+	}
+	if err := s.k8sc.DeleteWorkerPod(ctx, taskID); err != nil {
+		return nil, err
+	}
+	if err := s.git.RemoveWorktree(ctx, repo, taskID, "agent/"+taskID); err != nil {
+		return nil, fmt.Errorf("remove worktree: %w", err)
+	}
+	s.reportEvent(ctx, taskID, agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_TERMINATED, "", "")
+	return &agentfleetv1.TearDownSessionResponse{TornDown: true}, nil
+}
+
+func (s *Server) tearDownE2e(ctx context.Context, taskID string) (*agentfleetv1.TearDownSessionResponse, error) {
+	_, exists, err := s.k8sc.GetPod(ctx, k8s.ResourceName(taskID))
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
+		return &agentfleetv1.TearDownSessionResponse{TornDown: false}, nil
+	}
+	if err := s.k8sc.DeleteAll(ctx, taskID); err != nil {
+		return nil, err
+	}
+	s.proxy.DropClient(taskID)
+	return &agentfleetv1.TearDownSessionResponse{TornDown: true}, nil
+}
+
+func (s *Server) reportEvent(ctx context.Context, taskID string, kind agentfleetv1.SessionKind, phase agentfleetv1.PodPhase, podName, message string) {
+	s.core.ReportEvent(ctx, &agentfleetv1.PodEvent{
+		TaskId:  taskID,
+		Kind:    kind,
+		Phase:   phase,
+		PodName: podName,
+		Message: message,
+	})
+}

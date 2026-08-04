@@ -374,6 +374,7 @@ export const DashboardService: GenService<{
    * than duplicating a byte-identical message pair.
    * buf:lint:ignore RPC_REQUEST_STANDARD_NAME
    * buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+   * buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
    *
    * @generated from rpc agentfleet.v1.DashboardService.GetTranscript
    */
@@ -386,6 +387,7 @@ export const DashboardService: GenService<{
    * Streams transcript.proto's TranscriptEntry directly rather than
    * wrapping it in a redundant StreamTranscriptResponse.
    * buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+   * buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
    *
    * @generated from rpc agentfleet.v1.DashboardService.StreamTranscript
    */

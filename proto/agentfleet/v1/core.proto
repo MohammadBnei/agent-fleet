@@ -1,0 +1,194 @@
+syntax = "proto3";
+package agentfleet.v1;
+option go_package = "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1;agentfleetv1";
+
+import "agentfleet/v1/transcript.proto";
+import "agentfleet/v1/provisioner.proto";
+
+// core is the gRPC server here — its first (see docs/adr/0020's Context:
+// "nothing under fleet-core/ hosts one today"). Two kinds of clients:
+// the provisioner (streaming pod-lifecycle events in, ReportPodEvents
+// only) and every worker pod's sidecar (everything else — the sidecar's
+// local MCP server and wrapper-facing API both funnel through this one
+// outbound connection, docs/adr/0020 point 5). core holds the fleet's
+// only Postgres credentials (docs/adr/0020 point 1); this service is how
+// every other component reaches data that lives there.
+
+// --- provisioner -> core: pushed, not polled (docs/adr/0020 point 3) ---
+
+enum PodPhase {
+  POD_PHASE_UNSPECIFIED = 0;
+  POD_PHASE_CREATED = 1;
+  POD_PHASE_SCHEDULED = 2;
+  POD_PHASE_RUNNING = 3;
+  POD_PHASE_CRASHED = 4;
+  POD_PHASE_TERMINATED = 5;
+}
+
+message PodEvent {
+  string task_id = 1;
+  SessionKind kind = 2;
+  PodPhase phase = 3;
+  string pod_name = 4;
+  string message = 5; // human-readable detail, e.g. a crash reason
+}
+
+message ReportPodEventsResponse {}
+
+// --- sidecar -> core: agent-facing (proxied MCP-shaped calls) ---
+
+// Mirrors today's send_message MCP tool exactly — reuses transcript.proto's
+// types rather than redefining them (same precedent dashboard.proto already
+// set for GetTranscript/StreamTranscript).
+message SendMessageRequest {
+  string task_id = 1;
+  string from = 2;
+  string text = 3;
+  TranscriptEntryType type = 4;
+  string idempotency_key = 5; // core mints one server-side if empty
+}
+
+message SendMessageResponse {
+  int64 seq = 1;
+}
+
+// Preserves the AskUserQuestion MCP tool's exact long-poll contract
+// (fleet-core/internal/mcpserver/ask_user_question.go today): appends a
+// QUESTION entry, long-polls for a matching ANSWER entry up to timeout_ms,
+// returns it verbatim if found or {status:"pending"} if not — the caller
+// re-invokes with the same questions to keep waiting, same as today.
+message AskUserQuestionRequest {
+  string task_id = 1;
+  string questions_json = 2;
+  int32 timeout_ms = 3; // default 60000, matching today's handler
+}
+
+message AskUserQuestionResponse {
+  string status = 1; // "answered" | "pending"
+  string answers_json = 2; // set only when status == "answered"
+  int64 question_seq = 3;
+}
+
+message RequestE2eEnvRequest {
+  string task_id = 1;
+}
+
+message RequestE2eEnvResponse {
+  string preview_url = 1;
+  string status = 2;
+}
+
+message KillE2eEnvRequest {
+  string task_id = 1;
+}
+
+message KillE2eEnvResponse {
+  bool killed = 1;
+}
+
+// Playwright's tool set is discovered at runtime by the e2e pod, not fixed
+// — proxied sidecar -> core -> provisioner -> e2e pod (see provisioner.proto's
+// matching pair; same message shapes, reused rather than redefined).
+
+// --- sidecar -> core: wrapper-facing (never agent-initiated, docs/adr/0020
+// point 5's third responsibility) ---
+
+message HeartbeatRequest {
+  string task_id = 1;
+  string lease_id = 2;
+}
+
+message HeartbeatResponse {}
+
+message SetTaskStatusRequest {
+  string task_id = 1;
+  string status = 2;
+  optional string pr_url = 3;
+  optional string notes = 4;
+  optional string last_error = 5;
+}
+
+message SetTaskStatusResponse {}
+
+message AppendJournalRequest {
+  string repo = 1;
+  string actor = 2;
+  string event_type = 3;
+  string payload_json = 4;
+}
+
+message AppendJournalResponse {}
+
+message SaveSessionIdRequest {
+  string task_id = 1;
+  string planning_session_id = 2;
+  string model = 3;
+}
+
+message SaveSessionIdResponse {}
+
+// Checked immediately before the irreversible push/PR step (mirrors
+// worker/src/db.ts's stillHoldsLease today) — guards against a stale/
+// reclaimed pod completing work after the provisioner has already
+// respawned a fresh one for the same task.
+message StillHoldsLeaseRequest {
+  string task_id = 1;
+  string lease_id = 2;
+}
+
+message StillHoldsLeaseResponse {
+  bool holds = 1;
+}
+
+// Git diff/branch/elapsed-time/tool-call-summary telemetry, pushed by the
+// sidecar on its own schedule — entirely decoupled from agent tool calls
+// (docs/adr/0020 point 5's second bullet). Persisted as a
+// TRANSCRIPT_ENTRY_TYPE_TOOL_CALL entry, never relayed to Discord.
+message PushToolTelemetryRequest {
+  string task_id = 1;
+  string summary_json = 2;
+}
+
+message PushToolTelemetryResponse {}
+
+// The mechanism that lets the sidecar deliver new human input to the
+// wrapper live, for streamInput() (docs/adr/0021 point 2) — a genuine
+// live feed, not a poll the wrapper initiates on its own schedule.
+message StreamHumanMessagesRequest {
+  string task_id = 1;
+  int64 since_seq = 2;
+}
+
+service CoreService {
+  // buf:lint:ignore RPC_REQUEST_STANDARD_NAME
+  rpc ReportPodEvents(stream PodEvent) returns (ReportPodEventsResponse);
+
+  rpc SendMessage(SendMessageRequest) returns (SendMessageResponse);
+  // Reuses transcript.proto's ReadTranscriptSinceRequest/Response, same
+  // precedent dashboard.proto already set for GetTranscript.
+  // buf:lint:ignore RPC_REQUEST_STANDARD_NAME
+  // buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+  // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+  rpc WaitForMessages(ReadTranscriptSinceRequest) returns (ReadTranscriptSinceResponse);
+  rpc AskUserQuestion(AskUserQuestionRequest) returns (AskUserQuestionResponse);
+  rpc RequestE2eEnv(RequestE2eEnvRequest) returns (RequestE2eEnvResponse);
+  rpc KillE2eEnv(KillE2eEnvRequest) returns (KillE2eEnvResponse);
+  // Reuses provisioner.proto's message shapes — same passthrough, one hop
+  // further down the chain (see that file's own comment).
+  // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+  rpc ListE2eTools(ListE2eToolsRequest) returns (ListE2eToolsResponse);
+  // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+  rpc CallE2eTool(CallE2eToolRequest) returns (CallE2eToolResponse);
+
+  rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+  rpc SetTaskStatus(SetTaskStatusRequest) returns (SetTaskStatusResponse);
+  rpc AppendJournal(AppendJournalRequest) returns (AppendJournalResponse);
+  rpc SaveSessionId(SaveSessionIdRequest) returns (SaveSessionIdResponse);
+  rpc StillHoldsLease(StillHoldsLeaseRequest) returns (StillHoldsLeaseResponse);
+  rpc PushToolTelemetry(PushToolTelemetryRequest) returns (PushToolTelemetryResponse);
+  // Streams transcript.proto's TranscriptEntry directly, same precedent
+  // dashboard.proto's StreamTranscript already set.
+  // buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+  // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+  rpc StreamHumanMessages(StreamHumanMessagesRequest) returns (stream TranscriptEntry);
+}
