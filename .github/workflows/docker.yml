@@ -40,7 +40,11 @@ jobs:
   changes:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    # Setting ANY permissions here resets every other permission to `none`
+    # for this job's GITHUB_TOKEN (not just the ones listed) — contents:
+    # read must be explicit or actions/checkout's own clone fails.
     permissions:
+      contents: read
       pull-requests: read
     outputs:
       worker: ${{ steps.filter.outputs.worker }}

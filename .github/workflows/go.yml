@@ -27,7 +27,11 @@ jobs:
   # is pull_request-only).
   changes:
     runs-on: ubuntu-latest
+    # Setting ANY permissions here resets every other permission to `none`
+    # for this job's GITHUB_TOKEN (not just the ones listed) — contents:
+    # read must be explicit or actions/checkout's own clone fails.
     permissions:
+      contents: read
       pull-requests: read
     outputs:
       proto: ${{ steps.filter.outputs.proto }}
