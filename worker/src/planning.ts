@@ -1,11 +1,10 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
-import { Redis } from "ioredis";
 import type { Task } from "./db.js";
 import { appendJournal } from "./db.js";
 import { postReply } from "./discord.js";
 import { log } from "./log.js";
+import { currentCursor, readSince } from "./fleetCoreClient.js";
 
-const MCP_REDIS_ENTRY = process.env.MCP_REDIS_ENTRY ?? "/app/mcp-redis/src/index.ts";
 const MODEL = process.env.CLAUDE_MODEL ?? "claude-opus-4-8";
 const PLANNING_TIMEOUT_MS = Number(process.env.PLANNING_TIMEOUT_MS ?? 0); // 0 = unbounded, per mvp-spec
 
@@ -25,40 +24,21 @@ const MAX_TURNS_IMPLEMENTATION = process.env.MAX_TURNS_IMPLEMENTATION
 // (subscription), not metered API billing — total_cost_usd is a notional
 // figure the SDK still computes for reporting, not a real charge.
 
-function redisClient(): Redis {
-  return new Redis({
-    host: process.env.REDIS_HOST ?? "redis.bnei.lan",
-    port: Number(process.env.REDIS_PORT ?? 6379),
-    password: process.env.REDIS_MAIN_PASSWORD,
-  });
-}
-
-function planningKey(taskId: string): string {
-  return `agentfleet:planning:${taskId}`;
-}
-
 // allowedTools only *auto-approves* — tools missing from it still exist but
 // get their permission request silently denied in a headless query() (no
 // canUseTool handler, no TTY to prompt). Without these, the critic/proposer
 // can never actually call send_message/wait_for_messages: confirmed live —
 // burned all 15 turns on denied calls in under a minute, $1.1+, zero
 // transcript entries either side.
-const REDIS_MCP_TOOLS = [
-  "mcp__agent-fleet-redis__send_message",
-  "mcp__agent-fleet-redis__wait_for_messages",
+const FLEET_CORE_MCP_TOOLS = [
+  "mcp__agent-fleet-core__send_message",
+  "mcp__agent-fleet-core__wait_for_messages",
 ];
 
-function mcpServer() {
-  return {
-    type: "stdio" as const,
-    command: "bun",
-    args: ["run", MCP_REDIS_ENTRY],
-    env: {
-      REDIS_HOST: process.env.REDIS_HOST ?? "redis.bnei.lan",
-      REDIS_PORT: process.env.REDIS_PORT ?? "6379",
-      REDIS_MAIN_PASSWORD: process.env.REDIS_MAIN_PASSWORD ?? "",
-    },
-  };
+const FLEET_CORE_URL = process.env.FLEET_CORE_URL ?? "http://fleet-core.agent-fleet.svc.cluster.local:8080";
+
+function fleetCoreMcpServer() {
+  return { type: "http" as const, url: `${FLEET_CORE_URL}/mcp` };
 }
 
 // Implementation-phase only (see runImplementationPhase) — e2e testing only
@@ -68,7 +48,7 @@ function mcpServer() {
 // they only exist once request_e2e_env has actually created a pod, so
 // enumerating them upfront isn't possible. Allowing the whole
 // "mcp__agent-fleet-e2e__*" prefix is required for those to work at all;
-// same silent-permission-denial trap as REDIS_MCP_TOOLS above (ADR-0008) —
+// same silent-permission-denial trap as FLEET_CORE_MCP_TOOLS above (ADR-0008) —
 // verify this prefix form is actually honored by the SDK during real e2e
 // testing, don't assume it from this comment alone.
 const E2E_MCP_TOOLS = [
@@ -137,44 +117,37 @@ async function watchBatch(
   flags: SessionFlags,
   criticEnabled: boolean,
 ): Promise<WatchOutcome> {
-  const redis = redisClient();
-  const key = planningKey(task.id);
   const deadline = timeoutMs > 0 ? Date.now() + timeoutMs : Infinity;
   let cursor = sinceIndex;
   let proposerCount = 0;
   let criticCount = 0;
-  try {
-    while (Date.now() < deadline) {
-      const raw = await redis.lrange(key, cursor, -1);
-      for (const r of raw) {
-        cursor++;
-        const msg = JSON.parse(r) as TranscriptEntry;
-        if (msg.from === "human" && isAbort(msg)) {
-          log("info", "human abort received during planning batch", { taskId: task.id, text: msg.text });
-          return { type: "aborted" };
-        }
-        if (msg.from === "human" && isApproval(msg)) return { type: "approved" };
-        if (msg.from === "proposer" || msg.from === "critic") {
-          if (msg.from === "proposer") proposerCount++;
-          else criticCount++;
-          if (task.discord_thread_id) {
-            await postReply(task.discord_thread_id, `**${msg.from}:** ${msg.text}`);
-          }
+  while (Date.now() < deadline) {
+    const { messages, nextIndex } = await readSince(task.id, cursor);
+    cursor = nextIndex;
+    for (const msg of messages as TranscriptEntry[]) {
+      if (msg.from === "human" && isAbort(msg)) {
+        log("info", "human abort received during planning batch", { taskId: task.id, text: msg.text });
+        return { type: "aborted" };
+      }
+      if (msg.from === "human" && isApproval(msg)) return { type: "approved" };
+      if (msg.from === "proposer" || msg.from === "critic") {
+        if (msg.from === "proposer") proposerCount++;
+        else criticCount++;
+        if (task.discord_thread_id) {
+          await postReply(task.discord_thread_id, `**${msg.from}:** ${msg.text}`);
         }
       }
-      const roundsSoFar = criticEnabled ? Math.min(proposerCount, criticCount) : proposerCount;
-      if (roundsSoFar >= maxRounds) {
-        return { type: "round_cap", nextIndex: cursor };
-      }
-      if (flags.proposerEnded || (criticEnabled && flags.criticEnded)) {
-        return { type: "session_ended", nextIndex: cursor };
-      }
-      await new Promise((r) => setTimeout(r, 1000));
     }
-    return { type: "timeout" };
-  } finally {
-    redis.disconnect();
+    const roundsSoFar = criticEnabled ? Math.min(proposerCount, criticCount) : proposerCount;
+    if (roundsSoFar >= maxRounds) {
+      return { type: "round_cap", nextIndex: cursor };
+    }
+    if (flags.proposerEnded || (criticEnabled && flags.criticEnded)) {
+      return { type: "session_ended", nextIndex: cursor };
+    }
+    await new Promise((r) => setTimeout(r, 1000));
   }
+  return { type: "timeout" };
 }
 
 // Blocks until Mohammad sends *any* reply (or an abort) after a round-cap
@@ -185,28 +158,21 @@ async function waitForCheckpointReply(
   sinceIndex: number,
   timeoutMs: number,
 ): Promise<"continue" | "aborted" | "timeout"> {
-  const redis = redisClient();
-  const key = planningKey(taskId);
   const deadline = timeoutMs > 0 ? Date.now() + timeoutMs : Infinity;
   let cursor = sinceIndex;
-  try {
-    while (Date.now() < deadline) {
-      const raw = await redis.lrange(key, cursor, -1);
-      for (const r of raw) {
-        cursor++;
-        const msg = JSON.parse(r) as TranscriptEntry;
-        if (msg.from === "human") {
-          const abort = isAbort(msg);
-          if (abort) log("info", "human abort received", { taskId, text: msg.text });
-          return abort ? "aborted" : "continue";
-        }
+  while (Date.now() < deadline) {
+    const { messages, nextIndex } = await readSince(taskId, cursor);
+    cursor = nextIndex;
+    for (const msg of messages as TranscriptEntry[]) {
+      if (msg.from === "human") {
+        const abort = isAbort(msg);
+        if (abort) log("info", "human abort received", { taskId, text: msg.text });
+        return abort ? "aborted" : "continue";
       }
-      await new Promise((r) => setTimeout(r, 1000));
     }
-    return "timeout";
-  } finally {
-    redis.disconnect();
+    await new Promise((r) => setTimeout(r, 1000));
   }
+  return "timeout";
 }
 
 function proposerPrompt(task: Task, resuming: boolean): string {
@@ -324,8 +290,8 @@ export async function runPlanningPhase(
             model: MODEL,
             cwd: `/workspace/worktrees/${task.id}`,
             permissionMode: "plan",
-            allowedTools: ["Read", "Glob", "Grep", "Bash", "WebSearch", "WebFetch", ...REDIS_MCP_TOOLS],
-            mcpServers: { "agent-fleet-redis": mcpServer() },
+            allowedTools: ["Read", "Glob", "Grep", "Bash", "WebSearch", "WebFetch", ...FLEET_CORE_MCP_TOOLS],
+            mcpServers: { "agent-fleet-core": fleetCoreMcpServer() },
             maxTurns: MAX_TURNS_PLANNING,
             abortController: proposerAbort,
           },
@@ -356,8 +322,8 @@ export async function runPlanningPhase(
                 model: MODEL,
                 cwd: `/workspace/worktrees/${task.id}`,
                 permissionMode: "plan",
-                allowedTools: ["Read", "Glob", "Grep", "Bash", "WebSearch", "WebFetch", ...REDIS_MCP_TOOLS],
-                mcpServers: { "agent-fleet-redis": mcpServer() },
+                allowedTools: ["Read", "Glob", "Grep", "Bash", "WebSearch", "WebFetch", ...FLEET_CORE_MCP_TOOLS],
+                mcpServers: { "agent-fleet-core": fleetCoreMcpServer() },
                 maxTurns: MAX_TURNS_PLANNING,
                 abortController: criticAbort,
               },
@@ -419,9 +385,7 @@ End your final message with a line exactly: PR_READY: <one-paragraph summary for
   let finalText = "";
   let cursor = 0;
   try {
-    const redis = redisClient();
-    cursor = await redis.llen(planningKey(task.id));
-    redis.disconnect();
+    cursor = await currentCursor(task.id);
   } catch {
     // best-effort — if this fails the abort watcher just starts from 0
   }
@@ -449,10 +413,10 @@ End your final message with a line exactly: PR_READY: <one-paragraph summary for
         permissionMode: "default",
         allowedTools: [
           "Read", "Glob", "Grep", "Bash", "Write", "Edit", "WebSearch", "WebFetch",
-          ...REDIS_MCP_TOOLS,
+          ...FLEET_CORE_MCP_TOOLS,
           ...E2E_MCP_TOOLS,
         ],
-        mcpServers: { "agent-fleet-redis": mcpServer(), "agent-fleet-e2e": e2eMcpServer(task) },
+        mcpServers: { "agent-fleet-core": fleetCoreMcpServer(), "agent-fleet-e2e": e2eMcpServer(task) },
         maxTurns: MAX_TURNS_IMPLEMENTATION,
         abortController,
       },

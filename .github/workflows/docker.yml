@@ -33,7 +33,7 @@ jobs:
     strategy:
       fail-fast: false # one image's test/build failure shouldn't hide the other's status
       matrix:
-        component: [worker, bot, e2e-provisioner]
+        component: [worker]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -107,9 +107,7 @@ jobs:
           load: true # single-platform build — was needed to make the image
                      # visible to the local docker daemon for the (now
                      # disabled) Trivy scan step; harmless to leave
-          # worker/bot need the repo root as context (their Dockerfiles COPY
-          # mcp-redis in as a sibling); e2e-provisioner is standalone.
-          context: ${{ matrix.component == 'e2e-provisioner' && 'e2e-provisioner' || '.' }}
+          context: .
           file: ${{ matrix.component }}/Dockerfile
           tags: >-
             ${{ env.DOCKERHUB_USERNAME }}/agent-fleet-${{ matrix.component }}:${{ steps.info.outputs.version }},
@@ -194,8 +192,78 @@ jobs:
           cache-from: type=registry,ref=${{ env.DOCKERHUB_USERNAME }}/agent-fleet-e2e-runner:buildcache
           cache-to: type=registry,ref=${{ env.DOCKERHUB_USERNAME }}/agent-fleet-e2e-runner:buildcache,mode=max
 
+  # Separate job rather than folding into build-push above: these are Go
+  # modules (no package.json, no bun install/test) — a go.yml workflow
+  # runs the real correctness gate (vet/test/lint/buf) on every push/PR;
+  # this job's job is just the Docker packaging step, same division of
+  # labor and same PR-safe tag computation as build-push-e2e-runner.
+  build-push-go:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        component: [fleet-core, e2e-provisioner]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Infisical CLI
+        run: |
+          curl -1sLf 'https://artifacts-cli.infisical.com/setup.deb.sh' | sudo -E bash
+          sudo apt-get update && sudo apt-get install -y infisical
+
+      - name: Load secrets from Infisical
+        run: |
+          set -euo pipefail
+          while IFS='=' read -r key raw_value; do
+            [ -z "$key" ] && continue
+            value="${raw_value%\'}"
+            value="${value#\'}"
+            echo "::add-mask::$value"
+            echo "$key=$value" >> "$GITHUB_ENV"
+          done < <(infisical export --domain=https://infisical.bnei.dev/api --token="${{ secrets.INFISICAL_TOKEN }}" --projectId="$INFISICAL_PROJECT_ID" --env=dev --format=dotenv | grep -E '^DOCKERHUB_')
+
+      - name: Docker Login
+        uses: docker/login-action@v3
+        with:
+          username: ${{ env.DOCKERHUB_USERNAME }}
+          password: ${{ env.DOCKERHUB_TOKEN }}
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # No package.json here to read a version from — same PR-safe
+      # tag-computation pattern as build-push-e2e-runner.
+      - name: Compute image tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "value=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=pr-${{ github.event.pull_request.number }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          platforms: ${{ env.PLATFORMS }}
+          push: ${{ github.event_name == 'push' }}
+          load: true
+          # Repo-root context: each Dockerfile COPYs go.work + proto/gen/go
+          # as siblings alongside its own module directory.
+          context: .
+          file: ${{ matrix.component }}/Dockerfile
+          tags: >-
+            ${{ env.DOCKERHUB_USERNAME }}/agent-fleet-${{ matrix.component }}:${{ steps.tag.outputs.value }},
+            ${{ env.DOCKERHUB_USERNAME }}/agent-fleet-${{ matrix.component }}:latest
+          cache-from: type=registry,ref=${{ env.DOCKERHUB_USERNAME }}/agent-fleet-${{ matrix.component }}:buildcache
+          cache-to: type=registry,ref=${{ env.DOCKERHUB_USERNAME }}/agent-fleet-${{ matrix.component }}:buildcache,mode=max
+
   deploy:
-    needs: build-push
+    needs: [build-push, build-push-go]
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:

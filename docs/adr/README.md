@@ -10,7 +10,7 @@ Decisions with no real alternative ever on the table live in
 
 | ADR | Title | Status |
 |---|---|---|
-| [0001](0001-redis-durable-list-over-pubsub.md) | Durable Redis list over pub/sub for the planning transcript | Accepted |
+| [0001](0001-redis-durable-list-over-pubsub.md) | Durable Redis list over pub/sub for the planning transcript | Superseded by [0013](0013-go-fleet-core-and-e2e-provisioner-rewrite.md) |
 | [0002](0002-no-orchestration-framework.md) | No orchestration framework (Hermes/OpenClaw rejected) | Accepted |
 | [0003](0003-persistent-worker-pod-per-repo.md) | Persistent worker pod per target repo, not one Job per task | Accepted |
 | [0004](0004-subscription-oauth-not-metered-api.md) | Claude Code subscription OAuth, not a metered API key | Accepted |
@@ -22,3 +22,4 @@ Decisions with no real alternative ever on the table live in
 | [0010](0010-shared-rwx-pvc-across-apps.md) | Shared `ReadWriteMany` PVC across bot + both workers | Accepted |
 | [0011](0011-critic-opt-out-and-context-handoff.md) | Critic session is opt-out (human-only), plus proposer→critic context handoff | Accepted |
 | [0012](0012-e2e-provisioner-standalone-app.md) | On-demand e2e test environments via a standalone e2e-provisioner | Accepted |
+| [0013](0013-go-fleet-core-and-e2e-provisioner-rewrite.md) | Go `fleet-core` replaces Redis coordination; `e2e-provisioner`/`bot` rewritten in Go | Accepted |

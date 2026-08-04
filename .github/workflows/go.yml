@@ -1,0 +1,149 @@
+name: Go and Proto
+
+# Correctness gate for the Go side of the fleet (fleet-core, e2e-provisioner)
+# and the buf-managed proto schema they + worker's ts-proto codegen share —
+# see docs/adr/0013. Kept separate from docker.yml: this checks code
+# quality/correctness, docker.yml handles image packaging/push/deploy (same
+# division dream-analyst's/this repo's existing workflows already draw
+# between "tests" and "build+push").
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+env:
+  BUF_VERSION: '1.55.1'
+  PROTOC_GEN_GO_VERSION: 'v1.36.1'
+  PROTOC_GEN_GO_GRPC_VERSION: 'v1.3.0'
+
+jobs:
+  buf:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup buf
+        uses: bufbuild/buf-setup-action@v1
+        with:
+          version: ${{ env.BUF_VERSION }}
+
+      - name: buf lint
+        working-directory: proto
+        run: buf lint
+
+      # actions/checkout only creates a remote-tracking ref
+      # (origin/main), never a local branch literally named "main" — buf's
+      # git input needs `ref=`, not `branch=`, to resolve that. Skipped
+      # gracefully on the PR that first introduces proto/ at all, since
+      # there's genuinely nothing on main yet to compare against.
+      - name: buf breaking (against main)
+        if: github.event_name == 'pull_request'
+        working-directory: proto
+        run: |
+          if git cat-file -e origin/main:proto 2>/dev/null; then
+            buf breaking --against '../.git#ref=origin/main,subdir=proto'
+          else
+            echo "no proto/ on origin/main yet — nothing to break against"
+          fi
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.work
+
+      # setup-go's own module/build cache (keyed on go.sum, enabled by
+      # default) doesn't cover `go install`'d binaries under $GOBIN — cache
+      # those separately, keyed on the pinned plugin versions above, so a
+      # version bump invalidates the cache instead of silently reusing a
+      # stale binary.
+      - name: Cache protoc-gen-go / protoc-gen-go-grpc binaries
+        id: protoc-gen-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/go/bin
+          key: protoc-gen-${{ runner.os }}-${{ env.PROTOC_GEN_GO_VERSION }}-${{ env.PROTOC_GEN_GO_GRPC_VERSION }}
+
+      - name: Install protoc-gen-go / protoc-gen-go-grpc
+        if: steps.protoc-gen-cache.outputs.cache-hit != 'true'
+        run: |
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@${{ env.PROTOC_GEN_GO_VERSION }}
+          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@${{ env.PROTOC_GEN_GO_GRPC_VERSION }}
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install ts-proto (buf generate's local TS plugin)
+        working-directory: worker
+        run: bun install --frozen-lockfile
+
+      - name: buf generate drift check
+        working-directory: proto
+        run: |
+          export PATH="$HOME/go/bin:$PATH"
+          buf generate
+          git diff --exit-code -- gen ../worker/src/gen
+
+  go:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        module: [fleet-core, e2e-provisioner]
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: agentfleet
+          POSTGRES_PASSWORD: agentfleet
+          POSTGRES_DB: agentfleetdb
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.work
+
+      - name: go vet
+        working-directory: ${{ matrix.module }}
+        run: go vet ./...
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          working-directory: ${{ matrix.module }}
+          # Pinned, not `latest` — go.mod declares go 1.26.5 (this repo's
+          # local toolchain), and golangci-lint refuses to analyze a
+          # module targeting a newer Go than it was itself built with.
+          # v2.9.0+ is the first line built with go1.26; v2.12.2 matches
+          # what's verified working locally (`golangci-lint version`).
+          # golangci-lint-action v7+ is required for golangci-lint v2.x
+          # (v6 only supports v1.x).
+          version: v2.12.2
+
+      - name: go test
+        working-directory: ${{ matrix.module }}
+        run: go test ./... -race -cover
+
+      - name: go test (integration, real Postgres)
+        working-directory: ${{ matrix.module }}
+        env:
+          AGENTFLEET_DB_HOST: localhost
+          AGENTFLEET_DB_PORT: '5432'
+          AGENTFLEET_DB_NAME: agentfleetdb
+          AGENTFLEET_DB_USER: agentfleet
+          AGENTFLEET_DB_PASSWORD: agentfleet
+        run: go test -tags=integration ./...

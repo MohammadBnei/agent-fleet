@@ -1,37 +1,33 @@
 // Exercises planning.ts's coordination logic — round-cap math, the
 // skip_critique branch (ADR-0011), crash recovery, human approval, and the
-// implementation-phase kill switch — without a real Claude session or Redis
-// server. Mocks must be registered before importing planning.js (Bun
-// resolves mock.module() calls ahead of subsequent static imports).
+// implementation-phase kill switch — without a real Claude session or
+// fleet-core server. Mocks must be registered before importing planning.js
+// (Bun resolves mock.module() calls ahead of subsequent static imports).
 import { test, expect, mock, beforeEach } from "bun:test";
 import type { Task } from "./db.js";
 
 type TranscriptMsg = { from: string; text: string; type?: string };
 
-// In-memory stand-in for the shared Redis planning transcript. Keyed exactly
-// like planningKey() in planning.ts so both the mocked ioredis client and
-// this file's own pushMsg() calls see the same list.
-const redisStore = new Map<string, TranscriptMsg[]>();
+// In-memory stand-in for fleet-core's planning_transcript, keyed by taskId
+// (fleetCoreClient's readSince/currentCursor take taskId directly, unlike
+// the old Redis key string) — both the mocked module and this file's own
+// pushMsg() calls see the same list.
+const transcriptStore = new Map<string, TranscriptMsg[]>();
 
-function pushMsg(key: string, msg: TranscriptMsg): void {
-  const list = redisStore.get(key) ?? [];
+function pushMsg(taskId: string, msg: TranscriptMsg): void {
+  const list = transcriptStore.get(taskId) ?? [];
   list.push(msg);
-  redisStore.set(key, list);
+  transcriptStore.set(taskId, list);
 }
 
-mock.module("ioredis", () => {
-  class FakeRedis {
-    async lrange(key: string, start: number): Promise<string[]> {
-      const list = redisStore.get(key) ?? [];
-      return list.slice(start < 0 ? 0 : start).map((m) => JSON.stringify(m));
-    }
-    async llen(key: string): Promise<number> {
-      return (redisStore.get(key) ?? []).length;
-    }
-    disconnect(): void {}
-  }
-  return { Redis: FakeRedis, default: FakeRedis };
-});
+mock.module("./fleetCoreClient.js", () => ({
+  readSince: async (taskId: string, sinceIndex: number) => {
+    const list = transcriptStore.get(taskId) ?? [];
+    const start = sinceIndex < 0 ? 0 : sinceIndex;
+    return { messages: list.slice(start), nextIndex: list.length };
+  },
+  currentCursor: async (taskId: string) => (transcriptStore.get(taskId) ?? []).length,
+}));
 
 // appendJournal writes to real Postgres — stub it so tests never touch the
 // network, regardless of what CI's DNS does with the unreachable prod host.
@@ -92,7 +88,7 @@ mock.module("@anthropic-ai/claude-agent-sdk", () => ({
     if (role === "critic" && taskId === crashCriticForTaskId) {
       throw new Error("simulated critic crash");
     }
-    pushMsg(`agentfleet:planning:${taskId}`, { from: role, text: `mock ${role} message` });
+    pushMsg(taskId, { from: role, text: `mock ${role} message` });
     yield {
       type: "assistant",
       message: { content: [{ type: "text", text: `mock ${role} message` }] },
@@ -129,13 +125,12 @@ test(
   "skip_critique=true never spawns a critic session",
   async () => {
     const task = makeTask({ skip_critique: true });
-    const key = `agentfleet:planning:${task.id}`;
 
     const phase = runPlanningPhase(task);
     // Give the round-cap checkpoint a chance to fire, then abort at the
     // checkpoint so the phase resolves instead of waiting on a human forever.
     await Bun.sleep(50);
-    pushMsg(key, { from: "human", text: "stop", type: "abort" });
+    pushMsg(task.id, { from: "human", text: "stop", type: "abort" });
 
     const result = await phase;
 
@@ -150,11 +145,10 @@ test(
   "skip_critique=false (default) requires both a proposer and a critic session",
   async () => {
     const task = makeTask({ skip_critique: false });
-    const key = `agentfleet:planning:${task.id}`;
 
     const phase = runPlanningPhase(task);
     await Bun.sleep(50);
-    pushMsg(key, { from: "human", text: "stop", type: "abort" });
+    pushMsg(task.id, { from: "human", text: "stop", type: "abort" });
 
     const result = await phase;
 
@@ -169,11 +163,10 @@ test(
   "human approval resolves the phase and returns the proposer's session id",
   async () => {
     const task = makeTask({ skip_critique: true });
-    const key = `agentfleet:planning:${task.id}`;
 
     const phase = runPlanningPhase(task);
     await Bun.sleep(50);
-    pushMsg(key, { from: "human", text: "approved", type: "approve" });
+    pushMsg(task.id, { from: "human", text: "approved", type: "approve" });
 
     const result = await phase;
 
@@ -188,7 +181,6 @@ test(
   async () => {
     const task = makeTask({ skip_critique: false, discord_thread_id: "thread-1" });
     crashCriticForTaskId = task.id;
-    const key = `agentfleet:planning:${task.id}`;
 
     const phase = runPlanningPhase(task);
     // watchBatch polls every ~1s; wait a full cycle so it has definitely
@@ -196,7 +188,7 @@ test(
     // checkpoint before this test's own abort message can race it and get
     // picked up as a plain kill-switch instead.
     await Bun.sleep(1300);
-    pushMsg(key, { from: "human", text: "stop", type: "abort" });
+    pushMsg(task.id, { from: "human", text: "stop", type: "abort" });
 
     const result = await phase;
 
@@ -211,11 +203,10 @@ test(
   async () => {
     queryDelayMs = 1500; // outlast waitForCheckpointReply's ~1s poll so the abort wins the race
     const task = makeTask({ skip_critique: true });
-    const key = `agentfleet:planning:${task.id}`;
 
     const phase = runImplementationPhase(task, "proposer-fixed-session");
     await Bun.sleep(50);
-    pushMsg(key, { from: "human", text: "stop", type: "abort" });
+    pushMsg(task.id, { from: "human", text: "stop", type: "abort" });
 
     const result = await phase;
 
@@ -228,7 +219,6 @@ test(
   "implementation completes and returns the session's final text",
   async () => {
     const task = makeTask({ skip_critique: true });
-    const key = `agentfleet:planning:${task.id}`;
 
     const result = await runImplementationPhase(task, "proposer-fixed-session");
 
@@ -237,11 +227,11 @@ test(
 
     // runImplementationPhase's stopWatcher has no timeout and only exits on
     // an abort message — having lost the Promise.race here, it's still
-    // polling Redis in the background. Harmless in production (the worker
+    // polling fleet-core in the background. Harmless in production (the worker
     // process moves on to push+PR and keeps running regardless), but it
     // would leak a live 1s timer past this test in a short-lived test
     // process. Give it the abort it's waiting for before moving on.
-    pushMsg(key, { from: "human", text: "stop", type: "abort" });
+    pushMsg(task.id, { from: "human", text: "stop", type: "abort" });
     await Bun.sleep(1200);
   },
   10000,

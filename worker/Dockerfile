@@ -1,5 +1,4 @@
-# Build context must be the agent-fleet/ repo root (not worker/), since this
-# also needs mcp-redis/ as a sibling directory:
+# Build context must be the agent-fleet/ repo root (not worker/):
 #   docker build -f worker/Dockerfile -t <tag> .
 #
 # Bun runs the TypeScript sources directly (no separate tsc build stage/dist
@@ -32,11 +31,8 @@ RUN mkdir -p /root/.claude
 COPY worker/claude-settings.json /root/.claude/settings.json
 
 WORKDIR /app
-COPY mcp-redis ./mcp-redis
 COPY worker ./worker
-RUN cd mcp-redis && bun install --production
 RUN cd worker && bun install --production
 
-ENV MCP_REDIS_ENTRY=/app/mcp-redis/src/index.ts
 WORKDIR /app/worker
 CMD ["bun", "run", "src/index.ts"]
