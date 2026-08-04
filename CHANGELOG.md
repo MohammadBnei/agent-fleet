@@ -1,5 +1,12 @@
 # Changelog
 
+# [1.3.0](https://github.com/MohammadBnei/agent-fleet/compare/1.2.0...1.3.0) (2026-08-04)
+
+
+### Features
+
+* **worker,fleet-core,dashboard:** single-session planner + dashboard-answered AskUserQuestion ([d59a96f](https://github.com/MohammadBnei/agent-fleet/commit/d59a96f8f711cb7f83e4a69ffcf03b828605d231))
+
 # [1.2.0](https://github.com/MohammadBnei/agent-fleet/compare/1.1.1...1.2.0) (2026-08-04)
 
 
