@@ -1,5 +1,18 @@
 # Changelog
 
+# [1.4.0](https://github.com/MohammadBnei/agent-fleet/compare/1.3.0...1.4.0) (2026-08-04)
+
+
+### Bug Fixes
+
+* **ci:** avoid shadowing actions/github-script's injected `core` global ([8138675](https://github.com/MohammadBnei/agent-fleet/commit/81386754f7114663b7c273ff18fa268c2881d51c))
+* **sidecar:** declare direct dependencies in go.mod ([323551d](https://github.com/MohammadBnei/agent-fleet/commit/323551de95fe6897e843bf628ba4af7fada70df9))
+
+
+### Features
+
+* **core,provisioner,sidecar,worker,k8s:** shared-PVC provisioner, hub-and-spoke gRPC, continuous streaming sessions ([02a5579](https://github.com/MohammadBnei/agent-fleet/commit/02a55795ed4f721b389b61c4582845201c12f43a))
+
 # [1.3.0](https://github.com/MohammadBnei/agent-fleet/compare/1.2.0...1.3.0) (2026-08-04)
 
 
