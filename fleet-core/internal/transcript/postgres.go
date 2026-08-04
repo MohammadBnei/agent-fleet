@@ -10,9 +10,9 @@ import (
 )
 
 // PostgresStore is the Store implementation backing planning_transcript
-// (db/schema.sql). Concurrent appends to the same task (proposer + critic
-// posting near-simultaneously) are serialized via a per-task advisory lock
-// so seq assignment can't race.
+// (db/schema.sql). Concurrent appends to the same task (a human's Discord
+// reply landing alongside the planner's own send_message call) are
+// serialized via a per-task advisory lock so seq assignment can't race.
 type PostgresStore struct {
 	pool *pgxpool.Pool
 }

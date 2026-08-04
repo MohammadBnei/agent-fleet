@@ -25,11 +25,7 @@ func (c *Client) onInteractionCreate(s *discordgo.Session, i *discordgo.Interact
 	case "task":
 		repo := data.Options[0].StringValue()
 		description := data.Options[1].StringValue()
-		skipCritique := false
-		if opt := data.GetOption("skip_critique"); opt != nil {
-			skipCritique = opt.BoolValue()
-		}
-		c.startTask(ctx, s, i, repo, description, skipCritique)
+		c.startTask(ctx, s, i, repo, description)
 
 	case "approve":
 		c.withTaskFromThread(ctx, s, i, func(taskID string) {
@@ -57,7 +53,7 @@ func (c *Client) onInteractionCreate(s *discordgo.Session, i *discordgo.Interact
 	}
 }
 
-func (c *Client) startTask(ctx context.Context, s *discordgo.Session, i *discordgo.InteractionCreate, repo, description string, skipCritique bool) {
+func (c *Client) startTask(ctx context.Context, s *discordgo.Session, i *discordgo.InteractionCreate, repo, description string) {
 	msg, err := s.ChannelMessageSend(c.channelID, fmt.Sprintf("**New task** (%s): %s", repo, description))
 	if err != nil {
 		respond(s, i, "Failed to open task thread.")
@@ -68,7 +64,7 @@ func (c *Client) startTask(ctx context.Context, s *discordgo.Session, i *discord
 		respond(s, i, "Failed to open task thread.")
 		return
 	}
-	taskID, err := c.tasks.CreateTask(ctx, repo, description, c.channelID, thread.ID, skipCritique)
+	taskID, err := c.tasks.CreateTask(ctx, repo, description, c.channelID, thread.ID)
 	if err != nil {
 		respond(s, i, "Failed to create task.")
 		return
@@ -93,7 +89,7 @@ func (c *Client) onMessageCreate(s *discordgo.Session, m *discordgo.MessageCreat
 			if err != nil {
 				return
 			}
-			if _, err := c.tasks.CreateTask(ctx, repo, description, c.channelID, thread.ID, false); err != nil {
+			if _, err := c.tasks.CreateTask(ctx, repo, description, c.channelID, thread.ID); err != nil {
 				slog.Error("legacy !task create failed", "error", err)
 			}
 		}

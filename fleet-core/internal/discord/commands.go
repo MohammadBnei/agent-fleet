@@ -23,7 +23,6 @@ var commandDefs = []*discordgo.ApplicationCommand{
 		Options: []*discordgo.ApplicationCommandOption{
 			{Type: discordgo.ApplicationCommandOptionString, Name: "repo", Description: "Target repo", Required: true, Choices: repoChoices()},
 			{Type: discordgo.ApplicationCommandOptionString, Name: "description", Description: "What to do", Required: true},
-			{Type: discordgo.ApplicationCommandOptionBoolean, Name: "skip_critique", Description: "Skip the critic phase"},
 		},
 	},
 	{Name: "approve", Description: "Approve the current plan for this task"},

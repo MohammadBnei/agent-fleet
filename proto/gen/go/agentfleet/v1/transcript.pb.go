@@ -28,6 +28,12 @@ const (
 	TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_DISCUSSION  TranscriptEntryType = 1
 	TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_APPROVE     TranscriptEntryType = 2
 	TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_ABORT       TranscriptEntryType = 3
+	// Structured multiple-choice question(s) posted by the planner via the
+	// AskUserQuestion MCP tool — `text` is a JSON payload, not prose. Answered
+	// via the dashboard (not Discord), see docs/adr/0018.
+	TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_QUESTION TranscriptEntryType = 4
+	// The human's answer to a QUESTION entry — `text` is a JSON payload.
+	TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_ANSWER TranscriptEntryType = 5
 )
 
 // Enum value maps for TranscriptEntryType.
@@ -37,12 +43,16 @@ var (
 		1: "TRANSCRIPT_ENTRY_TYPE_DISCUSSION",
 		2: "TRANSCRIPT_ENTRY_TYPE_APPROVE",
 		3: "TRANSCRIPT_ENTRY_TYPE_ABORT",
+		4: "TRANSCRIPT_ENTRY_TYPE_QUESTION",
+		5: "TRANSCRIPT_ENTRY_TYPE_ANSWER",
 	}
 	TranscriptEntryType_value = map[string]int32{
 		"TRANSCRIPT_ENTRY_TYPE_UNSPECIFIED": 0,
 		"TRANSCRIPT_ENTRY_TYPE_DISCUSSION":  1,
 		"TRANSCRIPT_ENTRY_TYPE_APPROVE":     2,
 		"TRANSCRIPT_ENTRY_TYPE_ABORT":       3,
+		"TRANSCRIPT_ENTRY_TYPE_QUESTION":    4,
+		"TRANSCRIPT_ENTRY_TYPE_ANSWER":      5,
 	}
 )
 
@@ -77,7 +87,7 @@ type TranscriptEntry struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	TaskId        string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
 	Seq           int64                  `protobuf:"varint,2,opt,name=seq,proto3" json:"seq,omitempty"`
-	From          string                 `protobuf:"bytes,3,opt,name=from,proto3" json:"from,omitempty"` // "proposer" | "critic" | "human"
+	From          string                 `protobuf:"bytes,3,opt,name=from,proto3" json:"from,omitempty"` // "planner" | "human"
 	Text          string                 `protobuf:"bytes,4,opt,name=text,proto3" json:"text,omitempty"`
 	Type          TranscriptEntryType    `protobuf:"varint,5,opt,name=type,proto3,enum=agentfleet.v1.TranscriptEntryType" json:"type,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -361,12 +371,14 @@ const file_agentfleet_v1_transcript_proto_rawDesc = "" +
 	"timeout_ms\x18\x03 \x01(\x05R\ttimeoutMs\"r\n" +
 	"\x1bReadTranscriptSinceResponse\x128\n" +
 	"\aentries\x18\x01 \x03(\v2\x1e.agentfleet.v1.TranscriptEntryR\aentries\x12\x19\n" +
-	"\bnext_seq\x18\x02 \x01(\x03R\anextSeq*\xa6\x01\n" +
+	"\bnext_seq\x18\x02 \x01(\x03R\anextSeq*\xec\x01\n" +
 	"\x13TranscriptEntryType\x12%\n" +
 	"!TRANSCRIPT_ENTRY_TYPE_UNSPECIFIED\x10\x00\x12$\n" +
 	" TRANSCRIPT_ENTRY_TYPE_DISCUSSION\x10\x01\x12!\n" +
 	"\x1dTRANSCRIPT_ENTRY_TYPE_APPROVE\x10\x02\x12\x1f\n" +
-	"\x1bTRANSCRIPT_ENTRY_TYPE_ABORT\x10\x03BMZKgithub.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1;agentfleetv1b\x06proto3"
+	"\x1bTRANSCRIPT_ENTRY_TYPE_ABORT\x10\x03\x12\"\n" +
+	"\x1eTRANSCRIPT_ENTRY_TYPE_QUESTION\x10\x04\x12 \n" +
+	"\x1cTRANSCRIPT_ENTRY_TYPE_ANSWER\x10\x05BMZKgithub.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1;agentfleetv1b\x06proto3"
 
 var (
 	file_agentfleet_v1_transcript_proto_rawDescOnce sync.Once

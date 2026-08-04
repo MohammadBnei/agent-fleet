@@ -46,9 +46,14 @@ Look specifically at `session.result` events' `permissionDenials` and
 `numTurns`/`totalCostUsd`. **A high `permissionDenials` count with very few
 turns is the signature of a missing `allowedTools` entry** — a headless
 `query()` has no `canUseTool` prompt, so a disallowed tool call is silently
-denied, not errored loudly (`docs/adr/0008`). If a critic or proposer never
-posted to the transcript at all despite running for a while, check this
-before assuming the model just didn't respond.
+denied, not errored loudly (`docs/adr/0008`). If the planner never posted
+to the transcript at all despite running for a while, check this before
+assuming the model just didn't respond. Since `docs/adr/0017`, planning is
+one `query()` session (`from: "planner"`, not a proposer/critic pair) — a
+`Task`-tool permission denial specifically means
+`doubt-driven-development`'s fresh-context subagent spawn was silently
+blocked (unverified whether `Task` is honored under `permissionMode:
+"plan"` — see that ADR's Consequences).
 
 ## 3. Check the worker pod's live logs
 
@@ -91,3 +96,15 @@ quiet but this list is still growing, the bot's relay
 - **`total_cost_usd` looks wrong/zero** → expected under subscription auth
   (`CLAUDE_CODE_OAUTH_TOKEN`, not a metered API key) — it's a notional
   figure, not a real charge (`docs/adr/0004`). Not a bug by itself.
+- **`Task` tool permission denial during planning** → `doubt-driven-
+  development` never actually ran its fresh-context review despite the
+  planner saying it would; the model has no visible error to react to, it
+  just silently loses the review step. Check the `system`/`init` log line's
+  `skills`/`plugins` fields (confirms `worker/skills/agent-fleet-planning`
+  loaded) and `tool_use`/`tool_result` entries naming `Task` (`docs/adr/0017`).
+- **A `tool_use` entry naming `AskUserQuestion`** → the planner tried to use
+  the native interactive-question tool instead of the Discord-relay
+  reinterpretation (`send_message`/`wait_for_messages`) its prompt
+  instructs — that tool doesn't exist in this headless environment, so the
+  call is silently denied and the interview step effectively never asked
+  Mohammad anything (`docs/adr/0017`).

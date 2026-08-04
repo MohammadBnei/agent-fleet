@@ -56,6 +56,9 @@ const (
 	// DashboardServiceKillE2EProcedure is the fully-qualified name of the DashboardService's KillE2e
 	// RPC.
 	DashboardServiceKillE2EProcedure = "/agentfleet.v1.DashboardService/KillE2e"
+	// DashboardServiceAnswerQuestionProcedure is the fully-qualified name of the DashboardService's
+	// AnswerQuestion RPC.
+	DashboardServiceAnswerQuestionProcedure = "/agentfleet.v1.DashboardService/AnswerQuestion"
 )
 
 // DashboardServiceClient is a client for the agentfleet.v1.DashboardService service.
@@ -75,6 +78,7 @@ type DashboardServiceClient interface {
 	Approve(context.Context, *connect.Request[v1.ApproveRequest]) (*connect.Response[v1.ApproveResponse], error)
 	Stop(context.Context, *connect.Request[v1.StopRequest]) (*connect.Response[v1.StopResponse], error)
 	KillE2E(context.Context, *connect.Request[v1.KillE2ERequest]) (*connect.Response[v1.KillE2EResponse], error)
+	AnswerQuestion(context.Context, *connect.Request[v1.AnswerQuestionRequest]) (*connect.Response[v1.AnswerQuestionResponse], error)
 }
 
 // NewDashboardServiceClient constructs a client for the agentfleet.v1.DashboardService service. By
@@ -136,6 +140,12 @@ func NewDashboardServiceClient(httpClient connect.HTTPClient, baseURL string, op
 			connect.WithSchema(dashboardServiceMethods.ByName("KillE2e")),
 			connect.WithClientOptions(opts...),
 		),
+		answerQuestion: connect.NewClient[v1.AnswerQuestionRequest, v1.AnswerQuestionResponse](
+			httpClient,
+			baseURL+DashboardServiceAnswerQuestionProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("AnswerQuestion")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -149,6 +159,7 @@ type dashboardServiceClient struct {
 	approve          *connect.Client[v1.ApproveRequest, v1.ApproveResponse]
 	stop             *connect.Client[v1.StopRequest, v1.StopResponse]
 	killE2E          *connect.Client[v1.KillE2ERequest, v1.KillE2EResponse]
+	answerQuestion   *connect.Client[v1.AnswerQuestionRequest, v1.AnswerQuestionResponse]
 }
 
 // ListTasks calls agentfleet.v1.DashboardService.ListTasks.
@@ -191,6 +202,11 @@ func (c *dashboardServiceClient) KillE2E(ctx context.Context, req *connect.Reque
 	return c.killE2E.CallUnary(ctx, req)
 }
 
+// AnswerQuestion calls agentfleet.v1.DashboardService.AnswerQuestion.
+func (c *dashboardServiceClient) AnswerQuestion(ctx context.Context, req *connect.Request[v1.AnswerQuestionRequest]) (*connect.Response[v1.AnswerQuestionResponse], error) {
+	return c.answerQuestion.CallUnary(ctx, req)
+}
+
 // DashboardServiceHandler is an implementation of the agentfleet.v1.DashboardService service.
 type DashboardServiceHandler interface {
 	ListTasks(context.Context, *connect.Request[v1.ListTasksRequest]) (*connect.Response[v1.ListTasksResponse], error)
@@ -208,6 +224,7 @@ type DashboardServiceHandler interface {
 	Approve(context.Context, *connect.Request[v1.ApproveRequest]) (*connect.Response[v1.ApproveResponse], error)
 	Stop(context.Context, *connect.Request[v1.StopRequest]) (*connect.Response[v1.StopResponse], error)
 	KillE2E(context.Context, *connect.Request[v1.KillE2ERequest]) (*connect.Response[v1.KillE2EResponse], error)
+	AnswerQuestion(context.Context, *connect.Request[v1.AnswerQuestionRequest]) (*connect.Response[v1.AnswerQuestionResponse], error)
 }
 
 // NewDashboardServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -265,6 +282,12 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 		connect.WithSchema(dashboardServiceMethods.ByName("KillE2e")),
 		connect.WithHandlerOptions(opts...),
 	)
+	dashboardServiceAnswerQuestionHandler := connect.NewUnaryHandler(
+		DashboardServiceAnswerQuestionProcedure,
+		svc.AnswerQuestion,
+		connect.WithSchema(dashboardServiceMethods.ByName("AnswerQuestion")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/agentfleet.v1.DashboardService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case DashboardServiceListTasksProcedure:
@@ -283,6 +306,8 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 			dashboardServiceStopHandler.ServeHTTP(w, r)
 		case DashboardServiceKillE2EProcedure:
 			dashboardServiceKillE2EHandler.ServeHTTP(w, r)
+		case DashboardServiceAnswerQuestionProcedure:
+			dashboardServiceAnswerQuestionHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -322,4 +347,8 @@ func (UnimplementedDashboardServiceHandler) Stop(context.Context, *connect.Reque
 
 func (UnimplementedDashboardServiceHandler) KillE2E(context.Context, *connect.Request[v1.KillE2ERequest]) (*connect.Response[v1.KillE2EResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.KillE2e is not implemented"))
+}
+
+func (UnimplementedDashboardServiceHandler) AnswerQuestion(context.Context, *connect.Request[v1.AnswerQuestionRequest]) (*connect.Response[v1.AnswerQuestionResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.AnswerQuestion is not implemented"))
 }

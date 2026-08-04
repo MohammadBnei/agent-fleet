@@ -14,7 +14,7 @@ from, what's below reflects the actual implementation.
 | `worker/` | The Claude Code worker (TS/Bun — the only remaining JS runtime in the fleet, since it's the sole host of `@anthropic-ai/claude-agent-sdk`'s `query()`). One persistent pod per target repo. Polls `tasks` for its repo, creates a git worktree per claimed task, runs the planning phase then the implementation phase, opens a PR, replies in the Discord thread. Talks to `fleet-core` and `e2e-provisioner` only via MCP over HTTP — never gRPC. |
 | `proto/` | buf-managed `.proto` schema (lint + breaking-change CI + generate/drift check): the `E2eProvisionerService` gRPC contract (`fleet-core` → `e2e-provisioner`, the one real gRPC call in the fleet) and message shapes documenting the MCP transcript payload. Generates Go (`proto/gen/go`, own module) and TS types (`worker/src/gen`, `ts-proto`, types-only). |
 | `db/schema.sql` | Shared Postgres schema (`agentfleetdb`, Pigsty-managed): `tasks` queue, append-only `knowledge_journal`, `planning_transcript` (the durable planning transcript, replacing the old Redis list — pull/cursor reads, per-task idempotency-keyed appends), and `e2e_sessions` (on-demand e2e environment lifecycle). |
-| `dashboard/` | React + Vite + TypeScript + Tailwind/DaisyUI SPA — task list, task detail (live transcript via a Connect server-streaming RPC, approve/stop/kill-e2e buttons, code-server link), talking to `fleet-core` via a generated `@connectrpc/connect-web` client (`dashboard/src/gen/`, buf-generated). Built by `fleet-core/Dockerfile`'s `spa` stage and embedded into the `fleet-core` binary — not deployed on its own, see [`adr/0015`](adr/0015-connectrpc-dashboard-api.md). |
+| `dashboard/` | React + Vite + TypeScript + Tailwind/DaisyUI SPA — task list, task detail (live transcript via a Connect server-streaming RPC, approve/stop/kill-e2e buttons, code-server link, AskUserQuestion answer forms — see [`adr/0018`](adr/0018-ask-user-question-via-dashboard.md)), talking to `fleet-core` via a generated `@connectrpc/connect-web` client (`dashboard/src/gen/`, buf-generated). Built by `fleet-core/Dockerfile`'s `spa` stage and embedded into the `fleet-core` binary — not deployed on its own, see [`adr/0015`](adr/0015-connectrpc-dashboard-api.md). |
 | `k8s/` | Helm values for three deployed apps (`fleet-core`, `dream-analyst-worker`, `vos-monolith-worker`), consumed by two-source ArgoCD Applications defined in `infra-bootstrap`. |
 | `e2e-provisioner/` | Go service (`client-go`) — the only component in the fleet with Kubernetes RBAC (namespaced `Role`, never a `ClusterRole`) to create/delete Pods/Services/IngressRoutes/Middlewares. Exposes an MCP server per task (`/mcp/:taskId`) that the worker calls to request/kill an on-demand e2e environment, proxies Playwright MCP tool calls to whichever e2e pod is live for that task, and exposes a small gRPC service `fleet-core` calls for `/e2e-kill`. Deployed as a standalone plain-manifest ArgoCD Application in `infra-bootstrap` (`gitops/platform/e2e-provisioner/`), not via `k8s/` here — unchanged RBAC/placement from [`adr/0012`](adr/0012-e2e-provisioner-standalone-app.md), rewritten Go per [`adr/0013`](adr/0013-go-fleet-core-and-e2e-provisioner-rewrite.md). |
 | `e2e-runner/` | One generic pod image (code-server + the target app + a Playwright MCP server, CPU-only headless Chromium for v1) that `e2e-provisioner` spins up per task, parametrized by env vars the same way `worker/`'s single image is parametrized by `TARGET_REPO`. |
@@ -27,20 +27,21 @@ sequenceDiagram
     participant FC as fleet-core
     participant PG as Postgres (tasks + planning_transcript)
     participant W as worker
-    participant P as proposer session
-    participant C as critic session
+    participant P as planner session
 
     D->>FC: /task repo desc
     FC->>PG: createTask() → status=pending
     W->>PG: claimNextTask() (FOR UPDATE SKIP LOCKED) — unchanged, fleet-core never touches this
     W->>W: createWorktree(): git worktree add -b agent/<taskId>
 
-    par Planning phase (permissionMode: plan, read/bash only)
-        W->>P: query() proposer
-        W->>C: query() critic
-    end
+    W->>P: query() planner (permissionMode: plan, read/bash only, plus Task for doubt-driven-development's fresh-context subagent)
     P->>FC: send_message (MCP tool call → planning_transcript)
-    C->>FC: send_message (MCP tool call → planning_transcript)
+    opt architecture-interview invoked (planner's own judgment)
+        P->>FC: send_message (question)
+        D->>FC: thread reply
+        FC->>PG: in-process Append() — no network hop, same binary
+        P->>FC: wait_for_messages
+    end
     D->>FC: thread replies
     FC->>PG: in-process Append() — no network hop, same binary
     FC-->>D: every message relayed live
@@ -48,7 +49,7 @@ sequenceDiagram
     D->>FC: /approve (or "approved"/"lgtm"/"ship it"/"go ahead")
     Note over FC: never inferred from silence or round completion
 
-    W->>P: query({ resume: proposerSessionId }, permissionMode: default, write/edit unlocked)
+    W->>P: query({ resume: planningSessionId }, permissionMode: default, write/edit unlocked)
     P->>P: code, test, docs, commit
     W->>W: pushAndOpenPr(): git push + gh pr create
     W->>PG: status=done, pr_url set
@@ -60,7 +61,7 @@ sequenceDiagram
 in either phase, not just at a checkpoint — relayed into the same
 transcript and checked first, before the word-match approval fallback.
 
-During the implementation phase, the proposer session can also call
+During the implementation phase, the planner session can also call
 `request_e2e_env`/`kill_env` (an MCP server proxied through
 `e2e-provisioner`, a separate MCP surface from `fleet-core`'s) to spin up a
 live preview pod and drive Playwright browser tests against it — see
@@ -74,19 +75,30 @@ or the agent — never merely because a PR was opened.
 
 ## 3. Planning-phase guardrails
 
-- **Critic is opt-out, human-only.** Critique runs by default; a
-  `skip_critique` boolean on `/task` (default false) skips spawning the
-  critic session entirely for that task — round-cap math then counts
-  proposer turns alone. The proposer never decides this for itself — see
-  [`adr/0011-critic-opt-out-and-context-handoff.md`](adr/0011-critic-opt-out-and-context-handoff.md).
-- **Proposer→critic context handoff.** The proposer cites the files/paths
-  it read in its plan message; the critic starts from those instead of
-  re-reading the repo cold, only exploring further to verify a claim or
-  cover a gap (same ADR).
-- **Round cap:** every `MAX_PLANNING_ROUNDS` (default 1) proposer↔critic
-  exchanges without a verdict from Mohammad, both sessions are aborted and
-  a checkpoint posts to Discord: reply to continue, `/approve`, or `/stop`.
-- **Session-end checkpoint:** if either session ends early (crash, turn
+- **Complexity-gated interview/doubt, no `/task` knob.** The planner
+  decides for itself, per task, whether `architecture-interview` and/or
+  `doubt-driven-development` apply, using each skill's own "when to use"
+  criteria — no pre-task boolean locks in a guess before exploration has
+  even happened. Mohammad can still interject live in the thread at any
+  point ("skip the interview" / "run doubt on this") since narrative
+  planning discussion still routes through `send_message`/
+  `wait_for_messages` to Discord — see
+  [`adr/0017-single-session-planning-pipeline.md`](adr/0017-single-session-planning-pipeline.md).
+- **`PLAN_READY:` round-cap convention.** A single planner session can post
+  many `send_message` messages before there's anything to checkpoint on —
+  the round cap counts only messages prefixed `PLAN_READY:` (a complete,
+  reviewable plan), not every message.
+- **AskUserQuestion, answered via the dashboard, not Discord.** A real
+  `AskUserQuestion` MCP tool (structured questions, options with
+  label+description, optional multi-select) posts a `question`-type
+  `planning_transcript` entry and blocks until the dashboard's
+  `AnswerQuestion` RPC posts the matching `answer` entry — Discord's
+  plain-text threads can't render structured multiple-choice UI. See
+  [`adr/0018-ask-user-question-via-dashboard.md`](adr/0018-ask-user-question-via-dashboard.md).
+- **Round cap:** every `MAX_PLANNING_ROUNDS` (default 1) `PLAN_READY:`
+  posts without a verdict from Mohammad, the session is aborted and a
+  checkpoint posts to Discord: reply to continue, `/approve`, or `/stop`.
+- **Session-end checkpoint:** if the session ends early (crash, turn
   limit, early return) before the round cap, the same checkpoint fires
   instead of silently retrying.
 - **Turn/time limits are opt-in, not default.** `MAX_TURNS_PLANNING`,
@@ -111,12 +123,17 @@ or the agent — never merely because a PR was opened.
 - Legacy fallback: free-text `!task <repo>: <description>` trigger and
   plain "approved"/"stop" replies, for anyone who doesn't use the slash
   commands.
-- Live relay of every proposer/critic message — and their raw assistant
-  reasoning text, not just formal `send_message` posts — to the Discord
-  thread as it's generated.
+- Live relay of every planner message — plan drafts, interview questions,
+  doubt-cycle status — and its raw assistant reasoning text, not just
+  formal `send_message` posts — to the Discord thread as it's generated.
+- Structured self-review via real, vendored Claude Code skills
+  (`doubt-driven-development`'s fresh-context `Task`-tool subagent,
+  `architecture-interview`'s stakeholder elicitation) instead of a
+  bespoke second agent session — see
+  [`adr/0017`](adr/0017-single-session-planning-pipeline.md).
 - Explicit-approval gate: write/edit tools are structurally absent from
   the planning-phase `allowedTools` list, not just discouraged by prompt.
-- Same proposer session resumed into implementation — no restart, no
+- Same planner session resumed into implementation — no restart, no
   context loss between planning and coding.
 - `/e2e-kill` requests a kill via `e2e-provisioner`'s gRPC API
   (`KillE2eSession`), not a direct `e2e_sessions` write — `fleet-core`
@@ -239,9 +256,9 @@ erDiagram
     planning_transcript {
         uuid task_id FK
         bigint seq PK
-        text from "proposer|critic|human"
+        text from "planner|human"
         text text
-        text type "discussion|approve|abort"
+        text type "discussion|approve|abort|question|answer"
         text idempotency_key
         boolean relayed_to_discord
         int relay_attempts

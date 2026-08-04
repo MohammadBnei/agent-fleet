@@ -12,16 +12,17 @@ CREATE TABLE IF NOT EXISTS tasks (
   claimed_by        TEXT,
   pr_url            TEXT,
   notes             TEXT,
-  skip_critique     BOOLEAN NOT NULL DEFAULT false,
   created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS tasks_repo_status_idx ON tasks (repo, status);
 
--- CREATE TABLE IF NOT EXISTS above is a no-op against the already-live
--- table, so new columns need their own idempotent statement here too.
-ALTER TABLE tasks ADD COLUMN IF NOT EXISTS skip_critique BOOLEAN NOT NULL DEFAULT false;
+-- skip_critique was the /task-time opt-out for the old proposer/critic
+-- design (docs/adr/0011, superseded) — dead now that planning is a single
+-- session and interview/doubt gating is the planner's own judgment call
+-- (docs/adr/0017).
+ALTER TABLE tasks DROP COLUMN IF EXISTS skip_critique;
 
 -- Named + re-applied via DROP/ADD (not inline on the column) so adding a new
 -- status later — like 'cancelled' below, for the round-cap/kill-switch
@@ -29,7 +30,21 @@ ALTER TABLE tasks ADD COLUMN IF NOT EXISTS skip_critique BOOLEAN NOT NULL DEFAUL
 -- future fresh creates.
 ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_status_check;
 ALTER TABLE tasks ADD CONSTRAINT tasks_status_check
-  CHECK (status IN ('pending', 'claimed', 'planning', 'done', 'failed', 'cancelled'));
+  CHECK (status IN ('pending', 'claimed', 'planning', 'implementing', 'done', 'failed', 'cancelled'));
+
+-- Crash recovery + resume (see docs/adr/0016). planning_session_id is the
+-- Postgres-durable *pointer* to the single planner session's Claude session
+-- (docs/adr/0017 — one session, not a proposer_session_id/critic_session_id
+-- pair) whose actual transcript now lives on the worker's RWX PVC
+-- (CLAUDE_CONFIG_DIR, see ADR-0016) — the id alone is useless without that
+-- PVC-side change. heartbeat_at drives stale-claim reclaim in
+-- claimNextTask; lease_id guards the rare split-brain case where a reclaim
+-- raced a not-actually-dead worker.
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS planning_session_id TEXT;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS retry_count INT NOT NULL DEFAULT 0;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS last_error TEXT;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS heartbeat_at TIMESTAMPTZ;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS lease_id UUID;
 
 -- Append-only fleet knowledge journal (mirrors ai-devkit's JSON-event pattern,
 -- see agent-fleet reference-check memory: avoids write-conflict issues that a
@@ -71,12 +86,13 @@ ALTER TABLE e2e_sessions ADD CONSTRAINT e2e_sessions_status_check
 ALTER TABLE e2e_sessions ADD COLUMN IF NOT EXISTS kill_idempotency_key TEXT;
 
 -- Replaces the Redis list (agentfleet:planning:<taskId>) as the durable
--- store for the proposer/critic/human planning conversation (see
--- docs/adr/0013). `seq` is the per-task monotonic cursor that replicates
--- LRANGE-from-index semantics — fleet-core computes it inside the same
--- transaction as the insert, guarded by
--- pg_advisory_xact_lock(hashtext(task_id::text)) so two near-simultaneous
--- appends (proposer + critic posting at once) can't race the same seq.
+-- store for the planner/human planning conversation (see docs/adr/0013;
+-- "planner" not "proposer/critic" as of docs/adr/0017). `seq` is the
+-- per-task monotonic cursor that replicates LRANGE-from-index semantics —
+-- fleet-core computes it inside the same transaction as the insert,
+-- guarded by pg_advisory_xact_lock(hashtext(task_id::text)) so a human's
+-- Discord reply and the planner's own concurrent send_message call can't
+-- race the same seq.
 CREATE TABLE IF NOT EXISTS planning_transcript (
   task_id         UUID NOT NULL REFERENCES tasks(id),
   seq             BIGINT NOT NULL,
@@ -96,9 +112,13 @@ CREATE INDEX IF NOT EXISTS planning_transcript_task_seq_idx
 CREATE UNIQUE INDEX IF NOT EXISTS planning_transcript_idempotency_idx
   ON planning_transcript (task_id, idempotency_key);
 
+-- 'question'/'answer' carry a JSON payload in `text`, not prose — the
+-- AskUserQuestion MCP tool (fleet-core/internal/mcpserver) posts a
+-- 'question' entry and long-polls for the matching 'answer' entry, which
+-- the dashboard (not Discord) submits via AnswerQuestion. See docs/adr/0018.
 ALTER TABLE planning_transcript DROP CONSTRAINT IF EXISTS planning_transcript_type_check;
 ALTER TABLE planning_transcript ADD CONSTRAINT planning_transcript_type_check
-  CHECK (type IN ('discussion', 'approve', 'abort') OR type IS NULL);
+  CHECK (type IN ('discussion', 'approve', 'abort', 'question', 'answer') OR type IS NULL);
 
 -- Retry/DLQ for the Discord-relay side effect only — the transcript entry
 -- itself is already durable the moment the row above commits; these track

@@ -53,9 +53,10 @@ secrets backend); this repo owns the fleet's own source and deploy config.
   streaming-watch RPC without a resume cursor — a dropped message during a
   plan-mode approval gate isn't recoverable (see `docs/adr/0013`,
   successor to the original Redis-list-over-pubsub decision).
-- No orchestration framework (Hermes/OpenClaw rejected) — proposer and
-  critic are independent Agent SDK `query()` sessions coordinating only
-  through the shared transcript.
+- No orchestration framework (Hermes/OpenClaw rejected) — a single Agent
+  SDK planning session, using real Claude Code skills
+  (doubt-driven-development, architecture-interview) for review/elicitation
+  instead of a second independent session — see `docs/adr/0017`.
 - One persistent worker pod per target repo, polling Postgres; git
   worktree isolation happens per-task inside the pod, not at
   pod-lifecycle level.

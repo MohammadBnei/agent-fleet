@@ -1,6 +1,6 @@
 # ADR-0002: No orchestration framework (Hermes/OpenClaw rejected)
 
-**Status:** Accepted
+**Status:** Superseded by [0017](0017-single-session-planning-pipeline.md) (the proposer+critic pair it describes is gone; the "no orchestration framework" conclusion still holds)
 **Date:** 2026-07-20 (design-v0.md's open question) — resolved by 2026-07-30 implementation
 
 ## Context

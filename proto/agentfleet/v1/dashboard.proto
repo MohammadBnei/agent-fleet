@@ -80,6 +80,24 @@ message KillE2eResponse {
   bool killed = 1;
 }
 
+// Answers a pending QUESTION-type transcript entry (posted by the planner's
+// AskUserQuestion MCP tool call, see docs/adr/0018). `seq` is that entry's
+// own seq — carried for the dashboard's own bookkeeping/idempotency, not
+// required for correlation server-side (only one question is ever pending
+// per task at a time, since the planner's tool call blocks on it).
+// `answers_json` is a JSON-encoded {"answers": {"<question>": "<label>"}}
+// payload, opaque to fleet-core — it's appended verbatim as the answer
+// entry's `text` and returned verbatim to the blocked MCP tool call.
+message AnswerQuestionRequest {
+  string task_id = 1;
+  int64 seq = 2;
+  string answers_json = 3;
+}
+
+message AnswerQuestionResponse {
+  string status = 1;
+}
+
 service DashboardService {
   rpc ListTasks(ListTasksRequest) returns (ListTasksResponse);
   rpc GetTask(GetTaskRequest) returns (GetTaskResponse);
@@ -96,4 +114,5 @@ service DashboardService {
   rpc Approve(ApproveRequest) returns (ApproveResponse);
   rpc Stop(StopRequest) returns (StopResponse);
   rpc KillE2e(KillE2eRequest) returns (KillE2eResponse);
+  rpc AnswerQuestion(AnswerQuestionRequest) returns (AnswerQuestionResponse);
 }
