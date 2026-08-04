@@ -27,6 +27,11 @@ import (
 )
 
 func main() {
+	// JSON, not slog's default TextHandler — Loki/LogQL queries against
+	// this fleet expect structured logs (same convention the TS services'
+	// log.ts already used).
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
+
 	cfg := config.Load()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
