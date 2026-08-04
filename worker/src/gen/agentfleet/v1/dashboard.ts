@@ -649,12 +649,14 @@ export interface DashboardService {
    * than duplicating a byte-identical message pair.
    * buf:lint:ignore RPC_REQUEST_STANDARD_NAME
    * buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+   * buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
    */
   GetTranscript(request: ReadTranscriptSinceRequest): Promise<ReadTranscriptSinceResponse>;
   /**
    * Streams transcript.proto's TranscriptEntry directly rather than
    * wrapping it in a redundant StreamTranscriptResponse.
    * buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+   * buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
    */
   StreamTranscript(request: StreamTranscriptRequest): Observable<TranscriptEntry>;
   GetE2eStatus(request: GetE2eStatusRequest): Promise<GetE2eStatusResponse>;

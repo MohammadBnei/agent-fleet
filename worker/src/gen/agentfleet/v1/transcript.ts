@@ -21,6 +21,13 @@ export enum TranscriptEntryType {
   TRANSCRIPT_ENTRY_TYPE_QUESTION = 4,
   /** TRANSCRIPT_ENTRY_TYPE_ANSWER - The human's answer to a QUESTION entry — `text` is a JSON payload. */
   TRANSCRIPT_ENTRY_TYPE_ANSWER = 5,
+  /**
+   * TRANSCRIPT_ENTRY_TYPE_TOOL_CALL - Worker-sidecar-originated, never human- or agent-authored: git
+   * diff/branch/tool-call telemetry pushed independently of any agent tool
+   * call (see docs/adr/0020, docs/adr/0021's sidecar). `text` is a JSON
+   * payload. Never relayed to Discord (core's relay loop skips this type).
+   */
+  TRANSCRIPT_ENTRY_TYPE_TOOL_CALL = 6,
   UNRECOGNIZED = -1,
 }
 
@@ -44,6 +51,9 @@ export function transcriptEntryTypeFromJSON(object: any): TranscriptEntryType {
     case 5:
     case "TRANSCRIPT_ENTRY_TYPE_ANSWER":
       return TranscriptEntryType.TRANSCRIPT_ENTRY_TYPE_ANSWER;
+    case 6:
+    case "TRANSCRIPT_ENTRY_TYPE_TOOL_CALL":
+      return TranscriptEntryType.TRANSCRIPT_ENTRY_TYPE_TOOL_CALL;
     case -1:
     case "UNRECOGNIZED":
     default:
@@ -65,6 +75,8 @@ export function transcriptEntryTypeToJSON(object: TranscriptEntryType): string {
       return "TRANSCRIPT_ENTRY_TYPE_QUESTION";
     case TranscriptEntryType.TRANSCRIPT_ENTRY_TYPE_ANSWER:
       return "TRANSCRIPT_ENTRY_TYPE_ANSWER";
+    case TranscriptEntryType.TRANSCRIPT_ENTRY_TYPE_TOOL_CALL:
+      return "TRANSCRIPT_ENTRY_TYPE_TOOL_CALL";
     case TranscriptEntryType.UNRECOGNIZED:
     default:
       return "UNRECOGNIZED";

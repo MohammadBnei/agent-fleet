@@ -1,0 +1,16 @@
+# The one shared RWX PVC docs/adr/0019 replaces the per-repo worker PVCs
+# with: repo clones + git worktrees (one subdir per in-flight task) +
+# Claude Code sessions + skills/CLAUDE.md, all under one mount. Only the
+# provisioner (git clone/fetch/worktree add+remove) and each task's
+# worker+sidecar pod (mounted via a per-task SubPath) ever touch it —
+# core never does, holding zero PVC access matches its zero-RBAC design.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: agent-fleet-workspace
+  namespace: agent-fleet
+spec:
+  accessModes: ["ReadWriteMany"]
+  resources:
+    requests:
+      storage: 20Gi

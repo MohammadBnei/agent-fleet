@@ -1,0 +1,20 @@
+# ClusterIP only — reached by core's gRPC client at :9090 (CreateWorkerPod/
+# CreateE2eSession/TearDownSession/ListE2eTools/CallE2eTool — see
+# docs/adr/0020's hub-and-spoke rule: nothing else ever calls the
+# provisioner directly, not even a worker pod); never exposed outside the
+# cluster. :8080/http is Playwright MCP proxying only.
+apiVersion: v1
+kind: Service
+metadata:
+  name: provisioner
+  namespace: agent-fleet
+spec:
+  selector:
+    app: provisioner
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080
+  - name: grpc
+    port: 9090
+    targetPort: 9090

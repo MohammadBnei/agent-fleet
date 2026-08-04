@@ -1,0 +1,12 @@
+// Replaces db.ts's Task interface — massively simplified, since a
+// single-shot worker pod (docs/adr/0019) no longer claims, retries, or
+// tracks its own resume state: core's dispatch loop and the provisioner
+// own the whole lifecycle up to the moment this pod exists. Everything the
+// worker needs arrives via env at pod creation time (see
+// provisioner/internal/k8s/pod.go's CreateWorkerPod), not a fetched row.
+export type Task = {
+  id: string;
+  repo: string;
+  description: string;
+  leaseId: string;
+};

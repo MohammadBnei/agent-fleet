@@ -2,11 +2,13 @@ syntax = "proto3";
 package agentfleet.v1;
 option go_package = "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1;agentfleetv1";
 
-// Message shapes only — no service here. This data travels over MCP
-// (fleet-core's send_message/wait_for_messages tools), never gRPC; these
-// types exist so fleet-core (Go) and worker (TS, via ts-proto types-only
-// codegen) agree on one schema for the MCP tool JSON payloads instead of
-// each side hand-maintaining an implicit shape (see docs/adr/0013).
+// Message shapes only — no service here (reused by core.proto's
+// CoreService and the dashboard's DashboardService). Originally this data
+// only ever traveled over MCP (fleet-core's send_message/wait_for_messages
+// tools) — as of docs/adr/0020, MCP is local-only (agent-to-sidecar) and
+// gRPC carries this between the sidecar and core instead; these message
+// shapes are unchanged by that transport switch, only how they're
+// delivered.
 
 enum TranscriptEntryType {
   TRANSCRIPT_ENTRY_TYPE_UNSPECIFIED = 0;
@@ -19,6 +21,11 @@ enum TranscriptEntryType {
   TRANSCRIPT_ENTRY_TYPE_QUESTION = 4;
   // The human's answer to a QUESTION entry — `text` is a JSON payload.
   TRANSCRIPT_ENTRY_TYPE_ANSWER = 5;
+  // Worker-sidecar-originated, never human- or agent-authored: git
+  // diff/branch/tool-call telemetry pushed independently of any agent tool
+  // call (see docs/adr/0020, docs/adr/0021's sidecar). `text` is a JSON
+  // payload. Never relayed to Discord (core's relay loop skips this type).
+  TRANSCRIPT_ENTRY_TYPE_TOOL_CALL = 6;
 }
 
 message TranscriptEntry {

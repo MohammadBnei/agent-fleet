@@ -1,353 +1,297 @@
-// Exercises planning.ts's coordination logic — the PLAN_READY: round-cap
-// convention, crash recovery, human approval, tool/plugin wiring, and the
-// implementation-phase kill switch — without a real Claude session or
-// fleet-core server. Mocks must be registered before importing planning.js
-// (Bun resolves mock.module() calls ahead of subsequent static imports).
+// Exercises planning.ts's continuous-session driver (docs/adr/0021) — the
+// canUseTool gate, the PLAN_READY: round-cap convention, human approval/
+// abort via the streamed message feed, and implementation-result
+// classification — without a real Claude session or sidecar. Mocks must be
+// registered before importing planning.js (Bun resolves mock.module()
+// calls ahead of subsequent static imports).
 import { test, expect, mock, beforeEach } from "bun:test";
-import type { Task } from "./db.js";
-
-type TranscriptMsg = { from: string; text: string; type?: string };
 
 const PLAN_READY_PREFIX = "PLAN_READY:";
 
-// In-memory stand-in for fleet-core's planning_transcript, keyed by taskId
-// (fleetCoreClient's readSince/currentCursor take taskId directly, unlike
-// the old Redis key string) — both the mocked module and this file's own
-// pushMsg() calls see the same list.
-const transcriptStore = new Map<string, TranscriptMsg[]>();
+// --- fake sidecarClient.js ---
 
-function pushMsg(taskId: string, msg: TranscriptMsg): void {
-  const list = transcriptStore.get(taskId) ?? [];
-  list.push(msg);
-  transcriptStore.set(taskId, list);
-}
+const pushedMessages: { from: string; text: string; type?: string }[] = [];
+const savedSessionIds: string[] = [];
+const statusUpdates: string[] = [];
 
-mock.module("./fleetCoreClient.js", () => ({
-  readSince: async (taskId: string, sinceIndex: number) => {
-    const list = transcriptStore.get(taskId) ?? [];
-    const start = sinceIndex < 0 ? 0 : sinceIndex;
-    return { messages: list.slice(start), nextIndex: list.length };
-  },
-  currentCursor: async (taskId: string) => (transcriptStore.get(taskId) ?? []).length,
-}));
+// The human-message feed a real sidecar SSE stream would deliver — tests
+// drive this directly instead of a real HTTP connection. onEntry is
+// captured so a test can push into it at any point after runTask() starts.
+let humanMessageHandler: ((entry: { seq: number; from: string; text: string; type?: string }) => void | Promise<void>) | null = null;
 
-// appendJournal/saveSessionIds write to real Postgres — stub them so tests
-// never touch the network, regardless of what CI's DNS does with the
-// unreachable prod host.
-mock.module("./db.js", () => ({
-  appendJournal: mock(async () => {}),
-  saveSessionIds: mock(async () => {}),
-}));
-
-// postReply hits the real Discord REST API — capture what would have been
-// posted instead. Most tests never trigger it (discord_thread_id: null on
-// makeTask's default), but the crash-recovery and round-cap tests below need
-// to inspect the checkpoint text to tell a session-ended checkpoint apart
-// from a round-cap one.
-const discordPosts: string[] = [];
-mock.module("./discord.js", () => ({
-  postReply: mock(async (_threadId: string, content: string) => {
-    discordPosts.push(content);
+mock.module("./sidecarClient.js", () => ({
+  pushMessage: mock(async (from: string, text: string, type?: string) => {
+    pushedMessages.push({ from, text, type });
+  }),
+  saveSessionId: mock(async (id: string) => {
+    savedSessionIds.push(id);
+  }),
+  setStatus: mock(async (status: string) => {
+    statusUpdates.push(status);
+  }),
+  streamHumanMessages: mock(async (onEntry: typeof humanMessageHandler, signal: AbortSignal) => {
+    humanMessageHandler = onEntry;
+    // Resolves only when the caller aborts — mirrors the real SSE stream's
+    // "runs until aborted" contract (worker/src/sidecarClient.ts).
+    await new Promise<void>((resolve) => {
+      signal.addEventListener("abort", () => resolve());
+    });
   }),
 }));
 
-// Records every fake query() invocation's options — the actual signal that
-// tool/plugin wiring (Task tool, the local skills plugin, no write/edit in
-// plan mode) is correct, since there's only one session role now.
-let queryCalls: Array<{ options: Record<string, unknown> }> = [];
-
-// Lets one test force the fake planner session to crash immediately after
-// starting (simulating error_max_turns / a real crash), to verify watchBatch
-// reacts with a "session ended" checkpoint instead of hanging forever.
-let crashPlannerForTaskId: string | null = null;
-
-// Lets a test slow the fake session down past a poll interval, so a
-// concurrently-arriving abort message has time to win the race instead of
-// the (near-instant) fake generator finishing first.
-let queryDelayMs = 0;
-
-// Controls the text of the transcript message the fake session posts —
-// defaults to a PLAN_READY: post (the common case: a session that produces
-// a plan). Round-cap-specific tests override this to a non-prefixed message
-// to prove interview/doubt-cycle chatter doesn't trip the checkpoint.
-let mockMessageText = `${PLAN_READY_PREFIX} mock planner message`;
-
-// Lets a test force the SDK's final `result` message for one task, to
-// exercise runImplementationPhase's transient-vs-terminal classification
-// (docs/adr/0016) without a real crash.
-let forceResultForTaskId: string | null = null;
-let forceResult: { subtype: string; num_turns: number; total_cost_usd: number } | null = null;
-
-function taskIdFromCwd(cwd: string | undefined): string {
-  const m = cwd?.match(/\/workspace\/worktrees\/(.+)$/);
-  if (!m) throw new Error(`fake query(): could not extract taskId from cwd "${cwd}"`);
-  return m[1];
+function pushHuman(text: string, type?: string): void {
+  humanMessageHandler?.({ seq: 0, from: "human", text, type });
 }
 
+// --- fake @anthropic-ai/claude-agent-sdk ---
+
+// One "round" per message the fake session receives via the streamed
+// prompt — each round yields system init (first round only), an assistant
+// message, then a result, then waits for the next input. Mirrors the real
+// SDK's streaming-input behavior confirmed in this session's own Phase 0
+// spike: the same Query object keeps accepting input after interrupt().
+let mockMessageText = `${PLAN_READY_PREFIX} mock planner message`;
+let forceResult: { subtype: string; num_turns: number; total_cost_usd: number } | null = null;
+let crashOnRound: number | null = null;
+let capturedCanUseTool: ((toolName: string, input: unknown) => Promise<{ behavior: string; message?: string }>) | null = null;
+let interruptCalls = 0;
+let setPermissionModeCalls: string[] = [];
+let queryOptions: Record<string, unknown> | null = null;
+
 mock.module("@anthropic-ai/claude-agent-sdk", () => ({
-  query: async function* ({
-    prompt: _prompt,
-    options,
-  }: {
-    prompt: string;
-    options: Record<string, unknown> & { cwd?: string };
-  }) {
-    queryCalls.push({ options });
-    const taskId = taskIdFromCwd(options?.cwd);
-    yield { type: "system", subtype: "init", session_id: `planner-${crypto.randomUUID()}` };
-    if (queryDelayMs > 0) await Bun.sleep(queryDelayMs);
-    if (taskId === crashPlannerForTaskId) {
-      throw new Error("simulated planner crash");
+  query: ({ prompt, options }: { prompt: AsyncIterable<{ message: { content: string } }>; options: Record<string, unknown> }) => {
+    queryOptions = options;
+    capturedCanUseTool = options.canUseTool as typeof capturedCanUseTool;
+    const iterator = prompt[Symbol.asyncIterator]();
+    const abortController = options.abortController as AbortController;
+    let round = 0;
+    let sessionId = "";
+
+    async function* generate() {
+      for (;;) {
+        // Mirrors a real aborted session: abortController.abort() rejects
+        // whatever the generator is currently awaiting, it doesn't just
+        // stop yielding. Without this, the "idle, waiting for the next
+        // streamed input" case (the common shape of an unprompted /stop)
+        // never resolves at all.
+        const next = await Promise.race([
+          iterator.next(),
+          new Promise<never>((_, reject) => {
+            if (abortController?.signal.aborted) reject(new Error("aborted"));
+            abortController?.signal.addEventListener("abort", () => reject(new Error("aborted")));
+          }),
+        ]);
+        const { done } = next;
+        if (done) return;
+        round++;
+        if (!sessionId) {
+          sessionId = `planner-${crypto.randomUUID()}`;
+          yield { type: "system", subtype: "init", session_id: sessionId };
+        }
+        if (round === crashOnRound) throw new Error("simulated session crash");
+
+        yield {
+          type: "assistant",
+          message: {
+            content: [
+              {
+                type: "tool_use",
+                name: "mcp__agent-fleet-sidecar__send_message",
+                input: { text: mockMessageText },
+              },
+              { type: "text", text: mockMessageText },
+            ],
+          },
+        };
+        if (forceResult) {
+          yield { type: "result", ...forceResult };
+          continue;
+        }
+        yield { type: "result", subtype: "success", num_turns: 1, total_cost_usd: 0.01 };
+      }
     }
-    pushMsg(taskId, { from: "planner", text: mockMessageText });
-    yield {
-      type: "assistant",
-      message: { content: [{ type: "text", text: "mock planner message" }] },
-    };
-    if (taskId === forceResultForTaskId && forceResult) {
-      yield { type: "result", ...forceResult };
-      return;
-    }
-    yield { type: "result", subtype: "success", num_turns: 1, total_cost_usd: 0 };
+
+    const gen = generate();
+    return Object.assign(gen, {
+      interrupt: mock(async () => {
+        interruptCalls++;
+      }),
+      setPermissionMode: mock(async (mode: string) => {
+        setPermissionModeCalls.push(mode);
+      }),
+    });
   },
 }));
 
-const { runPlanningPhase, runImplementationPhase, TransientError } = await import("./planning.js");
+const { runTask, TransientError } = await import("./planning.js");
 
 beforeEach(() => {
-  queryCalls = [];
-  crashPlannerForTaskId = null;
-  queryDelayMs = 0;
-  discordPosts.length = 0;
+  pushedMessages.length = 0;
+  savedSessionIds.length = 0;
+  statusUpdates.length = 0;
+  humanMessageHandler = null;
   mockMessageText = `${PLAN_READY_PREFIX} mock planner message`;
-  forceResultForTaskId = null;
   forceResult = null;
+  crashOnRound = null;
+  capturedCanUseTool = null;
+  interruptCalls = 0;
+  setPermissionModeCalls = [];
+  queryOptions = null;
 });
 
-function makeTask(overrides: Partial<Task> = {}): Task {
+function makeTask(overrides: Partial<{ id: string; repo: string; description: string; leaseId: string }> = {}) {
   return {
     id: crypto.randomUUID(),
     repo: "dream-analyst",
     description: "test task",
-    status: "planning",
-    discord_channel_id: "chan",
-    discord_thread_id: null, // keeps postReply() unreachable by default — every call site is gated on this
-    claimed_by: "test-worker",
-    pr_url: null,
-    planning_session_id: null,
-    retry_count: 0,
-    last_error: null,
-    heartbeat_at: null,
-    lease_id: null,
+    leaseId: "lease-1",
     ...overrides,
   };
 }
 
-test(
-  "the planning session runs with plan-mode tool wiring: Task + the local skills plugin, no write/edit",
-  async () => {
-    const task = makeTask();
+test("tool wiring: plan mode, no Write/Edit in allowedTools, canUseTool present, local skills plugin", async () => {
+  const task = makeTask();
+  const promise = runTask(task);
+  await Bun.sleep(20);
+  pushHuman("stop", "abort");
+  await promise;
 
-    const phase = runPlanningPhase(task);
-    await Bun.sleep(50);
-    pushMsg(task.id, { from: "human", text: "stop", type: "abort" });
-    await phase;
+  expect(queryOptions).not.toBeNull();
+  expect(queryOptions?.permissionMode).toBe("plan");
+  const allowedTools = queryOptions?.allowedTools as string[];
+  expect(allowedTools).not.toContain("Write");
+  expect(allowedTools).not.toContain("Edit");
+  expect(allowedTools).toContain("Task");
+  expect(allowedTools).toContain("mcp__agent-fleet-sidecar__AskUserQuestion");
+  expect(typeof queryOptions?.canUseTool).toBe("function");
+  const plugins = queryOptions?.plugins as Array<{ type: string; path: string }>;
+  expect(plugins.some((p) => p.type === "local" && p.path.includes("agent-fleet-planning"))).toBe(true);
+}, 10000);
 
-    expect(queryCalls.length).toBe(1);
-    const { options } = queryCalls[0];
-    expect(options.permissionMode).toBe("plan");
-    expect(options.allowedTools).toContain("Task");
-    expect(options.allowedTools).toContain("mcp__agent-fleet-core__AskUserQuestion");
-    expect(options.allowedTools).not.toContain("Write");
-    expect(options.allowedTools).not.toContain("Edit");
-    const plugins = options.plugins as Array<{ type: string; path: string }>;
-    expect(plugins.some((p) => p.type === "local" && p.path.includes("agent-fleet-planning"))).toBe(true);
-  },
-  10000,
-);
+test("canUseTool denies Write/Edit before approval, allows after", async () => {
+  const task = makeTask();
+  const promise = runTask(task);
+  await Bun.sleep(20);
 
-test(
-  "a dashboard-submitted answer entry is never misread as approval/abort",
-  async () => {
-    const task = makeTask();
+  const beforeApproval = await capturedCanUseTool!("Write", { file_path: "x" });
+  expect(beforeApproval.behavior).toBe("deny");
 
-    const phase = runPlanningPhase(task);
-    await Bun.sleep(50);
-    // A human's chosen option label could itself contain a word
-    // isApproval's word-matching fallback matches (docs/adr/0018) — an
-    // "answer"-type entry must never resolve the phase on its own.
-    pushMsg(task.id, { from: "human", type: "answer", text: '{"answers":{"q":"approved, ship it"}}' });
-    await Bun.sleep(200);
-    pushMsg(task.id, { from: "human", text: "stop", type: "abort" });
+  pushHuman("approved", "approve");
+  await Bun.sleep(20);
+  const afterApproval = await capturedCanUseTool!("Write", { file_path: "x" });
+  expect(afterApproval.behavior).toBe("allow");
 
-    const result = await phase;
+  pushHuman("stop", "abort");
+  await promise;
+}, 10000);
 
-    expect(result.aborted).toBe(true);
-  },
-  10000,
-);
+test("an answer-type human entry is never misread as approval/abort", async () => {
+  const task = makeTask();
+  const promise = runTask(task);
+  await Bun.sleep(20);
+  // A human's chosen option label could itself contain a word isApproval's
+  // word-matching fallback matches (docs/adr/0018) — an "answer"-type
+  // entry must never resolve the phase on its own.
+  pushHuman('{"answers":{"q":"approved, ship it"}}', "answer");
+  await Bun.sleep(20);
+  expect(setPermissionModeCalls.length).toBe(0);
 
-test(
-  "a question-type planner message relays a dashboard pointer, not the raw JSON payload",
-  async () => {
-    const task = makeTask({ discord_thread_id: "thread-1" });
-    mockMessageText = "exploring the repo before drafting a plan"; // non-PLAN_READY, keeps watchBatch polling
+  pushHuman("stop", "abort");
+  const result = await promise;
+  expect(result.aborted).toBe(true);
+}, 10000);
 
-    const phase = runPlanningPhase(task);
-    await Bun.sleep(50);
-    pushMsg(task.id, {
-      from: "planner",
-      type: "question",
-      text: '{"questions":[{"question":"which?","header":"Q","options":[]}]}',
-    });
-    await Bun.sleep(1300); // outlast watchBatch's ~1s poll
-    pushMsg(task.id, { from: "human", text: "stop", type: "abort" });
-    await phase;
+test("human approval flips the session to implementation and reports status", async () => {
+  const task = makeTask();
+  const promise = runTask(task);
+  await Bun.sleep(20);
+  pushHuman("approved", "approve");
+  await Bun.sleep(20);
 
-    expect(discordPosts.some((m) => m.includes("answer it on the dashboard"))).toBe(true);
-    expect(discordPosts.some((m) => m.includes('"questions"'))).toBe(false);
-  },
-  10000,
-);
+  expect(setPermissionModeCalls).toContain("default");
+  expect(statusUpdates).toContain("implementing");
+  expect(savedSessionIds.length).toBe(1);
+  expect(savedSessionIds[0]).toMatch(/^planner-/);
 
-test(
-  "human approval resolves the phase and returns the planner's session id",
-  async () => {
-    const task = makeTask();
+  pushHuman("stop", "abort");
+  await promise;
+}, 10000);
 
-    const phase = runPlanningPhase(task);
-    await Bun.sleep(50);
-    pushMsg(task.id, { from: "human", text: "approved", type: "approve" });
+test("abort before approval ends the task as aborted", async () => {
+  const task = makeTask();
+  const promise = runTask(task);
+  await Bun.sleep(20);
+  pushHuman("stop", "abort");
+  const result = await promise;
 
-    const result = await phase;
+  expect(result.aborted).toBe(true);
+  expect(interruptCalls).toBeGreaterThan(0);
+}, 10000);
 
-    expect(result.aborted).toBe(false);
-    expect(result.planningSessionId).toMatch(/^planner-/);
-  },
-  10000,
-);
+test("a PLAN_READY: post counts toward the round cap and posts a checkpoint", async () => {
+  const task = makeTask();
+  mockMessageText = `${PLAN_READY_PREFIX} draft plan`;
+  const promise = runTask(task);
+  await Bun.sleep(50);
 
-test(
-  "a crashed planner session triggers a session-ended checkpoint, not a silent hang",
-  async () => {
-    const task = makeTask({ discord_thread_id: "thread-1" });
-    crashPlannerForTaskId = task.id;
+  expect(pushedMessages.some((m) => m.text.includes("Round 1 done"))).toBe(true);
+  expect(interruptCalls).toBeGreaterThan(0);
 
-    const phase = runPlanningPhase(task);
-    // watchBatch polls every ~1s; wait a full cycle so it has definitely
-    // already detected flags.sessionEnded and posted the session-ended
-    // checkpoint before this test's own abort message can race it and get
-    // picked up as a plain kill-switch instead.
-    await Bun.sleep(1300);
-    pushMsg(task.id, { from: "human", text: "stop", type: "abort" });
+  pushHuman("stop", "abort");
+  await promise;
+}, 10000);
 
-    const result = await phase;
+test("a non-PLAN_READY: post does not count toward the round cap", async () => {
+  const task = makeTask();
+  mockMessageText = "exploring the repo before drafting a plan";
+  const promise = runTask(task);
+  await Bun.sleep(50);
 
-    expect(result.aborted).toBe(true);
-    expect(discordPosts.some((m) => m.includes("crashed"))).toBe(true);
-  },
-  10000,
-);
+  expect(pushedMessages.some((m) => m.text.includes("Round 1 done"))).toBe(false);
 
-test(
-  "a PLAN_READY: post counts toward the round cap",
-  async () => {
-    const task = makeTask({ discord_thread_id: "thread-1" });
-    mockMessageText = `${PLAN_READY_PREFIX} draft plan`;
+  pushHuman("stop", "abort");
+  await promise;
+}, 10000);
 
-    const phase = runPlanningPhase(task);
-    await Bun.sleep(1300); // outlast watchBatch's ~1s poll so the checkpoint has fired
-    pushMsg(task.id, { from: "human", text: "stop", type: "abort" });
-    await phase;
+test("a crashed session propagates the error instead of hanging", async () => {
+  const task = makeTask();
+  crashOnRound = 1;
+  await expect(runTask(task)).rejects.toThrow("simulated session crash");
+}, 10000);
 
-    expect(discordPosts.some((m) => m.includes("Round 1 done"))).toBe(true);
-  },
-  10000,
-);
+test("implementation completes and returns the session's final text", async () => {
+  const task = makeTask();
+  // Approval immediately pushes the implementation prompt as the very next
+  // round (runTask breaks on the first post-approval result) — the desired
+  // text has to be in place *before* approving, not after.
+  mockMessageText = "PR_READY: did the thing";
+  const promise = runTask(task);
+  await Bun.sleep(20);
+  pushHuman("approved", "approve");
 
-test(
-  "a non-PLAN_READY: post (e.g. an interview question) does not count toward the round cap",
-  async () => {
-    const task = makeTask({ discord_thread_id: "thread-1" });
-    mockMessageText = "which quality attribute matters more here?"; // no PLAN_READY: prefix
+  const result = await promise;
+  expect(result.aborted).toBe(false);
+  expect(result.summary).toContain("PR_READY: did the thing");
+}, 10000);
 
-    const phase = runPlanningPhase(task);
-    await Bun.sleep(1300);
-    pushMsg(task.id, { from: "human", text: "stop", type: "abort" });
-    await phase;
+test("a 0-turn/$0 implementation result is classified transient", async () => {
+  const task = makeTask();
+  forceResult = { subtype: "error_during_execution", num_turns: 0, total_cost_usd: 0 };
+  const promise = runTask(task);
+  await Bun.sleep(20);
+  pushHuman("approved", "approve");
 
-    // The session still ends (single fake yield, no resume), so the
-    // checkpoint that fires is session-ended, never a round-cap "Round 1
-    // done" — proving the round cap didn't count the unprefixed message.
-    expect(discordPosts.some((m) => m.includes("ended without reaching a decision"))).toBe(true);
-    expect(discordPosts.some((m) => m.includes("Round 1 done"))).toBe(false);
-  },
-  10000,
-);
+  await expect(promise).rejects.toThrow(TransientError);
+}, 10000);
 
-test(
-  "a stop mid-implementation aborts instead of reporting success",
-  async () => {
-    queryDelayMs = 1500; // outlast waitForCheckpointReply's ~1s poll so the abort wins the race
-    const task = makeTask();
+test("a genuine non-success implementation result throws a plain Error", async () => {
+  const task = makeTask();
+  forceResult = { subtype: "error_max_turns", num_turns: 5, total_cost_usd: 0.42 };
+  const promise = runTask(task);
+  await Bun.sleep(20);
+  pushHuman("approved", "approve");
 
-    const phase = runImplementationPhase(task, "planner-fixed-session");
-    await Bun.sleep(50);
-    pushMsg(task.id, { from: "human", text: "stop", type: "abort" });
-
-    const result = await phase;
-
-    expect(result.aborted).toBe(true);
-  },
-  10000,
-);
-
-test(
-  "implementation completes and returns the session's final text",
-  async () => {
-    const task = makeTask();
-
-    const result = await runImplementationPhase(task, "planner-fixed-session");
-
-    expect(result.aborted).toBe(false);
-    expect(result.summary).toContain("mock planner message");
-
-    // runImplementationPhase's stopWatcher has no timeout and only exits on
-    // an abort message — having lost the Promise.race here, it's still
-    // polling fleet-core in the background. Harmless in production (the worker
-    // process moves on to push+PR and keeps running regardless), but it
-    // would leak a live 1s timer past this test in a short-lived test
-    // process. Give it the abort it's waiting for before moving on.
-    pushMsg(task.id, { from: "human", text: "stop", type: "abort" });
-    await Bun.sleep(1200);
-  },
-  10000,
-);
-
-test(
-  "a 0-turn/$0 implementation result is classified transient, matching the real incident",
-  async () => {
-    const task = makeTask();
-    forceResultForTaskId = task.id;
-    forceResult = { subtype: "error_during_execution", num_turns: 0, total_cost_usd: 0 };
-
-    await expect(runImplementationPhase(task, "planner-fixed-session")).rejects.toThrow(TransientError);
-  },
-  10000,
-);
-
-test(
-  "a genuine non-success implementation result throws a plain Error, not TransientError",
-  async () => {
-    const task = makeTask();
-    forceResultForTaskId = task.id;
-    forceResult = { subtype: "error_max_turns", num_turns: 5, total_cost_usd: 0.42 };
-
-    const failure = runImplementationPhase(task, "planner-fixed-session");
-    await expect(failure).rejects.toThrow("implementation stopped: error_max_turns after 5 turns, $0.42");
-
-    const error = await failure.catch((e) => e);
-    expect(error).not.toBeInstanceOf(TransientError);
-  },
-  10000,
-);
+  await expect(promise).rejects.toThrow("implementation stopped: error_max_turns after 5 turns, $0.42");
+  const error = await promise.catch((e) => e);
+  expect(error).not.toBeInstanceOf(TransientError);
+}, 10000);

@@ -1,0 +1,37 @@
+# Namespaced Role only — never a ClusterRole. Scoped to exactly what the
+# provisioner needs to create/tear down an e2e-preview pod (Pod, Service,
+# Traefik IngressRoute/Middleware) AND, as of docs/adr/0019/0020, a worker
+# pod — both are plain Pods, so no new verb was needed, just the same
+# create/get/list/watch/delete set already granted here. No Secret access:
+# preview auth reuses the existing basic-admin-auth Middleware, no
+# per-session secret is ever minted.
+#
+# The worker pods themselves never get any of this — this Role is the ONLY
+# RBAC surface in the whole fleet that can create/delete cluster resources
+# (core, per docs/adr/0020 point 1, needs none at all).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: provisioner
+  namespace: agent-fleet
+rules:
+- apiGroups: [""]
+  resources: ["pods", "services"]
+  verbs: ["create", "get", "list", "watch", "delete"]
+- apiGroups: ["traefik.io"]
+  resources: ["ingressroutes", "middlewares"]
+  verbs: ["create", "get", "list", "watch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: provisioner
+  namespace: agent-fleet
+subjects:
+- kind: ServiceAccount
+  name: provisioner
+  namespace: agent-fleet
+roleRef:
+  kind: Role
+  name: provisioner
+  apiGroup: rbac.authorization.k8s.io
