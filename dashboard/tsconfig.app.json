@@ -19,7 +19,11 @@
     /* Linting */
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "erasableSyntaxOnly": true,
+    // Off: src/gen/'s buf-generated code (protobuf-es) emits real TS
+    // `enum` declarations for proto enums, which erasableSyntaxOnly
+    // rejects — a Vite scaffold default, not a chosen project convention,
+    // so relaxing it for generated code isn't weakening anything deliberate.
+    "erasableSyntaxOnly": false,
     "noFallthroughCasesInSwitch": true
   },
   "include": ["src"]

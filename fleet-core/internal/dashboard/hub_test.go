@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
+
 	"github.com/MohammadBnei/agent-fleet/fleet-core/internal/transcript"
 )
 
@@ -16,13 +18,13 @@ func TestHub_BroadcastFanOut(t *testing.T) {
 	ch2, cancel2 := hub.Subscribe("task-1", 0)
 	defer cancel2()
 
-	hub.broadcast("task-1", Event{Seq: 1, From: "human", Text: "hi", Type: "discussion"})
+	hub.broadcast("task-1", &agentfleetv1.TranscriptEntry{Seq: 1, From: "human", Text: "hi", Type: agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_DISCUSSION})
 
-	for i, ch := range []chan Event{ch1, ch2} {
+	for i, ch := range []chan *agentfleetv1.TranscriptEntry{ch1, ch2} {
 		select {
 		case e := <-ch:
-			if e.Seq != 1 {
-				t.Errorf("subscriber %d: seq = %d, want 1", i, e.Seq)
+			if e.GetSeq() != 1 {
+				t.Errorf("subscriber %d: seq = %d, want 1", i, e.GetSeq())
 			}
 		case <-time.After(time.Second):
 			t.Errorf("subscriber %d: did not receive broadcast", i)
@@ -82,8 +84,11 @@ func TestHub_PollOnceOnlyPollsSubscribedTasks(t *testing.T) {
 
 	select {
 	case e := <-ch:
-		if e.Text != "hi" {
-			t.Errorf("text = %q, want %q", e.Text, "hi")
+		if e.GetText() != "hi" {
+			t.Errorf("text = %q, want %q", e.GetText(), "hi")
+		}
+		if e.GetType() != agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_DISCUSSION {
+			t.Errorf("type = %v, want DISCUSSION (string->enum mapping)", e.GetType())
 		}
 	case <-time.After(time.Second):
 		t.Fatal("did not receive polled entry")
