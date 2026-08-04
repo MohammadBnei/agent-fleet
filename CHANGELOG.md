@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.1](https://github.com/MohammadBnei/agent-fleet/compare/1.1.0...1.1.1) (2026-08-04)
+
+
+### Bug Fixes
+
+* **ci:** deploy job was silently skipped despite its needs succeeding ([89a2955](https://github.com/MohammadBnei/agent-fleet/commit/89a29552e8d3ac6b11994971e4c185c760bda397))
+
 # [1.1.0](https://github.com/MohammadBnei/agent-fleet/compare/1.0.2...1.1.0) (2026-08-04)
 
 
