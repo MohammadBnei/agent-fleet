@@ -2,6 +2,7 @@ package k8s
 
 import (
 	"context"
+	"log/slog"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -22,10 +23,20 @@ func (c *Client) CreateService(ctx context.Context, taskID string) error {
 		},
 	}
 	_, err := c.Core.CoreV1().Services(c.Namespace).Create(ctx, svc, metav1.CreateOptions{})
-	return err
+	if err != nil {
+		slog.Error("k8s CreateService", "taskId", taskID, "error", err)
+		return err
+	}
+	slog.Info("k8s CreateService", "taskId", taskID)
+	return nil
 }
 
 func (c *Client) DeleteService(ctx context.Context, taskID string) error {
-	err := c.Core.CoreV1().Services(c.Namespace).Delete(ctx, ResourceName(taskID), metav1.DeleteOptions{})
-	return ignoreNotFound(err)
+	err := ignoreNotFound(c.Core.CoreV1().Services(c.Namespace).Delete(ctx, ResourceName(taskID), metav1.DeleteOptions{}))
+	if err != nil {
+		slog.Error("k8s DeleteService", "taskId", taskID, "error", err)
+		return err
+	}
+	slog.Info("k8s DeleteService", "taskId", taskID)
+	return nil
 }

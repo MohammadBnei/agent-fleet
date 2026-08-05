@@ -26,6 +26,11 @@ type Client struct {
 	WorkerImage  string
 	SidecarImage string
 	WorkspacePVC string
+	// LogLevel is forwarded verbatim into every worker pod's sidecar and
+	// worker containers (see CreateWorkerPod) — the provisioner's own
+	// LOG_LEVEL is the fleet's single source of truth for it, since those
+	// containers are spawned per-task rather than configured statically.
+	LogLevel string
 }
 
 // New builds an in-cluster client. client-go's rest.InClusterConfig()
@@ -49,15 +54,18 @@ func New(namespace string, cfg Images) (*Client, error) {
 		Core: core, Dynamic: dyn, Namespace: namespace,
 		RunnerImage: cfg.RunnerImage, WorkerImage: cfg.WorkerImage,
 		SidecarImage: cfg.SidecarImage, WorkspacePVC: cfg.WorkspacePVC,
+		LogLevel: cfg.LogLevel,
 	}, nil
 }
 
-// Images bundles the image/PVC config New needs — named struct instead of
-// four positional strings, so a call site can't silently transpose two of
-// them (RunnerImage/WorkerImage/SidecarImage are string-identical types).
+// Images bundles the image/PVC/log-level config New needs — named struct
+// instead of positional strings, so a call site can't silently transpose
+// two of them (RunnerImage/WorkerImage/SidecarImage are string-identical
+// types).
 type Images struct {
 	RunnerImage  string
 	WorkerImage  string
 	SidecarImage string
 	WorkspacePVC string
+	LogLevel     string
 }

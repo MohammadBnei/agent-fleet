@@ -86,7 +86,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool) error {
 	// pushes pod-lifecycle events here, and every worker pod's sidecar
 	// reaches everything else (the old /mcp HTTP surface, and the direct-SQL
 	// calls worker/src/db.ts used to make) through this same service.
-	grpcServer := grpc.NewServer()
+	grpcServer := grpc.NewServer(grpc.UnaryInterceptor(coreserver.AccessLogInterceptor))
 	agentfleetv1.RegisterCoreServiceServer(grpcServer, coreserver.New(store, taskStore, journalStore, provisioner))
 	grpcLis, err := net.Listen("tcp", ":"+cfg.GRPCPort)
 	if err != nil {
@@ -105,7 +105,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool) error {
 	dashboardSvc := dashboard.NewServer(taskStore, store, journalStore, provisioner, hub)
 	dashboardPath, dashboardHandler := agentfleetv1connect.NewDashboardServiceHandler(
 		dashboardSvc,
-		connect.WithInterceptors(dashboard.NewCSRFInterceptor()),
+		connect.WithInterceptors(dashboard.NewCSRFInterceptor(), dashboard.NewAccessLogInterceptor()),
 	)
 	mux.Handle(dashboardPath, dashboardHandler)
 	mux.Handle("/", webui.Handler())

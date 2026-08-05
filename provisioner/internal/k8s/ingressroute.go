@@ -3,6 +3,7 @@ package k8s
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
@@ -51,10 +52,20 @@ func (c *Client) CreateIngressRoute(ctx context.Context, host, taskID string) er
 		},
 	}}
 	_, err := c.Dynamic.Resource(ingressRouteGVR).Namespace(c.Namespace).Create(ctx, obj, createOpts())
-	return err
+	if err != nil {
+		slog.Error("k8s CreateIngressRoute", "taskId", taskID, "error", err)
+		return err
+	}
+	slog.Info("k8s CreateIngressRoute", "taskId", taskID)
+	return nil
 }
 
 func (c *Client) DeleteIngressRoute(ctx context.Context, taskID string) error {
-	err := c.Dynamic.Resource(ingressRouteGVR).Namespace(c.Namespace).Delete(ctx, ResourceName(taskID), deleteOpts())
-	return ignoreNotFound(err)
+	err := ignoreNotFound(c.Dynamic.Resource(ingressRouteGVR).Namespace(c.Namespace).Delete(ctx, ResourceName(taskID), deleteOpts()))
+	if err != nil {
+		slog.Error("k8s DeleteIngressRoute", "taskId", taskID, "error", err)
+		return err
+	}
+	slog.Info("k8s DeleteIngressRoute", "taskId", taskID)
+	return nil
 }

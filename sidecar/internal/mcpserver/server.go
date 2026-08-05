@@ -12,6 +12,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 
 	"github.com/mark3labs/mcp-go/mcp"
@@ -86,8 +87,10 @@ func sendMessageHandler(core *coreclient.Client) server.ToolHandlerFunc {
 		if from == "" || text == "" {
 			return mcp.NewToolResultError("from and text are required"), nil
 		}
+		slog.Info("mcp send_message", "from", from, "type", msgType)
 		seq, err := core.SendMessage(ctx, from, text, stringToProtoType(msgType), idempotencyKey)
 		if err != nil {
+			slog.Error("mcp send_message", "error", err)
 			return nil, fmt.Errorf("send_message: %w", err)
 		}
 		body, _ := json.Marshal(map[string]int64{"index": seq})
@@ -99,8 +102,10 @@ func waitForMessagesHandler(core *coreclient.Client) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		sinceIndex := int64(req.GetInt("sinceIndex", 0))
 		timeoutMs := int32(req.GetInt("timeoutMs", 30000))
+		slog.Debug("mcp wait_for_messages", "sinceIndex", sinceIndex, "timeoutMs", timeoutMs)
 		entries, nextSeq, err := core.WaitForMessages(ctx, sinceIndex, timeoutMs)
 		if err != nil {
+			slog.Error("mcp wait_for_messages", "error", err)
 			return nil, fmt.Errorf("wait_for_messages: %w", err)
 		}
 		messages := make([]map[string]any, 0, len(entries))
@@ -125,8 +130,10 @@ func askUserQuestionHandler(core *coreclient.Client) func(ctx context.Context, r
 		if timeoutMs <= 0 {
 			timeoutMs = 60000
 		}
+		slog.Info("mcp AskUserQuestion", "questions", len(args.Questions))
 		status, answersJSON, _, err := core.AskUserQuestion(ctx, string(payload), timeoutMs)
 		if err != nil {
+			slog.Error("mcp AskUserQuestion", "error", err)
 			return nil, fmt.Errorf("AskUserQuestion: %w", err)
 		}
 		if status == "answered" {
@@ -139,8 +146,10 @@ func askUserQuestionHandler(core *coreclient.Client) func(ctx context.Context, r
 
 func requestE2eEnvHandler(core *coreclient.Client, s *server.MCPServer) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		slog.Info("mcp request_e2e_env")
 		previewURL, _, err := core.RequestE2eEnv(ctx)
 		if err != nil {
+			slog.Error("mcp request_e2e_env", "error", err)
 			return mcp.NewToolResultError(err.Error()), nil
 		}
 
@@ -184,7 +193,9 @@ func addProxiedTool(s *server.MCPServer, core *coreclient.Client, desc *agentfle
 
 func killEnvHandler(core *coreclient.Client) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		slog.Info("mcp kill_env")
 		if _, err := core.KillE2eEnv(ctx); err != nil {
+			slog.Error("mcp kill_env", "error", err)
 			return mcp.NewToolResultError(err.Error()), nil
 		}
 		return mcp.NewToolResultText("kill requested"), nil

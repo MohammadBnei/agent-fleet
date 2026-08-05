@@ -11,6 +11,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 
 	corev1 "k8s.io/api/core/v1"
 
@@ -55,6 +56,7 @@ func (s *Server) KillE2ESession(ctx context.Context, req *agentfleetv1.KillE2ESe
 		return nil, err
 	}
 	s.proxy.DropClient(req.GetTaskId())
+	slog.Info("grpcserver KillE2ESession", "taskId", req.GetTaskId())
 	return &agentfleetv1.KillE2ESessionResponse{Killed: true}, nil
 }
 
@@ -101,6 +103,7 @@ func (s *Server) CreateE2ESession(ctx context.Context, req *agentfleetv1.CreateE
 	if err := s.k8sc.CreateIngressRoute(ctx, s.e2eHost, req.GetTaskId()); err != nil {
 		return nil, fmt.Errorf("create e2e ingressroute: %w", err)
 	}
+	slog.Info("grpcserver CreateE2ESession", "taskId", req.GetTaskId(), "repo", req.GetRepo())
 	return &agentfleetv1.CreateE2ESessionResponse{
 		Status:     "running",
 		PreviewUrl: k8s.PreviewURLFor(s.e2eHost, req.GetTaskId()),
@@ -150,6 +153,7 @@ func (s *Server) CallE2ETool(ctx context.Context, req *agentfleetv1.CallE2EToolR
 	if err != nil {
 		return nil, err
 	}
+	slog.Debug("grpcserver CallE2ETool", "taskId", req.GetTaskId(), "tool", req.GetToolName())
 	resultJSON, err := json.Marshal(result)
 	if err != nil {
 		return nil, fmt.Errorf("marshal tool result: %w", err)
@@ -178,6 +182,7 @@ func (s *Server) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWo
 
 	podName := k8s.WorkerResourceName(req.GetTaskId())
 	s.reportEvent(ctx, req.GetTaskId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_SCHEDULED, podName, "")
+	slog.Info("grpcserver CreateWorkerPod", "taskId", req.GetTaskId(), "repo", req.GetRepo(), "podName", podName)
 	return &agentfleetv1.CreateWorkerPodResponse{PodName: podName}, nil
 }
 
@@ -215,6 +220,7 @@ func (s *Server) tearDownWorker(ctx context.Context, taskID string) (*agentfleet
 		return nil, err
 	}
 	s.reportEvent(ctx, taskID, agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_TERMINATED, "", "")
+	slog.Info("grpcserver tearDownWorker", "taskId", taskID)
 	return &agentfleetv1.TearDownSessionResponse{TornDown: true}, nil
 }
 
@@ -230,6 +236,7 @@ func (s *Server) tearDownE2e(ctx context.Context, taskID string) (*agentfleetv1.
 		return nil, err
 	}
 	s.proxy.DropClient(taskID)
+	slog.Info("grpcserver tearDownE2e", "taskId", taskID)
 	return &agentfleetv1.TearDownSessionResponse{TornDown: true}, nil
 }
 
