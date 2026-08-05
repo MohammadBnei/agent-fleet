@@ -67,6 +67,8 @@ func newTestPool(t *testing.T) *pgxpool.Pool {
 			heartbeat_at       TIMESTAMPTZ,
 			lease_id           UUID,
 			deleted_at         TIMESTAMPTZ,
+			pod_phase          TEXT,
+			pod_message        TEXT,
 			created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
 			updated_at         TIMESTAMPTZ NOT NULL DEFAULT now()
 		);

@@ -311,6 +311,7 @@ func (s *Server) ReportPodEvents(stream agentfleetv1.CoreService_ReportPodEvents
 			return stream.SendAndClose(&agentfleetv1.ReportPodEventsResponse{})
 		}
 		payload, marshalErr := json.Marshal(map[string]any{
+			"taskId":  event.GetTaskId(),
 			"kind":    event.GetKind().String(),
 			"phase":   event.GetPhase().String(),
 			"podName": event.GetPodName(),
@@ -321,6 +322,15 @@ func (s *Server) ReportPodEvents(stream agentfleetv1.CoreService_ReportPodEvents
 		}
 		if err := s.journal.Append(ctx, "", "provisioner", "pod."+event.GetPhase().String(), string(payload)); err != nil {
 			return fmt.Errorf("ReportPodEvents: %w", err)
+		}
+
+		// Live worker-pod state for the dashboard (separate from the
+		// crash-reclaim fast-path below) — only worker pods have a task to
+		// attach state to; e2e pods have no matching tasks row.
+		if event.GetKind() == agentfleetv1.SessionKind_SESSION_KIND_WORKER {
+			if err := s.tasks.SetPodPhase(ctx, event.GetTaskId(), event.GetPhase().String(), event.GetMessage()); err != nil {
+				slog.Error("ReportPodEvents: set pod phase failed", "taskId", event.GetTaskId(), "error", err)
+			}
 		}
 
 		// Fast-path accelerant on top of the heartbeat-reclaim fallback

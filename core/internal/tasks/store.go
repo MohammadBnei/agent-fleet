@@ -45,6 +45,8 @@ type Task struct {
 	Status      string  `json:"status"`
 	ThreadID    *string `json:"threadId,omitempty"`
 	PrURL       *string `json:"prUrl,omitempty"`
+	PodPhase    *string `json:"podPhase,omitempty"`
+	PodMessage  *string `json:"podMessage,omitempty"`
 	LeaseID     string  `json:"-"`
 }
 
@@ -106,9 +108,9 @@ func (s *Store) FindTaskIDByThread(ctx context.Context, threadID string) (string
 func (s *Store) GetTask(ctx context.Context, id string) (*Task, error) {
 	var t Task
 	err := s.pool.QueryRow(ctx, `
-		SELECT id, repo, description, status, discord_thread_id, pr_url
+		SELECT id, repo, description, status, discord_thread_id, pr_url, pod_phase, pod_message
 		FROM tasks WHERE id = $1 AND deleted_at IS NULL
-	`, id).Scan(&t.ID, &t.Repo, &t.Description, &t.Status, &t.ThreadID, &t.PrURL)
+	`, id).Scan(&t.ID, &t.Repo, &t.Description, &t.Status, &t.ThreadID, &t.PrURL, &t.PodPhase, &t.PodMessage)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
@@ -151,7 +153,7 @@ func (s *Store) GetTaskStatusInfo(ctx context.Context, id string) (*TaskStatusIn
 
 func (s *Store) ListRecentTasks(ctx context.Context, limit int) ([]Task, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, repo, description, status, discord_thread_id, pr_url
+		SELECT id, repo, description, status, discord_thread_id, pr_url, pod_phase, pod_message
 		FROM tasks WHERE deleted_at IS NULL ORDER BY created_at DESC LIMIT $1
 	`, limit)
 	if err != nil {
@@ -166,7 +168,7 @@ func (s *Store) ListRecentTasks(ctx context.Context, limit int) ([]Task, error) 
 	out := []Task{}
 	for rows.Next() {
 		var t Task
-		if err := rows.Scan(&t.ID, &t.Repo, &t.Description, &t.Status, &t.ThreadID, &t.PrURL); err != nil {
+		if err := rows.Scan(&t.ID, &t.Repo, &t.Description, &t.Status, &t.ThreadID, &t.PrURL, &t.PodPhase, &t.PodMessage); err != nil {
 			slog.Error("tasks ListRecentTasks: scan", "error", err)
 			return nil, fmt.Errorf("scan task: %w", err)
 		}
@@ -281,6 +283,22 @@ func (s *Store) MarkCrashed(ctx context.Context, id string) error {
 		return fmt.Errorf("mark crashed: %w", err)
 	}
 	slog.Warn("tasks MarkCrashed", "taskId", id)
+	return nil
+}
+
+// SetPodPhase records the worker pod's own lifecycle state (created/
+// scheduled/running/crashed/terminated) — distinct from `status`, the
+// task's business state. Called from ReportPodEvents so the dashboard can
+// show worker-pod state without kubectl. Unconditional (unlike
+// MarkCrashed): pod phase isn't gated on the task still being non-terminal,
+// since it's just describing the pod, not driving reclaim.
+func (s *Store) SetPodPhase(ctx context.Context, id, phase, message string) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE tasks SET pod_phase = $2, pod_message = $3, updated_at = now() WHERE id = $1
+	`, id, phase, message)
+	if err != nil {
+		return fmt.Errorf("set pod phase: %w", err)
+	}
 	return nil
 }
 

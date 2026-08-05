@@ -69,6 +69,24 @@ async function defaultVerifyPrExists(branch: string): Promise<string | null> {
   return stdout || null;
 }
 
+// Bounded retry for the one sidecar call that's load-bearing at startup
+// (see below) — a single transient blip (e.g. core mid-rollout) shouldn't
+// permanently fail a task that would otherwise have succeeded a second
+// later. Not used elsewhere: every other sidecar call in this file already
+// treats failure as best-effort via reportStatus/.catch(...).
+async function withRetry<T>(fn: () => Promise<T>, attempts = 3, delayMs = 1000): Promise<T> {
+  let lastErr: unknown;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      if (i < attempts - 1) await new Promise((resolve) => setTimeout(resolve, delayMs * 2 ** i));
+    }
+  }
+  throw lastErr;
+}
+
 // Best-effort status write with its own guard — used everywhere a status
 // report is the last thing standing between a real outcome and a task stuck
 // at a stale status until core's 10-min heartbeat reclaim (reliability
@@ -106,7 +124,19 @@ export async function main(
 
   try {
     await configureGitAuth();
-    await sidecar.setStatus("planning");
+    // Unlike every other status write in this function, this one runs
+    // before the agent session even starts — a bare throw here previously
+    // fell straight to the generic "failed" path below and killed the task
+    // in well under a second on any transient core blip (observed live:
+    // "produced zero addresses" during a core rollout). Retried a few
+    // times, then reframed as TransientError so a blip that outlasts the
+    // retries still gets core's normal reclaim-and-redispatch treatment
+    // instead of being marked (permanently, after enough retries) failed.
+    try {
+      await withRetry(() => sidecar.setStatus("planning"));
+    } catch (err) {
+      throw new TransientError(`sidecar.setStatus("planning") failed after retries: ${err}`);
+    }
     const result = await runTask(task);
 
     if (result.aborted) {

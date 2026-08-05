@@ -68,6 +68,14 @@ ALTER TABLE tasks ALTER COLUMN discord_channel_id DROP NOT NULL;
 -- GetTask/ListRecentTasks both filter WHERE deleted_at IS NULL.
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
 
+-- Pod-lifecycle state (PodPhase: created/scheduled/running/crashed/
+-- terminated), set by ReportPodEvents alongside its existing knowledge_journal
+-- write — distinct from `status` (business state: planning/implementing/
+-- done/...). Lets the dashboard show worker-pod state directly instead of
+-- requiring kubectl.
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS pod_phase TEXT;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS pod_message TEXT;
+
 -- Append-only fleet knowledge journal (mirrors ai-devkit's JSON-event pattern,
 -- see agent-fleet reference-check memory: avoids write-conflict issues that a
 -- shared mutable doc would hit across concurrent worker pods).
@@ -145,12 +153,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS planning_transcript_idempotency_idx
 -- with its own msg.type verbatim, not just assistant text as before).
 -- 'tool_call' is PushToolTelemetry's sidecar-pushed summary — already
 -- inserted before this change (coreserver/server.go), just never actually
--- listed here; a pre-existing gap this widening also closes. This embedded
--- copy had drifted from db/schema.sql (still missing 'tool_call' etc. here
--- despite the canonical file already having them) — CI's drift diff should
--- have caught this but evidently didn't; found while seeding local test
--- data for the mobile dashboard work and inserting a 'tool_call' row
--- failed the CHECK constraint against this file's copy.
+-- listed here; a pre-existing gap this widening also closes.
 ALTER TABLE planning_transcript DROP CONSTRAINT IF EXISTS planning_transcript_type_check;
 ALTER TABLE planning_transcript ADD CONSTRAINT planning_transcript_type_check
   CHECK (type IN (
@@ -172,9 +175,5 @@ ALTER TABLE planning_transcript ADD COLUMN IF NOT EXISTS relay_last_error TEXT;
 -- calls out as a real gap: today's "any pending question + any reply"
 -- would let an unrelated message satisfy a blocked AskUserQuestion call.
 -- NULL for every entry except an 'answer' replying to a specific
--- 'question' entry's own seq. This embedded copy was missing the column
--- entirely (same drift as the CHECK constraint above) — transcript.
--- PostgresStore.AppendReply (the AnswerQuestion RPC's write path) writes
--- to it unconditionally, so every real deployment applying only this file
--- would have hard-failed on the first answered question.
+-- 'question' entry's own seq.
 ALTER TABLE planning_transcript ADD COLUMN IF NOT EXISTS reply_to_seq BIGINT;

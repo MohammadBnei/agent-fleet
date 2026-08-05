@@ -22,13 +22,18 @@ const (
 )
 
 type Task struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Repo          string                 `protobuf:"bytes,2,opt,name=repo,proto3" json:"repo,omitempty"`
-	Description   string                 `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
-	Status        string                 `protobuf:"bytes,4,opt,name=status,proto3" json:"status,omitempty"`
-	ThreadId      *string                `protobuf:"bytes,5,opt,name=thread_id,json=threadId,proto3,oneof" json:"thread_id,omitempty"`
-	PrUrl         *string                `protobuf:"bytes,6,opt,name=pr_url,json=prUrl,proto3,oneof" json:"pr_url,omitempty"`
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Id          string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Repo        string                 `protobuf:"bytes,2,opt,name=repo,proto3" json:"repo,omitempty"`
+	Description string                 `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
+	Status      string                 `protobuf:"bytes,4,opt,name=status,proto3" json:"status,omitempty"`
+	ThreadId    *string                `protobuf:"bytes,5,opt,name=thread_id,json=threadId,proto3,oneof" json:"thread_id,omitempty"`
+	PrUrl       *string                `protobuf:"bytes,6,opt,name=pr_url,json=prUrl,proto3,oneof" json:"pr_url,omitempty"`
+	// Worker-pod lifecycle state (PodPhase, set via ReportPodEvents) — distinct
+	// from `status` (business state). Unset until the provisioner reports the
+	// pod's first event.
+	PodPhase      *string `protobuf:"bytes,7,opt,name=pod_phase,json=podPhase,proto3,oneof" json:"pod_phase,omitempty"`
+	PodMessage    *string `protobuf:"bytes,8,opt,name=pod_message,json=podMessage,proto3,oneof" json:"pod_message,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -101,6 +106,20 @@ func (x *Task) GetThreadId() string {
 func (x *Task) GetPrUrl() string {
 	if x != nil && x.PrUrl != nil {
 		return *x.PrUrl
+	}
+	return ""
+}
+
+func (x *Task) GetPodPhase() string {
+	if x != nil && x.PodPhase != nil {
+		return *x.PodPhase
+	}
+	return ""
+}
+
+func (x *Task) GetPodMessage() string {
+	if x != nil && x.PodMessage != nil {
+		return *x.PodMessage
 	}
 	return ""
 }
@@ -1471,17 +1490,23 @@ var File_agentfleet_v1_dashboard_proto protoreflect.FileDescriptor
 
 const file_agentfleet_v1_dashboard_proto_rawDesc = "" +
 	"\n" +
-	"\x1dagentfleet/v1/dashboard.proto\x12\ragentfleet.v1\x1a\x1fagentfleet/v1/provisioner.proto\x1a\x1eagentfleet/v1/transcript.proto\"\xbb\x01\n" +
+	"\x1dagentfleet/v1/dashboard.proto\x12\ragentfleet.v1\x1a\x1fagentfleet/v1/provisioner.proto\x1a\x1eagentfleet/v1/transcript.proto\"\xa1\x02\n" +
 	"\x04Task\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04repo\x18\x02 \x01(\tR\x04repo\x12 \n" +
 	"\vdescription\x18\x03 \x01(\tR\vdescription\x12\x16\n" +
 	"\x06status\x18\x04 \x01(\tR\x06status\x12 \n" +
 	"\tthread_id\x18\x05 \x01(\tH\x00R\bthreadId\x88\x01\x01\x12\x1a\n" +
-	"\x06pr_url\x18\x06 \x01(\tH\x01R\x05prUrl\x88\x01\x01B\f\n" +
+	"\x06pr_url\x18\x06 \x01(\tH\x01R\x05prUrl\x88\x01\x01\x12 \n" +
+	"\tpod_phase\x18\a \x01(\tH\x02R\bpodPhase\x88\x01\x01\x12$\n" +
+	"\vpod_message\x18\b \x01(\tH\x03R\n" +
+	"podMessage\x88\x01\x01B\f\n" +
 	"\n" +
 	"_thread_idB\t\n" +
-	"\a_pr_url\"(\n" +
+	"\a_pr_urlB\f\n" +
+	"\n" +
+	"_pod_phaseB\x0e\n" +
+	"\f_pod_message\"(\n" +
 	"\x10ListTasksRequest\x12\x14\n" +
 	"\x05limit\x18\x01 \x01(\x05R\x05limit\">\n" +
 	"\x11ListTasksResponse\x12)\n" +

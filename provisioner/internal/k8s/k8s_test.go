@@ -157,8 +157,8 @@ func TestCreateWorkerPod_TwoContainersSharedPVC(t *testing.T) {
 	if sidecar.RestartPolicy == nil || *sidecar.RestartPolicy != corev1.ContainerRestartPolicyAlways {
 		t.Errorf("sidecar init container must be a native sidecar (RestartPolicy: Always), got %v", sidecar.RestartPolicy)
 	}
-	if sidecar.StartupProbe == nil || sidecar.StartupProbe.TCPSocket == nil {
-		t.Errorf("sidecar init container must have a TCP startup probe so the worker waits for it to be ready, got %+v", sidecar.StartupProbe)
+	if sidecar.StartupProbe == nil || sidecar.StartupProbe.HTTPGet == nil || sidecar.StartupProbe.HTTPGet.Path != "/readyz" {
+		t.Errorf("sidecar init container must have an HTTP /readyz startup probe so the worker waits for a proven core connection, got %+v", sidecar.StartupProbe)
 	}
 	// Whole PVC, no SubPath: a linked git worktree's .git gitlink is an
 	// absolute path back to repos/<repo>/.git/worktrees/<taskId>, which a
