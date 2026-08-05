@@ -99,7 +99,7 @@ func TestClaimNextTask_ConcurrentCallersNeverDoubleClaim(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			task, err := store.ClaimNextTask(ctx)
+			task, err := store.ClaimNextTask(ctx, 1000)
 			if err != nil {
 				t.Errorf("claim %d: %v", i, err)
 				return
@@ -142,7 +142,7 @@ func TestClaimNextTask_ReclaimsStaleHeartbeat(t *testing.T) {
 		t.Fatalf("seed stale task: %v", err)
 	}
 
-	task, err := store.ClaimNextTask(ctx)
+	task, err := store.ClaimNextTask(ctx, 1000)
 	if err != nil {
 		t.Fatalf("claim: %v", err)
 	}
@@ -162,26 +162,67 @@ func TestClaimNextTask_ReclaimsStaleHeartbeat(t *testing.T) {
 	}
 }
 
-func TestCountInFlight(t *testing.T) {
+// TestClaimNextTask_RespectsMaxInFlight covers reliability-findings.md #6:
+// the concurrency cap is now enforced inside ClaimNextTask's own atomic
+// query, not a separate CountInFlight call beforehand — this fires enough
+// concurrent claimers against a capacity-2 cap to catch a TOCTOU
+// regression (a pre-fix two-step check-then-claim would let more than 2
+// through).
+func TestClaimNextTask_RespectsMaxInFlight(t *testing.T) {
 	pool := newTestPool(t)
 	ctx := context.Background()
 	store := NewStore(pool)
 
-	for _, status := range []string{"pending", "claimed", "planning", "implementing", "done", "failed"} {
+	const maxInFlight = 2
+	const pendingTasks = 10
+	for i := 0; i < pendingTasks; i++ {
 		if _, err := pool.Exec(ctx, `
-			INSERT INTO tasks (repo, description, discord_channel_id, status) VALUES ('dream-analyst', 'task', 'chan', $1)
-		`, status); err != nil {
-			t.Fatalf("seed %s task: %v", status, err)
+			INSERT INTO tasks (repo, description, discord_channel_id) VALUES ('dream-analyst', 'task', 'chan')
+		`); err != nil {
+			t.Fatalf("seed task %d: %v", i, err)
 		}
 	}
 
-	n, err := store.CountInFlight(ctx)
-	if err != nil {
+	const claimers = 20
+	var wg sync.WaitGroup
+	claimed := make([]string, claimers)
+	for i := 0; i < claimers; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			task, err := store.ClaimNextTask(ctx, maxInFlight)
+			if err != nil {
+				t.Errorf("claim %d: %v", i, err)
+				return
+			}
+			if task != nil {
+				claimed[i] = task.ID
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	got := 0
+	for _, id := range claimed {
+		if id != "" {
+			got++
+		}
+	}
+	if got > maxInFlight {
+		t.Fatalf("expected at most %d tasks claimed with maxInFlight=%d, got %d", maxInFlight, maxInFlight, got)
+	}
+
+	var inFlight int
+	if err := pool.QueryRow(ctx, `
+		SELECT count(*) FROM tasks WHERE status IN ('claimed', 'planning', 'implementing')
+	`).Scan(&inFlight); err != nil {
 		t.Fatalf("count in flight: %v", err)
 	}
-	// claimed, planning, implementing count; pending, done, failed don't.
-	if n != 3 {
-		t.Fatalf("expected 3 in-flight tasks, got %d", n)
+	if inFlight != got {
+		t.Fatalf("in-flight count %d doesn't match claimed count %d", inFlight, got)
+	}
+	if inFlight > maxInFlight {
+		t.Fatalf("in-flight count %d exceeds maxInFlight %d", inFlight, maxInFlight)
 	}
 }
 
@@ -230,7 +271,7 @@ func TestStillHoldsLease(t *testing.T) {
 		t.Fatalf("seed task: %v", err)
 	}
 
-	task, err := store.ClaimNextTask(ctx)
+	task, err := store.ClaimNextTask(ctx, 1000)
 	if err != nil || task == nil {
 		t.Fatalf("claim: task=%v err=%v", task, err)
 	}

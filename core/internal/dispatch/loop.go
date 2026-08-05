@@ -21,10 +21,23 @@ type Loop struct {
 	tasks       *tasks.Store
 	provisioner *provisionerclient.Client
 	maxInFlight int
+	nudge       chan struct{}
 }
 
 func New(taskStore *tasks.Store, provisioner *provisionerclient.Client, maxInFlight int) *Loop {
-	return &Loop{tasks: taskStore, provisioner: provisioner, maxInFlight: maxInFlight}
+	return &Loop{tasks: taskStore, provisioner: provisioner, maxInFlight: maxInFlight, nudge: make(chan struct{}, 1)}
+}
+
+// Nudge triggers an immediate claim attempt instead of waiting for the
+// next tick (reliability-findings.md #5) — non-blocking, safe to call from
+// any goroutine (e.g. tasks.Store.CreateTask right after a commit). The
+// ticker in Run stays as a fallback — it's also what drives
+// heartbeat-reclaim scanning, which has no "write" to nudge on.
+func (l *Loop) Nudge() {
+	select {
+	case l.nudge <- struct{}{}:
+	default:
+	}
 }
 
 // Run polls every pollInterval until ctx is cancelled. Errors are logged
@@ -39,21 +52,17 @@ func (l *Loop) Run(ctx context.Context, pollInterval time.Duration) {
 			return
 		case <-ticker.C:
 			l.tick(ctx)
+		case <-l.nudge:
+			l.tick(ctx)
 		}
 	}
 }
 
 func (l *Loop) tick(ctx context.Context) {
-	inFlight, err := l.tasks.CountInFlight(ctx)
-	if err != nil {
-		slog.Error("dispatch: count in flight failed", "error", err)
-		return
-	}
-	if inFlight >= l.maxInFlight {
-		return
-	}
-
-	task, err := l.tasks.ClaimNextTask(ctx)
+	// The concurrency-headroom check lives inside ClaimNextTask's own query
+	// now (reliability-findings.md #6) — a separate CountInFlight call
+	// beforehand was a TOCTOU race under >1 dispatch-loop replica.
+	task, err := l.tasks.ClaimNextTask(ctx, l.maxInFlight)
 	if err != nil {
 		slog.Error("dispatch: claim failed", "error", err)
 		return
