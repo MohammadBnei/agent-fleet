@@ -372,6 +372,14 @@ func stringToProtoType(s string) agentfleetv1.TranscriptEntryType {
 		return agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_ANSWER
 	case "tool_call":
 		return agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_TOOL_CALL
+	case "system":
+		return agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_SYSTEM
+	case "assistant":
+		return agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_ASSISTANT
+	case "user":
+		return agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_USER
+	case "result":
+		return agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_RESULT
 	default:
 		return agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_UNSPECIFIED
 	}
@@ -391,6 +399,14 @@ func protoTypeToString(t agentfleetv1.TranscriptEntryType) string {
 		return "answer"
 	case agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_TOOL_CALL:
 		return "tool_call"
+	case agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_SYSTEM:
+		return "system"
+	case agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_ASSISTANT:
+		return "assistant"
+	case agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_USER:
+		return "user"
+	case agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_RESULT:
+		return "result"
 	default:
 		return ""
 	}

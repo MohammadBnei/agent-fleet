@@ -117,6 +117,25 @@ export interface AnswerQuestionResponse {
 }
 
 /**
+ * Discuss lets a human send an arbitrary free-text message from the
+ * dashboard, full parity with a Discord thread reply — appended as a
+ * "discussion" transcript entry, picked up by the worker's existing
+ * streamHumanMessages SSE the same way a Discord reply already is (no
+ * worker/sidecar changes needed, it's a plain cursor-based transcript
+ * stream, not Discord-specific). `from`/`type` are hardcoded server-side,
+ * same pattern as Approve hardcoding "human"/"approve" — the dashboard has
+ * no need to expose them.
+ */
+export interface DiscussRequest {
+  taskId: string;
+  text: string;
+}
+
+export interface DiscussResponse {
+  status: string;
+}
+
+/**
  * Soft-deletes the task (see db/schema.sql's tasks.deleted_at) after
  * force-tearing down any live worker/e2e pod — unlike Stop, which only
  * posts an "abort" transcript entry the worker pod must be alive and
@@ -788,6 +807,71 @@ export const AnswerQuestionResponse: MessageFns<AnswerQuestionResponse> = {
   },
 };
 
+function createBaseDiscussRequest(): DiscussRequest {
+  return { taskId: "", text: "" };
+}
+
+export const DiscussRequest: MessageFns<DiscussRequest> = {
+  fromJSON(object: any): DiscussRequest {
+    return {
+      taskId: isSet(object.taskId)
+        ? globalThis.String(object.taskId)
+        : isSet(object.task_id)
+        ? globalThis.String(object.task_id)
+        : "",
+      text: isSet(object.text) ? globalThis.String(object.text) : "",
+    };
+  },
+
+  toJSON(message: DiscussRequest): unknown {
+    const obj: any = {};
+    if (message.taskId !== "") {
+      obj.taskId = message.taskId;
+    }
+    if (message.text !== "") {
+      obj.text = message.text;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<DiscussRequest>, I>>(base?: I): DiscussRequest {
+    return DiscussRequest.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<DiscussRequest>, I>>(object: I): DiscussRequest {
+    const message = createBaseDiscussRequest();
+    message.taskId = object.taskId ?? "";
+    message.text = object.text ?? "";
+    return message;
+  },
+};
+
+function createBaseDiscussResponse(): DiscussResponse {
+  return { status: "" };
+}
+
+export const DiscussResponse: MessageFns<DiscussResponse> = {
+  fromJSON(object: any): DiscussResponse {
+    return { status: isSet(object.status) ? globalThis.String(object.status) : "" };
+  },
+
+  toJSON(message: DiscussResponse): unknown {
+    const obj: any = {};
+    if (message.status !== "") {
+      obj.status = message.status;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<DiscussResponse>, I>>(base?: I): DiscussResponse {
+    return DiscussResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<DiscussResponse>, I>>(object: I): DiscussResponse {
+    const message = createBaseDiscussResponse();
+    message.status = object.status ?? "";
+    return message;
+  },
+};
+
 function createBaseDeleteTaskRequest(): DeleteTaskRequest {
   return { taskId: "" };
 }
@@ -1149,6 +1233,7 @@ export interface DashboardService {
   Stop(request: StopRequest): Promise<StopResponse>;
   KillE2e(request: KillE2eRequest): Promise<KillE2eResponse>;
   AnswerQuestion(request: AnswerQuestionRequest): Promise<AnswerQuestionResponse>;
+  Discuss(request: DiscussRequest): Promise<DiscussResponse>;
   DeleteTask(request: DeleteTaskRequest): Promise<DeleteTaskResponse>;
   /**
    * Reuses provisioner.proto's ListWorktreesRequest (identical shape,

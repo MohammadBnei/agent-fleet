@@ -3,8 +3,51 @@ import { client } from "../connectClient";
 import type { Task } from "../gen/agentfleet/v1/dashboard_pb";
 import { TranscriptEntryType, type TranscriptEntry } from "../gen/agentfleet/v1/transcript_pb";
 import { enrichTask } from "../mockEnrichment";
-import { parseQuestions, parseAnswers, findPendingQuestion, latestToolCallSummary } from "../transcript";
+import {
+  parseQuestions,
+  parseAnswers,
+  findPendingQuestion,
+  latestToolCallSummary,
+  parseSdkSystemInfo,
+  parseSdkResultSummary,
+  buildToolCallPairs,
+  latestTodos,
+} from "../transcript";
 import { useTaskDetail } from "../useTaskDetail";
+import { ToolCallItem } from "../components/ToolCallItem";
+import { ErrorModal } from "../components/ErrorModal";
+
+// Minimal distinct treatment for the raw SDK message types (reliability-
+// findings.md #0: "relay everything, let the UI decide") — before this,
+// everything but QUESTION/ANSWER fell through to one generic prose bubble.
+// ASSISTANT/USER (tool_use/tool_result) aren't handled here — they move to
+// the right panel's TOOL CALLS section as paired ToolCallItems instead of
+// two unrelated bubbles in the feed. Cosmetic only: no new state, no new RPCs.
+function EntryBubble({ entry }: { entry: TranscriptEntry }) {
+  if (entry.type === TranscriptEntryType.SYSTEM) {
+    const info = parseSdkSystemInfo(entry.text);
+    return (
+      <div className="text-[10.5px] text-base-content/40 flex items-center gap-1.5">
+        <span className="badge badge-ghost badge-xs">session</span>
+        {info?.model ? `started · ${info.model}` : "session started"}
+      </div>
+    );
+  }
+  if (entry.type === TranscriptEntryType.RESULT) {
+    const r = parseSdkResultSummary(entry.text);
+    return (
+      <div className="text-[10.5px] text-base-content/40">
+        {r ? `${r.numTurns ?? "?"} turns · $${(r.totalCostUsd ?? 0).toFixed(3)}` : entry.text}
+      </div>
+    );
+  }
+  return (
+    <div className="max-w-[760px]">
+      <div className="text-[10px] opacity-50">{entry.from}</div>
+      <div className="text-[12px] leading-relaxed whitespace-pre-wrap mt-1 text-base-content/90">{entry.text}</div>
+    </div>
+  );
+}
 
 // Renders one AskUserQuestion batch as a form (already answered: shows what
 // was submitted instead). One question per fieldset, chip-style buttons for
@@ -154,7 +197,8 @@ export function TaskDetail({
   tasks: Task[];
   onSelect: (id: string) => void;
 }) {
-  const { task, entries, previewUrl, branch, busy, loadError, actionError, run } = useTaskDetail(taskId);
+  const { task, entries, previewUrl, branch, busy, loadError, actionError, run, clearActionError } = useTaskDetail(taskId);
+  const [message, setMessage] = useState("");
 
   if (loadError) return <div className="alert alert-error m-4">{loadError}</div>;
   if (!task) return <div className="p-4">Loading…</div>;
@@ -162,66 +206,40 @@ export function TaskDetail({
   const enrichment = enrichTask(task);
   const siblings = tasks.filter((t) => t.id !== taskId);
 
+  function sendMessage() {
+    const text = message.trim();
+    if (!text) return;
+    setMessage("");
+    run(() => client.discuss({ taskId, text }));
+  }
+
   // Used both by the inline QuestionCard below and the quick-reply chip row.
   const pendingQuestion = findPendingQuestion(entries);
   const pendingParsed = pendingQuestion ? parseQuestions(pendingQuestion.text) : null;
   const chipQuestion =
     pendingParsed && pendingParsed.length === 1 && !pendingParsed[0].multiSelect ? pendingParsed[0] : null;
   const changes = latestToolCallSummary(entries)?.files ?? null;
+  const toolCallPairs = buildToolCallPairs(entries);
+  const todos = latestTodos(entries);
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex-none px-6 pt-4 pb-3.5 border-b border-base-content/10 flex items-start gap-4">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2.5">
-            <h2 className="font-display font-semibold text-[19px]">{task.description}</h2>
-            <span className={`px-2 py-0.5 rounded text-[9.5px] font-semibold border tracking-wide ${STATUS_COLOR[task.status] ?? "border-base-content/20"}`}>
-              {task.status.toUpperCase()}
-            </span>
-          </div>
-          <div className="flex flex-wrap items-center gap-3.5 mt-2 text-[10px] text-base-content/50">
-            <span>#{task.id.slice(0, 6)}</span>
-            <span>{task.repo}</span>
-            {branch && <span>branch {branch}</span>}
-            <span>{enrichment.model}</span>
-            <span>{enrichment.tokens}</span>
-            <span>started {enrichment.startedAt}</span>
-          </div>
+      <div className="flex-none px-6 pt-4 pb-3.5 border-b border-base-content/10">
+        <div className="flex items-center gap-2.5">
+          <h2 className="font-display font-semibold text-[19px]">{task.description}</h2>
+          <span className={`px-2 py-0.5 rounded text-[9.5px] font-semibold border tracking-wide ${STATUS_COLOR[task.status] ?? "border-base-content/20"}`}>
+            {task.status.toUpperCase()}
+          </span>
         </div>
-        <div className="ml-auto flex gap-2 flex-none">
-          <button
-            type="button"
-            className="btn btn-success btn-sm"
-            disabled={busy}
-            onClick={() => run(() => client.approve({ taskId }))}
-          >
-            Approve
-          </button>
-          <button
-            type="button"
-            className="btn btn-warning btn-sm"
-            disabled={busy}
-            onClick={() => run(() => client.stop({ taskId }))}
-          >
-            Stop
-          </button>
-          <button
-            type="button"
-            className="btn btn-outline btn-sm"
-            disabled={busy}
-            onClick={() => run(() => client.killE2e({ taskId }))}
-          >
-            Kill e2e
-          </button>
-          {previewUrl && (
-            <a href={previewUrl} target="_blank" rel="noreferrer" className="btn btn-outline btn-sm">
-              Open code-server
-            </a>
-          )}
+        <div className="flex flex-wrap items-center gap-3.5 mt-2 text-[10px] text-base-content/50">
+          <span>#{task.id.slice(0, 6)}</span>
+          <span>{task.repo}</span>
+          {branch && <span>branch {branch}</span>}
+          <span>{enrichment.model}</span>
+          <span>{enrichment.tokens}</span>
+          <span>started {enrichment.startedAt}</span>
         </div>
       </div>
-
-      {actionError && <div className="alert alert-error mx-6 mt-3">{actionError}</div>}
 
       <div className="flex flex-1 min-h-0">
         <div className="flex-1 min-w-0 flex flex-col">
@@ -233,6 +251,10 @@ export function TaskDetail({
               // above (latestToolCallSummary) — the sidecar's periodic
               // {branch, files[]} push isn't prose meant for the feed.
               if (entry.type === TranscriptEntryType.TOOL_CALL) return null;
+              // Moved to the right panel's TOOL CALLS section (paired via
+              // buildToolCallPairs) — desktop keeps the main feed to prose/
+              // decisions, not raw tool input/output.
+              if (entry.type === TranscriptEntryType.ASSISTANT || entry.type === TranscriptEntryType.USER) return null;
 
               if (entry.type === TranscriptEntryType.QUESTION) {
                 const answerEntry = entries.slice(idx + 1).find((e) => e.type === TranscriptEntryType.ANSWER);
@@ -251,18 +273,12 @@ export function TaskDetail({
                 );
               }
 
-              return (
-                <div key={String(entry.seq)} className="max-w-[760px]">
-                  <div className="text-[10px] opacity-50">{entry.from}</div>
-                  <div className="text-[12px] leading-relaxed whitespace-pre-wrap mt-1 text-base-content/90">
-                    {entry.text}
-                  </div>
-                </div>
-              );
+              return <div key={String(entry.seq)}><EntryBubble entry={entry} /></div>;
             })}
           </div>
 
           <div className="flex-none px-6 py-3.5 border-t border-base-content/10 bg-base-200 flex flex-col gap-2.5">
+            <ErrorModal message={actionError} onClose={clearActionError} />
             {chipQuestion && (
               <div className="flex gap-1.5 items-center flex-wrap">
                 <span className="text-[9.5px] tracking-[0.09em] text-base-content/40 mr-1">QUICK</span>
@@ -289,13 +305,57 @@ export function TaskDetail({
                 ))}
               </div>
             )}
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                type="button"
+                className="btn btn-success btn-xs"
+                disabled={busy}
+                onClick={() => run(() => client.approve({ taskId }))}
+              >
+                Approve
+              </button>
+              <button
+                type="button"
+                className="btn btn-warning btn-xs"
+                disabled={busy}
+                onClick={() => run(() => client.stop({ taskId }))}
+              >
+                Stop
+              </button>
+              <button
+                type="button"
+                className="btn btn-outline btn-xs"
+                disabled={busy}
+                onClick={() => run(() => client.killE2e({ taskId }))}
+              >
+                Kill e2e
+              </button>
+              {previewUrl && (
+                <a href={previewUrl} target="_blank" rel="noreferrer" className="btn btn-outline btn-xs">
+                  Open code-server
+                </a>
+              )}
+            </div>
             <div className="flex items-center gap-2.5 px-3.5 py-3 border border-base-content/15 rounded-lg bg-base-300/40">
               <span className="text-primary font-semibold">&gt;</span>
               <input
-                disabled
-                placeholder="answer via the question card above — no free-text channel yet"
-                className="flex-1 bg-transparent outline-none text-[12px] placeholder:text-base-content/40 cursor-not-allowed"
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") sendMessage();
+                }}
+                disabled={busy}
+                placeholder="message the agent…"
+                className="flex-1 bg-transparent outline-none text-[12px] placeholder:text-base-content/40"
               />
+              <button
+                type="button"
+                disabled={busy || !message.trim()}
+                onClick={sendMessage}
+                className="text-[11px] text-primary font-medium disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                Send
+              </button>
             </div>
           </div>
         </div>
@@ -304,14 +364,47 @@ export function TaskDetail({
           <div>
             <div className="text-[9.5px] tracking-[0.11em] text-base-content/60 font-semibold">TODOS</div>
             <div className="flex flex-col gap-1.5 mt-2.5">
-              {enrichment.todos.map((t, i) => (
-                <div key={i} className="flex gap-2 items-start text-[11px]">
-                  <span className={t.done ? "text-success" : "text-base-content/30"}>{t.done ? "✓" : "○"}</span>
-                  <span className={t.done ? "line-through text-base-content/40" : "text-base-content/80"}>
-                    {t.text}
-                  </span>
-                </div>
-              ))}
+              {todos && todos.length > 0 ? (
+                todos.map((t, i) => (
+                  <div key={i} className="flex gap-2 items-start text-[11px]">
+                    <span
+                      className={
+                        t.status === "completed"
+                          ? "text-success"
+                          : t.status === "in_progress"
+                            ? "text-primary"
+                            : "text-base-content/30"
+                      }
+                    >
+                      {t.status === "completed" ? "✓" : t.status === "in_progress" ? "◐" : "○"}
+                    </span>
+                    <span
+                      className={
+                        t.status === "completed"
+                          ? "line-through text-base-content/40"
+                          : t.status === "in_progress"
+                            ? "text-base-content"
+                            : "text-base-content/80"
+                      }
+                    >
+                      {t.status === "in_progress" ? t.activeForm : t.content}
+                    </span>
+                  </div>
+                ))
+              ) : (
+                <div className="text-[10.5px] text-base-content/40">no todos yet</div>
+              )}
+            </div>
+          </div>
+
+          <div>
+            <div className="text-[9.5px] tracking-[0.11em] text-base-content/60 font-semibold">TOOL CALLS</div>
+            <div className="flex flex-col gap-1.5 mt-2.5">
+              {toolCallPairs.length > 0 ? (
+                toolCallPairs.map((pair) => <ToolCallItem key={String(pair.call.seq)} pair={pair} />)
+              ) : (
+                <div className="text-[10.5px] text-base-content/40">no tool calls yet</div>
+              )}
             </div>
           </div>
 
@@ -358,9 +451,10 @@ export function TaskDetail({
               onClick={() => onSelect(t.id)}
               className="flex-none flex items-center gap-2 px-2.5 py-1.5 border border-base-content/10 rounded-md hover:border-base-content/25 cursor-pointer"
             >
-              <span className="w-1.5 h-1.5 rounded-full bg-info" />
               <span className="text-[10.5px]">#{t.id.slice(0, 6)}</span>
-              <span className="text-[10px] text-base-content/50">{enrichTask(t).currentActivity}</span>
+              <span className={`px-1.5 py-0.5 rounded text-[9px] font-semibold border tracking-wide ${STATUS_COLOR[t.status] ?? "border-base-content/20"}`}>
+                {t.status.toUpperCase()}
+              </span>
             </button>
           ))}
         </div>

@@ -26,6 +26,15 @@ enum TranscriptEntryType {
   // call (see docs/adr/0020, docs/adr/0021's sidecar). `text` is a JSON
   // payload. Never relayed to Discord (core's relay loop skips this type).
   TRANSCRIPT_ENTRY_TYPE_TOOL_CALL = 6;
+  // The raw Claude Agent SDK message discriminants worker/src/planning.ts's
+  // logSdkMessage relays verbatim (reliability-findings.md #0: "relay
+  // everything, let the UI decide, no pre-filtering") — `text` is a JSON
+  // payload, dashboard-only, never relayed to Discord (matches the DB
+  // CHECK constraint in db/schema.sql, already widened for these values).
+  TRANSCRIPT_ENTRY_TYPE_SYSTEM = 7;
+  TRANSCRIPT_ENTRY_TYPE_ASSISTANT = 8;
+  TRANSCRIPT_ENTRY_TYPE_USER = 9;
+  TRANSCRIPT_ENTRY_TYPE_RESULT = 10;
 }
 
 message TranscriptEntry {

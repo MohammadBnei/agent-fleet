@@ -112,6 +112,38 @@ func TestServer_CreateTask_EmptyDescription(t *testing.T) {
 	}
 }
 
+// TestServer_Discuss covers the dashboard's free-text chat channel
+// (reliability-findings.md's "seamless interaction" gap — the dashboard
+// previously had no way to send arbitrary text, only structured
+// Approve/Stop/AnswerQuestion) — full parity with a Discord reply: appended
+// as a plain "discussion" entry, same as Approve/Stop hardcode their own type.
+func TestServer_Discuss(t *testing.T) {
+	store := &recordingStore{}
+	s := NewServer(nil, store, nil, nil, nil)
+
+	req := connect.NewRequest(&agentfleetv1.DiscussRequest{TaskId: "task-1", Text: "what's the status?"})
+	resp, err := s.Discuss(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Discuss: %v", err)
+	}
+	if resp.Msg.GetStatus() != "sent" {
+		t.Errorf("status = %q, want %q", resp.Msg.GetStatus(), "sent")
+	}
+	if store.lastTaskID != "task-1" || store.lastFrom != "human" || store.lastText != "what's the status?" || store.lastType != "discussion" {
+		t.Errorf("Append(%q, %q, %q, %q), want (task-1, human, \"what's the status?\", discussion)",
+			store.lastTaskID, store.lastFrom, store.lastText, store.lastType)
+	}
+}
+
+func TestServer_Discuss_EmptyText(t *testing.T) {
+	s := NewServer(nil, &recordingStore{}, nil, nil, nil)
+
+	req := connect.NewRequest(&agentfleetv1.DiscussRequest{TaskId: "task-1", Text: ""})
+	if _, err := s.Discuss(context.Background(), req); connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatalf("Discuss error = %v, want CodeInvalidArgument", err)
+	}
+}
+
 func TestServer_AnswerQuestion(t *testing.T) {
 	store := &recordingStore{}
 	s := NewServer(nil, store, nil, nil, nil)
@@ -151,6 +183,10 @@ func TestStringToProtoType(t *testing.T) {
 		{"question", agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_QUESTION},
 		{"answer", agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_ANSWER},
 		{"tool_call", agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_TOOL_CALL},
+		{"system", agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_SYSTEM},
+		{"assistant", agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_ASSISTANT},
+		{"user", agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_USER},
+		{"result", agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_RESULT},
 		{"", agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_UNSPECIFIED},
 		{"garbage", agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_UNSPECIFIED},
 	}

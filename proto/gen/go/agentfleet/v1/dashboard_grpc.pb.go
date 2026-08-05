@@ -29,6 +29,7 @@ const (
 	DashboardService_Stop_FullMethodName             = "/agentfleet.v1.DashboardService/Stop"
 	DashboardService_KillE2E_FullMethodName          = "/agentfleet.v1.DashboardService/KillE2e"
 	DashboardService_AnswerQuestion_FullMethodName   = "/agentfleet.v1.DashboardService/AnswerQuestion"
+	DashboardService_Discuss_FullMethodName          = "/agentfleet.v1.DashboardService/Discuss"
 	DashboardService_DeleteTask_FullMethodName       = "/agentfleet.v1.DashboardService/DeleteTask"
 	DashboardService_ListWorktrees_FullMethodName    = "/agentfleet.v1.DashboardService/ListWorktrees"
 	DashboardService_DeleteWorktree_FullMethodName   = "/agentfleet.v1.DashboardService/DeleteWorktree"
@@ -58,6 +59,7 @@ type DashboardServiceClient interface {
 	Stop(ctx context.Context, in *StopRequest, opts ...grpc.CallOption) (*StopResponse, error)
 	KillE2E(ctx context.Context, in *KillE2ERequest, opts ...grpc.CallOption) (*KillE2EResponse, error)
 	AnswerQuestion(ctx context.Context, in *AnswerQuestionRequest, opts ...grpc.CallOption) (*AnswerQuestionResponse, error)
+	Discuss(ctx context.Context, in *DiscussRequest, opts ...grpc.CallOption) (*DiscussResponse, error)
 	DeleteTask(ctx context.Context, in *DeleteTaskRequest, opts ...grpc.CallOption) (*DeleteTaskResponse, error)
 	// Reuses provisioner.proto's ListWorktreesRequest (identical shape,
 	// empty) and DeleteWorktreeRequest/Response (identical shape, no
@@ -190,6 +192,16 @@ func (c *dashboardServiceClient) AnswerQuestion(ctx context.Context, in *AnswerQ
 	return out, nil
 }
 
+func (c *dashboardServiceClient) Discuss(ctx context.Context, in *DiscussRequest, opts ...grpc.CallOption) (*DiscussResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DiscussResponse)
+	err := c.cc.Invoke(ctx, DashboardService_Discuss_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *dashboardServiceClient) DeleteTask(ctx context.Context, in *DeleteTaskRequest, opts ...grpc.CallOption) (*DeleteTaskResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(DeleteTaskResponse)
@@ -253,6 +265,7 @@ type DashboardServiceServer interface {
 	Stop(context.Context, *StopRequest) (*StopResponse, error)
 	KillE2E(context.Context, *KillE2ERequest) (*KillE2EResponse, error)
 	AnswerQuestion(context.Context, *AnswerQuestionRequest) (*AnswerQuestionResponse, error)
+	Discuss(context.Context, *DiscussRequest) (*DiscussResponse, error)
 	DeleteTask(context.Context, *DeleteTaskRequest) (*DeleteTaskResponse, error)
 	// Reuses provisioner.proto's ListWorktreesRequest (identical shape,
 	// empty) and DeleteWorktreeRequest/Response (identical shape, no
@@ -305,6 +318,9 @@ func (UnimplementedDashboardServiceServer) KillE2E(context.Context, *KillE2ERequ
 }
 func (UnimplementedDashboardServiceServer) AnswerQuestion(context.Context, *AnswerQuestionRequest) (*AnswerQuestionResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method AnswerQuestion not implemented")
+}
+func (UnimplementedDashboardServiceServer) Discuss(context.Context, *DiscussRequest) (*DiscussResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Discuss not implemented")
 }
 func (UnimplementedDashboardServiceServer) DeleteTask(context.Context, *DeleteTaskRequest) (*DeleteTaskResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeleteTask not implemented")
@@ -512,6 +528,24 @@ func _DashboardService_AnswerQuestion_Handler(srv interface{}, ctx context.Conte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DashboardService_Discuss_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DiscussRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DashboardServiceServer).Discuss(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DashboardService_Discuss_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DashboardServiceServer).Discuss(ctx, req.(*DiscussRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _DashboardService_DeleteTask_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(DeleteTaskRequest)
 	if err := dec(in); err != nil {
@@ -626,6 +660,10 @@ var DashboardService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "AnswerQuestion",
 			Handler:    _DashboardService_AnswerQuestion_Handler,
+		},
+		{
+			MethodName: "Discuss",
+			Handler:    _DashboardService_Discuss_Handler,
 		},
 		{
 			MethodName: "DeleteTask",

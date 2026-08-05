@@ -180,6 +180,25 @@ func (s *Server) AnswerQuestion(ctx context.Context, req *connect.Request[agentf
 	return connect.NewResponse(&agentfleetv1.AnswerQuestionResponse{Status: "answered"}), nil
 }
 
+// Discuss appends a human-authored free-text message from the dashboard —
+// full parity with a Discord thread reply. The worker's existing
+// streamHumanMessages SSE picks it up the same way it already picks up a
+// Discord reply, since it's just a cursor-based transcript stream with no
+// origin-specific handling (reliability-findings.md's "seamless
+// interaction" gap: the dashboard previously had no way to send arbitrary
+// text, only structured Approve/Stop/AnswerQuestion).
+func (s *Server) Discuss(ctx context.Context, req *connect.Request[agentfleetv1.DiscussRequest]) (*connect.Response[agentfleetv1.DiscussResponse], error) {
+	taskID := req.Msg.GetTaskId()
+	text := req.Msg.GetText()
+	if text == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("text is required"))
+	}
+	if _, err := s.transcr.Append(ctx, taskID, "human", text, "discussion", uuid.NewString()); err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	return connect.NewResponse(&agentfleetv1.DiscussResponse{Status: "sent"}), nil
+}
+
 // DeleteTask force-tears-down any live session for taskID (both kinds —
 // mirrors the same two calls coreserver/server.go's SetTaskStatus makes on
 // a terminal status, just invoked directly instead of waiting for the
@@ -311,6 +330,14 @@ func stringToProtoType(s string) agentfleetv1.TranscriptEntryType {
 		return agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_ANSWER
 	case "tool_call":
 		return agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_TOOL_CALL
+	case "system":
+		return agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_SYSTEM
+	case "assistant":
+		return agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_ASSISTANT
+	case "user":
+		return agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_USER
+	case "result":
+		return agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_RESULT
 	default:
 		return agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_UNSPECIFIED
 	}

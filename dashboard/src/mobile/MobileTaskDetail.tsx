@@ -1,9 +1,21 @@
 import { useState } from "react";
 import { client } from "../connectClient";
 import { TranscriptEntryType, type TranscriptEntry } from "../gen/agentfleet/v1/transcript_pb";
-import { enrichTask } from "../mockEnrichment";
-import { parseQuestions, parseAnswers, findPendingQuestion, parseToolCallSummary } from "../transcript";
+import {
+  parseQuestions,
+  parseAnswers,
+  findPendingQuestion,
+  parseToolCallSummary,
+  parseSdkSystemInfo,
+  parseSdkToolResult,
+  parseSdkResultSummary,
+  buildToolCallPairs,
+  pairedResultSeqs,
+  latestTodos,
+} from "../transcript";
 import { useTaskDetail } from "../useTaskDetail";
+import { ToolCallItem } from "../components/ToolCallItem";
+import { ErrorModal } from "../components/ErrorModal";
 
 // Mirrors the "herd" mock's phone session screen (Agent Fleet Mobile.dc.html)
 // minus device chrome. Single-pane (list vs. detail), unlike desktop's
@@ -140,6 +152,51 @@ function ToolCallLine({ entry }: { entry: TranscriptEntry }) {
   );
 }
 
+// Mirrors desktop TaskDetail's EntryBubble at mobile's smaller text scale —
+// same reliability-findings.md #0 rationale ("relay everything, let the UI
+// decide"), cosmetic only. ASSISTANT (tool_use) is handled by the feed loop
+// itself via ToolCallItem, not here — every ASSISTANT entry always becomes a
+// pair. USER stays here only as the orphaned-tool_result fallback (no
+// matching call, e.g. a truncated history) — the normal case is skipped by
+// the feed loop too, already folded into its pair's ToolCallItem.
+function MobileEntryBubble({ entry }: { entry: TranscriptEntry }) {
+  if (entry.type === TranscriptEntryType.SYSTEM) {
+    const info = parseSdkSystemInfo(entry.text);
+    return (
+      <div className="text-[10px] text-base-content/40 flex items-center gap-1.5">
+        <span className="badge badge-ghost badge-xs">session</span>
+        {info?.model ? `started · ${info.model}` : "session started"}
+      </div>
+    );
+  }
+  if (entry.type === TranscriptEntryType.USER) {
+    const tr = parseSdkToolResult(entry.text);
+    return (
+      <div
+        className={`rounded-md border px-2.5 py-2 ${tr?.isError ? "border-error/40 bg-error/5" : "border-base-content/10 bg-base-200/40"}`}
+      >
+        <pre className="text-[10.5px] whitespace-pre-wrap font-mono text-base-content/70">
+          {typeof tr?.content === "string" ? tr.content : JSON.stringify(tr?.content ?? entry.text, null, 2)}
+        </pre>
+      </div>
+    );
+  }
+  if (entry.type === TranscriptEntryType.RESULT) {
+    const r = parseSdkResultSummary(entry.text);
+    return (
+      <div className="text-[10px] text-base-content/40">
+        {r ? `${r.numTurns ?? "?"} turns · $${(r.totalCostUsd ?? 0).toFixed(3)}` : entry.text}
+      </div>
+    );
+  }
+  return (
+    <div>
+      <div className="text-[10px] opacity-50">{entry.from}</div>
+      <div className="text-[12.5px] leading-relaxed whitespace-pre-wrap mt-1 text-base-content/90">{entry.text}</div>
+    </div>
+  );
+}
+
 export function MobileTaskDetail({
   taskId,
   onBack,
@@ -149,7 +206,8 @@ export function MobileTaskDetail({
   onBack: () => void;
   onDelete: () => void;
 }) {
-  const { task, entries, busy, loadError, actionError, run } = useTaskDetail(taskId);
+  const { task, entries, busy, loadError, actionError, run, clearActionError } = useTaskDetail(taskId);
+  const [message, setMessage] = useState("");
 
   if (loadError) {
     return (
@@ -163,13 +221,28 @@ export function MobileTaskDetail({
   }
   if (!task) return <div className="p-4">Loading…</div>;
 
-  const enrichment = enrichTask(task);
-  const done = enrichment.todos.filter((t) => t.done).length;
+  const todos = latestTodos(entries) ?? [];
+  const done = todos.filter((t) => t.status === "completed").length;
   const pendingQuestion = findPendingQuestion(entries);
   const pendingParsed = pendingQuestion ? parseQuestions(pendingQuestion.text) : null;
   const chipQuestion =
     pendingParsed && pendingParsed.length === 1 && !pendingParsed[0].multiSelect ? pendingParsed[0] : null;
-  const blockedTodo = pendingQuestion ? enrichment.todos.find((t) => !t.done) : null;
+  const blockedTodo = pendingQuestion
+    ? (todos.find((t) => t.status === "in_progress") ?? todos.find((t) => t.status !== "completed"))
+    : null;
+  // Tool calls stay inline in the mobile feed (unlike desktop's right-panel
+  // move) — paired via the same call<->output id correlation, one
+  // collapsible ToolCallItem per call instead of two separate bubbles.
+  const toolCallPairs = buildToolCallPairs(entries);
+  const toolCallPairsBySeq = new Map(toolCallPairs.map((p) => [p.call.seq, p]));
+  const consumedResultSeqs = pairedResultSeqs(toolCallPairs);
+
+  function sendMessage() {
+    const text = message.trim();
+    if (!text) return;
+    setMessage("");
+    run(() => client.discuss({ taskId, text }));
+  }
 
   return (
     <div className="flex flex-col h-full bg-base-100">
@@ -202,17 +275,17 @@ export function MobileTaskDetail({
             </span>
           )}
           <div className="flex-1 flex gap-1">
-            {enrichment.todos.map((t, i) => (
+            {todos.map((t, i) => (
               <div
                 key={i}
                 className={`flex-1 h-1 rounded ${
-                  t.done ? "bg-secondary" : pendingQuestion && t === blockedTodo ? "bg-primary" : "bg-base-content/10"
+                  t.status === "completed" ? "bg-secondary" : t.status === "in_progress" ? "bg-primary" : "bg-base-content/10"
                 }`}
               />
             ))}
           </div>
           <span className="text-[10px] text-base-content/50 flex-none">
-            {done}/{enrichment.todos.length}
+            {done}/{todos.length}
           </span>
         </div>
       </div>
@@ -221,13 +294,13 @@ export function MobileTaskDetail({
         <div className="flex-none px-4 py-2.5 border-b border-base-content/5 bg-base-300/30 flex items-start gap-2">
           <span className="text-[10px] text-primary flex-none mt-0.5">→</span>
           <div className="min-w-0">
-            <div className="text-[11.5px] text-base-content/90">{blockedTodo.text}</div>
+            <div className="text-[11.5px] text-base-content/90">{blockedTodo.content}</div>
             <div className="text-[9.5px] text-primary mt-0.5">blocked on your answer</div>
           </div>
         </div>
       )}
 
-      {actionError && <div className="alert alert-error mx-4 mt-2 text-[12px]">{actionError}</div>}
+      <ErrorModal message={actionError} onClose={clearActionError} />
 
       <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3.5 flex flex-col gap-3">
         {entries.map((entry, idx) => {
@@ -235,6 +308,14 @@ export function MobileTaskDetail({
           if (entry.type === TranscriptEntryType.TOOL_CALL) {
             return <ToolCallLine key={String(entry.seq)} entry={entry} />;
           }
+          if (entry.type === TranscriptEntryType.ASSISTANT) {
+            const pair = toolCallPairsBySeq.get(entry.seq);
+            return pair ? <ToolCallItem key={String(entry.seq)} pair={pair} /> : null;
+          }
+          // Normal case: already rendered inside its pair's ToolCallItem
+          // above. Falls through to MobileEntryBubble's orphan handling
+          // only if no matching call was found.
+          if (entry.type === TranscriptEntryType.USER && consumedResultSeqs.has(entry.seq)) return null;
           if (entry.type === TranscriptEntryType.QUESTION) {
             const answerEntry = entries.slice(idx + 1).find((e) => e.type === TranscriptEntryType.ANSWER);
             return (
@@ -251,10 +332,7 @@ export function MobileTaskDetail({
           }
           return (
             <div key={String(entry.seq)}>
-              <div className="text-[10px] opacity-50">{entry.from}</div>
-              <div className="text-[12.5px] leading-relaxed whitespace-pre-wrap mt-1 text-base-content/90">
-                {entry.text}
-              </div>
+              <MobileEntryBubble entry={entry} />
             </div>
           );
         })}
@@ -289,10 +367,23 @@ export function MobileTaskDetail({
           <div className="flex-1 flex items-center gap-2.5 px-3.5 py-3 border border-base-content/15 rounded-lg bg-base-300/40 min-h-11">
             <span className="text-primary font-semibold text-[13px]">&gt;</span>
             <input
-              disabled
-              placeholder="answer via the question card above"
-              className="flex-1 bg-transparent outline-none text-[12px] placeholder:text-base-content/40 cursor-not-allowed"
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") sendMessage();
+              }}
+              disabled={busy}
+              placeholder="message the agent…"
+              className="flex-1 bg-transparent outline-none text-[12px] placeholder:text-base-content/40"
             />
+            <button
+              type="button"
+              disabled={busy || !message.trim()}
+              onClick={sendMessage}
+              className="text-[11px] text-primary font-medium disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              Send
+            </button>
           </div>
         </div>
       </div>

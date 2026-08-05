@@ -99,5 +99,5 @@ export function useTaskDetail(taskId: string) {
     }
   }
 
-  return { task, entries, previewUrl, branch, busy, loadError, actionError, run };
+  return { task, entries, previewUrl, branch, busy, loadError, actionError, run, clearActionError: () => setActionError(null) };
 }

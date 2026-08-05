@@ -60,3 +60,111 @@ export function latestToolCallSummary(entries: TranscriptEntry[]): ToolCallSumma
   }
   return null;
 }
+
+// The raw Claude Agent SDK message discriminants worker/src/planning.ts's
+// logSdkMessage relays verbatim (reliability-findings.md #0: "relay
+// everything, let the UI decide"). Defensive parse like the helpers above —
+// a malformed payload falls back to the raw text bubble instead of crashing.
+export type SdkSystemInfo = { model?: string; permissionMode?: string };
+export function parseSdkSystemInfo(text: string): SdkSystemInfo | null {
+  try {
+    return JSON.parse(text) as SdkSystemInfo;
+  } catch {
+    return null;
+  }
+}
+
+export type SdkToolUse = { id?: string; tool?: string; input?: unknown };
+export function parseSdkToolUse(text: string): SdkToolUse | null {
+  try {
+    return JSON.parse(text) as SdkToolUse;
+  } catch {
+    return null;
+  }
+}
+
+export type SdkToolResult = { toolUseId?: string; isError?: boolean; content?: unknown };
+export function parseSdkToolResult(text: string): SdkToolResult | null {
+  try {
+    return JSON.parse(text) as SdkToolResult;
+  } catch {
+    return null;
+  }
+}
+
+// Pairs an ASSISTANT (tool_use) entry with its USER (tool_result) entry via
+// the Anthropic content-block id<->tool_use_id correlation worker/src/
+// planning.ts's logSdkMessage now carries — without this, a tool call and
+// its output render as two unrelated-looking bubbles with no visible link.
+// `result` is null while the call is still in flight (no matching
+// tool_result has arrived yet).
+export type ToolCallPair = { call: TranscriptEntry; callInfo: SdkToolUse; result: TranscriptEntry | null; resultInfo: SdkToolResult | null };
+
+export function buildToolCallPairs(entries: TranscriptEntry[]): ToolCallPair[] {
+  const pairs: ToolCallPair[] = [];
+  for (const entry of entries) {
+    if (entry.type !== TranscriptEntryType.ASSISTANT) continue;
+    const callInfo = parseSdkToolUse(entry.text) ?? {};
+    // TodoWrite has its own dedicated TODOS panel (latestTodos below) —
+    // showing it again as a generic raw-JSON tool call would just be a
+    // worse duplicate of the same data.
+    if (callInfo.tool === "TodoWrite") continue;
+    const resultEntry = callInfo.id
+      ? (entries.find((e) => e.type === TranscriptEntryType.USER && parseSdkToolResult(e.text)?.toolUseId === callInfo.id) ?? null)
+      : null;
+    pairs.push({ call: entry, callInfo, result: resultEntry, resultInfo: resultEntry ? parseSdkToolResult(resultEntry.text) : null });
+  }
+  return pairs;
+}
+
+// USER entries already folded into a ToolCallPair above shouldn't also
+// render as a standalone bubble wherever the feed still shows tool
+// output inline (mobile) — an orphaned tool_result (no matching call, e.g.
+// truncated history) still falls through and renders on its own.
+export function pairedResultSeqs(pairs: ToolCallPair[]): Set<bigint> {
+  return new Set(pairs.filter((p) => p.result).map((p) => p.result!.seq));
+}
+
+// The TODOS panel's real data source — Claude Code's built-in TodoWrite
+// tool (the agent calls it throughout a session to track its own plan) is
+// already relayed like any other tool_use via logSdkMessage; nothing new to
+// wire up, just read the latest call's full list instead of showing a fake
+// one. `null` before the agent's first TodoWrite call.
+export type TodoItem = { content: string; status: "pending" | "in_progress" | "completed"; activeForm: string };
+export function latestTodos(entries: TranscriptEntry[]): TodoItem[] | null {
+  for (let i = entries.length - 1; i >= 0; i--) {
+    const e = entries[i];
+    if (e.type !== TranscriptEntryType.ASSISTANT) continue;
+    const info = parseSdkToolUse(e.text);
+    if (info?.tool !== "TodoWrite") continue;
+    const todos = (info.input as { todos?: unknown })?.todos;
+    return Array.isArray(todos) ? (todos as TodoItem[]) : null;
+  }
+  return null;
+}
+
+// Best-effort one-line preview for a collapsed tool-call header — common
+// fields across the built-in tools (Read/Write/Edit/Bash/Grep/Glob), falling
+// back to compact JSON for anything else rather than showing nothing.
+export function summarizeToolInput(input: unknown): string {
+  if (input && typeof input === "object") {
+    const obj = input as Record<string, unknown>;
+    for (const key of ["file_path", "command", "pattern", "path", "description", "url"]) {
+      if (typeof obj[key] === "string") return obj[key] as string;
+    }
+  }
+  try {
+    return JSON.stringify(input);
+  } catch {
+    return String(input);
+  }
+}
+
+export type SdkResultSummary = { subtype?: string; numTurns?: number; totalCostUsd?: number };
+export function parseSdkResultSummary(text: string): SdkResultSummary | null {
+  try {
+    return JSON.parse(text) as SdkResultSummary;
+  } catch {
+    return null;
+  }
+}
