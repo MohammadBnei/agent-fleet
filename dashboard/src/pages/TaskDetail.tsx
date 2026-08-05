@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { client } from "../connectClient";
 import type { Task } from "../gen/agentfleet/v1/dashboard_pb";
+import { podStateBadge } from "./TaskList";
 import { TranscriptEntryType, type TranscriptEntry } from "../gen/agentfleet/v1/transcript_pb";
 import { enrichTask } from "../mockEnrichment";
 import {
@@ -197,14 +198,22 @@ export function TaskDetail({
   tasks: Task[];
   onSelect: (id: string) => void;
 }) {
-  const { task, entries, previewUrl, branch, busy, loadError, actionError, run, clearActionError } = useTaskDetail(taskId);
+  const { task: fetchedTask, entries, previewUrl, branch, busy, loadError, actionError, run, clearActionError } =
+    useTaskDetail(taskId);
   const [message, setMessage] = useState("");
 
   if (loadError) return <div className="alert alert-error m-4">{loadError}</div>;
-  if (!task) return <div className="p-4">Loading…</div>;
+  if (!fetchedTask) return <div className="p-4">Loading…</div>;
+
+  // `tasks` is App.tsx's already-polled (5s) list — preferring it here
+  // keeps pod_phase/status live without a second poll loop just for this
+  // page; falls back to the one-shot fetch for the instant before the next
+  // poll tick includes this task (e.g. a just-created task).
+  const task = tasks.find((t) => t.id === taskId) ?? fetchedTask;
 
   const enrichment = enrichTask(task);
   const siblings = tasks.filter((t) => t.id !== taskId);
+  const podBadge = podStateBadge(task);
 
   function sendMessage() {
     const text = message.trim();
@@ -230,6 +239,14 @@ export function TaskDetail({
           <span className={`px-2 py-0.5 rounded text-[9.5px] font-semibold border tracking-wide ${STATUS_COLOR[task.status] ?? "border-base-content/20"}`}>
             {task.status.toUpperCase()}
           </span>
+          {podBadge && (
+            <span
+              className={`px-2 py-0.5 rounded text-[9.5px] font-semibold border tracking-wide ${podBadge.className}`}
+              title={task.podMessage || undefined}
+            >
+              POD {podBadge.label}
+            </span>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-3.5 mt-2 text-[10px] text-base-content/50">
           <span>#{task.id.slice(0, 6)}</span>
@@ -444,19 +461,30 @@ export function TaskDetail({
       {siblings.length > 0 && (
         <div className="flex-none border-t border-base-content/10 bg-base-200 px-6 py-2.5 flex items-center gap-2.5 overflow-x-auto">
           <span className="text-[9.5px] tracking-[0.1em] text-base-content/40 flex-none">REST OF THE HERD</span>
-          {siblings.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => onSelect(t.id)}
-              className="flex-none flex items-center gap-2 px-2.5 py-1.5 border border-base-content/10 rounded-md hover:border-base-content/25 cursor-pointer"
-            >
-              <span className="text-[10.5px]">#{t.id.slice(0, 6)}</span>
-              <span className={`px-1.5 py-0.5 rounded text-[9px] font-semibold border tracking-wide ${STATUS_COLOR[t.status] ?? "border-base-content/20"}`}>
-                {t.status.toUpperCase()}
-              </span>
-            </button>
-          ))}
+          {siblings.map((t) => {
+            const siblingPodBadge = podStateBadge(t);
+            return (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => onSelect(t.id)}
+                className="flex-none flex items-center gap-2 px-2.5 py-1.5 border border-base-content/10 rounded-md hover:border-base-content/25 cursor-pointer"
+              >
+                <span className="text-[10.5px]">#{t.id.slice(0, 6)}</span>
+                <span className={`px-1.5 py-0.5 rounded text-[9px] font-semibold border tracking-wide ${STATUS_COLOR[t.status] ?? "border-base-content/20"}`}>
+                  {t.status.toUpperCase()}
+                </span>
+                {siblingPodBadge && (
+                  <span
+                    className={`px-1.5 py-0.5 rounded text-[9px] font-semibold border tracking-wide ${siblingPodBadge.className}`}
+                    title={t.podMessage || undefined}
+                  >
+                    {siblingPodBadge.label}
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
       )}
     </div>

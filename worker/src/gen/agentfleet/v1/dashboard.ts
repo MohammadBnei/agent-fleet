@@ -17,7 +17,16 @@ export interface Task {
   description: string;
   status: string;
   threadId?: string | undefined;
-  prUrl?: string | undefined;
+  prUrl?:
+    | string
+    | undefined;
+  /**
+   * Worker-pod lifecycle state (PodPhase, set via ReportPodEvents) — distinct
+   * from `status` (business state). Unset until the provisioner reports the
+   * pod's first event.
+   */
+  podPhase?: string | undefined;
+  podMessage?: string | undefined;
 }
 
 export interface ListTasksRequest {
@@ -205,7 +214,16 @@ export interface GetJournalResponse {
 }
 
 function createBaseTask(): Task {
-  return { id: "", repo: "", description: "", status: "", threadId: undefined, prUrl: undefined };
+  return {
+    id: "",
+    repo: "",
+    description: "",
+    status: "",
+    threadId: undefined,
+    prUrl: undefined,
+    podPhase: undefined,
+    podMessage: undefined,
+  };
 }
 
 export const Task: MessageFns<Task> = {
@@ -224,6 +242,16 @@ export const Task: MessageFns<Task> = {
         ? globalThis.String(object.prUrl)
         : isSet(object.pr_url)
         ? globalThis.String(object.pr_url)
+        : undefined,
+      podPhase: isSet(object.podPhase)
+        ? globalThis.String(object.podPhase)
+        : isSet(object.pod_phase)
+        ? globalThis.String(object.pod_phase)
+        : undefined,
+      podMessage: isSet(object.podMessage)
+        ? globalThis.String(object.podMessage)
+        : isSet(object.pod_message)
+        ? globalThis.String(object.pod_message)
         : undefined,
     };
   },
@@ -248,6 +276,12 @@ export const Task: MessageFns<Task> = {
     if (message.prUrl !== undefined) {
       obj.prUrl = message.prUrl;
     }
+    if (message.podPhase !== undefined) {
+      obj.podPhase = message.podPhase;
+    }
+    if (message.podMessage !== undefined) {
+      obj.podMessage = message.podMessage;
+    }
     return obj;
   },
 
@@ -262,6 +296,8 @@ export const Task: MessageFns<Task> = {
     message.status = object.status ?? "";
     message.threadId = object.threadId ?? undefined;
     message.prUrl = object.prUrl ?? undefined;
+    message.podPhase = object.podPhase ?? undefined;
+    message.podMessage = object.podMessage ?? undefined;
     return message;
   },
 };

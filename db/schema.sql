@@ -68,6 +68,14 @@ ALTER TABLE tasks ALTER COLUMN discord_channel_id DROP NOT NULL;
 -- GetTask/ListRecentTasks both filter WHERE deleted_at IS NULL.
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
 
+-- Pod-lifecycle state (PodPhase: created/scheduled/running/crashed/
+-- terminated), set by ReportPodEvents alongside its existing knowledge_journal
+-- write — distinct from `status` (business state: planning/implementing/
+-- done/...). Lets the dashboard show worker-pod state directly instead of
+-- requiring kubectl.
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS pod_phase TEXT;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS pod_message TEXT;
+
 -- Append-only fleet knowledge journal (mirrors ai-devkit's JSON-event pattern,
 -- see agent-fleet reference-check memory: avoids write-conflict issues that a
 -- shared mutable doc would hit across concurrent worker pods).

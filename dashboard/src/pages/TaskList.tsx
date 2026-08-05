@@ -26,6 +26,24 @@ export function prBadge(task: Task): { label: string; className: string } | null
   return { label: number ? `PR ${number} ✓` : "PR ✓", className: "text-success" };
 }
 
+// Worker-pod lifecycle (PodPhase, reported by the provisioner) — distinct
+// from `task.status` (business state). Unset until the pod's first event
+// arrives, so this is null more often than not for a brand-new task.
+export function podStateBadge(task: Task): { label: string; className: string } | null {
+  const phase = task.podPhase;
+  if (!phase || phase === "POD_PHASE_UNSPECIFIED") return null;
+  const label = phase.replace("POD_PHASE_", "");
+  const className =
+    label === "CRASHED"
+      ? "text-error border-error/45 bg-error/10"
+      : label === "RUNNING"
+        ? "text-success border-success/45 bg-success/10"
+        : label === "TERMINATED"
+          ? "text-base-content/50 border-base-content/20 bg-base-content/5"
+          : "text-info border-info/45 bg-info/10"; // CREATED / SCHEDULED
+  return { label, className };
+}
+
 function SidebarSection({
   title,
   count,
@@ -81,6 +99,7 @@ function NeedsYouCard({
 }) {
   const enrichment = enrichTask(task);
   const progress = todos.filter((t) => t.status === "completed").length;
+  const podBadge = podStateBadge(task);
   return (
     <div className="relative">
       <button
@@ -94,6 +113,11 @@ function NeedsYouCard({
         <div className="flex items-center gap-2">
           <span className="text-[11px] font-semibold">#{task.id.slice(0, 6)}</span>
           <span className="text-[10px] text-base-content/50">{task.repo}</span>
+          {podBadge && (
+            <span className={`text-[8.5px] px-1 rounded border tracking-wide ${podBadge.className}`}>
+              {podBadge.label}
+            </span>
+          )}
           <span className="ml-auto text-[9.5px] text-primary">{enrichment.idleLabel}</span>
         </div>
         <div className="text-[11.5px] leading-relaxed mt-1.5 text-base-content/90">
@@ -123,6 +147,7 @@ function WorkingCard({
 }) {
   const progress = todos.filter((t) => t.status === "completed").length;
   const pct = Math.round((progress / Math.max(todos.length, 1)) * 100);
+  const podBadge = podStateBadge(task);
   return (
     <div className="relative">
       <button
@@ -136,6 +161,11 @@ function WorkingCard({
           <span className="w-1.5 h-1.5 rounded-full bg-info animate-fpulse" />
           <span className="text-[11px]">#{task.id.slice(0, 6)}</span>
           <span className="text-[10px] text-base-content/50">{task.repo}</span>
+          {podBadge && (
+            <span className={`text-[8.5px] px-1 rounded border tracking-wide ${podBadge.className}`}>
+              {podBadge.label}
+            </span>
+          )}
         </div>
         <div className="text-[11px] leading-relaxed mt-1 text-base-content/70 truncate">
           {task.description}

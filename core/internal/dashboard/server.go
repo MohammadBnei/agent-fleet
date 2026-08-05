@@ -299,6 +299,8 @@ func taskToProto(t tasks.Task) *agentfleetv1.Task {
 		Status:      t.Status,
 		ThreadId:    t.ThreadID,
 		PrUrl:       t.PrURL,
+		PodPhase:    t.PodPhase,
+		PodMessage:  t.PodMessage,
 	}
 }
 
