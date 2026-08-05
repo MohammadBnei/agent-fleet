@@ -8,43 +8,54 @@ This repo is submoduled into
 [`infra-bootstrap`](https://github.com/MohammadBnei/infra-bootstrap) at
 `agent-fleet/` — that's where the cluster itself (Kubernetes, ArgoCD,
 ingress, secrets backend) is provisioned and documented. This repo holds the
-fleet's own source (Discord bot, worker, MCP server) and deploy config
-(`k8s/` Helm values).
+fleet's own source (`core`, `provisioner`, `sidecar`, `worker`) and deploy
+config (`k8s/`).
 
 ## Status
 
 See **[`CLAUDE.md`](./CLAUDE.md)** for orientation and
 **[`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md)** for the canonical
 topology and current features — the golden path (one Discord message → one
-isolated Claude Code worker → one PR) is live: one persistent worker pod
-per target repo (dream-analyst, vos-monolith), with git-worktree-per-task
-isolation happening inside that pod rather than at the pod-lifecycle level.
-See [`docs/adr/0003`](./docs/adr/0003-persistent-worker-pod-per-repo.md)
-for why that revises the original "one Kubernetes Job per task" design.
+on-demand Claude Code worker pod → one PR) is live. Task dispatch is
+fleet-wide, not one-task-per-repo: `core` claims a pending task and commands
+`provisioner` to spin up a single-shot, two-container worker pod (worker +
+sidecar) with a git worktree already prepared on a shared PVC, up to
+`MAX_IN_FLIGHT_TASKS` concurrent tasks across any known repo. See
+[`docs/adr/0019`](./docs/adr/0019-shared-pvc-and-unified-provisioner.md)
+for why this replaced the original one-persistent-pod-per-repo design.
 
-- `bot/` — Discord bot: watches a trigger channel for `/task` (or the legacy
-  `!task <repo>: <description>` free-text fallback), opens a Discord thread,
-  inserts a row into the shared Postgres `tasks` table, and relays
-  subsequent thread replies into the task's planning transcript (Redis) so
-  the proposer/critic/human conversation is visible to all three.
-- `worker/` — one image, deployed twice (once per target repo). Polls
-  Postgres for its repo's pending tasks, creates a git worktree per task, runs
-  a proposer + critic Agent SDK session (`claude-opus-4-8`) that debate the
-  plan over the shared Redis transcript — read/bash-only until Mohammad
-  replies "approved" in the thread — then resumes the **same** proposer
-  session with write/edit unlocked to implement, test, commit, push, and open
-  a PR via `gh`.
-- `mcp-redis/` — stdio MCP server wrapping the shared planning transcript as a
-  durable Redis list (not pub/sub — a list can't drop a message published
-  while no one's subscribed).
-- `db/schema.sql` — the shared `tasks` queue + an append-only
-  `knowledge_journal` table, both in the fleet-wide `agentfleetdb` Postgres
-  database (Pigsty).
+- `core/` — Go: Discord ingress (`/task`/`/approve`/`/stop`/`/e2e-kill`,
+  legacy `!task repo: desc`), the dispatch loop that claims tasks and
+  commands the provisioner, its own gRPC server (`CoreService`), the
+  planning-transcript coordination (Postgres), and the web dashboard's
+  ConnectRPC API + static SPA. The fleet's sole holder of Postgres
+  credentials; needs zero cluster RBAC.
+- `provisioner/` — Go, `client-go`: the only fleet component with
+  Kubernetes RBAC. Owns all pod creation (worker pods and on-demand
+  e2e-preview pods) and the entire git lifecycle (clone/fetch/worktree
+  add/remove) on one shared `ReadWriteMany` PVC.
+- `sidecar/` — Go: a second container in every worker pod. Hosts a local
+  MCP server the Agent SDK session talks to, plus a local plain API for
+  the worker's own control-flow (heartbeat, status, journal, and the live
+  human-message feed that lets a Discord/dashboard reply reach the running
+  session mid-task).
+- `worker/` — TS/Bun, the only remaining JS runtime (sole host of
+  `@anthropic-ai/claude-agent-sdk`). Single-shot: handed one task at pod
+  creation, runs one continuous streaming-input Agent SDK session spanning
+  planning *and* implementation (no restart at the approval boundary),
+  pushes, opens a PR via `gh`, and exits.
+- `proto/` — buf-managed `.proto` schema for `CoreService`/
+  `ProvisionerService`/`DashboardService` — the only inter-process
+  protocol in the fleet (MCP is local-only, agent ↔ its own pod's
+  sidecar).
+- `db/schema.sql` — the shared `tasks` queue, append-only
+  `knowledge_journal`, and `planning_transcript`, in the fleet-wide
+  `agentfleetdb` Postgres database (Pigsty).
 
-Deployment config (Helm values) lives in `k8s/` in this repo — a two-source
-ArgoCD Application (chart from `infra-bootstrap`, values from here, see
-`infra-bootstrap`'s `gitops/apps/registry.yaml`) so `docker.yml`'s deploy job
-can bump the pinned image tag on release without a cross-repo commit.
+Deployment config lives in `k8s/` in this repo: `core.yaml` (Helm values, a
+two-source ArgoCD Application — chart from `infra-bootstrap`, values from
+here) and `provisioner/` (standalone plain manifests, since it needs RBAC
+`common-app-chart` can't express).
 
 Only the Application/ApplicationSet registration itself lives in
 `infra-bootstrap`'s `gitops/` — see that repo's `gitops/README.md`.
@@ -52,12 +63,14 @@ Only the Application/ApplicationSet registration itself lives in
 ## Relationship to `infra-bootstrap`
 
 - The cluster (`ukubi-cluster`), GitOps (`gitops/`), and secrets backend
-  (External Secrets + SOPS/age) are all owned by `infra-bootstrap` — this
-  repo consumes them, it doesn't redefine them.
-- Workers run as persistent Kubernetes pods on `ukubi-cluster` (one per
-  target repo, see `docs/ARCHITECTURE.md` §5); the Discord bot deploys as a
-  normal gitops app, following `infra-bootstrap`'s `/add-app` pattern
-  (reusing `gitops/platform/common-app-chart`).
+  (Infisical) are all owned by `infra-bootstrap` — this repo consumes
+  them, it doesn't redefine them.
+- Worker/sidecar pods are ephemeral, spawned on demand by `provisioner`
+  (see `docs/ARCHITECTURE.md` §5), not persistent per-repo deployments.
+  `core` deploys as a normal gitops app (`infra-bootstrap`'s `/add-app`
+  pattern, reusing `gitops/platform/common-app-chart`); `provisioner`'s
+  manifests live in this repo (`k8s/provisioner/`) and register as a
+  standalone Application in `infra-bootstrap`.
 - Per `infra-bootstrap`'s own `CLAUDE.md`, this fleet does **not** manage
   `infra-bootstrap`'s own cluster ops (kubespray/ansible/pigsty) — that's
   explicitly blocked until revisited (see `docs/DECISIONS.md`).

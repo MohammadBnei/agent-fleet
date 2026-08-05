@@ -16,8 +16,8 @@ Any doc, code, comment, or memory that contradicts this file or an
 1. This file (`DECISIONS.md`) — hard prerequisite.
 2. [`ARCHITECTURE.md`](ARCHITECTURE.md) for topology/current features.
 3. [`adr/`](adr/README.md) for the reasoning behind any specific decision.
-4. Then the source itself (`worker/src/`, `fleet-core/internal/`,
-   `e2e-provisioner/internal/`).
+4. Then the source itself (`core/internal/`, `provisioner/internal/`,
+   `sidecar/internal/`, `worker/src/`).
 
 ---
 
@@ -25,21 +25,29 @@ Any doc, code, comment, or memory that contradicts this file or an
 
 - **Bun is the sole JS runtime for `worker/`** — the only remaining TS/Bun
   component (superseded 2026-08-03 by [`adr/0013`](adr/0013-go-fleet-core-and-e2e-provisioner-rewrite.md)
-  for `bot/`/`mcp-redis/`, which no longer exist; `fleet-core`/
-  `e2e-provisioner` are Go). No build step for `worker/`'s TypeScript
-  sources — runs directly. No npm/pnpm/yarn workspace tooling; `worker/`
-  keeps its own `package.json`/`bun.lock`, and each Go module keeps its own
-  `go.mod` under the shared `go.work`.
+  for `bot/`/`mcp-redis/`, which no longer exist; `core`/`provisioner`/
+  `sidecar` are all Go, per [`adr/0019`](adr/0019-shared-pvc-and-unified-provisioner.md)–[`0021`](adr/0021-continuous-streaming-session.md)'s
+  rename/redesign of `fleet-core`/`e2e-provisioner` plus the new `sidecar`
+  component). No build step for `worker/`'s TypeScript sources — runs
+  directly. No npm/pnpm/yarn workspace tooling; `worker/` keeps its own
+  `package.json`/`bun.lock`, and each Go module keeps its own `go.mod`
+  under the shared `go.work`.
 - **Git auth goes through the `gh` CLI**, not a hand-rolled token-in-header
   client — `gh auth setup-git` wires `GH_TOKEN` into git's credential
-  helper once, and `gh pr create`/`gh api` reuse the same token.
+  helper once, and `gh pr create`/`gh api` reuse the same token. Both the
+  provisioner (its own clone/fetch on the shared PVC) and the worker (its
+  own push/PR) configure this independently — separate pods, no shared
+  `$HOME`.
 - **`knowledge_journal` is append-only**, not a mutable shared doc — avoids
   write-conflict issues a shared mutable record would hit across
-  concurrent worker pods (dream-analyst-worker and vos-monolith-worker
-  write to it independently).
+  concurrently dispatched worker pods. Written only by `core` now (`core`
+  is the fleet's sole Postgres-credential holder,
+  [`adr/0020`](adr/0020-hub-and-spoke-grpc-worker-sidecar.md) point 1) —
+  every other component appends to it via a `CoreService` gRPC call, not a
+  direct write.
 - **One repo, one version/CHANGELOG.** `release.yml` runs from the repo
   root, not per-package — the fleet ships as one unit even though
-  `worker/`, `fleet-core/`, `e2e-provisioner/` are deployed as separate
+  `worker/`, `core/`, `provisioner/`, `sidecar/` are deployed as separate
   images.
 - **Workflow discipline:** all changes via feature branch + PR, no direct
   push to `main`; secrets only via Infisical, fetched at run time, never

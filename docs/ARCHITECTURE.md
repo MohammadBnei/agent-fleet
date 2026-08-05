@@ -2,220 +2,288 @@
 
 Canonical topology and current features for `agent-fleet` — the WHAT. For
 the WHY behind any specific choice, see [`DECISIONS.md`](DECISIONS.md) and
-[`adr/`](adr/README.md). This file supersedes the old `mvp-spec.md`
-(deleted) — where that spec described intent that the code later diverged
-from, what's below reflects the actual implementation.
+[`adr/`](adr/README.md). This revision reflects the
+[`adr/0019`](adr/0019-shared-pvc-and-unified-provisioner.md)/
+[`0020`](adr/0020-hub-and-spoke-grpc-worker-sidecar.md)/
+[`0021`](adr/0021-continuous-streaming-session.md) redesign: `fleet-core` →
+`core`, `e2e-provisioner` → `provisioner`, a new `sidecar` container, and a
+rewritten single-shot `worker/`. Where this disagrees with anything else,
+this file wins for topology/features — the reading order is
+`DECISIONS.md` → this file → `adr/` → source.
 
 ## 1. Components
 
 | Component | Role |
 |---|---|
-| `fleet-core/` | Go service: Discord ingress (`/task`/`/approve`/`/stop`/`/e2e-kill`, legacy `!task repo: desc`) + planning-transcript coordination (replaces `mcp-redis`'s role — exposes `send_message`/`wait_for_messages` over a persistent MCP HTTP server) + Loki log/introspection queries + the web dashboard's ConnectRPC API and static SPA (`dashboard/`, see [`adr/0015`](adr/0015-connectrpc-dashboard-api.md), which supersedes [`adr/0014`](adr/0014-fleet-core-dashboard-backend.md)'s REST/SSE transport), as internal packages in one binary — no cluster RBAC, folded per [`adr/0013`](adr/0013-go-fleet-core-and-e2e-provisioner-rewrite.md)'s decomposition rule (split only on RBAC/trust boundaries). Calls `e2e-provisioner`'s gRPC service for `/e2e-kill` rather than writing `e2e_sessions` directly. |
-| `worker/` | The Claude Code worker (TS/Bun — the only remaining JS runtime in the fleet, since it's the sole host of `@anthropic-ai/claude-agent-sdk`'s `query()`). One persistent pod per target repo. Polls `tasks` for its repo, creates a git worktree per claimed task, runs the planning phase then the implementation phase, opens a PR, replies in the Discord thread. Talks to `fleet-core` and `e2e-provisioner` only via MCP over HTTP — never gRPC. |
-| `proto/` | buf-managed `.proto` schema (lint + breaking-change CI + generate/drift check): the `E2eProvisionerService` gRPC contract (`fleet-core` → `e2e-provisioner`, the one real gRPC call in the fleet) and message shapes documenting the MCP transcript payload. Generates Go (`proto/gen/go`, own module) and TS types (`worker/src/gen`, `ts-proto`, types-only). |
-| `db/schema.sql` | Shared Postgres schema (`agentfleetdb`, Pigsty-managed): `tasks` queue, append-only `knowledge_journal`, `planning_transcript` (the durable planning transcript, replacing the old Redis list — pull/cursor reads, per-task idempotency-keyed appends), and `e2e_sessions` (on-demand e2e environment lifecycle). |
-| `dashboard/` | React + Vite + TypeScript + Tailwind/DaisyUI SPA — task list, task detail (live transcript via a Connect server-streaming RPC, approve/stop/kill-e2e buttons, code-server link, AskUserQuestion answer forms — see [`adr/0018`](adr/0018-ask-user-question-via-dashboard.md)), talking to `fleet-core` via a generated `@connectrpc/connect-web` client (`dashboard/src/gen/`, buf-generated). Built by `fleet-core/Dockerfile`'s `spa` stage and embedded into the `fleet-core` binary — not deployed on its own, see [`adr/0015`](adr/0015-connectrpc-dashboard-api.md). |
-| `k8s/` | Helm values for three deployed apps (`fleet-core`, `dream-analyst-worker`, `vos-monolith-worker`), consumed by two-source ArgoCD Applications defined in `infra-bootstrap`. |
-| `e2e-provisioner/` | Go service (`client-go`) — the only component in the fleet with Kubernetes RBAC (namespaced `Role`, never a `ClusterRole`) to create/delete Pods/Services/IngressRoutes/Middlewares. Exposes an MCP server per task (`/mcp/:taskId`) that the worker calls to request/kill an on-demand e2e environment, proxies Playwright MCP tool calls to whichever e2e pod is live for that task, and exposes a small gRPC service `fleet-core` calls for `/e2e-kill`. Deployed as a standalone plain-manifest ArgoCD Application in `infra-bootstrap` (`gitops/platform/e2e-provisioner/`), not via `k8s/` here — unchanged RBAC/placement from [`adr/0012`](adr/0012-e2e-provisioner-standalone-app.md), rewritten Go per [`adr/0013`](adr/0013-go-fleet-core-and-e2e-provisioner-rewrite.md). |
-| `e2e-runner/` | One generic pod image (code-server + the target app + a Playwright MCP server, CPU-only headless Chromium for v1) that `e2e-provisioner` spins up per task, parametrized by env vars the same way `worker/`'s single image is parametrized by `TARGET_REPO`. |
+| `core/` | Go service: Discord ingress (`/task`/`/approve`/`/stop`/`/e2e-kill`, legacy `!task repo: desc`) + the dispatch loop that claims pending tasks and commands the provisioner to spawn worker pods + `CoreService`, core's own gRPC server (agent-facing proxied MCP calls, wrapper-facing housekeeping calls, and the provisioner's pushed pod-lifecycle event stream) + planning-transcript coordination (Postgres) + Loki log/introspection queries + the web dashboard's ConnectRPC API and static SPA (`dashboard/`) — all as internal packages in one binary. **The fleet's sole holder of `AGENTFLEET_DB_*` credentials** (`docs/adr/0020` point 1) and the *only* component that ever calls the provisioner (hub-and-spoke). Needs zero cluster RBAC. |
+| `provisioner/` | Go service (`client-go`) — the only component in the fleet with Kubernetes RBAC (namespaced `Role`, never a `ClusterRole`) to create/delete Pods/Services/IngressRoutes/Middlewares. Owns **all** cluster-pod creation in the fleet: today's on-demand e2e-preview pods (unchanged behavior from `adr/0012`) *and* worker pods (new, `adr/0019`). Also owns the entire git lifecycle on the one shared workspace PVC — clone, fetch, worktree add/remove — serialized per-repo by an in-process mutex (`internal/git`), so no PVC-level file lock is needed. Holds **zero** Postgres credentials; Kubernetes itself (pod existence/phase) is its durable source of truth for session state. Hosts `ProvisionerService` (gRPC server, core is the only caller) and is a gRPC client of core for one call: pushing `PodEvent`s. |
+| `sidecar/` | Go — new, a real second container in every worker pod (`docs/adr/0020` point 5). Two local (`localhost`-only) surfaces, one outbound gRPC connection to `core`: an MCP server the Agent SDK session connects to (proxies `send_message`/`wait_for_messages`/`AskUserQuestion`/`request_e2e_env`/`kill_env` onward to `CoreService`), and a plain HTTP/JSON API for the TS wrapper's own control-flow (`heartbeat`, `status`, `journal`, `session-id`, `still-holds-lease`, `telemetry`, `message`) — including the load-bearing `GET /human-messages` SSE feed that delivers new human input to the wrapper live, for `streamInput()` (`docs/adr/0021` point 2). An independent telemetry loop pushes `git diff --numstat`-derived branch/file-change stats to core every 5s, decoupled from anything the agent itself does. |
+| `worker/` | The Claude Code worker (TS/Bun — the only remaining JS runtime in the fleet, sole host of `@anthropic-ai/claude-agent-sdk`'s `query()`). **Single-shot** (`docs/adr/0019`): the provisioner hands it one `TASK_ID`/`TARGET_REPO`/`LEASE_ID`/`BASE_BRANCH` via env, already pointed at a pre-cloned, pre-worktreed `/workspace` — the worker never runs `git clone`/`git worktree add` itself. Runs **one continuous `query()` session in streaming-input mode**, spanning planning *and* implementation with no teardown/restart at the approval boundary (`docs/adr/0021`), then exits. Talks only to its own pod's `localhost` sidecar — never Postgres, never the provisioner, never `core` directly. |
+| `proto/` | buf-managed `.proto` schema (lint + breaking-change CI + generate/drift check): `CoreService` (core's gRPC server — agent/wrapper/provisioner-facing), `ProvisionerService` (the provisioner's gRPC server, renamed from `E2eProvisionerService`), and `DashboardService` (ConnectRPC, dashboard ↔ core). Generates Go (`proto/gen/go`) and TS types (`worker/src/gen`, `dashboard/src/gen`, `ts-proto`). |
+| `db/schema.sql` | Shared Postgres schema (`agentfleetdb`, Pigsty-managed), applied idempotently via `core migrate` (`go:embed`'d, `core`'s own `PreSync` hook — see `core/internal/db/migrate.go`). `tasks` (the queue), append-only `knowledge_journal`, `planning_transcript` (durable planning transcript, pull/cursor reads, idempotency-keyed appends). `e2e_sessions` still exists in the schema but is **no longer read or written by any Go/TS code** — e2e-session state moved to being Kubernetes-native (pod existence/phase) as of `docs/adr/0020` point 1; see §6. |
+| `dashboard/` | React + Vite + TypeScript + Tailwind/DaisyUI SPA — task list, task detail (live transcript via a Connect server-streaming RPC, approve/stop/kill-e2e buttons, code-server link, `AskUserQuestion` answer forms — `adr/0018`), talking to `core` via a generated `@connectrpc/connect-web` client. Built into and served by `core`'s binary — not deployed on its own. Unaffected in substance by the redesign — only the backend's internal transport to the worker changed, not the dashboard-facing contract. |
+| `k8s/` | This repo's own deploy manifests: `core.yaml` (Helm values for `common-app-chart`, zero RBAC) and `provisioner/` (a standalone plain-manifest directory — `Deployment`/`Service`/`ServiceAccount`/`Role`/`InfisicalSecret`/`NetworkPolicy`/`PersistentVolumeClaim` — since it needs RBAC `common-app-chart` can't express). Both referenced from `infra-bootstrap`'s `gitops/` (see §9). |
+| `e2e-runner/` | One generic pod image (code-server + the target app + a Playwright MCP server, CPU-only headless Chromium for v1) the provisioner spins up per on-demand e2e request, parametrized by env vars the same way `worker/`'s image is parametrized by `TARGET_REPO`. Unchanged by this redesign. |
 
 ## 2. End-to-end flow
 
 ```mermaid
 sequenceDiagram
     participant D as Discord
-    participant FC as fleet-core
+    participant C as core (Discord ingress, dispatch, CoreService gRPC)
     participant PG as Postgres (tasks + planning_transcript)
-    participant W as worker
-    participant P as planner session
+    participant P as provisioner (ProvisionerService gRPC, git, k8s)
+    participant SC as sidecar (in worker pod)
+    participant W as worker (TS wrapper, in worker pod)
+    participant Ag as Agent SDK session (streaming-input)
 
-    D->>FC: /task repo desc
-    FC->>PG: createTask() → status=pending
-    W->>PG: claimNextTask() (FOR UPDATE SKIP LOCKED) — unchanged, fleet-core never touches this
-    W->>W: createWorktree(): git worktree add -b agent/<taskId>
+    D->>C: /task repo desc
+    C->>PG: CreateTask() → status=pending
 
-    W->>P: query() planner (permissionMode: plan, read/bash only, plus Task for doubt-driven-development's fresh-context subagent)
-    P->>FC: send_message (MCP tool call → planning_transcript)
-    opt architecture-interview invoked (planner's own judgment)
-        P->>FC: send_message (question)
-        D->>FC: thread reply
-        FC->>PG: in-process Append() — no network hop, same binary
-        P->>FC: wait_for_messages
+    loop dispatch loop, every 2s (core/internal/dispatch)
+        C->>PG: CountInFlight() — headroom check, Postgres is ground truth
+        C->>PG: ClaimNextTask() (FOR UPDATE SKIP LOCKED)
     end
-    D->>FC: thread replies
-    FC->>PG: in-process Append() — no network hop, same binary
-    FC-->>D: every message relayed live
+    C->>P: CreateWorkerPod(taskId, repo, repoUrl, baseBranch, leaseId) [gRPC]
+    P->>P: EnsureRepoCloned / CreateWorktree (per-repo in-process mutex)
+    P->>SC: client-go creates one Pod, two containers: worker + sidecar
+    P-->>C: ReportPodEvents stream (created→scheduled→running→...) [gRPC]
+    C->>PG: journal every pod event (knowledge_journal)
 
-    D->>FC: /approve (or "approved"/"lgtm"/"ship it"/"go ahead")
-    Note over FC: never inferred from silence or round completion
+    W->>Ag: query() streaming-input, permissionMode=plan, canUseTool gate
+    Ag->>SC: mcp tool call (local MCP, e.g. send_message)
+    SC->>C: SendMessage [gRPC]
+    C->>PG: Append to planning_transcript
+    C-->>D: relay loop posts every message live
 
-    W->>P: query({ resume: planningSessionId }, permissionMode: default, write/edit unlocked)
-    P->>P: code, test, docs, commit
-    W->>W: pushAndOpenPr(): git push + gh pr create
-    W->>PG: status=done, pr_url set
-    W->>FC: postReply(summary + PR link) via send_message
-    FC->>D: thread reply
+    D->>C: thread reply
+    C->>PG: Append (from=human)
+    C-->>SC: StreamHumanMessages [gRPC server-stream]
+    SC-->>W: GET /human-messages (SSE)
+    W->>Ag: streamInput(reply text)
+
+    D->>C: /approve (or word-match "approved"/"lgtm"/"ship it"/"go ahead")
+    C-->>SC: StreamHumanMessages delivers the approve entry
+    SC-->>W: SSE event, type=approve
+    W->>Ag: query.setPermissionMode('default') + streamInput(implement prompt)
+    Note over Ag: same session, no restart — canUseTool now allows Write/Edit
+
+    Ag->>Ag: write code, tests, docs, commit
+    W->>W: pushAndOpenPr(): git push + gh pr create (worker's own GH_TOKEN)
+    W->>SC: POST /status {done, prUrl} → SetTaskStatus [gRPC]
+    SC->>C: SetTaskStatus [gRPC]
+    C->>PG: tasks.status=done, pr_url set
+    C->>P: TearDownSession(taskId, WORKER) [gRPC] — opportunistic, on any terminal status
+    P->>P: delete pod, remove worktree
+    C-->>D: relay posts summary + PR link
 ```
 
-`/stop` (or "stop"/"abort"/"cancel"/"kill" in a reply) aborts at any point
-in either phase, not just at a checkpoint — relayed into the same
-transcript and checked first, before the word-match approval fallback.
+`/stop` (or "stop"/"abort"/"cancel"/"kill" in a reply) maps to
+`query.interrupt()` — the SDK's own graceful stop primitive, not a process
+kill — plus `abortController.abort()` as a backstop for the case where the
+session is idle between rounds and there's nothing active to interrupt
+(`docs/adr/0021` point 3). Checked before the approval word-match fallback,
+at any point in either phase.
 
-During the implementation phase, the planner session can also call
-`request_e2e_env`/`kill_env` (an MCP server proxied through
-`e2e-provisioner`, a separate MCP surface from `fleet-core`'s) to spin up a
-live preview pod and drive Playwright browser tests against it — see
-[`adr/0012`](adr/0012-e2e-provisioner-standalone-app.md) for the full
-design and why the worker itself never gets Kubernetes RBAC to do this
-directly. Teardown happens on the task reaching a terminal status or an
-explicit kill from either Mohammad (`/e2e-kill`, now routed through
-`fleet-core`'s gRPC call to `e2e-provisioner` rather than a direct DB
-write — see [`adr/0013`](adr/0013-go-fleet-core-and-e2e-provisioner-rewrite.md))
-or the agent — never merely because a PR was opened.
+During implementation, the agent can call `request_e2e_env`/`kill_env` — a
+three-hop proxy (agent → sidecar's local MCP → `core`'s `CoreService` →
+`provisioner`'s `ProvisionerService`) to spin up a live preview pod and
+drive Playwright browser tests against it, per `docs/adr/0012`'s original
+design (RBAC boundary unchanged) as extended by `docs/adr/0020`'s
+hub-and-spoke rule (no direct worker→provisioner path exists anymore, even
+for this). Teardown happens on the task reaching a terminal status
+(`core`'s opportunistic trigger in `SetTaskStatus`) or an explicit kill
+(`/e2e-kill` from Discord, or the agent's own `kill_env`) — never merely
+because a PR was opened.
+
+**MCP is purely local** (agent ↔ its own pod's sidecar, over `localhost`).
+**gRPC is the only inter-process/inter-pod protocol anywhere in the
+fleet** — there is no direct HTTP MCP surface reachable across a pod
+boundary anymore (`docs/adr/0020` point 6).
 
 ## 3. Planning-phase guardrails
 
 - **Complexity-gated interview/doubt, no `/task` knob.** The planner
   decides for itself, per task, whether `architecture-interview` and/or
   `doubt-driven-development` apply, using each skill's own "when to use"
-  criteria — no pre-task boolean locks in a guess before exploration has
-  even happened. Mohammad can still interject live in the thread at any
-  point ("skip the interview" / "run doubt on this") since narrative
-  planning discussion still routes through `send_message`/
-  `wait_for_messages` to Discord — see
-  [`adr/0017-single-session-planning-pipeline.md`](adr/0017-single-session-planning-pipeline.md).
-- **`PLAN_READY:` round-cap convention.** A single planner session can post
-  many `send_message` messages before there's anything to checkpoint on —
-  the round cap counts only messages prefixed `PLAN_READY:` (a complete,
-  reviewable plan), not every message.
+  criteria. Mohammad can still interject live in the thread at any point
+  ("skip the interview" / "run doubt on this") — narrative planning
+  discussion is fed straight into the running session via `streamInput()`
+  (`docs/adr/0021`), reaching the model live instead of waiting for it to
+  poll — see [`adr/0017`](adr/0017-single-session-planning-pipeline.md).
+- **`PLAN_READY:` round-cap convention, now an in-session pause, not a
+  teardown.** A single continuous session can post many `send_message`
+  messages before there's anything to checkpoint on — the round cap counts
+  only messages prefixed `PLAN_READY:`. Every `MAX_PLANNING_ROUNDS`
+  (default 1) such posts without a verdict, the wrapper calls
+  `query.interrupt()` (pausing, not ending, the same session), posts a
+  checkpoint message, and resumes feeding input via `streamInput()` once a
+  human replies — continue, approve, or stop. See
+  [`adr/0008`](adr/0008-unbounded-guardrail-defaults.md) (mechanism
+  corrected by `adr/0021`, cap semantics unchanged).
 - **AskUserQuestion, answered via the dashboard, not Discord.** A real
-  `AskUserQuestion` MCP tool (structured questions, options with
-  label+description, optional multi-select) posts a `question`-type
-  `planning_transcript` entry and blocks until the dashboard's
-  `AnswerQuestion` RPC posts the matching `answer` entry — Discord's
-  plain-text threads can't render structured multiple-choice UI. See
-  [`adr/0018-ask-user-question-via-dashboard.md`](adr/0018-ask-user-question-via-dashboard.md).
-- **Round cap:** every `MAX_PLANNING_ROUNDS` (default 1) `PLAN_READY:`
-  posts without a verdict from Mohammad, the session is aborted and a
-  checkpoint posts to Discord: reply to continue, `/approve`, or `/stop`.
-- **Session-end checkpoint:** if the session ends early (crash, turn
-  limit, early return) before the round cap, the same checkpoint fires
-  instead of silently retrying.
-- **Turn/time limits are opt-in, not default.** `MAX_TURNS_PLANNING`,
-  `MAX_TURNS_IMPLEMENTATION`, and `PLANNING_TIMEOUT_MS` are all unbounded
-  unless explicitly set — fixed defaults were tried and repeatedly proved
-  too tight for genuine exploration of an unfamiliar codebase (see
-  `worker/src/planning.ts`'s inline comments and
-  [`adr/0008-unbounded-guardrail-defaults.md`](adr/0008-unbounded-guardrail-defaults.md)).
+  `AskUserQuestion` MCP tool (proxied through the sidecar → `core`) posts a
+  `question`-type `planning_transcript` entry and long-polls until the
+  dashboard's `AnswerQuestion` RPC posts the matching `answer` entry —
+  Discord's plain-text threads can't render structured multiple-choice UI.
+  See [`adr/0018`](adr/0018-ask-user-question-via-dashboard.md).
+- **`/approve` is a live `query.setPermissionMode()` call**, made by the
+  wrapper the instant an explicit approval is detected — no new process, no
+  session teardown, same `isApproval()` word-match/type-check logic as
+  before (`docs/adr/0021` point 4; `docs/adr/0005`'s "never inferred from
+  silence" rule is unchanged).
+- **Two independent enforcement layers on `Write`/`Edit`, confirmed by real
+  testing, not assumed.** `Write`/`Edit` stay structurally absent from
+  `allowedTools` for the whole session (as before); a `canUseTool` callback
+  additionally denies them while an in-memory `approved` flag is false.
+  Verified empirically (`docs/adr/0021`'s Phase 0 spike): with `Write` *in*
+  `allowedTools`, `canUseTool` is never invoked at all — the list bypasses
+  the callback entirely, which is exactly why the tool stays undeclared.
+- **Turn/time limits are opt-in, not default.** `MAX_TURNS`,
+  `MAX_PLANNING_ROUNDS` aside, nothing else is bounded unless explicitly
+  set — see [`adr/0008`](adr/0008-unbounded-guardrail-defaults.md).
 - **No cost cap.** Claude Code authenticates via `CLAUDE_CODE_OAUTH_TOKEN`
   (subscription), not a metered API key, so `total_cost_usd` in SDK
   results is notional, not a real charge.
-- Every SDK message (not just the final result) streams to `kubectl logs`
-  and, for assistant text, to the Discord thread — added after a real
-  incident where a missing `allowedTools` entry silently denied every
-  MCP tool call with zero visible signal until cost/turn-count was
-  inspected after the fact.
+- Every SDK message (not just the final result) is logged
+  (`worker/src/planning.ts`'s `logSdkMessage`), and every assistant text
+  block is relayed into the transcript (`sidecar.pushMessage`) — added
+  after a real incident where a missing `allowedTools` entry silently
+  denied every MCP tool call with zero visible signal until cost/turn-count
+  was inspected after the fact.
 
 ## 4. Current features (the golden path, working today)
 
-- `/task`, `/approve`, `/stop` Discord slash commands, guild-scoped
-  (registers instantly, no global-command propagation delay).
+- `/task`, `/approve`, `/stop`, `/e2e-kill` Discord slash commands,
+  guild-scoped (registers instantly, no global-command propagation delay).
 - Legacy fallback: free-text `!task <repo>: <description>` trigger and
-  plain "approved"/"stop" replies, for anyone who doesn't use the slash
-  commands.
-- Live relay of every planner message — plan drafts, interview questions,
-  doubt-cycle status — and its raw assistant reasoning text, not just
-  formal `send_message` posts — to the Discord thread as it's generated.
+  plain "approved"/"stop" replies.
+- Live relay of every message on the planning transcript — plan drafts,
+  interview questions, doubt-cycle status, raw assistant narration — to
+  the Discord thread as it's generated, via `core`'s own relay loop
+  (`internal/transcript/relay.go`), regardless of whether the message came
+  from the agent's own `send_message` tool call or the sidecar's
+  independent telemetry/wrapper housekeeping calls.
 - Structured self-review via real, vendored Claude Code skills
   (`doubt-driven-development`'s fresh-context `Task`-tool subagent,
-  `architecture-interview`'s stakeholder elicitation) instead of a
-  bespoke second agent session — see
+  `architecture-interview`'s stakeholder elicitation) — see
   [`adr/0017`](adr/0017-single-session-planning-pipeline.md).
-- Explicit-approval gate: write/edit tools are structurally absent from
-  the planning-phase `allowedTools` list, not just discouraged by prompt.
-- Same planner session resumed into implementation — no restart, no
-  context loss between planning and coding.
-- `/e2e-kill` requests a kill via `e2e-provisioner`'s gRPC API
-  (`KillE2eSession`), not a direct `e2e_sessions` write — `fleet-core`
-  never reaches into a table it doesn't own (see
-  [`adr/0013`](adr/0013-go-fleet-core-and-e2e-provisioner-rewrite.md)).
+- **One continuous Agent SDK session per task**, streaming-input mode,
+  spanning planning and implementation — no restart, no context loss, no
+  disk-based resume at the approval boundary (`resume: sessionId` is kept
+  only for crash recovery, `docs/adr/0016`/`0021` point 6).
+- Explicit-approval gate: write/edit tools structurally absent from
+  `allowedTools` for the whole session, plus a live `canUseTool` backstop
+  — see §3.
+- `/e2e-kill` requests a kill via `core`'s `CoreService.KillE2eEnv`, proxied
+  to the provisioner's `ProvisionerService.KillE2ESession` — `core` never
+  writes e2e-session state directly, and e2e-session state itself is
+  Kubernetes-native now (§6), not a Postgres row.
 - Git commit identity derived live from the authenticated bot GitHub
-  account (`gh api user --jq .login`), not hardcoded — stays correct if
-  the bot account changes.
-- Append-only `knowledge_journal` (task claimed/cancelled/done/failed,
-  session results) — a shared fleet-wide record, avoiding the
-  write-conflict issues a mutable shared doc would hit across concurrent
-  worker pods.
-- On-demand e2e test environments during implementation: a live preview pod
-  (app + code-server + Playwright MCP) the agent can request, drive
-  browser/API tests against, and share a preview URL for — see
+  account (`gh api user --jq .login`), not hardcoded — both the
+  provisioner (its own clone/fetch) and the worker (its own push/PR) do
+  this independently, since the two processes don't share `$HOME`.
+- Append-only `knowledge_journal` — task lifecycle events, session
+  results, and (new) provisioner pod-lifecycle events, all funneled
+  through `core`'s single Postgres connection.
+- On-demand e2e test environments during implementation, three-hop
+  proxied through `core` (§2) — see
   [`adr/0012`](adr/0012-e2e-provisioner-standalone-app.md). CPU-only for
   now; GPU-accelerated Chromium is a deferred fast-follow.
+- **Fleet-wide concurrency, not one task per repo.** Any number of tasks
+  across any known repo can be in flight simultaneously, up to
+  `MAX_IN_FLIGHT_TASKS` (default 5) — `core`'s dispatch loop claims
+  repo-agnostically (`docs/adr/0019`).
+- **Crash recovery without a self-retrying pod.** Worker pods are
+  single-shot; a crashed pod's task becomes eligible for `ClaimNextTask`'s
+  stale-heartbeat reclaim (>10min), and the provisioner's reconcile loop
+  garbage-collects the pod itself if it reached a terminal k8s phase
+  without `core` ever calling `TearDownSession` for it.
 
 ## 5. Deployment shape
 
-One **persistent, always-on** worker pod per target repo
-(`dream-analyst-worker`, `vos-monolith-worker`) — not one Kubernetes Job
-per task. This superseded the original one-Job-per-task design on
-2026-07-30; git-worktree-per-task isolation happens *inside* the
-long-lived pod instead of at the pod-lifecycle level (see
-[`adr/0003-persistent-worker-pod-per-repo.md`](adr/0003-persistent-worker-pod-per-repo.md)).
-`replicaCount: 1`, always-on for now — KEDA scale-to-0 is not yet wired up.
+**One shared `ReadWriteMany` PVC** (`agent-fleet-workspace`, owned by the
+provisioner's own manifests) replaces the old two per-repo workspace PVCs
+(`docs/adr/0019`). Layout: `<root>/repos/<repo>/` (one clone per repo,
+fetched in place, never re-cloned per task) and
+`<root>/worktrees/<taskId>/` (one worktree per task, keyed by the
+already-globally-unique task ID, not nested per repo). Only the
+provisioner (clone/fetch/worktree add+remove) and each task's worker+
+sidecar pod (mounted read-write via a per-task `subPath`) ever touch it —
+`core` holds zero PVC access, matching its zero-RBAC design. The old
+`agent-fleet-shared-pvc` (`/mnt/fleet-shared`, skills/journal-mirror/MCP
+configs) is dropped entirely — confirmed via a full-repo grep that nothing
+in `core`/`provisioner`/`sidecar`/`worker` references it anymore; the
+planning skills plugin now ships baked into the worker image
+(`PLANNING_SKILLS_PLUGIN_PATH = "/app/worker/skills/agent-fleet-planning"`,
+unchanged from before this redesign — the PVC-resident-skills idea from
+`docs/adr/0019` point 6 was not carried into the actual implementation).
 
-Both worker apps and `fleet-core` mount a shared `ReadWriteMany` PVC
-(`agent-fleet-shared-pvc`, owned by `fleet-core`'s Application — moved here
-from the deleted `agent-fleet-bot.yaml`) at `/mnt/fleet-shared`, alongside
-their own per-repo workspace PVC at `/workspace` for the git checkout +
-per-task worktrees — also `ReadWriteMany` (not `ReadWriteOnce`, as of
-`adr/0012`) so `e2e-provisioner` can mount the same PVC into an ephemeral
-e2e pod via a per-task `subPath`.
+**Worker pods are single-shot, two containers, spawned per task — not
+persistent, not one Deployment per repo.** The provisioner builds each
+Pod directly via `client-go` (`provisioner/internal/k8s/pod.go`):
+- `worker` container: the TS/Bun image, `TASK_ID`/`TARGET_REPO`/
+  `TASK_DESCRIPTION`/`LEASE_ID`/`BASE_BRANCH`/`SIDECAR_MCP_ADDR`/
+  `SIDECAR_API_ADDR`/`GH_TOKEN` env, `250m`–`2000m` CPU / `512Mi`–`2Gi`
+  memory.
+- `sidecar` container: the Go image, `TASK_ID`/`TARGET_REPO`/`MCP_PORT`
+  (9090)/`LOCAL_API_PORT` (9091) env, `50m`–`250m` CPU / `64Mi`–`256Mi`
+  memory.
+- Both mount `/workspace` from the shared PVC via the identical
+  `subPath: worktrees/<taskId>` — a shared filesystem view of the one
+  worktree, not a shared clone.
+- `RestartPolicy: Never` — a crashed pod is not restarted by Kubernetes;
+  recovery is `core`'s stale-heartbeat reclaim (§4), not `kubelet`.
 
-`fleet-core` needs **zero cluster RBAC**, so unlike `e2e-provisioner` it
-deploys via this repo's own `k8s/fleet-core.yaml` through
-`common-app-chart` — no standalone-Application escape hatch needed.
+**`core` needs zero cluster RBAC**, so it deploys via this repo's own
+`k8s/core.yaml` through `common-app-chart` (two-source ArgoCD Application,
+chart from `infra-bootstrap`, values from here) — no standalone-Application
+escape hatch needed. `core` is this repo's first app with a real listening
+`service.port` (`8080`, publicly reachable — the dashboard/`/healthz`) and
+a second, `ClusterIP`-only gRPC port (`CORE_GRPC_PORT`, `9090`, never
+publicly routed). Its HTTP ingress is gated behind the shared
+`basic-admin-auth` Traefik Middleware (already gating pgweb/Alertmanager).
 
-`fleet-core` is this repo's first app with a real listening `service.port`
-(`8080`, now publicly reachable) and a public `IngressRoute` — the two
-worker apps' `service.port` is unused. Its ingress is gated behind the
-shared `basic-admin-auth` Traefik Middleware (already gating pgweb/
-Alertmanager); the hostname itself lives in `infra-bootstrap`'s
-`gitops/apps/registry.yaml` entry, not `k8s/fleet-core.yaml` (the
-ApplicationSet template's Helm `parameters` override always wins over a
-values-file setting of the same key). `common-app-chart`'s `IngressRoute`
-has no path-scoped routing, so `/mcp`/`/healthz` become reachable through
-that same public, BasicAuth-gated host too — an accepted limitation, see
-[`adr/0014`](adr/0014-fleet-core-dashboard-backend.md).
-`e2e-provisioner` itself is still **not** deployed from this repo's `k8s/`
-— it's a standalone plain-manifest ArgoCD Application living in
-`infra-bootstrap` (`gitops/platform/e2e-provisioner/`), since it needs
-Kubernetes RBAC that `common-app-chart` has no way to express. See
-[`adr/0012`](adr/0012-e2e-provisioner-standalone-app.md).
+**`provisioner` needs real RBAC**, so — unlike `core` — it is **not**
+deployed through `common-app-chart`. As of this redesign its manifests
+moved *into this repo* (`k8s/provisioner/`: `Deployment`, `Service`,
+`ServiceAccount`, namespaced `Role`, `InfisicalSecret`, `NetworkPolicy`,
+`PersistentVolumeClaim`), registered in `infra-bootstrap` as a standalone
+plain-manifest ArgoCD Application (`gitops/bootstrap/
+provisioner-application.yaml`) pointed at this repo instead of
+`infra-bootstrap/gitops/platform/e2e-provisioner/` (the old location, now
+deleted) — see §9.
 
 ### Deploy pipeline
 
 1. Push a tag → `.github/workflows/docker.yml`'s `build-push` job builds
-   the `worker` image (bun-based matrix); a separate `build-push-go` job
-   builds `fleet-core`/`e2e-provisioner` (Go, no package.json — tagged
-   with the pushed git tag directly, same PR-safe tag computation as
-   `build-push-e2e-runner`). A separate `.github/workflows/go.yml` runs
-   the real correctness gate for the Go side on every push/PR: `go vet`,
+   the `worker` image (Bun-based); `build-push-go` builds `core`/
+   `provisioner`/`sidecar` (Go, no `package.json` — tagged with the pushed
+   git tag directly). A separate `.github/workflows/go.yml` runs the real
+   correctness gate for the Go side on every push/PR: `go vet`,
    `golangci-lint`, `go test -race`, `-tags=integration` tests against a
    real Postgres service container, plus `buf lint`/`buf breaking`/a
    generate-drift check for `proto/`.
-2. `docker.yml`'s `deploy` job (needs both build jobs) `sed`-bumps every
-   `tag: "..."` in `k8s/*.yaml` to the pushed tag and commits straight to
-   `main` (via the default `GITHUB_TOKEN`, deliberately not re-triggering
-   `release.yml`'s push-to-main trigger).
-3. ArgoCD's two-source Applications (chart from `infra-bootstrap`, values
-   from this repo's `k8s/`) pick up the new pinned tag and sync.
-4. `db/schema.sql` is applied idempotently via a `PreSync` hook on
-   `fleet-core`'s Application, running `fleet-core migrate` (a Cobra-free
-   subcommand — the schema is `go:embed`'d into the binary at build time)
-   instead of the bot's old `psql -f` invocation.
+2. `docker.yml`'s `deploy` job (needs all build jobs) `sed`-bumps every
+   `tag: "..."` in `k8s/core.yaml` (Helm-values shape) and every
+   `image: repo:tag` in `k8s/provisioner/*.yaml` (plain-manifest shape,
+   scoped to `mohammaddocker/agent-fleet-{core,provisioner,worker,sidecar}`
+   — `e2e-runner`'s floating `:latest` is deliberately excluded) to the
+   pushed tag, and commits straight to `main` (via the default
+   `GITHUB_TOKEN`, deliberately not re-triggering `release.yml`'s
+   push-to-main trigger).
+3. ArgoCD's Applications (`core` via a two-source chart Application,
+   `provisioner` via its own standalone plain-manifest Application) pick up
+   the new pinned tags and sync.
+4. `db/schema.sql` is applied idempotently via a `PreSync` hook on `core`'s
+   Application, running `core migrate` (schema `go:embed`'d into the
+   binary at build time).
 
-`release.yml` runs separately (`release-it`, conventional-changelog/angular
-preset) on ordinary pushes to `main`, bumping `package.json`'s version and
-`CHANGELOG.md` — unrelated to the image-tag bump above.
+`release.yml` runs separately (`release-it`, conventional-changelog/
+angular preset) on ordinary pushes to `main`, bumping `package.json`'s
+version and `CHANGELOG.md` — unrelated to the image-tag bump above; the
+whole fleet (`core`/`provisioner`/`sidecar`/`worker`/`e2e-runner` images)
+still ships as one version/CHANGELOG, one repo.
 
 ## 6. Data model
 
@@ -225,40 +293,35 @@ erDiagram
         uuid id PK
         text repo "dream-analyst | vos-monolith"
         text description
-        text status "pending|claimed|planning|done|failed|cancelled"
+        text status "pending|claimed|planning|implementing|done|failed|cancelled"
         text discord_channel_id
         text discord_thread_id
         text claimed_by
         text pr_url
         text notes
+        text planning_session_id "Claude session id, for crash-recovery resume"
+        int retry_count
+        text last_error
+        timestamptz heartbeat_at "stale-claim reclaim, >10min"
+        uuid lease_id "split-brain guard, checked before push/PR"
+        text model "which model actually ran this task's session"
         timestamptz created_at
         timestamptz updated_at
     }
     knowledge_journal {
         bigserial id PK
         text repo
-        text actor "worker or bot name"
-        text event_type "task.claimed|task.done|session.result|..."
+        text actor "worker | provisioner | sidecar | core (Discord relay)"
+        text event_type "task.claimed|task.done|session.result|pod.<phase>|..."
         jsonb payload
         timestamptz created_at
-    }
-    e2e_sessions {
-        uuid id PK
-        uuid task_id FK
-        text status "requested|running|failed|torn_down"
-        text pod_name
-        text ingress_path
-        boolean kill_requested
-        text kill_idempotency_key
-        timestamptz created_at
-        timestamptz updated_at
     }
     planning_transcript {
         uuid task_id FK
         bigint seq PK
         text from "planner|human"
         text text
-        text type "discussion|approve|abort|question|answer"
+        text type "discussion|approve|abort|question|answer|tool_call"
         text idempotency_key
         boolean relayed_to_discord
         int relay_attempts
@@ -266,86 +329,108 @@ erDiagram
         text relay_last_error
         timestamptz created_at
     }
-    tasks ||--o{ e2e_sessions : "task_id"
     tasks ||--o{ planning_transcript : "task_id"
 ```
 
-`tasks` is the mutable queue (`db/schema.sql`); `knowledge_journal` is
-append-only, written by both `fleet-core/` and `worker/` — no foreign key
-between them, joined only by `repo`/timing when reading. `e2e_sessions`
-**does** have a real FK to `tasks` — it's the single coordination point
-between the worker's tool calls, `e2e-provisioner`'s reconcile loop, and
-`fleet-core`'s `/e2e-kill` command (via `e2e-provisioner`'s gRPC API, not a
-direct write — see [`adr/0013`](adr/0013-go-fleet-core-and-e2e-provisioner-rewrite.md)),
-none of which talk to each other directly otherwise (see
-[`adr/0012`](adr/0012-e2e-provisioner-standalone-app.md)). `planning_transcript`
-replaces the old Redis list — `(task_id, seq)` PK gives the same
-append-once-per-call ordering guarantee `RPUSH` gave, plus real dedup via
-the `(task_id, idempotency_key)` unique index Redis never had; the
-`relay_*` columns are a retry/DLQ for the Discord-posting side effect only,
-not the transcript entry's own durability (see `adr/0013`).
+`tasks` is the mutable queue; `knowledge_journal` is append-only, written
+only by `core` now (every writer — worker, sidecar, provisioner — goes
+through `core`'s `CoreService.AppendJournal`/`ReportPodEvents`, since
+`core` is the fleet's sole Postgres-credential holder). `planning_transcript`
+gives the same append-once-per-call ordering guarantee a durable list
+would, plus real dedup via the `(task_id, idempotency_key)` unique index;
+the `relay_*` columns are a retry/DLQ for the Discord-posting side effect
+only, not the transcript entry's own durability. The `tool_call` transcript
+type carries the sidecar's independent telemetry (git diff/branch stats) —
+`internal/transcript/relay.go`'s `relayPending` skips this type, so it
+never posts to Discord.
+
+**`e2e_sessions` still exists in `db/schema.sql` (and the `core`-embedded
+copy) but is dead code as of this redesign** — a full grep across
+`core/`, `provisioner/`, and `worker/` finds zero reads or writes against
+it. E2e-session existence/status is derived live from Kubernetes pod
+state instead (`provisioner/internal/grpcserver`'s `GetE2ESessionStatus`/
+`CreateE2ESession` call `k8sc.GetPod`, never a Postgres query) —
+`docs/adr/0020` point 1's "the provisioner holds no DB credentials at all"
+made the table's original purpose (the one coordination point between
+worker tool calls, the provisioner's reconcile loop, and `/e2e-kill`)
+moot. Left in the schema rather than dropped as part of this doc-only
+pass; dropping it is a small, separate follow-up if anyone confirms
+nothing external still queries it directly.
 
 ## 7. Environment variables
 
-### `worker/`
+### `core/`
 
 | Var | Default | Notes |
 |---|---|---|
-| `TARGET_REPO`, `TARGET_REPO_URL` | *(required)* | Which repo this pod owns |
-| `WORKER_NAME` | `<TARGET_REPO>-worker` | |
-| `BASE_BRANCH` | `main` | e.g. `dev` for `vos-monolith`, whose `main` only gets prod tag bumps |
-| `POLL_INTERVAL_MS` | `5000` | |
-| `CLAUDE_MODEL` | `claude-opus-4-8` | |
-| `MAX_PLANNING_ROUNDS` | `1` | |
-| `MAX_TURNS_PLANNING`, `MAX_TURNS_IMPLEMENTATION` | unbounded | opt-in caps |
-| `PLANNING_TIMEOUT_MS` | `0` (unbounded) | |
-| `FLEET_CORE_URL` | `http://fleet-core.agent-fleet.svc.cluster.local:8080` | in-cluster MCP endpoint for `send_message`/`wait_for_messages` — replaces `MCP_REDIS_ENTRY`/`REDIS_*` |
-| `E2E_PROVISIONER_URL` | `http://e2e-provisioner.agent-fleet.svc.cluster.local:8080` | in-cluster MCP endpoint for `request_e2e_env`/`kill_env` |
-| `AGENTFLEET_DB_HOST`/`PORT`/`NAME`/`USER`/`PASSWORD` | `postgres.bnei.lan`/`5432`/`agentfleetdb`/`dbuser_agentfleet`/– | |
-| `GH_TOKEN` | – | bot GitHub account PAT; wired into `git`'s credential helper via `gh auth setup-git` |
-| `CLAUDE_CODE_OAUTH_TOKEN` | – | minted via `claude setup-token` |
-
-### `fleet-core/`
-
-| Var | Default | Notes |
-|---|---|---|
-| `FLEET_CORE_PORT` | `8080` | MCP HTTP server + `/healthz` |
+| `CORE_PORT` | `8080` | HTTP: `/healthz`, dashboard ConnectRPC API, static SPA |
+| `CORE_GRPC_PORT` | `9090` | `CoreService` — the provisioner's `ReportPodEvents` client and every worker pod's sidecar connect here |
+| `AGENTFLEET_DB_HOST`/`PORT`/`NAME`/`USER`/`PASSWORD` | `postgres.bnei.lan`/`5432`/`agentfleetdb`/`dbuser_agentfleet`/– | the *only* component in the fleet with these |
 | `DISCORD_BOT_TOKEN` | – | |
 | `DISCORD_TRIGGER_CHANNEL_ID` | – | |
 | `LOKI_URL` | `http://loki.monitoring.svc.cluster.local:3100` | log/introspection queries |
-| `E2E_PROVISIONER_GRPC_ADDR` | `e2e-provisioner.agent-fleet.svc.cluster.local:9090` | `/e2e-kill`'s gRPC client target |
-| `AGENTFLEET_DB_HOST`/`PORT`/`NAME`/`USER`/`PASSWORD` | same convention as `worker/` | |
+| `PROVISIONER_GRPC_ADDR` | `provisioner.agent-fleet.svc.cluster.local:9090` | `ProvisionerService` client target |
+| `MAX_IN_FLIGHT_TASKS` | `5` | dispatch loop's fleet-wide concurrency cap (`docs/adr/0019`/`0020`) |
 
-All of the above flow through Infisical (project `agent-fleet-nygh`,
-env `dev`) — never committed, never in a manifest as plain text.
-`REDIS_HOST`/`REDIS_PORT`/`REDIS_MAIN_PASSWORD` no longer exist — retire
-them from the Infisical project once cutover is confirmed (see
-`adr/0013`).
-
-### `e2e-provisioner/`
+### `provisioner/`
 
 | Var | Default | Notes |
 |---|---|---|
-| `NAMESPACE` | `agent-fleet` | where it creates/deletes e2e Pods/Services/IngressRoutes |
-| `E2E_RUNNER_IMAGE` | `mohammaddocker/agent-fleet-e2e-runner:latest` | floating tag for v1, see `adr/0012` |
-| `E2E_HOST` | `e2e.bnei.dev` | static host, path-routed per task — no wildcard DNS exists in this cluster |
+| `NAMESPACE` | `agent-fleet` | where it creates/deletes Pods/Services/IngressRoutes/Middlewares |
+| `E2E_RUNNER_IMAGE` | `mohammaddocker/agent-fleet-e2e-runner:latest` | floating tag for v1 |
+| `WORKER_IMAGE` | `mohammaddocker/agent-fleet-worker:latest` | pinned by the deploy job in practice |
+| `SIDECAR_IMAGE` | `mohammaddocker/agent-fleet-sidecar:latest` | pinned by the deploy job in practice |
+| `WORKSPACE_PVC` | `agent-fleet-workspace` | the one shared RWX PVC name |
+| `WORKTREES_ROOT` | `/workspace` | where that PVC is mounted inside the provisioner's own pod |
+| `E2E_HOST` | `e2e.bnei.dev` | static host, path-routed per task |
 | `E2E_START_CMD_DREAM_ANALYST`, `E2E_START_CMD_VOS_MONOLITH` | `bun install && bun run dev` | per-repo build/run command |
-| `PORT` | `8080` | its own MCP HTTP server |
-| `GRPC_PORT` | `9090` | `E2eProvisionerService` — `fleet-core`'s `/e2e-kill` client |
-| `RECONCILE_INTERVAL_MS` | `10000` | teardown/orphan-cleanup poll loop |
-| `AGENTFLEET_DB_*` | same convention as `worker/`/`fleet-core/` | |
+| `PORT` | `8080` | HTTP (currently unused beyond health, kept for parity) |
+| `GRPC_PORT` | `9090` | `ProvisionerService` |
+| `CORE_GRPC_ADDR` | `core.agent-fleet.svc.cluster.local:9090` | where `ReportPodEvents` streams to |
+| `RECONCILE_INTERVAL_MS` | `10000` | terminal-worker-pod GC poll (`internal/reconcile`) |
+| `GH_TOKEN` | – | for the provisioner's own clone/fetch auth (`gh auth setup-git`), and forwarded verbatim into every worker pod's `worker` container env |
 
-No `NODE_EXTRA_CA_CERTS`/`NODE_USE_SYSTEM_CA` — that was a Bun-specific
-TLS workaround (see `adr/0013`); `client-go`'s in-cluster config needs no
-equivalent.
+No `AGENTFLEET_DB_*` here at all — see §6.
+
+### `sidecar/` (per worker pod, injected by the provisioner at pod creation)
+
+| Var | Default | Notes |
+|---|---|---|
+| `TASK_ID` | *(required)* | |
+| `TARGET_REPO` | – | |
+| `CORE_GRPC_ADDR` | `core.agent-fleet.svc.cluster.local:9090` | its one outbound gRPC connection |
+| `WORKTREE_PATH` | `/workspace` | for the telemetry loop's `git diff`/`rev-parse` calls |
+| `MCP_PORT` | `9090` | agent-facing local MCP server |
+| `LOCAL_API_PORT` | `9091` | wrapper-facing plain HTTP/JSON API |
+
+### `worker/` (per worker pod, injected by the provisioner at pod creation)
+
+| Var | Default | Notes |
+|---|---|---|
+| `TASK_ID`, `TARGET_REPO`, `LEASE_ID` | *(required)* | |
+| `TASK_DESCRIPTION` | – | |
+| `BASE_BRANCH` | `main` | e.g. `dev` for `vos-monolith` |
+| `SIDECAR_MCP_ADDR` | `localhost:9090` | the Agent SDK session's `mcpServers` config points here |
+| `SIDECAR_API_ADDR` | `localhost:9091` | the wrapper's own control-flow calls |
+| `WORKTREE_PATH` | `/workspace` | |
+| `GH_TOKEN` | – | the worker's *own* `git push`/`gh pr create` auth — separate from the provisioner's, since the two are different pods that don't share `$HOME` |
+| `CLAUDE_MODEL` | `claude-opus-4-8` | |
+| `MAX_PLANNING_ROUNDS` | `1` | |
+| `MAX_TURNS` | unbounded | opt-in cap |
+| `CLAUDE_CODE_OAUTH_TOKEN` | – | minted via `claude setup-token` |
+
+All of the above flow through Infisical (project `agent-fleet-nygh`,
+env `dev`) — never committed, never in a manifest as plain text.
 
 ## 8. Current targets
 
-`dream-analyst` and `vos-monolith` — real repos, each with its own
-persistent worker (`k8s/dream-analyst-worker.yaml`,
-`k8s/vos-monolith-worker.yaml`). `fleet-core/internal/tasks`'
-`KnownRepos` (moved from `bot/src/db.ts`'s `KNOWN_REPOS`) is the source of
-truth for which repos the `/task` command will accept.
+`dream-analyst` and `vos-monolith` — real repos. `core/internal/tasks`'
+`KnownRepos` map (moved from `bot/src/db.ts`'s `KNOWN_REPOS`, then from
+`fleet-core`) is the source of truth for which repos the `/task` command
+accepts and their per-repo `RepoConfig` (clone URL, base branch). No
+per-repo Deployment or PVC exists anymore — onboarding a new repo is
+purely a `KnownRepos` entry, not new k8s manifests (`docs/adr/0019`'s
+stated goal).
 
 ## 9. Relationship to `infra-bootstrap`
 
@@ -353,13 +438,21 @@ truth for which repos the `/task` command will accept.
   are all owned by `infra-bootstrap` — this repo consumes them, it doesn't
   redefine them.
 - Only the Application/ApplicationSet registration lives in
-  `infra-bootstrap`'s `gitops/apps/registry.yaml` — see that repo's
-  `/add-app` skill and `gitops/README.md`.
-- `fleet-core` deploys via this repo's own `k8s/fleet-core.yaml`
-  (`common-app-chart`, registered in `infra-bootstrap` like any other app)
-  since it needs no RBAC `infra-bootstrap` would otherwise have to grant.
-  `e2e-provisioner` keeps its existing standalone-Application placement in
-  `infra-bootstrap/gitops/platform/e2e-provisioner/` — only the binary's
-  language changed, per `adr/0013`.
+  `infra-bootstrap`'s `gitops/apps/registry.yaml` +
+  `gitops/bootstrap/apps.applicationset.yaml` (the latter is the literal
+  generator ArgoCD reads; the former is a human-maintained mirror — both
+  must be kept in sync manually) — see that repo's `/add-app` skill and
+  `gitops/README.md`.
+- `core` deploys via this repo's own `k8s/core.yaml` (`common-app-chart`,
+  registered in `infra-bootstrap` like any other app) since it needs no
+  RBAC `infra-bootstrap` would otherwise have to grant. The ArgoCD
+  Application is named `agent-fleet-core` (renamed from `agent-fleet-bot`
+  once nothing PVC-stateful was attached to it anymore).
+- `provisioner`'s manifests **moved from `infra-bootstrap` into this
+  repo** (`k8s/provisioner/`) as part of this redesign — it's still a
+  standalone plain-manifest ArgoCD Application (`platform-provisioner` in
+  `infra-bootstrap`'s `gitops/bootstrap/provisioner-application.yaml`,
+  since it needs RBAC `common-app-chart` can't express), but the
+  manifests themselves are no longer `infra-bootstrap`'s to edit.
 - This fleet does **not** manage `infra-bootstrap`'s own cluster ops
   (kubespray/ansible/pigsty) — blocked per that repo's own `CLAUDE.md`.
