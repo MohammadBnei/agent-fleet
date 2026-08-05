@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -136,13 +137,20 @@ func TestCreateWorkerPod_TwoContainersSharedPVC(t *testing.T) {
 	if pod.Labels[ComponentLabel] != ComponentWorker || pod.Labels[RepoLabel] != "dream-analyst" {
 		t.Errorf("unexpected labels: %+v", pod.Labels)
 	}
-	if len(pod.Spec.Containers) != 2 {
-		t.Fatalf("expected 2 containers (worker+sidecar), got %d", len(pod.Spec.Containers))
+	if len(pod.Spec.Containers) != 1 || pod.Spec.Containers[0].Name != "worker" {
+		t.Fatalf("expected 1 container (worker), got %+v", pod.Spec.Containers)
 	}
-	if pod.Spec.Containers[0].Name != "worker" || pod.Spec.Containers[1].Name != "sidecar" {
-		t.Errorf("unexpected container names: %v, %v", pod.Spec.Containers[0].Name, pod.Spec.Containers[1].Name)
+	if len(pod.Spec.InitContainers) != 1 || pod.Spec.InitContainers[0].Name != "sidecar" {
+		t.Fatalf("expected 1 init container (sidecar), got %+v", pod.Spec.InitContainers)
 	}
-	for _, ctr := range pod.Spec.Containers {
+	sidecar := pod.Spec.InitContainers[0]
+	if sidecar.RestartPolicy == nil || *sidecar.RestartPolicy != corev1.ContainerRestartPolicyAlways {
+		t.Errorf("sidecar init container must be a native sidecar (RestartPolicy: Always), got %v", sidecar.RestartPolicy)
+	}
+	if sidecar.StartupProbe == nil || sidecar.StartupProbe.TCPSocket == nil {
+		t.Errorf("sidecar init container must have a TCP startup probe so the worker waits for it to be ready, got %+v", sidecar.StartupProbe)
+	}
+	for _, ctr := range append(append([]corev1.Container{}, pod.Spec.Containers...), pod.Spec.InitContainers...) {
 		if len(ctr.VolumeMounts) != 1 || ctr.VolumeMounts[0].SubPath != "worktrees/task-1" {
 			t.Errorf("container %s: unexpected volume mounts: %+v", ctr.Name, ctr.VolumeMounts)
 		}
