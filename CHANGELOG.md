@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.10.1](https://github.com/MohammadBnei/agent-fleet/compare/1.10.0...1.10.1) (2026-08-05)
+
+
+### Bug Fixes
+
+* **sidecar,provisioner:** correct gRPC retry status code spelling, crash-looping every pod on startup ([815a1d3](https://github.com/MohammadBnei/agent-fleet/commit/815a1d354a90299a98561af1fb4747a730ecade5))
+
 # [1.10.0](https://github.com/MohammadBnei/agent-fleet/compare/1.9.0...1.10.0) (2026-08-05)
 
 
