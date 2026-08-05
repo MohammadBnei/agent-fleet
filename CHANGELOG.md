@@ -1,5 +1,12 @@
 # Changelog
 
+# [1.7.0](https://github.com/MohammadBnei/agent-fleet/compare/1.6.8...1.7.0) (2026-08-05)
+
+
+### Features
+
+* **dashboard:** add mobile view, real branch/changes/needs-you, session delete ([6d784ac](https://github.com/MohammadBnei/agent-fleet/commit/6d784ac034b10642f5cc3e76c364f9ce5f0b3ec1))
+
 ## [1.6.8](https://github.com/MohammadBnei/agent-fleet/compare/1.6.7...1.6.8) (2026-08-05)
 
 
