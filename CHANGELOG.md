@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.5.1](https://github.com/MohammadBnei/agent-fleet/compare/1.5.0...1.5.1) (2026-08-05)
+
+
+### Bug Fixes
+
+* **core:** log discord thread-open failures instead of swallowing them ([efe3cc7](https://github.com/MohammadBnei/agent-fleet/commit/efe3cc75c584c0b9ea4e32098c52cd84231dae19))
+* **core:** truncate task description in Discord thread names ([566bb93](https://github.com/MohammadBnei/agent-fleet/commit/566bb935a19bbbae2872385ff206e9e3ac32ca4e))
+
 # [1.5.0](https://github.com/MohammadBnei/agent-fleet/compare/1.4.0...1.5.0) (2026-08-05)
 
 
