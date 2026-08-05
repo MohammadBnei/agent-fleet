@@ -184,11 +184,23 @@ func (s *Store) ListRecentTasks(ctx context.Context, limit int) ([]Task, error) 
 // gates every claim, including a stale-heartbeat reclaim, not just a
 // fresh pending pickup (docs/adr/0020 point 3 — Postgres stays ground
 // truth for concurrency, survives a core restart).
-func (s *Store) ClaimNextTask(ctx context.Context, maxInFlight int) (*Task, error) {
+//
+// maxRetries caps the reclaim itself (reliability-findings.md #1):
+// retry_count was tracked but never capped before, so a task whose worker
+// pod keeps crashing looped through reclaim forever. A reclaim that would
+// push retry_count to maxRetries or beyond sets status =
+// 'failed_permanently' instead — a terminal state, not a claim, so this
+// method returns (nil, nil) for that row rather than handing back a task
+// to dispatch a pod for.
+func (s *Store) ClaimNextTask(ctx context.Context, maxInFlight, maxRetries int) (*Task, error) {
 	var t Task
 	err := s.pool.QueryRow(ctx, `
 		UPDATE tasks
-		SET status = CASE WHEN status = 'pending' THEN 'claimed' ELSE status END,
+		SET status = CASE
+		               WHEN status = 'pending' THEN 'claimed'
+		               WHEN retry_count + 1 >= $2 THEN 'failed_permanently'
+		               ELSE status
+		             END,
 		    heartbeat_at = now(),
 		    lease_id = gen_random_uuid(),
 		    retry_count = CASE WHEN status != 'pending' THEN retry_count + 1 ELSE retry_count END,
@@ -204,12 +216,15 @@ func (s *Store) ClaimNextTask(ctx context.Context, maxInFlight int) (*Task, erro
 			LIMIT 1
 		)
 		RETURNING id, repo, description, status, discord_thread_id, pr_url, lease_id::text
-	`, maxInFlight).Scan(&t.ID, &t.Repo, &t.Description, &t.Status, &t.ThreadID, &t.PrURL, &t.LeaseID)
+	`, maxInFlight, maxRetries).Scan(&t.ID, &t.Repo, &t.Description, &t.Status, &t.ThreadID, &t.PrURL, &t.LeaseID)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("claim next task: %w", err)
+	}
+	if t.Status == "failed_permanently" {
+		return nil, nil
 	}
 	return &t, nil
 }
@@ -225,6 +240,26 @@ func (s *Store) UpdateHeartbeat(ctx context.Context, id, leaseID string) error {
 	`, id, leaseID)
 	if err != nil {
 		return fmt.Errorf("update heartbeat: %w", err)
+	}
+	return nil
+}
+
+// MarkCrashed backdates heartbeat_at past the 10-minute staleness window
+// so the next ClaimNextTask tick treats this task as immediately
+// reclaim-eligible (reliability-findings.md #1) — a fast-path accelerant
+// on top of the heartbeat fallback, reusing the existing reclaim
+// mechanism rather than inventing a second one. Scoped to non-terminal
+// statuses only: a crash event arriving after the task already reached a
+// terminal status (a race between the provisioner's reconcile loop and
+// core's own opportunistic teardown) is a harmless no-op, not an error.
+func (s *Store) MarkCrashed(ctx context.Context, id string) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE tasks
+		SET heartbeat_at = now() - interval '11 minutes', updated_at = now()
+		WHERE id = $1 AND status IN ('claimed', 'planning', 'implementing')
+	`, id)
+	if err != nil {
+		return fmt.Errorf("mark crashed: %w", err)
 	}
 	return nil
 }

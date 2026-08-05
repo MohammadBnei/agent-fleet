@@ -31,6 +31,7 @@ const (
 	DashboardService_AnswerQuestion_FullMethodName   = "/agentfleet.v1.DashboardService/AnswerQuestion"
 	DashboardService_ListWorktrees_FullMethodName    = "/agentfleet.v1.DashboardService/ListWorktrees"
 	DashboardService_DeleteWorktree_FullMethodName   = "/agentfleet.v1.DashboardService/DeleteWorktree"
+	DashboardService_GetJournal_FullMethodName       = "/agentfleet.v1.DashboardService/GetJournal"
 )
 
 // DashboardServiceClient is the client API for DashboardService service.
@@ -67,6 +68,7 @@ type DashboardServiceClient interface {
 	ListWorktrees(ctx context.Context, in *ListWorktreesRequest, opts ...grpc.CallOption) (*ListWorktreesViewResponse, error)
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	DeleteWorktree(ctx context.Context, in *DeleteWorktreeRequest, opts ...grpc.CallOption) (*DeleteWorktreeResponse, error)
+	GetJournal(ctx context.Context, in *GetJournalRequest, opts ...grpc.CallOption) (*GetJournalResponse, error)
 }
 
 type dashboardServiceClient struct {
@@ -206,6 +208,16 @@ func (c *dashboardServiceClient) DeleteWorktree(ctx context.Context, in *DeleteW
 	return out, nil
 }
 
+func (c *dashboardServiceClient) GetJournal(ctx context.Context, in *GetJournalRequest, opts ...grpc.CallOption) (*GetJournalResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetJournalResponse)
+	err := c.cc.Invoke(ctx, DashboardService_GetJournal_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // DashboardServiceServer is the server API for DashboardService service.
 // All implementations must embed UnimplementedDashboardServiceServer
 // for forward compatibility.
@@ -240,6 +252,7 @@ type DashboardServiceServer interface {
 	ListWorktrees(context.Context, *ListWorktreesRequest) (*ListWorktreesViewResponse, error)
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	DeleteWorktree(context.Context, *DeleteWorktreeRequest) (*DeleteWorktreeResponse, error)
+	GetJournal(context.Context, *GetJournalRequest) (*GetJournalResponse, error)
 	mustEmbedUnimplementedDashboardServiceServer()
 }
 
@@ -285,6 +298,9 @@ func (UnimplementedDashboardServiceServer) ListWorktrees(context.Context, *ListW
 }
 func (UnimplementedDashboardServiceServer) DeleteWorktree(context.Context, *DeleteWorktreeRequest) (*DeleteWorktreeResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeleteWorktree not implemented")
+}
+func (UnimplementedDashboardServiceServer) GetJournal(context.Context, *GetJournalRequest) (*GetJournalResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetJournal not implemented")
 }
 func (UnimplementedDashboardServiceServer) mustEmbedUnimplementedDashboardServiceServer() {}
 func (UnimplementedDashboardServiceServer) testEmbeddedByValue()                          {}
@@ -516,6 +532,24 @@ func _DashboardService_DeleteWorktree_Handler(srv interface{}, ctx context.Conte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DashboardService_GetJournal_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetJournalRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DashboardServiceServer).GetJournal(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DashboardService_GetJournal_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DashboardServiceServer).GetJournal(ctx, req.(*GetJournalRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // DashboardService_ServiceDesc is the grpc.ServiceDesc for DashboardService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -566,6 +600,10 @@ var DashboardService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DeleteWorktree",
 			Handler:    _DashboardService_DeleteWorktree_Handler,
+		},
+		{
+			MethodName: "GetJournal",
+			Handler:    _DashboardService_GetJournal_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

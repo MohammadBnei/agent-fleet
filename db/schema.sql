@@ -26,11 +26,13 @@ ALTER TABLE tasks DROP COLUMN IF EXISTS skip_critique;
 
 -- Named + re-applied via DROP/ADD (not inline on the column) so adding a new
 -- status later — like 'cancelled' below, for the round-cap/kill-switch
--- guardrails — is a safe re-run against the already-live table, not just
+-- guardrails, and 'failed_permanently' (reliability-findings.md #1: a task
+-- reclaimed past MAX_TASK_RETRIES stops retrying instead of looping
+-- forever) — is a safe re-run against the already-live table, not just
 -- future fresh creates.
 ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_status_check;
 ALTER TABLE tasks ADD CONSTRAINT tasks_status_check
-  CHECK (status IN ('pending', 'claimed', 'planning', 'implementing', 'done', 'failed', 'cancelled'));
+  CHECK (status IN ('pending', 'claimed', 'planning', 'implementing', 'done', 'failed', 'cancelled', 'failed_permanently'));
 
 -- Crash recovery + resume (see docs/adr/0016). planning_session_id is the
 -- Postgres-durable *pointer* to the single planner session's Claude session

@@ -99,7 +99,7 @@ func TestClaimNextTask_ConcurrentCallersNeverDoubleClaim(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			task, err := store.ClaimNextTask(ctx, 1000)
+			task, err := store.ClaimNextTask(ctx, 1000, 1000)
 			if err != nil {
 				t.Errorf("claim %d: %v", i, err)
 				return
@@ -142,7 +142,7 @@ func TestClaimNextTask_ReclaimsStaleHeartbeat(t *testing.T) {
 		t.Fatalf("seed stale task: %v", err)
 	}
 
-	task, err := store.ClaimNextTask(ctx, 1000)
+	task, err := store.ClaimNextTask(ctx, 1000, 1000)
 	if err != nil {
 		t.Fatalf("claim: %v", err)
 	}
@@ -190,7 +190,7 @@ func TestClaimNextTask_RespectsMaxInFlight(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			task, err := store.ClaimNextTask(ctx, maxInFlight)
+			task, err := store.ClaimNextTask(ctx, maxInFlight, 1000)
 			if err != nil {
 				t.Errorf("claim %d: %v", i, err)
 				return
@@ -223,6 +223,141 @@ func TestClaimNextTask_RespectsMaxInFlight(t *testing.T) {
 	}
 	if inFlight > maxInFlight {
 		t.Fatalf("in-flight count %d exceeds maxInFlight %d", inFlight, maxInFlight)
+	}
+}
+
+// TestClaimNextTask_FailsPermanentlyAfterMaxRetries covers
+// reliability-findings.md #1: retry_count was tracked but never capped
+// before — a task whose worker pod keeps crashing would loop through
+// reclaim forever. A reclaim that would push retry_count to maxRetries or
+// beyond sets status='failed_permanently' instead of reclaiming, and
+// ClaimNextTask returns (nil, nil) for that row rather than handing back
+// a task to dispatch a pod for.
+func TestClaimNextTask_FailsPermanentlyAfterMaxRetries(t *testing.T) {
+	pool := newTestPool(t)
+	ctx := context.Background()
+	store := NewStore(pool)
+
+	const maxRetries = 3
+	var taskID string
+	if err := pool.QueryRow(ctx, `
+		INSERT INTO tasks (repo, description, discord_channel_id, status, heartbeat_at, retry_count)
+		VALUES ('dream-analyst', 'task', 'chan', 'implementing', now() - interval '11 minutes', $1)
+		RETURNING id
+	`, maxRetries-1).Scan(&taskID); err != nil {
+		t.Fatalf("seed task at the retry ceiling: %v", err)
+	}
+
+	task, err := store.ClaimNextTask(ctx, 1000, maxRetries)
+	if err != nil {
+		t.Fatalf("claim: %v", err)
+	}
+	if task != nil {
+		t.Fatalf("expected nil (not a dispatchable claim) once the retry cap is hit, got %+v", task)
+	}
+
+	var status string
+	var retryCount int
+	if err := pool.QueryRow(ctx, `SELECT status, retry_count FROM tasks WHERE id = $1`, taskID).Scan(&status, &retryCount); err != nil {
+		t.Fatalf("check status: %v", err)
+	}
+	if status != "failed_permanently" {
+		t.Fatalf("expected status=failed_permanently, got %q", status)
+	}
+	if retryCount != maxRetries {
+		t.Fatalf("expected retry_count incremented to %d, got %d", maxRetries, retryCount)
+	}
+}
+
+// TestClaimNextTask_ReclaimsBelowRetryCeiling is the negative case: a
+// reclaim that does NOT hit the cap still behaves like before — reclaimed
+// normally, status unchanged, retry_count incremented by exactly one.
+func TestClaimNextTask_ReclaimsBelowRetryCeiling(t *testing.T) {
+	pool := newTestPool(t)
+	ctx := context.Background()
+	store := NewStore(pool)
+
+	const maxRetries = 3
+	var taskID string
+	if err := pool.QueryRow(ctx, `
+		INSERT INTO tasks (repo, description, discord_channel_id, status, heartbeat_at, retry_count)
+		VALUES ('dream-analyst', 'task', 'chan', 'implementing', now() - interval '11 minutes', 0)
+		RETURNING id
+	`).Scan(&taskID); err != nil {
+		t.Fatalf("seed task: %v", err)
+	}
+
+	task, err := store.ClaimNextTask(ctx, 1000, maxRetries)
+	if err != nil {
+		t.Fatalf("claim: %v", err)
+	}
+	if task == nil || task.ID != taskID {
+		t.Fatalf("expected the task to be reclaimed normally, got %+v", task)
+	}
+	if task.Status != "implementing" {
+		t.Fatalf("expected status unchanged at 'implementing', got %q", task.Status)
+	}
+}
+
+// TestMarkCrashed_BackdatesHeartbeatForNonTerminalTask covers
+// reliability-findings.md #1's fast-path: MarkCrashed makes the task
+// immediately reclaim-eligible instead of waiting out the full 10-minute
+// staleness window.
+func TestMarkCrashed_BackdatesHeartbeatForNonTerminalTask(t *testing.T) {
+	pool := newTestPool(t)
+	ctx := context.Background()
+	store := NewStore(pool)
+
+	var taskID string
+	if err := pool.QueryRow(ctx, `
+		INSERT INTO tasks (repo, description, discord_channel_id, status, heartbeat_at)
+		VALUES ('dream-analyst', 'task', 'chan', 'implementing', now())
+		RETURNING id
+	`).Scan(&taskID); err != nil {
+		t.Fatalf("seed task with a fresh heartbeat: %v", err)
+	}
+
+	if err := store.MarkCrashed(ctx, taskID); err != nil {
+		t.Fatalf("mark crashed: %v", err)
+	}
+
+	task, err := store.ClaimNextTask(ctx, 1000, 1000)
+	if err != nil {
+		t.Fatalf("claim: %v", err)
+	}
+	if task == nil || task.ID != taskID {
+		t.Fatalf("expected MarkCrashed to make the task immediately reclaim-eligible, got %+v", task)
+	}
+}
+
+// TestMarkCrashed_NoopForTerminalTask covers the safe-no-op guarantee: a
+// crash event arriving after the task already reached a terminal status
+// (a race between the provisioner's reconcile loop and core's own
+// opportunistic teardown) must not resurrect it.
+func TestMarkCrashed_NoopForTerminalTask(t *testing.T) {
+	pool := newTestPool(t)
+	ctx := context.Background()
+	store := NewStore(pool)
+
+	var taskID string
+	if err := pool.QueryRow(ctx, `
+		INSERT INTO tasks (repo, description, discord_channel_id, status, heartbeat_at)
+		VALUES ('dream-analyst', 'task', 'chan', 'done', now())
+		RETURNING id
+	`).Scan(&taskID); err != nil {
+		t.Fatalf("seed a done task: %v", err)
+	}
+
+	if err := store.MarkCrashed(ctx, taskID); err != nil {
+		t.Fatalf("mark crashed: %v", err)
+	}
+
+	var status string
+	if err := pool.QueryRow(ctx, `SELECT status FROM tasks WHERE id = $1`, taskID).Scan(&status); err != nil {
+		t.Fatalf("check status: %v", err)
+	}
+	if status != "done" {
+		t.Fatalf("expected a terminal task's status to be untouched by MarkCrashed, got %q", status)
 	}
 }
 
@@ -271,7 +406,7 @@ func TestStillHoldsLease(t *testing.T) {
 		t.Fatalf("seed task: %v", err)
 	}
 
-	task, err := store.ClaimNextTask(ctx, 1000)
+	task, err := store.ClaimNextTask(ctx, 1000, 1000)
 	if err != nil || task == nil {
 		t.Fatalf("claim: task=%v err=%v", task, err)
 	}

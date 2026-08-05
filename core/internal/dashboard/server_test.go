@@ -34,7 +34,7 @@ func (r *recordingStore) ReadSince(context.Context, string, int64, int) ([]trans
 
 func TestServer_Approve(t *testing.T) {
 	store := &recordingStore{}
-	s := NewServer(nil, store, nil, nil)
+	s := NewServer(nil, store, nil, nil, nil)
 
 	resp, err := s.Approve(context.Background(), connect.NewRequest(&agentfleetv1.ApproveRequest{TaskId: "task-1"}))
 	if err != nil {
@@ -51,7 +51,7 @@ func TestServer_Approve(t *testing.T) {
 
 func TestServer_Stop_DefaultReason(t *testing.T) {
 	store := &recordingStore{}
-	s := NewServer(nil, store, nil, nil)
+	s := NewServer(nil, store, nil, nil, nil)
 
 	resp, err := s.Stop(context.Background(), connect.NewRequest(&agentfleetv1.StopRequest{TaskId: "task-1"}))
 	if err != nil {
@@ -67,7 +67,7 @@ func TestServer_Stop_DefaultReason(t *testing.T) {
 
 func TestServer_Stop_CustomReason(t *testing.T) {
 	store := &recordingStore{}
-	s := NewServer(nil, store, nil, nil)
+	s := NewServer(nil, store, nil, nil, nil)
 
 	reason := "wrong direction"
 	req := connect.NewRequest(&agentfleetv1.StopRequest{TaskId: "task-1", Reason: &reason})
@@ -89,7 +89,7 @@ func TestServer_Stop_CustomReason(t *testing.T) {
 // its own testcontainers setup (see this file's own comment on
 // GetE2EStatus/KillE2E for the same reasoning).
 func TestServer_CreateTask_UnknownRepo(t *testing.T) {
-	s := NewServer(nil, nil, nil, nil)
+	s := NewServer(nil, nil, nil, nil, nil)
 
 	req := connect.NewRequest(&agentfleetv1.CreateTaskRequest{Repo: "not-a-real-repo", Description: "do something"})
 	if _, err := s.CreateTask(context.Background(), req); connect.CodeOf(err) != connect.CodeInvalidArgument {
@@ -98,7 +98,7 @@ func TestServer_CreateTask_UnknownRepo(t *testing.T) {
 }
 
 func TestServer_CreateTask_EmptyDescription(t *testing.T) {
-	s := NewServer(nil, nil, nil, nil)
+	s := NewServer(nil, nil, nil, nil, nil)
 
 	req := connect.NewRequest(&agentfleetv1.CreateTaskRequest{Repo: "dream-analyst", Description: ""})
 	if _, err := s.CreateTask(context.Background(), req); connect.CodeOf(err) != connect.CodeInvalidArgument {
@@ -108,7 +108,7 @@ func TestServer_CreateTask_EmptyDescription(t *testing.T) {
 
 func TestServer_AnswerQuestion(t *testing.T) {
 	store := &recordingStore{}
-	s := NewServer(nil, store, nil, nil)
+	s := NewServer(nil, store, nil, nil, nil)
 
 	answersJSON := `{"answers":{"Which quality attribute wins?":"Latency"}}`
 	req := connect.NewRequest(&agentfleetv1.AnswerQuestionRequest{TaskId: "task-1", Seq: 3, AnswersJson: answersJSON})

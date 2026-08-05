@@ -133,6 +133,32 @@ message ListWorktreesViewResponse {
   repeated WorktreeView worktrees = 1;
 }
 
+// GetJournal is the read path reliability-findings.md #1/#7 both call out
+// as missing — knowledge_journal had no Get/List RPC anywhere, so even a
+// journaled crash event was invisible without direct Postgres access.
+// Typed request/response, same pull/cursor shape as GetTranscript, not a
+// generic Query(bytes) returns (bytes) dispatcher — two concrete gaps
+// don't justify throwing away protobuf's type safety for a general one.
+message JournalEntry {
+  int64 id = 1;
+  string repo = 2;
+  string actor = 3;
+  string event_type = 4;
+  string payload_json = 5;
+  string created_at = 6; // RFC3339
+}
+
+message GetJournalRequest {
+  string repo = 1; // "" matches every repo
+  int64 since_id = 2;
+  int32 limit = 3;
+}
+
+message GetJournalResponse {
+  repeated JournalEntry entries = 1;
+  int64 next_id = 2;
+}
+
 service DashboardService {
   rpc ListTasks(ListTasksRequest) returns (ListTasksResponse);
   rpc GetTask(GetTaskRequest) returns (GetTaskResponse);
@@ -164,4 +190,5 @@ service DashboardService {
   rpc ListWorktrees(ListWorktreesRequest) returns (ListWorktreesViewResponse);
   // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
   rpc DeleteWorktree(DeleteWorktreeRequest) returns (DeleteWorktreeResponse);
+  rpc GetJournal(GetJournalRequest) returns (GetJournalResponse);
 }

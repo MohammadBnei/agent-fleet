@@ -59,7 +59,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool) error {
 
 	// docs/adr/0020 point 2: core claims, then commands the provisioner —
 	// the provisioner never claims tasks or decides to spawn on its own.
-	dispatchLoop := dispatch.New(taskStore, provisioner, cfg.MaxInFlight)
+	dispatchLoop := dispatch.New(taskStore, provisioner, cfg.MaxInFlight, cfg.MaxTaskRetries)
 	go dispatchLoop.Run(ctx, 2*time.Second)
 	// Same nudge pattern as the relay above — CreateTask fires it so a new
 	// task doesn't wait up to pollInterval for its first dispatch attempt.
@@ -85,7 +85,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool) error {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
-	dashboardSvc := dashboard.NewServer(taskStore, store, provisioner, hub)
+	dashboardSvc := dashboard.NewServer(taskStore, store, journalStore, provisioner, hub)
 	dashboardPath, dashboardHandler := agentfleetv1connect.NewDashboardServiceHandler(
 		dashboardSvc,
 		connect.WithInterceptors(dashboard.NewCSRFInterceptor()),

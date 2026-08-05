@@ -17,6 +17,8 @@ import (
 	"log/slog"
 	"time"
 
+	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
+
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/k8s"
 )
 
@@ -34,12 +36,23 @@ type JobLister interface {
 	DeleteWorkerJob(ctx context.Context, taskID string) error
 }
 
-type Loop struct {
-	k8sc JobLister
+// EventReporter is the narrow slice of coreclient.Client this package
+// needs — a hand-written fake satisfies it in tests, no live gRPC
+// connection to core required. Same method shape grpcserver.Server's own
+// EventReporter already uses (a separate interface in a different
+// package, not shared directly, to avoid a cross-package coupling neither
+// side needs).
+type EventReporter interface {
+	ReportEvent(ctx context.Context, event *agentfleetv1.PodEvent)
 }
 
-func New(k8sc JobLister) *Loop {
-	return &Loop{k8sc: k8sc}
+type Loop struct {
+	k8sc JobLister
+	core EventReporter
+}
+
+func New(k8sc JobLister, core EventReporter) *Loop {
+	return &Loop{k8sc: k8sc, core: core}
 }
 
 func (l *Loop) gcTerminalWorkerJobs(ctx context.Context) {
@@ -51,6 +64,21 @@ func (l *Loop) gcTerminalWorkerJobs(ctx context.Context) {
 	for _, job := range jobs {
 		if job.Phase != "Succeeded" && job.Phase != "Failed" {
 			continue
+		}
+		// Fast-path crash report (reliability-findings.md #1) — reported
+		// before GC-ing the Job, on top of the heartbeat-reclaim fallback
+		// core's own ClaimNextTask already has. core's own
+		// coreserver.ReportPodEvents scopes MarkCrashed to a non-terminal
+		// task, so this is a safe no-op if the task already reached a
+		// terminal status through its own SetTaskStatus call first.
+		if job.Phase == "Failed" {
+			l.core.ReportEvent(ctx, &agentfleetv1.PodEvent{
+				TaskId:  job.TaskID,
+				Kind:    agentfleetv1.SessionKind_SESSION_KIND_WORKER,
+				Phase:   agentfleetv1.PodPhase_POD_PHASE_CRASHED,
+				PodName: job.JobName,
+				Message: "worker job reached a terminal Failed phase",
+			})
 		}
 		slog.Info("reconcile: gc'ing terminal worker job", "taskId", job.TaskID, "jobName", job.JobName, "phase", job.Phase)
 		if err := l.k8sc.DeleteWorkerJob(ctx, job.TaskID); err != nil {
