@@ -142,3 +142,6 @@ repo is a `KnownRepos` entry, not new k8s manifests.
 - `/fleet-debug` — diagnose a stuck or failed task (task/journal state,
   worker/sidecar/provisioner logs, the `planning_transcript` table, known
   failure modes).
+- `/dashboard-e2e` — spin up the minimal local stack (throwaway Postgres +
+  `core` + dashboard dev server) to Playwright-test the dashboard UI, then
+  tear it all down.
