@@ -7,6 +7,8 @@ package discord
 import (
 	"context"
 	"fmt"
+	"log/slog"
+	"time"
 
 	"github.com/bwmarrin/discordgo"
 
@@ -60,12 +62,37 @@ func (c *Client) onReady(s *discordgo.Session, r *discordgo.Ready) {
 	// Guild-scoped registration, derived from the trigger channel (mirrors
 	// bot/src/index.ts) — not global, so command updates propagate
 	// immediately instead of Discord's up-to-1h global-command cache.
-	ch, err := s.Channel(c.channelID)
+	//
+	// Retried: a transient failure here used to be silent and permanent —
+	// onReady only fires once per connection, so one bad REST call meant
+	// slash commands never registered until the next pod restart, with
+	// nothing logged anywhere to explain why.
+	ch, err := channelWithRetry(func() (*discordgo.Channel, error) { return s.Channel(c.channelID) }, 3, 2*time.Second)
 	if err != nil {
+		slog.Error("onReady: channel lookup failed, giving up — slash commands not registered", "channelId", c.channelID, "error", err)
 		return
 	}
 	c.guildID = ch.GuildID
 	registerCommands(s, c.appID, c.guildID)
+}
+
+// channelWithRetry retries a transient Discord REST failure a few times
+// before giving up, logging each attempt so a startup hiccup is visible
+// instead of silently dropping command registration forever.
+func channelWithRetry(lookup func() (*discordgo.Channel, error), attempts int, delay time.Duration) (*discordgo.Channel, error) {
+	var ch *discordgo.Channel
+	var err error
+	for attempt := 1; attempt <= attempts; attempt++ {
+		ch, err = lookup()
+		if err == nil {
+			return ch, nil
+		}
+		slog.Error("onReady: channel lookup failed, retrying", "attempt", attempt, "error", err)
+		if attempt < attempts {
+			time.Sleep(delay)
+		}
+	}
+	return nil, err
 }
 
 // PostToThread implements transcript.Notifier — the relay loop's Discord
