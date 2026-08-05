@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.4](https://github.com/MohammadBnei/agent-fleet/compare/1.6.3...1.6.4) (2026-08-05)
+
+
+### Bug Fixes
+
+* **reliability:** Phase 2 — dashboard Worktrees view + tests ([#2](https://github.com/MohammadBnei/agent-fleet/issues/2)) ([b6dda72](https://github.com/MohammadBnei/agent-fleet/commit/b6dda72845d72c3389d797c5030a37c3b9185d23))
+
 ## [1.6.3](https://github.com/MohammadBnei/agent-fleet/compare/1.6.2...1.6.3) (2026-08-05)
 
 
