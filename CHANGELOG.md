@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.8](https://github.com/MohammadBnei/agent-fleet/compare/1.6.7...1.6.8) (2026-08-05)
+
+
+### Bug Fixes
+
+* bound-retry sidecar/provisioner->core gRPC calls, surface real task failures via exit code ([a8a0aec](https://github.com/MohammadBnei/agent-fleet/commit/a8a0aec2ba5c3a4afb8ae44098cd23868012355d))
+
 ## [1.6.7](https://github.com/MohammadBnei/agent-fleet/compare/1.6.6...1.6.7) (2026-08-05)
 
 
