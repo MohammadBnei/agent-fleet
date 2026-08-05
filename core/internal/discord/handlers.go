@@ -56,11 +56,13 @@ func (c *Client) onInteractionCreate(s *discordgo.Session, i *discordgo.Interact
 func (c *Client) startTask(ctx context.Context, s *discordgo.Session, i *discordgo.InteractionCreate, repo, description string) {
 	msg, err := s.ChannelMessageSend(c.channelID, fmt.Sprintf("**New task** (%s): %s", repo, description))
 	if err != nil {
+		slog.Error("startTask: channel message send failed", "channelId", c.channelID, "error", err)
 		respond(s, i, "Failed to open task thread.")
 		return
 	}
 	thread, err := s.MessageThreadStart(c.channelID, msg.ID, description, 1440)
 	if err != nil {
+		slog.Error("startTask: thread start failed", "channelId", c.channelID, "messageId", msg.ID, "error", err)
 		respond(s, i, "Failed to open task thread.")
 		return
 	}
@@ -83,10 +85,12 @@ func (c *Client) onMessageCreate(s *discordgo.Session, m *discordgo.MessageCreat
 			repo, description := match[1], match[2]
 			msg, err := s.ChannelMessageSend(c.channelID, fmt.Sprintf("**New task** (%s): %s", repo, description))
 			if err != nil {
+				slog.Error("legacy !task: channel message send failed", "channelId", c.channelID, "error", err)
 				return
 			}
 			thread, err := s.MessageThreadStart(c.channelID, msg.ID, description, 1440)
 			if err != nil {
+				slog.Error("legacy !task: thread start failed", "channelId", c.channelID, "messageId", msg.ID, "error", err)
 				return
 			}
 			if _, err := c.tasks.CreateTask(ctx, repo, description, c.channelID, thread.ID); err != nil {
