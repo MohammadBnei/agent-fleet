@@ -164,13 +164,14 @@ func (s *Server) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWo
 		s.reportEvent(ctx, req.GetTaskId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_CRASHED, "", "clone/fetch failed: "+err.Error())
 		return nil, fmt.Errorf("ensure repo cloned: %w", err)
 	}
-	if _, _, err := s.git.CreateWorktree(ctx, req.GetRepo(), req.GetTaskId(), req.GetBaseBranch()); err != nil {
+	worktreePath, _, err := s.git.CreateWorktree(ctx, req.GetRepo(), req.GetTaskId(), req.GetBaseBranch())
+	if err != nil {
 		s.reportEvent(ctx, req.GetTaskId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_CRASHED, "", "worktree add failed: "+err.Error())
 		return nil, fmt.Errorf("create worktree: %w", err)
 	}
 	s.reportEvent(ctx, req.GetTaskId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_CREATED, "", "")
 
-	if err := s.k8sc.CreateWorkerPod(ctx, req.GetTaskId(), req.GetRepo(), req.GetDescription(), req.GetLeaseId(), req.GetBaseBranch()); err != nil {
+	if err := s.k8sc.CreateWorkerPod(ctx, req.GetTaskId(), req.GetRepo(), req.GetDescription(), req.GetLeaseId(), req.GetBaseBranch(), worktreePath); err != nil {
 		s.reportEvent(ctx, req.GetTaskId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_CRASHED, "", "pod create failed: "+err.Error())
 		return nil, fmt.Errorf("create worker pod: %w", err)
 	}

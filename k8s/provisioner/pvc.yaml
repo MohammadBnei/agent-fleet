@@ -2,8 +2,17 @@
 # with: repo clones + git worktrees (one subdir per in-flight task) +
 # Claude Code sessions + skills/CLAUDE.md, all under one mount. Only the
 # provisioner (git clone/fetch/worktree add+remove) and each task's
-# worker+sidecar pod (mounted via a per-task SubPath) ever touch it —
-# core never does, holding zero PVC access matches its zero-RBAC design.
+# worker+sidecar pod ever touch it — core never does, holding zero PVC
+# access matches its zero-RBAC design.
+#
+# Worker/sidecar mount the PVC whole, same as the provisioner — not scoped
+# to a per-task SubPath. A linked git worktree's .git file is an
+# absolute-path gitlink back to repos/<repo>/.git/worktrees/<taskId>
+# (HEAD/index/commondir); a SubPath scoped to just worktrees/<taskId>
+# severs that path and every git command in the pod fails with "not a git
+# repository" (found live, 2026-08-05). Isolation between concurrent
+# tasks' worktrees is by directory naming (keyed by task ID) only, not by
+# mount boundary.
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
