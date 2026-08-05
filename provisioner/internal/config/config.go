@@ -24,6 +24,10 @@ type Config struct {
 	// call, on top of being core's gRPC server for everything else.
 	CoreGRPCAddr      string
 	ReconcileInterval string
+	// SweepInterval is how often the [gone]-branch sweep runs
+	// (reliability-findings.md #2) — minutes, not seconds: it does a real
+	// `git fetch` per repo, unlike the k8s-only reconcile loop.
+	SweepInterval string
 }
 
 func Load() Config {
@@ -39,6 +43,7 @@ func Load() Config {
 		GRPCPort:          env("GRPC_PORT", "9090"),
 		CoreGRPCAddr:      env("CORE_GRPC_ADDR", "core.agent-fleet.svc.cluster.local:9090"),
 		ReconcileInterval: env("RECONCILE_INTERVAL_MS", "10000"),
+		SweepInterval:     env("SWEEP_INTERVAL_MS", "300000"),
 	}
 }
 

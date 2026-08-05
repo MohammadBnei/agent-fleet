@@ -62,6 +62,12 @@ const (
 	// DashboardServiceAnswerQuestionProcedure is the fully-qualified name of the DashboardService's
 	// AnswerQuestion RPC.
 	DashboardServiceAnswerQuestionProcedure = "/agentfleet.v1.DashboardService/AnswerQuestion"
+	// DashboardServiceListWorktreesProcedure is the fully-qualified name of the DashboardService's
+	// ListWorktrees RPC.
+	DashboardServiceListWorktreesProcedure = "/agentfleet.v1.DashboardService/ListWorktrees"
+	// DashboardServiceDeleteWorktreeProcedure is the fully-qualified name of the DashboardService's
+	// DeleteWorktree RPC.
+	DashboardServiceDeleteWorktreeProcedure = "/agentfleet.v1.DashboardService/DeleteWorktree"
 )
 
 // DashboardServiceClient is a client for the agentfleet.v1.DashboardService service.
@@ -85,6 +91,17 @@ type DashboardServiceClient interface {
 	Stop(context.Context, *connect.Request[v1.StopRequest]) (*connect.Response[v1.StopResponse], error)
 	KillE2E(context.Context, *connect.Request[v1.KillE2ERequest]) (*connect.Response[v1.KillE2EResponse], error)
 	AnswerQuestion(context.Context, *connect.Request[v1.AnswerQuestionRequest]) (*connect.Response[v1.AnswerQuestionResponse], error)
+	// Reuses provisioner.proto's ListWorktreesRequest (identical shape,
+	// empty) and DeleteWorktreeRequest/Response (identical shape, no
+	// dashboard-specific fields needed) — same passthrough-reuse pattern
+	// core.proto's ListE2eTools/CallE2eTool already established. The
+	// response is enriched with a left-join against `tasks`, so it can't
+	// reuse provisioner's own WorktreeInfo/ListWorktreesResponse as-is.
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+	ListWorktrees(context.Context, *connect.Request[v1.ListWorktreesRequest]) (*connect.Response[v1.ListWorktreesViewResponse], error)
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	DeleteWorktree(context.Context, *connect.Request[v1.DeleteWorktreeRequest]) (*connect.Response[v1.DeleteWorktreeResponse], error)
 }
 
 // NewDashboardServiceClient constructs a client for the agentfleet.v1.DashboardService service. By
@@ -158,6 +175,18 @@ func NewDashboardServiceClient(httpClient connect.HTTPClient, baseURL string, op
 			connect.WithSchema(dashboardServiceMethods.ByName("AnswerQuestion")),
 			connect.WithClientOptions(opts...),
 		),
+		listWorktrees: connect.NewClient[v1.ListWorktreesRequest, v1.ListWorktreesViewResponse](
+			httpClient,
+			baseURL+DashboardServiceListWorktreesProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("ListWorktrees")),
+			connect.WithClientOptions(opts...),
+		),
+		deleteWorktree: connect.NewClient[v1.DeleteWorktreeRequest, v1.DeleteWorktreeResponse](
+			httpClient,
+			baseURL+DashboardServiceDeleteWorktreeProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("DeleteWorktree")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -173,6 +202,8 @@ type dashboardServiceClient struct {
 	stop             *connect.Client[v1.StopRequest, v1.StopResponse]
 	killE2E          *connect.Client[v1.KillE2ERequest, v1.KillE2EResponse]
 	answerQuestion   *connect.Client[v1.AnswerQuestionRequest, v1.AnswerQuestionResponse]
+	listWorktrees    *connect.Client[v1.ListWorktreesRequest, v1.ListWorktreesViewResponse]
+	deleteWorktree   *connect.Client[v1.DeleteWorktreeRequest, v1.DeleteWorktreeResponse]
 }
 
 // ListTasks calls agentfleet.v1.DashboardService.ListTasks.
@@ -225,6 +256,16 @@ func (c *dashboardServiceClient) AnswerQuestion(ctx context.Context, req *connec
 	return c.answerQuestion.CallUnary(ctx, req)
 }
 
+// ListWorktrees calls agentfleet.v1.DashboardService.ListWorktrees.
+func (c *dashboardServiceClient) ListWorktrees(ctx context.Context, req *connect.Request[v1.ListWorktreesRequest]) (*connect.Response[v1.ListWorktreesViewResponse], error) {
+	return c.listWorktrees.CallUnary(ctx, req)
+}
+
+// DeleteWorktree calls agentfleet.v1.DashboardService.DeleteWorktree.
+func (c *dashboardServiceClient) DeleteWorktree(ctx context.Context, req *connect.Request[v1.DeleteWorktreeRequest]) (*connect.Response[v1.DeleteWorktreeResponse], error) {
+	return c.deleteWorktree.CallUnary(ctx, req)
+}
+
 // DashboardServiceHandler is an implementation of the agentfleet.v1.DashboardService service.
 type DashboardServiceHandler interface {
 	ListTasks(context.Context, *connect.Request[v1.ListTasksRequest]) (*connect.Response[v1.ListTasksResponse], error)
@@ -246,6 +287,17 @@ type DashboardServiceHandler interface {
 	Stop(context.Context, *connect.Request[v1.StopRequest]) (*connect.Response[v1.StopResponse], error)
 	KillE2E(context.Context, *connect.Request[v1.KillE2ERequest]) (*connect.Response[v1.KillE2EResponse], error)
 	AnswerQuestion(context.Context, *connect.Request[v1.AnswerQuestionRequest]) (*connect.Response[v1.AnswerQuestionResponse], error)
+	// Reuses provisioner.proto's ListWorktreesRequest (identical shape,
+	// empty) and DeleteWorktreeRequest/Response (identical shape, no
+	// dashboard-specific fields needed) — same passthrough-reuse pattern
+	// core.proto's ListE2eTools/CallE2eTool already established. The
+	// response is enriched with a left-join against `tasks`, so it can't
+	// reuse provisioner's own WorktreeInfo/ListWorktreesResponse as-is.
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+	ListWorktrees(context.Context, *connect.Request[v1.ListWorktreesRequest]) (*connect.Response[v1.ListWorktreesViewResponse], error)
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	DeleteWorktree(context.Context, *connect.Request[v1.DeleteWorktreeRequest]) (*connect.Response[v1.DeleteWorktreeResponse], error)
 }
 
 // NewDashboardServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -315,6 +367,18 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 		connect.WithSchema(dashboardServiceMethods.ByName("AnswerQuestion")),
 		connect.WithHandlerOptions(opts...),
 	)
+	dashboardServiceListWorktreesHandler := connect.NewUnaryHandler(
+		DashboardServiceListWorktreesProcedure,
+		svc.ListWorktrees,
+		connect.WithSchema(dashboardServiceMethods.ByName("ListWorktrees")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dashboardServiceDeleteWorktreeHandler := connect.NewUnaryHandler(
+		DashboardServiceDeleteWorktreeProcedure,
+		svc.DeleteWorktree,
+		connect.WithSchema(dashboardServiceMethods.ByName("DeleteWorktree")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/agentfleet.v1.DashboardService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case DashboardServiceListTasksProcedure:
@@ -337,6 +401,10 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 			dashboardServiceKillE2EHandler.ServeHTTP(w, r)
 		case DashboardServiceAnswerQuestionProcedure:
 			dashboardServiceAnswerQuestionHandler.ServeHTTP(w, r)
+		case DashboardServiceListWorktreesProcedure:
+			dashboardServiceListWorktreesHandler.ServeHTTP(w, r)
+		case DashboardServiceDeleteWorktreeProcedure:
+			dashboardServiceDeleteWorktreeHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -384,4 +452,12 @@ func (UnimplementedDashboardServiceHandler) KillE2E(context.Context, *connect.Re
 
 func (UnimplementedDashboardServiceHandler) AnswerQuestion(context.Context, *connect.Request[v1.AnswerQuestionRequest]) (*connect.Response[v1.AnswerQuestionResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.AnswerQuestion is not implemented"))
+}
+
+func (UnimplementedDashboardServiceHandler) ListWorktrees(context.Context, *connect.Request[v1.ListWorktreesRequest]) (*connect.Response[v1.ListWorktreesViewResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.ListWorktrees is not implemented"))
+}
+
+func (UnimplementedDashboardServiceHandler) DeleteWorktree(context.Context, *connect.Request[v1.DeleteWorktreeRequest]) (*connect.Response[v1.DeleteWorktreeResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.DeleteWorktree is not implemented"))
 }

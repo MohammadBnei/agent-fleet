@@ -126,6 +126,38 @@ message CallE2eToolResponse {
   bool is_error = 2;
 }
 
+// Worktree/branch lifecycle (reliability-findings.md #2): a task's
+// worktree is no longer deleted as a side effect of TearDownSession (that
+// destroyed never-pushed commits whenever a terminal status was reached
+// via a git push failure — the only reference to them lived in the
+// worktree's branch). These two RPCs are the manual half of cleanup
+// (dashboard-driven); the automated half is the periodic sweep
+// (provisioner/internal/sweep), which only acts once a branch's upstream
+// is confirmed [gone].
+message ListWorktreesRequest {}
+
+message WorktreeInfo {
+  string task_id = 1;
+  string repo = 2;
+  string branch = 3;
+  string upstream_track = 4; // e.g. "[gone]", "[ahead 2]", ""
+  int64 mtime_unix = 5;
+}
+
+message ListWorktreesResponse {
+  repeated WorktreeInfo worktrees = 1;
+}
+
+message DeleteWorktreeRequest {
+  string task_id = 1;
+  string repo = 2;
+  bool also_delete_branch = 3;
+}
+
+message DeleteWorktreeResponse {
+  bool deleted = 1;
+}
+
 service ProvisionerService {
   rpc KillE2eSession(KillE2eSessionRequest) returns (KillE2eSessionResponse);
   rpc GetE2eSessionStatus(GetE2eSessionStatusRequest) returns (GetE2eSessionStatusResponse);
@@ -138,4 +170,12 @@ service ProvisionerService {
   rpc CallE2eTool(CallE2eToolRequest) returns (CallE2eToolResponse);
   rpc CreateWorkerPod(CreateWorkerPodRequest) returns (CreateWorkerPodResponse);
   rpc TearDownSession(TearDownSessionRequest) returns (TearDownSessionResponse);
+  // Reused as-is by dashboard.proto's own ListWorktrees (identical empty
+  // request shape) — same passthrough pattern as ListE2eTools above.
+  // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+  rpc ListWorktrees(ListWorktreesRequest) returns (ListWorktreesResponse);
+  // Reused as-is by dashboard.proto's own DeleteWorktree (identical
+  // request/response shape, no dashboard-specific fields needed).
+  // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+  rpc DeleteWorktree(DeleteWorktreeRequest) returns (DeleteWorktreeResponse);
 }

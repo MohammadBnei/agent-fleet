@@ -6,6 +6,7 @@
 
 /* eslint-disable */
 import { Observable } from "rxjs";
+import { DeleteWorktreeRequest, DeleteWorktreeResponse, ListWorktreesRequest } from "./provisioner.js";
 import { ReadTranscriptSinceRequest, ReadTranscriptSinceResponse, TranscriptEntry } from "./transcript.js";
 
 export const protobufPackage = "agentfleet.v1";
@@ -113,6 +114,28 @@ export interface AnswerQuestionRequest {
 
 export interface AnswerQuestionResponse {
   status: string;
+}
+
+/**
+ * WorktreeView is provisioner.proto's WorktreeInfo left-joined against
+ * `tasks` (reliability-findings.md #2) — task_status/task_error/pr_url
+ * are unset, not omitted, when the task row itself no longer exists,
+ * which is exactly the orphaned-worktree case this view exists to
+ * surface (an inner join would hide it).
+ */
+export interface WorktreeView {
+  taskId: string;
+  repo: string;
+  branch: string;
+  upstreamTrack: string;
+  mtimeUnix: number;
+  taskStatus?: string | undefined;
+  taskError?: string | undefined;
+  prUrl?: string | undefined;
+}
+
+export interface ListWorktreesViewResponse {
+  worktrees: WorktreeView[];
 }
 
 function createBaseTask(): Task {
@@ -718,6 +741,134 @@ export const AnswerQuestionResponse: MessageFns<AnswerQuestionResponse> = {
   },
 };
 
+function createBaseWorktreeView(): WorktreeView {
+  return {
+    taskId: "",
+    repo: "",
+    branch: "",
+    upstreamTrack: "",
+    mtimeUnix: 0,
+    taskStatus: undefined,
+    taskError: undefined,
+    prUrl: undefined,
+  };
+}
+
+export const WorktreeView: MessageFns<WorktreeView> = {
+  fromJSON(object: any): WorktreeView {
+    return {
+      taskId: isSet(object.taskId)
+        ? globalThis.String(object.taskId)
+        : isSet(object.task_id)
+        ? globalThis.String(object.task_id)
+        : "",
+      repo: isSet(object.repo) ? globalThis.String(object.repo) : "",
+      branch: isSet(object.branch) ? globalThis.String(object.branch) : "",
+      upstreamTrack: isSet(object.upstreamTrack)
+        ? globalThis.String(object.upstreamTrack)
+        : isSet(object.upstream_track)
+        ? globalThis.String(object.upstream_track)
+        : "",
+      mtimeUnix: isSet(object.mtimeUnix)
+        ? globalThis.Number(object.mtimeUnix)
+        : isSet(object.mtime_unix)
+        ? globalThis.Number(object.mtime_unix)
+        : 0,
+      taskStatus: isSet(object.taskStatus)
+        ? globalThis.String(object.taskStatus)
+        : isSet(object.task_status)
+        ? globalThis.String(object.task_status)
+        : undefined,
+      taskError: isSet(object.taskError)
+        ? globalThis.String(object.taskError)
+        : isSet(object.task_error)
+        ? globalThis.String(object.task_error)
+        : undefined,
+      prUrl: isSet(object.prUrl)
+        ? globalThis.String(object.prUrl)
+        : isSet(object.pr_url)
+        ? globalThis.String(object.pr_url)
+        : undefined,
+    };
+  },
+
+  toJSON(message: WorktreeView): unknown {
+    const obj: any = {};
+    if (message.taskId !== "") {
+      obj.taskId = message.taskId;
+    }
+    if (message.repo !== "") {
+      obj.repo = message.repo;
+    }
+    if (message.branch !== "") {
+      obj.branch = message.branch;
+    }
+    if (message.upstreamTrack !== "") {
+      obj.upstreamTrack = message.upstreamTrack;
+    }
+    if (message.mtimeUnix !== 0) {
+      obj.mtimeUnix = Math.round(message.mtimeUnix);
+    }
+    if (message.taskStatus !== undefined) {
+      obj.taskStatus = message.taskStatus;
+    }
+    if (message.taskError !== undefined) {
+      obj.taskError = message.taskError;
+    }
+    if (message.prUrl !== undefined) {
+      obj.prUrl = message.prUrl;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<WorktreeView>, I>>(base?: I): WorktreeView {
+    return WorktreeView.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<WorktreeView>, I>>(object: I): WorktreeView {
+    const message = createBaseWorktreeView();
+    message.taskId = object.taskId ?? "";
+    message.repo = object.repo ?? "";
+    message.branch = object.branch ?? "";
+    message.upstreamTrack = object.upstreamTrack ?? "";
+    message.mtimeUnix = object.mtimeUnix ?? 0;
+    message.taskStatus = object.taskStatus ?? undefined;
+    message.taskError = object.taskError ?? undefined;
+    message.prUrl = object.prUrl ?? undefined;
+    return message;
+  },
+};
+
+function createBaseListWorktreesViewResponse(): ListWorktreesViewResponse {
+  return { worktrees: [] };
+}
+
+export const ListWorktreesViewResponse: MessageFns<ListWorktreesViewResponse> = {
+  fromJSON(object: any): ListWorktreesViewResponse {
+    return {
+      worktrees: globalThis.Array.isArray(object?.worktrees)
+        ? object.worktrees.map((e: any) => WorktreeView.fromJSON(e))
+        : [],
+    };
+  },
+
+  toJSON(message: ListWorktreesViewResponse): unknown {
+    const obj: any = {};
+    if (message.worktrees?.length) {
+      obj.worktrees = message.worktrees.map((e) => WorktreeView.toJSON(e));
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<ListWorktreesViewResponse>, I>>(base?: I): ListWorktreesViewResponse {
+    return ListWorktreesViewResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<ListWorktreesViewResponse>, I>>(object: I): ListWorktreesViewResponse {
+    const message = createBaseListWorktreesViewResponse();
+    message.worktrees = object.worktrees?.map((e) => WorktreeView.fromPartial(e)) || [];
+    return message;
+  },
+};
+
 export interface DashboardService {
   ListTasks(request: ListTasksRequest): Promise<ListTasksResponse>;
   GetTask(request: GetTaskRequest): Promise<GetTaskResponse>;
@@ -742,6 +893,19 @@ export interface DashboardService {
   Stop(request: StopRequest): Promise<StopResponse>;
   KillE2e(request: KillE2eRequest): Promise<KillE2eResponse>;
   AnswerQuestion(request: AnswerQuestionRequest): Promise<AnswerQuestionResponse>;
+  /**
+   * Reuses provisioner.proto's ListWorktreesRequest (identical shape,
+   * empty) and DeleteWorktreeRequest/Response (identical shape, no
+   * dashboard-specific fields needed) — same passthrough-reuse pattern
+   * core.proto's ListE2eTools/CallE2eTool already established. The
+   * response is enriched with a left-join against `tasks`, so it can't
+   * reuse provisioner's own WorktreeInfo/ListWorktreesResponse as-is.
+   * buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+   * buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+   */
+  ListWorktrees(request: ListWorktreesRequest): Promise<ListWorktreesViewResponse>;
+  /** buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE */
+  DeleteWorktree(request: DeleteWorktreeRequest): Promise<DeleteWorktreeResponse>;
 }
 
 type Builtin = Date | Function | Uint8Array | string | number | boolean | undefined;

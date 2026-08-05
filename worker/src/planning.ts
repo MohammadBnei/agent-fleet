@@ -84,7 +84,7 @@ function plannerPrompt(task: Task): string {
   return `You are the PLANNER for task ${task.id} in repo ${task.repo}.
 Task: ${task.description}
 
-You are in a fresh git worktree on branch agent/${task.id}. Work through this pipeline, using your own judgment about how much of it a task this size actually needs — skip a stage and say why in one line rather than run it on autopilot:
+You are in a git worktree on branch agent/${task.id} — it may be freshly created or resumed from a prior attempt (the provisioner reuses an existing worktree as-is rather than wiping it, reliability-findings.md #2), so run \`git status\` and \`git log --oneline -5\` first to see what's actually there before assuming a clean slate. Work through this pipeline, using your own judgment about how much of it a task this size actually needs — skip a stage and say why in one line rather than run it on autopilot:
 
 1. EXPLORE: read the actual repository — don't guess at structure or conventions.
 2. REVIEW: check your own findings for gaps before drafting anything.

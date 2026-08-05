@@ -26,6 +26,8 @@ const (
 	ProvisionerService_CallE2ETool_FullMethodName         = "/agentfleet.v1.ProvisionerService/CallE2eTool"
 	ProvisionerService_CreateWorkerPod_FullMethodName     = "/agentfleet.v1.ProvisionerService/CreateWorkerPod"
 	ProvisionerService_TearDownSession_FullMethodName     = "/agentfleet.v1.ProvisionerService/TearDownSession"
+	ProvisionerService_ListWorktrees_FullMethodName       = "/agentfleet.v1.ProvisionerService/ListWorktrees"
+	ProvisionerService_DeleteWorktree_FullMethodName      = "/agentfleet.v1.ProvisionerService/DeleteWorktree"
 )
 
 // ProvisionerServiceClient is the client API for ProvisionerService service.
@@ -43,6 +45,14 @@ type ProvisionerServiceClient interface {
 	CallE2ETool(ctx context.Context, in *CallE2EToolRequest, opts ...grpc.CallOption) (*CallE2EToolResponse, error)
 	CreateWorkerPod(ctx context.Context, in *CreateWorkerPodRequest, opts ...grpc.CallOption) (*CreateWorkerPodResponse, error)
 	TearDownSession(ctx context.Context, in *TearDownSessionRequest, opts ...grpc.CallOption) (*TearDownSessionResponse, error)
+	// Reused as-is by dashboard.proto's own ListWorktrees (identical empty
+	// request shape) — same passthrough pattern as ListE2eTools above.
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	ListWorktrees(ctx context.Context, in *ListWorktreesRequest, opts ...grpc.CallOption) (*ListWorktreesResponse, error)
+	// Reused as-is by dashboard.proto's own DeleteWorktree (identical
+	// request/response shape, no dashboard-specific fields needed).
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	DeleteWorktree(ctx context.Context, in *DeleteWorktreeRequest, opts ...grpc.CallOption) (*DeleteWorktreeResponse, error)
 }
 
 type provisionerServiceClient struct {
@@ -123,6 +133,26 @@ func (c *provisionerServiceClient) TearDownSession(ctx context.Context, in *Tear
 	return out, nil
 }
 
+func (c *provisionerServiceClient) ListWorktrees(ctx context.Context, in *ListWorktreesRequest, opts ...grpc.CallOption) (*ListWorktreesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListWorktreesResponse)
+	err := c.cc.Invoke(ctx, ProvisionerService_ListWorktrees_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *provisionerServiceClient) DeleteWorktree(ctx context.Context, in *DeleteWorktreeRequest, opts ...grpc.CallOption) (*DeleteWorktreeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteWorktreeResponse)
+	err := c.cc.Invoke(ctx, ProvisionerService_DeleteWorktree_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ProvisionerServiceServer is the server API for ProvisionerService service.
 // All implementations must embed UnimplementedProvisionerServiceServer
 // for forward compatibility.
@@ -138,6 +168,14 @@ type ProvisionerServiceServer interface {
 	CallE2ETool(context.Context, *CallE2EToolRequest) (*CallE2EToolResponse, error)
 	CreateWorkerPod(context.Context, *CreateWorkerPodRequest) (*CreateWorkerPodResponse, error)
 	TearDownSession(context.Context, *TearDownSessionRequest) (*TearDownSessionResponse, error)
+	// Reused as-is by dashboard.proto's own ListWorktrees (identical empty
+	// request shape) — same passthrough pattern as ListE2eTools above.
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	ListWorktrees(context.Context, *ListWorktreesRequest) (*ListWorktreesResponse, error)
+	// Reused as-is by dashboard.proto's own DeleteWorktree (identical
+	// request/response shape, no dashboard-specific fields needed).
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	DeleteWorktree(context.Context, *DeleteWorktreeRequest) (*DeleteWorktreeResponse, error)
 	mustEmbedUnimplementedProvisionerServiceServer()
 }
 
@@ -168,6 +206,12 @@ func (UnimplementedProvisionerServiceServer) CreateWorkerPod(context.Context, *C
 }
 func (UnimplementedProvisionerServiceServer) TearDownSession(context.Context, *TearDownSessionRequest) (*TearDownSessionResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method TearDownSession not implemented")
+}
+func (UnimplementedProvisionerServiceServer) ListWorktrees(context.Context, *ListWorktreesRequest) (*ListWorktreesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListWorktrees not implemented")
+}
+func (UnimplementedProvisionerServiceServer) DeleteWorktree(context.Context, *DeleteWorktreeRequest) (*DeleteWorktreeResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteWorktree not implemented")
 }
 func (UnimplementedProvisionerServiceServer) mustEmbedUnimplementedProvisionerServiceServer() {}
 func (UnimplementedProvisionerServiceServer) testEmbeddedByValue()                            {}
@@ -316,6 +360,42 @@ func _ProvisionerService_TearDownSession_Handler(srv interface{}, ctx context.Co
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ProvisionerService_ListWorktrees_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListWorktreesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProvisionerServiceServer).ListWorktrees(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ProvisionerService_ListWorktrees_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProvisionerServiceServer).ListWorktrees(ctx, req.(*ListWorktreesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ProvisionerService_DeleteWorktree_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteWorktreeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProvisionerServiceServer).DeleteWorktree(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ProvisionerService_DeleteWorktree_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProvisionerServiceServer).DeleteWorktree(ctx, req.(*DeleteWorktreeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ProvisionerService_ServiceDesc is the grpc.ServiceDesc for ProvisionerService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -350,6 +430,14 @@ var ProvisionerService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "TearDownSession",
 			Handler:    _ProvisionerService_TearDownSession_Handler,
+		},
+		{
+			MethodName: "ListWorktrees",
+			Handler:    _ProvisionerService_ListWorktrees_Handler,
+		},
+		{
+			MethodName: "DeleteWorktree",
+			Handler:    _ProvisionerService_DeleteWorktree_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

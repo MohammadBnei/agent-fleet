@@ -883,6 +883,274 @@ func (x *CallE2EToolResponse) GetIsError() bool {
 	return false
 }
 
+// Worktree/branch lifecycle (reliability-findings.md #2): a task's
+// worktree is no longer deleted as a side effect of TearDownSession (that
+// destroyed never-pushed commits whenever a terminal status was reached
+// via a git push failure — the only reference to them lived in the
+// worktree's branch). These two RPCs are the manual half of cleanup
+// (dashboard-driven); the automated half is the periodic sweep
+// (provisioner/internal/sweep), which only acts once a branch's upstream
+// is confirmed [gone].
+type ListWorktreesRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListWorktreesRequest) Reset() {
+	*x = ListWorktreesRequest{}
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListWorktreesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListWorktreesRequest) ProtoMessage() {}
+
+func (x *ListWorktreesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListWorktreesRequest.ProtoReflect.Descriptor instead.
+func (*ListWorktreesRequest) Descriptor() ([]byte, []int) {
+	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{15}
+}
+
+type WorktreeInfo struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TaskId        string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	Repo          string                 `protobuf:"bytes,2,opt,name=repo,proto3" json:"repo,omitempty"`
+	Branch        string                 `protobuf:"bytes,3,opt,name=branch,proto3" json:"branch,omitempty"`
+	UpstreamTrack string                 `protobuf:"bytes,4,opt,name=upstream_track,json=upstreamTrack,proto3" json:"upstream_track,omitempty"` // e.g. "[gone]", "[ahead 2]", ""
+	MtimeUnix     int64                  `protobuf:"varint,5,opt,name=mtime_unix,json=mtimeUnix,proto3" json:"mtime_unix,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WorktreeInfo) Reset() {
+	*x = WorktreeInfo{}
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WorktreeInfo) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WorktreeInfo) ProtoMessage() {}
+
+func (x *WorktreeInfo) ProtoReflect() protoreflect.Message {
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WorktreeInfo.ProtoReflect.Descriptor instead.
+func (*WorktreeInfo) Descriptor() ([]byte, []int) {
+	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *WorktreeInfo) GetTaskId() string {
+	if x != nil {
+		return x.TaskId
+	}
+	return ""
+}
+
+func (x *WorktreeInfo) GetRepo() string {
+	if x != nil {
+		return x.Repo
+	}
+	return ""
+}
+
+func (x *WorktreeInfo) GetBranch() string {
+	if x != nil {
+		return x.Branch
+	}
+	return ""
+}
+
+func (x *WorktreeInfo) GetUpstreamTrack() string {
+	if x != nil {
+		return x.UpstreamTrack
+	}
+	return ""
+}
+
+func (x *WorktreeInfo) GetMtimeUnix() int64 {
+	if x != nil {
+		return x.MtimeUnix
+	}
+	return 0
+}
+
+type ListWorktreesResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Worktrees     []*WorktreeInfo        `protobuf:"bytes,1,rep,name=worktrees,proto3" json:"worktrees,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListWorktreesResponse) Reset() {
+	*x = ListWorktreesResponse{}
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListWorktreesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListWorktreesResponse) ProtoMessage() {}
+
+func (x *ListWorktreesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListWorktreesResponse.ProtoReflect.Descriptor instead.
+func (*ListWorktreesResponse) Descriptor() ([]byte, []int) {
+	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *ListWorktreesResponse) GetWorktrees() []*WorktreeInfo {
+	if x != nil {
+		return x.Worktrees
+	}
+	return nil
+}
+
+type DeleteWorktreeRequest struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	TaskId           string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	Repo             string                 `protobuf:"bytes,2,opt,name=repo,proto3" json:"repo,omitempty"`
+	AlsoDeleteBranch bool                   `protobuf:"varint,3,opt,name=also_delete_branch,json=alsoDeleteBranch,proto3" json:"also_delete_branch,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *DeleteWorktreeRequest) Reset() {
+	*x = DeleteWorktreeRequest{}
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteWorktreeRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteWorktreeRequest) ProtoMessage() {}
+
+func (x *DeleteWorktreeRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteWorktreeRequest.ProtoReflect.Descriptor instead.
+func (*DeleteWorktreeRequest) Descriptor() ([]byte, []int) {
+	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *DeleteWorktreeRequest) GetTaskId() string {
+	if x != nil {
+		return x.TaskId
+	}
+	return ""
+}
+
+func (x *DeleteWorktreeRequest) GetRepo() string {
+	if x != nil {
+		return x.Repo
+	}
+	return ""
+}
+
+func (x *DeleteWorktreeRequest) GetAlsoDeleteBranch() bool {
+	if x != nil {
+		return x.AlsoDeleteBranch
+	}
+	return false
+}
+
+type DeleteWorktreeResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Deleted       bool                   `protobuf:"varint,1,opt,name=deleted,proto3" json:"deleted,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteWorktreeResponse) Reset() {
+	*x = DeleteWorktreeResponse{}
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteWorktreeResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteWorktreeResponse) ProtoMessage() {}
+
+func (x *DeleteWorktreeResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteWorktreeResponse.ProtoReflect.Descriptor instead.
+func (*DeleteWorktreeResponse) Descriptor() ([]byte, []int) {
+	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *DeleteWorktreeResponse) GetDeleted() bool {
+	if x != nil {
+		return x.Deleted
+	}
+	return false
+}
+
 var File_agentfleet_v1_provisioner_proto protoreflect.FileDescriptor
 
 const file_agentfleet_v1_provisioner_proto_rawDesc = "" +
@@ -936,11 +1204,27 @@ const file_agentfleet_v1_provisioner_proto_rawDesc = "" +
 	"\x13CallE2eToolResponse\x12\x1f\n" +
 	"\vresult_json\x18\x01 \x01(\tR\n" +
 	"resultJson\x12\x19\n" +
-	"\bis_error\x18\x02 \x01(\bR\aisError*Z\n" +
+	"\bis_error\x18\x02 \x01(\bR\aisError\"\x16\n" +
+	"\x14ListWorktreesRequest\"\x99\x01\n" +
+	"\fWorktreeInfo\x12\x17\n" +
+	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x12\n" +
+	"\x04repo\x18\x02 \x01(\tR\x04repo\x12\x16\n" +
+	"\x06branch\x18\x03 \x01(\tR\x06branch\x12%\n" +
+	"\x0eupstream_track\x18\x04 \x01(\tR\rupstreamTrack\x12\x1d\n" +
+	"\n" +
+	"mtime_unix\x18\x05 \x01(\x03R\tmtimeUnix\"R\n" +
+	"\x15ListWorktreesResponse\x129\n" +
+	"\tworktrees\x18\x01 \x03(\v2\x1b.agentfleet.v1.WorktreeInfoR\tworktrees\"r\n" +
+	"\x15DeleteWorktreeRequest\x12\x17\n" +
+	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x12\n" +
+	"\x04repo\x18\x02 \x01(\tR\x04repo\x12,\n" +
+	"\x12also_delete_branch\x18\x03 \x01(\bR\x10alsoDeleteBranch\"2\n" +
+	"\x16DeleteWorktreeResponse\x12\x18\n" +
+	"\adeleted\x18\x01 \x01(\bR\adeleted*Z\n" +
 	"\vSessionKind\x12\x1c\n" +
 	"\x18SESSION_KIND_UNSPECIFIED\x10\x00\x12\x17\n" +
 	"\x13SESSION_KIND_WORKER\x10\x01\x12\x14\n" +
-	"\x10SESSION_KIND_E2E\x10\x022\xb9\x05\n" +
+	"\x10SESSION_KIND_E2E\x10\x022\xf4\x06\n" +
 	"\x12ProvisionerService\x12]\n" +
 	"\x0eKillE2eSession\x12$.agentfleet.v1.KillE2eSessionRequest\x1a%.agentfleet.v1.KillE2eSessionResponse\x12l\n" +
 	"\x13GetE2eSessionStatus\x12).agentfleet.v1.GetE2eSessionStatusRequest\x1a*.agentfleet.v1.GetE2eSessionStatusResponse\x12c\n" +
@@ -948,7 +1232,9 @@ const file_agentfleet_v1_provisioner_proto_rawDesc = "" +
 	"\fListE2eTools\x12\".agentfleet.v1.ListE2eToolsRequest\x1a#.agentfleet.v1.ListE2eToolsResponse\x12T\n" +
 	"\vCallE2eTool\x12!.agentfleet.v1.CallE2eToolRequest\x1a\".agentfleet.v1.CallE2eToolResponse\x12`\n" +
 	"\x0fCreateWorkerPod\x12%.agentfleet.v1.CreateWorkerPodRequest\x1a&.agentfleet.v1.CreateWorkerPodResponse\x12`\n" +
-	"\x0fTearDownSession\x12%.agentfleet.v1.TearDownSessionRequest\x1a&.agentfleet.v1.TearDownSessionResponseBMZKgithub.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1;agentfleetv1b\x06proto3"
+	"\x0fTearDownSession\x12%.agentfleet.v1.TearDownSessionRequest\x1a&.agentfleet.v1.TearDownSessionResponse\x12Z\n" +
+	"\rListWorktrees\x12#.agentfleet.v1.ListWorktreesRequest\x1a$.agentfleet.v1.ListWorktreesResponse\x12]\n" +
+	"\x0eDeleteWorktree\x12$.agentfleet.v1.DeleteWorktreeRequest\x1a%.agentfleet.v1.DeleteWorktreeResponseBMZKgithub.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1;agentfleetv1b\x06proto3"
 
 var (
 	file_agentfleet_v1_provisioner_proto_rawDescOnce sync.Once
@@ -963,7 +1249,7 @@ func file_agentfleet_v1_provisioner_proto_rawDescGZIP() []byte {
 }
 
 var file_agentfleet_v1_provisioner_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_agentfleet_v1_provisioner_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
+var file_agentfleet_v1_provisioner_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
 var file_agentfleet_v1_provisioner_proto_goTypes = []any{
 	(SessionKind)(0),                    // 0: agentfleet.v1.SessionKind
 	(*KillE2ESessionRequest)(nil),       // 1: agentfleet.v1.KillE2eSessionRequest
@@ -981,29 +1267,39 @@ var file_agentfleet_v1_provisioner_proto_goTypes = []any{
 	(*ListE2EToolsResponse)(nil),        // 13: agentfleet.v1.ListE2eToolsResponse
 	(*CallE2EToolRequest)(nil),          // 14: agentfleet.v1.CallE2eToolRequest
 	(*CallE2EToolResponse)(nil),         // 15: agentfleet.v1.CallE2eToolResponse
+	(*ListWorktreesRequest)(nil),        // 16: agentfleet.v1.ListWorktreesRequest
+	(*WorktreeInfo)(nil),                // 17: agentfleet.v1.WorktreeInfo
+	(*ListWorktreesResponse)(nil),       // 18: agentfleet.v1.ListWorktreesResponse
+	(*DeleteWorktreeRequest)(nil),       // 19: agentfleet.v1.DeleteWorktreeRequest
+	(*DeleteWorktreeResponse)(nil),      // 20: agentfleet.v1.DeleteWorktreeResponse
 }
 var file_agentfleet_v1_provisioner_proto_depIdxs = []int32{
 	0,  // 0: agentfleet.v1.TearDownSessionRequest.kind:type_name -> agentfleet.v1.SessionKind
 	12, // 1: agentfleet.v1.ListE2eToolsResponse.tools:type_name -> agentfleet.v1.E2eToolDescriptor
-	1,  // 2: agentfleet.v1.ProvisionerService.KillE2eSession:input_type -> agentfleet.v1.KillE2eSessionRequest
-	3,  // 3: agentfleet.v1.ProvisionerService.GetE2eSessionStatus:input_type -> agentfleet.v1.GetE2eSessionStatusRequest
-	5,  // 4: agentfleet.v1.ProvisionerService.CreateE2eSession:input_type -> agentfleet.v1.CreateE2eSessionRequest
-	11, // 5: agentfleet.v1.ProvisionerService.ListE2eTools:input_type -> agentfleet.v1.ListE2eToolsRequest
-	14, // 6: agentfleet.v1.ProvisionerService.CallE2eTool:input_type -> agentfleet.v1.CallE2eToolRequest
-	7,  // 7: agentfleet.v1.ProvisionerService.CreateWorkerPod:input_type -> agentfleet.v1.CreateWorkerPodRequest
-	9,  // 8: agentfleet.v1.ProvisionerService.TearDownSession:input_type -> agentfleet.v1.TearDownSessionRequest
-	2,  // 9: agentfleet.v1.ProvisionerService.KillE2eSession:output_type -> agentfleet.v1.KillE2eSessionResponse
-	4,  // 10: agentfleet.v1.ProvisionerService.GetE2eSessionStatus:output_type -> agentfleet.v1.GetE2eSessionStatusResponse
-	6,  // 11: agentfleet.v1.ProvisionerService.CreateE2eSession:output_type -> agentfleet.v1.CreateE2eSessionResponse
-	13, // 12: agentfleet.v1.ProvisionerService.ListE2eTools:output_type -> agentfleet.v1.ListE2eToolsResponse
-	15, // 13: agentfleet.v1.ProvisionerService.CallE2eTool:output_type -> agentfleet.v1.CallE2eToolResponse
-	8,  // 14: agentfleet.v1.ProvisionerService.CreateWorkerPod:output_type -> agentfleet.v1.CreateWorkerPodResponse
-	10, // 15: agentfleet.v1.ProvisionerService.TearDownSession:output_type -> agentfleet.v1.TearDownSessionResponse
-	9,  // [9:16] is the sub-list for method output_type
-	2,  // [2:9] is the sub-list for method input_type
-	2,  // [2:2] is the sub-list for extension type_name
-	2,  // [2:2] is the sub-list for extension extendee
-	0,  // [0:2] is the sub-list for field type_name
+	17, // 2: agentfleet.v1.ListWorktreesResponse.worktrees:type_name -> agentfleet.v1.WorktreeInfo
+	1,  // 3: agentfleet.v1.ProvisionerService.KillE2eSession:input_type -> agentfleet.v1.KillE2eSessionRequest
+	3,  // 4: agentfleet.v1.ProvisionerService.GetE2eSessionStatus:input_type -> agentfleet.v1.GetE2eSessionStatusRequest
+	5,  // 5: agentfleet.v1.ProvisionerService.CreateE2eSession:input_type -> agentfleet.v1.CreateE2eSessionRequest
+	11, // 6: agentfleet.v1.ProvisionerService.ListE2eTools:input_type -> agentfleet.v1.ListE2eToolsRequest
+	14, // 7: agentfleet.v1.ProvisionerService.CallE2eTool:input_type -> agentfleet.v1.CallE2eToolRequest
+	7,  // 8: agentfleet.v1.ProvisionerService.CreateWorkerPod:input_type -> agentfleet.v1.CreateWorkerPodRequest
+	9,  // 9: agentfleet.v1.ProvisionerService.TearDownSession:input_type -> agentfleet.v1.TearDownSessionRequest
+	16, // 10: agentfleet.v1.ProvisionerService.ListWorktrees:input_type -> agentfleet.v1.ListWorktreesRequest
+	19, // 11: agentfleet.v1.ProvisionerService.DeleteWorktree:input_type -> agentfleet.v1.DeleteWorktreeRequest
+	2,  // 12: agentfleet.v1.ProvisionerService.KillE2eSession:output_type -> agentfleet.v1.KillE2eSessionResponse
+	4,  // 13: agentfleet.v1.ProvisionerService.GetE2eSessionStatus:output_type -> agentfleet.v1.GetE2eSessionStatusResponse
+	6,  // 14: agentfleet.v1.ProvisionerService.CreateE2eSession:output_type -> agentfleet.v1.CreateE2eSessionResponse
+	13, // 15: agentfleet.v1.ProvisionerService.ListE2eTools:output_type -> agentfleet.v1.ListE2eToolsResponse
+	15, // 16: agentfleet.v1.ProvisionerService.CallE2eTool:output_type -> agentfleet.v1.CallE2eToolResponse
+	8,  // 17: agentfleet.v1.ProvisionerService.CreateWorkerPod:output_type -> agentfleet.v1.CreateWorkerPodResponse
+	10, // 18: agentfleet.v1.ProvisionerService.TearDownSession:output_type -> agentfleet.v1.TearDownSessionResponse
+	18, // 19: agentfleet.v1.ProvisionerService.ListWorktrees:output_type -> agentfleet.v1.ListWorktreesResponse
+	20, // 20: agentfleet.v1.ProvisionerService.DeleteWorktree:output_type -> agentfleet.v1.DeleteWorktreeResponse
+	12, // [12:21] is the sub-list for method output_type
+	3,  // [3:12] is the sub-list for method input_type
+	3,  // [3:3] is the sub-list for extension type_name
+	3,  // [3:3] is the sub-list for extension extendee
+	0,  // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_agentfleet_v1_provisioner_proto_init() }
@@ -1017,7 +1313,7 @@ func file_agentfleet_v1_provisioner_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_agentfleet_v1_provisioner_proto_rawDesc), len(file_agentfleet_v1_provisioner_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   15,
+			NumMessages:   20,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

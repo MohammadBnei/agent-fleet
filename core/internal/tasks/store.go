@@ -113,6 +113,35 @@ func (s *Store) GetTask(ctx context.Context, id string) (*Task, error) {
 	return &t, nil
 }
 
+// TaskStatusInfo is the minimal per-task slice the dashboard's
+// ListWorktrees needs to left-join a worktree against its originating
+// task, if one still exists (reliability-findings.md #2) — narrower than
+// GetTask's full Task, which carries fields (Repo/Description/ThreadID)
+// this join doesn't use.
+type TaskStatusInfo struct {
+	Status    string
+	LastError *string
+	PrURL     *string
+}
+
+// GetTaskStatusInfo returns nil (not an error) when id doesn't match any
+// task — the left-join's whole point is surfacing exactly that case (an
+// orphaned worktree with no task row left to explain it), not erroring on
+// it.
+func (s *Store) GetTaskStatusInfo(ctx context.Context, id string) (*TaskStatusInfo, error) {
+	var t TaskStatusInfo
+	err := s.pool.QueryRow(ctx, `
+		SELECT status, last_error, pr_url FROM tasks WHERE id = $1
+	`, id).Scan(&t.Status, &t.LastError, &t.PrURL)
+	if err == pgx.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get task status info: %w", err)
+	}
+	return &t, nil
+}
+
 func (s *Store) ListRecentTasks(ctx context.Context, limit int) ([]Task, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT id, repo, description, status, discord_thread_id, pr_url

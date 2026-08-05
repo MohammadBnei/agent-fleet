@@ -181,7 +181,13 @@ func TestTearDownSession_Worker_NoopWhenNothingToTearDown(t *testing.T) {
 	}
 }
 
-func TestTearDownSession_Worker_RemovesPodAndWorktree(t *testing.T) {
+// TestTearDownSession_Worker_RemovesJobButKeepsWorktree is the regression
+// guard reliability-findings.md #2 explicitly notes was missing before
+// this fix: teardown deletes the Job, but must leave the worktree/branch
+// alone — the old unconditional branch -D here destroyed the only
+// reference to a never-pushed branch's commits whenever a terminal status
+// was reached via a git push failure.
+func TestTearDownSession_Worker_RemovesJobButKeepsWorktree(t *testing.T) {
 	s, k8sc, _ := newTestServer(t)
 	ctx := context.Background()
 	origin := newTestOriginRepo(t)
@@ -203,5 +209,13 @@ func TestTearDownSession_Worker_RemovesPodAndWorktree(t *testing.T) {
 	}
 	if _, exists, err := k8sc.GetWorkerJobRepo(ctx, "task-1"); err != nil || exists {
 		t.Fatalf("expected the worker job to be deleted: exists=%v err=%v", exists, err)
+	}
+
+	worktrees, err := s.git.ListWorktrees(ctx, "dream-analyst")
+	if err != nil {
+		t.Fatalf("ListWorktrees: %v", err)
+	}
+	if len(worktrees) != 1 || worktrees[0].TaskID != "task-1" {
+		t.Fatalf("expected task-1's worktree to survive teardown, got %+v", worktrees)
 	}
 }

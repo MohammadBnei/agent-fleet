@@ -137,3 +137,26 @@ func (c *Client) TearDownSession(ctx context.Context, taskID string, kind agentf
 	}
 	return resp.GetTornDown(), nil
 }
+
+// ListWorktrees/DeleteWorktree back the dashboard's manual worktree
+// cleanup view (reliability-findings.md #2) — core has no PVC access
+// itself, so this is a pure passthrough to the provisioner's own git.Manager.
+func (c *Client) ListWorktrees(ctx context.Context) ([]*agentfleetv1.WorktreeInfo, error) {
+	resp, err := c.rpc.ListWorktrees(ctx, &agentfleetv1.ListWorktreesRequest{})
+	if err != nil {
+		return nil, fmt.Errorf("ListWorktrees: %w", err)
+	}
+	return resp.GetWorktrees(), nil
+}
+
+func (c *Client) DeleteWorktree(ctx context.Context, taskID, repo string, alsoDeleteBranch bool) (deleted bool, err error) {
+	resp, err := c.rpc.DeleteWorktree(ctx, &agentfleetv1.DeleteWorktreeRequest{
+		TaskId:           taskID,
+		Repo:             repo,
+		AlsoDeleteBranch: alsoDeleteBranch,
+	})
+	if err != nil {
+		return false, fmt.Errorf("DeleteWorktree: %w", err)
+	}
+	return resp.GetDeleted(), nil
+}

@@ -195,8 +195,15 @@ func (s *Server) TearDownSession(ctx context.Context, req *agentfleetv1.TearDown
 	}
 }
 
+// tearDownWorker no longer touches git state at all (reliability-findings.md
+// #2) — for any status including "done", not just failure paths. The old
+// unconditional branch -D here destroyed the only reference to a
+// never-pushed branch's commits whenever a terminal status was reached via
+// a git push failure. Worktree/branch cleanup now happens two other ways:
+// the periodic sweep (provisioner/internal/sweep, [gone]-tracked branches)
+// and manual dashboard deletion (ListWorktrees/DeleteWorktree, below).
 func (s *Server) tearDownWorker(ctx context.Context, taskID string) (*agentfleetv1.TearDownSessionResponse, error) {
-	repo, exists, err := s.k8sc.GetWorkerJobRepo(ctx, taskID)
+	_, exists, err := s.k8sc.GetWorkerJobRepo(ctx, taskID)
 	if err != nil {
 		return nil, err
 	}
@@ -205,9 +212,6 @@ func (s *Server) tearDownWorker(ctx context.Context, taskID string) (*agentfleet
 	}
 	if err := s.k8sc.DeleteWorkerJob(ctx, taskID); err != nil {
 		return nil, err
-	}
-	if err := s.git.RemoveWorktree(ctx, repo, taskID, "agent/"+taskID); err != nil {
-		return nil, fmt.Errorf("remove worktree: %w", err)
 	}
 	s.reportEvent(ctx, taskID, agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_TERMINATED, "", "")
 	return &agentfleetv1.TearDownSessionResponse{TornDown: true}, nil
@@ -226,6 +230,39 @@ func (s *Server) tearDownE2e(ctx context.Context, taskID string) (*agentfleetv1.
 	}
 	s.proxy.DropClient(taskID)
 	return &agentfleetv1.TearDownSessionResponse{TornDown: true}, nil
+}
+
+// --- worktree lifecycle (reliability-findings.md #2) ---
+
+func (s *Server) ListWorktrees(ctx context.Context, _ *agentfleetv1.ListWorktreesRequest) (*agentfleetv1.ListWorktreesResponse, error) {
+	repos, err := s.git.ListClonedRepos()
+	if err != nil {
+		return nil, fmt.Errorf("list cloned repos: %w", err)
+	}
+	var out []*agentfleetv1.WorktreeInfo
+	for _, repo := range repos {
+		infos, err := s.git.ListWorktrees(ctx, repo)
+		if err != nil {
+			return nil, fmt.Errorf("list worktrees for %s: %w", repo, err)
+		}
+		for _, info := range infos {
+			out = append(out, &agentfleetv1.WorktreeInfo{
+				TaskId:        info.TaskID,
+				Repo:          info.Repo,
+				Branch:        info.Branch,
+				UpstreamTrack: info.UpstreamTrack,
+				MtimeUnix:     info.MtimeUnix,
+			})
+		}
+	}
+	return &agentfleetv1.ListWorktreesResponse{Worktrees: out}, nil
+}
+
+func (s *Server) DeleteWorktree(ctx context.Context, req *agentfleetv1.DeleteWorktreeRequest) (*agentfleetv1.DeleteWorktreeResponse, error) {
+	if err := s.git.DeleteWorktree(ctx, req.GetRepo(), req.GetTaskId(), req.GetAlsoDeleteBranch()); err != nil {
+		return nil, err
+	}
+	return &agentfleetv1.DeleteWorktreeResponse{Deleted: true}, nil
 }
 
 func (s *Server) reportEvent(ctx context.Context, taskID string, kind agentfleetv1.SessionKind, phase agentfleetv1.PodPhase, podName, message string) {

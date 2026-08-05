@@ -54,6 +54,12 @@ const (
 	// ProvisionerServiceTearDownSessionProcedure is the fully-qualified name of the
 	// ProvisionerService's TearDownSession RPC.
 	ProvisionerServiceTearDownSessionProcedure = "/agentfleet.v1.ProvisionerService/TearDownSession"
+	// ProvisionerServiceListWorktreesProcedure is the fully-qualified name of the ProvisionerService's
+	// ListWorktrees RPC.
+	ProvisionerServiceListWorktreesProcedure = "/agentfleet.v1.ProvisionerService/ListWorktrees"
+	// ProvisionerServiceDeleteWorktreeProcedure is the fully-qualified name of the ProvisionerService's
+	// DeleteWorktree RPC.
+	ProvisionerServiceDeleteWorktreeProcedure = "/agentfleet.v1.ProvisionerService/DeleteWorktree"
 )
 
 // ProvisionerServiceClient is a client for the agentfleet.v1.ProvisionerService service.
@@ -69,6 +75,14 @@ type ProvisionerServiceClient interface {
 	CallE2ETool(context.Context, *connect.Request[v1.CallE2EToolRequest]) (*connect.Response[v1.CallE2EToolResponse], error)
 	CreateWorkerPod(context.Context, *connect.Request[v1.CreateWorkerPodRequest]) (*connect.Response[v1.CreateWorkerPodResponse], error)
 	TearDownSession(context.Context, *connect.Request[v1.TearDownSessionRequest]) (*connect.Response[v1.TearDownSessionResponse], error)
+	// Reused as-is by dashboard.proto's own ListWorktrees (identical empty
+	// request shape) — same passthrough pattern as ListE2eTools above.
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	ListWorktrees(context.Context, *connect.Request[v1.ListWorktreesRequest]) (*connect.Response[v1.ListWorktreesResponse], error)
+	// Reused as-is by dashboard.proto's own DeleteWorktree (identical
+	// request/response shape, no dashboard-specific fields needed).
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	DeleteWorktree(context.Context, *connect.Request[v1.DeleteWorktreeRequest]) (*connect.Response[v1.DeleteWorktreeResponse], error)
 }
 
 // NewProvisionerServiceClient constructs a client for the agentfleet.v1.ProvisionerService service.
@@ -124,6 +138,18 @@ func NewProvisionerServiceClient(httpClient connect.HTTPClient, baseURL string, 
 			connect.WithSchema(provisionerServiceMethods.ByName("TearDownSession")),
 			connect.WithClientOptions(opts...),
 		),
+		listWorktrees: connect.NewClient[v1.ListWorktreesRequest, v1.ListWorktreesResponse](
+			httpClient,
+			baseURL+ProvisionerServiceListWorktreesProcedure,
+			connect.WithSchema(provisionerServiceMethods.ByName("ListWorktrees")),
+			connect.WithClientOptions(opts...),
+		),
+		deleteWorktree: connect.NewClient[v1.DeleteWorktreeRequest, v1.DeleteWorktreeResponse](
+			httpClient,
+			baseURL+ProvisionerServiceDeleteWorktreeProcedure,
+			connect.WithSchema(provisionerServiceMethods.ByName("DeleteWorktree")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -136,6 +162,8 @@ type provisionerServiceClient struct {
 	callE2ETool         *connect.Client[v1.CallE2EToolRequest, v1.CallE2EToolResponse]
 	createWorkerPod     *connect.Client[v1.CreateWorkerPodRequest, v1.CreateWorkerPodResponse]
 	tearDownSession     *connect.Client[v1.TearDownSessionRequest, v1.TearDownSessionResponse]
+	listWorktrees       *connect.Client[v1.ListWorktreesRequest, v1.ListWorktreesResponse]
+	deleteWorktree      *connect.Client[v1.DeleteWorktreeRequest, v1.DeleteWorktreeResponse]
 }
 
 // KillE2ESession calls agentfleet.v1.ProvisionerService.KillE2eSession.
@@ -173,6 +201,16 @@ func (c *provisionerServiceClient) TearDownSession(ctx context.Context, req *con
 	return c.tearDownSession.CallUnary(ctx, req)
 }
 
+// ListWorktrees calls agentfleet.v1.ProvisionerService.ListWorktrees.
+func (c *provisionerServiceClient) ListWorktrees(ctx context.Context, req *connect.Request[v1.ListWorktreesRequest]) (*connect.Response[v1.ListWorktreesResponse], error) {
+	return c.listWorktrees.CallUnary(ctx, req)
+}
+
+// DeleteWorktree calls agentfleet.v1.ProvisionerService.DeleteWorktree.
+func (c *provisionerServiceClient) DeleteWorktree(ctx context.Context, req *connect.Request[v1.DeleteWorktreeRequest]) (*connect.Response[v1.DeleteWorktreeResponse], error) {
+	return c.deleteWorktree.CallUnary(ctx, req)
+}
+
 // ProvisionerServiceHandler is an implementation of the agentfleet.v1.ProvisionerService service.
 type ProvisionerServiceHandler interface {
 	KillE2ESession(context.Context, *connect.Request[v1.KillE2ESessionRequest]) (*connect.Response[v1.KillE2ESessionResponse], error)
@@ -186,6 +224,14 @@ type ProvisionerServiceHandler interface {
 	CallE2ETool(context.Context, *connect.Request[v1.CallE2EToolRequest]) (*connect.Response[v1.CallE2EToolResponse], error)
 	CreateWorkerPod(context.Context, *connect.Request[v1.CreateWorkerPodRequest]) (*connect.Response[v1.CreateWorkerPodResponse], error)
 	TearDownSession(context.Context, *connect.Request[v1.TearDownSessionRequest]) (*connect.Response[v1.TearDownSessionResponse], error)
+	// Reused as-is by dashboard.proto's own ListWorktrees (identical empty
+	// request shape) — same passthrough pattern as ListE2eTools above.
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	ListWorktrees(context.Context, *connect.Request[v1.ListWorktreesRequest]) (*connect.Response[v1.ListWorktreesResponse], error)
+	// Reused as-is by dashboard.proto's own DeleteWorktree (identical
+	// request/response shape, no dashboard-specific fields needed).
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	DeleteWorktree(context.Context, *connect.Request[v1.DeleteWorktreeRequest]) (*connect.Response[v1.DeleteWorktreeResponse], error)
 }
 
 // NewProvisionerServiceHandler builds an HTTP handler from the service implementation. It returns
@@ -237,6 +283,18 @@ func NewProvisionerServiceHandler(svc ProvisionerServiceHandler, opts ...connect
 		connect.WithSchema(provisionerServiceMethods.ByName("TearDownSession")),
 		connect.WithHandlerOptions(opts...),
 	)
+	provisionerServiceListWorktreesHandler := connect.NewUnaryHandler(
+		ProvisionerServiceListWorktreesProcedure,
+		svc.ListWorktrees,
+		connect.WithSchema(provisionerServiceMethods.ByName("ListWorktrees")),
+		connect.WithHandlerOptions(opts...),
+	)
+	provisionerServiceDeleteWorktreeHandler := connect.NewUnaryHandler(
+		ProvisionerServiceDeleteWorktreeProcedure,
+		svc.DeleteWorktree,
+		connect.WithSchema(provisionerServiceMethods.ByName("DeleteWorktree")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/agentfleet.v1.ProvisionerService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case ProvisionerServiceKillE2ESessionProcedure:
@@ -253,6 +311,10 @@ func NewProvisionerServiceHandler(svc ProvisionerServiceHandler, opts ...connect
 			provisionerServiceCreateWorkerPodHandler.ServeHTTP(w, r)
 		case ProvisionerServiceTearDownSessionProcedure:
 			provisionerServiceTearDownSessionHandler.ServeHTTP(w, r)
+		case ProvisionerServiceListWorktreesProcedure:
+			provisionerServiceListWorktreesHandler.ServeHTTP(w, r)
+		case ProvisionerServiceDeleteWorktreeProcedure:
+			provisionerServiceDeleteWorktreeHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -288,4 +350,12 @@ func (UnimplementedProvisionerServiceHandler) CreateWorkerPod(context.Context, *
 
 func (UnimplementedProvisionerServiceHandler) TearDownSession(context.Context, *connect.Request[v1.TearDownSessionRequest]) (*connect.Response[v1.TearDownSessionResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.ProvisionerService.TearDownSession is not implemented"))
+}
+
+func (UnimplementedProvisionerServiceHandler) ListWorktrees(context.Context, *connect.Request[v1.ListWorktreesRequest]) (*connect.Response[v1.ListWorktreesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.ProvisionerService.ListWorktrees is not implemented"))
+}
+
+func (UnimplementedProvisionerServiceHandler) DeleteWorktree(context.Context, *connect.Request[v1.DeleteWorktreeRequest]) (*connect.Response[v1.DeleteWorktreeResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.ProvisionerService.DeleteWorktree is not implemented"))
 }

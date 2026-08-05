@@ -2,6 +2,7 @@ syntax = "proto3";
 package agentfleet.v1;
 option go_package = "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1;agentfleetv1";
 
+import "agentfleet/v1/provisioner.proto";
 import "agentfleet/v1/transcript.proto";
 
 // The web dashboard's API (see docs/adr/0015) — served over ConnectRPC by
@@ -112,6 +113,26 @@ message AnswerQuestionResponse {
   string status = 1;
 }
 
+// WorktreeView is provisioner.proto's WorktreeInfo left-joined against
+// `tasks` (reliability-findings.md #2) — task_status/task_error/pr_url
+// are unset, not omitted, when the task row itself no longer exists,
+// which is exactly the orphaned-worktree case this view exists to
+// surface (an inner join would hide it).
+message WorktreeView {
+  string task_id = 1;
+  string repo = 2;
+  string branch = 3;
+  string upstream_track = 4;
+  int64 mtime_unix = 5;
+  optional string task_status = 6;
+  optional string task_error = 7;
+  optional string pr_url = 8;
+}
+
+message ListWorktreesViewResponse {
+  repeated WorktreeView worktrees = 1;
+}
+
 service DashboardService {
   rpc ListTasks(ListTasksRequest) returns (ListTasksResponse);
   rpc GetTask(GetTaskRequest) returns (GetTaskResponse);
@@ -132,4 +153,15 @@ service DashboardService {
   rpc Stop(StopRequest) returns (StopResponse);
   rpc KillE2e(KillE2eRequest) returns (KillE2eResponse);
   rpc AnswerQuestion(AnswerQuestionRequest) returns (AnswerQuestionResponse);
+  // Reuses provisioner.proto's ListWorktreesRequest (identical shape,
+  // empty) and DeleteWorktreeRequest/Response (identical shape, no
+  // dashboard-specific fields needed) — same passthrough-reuse pattern
+  // core.proto's ListE2eTools/CallE2eTool already established. The
+  // response is enriched with a left-join against `tasks`, so it can't
+  // reuse provisioner's own WorktreeInfo/ListWorktreesResponse as-is.
+  // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+  // buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+  rpc ListWorktrees(ListWorktreesRequest) returns (ListWorktreesViewResponse);
+  // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+  rpc DeleteWorktree(DeleteWorktreeRequest) returns (DeleteWorktreeResponse);
 }
