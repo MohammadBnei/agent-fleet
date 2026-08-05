@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -130,33 +131,42 @@ func TestCreateWorkerPod_TwoContainersSharedPVC(t *testing.T) {
 		t.Fatalf("CreateWorkerPod: %v", err)
 	}
 
-	pod, err := c.Core.CoreV1().Pods("agent-fleet").Get(ctx, WorkerResourceName("task-1"), metav1.GetOptions{})
+	job, err := c.Core.BatchV1().Jobs("agent-fleet").Get(ctx, WorkerResourceName("task-1"), metav1.GetOptions{})
 	if err != nil {
-		t.Fatalf("get pod: %v", err)
+		t.Fatalf("get job: %v", err)
 	}
-	if pod.Labels[ComponentLabel] != ComponentWorker || pod.Labels[RepoLabel] != "dream-analyst" {
-		t.Errorf("unexpected labels: %+v", pod.Labels)
+	if job.Labels[ComponentLabel] != ComponentWorker || job.Labels[RepoLabel] != "dream-analyst" {
+		t.Errorf("unexpected labels: %+v", job.Labels)
 	}
-	if len(pod.Spec.Containers) != 1 || pod.Spec.Containers[0].Name != "worker" {
-		t.Fatalf("expected 1 container (worker), got %+v", pod.Spec.Containers)
+	// reliability-findings.md #11: core's heartbeat/reclaim stays the sole
+	// retry mechanism — a k8s-level retry here would double up against it.
+	if job.Spec.BackoffLimit == nil || *job.Spec.BackoffLimit != 0 {
+		t.Errorf("expected BackoffLimit 0 (no k8s-level retry), got %v", job.Spec.BackoffLimit)
 	}
-	if len(pod.Spec.InitContainers) != 1 || pod.Spec.InitContainers[0].Name != "sidecar" {
-		t.Fatalf("expected 1 init container (sidecar), got %+v", pod.Spec.InitContainers)
+	if job.Spec.TTLSecondsAfterFinished == nil || *job.Spec.TTLSecondsAfterFinished != workerJobTTLSeconds {
+		t.Errorf("expected TTLSecondsAfterFinished %d, got %v", workerJobTTLSeconds, job.Spec.TTLSecondsAfterFinished)
 	}
-	sidecar := pod.Spec.InitContainers[0]
+	podSpec := job.Spec.Template.Spec
+	if len(podSpec.Containers) != 1 || podSpec.Containers[0].Name != "worker" {
+		t.Fatalf("expected 1 container (worker), got %+v", podSpec.Containers)
+	}
+	if len(podSpec.InitContainers) != 1 || podSpec.InitContainers[0].Name != "sidecar" {
+		t.Fatalf("expected 1 init container (sidecar), got %+v", podSpec.InitContainers)
+	}
+	sidecar := podSpec.InitContainers[0]
 	if sidecar.RestartPolicy == nil || *sidecar.RestartPolicy != corev1.ContainerRestartPolicyAlways {
 		t.Errorf("sidecar init container must be a native sidecar (RestartPolicy: Always), got %v", sidecar.RestartPolicy)
 	}
 	if sidecar.StartupProbe == nil || sidecar.StartupProbe.TCPSocket == nil {
 		t.Errorf("sidecar init container must have a TCP startup probe so the worker waits for it to be ready, got %+v", sidecar.StartupProbe)
 	}
-	for _, ctr := range append(append([]corev1.Container{}, pod.Spec.Containers...), pod.Spec.InitContainers...) {
+	for _, ctr := range append(append([]corev1.Container{}, podSpec.Containers...), podSpec.InitContainers...) {
 		if len(ctr.VolumeMounts) != 1 || ctr.VolumeMounts[0].SubPath != "worktrees/task-1" {
 			t.Errorf("container %s: unexpected volume mounts: %+v", ctr.Name, ctr.VolumeMounts)
 		}
 	}
-	if len(pod.Spec.Volumes) != 1 || pod.Spec.Volumes[0].PersistentVolumeClaim.ClaimName != "agent-fleet-workspace" {
-		t.Errorf("expected single shared-PVC volume, got: %+v", pod.Spec.Volumes)
+	if len(podSpec.Volumes) != 1 || podSpec.Volumes[0].PersistentVolumeClaim.ClaimName != "agent-fleet-workspace" {
+		t.Errorf("expected single shared-PVC volume, got: %+v", podSpec.Volumes)
 	}
 }
 
@@ -169,30 +179,26 @@ func TestGetPod_ExistsVsNotFound(t *testing.T) {
 		t.Fatalf("expected exists=false for a missing pod, got exists=%v err=%v", exists, err)
 	}
 
-	if err := c.CreateWorkerPod(ctx, "task-1", "dream-analyst", "test task", "lease-1", "main"); err != nil {
-		t.Fatalf("CreateWorkerPod: %v", err)
+	// GetPod is the e2e-preview-pod getter (worker sessions are Jobs now,
+	// reliability-findings.md #11) — exercised against CreatePod, not
+	// CreateWorkerPod.
+	if err := c.CreatePod(ctx, TaskRef{ID: "task-1", Repo: "dream-analyst"}); err != nil {
+		t.Fatalf("CreatePod: %v", err)
 	}
-	// Phase itself isn't asserted here: the fake clientset stores exactly
-	// what Create() was given and doesn't simulate the real API server's
-	// admission-time defaulting (a live cluster sets a fresh pod's phase to
-	// Pending; the fake leaves it "", the struct's zero value). exists=true
-	// is the property this package actually needs GetPod to be correct
-	// about — see e2eStatusFromPhase's own default case for how an
-	// unexpected/empty phase is handled downstream.
-	_, exists, err = c.GetPod(ctx, WorkerResourceName("task-1"))
+	_, exists, err = c.GetPod(ctx, ResourceName("task-1"))
 	if err != nil || !exists {
 		t.Fatalf("expected exists=true for a created pod, got exists=%v err=%v", exists, err)
 	}
 }
 
-func TestGetWorkerPodRepo_RecoversRepoFromLabel(t *testing.T) {
+func TestGetWorkerJobRepo_RecoversRepoFromLabel(t *testing.T) {
 	c := newTestClient()
 	ctx := context.Background()
 
 	if err := c.CreateWorkerPod(ctx, "task-1", "vos-monolith", "test task", "lease-1", "dev"); err != nil {
 		t.Fatalf("CreateWorkerPod: %v", err)
 	}
-	repo, exists, err := c.GetWorkerPodRepo(ctx, "task-1")
+	repo, exists, err := c.GetWorkerJobRepo(ctx, "task-1")
 	if err != nil || !exists {
 		t.Fatalf("expected exists=true, got exists=%v err=%v", exists, err)
 	}
@@ -200,13 +206,13 @@ func TestGetWorkerPodRepo_RecoversRepoFromLabel(t *testing.T) {
 		t.Errorf("expected repo=vos-monolith, got %q", repo)
 	}
 
-	_, exists, err = c.GetWorkerPodRepo(ctx, "never-existed")
+	_, exists, err = c.GetWorkerJobRepo(ctx, "never-existed")
 	if err != nil || exists {
-		t.Fatalf("expected exists=false for a missing pod, got exists=%v err=%v", exists, err)
+		t.Fatalf("expected exists=false for a missing job, got exists=%v err=%v", exists, err)
 	}
 }
 
-func TestListWorkerPodsByLabel_ExcludesE2ePods(t *testing.T) {
+func TestListWorkerJobsByLabel_ExcludesE2ePods(t *testing.T) {
 	c := newTestClient()
 	ctx := context.Background()
 
@@ -217,12 +223,33 @@ func TestListWorkerPodsByLabel_ExcludesE2ePods(t *testing.T) {
 		t.Fatalf("CreatePod (e2e): %v", err)
 	}
 
-	pods, err := c.ListWorkerPodsByLabel(ctx)
+	jobs, err := c.ListWorkerJobsByLabel(ctx)
 	if err != nil {
-		t.Fatalf("ListWorkerPodsByLabel: %v", err)
+		t.Fatalf("ListWorkerJobsByLabel: %v", err)
 	}
-	if len(pods) != 1 || pods[0].TaskID != "task-1" {
-		t.Errorf("expected only the worker pod listed, got %+v", pods)
+	if len(jobs) != 1 || jobs[0].TaskID != "task-1" {
+		t.Errorf("expected only the worker job listed, got %+v", jobs)
+	}
+}
+
+func TestJobPhase_DerivedFromConditions(t *testing.T) {
+	cases := []struct {
+		name  string
+		conds []batchv1.JobCondition
+		want  string
+	}{
+		{"no conditions yet", nil, ""},
+		{"complete", []batchv1.JobCondition{{Type: batchv1.JobComplete, Status: "True"}}, "Succeeded"},
+		{"failed", []batchv1.JobCondition{{Type: batchv1.JobFailed, Status: "True"}}, "Failed"},
+		{"condition present but not True", []batchv1.JobCondition{{Type: batchv1.JobFailed, Status: "False"}}, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			job := &batchv1.Job{Status: batchv1.JobStatus{Conditions: tc.conds}}
+			if got := jobPhase(job); got != tc.want {
+				t.Errorf("jobPhase() = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 

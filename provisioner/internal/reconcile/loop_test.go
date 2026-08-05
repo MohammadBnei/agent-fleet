@@ -9,31 +9,31 @@ import (
 )
 
 type fakeK8s struct {
-	pods    []k8s.LiveWorkerPod
+	jobs    []k8s.LiveWorkerJob
 	deleted []string
 }
 
-func (f *fakeK8s) ListWorkerPodsByLabel(ctx context.Context) ([]k8s.LiveWorkerPod, error) {
-	return f.pods, nil
+func (f *fakeK8s) ListWorkerJobsByLabel(ctx context.Context) ([]k8s.LiveWorkerJob, error) {
+	return f.jobs, nil
 }
-func (f *fakeK8s) DeleteWorkerPod(ctx context.Context, taskID string) error {
+func (f *fakeK8s) DeleteWorkerJob(ctx context.Context, taskID string) error {
 	f.deleted = append(f.deleted, taskID)
 	return nil
 }
 
-func TestGcTerminalWorkerPods_OnlyDeletesTerminalPhase(t *testing.T) {
-	kc := &fakeK8s{pods: []k8s.LiveWorkerPod{
-		{TaskID: "running-1", PodName: "worker-1", Phase: "Running"},
-		{TaskID: "done-1", PodName: "worker-2", Phase: "Succeeded"},
-		{TaskID: "failed-1", PodName: "worker-3", Phase: "Failed"},
-		{TaskID: "pending-1", PodName: "worker-4", Phase: "Pending"},
+func TestGcTerminalWorkerJobs_OnlyDeletesTerminalPhase(t *testing.T) {
+	kc := &fakeK8s{jobs: []k8s.LiveWorkerJob{
+		{TaskID: "running-1", JobName: "worker-1", Phase: "Running"},
+		{TaskID: "done-1", JobName: "worker-2", Phase: "Succeeded"},
+		{TaskID: "failed-1", JobName: "worker-3", Phase: "Failed"},
+		{TaskID: "pending-1", JobName: "worker-4", Phase: "Pending"},
 	}}
 	l := New(kc)
 
-	l.gcTerminalWorkerPods(context.Background())
+	l.gcTerminalWorkerJobs(context.Background())
 
 	if len(kc.deleted) != 2 {
-		t.Fatalf("expected exactly 2 terminal pods deleted, got %v", kc.deleted)
+		t.Fatalf("expected exactly 2 terminal jobs deleted, got %v", kc.deleted)
 	}
 	deleted := map[string]bool{kc.deleted[0]: true, kc.deleted[1]: true}
 	if !deleted["done-1"] || !deleted["failed-1"] {
