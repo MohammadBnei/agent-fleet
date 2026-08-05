@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.6.1](https://github.com/MohammadBnei/agent-fleet/compare/1.6.0...1.6.1) (2026-08-05)
+
+
+### Bug Fixes
+
+* **deploy:** expose core's gRPC port on its Service ([dbfe71a](https://github.com/MohammadBnei/agent-fleet/commit/dbfe71aeb9ca0619fd7782e5cbe7f664301c39e1))
+* **provisioner:** make sidecar a native K8s sidecar to fix worker startup race ([b393a28](https://github.com/MohammadBnei/agent-fleet/commit/b393a284f3c8276f706fb363a3eb722b7f054cae))
+
 # [1.6.0](https://github.com/MohammadBnei/agent-fleet/compare/1.5.1...1.6.0) (2026-08-05)
 
 
