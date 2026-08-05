@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.3](https://github.com/MohammadBnei/agent-fleet/compare/1.6.2...1.6.3) (2026-08-05)
+
+
+### Bug Fixes
+
+* **reliability:** Phase 1 — worker pods become batch/v1.Job ([#11](https://github.com/MohammadBnei/agent-fleet/issues/11)) ([ba71c00](https://github.com/MohammadBnei/agent-fleet/commit/ba71c00a55eeffb5110a728dc37685ed5ecc6c92))
+
 ## [1.6.2](https://github.com/MohammadBnei/agent-fleet/compare/1.6.1...1.6.2) (2026-08-05)
 
 
