@@ -9,6 +9,7 @@ package journal
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -33,6 +34,7 @@ func (s *Store) Append(ctx context.Context, repo, actor, eventType, payloadJSON 
 		VALUES ($1, $2, $3, $4)
 	`, repo, actor, eventType, payloadJSON)
 	if err != nil {
+		slog.Error("journal Append", "repo", repo, "actor", actor, "eventType", eventType, "error", err)
 		return fmt.Errorf("append journal: %w", err)
 	}
 	return nil
@@ -66,6 +68,7 @@ func (s *Store) List(ctx context.Context, repo string, sinceID int64, limit int)
 		LIMIT $3
 	`, sinceID, repo, limit)
 	if err != nil {
+		slog.Error("journal List", "repo", repo, "error", err)
 		return nil, fmt.Errorf("list journal: %w", err)
 	}
 	defer rows.Close()
@@ -77,6 +80,7 @@ func (s *Store) List(ctx context.Context, repo string, sinceID int64, limit int)
 	for rows.Next() {
 		var e Entry
 		if err := rows.Scan(&e.ID, &e.Repo, &e.Actor, &e.EventType, &e.PayloadJSON, &e.CreatedAt); err != nil {
+			slog.Error("journal List: scan", "error", err)
 			return nil, fmt.Errorf("scan journal entry: %w", err)
 		}
 		entries = append(entries, e)

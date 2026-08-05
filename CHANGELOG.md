@@ -1,5 +1,24 @@
 # Changelog
 
+# [1.9.0](https://github.com/MohammadBnei/agent-fleet/compare/1.8.0...1.9.0) (2026-08-05)
+
+
+### Bug Fixes
+
+* **provisioner:** forward LOG_LEVEL to spawned worker/sidecar pods ([9ad9330](https://github.com/MohammadBnei/agent-fleet/commit/9ad9330e6885cd3abb5af7a8d05bd9503d11dcda))
+
+
+### Features
+
+* **observability:** LOG_LEVEL-configurable logging fleet-wide ([7bbef08](https://github.com/MohammadBnei/agent-fleet/commit/7bbef08b143e46ed51492bec7b4d3519a9d3fcce))
+
+# [1.8.0](https://github.com/MohammadBnei/agent-fleet/compare/1.7.0...1.8.0) (2026-08-05)
+
+
+### Features
+
+* **dashboard:** seamless chat, real todos/tool-calls, fix Discord type-leak ([606c769](https://github.com/MohammadBnei/agent-fleet/commit/606c7695d8796507d0b8c1cd147bd6b2b830a83c))
+
 # [1.7.0](https://github.com/MohammadBnei/agent-fleet/compare/1.6.8...1.7.0) (2026-08-05)
 
 

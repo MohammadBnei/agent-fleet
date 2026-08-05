@@ -17,7 +17,12 @@ import (
 )
 
 func main() {
-	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
+	rawLogLevel := env("LOG_LEVEL", "info")
+	level, warning := resolveLogLevel(rawLogLevel)
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level})))
+	if warning != "" {
+		slog.Warn(warning, "value", rawLogLevel)
+	}
 
 	taskID := os.Getenv("TASK_ID")
 	if taskID == "" {
@@ -52,8 +57,8 @@ func main() {
 
 	go telemetry.Run(ctx, core, worktreePath, 5*time.Second)
 
-	mcpServer := &http.Server{Addr: ":" + mcpPort, Handler: mcpserver.New(core)}
-	localAPIServer := &http.Server{Addr: ":" + localAPIPort, Handler: localapi.New(core)}
+	mcpServer := &http.Server{Addr: ":" + mcpPort, Handler: withAccessLog("sidecar mcp", mcpserver.New(core))}
+	localAPIServer := &http.Server{Addr: ":" + localAPIPort, Handler: withAccessLog("sidecar local api", localapi.New(core))}
 
 	go func() {
 		slog.Info("sidecar mcp listening", "port", mcpPort)
@@ -75,9 +80,45 @@ func main() {
 	_ = localAPIServer.Shutdown(shutdownCtx)
 }
 
+// withAccessLog logs one line per request (method, path, status, duration)
+// — both of sidecar's HTTP muxes had zero request-level logging before.
+func withAccessLog(name string, h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		sw := &statusWriter{ResponseWriter: w, status: http.StatusOK}
+		h.ServeHTTP(sw, r)
+		slog.Info(name, "method", r.Method, "path", r.URL.Path, "status", sw.status, "duration_ms", time.Since(start).Milliseconds())
+	})
+}
+
+type statusWriter struct {
+	http.ResponseWriter
+	status int
+}
+
+func (w *statusWriter) WriteHeader(status int) {
+	w.status = status
+	w.ResponseWriter.WriteHeader(status)
+}
+
 func env(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
 	}
 	return fallback
+}
+
+// resolveLogLevel parses raw (LOG_LEVEL) via slog.Level.UnmarshalText
+// (DEBUG/INFO/WARN/ERROR, case-insensitive) and falls back to Info on
+// anything invalid or empty. warning is non-empty when the fallback fired,
+// so the caller can log it once the level-appropriate handler exists.
+func resolveLogLevel(raw string) (level slog.Level, warning string) {
+	if raw == "" {
+		return slog.LevelInfo, ""
+	}
+	var l slog.Level
+	if err := l.UnmarshalText([]byte(raw)); err != nil {
+		return slog.LevelInfo, "invalid LOG_LEVEL, defaulting to info"
+	}
+	return l, ""
 }

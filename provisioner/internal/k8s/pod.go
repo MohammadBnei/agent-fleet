@@ -3,6 +3,7 @@ package k8s
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 
 	batchv1 "k8s.io/api/batch/v1"
@@ -89,12 +90,22 @@ func (c *Client) CreatePod(ctx context.Context, task TaskRef) error {
 	}
 
 	_, err = c.Core.CoreV1().Pods(c.Namespace).Create(ctx, pod, metav1.CreateOptions{})
-	return err
+	if err != nil {
+		slog.Error("k8s CreatePod", "taskId", task.ID, "error", err)
+		return err
+	}
+	slog.Info("k8s CreatePod", "taskId", task.ID)
+	return nil
 }
 
 func (c *Client) DeletePod(ctx context.Context, taskID string) error {
-	err := c.Core.CoreV1().Pods(c.Namespace).Delete(ctx, ResourceName(taskID), metav1.DeleteOptions{})
-	return ignoreNotFound(err)
+	err := ignoreNotFound(c.Core.CoreV1().Pods(c.Namespace).Delete(ctx, ResourceName(taskID), metav1.DeleteOptions{}))
+	if err != nil {
+		slog.Error("k8s DeletePod", "taskId", taskID, "error", err)
+		return err
+	}
+	slog.Info("k8s DeletePod", "taskId", taskID)
+	return nil
 }
 
 // GetPod returns the pod's current phase, or exists=false if it doesn't —
@@ -109,6 +120,7 @@ func (c *Client) GetPod(ctx context.Context, name string) (phase corev1.PodPhase
 		return "", false, nil
 	}
 	if err != nil {
+		slog.Error("k8s GetPod", "name", name, "error", err)
 		return "", false, err
 	}
 	return pod.Status.Phase, true, nil
@@ -140,113 +152,115 @@ func (c *Client) CreateWorkerPod(ctx context.Context, taskID, repo, description,
 
 	podSpec := corev1.PodSpec{
 		RestartPolicy: corev1.RestartPolicyNever,
-			// sidecar runs as a native sidecar (K8s 1.29+, this cluster is
-			// v1.35): an init container with RestartPolicy Always plus a
-			// StartupProbe, so kubelet blocks starting the worker container
-			// until the sidecar is actually accepting connections. Without
-			// this, both containers start concurrently and the worker's
-			// first sidecar call can lose the race (observed live: worker
-			// crashed 6ms after start, ~7s before the sidecar logged
-			// "listening").
-			InitContainers: []corev1.Container{
-				{
-					Name:          "sidecar",
-					Image:         c.SidecarImage,
-					RestartPolicy: &sidecarRestartAlways,
-					Env: []corev1.EnvVar{
-						{Name: "TASK_ID", Value: taskID},
-						{Name: "TARGET_REPO", Value: repo},
-						{Name: "MCP_PORT", Value: fmt.Sprint(SidecarMCPPort)},
-						{Name: "LOCAL_API_PORT", Value: fmt.Sprint(SidecarAPIPort)},
-						{Name: "WORKTREE_PATH", Value: worktreePath},
+		// sidecar runs as a native sidecar (K8s 1.29+, this cluster is
+		// v1.35): an init container with RestartPolicy Always plus a
+		// StartupProbe, so kubelet blocks starting the worker container
+		// until the sidecar is actually accepting connections. Without
+		// this, both containers start concurrently and the worker's
+		// first sidecar call can lose the race (observed live: worker
+		// crashed 6ms after start, ~7s before the sidecar logged
+		// "listening").
+		InitContainers: []corev1.Container{
+			{
+				Name:          "sidecar",
+				Image:         c.SidecarImage,
+				RestartPolicy: &sidecarRestartAlways,
+				Env: []corev1.EnvVar{
+					{Name: "TASK_ID", Value: taskID},
+					{Name: "TARGET_REPO", Value: repo},
+					{Name: "MCP_PORT", Value: fmt.Sprint(SidecarMCPPort)},
+					{Name: "LOCAL_API_PORT", Value: fmt.Sprint(SidecarAPIPort)},
+					{Name: "WORKTREE_PATH", Value: worktreePath},
+					{Name: "LOG_LEVEL", Value: c.LogLevel},
+				},
+				Ports: []corev1.ContainerPort{
+					{Name: "mcp", ContainerPort: SidecarMCPPort},
+					{Name: "local-api", ContainerPort: SidecarAPIPort},
+				},
+				VolumeMounts: []corev1.VolumeMount{
+					// Whole PVC, not a per-task SubPath: a linked git
+					// worktree's .git file is an absolute-path gitlink
+					// back to the main clone's repos/<repo>/.git/worktrees/
+					// <taskId> admin dir (HEAD/index/commondir) — a
+					// SubPath scoped to just worktrees/<taskId> cuts that
+					// path off entirely, so every git command in this
+					// container failed with "not a git repository"
+					// (produced by design in ADR-0019 but never checked
+					// against how linked worktrees actually work).
+					{Name: "workspace", MountPath: "/workspace"},
+				},
+				Resources: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("50m"),
+						corev1.ResourceMemory: resource.MustParse("64Mi"),
 					},
-					Ports: []corev1.ContainerPort{
-						{Name: "mcp", ContainerPort: SidecarMCPPort},
-						{Name: "local-api", ContainerPort: SidecarAPIPort},
+					Limits: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("250m"),
+						corev1.ResourceMemory: resource.MustParse("256Mi"),
 					},
-					VolumeMounts: []corev1.VolumeMount{
-						// Whole PVC, not a per-task SubPath: a linked git
-						// worktree's .git file is an absolute-path gitlink
-						// back to the main clone's repos/<repo>/.git/worktrees/
-						// <taskId> admin dir (HEAD/index/commondir) — a
-						// SubPath scoped to just worktrees/<taskId> cuts that
-						// path off entirely, so every git command in this
-						// container failed with "not a git repository"
-						// (produced by design in ADR-0019 but never checked
-						// against how linked worktrees actually work).
-						{Name: "workspace", MountPath: "/workspace"},
-					},
-					Resources: corev1.ResourceRequirements{
-						Requests: corev1.ResourceList{
-							corev1.ResourceCPU:    resource.MustParse("50m"),
-							corev1.ResourceMemory: resource.MustParse("64Mi"),
+				},
+				// HTTP on /readyz, not a bare TCP check: a TCP probe only
+				// proves the sidecar process is listening, not that it can
+				// actually reach core — a sidecar with zero core
+				// connectivity passed a TCP probe every time, unblocking
+				// the worker container against a core it couldn't talk to
+				// (observed live: worker crashed 6ms after start via an
+				// unguarded first sidecar call, during a core rollout
+				// blip). /readyz only returns 200 once the sidecar's
+				// coreclient has an actual live connection. Budget widened
+				// from the prior ~30s to ~2min to ride out a core rollout,
+				// not just a process-start race.
+				StartupProbe: &corev1.Probe{
+					ProbeHandler: corev1.ProbeHandler{
+						HTTPGet: &corev1.HTTPGetAction{
+							Path: "/readyz",
+							Port: intstr.FromInt32(SidecarAPIPort),
 						},
-						Limits: corev1.ResourceList{
-							corev1.ResourceCPU:    resource.MustParse("250m"),
-							corev1.ResourceMemory: resource.MustParse("256Mi"),
-						},
 					},
-					// HTTP on /readyz, not a bare TCP check: a TCP probe only
-					// proves the sidecar process is listening, not that it can
-					// actually reach core — a sidecar with zero core
-					// connectivity passed a TCP probe every time, unblocking
-					// the worker container against a core it couldn't talk to
-					// (observed live: worker crashed 6ms after start via an
-					// unguarded first sidecar call, during a core rollout
-					// blip). /readyz only returns 200 once the sidecar's
-					// coreclient has an actual live connection. Budget widened
-					// from the prior ~30s to ~2min to ride out a core rollout,
-					// not just a process-start race.
-					StartupProbe: &corev1.Probe{
-						ProbeHandler: corev1.ProbeHandler{
-							HTTPGet: &corev1.HTTPGetAction{
-								Path: "/readyz",
-								Port: intstr.FromInt32(SidecarAPIPort),
-							},
-						},
-						PeriodSeconds:    2,
-						FailureThreshold: 60,
+					PeriodSeconds:    2,
+					FailureThreshold: 60,
+				},
+			},
+		},
+		Containers: []corev1.Container{
+			{
+				Name:  "worker",
+				Image: c.WorkerImage,
+				Env: []corev1.EnvVar{
+					{Name: "TASK_ID", Value: taskID},
+					{Name: "TARGET_REPO", Value: repo},
+					{Name: "TASK_DESCRIPTION", Value: description},
+					{Name: "LEASE_ID", Value: leaseID},
+					{Name: "BASE_BRANCH", Value: baseBranch},
+					{Name: "SIDECAR_MCP_ADDR", Value: fmt.Sprintf("localhost:%d", SidecarMCPPort)},
+					{Name: "SIDECAR_API_ADDR", Value: fmt.Sprintf("localhost:%d", SidecarAPIPort)},
+					// The worker's own git push/gh pr create needs auth
+					// independently of the provisioner's clone/fetch —
+					// separate containers, only /workspace is shared, not
+					// $HOME (see worker/src/index.ts's configureGitAuth).
+					// Forwarded from the provisioner's own Infisical-sourced
+					// env, same value.
+					{Name: "GH_TOKEN", Value: os.Getenv("GH_TOKEN")},
+					{Name: "WORKTREE_PATH", Value: worktreePath},
+					{Name: "LOG_LEVEL", Value: c.LogLevel},
+				},
+				VolumeMounts: []corev1.VolumeMount{
+					// Whole PVC, not a per-task SubPath — see the sidecar
+					// container's identical mount above for why.
+					{Name: "workspace", MountPath: "/workspace"},
+				},
+				Resources: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("250m"),
+						corev1.ResourceMemory: resource.MustParse("512Mi"),
+					},
+					Limits: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("2000m"),
+						corev1.ResourceMemory: resource.MustParse("2Gi"),
 					},
 				},
 			},
-			Containers: []corev1.Container{
-				{
-					Name:  "worker",
-					Image: c.WorkerImage,
-					Env: []corev1.EnvVar{
-						{Name: "TASK_ID", Value: taskID},
-						{Name: "TARGET_REPO", Value: repo},
-						{Name: "TASK_DESCRIPTION", Value: description},
-						{Name: "LEASE_ID", Value: leaseID},
-						{Name: "BASE_BRANCH", Value: baseBranch},
-						{Name: "SIDECAR_MCP_ADDR", Value: fmt.Sprintf("localhost:%d", SidecarMCPPort)},
-						{Name: "SIDECAR_API_ADDR", Value: fmt.Sprintf("localhost:%d", SidecarAPIPort)},
-						// The worker's own git push/gh pr create needs auth
-						// independently of the provisioner's clone/fetch —
-						// separate containers, only /workspace is shared, not
-						// $HOME (see worker/src/index.ts's configureGitAuth).
-						// Forwarded from the provisioner's own Infisical-sourced
-						// env, same value.
-						{Name: "GH_TOKEN", Value: os.Getenv("GH_TOKEN")},
-						{Name: "WORKTREE_PATH", Value: worktreePath},
-					},
-					VolumeMounts: []corev1.VolumeMount{
-						// Whole PVC, not a per-task SubPath — see the sidecar
-						// container's identical mount above for why.
-						{Name: "workspace", MountPath: "/workspace"},
-					},
-					Resources: corev1.ResourceRequirements{
-						Requests: corev1.ResourceList{
-							corev1.ResourceCPU:    resource.MustParse("250m"),
-							corev1.ResourceMemory: resource.MustParse("512Mi"),
-						},
-						Limits: corev1.ResourceList{
-							corev1.ResourceCPU:    resource.MustParse("2000m"),
-							corev1.ResourceMemory: resource.MustParse("2Gi"),
-						},
-					},
-				},
-			},
+		},
 		Volumes: []corev1.Volume{
 			{
 				Name: "workspace",
@@ -270,7 +284,12 @@ func (c *Client) CreateWorkerPod(ctx context.Context, taskID, repo, description,
 	}
 
 	_, err := c.Core.BatchV1().Jobs(c.Namespace).Create(ctx, job, metav1.CreateOptions{})
-	return err
+	if err != nil {
+		slog.Error("k8s CreateWorkerPod", "taskId", taskID, "repo", repo, "error", err)
+		return err
+	}
+	slog.Info("k8s CreateWorkerPod", "taskId", taskID, "repo", repo)
+	return nil
 }
 
 // jobForegroundDeletion cascades to the Job's own Pod synchronously —
@@ -282,8 +301,13 @@ func jobForegroundDeletion() metav1.DeleteOptions {
 }
 
 func (c *Client) DeleteWorkerJob(ctx context.Context, taskID string) error {
-	err := c.Core.BatchV1().Jobs(c.Namespace).Delete(ctx, WorkerResourceName(taskID), jobForegroundDeletion())
-	return ignoreNotFound(err)
+	err := ignoreNotFound(c.Core.BatchV1().Jobs(c.Namespace).Delete(ctx, WorkerResourceName(taskID), jobForegroundDeletion()))
+	if err != nil {
+		slog.Error("k8s DeleteWorkerJob", "taskId", taskID, "error", err)
+		return err
+	}
+	slog.Info("k8s DeleteWorkerJob", "taskId", taskID)
+	return nil
 }
 
 // GetWorkerJobRepo recovers which repo a worker job belongs to from its
@@ -296,6 +320,7 @@ func (c *Client) GetWorkerJobRepo(ctx context.Context, taskID string) (repo stri
 		return "", false, nil
 	}
 	if err != nil {
+		slog.Error("k8s GetWorkerJobRepo", "taskId", taskID, "error", err)
 		return "", false, err
 	}
 	return job.Labels[RepoLabel], true, nil

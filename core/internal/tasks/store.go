@@ -10,6 +10,7 @@ package tasks
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -81,8 +82,10 @@ func (s *Store) CreateTask(ctx context.Context, repo, description string, channe
 		RETURNING id
 	`, repo, description, channelID, threadID).Scan(&id)
 	if err != nil {
+		slog.Error("tasks CreateTask", "repo", repo, "error", err)
 		return "", fmt.Errorf("create task: %w", err)
 	}
+	slog.Info("tasks CreateTask", "taskId", id, "repo", repo)
 	if s.nudge != nil {
 		s.nudge()
 	}
@@ -96,6 +99,7 @@ func (s *Store) FindTaskIDByThread(ctx context.Context, threadID string) (string
 		return "", nil
 	}
 	if err != nil {
+		slog.Error("tasks FindTaskIDByThread", "threadId", threadID, "error", err)
 		return "", fmt.Errorf("find task by thread: %w", err)
 	}
 	return id, nil
@@ -111,6 +115,7 @@ func (s *Store) GetTask(ctx context.Context, id string) (*Task, error) {
 		return nil, nil
 	}
 	if err != nil {
+		slog.Error("tasks GetTask", "taskId", id, "error", err)
 		return nil, fmt.Errorf("get task: %w", err)
 	}
 	return &t, nil
@@ -140,6 +145,7 @@ func (s *Store) GetTaskStatusInfo(ctx context.Context, id string) (*TaskStatusIn
 		return nil, nil
 	}
 	if err != nil {
+		slog.Error("tasks GetTaskStatusInfo", "taskId", id, "error", err)
 		return nil, fmt.Errorf("get task status info: %w", err)
 	}
 	return &t, nil
@@ -151,6 +157,7 @@ func (s *Store) ListRecentTasks(ctx context.Context, limit int) ([]Task, error) 
 		FROM tasks WHERE deleted_at IS NULL ORDER BY created_at DESC LIMIT $1
 	`, limit)
 	if err != nil {
+		slog.Error("tasks ListRecentTasks", "error", err)
 		return nil, fmt.Errorf("list recent tasks: %w", err)
 	}
 	defer rows.Close()
@@ -162,6 +169,7 @@ func (s *Store) ListRecentTasks(ctx context.Context, limit int) ([]Task, error) 
 	for rows.Next() {
 		var t Task
 		if err := rows.Scan(&t.ID, &t.Repo, &t.Description, &t.Status, &t.ThreadID, &t.PrURL, &t.PodPhase, &t.PodMessage); err != nil {
+			slog.Error("tasks ListRecentTasks: scan", "error", err)
 			return nil, fmt.Errorf("scan task: %w", err)
 		}
 		out = append(out, t)
@@ -221,14 +229,22 @@ func (s *Store) ClaimNextTask(ctx context.Context, maxInFlight, maxRetries int) 
 		RETURNING id, repo, description, status, discord_thread_id, pr_url, lease_id::text
 	`, maxInFlight, maxRetries).Scan(&t.ID, &t.Repo, &t.Description, &t.Status, &t.ThreadID, &t.PrURL, &t.LeaseID)
 	if err == pgx.ErrNoRows {
+		// Debug, not silent — this is the fleet's dispatch poll, ticking
+		// every couple seconds; the only proof it's alive at all when
+		// nothing's eligible (e.g. a task stuck pending for an unrelated
+		// reason) is visible at LOG_LEVEL=debug.
+		slog.Debug("tasks ClaimNextTask: nothing eligible")
 		return nil, nil
 	}
 	if err != nil {
+		slog.Error("tasks ClaimNextTask", "error", err)
 		return nil, fmt.Errorf("claim next task: %w", err)
 	}
 	if t.Status == "failed_permanently" {
+		slog.Warn("tasks ClaimNextTask: retries exhausted, marking failed_permanently", "taskId", t.ID, "repo", t.Repo)
 		return nil, nil
 	}
+	slog.Info("tasks ClaimNextTask", "taskId", t.ID, "repo", t.Repo)
 	return &t, nil
 }
 
@@ -242,6 +258,7 @@ func (s *Store) UpdateHeartbeat(ctx context.Context, id, leaseID string) error {
 		UPDATE tasks SET heartbeat_at = now(), updated_at = now() WHERE id = $1 AND lease_id::text = $2
 	`, id, leaseID)
 	if err != nil {
+		slog.Error("tasks UpdateHeartbeat", "taskId", id, "error", err)
 		return fmt.Errorf("update heartbeat: %w", err)
 	}
 	return nil
@@ -262,8 +279,10 @@ func (s *Store) MarkCrashed(ctx context.Context, id string) error {
 		WHERE id = $1 AND status IN ('claimed', 'planning', 'implementing')
 	`, id)
 	if err != nil {
+		slog.Error("tasks MarkCrashed", "taskId", id, "error", err)
 		return fmt.Errorf("mark crashed: %w", err)
 	}
+	slog.Warn("tasks MarkCrashed", "taskId", id)
 	return nil
 }
 
@@ -296,6 +315,7 @@ func (s *Store) SetStatus(ctx context.Context, id, status string, prURL, notes, 
 		WHERE id = $1
 	`, id, status, prURL, notes, lastError)
 	if err != nil {
+		slog.Error("tasks SetStatus", "taskId", id, "status", status, "error", err)
 		return fmt.Errorf("set status: %w", err)
 	}
 	return nil
@@ -306,6 +326,7 @@ func (s *Store) SaveSessionID(ctx context.Context, id, planningSessionID, model 
 		UPDATE tasks SET planning_session_id = $2, model = $3, updated_at = now() WHERE id = $1
 	`, id, planningSessionID, model)
 	if err != nil {
+		slog.Error("tasks SaveSessionID", "taskId", id, "error", err)
 		return fmt.Errorf("save session id: %w", err)
 	}
 	return nil
@@ -322,6 +343,7 @@ func (s *Store) SoftDelete(ctx context.Context, id string) error {
 		UPDATE tasks SET deleted_at = now(), updated_at = now() WHERE id = $1
 	`, id)
 	if err != nil {
+		slog.Error("tasks SoftDelete", "taskId", id, "error", err)
 		return fmt.Errorf("soft delete task: %w", err)
 	}
 	return nil
@@ -340,6 +362,7 @@ func (s *Store) StillHoldsLease(ctx context.Context, id, leaseID string) (bool, 
 		return false, nil
 	}
 	if err != nil {
+		slog.Error("tasks StillHoldsLease", "taskId", id, "error", err)
 		return false, fmt.Errorf("still holds lease: %w", err)
 	}
 	return holds, nil
