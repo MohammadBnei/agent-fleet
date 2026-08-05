@@ -1,5 +1,18 @@
 # Changelog
 
+# [1.10.0](https://github.com/MohammadBnei/agent-fleet/compare/1.9.0...1.10.0) (2026-08-05)
+
+
+### Bug Fixes
+
+* **core:** add pod_phase/pod_message to integration tests' inline schema ([e5a7a5e](https://github.com/MohammadBnei/agent-fleet/commit/e5a7a5ecb1d6eae4013d696260f728d005866b3e))
+* **worker,sidecar,provisioner:** stop crashing workers on transient core outages ([1a5272c](https://github.com/MohammadBnei/agent-fleet/commit/1a5272c441aa9ca6d2e5885e18ea0bb807630782))
+
+
+### Features
+
+* **dashboard:** surface worker-pod lifecycle state in the UI ([baa4e51](https://github.com/MohammadBnei/agent-fleet/commit/baa4e51f054bfcb8dcdb2249f4d0cb0307ba1377))
+
 # [1.9.0](https://github.com/MohammadBnei/agent-fleet/compare/1.8.0...1.9.0) (2026-08-05)
 
 
