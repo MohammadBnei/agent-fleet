@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.5](https://github.com/MohammadBnei/agent-fleet/compare/1.6.4...1.6.5) (2026-08-05)
+
+
+### Bug Fixes
+
+* **reliability:** Phase 3 — crash reporting + journal read path ([#1](https://github.com/MohammadBnei/agent-fleet/issues/1)) ([646bb06](https://github.com/MohammadBnei/agent-fleet/commit/646bb06be5ff69a3b1df3fc659d351fd2bd19fd5)), closes [#7](https://github.com/MohammadBnei/agent-fleet/issues/7)
+
 ## [1.6.4](https://github.com/MohammadBnei/agent-fleet/compare/1.6.3...1.6.4) (2026-08-05)
 
 
