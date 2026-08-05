@@ -1,5 +1,12 @@
 # Changelog
 
+# [1.8.0](https://github.com/MohammadBnei/agent-fleet/compare/1.7.0...1.8.0) (2026-08-05)
+
+
+### Features
+
+* **dashboard:** seamless chat, real todos/tool-calls, fix Discord type-leak ([606c769](https://github.com/MohammadBnei/agent-fleet/commit/606c7695d8796507d0b8c1cd147bd6b2b830a83c))
+
 # [1.7.0](https://github.com/MohammadBnei/agent-fleet/compare/1.6.8...1.7.0) (2026-08-05)
 
 
