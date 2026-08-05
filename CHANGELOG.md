@@ -1,5 +1,12 @@
 # Changelog
 
+# [1.6.0](https://github.com/MohammadBnei/agent-fleet/compare/1.5.1...1.6.0) (2026-08-05)
+
+
+### Features
+
+* **dashboard:** create tasks from the dashboard, not just Discord ([a87089e](https://github.com/MohammadBnei/agent-fleet/commit/a87089e8cb00820377ce76237a1d3dbe06686c81))
+
 ## [1.5.1](https://github.com/MohammadBnei/agent-fleet/compare/1.5.0...1.5.1) (2026-08-05)
 
 
