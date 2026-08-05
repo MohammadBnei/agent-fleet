@@ -12,7 +12,7 @@ Status: `open` (found, undesigned) · `designing` (decision drafted) ·
 
 ## 0. Worker session = plain Claude Code session. Discord/dashboard = transport only.
 
-**Status:** fixed. See PR #29. All five "must fix before implementation"
+**Status:** fixed → see [`adr/0025`](adr/0025-continuous-session-worker-redesign.md). See PR #29. All five "must fix before implementation"
 open items resolved as part of that PR (including a real SDK/transport
 spike — held a canUseTool decision pending for 3 minutes, no timeout or
 dropped connection). Still worth a real ADR later (revises ADR-0005's
@@ -126,7 +126,7 @@ unfiltered regardless — dashboard renders full stream.
 
 ## 1. Worker-pod failure handling: fragmented across three uncoordinated mechanisms
 
-**Status:** fixed. See PR #28.
+**Status:** fixed → see [`adr/0024`](adr/0024-crash-fast-path-and-journal-read.md). See PR #28.
 
 **Where:** `provisioner/internal/reconcile/loop.go` (10s poll, GCs dead
 pods, tells no one, skips worktree cleanup) · `core/internal/coreserver/
@@ -162,7 +162,7 @@ Fix: two more typed RPCs, same pattern as `GetTranscript`/
 
 ## 2. Worktree/branch lifecycle: status-triggered deletion loses data — redesigned around explicit signals only
 
-**Status:** fixed. See PR #27.
+**Status:** fixed → see [`adr/0023`](adr/0023-worktree-reuse-and-branch-sweep.md). See PR #27.
 
 **Old bug:** `RemoveWorktree` (`git.go:164-177`) unconditionally
 `branch -D`s on every terminal status. Commits survive worktree
@@ -305,7 +305,7 @@ free text.
 
 ## 11. Provisioner hand-rolls ephemeral pod lifecycle instead of using `batch/v1.Job` — CRD/operator considered and rejected for now
 
-**Status:** fixed. See PR #26.
+**Status:** fixed → see [`adr/0022`](adr/0022-batch-job-worker-pod-lifecycle.md). See PR #26.
 
 **Where:** `provisioner/internal/reconcile/loop.go` — same code as #1, different angle: it creates bare `Pod`s directly and hand-rolls retry/GC/status via a 10s poll, duplicated across the two pod kinds (worker, e2e-preview).
 

@@ -31,9 +31,10 @@ for why this replaced the original one-persistent-pod-per-repo design.
   ConnectRPC API + static SPA. The fleet's sole holder of Postgres
   credentials; needs zero cluster RBAC.
 - `provisioner/` — Go, `client-go`: the only fleet component with
-  Kubernetes RBAC. Owns all pod creation (worker pods and on-demand
-  e2e-preview pods) and the entire git lifecycle (clone/fetch/worktree
-  add/remove) on one shared `ReadWriteMany` PVC.
+  Kubernetes RBAC. Owns all pod creation — worker sessions as a
+  `batch/v1.Job`, on-demand e2e-preview pods as a bare `Pod` — and the
+  entire git lifecycle (clone/fetch/worktree add, reuse-not-wipe, plus a
+  periodic sweep) on one shared `ReadWriteMany` PVC.
 - `sidecar/` — Go: a second container in every worker pod. Hosts a local
   MCP server the Agent SDK session talks to, plus a local plain API for
   the worker's own control-flow (heartbeat, status, journal, and the live
@@ -41,9 +42,10 @@ for why this replaced the original one-persistent-pod-per-repo design.
   session mid-task).
 - `worker/` — TS/Bun, the only remaining JS runtime (sole host of
   `@anthropic-ai/claude-agent-sdk`). Single-shot: handed one task at pod
-  creation, runs one continuous streaming-input Agent SDK session spanning
-  planning *and* implementation (no restart at the approval boundary),
-  pushes, opens a PR via `gh`, and exits.
+  creation, runs one continuous streaming-input Agent SDK session with no
+  fleet-imposed phase boundary — the agent itself commits, pushes, and
+  opens a PR via `gh` from inside the session, and the wrapper verifies
+  the PR actually exists before declaring done.
 - `proto/` — buf-managed `.proto` schema for `CoreService`/
   `ProvisionerService`/`DashboardService` — the only inter-process
   protocol in the fleet (MCP is local-only, agent ↔ its own pod's
