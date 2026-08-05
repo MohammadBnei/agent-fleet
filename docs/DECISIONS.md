@@ -71,7 +71,7 @@ Any doc, code, comment, or memory that contradicts this file or an
 - **Committing Discord/GitHub/Anthropic tokens** to this repo or any
   target repo, in code, manifests, or CI config.
 - **A bespoke per-app Helm chart.** Always reuse
-  `infra-bootstrap/gitops/platform/common-app-chart`.
+  `infra-bootstrap/gitops/platform/common-app-chart` — see `adr/0026`.
 - **A bare streaming-watch RPC without a durable resume cursor for the
   planning transcript.** Pull/cursor reads only — see `adr/0013`
   (successor to the same message-loss concern `adr/0001` raised about

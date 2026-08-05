@@ -150,6 +150,14 @@ export async function main(
       await sidecar
         .appendJournal(task.repo, "worker", "task.transient_error", { taskId: task.id, error: String(err) })
         .catch((journalErr) => log("warn", "appendJournal(task.transient_error) failed", { taskId: task.id, error: String(journalErr) }));
+      // A non-zero exit is the point, independent of the journal/status
+      // writes above succeeding or not: it's what makes the k8s Job phase
+      // Failed instead of Succeeded, which is what the provisioner's
+      // reconcile loop (and its fast-path crash report to core) keys off
+      // of — the one signal that survives even when every sidecar call
+      // above failed too (see docs/reliability-backlog, "swallowed task
+      // failure" finding).
+      process.exitCode = 1;
       return;
     }
     await reportStatus(sidecar, "failed", { lastError: String(err) });
@@ -157,6 +165,7 @@ export async function main(
       .appendJournal(task.repo, "worker", "task.failed", { taskId: task.id, error: String(err) })
       .catch((journalErr) => log("warn", "appendJournal(task.failed) failed", { taskId: task.id, error: String(journalErr) }));
     log("error", "task failed", { taskId: task.id, error: String(err) });
+    process.exitCode = 1;
   } finally {
     clearInterval(heartbeat);
   }

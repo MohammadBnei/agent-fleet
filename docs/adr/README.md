@@ -35,3 +35,4 @@ Decisions with no real alternative ever on the table live in
 | [0023](0023-worktree-reuse-and-branch-sweep.md) | Worktree/branch lifecycle redesigned around explicit signals only | Accepted |
 | [0024](0024-crash-fast-path-and-journal-read.md) | Pod-crash fast-path detection, a real retry cap, and a `knowledge_journal` read path | Accepted |
 | [0025](0025-continuous-session-worker-redesign.md) | Worker session is a plain Claude Code session — Discord/dashboard are transport only | Accepted |
+| [0026](0026-core-stays-on-common-app-chart.md) | `core` stays on `common-app-chart`, no per-app Helm chart | Accepted |

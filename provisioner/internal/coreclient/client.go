@@ -22,8 +22,29 @@ type Client struct {
 	rpc  agentfleetv1.CoreServiceClient
 }
 
+// retryServiceConfig bounds-retries transient "produced zero addresses"
+// blips (core is a single replica — any restart briefly empties the
+// Service's DNS answer, surfaced to callers as codes.Unavailable) without
+// hanging forever if core is actually down for longer than that.
+const retryServiceConfig = `{
+	"methodConfig": [{
+		"name": [{"service": "agentfleet.v1.CoreService"}],
+		"waitForReady": true,
+		"retryPolicy": {
+			"MaxAttempts": 5,
+			"InitialBackoff": "0.5s",
+			"MaxBackoff": "5s",
+			"BackoffMultiplier": 2.0,
+			"RetryableStatusCodes": ["UNAVAILABLE"]
+		}
+	}]
+}`
+
 func New(addr string) (*Client, error) {
-	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(addr,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithDefaultServiceConfig(retryServiceConfig),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("dial core: %w", err)
 	}

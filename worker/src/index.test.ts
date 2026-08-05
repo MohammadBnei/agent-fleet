@@ -8,7 +8,7 @@
 // planning.test.ts independently needs the real ./planning.js and
 // ./sidecarClient.js at its own top level; module-mocking either here
 // would leak into that file's import and break it.
-import { test, expect } from "bun:test";
+import { test, expect, afterEach } from "bun:test";
 import type { Task } from "./types.js";
 
 process.env.TASK_ID = "task-1";
@@ -16,6 +16,16 @@ process.env.TARGET_REPO = "dream-analyst";
 process.env.LEASE_ID = "lease-1";
 
 const { main } = await import("./index.js");
+
+// main() now sets the real process.exitCode on a task failure (that's the
+// point — see the new test below), which several tests in this file
+// trigger on purpose for unrelated reasons. Without resetting it, that
+// leaks past this file into bun test's own overall exit code. Reset to 0,
+// not undefined — this Bun version (1.3.6) treats assigning `undefined`
+// after a prior write as a no-op, so it wouldn't actually clear it.
+afterEach(() => {
+  process.exitCode = 0;
+});
 
 test("a sidecar failure while reporting 'failed' status doesn't crash the process", async () => {
   const statusCalls: { status: string; fields?: unknown }[] = [];
@@ -64,6 +74,20 @@ test("a sidecar failure while reporting 'failed' status doesn't crash the proces
   // main() completed normally by containing the double-failure locally —
   // it never needed to escape to the top-level crash handler.
   expect(exitCode).toBe("not-called");
+});
+
+// Locks in the fix for the bug fleet-debug found: a real task failure was
+// swallowed inside main()'s own catch block, so the process still exited 0
+// — the provisioner's reconcile GC then saw the k8s Job as "Succeeded" and
+// discarded it, even though the task had actually failed.
+test("a real task failure sets a non-zero exit code even though main() handles it internally", async () => {
+  const statusCalls: { status: string; fields?: unknown }[] = [];
+  const fakeRunTask = async (_task: Task) => {
+    throw new Error("simulated implementation failure");
+  };
+
+  await main(fakeSidecarRecording(statusCalls) as never, fakeRunTask as never);
+  expect(process.exitCode).toBe(1);
 });
 
 function fakeSidecarRecording(statusCalls: { status: string; fields?: unknown }[]) {
