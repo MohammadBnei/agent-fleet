@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.7](https://github.com/MohammadBnei/agent-fleet/compare/1.6.6...1.6.7) (2026-08-05)
+
+
+### Bug Fixes
+
+* **provisioner:** stop mounting worker/sidecar PVC via per-task subPath ([8e6626f](https://github.com/MohammadBnei/agent-fleet/commit/8e6626feeebc90f8ab151b92ab3b01d86acb4560))
+
 ## [1.6.6](https://github.com/MohammadBnei/agent-fleet/compare/1.6.5...1.6.6) (2026-08-05)
 
 
