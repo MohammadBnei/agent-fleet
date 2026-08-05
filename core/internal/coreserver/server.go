@@ -117,7 +117,11 @@ func (s *Server) AskUserQuestion(ctx context.Context, req *agentfleetv1.AskUserQ
 		}
 		cursor = nextSeq
 		for _, e := range entries {
-			if e.From == "human" && e.Type == "answer" {
+			// ReplyTo must match this call's own question seq
+			// (reliability-findings.md #0) — "any pending question + any
+			// reply" (the old check) would let an unrelated answer or a
+			// second concurrent question's answer satisfy this one.
+			if e.From == "human" && e.Type == "answer" && e.ReplyTo != nil && *e.ReplyTo == seq {
 				return &agentfleetv1.AskUserQuestionResponse{Status: "answered", AnswersJson: e.Text, QuestionSeq: seq}, nil
 			}
 		}

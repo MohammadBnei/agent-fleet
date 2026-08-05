@@ -12,8 +12,12 @@ Status: `open` (found, undesigned) · `designing` (decision drafted) ·
 
 ## 0. Worker session = plain Claude Code session. Discord/dashboard = transport only.
 
-**Status:** designing. Needs a real ADR (revises ADR-0005's mechanism,
-ADR-0021's phase design), not a code patch.
+**Status:** fixed. See PR #29. All five "must fix before implementation"
+open items resolved as part of that PR (including a real SDK/transport
+spike — held a canUseTool decision pending for 3 minutes, no timeout or
+dropped connection). Still worth a real ADR later (revises ADR-0005's
+mechanism, ADR-0021's phase design) — this backlog entry stays as the
+implementation record until then.
 
 **Principle:** Claude Code already handles permission prompts,
 questions, stop — headless included. Fleet shouldn't build protocol on
@@ -122,7 +126,7 @@ unfiltered regardless — dashboard renders full stream.
 
 ## 1. Worker-pod failure handling: fragmented across three uncoordinated mechanisms
 
-**Status:** designing (architecture-interview 2026-08-05, drafted, not confirmed).
+**Status:** fixed. See PR #28.
 
 **Where:** `provisioner/internal/reconcile/loop.go` (10s poll, GCs dead
 pods, tells no one, skips worktree cleanup) · `core/internal/coreserver/
@@ -158,7 +162,7 @@ Fix: two more typed RPCs, same pattern as `GetTranscript`/
 
 ## 2. Worktree/branch lifecycle: status-triggered deletion loses data — redesigned around explicit signals only
 
-**Status:** designing (shape converged 2026-08-05, doubt-reviewed, not implemented).
+**Status:** fixed. See PR #27.
 
 **Old bug:** `RemoveWorktree` (`git.go:164-177`) unconditionally
 `branch -D`s on every terminal status. Commits survive worktree
@@ -211,7 +215,7 @@ same-task-ID crash-retry where the branch itself is correctly reused.
 
 ## 3. `isApproval`/`isAbort`: whole-word substring matching, not intent parsing
 
-**Status:** superseded by #0 — mechanism deleted, not hardened.
+**Status:** fixed — superseded by #0, mechanism deleted (not hardened) in PR #29.
 
 `planning.ts:33-43`: `/\bapprove(d)?\b|\blgtm\b|\bship it\b|\bgo ahead\b/i`
 on free text. "I don't approve this, redo the auth flow" contains
@@ -223,7 +227,7 @@ structured signals.
 
 ## 4. `PLAN_READY:`/`PR_READY:` magic string prefixes
 
-**Status:** superseded by #0 — no phase boundary left to signal.
+**Status:** fixed — superseded by #0, no phase boundary left to signal, in PR #29.
 
 `planning.ts:25,92,254-255`, `index.ts:82`:
 `result.summary.split("PR_READY:")[1]?.trim() ?? result.summary`. No
@@ -234,7 +238,7 @@ final message.
 
 ## 5. Two independent, uncoordinated 2s pollers instead of event-driven nudges
 
-**Status:** open
+**Status:** fixed. See PR #25.
 
 `core/internal/dispatch/loop.go:34` (task claiming), `core/internal/
 transcript/relay.go:24-35` (Discord relay) — both hardcoded 2s tickers
@@ -246,7 +250,7 @@ relay's flush. Two small additions.
 
 ## 6. `CountInFlight`/`ClaimNextTask` not in one transaction
 
-**Status:** open, low severity today.
+**Status:** fixed. See PR #25.
 
 `dispatch/loop.go:47,56`. Not exploitable single-replica (`ClaimNextTask`'s
 `SKIP LOCKED` prevents double-claiming the *same* task) — but >1 replica
@@ -256,7 +260,7 @@ priority unless `core` scales beyond one replica.
 
 ## 7. Sidecar telemetry/journal calls fire-and-forget; journal has no read path
 
-**Status:** open, read-path half covered by #1.
+**Status:** fixed. Swallowed errors now logged in PR #25; read path landed with #1 in PR #28.
 
 `index.ts:65,78,97,107,111`, `planning.ts:132,245,273-277` —
 `appendJournal`/`pushMessage`/`saveSessionId` all `.catch(() => {})`'d.
@@ -266,7 +270,7 @@ covered by #1's read-path work; at minimum log (don't swallow) locally.
 
 ## 8. Non-`success` SDK result subtypes unhandled outside the approved branch
 
-**Status:** open — simplified, not eliminated, by #0.
+**Status:** fixed — resolved as a byproduct of #0 removing the branch split, in PR #29.
 
 `planning.ts:260-282`. Real subtypes confirmed against SDK types
 (`coreTypes.d.ts:458-460`): `error_during_execution`, `error_max_turns`,
@@ -279,7 +283,7 @@ as an error uniformly, everywhere, once #0 removes the branch split.
 
 ## 9. Sidecar unreachability at the worst moment cascades into total silence
 
-**Status:** open
+**Status:** fixed. See PR #25.
 
 `index.ts:88,110` — `stillHoldsLease` and the catch block's
 `setStatus("failed", ...)` are bare, unguarded (unlike everything
@@ -292,7 +296,7 @@ in the top-level crash handler.
 
 ## 10. `gh pr create`'s PR-URL extraction can grab the wrong URL
 
-**Status:** open, low severity.
+**Status:** fixed. See PR #25.
 
 `index.ts:58` — `stdout.match(/https:\/\/github\.com\/\S+/)` grabs the
 *first* GitHub URL in stdout, not necessarily the PR's. **Fix:** `gh pr
@@ -301,7 +305,7 @@ free text.
 
 ## 11. Provisioner hand-rolls ephemeral pod lifecycle instead of using `batch/v1.Job` — CRD/operator considered and rejected for now
 
-**Status:** designing (architecture-interview 2026-08-05, converged, not implemented).
+**Status:** fixed. See PR #26.
 
 **Where:** `provisioner/internal/reconcile/loop.go` — same code as #1, different angle: it creates bare `Pod`s directly and hand-rolls retry/GC/status via a 10s poll, duplicated across the two pod kinds (worker, e2e-preview).
 

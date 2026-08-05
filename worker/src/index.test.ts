@@ -65,3 +65,51 @@ test("a sidecar failure while reporting 'failed' status doesn't crash the proces
   // it never needed to escape to the top-level crash handler.
   expect(exitCode).toBe("not-called");
 });
+
+function fakeSidecarRecording(statusCalls: { status: string; fields?: unknown }[]) {
+  return {
+    heartbeat: async () => {},
+    appendJournal: async () => {},
+    setStatus: async (status: string, fields?: unknown) => {
+      statusCalls.push({ status, fields });
+    },
+    stillHoldsLease: async () => true,
+    saveSessionId: async () => {},
+    pushMessage: async () => {},
+    streamHumanMessages: async () => {},
+  };
+}
+
+// reliability-findings.md #0 open item 4 ("real-PR-resulted check"): the
+// agent now runs its own git push/gh pr create via Bash, so the wrapper no
+// longer constructs the PR itself — it only verifies one exists before
+// declaring the task done.
+test("a successful task verifies a PR exists before reporting done", async () => {
+  const statusCalls: { status: string; fields?: unknown }[] = [];
+  const fakeRunTask = async (_task: Task) => ({ aborted: false, summary: "PR_READY: did the thing" });
+  const fakeVerifyPrExists = async (_branch: string) => "https://github.com/org/repo/pull/42";
+  const fakeConfigureGitAuth = async () => {};
+
+  await main(fakeSidecarRecording(statusCalls) as never, fakeRunTask as never, fakeVerifyPrExists, fakeConfigureGitAuth);
+
+  const doneCall = statusCalls.find((c) => c.status === "done");
+  expect(doneCall).toBeDefined();
+  expect((doneCall?.fields as { prUrl?: string } | undefined)?.prUrl).toBe("https://github.com/org/repo/pull/42");
+});
+
+// The other half of the same check: a session that claims PR_READY: but
+// left no actual PR behind must be reported as failed, not done — trusting
+// the agent's own claim at face value is exactly the gap this check closes.
+test("no PR found after a session claims done is reported as failed, not done", async () => {
+  const statusCalls: { status: string; fields?: unknown }[] = [];
+  const fakeRunTask = async (_task: Task) => ({ aborted: false, summary: "PR_READY: did the thing" });
+  const fakeVerifyPrExists = async (_branch: string) => null;
+  const fakeConfigureGitAuth = async () => {};
+
+  await main(fakeSidecarRecording(statusCalls) as never, fakeRunTask as never, fakeVerifyPrExists, fakeConfigureGitAuth);
+
+  expect(statusCalls.some((c) => c.status === "done")).toBe(false);
+  const failedCall = statusCalls.find((c) => c.status === "failed");
+  expect(failedCall).toBeDefined();
+  expect((failedCall?.fields as { lastError?: string } | undefined)?.lastError).toContain("no PR was found");
+});

@@ -57,18 +57,27 @@ func (r *Relay) Run(ctx context.Context, pollInterval time.Duration) {
 	}
 }
 
+// discordSafeTypes is an allowlist, not a denylist (reliability-
+// findings.md #0) — logSdkMessage now relays every SDK message type
+// (system/assistant/user/result) plus PushToolTelemetry's tool_call, none
+// of which are safe to post verbatim to Discord (raw Bash stdout/stderr,
+// file contents, tool_use input). A denylist of exactly one type
+// (tool_call) meant any *new* type nobody remembered to exclude would
+// spam every task thread by default; an allowlist fails closed instead.
+var discordSafeTypes = []string{"", "discussion", "approve", "abort", "question", "answer"}
+
 func relayPending(ctx context.Context, pool *pgxpool.Pool, notifier Notifier) {
-	// Sidecar-pushed telemetry (docs/adr/0020/0021) rides this same table's
-	// idempotency/relay infra but must never reach Discord — raw JSON tool
-	// summaries would spam every task thread the moment the sidecar starts
-	// using PushToolTelemetry. Flip it to relayed without ever posting,
-	// before the SELECT below even sees it — cheap (self-clears every tick),
-	// no schema change, and the main query stays untouched.
+	// Everything not on the allowlist is flipped to relayed without ever
+	// posting, before the SELECT below even sees it — cheap (self-clears
+	// every tick), no schema change to the relay-tracking columns, and the
+	// main query stays untouched. The transcript row itself is untouched
+	// either way — only relayed_to_discord changes — so the dashboard
+	// (which renders the full stream regardless) is unaffected.
 	if _, err := pool.Exec(ctx, `
 		UPDATE planning_transcript SET relayed_to_discord = true
-		WHERE relayed_to_discord = false AND type = 'tool_call'
-	`); err != nil {
-		slog.Error("relay: skip tool_call entries", "error", err)
+		WHERE relayed_to_discord = false AND COALESCE(type, '') != ALL($1)
+	`, discordSafeTypes); err != nil {
+		slog.Error("relay: skip non-Discord-safe entries", "error", err)
 	}
 
 	rows, err := pool.Query(ctx, `

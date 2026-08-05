@@ -69,6 +69,7 @@ func newTestPool(t *testing.T) *pgxpool.Pool {
 			relay_attempts     INT NOT NULL DEFAULT 0,
 			relay_dead_letter  BOOLEAN NOT NULL DEFAULT false,
 			relay_last_error   TEXT,
+			reply_to_seq       BIGINT,
 			PRIMARY KEY (task_id, seq)
 		);
 		CREATE UNIQUE INDEX planning_transcript_idempotency_idx
@@ -149,5 +150,43 @@ func TestPostgresStore_IdempotentAppendDoesNotDuplicate(t *testing.T) {
 	}
 	if len(entries) != 1 {
 		t.Fatalf("expected exactly 1 entry (no duplicate), got %d", len(entries))
+	}
+}
+
+// TestPostgresStore_AppendReplyRoundTripsReplyTo covers reliability-
+// findings.md #0's question-seq correlation: AppendReply's replyToSeq
+// must survive a real INSERT/SELECT round trip through ReadSince, since
+// that's what AskUserQuestion's own matching loop reads back.
+func TestPostgresStore_AppendReplyRoundTripsReplyTo(t *testing.T) {
+	pool := newTestPool(t)
+	ctx := context.Background()
+	store := NewPostgresStore(pool)
+
+	var taskID string
+	if err := pool.QueryRow(ctx, `INSERT INTO tasks DEFAULT VALUES RETURNING id`).Scan(&taskID); err != nil {
+		t.Fatalf("insert task: %v", err)
+	}
+
+	questionSeq, err := store.Append(ctx, taskID, "planner", `{"questions":[]}`, "question", "")
+	if err != nil {
+		t.Fatalf("append question: %v", err)
+	}
+	if _, err := store.AppendReply(ctx, taskID, "human", `{"answers":{}}`, "answer", "", questionSeq); err != nil {
+		t.Fatalf("append reply: %v", err)
+	}
+
+	entries, _, err := store.ReadSince(ctx, taskID, 0, 100)
+	if err != nil {
+		t.Fatalf("read since: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(entries))
+	}
+	answer := entries[1]
+	if answer.Type != "answer" || answer.ReplyTo == nil || *answer.ReplyTo != questionSeq {
+		t.Fatalf("expected the answer's ReplyTo to round-trip as %d, got %+v", questionSeq, answer)
+	}
+	if entries[0].ReplyTo != nil {
+		t.Fatalf("expected the question entry's own ReplyTo to be nil, got %v", *entries[0].ReplyTo)
 	}
 }

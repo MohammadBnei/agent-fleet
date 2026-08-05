@@ -60,6 +60,10 @@ func (f *fakeStore) Append(context.Context, string, string, string, string, stri
 	panic("not used by pollOnce")
 }
 
+func (f *fakeStore) AppendReply(context.Context, string, string, string, string, string, int64) (int64, error) {
+	panic("not used by pollOnce")
+}
+
 func (f *fakeStore) ReadSince(_ context.Context, _ string, sinceSeq int64, _ int) ([]transcript.Entry, int64, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
