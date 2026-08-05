@@ -1,12 +1,11 @@
-// Exercises planning.ts's continuous-session driver (docs/adr/0021) — the
-// canUseTool gate, the PLAN_READY: round-cap convention, human approval/
-// abort via the streamed message feed, and implementation-result
-// classification — without a real Claude session or sidecar. Mocks must be
-// registered before importing planning.js (Bun resolves mock.module()
-// calls ahead of subsequent static imports).
+// Exercises planning.ts's continuous-session driver (docs/adr/0021,
+// reliability-findings.md #0) — the canUseTool gate, human approval/abort
+// via the streamed message feed (structured signals only, no free-text
+// regex), raw-message relay, and uniform result-subtype classification —
+// without a real Claude session or sidecar. Mocks must be registered
+// before importing planning.js (Bun resolves mock.module() calls ahead of
+// subsequent static imports).
 import { test, expect, mock, beforeEach } from "bun:test";
-
-const PLAN_READY_PREFIX = "PLAN_READY:";
 
 // --- fake sidecarClient.js ---
 
@@ -47,12 +46,14 @@ function pushHuman(text: string, type?: string): void {
 
 // One "round" per message the fake session receives via the streamed
 // prompt — each round yields system init (first round only), an assistant
-// message, then a result, then waits for the next input. Mirrors the real
-// SDK's streaming-input behavior confirmed in this session's own Phase 0
-// spike: the same Query object keeps accepting input after interrupt().
-let mockMessageText = `${PLAN_READY_PREFIX} mock planner message`;
+// message (optionally followed by a tool_result user message), then a
+// result, then waits for the next input. Mirrors the real SDK's
+// streaming-input behavior confirmed in this session's own Phase 0 spike:
+// the same Query object keeps accepting input after interrupt().
+let mockMessageText = "mock planner message";
 let forceResult: { subtype: string; num_turns: number; total_cost_usd: number } | null = null;
 let crashOnRound: number | null = null;
+let includeToolResult = false;
 let capturedCanUseTool: ((toolName: string, input: unknown) => Promise<{ behavior: string; message?: string }>) | null = null;
 let interruptCalls = 0;
 let setPermissionModeCalls: string[] = [];
@@ -103,6 +104,12 @@ mock.module("@anthropic-ai/claude-agent-sdk", () => ({
             ],
           },
         };
+        if (includeToolResult) {
+          yield {
+            type: "user",
+            message: { content: [{ type: "tool_result", is_error: false, content: "tool output" }] },
+          };
+        }
         if (forceResult) {
           yield { type: "result", ...forceResult };
           continue;
@@ -130,21 +137,23 @@ beforeEach(() => {
   savedSessionIds.length = 0;
   statusUpdates.length = 0;
   humanMessageHandler = null;
-  mockMessageText = `${PLAN_READY_PREFIX} mock planner message`;
+  mockMessageText = "mock planner message";
   forceResult = null;
   crashOnRound = null;
+  includeToolResult = false;
   capturedCanUseTool = null;
   interruptCalls = 0;
   setPermissionModeCalls = [];
   queryOptions = null;
 });
 
-function makeTask(overrides: Partial<{ id: string; repo: string; description: string; leaseId: string }> = {}) {
+function makeTask(overrides: Partial<{ id: string; repo: string; description: string; leaseId: string; baseBranch: string }> = {}) {
   return {
     id: crypto.randomUUID(),
     repo: "dream-analyst",
     description: "test task",
     leaseId: "lease-1",
+    baseBranch: "main",
     ...overrides,
   };
 }
@@ -176,12 +185,12 @@ test("canUseTool denies Write/Edit before approval, allows after", async () => {
   const beforeApproval = await capturedCanUseTool!("Write", { file_path: "x" });
   expect(beforeApproval.behavior).toBe("deny");
 
-  pushHuman("approved", "approve");
+  pushHuman("", "approve");
   await Bun.sleep(20);
   const afterApproval = await capturedCanUseTool!("Write", { file_path: "x" });
   expect(afterApproval.behavior).toBe("allow");
 
-  pushHuman("stop", "abort");
+  pushHuman("", "abort");
   await promise;
 }, 10000);
 
@@ -189,14 +198,33 @@ test("an answer-type human entry is never misread as approval/abort", async () =
   const task = makeTask();
   const promise = runTask(task);
   await Bun.sleep(20);
-  // A human's chosen option label could itself contain a word isApproval's
-  // word-matching fallback matches (docs/adr/0018) — an "answer"-type
-  // entry must never resolve the phase on its own.
+  // A human's chosen option label could itself contain a word that used to
+  // trip the deleted free-text isApproval/isAbort fallback (docs/adr/0018)
+  // — an "answer"-type entry must never resolve the phase on its own, only
+  // a structured type:"approve"/"abort" does now (reliability-findings.md
+  // #0/#3).
   pushHuman('{"answers":{"q":"approved, ship it"}}', "answer");
   await Bun.sleep(20);
   expect(setPermissionModeCalls.length).toBe(0);
 
-  pushHuman("stop", "abort");
+  pushHuman("", "abort");
+  const result = await promise;
+  expect(result.aborted).toBe(true);
+}, 10000);
+
+test("free text alone never triggers approval or abort — only structured signals do", async () => {
+  const task = makeTask();
+  const promise = runTask(task);
+  await Bun.sleep(20);
+  // Plain conversational text containing words the old regex fallback
+  // matched ("approved", "stop") must do nothing now that isApproval/
+  // isAbort are deleted entirely (reliability-findings.md #0/#3).
+  pushHuman("I approved a similar PR yesterday, let's stop and think about this first", "discussion");
+  await Bun.sleep(20);
+  expect(setPermissionModeCalls.length).toBe(0);
+  expect(interruptCalls).toBe(0);
+
+  pushHuman("", "abort");
   const result = await promise;
   expect(result.aborted).toBe(true);
 }, 10000);
@@ -205,7 +233,7 @@ test("human approval flips the session to implementation and reports status", as
   const task = makeTask();
   const promise = runTask(task);
   await Bun.sleep(20);
-  pushHuman("approved", "approve");
+  pushHuman("", "approve");
   await Bun.sleep(20);
 
   expect(setPermissionModeCalls).toContain("default");
@@ -213,7 +241,7 @@ test("human approval flips the session to implementation and reports status", as
   expect(savedSessionIds.length).toBe(1);
   expect(savedSessionIds[0]).toMatch(/^planner-/);
 
-  pushHuman("stop", "abort");
+  pushHuman("", "abort");
   await promise;
 }, 10000);
 
@@ -221,36 +249,11 @@ test("abort before approval ends the task as aborted", async () => {
   const task = makeTask();
   const promise = runTask(task);
   await Bun.sleep(20);
-  pushHuman("stop", "abort");
+  pushHuman("", "abort");
   const result = await promise;
 
   expect(result.aborted).toBe(true);
   expect(interruptCalls).toBeGreaterThan(0);
-}, 10000);
-
-test("a PLAN_READY: post counts toward the round cap and posts a checkpoint", async () => {
-  const task = makeTask();
-  mockMessageText = `${PLAN_READY_PREFIX} draft plan`;
-  const promise = runTask(task);
-  await Bun.sleep(50);
-
-  expect(pushedMessages.some((m) => m.text.includes("Round 1 done"))).toBe(true);
-  expect(interruptCalls).toBeGreaterThan(0);
-
-  pushHuman("stop", "abort");
-  await promise;
-}, 10000);
-
-test("a non-PLAN_READY: post does not count toward the round cap", async () => {
-  const task = makeTask();
-  mockMessageText = "exploring the repo before drafting a plan";
-  const promise = runTask(task);
-  await Bun.sleep(50);
-
-  expect(pushedMessages.some((m) => m.text.includes("Round 1 done"))).toBe(false);
-
-  pushHuman("stop", "abort");
-  await promise;
 }, 10000);
 
 test("a crashed session propagates the error instead of hanging", async () => {
@@ -261,37 +264,78 @@ test("a crashed session propagates the error instead of hanging", async () => {
 
 test("implementation completes and returns the session's final text", async () => {
   const task = makeTask();
-  // Approval immediately pushes the implementation prompt as the very next
-  // round (runTask breaks on the first post-approval result) — the desired
-  // text has to be in place *before* approving, not after.
+  // Approval immediately pushes the fixed post-approval input as the very
+  // next round (runTask breaks on the first post-approval success result)
+  // — the desired final text has to be in place *before* approving.
   mockMessageText = "PR_READY: did the thing";
   const promise = runTask(task);
   await Bun.sleep(20);
-  pushHuman("approved", "approve");
+  pushHuman("", "approve");
 
   const result = await promise;
   expect(result.aborted).toBe(false);
   expect(result.summary).toContain("PR_READY: did the thing");
 }, 10000);
 
-test("a 0-turn/$0 implementation result is classified transient", async () => {
+test("a 0-turn/$0 result is classified transient", async () => {
+  const task = makeTask();
+  forceResult = { subtype: "error_during_execution", num_turns: 0, total_cost_usd: 0 };
+  // Uniform handling (reliability-findings.md #8) means this now throws on
+  // the very first round, before any approval — no pushHuman needed, and
+  // attaching the rejection handler immediately avoids an unhandled-
+  // rejection race against a Bun.sleep that used to give approval time to
+  // land first.
+  await expect(runTask(task)).rejects.toThrow(TransientError);
+}, 10000);
+
+test("a genuine non-success result throws a plain Error", async () => {
+  const task = makeTask();
+  forceResult = { subtype: "error_max_turns", num_turns: 5, total_cost_usd: 0.42 };
+  const promise = runTask(task);
+
+  await expect(promise).rejects.toThrow("session stopped: error_max_turns after 5 turns, $0.42");
+  const error = await promise.catch((e) => e);
+  expect(error).not.toBeInstanceOf(TransientError);
+}, 10000);
+
+// Closes reliability-findings.md #8's actual gap: before #0, only the
+// post-approval branch ever checked msg.subtype, so a non-success result
+// during what used to be the planning phase went unhandled. Now the check
+// is uniform — no approved/!approved branch split left to fall through.
+test("a non-success result before approval is classified the same as after approval", async () => {
+  const task = makeTask();
+  forceResult = { subtype: "error_max_turns", num_turns: 3, total_cost_usd: 0.1 };
+  const promise = runTask(task);
+
+  await expect(promise).rejects.toThrow("session stopped: error_max_turns after 3 turns, $0.1");
+  const error = await promise.catch((e) => e);
+  expect(error).not.toBeInstanceOf(TransientError);
+}, 10000);
+
+test("a non-success 0-turn/$0 result before approval is classified transient", async () => {
   const task = makeTask();
   forceResult = { subtype: "error_during_execution", num_turns: 0, total_cost_usd: 0 };
   const promise = runTask(task);
-  await Bun.sleep(20);
-  pushHuman("approved", "approve");
 
   await expect(promise).rejects.toThrow(TransientError);
 }, 10000);
 
-test("a genuine non-success implementation result throws a plain Error", async () => {
+// Raw-relay behavior (reliability-findings.md #0): every SDK message
+// reaches pushMessage now, not just assistant text blocks — tool_use,
+// tool_result, and result summaries all get relayed too, each tagged with
+// its own type (dashboard-only visibility; core's relay allowlist keeps
+// them off Discord).
+test("tool_use, tool_result, and result messages are all relayed, not just assistant text", async () => {
   const task = makeTask();
-  forceResult = { subtype: "error_max_turns", num_turns: 5, total_cost_usd: 0.42 };
+  includeToolResult = true;
   const promise = runTask(task);
   await Bun.sleep(20);
-  pushHuman("approved", "approve");
+  pushHuman("", "abort");
+  await promise;
 
-  await expect(promise).rejects.toThrow("implementation stopped: error_max_turns after 5 turns, $0.42");
-  const error = await promise.catch((e) => e);
-  expect(error).not.toBeInstanceOf(TransientError);
+  expect(pushedMessages.some((m) => m.type === "discussion" && m.text === "mock planner message")).toBe(true);
+  expect(pushedMessages.some((m) => m.type === "assistant")).toBe(true); // tool_use
+  expect(pushedMessages.some((m) => m.type === "user")).toBe(true); // tool_result
+  expect(pushedMessages.some((m) => m.type === "result")).toBe(true);
+  expect(pushedMessages.some((m) => m.type === "system")).toBe(true); // session-init
 }, 10000);

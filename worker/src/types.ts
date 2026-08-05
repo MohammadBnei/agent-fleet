@@ -9,4 +9,8 @@ export type Task = {
   repo: string;
   description: string;
   leaseId: string;
+  // baseBranch threads into the merged task prompt (reliability-findings.md
+  // #0) so the agent's own `gh pr create --base` is correct — some repos
+  // don't develop off "main" (e.g. vos-monolith uses "dev").
+  baseBranch: string;
 };

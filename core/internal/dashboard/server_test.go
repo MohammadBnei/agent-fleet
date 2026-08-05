@@ -21,10 +21,16 @@ import (
 // concrete *provisionerclient.Client, already exercised by provisionerclient's own tests.
 type recordingStore struct {
 	lastTaskID, lastFrom, lastText, lastType string
+	lastReplyTo                              int64
 }
 
 func (r *recordingStore) Append(_ context.Context, taskID, from, text, msgType, _ string) (int64, error) {
 	r.lastTaskID, r.lastFrom, r.lastText, r.lastType = taskID, from, text, msgType
+	return 0, nil
+}
+
+func (r *recordingStore) AppendReply(_ context.Context, taskID, from, text, msgType, _ string, replyToSeq int64) (int64, error) {
+	r.lastTaskID, r.lastFrom, r.lastText, r.lastType, r.lastReplyTo = taskID, from, text, msgType, replyToSeq
 	return 0, nil
 }
 
@@ -120,7 +126,10 @@ func TestServer_AnswerQuestion(t *testing.T) {
 		t.Errorf("status = %q, want %q", resp.Msg.GetStatus(), "answered")
 	}
 	if store.lastTaskID != "task-1" || store.lastFrom != "human" || store.lastText != answersJSON || store.lastType != "answer" {
-		t.Errorf("Append(%q, %q, %q, %q), want (task-1, human, %s, answer)",
+		t.Errorf("AppendReply(%q, %q, %q, %q), want (task-1, human, %s, answer)",
 			store.lastTaskID, store.lastFrom, store.lastText, store.lastType, answersJSON)
+	}
+	if store.lastReplyTo != 3 {
+		t.Errorf("lastReplyTo = %d, want 3 (the question's own seq, reliability-findings.md #0's correlation)", store.lastReplyTo)
 	}
 }

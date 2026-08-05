@@ -132,9 +132,20 @@ CREATE UNIQUE INDEX IF NOT EXISTS planning_transcript_idempotency_idx
 -- AskUserQuestion MCP tool (fleet-core/internal/mcpserver) posts a
 -- 'question' entry and long-polls for the matching 'answer' entry, which
 -- the dashboard (not Discord) submits via AnswerQuestion. See docs/adr/0018.
+--
+-- 'system'/'assistant'/'user'/'result' are the SDK's own raw message
+-- discriminants (reliability-findings.md #0's "relay everything, let the
+-- UI decide" — worker/src/planning.ts's logSdkMessage tags every message
+-- with its own msg.type verbatim, not just assistant text as before).
+-- 'tool_call' is PushToolTelemetry's sidecar-pushed summary — already
+-- inserted before this change (coreserver/server.go), just never actually
+-- listed here; a pre-existing gap this widening also closes.
 ALTER TABLE planning_transcript DROP CONSTRAINT IF EXISTS planning_transcript_type_check;
 ALTER TABLE planning_transcript ADD CONSTRAINT planning_transcript_type_check
-  CHECK (type IN ('discussion', 'approve', 'abort', 'question', 'answer') OR type IS NULL);
+  CHECK (type IN (
+    'discussion', 'approve', 'abort', 'question', 'answer',
+    'tool_call', 'system', 'assistant', 'user', 'result'
+  ) OR type IS NULL);
 
 -- Retry/DLQ for the Discord-relay side effect only — the transcript entry
 -- itself is already durable the moment the row above commits; these track
@@ -145,3 +156,10 @@ ALTER TABLE planning_transcript ADD COLUMN IF NOT EXISTS relayed_to_discord BOOL
 ALTER TABLE planning_transcript ADD COLUMN IF NOT EXISTS relay_attempts INT NOT NULL DEFAULT 0;
 ALTER TABLE planning_transcript ADD COLUMN IF NOT EXISTS relay_dead_letter BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE planning_transcript ADD COLUMN IF NOT EXISTS relay_last_error TEXT;
+
+-- reply_to_seq is the question-seq correlation reliability-findings.md #0
+-- calls out as a real gap: today's "any pending question + any reply"
+-- would let an unrelated message satisfy a blocked AskUserQuestion call.
+-- NULL for every entry except an 'answer' replying to a specific
+-- 'question' entry's own seq.
+ALTER TABLE planning_transcript ADD COLUMN IF NOT EXISTS reply_to_seq BIGINT;

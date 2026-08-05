@@ -31,6 +31,17 @@ func (s *PostgresStore) SetNudge(nudge func()) {
 }
 
 func (s *PostgresStore) Append(ctx context.Context, taskID, from, text, msgType, idempotencyKey string) (int64, error) {
+	return s.appendInternal(ctx, taskID, from, text, msgType, idempotencyKey, nil)
+}
+
+// AppendReply is Append plus reply-to-seq correlation (reliability-
+// findings.md #0) — see Store interface's own doc comment for why this is
+// a second method, not a signature change to Append.
+func (s *PostgresStore) AppendReply(ctx context.Context, taskID, from, text, msgType, idempotencyKey string, replyToSeq int64) (int64, error) {
+	return s.appendInternal(ctx, taskID, from, text, msgType, idempotencyKey, &replyToSeq)
+}
+
+func (s *PostgresStore) appendInternal(ctx context.Context, taskID, from, text, msgType, idempotencyKey string, replyToSeq *int64) (int64, error) {
 	if idempotencyKey == "" {
 		// The dedup guarantee lives here, not in each caller — an empty key
 		// must never reach the query below as a literal value: every
@@ -73,11 +84,11 @@ func (s *PostgresStore) Append(ctx context.Context, taskID, from, text, msgType,
 		msgTypePtr = &msgType
 	}
 	err = tx.QueryRow(ctx, `
-		INSERT INTO planning_transcript (task_id, seq, "from", text, type, idempotency_key)
-		SELECT $1, COALESCE(MAX(seq), -1) + 1, $2, $3, $4, $5
+		INSERT INTO planning_transcript (task_id, seq, "from", text, type, idempotency_key, reply_to_seq)
+		SELECT $1, COALESCE(MAX(seq), -1) + 1, $2, $3, $4, $5, $6
 		FROM planning_transcript WHERE task_id = $1
 		RETURNING seq
-	`, taskID, from, text, msgTypePtr, idempotencyKey).Scan(&seq)
+	`, taskID, from, text, msgTypePtr, idempotencyKey, replyToSeq).Scan(&seq)
 	if err != nil {
 		return 0, fmt.Errorf("insert: %w", err)
 	}
@@ -93,7 +104,7 @@ func (s *PostgresStore) Append(ctx context.Context, taskID, from, text, msgType,
 
 func (s *PostgresStore) ReadSince(ctx context.Context, taskID string, sinceSeq int64, limit int) ([]Entry, int64, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT seq, "from", text, COALESCE(type, '')
+		SELECT seq, "from", text, COALESCE(type, ''), reply_to_seq
 		FROM planning_transcript
 		WHERE task_id = $1 AND seq >= $2
 		ORDER BY seq
@@ -111,7 +122,7 @@ func (s *PostgresStore) ReadSince(ctx context.Context, taskID string, sinceSeq i
 	nextSeq := sinceSeq
 	for rows.Next() {
 		var e Entry
-		if err := rows.Scan(&e.Seq, &e.From, &e.Text, &e.Type); err != nil {
+		if err := rows.Scan(&e.Seq, &e.From, &e.Text, &e.Type, &e.ReplyTo); err != nil {
 			return nil, sinceSeq, fmt.Errorf("scan: %w", err)
 		}
 		entries = append(entries, e)

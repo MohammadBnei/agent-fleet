@@ -100,13 +100,50 @@ func (c *Client) onMessageCreate(s *discordgo.Session, m *discordgo.MessageCreat
 		return
 	}
 
-	// Free-text-in-thread relay, default type "discussion" — mirrors
-	// bot/src/index.ts's plain-message-in-thread behavior.
+	// Free-text-in-thread relay — mirrors bot/src/index.ts's plain-message-
+	// in-thread behavior, but a reply to a still-pending AskUserQuestion
+	// call gets tagged "answer" with question-seq correlation instead of
+	// defaulting to "discussion" (reliability-findings.md #0: before this,
+	// Discord users had no way to actually answer a question — only the
+	// dashboard's AnswerQuestion RPC could).
 	taskID, err := c.tasks.FindTaskIDByThread(ctx, m.ChannelID)
 	if err != nil || taskID == "" {
 		return
 	}
+	if pendingSeq, err := c.findPendingQuestionSeq(ctx, taskID); err != nil {
+		slog.Error("find pending question failed", "taskId", taskID, "error", err)
+	} else if pendingSeq > 0 {
+		if _, err := c.transcr.AppendReply(ctx, taskID, "human", m.Content, "answer", uuid.NewString(), pendingSeq); err != nil {
+			slog.Error("relay reply append failed", "taskId", taskID, "error", err)
+		}
+		return
+	}
 	c.relay(ctx, taskID, "human", m.Content, "discussion")
+}
+
+// findPendingQuestionSeq returns the seq of the most recent still-open
+// "question" entry for taskID, or 0 if none is pending. "Open" means no
+// later "answer" entry replies to it — AskUserQuestion's own matching
+// loop (coreserver.Server.AskUserQuestion) uses the identical ReplyTo
+// correlation, so this stays consistent with what actually unblocks it.
+func (c *Client) findPendingQuestionSeq(ctx context.Context, taskID string) (int64, error) {
+	entries, _, err := c.transcr.ReadSince(ctx, taskID, 0, 1000)
+	if err != nil {
+		return 0, err
+	}
+	answered := make(map[int64]bool, len(entries))
+	for _, e := range entries {
+		if e.Type == "answer" && e.ReplyTo != nil {
+			answered[*e.ReplyTo] = true
+		}
+	}
+	var pending int64
+	for _, e := range entries {
+		if e.Type == "question" && !answered[e.Seq] {
+			pending = e.Seq
+		}
+	}
+	return pending, nil
 }
 
 func (c *Client) withTaskFromThread(ctx context.Context, s *discordgo.Session, i *discordgo.InteractionCreate, fn func(taskID string)) {

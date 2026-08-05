@@ -168,13 +168,13 @@ func (s *Server) KillE2E(ctx context.Context, req *connect.Request[agentfleetv1.
 
 // AnswerQuestion appends the human's answer to a pending QUESTION-type
 // transcript entry (posted by the planner's AskUserQuestion MCP tool call,
-// see docs/adr/0018) — the same Append() call Approve/Stop above make, just
-// with an opaque JSON payload instead of a fixed string. `req.Msg.Seq` isn't
-// used server-side for correlation (only one question is ever pending per
-// task at a time); it's carried through for the dashboard's own bookkeeping.
+// see docs/adr/0018) via AppendReply — req.Msg.Seq is the question entry's
+// own seq, now actually used server-side for correlation
+// (reliability-findings.md #0: "any pending question + any reply" let an
+// unrelated message satisfy a blocked AskUserQuestion call).
 func (s *Server) AnswerQuestion(ctx context.Context, req *connect.Request[agentfleetv1.AnswerQuestionRequest]) (*connect.Response[agentfleetv1.AnswerQuestionResponse], error) {
 	taskID := req.Msg.GetTaskId()
-	if _, err := s.transcr.Append(ctx, taskID, "human", req.Msg.GetAnswersJson(), "answer", uuid.NewString()); err != nil {
+	if _, err := s.transcr.AppendReply(ctx, taskID, "human", req.Msg.GetAnswersJson(), "answer", uuid.NewString(), req.Msg.GetSeq()); err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	return connect.NewResponse(&agentfleetv1.AnswerQuestionResponse{Status: "answered"}), nil

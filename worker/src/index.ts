@@ -10,6 +10,8 @@ import type { Task } from "./types.js";
 
 type Sidecar = typeof defaultSidecar;
 type RunTask = typeof defaultRunTask;
+type VerifyPrExists = (branch: string) => Promise<string | null>;
+type ConfigureGitAuth = () => Promise<void>;
 
 const TASK_ID = process.env.TASK_ID;
 const TARGET_REPO = process.env.TARGET_REPO;
@@ -27,7 +29,7 @@ if (!TASK_ID || !TARGET_REPO || !LEASE_ID) {
   throw new Error("TASK_ID, TARGET_REPO, and LEASE_ID must be set");
 }
 
-const task: Task = { id: TASK_ID, repo: TARGET_REPO, description: TASK_DESCRIPTION ?? "", leaseId: LEASE_ID };
+const task: Task = { id: TASK_ID, repo: TARGET_REPO, description: TASK_DESCRIPTION ?? "", leaseId: LEASE_ID, baseBranch: BASE_BRANCH };
 
 async function run(cmd: string[], cwd: string): Promise<string> {
   const proc = Bun.spawn(cmd, { cwd, stdout: "pipe", stderr: "pipe" });
@@ -43,10 +45,12 @@ async function run(cmd: string[], cwd: string): Promise<string> {
 // configures ITS OWN container's git credential helper — worker and
 // provisioner are separate pods/containers sharing only the /workspace
 // PVC mount, not $HOME. This pod still needs its own auth to `git push`/
-// `gh pr create` (ported from the old worker/src/git.ts's
-// configureGitAuth, deleted when clone/worktree setup moved out but this
-// half of it was still needed here).
-async function configureGitAuth(): Promise<void> {
+// `gh pr create`, run once unconditionally before the session starts
+// (reliability-findings.md #0) rather than lazily right before a push
+// call the wrapper itself used to make — the agent now runs those
+// commands itself via Bash, mid-session, so the auth has to already be in
+// place whenever it decides to.
+async function defaultConfigureGitAuth(): Promise<void> {
   if (!process.env.GH_TOKEN) return; // falls back to whatever ambient git auth is configured
   await run(["gh", "auth", "setup-git"], WORKTREE_PATH);
   const login = await run(["gh", "api", "user", "--jq", ".login"], WORKTREE_PATH);
@@ -54,20 +58,15 @@ async function configureGitAuth(): Promise<void> {
   await run(["git", "config", "--global", "user.email", `${login}@users.noreply.github.com`], WORKTREE_PATH);
 }
 
-// `gh pr create` has no --json/structured-output mode (checked: gh 2.96.0's
-// --help lists none) — per its own docs, on success it prints only the PR
-// URL, so the fix is to anchor on that shape (a real .../pull/<n> URL, the
-// last non-empty stdout line) instead of grabbing the first github.com
-// substring anywhere in stdout, which could match an unrelated URL.
-const PR_URL_RE = /^https:\/\/github\.com\/[^/\s]+\/[^/\s]+\/pull\/\d+$/;
-
-async function pushAndOpenPr(branch: string, title: string, body: string): Promise<string> {
-  await configureGitAuth();
-  await run(["git", "push", "-u", "origin", branch], WORKTREE_PATH);
-  const stdout = await run(["gh", "pr", "create", "--title", title, "--body", body, "--head", branch, "--base", BASE_BRANCH], WORKTREE_PATH);
-  const lastLine = stdout.trim().split("\n").pop()?.trim() ?? "";
-  if (!PR_URL_RE.test(lastLine)) throw new Error(`gh pr create did not return a PR URL: ${stdout}`);
-  return lastLine;
+// defaultVerifyPrExists is the "real-PR-resulted" check (reliability-
+// findings.md #0 open item 4) — the agent runs its own `git push`/
+// `gh pr create` via Bash now (no more wrapper-owned pushAndOpenPr), so
+// before reporting "done" the wrapper confirms a PR actually exists for
+// this branch rather than trusting the agent's own PR_READY: claim at
+// face value.
+async function defaultVerifyPrExists(branch: string): Promise<string | null> {
+  const stdout = await run(["gh", "pr", "list", "--head", branch, "--json", "url", "--jq", ".[0].url"], WORKTREE_PATH);
+  return stdout || null;
 }
 
 // Best-effort status write with its own guard — used everywhere a status
@@ -83,13 +82,19 @@ async function reportStatus(sidecar: Sidecar, status: string, fields?: Parameter
   }
 }
 
-// sidecar/runTask default to the real implementations — the parameters
-// exist so tests can substitute fakes without touching module resolution
-// (index.test.ts and planning.test.ts both need to control this same
-// boundary independently; Bun's mock.module is process-global, not
-// per-file, so module-mocking either of these here would leak into
-// planning.test.ts's own real import of ./planning.js).
-export async function main(sidecar: Sidecar = defaultSidecar, runTask: RunTask = defaultRunTask): Promise<void> {
+// sidecar/runTask/verifyPrExists/configureGitAuth default to the real
+// implementations — the parameters exist so tests can substitute fakes
+// without touching module resolution (index.test.ts and planning.test.ts
+// both need to control this same boundary independently; Bun's
+// mock.module is process-global, not per-file, so module-mocking any of
+// these here would leak into planning.test.ts's own real import of
+// ./planning.js).
+export async function main(
+  sidecar: Sidecar = defaultSidecar,
+  runTask: RunTask = defaultRunTask,
+  verifyPrExists: VerifyPrExists = defaultVerifyPrExists,
+  configureGitAuth: ConfigureGitAuth = defaultConfigureGitAuth,
+): Promise<void> {
   log("info", "task starting", { taskId: task.id, repo: task.repo });
   await sidecar
     .appendJournal(task.repo, "worker", "task.claimed", { taskId: task.id })
@@ -100,6 +105,7 @@ export async function main(sidecar: Sidecar = defaultSidecar, runTask: RunTask =
   }, HEARTBEAT_INTERVAL_MS);
 
   try {
+    await configureGitAuth();
     await sidecar.setStatus("planning");
     const result = await runTask(task);
 
@@ -112,30 +118,23 @@ export async function main(sidecar: Sidecar = defaultSidecar, runTask: RunTask =
       return;
     }
 
-    const summary = result.summary.split("PR_READY:")[1]?.trim() ?? result.summary;
-
-    // Guard against the rare split-brain case: this pod's heartbeat went
-    // stale during a network partition (not an actual crash), core
-    // reclaimed and dispatched a fresh pod, and connectivity has since come
-    // back — never open a duplicate PR in that window. See docs/adr/0016.
-    // A blip in the check itself (sidecar unreachable) is treated the same
-    // as "lease lost" — safer to skip a push than risk a duplicate PR.
-    let holdsLease: boolean;
-    try {
-      holdsLease = await sidecar.stillHoldsLease(task.leaseId);
-    } catch (err) {
-      log("warn", "stillHoldsLease check failed — assuming lease lost, skipping push", { taskId: task.id, error: String(err) });
-      holdsLease = false;
-    }
-    if (!holdsLease) {
-      log("warn", "lease lost before push — another claimant has taken over, aborting silently", { taskId: task.id });
-      return;
-    }
-
+    // No lease check before a push here — there's no wrapper-owned push
+    // step left to gate (the agent already ran `git push`/`gh pr create`
+    // itself, mid-session, via Bash). A lease-check tool wrapping that was
+    // considered and rejected: agent-dependent safety isn't safety, and
+    // bundling the check into one atomic "ship it" tool still guards
+    // inside the pod — wrong layer either way. The residual stale/
+    // reclaimed-pod duplicate-work risk is handled at the infra layer
+    // (reliability-findings.md #1's faster crash detection shrinks the
+    // reclaim window) — a human closing a duplicate PR is the accepted
+    // fallback, not a lock.
     const branch = `agent/${task.id}`;
-    const prUrl = await pushAndOpenPr(branch, task.description, summary);
+    const prUrl = await verifyPrExists(branch);
+    if (!prUrl) {
+      throw new Error(`session ended but no PR was found for ${branch} — the agent may not have actually pushed/opened one`);
+    }
 
-    await sidecar.setStatus("done", { prUrl });
+    await sidecar.setStatus("done", { prUrl, notes: result.summary });
     await sidecar
       .appendJournal(task.repo, "worker", "task.done", { taskId: task.id, prUrl })
       .catch((err) => log("warn", "appendJournal(task.done) failed", { taskId: task.id, error: String(err) }));
