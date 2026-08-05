@@ -129,13 +129,12 @@ func (c *Client) GetPod(ctx context.Context, name string) (phase corev1.PodPhase
 // workload with no expected completion, and (per reconcile/loop.go's own
 // doc comment) they were never part of the hand-rolled GC this finding is
 // about in the first place.
-func (c *Client) CreateWorkerPod(ctx context.Context, taskID, repo, description, leaseID, baseBranch string) error {
+func (c *Client) CreateWorkerPod(ctx context.Context, taskID, repo, description, leaseID, baseBranch, worktreePath string) error {
 	if baseBranch == "" {
 		baseBranch = "main" // matches git.Manager.CreateWorktree's own default
 	}
 	name := WorkerResourceName(taskID)
 	labels := WorkerLabels(taskID, repo)
-	subPath := "worktrees/" + taskID
 
 	sidecarRestartAlways := corev1.ContainerRestartPolicyAlways
 
@@ -159,13 +158,23 @@ func (c *Client) CreateWorkerPod(ctx context.Context, taskID, repo, description,
 						{Name: "TARGET_REPO", Value: repo},
 						{Name: "MCP_PORT", Value: fmt.Sprint(SidecarMCPPort)},
 						{Name: "LOCAL_API_PORT", Value: fmt.Sprint(SidecarAPIPort)},
+						{Name: "WORKTREE_PATH", Value: worktreePath},
 					},
 					Ports: []corev1.ContainerPort{
 						{Name: "mcp", ContainerPort: SidecarMCPPort},
 						{Name: "local-api", ContainerPort: SidecarAPIPort},
 					},
 					VolumeMounts: []corev1.VolumeMount{
-						{Name: "workspace", MountPath: "/workspace", SubPath: subPath},
+						// Whole PVC, not a per-task SubPath: a linked git
+						// worktree's .git file is an absolute-path gitlink
+						// back to the main clone's repos/<repo>/.git/worktrees/
+						// <taskId> admin dir (HEAD/index/commondir) — a
+						// SubPath scoped to just worktrees/<taskId> cuts that
+						// path off entirely, so every git command in this
+						// container failed with "not a git repository"
+						// (produced by design in ADR-0019 but never checked
+						// against how linked worktrees actually work).
+						{Name: "workspace", MountPath: "/workspace"},
 					},
 					Resources: corev1.ResourceRequirements{
 						Requests: corev1.ResourceList{
@@ -205,9 +214,12 @@ func (c *Client) CreateWorkerPod(ctx context.Context, taskID, repo, description,
 						// Forwarded from the provisioner's own Infisical-sourced
 						// env, same value.
 						{Name: "GH_TOKEN", Value: os.Getenv("GH_TOKEN")},
+						{Name: "WORKTREE_PATH", Value: worktreePath},
 					},
 					VolumeMounts: []corev1.VolumeMount{
-						{Name: "workspace", MountPath: "/workspace", SubPath: subPath},
+						// Whole PVC, not a per-task SubPath — see the sidecar
+						// container's identical mount above for why.
+						{Name: "workspace", MountPath: "/workspace"},
 					},
 					Resources: corev1.ResourceRequirements{
 						Requests: corev1.ResourceList{
