@@ -71,6 +71,8 @@ func newTestPool(t *testing.T) *pgxpool.Pool {
 			retry_count        INT NOT NULL DEFAULT 0,
 			heartbeat_at       TIMESTAMPTZ,
 			lease_id           UUID,
+			pod_phase          TEXT,
+			pod_message        TEXT,
 			created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
 			updated_at         TIMESTAMPTZ NOT NULL DEFAULT now()
 		);
