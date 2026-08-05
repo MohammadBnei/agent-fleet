@@ -79,6 +79,33 @@ func TestServer_Stop_CustomReason(t *testing.T) {
 	}
 }
 
+// TestServer_CreateTask_UnknownRepo/EmptyDescription cover the two
+// validation branches that return before ever touching tasks.Store — hence
+// the nil taskStore, same pattern as the other tests in this file passing
+// nil for stores CreateTask/Approve/Stop don't need. The success path
+// (a real INSERT with nil channel/thread) is exercised by tasks package's
+// own TestCreateTask_NilChannelAndThread — this handler is a one-line
+// pass-through to that store method plus taskToProto, not new logic worth
+// its own testcontainers setup (see this file's own comment on
+// GetE2EStatus/KillE2E for the same reasoning).
+func TestServer_CreateTask_UnknownRepo(t *testing.T) {
+	s := NewServer(nil, nil, nil, nil)
+
+	req := connect.NewRequest(&agentfleetv1.CreateTaskRequest{Repo: "not-a-real-repo", Description: "do something"})
+	if _, err := s.CreateTask(context.Background(), req); connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatalf("CreateTask error = %v, want CodeInvalidArgument", err)
+	}
+}
+
+func TestServer_CreateTask_EmptyDescription(t *testing.T) {
+	s := NewServer(nil, nil, nil, nil)
+
+	req := connect.NewRequest(&agentfleetv1.CreateTaskRequest{Repo: "dream-analyst", Description: ""})
+	if _, err := s.CreateTask(context.Background(), req); connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatalf("CreateTask error = %v, want CodeInvalidArgument", err)
+	}
+}
+
 func TestServer_AnswerQuestion(t *testing.T) {
 	store := &recordingStore{}
 	s := NewServer(nil, store, nil, nil)

@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { TaskList } from "./pages/TaskList";
 import { TaskDetail } from "./pages/TaskDetail";
+import { NewTaskDialog } from "./components/NewTaskDialog";
 import { client } from "./connectClient";
 import type { Task } from "./gen/agentfleet/v1/dashboard_pb";
 import { enrichTask } from "./mockEnrichment";
@@ -27,25 +28,18 @@ export default function App() {
   const [tasksError, setTasksError] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
 
-  useEffect(() => {
-    let cancelled = false;
-    const load = () => {
-      client
-        .listTasks({})
-        .then((res) => {
-          if (!cancelled) setTasks(res.tasks);
-        })
-        .catch((err: Error) => {
-          if (!cancelled) setTasksError(err.message);
-        });
-    };
-    load();
-    const interval = setInterval(load, POLL_INTERVAL_MS);
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
+  const loadTasks = useCallback(() => {
+    return client
+      .listTasks({})
+      .then((res) => setTasks(res.tasks))
+      .catch((err: Error) => setTasksError(err.message));
   }, []);
+
+  useEffect(() => {
+    loadTasks();
+    const interval = setInterval(loadTasks, POLL_INTERVAL_MS);
+    return () => clearInterval(interval);
+  }, [loadTasks]);
 
   function selectTask(id: string) {
     setSelectedId(id);
@@ -92,14 +86,12 @@ export default function App() {
         )}
 
         <div className="flex items-center gap-4 text-[10.5px] text-base-content/50">
-          <button
-            type="button"
-            disabled
-            className="px-3 py-1.5 rounded-md bg-base-content text-base-100 text-[11px] font-semibold opacity-40 cursor-not-allowed"
-            title="Task creation happens via Discord — not wired here yet"
-          >
-            + send a task
-          </button>
+          <NewTaskDialog
+            onCreated={(id) => {
+              loadTasks();
+              selectTask(id);
+            }}
+          />
           <span>{tasks.length} sessions live</span>
           <span>{repoCount} repos</span>
         </div>

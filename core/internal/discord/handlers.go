@@ -66,7 +66,7 @@ func (c *Client) startTask(ctx context.Context, s *discordgo.Session, i *discord
 		respond(s, i, "Failed to open task thread.")
 		return
 	}
-	taskID, err := c.tasks.CreateTask(ctx, repo, description, c.channelID, thread.ID)
+	taskID, err := c.tasks.CreateTask(ctx, repo, description, &c.channelID, &thread.ID)
 	if err != nil {
 		respond(s, i, "Failed to create task.")
 		return
@@ -93,7 +93,7 @@ func (c *Client) onMessageCreate(s *discordgo.Session, m *discordgo.MessageCreat
 				slog.Error("legacy !task: thread start failed", "channelId", c.channelID, "messageId", msg.ID, "error", err)
 				return
 			}
-			if _, err := c.tasks.CreateTask(ctx, repo, description, c.channelID, thread.ID); err != nil {
+			if _, err := c.tasks.CreateTask(ctx, repo, description, &c.channelID, &thread.ID); err != nil {
 				slog.Error("legacy !task create failed", "error", err)
 			}
 		}

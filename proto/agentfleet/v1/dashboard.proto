@@ -38,6 +38,20 @@ message GetTaskResponse {
   Task task = 1;
 }
 
+// Creates a task the same way a Discord /task command does, minus the
+// Discord thread — repo must be one of tasks.KnownRepos (core/internal/tasks/
+// store.go), description must be non-empty. The created task has no
+// discord_channel_id/discord_thread_id, which core/internal/discord/
+// session.go's PostToThread already handles as a no-op relay target.
+message CreateTaskRequest {
+  string repo = 1;
+  string description = 2;
+}
+
+message CreateTaskResponse {
+  Task task = 1;
+}
+
 // Streamed directly as `stream TranscriptEntry` on the RPC below — no
 // wrapper response message, unlike the unary GetTranscript (which reuses
 // transcript.proto's ReadTranscriptSinceResponse).
@@ -101,6 +115,7 @@ message AnswerQuestionResponse {
 service DashboardService {
   rpc ListTasks(ListTasksRequest) returns (ListTasksResponse);
   rpc GetTask(GetTaskRequest) returns (GetTaskResponse);
+  rpc CreateTask(CreateTaskRequest) returns (CreateTaskResponse);
   // Reuses transcript.proto's ReadTranscriptSinceRequest/Response rather
   // than duplicating a byte-identical message pair.
   // buf:lint:ignore RPC_REQUEST_STANDARD_NAME

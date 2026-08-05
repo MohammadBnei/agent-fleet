@@ -36,6 +36,22 @@ export interface GetTaskResponse {
 }
 
 /**
+ * Creates a task the same way a Discord /task command does, minus the
+ * Discord thread — repo must be one of tasks.KnownRepos (core/internal/tasks/
+ * store.go), description must be non-empty. The created task has no
+ * discord_channel_id/discord_thread_id, which core/internal/discord/
+ * session.go's PostToThread already handles as a no-op relay target.
+ */
+export interface CreateTaskRequest {
+  repo: string;
+  description: string;
+}
+
+export interface CreateTaskResponse {
+  task?: Task | undefined;
+}
+
+/**
  * Streamed directly as `stream TranscriptEntry` on the RPC below — no
  * wrapper response message, unlike the unary GetTranscript (which reuses
  * transcript.proto's ReadTranscriptSinceResponse).
@@ -264,6 +280,67 @@ export const GetTaskResponse: MessageFns<GetTaskResponse> = {
   },
   fromPartial<I extends Exact<DeepPartial<GetTaskResponse>, I>>(object: I): GetTaskResponse {
     const message = createBaseGetTaskResponse();
+    message.task = (object.task !== undefined && object.task !== null) ? Task.fromPartial(object.task) : undefined;
+    return message;
+  },
+};
+
+function createBaseCreateTaskRequest(): CreateTaskRequest {
+  return { repo: "", description: "" };
+}
+
+export const CreateTaskRequest: MessageFns<CreateTaskRequest> = {
+  fromJSON(object: any): CreateTaskRequest {
+    return {
+      repo: isSet(object.repo) ? globalThis.String(object.repo) : "",
+      description: isSet(object.description) ? globalThis.String(object.description) : "",
+    };
+  },
+
+  toJSON(message: CreateTaskRequest): unknown {
+    const obj: any = {};
+    if (message.repo !== "") {
+      obj.repo = message.repo;
+    }
+    if (message.description !== "") {
+      obj.description = message.description;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<CreateTaskRequest>, I>>(base?: I): CreateTaskRequest {
+    return CreateTaskRequest.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<CreateTaskRequest>, I>>(object: I): CreateTaskRequest {
+    const message = createBaseCreateTaskRequest();
+    message.repo = object.repo ?? "";
+    message.description = object.description ?? "";
+    return message;
+  },
+};
+
+function createBaseCreateTaskResponse(): CreateTaskResponse {
+  return { task: undefined };
+}
+
+export const CreateTaskResponse: MessageFns<CreateTaskResponse> = {
+  fromJSON(object: any): CreateTaskResponse {
+    return { task: isSet(object.task) ? Task.fromJSON(object.task) : undefined };
+  },
+
+  toJSON(message: CreateTaskResponse): unknown {
+    const obj: any = {};
+    if (message.task !== undefined) {
+      obj.task = Task.toJSON(message.task);
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<CreateTaskResponse>, I>>(base?: I): CreateTaskResponse {
+    return CreateTaskResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<CreateTaskResponse>, I>>(object: I): CreateTaskResponse {
+    const message = createBaseCreateTaskResponse();
     message.task = (object.task !== undefined && object.task !== null) ? Task.fromPartial(object.task) : undefined;
     return message;
   },
@@ -644,6 +721,7 @@ export const AnswerQuestionResponse: MessageFns<AnswerQuestionResponse> = {
 export interface DashboardService {
   ListTasks(request: ListTasksRequest): Promise<ListTasksResponse>;
   GetTask(request: GetTaskRequest): Promise<GetTaskResponse>;
+  CreateTask(request: CreateTaskRequest): Promise<CreateTaskResponse>;
   /**
    * Reuses transcript.proto's ReadTranscriptSinceRequest/Response rather
    * than duplicating a byte-identical message pair.

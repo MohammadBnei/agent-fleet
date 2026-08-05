@@ -39,6 +39,9 @@ const (
 	// DashboardServiceGetTaskProcedure is the fully-qualified name of the DashboardService's GetTask
 	// RPC.
 	DashboardServiceGetTaskProcedure = "/agentfleet.v1.DashboardService/GetTask"
+	// DashboardServiceCreateTaskProcedure is the fully-qualified name of the DashboardService's
+	// CreateTask RPC.
+	DashboardServiceCreateTaskProcedure = "/agentfleet.v1.DashboardService/CreateTask"
 	// DashboardServiceGetTranscriptProcedure is the fully-qualified name of the DashboardService's
 	// GetTranscript RPC.
 	DashboardServiceGetTranscriptProcedure = "/agentfleet.v1.DashboardService/GetTranscript"
@@ -65,6 +68,7 @@ const (
 type DashboardServiceClient interface {
 	ListTasks(context.Context, *connect.Request[v1.ListTasksRequest]) (*connect.Response[v1.ListTasksResponse], error)
 	GetTask(context.Context, *connect.Request[v1.GetTaskRequest]) (*connect.Response[v1.GetTaskResponse], error)
+	CreateTask(context.Context, *connect.Request[v1.CreateTaskRequest]) (*connect.Response[v1.CreateTaskResponse], error)
 	// Reuses transcript.proto's ReadTranscriptSinceRequest/Response rather
 	// than duplicating a byte-identical message pair.
 	// buf:lint:ignore RPC_REQUEST_STANDARD_NAME
@@ -104,6 +108,12 @@ func NewDashboardServiceClient(httpClient connect.HTTPClient, baseURL string, op
 			httpClient,
 			baseURL+DashboardServiceGetTaskProcedure,
 			connect.WithSchema(dashboardServiceMethods.ByName("GetTask")),
+			connect.WithClientOptions(opts...),
+		),
+		createTask: connect.NewClient[v1.CreateTaskRequest, v1.CreateTaskResponse](
+			httpClient,
+			baseURL+DashboardServiceCreateTaskProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("CreateTask")),
 			connect.WithClientOptions(opts...),
 		),
 		getTranscript: connect.NewClient[v1.ReadTranscriptSinceRequest, v1.ReadTranscriptSinceResponse](
@@ -155,6 +165,7 @@ func NewDashboardServiceClient(httpClient connect.HTTPClient, baseURL string, op
 type dashboardServiceClient struct {
 	listTasks        *connect.Client[v1.ListTasksRequest, v1.ListTasksResponse]
 	getTask          *connect.Client[v1.GetTaskRequest, v1.GetTaskResponse]
+	createTask       *connect.Client[v1.CreateTaskRequest, v1.CreateTaskResponse]
 	getTranscript    *connect.Client[v1.ReadTranscriptSinceRequest, v1.ReadTranscriptSinceResponse]
 	streamTranscript *connect.Client[v1.StreamTranscriptRequest, v1.TranscriptEntry]
 	getE2EStatus     *connect.Client[v1.GetE2EStatusRequest, v1.GetE2EStatusResponse]
@@ -172,6 +183,11 @@ func (c *dashboardServiceClient) ListTasks(ctx context.Context, req *connect.Req
 // GetTask calls agentfleet.v1.DashboardService.GetTask.
 func (c *dashboardServiceClient) GetTask(ctx context.Context, req *connect.Request[v1.GetTaskRequest]) (*connect.Response[v1.GetTaskResponse], error) {
 	return c.getTask.CallUnary(ctx, req)
+}
+
+// CreateTask calls agentfleet.v1.DashboardService.CreateTask.
+func (c *dashboardServiceClient) CreateTask(ctx context.Context, req *connect.Request[v1.CreateTaskRequest]) (*connect.Response[v1.CreateTaskResponse], error) {
+	return c.createTask.CallUnary(ctx, req)
 }
 
 // GetTranscript calls agentfleet.v1.DashboardService.GetTranscript.
@@ -213,6 +229,7 @@ func (c *dashboardServiceClient) AnswerQuestion(ctx context.Context, req *connec
 type DashboardServiceHandler interface {
 	ListTasks(context.Context, *connect.Request[v1.ListTasksRequest]) (*connect.Response[v1.ListTasksResponse], error)
 	GetTask(context.Context, *connect.Request[v1.GetTaskRequest]) (*connect.Response[v1.GetTaskResponse], error)
+	CreateTask(context.Context, *connect.Request[v1.CreateTaskRequest]) (*connect.Response[v1.CreateTaskResponse], error)
 	// Reuses transcript.proto's ReadTranscriptSinceRequest/Response rather
 	// than duplicating a byte-identical message pair.
 	// buf:lint:ignore RPC_REQUEST_STANDARD_NAME
@@ -248,6 +265,12 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 		DashboardServiceGetTaskProcedure,
 		svc.GetTask,
 		connect.WithSchema(dashboardServiceMethods.ByName("GetTask")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dashboardServiceCreateTaskHandler := connect.NewUnaryHandler(
+		DashboardServiceCreateTaskProcedure,
+		svc.CreateTask,
+		connect.WithSchema(dashboardServiceMethods.ByName("CreateTask")),
 		connect.WithHandlerOptions(opts...),
 	)
 	dashboardServiceGetTranscriptHandler := connect.NewUnaryHandler(
@@ -298,6 +321,8 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 			dashboardServiceListTasksHandler.ServeHTTP(w, r)
 		case DashboardServiceGetTaskProcedure:
 			dashboardServiceGetTaskHandler.ServeHTTP(w, r)
+		case DashboardServiceCreateTaskProcedure:
+			dashboardServiceCreateTaskHandler.ServeHTTP(w, r)
 		case DashboardServiceGetTranscriptProcedure:
 			dashboardServiceGetTranscriptHandler.ServeHTTP(w, r)
 		case DashboardServiceStreamTranscriptProcedure:
@@ -327,6 +352,10 @@ func (UnimplementedDashboardServiceHandler) ListTasks(context.Context, *connect.
 
 func (UnimplementedDashboardServiceHandler) GetTask(context.Context, *connect.Request[v1.GetTaskRequest]) (*connect.Response[v1.GetTaskResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.GetTask is not implemented"))
+}
+
+func (UnimplementedDashboardServiceHandler) CreateTask(context.Context, *connect.Request[v1.CreateTaskRequest]) (*connect.Response[v1.CreateTaskResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.CreateTask is not implemented"))
 }
 
 func (UnimplementedDashboardServiceHandler) GetTranscript(context.Context, *connect.Request[v1.ReadTranscriptSinceRequest]) (*connect.Response[v1.ReadTranscriptSinceResponse], error) {

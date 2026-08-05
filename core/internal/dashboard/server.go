@@ -8,6 +8,7 @@ package dashboard
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
@@ -60,6 +61,33 @@ func (s *Server) GetTask(ctx context.Context, req *connect.Request[agentfleetv1.
 		return nil, connect.NewError(connect.CodeNotFound, errors.New("task not found"))
 	}
 	return connect.NewResponse(&agentfleetv1.GetTaskResponse{Task: taskToProto(*t)}), nil
+}
+
+// CreateTask lets the dashboard create a task the same way a Discord /task
+// command does, minus the Discord thread — it calls the exact same
+// tasks.Store.CreateTask core/internal/discord/handlers.go's startTask
+// calls, just with nil channel/thread (docs/adr/0015). PostToThread
+// (core/internal/discord/session.go) already no-ops on a nil ThreadID, so
+// no other code needs to special-case a dashboard-origin task.
+func (s *Server) CreateTask(ctx context.Context, req *connect.Request[agentfleetv1.CreateTaskRequest]) (*connect.Response[agentfleetv1.CreateTaskResponse], error) {
+	repo := req.Msg.GetRepo()
+	if _, ok := tasks.KnownRepos[repo]; !ok {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("unknown repo %q", repo))
+	}
+	description := req.Msg.GetDescription()
+	if description == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("description is required"))
+	}
+
+	id, err := s.tasks.CreateTask(ctx, repo, description, nil, nil)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	t, err := s.tasks.GetTask(ctx, id)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	return connect.NewResponse(&agentfleetv1.CreateTaskResponse{Task: taskToProto(*t)}), nil
 }
 
 func (s *Server) GetTranscript(ctx context.Context, req *connect.Request[agentfleetv1.ReadTranscriptSinceRequest]) (*connect.Response[agentfleetv1.ReadTranscriptSinceResponse], error) {
