@@ -1,5 +1,17 @@
 # Changelog
 
+# [1.5.0](https://github.com/MohammadBnei/agent-fleet/compare/1.4.0...1.5.0) (2026-08-05)
+
+
+### Bug Fixes
+
+* **core:** retry Discord channel lookup in onReady instead of silently giving up ([8cbfaf1](https://github.com/MohammadBnei/agent-fleet/commit/8cbfaf1f5d2d01108e367e923f769f37dcf4a108))
+
+
+### Features
+
+* **dashboard:** reskin to the "herd" design ([43e7367](https://github.com/MohammadBnei/agent-fleet/commit/43e73678ecd88176817135320c80ba97a71e2135))
+
 # [1.4.0](https://github.com/MohammadBnei/agent-fleet/compare/1.3.0...1.4.0) (2026-08-04)
 
 
