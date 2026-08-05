@@ -1,2 +1,66 @@
+@import url("https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600&family=IBM+Plex+Mono:wght@400;500;600&display=swap");
 @import "tailwindcss";
-@plugin "daisyui";
+@plugin "daisyui" {
+  themes: false;
+}
+@plugin "daisyui/theme" {
+  name: "herd";
+  default: true;
+  color-scheme: dark;
+  --color-base-100: #100f0c;
+  --color-base-200: #14130f;
+  --color-base-300: #1c1b15;
+  --color-base-content: #eae7de;
+  --color-primary: #e0a94e;
+  --color-primary-content: #100f0c;
+  --color-secondary: #7ba3dd;
+  --color-secondary-content: #100f0c;
+  --color-accent: #7ba3dd;
+  --color-accent-content: #100f0c;
+  --color-neutral: #1c1b15;
+  --color-neutral-content: #eae7de;
+  --color-info: #7ba3dd;
+  --color-info-content: #100f0c;
+  --color-success: #7fa07c;
+  --color-success-content: #100f0c;
+  --color-warning: #c58b6a;
+  --color-warning-content: #100f0c;
+  --color-error: #c58b6a;
+  --color-error-content: #100f0c;
+  --radius-selector: 0.35rem;
+  --radius-field: 0.35rem;
+  --radius-box: 0.5rem;
+  --border: 1px;
+}
+
+@layer base {
+  body {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    -webkit-font-smoothing: antialiased;
+  }
+  h1,
+  h2,
+  h3,
+  .font-display {
+    font-family: "Bricolage Grotesque", sans-serif;
+    letter-spacing: -0.01em;
+  }
+  ::selection {
+    background: var(--color-primary);
+    color: var(--color-primary-content);
+  }
+}
+
+@keyframes fpulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.animate-fpulse {
+  animation: fpulse 1.8s infinite;
+}
