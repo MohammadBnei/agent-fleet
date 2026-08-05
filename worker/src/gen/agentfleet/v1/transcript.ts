@@ -28,6 +28,17 @@ export enum TranscriptEntryType {
    * payload. Never relayed to Discord (core's relay loop skips this type).
    */
   TRANSCRIPT_ENTRY_TYPE_TOOL_CALL = 6,
+  /**
+   * TRANSCRIPT_ENTRY_TYPE_SYSTEM - The raw Claude Agent SDK message discriminants worker/src/planning.ts's
+   * logSdkMessage relays verbatim (reliability-findings.md #0: "relay
+   * everything, let the UI decide, no pre-filtering") — `text` is a JSON
+   * payload, dashboard-only, never relayed to Discord (matches the DB
+   * CHECK constraint in db/schema.sql, already widened for these values).
+   */
+  TRANSCRIPT_ENTRY_TYPE_SYSTEM = 7,
+  TRANSCRIPT_ENTRY_TYPE_ASSISTANT = 8,
+  TRANSCRIPT_ENTRY_TYPE_USER = 9,
+  TRANSCRIPT_ENTRY_TYPE_RESULT = 10,
   UNRECOGNIZED = -1,
 }
 
@@ -54,6 +65,18 @@ export function transcriptEntryTypeFromJSON(object: any): TranscriptEntryType {
     case 6:
     case "TRANSCRIPT_ENTRY_TYPE_TOOL_CALL":
       return TranscriptEntryType.TRANSCRIPT_ENTRY_TYPE_TOOL_CALL;
+    case 7:
+    case "TRANSCRIPT_ENTRY_TYPE_SYSTEM":
+      return TranscriptEntryType.TRANSCRIPT_ENTRY_TYPE_SYSTEM;
+    case 8:
+    case "TRANSCRIPT_ENTRY_TYPE_ASSISTANT":
+      return TranscriptEntryType.TRANSCRIPT_ENTRY_TYPE_ASSISTANT;
+    case 9:
+    case "TRANSCRIPT_ENTRY_TYPE_USER":
+      return TranscriptEntryType.TRANSCRIPT_ENTRY_TYPE_USER;
+    case 10:
+    case "TRANSCRIPT_ENTRY_TYPE_RESULT":
+      return TranscriptEntryType.TRANSCRIPT_ENTRY_TYPE_RESULT;
     case -1:
     case "UNRECOGNIZED":
     default:
@@ -77,6 +100,14 @@ export function transcriptEntryTypeToJSON(object: TranscriptEntryType): string {
       return "TRANSCRIPT_ENTRY_TYPE_ANSWER";
     case TranscriptEntryType.TRANSCRIPT_ENTRY_TYPE_TOOL_CALL:
       return "TRANSCRIPT_ENTRY_TYPE_TOOL_CALL";
+    case TranscriptEntryType.TRANSCRIPT_ENTRY_TYPE_SYSTEM:
+      return "TRANSCRIPT_ENTRY_TYPE_SYSTEM";
+    case TranscriptEntryType.TRANSCRIPT_ENTRY_TYPE_ASSISTANT:
+      return "TRANSCRIPT_ENTRY_TYPE_ASSISTANT";
+    case TranscriptEntryType.TRANSCRIPT_ENTRY_TYPE_USER:
+      return "TRANSCRIPT_ENTRY_TYPE_USER";
+    case TranscriptEntryType.TRANSCRIPT_ENTRY_TYPE_RESULT:
+      return "TRANSCRIPT_ENTRY_TYPE_RESULT";
     case TranscriptEntryType.UNRECOGNIZED:
     default:
       return "UNRECOGNIZED";

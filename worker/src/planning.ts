@@ -136,7 +136,7 @@ async function logSdkMessage(actor: string, msg: { type: string; [key: string]: 
       }
       if (block.type === "tool_use") {
         log("info", `${actor} tool_use`, { tool: block.name, input: block.input });
-        await push(JSON.stringify({ tool: block.name, input: block.input }), "assistant");
+        await push(JSON.stringify({ id: block.id, tool: block.name, input: block.input }), "assistant");
       }
     }
     return;
@@ -148,7 +148,11 @@ async function logSdkMessage(actor: string, msg: { type: string; [key: string]: 
         const isError = Boolean(block.is_error);
         const resultContent = typeof block.content === "string" ? block.content.slice(0, 2000) : block.content;
         log(isError ? "error" : "info", `${actor} tool_result`, { isError, content: resultContent });
-        await push(JSON.stringify({ isError, content: resultContent }), "user");
+        // toolUseId correlates back to the tool_use block's own `id` above —
+        // the dashboard pairs call+output into one collapsible unit instead
+        // of two unrelated-looking bubbles (standard Anthropic content-block
+        // shape: tool_result always carries the originating tool_use's id).
+        await push(JSON.stringify({ toolUseId: block.tool_use_id, isError, content: resultContent }), "user");
       }
     }
     return;

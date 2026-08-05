@@ -39,18 +39,31 @@ const (
 	// call (see docs/adr/0020, docs/adr/0021's sidecar). `text` is a JSON
 	// payload. Never relayed to Discord (core's relay loop skips this type).
 	TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_TOOL_CALL TranscriptEntryType = 6
+	// The raw Claude Agent SDK message discriminants worker/src/planning.ts's
+	// logSdkMessage relays verbatim (reliability-findings.md #0: "relay
+	// everything, let the UI decide, no pre-filtering") — `text` is a JSON
+	// payload, dashboard-only, never relayed to Discord (matches the DB
+	// CHECK constraint in db/schema.sql, already widened for these values).
+	TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_SYSTEM    TranscriptEntryType = 7
+	TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_ASSISTANT TranscriptEntryType = 8
+	TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_USER      TranscriptEntryType = 9
+	TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_RESULT    TranscriptEntryType = 10
 )
 
 // Enum value maps for TranscriptEntryType.
 var (
 	TranscriptEntryType_name = map[int32]string{
-		0: "TRANSCRIPT_ENTRY_TYPE_UNSPECIFIED",
-		1: "TRANSCRIPT_ENTRY_TYPE_DISCUSSION",
-		2: "TRANSCRIPT_ENTRY_TYPE_APPROVE",
-		3: "TRANSCRIPT_ENTRY_TYPE_ABORT",
-		4: "TRANSCRIPT_ENTRY_TYPE_QUESTION",
-		5: "TRANSCRIPT_ENTRY_TYPE_ANSWER",
-		6: "TRANSCRIPT_ENTRY_TYPE_TOOL_CALL",
+		0:  "TRANSCRIPT_ENTRY_TYPE_UNSPECIFIED",
+		1:  "TRANSCRIPT_ENTRY_TYPE_DISCUSSION",
+		2:  "TRANSCRIPT_ENTRY_TYPE_APPROVE",
+		3:  "TRANSCRIPT_ENTRY_TYPE_ABORT",
+		4:  "TRANSCRIPT_ENTRY_TYPE_QUESTION",
+		5:  "TRANSCRIPT_ENTRY_TYPE_ANSWER",
+		6:  "TRANSCRIPT_ENTRY_TYPE_TOOL_CALL",
+		7:  "TRANSCRIPT_ENTRY_TYPE_SYSTEM",
+		8:  "TRANSCRIPT_ENTRY_TYPE_ASSISTANT",
+		9:  "TRANSCRIPT_ENTRY_TYPE_USER",
+		10: "TRANSCRIPT_ENTRY_TYPE_RESULT",
 	}
 	TranscriptEntryType_value = map[string]int32{
 		"TRANSCRIPT_ENTRY_TYPE_UNSPECIFIED": 0,
@@ -60,6 +73,10 @@ var (
 		"TRANSCRIPT_ENTRY_TYPE_QUESTION":    4,
 		"TRANSCRIPT_ENTRY_TYPE_ANSWER":      5,
 		"TRANSCRIPT_ENTRY_TYPE_TOOL_CALL":   6,
+		"TRANSCRIPT_ENTRY_TYPE_SYSTEM":      7,
+		"TRANSCRIPT_ENTRY_TYPE_ASSISTANT":   8,
+		"TRANSCRIPT_ENTRY_TYPE_USER":        9,
+		"TRANSCRIPT_ENTRY_TYPE_RESULT":      10,
 	}
 )
 
@@ -378,7 +395,7 @@ const file_agentfleet_v1_transcript_proto_rawDesc = "" +
 	"timeout_ms\x18\x03 \x01(\x05R\ttimeoutMs\"r\n" +
 	"\x1bReadTranscriptSinceResponse\x128\n" +
 	"\aentries\x18\x01 \x03(\v2\x1e.agentfleet.v1.TranscriptEntryR\aentries\x12\x19\n" +
-	"\bnext_seq\x18\x02 \x01(\x03R\anextSeq*\x91\x02\n" +
+	"\bnext_seq\x18\x02 \x01(\x03R\anextSeq*\x9a\x03\n" +
 	"\x13TranscriptEntryType\x12%\n" +
 	"!TRANSCRIPT_ENTRY_TYPE_UNSPECIFIED\x10\x00\x12$\n" +
 	" TRANSCRIPT_ENTRY_TYPE_DISCUSSION\x10\x01\x12!\n" +
@@ -386,7 +403,12 @@ const file_agentfleet_v1_transcript_proto_rawDesc = "" +
 	"\x1bTRANSCRIPT_ENTRY_TYPE_ABORT\x10\x03\x12\"\n" +
 	"\x1eTRANSCRIPT_ENTRY_TYPE_QUESTION\x10\x04\x12 \n" +
 	"\x1cTRANSCRIPT_ENTRY_TYPE_ANSWER\x10\x05\x12#\n" +
-	"\x1fTRANSCRIPT_ENTRY_TYPE_TOOL_CALL\x10\x06BMZKgithub.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1;agentfleetv1b\x06proto3"
+	"\x1fTRANSCRIPT_ENTRY_TYPE_TOOL_CALL\x10\x06\x12 \n" +
+	"\x1cTRANSCRIPT_ENTRY_TYPE_SYSTEM\x10\a\x12#\n" +
+	"\x1fTRANSCRIPT_ENTRY_TYPE_ASSISTANT\x10\b\x12\x1e\n" +
+	"\x1aTRANSCRIPT_ENTRY_TYPE_USER\x10\t\x12 \n" +
+	"\x1cTRANSCRIPT_ENTRY_TYPE_RESULT\x10\n" +
+	"BMZKgithub.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1;agentfleetv1b\x06proto3"
 
 var (
 	file_agentfleet_v1_transcript_proto_rawDescOnce sync.Once

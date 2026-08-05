@@ -7,7 +7,8 @@ import { MobileTaskList } from "./mobile/MobileTaskList";
 import { MobileTaskDetail } from "./mobile/MobileTaskDetail";
 import { client } from "./connectClient";
 import type { Task } from "./gen/agentfleet/v1/dashboard_pb";
-import { findPendingQuestion } from "./transcript";
+import { findPendingQuestion, latestTodos, type TodoItem } from "./transcript";
+import { ErrorModal } from "./components/ErrorModal";
 
 // No router library for two views (see docs/adr/0013's plan) — state
 // mirrored to ?task=<id> so a task's detail view is still bookmarkable/
@@ -39,6 +40,7 @@ export default function App() {
   const [tasksError, setTasksError] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
   const [needsYouIds, setNeedsYouIds] = useState<Set<string>>(new Set());
+  const [todosById, setTodosById] = useState<Map<string, TodoItem[]>>(new Map());
 
   const loadTasks = useCallback(() => {
     return client
@@ -60,10 +62,14 @@ export default function App() {
   // concurrency cap of 5 (see CLAUDE.md), on the same 5s poll cadence as
   // loadTasks — an extra live stream per active task just for this would
   // contradict this file's own "plain polling, not a stream" call above.
+  // Same fetch also derives each task's real todos (latest TodoWrite call)
+  // for the list cards' progress bars — one more field off data already in
+  // hand, not a second round of per-task requests.
   useEffect(() => {
     const active = tasks.filter((t) => ACTIVE_STATUSES.has(t.status));
     if (active.length === 0) {
       setNeedsYouIds(new Set());
+      setTodosById(new Map());
       return;
     }
     let cancelled = false;
@@ -71,12 +77,13 @@ export default function App() {
       active.map((t) =>
         client
           .getTranscript({ taskId: t.id, sinceSeq: 0n })
-          .then((res) => ({ id: t.id, pending: findPendingQuestion(res.entries) !== null }))
-          .catch(() => ({ id: t.id, pending: false })),
+          .then((res) => ({ id: t.id, pending: findPendingQuestion(res.entries) !== null, todos: latestTodos(res.entries) }))
+          .catch(() => ({ id: t.id, pending: false, todos: null as TodoItem[] | null })),
       ),
     ).then((results) => {
       if (cancelled) return;
       setNeedsYouIds(new Set(results.filter((r) => r.pending).map((r) => r.id)));
+      setTodosById(new Map(results.filter((r): r is typeof r & { todos: TodoItem[] } => r.todos !== null).map((r) => [r.id, r.todos])));
     });
     return () => {
       cancelled = true;
@@ -209,9 +216,7 @@ export default function App() {
         )}
       </div>
 
-      {tasksError && (
-        <div className="alert alert-error m-2 text-sm">{tasksError}</div>
-      )}
+      <ErrorModal message={tasksError} onClose={() => setTasksError(null)} />
 
       <div className="hidden sm:flex flex-col lg:flex-row flex-1 min-h-0">
         {view === "worktrees" ? (
@@ -223,6 +228,7 @@ export default function App() {
                 tasks={filteredTasks}
                 selectedId={selectedId}
                 needsYouIds={needsYouIds}
+                todosById={todosById}
                 onSelect={selectTask}
                 onDelete={deleteTask}
               />
@@ -246,6 +252,7 @@ export default function App() {
             tasks={tasks}
             filteredTasks={filteredTasks}
             needsYouIds={needsYouIds}
+            todosById={todosById}
             needsYouCount={needsYouCount}
             repoCount={repoCount}
             filter={filter}

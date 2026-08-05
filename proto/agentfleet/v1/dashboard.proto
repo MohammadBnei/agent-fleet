@@ -113,6 +113,23 @@ message AnswerQuestionResponse {
   string status = 1;
 }
 
+// Discuss lets a human send an arbitrary free-text message from the
+// dashboard, full parity with a Discord thread reply — appended as a
+// "discussion" transcript entry, picked up by the worker's existing
+// streamHumanMessages SSE the same way a Discord reply already is (no
+// worker/sidecar changes needed, it's a plain cursor-based transcript
+// stream, not Discord-specific). `from`/`type` are hardcoded server-side,
+// same pattern as Approve hardcoding "human"/"approve" — the dashboard has
+// no need to expose them.
+message DiscussRequest {
+  string task_id = 1;
+  string text = 2;
+}
+
+message DiscussResponse {
+  string status = 1;
+}
+
 // Soft-deletes the task (see db/schema.sql's tasks.deleted_at) after
 // force-tearing down any live worker/e2e pod — unlike Stop, which only
 // posts an "abort" transcript entry the worker pod must be alive and
@@ -194,6 +211,7 @@ service DashboardService {
   rpc Stop(StopRequest) returns (StopResponse);
   rpc KillE2e(KillE2eRequest) returns (KillE2eResponse);
   rpc AnswerQuestion(AnswerQuestionRequest) returns (AnswerQuestionResponse);
+  rpc Discuss(DiscussRequest) returns (DiscussResponse);
   rpc DeleteTask(DeleteTaskRequest) returns (DeleteTaskResponse);
   // Reuses provisioner.proto's ListWorktreesRequest (identical shape,
   // empty) and DeleteWorktreeRequest/Response (identical shape, no

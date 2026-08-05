@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { client } from "../connectClient";
 import type { WorktreeView } from "../gen/agentfleet/v1/dashboard_pb";
+import { ErrorModal } from "../components/ErrorModal";
 
 // The manual half of worktree/branch cleanup (reliability-findings.md #2)
 // — the automated half is the provisioner's periodic [gone]-branch sweep,
@@ -106,7 +107,7 @@ export function Worktrees() {
           {loading ? "Refreshing…" : "Refresh"}
         </button>
       </div>
-      {error && <div className="alert alert-error text-sm mb-3">{error}</div>}
+      <ErrorModal message={error} onClose={() => setError(null)} />
       {!loading && worktrees.length === 0 && !error && (
         <div className="opacity-60 text-sm">No worktrees on disk.</div>
       )}

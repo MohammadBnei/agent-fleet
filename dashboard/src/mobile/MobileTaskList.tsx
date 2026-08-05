@@ -2,15 +2,16 @@ import type { Task } from "../gen/agentfleet/v1/dashboard_pb";
 import { enrichTask } from "../mockEnrichment";
 import { bucketTasks, prBadge } from "../pages/TaskList";
 import { NewTaskDialog } from "../components/NewTaskDialog";
+import type { TodoItem } from "../transcript";
 
 // Mirrors the "herd" mock's phone list screen (Agent Fleet Mobile.dc.html)
 // minus the device chrome (status bar / home indicator are the design
 // tool's own preview frame, not real UI). Pure presentation — all data
 // comes from App.tsx, same as the desktop TaskList.
 
-function NeedsYouCard({ task, onSelect }: { task: Task; onSelect: () => void }) {
+function NeedsYouCard({ task, todos, onSelect }: { task: Task; todos: TodoItem[]; onSelect: () => void }) {
   const enrichment = enrichTask(task);
-  const done = enrichment.todos.filter((t) => t.done).length;
+  const done = todos.filter((t) => t.status === "completed").length;
   return (
     <button
       type="button"
@@ -25,13 +26,13 @@ function NeedsYouCard({ task, onSelect }: { task: Task; onSelect: () => void }) 
       </div>
       <div className="text-[13px] leading-relaxed mt-2 text-base-content/95">{task.description}</div>
       <div className="flex gap-1 mt-3">
-        {enrichment.todos.map((t, i) => (
-          <div key={i} className={`flex-1 h-[5px] rounded ${t.done ? "bg-secondary" : "bg-base-content/10"}`} />
+        {todos.map((t, i) => (
+          <div key={i} className={`flex-1 h-[5px] rounded ${t.status === "completed" ? "bg-secondary" : "bg-base-content/10"}`} />
         ))}
       </div>
       <div className="flex items-center gap-2 mt-1.5">
         <span className="text-[10px] text-base-content/50">
-          {done} of {enrichment.todos.length} todos
+          {done} of {todos.length} todos
         </span>
         <span className="ml-auto px-3.5 py-1.5 rounded-md bg-primary text-primary-content text-[11px] font-semibold min-h-8 flex items-center">
           answer
@@ -41,10 +42,10 @@ function NeedsYouCard({ task, onSelect }: { task: Task; onSelect: () => void }) 
   );
 }
 
-function WorkingCard({ task, onSelect }: { task: Task; onSelect: () => void }) {
+function WorkingCard({ task, todos, onSelect }: { task: Task; todos: TodoItem[]; onSelect: () => void }) {
   const enrichment = enrichTask(task);
-  const done = enrichment.todos.filter((t) => t.done).length;
-  const pct = Math.round((done / Math.max(enrichment.todos.length, 1)) * 100);
+  const done = todos.filter((t) => t.status === "completed").length;
+  const pct = Math.round((done / Math.max(todos.length, 1)) * 100);
   return (
     <button
       type="button"
@@ -63,7 +64,7 @@ function WorkingCard({ task, onSelect }: { task: Task; onSelect: () => void }) {
           <div className="h-1 bg-secondary rounded-full" style={{ width: `${pct}%` }} />
         </div>
         <span className="text-[10px] text-base-content/50">
-          {done}/{enrichment.todos.length}
+          {done}/{todos.length}
         </span>
       </div>
     </button>
@@ -102,6 +103,7 @@ export function MobileTaskList({
   tasks,
   filteredTasks,
   needsYouIds,
+  todosById,
   needsYouCount,
   repoCount,
   filter,
@@ -112,6 +114,7 @@ export function MobileTaskList({
   tasks: Task[];
   filteredTasks: Task[];
   needsYouIds: Set<string>;
+  todosById: Map<string, TodoItem[]>;
   needsYouCount: number;
   repoCount: number;
   filter: string;
@@ -157,12 +160,12 @@ export function MobileTaskList({
           <>
             <Section title="NEEDS YOU" count={needsYou.length}>
               {needsYou.map((t) => (
-                <NeedsYouCard key={t.id} task={t} onSelect={() => onSelect(t.id)} />
+                <NeedsYouCard key={t.id} task={t} todos={todosById.get(t.id) ?? []} onSelect={() => onSelect(t.id)} />
               ))}
             </Section>
             <Section title="WORKING" count={working.length}>
               {working.map((t) => (
-                <WorkingCard key={t.id} task={t} onSelect={() => onSelect(t.id)} />
+                <WorkingCard key={t.id} task={t} todos={todosById.get(t.id) ?? []} onSelect={() => onSelect(t.id)} />
               ))}
             </Section>
             <Section title="SHIPPED" count={shipped.length}>

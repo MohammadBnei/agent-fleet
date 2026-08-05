@@ -1,5 +1,6 @@
 import type { Task } from "../gen/agentfleet/v1/dashboard_pb";
 import { enrichTask } from "../mockEnrichment";
+import type { TodoItem } from "../transcript";
 
 export const ACTIVE_STATUSES = new Set(["pending", "claimed", "planning", "implementing"]);
 export const SHIPPED_STATUSES = new Set(["done", "failed", "cancelled"]);
@@ -67,17 +68,19 @@ function DeleteButton({ onDelete }: { onDelete: () => void }) {
 
 function NeedsYouCard({
   task,
+  todos,
   selected,
   onSelect,
   onDelete,
 }: {
   task: Task;
+  todos: TodoItem[];
   selected: boolean;
   onSelect: () => void;
   onDelete: () => void;
 }) {
   const enrichment = enrichTask(task);
-  const progress = enrichment.todos.filter((t) => t.done).length;
+  const progress = todos.filter((t) => t.status === "completed").length;
   return (
     <div className="relative">
       <button
@@ -97,7 +100,7 @@ function NeedsYouCard({
           {task.description}
         </div>
         <div className="text-[9.5px] text-base-content/40 mt-1.5">
-          {progress} of {enrichment.todos.length} todos
+          {progress} of {todos.length} todos
         </div>
       </button>
       <DeleteButton onDelete={onDelete} />
@@ -107,18 +110,19 @@ function NeedsYouCard({
 
 function WorkingCard({
   task,
+  todos,
   selected,
   onSelect,
   onDelete,
 }: {
   task: Task;
+  todos: TodoItem[];
   selected: boolean;
   onSelect: () => void;
   onDelete: () => void;
 }) {
-  const enrichment = enrichTask(task);
-  const progress = enrichment.todos.filter((t) => t.done).length;
-  const pct = Math.round((progress / Math.max(enrichment.todos.length, 1)) * 100);
+  const progress = todos.filter((t) => t.status === "completed").length;
+  const pct = Math.round((progress / Math.max(todos.length, 1)) * 100);
   return (
     <div className="relative">
       <button
@@ -141,7 +145,7 @@ function WorkingCard({
             <div className="h-[3px] bg-info rounded-full" style={{ width: `${pct}%` }} />
           </div>
           <span className="text-[9.5px] text-base-content/40">
-            {progress}/{enrichment.todos.length}
+            {progress}/{todos.length}
           </span>
         </div>
       </button>
@@ -184,12 +188,14 @@ export function TaskList({
   tasks,
   selectedId,
   needsYouIds,
+  todosById,
   onSelect,
   onDelete,
 }: {
   tasks: Task[];
   selectedId: string | null;
   needsYouIds: Set<string>;
+  todosById: Map<string, TodoItem[]>;
   onSelect: (id: string) => void;
   onDelete: (id: string) => void;
 }) {
@@ -206,6 +212,7 @@ export function TaskList({
           <NeedsYouCard
             key={t.id}
             task={t}
+            todos={todosById.get(t.id) ?? []}
             selected={t.id === selectedId}
             onSelect={() => onSelect(t.id)}
             onDelete={() => onDelete(t.id)}
@@ -217,6 +224,7 @@ export function TaskList({
           <WorkingCard
             key={t.id}
             task={t}
+            todos={todosById.get(t.id) ?? []}
             selected={t.id === selectedId}
             onSelect={() => onSelect(t.id)}
             onDelete={() => onDelete(t.id)}
