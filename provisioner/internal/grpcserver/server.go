@@ -196,14 +196,14 @@ func (s *Server) TearDownSession(ctx context.Context, req *agentfleetv1.TearDown
 }
 
 func (s *Server) tearDownWorker(ctx context.Context, taskID string) (*agentfleetv1.TearDownSessionResponse, error) {
-	repo, exists, err := s.k8sc.GetWorkerPodRepo(ctx, taskID)
+	repo, exists, err := s.k8sc.GetWorkerJobRepo(ctx, taskID)
 	if err != nil {
 		return nil, err
 	}
 	if !exists {
 		return &agentfleetv1.TearDownSessionResponse{TornDown: false}, nil
 	}
-	if err := s.k8sc.DeleteWorkerPod(ctx, taskID); err != nil {
+	if err := s.k8sc.DeleteWorkerJob(ctx, taskID); err != nil {
 		return nil, err
 	}
 	if err := s.git.RemoveWorktree(ctx, repo, taskID, "agent/"+taskID); err != nil {

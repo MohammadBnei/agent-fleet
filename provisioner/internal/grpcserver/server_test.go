@@ -150,8 +150,11 @@ func TestCreateWorkerPod_ClonesAndCreatesPod(t *testing.T) {
 		t.Errorf("unexpected pod name: %s", resp.GetPodName())
 	}
 
-	if _, exists, err := k8sc.GetPod(ctx, resp.GetPodName()); err != nil || !exists {
-		t.Fatalf("expected the worker pod to exist: exists=%v err=%v", exists, err)
+	// Worker sessions are batch/v1.Jobs now (reliability-findings.md #11),
+	// not bare Pods — GetWorkerJobRepo is the existence check that actually
+	// applies here.
+	if _, exists, err := k8sc.GetWorkerJobRepo(ctx, "task-1"); err != nil || !exists {
+		t.Fatalf("expected the worker job to exist: exists=%v err=%v", exists, err)
 	}
 
 	sawScheduled := false
@@ -198,7 +201,7 @@ func TestTearDownSession_Worker_RemovesPodAndWorktree(t *testing.T) {
 	if !resp.GetTornDown() {
 		t.Errorf("expected torn_down=true")
 	}
-	if _, exists, err := k8sc.GetPod(ctx, k8s.WorkerResourceName("task-1")); err != nil || exists {
-		t.Fatalf("expected the worker pod to be deleted: exists=%v err=%v", exists, err)
+	if _, exists, err := k8sc.GetWorkerJobRepo(ctx, "task-1"); err != nil || exists {
+		t.Fatalf("expected the worker job to be deleted: exists=%v err=%v", exists, err)
 	}
 }

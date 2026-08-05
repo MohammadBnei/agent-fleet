@@ -5,12 +5,22 @@ import (
 	"fmt"
 	"os"
 
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
+
+// workerJobTTLSeconds is how long a finished worker Job (and the pod it
+// owns) sticks around before Kubernetes' TTL controller garbage-collects
+// it — reliability-findings.md #11: this replaces the reconcile loop's own
+// hand-rolled terminal-phase GC pass. Long enough to `kubectl logs` a
+// crashed worker, short enough not to accumulate.
+const workerJobTTLSeconds = 300
+
+func int32Ptr(i int32) *int32 { return &i }
 
 // CreatedE2ePod mirrors CreatedE2ePod in k8s.ts.
 type CreatedE2ePod struct {
@@ -105,10 +115,20 @@ func (c *Client) GetPod(ctx context.Context, name string) (phase corev1.PodPhase
 }
 
 // CreateWorkerPod builds the two-container pod (worker + sidecar,
-// docs/adr/0020 point 5) for a claimed task. The worker never runs git
-// itself — its worktree is already prepared by git.Manager before this is
-// called (docs/adr/0019 point 2) — mounted into both containers via the
-// same subPath convention e2e pods already use.
+// docs/adr/0020 point 5) for a claimed task, wrapped in a batch/v1.Job
+// (reliability-findings.md #11) rather than a bare Pod — retry/backoff
+// and terminal-state GC come from Job's own semantics instead of the
+// reconcile loop hand-rolling them. BackoffLimit is deliberately 0: core's
+// heartbeat/reclaim (ClaimNextTask) stays the sole retry mechanism
+// (ADR-0020 pt.2 — the provisioner never decides pod lifecycle on its
+// own), a k8s-level retry here would silently double up against it.
+//
+// e2e-preview pods (CreatePod, below) deliberately stay bare Pods: they're
+// long-running/interactive, killed explicitly via KillE2eSession, not
+// run-to-completion — Job's retry/backoff/TTL semantics don't apply to a
+// workload with no expected completion, and (per reconcile/loop.go's own
+// doc comment) they were never part of the hand-rolled GC this finding is
+// about in the first place.
 func (c *Client) CreateWorkerPod(ctx context.Context, taskID, repo, description, leaseID, baseBranch string) error {
 	if baseBranch == "" {
 		baseBranch = "main" // matches git.Manager.CreateWorktree's own default
@@ -119,10 +139,8 @@ func (c *Client) CreateWorkerPod(ctx context.Context, taskID, repo, description,
 
 	sidecarRestartAlways := corev1.ContainerRestartPolicyAlways
 
-	pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: c.Namespace, Labels: labels},
-		Spec: corev1.PodSpec{
-			RestartPolicy: corev1.RestartPolicyNever,
+	podSpec := corev1.PodSpec{
+		RestartPolicy: corev1.RestartPolicyNever,
 			// sidecar runs as a native sidecar (K8s 1.29+, this cluster is
 			// v1.35): an init container with RestartPolicy Always plus a
 			// StartupProbe, so kubelet blocks starting the worker container
@@ -203,39 +221,58 @@ func (c *Client) CreateWorkerPod(ctx context.Context, taskID, repo, description,
 					},
 				},
 			},
-			Volumes: []corev1.Volume{
-				{
-					Name: "workspace",
-					VolumeSource: corev1.VolumeSource{
-						PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: c.WorkspacePVC},
-					},
+		Volumes: []corev1.Volume{
+			{
+				Name: "workspace",
+				VolumeSource: corev1.VolumeSource{
+					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: c.WorkspacePVC},
 				},
 			},
 		},
 	}
 
-	_, err := c.Core.CoreV1().Pods(c.Namespace).Create(ctx, pod, metav1.CreateOptions{})
+	job := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: c.Namespace, Labels: labels},
+		Spec: batchv1.JobSpec{
+			BackoffLimit:            int32Ptr(0),
+			TTLSecondsAfterFinished: int32Ptr(workerJobTTLSeconds),
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{Labels: labels},
+				Spec:       podSpec,
+			},
+		},
+	}
+
+	_, err := c.Core.BatchV1().Jobs(c.Namespace).Create(ctx, job, metav1.CreateOptions{})
 	return err
 }
 
-func (c *Client) DeleteWorkerPod(ctx context.Context, taskID string) error {
-	err := c.Core.CoreV1().Pods(c.Namespace).Delete(ctx, WorkerResourceName(taskID), metav1.DeleteOptions{})
+// jobForegroundDeletion cascades to the Job's own Pod synchronously —
+// without it, the default background propagation can leave the Pod
+// visible for a moment after DeleteWorkerJob returns.
+func jobForegroundDeletion() metav1.DeleteOptions {
+	policy := metav1.DeletePropagationForeground
+	return metav1.DeleteOptions{PropagationPolicy: &policy}
+}
+
+func (c *Client) DeleteWorkerJob(ctx context.Context, taskID string) error {
+	err := c.Core.BatchV1().Jobs(c.Namespace).Delete(ctx, WorkerResourceName(taskID), jobForegroundDeletion())
 	return ignoreNotFound(err)
 }
 
-// GetWorkerPodRepo recovers which repo a worker pod belongs to from its
+// GetWorkerJobRepo recovers which repo a worker job belongs to from its
 // own RepoLabel — the only way to know, since the provisioner holds no DB
 // credentials to look it up any other way (docs/adr/0020 point 1). Needed
 // by TearDownSession to remove the right worktree.
-func (c *Client) GetWorkerPodRepo(ctx context.Context, taskID string) (repo string, exists bool, err error) {
-	pod, err := c.Core.CoreV1().Pods(c.Namespace).Get(ctx, WorkerResourceName(taskID), metav1.GetOptions{})
+func (c *Client) GetWorkerJobRepo(ctx context.Context, taskID string) (repo string, exists bool, err error) {
+	job, err := c.Core.BatchV1().Jobs(c.Namespace).Get(ctx, WorkerResourceName(taskID), metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
 		return "", false, nil
 	}
 	if err != nil {
 		return "", false, err
 	}
-	return pod.Labels[RepoLabel], true, nil
+	return job.Labels[RepoLabel], true, nil
 }
 
 func resourcePtr(qty string) *resource.Quantity {
