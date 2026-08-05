@@ -56,7 +56,7 @@ func newTestPool(t *testing.T) *pgxpool.Pool {
 			repo               TEXT NOT NULL,
 			description        TEXT NOT NULL,
 			status             TEXT NOT NULL DEFAULT 'pending',
-			discord_channel_id TEXT NOT NULL,
+			discord_channel_id TEXT,
 			discord_thread_id  TEXT,
 			pr_url             TEXT,
 			notes              TEXT,
@@ -182,6 +182,39 @@ func TestCountInFlight(t *testing.T) {
 	// claimed, planning, implementing count; pending, done, failed don't.
 	if n != 3 {
 		t.Fatalf("expected 3 in-flight tasks, got %d", n)
+	}
+}
+
+// TestCreateTask_NilChannelAndThread covers the dashboard-origin path
+// (DashboardService.CreateTask): no Discord channel/thread at all, unlike
+// every Discord-originated task which always has a channel.
+func TestCreateTask_NilChannelAndThread(t *testing.T) {
+	pool := newTestPool(t)
+	ctx := context.Background()
+	store := NewStore(pool)
+
+	id, err := store.CreateTask(ctx, "dream-analyst", "task from dashboard", nil, nil)
+	if err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+
+	task, err := store.GetTask(ctx, id)
+	if err != nil {
+		t.Fatalf("get task: %v", err)
+	}
+	if task == nil {
+		t.Fatal("expected task to exist")
+	}
+	if task.ThreadID != nil {
+		t.Fatalf("expected nil ThreadID, got %v", *task.ThreadID)
+	}
+
+	var channelID *string
+	if err := pool.QueryRow(ctx, `SELECT discord_channel_id FROM tasks WHERE id = $1`, id).Scan(&channelID); err != nil {
+		t.Fatalf("check discord_channel_id: %v", err)
+	}
+	if channelID != nil {
+		t.Fatalf("expected NULL discord_channel_id, got %v", *channelID)
 	}
 }
 

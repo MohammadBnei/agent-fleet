@@ -54,6 +54,12 @@ ALTER TABLE tasks ADD COLUMN IF NOT EXISTS lease_id UUID;
 -- rewritten Go services issue against this table.
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS model TEXT;
 
+-- Tasks created from the dashboard (DashboardService.CreateTask) have no
+-- Discord channel/thread at all — core/internal/discord/session.go's
+-- PostToThread already no-ops when discord_thread_id is NULL, so relaxing
+-- this is enough to support that origin without any other schema change.
+ALTER TABLE tasks ALTER COLUMN discord_channel_id DROP NOT NULL;
+
 -- Append-only fleet knowledge journal (mirrors ai-devkit's JSON-event pattern,
 -- see agent-fleet reference-check memory: avoids write-conflict issues that a
 -- shared mutable doc would hit across concurrent worker pods).

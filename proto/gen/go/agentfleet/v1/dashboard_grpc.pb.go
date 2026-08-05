@@ -21,6 +21,7 @@ const _ = grpc.SupportPackageIsVersion9
 const (
 	DashboardService_ListTasks_FullMethodName        = "/agentfleet.v1.DashboardService/ListTasks"
 	DashboardService_GetTask_FullMethodName          = "/agentfleet.v1.DashboardService/GetTask"
+	DashboardService_CreateTask_FullMethodName       = "/agentfleet.v1.DashboardService/CreateTask"
 	DashboardService_GetTranscript_FullMethodName    = "/agentfleet.v1.DashboardService/GetTranscript"
 	DashboardService_StreamTranscript_FullMethodName = "/agentfleet.v1.DashboardService/StreamTranscript"
 	DashboardService_GetE2EStatus_FullMethodName     = "/agentfleet.v1.DashboardService/GetE2eStatus"
@@ -36,6 +37,7 @@ const (
 type DashboardServiceClient interface {
 	ListTasks(ctx context.Context, in *ListTasksRequest, opts ...grpc.CallOption) (*ListTasksResponse, error)
 	GetTask(ctx context.Context, in *GetTaskRequest, opts ...grpc.CallOption) (*GetTaskResponse, error)
+	CreateTask(ctx context.Context, in *CreateTaskRequest, opts ...grpc.CallOption) (*CreateTaskResponse, error)
 	// Reuses transcript.proto's ReadTranscriptSinceRequest/Response rather
 	// than duplicating a byte-identical message pair.
 	// buf:lint:ignore RPC_REQUEST_STANDARD_NAME
@@ -76,6 +78,16 @@ func (c *dashboardServiceClient) GetTask(ctx context.Context, in *GetTaskRequest
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetTaskResponse)
 	err := c.cc.Invoke(ctx, DashboardService_GetTask_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dashboardServiceClient) CreateTask(ctx context.Context, in *CreateTaskRequest, opts ...grpc.CallOption) (*CreateTaskResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateTaskResponse)
+	err := c.cc.Invoke(ctx, DashboardService_CreateTask_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -167,6 +179,7 @@ func (c *dashboardServiceClient) AnswerQuestion(ctx context.Context, in *AnswerQ
 type DashboardServiceServer interface {
 	ListTasks(context.Context, *ListTasksRequest) (*ListTasksResponse, error)
 	GetTask(context.Context, *GetTaskRequest) (*GetTaskResponse, error)
+	CreateTask(context.Context, *CreateTaskRequest) (*CreateTaskResponse, error)
 	// Reuses transcript.proto's ReadTranscriptSinceRequest/Response rather
 	// than duplicating a byte-identical message pair.
 	// buf:lint:ignore RPC_REQUEST_STANDARD_NAME
@@ -198,6 +211,9 @@ func (UnimplementedDashboardServiceServer) ListTasks(context.Context, *ListTasks
 }
 func (UnimplementedDashboardServiceServer) GetTask(context.Context, *GetTaskRequest) (*GetTaskResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetTask not implemented")
+}
+func (UnimplementedDashboardServiceServer) CreateTask(context.Context, *CreateTaskRequest) (*CreateTaskResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CreateTask not implemented")
 }
 func (UnimplementedDashboardServiceServer) GetTranscript(context.Context, *ReadTranscriptSinceRequest) (*ReadTranscriptSinceResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetTranscript not implemented")
@@ -273,6 +289,24 @@ func _DashboardService_GetTask_Handler(srv interface{}, ctx context.Context, dec
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(DashboardServiceServer).GetTask(ctx, req.(*GetTaskRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DashboardService_CreateTask_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateTaskRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DashboardServiceServer).CreateTask(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DashboardService_CreateTask_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DashboardServiceServer).CreateTask(ctx, req.(*CreateTaskRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -410,6 +444,10 @@ var DashboardService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetTask",
 			Handler:    _DashboardService_GetTask_Handler,
+		},
+		{
+			MethodName: "CreateTask",
+			Handler:    _DashboardService_CreateTask_Handler,
 		},
 		{
 			MethodName: "GetTranscript",

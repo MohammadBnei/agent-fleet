@@ -55,7 +55,13 @@ func NewStore(pool *pgxpool.Pool) *Store {
 	return &Store{pool: pool}
 }
 
-func (s *Store) CreateTask(ctx context.Context, repo, description, channelID, threadID string) (string, error) {
+// channelID/threadID are nil for a task created from the dashboard
+// (DashboardService.CreateTask) — it has no Discord channel/thread at all.
+// Passing nil rather than "" matters: discord/session.go's PostToThread
+// checks ThreadID == nil to skip relaying, and a non-nil empty string would
+// instead attempt (and fail) a ChannelMessageSend("", ...) on every relay
+// tick.
+func (s *Store) CreateTask(ctx context.Context, repo, description string, channelID, threadID *string) (string, error) {
 	var id string
 	err := s.pool.QueryRow(ctx, `
 		INSERT INTO tasks (repo, description, discord_channel_id, discord_thread_id)

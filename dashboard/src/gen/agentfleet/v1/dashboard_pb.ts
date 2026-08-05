@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file agentfleet/v1/dashboard.proto.
  */
 export const file_agentfleet_v1_dashboard: GenFile = /*@__PURE__*/
-  fileDesc("Ch1hZ2VudGZsZWV0L3YxL2Rhc2hib2FyZC5wcm90bxINYWdlbnRmbGVldC52MSKLAQoEVGFzaxIKCgJpZBgBIAEoCRIMCgRyZXBvGAIgASgJEhMKC2Rlc2NyaXB0aW9uGAMgASgJEg4KBnN0YXR1cxgEIAEoCRIWCgl0aHJlYWRfaWQYBSABKAlIAIgBARITCgZwcl91cmwYBiABKAlIAYgBAUIMCgpfdGhyZWFkX2lkQgkKB19wcl91cmwiIQoQTGlzdFRhc2tzUmVxdWVzdBINCgVsaW1pdBgBIAEoBSI3ChFMaXN0VGFza3NSZXNwb25zZRIiCgV0YXNrcxgBIAMoCzITLmFnZW50ZmxlZXQudjEuVGFzayIcCg5HZXRUYXNrUmVxdWVzdBIKCgJpZBgBIAEoCSI0Cg9HZXRUYXNrUmVzcG9uc2USIQoEdGFzaxgBIAEoCzITLmFnZW50ZmxlZXQudjEuVGFzayI9ChdTdHJlYW1UcmFuc2NyaXB0UmVxdWVzdBIPCgd0YXNrX2lkGAEgASgJEhEKCXNpbmNlX3NlcRgCIAEoAyImChNHZXRFMmVTdGF0dXNSZXF1ZXN0Eg8KB3Rhc2tfaWQYASABKAkiOwoUR2V0RTJlU3RhdHVzUmVzcG9uc2USDgoGc3RhdHVzGAEgASgJEhMKC3ByZXZpZXdfdXJsGAIgASgJIiEKDkFwcHJvdmVSZXF1ZXN0Eg8KB3Rhc2tfaWQYASABKAkiIQoPQXBwcm92ZVJlc3BvbnNlEg4KBnN0YXR1cxgBIAEoCSI+CgtTdG9wUmVxdWVzdBIPCgd0YXNrX2lkGAEgASgJEhMKBnJlYXNvbhgCIAEoCUgAiAEBQgkKB19yZWFzb24iHgoMU3RvcFJlc3BvbnNlEg4KBnN0YXR1cxgBIAEoCSIhCg5LaWxsRTJlUmVxdWVzdBIPCgd0YXNrX2lkGAEgASgJIiEKD0tpbGxFMmVSZXNwb25zZRIOCgZraWxsZWQYASABKAgiSwoVQW5zd2VyUXVlc3Rpb25SZXF1ZXN0Eg8KB3Rhc2tfaWQYASABKAkSCwoDc2VxGAIgASgDEhQKDGFuc3dlcnNfanNvbhgDIAEoCSIoChZBbnN3ZXJRdWVzdGlvblJlc3BvbnNlEg4KBnN0YXR1cxgBIAEoCTL/BQoQRGFzaGJvYXJkU2VydmljZRJOCglMaXN0VGFza3MSHy5hZ2VudGZsZWV0LnYxLkxpc3RUYXNrc1JlcXVlc3QaIC5hZ2VudGZsZWV0LnYxLkxpc3RUYXNrc1Jlc3BvbnNlEkgKB0dldFRhc2sSHS5hZ2VudGZsZWV0LnYxLkdldFRhc2tSZXF1ZXN0Gh4uYWdlbnRmbGVldC52MS5HZXRUYXNrUmVzcG9uc2USZgoNR2V0VHJhbnNjcmlwdBIpLmFnZW50ZmxlZXQudjEuUmVhZFRyYW5zY3JpcHRTaW5jZVJlcXVlc3QaKi5hZ2VudGZsZWV0LnYxLlJlYWRUcmFuc2NyaXB0U2luY2VSZXNwb25zZRJcChBTdHJlYW1UcmFuc2NyaXB0EiYuYWdlbnRmbGVldC52MS5TdHJlYW1UcmFuc2NyaXB0UmVxdWVzdBoeLmFnZW50ZmxlZXQudjEuVHJhbnNjcmlwdEVudHJ5MAESVwoMR2V0RTJlU3RhdHVzEiIuYWdlbnRmbGVldC52MS5HZXRFMmVTdGF0dXNSZXF1ZXN0GiMuYWdlbnRmbGVldC52MS5HZXRFMmVTdGF0dXNSZXNwb25zZRJICgdBcHByb3ZlEh0uYWdlbnRmbGVldC52MS5BcHByb3ZlUmVxdWVzdBoeLmFnZW50ZmxlZXQudjEuQXBwcm92ZVJlc3BvbnNlEj8KBFN0b3ASGi5hZ2VudGZsZWV0LnYxLlN0b3BSZXF1ZXN0GhsuYWdlbnRmbGVldC52MS5TdG9wUmVzcG9uc2USSAoHS2lsbEUyZRIdLmFnZW50ZmxlZXQudjEuS2lsbEUyZVJlcXVlc3QaHi5hZ2VudGZsZWV0LnYxLktpbGxFMmVSZXNwb25zZRJdCg5BbnN3ZXJRdWVzdGlvbhIkLmFnZW50ZmxlZXQudjEuQW5zd2VyUXVlc3Rpb25SZXF1ZXN0GiUuYWdlbnRmbGVldC52MS5BbnN3ZXJRdWVzdGlvblJlc3BvbnNlQk1aS2dpdGh1Yi5jb20vTW9oYW1tYWRCbmVpL2FnZW50LWZsZWV0L3Byb3RvL2dlbi9nby9hZ2VudGZsZWV0L3YxO2FnZW50ZmxlZXR2MWIGcHJvdG8z", [file_agentfleet_v1_transcript]);
+  fileDesc("Ch1hZ2VudGZsZWV0L3YxL2Rhc2hib2FyZC5wcm90bxINYWdlbnRmbGVldC52MSKLAQoEVGFzaxIKCgJpZBgBIAEoCRIMCgRyZXBvGAIgASgJEhMKC2Rlc2NyaXB0aW9uGAMgASgJEg4KBnN0YXR1cxgEIAEoCRIWCgl0aHJlYWRfaWQYBSABKAlIAIgBARITCgZwcl91cmwYBiABKAlIAYgBAUIMCgpfdGhyZWFkX2lkQgkKB19wcl91cmwiIQoQTGlzdFRhc2tzUmVxdWVzdBINCgVsaW1pdBgBIAEoBSI3ChFMaXN0VGFza3NSZXNwb25zZRIiCgV0YXNrcxgBIAMoCzITLmFnZW50ZmxlZXQudjEuVGFzayIcCg5HZXRUYXNrUmVxdWVzdBIKCgJpZBgBIAEoCSI0Cg9HZXRUYXNrUmVzcG9uc2USIQoEdGFzaxgBIAEoCzITLmFnZW50ZmxlZXQudjEuVGFzayI2ChFDcmVhdGVUYXNrUmVxdWVzdBIMCgRyZXBvGAEgASgJEhMKC2Rlc2NyaXB0aW9uGAIgASgJIjcKEkNyZWF0ZVRhc2tSZXNwb25zZRIhCgR0YXNrGAEgASgLMhMuYWdlbnRmbGVldC52MS5UYXNrIj0KF1N0cmVhbVRyYW5zY3JpcHRSZXF1ZXN0Eg8KB3Rhc2tfaWQYASABKAkSEQoJc2luY2Vfc2VxGAIgASgDIiYKE0dldEUyZVN0YXR1c1JlcXVlc3QSDwoHdGFza19pZBgBIAEoCSI7ChRHZXRFMmVTdGF0dXNSZXNwb25zZRIOCgZzdGF0dXMYASABKAkSEwoLcHJldmlld191cmwYAiABKAkiIQoOQXBwcm92ZVJlcXVlc3QSDwoHdGFza19pZBgBIAEoCSIhCg9BcHByb3ZlUmVzcG9uc2USDgoGc3RhdHVzGAEgASgJIj4KC1N0b3BSZXF1ZXN0Eg8KB3Rhc2tfaWQYASABKAkSEwoGcmVhc29uGAIgASgJSACIAQFCCQoHX3JlYXNvbiIeCgxTdG9wUmVzcG9uc2USDgoGc3RhdHVzGAEgASgJIiEKDktpbGxFMmVSZXF1ZXN0Eg8KB3Rhc2tfaWQYASABKAkiIQoPS2lsbEUyZVJlc3BvbnNlEg4KBmtpbGxlZBgBIAEoCCJLChVBbnN3ZXJRdWVzdGlvblJlcXVlc3QSDwoHdGFza19pZBgBIAEoCRILCgNzZXEYAiABKAMSFAoMYW5zd2Vyc19qc29uGAMgASgJIigKFkFuc3dlclF1ZXN0aW9uUmVzcG9uc2USDgoGc3RhdHVzGAEgASgJMtIGChBEYXNoYm9hcmRTZXJ2aWNlEk4KCUxpc3RUYXNrcxIfLmFnZW50ZmxlZXQudjEuTGlzdFRhc2tzUmVxdWVzdBogLmFnZW50ZmxlZXQudjEuTGlzdFRhc2tzUmVzcG9uc2USSAoHR2V0VGFzaxIdLmFnZW50ZmxlZXQudjEuR2V0VGFza1JlcXVlc3QaHi5hZ2VudGZsZWV0LnYxLkdldFRhc2tSZXNwb25zZRJRCgpDcmVhdGVUYXNrEiAuYWdlbnRmbGVldC52MS5DcmVhdGVUYXNrUmVxdWVzdBohLmFnZW50ZmxlZXQudjEuQ3JlYXRlVGFza1Jlc3BvbnNlEmYKDUdldFRyYW5zY3JpcHQSKS5hZ2VudGZsZWV0LnYxLlJlYWRUcmFuc2NyaXB0U2luY2VSZXF1ZXN0GiouYWdlbnRmbGVldC52MS5SZWFkVHJhbnNjcmlwdFNpbmNlUmVzcG9uc2USXAoQU3RyZWFtVHJhbnNjcmlwdBImLmFnZW50ZmxlZXQudjEuU3RyZWFtVHJhbnNjcmlwdFJlcXVlc3QaHi5hZ2VudGZsZWV0LnYxLlRyYW5zY3JpcHRFbnRyeTABElcKDEdldEUyZVN0YXR1cxIiLmFnZW50ZmxlZXQudjEuR2V0RTJlU3RhdHVzUmVxdWVzdBojLmFnZW50ZmxlZXQudjEuR2V0RTJlU3RhdHVzUmVzcG9uc2USSAoHQXBwcm92ZRIdLmFnZW50ZmxlZXQudjEuQXBwcm92ZVJlcXVlc3QaHi5hZ2VudGZsZWV0LnYxLkFwcHJvdmVSZXNwb25zZRI/CgRTdG9wEhouYWdlbnRmbGVldC52MS5TdG9wUmVxdWVzdBobLmFnZW50ZmxlZXQudjEuU3RvcFJlc3BvbnNlEkgKB0tpbGxFMmUSHS5hZ2VudGZsZWV0LnYxLktpbGxFMmVSZXF1ZXN0Gh4uYWdlbnRmbGVldC52MS5LaWxsRTJlUmVzcG9uc2USXQoOQW5zd2VyUXVlc3Rpb24SJC5hZ2VudGZsZWV0LnYxLkFuc3dlclF1ZXN0aW9uUmVxdWVzdBolLmFnZW50ZmxlZXQudjEuQW5zd2VyUXVlc3Rpb25SZXNwb25zZUJNWktnaXRodWIuY29tL01vaGFtbWFkQm5laS9hZ2VudC1mbGVldC9wcm90by9nZW4vZ28vYWdlbnRmbGVldC92MTthZ2VudGZsZWV0djFiBnByb3RvMw", [file_agentfleet_v1_transcript]);
 
 /**
  * @generated from message agentfleet.v1.Task
@@ -125,6 +125,51 @@ export const GetTaskResponseSchema: GenMessage<GetTaskResponse> = /*@__PURE__*/
   messageDesc(file_agentfleet_v1_dashboard, 4);
 
 /**
+ * Creates a task the same way a Discord /task command does, minus the
+ * Discord thread — repo must be one of tasks.KnownRepos (core/internal/tasks/
+ * store.go), description must be non-empty. The created task has no
+ * discord_channel_id/discord_thread_id, which core/internal/discord/
+ * session.go's PostToThread already handles as a no-op relay target.
+ *
+ * @generated from message agentfleet.v1.CreateTaskRequest
+ */
+export type CreateTaskRequest = Message<"agentfleet.v1.CreateTaskRequest"> & {
+  /**
+   * @generated from field: string repo = 1;
+   */
+  repo: string;
+
+  /**
+   * @generated from field: string description = 2;
+   */
+  description: string;
+};
+
+/**
+ * Describes the message agentfleet.v1.CreateTaskRequest.
+ * Use `create(CreateTaskRequestSchema)` to create a new message.
+ */
+export const CreateTaskRequestSchema: GenMessage<CreateTaskRequest> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_dashboard, 5);
+
+/**
+ * @generated from message agentfleet.v1.CreateTaskResponse
+ */
+export type CreateTaskResponse = Message<"agentfleet.v1.CreateTaskResponse"> & {
+  /**
+   * @generated from field: agentfleet.v1.Task task = 1;
+   */
+  task?: Task | undefined;
+};
+
+/**
+ * Describes the message agentfleet.v1.CreateTaskResponse.
+ * Use `create(CreateTaskResponseSchema)` to create a new message.
+ */
+export const CreateTaskResponseSchema: GenMessage<CreateTaskResponse> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_dashboard, 6);
+
+/**
  * Streamed directly as `stream TranscriptEntry` on the RPC below — no
  * wrapper response message, unlike the unary GetTranscript (which reuses
  * transcript.proto's ReadTranscriptSinceResponse).
@@ -148,7 +193,7 @@ export type StreamTranscriptRequest = Message<"agentfleet.v1.StreamTranscriptReq
  * Use `create(StreamTranscriptRequestSchema)` to create a new message.
  */
 export const StreamTranscriptRequestSchema: GenMessage<StreamTranscriptRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 5);
+  messageDesc(file_agentfleet_v1_dashboard, 7);
 
 /**
  * @generated from message agentfleet.v1.GetE2eStatusRequest
@@ -165,7 +210,7 @@ export type GetE2eStatusRequest = Message<"agentfleet.v1.GetE2eStatusRequest"> &
  * Use `create(GetE2eStatusRequestSchema)` to create a new message.
  */
 export const GetE2eStatusRequestSchema: GenMessage<GetE2eStatusRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 6);
+  messageDesc(file_agentfleet_v1_dashboard, 8);
 
 /**
  * @generated from message agentfleet.v1.GetE2eStatusResponse
@@ -187,7 +232,7 @@ export type GetE2eStatusResponse = Message<"agentfleet.v1.GetE2eStatusResponse">
  * Use `create(GetE2eStatusResponseSchema)` to create a new message.
  */
 export const GetE2eStatusResponseSchema: GenMessage<GetE2eStatusResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 7);
+  messageDesc(file_agentfleet_v1_dashboard, 9);
 
 /**
  * @generated from message agentfleet.v1.ApproveRequest
@@ -204,7 +249,7 @@ export type ApproveRequest = Message<"agentfleet.v1.ApproveRequest"> & {
  * Use `create(ApproveRequestSchema)` to create a new message.
  */
 export const ApproveRequestSchema: GenMessage<ApproveRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 8);
+  messageDesc(file_agentfleet_v1_dashboard, 10);
 
 /**
  * @generated from message agentfleet.v1.ApproveResponse
@@ -221,7 +266,7 @@ export type ApproveResponse = Message<"agentfleet.v1.ApproveResponse"> & {
  * Use `create(ApproveResponseSchema)` to create a new message.
  */
 export const ApproveResponseSchema: GenMessage<ApproveResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 9);
+  messageDesc(file_agentfleet_v1_dashboard, 11);
 
 /**
  * @generated from message agentfleet.v1.StopRequest
@@ -243,7 +288,7 @@ export type StopRequest = Message<"agentfleet.v1.StopRequest"> & {
  * Use `create(StopRequestSchema)` to create a new message.
  */
 export const StopRequestSchema: GenMessage<StopRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 10);
+  messageDesc(file_agentfleet_v1_dashboard, 12);
 
 /**
  * @generated from message agentfleet.v1.StopResponse
@@ -260,7 +305,7 @@ export type StopResponse = Message<"agentfleet.v1.StopResponse"> & {
  * Use `create(StopResponseSchema)` to create a new message.
  */
 export const StopResponseSchema: GenMessage<StopResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 11);
+  messageDesc(file_agentfleet_v1_dashboard, 13);
 
 /**
  * @generated from message agentfleet.v1.KillE2eRequest
@@ -277,7 +322,7 @@ export type KillE2eRequest = Message<"agentfleet.v1.KillE2eRequest"> & {
  * Use `create(KillE2eRequestSchema)` to create a new message.
  */
 export const KillE2eRequestSchema: GenMessage<KillE2eRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 12);
+  messageDesc(file_agentfleet_v1_dashboard, 14);
 
 /**
  * @generated from message agentfleet.v1.KillE2eResponse
@@ -294,7 +339,7 @@ export type KillE2eResponse = Message<"agentfleet.v1.KillE2eResponse"> & {
  * Use `create(KillE2eResponseSchema)` to create a new message.
  */
 export const KillE2eResponseSchema: GenMessage<KillE2eResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 13);
+  messageDesc(file_agentfleet_v1_dashboard, 15);
 
 /**
  * Answers a pending QUESTION-type transcript entry (posted by the planner's
@@ -330,7 +375,7 @@ export type AnswerQuestionRequest = Message<"agentfleet.v1.AnswerQuestionRequest
  * Use `create(AnswerQuestionRequestSchema)` to create a new message.
  */
 export const AnswerQuestionRequestSchema: GenMessage<AnswerQuestionRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 14);
+  messageDesc(file_agentfleet_v1_dashboard, 16);
 
 /**
  * @generated from message agentfleet.v1.AnswerQuestionResponse
@@ -347,7 +392,7 @@ export type AnswerQuestionResponse = Message<"agentfleet.v1.AnswerQuestionRespon
  * Use `create(AnswerQuestionResponseSchema)` to create a new message.
  */
 export const AnswerQuestionResponseSchema: GenMessage<AnswerQuestionResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 15);
+  messageDesc(file_agentfleet_v1_dashboard, 17);
 
 /**
  * @generated from service agentfleet.v1.DashboardService
@@ -368,6 +413,14 @@ export const DashboardService: GenService<{
     methodKind: "unary";
     input: typeof GetTaskRequestSchema;
     output: typeof GetTaskResponseSchema;
+  },
+  /**
+   * @generated from rpc agentfleet.v1.DashboardService.CreateTask
+   */
+  createTask: {
+    methodKind: "unary";
+    input: typeof CreateTaskRequestSchema;
+    output: typeof CreateTaskResponseSchema;
   },
   /**
    * Reuses transcript.proto's ReadTranscriptSinceRequest/Response rather
