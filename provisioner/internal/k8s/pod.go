@@ -171,6 +171,7 @@ func (c *Client) CreateWorkerPod(ctx context.Context, taskID, repo, description,
 					{Name: "MCP_PORT", Value: fmt.Sprint(SidecarMCPPort)},
 					{Name: "LOCAL_API_PORT", Value: fmt.Sprint(SidecarAPIPort)},
 					{Name: "WORKTREE_PATH", Value: worktreePath},
+					{Name: "LOG_LEVEL", Value: c.LogLevel},
 				},
 				Ports: []corev1.ContainerPort{
 					{Name: "mcp", ContainerPort: SidecarMCPPort},
@@ -227,6 +228,7 @@ func (c *Client) CreateWorkerPod(ctx context.Context, taskID, repo, description,
 					// env, same value.
 					{Name: "GH_TOKEN", Value: os.Getenv("GH_TOKEN")},
 					{Name: "WORKTREE_PATH", Value: worktreePath},
+					{Name: "LOG_LEVEL", Value: c.LogLevel},
 				},
 				VolumeMounts: []corev1.VolumeMount{
 					// Whole PVC, not a per-task SubPath — see the sidecar
