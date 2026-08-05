@@ -56,11 +56,13 @@ func (c *Client) onInteractionCreate(s *discordgo.Session, i *discordgo.Interact
 func (c *Client) startTask(ctx context.Context, s *discordgo.Session, i *discordgo.InteractionCreate, repo, description string) {
 	msg, err := s.ChannelMessageSend(c.channelID, fmt.Sprintf("**New task** (%s): %s", repo, description))
 	if err != nil {
+		slog.Error("startTask: channel message send failed", "channelId", c.channelID, "error", err)
 		respond(s, i, "Failed to open task thread.")
 		return
 	}
-	thread, err := s.MessageThreadStart(c.channelID, msg.ID, description, 1440)
+	thread, err := s.MessageThreadStart(c.channelID, msg.ID, threadName(repo, description), 1440)
 	if err != nil {
+		slog.Error("startTask: thread start failed", "channelId", c.channelID, "messageId", msg.ID, "error", err)
 		respond(s, i, "Failed to open task thread.")
 		return
 	}
@@ -83,10 +85,12 @@ func (c *Client) onMessageCreate(s *discordgo.Session, m *discordgo.MessageCreat
 			repo, description := match[1], match[2]
 			msg, err := s.ChannelMessageSend(c.channelID, fmt.Sprintf("**New task** (%s): %s", repo, description))
 			if err != nil {
+				slog.Error("legacy !task: channel message send failed", "channelId", c.channelID, "error", err)
 				return
 			}
-			thread, err := s.MessageThreadStart(c.channelID, msg.ID, description, 1440)
+			thread, err := s.MessageThreadStart(c.channelID, msg.ID, threadName(repo, description), 1440)
 			if err != nil {
+				slog.Error("legacy !task: thread start failed", "channelId", c.channelID, "messageId", msg.ID, "error", err)
 				return
 			}
 			if _, err := c.tasks.CreateTask(ctx, repo, description, c.channelID, thread.ID); err != nil {
@@ -112,6 +116,17 @@ func (c *Client) withTaskFromThread(ctx context.Context, s *discordgo.Session, i
 		return
 	}
 	fn(taskID)
+}
+
+// threadName mirrors bot/src/index.ts's `${repo}: ${description.slice(0, 80)}`
+// — Discord thread names are capped at 100 chars, so an untruncated
+// description makes MessageThreadStart fail with no other symptom.
+func threadName(repo, description string) string {
+	r := []rune(description)
+	if len(r) > 80 {
+		description = string(r[:80])
+	}
+	return repo + ": " + description
 }
 
 func (c *Client) relay(ctx context.Context, taskID, from, text, msgType string) {
