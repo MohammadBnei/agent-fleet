@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.2](https://github.com/MohammadBnei/agent-fleet/compare/1.6.1...1.6.2) (2026-08-05)
+
+
+### Bug Fixes
+
+* **reliability:** Phase 0 quick wins from reliability-findings.md ([6cb4846](https://github.com/MohammadBnei/agent-fleet/commit/6cb484648bb4f19a867e4aebfeea2694d7db914c)), closes [#5](https://github.com/MohammadBnei/agent-fleet/issues/5) [#6](https://github.com/MohammadBnei/agent-fleet/issues/6) [#7-partial](https://github.com/MohammadBnei/agent-fleet/issues/7-partial) [#9](https://github.com/MohammadBnei/agent-fleet/issues/9) [#10](https://github.com/MohammadBnei/agent-fleet/issues/10) [#7](https://github.com/MohammadBnei/agent-fleet/issues/7)
+
 ## [1.6.1](https://github.com/MohammadBnei/agent-fleet/compare/1.6.0...1.6.1) (2026-08-05)
 
 
