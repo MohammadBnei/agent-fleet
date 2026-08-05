@@ -138,6 +138,36 @@ export interface ListWorktreesViewResponse {
   worktrees: WorktreeView[];
 }
 
+/**
+ * GetJournal is the read path reliability-findings.md #1/#7 both call out
+ * as missing — knowledge_journal had no Get/List RPC anywhere, so even a
+ * journaled crash event was invisible without direct Postgres access.
+ * Typed request/response, same pull/cursor shape as GetTranscript, not a
+ * generic Query(bytes) returns (bytes) dispatcher — two concrete gaps
+ * don't justify throwing away protobuf's type safety for a general one.
+ */
+export interface JournalEntry {
+  id: number;
+  repo: string;
+  actor: string;
+  eventType: string;
+  payloadJson: string;
+  /** RFC3339 */
+  createdAt: string;
+}
+
+export interface GetJournalRequest {
+  /** "" matches every repo */
+  repo: string;
+  sinceId: number;
+  limit: number;
+}
+
+export interface GetJournalResponse {
+  entries: JournalEntry[];
+  nextId: number;
+}
+
 function createBaseTask(): Task {
   return { id: "", repo: "", description: "", status: "", threadId: undefined, prUrl: undefined };
 }
@@ -869,6 +899,155 @@ export const ListWorktreesViewResponse: MessageFns<ListWorktreesViewResponse> = 
   },
 };
 
+function createBaseJournalEntry(): JournalEntry {
+  return { id: 0, repo: "", actor: "", eventType: "", payloadJson: "", createdAt: "" };
+}
+
+export const JournalEntry: MessageFns<JournalEntry> = {
+  fromJSON(object: any): JournalEntry {
+    return {
+      id: isSet(object.id) ? globalThis.Number(object.id) : 0,
+      repo: isSet(object.repo) ? globalThis.String(object.repo) : "",
+      actor: isSet(object.actor) ? globalThis.String(object.actor) : "",
+      eventType: isSet(object.eventType)
+        ? globalThis.String(object.eventType)
+        : isSet(object.event_type)
+        ? globalThis.String(object.event_type)
+        : "",
+      payloadJson: isSet(object.payloadJson)
+        ? globalThis.String(object.payloadJson)
+        : isSet(object.payload_json)
+        ? globalThis.String(object.payload_json)
+        : "",
+      createdAt: isSet(object.createdAt)
+        ? globalThis.String(object.createdAt)
+        : isSet(object.created_at)
+        ? globalThis.String(object.created_at)
+        : "",
+    };
+  },
+
+  toJSON(message: JournalEntry): unknown {
+    const obj: any = {};
+    if (message.id !== 0) {
+      obj.id = Math.round(message.id);
+    }
+    if (message.repo !== "") {
+      obj.repo = message.repo;
+    }
+    if (message.actor !== "") {
+      obj.actor = message.actor;
+    }
+    if (message.eventType !== "") {
+      obj.eventType = message.eventType;
+    }
+    if (message.payloadJson !== "") {
+      obj.payloadJson = message.payloadJson;
+    }
+    if (message.createdAt !== "") {
+      obj.createdAt = message.createdAt;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<JournalEntry>, I>>(base?: I): JournalEntry {
+    return JournalEntry.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<JournalEntry>, I>>(object: I): JournalEntry {
+    const message = createBaseJournalEntry();
+    message.id = object.id ?? 0;
+    message.repo = object.repo ?? "";
+    message.actor = object.actor ?? "";
+    message.eventType = object.eventType ?? "";
+    message.payloadJson = object.payloadJson ?? "";
+    message.createdAt = object.createdAt ?? "";
+    return message;
+  },
+};
+
+function createBaseGetJournalRequest(): GetJournalRequest {
+  return { repo: "", sinceId: 0, limit: 0 };
+}
+
+export const GetJournalRequest: MessageFns<GetJournalRequest> = {
+  fromJSON(object: any): GetJournalRequest {
+    return {
+      repo: isSet(object.repo) ? globalThis.String(object.repo) : "",
+      sinceId: isSet(object.sinceId)
+        ? globalThis.Number(object.sinceId)
+        : isSet(object.since_id)
+        ? globalThis.Number(object.since_id)
+        : 0,
+      limit: isSet(object.limit) ? globalThis.Number(object.limit) : 0,
+    };
+  },
+
+  toJSON(message: GetJournalRequest): unknown {
+    const obj: any = {};
+    if (message.repo !== "") {
+      obj.repo = message.repo;
+    }
+    if (message.sinceId !== 0) {
+      obj.sinceId = Math.round(message.sinceId);
+    }
+    if (message.limit !== 0) {
+      obj.limit = Math.round(message.limit);
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<GetJournalRequest>, I>>(base?: I): GetJournalRequest {
+    return GetJournalRequest.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<GetJournalRequest>, I>>(object: I): GetJournalRequest {
+    const message = createBaseGetJournalRequest();
+    message.repo = object.repo ?? "";
+    message.sinceId = object.sinceId ?? 0;
+    message.limit = object.limit ?? 0;
+    return message;
+  },
+};
+
+function createBaseGetJournalResponse(): GetJournalResponse {
+  return { entries: [], nextId: 0 };
+}
+
+export const GetJournalResponse: MessageFns<GetJournalResponse> = {
+  fromJSON(object: any): GetJournalResponse {
+    return {
+      entries: globalThis.Array.isArray(object?.entries)
+        ? object.entries.map((e: any) => JournalEntry.fromJSON(e))
+        : [],
+      nextId: isSet(object.nextId)
+        ? globalThis.Number(object.nextId)
+        : isSet(object.next_id)
+        ? globalThis.Number(object.next_id)
+        : 0,
+    };
+  },
+
+  toJSON(message: GetJournalResponse): unknown {
+    const obj: any = {};
+    if (message.entries?.length) {
+      obj.entries = message.entries.map((e) => JournalEntry.toJSON(e));
+    }
+    if (message.nextId !== 0) {
+      obj.nextId = Math.round(message.nextId);
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<GetJournalResponse>, I>>(base?: I): GetJournalResponse {
+    return GetJournalResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<GetJournalResponse>, I>>(object: I): GetJournalResponse {
+    const message = createBaseGetJournalResponse();
+    message.entries = object.entries?.map((e) => JournalEntry.fromPartial(e)) || [];
+    message.nextId = object.nextId ?? 0;
+    return message;
+  },
+};
+
 export interface DashboardService {
   ListTasks(request: ListTasksRequest): Promise<ListTasksResponse>;
   GetTask(request: GetTaskRequest): Promise<GetTaskResponse>;
@@ -906,6 +1085,7 @@ export interface DashboardService {
   ListWorktrees(request: ListWorktreesRequest): Promise<ListWorktreesViewResponse>;
   /** buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE */
   DeleteWorktree(request: DeleteWorktreeRequest): Promise<DeleteWorktreeResponse>;
+  GetJournal(request: GetJournalRequest): Promise<GetJournalResponse>;
 }
 
 type Builtin = Date | Function | Uint8Array | string | number | boolean | undefined;

@@ -9,6 +9,7 @@ package journal
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -35,4 +36,50 @@ func (s *Store) Append(ctx context.Context, repo, actor, eventType, payloadJSON 
 		return fmt.Errorf("append journal: %w", err)
 	}
 	return nil
+}
+
+// Entry is one knowledge_journal row — the read side reliability-
+// findings.md #1/#7 both call out as missing (even a journaled crash was
+// invisible to anything but direct Postgres access).
+type Entry struct {
+	ID          int64
+	Repo        string
+	Actor       string
+	EventType   string
+	PayloadJSON string
+	CreatedAt   time.Time
+}
+
+// List returns entries with id > sinceID, ascending (insertion order) —
+// same pull/cursor shape as transcript.Store.ReadSince (docs/adr/0013).
+// repo == "" matches every repo, not just entries whose own repo is
+// literally empty — provisioner-sourced pod-lifecycle events are written
+// with repo="" (ReportPodEvents has no per-repo context), so a caller
+// asking for one specific repo's history would otherwise never see them
+// mixed in with worker-sourced entries that do have a repo.
+func (s *Store) List(ctx context.Context, repo string, sinceID int64, limit int) ([]Entry, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, COALESCE(repo, ''), actor, event_type, payload::text, created_at
+		FROM knowledge_journal
+		WHERE id > $1 AND ($2 = '' OR repo = $2)
+		ORDER BY id
+		LIMIT $3
+	`, sinceID, repo, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list journal: %w", err)
+	}
+	defer rows.Close()
+
+	// []Entry{}, not var entries []Entry — see tasks.Store.ListRecentTasks's
+	// identical fix: a nil slice marshals to JSON `null`, and this is
+	// exposed directly through the dashboard API.
+	entries := []Entry{}
+	for rows.Next() {
+		var e Entry
+		if err := rows.Scan(&e.ID, &e.Repo, &e.Actor, &e.EventType, &e.PayloadJSON, &e.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan journal entry: %w", err)
+		}
+		entries = append(entries, e)
+	}
+	return entries, rows.Err()
 }

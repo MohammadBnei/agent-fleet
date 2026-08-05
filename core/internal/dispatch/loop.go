@@ -18,14 +18,19 @@ import (
 
 // Loop owns the claim-then-command cycle.
 type Loop struct {
-	tasks       *tasks.Store
-	provisioner *provisionerclient.Client
-	maxInFlight int
-	nudge       chan struct{}
+	tasks          *tasks.Store
+	provisioner    *provisionerclient.Client
+	maxInFlight    int
+	maxTaskRetries int
+	nudge          chan struct{}
 }
 
-func New(taskStore *tasks.Store, provisioner *provisionerclient.Client, maxInFlight int) *Loop {
-	return &Loop{tasks: taskStore, provisioner: provisioner, maxInFlight: maxInFlight, nudge: make(chan struct{}, 1)}
+func New(taskStore *tasks.Store, provisioner *provisionerclient.Client, maxInFlight, maxTaskRetries int) *Loop {
+	return &Loop{
+		tasks: taskStore, provisioner: provisioner,
+		maxInFlight: maxInFlight, maxTaskRetries: maxTaskRetries,
+		nudge: make(chan struct{}, 1),
+	}
 }
 
 // Nudge triggers an immediate claim attempt instead of waiting for the
@@ -62,7 +67,7 @@ func (l *Loop) tick(ctx context.Context) {
 	// The concurrency-headroom check lives inside ClaimNextTask's own query
 	// now (reliability-findings.md #6) — a separate CountInFlight call
 	// beforehand was a TOCTOU race under >1 dispatch-loop replica.
-	task, err := l.tasks.ClaimNextTask(ctx, l.maxInFlight)
+	task, err := l.tasks.ClaimNextTask(ctx, l.maxInFlight, l.maxTaskRetries)
 	if err != nil {
 		slog.Error("dispatch: claim failed", "error", err)
 		return

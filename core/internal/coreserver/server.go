@@ -188,7 +188,9 @@ func (s *Server) Heartbeat(ctx context.Context, req *agentfleetv1.HeartbeatReque
 // terminalTaskStatuses mirrors db/schema.sql's tasks_status_check values
 // that end a task's lifecycle — the only statuses that should ever trigger
 // teardown.
-var terminalTaskStatuses = map[string]bool{"done": true, "failed": true, "cancelled": true}
+var terminalTaskStatuses = map[string]bool{
+	"done": true, "failed": true, "cancelled": true, "failed_permanently": true,
+}
 
 func (s *Server) SetTaskStatus(ctx context.Context, req *agentfleetv1.SetTaskStatusRequest) (*agentfleetv1.SetTaskStatusResponse, error) {
 	if err := s.tasks.SetStatus(ctx, req.GetTaskId(), req.GetStatus(), req.PrUrl, req.Notes, req.LastError); err != nil {
@@ -315,6 +317,19 @@ func (s *Server) ReportPodEvents(stream agentfleetv1.CoreService_ReportPodEvents
 		}
 		if err := s.journal.Append(ctx, "", "provisioner", "pod."+event.GetPhase().String(), string(payload)); err != nil {
 			return fmt.Errorf("ReportPodEvents: %w", err)
+		}
+
+		// Fast-path accelerant on top of the heartbeat-reclaim fallback
+		// (reliability-findings.md #1) — without this, a mid-task crash is
+		// invisible to core for up to the full 10-minute staleness window.
+		// MarkCrashed only touches a non-terminal task itself, so this is a
+		// safe no-op if the task already reached done/failed/cancelled
+		// through its own SetTaskStatus call before the provisioner's
+		// reconcile loop noticed the crash.
+		if event.GetKind() == agentfleetv1.SessionKind_SESSION_KIND_WORKER && event.GetPhase() == agentfleetv1.PodPhase_POD_PHASE_CRASHED {
+			if err := s.tasks.MarkCrashed(ctx, event.GetTaskId()); err != nil {
+				slog.Error("ReportPodEvents: mark crashed failed", "taskId", event.GetTaskId(), "error", err)
+			}
 		}
 	}
 }

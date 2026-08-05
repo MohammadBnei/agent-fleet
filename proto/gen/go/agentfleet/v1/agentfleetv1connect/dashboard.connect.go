@@ -68,6 +68,9 @@ const (
 	// DashboardServiceDeleteWorktreeProcedure is the fully-qualified name of the DashboardService's
 	// DeleteWorktree RPC.
 	DashboardServiceDeleteWorktreeProcedure = "/agentfleet.v1.DashboardService/DeleteWorktree"
+	// DashboardServiceGetJournalProcedure is the fully-qualified name of the DashboardService's
+	// GetJournal RPC.
+	DashboardServiceGetJournalProcedure = "/agentfleet.v1.DashboardService/GetJournal"
 )
 
 // DashboardServiceClient is a client for the agentfleet.v1.DashboardService service.
@@ -102,6 +105,7 @@ type DashboardServiceClient interface {
 	ListWorktrees(context.Context, *connect.Request[v1.ListWorktreesRequest]) (*connect.Response[v1.ListWorktreesViewResponse], error)
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	DeleteWorktree(context.Context, *connect.Request[v1.DeleteWorktreeRequest]) (*connect.Response[v1.DeleteWorktreeResponse], error)
+	GetJournal(context.Context, *connect.Request[v1.GetJournalRequest]) (*connect.Response[v1.GetJournalResponse], error)
 }
 
 // NewDashboardServiceClient constructs a client for the agentfleet.v1.DashboardService service. By
@@ -187,6 +191,12 @@ func NewDashboardServiceClient(httpClient connect.HTTPClient, baseURL string, op
 			connect.WithSchema(dashboardServiceMethods.ByName("DeleteWorktree")),
 			connect.WithClientOptions(opts...),
 		),
+		getJournal: connect.NewClient[v1.GetJournalRequest, v1.GetJournalResponse](
+			httpClient,
+			baseURL+DashboardServiceGetJournalProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("GetJournal")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -204,6 +214,7 @@ type dashboardServiceClient struct {
 	answerQuestion   *connect.Client[v1.AnswerQuestionRequest, v1.AnswerQuestionResponse]
 	listWorktrees    *connect.Client[v1.ListWorktreesRequest, v1.ListWorktreesViewResponse]
 	deleteWorktree   *connect.Client[v1.DeleteWorktreeRequest, v1.DeleteWorktreeResponse]
+	getJournal       *connect.Client[v1.GetJournalRequest, v1.GetJournalResponse]
 }
 
 // ListTasks calls agentfleet.v1.DashboardService.ListTasks.
@@ -266,6 +277,11 @@ func (c *dashboardServiceClient) DeleteWorktree(ctx context.Context, req *connec
 	return c.deleteWorktree.CallUnary(ctx, req)
 }
 
+// GetJournal calls agentfleet.v1.DashboardService.GetJournal.
+func (c *dashboardServiceClient) GetJournal(ctx context.Context, req *connect.Request[v1.GetJournalRequest]) (*connect.Response[v1.GetJournalResponse], error) {
+	return c.getJournal.CallUnary(ctx, req)
+}
+
 // DashboardServiceHandler is an implementation of the agentfleet.v1.DashboardService service.
 type DashboardServiceHandler interface {
 	ListTasks(context.Context, *connect.Request[v1.ListTasksRequest]) (*connect.Response[v1.ListTasksResponse], error)
@@ -298,6 +314,7 @@ type DashboardServiceHandler interface {
 	ListWorktrees(context.Context, *connect.Request[v1.ListWorktreesRequest]) (*connect.Response[v1.ListWorktreesViewResponse], error)
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	DeleteWorktree(context.Context, *connect.Request[v1.DeleteWorktreeRequest]) (*connect.Response[v1.DeleteWorktreeResponse], error)
+	GetJournal(context.Context, *connect.Request[v1.GetJournalRequest]) (*connect.Response[v1.GetJournalResponse], error)
 }
 
 // NewDashboardServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -379,6 +396,12 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 		connect.WithSchema(dashboardServiceMethods.ByName("DeleteWorktree")),
 		connect.WithHandlerOptions(opts...),
 	)
+	dashboardServiceGetJournalHandler := connect.NewUnaryHandler(
+		DashboardServiceGetJournalProcedure,
+		svc.GetJournal,
+		connect.WithSchema(dashboardServiceMethods.ByName("GetJournal")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/agentfleet.v1.DashboardService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case DashboardServiceListTasksProcedure:
@@ -405,6 +428,8 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 			dashboardServiceListWorktreesHandler.ServeHTTP(w, r)
 		case DashboardServiceDeleteWorktreeProcedure:
 			dashboardServiceDeleteWorktreeHandler.ServeHTTP(w, r)
+		case DashboardServiceGetJournalProcedure:
+			dashboardServiceGetJournalHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -460,4 +485,8 @@ func (UnimplementedDashboardServiceHandler) ListWorktrees(context.Context, *conn
 
 func (UnimplementedDashboardServiceHandler) DeleteWorktree(context.Context, *connect.Request[v1.DeleteWorktreeRequest]) (*connect.Response[v1.DeleteWorktreeResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.DeleteWorktree is not implemented"))
+}
+
+func (UnimplementedDashboardServiceHandler) GetJournal(context.Context, *connect.Request[v1.GetJournalRequest]) (*connect.Response[v1.GetJournalResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.GetJournal is not implemented"))
 }

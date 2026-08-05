@@ -23,6 +23,11 @@ type Config struct {
 	// actual human-followable ceiling, not a technical limit) — the
 	// dispatch loop's own headroom check, not per-repo.
 	MaxInFlight int
+	// MaxTaskRetries caps ClaimNextTask's stale-heartbeat reclaim
+	// (reliability-findings.md #1) — retry_count was tracked but never
+	// capped before, so a task whose worker pod keeps crashing looped
+	// through reclaim forever instead of eventually failing permanently.
+	MaxTaskRetries int
 }
 
 func Load() Config {
@@ -39,6 +44,7 @@ func Load() Config {
 		LokiURL:               env("LOKI_URL", "http://loki.monitoring.svc.cluster.local:3100"),
 		ProvisionerGRPCAddr:   env("PROVISIONER_GRPC_ADDR", "provisioner.agent-fleet.svc.cluster.local:9090"),
 		MaxInFlight:           envInt("MAX_IN_FLIGHT_TASKS", 5),
+		MaxTaskRetries:        envInt("MAX_TASK_RETRIES", 3),
 	}
 }
 

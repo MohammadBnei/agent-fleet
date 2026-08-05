@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
@@ -16,6 +17,7 @@ import (
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 	"github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1/agentfleetv1connect"
 
+	"github.com/MohammadBnei/agent-fleet/core/internal/journal"
 	"github.com/MohammadBnei/agent-fleet/core/internal/provisionerclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/tasks"
 	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
@@ -24,12 +26,13 @@ import (
 type Server struct {
 	tasks   *tasks.Store
 	transcr transcript.Store
+	journal *journal.Store
 	e2e     *provisionerclient.Client
 	hub     *Hub
 }
 
-func NewServer(taskStore *tasks.Store, transcr transcript.Store, e2e *provisionerclient.Client, hub *Hub) *Server {
-	return &Server{tasks: taskStore, transcr: transcr, e2e: e2e, hub: hub}
+func NewServer(taskStore *tasks.Store, transcr transcript.Store, journalStore *journal.Store, e2e *provisionerclient.Client, hub *Hub) *Server {
+	return &Server{tasks: taskStore, transcr: transcr, journal: journalStore, e2e: e2e, hub: hub}
 }
 
 var _ agentfleetv1connect.DashboardServiceHandler = (*Server)(nil)
@@ -215,6 +218,37 @@ func (s *Server) DeleteWorktree(ctx context.Context, req *connect.Request[agentf
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	return connect.NewResponse(&agentfleetv1.DeleteWorktreeResponse{Deleted: deleted}), nil
+}
+
+// GetJournal is the read path reliability-findings.md #1/#7 both call out
+// as missing — knowledge_journal previously had no Get/List RPC anywhere.
+func (s *Server) GetJournal(ctx context.Context, req *connect.Request[agentfleetv1.GetJournalRequest]) (*connect.Response[agentfleetv1.GetJournalResponse], error) {
+	limit := int(req.Msg.GetLimit())
+	if limit <= 0 {
+		limit = defaultListLimit
+	}
+	entries, err := s.journal.List(ctx, req.Msg.GetRepo(), req.Msg.GetSinceId(), limit)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	out := make([]*agentfleetv1.JournalEntry, len(entries))
+	nextID := req.Msg.GetSinceId()
+	for i, e := range entries {
+		out[i] = journalEntryToProto(e)
+		nextID = e.ID
+	}
+	return connect.NewResponse(&agentfleetv1.GetJournalResponse{Entries: out, NextId: nextID}), nil
+}
+
+func journalEntryToProto(e journal.Entry) *agentfleetv1.JournalEntry {
+	return &agentfleetv1.JournalEntry{
+		Id:          e.ID,
+		Repo:        e.Repo,
+		Actor:       e.Actor,
+		EventType:   e.EventType,
+		PayloadJson: e.PayloadJSON,
+		CreatedAt:   e.CreatedAt.Format(time.RFC3339),
+	}
 }
 
 func taskToProto(t tasks.Task) *agentfleetv1.Task {
