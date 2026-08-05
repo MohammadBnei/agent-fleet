@@ -28,6 +28,9 @@ type Config struct {
 	// (reliability-findings.md #2) — minutes, not seconds: it does a real
 	// `git fetch` per repo, unlike the k8s-only reconcile loop.
 	SweepInterval string
+	// LogLevel is one of debug/info/warn/error (case-insensitive), parsed
+	// via slog.Level.UnmarshalText in cmd/provisioner/main.go.
+	LogLevel string
 }
 
 func Load() Config {
@@ -44,6 +47,7 @@ func Load() Config {
 		CoreGRPCAddr:      env("CORE_GRPC_ADDR", "core.agent-fleet.svc.cluster.local:9090"),
 		ReconcileInterval: env("RECONCILE_INTERVAL_MS", "10000"),
 		SweepInterval:     env("SWEEP_INTERVAL_MS", "300000"),
+		LogLevel:          env("LOG_LEVEL", "info"),
 	}
 }
 

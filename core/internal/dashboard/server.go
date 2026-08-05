@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"connectrpc.com/connect"
@@ -46,6 +47,7 @@ func (s *Server) ListTasks(ctx context.Context, req *connect.Request[agentfleetv
 	}
 	list, err := s.tasks.ListRecentTasks(ctx, limit)
 	if err != nil {
+		slog.Error("dashboard ListTasks", "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	out := make([]*agentfleetv1.Task, len(list))
@@ -58,6 +60,7 @@ func (s *Server) ListTasks(ctx context.Context, req *connect.Request[agentfleetv
 func (s *Server) GetTask(ctx context.Context, req *connect.Request[agentfleetv1.GetTaskRequest]) (*connect.Response[agentfleetv1.GetTaskResponse], error) {
 	t, err := s.tasks.GetTask(ctx, req.Msg.GetId())
 	if err != nil {
+		slog.Error("dashboard GetTask", "taskId", req.Msg.GetId(), "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	if t == nil {
@@ -84,12 +87,15 @@ func (s *Server) CreateTask(ctx context.Context, req *connect.Request[agentfleet
 
 	id, err := s.tasks.CreateTask(ctx, repo, description, nil, nil)
 	if err != nil {
+		slog.Error("dashboard CreateTask", "repo", repo, "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	t, err := s.tasks.GetTask(ctx, id)
 	if err != nil {
+		slog.Error("dashboard CreateTask", "taskId", id, "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
+	slog.Info("dashboard CreateTask", "taskId", id, "repo", repo)
 	return connect.NewResponse(&agentfleetv1.CreateTaskResponse{Task: taskToProto(*t)}), nil
 }
 
@@ -97,6 +103,7 @@ func (s *Server) GetTranscript(ctx context.Context, req *connect.Request[agentfl
 	taskID := req.Msg.GetTaskId()
 	entries, next, err := s.transcr.ReadSince(ctx, taskID, req.Msg.GetSinceSeq(), 1000)
 	if err != nil {
+		slog.Error("dashboard GetTranscript", "taskId", taskID, "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	out := make([]*agentfleetv1.TranscriptEntry, len(entries))
@@ -128,6 +135,7 @@ func (s *Server) StreamTranscript(ctx context.Context, req *connect.Request[agen
 func (s *Server) GetE2EStatus(ctx context.Context, req *connect.Request[agentfleetv1.GetE2EStatusRequest]) (*connect.Response[agentfleetv1.GetE2EStatusResponse], error) {
 	status, previewURL, err := s.e2e.GetSessionStatus(ctx, req.Msg.GetTaskId())
 	if err != nil {
+		slog.Error("dashboard GetE2EStatus", "taskId", req.Msg.GetTaskId(), "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	return connect.NewResponse(&agentfleetv1.GetE2EStatusResponse{Status: status, PreviewUrl: previewURL}), nil
@@ -141,6 +149,7 @@ func (s *Server) GetE2EStatus(ctx context.Context, req *connect.Request[agentfle
 func (s *Server) Approve(ctx context.Context, req *connect.Request[agentfleetv1.ApproveRequest]) (*connect.Response[agentfleetv1.ApproveResponse], error) {
 	taskID := req.Msg.GetTaskId()
 	if _, err := s.transcr.Append(ctx, taskID, "human", "approved", "approve", uuid.NewString()); err != nil {
+		slog.Error("dashboard Approve", "taskId", taskID, "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	return connect.NewResponse(&agentfleetv1.ApproveResponse{Status: "approved"}), nil
@@ -153,6 +162,7 @@ func (s *Server) Stop(ctx context.Context, req *connect.Request[agentfleetv1.Sto
 		reason = req.Msg.GetReason()
 	}
 	if _, err := s.transcr.Append(ctx, taskID, "human", reason, "abort", uuid.NewString()); err != nil {
+		slog.Error("dashboard Stop", "taskId", taskID, "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	return connect.NewResponse(&agentfleetv1.StopResponse{Status: "stopping"}), nil
@@ -161,6 +171,7 @@ func (s *Server) Stop(ctx context.Context, req *connect.Request[agentfleetv1.Sto
 func (s *Server) KillE2E(ctx context.Context, req *connect.Request[agentfleetv1.KillE2ERequest]) (*connect.Response[agentfleetv1.KillE2EResponse], error) {
 	killed, err := s.e2e.KillSession(ctx, req.Msg.GetTaskId(), uuid.NewString())
 	if err != nil {
+		slog.Error("dashboard KillE2E", "taskId", req.Msg.GetTaskId(), "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	return connect.NewResponse(&agentfleetv1.KillE2EResponse{Killed: killed}), nil
@@ -175,6 +186,7 @@ func (s *Server) KillE2E(ctx context.Context, req *connect.Request[agentfleetv1.
 func (s *Server) AnswerQuestion(ctx context.Context, req *connect.Request[agentfleetv1.AnswerQuestionRequest]) (*connect.Response[agentfleetv1.AnswerQuestionResponse], error) {
 	taskID := req.Msg.GetTaskId()
 	if _, err := s.transcr.AppendReply(ctx, taskID, "human", req.Msg.GetAnswersJson(), "answer", uuid.NewString(), req.Msg.GetSeq()); err != nil {
+		slog.Error("dashboard AnswerQuestion", "taskId", taskID, "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	return connect.NewResponse(&agentfleetv1.AnswerQuestionResponse{Status: "answered"}), nil
@@ -190,14 +202,18 @@ func (s *Server) AnswerQuestion(ctx context.Context, req *connect.Request[agentf
 func (s *Server) DeleteTask(ctx context.Context, req *connect.Request[agentfleetv1.DeleteTaskRequest]) (*connect.Response[agentfleetv1.DeleteTaskResponse], error) {
 	taskID := req.Msg.GetTaskId()
 	if _, err := s.e2e.TearDownSession(ctx, taskID, agentfleetv1.SessionKind_SESSION_KIND_WORKER); err != nil {
+		slog.Error("dashboard DeleteTask: worker teardown", "taskId", taskID, "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	if _, err := s.e2e.TearDownSession(ctx, taskID, agentfleetv1.SessionKind_SESSION_KIND_E2E); err != nil {
+		slog.Error("dashboard DeleteTask: e2e teardown", "taskId", taskID, "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	if err := s.tasks.SoftDelete(ctx, taskID); err != nil {
+		slog.Error("dashboard DeleteTask: soft delete", "taskId", taskID, "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
+	slog.Info("dashboard DeleteTask", "taskId", taskID)
 	return connect.NewResponse(&agentfleetv1.DeleteTaskResponse{Status: "deleted"}), nil
 }
 
@@ -210,6 +226,7 @@ func (s *Server) DeleteTask(ctx context.Context, req *connect.Request[agentfleet
 func (s *Server) ListWorktrees(ctx context.Context, _ *connect.Request[agentfleetv1.ListWorktreesRequest]) (*connect.Response[agentfleetv1.ListWorktreesViewResponse], error) {
 	worktrees, err := s.e2e.ListWorktrees(ctx)
 	if err != nil {
+		slog.Error("dashboard ListWorktrees", "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	out := make([]*agentfleetv1.WorktreeView, len(worktrees))
@@ -222,6 +239,7 @@ func (s *Server) ListWorktrees(ctx context.Context, _ *connect.Request[agentflee
 			MtimeUnix:     w.GetMtimeUnix(),
 		}
 		if info, err := s.tasks.GetTaskStatusInfo(ctx, w.GetTaskId()); err != nil {
+			slog.Error("dashboard ListWorktrees: GetTaskStatusInfo", "taskId", w.GetTaskId(), "error", err)
 			return nil, connect.NewError(connect.CodeInternal, err)
 		} else if info != nil {
 			view.TaskStatus = &info.Status
@@ -236,6 +254,7 @@ func (s *Server) ListWorktrees(ctx context.Context, _ *connect.Request[agentflee
 func (s *Server) DeleteWorktree(ctx context.Context, req *connect.Request[agentfleetv1.DeleteWorktreeRequest]) (*connect.Response[agentfleetv1.DeleteWorktreeResponse], error) {
 	deleted, err := s.e2e.DeleteWorktree(ctx, req.Msg.GetTaskId(), req.Msg.GetRepo(), req.Msg.GetAlsoDeleteBranch())
 	if err != nil {
+		slog.Error("dashboard DeleteWorktree", "taskId", req.Msg.GetTaskId(), "repo", req.Msg.GetRepo(), "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	return connect.NewResponse(&agentfleetv1.DeleteWorktreeResponse{Deleted: deleted}), nil
@@ -250,6 +269,7 @@ func (s *Server) GetJournal(ctx context.Context, req *connect.Request[agentfleet
 	}
 	entries, err := s.journal.List(ctx, req.Msg.GetRepo(), req.Msg.GetSinceId(), limit)
 	if err != nil {
+		slog.Error("dashboard GetJournal", "repo", req.Msg.GetRepo(), "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	out := make([]*agentfleetv1.JournalEntry, len(entries))

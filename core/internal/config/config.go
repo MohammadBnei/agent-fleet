@@ -8,8 +8,11 @@ import (
 )
 
 type Config struct {
-	Port                  string
-	GRPCPort              string
+	Port     string
+	GRPCPort string
+	// LogLevel is one of debug/info/warn/error (case-insensitive), parsed
+	// via slog.Level.UnmarshalText in cmd/core/main.go.
+	LogLevel              string
 	DBHost                string
 	DBPort                int
 	DBName                string
@@ -34,6 +37,7 @@ func Load() Config {
 	return Config{
 		Port:                  env("CORE_PORT", "8080"),
 		GRPCPort:              env("CORE_GRPC_PORT", "9090"),
+		LogLevel:              env("LOG_LEVEL", "info"),
 		DBHost:                env("AGENTFLEET_DB_HOST", "postgres.bnei.lan"),
 		DBPort:                envInt("AGENTFLEET_DB_PORT", 5432),
 		DBName:                env("AGENTFLEET_DB_NAME", "agentfleetdb"),

@@ -26,12 +26,18 @@ import (
 )
 
 func main() {
+	cfg := config.Load()
+
 	// JSON, not slog's default TextHandler — Loki/LogQL queries against
 	// this fleet expect structured logs (same convention the TS services'
-	// log.ts already used).
-	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
+	// log.ts already used). Level is LOG_LEVEL-configurable (debug/info/
+	// warn/error).
+	level, warning := resolveLogLevel(cfg.LogLevel)
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level})))
+	if warning != "" {
+		slog.Warn(warning, "value", cfg.LogLevel)
+	}
 
-	cfg := config.Load()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -66,7 +72,7 @@ func main() {
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
 	httpServer := &http.Server{Addr: ":" + cfg.Port, Handler: mux}
 
-	grpcSrv := grpc.NewServer()
+	grpcSrv := grpc.NewServer(grpc.UnaryInterceptor(grpcserver.AccessLogInterceptor))
 	agentfleetv1.RegisterProvisionerServiceServer(grpcSrv, grpcserver.New(k8sc, gitMgr, proxy, core, cfg.E2eHost))
 
 	reconcileInterval, _ := strconv.Atoi(cfg.ReconcileInterval)
@@ -101,4 +107,19 @@ func main() {
 	defer cancel()
 	_ = httpServer.Shutdown(shutdownCtx)
 	grpcSrv.GracefulStop()
+}
+
+// resolveLogLevel parses raw (LOG_LEVEL) via slog.Level.UnmarshalText
+// (DEBUG/INFO/WARN/ERROR, case-insensitive) and falls back to Info on
+// anything invalid or empty. warning is non-empty when the fallback fired,
+// so the caller can log it once the level-appropriate handler exists.
+func resolveLogLevel(raw string) (level slog.Level, warning string) {
+	if raw == "" {
+		return slog.LevelInfo, ""
+	}
+	var l slog.Level
+	if err := l.UnmarshalText([]byte(raw)); err != nil {
+		return slog.LevelInfo, "invalid LOG_LEVEL, defaulting to info"
+	}
+	return l, ""
 }

@@ -3,6 +3,7 @@ package k8s
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
@@ -31,12 +32,22 @@ func (c *Client) CreateMiddleware(ctx context.Context, taskID string) error {
 		},
 	}}
 	_, err := c.Dynamic.Resource(middlewareGVR).Namespace(c.Namespace).Create(ctx, obj, createOpts())
-	return err
+	if err != nil {
+		slog.Error("k8s CreateMiddleware", "taskId", taskID, "error", err)
+		return err
+	}
+	slog.Info("k8s CreateMiddleware", "taskId", taskID)
+	return nil
 }
 
 func (c *Client) DeleteMiddleware(ctx context.Context, taskID string) error {
-	err := c.Dynamic.Resource(middlewareGVR).Namespace(c.Namespace).Delete(ctx, stripPrefixName(taskID), deleteOpts())
-	return ignoreNotFound(err)
+	err := ignoreNotFound(c.Dynamic.Resource(middlewareGVR).Namespace(c.Namespace).Delete(ctx, stripPrefixName(taskID), deleteOpts()))
+	if err != nil {
+		slog.Error("k8s DeleteMiddleware", "taskId", taskID, "error", err)
+		return err
+	}
+	slog.Info("k8s DeleteMiddleware", "taskId", taskID)
+	return nil
 }
 
 func toInterfaceMap(m map[string]string) map[string]any {

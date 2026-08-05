@@ -2,6 +2,7 @@ package k8s
 
 import (
 	"context"
+	"log/slog"
 
 	batchv1 "k8s.io/api/batch/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -23,6 +24,7 @@ func (c *Client) ListPodsByLabel(ctx context.Context) ([]LiveE2ePod, error) {
 		LabelSelector: ComponentLabel + "=" + ComponentE2eRun,
 	})
 	if err != nil {
+		slog.Error("k8s ListPodsByLabel", "error", err)
 		return nil, err
 	}
 	out := make([]LiveE2ePod, 0, len(list.Items))
@@ -48,7 +50,11 @@ func (c *Client) DeleteAll(ctx context.Context, taskID string) error {
 	if err := c.DeleteService(ctx, taskID); err != nil {
 		return err
 	}
-	return c.DeletePod(ctx, taskID)
+	if err := c.DeletePod(ctx, taskID); err != nil {
+		return err
+	}
+	slog.Info("k8s DeleteAll", "taskId", taskID)
+	return nil
 }
 
 type LiveWorkerJob struct {
@@ -90,6 +96,7 @@ func (c *Client) ListWorkerJobsByLabel(ctx context.Context) ([]LiveWorkerJob, er
 		LabelSelector: ComponentLabel + "=" + ComponentWorker,
 	})
 	if err != nil {
+		slog.Error("k8s ListWorkerJobsByLabel", "error", err)
 		return nil, err
 	}
 	out := make([]LiveWorkerJob, 0, len(list.Items))
