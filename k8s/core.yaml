@@ -21,8 +21,17 @@ image:
   # job on every release tag.
   tag: "1.6.0"
 
+# extraPorts.grpc backs CORE_GRPC_PORT below — sidecar and provisioner both
+# dial core.agent-fleet.svc.cluster.local:9090 for CoreService. Without
+# this, that address resolves (Service exists) but the port doesn't,
+# and every ReportEvent/StillHoldsLease call from those two components
+# fails with "rpc error: code = Unavailable desc = name resolver error:
+# produced zero addresses" (confirmed live, this was previously missing).
 service:
   port: 8080 # /healthz, the dashboard's ConnectRPC API + static SPA
+  extraPorts:
+    - name: grpc
+      port: 9090
 
 # This app's first public-facing surface (the dashboard) — hostname itself
 # is driven by infra-bootstrap's gitops/apps/registry.yaml entry (its
@@ -37,11 +46,6 @@ ingress:
     - name: basic-admin-auth
       namespace: default
 
-# common-app-chart has no way to express a second listening port today —
-# core's own gRPC server (CORE_GRPC_PORT, ClusterIP-only, never publicly
-# routed) needs its own Service port entry once actually deployed; verify
-# against the chart's real capabilities during rollout rather than
-# guessing here.
 env:
   - name: CORE_PORT
     value: "8080"
