@@ -26,11 +26,13 @@ ALTER TABLE tasks DROP COLUMN IF EXISTS skip_critique;
 
 -- Named + re-applied via DROP/ADD (not inline on the column) so adding a new
 -- status later — like 'cancelled' below, for the round-cap/kill-switch
--- guardrails — is a safe re-run against the already-live table, not just
+-- guardrails, and 'failed_permanently' (reliability-findings.md #1: a task
+-- reclaimed past MAX_TASK_RETRIES stops retrying instead of looping
+-- forever) — is a safe re-run against the already-live table, not just
 -- future fresh creates.
 ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_status_check;
 ALTER TABLE tasks ADD CONSTRAINT tasks_status_check
-  CHECK (status IN ('pending', 'claimed', 'planning', 'implementing', 'done', 'failed', 'cancelled'));
+  CHECK (status IN ('pending', 'claimed', 'planning', 'implementing', 'done', 'failed', 'cancelled', 'failed_permanently'));
 
 -- Crash recovery + resume (see docs/adr/0016). planning_session_id is the
 -- Postgres-durable *pointer* to the single planner session's Claude session
@@ -59,6 +61,12 @@ ALTER TABLE tasks ADD COLUMN IF NOT EXISTS model TEXT;
 -- PostToThread already no-ops when discord_thread_id is NULL, so relaxing
 -- this is enough to support that origin without any other schema change.
 ALTER TABLE tasks ALTER COLUMN discord_channel_id DROP NOT NULL;
+
+-- DashboardService.DeleteTask soft-deletes: a hard DELETE would violate
+-- planning_transcript/e2e_sessions' REFERENCES tasks(id) (no cascade) the
+-- moment a task has any transcript history, which is effectively always.
+-- GetTask/ListRecentTasks both filter WHERE deleted_at IS NULL.
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
 
 -- Append-only fleet knowledge journal (mirrors ai-devkit's JSON-event pattern,
 -- see agent-fleet reference-check memory: avoids write-conflict issues that a
@@ -130,9 +138,25 @@ CREATE UNIQUE INDEX IF NOT EXISTS planning_transcript_idempotency_idx
 -- AskUserQuestion MCP tool (fleet-core/internal/mcpserver) posts a
 -- 'question' entry and long-polls for the matching 'answer' entry, which
 -- the dashboard (not Discord) submits via AnswerQuestion. See docs/adr/0018.
+--
+-- 'system'/'assistant'/'user'/'result' are the SDK's own raw message
+-- discriminants (reliability-findings.md #0's "relay everything, let the
+-- UI decide" — worker/src/planning.ts's logSdkMessage tags every message
+-- with its own msg.type verbatim, not just assistant text as before).
+-- 'tool_call' is PushToolTelemetry's sidecar-pushed summary — already
+-- inserted before this change (coreserver/server.go), just never actually
+-- listed here; a pre-existing gap this widening also closes. This embedded
+-- copy had drifted from db/schema.sql (still missing 'tool_call' etc. here
+-- despite the canonical file already having them) — CI's drift diff should
+-- have caught this but evidently didn't; found while seeding local test
+-- data for the mobile dashboard work and inserting a 'tool_call' row
+-- failed the CHECK constraint against this file's copy.
 ALTER TABLE planning_transcript DROP CONSTRAINT IF EXISTS planning_transcript_type_check;
 ALTER TABLE planning_transcript ADD CONSTRAINT planning_transcript_type_check
-  CHECK (type IN ('discussion', 'approve', 'abort', 'question', 'answer') OR type IS NULL);
+  CHECK (type IN (
+    'discussion', 'approve', 'abort', 'question', 'answer',
+    'tool_call', 'system', 'assistant', 'user', 'result'
+  ) OR type IS NULL);
 
 -- Retry/DLQ for the Discord-relay side effect only — the transcript entry
 -- itself is already durable the moment the row above commits; these track
@@ -143,3 +167,14 @@ ALTER TABLE planning_transcript ADD COLUMN IF NOT EXISTS relayed_to_discord BOOL
 ALTER TABLE planning_transcript ADD COLUMN IF NOT EXISTS relay_attempts INT NOT NULL DEFAULT 0;
 ALTER TABLE planning_transcript ADD COLUMN IF NOT EXISTS relay_dead_letter BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE planning_transcript ADD COLUMN IF NOT EXISTS relay_last_error TEXT;
+
+-- reply_to_seq is the question-seq correlation reliability-findings.md #0
+-- calls out as a real gap: today's "any pending question + any reply"
+-- would let an unrelated message satisfy a blocked AskUserQuestion call.
+-- NULL for every entry except an 'answer' replying to a specific
+-- 'question' entry's own seq. This embedded copy was missing the column
+-- entirely (same drift as the CHECK constraint above) — transcript.
+-- PostgresStore.AppendReply (the AnswerQuestion RPC's write path) writes
+-- to it unconditionally, so every real deployment applying only this file
+-- would have hard-failed on the first answered question.
+ALTER TABLE planning_transcript ADD COLUMN IF NOT EXISTS reply_to_seq BIGINT;

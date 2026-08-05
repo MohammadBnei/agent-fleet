@@ -180,6 +180,27 @@ func (s *Server) AnswerQuestion(ctx context.Context, req *connect.Request[agentf
 	return connect.NewResponse(&agentfleetv1.AnswerQuestionResponse{Status: "answered"}), nil
 }
 
+// DeleteTask force-tears-down any live session for taskID (both kinds —
+// mirrors the same two calls coreserver/server.go's SetTaskStatus makes on
+// a terminal status, just invoked directly instead of waiting for the
+// worker pod to reach that code path, so a wedged/crashed pod doesn't
+// block removal like Stop's cooperative abort-signal does) and then
+// soft-deletes the task row. Doesn't touch status — see
+// tasks.Store.SoftDelete's own comment.
+func (s *Server) DeleteTask(ctx context.Context, req *connect.Request[agentfleetv1.DeleteTaskRequest]) (*connect.Response[agentfleetv1.DeleteTaskResponse], error) {
+	taskID := req.Msg.GetTaskId()
+	if _, err := s.e2e.TearDownSession(ctx, taskID, agentfleetv1.SessionKind_SESSION_KIND_WORKER); err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	if _, err := s.e2e.TearDownSession(ctx, taskID, agentfleetv1.SessionKind_SESSION_KIND_E2E); err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	if err := s.tasks.SoftDelete(ctx, taskID); err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	return connect.NewResponse(&agentfleetv1.DeleteTaskResponse{Status: "deleted"}), nil
+}
+
 // ListWorktrees left-joins the provisioner's raw worktree list against
 // `tasks` (reliability-findings.md #2) — core has no PVC access itself,
 // so the worktree data comes from a passthrough call to the provisioner;
@@ -273,9 +294,9 @@ func entryToProto(taskID string, e transcript.Entry) *agentfleetv1.TranscriptEnt
 }
 
 // stringToProtoType maps the MCP wire's plain-string transcript type
-// ("" | "discussion" | "approve" | "abort" | "question" | "answer") to the
-// enum this proto message uses — one direction only, nothing in this
-// service ever needs enum->string.
+// ("" | "discussion" | "approve" | "abort" | "question" | "answer" |
+// "tool_call") to the enum this proto message uses — one direction only,
+// nothing in this service ever needs enum->string.
 func stringToProtoType(s string) agentfleetv1.TranscriptEntryType {
 	switch s {
 	case "discussion":
@@ -288,6 +309,8 @@ func stringToProtoType(s string) agentfleetv1.TranscriptEntryType {
 		return agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_QUESTION
 	case "answer":
 		return agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_ANSWER
+	case "tool_call":
+		return agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_TOOL_CALL
 	default:
 		return agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_UNSPECIFIED
 	}

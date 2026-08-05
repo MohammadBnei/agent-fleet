@@ -66,6 +66,7 @@ func newTestPool(t *testing.T) *pgxpool.Pool {
 			retry_count        INT NOT NULL DEFAULT 0,
 			heartbeat_at       TIMESTAMPTZ,
 			lease_id           UUID,
+			deleted_at         TIMESTAMPTZ,
 			created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
 			updated_at         TIMESTAMPTZ NOT NULL DEFAULT now()
 		);
@@ -391,6 +392,43 @@ func TestCreateTask_NilChannelAndThread(t *testing.T) {
 	}
 	if channelID != nil {
 		t.Fatalf("expected NULL discord_channel_id, got %v", *channelID)
+	}
+}
+
+// TestSoftDelete_HidesFromGetAndList covers the dashboard's DeleteTask
+// path: a soft-deleted task must disappear from both single-task lookup
+// and the list, without a row deletion (which planning_transcript's FK
+// would reject once any transcript history exists).
+func TestSoftDelete_HidesFromGetAndList(t *testing.T) {
+	pool := newTestPool(t)
+	ctx := context.Background()
+	store := NewStore(pool)
+
+	id, err := store.CreateTask(ctx, "dream-analyst", "to be deleted", nil, nil)
+	if err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+
+	if err := store.SoftDelete(ctx, id); err != nil {
+		t.Fatalf("soft delete: %v", err)
+	}
+
+	task, err := store.GetTask(ctx, id)
+	if err != nil {
+		t.Fatalf("get task: %v", err)
+	}
+	if task != nil {
+		t.Fatalf("expected GetTask to return nil for a soft-deleted task, got %+v", task)
+	}
+
+	list, err := store.ListRecentTasks(ctx, 50)
+	if err != nil {
+		t.Fatalf("list recent tasks: %v", err)
+	}
+	for _, t2 := range list {
+		if t2.ID == id {
+			t.Fatalf("expected soft-deleted task %s to be excluded from ListRecentTasks", id)
+		}
 	}
 }
 

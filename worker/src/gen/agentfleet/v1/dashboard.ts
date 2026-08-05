@@ -117,6 +117,23 @@ export interface AnswerQuestionResponse {
 }
 
 /**
+ * Soft-deletes the task (see db/schema.sql's tasks.deleted_at) after
+ * force-tearing down any live worker/e2e pod — unlike Stop, which only
+ * posts an "abort" transcript entry the worker pod must be alive and
+ * cooperative to react to, this calls ProvisionerService.TearDownSession
+ * directly so a wedged/crashed pod doesn't block removal. Doesn't touch
+ * `status` — a `done` task stays `done`, it just stops appearing in
+ * ListTasks.
+ */
+export interface DeleteTaskRequest {
+  taskId: string;
+}
+
+export interface DeleteTaskResponse {
+  status: string;
+}
+
+/**
  * WorktreeView is provisioner.proto's WorktreeInfo left-joined against
  * `tasks` (reliability-findings.md #2) — task_status/task_error/pr_url
  * are unset, not omitted, when the task row itself no longer exists,
@@ -771,6 +788,66 @@ export const AnswerQuestionResponse: MessageFns<AnswerQuestionResponse> = {
   },
 };
 
+function createBaseDeleteTaskRequest(): DeleteTaskRequest {
+  return { taskId: "" };
+}
+
+export const DeleteTaskRequest: MessageFns<DeleteTaskRequest> = {
+  fromJSON(object: any): DeleteTaskRequest {
+    return {
+      taskId: isSet(object.taskId)
+        ? globalThis.String(object.taskId)
+        : isSet(object.task_id)
+        ? globalThis.String(object.task_id)
+        : "",
+    };
+  },
+
+  toJSON(message: DeleteTaskRequest): unknown {
+    const obj: any = {};
+    if (message.taskId !== "") {
+      obj.taskId = message.taskId;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<DeleteTaskRequest>, I>>(base?: I): DeleteTaskRequest {
+    return DeleteTaskRequest.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<DeleteTaskRequest>, I>>(object: I): DeleteTaskRequest {
+    const message = createBaseDeleteTaskRequest();
+    message.taskId = object.taskId ?? "";
+    return message;
+  },
+};
+
+function createBaseDeleteTaskResponse(): DeleteTaskResponse {
+  return { status: "" };
+}
+
+export const DeleteTaskResponse: MessageFns<DeleteTaskResponse> = {
+  fromJSON(object: any): DeleteTaskResponse {
+    return { status: isSet(object.status) ? globalThis.String(object.status) : "" };
+  },
+
+  toJSON(message: DeleteTaskResponse): unknown {
+    const obj: any = {};
+    if (message.status !== "") {
+      obj.status = message.status;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<DeleteTaskResponse>, I>>(base?: I): DeleteTaskResponse {
+    return DeleteTaskResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<DeleteTaskResponse>, I>>(object: I): DeleteTaskResponse {
+    const message = createBaseDeleteTaskResponse();
+    message.status = object.status ?? "";
+    return message;
+  },
+};
+
 function createBaseWorktreeView(): WorktreeView {
   return {
     taskId: "",
@@ -1072,6 +1149,7 @@ export interface DashboardService {
   Stop(request: StopRequest): Promise<StopResponse>;
   KillE2e(request: KillE2eRequest): Promise<KillE2eResponse>;
   AnswerQuestion(request: AnswerQuestionRequest): Promise<AnswerQuestionResponse>;
+  DeleteTask(request: DeleteTaskRequest): Promise<DeleteTaskResponse>;
   /**
    * Reuses provisioner.proto's ListWorktreesRequest (identical shape,
    * empty) and DeleteWorktreeRequest/Response (identical shape, no

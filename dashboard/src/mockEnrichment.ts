@@ -1,33 +1,26 @@
 import type { Task } from "./gen/agentfleet/v1/dashboard_pb";
 
 // ponytail: the "herd" mock design shows several fields the real backend
-// doesn't expose yet — todos, decisions log, model/tokens/worktree/branch/
-// session-time, and a "needs your input" signal. This file fakes all of
-// them, deterministically per task id (so a value doesn't jitter every 5s
-// poll), so the reskin can ship now and get wired to real data later:
-//   - needsYou: should come from a backend flag once listTasks can cheaply
-//     compute "latest transcript entry is an unanswered question" — see
-//     the plan's deferred backend note.
-//   - changes/branch: the sidecar already pushes real {branch, files[]}
-//     diff snapshots via a TOOL_CALL transcript entry, but two backend
-//     bugs currently drop it (db/schema.sql's type CHECK constraint
-//     doesn't allow 'tool_call', and dashboard/server.go's
-//     stringToProtoType has no case for it). Fix those, then swap this
-//     panel to read real TOOL_CALL entries instead.
-//   - todos/decisions/model/tokens/worktree/startedAt: no backend source
-//     exists at all yet.
+// doesn't expose at all — no proto field, no schema column, nothing to
+// wire up later short of a real backend change (unlike needsYou/branch/
+// changes, which used to live here too and are now real, see App.tsx's
+// needsYouIds and TaskDetail.tsx's `branch`/`changes`). This file fakes
+// only what's left, deterministically per task id (so a value doesn't
+// jitter every 5s poll):
+//   - todos/decisions: no backend representation of a todo list or a
+//     decision log exists anywhere.
+//   - model/tokens/startedAt: Task has no timestamp or model/token field
+//     at all (not even created_at).
+//   - idleLabel/currentActivity: no "what's it doing right now" signal
+//     exists server-side.
 
 export type TaskEnrichment = {
-  needsYou: boolean;
   idleLabel: string;
   currentActivity: string;
-  worktree: string;
-  branch: string;
   model: string;
   tokens: string;
   startedAt: string;
   todos: { text: string; done: boolean }[];
-  changes: { path: string; added: number; removed: number }[];
   decisions: { text: string; author: string }[];
 };
 
@@ -48,14 +41,6 @@ const DECISION_POOL = [
   "migration must be reversible",
   "flag-gate the rollout",
   "reuse shared middleware",
-];
-
-const FILE_POOL = [
-  "migrations/014_rem_phase.sql",
-  "ingest/handler.py",
-  "ingest/rem.py",
-  "src/middleware/auth.ts",
-  "tests/cache_test.py",
 ];
 
 const ACTIVITY_POOL = [
@@ -84,26 +69,17 @@ export function enrichTask(task: Task): TaskEnrichment {
   const seed = hashSeed(task.id);
   const todoCount = 3 + (seed % 3);
   const doneCount = seed % (todoCount + 1);
-  const changeCount = 1 + (seed % 3);
   const idleMin = 1 + (seed % 40);
 
   return {
-    needsYou: seed % 5 === 0,
     idleLabel: `idle ${idleMin}m`,
     currentActivity: pick(ACTIVITY_POOL, seed, 0),
-    worktree: `task-${task.id.slice(0, 8)}`,
-    branch: `agent/${task.id.slice(0, 8)}`,
     model: pick(MODELS, seed, 0),
     tokens: `${((seed % 900) / 10 + 5).toFixed(1)}k tokens`,
     startedAt: `${9 + (seed % 8)}:${(seed % 6) * 10 || "00"}`,
     todos: Array.from({ length: todoCount }, (_, i) => ({
       text: pick(TODO_POOL, seed, i),
       done: i < doneCount,
-    })),
-    changes: Array.from({ length: changeCount }, (_, i) => ({
-      path: pick(FILE_POOL, seed, i * 2),
-      added: 5 + ((seed + i * 7) % 60),
-      removed: (seed + i * 3) % 12,
     })),
     decisions: Array.from({ length: 1 + (seed % 3) }, (_, i) => ({
       text: pick(DECISION_POOL, seed, i),

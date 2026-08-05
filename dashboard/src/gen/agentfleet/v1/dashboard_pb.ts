@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file agentfleet/v1/dashboard.proto.
  */
 export const file_agentfleet_v1_dashboard: GenFile = /*@__PURE__*/
-  fileDesc("Ch1hZ2VudGZsZWV0L3YxL2Rhc2hib2FyZC5wcm90bxINYWdlbnRmbGVldC52MSKLAQoEVGFzaxIKCgJpZBgBIAEoCRIMCgRyZXBvGAIgASgJEhMKC2Rlc2NyaXB0aW9uGAMgASgJEg4KBnN0YXR1cxgEIAEoCRIWCgl0aHJlYWRfaWQYBSABKAlIAIgBARITCgZwcl91cmwYBiABKAlIAYgBAUIMCgpfdGhyZWFkX2lkQgkKB19wcl91cmwiIQoQTGlzdFRhc2tzUmVxdWVzdBINCgVsaW1pdBgBIAEoBSI3ChFMaXN0VGFza3NSZXNwb25zZRIiCgV0YXNrcxgBIAMoCzITLmFnZW50ZmxlZXQudjEuVGFzayIcCg5HZXRUYXNrUmVxdWVzdBIKCgJpZBgBIAEoCSI0Cg9HZXRUYXNrUmVzcG9uc2USIQoEdGFzaxgBIAEoCzITLmFnZW50ZmxlZXQudjEuVGFzayI2ChFDcmVhdGVUYXNrUmVxdWVzdBIMCgRyZXBvGAEgASgJEhMKC2Rlc2NyaXB0aW9uGAIgASgJIjcKEkNyZWF0ZVRhc2tSZXNwb25zZRIhCgR0YXNrGAEgASgLMhMuYWdlbnRmbGVldC52MS5UYXNrIj0KF1N0cmVhbVRyYW5zY3JpcHRSZXF1ZXN0Eg8KB3Rhc2tfaWQYASABKAkSEQoJc2luY2Vfc2VxGAIgASgDIiYKE0dldEUyZVN0YXR1c1JlcXVlc3QSDwoHdGFza19pZBgBIAEoCSI7ChRHZXRFMmVTdGF0dXNSZXNwb25zZRIOCgZzdGF0dXMYASABKAkSEwoLcHJldmlld191cmwYAiABKAkiIQoOQXBwcm92ZVJlcXVlc3QSDwoHdGFza19pZBgBIAEoCSIhCg9BcHByb3ZlUmVzcG9uc2USDgoGc3RhdHVzGAEgASgJIj4KC1N0b3BSZXF1ZXN0Eg8KB3Rhc2tfaWQYASABKAkSEwoGcmVhc29uGAIgASgJSACIAQFCCQoHX3JlYXNvbiIeCgxTdG9wUmVzcG9uc2USDgoGc3RhdHVzGAEgASgJIiEKDktpbGxFMmVSZXF1ZXN0Eg8KB3Rhc2tfaWQYASABKAkiIQoPS2lsbEUyZVJlc3BvbnNlEg4KBmtpbGxlZBgBIAEoCCJLChVBbnN3ZXJRdWVzdGlvblJlcXVlc3QSDwoHdGFza19pZBgBIAEoCRILCgNzZXEYAiABKAMSFAoMYW5zd2Vyc19qc29uGAMgASgJIigKFkFuc3dlclF1ZXN0aW9uUmVzcG9uc2USDgoGc3RhdHVzGAEgASgJItsBCgxXb3JrdHJlZVZpZXcSDwoHdGFza19pZBgBIAEoCRIMCgRyZXBvGAIgASgJEg4KBmJyYW5jaBgDIAEoCRIWCg51cHN0cmVhbV90cmFjaxgEIAEoCRISCgptdGltZV91bml4GAUgASgDEhgKC3Rhc2tfc3RhdHVzGAYgASgJSACIAQESFwoKdGFza19lcnJvchgHIAEoCUgBiAEBEhMKBnByX3VybBgIIAEoCUgCiAEBQg4KDF90YXNrX3N0YXR1c0INCgtfdGFza19lcnJvckIJCgdfcHJfdXJsIksKGUxpc3RXb3JrdHJlZXNWaWV3UmVzcG9uc2USLgoJd29ya3RyZWVzGAEgAygLMhsuYWdlbnRmbGVldC52MS5Xb3JrdHJlZVZpZXcidQoMSm91cm5hbEVudHJ5EgoKAmlkGAEgASgDEgwKBHJlcG8YAiABKAkSDQoFYWN0b3IYAyABKAkSEgoKZXZlbnRfdHlwZRgEIAEoCRIUCgxwYXlsb2FkX2pzb24YBSABKAkSEgoKY3JlYXRlZF9hdBgGIAEoCSJCChFHZXRKb3VybmFsUmVxdWVzdBIMCgRyZXBvGAEgASgJEhAKCHNpbmNlX2lkGAIgASgDEg0KBWxpbWl0GAMgASgFIlMKEkdldEpvdXJuYWxSZXNwb25zZRIsCgdlbnRyaWVzGAEgAygLMhsuYWdlbnRmbGVldC52MS5Kb3VybmFsRW50cnkSDwoHbmV4dF9pZBgCIAEoAzLkCAoQRGFzaGJvYXJkU2VydmljZRJOCglMaXN0VGFza3MSHy5hZ2VudGZsZWV0LnYxLkxpc3RUYXNrc1JlcXVlc3QaIC5hZ2VudGZsZWV0LnYxLkxpc3RUYXNrc1Jlc3BvbnNlEkgKB0dldFRhc2sSHS5hZ2VudGZsZWV0LnYxLkdldFRhc2tSZXF1ZXN0Gh4uYWdlbnRmbGVldC52MS5HZXRUYXNrUmVzcG9uc2USUQoKQ3JlYXRlVGFzaxIgLmFnZW50ZmxlZXQudjEuQ3JlYXRlVGFza1JlcXVlc3QaIS5hZ2VudGZsZWV0LnYxLkNyZWF0ZVRhc2tSZXNwb25zZRJmCg1HZXRUcmFuc2NyaXB0EikuYWdlbnRmbGVldC52MS5SZWFkVHJhbnNjcmlwdFNpbmNlUmVxdWVzdBoqLmFnZW50ZmxlZXQudjEuUmVhZFRyYW5zY3JpcHRTaW5jZVJlc3BvbnNlElwKEFN0cmVhbVRyYW5zY3JpcHQSJi5hZ2VudGZsZWV0LnYxLlN0cmVhbVRyYW5zY3JpcHRSZXF1ZXN0Gh4uYWdlbnRmbGVldC52MS5UcmFuc2NyaXB0RW50cnkwARJXCgxHZXRFMmVTdGF0dXMSIi5hZ2VudGZsZWV0LnYxLkdldEUyZVN0YXR1c1JlcXVlc3QaIy5hZ2VudGZsZWV0LnYxLkdldEUyZVN0YXR1c1Jlc3BvbnNlEkgKB0FwcHJvdmUSHS5hZ2VudGZsZWV0LnYxLkFwcHJvdmVSZXF1ZXN0Gh4uYWdlbnRmbGVldC52MS5BcHByb3ZlUmVzcG9uc2USPwoEU3RvcBIaLmFnZW50ZmxlZXQudjEuU3RvcFJlcXVlc3QaGy5hZ2VudGZsZWV0LnYxLlN0b3BSZXNwb25zZRJICgdLaWxsRTJlEh0uYWdlbnRmbGVldC52MS5LaWxsRTJlUmVxdWVzdBoeLmFnZW50ZmxlZXQudjEuS2lsbEUyZVJlc3BvbnNlEl0KDkFuc3dlclF1ZXN0aW9uEiQuYWdlbnRmbGVldC52MS5BbnN3ZXJRdWVzdGlvblJlcXVlc3QaJS5hZ2VudGZsZWV0LnYxLkFuc3dlclF1ZXN0aW9uUmVzcG9uc2USXgoNTGlzdFdvcmt0cmVlcxIjLmFnZW50ZmxlZXQudjEuTGlzdFdvcmt0cmVlc1JlcXVlc3QaKC5hZ2VudGZsZWV0LnYxLkxpc3RXb3JrdHJlZXNWaWV3UmVzcG9uc2USXQoORGVsZXRlV29ya3RyZWUSJC5hZ2VudGZsZWV0LnYxLkRlbGV0ZVdvcmt0cmVlUmVxdWVzdBolLmFnZW50ZmxlZXQudjEuRGVsZXRlV29ya3RyZWVSZXNwb25zZRJRCgpHZXRKb3VybmFsEiAuYWdlbnRmbGVldC52MS5HZXRKb3VybmFsUmVxdWVzdBohLmFnZW50ZmxlZXQudjEuR2V0Sm91cm5hbFJlc3BvbnNlQk1aS2dpdGh1Yi5jb20vTW9oYW1tYWRCbmVpL2FnZW50LWZsZWV0L3Byb3RvL2dlbi9nby9hZ2VudGZsZWV0L3YxO2FnZW50ZmxlZXR2MWIGcHJvdG8z", [file_agentfleet_v1_provisioner, file_agentfleet_v1_transcript]);
+  fileDesc("Ch1hZ2VudGZsZWV0L3YxL2Rhc2hib2FyZC5wcm90bxINYWdlbnRmbGVldC52MSKLAQoEVGFzaxIKCgJpZBgBIAEoCRIMCgRyZXBvGAIgASgJEhMKC2Rlc2NyaXB0aW9uGAMgASgJEg4KBnN0YXR1cxgEIAEoCRIWCgl0aHJlYWRfaWQYBSABKAlIAIgBARITCgZwcl91cmwYBiABKAlIAYgBAUIMCgpfdGhyZWFkX2lkQgkKB19wcl91cmwiIQoQTGlzdFRhc2tzUmVxdWVzdBINCgVsaW1pdBgBIAEoBSI3ChFMaXN0VGFza3NSZXNwb25zZRIiCgV0YXNrcxgBIAMoCzITLmFnZW50ZmxlZXQudjEuVGFzayIcCg5HZXRUYXNrUmVxdWVzdBIKCgJpZBgBIAEoCSI0Cg9HZXRUYXNrUmVzcG9uc2USIQoEdGFzaxgBIAEoCzITLmFnZW50ZmxlZXQudjEuVGFzayI2ChFDcmVhdGVUYXNrUmVxdWVzdBIMCgRyZXBvGAEgASgJEhMKC2Rlc2NyaXB0aW9uGAIgASgJIjcKEkNyZWF0ZVRhc2tSZXNwb25zZRIhCgR0YXNrGAEgASgLMhMuYWdlbnRmbGVldC52MS5UYXNrIj0KF1N0cmVhbVRyYW5zY3JpcHRSZXF1ZXN0Eg8KB3Rhc2tfaWQYASABKAkSEQoJc2luY2Vfc2VxGAIgASgDIiYKE0dldEUyZVN0YXR1c1JlcXVlc3QSDwoHdGFza19pZBgBIAEoCSI7ChRHZXRFMmVTdGF0dXNSZXNwb25zZRIOCgZzdGF0dXMYASABKAkSEwoLcHJldmlld191cmwYAiABKAkiIQoOQXBwcm92ZVJlcXVlc3QSDwoHdGFza19pZBgBIAEoCSIhCg9BcHByb3ZlUmVzcG9uc2USDgoGc3RhdHVzGAEgASgJIj4KC1N0b3BSZXF1ZXN0Eg8KB3Rhc2tfaWQYASABKAkSEwoGcmVhc29uGAIgASgJSACIAQFCCQoHX3JlYXNvbiIeCgxTdG9wUmVzcG9uc2USDgoGc3RhdHVzGAEgASgJIiEKDktpbGxFMmVSZXF1ZXN0Eg8KB3Rhc2tfaWQYASABKAkiIQoPS2lsbEUyZVJlc3BvbnNlEg4KBmtpbGxlZBgBIAEoCCJLChVBbnN3ZXJRdWVzdGlvblJlcXVlc3QSDwoHdGFza19pZBgBIAEoCRILCgNzZXEYAiABKAMSFAoMYW5zd2Vyc19qc29uGAMgASgJIigKFkFuc3dlclF1ZXN0aW9uUmVzcG9uc2USDgoGc3RhdHVzGAEgASgJIiQKEURlbGV0ZVRhc2tSZXF1ZXN0Eg8KB3Rhc2tfaWQYASABKAkiJAoSRGVsZXRlVGFza1Jlc3BvbnNlEg4KBnN0YXR1cxgBIAEoCSLbAQoMV29ya3RyZWVWaWV3Eg8KB3Rhc2tfaWQYASABKAkSDAoEcmVwbxgCIAEoCRIOCgZicmFuY2gYAyABKAkSFgoOdXBzdHJlYW1fdHJhY2sYBCABKAkSEgoKbXRpbWVfdW5peBgFIAEoAxIYCgt0YXNrX3N0YXR1cxgGIAEoCUgAiAEBEhcKCnRhc2tfZXJyb3IYByABKAlIAYgBARITCgZwcl91cmwYCCABKAlIAogBAUIOCgxfdGFza19zdGF0dXNCDQoLX3Rhc2tfZXJyb3JCCQoHX3ByX3VybCJLChlMaXN0V29ya3RyZWVzVmlld1Jlc3BvbnNlEi4KCXdvcmt0cmVlcxgBIAMoCzIbLmFnZW50ZmxlZXQudjEuV29ya3RyZWVWaWV3InUKDEpvdXJuYWxFbnRyeRIKCgJpZBgBIAEoAxIMCgRyZXBvGAIgASgJEg0KBWFjdG9yGAMgASgJEhIKCmV2ZW50X3R5cGUYBCABKAkSFAoMcGF5bG9hZF9qc29uGAUgASgJEhIKCmNyZWF0ZWRfYXQYBiABKAkiQgoRR2V0Sm91cm5hbFJlcXVlc3QSDAoEcmVwbxgBIAEoCRIQCghzaW5jZV9pZBgCIAEoAxINCgVsaW1pdBgDIAEoBSJTChJHZXRKb3VybmFsUmVzcG9uc2USLAoHZW50cmllcxgBIAMoCzIbLmFnZW50ZmxlZXQudjEuSm91cm5hbEVudHJ5Eg8KB25leHRfaWQYAiABKAMytwkKEERhc2hib2FyZFNlcnZpY2USTgoJTGlzdFRhc2tzEh8uYWdlbnRmbGVldC52MS5MaXN0VGFza3NSZXF1ZXN0GiAuYWdlbnRmbGVldC52MS5MaXN0VGFza3NSZXNwb25zZRJICgdHZXRUYXNrEh0uYWdlbnRmbGVldC52MS5HZXRUYXNrUmVxdWVzdBoeLmFnZW50ZmxlZXQudjEuR2V0VGFza1Jlc3BvbnNlElEKCkNyZWF0ZVRhc2sSIC5hZ2VudGZsZWV0LnYxLkNyZWF0ZVRhc2tSZXF1ZXN0GiEuYWdlbnRmbGVldC52MS5DcmVhdGVUYXNrUmVzcG9uc2USZgoNR2V0VHJhbnNjcmlwdBIpLmFnZW50ZmxlZXQudjEuUmVhZFRyYW5zY3JpcHRTaW5jZVJlcXVlc3QaKi5hZ2VudGZsZWV0LnYxLlJlYWRUcmFuc2NyaXB0U2luY2VSZXNwb25zZRJcChBTdHJlYW1UcmFuc2NyaXB0EiYuYWdlbnRmbGVldC52MS5TdHJlYW1UcmFuc2NyaXB0UmVxdWVzdBoeLmFnZW50ZmxlZXQudjEuVHJhbnNjcmlwdEVudHJ5MAESVwoMR2V0RTJlU3RhdHVzEiIuYWdlbnRmbGVldC52MS5HZXRFMmVTdGF0dXNSZXF1ZXN0GiMuYWdlbnRmbGVldC52MS5HZXRFMmVTdGF0dXNSZXNwb25zZRJICgdBcHByb3ZlEh0uYWdlbnRmbGVldC52MS5BcHByb3ZlUmVxdWVzdBoeLmFnZW50ZmxlZXQudjEuQXBwcm92ZVJlc3BvbnNlEj8KBFN0b3ASGi5hZ2VudGZsZWV0LnYxLlN0b3BSZXF1ZXN0GhsuYWdlbnRmbGVldC52MS5TdG9wUmVzcG9uc2USSAoHS2lsbEUyZRIdLmFnZW50ZmxlZXQudjEuS2lsbEUyZVJlcXVlc3QaHi5hZ2VudGZsZWV0LnYxLktpbGxFMmVSZXNwb25zZRJdCg5BbnN3ZXJRdWVzdGlvbhIkLmFnZW50ZmxlZXQudjEuQW5zd2VyUXVlc3Rpb25SZXF1ZXN0GiUuYWdlbnRmbGVldC52MS5BbnN3ZXJRdWVzdGlvblJlc3BvbnNlElEKCkRlbGV0ZVRhc2sSIC5hZ2VudGZsZWV0LnYxLkRlbGV0ZVRhc2tSZXF1ZXN0GiEuYWdlbnRmbGVldC52MS5EZWxldGVUYXNrUmVzcG9uc2USXgoNTGlzdFdvcmt0cmVlcxIjLmFnZW50ZmxlZXQudjEuTGlzdFdvcmt0cmVlc1JlcXVlc3QaKC5hZ2VudGZsZWV0LnYxLkxpc3RXb3JrdHJlZXNWaWV3UmVzcG9uc2USXQoORGVsZXRlV29ya3RyZWUSJC5hZ2VudGZsZWV0LnYxLkRlbGV0ZVdvcmt0cmVlUmVxdWVzdBolLmFnZW50ZmxlZXQudjEuRGVsZXRlV29ya3RyZWVSZXNwb25zZRJRCgpHZXRKb3VybmFsEiAuYWdlbnRmbGVldC52MS5HZXRKb3VybmFsUmVxdWVzdBohLmFnZW50ZmxlZXQudjEuR2V0Sm91cm5hbFJlc3BvbnNlQk1aS2dpdGh1Yi5jb20vTW9oYW1tYWRCbmVpL2FnZW50LWZsZWV0L3Byb3RvL2dlbi9nby9hZ2VudGZsZWV0L3YxO2FnZW50ZmxlZXR2MWIGcHJvdG8z", [file_agentfleet_v1_provisioner, file_agentfleet_v1_transcript]);
 
 /**
  * @generated from message agentfleet.v1.Task
@@ -397,6 +397,48 @@ export const AnswerQuestionResponseSchema: GenMessage<AnswerQuestionResponse> = 
   messageDesc(file_agentfleet_v1_dashboard, 17);
 
 /**
+ * Soft-deletes the task (see db/schema.sql's tasks.deleted_at) after
+ * force-tearing down any live worker/e2e pod — unlike Stop, which only
+ * posts an "abort" transcript entry the worker pod must be alive and
+ * cooperative to react to, this calls ProvisionerService.TearDownSession
+ * directly so a wedged/crashed pod doesn't block removal. Doesn't touch
+ * `status` — a `done` task stays `done`, it just stops appearing in
+ * ListTasks.
+ *
+ * @generated from message agentfleet.v1.DeleteTaskRequest
+ */
+export type DeleteTaskRequest = Message<"agentfleet.v1.DeleteTaskRequest"> & {
+  /**
+   * @generated from field: string task_id = 1;
+   */
+  taskId: string;
+};
+
+/**
+ * Describes the message agentfleet.v1.DeleteTaskRequest.
+ * Use `create(DeleteTaskRequestSchema)` to create a new message.
+ */
+export const DeleteTaskRequestSchema: GenMessage<DeleteTaskRequest> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_dashboard, 18);
+
+/**
+ * @generated from message agentfleet.v1.DeleteTaskResponse
+ */
+export type DeleteTaskResponse = Message<"agentfleet.v1.DeleteTaskResponse"> & {
+  /**
+   * @generated from field: string status = 1;
+   */
+  status: string;
+};
+
+/**
+ * Describes the message agentfleet.v1.DeleteTaskResponse.
+ * Use `create(DeleteTaskResponseSchema)` to create a new message.
+ */
+export const DeleteTaskResponseSchema: GenMessage<DeleteTaskResponse> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_dashboard, 19);
+
+/**
  * WorktreeView is provisioner.proto's WorktreeInfo left-joined against
  * `tasks` (reliability-findings.md #2) — task_status/task_error/pr_url
  * are unset, not omitted, when the task row itself no longer exists,
@@ -452,7 +494,7 @@ export type WorktreeView = Message<"agentfleet.v1.WorktreeView"> & {
  * Use `create(WorktreeViewSchema)` to create a new message.
  */
 export const WorktreeViewSchema: GenMessage<WorktreeView> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 18);
+  messageDesc(file_agentfleet_v1_dashboard, 20);
 
 /**
  * @generated from message agentfleet.v1.ListWorktreesViewResponse
@@ -469,7 +511,7 @@ export type ListWorktreesViewResponse = Message<"agentfleet.v1.ListWorktreesView
  * Use `create(ListWorktreesViewResponseSchema)` to create a new message.
  */
 export const ListWorktreesViewResponseSchema: GenMessage<ListWorktreesViewResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 19);
+  messageDesc(file_agentfleet_v1_dashboard, 21);
 
 /**
  * GetJournal is the read path reliability-findings.md #1/#7 both call out
@@ -520,7 +562,7 @@ export type JournalEntry = Message<"agentfleet.v1.JournalEntry"> & {
  * Use `create(JournalEntrySchema)` to create a new message.
  */
 export const JournalEntrySchema: GenMessage<JournalEntry> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 20);
+  messageDesc(file_agentfleet_v1_dashboard, 22);
 
 /**
  * @generated from message agentfleet.v1.GetJournalRequest
@@ -549,7 +591,7 @@ export type GetJournalRequest = Message<"agentfleet.v1.GetJournalRequest"> & {
  * Use `create(GetJournalRequestSchema)` to create a new message.
  */
 export const GetJournalRequestSchema: GenMessage<GetJournalRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 21);
+  messageDesc(file_agentfleet_v1_dashboard, 23);
 
 /**
  * @generated from message agentfleet.v1.GetJournalResponse
@@ -571,7 +613,7 @@ export type GetJournalResponse = Message<"agentfleet.v1.GetJournalResponse"> & {
  * Use `create(GetJournalResponseSchema)` to create a new message.
  */
 export const GetJournalResponseSchema: GenMessage<GetJournalResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 22);
+  messageDesc(file_agentfleet_v1_dashboard, 24);
 
 /**
  * @generated from service agentfleet.v1.DashboardService
@@ -667,6 +709,14 @@ export const DashboardService: GenService<{
     methodKind: "unary";
     input: typeof AnswerQuestionRequestSchema;
     output: typeof AnswerQuestionResponseSchema;
+  },
+  /**
+   * @generated from rpc agentfleet.v1.DashboardService.DeleteTask
+   */
+  deleteTask: {
+    methodKind: "unary";
+    input: typeof DeleteTaskRequestSchema;
+    output: typeof DeleteTaskResponseSchema;
   },
   /**
    * Reuses provisioner.proto's ListWorktreesRequest (identical shape,

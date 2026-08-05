@@ -113,6 +113,21 @@ message AnswerQuestionResponse {
   string status = 1;
 }
 
+// Soft-deletes the task (see db/schema.sql's tasks.deleted_at) after
+// force-tearing down any live worker/e2e pod — unlike Stop, which only
+// posts an "abort" transcript entry the worker pod must be alive and
+// cooperative to react to, this calls ProvisionerService.TearDownSession
+// directly so a wedged/crashed pod doesn't block removal. Doesn't touch
+// `status` — a `done` task stays `done`, it just stops appearing in
+// ListTasks.
+message DeleteTaskRequest {
+  string task_id = 1;
+}
+
+message DeleteTaskResponse {
+  string status = 1;
+}
+
 // WorktreeView is provisioner.proto's WorktreeInfo left-joined against
 // `tasks` (reliability-findings.md #2) — task_status/task_error/pr_url
 // are unset, not omitted, when the task row itself no longer exists,
@@ -179,6 +194,7 @@ service DashboardService {
   rpc Stop(StopRequest) returns (StopResponse);
   rpc KillE2e(KillE2eRequest) returns (KillE2eResponse);
   rpc AnswerQuestion(AnswerQuestionRequest) returns (AnswerQuestionResponse);
+  rpc DeleteTask(DeleteTaskRequest) returns (DeleteTaskResponse);
   // Reuses provisioner.proto's ListWorktreesRequest (identical shape,
   // empty) and DeleteWorktreeRequest/Response (identical shape, no
   // dashboard-specific fields needed) — same passthrough-reuse pattern

@@ -102,7 +102,8 @@ func (s *Store) FindTaskIDByThread(ctx context.Context, threadID string) (string
 func (s *Store) GetTask(ctx context.Context, id string) (*Task, error) {
 	var t Task
 	err := s.pool.QueryRow(ctx, `
-		SELECT id, repo, description, status, discord_thread_id, pr_url FROM tasks WHERE id = $1
+		SELECT id, repo, description, status, discord_thread_id, pr_url
+		FROM tasks WHERE id = $1 AND deleted_at IS NULL
 	`, id).Scan(&t.ID, &t.Repo, &t.Description, &t.Status, &t.ThreadID, &t.PrURL)
 	if err == pgx.ErrNoRows {
 		return nil, nil
@@ -145,7 +146,7 @@ func (s *Store) GetTaskStatusInfo(ctx context.Context, id string) (*TaskStatusIn
 func (s *Store) ListRecentTasks(ctx context.Context, limit int) ([]Task, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT id, repo, description, status, discord_thread_id, pr_url
-		FROM tasks ORDER BY created_at DESC LIMIT $1
+		FROM tasks WHERE deleted_at IS NULL ORDER BY created_at DESC LIMIT $1
 	`, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list recent tasks: %w", err)
@@ -288,6 +289,22 @@ func (s *Store) SaveSessionID(ctx context.Context, id, planningSessionID, model 
 	`, id, planningSessionID, model)
 	if err != nil {
 		return fmt.Errorf("save session id: %w", err)
+	}
+	return nil
+}
+
+// SoftDelete hides a task from GetTask/ListRecentTasks without a hard
+// DELETE — planning_transcript/e2e_sessions both REFERENCES tasks(id) with
+// no ON DELETE CASCADE, so a real DELETE would fail once a task has any
+// transcript history (effectively always). Doesn't touch `status`: a
+// dashboard-initiated delete of an already-`done` task shouldn't relabel
+// it `cancelled` just because it's no longer listed.
+func (s *Store) SoftDelete(ctx context.Context, id string) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE tasks SET deleted_at = now(), updated_at = now() WHERE id = $1
+	`, id)
+	if err != nil {
+		return fmt.Errorf("soft delete task: %w", err)
 	}
 	return nil
 }
