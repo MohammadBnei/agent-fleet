@@ -229,11 +229,6 @@ func (s *Store) ClaimNextTask(ctx context.Context, maxInFlight, maxRetries int) 
 		RETURNING id, repo, description, status, discord_thread_id, pr_url, lease_id::text
 	`, maxInFlight, maxRetries).Scan(&t.ID, &t.Repo, &t.Description, &t.Status, &t.ThreadID, &t.PrURL, &t.LeaseID)
 	if err == pgx.ErrNoRows {
-		// Debug, not silent — this is the fleet's dispatch poll, ticking
-		// every couple seconds; the only proof it's alive at all when
-		// nothing's eligible (e.g. a task stuck pending for an unrelated
-		// reason) is visible at LOG_LEVEL=debug.
-		slog.Debug("tasks ClaimNextTask: nothing eligible")
 		return nil, nil
 	}
 	if err != nil {
