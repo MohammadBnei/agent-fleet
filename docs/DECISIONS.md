@@ -58,9 +58,14 @@ Any doc, code, comment, or memory that contradicts this file or an
 - **Auto-merge, ever.** Every task result is a PR; a human merges.
 - **A shared writable repo PVC across tasks.** One git worktree per task,
   always — see `adr/0003`.
-- **Inferring approval from silence or round completion.** Only an
-  explicit `/approve` (or its word-match fallback) unlocks write/edit —
-  see `adr/0005`.
+- **Inferring approval from silence, round completion, or free-text
+  sentiment.** Only an explicit, structured `/approve` signal unlocks
+  write/edit — see `adr/0005`, `adr/0025`.
+- **Deleting a worktree or branch as a side effect of a task reaching a
+  terminal status.** Only an explicit signal — the sweep's confirmed
+  `[gone]`, or an explicit dashboard delete — removes git state; a hard-won
+  lesson after uncommitted work was destroyed twice by the old design —
+  see `adr/0023`.
 - **Hardcoding git commit identity.** Always derived live from the
   authenticated bot GitHub account — see `adr/0006`.
 - **Committing Discord/GitHub/Anthropic tokens** to this repo or any
