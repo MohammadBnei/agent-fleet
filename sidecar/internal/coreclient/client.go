@@ -9,8 +9,10 @@ package coreclient
 import (
 	"context"
 	"fmt"
+	"sync/atomic"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials/insecure"
 
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
@@ -20,12 +22,15 @@ type Client struct {
 	conn   *grpc.ClientConn
 	rpc    agentfleetv1.CoreServiceClient
 	taskID string
+	ready  atomic.Bool
 }
 
 // retryServiceConfig bounds-retries transient "produced zero addresses"
 // blips (core is a single replica — any restart briefly empties the
-// Service's DNS answer, surfaced to callers as codes.Unavailable) without
-// hanging forever if core is actually down for longer than that.
+// Service's DNS answer) without hanging forever if core is actually down
+// for longer than that. Covers both codes the resolver failure has been
+// observed to surface as: Unavailable once a connection exists, Canceled
+// when it fails before one's ever established (confirmed live).
 const retryServiceConfig = `{
 	"methodConfig": [{
 		"name": [{"service": "agentfleet.v1.CoreService"}],
@@ -35,7 +40,7 @@ const retryServiceConfig = `{
 			"InitialBackoff": "0.5s",
 			"MaxBackoff": "5s",
 			"BackoffMultiplier": 2.0,
-			"RetryableStatusCodes": ["UNAVAILABLE"]
+			"RetryableStatusCodes": ["UNAVAILABLE", "CANCELED"]
 		}
 	}]
 }`
@@ -53,6 +58,34 @@ func New(addr, taskID string) (*Client, error) {
 
 func (c *Client) Close() error {
 	return c.conn.Close()
+}
+
+// Ready reports whether WaitReady has ever observed a live connection to
+// core. Backs the sidecar's /readyz endpoint, which gates the provisioner's
+// StartupProbe on core actually being reachable — not just this process
+// being up (grpc.NewClient's dial is lazy, so a bare TCP/process check
+// proves nothing about core connectivity).
+func (c *Client) Ready() bool {
+	return c.ready.Load()
+}
+
+// WaitReady blocks until core.conn reaches connectivity.Ready (retrying
+// through DNS/dial failures like "produced zero addresses" indefinitely,
+// bounded only by ctx) or ctx is done. Uses grpc's own connection-state API
+// rather than a synthetic ping RPC — no server-side call, no journal/log
+// side effects from the readiness probe itself.
+func (c *Client) WaitReady(ctx context.Context) error {
+	c.conn.Connect()
+	for {
+		state := c.conn.GetState()
+		if state == connectivity.Ready {
+			c.ready.Store(true)
+			return nil
+		}
+		if !c.conn.WaitForStateChange(ctx, state) {
+			return ctx.Err()
+		}
+	}
 }
 
 // --- agent-facing (proxied by the local MCP server) ---

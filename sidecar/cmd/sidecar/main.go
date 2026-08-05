@@ -39,6 +39,17 @@ func main() {
 	}
 	defer func() { _ = core.Close() }()
 
+	// Backs /readyz: the provisioner's StartupProbe waits on this before
+	// unblocking the worker container, so a core outage/rollout blocks the
+	// worker from starting instead of it crashing on its first sidecar call
+	// (observed live: worker died in <1s on an unguarded setStatus call
+	// while core's Service briefly had zero endpoints).
+	go func() {
+		if err := core.WaitReady(ctx); err != nil {
+			slog.Warn("core.WaitReady did not complete", "error", err)
+		}
+	}()
+
 	go telemetry.Run(ctx, core, worktreePath, 5*time.Second)
 
 	mcpServer := &http.Server{Addr: ":" + mcpPort, Handler: mcpserver.New(core)}

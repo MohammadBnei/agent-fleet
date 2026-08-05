@@ -186,12 +186,26 @@ func (c *Client) CreateWorkerPod(ctx context.Context, taskID, repo, description,
 							corev1.ResourceMemory: resource.MustParse("256Mi"),
 						},
 					},
+					// HTTP on /readyz, not a bare TCP check: a TCP probe only
+					// proves the sidecar process is listening, not that it can
+					// actually reach core — a sidecar with zero core
+					// connectivity passed a TCP probe every time, unblocking
+					// the worker container against a core it couldn't talk to
+					// (observed live: worker crashed 6ms after start via an
+					// unguarded first sidecar call, during a core rollout
+					// blip). /readyz only returns 200 once the sidecar's
+					// coreclient has an actual live connection. Budget widened
+					// from the prior ~30s to ~2min to ride out a core rollout,
+					// not just a process-start race.
 					StartupProbe: &corev1.Probe{
 						ProbeHandler: corev1.ProbeHandler{
-							TCPSocket: &corev1.TCPSocketAction{Port: intstr.FromInt32(SidecarAPIPort)},
+							HTTPGet: &corev1.HTTPGetAction{
+								Path: "/readyz",
+								Port: intstr.FromInt32(SidecarAPIPort),
+							},
 						},
-						PeriodSeconds:    1,
-						FailureThreshold: 30,
+						PeriodSeconds:    2,
+						FailureThreshold: 60,
 					},
 				},
 			},

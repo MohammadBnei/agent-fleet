@@ -25,6 +25,7 @@ import (
 
 func New(core *coreclient.Client) http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /readyz", readyzHandler(core))
 	mux.HandleFunc("POST /heartbeat", heartbeatHandler(core))
 	mux.HandleFunc("POST /status", statusHandler(core))
 	mux.HandleFunc("POST /journal", journalHandler(core))
@@ -49,6 +50,22 @@ func writeError(w http.ResponseWriter, status int, err error) {
 func decodeJSON(r *http.Request, v any) error {
 	defer func() { _ = r.Body.Close() }()
 	return json.NewDecoder(r.Body).Decode(v)
+}
+
+// readyzHandler backs the provisioner's StartupProbe on the sidecar init
+// container — 200 only once core.WaitReady (started in main) has observed a
+// live connection to core, 503 until then. Deliberately not the same as
+// "process is up": a bare TCP/liveness check passes immediately regardless
+// of whether core is reachable, which is what let the worker container
+// start against an unreachable core in the first place.
+func readyzHandler(core *coreclient.Client) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !core.Ready() {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}
 }
 
 func heartbeatHandler(core *coreclient.Client) http.HandlerFunc {

@@ -24,8 +24,11 @@ type Client struct {
 
 // retryServiceConfig bounds-retries transient "produced zero addresses"
 // blips (core is a single replica — any restart briefly empties the
-// Service's DNS answer, surfaced to callers as codes.Unavailable) without
-// hanging forever if core is actually down for longer than that.
+// Service's DNS answer) without hanging forever if core is actually down
+// for longer than that. Covers both codes the resolver failure has been
+// observed to surface as: Unavailable once a connection exists, Canceled
+// when it fails before one's ever established (confirmed live — this is
+// what "ReportEvent: open stream failed ... produced zero addresses" was).
 const retryServiceConfig = `{
 	"methodConfig": [{
 		"name": [{"service": "agentfleet.v1.CoreService"}],
@@ -35,7 +38,7 @@ const retryServiceConfig = `{
 			"InitialBackoff": "0.5s",
 			"MaxBackoff": "5s",
 			"BackoffMultiplier": 2.0,
-			"RetryableStatusCodes": ["UNAVAILABLE"]
+			"RetryableStatusCodes": ["UNAVAILABLE", "CANCELED"]
 		}
 	}]
 }`
