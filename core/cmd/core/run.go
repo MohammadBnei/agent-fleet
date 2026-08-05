@@ -27,6 +27,17 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/webui"
 )
 
+// noopNotifier is the relay's target when no Discord bot token is
+// configured — the dashboard (DashboardService.CreateTask/AnswerQuestion/
+// etc.) never required Discord (a dashboard-origin task already has a nil
+// discord_thread_id, which PostToThread already no-ops on), so core's
+// gRPC/dashboard surface shouldn't hard-require a bot session at startup
+// either. Local dev and dashboard-only deployments can now run core
+// without DISCORD_BOT_TOKEN.
+type noopNotifier struct{}
+
+func (noopNotifier) PostToThread(context.Context, string, transcript.Entry) error { return nil }
+
 func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool) error {
 	store := transcript.NewPostgresStore(pool)
 	taskStore := tasks.NewStore(pool)
@@ -38,16 +49,22 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool) error {
 	}
 	defer func() { _ = provisioner.Close() }()
 
-	dc, err := discord.New(cfg, taskStore, store, provisioner)
-	if err != nil {
-		return err
+	var notifier transcript.Notifier = noopNotifier{}
+	if cfg.DiscordBotToken != "" {
+		dc, err := discord.New(cfg, taskStore, store, provisioner)
+		if err != nil {
+			return err
+		}
+		if err := dc.Open(); err != nil {
+			return err
+		}
+		defer func() { _ = dc.Close() }()
+		notifier = dc
+	} else {
+		slog.Warn("DISCORD_BOT_TOKEN not set — running without Discord (dashboard/gRPC only)")
 	}
-	if err := dc.Open(); err != nil {
-		return err
-	}
-	defer func() { _ = dc.Close() }()
 
-	relay := transcript.NewRelay(pool, dc)
+	relay := transcript.NewRelay(pool, notifier)
 	go relay.Run(ctx, 2*time.Second)
 	// reliability-findings.md #5: nudge the relay right after a write
 	// instead of waiting up to pollInterval for the next tick. The ticker

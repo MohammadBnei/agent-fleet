@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { TaskList } from "./pages/TaskList";
+import { TaskList, ACTIVE_STATUSES } from "./pages/TaskList";
 import { TaskDetail } from "./pages/TaskDetail";
 import { Worktrees } from "./pages/Worktrees";
 import { NewTaskDialog } from "./components/NewTaskDialog";
+import { MobileTaskList } from "./mobile/MobileTaskList";
+import { MobileTaskDetail } from "./mobile/MobileTaskDetail";
 import { client } from "./connectClient";
 import type { Task } from "./gen/agentfleet/v1/dashboard_pb";
-import { enrichTask } from "./mockEnrichment";
+import { findPendingQuestion } from "./transcript";
 
 // No router library for two views (see docs/adr/0013's plan) — state
 // mirrored to ?task=<id> so a task's detail view is still bookmarkable/
@@ -36,6 +38,7 @@ export default function App() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [tasksError, setTasksError] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
+  const [needsYouIds, setNeedsYouIds] = useState<Set<string>>(new Set());
 
   const loadTasks = useCallback(() => {
     return client
@@ -50,6 +53,36 @@ export default function App() {
     return () => clearInterval(interval);
   }, [loadTasks]);
 
+  // "Needs you" has no backend flag (yet) — derived here from the same
+  // transcript state TaskDetail.tsx already uses to decide whether to show
+  // a QuestionCard: the latest QUESTION entry with no later ANSWER. Scoped
+  // to ACTIVE_STATUSES tasks only, bounded by the fleet's default
+  // concurrency cap of 5 (see CLAUDE.md), on the same 5s poll cadence as
+  // loadTasks — an extra live stream per active task just for this would
+  // contradict this file's own "plain polling, not a stream" call above.
+  useEffect(() => {
+    const active = tasks.filter((t) => ACTIVE_STATUSES.has(t.status));
+    if (active.length === 0) {
+      setNeedsYouIds(new Set());
+      return;
+    }
+    let cancelled = false;
+    Promise.all(
+      active.map((t) =>
+        client
+          .getTranscript({ taskId: t.id, sinceSeq: 0n })
+          .then((res) => ({ id: t.id, pending: findPendingQuestion(res.entries) !== null }))
+          .catch(() => ({ id: t.id, pending: false })),
+      ),
+    ).then((results) => {
+      if (cancelled) return;
+      setNeedsYouIds(new Set(results.filter((r) => r.pending).map((r) => r.id)));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [tasks]);
+
   function selectTask(id: string) {
     setSelectedId(id);
     setView("tasks");
@@ -57,6 +90,32 @@ export default function App() {
     url.searchParams.set("task", id);
     url.searchParams.delete("view");
     window.history.pushState({}, "", url);
+  }
+
+  // Only real caller today is the mobile back button — desktop's split-pane
+  // layout has no "go back", it just leaves the "select a task" placeholder
+  // showing when nothing's selected.
+  function clearSelection() {
+    setSelectedId(null);
+    const url = new URL(window.location.href);
+    url.searchParams.delete("task");
+    window.history.pushState({}, "", url);
+  }
+
+  // Force-tears-down any live session then soft-deletes the task (see
+  // docs/adr for DashboardService.DeleteTask) — used by both the desktop
+  // TaskList's per-row delete button and the mobile session screen's "⋯".
+  function deleteTask(id: string) {
+    if (!window.confirm("Delete this session? This tears down any live pod and removes it from the list.")) {
+      return;
+    }
+    client
+      .deleteTask({ taskId: id })
+      .then(() => {
+        loadTasks();
+        if (id === selectedId) clearSelection();
+      })
+      .catch((err: Error) => setTasksError(err.message));
   }
 
   function selectView(next: "tasks" | "worktrees") {
@@ -68,8 +127,8 @@ export default function App() {
   }
 
   const needsYouCount = useMemo(
-    () => tasks.filter((t) => enrichTask(t).needsYou).length,
-    [tasks],
+    () => tasks.filter((t) => needsYouIds.has(t.id)).length,
+    [tasks, needsYouIds],
   );
   const repoCount = useMemo(
     () => new Set(tasks.map((t) => t.repo)).size,
@@ -87,7 +146,10 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-base-100 flex flex-col">
-      <div className="flex-none flex items-center gap-5 px-5 h-13 border-b border-base-content/10 bg-base-200">
+      {/* Desktop chrome — the mobile view (below) has its own header inside
+          MobileTaskList/MobileTaskDetail, matching the "herd" mock's phone
+          screens, which don't share this row at all. */}
+      <div className="hidden sm:flex flex-none items-center gap-5 px-5 h-13 border-b border-base-content/10 bg-base-200">
         <div className="flex items-baseline gap-2">
           <span className="font-display font-semibold text-base">herd</span>
           <span className="text-[10.5px] text-base-content/50">
@@ -151,22 +213,51 @@ export default function App() {
         <div className="alert alert-error m-2 text-sm">{tasksError}</div>
       )}
 
-      {view === "worktrees" ? (
-        <Worktrees />
-      ) : (
-        <div className="flex flex-col lg:flex-row flex-1 min-h-0">
-          <div className="lg:w-[320px] flex-none border-b lg:border-b-0 lg:border-r border-base-content/10 bg-base-200 overflow-y-auto">
-            <TaskList tasks={filteredTasks} selectedId={selectedId} onSelect={selectTask} />
-          </div>
-          <div className="flex-1 min-w-0">
-            {selectedId ? (
-              <TaskDetail taskId={selectedId} tasks={tasks} onSelect={selectTask} />
-            ) : (
-              <div className="p-4 opacity-60">Select a task to view details.</div>
-            )}
-          </div>
-        </div>
-      )}
+      <div className="hidden sm:flex flex-col lg:flex-row flex-1 min-h-0">
+        {view === "worktrees" ? (
+          <Worktrees />
+        ) : (
+          <>
+            <div className="lg:w-[320px] flex-none border-b lg:border-b-0 lg:border-r border-base-content/10 bg-base-200 overflow-y-auto">
+              <TaskList
+                tasks={filteredTasks}
+                selectedId={selectedId}
+                needsYouIds={needsYouIds}
+                onSelect={selectTask}
+                onDelete={deleteTask}
+              />
+            </div>
+            <div className="flex-1 min-w-0">
+              {selectedId ? (
+                <TaskDetail taskId={selectedId} tasks={tasks} onSelect={selectTask} />
+              ) : (
+                <div className="p-4 opacity-60">Select a task to view details.</div>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+
+      <div className="sm:hidden flex-1 min-h-0 flex flex-col">
+        {selectedId ? (
+          <MobileTaskDetail taskId={selectedId} onBack={clearSelection} onDelete={() => deleteTask(selectedId)} />
+        ) : (
+          <MobileTaskList
+            tasks={tasks}
+            filteredTasks={filteredTasks}
+            needsYouIds={needsYouIds}
+            needsYouCount={needsYouCount}
+            repoCount={repoCount}
+            filter={filter}
+            setFilter={setFilter}
+            onSelect={selectTask}
+            onCreated={(id) => {
+              loadTasks();
+              selectTask(id);
+            }}
+          />
+        )}
+      </div>
     </div>
   );
 }

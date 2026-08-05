@@ -133,3 +133,30 @@ func TestServer_AnswerQuestion(t *testing.T) {
 		t.Errorf("lastReplyTo = %d, want 3 (the question's own seq, reliability-findings.md #0's correlation)", store.lastReplyTo)
 	}
 }
+
+// TestStringToProtoType covers the read-path mapping the dashboard's
+// GetTranscript/StreamTranscript rely on — "tool_call" was accepted by the
+// DB CHECK constraint and by coreserver's own ingestion-path copy of this
+// switch, but silently fell through to UNSPECIFIED here, making
+// sidecar-pushed tool telemetry indistinguishable from a plain message in
+// the dashboard UI.
+func TestStringToProtoType(t *testing.T) {
+	cases := []struct {
+		in   string
+		want agentfleetv1.TranscriptEntryType
+	}{
+		{"discussion", agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_DISCUSSION},
+		{"approve", agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_APPROVE},
+		{"abort", agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_ABORT},
+		{"question", agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_QUESTION},
+		{"answer", agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_ANSWER},
+		{"tool_call", agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_TOOL_CALL},
+		{"", agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_UNSPECIFIED},
+		{"garbage", agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_UNSPECIFIED},
+	}
+	for _, c := range cases {
+		if got := stringToProtoType(c.in); got != c.want {
+			t.Errorf("stringToProtoType(%q) = %v, want %v", c.in, got, c.want)
+		}
+	}
+}

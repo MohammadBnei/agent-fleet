@@ -62,6 +62,9 @@ const (
 	// DashboardServiceAnswerQuestionProcedure is the fully-qualified name of the DashboardService's
 	// AnswerQuestion RPC.
 	DashboardServiceAnswerQuestionProcedure = "/agentfleet.v1.DashboardService/AnswerQuestion"
+	// DashboardServiceDeleteTaskProcedure is the fully-qualified name of the DashboardService's
+	// DeleteTask RPC.
+	DashboardServiceDeleteTaskProcedure = "/agentfleet.v1.DashboardService/DeleteTask"
 	// DashboardServiceListWorktreesProcedure is the fully-qualified name of the DashboardService's
 	// ListWorktrees RPC.
 	DashboardServiceListWorktreesProcedure = "/agentfleet.v1.DashboardService/ListWorktrees"
@@ -94,6 +97,7 @@ type DashboardServiceClient interface {
 	Stop(context.Context, *connect.Request[v1.StopRequest]) (*connect.Response[v1.StopResponse], error)
 	KillE2E(context.Context, *connect.Request[v1.KillE2ERequest]) (*connect.Response[v1.KillE2EResponse], error)
 	AnswerQuestion(context.Context, *connect.Request[v1.AnswerQuestionRequest]) (*connect.Response[v1.AnswerQuestionResponse], error)
+	DeleteTask(context.Context, *connect.Request[v1.DeleteTaskRequest]) (*connect.Response[v1.DeleteTaskResponse], error)
 	// Reuses provisioner.proto's ListWorktreesRequest (identical shape,
 	// empty) and DeleteWorktreeRequest/Response (identical shape, no
 	// dashboard-specific fields needed) — same passthrough-reuse pattern
@@ -179,6 +183,12 @@ func NewDashboardServiceClient(httpClient connect.HTTPClient, baseURL string, op
 			connect.WithSchema(dashboardServiceMethods.ByName("AnswerQuestion")),
 			connect.WithClientOptions(opts...),
 		),
+		deleteTask: connect.NewClient[v1.DeleteTaskRequest, v1.DeleteTaskResponse](
+			httpClient,
+			baseURL+DashboardServiceDeleteTaskProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("DeleteTask")),
+			connect.WithClientOptions(opts...),
+		),
 		listWorktrees: connect.NewClient[v1.ListWorktreesRequest, v1.ListWorktreesViewResponse](
 			httpClient,
 			baseURL+DashboardServiceListWorktreesProcedure,
@@ -212,6 +222,7 @@ type dashboardServiceClient struct {
 	stop             *connect.Client[v1.StopRequest, v1.StopResponse]
 	killE2E          *connect.Client[v1.KillE2ERequest, v1.KillE2EResponse]
 	answerQuestion   *connect.Client[v1.AnswerQuestionRequest, v1.AnswerQuestionResponse]
+	deleteTask       *connect.Client[v1.DeleteTaskRequest, v1.DeleteTaskResponse]
 	listWorktrees    *connect.Client[v1.ListWorktreesRequest, v1.ListWorktreesViewResponse]
 	deleteWorktree   *connect.Client[v1.DeleteWorktreeRequest, v1.DeleteWorktreeResponse]
 	getJournal       *connect.Client[v1.GetJournalRequest, v1.GetJournalResponse]
@@ -267,6 +278,11 @@ func (c *dashboardServiceClient) AnswerQuestion(ctx context.Context, req *connec
 	return c.answerQuestion.CallUnary(ctx, req)
 }
 
+// DeleteTask calls agentfleet.v1.DashboardService.DeleteTask.
+func (c *dashboardServiceClient) DeleteTask(ctx context.Context, req *connect.Request[v1.DeleteTaskRequest]) (*connect.Response[v1.DeleteTaskResponse], error) {
+	return c.deleteTask.CallUnary(ctx, req)
+}
+
 // ListWorktrees calls agentfleet.v1.DashboardService.ListWorktrees.
 func (c *dashboardServiceClient) ListWorktrees(ctx context.Context, req *connect.Request[v1.ListWorktreesRequest]) (*connect.Response[v1.ListWorktreesViewResponse], error) {
 	return c.listWorktrees.CallUnary(ctx, req)
@@ -303,6 +319,7 @@ type DashboardServiceHandler interface {
 	Stop(context.Context, *connect.Request[v1.StopRequest]) (*connect.Response[v1.StopResponse], error)
 	KillE2E(context.Context, *connect.Request[v1.KillE2ERequest]) (*connect.Response[v1.KillE2EResponse], error)
 	AnswerQuestion(context.Context, *connect.Request[v1.AnswerQuestionRequest]) (*connect.Response[v1.AnswerQuestionResponse], error)
+	DeleteTask(context.Context, *connect.Request[v1.DeleteTaskRequest]) (*connect.Response[v1.DeleteTaskResponse], error)
 	// Reuses provisioner.proto's ListWorktreesRequest (identical shape,
 	// empty) and DeleteWorktreeRequest/Response (identical shape, no
 	// dashboard-specific fields needed) — same passthrough-reuse pattern
@@ -384,6 +401,12 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 		connect.WithSchema(dashboardServiceMethods.ByName("AnswerQuestion")),
 		connect.WithHandlerOptions(opts...),
 	)
+	dashboardServiceDeleteTaskHandler := connect.NewUnaryHandler(
+		DashboardServiceDeleteTaskProcedure,
+		svc.DeleteTask,
+		connect.WithSchema(dashboardServiceMethods.ByName("DeleteTask")),
+		connect.WithHandlerOptions(opts...),
+	)
 	dashboardServiceListWorktreesHandler := connect.NewUnaryHandler(
 		DashboardServiceListWorktreesProcedure,
 		svc.ListWorktrees,
@@ -424,6 +447,8 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 			dashboardServiceKillE2EHandler.ServeHTTP(w, r)
 		case DashboardServiceAnswerQuestionProcedure:
 			dashboardServiceAnswerQuestionHandler.ServeHTTP(w, r)
+		case DashboardServiceDeleteTaskProcedure:
+			dashboardServiceDeleteTaskHandler.ServeHTTP(w, r)
 		case DashboardServiceListWorktreesProcedure:
 			dashboardServiceListWorktreesHandler.ServeHTTP(w, r)
 		case DashboardServiceDeleteWorktreeProcedure:
@@ -477,6 +502,10 @@ func (UnimplementedDashboardServiceHandler) KillE2E(context.Context, *connect.Re
 
 func (UnimplementedDashboardServiceHandler) AnswerQuestion(context.Context, *connect.Request[v1.AnswerQuestionRequest]) (*connect.Response[v1.AnswerQuestionResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.AnswerQuestion is not implemented"))
+}
+
+func (UnimplementedDashboardServiceHandler) DeleteTask(context.Context, *connect.Request[v1.DeleteTaskRequest]) (*connect.Response[v1.DeleteTaskResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.DeleteTask is not implemented"))
 }
 
 func (UnimplementedDashboardServiceHandler) ListWorktrees(context.Context, *connect.Request[v1.ListWorktreesRequest]) (*connect.Response[v1.ListWorktreesViewResponse], error) {

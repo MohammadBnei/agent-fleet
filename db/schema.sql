@@ -62,6 +62,12 @@ ALTER TABLE tasks ADD COLUMN IF NOT EXISTS model TEXT;
 -- this is enough to support that origin without any other schema change.
 ALTER TABLE tasks ALTER COLUMN discord_channel_id DROP NOT NULL;
 
+-- DashboardService.DeleteTask soft-deletes: a hard DELETE would violate
+-- planning_transcript/e2e_sessions' REFERENCES tasks(id) (no cascade) the
+-- moment a task has any transcript history, which is effectively always.
+-- GetTask/ListRecentTasks both filter WHERE deleted_at IS NULL.
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+
 -- Append-only fleet knowledge journal (mirrors ai-devkit's JSON-event pattern,
 -- see agent-fleet reference-check memory: avoids write-conflict issues that a
 -- shared mutable doc would hit across concurrent worker pods).
