@@ -129,7 +129,9 @@ async function logSdkMessage(actor: string, msg: { type: string; [key: string]: 
         log("info", `${actor} text`, { text: block.text });
         // Relayed through the transcript (core's own relay loop posts it to
         // Discord), not a direct Discord call — see sidecarClient.pushMessage.
-        await sidecar.pushMessage(actor, block.text, "discussion").catch(() => {});
+        await sidecar
+          .pushMessage(actor, block.text, "discussion")
+          .catch((err) => log("warn", "pushMessage failed", { actor, error: String(err) }));
       }
       if (block.type === "tool_use") log("info", `${actor} tool_use`, { tool: block.name, input: block.input });
     }
@@ -227,7 +229,9 @@ export async function runTask(task: Task): Promise<TaskResult> {
         // function now (one continuous session, docs/adr/0021) — index.ts
         // has no other way to observe it, so this is the one place that
         // updates the status humans see on the dashboard/Discord.
-        await sidecar.setStatus("implementing").catch(() => {});
+        await sidecar
+          .setStatus("implementing")
+          .catch((err) => log("warn", "setStatus(implementing) failed", { taskId: task.id, error: String(err) }));
         return;
       }
       awaitingCheckpointReply = false;
@@ -242,7 +246,9 @@ export async function runTask(task: Task): Promise<TaskResult> {
       if (!sessionId && "session_id" in msg) {
         sessionId = msg.session_id as string;
         input.setSessionId(sessionId);
-        await sidecar.saveSessionId(sessionId, MODEL).catch(() => {});
+        await sidecar
+          .saveSessionId(sessionId, MODEL)
+          .catch((err) => log("warn", "saveSessionId failed", { taskId: task.id, error: String(err) }));
       }
       await logSdkMessage("planner", msg as { type: string; [key: string]: unknown });
 
@@ -270,11 +276,13 @@ export async function runTask(task: Task): Promise<TaskResult> {
         if (planCount >= MAX_PLANNING_ROUNDS && !awaitingCheckpointReply) {
           awaitingCheckpointReply = true;
           await q.interrupt();
-          await sidecar.pushMessage(
-            "planner",
-            `Round ${planCount} done (${MAX_PLANNING_ROUNDS} plan draft${MAX_PLANNING_ROUNDS === 1 ? "" : "s"}) with no verdict yet. Reply to keep going, say "approved" to proceed, or "stop" to cancel.`,
-            "discussion",
-          ).catch(() => {});
+          await sidecar
+            .pushMessage(
+              "planner",
+              `Round ${planCount} done (${MAX_PLANNING_ROUNDS} plan draft${MAX_PLANNING_ROUNDS === 1 ? "" : "s"}) with no verdict yet. Reply to keep going, say "approved" to proceed, or "stop" to cancel.`,
+              "discussion",
+            )
+            .catch((err) => log("warn", "pushMessage(checkpoint) failed", { taskId: task.id, error: String(err) }));
         }
         // Otherwise: not yet approved, not at the round cap — the session
         // naturally pauses here until the human-message consumer above

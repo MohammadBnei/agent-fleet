@@ -48,11 +48,21 @@ type Task struct {
 }
 
 type Store struct {
-	pool *pgxpool.Pool
+	pool  *pgxpool.Pool
+	nudge func() // optional; set via SetNudge
 }
 
 func NewStore(pool *pgxpool.Pool) *Store {
 	return &Store{pool: pool}
+}
+
+// SetNudge wires an immediate-dispatch trigger (reliability-findings.md
+// #5) — called once at startup rather than threaded through the
+// constructor, since dispatch.Loop itself is constructed from a *Store
+// and only exists after NewStore returns. A nil nudge (the zero value,
+// before SetNudge is called) is a valid no-op.
+func (s *Store) SetNudge(nudge func()) {
+	s.nudge = nudge
 }
 
 // channelID/threadID are nil for a task created from the dashboard
@@ -70,6 +80,9 @@ func (s *Store) CreateTask(ctx context.Context, repo, description string, channe
 	`, repo, description, channelID, threadID).Scan(&id)
 	if err != nil {
 		return "", fmt.Errorf("create task: %w", err)
+	}
+	if s.nudge != nil {
+		s.nudge()
 	}
 	return id, nil
 }
@@ -132,7 +145,17 @@ func (s *Store) ListRecentTasks(ctx context.Context, limit int) ([]Task, error) 
 // pending, or claimed/planning/implementing with a stale heartbeat (>10min
 // — a worker pod that crashed without failing the task cleanly, docs/adr/
 // 0016). Returns (nil, nil) when nothing is eligible.
-func (s *Store) ClaimNextTask(ctx context.Context) (*Task, error) {
+//
+// maxInFlight gates the claim itself, inside the same FOR UPDATE SKIP
+// LOCKED query, instead of a separate CountInFlight call before it
+// (reliability-findings.md #6) — a caller checking headroom and then
+// claiming as two round trips is a TOCTOU race under >1 dispatch-loop
+// replica; folding the count into the WHERE makes the whole
+// check-then-claim atomic. Matches today's existing semantics: the cap
+// gates every claim, including a stale-heartbeat reclaim, not just a
+// fresh pending pickup (docs/adr/0020 point 3 — Postgres stays ground
+// truth for concurrency, survives a core restart).
+func (s *Store) ClaimNextTask(ctx context.Context, maxInFlight int) (*Task, error) {
 	var t Task
 	err := s.pool.QueryRow(ctx, `
 		UPDATE tasks
@@ -143,15 +166,16 @@ func (s *Store) ClaimNextTask(ctx context.Context) (*Task, error) {
 		    updated_at = now()
 		WHERE id = (
 			SELECT id FROM tasks
-			WHERE status = 'pending'
-			   OR (status IN ('claimed', 'planning', 'implementing')
-			       AND (heartbeat_at IS NULL OR heartbeat_at < now() - interval '10 minutes'))
+			WHERE (status = 'pending'
+			       OR (status IN ('claimed', 'planning', 'implementing')
+			           AND (heartbeat_at IS NULL OR heartbeat_at < now() - interval '10 minutes')))
+			  AND (SELECT count(*) FROM tasks WHERE status IN ('claimed', 'planning', 'implementing')) < $1
 			ORDER BY created_at
 			FOR UPDATE SKIP LOCKED
 			LIMIT 1
 		)
 		RETURNING id, repo, description, status, discord_thread_id, pr_url, lease_id::text
-	`).Scan(&t.ID, &t.Repo, &t.Description, &t.Status, &t.ThreadID, &t.PrURL, &t.LeaseID)
+	`, maxInFlight).Scan(&t.ID, &t.Repo, &t.Description, &t.Status, &t.ThreadID, &t.PrURL, &t.LeaseID)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
@@ -159,21 +183,6 @@ func (s *Store) ClaimNextTask(ctx context.Context) (*Task, error) {
 		return nil, fmt.Errorf("claim next task: %w", err)
 	}
 	return &t, nil
-}
-
-// CountInFlight is the dispatch loop's concurrency-headroom check
-// (docs/adr/0020 point 3 — Postgres, not the provisioner's event stream,
-// is ground truth: it survives a core restart, where in-memory
-// stream-derived state would reset to zero).
-func (s *Store) CountInFlight(ctx context.Context) (int, error) {
-	var n int
-	err := s.pool.QueryRow(ctx, `
-		SELECT count(*) FROM tasks WHERE status IN ('claimed', 'planning', 'implementing')
-	`).Scan(&n)
-	if err != nil {
-		return 0, fmt.Errorf("count in flight: %w", err)
-	}
-	return n, nil
 }
 
 // UpdateHeartbeat, SetStatus, SaveSessionID, and StillHoldsLease port

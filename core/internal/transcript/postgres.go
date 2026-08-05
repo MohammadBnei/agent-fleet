@@ -14,11 +14,20 @@ import (
 // reply landing alongside the planner's own send_message call) are
 // serialized via a per-task advisory lock so seq assignment can't race.
 type PostgresStore struct {
-	pool *pgxpool.Pool
+	pool  *pgxpool.Pool
+	nudge func() // optional; set via SetNudge
 }
 
 func NewPostgresStore(pool *pgxpool.Pool) *PostgresStore {
 	return &PostgresStore{pool: pool}
+}
+
+// SetNudge wires an immediate-relay trigger (reliability-findings.md #5) —
+// called once at startup rather than threaded through Append's ~6 call
+// sites individually. A nil nudge (the zero value, before SetNudge is
+// called) is a valid no-op.
+func (s *PostgresStore) SetNudge(nudge func()) {
+	s.nudge = nudge
 }
 
 func (s *PostgresStore) Append(ctx context.Context, taskID, from, text, msgType, idempotencyKey string) (int64, error) {
@@ -73,7 +82,13 @@ func (s *PostgresStore) Append(ctx context.Context, taskID, from, text, msgType,
 		return 0, fmt.Errorf("insert: %w", err)
 	}
 
-	return seq, tx.Commit(ctx)
+	if err := tx.Commit(ctx); err != nil {
+		return 0, err
+	}
+	if s.nudge != nil {
+		s.nudge()
+	}
+	return seq, nil
 }
 
 func (s *PostgresStore) ReadSince(ctx context.Context, taskID string, sinceSeq int64, limit int) ([]Entry, int64, error) {

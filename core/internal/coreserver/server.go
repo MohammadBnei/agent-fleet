@@ -289,8 +289,9 @@ func (s *Server) StreamHumanMessages(req *agentfleetv1.StreamHumanMessagesReques
 // (created/scheduled/running/crashed/terminated) into knowledge_journal
 // for logging/dashboard/future use. It is deliberately NOT the source of
 // truth for dispatch concurrency headroom — see internal/dispatch, which
-// derives that from tasks.CountInFlight (Postgres, survives a core
-// restart; this stream's in-memory state would not).
+// derives that atomically inside tasks.ClaimNextTask's own claim query
+// (Postgres, survives a core restart; this stream's in-memory state would
+// not).
 func (s *Server) ReportPodEvents(stream agentfleetv1.CoreService_ReportPodEventsServer) error {
 	ctx := stream.Context()
 	for {

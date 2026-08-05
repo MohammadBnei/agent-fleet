@@ -47,14 +47,23 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool) error {
 	}
 	defer func() { _ = dc.Close() }()
 
-	go transcript.RelayLoop(ctx, pool, dc, 2*time.Second)
+	relay := transcript.NewRelay(pool, dc)
+	go relay.Run(ctx, 2*time.Second)
+	// reliability-findings.md #5: nudge the relay right after a write
+	// instead of waiting up to pollInterval for the next tick. The ticker
+	// stays as the fallback.
+	store.SetNudge(relay.Nudge)
 
 	hub := dashboard.NewHub()
 	go hub.PollLoop(ctx, store, 2*time.Second)
 
 	// docs/adr/0020 point 2: core claims, then commands the provisioner —
 	// the provisioner never claims tasks or decides to spawn on its own.
-	go dispatch.New(taskStore, provisioner, cfg.MaxInFlight).Run(ctx, 2*time.Second)
+	dispatchLoop := dispatch.New(taskStore, provisioner, cfg.MaxInFlight)
+	go dispatchLoop.Run(ctx, 2*time.Second)
+	// Same nudge pattern as the relay above — CreateTask fires it so a new
+	// task doesn't wait up to pollInterval for its first dispatch attempt.
+	taskStore.SetNudge(dispatchLoop.Nudge)
 
 	// core's first gRPC server (docs/adr/0020's Context) — the provisioner
 	// pushes pod-lifecycle events here, and every worker pod's sidecar

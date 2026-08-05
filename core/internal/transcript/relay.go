@@ -17,11 +17,32 @@ type Notifier interface {
 
 const maxRelayAttempts = 5
 
-// RelayLoop retries posting unrelayed planning_transcript entries to
-// Discord, so a transient API failure retries instead of (as today's
-// unguarded postReply can) crashing the whole watch loop. After
-// maxRelayAttempts it marks the row dead-lettered and stops retrying it.
-func RelayLoop(ctx context.Context, pool *pgxpool.Pool, notifier Notifier, pollInterval time.Duration) {
+// Relay retries posting unrelayed planning_transcript entries to Discord,
+// so a transient API failure retries instead of (as today's unguarded
+// postReply can) crashing the whole watch loop. After maxRelayAttempts it
+// marks the row dead-lettered and stops retrying it.
+type Relay struct {
+	pool     *pgxpool.Pool
+	notifier Notifier
+	nudge    chan struct{}
+}
+
+func NewRelay(pool *pgxpool.Pool, notifier Notifier) *Relay {
+	return &Relay{pool: pool, notifier: notifier, nudge: make(chan struct{}, 1)}
+}
+
+// Nudge triggers an immediate relay pass instead of waiting for the next
+// tick (reliability-findings.md #5) — non-blocking, safe to call from any
+// goroutine (e.g. PostgresStore.Append right after a commit). The ticker
+// in Run stays as a fallback in case a nudge is ever missed.
+func (r *Relay) Nudge() {
+	select {
+	case r.nudge <- struct{}{}:
+	default:
+	}
+}
+
+func (r *Relay) Run(ctx context.Context, pollInterval time.Duration) {
 	ticker := time.NewTicker(pollInterval)
 	defer ticker.Stop()
 	for {
@@ -29,7 +50,9 @@ func RelayLoop(ctx context.Context, pool *pgxpool.Pool, notifier Notifier, pollI
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			relayPending(ctx, pool, notifier)
+			relayPending(ctx, r.pool, r.notifier)
+		case <-r.nudge:
+			relayPending(ctx, r.pool, r.notifier)
 		}
 	}
 }

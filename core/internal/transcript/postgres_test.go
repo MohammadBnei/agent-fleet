@@ -58,13 +58,17 @@ func newTestPool(t *testing.T) *pgxpool.Pool {
 		CREATE EXTENSION IF NOT EXISTS pgcrypto;
 		CREATE TABLE tasks (id UUID PRIMARY KEY DEFAULT gen_random_uuid());
 		CREATE TABLE planning_transcript (
-			task_id         UUID NOT NULL REFERENCES tasks(id),
-			seq             BIGINT NOT NULL,
-			"from"          TEXT NOT NULL,
-			text            TEXT NOT NULL,
-			type            TEXT,
-			idempotency_key TEXT NOT NULL,
-			created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+			task_id            UUID NOT NULL REFERENCES tasks(id),
+			seq                BIGINT NOT NULL,
+			"from"             TEXT NOT NULL,
+			text               TEXT NOT NULL,
+			type               TEXT,
+			idempotency_key    TEXT NOT NULL,
+			created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+			relayed_to_discord BOOLEAN NOT NULL DEFAULT false,
+			relay_attempts     INT NOT NULL DEFAULT 0,
+			relay_dead_letter  BOOLEAN NOT NULL DEFAULT false,
+			relay_last_error   TEXT,
 			PRIMARY KEY (task_id, seq)
 		);
 		CREATE UNIQUE INDEX planning_transcript_idempotency_idx
