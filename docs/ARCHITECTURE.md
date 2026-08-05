@@ -21,7 +21,7 @@ this file wins for topology/features — the reading order is
 | `worker/` | The Claude Code worker (TS/Bun — the only remaining JS runtime in the fleet, sole host of `@anthropic-ai/claude-agent-sdk`'s `query()`). **Single-shot** (`docs/adr/0019`): the provisioner hands it one `TASK_ID`/`TARGET_REPO`/`LEASE_ID`/`BASE_BRANCH` via env, already pointed at a pre-cloned, pre-worktreed `/workspace` — the worker never runs `git clone`/`git worktree add` itself. Runs **one continuous `query()` session in streaming-input mode**, spanning planning *and* implementation with no teardown/restart at the approval boundary (`docs/adr/0021`), then exits. Talks only to its own pod's `localhost` sidecar — never Postgres, never the provisioner, never `core` directly. |
 | `proto/` | buf-managed `.proto` schema (lint + breaking-change CI + generate/drift check): `CoreService` (core's gRPC server — agent/wrapper/provisioner-facing), `ProvisionerService` (the provisioner's gRPC server, renamed from `E2eProvisionerService`), and `DashboardService` (ConnectRPC, dashboard ↔ core). Generates Go (`proto/gen/go`) and TS types (`worker/src/gen`, `dashboard/src/gen`, `ts-proto`). |
 | `db/schema.sql` | Shared Postgres schema (`agentfleetdb`, Pigsty-managed), applied idempotently via `core migrate` (`go:embed`'d, `core`'s own `PreSync` hook — see `core/internal/db/migrate.go`). `tasks` (the queue), append-only `knowledge_journal`, `planning_transcript` (durable planning transcript, pull/cursor reads, idempotency-keyed appends). `e2e_sessions` still exists in the schema but is **no longer read or written by any Go/TS code** — e2e-session state moved to being Kubernetes-native (pod existence/phase) as of `docs/adr/0020` point 1; see §6. |
-| `dashboard/` | React + Vite + TypeScript + Tailwind/DaisyUI SPA — task list, task detail (live transcript via a Connect server-streaming RPC, approve/stop/kill-e2e buttons, code-server link, `AskUserQuestion` answer forms — `adr/0018`), talking to `core` via a generated `@connectrpc/connect-web` client. Built into and served by `core`'s binary — not deployed on its own. Unaffected in substance by the redesign — only the backend's internal transport to the worker changed, not the dashboard-facing contract. |
+| `dashboard/` | React + Vite + TypeScript + Tailwind/DaisyUI SPA — task list, **task creation** (`NewTaskDialog.tsx`, `DashboardService.CreateTask` — an alternative to Discord's `/task`, not a replacement), task detail (live transcript via a Connect server-streaming RPC, approve/stop/kill-e2e buttons, code-server link, `AskUserQuestion` answer forms — `adr/0018`), talking to `core` via a generated `@connectrpc/connect-web` client. Built into and served by `core`'s binary — not deployed on its own. Unaffected in substance by the `adr/0019`–`0021` redesign — only the backend's internal transport to the worker changed, not the dashboard-facing contract. |
 | `k8s/` | This repo's own deploy manifests: `core.yaml` (Helm values for `common-app-chart`, zero RBAC) and `provisioner/` (a standalone plain-manifest directory — `Deployment`/`Service`/`ServiceAccount`/`Role`/`InfisicalSecret`/`NetworkPolicy`/`PersistentVolumeClaim` — since it needs RBAC `common-app-chart` can't express). Both referenced from `infra-bootstrap`'s `gitops/` (see §9). |
 | `e2e-runner/` | One generic pod image (code-server + the target app + a Playwright MCP server, CPU-only headless Chromium for v1) the provisioner spins up per on-demand e2e request, parametrized by env vars the same way `worker/`'s image is parametrized by `TARGET_REPO`. Unchanged by this redesign. |
 
@@ -158,6 +158,17 @@ boundary anymore (`docs/adr/0020` point 6).
   guild-scoped (registers instantly, no global-command propagation delay).
 - Legacy fallback: free-text `!task <repo>: <description>` trigger and
   plain "approved"/"stop" replies.
+- **Tasks can also be created from the dashboard, not just Discord** —
+  `DashboardService.CreateTask` calls the exact same `tasks.Store.CreateTask`
+  path the Discord `/task` handler does, just with a nil
+  `discord_channel_id`/`discord_thread_id` (that column is nullable as of
+  this feature). No separate task-creation logic to keep in sync: a
+  dashboard-created task has no Discord thread at all, and
+  `core/internal/discord/session.go`'s `PostToThread` already no-ops when
+  `ThreadID` is nil, so relay/approve/stop all work identically regardless
+  of which surface created the task — approval/stop for a dashboard-only
+  task just has to happen from the dashboard instead of a Discord reply,
+  since there's no thread to reply in.
 - Live relay of every message on the planning transcript — plan drafts,
   interview questions, doubt-cycle status, raw assistant narration — to
   the Discord thread as it's generated, via `core`'s own relay loop
