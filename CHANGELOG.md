@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.6](https://github.com/MohammadBnei/agent-fleet/compare/1.6.5...1.6.6) (2026-08-05)
+
+
+### Bug Fixes
+
+* **reliability:** Phase 4 — worker session = plain continuous session ([#0](https://github.com/MohammadBnei/agent-fleet/issues/0)) ([0901f64](https://github.com/MohammadBnei/agent-fleet/commit/0901f649706ffe31907c181046e27c057792e38f)), closes [#8](https://github.com/MohammadBnei/agent-fleet/issues/8) [3/#4](https://github.com/MohammadBnei/agent-fleet/issues/4) [#3](https://github.com/MohammadBnei/agent-fleet/issues/3) [#8](https://github.com/MohammadBnei/agent-fleet/issues/8)
+
 ## [1.6.5](https://github.com/MohammadBnei/agent-fleet/compare/1.6.4...1.6.5) (2026-08-05)
 
 
