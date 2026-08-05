@@ -40,7 +40,7 @@ const retryServiceConfig = `{
 			"InitialBackoff": "0.5s",
 			"MaxBackoff": "5s",
 			"BackoffMultiplier": 2.0,
-			"RetryableStatusCodes": ["UNAVAILABLE", "CANCELED"]
+			"RetryableStatusCodes": ["UNAVAILABLE", "CANCELLED"]
 		}
 	}]
 }`
