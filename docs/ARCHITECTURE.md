@@ -220,8 +220,8 @@ fetched in place, never re-cloned per task) and
 `<root>/worktrees/<taskId>/` (one worktree per task, keyed by the
 already-globally-unique task ID, not nested per repo). Only the
 provisioner (clone/fetch/worktree add+remove) and each task's worker+
-sidecar pod (mounted read-write via a per-task `subPath`) ever touch it —
-`core` holds zero PVC access, matching its zero-RBAC design. The old
+sidecar pod ever touch it — `core` holds zero PVC access, matching its
+zero-RBAC design. The old
 `agent-fleet-shared-pvc` (`/mnt/fleet-shared`, skills/journal-mirror/MCP
 configs) is dropped entirely — confirmed via a full-repo grep that nothing
 in `core`/`provisioner`/`sidecar`/`worker` references it anymore; the
@@ -235,14 +235,21 @@ persistent, not one Deployment per repo.** The provisioner builds each
 Pod directly via `client-go` (`provisioner/internal/k8s/pod.go`):
 - `worker` container: the TS/Bun image, `TASK_ID`/`TARGET_REPO`/
   `TASK_DESCRIPTION`/`LEASE_ID`/`BASE_BRANCH`/`SIDECAR_MCP_ADDR`/
-  `SIDECAR_API_ADDR`/`GH_TOKEN` env, `250m`–`2000m` CPU / `512Mi`–`2Gi`
-  memory.
+  `SIDECAR_API_ADDR`/`GH_TOKEN`/`WORKTREE_PATH` env, `250m`–`2000m` CPU /
+  `512Mi`–`2Gi` memory.
 - `sidecar` container: the Go image, `TASK_ID`/`TARGET_REPO`/`MCP_PORT`
-  (9090)/`LOCAL_API_PORT` (9091) env, `50m`–`250m` CPU / `64Mi`–`256Mi`
-  memory.
-- Both mount `/workspace` from the shared PVC via the identical
-  `subPath: worktrees/<taskId>` — a shared filesystem view of the one
-  worktree, not a shared clone.
+  (9090)/`LOCAL_API_PORT` (9091)/`WORKTREE_PATH` env, `50m`–`250m` CPU /
+  `64Mi`–`256Mi` memory.
+- Both mount the **whole** PVC at `/workspace` — not a per-task `subPath`.
+  A linked git worktree's `.git` file is an absolute-path gitlink back to
+  `repos/<repo>/.git/worktrees/<taskId>` (`HEAD`/`index`/`commondir`); a
+  `subPath` scoped to just `worktrees/<taskId>` cuts that path off and
+  every git command in the pod fails with "not a git repository" (found
+  live, 2026-08-05). `WORKTREE_PATH` env (the provisioner's own
+  `CreateWorktree` result, e.g. `/workspace/worktrees/<taskId>`) tells
+  worker/sidecar where their task's checkout lives within that shared
+  view; isolation between concurrent tasks is by directory naming only,
+  not a mount boundary.
 - `RestartPolicy: Never` — a crashed pod is not restarted by Kubernetes;
   recovery is `core`'s stale-heartbeat reclaim (§4), not `kubelet`.
 

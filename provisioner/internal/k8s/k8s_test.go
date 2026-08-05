@@ -127,7 +127,7 @@ func TestCreateWorkerPod_TwoContainersSharedPVC(t *testing.T) {
 	c := newTestClient()
 	ctx := context.Background()
 
-	if err := c.CreateWorkerPod(ctx, "task-1", "dream-analyst", "test task", "lease-1", "main"); err != nil {
+	if err := c.CreateWorkerPod(ctx, "task-1", "dream-analyst", "test task", "lease-1", "main", "/workspace/worktrees/task-1"); err != nil {
 		t.Fatalf("CreateWorkerPod: %v", err)
 	}
 
@@ -160,9 +160,24 @@ func TestCreateWorkerPod_TwoContainersSharedPVC(t *testing.T) {
 	if sidecar.StartupProbe == nil || sidecar.StartupProbe.TCPSocket == nil {
 		t.Errorf("sidecar init container must have a TCP startup probe so the worker waits for it to be ready, got %+v", sidecar.StartupProbe)
 	}
+	// Whole PVC, no SubPath: a linked git worktree's .git gitlink is an
+	// absolute path back to repos/<repo>/.git/worktrees/<taskId>, which a
+	// SubPath scoped to just worktrees/<taskId> would put out of reach.
 	for _, ctr := range append(append([]corev1.Container{}, podSpec.Containers...), podSpec.InitContainers...) {
-		if len(ctr.VolumeMounts) != 1 || ctr.VolumeMounts[0].SubPath != "worktrees/task-1" {
+		if len(ctr.VolumeMounts) != 1 || ctr.VolumeMounts[0].SubPath != "" || ctr.VolumeMounts[0].MountPath != "/workspace" {
 			t.Errorf("container %s: unexpected volume mounts: %+v", ctr.Name, ctr.VolumeMounts)
+		}
+		foundWorktreePath := false
+		for _, e := range ctr.Env {
+			if e.Name == "WORKTREE_PATH" {
+				foundWorktreePath = true
+				if e.Value != "/workspace/worktrees/task-1" {
+					t.Errorf("container %s: unexpected WORKTREE_PATH: %q", ctr.Name, e.Value)
+				}
+			}
+		}
+		if !foundWorktreePath {
+			t.Errorf("container %s: missing WORKTREE_PATH env var", ctr.Name)
 		}
 	}
 	if len(podSpec.Volumes) != 1 || podSpec.Volumes[0].PersistentVolumeClaim.ClaimName != "agent-fleet-workspace" {
@@ -195,7 +210,7 @@ func TestGetWorkerJobRepo_RecoversRepoFromLabel(t *testing.T) {
 	c := newTestClient()
 	ctx := context.Background()
 
-	if err := c.CreateWorkerPod(ctx, "task-1", "vos-monolith", "test task", "lease-1", "dev"); err != nil {
+	if err := c.CreateWorkerPod(ctx, "task-1", "vos-monolith", "test task", "lease-1", "dev", "/workspace/worktrees/task-1"); err != nil {
 		t.Fatalf("CreateWorkerPod: %v", err)
 	}
 	repo, exists, err := c.GetWorkerJobRepo(ctx, "task-1")
@@ -216,7 +231,7 @@ func TestListWorkerJobsByLabel_ExcludesE2ePods(t *testing.T) {
 	c := newTestClient()
 	ctx := context.Background()
 
-	if err := c.CreateWorkerPod(ctx, "task-1", "dream-analyst", "test task", "lease-1", "main"); err != nil {
+	if err := c.CreateWorkerPod(ctx, "task-1", "dream-analyst", "test task", "lease-1", "main", "/workspace/worktrees/task-1"); err != nil {
 		t.Fatalf("CreateWorkerPod: %v", err)
 	}
 	if err := c.CreatePod(ctx, TaskRef{ID: "task-2", Repo: "dream-analyst"}); err != nil {
