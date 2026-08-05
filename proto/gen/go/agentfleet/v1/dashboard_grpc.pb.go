@@ -29,6 +29,8 @@ const (
 	DashboardService_Stop_FullMethodName             = "/agentfleet.v1.DashboardService/Stop"
 	DashboardService_KillE2E_FullMethodName          = "/agentfleet.v1.DashboardService/KillE2e"
 	DashboardService_AnswerQuestion_FullMethodName   = "/agentfleet.v1.DashboardService/AnswerQuestion"
+	DashboardService_ListWorktrees_FullMethodName    = "/agentfleet.v1.DashboardService/ListWorktrees"
+	DashboardService_DeleteWorktree_FullMethodName   = "/agentfleet.v1.DashboardService/DeleteWorktree"
 )
 
 // DashboardServiceClient is the client API for DashboardService service.
@@ -54,6 +56,17 @@ type DashboardServiceClient interface {
 	Stop(ctx context.Context, in *StopRequest, opts ...grpc.CallOption) (*StopResponse, error)
 	KillE2E(ctx context.Context, in *KillE2ERequest, opts ...grpc.CallOption) (*KillE2EResponse, error)
 	AnswerQuestion(ctx context.Context, in *AnswerQuestionRequest, opts ...grpc.CallOption) (*AnswerQuestionResponse, error)
+	// Reuses provisioner.proto's ListWorktreesRequest (identical shape,
+	// empty) and DeleteWorktreeRequest/Response (identical shape, no
+	// dashboard-specific fields needed) — same passthrough-reuse pattern
+	// core.proto's ListE2eTools/CallE2eTool already established. The
+	// response is enriched with a left-join against `tasks`, so it can't
+	// reuse provisioner's own WorktreeInfo/ListWorktreesResponse as-is.
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+	ListWorktrees(ctx context.Context, in *ListWorktreesRequest, opts ...grpc.CallOption) (*ListWorktreesViewResponse, error)
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	DeleteWorktree(ctx context.Context, in *DeleteWorktreeRequest, opts ...grpc.CallOption) (*DeleteWorktreeResponse, error)
 }
 
 type dashboardServiceClient struct {
@@ -173,6 +186,26 @@ func (c *dashboardServiceClient) AnswerQuestion(ctx context.Context, in *AnswerQ
 	return out, nil
 }
 
+func (c *dashboardServiceClient) ListWorktrees(ctx context.Context, in *ListWorktreesRequest, opts ...grpc.CallOption) (*ListWorktreesViewResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListWorktreesViewResponse)
+	err := c.cc.Invoke(ctx, DashboardService_ListWorktrees_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dashboardServiceClient) DeleteWorktree(ctx context.Context, in *DeleteWorktreeRequest, opts ...grpc.CallOption) (*DeleteWorktreeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteWorktreeResponse)
+	err := c.cc.Invoke(ctx, DashboardService_DeleteWorktree_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // DashboardServiceServer is the server API for DashboardService service.
 // All implementations must embed UnimplementedDashboardServiceServer
 // for forward compatibility.
@@ -196,6 +229,17 @@ type DashboardServiceServer interface {
 	Stop(context.Context, *StopRequest) (*StopResponse, error)
 	KillE2E(context.Context, *KillE2ERequest) (*KillE2EResponse, error)
 	AnswerQuestion(context.Context, *AnswerQuestionRequest) (*AnswerQuestionResponse, error)
+	// Reuses provisioner.proto's ListWorktreesRequest (identical shape,
+	// empty) and DeleteWorktreeRequest/Response (identical shape, no
+	// dashboard-specific fields needed) — same passthrough-reuse pattern
+	// core.proto's ListE2eTools/CallE2eTool already established. The
+	// response is enriched with a left-join against `tasks`, so it can't
+	// reuse provisioner's own WorktreeInfo/ListWorktreesResponse as-is.
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+	ListWorktrees(context.Context, *ListWorktreesRequest) (*ListWorktreesViewResponse, error)
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	DeleteWorktree(context.Context, *DeleteWorktreeRequest) (*DeleteWorktreeResponse, error)
 	mustEmbedUnimplementedDashboardServiceServer()
 }
 
@@ -235,6 +279,12 @@ func (UnimplementedDashboardServiceServer) KillE2E(context.Context, *KillE2ERequ
 }
 func (UnimplementedDashboardServiceServer) AnswerQuestion(context.Context, *AnswerQuestionRequest) (*AnswerQuestionResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method AnswerQuestion not implemented")
+}
+func (UnimplementedDashboardServiceServer) ListWorktrees(context.Context, *ListWorktreesRequest) (*ListWorktreesViewResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListWorktrees not implemented")
+}
+func (UnimplementedDashboardServiceServer) DeleteWorktree(context.Context, *DeleteWorktreeRequest) (*DeleteWorktreeResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteWorktree not implemented")
 }
 func (UnimplementedDashboardServiceServer) mustEmbedUnimplementedDashboardServiceServer() {}
 func (UnimplementedDashboardServiceServer) testEmbeddedByValue()                          {}
@@ -430,6 +480,42 @@ func _DashboardService_AnswerQuestion_Handler(srv interface{}, ctx context.Conte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DashboardService_ListWorktrees_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListWorktreesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DashboardServiceServer).ListWorktrees(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DashboardService_ListWorktrees_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DashboardServiceServer).ListWorktrees(ctx, req.(*ListWorktreesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DashboardService_DeleteWorktree_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteWorktreeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DashboardServiceServer).DeleteWorktree(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DashboardService_DeleteWorktree_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DashboardServiceServer).DeleteWorktree(ctx, req.(*DeleteWorktreeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // DashboardService_ServiceDesc is the grpc.ServiceDesc for DashboardService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -472,6 +558,14 @@ var DashboardService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "AnswerQuestion",
 			Handler:    _DashboardService_AnswerQuestion_Handler,
+		},
+		{
+			MethodName: "ListWorktrees",
+			Handler:    _DashboardService_ListWorktrees_Handler,
+		},
+		{
+			MethodName: "DeleteWorktree",
+			Handler:    _DashboardService_DeleteWorktree_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

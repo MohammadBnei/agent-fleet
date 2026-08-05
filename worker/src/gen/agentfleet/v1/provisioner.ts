@@ -170,6 +170,42 @@ export interface CallE2eToolResponse {
   isError: boolean;
 }
 
+/**
+ * Worktree/branch lifecycle (reliability-findings.md #2): a task's
+ * worktree is no longer deleted as a side effect of TearDownSession (that
+ * destroyed never-pushed commits whenever a terminal status was reached
+ * via a git push failure — the only reference to them lived in the
+ * worktree's branch). These two RPCs are the manual half of cleanup
+ * (dashboard-driven); the automated half is the periodic sweep
+ * (provisioner/internal/sweep), which only acts once a branch's upstream
+ * is confirmed [gone].
+ */
+export interface ListWorktreesRequest {
+}
+
+export interface WorktreeInfo {
+  taskId: string;
+  repo: string;
+  branch: string;
+  /** e.g. "[gone]", "[ahead 2]", "" */
+  upstreamTrack: string;
+  mtimeUnix: number;
+}
+
+export interface ListWorktreesResponse {
+  worktrees: WorktreeInfo[];
+}
+
+export interface DeleteWorktreeRequest {
+  taskId: string;
+  repo: string;
+  alsoDeleteBranch: boolean;
+}
+
+export interface DeleteWorktreeResponse {
+  deleted: boolean;
+}
+
 function createBaseKillE2eSessionRequest(): KillE2eSessionRequest {
   return { taskId: "", idempotencyKey: "" };
 }
@@ -758,6 +794,195 @@ export const CallE2eToolResponse: MessageFns<CallE2eToolResponse> = {
   },
 };
 
+function createBaseListWorktreesRequest(): ListWorktreesRequest {
+  return {};
+}
+
+export const ListWorktreesRequest: MessageFns<ListWorktreesRequest> = {
+  fromJSON(_: any): ListWorktreesRequest {
+    return {};
+  },
+
+  toJSON(_: ListWorktreesRequest): unknown {
+    const obj: any = {};
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<ListWorktreesRequest>, I>>(base?: I): ListWorktreesRequest {
+    return ListWorktreesRequest.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<ListWorktreesRequest>, I>>(_: I): ListWorktreesRequest {
+    const message = createBaseListWorktreesRequest();
+    return message;
+  },
+};
+
+function createBaseWorktreeInfo(): WorktreeInfo {
+  return { taskId: "", repo: "", branch: "", upstreamTrack: "", mtimeUnix: 0 };
+}
+
+export const WorktreeInfo: MessageFns<WorktreeInfo> = {
+  fromJSON(object: any): WorktreeInfo {
+    return {
+      taskId: isSet(object.taskId)
+        ? globalThis.String(object.taskId)
+        : isSet(object.task_id)
+        ? globalThis.String(object.task_id)
+        : "",
+      repo: isSet(object.repo) ? globalThis.String(object.repo) : "",
+      branch: isSet(object.branch) ? globalThis.String(object.branch) : "",
+      upstreamTrack: isSet(object.upstreamTrack)
+        ? globalThis.String(object.upstreamTrack)
+        : isSet(object.upstream_track)
+        ? globalThis.String(object.upstream_track)
+        : "",
+      mtimeUnix: isSet(object.mtimeUnix)
+        ? globalThis.Number(object.mtimeUnix)
+        : isSet(object.mtime_unix)
+        ? globalThis.Number(object.mtime_unix)
+        : 0,
+    };
+  },
+
+  toJSON(message: WorktreeInfo): unknown {
+    const obj: any = {};
+    if (message.taskId !== "") {
+      obj.taskId = message.taskId;
+    }
+    if (message.repo !== "") {
+      obj.repo = message.repo;
+    }
+    if (message.branch !== "") {
+      obj.branch = message.branch;
+    }
+    if (message.upstreamTrack !== "") {
+      obj.upstreamTrack = message.upstreamTrack;
+    }
+    if (message.mtimeUnix !== 0) {
+      obj.mtimeUnix = Math.round(message.mtimeUnix);
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<WorktreeInfo>, I>>(base?: I): WorktreeInfo {
+    return WorktreeInfo.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<WorktreeInfo>, I>>(object: I): WorktreeInfo {
+    const message = createBaseWorktreeInfo();
+    message.taskId = object.taskId ?? "";
+    message.repo = object.repo ?? "";
+    message.branch = object.branch ?? "";
+    message.upstreamTrack = object.upstreamTrack ?? "";
+    message.mtimeUnix = object.mtimeUnix ?? 0;
+    return message;
+  },
+};
+
+function createBaseListWorktreesResponse(): ListWorktreesResponse {
+  return { worktrees: [] };
+}
+
+export const ListWorktreesResponse: MessageFns<ListWorktreesResponse> = {
+  fromJSON(object: any): ListWorktreesResponse {
+    return {
+      worktrees: globalThis.Array.isArray(object?.worktrees)
+        ? object.worktrees.map((e: any) => WorktreeInfo.fromJSON(e))
+        : [],
+    };
+  },
+
+  toJSON(message: ListWorktreesResponse): unknown {
+    const obj: any = {};
+    if (message.worktrees?.length) {
+      obj.worktrees = message.worktrees.map((e) => WorktreeInfo.toJSON(e));
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<ListWorktreesResponse>, I>>(base?: I): ListWorktreesResponse {
+    return ListWorktreesResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<ListWorktreesResponse>, I>>(object: I): ListWorktreesResponse {
+    const message = createBaseListWorktreesResponse();
+    message.worktrees = object.worktrees?.map((e) => WorktreeInfo.fromPartial(e)) || [];
+    return message;
+  },
+};
+
+function createBaseDeleteWorktreeRequest(): DeleteWorktreeRequest {
+  return { taskId: "", repo: "", alsoDeleteBranch: false };
+}
+
+export const DeleteWorktreeRequest: MessageFns<DeleteWorktreeRequest> = {
+  fromJSON(object: any): DeleteWorktreeRequest {
+    return {
+      taskId: isSet(object.taskId)
+        ? globalThis.String(object.taskId)
+        : isSet(object.task_id)
+        ? globalThis.String(object.task_id)
+        : "",
+      repo: isSet(object.repo) ? globalThis.String(object.repo) : "",
+      alsoDeleteBranch: isSet(object.alsoDeleteBranch)
+        ? globalThis.Boolean(object.alsoDeleteBranch)
+        : isSet(object.also_delete_branch)
+        ? globalThis.Boolean(object.also_delete_branch)
+        : false,
+    };
+  },
+
+  toJSON(message: DeleteWorktreeRequest): unknown {
+    const obj: any = {};
+    if (message.taskId !== "") {
+      obj.taskId = message.taskId;
+    }
+    if (message.repo !== "") {
+      obj.repo = message.repo;
+    }
+    if (message.alsoDeleteBranch !== false) {
+      obj.alsoDeleteBranch = message.alsoDeleteBranch;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<DeleteWorktreeRequest>, I>>(base?: I): DeleteWorktreeRequest {
+    return DeleteWorktreeRequest.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<DeleteWorktreeRequest>, I>>(object: I): DeleteWorktreeRequest {
+    const message = createBaseDeleteWorktreeRequest();
+    message.taskId = object.taskId ?? "";
+    message.repo = object.repo ?? "";
+    message.alsoDeleteBranch = object.alsoDeleteBranch ?? false;
+    return message;
+  },
+};
+
+function createBaseDeleteWorktreeResponse(): DeleteWorktreeResponse {
+  return { deleted: false };
+}
+
+export const DeleteWorktreeResponse: MessageFns<DeleteWorktreeResponse> = {
+  fromJSON(object: any): DeleteWorktreeResponse {
+    return { deleted: isSet(object.deleted) ? globalThis.Boolean(object.deleted) : false };
+  },
+
+  toJSON(message: DeleteWorktreeResponse): unknown {
+    const obj: any = {};
+    if (message.deleted !== false) {
+      obj.deleted = message.deleted;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<DeleteWorktreeResponse>, I>>(base?: I): DeleteWorktreeResponse {
+    return DeleteWorktreeResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<DeleteWorktreeResponse>, I>>(object: I): DeleteWorktreeResponse {
+    const message = createBaseDeleteWorktreeResponse();
+    message.deleted = object.deleted ?? false;
+    return message;
+  },
+};
+
 export interface ProvisionerService {
   KillE2eSession(request: KillE2eSessionRequest): Promise<KillE2eSessionResponse>;
   GetE2eSessionStatus(request: GetE2eSessionStatusRequest): Promise<GetE2eSessionStatusResponse>;
@@ -772,6 +997,18 @@ export interface ProvisionerService {
   CallE2eTool(request: CallE2eToolRequest): Promise<CallE2eToolResponse>;
   CreateWorkerPod(request: CreateWorkerPodRequest): Promise<CreateWorkerPodResponse>;
   TearDownSession(request: TearDownSessionRequest): Promise<TearDownSessionResponse>;
+  /**
+   * Reused as-is by dashboard.proto's own ListWorktrees (identical empty
+   * request shape) — same passthrough pattern as ListE2eTools above.
+   * buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+   */
+  ListWorktrees(request: ListWorktreesRequest): Promise<ListWorktreesResponse>;
+  /**
+   * Reused as-is by dashboard.proto's own DeleteWorktree (identical
+   * request/response shape, no dashboard-specific fields needed).
+   * buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+   */
+  DeleteWorktree(request: DeleteWorktreeRequest): Promise<DeleteWorktreeResponse>;
 }
 
 type Builtin = Date | Function | Uint8Array | string | number | boolean | undefined;

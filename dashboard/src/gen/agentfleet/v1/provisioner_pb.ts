@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file agentfleet/v1/provisioner.proto.
  */
 export const file_agentfleet_v1_provisioner: GenFile = /*@__PURE__*/
-  fileDesc("Ch9hZ2VudGZsZWV0L3YxL3Byb3Zpc2lvbmVyLnByb3RvEg1hZ2VudGZsZWV0LnYxIkEKFUtpbGxFMmVTZXNzaW9uUmVxdWVzdBIPCgd0YXNrX2lkGAEgASgJEhcKD2lkZW1wb3RlbmN5X2tleRgCIAEoCSIoChZLaWxsRTJlU2Vzc2lvblJlc3BvbnNlEg4KBmtpbGxlZBgBIAEoCCItChpHZXRFMmVTZXNzaW9uU3RhdHVzUmVxdWVzdBIPCgd0YXNrX2lkGAEgASgJIkIKG0dldEUyZVNlc3Npb25TdGF0dXNSZXNwb25zZRIOCgZzdGF0dXMYASABKAkSEwoLcHJldmlld191cmwYAiABKAkiOAoXQ3JlYXRlRTJlU2Vzc2lvblJlcXVlc3QSDwoHdGFza19pZBgBIAEoCRIMCgRyZXBvGAIgASgJIj8KGENyZWF0ZUUyZVNlc3Npb25SZXNwb25zZRIOCgZzdGF0dXMYASABKAkSEwoLcHJldmlld191cmwYAiABKAkihQEKFkNyZWF0ZVdvcmtlclBvZFJlcXVlc3QSDwoHdGFza19pZBgBIAEoCRIMCgRyZXBvGAIgASgJEhAKCHJlcG9fdXJsGAMgASgJEhMKC2Jhc2VfYnJhbmNoGAQgASgJEhMKC2Rlc2NyaXB0aW9uGAUgASgJEhAKCGxlYXNlX2lkGAYgASgJIisKF0NyZWF0ZVdvcmtlclBvZFJlc3BvbnNlEhAKCHBvZF9uYW1lGAEgASgJIlMKFlRlYXJEb3duU2Vzc2lvblJlcXVlc3QSDwoHdGFza19pZBgBIAEoCRIoCgRraW5kGAIgASgOMhouYWdlbnRmbGVldC52MS5TZXNzaW9uS2luZCIsChdUZWFyRG93blNlc3Npb25SZXNwb25zZRIRCgl0b3JuX2Rvd24YASABKAgiJgoTTGlzdEUyZVRvb2xzUmVxdWVzdBIPCgd0YXNrX2lkGAEgASgJIlEKEUUyZVRvb2xEZXNjcmlwdG9yEgwKBG5hbWUYASABKAkSEwoLZGVzY3JpcHRpb24YAiABKAkSGQoRaW5wdXRfc2NoZW1hX2pzb24YAyABKAkiRwoUTGlzdEUyZVRvb2xzUmVzcG9uc2USLwoFdG9vbHMYASADKAsyIC5hZ2VudGZsZWV0LnYxLkUyZVRvb2xEZXNjcmlwdG9yIlAKEkNhbGxFMmVUb29sUmVxdWVzdBIPCgd0YXNrX2lkGAEgASgJEhEKCXRvb2xfbmFtZRgCIAEoCRIWCg5hcmd1bWVudHNfanNvbhgDIAEoCSI8ChNDYWxsRTJlVG9vbFJlc3BvbnNlEhMKC3Jlc3VsdF9qc29uGAEgASgJEhAKCGlzX2Vycm9yGAIgASgIKloKC1Nlc3Npb25LaW5kEhwKGFNFU1NJT05fS0lORF9VTlNQRUNJRklFRBAAEhcKE1NFU1NJT05fS0lORF9XT1JLRVIQARIUChBTRVNTSU9OX0tJTkRfRTJFEAIyuQUKElByb3Zpc2lvbmVyU2VydmljZRJdCg5LaWxsRTJlU2Vzc2lvbhIkLmFnZW50ZmxlZXQudjEuS2lsbEUyZVNlc3Npb25SZXF1ZXN0GiUuYWdlbnRmbGVldC52MS5LaWxsRTJlU2Vzc2lvblJlc3BvbnNlEmwKE0dldEUyZVNlc3Npb25TdGF0dXMSKS5hZ2VudGZsZWV0LnYxLkdldEUyZVNlc3Npb25TdGF0dXNSZXF1ZXN0GiouYWdlbnRmbGVldC52MS5HZXRFMmVTZXNzaW9uU3RhdHVzUmVzcG9uc2USYwoQQ3JlYXRlRTJlU2Vzc2lvbhImLmFnZW50ZmxlZXQudjEuQ3JlYXRlRTJlU2Vzc2lvblJlcXVlc3QaJy5hZ2VudGZsZWV0LnYxLkNyZWF0ZUUyZVNlc3Npb25SZXNwb25zZRJXCgxMaXN0RTJlVG9vbHMSIi5hZ2VudGZsZWV0LnYxLkxpc3RFMmVUb29sc1JlcXVlc3QaIy5hZ2VudGZsZWV0LnYxLkxpc3RFMmVUb29sc1Jlc3BvbnNlElQKC0NhbGxFMmVUb29sEiEuYWdlbnRmbGVldC52MS5DYWxsRTJlVG9vbFJlcXVlc3QaIi5hZ2VudGZsZWV0LnYxLkNhbGxFMmVUb29sUmVzcG9uc2USYAoPQ3JlYXRlV29ya2VyUG9kEiUuYWdlbnRmbGVldC52MS5DcmVhdGVXb3JrZXJQb2RSZXF1ZXN0GiYuYWdlbnRmbGVldC52MS5DcmVhdGVXb3JrZXJQb2RSZXNwb25zZRJgCg9UZWFyRG93blNlc3Npb24SJS5hZ2VudGZsZWV0LnYxLlRlYXJEb3duU2Vzc2lvblJlcXVlc3QaJi5hZ2VudGZsZWV0LnYxLlRlYXJEb3duU2Vzc2lvblJlc3BvbnNlQk1aS2dpdGh1Yi5jb20vTW9oYW1tYWRCbmVpL2FnZW50LWZsZWV0L3Byb3RvL2dlbi9nby9hZ2VudGZsZWV0L3YxO2FnZW50ZmxlZXR2MWIGcHJvdG8z");
+  fileDesc("Ch9hZ2VudGZsZWV0L3YxL3Byb3Zpc2lvbmVyLnByb3RvEg1hZ2VudGZsZWV0LnYxIkEKFUtpbGxFMmVTZXNzaW9uUmVxdWVzdBIPCgd0YXNrX2lkGAEgASgJEhcKD2lkZW1wb3RlbmN5X2tleRgCIAEoCSIoChZLaWxsRTJlU2Vzc2lvblJlc3BvbnNlEg4KBmtpbGxlZBgBIAEoCCItChpHZXRFMmVTZXNzaW9uU3RhdHVzUmVxdWVzdBIPCgd0YXNrX2lkGAEgASgJIkIKG0dldEUyZVNlc3Npb25TdGF0dXNSZXNwb25zZRIOCgZzdGF0dXMYASABKAkSEwoLcHJldmlld191cmwYAiABKAkiOAoXQ3JlYXRlRTJlU2Vzc2lvblJlcXVlc3QSDwoHdGFza19pZBgBIAEoCRIMCgRyZXBvGAIgASgJIj8KGENyZWF0ZUUyZVNlc3Npb25SZXNwb25zZRIOCgZzdGF0dXMYASABKAkSEwoLcHJldmlld191cmwYAiABKAkihQEKFkNyZWF0ZVdvcmtlclBvZFJlcXVlc3QSDwoHdGFza19pZBgBIAEoCRIMCgRyZXBvGAIgASgJEhAKCHJlcG9fdXJsGAMgASgJEhMKC2Jhc2VfYnJhbmNoGAQgASgJEhMKC2Rlc2NyaXB0aW9uGAUgASgJEhAKCGxlYXNlX2lkGAYgASgJIisKF0NyZWF0ZVdvcmtlclBvZFJlc3BvbnNlEhAKCHBvZF9uYW1lGAEgASgJIlMKFlRlYXJEb3duU2Vzc2lvblJlcXVlc3QSDwoHdGFza19pZBgBIAEoCRIoCgRraW5kGAIgASgOMhouYWdlbnRmbGVldC52MS5TZXNzaW9uS2luZCIsChdUZWFyRG93blNlc3Npb25SZXNwb25zZRIRCgl0b3JuX2Rvd24YASABKAgiJgoTTGlzdEUyZVRvb2xzUmVxdWVzdBIPCgd0YXNrX2lkGAEgASgJIlEKEUUyZVRvb2xEZXNjcmlwdG9yEgwKBG5hbWUYASABKAkSEwoLZGVzY3JpcHRpb24YAiABKAkSGQoRaW5wdXRfc2NoZW1hX2pzb24YAyABKAkiRwoUTGlzdEUyZVRvb2xzUmVzcG9uc2USLwoFdG9vbHMYASADKAsyIC5hZ2VudGZsZWV0LnYxLkUyZVRvb2xEZXNjcmlwdG9yIlAKEkNhbGxFMmVUb29sUmVxdWVzdBIPCgd0YXNrX2lkGAEgASgJEhEKCXRvb2xfbmFtZRgCIAEoCRIWCg5hcmd1bWVudHNfanNvbhgDIAEoCSI8ChNDYWxsRTJlVG9vbFJlc3BvbnNlEhMKC3Jlc3VsdF9qc29uGAEgASgJEhAKCGlzX2Vycm9yGAIgASgIIhYKFExpc3RXb3JrdHJlZXNSZXF1ZXN0ImkKDFdvcmt0cmVlSW5mbxIPCgd0YXNrX2lkGAEgASgJEgwKBHJlcG8YAiABKAkSDgoGYnJhbmNoGAMgASgJEhYKDnVwc3RyZWFtX3RyYWNrGAQgASgJEhIKCm10aW1lX3VuaXgYBSABKAMiRwoVTGlzdFdvcmt0cmVlc1Jlc3BvbnNlEi4KCXdvcmt0cmVlcxgBIAMoCzIbLmFnZW50ZmxlZXQudjEuV29ya3RyZWVJbmZvIlIKFURlbGV0ZVdvcmt0cmVlUmVxdWVzdBIPCgd0YXNrX2lkGAEgASgJEgwKBHJlcG8YAiABKAkSGgoSYWxzb19kZWxldGVfYnJhbmNoGAMgASgIIikKFkRlbGV0ZVdvcmt0cmVlUmVzcG9uc2USDwoHZGVsZXRlZBgBIAEoCCpaCgtTZXNzaW9uS2luZBIcChhTRVNTSU9OX0tJTkRfVU5TUEVDSUZJRUQQABIXChNTRVNTSU9OX0tJTkRfV09SS0VSEAESFAoQU0VTU0lPTl9LSU5EX0UyRRACMvQGChJQcm92aXNpb25lclNlcnZpY2USXQoOS2lsbEUyZVNlc3Npb24SJC5hZ2VudGZsZWV0LnYxLktpbGxFMmVTZXNzaW9uUmVxdWVzdBolLmFnZW50ZmxlZXQudjEuS2lsbEUyZVNlc3Npb25SZXNwb25zZRJsChNHZXRFMmVTZXNzaW9uU3RhdHVzEikuYWdlbnRmbGVldC52MS5HZXRFMmVTZXNzaW9uU3RhdHVzUmVxdWVzdBoqLmFnZW50ZmxlZXQudjEuR2V0RTJlU2Vzc2lvblN0YXR1c1Jlc3BvbnNlEmMKEENyZWF0ZUUyZVNlc3Npb24SJi5hZ2VudGZsZWV0LnYxLkNyZWF0ZUUyZVNlc3Npb25SZXF1ZXN0GicuYWdlbnRmbGVldC52MS5DcmVhdGVFMmVTZXNzaW9uUmVzcG9uc2USVwoMTGlzdEUyZVRvb2xzEiIuYWdlbnRmbGVldC52MS5MaXN0RTJlVG9vbHNSZXF1ZXN0GiMuYWdlbnRmbGVldC52MS5MaXN0RTJlVG9vbHNSZXNwb25zZRJUCgtDYWxsRTJlVG9vbBIhLmFnZW50ZmxlZXQudjEuQ2FsbEUyZVRvb2xSZXF1ZXN0GiIuYWdlbnRmbGVldC52MS5DYWxsRTJlVG9vbFJlc3BvbnNlEmAKD0NyZWF0ZVdvcmtlclBvZBIlLmFnZW50ZmxlZXQudjEuQ3JlYXRlV29ya2VyUG9kUmVxdWVzdBomLmFnZW50ZmxlZXQudjEuQ3JlYXRlV29ya2VyUG9kUmVzcG9uc2USYAoPVGVhckRvd25TZXNzaW9uEiUuYWdlbnRmbGVldC52MS5UZWFyRG93blNlc3Npb25SZXF1ZXN0GiYuYWdlbnRmbGVldC52MS5UZWFyRG93blNlc3Npb25SZXNwb25zZRJaCg1MaXN0V29ya3RyZWVzEiMuYWdlbnRmbGVldC52MS5MaXN0V29ya3RyZWVzUmVxdWVzdBokLmFnZW50ZmxlZXQudjEuTGlzdFdvcmt0cmVlc1Jlc3BvbnNlEl0KDkRlbGV0ZVdvcmt0cmVlEiQuYWdlbnRmbGVldC52MS5EZWxldGVXb3JrdHJlZVJlcXVlc3QaJS5hZ2VudGZsZWV0LnYxLkRlbGV0ZVdvcmt0cmVlUmVzcG9uc2VCTVpLZ2l0aHViLmNvbS9Nb2hhbW1hZEJuZWkvYWdlbnQtZmxlZXQvcHJvdG8vZ2VuL2dvL2FnZW50ZmxlZXQvdjE7YWdlbnRmbGVldHYxYgZwcm90bzM");
 
 /**
  * @generated from message agentfleet.v1.KillE2eSessionRequest
@@ -384,6 +384,128 @@ export const CallE2eToolResponseSchema: GenMessage<CallE2eToolResponse> = /*@__P
   messageDesc(file_agentfleet_v1_provisioner, 14);
 
 /**
+ * Worktree/branch lifecycle (reliability-findings.md #2): a task's
+ * worktree is no longer deleted as a side effect of TearDownSession (that
+ * destroyed never-pushed commits whenever a terminal status was reached
+ * via a git push failure — the only reference to them lived in the
+ * worktree's branch). These two RPCs are the manual half of cleanup
+ * (dashboard-driven); the automated half is the periodic sweep
+ * (provisioner/internal/sweep), which only acts once a branch's upstream
+ * is confirmed [gone].
+ *
+ * @generated from message agentfleet.v1.ListWorktreesRequest
+ */
+export type ListWorktreesRequest = Message<"agentfleet.v1.ListWorktreesRequest"> & {
+};
+
+/**
+ * Describes the message agentfleet.v1.ListWorktreesRequest.
+ * Use `create(ListWorktreesRequestSchema)` to create a new message.
+ */
+export const ListWorktreesRequestSchema: GenMessage<ListWorktreesRequest> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_provisioner, 15);
+
+/**
+ * @generated from message agentfleet.v1.WorktreeInfo
+ */
+export type WorktreeInfo = Message<"agentfleet.v1.WorktreeInfo"> & {
+  /**
+   * @generated from field: string task_id = 1;
+   */
+  taskId: string;
+
+  /**
+   * @generated from field: string repo = 2;
+   */
+  repo: string;
+
+  /**
+   * @generated from field: string branch = 3;
+   */
+  branch: string;
+
+  /**
+   * e.g. "[gone]", "[ahead 2]", ""
+   *
+   * @generated from field: string upstream_track = 4;
+   */
+  upstreamTrack: string;
+
+  /**
+   * @generated from field: int64 mtime_unix = 5;
+   */
+  mtimeUnix: bigint;
+};
+
+/**
+ * Describes the message agentfleet.v1.WorktreeInfo.
+ * Use `create(WorktreeInfoSchema)` to create a new message.
+ */
+export const WorktreeInfoSchema: GenMessage<WorktreeInfo> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_provisioner, 16);
+
+/**
+ * @generated from message agentfleet.v1.ListWorktreesResponse
+ */
+export type ListWorktreesResponse = Message<"agentfleet.v1.ListWorktreesResponse"> & {
+  /**
+   * @generated from field: repeated agentfleet.v1.WorktreeInfo worktrees = 1;
+   */
+  worktrees: WorktreeInfo[];
+};
+
+/**
+ * Describes the message agentfleet.v1.ListWorktreesResponse.
+ * Use `create(ListWorktreesResponseSchema)` to create a new message.
+ */
+export const ListWorktreesResponseSchema: GenMessage<ListWorktreesResponse> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_provisioner, 17);
+
+/**
+ * @generated from message agentfleet.v1.DeleteWorktreeRequest
+ */
+export type DeleteWorktreeRequest = Message<"agentfleet.v1.DeleteWorktreeRequest"> & {
+  /**
+   * @generated from field: string task_id = 1;
+   */
+  taskId: string;
+
+  /**
+   * @generated from field: string repo = 2;
+   */
+  repo: string;
+
+  /**
+   * @generated from field: bool also_delete_branch = 3;
+   */
+  alsoDeleteBranch: boolean;
+};
+
+/**
+ * Describes the message agentfleet.v1.DeleteWorktreeRequest.
+ * Use `create(DeleteWorktreeRequestSchema)` to create a new message.
+ */
+export const DeleteWorktreeRequestSchema: GenMessage<DeleteWorktreeRequest> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_provisioner, 18);
+
+/**
+ * @generated from message agentfleet.v1.DeleteWorktreeResponse
+ */
+export type DeleteWorktreeResponse = Message<"agentfleet.v1.DeleteWorktreeResponse"> & {
+  /**
+   * @generated from field: bool deleted = 1;
+   */
+  deleted: boolean;
+};
+
+/**
+ * Describes the message agentfleet.v1.DeleteWorktreeResponse.
+ * Use `create(DeleteWorktreeResponseSchema)` to create a new message.
+ */
+export const DeleteWorktreeResponseSchema: GenMessage<DeleteWorktreeResponse> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_provisioner, 19);
+
+/**
  * Which kind of session/pod an operation targets — worker pods and e2e
  * preview pods share the provisioner's reconcile/teardown machinery
  * (docs/adr/0019) but are tracked and torn down independently.
@@ -478,6 +600,30 @@ export const ProvisionerService: GenService<{
     methodKind: "unary";
     input: typeof TearDownSessionRequestSchema;
     output: typeof TearDownSessionResponseSchema;
+  },
+  /**
+   * Reused as-is by dashboard.proto's own ListWorktrees (identical empty
+   * request shape) — same passthrough pattern as ListE2eTools above.
+   * buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+   *
+   * @generated from rpc agentfleet.v1.ProvisionerService.ListWorktrees
+   */
+  listWorktrees: {
+    methodKind: "unary";
+    input: typeof ListWorktreesRequestSchema;
+    output: typeof ListWorktreesResponseSchema;
+  },
+  /**
+   * Reused as-is by dashboard.proto's own DeleteWorktree (identical
+   * request/response shape, no dashboard-specific fields needed).
+   * buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+   *
+   * @generated from rpc agentfleet.v1.ProvisionerService.DeleteWorktree
+   */
+  deleteWorktree: {
+    methodKind: "unary";
+    input: typeof DeleteWorktreeRequestSchema;
+    output: typeof DeleteWorktreeResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_agentfleet_v1_provisioner, 0);

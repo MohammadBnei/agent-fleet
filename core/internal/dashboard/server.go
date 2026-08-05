@@ -177,6 +177,46 @@ func (s *Server) AnswerQuestion(ctx context.Context, req *connect.Request[agentf
 	return connect.NewResponse(&agentfleetv1.AnswerQuestionResponse{Status: "answered"}), nil
 }
 
+// ListWorktrees left-joins the provisioner's raw worktree list against
+// `tasks` (reliability-findings.md #2) — core has no PVC access itself,
+// so the worktree data comes from a passthrough call to the provisioner;
+// task_status/task_error/pr_url are left unset (not an error) for a
+// worktree whose task row no longer exists, exactly the orphaned case
+// this view exists to surface. An inner join would hide it.
+func (s *Server) ListWorktrees(ctx context.Context, _ *connect.Request[agentfleetv1.ListWorktreesRequest]) (*connect.Response[agentfleetv1.ListWorktreesViewResponse], error) {
+	worktrees, err := s.e2e.ListWorktrees(ctx)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	out := make([]*agentfleetv1.WorktreeView, len(worktrees))
+	for i, w := range worktrees {
+		view := &agentfleetv1.WorktreeView{
+			TaskId:        w.GetTaskId(),
+			Repo:          w.GetRepo(),
+			Branch:        w.GetBranch(),
+			UpstreamTrack: w.GetUpstreamTrack(),
+			MtimeUnix:     w.GetMtimeUnix(),
+		}
+		if info, err := s.tasks.GetTaskStatusInfo(ctx, w.GetTaskId()); err != nil {
+			return nil, connect.NewError(connect.CodeInternal, err)
+		} else if info != nil {
+			view.TaskStatus = &info.Status
+			view.TaskError = info.LastError
+			view.PrUrl = info.PrURL
+		}
+		out[i] = view
+	}
+	return connect.NewResponse(&agentfleetv1.ListWorktreesViewResponse{Worktrees: out}), nil
+}
+
+func (s *Server) DeleteWorktree(ctx context.Context, req *connect.Request[agentfleetv1.DeleteWorktreeRequest]) (*connect.Response[agentfleetv1.DeleteWorktreeResponse], error) {
+	deleted, err := s.e2e.DeleteWorktree(ctx, req.Msg.GetTaskId(), req.Msg.GetRepo(), req.Msg.GetAlsoDeleteBranch())
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	return connect.NewResponse(&agentfleetv1.DeleteWorktreeResponse{Deleted: deleted}), nil
+}
+
 func taskToProto(t tasks.Task) *agentfleetv1.Task {
 	return &agentfleetv1.Task{
 		Id:          t.ID,

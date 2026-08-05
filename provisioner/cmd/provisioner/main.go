@@ -22,6 +22,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/k8s"
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/mcpproxy"
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/reconcile"
+	"github.com/MohammadBnei/agent-fleet/provisioner/internal/sweep"
 )
 
 func main() {
@@ -71,6 +72,10 @@ func main() {
 	reconcileInterval, _ := strconv.Atoi(cfg.ReconcileInterval)
 	loop := reconcile.New(k8sc)
 	go loop.Run(ctx, time.Duration(reconcileInterval)*time.Millisecond)
+
+	sweepInterval, _ := strconv.Atoi(cfg.SweepInterval)
+	sweepLoop := sweep.New(gitMgr)
+	go sweepLoop.Run(ctx, time.Duration(sweepInterval)*time.Millisecond)
 
 	go func() {
 		lis, err := net.Listen("tcp", ":"+cfg.GRPCPort)

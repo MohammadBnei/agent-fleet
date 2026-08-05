@@ -9,6 +9,7 @@ package git
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -121,6 +122,15 @@ func (m *Manager) EnsureRepoCloned(ctx context.Context, repo, repoURL string) er
 // reuses the branch if it already exists — e.g. a retry after a transient
 // dispatch failure). baseBranch defaults to "main" when empty, mirroring
 // worker/src/git.ts's BASE_BRANCH default.
+//
+// Reuse, don't wipe, don't validate (reliability-findings.md #2): if the
+// worktree path already exists, it's returned as-is — zero git commands,
+// zero validity check. The old unconditional os.RemoveAll here destroyed
+// uncommitted work on every same-task-ID retry (e.g. after a transient
+// dispatch failure), even though the branch itself was correctly reused.
+// Stale .git/index.lock, half-written files — that's Claude Code's own
+// problem to notice via `git status`/`git log` inside its own pod (it has
+// Bash access), not this package's job to pre-empt.
 func (m *Manager) CreateWorktree(ctx context.Context, repo, taskID, baseBranch string) (path, branch string, err error) {
 	if baseBranch == "" {
 		baseBranch = "main"
@@ -133,15 +143,13 @@ func (m *Manager) CreateWorktree(ctx context.Context, repo, taskID, baseBranch s
 	branch = "agent/" + taskID
 	path = m.worktreePath(taskID)
 
+	if _, statErr := os.Stat(path); statErr == nil {
+		return path, branch, nil
+	}
+
 	if err := os.MkdirAll(filepath.Join(m.root, "worktrees"), 0o755); err != nil {
 		return "", "", fmt.Errorf("mkdir worktrees root: %w", err)
 	}
-	_ = os.RemoveAll(path) // stale leftovers from a prior failed attempt, if any
-
-	// Clear stale admin metadata after the RemoveAll, not before — a
-	// directory we just deleted ourselves still looks "registered" to git
-	// otherwise (same ordering worker/src/git.ts's createWorktree used).
-	_, _ = m.run(ctx, repoPath, "worktree", "prune")
 
 	branchExists := false
 	if out, err := m.run(ctx, repoPath, "branch", "--list", branch); err == nil && out != "" {
@@ -158,9 +166,14 @@ func (m *Manager) CreateWorktree(ctx context.Context, repo, taskID, baseBranch s
 	return path, branch, nil
 }
 
-// RemoveWorktree tears down a task's worktree — called after the task
-// reaches a terminal state (docs/adr/0019 point 2), same lifecycle
-// position teardown already occupies for e2e pods.
+// RemoveWorktree deletes a task's worktree and branch outright. As of
+// reliability-findings.md #2, session teardown (grpcserver.tearDownWorker)
+// no longer calls this on every terminal status — an unconditional
+// branch -D there destroyed the only reference to a never-pushed branch's
+// commits whenever a terminal status was reached via a git push failure.
+// Callers now: SweepGoneBranches below (only once a branch's upstream is
+// confirmed [gone] — i.e. actually merged/closed), and the dashboard's
+// manual DeleteWorktree RPC (an explicit human decision).
 func (m *Manager) RemoveWorktree(ctx context.Context, repo, taskID, branch string) error {
 	lock := m.repoLock(repo)
 	lock.Lock()
@@ -173,5 +186,152 @@ func (m *Manager) RemoveWorktree(ctx context.Context, repo, taskID, branch strin
 		_ = os.RemoveAll(path)
 	}
 	_, _ = m.run(ctx, repoPath, "branch", "-D", branch)
+	return nil
+}
+
+// ListClonedRepos returns the repo names with a local clone under
+// <root>/repos — the sweep's own repo discovery, since the provisioner
+// holds no DB credentials to ask core's tasks.KnownRepos instead
+// (docs/adr/0020 point 1).
+func (m *Manager) ListClonedRepos() ([]string, error) {
+	entries, err := os.ReadDir(filepath.Join(m.root, "repos"))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("read repos dir: %w", err)
+	}
+	repos := make([]string, 0, len(entries))
+	for _, e := range entries {
+		if e.IsDir() {
+			repos = append(repos, e.Name())
+		}
+	}
+	return repos, nil
+}
+
+// SweepGoneBranches deletes agent/<taskId> branches (and their worktrees)
+// whose upstream tracking branch is gone — i.e. already merged/closed on
+// GitHub (reliability-findings.md #2's automated half; the dashboard's
+// manual DeleteWorktree is the other half, and the fallback for the
+// accepted gap below).
+//
+// Accepted gap: a worktree/branch abandoned *before* its first push never
+// gets an upstream ref to compare against (`git worktree add -b <branch>
+// <path> origin/<base>` tracks origin/<base> by default, not a branch
+// that doesn't exist yet), so [gone] never fires for it — it leaks
+// forever, invisible to this sweep. Not solved by making this smarter;
+// manual dashboard delete is the primary cleanup path for that case.
+func (m *Manager) SweepGoneBranches(ctx context.Context, repo string) error {
+	repoPath := m.repoPath(repo)
+
+	// Network I/O — deliberately outside the per-repo mutex (held only
+	// below, for the mutations) so a slow fetch doesn't stall live task
+	// dispatch on this repo (CreateWorktree/EnsureRepoCloned take the same
+	// lock).
+	if _, err := m.run(ctx, repoPath, "fetch", "--prune", "origin"); err != nil {
+		return fmt.Errorf("fetch --prune: %w", err)
+	}
+
+	out, err := m.run(ctx, repoPath, "for-each-ref", "--format=%(refname:short) %(upstream:track)", "refs/heads/agent/")
+	if err != nil {
+		return fmt.Errorf("for-each-ref: %w", err)
+	}
+	if out == "" {
+		return nil
+	}
+
+	lock := m.repoLock(repo)
+	lock.Lock()
+	defer lock.Unlock()
+
+	for line := range strings.SplitSeq(out, "\n") {
+		branch, track, ok := strings.Cut(line, " ")
+		if !ok || track != "[gone]" {
+			continue
+		}
+		taskID := strings.TrimPrefix(branch, "agent/")
+		path := m.worktreePath(taskID)
+		// Order matters: worktree remove (updates git's own metadata)
+		// before branch -D — git refuses -D on a checked-out branch, the
+		// wrong order silently deletes nothing.
+		if _, err := m.run(ctx, repoPath, "worktree", "remove", "--force", path); err != nil {
+			_ = os.RemoveAll(path)
+			_, _ = m.run(ctx, repoPath, "worktree", "prune")
+		}
+		if _, err := m.run(ctx, repoPath, "branch", "-D", branch); err != nil {
+			slog.Error("sweep: branch -D failed", "repo", repo, "branch", branch, "error", err)
+		}
+	}
+	return nil
+}
+
+// WorktreeInfo describes one on-disk agent/<taskId> worktree — the
+// dashboard's manual cleanup view (reliability-findings.md #2).
+type WorktreeInfo struct {
+	TaskID        string
+	Repo          string
+	Branch        string
+	UpstreamTrack string // e.g. "[gone]", "[ahead 2]", ""
+	MtimeUnix     int64
+}
+
+// ListWorktrees enumerates agent/<taskId> worktrees for repo, read-only
+// (no mutex — nothing here mutates git state). %(worktreepath) is empty
+// for a branch with no worktree currently checked out (e.g. already
+// removed by the sweep but the branch itself somehow survived) — skipped,
+// since there's nothing on disk to show or delete for it.
+func (m *Manager) ListWorktrees(ctx context.Context, repo string) ([]WorktreeInfo, error) {
+	repoPath := m.repoPath(repo)
+	out, err := m.run(ctx, repoPath, "for-each-ref", "--format=%(refname:short)|%(upstream:track)|%(worktreepath)", "refs/heads/agent/")
+	if err != nil {
+		return nil, fmt.Errorf("for-each-ref: %w", err)
+	}
+	if out == "" {
+		return nil, nil
+	}
+
+	var infos []WorktreeInfo
+	for line := range strings.SplitSeq(out, "\n") {
+		parts := strings.SplitN(line, "|", 3)
+		if len(parts) != 3 || parts[2] == "" {
+			continue
+		}
+		branch, track, path := parts[0], parts[1], parts[2]
+		info := WorktreeInfo{
+			TaskID:        strings.TrimPrefix(branch, "agent/"),
+			Repo:          repo,
+			Branch:        branch,
+			UpstreamTrack: track,
+		}
+		if fi, statErr := os.Stat(path); statErr == nil {
+			info.MtimeUnix = fi.ModTime().Unix()
+		}
+		infos = append(infos, info)
+	}
+	return infos, nil
+}
+
+// DeleteWorktree is the dashboard's manual, per-call cleanup action
+// (reliability-findings.md #2) — unlike SweepGoneBranches (which only
+// ever acts once a branch's upstream is confirmed [gone], so always
+// deletes both), a human might want to keep the branch after clearing
+// just the worktree's disk space, hence alsoDeleteBranch as a separate
+// choice rather than always-both.
+func (m *Manager) DeleteWorktree(ctx context.Context, repo, taskID string, alsoDeleteBranch bool) error {
+	lock := m.repoLock(repo)
+	lock.Lock()
+	defer lock.Unlock()
+
+	repoPath := m.repoPath(repo)
+	path := m.worktreePath(taskID)
+
+	if _, err := m.run(ctx, repoPath, "worktree", "remove", "--force", path); err != nil {
+		_ = os.RemoveAll(path)
+		_, _ = m.run(ctx, repoPath, "worktree", "prune")
+	}
+	if alsoDeleteBranch {
+		_, _ = m.run(ctx, repoPath, "branch", "-D", "agent/"+taskID)
+	}
 	return nil
 }
