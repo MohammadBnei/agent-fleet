@@ -7,20 +7,27 @@ the WHY behind any specific choice, see [`DECISIONS.md`](DECISIONS.md) and
 [`0020`](adr/0020-hub-and-spoke-grpc-worker-sidecar.md)/
 [`0021`](adr/0021-continuous-streaming-session.md) redesign: `fleet-core` →
 `core`, `e2e-provisioner` → `provisioner`, a new `sidecar` container, and a
-rewritten single-shot `worker/`. Where this disagrees with anything else,
-this file wins for topology/features — the reading order is
-`DECISIONS.md` → this file → `adr/` → source.
+rewritten single-shot `worker/`. It also folds in
+[`adr/0022`](adr/0022-batch-job-worker-pod-lifecycle.md)–[`0025`](adr/0025-continuous-session-worker-redesign.md)
+(the reliability backlog, `docs/reliability-findings.md`, PRs #25–#29):
+worker pods run as `batch/v1.Job`, worktree/branch cleanup moved off
+task-status-triggered deletion, pod crashes get a fast-path report, and
+the worker's own fleet-orchestrated phase machinery is gone — one
+continuous session is now uniformly relayed, gated only by the SDK's own
+`canUseTool`. Where this disagrees with anything else, this file wins for
+topology/features — the reading order is `DECISIONS.md` → this file →
+`adr/` → source.
 
 ## 1. Components
 
 | Component | Role |
 |---|---|
 | `core/` | Go service: Discord ingress (`/task`/`/approve`/`/stop`/`/e2e-kill`, legacy `!task repo: desc`) + the dispatch loop that claims pending tasks and commands the provisioner to spawn worker pods + `CoreService`, core's own gRPC server (agent-facing proxied MCP calls, wrapper-facing housekeeping calls, and the provisioner's pushed pod-lifecycle event stream) + planning-transcript coordination (Postgres) + Loki log/introspection queries + the web dashboard's ConnectRPC API and static SPA (`dashboard/`) — all as internal packages in one binary. **The fleet's sole holder of `AGENTFLEET_DB_*` credentials** (`docs/adr/0020` point 1) and the *only* component that ever calls the provisioner (hub-and-spoke). Needs zero cluster RBAC. |
-| `provisioner/` | Go service (`client-go`) — the only component in the fleet with Kubernetes RBAC (namespaced `Role`, never a `ClusterRole`) to create/delete Pods/Services/IngressRoutes/Middlewares. Owns **all** cluster-pod creation in the fleet: today's on-demand e2e-preview pods (unchanged behavior from `adr/0012`) *and* worker pods (new, `adr/0019`). Also owns the entire git lifecycle on the one shared workspace PVC — clone, fetch, worktree add/remove — serialized per-repo by an in-process mutex (`internal/git`), so no PVC-level file lock is needed. Holds **zero** Postgres credentials; Kubernetes itself (pod existence/phase) is its durable source of truth for session state. Hosts `ProvisionerService` (gRPC server, core is the only caller) and is a gRPC client of core for one call: pushing `PodEvent`s. |
+| `provisioner/` | Go service (`client-go`) — the only component in the fleet with Kubernetes RBAC (namespaced `Role`, never a `ClusterRole`) to create/delete Pods/Jobs/Services/IngressRoutes/Middlewares. Owns **all** cluster-pod creation in the fleet: on-demand e2e-preview pods (bare `Pod`, unchanged behavior from `adr/0012` — long-running/interactive, killed explicitly, not run-to-completion) and worker sessions (a `batch/v1.Job` as of [`adr/0022`](adr/0022-batch-job-worker-pod-lifecycle.md) — `BackoffLimit: 0`, `TTLSecondsAfterFinished: 300s`; `core`'s heartbeat/reclaim stays the sole retry mechanism). Also owns the entire git lifecycle on the one shared workspace PVC — clone, fetch, worktree add (reuse-not-wipe) — serialized per-repo by an in-process mutex (`internal/git`), so no PVC-level file lock is needed. A worktree/branch is **never** deleted as part of session teardown anymore ([`adr/0023`](adr/0023-worktree-reuse-and-branch-sweep.md)) — cleanup is a separate periodic sweep (`internal/sweep`, `[gone]`-tracked branches only) plus a manual dashboard "Worktrees" view. Holds **zero** Postgres credentials; Kubernetes itself (pod/Job existence/phase) is its durable source of truth for session state. Hosts `ProvisionerService` (gRPC server, core is the only caller) and is a gRPC client of core, pushing `PodEvent`s — including a fast-path crash report the instant a worker `Job` reaches `Failed` ([`adr/0024`](adr/0024-crash-fast-path-and-journal-read.md)). |
 | `sidecar/` | Go — new, a real second container in every worker pod (`docs/adr/0020` point 5). Two local (`localhost`-only) surfaces, one outbound gRPC connection to `core`: an MCP server the Agent SDK session connects to (proxies `send_message`/`wait_for_messages`/`AskUserQuestion`/`request_e2e_env`/`kill_env` onward to `CoreService`), and a plain HTTP/JSON API for the TS wrapper's own control-flow (`heartbeat`, `status`, `journal`, `session-id`, `still-holds-lease`, `telemetry`, `message`) — including the load-bearing `GET /human-messages` SSE feed that delivers new human input to the wrapper live, for `streamInput()` (`docs/adr/0021` point 2). An independent telemetry loop pushes `git diff --numstat`-derived branch/file-change stats to core every 5s, decoupled from anything the agent itself does. |
-| `worker/` | The Claude Code worker (TS/Bun — the only remaining JS runtime in the fleet, sole host of `@anthropic-ai/claude-agent-sdk`'s `query()`). **Single-shot** (`docs/adr/0019`): the provisioner hands it one `TASK_ID`/`TARGET_REPO`/`LEASE_ID`/`BASE_BRANCH` via env, already pointed at a pre-cloned, pre-worktreed `/workspace` — the worker never runs `git clone`/`git worktree add` itself. Runs **one continuous `query()` session in streaming-input mode**, spanning planning *and* implementation with no teardown/restart at the approval boundary (`docs/adr/0021`), then exits. Talks only to its own pod's `localhost` sidecar — never Postgres, never the provisioner, never `core` directly. |
+| `worker/` | The Claude Code worker (TS/Bun — the only remaining JS runtime in the fleet, sole host of `@anthropic-ai/claude-agent-sdk`'s `query()`). **Single-shot** (`docs/adr/0019`): the provisioner hands it one `TASK_ID`/`TARGET_REPO`/`LEASE_ID`/`BASE_BRANCH` via env, already pointed at a pre-cloned, pre-worktreed `/workspace` — the worker never runs `git clone`/`git worktree add` itself. Runs **one continuous `query()` session in streaming-input mode**, no fleet-imposed phase boundary of any kind — the agent paces its own explore/plan/implement work, gated only by `Write`/`Edit` being denied until an explicit `/approve` ([`adr/0025`](adr/0025-continuous-session-worker-redesign.md)). The agent runs its own `git commit`/`push`/`gh pr create` via Bash inside the session; the wrapper's remaining job is bootstrap, heartbeat, status reporting, and a post-session `verifyPrExists` (`gh pr list`) check before declaring done. Talks only to its own pod's `localhost` sidecar — never Postgres, never the provisioner, never `core` directly. |
 | `proto/` | buf-managed `.proto` schema (lint + breaking-change CI + generate/drift check): `CoreService` (core's gRPC server — agent/wrapper/provisioner-facing), `ProvisionerService` (the provisioner's gRPC server, renamed from `E2eProvisionerService`), and `DashboardService` (ConnectRPC, dashboard ↔ core). Generates Go (`proto/gen/go`) and TS types (`worker/src/gen`, `dashboard/src/gen`, `ts-proto`). |
-| `db/schema.sql` | Shared Postgres schema (`agentfleetdb`, Pigsty-managed), applied idempotently via `core migrate` (`go:embed`'d, `core`'s own `PreSync` hook — see `core/internal/db/migrate.go`). `tasks` (the queue), append-only `knowledge_journal`, `planning_transcript` (durable planning transcript, pull/cursor reads, idempotency-keyed appends). `e2e_sessions` still exists in the schema but is **no longer read or written by any Go/TS code** — e2e-session state moved to being Kubernetes-native (pod existence/phase) as of `docs/adr/0020` point 1; see §6. |
+| `db/schema.sql` | Shared Postgres schema (`agentfleetdb`, Pigsty-managed), applied idempotently via `core migrate` (`go:embed`'d, `core`'s own `PreSync` hook — see `core/internal/db/migrate.go`). `tasks` (the queue — gains a `failed_permanently` terminal status as of [`adr/0024`](adr/0024-crash-fast-path-and-journal-read.md), a retry-cap outcome distinct from a single attempt's `failed`), append-only `knowledge_journal` (now readable via `GetJournal`, `adr/0024`), `planning_transcript` (durable planning transcript, pull/cursor reads, idempotency-keyed appends, plus a `reply_to_seq` column for question-seq correlation as of [`adr/0025`](adr/0025-continuous-session-worker-redesign.md)). `e2e_sessions` still exists in the schema but is **no longer read or written by any Go/TS code** — e2e-session state moved to being Kubernetes-native (pod existence/phase) as of `docs/adr/0020` point 1; see §6. |
 | `dashboard/` | React + Vite + TypeScript + Tailwind/DaisyUI SPA — task list, **task creation** (`NewTaskDialog.tsx`, `DashboardService.CreateTask` — an alternative to Discord's `/task`, not a replacement), task detail (live transcript via a Connect server-streaming RPC, approve/stop/kill-e2e buttons, code-server link, `AskUserQuestion` answer forms — `adr/0018`), talking to `core` via a generated `@connectrpc/connect-web` client. Built into and served by `core`'s binary — not deployed on its own. Unaffected in substance by the `adr/0019`–`0021` redesign — only the backend's internal transport to the worker changed, not the dashboard-facing contract. |
 | `k8s/` | This repo's own deploy manifests: `core.yaml` (Helm values for `common-app-chart`, zero RBAC) and `provisioner/` (a standalone plain-manifest directory — `Deployment`/`Service`/`ServiceAccount`/`Role`/`InfisicalSecret`/`NetworkPolicy`/`PersistentVolumeClaim` — since it needs RBAC `common-app-chart` can't express). Both referenced from `infra-bootstrap`'s `gitops/` (see §9). |
 | `e2e-runner/` | One generic pod image (code-server + the target app + a Playwright MCP server, CPU-only headless Chromium for v1) the provisioner spins up per on-demand e2e request, parametrized by env vars the same way `worker/`'s image is parametrized by `TARGET_REPO`. Unchanged by this redesign. |
@@ -41,20 +48,19 @@ sequenceDiagram
     C->>PG: CreateTask() → status=pending
 
     loop dispatch loop, every 2s (core/internal/dispatch)
-        C->>PG: CountInFlight() — headroom check, Postgres is ground truth
-        C->>PG: ClaimNextTask() (FOR UPDATE SKIP LOCKED)
+        C->>PG: ClaimNextTask(maxInFlight, maxRetries) (FOR UPDATE SKIP LOCKED — headroom + retry-cap check folded into the one query)
     end
     C->>P: CreateWorkerPod(taskId, repo, repoUrl, baseBranch, leaseId) [gRPC]
-    P->>P: EnsureRepoCloned / CreateWorktree (per-repo in-process mutex)
-    P->>SC: client-go creates one Pod, two containers: worker + sidecar
-    P-->>C: ReportPodEvents stream (created→scheduled→running→...) [gRPC]
+    P->>P: EnsureRepoCloned / CreateWorktree (reuse-not-wipe, per-repo in-process mutex)
+    P->>SC: client-go creates a batch/v1.Job, two containers: worker + sidecar (adr/0022)
+    P-->>C: ReportPodEvents stream (created→scheduled→running→...→[fast-path Failed], adr/0024) [gRPC]
     C->>PG: journal every pod event (knowledge_journal)
 
-    W->>Ag: query() streaming-input, permissionMode=plan, canUseTool gate
+    W->>Ag: query() streaming-input, one taskPrompt, no fleet-imposed phase boundary
     Ag->>SC: mcp tool call (local MCP, e.g. send_message)
     SC->>C: SendMessage [gRPC]
     C->>PG: Append to planning_transcript
-    C-->>D: relay loop posts every message live
+    C-->>D: relay loop posts every message live (allowlisted types only, adr/0025 pt.5)
 
     D->>C: thread reply
     C->>PG: Append (from=human)
@@ -62,28 +68,38 @@ sequenceDiagram
     SC-->>W: GET /human-messages (SSE)
     W->>Ag: streamInput(reply text)
 
-    D->>C: /approve (or word-match "approved"/"lgtm"/"ship it"/"go ahead")
+    D->>C: /approve (structured signal only — adr/0025 pt.3)
     C-->>SC: StreamHumanMessages delivers the approve entry
     SC-->>W: SSE event, type=approve
-    W->>Ag: query.setPermissionMode('default') + streamInput(implement prompt)
-    Note over Ag: same session, no restart — canUseTool now allows Write/Edit
+    W->>Ag: query.setPermissionMode('default') — no new prompt pushed
+    Note over Ag: same session, same taskPrompt, no restart — canUseTool now allows Write/Edit
 
-    Ag->>Ag: write code, tests, docs, commit
-    W->>W: pushAndOpenPr(): git push + gh pr create (worker's own GH_TOKEN)
+    Ag->>Ag: write code, tests, docs; commit, push, gh pr create — all via Bash, in-session
+    W->>W: verifyPrExists(): gh pr list --head <branch> (post-session check, not trusted from the agent's own claim)
     W->>SC: POST /status {done, prUrl} → SetTaskStatus [gRPC]
     SC->>C: SetTaskStatus [gRPC]
     C->>PG: tasks.status=done, pr_url set
     C->>P: TearDownSession(taskId, WORKER) [gRPC] — opportunistic, on any terminal status
-    P->>P: delete pod, remove worktree
+    P->>P: delete Job (worktree/branch untouched — reuse + periodic sweep, adr/0023)
     C-->>D: relay posts summary + PR link
 ```
 
 `/stop` (or "stop"/"abort"/"cancel"/"kill" in a reply) maps to
 `query.interrupt()` — the SDK's own graceful stop primitive, not a process
 kill — plus `abortController.abort()` as a backstop for the case where the
-session is idle between rounds and there's nothing active to interrupt
-(`docs/adr/0021` point 3). Checked before the approval word-match fallback,
-at any point in either phase.
+session is idle and there's nothing active to interrupt (`docs/adr/0021`
+point 3). This is a structured signal only (`/stop`, or the same handful of
+literal Discord replies) — there is no free-text sentiment matching, and it
+can fire at any point in the one continuous session, not just a specific
+phase (`adr/0025` pt.3).
+
+Every `AskUserQuestion` carries the transcript's own append-order sequence
+number; the human's reply threads back via a `reply_to_seq` column
+(`planning_transcript`), so a second question posted before the first is
+answered can't have its reply misattributed — a real gap under
+concurrent/rapid questions, not a hypothetical one (`adr/0025` pt.4). Both
+Discord and the dashboard can answer a question now; previously only the
+dashboard could (superseding `adr/0018`'s dashboard-only framing).
 
 During implementation, the agent can call `request_e2e_env`/`kill_env` — a
 three-hop proxy (agent → sidecar's local MCP → `core`'s `CoreService` →
@@ -111,37 +127,49 @@ boundary anymore (`docs/adr/0020` point 6).
   discussion is fed straight into the running session via `streamInput()`
   (`docs/adr/0021`), reaching the model live instead of waiting for it to
   poll — see [`adr/0017`](adr/0017-single-session-planning-pipeline.md).
-- **`PLAN_READY:` round-cap convention, now an in-session pause, not a
-  teardown.** A single continuous session can post many `send_message`
-  messages before there's anything to checkpoint on — the round cap counts
-  only messages prefixed `PLAN_READY:`. Every `MAX_PLANNING_ROUNDS`
-  (default 1) such posts without a verdict, the wrapper calls
-  `query.interrupt()` (pausing, not ending, the same session), posts a
-  checkpoint message, and resumes feeding input via `streamInput()` once a
-  human replies — continue, approve, or stop. See
-  [`adr/0008`](adr/0008-unbounded-guardrail-defaults.md) (mechanism
-  corrected by `adr/0021`, cap semantics unchanged).
-- **AskUserQuestion, answered via the dashboard, not Discord.** A real
-  `AskUserQuestion` MCP tool (proxied through the sidecar → `core`) posts a
-  `question`-type `planning_transcript` entry and long-polls until the
-  dashboard's `AnswerQuestion` RPC posts the matching `answer` entry —
-  Discord's plain-text threads can't render structured multiple-choice UI.
-  See [`adr/0018`](adr/0018-ask-user-question-via-dashboard.md).
+- **No round cap, no phase boundary — the agent paces itself.** The old
+  `PLAN_READY:`/`PR_READY:` message-prefix parsing and the round-cap/
+  checkpoint machinery built on top of it are deleted outright: there's no
+  fleet-imposed phase transition left to checkpoint on. One `taskPrompt`
+  spans the whole session; the agent decides when to explore, when to plan
+  out loud, and when to implement, ending its final message with a
+  `PR_READY:` summary line the wrapper uses for the PR description only —
+  not as a phase signal (`adr/0025` pt.1–2).
+- **AskUserQuestion, correlated by sequence and answerable from Discord or
+  the dashboard.** A real `AskUserQuestion` MCP tool (proxied through the
+  sidecar → `core`) posts a `question`-type `planning_transcript` entry and
+  long-polls until a matching `answer` entry appears, threaded via a
+  `reply_to_seq` column so a second question posted before the first is
+  answered can't have its reply misattributed. Superseded from `adr/0018`:
+  Discord can now answer questions too, not just the dashboard (`adr/0025`
+  pt.4).
 - **`/approve` is a live `query.setPermissionMode()` call**, made by the
-  wrapper the instant an explicit approval is detected — no new process, no
-  session teardown, same `isApproval()` word-match/type-check logic as
-  before (`docs/adr/0021` point 4; `docs/adr/0005`'s "never inferred from
-  silence" rule is unchanged).
+  wrapper the instant a *structured* approval signal arrives — `/approve`,
+  or the same handful of literal Discord replies already treated as
+  structured. The old free-text `isApproval()`/`isAbort()` word-match regex
+  is deleted: it produced real false positives ("I don't approve this,
+  redo the auth flow" used to match). No new process, no session teardown
+  — `docs/adr/0005`'s "never inferred from silence or sentiment" rule is
+  unchanged, only the trigger mechanism changed (`adr/0025` pt.3).
 - **Two independent enforcement layers on `Write`/`Edit`, confirmed by real
-  testing, not assumed.** `Write`/`Edit` stay structurally absent from
-  `allowedTools` for the whole session (as before); a `canUseTool` callback
-  additionally denies them while an in-memory `approved` flag is false.
-  Verified empirically (`docs/adr/0021`'s Phase 0 spike): with `Write` *in*
-  `allowedTools`, `canUseTool` is never invoked at all — the list bypasses
-  the callback entirely, which is exactly why the tool stays undeclared.
-- **Turn/time limits are opt-in, not default.** `MAX_TURNS`,
-  `MAX_PLANNING_ROUNDS` aside, nothing else is bounded unless explicitly
-  set — see [`adr/0008`](adr/0008-unbounded-guardrail-defaults.md).
+  testing, not assumed — unchanged by this redesign.** `Write`/`Edit` stay
+  structurally absent from `allowedTools` for the whole session; a
+  `canUseTool` callback additionally denies them while an in-memory
+  `approved` flag is false. Verified empirically (`docs/adr/0021`'s
+  original spike, reconfirmed by a 3-minute pending-decision spike for
+  `adr/0025`): with `Write` *in* `allowedTools`, `canUseTool` is never
+  invoked at all — the list bypasses the callback entirely, which is
+  exactly why the tool stays undeclared.
+- **Every raw SDK message is relayed to Discord through an allowlist, not
+  a denylist.** `logSdkMessage` now relays every SDK message type;
+  `relay.go`'s `discordSafeTypes` allowlist decides what actually reaches
+  the thread. A denylist would let any new raw SDK message type leak by
+  default — a real secret-leak risk (Bash stdout/stderr, file contents)
+  (`adr/0025` pt.5).
+- **Turn/time limits are opt-in, not default.** `MAX_TURNS` aside, nothing
+  else is bounded unless explicitly set — see
+  [`adr/0008`](adr/0008-unbounded-guardrail-defaults.md). `MAX_PLANNING_ROUNDS`
+  no longer exists — there's no round concept left to cap.
 - **No cost cap.** Claude Code authenticates via `CLAUDE_CODE_OAUTH_TOKEN`
   (subscription), not a metered API key, so `total_cost_usd` in SDK
   results is notional, not a real charge.
@@ -179,10 +207,11 @@ boundary anymore (`docs/adr/0020` point 6).
   (`doubt-driven-development`'s fresh-context `Task`-tool subagent,
   `architecture-interview`'s stakeholder elicitation) — see
   [`adr/0017`](adr/0017-single-session-planning-pipeline.md).
-- **One continuous Agent SDK session per task**, streaming-input mode,
-  spanning planning and implementation — no restart, no context loss, no
-  disk-based resume at the approval boundary (`resume: sessionId` is kept
-  only for crash recovery, `docs/adr/0016`/`0021` point 6).
+- **One continuous Agent SDK session per task**, streaming-input mode, one
+  `taskPrompt`, no fleet-imposed phase boundary between planning and
+  implementation — no restart, no context loss, no disk-based resume at
+  the approval boundary (`resume: sessionId` is kept only for crash
+  recovery, `docs/adr/0016`/`0021` point 6, `adr/0025`).
 - Explicit-approval gate: write/edit tools structurally absent from
   `allowedTools` for the whole session, plus a live `canUseTool` backstop
   — see §3.
@@ -195,8 +224,17 @@ boundary anymore (`docs/adr/0020` point 6).
   provisioner (its own clone/fetch) and the worker (its own push/PR) do
   this independently, since the two processes don't share `$HOME`.
 - Append-only `knowledge_journal` — task lifecycle events, session
-  results, and (new) provisioner pod-lifecycle events, all funneled
-  through `core`'s single Postgres connection.
+  results, and provisioner pod-lifecycle events, all funneled through
+  `core`'s single Postgres connection, now readable via a typed
+  `GetJournal` RPC instead of direct-SQL-only (`adr/0024`).
+- **Worktree reuse, not wipe, plus a periodic sweep.** `CreateWorktree`
+  returns immediately if the task's worktree path already exists — no git
+  command runs on a retry. Worktree/branch deletion is never a side effect
+  of session teardown or task status anymore; cleanup is a separate
+  periodic sweep (`provisioner/internal/sweep`, `git fetch --prune` +
+  `[gone]`-ref detection) plus a manual "Worktrees" dashboard view for
+  anything the sweep can't reach (e.g. a branch never pushed)
+  (`adr/0023`).
 - On-demand e2e test environments during implementation, three-hop
   proxied through `core` (§2) — see
   [`adr/0012`](adr/0012-e2e-provisioner-standalone-app.md). CPU-only for
@@ -205,11 +243,18 @@ boundary anymore (`docs/adr/0020` point 6).
   across any known repo can be in flight simultaneously, up to
   `MAX_IN_FLIGHT_TASKS` (default 5) — `core`'s dispatch loop claims
   repo-agnostically (`docs/adr/0019`).
-- **Crash recovery without a self-retrying pod.** Worker pods are
-  single-shot; a crashed pod's task becomes eligible for `ClaimNextTask`'s
-  stale-heartbeat reclaim (>10min), and the provisioner's reconcile loop
-  garbage-collects the pod itself if it reached a terminal k8s phase
-  without `core` ever calling `TearDownSession` for it.
+- **Crash recovery with a fast path, not just a 10-minute wait.** Worker
+  sessions are single-shot `batch/v1.Job`s; the instant a `Job` reaches
+  `Failed`, the provisioner's `EventReporter` pushes a crash event that
+  `core` turns into `tasks.MarkCrashed` — backdating `heartbeat_at` so the
+  *next* dispatch tick reclaims it immediately, not after the old
+  10-minute stale-heartbeat wait. That heartbeat reclaim is kept as the
+  fallback for a missed push event, not replaced. `ClaimNextTask` also
+  gets a `maxRetries` cap (`MAX_TASK_RETRIES`, default 3) — a reclaim at
+  the cap sets `failed_permanently` instead of retrying again
+  (`adr/0024`). The provisioner's reconcile loop still garbage-collects
+  the `Job` itself if it reached a terminal k8s phase without `core` ever
+  calling `TearDownSession` for it.
 
 ## 5. Deployment shape
 
@@ -219,9 +264,9 @@ provisioner's own manifests) replaces the old two per-repo workspace PVCs
 fetched in place, never re-cloned per task) and
 `<root>/worktrees/<taskId>/` (one worktree per task, keyed by the
 already-globally-unique task ID, not nested per repo). Only the
-provisioner (clone/fetch/worktree add+remove) and each task's worker+
-sidecar pod (mounted read-write via a per-task `subPath`) ever touch it —
-`core` holds zero PVC access, matching its zero-RBAC design. The old
+provisioner (clone/fetch/worktree add, reuse-not-wipe, `adr/0023`) and each
+task's worker+sidecar pod ever touch it — `core` holds zero PVC access,
+matching its zero-RBAC design. The old
 `agent-fleet-shared-pvc` (`/mnt/fleet-shared`, skills/journal-mirror/MCP
 configs) is dropped entirely — confirmed via a full-repo grep that nothing
 in `core`/`provisioner`/`sidecar`/`worker` references it anymore; the
@@ -230,21 +275,33 @@ planning skills plugin now ships baked into the worker image
 unchanged from before this redesign — the PVC-resident-skills idea from
 `docs/adr/0019` point 6 was not carried into the actual implementation).
 
-**Worker pods are single-shot, two containers, spawned per task — not
-persistent, not one Deployment per repo.** The provisioner builds each
-Pod directly via `client-go` (`provisioner/internal/k8s/pod.go`):
+**Worker sessions are single-shot, two containers, spawned per task — not
+persistent, not one Deployment per repo.** The provisioner builds a
+`batch/v1.Job` directly via `client-go` (`provisioner/internal/k8s/pod.go`,
+`adr/0022`) for worker sessions; on-demand e2e-preview sessions stay a bare
+`Pod` (long-running/interactive, killed explicitly rather than run-to-
+completion — `Job` semantics don't fit):
 - `worker` container: the TS/Bun image, `TASK_ID`/`TARGET_REPO`/
   `TASK_DESCRIPTION`/`LEASE_ID`/`BASE_BRANCH`/`SIDECAR_MCP_ADDR`/
-  `SIDECAR_API_ADDR`/`GH_TOKEN` env, `250m`–`2000m` CPU / `512Mi`–`2Gi`
-  memory.
+  `SIDECAR_API_ADDR`/`GH_TOKEN`/`WORKTREE_PATH` env, `250m`–`2000m` CPU /
+  `512Mi`–`2Gi` memory.
 - `sidecar` container: the Go image, `TASK_ID`/`TARGET_REPO`/`MCP_PORT`
-  (9090)/`LOCAL_API_PORT` (9091) env, `50m`–`250m` CPU / `64Mi`–`256Mi`
-  memory.
-- Both mount `/workspace` from the shared PVC via the identical
-  `subPath: worktrees/<taskId>` — a shared filesystem view of the one
-  worktree, not a shared clone.
-- `RestartPolicy: Never` — a crashed pod is not restarted by Kubernetes;
-  recovery is `core`'s stale-heartbeat reclaim (§4), not `kubelet`.
+  (9090)/`LOCAL_API_PORT` (9091)/`WORKTREE_PATH` env, `50m`–`250m` CPU /
+  `64Mi`–`256Mi` memory.
+- Both mount the **whole** PVC at `/workspace` — not a per-task `subPath`.
+  A linked git worktree's `.git` file is an absolute-path gitlink back to
+  `repos/<repo>/.git/worktrees/<taskId>` (`HEAD`/`index`/`commondir`); a
+  `subPath` scoped to just `worktrees/<taskId>` cuts that path off, so
+  every git command in the pod fails with "not a git repository" (found
+  live, 2026-08-05, fixed in PR #30). `WORKTREE_PATH` (the provisioner's
+  own `CreateWorktree` result, e.g. `/workspace/worktrees/<taskId>`) tells
+  worker/sidecar where their task's checkout lives within that shared
+  view; isolation between concurrent tasks' worktrees is by directory
+  naming (keyed by task ID) only, not a mount boundary.
+- `RestartPolicy: Never` on the Job's pod template — a crashed pod is not
+  restarted by Kubernetes; recovery is `core`'s crash fast-path/stale-
+  heartbeat reclaim (§4), not `kubelet` or the Job's own (deliberately
+  disabled, `BackoffLimit: 0`) retry.
 
 **`core` needs zero cluster RBAC**, so it deploys via this repo's own
 `k8s/core.yaml` through `common-app-chart` (two-source ArgoCD Application,
@@ -263,7 +320,10 @@ moved *into this repo* (`k8s/provisioner/`: `Deployment`, `Service`,
 plain-manifest ArgoCD Application (`gitops/bootstrap/
 provisioner-application.yaml`) pointed at this repo instead of
 `infra-bootstrap/gitops/platform/e2e-provisioner/` (the old location, now
-deleted) — see §9.
+deleted) — see §9. Its `Role` (`k8s/provisioner/role.yaml`) grants
+`batch/jobs` alongside `pods`/`services`/`ingressroutes`/`middlewares` as
+of `adr/0022` — a gap the fake-clientset unit tests didn't catch, only a
+real `kind`-cluster smoke test did.
 
 ### Deploy pipeline
 
@@ -304,7 +364,7 @@ erDiagram
         uuid id PK
         text repo "dream-analyst | vos-monolith"
         text description
-        text status "pending|claimed|planning|implementing|done|failed|cancelled"
+        text status "pending|claimed|planning|implementing|done|failed|cancelled|failed_permanently"
         text discord_channel_id
         text discord_thread_id
         text claimed_by
@@ -332,12 +392,13 @@ erDiagram
         bigint seq PK
         text from "planner|human"
         text text
-        text type "discussion|approve|abort|question|answer|tool_call"
+        text type "discussion|approve|abort|question|answer|tool_call|system|assistant|user|result"
         text idempotency_key
         boolean relayed_to_discord
         int relay_attempts
         boolean relay_dead_letter
         text relay_last_error
+        bigint reply_to_seq "answer's seq back-reference to its question, adr/0025"
         timestamptz created_at
     }
     tasks ||--o{ planning_transcript : "task_id"
@@ -382,6 +443,7 @@ nothing external still queries it directly.
 | `LOKI_URL` | `http://loki.monitoring.svc.cluster.local:3100` | log/introspection queries |
 | `PROVISIONER_GRPC_ADDR` | `provisioner.agent-fleet.svc.cluster.local:9090` | `ProvisionerService` client target |
 | `MAX_IN_FLIGHT_TASKS` | `5` | dispatch loop's fleet-wide concurrency cap (`docs/adr/0019`/`0020`) |
+| `MAX_TASK_RETRIES` | `3` | `ClaimNextTask`'s reclaim cap — a reclaim past this sets `failed_permanently` instead of retrying (`adr/0024`) |
 
 ### `provisioner/`
 
@@ -426,7 +488,6 @@ No `AGENTFLEET_DB_*` here at all — see §6.
 | `WORKTREE_PATH` | `/workspace` | |
 | `GH_TOKEN` | – | the worker's *own* `git push`/`gh pr create` auth — separate from the provisioner's, since the two are different pods that don't share `$HOME` |
 | `CLAUDE_MODEL` | `claude-opus-4-8` | |
-| `MAX_PLANNING_ROUNDS` | `1` | |
 | `MAX_TURNS` | unbounded | opt-in cap |
 | `CLAUDE_CODE_OAUTH_TOKEN` | – | minted via `claude setup-token` |
 
