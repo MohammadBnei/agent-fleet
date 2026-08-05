@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.10.2](https://github.com/MohammadBnei/agent-fleet/compare/1.10.1...1.10.2) (2026-08-05)
+
+
+### Bug Fixes
+
+* **core:** drop debug log on every empty ClaimNextTask poll ([5d5405d](https://github.com/MohammadBnei/agent-fleet/commit/5d5405d6d529ccf441d896ad8bf2f12e780d1d57))
+
 ## [1.10.1](https://github.com/MohammadBnei/agent-fleet/compare/1.10.0...1.10.1) (2026-08-05)
 
 
