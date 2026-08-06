@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.18.2](https://github.com/MohammadBnei/agent-fleet/compare/1.18.1...1.18.2) (2026-08-06)
+
+
+### Bug Fixes
+
+* **worker,sidecar:** reconnect human-message feed instead of dying silently forever ([#53](https://github.com/MohammadBnei/agent-fleet/issues/53)) ([ccfb345](https://github.com/MohammadBnei/agent-fleet/commit/ccfb34535b0bdf16dde26a0292b8d4fa8050d61f))
+
 ## [1.18.1](https://github.com/MohammadBnei/agent-fleet/compare/1.18.0...1.18.1) (2026-08-06)
 
 
