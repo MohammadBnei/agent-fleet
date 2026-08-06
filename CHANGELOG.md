@@ -1,5 +1,12 @@
 # Changelog
 
+# [1.13.0](https://github.com/MohammadBnei/agent-fleet/compare/1.12.0...1.13.0) (2026-08-06)
+
+
+### Features
+
+* **provisioner,dashboard:** surface the precise provisioning step ([8caeb29](https://github.com/MohammadBnei/agent-fleet/commit/8caeb29c65053d02163af66355e3f477a854f207)), closes [#41](https://github.com/MohammadBnei/agent-fleet/issues/41)
+
 # [1.12.0](https://github.com/MohammadBnei/agent-fleet/compare/1.11.1...1.12.0) (2026-08-06)
 
 
