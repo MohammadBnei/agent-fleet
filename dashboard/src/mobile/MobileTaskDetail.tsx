@@ -16,6 +16,7 @@ import {
   asDisplayMarkdown,
 } from "../transcript";
 import { useTaskDetail } from "../useTaskDetail";
+import { useAtBottom } from "../useAtBottom";
 import { ToolCallItem } from "../components/ToolCallItem";
 import { ErrorModal } from "../components/ErrorModal";
 import { Markdown } from "../components/Markdown";
@@ -246,6 +247,8 @@ export function MobileTaskDetail({
     useTaskDetail(taskId);
   const [message, setMessage] = useState("");
   const [bypassOpen, setBypassOpen] = useState(false);
+  const { ref: feedRef, atBottom: feedAtBottom, onScroll: feedOnScroll, scrollToBottom: feedScrollToBottom } =
+    useAtBottom<HTMLDivElement>();
 
   if (loadError) {
     return (
@@ -352,7 +355,8 @@ export function MobileTaskDetail({
 
       <ErrorModal message={actionError} onClose={clearActionError} />
 
-      <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3.5 flex flex-col gap-3">
+      <div className="relative flex-1 min-h-0">
+      <div ref={feedRef} onScroll={feedOnScroll} className="absolute inset-0 overflow-y-auto px-4 py-3.5 flex flex-col gap-3">
         {entries.map((entry, idx) => {
           if (entry.type === TranscriptEntryType.ANSWER) return null;
           if (entry.type === TranscriptEntryType.TOOL_CALL) {
@@ -396,6 +400,17 @@ export function MobileTaskDetail({
             </div>
           </div>
         )}
+      </div>
+      {!feedAtBottom && (
+        <button
+          type="button"
+          onClick={feedScrollToBottom}
+          className="btn btn-circle btn-xs absolute bottom-3 right-3 bg-base-300 border-base-content/20 shadow-md"
+          title="Scroll to bottom"
+        >
+          ↓
+        </button>
+      )}
       </div>
 
       <div className="flex-none border-t border-base-content/10 bg-base-200 px-4 pt-3 pb-2.5 flex flex-col gap-2.5">
