@@ -10,6 +10,7 @@ package provisionerclient
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -21,6 +22,18 @@ type Client struct {
 	conn *grpc.ClientConn
 	rpc  agentfleetv1.ProvisionerServiceClient
 }
+
+// sessionCallTimeout bounds CreateWorkerPod/TearDownSession specifically —
+// the two calls whose server-side work (git clone/fetch/worktree-add, a
+// k8s Job create/delete) can genuinely take a while under normal load, but
+// must never take forever. Without this, a stuck downstream step hangs
+// whichever caller invoked it indefinitely — for CreateWorkerPod's one
+// caller, core's single-goroutine dispatch loop (dispatch.Loop.tick), that
+// means the entire fleet's dispatch freezes on one wedged task, since
+// nothing else ever proceeds past a tick() call that never returns
+// (confirmed live: a task's CreateWorkerPod call hung with no error, no
+// pod ever created, and every other pending task stuck behind it).
+const sessionCallTimeout = 2 * time.Minute
 
 // New dials addr (in-cluster ClusterIP, no TLS needed — Cilium's own
 // network policy is the trust boundary here, same as every other
@@ -108,6 +121,8 @@ func (c *Client) CallE2eTool(ctx context.Context, taskID, toolName, argumentsJSO
 // (docs/adr/0020 point 2 — core claims, then commands; the provisioner
 // never claims tasks itself).
 func (c *Client) CreateWorkerPod(ctx context.Context, taskID, repo, repoURL, baseBranch, description, leaseID string) (podName string, err error) {
+	ctx, cancel := context.WithTimeout(ctx, sessionCallTimeout)
+	defer cancel()
 	resp, err := c.rpc.CreateWorkerPod(ctx, &agentfleetv1.CreateWorkerPodRequest{
 		TaskId:      taskID,
 		Repo:        repo,
@@ -128,6 +143,8 @@ func (c *Client) CreateWorkerPod(ctx context.Context, taskID, repo, repoURL, bas
 // provisioner never polls/joins against task status itself
 // (docs/adr/0020 point 1).
 func (c *Client) TearDownSession(ctx context.Context, taskID string, kind agentfleetv1.SessionKind) (tornDown bool, err error) {
+	ctx, cancel := context.WithTimeout(ctx, sessionCallTimeout)
+	defer cancel()
 	resp, err := c.rpc.TearDownSession(ctx, &agentfleetv1.TearDownSessionRequest{
 		TaskId: taskID,
 		Kind:   kind,
