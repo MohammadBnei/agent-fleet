@@ -1,0 +1,37 @@
+# Local-only stand-in for prod's ReadWriteMany agent-fleet-workspace PVC
+# (k8s/provisioner/pvc.yaml). kind is single-node (control-plane only) for
+# local testing, so a hostPath-backed PV bound to a PVC of the SAME NAME
+# gives provisioner/worker/sidecar pods the identical whole-volume mount
+# prod uses — pod.go only ever references the PVC by name (WorkspacePVC),
+# so this needs zero code changes. See local/kind/README.md for why this is
+# local-only and must never be read as a proposal to change prod's
+# PVC/storage class.
+#
+# /data/agent-fleet-workspace is a path inside the kind control-plane node
+# container, made visible on the Mac via the kind cluster config's
+# extraMounts (see the /kind-local skill's cluster-create step — kind has
+# no CLI flag for this, unlike k3d's `--volume`, so the mount is declared in
+# a generated kind-config.yaml instead).
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: agent-fleet-workspace
+spec:
+  capacity:
+    storage: 20Gi
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: manual # non-default SC: stops kind's default local-path-provisioner from dynamically provisioning instead
+  hostPath:
+    path: /data/agent-fleet-workspace
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: agent-fleet-workspace
+  namespace: agent-fleet
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: manual
+  resources:
+    requests:
+      storage: 20Gi

@@ -1,0 +1,6 @@
+# Local-only. Matches prod's namespace name (agent-fleet) so RBAC/Service
+# manifests reused verbatim from k8s/provisioner/ need no edits.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: agent-fleet

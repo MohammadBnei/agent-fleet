@@ -5,3 +5,7 @@ dist/
 # fresh CI checkout has no built SPA output sitting there yet.
 !fleet-core/internal/webui/dist/
 !fleet-core/internal/webui/dist/.gitkeep
+
+# local/kind testing ground: Mac-side view of the kind node's hostPath mount
+# (worktrees/clones from real local test runs) — never committed.
+local/kind/workspace-data/

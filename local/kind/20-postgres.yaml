@@ -1,0 +1,64 @@
+# Throwaway Postgres for the local kind ground, same disposable credentials
+# as .claude/skills/dashboard-e2e/SKILL.md for consistency. emptyDir, not a
+# PVC — this sandbox gets torn down and recreated, not resumed; a PVC buys
+# nothing here (ponytail: upgrade to a PVC only if someone wants data to
+# survive a pod restart mid-session).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: agent-fleet
+  labels:
+    app.kubernetes.io/part-of: agent-fleet
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+        app.kubernetes.io/part-of: agent-fleet
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:18
+          env:
+            - name: POSTGRES_USER
+              value: agentfleet
+            - name: POSTGRES_PASSWORD
+              value: agentfleet
+            - name: POSTGRES_DB
+              value: agentfleetdb
+          ports:
+            - containerPort: 5432
+              name: postgres
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "agentfleet"]
+            initialDelaySeconds: 2
+            periodSeconds: 2
+          volumeMounts:
+            # postgres:18+ images store data in a major-version-specific
+            # subdirectory under /var/lib/postgresql itself, not
+            # /var/lib/postgresql/data — mounting at the old path makes the
+            # image refuse to start ("unused mount/volume" error).
+            - name: data
+              mountPath: /var/lib/postgresql
+      volumes:
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: agent-fleet
+spec:
+  selector:
+    app: postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432
