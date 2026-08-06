@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.18.1](https://github.com/MohammadBnei/agent-fleet/compare/1.18.0...1.18.1) (2026-08-06)
+
+
+### Bug Fixes
+
+* **worker:** make ExitPlanMode block on real approval, close Bash write-gate bypass ([#52](https://github.com/MohammadBnei/agent-fleet/issues/52)) ([686e105](https://github.com/MohammadBnei/agent-fleet/commit/686e105d57e36c025dd22ea9c4772b620bb73277))
+
 # [1.18.0](https://github.com/MohammadBnei/agent-fleet/compare/1.17.0...1.18.0) (2026-08-06)
 
 
