@@ -1,5 +1,12 @@
 # Changelog
 
+# [1.19.0](https://github.com/MohammadBnei/agent-fleet/compare/1.18.3...1.19.0) (2026-08-06)
+
+
+### Features
+
+* **dashboard:** resizable/collapsible sidebar panels, unified Actions modal, exchange-zone parity ([#54](https://github.com/MohammadBnei/agent-fleet/issues/54)) ([7f69043](https://github.com/MohammadBnei/agent-fleet/commit/7f690438127a94c36ba05030f331563641200fcf))
+
 ## [1.18.3](https://github.com/MohammadBnei/agent-fleet/compare/1.18.2...1.18.3) (2026-08-06)
 
 
