@@ -1,5 +1,12 @@
 # Changelog
 
+# [1.18.0](https://github.com/MohammadBnei/agent-fleet/compare/1.17.0...1.18.0) (2026-08-06)
+
+
+### Features
+
+* **dashboard:** drag-to-reorder and resizable, persisted right-column panels ([#51](https://github.com/MohammadBnei/agent-fleet/issues/51)) ([ad7f600](https://github.com/MohammadBnei/agent-fleet/commit/ad7f600cb464c489195eab1c9d2a2a3536756b29))
+
 # [1.17.0](https://github.com/MohammadBnei/agent-fleet/compare/1.16.0...1.17.0) (2026-08-06)
 
 
