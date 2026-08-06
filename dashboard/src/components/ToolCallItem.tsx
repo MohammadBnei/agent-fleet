@@ -1,5 +1,6 @@
 import type { ToolCallPair } from "../transcript";
 import { summarizeToolInput } from "../transcript";
+import { JsonView } from "./JsonView";
 
 // One collapsible call+output unit, shared between desktop's right-panel
 // TOOL CALLS section and mobile's inline feed — native <details>/<summary>
@@ -22,16 +23,20 @@ export function ToolCallItem({ pair }: { pair: ToolCallPair }) {
       <div className="collapse-content flex flex-col gap-2 pl-3 pr-3 pb-3">
         <div>
           <div className="text-[9px] tracking-wide opacity-40 mb-1">CALL</div>
-          <pre className="text-[10.5px] font-mono whitespace-pre-wrap text-base-content/70">
-            {JSON.stringify(callInfo.input, null, 2)}
-          </pre>
+          <div className="text-[10.5px] font-mono">
+            <JsonView value={callInfo.input} />
+          </div>
         </div>
         <div>
           <div className="text-[9px] tracking-wide opacity-40 mb-1">OUTPUT</div>
           {result ? (
-            <pre className={`text-[10.5px] font-mono whitespace-pre-wrap ${isError ? "text-error" : "text-base-content/70"}`}>
-              {typeof resultInfo?.content === "string" ? resultInfo.content : JSON.stringify(resultInfo?.content, null, 2)}
-            </pre>
+            <div className={`text-[10.5px] font-mono ${isError ? "text-error" : ""}`}>
+              {typeof resultInfo?.content === "string" ? (
+                <div className="whitespace-pre-wrap">{resultInfo.content}</div>
+              ) : (
+                <JsonView value={resultInfo?.content} />
+              )}
+            </div>
           ) : (
             <div className="text-[10.5px] opacity-40">running…</div>
           )}

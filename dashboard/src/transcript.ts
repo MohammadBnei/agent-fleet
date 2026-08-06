@@ -3,6 +3,18 @@ import { TranscriptEntryType, type TranscriptEntry } from "./gen/agentfleet/v1/t
 export type QuestionOption = { label: string; description: string };
 export type Question = { question: string; header: string; options: QuestionOption[]; multiSelect?: boolean };
 
+// Visual distinction between "planner" and "human" is now a markdown
+// blockquote, not a text label (see Markdown.tsx) — `> ` needs to prefix
+// every line, not just the first, for a multi-line human message to render
+// as one blockquote instead of one quoted line followed by plain text.
+export function asDisplayMarkdown(entry: TranscriptEntry): string {
+  if (entry.from !== "human") return entry.text;
+  return entry.text
+    .split("\n")
+    .map((line) => `> ${line}`)
+    .join("\n");
+}
+
 // AskUserQuestion (docs/adr/0018) posts `text` as JSON, not prose — these
 // parse it defensively so a malformed/future-shaped payload falls back to
 // a plain bubble instead of crashing the page.

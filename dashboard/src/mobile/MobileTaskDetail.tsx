@@ -12,10 +12,13 @@ import {
   buildToolCallPairs,
   pairedResultSeqs,
   latestTodos,
+  asDisplayMarkdown,
 } from "../transcript";
 import { useTaskDetail } from "../useTaskDetail";
 import { ToolCallItem } from "../components/ToolCallItem";
 import { ErrorModal } from "../components/ErrorModal";
+import { Markdown } from "../components/Markdown";
+import { JsonView } from "../components/JsonView";
 
 // Mirrors the "herd" mock's phone session screen (Agent Fleet Mobile.dc.html)
 // minus device chrome. Single-pane (list vs. detail), unlike desktop's
@@ -38,8 +41,7 @@ function MobileQuestionCard({
   if (!questions) {
     return (
       <div className="px-3 py-2.5 rounded-lg bg-base-200/60 border border-base-content/10">
-        <div className="text-[10px] opacity-50">{entry.from}</div>
-        <div className="text-[12.5px] whitespace-pre-wrap mt-1">{entry.text}</div>
+        <div className="text-[12.5px] whitespace-pre-wrap">{entry.text}</div>
       </div>
     );
   }
@@ -175,9 +177,11 @@ function MobileEntryBubble({ entry }: { entry: TranscriptEntry }) {
       <div
         className={`rounded-md border px-2.5 py-2 ${tr?.isError ? "border-error/40 bg-error/5" : "border-base-content/10 bg-base-200/40"}`}
       >
-        <pre className="text-[10.5px] whitespace-pre-wrap font-mono text-base-content/70">
-          {typeof tr?.content === "string" ? tr.content : JSON.stringify(tr?.content ?? entry.text, null, 2)}
-        </pre>
+        {typeof tr?.content === "string" ? (
+          <pre className="text-[10.5px] whitespace-pre-wrap font-mono text-base-content/70">{tr.content}</pre>
+        ) : (
+          <JsonView value={tr?.content ?? entry.text} />
+        )}
       </div>
     );
   }
@@ -191,8 +195,9 @@ function MobileEntryBubble({ entry }: { entry: TranscriptEntry }) {
   }
   return (
     <div>
-      <div className="text-[10px] opacity-50">{entry.from}</div>
-      <div className="text-[12.5px] leading-relaxed whitespace-pre-wrap mt-1 text-base-content/90">{entry.text}</div>
+      <div className="text-[12.5px] leading-relaxed text-base-content/90">
+        <Markdown text={asDisplayMarkdown(entry)} />
+      </div>
     </div>
   );
 }

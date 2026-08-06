@@ -100,7 +100,7 @@ export function Worktrees() {
   }, [load]);
 
   return (
-    <div className="p-4 overflow-x-auto">
+    <div className="lg:col-span-2 min-h-0 overflow-y-auto p-4 overflow-x-auto">
       <div className="flex items-center gap-3 mb-3">
         <h2 className="font-semibold text-base">Worktrees</h2>
         <button type="button" onClick={load} disabled={loading} className="btn btn-xs">

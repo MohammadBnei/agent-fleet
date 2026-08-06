@@ -152,11 +152,11 @@ export default function App() {
   }, [tasks, filter]);
 
   return (
-    <div className="min-h-screen bg-base-100 flex flex-col">
+    <div className="h-screen overflow-hidden bg-base-100 grid grid-rows-[auto_1fr]">
       {/* Desktop chrome — the mobile view (below) has its own header inside
           MobileTaskList/MobileTaskDetail, matching the "herd" mock's phone
           screens, which don't share this row at all. */}
-      <div className="hidden sm:flex flex-none items-center gap-5 px-5 h-13 border-b border-base-content/10 bg-base-200">
+      <div className="hidden sm:flex row-start-1 items-center gap-5 px-5 h-13 border-b border-base-content/10 bg-base-200">
         <div className="flex items-baseline gap-2">
           <span className="font-display font-semibold text-base">herd</span>
           <span className="text-[10.5px] text-base-content/50">
@@ -218,12 +218,12 @@ export default function App() {
 
       <ErrorModal message={tasksError} onClose={() => setTasksError(null)} />
 
-      <div className="hidden sm:flex flex-col lg:flex-row flex-1 min-h-0">
+      <div className="hidden sm:grid grid-cols-1 lg:grid-cols-[320px_1fr] row-start-2 min-h-0">
         {view === "worktrees" ? (
           <Worktrees />
         ) : (
           <>
-            <div className="lg:w-[320px] flex-none border-b lg:border-b-0 lg:border-r border-base-content/10 bg-base-200 overflow-y-auto">
+            <div className="border-b lg:border-b-0 lg:border-r border-base-content/10 bg-base-200 overflow-y-auto min-h-0">
               <TaskList
                 tasks={filteredTasks}
                 selectedId={selectedId}
@@ -233,7 +233,7 @@ export default function App() {
                 onDelete={deleteTask}
               />
             </div>
-            <div className="flex-1 min-w-0">
+            <div className="min-w-0 min-h-0">
               {selectedId ? (
                 <TaskDetail taskId={selectedId} tasks={tasks} onSelect={selectTask} />
               ) : (
@@ -244,7 +244,7 @@ export default function App() {
         )}
       </div>
 
-      <div className="sm:hidden flex-1 min-h-0 flex flex-col">
+      <div className="sm:hidden row-start-2 min-h-0 flex flex-col">
         {selectedId ? (
           <MobileTaskDetail taskId={selectedId} onBack={clearSelection} onDelete={() => deleteTask(selectedId)} />
         ) : (
