@@ -1,0 +1,76 @@
+# Local-only raw Deployment+Service for core. k8s/core.yaml is a Helm
+# *values* file for ArgoCD's common-app-chart, not applicable to a plain
+# `kubectl apply` — this is a hand-written equivalent for local testing.
+# No ingress: reach core via `kubectl port-forward svc/core 8080:8080`.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: core
+  namespace: agent-fleet
+  labels:
+    app.kubernetes.io/part-of: agent-fleet
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: core
+  template:
+    metadata:
+      labels:
+        app: core
+        app.kubernetes.io/part-of: agent-fleet
+    spec:
+      containers:
+        - name: core
+          image: agent-fleet-core:local
+          imagePullPolicy: Never # fails loudly (ErrImageNeverPull) instead of silently reusing a stale build
+          ports:
+            - containerPort: 8080
+              name: http
+            - containerPort: 9090
+              name: grpc
+          env:
+            - name: CORE_PORT
+              value: "8080"
+            - name: CORE_GRPC_PORT
+              value: "9090"
+            # Default (provisioner.agent-fleet.svc.cluster.local:9090)
+            # already matches 40-provisioner.yaml's Service name — no
+            # override needed.
+            - name: MAX_IN_FLIGHT_TASKS
+              value: "5"
+            # DISCORD_BOT_TOKEN deliberately omitted — core/cmd/core/run.go
+            # falls back to a noopNotifier, same as dashboard-e2e.
+            # LOKI_URL deliberately omitted — no Loki in this local ground;
+            # log-query features degrade gracefully, everything else works.
+          envFrom:
+            - secretRef:
+                name: agent-fleet-local-secrets
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            periodSeconds: 2
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: core
+  namespace: agent-fleet
+spec:
+  selector:
+    app: core
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+    - name: grpc
+      port: 9090
+      targetPort: 9090

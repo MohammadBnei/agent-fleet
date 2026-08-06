@@ -1,0 +1,69 @@
+# Local variant of k8s/provisioner/deployment.yaml: local image tags,
+# imagePullPolicy: Never, and agent-fleet-local-secrets in place of the
+# InfisicalSecret-backed provisioner-infisical secretRef. RBAC/ServiceAccount/
+# Service are reused verbatim from k8s/provisioner/ (see local/kind/README.md)
+# — only this Deployment differs from prod.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: provisioner
+  namespace: agent-fleet
+  labels:
+    app.kubernetes.io/part-of: agent-fleet
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: provisioner
+  template:
+    metadata:
+      labels:
+        app: provisioner
+        app.kubernetes.io/part-of: agent-fleet
+    spec:
+      serviceAccountName: provisioner
+      containers:
+        - name: provisioner
+          image: agent-fleet-provisioner:local
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8080
+              name: http
+            - containerPort: 9090
+              name: grpc
+          env:
+            - name: NAMESPACE
+              value: agent-fleet
+            - name: E2E_HOST
+              value: e2e.bnei.dev # unused locally — no e2e-preview flow exercised here
+            - name: PORT
+              value: "8080"
+            - name: GRPC_PORT
+              value: "9090"
+            - name: WORKER_IMAGE
+              value: agent-fleet-worker:local
+            - name: SIDECAR_IMAGE
+              value: agent-fleet-sidecar:local
+            - name: WORKSPACE_PVC
+              value: agent-fleet-workspace
+            - name: WORKTREES_ROOT
+              value: /workspace
+            # Default (core.agent-fleet.svc.cluster.local:9090) already
+            # matches 30-core.yaml's Service name — no override needed.
+          envFrom:
+            - secretRef:
+                name: agent-fleet-local-secrets
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+      volumes:
+        - name: workspace
+          persistentVolumeClaim:
+            claimName: agent-fleet-workspace
