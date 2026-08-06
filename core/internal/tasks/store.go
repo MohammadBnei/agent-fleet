@@ -11,6 +11,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -39,15 +40,18 @@ var KnownRepos = map[string]RepoConfig{
 // it to JSON before, so these tags are new but don't change any existing
 // behavior.
 type Task struct {
-	ID          string  `json:"id"`
-	Repo        string  `json:"repo"`
-	Description string  `json:"description"`
-	Status      string  `json:"status"`
-	ThreadID    *string `json:"threadId,omitempty"`
-	PrURL       *string `json:"prUrl,omitempty"`
-	PodPhase    *string `json:"podPhase,omitempty"`
-	PodMessage  *string `json:"podMessage,omitempty"`
-	LeaseID     string  `json:"-"`
+	ID          string     `json:"id"`
+	Repo        string     `json:"repo"`
+	Description string     `json:"description"`
+	Status      string     `json:"status"`
+	ThreadID    *string    `json:"threadId,omitempty"`
+	PrURL       *string    `json:"prUrl,omitempty"`
+	PodPhase    *string    `json:"podPhase,omitempty"`
+	PodMessage  *string    `json:"podMessage,omitempty"`
+	HeartbeatAt *time.Time `json:"heartbeatAt,omitempty"`
+	RetryCount  int        `json:"retryCount"`
+	LastError   *string    `json:"lastError,omitempty"`
+	LeaseID     string     `json:"-"`
 }
 
 type Store struct {
@@ -108,9 +112,11 @@ func (s *Store) FindTaskIDByThread(ctx context.Context, threadID string) (string
 func (s *Store) GetTask(ctx context.Context, id string) (*Task, error) {
 	var t Task
 	err := s.pool.QueryRow(ctx, `
-		SELECT id, repo, description, status, discord_thread_id, pr_url, pod_phase, pod_message
+		SELECT id, repo, description, status, discord_thread_id, pr_url, pod_phase, pod_message,
+		       heartbeat_at, retry_count, last_error
 		FROM tasks WHERE id = $1 AND deleted_at IS NULL
-	`, id).Scan(&t.ID, &t.Repo, &t.Description, &t.Status, &t.ThreadID, &t.PrURL, &t.PodPhase, &t.PodMessage)
+	`, id).Scan(&t.ID, &t.Repo, &t.Description, &t.Status, &t.ThreadID, &t.PrURL, &t.PodPhase, &t.PodMessage,
+		&t.HeartbeatAt, &t.RetryCount, &t.LastError)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
@@ -153,7 +159,8 @@ func (s *Store) GetTaskStatusInfo(ctx context.Context, id string) (*TaskStatusIn
 
 func (s *Store) ListRecentTasks(ctx context.Context, limit int) ([]Task, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, repo, description, status, discord_thread_id, pr_url, pod_phase, pod_message
+		SELECT id, repo, description, status, discord_thread_id, pr_url, pod_phase, pod_message,
+		       heartbeat_at, retry_count, last_error
 		FROM tasks WHERE deleted_at IS NULL ORDER BY created_at DESC LIMIT $1
 	`, limit)
 	if err != nil {
@@ -168,7 +175,8 @@ func (s *Store) ListRecentTasks(ctx context.Context, limit int) ([]Task, error) 
 	out := []Task{}
 	for rows.Next() {
 		var t Task
-		if err := rows.Scan(&t.ID, &t.Repo, &t.Description, &t.Status, &t.ThreadID, &t.PrURL, &t.PodPhase, &t.PodMessage); err != nil {
+		if err := rows.Scan(&t.ID, &t.Repo, &t.Description, &t.Status, &t.ThreadID, &t.PrURL, &t.PodPhase, &t.PodMessage,
+			&t.HeartbeatAt, &t.RetryCount, &t.LastError); err != nil {
 			slog.Error("tasks ListRecentTasks: scan", "error", err)
 			return nil, fmt.Errorf("scan task: %w", err)
 		}

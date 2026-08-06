@@ -26,6 +26,17 @@ message Task {
   // pod's first event.
   optional string pod_phase = 7;
   optional string pod_message = 8;
+  // Reclaim-eligibility signal (ClaimNextTask reclaims a claimed/planning/
+  // implementing task once this is >10min stale — the exact staleness
+  // threshold the dashboard's own "stuck" badge should match). Set once at
+  // claim time, refreshed by the worker pod's own heartbeat loop; unset for
+  // a still-pending task. RFC3339, matching JournalEntry.created_at.
+  optional string heartbeat_at = 9;
+  // How many times ClaimNextTask has reclaimed this task after a stale
+  // heartbeat (capped at MAX_TASK_RETRIES before the task goes
+  // failed_permanently instead of being reclaimed again).
+  int32 retry_count = 10;
+  optional string last_error = 11;
 }
 
 message ListTasksRequest {
