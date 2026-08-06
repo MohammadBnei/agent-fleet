@@ -14,6 +14,7 @@ import (
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/config"
 	"github.com/MohammadBnei/agent-fleet/core/internal/provisionerclient"
+	"github.com/MohammadBnei/agent-fleet/core/internal/repos"
 	"github.com/MohammadBnei/agent-fleet/core/internal/tasks"
 	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
 )
@@ -22,13 +23,14 @@ type Client struct {
 	session   *discordgo.Session
 	tasks     *tasks.Store
 	transcr   transcript.Store
+	repos     *repos.Store
 	e2e       *provisionerclient.Client
 	guildID   string
 	channelID string
 	appID     string
 }
 
-func New(cfg config.Config, taskStore *tasks.Store, transcr transcript.Store, e2e *provisionerclient.Client) (*Client, error) {
+func New(cfg config.Config, taskStore *tasks.Store, transcr transcript.Store, repoStore *repos.Store, e2e *provisionerclient.Client) (*Client, error) {
 	s, err := discordgo.New("Bot " + cfg.DiscordBotToken)
 	if err != nil {
 		return nil, fmt.Errorf("discordgo.New: %w", err)
@@ -39,6 +41,7 @@ func New(cfg config.Config, taskStore *tasks.Store, transcr transcript.Store, e2
 		session:   s,
 		tasks:     taskStore,
 		transcr:   transcr,
+		repos:     repoStore,
 		e2e:       e2e,
 		channelID: cfg.DiscordTriggerChannel,
 	}
@@ -73,7 +76,29 @@ func (c *Client) onReady(s *discordgo.Session, r *discordgo.Ready) {
 		return
 	}
 	c.guildID = ch.GuildID
-	registerCommands(s, c.appID, c.guildID)
+	c.RefreshCommands(context.Background())
+}
+
+// RefreshCommands re-fetches the repo list and re-registers every slash
+// command — discordgo.ApplicationCommandCreate upserts by name, so calling
+// this again live-updates /task's repo dropdown with no restart needed.
+// Wired as repos.Store's OnChange callback (core/cmd/core/run.go) so a
+// dashboard repo add/edit/delete propagates immediately (docs/adr/0028); a
+// no-op if onReady hasn't fired yet (guildID/appID still empty).
+func (c *Client) RefreshCommands(ctx context.Context) {
+	if c.appID == "" || c.guildID == "" {
+		return
+	}
+	list, err := c.repos.List(ctx)
+	if err != nil {
+		slog.Error("RefreshCommands: repo list failed, commands not refreshed", "error", err)
+		return
+	}
+	names := make([]string, len(list))
+	for i, r := range list {
+		names[i] = r.Name
+	}
+	registerCommands(c.session, c.appID, c.guildID, names)
 }
 
 // channelWithRetry retries a transient Discord REST failure a few times

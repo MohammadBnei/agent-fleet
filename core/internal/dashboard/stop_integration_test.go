@@ -76,6 +76,13 @@ func newTestPool(t *testing.T) *pgxpool.Pool {
 			created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
 			updated_at         TIMESTAMPTZ NOT NULL DEFAULT now()
 		);
+		CREATE TABLE repos (
+			name        TEXT PRIMARY KEY,
+			url         TEXT NOT NULL,
+			base_branch TEXT NOT NULL DEFAULT '',
+			created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+			updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+		);
 	`)
 	if err != nil {
 		t.Fatalf("apply schema: %v", err)
@@ -102,7 +109,7 @@ func TestServer_Stop_DefaultReason(t *testing.T) {
 	pool := newTestPool(t)
 	taskID := seedTask(t, pool)
 	store := &recordingStore{}
-	s := NewServer(tasks.NewStore(pool), store, nil, nil, nil)
+	s := NewServer(tasks.NewStore(pool), store, nil, nil, nil, nil)
 
 	resp, err := s.Stop(context.Background(), connect.NewRequest(&agentfleetv1.StopRequest{TaskId: taskID}))
 	if err != nil {
@@ -128,7 +135,7 @@ func TestServer_Stop_CustomReason(t *testing.T) {
 	pool := newTestPool(t)
 	taskID := seedTask(t, pool)
 	store := &recordingStore{}
-	s := NewServer(tasks.NewStore(pool), store, nil, nil, nil)
+	s := NewServer(tasks.NewStore(pool), store, nil, nil, nil, nil)
 
 	reason := "wrong direction"
 	req := connect.NewRequest(&agentfleetv1.StopRequest{TaskId: taskID, Reason: &reason})

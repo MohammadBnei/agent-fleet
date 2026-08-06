@@ -15,6 +15,7 @@ import (
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/provisionerclient"
+	"github.com/MohammadBnei/agent-fleet/core/internal/repos"
 	"github.com/MohammadBnei/agent-fleet/core/internal/tasks"
 )
 
@@ -25,6 +26,7 @@ import (
 // the same two dependencies.
 type Loop struct {
 	tasks          *tasks.Store
+	repos          *repos.Store
 	provisioner    *provisionerclient.Client
 	maxInFlight    int
 	maxTaskRetries int
@@ -32,9 +34,9 @@ type Loop struct {
 	nudge          chan struct{}
 }
 
-func New(taskStore *tasks.Store, provisioner *provisionerclient.Client, maxInFlight, maxTaskRetries int, stopGrace time.Duration) *Loop {
+func New(taskStore *tasks.Store, repoStore *repos.Store, provisioner *provisionerclient.Client, maxInFlight, maxTaskRetries int, stopGrace time.Duration) *Loop {
 	return &Loop{
-		tasks: taskStore, provisioner: provisioner,
+		tasks: taskStore, repos: repoStore, provisioner: provisioner,
 		maxInFlight: maxInFlight, maxTaskRetries: maxTaskRetries,
 		stopGrace: stopGrace,
 		nudge:     make(chan struct{}, 1),
@@ -104,8 +106,12 @@ func (l *Loop) tick(ctx context.Context) {
 	// pollInterval instead of draining immediately.
 	l.Nudge()
 
-	repoCfg, ok := tasks.KnownRepos[task.Repo]
-	if !ok {
+	repoCfg, err := l.repos.Get(ctx, task.Repo)
+	if err != nil {
+		slog.Error("dispatch: repo lookup failed", "taskId", task.ID, "repo", task.Repo, "error", err)
+		return
+	}
+	if repoCfg == nil {
 		slog.Error("dispatch: claimed task for unknown repo, cannot dispatch", "taskId", task.ID, "repo", task.Repo)
 		return
 	}

@@ -177,3 +177,21 @@ ALTER TABLE planning_transcript ADD COLUMN IF NOT EXISTS relay_last_error TEXT;
 -- NULL for every entry except an 'answer' replying to a specific
 -- 'question' entry's own seq.
 ALTER TABLE planning_transcript ADD COLUMN IF NOT EXISTS reply_to_seq BIGINT;
+
+-- Target-repo config, dashboard-editable (docs/adr/0028) — replaces the
+-- hardcoded tasks.KnownRepos Go map so onboarding/editing a repo no longer
+-- needs a core redeploy. No FK from tasks.repo: a removed repo shouldn't
+-- retroactively break historical task rows.
+CREATE TABLE IF NOT EXISTS repos (
+  name        TEXT PRIMARY KEY,
+  url         TEXT NOT NULL,
+  base_branch TEXT NOT NULL DEFAULT '', -- '' means the provisioner defaults to "main"
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+INSERT INTO repos (name, url, base_branch) VALUES
+  ('dream-analyst', 'https://github.com/MohammadBnei/dream-analyst.git', ''),
+  ('vos-monolith',  'https://github.com/MohammadBnei/vos-monolith.git', 'dev'),
+  ('agent-fleet',   'https://github.com/MohammadBnei/agent-fleet.git', '')
+ON CONFLICT (name) DO NOTHING;

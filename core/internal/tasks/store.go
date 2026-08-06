@@ -17,23 +17,9 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// RepoConfig is the static per-repo config the dispatch loop needs to pass
-// to the provisioner's CreateWorkerPod — mirrors what used to be per-repo
-// Deployment env vars (k8s/dream-analyst-worker.yaml's TARGET_REPO_URL,
-// k8s/vos-monolith-worker.yaml's BASE_BRANCH="dev"). A fourth copy of the
-// known-repos list (dashboard/bot/e2e-provisioner each already have their
-// own, per earlier repo research) — consistent with existing precedent,
-// not new debt.
-type RepoConfig struct {
-	URL        string
-	BaseBranch string // "" means the provisioner defaults to "main"
-}
-
-// KnownRepos mirrors bot/src/db.ts's KNOWN_REPOS.
-var KnownRepos = map[string]RepoConfig{
-	"dream-analyst": {URL: "https://github.com/MohammadBnei/dream-analyst.git"},
-	"vos-monolith":  {URL: "https://github.com/MohammadBnei/vos-monolith.git", BaseBranch: "dev"},
-}
+// Target-repo config used to live here as a hardcoded KnownRepos map —
+// moved to the dashboard-editable `repos` table (docs/adr/0028), see
+// core/internal/repos.
 
 // JSON tags: this struct is now also serialized directly by the dashboard
 // API (internal/dashboard, see docs/adr/0014) — Discord never serialized

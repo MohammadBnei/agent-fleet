@@ -80,6 +80,18 @@ const (
 	// DashboardServiceGetJournalProcedure is the fully-qualified name of the DashboardService's
 	// GetJournal RPC.
 	DashboardServiceGetJournalProcedure = "/agentfleet.v1.DashboardService/GetJournal"
+	// DashboardServiceListReposProcedure is the fully-qualified name of the DashboardService's
+	// ListRepos RPC.
+	DashboardServiceListReposProcedure = "/agentfleet.v1.DashboardService/ListRepos"
+	// DashboardServiceCreateRepoProcedure is the fully-qualified name of the DashboardService's
+	// CreateRepo RPC.
+	DashboardServiceCreateRepoProcedure = "/agentfleet.v1.DashboardService/CreateRepo"
+	// DashboardServiceUpdateRepoProcedure is the fully-qualified name of the DashboardService's
+	// UpdateRepo RPC.
+	DashboardServiceUpdateRepoProcedure = "/agentfleet.v1.DashboardService/UpdateRepo"
+	// DashboardServiceDeleteRepoProcedure is the fully-qualified name of the DashboardService's
+	// DeleteRepo RPC.
+	DashboardServiceDeleteRepoProcedure = "/agentfleet.v1.DashboardService/DeleteRepo"
 )
 
 // DashboardServiceClient is a client for the agentfleet.v1.DashboardService service.
@@ -118,6 +130,10 @@ type DashboardServiceClient interface {
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	DeleteWorktree(context.Context, *connect.Request[v1.DeleteWorktreeRequest]) (*connect.Response[v1.DeleteWorktreeResponse], error)
 	GetJournal(context.Context, *connect.Request[v1.GetJournalRequest]) (*connect.Response[v1.GetJournalResponse], error)
+	ListRepos(context.Context, *connect.Request[v1.ListReposRequest]) (*connect.Response[v1.ListReposResponse], error)
+	CreateRepo(context.Context, *connect.Request[v1.CreateRepoRequest]) (*connect.Response[v1.CreateRepoResponse], error)
+	UpdateRepo(context.Context, *connect.Request[v1.UpdateRepoRequest]) (*connect.Response[v1.UpdateRepoResponse], error)
+	DeleteRepo(context.Context, *connect.Request[v1.DeleteRepoRequest]) (*connect.Response[v1.DeleteRepoResponse], error)
 }
 
 // NewDashboardServiceClient constructs a client for the agentfleet.v1.DashboardService service. By
@@ -227,6 +243,30 @@ func NewDashboardServiceClient(httpClient connect.HTTPClient, baseURL string, op
 			connect.WithSchema(dashboardServiceMethods.ByName("GetJournal")),
 			connect.WithClientOptions(opts...),
 		),
+		listRepos: connect.NewClient[v1.ListReposRequest, v1.ListReposResponse](
+			httpClient,
+			baseURL+DashboardServiceListReposProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("ListRepos")),
+			connect.WithClientOptions(opts...),
+		),
+		createRepo: connect.NewClient[v1.CreateRepoRequest, v1.CreateRepoResponse](
+			httpClient,
+			baseURL+DashboardServiceCreateRepoProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("CreateRepo")),
+			connect.WithClientOptions(opts...),
+		),
+		updateRepo: connect.NewClient[v1.UpdateRepoRequest, v1.UpdateRepoResponse](
+			httpClient,
+			baseURL+DashboardServiceUpdateRepoProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("UpdateRepo")),
+			connect.WithClientOptions(opts...),
+		),
+		deleteRepo: connect.NewClient[v1.DeleteRepoRequest, v1.DeleteRepoResponse](
+			httpClient,
+			baseURL+DashboardServiceDeleteRepoProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("DeleteRepo")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -248,6 +288,10 @@ type dashboardServiceClient struct {
 	listWorktrees     *connect.Client[v1.ListWorktreesRequest, v1.ListWorktreesViewResponse]
 	deleteWorktree    *connect.Client[v1.DeleteWorktreeRequest, v1.DeleteWorktreeResponse]
 	getJournal        *connect.Client[v1.GetJournalRequest, v1.GetJournalResponse]
+	listRepos         *connect.Client[v1.ListReposRequest, v1.ListReposResponse]
+	createRepo        *connect.Client[v1.CreateRepoRequest, v1.CreateRepoResponse]
+	updateRepo        *connect.Client[v1.UpdateRepoRequest, v1.UpdateRepoResponse]
+	deleteRepo        *connect.Client[v1.DeleteRepoRequest, v1.DeleteRepoResponse]
 }
 
 // ListTasks calls agentfleet.v1.DashboardService.ListTasks.
@@ -330,6 +374,26 @@ func (c *dashboardServiceClient) GetJournal(ctx context.Context, req *connect.Re
 	return c.getJournal.CallUnary(ctx, req)
 }
 
+// ListRepos calls agentfleet.v1.DashboardService.ListRepos.
+func (c *dashboardServiceClient) ListRepos(ctx context.Context, req *connect.Request[v1.ListReposRequest]) (*connect.Response[v1.ListReposResponse], error) {
+	return c.listRepos.CallUnary(ctx, req)
+}
+
+// CreateRepo calls agentfleet.v1.DashboardService.CreateRepo.
+func (c *dashboardServiceClient) CreateRepo(ctx context.Context, req *connect.Request[v1.CreateRepoRequest]) (*connect.Response[v1.CreateRepoResponse], error) {
+	return c.createRepo.CallUnary(ctx, req)
+}
+
+// UpdateRepo calls agentfleet.v1.DashboardService.UpdateRepo.
+func (c *dashboardServiceClient) UpdateRepo(ctx context.Context, req *connect.Request[v1.UpdateRepoRequest]) (*connect.Response[v1.UpdateRepoResponse], error) {
+	return c.updateRepo.CallUnary(ctx, req)
+}
+
+// DeleteRepo calls agentfleet.v1.DashboardService.DeleteRepo.
+func (c *dashboardServiceClient) DeleteRepo(ctx context.Context, req *connect.Request[v1.DeleteRepoRequest]) (*connect.Response[v1.DeleteRepoResponse], error) {
+	return c.deleteRepo.CallUnary(ctx, req)
+}
+
 // DashboardServiceHandler is an implementation of the agentfleet.v1.DashboardService service.
 type DashboardServiceHandler interface {
 	ListTasks(context.Context, *connect.Request[v1.ListTasksRequest]) (*connect.Response[v1.ListTasksResponse], error)
@@ -366,6 +430,10 @@ type DashboardServiceHandler interface {
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	DeleteWorktree(context.Context, *connect.Request[v1.DeleteWorktreeRequest]) (*connect.Response[v1.DeleteWorktreeResponse], error)
 	GetJournal(context.Context, *connect.Request[v1.GetJournalRequest]) (*connect.Response[v1.GetJournalResponse], error)
+	ListRepos(context.Context, *connect.Request[v1.ListReposRequest]) (*connect.Response[v1.ListReposResponse], error)
+	CreateRepo(context.Context, *connect.Request[v1.CreateRepoRequest]) (*connect.Response[v1.CreateRepoResponse], error)
+	UpdateRepo(context.Context, *connect.Request[v1.UpdateRepoRequest]) (*connect.Response[v1.UpdateRepoResponse], error)
+	DeleteRepo(context.Context, *connect.Request[v1.DeleteRepoRequest]) (*connect.Response[v1.DeleteRepoResponse], error)
 }
 
 // NewDashboardServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -471,6 +539,30 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 		connect.WithSchema(dashboardServiceMethods.ByName("GetJournal")),
 		connect.WithHandlerOptions(opts...),
 	)
+	dashboardServiceListReposHandler := connect.NewUnaryHandler(
+		DashboardServiceListReposProcedure,
+		svc.ListRepos,
+		connect.WithSchema(dashboardServiceMethods.ByName("ListRepos")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dashboardServiceCreateRepoHandler := connect.NewUnaryHandler(
+		DashboardServiceCreateRepoProcedure,
+		svc.CreateRepo,
+		connect.WithSchema(dashboardServiceMethods.ByName("CreateRepo")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dashboardServiceUpdateRepoHandler := connect.NewUnaryHandler(
+		DashboardServiceUpdateRepoProcedure,
+		svc.UpdateRepo,
+		connect.WithSchema(dashboardServiceMethods.ByName("UpdateRepo")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dashboardServiceDeleteRepoHandler := connect.NewUnaryHandler(
+		DashboardServiceDeleteRepoProcedure,
+		svc.DeleteRepo,
+		connect.WithSchema(dashboardServiceMethods.ByName("DeleteRepo")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/agentfleet.v1.DashboardService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case DashboardServiceListTasksProcedure:
@@ -505,6 +597,14 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 			dashboardServiceDeleteWorktreeHandler.ServeHTTP(w, r)
 		case DashboardServiceGetJournalProcedure:
 			dashboardServiceGetJournalHandler.ServeHTTP(w, r)
+		case DashboardServiceListReposProcedure:
+			dashboardServiceListReposHandler.ServeHTTP(w, r)
+		case DashboardServiceCreateRepoProcedure:
+			dashboardServiceCreateRepoHandler.ServeHTTP(w, r)
+		case DashboardServiceUpdateRepoProcedure:
+			dashboardServiceUpdateRepoHandler.ServeHTTP(w, r)
+		case DashboardServiceDeleteRepoProcedure:
+			dashboardServiceDeleteRepoHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -576,4 +676,20 @@ func (UnimplementedDashboardServiceHandler) DeleteWorktree(context.Context, *con
 
 func (UnimplementedDashboardServiceHandler) GetJournal(context.Context, *connect.Request[v1.GetJournalRequest]) (*connect.Response[v1.GetJournalResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.GetJournal is not implemented"))
+}
+
+func (UnimplementedDashboardServiceHandler) ListRepos(context.Context, *connect.Request[v1.ListReposRequest]) (*connect.Response[v1.ListReposResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.ListRepos is not implemented"))
+}
+
+func (UnimplementedDashboardServiceHandler) CreateRepo(context.Context, *connect.Request[v1.CreateRepoRequest]) (*connect.Response[v1.CreateRepoResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.CreateRepo is not implemented"))
+}
+
+func (UnimplementedDashboardServiceHandler) UpdateRepo(context.Context, *connect.Request[v1.UpdateRepoRequest]) (*connect.Response[v1.UpdateRepoResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.UpdateRepo is not implemented"))
+}
+
+func (UnimplementedDashboardServiceHandler) DeleteRepo(context.Context, *connect.Request[v1.DeleteRepoRequest]) (*connect.Response[v1.DeleteRepoResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.DeleteRepo is not implemented"))
 }

@@ -21,18 +21,20 @@ pod per task on demand.
 
 ## 1. Onboard a new target repo
 
-No new k8s manifest, no new Deployment — just a config entry plus a
-GitHub-side grant:
+No new k8s manifest, no new Deployment, no redeploy — repo config lives in
+the dashboard-editable `repos` table (`docs/adr/0028`), not Go source:
 
-1. **`core/internal/tasks/store.go`'s `KnownRepos` map** — add an entry:
-   `{URL: "https://github.com/...", BaseBranch: "..."}`. `BaseBranch` only
-   needs setting if the repo doesn't develop off `main` (see
-   `vos-monolith`'s entry — its default branch is `dev`). Without this,
-   `/task`'s dropdown won't offer the repo (`core/internal/discord/
-   commands.go`'s `repoChoices()` reads this map) and the dispatch loop
-   will refuse to dispatch a claimed task for it (`core/internal/dispatch/
-   loop.go`'s `tick()` checks `KnownRepos` before calling
-   `CreateWorkerPod`).
+1. **Dashboard → "manage repos"** — add an entry: name, git URL, base
+   branch (only needs setting if the repo doesn't develop off `main` — see
+   `vos-monolith`'s row, base branch `dev`). This writes straight to the
+   `repos` table (`core/internal/repos.Store`); `/task`'s Discord dropdown
+   refreshes live (`repos.Store`'s `OnChange` callback re-registers Discord
+   commands, `core/internal/discord/session.go`'s `RefreshCommands`) and
+   the dispatch loop reads the new row immediately (`core/internal/
+   dispatch/loop.go`'s `tick()` calls `repos.Store.Get` before
+   `CreateWorkerPod`) — no core restart needed either way. Direct SQL
+   (`INSERT INTO repos (name, url, base_branch) VALUES (...)`) works too if
+   the dashboard isn't reachable.
 2. **Infisical** — confirm the target repo's bot GitHub account
    (`GH_TOKEN`, shared by the provisioner's clone/fetch and the worker's
    push/PR) has collaborator access to open PRs there. The rest of the
@@ -43,12 +45,15 @@ GitHub-side grant:
    config file, just `provisioner/internal/k8s/names.go`'s `StartCmdFor`
    (a small `switch`, env-overridable via `E2E_START_CMD_<REPO>`) for the
    on-demand e2e-preview pod's app-start command, if this repo will use
-   that feature.
+   that feature. This one's still a Go-source/redeploy change — the
+   provisioner holds no DB credentials (`docs/adr/0020` point 1), so it
+   can't read the `repos` table directly.
 
-This is a one-file, one-repo change — no `infra-bootstrap` edit needed
-(that repo only knows about `core`'s and `provisioner`'s own
-Applications, not individual target repos). Confirm with Mohammad before
-merging, since it changes what `/task` will accept fleet-wide.
+No `infra-bootstrap` edit needed (that repo only knows about `core`'s and
+`provisioner`'s own Applications, not individual target repos). Unlike the
+old code-review-gated flow, a dashboard-added repo is live immediately —
+weigh that before adding one on a whim, since it changes what `/task` will
+accept fleet-wide right away.
 
 ## 2. Release / deploy walkthrough
 
@@ -102,6 +107,9 @@ SELECT event_type, payload, created_at
 FROM knowledge_journal
 WHERE payload->>'taskId' = '<taskId>'
 ORDER BY created_at;
+
+-- currently configured repos (docs/adr/0028)
+SELECT name, url, base_branch FROM repos ORDER BY name;
 ```
 
 Connect via the `AGENTFLEET_DB_*` credentials (Infisical, `agent-fleet-nygh`

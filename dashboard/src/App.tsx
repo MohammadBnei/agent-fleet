@@ -3,12 +3,14 @@ import { TaskList, ACTIVE_STATUSES } from "./pages/TaskList";
 import { TaskDetail } from "./pages/TaskDetail";
 import { Worktrees } from "./pages/Worktrees";
 import { NewTaskDialog } from "./components/NewTaskDialog";
+import { ManageReposModal } from "./components/ManageReposModal";
 import { MobileTaskList } from "./mobile/MobileTaskList";
 import { MobileTaskDetail } from "./mobile/MobileTaskDetail";
 import { client } from "./connectClient";
 import type { Task } from "./gen/agentfleet/v1/dashboard_pb";
 import { findPendingQuestion, latestTodos, type TodoItem } from "./transcript";
 import { ErrorModal } from "./components/ErrorModal";
+import { ConfirmModal } from "./components/ConfirmModal";
 import { useMediaQuery } from "./useMediaQuery";
 
 // No router library for two views (see docs/adr/0013's plan) — state
@@ -50,6 +52,7 @@ export default function App() {
   const [filter, setFilter] = useState("");
   const [needsYouIds, setNeedsYouIds] = useState<Set<string>>(new Set());
   const [todosById, setTodosById] = useState<Map<string, TodoItem[]>>(new Map());
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 
   const loadTasks = useCallback(() => {
     return client
@@ -121,10 +124,17 @@ export default function App() {
   // Force-tears-down any live session then soft-deletes the task (see
   // docs/adr for DashboardService.DeleteTask) — used by both the desktop
   // TaskList's per-row delete button and the mobile session screen's "⋯".
+  // Confirmation is a ConfirmModal, not window.confirm (native dialogs
+  // can't be themed and block the render thread) — deleteTask just opens
+  // it; confirmDeleteTask does the actual call.
   function deleteTask(id: string) {
-    if (!window.confirm("Delete this session? This tears down any live pod and removes it from the list.")) {
-      return;
-    }
+    setPendingDeleteId(id);
+  }
+
+  function confirmDeleteTask() {
+    const id = pendingDeleteId;
+    setPendingDeleteId(null);
+    if (!id) return;
     client
       .deleteTask({ taskId: id })
       .then(() => {
@@ -202,6 +212,7 @@ export default function App() {
               selectTask(id);
             }}
           />
+          <ManageReposModal />
           <span>{liveCount} sessions live</span>
           <span>{repoCount} repos</span>
         </div>
@@ -240,6 +251,12 @@ export default function App() {
       )}
 
       <ErrorModal message={tasksError} onClose={() => setTasksError(null)} />
+      <ConfirmModal
+        open={pendingDeleteId !== null}
+        message="Delete this session? This tears down any live pod and removes it from the list."
+        onConfirm={confirmDeleteTask}
+        onCancel={() => setPendingDeleteId(null)}
+      />
 
       {isDesktop ? (
       <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] row-start-2 min-h-0">

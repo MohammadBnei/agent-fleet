@@ -40,7 +40,7 @@ func (r *recordingStore) ReadSince(context.Context, string, int64, int) ([]trans
 
 func TestServer_Approve(t *testing.T) {
 	store := &recordingStore{}
-	s := NewServer(nil, store, nil, nil, nil)
+	s := NewServer(nil, store, nil, nil, nil, nil)
 
 	resp, err := s.Approve(context.Background(), connect.NewRequest(&agentfleetv1.ApproveRequest{TaskId: "task-1"}))
 	if err != nil {
@@ -63,32 +63,11 @@ func TestServer_Approve(t *testing.T) {
 // CreateTask's own comment below already gives for pass-through logic
 // touching a real store.
 
-// TestServer_CreateTask_UnknownRepo/EmptyDescription cover the two
-// validation branches that return before ever touching tasks.Store — hence
-// the nil taskStore, same pattern as the other tests in this file passing
-// nil for stores CreateTask/Approve/Stop don't need. The success path
-// (a real INSERT with nil channel/thread) is exercised by tasks package's
-// own TestCreateTask_NilChannelAndThread — this handler is a one-line
-// pass-through to that store method plus taskToProto, not new logic worth
-// its own testcontainers setup (see this file's own comment on
-// GetE2EStatus/KillE2E for the same reasoning).
-func TestServer_CreateTask_UnknownRepo(t *testing.T) {
-	s := NewServer(nil, nil, nil, nil, nil)
-
-	req := connect.NewRequest(&agentfleetv1.CreateTaskRequest{Repo: "not-a-real-repo", Description: "do something"})
-	if _, err := s.CreateTask(context.Background(), req); connect.CodeOf(err) != connect.CodeInvalidArgument {
-		t.Fatalf("CreateTask error = %v, want CodeInvalidArgument", err)
-	}
-}
-
-func TestServer_CreateTask_EmptyDescription(t *testing.T) {
-	s := NewServer(nil, nil, nil, nil, nil)
-
-	req := connect.NewRequest(&agentfleetv1.CreateTaskRequest{Repo: "dream-analyst", Description: ""})
-	if _, err := s.CreateTask(context.Background(), req); connect.CodeOf(err) != connect.CodeInvalidArgument {
-		t.Fatalf("CreateTask error = %v, want CodeInvalidArgument", err)
-	}
-}
+// TestServer_CreateTask_UnknownRepo/EmptyDescription moved to
+// create_task_integration_test.go — CreateTask now validates the repo via
+// s.repos.Get (docs/adr/0028), a concrete Postgres-backed store, not a map
+// lookup a nil store can stand in for (same reasoning stop_integration_
+// test.go's own comment gives for Stop/tasks.Store).
 
 // TestServer_Discuss covers the dashboard's free-text chat channel
 // (reliability-findings.md's "seamless interaction" gap — the dashboard
@@ -97,7 +76,7 @@ func TestServer_CreateTask_EmptyDescription(t *testing.T) {
 // as a plain "discussion" entry, same as Approve/Stop hardcode their own type.
 func TestServer_Discuss(t *testing.T) {
 	store := &recordingStore{}
-	s := NewServer(nil, store, nil, nil, nil)
+	s := NewServer(nil, store, nil, nil, nil, nil)
 
 	req := connect.NewRequest(&agentfleetv1.DiscussRequest{TaskId: "task-1", Text: "what's the status?"})
 	resp, err := s.Discuss(context.Background(), req)
@@ -114,7 +93,7 @@ func TestServer_Discuss(t *testing.T) {
 }
 
 func TestServer_Discuss_EmptyText(t *testing.T) {
-	s := NewServer(nil, &recordingStore{}, nil, nil, nil)
+	s := NewServer(nil, &recordingStore{}, nil, nil, nil, nil)
 
 	req := connect.NewRequest(&agentfleetv1.DiscussRequest{TaskId: "task-1", Text: ""})
 	if _, err := s.Discuss(context.Background(), req); connect.CodeOf(err) != connect.CodeInvalidArgument {
@@ -124,7 +103,7 @@ func TestServer_Discuss_EmptyText(t *testing.T) {
 
 func TestServer_AnswerQuestion(t *testing.T) {
 	store := &recordingStore{}
-	s := NewServer(nil, store, nil, nil, nil)
+	s := NewServer(nil, store, nil, nil, nil, nil)
 
 	answersJSON := `{"answers":{"Which quality attribute wins?":"Latency"}}`
 	req := connect.NewRequest(&agentfleetv1.AnswerQuestionRequest{TaskId: "task-1", Seq: 3, AnswersJson: answersJSON})

@@ -35,6 +35,10 @@ const (
 	DashboardService_ListWorktrees_FullMethodName     = "/agentfleet.v1.DashboardService/ListWorktrees"
 	DashboardService_DeleteWorktree_FullMethodName    = "/agentfleet.v1.DashboardService/DeleteWorktree"
 	DashboardService_GetJournal_FullMethodName        = "/agentfleet.v1.DashboardService/GetJournal"
+	DashboardService_ListRepos_FullMethodName         = "/agentfleet.v1.DashboardService/ListRepos"
+	DashboardService_CreateRepo_FullMethodName        = "/agentfleet.v1.DashboardService/CreateRepo"
+	DashboardService_UpdateRepo_FullMethodName        = "/agentfleet.v1.DashboardService/UpdateRepo"
+	DashboardService_DeleteRepo_FullMethodName        = "/agentfleet.v1.DashboardService/DeleteRepo"
 )
 
 // DashboardServiceClient is the client API for DashboardService service.
@@ -75,6 +79,10 @@ type DashboardServiceClient interface {
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	DeleteWorktree(ctx context.Context, in *DeleteWorktreeRequest, opts ...grpc.CallOption) (*DeleteWorktreeResponse, error)
 	GetJournal(ctx context.Context, in *GetJournalRequest, opts ...grpc.CallOption) (*GetJournalResponse, error)
+	ListRepos(ctx context.Context, in *ListReposRequest, opts ...grpc.CallOption) (*ListReposResponse, error)
+	CreateRepo(ctx context.Context, in *CreateRepoRequest, opts ...grpc.CallOption) (*CreateRepoResponse, error)
+	UpdateRepo(ctx context.Context, in *UpdateRepoRequest, opts ...grpc.CallOption) (*UpdateRepoResponse, error)
+	DeleteRepo(ctx context.Context, in *DeleteRepoRequest, opts ...grpc.CallOption) (*DeleteRepoResponse, error)
 }
 
 type dashboardServiceClient struct {
@@ -254,6 +262,46 @@ func (c *dashboardServiceClient) GetJournal(ctx context.Context, in *GetJournalR
 	return out, nil
 }
 
+func (c *dashboardServiceClient) ListRepos(ctx context.Context, in *ListReposRequest, opts ...grpc.CallOption) (*ListReposResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListReposResponse)
+	err := c.cc.Invoke(ctx, DashboardService_ListRepos_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dashboardServiceClient) CreateRepo(ctx context.Context, in *CreateRepoRequest, opts ...grpc.CallOption) (*CreateRepoResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateRepoResponse)
+	err := c.cc.Invoke(ctx, DashboardService_CreateRepo_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dashboardServiceClient) UpdateRepo(ctx context.Context, in *UpdateRepoRequest, opts ...grpc.CallOption) (*UpdateRepoResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateRepoResponse)
+	err := c.cc.Invoke(ctx, DashboardService_UpdateRepo_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dashboardServiceClient) DeleteRepo(ctx context.Context, in *DeleteRepoRequest, opts ...grpc.CallOption) (*DeleteRepoResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteRepoResponse)
+	err := c.cc.Invoke(ctx, DashboardService_DeleteRepo_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // DashboardServiceServer is the server API for DashboardService service.
 // All implementations must embed UnimplementedDashboardServiceServer
 // for forward compatibility.
@@ -292,6 +340,10 @@ type DashboardServiceServer interface {
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	DeleteWorktree(context.Context, *DeleteWorktreeRequest) (*DeleteWorktreeResponse, error)
 	GetJournal(context.Context, *GetJournalRequest) (*GetJournalResponse, error)
+	ListRepos(context.Context, *ListReposRequest) (*ListReposResponse, error)
+	CreateRepo(context.Context, *CreateRepoRequest) (*CreateRepoResponse, error)
+	UpdateRepo(context.Context, *UpdateRepoRequest) (*UpdateRepoResponse, error)
+	DeleteRepo(context.Context, *DeleteRepoRequest) (*DeleteRepoResponse, error)
 	mustEmbedUnimplementedDashboardServiceServer()
 }
 
@@ -349,6 +401,18 @@ func (UnimplementedDashboardServiceServer) DeleteWorktree(context.Context, *Dele
 }
 func (UnimplementedDashboardServiceServer) GetJournal(context.Context, *GetJournalRequest) (*GetJournalResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetJournal not implemented")
+}
+func (UnimplementedDashboardServiceServer) ListRepos(context.Context, *ListReposRequest) (*ListReposResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListRepos not implemented")
+}
+func (UnimplementedDashboardServiceServer) CreateRepo(context.Context, *CreateRepoRequest) (*CreateRepoResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CreateRepo not implemented")
+}
+func (UnimplementedDashboardServiceServer) UpdateRepo(context.Context, *UpdateRepoRequest) (*UpdateRepoResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpdateRepo not implemented")
+}
+func (UnimplementedDashboardServiceServer) DeleteRepo(context.Context, *DeleteRepoRequest) (*DeleteRepoResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteRepo not implemented")
 }
 func (UnimplementedDashboardServiceServer) mustEmbedUnimplementedDashboardServiceServer() {}
 func (UnimplementedDashboardServiceServer) testEmbeddedByValue()                          {}
@@ -652,6 +716,78 @@ func _DashboardService_GetJournal_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DashboardService_ListRepos_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListReposRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DashboardServiceServer).ListRepos(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DashboardService_ListRepos_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DashboardServiceServer).ListRepos(ctx, req.(*ListReposRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DashboardService_CreateRepo_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateRepoRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DashboardServiceServer).CreateRepo(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DashboardService_CreateRepo_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DashboardServiceServer).CreateRepo(ctx, req.(*CreateRepoRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DashboardService_UpdateRepo_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateRepoRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DashboardServiceServer).UpdateRepo(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DashboardService_UpdateRepo_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DashboardServiceServer).UpdateRepo(ctx, req.(*UpdateRepoRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DashboardService_DeleteRepo_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteRepoRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DashboardServiceServer).DeleteRepo(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DashboardService_DeleteRepo_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DashboardServiceServer).DeleteRepo(ctx, req.(*DeleteRepoRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // DashboardService_ServiceDesc is the grpc.ServiceDesc for DashboardService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -718,6 +854,22 @@ var DashboardService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetJournal",
 			Handler:    _DashboardService_GetJournal_Handler,
+		},
+		{
+			MethodName: "ListRepos",
+			Handler:    _DashboardService_ListRepos_Handler,
+		},
+		{
+			MethodName: "CreateRepo",
+			Handler:    _DashboardService_CreateRepo_Handler,
+		},
+		{
+			MethodName: "UpdateRepo",
+			Handler:    _DashboardService_UpdateRepo_Handler,
+		},
+		{
+			MethodName: "DeleteRepo",
+			Handler:    _DashboardService_DeleteRepo_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{
