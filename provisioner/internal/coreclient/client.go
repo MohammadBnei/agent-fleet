@@ -10,12 +10,24 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 )
+
+// eventReportTimeout bounds ReportEvent so a hung stream to core delays the
+// caller's real provisioning work (CreateWorkerPod's git clone/worktree/pod-
+// create sequence, which now reports intermediate progress via this same
+// call) by at most this long, not forever — the mirror image of
+// provisionerclient's own CreateWorkerPod/TearDownSession deadline (core ->
+// provisioner instead of provisioner -> core), closing the same class of
+// bug from the other direction. Short, since this is a best-effort progress
+// ping, not real work: worth failing fast and letting the next step's
+// report try again, not worth blocking provisioning on.
+const eventReportTimeout = 10 * time.Second
 
 type Client struct {
 	conn *grpc.ClientConn
@@ -65,6 +77,8 @@ func (c *Client) Close() error {
 // one short-lived stream per event is simpler and avoids reconnect/backoff
 // logic for a connection that would mostly sit idle anyway.
 func (c *Client) ReportEvent(ctx context.Context, event *agentfleetv1.PodEvent) {
+	ctx, cancel := context.WithTimeout(ctx, eventReportTimeout)
+	defer cancel()
 	stream, err := c.rpc.ReportPodEvents(ctx)
 	if err != nil {
 		slog.Warn("ReportEvent: open stream failed", "taskId", event.GetTaskId(), "error", err)

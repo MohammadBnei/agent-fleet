@@ -30,6 +30,16 @@ const (
 	PodPhase_POD_PHASE_RUNNING     PodPhase = 3
 	PodPhase_POD_PHASE_CRASHED     PodPhase = 4
 	PodPhase_POD_PHASE_TERMINATED  PodPhase = 5
+	// Reported once, immediately when CreateWorkerPod's handler starts —
+	// before git clone/worktree/pod-create even begin. Closes the blind
+	// spot where a claimed task with a hung or slow provisioning step looked
+	// identical to one that hadn't started at all (confirmed live: a task
+	// sat claimed for 20+ minutes with zero pod events, indistinguishable
+	// from "provisioner never got the call"). `message` carries the current
+	// sub-step ("cloning repo", "adding worktree", "creating pod") — no new
+	// enum value per sub-step, since the set of steps is provisioner-
+	// internal detail, not a state other components branch on.
+	PodPhase_POD_PHASE_PROVISIONING PodPhase = 6
 )
 
 // Enum value maps for PodPhase.
@@ -41,14 +51,16 @@ var (
 		3: "POD_PHASE_RUNNING",
 		4: "POD_PHASE_CRASHED",
 		5: "POD_PHASE_TERMINATED",
+		6: "POD_PHASE_PROVISIONING",
 	}
 	PodPhase_value = map[string]int32{
-		"POD_PHASE_UNSPECIFIED": 0,
-		"POD_PHASE_CREATED":     1,
-		"POD_PHASE_SCHEDULED":   2,
-		"POD_PHASE_RUNNING":     3,
-		"POD_PHASE_CRASHED":     4,
-		"POD_PHASE_TERMINATED":  5,
+		"POD_PHASE_UNSPECIFIED":  0,
+		"POD_PHASE_CREATED":      1,
+		"POD_PHASE_SCHEDULED":    2,
+		"POD_PHASE_RUNNING":      3,
+		"POD_PHASE_CRASHED":      4,
+		"POD_PHASE_TERMINATED":   5,
+		"POD_PHASE_PROVISIONING": 6,
 	}
 )
 
@@ -85,7 +97,7 @@ type PodEvent struct {
 	Kind          SessionKind            `protobuf:"varint,2,opt,name=kind,proto3,enum=agentfleet.v1.SessionKind" json:"kind,omitempty"`
 	Phase         PodPhase               `protobuf:"varint,3,opt,name=phase,proto3,enum=agentfleet.v1.PodPhase" json:"phase,omitempty"`
 	PodName       string                 `protobuf:"bytes,4,opt,name=pod_name,json=podName,proto3" json:"pod_name,omitempty"`
-	Message       string                 `protobuf:"bytes,5,opt,name=message,proto3" json:"message,omitempty"` // human-readable detail, e.g. a crash reason
+	Message       string                 `protobuf:"bytes,5,opt,name=message,proto3" json:"message,omitempty"` // human-readable detail — a crash reason, or (for
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1347,14 +1359,15 @@ const file_agentfleet_v1_core_proto_rawDesc = "" +
 	"\x19PushToolTelemetryResponse\"R\n" +
 	"\x1aStreamHumanMessagesRequest\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x1b\n" +
-	"\tsince_seq\x18\x02 \x01(\x03R\bsinceSeq*\x9d\x01\n" +
+	"\tsince_seq\x18\x02 \x01(\x03R\bsinceSeq*\xb9\x01\n" +
 	"\bPodPhase\x12\x19\n" +
 	"\x15POD_PHASE_UNSPECIFIED\x10\x00\x12\x15\n" +
 	"\x11POD_PHASE_CREATED\x10\x01\x12\x17\n" +
 	"\x13POD_PHASE_SCHEDULED\x10\x02\x12\x15\n" +
 	"\x11POD_PHASE_RUNNING\x10\x03\x12\x15\n" +
 	"\x11POD_PHASE_CRASHED\x10\x04\x12\x18\n" +
-	"\x14POD_PHASE_TERMINATED\x10\x052\xf5\n" +
+	"\x14POD_PHASE_TERMINATED\x10\x05\x12\x1a\n" +
+	"\x16POD_PHASE_PROVISIONING\x10\x062\xf5\n" +
 	"\n" +
 	"\vCoreService\x12T\n" +
 	"\x0fReportPodEvents\x12\x17.agentfleet.v1.PodEvent\x1a&.agentfleet.v1.ReportPodEventsResponse(\x01\x12T\n" +
