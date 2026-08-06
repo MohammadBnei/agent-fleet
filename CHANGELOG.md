@@ -1,5 +1,12 @@
 # Changelog
 
+# [1.12.0](https://github.com/MohammadBnei/agent-fleet/compare/1.11.1...1.12.0) (2026-08-06)
+
+
+### Features
+
+* **local:** add kind-based local testing ground, fix worker Claude auth ([#42](https://github.com/MohammadBnei/agent-fleet/issues/42)) ([e47dc75](https://github.com/MohammadBnei/agent-fleet/commit/e47dc759fb64917037f79ef1bc8bba6290465764))
+
 ## [1.11.1](https://github.com/MohammadBnei/agent-fleet/compare/1.11.0...1.11.1) (2026-08-06)
 
 
