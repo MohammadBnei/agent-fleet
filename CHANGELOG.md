@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.13.1](https://github.com/MohammadBnei/agent-fleet/compare/1.13.0...1.13.1) (2026-08-06)
+
+
+### Bug Fixes
+
+* **provisioner:** forward CORE_GRPC_ADDR into every worker pod's sidecar ([14b75b8](https://github.com/MohammadBnei/agent-fleet/commit/14b75b8b2ddc2fc29f7c0e923bb59f73566b6a79))
+* **sidecar:** make the access-log wrapper support SSE flushing ([358d695](https://github.com/MohammadBnei/agent-fleet/commit/358d69513b74f9697e65b94560942b3afd16d4c3))
+
 # [1.13.0](https://github.com/MohammadBnei/agent-fleet/compare/1.12.0...1.13.0) (2026-08-06)
 
 
