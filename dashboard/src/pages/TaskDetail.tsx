@@ -199,8 +199,19 @@ export function TaskDetail({
   tasks: Task[];
   onSelect: (id: string) => void;
 }) {
-  const { task: fetchedTask, entries, previewUrl, branch, busy, loadError, actionError, run, clearActionError } =
-    useTaskDetail(taskId);
+  const {
+    task: fetchedTask,
+    entries,
+    previewUrl,
+    branch,
+    busy,
+    loadError,
+    actionError,
+    pendingMessage,
+    run,
+    sendDiscuss,
+    clearActionError,
+  } = useTaskDetail(taskId);
   const [message, setMessage] = useState("");
 
   if (loadError) return <div className="alert alert-error m-4">{loadError}</div>;
@@ -222,7 +233,7 @@ export function TaskDetail({
     const text = message.trim();
     if (!text) return;
     setMessage("");
-    run(() => client.discuss({ taskId, text }));
+    sendDiscuss(text);
   }
 
   // Used both by the inline QuestionCard below and the quick-reply chip row.
@@ -317,6 +328,16 @@ export function TaskDetail({
 
               return <div key={String(entry.seq)}><EntryBubble entry={entry} /></div>;
             })}
+            {pendingMessage && (
+              <div className="max-w-[760px] opacity-60">
+                <div className="text-[12px] leading-relaxed text-base-content/90 flex items-start gap-2">
+                  <div className="flex-1 min-w-0">
+                    <Markdown text={asDisplayMarkdown({ from: "human", text: pendingMessage })} />
+                  </div>
+                  <span className="loading loading-spinner loading-xs flex-none mt-1" />
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="flex-none px-6 py-3.5 border-t border-base-content/10 bg-base-200 flex flex-col gap-2.5">

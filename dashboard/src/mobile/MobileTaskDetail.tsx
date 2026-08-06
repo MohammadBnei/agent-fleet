@@ -212,7 +212,8 @@ export function MobileTaskDetail({
   onBack: () => void;
   onDelete: () => void;
 }) {
-  const { task, entries, busy, loadError, actionError, run, clearActionError } = useTaskDetail(taskId);
+  const { task, entries, busy, loadError, actionError, pendingMessage, run, sendDiscuss, clearActionError } =
+    useTaskDetail(taskId);
   const [message, setMessage] = useState("");
 
   if (loadError) {
@@ -248,7 +249,7 @@ export function MobileTaskDetail({
     const text = message.trim();
     if (!text) return;
     setMessage("");
-    run(() => client.discuss({ taskId, text }));
+    sendDiscuss(text);
   }
 
   return (
@@ -350,6 +351,16 @@ export function MobileTaskDetail({
             </div>
           );
         })}
+        {pendingMessage && (
+          <div className="opacity-60">
+            <div className="text-[12.5px] leading-relaxed text-base-content/90 flex items-start gap-2">
+              <div className="flex-1 min-w-0">
+                <Markdown text={asDisplayMarkdown({ from: "human", text: pendingMessage })} />
+              </div>
+              <span className="loading loading-spinner loading-xs flex-none mt-1" />
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="flex-none border-t border-base-content/10 bg-base-200 px-4 pt-3 pb-2.5 flex flex-col gap-2.5">

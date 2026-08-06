@@ -7,7 +7,7 @@ export type Question = { question: string; header: string; options: QuestionOpti
 // blockquote, not a text label (see Markdown.tsx) — `> ` needs to prefix
 // every line, not just the first, for a multi-line human message to render
 // as one blockquote instead of one quoted line followed by plain text.
-export function asDisplayMarkdown(entry: TranscriptEntry): string {
+export function asDisplayMarkdown(entry: { from: string; text: string }): string {
   if (entry.from !== "human") return entry.text;
   return entry.text
     .split("\n")
