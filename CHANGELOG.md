@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.18.3](https://github.com/MohammadBnei/agent-fleet/compare/1.18.2...1.18.3) (2026-08-06)
+
+
+### Bug Fixes
+
+* **core:** actually kill worker pods on Stop ([#55](https://github.com/MohammadBnei/agent-fleet/issues/55)) ([a5dd238](https://github.com/MohammadBnei/agent-fleet/commit/a5dd2381d01c5d6a1157d9c4f06d40bd62ca04d0)), closes [#12](https://github.com/MohammadBnei/agent-fleet/issues/12)
+
 ## [1.18.2](https://github.com/MohammadBnei/agent-fleet/compare/1.18.1...1.18.2) (2026-08-06)
 
 
