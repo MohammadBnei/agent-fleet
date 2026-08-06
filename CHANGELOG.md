@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.19.1](https://github.com/MohammadBnei/agent-fleet/compare/1.19.0...1.19.1) (2026-08-06)
+
+
+### Bug Fixes
+
+* **worker:** stop streamHumanMessages hanging on abort mid-onEntry ([#56](https://github.com/MohammadBnei/agent-fleet/issues/56)) ([dfba2ce](https://github.com/MohammadBnei/agent-fleet/commit/dfba2ce51a11bc9c54cd48b6e9edf5ed1ac21a51))
+
 # [1.19.0](https://github.com/MohammadBnei/agent-fleet/compare/1.18.3...1.19.0) (2026-08-06)
 
 
