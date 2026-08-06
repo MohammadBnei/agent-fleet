@@ -150,6 +150,16 @@ async function streamOnce(
   if (!res.ok || !res.body) throw new Error(`sidecar human-messages stream failed: ${res.status}`);
 
   const reader = res.body.getReader();
+  // Belt-and-suspenders: fetch()'s own `signal` should cancel an in-flight
+  // reader.read() once aborted, but that's not reliably immediate across
+  // every runtime/timing — an abort fired synchronously from inside
+  // onEntry (exactly what every caller does to end a session cleanly) can
+  // leave a *subsequent* reader.read() call hanging indefinitely, since
+  // nothing forces that read to settle. Explicitly cancelling the reader
+  // guarantees any pending/future read() rejects promptly regardless of
+  // whether the fetch-level signal wiring caught it in time.
+  const onAbort = () => void reader.cancel().catch(() => {});
+  signal.addEventListener("abort", onAbort, { once: true });
   const decoder = new TextDecoder();
   let buffer = "";
   try {
@@ -165,12 +175,16 @@ async function streamOnce(
         if (!line) continue;
         const entry = JSON.parse(line.slice("data: ".length)) as TranscriptEntry;
         await onEntry(entry);
+        // Don't wait on another read() at all once aborted — that's the
+        // exact hang this is guarding against, not just a fallback for it.
+        if (signal.aborted) return;
       }
     }
   } catch (err) {
     if (signal.aborted) return; // expected on shutdown, not a real failure
     throw err;
   } finally {
+    signal.removeEventListener("abort", onAbort);
     reader.releaseLock();
   }
 }
