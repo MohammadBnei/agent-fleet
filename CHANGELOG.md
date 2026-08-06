@@ -1,5 +1,12 @@
 # Changelog
 
+# [1.17.0](https://github.com/MohammadBnei/agent-fleet/compare/1.16.0...1.17.0) (2026-08-06)
+
+
+### Features
+
+* **dashboard:** scroll to bottom on human message, pulse on AI message ([b8fd8f5](https://github.com/MohammadBnei/agent-fleet/commit/b8fd8f514716272e9f9f9105e7df3e1cd80c7176))
+
 # [1.16.0](https://github.com/MohammadBnei/agent-fleet/compare/1.15.0...1.16.0) (2026-08-06)
 
 
