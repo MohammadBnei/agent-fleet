@@ -7,7 +7,12 @@ import { MermaidDiagram } from "./MermaidDiagram";
 const components: Components = {
   p: (props) => <p className="mb-2 last:mb-0" {...props} />,
   ul: (props) => <ul className="pl-4 list-disc mb-2" {...props} />,
-  ol: (props) => <ol className="pl-4 list-decimal mb-2" {...props} />,
+  // pl-5, not pl-4 like ul — "1."/"2."/"3." markers (list-style-position:
+  // outside, the browser default) need more gutter than a bullet glyph
+  // does; at pl-4 the digit clips against the container edge (visible in
+  // PlanCard's full-bleed layout, but the same underlying gutter applies
+  // everywhere this renders).
+  ol: (props) => <ol className="pl-5 list-decimal mb-2" {...props} />,
   li: (props) => <li className="mb-0.5" {...props} />,
   a: (props) => <a className="text-primary underline" target="_blank" rel="noreferrer" {...props} />,
   h1: (props) => <h1 className="font-semibold text-[13px] mt-2 mb-1" {...props} />,

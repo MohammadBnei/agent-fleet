@@ -47,6 +47,27 @@ export function findPendingQuestion(entries: TranscriptEntry[]): TranscriptEntry
   return idx >= 0 ? entries[idx] : null;
 }
 
+// ExitPlanMode is an SDK built-in, not a fleet-owned MCP tool (unlike
+// AskUserQuestion) — it has no dedicated transcript type or seq-correlated
+// answer. worker/src/planning.ts's canUseTool blocks on it until *any*
+// human-originated entry arrives (Approve allows it verbatim, anything else
+// denies it with that text as feedback), so "pending" here mirrors that
+// same single-pending invariant: the latest ExitPlanMode call with no later
+// entry `from === "human"`.
+export function findPendingPlan(entries: TranscriptEntry[]): { entry: TranscriptEntry; plan: string } | null {
+  for (let i = entries.length - 1; i >= 0; i--) {
+    const e = entries[i];
+    if (e.type !== TranscriptEntryType.ASSISTANT) continue;
+    const info = parseSdkToolUse(e.text);
+    if (info?.tool !== "ExitPlanMode") continue;
+    const plan = (info.input as { plan?: unknown } | undefined)?.plan;
+    if (typeof plan !== "string") return null;
+    const resolved = entries.slice(i + 1).some((later) => later.from === "human");
+    return resolved ? null : { entry: e, plan };
+  }
+  return null;
+}
+
 export type ToolCallSummary = { branch?: string; files?: { path: string; added: number; removed: number }[] };
 
 // The sidecar's periodic telemetry push always sends {branch, files[]}
@@ -176,8 +197,14 @@ export function latestTodos(entries: TranscriptEntry[]): TodoItem[] | null {
 export function summarizeToolInput(input: unknown): string {
   if (input && typeof input === "object") {
     const obj = input as Record<string, unknown>;
-    for (const key of ["file_path", "command", "pattern", "path", "description", "url"]) {
-      if (typeof obj[key] === "string") return obj[key] as string;
+    for (const key of ["file_path", "command", "pattern", "path", "description", "url", "plan"]) {
+      const value = obj[key];
+      // First line only — matters for "plan" (multi-line markdown), harmless
+      // for the single-line fields. Without this, ToolCallItem's shortValue
+      // (which finds the last "/" for path-like values) can end up taking
+      // an unrelated tail from deep inside a multi-line value instead of an
+      // actual preview.
+      if (typeof value === "string") return value.split("\n")[0];
     }
   }
   try {

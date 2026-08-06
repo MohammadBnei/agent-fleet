@@ -7,10 +7,12 @@ import {
   parseQuestions,
   parseAnswers,
   findPendingQuestion,
+  findPendingPlan,
   latestToolCallSummary,
   latestSlashCommands,
   parseSdkSystemInfo,
   parseSdkResultSummary,
+  parseSdkToolUse,
   buildToolCallPairs,
   pairedResultSeqs,
   latestTodos,
@@ -21,6 +23,7 @@ import { useAtBottom } from "../useAtBottom";
 import { useLocalStorageState } from "../useLocalStorageState";
 import { ToolCallItem } from "../components/ToolCallItem";
 import { ToolCallLine } from "../components/ToolCallLine";
+import { PlanCard } from "../components/PlanCard";
 import { ErrorModal } from "../components/ErrorModal";
 import { Markdown } from "../components/Markdown";
 import { BypassConfirmModal } from "../components/BypassConfirmModal";
@@ -284,6 +287,20 @@ export function TaskDetail({
     }
     prevEntriesLenRef.current = entries.length;
   }, [entries, feedAtBottom, feedScrollToBottom]);
+
+  // Land on the latest message when a task is opened (selecting it from the
+  // list, or a direct ?task= nav) — this component instance is reused
+  // across task switches (App.tsx doesn't key it by id), so track which
+  // task we've already jumped for instead of scrolling on every render.
+  // Instant, not smooth — this is "arriving", not "a new message came in"
+  // (that's the effect above).
+  const scrolledForTaskRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (entries.length === 0 || scrolledForTaskRef.current === taskId) return;
+    scrolledForTaskRef.current = taskId;
+    const el = feedRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [taskId, entries, feedRef]);
   useEffect(() => {
     if (feedAtBottom) setHasNewAiMessage(false);
   }, [feedAtBottom]);
@@ -425,6 +442,7 @@ export function TaskDetail({
   const chipQuestion =
     pendingParsed && pendingParsed.length === 1 && !pendingParsed[0].multiSelect ? pendingParsed[0] : null;
   const changes = latestToolCallSummary(entries)?.files ?? null;
+  const pendingPlan = findPendingPlan(entries);
   const toolCallPairs = buildToolCallPairs(entries);
   const toolCallPairsBySeq = new Map(toolCallPairs.map((p) => [p.call.seq, p]));
   const consumedResultSeqs = pairedResultSeqs(toolCallPairs);
@@ -499,6 +517,26 @@ export function TaskDetail({
                 if (hideChangesInFeed) return null;
                 return <ToolCallLine key={String(entry.seq)} entry={entry} />;
               }
+              // ExitPlanMode always gets its own full-width card, ignoring
+              // the "Tools" toggle — it's a decision that needs a response,
+              // not an incidental tool call. Must be checked before the
+              // generic ASSISTANT branch below.
+              if (entry.type === TranscriptEntryType.ASSISTANT && parseSdkToolUse(entry.text)?.tool === "ExitPlanMode") {
+                const isPending = pendingPlan?.entry.seq === entry.seq;
+                const plan = isPending ? pendingPlan!.plan : (parseSdkToolUse(entry.text)!.input as { plan?: string })?.plan;
+                if (typeof plan !== "string") return null;
+                return (
+                  <PlanCard
+                    key={String(entry.seq)}
+                    plan={plan}
+                    pending={isPending}
+                    busy={busy}
+                    onApprove={() => run(() => client.approve({ taskId }))}
+                    onFeedback={(text) => sendDiscuss(text)}
+                    edgeClassName="-mx-6 px-6"
+                  />
+                );
+              }
               // Always listed in the TOOL CALLS panel regardless; inline
               // here too when the shared "Tools" toggle (Actions modal) is
               // on — same paired call+result treatment as mobile's feed.
@@ -546,7 +584,7 @@ export function TaskDetail({
             <button
               type="button"
               onClick={feedScrollToBottom}
-              className="btn btn-circle btn-xs absolute bottom-3 right-3 bg-base-300 border-base-content/20 shadow-md relative"
+              className="btn btn-circle btn-xs absolute bottom-3 left-1/2 -translate-x-1/2 bg-base-300 border-base-content/20 shadow-md"
               title="Scroll to bottom"
             >
               ↓

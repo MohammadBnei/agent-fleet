@@ -5,8 +5,10 @@ import {
   parseQuestions,
   parseAnswers,
   findPendingQuestion,
+  findPendingPlan,
   latestSlashCommands,
   parseSdkSystemInfo,
+  parseSdkToolUse,
   parseSdkToolResult,
   parseSdkResultSummary,
   buildToolCallPairs,
@@ -19,6 +21,7 @@ import { useLocalStorageState } from "../useLocalStorageState";
 import { useAtBottom } from "../useAtBottom";
 import { ToolCallItem } from "../components/ToolCallItem";
 import { ToolCallLine } from "../components/ToolCallLine";
+import { PlanCard } from "../components/PlanCard";
 import { ErrorModal } from "../components/ErrorModal";
 import { Markdown } from "../components/Markdown";
 import { JsonView } from "../components/JsonView";
@@ -264,6 +267,17 @@ export function MobileTaskDetail({
     if (feedAtBottom) setHasNewAiMessage(false);
   }, [feedAtBottom]);
 
+  // See TaskDetail.tsx's identical effect: land on the latest message when
+  // a task is opened, instant (not smooth) since this is "arriving," not
+  // "a new message came in."
+  const scrolledForTaskRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (entries.length === 0 || scrolledForTaskRef.current === taskId) return;
+    scrolledForTaskRef.current = taskId;
+    const el = feedRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [taskId, entries, feedRef]);
+
   if (loadError) {
     return (
       <div className="p-4">
@@ -286,6 +300,7 @@ export function MobileTaskDetail({
   const blockedTodo = pendingQuestion
     ? (todos.find((t) => t.status === "in_progress") ?? todos.find((t) => t.status !== "completed"))
     : null;
+  const pendingPlan = findPendingPlan(entries);
   // Tool calls stay inline in the mobile feed (unlike desktop's right-panel
   // move) — paired via the same call<->output id correlation, one
   // collapsible ToolCallItem per call instead of two separate bubbles.
@@ -377,6 +392,22 @@ export function MobileTaskDetail({
             if (hideChangesInFeed) return null;
             return <ToolCallLine key={String(entry.seq)} entry={entry} />;
           }
+          if (entry.type === TranscriptEntryType.ASSISTANT && parseSdkToolUse(entry.text)?.tool === "ExitPlanMode") {
+            const isPending = pendingPlan?.entry.seq === entry.seq;
+            const plan = isPending ? pendingPlan!.plan : (parseSdkToolUse(entry.text)!.input as { plan?: string })?.plan;
+            if (typeof plan !== "string") return null;
+            return (
+              <PlanCard
+                key={String(entry.seq)}
+                plan={plan}
+                pending={isPending}
+                busy={busy}
+                onApprove={() => run(() => client.approve({ taskId }))}
+                onFeedback={(text) => sendDiscuss(text)}
+                edgeClassName="-mx-4 px-4"
+              />
+            );
+          }
           if (entry.type === TranscriptEntryType.ASSISTANT) {
             if (hideToolsInFeed) return null;
             const pair = toolCallPairsBySeq.get(entry.seq);
@@ -421,7 +452,7 @@ export function MobileTaskDetail({
         <button
           type="button"
           onClick={feedScrollToBottom}
-          className="btn btn-circle btn-xs absolute bottom-3 right-3 bg-base-300 border-base-content/20 shadow-md"
+          className="btn btn-circle btn-xs absolute bottom-3 left-1/2 -translate-x-1/2 bg-base-300 border-base-content/20 shadow-md"
           title="Scroll to bottom"
         >
           ↓
