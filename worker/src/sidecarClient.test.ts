@@ -14,15 +14,24 @@ type Handler = (req: Request) => Response | Promise<Response>;
 let handler: Handler = () => new Response("not configured", { status: 500 });
 const receivedSinceSeqs: string[] = [];
 
+// Bind and connect via the literal IPv4 loopback address, not "localhost"
+// — confirmed live in CI (GitHub Actions' Linux runners): "localhost"
+// there resolves to ::1 first, Bun.serve's default hostname only listens
+// on 0.0.0.0/IPv4, and fetch() doesn't race both like a browser's Happy
+// Eyeballs, so every request just hangs until the test's own 10s timeout.
+// Passed clean locally on macOS the whole time, which resolves "localhost"
+// straight to 127.0.0.1 — worth remembering next time a Bun.serve-backed
+// test "works on my machine" but times out only in CI.
 const server = Bun.serve({
   port: 0,
+  hostname: "127.0.0.1",
   fetch(req) {
     const url = new URL(req.url);
     receivedSinceSeqs.push(url.searchParams.get("sinceSeq") ?? "");
     return handler(req);
   },
 });
-process.env.SIDECAR_API_ADDR = `localhost:${server.port}`;
+process.env.SIDECAR_API_ADDR = `127.0.0.1:${server.port}`;
 
 const { streamHumanMessages } = await import("./sidecarClient.js");
 
