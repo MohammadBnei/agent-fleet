@@ -1,5 +1,19 @@
 # Changelog
 
+# [1.14.0](https://github.com/MohammadBnei/agent-fleet/compare/1.13.1...1.14.0) (2026-08-06)
+
+
+### Bug Fixes
+
+* **dashboard:** optimistic echo for sent human messages ([c3adbef](https://github.com/MohammadBnei/agent-fleet/commit/c3adbef2557582c2beba7c620661a429598a4dbd))
+* **dashboard:** regenerate bun.lock, drop stray npm lockfile ([016f77b](https://github.com/MohammadBnei/agent-fleet/commit/016f77b43645221868eb19b386d031a719599a07))
+* **dashboard:** remove fake mock data, fix live counter, add PR link and mobile worktrees nav ([ecf3d57](https://github.com/MohammadBnei/agent-fleet/commit/ecf3d57a0d0d5bfd72bf0868b7b54b3c73d98f70))
+
+
+### Features
+
+* **dashboard:** grid layout, markdown/mermaid rendering, formatted tool JSON ([f82514a](https://github.com/MohammadBnei/agent-fleet/commit/f82514a4cf5f35e06aa8de0eaf8575c5fc1b7117))
+
 ## [1.13.1](https://github.com/MohammadBnei/agent-fleet/compare/1.13.0...1.13.1) (2026-08-06)
 
 
