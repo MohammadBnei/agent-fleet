@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.10.4](https://github.com/MohammadBnei/agent-fleet/compare/1.10.3...1.10.4) (2026-08-06)
+
+
+### Bug Fixes
+
+* **core:** bound provisioner CreateWorkerPod/TearDownSession with a deadline ([8357d30](https://github.com/MohammadBnei/agent-fleet/commit/8357d308d13ab5603bb35b7e5d71eea973b55e4e))
+
 ## [1.10.3](https://github.com/MohammadBnei/agent-fleet/compare/1.10.2...1.10.3) (2026-08-06)
 
 
