@@ -17,11 +17,26 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strconv"
+	"sync"
+	"time"
 
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 
 	"github.com/MohammadBnei/agent-fleet/sidecar/internal/coreclient"
 )
+
+// sseKeepAliveInterval is how often humanMessagesHandler writes a comment
+// line while idle. Confirmed live in prod: with no keep-alive, this feed
+// can go silent at the wire level for as long as there's simply no new
+// human message (core's own poll loop never touches the wire when it
+// finds nothing new) — long enough for something upstream to eventually
+// kill the connection outright (a redeploy, an idle-connection reaper,
+// ...), which then permanently ends this task's ability to ever receive
+// another human message (see streamHumanMessages' own reconnect loop on
+// the worker side for the other half of this fix). 15s is comfortably
+// under any idle-connection policy this is realistically up against.
+const sseKeepAliveInterval = 15 * time.Second
 
 func New(core *coreclient.Client) http.Handler {
 	mux := http.NewServeMux()
@@ -215,10 +230,21 @@ func messageHandler(core *coreclient.Client) http.HandlerFunc {
 // humanMessagesHandler is Server-Sent Events, not a gRPC stream — the
 // worker consumes it with a plain fetch()+ReadableStream, no new
 // client-library dependency needed for the one local streaming call it
-// makes (docs/adr/0021 point 2).
+// makes (docs/adr/0021 point 2). sinceSeq comes from the query string —
+// the worker's own reconnect loop passes the last seq it actually
+// processed so a reconnect resumes exactly where it left off instead of
+// replaying (or worse, silently missing) history. It runs
+// core.StreamHumanMessages in its own goroutine so a keep-alive ticker
+// can still write to the response while that call is blocked waiting on
+// the next real message.
 func humanMessagesHandler(core *coreclient.Client) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		sinceSeq := int64(0)
+		if v := r.URL.Query().Get("sinceSeq"); v != "" {
+			if parsed, err := strconv.ParseInt(v, 10, 64); err == nil {
+				sinceSeq = parsed
+			}
+		}
 		flusher, ok := w.(http.Flusher)
 		if !ok {
 			writeError(w, http.StatusInternalServerError, errors.New("response writer does not support flushing"))
@@ -228,15 +254,41 @@ func humanMessagesHandler(core *coreclient.Client) http.HandlerFunc {
 		w.Header().Set("Cache-Control", "no-cache")
 		w.WriteHeader(http.StatusOK)
 
-		err := core.StreamHumanMessages(r.Context(), sinceSeq, func(entry *agentfleetv1.TranscriptEntry) {
-			payload, _ := json.Marshal(map[string]any{
-				"seq": entry.GetSeq(), "from": entry.GetFrom(), "text": entry.GetText(), "type": protoTypeToString(entry.GetType()),
-			})
-			_, _ = w.Write([]byte("data: " + string(payload) + "\n\n"))
+		// core.StreamHumanMessages only ever writes when onEntry fires, so
+		// without this ticker the connection can go byte-silent for as long
+		// as there's simply nothing new to deliver.
+		var writeMu sync.Mutex
+		write := func(b []byte) {
+			writeMu.Lock()
+			defer writeMu.Unlock()
+			_, _ = w.Write(b)
 			flusher.Flush()
-		})
-		if err != nil {
-			slog.Info("human-messages stream ended", "error", err)
+		}
+
+		done := make(chan error, 1)
+		go func() {
+			done <- core.StreamHumanMessages(r.Context(), sinceSeq, func(entry *agentfleetv1.TranscriptEntry) {
+				payload, _ := json.Marshal(map[string]any{
+					"seq": entry.GetSeq(), "from": entry.GetFrom(), "text": entry.GetText(), "type": protoTypeToString(entry.GetType()),
+				})
+				write([]byte("data: " + string(payload) + "\n\n"))
+			})
+		}()
+
+		ticker := time.NewTicker(sseKeepAliveInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case err := <-done:
+				if err != nil {
+					slog.Info("human-messages stream ended", "error", err)
+				}
+				return
+			case <-ticker.C:
+				write([]byte(": keep-alive\n\n"))
+			case <-r.Context().Done():
+				return
+			}
 		}
 	}
 }
