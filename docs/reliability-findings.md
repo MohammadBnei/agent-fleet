@@ -322,6 +322,23 @@ free text.
 
 **Reversibility:** two-way door — `Job` is a built-in resource, nothing to migrate away from. A CRD/operator remains addable later (e.g. if a future incident-remediation feature genuinely needs externally-authored declarative desired state or `kubectl`-native visibility) without unwinding this.
 
+## 12. Session resume is dead code — a reclaimed task always starts a brand-new Claude session, and retry_count doesn't distinguish "crashed" from "idle"
+
+**Status:** open.
+
+**Where:** `docs/adr/0016-task-crash-recovery-and-retry.md` (the original design) · `docs/adr/0021` lines ~162-166 (flags this as an unverified open risk after the continuous-session rewrite) · `core/internal/tasks/store.go`'s `SaveSessionID`/`planning_session_id` column and `ClaimNextTask`'s `retry_count` increment · `provisioner/internal/k8s/pod.go`'s `CreateWorkerPod` env-var list · `worker/src/types.ts`'s `Task` type · `worker/src/planning.ts`'s `query()` call · `sidecar/internal/mcpserver/server.go`'s `AskUserQuestion`/`wait_for_messages` long-poll.
+
+**Problem:** ADR-0016 designed a resume path — Claude session transcripts persisted on the worker PVC via `CLAUDE_CONFIG_DIR`, with `planning_session_id` as a Postgres-durable pointer so a reclaimed task could `resume:` its prior session. None of it survived the later rewrites: `CLAUDE_CONFIG_DIR` is set nowhere in the repo, `SaveSessionID` writes `planning_session_id` but nothing ever reads it back, `CreateWorkerPod` passes no session id to the new pod, `worker/src/types.ts`'s own `Task` comment says a single-shot worker "no longer claims, retries, or tracks its own resume state," and `planning.ts`'s `query()` call has no `resume:` option. **A task reclaimed today — for any reason, including a pod simply being killed — starts a completely fresh Claude session**, re-deriving context only from git state on the (reused) worktree. All prior reasoning/plan discussion is gone, not paused.
+
+Compounding this: `ClaimNextTask` increments `retry_count` on every reclaim of a stale-heartbeat task, capped by `MAX_TASK_RETRIES` (default 3) before the task flips to `failed_permanently` — permanently, unrecoverably. Nothing distinguishes "worker pod genuinely crashed" from "worker pod was killed/died while the task was legitimately just waiting on a human" (an open `AskUserQuestion` — `wait_for_messages` times out and returns `{"status":"pending"}` with no forced exit — or an unactioned plan-mode approval gate). A task can also sit with a *live* pod indefinitely today: nothing exits the worker process on its own after a long idle stretch (no `ActiveDeadlineSeconds` on the worker `Job`, no self-initiated idle-exit), so the only way this gap gets exercised right now is an involuntary pod death (node pressure, OOM, `kubectl delete`, a future stuck-pod GC pass) while a task is mid-thought.
+
+**Why it matters now:** came up designing a stuck-pod GC for `provisioner/internal/reconcile`'s reconcile loop (`fix/worker-pod-stop-gc` branch) — killing a worker Job that's been `Running`/`Pending` past some age ceiling, to catch a task nobody will ever click Stop on. Rejected for now specifically because of this gap: with no real resume, the GC would silently discard in-progress reasoning on every kill, and repeated kills of a task the human is legitimately still thinking about would erode `retry_count` toward `failed_permanently` for reasons unrelated to any real failure. That PR ships only the Stop-initiated grace-period force-kill (`dispatch.Loop`'s `enforceStopGrace` — safe, since it only fires after an explicit human Stop, never an idle-but-intentional pod) and leaves stuck-pod GC as follow-up work blocked on this.
+
+**Open question:** what's the right fix, and in what order —
+1. Actually wire up ADR-0016's resume path for the current continuous-session architecture (`CLAUDE_CONFIG_DIR` on the shared PVC, read `planning_session_id` back on `CreateWorkerPod`, pass `resume:` to `query()`) — closes the context-loss half, but ADR-0021 already flagged this path as unverified even in its original crash-only scope; may need real design work for the continuous-session case.
+2. Separately, stop conflating "crashed" and "idle-on-human" in `retry_count`/reclaim accounting — e.g. a distinct "blocked on human" status or signal (open question/pending approval in `planning_transcript`) that reclaim and any future stuck-pod GC both treat as "don't count against retries, don't age out" or "age out on a much longer clock."
+3. Only once both land does a stuck-pod max-age GC (the original motivation) become safe to build without either losing work or silently killing tasks the human just hasn't gotten to yet.
+
 ---
 
 ## Already fixed
