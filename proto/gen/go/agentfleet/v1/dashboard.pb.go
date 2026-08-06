@@ -333,8 +333,8 @@ func (x *GetTaskResponse) GetTask() *Task {
 }
 
 // Creates a task the same way a Discord /task command does, minus the
-// Discord thread — repo must be one of tasks.KnownRepos (core/internal/tasks/
-// store.go), description must be non-empty. The created task has no
+// Discord thread — repo must be a name in the repos table (docs/adr/0028,
+// core/internal/repos), description must be non-empty. The created task has no
 // discord_channel_id/discord_thread_id, which core/internal/discord/
 // session.go's PostToThread already handles as a no-op relay target.
 type CreateTaskRequest struct {
@@ -1621,6 +1621,446 @@ func (x *GetJournalResponse) GetNextId() int64 {
 	return 0
 }
 
+// Repo is the dashboard-editable target-repo config (docs/adr/0028) —
+// replaces the hardcoded tasks.KnownRepos Go map, backed by the `repos`
+// table (db/schema.sql). No timestamps exposed: the dashboard's repo list
+// is small and unordered, unlike Task/JournalEntry which need cursor state.
+type Repo struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Url           string                 `protobuf:"bytes,2,opt,name=url,proto3" json:"url,omitempty"`
+	BaseBranch    string                 `protobuf:"bytes,3,opt,name=base_branch,json=baseBranch,proto3" json:"base_branch,omitempty"` // "" means the provisioner defaults to "main"
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Repo) Reset() {
+	*x = Repo{}
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[29]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Repo) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Repo) ProtoMessage() {}
+
+func (x *Repo) ProtoReflect() protoreflect.Message {
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[29]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Repo.ProtoReflect.Descriptor instead.
+func (*Repo) Descriptor() ([]byte, []int) {
+	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{29}
+}
+
+func (x *Repo) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *Repo) GetUrl() string {
+	if x != nil {
+		return x.Url
+	}
+	return ""
+}
+
+func (x *Repo) GetBaseBranch() string {
+	if x != nil {
+		return x.BaseBranch
+	}
+	return ""
+}
+
+type ListReposRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListReposRequest) Reset() {
+	*x = ListReposRequest{}
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[30]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListReposRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListReposRequest) ProtoMessage() {}
+
+func (x *ListReposRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[30]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListReposRequest.ProtoReflect.Descriptor instead.
+func (*ListReposRequest) Descriptor() ([]byte, []int) {
+	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{30}
+}
+
+type ListReposResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Repos         []*Repo                `protobuf:"bytes,1,rep,name=repos,proto3" json:"repos,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListReposResponse) Reset() {
+	*x = ListReposResponse{}
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[31]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListReposResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListReposResponse) ProtoMessage() {}
+
+func (x *ListReposResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[31]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListReposResponse.ProtoReflect.Descriptor instead.
+func (*ListReposResponse) Descriptor() ([]byte, []int) {
+	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{31}
+}
+
+func (x *ListReposResponse) GetRepos() []*Repo {
+	if x != nil {
+		return x.Repos
+	}
+	return nil
+}
+
+type CreateRepoRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Url           string                 `protobuf:"bytes,2,opt,name=url,proto3" json:"url,omitempty"`
+	BaseBranch    string                 `protobuf:"bytes,3,opt,name=base_branch,json=baseBranch,proto3" json:"base_branch,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateRepoRequest) Reset() {
+	*x = CreateRepoRequest{}
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[32]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateRepoRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateRepoRequest) ProtoMessage() {}
+
+func (x *CreateRepoRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[32]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateRepoRequest.ProtoReflect.Descriptor instead.
+func (*CreateRepoRequest) Descriptor() ([]byte, []int) {
+	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{32}
+}
+
+func (x *CreateRepoRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *CreateRepoRequest) GetUrl() string {
+	if x != nil {
+		return x.Url
+	}
+	return ""
+}
+
+func (x *CreateRepoRequest) GetBaseBranch() string {
+	if x != nil {
+		return x.BaseBranch
+	}
+	return ""
+}
+
+type CreateRepoResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Repo          *Repo                  `protobuf:"bytes,1,opt,name=repo,proto3" json:"repo,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateRepoResponse) Reset() {
+	*x = CreateRepoResponse{}
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[33]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateRepoResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateRepoResponse) ProtoMessage() {}
+
+func (x *CreateRepoResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[33]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateRepoResponse.ProtoReflect.Descriptor instead.
+func (*CreateRepoResponse) Descriptor() ([]byte, []int) {
+	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{33}
+}
+
+func (x *CreateRepoResponse) GetRepo() *Repo {
+	if x != nil {
+		return x.Repo
+	}
+	return nil
+}
+
+type UpdateRepoRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Url           string                 `protobuf:"bytes,2,opt,name=url,proto3" json:"url,omitempty"`
+	BaseBranch    string                 `protobuf:"bytes,3,opt,name=base_branch,json=baseBranch,proto3" json:"base_branch,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateRepoRequest) Reset() {
+	*x = UpdateRepoRequest{}
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[34]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateRepoRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateRepoRequest) ProtoMessage() {}
+
+func (x *UpdateRepoRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[34]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateRepoRequest.ProtoReflect.Descriptor instead.
+func (*UpdateRepoRequest) Descriptor() ([]byte, []int) {
+	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{34}
+}
+
+func (x *UpdateRepoRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *UpdateRepoRequest) GetUrl() string {
+	if x != nil {
+		return x.Url
+	}
+	return ""
+}
+
+func (x *UpdateRepoRequest) GetBaseBranch() string {
+	if x != nil {
+		return x.BaseBranch
+	}
+	return ""
+}
+
+type UpdateRepoResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Repo          *Repo                  `protobuf:"bytes,1,opt,name=repo,proto3" json:"repo,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateRepoResponse) Reset() {
+	*x = UpdateRepoResponse{}
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[35]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateRepoResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateRepoResponse) ProtoMessage() {}
+
+func (x *UpdateRepoResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[35]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateRepoResponse.ProtoReflect.Descriptor instead.
+func (*UpdateRepoResponse) Descriptor() ([]byte, []int) {
+	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{35}
+}
+
+func (x *UpdateRepoResponse) GetRepo() *Repo {
+	if x != nil {
+		return x.Repo
+	}
+	return nil
+}
+
+type DeleteRepoRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteRepoRequest) Reset() {
+	*x = DeleteRepoRequest{}
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[36]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteRepoRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteRepoRequest) ProtoMessage() {}
+
+func (x *DeleteRepoRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[36]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteRepoRequest.ProtoReflect.Descriptor instead.
+func (*DeleteRepoRequest) Descriptor() ([]byte, []int) {
+	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{36}
+}
+
+func (x *DeleteRepoRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+type DeleteRepoResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Status        string                 `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteRepoResponse) Reset() {
+	*x = DeleteRepoResponse{}
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[37]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteRepoResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteRepoResponse) ProtoMessage() {}
+
+func (x *DeleteRepoResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[37]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteRepoResponse.ProtoReflect.Descriptor instead.
+func (*DeleteRepoResponse) Descriptor() ([]byte, []int) {
+	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{37}
+}
+
+func (x *DeleteRepoResponse) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
 var File_agentfleet_v1_dashboard_proto protoreflect.FileDescriptor
 
 const file_agentfleet_v1_dashboard_proto_rawDesc = "" +
@@ -1738,8 +2178,33 @@ const file_agentfleet_v1_dashboard_proto_rawDesc = "" +
 	"\x05limit\x18\x03 \x01(\x05R\x05limit\"d\n" +
 	"\x12GetJournalResponse\x125\n" +
 	"\aentries\x18\x01 \x03(\v2\x1b.agentfleet.v1.JournalEntryR\aentries\x12\x17\n" +
-	"\anext_id\x18\x02 \x01(\x03R\x06nextId2\xe9\n" +
-	"\n" +
+	"\anext_id\x18\x02 \x01(\x03R\x06nextId\"M\n" +
+	"\x04Repo\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x10\n" +
+	"\x03url\x18\x02 \x01(\tR\x03url\x12\x1f\n" +
+	"\vbase_branch\x18\x03 \x01(\tR\n" +
+	"baseBranch\"\x12\n" +
+	"\x10ListReposRequest\">\n" +
+	"\x11ListReposResponse\x12)\n" +
+	"\x05repos\x18\x01 \x03(\v2\x13.agentfleet.v1.RepoR\x05repos\"Z\n" +
+	"\x11CreateRepoRequest\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x10\n" +
+	"\x03url\x18\x02 \x01(\tR\x03url\x12\x1f\n" +
+	"\vbase_branch\x18\x03 \x01(\tR\n" +
+	"baseBranch\"=\n" +
+	"\x12CreateRepoResponse\x12'\n" +
+	"\x04repo\x18\x01 \x01(\v2\x13.agentfleet.v1.RepoR\x04repo\"Z\n" +
+	"\x11UpdateRepoRequest\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x10\n" +
+	"\x03url\x18\x02 \x01(\tR\x03url\x12\x1f\n" +
+	"\vbase_branch\x18\x03 \x01(\tR\n" +
+	"baseBranch\"=\n" +
+	"\x12UpdateRepoResponse\x12'\n" +
+	"\x04repo\x18\x01 \x01(\v2\x13.agentfleet.v1.RepoR\x04repo\"'\n" +
+	"\x11DeleteRepoRequest\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\",\n" +
+	"\x12DeleteRepoResponse\x12\x16\n" +
+	"\x06status\x18\x01 \x01(\tR\x06status2\xb2\r\n" +
 	"\x10DashboardService\x12N\n" +
 	"\tListTasks\x12\x1f.agentfleet.v1.ListTasksRequest\x1a .agentfleet.v1.ListTasksResponse\x12H\n" +
 	"\aGetTask\x12\x1d.agentfleet.v1.GetTaskRequest\x1a\x1e.agentfleet.v1.GetTaskResponse\x12Q\n" +
@@ -1759,7 +2224,14 @@ const file_agentfleet_v1_dashboard_proto_rawDesc = "" +
 	"\rListWorktrees\x12#.agentfleet.v1.ListWorktreesRequest\x1a(.agentfleet.v1.ListWorktreesViewResponse\x12]\n" +
 	"\x0eDeleteWorktree\x12$.agentfleet.v1.DeleteWorktreeRequest\x1a%.agentfleet.v1.DeleteWorktreeResponse\x12Q\n" +
 	"\n" +
-	"GetJournal\x12 .agentfleet.v1.GetJournalRequest\x1a!.agentfleet.v1.GetJournalResponseBMZKgithub.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1;agentfleetv1b\x06proto3"
+	"GetJournal\x12 .agentfleet.v1.GetJournalRequest\x1a!.agentfleet.v1.GetJournalResponse\x12N\n" +
+	"\tListRepos\x12\x1f.agentfleet.v1.ListReposRequest\x1a .agentfleet.v1.ListReposResponse\x12Q\n" +
+	"\n" +
+	"CreateRepo\x12 .agentfleet.v1.CreateRepoRequest\x1a!.agentfleet.v1.CreateRepoResponse\x12Q\n" +
+	"\n" +
+	"UpdateRepo\x12 .agentfleet.v1.UpdateRepoRequest\x1a!.agentfleet.v1.UpdateRepoResponse\x12Q\n" +
+	"\n" +
+	"DeleteRepo\x12 .agentfleet.v1.DeleteRepoRequest\x1a!.agentfleet.v1.DeleteRepoResponseBMZKgithub.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1;agentfleetv1b\x06proto3"
 
 var (
 	file_agentfleet_v1_dashboard_proto_rawDescOnce sync.Once
@@ -1773,7 +2245,7 @@ func file_agentfleet_v1_dashboard_proto_rawDescGZIP() []byte {
 	return file_agentfleet_v1_dashboard_proto_rawDescData
 }
 
-var file_agentfleet_v1_dashboard_proto_msgTypes = make([]protoimpl.MessageInfo, 29)
+var file_agentfleet_v1_dashboard_proto_msgTypes = make([]protoimpl.MessageInfo, 38)
 var file_agentfleet_v1_dashboard_proto_goTypes = []any{
 	(*Task)(nil),                        // 0: agentfleet.v1.Task
 	(*ListTasksRequest)(nil),            // 1: agentfleet.v1.ListTasksRequest
@@ -1804,12 +2276,21 @@ var file_agentfleet_v1_dashboard_proto_goTypes = []any{
 	(*JournalEntry)(nil),                // 26: agentfleet.v1.JournalEntry
 	(*GetJournalRequest)(nil),           // 27: agentfleet.v1.GetJournalRequest
 	(*GetJournalResponse)(nil),          // 28: agentfleet.v1.GetJournalResponse
-	(*ReadTranscriptSinceRequest)(nil),  // 29: agentfleet.v1.ReadTranscriptSinceRequest
-	(*ListWorktreesRequest)(nil),        // 30: agentfleet.v1.ListWorktreesRequest
-	(*DeleteWorktreeRequest)(nil),       // 31: agentfleet.v1.DeleteWorktreeRequest
-	(*ReadTranscriptSinceResponse)(nil), // 32: agentfleet.v1.ReadTranscriptSinceResponse
-	(*TranscriptEntry)(nil),             // 33: agentfleet.v1.TranscriptEntry
-	(*DeleteWorktreeResponse)(nil),      // 34: agentfleet.v1.DeleteWorktreeResponse
+	(*Repo)(nil),                        // 29: agentfleet.v1.Repo
+	(*ListReposRequest)(nil),            // 30: agentfleet.v1.ListReposRequest
+	(*ListReposResponse)(nil),           // 31: agentfleet.v1.ListReposResponse
+	(*CreateRepoRequest)(nil),           // 32: agentfleet.v1.CreateRepoRequest
+	(*CreateRepoResponse)(nil),          // 33: agentfleet.v1.CreateRepoResponse
+	(*UpdateRepoRequest)(nil),           // 34: agentfleet.v1.UpdateRepoRequest
+	(*UpdateRepoResponse)(nil),          // 35: agentfleet.v1.UpdateRepoResponse
+	(*DeleteRepoRequest)(nil),           // 36: agentfleet.v1.DeleteRepoRequest
+	(*DeleteRepoResponse)(nil),          // 37: agentfleet.v1.DeleteRepoResponse
+	(*ReadTranscriptSinceRequest)(nil),  // 38: agentfleet.v1.ReadTranscriptSinceRequest
+	(*ListWorktreesRequest)(nil),        // 39: agentfleet.v1.ListWorktreesRequest
+	(*DeleteWorktreeRequest)(nil),       // 40: agentfleet.v1.DeleteWorktreeRequest
+	(*ReadTranscriptSinceResponse)(nil), // 41: agentfleet.v1.ReadTranscriptSinceResponse
+	(*TranscriptEntry)(nil),             // 42: agentfleet.v1.TranscriptEntry
+	(*DeleteWorktreeResponse)(nil),      // 43: agentfleet.v1.DeleteWorktreeResponse
 }
 var file_agentfleet_v1_dashboard_proto_depIdxs = []int32{
 	0,  // 0: agentfleet.v1.ListTasksResponse.tasks:type_name -> agentfleet.v1.Task
@@ -1817,43 +2298,54 @@ var file_agentfleet_v1_dashboard_proto_depIdxs = []int32{
 	0,  // 2: agentfleet.v1.CreateTaskResponse.task:type_name -> agentfleet.v1.Task
 	24, // 3: agentfleet.v1.ListWorktreesViewResponse.worktrees:type_name -> agentfleet.v1.WorktreeView
 	26, // 4: agentfleet.v1.GetJournalResponse.entries:type_name -> agentfleet.v1.JournalEntry
-	1,  // 5: agentfleet.v1.DashboardService.ListTasks:input_type -> agentfleet.v1.ListTasksRequest
-	3,  // 6: agentfleet.v1.DashboardService.GetTask:input_type -> agentfleet.v1.GetTaskRequest
-	5,  // 7: agentfleet.v1.DashboardService.CreateTask:input_type -> agentfleet.v1.CreateTaskRequest
-	29, // 8: agentfleet.v1.DashboardService.GetTranscript:input_type -> agentfleet.v1.ReadTranscriptSinceRequest
-	7,  // 9: agentfleet.v1.DashboardService.StreamTranscript:input_type -> agentfleet.v1.StreamTranscriptRequest
-	8,  // 10: agentfleet.v1.DashboardService.GetE2eStatus:input_type -> agentfleet.v1.GetE2eStatusRequest
-	10, // 11: agentfleet.v1.DashboardService.Approve:input_type -> agentfleet.v1.ApproveRequest
-	12, // 12: agentfleet.v1.DashboardService.Stop:input_type -> agentfleet.v1.StopRequest
-	14, // 13: agentfleet.v1.DashboardService.SetPermissionMode:input_type -> agentfleet.v1.SetPermissionModeRequest
-	16, // 14: agentfleet.v1.DashboardService.KillE2e:input_type -> agentfleet.v1.KillE2eRequest
-	18, // 15: agentfleet.v1.DashboardService.AnswerQuestion:input_type -> agentfleet.v1.AnswerQuestionRequest
-	20, // 16: agentfleet.v1.DashboardService.Discuss:input_type -> agentfleet.v1.DiscussRequest
-	22, // 17: agentfleet.v1.DashboardService.DeleteTask:input_type -> agentfleet.v1.DeleteTaskRequest
-	30, // 18: agentfleet.v1.DashboardService.ListWorktrees:input_type -> agentfleet.v1.ListWorktreesRequest
-	31, // 19: agentfleet.v1.DashboardService.DeleteWorktree:input_type -> agentfleet.v1.DeleteWorktreeRequest
-	27, // 20: agentfleet.v1.DashboardService.GetJournal:input_type -> agentfleet.v1.GetJournalRequest
-	2,  // 21: agentfleet.v1.DashboardService.ListTasks:output_type -> agentfleet.v1.ListTasksResponse
-	4,  // 22: agentfleet.v1.DashboardService.GetTask:output_type -> agentfleet.v1.GetTaskResponse
-	6,  // 23: agentfleet.v1.DashboardService.CreateTask:output_type -> agentfleet.v1.CreateTaskResponse
-	32, // 24: agentfleet.v1.DashboardService.GetTranscript:output_type -> agentfleet.v1.ReadTranscriptSinceResponse
-	33, // 25: agentfleet.v1.DashboardService.StreamTranscript:output_type -> agentfleet.v1.TranscriptEntry
-	9,  // 26: agentfleet.v1.DashboardService.GetE2eStatus:output_type -> agentfleet.v1.GetE2eStatusResponse
-	11, // 27: agentfleet.v1.DashboardService.Approve:output_type -> agentfleet.v1.ApproveResponse
-	13, // 28: agentfleet.v1.DashboardService.Stop:output_type -> agentfleet.v1.StopResponse
-	15, // 29: agentfleet.v1.DashboardService.SetPermissionMode:output_type -> agentfleet.v1.SetPermissionModeResponse
-	17, // 30: agentfleet.v1.DashboardService.KillE2e:output_type -> agentfleet.v1.KillE2eResponse
-	19, // 31: agentfleet.v1.DashboardService.AnswerQuestion:output_type -> agentfleet.v1.AnswerQuestionResponse
-	21, // 32: agentfleet.v1.DashboardService.Discuss:output_type -> agentfleet.v1.DiscussResponse
-	23, // 33: agentfleet.v1.DashboardService.DeleteTask:output_type -> agentfleet.v1.DeleteTaskResponse
-	25, // 34: agentfleet.v1.DashboardService.ListWorktrees:output_type -> agentfleet.v1.ListWorktreesViewResponse
-	34, // 35: agentfleet.v1.DashboardService.DeleteWorktree:output_type -> agentfleet.v1.DeleteWorktreeResponse
-	28, // 36: agentfleet.v1.DashboardService.GetJournal:output_type -> agentfleet.v1.GetJournalResponse
-	21, // [21:37] is the sub-list for method output_type
-	5,  // [5:21] is the sub-list for method input_type
-	5,  // [5:5] is the sub-list for extension type_name
-	5,  // [5:5] is the sub-list for extension extendee
-	0,  // [0:5] is the sub-list for field type_name
+	29, // 5: agentfleet.v1.ListReposResponse.repos:type_name -> agentfleet.v1.Repo
+	29, // 6: agentfleet.v1.CreateRepoResponse.repo:type_name -> agentfleet.v1.Repo
+	29, // 7: agentfleet.v1.UpdateRepoResponse.repo:type_name -> agentfleet.v1.Repo
+	1,  // 8: agentfleet.v1.DashboardService.ListTasks:input_type -> agentfleet.v1.ListTasksRequest
+	3,  // 9: agentfleet.v1.DashboardService.GetTask:input_type -> agentfleet.v1.GetTaskRequest
+	5,  // 10: agentfleet.v1.DashboardService.CreateTask:input_type -> agentfleet.v1.CreateTaskRequest
+	38, // 11: agentfleet.v1.DashboardService.GetTranscript:input_type -> agentfleet.v1.ReadTranscriptSinceRequest
+	7,  // 12: agentfleet.v1.DashboardService.StreamTranscript:input_type -> agentfleet.v1.StreamTranscriptRequest
+	8,  // 13: agentfleet.v1.DashboardService.GetE2eStatus:input_type -> agentfleet.v1.GetE2eStatusRequest
+	10, // 14: agentfleet.v1.DashboardService.Approve:input_type -> agentfleet.v1.ApproveRequest
+	12, // 15: agentfleet.v1.DashboardService.Stop:input_type -> agentfleet.v1.StopRequest
+	14, // 16: agentfleet.v1.DashboardService.SetPermissionMode:input_type -> agentfleet.v1.SetPermissionModeRequest
+	16, // 17: agentfleet.v1.DashboardService.KillE2e:input_type -> agentfleet.v1.KillE2eRequest
+	18, // 18: agentfleet.v1.DashboardService.AnswerQuestion:input_type -> agentfleet.v1.AnswerQuestionRequest
+	20, // 19: agentfleet.v1.DashboardService.Discuss:input_type -> agentfleet.v1.DiscussRequest
+	22, // 20: agentfleet.v1.DashboardService.DeleteTask:input_type -> agentfleet.v1.DeleteTaskRequest
+	39, // 21: agentfleet.v1.DashboardService.ListWorktrees:input_type -> agentfleet.v1.ListWorktreesRequest
+	40, // 22: agentfleet.v1.DashboardService.DeleteWorktree:input_type -> agentfleet.v1.DeleteWorktreeRequest
+	27, // 23: agentfleet.v1.DashboardService.GetJournal:input_type -> agentfleet.v1.GetJournalRequest
+	30, // 24: agentfleet.v1.DashboardService.ListRepos:input_type -> agentfleet.v1.ListReposRequest
+	32, // 25: agentfleet.v1.DashboardService.CreateRepo:input_type -> agentfleet.v1.CreateRepoRequest
+	34, // 26: agentfleet.v1.DashboardService.UpdateRepo:input_type -> agentfleet.v1.UpdateRepoRequest
+	36, // 27: agentfleet.v1.DashboardService.DeleteRepo:input_type -> agentfleet.v1.DeleteRepoRequest
+	2,  // 28: agentfleet.v1.DashboardService.ListTasks:output_type -> agentfleet.v1.ListTasksResponse
+	4,  // 29: agentfleet.v1.DashboardService.GetTask:output_type -> agentfleet.v1.GetTaskResponse
+	6,  // 30: agentfleet.v1.DashboardService.CreateTask:output_type -> agentfleet.v1.CreateTaskResponse
+	41, // 31: agentfleet.v1.DashboardService.GetTranscript:output_type -> agentfleet.v1.ReadTranscriptSinceResponse
+	42, // 32: agentfleet.v1.DashboardService.StreamTranscript:output_type -> agentfleet.v1.TranscriptEntry
+	9,  // 33: agentfleet.v1.DashboardService.GetE2eStatus:output_type -> agentfleet.v1.GetE2eStatusResponse
+	11, // 34: agentfleet.v1.DashboardService.Approve:output_type -> agentfleet.v1.ApproveResponse
+	13, // 35: agentfleet.v1.DashboardService.Stop:output_type -> agentfleet.v1.StopResponse
+	15, // 36: agentfleet.v1.DashboardService.SetPermissionMode:output_type -> agentfleet.v1.SetPermissionModeResponse
+	17, // 37: agentfleet.v1.DashboardService.KillE2e:output_type -> agentfleet.v1.KillE2eResponse
+	19, // 38: agentfleet.v1.DashboardService.AnswerQuestion:output_type -> agentfleet.v1.AnswerQuestionResponse
+	21, // 39: agentfleet.v1.DashboardService.Discuss:output_type -> agentfleet.v1.DiscussResponse
+	23, // 40: agentfleet.v1.DashboardService.DeleteTask:output_type -> agentfleet.v1.DeleteTaskResponse
+	25, // 41: agentfleet.v1.DashboardService.ListWorktrees:output_type -> agentfleet.v1.ListWorktreesViewResponse
+	43, // 42: agentfleet.v1.DashboardService.DeleteWorktree:output_type -> agentfleet.v1.DeleteWorktreeResponse
+	28, // 43: agentfleet.v1.DashboardService.GetJournal:output_type -> agentfleet.v1.GetJournalResponse
+	31, // 44: agentfleet.v1.DashboardService.ListRepos:output_type -> agentfleet.v1.ListReposResponse
+	33, // 45: agentfleet.v1.DashboardService.CreateRepo:output_type -> agentfleet.v1.CreateRepoResponse
+	35, // 46: agentfleet.v1.DashboardService.UpdateRepo:output_type -> agentfleet.v1.UpdateRepoResponse
+	37, // 47: agentfleet.v1.DashboardService.DeleteRepo:output_type -> agentfleet.v1.DeleteRepoResponse
+	28, // [28:48] is the sub-list for method output_type
+	8,  // [8:28] is the sub-list for method input_type
+	8,  // [8:8] is the sub-list for extension type_name
+	8,  // [8:8] is the sub-list for extension extendee
+	0,  // [0:8] is the sub-list for field type_name
 }
 
 func init() { file_agentfleet_v1_dashboard_proto_init() }
@@ -1872,7 +2364,7 @@ func file_agentfleet_v1_dashboard_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_agentfleet_v1_dashboard_proto_rawDesc), len(file_agentfleet_v1_dashboard_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   29,
+			NumMessages:   38,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

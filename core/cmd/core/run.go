@@ -22,6 +22,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/dispatch"
 	"github.com/MohammadBnei/agent-fleet/core/internal/journal"
 	"github.com/MohammadBnei/agent-fleet/core/internal/provisionerclient"
+	"github.com/MohammadBnei/agent-fleet/core/internal/repos"
 	"github.com/MohammadBnei/agent-fleet/core/internal/tasks"
 	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
 	"github.com/MohammadBnei/agent-fleet/core/internal/webui"
@@ -42,6 +43,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool) error {
 	store := transcript.NewPostgresStore(pool)
 	taskStore := tasks.NewStore(pool)
 	journalStore := journal.NewStore(pool)
+	repoStore := repos.NewStore(pool)
 
 	provisioner, err := provisionerclient.New(cfg.ProvisionerGRPCAddr)
 	if err != nil {
@@ -51,7 +53,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool) error {
 
 	var notifier transcript.Notifier = noopNotifier{}
 	if cfg.DiscordBotToken != "" {
-		dc, err := discord.New(cfg, taskStore, store, provisioner)
+		dc, err := discord.New(cfg, taskStore, store, repoStore, provisioner)
 		if err != nil {
 			return err
 		}
@@ -60,6 +62,9 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool) error {
 		}
 		defer func() { _ = dc.Close() }()
 		notifier = dc
+		// Live-refreshes /task's repo dropdown after a dashboard repos
+		// mutation (docs/adr/0028) — no redeploy/restart needed.
+		repoStore.SetOnChange(func() { dc.RefreshCommands(ctx) })
 	} else {
 		slog.Warn("DISCORD_BOT_TOKEN not set — running without Discord (dashboard/gRPC only)")
 	}
@@ -76,7 +81,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool) error {
 
 	// docs/adr/0020 point 2: core claims, then commands the provisioner —
 	// the provisioner never claims tasks or decides to spawn on its own.
-	dispatchLoop := dispatch.New(taskStore, provisioner, cfg.MaxInFlight, cfg.MaxTaskRetries, cfg.StopGrace)
+	dispatchLoop := dispatch.New(taskStore, repoStore, provisioner, cfg.MaxInFlight, cfg.MaxTaskRetries, cfg.StopGrace)
 	// CreateTask/SetStatus/MarkCrashed all nudge (below) for the responsive
 	// path, so this interval is now purely a fallback: recovery for a
 	// dropped nudge, plus the passive path for a worker that vanished
@@ -110,7 +115,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool) error {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
-	dashboardSvc := dashboard.NewServer(taskStore, store, journalStore, provisioner, hub)
+	dashboardSvc := dashboard.NewServer(taskStore, store, journalStore, repoStore, provisioner, hub)
 	dashboardPath, dashboardHandler := agentfleetv1connect.NewDashboardServiceHandler(
 		dashboardSvc,
 		connect.WithInterceptors(dashboard.NewCSRFInterceptor(), dashboard.NewAccessLogInterceptor()),

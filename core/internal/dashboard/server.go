@@ -14,12 +14,14 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 	"github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1/agentfleetv1connect"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/journal"
 	"github.com/MohammadBnei/agent-fleet/core/internal/provisionerclient"
+	"github.com/MohammadBnei/agent-fleet/core/internal/repos"
 	"github.com/MohammadBnei/agent-fleet/core/internal/tasks"
 	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
 )
@@ -28,12 +30,13 @@ type Server struct {
 	tasks   *tasks.Store
 	transcr transcript.Store
 	journal *journal.Store
+	repos   *repos.Store
 	e2e     *provisionerclient.Client
 	hub     *Hub
 }
 
-func NewServer(taskStore *tasks.Store, transcr transcript.Store, journalStore *journal.Store, e2e *provisionerclient.Client, hub *Hub) *Server {
-	return &Server{tasks: taskStore, transcr: transcr, journal: journalStore, e2e: e2e, hub: hub}
+func NewServer(taskStore *tasks.Store, transcr transcript.Store, journalStore *journal.Store, repoStore *repos.Store, e2e *provisionerclient.Client, hub *Hub) *Server {
+	return &Server{tasks: taskStore, transcr: transcr, journal: journalStore, repos: repoStore, e2e: e2e, hub: hub}
 }
 
 var _ agentfleetv1connect.DashboardServiceHandler = (*Server)(nil)
@@ -77,7 +80,12 @@ func (s *Server) GetTask(ctx context.Context, req *connect.Request[agentfleetv1.
 // no other code needs to special-case a dashboard-origin task.
 func (s *Server) CreateTask(ctx context.Context, req *connect.Request[agentfleetv1.CreateTaskRequest]) (*connect.Response[agentfleetv1.CreateTaskResponse], error) {
 	repo := req.Msg.GetRepo()
-	if _, ok := tasks.KnownRepos[repo]; !ok {
+	repoCfg, err := s.repos.Get(ctx, repo)
+	if err != nil {
+		slog.Error("dashboard CreateTask: repo lookup", "repo", repo, "error", err)
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	if repoCfg == nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("unknown repo %q", repo))
 	}
 	description := req.Msg.GetDescription()
@@ -339,6 +347,75 @@ func (s *Server) GetJournal(ctx context.Context, req *connect.Request[agentfleet
 		nextID = e.ID
 	}
 	return connect.NewResponse(&agentfleetv1.GetJournalResponse{Entries: out, NextId: nextID}), nil
+}
+
+// ListRepos/CreateRepo/UpdateRepo/DeleteRepo back the dashboard's "manage
+// repos" UI (docs/adr/0028) — the DB-backed replacement for the hardcoded
+// tasks.KnownRepos Go map. repos.Store.SetOnChange (wired in
+// core/cmd/core/run.go) refreshes Discord's /task repo choices after every
+// mutation here, so no redeploy or bot restart is needed either.
+
+func (s *Server) ListRepos(ctx context.Context, _ *connect.Request[agentfleetv1.ListReposRequest]) (*connect.Response[agentfleetv1.ListReposResponse], error) {
+	list, err := s.repos.List(ctx)
+	if err != nil {
+		slog.Error("dashboard ListRepos", "error", err)
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	out := make([]*agentfleetv1.Repo, len(list))
+	for i, r := range list {
+		out[i] = repoToProto(r)
+	}
+	return connect.NewResponse(&agentfleetv1.ListReposResponse{Repos: out}), nil
+}
+
+func (s *Server) CreateRepo(ctx context.Context, req *connect.Request[agentfleetv1.CreateRepoRequest]) (*connect.Response[agentfleetv1.CreateRepoResponse], error) {
+	name := req.Msg.GetName()
+	url := req.Msg.GetUrl()
+	if name == "" || url == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("name and url are required"))
+	}
+	r := repos.Repo{Name: name, URL: url, BaseBranch: req.Msg.GetBaseBranch()}
+	if err := s.repos.Create(ctx, r); err != nil {
+		if errors.Is(err, repos.ErrExists) {
+			return nil, connect.NewError(connect.CodeAlreadyExists, err)
+		}
+		slog.Error("dashboard CreateRepo", "name", name, "error", err)
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	return connect.NewResponse(&agentfleetv1.CreateRepoResponse{Repo: repoToProto(r)}), nil
+}
+
+func (s *Server) UpdateRepo(ctx context.Context, req *connect.Request[agentfleetv1.UpdateRepoRequest]) (*connect.Response[agentfleetv1.UpdateRepoResponse], error) {
+	name := req.Msg.GetName()
+	url := req.Msg.GetUrl()
+	if name == "" || url == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("name and url are required"))
+	}
+	r := repos.Repo{Name: name, URL: url, BaseBranch: req.Msg.GetBaseBranch()}
+	if err := s.repos.Update(ctx, r); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("unknown repo %q", name))
+		}
+		slog.Error("dashboard UpdateRepo", "name", name, "error", err)
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	return connect.NewResponse(&agentfleetv1.UpdateRepoResponse{Repo: repoToProto(r)}), nil
+}
+
+func (s *Server) DeleteRepo(ctx context.Context, req *connect.Request[agentfleetv1.DeleteRepoRequest]) (*connect.Response[agentfleetv1.DeleteRepoResponse], error) {
+	name := req.Msg.GetName()
+	if err := s.repos.Delete(ctx, name); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("unknown repo %q", name))
+		}
+		slog.Error("dashboard DeleteRepo", "name", name, "error", err)
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	return connect.NewResponse(&agentfleetv1.DeleteRepoResponse{Status: "deleted"}), nil
+}
+
+func repoToProto(r repos.Repo) *agentfleetv1.Repo {
+	return &agentfleetv1.Repo{Name: r.Name, Url: r.URL, BaseBranch: r.BaseBranch}
 }
 
 func journalEntryToProto(e journal.Entry) *agentfleetv1.JournalEntry {

@@ -112,9 +112,10 @@ blocked here too).
 
 ## Current targets
 
-`dream-analyst`, `vos-monolith` — real repos, listed in `core/internal/
-tasks`'s `KnownRepos` map. No per-repo Deployment/PVC — onboarding a new
-repo is a `KnownRepos` entry, not new k8s manifests.
+`dream-analyst`, `vos-monolith`, `agent-fleet` — real repos, seeded into
+the dashboard-editable `repos` table (`docs/adr/0028`) — no redeploy
+needed to add/edit one. No per-repo Deployment/PVC — onboarding a new repo
+is a "manage repos" entry in the dashboard, not new k8s manifests.
 
 ## Workflow rules
 

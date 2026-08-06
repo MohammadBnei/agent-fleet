@@ -1,12 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { client } from "../connectClient";
 import { Modal } from "./Modal";
-
-// Mirrors core/internal/tasks/store.go's KnownRepos — every caller of
-// CreateTask (bot/core/dashboard) keeps its own copy of this list already
-// (see that file's own comment), so hardcoding here is consistent with
-// existing precedent, not new debt.
-const KNOWN_REPOS = ["dream-analyst", "vos-monolith"];
 
 export function NewTaskDialog({
   onCreated,
@@ -14,10 +8,26 @@ export function NewTaskDialog({
   onCreated: (taskId: string) => void;
 }) {
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [repo, setRepo] = useState(KNOWN_REPOS[0]);
+  const [repoNames, setRepoNames] = useState<string[]>([]);
+  const [repo, setRepo] = useState("");
   const [description, setDescription] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Fetched from the dashboard-editable repos table (docs/adr/0028), not a
+  // hardcoded list — a repo added/removed via ManageReposModal shows up
+  // here without a redeploy.
+  useEffect(() => {
+    if (!dialogOpen) return;
+    client
+      .listRepos({})
+      .then((res) => {
+        const names = res.repos.map((r) => r.name);
+        setRepoNames(names);
+        setRepo((current) => current || names[0] || "");
+      })
+      .catch((err: Error) => setError(err.message));
+  }, [dialogOpen]);
 
   function open() {
     setError(null);
@@ -65,7 +75,7 @@ export function NewTaskDialog({
               onChange={(e) => setRepo(e.target.value)}
               className="select select-bordered select-sm"
             >
-              {KNOWN_REPOS.map((r) => (
+              {repoNames.map((r) => (
                 <option key={r} value={r}>
                   {r}
                 </option>
@@ -90,7 +100,7 @@ export function NewTaskDialog({
             </button>
             <button
               type="submit"
-              disabled={submitting || !description.trim()}
+              disabled={submitting || !repo || !description.trim()}
               className="btn btn-sm btn-primary"
             >
               {submitting ? "Creating…" : "Create"}

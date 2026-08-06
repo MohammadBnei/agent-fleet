@@ -362,7 +362,7 @@ still ships as one version/CHANGELOG, one repo.
 erDiagram
     tasks {
         uuid id PK
-        text repo "dream-analyst | vos-monolith"
+        text repo "name in repos table, adr/0028"
         text description
         text status "pending|claimed|planning|implementing|done|failed|cancelled|failed_permanently"
         text discord_channel_id
@@ -402,6 +402,13 @@ erDiagram
         timestamptz created_at
     }
     tasks ||--o{ planning_transcript : "task_id"
+    repos {
+        text name PK
+        text url
+        text base_branch "'' means provisioner defaults to main"
+        timestamptz created_at
+        timestamptz updated_at
+    }
 ```
 
 `tasks` is the mutable queue; `knowledge_journal` is append-only, written
@@ -415,6 +422,13 @@ only, not the transcript entry's own durability. The `tool_call` transcript
 type carries the sidecar's independent telemetry (git diff/branch stats) —
 `internal/transcript/relay.go`'s `relayPending` skips this type, so it
 never posts to Discord.
+
+`repos` is the dashboard-editable target-repo config (docs/adr/0028) — no
+`tasks.repo` FK, deliberately, so deleting a repo doesn't retroactively
+break historical task rows. Replaces the old hardcoded `tasks.KnownRepos`
+Go map; `core/internal/repos.Store` reads/writes it, and a mutation fires
+`SetOnChange` to live-refresh Discord's `/task` command choices with no
+redeploy needed.
 
 **`e2e_sessions` still exists in `db/schema.sql` (and the `core`-embedded
 copy) but is dead code as of this redesign** — a full grep across
@@ -496,13 +510,16 @@ env `dev`) — never committed, never in a manifest as plain text.
 
 ## 8. Current targets
 
-`dream-analyst` and `vos-monolith` — real repos. `core/internal/tasks`'
-`KnownRepos` map (moved from `bot/src/db.ts`'s `KNOWN_REPOS`, then from
-`fleet-core`) is the source of truth for which repos the `/task` command
-accepts and their per-repo `RepoConfig` (clone URL, base branch). No
-per-repo Deployment or PVC exists anymore — onboarding a new repo is
-purely a `KnownRepos` entry, not new k8s manifests (`docs/adr/0019`'s
-stated goal).
+`dream-analyst`, `vos-monolith`, `agent-fleet` — real repos, seeded into
+the `repos` table (see §6, `docs/adr/0028`). The `repos` table is the
+source of truth for which repos the `/task` command accepts and their
+per-repo config (clone URL, base branch), dashboard-editable at
+runtime — no redeploy needed, and no Go source change either (superseding
+the old `core/internal/tasks.KnownRepos` map, itself moved from
+`bot/src/db.ts`'s `KNOWN_REPOS`, then from `fleet-core`). No per-repo
+Deployment or PVC exists — onboarding a new repo is a dashboard "manage
+repos" entry, not new k8s manifests (`docs/adr/0019`'s stated goal, now one
+step further via `docs/adr/0028`).
 
 ## 9. Relationship to `infra-bootstrap`
 

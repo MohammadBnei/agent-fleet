@@ -56,8 +56,8 @@ message GetTaskResponse {
 }
 
 // Creates a task the same way a Discord /task command does, minus the
-// Discord thread — repo must be one of tasks.KnownRepos (core/internal/tasks/
-// store.go), description must be non-empty. The created task has no
+// Discord thread — repo must be a name in the repos table (docs/adr/0028,
+// core/internal/repos), description must be non-empty. The created task has no
 // discord_channel_id/discord_thread_id, which core/internal/discord/
 // session.go's PostToThread already handles as a no-op relay target.
 message CreateTaskRequest {
@@ -223,6 +223,50 @@ message GetJournalResponse {
   int64 next_id = 2;
 }
 
+// Repo is the dashboard-editable target-repo config (docs/adr/0028) —
+// replaces the hardcoded tasks.KnownRepos Go map, backed by the `repos`
+// table (db/schema.sql). No timestamps exposed: the dashboard's repo list
+// is small and unordered, unlike Task/JournalEntry which need cursor state.
+message Repo {
+  string name = 1;
+  string url = 2;
+  string base_branch = 3; // "" means the provisioner defaults to "main"
+}
+
+message ListReposRequest {}
+
+message ListReposResponse {
+  repeated Repo repos = 1;
+}
+
+message CreateRepoRequest {
+  string name = 1;
+  string url = 2;
+  string base_branch = 3;
+}
+
+message CreateRepoResponse {
+  Repo repo = 1;
+}
+
+message UpdateRepoRequest {
+  string name = 1;
+  string url = 2;
+  string base_branch = 3;
+}
+
+message UpdateRepoResponse {
+  Repo repo = 1;
+}
+
+message DeleteRepoRequest {
+  string name = 1;
+}
+
+message DeleteRepoResponse {
+  string status = 1;
+}
+
 service DashboardService {
   rpc ListTasks(ListTasksRequest) returns (ListTasksResponse);
   rpc GetTask(GetTaskRequest) returns (GetTaskResponse);
@@ -258,4 +302,8 @@ service DashboardService {
   // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
   rpc DeleteWorktree(DeleteWorktreeRequest) returns (DeleteWorktreeResponse);
   rpc GetJournal(GetJournalRequest) returns (GetJournalResponse);
+  rpc ListRepos(ListReposRequest) returns (ListReposResponse);
+  rpc CreateRepo(CreateRepoRequest) returns (CreateRepoResponse);
+  rpc UpdateRepo(UpdateRepoRequest) returns (UpdateRepoResponse);
+  rpc DeleteRepo(DeleteRepoRequest) returns (DeleteRepoResponse);
 }

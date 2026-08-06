@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { client } from "../connectClient";
 import type { WorktreeView } from "../gen/agentfleet/v1/dashboard_pb";
 import { ErrorModal } from "../components/ErrorModal";
+import { ConfirmModal } from "../components/ConfirmModal";
 
 // The manual half of worktree/branch cleanup (reliability-findings.md #2)
 // — the automated half is the provisioner's periodic [gone]-branch sweep,
@@ -23,11 +24,12 @@ function WorktreeRow({
   const [alsoDeleteBranch, setAlsoDeleteBranch] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const orphaned = worktree.taskStatus === undefined;
+  const what = alsoDeleteBranch ? "worktree and branch" : "worktree";
 
   async function handleDelete() {
-    const what = alsoDeleteBranch ? "worktree and branch" : "worktree";
-    if (!window.confirm(`Delete the ${what} for ${worktree.branch}?`)) return;
+    setConfirmOpen(false);
     setDeleting(true);
     setError(null);
     try {
@@ -73,9 +75,15 @@ function WorktreeRow({
           />
           also delete branch
         </label>
-        <button type="button" onClick={handleDelete} disabled={deleting} className="btn btn-xs btn-error">
+        <button type="button" onClick={() => setConfirmOpen(true)} disabled={deleting} className="btn btn-xs btn-error">
           {deleting ? "Deleting…" : "Delete"}
         </button>
+        <ConfirmModal
+          open={confirmOpen}
+          message={`Delete the ${what} for ${worktree.branch}?`}
+          onConfirm={handleDelete}
+          onCancel={() => setConfirmOpen(false)}
+        />
       </td>
     </tr>
   );

@@ -66,8 +66,8 @@ export interface GetTaskResponse {
 
 /**
  * Creates a task the same way a Discord /task command does, minus the
- * Discord thread — repo must be one of tasks.KnownRepos (core/internal/tasks/
- * store.go), description must be non-empty. The created task has no
+ * Discord thread — repo must be a name in the repos table (docs/adr/0028,
+ * core/internal/repos), description must be non-empty. The created task has no
  * discord_channel_id/discord_thread_id, which core/internal/discord/
  * session.go's PostToThread already handles as a no-op relay target.
  */
@@ -248,6 +248,54 @@ export interface GetJournalRequest {
 export interface GetJournalResponse {
   entries: JournalEntry[];
   nextId: number;
+}
+
+/**
+ * Repo is the dashboard-editable target-repo config (docs/adr/0028) —
+ * replaces the hardcoded tasks.KnownRepos Go map, backed by the `repos`
+ * table (db/schema.sql). No timestamps exposed: the dashboard's repo list
+ * is small and unordered, unlike Task/JournalEntry which need cursor state.
+ */
+export interface Repo {
+  name: string;
+  url: string;
+  /** "" means the provisioner defaults to "main" */
+  baseBranch: string;
+}
+
+export interface ListReposRequest {
+}
+
+export interface ListReposResponse {
+  repos: Repo[];
+}
+
+export interface CreateRepoRequest {
+  name: string;
+  url: string;
+  baseBranch: string;
+}
+
+export interface CreateRepoResponse {
+  repo?: Repo | undefined;
+}
+
+export interface UpdateRepoRequest {
+  name: string;
+  url: string;
+  baseBranch: string;
+}
+
+export interface UpdateRepoResponse {
+  repo?: Repo | undefined;
+}
+
+export interface DeleteRepoRequest {
+  name: string;
+}
+
+export interface DeleteRepoResponse {
+  status: string;
 }
 
 function createBaseTask(): Task {
@@ -1377,6 +1425,293 @@ export const GetJournalResponse: MessageFns<GetJournalResponse> = {
   },
 };
 
+function createBaseRepo(): Repo {
+  return { name: "", url: "", baseBranch: "" };
+}
+
+export const Repo: MessageFns<Repo> = {
+  fromJSON(object: any): Repo {
+    return {
+      name: isSet(object.name) ? globalThis.String(object.name) : "",
+      url: isSet(object.url) ? globalThis.String(object.url) : "",
+      baseBranch: isSet(object.baseBranch)
+        ? globalThis.String(object.baseBranch)
+        : isSet(object.base_branch)
+        ? globalThis.String(object.base_branch)
+        : "",
+    };
+  },
+
+  toJSON(message: Repo): unknown {
+    const obj: any = {};
+    if (message.name !== "") {
+      obj.name = message.name;
+    }
+    if (message.url !== "") {
+      obj.url = message.url;
+    }
+    if (message.baseBranch !== "") {
+      obj.baseBranch = message.baseBranch;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<Repo>, I>>(base?: I): Repo {
+    return Repo.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<Repo>, I>>(object: I): Repo {
+    const message = createBaseRepo();
+    message.name = object.name ?? "";
+    message.url = object.url ?? "";
+    message.baseBranch = object.baseBranch ?? "";
+    return message;
+  },
+};
+
+function createBaseListReposRequest(): ListReposRequest {
+  return {};
+}
+
+export const ListReposRequest: MessageFns<ListReposRequest> = {
+  fromJSON(_: any): ListReposRequest {
+    return {};
+  },
+
+  toJSON(_: ListReposRequest): unknown {
+    const obj: any = {};
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<ListReposRequest>, I>>(base?: I): ListReposRequest {
+    return ListReposRequest.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<ListReposRequest>, I>>(_: I): ListReposRequest {
+    const message = createBaseListReposRequest();
+    return message;
+  },
+};
+
+function createBaseListReposResponse(): ListReposResponse {
+  return { repos: [] };
+}
+
+export const ListReposResponse: MessageFns<ListReposResponse> = {
+  fromJSON(object: any): ListReposResponse {
+    return { repos: globalThis.Array.isArray(object?.repos) ? object.repos.map((e: any) => Repo.fromJSON(e)) : [] };
+  },
+
+  toJSON(message: ListReposResponse): unknown {
+    const obj: any = {};
+    if (message.repos?.length) {
+      obj.repos = message.repos.map((e) => Repo.toJSON(e));
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<ListReposResponse>, I>>(base?: I): ListReposResponse {
+    return ListReposResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<ListReposResponse>, I>>(object: I): ListReposResponse {
+    const message = createBaseListReposResponse();
+    message.repos = object.repos?.map((e) => Repo.fromPartial(e)) || [];
+    return message;
+  },
+};
+
+function createBaseCreateRepoRequest(): CreateRepoRequest {
+  return { name: "", url: "", baseBranch: "" };
+}
+
+export const CreateRepoRequest: MessageFns<CreateRepoRequest> = {
+  fromJSON(object: any): CreateRepoRequest {
+    return {
+      name: isSet(object.name) ? globalThis.String(object.name) : "",
+      url: isSet(object.url) ? globalThis.String(object.url) : "",
+      baseBranch: isSet(object.baseBranch)
+        ? globalThis.String(object.baseBranch)
+        : isSet(object.base_branch)
+        ? globalThis.String(object.base_branch)
+        : "",
+    };
+  },
+
+  toJSON(message: CreateRepoRequest): unknown {
+    const obj: any = {};
+    if (message.name !== "") {
+      obj.name = message.name;
+    }
+    if (message.url !== "") {
+      obj.url = message.url;
+    }
+    if (message.baseBranch !== "") {
+      obj.baseBranch = message.baseBranch;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<CreateRepoRequest>, I>>(base?: I): CreateRepoRequest {
+    return CreateRepoRequest.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<CreateRepoRequest>, I>>(object: I): CreateRepoRequest {
+    const message = createBaseCreateRepoRequest();
+    message.name = object.name ?? "";
+    message.url = object.url ?? "";
+    message.baseBranch = object.baseBranch ?? "";
+    return message;
+  },
+};
+
+function createBaseCreateRepoResponse(): CreateRepoResponse {
+  return { repo: undefined };
+}
+
+export const CreateRepoResponse: MessageFns<CreateRepoResponse> = {
+  fromJSON(object: any): CreateRepoResponse {
+    return { repo: isSet(object.repo) ? Repo.fromJSON(object.repo) : undefined };
+  },
+
+  toJSON(message: CreateRepoResponse): unknown {
+    const obj: any = {};
+    if (message.repo !== undefined) {
+      obj.repo = Repo.toJSON(message.repo);
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<CreateRepoResponse>, I>>(base?: I): CreateRepoResponse {
+    return CreateRepoResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<CreateRepoResponse>, I>>(object: I): CreateRepoResponse {
+    const message = createBaseCreateRepoResponse();
+    message.repo = (object.repo !== undefined && object.repo !== null) ? Repo.fromPartial(object.repo) : undefined;
+    return message;
+  },
+};
+
+function createBaseUpdateRepoRequest(): UpdateRepoRequest {
+  return { name: "", url: "", baseBranch: "" };
+}
+
+export const UpdateRepoRequest: MessageFns<UpdateRepoRequest> = {
+  fromJSON(object: any): UpdateRepoRequest {
+    return {
+      name: isSet(object.name) ? globalThis.String(object.name) : "",
+      url: isSet(object.url) ? globalThis.String(object.url) : "",
+      baseBranch: isSet(object.baseBranch)
+        ? globalThis.String(object.baseBranch)
+        : isSet(object.base_branch)
+        ? globalThis.String(object.base_branch)
+        : "",
+    };
+  },
+
+  toJSON(message: UpdateRepoRequest): unknown {
+    const obj: any = {};
+    if (message.name !== "") {
+      obj.name = message.name;
+    }
+    if (message.url !== "") {
+      obj.url = message.url;
+    }
+    if (message.baseBranch !== "") {
+      obj.baseBranch = message.baseBranch;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<UpdateRepoRequest>, I>>(base?: I): UpdateRepoRequest {
+    return UpdateRepoRequest.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<UpdateRepoRequest>, I>>(object: I): UpdateRepoRequest {
+    const message = createBaseUpdateRepoRequest();
+    message.name = object.name ?? "";
+    message.url = object.url ?? "";
+    message.baseBranch = object.baseBranch ?? "";
+    return message;
+  },
+};
+
+function createBaseUpdateRepoResponse(): UpdateRepoResponse {
+  return { repo: undefined };
+}
+
+export const UpdateRepoResponse: MessageFns<UpdateRepoResponse> = {
+  fromJSON(object: any): UpdateRepoResponse {
+    return { repo: isSet(object.repo) ? Repo.fromJSON(object.repo) : undefined };
+  },
+
+  toJSON(message: UpdateRepoResponse): unknown {
+    const obj: any = {};
+    if (message.repo !== undefined) {
+      obj.repo = Repo.toJSON(message.repo);
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<UpdateRepoResponse>, I>>(base?: I): UpdateRepoResponse {
+    return UpdateRepoResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<UpdateRepoResponse>, I>>(object: I): UpdateRepoResponse {
+    const message = createBaseUpdateRepoResponse();
+    message.repo = (object.repo !== undefined && object.repo !== null) ? Repo.fromPartial(object.repo) : undefined;
+    return message;
+  },
+};
+
+function createBaseDeleteRepoRequest(): DeleteRepoRequest {
+  return { name: "" };
+}
+
+export const DeleteRepoRequest: MessageFns<DeleteRepoRequest> = {
+  fromJSON(object: any): DeleteRepoRequest {
+    return { name: isSet(object.name) ? globalThis.String(object.name) : "" };
+  },
+
+  toJSON(message: DeleteRepoRequest): unknown {
+    const obj: any = {};
+    if (message.name !== "") {
+      obj.name = message.name;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<DeleteRepoRequest>, I>>(base?: I): DeleteRepoRequest {
+    return DeleteRepoRequest.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<DeleteRepoRequest>, I>>(object: I): DeleteRepoRequest {
+    const message = createBaseDeleteRepoRequest();
+    message.name = object.name ?? "";
+    return message;
+  },
+};
+
+function createBaseDeleteRepoResponse(): DeleteRepoResponse {
+  return { status: "" };
+}
+
+export const DeleteRepoResponse: MessageFns<DeleteRepoResponse> = {
+  fromJSON(object: any): DeleteRepoResponse {
+    return { status: isSet(object.status) ? globalThis.String(object.status) : "" };
+  },
+
+  toJSON(message: DeleteRepoResponse): unknown {
+    const obj: any = {};
+    if (message.status !== "") {
+      obj.status = message.status;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<DeleteRepoResponse>, I>>(base?: I): DeleteRepoResponse {
+    return DeleteRepoResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<DeleteRepoResponse>, I>>(object: I): DeleteRepoResponse {
+    const message = createBaseDeleteRepoResponse();
+    message.status = object.status ?? "";
+    return message;
+  },
+};
+
 export interface DashboardService {
   ListTasks(request: ListTasksRequest): Promise<ListTasksResponse>;
   GetTask(request: GetTaskRequest): Promise<GetTaskResponse>;
@@ -1418,6 +1753,10 @@ export interface DashboardService {
   /** buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE */
   DeleteWorktree(request: DeleteWorktreeRequest): Promise<DeleteWorktreeResponse>;
   GetJournal(request: GetJournalRequest): Promise<GetJournalResponse>;
+  ListRepos(request: ListReposRequest): Promise<ListReposResponse>;
+  CreateRepo(request: CreateRepoRequest): Promise<CreateRepoResponse>;
+  UpdateRepo(request: UpdateRepoRequest): Promise<UpdateRepoResponse>;
+  DeleteRepo(request: DeleteRepoRequest): Promise<DeleteRepoResponse>;
 }
 
 type Builtin = Date | Function | Uint8Array | string | number | boolean | undefined;
