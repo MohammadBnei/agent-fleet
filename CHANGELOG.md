@@ -1,5 +1,12 @@
 # Changelog
 
+# [1.11.0](https://github.com/MohammadBnei/agent-fleet/compare/1.10.4...1.11.0) (2026-08-06)
+
+
+### Features
+
+* **dashboard:** surface task staleness, retry count, and last error ([b030378](https://github.com/MohammadBnei/agent-fleet/commit/b030378b06212d8aaf6072c6cbc1ad2a21bf41a4))
+
 ## [1.10.4](https://github.com/MohammadBnei/agent-fleet/compare/1.10.3...1.10.4) (2026-08-06)
 
 
