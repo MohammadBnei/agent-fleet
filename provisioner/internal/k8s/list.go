@@ -3,6 +3,7 @@ package k8s
 import (
 	"context"
 	"log/slog"
+	"time"
 
 	batchv1 "k8s.io/api/batch/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -66,6 +67,12 @@ type LiveWorkerJob struct {
 	// status.phase, but kept as the same plain string so that comparison
 	// (and reconcile's own tests) didn't need to change shape.
 	Phase string
+	// CreatedAt is the Job's own creation time — used by reconcile's
+	// max-age stale-worker GC. Deliberately the Job's CreationTimestamp,
+	// not Status.StartTime (only set once a pod actually starts running):
+	// a Job stuck Pending forever (e.g. unschedulable, stuck image pull)
+	// should age out too, not just one that started and then ran too long.
+	CreatedAt time.Time
 }
 
 // jobPhase derives a Pod-phase-shaped terminal status from a Job's
@@ -105,7 +112,7 @@ func (c *Client) ListWorkerJobsByLabel(ctx context.Context) ([]LiveWorkerJob, er
 		if taskID == "" {
 			continue
 		}
-		out = append(out, LiveWorkerJob{TaskID: taskID, JobName: job.Name, Phase: jobPhase(&job)})
+		out = append(out, LiveWorkerJob{TaskID: taskID, JobName: job.Name, Phase: jobPhase(&job), CreatedAt: job.CreationTimestamp.Time})
 	}
 	return out, nil
 }

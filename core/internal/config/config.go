@@ -5,6 +5,7 @@ package config
 import (
 	"os"
 	"strconv"
+	"time"
 )
 
 type Config struct {
@@ -31,6 +32,12 @@ type Config struct {
 	// capped before, so a task whose worker pod keeps crashing looped
 	// through reclaim forever instead of eventually failing permanently.
 	MaxTaskRetries int
+	// StopGrace is how long dispatch.Loop waits after a Stop request before
+	// force-tearing down a worker pod that hasn't gone terminal on its own —
+	// long enough for a healthy pod to notice the cooperative abort message
+	// and shut down cleanly, short enough that a hung/unreachable pod
+	// doesn't outlive a Stop click indefinitely.
+	StopGrace time.Duration
 }
 
 func Load() Config {
@@ -49,6 +56,7 @@ func Load() Config {
 		ProvisionerGRPCAddr:   env("PROVISIONER_GRPC_ADDR", "provisioner.agent-fleet.svc.cluster.local:9090"),
 		MaxInFlight:           envInt("MAX_IN_FLIGHT_TASKS", 5),
 		MaxTaskRetries:        envInt("MAX_TASK_RETRIES", 3),
+		StopGrace:             time.Duration(envInt("STOP_GRACE_MS", 30000)) * time.Millisecond,
 	}
 }
 

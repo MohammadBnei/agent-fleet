@@ -78,7 +78,8 @@ func main() {
 	agentfleetv1.RegisterProvisionerServiceServer(grpcSrv, grpcserver.New(k8sc, gitMgr, proxy, core, cfg.E2eHost))
 
 	reconcileInterval, _ := strconv.Atoi(cfg.ReconcileInterval)
-	loop := reconcile.New(k8sc, core)
+	workerMaxAge, _ := strconv.Atoi(cfg.WorkerMaxAgeMs)
+	loop := reconcile.New(k8sc, core, time.Duration(workerMaxAge)*time.Millisecond)
 	go loop.Run(ctx, time.Duration(reconcileInterval)*time.Millisecond)
 
 	sweepInterval, _ := strconv.Atoi(cfg.SweepInterval)

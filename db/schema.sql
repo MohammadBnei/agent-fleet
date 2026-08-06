@@ -76,6 +76,13 @@ ALTER TABLE tasks ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS pod_phase TEXT;
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS pod_message TEXT;
 
+-- When a human first asked to stop this task (DashboardService.Stop).
+-- Stop itself only posts a cooperative abort message to the transcript;
+-- dispatch.Loop's grace-period sweep uses this timestamp to force-tear
+-- down a worker pod that never noticed/honored it, surviving a core
+-- restart since it's Postgres-durable rather than an in-memory timer.
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS stop_requested_at TIMESTAMPTZ;
+
 -- Append-only fleet knowledge journal (mirrors ai-devkit's JSON-event pattern,
 -- see agent-fleet reference-check memory: avoids write-conflict issues that a
 -- shared mutable doc would hit across concurrent worker pods).

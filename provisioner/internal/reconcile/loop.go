@@ -1,15 +1,20 @@
 // Package reconcile is a pure Kubernetes-native safety net now
 // (docs/adr/0020 point 1: the provisioner holds no Postgres credentials at
 // all, so there's nothing external left to reconcile pod state against).
-// Its only job: garbage-collect worker pods that reached a terminal k8s
-// phase (Succeeded/Failed) but weren't cleaned up by core's own
-// TearDownSession call — a safety net for a missed/failed call, not the
-// primary teardown mechanism (that's coreserver.SetTaskStatus's
-// opportunistic trigger, in core/). e2e pods have no natural "done" signal
-// from k8s alone (they run until explicitly killed) and no external
-// tracking left to compare against, so they're not GC'd here — an accepted
-// gap, not a silent one: a leaked e2e pod would need a different mechanism
-// entirely (e.g. a max-age timeout), deferred as future scope.
+// Two jobs: garbage-collect worker pods that reached a terminal k8s phase
+// (Succeeded/Failed) but weren't cleaned up by core's own TearDownSession
+// call — a safety net for a missed/failed call, not the primary teardown
+// mechanism (that's coreserver.SetTaskStatus's opportunistic trigger, in
+// core/) — and force-delete a worker Job that's been Pending/Running far
+// longer than any real task should take, independent of anyone ever
+// requesting a stop (dispatch.Loop's own grace-period sweep, in core/,
+// only fires once a stop was actually requested; this catches the case
+// where core crashed, the dashboard was never used, or the task just
+// silently stalled). e2e pods have no natural "done" signal from k8s alone
+// (they run until explicitly killed) and no external tracking left to
+// compare against, so they're not GC'd here — an accepted gap, not a
+// silent one: a leaked e2e pod would need a different max-age mechanism
+// entirely, deferred as future scope.
 package reconcile
 
 import (
@@ -49,10 +54,16 @@ type EventReporter interface {
 type Loop struct {
 	k8sc JobLister
 	core EventReporter
+	// maxWorkerAge is the stale-worker-Job ceiling — a Job (terminal or
+	// not) still around this long past its own creation gets force-deleted
+	// regardless of phase. Zero disables the check entirely (treated as
+	// "no ceiling"), so a zero-value Loop keeps today's terminal-only
+	// behavior.
+	maxWorkerAge time.Duration
 }
 
-func New(k8sc JobLister, core EventReporter) *Loop {
-	return &Loop{k8sc: k8sc, core: core}
+func New(k8sc JobLister, core EventReporter, maxWorkerAge time.Duration) *Loop {
+	return &Loop{k8sc: k8sc, core: core, maxWorkerAge: maxWorkerAge}
 }
 
 func (l *Loop) gcTerminalWorkerJobs(ctx context.Context) {
@@ -62,7 +73,9 @@ func (l *Loop) gcTerminalWorkerJobs(ctx context.Context) {
 		return
 	}
 	for _, job := range jobs {
-		if job.Phase != "Succeeded" && job.Phase != "Failed" {
+		terminal := job.Phase == "Succeeded" || job.Phase == "Failed"
+		stale := !terminal && l.maxWorkerAge > 0 && !job.CreatedAt.IsZero() && time.Since(job.CreatedAt) > l.maxWorkerAge
+		if !terminal && !stale {
 			continue
 		}
 		// Fast-path crash report (reliability-findings.md #1) — reported
@@ -71,7 +84,12 @@ func (l *Loop) gcTerminalWorkerJobs(ctx context.Context) {
 		// coreserver.ReportPodEvents scopes MarkCrashed to a non-terminal
 		// task, so this is a safe no-op if the task already reached a
 		// terminal status through its own SetTaskStatus call first.
-		if job.Phase == "Failed" {
+		// Stale (never-terminal) Jobs are reported the same way — from
+		// core's point of view a task whose worker Job got force-killed for
+		// running too long isn't distinguishable from one that crashed, and
+		// should be reclaim-eligible the same way.
+		switch {
+		case job.Phase == "Failed":
 			l.core.ReportEvent(ctx, &agentfleetv1.PodEvent{
 				TaskId:  job.TaskID,
 				Kind:    agentfleetv1.SessionKind_SESSION_KIND_WORKER,
@@ -79,8 +97,16 @@ func (l *Loop) gcTerminalWorkerJobs(ctx context.Context) {
 				PodName: job.JobName,
 				Message: "worker job reached a terminal Failed phase",
 			})
+		case stale:
+			l.core.ReportEvent(ctx, &agentfleetv1.PodEvent{
+				TaskId:  job.TaskID,
+				Kind:    agentfleetv1.SessionKind_SESSION_KIND_WORKER,
+				Phase:   agentfleetv1.PodPhase_POD_PHASE_CRASHED,
+				PodName: job.JobName,
+				Message: "worker job exceeded max age",
+			})
 		}
-		slog.Info("reconcile: gc'ing terminal worker job", "taskId", job.TaskID, "jobName", job.JobName, "phase", job.Phase)
+		slog.Info("reconcile: gc'ing worker job", "taskId", job.TaskID, "jobName", job.JobName, "phase", job.Phase, "stale", stale)
 		if err := l.k8sc.DeleteWorkerJob(ctx, job.TaskID); err != nil {
 			slog.Error("reconcile: delete worker job failed", "taskId", job.TaskID, "error", err)
 		}

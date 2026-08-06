@@ -24,6 +24,13 @@ type Config struct {
 	// call, on top of being core's gRPC server for everything else.
 	CoreGRPCAddr      string
 	ReconcileInterval string
+	// WorkerMaxAgeMs is the stale-worker-Job ceiling reconcile.Loop force-
+	// deletes past, regardless of phase — a safety net for a worker Job
+	// stuck Pending/Running indefinitely with nobody ever having requested
+	// a Stop (core's own grace-period sweep only fires once a Stop was
+	// actually clicked). Generous default: no real planning+implementation
+	// session should ever come close.
+	WorkerMaxAgeMs string
 	// SweepInterval is how often the [gone]-branch sweep runs
 	// (reliability-findings.md #2) — minutes, not seconds: it does a real
 	// `git fetch` per repo, unlike the k8s-only reconcile loop.
@@ -46,6 +53,7 @@ func Load() Config {
 		GRPCPort:          env("GRPC_PORT", "9090"),
 		CoreGRPCAddr:      env("CORE_GRPC_ADDR", "agent-fleet-core.agent-fleet.svc.cluster.local:9090"),
 		ReconcileInterval: env("RECONCILE_INTERVAL_MS", "10000"),
+		WorkerMaxAgeMs:    env("WORKER_MAX_AGE_MS", "7200000"), // 2h
 		SweepInterval:     env("SWEEP_INTERVAL_MS", "300000"),
 		LogLevel:          env("LOG_LEVEL", "info"),
 	}

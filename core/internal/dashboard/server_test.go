@@ -55,35 +55,13 @@ func TestServer_Approve(t *testing.T) {
 	}
 }
 
-func TestServer_Stop_DefaultReason(t *testing.T) {
-	store := &recordingStore{}
-	s := NewServer(nil, store, nil, nil, nil)
-
-	resp, err := s.Stop(context.Background(), connect.NewRequest(&agentfleetv1.StopRequest{TaskId: "task-1"}))
-	if err != nil {
-		t.Fatalf("Stop: %v", err)
-	}
-	if resp.Msg.GetStatus() != "stopping" {
-		t.Errorf("status = %q, want %q", resp.Msg.GetStatus(), "stopping")
-	}
-	if store.lastText != "stopped by human" || store.lastType != "abort" {
-		t.Errorf("got (%q, %q), want (stopped by human, abort)", store.lastText, store.lastType)
-	}
-}
-
-func TestServer_Stop_CustomReason(t *testing.T) {
-	store := &recordingStore{}
-	s := NewServer(nil, store, nil, nil, nil)
-
-	reason := "wrong direction"
-	req := connect.NewRequest(&agentfleetv1.StopRequest{TaskId: "task-1", Reason: &reason})
-	if _, err := s.Stop(context.Background(), req); err != nil {
-		t.Fatalf("Stop: %v", err)
-	}
-	if store.lastText != "wrong direction" {
-		t.Errorf("text = %q, want %q", store.lastText, "wrong direction")
-	}
-}
+// Stop's own tests moved to stop_integration_test.go (build tag
+// integration): Stop now also calls tasks.Store.MarkStopRequested (the
+// grace-period-then-force-kill fix), and tasks.Store is a concrete
+// Postgres-backed type here, not an interface a nil/fake can stand in for
+// like recordingStore does for transcript.Store — same reasoning
+// CreateTask's own comment below already gives for pass-through logic
+// touching a real store.
 
 // TestServer_CreateTask_UnknownRepo/EmptyDescription cover the two
 // validation branches that return before ever touching tasks.Store — hence

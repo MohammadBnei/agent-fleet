@@ -12,24 +12,32 @@ import (
 	"log/slog"
 	"time"
 
+	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
+
 	"github.com/MohammadBnei/agent-fleet/core/internal/provisionerclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/tasks"
 )
 
-// Loop owns the claim-then-command cycle.
+// Loop owns the claim-then-command cycle, plus the stop-grace-period
+// enforcement sweep below (see enforceStopGrace) — both share the same
+// tasks.Store/provisionerclient.Client pair and the same periodic ticker,
+// so a second loop/package for the sweep would just be more wiring around
+// the same two dependencies.
 type Loop struct {
 	tasks          *tasks.Store
 	provisioner    *provisionerclient.Client
 	maxInFlight    int
 	maxTaskRetries int
+	stopGrace      time.Duration
 	nudge          chan struct{}
 }
 
-func New(taskStore *tasks.Store, provisioner *provisionerclient.Client, maxInFlight, maxTaskRetries int) *Loop {
+func New(taskStore *tasks.Store, provisioner *provisionerclient.Client, maxInFlight, maxTaskRetries int, stopGrace time.Duration) *Loop {
 	return &Loop{
 		tasks: taskStore, provisioner: provisioner,
 		maxInFlight: maxInFlight, maxTaskRetries: maxTaskRetries,
-		nudge: make(chan struct{}, 1),
+		stopGrace: stopGrace,
+		nudge:     make(chan struct{}, 1),
 	}
 }
 
@@ -74,6 +82,8 @@ func (l *Loop) Run(ctx context.Context, pollInterval time.Duration) {
 }
 
 func (l *Loop) tick(ctx context.Context) {
+	l.enforceStopGrace(ctx)
+
 	// The concurrency-headroom check lives inside ClaimNextTask's own query
 	// now (reliability-findings.md #6) — a separate CountInFlight call
 	// beforehand was a TOCTOU race under >1 dispatch-loop replica.
@@ -106,4 +116,33 @@ func (l *Loop) tick(ctx context.Context) {
 		return
 	}
 	slog.Info("dispatch: worker pod created", "taskId", task.ID, "repo", task.Repo, "podName", podName)
+}
+
+// enforceStopGrace force-tears-down any task whose stop was requested
+// (DashboardService.Stop, via tasks.Store.MarkStopRequested) more than
+// stopGrace ago and still hasn't reached a terminal status — the fix for
+// a hung/crashed/unreachable worker pod that never noticed the cooperative
+// abort message Stop also posts. Mirrors the exact two-call TearDownSession
+// pattern DashboardService.DeleteTask and CoreService.SetTaskStatus's
+// opportunistic-teardown block already use.
+func (l *Loop) enforceStopGrace(ctx context.Context) {
+	ids, err := l.tasks.ListOverdueStopIDs(ctx, l.stopGrace)
+	if err != nil {
+		slog.Error("dispatch: list overdue stops failed", "error", err)
+		return
+	}
+	for _, id := range ids {
+		if _, err := l.provisioner.TearDownSession(ctx, id, agentfleetv1.SessionKind_SESSION_KIND_WORKER); err != nil {
+			slog.Error("dispatch: enforceStopGrace worker teardown failed", "taskId", id, "error", err)
+		}
+		if _, err := l.provisioner.TearDownSession(ctx, id, agentfleetv1.SessionKind_SESSION_KIND_E2E); err != nil {
+			slog.Error("dispatch: enforceStopGrace e2e teardown failed", "taskId", id, "error", err)
+		}
+		lastErr := "stopped by human (grace period exceeded)"
+		if err := l.tasks.SetStatus(ctx, id, "cancelled", nil, nil, &lastErr); err != nil {
+			slog.Error("dispatch: enforceStopGrace set status failed", "taskId", id, "error", err)
+			continue
+		}
+		slog.Info("dispatch: force-stopped task past grace period", "taskId", id)
+	}
 }
