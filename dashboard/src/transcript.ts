@@ -77,13 +77,28 @@ export function latestToolCallSummary(entries: TranscriptEntry[]): ToolCallSumma
 // logSdkMessage relays verbatim (reliability-findings.md #0: "relay
 // everything, let the UI decide"). Defensive parse like the helpers above —
 // a malformed payload falls back to the raw text bubble instead of crashing.
-export type SdkSystemInfo = { model?: string; permissionMode?: string };
+export type SdkSystemInfo = { model?: string; permissionMode?: string; slashCommands?: string[]; skills?: string[] };
 export function parseSdkSystemInfo(text: string): SdkSystemInfo | null {
   try {
     return JSON.parse(text) as SdkSystemInfo;
   } catch {
     return null;
   }
+}
+
+// The palette's data source — bare command names only (the SDK's own system/
+// init message doesn't carry descriptions/argument hints at runtime), so the
+// dashboard's slash-command autocomplete stays a lean name list, not a rich
+// command browser. Same "walk backwards to the latest SYSTEM entry" pattern
+// as latestToolCallSummary/latestTodos below.
+export function latestSlashCommands(entries: TranscriptEntry[]): string[] | null {
+  for (let i = entries.length - 1; i >= 0; i--) {
+    if (entries[i].type === TranscriptEntryType.SYSTEM) {
+      const info = parseSdkSystemInfo(entries[i].text);
+      return info?.slashCommands && info.slashCommands.length > 0 ? info.slashCommands : null;
+    }
+  }
+  return null;
 }
 
 export type SdkToolUse = { id?: string; tool?: string; input?: unknown };

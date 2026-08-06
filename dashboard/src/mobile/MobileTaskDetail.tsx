@@ -6,6 +6,7 @@ import {
   parseAnswers,
   findPendingQuestion,
   parseToolCallSummary,
+  latestSlashCommands,
   parseSdkSystemInfo,
   parseSdkToolResult,
   parseSdkResultSummary,
@@ -19,6 +20,7 @@ import { ToolCallItem } from "../components/ToolCallItem";
 import { ErrorModal } from "../components/ErrorModal";
 import { Markdown } from "../components/Markdown";
 import { JsonView } from "../components/JsonView";
+import { BypassConfirmModal } from "../components/BypassConfirmModal";
 import { prBadge } from "../pages/TaskList";
 
 // Mirrors the "herd" mock's phone session screen (Agent Fleet Mobile.dc.html)
@@ -194,6 +196,34 @@ function MobileEntryBubble({ entry }: { entry: TranscriptEntry }) {
       </div>
     );
   }
+  // Mirrors desktop EntryBubble's new cases — a real backend-verified event
+  // gets the same compact log-line treatment as SYSTEM/RESULT, distinct from
+  // the generic prose bubble the model's own narration of the same claim
+  // would otherwise render identically to.
+  if (entry.type === TranscriptEntryType.APPROVE) {
+    return (
+      <div className="text-[10px] text-base-content/40 flex items-center gap-1.5">
+        <span className="badge badge-success badge-xs">approved</span>
+        plan approved — implementing
+      </div>
+    );
+  }
+  if (entry.type === TranscriptEntryType.ABORT) {
+    return (
+      <div className="text-[10px] text-base-content/40 flex items-center gap-1.5">
+        <span className="badge badge-warning badge-xs">stopped</span>
+        {entry.text || "task stopped"}
+      </div>
+    );
+  }
+  if (entry.type === TranscriptEntryType.PERMISSION_MODE) {
+    return (
+      <div className="text-[10px] text-base-content/40 flex items-center gap-1.5">
+        <span className="badge badge-info badge-xs">mode</span>
+        permission mode → {entry.text}
+      </div>
+    );
+  }
   return (
     <div>
       <div className="text-[12.5px] leading-relaxed text-base-content/90">
@@ -215,6 +245,7 @@ export function MobileTaskDetail({
   const { task, entries, busy, loadError, actionError, pendingMessage, run, sendDiscuss, clearActionError } =
     useTaskDetail(taskId);
   const [message, setMessage] = useState("");
+  const [bypassOpen, setBypassOpen] = useState(false);
 
   if (loadError) {
     return (
@@ -244,6 +275,10 @@ export function MobileTaskDetail({
   const toolCallPairs = buildToolCallPairs(entries);
   const toolCallPairsBySeq = new Map(toolCallPairs.map((p) => [p.call.seq, p]));
   const consumedResultSeqs = pairedResultSeqs(toolCallPairs);
+  // Lean name-only autocomplete, same rationale as desktop TaskDetail.
+  const slashCommands = message.startsWith("/")
+    ? (latestSlashCommands(entries) ?? []).filter((c) => c.toLowerCase().startsWith(message.slice(1).toLowerCase()))
+    : [];
 
   function sendMessage() {
     const text = message.trim();
@@ -384,6 +419,76 @@ export function MobileTaskDetail({
                 className="flex-none px-3.5 py-2 rounded-2xl border border-primary/45 text-[11px] text-primary font-medium min-h-9 disabled:opacity-40"
               >
                 {opt.label}
+              </button>
+            ))}
+          </div>
+        )}
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            type="button"
+            className="btn btn-success btn-xs"
+            disabled={busy}
+            onClick={() => run(() => client.approve({ taskId }))}
+          >
+            Approve
+          </button>
+          <button
+            type="button"
+            className="btn btn-warning btn-xs"
+            disabled={busy}
+            onClick={() => run(() => client.stop({ taskId }))}
+          >
+            Stop
+          </button>
+          <button
+            type="button"
+            className="btn btn-outline btn-xs"
+            disabled={busy}
+            onClick={() => run(() => client.killE2e({ taskId }))}
+          >
+            Kill e2e
+          </button>
+          <div className="dropdown">
+            <button tabIndex={0} type="button" className="btn btn-outline btn-xs" disabled={busy}>
+              Mode ▾
+            </button>
+            <ul tabIndex={0} className="dropdown-content menu menu-sm bg-base-100 rounded-box shadow z-10 w-44 p-1">
+              <li>
+                <button type="button" onClick={() => run(() => client.setPermissionMode({ taskId, mode: "acceptEdits" }))}>
+                  Accept edits
+                </button>
+              </li>
+              <li>
+                <button type="button" onClick={() => run(() => client.setPermissionMode({ taskId, mode: "dontAsk" }))}>
+                  Don&apos;t ask
+                </button>
+              </li>
+              <li>
+                <button type="button" className="text-error" onClick={() => setBypassOpen(true)}>
+                  Bypass permissions
+                </button>
+              </li>
+            </ul>
+          </div>
+        </div>
+        <BypassConfirmModal
+          open={bypassOpen}
+          onCancel={() => setBypassOpen(false)}
+          onConfirm={() => {
+            setBypassOpen(false);
+            run(() => client.setPermissionMode({ taskId, mode: "bypassPermissions" }));
+          }}
+        />
+        {slashCommands.length > 0 && (
+          <div className="flex gap-1.5 overflow-x-auto">
+            {slashCommands.map((c) => (
+              <button
+                key={c}
+                type="button"
+                onClick={() => setMessage(`/${c} `)}
+                className="flex-none px-3.5 py-2 rounded-2xl border border-base-content/15 text-[11px] text-base-content/70 min-h-9"
+              >
+                /{c}
               </button>
             ))}
           </div>

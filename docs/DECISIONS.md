@@ -59,8 +59,10 @@ Any doc, code, comment, or memory that contradicts this file or an
 - **A shared writable repo PVC across tasks.** One git worktree per task,
   always — see `adr/0003`.
 - **Inferring approval from silence, round completion, or free-text
-  sentiment.** Only an explicit, structured `/approve` signal unlocks
-  write/edit — see `adr/0005`, `adr/0025`.
+  sentiment.** Only an explicit, structured `/approve` signal (or the
+  dashboard's explicit permission-mode selector, itself typed-confirmation
+  gated for `bypassPermissions`) unlocks write/edit — see `adr/0005`,
+  `adr/0025`, `adr/0027`.
 - **Deleting a worktree or branch as a side effect of a task reaching a
   terminal status.** Only an explicit signal — the sweep's confirmed
   `[gone]`, or an explicit dashboard delete — removes git state; a hard-won

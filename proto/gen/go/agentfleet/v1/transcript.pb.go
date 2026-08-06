@@ -48,6 +48,11 @@ const (
 	TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_ASSISTANT TranscriptEntryType = 8
 	TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_USER      TranscriptEntryType = 9
 	TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_RESULT    TranscriptEntryType = 10
+	// Human-authored, from the dashboard's permission-mode selector (see
+	// docs/adr/0027) — `text` is the raw target mode string
+	// ("acceptEdits"|"dontAsk"|"bypassPermissions"), same convention APPROVE
+	// already uses for its `text:"approved"`.
+	TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_PERMISSION_MODE TranscriptEntryType = 11
 )
 
 // Enum value maps for TranscriptEntryType.
@@ -64,19 +69,21 @@ var (
 		8:  "TRANSCRIPT_ENTRY_TYPE_ASSISTANT",
 		9:  "TRANSCRIPT_ENTRY_TYPE_USER",
 		10: "TRANSCRIPT_ENTRY_TYPE_RESULT",
+		11: "TRANSCRIPT_ENTRY_TYPE_PERMISSION_MODE",
 	}
 	TranscriptEntryType_value = map[string]int32{
-		"TRANSCRIPT_ENTRY_TYPE_UNSPECIFIED": 0,
-		"TRANSCRIPT_ENTRY_TYPE_DISCUSSION":  1,
-		"TRANSCRIPT_ENTRY_TYPE_APPROVE":     2,
-		"TRANSCRIPT_ENTRY_TYPE_ABORT":       3,
-		"TRANSCRIPT_ENTRY_TYPE_QUESTION":    4,
-		"TRANSCRIPT_ENTRY_TYPE_ANSWER":      5,
-		"TRANSCRIPT_ENTRY_TYPE_TOOL_CALL":   6,
-		"TRANSCRIPT_ENTRY_TYPE_SYSTEM":      7,
-		"TRANSCRIPT_ENTRY_TYPE_ASSISTANT":   8,
-		"TRANSCRIPT_ENTRY_TYPE_USER":        9,
-		"TRANSCRIPT_ENTRY_TYPE_RESULT":      10,
+		"TRANSCRIPT_ENTRY_TYPE_UNSPECIFIED":     0,
+		"TRANSCRIPT_ENTRY_TYPE_DISCUSSION":      1,
+		"TRANSCRIPT_ENTRY_TYPE_APPROVE":         2,
+		"TRANSCRIPT_ENTRY_TYPE_ABORT":           3,
+		"TRANSCRIPT_ENTRY_TYPE_QUESTION":        4,
+		"TRANSCRIPT_ENTRY_TYPE_ANSWER":          5,
+		"TRANSCRIPT_ENTRY_TYPE_TOOL_CALL":       6,
+		"TRANSCRIPT_ENTRY_TYPE_SYSTEM":          7,
+		"TRANSCRIPT_ENTRY_TYPE_ASSISTANT":       8,
+		"TRANSCRIPT_ENTRY_TYPE_USER":            9,
+		"TRANSCRIPT_ENTRY_TYPE_RESULT":          10,
+		"TRANSCRIPT_ENTRY_TYPE_PERMISSION_MODE": 11,
 	}
 )
 
@@ -395,7 +402,7 @@ const file_agentfleet_v1_transcript_proto_rawDesc = "" +
 	"timeout_ms\x18\x03 \x01(\x05R\ttimeoutMs\"r\n" +
 	"\x1bReadTranscriptSinceResponse\x128\n" +
 	"\aentries\x18\x01 \x03(\v2\x1e.agentfleet.v1.TranscriptEntryR\aentries\x12\x19\n" +
-	"\bnext_seq\x18\x02 \x01(\x03R\anextSeq*\x9a\x03\n" +
+	"\bnext_seq\x18\x02 \x01(\x03R\anextSeq*\xc5\x03\n" +
 	"\x13TranscriptEntryType\x12%\n" +
 	"!TRANSCRIPT_ENTRY_TYPE_UNSPECIFIED\x10\x00\x12$\n" +
 	" TRANSCRIPT_ENTRY_TYPE_DISCUSSION\x10\x01\x12!\n" +
@@ -408,7 +415,8 @@ const file_agentfleet_v1_transcript_proto_rawDesc = "" +
 	"\x1fTRANSCRIPT_ENTRY_TYPE_ASSISTANT\x10\b\x12\x1e\n" +
 	"\x1aTRANSCRIPT_ENTRY_TYPE_USER\x10\t\x12 \n" +
 	"\x1cTRANSCRIPT_ENTRY_TYPE_RESULT\x10\n" +
-	"BMZKgithub.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1;agentfleetv1b\x06proto3"
+	"\x12)\n" +
+	"%TRANSCRIPT_ENTRY_TYPE_PERMISSION_MODE\x10\vBMZKgithub.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1;agentfleetv1b\x06proto3"
 
 var (
 	file_agentfleet_v1_transcript_proto_rawDescOnce sync.Once

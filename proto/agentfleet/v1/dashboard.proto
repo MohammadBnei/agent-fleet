@@ -103,6 +103,22 @@ message StopResponse {
   string status = 1;
 }
 
+// Sets an arbitrary SDK permission mode on a running task (docs/adr/0027) —
+// distinct from Approve, which stays a fixed plan->default flip matching
+// Discord's binary /approve. `mode` must be one of "acceptEdits"|
+// "dontAsk"|"bypassPermissions" (validated server-side); "bypassPermissions"
+// deliberately disables the canUseTool Write/Edit gate for this task for the
+// rest of the session — the dashboard must get explicit, typed confirmation
+// from the human before sending that value.
+message SetPermissionModeRequest {
+  string task_id = 1;
+  string mode = 2;
+}
+
+message SetPermissionModeResponse {
+  string status = 1;
+}
+
 message KillE2eRequest {
   string task_id = 1;
 }
@@ -225,6 +241,7 @@ service DashboardService {
   rpc GetE2eStatus(GetE2eStatusRequest) returns (GetE2eStatusResponse);
   rpc Approve(ApproveRequest) returns (ApproveResponse);
   rpc Stop(StopRequest) returns (StopResponse);
+  rpc SetPermissionMode(SetPermissionModeRequest) returns (SetPermissionModeResponse);
   rpc KillE2e(KillE2eRequest) returns (KillE2eResponse);
   rpc AnswerQuestion(AnswerQuestionRequest) returns (AnswerQuestionResponse);
   rpc Discuss(DiscussRequest) returns (DiscussResponse);

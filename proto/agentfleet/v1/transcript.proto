@@ -35,6 +35,11 @@ enum TranscriptEntryType {
   TRANSCRIPT_ENTRY_TYPE_ASSISTANT = 8;
   TRANSCRIPT_ENTRY_TYPE_USER = 9;
   TRANSCRIPT_ENTRY_TYPE_RESULT = 10;
+  // Human-authored, from the dashboard's permission-mode selector (see
+  // docs/adr/0027) — `text` is the raw target mode string
+  // ("acceptEdits"|"dontAsk"|"bypassPermissions"), same convention APPROVE
+  // already uses for its `text:"approved"`.
+  TRANSCRIPT_ENTRY_TYPE_PERMISSION_MODE = 11;
 }
 
 message TranscriptEntry {
