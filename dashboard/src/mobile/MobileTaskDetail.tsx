@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { client } from "../connectClient";
 import { TranscriptEntryType, type TranscriptEntry } from "../gen/agentfleet/v1/transcript_pb";
 import {
@@ -250,6 +250,30 @@ export function MobileTaskDetail({
   const { ref: feedRef, atBottom: feedAtBottom, onScroll: feedOnScroll, scrollToBottom: feedScrollToBottom } =
     useAtBottom<HTMLDivElement>();
 
+  // See TaskDetail.tsx's identical effect for the rationale: new human
+  // entries jump to the bottom, new planner entries only pulse the button.
+  const [hasNewAiMessage, setHasNewAiMessage] = useState(false);
+  const prevEntriesLenRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (prevEntriesLenRef.current === null) {
+      prevEntriesLenRef.current = entries.length;
+      return;
+    }
+    if (entries.length > prevEntriesLenRef.current) {
+      const latest = entries[entries.length - 1];
+      if (latest.from === "human") {
+        feedScrollToBottom();
+        setHasNewAiMessage(false);
+      } else if (!feedAtBottom) {
+        setHasNewAiMessage(true);
+      }
+    }
+    prevEntriesLenRef.current = entries.length;
+  }, [entries, feedAtBottom, feedScrollToBottom]);
+  useEffect(() => {
+    if (feedAtBottom) setHasNewAiMessage(false);
+  }, [feedAtBottom]);
+
   if (loadError) {
     return (
       <div className="p-4">
@@ -405,10 +429,13 @@ export function MobileTaskDetail({
         <button
           type="button"
           onClick={feedScrollToBottom}
-          className="btn btn-circle btn-xs absolute bottom-3 right-3 bg-base-300 border-base-content/20 shadow-md"
+          className="btn btn-circle btn-xs absolute bottom-3 right-3 bg-base-300 border-base-content/20 shadow-md relative"
           title="Scroll to bottom"
         >
           ↓
+          {hasNewAiMessage && (
+            <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-primary animate-fpulse" />
+          )}
         </button>
       )}
       </div>

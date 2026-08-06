@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { client } from "../connectClient";
 import type { Task } from "../gen/agentfleet/v1/dashboard_pb";
 import { podStateBadge, staleBadge, heartbeatLabel, prBadge } from "./TaskList";
@@ -252,6 +252,33 @@ export function TaskDetail({
   const { ref: todosRef, atBottom: todosAtBottom, onScroll: todosOnScroll, scrollToBottom: todosScrollToBottom } =
     useAtBottom<HTMLDivElement>();
 
+  // A new human entry (this tab's own send, or one relayed from Discord)
+  // always jumps to the bottom — the reader clearly wants to see it. A new
+  // planner entry never yanks the view; if they're mid-scroll reading
+  // history, the button just pulses instead (cleared once they scroll back
+  // down themselves, via the effect below).
+  const [hasNewAiMessage, setHasNewAiMessage] = useState(false);
+  const prevEntriesLenRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (prevEntriesLenRef.current === null) {
+      prevEntriesLenRef.current = entries.length;
+      return;
+    }
+    if (entries.length > prevEntriesLenRef.current) {
+      const latest = entries[entries.length - 1];
+      if (latest.from === "human") {
+        feedScrollToBottom();
+        setHasNewAiMessage(false);
+      } else if (!feedAtBottom) {
+        setHasNewAiMessage(true);
+      }
+    }
+    prevEntriesLenRef.current = entries.length;
+  }, [entries, feedAtBottom, feedScrollToBottom]);
+  useEffect(() => {
+    if (feedAtBottom) setHasNewAiMessage(false);
+  }, [feedAtBottom]);
+
   if (loadError) return <div className="alert alert-error m-4">{loadError}</div>;
   if (!fetchedTask) return <div className="p-4">Loading…</div>;
 
@@ -388,10 +415,13 @@ export function TaskDetail({
             <button
               type="button"
               onClick={feedScrollToBottom}
-              className="btn btn-circle btn-xs absolute bottom-3 right-3 bg-base-300 border-base-content/20 shadow-md"
+              className="btn btn-circle btn-xs absolute bottom-3 right-3 bg-base-300 border-base-content/20 shadow-md relative"
               title="Scroll to bottom"
             >
               ↓
+              {hasNewAiMessage && (
+                <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-primary animate-fpulse" />
+              )}
             </button>
           )}
           </div>
