@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.10.3](https://github.com/MohammadBnei/agent-fleet/compare/1.10.2...1.10.3) (2026-08-06)
+
+
+### Bug Fixes
+
+* **core:** close dispatch-loop nudge gaps, widen poll to a true fallback ([3a7ef44](https://github.com/MohammadBnei/agent-fleet/commit/3a7ef44c289bdbae75d18d4952da723c33b08912))
+
 ## [1.10.2](https://github.com/MohammadBnei/agent-fleet/compare/1.10.1...1.10.2) (2026-08-05)
 
 
