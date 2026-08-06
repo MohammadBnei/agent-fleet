@@ -137,6 +137,13 @@ export default function App() {
     () => tasks.filter((t) => needsYouIds.has(t.id)).length,
     [tasks, needsYouIds],
   );
+  // "sessions live" means running, not "ever returned by listTasks" — the
+  // backend keeps returning done/failed/cancelled tasks (list history), so
+  // tasks.length alone never decrements.
+  const liveCount = useMemo(
+    () => tasks.filter((t) => ACTIVE_STATUSES.has(t.status)).length,
+    [tasks],
+  );
   const repoCount = useMemo(
     () => new Set(tasks.map((t) => t.repo)).size,
     [tasks],
@@ -152,11 +159,11 @@ export default function App() {
   }, [tasks, filter]);
 
   return (
-    <div className="min-h-screen bg-base-100 flex flex-col">
+    <div className="h-screen overflow-hidden bg-base-100 grid grid-rows-[auto_1fr]">
       {/* Desktop chrome — the mobile view (below) has its own header inside
           MobileTaskList/MobileTaskDetail, matching the "herd" mock's phone
           screens, which don't share this row at all. */}
-      <div className="hidden sm:flex flex-none items-center gap-5 px-5 h-13 border-b border-base-content/10 bg-base-200">
+      <div className="hidden sm:flex row-start-1 items-center gap-5 px-5 h-13 border-b border-base-content/10 bg-base-200">
         <div className="flex items-baseline gap-2">
           <span className="font-display font-semibold text-base">herd</span>
           <span className="text-[10.5px] text-base-content/50">
@@ -180,7 +187,7 @@ export default function App() {
               selectTask(id);
             }}
           />
-          <span>{tasks.length} sessions live</span>
+          <span>{liveCount} sessions live</span>
           <span>{repoCount} repos</span>
         </div>
 
@@ -218,12 +225,12 @@ export default function App() {
 
       <ErrorModal message={tasksError} onClose={() => setTasksError(null)} />
 
-      <div className="hidden sm:flex flex-col lg:flex-row flex-1 min-h-0">
+      <div className="hidden sm:grid grid-cols-1 lg:grid-cols-[320px_1fr] row-start-2 min-h-0">
         {view === "worktrees" ? (
           <Worktrees />
         ) : (
           <>
-            <div className="lg:w-[320px] flex-none border-b lg:border-b-0 lg:border-r border-base-content/10 bg-base-200 overflow-y-auto">
+            <div className="border-b lg:border-b-0 lg:border-r border-base-content/10 bg-base-200 overflow-y-auto min-h-0">
               <TaskList
                 tasks={filteredTasks}
                 selectedId={selectedId}
@@ -233,19 +240,24 @@ export default function App() {
                 onDelete={deleteTask}
               />
             </div>
-            <div className="flex-1 min-w-0">
+            <div className="min-w-0 min-h-0">
               {selectedId ? (
                 <TaskDetail taskId={selectedId} tasks={tasks} onSelect={selectTask} />
               ) : (
-                <div className="p-4 opacity-60">Select a task to view details.</div>
+                <div className="h-full flex flex-col items-center justify-center gap-2 text-base-content/30">
+                  <span className="text-4xl">⌕</span>
+                  <span className="text-[12px]">Select a task to view details</span>
+                </div>
               )}
             </div>
           </>
         )}
       </div>
 
-      <div className="sm:hidden flex-1 min-h-0 flex flex-col">
-        {selectedId ? (
+      <div className="sm:hidden row-start-2 min-h-0 flex flex-col">
+        {view === "worktrees" ? (
+          <Worktrees onBack={() => selectView("tasks")} />
+        ) : selectedId ? (
           <MobileTaskDetail taskId={selectedId} onBack={clearSelection} onDelete={() => deleteTask(selectedId)} />
         ) : (
           <MobileTaskList
@@ -254,10 +266,12 @@ export default function App() {
             needsYouIds={needsYouIds}
             todosById={todosById}
             needsYouCount={needsYouCount}
+            liveCount={liveCount}
             repoCount={repoCount}
             filter={filter}
             setFilter={setFilter}
             onSelect={selectTask}
+            onOpenWorktrees={() => selectView("worktrees")}
             onCreated={(id) => {
               loadTasks();
               selectTask(id);

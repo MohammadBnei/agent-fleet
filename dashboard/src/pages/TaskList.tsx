@@ -1,5 +1,4 @@
 import type { Task } from "../gen/agentfleet/v1/dashboard_pb";
-import { enrichTask } from "../mockEnrichment";
 import type { TodoItem } from "../transcript";
 
 export const ACTIVE_STATUSES = new Set(["pending", "claimed", "planning", "implementing"]);
@@ -135,7 +134,7 @@ function NeedsYouCard({
   onSelect: () => void;
   onDelete: () => void;
 }) {
-  const enrichment = enrichTask(task);
+  const heartbeat = heartbeatLabel(task);
   const progress = todos.filter((t) => t.status === "completed").length;
   const podBadge = podStateBadge(task);
   const staleTag = staleBadge(task);
@@ -162,7 +161,7 @@ function NeedsYouCard({
               {staleTag.label}
             </span>
           )}
-          <span className="ml-auto text-[9.5px] text-primary">{enrichment.idleLabel}</span>
+          {heartbeat && <span className="ml-auto text-[9.5px] text-primary">{heartbeat}</span>}
         </div>
         <div className="text-[11.5px] leading-relaxed mt-1.5 text-base-content/90">
           {task.description}

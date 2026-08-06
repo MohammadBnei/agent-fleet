@@ -1,6 +1,5 @@
 import type { Task } from "../gen/agentfleet/v1/dashboard_pb";
-import { enrichTask } from "../mockEnrichment";
-import { bucketTasks, prBadge } from "../pages/TaskList";
+import { bucketTasks, prBadge, heartbeatLabel } from "../pages/TaskList";
 import { NewTaskDialog } from "../components/NewTaskDialog";
 import type { TodoItem } from "../transcript";
 
@@ -10,7 +9,7 @@ import type { TodoItem } from "../transcript";
 // comes from App.tsx, same as the desktop TaskList.
 
 function NeedsYouCard({ task, todos, onSelect }: { task: Task; todos: TodoItem[]; onSelect: () => void }) {
-  const enrichment = enrichTask(task);
+  const heartbeat = heartbeatLabel(task);
   const done = todos.filter((t) => t.status === "completed").length;
   return (
     <button
@@ -22,7 +21,7 @@ function NeedsYouCard({ task, todos, onSelect }: { task: Task; todos: TodoItem[]
       <div className="flex items-center gap-2 min-w-0">
         <span className="text-[12px] font-semibold flex-none">#{task.id.slice(0, 6)}</span>
         <span className="text-[10.5px] text-base-content/50 truncate min-w-0">{task.repo}</span>
-        <span className="ml-auto text-[10px] text-primary flex-none">{enrichment.idleLabel}</span>
+        {heartbeat && <span className="ml-auto text-[10px] text-primary flex-none">{heartbeat}</span>}
       </div>
       <div className="text-[13px] leading-relaxed mt-2 text-base-content/95">{task.description}</div>
       <div className="flex gap-1 mt-3">
@@ -43,7 +42,7 @@ function NeedsYouCard({ task, todos, onSelect }: { task: Task; todos: TodoItem[]
 }
 
 function WorkingCard({ task, todos, onSelect }: { task: Task; todos: TodoItem[]; onSelect: () => void }) {
-  const enrichment = enrichTask(task);
+  const heartbeat = heartbeatLabel(task);
   const done = todos.filter((t) => t.status === "completed").length;
   const pct = Math.round((done / Math.max(todos.length, 1)) * 100);
   return (
@@ -56,7 +55,7 @@ function WorkingCard({ task, todos, onSelect }: { task: Task; todos: TodoItem[];
         <span className="w-1.5 h-1.5 rounded-full bg-secondary animate-fpulse flex-none" />
         <span className="text-[12px] flex-none">#{task.id.slice(0, 6)}</span>
         <span className="text-[10.5px] text-base-content/50 truncate min-w-0">{task.repo}</span>
-        <span className="ml-auto text-[10px] text-base-content/50 flex-none">{enrichment.currentActivity}</span>
+        {heartbeat && <span className="ml-auto text-[10px] text-base-content/50 flex-none">{heartbeat}</span>}
       </div>
       <div className="text-[12.5px] leading-relaxed mt-2 text-base-content/85">{task.description}</div>
       <div className="flex items-center gap-2 mt-2">
@@ -105,10 +104,12 @@ export function MobileTaskList({
   needsYouIds,
   todosById,
   needsYouCount,
+  liveCount,
   repoCount,
   filter,
   setFilter,
   onSelect,
+  onOpenWorktrees,
   onCreated,
 }: {
   tasks: Task[];
@@ -116,10 +117,12 @@ export function MobileTaskList({
   needsYouIds: Set<string>;
   todosById: Map<string, TodoItem[]>;
   needsYouCount: number;
+  liveCount: number;
   repoCount: number;
   filter: string;
   setFilter: (v: string) => void;
   onSelect: (id: string) => void;
+  onOpenWorktrees: () => void;
   onCreated: (id: string) => void;
 }) {
   const { needsYou, working, shipped } = bucketTasks(filteredTasks, needsYouIds);
@@ -130,8 +133,15 @@ export function MobileTaskList({
         <div className="flex items-center gap-2.5">
           <span className="font-display font-semibold text-[22px]">herd</span>
           <span className="text-[10px] text-base-content/50">
-            {tasks.length} sessions · {repoCount} repos
+            {liveCount} sessions · {repoCount} repos
           </span>
+          <button
+            type="button"
+            onClick={onOpenWorktrees}
+            className="ml-auto text-[10px] text-base-content/50 px-2 py-1 rounded-md border border-base-content/10"
+          >
+            Worktrees
+          </button>
         </div>
         <div className="flex items-center gap-2.5 mt-3">
           <div className="flex-1 flex items-center gap-2 px-3 py-2 border border-base-content/10 rounded-lg text-[11px] text-base-content/50">

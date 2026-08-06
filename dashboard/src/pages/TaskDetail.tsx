@@ -1,9 +1,8 @@
 import { useState } from "react";
 import { client } from "../connectClient";
 import type { Task } from "../gen/agentfleet/v1/dashboard_pb";
-import { podStateBadge, staleBadge, heartbeatLabel } from "./TaskList";
+import { podStateBadge, staleBadge, heartbeatLabel, prBadge } from "./TaskList";
 import { TranscriptEntryType, type TranscriptEntry } from "../gen/agentfleet/v1/transcript_pb";
-import { enrichTask } from "../mockEnrichment";
 import {
   parseQuestions,
   parseAnswers,
@@ -13,10 +12,12 @@ import {
   parseSdkResultSummary,
   buildToolCallPairs,
   latestTodos,
+  asDisplayMarkdown,
 } from "../transcript";
 import { useTaskDetail } from "../useTaskDetail";
 import { ToolCallItem } from "../components/ToolCallItem";
 import { ErrorModal } from "../components/ErrorModal";
+import { Markdown } from "../components/Markdown";
 
 // Minimal distinct treatment for the raw SDK message types (reliability-
 // findings.md #0: "relay everything, let the UI decide") — before this,
@@ -44,8 +45,9 @@ function EntryBubble({ entry }: { entry: TranscriptEntry }) {
   }
   return (
     <div className="max-w-[760px]">
-      <div className="text-[10px] opacity-50">{entry.from}</div>
-      <div className="text-[12px] leading-relaxed whitespace-pre-wrap mt-1 text-base-content/90">{entry.text}</div>
+      <div className="text-[12px] leading-relaxed text-base-content/90">
+        <Markdown text={asDisplayMarkdown(entry)} />
+      </div>
     </div>
   );
 }
@@ -72,8 +74,7 @@ function QuestionCard({
   if (!questions) {
     return (
       <div className="px-3 py-2 rounded-md bg-base-200/60 border border-base-content/10">
-        <div className="text-[10px] opacity-50">{entry.from}</div>
-        <div className="text-[12px] whitespace-pre-wrap mt-1">{entry.text}</div>
+        <div className="text-[12px] whitespace-pre-wrap">{entry.text}</div>
       </div>
     );
   }
@@ -198,8 +199,19 @@ export function TaskDetail({
   tasks: Task[];
   onSelect: (id: string) => void;
 }) {
-  const { task: fetchedTask, entries, previewUrl, branch, busy, loadError, actionError, run, clearActionError } =
-    useTaskDetail(taskId);
+  const {
+    task: fetchedTask,
+    entries,
+    previewUrl,
+    branch,
+    busy,
+    loadError,
+    actionError,
+    pendingMessage,
+    run,
+    sendDiscuss,
+    clearActionError,
+  } = useTaskDetail(taskId);
   const [message, setMessage] = useState("");
 
   if (loadError) return <div className="alert alert-error m-4">{loadError}</div>;
@@ -211,17 +223,17 @@ export function TaskDetail({
   // poll tick includes this task (e.g. a just-created task).
   const task = tasks.find((t) => t.id === taskId) ?? fetchedTask;
 
-  const enrichment = enrichTask(task);
   const siblings = tasks.filter((t) => t.id !== taskId);
   const podBadge = podStateBadge(task);
   const staleTag = staleBadge(task);
   const heartbeat = heartbeatLabel(task);
+  const prLink = prBadge(task);
 
   function sendMessage() {
     const text = message.trim();
     if (!text) return;
     setMessage("");
-    run(() => client.discuss({ taskId, text }));
+    sendDiscuss(text);
   }
 
   // Used both by the inline QuestionCard below and the quick-reply chip row.
@@ -234,8 +246,8 @@ export function TaskDetail({
   const todos = latestTodos(entries);
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="flex-none px-6 pt-4 pb-3.5 border-b border-base-content/10">
+    <div className="grid grid-rows-[auto_1fr] h-full">
+      <div className="px-6 pt-4 pb-3.5 border-b border-base-content/10">
         <div className="flex items-center gap-2.5">
           <h2 className="font-display font-semibold text-[19px]">{task.description}</h2>
           <span className={`px-2 py-0.5 rounded text-[9.5px] font-semibold border tracking-wide ${STATUS_COLOR[task.status] ?? "border-base-content/20"}`}>
@@ -257,14 +269,21 @@ export function TaskDetail({
               {staleTag.label}
             </span>
           )}
+          {prLink && (
+            <a
+              href={task.prUrl}
+              target="_blank"
+              rel="noreferrer"
+              className={`px-2 py-0.5 rounded text-[9.5px] font-semibold border tracking-wide border-current ${prLink.className}`}
+            >
+              {prLink.label}
+            </a>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-3.5 mt-2 text-[10px] text-base-content/50">
           <span>#{task.id.slice(0, 6)}</span>
           <span>{task.repo}</span>
           {branch && <span>branch {branch}</span>}
-          <span>{enrichment.model}</span>
-          <span>{enrichment.tokens}</span>
-          <span>started {enrichment.startedAt}</span>
           {heartbeat && <span className={staleTag ? "text-error" : undefined}>{heartbeat}</span>}
           {task.retryCount > 0 && <span>attempt {task.retryCount + 1}</span>}
           {task.lastError && (
@@ -275,8 +294,8 @@ export function TaskDetail({
         </div>
       </div>
 
-      <div className="flex flex-1 min-h-0">
-        <div className="flex-1 min-w-0 flex flex-col">
+      <div className="grid grid-cols-[1fr_280px] min-h-0">
+        <div className="min-w-0 min-h-0 flex flex-col">
           <div className="flex-1 overflow-y-auto px-6 py-5 flex flex-col gap-3">
             {entries.map((entry, idx) => {
               // Rendered inline by its QUESTION entry below, not as its own bubble.
@@ -309,6 +328,16 @@ export function TaskDetail({
 
               return <div key={String(entry.seq)}><EntryBubble entry={entry} /></div>;
             })}
+            {pendingMessage && (
+              <div className="max-w-[760px] opacity-60">
+                <div className="text-[12px] leading-relaxed text-base-content/90 flex items-start gap-2">
+                  <div className="flex-1 min-w-0">
+                    <Markdown text={asDisplayMarkdown({ from: "human", text: pendingMessage })} />
+                  </div>
+                  <span className="loading loading-spinner loading-xs flex-none mt-1" />
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="flex-none px-6 py-3.5 border-t border-base-content/10 bg-base-200 flex flex-col gap-2.5">
@@ -394,7 +423,7 @@ export function TaskDetail({
           </div>
         </div>
 
-        <div className="w-[280px] flex-none border-l border-base-content/10 bg-base-200 px-4 py-4 overflow-y-auto flex flex-col gap-5">
+        <div className="border-l border-base-content/10 bg-base-200 px-4 py-4 overflow-y-auto min-h-0 flex flex-col gap-5">
           <div>
             <div className="text-[9.5px] tracking-[0.11em] text-base-content/60 font-semibold">TODOS</div>
             <div className="flex flex-col gap-1.5 mt-2.5">
@@ -459,17 +488,6 @@ export function TaskDetail({
               ) : (
                 <div className="text-[10.5px] text-base-content/40">no changes yet</div>
               )}
-            </div>
-          </div>
-
-          <div>
-            <div className="text-[9.5px] tracking-[0.11em] text-base-content/60 font-semibold">DECISIONS</div>
-            <div className="flex flex-col gap-2 mt-2.5">
-              {enrichment.decisions.map((d, i) => (
-                <div key={i} className="text-[10.5px] leading-relaxed text-base-content/70">
-                  {d.text} <span className="text-base-content/35">· {d.author}</span>
-                </div>
-              ))}
             </div>
           </div>
         </div>

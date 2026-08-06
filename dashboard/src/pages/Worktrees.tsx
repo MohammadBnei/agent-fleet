@@ -81,7 +81,9 @@ function WorktreeRow({
   );
 }
 
-export function Worktrees() {
+// onBack is only passed by the mobile wrapper — desktop's grid column has
+// no "back" concept, it's a permanent third top-level view.
+export function Worktrees({ onBack }: { onBack?: () => void } = {}) {
   const [worktrees, setWorktrees] = useState<WorktreeView[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -100,8 +102,13 @@ export function Worktrees() {
   }, [load]);
 
   return (
-    <div className="p-4 overflow-x-auto">
+    <div className="lg:col-span-2 min-h-0 overflow-y-auto p-4 overflow-x-auto">
       <div className="flex items-center gap-3 mb-3">
+        {onBack && (
+          <button type="button" onClick={onBack} className="text-[17px] text-base-content/60 w-7 h-8 flex items-center">
+            ‹
+          </button>
+        )}
         <h2 className="font-semibold text-base">Worktrees</h2>
         <button type="button" onClick={load} disabled={loading} className="btn btn-xs">
           {loading ? "Refreshing…" : "Refresh"}

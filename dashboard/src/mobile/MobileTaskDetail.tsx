@@ -12,10 +12,14 @@ import {
   buildToolCallPairs,
   pairedResultSeqs,
   latestTodos,
+  asDisplayMarkdown,
 } from "../transcript";
 import { useTaskDetail } from "../useTaskDetail";
 import { ToolCallItem } from "../components/ToolCallItem";
 import { ErrorModal } from "../components/ErrorModal";
+import { Markdown } from "../components/Markdown";
+import { JsonView } from "../components/JsonView";
+import { prBadge } from "../pages/TaskList";
 
 // Mirrors the "herd" mock's phone session screen (Agent Fleet Mobile.dc.html)
 // minus device chrome. Single-pane (list vs. detail), unlike desktop's
@@ -38,8 +42,7 @@ function MobileQuestionCard({
   if (!questions) {
     return (
       <div className="px-3 py-2.5 rounded-lg bg-base-200/60 border border-base-content/10">
-        <div className="text-[10px] opacity-50">{entry.from}</div>
-        <div className="text-[12.5px] whitespace-pre-wrap mt-1">{entry.text}</div>
+        <div className="text-[12.5px] whitespace-pre-wrap">{entry.text}</div>
       </div>
     );
   }
@@ -175,9 +178,11 @@ function MobileEntryBubble({ entry }: { entry: TranscriptEntry }) {
       <div
         className={`rounded-md border px-2.5 py-2 ${tr?.isError ? "border-error/40 bg-error/5" : "border-base-content/10 bg-base-200/40"}`}
       >
-        <pre className="text-[10.5px] whitespace-pre-wrap font-mono text-base-content/70">
-          {typeof tr?.content === "string" ? tr.content : JSON.stringify(tr?.content ?? entry.text, null, 2)}
-        </pre>
+        {typeof tr?.content === "string" ? (
+          <pre className="text-[10.5px] whitespace-pre-wrap font-mono text-base-content/70">{tr.content}</pre>
+        ) : (
+          <JsonView value={tr?.content ?? entry.text} />
+        )}
       </div>
     );
   }
@@ -191,8 +196,9 @@ function MobileEntryBubble({ entry }: { entry: TranscriptEntry }) {
   }
   return (
     <div>
-      <div className="text-[10px] opacity-50">{entry.from}</div>
-      <div className="text-[12.5px] leading-relaxed whitespace-pre-wrap mt-1 text-base-content/90">{entry.text}</div>
+      <div className="text-[12.5px] leading-relaxed text-base-content/90">
+        <Markdown text={asDisplayMarkdown(entry)} />
+      </div>
     </div>
   );
 }
@@ -206,7 +212,8 @@ export function MobileTaskDetail({
   onBack: () => void;
   onDelete: () => void;
 }) {
-  const { task, entries, busy, loadError, actionError, run, clearActionError } = useTaskDetail(taskId);
+  const { task, entries, busy, loadError, actionError, pendingMessage, run, sendDiscuss, clearActionError } =
+    useTaskDetail(taskId);
   const [message, setMessage] = useState("");
 
   if (loadError) {
@@ -223,6 +230,7 @@ export function MobileTaskDetail({
 
   const todos = latestTodos(entries) ?? [];
   const done = todos.filter((t) => t.status === "completed").length;
+  const prLink = prBadge(task);
   const pendingQuestion = findPendingQuestion(entries);
   const pendingParsed = pendingQuestion ? parseQuestions(pendingQuestion.text) : null;
   const chipQuestion =
@@ -241,7 +249,7 @@ export function MobileTaskDetail({
     const text = message.trim();
     if (!text) return;
     setMessage("");
-    run(() => client.discuss({ taskId, text }));
+    sendDiscuss(text);
   }
 
   return (
@@ -255,8 +263,15 @@ export function MobileTaskDetail({
             <div className="text-[13px] font-semibold text-base-content leading-tight truncate">
               {task.description}
             </div>
-            <div className="text-[10px] text-base-content/50 mt-1">
-              #{task.id.slice(0, 6)} · {task.repo}
+            <div className="text-[10px] text-base-content/50 mt-1 flex items-center gap-2">
+              <span>
+                #{task.id.slice(0, 6)} · {task.repo}
+              </span>
+              {prLink && (
+                <a href={task.prUrl} target="_blank" rel="noreferrer" className={`text-[9px] font-semibold ${prLink.className}`}>
+                  {prLink.label}
+                </a>
+              )}
             </div>
           </div>
           <button
@@ -336,6 +351,16 @@ export function MobileTaskDetail({
             </div>
           );
         })}
+        {pendingMessage && (
+          <div className="opacity-60">
+            <div className="text-[12.5px] leading-relaxed text-base-content/90 flex items-start gap-2">
+              <div className="flex-1 min-w-0">
+                <Markdown text={asDisplayMarkdown({ from: "human", text: pendingMessage })} />
+              </div>
+              <span className="loading loading-spinner loading-xs flex-none mt-1" />
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="flex-none border-t border-base-content/10 bg-base-200 px-4 pt-3 pb-2.5 flex flex-col gap-2.5">
