@@ -154,11 +154,14 @@ CREATE UNIQUE INDEX IF NOT EXISTS planning_transcript_idempotency_idx
 -- 'tool_call' is PushToolTelemetry's sidecar-pushed summary — already
 -- inserted before this change (coreserver/server.go), just never actually
 -- listed here; a pre-existing gap this widening also closes.
+--
+-- 'permission_mode' is human-authored, from the dashboard's permission-mode
+-- selector (docs/adr/0027) — `text` is the raw target SDK mode string.
 ALTER TABLE planning_transcript DROP CONSTRAINT IF EXISTS planning_transcript_type_check;
 ALTER TABLE planning_transcript ADD CONSTRAINT planning_transcript_type_check
   CHECK (type IN (
     'discussion', 'approve', 'abort', 'question', 'answer',
-    'tool_call', 'system', 'assistant', 'user', 'result'
+    'tool_call', 'system', 'assistant', 'user', 'result', 'permission_mode'
   ) OR type IS NULL);
 
 -- Retry/DLQ for the Discord-relay side effect only — the transcript entry

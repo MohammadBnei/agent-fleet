@@ -116,6 +116,24 @@ export interface StopResponse {
   status: string;
 }
 
+/**
+ * Sets an arbitrary SDK permission mode on a running task (docs/adr/0027) —
+ * distinct from Approve, which stays a fixed plan->default flip matching
+ * Discord's binary /approve. `mode` must be one of "acceptEdits"|
+ * "dontAsk"|"bypassPermissions" (validated server-side); "bypassPermissions"
+ * deliberately disables the canUseTool Write/Edit gate for this task for the
+ * rest of the session — the dashboard must get explicit, typed confirmation
+ * from the human before sending that value.
+ */
+export interface SetPermissionModeRequest {
+  taskId: string;
+  mode: string;
+}
+
+export interface SetPermissionModeResponse {
+  status: string;
+}
+
 export interface KillE2eRequest {
   taskId: string;
 }
@@ -758,6 +776,71 @@ export const StopResponse: MessageFns<StopResponse> = {
   },
 };
 
+function createBaseSetPermissionModeRequest(): SetPermissionModeRequest {
+  return { taskId: "", mode: "" };
+}
+
+export const SetPermissionModeRequest: MessageFns<SetPermissionModeRequest> = {
+  fromJSON(object: any): SetPermissionModeRequest {
+    return {
+      taskId: isSet(object.taskId)
+        ? globalThis.String(object.taskId)
+        : isSet(object.task_id)
+        ? globalThis.String(object.task_id)
+        : "",
+      mode: isSet(object.mode) ? globalThis.String(object.mode) : "",
+    };
+  },
+
+  toJSON(message: SetPermissionModeRequest): unknown {
+    const obj: any = {};
+    if (message.taskId !== "") {
+      obj.taskId = message.taskId;
+    }
+    if (message.mode !== "") {
+      obj.mode = message.mode;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<SetPermissionModeRequest>, I>>(base?: I): SetPermissionModeRequest {
+    return SetPermissionModeRequest.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<SetPermissionModeRequest>, I>>(object: I): SetPermissionModeRequest {
+    const message = createBaseSetPermissionModeRequest();
+    message.taskId = object.taskId ?? "";
+    message.mode = object.mode ?? "";
+    return message;
+  },
+};
+
+function createBaseSetPermissionModeResponse(): SetPermissionModeResponse {
+  return { status: "" };
+}
+
+export const SetPermissionModeResponse: MessageFns<SetPermissionModeResponse> = {
+  fromJSON(object: any): SetPermissionModeResponse {
+    return { status: isSet(object.status) ? globalThis.String(object.status) : "" };
+  },
+
+  toJSON(message: SetPermissionModeResponse): unknown {
+    const obj: any = {};
+    if (message.status !== "") {
+      obj.status = message.status;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<SetPermissionModeResponse>, I>>(base?: I): SetPermissionModeResponse {
+    return SetPermissionModeResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<SetPermissionModeResponse>, I>>(object: I): SetPermissionModeResponse {
+    const message = createBaseSetPermissionModeResponse();
+    message.status = object.status ?? "";
+    return message;
+  },
+};
+
 function createBaseKillE2eRequest(): KillE2eRequest {
   return { taskId: "" };
 }
@@ -1316,6 +1399,7 @@ export interface DashboardService {
   GetE2eStatus(request: GetE2eStatusRequest): Promise<GetE2eStatusResponse>;
   Approve(request: ApproveRequest): Promise<ApproveResponse>;
   Stop(request: StopRequest): Promise<StopResponse>;
+  SetPermissionMode(request: SetPermissionModeRequest): Promise<SetPermissionModeResponse>;
   KillE2e(request: KillE2eRequest): Promise<KillE2eResponse>;
   AnswerQuestion(request: AnswerQuestionRequest): Promise<AnswerQuestionResponse>;
   Discuss(request: DiscussRequest): Promise<DiscussResponse>;

@@ -36,3 +36,4 @@ Decisions with no real alternative ever on the table live in
 | [0024](0024-crash-fast-path-and-journal-read.md) | Pod-crash fast-path detection, a real retry cap, and a `knowledge_journal` read path | Accepted |
 | [0025](0025-continuous-session-worker-redesign.md) | Worker session is a plain Claude Code session — Discord/dashboard are transport only | Accepted |
 | [0026](0026-core-stays-on-common-app-chart.md) | `core` stays on `common-app-chart`, no per-app Helm chart | Accepted |
+| [0027](0027-arbitrary-permission-mode-and-command-palette.md) | Dashboard permission-mode selector (incl. `bypassPermissions`) and slash-command palette | Accepted |

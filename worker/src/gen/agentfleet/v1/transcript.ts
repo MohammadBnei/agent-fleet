@@ -39,6 +39,13 @@ export enum TranscriptEntryType {
   TRANSCRIPT_ENTRY_TYPE_ASSISTANT = 8,
   TRANSCRIPT_ENTRY_TYPE_USER = 9,
   TRANSCRIPT_ENTRY_TYPE_RESULT = 10,
+  /**
+   * TRANSCRIPT_ENTRY_TYPE_PERMISSION_MODE - Human-authored, from the dashboard's permission-mode selector (see
+   * docs/adr/0027) — `text` is the raw target mode string
+   * ("acceptEdits"|"dontAsk"|"bypassPermissions"), same convention APPROVE
+   * already uses for its `text:"approved"`.
+   */
+  TRANSCRIPT_ENTRY_TYPE_PERMISSION_MODE = 11,
   UNRECOGNIZED = -1,
 }
 
@@ -77,6 +84,9 @@ export function transcriptEntryTypeFromJSON(object: any): TranscriptEntryType {
     case 10:
     case "TRANSCRIPT_ENTRY_TYPE_RESULT":
       return TranscriptEntryType.TRANSCRIPT_ENTRY_TYPE_RESULT;
+    case 11:
+    case "TRANSCRIPT_ENTRY_TYPE_PERMISSION_MODE":
+      return TranscriptEntryType.TRANSCRIPT_ENTRY_TYPE_PERMISSION_MODE;
     case -1:
     case "UNRECOGNIZED":
     default:
@@ -108,6 +118,8 @@ export function transcriptEntryTypeToJSON(object: TranscriptEntryType): string {
       return "TRANSCRIPT_ENTRY_TYPE_USER";
     case TranscriptEntryType.TRANSCRIPT_ENTRY_TYPE_RESULT:
       return "TRANSCRIPT_ENTRY_TYPE_RESULT";
+    case TranscriptEntryType.TRANSCRIPT_ENTRY_TYPE_PERMISSION_MODE:
+      return "TRANSCRIPT_ENTRY_TYPE_PERMISSION_MODE";
     case TranscriptEntryType.UNRECOGNIZED:
     default:
       return "UNRECOGNIZED";

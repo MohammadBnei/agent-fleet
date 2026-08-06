@@ -168,6 +168,37 @@ func (s *Server) Stop(ctx context.Context, req *connect.Request[agentfleetv1.Sto
 	return connect.NewResponse(&agentfleetv1.StopResponse{Status: "stopping"}), nil
 }
 
+// validPermissionModes is an allowlist, not a passthrough — the value ends
+// up in a real SDK call (worker/src/planning.ts's streamHumanMessages calls
+// q.setPermissionMode(mode) verbatim), so an unvalidated string here would
+// let a malformed dashboard request reach the SDK with an arbitrary value.
+// "plan"/"default" are deliberately excluded: those stay reachable only via
+// the existing binary Approve, matching Discord's /approve (docs/adr/0027).
+var validPermissionModes = map[string]bool{
+	"acceptEdits":       true,
+	"dontAsk":           true,
+	"bypassPermissions": true,
+}
+
+// SetPermissionMode sets an arbitrary SDK permission mode on a running task
+// (docs/adr/0027) — additive to Approve, which stays a fixed plan->default
+// flip. "bypassPermissions" deliberately disables the canUseTool Write/Edit
+// gate for the task's remaining session (see ADR-0027's SDK-source trace);
+// the dashboard is responsible for getting explicit, typed confirmation from
+// the human before ever sending that value here.
+func (s *Server) SetPermissionMode(ctx context.Context, req *connect.Request[agentfleetv1.SetPermissionModeRequest]) (*connect.Response[agentfleetv1.SetPermissionModeResponse], error) {
+	taskID := req.Msg.GetTaskId()
+	mode := req.Msg.GetMode()
+	if !validPermissionModes[mode] {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("invalid permission mode %q", mode))
+	}
+	if _, err := s.transcr.Append(ctx, taskID, "human", mode, "permission_mode", uuid.NewString()); err != nil {
+		slog.Error("dashboard SetPermissionMode", "taskId", taskID, "mode", mode, "error", err)
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	return connect.NewResponse(&agentfleetv1.SetPermissionModeResponse{Status: "set"}), nil
+}
+
 func (s *Server) KillE2E(ctx context.Context, req *connect.Request[agentfleetv1.KillE2ERequest]) (*connect.Response[agentfleetv1.KillE2EResponse], error) {
 	killed, err := s.e2e.KillSession(ctx, req.Msg.GetTaskId(), uuid.NewString())
 	if err != nil {
@@ -368,6 +399,8 @@ func stringToProtoType(s string) agentfleetv1.TranscriptEntryType {
 		return agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_USER
 	case "result":
 		return agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_RESULT
+	case "permission_mode":
+		return agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_PERMISSION_MODE
 	default:
 		return agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_UNSPECIFIED
 	}

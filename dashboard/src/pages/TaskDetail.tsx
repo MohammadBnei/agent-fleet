@@ -8,6 +8,7 @@ import {
   parseAnswers,
   findPendingQuestion,
   latestToolCallSummary,
+  latestSlashCommands,
   parseSdkSystemInfo,
   parseSdkResultSummary,
   buildToolCallPairs,
@@ -19,6 +20,7 @@ import { useAtBottom } from "../useAtBottom";
 import { ToolCallItem } from "../components/ToolCallItem";
 import { ErrorModal } from "../components/ErrorModal";
 import { Markdown } from "../components/Markdown";
+import { BypassConfirmModal } from "../components/BypassConfirmModal";
 
 // Minimal distinct treatment for the raw SDK message types (reliability-
 // findings.md #0: "relay everything, let the UI decide") — before this,
@@ -41,6 +43,36 @@ function EntryBubble({ entry }: { entry: TranscriptEntry }) {
     return (
       <div className="text-[10.5px] text-base-content/40">
         {r ? `${r.numTurns ?? "?"} turns · $${(r.totalCostUsd ?? 0).toFixed(3)}` : entry.text}
+      </div>
+    );
+  }
+  // Backend-verified events (a real transcript row core only writes after a
+  // genuine dashboard/Discord action) get the same compact log-line
+  // treatment as SYSTEM/RESULT above, distinct from the generic prose bubble
+  // below — otherwise these are indistinguishable from the model's own
+  // narration of the same claim (e.g. "good, user approved" in its own
+  // text), which is real but unverified.
+  if (entry.type === TranscriptEntryType.APPROVE) {
+    return (
+      <div className="text-[10.5px] text-base-content/40 flex items-center gap-1.5">
+        <span className="badge badge-success badge-xs">approved</span>
+        plan approved — implementing
+      </div>
+    );
+  }
+  if (entry.type === TranscriptEntryType.ABORT) {
+    return (
+      <div className="text-[10.5px] text-base-content/40 flex items-center gap-1.5">
+        <span className="badge badge-warning badge-xs">stopped</span>
+        {entry.text || "task stopped"}
+      </div>
+    );
+  }
+  if (entry.type === TranscriptEntryType.PERMISSION_MODE) {
+    return (
+      <div className="text-[10.5px] text-base-content/40 flex items-center gap-1.5">
+        <span className="badge badge-info badge-xs">mode</span>
+        permission mode → {entry.text}
       </div>
     );
   }
@@ -214,6 +246,7 @@ export function TaskDetail({
     clearActionError,
   } = useTaskDetail(taskId);
   const [message, setMessage] = useState("");
+  const [bypassOpen, setBypassOpen] = useState(false);
   const { ref: feedRef, atBottom: feedAtBottom, onScroll: feedOnScroll, scrollToBottom: feedScrollToBottom } =
     useAtBottom<HTMLDivElement>();
   const { ref: todosRef, atBottom: todosAtBottom, onScroll: todosOnScroll, scrollToBottom: todosScrollToBottom } =
@@ -249,6 +282,12 @@ export function TaskDetail({
   const changes = latestToolCallSummary(entries)?.files ?? null;
   const toolCallPairs = buildToolCallPairs(entries);
   const todos = latestTodos(entries);
+  // Lean name-only autocomplete (the SDK's system/init message carries no
+  // descriptions/argument hints at runtime, docs/adr/0027) — only shown
+  // while the draft looks like a command, filtered by what's typed so far.
+  const slashCommands = message.startsWith("/")
+    ? (latestSlashCommands(entries) ?? []).filter((c) => c.toLowerCase().startsWith(message.slice(1).toLowerCase()))
+    : [];
 
   return (
     <div className="grid grid-rows-[auto_1fr] h-full">
@@ -410,12 +449,57 @@ export function TaskDetail({
               >
                 Kill e2e
               </button>
+              <div className="dropdown">
+                <button tabIndex={0} type="button" className="btn btn-outline btn-xs" disabled={busy}>
+                  Mode ▾
+                </button>
+                <ul tabIndex={0} className="dropdown-content menu menu-sm bg-base-100 rounded-box shadow z-10 w-44 p-1">
+                  <li>
+                    <button type="button" onClick={() => run(() => client.setPermissionMode({ taskId, mode: "acceptEdits" }))}>
+                      Accept edits
+                    </button>
+                  </li>
+                  <li>
+                    <button type="button" onClick={() => run(() => client.setPermissionMode({ taskId, mode: "dontAsk" }))}>
+                      Don&apos;t ask
+                    </button>
+                  </li>
+                  <li>
+                    <button type="button" className="text-error" onClick={() => setBypassOpen(true)}>
+                      Bypass permissions
+                    </button>
+                  </li>
+                </ul>
+              </div>
               {previewUrl && (
                 <a href={previewUrl} target="_blank" rel="noreferrer" className="btn btn-outline btn-xs">
                   Open code-server
                 </a>
               )}
             </div>
+            {slashCommands.length > 0 && (
+              <div className="flex gap-1.5 items-center flex-wrap">
+                <span className="text-[9.5px] tracking-[0.09em] text-base-content/40 mr-1">COMMANDS</span>
+                {slashCommands.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => setMessage(`/${c} `)}
+                    className="px-2.5 py-1 rounded-full text-[10.5px] border border-base-content/15 text-base-content/70 hover:border-primary/50 hover:text-primary cursor-pointer"
+                  >
+                    /{c}
+                  </button>
+                ))}
+              </div>
+            )}
+            <BypassConfirmModal
+              open={bypassOpen}
+              onCancel={() => setBypassOpen(false)}
+              onConfirm={() => {
+                setBypassOpen(false);
+                run(() => client.setPermissionMode({ taskId, mode: "bypassPermissions" }));
+              }}
+            />
             <div className="flex items-center gap-2.5 px-3.5 py-3 border border-base-content/15 rounded-lg bg-base-300/40">
               <span className="text-primary font-semibold">&gt;</span>
               <input

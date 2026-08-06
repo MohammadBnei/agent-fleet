@@ -245,6 +245,26 @@ test("human approval flips the session to implementation and reports status", as
   await promise;
 }, 10000);
 
+test("a permission_mode entry sets the SDK mode, unlocks canUseTool, and reports status", async () => {
+  const task = makeTask();
+  const promise = runTask(task);
+  await Bun.sleep(20);
+
+  const beforeMode = await capturedCanUseTool!("Write", { file_path: "x" });
+  expect(beforeMode.behavior).toBe("deny");
+
+  pushHuman("acceptEdits", "permission_mode");
+  await Bun.sleep(20);
+
+  expect(setPermissionModeCalls).toContain("acceptEdits");
+  expect(statusUpdates).toContain("implementing");
+  const afterMode = await capturedCanUseTool!("Write", { file_path: "x" });
+  expect(afterMode.behavior).toBe("allow");
+
+  pushHuman("", "abort");
+  await promise;
+}, 10000);
+
 test("abort before approval ends the task as aborted", async () => {
   const task = makeTask();
   const promise = runTask(task);

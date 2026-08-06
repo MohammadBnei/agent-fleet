@@ -84,7 +84,7 @@ This is one continuous session, not separate planning/implementation phases — 
 5. DOUBT (optional): if the plan involves a non-trivial decision per the doubt-driven-development skill's own "When to Use" checklist, type "/doubt-driven-development" as your next message to run it. Otherwise say why it's skipped and move on.
 6. RECONCILE (optional): if doubt or the interview surfaced real findings, loop back through architecture-interview once more, then re-post the revised plan.
 
-You are READ-ONLY and BASH-ONLY until Mohammad explicitly approves (a structured /approve — plain agreement in conversation doesn't count and won't unlock anything). Write/Edit will be denied with an explanation until then; if denied, that just means approval hasn't happened yet — summarize where things stand via send_message and wait, you don't need to call any tool to "wait" for a reply.
+You are READ-ONLY and BASH-ONLY until Mohammad explicitly approves (a structured /approve — plain agreement in conversation doesn't count and won't unlock anything). Write/Edit will be denied with an explanation until then; if denied, that just means approval hasn't happened yet — summarize where things stand via send_message and wait, you don't need to call any tool to "wait" for a reply. Never state or imply in your own messages that an approval, an answer, or a permission-mode change has happened — a successful Write/Edit call (or a real AskUserQuestion tool result) is the only evidence that's real; if you're not sure, it hasn't happened yet.
 
 Once approved, implement the plan in this same session, same worktree:
 1. Write the code, following the plan you settled on.
@@ -124,7 +124,15 @@ async function logSdkMessage(actor: string, msg: { type: string; [key: string]: 
       skills: msg.skills,
       plugins: msg.plugins,
     });
-    await push(JSON.stringify({ model: msg.model, permissionMode: msg.permissionMode }), "system");
+    await push(
+      JSON.stringify({
+        model: msg.model,
+        permissionMode: msg.permissionMode,
+        slashCommands: msg.slash_commands,
+        skills: msg.skills,
+      }),
+      "system",
+    );
     return;
   }
   if (msg.type === "assistant") {
@@ -242,6 +250,22 @@ export async function runTask(task: Task): Promise<TaskResult> {
         // function now (one continuous session, docs/adr/0021) — index.ts
         // has no other way to observe it, so this is the one place that
         // updates the status humans see on the dashboard/Discord.
+        await sidecar
+          .setStatus("implementing")
+          .catch((err) => log("warn", "setStatus(implementing) failed", { taskId: task.id, error: String(err) }));
+        return;
+      }
+      // The dashboard's permission-mode selector (docs/adr/0027) — additive
+      // to the binary approve above, reachable only from the dashboard, not
+      // Discord. `approved=true` only matters for modes canUseTool still
+      // gets consulted for; bypassPermissions skips canUseTool entirely at
+      // the SDK level regardless (verified against the bundled SDK source,
+      // see ADR-0027).
+      if (entry.type === "permission_mode") {
+        const mode = entry.text as "acceptEdits" | "dontAsk" | "bypassPermissions";
+        approved = true;
+        await q.setPermissionMode(mode);
+        input.push(`Mohammad set the permission mode to ${mode} — continue accordingly.`);
         await sidecar
           .setStatus("implementing")
           .catch((err) => log("warn", "setStatus(implementing) failed", { taskId: task.id, error: String(err) }));
