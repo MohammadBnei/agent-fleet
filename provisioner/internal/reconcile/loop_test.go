@@ -39,7 +39,7 @@ func TestGcTerminalWorkerJobs_OnlyDeletesTerminalPhase(t *testing.T) {
 		{TaskID: "pending-1", JobName: "worker-4", Phase: "Pending"},
 	}}
 	reporter := &fakeEventReporter{}
-	l := New(kc, reporter, 0)
+	l := New(kc, reporter)
 
 	l.gcTerminalWorkerJobs(context.Background())
 
@@ -63,7 +63,7 @@ func TestGcTerminalWorkerJobs_ReportsCrashOnlyForFailed(t *testing.T) {
 		{TaskID: "failed-1", JobName: "worker-3", Phase: "Failed"},
 	}}
 	reporter := &fakeEventReporter{}
-	l := New(kc, reporter, 0)
+	l := New(kc, reporter)
 
 	l.gcTerminalWorkerJobs(context.Background())
 
@@ -82,53 +82,9 @@ func TestGcTerminalWorkerJobs_ReportsCrashOnlyForFailed(t *testing.T) {
 	}
 }
 
-// TestGcTerminalWorkerJobs_DeletesStaleNonTerminalJobs covers the stuck-pod
-// GC gap this exists for: a worker Job stuck Running/Pending far longer
-// than maxWorkerAge gets force-deleted even though it never reached a
-// terminal phase, independent of anyone ever requesting a Stop.
-func TestGcTerminalWorkerJobs_DeletesStaleNonTerminalJobs(t *testing.T) {
-	kc := &fakeK8s{jobs: []k8s.LiveWorkerJob{
-		{TaskID: "fresh-running", JobName: "worker-1", Phase: "Running", CreatedAt: time.Now().Add(-time.Minute)},
-		{TaskID: "stale-running", JobName: "worker-2", Phase: "Running", CreatedAt: time.Now().Add(-2 * time.Hour)},
-		{TaskID: "stale-pending", JobName: "worker-3", Phase: "Pending", CreatedAt: time.Now().Add(-2 * time.Hour)},
-	}}
-	reporter := &fakeEventReporter{}
-	l := New(kc, reporter, time.Hour)
-
-	l.gcTerminalWorkerJobs(context.Background())
-
-	if len(kc.deleted) != 2 {
-		t.Fatalf("expected exactly 2 stale jobs deleted, got %v", kc.deleted)
-	}
-	deleted := map[string]bool{kc.deleted[0]: true, kc.deleted[1]: true}
-	if !deleted["stale-running"] || !deleted["stale-pending"] {
-		t.Errorf("expected stale-running and stale-pending deleted, got %v", kc.deleted)
-	}
-	if len(reporter.events) != 2 {
-		t.Fatalf("expected exactly 2 reported crash events, got %d: %+v", len(reporter.events), reporter.events)
-	}
-}
-
-// TestGcTerminalWorkerJobs_ZeroMaxAgeDisablesStaleCheck covers the
-// zero-value default: maxWorkerAge=0 must not delete every non-terminal
-// Job on the first tick (time.Since(anything) > 0 would be true for any
-// past CreatedAt if the check weren't explicitly guarded).
-func TestGcTerminalWorkerJobs_ZeroMaxAgeDisablesStaleCheck(t *testing.T) {
-	kc := &fakeK8s{jobs: []k8s.LiveWorkerJob{
-		{TaskID: "old-running", JobName: "worker-1", Phase: "Running", CreatedAt: time.Now().Add(-24 * time.Hour)},
-	}}
-	l := New(kc, &fakeEventReporter{}, 0)
-
-	l.gcTerminalWorkerJobs(context.Background())
-
-	if len(kc.deleted) != 0 {
-		t.Fatalf("expected no jobs deleted with maxWorkerAge=0, got %v", kc.deleted)
-	}
-}
-
 func TestRun_StopsOnContextCancel(t *testing.T) {
 	kc := &fakeK8s{}
-	l := New(kc, &fakeEventReporter{}, 0)
+	l := New(kc, &fakeEventReporter{})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
 	defer cancel()
