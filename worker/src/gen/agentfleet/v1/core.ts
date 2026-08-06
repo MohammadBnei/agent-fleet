@@ -33,6 +33,18 @@ export enum PodPhase {
   POD_PHASE_RUNNING = 3,
   POD_PHASE_CRASHED = 4,
   POD_PHASE_TERMINATED = 5,
+  /**
+   * POD_PHASE_PROVISIONING - Reported once, immediately when CreateWorkerPod's handler starts —
+   * before git clone/worktree/pod-create even begin. Closes the blind
+   * spot where a claimed task with a hung or slow provisioning step looked
+   * identical to one that hadn't started at all (confirmed live: a task
+   * sat claimed for 20+ minutes with zero pod events, indistinguishable
+   * from "provisioner never got the call"). `message` carries the current
+   * sub-step ("cloning repo", "adding worktree", "creating pod") — no new
+   * enum value per sub-step, since the set of steps is provisioner-
+   * internal detail, not a state other components branch on.
+   */
+  POD_PHASE_PROVISIONING = 6,
   UNRECOGNIZED = -1,
 }
 
@@ -56,6 +68,9 @@ export function podPhaseFromJSON(object: any): PodPhase {
     case 5:
     case "POD_PHASE_TERMINATED":
       return PodPhase.POD_PHASE_TERMINATED;
+    case 6:
+    case "POD_PHASE_PROVISIONING":
+      return PodPhase.POD_PHASE_PROVISIONING;
     case -1:
     case "UNRECOGNIZED":
     default:
@@ -77,6 +92,8 @@ export function podPhaseToJSON(object: PodPhase): string {
       return "POD_PHASE_CRASHED";
     case PodPhase.POD_PHASE_TERMINATED:
       return "POD_PHASE_TERMINATED";
+    case PodPhase.POD_PHASE_PROVISIONING:
+      return "POD_PHASE_PROVISIONING";
     case PodPhase.UNRECOGNIZED:
     default:
       return "UNRECOGNIZED";
@@ -88,7 +105,7 @@ export interface PodEvent {
   kind: SessionKind;
   phase: PodPhase;
   podName: string;
-  /** human-readable detail, e.g. a crash reason */
+  /** human-readable detail — a crash reason, or (for */
   message: string;
 }
 

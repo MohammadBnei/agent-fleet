@@ -164,10 +164,20 @@ func (s *Server) CallE2ETool(ctx context.Context, req *agentfleetv1.CallE2EToolR
 // --- worker pods (new, docs/adr/0019/0020) ---
 
 func (s *Server) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWorkerPodRequest) (*agentfleetv1.CreateWorkerPodResponse, error) {
+	// Reported immediately, before any git/k8s work starts — otherwise a
+	// claimed task with a hung or merely slow provisioning step is
+	// indistinguishable from one the provisioner never received at all
+	// (confirmed live: a task sat claimed for 20+ minutes with zero pod
+	// events either way). PROVISIONING's `message` carries the current
+	// sub-step rather than a new enum value per step, since these are
+	// provisioner-internal detail, not states any other component branches
+	// on — see core.proto's own comment on the enum value.
+	s.reportEvent(ctx, req.GetTaskId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_PROVISIONING, "", "cloning repo")
 	if err := s.git.EnsureRepoCloned(ctx, req.GetRepo(), req.GetRepoUrl()); err != nil {
 		s.reportEvent(ctx, req.GetTaskId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_CRASHED, "", "clone/fetch failed: "+err.Error())
 		return nil, fmt.Errorf("ensure repo cloned: %w", err)
 	}
+	s.reportEvent(ctx, req.GetTaskId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_PROVISIONING, "", "adding worktree")
 	worktreePath, _, err := s.git.CreateWorktree(ctx, req.GetRepo(), req.GetTaskId(), req.GetBaseBranch())
 	if err != nil {
 		s.reportEvent(ctx, req.GetTaskId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_CRASHED, "", "worktree add failed: "+err.Error())
@@ -175,6 +185,7 @@ func (s *Server) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWo
 	}
 	s.reportEvent(ctx, req.GetTaskId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_CREATED, "", "")
 
+	s.reportEvent(ctx, req.GetTaskId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_PROVISIONING, "", "creating pod")
 	if err := s.k8sc.CreateWorkerPod(ctx, req.GetTaskId(), req.GetRepo(), req.GetDescription(), req.GetLeaseId(), req.GetBaseBranch(), worktreePath); err != nil {
 		s.reportEvent(ctx, req.GetTaskId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_CRASHED, "", "pod create failed: "+err.Error())
 		return nil, fmt.Errorf("create worker pod: %w", err)

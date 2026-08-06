@@ -33,6 +33,18 @@ export function podStateBadge(task: Task): { label: string; className: string } 
   const phase = task.podPhase;
   if (!phase || phase === "POD_PHASE_UNSPECIFIED") return null;
   const label = phase.replace("POD_PHASE_", "");
+  // PROVISIONING's message carries the current sub-step (cloning repo /
+  // adding worktree / creating pod) — the precise in-flight step, not a
+  // crash reason like other phases' message. Shown inline in the label
+  // itself, not just a tooltip: this is the exact gap that made today's
+  // incident invisible (claimed for 20+ minutes with no pod event at all
+  // looked identical to a task that had just been claimed a second ago).
+  if (label === "PROVISIONING") {
+    return {
+      label: task.podMessage ? `PROVISIONING: ${task.podMessage}` : "PROVISIONING",
+      className: "text-info border-info/45 bg-info/10 animate-pulse",
+    };
+  }
   const className =
     label === "CRASHED"
       ? "text-error border-error/45 bg-error/10"

@@ -23,6 +23,16 @@ enum PodPhase {
   POD_PHASE_RUNNING = 3;
   POD_PHASE_CRASHED = 4;
   POD_PHASE_TERMINATED = 5;
+  // Reported once, immediately when CreateWorkerPod's handler starts —
+  // before git clone/worktree/pod-create even begin. Closes the blind
+  // spot where a claimed task with a hung or slow provisioning step looked
+  // identical to one that hadn't started at all (confirmed live: a task
+  // sat claimed for 20+ minutes with zero pod events, indistinguishable
+  // from "provisioner never got the call"). `message` carries the current
+  // sub-step ("cloning repo", "adding worktree", "creating pod") — no new
+  // enum value per sub-step, since the set of steps is provisioner-
+  // internal detail, not a state other components branch on.
+  POD_PHASE_PROVISIONING = 6;
 }
 
 message PodEvent {
@@ -30,7 +40,8 @@ message PodEvent {
   SessionKind kind = 2;
   PodPhase phase = 3;
   string pod_name = 4;
-  string message = 5; // human-readable detail, e.g. a crash reason
+  string message = 5; // human-readable detail — a crash reason, or (for
+                       // POD_PHASE_PROVISIONING) the current sub-step
 }
 
 message ReportPodEventsResponse {}
