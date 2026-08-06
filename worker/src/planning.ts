@@ -1,4 +1,4 @@
-import { query, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
+import { query, type SDKUserMessage, type PermissionResult } from "@anthropic-ai/claude-agent-sdk";
 import type { Task } from "./types.js";
 import * as sidecar from "./sidecarClient.js";
 import { log } from "./log.js";
@@ -22,6 +22,25 @@ const PLANNING_SKILLS_PLUGIN_PATH = "/app/worker/skills/agent-fleet-planning";
 
 function sidecarMcpServer() {
   return { type: "http" as const, url: `http://${SIDECAR_MCP_ADDR}/mcp` };
+}
+
+// Bash used to sit in allowedTools, which meant canUseTool was never even
+// consulted for it (allowedTools bypasses canUseTool entirely for
+// anything it lists — same reason Write/Edit are deliberately kept out of
+// it, see below). A worker confused by a Write denial reached the same
+// effect via `Bash cp`/`mkdir` before real approval — confirmed live in
+// prod. This is a verb/redirection denylist, not a real sandbox.
+// ponytail: heuristic, not a sandbox — a determined bypass (base64 | some
+// decoder, etc.) can still slip through. Good enough to close the
+// demonstrated cp/mkdir bypass and the obvious write vectors. Upgrade
+// path if that's ever exploited for real: run pre-approval Bash against a
+// read-only bind mount of the worktree instead of out-guessing shell
+// syntax.
+const MUTATING_BASH_RE =
+  /(^|[;&|]\s*)(cp|mv|rm|rmdir|mkdir|touch|tee|dd|chmod|chown|ln|truncate|npm\s+install|pnpm\s+add|yarn\s+add)\b|\bsed\s+(-\w*i|--in-place)|\bgit\s+(add|commit|checkout|reset|apply|stash|rm|mv|clean)\b|>(?!=|&)/;
+
+function isMutatingBashCommand(command: string): boolean {
+  return MUTATING_BASH_RE.test(command);
 }
 
 // Feeds query()'s streaming-input mode — push() enqueues a message, the
@@ -67,8 +86,9 @@ class InputQueue {
 // (reliability-findings.md #0 supersedes #3/#4's regex/magic-string bugs
 // by deleting the mechanism, not patching it). The agent decides for
 // itself when it's explored/planned enough and when to start
-// implementing; canUseTool below is the only real gate (Write/Edit denied
-// until approved), same as before.
+// implementing; canUseTool below is the only real gate — ExitPlanMode
+// blocks on a genuine human decision, and Write/Edit/mutating-Bash are
+// denied until approved.
 function taskPrompt(task: Task): string {
   return `You are working on task ${task.id} in repo ${task.repo}.
 Task: ${task.description}
@@ -80,11 +100,11 @@ This is one continuous session, not separate planning/implementation phases — 
 1. EXPLORE: read the actual repository — don't guess at structure or conventions.
 2. REVIEW: check your own findings for gaps before drafting anything.
 3. INTERVIEW (optional): if this involves an architecturally non-trivial decision (new component, schema/protocol/API shape, a one-way door — see the architecture-interview skill's own DOOR classification), type "/architecture-interview" as your next message to run it. Otherwise say in one line why it's skipped and move on.
-4. PLAN: post your plan via send_message (from="planner"). Cite the specific files/paths you read and relied on.
+4. PLAN: post your plan via send_message (from="planner"). Cite the specific files/paths you read and relied on, then call ExitPlanMode with that same plan.
 5. DOUBT (optional): if the plan involves a non-trivial decision per the doubt-driven-development skill's own "When to Use" checklist, type "/doubt-driven-development" as your next message to run it. Otherwise say why it's skipped and move on.
 6. RECONCILE (optional): if doubt or the interview surfaced real findings, loop back through architecture-interview once more, then re-post the revised plan.
 
-You are READ-ONLY and BASH-ONLY until Mohammad explicitly approves (a structured /approve — plain agreement in conversation doesn't count and won't unlock anything). Write/Edit will be denied with an explanation until then; if denied, that just means approval hasn't happened yet — summarize where things stand via send_message and wait, you don't need to call any tool to "wait" for a reply. Never state or imply in your own messages that an approval, an answer, or a permission-mode change has happened — a successful Write/Edit call (or a real AskUserQuestion tool result) is the only evidence that's real; if you're not sure, it hasn't happened yet.
+You are READ-ONLY and read-only-BASH-ONLY until Mohammad explicitly approves. ExitPlanMode IS the approval prompt — like Claude Code's own plan mode, that call blocks until Mohammad actually responds (Approve, or a specific permission mode, from the dashboard); its tool result tells you what was decided, so just call it and read the answer, no separate wait/poll loop needed. A denied ExitPlanMode with a message means Mohammad replied with feedback, not approval — incorporate it and call ExitPlanMode again when ready. Write/Edit, and any Bash command that would modify files, are denied with an explanation until real approval lands — that's not a bug, it just means approval hasn't happened yet. Never state or imply in your own messages that an approval, an answer, or a permission-mode change has happened — a successful Write/Edit call, an ExitPlanMode call that returns allow, or a real AskUserQuestion tool result are the only evidence that's real; if you're not sure, it hasn't happened yet.
 
 Once approved, implement the plan in this same session, same worktree:
 1. Write the code, following the plan you settled on.
@@ -182,6 +202,23 @@ export async function runTask(task: Task): Promise<TaskResult> {
   let aborted = false;
   let finalText = "";
 
+  // Set only while a real ExitPlanMode call is in flight — canUseTool's
+  // ExitPlanMode branch below awaits this instead of trusting the SDK's
+  // own canned "plan approved" text, so the tool call itself blocks until
+  // a genuine human decision arrives. This makes plan-exit work the same
+  // way it does in Claude Code CLI: the exit-plan-mode prompt IS the
+  // approval gate, not a side channel disconnected from it.
+  let pendingPlanDecision: { resolve: (result: PermissionResult) => void; input: Record<string, unknown> } | null = null;
+
+  // build receives the original ExitPlanMode tool input so an "allow"
+  // result can pass it through unchanged (PermissionResult.allow requires
+  // updatedInput). No-op if no ExitPlanMode call is actually pending.
+  function resolvePendingPlan(build: (input: Record<string, unknown>) => PermissionResult): void {
+    const pending = pendingPlanDecision;
+    pendingPlanDecision = null;
+    if (pending) pending.resolve(build(pending.input));
+  }
+
   const input = new InputQueue();
   input.push(taskPrompt(task));
 
@@ -193,12 +230,13 @@ export async function runTask(task: Task): Promise<TaskResult> {
       cwd: WORKTREE_PATH,
       model: MODEL,
       permissionMode: "plan",
-      // Write/Edit are deliberately never in this list — canUseTool below
-      // is the live escalation path (confirmed in Phase 0's spike:
-      // allowedTools bypasses canUseTool entirely for anything it lists,
-      // so declaring them here would silently remove the gate, not add one).
+      // Write/Edit/Bash are deliberately never in this list — canUseTool
+      // below is the live escalation path for all three (confirmed in
+      // Phase 0's spike: allowedTools bypasses canUseTool entirely for
+      // anything it lists, so declaring them here would silently remove
+      // the gate, not add one).
       allowedTools: [
-        "Read", "Glob", "Grep", "Bash", "WebSearch", "WebFetch", "Task",
+        "Read", "Glob", "Grep", "WebSearch", "WebFetch", "Task",
         "mcp__agent-fleet-sidecar__send_message",
         "mcp__agent-fleet-sidecar__wait_for_messages",
         "mcp__agent-fleet-sidecar__AskUserQuestion",
@@ -207,10 +245,28 @@ export async function runTask(task: Task): Promise<TaskResult> {
         "mcp__agent-fleet-sidecar__*",
       ],
       canUseTool: async (toolName, toolInput) => {
-        if ((toolName === "Write" || toolName === "Edit") && !approved) {
-          return { behavior: "deny", message: "Not approved yet — wait for explicit human approval before writing." };
+        // ExitPlanMode blocks here until a real human decision resolves it
+        // (see streamHumanMessages below) — the SDK's own built-in
+        // ExitPlanMode success text is not evidence of real approval in
+        // this architecture, so we never just let it through.
+        if (toolName === "ExitPlanMode") {
+          return new Promise<PermissionResult>((resolve) => {
+            pendingPlanDecision = { resolve, input: toolInput as Record<string, unknown> };
+          });
         }
-        return { behavior: "allow", updatedInput: toolInput };
+        if (!approved) {
+          if (toolName === "Write" || toolName === "Edit") {
+            return { behavior: "deny", message: "Not approved yet — wait for explicit human approval before writing." };
+          }
+          if (toolName === "Bash" && isMutatingBashCommand((toolInput as { command?: string }).command ?? "")) {
+            return {
+              behavior: "deny",
+              message:
+                "Not approved yet — this Bash command would modify files. Read-only exploration (git status/log/diff, ls, find, cat, grep, ...) is fine; file mutation waits for explicit human approval.",
+            };
+          }
+        }
+        return { behavior: "allow", updatedInput: toolInput as Record<string, unknown> };
       },
       mcpServers: { "agent-fleet-sidecar": sidecarMcpServer() },
       plugins: [{ type: "local", path: PLANNING_SKILLS_PLUGIN_PATH }],
@@ -231,6 +287,9 @@ export async function runTask(task: Task): Promise<TaskResult> {
       if (entry.type === "answer") return; // consumed by the blocked AskUserQuestion tool call server-side
       if (entry.type === "abort") {
         aborted = true;
+        // A pending ExitPlanMode call has nothing left to wait for — deny
+        // it so the promise doesn't dangle past the session teardown below.
+        resolvePendingPlan(() => ({ behavior: "deny", message: "Mohammad stopped the task.", interrupt: true }));
         // interrupt() is graceful but only meaningful mid-turn — if the
         // session is idle (paused between rounds, waiting for the next
         // streamed input, the common case for an unprompted /stop),
@@ -245,7 +304,14 @@ export async function runTask(task: Task): Promise<TaskResult> {
       if (entry.type === "approve" && !approved) {
         approved = true;
         await q.setPermissionMode("default");
-        input.push("Mohammad approved the plan — implement it now, following the instructions already given.");
+        // If ExitPlanMode is the one waiting on this, resolving it IS the
+        // signal the model sees — no separate input.push needed (or
+        // wanted: it'd be a second, redundant "you're approved" message).
+        if (pendingPlanDecision) {
+          resolvePendingPlan((planInput) => ({ behavior: "allow", updatedInput: planInput }));
+        } else {
+          input.push("Mohammad approved the plan — implement it now, following the instructions already given.");
+        }
         // The planning->implementation boundary only exists inside this
         // function now (one continuous session, docs/adr/0021) — index.ts
         // has no other way to observe it, so this is the one place that
@@ -265,10 +331,24 @@ export async function runTask(task: Task): Promise<TaskResult> {
         const mode = entry.text as "acceptEdits" | "dontAsk" | "bypassPermissions";
         approved = true;
         await q.setPermissionMode(mode);
-        input.push(`Mohammad set the permission mode to ${mode} — continue accordingly.`);
+        if (pendingPlanDecision) {
+          resolvePendingPlan((planInput) => ({ behavior: "allow", updatedInput: planInput }));
+        } else {
+          input.push(`Mohammad set the permission mode to ${mode} — continue accordingly.`);
+        }
         await sidecar
           .setStatus("implementing")
           .catch((err) => log("warn", "setStatus(implementing) failed", { taskId: task.id, error: String(err) }));
+        return;
+      }
+      if (pendingPlanDecision) {
+        // A plain reply while ExitPlanMode is waiting is feedback, not
+        // approval — deny with the human's own text as the reason (same as
+        // choosing "No, keep planning" with guidance in Claude Code CLI's
+        // own prompt: interrupt stays unset so the model incorporates the
+        // reply and keeps going). It can call ExitPlanMode again once
+        // it's revised the plan.
+        resolvePendingPlan(() => ({ behavior: "deny", message: `Mohammad replied (not an approval): ${entry.text}` }));
         return;
       }
       input.push(entry.text);

@@ -265,6 +265,124 @@ test("a permission_mode entry sets the SDK mode, unlocks canUseTool, and reports
   await promise;
 }, 10000);
 
+test("ExitPlanMode blocks until a real Approve arrives, then allows with the plan passed through", async () => {
+  const task = makeTask();
+  const promise = runTask(task);
+  await Bun.sleep(20);
+
+  let resolved: { behavior: string } | null = null;
+  const planCall = capturedCanUseTool!("ExitPlanMode", { plan: "do the thing" }).then((r) => {
+    resolved = r as { behavior: string };
+    return r;
+  });
+  await Bun.sleep(20);
+  expect(resolved).toBeNull(); // still blocked, no canned SDK-style auto-allow
+
+  pushHuman("", "approve");
+  const result = await planCall;
+  expect(result.behavior).toBe("allow");
+  expect((result as { updatedInput?: unknown }).updatedInput).toEqual({ plan: "do the thing" });
+  expect(setPermissionModeCalls).toContain("default");
+
+  pushHuman("", "abort");
+  await promise;
+}, 10000);
+
+test("ExitPlanMode blocks until a permission_mode selection arrives, then allows", async () => {
+  const task = makeTask();
+  const promise = runTask(task);
+  await Bun.sleep(20);
+
+  const planCall = capturedCanUseTool!("ExitPlanMode", { plan: "do the thing" });
+  await Bun.sleep(20);
+
+  pushHuman("acceptEdits", "permission_mode");
+  const result = await planCall;
+  expect(result.behavior).toBe("allow");
+  expect(setPermissionModeCalls).toContain("acceptEdits");
+
+  pushHuman("", "abort");
+  await promise;
+}, 10000);
+
+test("a plain reply while ExitPlanMode is pending denies with the reply as feedback, not approval", async () => {
+  const task = makeTask();
+  const promise = runTask(task);
+  await Bun.sleep(20);
+
+  const planCall = capturedCanUseTool!("ExitPlanMode", { plan: "do the thing" });
+  await Bun.sleep(20);
+
+  pushHuman("actually, split phase 2 into its own PR", "discussion");
+  const result = await planCall;
+  expect(result.behavior).toBe("deny");
+  expect((result as { message?: string }).message).toContain("split phase 2 into its own PR");
+  // Feedback, not approval — nothing got unlocked.
+  expect(setPermissionModeCalls.length).toBe(0);
+  const stillDenied = await capturedCanUseTool!("Write", { file_path: "x" });
+  expect(stillDenied.behavior).toBe("deny");
+
+  pushHuman("", "abort");
+  await promise;
+}, 10000);
+
+test("abort resolves a pending ExitPlanMode instead of leaving it hanging", async () => {
+  const task = makeTask();
+  const promise = runTask(task);
+  await Bun.sleep(20);
+
+  const planCall = capturedCanUseTool!("ExitPlanMode", { plan: "do the thing" });
+  await Bun.sleep(20);
+
+  pushHuman("", "abort");
+  const result = await planCall;
+  expect(result.behavior).toBe("deny");
+
+  await promise;
+}, 10000);
+
+test("Bash is gated by canUseTool, not silently allowed via allowedTools", async () => {
+  const task = makeTask();
+  const promise = runTask(task);
+  await Bun.sleep(20);
+
+  const allowedTools = queryOptions?.allowedTools as string[];
+  expect(allowedTools).not.toContain("Bash");
+
+  pushHuman("", "abort");
+  await promise;
+}, 10000);
+
+test("canUseTool denies a mutating Bash command before approval, allows a read-only one", async () => {
+  const task = makeTask();
+  const promise = runTask(task);
+  await Bun.sleep(20);
+
+  const mutating = await capturedCanUseTool!("Bash", { command: "cp front/src/lib/prompts/x.ts front/src/lib/server/prompts/x.ts" });
+  expect(mutating.behavior).toBe("deny");
+
+  const readOnly = await capturedCanUseTool!("Bash", { command: "git status && git log --oneline -5" });
+  expect(readOnly.behavior).toBe("allow");
+
+  pushHuman("", "abort");
+  await promise;
+}, 10000);
+
+test("canUseTool allows a mutating Bash command once approved", async () => {
+  const task = makeTask();
+  const promise = runTask(task);
+  await Bun.sleep(20);
+
+  pushHuman("", "approve");
+  await Bun.sleep(20);
+
+  const nowAllowed = await capturedCanUseTool!("Bash", { command: "mkdir -p front/src/lib/server/prompts" });
+  expect(nowAllowed.behavior).toBe("allow");
+
+  pushHuman("", "abort");
+  await promise;
+}, 10000);
+
 test("abort before approval ends the task as aborted", async () => {
   const task = makeTask();
   const promise = runTask(task);
