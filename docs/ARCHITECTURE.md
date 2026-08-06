@@ -459,7 +459,7 @@ nothing external still queries it directly.
 | `E2E_START_CMD_DREAM_ANALYST`, `E2E_START_CMD_VOS_MONOLITH` | `bun install && bun run dev` | per-repo build/run command |
 | `PORT` | `8080` | HTTP (currently unused beyond health, kept for parity) |
 | `GRPC_PORT` | `9090` | `ProvisionerService` |
-| `CORE_GRPC_ADDR` | `core.agent-fleet.svc.cluster.local:9090` | where `ReportPodEvents` streams to |
+| `CORE_GRPC_ADDR` | `agent-fleet-core.agent-fleet.svc.cluster.local:9090` | where `ReportPodEvents` streams to |
 | `RECONCILE_INTERVAL_MS` | `10000` | terminal-worker-pod GC poll (`internal/reconcile`) |
 | `GH_TOKEN` | – | for the provisioner's own clone/fetch auth (`gh auth setup-git`), and forwarded verbatim into every worker pod's `worker` container env |
 
@@ -471,7 +471,7 @@ No `AGENTFLEET_DB_*` here at all — see §6.
 |---|---|---|
 | `TASK_ID` | *(required)* | |
 | `TARGET_REPO` | – | |
-| `CORE_GRPC_ADDR` | `core.agent-fleet.svc.cluster.local:9090` | its one outbound gRPC connection |
+| `CORE_GRPC_ADDR` | `agent-fleet-core.agent-fleet.svc.cluster.local:9090` | its one outbound gRPC connection |
 | `WORKTREE_PATH` | `/workspace` | for the telemetry loop's `git diff`/`rev-parse` calls |
 | `MCP_PORT` | `9090` | agent-facing local MCP server |
 | `LOCAL_API_PORT` | `9091` | wrapper-facing plain HTTP/JSON API |

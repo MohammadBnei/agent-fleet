@@ -29,7 +29,7 @@ func main() {
 		slog.Error("TASK_ID is required")
 		os.Exit(1)
 	}
-	coreAddr := env("CORE_GRPC_ADDR", "core.agent-fleet.svc.cluster.local:9090")
+	coreAddr := env("CORE_GRPC_ADDR", "agent-fleet-core.agent-fleet.svc.cluster.local:9090")
 	worktreePath := env("WORKTREE_PATH", "/workspace")
 	mcpPort := env("MCP_PORT", "9090")
 	localAPIPort := env("LOCAL_API_PORT", "9091")

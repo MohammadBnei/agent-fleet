@@ -22,11 +22,12 @@ image:
   tag: "1.10.4"
 
 # extraPorts.grpc backs CORE_GRPC_PORT below — sidecar and provisioner both
-# dial core.agent-fleet.svc.cluster.local:9090 for CoreService. Without
-# this, that address resolves (Service exists) but the port doesn't,
-# and every ReportEvent/StillHoldsLease call from those two components
-# fails with "rpc error: code = Unavailable desc = name resolver error:
-# produced zero addresses" (confirmed live, this was previously missing).
+# dial agent-fleet-core.agent-fleet.svc.cluster.local:9090 for CoreService
+# (common-app-chart prefixes the Service name with the release name, so it's
+# never bare "core" — a wrong hostname here previously made every
+# ReportEvent/SetTaskStatus/AppendJournal call from those two components
+# fail with "rpc error: code = Unavailable desc = name resolver error:
+# produced zero addresses", confirmed live 2026-08-06).
 service:
   port: 8080 # /healthz, the dashboard's ConnectRPC API + static SPA
   extraPorts:

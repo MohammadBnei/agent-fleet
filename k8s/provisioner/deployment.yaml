@@ -63,7 +63,7 @@ spec:
         - name: WORKTREES_ROOT
           value: /workspace
         - name: CORE_GRPC_ADDR
-          value: core.agent-fleet.svc.cluster.local:9090
+          value: agent-fleet-core.agent-fleet.svc.cluster.local:9090
         # client-go's rest.InClusterConfig() natively trusts the projected
         # ServiceAccount CA — no TLS workaround needed for a Go binary
         # (unlike the old TS e2e-provisioner, see docs/adr/0013).
