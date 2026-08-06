@@ -1,5 +1,12 @@
 # Changelog
 
+# [1.16.0](https://github.com/MohammadBnei/agent-fleet/compare/1.15.0...1.16.0) (2026-08-06)
+
+
+### Features
+
+* **dashboard:** permission-mode selector, slash-command palette, mobile parity ([ead4e30](https://github.com/MohammadBnei/agent-fleet/commit/ead4e30f7c8734e7a62f0119ceca2e53f589975a))
+
 # [1.15.0](https://github.com/MohammadBnei/agent-fleet/compare/1.14.0...1.15.0) (2026-08-06)
 
 
