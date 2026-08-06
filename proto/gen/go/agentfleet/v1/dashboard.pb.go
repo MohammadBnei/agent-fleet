@@ -32,8 +32,19 @@ type Task struct {
 	// Worker-pod lifecycle state (PodPhase, set via ReportPodEvents) — distinct
 	// from `status` (business state). Unset until the provisioner reports the
 	// pod's first event.
-	PodPhase      *string `protobuf:"bytes,7,opt,name=pod_phase,json=podPhase,proto3,oneof" json:"pod_phase,omitempty"`
-	PodMessage    *string `protobuf:"bytes,8,opt,name=pod_message,json=podMessage,proto3,oneof" json:"pod_message,omitempty"`
+	PodPhase   *string `protobuf:"bytes,7,opt,name=pod_phase,json=podPhase,proto3,oneof" json:"pod_phase,omitempty"`
+	PodMessage *string `protobuf:"bytes,8,opt,name=pod_message,json=podMessage,proto3,oneof" json:"pod_message,omitempty"`
+	// Reclaim-eligibility signal (ClaimNextTask reclaims a claimed/planning/
+	// implementing task once this is >10min stale — the exact staleness
+	// threshold the dashboard's own "stuck" badge should match). Set once at
+	// claim time, refreshed by the worker pod's own heartbeat loop; unset for
+	// a still-pending task. RFC3339, matching JournalEntry.created_at.
+	HeartbeatAt *string `protobuf:"bytes,9,opt,name=heartbeat_at,json=heartbeatAt,proto3,oneof" json:"heartbeat_at,omitempty"`
+	// How many times ClaimNextTask has reclaimed this task after a stale
+	// heartbeat (capped at MAX_TASK_RETRIES before the task goes
+	// failed_permanently instead of being reclaimed again).
+	RetryCount    int32   `protobuf:"varint,10,opt,name=retry_count,json=retryCount,proto3" json:"retry_count,omitempty"`
+	LastError     *string `protobuf:"bytes,11,opt,name=last_error,json=lastError,proto3,oneof" json:"last_error,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -120,6 +131,27 @@ func (x *Task) GetPodPhase() string {
 func (x *Task) GetPodMessage() string {
 	if x != nil && x.PodMessage != nil {
 		return *x.PodMessage
+	}
+	return ""
+}
+
+func (x *Task) GetHeartbeatAt() string {
+	if x != nil && x.HeartbeatAt != nil {
+		return *x.HeartbeatAt
+	}
+	return ""
+}
+
+func (x *Task) GetRetryCount() int32 {
+	if x != nil {
+		return x.RetryCount
+	}
+	return 0
+}
+
+func (x *Task) GetLastError() string {
+	if x != nil && x.LastError != nil {
+		return *x.LastError
 	}
 	return ""
 }
@@ -1490,7 +1522,7 @@ var File_agentfleet_v1_dashboard_proto protoreflect.FileDescriptor
 
 const file_agentfleet_v1_dashboard_proto_rawDesc = "" +
 	"\n" +
-	"\x1dagentfleet/v1/dashboard.proto\x12\ragentfleet.v1\x1a\x1fagentfleet/v1/provisioner.proto\x1a\x1eagentfleet/v1/transcript.proto\"\xa1\x02\n" +
+	"\x1dagentfleet/v1/dashboard.proto\x12\ragentfleet.v1\x1a\x1fagentfleet/v1/provisioner.proto\x1a\x1eagentfleet/v1/transcript.proto\"\xae\x03\n" +
 	"\x04Task\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04repo\x18\x02 \x01(\tR\x04repo\x12 \n" +
@@ -1500,13 +1532,21 @@ const file_agentfleet_v1_dashboard_proto_rawDesc = "" +
 	"\x06pr_url\x18\x06 \x01(\tH\x01R\x05prUrl\x88\x01\x01\x12 \n" +
 	"\tpod_phase\x18\a \x01(\tH\x02R\bpodPhase\x88\x01\x01\x12$\n" +
 	"\vpod_message\x18\b \x01(\tH\x03R\n" +
-	"podMessage\x88\x01\x01B\f\n" +
+	"podMessage\x88\x01\x01\x12&\n" +
+	"\fheartbeat_at\x18\t \x01(\tH\x04R\vheartbeatAt\x88\x01\x01\x12\x1f\n" +
+	"\vretry_count\x18\n" +
+	" \x01(\x05R\n" +
+	"retryCount\x12\"\n" +
+	"\n" +
+	"last_error\x18\v \x01(\tH\x05R\tlastError\x88\x01\x01B\f\n" +
 	"\n" +
 	"_thread_idB\t\n" +
 	"\a_pr_urlB\f\n" +
 	"\n" +
 	"_pod_phaseB\x0e\n" +
-	"\f_pod_message\"(\n" +
+	"\f_pod_messageB\x0f\n" +
+	"\r_heartbeat_atB\r\n" +
+	"\v_last_error\"(\n" +
 	"\x10ListTasksRequest\x12\x14\n" +
 	"\x05limit\x18\x01 \x01(\x05R\x05limit\">\n" +
 	"\x11ListTasksResponse\x12)\n" +

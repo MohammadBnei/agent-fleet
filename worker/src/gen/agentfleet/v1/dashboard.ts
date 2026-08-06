@@ -26,7 +26,26 @@ export interface Task {
    * pod's first event.
    */
   podPhase?: string | undefined;
-  podMessage?: string | undefined;
+  podMessage?:
+    | string
+    | undefined;
+  /**
+   * Reclaim-eligibility signal (ClaimNextTask reclaims a claimed/planning/
+   * implementing task once this is >10min stale — the exact staleness
+   * threshold the dashboard's own "stuck" badge should match). Set once at
+   * claim time, refreshed by the worker pod's own heartbeat loop; unset for
+   * a still-pending task. RFC3339, matching JournalEntry.created_at.
+   */
+  heartbeatAt?:
+    | string
+    | undefined;
+  /**
+   * How many times ClaimNextTask has reclaimed this task after a stale
+   * heartbeat (capped at MAX_TASK_RETRIES before the task goes
+   * failed_permanently instead of being reclaimed again).
+   */
+  retryCount: number;
+  lastError?: string | undefined;
 }
 
 export interface ListTasksRequest {
@@ -223,6 +242,9 @@ function createBaseTask(): Task {
     prUrl: undefined,
     podPhase: undefined,
     podMessage: undefined,
+    heartbeatAt: undefined,
+    retryCount: 0,
+    lastError: undefined,
   };
 }
 
@@ -253,6 +275,21 @@ export const Task: MessageFns<Task> = {
         : isSet(object.pod_message)
         ? globalThis.String(object.pod_message)
         : undefined,
+      heartbeatAt: isSet(object.heartbeatAt)
+        ? globalThis.String(object.heartbeatAt)
+        : isSet(object.heartbeat_at)
+        ? globalThis.String(object.heartbeat_at)
+        : undefined,
+      retryCount: isSet(object.retryCount)
+        ? globalThis.Number(object.retryCount)
+        : isSet(object.retry_count)
+        ? globalThis.Number(object.retry_count)
+        : 0,
+      lastError: isSet(object.lastError)
+        ? globalThis.String(object.lastError)
+        : isSet(object.last_error)
+        ? globalThis.String(object.last_error)
+        : undefined,
     };
   },
 
@@ -282,6 +319,15 @@ export const Task: MessageFns<Task> = {
     if (message.podMessage !== undefined) {
       obj.podMessage = message.podMessage;
     }
+    if (message.heartbeatAt !== undefined) {
+      obj.heartbeatAt = message.heartbeatAt;
+    }
+    if (message.retryCount !== 0) {
+      obj.retryCount = Math.round(message.retryCount);
+    }
+    if (message.lastError !== undefined) {
+      obj.lastError = message.lastError;
+    }
     return obj;
   },
 
@@ -298,6 +344,9 @@ export const Task: MessageFns<Task> = {
     message.prUrl = object.prUrl ?? undefined;
     message.podPhase = object.podPhase ?? undefined;
     message.podMessage = object.podMessage ?? undefined;
+    message.heartbeatAt = object.heartbeatAt ?? undefined;
+    message.retryCount = object.retryCount ?? 0;
+    message.lastError = object.lastError ?? undefined;
     return message;
   },
 };

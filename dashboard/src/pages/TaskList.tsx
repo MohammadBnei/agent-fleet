@@ -44,6 +44,32 @@ export function podStateBadge(task: Task): { label: string; className: string } 
   return { label, className };
 }
 
+// Matches core's own reclaim threshold (tasks.Store.ClaimNextTask reclaims
+// a claimed/planning/implementing task once its heartbeat is this stale) —
+// the dashboard's "stuck" signal should fire at exactly the point a human
+// can no longer distinguish "about to be reclaimed" from "silently wedged
+// forever" (see the incident where a task sat claimed with no pod for 20+
+// minutes and nothing in the UI showed it).
+const STALE_THRESHOLD_MS = 10 * 60 * 1000;
+
+export function staleBadge(task: Task): { label: string; className: string; title?: string } | null {
+  if (!ACTIVE_STATUSES.has(task.status) || !task.heartbeatAt) return null;
+  const elapsedMs = Date.now() - new Date(task.heartbeatAt).getTime();
+  if (elapsedMs < STALE_THRESHOLD_MS) return null;
+  const minutes = Math.floor(elapsedMs / 60_000);
+  return {
+    label: `STALE ${minutes}m`,
+    className: "text-error border-error/45 bg-error/10 animate-pulse",
+    title: task.lastError || `no heartbeat for ${minutes}m — will be reclaimed and redispatched`,
+  };
+}
+
+export function heartbeatLabel(task: Task): string | null {
+  if (!task.heartbeatAt) return null;
+  const minutes = Math.floor((Date.now() - new Date(task.heartbeatAt).getTime()) / 60_000);
+  return minutes < 1 ? "heartbeat just now" : `heartbeat ${minutes}m ago`;
+}
+
 function SidebarSection({
   title,
   count,
@@ -100,6 +126,7 @@ function NeedsYouCard({
   const enrichment = enrichTask(task);
   const progress = todos.filter((t) => t.status === "completed").length;
   const podBadge = podStateBadge(task);
+  const staleTag = staleBadge(task);
   return (
     <div className="relative">
       <button
@@ -116,6 +143,11 @@ function NeedsYouCard({
           {podBadge && (
             <span className={`text-[8.5px] px-1 rounded border tracking-wide ${podBadge.className}`}>
               {podBadge.label}
+            </span>
+          )}
+          {staleTag && (
+            <span className={`text-[8.5px] px-1 rounded border tracking-wide ${staleTag.className}`} title={staleTag.title}>
+              {staleTag.label}
             </span>
           )}
           <span className="ml-auto text-[9.5px] text-primary">{enrichment.idleLabel}</span>
@@ -148,6 +180,7 @@ function WorkingCard({
   const progress = todos.filter((t) => t.status === "completed").length;
   const pct = Math.round((progress / Math.max(todos.length, 1)) * 100);
   const podBadge = podStateBadge(task);
+  const staleTag = staleBadge(task);
   return (
     <div className="relative">
       <button
@@ -158,12 +191,17 @@ function WorkingCard({
         }`}
       >
         <div className="flex items-center gap-2">
-          <span className="w-1.5 h-1.5 rounded-full bg-info animate-fpulse" />
+          <span className={`w-1.5 h-1.5 rounded-full ${staleTag ? "bg-error" : "bg-info animate-fpulse"}`} />
           <span className="text-[11px]">#{task.id.slice(0, 6)}</span>
           <span className="text-[10px] text-base-content/50">{task.repo}</span>
           {podBadge && (
             <span className={`text-[8.5px] px-1 rounded border tracking-wide ${podBadge.className}`}>
               {podBadge.label}
+            </span>
+          )}
+          {staleTag && (
+            <span className={`text-[8.5px] px-1 rounded border tracking-wide ${staleTag.className}`} title={staleTag.title}>
+              {staleTag.label}
             </span>
           )}
         </div>

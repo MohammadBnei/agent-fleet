@@ -312,6 +312,11 @@ func journalEntryToProto(e journal.Entry) *agentfleetv1.JournalEntry {
 }
 
 func taskToProto(t tasks.Task) *agentfleetv1.Task {
+	var heartbeatAt *string
+	if t.HeartbeatAt != nil {
+		s := t.HeartbeatAt.Format(time.RFC3339)
+		heartbeatAt = &s
+	}
 	return &agentfleetv1.Task{
 		Id:          t.ID,
 		Repo:        t.Repo,
@@ -321,6 +326,9 @@ func taskToProto(t tasks.Task) *agentfleetv1.Task {
 		PrUrl:       t.PrURL,
 		PodPhase:    t.PodPhase,
 		PodMessage:  t.PodMessage,
+		HeartbeatAt: heartbeatAt,
+		RetryCount:  int32(t.RetryCount),
+		LastError:   t.LastError,
 	}
 }
 

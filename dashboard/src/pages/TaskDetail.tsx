@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { client } from "../connectClient";
 import type { Task } from "../gen/agentfleet/v1/dashboard_pb";
-import { podStateBadge } from "./TaskList";
+import { podStateBadge, staleBadge, heartbeatLabel } from "./TaskList";
 import { TranscriptEntryType, type TranscriptEntry } from "../gen/agentfleet/v1/transcript_pb";
 import { enrichTask } from "../mockEnrichment";
 import {
@@ -214,6 +214,8 @@ export function TaskDetail({
   const enrichment = enrichTask(task);
   const siblings = tasks.filter((t) => t.id !== taskId);
   const podBadge = podStateBadge(task);
+  const staleTag = staleBadge(task);
+  const heartbeat = heartbeatLabel(task);
 
   function sendMessage() {
     const text = message.trim();
@@ -247,6 +249,14 @@ export function TaskDetail({
               POD {podBadge.label}
             </span>
           )}
+          {staleTag && (
+            <span
+              className={`px-2 py-0.5 rounded text-[9.5px] font-semibold border tracking-wide ${staleTag.className}`}
+              title={staleTag.title}
+            >
+              {staleTag.label}
+            </span>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-3.5 mt-2 text-[10px] text-base-content/50">
           <span>#{task.id.slice(0, 6)}</span>
@@ -255,6 +265,13 @@ export function TaskDetail({
           <span>{enrichment.model}</span>
           <span>{enrichment.tokens}</span>
           <span>started {enrichment.startedAt}</span>
+          {heartbeat && <span className={staleTag ? "text-error" : undefined}>{heartbeat}</span>}
+          {task.retryCount > 0 && <span>attempt {task.retryCount + 1}</span>}
+          {task.lastError && (
+            <span className="text-warning" title={task.lastError}>
+              last error ⓘ
+            </span>
+          )}
         </div>
       </div>
 
