@@ -31,6 +31,14 @@ type Client struct {
 	// LOG_LEVEL is the fleet's single source of truth for it, since those
 	// containers are spawned per-task rather than configured statically.
 	LogLevel string
+	// CoreGRPCAddr is forwarded into every worker pod's sidecar container
+	// (see CreateWorkerPod), same reasoning as LogLevel: the provisioner
+	// already resolves this correctly for its own ReportPodEvents calls, so
+	// the sidecar should reuse that value instead of carrying its own
+	// separately-hardcoded default that can silently drift out of sync with
+	// wherever core's Service actually lives (e.g. prod's release-prefixed
+	// name vs kind-local's unprefixed one).
+	CoreGRPCAddr string
 }
 
 // New builds an in-cluster client. client-go's rest.InClusterConfig()
@@ -54,7 +62,7 @@ func New(namespace string, cfg Images) (*Client, error) {
 		Core: core, Dynamic: dyn, Namespace: namespace,
 		RunnerImage: cfg.RunnerImage, WorkerImage: cfg.WorkerImage,
 		SidecarImage: cfg.SidecarImage, WorkspacePVC: cfg.WorkspacePVC,
-		LogLevel: cfg.LogLevel,
+		LogLevel: cfg.LogLevel, CoreGRPCAddr: cfg.CoreGRPCAddr,
 	}, nil
 }
 
@@ -68,4 +76,5 @@ type Images struct {
 	SidecarImage string
 	WorkspacePVC string
 	LogLevel     string
+	CoreGRPCAddr string
 }

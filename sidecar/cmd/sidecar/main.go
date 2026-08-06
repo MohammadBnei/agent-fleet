@@ -101,6 +101,19 @@ func (w *statusWriter) WriteHeader(status int) {
 	w.ResponseWriter.WriteHeader(status)
 }
 
+// Flush forwards to the underlying ResponseWriter's Flusher. Without this,
+// embedding http.ResponseWriter as an interface field doesn't promote
+// Flush() — humanMessagesHandler's `w.(http.Flusher)` assertion always
+// failed through this wrapper, so /human-messages always returned 500
+// (confirmed live: every worker session's approve/abort signal silently
+// never arrived, forcing the agent to discover approval by polling the
+// transcript instead).
+func (w *statusWriter) Flush() {
+	if f, ok := w.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
 func env(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
 		return v

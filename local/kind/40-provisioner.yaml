@@ -48,8 +48,17 @@ spec:
               value: agent-fleet-workspace
             - name: WORKTREES_ROOT
               value: /workspace
-            # Default (core.agent-fleet.svc.cluster.local:9090) already
-            # matches 30-core.yaml's Service name — no override needed.
+            # core's code default is "agent-fleet-core.agent-fleet.svc.
+            # cluster.local:9090" — correct for prod, where core goes
+            # through common-app-chart and gets release-name-prefixed, but
+            # 30-core.yaml's Service here is named plain "core" (a raw
+            # Deployment+Service, not the chart). Override required, or the
+            # provisioner's ReportPodEvents calls AND every sidecar's
+            # CORE_GRPC_ADDR (forwarded from this same value, see
+            # provisioner/internal/k8s/pod.go) resolve zero addresses and
+            # every worker pod hangs forever at sidecar /readyz.
+            - name: CORE_GRPC_ADDR
+              value: core.agent-fleet.svc.cluster.local:9090
           envFrom:
             - secretRef:
                 name: agent-fleet-local-secrets
