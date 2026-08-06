@@ -50,6 +50,7 @@ func main() {
 		SidecarImage: cfg.SidecarImage,
 		WorkspacePVC: cfg.WorkspacePVC,
 		LogLevel:     cfg.LogLevel,
+		CoreGRPCAddr: cfg.CoreGRPCAddr,
 	})
 	if err != nil {
 		slog.Error("k8s client init failed", "error", err)

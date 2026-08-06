@@ -172,6 +172,13 @@ func (c *Client) CreateWorkerPod(ctx context.Context, taskID, repo, description,
 					{Name: "LOCAL_API_PORT", Value: fmt.Sprint(SidecarAPIPort)},
 					{Name: "WORKTREE_PATH", Value: worktreePath},
 					{Name: "LOG_LEVEL", Value: c.LogLevel},
+					// Without this, the sidecar falls back to its own
+					// separately-hardcoded default, which only happens to
+					// match prod's release-prefixed core Service name — it
+					// silently doesn't resolve against kind-local's
+					// unprefixed one (confirmed live: sidecar stuck at
+					// /readyz 503 forever, worker never starts).
+					{Name: "CORE_GRPC_ADDR", Value: c.CoreGRPCAddr},
 				},
 				Ports: []corev1.ContainerPort{
 					{Name: "mcp", ContainerPort: SidecarMCPPort},
