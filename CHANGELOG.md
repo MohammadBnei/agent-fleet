@@ -1,5 +1,12 @@
 # Changelog
 
+# [1.15.0](https://github.com/MohammadBnei/agent-fleet/compare/1.14.0...1.15.0) (2026-08-06)
+
+
+### Features
+
+* **dashboard:** card-style TODOS/TOOL CALLS/CHANGES, scroll-to-bottom button ([b480fec](https://github.com/MohammadBnei/agent-fleet/commit/b480fec25c03d234ef9f2d6d706229dac05ecd27))
+
 # [1.14.0](https://github.com/MohammadBnei/agent-fleet/compare/1.13.1...1.14.0) (2026-08-06)
 
 
