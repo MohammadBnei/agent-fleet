@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.11.1](https://github.com/MohammadBnei/agent-fleet/compare/1.11.0...1.11.1) (2026-08-06)
+
+
+### Bug Fixes
+
+* **core-grpc:** correct core's Service hostname for sidecar/provisioner ([#43](https://github.com/MohammadBnei/agent-fleet/issues/43)) ([61578d0](https://github.com/MohammadBnei/agent-fleet/commit/61578d007b2b3bd06a4981ddf4893e32781f7495))
+
 # [1.11.0](https://github.com/MohammadBnei/agent-fleet/compare/1.10.4...1.11.0) (2026-08-06)
 
 
