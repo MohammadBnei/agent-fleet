@@ -69,6 +69,7 @@ func newTestPool(t *testing.T) *pgxpool.Pool {
 			deleted_at         TIMESTAMPTZ,
 			pod_phase          TEXT,
 			pod_message        TEXT,
+			stop_requested_at  TIMESTAMPTZ,
 			created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
 			updated_at         TIMESTAMPTZ NOT NULL DEFAULT now()
 		);
@@ -431,6 +432,84 @@ func TestSoftDelete_HidesFromGetAndList(t *testing.T) {
 		if t2.ID == id {
 			t.Fatalf("expected soft-deleted task %s to be excluded from ListRecentTasks", id)
 		}
+	}
+}
+
+// TestMarkStopRequested_DoesNotResetAnExistingTimestamp covers the bug fix
+// this exists for: a repeated Stop click must not push the grace window
+// back out indefinitely by resetting stop_requested_at on every call.
+func TestMarkStopRequested_DoesNotResetAnExistingTimestamp(t *testing.T) {
+	pool := newTestPool(t)
+	ctx := context.Background()
+	store := NewStore(pool)
+
+	id, err := store.CreateTask(ctx, "dream-analyst", "task", nil, nil)
+	if err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+
+	if err := store.MarkStopRequested(ctx, id); err != nil {
+		t.Fatalf("mark stop requested (first): %v", err)
+	}
+	var first time.Time
+	if err := pool.QueryRow(ctx, `SELECT stop_requested_at FROM tasks WHERE id = $1`, id).Scan(&first); err != nil {
+		t.Fatalf("read first stop_requested_at: %v", err)
+	}
+
+	time.Sleep(10 * time.Millisecond)
+	if err := store.MarkStopRequested(ctx, id); err != nil {
+		t.Fatalf("mark stop requested (second): %v", err)
+	}
+	var second time.Time
+	if err := pool.QueryRow(ctx, `SELECT stop_requested_at FROM tasks WHERE id = $1`, id).Scan(&second); err != nil {
+		t.Fatalf("read second stop_requested_at: %v", err)
+	}
+
+	if !first.Equal(second) {
+		t.Fatalf("expected stop_requested_at to stay at %v, got reset to %v", first, second)
+	}
+}
+
+// TestListOverdueStopIDs_ReturnsOnlyOverdueNonTerminal covers
+// dispatch.Loop's grace-period sweep: a task must be returned only once
+// its stop request has aged past the grace window, and never once it's
+// reached a terminal status (which means teardown already happened via
+// the normal SetTaskStatus path, or the task was deleted).
+func TestListOverdueStopIDs_ReturnsOnlyOverdueNonTerminal(t *testing.T) {
+	pool := newTestPool(t)
+	ctx := context.Background()
+	store := NewStore(pool)
+
+	seed := func(status string, stopRequestedAgo *time.Duration) string {
+		var id string
+		var stopRequestedAt any
+		if stopRequestedAgo != nil {
+			stopRequestedAt = time.Now().Add(-*stopRequestedAgo)
+		}
+		if err := pool.QueryRow(ctx, `
+			INSERT INTO tasks (repo, description, discord_channel_id, status, stop_requested_at)
+			VALUES ('dream-analyst', 'task', 'chan', $1, $2)
+			RETURNING id
+		`, status, stopRequestedAt).Scan(&id); err != nil {
+			t.Fatalf("seed task: %v", err)
+		}
+		return id
+	}
+
+	old := 2 * time.Minute
+	recent := 1 * time.Second
+	overdueImplementing := seed("implementing", &old)
+	seed("implementing", &recent)     // not yet overdue
+	seed("implementing", nil)         // no stop requested at all
+	seed("cancelled", &old)           // overdue but already terminal
+	seed("done", &old)                // overdue but already terminal
+
+	ids, err := store.ListOverdueStopIDs(ctx, time.Minute)
+	if err != nil {
+		t.Fatalf("list overdue stops: %v", err)
+	}
+	if len(ids) != 1 || ids[0] != overdueImplementing {
+		t.Fatalf("expected exactly [%s], got %v", overdueImplementing, ids)
 	}
 }
 

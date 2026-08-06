@@ -339,6 +339,53 @@ func (s *Store) SetStatus(ctx context.Context, id, status string, prURL, notes, 
 	return nil
 }
 
+// MarkStopRequested records when a human first asked to stop this task
+// (DashboardService.Stop) — the durable half of stop's grace-period
+// force-kill (a bug report: Stop only posted a cooperative abort message,
+// so a hung/unreachable worker pod never actually died). Guarded by
+// `stop_requested_at IS NULL` so repeated Stop clicks don't keep resetting
+// the grace window a task has already been sitting in.
+func (s *Store) MarkStopRequested(ctx context.Context, id string) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE tasks SET stop_requested_at = now(), updated_at = now()
+		WHERE id = $1 AND stop_requested_at IS NULL
+	`, id)
+	if err != nil {
+		slog.Error("tasks MarkStopRequested", "taskId", id, "error", err)
+		return fmt.Errorf("mark stop requested: %w", err)
+	}
+	return nil
+}
+
+// ListOverdueStopIDs returns tasks that were asked to stop more than grace
+// ago but never reached a terminal status on their own — dispatch.Loop's
+// grace-period sweep force-tears these down instead of waiting on a worker
+// pod that may never notice the cooperative abort message. Terminal-status
+// list mirrors coreserver.terminalTaskStatuses.
+func (s *Store) ListOverdueStopIDs(ctx context.Context, grace time.Duration) ([]string, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT id FROM tasks
+		WHERE stop_requested_at IS NOT NULL
+		  AND stop_requested_at < now() - ($1 * interval '1 second')
+		  AND status NOT IN ('done', 'failed', 'cancelled', 'failed_permanently')
+		  AND deleted_at IS NULL
+	`, grace.Seconds())
+	if err != nil {
+		slog.Error("tasks ListOverdueStopIDs", "error", err)
+		return nil, fmt.Errorf("list overdue stops: %w", err)
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("list overdue stops: scan: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
 func (s *Store) SaveSessionID(ctx context.Context, id, planningSessionID, model string) error {
 	_, err := s.pool.Exec(ctx, `
 		UPDATE tasks SET planning_session_id = $2, model = $3, updated_at = now() WHERE id = $1

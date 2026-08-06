@@ -155,6 +155,12 @@ func (s *Server) Approve(ctx context.Context, req *connect.Request[agentfleetv1.
 	return connect.NewResponse(&agentfleetv1.ApproveResponse{Status: "approved"}), nil
 }
 
+// Stop posts a cooperative abort message (the worker pod notices it via
+// streamHumanMessages and exits cleanly if it's alive and responsive) and
+// also durably marks when the stop was requested — dispatch.Loop's
+// grace-period sweep force-tears-down the pod via TearDownSession if it
+// hasn't gone terminal within the grace window, covering the hung/crashed/
+// unreachable-pod case a bare abort message can never reach.
 func (s *Server) Stop(ctx context.Context, req *connect.Request[agentfleetv1.StopRequest]) (*connect.Response[agentfleetv1.StopResponse], error) {
 	taskID := req.Msg.GetTaskId()
 	reason := "stopped by human"
@@ -163,6 +169,10 @@ func (s *Server) Stop(ctx context.Context, req *connect.Request[agentfleetv1.Sto
 	}
 	if _, err := s.transcr.Append(ctx, taskID, "human", reason, "abort", uuid.NewString()); err != nil {
 		slog.Error("dashboard Stop", "taskId", taskID, "error", err)
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	if err := s.tasks.MarkStopRequested(ctx, taskID); err != nil {
+		slog.Error("dashboard Stop: mark stop requested", "taskId", taskID, "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	return connect.NewResponse(&agentfleetv1.StopResponse{Status: "stopping"}), nil
