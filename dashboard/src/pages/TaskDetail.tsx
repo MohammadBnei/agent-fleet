@@ -15,6 +15,7 @@ import {
   asDisplayMarkdown,
 } from "../transcript";
 import { useTaskDetail } from "../useTaskDetail";
+import { useAtBottom } from "../useAtBottom";
 import { ToolCallItem } from "../components/ToolCallItem";
 import { ErrorModal } from "../components/ErrorModal";
 import { Markdown } from "../components/Markdown";
@@ -213,6 +214,10 @@ export function TaskDetail({
     clearActionError,
   } = useTaskDetail(taskId);
   const [message, setMessage] = useState("");
+  const { ref: feedRef, atBottom: feedAtBottom, onScroll: feedOnScroll, scrollToBottom: feedScrollToBottom } =
+    useAtBottom<HTMLDivElement>();
+  const { ref: todosRef, atBottom: todosAtBottom, onScroll: todosOnScroll, scrollToBottom: todosScrollToBottom } =
+    useAtBottom<HTMLDivElement>();
 
   if (loadError) return <div className="alert alert-error m-4">{loadError}</div>;
   if (!fetchedTask) return <div className="p-4">Loading…</div>;
@@ -296,7 +301,8 @@ export function TaskDetail({
 
       <div className="grid grid-cols-[1fr_280px] min-h-0">
         <div className="min-w-0 min-h-0 flex flex-col">
-          <div className="flex-1 overflow-y-auto px-6 py-5 flex flex-col gap-3">
+          <div className="relative flex-1 min-h-0">
+          <div ref={feedRef} onScroll={feedOnScroll} className="absolute inset-0 overflow-y-auto px-6 py-5 flex flex-col gap-3">
             {entries.map((entry, idx) => {
               // Rendered inline by its QUESTION entry below, not as its own bubble.
               if (entry.type === TranscriptEntryType.ANSWER) return null;
@@ -338,6 +344,17 @@ export function TaskDetail({
                 </div>
               </div>
             )}
+          </div>
+          {!feedAtBottom && (
+            <button
+              type="button"
+              onClick={feedScrollToBottom}
+              className="btn btn-circle btn-xs absolute bottom-3 right-3 bg-base-300 border-base-content/20 shadow-md"
+              title="Scroll to bottom"
+            >
+              ↓
+            </button>
+          )}
           </div>
 
           <div className="flex-none px-6 py-3.5 border-t border-base-content/10 bg-base-200 flex flex-col gap-2.5">
@@ -423,10 +440,11 @@ export function TaskDetail({
           </div>
         </div>
 
-        <div className="border-l border-base-content/10 bg-base-200 px-4 py-4 overflow-y-auto min-h-0 flex flex-col gap-5">
-          <div>
+        <div className="border-l border-base-content/10 bg-base-200 px-4 py-4 overflow-y-auto min-h-0 flex flex-col gap-3">
+          <div className="rounded-lg border border-base-content/10 bg-base-300/20 p-3">
             <div className="text-[9.5px] tracking-[0.11em] text-base-content/60 font-semibold">TODOS</div>
-            <div className="flex flex-col gap-1.5 mt-2.5">
+            <div className="relative">
+            <div ref={todosRef} onScroll={todosOnScroll} className="flex flex-col gap-1.5 mt-2.5 max-h-56 overflow-y-auto">
               {todos && todos.length > 0 ? (
                 todos.map((t, i) => (
                   <div key={i} className="flex gap-2 items-start text-[11px]">
@@ -458,9 +476,20 @@ export function TaskDetail({
                 <div className="text-[10.5px] text-base-content/40">no todos yet</div>
               )}
             </div>
+            {!todosAtBottom && (
+              <button
+                type="button"
+                onClick={todosScrollToBottom}
+                className="btn btn-circle btn-xs absolute bottom-1 right-1 bg-base-100 border-base-content/20 shadow-md"
+                title="Scroll to bottom"
+              >
+                ↓
+              </button>
+            )}
+            </div>
           </div>
 
-          <div>
+          <div className="rounded-lg border border-base-content/10 bg-base-300/20 p-3">
             <div className="text-[9.5px] tracking-[0.11em] text-base-content/60 font-semibold">TOOL CALLS</div>
             <div className="flex flex-col gap-1.5 mt-2.5">
               {toolCallPairs.length > 0 ? (
@@ -471,7 +500,7 @@ export function TaskDetail({
             </div>
           </div>
 
-          <div>
+          <div className="rounded-lg border border-base-content/10 bg-base-300/20 p-3">
             <div className="flex items-baseline gap-2">
               <span className="text-[9.5px] tracking-[0.11em] text-base-content/60 font-semibold">CHANGES</span>
               {branch && <span className="text-[9.5px] text-base-content/35">{branch}</span>}
