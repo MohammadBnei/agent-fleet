@@ -17,10 +17,12 @@ import {
 } from "../transcript";
 import { useTaskDetail } from "../useTaskDetail";
 import { useAtBottom } from "../useAtBottom";
+import { useLocalStorageState } from "../useLocalStorageState";
 import { ToolCallItem } from "../components/ToolCallItem";
 import { ErrorModal } from "../components/ErrorModal";
 import { Markdown } from "../components/Markdown";
 import { BypassConfirmModal } from "../components/BypassConfirmModal";
+import { Panel } from "../components/Panel";
 
 // Minimal distinct treatment for the raw SDK message types (reliability-
 // findings.md #0: "relay everything, let the UI decide") — before this,
@@ -213,6 +215,9 @@ function QuestionCard({
   );
 }
 
+const PANEL_IDS = ["todos", "toolcalls", "changes"] as const;
+const DEFAULT_HEIGHT = 224; // matches TODOS's prior max-h-56
+
 const STATUS_COLOR: Record<string, string> = {
   pending: "text-base-content/60 border-base-content/20 bg-base-content/5",
   claimed: "text-info border-info/45 bg-info/10",
@@ -278,6 +283,47 @@ export function TaskDetail({
   useEffect(() => {
     if (feedAtBottom) setHasNewAiMessage(false);
   }, [feedAtBottom]);
+
+  const [order, setOrder] = useLocalStorageState<string[]>("taskDetail.rightPanel.order", [...PANEL_IDS]);
+  const [heights, setHeights] = useLocalStorageState<Record<string, number>>("taskDetail.rightPanel.heights", {});
+  const [draggedId, setDraggedId] = useState<string | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
+
+  function dragProps(id: string) {
+    return {
+      isDragging: draggedId === id,
+      isDragOver: dragOverId === id,
+      onDragStart: setDraggedId,
+      onDragEnd: () => {
+        setDraggedId(null);
+        setDragOverId(null);
+      },
+      onDragEnter: setDragOverId,
+      onDragLeave: () => setDragOverId(null),
+      onDrop: (targetId: string) => {
+        if (draggedId && draggedId !== targetId) {
+          setOrder((prev) => {
+            const next = prev.filter((x) => x !== draggedId);
+            next.splice(next.indexOf(targetId), 0, draggedId);
+            return next;
+          });
+        }
+        setDraggedId(null);
+        setDragOverId(null);
+      },
+    };
+  }
+
+  function handleResize(id: string, height: number) {
+    setHeights((prev) => ({ ...prev, [id]: height }));
+  }
+
+  // Defensive against stale localStorage (unknown id, or a future 4th panel
+  // missing from an old saved array).
+  const renderOrder = [
+    ...order.filter((id) => (PANEL_IDS as readonly string[]).includes(id)),
+    ...PANEL_IDS.filter((id) => !order.includes(id)),
+  ];
 
   if (loadError) return <div className="alert alert-error m-4">{loadError}</div>;
   if (!fetchedTask) return <div className="p-4">Loading…</div>;
@@ -555,84 +601,108 @@ export function TaskDetail({
         </div>
 
         <div className="border-l border-base-content/10 bg-base-200 px-4 py-4 overflow-y-auto min-h-0 flex flex-col gap-3">
-          <div className="rounded-lg border border-base-content/10 bg-base-300/20 p-3">
-            <div className="text-[9.5px] tracking-[0.11em] text-base-content/60 font-semibold">TODOS</div>
-            <div className="relative">
-            <div ref={todosRef} onScroll={todosOnScroll} className="flex flex-col gap-1.5 mt-2.5 max-h-56 overflow-y-auto">
-              {todos && todos.length > 0 ? (
-                todos.map((t, i) => (
-                  <div key={i} className="flex gap-2 items-start text-[11px]">
-                    <span
-                      className={
-                        t.status === "completed"
-                          ? "text-success"
-                          : t.status === "in_progress"
-                            ? "text-primary"
-                            : "text-base-content/30"
-                      }
-                    >
-                      {t.status === "completed" ? "✓" : t.status === "in_progress" ? "◐" : "○"}
-                    </span>
-                    <span
-                      className={
-                        t.status === "completed"
-                          ? "line-through text-base-content/40"
-                          : t.status === "in_progress"
-                            ? "text-base-content"
-                            : "text-base-content/80"
-                      }
-                    >
-                      {t.status === "in_progress" ? t.activeForm : t.content}
-                    </span>
-                  </div>
-                ))
-              ) : (
-                <div className="text-[10.5px] text-base-content/40">no todos yet</div>
-              )}
-            </div>
-            {!todosAtBottom && (
-              <button
-                type="button"
-                onClick={todosScrollToBottom}
-                className="btn btn-circle btn-xs absolute bottom-1 right-1 bg-base-100 border-base-content/20 shadow-md"
-                title="Scroll to bottom"
+          {renderOrder.map((id) => {
+            if (id === "todos") {
+              return (
+                <Panel
+                  key={id}
+                  id={id}
+                  title="TODOS"
+                  height={heights[id] ?? DEFAULT_HEIGHT}
+                  onResize={handleResize}
+                  drag={dragProps(id)}
+                  bodyRef={todosRef}
+                  onBodyScroll={todosOnScroll}
+                  overlay={
+                    !todosAtBottom && (
+                      <button
+                        type="button"
+                        onClick={todosScrollToBottom}
+                        className="btn btn-circle btn-xs absolute bottom-3 right-3 bg-base-100 border-base-content/20 shadow-md"
+                        title="Scroll to bottom"
+                      >
+                        ↓
+                      </button>
+                    )
+                  }
+                >
+                  {todos && todos.length > 0 ? (
+                    todos.map((t, i) => (
+                      <div key={i} className="flex gap-2 items-start text-[11px]">
+                        <span
+                          className={
+                            t.status === "completed"
+                              ? "text-success"
+                              : t.status === "in_progress"
+                                ? "text-primary"
+                                : "text-base-content/30"
+                          }
+                        >
+                          {t.status === "completed" ? "✓" : t.status === "in_progress" ? "◐" : "○"}
+                        </span>
+                        <span
+                          className={
+                            t.status === "completed"
+                              ? "line-through text-base-content/40"
+                              : t.status === "in_progress"
+                                ? "text-base-content"
+                                : "text-base-content/80"
+                          }
+                        >
+                          {t.status === "in_progress" ? t.activeForm : t.content}
+                        </span>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-[10.5px] text-base-content/40">no todos yet</div>
+                  )}
+                </Panel>
+              );
+            }
+
+            if (id === "toolcalls") {
+              return (
+                <Panel
+                  key={id}
+                  id={id}
+                  title="TOOL CALLS"
+                  height={heights[id] ?? DEFAULT_HEIGHT}
+                  onResize={handleResize}
+                  drag={dragProps(id)}
+                >
+                  {toolCallPairs.length > 0 ? (
+                    toolCallPairs.map((pair) => <ToolCallItem key={String(pair.call.seq)} pair={pair} />)
+                  ) : (
+                    <div className="text-[10.5px] text-base-content/40">no tool calls yet</div>
+                  )}
+                </Panel>
+              );
+            }
+
+            return (
+              <Panel
+                key={id}
+                id={id}
+                title="CHANGES"
+                headerExtra={branch && <span className="text-[9.5px] text-base-content/35">{branch}</span>}
+                height={heights[id] ?? DEFAULT_HEIGHT}
+                onResize={handleResize}
+                drag={dragProps(id)}
               >
-                ↓
-              </button>
-            )}
-            </div>
-          </div>
-
-          <div className="rounded-lg border border-base-content/10 bg-base-300/20 p-3">
-            <div className="text-[9.5px] tracking-[0.11em] text-base-content/60 font-semibold">TOOL CALLS</div>
-            <div className="flex flex-col gap-1.5 mt-2.5">
-              {toolCallPairs.length > 0 ? (
-                toolCallPairs.map((pair) => <ToolCallItem key={String(pair.call.seq)} pair={pair} />)
-              ) : (
-                <div className="text-[10.5px] text-base-content/40">no tool calls yet</div>
-              )}
-            </div>
-          </div>
-
-          <div className="rounded-lg border border-base-content/10 bg-base-300/20 p-3">
-            <div className="flex items-baseline gap-2">
-              <span className="text-[9.5px] tracking-[0.11em] text-base-content/60 font-semibold">CHANGES</span>
-              {branch && <span className="text-[9.5px] text-base-content/35">{branch}</span>}
-            </div>
-            <div className="flex flex-col gap-2 mt-2.5">
-              {changes && changes.length > 0 ? (
-                changes.map((c, i) => (
-                  <div key={i} className="flex items-center gap-2 text-[10.5px] min-w-0">
-                    <span className="flex-1 text-base-content/70 truncate min-w-0">{c.path}</span>
-                    <span className="text-success flex-none">+{c.added}</span>
-                    {c.removed > 0 && <span className="text-warning flex-none">−{c.removed}</span>}
-                  </div>
-                ))
-              ) : (
-                <div className="text-[10.5px] text-base-content/40">no changes yet</div>
-              )}
-            </div>
-          </div>
+                {changes && changes.length > 0 ? (
+                  changes.map((c, i) => (
+                    <div key={i} className="flex items-center gap-2 text-[10.5px] min-w-0">
+                      <span className="flex-1 text-base-content/70 truncate min-w-0">{c.path}</span>
+                      <span className="text-success flex-none">+{c.added}</span>
+                      {c.removed > 0 && <span className="text-warning flex-none">−{c.removed}</span>}
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-[10.5px] text-base-content/40">no changes yet</div>
+                )}
+              </Panel>
+            );
+          })}
         </div>
       </div>
 
