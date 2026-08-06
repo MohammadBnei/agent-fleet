@@ -9,6 +9,7 @@ import { client } from "./connectClient";
 import type { Task } from "./gen/agentfleet/v1/dashboard_pb";
 import { findPendingQuestion, latestTodos, type TodoItem } from "./transcript";
 import { ErrorModal } from "./components/ErrorModal";
+import { useMediaQuery } from "./useMediaQuery";
 
 // No router library for two views (see docs/adr/0013's plan) — state
 // mirrored to ?task=<id> so a task's detail view is still bookmarkable/
@@ -32,6 +33,14 @@ function readViewFromUrl(): "tasks" | "worktrees" {
 const POLL_INTERVAL_MS = 5000;
 
 export default function App() {
+  // Matches Tailwind's `sm:` breakpoint. Desktop (TaskDetail) and mobile
+  // (MobileTaskDetail) used to both mount unconditionally, just CSS-hidden
+  // via `hidden sm:*`/`sm:hidden` — each ran its own useTaskDetail, meaning
+  // two independent StreamTranscript subscriptions polling the same task
+  // concurrently whenever a task was open. Gating the mount itself on the
+  // actual viewport instead of hiding one with CSS stops that duplicate
+  // background streaming outright.
+  const isDesktop = useMediaQuery("(min-width: 640px)");
   const [view, setView] = useState<"tasks" | "worktrees">(readViewFromUrl);
   const [selectedId, setSelectedId] = useState<string | null>(
     readTaskIdFromUrl,
@@ -159,11 +168,17 @@ export default function App() {
   }, [tasks, filter]);
 
   return (
-    <div className="h-screen overflow-hidden bg-base-100 grid grid-rows-[auto_1fr]">
+    // h-dvh (dynamic viewport height), not h-screen (100vh) — 100vh is
+    // pinned to the largest possible viewport on mobile browsers, so it
+    // doesn't shrink when the on-screen keyboard opens; the composer at the
+    // bottom of the flex column ends up rendered underneath the keyboard
+    // instead of above it. h-dvh tracks the actual visible viewport.
+    <div className="h-dvh overflow-hidden bg-base-100 grid grid-rows-[auto_1fr]">
       {/* Desktop chrome — the mobile view (below) has its own header inside
           MobileTaskList/MobileTaskDetail, matching the "herd" mock's phone
           screens, which don't share this row at all. */}
-      <div className="hidden sm:flex row-start-1 items-center gap-5 px-5 h-13 border-b border-base-content/10 bg-base-200">
+      {isDesktop && (
+      <div className="flex row-start-1 items-center gap-5 px-5 h-13 border-b border-base-content/10 bg-base-200">
         <div className="flex items-baseline gap-2">
           <span className="font-display font-semibold text-base">herd</span>
           <span className="text-[10.5px] text-base-content/50">
@@ -222,10 +237,12 @@ export default function App() {
           </div>
         )}
       </div>
+      )}
 
       <ErrorModal message={tasksError} onClose={() => setTasksError(null)} />
 
-      <div className="hidden sm:grid grid-cols-1 lg:grid-cols-[320px_1fr] row-start-2 min-h-0">
+      {isDesktop ? (
+      <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] row-start-2 min-h-0">
         {view === "worktrees" ? (
           <Worktrees />
         ) : (
@@ -253,8 +270,8 @@ export default function App() {
           </>
         )}
       </div>
-
-      <div className="sm:hidden row-start-2 min-h-0 flex flex-col">
+      ) : (
+      <div className="row-start-2 min-h-0 flex flex-col">
         {view === "worktrees" ? (
           <Worktrees onBack={() => selectView("tasks")} />
         ) : selectedId ? (
@@ -279,6 +296,7 @@ export default function App() {
           />
         )}
       </div>
+      )}
     </div>
   );
 }

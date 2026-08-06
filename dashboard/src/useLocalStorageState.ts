@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 
 // Generic localStorage-backed state — used for the right panel's card order
 // and per-card heights so a reorganized dashboard survives a reload. Lazy
@@ -14,17 +14,23 @@ export function useLocalStorageState<T>(key: string, initial: T) {
     }
   });
 
-  function set(next: T | ((prev: T) => T)) {
-    setValue((prev) => {
-      const resolved = typeof next === "function" ? (next as (p: T) => T)(prev) : next;
-      try {
-        localStorage.setItem(key, JSON.stringify(resolved));
-      } catch {
-        // storage full/disabled — layout just won't persist this time
-      }
-      return resolved;
-    });
-  }
+  // Stable across renders (functional update only, no closed-over `value`)
+  // so callers can safely put it in a useCallback/useEffect dependency
+  // array without that memoization being defeated every render.
+  const set = useCallback(
+    (next: T | ((prev: T) => T)) => {
+      setValue((prev) => {
+        const resolved = typeof next === "function" ? (next as (p: T) => T)(prev) : next;
+        try {
+          localStorage.setItem(key, JSON.stringify(resolved));
+        } catch {
+          // storage full/disabled — layout just won't persist this time
+        }
+        return resolved;
+      });
+    },
+    [key],
+  );
 
   return [value, set] as const;
 }

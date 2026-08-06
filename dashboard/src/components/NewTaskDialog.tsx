@@ -1,5 +1,6 @@
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { client } from "../connectClient";
+import { Modal } from "./Modal";
 
 // Mirrors core/internal/tasks/store.go's KnownRepos — every caller of
 // CreateTask (bot/core/dashboard) keeps its own copy of this list already
@@ -12,7 +13,7 @@ export function NewTaskDialog({
 }: {
   onCreated: (taskId: string) => void;
 }) {
-  const dialogRef = useRef<HTMLDialogElement>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
   const [repo, setRepo] = useState(KNOWN_REPOS[0]);
   const [description, setDescription] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -20,11 +21,11 @@ export function NewTaskDialog({
 
   function open() {
     setError(null);
-    dialogRef.current?.showModal();
+    setDialogOpen(true);
   }
 
   function close() {
-    dialogRef.current?.close();
+    setDialogOpen(false);
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -54,54 +55,49 @@ export function NewTaskDialog({
         + send a task
       </button>
 
-      <dialog ref={dialogRef} className="modal">
-        <div className="modal-box">
-          <h3 className="font-semibold text-base mb-3">New task</h3>
-          <form onSubmit={handleSubmit} className="flex flex-col gap-3">
-            <label className="flex flex-col gap-1 text-sm">
-              Repo
-              <select
-                value={repo}
-                onChange={(e) => setRepo(e.target.value)}
-                className="select select-bordered select-sm"
-              >
-                {KNOWN_REPOS.map((r) => (
-                  <option key={r} value={r}>
-                    {r}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="flex flex-col gap-1 text-sm">
-              Description
-              <textarea
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="What should the agent do?"
-                className="textarea textarea-bordered textarea-sm"
-                rows={4}
-                required
-              />
-            </label>
-            {error && <p className="text-error text-sm">{error}</p>}
-            <div className="modal-action">
-              <button type="button" className="btn btn-sm" onClick={close}>
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={submitting || !description.trim()}
-                className="btn btn-sm btn-primary"
-              >
-                {submitting ? "Creating…" : "Create"}
-              </button>
-            </div>
-          </form>
-        </div>
-        <form method="dialog" className="modal-backdrop">
-          <button>close</button>
+      <Modal open={dialogOpen} onClose={close}>
+        <h3 className="font-semibold text-base mb-3">New task</h3>
+        <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+          <label className="flex flex-col gap-1 text-sm">
+            Repo
+            <select
+              value={repo}
+              onChange={(e) => setRepo(e.target.value)}
+              className="select select-bordered select-sm"
+            >
+              {KNOWN_REPOS.map((r) => (
+                <option key={r} value={r}>
+                  {r}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            Description
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="What should the agent do?"
+              className="textarea textarea-bordered textarea-sm"
+              rows={4}
+              required
+            />
+          </label>
+          {error && <p className="text-error text-sm">{error}</p>}
+          <div className="modal-action">
+            <button type="button" className="btn btn-sm" onClick={close}>
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={submitting || !description.trim()}
+              className="btn btn-sm btn-primary"
+            >
+              {submitting ? "Creating…" : "Create"}
+            </button>
+          </div>
         </form>
-      </dialog>
+      </Modal>
     </>
   );
 }

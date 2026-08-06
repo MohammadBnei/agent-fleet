@@ -15,8 +15,11 @@ const components: Components = {
   h3: (props) => <h3 className="font-semibold text-[13px] mt-2 mb-1" {...props} />,
   // Also the human-message treatment — see asDisplayMarkdown in transcript.ts,
   // which is the only thing that ever produces a blockquote in this app.
+  // Colored to match the composer's ">"/Send button (text-primary) — this
+  // is the actual color human messages render in; a wrapping div's color
+  // class has no effect here since this element sets its own.
   blockquote: (props) => (
-    <blockquote className="border-l-2 border-base-content/20 pl-2 italic text-base-content/70" {...props} />
+    <blockquote className="border-l-2 border-primary/30 pl-2 italic text-primary" {...props} />
   ),
   // Unwrapped so the `code` renderer below fully owns fenced-block markup
   // (needed for mermaid, which renders a <div>, not a <pre><code>).

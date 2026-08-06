@@ -5,7 +5,6 @@ import {
   parseQuestions,
   parseAnswers,
   findPendingQuestion,
-  parseToolCallSummary,
   latestSlashCommands,
   parseSdkSystemInfo,
   parseSdkToolResult,
@@ -16,12 +15,16 @@ import {
   asDisplayMarkdown,
 } from "../transcript";
 import { useTaskDetail } from "../useTaskDetail";
+import { useLocalStorageState } from "../useLocalStorageState";
 import { useAtBottom } from "../useAtBottom";
 import { ToolCallItem } from "../components/ToolCallItem";
+import { ToolCallLine } from "../components/ToolCallLine";
 import { ErrorModal } from "../components/ErrorModal";
 import { Markdown } from "../components/Markdown";
 import { JsonView } from "../components/JsonView";
 import { BypassConfirmModal } from "../components/BypassConfirmModal";
+import { Modal } from "../components/Modal";
+import { ActionsMenu } from "../components/ActionsMenu";
 import { prBadge } from "../pages/TaskList";
 
 // Mirrors the "herd" mock's phone session screen (Agent Fleet Mobile.dc.html)
@@ -139,25 +142,6 @@ function MobileQuestionCard({
   );
 }
 
-function ToolCallLine({ entry }: { entry: TranscriptEntry }) {
-  const summary = parseToolCallSummary(entry.text);
-  const files = summary?.files ?? [];
-  if (files.length === 0) return null;
-  const added = files.reduce((n, f) => n + f.added, 0);
-  const removed = files.reduce((n, f) => n + f.removed, 0);
-  return (
-    <div className="flex items-center gap-2 text-[11px] min-w-0">
-      <span className="text-secondary flex-none">⏺</span>
-      <span className="text-base-content/50 flex-none">files</span>
-      <span className="text-base-content/70 flex-1 truncate min-w-0">
-        {files.length} changed{summary?.branch ? ` · ${summary.branch}` : ""}
-      </span>
-      <span className="text-success flex-none">+{added}</span>
-      {removed > 0 && <span className="text-warning flex-none">−{removed}</span>}
-    </div>
-  );
-}
-
 // Mirrors desktop TaskDetail's EntryBubble at mobile's smaller text scale —
 // same reliability-findings.md #0 rationale ("relay everything, let the UI
 // decide"), cosmetic only. ASSISTANT (tool_use) is handled by the feed loop
@@ -227,7 +211,7 @@ function MobileEntryBubble({ entry }: { entry: TranscriptEntry }) {
   }
   return (
     <div>
-      <div className="text-[12.5px] leading-relaxed text-base-content/90">
+      <div className={`text-[12.5px] leading-relaxed ${entry.from === "human" ? "text-primary" : "text-base-content/90"}`}>
         <Markdown text={asDisplayMarkdown(entry)} />
       </div>
     </div>
@@ -243,10 +227,16 @@ export function MobileTaskDetail({
   onBack: () => void;
   onDelete: () => void;
 }) {
-  const { task, entries, busy, loadError, actionError, pendingMessage, run, sendDiscuss, clearActionError } =
+  const { task, entries, previewUrl, busy, loadError, actionError, pendingMessage, run, sendDiscuss, clearActionError } =
     useTaskDetail(taskId);
   const [message, setMessage] = useState("");
   const [bypassOpen, setBypassOpen] = useState(false);
+  const [actionsOpen, setActionsOpen] = useState(false);
+  // Plain show/hide for tool calls in this feed — settable here (via the
+  // Actions modal, no sidebar on mobile) or from desktop's TOOL CALLS panel
+  // header, same localStorage key either way.
+  const [hideToolsInFeed, setHideToolsInFeed] = useLocalStorageState<boolean>("taskDetail.hideToolsInFeed", false);
+  const [hideChangesInFeed, setHideChangesInFeed] = useLocalStorageState<boolean>("taskDetail.hideChangesInFeed", false);
   const { ref: feedRef, atBottom: feedAtBottom, onScroll: feedOnScroll, scrollToBottom: feedScrollToBottom } =
     useAtBottom<HTMLDivElement>();
 
@@ -384,9 +374,11 @@ export function MobileTaskDetail({
         {entries.map((entry, idx) => {
           if (entry.type === TranscriptEntryType.ANSWER) return null;
           if (entry.type === TranscriptEntryType.TOOL_CALL) {
+            if (hideChangesInFeed) return null;
             return <ToolCallLine key={String(entry.seq)} entry={entry} />;
           }
           if (entry.type === TranscriptEntryType.ASSISTANT) {
+            if (hideToolsInFeed) return null;
             const pair = toolCallPairsBySeq.get(entry.seq);
             return pair ? <ToolCallItem key={String(entry.seq)} pair={pair} /> : null;
           }
@@ -416,7 +408,7 @@ export function MobileTaskDetail({
         })}
         {pendingMessage && (
           <div className="opacity-60">
-            <div className="text-[12.5px] leading-relaxed text-base-content/90 flex items-start gap-2">
+            <div className="text-[12.5px] leading-relaxed text-primary flex items-start gap-2">
               <div className="flex-1 min-w-0">
                 <Markdown text={asDisplayMarkdown({ from: "human", text: pendingMessage })} />
               </div>
@@ -429,7 +421,7 @@ export function MobileTaskDetail({
         <button
           type="button"
           onClick={feedScrollToBottom}
-          className="btn btn-circle btn-xs absolute bottom-3 right-3 bg-base-300 border-base-content/20 shadow-md relative"
+          className="btn btn-circle btn-xs absolute bottom-3 right-3 bg-base-300 border-base-content/20 shadow-md"
           title="Scroll to bottom"
         >
           ↓
@@ -465,54 +457,6 @@ export function MobileTaskDetail({
             ))}
           </div>
         )}
-        <div className="flex items-center gap-2 flex-wrap">
-          <button
-            type="button"
-            className="btn btn-success btn-xs"
-            disabled={busy}
-            onClick={() => run(() => client.approve({ taskId }))}
-          >
-            Approve
-          </button>
-          <button
-            type="button"
-            className="btn btn-warning btn-xs"
-            disabled={busy}
-            onClick={() => run(() => client.stop({ taskId }))}
-          >
-            Stop
-          </button>
-          <button
-            type="button"
-            className="btn btn-outline btn-xs"
-            disabled={busy}
-            onClick={() => run(() => client.killE2e({ taskId }))}
-          >
-            Kill e2e
-          </button>
-          <div className="dropdown">
-            <button tabIndex={0} type="button" className="btn btn-outline btn-xs" disabled={busy}>
-              Mode ▾
-            </button>
-            <ul tabIndex={0} className="dropdown-content menu menu-sm bg-base-100 rounded-box shadow z-10 w-44 p-1">
-              <li>
-                <button type="button" onClick={() => run(() => client.setPermissionMode({ taskId, mode: "acceptEdits" }))}>
-                  Accept edits
-                </button>
-              </li>
-              <li>
-                <button type="button" onClick={() => run(() => client.setPermissionMode({ taskId, mode: "dontAsk" }))}>
-                  Don&apos;t ask
-                </button>
-              </li>
-              <li>
-                <button type="button" className="text-error" onClick={() => setBypassOpen(true)}>
-                  Bypass permissions
-                </button>
-              </li>
-            </ul>
-          </div>
-        </div>
         <BypassConfirmModal
           open={bypassOpen}
           onCancel={() => setBypassOpen(false)}
@@ -535,7 +479,7 @@ export function MobileTaskDetail({
             ))}
           </div>
         )}
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-stretch gap-2">
           <div className="flex-1 flex items-center gap-2.5 px-3.5 py-3 border border-base-content/15 rounded-lg bg-base-300/40 min-h-11">
             <span className="text-primary font-semibold text-[13px]">&gt;</span>
             <input
@@ -557,6 +501,31 @@ export function MobileTaskDetail({
               Send
             </button>
           </div>
+          <button
+            type="button"
+            onClick={() => setActionsOpen(true)}
+            title="Actions"
+            className="flex-none flex items-center justify-center px-3 border border-base-content/15 rounded-lg text-base-content/60 hover:text-base-content cursor-pointer"
+          >
+            ⚙
+          </button>
+          <Modal open={actionsOpen} onClose={() => setActionsOpen(false)}>
+            <h3 className="font-semibold text-base mb-3">Actions</h3>
+            <ActionsMenu
+              taskId={taskId}
+              busy={busy}
+              run={run}
+              previewUrl={previewUrl}
+              onBypassClick={() => {
+                setActionsOpen(false);
+                setBypassOpen(true);
+              }}
+              hideToolsInFeed={hideToolsInFeed}
+              onHideToolsInFeedChange={setHideToolsInFeed}
+              hideChangesInFeed={hideChangesInFeed}
+              onHideChangesInFeedChange={setHideChangesInFeed}
+            />
+          </Modal>
         </div>
       </div>
     </div>

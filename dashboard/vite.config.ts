@@ -11,6 +11,11 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': 'http://localhost:8080',
+      // connectClient.ts's transport uses baseUrl "/", so every RPC call
+      // goes to /agentfleet.v1.<Service>/<Method> directly — not under
+      // /api. Without this, the dev server 404s every call and
+      // connect-web surfaces it as a generic "unimplemented" error.
+      '^/agentfleet\\.v1\\.\\w+/': 'http://localhost:8080',
     },
   },
 })
