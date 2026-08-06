@@ -94,3 +94,141 @@ hooks:
       repository: mohammaddocker/agent-fleet-core
       tag: "1.18.3"
     command: ["/core", "migrate"]
+
+# Per-app Grafana dashboard (infra-bootstrap's grafana-ops skill / gitops/
+# README.md "common-app-chart" section) — renders a ConfigMap labeled
+# grafana_dashboard: "1", picked up dynamically by Grafana's dashboards
+# sidecar, no infra-bootstrap changes needed. No custom Prometheus metrics
+# exist anywhere in the fleet's code (core/provisioner/sidecar only expose
+# /healthz), so every panel here is either a generic kube-state-metrics/
+# cAdvisor pod query or a Loki LogQL query over the fleet-wide JSON/slog
+# logs (see docs/adr — the LOG_LEVEL/access-log commit that made this
+# possible). The pod_filter variable drives both metric and log panels via
+# the shared `pod` label — Alloy only attaches namespace/pod/container/app/
+# job to Loki streams (gitops/platform/values/alloy/values.yaml), no custom
+# k8s label reaches Loki, so filtering has to go through pod-name regex
+# rather than the agent-fleet.dev/component label.
+dashboards:
+  enabled: true
+  items:
+    overview: |
+      {
+        "title": "Agent Fleet",
+        "uid": "agent-fleet-overview",
+        "tags": ["agent-fleet"],
+        "timezone": "browser",
+        "schemaVersion": 39,
+        "version": 1,
+        "refresh": "30s",
+        "time": { "from": "now-6h", "to": "now" },
+        "templating": {
+          "list": [
+            {
+              "name": "pod_filter",
+              "type": "custom",
+              "label": "Component",
+              "query": "All : .+,core : agent-fleet-core-.*,provisioner : provisioner-.*,worker : worker-.*",
+              "current": { "text": "All", "value": ".+" },
+              "options": [
+                { "text": "All", "value": ".+", "selected": true },
+                { "text": "core", "value": "agent-fleet-core-.*", "selected": false },
+                { "text": "provisioner", "value": "provisioner-.*", "selected": false },
+                { "text": "worker", "value": "worker-.*", "selected": false }
+              ],
+              "multi": false,
+              "includeAll": false
+            }
+          ]
+        },
+        "panels": [
+          {
+            "id": 1,
+            "type": "timeseries",
+            "title": "CPU usage by pod",
+            "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+            "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+            "targets": [
+              { "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=\"agent-fleet\", container!=\"\", pod=~\"$pod_filter\"}[5m])) by (pod)", "legendFormat": "{{pod}}", "refId": "A" }
+            ]
+          },
+          {
+            "id": 2,
+            "type": "timeseries",
+            "title": "Memory usage by pod",
+            "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+            "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] },
+            "targets": [
+              { "expr": "sum(container_memory_working_set_bytes{namespace=\"agent-fleet\", container!=\"\", pod=~\"$pod_filter\"}) by (pod)", "legendFormat": "{{pod}}", "refId": "A" }
+            ]
+          },
+          {
+            "id": 3,
+            "type": "table",
+            "title": "Restarts by pod",
+            "gridPos": { "h": 6, "w": 8, "x": 0, "y": 8 },
+            "targets": [
+              { "expr": "sum(kube_pod_container_status_restarts_total{namespace=\"agent-fleet\", pod=~\"$pod_filter\"}) by (pod)", "instant": true, "format": "table", "refId": "A" }
+            ]
+          },
+          {
+            "id": 4,
+            "type": "stat",
+            "title": "Active worker pods",
+            "gridPos": { "h": 6, "w": 4, "x": 8, "y": 8 },
+            "targets": [
+              { "expr": "count(kube_pod_labels{namespace=\"agent-fleet\", label_agent_fleet_dev_component=\"worker\"})", "instant": true, "refId": "A" }
+            ]
+          },
+          {
+            "id": 5,
+            "type": "stat",
+            "title": "Errors in range",
+            "gridPos": { "h": 6, "w": 4, "x": 12, "y": 8 },
+            "datasource": { "type": "loki", "uid": "ds-loki" },
+            "targets": [
+              { "expr": "sum(count_over_time({namespace=\"agent-fleet\", pod=~\"$pod_filter\"} | json | level=\"ERROR\" [$__range]))", "instant": true, "refId": "A", "datasource": { "type": "loki", "uid": "ds-loki" } }
+            ]
+          },
+          {
+            "id": 6,
+            "type": "timeseries",
+            "title": "Error rate by pod",
+            "gridPos": { "h": 6, "w": 8, "x": 16, "y": 8 },
+            "datasource": { "type": "loki", "uid": "ds-loki" },
+            "targets": [
+              { "expr": "sum(rate({namespace=\"agent-fleet\", pod=~\"$pod_filter\"} | json | level=\"ERROR\" [5m])) by (pod)", "legendFormat": "{{pod}}", "refId": "A", "datasource": { "type": "loki", "uid": "ds-loki" } }
+            ]
+          },
+          {
+            "id": 7,
+            "type": "logs",
+            "title": "Live logs",
+            "gridPos": { "h": 10, "w": 24, "x": 0, "y": 14 },
+            "datasource": { "type": "loki", "uid": "ds-loki" },
+            "options": { "showTime": true, "sortOrder": "Descending", "wrapLogMessage": false, "enableLogDetails": true },
+            "targets": [
+              { "expr": "{namespace=\"agent-fleet\", pod=~\"$pod_filter\"} | json", "refId": "A", "datasource": { "type": "loki", "uid": "ds-loki" } }
+            ]
+          }
+        ]
+      }
+
+# One Loki-based alert (logAlerts.datasourceUid applies to every rule in
+# this block, so it can't be mixed with a Prometheus-based condition —
+# pod-restart/crash and OOM/high-memory aren't duplicated here because
+# kube-prometheus-stack's default rules (defaultRules never disabled in
+# infra-bootstrap's gitops/platform/values/prometheus/values.yaml) already
+# cover those cluster-wide and route to the same shared Discord receiver).
+# No app has used logAlerts before this — if the rule errors on evaluation
+# with "duplicate results with labels {}", that's a missing reduce step in
+# the shared common-app-chart template, fixed in infra-bootstrap, not here.
+logAlerts:
+  enabled: true
+  datasourceUid: ds-loki
+  rules:
+    - uid: high-error-log-rate
+      title: High error-log rate
+      expr: 'sum(count_over_time({namespace="agent-fleet"} | json | level="ERROR" [5m]))'
+      threshold: 5
+      for: 5m
+      severity: warning
