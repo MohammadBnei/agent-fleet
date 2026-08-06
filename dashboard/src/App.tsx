@@ -137,6 +137,13 @@ export default function App() {
     () => tasks.filter((t) => needsYouIds.has(t.id)).length,
     [tasks, needsYouIds],
   );
+  // "sessions live" means running, not "ever returned by listTasks" — the
+  // backend keeps returning done/failed/cancelled tasks (list history), so
+  // tasks.length alone never decrements.
+  const liveCount = useMemo(
+    () => tasks.filter((t) => ACTIVE_STATUSES.has(t.status)).length,
+    [tasks],
+  );
   const repoCount = useMemo(
     () => new Set(tasks.map((t) => t.repo)).size,
     [tasks],
@@ -180,7 +187,7 @@ export default function App() {
               selectTask(id);
             }}
           />
-          <span>{tasks.length} sessions live</span>
+          <span>{liveCount} sessions live</span>
           <span>{repoCount} repos</span>
         </div>
 
@@ -237,7 +244,10 @@ export default function App() {
               {selectedId ? (
                 <TaskDetail taskId={selectedId} tasks={tasks} onSelect={selectTask} />
               ) : (
-                <div className="p-4 opacity-60">Select a task to view details.</div>
+                <div className="h-full flex flex-col items-center justify-center gap-2 text-base-content/30">
+                  <span className="text-4xl">⌕</span>
+                  <span className="text-[12px]">Select a task to view details</span>
+                </div>
               )}
             </div>
           </>
@@ -245,7 +255,9 @@ export default function App() {
       </div>
 
       <div className="sm:hidden row-start-2 min-h-0 flex flex-col">
-        {selectedId ? (
+        {view === "worktrees" ? (
+          <Worktrees onBack={() => selectView("tasks")} />
+        ) : selectedId ? (
           <MobileTaskDetail taskId={selectedId} onBack={clearSelection} onDelete={() => deleteTask(selectedId)} />
         ) : (
           <MobileTaskList
@@ -254,10 +266,12 @@ export default function App() {
             needsYouIds={needsYouIds}
             todosById={todosById}
             needsYouCount={needsYouCount}
+            liveCount={liveCount}
             repoCount={repoCount}
             filter={filter}
             setFilter={setFilter}
             onSelect={selectTask}
+            onOpenWorktrees={() => selectView("worktrees")}
             onCreated={(id) => {
               loadTasks();
               selectTask(id);

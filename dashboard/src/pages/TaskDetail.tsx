@@ -1,9 +1,8 @@
 import { useState } from "react";
 import { client } from "../connectClient";
 import type { Task } from "../gen/agentfleet/v1/dashboard_pb";
-import { podStateBadge, staleBadge, heartbeatLabel } from "./TaskList";
+import { podStateBadge, staleBadge, heartbeatLabel, prBadge } from "./TaskList";
 import { TranscriptEntryType, type TranscriptEntry } from "../gen/agentfleet/v1/transcript_pb";
-import { enrichTask } from "../mockEnrichment";
 import {
   parseQuestions,
   parseAnswers,
@@ -213,11 +212,11 @@ export function TaskDetail({
   // poll tick includes this task (e.g. a just-created task).
   const task = tasks.find((t) => t.id === taskId) ?? fetchedTask;
 
-  const enrichment = enrichTask(task);
   const siblings = tasks.filter((t) => t.id !== taskId);
   const podBadge = podStateBadge(task);
   const staleTag = staleBadge(task);
   const heartbeat = heartbeatLabel(task);
+  const prLink = prBadge(task);
 
   function sendMessage() {
     const text = message.trim();
@@ -259,14 +258,21 @@ export function TaskDetail({
               {staleTag.label}
             </span>
           )}
+          {prLink && (
+            <a
+              href={task.prUrl}
+              target="_blank"
+              rel="noreferrer"
+              className={`px-2 py-0.5 rounded text-[9.5px] font-semibold border tracking-wide border-current ${prLink.className}`}
+            >
+              {prLink.label}
+            </a>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-3.5 mt-2 text-[10px] text-base-content/50">
           <span>#{task.id.slice(0, 6)}</span>
           <span>{task.repo}</span>
           {branch && <span>branch {branch}</span>}
-          <span>{enrichment.model}</span>
-          <span>{enrichment.tokens}</span>
-          <span>started {enrichment.startedAt}</span>
           {heartbeat && <span className={staleTag ? "text-error" : undefined}>{heartbeat}</span>}
           {task.retryCount > 0 && <span>attempt {task.retryCount + 1}</span>}
           {task.lastError && (
@@ -461,17 +467,6 @@ export function TaskDetail({
               ) : (
                 <div className="text-[10.5px] text-base-content/40">no changes yet</div>
               )}
-            </div>
-          </div>
-
-          <div>
-            <div className="text-[9.5px] tracking-[0.11em] text-base-content/60 font-semibold">DECISIONS</div>
-            <div className="flex flex-col gap-2 mt-2.5">
-              {enrichment.decisions.map((d, i) => (
-                <div key={i} className="text-[10.5px] leading-relaxed text-base-content/70">
-                  {d.text} <span className="text-base-content/35">· {d.author}</span>
-                </div>
-              ))}
             </div>
           </div>
         </div>

@@ -19,6 +19,7 @@ import { ToolCallItem } from "../components/ToolCallItem";
 import { ErrorModal } from "../components/ErrorModal";
 import { Markdown } from "../components/Markdown";
 import { JsonView } from "../components/JsonView";
+import { prBadge } from "../pages/TaskList";
 
 // Mirrors the "herd" mock's phone session screen (Agent Fleet Mobile.dc.html)
 // minus device chrome. Single-pane (list vs. detail), unlike desktop's
@@ -228,6 +229,7 @@ export function MobileTaskDetail({
 
   const todos = latestTodos(entries) ?? [];
   const done = todos.filter((t) => t.status === "completed").length;
+  const prLink = prBadge(task);
   const pendingQuestion = findPendingQuestion(entries);
   const pendingParsed = pendingQuestion ? parseQuestions(pendingQuestion.text) : null;
   const chipQuestion =
@@ -260,8 +262,15 @@ export function MobileTaskDetail({
             <div className="text-[13px] font-semibold text-base-content leading-tight truncate">
               {task.description}
             </div>
-            <div className="text-[10px] text-base-content/50 mt-1">
-              #{task.id.slice(0, 6)} · {task.repo}
+            <div className="text-[10px] text-base-content/50 mt-1 flex items-center gap-2">
+              <span>
+                #{task.id.slice(0, 6)} · {task.repo}
+              </span>
+              {prLink && (
+                <a href={task.prUrl} target="_blank" rel="noreferrer" className={`text-[9px] font-semibold ${prLink.className}`}>
+                  {prLink.label}
+                </a>
+              )}
             </div>
           </div>
           <button
