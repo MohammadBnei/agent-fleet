@@ -77,9 +77,17 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool) error {
 	// docs/adr/0020 point 2: core claims, then commands the provisioner —
 	// the provisioner never claims tasks or decides to spawn on its own.
 	dispatchLoop := dispatch.New(taskStore, provisioner, cfg.MaxInFlight, cfg.MaxTaskRetries)
-	go dispatchLoop.Run(ctx, 2*time.Second)
-	// Same nudge pattern as the relay above — CreateTask fires it so a new
-	// task doesn't wait up to pollInterval for its first dispatch attempt.
+	// CreateTask/SetStatus/MarkCrashed all nudge (below) for the responsive
+	// path, so this interval is now purely a fallback: recovery for a
+	// dropped nudge, plus the passive path for a worker that vanished
+	// without ever calling MarkCrashed (e.g. OOM-killed) — that case has no
+	// write to nudge on and is only caught by the 10-minute heartbeat-
+	// staleness scan in ClaimNextTask. 30s is comfortably tight against a
+	// 10-minute window while cutting ~150x the wasted ticks 2s produced.
+	go dispatchLoop.Run(ctx, 30*time.Second)
+	// Same nudge pattern as the relay above — CreateTask/SetStatus/
+	// MarkCrashed all fire it so dispatch/reclaim don't wait up to
+	// pollInterval for the common, event-driven cases.
 	taskStore.SetNudge(dispatchLoop.Nudge)
 
 	// core's first gRPC server (docs/adr/0020's Context) — the provisioner

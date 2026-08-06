@@ -35,9 +35,13 @@ func New(taskStore *tasks.Store, provisioner *provisionerclient.Client, maxInFli
 
 // Nudge triggers an immediate claim attempt instead of waiting for the
 // next tick (reliability-findings.md #5) — non-blocking, safe to call from
-// any goroutine (e.g. tasks.Store.CreateTask right after a commit). The
-// ticker in Run stays as a fallback — it's also what drives
-// heartbeat-reclaim scanning, which has no "write" to nudge on.
+// any goroutine. tasks.Store.CreateTask/SetStatus/MarkCrashed all call this
+// right after their own commit, covering task creation, capacity freed up
+// by a terminal status, and the crash fast-path. The ticker in Run stays
+// as a fallback: recovery for a dropped nudge, plus the one case that
+// still has no write to nudge on — a worker that vanishes without ever
+// calling MarkCrashed (e.g. OOM-killed), caught only by the passive
+// 10-minute heartbeat-staleness scan.
 func (l *Loop) Nudge() {
 	select {
 	case l.nudge <- struct{}{}:
@@ -51,6 +55,12 @@ func (l *Loop) Nudge() {
 func (l *Loop) Run(ctx context.Context, pollInterval time.Duration) {
 	ticker := time.NewTicker(pollInterval)
 	defer ticker.Stop()
+	// time.Ticker doesn't fire at t=0 — without this, a core restart with
+	// tasks already sitting `pending` in Postgres waits up to pollInterval
+	// before the very first check. The nudge channel is in-memory, not
+	// durable, so it has no memory of anything that happened before this
+	// process started; only Postgres does.
+	l.tick(ctx)
 	for {
 		select {
 		case <-ctx.Done():
@@ -75,6 +85,14 @@ func (l *Loop) tick(ctx context.Context) {
 	if task == nil {
 		return // nothing eligible right now
 	}
+	// A claim succeeded — immediately re-check for another eligible task
+	// instead of waiting for the next poll tick. Nudge's buffer is size 1,
+	// so a burst of N simultaneous SetStatus/MarkCrashed calls arriving
+	// while this tick is already running only ever guarantees one more
+	// tick after it, and tick only claims one task at a time — without
+	// this self-nudge, a real backlog would trickle out one claim per
+	// pollInterval instead of draining immediately.
+	l.Nudge()
 
 	repoCfg, ok := tasks.KnownRepos[task.Repo]
 	if !ok {

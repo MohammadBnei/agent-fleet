@@ -267,6 +267,9 @@ func (s *Store) UpdateHeartbeat(ctx context.Context, id, leaseID string) error {
 // statuses only: a crash event arriving after the task already reached a
 // terminal status (a race between the provisioner's reconcile loop and
 // core's own opportunistic teardown) is a harmless no-op, not an error.
+// Nudges same as CreateTask — this only stays a "fast-path" accelerant if
+// the dispatch loop actually wakes up promptly instead of waiting for its
+// next poll tick.
 func (s *Store) MarkCrashed(ctx context.Context, id string) error {
 	_, err := s.pool.Exec(ctx, `
 		UPDATE tasks
@@ -278,6 +281,9 @@ func (s *Store) MarkCrashed(ctx context.Context, id string) error {
 		return fmt.Errorf("mark crashed: %w", err)
 	}
 	slog.Warn("tasks MarkCrashed", "taskId", id)
+	if s.nudge != nil {
+		s.nudge()
+	}
 	return nil
 }
 
@@ -299,6 +305,12 @@ func (s *Store) SetPodPhase(ctx context.Context, id, phase, message string) erro
 
 // SetStatus mirrors worker/src/db.ts's setTaskStatus — optional fields
 // only update when supplied (nil pointer leaves the column unchanged).
+// Nudges unconditionally rather than special-casing terminal statuses: a
+// task reaching done/failed/cancelled/failed_permanently frees a
+// MaxInFlight slot a queued pending task may be waiting on, and nudging on
+// every call is cheap (Loop.Nudge is a non-blocking, already-debounced
+// channel send) — not worth coupling this file to the status enum just to
+// skip a handful of no-op ticks.
 func (s *Store) SetStatus(ctx context.Context, id, status string, prURL, notes, lastError *string) error {
 	_, err := s.pool.Exec(ctx, `
 		UPDATE tasks SET
@@ -312,6 +324,9 @@ func (s *Store) SetStatus(ctx context.Context, id, status string, prURL, notes, 
 	if err != nil {
 		slog.Error("tasks SetStatus", "taskId", id, "status", status, "error", err)
 		return fmt.Errorf("set status: %w", err)
+	}
+	if s.nudge != nil {
+		s.nudge()
 	}
 	return nil
 }
