@@ -1,5 +1,7 @@
 # Changelog
 
+## [1.19.2](https://github.com/MohammadBnei/agent-fleet/compare/1.19.1...1.19.2) (2026-08-07)
+
 ## [1.19.1](https://github.com/MohammadBnei/agent-fleet/compare/1.19.0...1.19.1) (2026-08-06)
 
 
