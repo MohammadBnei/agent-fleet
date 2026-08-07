@@ -5,7 +5,7 @@
 // result-subtype classification — without a real Claude session or
 // sidecar. Mocks must be registered before importing session.js (Bun
 // resolves mock.module() calls ahead of subsequent static imports).
-import { test, expect, mock, beforeEach } from "bun:test";
+import { test, expect, mock, beforeEach, afterAll } from "bun:test";
 
 // --- fake sidecarClient.js ---
 
@@ -20,6 +20,16 @@ let nextSeq = 1;
 let humanMessageHandler: ((entry: { seq: number; from: string; text: string; type?: string; replyTo?: number }) => void | Promise<void>) | null =
   null;
 
+// mock.module() replaces this specifier in Bun's module registry for the
+// rest of the whole `bun test` process, not just this file — bun test
+// runs every file in one shared process (sidecarClient.ts's own comment
+// documents this same hazard for a different reason). Left unrestored,
+// sidecarClient.test.ts (which needs the REAL implementation against a
+// real local HTTP server) can end up importing this fake instead — its
+// streamHumanMessages here only resolves on external abort and never
+// calls onEntry on its own, which reproduced as every sidecarClient.test.ts
+// case hanging for the full 10s timeout in CI (order-dependent, so it
+// didn't reproduce locally where file execution order happened to differ).
 mock.module("./sidecarClient.js", () => ({
   pushMessage: mock(async (from: string, text: string, type?: string) => {
     const seq = nextSeq++;
@@ -513,3 +523,10 @@ test("tool_use, tool_result, and result messages are all relayed, not just assis
   expect(pushedMessages.some((m) => m.type === "result")).toBe(true);
   expect(pushedMessages.some((m) => m.type === "system")).toBe(true); // session-init
 }, 10000);
+
+// Undoes this file's mock.module("./sidecarClient.js", ...) once this
+// file's own tests are done — see the comment on that call for why this
+// is required, not optional, in a shared-process test run.
+afterAll(() => {
+  mock.restore();
+});
