@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { client } from "../connectClient";
 import { Modal } from "./Modal";
+import type { PromptSnippet } from "../gen/agentfleet/v1/dashboard_pb";
 
 export function NewTaskDialog({
   onCreated,
@@ -11,6 +12,8 @@ export function NewTaskDialog({
   const [repoNames, setRepoNames] = useState<string[]>([]);
   const [repo, setRepo] = useState("");
   const [description, setDescription] = useState("");
+  const [snippets, setSnippets] = useState<PromptSnippet[]>([]);
+  const [snippetIds, setSnippetIds] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -29,6 +32,21 @@ export function NewTaskDialog({
       .catch((err: Error) => setError(err.message));
   }, [dialogOpen]);
 
+  // Same dashboard-editable, no-redeploy pattern as repos above — a task
+  // gets none of these by default (see ManagePromptSnippetsModal); this is
+  // just the picker for optionally attaching some.
+  useEffect(() => {
+    if (!dialogOpen) return;
+    client
+      .listPromptSnippets({})
+      .then((res) => setSnippets(res.snippets))
+      .catch((err: Error) => setError(err.message));
+  }, [dialogOpen]);
+
+  function toggleSnippet(id: string) {
+    setSnippetIds((current) => (current.includes(id) ? current.filter((x) => x !== id) : [...current, id]));
+  }
+
   function open() {
     setError(null);
     setDialogOpen(true);
@@ -44,8 +62,9 @@ export function NewTaskDialog({
     setSubmitting(true);
     setError(null);
     try {
-      const res = await client.createTask({ repo, description });
+      const res = await client.createTask({ repo, description, snippetIds });
       setDescription("");
+      setSnippetIds([]);
       close();
       if (res.task) onCreated(res.task.id);
     } catch (err) {
@@ -93,6 +112,22 @@ export function NewTaskDialog({
               required
             />
           </label>
+          {snippets.length > 0 && (
+            <fieldset className="flex flex-col gap-1 text-sm">
+              <legend className="mb-1">Guidance (optional)</legend>
+              {snippets.map((s) => (
+                <label key={s.id} className="flex items-center gap-2 text-[12px]">
+                  <input
+                    type="checkbox"
+                    checked={snippetIds.includes(s.id)}
+                    onChange={() => toggleSnippet(s.id)}
+                    className="checkbox checkbox-sm"
+                  />
+                  {s.name}
+                </label>
+              ))}
+            </fieldset>
+          )}
           {error && <p className="text-error text-sm">{error}</p>}
           <div className="modal-action">
             <button type="button" className="btn btn-sm" onClick={close}>

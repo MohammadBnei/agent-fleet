@@ -408,6 +408,12 @@ type CreateWorkerPodRequest struct {
 	// most critically), which self-aborts a resumed session within seconds
 	// of it starting. 0 for a brand-new task (nothing to skip).
 	ResumeFromSeq int64 `protobuf:"varint,8,opt,name=resume_from_seq,json=resumeFromSeq,proto3" json:"resume_from_seq,omitempty"`
+	// The task's resolved guidance text (tasks.guidance — the operator's
+	// chosen prompt_snippets, already joined at task-creation time) — handed
+	// straight through to the worker pod's TASK_GUIDANCE env, same reasoning
+	// as description above. Empty when no snippets were attached; the
+	// worker's own taskPrompt() then falls back to just the bare description.
+	Guidance      string `protobuf:"bytes,9,opt,name=guidance,proto3" json:"guidance,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -496,6 +502,13 @@ func (x *CreateWorkerPodRequest) GetResumeFromSeq() int64 {
 		return x.ResumeFromSeq
 	}
 	return 0
+}
+
+func (x *CreateWorkerPodRequest) GetGuidance() string {
+	if x != nil {
+		return x.Guidance
+	}
+	return ""
 }
 
 type CreateWorkerPodResponse struct {
@@ -1201,7 +1214,7 @@ const file_agentfleet_v1_provisioner_proto_rawDesc = "" +
 	"\x18CreateE2eSessionResponse\x12\x16\n" +
 	"\x06status\x18\x01 \x01(\tR\x06status\x12\x1f\n" +
 	"\vpreview_url\x18\x02 \x01(\tR\n" +
-	"previewUrl\"\x92\x02\n" +
+	"previewUrl\"\xae\x02\n" +
 	"\x16CreateWorkerPodRequest\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x12\n" +
 	"\x04repo\x18\x02 \x01(\tR\x04repo\x12\x19\n" +
@@ -1211,7 +1224,8 @@ const file_agentfleet_v1_provisioner_proto_rawDesc = "" +
 	"\vdescription\x18\x05 \x01(\tR\vdescription\x12\x19\n" +
 	"\blease_id\x18\x06 \x01(\tR\aleaseId\x12*\n" +
 	"\x11resume_session_id\x18\a \x01(\tR\x0fresumeSessionId\x12&\n" +
-	"\x0fresume_from_seq\x18\b \x01(\x03R\rresumeFromSeq\"4\n" +
+	"\x0fresume_from_seq\x18\b \x01(\x03R\rresumeFromSeq\x12\x1a\n" +
+	"\bguidance\x18\t \x01(\tR\bguidance\"4\n" +
 	"\x17CreateWorkerPodResponse\x12\x19\n" +
 	"\bpod_name\x18\x01 \x01(\tR\apodName\"a\n" +
 	"\x16TearDownSessionRequest\x12\x17\n" +

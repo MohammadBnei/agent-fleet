@@ -49,7 +49,7 @@ func New(core *coreclient.Client) http.Handler {
 	s := server.NewMCPServer("agent-fleet-sidecar", "0.1.0", server.WithToolCapabilities(true))
 
 	s.AddTool(mcp.NewTool("send_message",
-		mcp.WithDescription("Append a message to this task's shared transcript (visible to the human via the dashboard/Discord relay)."),
+		mcp.WithDescription("Append a message to this task's shared transcript (visible to the human via the dashboard/Discord relay). The response's nextIndex is the sinceIndex to use if you ever call wait_for_messages afterward — see that tool's own description for why."),
 		mcp.WithString("from", mcp.Required(), mcp.Description("'agent' | 'human'")),
 		mcp.WithString("text", mcp.Required()),
 		mcp.WithString("type", mcp.Description("'discussion' | 'approve' | 'abort'")),
@@ -57,7 +57,7 @@ func New(core *coreclient.Client) http.Handler {
 	), sendMessageHandler(core))
 
 	s.AddTool(mcp.NewTool("wait_for_messages",
-		mcp.WithDescription("Block (up to timeoutMs) until new transcript messages appear after sinceIndex, then return them."),
+		mcp.WithDescription("Block (up to timeoutMs) until new transcript messages appear at or after sinceIndex, then return them. You almost never need this: new human messages already arrive live as your next input while a session is running, with no polling required. sinceIndex is INCLUSIVE and results are NOT filtered by from — if you pass the raw index a prior send_message call returned, you will see that same message come back to you. Always pass the nextIndex field from your last send_message or wait_for_messages response instead."),
 		mcp.WithNumber("sinceIndex"),
 		mcp.WithNumber("timeoutMs"),
 	), waitForMessagesHandler(core))
@@ -93,7 +93,11 @@ func sendMessageHandler(core *coreclient.Client) server.ToolHandlerFunc {
 			slog.Error("mcp send_message", "error", err)
 			return nil, fmt.Errorf("send_message: %w", err)
 		}
-		body, _ := json.Marshal(map[string]int64{"index": seq})
+		// nextIndex (seq+1) is the exclusive cursor a caller should use for
+		// wait_for_messages' sinceIndex — that tool's own sinceIndex is
+		// inclusive, so passing this message's raw seq back would echo this
+		// same message to its own sender.
+		body, _ := json.Marshal(map[string]int64{"index": seq, "nextIndex": seq + 1})
 		return mcp.NewToolResultText(string(body)), nil
 	}
 }

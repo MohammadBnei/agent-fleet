@@ -155,7 +155,7 @@ func (c *Client) GetPod(ctx context.Context, name string) (phase corev1.PodPhase
 // workload with no expected completion, and (per reconcile/loop.go's own
 // doc comment) they were never part of the hand-rolled GC this finding is
 // about in the first place.
-func (c *Client) CreateWorkerPod(ctx context.Context, taskID, repo, description, leaseID, baseBranch, worktreePath, resumeSessionID string, resumeFromSeq int64) error {
+func (c *Client) CreateWorkerPod(ctx context.Context, taskID, repo, description, guidance, leaseID, baseBranch, worktreePath, resumeSessionID string, resumeFromSeq int64) error {
 	if baseBranch == "" {
 		baseBranch = "main" // matches git.Manager.CreateWorktree's own default
 	}
@@ -251,6 +251,7 @@ func (c *Client) CreateWorkerPod(ctx context.Context, taskID, repo, description,
 					{Name: "TASK_ID", Value: taskID},
 					{Name: "TARGET_REPO", Value: repo},
 					{Name: "TASK_DESCRIPTION", Value: description},
+					{Name: "TASK_GUIDANCE", Value: guidance},
 					{Name: "LEASE_ID", Value: leaseID},
 					{Name: "BASE_BRANCH", Value: baseBranch},
 					{Name: "SIDECAR_MCP_ADDR", Value: fmt.Sprintf("localhost:%d", SidecarMCPPort)},

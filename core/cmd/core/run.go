@@ -21,6 +21,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/discord"
 	"github.com/MohammadBnei/agent-fleet/core/internal/dispatch"
 	"github.com/MohammadBnei/agent-fleet/core/internal/journal"
+	"github.com/MohammadBnei/agent-fleet/core/internal/promptsnippets"
 	"github.com/MohammadBnei/agent-fleet/core/internal/provisionerclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/repos"
 	"github.com/MohammadBnei/agent-fleet/core/internal/tasks"
@@ -44,6 +45,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool) error {
 	taskStore := tasks.NewStore(pool)
 	journalStore := journal.NewStore(pool)
 	repoStore := repos.NewStore(pool)
+	snippetStore := promptsnippets.NewStore(pool)
 	// Every consumer below except SetNudge (a *PostgresStore-only method,
 	// not part of the transcript.Store interface) goes through this
 	// activity-tracking wrapper instead of `store` directly — see its own
@@ -121,7 +123,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool) error {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
-	dashboardSvc := dashboard.NewServer(taskStore, activityStore, journalStore, repoStore, provisioner, hub, cfg.MaxInFlight)
+	dashboardSvc := dashboard.NewServer(taskStore, activityStore, journalStore, repoStore, snippetStore, provisioner, hub, cfg.MaxInFlight)
 	dashboardPath, dashboardHandler := agentfleetv1connect.NewDashboardServiceHandler(
 		dashboardSvc,
 		connect.WithInterceptors(dashboard.NewCSRFInterceptor(), dashboard.NewAccessLogInterceptor()),

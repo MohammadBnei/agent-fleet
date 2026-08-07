@@ -4,6 +4,7 @@ import { TaskDetail } from "./pages/TaskDetail";
 import { Worktrees } from "./pages/Worktrees";
 import { NewTaskDialog } from "./components/NewTaskDialog";
 import { ManageReposModal } from "./components/ManageReposModal";
+import { ManagePromptSnippetsModal } from "./components/ManagePromptSnippetsModal";
 import { MobileTaskList } from "./mobile/MobileTaskList";
 import { MobileTaskDetail } from "./mobile/MobileTaskDetail";
 import { client } from "./connectClient";
@@ -213,6 +214,7 @@ export default function App() {
             }}
           />
           <ManageReposModal />
+          <ManagePromptSnippetsModal />
           <span>{liveCount} sessions live</span>
           <span>{repoCount} repos</span>
         </div>
