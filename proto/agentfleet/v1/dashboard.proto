@@ -126,6 +126,23 @@ message SetPermissionModeResponse {
   string status = 1;
 }
 
+// Warm boots a pod for an idle session on demand — the sessions redesign's
+// "bus" model (supersedes docs/adr/0021/0025's phase-boundary framing): a
+// task's pod is ephemeral compute, not tied to the task's whole lifetime.
+// Deliberately does not touch tasks.status (a loose UI-freshness signal
+// now, not control flow) — session state is the worktree + saved
+// session_id, both of which already survive teardown. Rejected with
+// CodeFailedPrecondition if the task already has a live pod (idempotent
+// double-click guard) or the fleet is already at MAX_IN_FLIGHT_TASKS.
+message WarmRequest {
+  string task_id = 1;
+}
+
+message WarmResponse {
+  string status = 1;
+  string pod_name = 2;
+}
+
 // Answers a pending PERMISSION_REQUEST-type transcript entry (posted by
 // canUseTool for any tool call the SDK's current permission mode would
 // prompt for — supersedes docs/adr/0021's Write/Edit-absent-from-
@@ -311,6 +328,7 @@ service DashboardService {
   rpc GetE2eStatus(GetE2eStatusRequest) returns (GetE2eStatusResponse);
   rpc Stop(StopRequest) returns (StopResponse);
   rpc SetPermissionMode(SetPermissionModeRequest) returns (SetPermissionModeResponse);
+  rpc Warm(WarmRequest) returns (WarmResponse);
   rpc KillE2e(KillE2eRequest) returns (KillE2eResponse);
   rpc AnswerQuestion(AnswerQuestionRequest) returns (AnswerQuestionResponse);
   rpc RespondToPermission(RespondToPermissionRequest) returns (RespondToPermissionResponse);

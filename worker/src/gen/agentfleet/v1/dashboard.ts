@@ -154,6 +154,25 @@ export interface SetPermissionModeResponse {
 }
 
 /**
+ * Warm boots a pod for an idle session on demand — the sessions redesign's
+ * "bus" model (supersedes docs/adr/0021/0025's phase-boundary framing): a
+ * task's pod is ephemeral compute, not tied to the task's whole lifetime.
+ * Deliberately does not touch tasks.status (a loose UI-freshness signal
+ * now, not control flow) — session state is the worktree + saved
+ * session_id, both of which already survive teardown. Rejected with
+ * CodeFailedPrecondition if the task already has a live pod (idempotent
+ * double-click guard) or the fleet is already at MAX_IN_FLIGHT_TASKS.
+ */
+export interface WarmRequest {
+  taskId: string;
+}
+
+export interface WarmResponse {
+  status: string;
+  podName: string;
+}
+
+/**
  * Answers a pending PERMISSION_REQUEST-type transcript entry (posted by
  * canUseTool for any tool call the SDK's current permission mode would
  * prompt for — supersedes docs/adr/0021's Write/Edit-absent-from-
@@ -895,6 +914,77 @@ export const SetPermissionModeResponse: MessageFns<SetPermissionModeResponse> = 
   fromPartial<I extends Exact<DeepPartial<SetPermissionModeResponse>, I>>(object: I): SetPermissionModeResponse {
     const message = createBaseSetPermissionModeResponse();
     message.status = object.status ?? "";
+    return message;
+  },
+};
+
+function createBaseWarmRequest(): WarmRequest {
+  return { taskId: "" };
+}
+
+export const WarmRequest: MessageFns<WarmRequest> = {
+  fromJSON(object: any): WarmRequest {
+    return {
+      taskId: isSet(object.taskId)
+        ? globalThis.String(object.taskId)
+        : isSet(object.task_id)
+        ? globalThis.String(object.task_id)
+        : "",
+    };
+  },
+
+  toJSON(message: WarmRequest): unknown {
+    const obj: any = {};
+    if (message.taskId !== "") {
+      obj.taskId = message.taskId;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<WarmRequest>, I>>(base?: I): WarmRequest {
+    return WarmRequest.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<WarmRequest>, I>>(object: I): WarmRequest {
+    const message = createBaseWarmRequest();
+    message.taskId = object.taskId ?? "";
+    return message;
+  },
+};
+
+function createBaseWarmResponse(): WarmResponse {
+  return { status: "", podName: "" };
+}
+
+export const WarmResponse: MessageFns<WarmResponse> = {
+  fromJSON(object: any): WarmResponse {
+    return {
+      status: isSet(object.status) ? globalThis.String(object.status) : "",
+      podName: isSet(object.podName)
+        ? globalThis.String(object.podName)
+        : isSet(object.pod_name)
+        ? globalThis.String(object.pod_name)
+        : "",
+    };
+  },
+
+  toJSON(message: WarmResponse): unknown {
+    const obj: any = {};
+    if (message.status !== "") {
+      obj.status = message.status;
+    }
+    if (message.podName !== "") {
+      obj.podName = message.podName;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<WarmResponse>, I>>(base?: I): WarmResponse {
+    return WarmResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<WarmResponse>, I>>(object: I): WarmResponse {
+    const message = createBaseWarmResponse();
+    message.status = object.status ?? "";
+    message.podName = object.podName ?? "";
     return message;
   },
 };
@@ -1818,6 +1908,7 @@ export interface DashboardService {
   GetE2eStatus(request: GetE2eStatusRequest): Promise<GetE2eStatusResponse>;
   Stop(request: StopRequest): Promise<StopResponse>;
   SetPermissionMode(request: SetPermissionModeRequest): Promise<SetPermissionModeResponse>;
+  Warm(request: WarmRequest): Promise<WarmResponse>;
   KillE2e(request: KillE2eRequest): Promise<KillE2eResponse>;
   AnswerQuestion(request: AnswerQuestionRequest): Promise<AnswerQuestionResponse>;
   RespondToPermission(request: RespondToPermissionRequest): Promise<RespondToPermissionResponse>;

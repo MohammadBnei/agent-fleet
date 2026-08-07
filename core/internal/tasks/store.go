@@ -11,6 +11,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"slices"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -255,6 +256,27 @@ func (s *Store) ClaimNextTask(ctx context.Context, maxInFlight, maxRetries int) 
 // sidecar's CoreService calls instead of the worker's own direct SQL
 // (docs/adr/0020 point 1: only core ever holds AGENTFLEET_DB_* credentials).
 
+// RefreshLease mints a fresh lease_id for a task outside the normal
+// ClaimNextTask path — DashboardService.Warm's own equivalent of what
+// claiming already does for a dispatch-loop-created pod. Without this, a
+// Warm-created pod's StillHoldsLease check (run immediately before the
+// worker's own push/PR step) would compare its own generated lease id
+// against whatever tasks.lease_id happened to hold from a prior claim (or
+// NULL) and always fail. Also refreshes heartbeat_at for the same reason
+// ClaimNextTask does — this pod is live now, not stale.
+func (s *Store) RefreshLease(ctx context.Context, id string) (leaseID string, err error) {
+	err = s.pool.QueryRow(ctx, `
+		UPDATE tasks SET lease_id = gen_random_uuid(), heartbeat_at = now(), updated_at = now()
+		WHERE id = $1
+		RETURNING lease_id::text
+	`, id).Scan(&leaseID)
+	if err != nil {
+		slog.Error("tasks RefreshLease", "taskId", id, "error", err)
+		return "", fmt.Errorf("refresh lease: %w", err)
+	}
+	return leaseID, nil
+}
+
 func (s *Store) UpdateHeartbeat(ctx context.Context, id, leaseID string) error {
 	_, err := s.pool.Exec(ctx, `
 		UPDATE tasks SET heartbeat_at = now(), updated_at = now() WHERE id = $1 AND lease_id::text = $2
@@ -310,6 +332,44 @@ func (s *Store) SetPodPhase(ctx context.Context, id, phase, message string) erro
 	return nil
 }
 
+// livePodPhases mirrors dashboard/src/pages/TaskList.tsx's own
+// podStateBadge classification — a task "has a live pod" iff its
+// pod_phase is one ReportPodEvents sets before a terminal outcome.
+// PodPhase string values match agentfleetv1.PodPhase.String() (what
+// coreserver's ReportPodEvents actually writes via SetPodPhase above).
+var livePodPhases = []string{"POD_PHASE_PROVISIONING", "POD_PHASE_CREATED", "POD_PHASE_SCHEDULED", "POD_PHASE_RUNNING"}
+
+// IsPodPhaseLive exposes the same classification livePodPhases/
+// CountLivePods use, for a single already-fetched Task (DashboardService.
+// Warm/Discuss check "does this one task already have a pod" — a single
+// GetTask result, not a fleet-wide count).
+func IsPodPhaseLive(phase *string) bool {
+	if phase == nil {
+		return false
+	}
+	return slices.Contains(livePodPhases, *phase)
+}
+
+// CountLivePods is the sessions redesign's concurrency-cap source of
+// truth for Warm (docs/adr supersession of 0021/0025) — pod_phase, not
+// status, since Warm/Stop deliberately never touch tasks.status anymore
+// (status is a loose UI-freshness signal now, not a control-flow gate).
+// Called from a low-frequency human-clicked action, not the hot dispatch
+// loop, so the narrow TOCTOU window between this count and the actual
+// CreateWorkerPod call (two concurrent Warm clicks racing past the cap by
+// one) is an accepted ceiling, not guarded with FOR UPDATE — matching the
+// low-stakes/low-frequency nature of the action it gates.
+func (s *Store) CountLivePods(ctx context.Context) (int, error) {
+	var count int
+	err := s.pool.QueryRow(ctx, `
+		SELECT count(*) FROM tasks WHERE pod_phase = ANY($1) AND deleted_at IS NULL
+	`, livePodPhases).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("count live pods: %w", err)
+	}
+	return count, nil
+}
+
 // SetStatus mirrors worker/src/db.ts's setTaskStatus — optional fields
 // only update when supplied (nil pointer leaves the column unchanged).
 // Nudges unconditionally rather than special-casing terminal statuses: a
@@ -357,18 +417,24 @@ func (s *Store) MarkStopRequested(ctx context.Context, id string) error {
 }
 
 // ListOverdueStopIDs returns tasks that were asked to stop more than grace
-// ago but never reached a terminal status on their own — dispatch.Loop's
-// grace-period sweep force-tears these down instead of waiting on a worker
-// pod that may never notice the cooperative abort message. Terminal-status
-// list mirrors coreserver.terminalTaskStatuses.
+// ago but still have a live pod — dispatch.Loop's grace-period sweep
+// force-tears these down instead of waiting on a worker pod that may never
+// notice the cooperative abort message. Gated on pod_phase, not status
+// (sessions redesign, supersedes docs/adr/0021/0025's phase-boundary
+// framing): status no longer goes terminal on a stop (a stopped session is
+// idle and resumable, not dead), so pod_phase is the only reliable "is
+// there still something to tear down" signal — self-resolving once
+// anything (a cooperative exit, this very sweep's own TearDownSession
+// call, or the provisioner's reconcile GC) reports the pod non-live, no
+// separate "clear stop_requested_at" step needed.
 func (s *Store) ListOverdueStopIDs(ctx context.Context, grace time.Duration) ([]string, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT id FROM tasks
 		WHERE stop_requested_at IS NOT NULL
 		  AND stop_requested_at < now() - ($1 * interval '1 second')
-		  AND status NOT IN ('done', 'failed', 'cancelled', 'failed_permanently')
+		  AND pod_phase = ANY($2)
 		  AND deleted_at IS NULL
-	`, grace.Seconds())
+	`, grace.Seconds(), livePodPhases)
 	if err != nil {
 		slog.Error("tasks ListOverdueStopIDs", "error", err)
 		return nil, fmt.Errorf("list overdue stops: %w", err)

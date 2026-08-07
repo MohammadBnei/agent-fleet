@@ -41,7 +41,7 @@ func (r *recordingStore) ReadSince(context.Context, string, int64, int) ([]trans
 
 func TestServer_RespondToPermission(t *testing.T) {
 	store := &recordingStore{}
-	s := NewServer(nil, store, nil, nil, nil, nil)
+	s := NewServer(nil, store, nil, nil, nil, nil, 5)
 
 	resp, err := s.RespondToPermission(context.Background(), connect.NewRequest(&agentfleetv1.RespondToPermissionRequest{
 		TaskId: "task-1", Seq: 7, DecisionJson: `{"behavior":"allow"}`,
@@ -73,31 +73,15 @@ func TestServer_RespondToPermission(t *testing.T) {
 // lookup a nil store can stand in for (same reasoning stop_integration_
 // test.go's own comment gives for Stop/tasks.Store).
 
-// TestServer_Discuss covers the dashboard's free-text chat channel
-// (reliability-findings.md's "seamless interaction" gap — the dashboard
-// previously had no way to send arbitrary text, only structured
-// Stop/AnswerQuestion) — full parity with a Discord reply: appended
-// as a plain "discussion" entry, same as Stop hardcodes its own type.
-func TestServer_Discuss(t *testing.T) {
-	store := &recordingStore{}
-	s := NewServer(nil, store, nil, nil, nil, nil)
-
-	req := connect.NewRequest(&agentfleetv1.DiscussRequest{TaskId: "task-1", Text: "what's the status?"})
-	resp, err := s.Discuss(context.Background(), req)
-	if err != nil {
-		t.Fatalf("Discuss: %v", err)
-	}
-	if resp.Msg.GetStatus() != "sent" {
-		t.Errorf("status = %q, want %q", resp.Msg.GetStatus(), "sent")
-	}
-	if store.lastTaskID != "task-1" || store.lastFrom != "human" || store.lastText != "what's the status?" || store.lastType != "discussion" {
-		t.Errorf("Append(%q, %q, %q, %q), want (task-1, human, \"what's the status?\", discussion)",
-			store.lastTaskID, store.lastFrom, store.lastText, store.lastType)
-	}
-}
+// TestServer_Discuss's happy-path coverage moved to
+// warm_integration_test.go (TestServer_Discuss_LivePod_NoWarmAttempt) —
+// Discuss now also calls warmIfIdle, which touches tasks.Store (concrete,
+// not an interface a nil store can stand in for), same reasoning
+// stop_integration_test.go's own comment gives for Stop. EmptyText stays
+// here since it returns before ever reaching tasks.Store.
 
 func TestServer_Discuss_EmptyText(t *testing.T) {
-	s := NewServer(nil, &recordingStore{}, nil, nil, nil, nil)
+	s := NewServer(nil, &recordingStore{}, nil, nil, nil, nil, 5)
 
 	req := connect.NewRequest(&agentfleetv1.DiscussRequest{TaskId: "task-1", Text: ""})
 	if _, err := s.Discuss(context.Background(), req); connect.CodeOf(err) != connect.CodeInvalidArgument {
@@ -107,7 +91,7 @@ func TestServer_Discuss_EmptyText(t *testing.T) {
 
 func TestServer_AnswerQuestion(t *testing.T) {
 	store := &recordingStore{}
-	s := NewServer(nil, store, nil, nil, nil, nil)
+	s := NewServer(nil, store, nil, nil, nil, nil, 5)
 
 	answersJSON := `{"answers":{"Which quality attribute wins?":"Latency"}}`
 	req := connect.NewRequest(&agentfleetv1.AnswerQuestionRequest{TaskId: "task-1", Seq: 3, AnswersJson: answersJSON})

@@ -712,6 +712,7 @@ export function TaskDetail({
                   run={run}
                   previewUrl={previewUrl}
                   currentMode={task.permissionMode}
+                  podPhase={task.podPhase}
                   onBypassClick={() => {
                     setActionsOpen(false);
                     setBypassOpen(true);

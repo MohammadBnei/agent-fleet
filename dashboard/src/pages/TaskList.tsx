@@ -25,6 +25,15 @@ export function prBadge(task: Task): { label: string; className: string } | null
   return { label: number ? `PR ${number} ✓` : "PR ✓", className: "text-success" };
 }
 
+// Mirrors core/internal/tasks/store.go's IsPodPhaseLive — the client-side
+// half of the same "does this session have a live pod right now" check
+// the Warm/Discuss server handlers use, so ActionsMenu can show Warm vs.
+// Stop without a round trip (sessions redesign, supersedes docs/adr/0021/
+// 0025's phase-boundary framing).
+export function isPodPhaseLive(phase?: string): boolean {
+  return phase === "POD_PHASE_PROVISIONING" || phase === "POD_PHASE_CREATED" || phase === "POD_PHASE_SCHEDULED" || phase === "POD_PHASE_RUNNING";
+}
+
 // Worker-pod lifecycle (PodPhase, reported by the provisioner) — distinct
 // from `task.status` (business state). Unset until the pod's first event
 // arrives, so this is null more often than not for a brand-new task.

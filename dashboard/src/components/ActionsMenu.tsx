@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react";
 import { client } from "../connectClient";
+import { isPodPhaseLive } from "../pages/TaskList";
 
 // The user-facing SDK modes worth a direct button — "delegate"/"dontAsk"
 // are SDK-internal/secondary, never surfaced here. "bypassPermissions" is
@@ -32,6 +33,7 @@ export function ActionsMenu({
   run,
   previewUrl,
   currentMode,
+  podPhase,
   onBypassClick,
   hideToolsInFeed,
   onHideToolsInFeedChange,
@@ -46,12 +48,17 @@ export function ActionsMenu({
   // chosen yet (the SDK itself starts a fresh session in "default", but
   // that's not durable here until SetPermissionMode is actually called).
   currentMode?: string;
+  // Drives Warm vs. Stop below — the same pod_phase TaskList's own badges
+  // already read, just here to answer "is there a pod to talk to right
+  // now" instead of "what does it look like in the list."
+  podPhase?: string;
   onBypassClick: () => void;
   hideToolsInFeed?: boolean;
   onHideToolsInFeedChange?: (value: boolean) => void;
   hideChangesInFeed?: boolean;
   onHideChangesInFeedChange?: (value: boolean) => void;
 }) {
+  const live = isPodPhaseLive(podPhase);
   return (
     <div className="flex flex-col gap-3">
       {(onHideToolsInFeedChange || onHideChangesInFeedChange) && (
@@ -81,14 +88,25 @@ export function ActionsMenu({
         </div>
       )}
       <div className="flex items-center gap-2 flex-wrap">
-      <button
-        type="button"
-        className="btn btn-warning btn-xs"
-        disabled={busy}
-        onClick={() => run(() => client.stop({ taskId }))}
-      >
-        Stop
-      </button>
+      {live ? (
+        <button
+          type="button"
+          className="btn btn-warning btn-xs"
+          disabled={busy}
+          onClick={() => run(() => client.stop({ taskId }))}
+        >
+          Stop
+        </button>
+      ) : (
+        <button
+          type="button"
+          className="btn btn-success btn-xs"
+          disabled={busy}
+          onClick={() => run(() => client.warm({ taskId }))}
+        >
+          Warm
+        </button>
+      )}
       <button
         type="button"
         className="btn btn-outline btn-xs"
