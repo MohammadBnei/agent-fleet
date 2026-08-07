@@ -78,6 +78,28 @@ test("reconnects after the server ends the stream cleanly, resuming from the las
   expect(receivedSinceSeqs[1]).toBe("1"); // resumed from the last delivered seq, not replayed from 0
 }, 10000);
 
+test("startSeq seeds the initial cursor instead of always requesting from 0", async () => {
+  // Covers a real regression: a resumed/warmed pod's cursor always
+  // defaulted to 0, replaying every pre-existing human directive
+  // (including a stale Stop's "abort" entry) into the new session.
+  handler = () => sseResponse([dataLine({ seq: 10, from: "human", text: "only new stuff", type: "discussion" })]);
+
+  const entries: { seq: number; text: string }[] = [];
+  const abortController = new AbortController();
+  const done = streamHumanMessages(
+    (entry) => {
+      entries.push({ seq: entry.seq, text: entry.text });
+      abortController.abort();
+    },
+    abortController.signal,
+    10,
+  );
+
+  await done;
+  expect(entries).toEqual([{ seq: 10, text: "only new stuff" }]);
+  expect(receivedSinceSeqs[0]).toBe("10");
+}, 10000);
+
 test("keep-alive comment lines are ignored, not mistaken for a message", async () => {
   handler = () => sseResponse([": keep-alive", dataLine({ seq: 1, from: "human", text: "real message" })]);
 
