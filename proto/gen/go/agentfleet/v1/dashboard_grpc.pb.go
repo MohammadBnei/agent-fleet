@@ -27,6 +27,7 @@ const (
 	DashboardService_GetE2EStatus_FullMethodName        = "/agentfleet.v1.DashboardService/GetE2eStatus"
 	DashboardService_Stop_FullMethodName                = "/agentfleet.v1.DashboardService/Stop"
 	DashboardService_SetPermissionMode_FullMethodName   = "/agentfleet.v1.DashboardService/SetPermissionMode"
+	DashboardService_Warm_FullMethodName                = "/agentfleet.v1.DashboardService/Warm"
 	DashboardService_KillE2E_FullMethodName             = "/agentfleet.v1.DashboardService/KillE2e"
 	DashboardService_AnswerQuestion_FullMethodName      = "/agentfleet.v1.DashboardService/AnswerQuestion"
 	DashboardService_RespondToPermission_FullMethodName = "/agentfleet.v1.DashboardService/RespondToPermission"
@@ -62,6 +63,7 @@ type DashboardServiceClient interface {
 	GetE2EStatus(ctx context.Context, in *GetE2EStatusRequest, opts ...grpc.CallOption) (*GetE2EStatusResponse, error)
 	Stop(ctx context.Context, in *StopRequest, opts ...grpc.CallOption) (*StopResponse, error)
 	SetPermissionMode(ctx context.Context, in *SetPermissionModeRequest, opts ...grpc.CallOption) (*SetPermissionModeResponse, error)
+	Warm(ctx context.Context, in *WarmRequest, opts ...grpc.CallOption) (*WarmResponse, error)
 	KillE2E(ctx context.Context, in *KillE2ERequest, opts ...grpc.CallOption) (*KillE2EResponse, error)
 	AnswerQuestion(ctx context.Context, in *AnswerQuestionRequest, opts ...grpc.CallOption) (*AnswerQuestionResponse, error)
 	RespondToPermission(ctx context.Context, in *RespondToPermissionRequest, opts ...grpc.CallOption) (*RespondToPermissionResponse, error)
@@ -176,6 +178,16 @@ func (c *dashboardServiceClient) SetPermissionMode(ctx context.Context, in *SetP
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(SetPermissionModeResponse)
 	err := c.cc.Invoke(ctx, DashboardService_SetPermissionMode_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dashboardServiceClient) Warm(ctx context.Context, in *WarmRequest, opts ...grpc.CallOption) (*WarmResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(WarmResponse)
+	err := c.cc.Invoke(ctx, DashboardService_Warm_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -323,6 +335,7 @@ type DashboardServiceServer interface {
 	GetE2EStatus(context.Context, *GetE2EStatusRequest) (*GetE2EStatusResponse, error)
 	Stop(context.Context, *StopRequest) (*StopResponse, error)
 	SetPermissionMode(context.Context, *SetPermissionModeRequest) (*SetPermissionModeResponse, error)
+	Warm(context.Context, *WarmRequest) (*WarmResponse, error)
 	KillE2E(context.Context, *KillE2ERequest) (*KillE2EResponse, error)
 	AnswerQuestion(context.Context, *AnswerQuestionRequest) (*AnswerQuestionResponse, error)
 	RespondToPermission(context.Context, *RespondToPermissionRequest) (*RespondToPermissionResponse, error)
@@ -377,6 +390,9 @@ func (UnimplementedDashboardServiceServer) Stop(context.Context, *StopRequest) (
 }
 func (UnimplementedDashboardServiceServer) SetPermissionMode(context.Context, *SetPermissionModeRequest) (*SetPermissionModeResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SetPermissionMode not implemented")
+}
+func (UnimplementedDashboardServiceServer) Warm(context.Context, *WarmRequest) (*WarmResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Warm not implemented")
 }
 func (UnimplementedDashboardServiceServer) KillE2E(context.Context, *KillE2ERequest) (*KillE2EResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method KillE2E not implemented")
@@ -568,6 +584,24 @@ func _DashboardService_SetPermissionMode_Handler(srv interface{}, ctx context.Co
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(DashboardServiceServer).SetPermissionMode(ctx, req.(*SetPermissionModeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DashboardService_Warm_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(WarmRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DashboardServiceServer).Warm(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DashboardService_Warm_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DashboardServiceServer).Warm(ctx, req.(*WarmRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -822,6 +856,10 @@ var DashboardService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SetPermissionMode",
 			Handler:    _DashboardService_SetPermissionMode_Handler,
+		},
+		{
+			MethodName: "Warm",
+			Handler:    _DashboardService_Warm_Handler,
 		},
 		{
 			MethodName: "KillE2e",

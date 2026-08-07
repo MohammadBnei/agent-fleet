@@ -115,7 +115,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool) error {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
-	dashboardSvc := dashboard.NewServer(taskStore, store, journalStore, repoStore, provisioner, hub)
+	dashboardSvc := dashboard.NewServer(taskStore, store, journalStore, repoStore, provisioner, hub, cfg.MaxInFlight)
 	dashboardPath, dashboardHandler := agentfleetv1connect.NewDashboardServiceHandler(
 		dashboardSvc,
 		connect.WithInterceptors(dashboard.NewCSRFInterceptor(), dashboard.NewAccessLogInterceptor()),

@@ -471,46 +471,50 @@ func TestMarkStopRequested_DoesNotResetAnExistingTimestamp(t *testing.T) {
 	}
 }
 
-// TestListOverdueStopIDs_ReturnsOnlyOverdueNonTerminal covers
+// TestListOverdueStopIDs_ReturnsOnlyOverdueWithLivePod covers
 // dispatch.Loop's grace-period sweep: a task must be returned only once
-// its stop request has aged past the grace window, and never once it's
-// reached a terminal status (which means teardown already happened via
-// the normal SetTaskStatus path, or the task was deleted).
-func TestListOverdueStopIDs_ReturnsOnlyOverdueNonTerminal(t *testing.T) {
+// its stop request has aged past the grace window, and only while it
+// still has a live pod to tear down — gated on pod_phase, not status
+// (sessions redesign, supersedes docs/adr/0021/0025's phase-boundary
+// framing: a stopped session stays non-terminal/resumable, so status
+// can't be the exclusion signal anymore).
+func TestListOverdueStopIDs_ReturnsOnlyOverdueWithLivePod(t *testing.T) {
 	pool := newTestPool(t)
 	ctx := context.Background()
 	store := NewStore(pool)
 
-	seed := func(status string, stopRequestedAgo *time.Duration) string {
+	seed := func(podPhase *string, stopRequestedAgo *time.Duration) string {
 		var id string
 		var stopRequestedAt any
 		if stopRequestedAgo != nil {
 			stopRequestedAt = time.Now().Add(-*stopRequestedAgo)
 		}
 		if err := pool.QueryRow(ctx, `
-			INSERT INTO tasks (repo, description, discord_channel_id, status, stop_requested_at)
-			VALUES ('dream-analyst', 'task', 'chan', $1, $2)
+			INSERT INTO tasks (repo, description, discord_channel_id, status, stop_requested_at, pod_phase)
+			VALUES ('dream-analyst', 'task', 'chan', 'running', $1, $2)
 			RETURNING id
-		`, status, stopRequestedAt).Scan(&id); err != nil {
+		`, stopRequestedAt, podPhase).Scan(&id); err != nil {
 			t.Fatalf("seed task: %v", err)
 		}
 		return id
 	}
+	phase := func(s string) *string { return &s }
 
 	old := 2 * time.Minute
 	recent := 1 * time.Second
-	overdueRunning := seed("running", &old)
-	seed("running", &recent)     // not yet overdue
-	seed("running", nil)         // no stop requested at all
-	seed("cancelled", &old)           // overdue but already terminal
-	seed("done", &old)                // overdue but already terminal
+	overdueWithLivePod := seed(phase("POD_PHASE_RUNNING"), &old)
+	seed(phase("POD_PHASE_RUNNING"), &recent)     // not yet overdue
+	seed(phase("POD_PHASE_RUNNING"), nil)         // no stop requested at all
+	seed(phase("POD_PHASE_TERMINATED"), &old)     // overdue but pod already gone
+	seed(phase("POD_PHASE_CRASHED"), &old)        // overdue but pod already gone
+	seed(nil, &old)                               // overdue but never had a pod event
 
 	ids, err := store.ListOverdueStopIDs(ctx, time.Minute)
 	if err != nil {
 		t.Fatalf("list overdue stops: %v", err)
 	}
-	if len(ids) != 1 || ids[0] != overdueRunning {
-		t.Fatalf("expected exactly [%s], got %v", overdueRunning, ids)
+	if len(ids) != 1 || ids[0] != overdueWithLivePod {
+		t.Fatalf("expected exactly [%s], got %v", overdueWithLivePod, ids)
 	}
 }
 

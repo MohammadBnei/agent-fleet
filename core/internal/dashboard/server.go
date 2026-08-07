@@ -27,16 +27,17 @@ import (
 )
 
 type Server struct {
-	tasks   *tasks.Store
-	transcr transcript.Store
-	journal *journal.Store
-	repos   *repos.Store
-	e2e     *provisionerclient.Client
-	hub     *Hub
+	tasks       *tasks.Store
+	transcr     transcript.Store
+	journal     *journal.Store
+	repos       *repos.Store
+	e2e         *provisionerclient.Client
+	hub         *Hub
+	maxInFlight int
 }
 
-func NewServer(taskStore *tasks.Store, transcr transcript.Store, journalStore *journal.Store, repoStore *repos.Store, e2e *provisionerclient.Client, hub *Hub) *Server {
-	return &Server{tasks: taskStore, transcr: transcr, journal: journalStore, repos: repoStore, e2e: e2e, hub: hub}
+func NewServer(taskStore *tasks.Store, transcr transcript.Store, journalStore *journal.Store, repoStore *repos.Store, e2e *provisionerclient.Client, hub *Hub, maxInFlight int) *Server {
+	return &Server{tasks: taskStore, transcr: transcr, journal: journalStore, repos: repoStore, e2e: e2e, hub: hub, maxInFlight: maxInFlight}
 }
 
 var _ agentfleetv1connect.DashboardServiceHandler = (*Server)(nil)
@@ -267,16 +268,119 @@ func (s *Server) RespondToPermission(ctx context.Context, req *connect.Request[a
 // origin-specific handling (reliability-findings.md's "seamless
 // interaction" gap: the dashboard previously had no way to send arbitrary
 // text, only structured Stop/AnswerQuestion/RespondToPermission).
+//
+// Also the sessions redesign's "boots on first interaction" path
+// (supersedes docs/adr/0021/0025's phase-boundary framing): a message to
+// an idle session (no live pod) warms one first, same as clicking Warm
+// explicitly, before the message is appended — so the pod that reads it
+// back off streamHumanMessages already exists. Silently does nothing
+// extra when a pod is already live (the common case).
 func (s *Server) Discuss(ctx context.Context, req *connect.Request[agentfleetv1.DiscussRequest]) (*connect.Response[agentfleetv1.DiscussResponse], error) {
 	taskID := req.Msg.GetTaskId()
 	text := req.Msg.GetText()
 	if text == "" {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("text is required"))
 	}
+	if _, err := s.warmIfIdle(ctx, taskID); err != nil {
+		return nil, err
+	}
 	if _, err := s.transcr.Append(ctx, taskID, "human", text, "discussion", uuid.NewString()); err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	return connect.NewResponse(&agentfleetv1.DiscussResponse{Status: "sent"}), nil
+}
+
+// Warm boots a pod for an idle session on demand (see WarmRequest's own
+// proto comment) — the explicit counterpart to Discuss's auto-warm. Gives
+// an explicit, specific rejection reason for each way a click can be a
+// no-op — unlike Discuss, which shares warmIfIdle's silent-skip behavior
+// for those same cases because it has a message to send regardless.
+func (s *Server) Warm(ctx context.Context, req *connect.Request[agentfleetv1.WarmRequest]) (*connect.Response[agentfleetv1.WarmResponse], error) {
+	taskID := req.Msg.GetTaskId()
+	t, err := s.tasks.GetTask(ctx, taskID)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	if t == nil {
+		return nil, connect.NewError(connect.CodeNotFound, errors.New("task not found"))
+	}
+	if tasks.IsPodPhaseLive(t.PodPhase) {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("session already has a live pod"))
+	}
+	if t.Status == "pending" {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("task hasn't been claimed yet — it will dispatch automatically"))
+	}
+	podName, err := s.warmIfIdle(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&agentfleetv1.WarmResponse{Status: "warming", PodName: podName}), nil
+}
+
+// warmIfIdle is Warm/Discuss's shared implementation: returns ("", nil)
+// if the task already has a live pod (a no-op, not an error — Discuss
+// calls this unconditionally on every message), the new pod's name if it
+// warmed one, or a typed connect error for anything else (unknown task,
+// fleet at MAX_IN_FLIGHT_TASKS). Deliberately never touches tasks.status —
+// status is a loose UI-freshness signal now, not control flow (sessions
+// redesign, supersedes docs/adr/0021/0025's phase-boundary framing); pod
+// lifecycle is pod_phase alone.
+func (s *Server) warmIfIdle(ctx context.Context, taskID string) (podName string, err error) {
+	t, err := s.tasks.GetTask(ctx, taskID)
+	if err != nil {
+		return "", connect.NewError(connect.CodeInternal, err)
+	}
+	if t == nil {
+		return "", connect.NewError(connect.CodeNotFound, errors.New("task not found"))
+	}
+	if tasks.IsPodPhaseLive(t.PodPhase) {
+		return "", nil
+	}
+	// A still-'pending' task hasn't been claimed yet — dispatch.Loop's own
+	// ClaimNextTask owns that first pod for every fresh task (it'll pick
+	// this one up within one poll tick regardless). Warming it here too
+	// would double-dispatch: both this call and the next dispatch tick
+	// would call CreateWorkerPod for the same task independently, since
+	// neither knows about the other's in-flight attempt. A silent no-op,
+	// not an error, from this shared helper — Discuss (which calls this
+	// unconditionally on every message) must still append the message
+	// either way; Warm's own handler below gives an explicit rejection
+	// instead, since a human clicking it deserves to know why nothing
+	// happened. Once claimed (any other status), the task is exclusively
+	// this function's territory.
+	if t.Status == "pending" {
+		return "", nil
+	}
+	// Accepted TOCTOU window (see tasks.Store.CountLivePods' own comment):
+	// this whole function only ever runs from a low-frequency human action
+	// (a click, or a typed message), never the hot dispatch loop.
+	live, err := s.tasks.CountLivePods(ctx)
+	if err != nil {
+		return "", connect.NewError(connect.CodeInternal, err)
+	}
+	if live >= s.maxInFlight {
+		return "", connect.NewError(connect.CodeResourceExhausted, fmt.Errorf("fleet at capacity (%d/%d warm pods)", live, s.maxInFlight))
+	}
+	repoCfg, err := s.repos.Get(ctx, t.Repo)
+	if err != nil {
+		return "", connect.NewError(connect.CodeInternal, err)
+	}
+	if repoCfg == nil {
+		return "", connect.NewError(connect.CodeInternal, fmt.Errorf("unknown repo %q", t.Repo))
+	}
+	resumeSessionID := ""
+	if t.SessionID != nil {
+		resumeSessionID = *t.SessionID
+	}
+	leaseID, err := s.tasks.RefreshLease(ctx, taskID)
+	if err != nil {
+		return "", connect.NewError(connect.CodeInternal, err)
+	}
+	podName, err = s.e2e.CreateWorkerPod(ctx, taskID, t.Repo, repoCfg.URL, repoCfg.BaseBranch, t.Description, leaseID, resumeSessionID)
+	if err != nil {
+		return "", connect.NewError(connect.CodeInternal, err)
+	}
+	return podName, nil
 }
 
 // DeleteTask force-tears-down any live session for taskID (both kinds —

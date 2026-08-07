@@ -148,11 +148,13 @@ func (l *Loop) enforceStopGrace(ctx context.Context) {
 		if _, err := l.provisioner.TearDownSession(ctx, id, agentfleetv1.SessionKind_SESSION_KIND_E2E); err != nil {
 			slog.Error("dispatch: enforceStopGrace e2e teardown failed", "taskId", id, "error", err)
 		}
-		lastErr := "stopped by human (grace period exceeded)"
-		if err := l.tasks.SetStatus(ctx, id, "cancelled", nil, nil, &lastErr); err != nil {
-			slog.Error("dispatch: enforceStopGrace set status failed", "taskId", id, "error", err)
-			continue
-		}
-		slog.Info("dispatch: force-stopped task past grace period", "taskId", id)
+		// No status change — this is pod teardown, not task termination
+		// (sessions redesign, supersedes docs/adr/0021/0025's phase-
+		// boundary framing): the worktree and saved session_id both
+		// survive, so the session is idle afterward, the same as it would
+		// be after a Stop that the worker honored cooperatively in time.
+		// Forcing a terminal "cancelled" status here would make an
+		// otherwise-resumable session look permanently dead.
+		slog.Warn("dispatch: force-stopped task past grace period", "taskId", id)
 	}
 }
