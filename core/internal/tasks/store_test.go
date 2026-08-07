@@ -71,6 +71,7 @@ func newTestPool(t *testing.T) *pgxpool.Pool {
 			pod_phase          TEXT,
 			pod_message        TEXT,
 			stop_requested_at  TIMESTAMPTZ,
+			last_active_at     TIMESTAMPTZ,
 			created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
 			updated_at         TIMESTAMPTZ NOT NULL DEFAULT now()
 		);
@@ -515,6 +516,91 @@ func TestListOverdueStopIDs_ReturnsOnlyOverdueWithLivePod(t *testing.T) {
 	}
 	if len(ids) != 1 || ids[0] != overdueWithLivePod {
 		t.Fatalf("expected exactly [%s], got %v", overdueWithLivePod, ids)
+	}
+}
+
+// TestListIdleWarmTaskIDs covers the idle-timeout backstop's query —
+// only a task with a live pod AND stale (or never-set) last_active_at is
+// idle-eligible. A NULL last_active_at counts as idle: a pod that warmed
+// but never had a single message exchanged is exactly the case this
+// backstop exists for.
+func TestListIdleWarmTaskIDs(t *testing.T) {
+	pool := newTestPool(t)
+	ctx := context.Background()
+	store := NewStore(pool)
+
+	seed := func(podPhase *string, lastActiveAgo *time.Duration) string {
+		var id string
+		var lastActiveAt any
+		if lastActiveAgo != nil {
+			lastActiveAt = time.Now().Add(-*lastActiveAgo)
+		}
+		if err := pool.QueryRow(ctx, `
+			INSERT INTO tasks (repo, description, discord_channel_id, status, pod_phase, last_active_at)
+			VALUES ('dream-analyst', 'task', 'chan', 'running', $1, $2)
+			RETURNING id
+		`, podPhase, lastActiveAt).Scan(&id); err != nil {
+			t.Fatalf("seed task: %v", err)
+		}
+		return id
+	}
+	phase := func(s string) *string { return &s }
+
+	old := 40 * time.Minute
+	recent := 1 * time.Minute
+	staleRunning := seed(phase("POD_PHASE_RUNNING"), &old)
+	neverActiveRunning := seed(phase("POD_PHASE_RUNNING"), nil) // warmed, never touched
+	seed(phase("POD_PHASE_RUNNING"), &recent)                   // recently active, not idle
+	seed(phase("POD_PHASE_TERMINATED"), &old)                   // stale but no live pod to tear down
+	seed(nil, &old)                                             // stale but never had a pod event
+
+	ids, err := store.ListIdleWarmTaskIDs(ctx, 30*time.Minute)
+	if err != nil {
+		t.Fatalf("list idle warm tasks: %v", err)
+	}
+	got := map[string]bool{}
+	for _, id := range ids {
+		got[id] = true
+	}
+	if len(ids) != 2 || !got[staleRunning] || !got[neverActiveRunning] {
+		t.Fatalf("expected exactly [%s %s], got %v", staleRunning, neverActiveRunning, ids)
+	}
+}
+
+// TestTouchActive_ResetsIdleEligibility covers the idle-timeout backstop's
+// activity signal end-to-end at the query level — a task that would
+// otherwise be idle-eligible drops out of ListIdleWarmTaskIDs immediately
+// after TouchActive, without needing to wait out a real clock interval.
+func TestTouchActive_ResetsIdleEligibility(t *testing.T) {
+	pool := newTestPool(t)
+	ctx := context.Background()
+	store := NewStore(pool)
+
+	old := 40 * time.Minute
+	var taskID string
+	if err := pool.QueryRow(ctx, `
+		INSERT INTO tasks (repo, description, discord_channel_id, status, pod_phase, last_active_at)
+		VALUES ('dream-analyst', 'task', 'chan', 'running', 'POD_PHASE_RUNNING', $1)
+		RETURNING id
+	`, time.Now().Add(-old)).Scan(&taskID); err != nil {
+		t.Fatalf("seed task: %v", err)
+	}
+
+	idsBefore, err := store.ListIdleWarmTaskIDs(ctx, 30*time.Minute)
+	if err != nil || len(idsBefore) != 1 {
+		t.Fatalf("expected the seeded task to be idle-eligible before TouchActive, got %v (err=%v)", idsBefore, err)
+	}
+
+	if err := store.TouchActive(ctx, taskID); err != nil {
+		t.Fatalf("TouchActive: %v", err)
+	}
+
+	idsAfter, err := store.ListIdleWarmTaskIDs(ctx, 30*time.Minute)
+	if err != nil {
+		t.Fatalf("list idle warm tasks: %v", err)
+	}
+	if len(idsAfter) != 0 {
+		t.Fatalf("expected no idle-eligible tasks after TouchActive, got %v", idsAfter)
 	}
 }
 

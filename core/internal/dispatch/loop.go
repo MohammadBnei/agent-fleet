@@ -31,15 +31,17 @@ type Loop struct {
 	maxInFlight    int
 	maxTaskRetries int
 	stopGrace      time.Duration
+	idleTimeout    time.Duration
 	nudge          chan struct{}
 }
 
-func New(taskStore *tasks.Store, repoStore *repos.Store, provisioner *provisionerclient.Client, maxInFlight, maxTaskRetries int, stopGrace time.Duration) *Loop {
+func New(taskStore *tasks.Store, repoStore *repos.Store, provisioner *provisionerclient.Client, maxInFlight, maxTaskRetries int, stopGrace, idleTimeout time.Duration) *Loop {
 	return &Loop{
 		tasks: taskStore, repos: repoStore, provisioner: provisioner,
 		maxInFlight: maxInFlight, maxTaskRetries: maxTaskRetries,
-		stopGrace: stopGrace,
-		nudge:     make(chan struct{}, 1),
+		stopGrace:   stopGrace,
+		idleTimeout: idleTimeout,
+		nudge:       make(chan struct{}, 1),
 	}
 }
 
@@ -85,6 +87,7 @@ func (l *Loop) Run(ctx context.Context, pollInterval time.Duration) {
 
 func (l *Loop) tick(ctx context.Context) {
 	l.enforceStopGrace(ctx)
+	l.enforceIdleTimeout(ctx)
 
 	// The concurrency-headroom check lives inside ClaimNextTask's own query
 	// now (reliability-findings.md #6) — a separate CountInFlight call
@@ -156,5 +159,33 @@ func (l *Loop) enforceStopGrace(ctx context.Context) {
 		// Forcing a terminal "cancelled" status here would make an
 		// otherwise-resumable session look permanently dead.
 		slog.Warn("dispatch: force-stopped task past grace period", "taskId", id)
+	}
+}
+
+// enforceIdleTimeout is the sessions redesign's idle-timeout backstop
+// (supersedes docs/adr/0021/0025's phase-boundary framing) — belongs here,
+// not a provisioner-side check, per docs/adr/0020 point 2 ("the
+// provisioner never decides pod lifecycle on its own"); already-settled
+// architecture, not a design choice being made here. A pod that's gone
+// idleTimeout with no real transcript activity (tasks.last_active_at, see
+// cmd/core's activityTrackingStore) gets torn down the same way
+// enforceStopGrace tears one down — same TearDownSession call, no status
+// change, since the session itself (worktree + saved session_id) is still
+// there to warm again later.
+func (l *Loop) enforceIdleTimeout(ctx context.Context) {
+	ids, err := l.tasks.ListIdleWarmTaskIDs(ctx, l.idleTimeout)
+	if err != nil {
+		slog.Error("dispatch: list idle warm tasks failed", "error", err)
+		return
+	}
+	for _, id := range ids {
+		if _, err := l.provisioner.TearDownSession(ctx, id, agentfleetv1.SessionKind_SESSION_KIND_WORKER); err != nil {
+			slog.Error("dispatch: enforceIdleTimeout worker teardown failed", "taskId", id, "error", err)
+			continue
+		}
+		if _, err := l.provisioner.TearDownSession(ctx, id, agentfleetv1.SessionKind_SESSION_KIND_E2E); err != nil {
+			slog.Error("dispatch: enforceIdleTimeout e2e teardown failed", "taskId", id, "error", err)
+		}
+		slog.Info("dispatch: idle-timed-out a warm session with no recent activity", "taskId", id)
 	}
 }

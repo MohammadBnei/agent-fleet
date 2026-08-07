@@ -451,6 +451,52 @@ func (s *Store) ListOverdueStopIDs(ctx context.Context, grace time.Duration) ([]
 	return ids, rows.Err()
 }
 
+// TouchActive bumps last_active_at — the idle-timeout backstop's activity
+// signal, fired from a transcript.Store decorator (core/cmd/core/run.go)
+// on every real Append/AppendReply, not the sidecar's own git-diff-gated
+// telemetry (silent for most of a normal conversation) or heartbeat_at
+// (fires unconditionally on a timer, only proves the pod is alive, not
+// that a human is present). Best-effort by design, same as
+// UpdateHeartbeat: a missed touch just means one sweep tick sees slightly
+// stale activity, not a correctness issue worth failing the caller's own
+// request over.
+func (s *Store) TouchActive(ctx context.Context, id string) error {
+	_, err := s.pool.Exec(ctx, `UPDATE tasks SET last_active_at = now() WHERE id = $1`, id)
+	if err != nil {
+		slog.Error("tasks TouchActive", "taskId", id, "error", err)
+		return fmt.Errorf("touch active: %w", err)
+	}
+	return nil
+}
+
+// ListIdleWarmTaskIDs mirrors ListOverdueStopIDs' shape exactly — a task
+// with a live pod (pod_phase) that's gone idleTimeout since its last real
+// transcript activity. NULL last_active_at counts as idle too: a pod that
+// warmed but never had a single message exchanged is exactly the case
+// this backstop exists for.
+func (s *Store) ListIdleWarmTaskIDs(ctx context.Context, idleTimeout time.Duration) ([]string, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT id FROM tasks
+		WHERE pod_phase = ANY($1)
+		  AND (last_active_at IS NULL OR last_active_at < now() - ($2 * interval '1 second'))
+		  AND deleted_at IS NULL
+	`, livePodPhases, idleTimeout.Seconds())
+	if err != nil {
+		slog.Error("tasks ListIdleWarmTaskIDs", "error", err)
+		return nil, fmt.Errorf("list idle warm tasks: %w", err)
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("list idle warm tasks: scan: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
 func (s *Store) SaveSessionID(ctx context.Context, id, sessionID, model string) error {
 	_, err := s.pool.Exec(ctx, `
 		UPDATE tasks SET session_id = $2, model = $3, updated_at = now() WHERE id = $1
