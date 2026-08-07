@@ -1,5 +1,23 @@
 # Changelog
 
+# [1.20.0](https://github.com/MohammadBnei/agent-fleet/compare/1.19.2...1.20.0) (2026-08-07)
+
+
+### Bug Fixes
+
+* **core,provisioner,worker:** three pod-lifecycle races caught live in kind ([a9a0ef8](https://github.com/MohammadBnei/agent-fleet/commit/a9a0ef8ed115870a52e6f6c1a9ad3286db9b096f))
+* **discord:** actually deregister stale slash commands, not just stop handling them ([46ba3d6](https://github.com/MohammadBnei/agent-fleet/commit/46ba3d6fbf6a18fda540aa58282cc95abf5df0b7))
+* **worker:** restore session.test.ts's sidecarClient mock after its own tests ([a87302d](https://github.com/MohammadBnei/agent-fleet/commit/a87302d8622406d26b1bfa93343ba93b51195a0e))
+
+
+### Features
+
+* **core,dashboard:** explicit warm/stop pod lifecycle ([d6590d7](https://github.com/MohammadBnei/agent-fleet/commit/d6590d79247c2ef703ad5aa02fc30fbd34fe1297))
+* **core:** idle-timeout backstop for warm pods ([8fdc4ce](https://github.com/MohammadBnei/agent-fleet/commit/8fdc4ce7a33380a5df8d5f08fd44affd0ae74631))
+* **db,proto:** add reply_to correlation + permission_request/response groundwork ([ac1eebf](https://github.com/MohammadBnei/agent-fleet/commit/ac1eebfa4016bc325537dbf1492e8825aaef6b6e))
+* **worker,core,dashboard:** generalize canUseTool into a live permission gate, delete Approve ([0c3b1ce](https://github.com/MohammadBnei/agent-fleet/commit/0c3b1ce555b9494414d4133e8e71600430e93067))
+* **worker,provisioner,core:** wire real session resume via CLAUDE_CONFIG_DIR + resume_session_id ([89596f2](https://github.com/MohammadBnei/agent-fleet/commit/89596f262ce60543a5badd012813895d9ce51e71))
+
 ## [1.19.2](https://github.com/MohammadBnei/agent-fleet/compare/1.19.1...1.19.2) (2026-08-07)
 
 ## [1.19.1](https://github.com/MohammadBnei/agent-fleet/compare/1.19.0...1.19.1) (2026-08-06)
