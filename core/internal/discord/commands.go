@@ -56,4 +56,49 @@ func registerCommands(s *discordgo.Session, appID, guildID string, repoNames []s
 			slog.Error("register command failed", "command", cmd.Name, "error", err)
 		}
 	}
+	pruneStaleCommands(s, appID, guildID, commandDefs(repoNames))
+}
+
+// pruneStaleCommands deletes any guild command Discord still has
+// registered that commandDefs no longer lists — ApplicationCommandCreate
+// only upserts by name, it never removes one dropped from the list (found
+// while deleting /approve for the sessions redesign, supersedes docs/adr/
+// 0021/0025's phase-boundary framing: leaving the old definition alone
+// only stops core from handling it server-side, the stale command stays
+// visible and selectable in Discord, worse than not registering it at
+// all). Runs after every registerCommands call, not just once at startup,
+// so a repos-table-triggered RefreshCommands also catches a command
+// deleted from commandDefs in a later deploy.
+func pruneStaleCommands(s *discordgo.Session, appID, guildID string, current []*discordgo.ApplicationCommand) {
+	existing, err := s.ApplicationCommands(appID, guildID)
+	if err != nil {
+		slog.Error("prune stale commands: list failed", "error", err)
+		return
+	}
+	for _, cmd := range staleCommands(current, existing) {
+		if err := s.ApplicationCommandDelete(appID, guildID, cmd.ID); err != nil {
+			slog.Error("prune stale command failed", "command", cmd.Name, "error", err)
+			continue
+		}
+		slog.Info("pruned stale slash command", "command", cmd.Name)
+	}
+}
+
+// staleCommands is pruneStaleCommands' pure decision logic, split out so
+// it's testable without a real discordgo.Session (same reasoning
+// session.go's channelWithRetry is a standalone function rather than a
+// method) — every command in `existing` whose name doesn't appear in
+// `current`.
+func staleCommands(current, existing []*discordgo.ApplicationCommand) []*discordgo.ApplicationCommand {
+	want := make(map[string]bool, len(current))
+	for _, cmd := range current {
+		want[cmd.Name] = true
+	}
+	var stale []*discordgo.ApplicationCommand
+	for _, cmd := range existing {
+		if !want[cmd.Name] {
+			stale = append(stale, cmd)
+		}
+	}
+	return stale
 }
