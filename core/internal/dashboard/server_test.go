@@ -39,6 +39,10 @@ func (r *recordingStore) ReadSince(context.Context, string, int64, int) ([]trans
 	return nil, 0, nil
 }
 
+func (r *recordingStore) LatestSeq(context.Context, string) (int64, error) {
+	return 0, nil
+}
+
 func TestServer_RespondToPermission(t *testing.T) {
 	store := &recordingStore{}
 	s := NewServer(nil, store, nil, nil, nil, nil, 5)

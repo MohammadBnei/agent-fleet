@@ -80,6 +80,13 @@ message CreateWorkerPodRequest {
   // starting fresh (sessions redesign, supersedes docs/adr/0021/0025's
   // phase-boundary framing). Empty for a brand-new task.
   string resume_session_id = 7;
+  // The transcript seq this pod's streamHumanMessages cursor should start
+  // from — one past whatever already existed for this task at dispatch
+  // time. Without this, a fresh pod's cursor defaults to 0 and replays
+  // every pre-existing human directive (a stale Stop's "abort" entry,
+  // most critically), which self-aborts a resumed session within seconds
+  // of it starting. 0 for a brand-new task (nothing to skip).
+  int64 resume_from_seq = 8;
 }
 
 message CreateWorkerPodResponse {

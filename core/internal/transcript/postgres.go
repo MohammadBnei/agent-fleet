@@ -134,3 +134,12 @@ func (s *PostgresStore) ReadSince(ctx context.Context, taskID string, sinceSeq i
 
 	return entries, nextSeq, nil
 }
+
+func (s *PostgresStore) LatestSeq(ctx context.Context, taskID string) (int64, error) {
+	var seq int64
+	err := s.pool.QueryRow(ctx, `SELECT COALESCE(MAX(seq) + 1, 0) FROM transcript WHERE task_id = $1`, taskID).Scan(&seq)
+	if err != nil {
+		return 0, fmt.Errorf("latest seq: %w", err)
+	}
+	return seq, nil
+}

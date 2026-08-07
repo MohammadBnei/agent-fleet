@@ -401,8 +401,15 @@ type CreateWorkerPodRequest struct {
 	// starting fresh (sessions redesign, supersedes docs/adr/0021/0025's
 	// phase-boundary framing). Empty for a brand-new task.
 	ResumeSessionId string `protobuf:"bytes,7,opt,name=resume_session_id,json=resumeSessionId,proto3" json:"resume_session_id,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// The transcript seq this pod's streamHumanMessages cursor should start
+	// from — one past whatever already existed for this task at dispatch
+	// time. Without this, a fresh pod's cursor defaults to 0 and replays
+	// every pre-existing human directive (a stale Stop's "abort" entry,
+	// most critically), which self-aborts a resumed session within seconds
+	// of it starting. 0 for a brand-new task (nothing to skip).
+	ResumeFromSeq int64 `protobuf:"varint,8,opt,name=resume_from_seq,json=resumeFromSeq,proto3" json:"resume_from_seq,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *CreateWorkerPodRequest) Reset() {
@@ -482,6 +489,13 @@ func (x *CreateWorkerPodRequest) GetResumeSessionId() string {
 		return x.ResumeSessionId
 	}
 	return ""
+}
+
+func (x *CreateWorkerPodRequest) GetResumeFromSeq() int64 {
+	if x != nil {
+		return x.ResumeFromSeq
+	}
+	return 0
 }
 
 type CreateWorkerPodResponse struct {
@@ -1187,7 +1201,7 @@ const file_agentfleet_v1_provisioner_proto_rawDesc = "" +
 	"\x18CreateE2eSessionResponse\x12\x16\n" +
 	"\x06status\x18\x01 \x01(\tR\x06status\x12\x1f\n" +
 	"\vpreview_url\x18\x02 \x01(\tR\n" +
-	"previewUrl\"\xea\x01\n" +
+	"previewUrl\"\x92\x02\n" +
 	"\x16CreateWorkerPodRequest\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x12\n" +
 	"\x04repo\x18\x02 \x01(\tR\x04repo\x12\x19\n" +
@@ -1196,7 +1210,8 @@ const file_agentfleet_v1_provisioner_proto_rawDesc = "" +
 	"baseBranch\x12 \n" +
 	"\vdescription\x18\x05 \x01(\tR\vdescription\x12\x19\n" +
 	"\blease_id\x18\x06 \x01(\tR\aleaseId\x12*\n" +
-	"\x11resume_session_id\x18\a \x01(\tR\x0fresumeSessionId\"4\n" +
+	"\x11resume_session_id\x18\a \x01(\tR\x0fresumeSessionId\x12&\n" +
+	"\x0fresume_from_seq\x18\b \x01(\x03R\rresumeFromSeq\"4\n" +
 	"\x17CreateWorkerPodResponse\x12\x19\n" +
 	"\bpod_name\x18\x01 \x01(\tR\apodName\"a\n" +
 	"\x16TearDownSessionRequest\x12\x17\n" +

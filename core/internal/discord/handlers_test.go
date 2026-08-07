@@ -34,6 +34,10 @@ func (f *fakeTranscriptStore) ReadSince(_ context.Context, _ string, sinceSeq in
 	return out, 0, nil
 }
 
+func (f *fakeTranscriptStore) LatestSeq(context.Context, string) (int64, error) {
+	panic("not used by findPendingQuestionSeq")
+}
+
 func int64Ptr(i int64) *int64 { return &i }
 
 // TestFindPendingQuestionSeq_ReturnsMostRecentUnansweredQuestion and its

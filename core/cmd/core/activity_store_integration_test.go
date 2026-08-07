@@ -86,6 +86,10 @@ func (f *fakeTranscriptStore) ReadSince(context.Context, string, int64, int) ([]
 	return nil, 0, nil
 }
 
+func (f *fakeTranscriptStore) LatestSeq(context.Context, string) (int64, error) {
+	return 0, nil
+}
+
 // TestActivityTrackingStore_TouchesOnAppend covers the idle-timeout
 // backstop's activity signal at its actual choke point — Append/
 // AppendReply must bump tasks.last_active_at, not just the transcript

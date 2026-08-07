@@ -376,7 +376,11 @@ func (s *Server) warmIfIdle(ctx context.Context, taskID string) (podName string,
 	if err != nil {
 		return "", connect.NewError(connect.CodeInternal, err)
 	}
-	podName, err = s.e2e.CreateWorkerPod(ctx, taskID, t.Repo, repoCfg.URL, repoCfg.BaseBranch, t.Description, leaseID, resumeSessionID)
+	resumeFromSeq, err := s.transcr.LatestSeq(ctx, taskID)
+	if err != nil {
+		return "", connect.NewError(connect.CodeInternal, err)
+	}
+	podName, err = s.e2e.CreateWorkerPod(ctx, taskID, t.Repo, repoCfg.URL, repoCfg.BaseBranch, t.Description, leaseID, resumeSessionID, resumeFromSeq)
 	if err != nil {
 		return "", connect.NewError(connect.CodeInternal, err)
 	}

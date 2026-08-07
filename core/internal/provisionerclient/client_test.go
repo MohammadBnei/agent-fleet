@@ -90,7 +90,7 @@ func TestClient_CreateWorkerPodAndTearDownSession_AlwaysBoundDeadline(t *testing
 
 	c := &Client{conn: conn, rpc: agentfleetv1.NewProvisionerServiceClient(conn)}
 
-	if _, err := c.CreateWorkerPod(context.Background(), "task-1", "repo", "url", "main", "desc", "lease-1", ""); err != nil {
+	if _, err := c.CreateWorkerPod(context.Background(), "task-1", "repo", "url", "main", "desc", "lease-1", "", 0); err != nil {
 		t.Fatalf("CreateWorkerPod: %v", err)
 	}
 	if !fake.sawDeadline || !fake.deadlineHadDL {

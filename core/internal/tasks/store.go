@@ -222,6 +222,8 @@ func (s *Store) ClaimNextTask(ctx context.Context, maxInFlight, maxRetries int) 
 		             END,
 		    heartbeat_at = now(),
 		    lease_id = gen_random_uuid(),
+		    last_active_at = now(),
+		    stop_requested_at = NULL,
 		    retry_count = CASE WHEN status != 'pending' THEN retry_count + 1 ELSE retry_count END,
 		    updated_at = now()
 		WHERE id = (
@@ -266,7 +268,7 @@ func (s *Store) ClaimNextTask(ctx context.Context, maxInFlight, maxRetries int) 
 // ClaimNextTask does — this pod is live now, not stale.
 func (s *Store) RefreshLease(ctx context.Context, id string) (leaseID string, err error) {
 	err = s.pool.QueryRow(ctx, `
-		UPDATE tasks SET lease_id = gen_random_uuid(), heartbeat_at = now(), updated_at = now()
+		UPDATE tasks SET lease_id = gen_random_uuid(), heartbeat_at = now(), last_active_at = now(), stop_requested_at = NULL, updated_at = now()
 		WHERE id = $1
 		RETURNING lease_id::text
 	`, id).Scan(&leaseID)
@@ -425,8 +427,13 @@ func (s *Store) MarkStopRequested(ctx context.Context, id string) error {
 // idle and resumable, not dead), so pod_phase is the only reliable "is
 // there still something to tear down" signal — self-resolving once
 // anything (a cooperative exit, this very sweep's own TearDownSession
-// call, or the provisioner's reconcile GC) reports the pod non-live, no
-// separate "clear stop_requested_at" step needed.
+// call, or the provisioner's reconcile GC) reports the pod non-live.
+// ClaimNextTask and RefreshLease both clear stop_requested_at when they
+// hand a task a fresh live pod — without that, warming/reclaiming a
+// previously-stopped task would leave its stale stop_requested_at in
+// place, and this sweep would force-tear the brand-new pod down again on
+// its very next tick (a real regression, caught live against a kind
+// cluster: Warm on a stopped task immediately got killed by this sweep).
 func (s *Store) ListOverdueStopIDs(ctx context.Context, grace time.Duration) ([]string, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT id FROM tasks

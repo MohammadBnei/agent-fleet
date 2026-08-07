@@ -40,4 +40,14 @@ type Store interface {
 	// ReadSince mirrors LRANGE(key, sinceSeq, -1): every entry with
 	// seq >= sinceSeq, in seq order, plus the next cursor to poll from.
 	ReadSince(ctx context.Context, taskID string, sinceSeq int64, limit int) (entries []Entry, nextSeq int64, err error)
+
+	// LatestSeq returns the seq a fresh pod attachment should start
+	// streaming human messages from — one past the highest seq that
+	// already exists for this task, so a Warm/reclaim never replays a
+	// directive meant for a prior pod incarnation (a real regression,
+	// caught live: Warm on a previously-Stopped task kept redelivering the
+	// old Stop's "abort" entry to the brand-new session, which self-
+	// aborted within seconds every time). Returns 0 for a task with no
+	// transcript yet.
+	LatestSeq(ctx context.Context, taskID string) (int64, error)
 }

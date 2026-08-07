@@ -74,6 +74,7 @@ func newTestPool(t *testing.T) *pgxpool.Pool {
 			pod_phase          TEXT,
 			pod_message        TEXT,
 			stop_requested_at  TIMESTAMPTZ,
+			last_active_at     TIMESTAMPTZ,
 			created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
 			updated_at         TIMESTAMPTZ NOT NULL DEFAULT now()
 		);

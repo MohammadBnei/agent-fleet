@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strconv"
 
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -154,7 +155,7 @@ func (c *Client) GetPod(ctx context.Context, name string) (phase corev1.PodPhase
 // workload with no expected completion, and (per reconcile/loop.go's own
 // doc comment) they were never part of the hand-rolled GC this finding is
 // about in the first place.
-func (c *Client) CreateWorkerPod(ctx context.Context, taskID, repo, description, leaseID, baseBranch, worktreePath, resumeSessionID string) error {
+func (c *Client) CreateWorkerPod(ctx context.Context, taskID, repo, description, leaseID, baseBranch, worktreePath, resumeSessionID string, resumeFromSeq int64) error {
 	if baseBranch == "" {
 		baseBranch = "main" // matches git.Manager.CreateWorktree's own default
 	}
@@ -272,6 +273,7 @@ func (c *Client) CreateWorkerPod(ctx context.Context, taskID, repo, description,
 					{Name: "WORKTREE_PATH", Value: worktreePath},
 					{Name: "CLAUDE_CONFIG_DIR", Value: claudeConfigDir},
 					{Name: "RESUME_SESSION_ID", Value: resumeSessionID},
+					{Name: "RESUME_FROM_SEQ", Value: strconv.FormatInt(resumeFromSeq, 10)},
 					{Name: "LOG_LEVEL", Value: c.LogLevel},
 				},
 				VolumeMounts: []corev1.VolumeMount{

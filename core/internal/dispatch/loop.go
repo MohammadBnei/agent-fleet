@@ -17,6 +17,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/provisionerclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/repos"
 	"github.com/MohammadBnei/agent-fleet/core/internal/tasks"
+	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
 )
 
 // Loop owns the claim-then-command cycle, plus the stop-grace-period
@@ -26,6 +27,7 @@ import (
 // the same two dependencies.
 type Loop struct {
 	tasks          *tasks.Store
+	transcr        transcript.Store
 	repos          *repos.Store
 	provisioner    *provisionerclient.Client
 	maxInFlight    int
@@ -35,9 +37,9 @@ type Loop struct {
 	nudge          chan struct{}
 }
 
-func New(taskStore *tasks.Store, repoStore *repos.Store, provisioner *provisionerclient.Client, maxInFlight, maxTaskRetries int, stopGrace, idleTimeout time.Duration) *Loop {
+func New(taskStore *tasks.Store, transcr transcript.Store, repoStore *repos.Store, provisioner *provisionerclient.Client, maxInFlight, maxTaskRetries int, stopGrace, idleTimeout time.Duration) *Loop {
 	return &Loop{
-		tasks: taskStore, repos: repoStore, provisioner: provisioner,
+		tasks: taskStore, transcr: transcr, repos: repoStore, provisioner: provisioner,
 		maxInFlight: maxInFlight, maxTaskRetries: maxTaskRetries,
 		stopGrace:   stopGrace,
 		idleTimeout: idleTimeout,
@@ -123,7 +125,12 @@ func (l *Loop) tick(ctx context.Context) {
 	if task.SessionID != nil {
 		resumeSessionID = *task.SessionID
 	}
-	podName, err := l.provisioner.CreateWorkerPod(ctx, task.ID, task.Repo, repoCfg.URL, repoCfg.BaseBranch, task.Description, task.LeaseID, resumeSessionID)
+	resumeFromSeq, err := l.transcr.LatestSeq(ctx, task.ID)
+	if err != nil {
+		slog.Error("dispatch: latest seq lookup failed", "taskId", task.ID, "error", err)
+		return
+	}
+	podName, err := l.provisioner.CreateWorkerPod(ctx, task.ID, task.Repo, repoCfg.URL, repoCfg.BaseBranch, task.Description, task.LeaseID, resumeSessionID, resumeFromSeq)
 	if err != nil {
 		slog.Error("dispatch: CreateWorkerPod failed", "taskId", task.ID, "error", err)
 		return
