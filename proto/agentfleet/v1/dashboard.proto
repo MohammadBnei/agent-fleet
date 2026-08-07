@@ -37,6 +37,21 @@ message Task {
   // failed_permanently instead of being reclaimed again).
   int32 retry_count = 10;
   optional string last_error = 11;
+  // The Claude SDK's own session id (SaveSessionId) — resumable in a fresh
+  // pod via `resume:` (sessions redesign, supersedes docs/adr/0021/0025's
+  // phase-boundary framing). Unset until the worker's first streamed
+  // message reports it.
+  optional string planning_session_id = 12;
+  // Last time a planning_transcript entry was appended for this task —
+  // substrate for the idle-timeout backstop that tears down an unattended
+  // pod. RFC3339, matching heartbeat_at. Unset for a task with no activity
+  // yet.
+  optional string last_active_at = 13;
+  // The session's current SDK permission mode ("default"|"plan"|
+  // "acceptEdits"|"bypassPermissions"|...), so the dashboard's mode picker
+  // can highlight the real active mode instead of guessing. Unset for an
+  // idle/never-warmed session.
+  optional string permission_mode = 14;
 }
 
 message ListTasksRequest {

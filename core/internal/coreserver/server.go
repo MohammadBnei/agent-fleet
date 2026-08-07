@@ -360,11 +360,12 @@ func entriesToProto(taskID string, entries []transcript.Entry) []*agentfleetv1.T
 
 func entryToProto(taskID string, e transcript.Entry) *agentfleetv1.TranscriptEntry {
 	return &agentfleetv1.TranscriptEntry{
-		TaskId: taskID,
-		Seq:    e.Seq,
-		From:   e.From,
-		Text:   e.Text,
-		Type:   stringToProtoType(e.Type),
+		TaskId:  taskID,
+		Seq:     e.Seq,
+		From:    e.From,
+		Text:    e.Text,
+		Type:    stringToProtoType(e.Type),
+		ReplyTo: e.ReplyTo,
 	}
 }
 
@@ -392,6 +393,10 @@ func stringToProtoType(s string) agentfleetv1.TranscriptEntryType {
 		return agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_RESULT
 	case "permission_mode":
 		return agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_PERMISSION_MODE
+	case "permission_request":
+		return agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_PERMISSION_REQUEST
+	case "permission_response":
+		return agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_PERMISSION_RESPONSE
 	default:
 		return agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_UNSPECIFIED
 	}
@@ -421,6 +426,10 @@ func protoTypeToString(t agentfleetv1.TranscriptEntryType) string {
 		return "result"
 	case agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_PERMISSION_MODE:
 		return "permission_mode"
+	case agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_PERMISSION_REQUEST:
+		return "permission_request"
+	case agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_PERMISSION_RESPONSE:
+		return "permission_response"
 	default:
 		return ""
 	}

@@ -40,6 +40,16 @@ enum TranscriptEntryType {
   // ("acceptEdits"|"dontAsk"|"bypassPermissions"), same convention APPROVE
   // already uses for its `text:"approved"`.
   TRANSCRIPT_ENTRY_TYPE_PERMISSION_MODE = 11;
+  // Worker-authored, posted by canUseTool for any tool call the SDK's
+  // current permission mode would prompt for (supersedes docs/adr/0021's
+  // Write/Edit-absent-from-allowedTools gate) — `text` is a JSON
+  // {tool, input} payload. Answered via DashboardService.RespondToPermission,
+  // correlated back through `reply_to` the same way ANSWER correlates to
+  // QUESTION.
+  TRANSCRIPT_ENTRY_TYPE_PERMISSION_REQUEST = 12;
+  // The human's allow/deny decision for a PERMISSION_REQUEST entry —
+  // `text` is a JSON {decision, updatedInput?} payload.
+  TRANSCRIPT_ENTRY_TYPE_PERMISSION_RESPONSE = 13;
 }
 
 message TranscriptEntry {
@@ -48,6 +58,12 @@ message TranscriptEntry {
   string from = 3; // "planner" | "human"
   string text = 4;
   TranscriptEntryType type = 5;
+  // Non-nil only for an ANSWER/PERMISSION_RESPONSE entry replying to a
+  // specific QUESTION/PERMISSION_REQUEST entry's own seq (mirrors
+  // transcript.Entry.ReplyTo server-side) — without this, a live-streamed
+  // entry had no reply correlation at all; only AskUserQuestion's
+  // in-process poll loop ever saw it.
+  optional int64 reply_to = 6;
 }
 
 message AppendTranscriptEntryRequest {

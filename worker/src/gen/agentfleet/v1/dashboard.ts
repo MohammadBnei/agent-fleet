@@ -45,7 +45,34 @@ export interface Task {
    * failed_permanently instead of being reclaimed again).
    */
   retryCount: number;
-  lastError?: string | undefined;
+  lastError?:
+    | string
+    | undefined;
+  /**
+   * The Claude SDK's own session id (SaveSessionId) — resumable in a fresh
+   * pod via `resume:` (sessions redesign, supersedes docs/adr/0021/0025's
+   * phase-boundary framing). Unset until the worker's first streamed
+   * message reports it.
+   */
+  planningSessionId?:
+    | string
+    | undefined;
+  /**
+   * Last time a planning_transcript entry was appended for this task —
+   * substrate for the idle-timeout backstop that tears down an unattended
+   * pod. RFC3339, matching heartbeat_at. Unset for a task with no activity
+   * yet.
+   */
+  lastActiveAt?:
+    | string
+    | undefined;
+  /**
+   * The session's current SDK permission mode ("default"|"plan"|
+   * "acceptEdits"|"bypassPermissions"|...), so the dashboard's mode picker
+   * can highlight the real active mode instead of guessing. Unset for an
+   * idle/never-warmed session.
+   */
+  permissionMode?: string | undefined;
 }
 
 export interface ListTasksRequest {
@@ -311,6 +338,9 @@ function createBaseTask(): Task {
     heartbeatAt: undefined,
     retryCount: 0,
     lastError: undefined,
+    planningSessionId: undefined,
+    lastActiveAt: undefined,
+    permissionMode: undefined,
   };
 }
 
@@ -356,6 +386,21 @@ export const Task: MessageFns<Task> = {
         : isSet(object.last_error)
         ? globalThis.String(object.last_error)
         : undefined,
+      planningSessionId: isSet(object.planningSessionId)
+        ? globalThis.String(object.planningSessionId)
+        : isSet(object.planning_session_id)
+        ? globalThis.String(object.planning_session_id)
+        : undefined,
+      lastActiveAt: isSet(object.lastActiveAt)
+        ? globalThis.String(object.lastActiveAt)
+        : isSet(object.last_active_at)
+        ? globalThis.String(object.last_active_at)
+        : undefined,
+      permissionMode: isSet(object.permissionMode)
+        ? globalThis.String(object.permissionMode)
+        : isSet(object.permission_mode)
+        ? globalThis.String(object.permission_mode)
+        : undefined,
     };
   },
 
@@ -394,6 +439,15 @@ export const Task: MessageFns<Task> = {
     if (message.lastError !== undefined) {
       obj.lastError = message.lastError;
     }
+    if (message.planningSessionId !== undefined) {
+      obj.planningSessionId = message.planningSessionId;
+    }
+    if (message.lastActiveAt !== undefined) {
+      obj.lastActiveAt = message.lastActiveAt;
+    }
+    if (message.permissionMode !== undefined) {
+      obj.permissionMode = message.permissionMode;
+    }
     return obj;
   },
 
@@ -413,6 +467,9 @@ export const Task: MessageFns<Task> = {
     message.heartbeatAt = object.heartbeatAt ?? undefined;
     message.retryCount = object.retryCount ?? 0;
     message.lastError = object.lastError ?? undefined;
+    message.planningSessionId = object.planningSessionId ?? undefined;
+    message.lastActiveAt = object.lastActiveAt ?? undefined;
+    message.permissionMode = object.permissionMode ?? undefined;
     return message;
   },
 };

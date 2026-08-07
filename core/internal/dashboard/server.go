@@ -436,27 +436,29 @@ func taskToProto(t tasks.Task) *agentfleetv1.Task {
 		heartbeatAt = &s
 	}
 	return &agentfleetv1.Task{
-		Id:          t.ID,
-		Repo:        t.Repo,
-		Description: t.Description,
-		Status:      t.Status,
-		ThreadId:    t.ThreadID,
-		PrUrl:       t.PrURL,
-		PodPhase:    t.PodPhase,
-		PodMessage:  t.PodMessage,
-		HeartbeatAt: heartbeatAt,
-		RetryCount:  int32(t.RetryCount),
-		LastError:   t.LastError,
+		Id:                t.ID,
+		Repo:              t.Repo,
+		Description:       t.Description,
+		Status:            t.Status,
+		ThreadId:          t.ThreadID,
+		PrUrl:             t.PrURL,
+		PodPhase:          t.PodPhase,
+		PodMessage:        t.PodMessage,
+		HeartbeatAt:       heartbeatAt,
+		RetryCount:        int32(t.RetryCount),
+		LastError:         t.LastError,
+		PlanningSessionId: t.PlanningSessionID,
 	}
 }
 
 func entryToProto(taskID string, e transcript.Entry) *agentfleetv1.TranscriptEntry {
 	return &agentfleetv1.TranscriptEntry{
-		TaskId: taskID,
-		Seq:    e.Seq,
-		From:   e.From,
-		Text:   e.Text,
-		Type:   stringToProtoType(e.Type),
+		TaskId:  taskID,
+		Seq:     e.Seq,
+		From:    e.From,
+		Text:    e.Text,
+		Type:    stringToProtoType(e.Type),
+		ReplyTo: e.ReplyTo,
 	}
 }
 
@@ -488,6 +490,10 @@ func stringToProtoType(s string) agentfleetv1.TranscriptEntryType {
 		return agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_RESULT
 	case "permission_mode":
 		return agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_PERMISSION_MODE
+	case "permission_request":
+		return agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_PERMISSION_REQUEST
+	case "permission_response":
+		return agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_PERMISSION_RESPONSE
 	default:
 		return agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_UNSPECIFIED
 	}

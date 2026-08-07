@@ -43,10 +43,25 @@ type Task struct {
 	// How many times ClaimNextTask has reclaimed this task after a stale
 	// heartbeat (capped at MAX_TASK_RETRIES before the task goes
 	// failed_permanently instead of being reclaimed again).
-	RetryCount    int32   `protobuf:"varint,10,opt,name=retry_count,json=retryCount,proto3" json:"retry_count,omitempty"`
-	LastError     *string `protobuf:"bytes,11,opt,name=last_error,json=lastError,proto3,oneof" json:"last_error,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	RetryCount int32   `protobuf:"varint,10,opt,name=retry_count,json=retryCount,proto3" json:"retry_count,omitempty"`
+	LastError  *string `protobuf:"bytes,11,opt,name=last_error,json=lastError,proto3,oneof" json:"last_error,omitempty"`
+	// The Claude SDK's own session id (SaveSessionId) — resumable in a fresh
+	// pod via `resume:` (sessions redesign, supersedes docs/adr/0021/0025's
+	// phase-boundary framing). Unset until the worker's first streamed
+	// message reports it.
+	PlanningSessionId *string `protobuf:"bytes,12,opt,name=planning_session_id,json=planningSessionId,proto3,oneof" json:"planning_session_id,omitempty"`
+	// Last time a planning_transcript entry was appended for this task —
+	// substrate for the idle-timeout backstop that tears down an unattended
+	// pod. RFC3339, matching heartbeat_at. Unset for a task with no activity
+	// yet.
+	LastActiveAt *string `protobuf:"bytes,13,opt,name=last_active_at,json=lastActiveAt,proto3,oneof" json:"last_active_at,omitempty"`
+	// The session's current SDK permission mode ("default"|"plan"|
+	// "acceptEdits"|"bypassPermissions"|...), so the dashboard's mode picker
+	// can highlight the real active mode instead of guessing. Unset for an
+	// idle/never-warmed session.
+	PermissionMode *string `protobuf:"bytes,14,opt,name=permission_mode,json=permissionMode,proto3,oneof" json:"permission_mode,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *Task) Reset() {
@@ -152,6 +167,27 @@ func (x *Task) GetRetryCount() int32 {
 func (x *Task) GetLastError() string {
 	if x != nil && x.LastError != nil {
 		return *x.LastError
+	}
+	return ""
+}
+
+func (x *Task) GetPlanningSessionId() string {
+	if x != nil && x.PlanningSessionId != nil {
+		return *x.PlanningSessionId
+	}
+	return ""
+}
+
+func (x *Task) GetLastActiveAt() string {
+	if x != nil && x.LastActiveAt != nil {
+		return *x.LastActiveAt
+	}
+	return ""
+}
+
+func (x *Task) GetPermissionMode() string {
+	if x != nil && x.PermissionMode != nil {
+		return *x.PermissionMode
 	}
 	return ""
 }
@@ -2065,7 +2101,7 @@ var File_agentfleet_v1_dashboard_proto protoreflect.FileDescriptor
 
 const file_agentfleet_v1_dashboard_proto_rawDesc = "" +
 	"\n" +
-	"\x1dagentfleet/v1/dashboard.proto\x12\ragentfleet.v1\x1a\x1fagentfleet/v1/provisioner.proto\x1a\x1eagentfleet/v1/transcript.proto\"\xae\x03\n" +
+	"\x1dagentfleet/v1/dashboard.proto\x12\ragentfleet.v1\x1a\x1fagentfleet/v1/provisioner.proto\x1a\x1eagentfleet/v1/transcript.proto\"\xfb\x04\n" +
 	"\x04Task\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04repo\x18\x02 \x01(\tR\x04repo\x12 \n" +
@@ -2081,7 +2117,10 @@ const file_agentfleet_v1_dashboard_proto_rawDesc = "" +
 	" \x01(\x05R\n" +
 	"retryCount\x12\"\n" +
 	"\n" +
-	"last_error\x18\v \x01(\tH\x05R\tlastError\x88\x01\x01B\f\n" +
+	"last_error\x18\v \x01(\tH\x05R\tlastError\x88\x01\x01\x123\n" +
+	"\x13planning_session_id\x18\f \x01(\tH\x06R\x11planningSessionId\x88\x01\x01\x12)\n" +
+	"\x0elast_active_at\x18\r \x01(\tH\aR\flastActiveAt\x88\x01\x01\x12,\n" +
+	"\x0fpermission_mode\x18\x0e \x01(\tH\bR\x0epermissionMode\x88\x01\x01B\f\n" +
 	"\n" +
 	"_thread_idB\t\n" +
 	"\a_pr_urlB\f\n" +
@@ -2089,7 +2128,10 @@ const file_agentfleet_v1_dashboard_proto_rawDesc = "" +
 	"_pod_phaseB\x0e\n" +
 	"\f_pod_messageB\x0f\n" +
 	"\r_heartbeat_atB\r\n" +
-	"\v_last_error\"(\n" +
+	"\v_last_errorB\x16\n" +
+	"\x14_planning_session_idB\x11\n" +
+	"\x0f_last_active_atB\x12\n" +
+	"\x10_permission_mode\"(\n" +
 	"\x10ListTasksRequest\x12\x14\n" +
 	"\x05limit\x18\x01 \x01(\x05R\x05limit\">\n" +
 	"\x11ListTasksResponse\x12)\n" +

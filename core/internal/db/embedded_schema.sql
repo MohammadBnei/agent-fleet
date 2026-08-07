@@ -30,6 +30,13 @@ ALTER TABLE tasks DROP COLUMN IF EXISTS skip_critique;
 -- reclaimed past MAX_TASK_RETRIES stops retrying instead of looping
 -- forever) — is a safe re-run against the already-live table, not just
 -- future fresh creates.
+--
+-- 'planning'/'implementing' are tolerated-but-deprecated as of the
+-- sessions redesign (supersedes docs/adr/0021/0025's phase-boundary
+-- framing): there's no fleet-imposed phase left to track, so nothing
+-- writes these anymore, but they stay in the CHECK for one release so an
+-- in-flight row from a rolling deploy against the old binary doesn't
+-- violate the constraint. Drop them once nothing live can write them.
 ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_status_check;
 ALTER TABLE tasks ADD CONSTRAINT tasks_status_check
   CHECK (status IN ('pending', 'claimed', 'planning', 'implementing', 'done', 'failed', 'cancelled', 'failed_permanently'));
@@ -75,6 +82,21 @@ ALTER TABLE tasks ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
 -- requiring kubectl.
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS pod_phase TEXT;
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS pod_message TEXT;
+
+-- When a human first asked to stop this task (DashboardService.Stop).
+-- Stop itself only posts a cooperative abort message to the transcript;
+-- dispatch.Loop's grace-period sweep uses this timestamp to force-tear
+-- down a worker pod that never noticed/honored it, surviving a core
+-- restart since it's Postgres-durable rather than an in-memory timer.
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS stop_requested_at TIMESTAMPTZ;
+
+-- Substrate for the sessions redesign's idle-timeout backstop: bumped on
+-- every planning_transcript append for this task (a decorator around
+-- transcript.Store, not every RPC call site individually), so a sweep can
+-- tell "pod alive but nobody's talking to it" apart from real activity.
+-- Distinct from heartbeat_at, which fires unconditionally on a timer and
+-- only proves the pod is alive, not that a human is present.
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS last_active_at TIMESTAMPTZ;
 
 -- Append-only fleet knowledge journal (mirrors ai-devkit's JSON-event pattern,
 -- see agent-fleet reference-check memory: avoids write-conflict issues that a
@@ -154,11 +176,24 @@ CREATE UNIQUE INDEX IF NOT EXISTS planning_transcript_idempotency_idx
 -- 'tool_call' is PushToolTelemetry's sidecar-pushed summary — already
 -- inserted before this change (coreserver/server.go), just never actually
 -- listed here; a pre-existing gap this widening also closes.
+--
+-- 'permission_mode' is human-authored, from the dashboard's permission-mode
+-- selector (docs/adr/0027) — `text` is the raw target SDK mode string.
+--
+-- 'permission_request'/'permission_response' are the sessions redesign's
+-- generalized canUseTool prompt-and-wait pair (supersedes docs/adr/0021's
+-- Write/Edit-absent-from-allowedTools gate): 'permission_request' is
+-- worker-authored, posted by canUseTool for any tool call the SDK's
+-- current permission mode would prompt for — `text` is a JSON
+-- {tool, input} payload. 'permission_response' is the dashboard's
+-- human-authored allow/deny decision, correlated back via reply_to_seq
+-- (below) the same way 'answer' correlates to 'question'.
 ALTER TABLE planning_transcript DROP CONSTRAINT IF EXISTS planning_transcript_type_check;
 ALTER TABLE planning_transcript ADD CONSTRAINT planning_transcript_type_check
   CHECK (type IN (
     'discussion', 'approve', 'abort', 'question', 'answer',
-    'tool_call', 'system', 'assistant', 'user', 'result'
+    'tool_call', 'system', 'assistant', 'user', 'result', 'permission_mode',
+    'permission_request', 'permission_response'
   ) OR type IS NULL);
 
 -- Retry/DLQ for the Discord-relay side effect only — the transcript entry
