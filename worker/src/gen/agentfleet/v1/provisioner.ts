@@ -121,6 +121,15 @@ export interface CreateWorkerPodRequest {
    * phase-boundary framing). Empty for a brand-new task.
    */
   resumeSessionId: string;
+  /**
+   * The transcript seq this pod's streamHumanMessages cursor should start
+   * from — one past whatever already existed for this task at dispatch
+   * time. Without this, a fresh pod's cursor defaults to 0 and replays
+   * every pre-existing human directive (a stale Stop's "abort" entry,
+   * most critically), which self-aborts a resumed session within seconds
+   * of it starting. 0 for a brand-new task (nothing to skip).
+   */
+  resumeFromSeq: number;
 }
 
 export interface CreateWorkerPodResponse {
@@ -432,7 +441,16 @@ export const CreateE2eSessionResponse: MessageFns<CreateE2eSessionResponse> = {
 };
 
 function createBaseCreateWorkerPodRequest(): CreateWorkerPodRequest {
-  return { taskId: "", repo: "", repoUrl: "", baseBranch: "", description: "", leaseId: "", resumeSessionId: "" };
+  return {
+    taskId: "",
+    repo: "",
+    repoUrl: "",
+    baseBranch: "",
+    description: "",
+    leaseId: "",
+    resumeSessionId: "",
+    resumeFromSeq: 0,
+  };
 }
 
 export const CreateWorkerPodRequest: MessageFns<CreateWorkerPodRequest> = {
@@ -465,6 +483,11 @@ export const CreateWorkerPodRequest: MessageFns<CreateWorkerPodRequest> = {
         : isSet(object.resume_session_id)
         ? globalThis.String(object.resume_session_id)
         : "",
+      resumeFromSeq: isSet(object.resumeFromSeq)
+        ? globalThis.Number(object.resumeFromSeq)
+        : isSet(object.resume_from_seq)
+        ? globalThis.Number(object.resume_from_seq)
+        : 0,
     };
   },
 
@@ -491,6 +514,9 @@ export const CreateWorkerPodRequest: MessageFns<CreateWorkerPodRequest> = {
     if (message.resumeSessionId !== "") {
       obj.resumeSessionId = message.resumeSessionId;
     }
+    if (message.resumeFromSeq !== 0) {
+      obj.resumeFromSeq = Math.round(message.resumeFromSeq);
+    }
     return obj;
   },
 
@@ -506,6 +532,7 @@ export const CreateWorkerPodRequest: MessageFns<CreateWorkerPodRequest> = {
     message.description = object.description ?? "";
     message.leaseId = object.leaseId ?? "";
     message.resumeSessionId = object.resumeSessionId ?? "";
+    message.resumeFromSeq = object.resumeFromSeq ?? 0;
     return message;
   },
 };

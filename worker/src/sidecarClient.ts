@@ -115,11 +115,18 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
 // evidence. lastSeq tracks how far we've actually delivered so a
 // reconnect resumes exactly there via the sidecar's sinceSeq query param
 // — no replayed or skipped messages.
+//
+// startSeq seeds the initial cursor (default 0, a brand-new task's
+// natural starting point) — a resumed/warmed pod must pass its own
+// dispatch-time RESUME_FROM_SEQ instead, or this replays every
+// pre-existing human directive from task history, including a stale
+// Stop's "abort" entry, which self-aborts the new session immediately.
 export async function streamHumanMessages(
   onEntry: (entry: TranscriptEntry) => void | Promise<void>,
   signal: AbortSignal,
+  startSeq = 0,
 ): Promise<void> {
-  let lastSeq = 0;
+  let lastSeq = startSeq;
   while (!signal.aborted) {
     try {
       await streamOnce(

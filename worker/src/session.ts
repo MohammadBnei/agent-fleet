@@ -19,6 +19,14 @@ const WORKTREE_PATH = process.env.WORKTREE_PATH ?? "/workspace";
 // to already point at the shared PVC (provisioner/internal/k8s/pod.go) or
 // there's nothing on this fresh container filesystem to resume from.
 const RESUME_SESSION_ID = process.env.RESUME_SESSION_ID || undefined;
+// The transcript seq to start streamHumanMessages from (provisioner/
+// internal/k8s/pod.go's RESUME_FROM_SEQ) — one past whatever already
+// existed for this task at dispatch time. 0 for a brand-new task.
+// Without this, a fresh pod's cursor defaults to 0 and replays every
+// pre-existing human directive, most critically a stale Stop's "abort"
+// entry — self-aborting a resumed session within seconds of it starting
+// (a real regression, caught live against a kind cluster).
+const RESUME_FROM_SEQ = process.env.RESUME_FROM_SEQ ? Number(process.env.RESUME_FROM_SEQ) : 0;
 
 // Absolute in-container path baked at image build time — the local skills
 // plugin (doubt-driven-development, architecture-interview), bundled the
@@ -350,7 +358,7 @@ export async function runTask(task: Task): Promise<TaskResult> {
         return;
       }
       input.push(entry.text);
-    }, humanMessagesAbort.signal)
+    }, humanMessagesAbort.signal, RESUME_FROM_SEQ)
     .catch((err) => log("error", "human message stream failed", { taskId: task.id, error: String(err) }));
 
   let sessionId = "";

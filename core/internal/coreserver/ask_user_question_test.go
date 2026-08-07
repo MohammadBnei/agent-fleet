@@ -53,6 +53,12 @@ func (f *fakeQAStore) ReadSince(_ context.Context, _ string, sinceSeq int64, _ i
 	return out, next, nil
 }
 
+func (f *fakeQAStore) LatestSeq(context.Context, string) (int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.nextSeq, nil
+}
+
 // TestAskUserQuestion_IgnoresAnswerToADifferentQuestion covers
 // reliability-findings.md #0's real gap: before question-seq correlation,
 // "any pending question + any reply" would let an unrelated answer (e.g.

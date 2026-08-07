@@ -64,6 +64,10 @@ func (f *fakeStore) AppendReply(context.Context, string, string, string, string,
 	panic("not used by pollOnce")
 }
 
+func (f *fakeStore) LatestSeq(context.Context, string) (int64, error) {
+	panic("not used by pollOnce")
+}
+
 func (f *fakeStore) ReadSince(_ context.Context, _ string, sinceSeq int64, _ int) ([]transcript.Entry, int64, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

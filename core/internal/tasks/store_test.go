@@ -472,6 +472,44 @@ func TestMarkStopRequested_DoesNotResetAnExistingTimestamp(t *testing.T) {
 	}
 }
 
+// TestRefreshLease_ClearsStaleStopRequest covers a real regression caught
+// live against a kind cluster: Warm-ing a previously-stopped task left
+// stop_requested_at set from the old Stop call, so the very next
+// enforceStopGrace sweep immediately force-tore-down the brand-new pod.
+// RefreshLease (warmIfIdle's choke point for "this task now has a fresh
+// live pod") must clear it, same as ClaimNextTask does on a fresh/reclaimed
+// dispatch.
+func TestRefreshLease_ClearsStaleStopRequest(t *testing.T) {
+	pool := newTestPool(t)
+	ctx := context.Background()
+	store := NewStore(pool)
+
+	id, err := store.CreateTask(ctx, "dream-analyst", "task", nil, nil)
+	if err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+	if err := store.MarkStopRequested(ctx, id); err != nil {
+		t.Fatalf("mark stop requested: %v", err)
+	}
+
+	if _, err := store.RefreshLease(ctx, id); err != nil {
+		t.Fatalf("refresh lease: %v", err)
+	}
+
+	var stopRequestedAt *time.Time
+	var lastActiveAt *time.Time
+	if err := pool.QueryRow(ctx, `SELECT stop_requested_at, last_active_at FROM tasks WHERE id = $1`, id).
+		Scan(&stopRequestedAt, &lastActiveAt); err != nil {
+		t.Fatalf("read task: %v", err)
+	}
+	if stopRequestedAt != nil {
+		t.Fatalf("expected stop_requested_at cleared by RefreshLease, got %v", *stopRequestedAt)
+	}
+	if lastActiveAt == nil {
+		t.Fatal("expected last_active_at set by RefreshLease, got nil")
+	}
+}
+
 // TestListOverdueStopIDs_ReturnsOnlyOverdueWithLivePod covers
 // dispatch.Loop's grace-period sweep: a task must be returned only once
 // its stop request has aged past the grace window, and only while it
