@@ -392,10 +392,17 @@ type CreateWorkerPodRequest struct {
 	// pod's env — the worker no longer fetches its own task row at all
 	// (docs/adr/0020 point 1: it holds no DB credentials, direct or
 	// otherwise), so whatever it needs has to arrive at pod creation time.
-	Description   string `protobuf:"bytes,5,opt,name=description,proto3" json:"description,omitempty"`
-	LeaseId       string `protobuf:"bytes,6,opt,name=lease_id,json=leaseId,proto3" json:"lease_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Description string `protobuf:"bytes,5,opt,name=description,proto3" json:"description,omitempty"`
+	LeaseId     string `protobuf:"bytes,6,opt,name=lease_id,json=leaseId,proto3" json:"lease_id,omitempty"`
+	// Non-empty when this task already has a saved Claude SDK session
+	// (tasks.session_id) — threaded straight to the worker pod's
+	// RESUME_SESSION_ID env, which worker/src/session.ts passes as `resume:`
+	// to query() so the new pod continues the prior conversation instead of
+	// starting fresh (sessions redesign, supersedes docs/adr/0021/0025's
+	// phase-boundary framing). Empty for a brand-new task.
+	ResumeSessionId string `protobuf:"bytes,7,opt,name=resume_session_id,json=resumeSessionId,proto3" json:"resume_session_id,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *CreateWorkerPodRequest) Reset() {
@@ -466,6 +473,13 @@ func (x *CreateWorkerPodRequest) GetDescription() string {
 func (x *CreateWorkerPodRequest) GetLeaseId() string {
 	if x != nil {
 		return x.LeaseId
+	}
+	return ""
+}
+
+func (x *CreateWorkerPodRequest) GetResumeSessionId() string {
+	if x != nil {
+		return x.ResumeSessionId
 	}
 	return ""
 }
@@ -1173,7 +1187,7 @@ const file_agentfleet_v1_provisioner_proto_rawDesc = "" +
 	"\x18CreateE2eSessionResponse\x12\x16\n" +
 	"\x06status\x18\x01 \x01(\tR\x06status\x12\x1f\n" +
 	"\vpreview_url\x18\x02 \x01(\tR\n" +
-	"previewUrl\"\xbe\x01\n" +
+	"previewUrl\"\xea\x01\n" +
 	"\x16CreateWorkerPodRequest\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x12\n" +
 	"\x04repo\x18\x02 \x01(\tR\x04repo\x12\x19\n" +
@@ -1181,7 +1195,8 @@ const file_agentfleet_v1_provisioner_proto_rawDesc = "" +
 	"\vbase_branch\x18\x04 \x01(\tR\n" +
 	"baseBranch\x12 \n" +
 	"\vdescription\x18\x05 \x01(\tR\vdescription\x12\x19\n" +
-	"\blease_id\x18\x06 \x01(\tR\aleaseId\"4\n" +
+	"\blease_id\x18\x06 \x01(\tR\aleaseId\x12*\n" +
+	"\x11resume_session_id\x18\a \x01(\tR\x0fresumeSessionId\"4\n" +
 	"\x17CreateWorkerPodResponse\x12\x19\n" +
 	"\bpod_name\x18\x01 \x01(\tR\apodName\"a\n" +
 	"\x16TearDownSessionRequest\x12\x17\n" +

@@ -233,8 +233,8 @@ func (s *Store) ClaimNextTask(ctx context.Context, maxInFlight, maxRetries int) 
 			FOR UPDATE SKIP LOCKED
 			LIMIT 1
 		)
-		RETURNING id, repo, description, status, discord_thread_id, pr_url, lease_id::text
-	`, maxInFlight, maxRetries).Scan(&t.ID, &t.Repo, &t.Description, &t.Status, &t.ThreadID, &t.PrURL, &t.LeaseID)
+		RETURNING id, repo, description, status, discord_thread_id, pr_url, lease_id::text, session_id
+	`, maxInFlight, maxRetries).Scan(&t.ID, &t.Repo, &t.Description, &t.Status, &t.ThreadID, &t.PrURL, &t.LeaseID, &t.SessionID)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}

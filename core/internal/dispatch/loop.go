@@ -116,7 +116,11 @@ func (l *Loop) tick(ctx context.Context) {
 		return
 	}
 
-	podName, err := l.provisioner.CreateWorkerPod(ctx, task.ID, task.Repo, repoCfg.URL, repoCfg.BaseBranch, task.Description, task.LeaseID)
+	resumeSessionID := ""
+	if task.SessionID != nil {
+		resumeSessionID = *task.SessionID
+	}
+	podName, err := l.provisioner.CreateWorkerPod(ctx, task.ID, task.Repo, repoCfg.URL, repoCfg.BaseBranch, task.Description, task.LeaseID, resumeSessionID)
 	if err != nil {
 		slog.Error("dispatch: CreateWorkerPod failed", "taskId", task.ID, "error", err)
 		return

@@ -21,6 +21,19 @@ import (
 // crashed worker, short enough not to accumulate.
 const workerJobTTLSeconds = 300
 
+// claudeConfigDir redirects the Agent SDK's session-state directory
+// (normally $HOME/.claude, which is a fresh container filesystem every
+// pod) onto the shared workspace PVC — without this, `resume:` has
+// nothing to resume from regardless of what session id is passed
+// (sessions redesign, supersedes docs/adr/0021/0025's phase-boundary
+// framing; the redirect itself was originally described in ADR-0016 but
+// never actually implemented until now). One shared root is safe across
+// concurrent tasks: the SDK's own per-project subdirectory is derived
+// directly from `cwd` (every non-alphanumeric character replaced with
+// `-`, confirmed against the bundled SDK's cli.js — not a hash), and
+// every task's cwd is already a distinct worktree path.
+const claudeConfigDir = "/workspace/.claude-home"
+
 func int32Ptr(i int32) *int32 { return &i }
 
 // CreatedE2ePod mirrors CreatedE2ePod in k8s.ts.
@@ -141,7 +154,7 @@ func (c *Client) GetPod(ctx context.Context, name string) (phase corev1.PodPhase
 // workload with no expected completion, and (per reconcile/loop.go's own
 // doc comment) they were never part of the hand-rolled GC this finding is
 // about in the first place.
-func (c *Client) CreateWorkerPod(ctx context.Context, taskID, repo, description, leaseID, baseBranch, worktreePath string) error {
+func (c *Client) CreateWorkerPod(ctx context.Context, taskID, repo, description, leaseID, baseBranch, worktreePath, resumeSessionID string) error {
 	if baseBranch == "" {
 		baseBranch = "main" // matches git.Manager.CreateWorktree's own default
 	}
@@ -257,6 +270,8 @@ func (c *Client) CreateWorkerPod(ctx context.Context, taskID, repo, description,
 					{Name: "CLAUDE_MODEL", Value: os.Getenv("CLAUDE_MODEL")},
 					{Name: "MAX_TURNS", Value: os.Getenv("MAX_TURNS")},
 					{Name: "WORKTREE_PATH", Value: worktreePath},
+					{Name: "CLAUDE_CONFIG_DIR", Value: claudeConfigDir},
+					{Name: "RESUME_SESSION_ID", Value: resumeSessionID},
 					{Name: "LOG_LEVEL", Value: c.LogLevel},
 				},
 				VolumeMounts: []corev1.VolumeMount{

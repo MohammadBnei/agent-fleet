@@ -127,7 +127,7 @@ func TestCreateWorkerPod_TwoContainersSharedPVC(t *testing.T) {
 	c := newTestClient()
 	ctx := context.Background()
 
-	if err := c.CreateWorkerPod(ctx, "task-1", "dream-analyst", "test task", "lease-1", "main", "/workspace/worktrees/task-1"); err != nil {
+	if err := c.CreateWorkerPod(ctx, "task-1", "dream-analyst", "test task", "lease-1", "main", "/workspace/worktrees/task-1", ""); err != nil {
 		t.Fatalf("CreateWorkerPod: %v", err)
 	}
 
@@ -185,6 +185,60 @@ func TestCreateWorkerPod_TwoContainersSharedPVC(t *testing.T) {
 	}
 }
 
+// findEnv returns the value of the first env var named `name`, and whether
+// it was found at all — RESUME_SESSION_ID legitimately has an empty-string
+// value for a brand-new task, so "found but empty" and "not set" have to
+// be distinguishable.
+func findEnv(env []corev1.EnvVar, name string) (string, bool) {
+	for _, e := range env {
+		if e.Name == name {
+			return e.Value, true
+		}
+	}
+	return "", false
+}
+
+// TestCreateWorkerPod_ResumeSession covers the sessions redesign's resume
+// path (supersedes docs/adr/0021/0025's phase-boundary framing, completes
+// the CLAUDE_CONFIG_DIR redirect ADR-0016 described but never wired up) —
+// CLAUDE_CONFIG_DIR must always point at the shared PVC (or `resume:` has
+// nothing to resume from regardless of what session id is passed), and
+// RESUME_SESSION_ID must carry through whatever resumeSessionID was given,
+// including empty for a fresh task.
+func TestCreateWorkerPod_ResumeSession(t *testing.T) {
+	c := newTestClient()
+	ctx := context.Background()
+
+	if err := c.CreateWorkerPod(ctx, "task-1", "dream-analyst", "test task", "lease-1", "main", "/workspace/worktrees/task-1", "sess-abc123"); err != nil {
+		t.Fatalf("CreateWorkerPod: %v", err)
+	}
+	job, err := c.Core.BatchV1().Jobs("agent-fleet").Get(ctx, WorkerResourceName("task-1"), metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("get job: %v", err)
+	}
+	worker := job.Spec.Template.Spec.Containers[0]
+	if configDir, ok := findEnv(worker.Env, "CLAUDE_CONFIG_DIR"); !ok || configDir != claudeConfigDir {
+		t.Errorf("CLAUDE_CONFIG_DIR = %q (found=%v), want %q", configDir, ok, claudeConfigDir)
+	}
+	if resumeID, ok := findEnv(worker.Env, "RESUME_SESSION_ID"); !ok || resumeID != "sess-abc123" {
+		t.Errorf("RESUME_SESSION_ID = %q (found=%v), want %q", resumeID, ok, "sess-abc123")
+	}
+
+	// A fresh task (no prior session) must still set RESUME_SESSION_ID —
+	// present-but-empty, not omitted, so worker/src/session.ts's env read
+	// doesn't have to distinguish "unset" from "empty" itself.
+	if err := c.CreateWorkerPod(ctx, "task-2", "dream-analyst", "test task", "lease-2", "main", "/workspace/worktrees/task-2", ""); err != nil {
+		t.Fatalf("CreateWorkerPod: %v", err)
+	}
+	job2, err := c.Core.BatchV1().Jobs("agent-fleet").Get(ctx, WorkerResourceName("task-2"), metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("get job: %v", err)
+	}
+	if resumeID, ok := findEnv(job2.Spec.Template.Spec.Containers[0].Env, "RESUME_SESSION_ID"); !ok || resumeID != "" {
+		t.Errorf("fresh task RESUME_SESSION_ID = %q (found=%v), want empty-but-present", resumeID, ok)
+	}
+}
+
 func TestGetPod_ExistsVsNotFound(t *testing.T) {
 	c := newTestClient()
 	ctx := context.Background()
@@ -210,7 +264,7 @@ func TestGetWorkerJobRepo_RecoversRepoFromLabel(t *testing.T) {
 	c := newTestClient()
 	ctx := context.Background()
 
-	if err := c.CreateWorkerPod(ctx, "task-1", "vos-monolith", "test task", "lease-1", "dev", "/workspace/worktrees/task-1"); err != nil {
+	if err := c.CreateWorkerPod(ctx, "task-1", "vos-monolith", "test task", "lease-1", "dev", "/workspace/worktrees/task-1", ""); err != nil {
 		t.Fatalf("CreateWorkerPod: %v", err)
 	}
 	repo, exists, err := c.GetWorkerJobRepo(ctx, "task-1")
@@ -231,7 +285,7 @@ func TestListWorkerJobsByLabel_ExcludesE2ePods(t *testing.T) {
 	c := newTestClient()
 	ctx := context.Background()
 
-	if err := c.CreateWorkerPod(ctx, "task-1", "dream-analyst", "test task", "lease-1", "main", "/workspace/worktrees/task-1"); err != nil {
+	if err := c.CreateWorkerPod(ctx, "task-1", "dream-analyst", "test task", "lease-1", "main", "/workspace/worktrees/task-1", ""); err != nil {
 		t.Fatalf("CreateWorkerPod: %v", err)
 	}
 	if err := c.CreatePod(ctx, TaskRef{ID: "task-2", Repo: "dream-analyst"}); err != nil {
