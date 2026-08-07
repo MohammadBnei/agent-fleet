@@ -112,6 +112,15 @@ export interface CreateWorkerPodRequest {
    */
   description: string;
   leaseId: string;
+  /**
+   * Non-empty when this task already has a saved Claude SDK session
+   * (tasks.session_id) — threaded straight to the worker pod's
+   * RESUME_SESSION_ID env, which worker/src/session.ts passes as `resume:`
+   * to query() so the new pod continues the prior conversation instead of
+   * starting fresh (sessions redesign, supersedes docs/adr/0021/0025's
+   * phase-boundary framing). Empty for a brand-new task.
+   */
+  resumeSessionId: string;
 }
 
 export interface CreateWorkerPodResponse {
@@ -423,7 +432,7 @@ export const CreateE2eSessionResponse: MessageFns<CreateE2eSessionResponse> = {
 };
 
 function createBaseCreateWorkerPodRequest(): CreateWorkerPodRequest {
-  return { taskId: "", repo: "", repoUrl: "", baseBranch: "", description: "", leaseId: "" };
+  return { taskId: "", repo: "", repoUrl: "", baseBranch: "", description: "", leaseId: "", resumeSessionId: "" };
 }
 
 export const CreateWorkerPodRequest: MessageFns<CreateWorkerPodRequest> = {
@@ -451,6 +460,11 @@ export const CreateWorkerPodRequest: MessageFns<CreateWorkerPodRequest> = {
         : isSet(object.lease_id)
         ? globalThis.String(object.lease_id)
         : "",
+      resumeSessionId: isSet(object.resumeSessionId)
+        ? globalThis.String(object.resumeSessionId)
+        : isSet(object.resume_session_id)
+        ? globalThis.String(object.resume_session_id)
+        : "",
     };
   },
 
@@ -474,6 +488,9 @@ export const CreateWorkerPodRequest: MessageFns<CreateWorkerPodRequest> = {
     if (message.leaseId !== "") {
       obj.leaseId = message.leaseId;
     }
+    if (message.resumeSessionId !== "") {
+      obj.resumeSessionId = message.resumeSessionId;
+    }
     return obj;
   },
 
@@ -488,6 +505,7 @@ export const CreateWorkerPodRequest: MessageFns<CreateWorkerPodRequest> = {
     message.baseBranch = object.baseBranch ?? "";
     message.description = object.description ?? "";
     message.leaseId = object.leaseId ?? "";
+    message.resumeSessionId = object.resumeSessionId ?? "";
     return message;
   },
 };

@@ -73,6 +73,13 @@ message CreateWorkerPodRequest {
   // otherwise), so whatever it needs has to arrive at pod creation time.
   string description = 5;
   string lease_id = 6;
+  // Non-empty when this task already has a saved Claude SDK session
+  // (tasks.session_id) — threaded straight to the worker pod's
+  // RESUME_SESSION_ID env, which worker/src/session.ts passes as `resume:`
+  // to query() so the new pod continues the prior conversation instead of
+  // starting fresh (sessions redesign, supersedes docs/adr/0021/0025's
+  // phase-boundary framing). Empty for a brand-new task.
+  string resume_session_id = 7;
 }
 
 message CreateWorkerPodResponse {

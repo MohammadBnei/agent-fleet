@@ -184,6 +184,13 @@ test("tool wiring: default mode, no Write/Edit in allowedTools, canUseTool prese
 
   expect(queryOptions).not.toBeNull();
   expect(queryOptions?.permissionMode).toBe("default");
+  // No RESUME_SESSION_ID env in this process — a fresh task, not a warmed
+  // one (RESUME_SESSION_ID is read once at module load, like MODEL/
+  // MAX_TURNS, so the positive "resume passed through" case isn't
+  // separately unit-testable here; covered instead by
+  // provisioner/internal/k8s/k8s_test.go's TestCreateWorkerPod_ResumeSession
+  // for the env-var plumbing, and manually via kind-local for the full path).
+  expect(queryOptions?.resume).toBeUndefined();
   const allowedTools = queryOptions?.allowedTools as string[];
   expect(allowedTools).not.toContain("Write");
   expect(allowedTools).not.toContain("Edit");

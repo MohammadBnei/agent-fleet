@@ -13,6 +13,12 @@ const MAX_TURNS = process.env.MAX_TURNS ? Number(process.env.MAX_TURNS) : undefi
 
 const SIDECAR_MCP_ADDR = process.env.SIDECAR_MCP_ADDR ?? "localhost:9090";
 const WORKTREE_PATH = process.env.WORKTREE_PATH ?? "/workspace";
+// Set by the provisioner (task.SessionID, via CreateWorkerPodRequest) when
+// this pod is warming an existing session rather than starting a fresh
+// one — empty, not unset, for a brand-new task. Requires CLAUDE_CONFIG_DIR
+// to already point at the shared PVC (provisioner/internal/k8s/pod.go) or
+// there's nothing on this fresh container filesystem to resume from.
+const RESUME_SESSION_ID = process.env.RESUME_SESSION_ID || undefined;
 
 // Absolute in-container path baked at image build time — the local skills
 // plugin (doubt-driven-development, architecture-interview), bundled the
@@ -73,10 +79,13 @@ class InputQueue {
 // current permission mode would prompt for blocks for a live human
 // decision, the same way it would in a terminal.
 function taskPrompt(task: Task): string {
+  const worktreeNote = RESUME_SESSION_ID
+    ? `You have already been talking about this task in this exact conversation — this session just resumed on the same git worktree (branch agent/${task.id}) after a pause, not a fresh start. Pick up from where you left off; run \`git status\` and \`git log --oneline -5\` to confirm what's actually on disk before assuming anything, but don't re-explain context you already have.`
+    : `You are in a git worktree on branch agent/${task.id} — it may be freshly created or resumed from a prior attempt (the provisioner reuses an existing worktree as-is rather than wiping it, reliability-findings.md #2), so run \`git status\` and \`git log --oneline -5\` first to see what's actually there before assuming a clean slate.`;
   return `You are working on task ${task.id} in repo ${task.repo}.
 Task: ${task.description}
 
-You are in a git worktree on branch agent/${task.id} — it may be freshly created or resumed from a prior attempt (the provisioner reuses an existing worktree as-is rather than wiping it, reliability-findings.md #2), so run \`git status\` and \`git log --oneline -5\` first to see what's actually there before assuming a clean slate.
+${worktreeNote}
 
 This is one continuous session, not separate planning/implementation phases — decide for yourself when you've explored and planned enough to implement. Use your own judgment about how much process a task this size actually needs; skip a stage and say why in one line rather than run it on autopilot:
 
@@ -225,6 +234,12 @@ export async function runTask(task: Task): Promise<TaskResult> {
       executable: "bun",
       cwd: WORKTREE_PATH,
       model: MODEL,
+      // Continues the prior conversation instead of starting fresh when
+      // this pod is warming an existing session (Phase 4's Warm action) —
+      // relies on CLAUDE_CONFIG_DIR already pointing at the shared PVC and
+      // `cwd` matching exactly what it was last time (same worktree path,
+      // guaranteed since it's always /workspace/worktrees/<taskId>).
+      resume: RESUME_SESSION_ID,
       // "default" — matches running `claude` locally with no flags. The
       // dashboard's mode picker can switch to plan/acceptEdits/
       // bypassPermissions at any point (docs/adr/0027's SetPermissionMode,

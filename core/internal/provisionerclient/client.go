@@ -120,16 +120,17 @@ func (c *Client) CallE2eTool(ctx context.Context, taskID, toolName, argumentsJSO
 // from core's own dispatch loop, immediately after it claims the task
 // (docs/adr/0020 point 2 — core claims, then commands; the provisioner
 // never claims tasks itself).
-func (c *Client) CreateWorkerPod(ctx context.Context, taskID, repo, repoURL, baseBranch, description, leaseID string) (podName string, err error) {
+func (c *Client) CreateWorkerPod(ctx context.Context, taskID, repo, repoURL, baseBranch, description, leaseID, resumeSessionID string) (podName string, err error) {
 	ctx, cancel := context.WithTimeout(ctx, sessionCallTimeout)
 	defer cancel()
 	resp, err := c.rpc.CreateWorkerPod(ctx, &agentfleetv1.CreateWorkerPodRequest{
-		TaskId:      taskID,
-		Repo:        repo,
-		RepoUrl:     repoURL,
-		BaseBranch:  baseBranch,
-		Description: description,
-		LeaseId:     leaseID,
+		TaskId:          taskID,
+		Repo:            repo,
+		RepoUrl:         repoURL,
+		BaseBranch:      baseBranch,
+		Description:     description,
+		LeaseId:         leaseID,
+		ResumeSessionId: resumeSessionID,
 	})
 	if err != nil {
 		return "", fmt.Errorf("CreateWorkerPod: %w", err)
