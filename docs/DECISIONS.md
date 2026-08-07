@@ -58,11 +58,12 @@ Any doc, code, comment, or memory that contradicts this file or an
 - **Auto-merge, ever.** Every task result is a PR; a human merges.
 - **A shared writable repo PVC across tasks.** One git worktree per task,
   always — see `adr/0003`.
-- **Inferring approval from silence, round completion, or free-text
-  sentiment.** Only an explicit, structured `/approve` signal (or the
-  dashboard's explicit permission-mode selector, itself typed-confirmation
-  gated for `bypassPermissions`) unlocks write/edit — see `adr/0005`,
-  `adr/0025`, `adr/0027`.
+- **Inferring a permission decision from silence, round completion, or
+  free-text sentiment.** `canUseTool` prompts live and blocks for a real,
+  structured `RespondToPermission` reply (or an explicit
+  `SetPermissionMode` call, itself typed-confirmation gated for
+  `bypassPermissions`) — never inferred from anything else. `/approve` no
+  longer exists — see `adr/0005`, `adr/0027`, `adr/0029`.
 - **Deleting a worktree or branch as a side effect of a task reaching a
   terminal status.** Only an explicit signal — the sweep's confirmed
   `[gone]`, or an explicit dashboard delete — removes git state; a hard-won
@@ -75,7 +76,7 @@ Any doc, code, comment, or memory that contradicts this file or an
 - **A bespoke per-app Helm chart.** Always reuse
   `infra-bootstrap/gitops/platform/common-app-chart` — see `adr/0026`.
 - **A bare streaming-watch RPC without a durable resume cursor for the
-  planning transcript.** Pull/cursor reads only — see `adr/0013`
+  transcript.** Pull/cursor reads only — see `adr/0013`
   (successor to the same message-loss concern `adr/0001` raised about
   Redis pub/sub, now against a gRPC/Postgres backend instead of Redis).
 - **An orchestration framework (Hermes, OpenClaw, or similar).** A single
