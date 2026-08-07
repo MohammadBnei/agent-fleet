@@ -1,7 +1,7 @@
 // Package localapi is the sidecar's second local surface — a plain
 // localhost HTTP/JSON API (deliberately not MCP-shaped, not gRPC) for the
 // TS worker wrapper's own control-flow and housekeeping calls: everything
-// worker/src/planning.ts/db.ts/index.ts used to do via direct SQL, plus —
+// worker/src/session.ts/db.ts/index.ts used to do via direct SQL, plus —
 // the load-bearing one — delivering live human messages for streamInput()
 // (docs/adr/0020 point 5's third responsibility, docs/adr/0021 point 2).
 // None of this is something the agent decides to do; it's the wrapper's
@@ -148,14 +148,14 @@ func journalHandler(core *coreclient.Client) http.HandlerFunc {
 func sessionIDHandler(core *coreclient.Client) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
-			PlanningSessionID string `json:"planningSessionId"`
-			Model             string `json:"model"`
+			SessionID string `json:"sessionId"`
+			Model     string `json:"model"`
 		}
 		if err := decodeJSON(r, &body); err != nil {
 			writeError(w, http.StatusBadRequest, err)
 			return
 		}
-		if err := core.SaveSessionID(r.Context(), body.PlanningSessionID, body.Model); err != nil {
+		if err := core.SaveSessionID(r.Context(), body.SessionID, body.Model); err != nil {
 			writeError(w, http.StatusBadGateway, err)
 			return
 		}
@@ -270,6 +270,7 @@ func humanMessagesHandler(core *coreclient.Client) http.HandlerFunc {
 			done <- core.StreamHumanMessages(r.Context(), sinceSeq, func(entry *agentfleetv1.TranscriptEntry) {
 				payload, _ := json.Marshal(map[string]any{
 					"seq": entry.GetSeq(), "from": entry.GetFrom(), "text": entry.GetText(), "type": protoTypeToString(entry.GetType()),
+					"replyTo": entry.ReplyTo,
 				})
 				write([]byte("data: " + string(payload) + "\n\n"))
 			})
@@ -311,6 +312,10 @@ func stringToProtoType(s string) agentfleetv1.TranscriptEntryType {
 		return agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_RESULT
 	case "permission_mode":
 		return agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_PERMISSION_MODE
+	case "permission_request":
+		return agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_PERMISSION_REQUEST
+	case "permission_response":
+		return agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_PERMISSION_RESPONSE
 	default:
 		return agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_UNSPECIFIED
 	}
@@ -338,6 +343,10 @@ func protoTypeToString(t agentfleetv1.TranscriptEntryType) string {
 		return "result"
 	case agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_PERMISSION_MODE:
 		return "permission_mode"
+	case agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_PERMISSION_REQUEST:
+		return "permission_request"
+	case agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_PERMISSION_RESPONSE:
+		return "permission_response"
 	default:
 		return ""
 	}

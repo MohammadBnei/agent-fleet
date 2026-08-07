@@ -35,7 +35,6 @@ func commandDefs(repoNames []string) []*discordgo.ApplicationCommand {
 				{Type: discordgo.ApplicationCommandOptionString, Name: "description", Description: "What to do", Required: true},
 			},
 		},
-		{Name: "approve", Description: "Approve the current plan for this task"},
 		{
 			Name:        "stop",
 			Description: "Abort this task",

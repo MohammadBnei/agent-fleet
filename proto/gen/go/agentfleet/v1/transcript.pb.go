@@ -28,7 +28,7 @@ const (
 	TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_DISCUSSION  TranscriptEntryType = 1
 	TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_APPROVE     TranscriptEntryType = 2
 	TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_ABORT       TranscriptEntryType = 3
-	// Structured multiple-choice question(s) posted by the planner via the
+	// Structured multiple-choice question(s) posted by the agent via the
 	// AskUserQuestion MCP tool — `text` is a JSON payload, not prose. Answered
 	// via the dashboard (not Discord), see docs/adr/0018.
 	TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_QUESTION TranscriptEntryType = 4
@@ -39,7 +39,7 @@ const (
 	// call (see docs/adr/0020, docs/adr/0021's sidecar). `text` is a JSON
 	// payload. Never relayed to Discord (core's relay loop skips this type).
 	TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_TOOL_CALL TranscriptEntryType = 6
-	// The raw Claude Agent SDK message discriminants worker/src/planning.ts's
+	// The raw Claude Agent SDK message discriminants worker/src/session.ts's
 	// logSdkMessage relays verbatim (reliability-findings.md #0: "relay
 	// everything, let the UI decide, no pre-filtering") — `text` is a JSON
 	// payload, dashboard-only, never relayed to Discord (matches the DB
@@ -132,7 +132,7 @@ type TranscriptEntry struct {
 	state  protoimpl.MessageState `protogen:"open.v1"`
 	TaskId string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
 	Seq    int64                  `protobuf:"varint,2,opt,name=seq,proto3" json:"seq,omitempty"`
-	From   string                 `protobuf:"bytes,3,opt,name=from,proto3" json:"from,omitempty"` // "planner" | "human"
+	From   string                 `protobuf:"bytes,3,opt,name=from,proto3" json:"from,omitempty"` // "agent" | "human"
 	Text   string                 `protobuf:"bytes,4,opt,name=text,proto3" json:"text,omitempty"`
 	Type   TranscriptEntryType    `protobuf:"varint,5,opt,name=type,proto3,enum=agentfleet.v1.TranscriptEntryType" json:"type,omitempty"`
 	// Non-nil only for an ANSWER/PERMISSION_RESPONSE entry replying to a

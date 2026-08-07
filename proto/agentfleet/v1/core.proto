@@ -132,7 +132,7 @@ message AppendJournalResponse {}
 
 message SaveSessionIdRequest {
   string task_id = 1;
-  string planning_session_id = 2;
+  string session_id = 2;
   string model = 3;
 }
 

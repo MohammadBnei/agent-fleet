@@ -57,7 +57,7 @@ func newTestPool(t *testing.T) *pgxpool.Pool {
 	_, err = pool.Exec(ctx, `
 		CREATE EXTENSION IF NOT EXISTS pgcrypto;
 		CREATE TABLE tasks (id UUID PRIMARY KEY DEFAULT gen_random_uuid());
-		CREATE TABLE planning_transcript (
+		CREATE TABLE transcript (
 			task_id            UUID NOT NULL REFERENCES tasks(id),
 			seq                BIGINT NOT NULL,
 			"from"             TEXT NOT NULL,
@@ -72,8 +72,8 @@ func newTestPool(t *testing.T) *pgxpool.Pool {
 			reply_to_seq       BIGINT,
 			PRIMARY KEY (task_id, seq)
 		);
-		CREATE UNIQUE INDEX planning_transcript_idempotency_idx
-			ON planning_transcript (task_id, idempotency_key);
+		CREATE UNIQUE INDEX transcript_idempotency_idx
+			ON transcript (task_id, idempotency_key);
 	`)
 	if err != nil {
 		t.Fatalf("apply schema: %v", err)
@@ -167,7 +167,7 @@ func TestPostgresStore_AppendReplyRoundTripsReplyTo(t *testing.T) {
 		t.Fatalf("insert task: %v", err)
 	}
 
-	questionSeq, err := store.Append(ctx, taskID, "planner", `{"questions":[]}`, "question", "")
+	questionSeq, err := store.Append(ctx, taskID, "agent", `{"questions":[]}`, "question", "")
 	if err != nil {
 		t.Fatalf("append question: %v", err)
 	}

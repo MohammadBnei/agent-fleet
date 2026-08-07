@@ -27,7 +27,7 @@ export type TranscriptEntry = Message<"agentfleet.v1.TranscriptEntry"> & {
   seq: bigint;
 
   /**
-   * "planner" | "human"
+   * "agent" | "human"
    *
    * @generated from field: string from = 3;
    */
@@ -175,7 +175,7 @@ export enum TranscriptEntryType {
   ABORT = 3,
 
   /**
-   * Structured multiple-choice question(s) posted by the planner via the
+   * Structured multiple-choice question(s) posted by the agent via the
    * AskUserQuestion MCP tool — `text` is a JSON payload, not prose. Answered
    * via the dashboard (not Discord), see docs/adr/0018.
    *
@@ -201,7 +201,7 @@ export enum TranscriptEntryType {
   TOOL_CALL = 6,
 
   /**
-   * The raw Claude Agent SDK message discriminants worker/src/planning.ts's
+   * The raw Claude Agent SDK message discriminants worker/src/session.ts's
    * logSdkMessage relays verbatim (reliability-findings.md #0: "relay
    * everything, let the UI decide, no pre-filtering") — `text` is a JSON
    * payload, dashboard-only, never relayed to Discord (matches the DB

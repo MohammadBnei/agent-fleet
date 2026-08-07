@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file agentfleet/v1/dashboard.proto.
  */
 export const file_agentfleet_v1_dashboard: GenFile = /*@__PURE__*/
-  fileDesc("Ch1hZ2VudGZsZWV0L3YxL2Rhc2hib2FyZC5wcm90bxINYWdlbnRmbGVldC52MSLgAwoEVGFzaxIKCgJpZBgBIAEoCRIMCgRyZXBvGAIgASgJEhMKC2Rlc2NyaXB0aW9uGAMgASgJEg4KBnN0YXR1cxgEIAEoCRIWCgl0aHJlYWRfaWQYBSABKAlIAIgBARITCgZwcl91cmwYBiABKAlIAYgBARIWCglwb2RfcGhhc2UYByABKAlIAogBARIYCgtwb2RfbWVzc2FnZRgIIAEoCUgDiAEBEhkKDGhlYXJ0YmVhdF9hdBgJIAEoCUgEiAEBEhMKC3JldHJ5X2NvdW50GAogASgFEhcKCmxhc3RfZXJyb3IYCyABKAlIBYgBARIgChNwbGFubmluZ19zZXNzaW9uX2lkGAwgASgJSAaIAQESGwoObGFzdF9hY3RpdmVfYXQYDSABKAlIB4gBARIcCg9wZXJtaXNzaW9uX21vZGUYDiABKAlICIgBAUIMCgpfdGhyZWFkX2lkQgkKB19wcl91cmxCDAoKX3BvZF9waGFzZUIOCgxfcG9kX21lc3NhZ2VCDwoNX2hlYXJ0YmVhdF9hdEINCgtfbGFzdF9lcnJvckIWChRfcGxhbm5pbmdfc2Vzc2lvbl9pZEIRCg9fbGFzdF9hY3RpdmVfYXRCEgoQX3Blcm1pc3Npb25fbW9kZSIhChBMaXN0VGFza3NSZXF1ZXN0Eg0KBWxpbWl0GAEgASgFIjcKEUxpc3RUYXNrc1Jlc3BvbnNlEiIKBXRhc2tzGAEgAygLMhMuYWdlbnRmbGVldC52MS5UYXNrIhwKDkdldFRhc2tSZXF1ZXN0EgoKAmlkGAEgASgJIjQKD0dldFRhc2tSZXNwb25zZRIhCgR0YXNrGAEgASgLMhMuYWdlbnRmbGVldC52MS5UYXNrIjYKEUNyZWF0ZVRhc2tSZXF1ZXN0EgwKBHJlcG8YASABKAkSEwoLZGVzY3JpcHRpb24YAiABKAkiNwoSQ3JlYXRlVGFza1Jlc3BvbnNlEiEKBHRhc2sYASABKAsyEy5hZ2VudGZsZWV0LnYxLlRhc2siPQoXU3RyZWFtVHJhbnNjcmlwdFJlcXVlc3QSDwoHdGFza19pZBgBIAEoCRIRCglzaW5jZV9zZXEYAiABKAMiJgoTR2V0RTJlU3RhdHVzUmVxdWVzdBIPCgd0YXNrX2lkGAEgASgJIjsKFEdldEUyZVN0YXR1c1Jlc3BvbnNlEg4KBnN0YXR1cxgBIAEoCRITCgtwcmV2aWV3X3VybBgCIAEoCSIhCg5BcHByb3ZlUmVxdWVzdBIPCgd0YXNrX2lkGAEgASgJIiEKD0FwcHJvdmVSZXNwb25zZRIOCgZzdGF0dXMYASABKAkiPgoLU3RvcFJlcXVlc3QSDwoHdGFza19pZBgBIAEoCRITCgZyZWFzb24YAiABKAlIAIgBAUIJCgdfcmVhc29uIh4KDFN0b3BSZXNwb25zZRIOCgZzdGF0dXMYASABKAkiOQoYU2V0UGVybWlzc2lvbk1vZGVSZXF1ZXN0Eg8KB3Rhc2tfaWQYASABKAkSDAoEbW9kZRgCIAEoCSIrChlTZXRQZXJtaXNzaW9uTW9kZVJlc3BvbnNlEg4KBnN0YXR1cxgBIAEoCSIhCg5LaWxsRTJlUmVxdWVzdBIPCgd0YXNrX2lkGAEgASgJIiEKD0tpbGxFMmVSZXNwb25zZRIOCgZraWxsZWQYASABKAgiSwoVQW5zd2VyUXVlc3Rpb25SZXF1ZXN0Eg8KB3Rhc2tfaWQYASABKAkSCwoDc2VxGAIgASgDEhQKDGFuc3dlcnNfanNvbhgDIAEoCSIoChZBbnN3ZXJRdWVzdGlvblJlc3BvbnNlEg4KBnN0YXR1cxgBIAEoCSIvCg5EaXNjdXNzUmVxdWVzdBIPCgd0YXNrX2lkGAEgASgJEgwKBHRleHQYAiABKAkiIQoPRGlzY3Vzc1Jlc3BvbnNlEg4KBnN0YXR1cxgBIAEoCSIkChFEZWxldGVUYXNrUmVxdWVzdBIPCgd0YXNrX2lkGAEgASgJIiQKEkRlbGV0ZVRhc2tSZXNwb25zZRIOCgZzdGF0dXMYASABKAki2wEKDFdvcmt0cmVlVmlldxIPCgd0YXNrX2lkGAEgASgJEgwKBHJlcG8YAiABKAkSDgoGYnJhbmNoGAMgASgJEhYKDnVwc3RyZWFtX3RyYWNrGAQgASgJEhIKCm10aW1lX3VuaXgYBSABKAMSGAoLdGFza19zdGF0dXMYBiABKAlIAIgBARIXCgp0YXNrX2Vycm9yGAcgASgJSAGIAQESEwoGcHJfdXJsGAggASgJSAKIAQFCDgoMX3Rhc2tfc3RhdHVzQg0KC190YXNrX2Vycm9yQgkKB19wcl91cmwiSwoZTGlzdFdvcmt0cmVlc1ZpZXdSZXNwb25zZRIuCgl3b3JrdHJlZXMYASADKAsyGy5hZ2VudGZsZWV0LnYxLldvcmt0cmVlVmlldyJ1CgxKb3VybmFsRW50cnkSCgoCaWQYASABKAMSDAoEcmVwbxgCIAEoCRINCgVhY3RvchgDIAEoCRISCgpldmVudF90eXBlGAQgASgJEhQKDHBheWxvYWRfanNvbhgFIAEoCRISCgpjcmVhdGVkX2F0GAYgASgJIkIKEUdldEpvdXJuYWxSZXF1ZXN0EgwKBHJlcG8YASABKAkSEAoIc2luY2VfaWQYAiABKAMSDQoFbGltaXQYAyABKAUiUwoSR2V0Sm91cm5hbFJlc3BvbnNlEiwKB2VudHJpZXMYASADKAsyGy5hZ2VudGZsZWV0LnYxLkpvdXJuYWxFbnRyeRIPCgduZXh0X2lkGAIgASgDIjYKBFJlcG8SDAoEbmFtZRgBIAEoCRILCgN1cmwYAiABKAkSEwoLYmFzZV9icmFuY2gYAyABKAkiEgoQTGlzdFJlcG9zUmVxdWVzdCI3ChFMaXN0UmVwb3NSZXNwb25zZRIiCgVyZXBvcxgBIAMoCzITLmFnZW50ZmxlZXQudjEuUmVwbyJDChFDcmVhdGVSZXBvUmVxdWVzdBIMCgRuYW1lGAEgASgJEgsKA3VybBgCIAEoCRITCgtiYXNlX2JyYW5jaBgDIAEoCSI3ChJDcmVhdGVSZXBvUmVzcG9uc2USIQoEcmVwbxgBIAEoCzITLmFnZW50ZmxlZXQudjEuUmVwbyJDChFVcGRhdGVSZXBvUmVxdWVzdBIMCgRuYW1lGAEgASgJEgsKA3VybBgCIAEoCRITCgtiYXNlX2JyYW5jaBgDIAEoCSI3ChJVcGRhdGVSZXBvUmVzcG9uc2USIQoEcmVwbxgBIAEoCzITLmFnZW50ZmxlZXQudjEuUmVwbyIhChFEZWxldGVSZXBvUmVxdWVzdBIMCgRuYW1lGAEgASgJIiQKEkRlbGV0ZVJlcG9SZXNwb25zZRIOCgZzdGF0dXMYASABKAkysg0KEERhc2hib2FyZFNlcnZpY2USTgoJTGlzdFRhc2tzEh8uYWdlbnRmbGVldC52MS5MaXN0VGFza3NSZXF1ZXN0GiAuYWdlbnRmbGVldC52MS5MaXN0VGFza3NSZXNwb25zZRJICgdHZXRUYXNrEh0uYWdlbnRmbGVldC52MS5HZXRUYXNrUmVxdWVzdBoeLmFnZW50ZmxlZXQudjEuR2V0VGFza1Jlc3BvbnNlElEKCkNyZWF0ZVRhc2sSIC5hZ2VudGZsZWV0LnYxLkNyZWF0ZVRhc2tSZXF1ZXN0GiEuYWdlbnRmbGVldC52MS5DcmVhdGVUYXNrUmVzcG9uc2USZgoNR2V0VHJhbnNjcmlwdBIpLmFnZW50ZmxlZXQudjEuUmVhZFRyYW5zY3JpcHRTaW5jZVJlcXVlc3QaKi5hZ2VudGZsZWV0LnYxLlJlYWRUcmFuc2NyaXB0U2luY2VSZXNwb25zZRJcChBTdHJlYW1UcmFuc2NyaXB0EiYuYWdlbnRmbGVldC52MS5TdHJlYW1UcmFuc2NyaXB0UmVxdWVzdBoeLmFnZW50ZmxlZXQudjEuVHJhbnNjcmlwdEVudHJ5MAESVwoMR2V0RTJlU3RhdHVzEiIuYWdlbnRmbGVldC52MS5HZXRFMmVTdGF0dXNSZXF1ZXN0GiMuYWdlbnRmbGVldC52MS5HZXRFMmVTdGF0dXNSZXNwb25zZRJICgdBcHByb3ZlEh0uYWdlbnRmbGVldC52MS5BcHByb3ZlUmVxdWVzdBoeLmFnZW50ZmxlZXQudjEuQXBwcm92ZVJlc3BvbnNlEj8KBFN0b3ASGi5hZ2VudGZsZWV0LnYxLlN0b3BSZXF1ZXN0GhsuYWdlbnRmbGVldC52MS5TdG9wUmVzcG9uc2USZgoRU2V0UGVybWlzc2lvbk1vZGUSJy5hZ2VudGZsZWV0LnYxLlNldFBlcm1pc3Npb25Nb2RlUmVxdWVzdBooLmFnZW50ZmxlZXQudjEuU2V0UGVybWlzc2lvbk1vZGVSZXNwb25zZRJICgdLaWxsRTJlEh0uYWdlbnRmbGVldC52MS5LaWxsRTJlUmVxdWVzdBoeLmFnZW50ZmxlZXQudjEuS2lsbEUyZVJlc3BvbnNlEl0KDkFuc3dlclF1ZXN0aW9uEiQuYWdlbnRmbGVldC52MS5BbnN3ZXJRdWVzdGlvblJlcXVlc3QaJS5hZ2VudGZsZWV0LnYxLkFuc3dlclF1ZXN0aW9uUmVzcG9uc2USSAoHRGlzY3VzcxIdLmFnZW50ZmxlZXQudjEuRGlzY3Vzc1JlcXVlc3QaHi5hZ2VudGZsZWV0LnYxLkRpc2N1c3NSZXNwb25zZRJRCgpEZWxldGVUYXNrEiAuYWdlbnRmbGVldC52MS5EZWxldGVUYXNrUmVxdWVzdBohLmFnZW50ZmxlZXQudjEuRGVsZXRlVGFza1Jlc3BvbnNlEl4KDUxpc3RXb3JrdHJlZXMSIy5hZ2VudGZsZWV0LnYxLkxpc3RXb3JrdHJlZXNSZXF1ZXN0GiguYWdlbnRmbGVldC52MS5MaXN0V29ya3RyZWVzVmlld1Jlc3BvbnNlEl0KDkRlbGV0ZVdvcmt0cmVlEiQuYWdlbnRmbGVldC52MS5EZWxldGVXb3JrdHJlZVJlcXVlc3QaJS5hZ2VudGZsZWV0LnYxLkRlbGV0ZVdvcmt0cmVlUmVzcG9uc2USUQoKR2V0Sm91cm5hbBIgLmFnZW50ZmxlZXQudjEuR2V0Sm91cm5hbFJlcXVlc3QaIS5hZ2VudGZsZWV0LnYxLkdldEpvdXJuYWxSZXNwb25zZRJOCglMaXN0UmVwb3MSHy5hZ2VudGZsZWV0LnYxLkxpc3RSZXBvc1JlcXVlc3QaIC5hZ2VudGZsZWV0LnYxLkxpc3RSZXBvc1Jlc3BvbnNlElEKCkNyZWF0ZVJlcG8SIC5hZ2VudGZsZWV0LnYxLkNyZWF0ZVJlcG9SZXF1ZXN0GiEuYWdlbnRmbGVldC52MS5DcmVhdGVSZXBvUmVzcG9uc2USUQoKVXBkYXRlUmVwbxIgLmFnZW50ZmxlZXQudjEuVXBkYXRlUmVwb1JlcXVlc3QaIS5hZ2VudGZsZWV0LnYxLlVwZGF0ZVJlcG9SZXNwb25zZRJRCgpEZWxldGVSZXBvEiAuYWdlbnRmbGVldC52MS5EZWxldGVSZXBvUmVxdWVzdBohLmFnZW50ZmxlZXQudjEuRGVsZXRlUmVwb1Jlc3BvbnNlQk1aS2dpdGh1Yi5jb20vTW9oYW1tYWRCbmVpL2FnZW50LWZsZWV0L3Byb3RvL2dlbi9nby9hZ2VudGZsZWV0L3YxO2FnZW50ZmxlZXR2MWIGcHJvdG8z", [file_agentfleet_v1_provisioner, file_agentfleet_v1_transcript]);
+  fileDesc("Ch1hZ2VudGZsZWV0L3YxL2Rhc2hib2FyZC5wcm90bxINYWdlbnRmbGVldC52MSLOAwoEVGFzaxIKCgJpZBgBIAEoCRIMCgRyZXBvGAIgASgJEhMKC2Rlc2NyaXB0aW9uGAMgASgJEg4KBnN0YXR1cxgEIAEoCRIWCgl0aHJlYWRfaWQYBSABKAlIAIgBARITCgZwcl91cmwYBiABKAlIAYgBARIWCglwb2RfcGhhc2UYByABKAlIAogBARIYCgtwb2RfbWVzc2FnZRgIIAEoCUgDiAEBEhkKDGhlYXJ0YmVhdF9hdBgJIAEoCUgEiAEBEhMKC3JldHJ5X2NvdW50GAogASgFEhcKCmxhc3RfZXJyb3IYCyABKAlIBYgBARIXCgpzZXNzaW9uX2lkGAwgASgJSAaIAQESGwoObGFzdF9hY3RpdmVfYXQYDSABKAlIB4gBARIcCg9wZXJtaXNzaW9uX21vZGUYDiABKAlICIgBAUIMCgpfdGhyZWFkX2lkQgkKB19wcl91cmxCDAoKX3BvZF9waGFzZUIOCgxfcG9kX21lc3NhZ2VCDwoNX2hlYXJ0YmVhdF9hdEINCgtfbGFzdF9lcnJvckINCgtfc2Vzc2lvbl9pZEIRCg9fbGFzdF9hY3RpdmVfYXRCEgoQX3Blcm1pc3Npb25fbW9kZSIhChBMaXN0VGFza3NSZXF1ZXN0Eg0KBWxpbWl0GAEgASgFIjcKEUxpc3RUYXNrc1Jlc3BvbnNlEiIKBXRhc2tzGAEgAygLMhMuYWdlbnRmbGVldC52MS5UYXNrIhwKDkdldFRhc2tSZXF1ZXN0EgoKAmlkGAEgASgJIjQKD0dldFRhc2tSZXNwb25zZRIhCgR0YXNrGAEgASgLMhMuYWdlbnRmbGVldC52MS5UYXNrIjYKEUNyZWF0ZVRhc2tSZXF1ZXN0EgwKBHJlcG8YASABKAkSEwoLZGVzY3JpcHRpb24YAiABKAkiNwoSQ3JlYXRlVGFza1Jlc3BvbnNlEiEKBHRhc2sYASABKAsyEy5hZ2VudGZsZWV0LnYxLlRhc2siPQoXU3RyZWFtVHJhbnNjcmlwdFJlcXVlc3QSDwoHdGFza19pZBgBIAEoCRIRCglzaW5jZV9zZXEYAiABKAMiJgoTR2V0RTJlU3RhdHVzUmVxdWVzdBIPCgd0YXNrX2lkGAEgASgJIjsKFEdldEUyZVN0YXR1c1Jlc3BvbnNlEg4KBnN0YXR1cxgBIAEoCRITCgtwcmV2aWV3X3VybBgCIAEoCSI+CgtTdG9wUmVxdWVzdBIPCgd0YXNrX2lkGAEgASgJEhMKBnJlYXNvbhgCIAEoCUgAiAEBQgkKB19yZWFzb24iHgoMU3RvcFJlc3BvbnNlEg4KBnN0YXR1cxgBIAEoCSI5ChhTZXRQZXJtaXNzaW9uTW9kZVJlcXVlc3QSDwoHdGFza19pZBgBIAEoCRIMCgRtb2RlGAIgASgJIisKGVNldFBlcm1pc3Npb25Nb2RlUmVzcG9uc2USDgoGc3RhdHVzGAEgASgJIlEKGlJlc3BvbmRUb1Blcm1pc3Npb25SZXF1ZXN0Eg8KB3Rhc2tfaWQYASABKAkSCwoDc2VxGAIgASgDEhUKDWRlY2lzaW9uX2pzb24YAyABKAkiLQobUmVzcG9uZFRvUGVybWlzc2lvblJlc3BvbnNlEg4KBnN0YXR1cxgBIAEoCSIhCg5LaWxsRTJlUmVxdWVzdBIPCgd0YXNrX2lkGAEgASgJIiEKD0tpbGxFMmVSZXNwb25zZRIOCgZraWxsZWQYASABKAgiSwoVQW5zd2VyUXVlc3Rpb25SZXF1ZXN0Eg8KB3Rhc2tfaWQYASABKAkSCwoDc2VxGAIgASgDEhQKDGFuc3dlcnNfanNvbhgDIAEoCSIoChZBbnN3ZXJRdWVzdGlvblJlc3BvbnNlEg4KBnN0YXR1cxgBIAEoCSIvCg5EaXNjdXNzUmVxdWVzdBIPCgd0YXNrX2lkGAEgASgJEgwKBHRleHQYAiABKAkiIQoPRGlzY3Vzc1Jlc3BvbnNlEg4KBnN0YXR1cxgBIAEoCSIkChFEZWxldGVUYXNrUmVxdWVzdBIPCgd0YXNrX2lkGAEgASgJIiQKEkRlbGV0ZVRhc2tSZXNwb25zZRIOCgZzdGF0dXMYASABKAki2wEKDFdvcmt0cmVlVmlldxIPCgd0YXNrX2lkGAEgASgJEgwKBHJlcG8YAiABKAkSDgoGYnJhbmNoGAMgASgJEhYKDnVwc3RyZWFtX3RyYWNrGAQgASgJEhIKCm10aW1lX3VuaXgYBSABKAMSGAoLdGFza19zdGF0dXMYBiABKAlIAIgBARIXCgp0YXNrX2Vycm9yGAcgASgJSAGIAQESEwoGcHJfdXJsGAggASgJSAKIAQFCDgoMX3Rhc2tfc3RhdHVzQg0KC190YXNrX2Vycm9yQgkKB19wcl91cmwiSwoZTGlzdFdvcmt0cmVlc1ZpZXdSZXNwb25zZRIuCgl3b3JrdHJlZXMYASADKAsyGy5hZ2VudGZsZWV0LnYxLldvcmt0cmVlVmlldyJ1CgxKb3VybmFsRW50cnkSCgoCaWQYASABKAMSDAoEcmVwbxgCIAEoCRINCgVhY3RvchgDIAEoCRISCgpldmVudF90eXBlGAQgASgJEhQKDHBheWxvYWRfanNvbhgFIAEoCRISCgpjcmVhdGVkX2F0GAYgASgJIkIKEUdldEpvdXJuYWxSZXF1ZXN0EgwKBHJlcG8YASABKAkSEAoIc2luY2VfaWQYAiABKAMSDQoFbGltaXQYAyABKAUiUwoSR2V0Sm91cm5hbFJlc3BvbnNlEiwKB2VudHJpZXMYASADKAsyGy5hZ2VudGZsZWV0LnYxLkpvdXJuYWxFbnRyeRIPCgduZXh0X2lkGAIgASgDIjYKBFJlcG8SDAoEbmFtZRgBIAEoCRILCgN1cmwYAiABKAkSEwoLYmFzZV9icmFuY2gYAyABKAkiEgoQTGlzdFJlcG9zUmVxdWVzdCI3ChFMaXN0UmVwb3NSZXNwb25zZRIiCgVyZXBvcxgBIAMoCzITLmFnZW50ZmxlZXQudjEuUmVwbyJDChFDcmVhdGVSZXBvUmVxdWVzdBIMCgRuYW1lGAEgASgJEgsKA3VybBgCIAEoCRITCgtiYXNlX2JyYW5jaBgDIAEoCSI3ChJDcmVhdGVSZXBvUmVzcG9uc2USIQoEcmVwbxgBIAEoCzITLmFnZW50ZmxlZXQudjEuUmVwbyJDChFVcGRhdGVSZXBvUmVxdWVzdBIMCgRuYW1lGAEgASgJEgsKA3VybBgCIAEoCRITCgtiYXNlX2JyYW5jaBgDIAEoCSI3ChJVcGRhdGVSZXBvUmVzcG9uc2USIQoEcmVwbxgBIAEoCzITLmFnZW50ZmxlZXQudjEuUmVwbyIhChFEZWxldGVSZXBvUmVxdWVzdBIMCgRuYW1lGAEgASgJIiQKEkRlbGV0ZVJlcG9SZXNwb25zZRIOCgZzdGF0dXMYASABKAky1g0KEERhc2hib2FyZFNlcnZpY2USTgoJTGlzdFRhc2tzEh8uYWdlbnRmbGVldC52MS5MaXN0VGFza3NSZXF1ZXN0GiAuYWdlbnRmbGVldC52MS5MaXN0VGFza3NSZXNwb25zZRJICgdHZXRUYXNrEh0uYWdlbnRmbGVldC52MS5HZXRUYXNrUmVxdWVzdBoeLmFnZW50ZmxlZXQudjEuR2V0VGFza1Jlc3BvbnNlElEKCkNyZWF0ZVRhc2sSIC5hZ2VudGZsZWV0LnYxLkNyZWF0ZVRhc2tSZXF1ZXN0GiEuYWdlbnRmbGVldC52MS5DcmVhdGVUYXNrUmVzcG9uc2USZgoNR2V0VHJhbnNjcmlwdBIpLmFnZW50ZmxlZXQudjEuUmVhZFRyYW5zY3JpcHRTaW5jZVJlcXVlc3QaKi5hZ2VudGZsZWV0LnYxLlJlYWRUcmFuc2NyaXB0U2luY2VSZXNwb25zZRJcChBTdHJlYW1UcmFuc2NyaXB0EiYuYWdlbnRmbGVldC52MS5TdHJlYW1UcmFuc2NyaXB0UmVxdWVzdBoeLmFnZW50ZmxlZXQudjEuVHJhbnNjcmlwdEVudHJ5MAESVwoMR2V0RTJlU3RhdHVzEiIuYWdlbnRmbGVldC52MS5HZXRFMmVTdGF0dXNSZXF1ZXN0GiMuYWdlbnRmbGVldC52MS5HZXRFMmVTdGF0dXNSZXNwb25zZRI/CgRTdG9wEhouYWdlbnRmbGVldC52MS5TdG9wUmVxdWVzdBobLmFnZW50ZmxlZXQudjEuU3RvcFJlc3BvbnNlEmYKEVNldFBlcm1pc3Npb25Nb2RlEicuYWdlbnRmbGVldC52MS5TZXRQZXJtaXNzaW9uTW9kZVJlcXVlc3QaKC5hZ2VudGZsZWV0LnYxLlNldFBlcm1pc3Npb25Nb2RlUmVzcG9uc2USSAoHS2lsbEUyZRIdLmFnZW50ZmxlZXQudjEuS2lsbEUyZVJlcXVlc3QaHi5hZ2VudGZsZWV0LnYxLktpbGxFMmVSZXNwb25zZRJdCg5BbnN3ZXJRdWVzdGlvbhIkLmFnZW50ZmxlZXQudjEuQW5zd2VyUXVlc3Rpb25SZXF1ZXN0GiUuYWdlbnRmbGVldC52MS5BbnN3ZXJRdWVzdGlvblJlc3BvbnNlEmwKE1Jlc3BvbmRUb1Blcm1pc3Npb24SKS5hZ2VudGZsZWV0LnYxLlJlc3BvbmRUb1Blcm1pc3Npb25SZXF1ZXN0GiouYWdlbnRmbGVldC52MS5SZXNwb25kVG9QZXJtaXNzaW9uUmVzcG9uc2USSAoHRGlzY3VzcxIdLmFnZW50ZmxlZXQudjEuRGlzY3Vzc1JlcXVlc3QaHi5hZ2VudGZsZWV0LnYxLkRpc2N1c3NSZXNwb25zZRJRCgpEZWxldGVUYXNrEiAuYWdlbnRmbGVldC52MS5EZWxldGVUYXNrUmVxdWVzdBohLmFnZW50ZmxlZXQudjEuRGVsZXRlVGFza1Jlc3BvbnNlEl4KDUxpc3RXb3JrdHJlZXMSIy5hZ2VudGZsZWV0LnYxLkxpc3RXb3JrdHJlZXNSZXF1ZXN0GiguYWdlbnRmbGVldC52MS5MaXN0V29ya3RyZWVzVmlld1Jlc3BvbnNlEl0KDkRlbGV0ZVdvcmt0cmVlEiQuYWdlbnRmbGVldC52MS5EZWxldGVXb3JrdHJlZVJlcXVlc3QaJS5hZ2VudGZsZWV0LnYxLkRlbGV0ZVdvcmt0cmVlUmVzcG9uc2USUQoKR2V0Sm91cm5hbBIgLmFnZW50ZmxlZXQudjEuR2V0Sm91cm5hbFJlcXVlc3QaIS5hZ2VudGZsZWV0LnYxLkdldEpvdXJuYWxSZXNwb25zZRJOCglMaXN0UmVwb3MSHy5hZ2VudGZsZWV0LnYxLkxpc3RSZXBvc1JlcXVlc3QaIC5hZ2VudGZsZWV0LnYxLkxpc3RSZXBvc1Jlc3BvbnNlElEKCkNyZWF0ZVJlcG8SIC5hZ2VudGZsZWV0LnYxLkNyZWF0ZVJlcG9SZXF1ZXN0GiEuYWdlbnRmbGVldC52MS5DcmVhdGVSZXBvUmVzcG9uc2USUQoKVXBkYXRlUmVwbxIgLmFnZW50ZmxlZXQudjEuVXBkYXRlUmVwb1JlcXVlc3QaIS5hZ2VudGZsZWV0LnYxLlVwZGF0ZVJlcG9SZXNwb25zZRJRCgpEZWxldGVSZXBvEiAuYWdlbnRmbGVldC52MS5EZWxldGVSZXBvUmVxdWVzdBohLmFnZW50ZmxlZXQudjEuRGVsZXRlUmVwb1Jlc3BvbnNlQk1aS2dpdGh1Yi5jb20vTW9oYW1tYWRCbmVpL2FnZW50LWZsZWV0L3Byb3RvL2dlbi9nby9hZ2VudGZsZWV0L3YxO2FnZW50ZmxlZXR2MWIGcHJvdG8z", [file_agentfleet_v1_provisioner, file_agentfleet_v1_transcript]);
 
 /**
  * @generated from message agentfleet.v1.Task
@@ -65,8 +65,8 @@ export type Task = Message<"agentfleet.v1.Task"> & {
   podMessage?: string | undefined;
 
   /**
-   * Reclaim-eligibility signal (ClaimNextTask reclaims a claimed/planning/
-   * implementing task once this is >10min stale — the exact staleness
+   * Reclaim-eligibility signal (ClaimNextTask reclaims a claimed/running
+   * task once this is >10min stale — the exact staleness
    * threshold the dashboard's own "stuck" badge should match). Set once at
    * claim time, refreshed by the worker pod's own heartbeat loop; unset for
    * a still-pending task. RFC3339, matching JournalEntry.created_at.
@@ -95,15 +95,14 @@ export type Task = Message<"agentfleet.v1.Task"> & {
    * phase-boundary framing). Unset until the worker's first streamed
    * message reports it.
    *
-   * @generated from field: optional string planning_session_id = 12;
+   * @generated from field: optional string session_id = 12;
    */
-  planningSessionId?: string | undefined;
+  sessionId?: string | undefined;
 
   /**
-   * Last time a planning_transcript entry was appended for this task —
-   * substrate for the idle-timeout backstop that tears down an unattended
-   * pod. RFC3339, matching heartbeat_at. Unset for a task with no activity
-   * yet.
+   * Last time a transcript entry was appended for this task — substrate
+   * for the idle-timeout backstop that tears down an unattended pod.
+   * RFC3339, matching heartbeat_at. Unset for a task with no activity yet.
    *
    * @generated from field: optional string last_active_at = 13;
    */
@@ -306,40 +305,6 @@ export const GetE2eStatusResponseSchema: GenMessage<GetE2eStatusResponse> = /*@_
   messageDesc(file_agentfleet_v1_dashboard, 9);
 
 /**
- * @generated from message agentfleet.v1.ApproveRequest
- */
-export type ApproveRequest = Message<"agentfleet.v1.ApproveRequest"> & {
-  /**
-   * @generated from field: string task_id = 1;
-   */
-  taskId: string;
-};
-
-/**
- * Describes the message agentfleet.v1.ApproveRequest.
- * Use `create(ApproveRequestSchema)` to create a new message.
- */
-export const ApproveRequestSchema: GenMessage<ApproveRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 10);
-
-/**
- * @generated from message agentfleet.v1.ApproveResponse
- */
-export type ApproveResponse = Message<"agentfleet.v1.ApproveResponse"> & {
-  /**
-   * @generated from field: string status = 1;
-   */
-  status: string;
-};
-
-/**
- * Describes the message agentfleet.v1.ApproveResponse.
- * Use `create(ApproveResponseSchema)` to create a new message.
- */
-export const ApproveResponseSchema: GenMessage<ApproveResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 11);
-
-/**
  * @generated from message agentfleet.v1.StopRequest
  */
 export type StopRequest = Message<"agentfleet.v1.StopRequest"> & {
@@ -359,7 +324,7 @@ export type StopRequest = Message<"agentfleet.v1.StopRequest"> & {
  * Use `create(StopRequestSchema)` to create a new message.
  */
 export const StopRequestSchema: GenMessage<StopRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 12);
+  messageDesc(file_agentfleet_v1_dashboard, 10);
 
 /**
  * @generated from message agentfleet.v1.StopResponse
@@ -376,16 +341,17 @@ export type StopResponse = Message<"agentfleet.v1.StopResponse"> & {
  * Use `create(StopResponseSchema)` to create a new message.
  */
 export const StopResponseSchema: GenMessage<StopResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 13);
+  messageDesc(file_agentfleet_v1_dashboard, 11);
 
 /**
- * Sets an arbitrary SDK permission mode on a running task (docs/adr/0027) —
- * distinct from Approve, which stays a fixed plan->default flip matching
- * Discord's binary /approve. `mode` must be one of "acceptEdits"|
- * "dontAsk"|"bypassPermissions" (validated server-side); "bypassPermissions"
- * deliberately disables the canUseTool Write/Edit gate for this task for the
- * rest of the session — the dashboard must get explicit, typed confirmation
- * from the human before sending that value.
+ * Sets an arbitrary SDK permission mode on a running task (docs/adr/0027,
+ * extended by the sessions redesign supersession of docs/adr/0021/0025 —
+ * Approve is gone, this is now the only mode lever). `mode` must be one of
+ * "default"|"plan"|"acceptEdits"|"bypassPermissions" (validated
+ * server-side); "bypassPermissions" deliberately disables the canUseTool
+ * prompt-and-wait gate for this task for the rest of the session — the
+ * dashboard must get explicit, typed confirmation from the human before
+ * sending that value.
  *
  * @generated from message agentfleet.v1.SetPermissionModeRequest
  */
@@ -406,7 +372,7 @@ export type SetPermissionModeRequest = Message<"agentfleet.v1.SetPermissionModeR
  * Use `create(SetPermissionModeRequestSchema)` to create a new message.
  */
 export const SetPermissionModeRequestSchema: GenMessage<SetPermissionModeRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 14);
+  messageDesc(file_agentfleet_v1_dashboard, 12);
 
 /**
  * @generated from message agentfleet.v1.SetPermissionModeResponse
@@ -423,6 +389,60 @@ export type SetPermissionModeResponse = Message<"agentfleet.v1.SetPermissionMode
  * Use `create(SetPermissionModeResponseSchema)` to create a new message.
  */
 export const SetPermissionModeResponseSchema: GenMessage<SetPermissionModeResponse> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_dashboard, 13);
+
+/**
+ * Answers a pending PERMISSION_REQUEST-type transcript entry (posted by
+ * canUseTool for any tool call the SDK's current permission mode would
+ * prompt for — supersedes docs/adr/0021's Write/Edit-absent-from-
+ * allowedTools gate). `seq` is that entry's own seq, carried the same way
+ * AnswerQuestion's is — for the dashboard's own bookkeeping, not required
+ * for correlation server-side. A sibling RPC to AnswerQuestion rather than
+ * overloading it: the payload shape differs (allow/deny/updatedInput vs.
+ * free-form answers JSON) and there's no real code to share beyond one
+ * AppendReply call either way.
+ *
+ * @generated from message agentfleet.v1.RespondToPermissionRequest
+ */
+export type RespondToPermissionRequest = Message<"agentfleet.v1.RespondToPermissionRequest"> & {
+  /**
+   * @generated from field: string task_id = 1;
+   */
+  taskId: string;
+
+  /**
+   * @generated from field: int64 seq = 2;
+   */
+  seq: bigint;
+
+  /**
+   * @generated from field: string decision_json = 3;
+   */
+  decisionJson: string;
+};
+
+/**
+ * Describes the message agentfleet.v1.RespondToPermissionRequest.
+ * Use `create(RespondToPermissionRequestSchema)` to create a new message.
+ */
+export const RespondToPermissionRequestSchema: GenMessage<RespondToPermissionRequest> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_dashboard, 14);
+
+/**
+ * @generated from message agentfleet.v1.RespondToPermissionResponse
+ */
+export type RespondToPermissionResponse = Message<"agentfleet.v1.RespondToPermissionResponse"> & {
+  /**
+   * @generated from field: string status = 1;
+   */
+  status: string;
+};
+
+/**
+ * Describes the message agentfleet.v1.RespondToPermissionResponse.
+ * Use `create(RespondToPermissionResponseSchema)` to create a new message.
+ */
+export const RespondToPermissionResponseSchema: GenMessage<RespondToPermissionResponse> = /*@__PURE__*/
   messageDesc(file_agentfleet_v1_dashboard, 15);
 
 /**
@@ -460,11 +480,11 @@ export const KillE2eResponseSchema: GenMessage<KillE2eResponse> = /*@__PURE__*/
   messageDesc(file_agentfleet_v1_dashboard, 17);
 
 /**
- * Answers a pending QUESTION-type transcript entry (posted by the planner's
+ * Answers a pending QUESTION-type transcript entry (posted by the agent's
  * AskUserQuestion MCP tool call, see docs/adr/0018). `seq` is that entry's
  * own seq — carried for the dashboard's own bookkeeping/idempotency, not
  * required for correlation server-side (only one question is ever pending
- * per task at a time, since the planner's tool call blocks on it).
+ * per task at a time, since the agent's tool call blocks on it).
  * `answers_json` is a JSON-encoded {"answers": {"<question>": "<label>"}}
  * payload, opaque to fleet-core — it's appended verbatim as the answer
  * entry's `text` and returned verbatim to the blocked MCP tool call.
@@ -519,8 +539,8 @@ export const AnswerQuestionResponseSchema: GenMessage<AnswerQuestionResponse> = 
  * streamHumanMessages SSE the same way a Discord reply already is (no
  * worker/sidecar changes needed, it's a plain cursor-based transcript
  * stream, not Discord-specific). `from`/`type` are hardcoded server-side,
- * same pattern as Approve hardcoding "human"/"approve" — the dashboard has
- * no need to expose them.
+ * same pattern as Stop hardcoding "human"/"abort" — the dashboard has no
+ * need to expose them.
  *
  * @generated from message agentfleet.v1.DiscussRequest
  */
@@ -1029,14 +1049,6 @@ export const DashboardService: GenService<{
     output: typeof GetE2eStatusResponseSchema;
   },
   /**
-   * @generated from rpc agentfleet.v1.DashboardService.Approve
-   */
-  approve: {
-    methodKind: "unary";
-    input: typeof ApproveRequestSchema;
-    output: typeof ApproveResponseSchema;
-  },
-  /**
    * @generated from rpc agentfleet.v1.DashboardService.Stop
    */
   stop: {
@@ -1067,6 +1079,14 @@ export const DashboardService: GenService<{
     methodKind: "unary";
     input: typeof AnswerQuestionRequestSchema;
     output: typeof AnswerQuestionResponseSchema;
+  },
+  /**
+   * @generated from rpc agentfleet.v1.DashboardService.RespondToPermission
+   */
+  respondToPermission: {
+    methodKind: "unary";
+    input: typeof RespondToPermissionRequestSchema;
+    output: typeof RespondToPermissionResponseSchema;
   },
   /**
    * @generated from rpc agentfleet.v1.DashboardService.Discuss

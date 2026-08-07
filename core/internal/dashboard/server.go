@@ -149,19 +149,13 @@ func (s *Server) GetE2EStatus(ctx context.Context, req *connect.Request[agentfle
 	return connect.NewResponse(&agentfleetv1.GetE2EStatusResponse{Status: status, PreviewUrl: previewURL}), nil
 }
 
-// Approve, Stop, and KillE2E below call the exact same store methods
-// core/internal/discord/handlers.go's /approve, /stop, and
-// /e2e-kill commands already call — no new business logic, just a second
-// caller (see docs/adr/0014, docs/adr/0015).
-
-func (s *Server) Approve(ctx context.Context, req *connect.Request[agentfleetv1.ApproveRequest]) (*connect.Response[agentfleetv1.ApproveResponse], error) {
-	taskID := req.Msg.GetTaskId()
-	if _, err := s.transcr.Append(ctx, taskID, "human", "approved", "approve", uuid.NewString()); err != nil {
-		slog.Error("dashboard Approve", "taskId", taskID, "error", err)
-		return nil, connect.NewError(connect.CodeInternal, err)
-	}
-	return connect.NewResponse(&agentfleetv1.ApproveResponse{Status: "approved"}), nil
-}
+// Stop and KillE2E below call the exact same store methods
+// core/internal/discord/handlers.go's /stop and /e2e-kill commands already
+// call — no new business logic, just a second caller (see docs/adr/0014,
+// docs/adr/0015). Approve is gone as of the sessions redesign (supersedes
+// docs/adr/0021/0025's phase-boundary framing) — there's no plan->default
+// flip left to fix a button to; SetPermissionMode below covers mode
+// switching, RespondToPermission covers per-tool-call decisions.
 
 // Stop posts a cooperative abort message (the worker pod notices it via
 // streamHumanMessages and exits cleanly if it's alive and responsive) and
@@ -187,23 +181,30 @@ func (s *Server) Stop(ctx context.Context, req *connect.Request[agentfleetv1.Sto
 }
 
 // validPermissionModes is an allowlist, not a passthrough — the value ends
-// up in a real SDK call (worker/src/planning.ts's streamHumanMessages calls
+// up in a real SDK call (worker/src/session.ts's streamHumanMessages calls
 // q.setPermissionMode(mode) verbatim), so an unvalidated string here would
 // let a malformed dashboard request reach the SDK with an arbitrary value.
-// "plan"/"default" are deliberately excluded: those stay reachable only via
-// the existing binary Approve, matching Discord's /approve (docs/adr/0027).
+// "default"/"plan" are now included — Approve (the old fixed plan->default
+// flip) is gone as of the sessions redesign, so these two are only
+// reachable through this one allowlisted lever.
 var validPermissionModes = map[string]bool{
+	"default":           true,
+	"plan":               true,
 	"acceptEdits":       true,
 	"dontAsk":           true,
 	"bypassPermissions": true,
 }
 
-// SetPermissionMode sets an arbitrary SDK permission mode on a running task
-// (docs/adr/0027) — additive to Approve, which stays a fixed plan->default
-// flip. "bypassPermissions" deliberately disables the canUseTool Write/Edit
+// SetPermissionMode sets the running session's SDK permission mode
+// (docs/adr/0027, extended by the sessions redesign supersession of
+// docs/adr/0021/0025 — this is now the only mode lever, Approve is gone).
+// "bypassPermissions" deliberately disables the canUseTool prompt-and-wait
 // gate for the task's remaining session (see ADR-0027's SDK-source trace);
-// the dashboard is responsible for getting explicit, typed confirmation from
-// the human before ever sending that value here.
+// the dashboard is responsible for getting explicit, typed confirmation
+// from the human before ever sending that value here. Persists to
+// tasks.permission_mode (durable "what mode is this session in right now"
+// for the dashboard's mode picker) in addition to the transcript append
+// that actually reaches the running worker.
 func (s *Server) SetPermissionMode(ctx context.Context, req *connect.Request[agentfleetv1.SetPermissionModeRequest]) (*connect.Response[agentfleetv1.SetPermissionModeResponse], error) {
 	taskID := req.Msg.GetTaskId()
 	mode := req.Msg.GetMode()
@@ -212,6 +213,10 @@ func (s *Server) SetPermissionMode(ctx context.Context, req *connect.Request[age
 	}
 	if _, err := s.transcr.Append(ctx, taskID, "human", mode, "permission_mode", uuid.NewString()); err != nil {
 		slog.Error("dashboard SetPermissionMode", "taskId", taskID, "mode", mode, "error", err)
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	if err := s.tasks.SetPermissionMode(ctx, taskID, mode); err != nil {
+		slog.Error("dashboard SetPermissionMode: persist", "taskId", taskID, "mode", mode, "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	return connect.NewResponse(&agentfleetv1.SetPermissionModeResponse{Status: "set"}), nil
@@ -227,7 +232,7 @@ func (s *Server) KillE2E(ctx context.Context, req *connect.Request[agentfleetv1.
 }
 
 // AnswerQuestion appends the human's answer to a pending QUESTION-type
-// transcript entry (posted by the planner's AskUserQuestion MCP tool call,
+// transcript entry (posted by the agent's AskUserQuestion MCP tool call,
 // see docs/adr/0018) via AppendReply — req.Msg.Seq is the question entry's
 // own seq, now actually used server-side for correlation
 // (reliability-findings.md #0: "any pending question + any reply" let an
@@ -241,13 +246,27 @@ func (s *Server) AnswerQuestion(ctx context.Context, req *connect.Request[agentf
 	return connect.NewResponse(&agentfleetv1.AnswerQuestionResponse{Status: "answered"}), nil
 }
 
+// RespondToPermission answers a pending PERMISSION_REQUEST entry — the
+// generalized canUseTool prompt-and-wait gate's counterpart to
+// AnswerQuestion, same AppendReply-by-seq shape, kept as a sibling RPC
+// rather than overloaded onto AnswerQuestion since the payload differs
+// (allow/deny/updatedInput JSON vs. free-form answers JSON).
+func (s *Server) RespondToPermission(ctx context.Context, req *connect.Request[agentfleetv1.RespondToPermissionRequest]) (*connect.Response[agentfleetv1.RespondToPermissionResponse], error) {
+	taskID := req.Msg.GetTaskId()
+	if _, err := s.transcr.AppendReply(ctx, taskID, "human", req.Msg.GetDecisionJson(), "permission_response", uuid.NewString(), req.Msg.GetSeq()); err != nil {
+		slog.Error("dashboard RespondToPermission", "taskId", taskID, "error", err)
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	return connect.NewResponse(&agentfleetv1.RespondToPermissionResponse{Status: "answered"}), nil
+}
+
 // Discuss appends a human-authored free-text message from the dashboard —
 // full parity with a Discord thread reply. The worker's existing
 // streamHumanMessages SSE picks it up the same way it already picks up a
 // Discord reply, since it's just a cursor-based transcript stream with no
 // origin-specific handling (reliability-findings.md's "seamless
 // interaction" gap: the dashboard previously had no way to send arbitrary
-// text, only structured Approve/Stop/AnswerQuestion).
+// text, only structured Stop/AnswerQuestion/RespondToPermission).
 func (s *Server) Discuss(ctx context.Context, req *connect.Request[agentfleetv1.DiscussRequest]) (*connect.Response[agentfleetv1.DiscussResponse], error) {
 	taskID := req.Msg.GetTaskId()
 	text := req.Msg.GetText()
@@ -447,7 +466,8 @@ func taskToProto(t tasks.Task) *agentfleetv1.Task {
 		HeartbeatAt:       heartbeatAt,
 		RetryCount:        int32(t.RetryCount),
 		LastError:         t.LastError,
-		PlanningSessionId: t.PlanningSessionID,
+		SessionId:         t.SessionID,
+		PermissionMode:    t.PermissionMode,
 	}
 }
 

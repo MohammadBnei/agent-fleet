@@ -249,7 +249,7 @@ func (c *Client) CreateWorkerPod(ctx context.Context, taskID, repo, description,
 					// env, same value.
 					{Name: "GH_TOKEN", Value: os.Getenv("GH_TOKEN")},
 					// The Agent SDK reads this straight from process.env
-					// (worker/src/planning.ts) — without forwarding it here,
+					// (worker/src/session.ts) — without forwarding it here,
 					// no worker pod can authenticate to run Claude Code at
 					// all, since containers don't inherit env from whatever
 					// created them.

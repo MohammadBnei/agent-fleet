@@ -56,7 +56,7 @@ func TestRelay_NudgeTriggersImmediateRelay(t *testing.T) {
 		t.Fatalf("insert task: %v", err)
 	}
 
-	if _, err := store.Append(ctx, taskID, "planner", "hello", "discussion", ""); err != nil {
+	if _, err := store.Append(ctx, taskID, "agent", "hello", "discussion", ""); err != nil {
 		t.Fatalf("append: %v", err)
 	}
 
@@ -95,7 +95,7 @@ func TestRelay_AllowlistOnlyRelaysDiscordSafeTypes(t *testing.T) {
 	discordSafe := []string{"discussion", "approve", "abort", "question", "answer"}
 	discordUnsafe := []string{"system", "assistant", "user", "result", "tool_call"}
 	for _, ty := range append(append([]string{}, discordSafe...), discordUnsafe...) {
-		if _, err := store.Append(ctx, taskID, "planner", "msg-"+ty, ty, ""); err != nil {
+		if _, err := store.Append(ctx, taskID, "agent", "msg-"+ty, ty, ""); err != nil {
 			t.Fatalf("append %s: %v", ty, err)
 		}
 	}
@@ -123,7 +123,7 @@ func TestRelay_AllowlistOnlyRelaysDiscordSafeTypes(t *testing.T) {
 	// on every future tick).
 	var pendingCount int
 	if err := pool.QueryRow(ctx, `
-		SELECT count(*) FROM planning_transcript WHERE task_id = $1 AND relayed_to_discord = false
+		SELECT count(*) FROM transcript WHERE task_id = $1 AND relayed_to_discord = false
 	`, taskID).Scan(&pendingCount); err != nil {
 		t.Fatalf("count pending: %v", err)
 	}

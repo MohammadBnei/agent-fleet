@@ -20,7 +20,7 @@ CREATE INDEX IF NOT EXISTS tasks_repo_status_idx ON tasks (repo, status);
 
 -- skip_critique was the /task-time opt-out for the old proposer/critic
 -- design (docs/adr/0011, superseded) — dead now that planning is a single
--- session and interview/doubt gating is the planner's own judgment call
+-- session and interview/doubt gating is the agent's own judgment call
 -- (docs/adr/0017).
 ALTER TABLE tasks DROP COLUMN IF EXISTS skip_critique;
 
@@ -31,36 +31,59 @@ ALTER TABLE tasks DROP COLUMN IF EXISTS skip_critique;
 -- forever) — is a safe re-run against the already-live table, not just
 -- future fresh creates.
 --
--- 'planning'/'implementing' are tolerated-but-deprecated as of the
--- sessions redesign (supersedes docs/adr/0021/0025's phase-boundary
--- framing): there's no fleet-imposed phase left to track, so nothing
--- writes these anymore, but they stay in the CHECK for one release so an
--- in-flight row from a rolling deploy against the old binary doesn't
--- violate the constraint. Drop them once nothing live can write them.
+-- 'planning'/'implementing' are gone as of the sessions redesign
+-- (supersedes docs/adr/0021/0025's phase-boundary framing) — there's no
+-- fleet-imposed phase left to track. 'running' replaces 'planning' as what
+-- index.ts sets once a session's pod is actually live, with no
+-- 'implementing' successor since there's no phase transition left to mark.
+-- Clean cutover, not a tolerated-legacy-value migration: homelab-scale,
+-- single deploy, no rolling-replica window where an old and new binary
+-- would both be writing this column at once.
+--
+-- Existing rows still holding a pre-cutover phase status collapse to
+-- 'running' *before* the stricter CHECK below is added — 'planning'
+-- because the pod was live, 'implementing' because that implied the pod
+-- was well past merely claimed. Must run first: adding the new CHECK
+-- against rows that still hold the old values would fail immediately.
+UPDATE tasks SET status = 'running' WHERE status IN ('planning', 'implementing');
+
 ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_status_check;
 ALTER TABLE tasks ADD CONSTRAINT tasks_status_check
-  CHECK (status IN ('pending', 'claimed', 'planning', 'implementing', 'done', 'failed', 'cancelled', 'failed_permanently'));
+  CHECK (status IN ('pending', 'claimed', 'running', 'done', 'failed', 'cancelled', 'failed_permanently'));
 
--- Crash recovery + resume (see docs/adr/0016). planning_session_id is the
--- Postgres-durable *pointer* to the single planner session's Claude session
+-- Crash recovery + resume (see docs/adr/0016). session_id is the
+-- Postgres-durable *pointer* to the session's own Claude SDK session
 -- (docs/adr/0017 — one session, not a proposer_session_id/critic_session_id
 -- pair) whose actual transcript now lives on the worker's RWX PVC
 -- (CLAUDE_CONFIG_DIR, see ADR-0016) — the id alone is useless without that
 -- PVC-side change. heartbeat_at drives stale-claim reclaim in
 -- claimNextTask; lease_id guards the rare split-brain case where a reclaim
 -- raced a not-actually-dead worker.
-ALTER TABLE tasks ADD COLUMN IF NOT EXISTS planning_session_id TEXT;
+--
+-- Renamed from planning_session_id as part of the sessions redesign
+-- (supersedes docs/adr/0021/0025's phase-boundary framing) — a guarded
+-- rename first (safe against an already-deployed environment that still
+-- has the old column), then the usual ADD COLUMN IF NOT EXISTS covers a
+-- genuinely fresh install.
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'tasks' AND column_name = 'planning_session_id')
+     AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'tasks' AND column_name = 'session_id') THEN
+    ALTER TABLE tasks RENAME COLUMN planning_session_id TO session_id;
+  END IF;
+END $$;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS session_id TEXT;
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS retry_count INT NOT NULL DEFAULT 0;
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS last_error TEXT;
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS heartbeat_at TIMESTAMPTZ;
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS lease_id UUID;
 
 -- Which model actually ran this task's session — set alongside
--- planning_session_id (core/internal/tasks/store.go's SaveSessionID,
--- called by the sidecar on the worker's behalf, docs/adr/0020/0021). Only
--- new column the shared-PVC/provisioner/sidecar redesign (docs/adr/0019-
--- 0021) actually needed — confirmed by re-checking every query the
--- rewritten Go services issue against this table.
+-- session_id (core/internal/tasks/store.go's SaveSessionID, called by the
+-- sidecar on the worker's behalf, docs/adr/0020/0021). Only new column the
+-- shared-PVC/provisioner/sidecar redesign (docs/adr/0019-0021) actually
+-- needed — confirmed by re-checking every query the rewritten Go services
+-- issue against this table.
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS model TEXT;
 
 -- Tasks created from the dashboard (DashboardService.CreateTask) have no
@@ -70,18 +93,27 @@ ALTER TABLE tasks ADD COLUMN IF NOT EXISTS model TEXT;
 ALTER TABLE tasks ALTER COLUMN discord_channel_id DROP NOT NULL;
 
 -- DashboardService.DeleteTask soft-deletes: a hard DELETE would violate
--- planning_transcript/e2e_sessions' REFERENCES tasks(id) (no cascade) the
+-- transcript/e2e_sessions' REFERENCES tasks(id) (no cascade) the
 -- moment a task has any transcript history, which is effectively always.
 -- GetTask/ListRecentTasks both filter WHERE deleted_at IS NULL.
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
 
 -- Pod-lifecycle state (PodPhase: created/scheduled/running/crashed/
 -- terminated), set by ReportPodEvents alongside its existing knowledge_journal
--- write — distinct from `status` (business state: planning/implementing/
+-- write — distinct from `status` (business state: pending/claimed/running/
 -- done/...). Lets the dashboard show worker-pod state directly instead of
 -- requiring kubectl.
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS pod_phase TEXT;
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS pod_message TEXT;
+
+-- The session's current SDK permission mode ("default"|"plan"|
+-- "acceptEdits"|"bypassPermissions"|...) — set alongside the
+-- 'permission_mode' transcript entry by DashboardService.SetPermissionMode,
+-- so the dashboard's mode picker can highlight the real active mode
+-- instead of inferring it from transcript history. NULL until a session's
+-- first SetPermissionMode call (a fresh session starts in "default" inside
+-- worker/src/session.ts, but that's not durable here until explicitly set).
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS permission_mode TEXT;
 
 -- When a human first asked to stop this task (DashboardService.Stop).
 -- Stop itself only posts a cooperative abort message to the transcript;
@@ -91,7 +123,7 @@ ALTER TABLE tasks ADD COLUMN IF NOT EXISTS pod_message TEXT;
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS stop_requested_at TIMESTAMPTZ;
 
 -- Substrate for the sessions redesign's idle-timeout backstop: bumped on
--- every planning_transcript append for this task (a decorator around
+-- every transcript append for this task (a decorator around
 -- transcript.Store, not every RPC call site individually), so a sweep can
 -- tell "pod alive but nobody's talking to it" apart from real activity.
 -- Distinct from heartbeat_at, which fires unconditionally on a timer and
@@ -138,14 +170,27 @@ ALTER TABLE e2e_sessions ADD CONSTRAINT e2e_sessions_status_check
 ALTER TABLE e2e_sessions ADD COLUMN IF NOT EXISTS kill_idempotency_key TEXT;
 
 -- Replaces the Redis list (agentfleet:planning:<taskId>) as the durable
--- store for the planner/human planning conversation (see docs/adr/0013;
--- "planner" not "proposer/critic" as of docs/adr/0017). `seq` is the
+-- store for the agent/human conversation (see docs/adr/0013). `seq` is the
 -- per-task monotonic cursor that replicates LRANGE-from-index semantics —
 -- fleet-core computes it inside the same transaction as the insert,
 -- guarded by pg_advisory_xact_lock(hashtext(task_id::text)) so a human's
--- Discord reply and the planner's own concurrent send_message call can't
+-- Discord reply and the agent's own concurrent send_message call can't
 -- race the same seq.
-CREATE TABLE IF NOT EXISTS planning_transcript (
+--
+-- Renamed from planning_transcript as part of the sessions redesign
+-- (supersedes docs/adr/0021/0025's phase-boundary framing — there's no
+-- distinct "planning" phase left to name the table after). Guarded rename
+-- first for an already-deployed environment, then CREATE TABLE IF NOT
+-- EXISTS covers a genuinely fresh install (a no-op once the rename above
+-- already ran).
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'planning_transcript')
+     AND NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'transcript') THEN
+    ALTER TABLE planning_transcript RENAME TO transcript;
+  END IF;
+END $$;
+CREATE TABLE IF NOT EXISTS transcript (
   task_id         UUID NOT NULL REFERENCES tasks(id),
   seq             BIGINT NOT NULL,
   "from"          TEXT NOT NULL,
@@ -156,13 +201,15 @@ CREATE TABLE IF NOT EXISTS planning_transcript (
   PRIMARY KEY (task_id, seq)
 );
 
-CREATE INDEX IF NOT EXISTS planning_transcript_task_seq_idx
-  ON planning_transcript (task_id, seq);
+DROP INDEX IF EXISTS planning_transcript_task_seq_idx;
+CREATE INDEX IF NOT EXISTS transcript_task_seq_idx
+  ON transcript (task_id, seq);
 
 -- Enforces the actual idempotency guarantee: retrying an append with the
 -- same (task_id, idempotency_key) must not double-post a message.
-CREATE UNIQUE INDEX IF NOT EXISTS planning_transcript_idempotency_idx
-  ON planning_transcript (task_id, idempotency_key);
+DROP INDEX IF EXISTS planning_transcript_idempotency_idx;
+CREATE UNIQUE INDEX IF NOT EXISTS transcript_idempotency_idx
+  ON transcript (task_id, idempotency_key);
 
 -- 'question'/'answer' carry a JSON payload in `text`, not prose — the
 -- AskUserQuestion MCP tool (fleet-core/internal/mcpserver) posts a
@@ -171,7 +218,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS planning_transcript_idempotency_idx
 --
 -- 'system'/'assistant'/'user'/'result' are the SDK's own raw message
 -- discriminants (reliability-findings.md #0's "relay everything, let the
--- UI decide" — worker/src/planning.ts's logSdkMessage tags every message
+-- UI decide" — worker/src/session.ts's logSdkMessage tags every message
 -- with its own msg.type verbatim, not just assistant text as before).
 -- 'tool_call' is PushToolTelemetry's sidecar-pushed summary — already
 -- inserted before this change (coreserver/server.go), just never actually
@@ -188,8 +235,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS planning_transcript_idempotency_idx
 -- {tool, input} payload. 'permission_response' is the dashboard's
 -- human-authored allow/deny decision, correlated back via reply_to_seq
 -- (below) the same way 'answer' correlates to 'question'.
-ALTER TABLE planning_transcript DROP CONSTRAINT IF EXISTS planning_transcript_type_check;
-ALTER TABLE planning_transcript ADD CONSTRAINT planning_transcript_type_check
+ALTER TABLE transcript DROP CONSTRAINT IF EXISTS planning_transcript_type_check;
+ALTER TABLE transcript DROP CONSTRAINT IF EXISTS transcript_type_check;
+ALTER TABLE transcript ADD CONSTRAINT transcript_type_check
   CHECK (type IN (
     'discussion', 'approve', 'abort', 'question', 'answer',
     'tool_call', 'system', 'assistant', 'user', 'result', 'permission_mode',
@@ -201,17 +249,17 @@ ALTER TABLE planning_transcript ADD CONSTRAINT planning_transcript_type_check
 -- whether fleet-core has successfully posted it to the Discord thread yet,
 -- so a transient Discord API failure retries instead of crashing the whole
 -- watch loop (today's unguarded postReply can do exactly that).
-ALTER TABLE planning_transcript ADD COLUMN IF NOT EXISTS relayed_to_discord BOOLEAN NOT NULL DEFAULT false;
-ALTER TABLE planning_transcript ADD COLUMN IF NOT EXISTS relay_attempts INT NOT NULL DEFAULT 0;
-ALTER TABLE planning_transcript ADD COLUMN IF NOT EXISTS relay_dead_letter BOOLEAN NOT NULL DEFAULT false;
-ALTER TABLE planning_transcript ADD COLUMN IF NOT EXISTS relay_last_error TEXT;
+ALTER TABLE transcript ADD COLUMN IF NOT EXISTS relayed_to_discord BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE transcript ADD COLUMN IF NOT EXISTS relay_attempts INT NOT NULL DEFAULT 0;
+ALTER TABLE transcript ADD COLUMN IF NOT EXISTS relay_dead_letter BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE transcript ADD COLUMN IF NOT EXISTS relay_last_error TEXT;
 
 -- reply_to_seq is the question-seq correlation reliability-findings.md #0
 -- calls out as a real gap: today's "any pending question + any reply"
 -- would let an unrelated message satisfy a blocked AskUserQuestion call.
--- NULL for every entry except an 'answer' replying to a specific
--- 'question' entry's own seq.
-ALTER TABLE planning_transcript ADD COLUMN IF NOT EXISTS reply_to_seq BIGINT;
+-- NULL for every entry except an 'answer'/'permission_response' replying
+-- to a specific 'question'/'permission_request' entry's own seq.
+ALTER TABLE transcript ADD COLUMN IF NOT EXISTS reply_to_seq BIGINT;
 
 -- Target-repo config, dashboard-editable (docs/adr/0028) — replaces the
 -- hardcoded tasks.KnownRepos Go map so onboarding/editing a repo no longer

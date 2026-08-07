@@ -9,9 +9,9 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// PostgresStore is the Store implementation backing planning_transcript
+// PostgresStore is the Store implementation backing transcript
 // (db/schema.sql). Concurrent appends to the same task (a human's Discord
-// reply landing alongside the planner's own send_message call) are
+// reply landing alongside the agent's own send_message call) are
 // serialized via a per-task advisory lock so seq assignment can't race.
 type PostgresStore struct {
 	pool  *pgxpool.Pool
@@ -68,7 +68,7 @@ func (s *PostgresStore) appendInternal(ctx context.Context, taskID, from, text, 
 	// already-assigned seq instead of appending twice.
 	var existingSeq int64
 	err = tx.QueryRow(ctx,
-		`SELECT seq FROM planning_transcript WHERE task_id = $1 AND idempotency_key = $2`,
+		`SELECT seq FROM transcript WHERE task_id = $1 AND idempotency_key = $2`,
 		taskID, idempotencyKey,
 	).Scan(&existingSeq)
 	if err == nil {
@@ -84,9 +84,9 @@ func (s *PostgresStore) appendInternal(ctx context.Context, taskID, from, text, 
 		msgTypePtr = &msgType
 	}
 	err = tx.QueryRow(ctx, `
-		INSERT INTO planning_transcript (task_id, seq, "from", text, type, idempotency_key, reply_to_seq)
+		INSERT INTO transcript (task_id, seq, "from", text, type, idempotency_key, reply_to_seq)
 		SELECT $1, COALESCE(MAX(seq), -1) + 1, $2, $3, $4, $5, $6
-		FROM planning_transcript WHERE task_id = $1
+		FROM transcript WHERE task_id = $1
 		RETURNING seq
 	`, taskID, from, text, msgTypePtr, idempotencyKey, replyToSeq).Scan(&seq)
 	if err != nil {
@@ -105,7 +105,7 @@ func (s *PostgresStore) appendInternal(ctx context.Context, taskID, from, text, 
 func (s *PostgresStore) ReadSince(ctx context.Context, taskID string, sinceSeq int64, limit int) ([]Entry, int64, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT seq, "from", text, COALESCE(type, ''), reply_to_seq
-		FROM planning_transcript
+		FROM transcript
 		WHERE task_id = $1 AND seq >= $2
 		ORDER BY seq
 		LIMIT $3

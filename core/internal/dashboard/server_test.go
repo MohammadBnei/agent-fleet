@@ -12,8 +12,9 @@ import (
 )
 
 // recordingStore captures the arguments its last Append call was made
-// with — enough to verify Server.Approve/Stop call transcript.Store the
-// same way core/internal/discord/handlers.go's Discord commands do
+// with — enough to verify Server.Stop/RespondToPermission call
+// transcript.Store the same way core/internal/discord/handlers.go's
+// Discord commands do
 // (see docs/adr/0014, docs/adr/0015), without needing a real Postgres for
 // logic this thin. transcript.Store.Append's own idempotency guarantee is
 // PostgresStore's responsibility, not this package's. Server.GetE2EStatus/
@@ -38,20 +39,23 @@ func (r *recordingStore) ReadSince(context.Context, string, int64, int) ([]trans
 	return nil, 0, nil
 }
 
-func TestServer_Approve(t *testing.T) {
+func TestServer_RespondToPermission(t *testing.T) {
 	store := &recordingStore{}
 	s := NewServer(nil, store, nil, nil, nil, nil)
 
-	resp, err := s.Approve(context.Background(), connect.NewRequest(&agentfleetv1.ApproveRequest{TaskId: "task-1"}))
+	resp, err := s.RespondToPermission(context.Background(), connect.NewRequest(&agentfleetv1.RespondToPermissionRequest{
+		TaskId: "task-1", Seq: 7, DecisionJson: `{"behavior":"allow"}`,
+	}))
 	if err != nil {
-		t.Fatalf("Approve: %v", err)
+		t.Fatalf("RespondToPermission: %v", err)
 	}
-	if resp.Msg.GetStatus() != "approved" {
-		t.Errorf("status = %q, want %q", resp.Msg.GetStatus(), "approved")
+	if resp.Msg.GetStatus() != "answered" {
+		t.Errorf("status = %q, want %q", resp.Msg.GetStatus(), "answered")
 	}
-	if store.lastTaskID != "task-1" || store.lastFrom != "human" || store.lastText != "approved" || store.lastType != "approve" {
-		t.Errorf("Append(%q, %q, %q, %q), want (task-1, human, approved, approve)",
-			store.lastTaskID, store.lastFrom, store.lastText, store.lastType)
+	if store.lastTaskID != "task-1" || store.lastFrom != "human" || store.lastText != `{"behavior":"allow"}` ||
+		store.lastType != "permission_response" || store.lastReplyTo != 7 {
+		t.Errorf("AppendReply(%q, %q, %q, %q, replyTo=%d), want (task-1, human, {\"behavior\":\"allow\"}, permission_response, replyTo=7)",
+			store.lastTaskID, store.lastFrom, store.lastText, store.lastType, store.lastReplyTo)
 	}
 }
 
@@ -72,8 +76,8 @@ func TestServer_Approve(t *testing.T) {
 // TestServer_Discuss covers the dashboard's free-text chat channel
 // (reliability-findings.md's "seamless interaction" gap — the dashboard
 // previously had no way to send arbitrary text, only structured
-// Approve/Stop/AnswerQuestion) — full parity with a Discord reply: appended
-// as a plain "discussion" entry, same as Approve/Stop hardcode their own type.
+// Stop/AnswerQuestion) — full parity with a Discord reply: appended
+// as a plain "discussion" entry, same as Stop hardcodes its own type.
 func TestServer_Discuss(t *testing.T) {
 	store := &recordingStore{}
 	s := NewServer(nil, store, nil, nil, nil, nil)
@@ -144,6 +148,9 @@ func TestStringToProtoType(t *testing.T) {
 		{"assistant", agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_ASSISTANT},
 		{"user", agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_USER},
 		{"result", agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_RESULT},
+		{"permission_mode", agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_PERMISSION_MODE},
+		{"permission_request", agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_PERMISSION_REQUEST},
+		{"permission_response", agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_PERMISSION_RESPONSE},
 		{"", agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_UNSPECIFIED},
 		{"garbage", agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_UNSPECIFIED},
 	}

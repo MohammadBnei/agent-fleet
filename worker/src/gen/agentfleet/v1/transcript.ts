@@ -14,7 +14,7 @@ export enum TranscriptEntryType {
   TRANSCRIPT_ENTRY_TYPE_APPROVE = 2,
   TRANSCRIPT_ENTRY_TYPE_ABORT = 3,
   /**
-   * TRANSCRIPT_ENTRY_TYPE_QUESTION - Structured multiple-choice question(s) posted by the planner via the
+   * TRANSCRIPT_ENTRY_TYPE_QUESTION - Structured multiple-choice question(s) posted by the agent via the
    * AskUserQuestion MCP tool — `text` is a JSON payload, not prose. Answered
    * via the dashboard (not Discord), see docs/adr/0018.
    */
@@ -29,7 +29,7 @@ export enum TranscriptEntryType {
    */
   TRANSCRIPT_ENTRY_TYPE_TOOL_CALL = 6,
   /**
-   * TRANSCRIPT_ENTRY_TYPE_SYSTEM - The raw Claude Agent SDK message discriminants worker/src/planning.ts's
+   * TRANSCRIPT_ENTRY_TYPE_SYSTEM - The raw Claude Agent SDK message discriminants worker/src/session.ts's
    * logSdkMessage relays verbatim (reliability-findings.md #0: "relay
    * everything, let the UI decide, no pre-filtering") — `text` is a JSON
    * payload, dashboard-only, never relayed to Discord (matches the DB
@@ -153,7 +153,7 @@ export function transcriptEntryTypeToJSON(object: TranscriptEntryType): string {
 export interface TranscriptEntry {
   taskId: string;
   seq: number;
-  /** "planner" | "human" */
+  /** "agent" | "human" */
   from: string;
   text: string;
   type: TranscriptEntryType;

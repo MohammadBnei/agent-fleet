@@ -51,9 +51,6 @@ const (
 	// DashboardServiceGetE2EStatusProcedure is the fully-qualified name of the DashboardService's
 	// GetE2eStatus RPC.
 	DashboardServiceGetE2EStatusProcedure = "/agentfleet.v1.DashboardService/GetE2eStatus"
-	// DashboardServiceApproveProcedure is the fully-qualified name of the DashboardService's Approve
-	// RPC.
-	DashboardServiceApproveProcedure = "/agentfleet.v1.DashboardService/Approve"
 	// DashboardServiceStopProcedure is the fully-qualified name of the DashboardService's Stop RPC.
 	DashboardServiceStopProcedure = "/agentfleet.v1.DashboardService/Stop"
 	// DashboardServiceSetPermissionModeProcedure is the fully-qualified name of the DashboardService's
@@ -65,6 +62,9 @@ const (
 	// DashboardServiceAnswerQuestionProcedure is the fully-qualified name of the DashboardService's
 	// AnswerQuestion RPC.
 	DashboardServiceAnswerQuestionProcedure = "/agentfleet.v1.DashboardService/AnswerQuestion"
+	// DashboardServiceRespondToPermissionProcedure is the fully-qualified name of the
+	// DashboardService's RespondToPermission RPC.
+	DashboardServiceRespondToPermissionProcedure = "/agentfleet.v1.DashboardService/RespondToPermission"
 	// DashboardServiceDiscussProcedure is the fully-qualified name of the DashboardService's Discuss
 	// RPC.
 	DashboardServiceDiscussProcedure = "/agentfleet.v1.DashboardService/Discuss"
@@ -111,11 +111,11 @@ type DashboardServiceClient interface {
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	StreamTranscript(context.Context, *connect.Request[v1.StreamTranscriptRequest]) (*connect.ServerStreamForClient[v1.TranscriptEntry], error)
 	GetE2EStatus(context.Context, *connect.Request[v1.GetE2EStatusRequest]) (*connect.Response[v1.GetE2EStatusResponse], error)
-	Approve(context.Context, *connect.Request[v1.ApproveRequest]) (*connect.Response[v1.ApproveResponse], error)
 	Stop(context.Context, *connect.Request[v1.StopRequest]) (*connect.Response[v1.StopResponse], error)
 	SetPermissionMode(context.Context, *connect.Request[v1.SetPermissionModeRequest]) (*connect.Response[v1.SetPermissionModeResponse], error)
 	KillE2E(context.Context, *connect.Request[v1.KillE2ERequest]) (*connect.Response[v1.KillE2EResponse], error)
 	AnswerQuestion(context.Context, *connect.Request[v1.AnswerQuestionRequest]) (*connect.Response[v1.AnswerQuestionResponse], error)
+	RespondToPermission(context.Context, *connect.Request[v1.RespondToPermissionRequest]) (*connect.Response[v1.RespondToPermissionResponse], error)
 	Discuss(context.Context, *connect.Request[v1.DiscussRequest]) (*connect.Response[v1.DiscussResponse], error)
 	DeleteTask(context.Context, *connect.Request[v1.DeleteTaskRequest]) (*connect.Response[v1.DeleteTaskResponse], error)
 	// Reuses provisioner.proto's ListWorktreesRequest (identical shape,
@@ -183,12 +183,6 @@ func NewDashboardServiceClient(httpClient connect.HTTPClient, baseURL string, op
 			connect.WithSchema(dashboardServiceMethods.ByName("GetE2eStatus")),
 			connect.WithClientOptions(opts...),
 		),
-		approve: connect.NewClient[v1.ApproveRequest, v1.ApproveResponse](
-			httpClient,
-			baseURL+DashboardServiceApproveProcedure,
-			connect.WithSchema(dashboardServiceMethods.ByName("Approve")),
-			connect.WithClientOptions(opts...),
-		),
 		stop: connect.NewClient[v1.StopRequest, v1.StopResponse](
 			httpClient,
 			baseURL+DashboardServiceStopProcedure,
@@ -211,6 +205,12 @@ func NewDashboardServiceClient(httpClient connect.HTTPClient, baseURL string, op
 			httpClient,
 			baseURL+DashboardServiceAnswerQuestionProcedure,
 			connect.WithSchema(dashboardServiceMethods.ByName("AnswerQuestion")),
+			connect.WithClientOptions(opts...),
+		),
+		respondToPermission: connect.NewClient[v1.RespondToPermissionRequest, v1.RespondToPermissionResponse](
+			httpClient,
+			baseURL+DashboardServiceRespondToPermissionProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("RespondToPermission")),
 			connect.WithClientOptions(opts...),
 		),
 		discuss: connect.NewClient[v1.DiscussRequest, v1.DiscussResponse](
@@ -272,26 +272,26 @@ func NewDashboardServiceClient(httpClient connect.HTTPClient, baseURL string, op
 
 // dashboardServiceClient implements DashboardServiceClient.
 type dashboardServiceClient struct {
-	listTasks         *connect.Client[v1.ListTasksRequest, v1.ListTasksResponse]
-	getTask           *connect.Client[v1.GetTaskRequest, v1.GetTaskResponse]
-	createTask        *connect.Client[v1.CreateTaskRequest, v1.CreateTaskResponse]
-	getTranscript     *connect.Client[v1.ReadTranscriptSinceRequest, v1.ReadTranscriptSinceResponse]
-	streamTranscript  *connect.Client[v1.StreamTranscriptRequest, v1.TranscriptEntry]
-	getE2EStatus      *connect.Client[v1.GetE2EStatusRequest, v1.GetE2EStatusResponse]
-	approve           *connect.Client[v1.ApproveRequest, v1.ApproveResponse]
-	stop              *connect.Client[v1.StopRequest, v1.StopResponse]
-	setPermissionMode *connect.Client[v1.SetPermissionModeRequest, v1.SetPermissionModeResponse]
-	killE2E           *connect.Client[v1.KillE2ERequest, v1.KillE2EResponse]
-	answerQuestion    *connect.Client[v1.AnswerQuestionRequest, v1.AnswerQuestionResponse]
-	discuss           *connect.Client[v1.DiscussRequest, v1.DiscussResponse]
-	deleteTask        *connect.Client[v1.DeleteTaskRequest, v1.DeleteTaskResponse]
-	listWorktrees     *connect.Client[v1.ListWorktreesRequest, v1.ListWorktreesViewResponse]
-	deleteWorktree    *connect.Client[v1.DeleteWorktreeRequest, v1.DeleteWorktreeResponse]
-	getJournal        *connect.Client[v1.GetJournalRequest, v1.GetJournalResponse]
-	listRepos         *connect.Client[v1.ListReposRequest, v1.ListReposResponse]
-	createRepo        *connect.Client[v1.CreateRepoRequest, v1.CreateRepoResponse]
-	updateRepo        *connect.Client[v1.UpdateRepoRequest, v1.UpdateRepoResponse]
-	deleteRepo        *connect.Client[v1.DeleteRepoRequest, v1.DeleteRepoResponse]
+	listTasks           *connect.Client[v1.ListTasksRequest, v1.ListTasksResponse]
+	getTask             *connect.Client[v1.GetTaskRequest, v1.GetTaskResponse]
+	createTask          *connect.Client[v1.CreateTaskRequest, v1.CreateTaskResponse]
+	getTranscript       *connect.Client[v1.ReadTranscriptSinceRequest, v1.ReadTranscriptSinceResponse]
+	streamTranscript    *connect.Client[v1.StreamTranscriptRequest, v1.TranscriptEntry]
+	getE2EStatus        *connect.Client[v1.GetE2EStatusRequest, v1.GetE2EStatusResponse]
+	stop                *connect.Client[v1.StopRequest, v1.StopResponse]
+	setPermissionMode   *connect.Client[v1.SetPermissionModeRequest, v1.SetPermissionModeResponse]
+	killE2E             *connect.Client[v1.KillE2ERequest, v1.KillE2EResponse]
+	answerQuestion      *connect.Client[v1.AnswerQuestionRequest, v1.AnswerQuestionResponse]
+	respondToPermission *connect.Client[v1.RespondToPermissionRequest, v1.RespondToPermissionResponse]
+	discuss             *connect.Client[v1.DiscussRequest, v1.DiscussResponse]
+	deleteTask          *connect.Client[v1.DeleteTaskRequest, v1.DeleteTaskResponse]
+	listWorktrees       *connect.Client[v1.ListWorktreesRequest, v1.ListWorktreesViewResponse]
+	deleteWorktree      *connect.Client[v1.DeleteWorktreeRequest, v1.DeleteWorktreeResponse]
+	getJournal          *connect.Client[v1.GetJournalRequest, v1.GetJournalResponse]
+	listRepos           *connect.Client[v1.ListReposRequest, v1.ListReposResponse]
+	createRepo          *connect.Client[v1.CreateRepoRequest, v1.CreateRepoResponse]
+	updateRepo          *connect.Client[v1.UpdateRepoRequest, v1.UpdateRepoResponse]
+	deleteRepo          *connect.Client[v1.DeleteRepoRequest, v1.DeleteRepoResponse]
 }
 
 // ListTasks calls agentfleet.v1.DashboardService.ListTasks.
@@ -324,11 +324,6 @@ func (c *dashboardServiceClient) GetE2EStatus(ctx context.Context, req *connect.
 	return c.getE2EStatus.CallUnary(ctx, req)
 }
 
-// Approve calls agentfleet.v1.DashboardService.Approve.
-func (c *dashboardServiceClient) Approve(ctx context.Context, req *connect.Request[v1.ApproveRequest]) (*connect.Response[v1.ApproveResponse], error) {
-	return c.approve.CallUnary(ctx, req)
-}
-
 // Stop calls agentfleet.v1.DashboardService.Stop.
 func (c *dashboardServiceClient) Stop(ctx context.Context, req *connect.Request[v1.StopRequest]) (*connect.Response[v1.StopResponse], error) {
 	return c.stop.CallUnary(ctx, req)
@@ -347,6 +342,11 @@ func (c *dashboardServiceClient) KillE2E(ctx context.Context, req *connect.Reque
 // AnswerQuestion calls agentfleet.v1.DashboardService.AnswerQuestion.
 func (c *dashboardServiceClient) AnswerQuestion(ctx context.Context, req *connect.Request[v1.AnswerQuestionRequest]) (*connect.Response[v1.AnswerQuestionResponse], error) {
 	return c.answerQuestion.CallUnary(ctx, req)
+}
+
+// RespondToPermission calls agentfleet.v1.DashboardService.RespondToPermission.
+func (c *dashboardServiceClient) RespondToPermission(ctx context.Context, req *connect.Request[v1.RespondToPermissionRequest]) (*connect.Response[v1.RespondToPermissionResponse], error) {
+	return c.respondToPermission.CallUnary(ctx, req)
 }
 
 // Discuss calls agentfleet.v1.DashboardService.Discuss.
@@ -411,11 +411,11 @@ type DashboardServiceHandler interface {
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	StreamTranscript(context.Context, *connect.Request[v1.StreamTranscriptRequest], *connect.ServerStream[v1.TranscriptEntry]) error
 	GetE2EStatus(context.Context, *connect.Request[v1.GetE2EStatusRequest]) (*connect.Response[v1.GetE2EStatusResponse], error)
-	Approve(context.Context, *connect.Request[v1.ApproveRequest]) (*connect.Response[v1.ApproveResponse], error)
 	Stop(context.Context, *connect.Request[v1.StopRequest]) (*connect.Response[v1.StopResponse], error)
 	SetPermissionMode(context.Context, *connect.Request[v1.SetPermissionModeRequest]) (*connect.Response[v1.SetPermissionModeResponse], error)
 	KillE2E(context.Context, *connect.Request[v1.KillE2ERequest]) (*connect.Response[v1.KillE2EResponse], error)
 	AnswerQuestion(context.Context, *connect.Request[v1.AnswerQuestionRequest]) (*connect.Response[v1.AnswerQuestionResponse], error)
+	RespondToPermission(context.Context, *connect.Request[v1.RespondToPermissionRequest]) (*connect.Response[v1.RespondToPermissionResponse], error)
 	Discuss(context.Context, *connect.Request[v1.DiscussRequest]) (*connect.Response[v1.DiscussResponse], error)
 	DeleteTask(context.Context, *connect.Request[v1.DeleteTaskRequest]) (*connect.Response[v1.DeleteTaskResponse], error)
 	// Reuses provisioner.proto's ListWorktreesRequest (identical shape,
@@ -479,12 +479,6 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 		connect.WithSchema(dashboardServiceMethods.ByName("GetE2eStatus")),
 		connect.WithHandlerOptions(opts...),
 	)
-	dashboardServiceApproveHandler := connect.NewUnaryHandler(
-		DashboardServiceApproveProcedure,
-		svc.Approve,
-		connect.WithSchema(dashboardServiceMethods.ByName("Approve")),
-		connect.WithHandlerOptions(opts...),
-	)
 	dashboardServiceStopHandler := connect.NewUnaryHandler(
 		DashboardServiceStopProcedure,
 		svc.Stop,
@@ -507,6 +501,12 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 		DashboardServiceAnswerQuestionProcedure,
 		svc.AnswerQuestion,
 		connect.WithSchema(dashboardServiceMethods.ByName("AnswerQuestion")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dashboardServiceRespondToPermissionHandler := connect.NewUnaryHandler(
+		DashboardServiceRespondToPermissionProcedure,
+		svc.RespondToPermission,
+		connect.WithSchema(dashboardServiceMethods.ByName("RespondToPermission")),
 		connect.WithHandlerOptions(opts...),
 	)
 	dashboardServiceDiscussHandler := connect.NewUnaryHandler(
@@ -577,8 +577,6 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 			dashboardServiceStreamTranscriptHandler.ServeHTTP(w, r)
 		case DashboardServiceGetE2EStatusProcedure:
 			dashboardServiceGetE2EStatusHandler.ServeHTTP(w, r)
-		case DashboardServiceApproveProcedure:
-			dashboardServiceApproveHandler.ServeHTTP(w, r)
 		case DashboardServiceStopProcedure:
 			dashboardServiceStopHandler.ServeHTTP(w, r)
 		case DashboardServiceSetPermissionModeProcedure:
@@ -587,6 +585,8 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 			dashboardServiceKillE2EHandler.ServeHTTP(w, r)
 		case DashboardServiceAnswerQuestionProcedure:
 			dashboardServiceAnswerQuestionHandler.ServeHTTP(w, r)
+		case DashboardServiceRespondToPermissionProcedure:
+			dashboardServiceRespondToPermissionHandler.ServeHTTP(w, r)
 		case DashboardServiceDiscussProcedure:
 			dashboardServiceDiscussHandler.ServeHTTP(w, r)
 		case DashboardServiceDeleteTaskProcedure:
@@ -638,10 +638,6 @@ func (UnimplementedDashboardServiceHandler) GetE2EStatus(context.Context, *conne
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.GetE2eStatus is not implemented"))
 }
 
-func (UnimplementedDashboardServiceHandler) Approve(context.Context, *connect.Request[v1.ApproveRequest]) (*connect.Response[v1.ApproveResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.Approve is not implemented"))
-}
-
 func (UnimplementedDashboardServiceHandler) Stop(context.Context, *connect.Request[v1.StopRequest]) (*connect.Response[v1.StopResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.Stop is not implemented"))
 }
@@ -656,6 +652,10 @@ func (UnimplementedDashboardServiceHandler) KillE2E(context.Context, *connect.Re
 
 func (UnimplementedDashboardServiceHandler) AnswerQuestion(context.Context, *connect.Request[v1.AnswerQuestionRequest]) (*connect.Response[v1.AnswerQuestionResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.AnswerQuestion is not implemented"))
+}
+
+func (UnimplementedDashboardServiceHandler) RespondToPermission(context.Context, *connect.Request[v1.RespondToPermissionRequest]) (*connect.Response[v1.RespondToPermissionResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.RespondToPermission is not implemented"))
 }
 
 func (UnimplementedDashboardServiceHandler) Discuss(context.Context, *connect.Request[v1.DiscussRequest]) (*connect.Response[v1.DiscussResponse], error) {

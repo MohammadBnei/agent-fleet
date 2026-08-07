@@ -66,7 +66,8 @@ func newTestPool(t *testing.T) *pgxpool.Pool {
 			pr_url             TEXT,
 			notes              TEXT,
 			last_error         TEXT,
-			planning_session_id TEXT,
+			session_id         TEXT,
+			permission_mode    TEXT,
 			model              TEXT,
 			retry_count        INT NOT NULL DEFAULT 0,
 			heartbeat_at       TIMESTAMPTZ,
@@ -144,7 +145,7 @@ func TestReportPodEvents_CrashedWorkerMarksNonTerminalTaskCrashed(t *testing.T) 
 	var taskID string
 	if err := pool.QueryRow(ctx, `
 		INSERT INTO tasks (repo, description, discord_channel_id, status, heartbeat_at)
-		VALUES ('dream-analyst', 'task', 'chan', 'implementing', now())
+		VALUES ('dream-analyst', 'task', 'chan', 'running', now())
 		RETURNING id
 	`).Scan(&taskID); err != nil {
 		t.Fatalf("seed task: %v", err)
@@ -205,7 +206,7 @@ func TestReportPodEvents_NonCrashedEventDoesNotMarkCrashed(t *testing.T) {
 	var taskID string
 	if err := pool.QueryRow(ctx, `
 		INSERT INTO tasks (repo, description, discord_channel_id, status, heartbeat_at)
-		VALUES ('dream-analyst', 'task', 'chan', 'implementing', now())
+		VALUES ('dream-analyst', 'task', 'chan', 'running', now())
 		RETURNING id
 	`).Scan(&taskID); err != nil {
 		t.Fatalf("seed task: %v", err)

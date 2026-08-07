@@ -1,5 +1,5 @@
 // Package transcript replaces the Redis list (agentfleet:planning:<taskId>)
-// as the durable store for the planner/human planning conversation. See
+// as the durable store for the agent/human conversation. See
 // docs/adr/0013: reads are pull/cursor-based (mirroring LRANGE from an
 // index), never a bare streaming-watch RPC, so a client reconnect can't
 // silently drop messages the way pub/sub could.
@@ -7,7 +7,7 @@ package transcript
 
 import "context"
 
-// Entry is one planning-transcript message, seq-ordered per task. JSON
+// Entry is one transcript message, seq-ordered per task. JSON
 // tags: also serialized directly by the dashboard API (internal/dashboard,
 // see docs/adr/0014), the first direct-JSON consumer — the MCP server
 // builds its own map[string]any instead of encoding this struct.

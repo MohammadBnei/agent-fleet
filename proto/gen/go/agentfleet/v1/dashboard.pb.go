@@ -34,8 +34,8 @@ type Task struct {
 	// pod's first event.
 	PodPhase   *string `protobuf:"bytes,7,opt,name=pod_phase,json=podPhase,proto3,oneof" json:"pod_phase,omitempty"`
 	PodMessage *string `protobuf:"bytes,8,opt,name=pod_message,json=podMessage,proto3,oneof" json:"pod_message,omitempty"`
-	// Reclaim-eligibility signal (ClaimNextTask reclaims a claimed/planning/
-	// implementing task once this is >10min stale — the exact staleness
+	// Reclaim-eligibility signal (ClaimNextTask reclaims a claimed/running
+	// task once this is >10min stale — the exact staleness
 	// threshold the dashboard's own "stuck" badge should match). Set once at
 	// claim time, refreshed by the worker pod's own heartbeat loop; unset for
 	// a still-pending task. RFC3339, matching JournalEntry.created_at.
@@ -49,11 +49,10 @@ type Task struct {
 	// pod via `resume:` (sessions redesign, supersedes docs/adr/0021/0025's
 	// phase-boundary framing). Unset until the worker's first streamed
 	// message reports it.
-	PlanningSessionId *string `protobuf:"bytes,12,opt,name=planning_session_id,json=planningSessionId,proto3,oneof" json:"planning_session_id,omitempty"`
-	// Last time a planning_transcript entry was appended for this task —
-	// substrate for the idle-timeout backstop that tears down an unattended
-	// pod. RFC3339, matching heartbeat_at. Unset for a task with no activity
-	// yet.
+	SessionId *string `protobuf:"bytes,12,opt,name=session_id,json=sessionId,proto3,oneof" json:"session_id,omitempty"`
+	// Last time a transcript entry was appended for this task — substrate
+	// for the idle-timeout backstop that tears down an unattended pod.
+	// RFC3339, matching heartbeat_at. Unset for a task with no activity yet.
 	LastActiveAt *string `protobuf:"bytes,13,opt,name=last_active_at,json=lastActiveAt,proto3,oneof" json:"last_active_at,omitempty"`
 	// The session's current SDK permission mode ("default"|"plan"|
 	// "acceptEdits"|"bypassPermissions"|...), so the dashboard's mode picker
@@ -171,9 +170,9 @@ func (x *Task) GetLastError() string {
 	return ""
 }
 
-func (x *Task) GetPlanningSessionId() string {
-	if x != nil && x.PlanningSessionId != nil {
-		return *x.PlanningSessionId
+func (x *Task) GetSessionId() string {
+	if x != nil && x.SessionId != nil {
+		return *x.SessionId
 	}
 	return ""
 }
@@ -620,94 +619,6 @@ func (x *GetE2EStatusResponse) GetPreviewUrl() string {
 	return ""
 }
 
-type ApproveRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	TaskId        string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ApproveRequest) Reset() {
-	*x = ApproveRequest{}
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[10]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ApproveRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ApproveRequest) ProtoMessage() {}
-
-func (x *ApproveRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[10]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ApproveRequest.ProtoReflect.Descriptor instead.
-func (*ApproveRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{10}
-}
-
-func (x *ApproveRequest) GetTaskId() string {
-	if x != nil {
-		return x.TaskId
-	}
-	return ""
-}
-
-type ApproveResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Status        string                 `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ApproveResponse) Reset() {
-	*x = ApproveResponse{}
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[11]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ApproveResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ApproveResponse) ProtoMessage() {}
-
-func (x *ApproveResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[11]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ApproveResponse.ProtoReflect.Descriptor instead.
-func (*ApproveResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{11}
-}
-
-func (x *ApproveResponse) GetStatus() string {
-	if x != nil {
-		return x.Status
-	}
-	return ""
-}
-
 type StopRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	TaskId        string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
@@ -718,7 +629,7 @@ type StopRequest struct {
 
 func (x *StopRequest) Reset() {
 	*x = StopRequest{}
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[12]
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -730,7 +641,7 @@ func (x *StopRequest) String() string {
 func (*StopRequest) ProtoMessage() {}
 
 func (x *StopRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[12]
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -743,7 +654,7 @@ func (x *StopRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StopRequest.ProtoReflect.Descriptor instead.
 func (*StopRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{12}
+	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *StopRequest) GetTaskId() string {
@@ -769,7 +680,7 @@ type StopResponse struct {
 
 func (x *StopResponse) Reset() {
 	*x = StopResponse{}
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[13]
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -781,7 +692,7 @@ func (x *StopResponse) String() string {
 func (*StopResponse) ProtoMessage() {}
 
 func (x *StopResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[13]
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -794,7 +705,7 @@ func (x *StopResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StopResponse.ProtoReflect.Descriptor instead.
 func (*StopResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{13}
+	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *StopResponse) GetStatus() string {
@@ -804,13 +715,14 @@ func (x *StopResponse) GetStatus() string {
 	return ""
 }
 
-// Sets an arbitrary SDK permission mode on a running task (docs/adr/0027) —
-// distinct from Approve, which stays a fixed plan->default flip matching
-// Discord's binary /approve. `mode` must be one of "acceptEdits"|
-// "dontAsk"|"bypassPermissions" (validated server-side); "bypassPermissions"
-// deliberately disables the canUseTool Write/Edit gate for this task for the
-// rest of the session — the dashboard must get explicit, typed confirmation
-// from the human before sending that value.
+// Sets an arbitrary SDK permission mode on a running task (docs/adr/0027,
+// extended by the sessions redesign supersession of docs/adr/0021/0025 —
+// Approve is gone, this is now the only mode lever). `mode` must be one of
+// "default"|"plan"|"acceptEdits"|"bypassPermissions" (validated
+// server-side); "bypassPermissions" deliberately disables the canUseTool
+// prompt-and-wait gate for this task for the rest of the session — the
+// dashboard must get explicit, typed confirmation from the human before
+// sending that value.
 type SetPermissionModeRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	TaskId        string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
@@ -821,7 +733,7 @@ type SetPermissionModeRequest struct {
 
 func (x *SetPermissionModeRequest) Reset() {
 	*x = SetPermissionModeRequest{}
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[14]
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -833,7 +745,7 @@ func (x *SetPermissionModeRequest) String() string {
 func (*SetPermissionModeRequest) ProtoMessage() {}
 
 func (x *SetPermissionModeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[14]
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -846,7 +758,7 @@ func (x *SetPermissionModeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetPermissionModeRequest.ProtoReflect.Descriptor instead.
 func (*SetPermissionModeRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{14}
+	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *SetPermissionModeRequest) GetTaskId() string {
@@ -872,7 +784,7 @@ type SetPermissionModeResponse struct {
 
 func (x *SetPermissionModeResponse) Reset() {
 	*x = SetPermissionModeResponse{}
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[15]
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -884,7 +796,7 @@ func (x *SetPermissionModeResponse) String() string {
 func (*SetPermissionModeResponse) ProtoMessage() {}
 
 func (x *SetPermissionModeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[15]
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -897,10 +809,123 @@ func (x *SetPermissionModeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetPermissionModeResponse.ProtoReflect.Descriptor instead.
 func (*SetPermissionModeResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{15}
+	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *SetPermissionModeResponse) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+// Answers a pending PERMISSION_REQUEST-type transcript entry (posted by
+// canUseTool for any tool call the SDK's current permission mode would
+// prompt for — supersedes docs/adr/0021's Write/Edit-absent-from-
+// allowedTools gate). `seq` is that entry's own seq, carried the same way
+// AnswerQuestion's is — for the dashboard's own bookkeeping, not required
+// for correlation server-side. A sibling RPC to AnswerQuestion rather than
+// overloading it: the payload shape differs (allow/deny/updatedInput vs.
+// free-form answers JSON) and there's no real code to share beyond one
+// AppendReply call either way.
+type RespondToPermissionRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TaskId        string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	Seq           int64                  `protobuf:"varint,2,opt,name=seq,proto3" json:"seq,omitempty"`
+	DecisionJson  string                 `protobuf:"bytes,3,opt,name=decision_json,json=decisionJson,proto3" json:"decision_json,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RespondToPermissionRequest) Reset() {
+	*x = RespondToPermissionRequest{}
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RespondToPermissionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RespondToPermissionRequest) ProtoMessage() {}
+
+func (x *RespondToPermissionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RespondToPermissionRequest.ProtoReflect.Descriptor instead.
+func (*RespondToPermissionRequest) Descriptor() ([]byte, []int) {
+	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *RespondToPermissionRequest) GetTaskId() string {
+	if x != nil {
+		return x.TaskId
+	}
+	return ""
+}
+
+func (x *RespondToPermissionRequest) GetSeq() int64 {
+	if x != nil {
+		return x.Seq
+	}
+	return 0
+}
+
+func (x *RespondToPermissionRequest) GetDecisionJson() string {
+	if x != nil {
+		return x.DecisionJson
+	}
+	return ""
+}
+
+type RespondToPermissionResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Status        string                 `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RespondToPermissionResponse) Reset() {
+	*x = RespondToPermissionResponse{}
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RespondToPermissionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RespondToPermissionResponse) ProtoMessage() {}
+
+func (x *RespondToPermissionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RespondToPermissionResponse.ProtoReflect.Descriptor instead.
+func (*RespondToPermissionResponse) Descriptor() ([]byte, []int) {
+	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *RespondToPermissionResponse) GetStatus() string {
 	if x != nil {
 		return x.Status
 	}
@@ -995,11 +1020,11 @@ func (x *KillE2EResponse) GetKilled() bool {
 	return false
 }
 
-// Answers a pending QUESTION-type transcript entry (posted by the planner's
+// Answers a pending QUESTION-type transcript entry (posted by the agent's
 // AskUserQuestion MCP tool call, see docs/adr/0018). `seq` is that entry's
 // own seq — carried for the dashboard's own bookkeeping/idempotency, not
 // required for correlation server-side (only one question is ever pending
-// per task at a time, since the planner's tool call blocks on it).
+// per task at a time, since the agent's tool call blocks on it).
 // `answers_json` is a JSON-encoded {"answers": {"<question>": "<label>"}}
 // payload, opaque to fleet-core — it's appended verbatim as the answer
 // entry's `text` and returned verbatim to the blocked MCP tool call.
@@ -1113,8 +1138,8 @@ func (x *AnswerQuestionResponse) GetStatus() string {
 // streamHumanMessages SSE the same way a Discord reply already is (no
 // worker/sidecar changes needed, it's a plain cursor-based transcript
 // stream, not Discord-specific). `from`/`type` are hardcoded server-side,
-// same pattern as Approve hardcoding "human"/"approve" — the dashboard has
-// no need to expose them.
+// same pattern as Stop hardcoding "human"/"abort" — the dashboard has no
+// need to expose them.
 type DiscussRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	TaskId        string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
@@ -2101,7 +2126,7 @@ var File_agentfleet_v1_dashboard_proto protoreflect.FileDescriptor
 
 const file_agentfleet_v1_dashboard_proto_rawDesc = "" +
 	"\n" +
-	"\x1dagentfleet/v1/dashboard.proto\x12\ragentfleet.v1\x1a\x1fagentfleet/v1/provisioner.proto\x1a\x1eagentfleet/v1/transcript.proto\"\xfb\x04\n" +
+	"\x1dagentfleet/v1/dashboard.proto\x12\ragentfleet.v1\x1a\x1fagentfleet/v1/provisioner.proto\x1a\x1eagentfleet/v1/transcript.proto\"\xe1\x04\n" +
 	"\x04Task\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04repo\x18\x02 \x01(\tR\x04repo\x12 \n" +
@@ -2117,8 +2142,9 @@ const file_agentfleet_v1_dashboard_proto_rawDesc = "" +
 	" \x01(\x05R\n" +
 	"retryCount\x12\"\n" +
 	"\n" +
-	"last_error\x18\v \x01(\tH\x05R\tlastError\x88\x01\x01\x123\n" +
-	"\x13planning_session_id\x18\f \x01(\tH\x06R\x11planningSessionId\x88\x01\x01\x12)\n" +
+	"last_error\x18\v \x01(\tH\x05R\tlastError\x88\x01\x01\x12\"\n" +
+	"\n" +
+	"session_id\x18\f \x01(\tH\x06R\tsessionId\x88\x01\x01\x12)\n" +
 	"\x0elast_active_at\x18\r \x01(\tH\aR\flastActiveAt\x88\x01\x01\x12,\n" +
 	"\x0fpermission_mode\x18\x0e \x01(\tH\bR\x0epermissionMode\x88\x01\x01B\f\n" +
 	"\n" +
@@ -2128,8 +2154,8 @@ const file_agentfleet_v1_dashboard_proto_rawDesc = "" +
 	"_pod_phaseB\x0e\n" +
 	"\f_pod_messageB\x0f\n" +
 	"\r_heartbeat_atB\r\n" +
-	"\v_last_errorB\x16\n" +
-	"\x14_planning_session_idB\x11\n" +
+	"\v_last_errorB\r\n" +
+	"\v_session_idB\x11\n" +
 	"\x0f_last_active_atB\x12\n" +
 	"\x10_permission_mode\"(\n" +
 	"\x10ListTasksRequest\x12\x14\n" +
@@ -2153,11 +2179,7 @@ const file_agentfleet_v1_dashboard_proto_rawDesc = "" +
 	"\x14GetE2eStatusResponse\x12\x16\n" +
 	"\x06status\x18\x01 \x01(\tR\x06status\x12\x1f\n" +
 	"\vpreview_url\x18\x02 \x01(\tR\n" +
-	"previewUrl\")\n" +
-	"\x0eApproveRequest\x12\x17\n" +
-	"\atask_id\x18\x01 \x01(\tR\x06taskId\")\n" +
-	"\x0fApproveResponse\x12\x16\n" +
-	"\x06status\x18\x01 \x01(\tR\x06status\"N\n" +
+	"previewUrl\"N\n" +
 	"\vStopRequest\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x1b\n" +
 	"\x06reason\x18\x02 \x01(\tH\x00R\x06reason\x88\x01\x01B\t\n" +
@@ -2168,6 +2190,12 @@ const file_agentfleet_v1_dashboard_proto_rawDesc = "" +
 	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x12\n" +
 	"\x04mode\x18\x02 \x01(\tR\x04mode\"3\n" +
 	"\x19SetPermissionModeResponse\x12\x16\n" +
+	"\x06status\x18\x01 \x01(\tR\x06status\"l\n" +
+	"\x1aRespondToPermissionRequest\x12\x17\n" +
+	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x10\n" +
+	"\x03seq\x18\x02 \x01(\x03R\x03seq\x12#\n" +
+	"\rdecision_json\x18\x03 \x01(\tR\fdecisionJson\"5\n" +
+	"\x1bRespondToPermissionResponse\x12\x16\n" +
 	"\x06status\x18\x01 \x01(\tR\x06status\")\n" +
 	"\x0eKillE2eRequest\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\tR\x06taskId\")\n" +
@@ -2246,7 +2274,7 @@ const file_agentfleet_v1_dashboard_proto_rawDesc = "" +
 	"\x11DeleteRepoRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\",\n" +
 	"\x12DeleteRepoResponse\x12\x16\n" +
-	"\x06status\x18\x01 \x01(\tR\x06status2\xb2\r\n" +
+	"\x06status\x18\x01 \x01(\tR\x06status2\xd6\r\n" +
 	"\x10DashboardService\x12N\n" +
 	"\tListTasks\x12\x1f.agentfleet.v1.ListTasksRequest\x1a .agentfleet.v1.ListTasksResponse\x12H\n" +
 	"\aGetTask\x12\x1d.agentfleet.v1.GetTaskRequest\x1a\x1e.agentfleet.v1.GetTaskResponse\x12Q\n" +
@@ -2254,12 +2282,12 @@ const file_agentfleet_v1_dashboard_proto_rawDesc = "" +
 	"CreateTask\x12 .agentfleet.v1.CreateTaskRequest\x1a!.agentfleet.v1.CreateTaskResponse\x12f\n" +
 	"\rGetTranscript\x12).agentfleet.v1.ReadTranscriptSinceRequest\x1a*.agentfleet.v1.ReadTranscriptSinceResponse\x12\\\n" +
 	"\x10StreamTranscript\x12&.agentfleet.v1.StreamTranscriptRequest\x1a\x1e.agentfleet.v1.TranscriptEntry0\x01\x12W\n" +
-	"\fGetE2eStatus\x12\".agentfleet.v1.GetE2eStatusRequest\x1a#.agentfleet.v1.GetE2eStatusResponse\x12H\n" +
-	"\aApprove\x12\x1d.agentfleet.v1.ApproveRequest\x1a\x1e.agentfleet.v1.ApproveResponse\x12?\n" +
+	"\fGetE2eStatus\x12\".agentfleet.v1.GetE2eStatusRequest\x1a#.agentfleet.v1.GetE2eStatusResponse\x12?\n" +
 	"\x04Stop\x12\x1a.agentfleet.v1.StopRequest\x1a\x1b.agentfleet.v1.StopResponse\x12f\n" +
 	"\x11SetPermissionMode\x12'.agentfleet.v1.SetPermissionModeRequest\x1a(.agentfleet.v1.SetPermissionModeResponse\x12H\n" +
 	"\aKillE2e\x12\x1d.agentfleet.v1.KillE2eRequest\x1a\x1e.agentfleet.v1.KillE2eResponse\x12]\n" +
-	"\x0eAnswerQuestion\x12$.agentfleet.v1.AnswerQuestionRequest\x1a%.agentfleet.v1.AnswerQuestionResponse\x12H\n" +
+	"\x0eAnswerQuestion\x12$.agentfleet.v1.AnswerQuestionRequest\x1a%.agentfleet.v1.AnswerQuestionResponse\x12l\n" +
+	"\x13RespondToPermission\x12).agentfleet.v1.RespondToPermissionRequest\x1a*.agentfleet.v1.RespondToPermissionResponse\x12H\n" +
 	"\aDiscuss\x12\x1d.agentfleet.v1.DiscussRequest\x1a\x1e.agentfleet.v1.DiscussResponse\x12Q\n" +
 	"\n" +
 	"DeleteTask\x12 .agentfleet.v1.DeleteTaskRequest\x1a!.agentfleet.v1.DeleteTaskResponse\x12^\n" +
@@ -2299,12 +2327,12 @@ var file_agentfleet_v1_dashboard_proto_goTypes = []any{
 	(*StreamTranscriptRequest)(nil),     // 7: agentfleet.v1.StreamTranscriptRequest
 	(*GetE2EStatusRequest)(nil),         // 8: agentfleet.v1.GetE2eStatusRequest
 	(*GetE2EStatusResponse)(nil),        // 9: agentfleet.v1.GetE2eStatusResponse
-	(*ApproveRequest)(nil),              // 10: agentfleet.v1.ApproveRequest
-	(*ApproveResponse)(nil),             // 11: agentfleet.v1.ApproveResponse
-	(*StopRequest)(nil),                 // 12: agentfleet.v1.StopRequest
-	(*StopResponse)(nil),                // 13: agentfleet.v1.StopResponse
-	(*SetPermissionModeRequest)(nil),    // 14: agentfleet.v1.SetPermissionModeRequest
-	(*SetPermissionModeResponse)(nil),   // 15: agentfleet.v1.SetPermissionModeResponse
+	(*StopRequest)(nil),                 // 10: agentfleet.v1.StopRequest
+	(*StopResponse)(nil),                // 11: agentfleet.v1.StopResponse
+	(*SetPermissionModeRequest)(nil),    // 12: agentfleet.v1.SetPermissionModeRequest
+	(*SetPermissionModeResponse)(nil),   // 13: agentfleet.v1.SetPermissionModeResponse
+	(*RespondToPermissionRequest)(nil),  // 14: agentfleet.v1.RespondToPermissionRequest
+	(*RespondToPermissionResponse)(nil), // 15: agentfleet.v1.RespondToPermissionResponse
 	(*KillE2ERequest)(nil),              // 16: agentfleet.v1.KillE2eRequest
 	(*KillE2EResponse)(nil),             // 17: agentfleet.v1.KillE2eResponse
 	(*AnswerQuestionRequest)(nil),       // 18: agentfleet.v1.AnswerQuestionRequest
@@ -2349,11 +2377,11 @@ var file_agentfleet_v1_dashboard_proto_depIdxs = []int32{
 	38, // 11: agentfleet.v1.DashboardService.GetTranscript:input_type -> agentfleet.v1.ReadTranscriptSinceRequest
 	7,  // 12: agentfleet.v1.DashboardService.StreamTranscript:input_type -> agentfleet.v1.StreamTranscriptRequest
 	8,  // 13: agentfleet.v1.DashboardService.GetE2eStatus:input_type -> agentfleet.v1.GetE2eStatusRequest
-	10, // 14: agentfleet.v1.DashboardService.Approve:input_type -> agentfleet.v1.ApproveRequest
-	12, // 15: agentfleet.v1.DashboardService.Stop:input_type -> agentfleet.v1.StopRequest
-	14, // 16: agentfleet.v1.DashboardService.SetPermissionMode:input_type -> agentfleet.v1.SetPermissionModeRequest
-	16, // 17: agentfleet.v1.DashboardService.KillE2e:input_type -> agentfleet.v1.KillE2eRequest
-	18, // 18: agentfleet.v1.DashboardService.AnswerQuestion:input_type -> agentfleet.v1.AnswerQuestionRequest
+	10, // 14: agentfleet.v1.DashboardService.Stop:input_type -> agentfleet.v1.StopRequest
+	12, // 15: agentfleet.v1.DashboardService.SetPermissionMode:input_type -> agentfleet.v1.SetPermissionModeRequest
+	16, // 16: agentfleet.v1.DashboardService.KillE2e:input_type -> agentfleet.v1.KillE2eRequest
+	18, // 17: agentfleet.v1.DashboardService.AnswerQuestion:input_type -> agentfleet.v1.AnswerQuestionRequest
+	14, // 18: agentfleet.v1.DashboardService.RespondToPermission:input_type -> agentfleet.v1.RespondToPermissionRequest
 	20, // 19: agentfleet.v1.DashboardService.Discuss:input_type -> agentfleet.v1.DiscussRequest
 	22, // 20: agentfleet.v1.DashboardService.DeleteTask:input_type -> agentfleet.v1.DeleteTaskRequest
 	39, // 21: agentfleet.v1.DashboardService.ListWorktrees:input_type -> agentfleet.v1.ListWorktreesRequest
@@ -2369,11 +2397,11 @@ var file_agentfleet_v1_dashboard_proto_depIdxs = []int32{
 	41, // 31: agentfleet.v1.DashboardService.GetTranscript:output_type -> agentfleet.v1.ReadTranscriptSinceResponse
 	42, // 32: agentfleet.v1.DashboardService.StreamTranscript:output_type -> agentfleet.v1.TranscriptEntry
 	9,  // 33: agentfleet.v1.DashboardService.GetE2eStatus:output_type -> agentfleet.v1.GetE2eStatusResponse
-	11, // 34: agentfleet.v1.DashboardService.Approve:output_type -> agentfleet.v1.ApproveResponse
-	13, // 35: agentfleet.v1.DashboardService.Stop:output_type -> agentfleet.v1.StopResponse
-	15, // 36: agentfleet.v1.DashboardService.SetPermissionMode:output_type -> agentfleet.v1.SetPermissionModeResponse
-	17, // 37: agentfleet.v1.DashboardService.KillE2e:output_type -> agentfleet.v1.KillE2eResponse
-	19, // 38: agentfleet.v1.DashboardService.AnswerQuestion:output_type -> agentfleet.v1.AnswerQuestionResponse
+	11, // 34: agentfleet.v1.DashboardService.Stop:output_type -> agentfleet.v1.StopResponse
+	13, // 35: agentfleet.v1.DashboardService.SetPermissionMode:output_type -> agentfleet.v1.SetPermissionModeResponse
+	17, // 36: agentfleet.v1.DashboardService.KillE2e:output_type -> agentfleet.v1.KillE2eResponse
+	19, // 37: agentfleet.v1.DashboardService.AnswerQuestion:output_type -> agentfleet.v1.AnswerQuestionResponse
+	15, // 38: agentfleet.v1.DashboardService.RespondToPermission:output_type -> agentfleet.v1.RespondToPermissionResponse
 	21, // 39: agentfleet.v1.DashboardService.Discuss:output_type -> agentfleet.v1.DiscussResponse
 	23, // 40: agentfleet.v1.DashboardService.DeleteTask:output_type -> agentfleet.v1.DeleteTaskResponse
 	25, // 41: agentfleet.v1.DashboardService.ListWorktrees:output_type -> agentfleet.v1.ListWorktreesViewResponse
@@ -2398,7 +2426,7 @@ func file_agentfleet_v1_dashboard_proto_init() {
 	file_agentfleet_v1_provisioner_proto_init()
 	file_agentfleet_v1_transcript_proto_init()
 	file_agentfleet_v1_dashboard_proto_msgTypes[0].OneofWrappers = []any{}
-	file_agentfleet_v1_dashboard_proto_msgTypes[12].OneofWrappers = []any{}
+	file_agentfleet_v1_dashboard_proto_msgTypes[10].OneofWrappers = []any{}
 	file_agentfleet_v1_dashboard_proto_msgTypes[24].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{

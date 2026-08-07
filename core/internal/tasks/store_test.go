@@ -61,7 +61,8 @@ func newTestPool(t *testing.T) *pgxpool.Pool {
 			pr_url             TEXT,
 			notes              TEXT,
 			last_error         TEXT,
-			planning_session_id TEXT,
+			session_id         TEXT,
+			permission_mode    TEXT,
 			model              TEXT,
 			retry_count        INT NOT NULL DEFAULT 0,
 			heartbeat_at       TIMESTAMPTZ,
@@ -140,7 +141,7 @@ func TestClaimNextTask_ReclaimsStaleHeartbeat(t *testing.T) {
 	var taskID string
 	if err := pool.QueryRow(ctx, `
 		INSERT INTO tasks (repo, description, discord_channel_id, status, heartbeat_at)
-		VALUES ('dream-analyst', 'task', 'chan', 'planning', now() - interval '11 minutes')
+		VALUES ('dream-analyst', 'task', 'chan', 'running', now() - interval '11 minutes')
 		RETURNING id
 	`).Scan(&taskID); err != nil {
 		t.Fatalf("seed stale task: %v", err)
@@ -218,7 +219,7 @@ func TestClaimNextTask_RespectsMaxInFlight(t *testing.T) {
 
 	var inFlight int
 	if err := pool.QueryRow(ctx, `
-		SELECT count(*) FROM tasks WHERE status IN ('claimed', 'planning', 'implementing')
+		SELECT count(*) FROM tasks WHERE status IN ('claimed', 'running')
 	`).Scan(&inFlight); err != nil {
 		t.Fatalf("count in flight: %v", err)
 	}
@@ -246,7 +247,7 @@ func TestClaimNextTask_FailsPermanentlyAfterMaxRetries(t *testing.T) {
 	var taskID string
 	if err := pool.QueryRow(ctx, `
 		INSERT INTO tasks (repo, description, discord_channel_id, status, heartbeat_at, retry_count)
-		VALUES ('dream-analyst', 'task', 'chan', 'implementing', now() - interval '11 minutes', $1)
+		VALUES ('dream-analyst', 'task', 'chan', 'running', now() - interval '11 minutes', $1)
 		RETURNING id
 	`, maxRetries-1).Scan(&taskID); err != nil {
 		t.Fatalf("seed task at the retry ceiling: %v", err)
@@ -285,7 +286,7 @@ func TestClaimNextTask_ReclaimsBelowRetryCeiling(t *testing.T) {
 	var taskID string
 	if err := pool.QueryRow(ctx, `
 		INSERT INTO tasks (repo, description, discord_channel_id, status, heartbeat_at, retry_count)
-		VALUES ('dream-analyst', 'task', 'chan', 'implementing', now() - interval '11 minutes', 0)
+		VALUES ('dream-analyst', 'task', 'chan', 'running', now() - interval '11 minutes', 0)
 		RETURNING id
 	`).Scan(&taskID); err != nil {
 		t.Fatalf("seed task: %v", err)
@@ -298,8 +299,8 @@ func TestClaimNextTask_ReclaimsBelowRetryCeiling(t *testing.T) {
 	if task == nil || task.ID != taskID {
 		t.Fatalf("expected the task to be reclaimed normally, got %+v", task)
 	}
-	if task.Status != "implementing" {
-		t.Fatalf("expected status unchanged at 'implementing', got %q", task.Status)
+	if task.Status != "running" {
+		t.Fatalf("expected status unchanged at 'running', got %q", task.Status)
 	}
 }
 
@@ -315,7 +316,7 @@ func TestMarkCrashed_BackdatesHeartbeatForNonTerminalTask(t *testing.T) {
 	var taskID string
 	if err := pool.QueryRow(ctx, `
 		INSERT INTO tasks (repo, description, discord_channel_id, status, heartbeat_at)
-		VALUES ('dream-analyst', 'task', 'chan', 'implementing', now())
+		VALUES ('dream-analyst', 'task', 'chan', 'running', now())
 		RETURNING id
 	`).Scan(&taskID); err != nil {
 		t.Fatalf("seed task with a fresh heartbeat: %v", err)
@@ -400,7 +401,7 @@ func TestCreateTask_NilChannelAndThread(t *testing.T) {
 
 // TestSoftDelete_HidesFromGetAndList covers the dashboard's DeleteTask
 // path: a soft-deleted task must disappear from both single-task lookup
-// and the list, without a row deletion (which planning_transcript's FK
+// and the list, without a row deletion (which transcript's FK
 // would reject once any transcript history exists).
 func TestSoftDelete_HidesFromGetAndList(t *testing.T) {
 	pool := newTestPool(t)
@@ -498,9 +499,9 @@ func TestListOverdueStopIDs_ReturnsOnlyOverdueNonTerminal(t *testing.T) {
 
 	old := 2 * time.Minute
 	recent := 1 * time.Second
-	overdueImplementing := seed("implementing", &old)
-	seed("implementing", &recent)     // not yet overdue
-	seed("implementing", nil)         // no stop requested at all
+	overdueRunning := seed("running", &old)
+	seed("running", &recent)     // not yet overdue
+	seed("running", nil)         // no stop requested at all
 	seed("cancelled", &old)           // overdue but already terminal
 	seed("done", &old)                // overdue but already terminal
 
@@ -508,8 +509,8 @@ func TestListOverdueStopIDs_ReturnsOnlyOverdueNonTerminal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list overdue stops: %v", err)
 	}
-	if len(ids) != 1 || ids[0] != overdueImplementing {
-		t.Fatalf("expected exactly [%s], got %v", overdueImplementing, ids)
+	if len(ids) != 1 || ids[0] != overdueRunning {
+		t.Fatalf("expected exactly [%s], got %v", overdueRunning, ids)
 	}
 }
 

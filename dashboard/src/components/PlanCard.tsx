@@ -1,13 +1,13 @@
 import { useState } from "react";
 import { Markdown } from "./Markdown";
 
-// ExitPlanMode has no dedicated transcript type or seq-correlated answer
-// (see transcript.ts's findPendingPlan) — Approve is the existing blind
-// global RPC (already correct given the worker's single-pending-plan
-// invariant), and "Request changes" reuses the existing sendDiscuss flow:
-// worker/src/planning.ts already treats any human reply while a plan is
-// pending as deny-with-feedback, re-arming the agent to call ExitPlanMode
-// again with a revised plan. No backend changes needed for either action.
+// ExitPlanMode's canUseTool call posts a real, seq-correlated
+// PERMISSION_REQUEST entry like any other tool (see transcript.ts's
+// findPendingPermissions) — "Approve" here just calls RespondToPermission
+// with an allow decision. "Request changes" reuses the existing
+// sendDiscuss flow: worker/src/session.ts already treats any human reply
+// while a permission request is pending as deny-with-feedback, re-arming
+// the agent to call ExitPlanMode again with a revised plan.
 //
 // `edgeClassName` breaks the card out of the feed's own horizontal padding
 // so it can span full width — desktop/mobile pass their own negative-margin

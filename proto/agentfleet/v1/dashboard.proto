@@ -26,8 +26,8 @@ message Task {
   // pod's first event.
   optional string pod_phase = 7;
   optional string pod_message = 8;
-  // Reclaim-eligibility signal (ClaimNextTask reclaims a claimed/planning/
-  // implementing task once this is >10min stale — the exact staleness
+  // Reclaim-eligibility signal (ClaimNextTask reclaims a claimed/running
+  // task once this is >10min stale — the exact staleness
   // threshold the dashboard's own "stuck" badge should match). Set once at
   // claim time, refreshed by the worker pod's own heartbeat loop; unset for
   // a still-pending task. RFC3339, matching JournalEntry.created_at.
@@ -41,11 +41,10 @@ message Task {
   // pod via `resume:` (sessions redesign, supersedes docs/adr/0021/0025's
   // phase-boundary framing). Unset until the worker's first streamed
   // message reports it.
-  optional string planning_session_id = 12;
-  // Last time a planning_transcript entry was appended for this task —
-  // substrate for the idle-timeout backstop that tears down an unattended
-  // pod. RFC3339, matching heartbeat_at. Unset for a task with no activity
-  // yet.
+  optional string session_id = 12;
+  // Last time a transcript entry was appended for this task — substrate
+  // for the idle-timeout backstop that tears down an unattended pod.
+  // RFC3339, matching heartbeat_at. Unset for a task with no activity yet.
   optional string last_active_at = 13;
   // The session's current SDK permission mode ("default"|"plan"|
   // "acceptEdits"|"bypassPermissions"|...), so the dashboard's mode picker
@@ -101,14 +100,6 @@ message GetE2eStatusResponse {
   string preview_url = 2;
 }
 
-message ApproveRequest {
-  string task_id = 1;
-}
-
-message ApproveResponse {
-  string status = 1;
-}
-
 message StopRequest {
   string task_id = 1;
   optional string reason = 2;
@@ -118,19 +109,39 @@ message StopResponse {
   string status = 1;
 }
 
-// Sets an arbitrary SDK permission mode on a running task (docs/adr/0027) —
-// distinct from Approve, which stays a fixed plan->default flip matching
-// Discord's binary /approve. `mode` must be one of "acceptEdits"|
-// "dontAsk"|"bypassPermissions" (validated server-side); "bypassPermissions"
-// deliberately disables the canUseTool Write/Edit gate for this task for the
-// rest of the session — the dashboard must get explicit, typed confirmation
-// from the human before sending that value.
+// Sets an arbitrary SDK permission mode on a running task (docs/adr/0027,
+// extended by the sessions redesign supersession of docs/adr/0021/0025 —
+// Approve is gone, this is now the only mode lever). `mode` must be one of
+// "default"|"plan"|"acceptEdits"|"bypassPermissions" (validated
+// server-side); "bypassPermissions" deliberately disables the canUseTool
+// prompt-and-wait gate for this task for the rest of the session — the
+// dashboard must get explicit, typed confirmation from the human before
+// sending that value.
 message SetPermissionModeRequest {
   string task_id = 1;
   string mode = 2;
 }
 
 message SetPermissionModeResponse {
+  string status = 1;
+}
+
+// Answers a pending PERMISSION_REQUEST-type transcript entry (posted by
+// canUseTool for any tool call the SDK's current permission mode would
+// prompt for — supersedes docs/adr/0021's Write/Edit-absent-from-
+// allowedTools gate). `seq` is that entry's own seq, carried the same way
+// AnswerQuestion's is — for the dashboard's own bookkeeping, not required
+// for correlation server-side. A sibling RPC to AnswerQuestion rather than
+// overloading it: the payload shape differs (allow/deny/updatedInput vs.
+// free-form answers JSON) and there's no real code to share beyond one
+// AppendReply call either way.
+message RespondToPermissionRequest {
+  string task_id = 1;
+  int64 seq = 2;
+  string decision_json = 3;
+}
+
+message RespondToPermissionResponse {
   string status = 1;
 }
 
@@ -142,11 +153,11 @@ message KillE2eResponse {
   bool killed = 1;
 }
 
-// Answers a pending QUESTION-type transcript entry (posted by the planner's
+// Answers a pending QUESTION-type transcript entry (posted by the agent's
 // AskUserQuestion MCP tool call, see docs/adr/0018). `seq` is that entry's
 // own seq — carried for the dashboard's own bookkeeping/idempotency, not
 // required for correlation server-side (only one question is ever pending
-// per task at a time, since the planner's tool call blocks on it).
+// per task at a time, since the agent's tool call blocks on it).
 // `answers_json` is a JSON-encoded {"answers": {"<question>": "<label>"}}
 // payload, opaque to fleet-core — it's appended verbatim as the answer
 // entry's `text` and returned verbatim to the blocked MCP tool call.
@@ -166,8 +177,8 @@ message AnswerQuestionResponse {
 // streamHumanMessages SSE the same way a Discord reply already is (no
 // worker/sidecar changes needed, it's a plain cursor-based transcript
 // stream, not Discord-specific). `from`/`type` are hardcoded server-side,
-// same pattern as Approve hardcoding "human"/"approve" — the dashboard has
-// no need to expose them.
+// same pattern as Stop hardcoding "human"/"abort" — the dashboard has no
+// need to expose them.
 message DiscussRequest {
   string task_id = 1;
   string text = 2;
@@ -298,11 +309,11 @@ service DashboardService {
   // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
   rpc StreamTranscript(StreamTranscriptRequest) returns (stream TranscriptEntry);
   rpc GetE2eStatus(GetE2eStatusRequest) returns (GetE2eStatusResponse);
-  rpc Approve(ApproveRequest) returns (ApproveResponse);
   rpc Stop(StopRequest) returns (StopResponse);
   rpc SetPermissionMode(SetPermissionModeRequest) returns (SetPermissionModeResponse);
   rpc KillE2e(KillE2eRequest) returns (KillE2eResponse);
   rpc AnswerQuestion(AnswerQuestionRequest) returns (AnswerQuestionResponse);
+  rpc RespondToPermission(RespondToPermissionRequest) returns (RespondToPermissionResponse);
   rpc Discuss(DiscussRequest) returns (DiscussResponse);
   rpc DeleteTask(DeleteTaskRequest) returns (DeleteTaskResponse);
   // Reuses provisioner.proto's ListWorktreesRequest (identical shape,

@@ -2,7 +2,7 @@ package transcript
 
 import "testing"
 
-// Literal port of the fixture set implied by worker/src/planning.ts's
+// Literal port of the fixture set implied by worker/src/session.ts's
 // comments — this is the single highest-value test in the whole rewrite,
 // since a regex-behavior drift here silently breaks the human approval gate.
 func TestIsApproval(t *testing.T) {

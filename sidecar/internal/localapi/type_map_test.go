@@ -7,7 +7,7 @@ import (
 )
 
 // TestStringToProtoType_RoundTrip covers messageHandler's write-path
-// mapping (worker/src/planning.ts's logSdkMessage sends these exact type
+// mapping (worker/src/session.ts's logSdkMessage sends these exact type
 // strings) and humanMessagesHandler's read-path reverse. Before the four
 // SDK message types below had enum values, they silently coerced to
 // UNSPECIFIED -> "" downstream in coreserver, which the Discord relay

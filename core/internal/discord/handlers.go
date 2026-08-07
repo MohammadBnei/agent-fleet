@@ -27,12 +27,6 @@ func (c *Client) onInteractionCreate(s *discordgo.Session, i *discordgo.Interact
 		description := data.Options[1].StringValue()
 		c.startTask(ctx, s, i, repo, description)
 
-	case "approve":
-		c.withTaskFromThread(ctx, s, i, func(taskID string) {
-			c.relay(ctx, taskID, "human", "approved", "approve")
-		})
-		respond(s, i, "Approved.")
-
 	case "stop":
 		reason := "stopped by human"
 		if opt := data.GetOption("reason"); opt != nil {

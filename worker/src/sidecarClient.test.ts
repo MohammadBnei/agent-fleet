@@ -3,7 +3,7 @@
 // exactly the kind of thing a mocked fetch would be too easy to get
 // "passing" without actually proving. Confirmed live in prod: a dropped
 // SSE connection used to end this feed for the rest of a task's life, with
-// nothing left to ever deliver Approve/Discuss/Abort again (no reconnect
+// nothing left to ever deliver a permission decision/Discuss/Abort again (no reconnect
 // loop anywhere in the old implementation). See sidecar/internal/localapi's
 // humanMessagesHandler for the other half of this fix (sinceSeq query
 // param + keep-alive pings).

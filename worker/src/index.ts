@@ -3,7 +3,7 @@
 // when it's done. Replaces the old claim-loop index.ts entirely; git
 // clone/worktree setup and retry/crash-recovery now live in the provisioner
 // (docs/adr/0019 point 2), not here.
-import { runTask as defaultRunTask, TransientError } from "./planning.js";
+import { runTask as defaultRunTask, TransientError } from "./session.js";
 import * as defaultSidecar from "./sidecarClient.js";
 import { log } from "./log.js";
 import type { Task } from "./types.js";
@@ -102,11 +102,11 @@ async function reportStatus(sidecar: Sidecar, status: string, fields?: Parameter
 
 // sidecar/runTask/verifyPrExists/configureGitAuth default to the real
 // implementations — the parameters exist so tests can substitute fakes
-// without touching module resolution (index.test.ts and planning.test.ts
+// without touching module resolution (index.test.ts and session.test.ts
 // both need to control this same boundary independently; Bun's
 // mock.module is process-global, not per-file, so module-mocking any of
-// these here would leak into planning.test.ts's own real import of
-// ./planning.js).
+// these here would leak into session.test.ts's own real import of
+// ./session.js).
 export async function main(
   sidecar: Sidecar = defaultSidecar,
   runTask: RunTask = defaultRunTask,
@@ -133,9 +133,9 @@ export async function main(
     // retries still gets core's normal reclaim-and-redispatch treatment
     // instead of being marked (permanently, after enough retries) failed.
     try {
-      await withRetry(() => sidecar.setStatus("planning"));
+      await withRetry(() => sidecar.setStatus("running"));
     } catch (err) {
-      throw new TransientError(`sidecar.setStatus("planning") failed after retries: ${err}`);
+      throw new TransientError(`sidecar.setStatus("running") failed after retries: ${err}`);
     }
     const result = await runTask(task);
 

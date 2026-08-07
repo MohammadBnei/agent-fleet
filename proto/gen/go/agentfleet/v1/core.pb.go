@@ -940,12 +940,12 @@ func (*AppendJournalResponse) Descriptor() ([]byte, []int) {
 }
 
 type SaveSessionIdRequest struct {
-	state             protoimpl.MessageState `protogen:"open.v1"`
-	TaskId            string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
-	PlanningSessionId string                 `protobuf:"bytes,2,opt,name=planning_session_id,json=planningSessionId,proto3" json:"planning_session_id,omitempty"`
-	Model             string                 `protobuf:"bytes,3,opt,name=model,proto3" json:"model,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TaskId        string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	SessionId     string                 `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	Model         string                 `protobuf:"bytes,3,opt,name=model,proto3" json:"model,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *SaveSessionIdRequest) Reset() {
@@ -985,9 +985,9 @@ func (x *SaveSessionIdRequest) GetTaskId() string {
 	return ""
 }
 
-func (x *SaveSessionIdRequest) GetPlanningSessionId() string {
+func (x *SaveSessionIdRequest) GetSessionId() string {
 	if x != nil {
-		return x.PlanningSessionId
+		return x.SessionId
 	}
 	return ""
 }
@@ -1342,10 +1342,11 @@ const file_agentfleet_v1_core_proto_rawDesc = "" +
 	"\n" +
 	"event_type\x18\x03 \x01(\tR\teventType\x12!\n" +
 	"\fpayload_json\x18\x04 \x01(\tR\vpayloadJson\"\x17\n" +
-	"\x15AppendJournalResponse\"u\n" +
+	"\x15AppendJournalResponse\"d\n" +
 	"\x14SaveSessionIdRequest\x12\x17\n" +
-	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12.\n" +
-	"\x13planning_session_id\x18\x02 \x01(\tR\x11planningSessionId\x12\x14\n" +
+	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x02 \x01(\tR\tsessionId\x12\x14\n" +
 	"\x05model\x18\x03 \x01(\tR\x05model\"\x17\n" +
 	"\x15SaveSessionIdResponse\"L\n" +
 	"\x16StillHoldsLeaseRequest\x12\x17\n" +

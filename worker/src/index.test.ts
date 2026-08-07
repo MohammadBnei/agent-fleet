@@ -5,7 +5,7 @@
 // main() takes its sidecar/runTask dependencies as parameters (defaulting
 // to the real implementations) rather than being driven via
 // mock.module() — Bun's mock.module is process-global, not per-file, and
-// planning.test.ts independently needs the real ./planning.js and
+// session.test.ts independently needs the real ./session.js and
 // ./sidecarClient.js at its own top level; module-mocking either here
 // would leak into that file's import and break it.
 import { test, expect, afterEach } from "bun:test";
@@ -34,7 +34,7 @@ test("a sidecar failure while reporting 'failed' status doesn't crash the proces
   const fakeSidecar = {
     heartbeat: async () => {},
     appendJournal: async () => {},
-    // "planning" succeeds (mirrors a sidecar that was fine until the very
+    // "running" succeeds (mirrors a sidecar that was fine until the very
     // end); "failed" — the status write index.ts's catch block makes
     // right as the task is going down — throws, simulating the blip
     // finding #9 describes.
@@ -66,8 +66,8 @@ test("a sidecar failure while reporting 'failed' status doesn't crash the proces
   // aren't wrapped in bun:test's `mock()`).
   await main(fakeSidecar as never, fakeRunTask as never);
 
-  // The "planning" status write succeeded before the simulated failure.
-  expect(statusCalls).toContainEqual({ status: "planning", fields: undefined });
+  // The "running" status write succeeded before the simulated failure.
+  expect(statusCalls).toContainEqual({ status: "running", fields: undefined });
   // The "failed" status write was attempted despite the sidecar throwing —
   // reliability-findings.md #9's guard wraps it, it doesn't get skipped.
   expect(failedStatusCallCount).toBeGreaterThan(0);

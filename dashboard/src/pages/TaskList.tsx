@@ -1,7 +1,7 @@
 import type { Task } from "../gen/agentfleet/v1/dashboard_pb";
 import type { TodoItem } from "../transcript";
 
-export const ACTIVE_STATUSES = new Set(["pending", "claimed", "planning", "implementing"]);
+export const ACTIVE_STATUSES = new Set(["pending", "claimed", "running"]);
 export const SHIPPED_STATUSES = new Set(["done", "failed", "cancelled"]);
 
 // Shared section-membership split — used by both the desktop TaskList and
@@ -56,7 +56,7 @@ export function podStateBadge(task: Task): { label: string; className: string } 
 }
 
 // Matches core's own reclaim threshold (tasks.Store.ClaimNextTask reclaims
-// a claimed/planning/implementing task once its heartbeat is this stale) —
+// a claimed/running task once its heartbeat is this stale) —
 // the dashboard's "stuck" signal should fire at exactly the point a human
 // can no longer distinguish "about to be reclaimed" from "silently wedged
 // forever" (see the incident where a task sat claimed with no pod for 20+
