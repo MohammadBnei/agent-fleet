@@ -38,6 +38,15 @@ type Config struct {
 	// and shut down cleanly, short enough that a hung/unreachable pod
 	// doesn't outlive a Stop click indefinitely.
 	StopGrace time.Duration
+	// IdleTimeout is the sessions redesign's idle-timeout backstop (supersedes
+	// docs/adr/0021/0025's phase-boundary framing) — how long a warm pod can
+	// go with no real transcript activity (tasks.last_active_at, bumped by a
+	// transcript.Store decorator on every Append/AppendReply, not the
+	// sidecar's own git-diff-gated telemetry or the unconditional heartbeat
+	// timer, neither of which prove a human is actually present) before
+	// dispatch.Loop tears it down — the same TearDownSession call
+	// enforceStopGrace already makes, no status change.
+	IdleTimeout time.Duration
 }
 
 func Load() Config {
@@ -57,6 +66,7 @@ func Load() Config {
 		MaxInFlight:           envInt("MAX_IN_FLIGHT_TASKS", 5),
 		MaxTaskRetries:        envInt("MAX_TASK_RETRIES", 3),
 		StopGrace:             time.Duration(envInt("STOP_GRACE_MS", 30000)) * time.Millisecond,
+		IdleTimeout:           time.Duration(envInt("IDLE_TIMEOUT_MS", 30*60*1000)) * time.Millisecond,
 	}
 }
 
