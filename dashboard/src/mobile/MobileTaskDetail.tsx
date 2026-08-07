@@ -5,10 +5,9 @@ import {
   parseQuestions,
   parseAnswers,
   findPendingQuestion,
-  findPendingPlan,
+  findPendingPermissions,
   latestSlashCommands,
   parseSdkSystemInfo,
-  parseSdkToolUse,
   parseSdkToolResult,
   parseSdkResultSummary,
   buildToolCallPairs,
@@ -22,6 +21,7 @@ import { useAtBottom } from "../useAtBottom";
 import { ToolCallItem } from "../components/ToolCallItem";
 import { ToolCallLine } from "../components/ToolCallLine";
 import { PlanCard } from "../components/PlanCard";
+import { PermissionCard } from "../components/PermissionCard";
 import { ErrorModal } from "../components/ErrorModal";
 import { Markdown } from "../components/Markdown";
 import { JsonView } from "../components/JsonView";
@@ -244,7 +244,7 @@ export function MobileTaskDetail({
     useAtBottom<HTMLDivElement>();
 
   // See TaskDetail.tsx's identical effect for the rationale: new human
-  // entries jump to the bottom, new planner entries only pulse the button.
+  // entries jump to the bottom, new agent entries only pulse the button.
   const [hasNewAiMessage, setHasNewAiMessage] = useState(false);
   const prevEntriesLenRef = useRef<number | null>(null);
   useEffect(() => {
@@ -300,7 +300,7 @@ export function MobileTaskDetail({
   const blockedTodo = pendingQuestion
     ? (todos.find((t) => t.status === "in_progress") ?? todos.find((t) => t.status !== "completed"))
     : null;
-  const pendingPlan = findPendingPlan(entries);
+  const pendingPermissions = findPendingPermissions(entries);
   // Tool calls stay inline in the mobile feed (unlike desktop's right-panel
   // move) — paired via the same call<->output id correlation, one
   // collapsible ToolCallItem per call instead of two separate bubbles.
@@ -392,18 +392,42 @@ export function MobileTaskDetail({
             if (hideChangesInFeed) return null;
             return <ToolCallLine key={String(entry.seq)} entry={entry} />;
           }
-          if (entry.type === TranscriptEntryType.ASSISTANT && parseSdkToolUse(entry.text)?.tool === "ExitPlanMode") {
-            const isPending = pendingPlan?.entry.seq === entry.seq;
-            const plan = isPending ? pendingPlan!.plan : (parseSdkToolUse(entry.text)!.input as { plan?: string })?.plan;
-            if (typeof plan !== "string") return null;
+          if (entry.type === TranscriptEntryType.PERMISSION_RESPONSE) return null;
+          if (entry.type === TranscriptEntryType.PERMISSION_REQUEST) {
+            let parsed: { tool?: string; input?: unknown } = {};
+            try {
+              parsed = JSON.parse(entry.text);
+            } catch {
+              return null;
+            }
+            if (typeof parsed.tool !== "string") return null;
+            const isPending = pendingPermissions.some((p) => p.entry.seq === entry.seq);
+            const respond = (decision: { behavior: "allow" | "deny"; message?: string }) =>
+              run(() => client.respondToPermission({ taskId, seq: entry.seq, decisionJson: JSON.stringify(decision) }));
+            if (parsed.tool === "ExitPlanMode") {
+              const plan = (parsed.input as { plan?: string } | undefined)?.plan;
+              if (typeof plan !== "string") return null;
+              return (
+                <PlanCard
+                  key={String(entry.seq)}
+                  plan={plan}
+                  pending={isPending}
+                  busy={busy}
+                  onApprove={() => respond({ behavior: "allow" })}
+                  onFeedback={(text) => sendDiscuss(text)}
+                  edgeClassName="-mx-4 px-4"
+                />
+              );
+            }
             return (
-              <PlanCard
+              <PermissionCard
                 key={String(entry.seq)}
-                plan={plan}
+                tool={parsed.tool}
+                input={parsed.input}
                 pending={isPending}
                 busy={busy}
-                onApprove={() => run(() => client.approve({ taskId }))}
-                onFeedback={(text) => sendDiscuss(text)}
+                onAllow={() => respond({ behavior: "allow" })}
+                onDeny={(message) => respond({ behavior: "deny", message })}
                 edgeClassName="-mx-4 px-4"
               />
             );
@@ -547,6 +571,7 @@ export function MobileTaskDetail({
               busy={busy}
               run={run}
               previewUrl={previewUrl}
+              currentMode={task.permissionMode}
               onBypassClick={() => {
                 setActionsOpen(false);
                 setBypassOpen(true);

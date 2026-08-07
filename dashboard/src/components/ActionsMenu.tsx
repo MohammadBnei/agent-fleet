@@ -1,9 +1,24 @@
 import type { CSSProperties } from "react";
 import { client } from "../connectClient";
 
-// The Approve/Stop/Kill e2e/Mode/Open-code-server button row, shared
-// between desktop and mobile — both render it inside a Modal, opened from a
-// small icon button rather than either platform picking its own layout.
+// The user-facing SDK modes worth a direct button — "delegate"/"dontAsk"
+// are SDK-internal/secondary, never surfaced here. "bypassPermissions" is
+// deliberately routed through onBypassClick's confirm modal, not called
+// directly like the other three, since it disables the canUseTool gate
+// outright for the rest of the session.
+const MODES = [
+  { value: "default", label: "Default" },
+  { value: "plan", label: "Plan" },
+  { value: "acceptEdits", label: "Accept edits" },
+] as const;
+
+// The Stop/Kill e2e/Mode/Open-code-server button row, shared between
+// desktop and mobile — both render it inside a Modal, opened from a small
+// icon button rather than either platform picking its own layout. Approve
+// is gone as of the sessions redesign (supersedes docs/adr/0021/0025's
+// phase-boundary framing) — there's no plan->default flip left to fix a
+// button to; the Mode dropdown below is the only lever now, and highlights
+// whichever mode is actually active instead of just offering to change it.
 // hideToolsInFeed/hideChangesInFeed only ever change what mobile's inline
 // exchange-zone feed shows (desktop keeps these in dedicated panels
 // regardless), but the toggle itself lives here — the one place both
@@ -16,6 +31,7 @@ export function ActionsMenu({
   busy,
   run,
   previewUrl,
+  currentMode,
   onBypassClick,
   hideToolsInFeed,
   onHideToolsInFeedChange,
@@ -26,6 +42,10 @@ export function ActionsMenu({
   busy: boolean;
   run: (action: () => Promise<unknown>) => void;
   previewUrl: string | null;
+  // Unset for an idle/never-warmed session — no mode has been explicitly
+  // chosen yet (the SDK itself starts a fresh session in "default", but
+  // that's not durable here until SetPermissionMode is actually called).
+  currentMode?: string;
   onBypassClick: () => void;
   hideToolsInFeed?: boolean;
   onHideToolsInFeedChange?: (value: boolean) => void;
@@ -63,14 +83,6 @@ export function ActionsMenu({
       <div className="flex items-center gap-2 flex-wrap">
       <button
         type="button"
-        className="btn btn-success btn-xs"
-        disabled={busy}
-        onClick={() => run(() => client.approve({ taskId }))}
-      >
-        Approve
-      </button>
-      <button
-        type="button"
         className="btn btn-warning btn-xs"
         disabled={busy}
         onClick={() => run(() => client.stop({ taskId }))}
@@ -97,7 +109,7 @@ export function ActionsMenu({
         popoverTarget="popover-mode"
         style={{ anchorName: "--anchor-mode" } as CSSProperties}
       >
-        Mode ▾
+        Mode: {MODES.find((m) => m.value === currentMode)?.label ?? currentMode ?? "?"} ▾
       </button>
       <ul
         className="dropdown menu menu-sm bg-base-100 rounded-box shadow w-44 p-1"
@@ -105,18 +117,25 @@ export function ActionsMenu({
         id="popover-mode"
         style={{ positionAnchor: "--anchor-mode" } as CSSProperties}
       >
+        {MODES.map((m) => (
+          <li key={m.value}>
+            <button
+              type="button"
+              className={m.value === currentMode ? "active" : undefined}
+              onClick={() => run(() => client.setPermissionMode({ taskId, mode: m.value }))}
+            >
+              {m.value === currentMode ? "✓ " : ""}
+              {m.label}
+            </button>
+          </li>
+        ))}
         <li>
-          <button type="button" onClick={() => run(() => client.setPermissionMode({ taskId, mode: "acceptEdits" }))}>
-            Accept edits
-          </button>
-        </li>
-        <li>
-          <button type="button" onClick={() => run(() => client.setPermissionMode({ taskId, mode: "dontAsk" }))}>
-            Don&apos;t ask
-          </button>
-        </li>
-        <li>
-          <button type="button" className="text-error" onClick={onBypassClick}>
+          <button
+            type="button"
+            className={currentMode === "bypassPermissions" ? "active text-error" : "text-error"}
+            onClick={onBypassClick}
+          >
+            {currentMode === "bypassPermissions" ? "✓ " : ""}
             Bypass permissions
           </button>
         </li>

@@ -98,7 +98,7 @@ func (s *Server) AskUserQuestion(ctx context.Context, req *agentfleetv1.AskUserQ
 		return nil, fmt.Errorf("task_id and questions_json are required")
 	}
 
-	seq, err := s.transcr.Append(ctx, req.GetTaskId(), "planner", req.GetQuestionsJson(), "question", uuid.NewString())
+	seq, err := s.transcr.Append(ctx, req.GetTaskId(), "agent", req.GetQuestionsJson(), "question", uuid.NewString())
 	if err != nil {
 		return nil, fmt.Errorf("AskUserQuestion: %w", err)
 	}
@@ -231,7 +231,7 @@ func (s *Server) AppendJournal(ctx context.Context, req *agentfleetv1.AppendJour
 }
 
 func (s *Server) SaveSessionId(ctx context.Context, req *agentfleetv1.SaveSessionIdRequest) (*agentfleetv1.SaveSessionIdResponse, error) {
-	if err := s.tasks.SaveSessionID(ctx, req.GetTaskId(), req.GetPlanningSessionId(), req.GetModel()); err != nil {
+	if err := s.tasks.SaveSessionID(ctx, req.GetTaskId(), req.GetSessionId(), req.GetModel()); err != nil {
 		return nil, fmt.Errorf("SaveSessionId: %w", err)
 	}
 	return &agentfleetv1.SaveSessionIdResponse{}, nil
@@ -259,7 +259,7 @@ func (s *Server) PushToolTelemetry(ctx context.Context, req *agentfleetv1.PushTo
 // StreamHumanMessages is the mechanism that lets the sidecar deliver new
 // human input to the wrapper live, for streamInput() (docs/adr/0021 point
 // 2) — a genuine live feed, not a poll the wrapper initiates on its own
-// schedule. Filters to from=="human": echoing the planner's own
+// schedule. Filters to from=="human": echoing the agent's own
 // send_message posts back as "new input" would double-feed the agent's own
 // words back to itself as a user turn.
 func (s *Server) StreamHumanMessages(req *agentfleetv1.StreamHumanMessagesRequest, stream agentfleetv1.CoreService_StreamHumanMessagesServer) error {

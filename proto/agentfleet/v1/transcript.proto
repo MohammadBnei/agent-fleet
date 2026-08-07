@@ -15,7 +15,7 @@ enum TranscriptEntryType {
   TRANSCRIPT_ENTRY_TYPE_DISCUSSION = 1;
   TRANSCRIPT_ENTRY_TYPE_APPROVE = 2;
   TRANSCRIPT_ENTRY_TYPE_ABORT = 3;
-  // Structured multiple-choice question(s) posted by the planner via the
+  // Structured multiple-choice question(s) posted by the agent via the
   // AskUserQuestion MCP tool — `text` is a JSON payload, not prose. Answered
   // via the dashboard (not Discord), see docs/adr/0018.
   TRANSCRIPT_ENTRY_TYPE_QUESTION = 4;
@@ -26,7 +26,7 @@ enum TranscriptEntryType {
   // call (see docs/adr/0020, docs/adr/0021's sidecar). `text` is a JSON
   // payload. Never relayed to Discord (core's relay loop skips this type).
   TRANSCRIPT_ENTRY_TYPE_TOOL_CALL = 6;
-  // The raw Claude Agent SDK message discriminants worker/src/planning.ts's
+  // The raw Claude Agent SDK message discriminants worker/src/session.ts's
   // logSdkMessage relays verbatim (reliability-findings.md #0: "relay
   // everything, let the UI decide, no pre-filtering") — `text` is a JSON
   // payload, dashboard-only, never relayed to Discord (matches the DB
@@ -55,7 +55,7 @@ enum TranscriptEntryType {
 message TranscriptEntry {
   string task_id = 1;
   int64 seq = 2;
-  string from = 3; // "planner" | "human"
+  string from = 3; // "agent" | "human"
   string text = 4;
   TranscriptEntryType type = 5;
   // Non-nil only for an ANSWER/PERMISSION_RESPONSE entry replying to a

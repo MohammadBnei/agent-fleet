@@ -38,12 +38,19 @@ type Task struct {
 	RetryCount  int        `json:"retryCount"`
 	LastError   *string    `json:"lastError,omitempty"`
 	LeaseID     string     `json:"-"`
-	// PlanningSessionID/Model are written by SaveSessionID but were never
-	// read back before the sessions redesign — now read so a warm/resume
-	// path (docs/adr supersession of 0021/0025) can pass the Claude SDK's
-	// own session id into a fresh pod's `resume:` option.
-	PlanningSessionID *string `json:"planningSessionId,omitempty"`
-	Model             *string `json:"model,omitempty"`
+	// SessionID/Model are written by SaveSessionID but were never read back
+	// before the sessions redesign — now read so a warm/resume path (docs/
+	// adr supersession of 0021/0025) can pass the Claude SDK's own session
+	// id into a fresh pod's `resume:` option. Renamed from
+	// PlanningSessionID/planning_session_id as part of the same redesign —
+	// there's no distinct "planning" phase left to name it after.
+	SessionID *string `json:"sessionId,omitempty"`
+	Model     *string `json:"model,omitempty"`
+	// PermissionMode is the session's current SDK permission mode, set
+	// alongside the 'permission_mode' transcript entry
+	// (DashboardService.SetPermissionMode) so the dashboard's mode picker
+	// can show the real active mode instead of inferring it from history.
+	PermissionMode *string `json:"permissionMode,omitempty"`
 }
 
 type Store struct {
@@ -105,10 +112,10 @@ func (s *Store) GetTask(ctx context.Context, id string) (*Task, error) {
 	var t Task
 	err := s.pool.QueryRow(ctx, `
 		SELECT id, repo, description, status, discord_thread_id, pr_url, pod_phase, pod_message,
-		       heartbeat_at, retry_count, last_error, planning_session_id, model
+		       heartbeat_at, retry_count, last_error, session_id, model, permission_mode
 		FROM tasks WHERE id = $1 AND deleted_at IS NULL
 	`, id).Scan(&t.ID, &t.Repo, &t.Description, &t.Status, &t.ThreadID, &t.PrURL, &t.PodPhase, &t.PodMessage,
-		&t.HeartbeatAt, &t.RetryCount, &t.LastError, &t.PlanningSessionID, &t.Model)
+		&t.HeartbeatAt, &t.RetryCount, &t.LastError, &t.SessionID, &t.Model, &t.PermissionMode)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
@@ -152,7 +159,7 @@ func (s *Store) GetTaskStatusInfo(ctx context.Context, id string) (*TaskStatusIn
 func (s *Store) ListRecentTasks(ctx context.Context, limit int) ([]Task, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT id, repo, description, status, discord_thread_id, pr_url, pod_phase, pod_message,
-		       heartbeat_at, retry_count, last_error, planning_session_id, model
+		       heartbeat_at, retry_count, last_error, session_id, model, permission_mode
 		FROM tasks WHERE deleted_at IS NULL ORDER BY created_at DESC LIMIT $1
 	`, limit)
 	if err != nil {
@@ -168,7 +175,7 @@ func (s *Store) ListRecentTasks(ctx context.Context, limit int) ([]Task, error) 
 	for rows.Next() {
 		var t Task
 		if err := rows.Scan(&t.ID, &t.Repo, &t.Description, &t.Status, &t.ThreadID, &t.PrURL, &t.PodPhase, &t.PodMessage,
-			&t.HeartbeatAt, &t.RetryCount, &t.LastError, &t.PlanningSessionID, &t.Model); err != nil {
+			&t.HeartbeatAt, &t.RetryCount, &t.LastError, &t.SessionID, &t.Model, &t.PermissionMode); err != nil {
 			slog.Error("tasks ListRecentTasks: scan", "error", err)
 			return nil, fmt.Errorf("scan task: %w", err)
 		}
@@ -182,7 +189,7 @@ func (s *Store) ListRecentTasks(ctx context.Context, limit int) ([]Task, error) 
 // claims tasks itself). Ported from worker/src/db.ts's claimNextTask, with
 // the repo filter dropped: concurrency is fleet-wide now, not per-repo
 // (docs/adr/0019), so any repo's eligible task can be claimed. Eligible:
-// pending, or claimed/planning/implementing with a stale heartbeat (>10min
+// pending, or claimed/running with a stale heartbeat (>10min
 // — a worker pod that crashed without failing the task cleanly, docs/adr/
 // 0016). Returns (nil, nil) when nothing is eligible.
 //
@@ -219,9 +226,9 @@ func (s *Store) ClaimNextTask(ctx context.Context, maxInFlight, maxRetries int) 
 		WHERE id = (
 			SELECT id FROM tasks
 			WHERE (status = 'pending'
-			       OR (status IN ('claimed', 'planning', 'implementing')
+			       OR (status IN ('claimed', 'running')
 			           AND (heartbeat_at IS NULL OR heartbeat_at < now() - interval '10 minutes')))
-			  AND (SELECT count(*) FROM tasks WHERE status IN ('claimed', 'planning', 'implementing')) < $1
+			  AND (SELECT count(*) FROM tasks WHERE status IN ('claimed', 'running')) < $1
 			ORDER BY created_at
 			FOR UPDATE SKIP LOCKED
 			LIMIT 1
@@ -274,7 +281,7 @@ func (s *Store) MarkCrashed(ctx context.Context, id string) error {
 	_, err := s.pool.Exec(ctx, `
 		UPDATE tasks
 		SET heartbeat_at = now() - interval '11 minutes', updated_at = now()
-		WHERE id = $1 AND status IN ('claimed', 'planning', 'implementing')
+		WHERE id = $1 AND status IN ('claimed', 'running')
 	`, id)
 	if err != nil {
 		slog.Error("tasks MarkCrashed", "taskId", id, "error", err)
@@ -378,10 +385,10 @@ func (s *Store) ListOverdueStopIDs(ctx context.Context, grace time.Duration) ([]
 	return ids, rows.Err()
 }
 
-func (s *Store) SaveSessionID(ctx context.Context, id, planningSessionID, model string) error {
+func (s *Store) SaveSessionID(ctx context.Context, id, sessionID, model string) error {
 	_, err := s.pool.Exec(ctx, `
-		UPDATE tasks SET planning_session_id = $2, model = $3, updated_at = now() WHERE id = $1
-	`, id, planningSessionID, model)
+		UPDATE tasks SET session_id = $2, model = $3, updated_at = now() WHERE id = $1
+	`, id, sessionID, model)
 	if err != nil {
 		slog.Error("tasks SaveSessionID", "taskId", id, "error", err)
 		return fmt.Errorf("save session id: %w", err)
@@ -389,8 +396,23 @@ func (s *Store) SaveSessionID(ctx context.Context, id, planningSessionID, model 
 	return nil
 }
 
+// SetPermissionMode records the session's current SDK permission mode
+// alongside DashboardService.SetPermissionMode's transcript append, so the
+// dashboard's mode picker has a durable source of truth for the real
+// active mode instead of inferring it from transcript history.
+func (s *Store) SetPermissionMode(ctx context.Context, id, mode string) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE tasks SET permission_mode = $2, updated_at = now() WHERE id = $1
+	`, id, mode)
+	if err != nil {
+		slog.Error("tasks SetPermissionMode", "taskId", id, "mode", mode, "error", err)
+		return fmt.Errorf("set permission mode: %w", err)
+	}
+	return nil
+}
+
 // SoftDelete hides a task from GetTask/ListRecentTasks without a hard
-// DELETE — planning_transcript/e2e_sessions both REFERENCES tasks(id) with
+// DELETE — transcript/e2e_sessions both REFERENCES tasks(id) with
 // no ON DELETE CASCADE, so a real DELETE would fail once a task has any
 // transcript history (effectively always). Doesn't touch `status`: a
 // dashboard-initiated delete of an already-`done` task shouldn't relabel

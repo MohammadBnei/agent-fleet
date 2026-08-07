@@ -1,26 +1,30 @@
-// Exercises planning.ts's continuous-session driver (docs/adr/0021,
-// reliability-findings.md #0) — the canUseTool gate, human approval/abort
-// via the streamed message feed (structured signals only, no free-text
-// regex), raw-message relay, and uniform result-subtype classification —
-// without a real Claude session or sidecar. Mocks must be registered
-// before importing planning.js (Bun resolves mock.module() calls ahead of
-// subsequent static imports).
+// Exercises session.ts's continuous-session driver — the generalized
+// canUseTool prompt-and-wait gate (supersedes docs/adr/0021/0025's
+// Write/Edit-absent-from-allowedTools + approve-signal framing), human
+// abort via the streamed message feed, raw-message relay, and uniform
+// result-subtype classification — without a real Claude session or
+// sidecar. Mocks must be registered before importing session.js (Bun
+// resolves mock.module() calls ahead of subsequent static imports).
 import { test, expect, mock, beforeEach } from "bun:test";
 
 // --- fake sidecarClient.js ---
 
-const pushedMessages: { from: string; text: string; type?: string }[] = [];
+const pushedMessages: { seq: number; from: string; text: string; type?: string }[] = [];
 const savedSessionIds: string[] = [];
 const statusUpdates: string[] = [];
+let nextSeq = 1;
 
 // The human-message feed a real sidecar SSE stream would deliver — tests
 // drive this directly instead of a real HTTP connection. onEntry is
 // captured so a test can push into it at any point after runTask() starts.
-let humanMessageHandler: ((entry: { seq: number; from: string; text: string; type?: string }) => void | Promise<void>) | null = null;
+let humanMessageHandler: ((entry: { seq: number; from: string; text: string; type?: string; replyTo?: number }) => void | Promise<void>) | null =
+  null;
 
 mock.module("./sidecarClient.js", () => ({
   pushMessage: mock(async (from: string, text: string, type?: string) => {
-    pushedMessages.push({ from, text, type });
+    const seq = nextSeq++;
+    pushedMessages.push({ seq, from, text, type });
+    return seq;
   }),
   saveSessionId: mock(async (id: string) => {
     savedSessionIds.push(id);
@@ -38,8 +42,19 @@ mock.module("./sidecarClient.js", () => ({
   }),
 }));
 
-function pushHuman(text: string, type?: string): void {
-  humanMessageHandler?.({ seq: 0, from: "human", text, type });
+function pushHuman(text: string, type?: string, replyTo?: number): void {
+  humanMessageHandler?.({ seq: 0, from: "human", text, type, replyTo });
+}
+
+// Finds the permission_request pushed for a given tool (there can be more
+// than one pending at once) and answers it via a permission_response
+// correlated by that request's own seq.
+function findPermissionRequest(tool: string) {
+  return pushedMessages.find((m) => m.type === "permission_request" && JSON.parse(m.text).tool === tool);
+}
+
+function respondToPermission(seq: number, decision: { behavior: "allow" | "deny"; updatedInput?: unknown; message?: string }): void {
+  pushHuman(JSON.stringify(decision), "permission_response", seq);
 }
 
 // --- fake @anthropic-ai/claude-agent-sdk ---
@@ -50,11 +65,12 @@ function pushHuman(text: string, type?: string): void {
 // result, then waits for the next input. Mirrors the real SDK's
 // streaming-input behavior confirmed in this session's own Phase 0 spike:
 // the same Query object keeps accepting input after interrupt().
-let mockMessageText = "mock planner message";
+let mockMessageText = "mock agent message";
 let forceResult: { subtype: string; num_turns: number; total_cost_usd: number } | null = null;
 let crashOnRound: number | null = null;
 let includeToolResult = false;
-let capturedCanUseTool: ((toolName: string, input: unknown) => Promise<{ behavior: string; message?: string }>) | null = null;
+let capturedCanUseTool: ((toolName: string, input: unknown) => Promise<{ behavior: string; message?: string; updatedInput?: unknown }>) | null =
+  null;
 let interruptCalls = 0;
 let setPermissionModeCalls: string[] = [];
 let queryOptions: Record<string, unknown> | null = null;
@@ -86,7 +102,7 @@ mock.module("@anthropic-ai/claude-agent-sdk", () => ({
         if (done) return;
         round++;
         if (!sessionId) {
-          sessionId = `planner-${crypto.randomUUID()}`;
+          sessionId = `agent-${crypto.randomUUID()}`;
           yield { type: "system", subtype: "init", session_id: sessionId };
         }
         if (round === crashOnRound) throw new Error("simulated session crash");
@@ -130,14 +146,15 @@ mock.module("@anthropic-ai/claude-agent-sdk", () => ({
   },
 }));
 
-const { runTask, TransientError } = await import("./planning.js");
+const { runTask, TransientError } = await import("./session.js");
 
 beforeEach(() => {
   pushedMessages.length = 0;
+  nextSeq = 1;
   savedSessionIds.length = 0;
   statusUpdates.length = 0;
   humanMessageHandler = null;
-  mockMessageText = "mock planner message";
+  mockMessageText = "mock agent message";
   forceResult = null;
   crashOnRound = null;
   includeToolResult = false;
@@ -158,7 +175,7 @@ function makeTask(overrides: Partial<{ id: string; repo: string; description: st
   };
 }
 
-test("tool wiring: plan mode, no Write/Edit in allowedTools, canUseTool present, local skills plugin", async () => {
+test("tool wiring: default mode, no Write/Edit in allowedTools, canUseTool present, local skills plugin", async () => {
   const task = makeTask();
   const promise = runTask(task);
   await Bun.sleep(20);
@@ -166,10 +183,11 @@ test("tool wiring: plan mode, no Write/Edit in allowedTools, canUseTool present,
   await promise;
 
   expect(queryOptions).not.toBeNull();
-  expect(queryOptions?.permissionMode).toBe("plan");
+  expect(queryOptions?.permissionMode).toBe("default");
   const allowedTools = queryOptions?.allowedTools as string[];
   expect(allowedTools).not.toContain("Write");
   expect(allowedTools).not.toContain("Edit");
+  expect(allowedTools).not.toContain("Bash");
   expect(allowedTools).toContain("Task");
   expect(allowedTools).toContain("mcp__agent-fleet-sidecar__AskUserQuestion");
   expect(typeof queryOptions?.canUseTool).toBe("function");
@@ -177,33 +195,90 @@ test("tool wiring: plan mode, no Write/Edit in allowedTools, canUseTool present,
   expect(plugins.some((p) => p.type === "local" && p.path.includes("agent-fleet-planning"))).toBe(true);
 }, 10000);
 
-test("canUseTool denies Write/Edit before approval, allows after", async () => {
+test("canUseTool posts a permission_request and blocks until a matching permission_response resolves it", async () => {
   const task = makeTask();
   const promise = runTask(task);
   await Bun.sleep(20);
 
-  const beforeApproval = await capturedCanUseTool!("Write", { file_path: "x" });
-  expect(beforeApproval.behavior).toBe("deny");
-
-  pushHuman("", "approve");
+  let resolved: { behavior: string } | null = null;
+  const call = capturedCanUseTool!("Write", { file_path: "x" }).then((r) => {
+    resolved = r as { behavior: string };
+    return r;
+  });
   await Bun.sleep(20);
-  const afterApproval = await capturedCanUseTool!("Write", { file_path: "x" });
-  expect(afterApproval.behavior).toBe("allow");
+  expect(resolved).toBeNull(); // still blocked, no auto-allow
+
+  const req = findPermissionRequest("Write");
+  expect(req).toBeDefined();
+  expect(JSON.parse(req!.text)).toEqual({ tool: "Write", input: { file_path: "x" } });
+
+  respondToPermission(req!.seq, { behavior: "allow" });
+  const result = await call;
+  expect(result.behavior).toBe("allow");
 
   pushHuman("", "abort");
   await promise;
 }, 10000);
 
-test("an answer-type human entry is never misread as approval/abort", async () => {
+test("a denied permission_response carries the human's reason through to the tool result", async () => {
   const task = makeTask();
   const promise = runTask(task);
   await Bun.sleep(20);
-  // A human's chosen option label could itself contain a word that used to
-  // trip the deleted free-text isApproval/isAbort fallback (docs/adr/0018)
-  // — an "answer"-type entry must never resolve the phase on its own, only
-  // a structured type:"approve"/"abort" does now (reliability-findings.md
-  // #0/#3).
-  pushHuman('{"answers":{"q":"approved, ship it"}}', "answer");
+
+  const call = capturedCanUseTool!("Bash", { command: "rm -rf /" });
+  await Bun.sleep(20);
+  const req = findPermissionRequest("Bash");
+  respondToPermission(req!.seq, { behavior: "deny", message: "absolutely not" });
+
+  const result = await call;
+  expect(result.behavior).toBe("deny");
+  expect(result.message).toBe("absolutely not");
+
+  pushHuman("", "abort");
+  await promise;
+}, 10000);
+
+test("parallel tool calls each get their own correlated permission_request, resolved independently", async () => {
+  const task = makeTask();
+  const promise = runTask(task);
+  await Bun.sleep(20);
+
+  let writeResolved: { behavior: string } | null = null;
+  let editResolved: { behavior: string } | null = null;
+  const writeCall = capturedCanUseTool!("Write", { file_path: "a" }).then((r) => {
+    writeResolved = r as { behavior: string };
+  });
+  const editCall = capturedCanUseTool!("Edit", { file_path: "b" }).then((r) => {
+    editResolved = r as { behavior: string };
+  });
+  await Bun.sleep(20);
+
+  const writeReq = findPermissionRequest("Write")!;
+  const editReq = findPermissionRequest("Edit")!;
+  expect(writeReq.seq).not.toBe(editReq.seq);
+
+  // Resolve Edit first — Write must stay pending.
+  respondToPermission(editReq.seq, { behavior: "allow" });
+  await editCall;
+  expect(editResolved!.behavior).toBe("allow");
+  expect(writeResolved).toBeNull();
+
+  respondToPermission(writeReq.seq, { behavior: "deny", message: "no" });
+  await writeCall;
+  expect(writeResolved!.behavior).toBe("deny");
+
+  pushHuman("", "abort");
+  await promise;
+}, 10000);
+
+test("an answer-type human entry is never misread as a permission decision", async () => {
+  const task = makeTask();
+  const promise = runTask(task);
+  await Bun.sleep(20);
+  // A human's chosen option label could itself contain JSON-ish text — an
+  // "answer"-type entry must never be treated as resolving anything here,
+  // only a structured type:"permission_response"/"permission_mode" does.
+  pushHuman('{"answers":{"q":"allow it"}}', "answer");
   await Bun.sleep(20);
   expect(setPermissionModeCalls.length).toBe(0);
 
@@ -212,14 +287,11 @@ test("an answer-type human entry is never misread as approval/abort", async () =
   expect(result.aborted).toBe(true);
 }, 10000);
 
-test("free text alone never triggers approval or abort — only structured signals do", async () => {
+test("free text alone never resolves a pending permission request or triggers abort", async () => {
   const task = makeTask();
   const promise = runTask(task);
   await Bun.sleep(20);
-  // Plain conversational text containing words the old regex fallback
-  // matched ("approved", "stop") must do nothing now that isApproval/
-  // isAbort are deleted entirely (reliability-findings.md #0/#3).
-  pushHuman("I approved a similar PR yesterday, let's stop and think about this first", "discussion");
+  pushHuman("I allowed a similar edit yesterday, let's stop and think about this first", "discussion");
   await Bun.sleep(20);
   expect(setPermissionModeCalls.length).toBe(0);
   expect(interruptCalls).toBe(0);
@@ -229,60 +301,65 @@ test("free text alone never triggers approval or abort — only structured signa
   expect(result.aborted).toBe(true);
 }, 10000);
 
-test("human approval flips the session to implementation and reports status", async () => {
+test("a plain reply while a permission request is pending denies it with the reply as feedback", async () => {
   const task = makeTask();
   const promise = runTask(task);
   await Bun.sleep(20);
-  pushHuman("", "approve");
+
+  const call = capturedCanUseTool!("Write", { file_path: "x" });
   await Bun.sleep(20);
 
-  expect(setPermissionModeCalls).toContain("default");
-  expect(statusUpdates).toContain("implementing");
-  expect(savedSessionIds.length).toBe(1);
-  expect(savedSessionIds[0]).toMatch(/^planner-/);
+  pushHuman("actually, split this into its own PR", "discussion");
+  const result = await call;
+  expect(result.behavior).toBe("deny");
+  expect((result as { message?: string }).message).toContain("split this into its own PR");
 
   pushHuman("", "abort");
   await promise;
 }, 10000);
 
-test("a permission_mode entry sets the SDK mode, unlocks canUseTool, and reports status", async () => {
-  const task = makeTask();
-  const promise = runTask(task);
-  await Bun.sleep(20);
-
-  const beforeMode = await capturedCanUseTool!("Write", { file_path: "x" });
-  expect(beforeMode.behavior).toBe("deny");
-
-  pushHuman("acceptEdits", "permission_mode");
-  await Bun.sleep(20);
-
-  expect(setPermissionModeCalls).toContain("acceptEdits");
-  expect(statusUpdates).toContain("implementing");
-  const afterMode = await capturedCanUseTool!("Write", { file_path: "x" });
-  expect(afterMode.behavior).toBe("allow");
-
-  pushHuman("", "abort");
-  await promise;
-}, 10000);
-
-test("ExitPlanMode blocks until a real Approve arrives, then allows with the plan passed through", async () => {
+test("a permission_mode entry sets the SDK mode and resolves any pending permission requests", async () => {
   const task = makeTask();
   const promise = runTask(task);
   await Bun.sleep(20);
 
   let resolved: { behavior: string } | null = null;
-  const planCall = capturedCanUseTool!("ExitPlanMode", { plan: "do the thing" }).then((r) => {
+  const call = capturedCanUseTool!("Write", { file_path: "x" }).then((r) => {
     resolved = r as { behavior: string };
+  });
+  await Bun.sleep(20);
+  expect(resolved).toBeNull();
+
+  pushHuman("acceptEdits", "permission_mode");
+  await call;
+
+  expect(resolved!.behavior).toBe("allow");
+  expect(setPermissionModeCalls).toContain("acceptEdits");
+  // No fleet-imposed phase left to report — status stays whatever it was.
+  expect(statusUpdates).not.toContain("implementing");
+
+  pushHuman("", "abort");
+  await promise;
+}, 10000);
+
+test("ExitPlanMode is gated the same as any other tool call — blocks until a permission_response arrives", async () => {
+  const task = makeTask();
+  const promise = runTask(task);
+  await Bun.sleep(20);
+
+  let resolved: { behavior: string; updatedInput?: unknown } | null = null;
+  const planCall = capturedCanUseTool!("ExitPlanMode", { plan: "do the thing" }).then((r) => {
+    resolved = r as { behavior: string; updatedInput?: unknown };
     return r;
   });
   await Bun.sleep(20);
   expect(resolved).toBeNull(); // still blocked, no canned SDK-style auto-allow
 
-  pushHuman("", "approve");
+  const req = findPermissionRequest("ExitPlanMode")!;
+  respondToPermission(req.seq, { behavior: "allow" });
   const result = await planCall;
   expect(result.behavior).toBe("allow");
   expect((result as { updatedInput?: unknown }).updatedInput).toEqual({ plan: "do the thing" });
-  expect(setPermissionModeCalls).toContain("default");
 
   pushHuman("", "abort");
   await promise;
@@ -305,38 +382,19 @@ test("ExitPlanMode blocks until a permission_mode selection arrives, then allows
   await promise;
 }, 10000);
 
-test("a plain reply while ExitPlanMode is pending denies with the reply as feedback, not approval", async () => {
+test("abort resolves every pending permission request instead of leaving them hanging", async () => {
   const task = makeTask();
   const promise = runTask(task);
   await Bun.sleep(20);
 
   const planCall = capturedCanUseTool!("ExitPlanMode", { plan: "do the thing" });
-  await Bun.sleep(20);
-
-  pushHuman("actually, split phase 2 into its own PR", "discussion");
-  const result = await planCall;
-  expect(result.behavior).toBe("deny");
-  expect((result as { message?: string }).message).toContain("split phase 2 into its own PR");
-  // Feedback, not approval — nothing got unlocked.
-  expect(setPermissionModeCalls.length).toBe(0);
-  const stillDenied = await capturedCanUseTool!("Write", { file_path: "x" });
-  expect(stillDenied.behavior).toBe("deny");
-
-  pushHuman("", "abort");
-  await promise;
-}, 10000);
-
-test("abort resolves a pending ExitPlanMode instead of leaving it hanging", async () => {
-  const task = makeTask();
-  const promise = runTask(task);
-  await Bun.sleep(20);
-
-  const planCall = capturedCanUseTool!("ExitPlanMode", { plan: "do the thing" });
+  const writeCall = capturedCanUseTool!("Write", { file_path: "x" });
   await Bun.sleep(20);
 
   pushHuman("", "abort");
-  const result = await planCall;
-  expect(result.behavior).toBe("deny");
+  const [planResult, writeResult] = await Promise.all([planCall, writeCall]);
+  expect(planResult.behavior).toBe("deny");
+  expect(writeResult.behavior).toBe("deny");
 
   await promise;
 }, 10000);
@@ -349,41 +407,17 @@ test("Bash is gated by canUseTool, not silently allowed via allowedTools", async
   const allowedTools = queryOptions?.allowedTools as string[];
   expect(allowedTools).not.toContain("Bash");
 
-  pushHuman("", "abort");
-  await promise;
-}, 10000);
-
-test("canUseTool denies a mutating Bash command before approval, allows a read-only one", async () => {
-  const task = makeTask();
-  const promise = runTask(task);
+  const call = capturedCanUseTool!("Bash", { command: "git status" });
   await Bun.sleep(20);
-
-  const mutating = await capturedCanUseTool!("Bash", { command: "cp front/src/lib/prompts/x.ts front/src/lib/server/prompts/x.ts" });
-  expect(mutating.behavior).toBe("deny");
-
-  const readOnly = await capturedCanUseTool!("Bash", { command: "git status && git log --oneline -5" });
-  expect(readOnly.behavior).toBe("allow");
+  expect(findPermissionRequest("Bash")).toBeDefined();
+  respondToPermission(findPermissionRequest("Bash")!.seq, { behavior: "allow" });
+  await call;
 
   pushHuman("", "abort");
   await promise;
 }, 10000);
 
-test("canUseTool allows a mutating Bash command once approved", async () => {
-  const task = makeTask();
-  const promise = runTask(task);
-  await Bun.sleep(20);
-
-  pushHuman("", "approve");
-  await Bun.sleep(20);
-
-  const nowAllowed = await capturedCanUseTool!("Bash", { command: "mkdir -p front/src/lib/server/prompts" });
-  expect(nowAllowed.behavior).toBe("allow");
-
-  pushHuman("", "abort");
-  await promise;
-}, 10000);
-
-test("abort before approval ends the task as aborted", async () => {
+test("abort before anything is answered ends the task as aborted", async () => {
   const task = makeTask();
   const promise = runTask(task);
   await Bun.sleep(20);
@@ -400,29 +434,39 @@ test("a crashed session propagates the error instead of hanging", async () => {
   await expect(runTask(task)).rejects.toThrow("simulated session crash");
 }, 10000);
 
-test("implementation completes and returns the session's final text", async () => {
+test("the session completes when the agent's own text includes PR_READY:", async () => {
   const task = makeTask();
-  // Approval immediately pushes the fixed post-approval input as the very
-  // next round (runTask breaks on the first post-approval success result)
-  // — the desired final text has to be in place *before* approving.
   mockMessageText = "PR_READY: did the thing";
+  const result = await runTask(task);
+
+  expect(result.aborted).toBe(false);
+  expect(result.summary).toContain("PR_READY: did the thing");
+  expect(savedSessionIds.length).toBe(1);
+  expect(savedSessionIds[0]).toMatch(/^agent-/);
+}, 10000);
+
+test("the session keeps consuming rounds until PR_READY: appears", async () => {
+  const task = makeTask();
   const promise = runTask(task);
   await Bun.sleep(20);
-  pushHuman("", "approve");
+  // First round already resolved as "success" with plain text — the loop
+  // must not have exited yet.
+  expect(savedSessionIds.length).toBe(1);
+
+  mockMessageText = "PR_READY: now really done";
+  // The next round only fires once more streamed input arrives — a plain
+  // discussion reply with no pending permission request just feeds the
+  // input queue.
+  pushHuman("keep going", "discussion");
 
   const result = await promise;
   expect(result.aborted).toBe(false);
-  expect(result.summary).toContain("PR_READY: did the thing");
+  expect(result.summary).toContain("PR_READY: now really done");
 }, 10000);
 
 test("a 0-turn/$0 result is classified transient", async () => {
   const task = makeTask();
   forceResult = { subtype: "error_during_execution", num_turns: 0, total_cost_usd: 0 };
-  // Uniform handling (reliability-findings.md #8) means this now throws on
-  // the very first round, before any approval — no pushHuman needed, and
-  // attaching the rejection handler immediately avoids an unhandled-
-  // rejection race against a Bun.sleep that used to give approval time to
-  // land first.
   await expect(runTask(task)).rejects.toThrow(TransientError);
 }, 10000);
 
@@ -436,21 +480,7 @@ test("a genuine non-success result throws a plain Error", async () => {
   expect(error).not.toBeInstanceOf(TransientError);
 }, 10000);
 
-// Closes reliability-findings.md #8's actual gap: before #0, only the
-// post-approval branch ever checked msg.subtype, so a non-success result
-// during what used to be the planning phase went unhandled. Now the check
-// is uniform — no approved/!approved branch split left to fall through.
-test("a non-success result before approval is classified the same as after approval", async () => {
-  const task = makeTask();
-  forceResult = { subtype: "error_max_turns", num_turns: 3, total_cost_usd: 0.1 };
-  const promise = runTask(task);
-
-  await expect(promise).rejects.toThrow("session stopped: error_max_turns after 3 turns, $0.1");
-  const error = await promise.catch((e) => e);
-  expect(error).not.toBeInstanceOf(TransientError);
-}, 10000);
-
-test("a non-success 0-turn/$0 result before approval is classified transient", async () => {
+test("a non-success 0-turn/$0 result is classified transient regardless of when it happens", async () => {
   const task = makeTask();
   forceResult = { subtype: "error_during_execution", num_turns: 0, total_cost_usd: 0 };
   const promise = runTask(task);
@@ -458,11 +488,10 @@ test("a non-success 0-turn/$0 result before approval is classified transient", a
   await expect(promise).rejects.toThrow(TransientError);
 }, 10000);
 
-// Raw-relay behavior (reliability-findings.md #0): every SDK message
-// reaches pushMessage now, not just assistant text blocks — tool_use,
-// tool_result, and result summaries all get relayed too, each tagged with
-// its own type (dashboard-only visibility; core's relay allowlist keeps
-// them off Discord).
+// Raw-relay behavior: every SDK message reaches pushMessage, not just
+// assistant text blocks — tool_use, tool_result, and result summaries all
+// get relayed too, each tagged with its own type (dashboard-only
+// visibility; core's relay allowlist keeps them off Discord).
 test("tool_use, tool_result, and result messages are all relayed, not just assistant text", async () => {
   const task = makeTask();
   includeToolResult = true;
@@ -471,7 +500,7 @@ test("tool_use, tool_result, and result messages are all relayed, not just assis
   pushHuman("", "abort");
   await promise;
 
-  expect(pushedMessages.some((m) => m.type === "discussion" && m.text === "mock planner message")).toBe(true);
+  expect(pushedMessages.some((m) => m.type === "discussion" && m.text === "mock agent message")).toBe(true);
   expect(pushedMessages.some((m) => m.type === "assistant")).toBe(true); // tool_use
   expect(pushedMessages.some((m) => m.type === "user")).toBe(true); // tool_result
   expect(pushedMessages.some((m) => m.type === "result")).toBe(true);

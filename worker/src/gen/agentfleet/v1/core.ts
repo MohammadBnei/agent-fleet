@@ -200,7 +200,7 @@ export interface AppendJournalResponse {
 
 export interface SaveSessionIdRequest {
   taskId: string;
-  planningSessionId: string;
+  sessionId: string;
   model: string;
 }
 
@@ -864,7 +864,7 @@ export const AppendJournalResponse: MessageFns<AppendJournalResponse> = {
 };
 
 function createBaseSaveSessionIdRequest(): SaveSessionIdRequest {
-  return { taskId: "", planningSessionId: "", model: "" };
+  return { taskId: "", sessionId: "", model: "" };
 }
 
 export const SaveSessionIdRequest: MessageFns<SaveSessionIdRequest> = {
@@ -875,10 +875,10 @@ export const SaveSessionIdRequest: MessageFns<SaveSessionIdRequest> = {
         : isSet(object.task_id)
         ? globalThis.String(object.task_id)
         : "",
-      planningSessionId: isSet(object.planningSessionId)
-        ? globalThis.String(object.planningSessionId)
-        : isSet(object.planning_session_id)
-        ? globalThis.String(object.planning_session_id)
+      sessionId: isSet(object.sessionId)
+        ? globalThis.String(object.sessionId)
+        : isSet(object.session_id)
+        ? globalThis.String(object.session_id)
         : "",
       model: isSet(object.model) ? globalThis.String(object.model) : "",
     };
@@ -889,8 +889,8 @@ export const SaveSessionIdRequest: MessageFns<SaveSessionIdRequest> = {
     if (message.taskId !== "") {
       obj.taskId = message.taskId;
     }
-    if (message.planningSessionId !== "") {
-      obj.planningSessionId = message.planningSessionId;
+    if (message.sessionId !== "") {
+      obj.sessionId = message.sessionId;
     }
     if (message.model !== "") {
       obj.model = message.model;
@@ -904,7 +904,7 @@ export const SaveSessionIdRequest: MessageFns<SaveSessionIdRequest> = {
   fromPartial<I extends Exact<DeepPartial<SaveSessionIdRequest>, I>>(object: I): SaveSessionIdRequest {
     const message = createBaseSaveSessionIdRequest();
     message.taskId = object.taskId ?? "";
-    message.planningSessionId = object.planningSessionId ?? "";
+    message.sessionId = object.sessionId ?? "";
     message.model = object.model ?? "";
     return message;
   },

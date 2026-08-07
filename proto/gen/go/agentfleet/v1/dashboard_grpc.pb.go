@@ -19,26 +19,26 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	DashboardService_ListTasks_FullMethodName         = "/agentfleet.v1.DashboardService/ListTasks"
-	DashboardService_GetTask_FullMethodName           = "/agentfleet.v1.DashboardService/GetTask"
-	DashboardService_CreateTask_FullMethodName        = "/agentfleet.v1.DashboardService/CreateTask"
-	DashboardService_GetTranscript_FullMethodName     = "/agentfleet.v1.DashboardService/GetTranscript"
-	DashboardService_StreamTranscript_FullMethodName  = "/agentfleet.v1.DashboardService/StreamTranscript"
-	DashboardService_GetE2EStatus_FullMethodName      = "/agentfleet.v1.DashboardService/GetE2eStatus"
-	DashboardService_Approve_FullMethodName           = "/agentfleet.v1.DashboardService/Approve"
-	DashboardService_Stop_FullMethodName              = "/agentfleet.v1.DashboardService/Stop"
-	DashboardService_SetPermissionMode_FullMethodName = "/agentfleet.v1.DashboardService/SetPermissionMode"
-	DashboardService_KillE2E_FullMethodName           = "/agentfleet.v1.DashboardService/KillE2e"
-	DashboardService_AnswerQuestion_FullMethodName    = "/agentfleet.v1.DashboardService/AnswerQuestion"
-	DashboardService_Discuss_FullMethodName           = "/agentfleet.v1.DashboardService/Discuss"
-	DashboardService_DeleteTask_FullMethodName        = "/agentfleet.v1.DashboardService/DeleteTask"
-	DashboardService_ListWorktrees_FullMethodName     = "/agentfleet.v1.DashboardService/ListWorktrees"
-	DashboardService_DeleteWorktree_FullMethodName    = "/agentfleet.v1.DashboardService/DeleteWorktree"
-	DashboardService_GetJournal_FullMethodName        = "/agentfleet.v1.DashboardService/GetJournal"
-	DashboardService_ListRepos_FullMethodName         = "/agentfleet.v1.DashboardService/ListRepos"
-	DashboardService_CreateRepo_FullMethodName        = "/agentfleet.v1.DashboardService/CreateRepo"
-	DashboardService_UpdateRepo_FullMethodName        = "/agentfleet.v1.DashboardService/UpdateRepo"
-	DashboardService_DeleteRepo_FullMethodName        = "/agentfleet.v1.DashboardService/DeleteRepo"
+	DashboardService_ListTasks_FullMethodName           = "/agentfleet.v1.DashboardService/ListTasks"
+	DashboardService_GetTask_FullMethodName             = "/agentfleet.v1.DashboardService/GetTask"
+	DashboardService_CreateTask_FullMethodName          = "/agentfleet.v1.DashboardService/CreateTask"
+	DashboardService_GetTranscript_FullMethodName       = "/agentfleet.v1.DashboardService/GetTranscript"
+	DashboardService_StreamTranscript_FullMethodName    = "/agentfleet.v1.DashboardService/StreamTranscript"
+	DashboardService_GetE2EStatus_FullMethodName        = "/agentfleet.v1.DashboardService/GetE2eStatus"
+	DashboardService_Stop_FullMethodName                = "/agentfleet.v1.DashboardService/Stop"
+	DashboardService_SetPermissionMode_FullMethodName   = "/agentfleet.v1.DashboardService/SetPermissionMode"
+	DashboardService_KillE2E_FullMethodName             = "/agentfleet.v1.DashboardService/KillE2e"
+	DashboardService_AnswerQuestion_FullMethodName      = "/agentfleet.v1.DashboardService/AnswerQuestion"
+	DashboardService_RespondToPermission_FullMethodName = "/agentfleet.v1.DashboardService/RespondToPermission"
+	DashboardService_Discuss_FullMethodName             = "/agentfleet.v1.DashboardService/Discuss"
+	DashboardService_DeleteTask_FullMethodName          = "/agentfleet.v1.DashboardService/DeleteTask"
+	DashboardService_ListWorktrees_FullMethodName       = "/agentfleet.v1.DashboardService/ListWorktrees"
+	DashboardService_DeleteWorktree_FullMethodName      = "/agentfleet.v1.DashboardService/DeleteWorktree"
+	DashboardService_GetJournal_FullMethodName          = "/agentfleet.v1.DashboardService/GetJournal"
+	DashboardService_ListRepos_FullMethodName           = "/agentfleet.v1.DashboardService/ListRepos"
+	DashboardService_CreateRepo_FullMethodName          = "/agentfleet.v1.DashboardService/CreateRepo"
+	DashboardService_UpdateRepo_FullMethodName          = "/agentfleet.v1.DashboardService/UpdateRepo"
+	DashboardService_DeleteRepo_FullMethodName          = "/agentfleet.v1.DashboardService/DeleteRepo"
 )
 
 // DashboardServiceClient is the client API for DashboardService service.
@@ -60,11 +60,11 @@ type DashboardServiceClient interface {
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	StreamTranscript(ctx context.Context, in *StreamTranscriptRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[TranscriptEntry], error)
 	GetE2EStatus(ctx context.Context, in *GetE2EStatusRequest, opts ...grpc.CallOption) (*GetE2EStatusResponse, error)
-	Approve(ctx context.Context, in *ApproveRequest, opts ...grpc.CallOption) (*ApproveResponse, error)
 	Stop(ctx context.Context, in *StopRequest, opts ...grpc.CallOption) (*StopResponse, error)
 	SetPermissionMode(ctx context.Context, in *SetPermissionModeRequest, opts ...grpc.CallOption) (*SetPermissionModeResponse, error)
 	KillE2E(ctx context.Context, in *KillE2ERequest, opts ...grpc.CallOption) (*KillE2EResponse, error)
 	AnswerQuestion(ctx context.Context, in *AnswerQuestionRequest, opts ...grpc.CallOption) (*AnswerQuestionResponse, error)
+	RespondToPermission(ctx context.Context, in *RespondToPermissionRequest, opts ...grpc.CallOption) (*RespondToPermissionResponse, error)
 	Discuss(ctx context.Context, in *DiscussRequest, opts ...grpc.CallOption) (*DiscussResponse, error)
 	DeleteTask(ctx context.Context, in *DeleteTaskRequest, opts ...grpc.CallOption) (*DeleteTaskResponse, error)
 	// Reuses provisioner.proto's ListWorktreesRequest (identical shape,
@@ -162,16 +162,6 @@ func (c *dashboardServiceClient) GetE2EStatus(ctx context.Context, in *GetE2ESta
 	return out, nil
 }
 
-func (c *dashboardServiceClient) Approve(ctx context.Context, in *ApproveRequest, opts ...grpc.CallOption) (*ApproveResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(ApproveResponse)
-	err := c.cc.Invoke(ctx, DashboardService_Approve_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 func (c *dashboardServiceClient) Stop(ctx context.Context, in *StopRequest, opts ...grpc.CallOption) (*StopResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(StopResponse)
@@ -206,6 +196,16 @@ func (c *dashboardServiceClient) AnswerQuestion(ctx context.Context, in *AnswerQ
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(AnswerQuestionResponse)
 	err := c.cc.Invoke(ctx, DashboardService_AnswerQuestion_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dashboardServiceClient) RespondToPermission(ctx context.Context, in *RespondToPermissionRequest, opts ...grpc.CallOption) (*RespondToPermissionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RespondToPermissionResponse)
+	err := c.cc.Invoke(ctx, DashboardService_RespondToPermission_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -321,11 +321,11 @@ type DashboardServiceServer interface {
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	StreamTranscript(*StreamTranscriptRequest, grpc.ServerStreamingServer[TranscriptEntry]) error
 	GetE2EStatus(context.Context, *GetE2EStatusRequest) (*GetE2EStatusResponse, error)
-	Approve(context.Context, *ApproveRequest) (*ApproveResponse, error)
 	Stop(context.Context, *StopRequest) (*StopResponse, error)
 	SetPermissionMode(context.Context, *SetPermissionModeRequest) (*SetPermissionModeResponse, error)
 	KillE2E(context.Context, *KillE2ERequest) (*KillE2EResponse, error)
 	AnswerQuestion(context.Context, *AnswerQuestionRequest) (*AnswerQuestionResponse, error)
+	RespondToPermission(context.Context, *RespondToPermissionRequest) (*RespondToPermissionResponse, error)
 	Discuss(context.Context, *DiscussRequest) (*DiscussResponse, error)
 	DeleteTask(context.Context, *DeleteTaskRequest) (*DeleteTaskResponse, error)
 	// Reuses provisioner.proto's ListWorktreesRequest (identical shape,
@@ -372,9 +372,6 @@ func (UnimplementedDashboardServiceServer) StreamTranscript(*StreamTranscriptReq
 func (UnimplementedDashboardServiceServer) GetE2EStatus(context.Context, *GetE2EStatusRequest) (*GetE2EStatusResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetE2EStatus not implemented")
 }
-func (UnimplementedDashboardServiceServer) Approve(context.Context, *ApproveRequest) (*ApproveResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method Approve not implemented")
-}
 func (UnimplementedDashboardServiceServer) Stop(context.Context, *StopRequest) (*StopResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Stop not implemented")
 }
@@ -386,6 +383,9 @@ func (UnimplementedDashboardServiceServer) KillE2E(context.Context, *KillE2ERequ
 }
 func (UnimplementedDashboardServiceServer) AnswerQuestion(context.Context, *AnswerQuestionRequest) (*AnswerQuestionResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method AnswerQuestion not implemented")
+}
+func (UnimplementedDashboardServiceServer) RespondToPermission(context.Context, *RespondToPermissionRequest) (*RespondToPermissionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RespondToPermission not implemented")
 }
 func (UnimplementedDashboardServiceServer) Discuss(context.Context, *DiscussRequest) (*DiscussResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Discuss not implemented")
@@ -536,24 +536,6 @@ func _DashboardService_GetE2EStatus_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
-func _DashboardService_Approve_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ApproveRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(DashboardServiceServer).Approve(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: DashboardService_Approve_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(DashboardServiceServer).Approve(ctx, req.(*ApproveRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 func _DashboardService_Stop_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(StopRequest)
 	if err := dec(in); err != nil {
@@ -622,6 +604,24 @@ func _DashboardService_AnswerQuestion_Handler(srv interface{}, ctx context.Conte
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(DashboardServiceServer).AnswerQuestion(ctx, req.(*AnswerQuestionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DashboardService_RespondToPermission_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RespondToPermissionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DashboardServiceServer).RespondToPermission(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DashboardService_RespondToPermission_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DashboardServiceServer).RespondToPermission(ctx, req.(*RespondToPermissionRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -816,10 +816,6 @@ var DashboardService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _DashboardService_GetE2EStatus_Handler,
 		},
 		{
-			MethodName: "Approve",
-			Handler:    _DashboardService_Approve_Handler,
-		},
-		{
 			MethodName: "Stop",
 			Handler:    _DashboardService_Stop_Handler,
 		},
@@ -834,6 +830,10 @@ var DashboardService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "AnswerQuestion",
 			Handler:    _DashboardService_AnswerQuestion_Handler,
+		},
+		{
+			MethodName: "RespondToPermission",
+			Handler:    _DashboardService_RespondToPermission_Handler,
 		},
 		{
 			MethodName: "Discuss",

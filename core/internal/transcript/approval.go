@@ -2,7 +2,7 @@ package transcript
 
 import "regexp"
 
-// Direct port of worker/src/planning.ts's isApproval/isAbort — exact regex
+// Direct port of worker/src/session.ts's isApproval/isAbort — exact regex
 // parity matters here: this is the human approval gate (see docs/adr/0005),
 // and a behavior drift silently breaks it. The `type` field (only ever set
 // by the Discord bot's relay, never by the LLM-issued send_message tool

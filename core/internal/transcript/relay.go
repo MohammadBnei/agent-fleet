@@ -17,7 +17,7 @@ type Notifier interface {
 
 const maxRelayAttempts = 5
 
-// Relay retries posting unrelayed planning_transcript entries to Discord,
+// Relay retries posting unrelayed transcript entries to Discord,
 // so a transient API failure retries instead of (as today's unguarded
 // postReply can) crashing the whole watch loop. After maxRelayAttempts it
 // marks the row dead-lettered and stops retrying it.
@@ -74,7 +74,7 @@ func relayPending(ctx context.Context, pool *pgxpool.Pool, notifier Notifier) {
 	// either way — only relayed_to_discord changes — so the dashboard
 	// (which renders the full stream regardless) is unaffected.
 	if _, err := pool.Exec(ctx, `
-		UPDATE planning_transcript SET relayed_to_discord = true
+		UPDATE transcript SET relayed_to_discord = true
 		WHERE relayed_to_discord = false AND COALESCE(type, '') != ALL($1)
 	`, discordSafeTypes); err != nil {
 		slog.Error("relay: skip non-Discord-safe entries", "error", err)
@@ -82,7 +82,7 @@ func relayPending(ctx context.Context, pool *pgxpool.Pool, notifier Notifier) {
 
 	rows, err := pool.Query(ctx, `
 		SELECT task_id, seq, "from", text, COALESCE(type, '')
-		FROM planning_transcript
+		FROM transcript
 		WHERE relayed_to_discord = false AND relay_dead_letter = false
 		ORDER BY task_id, seq
 	`)
@@ -110,7 +110,7 @@ func relayPending(ctx context.Context, pool *pgxpool.Pool, notifier Notifier) {
 		if err := notifier.PostToThread(ctx, p.taskID, p.e); err != nil {
 			slog.Warn("relay: post failed, will retry", "taskId", p.taskID, "seq", p.e.Seq, "error", err)
 			_, _ = pool.Exec(ctx, `
-				UPDATE planning_transcript
+				UPDATE transcript
 				SET relay_attempts = relay_attempts + 1,
 				    relay_last_error = $3,
 				    relay_dead_letter = (relay_attempts + 1 >= $4)
@@ -119,7 +119,7 @@ func relayPending(ctx context.Context, pool *pgxpool.Pool, notifier Notifier) {
 			continue
 		}
 		_, _ = pool.Exec(ctx, `
-			UPDATE planning_transcript SET relayed_to_discord = true WHERE task_id = $1 AND seq = $2
+			UPDATE transcript SET relayed_to_discord = true WHERE task_id = $1 AND seq = $2
 		`, p.taskID, p.e.Seq)
 	}
 }

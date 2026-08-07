@@ -45,9 +45,9 @@ func int64Ptr(i int64) *int64 { return &i }
 // (coreserver.Server.AskUserQuestion) uses.
 func TestFindPendingQuestionSeq_ReturnsMostRecentUnansweredQuestion(t *testing.T) {
 	store := &fakeTranscriptStore{entries: []transcript.Entry{
-		{Seq: 1, From: "planner", Type: "question"},
+		{Seq: 1, From: "agent", Type: "question"},
 		{Seq: 2, From: "human", Type: "answer", ReplyTo: int64Ptr(1)},
-		{Seq: 3, From: "planner", Type: "question"},
+		{Seq: 3, From: "agent", Type: "question"},
 	}}
 	c := &Client{transcr: store}
 
@@ -62,7 +62,7 @@ func TestFindPendingQuestionSeq_ReturnsMostRecentUnansweredQuestion(t *testing.T
 
 func TestFindPendingQuestionSeq_ReturnsZeroWhenAllAnswered(t *testing.T) {
 	store := &fakeTranscriptStore{entries: []transcript.Entry{
-		{Seq: 1, From: "planner", Type: "question"},
+		{Seq: 1, From: "agent", Type: "question"},
 		{Seq: 2, From: "human", Type: "answer", ReplyTo: int64Ptr(1)},
 	}}
 	c := &Client{transcr: store}

@@ -7,12 +7,11 @@ import {
   parseQuestions,
   parseAnswers,
   findPendingQuestion,
-  findPendingPlan,
+  findPendingPermissions,
   latestToolCallSummary,
   latestSlashCommands,
   parseSdkSystemInfo,
   parseSdkResultSummary,
-  parseSdkToolUse,
   buildToolCallPairs,
   pairedResultSeqs,
   latestTodos,
@@ -24,6 +23,7 @@ import { useLocalStorageState } from "../useLocalStorageState";
 import { ToolCallItem } from "../components/ToolCallItem";
 import { ToolCallLine } from "../components/ToolCallLine";
 import { PlanCard } from "../components/PlanCard";
+import { PermissionCard } from "../components/PermissionCard";
 import { ErrorModal } from "../components/ErrorModal";
 import { Markdown } from "../components/Markdown";
 import { BypassConfirmModal } from "../components/BypassConfirmModal";
@@ -228,8 +228,7 @@ const PANEL_ORDER = ["todos", "toolcalls", "changes"] as const;
 const STATUS_COLOR: Record<string, string> = {
   pending: "text-base-content/60 border-base-content/20 bg-base-content/5",
   claimed: "text-info border-info/45 bg-info/10",
-  planning: "text-info border-info/45 bg-info/10",
-  implementing: "text-info border-info/45 bg-info/10",
+  running: "text-info border-info/45 bg-info/10",
   done: "text-success border-success/45 bg-success/10",
   failed: "text-warning border-warning/45 bg-warning/10",
   cancelled: "text-warning border-warning/45 bg-warning/10",
@@ -266,7 +265,7 @@ export function TaskDetail({
 
   // A new human entry (this tab's own send, or one relayed from Discord)
   // always jumps to the bottom — the reader clearly wants to see it. A new
-  // planner entry never yanks the view; if they're mid-scroll reading
+  // agent entry never yanks the view; if they're mid-scroll reading
   // history, the button just pulses instead (cleared once they scroll back
   // down themselves, via the effect below).
   const [hasNewAiMessage, setHasNewAiMessage] = useState(false);
@@ -442,7 +441,7 @@ export function TaskDetail({
   const chipQuestion =
     pendingParsed && pendingParsed.length === 1 && !pendingParsed[0].multiSelect ? pendingParsed[0] : null;
   const changes = latestToolCallSummary(entries)?.files ?? null;
-  const pendingPlan = findPendingPlan(entries);
+  const pendingPermissions = findPendingPermissions(entries);
   const toolCallPairs = buildToolCallPairs(entries);
   const toolCallPairsBySeq = new Map(toolCallPairs.map((p) => [p.call.seq, p]));
   const consumedResultSeqs = pairedResultSeqs(toolCallPairs);
@@ -517,22 +516,51 @@ export function TaskDetail({
                 if (hideChangesInFeed) return null;
                 return <ToolCallLine key={String(entry.seq)} entry={entry} />;
               }
-              // ExitPlanMode always gets its own full-width card, ignoring
-              // the "Tools" toggle — it's a decision that needs a response,
-              // not an incidental tool call. Must be checked before the
-              // generic ASSISTANT branch below.
-              if (entry.type === TranscriptEntryType.ASSISTANT && parseSdkToolUse(entry.text)?.tool === "ExitPlanMode") {
-                const isPending = pendingPlan?.entry.seq === entry.seq;
-                const plan = isPending ? pendingPlan!.plan : (parseSdkToolUse(entry.text)!.input as { plan?: string })?.plan;
-                if (typeof plan !== "string") return null;
+              // Rendered inline by its PERMISSION_REQUEST entry below, not
+              // as its own bubble.
+              if (entry.type === TranscriptEntryType.PERMISSION_RESPONSE) return null;
+              // Every canUseTool prompt always gets its own full-width
+              // card, ignoring the "Tools" toggle — it's a decision that
+              // needs a response, not an incidental tool call. ExitPlanMode
+              // gets the nicer plan-specific PlanCard; everything else gets
+              // the generic PermissionCard. Must be checked before the
+              // generic ASSISTANT branch below (the raw tool_use log entry
+              // for the same call still falls through there separately).
+              if (entry.type === TranscriptEntryType.PERMISSION_REQUEST) {
+                let parsed: { tool?: string; input?: unknown } = {};
+                try {
+                  parsed = JSON.parse(entry.text);
+                } catch {
+                  return null;
+                }
+                if (typeof parsed.tool !== "string") return null;
+                const isPending = pendingPermissions.some((p) => p.entry.seq === entry.seq);
+                const respond = (decision: { behavior: "allow" | "deny"; message?: string }) =>
+                  run(() => client.respondToPermission({ taskId, seq: entry.seq, decisionJson: JSON.stringify(decision) }));
+                if (parsed.tool === "ExitPlanMode") {
+                  const plan = (parsed.input as { plan?: string } | undefined)?.plan;
+                  if (typeof plan !== "string") return null;
+                  return (
+                    <PlanCard
+                      key={String(entry.seq)}
+                      plan={plan}
+                      pending={isPending}
+                      busy={busy}
+                      onApprove={() => respond({ behavior: "allow" })}
+                      onFeedback={(text) => sendDiscuss(text)}
+                      edgeClassName="-mx-6 px-6"
+                    />
+                  );
+                }
                 return (
-                  <PlanCard
+                  <PermissionCard
                     key={String(entry.seq)}
-                    plan={plan}
+                    tool={parsed.tool}
+                    input={parsed.input}
                     pending={isPending}
                     busy={busy}
-                    onApprove={() => run(() => client.approve({ taskId }))}
-                    onFeedback={(text) => sendDiscuss(text)}
+                    onAllow={() => respond({ behavior: "allow" })}
+                    onDeny={(message) => respond({ behavior: "deny", message })}
                     edgeClassName="-mx-6 px-6"
                   />
                 );
@@ -683,6 +711,7 @@ export function TaskDetail({
                   busy={busy}
                   run={run}
                   previewUrl={previewUrl}
+                  currentMode={task.permissionMode}
                   onBypassClick={() => {
                     setActionsOpen(false);
                     setBypassOpen(true);

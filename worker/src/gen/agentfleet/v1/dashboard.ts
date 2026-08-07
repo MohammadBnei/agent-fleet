@@ -30,8 +30,8 @@ export interface Task {
     | string
     | undefined;
   /**
-   * Reclaim-eligibility signal (ClaimNextTask reclaims a claimed/planning/
-   * implementing task once this is >10min stale — the exact staleness
+   * Reclaim-eligibility signal (ClaimNextTask reclaims a claimed/running
+   * task once this is >10min stale — the exact staleness
    * threshold the dashboard's own "stuck" badge should match). Set once at
    * claim time, refreshed by the worker pod's own heartbeat loop; unset for
    * a still-pending task. RFC3339, matching JournalEntry.created_at.
@@ -54,14 +54,13 @@ export interface Task {
    * phase-boundary framing). Unset until the worker's first streamed
    * message reports it.
    */
-  planningSessionId?:
+  sessionId?:
     | string
     | undefined;
   /**
-   * Last time a planning_transcript entry was appended for this task —
-   * substrate for the idle-timeout backstop that tears down an unattended
-   * pod. RFC3339, matching heartbeat_at. Unset for a task with no activity
-   * yet.
+   * Last time a transcript entry was appended for this task — substrate
+   * for the idle-timeout backstop that tears down an unattended pod.
+   * RFC3339, matching heartbeat_at. Unset for a task with no activity yet.
    */
   lastActiveAt?:
     | string
@@ -126,14 +125,6 @@ export interface GetE2eStatusResponse {
   previewUrl: string;
 }
 
-export interface ApproveRequest {
-  taskId: string;
-}
-
-export interface ApproveResponse {
-  status: string;
-}
-
 export interface StopRequest {
   taskId: string;
   reason?: string | undefined;
@@ -144,13 +135,14 @@ export interface StopResponse {
 }
 
 /**
- * Sets an arbitrary SDK permission mode on a running task (docs/adr/0027) —
- * distinct from Approve, which stays a fixed plan->default flip matching
- * Discord's binary /approve. `mode` must be one of "acceptEdits"|
- * "dontAsk"|"bypassPermissions" (validated server-side); "bypassPermissions"
- * deliberately disables the canUseTool Write/Edit gate for this task for the
- * rest of the session — the dashboard must get explicit, typed confirmation
- * from the human before sending that value.
+ * Sets an arbitrary SDK permission mode on a running task (docs/adr/0027,
+ * extended by the sessions redesign supersession of docs/adr/0021/0025 —
+ * Approve is gone, this is now the only mode lever). `mode` must be one of
+ * "default"|"plan"|"acceptEdits"|"bypassPermissions" (validated
+ * server-side); "bypassPermissions" deliberately disables the canUseTool
+ * prompt-and-wait gate for this task for the rest of the session — the
+ * dashboard must get explicit, typed confirmation from the human before
+ * sending that value.
  */
 export interface SetPermissionModeRequest {
   taskId: string;
@@ -158,6 +150,27 @@ export interface SetPermissionModeRequest {
 }
 
 export interface SetPermissionModeResponse {
+  status: string;
+}
+
+/**
+ * Answers a pending PERMISSION_REQUEST-type transcript entry (posted by
+ * canUseTool for any tool call the SDK's current permission mode would
+ * prompt for — supersedes docs/adr/0021's Write/Edit-absent-from-
+ * allowedTools gate). `seq` is that entry's own seq, carried the same way
+ * AnswerQuestion's is — for the dashboard's own bookkeeping, not required
+ * for correlation server-side. A sibling RPC to AnswerQuestion rather than
+ * overloading it: the payload shape differs (allow/deny/updatedInput vs.
+ * free-form answers JSON) and there's no real code to share beyond one
+ * AppendReply call either way.
+ */
+export interface RespondToPermissionRequest {
+  taskId: string;
+  seq: number;
+  decisionJson: string;
+}
+
+export interface RespondToPermissionResponse {
   status: string;
 }
 
@@ -170,11 +183,11 @@ export interface KillE2eResponse {
 }
 
 /**
- * Answers a pending QUESTION-type transcript entry (posted by the planner's
+ * Answers a pending QUESTION-type transcript entry (posted by the agent's
  * AskUserQuestion MCP tool call, see docs/adr/0018). `seq` is that entry's
  * own seq — carried for the dashboard's own bookkeeping/idempotency, not
  * required for correlation server-side (only one question is ever pending
- * per task at a time, since the planner's tool call blocks on it).
+ * per task at a time, since the agent's tool call blocks on it).
  * `answers_json` is a JSON-encoded {"answers": {"<question>": "<label>"}}
  * payload, opaque to fleet-core — it's appended verbatim as the answer
  * entry's `text` and returned verbatim to the blocked MCP tool call.
@@ -196,8 +209,8 @@ export interface AnswerQuestionResponse {
  * streamHumanMessages SSE the same way a Discord reply already is (no
  * worker/sidecar changes needed, it's a plain cursor-based transcript
  * stream, not Discord-specific). `from`/`type` are hardcoded server-side,
- * same pattern as Approve hardcoding "human"/"approve" — the dashboard has
- * no need to expose them.
+ * same pattern as Stop hardcoding "human"/"abort" — the dashboard has no
+ * need to expose them.
  */
 export interface DiscussRequest {
   taskId: string;
@@ -338,7 +351,7 @@ function createBaseTask(): Task {
     heartbeatAt: undefined,
     retryCount: 0,
     lastError: undefined,
-    planningSessionId: undefined,
+    sessionId: undefined,
     lastActiveAt: undefined,
     permissionMode: undefined,
   };
@@ -386,10 +399,10 @@ export const Task: MessageFns<Task> = {
         : isSet(object.last_error)
         ? globalThis.String(object.last_error)
         : undefined,
-      planningSessionId: isSet(object.planningSessionId)
-        ? globalThis.String(object.planningSessionId)
-        : isSet(object.planning_session_id)
-        ? globalThis.String(object.planning_session_id)
+      sessionId: isSet(object.sessionId)
+        ? globalThis.String(object.sessionId)
+        : isSet(object.session_id)
+        ? globalThis.String(object.session_id)
         : undefined,
       lastActiveAt: isSet(object.lastActiveAt)
         ? globalThis.String(object.lastActiveAt)
@@ -439,8 +452,8 @@ export const Task: MessageFns<Task> = {
     if (message.lastError !== undefined) {
       obj.lastError = message.lastError;
     }
-    if (message.planningSessionId !== undefined) {
-      obj.planningSessionId = message.planningSessionId;
+    if (message.sessionId !== undefined) {
+      obj.sessionId = message.sessionId;
     }
     if (message.lastActiveAt !== undefined) {
       obj.lastActiveAt = message.lastActiveAt;
@@ -467,7 +480,7 @@ export const Task: MessageFns<Task> = {
     message.heartbeatAt = object.heartbeatAt ?? undefined;
     message.retryCount = object.retryCount ?? 0;
     message.lastError = object.lastError ?? undefined;
-    message.planningSessionId = object.planningSessionId ?? undefined;
+    message.sessionId = object.sessionId ?? undefined;
     message.lastActiveAt = object.lastActiveAt ?? undefined;
     message.permissionMode = object.permissionMode ?? undefined;
     return message;
@@ -756,66 +769,6 @@ export const GetE2eStatusResponse: MessageFns<GetE2eStatusResponse> = {
   },
 };
 
-function createBaseApproveRequest(): ApproveRequest {
-  return { taskId: "" };
-}
-
-export const ApproveRequest: MessageFns<ApproveRequest> = {
-  fromJSON(object: any): ApproveRequest {
-    return {
-      taskId: isSet(object.taskId)
-        ? globalThis.String(object.taskId)
-        : isSet(object.task_id)
-        ? globalThis.String(object.task_id)
-        : "",
-    };
-  },
-
-  toJSON(message: ApproveRequest): unknown {
-    const obj: any = {};
-    if (message.taskId !== "") {
-      obj.taskId = message.taskId;
-    }
-    return obj;
-  },
-
-  create<I extends Exact<DeepPartial<ApproveRequest>, I>>(base?: I): ApproveRequest {
-    return ApproveRequest.fromPartial(base ?? ({} as any));
-  },
-  fromPartial<I extends Exact<DeepPartial<ApproveRequest>, I>>(object: I): ApproveRequest {
-    const message = createBaseApproveRequest();
-    message.taskId = object.taskId ?? "";
-    return message;
-  },
-};
-
-function createBaseApproveResponse(): ApproveResponse {
-  return { status: "" };
-}
-
-export const ApproveResponse: MessageFns<ApproveResponse> = {
-  fromJSON(object: any): ApproveResponse {
-    return { status: isSet(object.status) ? globalThis.String(object.status) : "" };
-  },
-
-  toJSON(message: ApproveResponse): unknown {
-    const obj: any = {};
-    if (message.status !== "") {
-      obj.status = message.status;
-    }
-    return obj;
-  },
-
-  create<I extends Exact<DeepPartial<ApproveResponse>, I>>(base?: I): ApproveResponse {
-    return ApproveResponse.fromPartial(base ?? ({} as any));
-  },
-  fromPartial<I extends Exact<DeepPartial<ApproveResponse>, I>>(object: I): ApproveResponse {
-    const message = createBaseApproveResponse();
-    message.status = object.status ?? "";
-    return message;
-  },
-};
-
 function createBaseStopRequest(): StopRequest {
   return { taskId: "", reason: undefined };
 }
@@ -941,6 +894,80 @@ export const SetPermissionModeResponse: MessageFns<SetPermissionModeResponse> = 
   },
   fromPartial<I extends Exact<DeepPartial<SetPermissionModeResponse>, I>>(object: I): SetPermissionModeResponse {
     const message = createBaseSetPermissionModeResponse();
+    message.status = object.status ?? "";
+    return message;
+  },
+};
+
+function createBaseRespondToPermissionRequest(): RespondToPermissionRequest {
+  return { taskId: "", seq: 0, decisionJson: "" };
+}
+
+export const RespondToPermissionRequest: MessageFns<RespondToPermissionRequest> = {
+  fromJSON(object: any): RespondToPermissionRequest {
+    return {
+      taskId: isSet(object.taskId)
+        ? globalThis.String(object.taskId)
+        : isSet(object.task_id)
+        ? globalThis.String(object.task_id)
+        : "",
+      seq: isSet(object.seq) ? globalThis.Number(object.seq) : 0,
+      decisionJson: isSet(object.decisionJson)
+        ? globalThis.String(object.decisionJson)
+        : isSet(object.decision_json)
+        ? globalThis.String(object.decision_json)
+        : "",
+    };
+  },
+
+  toJSON(message: RespondToPermissionRequest): unknown {
+    const obj: any = {};
+    if (message.taskId !== "") {
+      obj.taskId = message.taskId;
+    }
+    if (message.seq !== 0) {
+      obj.seq = Math.round(message.seq);
+    }
+    if (message.decisionJson !== "") {
+      obj.decisionJson = message.decisionJson;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<RespondToPermissionRequest>, I>>(base?: I): RespondToPermissionRequest {
+    return RespondToPermissionRequest.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<RespondToPermissionRequest>, I>>(object: I): RespondToPermissionRequest {
+    const message = createBaseRespondToPermissionRequest();
+    message.taskId = object.taskId ?? "";
+    message.seq = object.seq ?? 0;
+    message.decisionJson = object.decisionJson ?? "";
+    return message;
+  },
+};
+
+function createBaseRespondToPermissionResponse(): RespondToPermissionResponse {
+  return { status: "" };
+}
+
+export const RespondToPermissionResponse: MessageFns<RespondToPermissionResponse> = {
+  fromJSON(object: any): RespondToPermissionResponse {
+    return { status: isSet(object.status) ? globalThis.String(object.status) : "" };
+  },
+
+  toJSON(message: RespondToPermissionResponse): unknown {
+    const obj: any = {};
+    if (message.status !== "") {
+      obj.status = message.status;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<RespondToPermissionResponse>, I>>(base?: I): RespondToPermissionResponse {
+    return RespondToPermissionResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<RespondToPermissionResponse>, I>>(object: I): RespondToPermissionResponse {
+    const message = createBaseRespondToPermissionResponse();
     message.status = object.status ?? "";
     return message;
   },
@@ -1789,11 +1816,11 @@ export interface DashboardService {
    */
   StreamTranscript(request: StreamTranscriptRequest): Observable<TranscriptEntry>;
   GetE2eStatus(request: GetE2eStatusRequest): Promise<GetE2eStatusResponse>;
-  Approve(request: ApproveRequest): Promise<ApproveResponse>;
   Stop(request: StopRequest): Promise<StopResponse>;
   SetPermissionMode(request: SetPermissionModeRequest): Promise<SetPermissionModeResponse>;
   KillE2e(request: KillE2eRequest): Promise<KillE2eResponse>;
   AnswerQuestion(request: AnswerQuestionRequest): Promise<AnswerQuestionResponse>;
+  RespondToPermission(request: RespondToPermissionRequest): Promise<RespondToPermissionResponse>;
   Discuss(request: DiscussRequest): Promise<DiscussResponse>;
   DeleteTask(request: DeleteTaskRequest): Promise<DeleteTaskResponse>;
   /**

@@ -49,15 +49,15 @@ func New(core *coreclient.Client) http.Handler {
 	s := server.NewMCPServer("agent-fleet-sidecar", "0.1.0", server.WithToolCapabilities(true))
 
 	s.AddTool(mcp.NewTool("send_message",
-		mcp.WithDescription("Append a message to this task's shared planning transcript (visible to the human via the dashboard/Discord relay)."),
-		mcp.WithString("from", mcp.Required(), mcp.Description("'planner' | 'human'")),
+		mcp.WithDescription("Append a message to this task's shared transcript (visible to the human via the dashboard/Discord relay)."),
+		mcp.WithString("from", mcp.Required(), mcp.Description("'agent' | 'human'")),
 		mcp.WithString("text", mcp.Required()),
 		mcp.WithString("type", mcp.Description("'discussion' | 'approve' | 'abort'")),
 		mcp.WithString("idempotencyKey"),
 	), sendMessageHandler(core))
 
 	s.AddTool(mcp.NewTool("wait_for_messages",
-		mcp.WithDescription("Block (up to timeoutMs) until new planning-transcript messages appear after sinceIndex, then return them."),
+		mcp.WithDescription("Block (up to timeoutMs) until new transcript messages appear after sinceIndex, then return them."),
 		mcp.WithNumber("sinceIndex"),
 		mcp.WithNumber("timeoutMs"),
 	), waitForMessagesHandler(core))

@@ -57,8 +57,8 @@ export async function appendJournal(
   await postJSON("/journal", { repo, actor, eventType, payload });
 }
 
-export async function saveSessionId(planningSessionId: string, model: string): Promise<void> {
-  await postJSON("/session-id", { planningSessionId, model });
+export async function saveSessionId(sessionId: string, model: string): Promise<void> {
+  await postJSON("/session-id", { sessionId, model });
 }
 
 export async function stillHoldsLease(leaseId: string): Promise<boolean> {
@@ -69,14 +69,17 @@ export async function stillHoldsLease(leaseId: string): Promise<boolean> {
 }
 
 // pushMessage lets the wrapper post directly into the transcript — the
-// round-cap checkpoint text, and the agent's raw assistant narration (today
+// round-cap checkpoint text, the agent's raw assistant narration (today
 // relayed to Discord by the now-deleted discord.ts; both now route through
-// core's own relay loop, uniformly with the agent's own send_message posts).
-export async function pushMessage(from: string, text: string, type?: string): Promise<void> {
-  await postJSON("/message", { from, text, type });
+// core's own relay loop, uniformly with the agent's own send_message posts),
+// and canUseTool's own permission_request entries, which need the returned
+// seq back to correlate the eventual permission_response reply.
+export async function pushMessage(from: string, text: string, type?: string): Promise<number> {
+  const res = await postJSON<{ seq: number }>("/message", { from, text, type });
+  return res.seq;
 }
 
-export type TranscriptEntry = { seq: number; from: string; text: string; type?: string };
+export type TranscriptEntry = { seq: number; from: string; text: string; type?: string; replyTo?: number };
 
 const RECONNECT_DELAY_MS = 2000;
 
@@ -107,7 +110,7 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
 // closes that idle connection (a redeploy, an idle-connection reaper,
 // anything), the old version of this function just returned or threw once
 // and was never called again — permanently ending the task's ability to
-// receive another human message (Approve, Discuss, even Abort) for the
+// receive another human message (a permission decision, Discuss, even Abort) for the
 // rest of its life, with nothing but one easy-to-miss log line as
 // evidence. lastSeq tracks how far we've actually delivered so a
 // reconnect resumes exactly there via the sidecar's sinceSeq query param

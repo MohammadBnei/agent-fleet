@@ -184,9 +184,9 @@ func (c *Client) AppendJournal(ctx context.Context, repo, actor, eventType, payl
 	return nil
 }
 
-func (c *Client) SaveSessionID(ctx context.Context, planningSessionID, model string) error {
+func (c *Client) SaveSessionID(ctx context.Context, sessionID, model string) error {
 	_, err := c.rpc.SaveSessionId(ctx, &agentfleetv1.SaveSessionIdRequest{
-		TaskId: c.taskID, PlanningSessionId: planningSessionID, Model: model,
+		TaskId: c.taskID, SessionId: sessionID, Model: model,
 	})
 	if err != nil {
 		return fmt.Errorf("SaveSessionId: %w", err)

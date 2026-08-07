@@ -3,7 +3,7 @@ import { TranscriptEntryType, type TranscriptEntry } from "./gen/agentfleet/v1/t
 export type QuestionOption = { label: string; description: string };
 export type Question = { question: string; header: string; options: QuestionOption[]; multiSelect?: boolean };
 
-// Visual distinction between "planner" and "human" is now a markdown
+// Visual distinction between "agent" and "human" is now a markdown
 // blockquote, not a text label (see Markdown.tsx) — `> ` needs to prefix
 // every line, not just the first, for a multi-line human message to render
 // as one blockquote instead of one quoted line followed by plain text.
@@ -36,7 +36,7 @@ export function parseAnswers(text: string): Record<string, string> | null {
   }
 }
 
-// Only one question is ever pending per task at a time (the planner's tool
+// Only one question is ever pending per task at a time (the agent's tool
 // call blocks on it) — the latest QUESTION entry with no later ANSWER.
 export function findPendingQuestion(entries: TranscriptEntry[]): TranscriptEntry | null {
   const idx = entries.findIndex(
@@ -47,25 +47,30 @@ export function findPendingQuestion(entries: TranscriptEntry[]): TranscriptEntry
   return idx >= 0 ? entries[idx] : null;
 }
 
-// ExitPlanMode is an SDK built-in, not a fleet-owned MCP tool (unlike
-// AskUserQuestion) — it has no dedicated transcript type or seq-correlated
-// answer. worker/src/planning.ts's canUseTool blocks on it until *any*
-// human-originated entry arrives (Approve allows it verbatim, anything else
-// denies it with that text as feedback), so "pending" here mirrors that
-// same single-pending invariant: the latest ExitPlanMode call with no later
-// entry `from === "human"`.
-export function findPendingPlan(entries: TranscriptEntry[]): { entry: TranscriptEntry; plan: string } | null {
-  for (let i = entries.length - 1; i >= 0; i--) {
-    const e = entries[i];
-    if (e.type !== TranscriptEntryType.ASSISTANT) continue;
-    const info = parseSdkToolUse(e.text);
-    if (info?.tool !== "ExitPlanMode") continue;
-    const plan = (info.input as { plan?: unknown } | undefined)?.plan;
-    if (typeof plan !== "string") return null;
-    const resolved = entries.slice(i + 1).some((later) => later.from === "human");
-    return resolved ? null : { entry: e, plan };
+export type PendingPermission = { entry: TranscriptEntry; tool: string; input: unknown };
+
+// A PERMISSION_REQUEST entry is pending until a PERMISSION_RESPONSE entry
+// replies to its own seq (real correlation, not the old "any later
+// human-originated entry" heuristic ExitPlanMode used to rely on before
+// `reply_to` existed on the wire — see docs/adr supersession of 0021/0025).
+// Multiple can be pending at once now that canUseTool is a generic
+// per-tool-call gate rather than an ExitPlanMode-only special case, so this
+// returns every unresolved one, not just the latest.
+export function findPendingPermissions(entries: TranscriptEntry[]): PendingPermission[] {
+  const out: PendingPermission[] = [];
+  for (const e of entries) {
+    if (e.type !== TranscriptEntryType.PERMISSION_REQUEST) continue;
+    let parsed: { tool?: unknown; input?: unknown };
+    try {
+      parsed = JSON.parse(e.text);
+    } catch {
+      continue;
+    }
+    if (typeof parsed.tool !== "string") continue;
+    const resolved = entries.some((later) => later.type === TranscriptEntryType.PERMISSION_RESPONSE && later.replyTo === e.seq);
+    if (!resolved) out.push({ entry: e, tool: parsed.tool, input: parsed.input });
   }
-  return null;
+  return out;
 }
 
 export type ToolCallSummary = { branch?: string; files?: { path: string; added: number; removed: number }[] };
@@ -94,7 +99,7 @@ export function latestToolCallSummary(entries: TranscriptEntry[]): ToolCallSumma
   return null;
 }
 
-// The raw Claude Agent SDK message discriminants worker/src/planning.ts's
+// The raw Claude Agent SDK message discriminants worker/src/session.ts's
 // logSdkMessage relays verbatim (reliability-findings.md #0: "relay
 // everything, let the UI decide"). Defensive parse like the helpers above —
 // a malformed payload falls back to the raw text bubble instead of crashing.
@@ -142,7 +147,7 @@ export function parseSdkToolResult(text: string): SdkToolResult | null {
 
 // Pairs an ASSISTANT (tool_use) entry with its USER (tool_result) entry via
 // the Anthropic content-block id<->tool_use_id correlation worker/src/
-// planning.ts's logSdkMessage now carries — without this, a tool call and
+// session.ts's logSdkMessage now carries — without this, a tool call and
 // its output render as two unrelated-looking bubbles with no visible link.
 // `result` is null while the call is still in flight (no matching
 // tool_result has arrived yet).
