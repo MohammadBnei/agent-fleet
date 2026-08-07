@@ -46,6 +46,20 @@ export enum TranscriptEntryType {
    * already uses for its `text:"approved"`.
    */
   TRANSCRIPT_ENTRY_TYPE_PERMISSION_MODE = 11,
+  /**
+   * TRANSCRIPT_ENTRY_TYPE_PERMISSION_REQUEST - Worker-authored, posted by canUseTool for any tool call the SDK's
+   * current permission mode would prompt for (supersedes docs/adr/0021's
+   * Write/Edit-absent-from-allowedTools gate) — `text` is a JSON
+   * {tool, input} payload. Answered via DashboardService.RespondToPermission,
+   * correlated back through `reply_to` the same way ANSWER correlates to
+   * QUESTION.
+   */
+  TRANSCRIPT_ENTRY_TYPE_PERMISSION_REQUEST = 12,
+  /**
+   * TRANSCRIPT_ENTRY_TYPE_PERMISSION_RESPONSE - The human's allow/deny decision for a PERMISSION_REQUEST entry —
+   * `text` is a JSON {decision, updatedInput?} payload.
+   */
+  TRANSCRIPT_ENTRY_TYPE_PERMISSION_RESPONSE = 13,
   UNRECOGNIZED = -1,
 }
 
@@ -87,6 +101,12 @@ export function transcriptEntryTypeFromJSON(object: any): TranscriptEntryType {
     case 11:
     case "TRANSCRIPT_ENTRY_TYPE_PERMISSION_MODE":
       return TranscriptEntryType.TRANSCRIPT_ENTRY_TYPE_PERMISSION_MODE;
+    case 12:
+    case "TRANSCRIPT_ENTRY_TYPE_PERMISSION_REQUEST":
+      return TranscriptEntryType.TRANSCRIPT_ENTRY_TYPE_PERMISSION_REQUEST;
+    case 13:
+    case "TRANSCRIPT_ENTRY_TYPE_PERMISSION_RESPONSE":
+      return TranscriptEntryType.TRANSCRIPT_ENTRY_TYPE_PERMISSION_RESPONSE;
     case -1:
     case "UNRECOGNIZED":
     default:
@@ -120,6 +140,10 @@ export function transcriptEntryTypeToJSON(object: TranscriptEntryType): string {
       return "TRANSCRIPT_ENTRY_TYPE_RESULT";
     case TranscriptEntryType.TRANSCRIPT_ENTRY_TYPE_PERMISSION_MODE:
       return "TRANSCRIPT_ENTRY_TYPE_PERMISSION_MODE";
+    case TranscriptEntryType.TRANSCRIPT_ENTRY_TYPE_PERMISSION_REQUEST:
+      return "TRANSCRIPT_ENTRY_TYPE_PERMISSION_REQUEST";
+    case TranscriptEntryType.TRANSCRIPT_ENTRY_TYPE_PERMISSION_RESPONSE:
+      return "TRANSCRIPT_ENTRY_TYPE_PERMISSION_RESPONSE";
     case TranscriptEntryType.UNRECOGNIZED:
     default:
       return "UNRECOGNIZED";
@@ -133,6 +157,14 @@ export interface TranscriptEntry {
   from: string;
   text: string;
   type: TranscriptEntryType;
+  /**
+   * Non-nil only for an ANSWER/PERMISSION_RESPONSE entry replying to a
+   * specific QUESTION/PERMISSION_REQUEST entry's own seq (mirrors
+   * transcript.Entry.ReplyTo server-side) — without this, a live-streamed
+   * entry had no reply correlation at all; only AskUserQuestion's
+   * in-process poll loop ever saw it.
+   */
+  replyTo?: number | undefined;
 }
 
 export interface AppendTranscriptEntryRequest {
@@ -156,7 +188,7 @@ export interface ReadTranscriptSinceResponse {
 }
 
 function createBaseTranscriptEntry(): TranscriptEntry {
-  return { taskId: "", seq: 0, from: "", text: "", type: 0 };
+  return { taskId: "", seq: 0, from: "", text: "", type: 0, replyTo: undefined };
 }
 
 export const TranscriptEntry: MessageFns<TranscriptEntry> = {
@@ -171,6 +203,11 @@ export const TranscriptEntry: MessageFns<TranscriptEntry> = {
       from: isSet(object.from) ? globalThis.String(object.from) : "",
       text: isSet(object.text) ? globalThis.String(object.text) : "",
       type: isSet(object.type) ? transcriptEntryTypeFromJSON(object.type) : 0,
+      replyTo: isSet(object.replyTo)
+        ? globalThis.Number(object.replyTo)
+        : isSet(object.reply_to)
+        ? globalThis.Number(object.reply_to)
+        : undefined,
     };
   },
 
@@ -191,6 +228,9 @@ export const TranscriptEntry: MessageFns<TranscriptEntry> = {
     if (message.type !== 0) {
       obj.type = transcriptEntryTypeToJSON(message.type);
     }
+    if (message.replyTo !== undefined) {
+      obj.replyTo = Math.round(message.replyTo);
+    }
     return obj;
   },
 
@@ -204,6 +244,7 @@ export const TranscriptEntry: MessageFns<TranscriptEntry> = {
     message.from = object.from ?? "";
     message.text = object.text ?? "";
     message.type = object.type ?? 0;
+    message.replyTo = object.replyTo ?? undefined;
     return message;
   },
 };

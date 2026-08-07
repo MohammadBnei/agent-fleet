@@ -38,6 +38,12 @@ type Task struct {
 	RetryCount  int        `json:"retryCount"`
 	LastError   *string    `json:"lastError,omitempty"`
 	LeaseID     string     `json:"-"`
+	// PlanningSessionID/Model are written by SaveSessionID but were never
+	// read back before the sessions redesign — now read so a warm/resume
+	// path (docs/adr supersession of 0021/0025) can pass the Claude SDK's
+	// own session id into a fresh pod's `resume:` option.
+	PlanningSessionID *string `json:"planningSessionId,omitempty"`
+	Model             *string `json:"model,omitempty"`
 }
 
 type Store struct {
@@ -99,10 +105,10 @@ func (s *Store) GetTask(ctx context.Context, id string) (*Task, error) {
 	var t Task
 	err := s.pool.QueryRow(ctx, `
 		SELECT id, repo, description, status, discord_thread_id, pr_url, pod_phase, pod_message,
-		       heartbeat_at, retry_count, last_error
+		       heartbeat_at, retry_count, last_error, planning_session_id, model
 		FROM tasks WHERE id = $1 AND deleted_at IS NULL
 	`, id).Scan(&t.ID, &t.Repo, &t.Description, &t.Status, &t.ThreadID, &t.PrURL, &t.PodPhase, &t.PodMessage,
-		&t.HeartbeatAt, &t.RetryCount, &t.LastError)
+		&t.HeartbeatAt, &t.RetryCount, &t.LastError, &t.PlanningSessionID, &t.Model)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
@@ -146,7 +152,7 @@ func (s *Store) GetTaskStatusInfo(ctx context.Context, id string) (*TaskStatusIn
 func (s *Store) ListRecentTasks(ctx context.Context, limit int) ([]Task, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT id, repo, description, status, discord_thread_id, pr_url, pod_phase, pod_message,
-		       heartbeat_at, retry_count, last_error
+		       heartbeat_at, retry_count, last_error, planning_session_id, model
 		FROM tasks WHERE deleted_at IS NULL ORDER BY created_at DESC LIMIT $1
 	`, limit)
 	if err != nil {
@@ -162,7 +168,7 @@ func (s *Store) ListRecentTasks(ctx context.Context, limit int) ([]Task, error) 
 	for rows.Next() {
 		var t Task
 		if err := rows.Scan(&t.ID, &t.Repo, &t.Description, &t.Status, &t.ThreadID, &t.PrURL, &t.PodPhase, &t.PodMessage,
-			&t.HeartbeatAt, &t.RetryCount, &t.LastError); err != nil {
+			&t.HeartbeatAt, &t.RetryCount, &t.LastError, &t.PlanningSessionID, &t.Model); err != nil {
 			slog.Error("tasks ListRecentTasks: scan", "error", err)
 			return nil, fmt.Errorf("scan task: %w", err)
 		}

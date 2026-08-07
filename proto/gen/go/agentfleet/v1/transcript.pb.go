@@ -53,6 +53,16 @@ const (
 	// ("acceptEdits"|"dontAsk"|"bypassPermissions"), same convention APPROVE
 	// already uses for its `text:"approved"`.
 	TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_PERMISSION_MODE TranscriptEntryType = 11
+	// Worker-authored, posted by canUseTool for any tool call the SDK's
+	// current permission mode would prompt for (supersedes docs/adr/0021's
+	// Write/Edit-absent-from-allowedTools gate) — `text` is a JSON
+	// {tool, input} payload. Answered via DashboardService.RespondToPermission,
+	// correlated back through `reply_to` the same way ANSWER correlates to
+	// QUESTION.
+	TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_PERMISSION_REQUEST TranscriptEntryType = 12
+	// The human's allow/deny decision for a PERMISSION_REQUEST entry —
+	// `text` is a JSON {decision, updatedInput?} payload.
+	TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_PERMISSION_RESPONSE TranscriptEntryType = 13
 )
 
 // Enum value maps for TranscriptEntryType.
@@ -70,20 +80,24 @@ var (
 		9:  "TRANSCRIPT_ENTRY_TYPE_USER",
 		10: "TRANSCRIPT_ENTRY_TYPE_RESULT",
 		11: "TRANSCRIPT_ENTRY_TYPE_PERMISSION_MODE",
+		12: "TRANSCRIPT_ENTRY_TYPE_PERMISSION_REQUEST",
+		13: "TRANSCRIPT_ENTRY_TYPE_PERMISSION_RESPONSE",
 	}
 	TranscriptEntryType_value = map[string]int32{
-		"TRANSCRIPT_ENTRY_TYPE_UNSPECIFIED":     0,
-		"TRANSCRIPT_ENTRY_TYPE_DISCUSSION":      1,
-		"TRANSCRIPT_ENTRY_TYPE_APPROVE":         2,
-		"TRANSCRIPT_ENTRY_TYPE_ABORT":           3,
-		"TRANSCRIPT_ENTRY_TYPE_QUESTION":        4,
-		"TRANSCRIPT_ENTRY_TYPE_ANSWER":          5,
-		"TRANSCRIPT_ENTRY_TYPE_TOOL_CALL":       6,
-		"TRANSCRIPT_ENTRY_TYPE_SYSTEM":          7,
-		"TRANSCRIPT_ENTRY_TYPE_ASSISTANT":       8,
-		"TRANSCRIPT_ENTRY_TYPE_USER":            9,
-		"TRANSCRIPT_ENTRY_TYPE_RESULT":          10,
-		"TRANSCRIPT_ENTRY_TYPE_PERMISSION_MODE": 11,
+		"TRANSCRIPT_ENTRY_TYPE_UNSPECIFIED":         0,
+		"TRANSCRIPT_ENTRY_TYPE_DISCUSSION":          1,
+		"TRANSCRIPT_ENTRY_TYPE_APPROVE":             2,
+		"TRANSCRIPT_ENTRY_TYPE_ABORT":               3,
+		"TRANSCRIPT_ENTRY_TYPE_QUESTION":            4,
+		"TRANSCRIPT_ENTRY_TYPE_ANSWER":              5,
+		"TRANSCRIPT_ENTRY_TYPE_TOOL_CALL":           6,
+		"TRANSCRIPT_ENTRY_TYPE_SYSTEM":              7,
+		"TRANSCRIPT_ENTRY_TYPE_ASSISTANT":           8,
+		"TRANSCRIPT_ENTRY_TYPE_USER":                9,
+		"TRANSCRIPT_ENTRY_TYPE_RESULT":              10,
+		"TRANSCRIPT_ENTRY_TYPE_PERMISSION_MODE":     11,
+		"TRANSCRIPT_ENTRY_TYPE_PERMISSION_REQUEST":  12,
+		"TRANSCRIPT_ENTRY_TYPE_PERMISSION_RESPONSE": 13,
 	}
 )
 
@@ -115,12 +129,18 @@ func (TranscriptEntryType) EnumDescriptor() ([]byte, []int) {
 }
 
 type TranscriptEntry struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	TaskId        string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
-	Seq           int64                  `protobuf:"varint,2,opt,name=seq,proto3" json:"seq,omitempty"`
-	From          string                 `protobuf:"bytes,3,opt,name=from,proto3" json:"from,omitempty"` // "planner" | "human"
-	Text          string                 `protobuf:"bytes,4,opt,name=text,proto3" json:"text,omitempty"`
-	Type          TranscriptEntryType    `protobuf:"varint,5,opt,name=type,proto3,enum=agentfleet.v1.TranscriptEntryType" json:"type,omitempty"`
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	TaskId string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	Seq    int64                  `protobuf:"varint,2,opt,name=seq,proto3" json:"seq,omitempty"`
+	From   string                 `protobuf:"bytes,3,opt,name=from,proto3" json:"from,omitempty"` // "planner" | "human"
+	Text   string                 `protobuf:"bytes,4,opt,name=text,proto3" json:"text,omitempty"`
+	Type   TranscriptEntryType    `protobuf:"varint,5,opt,name=type,proto3,enum=agentfleet.v1.TranscriptEntryType" json:"type,omitempty"`
+	// Non-nil only for an ANSWER/PERMISSION_RESPONSE entry replying to a
+	// specific QUESTION/PERMISSION_REQUEST entry's own seq (mirrors
+	// transcript.Entry.ReplyTo server-side) — without this, a live-streamed
+	// entry had no reply correlation at all; only AskUserQuestion's
+	// in-process poll loop ever saw it.
+	ReplyTo       *int64 `protobuf:"varint,6,opt,name=reply_to,json=replyTo,proto3,oneof" json:"reply_to,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -188,6 +208,13 @@ func (x *TranscriptEntry) GetType() TranscriptEntryType {
 		return x.Type
 	}
 	return TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_UNSPECIFIED
+}
+
+func (x *TranscriptEntry) GetReplyTo() int64 {
+	if x != nil && x.ReplyTo != nil {
+		return *x.ReplyTo
+	}
+	return 0
 }
 
 type AppendTranscriptEntryRequest struct {
@@ -382,13 +409,15 @@ var File_agentfleet_v1_transcript_proto protoreflect.FileDescriptor
 
 const file_agentfleet_v1_transcript_proto_rawDesc = "" +
 	"\n" +
-	"\x1eagentfleet/v1/transcript.proto\x12\ragentfleet.v1\"\x9c\x01\n" +
+	"\x1eagentfleet/v1/transcript.proto\x12\ragentfleet.v1\"\xc9\x01\n" +
 	"\x0fTranscriptEntry\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x10\n" +
 	"\x03seq\x18\x02 \x01(\x03R\x03seq\x12\x12\n" +
 	"\x04from\x18\x03 \x01(\tR\x04from\x12\x12\n" +
 	"\x04text\x18\x04 \x01(\tR\x04text\x126\n" +
-	"\x04type\x18\x05 \x01(\x0e2\".agentfleet.v1.TranscriptEntryTypeR\x04type\"\xc0\x01\n" +
+	"\x04type\x18\x05 \x01(\x0e2\".agentfleet.v1.TranscriptEntryTypeR\x04type\x12\x1e\n" +
+	"\breply_to\x18\x06 \x01(\x03H\x00R\areplyTo\x88\x01\x01B\v\n" +
+	"\t_reply_to\"\xc0\x01\n" +
 	"\x1cAppendTranscriptEntryRequest\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x12\n" +
 	"\x04from\x18\x02 \x01(\tR\x04from\x12\x12\n" +
@@ -402,7 +431,7 @@ const file_agentfleet_v1_transcript_proto_rawDesc = "" +
 	"timeout_ms\x18\x03 \x01(\x05R\ttimeoutMs\"r\n" +
 	"\x1bReadTranscriptSinceResponse\x128\n" +
 	"\aentries\x18\x01 \x03(\v2\x1e.agentfleet.v1.TranscriptEntryR\aentries\x12\x19\n" +
-	"\bnext_seq\x18\x02 \x01(\x03R\anextSeq*\xc5\x03\n" +
+	"\bnext_seq\x18\x02 \x01(\x03R\anextSeq*\xa2\x04\n" +
 	"\x13TranscriptEntryType\x12%\n" +
 	"!TRANSCRIPT_ENTRY_TYPE_UNSPECIFIED\x10\x00\x12$\n" +
 	" TRANSCRIPT_ENTRY_TYPE_DISCUSSION\x10\x01\x12!\n" +
@@ -416,7 +445,9 @@ const file_agentfleet_v1_transcript_proto_rawDesc = "" +
 	"\x1aTRANSCRIPT_ENTRY_TYPE_USER\x10\t\x12 \n" +
 	"\x1cTRANSCRIPT_ENTRY_TYPE_RESULT\x10\n" +
 	"\x12)\n" +
-	"%TRANSCRIPT_ENTRY_TYPE_PERMISSION_MODE\x10\vBMZKgithub.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1;agentfleetv1b\x06proto3"
+	"%TRANSCRIPT_ENTRY_TYPE_PERMISSION_MODE\x10\v\x12,\n" +
+	"(TRANSCRIPT_ENTRY_TYPE_PERMISSION_REQUEST\x10\f\x12-\n" +
+	")TRANSCRIPT_ENTRY_TYPE_PERMISSION_RESPONSE\x10\rBMZKgithub.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1;agentfleetv1b\x06proto3"
 
 var (
 	file_agentfleet_v1_transcript_proto_rawDescOnce sync.Once
@@ -455,6 +486,7 @@ func file_agentfleet_v1_transcript_proto_init() {
 	if File_agentfleet_v1_transcript_proto != nil {
 		return
 	}
+	file_agentfleet_v1_transcript_proto_msgTypes[0].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
