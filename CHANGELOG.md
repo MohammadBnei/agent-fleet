@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.22.1](https://github.com/MohammadBnei/agent-fleet/compare/1.22.0...1.22.1) (2026-08-08)
+
+
+### Bug Fixes
+
+* **worker,dashboard:** stop native AskUserQuestion, add cogitating indicator ([#66](https://github.com/MohammadBnei/agent-fleet/issues/66)) ([f71843c](https://github.com/MohammadBnei/agent-fleet/commit/f71843c5d88c22713d38ed703fdfd0b438f3d729))
+
 # [1.22.0](https://github.com/MohammadBnei/agent-fleet/compare/1.21.3...1.22.0) (2026-08-08)
 
 
