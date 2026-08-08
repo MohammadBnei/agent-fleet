@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.24.1](https://github.com/MohammadBnei/agent-fleet/compare/1.24.0...1.24.1) (2026-08-08)
+
+
+### Bug Fixes
+
+* **dashboard:** remove EntryBubble memoization to fix message display bug ([ae2fc88](https://github.com/MohammadBnei/agent-fleet/commit/ae2fc882fc065cb6fc411c61eb6bbb1b1a576022))
+
 # [1.24.0](https://github.com/MohammadBnei/agent-fleet/compare/1.23.5...1.24.0) (2026-08-08)
 
 
