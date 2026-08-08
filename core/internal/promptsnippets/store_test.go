@@ -51,6 +51,7 @@ func newTestPool(t *testing.T) *pgxpool.Pool {
 			id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 			name       TEXT NOT NULL UNIQUE,
 			text       TEXT NOT NULL,
+			suggested_permission_mode TEXT,
 			created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
 			updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 		);
