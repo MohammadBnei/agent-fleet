@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"connectrpc.com/connect"
@@ -20,6 +21,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1/agentfleetv1connect"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/journal"
+	"github.com/MohammadBnei/agent-fleet/core/internal/promptsnippets"
 	"github.com/MohammadBnei/agent-fleet/core/internal/provisionerclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/repos"
 	"github.com/MohammadBnei/agent-fleet/core/internal/tasks"
@@ -31,13 +33,14 @@ type Server struct {
 	transcr     transcript.Store
 	journal     *journal.Store
 	repos       *repos.Store
+	snippets    *promptsnippets.Store
 	e2e         *provisionerclient.Client
 	hub         *Hub
 	maxInFlight int
 }
 
-func NewServer(taskStore *tasks.Store, transcr transcript.Store, journalStore *journal.Store, repoStore *repos.Store, e2e *provisionerclient.Client, hub *Hub, maxInFlight int) *Server {
-	return &Server{tasks: taskStore, transcr: transcr, journal: journalStore, repos: repoStore, e2e: e2e, hub: hub, maxInFlight: maxInFlight}
+func NewServer(taskStore *tasks.Store, transcr transcript.Store, journalStore *journal.Store, repoStore *repos.Store, snippetStore *promptsnippets.Store, e2e *provisionerclient.Client, hub *Hub, maxInFlight int) *Server {
+	return &Server{tasks: taskStore, transcr: transcr, journal: journalStore, repos: repoStore, snippets: snippetStore, e2e: e2e, hub: hub, maxInFlight: maxInFlight}
 }
 
 var _ agentfleetv1connect.DashboardServiceHandler = (*Server)(nil)
@@ -94,7 +97,13 @@ func (s *Server) CreateTask(ctx context.Context, req *connect.Request[agentfleet
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("description is required"))
 	}
 
-	id, err := s.tasks.CreateTask(ctx, repo, description, nil, nil)
+	guidance, err := s.resolveGuidance(ctx, req.Msg.GetSnippetIds())
+	if err != nil {
+		slog.Error("dashboard CreateTask: snippet lookup", "repo", repo, "error", err)
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+
+	id, err := s.tasks.CreateTask(ctx, repo, description, guidance, nil, nil)
 	if err != nil {
 		slog.Error("dashboard CreateTask", "repo", repo, "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
@@ -106,6 +115,25 @@ func (s *Server) CreateTask(ctx context.Context, req *connect.Request[agentfleet
 	}
 	slog.Info("dashboard CreateTask", "taskId", id, "repo", repo)
 	return connect.NewResponse(&agentfleetv1.CreateTaskResponse{Task: taskToProto(*t)}), nil
+}
+
+// resolveGuidance joins the text of the operator's selected prompt
+// snippets, in the store's own name order, into the single guidance blob
+// stored on the task. Empty input returns "" — a task with no snippets
+// attached gets no extra guidance at all, just its own description.
+func (s *Server) resolveGuidance(ctx context.Context, snippetIDs []string) (string, error) {
+	if len(snippetIDs) == 0 {
+		return "", nil
+	}
+	snippets, err := s.snippets.GetByIDs(ctx, snippetIDs)
+	if err != nil {
+		return "", err
+	}
+	texts := make([]string, len(snippets))
+	for i, sn := range snippets {
+		texts[i] = sn.Text
+	}
+	return strings.Join(texts, "\n\n"), nil
 }
 
 func (s *Server) GetTranscript(ctx context.Context, req *connect.Request[agentfleetv1.ReadTranscriptSinceRequest]) (*connect.Response[agentfleetv1.ReadTranscriptSinceResponse], error) {
@@ -380,7 +408,7 @@ func (s *Server) warmIfIdle(ctx context.Context, taskID string) (podName string,
 	if err != nil {
 		return "", connect.NewError(connect.CodeInternal, err)
 	}
-	podName, err = s.e2e.CreateWorkerPod(ctx, taskID, t.Repo, repoCfg.URL, repoCfg.BaseBranch, t.Description, leaseID, resumeSessionID, resumeFromSeq)
+	podName, err = s.e2e.CreateWorkerPod(ctx, taskID, t.Repo, repoCfg.URL, repoCfg.BaseBranch, t.Description, t.Guidance, leaseID, resumeSessionID, resumeFromSeq)
 	if err != nil {
 		return "", connect.NewError(connect.CodeInternal, err)
 	}
@@ -543,6 +571,77 @@ func (s *Server) DeleteRepo(ctx context.Context, req *connect.Request[agentfleet
 
 func repoToProto(r repos.Repo) *agentfleetv1.Repo {
 	return &agentfleetv1.Repo{Name: r.Name, Url: r.URL, BaseBranch: r.BaseBranch}
+}
+
+// ListPromptSnippets/CreatePromptSnippet/UpdatePromptSnippet/
+// DeletePromptSnippet back the dashboard's "manage guidance" UI — the
+// dashboard-editable replacement for worker/src/session.ts's old
+// hardcoded taskPrompt() workflow text. Same shape as the repos CRUD
+// above, no onChange wiring needed (unlike repos, nothing outside the
+// dashboard itself reads this list live).
+
+func (s *Server) ListPromptSnippets(ctx context.Context, _ *connect.Request[agentfleetv1.ListPromptSnippetsRequest]) (*connect.Response[agentfleetv1.ListPromptSnippetsResponse], error) {
+	list, err := s.snippets.List(ctx)
+	if err != nil {
+		slog.Error("dashboard ListPromptSnippets", "error", err)
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	out := make([]*agentfleetv1.PromptSnippet, len(list))
+	for i, sn := range list {
+		out[i] = snippetToProto(sn)
+	}
+	return connect.NewResponse(&agentfleetv1.ListPromptSnippetsResponse{Snippets: out}), nil
+}
+
+func (s *Server) CreatePromptSnippet(ctx context.Context, req *connect.Request[agentfleetv1.CreatePromptSnippetRequest]) (*connect.Response[agentfleetv1.CreatePromptSnippetResponse], error) {
+	name := req.Msg.GetName()
+	text := req.Msg.GetText()
+	if name == "" || text == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("name and text are required"))
+	}
+	sn, err := s.snippets.Create(ctx, promptsnippets.Snippet{Name: name, Text: text})
+	if err != nil {
+		if errors.Is(err, promptsnippets.ErrExists) {
+			return nil, connect.NewError(connect.CodeAlreadyExists, err)
+		}
+		slog.Error("dashboard CreatePromptSnippet", "name", name, "error", err)
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	return connect.NewResponse(&agentfleetv1.CreatePromptSnippetResponse{Snippet: snippetToProto(sn)}), nil
+}
+
+func (s *Server) UpdatePromptSnippet(ctx context.Context, req *connect.Request[agentfleetv1.UpdatePromptSnippetRequest]) (*connect.Response[agentfleetv1.UpdatePromptSnippetResponse], error) {
+	id := req.Msg.GetId()
+	name := req.Msg.GetName()
+	text := req.Msg.GetText()
+	if id == "" || name == "" || text == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("id, name, and text are required"))
+	}
+	sn := promptsnippets.Snippet{ID: id, Name: name, Text: text}
+	if err := s.snippets.Update(ctx, sn); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("unknown prompt snippet %q", id))
+		}
+		slog.Error("dashboard UpdatePromptSnippet", "id", id, "error", err)
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	return connect.NewResponse(&agentfleetv1.UpdatePromptSnippetResponse{Snippet: snippetToProto(sn)}), nil
+}
+
+func (s *Server) DeletePromptSnippet(ctx context.Context, req *connect.Request[agentfleetv1.DeletePromptSnippetRequest]) (*connect.Response[agentfleetv1.DeletePromptSnippetResponse], error) {
+	id := req.Msg.GetId()
+	if err := s.snippets.Delete(ctx, id); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("unknown prompt snippet %q", id))
+		}
+		slog.Error("dashboard DeletePromptSnippet", "id", id, "error", err)
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	return connect.NewResponse(&agentfleetv1.DeletePromptSnippetResponse{Status: "deleted"}), nil
+}
+
+func snippetToProto(sn promptsnippets.Snippet) *agentfleetv1.PromptSnippet {
+	return &agentfleetv1.PromptSnippet{Id: sn.ID, Name: sn.Name, Text: sn.Text}
 }
 
 func journalEntryToProto(e journal.Entry) *agentfleetv1.JournalEntry {

@@ -10,12 +10,12 @@ import type { Task } from "./types.js";
 
 type Sidecar = typeof defaultSidecar;
 type RunTask = typeof defaultRunTask;
-type VerifyPrExists = (branch: string) => Promise<string | null>;
 type ConfigureGitAuth = () => Promise<void>;
 
 const TASK_ID = process.env.TASK_ID;
 const TARGET_REPO = process.env.TARGET_REPO;
 const TASK_DESCRIPTION = process.env.TASK_DESCRIPTION;
+const TASK_GUIDANCE = process.env.TASK_GUIDANCE ?? "";
 const LEASE_ID = process.env.LEASE_ID;
 // Some target repos don't develop off `main` (e.g. vos-monolith's default
 // branch is `dev`) — the provisioner already knows this per-repo config
@@ -29,7 +29,7 @@ if (!TASK_ID || !TARGET_REPO || !LEASE_ID) {
   throw new Error("TASK_ID, TARGET_REPO, and LEASE_ID must be set");
 }
 
-const task: Task = { id: TASK_ID, repo: TARGET_REPO, description: TASK_DESCRIPTION ?? "", leaseId: LEASE_ID, baseBranch: BASE_BRANCH };
+const task: Task = { id: TASK_ID, repo: TARGET_REPO, description: TASK_DESCRIPTION ?? "", leaseId: LEASE_ID, baseBranch: BASE_BRANCH, guidance: TASK_GUIDANCE };
 
 async function run(cmd: string[], cwd: string): Promise<string> {
   const proc = Bun.spawn(cmd, { cwd, stdout: "pipe", stderr: "pipe" });
@@ -56,17 +56,6 @@ async function defaultConfigureGitAuth(): Promise<void> {
   const login = await run(["gh", "api", "user", "--jq", ".login"], WORKTREE_PATH);
   await run(["git", "config", "--global", "user.name", login], WORKTREE_PATH);
   await run(["git", "config", "--global", "user.email", `${login}@users.noreply.github.com`], WORKTREE_PATH);
-}
-
-// defaultVerifyPrExists is the "real-PR-resulted" check (reliability-
-// findings.md #0 open item 4) — the agent runs its own `git push`/
-// `gh pr create` via Bash now (no more wrapper-owned pushAndOpenPr), so
-// before reporting "done" the wrapper confirms a PR actually exists for
-// this branch rather than trusting the agent's own PR_READY: claim at
-// face value.
-async function defaultVerifyPrExists(branch: string): Promise<string | null> {
-  const stdout = await run(["gh", "pr", "list", "--head", branch, "--json", "url", "--jq", ".[0].url"], WORKTREE_PATH);
-  return stdout || null;
 }
 
 // Bounded retry for the one sidecar call that's load-bearing at startup
@@ -100,17 +89,15 @@ async function reportStatus(sidecar: Sidecar, status: string, fields?: Parameter
   }
 }
 
-// sidecar/runTask/verifyPrExists/configureGitAuth default to the real
-// implementations — the parameters exist so tests can substitute fakes
-// without touching module resolution (index.test.ts and session.test.ts
-// both need to control this same boundary independently; Bun's
-// mock.module is process-global, not per-file, so module-mocking any of
-// these here would leak into session.test.ts's own real import of
-// ./session.js).
+// sidecar/runTask/configureGitAuth default to the real implementations —
+// the parameters exist so tests can substitute fakes without touching
+// module resolution (index.test.ts and session.test.ts both need to
+// control this same boundary independently; Bun's mock.module is
+// process-global, not per-file, so module-mocking any of these here would
+// leak into session.test.ts's own real import of ./session.js).
 export async function main(
   sidecar: Sidecar = defaultSidecar,
   runTask: RunTask = defaultRunTask,
-  verifyPrExists: VerifyPrExists = defaultVerifyPrExists,
   configureGitAuth: ConfigureGitAuth = defaultConfigureGitAuth,
 ): Promise<void> {
   log("info", "task starting", { taskId: task.id, repo: task.repo });
@@ -137,38 +124,18 @@ export async function main(
     } catch (err) {
       throw new TransientError(`sidecar.setStatus("running") failed after retries: ${err}`);
     }
+    // runTask only ever returns normally via a human-initiated Stop — no
+    // automated completion detection anywhere (no PR_READY: text match, no
+    // PR-existence check). The human was watching the live dashboard
+    // transcript before deciding to stop it, so there's nothing here to
+    // infer; "cancelled" is reused as the single "ended via Stop" terminal
+    // status rather than adding a new enum value for it.
     const result = await runTask(task);
-
-    if (result.aborted) {
-      log("info", "task cancelled", { taskId: task.id });
-      await sidecar.setStatus("cancelled");
-      await sidecar
-        .appendJournal(task.repo, "worker", "task.cancelled", { taskId: task.id })
-        .catch((err) => log("warn", "appendJournal(task.cancelled) failed", { taskId: task.id, error: String(err) }));
-      return;
-    }
-
-    // No lease check before a push here — there's no wrapper-owned push
-    // step left to gate (the agent already ran `git push`/`gh pr create`
-    // itself, mid-session, via Bash). A lease-check tool wrapping that was
-    // considered and rejected: agent-dependent safety isn't safety, and
-    // bundling the check into one atomic "ship it" tool still guards
-    // inside the pod — wrong layer either way. The residual stale/
-    // reclaimed-pod duplicate-work risk is handled at the infra layer
-    // (reliability-findings.md #1's faster crash detection shrinks the
-    // reclaim window) — a human closing a duplicate PR is the accepted
-    // fallback, not a lock.
-    const branch = `agent/${task.id}`;
-    const prUrl = await verifyPrExists(branch);
-    if (!prUrl) {
-      throw new Error(`session ended but no PR was found for ${branch} — the agent may not have actually pushed/opened one`);
-    }
-
-    await sidecar.setStatus("done", { prUrl, notes: result.summary });
+    log("info", "task ended", { taskId: task.id, aborted: result.aborted });
+    await sidecar.setStatus("cancelled", { notes: result.summary });
     await sidecar
-      .appendJournal(task.repo, "worker", "task.done", { taskId: task.id, prUrl })
-      .catch((err) => log("warn", "appendJournal(task.done) failed", { taskId: task.id, error: String(err) }));
-    log("info", "task done", { taskId: task.id, prUrl });
+      .appendJournal(task.repo, "worker", "task.stopped", { taskId: task.id })
+      .catch((err) => log("warn", "appendJournal(task.stopped) failed", { taskId: task.id, error: String(err) }));
   } catch (err) {
     if (err instanceof TransientError) {
       // No requeue-and-retry here — that's core's job now (a stale

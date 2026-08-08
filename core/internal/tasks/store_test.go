@@ -55,6 +55,7 @@ func newTestPool(t *testing.T) *pgxpool.Pool {
 			id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 			repo               TEXT NOT NULL,
 			description        TEXT NOT NULL,
+			guidance           TEXT NOT NULL DEFAULT '',
 			status             TEXT NOT NULL DEFAULT 'pending',
 			discord_channel_id TEXT,
 			discord_thread_id  TEXT,
@@ -375,7 +376,7 @@ func TestCreateTask_NilChannelAndThread(t *testing.T) {
 	ctx := context.Background()
 	store := NewStore(pool)
 
-	id, err := store.CreateTask(ctx, "dream-analyst", "task from dashboard", nil, nil)
+	id, err := store.CreateTask(ctx, "dream-analyst", "task from dashboard", "", nil, nil)
 	if err != nil {
 		t.Fatalf("create task: %v", err)
 	}
@@ -409,7 +410,7 @@ func TestSoftDelete_HidesFromGetAndList(t *testing.T) {
 	ctx := context.Background()
 	store := NewStore(pool)
 
-	id, err := store.CreateTask(ctx, "dream-analyst", "to be deleted", nil, nil)
+	id, err := store.CreateTask(ctx, "dream-analyst", "to be deleted", "", nil, nil)
 	if err != nil {
 		t.Fatalf("create task: %v", err)
 	}
@@ -445,7 +446,7 @@ func TestMarkStopRequested_DoesNotResetAnExistingTimestamp(t *testing.T) {
 	ctx := context.Background()
 	store := NewStore(pool)
 
-	id, err := store.CreateTask(ctx, "dream-analyst", "task", nil, nil)
+	id, err := store.CreateTask(ctx, "dream-analyst", "task", "", nil, nil)
 	if err != nil {
 		t.Fatalf("create task: %v", err)
 	}
@@ -484,7 +485,7 @@ func TestRefreshLease_ClearsStaleStopRequest(t *testing.T) {
 	ctx := context.Background()
 	store := NewStore(pool)
 
-	id, err := store.CreateTask(ctx, "dream-analyst", "task", nil, nil)
+	id, err := store.CreateTask(ctx, "dream-analyst", "task", "", nil, nil)
 	if err != nil {
 		t.Fatalf("create task: %v", err)
 	}

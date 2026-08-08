@@ -30,6 +30,12 @@ type Task struct {
 	ID          string     `json:"id"`
 	Repo        string     `json:"repo"`
 	Description string     `json:"description"`
+	// Guidance is the operator's chosen prompt_snippets, already resolved
+	// and joined at task-creation time (DashboardService.CreateTask) —
+	// threaded straight through to the worker pod's TASK_GUIDANCE env at
+	// dispatch. "" for a task created with no snippets attached (including
+	// every Discord-originated task, which has no snippet picker).
+	Guidance    string     `json:"guidance,omitempty"`
 	Status      string     `json:"status"`
 	ThreadID    *string    `json:"threadId,omitempty"`
 	PrURL       *string    `json:"prUrl,omitempty"`
@@ -78,13 +84,19 @@ func (s *Store) SetNudge(nudge func()) {
 // checks ThreadID == nil to skip relaying, and a non-nil empty string would
 // instead attempt (and fail) a ChannelMessageSend("", ...) on every relay
 // tick.
-func (s *Store) CreateTask(ctx context.Context, repo, description string, channelID, threadID *string) (string, error) {
+//
+// guidance is the already-resolved, already-joined text of whatever
+// prompt_snippets the caller chose (dashboard) or "" (Discord's /task has
+// no snippet picker) — resolved once here, at creation time, and stored
+// as a frozen snapshot rather than a live reference, same reasoning as
+// description itself.
+func (s *Store) CreateTask(ctx context.Context, repo, description, guidance string, channelID, threadID *string) (string, error) {
 	var id string
 	err := s.pool.QueryRow(ctx, `
-		INSERT INTO tasks (repo, description, discord_channel_id, discord_thread_id)
-		VALUES ($1, $2, $3, $4)
+		INSERT INTO tasks (repo, description, guidance, discord_channel_id, discord_thread_id)
+		VALUES ($1, $2, $3, $4, $5)
 		RETURNING id
-	`, repo, description, channelID, threadID).Scan(&id)
+	`, repo, description, guidance, channelID, threadID).Scan(&id)
 	if err != nil {
 		slog.Error("tasks CreateTask", "repo", repo, "error", err)
 		return "", fmt.Errorf("create task: %w", err)
@@ -112,10 +124,10 @@ func (s *Store) FindTaskIDByThread(ctx context.Context, threadID string) (string
 func (s *Store) GetTask(ctx context.Context, id string) (*Task, error) {
 	var t Task
 	err := s.pool.QueryRow(ctx, `
-		SELECT id, repo, description, status, discord_thread_id, pr_url, pod_phase, pod_message,
+		SELECT id, repo, description, guidance, status, discord_thread_id, pr_url, pod_phase, pod_message,
 		       heartbeat_at, retry_count, last_error, session_id, model, permission_mode
 		FROM tasks WHERE id = $1 AND deleted_at IS NULL
-	`, id).Scan(&t.ID, &t.Repo, &t.Description, &t.Status, &t.ThreadID, &t.PrURL, &t.PodPhase, &t.PodMessage,
+	`, id).Scan(&t.ID, &t.Repo, &t.Description, &t.Guidance, &t.Status, &t.ThreadID, &t.PrURL, &t.PodPhase, &t.PodMessage,
 		&t.HeartbeatAt, &t.RetryCount, &t.LastError, &t.SessionID, &t.Model, &t.PermissionMode)
 	if err == pgx.ErrNoRows {
 		return nil, nil
@@ -159,7 +171,7 @@ func (s *Store) GetTaskStatusInfo(ctx context.Context, id string) (*TaskStatusIn
 
 func (s *Store) ListRecentTasks(ctx context.Context, limit int) ([]Task, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, repo, description, status, discord_thread_id, pr_url, pod_phase, pod_message,
+		SELECT id, repo, description, guidance, status, discord_thread_id, pr_url, pod_phase, pod_message,
 		       heartbeat_at, retry_count, last_error, session_id, model, permission_mode
 		FROM tasks WHERE deleted_at IS NULL ORDER BY created_at DESC LIMIT $1
 	`, limit)
@@ -175,7 +187,7 @@ func (s *Store) ListRecentTasks(ctx context.Context, limit int) ([]Task, error) 
 	out := []Task{}
 	for rows.Next() {
 		var t Task
-		if err := rows.Scan(&t.ID, &t.Repo, &t.Description, &t.Status, &t.ThreadID, &t.PrURL, &t.PodPhase, &t.PodMessage,
+		if err := rows.Scan(&t.ID, &t.Repo, &t.Description, &t.Guidance, &t.Status, &t.ThreadID, &t.PrURL, &t.PodPhase, &t.PodMessage,
 			&t.HeartbeatAt, &t.RetryCount, &t.LastError, &t.SessionID, &t.Model, &t.PermissionMode); err != nil {
 			slog.Error("tasks ListRecentTasks: scan", "error", err)
 			return nil, fmt.Errorf("scan task: %w", err)
@@ -236,8 +248,8 @@ func (s *Store) ClaimNextTask(ctx context.Context, maxInFlight, maxRetries int) 
 			FOR UPDATE SKIP LOCKED
 			LIMIT 1
 		)
-		RETURNING id, repo, description, status, discord_thread_id, pr_url, lease_id::text, session_id
-	`, maxInFlight, maxRetries).Scan(&t.ID, &t.Repo, &t.Description, &t.Status, &t.ThreadID, &t.PrURL, &t.LeaseID, &t.SessionID)
+		RETURNING id, repo, description, guidance, status, discord_thread_id, pr_url, lease_id::text, session_id
+	`, maxInFlight, maxRetries).Scan(&t.ID, &t.Repo, &t.Description, &t.Guidance, &t.Status, &t.ThreadID, &t.PrURL, &t.LeaseID, &t.SessionID)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}

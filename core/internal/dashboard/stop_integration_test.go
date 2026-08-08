@@ -58,6 +58,7 @@ func newTestPool(t *testing.T) *pgxpool.Pool {
 			id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 			repo               TEXT NOT NULL,
 			description        TEXT NOT NULL,
+			guidance           TEXT NOT NULL DEFAULT '',
 			status             TEXT NOT NULL DEFAULT 'pending',
 			discord_channel_id TEXT,
 			discord_thread_id  TEXT,
@@ -111,7 +112,7 @@ func TestServer_Stop_DefaultReason(t *testing.T) {
 	pool := newTestPool(t)
 	taskID := seedTask(t, pool)
 	store := &recordingStore{}
-	s := NewServer(tasks.NewStore(pool), store, nil, nil, nil, nil, 5)
+	s := NewServer(tasks.NewStore(pool), store, nil, nil, nil, nil, nil, 5)
 
 	resp, err := s.Stop(context.Background(), connect.NewRequest(&agentfleetv1.StopRequest{TaskId: taskID}))
 	if err != nil {
@@ -137,7 +138,7 @@ func TestServer_Stop_CustomReason(t *testing.T) {
 	pool := newTestPool(t)
 	taskID := seedTask(t, pool)
 	store := &recordingStore{}
-	s := NewServer(tasks.NewStore(pool), store, nil, nil, nil, nil, 5)
+	s := NewServer(tasks.NewStore(pool), store, nil, nil, nil, nil, nil, 5)
 
 	reason := "wrong direction"
 	req := connect.NewRequest(&agentfleetv1.StopRequest{TaskId: taskID, Reason: &reason})

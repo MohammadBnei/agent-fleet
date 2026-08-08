@@ -130,7 +130,7 @@ func (l *Loop) tick(ctx context.Context) {
 		slog.Error("dispatch: latest seq lookup failed", "taskId", task.ID, "error", err)
 		return
 	}
-	podName, err := l.provisioner.CreateWorkerPod(ctx, task.ID, task.Repo, repoCfg.URL, repoCfg.BaseBranch, task.Description, task.LeaseID, resumeSessionID, resumeFromSeq)
+	podName, err := l.provisioner.CreateWorkerPod(ctx, task.ID, task.Repo, repoCfg.URL, repoCfg.BaseBranch, task.Description, task.Guidance, task.LeaseID, resumeSessionID, resumeFromSeq)
 	if err != nil {
 		slog.Error("dispatch: CreateWorkerPod failed", "taskId", task.ID, "error", err)
 		return

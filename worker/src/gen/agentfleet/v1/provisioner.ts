@@ -130,6 +130,14 @@ export interface CreateWorkerPodRequest {
    * of it starting. 0 for a brand-new task (nothing to skip).
    */
   resumeFromSeq: number;
+  /**
+   * The task's resolved guidance text (tasks.guidance — the operator's
+   * chosen prompt_snippets, already joined at task-creation time) — handed
+   * straight through to the worker pod's TASK_GUIDANCE env, same reasoning
+   * as description above. Empty when no snippets were attached; the
+   * worker's own taskPrompt() then falls back to just the bare description.
+   */
+  guidance: string;
 }
 
 export interface CreateWorkerPodResponse {
@@ -450,6 +458,7 @@ function createBaseCreateWorkerPodRequest(): CreateWorkerPodRequest {
     leaseId: "",
     resumeSessionId: "",
     resumeFromSeq: 0,
+    guidance: "",
   };
 }
 
@@ -488,6 +497,7 @@ export const CreateWorkerPodRequest: MessageFns<CreateWorkerPodRequest> = {
         : isSet(object.resume_from_seq)
         ? globalThis.Number(object.resume_from_seq)
         : 0,
+      guidance: isSet(object.guidance) ? globalThis.String(object.guidance) : "",
     };
   },
 
@@ -517,6 +527,9 @@ export const CreateWorkerPodRequest: MessageFns<CreateWorkerPodRequest> = {
     if (message.resumeFromSeq !== 0) {
       obj.resumeFromSeq = Math.round(message.resumeFromSeq);
     }
+    if (message.guidance !== "") {
+      obj.guidance = message.guidance;
+    }
     return obj;
   },
 
@@ -533,6 +546,7 @@ export const CreateWorkerPodRequest: MessageFns<CreateWorkerPodRequest> = {
     message.leaseId = object.leaseId ?? "";
     message.resumeSessionId = object.resumeSessionId ?? "";
     message.resumeFromSeq = object.resumeFromSeq ?? 0;
+    message.guidance = object.guidance ?? "";
     return message;
   },
 };

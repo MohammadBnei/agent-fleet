@@ -96,10 +96,15 @@ export interface GetTaskResponse {
  * core/internal/repos), description must be non-empty. The created task has no
  * discord_channel_id/discord_thread_id, which core/internal/discord/
  * session.go's PostToThread already handles as a no-op relay target.
+ * snippet_ids optionally names rows from the prompt_snippets table — their
+ * text is resolved and joined once, at creation time, into the new task's
+ * own guidance column (see PromptSnippet below); empty means the task gets
+ * only its own description, no extra guidance.
  */
 export interface CreateTaskRequest {
   repo: string;
   description: string;
+  snippetIds: string[];
 }
 
 export interface CreateTaskResponse {
@@ -354,6 +359,55 @@ export interface DeleteRepoRequest {
 }
 
 export interface DeleteRepoResponse {
+  status: string;
+}
+
+/**
+ * PromptSnippet is dashboard-editable, reusable guidance text (same
+ * no-redeploy pattern as Repo above), backed by the `prompt_snippets`
+ * table (db/schema.sql). An operator optionally attaches a set of these to
+ * a task at creation time (CreateTaskRequest.snippet_ids) — replaces
+ * worker/src/session.ts's old unconditional, hardcoded workflow prompt. A
+ * task's base prompt is just its own description; anything more is one of
+ * these, picked per task, not forced on every task regardless of size.
+ */
+export interface PromptSnippet {
+  id: string;
+  name: string;
+  text: string;
+}
+
+export interface ListPromptSnippetsRequest {
+}
+
+export interface ListPromptSnippetsResponse {
+  snippets: PromptSnippet[];
+}
+
+export interface CreatePromptSnippetRequest {
+  name: string;
+  text: string;
+}
+
+export interface CreatePromptSnippetResponse {
+  snippet?: PromptSnippet | undefined;
+}
+
+export interface UpdatePromptSnippetRequest {
+  id: string;
+  name: string;
+  text: string;
+}
+
+export interface UpdatePromptSnippetResponse {
+  snippet?: PromptSnippet | undefined;
+}
+
+export interface DeletePromptSnippetRequest {
+  id: string;
+}
+
+export interface DeletePromptSnippetResponse {
   status: string;
 }
 
@@ -615,7 +669,7 @@ export const GetTaskResponse: MessageFns<GetTaskResponse> = {
 };
 
 function createBaseCreateTaskRequest(): CreateTaskRequest {
-  return { repo: "", description: "" };
+  return { repo: "", description: "", snippetIds: [] };
 }
 
 export const CreateTaskRequest: MessageFns<CreateTaskRequest> = {
@@ -623,6 +677,11 @@ export const CreateTaskRequest: MessageFns<CreateTaskRequest> = {
     return {
       repo: isSet(object.repo) ? globalThis.String(object.repo) : "",
       description: isSet(object.description) ? globalThis.String(object.description) : "",
+      snippetIds: globalThis.Array.isArray(object?.snippetIds)
+        ? object.snippetIds.map((e: any) => globalThis.String(e))
+        : globalThis.Array.isArray(object?.snippet_ids)
+        ? object.snippet_ids.map((e: any) => globalThis.String(e))
+        : [],
     };
   },
 
@@ -634,6 +693,9 @@ export const CreateTaskRequest: MessageFns<CreateTaskRequest> = {
     if (message.description !== "") {
       obj.description = message.description;
     }
+    if (message.snippetIds?.length) {
+      obj.snippetIds = message.snippetIds;
+    }
     return obj;
   },
 
@@ -644,6 +706,7 @@ export const CreateTaskRequest: MessageFns<CreateTaskRequest> = {
     const message = createBaseCreateTaskRequest();
     message.repo = object.repo ?? "";
     message.description = object.description ?? "";
+    message.snippetIds = object.snippetIds?.map((e) => e) || [];
     return message;
   },
 };
@@ -1886,6 +1949,284 @@ export const DeleteRepoResponse: MessageFns<DeleteRepoResponse> = {
   },
 };
 
+function createBasePromptSnippet(): PromptSnippet {
+  return { id: "", name: "", text: "" };
+}
+
+export const PromptSnippet: MessageFns<PromptSnippet> = {
+  fromJSON(object: any): PromptSnippet {
+    return {
+      id: isSet(object.id) ? globalThis.String(object.id) : "",
+      name: isSet(object.name) ? globalThis.String(object.name) : "",
+      text: isSet(object.text) ? globalThis.String(object.text) : "",
+    };
+  },
+
+  toJSON(message: PromptSnippet): unknown {
+    const obj: any = {};
+    if (message.id !== "") {
+      obj.id = message.id;
+    }
+    if (message.name !== "") {
+      obj.name = message.name;
+    }
+    if (message.text !== "") {
+      obj.text = message.text;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<PromptSnippet>, I>>(base?: I): PromptSnippet {
+    return PromptSnippet.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<PromptSnippet>, I>>(object: I): PromptSnippet {
+    const message = createBasePromptSnippet();
+    message.id = object.id ?? "";
+    message.name = object.name ?? "";
+    message.text = object.text ?? "";
+    return message;
+  },
+};
+
+function createBaseListPromptSnippetsRequest(): ListPromptSnippetsRequest {
+  return {};
+}
+
+export const ListPromptSnippetsRequest: MessageFns<ListPromptSnippetsRequest> = {
+  fromJSON(_: any): ListPromptSnippetsRequest {
+    return {};
+  },
+
+  toJSON(_: ListPromptSnippetsRequest): unknown {
+    const obj: any = {};
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<ListPromptSnippetsRequest>, I>>(base?: I): ListPromptSnippetsRequest {
+    return ListPromptSnippetsRequest.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<ListPromptSnippetsRequest>, I>>(_: I): ListPromptSnippetsRequest {
+    const message = createBaseListPromptSnippetsRequest();
+    return message;
+  },
+};
+
+function createBaseListPromptSnippetsResponse(): ListPromptSnippetsResponse {
+  return { snippets: [] };
+}
+
+export const ListPromptSnippetsResponse: MessageFns<ListPromptSnippetsResponse> = {
+  fromJSON(object: any): ListPromptSnippetsResponse {
+    return {
+      snippets: globalThis.Array.isArray(object?.snippets)
+        ? object.snippets.map((e: any) => PromptSnippet.fromJSON(e))
+        : [],
+    };
+  },
+
+  toJSON(message: ListPromptSnippetsResponse): unknown {
+    const obj: any = {};
+    if (message.snippets?.length) {
+      obj.snippets = message.snippets.map((e) => PromptSnippet.toJSON(e));
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<ListPromptSnippetsResponse>, I>>(base?: I): ListPromptSnippetsResponse {
+    return ListPromptSnippetsResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<ListPromptSnippetsResponse>, I>>(object: I): ListPromptSnippetsResponse {
+    const message = createBaseListPromptSnippetsResponse();
+    message.snippets = object.snippets?.map((e) => PromptSnippet.fromPartial(e)) || [];
+    return message;
+  },
+};
+
+function createBaseCreatePromptSnippetRequest(): CreatePromptSnippetRequest {
+  return { name: "", text: "" };
+}
+
+export const CreatePromptSnippetRequest: MessageFns<CreatePromptSnippetRequest> = {
+  fromJSON(object: any): CreatePromptSnippetRequest {
+    return {
+      name: isSet(object.name) ? globalThis.String(object.name) : "",
+      text: isSet(object.text) ? globalThis.String(object.text) : "",
+    };
+  },
+
+  toJSON(message: CreatePromptSnippetRequest): unknown {
+    const obj: any = {};
+    if (message.name !== "") {
+      obj.name = message.name;
+    }
+    if (message.text !== "") {
+      obj.text = message.text;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<CreatePromptSnippetRequest>, I>>(base?: I): CreatePromptSnippetRequest {
+    return CreatePromptSnippetRequest.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<CreatePromptSnippetRequest>, I>>(object: I): CreatePromptSnippetRequest {
+    const message = createBaseCreatePromptSnippetRequest();
+    message.name = object.name ?? "";
+    message.text = object.text ?? "";
+    return message;
+  },
+};
+
+function createBaseCreatePromptSnippetResponse(): CreatePromptSnippetResponse {
+  return { snippet: undefined };
+}
+
+export const CreatePromptSnippetResponse: MessageFns<CreatePromptSnippetResponse> = {
+  fromJSON(object: any): CreatePromptSnippetResponse {
+    return { snippet: isSet(object.snippet) ? PromptSnippet.fromJSON(object.snippet) : undefined };
+  },
+
+  toJSON(message: CreatePromptSnippetResponse): unknown {
+    const obj: any = {};
+    if (message.snippet !== undefined) {
+      obj.snippet = PromptSnippet.toJSON(message.snippet);
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<CreatePromptSnippetResponse>, I>>(base?: I): CreatePromptSnippetResponse {
+    return CreatePromptSnippetResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<CreatePromptSnippetResponse>, I>>(object: I): CreatePromptSnippetResponse {
+    const message = createBaseCreatePromptSnippetResponse();
+    message.snippet = (object.snippet !== undefined && object.snippet !== null)
+      ? PromptSnippet.fromPartial(object.snippet)
+      : undefined;
+    return message;
+  },
+};
+
+function createBaseUpdatePromptSnippetRequest(): UpdatePromptSnippetRequest {
+  return { id: "", name: "", text: "" };
+}
+
+export const UpdatePromptSnippetRequest: MessageFns<UpdatePromptSnippetRequest> = {
+  fromJSON(object: any): UpdatePromptSnippetRequest {
+    return {
+      id: isSet(object.id) ? globalThis.String(object.id) : "",
+      name: isSet(object.name) ? globalThis.String(object.name) : "",
+      text: isSet(object.text) ? globalThis.String(object.text) : "",
+    };
+  },
+
+  toJSON(message: UpdatePromptSnippetRequest): unknown {
+    const obj: any = {};
+    if (message.id !== "") {
+      obj.id = message.id;
+    }
+    if (message.name !== "") {
+      obj.name = message.name;
+    }
+    if (message.text !== "") {
+      obj.text = message.text;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<UpdatePromptSnippetRequest>, I>>(base?: I): UpdatePromptSnippetRequest {
+    return UpdatePromptSnippetRequest.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<UpdatePromptSnippetRequest>, I>>(object: I): UpdatePromptSnippetRequest {
+    const message = createBaseUpdatePromptSnippetRequest();
+    message.id = object.id ?? "";
+    message.name = object.name ?? "";
+    message.text = object.text ?? "";
+    return message;
+  },
+};
+
+function createBaseUpdatePromptSnippetResponse(): UpdatePromptSnippetResponse {
+  return { snippet: undefined };
+}
+
+export const UpdatePromptSnippetResponse: MessageFns<UpdatePromptSnippetResponse> = {
+  fromJSON(object: any): UpdatePromptSnippetResponse {
+    return { snippet: isSet(object.snippet) ? PromptSnippet.fromJSON(object.snippet) : undefined };
+  },
+
+  toJSON(message: UpdatePromptSnippetResponse): unknown {
+    const obj: any = {};
+    if (message.snippet !== undefined) {
+      obj.snippet = PromptSnippet.toJSON(message.snippet);
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<UpdatePromptSnippetResponse>, I>>(base?: I): UpdatePromptSnippetResponse {
+    return UpdatePromptSnippetResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<UpdatePromptSnippetResponse>, I>>(object: I): UpdatePromptSnippetResponse {
+    const message = createBaseUpdatePromptSnippetResponse();
+    message.snippet = (object.snippet !== undefined && object.snippet !== null)
+      ? PromptSnippet.fromPartial(object.snippet)
+      : undefined;
+    return message;
+  },
+};
+
+function createBaseDeletePromptSnippetRequest(): DeletePromptSnippetRequest {
+  return { id: "" };
+}
+
+export const DeletePromptSnippetRequest: MessageFns<DeletePromptSnippetRequest> = {
+  fromJSON(object: any): DeletePromptSnippetRequest {
+    return { id: isSet(object.id) ? globalThis.String(object.id) : "" };
+  },
+
+  toJSON(message: DeletePromptSnippetRequest): unknown {
+    const obj: any = {};
+    if (message.id !== "") {
+      obj.id = message.id;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<DeletePromptSnippetRequest>, I>>(base?: I): DeletePromptSnippetRequest {
+    return DeletePromptSnippetRequest.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<DeletePromptSnippetRequest>, I>>(object: I): DeletePromptSnippetRequest {
+    const message = createBaseDeletePromptSnippetRequest();
+    message.id = object.id ?? "";
+    return message;
+  },
+};
+
+function createBaseDeletePromptSnippetResponse(): DeletePromptSnippetResponse {
+  return { status: "" };
+}
+
+export const DeletePromptSnippetResponse: MessageFns<DeletePromptSnippetResponse> = {
+  fromJSON(object: any): DeletePromptSnippetResponse {
+    return { status: isSet(object.status) ? globalThis.String(object.status) : "" };
+  },
+
+  toJSON(message: DeletePromptSnippetResponse): unknown {
+    const obj: any = {};
+    if (message.status !== "") {
+      obj.status = message.status;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<DeletePromptSnippetResponse>, I>>(base?: I): DeletePromptSnippetResponse {
+    return DeletePromptSnippetResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<DeletePromptSnippetResponse>, I>>(object: I): DeletePromptSnippetResponse {
+    const message = createBaseDeletePromptSnippetResponse();
+    message.status = object.status ?? "";
+    return message;
+  },
+};
+
 export interface DashboardService {
   ListTasks(request: ListTasksRequest): Promise<ListTasksResponse>;
   GetTask(request: GetTaskRequest): Promise<GetTaskResponse>;
@@ -1932,6 +2273,10 @@ export interface DashboardService {
   CreateRepo(request: CreateRepoRequest): Promise<CreateRepoResponse>;
   UpdateRepo(request: UpdateRepoRequest): Promise<UpdateRepoResponse>;
   DeleteRepo(request: DeleteRepoRequest): Promise<DeleteRepoResponse>;
+  ListPromptSnippets(request: ListPromptSnippetsRequest): Promise<ListPromptSnippetsResponse>;
+  CreatePromptSnippet(request: CreatePromptSnippetRequest): Promise<CreatePromptSnippetResponse>;
+  UpdatePromptSnippet(request: UpdatePromptSnippetRequest): Promise<UpdatePromptSnippetResponse>;
+  DeletePromptSnippet(request: DeletePromptSnippetRequest): Promise<DeletePromptSnippetResponse>;
 }
 
 type Builtin = Date | Function | Uint8Array | string | number | boolean | undefined;

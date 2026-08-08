@@ -76,48 +76,22 @@ class InputQueue {
   }
 }
 
-// One continuous session, planning and implementation both — no fleet-
-// imposed phase boundary, no PLAN_READY:/checkpoint-round machinery
-// (reliability-findings.md #0 supersedes #3/#4's regex/magic-string bugs
-// by deleting the mechanism, not patching it). The agent decides for
-// itself when it's explored/planned enough and when to start
-// implementing. There's no fleet-imposed approval gate either (supersedes
-// docs/adr/0021/0025's phase-boundary framing) — canUseTool reproduces
-// exactly what running `claude` locally does: any tool call the session's
-// current permission mode would prompt for blocks for a live human
-// decision, the same way it would in a terminal.
+// This is deliberately thin: "Claude Code, reached through a dashboard" —
+// the fleet's value is the infra (pod, worktree, dashboard access), not a
+// bespoke conversation script layered on top (supersedes docs/adr/0021/
+// 0025's phase-boundary framing and the EXPLORE/REVIEW/INTERVIEW/PLAN/
+// DOUBT/RECONCILE workflow this function used to force on every task
+// unconditionally). The agent discovers its own worktree/branch state via
+// git, and its own tools via the MCP tool list, the same way a human
+// resuming work in a terminal would — nothing here needs to say it. Any
+// process guidance (architecture-interview, doubt-driven-development,
+// posting a plan, opening a PR) is opt-in per task, via task.guidance —
+// the operator's chosen prompt_snippets (dashboard-editable, see
+// db/schema.sql), joined once at task-creation time. "" attaches nothing.
 function taskPrompt(task: Task): string {
-  const worktreeNote = RESUME_SESSION_ID
-    ? `You have already been talking about this task in this exact conversation — this session just resumed on the same git worktree (branch agent/${task.id}) after a pause, not a fresh start. Pick up from where you left off; run \`git status\` and \`git log --oneline -5\` to confirm what's actually on disk before assuming anything, but don't re-explain context you already have.`
-    : `You are in a git worktree on branch agent/${task.id} — it may be freshly created or resumed from a prior attempt (the provisioner reuses an existing worktree as-is rather than wiping it, reliability-findings.md #2), so run \`git status\` and \`git log --oneline -5\` first to see what's actually there before assuming a clean slate.`;
+  const guidance = task.guidance ? `\n\n${task.guidance}` : "";
   return `You are working on task ${task.id} in repo ${task.repo}.
-Task: ${task.description}
-
-${worktreeNote}
-
-This is one continuous session, not separate planning/implementation phases — decide for yourself when you've explored and planned enough to implement. Use your own judgment about how much process a task this size actually needs; skip a stage and say why in one line rather than run it on autopilot:
-
-1. EXPLORE: read the actual repository — don't guess at structure or conventions.
-2. REVIEW: check your own findings for gaps before drafting anything.
-3. INTERVIEW (optional): if this involves an architecturally non-trivial decision (new component, schema/protocol/API shape, a one-way door — see the architecture-interview skill's own DOOR classification), type "/architecture-interview" as your next message to run it. Otherwise say in one line why it's skipped and move on.
-4. PLAN: post your plan via send_message (from="agent"), citing the specific files/paths you read and relied on. If Mohammad has put this session into plan mode (the dashboard's mode picker), call ExitPlanMode with that same plan once you're confident — it blocks for a real human decision the same way it does in Claude Code's own plan mode. Outside plan mode, just proceed to implementing once you've posted the plan.
-5. DOUBT (optional): if the plan involves a non-trivial decision per the doubt-driven-development skill's own "When to Use" checklist, type "/doubt-driven-development" as your next message to run it. Otherwise say why it's skipped and move on.
-6. RECONCILE (optional): if doubt or the interview surfaced real findings, loop back through architecture-interview once more, then re-post the revised plan.
-
-Every tool call blocks for a live human decision exactly the way it would running \`claude\` locally without --dangerously-skip-permissions — this isn't a fleet-specific restriction on top of that, it's the same mechanism. A denial carries Mohammad's own reason; incorporate it and retry once you've addressed it. Never state or imply in your own messages that a tool call succeeded, an answer arrived, or a permission mode changed before its own result actually confirms it — a successful tool result, an allowed permission decision, or a real AskUserQuestion answer are the only evidence that's real.
-
-Implement the plan in this same session, same worktree:
-1. Write the code, following the plan you settled on.
-2. Add or update tests; run the repo's test suite and make it pass. If there is no test suite, add one first.
-3. If the task calls for e2e/browser/behavioral verification, call request_e2e_env to get a live pod running this branch plus Playwright browser-automation tools — use it, then call kill_env when you're done. Mention the preview URL in your reply.
-4. Update docs if relevant.
-5. Commit your changes with git yourself via Bash, then push and open the PR yourself: \`git push -u origin agent/${task.id}\`, then \`gh pr create --title "..." --body "..." --base ${task.baseBranch}\`. Your git identity is already configured — just run the commands. Confirm the PR actually exists afterward (e.g. \`gh pr view\`) before declaring done.
-6. End your final message with a line exactly: PR_READY: <one-paragraph summary for the PR description>
-
-IMPORTANT — this environment is headless, there is no TTY, but AskUserQuestion IS real here:
-- Whenever architecture-interview (or any skill) wants to ask "the user" a question, use the AskUserQuestion tool exactly as the skill instructs. It is wired to the web dashboard, not Discord: the call blocks (up to timeoutMs, default 60s) until answered there. If it returns {"status":"pending"}, call it again with the same questions to keep waiting.
-- send_message is for everything else: narrative plan text and status updates.
-- doubt-driven-development's cross-model escalation step is non-interactive here — skip it and announce the skip.`;
+Task: ${task.description}${guidance}`;
 }
 
 // Relays every SDK message, tagged by its own raw type, to the transcript
@@ -353,9 +327,12 @@ export async function runTask(task: Task): Promise<TaskResult> {
         // answer — deny every pending request with it (same as choosing
         // "No, keep planning" with guidance in Claude Code CLI's own
         // ExitPlanMode prompt: interrupt stays unset so the model
-        // incorporates the reply and keeps going, then retries the call).
+        // incorporates the reply and keeps going, then retries the call)
+        // AND push it as a real conversational turn below — a denial
+        // message embedded in a tool_result reads as "my call failed," not
+        // "Mohammad is talking to me right now." Without falling through,
+        // the only trace of his reply was buried once per pending call.
         resolveAllPendingDeny(`Mohammad replied (not an approval): ${entry.text}`);
-        return;
       }
       input.push(entry.text);
     }, humanMessagesAbort.signal, RESUME_FROM_SEQ)
@@ -388,14 +365,12 @@ export async function runTask(task: Task): Promise<TaskResult> {
         // fleet-imposed phase boundary to split on. A non-success result
         // at any point in the session is treated the same way.
         if (msg.subtype === "success") {
-          // No fleet-imposed phase boundary left to signal "done" — the
-          // agent's own PR_READY: marker (taskPrompt's own final-message
-          // instruction) is the only completion signal now, exactly like a
-          // human deciding a CLI conversation is finished. Anything else is
-          // the session paused naturally between turns (idle, waiting for
-          // the next streamed input); keep consuming — the human-message
-          // consumer above pushes the next input whenever one arrives.
-          if (finalText.includes("PR_READY:")) break;
+          // No automated completion detection at all (no PR_READY: text
+          // match, no PR-existence check) — a session only ever ends via
+          // aborted above (the human's own Stop) or a genuinely thrown
+          // error below. A success result just means this round is done;
+          // the session pauses naturally, waiting for the next streamed
+          // input, exactly like an idle terminal `claude` session.
           continue;
         }
         const transient = msg.num_turns === 0 && msg.total_cost_usd === 0;

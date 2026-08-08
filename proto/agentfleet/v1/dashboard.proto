@@ -74,9 +74,14 @@ message GetTaskResponse {
 // core/internal/repos), description must be non-empty. The created task has no
 // discord_channel_id/discord_thread_id, which core/internal/discord/
 // session.go's PostToThread already handles as a no-op relay target.
+// snippet_ids optionally names rows from the prompt_snippets table — their
+// text is resolved and joined once, at creation time, into the new task's
+// own guidance column (see PromptSnippet below); empty means the task gets
+// only its own description, no extra guidance.
 message CreateTaskRequest {
   string repo = 1;
   string description = 2;
+  repeated string snippet_ids = 3;
 }
 
 message CreateTaskResponse {
@@ -310,6 +315,52 @@ message DeleteRepoResponse {
   string status = 1;
 }
 
+// PromptSnippet is dashboard-editable, reusable guidance text (same
+// no-redeploy pattern as Repo above), backed by the `prompt_snippets`
+// table (db/schema.sql). An operator optionally attaches a set of these to
+// a task at creation time (CreateTaskRequest.snippet_ids) — replaces
+// worker/src/session.ts's old unconditional, hardcoded workflow prompt. A
+// task's base prompt is just its own description; anything more is one of
+// these, picked per task, not forced on every task regardless of size.
+message PromptSnippet {
+  string id = 1;
+  string name = 2;
+  string text = 3;
+}
+
+message ListPromptSnippetsRequest {}
+
+message ListPromptSnippetsResponse {
+  repeated PromptSnippet snippets = 1;
+}
+
+message CreatePromptSnippetRequest {
+  string name = 1;
+  string text = 2;
+}
+
+message CreatePromptSnippetResponse {
+  PromptSnippet snippet = 1;
+}
+
+message UpdatePromptSnippetRequest {
+  string id = 1;
+  string name = 2;
+  string text = 3;
+}
+
+message UpdatePromptSnippetResponse {
+  PromptSnippet snippet = 1;
+}
+
+message DeletePromptSnippetRequest {
+  string id = 1;
+}
+
+message DeletePromptSnippetResponse {
+  string status = 1;
+}
+
 service DashboardService {
   rpc ListTasks(ListTasksRequest) returns (ListTasksResponse);
   rpc GetTask(GetTaskRequest) returns (GetTaskResponse);
@@ -350,4 +401,8 @@ service DashboardService {
   rpc CreateRepo(CreateRepoRequest) returns (CreateRepoResponse);
   rpc UpdateRepo(UpdateRepoRequest) returns (UpdateRepoResponse);
   rpc DeleteRepo(DeleteRepoRequest) returns (DeleteRepoResponse);
+  rpc ListPromptSnippets(ListPromptSnippetsRequest) returns (ListPromptSnippetsResponse);
+  rpc CreatePromptSnippet(CreatePromptSnippetRequest) returns (CreatePromptSnippetResponse);
+  rpc UpdatePromptSnippet(UpdatePromptSnippetRequest) returns (UpdatePromptSnippetResponse);
+  rpc DeletePromptSnippet(DeletePromptSnippetRequest) returns (DeletePromptSnippetResponse);
 }

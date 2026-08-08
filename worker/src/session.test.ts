@@ -84,6 +84,11 @@ let capturedCanUseTool: ((toolName: string, input: unknown) => Promise<{ behavio
 let interruptCalls = 0;
 let setPermissionModeCalls: string[] = [];
 let queryOptions: Record<string, unknown> | null = null;
+// Every value the fake session's generator actually pulled off the
+// streamed prompt — lets a test assert a given piece of text really
+// reached the InputQueue (i.e. became a real conversational turn), not
+// just that some other side effect (like a permission denial) happened.
+let consumedInputs: { message: { content: string } }[] = [];
 
 mock.module("@anthropic-ai/claude-agent-sdk", () => ({
   query: ({ prompt, options }: { prompt: AsyncIterable<{ message: { content: string } }>; options: Record<string, unknown> }) => {
@@ -108,8 +113,9 @@ mock.module("@anthropic-ai/claude-agent-sdk", () => ({
             abortController?.signal.addEventListener("abort", () => reject(new Error("aborted")));
           }),
         ]);
-        const { done } = next;
+        const { done, value } = next;
         if (done) return;
+        consumedInputs.push(value as { message: { content: string } });
         round++;
         if (!sessionId) {
           sessionId = `agent-${crypto.randomUUID()}`;
@@ -172,15 +178,17 @@ beforeEach(() => {
   interruptCalls = 0;
   setPermissionModeCalls = [];
   queryOptions = null;
+  consumedInputs = [];
 });
 
-function makeTask(overrides: Partial<{ id: string; repo: string; description: string; leaseId: string; baseBranch: string }> = {}) {
+function makeTask(overrides: Partial<{ id: string; repo: string; description: string; leaseId: string; baseBranch: string; guidance: string }> = {}) {
   return {
     id: crypto.randomUUID(),
     repo: "dream-analyst",
     description: "test task",
     leaseId: "lease-1",
     baseBranch: "main",
+    guidance: "",
     ...overrides,
   };
 }
@@ -331,6 +339,12 @@ test("a plain reply while a permission request is pending denies it with the rep
   expect(result.behavior).toBe("deny");
   expect((result as { message?: string }).message).toContain("split this into its own PR");
 
+  // The same reply must also reach the agent as a real conversational
+  // turn, not just live embedded inside the denial reason — otherwise
+  // there's nothing for the agent to actually respond to.
+  await Bun.sleep(20);
+  expect(consumedInputs.some((m) => m.message.content === "actually, split this into its own PR")).toBe(true);
+
   pushHuman("", "abort");
   await promise;
 }, 10000);
@@ -451,34 +465,39 @@ test("a crashed session propagates the error instead of hanging", async () => {
   await expect(runTask(task)).rejects.toThrow("simulated session crash");
 }, 10000);
 
-test("the session completes when the agent's own text includes PR_READY:", async () => {
+test("a successful round never ends the session on its own — no automated completion detection", async () => {
   const task = makeTask();
-  mockMessageText = "PR_READY: did the thing";
-  const result = await runTask(task);
+  mockMessageText = "done, opened the PR";
+  const promise = runTask(task);
+  await Bun.sleep(20);
 
-  expect(result.aborted).toBe(false);
-  expect(result.summary).toContain("PR_READY: did the thing");
+  // The session already ran one successful round but must still be
+  // running, waiting for the next input — nothing in the agent's own text
+  // ends it, no matter what it says.
   expect(savedSessionIds.length).toBe(1);
-  expect(savedSessionIds[0]).toMatch(/^agent-/);
+
+  pushHuman("", "abort");
+  const result = await promise;
+  expect(result.aborted).toBe(true);
 }, 10000);
 
-test("the session keeps consuming rounds until PR_READY: appears", async () => {
+test("the session keeps consuming successful rounds indefinitely until a human stops it", async () => {
   const task = makeTask();
   const promise = runTask(task);
   await Bun.sleep(20);
-  // First round already resolved as "success" with plain text — the loop
-  // must not have exited yet.
   expect(savedSessionIds.length).toBe(1);
 
-  mockMessageText = "PR_READY: now really done";
-  // The next round only fires once more streamed input arrives — a plain
-  // discussion reply with no pending permission request just feeds the
-  // input queue.
+  // Several more rounds, each a plain discussion reply feeding the input
+  // queue — the loop must keep going through all of them, exactly like an
+  // idle terminal session picking up each new message.
   pushHuman("keep going", "discussion");
+  await Bun.sleep(20);
+  pushHuman("still keep going", "discussion");
+  await Bun.sleep(20);
 
+  pushHuman("", "abort");
   const result = await promise;
-  expect(result.aborted).toBe(false);
-  expect(result.summary).toContain("PR_READY: now really done");
+  expect(result.aborted).toBe(true);
 }, 10000);
 
 test("a 0-turn/$0 result is classified transient", async () => {
