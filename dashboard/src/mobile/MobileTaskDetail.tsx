@@ -435,6 +435,7 @@ export function MobileTaskDetail({
                   onApprove={() => respond({ behavior: "allow" })}
                   onFeedback={(text) => sendDiscuss(text)}
                   edgeClassName="-mx-4 px-4"
+                  allowAnnotate={false}
                 />
               );
             }
