@@ -74,6 +74,16 @@ const (
 	// CoreServiceStreamHumanMessagesProcedure is the fully-qualified name of the CoreService's
 	// StreamHumanMessages RPC.
 	CoreServiceStreamHumanMessagesProcedure = "/agentfleet.v1.CoreService/StreamHumanMessages"
+	// CoreServiceListFilesProcedure is the fully-qualified name of the CoreService's ListFiles RPC.
+	CoreServiceListFilesProcedure = "/agentfleet.v1.CoreService/ListFiles"
+	// CoreServiceGetFileUploadUrlProcedure is the fully-qualified name of the CoreService's
+	// GetFileUploadUrl RPC.
+	CoreServiceGetFileUploadUrlProcedure = "/agentfleet.v1.CoreService/GetFileUploadUrl"
+	// CoreServiceGetFileDownloadUrlProcedure is the fully-qualified name of the CoreService's
+	// GetFileDownloadUrl RPC.
+	CoreServiceGetFileDownloadUrlProcedure = "/agentfleet.v1.CoreService/GetFileDownloadUrl"
+	// CoreServiceDeleteFileProcedure is the fully-qualified name of the CoreService's DeleteFile RPC.
+	CoreServiceDeleteFileProcedure = "/agentfleet.v1.CoreService/DeleteFile"
 )
 
 // CoreServiceClient is a client for the agentfleet.v1.CoreService service.
@@ -107,6 +117,14 @@ type CoreServiceClient interface {
 	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	StreamHumanMessages(context.Context, *connect.Request[v1.StreamHumanMessagesRequest]) (*connect.ServerStreamForClient[v1.TranscriptEntry], error)
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	ListFiles(context.Context, *connect.Request[v1.ListFilesRequest]) (*connect.Response[v1.ListFilesResponse], error)
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	GetFileUploadUrl(context.Context, *connect.Request[v1.GetFileUploadUrlRequest]) (*connect.Response[v1.GetFileUploadUrlResponse], error)
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	GetFileDownloadUrl(context.Context, *connect.Request[v1.GetFileDownloadUrlRequest]) (*connect.Response[v1.GetFileDownloadUrlResponse], error)
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	DeleteFile(context.Context, *connect.Request[v1.DeleteFileRequest]) (*connect.Response[v1.DeleteFileResponse], error)
 }
 
 // NewCoreServiceClient constructs a client for the agentfleet.v1.CoreService service. By default,
@@ -210,6 +228,30 @@ func NewCoreServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(coreServiceMethods.ByName("StreamHumanMessages")),
 			connect.WithClientOptions(opts...),
 		),
+		listFiles: connect.NewClient[v1.ListFilesRequest, v1.ListFilesResponse](
+			httpClient,
+			baseURL+CoreServiceListFilesProcedure,
+			connect.WithSchema(coreServiceMethods.ByName("ListFiles")),
+			connect.WithClientOptions(opts...),
+		),
+		getFileUploadUrl: connect.NewClient[v1.GetFileUploadUrlRequest, v1.GetFileUploadUrlResponse](
+			httpClient,
+			baseURL+CoreServiceGetFileUploadUrlProcedure,
+			connect.WithSchema(coreServiceMethods.ByName("GetFileUploadUrl")),
+			connect.WithClientOptions(opts...),
+		),
+		getFileDownloadUrl: connect.NewClient[v1.GetFileDownloadUrlRequest, v1.GetFileDownloadUrlResponse](
+			httpClient,
+			baseURL+CoreServiceGetFileDownloadUrlProcedure,
+			connect.WithSchema(coreServiceMethods.ByName("GetFileDownloadUrl")),
+			connect.WithClientOptions(opts...),
+		),
+		deleteFile: connect.NewClient[v1.DeleteFileRequest, v1.DeleteFileResponse](
+			httpClient,
+			baseURL+CoreServiceDeleteFileProcedure,
+			connect.WithSchema(coreServiceMethods.ByName("DeleteFile")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -230,6 +272,10 @@ type coreServiceClient struct {
 	stillHoldsLease     *connect.Client[v1.StillHoldsLeaseRequest, v1.StillHoldsLeaseResponse]
 	pushToolTelemetry   *connect.Client[v1.PushToolTelemetryRequest, v1.PushToolTelemetryResponse]
 	streamHumanMessages *connect.Client[v1.StreamHumanMessagesRequest, v1.TranscriptEntry]
+	listFiles           *connect.Client[v1.ListFilesRequest, v1.ListFilesResponse]
+	getFileUploadUrl    *connect.Client[v1.GetFileUploadUrlRequest, v1.GetFileUploadUrlResponse]
+	getFileDownloadUrl  *connect.Client[v1.GetFileDownloadUrlRequest, v1.GetFileDownloadUrlResponse]
+	deleteFile          *connect.Client[v1.DeleteFileRequest, v1.DeleteFileResponse]
 }
 
 // ReportPodEvents calls agentfleet.v1.CoreService.ReportPodEvents.
@@ -307,6 +353,26 @@ func (c *coreServiceClient) StreamHumanMessages(ctx context.Context, req *connec
 	return c.streamHumanMessages.CallServerStream(ctx, req)
 }
 
+// ListFiles calls agentfleet.v1.CoreService.ListFiles.
+func (c *coreServiceClient) ListFiles(ctx context.Context, req *connect.Request[v1.ListFilesRequest]) (*connect.Response[v1.ListFilesResponse], error) {
+	return c.listFiles.CallUnary(ctx, req)
+}
+
+// GetFileUploadUrl calls agentfleet.v1.CoreService.GetFileUploadUrl.
+func (c *coreServiceClient) GetFileUploadUrl(ctx context.Context, req *connect.Request[v1.GetFileUploadUrlRequest]) (*connect.Response[v1.GetFileUploadUrlResponse], error) {
+	return c.getFileUploadUrl.CallUnary(ctx, req)
+}
+
+// GetFileDownloadUrl calls agentfleet.v1.CoreService.GetFileDownloadUrl.
+func (c *coreServiceClient) GetFileDownloadUrl(ctx context.Context, req *connect.Request[v1.GetFileDownloadUrlRequest]) (*connect.Response[v1.GetFileDownloadUrlResponse], error) {
+	return c.getFileDownloadUrl.CallUnary(ctx, req)
+}
+
+// DeleteFile calls agentfleet.v1.CoreService.DeleteFile.
+func (c *coreServiceClient) DeleteFile(ctx context.Context, req *connect.Request[v1.DeleteFileRequest]) (*connect.Response[v1.DeleteFileResponse], error) {
+	return c.deleteFile.CallUnary(ctx, req)
+}
+
 // CoreServiceHandler is an implementation of the agentfleet.v1.CoreService service.
 type CoreServiceHandler interface {
 	// buf:lint:ignore RPC_REQUEST_STANDARD_NAME
@@ -338,6 +404,14 @@ type CoreServiceHandler interface {
 	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	StreamHumanMessages(context.Context, *connect.Request[v1.StreamHumanMessagesRequest], *connect.ServerStream[v1.TranscriptEntry]) error
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	ListFiles(context.Context, *connect.Request[v1.ListFilesRequest]) (*connect.Response[v1.ListFilesResponse], error)
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	GetFileUploadUrl(context.Context, *connect.Request[v1.GetFileUploadUrlRequest]) (*connect.Response[v1.GetFileUploadUrlResponse], error)
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	GetFileDownloadUrl(context.Context, *connect.Request[v1.GetFileDownloadUrlRequest]) (*connect.Response[v1.GetFileDownloadUrlResponse], error)
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	DeleteFile(context.Context, *connect.Request[v1.DeleteFileRequest]) (*connect.Response[v1.DeleteFileResponse], error)
 }
 
 // NewCoreServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -437,6 +511,30 @@ func NewCoreServiceHandler(svc CoreServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(coreServiceMethods.ByName("StreamHumanMessages")),
 		connect.WithHandlerOptions(opts...),
 	)
+	coreServiceListFilesHandler := connect.NewUnaryHandler(
+		CoreServiceListFilesProcedure,
+		svc.ListFiles,
+		connect.WithSchema(coreServiceMethods.ByName("ListFiles")),
+		connect.WithHandlerOptions(opts...),
+	)
+	coreServiceGetFileUploadUrlHandler := connect.NewUnaryHandler(
+		CoreServiceGetFileUploadUrlProcedure,
+		svc.GetFileUploadUrl,
+		connect.WithSchema(coreServiceMethods.ByName("GetFileUploadUrl")),
+		connect.WithHandlerOptions(opts...),
+	)
+	coreServiceGetFileDownloadUrlHandler := connect.NewUnaryHandler(
+		CoreServiceGetFileDownloadUrlProcedure,
+		svc.GetFileDownloadUrl,
+		connect.WithSchema(coreServiceMethods.ByName("GetFileDownloadUrl")),
+		connect.WithHandlerOptions(opts...),
+	)
+	coreServiceDeleteFileHandler := connect.NewUnaryHandler(
+		CoreServiceDeleteFileProcedure,
+		svc.DeleteFile,
+		connect.WithSchema(coreServiceMethods.ByName("DeleteFile")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/agentfleet.v1.CoreService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case CoreServiceReportPodEventsProcedure:
@@ -469,6 +567,14 @@ func NewCoreServiceHandler(svc CoreServiceHandler, opts ...connect.HandlerOption
 			coreServicePushToolTelemetryHandler.ServeHTTP(w, r)
 		case CoreServiceStreamHumanMessagesProcedure:
 			coreServiceStreamHumanMessagesHandler.ServeHTTP(w, r)
+		case CoreServiceListFilesProcedure:
+			coreServiceListFilesHandler.ServeHTTP(w, r)
+		case CoreServiceGetFileUploadUrlProcedure:
+			coreServiceGetFileUploadUrlHandler.ServeHTTP(w, r)
+		case CoreServiceGetFileDownloadUrlProcedure:
+			coreServiceGetFileDownloadUrlHandler.ServeHTTP(w, r)
+		case CoreServiceDeleteFileProcedure:
+			coreServiceDeleteFileHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -536,4 +642,20 @@ func (UnimplementedCoreServiceHandler) PushToolTelemetry(context.Context, *conne
 
 func (UnimplementedCoreServiceHandler) StreamHumanMessages(context.Context, *connect.Request[v1.StreamHumanMessagesRequest], *connect.ServerStream[v1.TranscriptEntry]) error {
 	return connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.CoreService.StreamHumanMessages is not implemented"))
+}
+
+func (UnimplementedCoreServiceHandler) ListFiles(context.Context, *connect.Request[v1.ListFilesRequest]) (*connect.Response[v1.ListFilesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.CoreService.ListFiles is not implemented"))
+}
+
+func (UnimplementedCoreServiceHandler) GetFileUploadUrl(context.Context, *connect.Request[v1.GetFileUploadUrlRequest]) (*connect.Response[v1.GetFileUploadUrlResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.CoreService.GetFileUploadUrl is not implemented"))
+}
+
+func (UnimplementedCoreServiceHandler) GetFileDownloadUrl(context.Context, *connect.Request[v1.GetFileDownloadUrlRequest]) (*connect.Response[v1.GetFileDownloadUrlResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.CoreService.GetFileDownloadUrl is not implemented"))
+}
+
+func (UnimplementedCoreServiceHandler) DeleteFile(context.Context, *connect.Request[v1.DeleteFileRequest]) (*connect.Response[v1.DeleteFileResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.CoreService.DeleteFile is not implemented"))
 }

@@ -6,6 +6,16 @@
 
 /* eslint-disable */
 import { Observable } from "rxjs";
+import {
+  DeleteFileRequest,
+  DeleteFileResponse,
+  GetFileDownloadUrlRequest,
+  GetFileDownloadUrlResponse,
+  GetFileUploadUrlRequest,
+  GetFileUploadUrlResponse,
+  ListFilesRequest,
+  ListFilesResponse,
+} from "./files.js";
 import { DeleteWorktreeRequest, DeleteWorktreeResponse, ListWorktreesRequest } from "./provisioner.js";
 import { ReadTranscriptSinceRequest, ReadTranscriptSinceResponse, TranscriptEntry } from "./transcript.js";
 
@@ -2277,6 +2287,14 @@ export interface DashboardService {
   CreatePromptSnippet(request: CreatePromptSnippetRequest): Promise<CreatePromptSnippetResponse>;
   UpdatePromptSnippet(request: UpdatePromptSnippetRequest): Promise<UpdatePromptSnippetResponse>;
   DeletePromptSnippet(request: DeletePromptSnippetRequest): Promise<DeletePromptSnippetResponse>;
+  /** buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE */
+  ListFiles(request: ListFilesRequest): Promise<ListFilesResponse>;
+  /** buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE */
+  GetFileUploadUrl(request: GetFileUploadUrlRequest): Promise<GetFileUploadUrlResponse>;
+  /** buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE */
+  GetFileDownloadUrl(request: GetFileDownloadUrlRequest): Promise<GetFileDownloadUrlResponse>;
+  /** buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE */
+  DeleteFile(request: DeleteFileRequest): Promise<DeleteFileResponse>;
 }
 
 type Builtin = Date | Function | Uint8Array | string | number | boolean | undefined;

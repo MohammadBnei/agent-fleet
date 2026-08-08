@@ -7,6 +7,16 @@
 /* eslint-disable */
 import { Observable } from "rxjs";
 import {
+  DeleteFileRequest,
+  DeleteFileResponse,
+  GetFileDownloadUrlRequest,
+  GetFileDownloadUrlResponse,
+  GetFileUploadUrlRequest,
+  GetFileUploadUrlResponse,
+  ListFilesRequest,
+  ListFilesResponse,
+} from "./files.js";
+import {
   CallE2eToolRequest,
   CallE2eToolResponse,
   ListE2eToolsRequest,
@@ -1145,6 +1155,14 @@ export interface CoreService {
    * buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
    */
   StreamHumanMessages(request: StreamHumanMessagesRequest): Observable<TranscriptEntry>;
+  /** buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE */
+  ListFiles(request: ListFilesRequest): Promise<ListFilesResponse>;
+  /** buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE */
+  GetFileUploadUrl(request: GetFileUploadUrlRequest): Promise<GetFileUploadUrlResponse>;
+  /** buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE */
+  GetFileDownloadUrl(request: GetFileDownloadUrlRequest): Promise<GetFileDownloadUrlResponse>;
+  /** buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE */
+  DeleteFile(request: DeleteFileRequest): Promise<DeleteFileResponse>;
 }
 
 type Builtin = Date | Function | Uint8Array | string | number | boolean | undefined;

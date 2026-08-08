@@ -20,6 +20,7 @@ import (
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 	"github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1/agentfleetv1connect"
 
+	"github.com/MohammadBnei/agent-fleet/core/internal/filestore"
 	"github.com/MohammadBnei/agent-fleet/core/internal/journal"
 	"github.com/MohammadBnei/agent-fleet/core/internal/promptsnippets"
 	"github.com/MohammadBnei/agent-fleet/core/internal/provisionerclient"
@@ -35,12 +36,13 @@ type Server struct {
 	repos       *repos.Store
 	snippets    *promptsnippets.Store
 	e2e         *provisionerclient.Client
+	files       filestore.Store
 	hub         *Hub
 	maxInFlight int
 }
 
-func NewServer(taskStore *tasks.Store, transcr transcript.Store, journalStore *journal.Store, repoStore *repos.Store, snippetStore *promptsnippets.Store, e2e *provisionerclient.Client, hub *Hub, maxInFlight int) *Server {
-	return &Server{tasks: taskStore, transcr: transcr, journal: journalStore, repos: repoStore, snippets: snippetStore, e2e: e2e, hub: hub, maxInFlight: maxInFlight}
+func NewServer(taskStore *tasks.Store, transcr transcript.Store, journalStore *journal.Store, repoStore *repos.Store, snippetStore *promptsnippets.Store, e2e *provisionerclient.Client, files filestore.Store, hub *Hub, maxInFlight int) *Server {
+	return &Server{tasks: taskStore, transcr: transcr, journal: journalStore, repos: repoStore, snippets: snippetStore, e2e: e2e, files: files, hub: hub, maxInFlight: maxInFlight}
 }
 
 var _ agentfleetv1connect.DashboardServiceHandler = (*Server)(nil)
@@ -642,6 +644,53 @@ func (s *Server) DeletePromptSnippet(ctx context.Context, req *connect.Request[a
 
 func snippetToProto(sn promptsnippets.Snippet) *agentfleetv1.PromptSnippet {
 	return &agentfleetv1.PromptSnippet{Id: sn.ID, Name: sn.Name, Text: sn.Text}
+}
+
+// --- shared file space (docs/adr/0030) — core mints presigned URLs, the
+// dashboard's browser moves the actual bytes directly against Garage ---
+
+func (s *Server) ListFiles(ctx context.Context, _ *connect.Request[agentfleetv1.ListFilesRequest]) (*connect.Response[agentfleetv1.ListFilesResponse], error) {
+	files, err := s.files.List(ctx)
+	if err != nil {
+		slog.Error("dashboard ListFiles", "error", err)
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	out := make([]*agentfleetv1.FileMetadata, len(files))
+	for i, f := range files {
+		out[i] = &agentfleetv1.FileMetadata{
+			Key:          f.Key,
+			SizeBytes:    f.SizeBytes,
+			LastModified: f.LastModified.Format(time.RFC3339),
+			ContentType:  f.ContentType,
+		}
+	}
+	return connect.NewResponse(&agentfleetv1.ListFilesResponse{Files: out}), nil
+}
+
+func (s *Server) GetFileUploadUrl(ctx context.Context, req *connect.Request[agentfleetv1.GetFileUploadUrlRequest]) (*connect.Response[agentfleetv1.GetFileUploadUrlResponse], error) {
+	url, key, expiresAt, err := s.files.PresignUpload(ctx, req.Msg.GetFilename(), req.Msg.GetContentType())
+	if err != nil {
+		slog.Error("dashboard GetFileUploadUrl", "filename", req.Msg.GetFilename(), "error", err)
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	return connect.NewResponse(&agentfleetv1.GetFileUploadUrlResponse{UploadUrl: url, Key: key, ExpiresAt: expiresAt.Format(time.RFC3339)}), nil
+}
+
+func (s *Server) GetFileDownloadUrl(ctx context.Context, req *connect.Request[agentfleetv1.GetFileDownloadUrlRequest]) (*connect.Response[agentfleetv1.GetFileDownloadUrlResponse], error) {
+	url, expiresAt, err := s.files.PresignDownload(ctx, req.Msg.GetKey())
+	if err != nil {
+		slog.Error("dashboard GetFileDownloadUrl", "key", req.Msg.GetKey(), "error", err)
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	return connect.NewResponse(&agentfleetv1.GetFileDownloadUrlResponse{DownloadUrl: url, ExpiresAt: expiresAt.Format(time.RFC3339)}), nil
+}
+
+func (s *Server) DeleteFile(ctx context.Context, req *connect.Request[agentfleetv1.DeleteFileRequest]) (*connect.Response[agentfleetv1.DeleteFileResponse], error) {
+	if err := s.files.Delete(ctx, req.Msg.GetKey()); err != nil {
+		slog.Error("dashboard DeleteFile", "key", req.Msg.GetKey(), "error", err)
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	return connect.NewResponse(&agentfleetv1.DeleteFileResponse{Status: "deleted"}), nil
 }
 
 func journalEntryToProto(e journal.Entry) *agentfleetv1.JournalEntry {

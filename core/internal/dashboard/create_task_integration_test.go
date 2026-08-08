@@ -26,7 +26,7 @@ func TestServer_CreateTask_UnknownRepo(t *testing.T) {
 	if err := repoStore.Create(context.Background(), repos.Repo{Name: "dream-analyst", URL: "https://example.com/dream-analyst.git"}); err != nil {
 		t.Fatalf("seed repo: %v", err)
 	}
-	s := NewServer(tasks.NewStore(pool), nil, nil, repoStore, nil, nil, nil, 5)
+	s := NewServer(tasks.NewStore(pool), nil, nil, repoStore, nil, nil, nil, nil, 5)
 
 	req := connect.NewRequest(&agentfleetv1.CreateTaskRequest{Repo: "not-a-real-repo", Description: "do something"})
 	if _, err := s.CreateTask(context.Background(), req); connect.CodeOf(err) != connect.CodeInvalidArgument {
@@ -40,7 +40,7 @@ func TestServer_CreateTask_EmptyDescription(t *testing.T) {
 	if err := repoStore.Create(context.Background(), repos.Repo{Name: "dream-analyst", URL: "https://example.com/dream-analyst.git"}); err != nil {
 		t.Fatalf("seed repo: %v", err)
 	}
-	s := NewServer(tasks.NewStore(pool), nil, nil, repoStore, nil, nil, nil, 5)
+	s := NewServer(tasks.NewStore(pool), nil, nil, repoStore, nil, nil, nil, nil, 5)
 
 	req := connect.NewRequest(&agentfleetv1.CreateTaskRequest{Repo: "dream-analyst", Description: ""})
 	if _, err := s.CreateTask(context.Background(), req); connect.CodeOf(err) != connect.CodeInvalidArgument {

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { TaskList, ACTIVE_STATUSES } from "./pages/TaskList";
 import { TaskDetail } from "./pages/TaskDetail";
 import { Worktrees } from "./pages/Worktrees";
+import { Files } from "./pages/Files";
 import { NewTaskDialog } from "./components/NewTaskDialog";
 import { ManageReposModal } from "./components/ManageReposModal";
 import { ManagePromptSnippetsModal } from "./components/ManagePromptSnippetsModal";
@@ -21,11 +22,12 @@ function readTaskIdFromUrl(): string | null {
   return new URLSearchParams(window.location.search).get("task");
 }
 
-// Worktrees (reliability-findings.md #2's manual cleanup view) is a third
-// top-level view, same no-router/URL-param pattern as the task list/detail
-// split above.
-function readViewFromUrl(): "tasks" | "worktrees" {
-  return new URLSearchParams(window.location.search).get("view") === "worktrees" ? "worktrees" : "tasks";
+// Worktrees (reliability-findings.md #2's manual cleanup view) and Files
+// (docs/adr/0030's shared file space) are additional top-level views, same
+// no-router/URL-param pattern as the task list/detail split above.
+function readViewFromUrl(): "tasks" | "worktrees" | "files" {
+  const v = new URLSearchParams(window.location.search).get("view");
+  return v === "worktrees" || v === "files" ? v : "tasks";
 }
 
 // Plain polling, not a stream — a second live feed just for the list is
@@ -44,7 +46,7 @@ export default function App() {
   // actual viewport instead of hiding one with CSS stops that duplicate
   // background streaming outright.
   const isDesktop = useMediaQuery("(min-width: 640px)");
-  const [view, setView] = useState<"tasks" | "worktrees">(readViewFromUrl);
+  const [view, setView] = useState<"tasks" | "worktrees" | "files">(readViewFromUrl);
   const [selectedId, setSelectedId] = useState<string | null>(
     readTaskIdFromUrl,
   );
@@ -145,10 +147,10 @@ export default function App() {
       .catch((err: Error) => setTasksError(err.message));
   }
 
-  function selectView(next: "tasks" | "worktrees") {
+  function selectView(next: "tasks" | "worktrees" | "files") {
     setView(next);
     const url = new URL(window.location.href);
-    if (next === "worktrees") url.searchParams.set("view", "worktrees");
+    if (next !== "tasks") url.searchParams.set("view", next);
     else url.searchParams.delete("view");
     window.history.pushState({}, "", url);
   }
@@ -234,6 +236,13 @@ export default function App() {
           >
             Worktrees
           </button>
+          <button
+            type="button"
+            onClick={() => selectView("files")}
+            className={`px-2.5 py-1 rounded-md ${view === "files" ? "bg-base-content/10 text-base-content" : "text-base-content/50 hover:text-base-content"}`}
+          >
+            Files
+          </button>
         </div>
 
         {view === "tasks" && (
@@ -264,6 +273,8 @@ export default function App() {
       <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] row-start-2 min-h-0">
         {view === "worktrees" ? (
           <Worktrees />
+        ) : view === "files" ? (
+          <Files />
         ) : (
           <>
             <div className="border-b lg:border-b-0 lg:border-r border-base-content/10 bg-base-200 overflow-y-auto min-h-0">
@@ -293,6 +304,8 @@ export default function App() {
       <div className="row-start-2 min-h-0 flex flex-col">
         {view === "worktrees" ? (
           <Worktrees onBack={() => selectView("tasks")} />
+        ) : view === "files" ? (
+          <Files onBack={() => selectView("tasks")} />
         ) : selectedId ? (
           <MobileTaskDetail taskId={selectedId} onBack={clearSelection} onDelete={() => deleteTask(selectedId)} />
         ) : (
@@ -308,6 +321,7 @@ export default function App() {
             setFilter={setFilter}
             onSelect={selectTask}
             onOpenWorktrees={() => selectView("worktrees")}
+            onOpenFiles={() => selectView("files")}
             onCreated={(id) => {
               loadTasks();
               selectTask(id);

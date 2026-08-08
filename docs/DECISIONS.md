@@ -52,6 +52,10 @@ Any doc, code, comment, or memory that contradicts this file or an
 - **Workflow discipline:** all changes via feature branch + PR, no direct
   push to `main`; secrets only via Infisical, fetched at run time, never
   committed.
+- **`core` is the sole holder of the Garage S3 credential** backing the
+  fleet-wide shared file space — it only ever mints short-lived presigned
+  PUT/GET URLs, never proxies file bytes itself. See
+  [`adr/0030`](adr/0030-garage-s3-shared-files.md).
 
 ## 2. Forbidden patterns (quick check — full list + reasons in `adr/`)
 

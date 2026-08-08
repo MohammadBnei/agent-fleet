@@ -154,6 +154,43 @@ func (c *Client) CallE2eTool(ctx context.Context, toolName, argumentsJSON string
 	return resp.GetResultJson(), resp.GetIsError(), nil
 }
 
+// ListFiles, GetFileUploadURL, GetFileDownloadURL, and DeleteFile back the
+// shared file space (docs/adr/0030) — the flat namespace isn't scoped to
+// this sidecar's own task, so unlike every other agent-facing method here
+// these don't pass c.taskID.
+
+func (c *Client) ListFiles(ctx context.Context) ([]*agentfleetv1.FileMetadata, error) {
+	resp, err := c.rpc.ListFiles(ctx, &agentfleetv1.ListFilesRequest{})
+	if err != nil {
+		return nil, fmt.Errorf("ListFiles: %w", err)
+	}
+	return resp.GetFiles(), nil
+}
+
+func (c *Client) GetFileUploadURL(ctx context.Context, filename, contentType string) (uploadURL, key, expiresAt string, err error) {
+	resp, err := c.rpc.GetFileUploadUrl(ctx, &agentfleetv1.GetFileUploadUrlRequest{Filename: filename, ContentType: contentType})
+	if err != nil {
+		return "", "", "", fmt.Errorf("GetFileUploadUrl: %w", err)
+	}
+	return resp.GetUploadUrl(), resp.GetKey(), resp.GetExpiresAt(), nil
+}
+
+func (c *Client) GetFileDownloadURL(ctx context.Context, key string) (downloadURL, expiresAt string, err error) {
+	resp, err := c.rpc.GetFileDownloadUrl(ctx, &agentfleetv1.GetFileDownloadUrlRequest{Key: key})
+	if err != nil {
+		return "", "", fmt.Errorf("GetFileDownloadUrl: %w", err)
+	}
+	return resp.GetDownloadUrl(), resp.GetExpiresAt(), nil
+}
+
+func (c *Client) DeleteFile(ctx context.Context, key string) error {
+	_, err := c.rpc.DeleteFile(ctx, &agentfleetv1.DeleteFileRequest{Key: key})
+	if err != nil {
+		return fmt.Errorf("DeleteFile: %w", err)
+	}
+	return nil
+}
+
 // --- wrapper-facing (proxied by the local plain API) ---
 
 func (c *Client) Heartbeat(ctx context.Context, leaseID string) error {

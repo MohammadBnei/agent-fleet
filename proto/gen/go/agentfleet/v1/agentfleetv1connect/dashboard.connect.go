@@ -106,6 +106,18 @@ const (
 	// DashboardServiceDeletePromptSnippetProcedure is the fully-qualified name of the
 	// DashboardService's DeletePromptSnippet RPC.
 	DashboardServiceDeletePromptSnippetProcedure = "/agentfleet.v1.DashboardService/DeletePromptSnippet"
+	// DashboardServiceListFilesProcedure is the fully-qualified name of the DashboardService's
+	// ListFiles RPC.
+	DashboardServiceListFilesProcedure = "/agentfleet.v1.DashboardService/ListFiles"
+	// DashboardServiceGetFileUploadUrlProcedure is the fully-qualified name of the DashboardService's
+	// GetFileUploadUrl RPC.
+	DashboardServiceGetFileUploadUrlProcedure = "/agentfleet.v1.DashboardService/GetFileUploadUrl"
+	// DashboardServiceGetFileDownloadUrlProcedure is the fully-qualified name of the DashboardService's
+	// GetFileDownloadUrl RPC.
+	DashboardServiceGetFileDownloadUrlProcedure = "/agentfleet.v1.DashboardService/GetFileDownloadUrl"
+	// DashboardServiceDeleteFileProcedure is the fully-qualified name of the DashboardService's
+	// DeleteFile RPC.
+	DashboardServiceDeleteFileProcedure = "/agentfleet.v1.DashboardService/DeleteFile"
 )
 
 // DashboardServiceClient is a client for the agentfleet.v1.DashboardService service.
@@ -153,6 +165,14 @@ type DashboardServiceClient interface {
 	CreatePromptSnippet(context.Context, *connect.Request[v1.CreatePromptSnippetRequest]) (*connect.Response[v1.CreatePromptSnippetResponse], error)
 	UpdatePromptSnippet(context.Context, *connect.Request[v1.UpdatePromptSnippetRequest]) (*connect.Response[v1.UpdatePromptSnippetResponse], error)
 	DeletePromptSnippet(context.Context, *connect.Request[v1.DeletePromptSnippetRequest]) (*connect.Response[v1.DeletePromptSnippetResponse], error)
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	ListFiles(context.Context, *connect.Request[v1.ListFilesRequest]) (*connect.Response[v1.ListFilesResponse], error)
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	GetFileUploadUrl(context.Context, *connect.Request[v1.GetFileUploadUrlRequest]) (*connect.Response[v1.GetFileUploadUrlResponse], error)
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	GetFileDownloadUrl(context.Context, *connect.Request[v1.GetFileDownloadUrlRequest]) (*connect.Response[v1.GetFileDownloadUrlResponse], error)
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	DeleteFile(context.Context, *connect.Request[v1.DeleteFileRequest]) (*connect.Response[v1.DeleteFileResponse], error)
 }
 
 // NewDashboardServiceClient constructs a client for the agentfleet.v1.DashboardService service. By
@@ -316,6 +336,30 @@ func NewDashboardServiceClient(httpClient connect.HTTPClient, baseURL string, op
 			connect.WithSchema(dashboardServiceMethods.ByName("DeletePromptSnippet")),
 			connect.WithClientOptions(opts...),
 		),
+		listFiles: connect.NewClient[v1.ListFilesRequest, v1.ListFilesResponse](
+			httpClient,
+			baseURL+DashboardServiceListFilesProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("ListFiles")),
+			connect.WithClientOptions(opts...),
+		),
+		getFileUploadUrl: connect.NewClient[v1.GetFileUploadUrlRequest, v1.GetFileUploadUrlResponse](
+			httpClient,
+			baseURL+DashboardServiceGetFileUploadUrlProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("GetFileUploadUrl")),
+			connect.WithClientOptions(opts...),
+		),
+		getFileDownloadUrl: connect.NewClient[v1.GetFileDownloadUrlRequest, v1.GetFileDownloadUrlResponse](
+			httpClient,
+			baseURL+DashboardServiceGetFileDownloadUrlProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("GetFileDownloadUrl")),
+			connect.WithClientOptions(opts...),
+		),
+		deleteFile: connect.NewClient[v1.DeleteFileRequest, v1.DeleteFileResponse](
+			httpClient,
+			baseURL+DashboardServiceDeleteFileProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("DeleteFile")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -346,6 +390,10 @@ type dashboardServiceClient struct {
 	createPromptSnippet *connect.Client[v1.CreatePromptSnippetRequest, v1.CreatePromptSnippetResponse]
 	updatePromptSnippet *connect.Client[v1.UpdatePromptSnippetRequest, v1.UpdatePromptSnippetResponse]
 	deletePromptSnippet *connect.Client[v1.DeletePromptSnippetRequest, v1.DeletePromptSnippetResponse]
+	listFiles           *connect.Client[v1.ListFilesRequest, v1.ListFilesResponse]
+	getFileUploadUrl    *connect.Client[v1.GetFileUploadUrlRequest, v1.GetFileUploadUrlResponse]
+	getFileDownloadUrl  *connect.Client[v1.GetFileDownloadUrlRequest, v1.GetFileDownloadUrlResponse]
+	deleteFile          *connect.Client[v1.DeleteFileRequest, v1.DeleteFileResponse]
 }
 
 // ListTasks calls agentfleet.v1.DashboardService.ListTasks.
@@ -473,6 +521,26 @@ func (c *dashboardServiceClient) DeletePromptSnippet(ctx context.Context, req *c
 	return c.deletePromptSnippet.CallUnary(ctx, req)
 }
 
+// ListFiles calls agentfleet.v1.DashboardService.ListFiles.
+func (c *dashboardServiceClient) ListFiles(ctx context.Context, req *connect.Request[v1.ListFilesRequest]) (*connect.Response[v1.ListFilesResponse], error) {
+	return c.listFiles.CallUnary(ctx, req)
+}
+
+// GetFileUploadUrl calls agentfleet.v1.DashboardService.GetFileUploadUrl.
+func (c *dashboardServiceClient) GetFileUploadUrl(ctx context.Context, req *connect.Request[v1.GetFileUploadUrlRequest]) (*connect.Response[v1.GetFileUploadUrlResponse], error) {
+	return c.getFileUploadUrl.CallUnary(ctx, req)
+}
+
+// GetFileDownloadUrl calls agentfleet.v1.DashboardService.GetFileDownloadUrl.
+func (c *dashboardServiceClient) GetFileDownloadUrl(ctx context.Context, req *connect.Request[v1.GetFileDownloadUrlRequest]) (*connect.Response[v1.GetFileDownloadUrlResponse], error) {
+	return c.getFileDownloadUrl.CallUnary(ctx, req)
+}
+
+// DeleteFile calls agentfleet.v1.DashboardService.DeleteFile.
+func (c *dashboardServiceClient) DeleteFile(ctx context.Context, req *connect.Request[v1.DeleteFileRequest]) (*connect.Response[v1.DeleteFileResponse], error) {
+	return c.deleteFile.CallUnary(ctx, req)
+}
+
 // DashboardServiceHandler is an implementation of the agentfleet.v1.DashboardService service.
 type DashboardServiceHandler interface {
 	ListTasks(context.Context, *connect.Request[v1.ListTasksRequest]) (*connect.Response[v1.ListTasksResponse], error)
@@ -518,6 +586,14 @@ type DashboardServiceHandler interface {
 	CreatePromptSnippet(context.Context, *connect.Request[v1.CreatePromptSnippetRequest]) (*connect.Response[v1.CreatePromptSnippetResponse], error)
 	UpdatePromptSnippet(context.Context, *connect.Request[v1.UpdatePromptSnippetRequest]) (*connect.Response[v1.UpdatePromptSnippetResponse], error)
 	DeletePromptSnippet(context.Context, *connect.Request[v1.DeletePromptSnippetRequest]) (*connect.Response[v1.DeletePromptSnippetResponse], error)
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	ListFiles(context.Context, *connect.Request[v1.ListFilesRequest]) (*connect.Response[v1.ListFilesResponse], error)
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	GetFileUploadUrl(context.Context, *connect.Request[v1.GetFileUploadUrlRequest]) (*connect.Response[v1.GetFileUploadUrlResponse], error)
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	GetFileDownloadUrl(context.Context, *connect.Request[v1.GetFileDownloadUrlRequest]) (*connect.Response[v1.GetFileDownloadUrlResponse], error)
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	DeleteFile(context.Context, *connect.Request[v1.DeleteFileRequest]) (*connect.Response[v1.DeleteFileResponse], error)
 }
 
 // NewDashboardServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -677,6 +753,30 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 		connect.WithSchema(dashboardServiceMethods.ByName("DeletePromptSnippet")),
 		connect.WithHandlerOptions(opts...),
 	)
+	dashboardServiceListFilesHandler := connect.NewUnaryHandler(
+		DashboardServiceListFilesProcedure,
+		svc.ListFiles,
+		connect.WithSchema(dashboardServiceMethods.ByName("ListFiles")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dashboardServiceGetFileUploadUrlHandler := connect.NewUnaryHandler(
+		DashboardServiceGetFileUploadUrlProcedure,
+		svc.GetFileUploadUrl,
+		connect.WithSchema(dashboardServiceMethods.ByName("GetFileUploadUrl")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dashboardServiceGetFileDownloadUrlHandler := connect.NewUnaryHandler(
+		DashboardServiceGetFileDownloadUrlProcedure,
+		svc.GetFileDownloadUrl,
+		connect.WithSchema(dashboardServiceMethods.ByName("GetFileDownloadUrl")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dashboardServiceDeleteFileHandler := connect.NewUnaryHandler(
+		DashboardServiceDeleteFileProcedure,
+		svc.DeleteFile,
+		connect.WithSchema(dashboardServiceMethods.ByName("DeleteFile")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/agentfleet.v1.DashboardService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case DashboardServiceListTasksProcedure:
@@ -729,6 +829,14 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 			dashboardServiceUpdatePromptSnippetHandler.ServeHTTP(w, r)
 		case DashboardServiceDeletePromptSnippetProcedure:
 			dashboardServiceDeletePromptSnippetHandler.ServeHTTP(w, r)
+		case DashboardServiceListFilesProcedure:
+			dashboardServiceListFilesHandler.ServeHTTP(w, r)
+		case DashboardServiceGetFileUploadUrlProcedure:
+			dashboardServiceGetFileUploadUrlHandler.ServeHTTP(w, r)
+		case DashboardServiceGetFileDownloadUrlProcedure:
+			dashboardServiceGetFileDownloadUrlHandler.ServeHTTP(w, r)
+		case DashboardServiceDeleteFileProcedure:
+			dashboardServiceDeleteFileHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -836,4 +944,20 @@ func (UnimplementedDashboardServiceHandler) UpdatePromptSnippet(context.Context,
 
 func (UnimplementedDashboardServiceHandler) DeletePromptSnippet(context.Context, *connect.Request[v1.DeletePromptSnippetRequest]) (*connect.Response[v1.DeletePromptSnippetResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.DeletePromptSnippet is not implemented"))
+}
+
+func (UnimplementedDashboardServiceHandler) ListFiles(context.Context, *connect.Request[v1.ListFilesRequest]) (*connect.Response[v1.ListFilesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.ListFiles is not implemented"))
+}
+
+func (UnimplementedDashboardServiceHandler) GetFileUploadUrl(context.Context, *connect.Request[v1.GetFileUploadUrlRequest]) (*connect.Response[v1.GetFileUploadUrlResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.GetFileUploadUrl is not implemented"))
+}
+
+func (UnimplementedDashboardServiceHandler) GetFileDownloadUrl(context.Context, *connect.Request[v1.GetFileDownloadUrlRequest]) (*connect.Response[v1.GetFileDownloadUrlResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.GetFileDownloadUrl is not implemented"))
+}
+
+func (UnimplementedDashboardServiceHandler) DeleteFile(context.Context, *connect.Request[v1.DeleteFileRequest]) (*connect.Response[v1.DeleteFileResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.DeleteFile is not implemented"))
 }
