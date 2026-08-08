@@ -265,9 +265,11 @@ export function TaskDetail({
 
   // A new human entry (this tab's own send, or one relayed from Discord)
   // always jumps to the bottom — the reader clearly wants to see it. A new
-  // agent entry never yanks the view; if they're mid-scroll reading
-  // history, the button just pulses instead (cleared once they scroll back
-  // down themselves, via the effect below).
+  // agent entry follows too, but only if the reader was already at the
+  // bottom (feedAtBottom, captured as of just before this entry landed) —
+  // otherwise they're mid-scroll reading history and it'd yank the view;
+  // the button just pulses instead (cleared once they scroll back down
+  // themselves, via the effect below).
   const [hasNewAiMessage, setHasNewAiMessage] = useState(false);
   const prevEntriesLenRef = useRef<number | null>(null);
   useEffect(() => {
@@ -277,10 +279,10 @@ export function TaskDetail({
     }
     if (entries.length > prevEntriesLenRef.current) {
       const latest = entries[entries.length - 1];
-      if (latest.from === "human") {
+      if (latest.from === "human" || feedAtBottom) {
         feedScrollToBottom();
         setHasNewAiMessage(false);
-      } else if (!feedAtBottom) {
+      } else {
         setHasNewAiMessage(true);
       }
     }
