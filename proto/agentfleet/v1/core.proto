@@ -82,6 +82,11 @@ message AskUserQuestionResponse {
 
 message RequestE2eEnvRequest {
   string task_id = 1;
+  // Shell command that installs deps and starts the app, run via
+  // `bash -lc` from the worktree root (e.g. "cd front && bun install &&
+  // bun run dev"). Optional — falls back to the provisioner's
+  // per-repo default (StartCmdFor) when empty.
+  string start_cmd = 2;
 }
 
 message RequestE2eEnvResponse {

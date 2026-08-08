@@ -90,7 +90,7 @@ func (s *Server) CreateE2ESession(ctx context.Context, req *agentfleetv1.CreateE
 		}, nil
 	}
 
-	taskRef := k8s.TaskRef{ID: req.GetTaskId(), Repo: req.GetRepo()}
+	taskRef := k8s.TaskRef{ID: req.GetTaskId(), Repo: req.GetRepo(), StartCmd: req.GetStartCmd()}
 	if err := s.k8sc.CreatePod(ctx, taskRef); err != nil {
 		return nil, fmt.Errorf("create e2e pod: %w", err)
 	}

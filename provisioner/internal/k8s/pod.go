@@ -47,12 +47,20 @@ type CreatedE2ePod struct {
 type TaskRef struct {
 	ID   string
 	Repo string
+	// StartCmd, when set, overrides StartCmdFor's per-repo default —
+	// the agent supplying its own command (it knows the worktree's actual
+	// layout right now) beats a static guess made at pod-creation time.
+	StartCmd string
 }
 
 func (c *Client) CreatePod(ctx context.Context, task TaskRef) error {
-	startCmd, err := StartCmdFor(task.Repo)
-	if err != nil {
-		return err
+	startCmd := task.StartCmd
+	if startCmd == "" {
+		var err error
+		startCmd, err = StartCmdFor(task.Repo)
+		if err != nil {
+			return err
+		}
 	}
 	name := ResourceName(task.ID)
 	labels := Labels(task.ID)
@@ -71,11 +79,13 @@ func (c *Client) CreatePod(ctx context.Context, task TaskRef) error {
 						{Name: "E2E_APP_PORT", Value: fmt.Sprint(AppPort)},
 						{Name: "E2E_CODE_SERVER_PORT", Value: fmt.Sprint(CodeServerPort)},
 						{Name: "E2E_PLAYWRIGHT_PORT", Value: fmt.Sprint(PlaywrightPort)},
+						{Name: "E2E_EXEC_PORT", Value: fmt.Sprint(ExecPort)},
 					},
 					Ports: []corev1.ContainerPort{
 						{Name: "app", ContainerPort: AppPort},
 						{Name: "code-server", ContainerPort: CodeServerPort},
 						{Name: "playwright", ContainerPort: PlaywrightPort},
+						{Name: "exec", ContainerPort: ExecPort},
 					},
 					VolumeMounts: []corev1.VolumeMount{
 						{Name: "workspace", MountPath: "/workspace", SubPath: "worktrees/" + task.ID},
@@ -103,8 +113,7 @@ func (c *Client) CreatePod(ctx context.Context, task TaskRef) error {
 		},
 	}
 
-	_, err = c.Core.CoreV1().Pods(c.Namespace).Create(ctx, pod, metav1.CreateOptions{})
-	if err != nil {
+	if _, err := c.Core.CoreV1().Pods(c.Namespace).Create(ctx, pod, metav1.CreateOptions{}); err != nil {
 		slog.Error("k8s CreatePod", "taskId", task.ID, "error", err)
 		return err
 	}

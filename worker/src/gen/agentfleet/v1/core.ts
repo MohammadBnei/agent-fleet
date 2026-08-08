@@ -154,6 +154,13 @@ export interface AskUserQuestionResponse {
 
 export interface RequestE2eEnvRequest {
   taskId: string;
+  /**
+   * Shell command that installs deps and starts the app, run via
+   * `bash -lc` from the worktree root (e.g. "cd front && bun install &&
+   * bun run dev"). Optional — falls back to the provisioner's
+   * per-repo default (StartCmdFor) when empty.
+   */
+  startCmd: string;
 }
 
 export interface RequestE2eEnvResponse {
@@ -509,7 +516,7 @@ export const AskUserQuestionResponse: MessageFns<AskUserQuestionResponse> = {
 };
 
 function createBaseRequestE2eEnvRequest(): RequestE2eEnvRequest {
-  return { taskId: "" };
+  return { taskId: "", startCmd: "" };
 }
 
 export const RequestE2eEnvRequest: MessageFns<RequestE2eEnvRequest> = {
@@ -520,6 +527,11 @@ export const RequestE2eEnvRequest: MessageFns<RequestE2eEnvRequest> = {
         : isSet(object.task_id)
         ? globalThis.String(object.task_id)
         : "",
+      startCmd: isSet(object.startCmd)
+        ? globalThis.String(object.startCmd)
+        : isSet(object.start_cmd)
+        ? globalThis.String(object.start_cmd)
+        : "",
     };
   },
 
@@ -527,6 +539,9 @@ export const RequestE2eEnvRequest: MessageFns<RequestE2eEnvRequest> = {
     const obj: any = {};
     if (message.taskId !== "") {
       obj.taskId = message.taskId;
+    }
+    if (message.startCmd !== "") {
+      obj.startCmd = message.startCmd;
     }
     return obj;
   },
@@ -537,6 +552,7 @@ export const RequestE2eEnvRequest: MessageFns<RequestE2eEnvRequest> = {
   fromPartial<I extends Exact<DeepPartial<RequestE2eEnvRequest>, I>>(object: I): RequestE2eEnvRequest {
     const message = createBaseRequestE2eEnvRequest();
     message.taskId = object.taskId ?? "";
+    message.startCmd = object.startCmd ?? "";
     return message;
   },
 };

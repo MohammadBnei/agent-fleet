@@ -39,6 +39,9 @@ message GetE2eSessionStatusResponse {
 message CreateE2eSessionRequest {
   string task_id = 1;
   string repo = 2;
+  // See RequestE2eEnvRequest.start_cmd in core.proto — passed through
+  // core unchanged.
+  string start_cmd = 3;
 }
 
 message CreateE2eSessionResponse {

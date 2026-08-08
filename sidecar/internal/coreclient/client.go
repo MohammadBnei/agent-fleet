@@ -120,8 +120,8 @@ func (c *Client) AskUserQuestion(ctx context.Context, questionsJSON string, time
 	return resp.GetStatus(), resp.GetAnswersJson(), resp.GetQuestionSeq(), nil
 }
 
-func (c *Client) RequestE2eEnv(ctx context.Context) (previewURL, status string, err error) {
-	resp, err := c.rpc.RequestE2EEnv(ctx, &agentfleetv1.RequestE2EEnvRequest{TaskId: c.taskID})
+func (c *Client) RequestE2eEnv(ctx context.Context, startCmd string) (previewURL, status string, err error) {
+	resp, err := c.rpc.RequestE2EEnv(ctx, &agentfleetv1.RequestE2EEnvRequest{TaskId: c.taskID, StartCmd: startCmd})
 	if err != nil {
 		return "", "", fmt.Errorf("RequestE2eEnv: %w", err)
 	}
