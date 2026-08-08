@@ -83,11 +83,16 @@ jobs:
     needs: changes
     if: needs.changes.outputs.proto == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.head_ref }}
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup buf
         uses: bufbuild/buf-setup-action@v1
@@ -153,12 +158,30 @@ jobs:
         working-directory: dashboard
         run: bun install --frozen-lockfile
 
-      - name: buf generate drift check
+      - name: buf generate
         working-directory: proto
         run: |
           export PATH="$HOME/go/bin:$PATH"
           buf generate
-          git diff --exit-code -- gen ../worker/src/gen ../dashboard/src/gen
+
+      - name: Check for drift and auto-commit
+        run: |
+          if ! git diff --quiet -- proto/gen worker/src/gen dashboard/src/gen; then
+            echo "Generated files are out of sync with proto definitions"
+            if [ "${{ github.event_name }}" = "pull_request" ]; then
+              echo "Auto-committing regenerated proto files"
+              git config user.name "github-actions[bot]"
+              git config user.email "github-actions[bot]@users.noreply.github.com"
+              git add proto/gen worker/src/gen dashboard/src/gen
+              git commit -m "chore: regenerate proto files after schema changes"
+              git push
+            else
+              echo "Not a PR - failing the check"
+              exit 1
+            fi
+          else
+            echo "Generated files are up to date"
+          fi
 
   go:
     needs: changes
