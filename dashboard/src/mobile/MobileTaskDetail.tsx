@@ -247,6 +247,7 @@ export function MobileTaskDetail({
   // entries jump to the bottom; new agent entries follow too when the
   // reader was already at the bottom, otherwise just pulse the button.
   const [hasNewAiMessage, setHasNewAiMessage] = useState(false);
+  const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
   const prevEntriesLenRef = useRef<number | null>(null);
   useEffect(() => {
     if (prevEntriesLenRef.current === null) {
@@ -331,9 +332,20 @@ export function MobileTaskDetail({
             ‹
           </button>
           <div className="min-w-0 flex-1">
-            <div className="text-[13px] font-semibold text-base-content leading-tight break-words line-clamp-2">
-              {task.description}
-            </div>
+            <button
+              type="button"
+              onClick={() => setIsDescriptionExpanded(!isDescriptionExpanded)}
+              className="text-left w-full group"
+            >
+              <div className="flex items-start gap-1.5">
+                <div className={`text-[13px] font-semibold text-base-content leading-tight break-words flex-1 ${isDescriptionExpanded ? "" : "line-clamp-2"}`}>
+                  {task.description}
+                </div>
+                <span className="text-[10px] text-base-content/40 group-hover:text-base-content/60 flex-none mt-0.5">
+                  {isDescriptionExpanded ? "▴" : "▾"}
+                </span>
+              </div>
+            </button>
             <div className="text-[10px] text-base-content/50 mt-1 flex items-center gap-2 flex-wrap">
               <span className="whitespace-nowrap">
                 #{task.id.slice(0, 6)} · {task.repo}
