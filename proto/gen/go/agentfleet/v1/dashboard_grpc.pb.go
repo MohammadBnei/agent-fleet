@@ -44,6 +44,7 @@ const (
 	DashboardService_CreatePromptSnippet_FullMethodName = "/agentfleet.v1.DashboardService/CreatePromptSnippet"
 	DashboardService_UpdatePromptSnippet_FullMethodName = "/agentfleet.v1.DashboardService/UpdatePromptSnippet"
 	DashboardService_DeletePromptSnippet_FullMethodName = "/agentfleet.v1.DashboardService/DeletePromptSnippet"
+	DashboardService_QueryLogs_FullMethodName           = "/agentfleet.v1.DashboardService/QueryLogs"
 )
 
 // DashboardServiceClient is the client API for DashboardService service.
@@ -93,6 +94,9 @@ type DashboardServiceClient interface {
 	CreatePromptSnippet(ctx context.Context, in *CreatePromptSnippetRequest, opts ...grpc.CallOption) (*CreatePromptSnippetResponse, error)
 	UpdatePromptSnippet(ctx context.Context, in *UpdatePromptSnippetRequest, opts ...grpc.CallOption) (*UpdatePromptSnippetResponse, error)
 	DeletePromptSnippet(ctx context.Context, in *DeletePromptSnippetRequest, opts ...grpc.CallOption) (*DeletePromptSnippetResponse, error)
+	// Reuses core.proto's QueryLogsRequest/QueryLogsResponse
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	QueryLogs(ctx context.Context, in *QueryLogsRequest, opts ...grpc.CallOption) (*QueryLogsResponse, error)
 }
 
 type dashboardServiceClient struct {
@@ -362,6 +366,16 @@ func (c *dashboardServiceClient) DeletePromptSnippet(ctx context.Context, in *De
 	return out, nil
 }
 
+func (c *dashboardServiceClient) QueryLogs(ctx context.Context, in *QueryLogsRequest, opts ...grpc.CallOption) (*QueryLogsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(QueryLogsResponse)
+	err := c.cc.Invoke(ctx, DashboardService_QueryLogs_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // DashboardServiceServer is the server API for DashboardService service.
 // All implementations must embed UnimplementedDashboardServiceServer
 // for forward compatibility.
@@ -409,6 +423,9 @@ type DashboardServiceServer interface {
 	CreatePromptSnippet(context.Context, *CreatePromptSnippetRequest) (*CreatePromptSnippetResponse, error)
 	UpdatePromptSnippet(context.Context, *UpdatePromptSnippetRequest) (*UpdatePromptSnippetResponse, error)
 	DeletePromptSnippet(context.Context, *DeletePromptSnippetRequest) (*DeletePromptSnippetResponse, error)
+	// Reuses core.proto's QueryLogsRequest/QueryLogsResponse
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	QueryLogs(context.Context, *QueryLogsRequest) (*QueryLogsResponse, error)
 	mustEmbedUnimplementedDashboardServiceServer()
 }
 
@@ -493,6 +510,9 @@ func (UnimplementedDashboardServiceServer) UpdatePromptSnippet(context.Context, 
 }
 func (UnimplementedDashboardServiceServer) DeletePromptSnippet(context.Context, *DeletePromptSnippetRequest) (*DeletePromptSnippetResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeletePromptSnippet not implemented")
+}
+func (UnimplementedDashboardServiceServer) QueryLogs(context.Context, *QueryLogsRequest) (*QueryLogsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method QueryLogs not implemented")
 }
 func (UnimplementedDashboardServiceServer) mustEmbedUnimplementedDashboardServiceServer() {}
 func (UnimplementedDashboardServiceServer) testEmbeddedByValue()                          {}
@@ -958,6 +978,24 @@ func _DashboardService_DeletePromptSnippet_Handler(srv interface{}, ctx context.
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DashboardService_QueryLogs_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryLogsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DashboardServiceServer).QueryLogs(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DashboardService_QueryLogs_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DashboardServiceServer).QueryLogs(ctx, req.(*QueryLogsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // DashboardService_ServiceDesc is the grpc.ServiceDesc for DashboardService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1060,6 +1098,10 @@ var DashboardService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DeletePromptSnippet",
 			Handler:    _DashboardService_DeletePromptSnippet_Handler,
+		},
+		{
+			MethodName: "QueryLogs",
+			Handler:    _DashboardService_QueryLogs_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

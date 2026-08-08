@@ -34,6 +34,7 @@ const (
 	CoreService_StillHoldsLease_FullMethodName     = "/agentfleet.v1.CoreService/StillHoldsLease"
 	CoreService_PushToolTelemetry_FullMethodName   = "/agentfleet.v1.CoreService/PushToolTelemetry"
 	CoreService_StreamHumanMessages_FullMethodName = "/agentfleet.v1.CoreService/StreamHumanMessages"
+	CoreService_ViewLogs_FullMethodName            = "/agentfleet.v1.CoreService/ViewLogs"
 )
 
 // CoreServiceClient is the client API for CoreService service.
@@ -69,6 +70,7 @@ type CoreServiceClient interface {
 	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	StreamHumanMessages(ctx context.Context, in *StreamHumanMessagesRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[TranscriptEntry], error)
+	ViewLogs(ctx context.Context, in *ViewLogsRequest, opts ...grpc.CallOption) (*ViewLogsResponse, error)
 }
 
 type coreServiceClient struct {
@@ -241,6 +243,16 @@ func (c *coreServiceClient) StreamHumanMessages(ctx context.Context, in *StreamH
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type CoreService_StreamHumanMessagesClient = grpc.ServerStreamingClient[TranscriptEntry]
 
+func (c *coreServiceClient) ViewLogs(ctx context.Context, in *ViewLogsRequest, opts ...grpc.CallOption) (*ViewLogsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ViewLogsResponse)
+	err := c.cc.Invoke(ctx, CoreService_ViewLogs_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CoreServiceServer is the server API for CoreService service.
 // All implementations must embed UnimplementedCoreServiceServer
 // for forward compatibility.
@@ -274,6 +286,7 @@ type CoreServiceServer interface {
 	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	StreamHumanMessages(*StreamHumanMessagesRequest, grpc.ServerStreamingServer[TranscriptEntry]) error
+	ViewLogs(context.Context, *ViewLogsRequest) (*ViewLogsResponse, error)
 	mustEmbedUnimplementedCoreServiceServer()
 }
 
@@ -328,6 +341,9 @@ func (UnimplementedCoreServiceServer) PushToolTelemetry(context.Context, *PushTo
 }
 func (UnimplementedCoreServiceServer) StreamHumanMessages(*StreamHumanMessagesRequest, grpc.ServerStreamingServer[TranscriptEntry]) error {
 	return status.Error(codes.Unimplemented, "method StreamHumanMessages not implemented")
+}
+func (UnimplementedCoreServiceServer) ViewLogs(context.Context, *ViewLogsRequest) (*ViewLogsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ViewLogs not implemented")
 }
 func (UnimplementedCoreServiceServer) mustEmbedUnimplementedCoreServiceServer() {}
 func (UnimplementedCoreServiceServer) testEmbeddedByValue()                     {}
@@ -602,6 +618,24 @@ func _CoreService_StreamHumanMessages_Handler(srv interface{}, stream grpc.Serve
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type CoreService_StreamHumanMessagesServer = grpc.ServerStreamingServer[TranscriptEntry]
 
+func _CoreService_ViewLogs_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ViewLogsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).ViewLogs(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_ViewLogs_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).ViewLogs(ctx, req.(*ViewLogsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // CoreService_ServiceDesc is the grpc.ServiceDesc for CoreService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -660,6 +694,10 @@ var CoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "PushToolTelemetry",
 			Handler:    _CoreService_PushToolTelemetry_Handler,
+		},
+		{
+			MethodName: "ViewLogs",
+			Handler:    _CoreService_ViewLogs_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{
