@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Markdown } from "./Markdown";
 
 type Annotation = { quote: string; comment: string };
@@ -47,14 +47,28 @@ export function PlanCard({
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [selection, setSelection] = useState<SelectionPopover | null>(null);
   const [draft, setDraft] = useState("");
+  const [isExpanded, setIsExpanded] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
 
   if (!pending) {
     return (
-      <div className="flex items-center gap-1.5 text-[10.5px] text-base-content/40">
-        <span className="badge badge-ghost badge-xs">plan</span>
-        <span className="truncate">{plan.split("\n")[0]}</span>
-      </div>
+      <button
+        type="button"
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="flex items-start gap-1.5 text-[10.5px] text-base-content/40 hover:text-base-content/60 w-full text-left group"
+      >
+        <span className="badge badge-ghost badge-xs flex-none">plan approved</span>
+        {isExpanded ? (
+          <div className="flex-1 min-w-0">
+            <Markdown content={plan} />
+          </div>
+        ) : (
+          <span className="truncate flex-1">{plan.split("\n")[0]}</span>
+        )}
+        <span className="text-[10px] flex-none group-hover:text-base-content/60">
+          {isExpanded ? "▴" : "▾"}
+        </span>
+      </button>
     );
   }
 
@@ -178,7 +192,14 @@ export function PlanCard({
       )}
       <div className="flex items-center gap-2 mt-3">
         <button type="button" className="btn btn-success btn-sm" disabled={busy} onClick={onApprove}>
-          Approve
+          {busy ? (
+            <>
+              <span className="loading loading-spinner loading-xs"></span>
+              Approving...
+            </>
+          ) : (
+            "Approve"
+          )}
         </button>
         <button
           type="button"
@@ -208,7 +229,14 @@ export function PlanCard({
             disabled={busy || (!feedback.trim() && annotations.length === 0)}
             onClick={send}
           >
-            Send
+            {busy ? (
+              <>
+                <span className="loading loading-spinner loading-xs"></span>
+                Sending...
+              </>
+            ) : (
+              "Send"
+            )}
           </button>
         </div>
       )}

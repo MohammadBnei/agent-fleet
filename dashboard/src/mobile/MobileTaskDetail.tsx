@@ -46,7 +46,15 @@ function MobileQuestionCard({
   onSubmit: (answers: Record<string, string>) => void;
 }) {
   const [selected, setSelected] = useState<Record<number, string[]>>({});
+  const [isCollapsed, setIsCollapsed] = useState(false);
   const questions = parseQuestions(entry.text);
+
+  // Auto-collapse when answer is received
+  useEffect(() => {
+    if (answer && !isCollapsed) {
+      setIsCollapsed(true);
+    }
+  }, [answer, isCollapsed]);
 
   if (!questions) {
     return (
@@ -88,19 +96,30 @@ function MobileQuestionCard({
         background: "linear-gradient(180deg,rgba(224,169,78,.1),rgba(224,169,78,.03))",
       }}
     >
-      <div className="flex items-center gap-2">
+      <button
+        type="button"
+        onClick={() => answer && setIsCollapsed(!isCollapsed)}
+        className="flex items-center gap-2 w-full text-left"
+        disabled={!answer}
+      >
         {!answer && <span className="w-1.5 h-1.5 rounded-full bg-primary animate-fpulse" />}
-        <span className="text-[9px] tracking-[0.09em] font-semibold text-primary">
+        <span className="text-[9px] tracking-[0.09em] font-semibold text-primary flex-1">
           {answer ? "ANSWERED" : "QUESTION"}
         </span>
-      </div>
-      <div className="flex flex-col gap-3.5 mt-2.5">
-        {questions.map((q, qIndex) => (
-          <fieldset key={qIndex} className="flex flex-col gap-2">
-            <legend className="text-[13px] leading-relaxed text-base-content">{q.question}</legend>
-            {answer ? (
-              <div className="badge badge-outline">{answer[q.question] ?? "—"}</div>
-            ) : q.multiSelect ? (
+        {answer && (
+          <span className="text-[10px] text-base-content/40">
+            {isCollapsed ? "▾" : "▴"}
+          </span>
+        )}
+      </button>
+      {!isCollapsed && (
+        <div className="flex flex-col gap-3.5 mt-2.5">
+          {questions.map((q, qIndex) => (
+            <fieldset key={qIndex} className="flex flex-col gap-2">
+              <legend className="text-[13px] leading-relaxed text-base-content">{q.question}</legend>
+              {answer ? (
+                <div className="badge badge-outline">{answer[q.question] ?? "—"}</div>
+              ) : q.multiSelect ? (
               q.options.map((opt) => (
                 <label key={opt.label} className="flex items-start gap-2 cursor-pointer text-[12px]">
                   <input
@@ -137,10 +156,18 @@ function MobileQuestionCard({
         ))}
         {!answer && (
           <button type="button" className="btn btn-primary btn-sm" disabled={busy || !allAnswered} onClick={submit}>
-            Submit answer
+            {busy ? (
+              <>
+                <span className="loading loading-spinner loading-xs"></span>
+                Submitting...
+              </>
+            ) : (
+              "Submit answer"
+            )}
           </button>
         )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }
