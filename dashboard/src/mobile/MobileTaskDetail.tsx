@@ -28,7 +28,7 @@ import { JsonView } from "../components/JsonView";
 import { BypassConfirmModal } from "../components/BypassConfirmModal";
 import { Modal } from "../components/Modal";
 import { ActionsMenu } from "../components/ActionsMenu";
-import { prBadge } from "../pages/TaskList";
+import { prBadge, podStateBadge, staleBadge } from "../pages/TaskList";
 
 // Mirrors the "herd" mock's phone session screen (Agent Fleet Mobile.dc.html)
 // minus device chrome. Single-pane (list vs. detail), unlike desktop's
@@ -293,6 +293,8 @@ export function MobileTaskDetail({
   const todos = latestTodos(entries) ?? [];
   const done = todos.filter((t) => t.status === "completed").length;
   const prLink = prBadge(task);
+  const podBadge = podStateBadge(task);
+  const staleTag = staleBadge(task);
   const pendingQuestion = findPendingQuestion(entries);
   const pendingParsed = pendingQuestion ? parseQuestions(pendingQuestion.text) : null;
   const chipQuestion =
@@ -322,22 +324,38 @@ export function MobileTaskDetail({
   return (
     <div className="flex flex-col h-full bg-base-100">
       <div className="flex-none px-4 pt-3.5 pb-3 border-b border-base-content/10 bg-base-200">
-        <div className="flex items-center gap-2.5">
-          <button type="button" onClick={onBack} className="text-[17px] text-base-content/60 w-7 h-8 flex items-center">
+        <div className="flex items-start gap-2.5">
+          <button type="button" onClick={onBack} className="text-[17px] text-base-content/60 w-7 h-8 flex items-center flex-none">
             ‹
           </button>
           <div className="min-w-0 flex-1">
-            <div className="text-[13px] font-semibold text-base-content leading-tight truncate">
+            <div className="text-[13px] font-semibold text-base-content leading-tight break-words">
               {task.description}
             </div>
-            <div className="text-[10px] text-base-content/50 mt-1 flex items-center gap-2">
-              <span>
+            <div className="text-[10px] text-base-content/50 mt-1 flex items-center gap-2 flex-wrap">
+              <span className="whitespace-nowrap">
                 #{task.id.slice(0, 6)} · {task.repo}
               </span>
               {prLink && (
-                <a href={task.prUrl} target="_blank" rel="noreferrer" className={`text-[9px] font-semibold ${prLink.className}`}>
+                <a href={task.prUrl} target="_blank" rel="noreferrer" className={`text-[9px] font-semibold ${prLink.className} whitespace-nowrap`}>
                   {prLink.label}
                 </a>
+              )}
+              {podBadge && (
+                <span
+                  className={`px-1.5 py-0.5 rounded text-[9px] font-semibold border tracking-wide ${podBadge.className} whitespace-nowrap`}
+                  title={task.podMessage || undefined}
+                >
+                  POD {podBadge.label}
+                </span>
+              )}
+              {staleTag && (
+                <span
+                  className={`px-1.5 py-0.5 rounded text-[9px] font-semibold border tracking-wide ${staleTag.className} whitespace-nowrap`}
+                  title={staleTag.title}
+                >
+                  {staleTag.label}
+                </span>
               )}
             </div>
           </div>
@@ -352,11 +370,11 @@ export function MobileTaskDetail({
         </div>
         <div className="flex items-center gap-2.5 mt-3">
           {pendingQuestion && (
-            <span className="px-1.5 py-0.5 rounded bg-primary/15 border border-primary/45 text-[9px] font-semibold text-primary tracking-wide">
+            <span className="px-1.5 py-0.5 rounded bg-primary/15 border border-primary/45 text-[9px] font-semibold text-primary tracking-wide flex-none whitespace-nowrap">
               WAITING ON YOU
             </span>
           )}
-          <div className="flex-1 flex gap-1">
+          <div className="flex-1 flex gap-1 min-w-0">
             {todos.map((t, i) => (
               <div
                 key={i}
@@ -366,7 +384,7 @@ export function MobileTaskDetail({
               />
             ))}
           </div>
-          <span className="text-[10px] text-base-content/50 flex-none">
+          <span className="text-[10px] text-base-content/50 flex-none whitespace-nowrap">
             {done}/{todos.length}
           </span>
         </div>
