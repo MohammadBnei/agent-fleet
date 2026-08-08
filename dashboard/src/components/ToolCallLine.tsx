@@ -1,3 +1,4 @@
+import { memo } from "react";
 import type { TranscriptEntry } from "../gen/agentfleet/v1/transcript_pb";
 import { parseToolCallSummary } from "../transcript";
 
@@ -5,7 +6,8 @@ import { parseToolCallSummary } from "../transcript";
 // line — shared between mobile's exchange-zone feed and desktop's (when the
 // "Changes" toggle is on), same file-change info desktop's dedicated
 // CHANGES panel always shows regardless.
-export function ToolCallLine({ entry }: { entry: TranscriptEntry }) {
+// Memoized to prevent re-rendering when the entry hasn't changed.
+export const ToolCallLine = memo(function ToolCallLine({ entry }: { entry: TranscriptEntry }) {
   const summary = parseToolCallSummary(entry.text);
   const files = summary?.files ?? [];
   if (files.length === 0) return null;
@@ -22,4 +24,4 @@ export function ToolCallLine({ entry }: { entry: TranscriptEntry }) {
       {removed > 0 && <span className="text-warning flex-none">−{removed}</span>}
     </div>
   );
-}
+});

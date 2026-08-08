@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { client } from "../connectClient";
 import { TranscriptEntryType, type TranscriptEntry } from "../gen/agentfleet/v1/transcript_pb";
 import {
@@ -179,7 +179,8 @@ function MobileQuestionCard({
 // pair. USER stays here only as the orphaned-tool_result fallback (no
 // matching call, e.g. a truncated history) — the normal case is skipped by
 // the feed loop too, already folded into its pair's ToolCallItem.
-function MobileEntryBubble({ entry }: { entry: TranscriptEntry }) {
+// Memoized to prevent re-rendering entries that haven't changed.
+const MobileEntryBubble = memo(function MobileEntryBubble({ entry }: { entry: TranscriptEntry }) {
   if (entry.type === TranscriptEntryType.SYSTEM) {
     const info = parseSdkSystemInfo(entry.text);
     return (
@@ -246,7 +247,7 @@ function MobileEntryBubble({ entry }: { entry: TranscriptEntry }) {
       </div>
     </div>
   );
-}
+});
 
 export function MobileTaskDetail({
   taskId,
