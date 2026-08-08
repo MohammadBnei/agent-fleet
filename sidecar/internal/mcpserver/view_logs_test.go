@@ -120,13 +120,10 @@ func TestViewLogsHandler(t *testing.T) {
 
 			handler := viewLogsHandler(mock)
 
-			// Convert params to CallToolRequest
-			req := mcp.CallToolRequest{
-				Params: mcp.CallToolRequestParams{
-					Name: "view_logs",
-					Arguments: tt.params,
-				},
-			}
+			// Create CallToolRequest with test parameters
+			req := mcp.CallToolRequest{}
+			req.Params.Name = "view_logs"
+			req.Params.Arguments = tt.params
 
 			result, err := handler(context.Background(), req)
 
