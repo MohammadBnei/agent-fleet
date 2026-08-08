@@ -21,9 +21,10 @@ import (
 var ErrExists = errors.New("prompt snippet already exists")
 
 type Snippet struct {
-	ID   string
-	Name string
-	Text string
+	ID                       string
+	Name                     string
+	Text                     string
+	SuggestedPermissionMode  *string
 }
 
 type Store struct {
@@ -42,7 +43,7 @@ func (s *Store) SetOnChange(onChange func()) {
 }
 
 func (s *Store) List(ctx context.Context) ([]Snippet, error) {
-	rows, err := s.pool.Query(ctx, `SELECT id, name, text FROM prompt_snippets ORDER BY name`)
+	rows, err := s.pool.Query(ctx, `SELECT id, name, text, suggested_permission_mode FROM prompt_snippets ORDER BY name`)
 	if err != nil {
 		slog.Error("promptsnippets List", "error", err)
 		return nil, fmt.Errorf("list prompt snippets: %w", err)
@@ -55,7 +56,7 @@ func (s *Store) List(ctx context.Context) ([]Snippet, error) {
 	result := []Snippet{}
 	for rows.Next() {
 		var sn Snippet
-		if err := rows.Scan(&sn.ID, &sn.Name, &sn.Text); err != nil {
+		if err := rows.Scan(&sn.ID, &sn.Name, &sn.Text, &sn.SuggestedPermissionMode); err != nil {
 			slog.Error("promptsnippets List: scan", "error", err)
 			return nil, fmt.Errorf("scan prompt snippet: %w", err)
 		}
@@ -74,7 +75,7 @@ func (s *Store) GetByIDs(ctx context.Context, ids []string) ([]Snippet, error) {
 	if len(ids) == 0 {
 		return nil, nil
 	}
-	rows, err := s.pool.Query(ctx, `SELECT id, name, text FROM prompt_snippets WHERE id = ANY($1) ORDER BY name`, ids)
+	rows, err := s.pool.Query(ctx, `SELECT id, name, text, suggested_permission_mode FROM prompt_snippets WHERE id = ANY($1) ORDER BY name`, ids)
 	if err != nil {
 		slog.Error("promptsnippets GetByIDs", "error", err)
 		return nil, fmt.Errorf("get prompt snippets: %w", err)
@@ -84,7 +85,7 @@ func (s *Store) GetByIDs(ctx context.Context, ids []string) ([]Snippet, error) {
 	result := []Snippet{}
 	for rows.Next() {
 		var sn Snippet
-		if err := rows.Scan(&sn.ID, &sn.Name, &sn.Text); err != nil {
+		if err := rows.Scan(&sn.ID, &sn.Name, &sn.Text, &sn.SuggestedPermissionMode); err != nil {
 			slog.Error("promptsnippets GetByIDs: scan", "error", err)
 			return nil, fmt.Errorf("scan prompt snippet: %w", err)
 		}

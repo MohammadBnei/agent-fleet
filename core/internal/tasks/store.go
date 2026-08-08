@@ -89,14 +89,15 @@ func (s *Store) SetNudge(nudge func()) {
 // prompt_snippets the caller chose (dashboard) or "" (Discord's /task has
 // no snippet picker) — resolved once here, at creation time, and stored
 // as a frozen snapshot rather than a live reference, same reasoning as
-// description itself.
-func (s *Store) CreateTask(ctx context.Context, repo, description, guidance string, channelID, threadID *string) (string, error) {
+// description itself. model is the Claude model to use for this task; if
+// empty, the worker will fall back to the global CLAUDE_MODEL env var.
+func (s *Store) CreateTask(ctx context.Context, repo, description, guidance, model string, channelID, threadID *string) (string, error) {
 	var id string
 	err := s.pool.QueryRow(ctx, `
-		INSERT INTO tasks (repo, description, guidance, discord_channel_id, discord_thread_id)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO tasks (repo, description, guidance, model, discord_channel_id, discord_thread_id)
+		VALUES ($1, $2, $3, $4, $5, $6)
 		RETURNING id
-	`, repo, description, guidance, channelID, threadID).Scan(&id)
+	`, repo, description, guidance, model, channelID, threadID).Scan(&id)
 	if err != nil {
 		slog.Error("tasks CreateTask", "repo", repo, "error", err)
 		return "", fmt.Errorf("create task: %w", err)

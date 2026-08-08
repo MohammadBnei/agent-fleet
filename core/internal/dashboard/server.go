@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"strings"
 	"time"
 
@@ -99,16 +100,34 @@ func (s *Server) CreateTask(ctx context.Context, req *connect.Request[agentfleet
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("description is required"))
 	}
 
-	guidance, err := s.resolveGuidance(ctx, req.Msg.GetSnippetIds())
+	guidance, suggestedMode, err := s.resolveGuidanceAndMode(ctx, req.Msg.GetSnippetIds())
 	if err != nil {
 		slog.Error("dashboard CreateTask: snippet lookup", "repo", repo, "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
-	id, err := s.tasks.CreateTask(ctx, repo, description, guidance, nil, nil)
+	// Get model from request, validate it, and default to env if empty
+	model := req.Msg.GetModel()
+	if model == "" {
+		model = os.Getenv("CLAUDE_MODEL")
+		if model == "" {
+			model = "claude-opus-4-8"
+		}
+	} else if !isValidModel(model) {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("invalid model %q", model))
+	}
+
+	id, err := s.tasks.CreateTask(ctx, repo, description, guidance, model, nil, nil)
 	if err != nil {
 		slog.Error("dashboard CreateTask", "repo", repo, "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+
+	// If any snippet suggests a permission mode, auto-set it immediately
+	if suggestedMode != "" {
+		if err := s.tasks.SetPermissionMode(ctx, id, suggestedMode); err != nil {
+			slog.Warn("dashboard CreateTask: failed to set suggested permission mode", "taskId", id, "mode", suggestedMode, "error", err)
+		}
 	}
 	t, err := s.tasks.GetTask(ctx, id)
 	if err != nil {
@@ -119,23 +138,43 @@ func (s *Server) CreateTask(ctx context.Context, req *connect.Request[agentfleet
 	return connect.NewResponse(&agentfleetv1.CreateTaskResponse{Task: taskToProto(*t)}), nil
 }
 
-// resolveGuidance joins the text of the operator's selected prompt
+// resolveGuidanceAndMode joins the text of the operator's selected prompt
 // snippets, in the store's own name order, into the single guidance blob
-// stored on the task. Empty input returns "" — a task with no snippets
-// attached gets no extra guidance at all, just its own description.
-func (s *Server) resolveGuidance(ctx context.Context, snippetIDs []string) (string, error) {
+// stored on the task. Also returns the first non-empty suggested_permission_mode
+// from any of the snippets. Empty input returns "" for both — a task with no
+// snippets attached gets no extra guidance at all, just its own description.
+func (s *Server) resolveGuidanceAndMode(ctx context.Context, snippetIDs []string) (string, string, error) {
 	if len(snippetIDs) == 0 {
-		return "", nil
+		return "", "", nil
 	}
 	snippets, err := s.snippets.GetByIDs(ctx, snippetIDs)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	texts := make([]string, len(snippets))
+	suggestedMode := ""
 	for i, sn := range snippets {
 		texts[i] = sn.Text
+		// Take the first non-empty suggested mode
+		if suggestedMode == "" && sn.SuggestedPermissionMode != nil && *sn.SuggestedPermissionMode != "" {
+			suggestedMode = *sn.SuggestedPermissionMode
+		}
 	}
-	return strings.Join(texts, "\n\n"), nil
+	return strings.Join(texts, "\n\n"), suggestedMode, nil
+}
+
+// validModels is the allowlist of Claude models that can be selected per-task.
+// This prevents injection of arbitrary model names and ensures only supported
+// models are used.
+var validModels = map[string]bool{
+	"claude-opus-4-8":              true,
+	"claude-sonnet-4-5-20250929":   true,
+	"claude-opus-4-5-20251101":     true,
+	"claude-haiku-4-5-20250929":    true,
+}
+
+func isValidModel(model string) bool {
+	return validModels[model]
 }
 
 func (s *Server) GetTranscript(ctx context.Context, req *connect.Request[agentfleetv1.ReadTranscriptSinceRequest]) (*connect.Response[agentfleetv1.ReadTranscriptSinceResponse], error) {
