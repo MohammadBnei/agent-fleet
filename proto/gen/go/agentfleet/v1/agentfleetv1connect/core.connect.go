@@ -74,6 +74,8 @@ const (
 	// CoreServiceStreamHumanMessagesProcedure is the fully-qualified name of the CoreService's
 	// StreamHumanMessages RPC.
 	CoreServiceStreamHumanMessagesProcedure = "/agentfleet.v1.CoreService/StreamHumanMessages"
+	// CoreServiceViewLogsProcedure is the fully-qualified name of the CoreService's ViewLogs RPC.
+	CoreServiceViewLogsProcedure = "/agentfleet.v1.CoreService/ViewLogs"
 )
 
 // CoreServiceClient is a client for the agentfleet.v1.CoreService service.
@@ -107,6 +109,7 @@ type CoreServiceClient interface {
 	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	StreamHumanMessages(context.Context, *connect.Request[v1.StreamHumanMessagesRequest]) (*connect.ServerStreamForClient[v1.TranscriptEntry], error)
+	ViewLogs(context.Context, *connect.Request[v1.ViewLogsRequest]) (*connect.Response[v1.ViewLogsResponse], error)
 }
 
 // NewCoreServiceClient constructs a client for the agentfleet.v1.CoreService service. By default,
@@ -210,6 +213,12 @@ func NewCoreServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(coreServiceMethods.ByName("StreamHumanMessages")),
 			connect.WithClientOptions(opts...),
 		),
+		viewLogs: connect.NewClient[v1.ViewLogsRequest, v1.ViewLogsResponse](
+			httpClient,
+			baseURL+CoreServiceViewLogsProcedure,
+			connect.WithSchema(coreServiceMethods.ByName("ViewLogs")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -230,6 +239,7 @@ type coreServiceClient struct {
 	stillHoldsLease     *connect.Client[v1.StillHoldsLeaseRequest, v1.StillHoldsLeaseResponse]
 	pushToolTelemetry   *connect.Client[v1.PushToolTelemetryRequest, v1.PushToolTelemetryResponse]
 	streamHumanMessages *connect.Client[v1.StreamHumanMessagesRequest, v1.TranscriptEntry]
+	viewLogs            *connect.Client[v1.ViewLogsRequest, v1.ViewLogsResponse]
 }
 
 // ReportPodEvents calls agentfleet.v1.CoreService.ReportPodEvents.
@@ -307,6 +317,11 @@ func (c *coreServiceClient) StreamHumanMessages(ctx context.Context, req *connec
 	return c.streamHumanMessages.CallServerStream(ctx, req)
 }
 
+// ViewLogs calls agentfleet.v1.CoreService.ViewLogs.
+func (c *coreServiceClient) ViewLogs(ctx context.Context, req *connect.Request[v1.ViewLogsRequest]) (*connect.Response[v1.ViewLogsResponse], error) {
+	return c.viewLogs.CallUnary(ctx, req)
+}
+
 // CoreServiceHandler is an implementation of the agentfleet.v1.CoreService service.
 type CoreServiceHandler interface {
 	// buf:lint:ignore RPC_REQUEST_STANDARD_NAME
@@ -338,6 +353,7 @@ type CoreServiceHandler interface {
 	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	StreamHumanMessages(context.Context, *connect.Request[v1.StreamHumanMessagesRequest], *connect.ServerStream[v1.TranscriptEntry]) error
+	ViewLogs(context.Context, *connect.Request[v1.ViewLogsRequest]) (*connect.Response[v1.ViewLogsResponse], error)
 }
 
 // NewCoreServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -437,6 +453,12 @@ func NewCoreServiceHandler(svc CoreServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(coreServiceMethods.ByName("StreamHumanMessages")),
 		connect.WithHandlerOptions(opts...),
 	)
+	coreServiceViewLogsHandler := connect.NewUnaryHandler(
+		CoreServiceViewLogsProcedure,
+		svc.ViewLogs,
+		connect.WithSchema(coreServiceMethods.ByName("ViewLogs")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/agentfleet.v1.CoreService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case CoreServiceReportPodEventsProcedure:
@@ -469,6 +491,8 @@ func NewCoreServiceHandler(svc CoreServiceHandler, opts ...connect.HandlerOption
 			coreServicePushToolTelemetryHandler.ServeHTTP(w, r)
 		case CoreServiceStreamHumanMessagesProcedure:
 			coreServiceStreamHumanMessagesHandler.ServeHTTP(w, r)
+		case CoreServiceViewLogsProcedure:
+			coreServiceViewLogsHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -536,4 +560,8 @@ func (UnimplementedCoreServiceHandler) PushToolTelemetry(context.Context, *conne
 
 func (UnimplementedCoreServiceHandler) StreamHumanMessages(context.Context, *connect.Request[v1.StreamHumanMessagesRequest], *connect.ServerStream[v1.TranscriptEntry]) error {
 	return connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.CoreService.StreamHumanMessages is not implemented"))
+}
+
+func (UnimplementedCoreServiceHandler) ViewLogs(context.Context, *connect.Request[v1.ViewLogsRequest]) (*connect.Response[v1.ViewLogsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.CoreService.ViewLogs is not implemented"))
 }

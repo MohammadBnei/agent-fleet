@@ -253,6 +253,67 @@ export interface StreamHumanMessagesRequest {
   sinceSeq: number;
 }
 
+export interface QueryLogsRequest {
+  /** Optional - for fleet components */
+  taskId: string;
+  /** Default "agent-fleet" */
+  namespace: string;
+  /** worker|sidecar|core|provisioner|e2e|app */
+  component: string;
+  /** Optional - for component="app" */
+  appName: string;
+  /** debug|info|warn|error (empty = all) */
+  level: string;
+  /** RFC3339, inclusive */
+  startTime: string;
+  /** RFC3339, exclusive */
+  endTime: string;
+  /** Max entries (default 100, max 1000) */
+  limit: number;
+}
+
+export interface LogEntry {
+  /** RFC3339 */
+  timestamp: string;
+  level: string;
+  msg: string;
+  component: string;
+  podName: string;
+  namespace: string;
+  /** Other slog fields as JSON */
+  fieldsJson: string;
+}
+
+export interface QueryLogsResponse {
+  entries: LogEntry[];
+  totalCount: number;
+}
+
+/** For agents via MCP tool - supports both duration and explicit timestamps */
+export interface ViewLogsRequest {
+  /** Required */
+  component: string;
+  /** Optional */
+  appName: string;
+  /** Optional (default "agent-fleet") */
+  namespace: string;
+  /** Optional (empty = all) */
+  level: string;
+  /** "1h"|"30m"|"24h" (default "1h") - ignored if start_time set */
+  duration: string;
+  /** Default 50, max 1000 */
+  limit: number;
+  /** Optional: RFC3339 timestamp, overrides duration */
+  startTime: string;
+  /** Optional: RFC3339 timestamp (default: now) */
+  endTime: string;
+}
+
+export interface ViewLogsResponse {
+  /** Formatted for agent consumption */
+  logsText: string;
+}
+
 function createBasePodEvent(): PodEvent {
   return { taskId: "", kind: 0, phase: 0, podName: "", message: "" };
 }
@@ -1125,6 +1186,300 @@ export const StreamHumanMessagesRequest: MessageFns<StreamHumanMessagesRequest> 
   },
 };
 
+function createBaseQueryLogsRequest(): QueryLogsRequest {
+  return { taskId: "", namespace: "", component: "", appName: "", level: "", startTime: "", endTime: "", limit: 0 };
+}
+
+export const QueryLogsRequest: MessageFns<QueryLogsRequest> = {
+  fromJSON(object: any): QueryLogsRequest {
+    return {
+      taskId: isSet(object.taskId)
+        ? globalThis.String(object.taskId)
+        : isSet(object.task_id)
+        ? globalThis.String(object.task_id)
+        : "",
+      namespace: isSet(object.namespace) ? globalThis.String(object.namespace) : "",
+      component: isSet(object.component) ? globalThis.String(object.component) : "",
+      appName: isSet(object.appName)
+        ? globalThis.String(object.appName)
+        : isSet(object.app_name)
+        ? globalThis.String(object.app_name)
+        : "",
+      level: isSet(object.level) ? globalThis.String(object.level) : "",
+      startTime: isSet(object.startTime)
+        ? globalThis.String(object.startTime)
+        : isSet(object.start_time)
+        ? globalThis.String(object.start_time)
+        : "",
+      endTime: isSet(object.endTime)
+        ? globalThis.String(object.endTime)
+        : isSet(object.end_time)
+        ? globalThis.String(object.end_time)
+        : "",
+      limit: isSet(object.limit) ? globalThis.Number(object.limit) : 0,
+    };
+  },
+
+  toJSON(message: QueryLogsRequest): unknown {
+    const obj: any = {};
+    if (message.taskId !== "") {
+      obj.taskId = message.taskId;
+    }
+    if (message.namespace !== "") {
+      obj.namespace = message.namespace;
+    }
+    if (message.component !== "") {
+      obj.component = message.component;
+    }
+    if (message.appName !== "") {
+      obj.appName = message.appName;
+    }
+    if (message.level !== "") {
+      obj.level = message.level;
+    }
+    if (message.startTime !== "") {
+      obj.startTime = message.startTime;
+    }
+    if (message.endTime !== "") {
+      obj.endTime = message.endTime;
+    }
+    if (message.limit !== 0) {
+      obj.limit = Math.round(message.limit);
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<QueryLogsRequest>, I>>(base?: I): QueryLogsRequest {
+    return QueryLogsRequest.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<QueryLogsRequest>, I>>(object: I): QueryLogsRequest {
+    const message = createBaseQueryLogsRequest();
+    message.taskId = object.taskId ?? "";
+    message.namespace = object.namespace ?? "";
+    message.component = object.component ?? "";
+    message.appName = object.appName ?? "";
+    message.level = object.level ?? "";
+    message.startTime = object.startTime ?? "";
+    message.endTime = object.endTime ?? "";
+    message.limit = object.limit ?? 0;
+    return message;
+  },
+};
+
+function createBaseLogEntry(): LogEntry {
+  return { timestamp: "", level: "", msg: "", component: "", podName: "", namespace: "", fieldsJson: "" };
+}
+
+export const LogEntry: MessageFns<LogEntry> = {
+  fromJSON(object: any): LogEntry {
+    return {
+      timestamp: isSet(object.timestamp) ? globalThis.String(object.timestamp) : "",
+      level: isSet(object.level) ? globalThis.String(object.level) : "",
+      msg: isSet(object.msg) ? globalThis.String(object.msg) : "",
+      component: isSet(object.component) ? globalThis.String(object.component) : "",
+      podName: isSet(object.podName)
+        ? globalThis.String(object.podName)
+        : isSet(object.pod_name)
+        ? globalThis.String(object.pod_name)
+        : "",
+      namespace: isSet(object.namespace) ? globalThis.String(object.namespace) : "",
+      fieldsJson: isSet(object.fieldsJson)
+        ? globalThis.String(object.fieldsJson)
+        : isSet(object.fields_json)
+        ? globalThis.String(object.fields_json)
+        : "",
+    };
+  },
+
+  toJSON(message: LogEntry): unknown {
+    const obj: any = {};
+    if (message.timestamp !== "") {
+      obj.timestamp = message.timestamp;
+    }
+    if (message.level !== "") {
+      obj.level = message.level;
+    }
+    if (message.msg !== "") {
+      obj.msg = message.msg;
+    }
+    if (message.component !== "") {
+      obj.component = message.component;
+    }
+    if (message.podName !== "") {
+      obj.podName = message.podName;
+    }
+    if (message.namespace !== "") {
+      obj.namespace = message.namespace;
+    }
+    if (message.fieldsJson !== "") {
+      obj.fieldsJson = message.fieldsJson;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<LogEntry>, I>>(base?: I): LogEntry {
+    return LogEntry.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<LogEntry>, I>>(object: I): LogEntry {
+    const message = createBaseLogEntry();
+    message.timestamp = object.timestamp ?? "";
+    message.level = object.level ?? "";
+    message.msg = object.msg ?? "";
+    message.component = object.component ?? "";
+    message.podName = object.podName ?? "";
+    message.namespace = object.namespace ?? "";
+    message.fieldsJson = object.fieldsJson ?? "";
+    return message;
+  },
+};
+
+function createBaseQueryLogsResponse(): QueryLogsResponse {
+  return { entries: [], totalCount: 0 };
+}
+
+export const QueryLogsResponse: MessageFns<QueryLogsResponse> = {
+  fromJSON(object: any): QueryLogsResponse {
+    return {
+      entries: globalThis.Array.isArray(object?.entries) ? object.entries.map((e: any) => LogEntry.fromJSON(e)) : [],
+      totalCount: isSet(object.totalCount)
+        ? globalThis.Number(object.totalCount)
+        : isSet(object.total_count)
+        ? globalThis.Number(object.total_count)
+        : 0,
+    };
+  },
+
+  toJSON(message: QueryLogsResponse): unknown {
+    const obj: any = {};
+    if (message.entries?.length) {
+      obj.entries = message.entries.map((e) => LogEntry.toJSON(e));
+    }
+    if (message.totalCount !== 0) {
+      obj.totalCount = Math.round(message.totalCount);
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<QueryLogsResponse>, I>>(base?: I): QueryLogsResponse {
+    return QueryLogsResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<QueryLogsResponse>, I>>(object: I): QueryLogsResponse {
+    const message = createBaseQueryLogsResponse();
+    message.entries = object.entries?.map((e) => LogEntry.fromPartial(e)) || [];
+    message.totalCount = object.totalCount ?? 0;
+    return message;
+  },
+};
+
+function createBaseViewLogsRequest(): ViewLogsRequest {
+  return { component: "", appName: "", namespace: "", level: "", duration: "", limit: 0, startTime: "", endTime: "" };
+}
+
+export const ViewLogsRequest: MessageFns<ViewLogsRequest> = {
+  fromJSON(object: any): ViewLogsRequest {
+    return {
+      component: isSet(object.component) ? globalThis.String(object.component) : "",
+      appName: isSet(object.appName)
+        ? globalThis.String(object.appName)
+        : isSet(object.app_name)
+        ? globalThis.String(object.app_name)
+        : "",
+      namespace: isSet(object.namespace) ? globalThis.String(object.namespace) : "",
+      level: isSet(object.level) ? globalThis.String(object.level) : "",
+      duration: isSet(object.duration) ? globalThis.String(object.duration) : "",
+      limit: isSet(object.limit) ? globalThis.Number(object.limit) : 0,
+      startTime: isSet(object.startTime)
+        ? globalThis.String(object.startTime)
+        : isSet(object.start_time)
+        ? globalThis.String(object.start_time)
+        : "",
+      endTime: isSet(object.endTime)
+        ? globalThis.String(object.endTime)
+        : isSet(object.end_time)
+        ? globalThis.String(object.end_time)
+        : "",
+    };
+  },
+
+  toJSON(message: ViewLogsRequest): unknown {
+    const obj: any = {};
+    if (message.component !== "") {
+      obj.component = message.component;
+    }
+    if (message.appName !== "") {
+      obj.appName = message.appName;
+    }
+    if (message.namespace !== "") {
+      obj.namespace = message.namespace;
+    }
+    if (message.level !== "") {
+      obj.level = message.level;
+    }
+    if (message.duration !== "") {
+      obj.duration = message.duration;
+    }
+    if (message.limit !== 0) {
+      obj.limit = Math.round(message.limit);
+    }
+    if (message.startTime !== "") {
+      obj.startTime = message.startTime;
+    }
+    if (message.endTime !== "") {
+      obj.endTime = message.endTime;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<ViewLogsRequest>, I>>(base?: I): ViewLogsRequest {
+    return ViewLogsRequest.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<ViewLogsRequest>, I>>(object: I): ViewLogsRequest {
+    const message = createBaseViewLogsRequest();
+    message.component = object.component ?? "";
+    message.appName = object.appName ?? "";
+    message.namespace = object.namespace ?? "";
+    message.level = object.level ?? "";
+    message.duration = object.duration ?? "";
+    message.limit = object.limit ?? 0;
+    message.startTime = object.startTime ?? "";
+    message.endTime = object.endTime ?? "";
+    return message;
+  },
+};
+
+function createBaseViewLogsResponse(): ViewLogsResponse {
+  return { logsText: "" };
+}
+
+export const ViewLogsResponse: MessageFns<ViewLogsResponse> = {
+  fromJSON(object: any): ViewLogsResponse {
+    return {
+      logsText: isSet(object.logsText)
+        ? globalThis.String(object.logsText)
+        : isSet(object.logs_text)
+        ? globalThis.String(object.logs_text)
+        : "",
+    };
+  },
+
+  toJSON(message: ViewLogsResponse): unknown {
+    const obj: any = {};
+    if (message.logsText !== "") {
+      obj.logsText = message.logsText;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<ViewLogsResponse>, I>>(base?: I): ViewLogsResponse {
+    return ViewLogsResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<ViewLogsResponse>, I>>(object: I): ViewLogsResponse {
+    const message = createBaseViewLogsResponse();
+    message.logsText = object.logsText ?? "";
+    return message;
+  },
+};
+
 export interface CoreService {
   /** buf:lint:ignore RPC_REQUEST_STANDARD_NAME */
   ReportPodEvents(request: Observable<PodEvent>): Promise<ReportPodEventsResponse>;
@@ -1161,6 +1516,7 @@ export interface CoreService {
    * buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
    */
   StreamHumanMessages(request: StreamHumanMessagesRequest): Observable<TranscriptEntry>;
+  ViewLogs(request: ViewLogsRequest): Promise<ViewLogsResponse>;
 }
 
 type Builtin = Date | Function | Uint8Array | string | number | boolean | undefined;

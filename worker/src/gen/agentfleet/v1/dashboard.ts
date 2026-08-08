@@ -6,6 +6,7 @@
 
 /* eslint-disable */
 import { Observable } from "rxjs";
+import { QueryLogsRequest, QueryLogsResponse } from "./core.js";
 import { DeleteWorktreeRequest, DeleteWorktreeResponse, ListWorktreesRequest } from "./provisioner.js";
 import { ReadTranscriptSinceRequest, ReadTranscriptSinceResponse, TranscriptEntry } from "./transcript.js";
 
@@ -2277,6 +2278,11 @@ export interface DashboardService {
   CreatePromptSnippet(request: CreatePromptSnippetRequest): Promise<CreatePromptSnippetResponse>;
   UpdatePromptSnippet(request: UpdatePromptSnippetRequest): Promise<UpdatePromptSnippetResponse>;
   DeletePromptSnippet(request: DeletePromptSnippetRequest): Promise<DeletePromptSnippetResponse>;
+  /**
+   * Reuses core.proto's QueryLogsRequest/QueryLogsResponse
+   * buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+   */
+  QueryLogs(request: QueryLogsRequest): Promise<QueryLogsResponse>;
 }
 
 type Builtin = Date | Function | Uint8Array | string | number | boolean | undefined;
