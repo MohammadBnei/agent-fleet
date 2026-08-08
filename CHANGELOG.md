@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.21.3](https://github.com/MohammadBnei/agent-fleet/compare/1.21.2...1.21.3) (2026-08-08)
+
+
+### Bug Fixes
+
+* **core:** correct CoreServiceServer e2e method casing ([27a35c5](https://github.com/MohammadBnei/agent-fleet/commit/27a35c55ba7f3e9e9c4e3560632b8663c1b79ac4))
+
 ## [1.21.2](https://github.com/MohammadBnei/agent-fleet/compare/1.21.1...1.21.2) (2026-08-08)
 
 ## [1.21.1](https://github.com/MohammadBnei/agent-fleet/compare/1.21.0...1.21.1) (2026-08-08)
