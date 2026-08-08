@@ -1,5 +1,12 @@
 # Changelog
 
+# [1.23.0](https://github.com/MohammadBnei/agent-fleet/compare/1.22.1...1.23.0) (2026-08-08)
+
+
+### Features
+
+* **e2e:** agent-controlled app startup + ad-hoc run_command on the e2e pod ([#65](https://github.com/MohammadBnei/agent-fleet/issues/65)) ([11e1c4e](https://github.com/MohammadBnei/agent-fleet/commit/11e1c4e4de27bc32d9a850f33ca8e1fee07950b1))
+
 ## [1.22.1](https://github.com/MohammadBnei/agent-fleet/compare/1.22.0...1.22.1) (2026-08-08)
 
 
