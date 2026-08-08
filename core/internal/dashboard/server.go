@@ -38,10 +38,10 @@ type Server struct {
 	e2e         *provisionerclient.Client
 	hub         *Hub
 	maxInFlight int
-	loki        *lokiclient.Client
+	loki        lokiclient.Querier
 }
 
-func NewServer(taskStore *tasks.Store, transcr transcript.Store, journalStore *journal.Store, repoStore *repos.Store, snippetStore *promptsnippets.Store, e2e *provisionerclient.Client, hub *Hub, maxInFlight int, loki *lokiclient.Client) *Server {
+func NewServer(taskStore *tasks.Store, transcr transcript.Store, journalStore *journal.Store, repoStore *repos.Store, snippetStore *promptsnippets.Store, e2e *provisionerclient.Client, hub *Hub, maxInFlight int, loki lokiclient.Querier) *Server {
 	return &Server{tasks: taskStore, transcr: transcr, journal: journalStore, repos: repoStore, snippets: snippetStore, e2e: e2e, hub: hub, maxInFlight: maxInFlight, loki: loki}
 }
 

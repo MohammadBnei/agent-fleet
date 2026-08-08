@@ -10,12 +10,12 @@ import (
 
 // mockCoreClient is a test double for coreclient.Client
 type mockCoreClient struct {
-	viewLogsFunc func(ctx context.Context, component, appName, namespace, level, duration string, limit int32) (string, error)
+	viewLogsFunc func(ctx context.Context, component, appName, namespace, level, duration string, limit int32, startTime, endTime string) (string, error)
 }
 
-func (m *mockCoreClient) ViewLogs(ctx context.Context, component, appName, namespace, level, duration string, limit int32) (string, error) {
+func (m *mockCoreClient) ViewLogs(ctx context.Context, component, appName, namespace, level, duration string, limit int32, startTime, endTime string) (string, error) {
 	if m.viewLogsFunc != nil {
-		return m.viewLogsFunc(ctx, component, appName, namespace, level, duration, limit)
+		return m.viewLogsFunc(ctx, component, appName, namespace, level, duration, limit, startTime, endTime)
 	}
 	return "", nil
 }
@@ -101,7 +101,7 @@ func TestViewLogsHandler(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mock := &mockCoreClient{
-				viewLogsFunc: func(ctx context.Context, component, appName, namespace, level, duration string, limit int32) (string, error) {
+				viewLogsFunc: func(ctx context.Context, component, appName, namespace, level, duration string, limit int32, startTime, endTime string) (string, error) {
 					// Verify defaults are applied correctly
 					if component == "sidecar" {
 						if namespace != "agent-fleet" {

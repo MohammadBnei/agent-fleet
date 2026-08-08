@@ -40,10 +40,10 @@ type Server struct {
 	tasks       *tasks.Store
 	journal     *journal.Store
 	provisioner *provisionerclient.Client
-	loki        *lokiclient.Client
+	loki        lokiclient.Querier
 }
 
-func New(transcr transcript.Store, taskStore *tasks.Store, journalStore *journal.Store, provisioner *provisionerclient.Client, loki *lokiclient.Client) *Server {
+func New(transcr transcript.Store, taskStore *tasks.Store, journalStore *journal.Store, provisioner *provisionerclient.Client, loki lokiclient.Querier) *Server {
 	return &Server{transcr: transcr, tasks: taskStore, journal: journalStore, provisioner: provisioner, loki: loki}
 }
 
