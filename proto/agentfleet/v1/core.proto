@@ -175,6 +175,48 @@ message StreamHumanMessagesRequest {
   int64 since_seq = 2;
 }
 
+// --- Log querying (Loki queries, docs/adr/0013) ---
+
+message QueryLogsRequest {
+  string task_id = 1;        // Optional - for fleet components
+  string namespace = 2;       // Default "agent-fleet"
+  string component = 3;       // worker|sidecar|core|provisioner|e2e|app
+  string app_name = 4;        // Optional - for component="app"
+  string level = 5;           // debug|info|warn|error (empty = all)
+  string start_time = 6;      // RFC3339, inclusive
+  string end_time = 7;        // RFC3339, exclusive
+  int32 limit = 8;            // Max entries (default 100, max 1000)
+}
+
+message LogEntry {
+  string timestamp = 1;       // RFC3339
+  string level = 2;
+  string msg = 3;
+  string component = 4;
+  string pod_name = 5;
+  string namespace = 6;
+  string fields_json = 7;     // Other slog fields as JSON
+}
+
+message QueryLogsResponse {
+  repeated LogEntry entries = 1;
+  int32 total_count = 2;
+}
+
+// For agents via MCP tool - simplified interface with duration
+message ViewLogsRequest {
+  string component = 1;       // Required
+  string app_name = 2;        // Optional
+  string namespace = 3;       // Optional (default "agent-fleet")
+  string level = 4;           // Optional (empty = all)
+  string duration = 5;        // "1h"|"30m"|"24h" (default "1h")
+  int32 limit = 6;            // Default 50
+}
+
+message ViewLogsResponse {
+  string logs_text = 1;       // Formatted for agent consumption
+}
+
 service CoreService {
   // buf:lint:ignore RPC_REQUEST_STANDARD_NAME
   rpc ReportPodEvents(stream PodEvent) returns (ReportPodEventsResponse);
@@ -207,4 +249,6 @@ service CoreService {
   // buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
   // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
   rpc StreamHumanMessages(StreamHumanMessagesRequest) returns (stream TranscriptEntry);
+
+  rpc ViewLogs(ViewLogsRequest) returns (ViewLogsResponse);
 }

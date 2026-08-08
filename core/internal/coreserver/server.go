@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -22,6 +23,7 @@ import (
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/journal"
+	"github.com/MohammadBnei/agent-fleet/core/internal/lokiclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/provisionerclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/tasks"
 	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
@@ -38,10 +40,11 @@ type Server struct {
 	tasks       *tasks.Store
 	journal     *journal.Store
 	provisioner *provisionerclient.Client
+	loki        *lokiclient.Client
 }
 
-func New(transcr transcript.Store, taskStore *tasks.Store, journalStore *journal.Store, provisioner *provisionerclient.Client) *Server {
-	return &Server{transcr: transcr, tasks: taskStore, journal: journalStore, provisioner: provisioner}
+func New(transcr transcript.Store, taskStore *tasks.Store, journalStore *journal.Store, provisioner *provisionerclient.Client, loki *lokiclient.Client) *Server {
+	return &Server{transcr: transcr, tasks: taskStore, journal: journalStore, provisioner: provisioner, loki: loki}
 }
 
 // --- agent-facing (proxied MCP-shaped calls) ---
@@ -433,4 +436,99 @@ func protoTypeToString(t agentfleetv1.TranscriptEntryType) string {
 	default:
 		return ""
 	}
+}
+
+// --- Log querying (Loki queries, docs/adr/0013) ---
+
+// ViewLogs queries Loki for logs and returns formatted text for agent consumption.
+func (s *Server) ViewLogs(ctx context.Context, req *agentfleetv1.ViewLogsRequest) (*agentfleetv1.ViewLogsResponse, error) {
+	if req.GetComponent() == "" {
+		return nil, fmt.Errorf("component is required")
+	}
+
+	// Extract taskId from context metadata (sidecar includes it)
+	taskID := extractTaskIDFromMetadata(ctx)
+
+	// Parse duration -> start time
+	duration := parseDuration(req.GetDuration(), time.Hour) // default 1h
+	start := time.Now().Add(-duration)
+
+	// Apply defaults
+	namespace := req.GetNamespace()
+	if namespace == "" {
+		namespace = "agent-fleet"
+	}
+	limit := int(req.GetLimit())
+	if limit <= 0 {
+		limit = 50
+	}
+
+	// Query Loki
+	entries, err := s.loki.Query(ctx, lokiclient.QueryRequest{
+		TaskID:    taskID,
+		Namespace: namespace,
+		Component: req.GetComponent(),
+		AppName:   req.GetAppName(),
+		Level:     req.GetLevel(),
+		Start:     start,
+		End:       time.Now(),
+		Limit:     limit,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("query Loki: %w", err)
+	}
+
+	// Format for agent (table with timestamp, level, message)
+	text := formatLogsForAgent(entries)
+	return &agentfleetv1.ViewLogsResponse{LogsText: text}, nil
+}
+
+// extractTaskIDFromMetadata extracts task_id from gRPC metadata.
+// The sidecar includes this in every call.
+func extractTaskIDFromMetadata(ctx context.Context) string {
+	// TODO: Extract from gRPC metadata when sidecar implementation is done
+	// For now, return empty - this will cause Loki to query all pods
+	// of the specified component
+	return ""
+}
+
+// parseDuration parses a duration string like "1h", "30m", "24h".
+func parseDuration(s string, defaultDur time.Duration) time.Duration {
+	if s == "" {
+		return defaultDur
+	}
+	d, err := time.ParseDuration(s)
+	if err != nil {
+		slog.Warn("invalid duration, using default", "duration", s, "default", defaultDur)
+		return defaultDur
+	}
+	return d
+}
+
+// formatLogsForAgent formats log entries as a table for agent consumption.
+func formatLogsForAgent(entries []lokiclient.LogEntry) string {
+	if len(entries) == 0 {
+		return "No logs found."
+	}
+
+	var b strings.Builder
+	b.WriteString("Timestamp            Level  Message\n")
+	b.WriteString("-------------------  -----  -------\n")
+
+	for _, entry := range entries {
+		ts := entry.Timestamp.Format("2006-01-02 15:04:05")
+		level := entry.Level
+		if level == "" {
+			level = "info"
+		}
+		// Truncate long messages
+		msg := entry.Msg
+		if len(msg) > 80 {
+			msg = msg[:77] + "..."
+		}
+		fmt.Fprintf(&b, "%s  %-5s  %s\n", ts, level, msg)
+	}
+
+	fmt.Fprintf(&b, "\nShowing %d entries", len(entries))
+	return b.String()
 }

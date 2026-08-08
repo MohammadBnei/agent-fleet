@@ -227,3 +227,22 @@ func (c *Client) StreamHumanMessages(ctx context.Context, sinceSeq int64, onEntr
 		onEntry(entry)
 	}
 }
+
+// ViewLogs queries Loki for recent logs from fleet components or deployed
+// apps. Used by the view_logs MCP tool to help agents debug issues by viewing
+// logs from worker, sidecar, or deployed applications during e2e tests.
+// Returns formatted log text suitable for agent consumption.
+func (c *Client) ViewLogs(ctx context.Context, component, appName, namespace, level, duration string, limit int32) (string, error) {
+	resp, err := c.rpc.ViewLogs(ctx, &agentfleetv1.ViewLogsRequest{
+		Component: component,
+		AppName:   appName,
+		Namespace: namespace,
+		Level:     level,
+		Duration:  duration,
+		Limit:     limit,
+	})
+	if err != nil {
+		return "", fmt.Errorf("ViewLogs: %w", err)
+	}
+	return resp.GetLogsText(), nil
+}

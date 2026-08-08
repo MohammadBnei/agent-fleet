@@ -21,6 +21,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/discord"
 	"github.com/MohammadBnei/agent-fleet/core/internal/dispatch"
 	"github.com/MohammadBnei/agent-fleet/core/internal/journal"
+	"github.com/MohammadBnei/agent-fleet/core/internal/lokiclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/promptsnippets"
 	"github.com/MohammadBnei/agent-fleet/core/internal/provisionerclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/repos"
@@ -58,6 +59,9 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool) error {
 		return err
 	}
 	defer func() { _ = provisioner.Close() }()
+
+	// Create Loki client for log querying (docs/adr/0013)
+	loki := lokiclient.New(cfg.LokiURL)
 
 	var notifier transcript.Notifier = noopNotifier{}
 	if cfg.DiscordBotToken != "" {
@@ -108,7 +112,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool) error {
 	// reaches everything else (the old /mcp HTTP surface, and the direct-SQL
 	// calls worker/src/db.ts used to make) through this same service.
 	grpcServer := grpc.NewServer(grpc.UnaryInterceptor(coreserver.AccessLogInterceptor))
-	agentfleetv1.RegisterCoreServiceServer(grpcServer, coreserver.New(activityStore, taskStore, journalStore, provisioner))
+	agentfleetv1.RegisterCoreServiceServer(grpcServer, coreserver.New(activityStore, taskStore, journalStore, provisioner, loki))
 	grpcLis, err := net.Listen("tcp", ":"+cfg.GRPCPort)
 	if err != nil {
 		return err
@@ -123,7 +127,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool) error {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
-	dashboardSvc := dashboard.NewServer(taskStore, activityStore, journalStore, repoStore, snippetStore, provisioner, hub, cfg.MaxInFlight)
+	dashboardSvc := dashboard.NewServer(taskStore, activityStore, journalStore, repoStore, snippetStore, provisioner, hub, cfg.MaxInFlight, loki)
 	dashboardPath, dashboardHandler := agentfleetv1connect.NewDashboardServiceHandler(
 		dashboardSvc,
 		connect.WithInterceptors(dashboard.NewCSRFInterceptor(), dashboard.NewAccessLogInterceptor()),
