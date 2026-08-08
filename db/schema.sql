@@ -293,19 +293,28 @@ CREATE TABLE IF NOT EXISTS prompt_snippets (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Suggested permission mode for this snippet (NULL means no suggestion).
+-- When a task is created with snippets that have this set, the first
+-- non-null suggestion is auto-applied to the task's permission_mode.
+ALTER TABLE prompt_snippets ADD COLUMN IF NOT EXISTS suggested_permission_mode TEXT;
+
 -- Seeded with the content the old taskPrompt() used to force on every
 -- task, split into the same stages, so nothing is lost — just made
 -- optional and dashboard-editable rather than hardcoded and unconditional.
-INSERT INTO prompt_snippets (name, text) VALUES
+INSERT INTO prompt_snippets (name, text, suggested_permission_mode) VALUES
   ('Architecture interview',
-   'If this task involves an architecturally non-trivial decision (new component, schema/protocol/API shape, a one-way door — see the architecture-interview skill''s own DOOR classification), type "/architecture-interview" as your next message to run it before you plan. Otherwise say in one line why it''s skipped and move on.'),
+   'If this task involves an architecturally non-trivial decision (new component, schema/protocol/API shape, a one-way door — see the architecture-interview skill''s own DOOR classification), type "/architecture-interview" as your next message to run it before you plan. Otherwise say in one line why it''s skipped and move on.',
+   NULL),
   ('Post a plan for approval',
-   'Before implementing, post your plan via send_message (from="agent"), citing the specific files/paths you read and relied on. If Mohammad has put this session into plan mode (the dashboard''s mode picker), call ExitPlanMode with that same plan once you''re confident — it blocks for a real human decision the same way it does in Claude Code''s own plan mode. Outside plan mode, just proceed to implementing once you''ve posted the plan.'),
+   'Before implementing, post your plan via send_message (from="agent"), citing the specific files/paths you read and relied on. If Mohammad has put this session into plan mode (the dashboard''s mode picker), call ExitPlanMode with that same plan once you''re confident — it blocks for a real human decision the same way it does in Claude Code''s own plan mode. Outside plan mode, just proceed to implementing once you''ve posted the plan.',
+   'plan'),
   ('Doubt-driven review',
-   'Once you have a plan, if it involves a non-trivial decision per the doubt-driven-development skill''s own "When to Use" checklist, type "/doubt-driven-development" as your next message to run it. Otherwise say why it''s skipped and move on. Its cross-model escalation step is non-interactive in this environment — skip it and announce the skip.'),
+   'Once you have a plan, if it involves a non-trivial decision per the doubt-driven-development skill''s own "When to Use" checklist, type "/doubt-driven-development" as your next message to run it. Otherwise say why it''s skipped and move on. Its cross-model escalation step is non-interactive in this environment — skip it and announce the skip.',
+   NULL),
   ('Open a PR when done',
-   'Write the code following your plan, and add or update tests — run the repo''s test suite and make it pass; if there is no test suite, add one first. Update docs if relevant. Then commit your changes with git yourself via Bash, push, and open the PR yourself: push your branch (git push -u origin <your branch>), then gh pr create --title "..." --body "..." against this task''s base branch. Your git identity is already configured — just run the commands. Confirm the PR actually exists afterward (e.g. gh pr view) before telling Mohammad it''s ready.')
-ON CONFLICT (name) DO NOTHING;
+   'Write the code following your plan, and add or update tests — run the repo''s test suite and make it pass; if there is no test suite, add one first. Update docs if relevant. Then commit your changes with git yourself via Bash, push, and open the PR yourself: push your branch (git push -u origin <your branch>), then gh pr create --title "..." --body "..." against this task''s base branch. Your git identity is already configured — just run the commands. Confirm the PR actually exists afterward (e.g. gh pr view) before telling Mohammad it''s ready.',
+   NULL)
+ON CONFLICT (name) DO UPDATE SET suggested_permission_mode = EXCLUDED.suggested_permission_mode;
 
 -- Resolved once at task-creation time (DashboardService.CreateTask joins
 -- the operator's selected snippet texts) and stored alongside description

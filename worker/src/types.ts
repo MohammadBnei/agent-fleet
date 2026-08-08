@@ -19,4 +19,10 @@ export type Task = {
   // "" when no snippets were attached — the task's base prompt is then
   // just its own description, nothing more.
   guidance: string;
+  // The current SDK permission mode for this session, fetched from the
+  // database on startup instead of being passed via env vars.
+  permissionMode?: string;
+  // The Claude model to use for this task, fetched from the database on
+  // startup instead of being passed via env vars.
+  model?: string;
 };

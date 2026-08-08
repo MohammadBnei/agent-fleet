@@ -14,14 +14,7 @@ type ConfigureGitAuth = () => Promise<void>;
 
 const TASK_ID = process.env.TASK_ID;
 const TARGET_REPO = process.env.TARGET_REPO;
-const TASK_DESCRIPTION = process.env.TASK_DESCRIPTION;
-const TASK_GUIDANCE = process.env.TASK_GUIDANCE ?? "";
 const LEASE_ID = process.env.LEASE_ID;
-// Some target repos don't develop off `main` (e.g. vos-monolith's default
-// branch is `dev`) — the provisioner already knows this per-repo config
-// (tasks.KnownRepos in core) and threads it through at pod creation, same
-// as it does for the worktree's own base branch.
-const BASE_BRANCH = process.env.BASE_BRANCH ?? "main";
 const HEARTBEAT_INTERVAL_MS = 30_000;
 const WORKTREE_PATH = process.env.WORKTREE_PATH ?? "/workspace";
 
@@ -29,7 +22,24 @@ if (!TASK_ID || !TARGET_REPO || !LEASE_ID) {
   throw new Error("TASK_ID, TARGET_REPO, and LEASE_ID must be set");
 }
 
-const task: Task = { id: TASK_ID, repo: TARGET_REPO, description: TASK_DESCRIPTION ?? "", leaseId: LEASE_ID, baseBranch: BASE_BRANCH, guidance: TASK_GUIDANCE };
+// Task data (description, guidance, baseBranch, permissionMode, model) is now
+// fetched from the database on startup instead of being passed via env vars.
+// This ensures the worker always has fresh data from the source of truth, even
+// on resume/restart. Only pod identity (TASK_ID, TARGET_REPO, LEASE_ID) comes
+// from env vars.
+async function buildTask(sidecar: Sidecar): Promise<Task> {
+  const taskData = await sidecar.getTask();
+  return {
+    id: TASK_ID,
+    repo: TARGET_REPO,
+    leaseId: LEASE_ID,
+    description: taskData.description,
+    guidance: taskData.guidance,
+    baseBranch: taskData.baseBranch,
+    permissionMode: taskData.permissionMode,
+    model: taskData.model,
+  };
+}
 
 async function run(cmd: string[], cwd: string): Promise<string> {
   const proc = Bun.spawn(cmd, { cwd, stdout: "pipe", stderr: "pipe" });
@@ -81,11 +91,11 @@ async function withRetry<T>(fn: () => Promise<T>, attempts = 3, delayMs = 1000):
 // at a stale status until core's 10-min heartbeat reclaim (reliability
 // finding #9: a sidecar blip at exactly the wrong moment must not cascade
 // into total silence).
-async function reportStatus(sidecar: Sidecar, status: string, fields?: Parameters<Sidecar["setStatus"]>[1]): Promise<void> {
+async function reportStatus(sidecar: Sidecar, taskId: string, status: string, fields?: Parameters<Sidecar["setStatus"]>[1]): Promise<void> {
   try {
     await sidecar.setStatus(status, fields);
   } catch (err) {
-    log("error", "failed to report status to sidecar", { taskId: task.id, status, error: String(err) });
+    log("error", "failed to report status to sidecar", { taskId, status, error: String(err) });
   }
 }
 
@@ -100,6 +110,11 @@ export async function main(
   runTask: RunTask = defaultRunTask,
   configureGitAuth: ConfigureGitAuth = defaultConfigureGitAuth,
 ): Promise<void> {
+  // Fetch fresh task data from the database via sidecar. This ensures we have
+  // the latest description, guidance, baseBranch, permissionMode, and model
+  // from the source of truth, not stale env vars.
+  const task = await buildTask(sidecar);
+
   log("info", "task starting", { taskId: task.id, repo: task.repo });
   await sidecar
     .appendJournal(task.repo, "worker", "task.claimed", { taskId: task.id })
@@ -157,7 +172,7 @@ export async function main(
       process.exitCode = 1;
       return;
     }
-    await reportStatus(sidecar, "failed", { lastError: String(err) });
+    await reportStatus(sidecar, task.id, "failed", { lastError: String(err) });
     await sidecar
       .appendJournal(task.repo, "worker", "task.failed", { taskId: task.id, error: String(err) })
       .catch((journalErr) => log("warn", "appendJournal(task.failed) failed", { taskId: task.id, error: String(journalErr) }));
@@ -173,12 +188,12 @@ export async function main(
 // independently invokable for tests, without a top-level side effect.
 if (import.meta.main) {
   main().catch(async (err) => {
-    log("error", "worker crashed", { taskId: task.id, error: String(err) });
+    log("error", "worker crashed", { taskId: TASK_ID, error: String(err) });
     // Last-resort attempt: everything above already guards its own status
     // writes, so reaching here means something unforeseen slipped past
     // those guards — still worth one more try before the pod exits and
     // the task sits stuck until core's 10-min reclaim.
-    await reportStatus(defaultSidecar, "failed", { lastError: String(err) });
+    await reportStatus(defaultSidecar, TASK_ID!, "failed", { lastError: String(err) });
     process.exit(1);
   });
 }

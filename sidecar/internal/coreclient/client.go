@@ -19,10 +19,11 @@ import (
 )
 
 type Client struct {
-	conn   *grpc.ClientConn
-	rpc    agentfleetv1.CoreServiceClient
-	taskID string
-	ready  atomic.Bool
+	conn      *grpc.ClientConn
+	rpc       agentfleetv1.CoreServiceClient
+	dashboard agentfleetv1.DashboardServiceClient
+	taskID    string
+	ready     atomic.Bool
 }
 
 // retryServiceConfig bounds-retries transient "produced zero addresses"
@@ -53,7 +54,12 @@ func New(addr, taskID string) (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("dial core: %w", err)
 	}
-	return &Client{conn: conn, rpc: agentfleetv1.NewCoreServiceClient(conn), taskID: taskID}, nil
+	return &Client{
+		conn:      conn,
+		rpc:       agentfleetv1.NewCoreServiceClient(conn),
+		dashboard: agentfleetv1.NewDashboardServiceClient(conn),
+		taskID:    taskID,
+	}, nil
 }
 
 func (c *Client) Close() error {
@@ -248,4 +254,29 @@ func (c *Client) ViewLogs(ctx context.Context, component, appName, namespace, le
 		return "", fmt.Errorf("ViewLogs: %w", err)
 	}
 	return resp.GetLogsText(), nil
+}
+
+// GetTask fetches the task details from the database, including model and
+// permission_mode. Used by the worker on startup to fetch fresh task data
+// instead of relying on stale environment variables.
+func (c *Client) GetTask(ctx context.Context) (*agentfleetv1.Task, error) {
+	resp, err := c.dashboard.GetTask(ctx, &agentfleetv1.GetTaskRequest{Id: c.taskID})
+	if err != nil {
+		return nil, fmt.Errorf("GetTask: %w", err)
+	}
+	return resp.GetTask(), nil
+}
+
+// SetPermissionMode persists the current permission mode to the database.
+// Used by the worker to save the initial "default" mode or when the mode is
+// changed via the dashboard.
+func (c *Client) SetPermissionMode(ctx context.Context, mode string) error {
+	_, err := c.dashboard.SetPermissionMode(ctx, &agentfleetv1.SetPermissionModeRequest{
+		TaskId: c.taskID,
+		Mode:   mode,
+	})
+	if err != nil {
+		return fmt.Errorf("SetPermissionMode: %w", err)
+	}
+	return nil
 }

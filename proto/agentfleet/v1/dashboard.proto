@@ -83,6 +83,7 @@ message CreateTaskRequest {
   string repo = 1;
   string description = 2;
   repeated string snippet_ids = 3;
+  optional string model = 4;
 }
 
 message CreateTaskResponse {
@@ -327,6 +328,7 @@ message PromptSnippet {
   string id = 1;
   string name = 2;
   string text = 3;
+  optional string suggested_permission_mode = 4;
 }
 
 message ListPromptSnippetsRequest {}
