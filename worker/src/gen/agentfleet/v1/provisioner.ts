@@ -83,6 +83,11 @@ export interface GetE2eSessionStatusResponse {
 export interface CreateE2eSessionRequest {
   taskId: string;
   repo: string;
+  /**
+   * See RequestE2eEnvRequest.start_cmd in core.proto — passed through
+   * core unchanged.
+   */
+  startCmd: string;
 }
 
 export interface CreateE2eSessionResponse {
@@ -373,7 +378,7 @@ export const GetE2eSessionStatusResponse: MessageFns<GetE2eSessionStatusResponse
 };
 
 function createBaseCreateE2eSessionRequest(): CreateE2eSessionRequest {
-  return { taskId: "", repo: "" };
+  return { taskId: "", repo: "", startCmd: "" };
 }
 
 export const CreateE2eSessionRequest: MessageFns<CreateE2eSessionRequest> = {
@@ -385,6 +390,11 @@ export const CreateE2eSessionRequest: MessageFns<CreateE2eSessionRequest> = {
         ? globalThis.String(object.task_id)
         : "",
       repo: isSet(object.repo) ? globalThis.String(object.repo) : "",
+      startCmd: isSet(object.startCmd)
+        ? globalThis.String(object.startCmd)
+        : isSet(object.start_cmd)
+        ? globalThis.String(object.start_cmd)
+        : "",
     };
   },
 
@@ -396,6 +406,9 @@ export const CreateE2eSessionRequest: MessageFns<CreateE2eSessionRequest> = {
     if (message.repo !== "") {
       obj.repo = message.repo;
     }
+    if (message.startCmd !== "") {
+      obj.startCmd = message.startCmd;
+    }
     return obj;
   },
 
@@ -406,6 +419,7 @@ export const CreateE2eSessionRequest: MessageFns<CreateE2eSessionRequest> = {
     const message = createBaseCreateE2eSessionRequest();
     message.taskId = object.taskId ?? "";
     message.repo = object.repo ?? "";
+    message.startCmd = object.startCmd ?? "";
     return message;
   },
 };
