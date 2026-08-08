@@ -36,8 +36,11 @@ mock.module("./sidecarClient.js", () => ({
     pushedMessages.push({ seq, from, text, type });
     return seq;
   }),
-  saveSessionId: mock(async (id: string) => {
+  saveSessionId: mock(async (id: string, model: string) => {
     savedSessionIds.push(id);
+  }),
+  savePermissionMode: mock(async (mode: string) => {
+    // Mock implementation - just accept the call
   }),
   setStatus: mock(async (status: string) => {
     statusUpdates.push(status);

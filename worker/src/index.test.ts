@@ -34,6 +34,13 @@ test("a sidecar failure while reporting 'failed' status doesn't crash the proces
   const fakeSidecar = {
     heartbeat: async () => {},
     appendJournal: async () => {},
+    getTask: async () => ({
+      description: "test task",
+      guidance: "",
+      baseBranch: "main",
+      permissionMode: "default",
+      model: "claude-opus-4-8",
+    }),
     // "running" succeeds (mirrors a sidecar that was fine until the very
     // end); "failed" — the status write index.ts's catch block makes
     // right as the task is going down — throws, simulating the blip
@@ -94,6 +101,13 @@ function fakeSidecarRecording(statusCalls: { status: string; fields?: unknown }[
   return {
     heartbeat: async () => {},
     appendJournal: async () => {},
+    getTask: async () => ({
+      description: "test task",
+      guidance: "",
+      baseBranch: "main",
+      permissionMode: "default",
+      model: "claude-opus-4-8",
+    }),
     setStatus: async (status: string, fields?: unknown) => {
       statusCalls.push({ status, fields });
     },
