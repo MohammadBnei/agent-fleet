@@ -4,6 +4,7 @@ option go_package = "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet
 
 import "agentfleet/v1/provisioner.proto";
 import "agentfleet/v1/transcript.proto";
+import "agentfleet/v1/core.proto";
 
 // The web dashboard's API (see docs/adr/0015) — served over ConnectRPC by
 // fleet-core, consumed by a generated connect-web client in dashboard/.
@@ -405,4 +406,8 @@ service DashboardService {
   rpc CreatePromptSnippet(CreatePromptSnippetRequest) returns (CreatePromptSnippetResponse);
   rpc UpdatePromptSnippet(UpdatePromptSnippetRequest) returns (UpdatePromptSnippetResponse);
   rpc DeletePromptSnippet(DeletePromptSnippetRequest) returns (DeletePromptSnippetResponse);
+
+  // Reuses core.proto's QueryLogsRequest/QueryLogsResponse
+  // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+  rpc QueryLogs(QueryLogsRequest) returns (QueryLogsResponse);
 }

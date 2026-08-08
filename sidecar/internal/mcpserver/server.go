@@ -76,6 +76,16 @@ func New(core *coreclient.Client) http.Handler {
 		mcp.WithDescription("Tear down this task's e2e environment now, without waiting for the task to finish."),
 	), killEnvHandler(core))
 
+	s.AddTool(mcp.NewTool("view_logs",
+		mcp.WithDescription("View recent logs from fleet components or deployed apps. Returns formatted log entries. Use this to debug issues with worker, sidecar, or the deployed application during e2e tests."),
+		mcp.WithString("component", mcp.Required(), mcp.Description("Which component: worker|sidecar|core|provisioner|e2e|app")),
+		mcp.WithString("app_name", mcp.Description("For component=app, specify app name: dream-analyst|vos-monolith")),
+		mcp.WithString("namespace", mcp.Description("Kubernetes namespace (default: agent-fleet, use 'default' for deployed apps)")),
+		mcp.WithString("level", mcp.Description("Filter by level: debug|info|warn|error (default: all)")),
+		mcp.WithString("duration", mcp.Description("How far back: 1h|30m|6h|24h (default: 1h)")),
+		mcp.WithNumber("limit", mcp.Description("Max entries to return (default 50, max 1000)")),
+	), viewLogsHandler(core))
+
 	return server.NewStreamableHTTPServer(s)
 }
 
@@ -239,5 +249,30 @@ func protoTypeToString(t agentfleetv1.TranscriptEntryType) string {
 		return "answer"
 	default:
 		return ""
+	}
+}
+
+func viewLogsHandler(core *coreclient.Client) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		component := req.GetString("component", "")
+		if component == "" {
+			return mcp.NewToolResultError("component is required"), nil
+		}
+
+		appName := req.GetString("app_name", "")
+		namespace := req.GetString("namespace", "agent-fleet")
+		level := req.GetString("level", "")
+		duration := req.GetString("duration", "1h")
+		limit := int32(req.GetInt("limit", 50))
+
+		slog.Info("mcp view_logs", "component", component, "namespace", namespace, "level", level, "duration", duration)
+
+		logsText, err := core.ViewLogs(ctx, component, appName, namespace, level, duration, limit)
+		if err != nil {
+			slog.Error("mcp view_logs", "error", err)
+			return nil, fmt.Errorf("view_logs: %w", err)
+		}
+
+		return mcp.NewToolResultText(logsText), nil
 	}
 }

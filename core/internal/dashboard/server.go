@@ -21,6 +21,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1/agentfleetv1connect"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/journal"
+	"github.com/MohammadBnei/agent-fleet/core/internal/lokiclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/promptsnippets"
 	"github.com/MohammadBnei/agent-fleet/core/internal/provisionerclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/repos"
@@ -37,10 +38,11 @@ type Server struct {
 	e2e         *provisionerclient.Client
 	hub         *Hub
 	maxInFlight int
+	loki        *lokiclient.Client
 }
 
-func NewServer(taskStore *tasks.Store, transcr transcript.Store, journalStore *journal.Store, repoStore *repos.Store, snippetStore *promptsnippets.Store, e2e *provisionerclient.Client, hub *Hub, maxInFlight int) *Server {
-	return &Server{tasks: taskStore, transcr: transcr, journal: journalStore, repos: repoStore, snippets: snippetStore, e2e: e2e, hub: hub, maxInFlight: maxInFlight}
+func NewServer(taskStore *tasks.Store, transcr transcript.Store, journalStore *journal.Store, repoStore *repos.Store, snippetStore *promptsnippets.Store, e2e *provisionerclient.Client, hub *Hub, maxInFlight int, loki *lokiclient.Client) *Server {
+	return &Server{tasks: taskStore, transcr: transcr, journal: journalStore, repos: repoStore, snippets: snippetStore, e2e: e2e, hub: hub, maxInFlight: maxInFlight, loki: loki}
 }
 
 var _ agentfleetv1connect.DashboardServiceHandler = (*Server)(nil)
@@ -724,4 +726,73 @@ func stringToProtoType(s string) agentfleetv1.TranscriptEntryType {
 	default:
 		return agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_UNSPECIFIED
 	}
+}
+
+// QueryLogs queries Loki for log entries from fleet components or deployed
+// apps. Used by the dashboard's Logs tab to display logs for a specific task,
+// component, or deployed application. Returns structured log entries with
+// timestamp, level, message, and other fields.
+func (s *Server) QueryLogs(ctx context.Context, req *connect.Request[agentfleetv1.QueryLogsRequest]) (*connect.Response[agentfleetv1.QueryLogsResponse], error) {
+	// Parse time strings (RFC3339)
+	start, err := time.Parse(time.RFC3339, req.Msg.GetStartTime())
+	if err != nil {
+		slog.Error("dashboard QueryLogs: invalid start_time", "start_time", req.Msg.GetStartTime(), "error", err)
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("invalid start_time: %w", err))
+	}
+	end, err := time.Parse(time.RFC3339, req.Msg.GetEndTime())
+	if err != nil {
+		slog.Error("dashboard QueryLogs: invalid end_time", "end_time", req.Msg.GetEndTime(), "error", err)
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("invalid end_time: %w", err))
+	}
+
+	// Default namespace to agent-fleet if not specified
+	namespace := req.Msg.GetNamespace()
+	if namespace == "" {
+		namespace = "agent-fleet"
+	}
+
+	// Default limit to 100 if not specified, cap at 1000
+	limit := int(req.Msg.GetLimit())
+	if limit == 0 {
+		limit = 100
+	}
+	if limit > 1000 {
+		limit = 1000
+	}
+
+	// Query Loki via lokiclient
+	entries, err := s.loki.Query(ctx, lokiclient.QueryRequest{
+		TaskID:    req.Msg.GetTaskId(),
+		Namespace: namespace,
+		Component: req.Msg.GetComponent(),
+		AppName:   req.Msg.GetAppName(),
+		Level:     req.Msg.GetLevel(),
+		Start:     start,
+		End:       end,
+		Limit:     limit,
+	})
+	if err != nil {
+		slog.Error("dashboard QueryLogs: Loki query failed", "error", err)
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("query Loki: %w", err))
+	}
+
+	// Convert to proto
+	protoEntries := make([]*agentfleetv1.LogEntry, len(entries))
+	for i, e := range entries {
+		protoEntries[i] = &agentfleetv1.LogEntry{
+			Timestamp:  e.Timestamp.Format(time.RFC3339),
+			Level:      e.Level,
+			Msg:        e.Msg,
+			Component:  e.Component,
+			PodName:    e.PodName,
+			Namespace:  e.Namespace,
+			FieldsJson: e.FieldsJSON,
+		}
+	}
+
+	slog.Info("dashboard QueryLogs", "component", req.Msg.GetComponent(), "count", len(entries))
+	return connect.NewResponse(&agentfleetv1.QueryLogsResponse{
+		Entries:    protoEntries,
+		TotalCount: int32(len(entries)),
+	}), nil
 }
