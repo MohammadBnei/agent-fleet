@@ -381,6 +381,7 @@ type CreateTaskRequest struct {
 	Repo          string                 `protobuf:"bytes,1,opt,name=repo,proto3" json:"repo,omitempty"`
 	Description   string                 `protobuf:"bytes,2,opt,name=description,proto3" json:"description,omitempty"`
 	SnippetIds    []string               `protobuf:"bytes,3,rep,name=snippet_ids,json=snippetIds,proto3" json:"snippet_ids,omitempty"`
+	Model         *string                `protobuf:"bytes,4,opt,name=model,proto3,oneof" json:"model,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -434,6 +435,13 @@ func (x *CreateTaskRequest) GetSnippetIds() []string {
 		return x.SnippetIds
 	}
 	return nil
+}
+
+func (x *CreateTaskRequest) GetModel() string {
+	if x != nil && x.Model != nil {
+		return *x.Model
+	}
+	return ""
 }
 
 type CreateTaskResponse struct {
@@ -2246,12 +2254,13 @@ func (x *DeleteRepoResponse) GetStatus() string {
 // task's base prompt is just its own description; anything more is one of
 // these, picked per task, not forced on every task regardless of size.
 type PromptSnippet struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	Text          string                 `protobuf:"bytes,3,opt,name=text,proto3" json:"text,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state                   protoimpl.MessageState `protogen:"open.v1"`
+	Id                      string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Name                    string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Text                    string                 `protobuf:"bytes,3,opt,name=text,proto3" json:"text,omitempty"`
+	SuggestedPermissionMode *string                `protobuf:"bytes,4,opt,name=suggested_permission_mode,json=suggestedPermissionMode,proto3,oneof" json:"suggested_permission_mode,omitempty"`
+	unknownFields           protoimpl.UnknownFields
+	sizeCache               protoimpl.SizeCache
 }
 
 func (x *PromptSnippet) Reset() {
@@ -2301,6 +2310,13 @@ func (x *PromptSnippet) GetName() string {
 func (x *PromptSnippet) GetText() string {
 	if x != nil {
 		return x.Text
+	}
+	return ""
+}
+
+func (x *PromptSnippet) GetSuggestedPermissionMode() string {
+	if x != nil && x.SuggestedPermissionMode != nil {
+		return *x.SuggestedPermissionMode
 	}
 	return ""
 }
@@ -2716,12 +2732,14 @@ const file_agentfleet_v1_dashboard_proto_rawDesc = "" +
 	"\x0eGetTaskRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\":\n" +
 	"\x0fGetTaskResponse\x12'\n" +
-	"\x04task\x18\x01 \x01(\v2\x13.agentfleet.v1.TaskR\x04task\"j\n" +
+	"\x04task\x18\x01 \x01(\v2\x13.agentfleet.v1.TaskR\x04task\"\x8f\x01\n" +
 	"\x11CreateTaskRequest\x12\x12\n" +
 	"\x04repo\x18\x01 \x01(\tR\x04repo\x12 \n" +
 	"\vdescription\x18\x02 \x01(\tR\vdescription\x12\x1f\n" +
 	"\vsnippet_ids\x18\x03 \x03(\tR\n" +
-	"snippetIds\"=\n" +
+	"snippetIds\x12\x19\n" +
+	"\x05model\x18\x04 \x01(\tH\x00R\x05model\x88\x01\x01B\b\n" +
+	"\x06_model\"=\n" +
 	"\x12CreateTaskResponse\x12'\n" +
 	"\x04task\x18\x01 \x01(\v2\x13.agentfleet.v1.TaskR\x04task\"O\n" +
 	"\x17StreamTranscriptRequest\x12\x17\n" +
@@ -2832,11 +2850,13 @@ const file_agentfleet_v1_dashboard_proto_rawDesc = "" +
 	"\x11DeleteRepoRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\",\n" +
 	"\x12DeleteRepoResponse\x12\x16\n" +
-	"\x06status\x18\x01 \x01(\tR\x06status\"G\n" +
+	"\x06status\x18\x01 \x01(\tR\x06status\"\xa6\x01\n" +
 	"\rPromptSnippet\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x12\n" +
-	"\x04text\x18\x03 \x01(\tR\x04text\"\x1b\n" +
+	"\x04text\x18\x03 \x01(\tR\x04text\x12?\n" +
+	"\x19suggested_permission_mode\x18\x04 \x01(\tH\x00R\x17suggestedPermissionMode\x88\x01\x01B\x1c\n" +
+	"\x1a_suggested_permission_mode\"\x1b\n" +
 	"\x19ListPromptSnippetsRequest\"V\n" +
 	"\x1aListPromptSnippetsResponse\x128\n" +
 	"\bsnippets\x18\x01 \x03(\v2\x1c.agentfleet.v1.PromptSnippetR\bsnippets\"D\n" +
@@ -3041,8 +3061,10 @@ func file_agentfleet_v1_dashboard_proto_init() {
 	file_agentfleet_v1_transcript_proto_init()
 	file_agentfleet_v1_core_proto_init()
 	file_agentfleet_v1_dashboard_proto_msgTypes[0].OneofWrappers = []any{}
+	file_agentfleet_v1_dashboard_proto_msgTypes[5].OneofWrappers = []any{}
 	file_agentfleet_v1_dashboard_proto_msgTypes[10].OneofWrappers = []any{}
 	file_agentfleet_v1_dashboard_proto_msgTypes[26].OneofWrappers = []any{}
+	file_agentfleet_v1_dashboard_proto_msgTypes[40].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

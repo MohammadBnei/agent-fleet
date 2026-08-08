@@ -106,6 +106,7 @@ export interface CreateTaskRequest {
   repo: string;
   description: string;
   snippetIds: string[];
+  model?: string | undefined;
 }
 
 export interface CreateTaskResponse {
@@ -376,6 +377,7 @@ export interface PromptSnippet {
   id: string;
   name: string;
   text: string;
+  suggestedPermissionMode?: string | undefined;
 }
 
 export interface ListPromptSnippetsRequest {
@@ -670,7 +672,7 @@ export const GetTaskResponse: MessageFns<GetTaskResponse> = {
 };
 
 function createBaseCreateTaskRequest(): CreateTaskRequest {
-  return { repo: "", description: "", snippetIds: [] };
+  return { repo: "", description: "", snippetIds: [], model: undefined };
 }
 
 export const CreateTaskRequest: MessageFns<CreateTaskRequest> = {
@@ -683,6 +685,7 @@ export const CreateTaskRequest: MessageFns<CreateTaskRequest> = {
         : globalThis.Array.isArray(object?.snippet_ids)
         ? object.snippet_ids.map((e: any) => globalThis.String(e))
         : [],
+      model: isSet(object.model) ? globalThis.String(object.model) : undefined,
     };
   },
 
@@ -697,6 +700,9 @@ export const CreateTaskRequest: MessageFns<CreateTaskRequest> = {
     if (message.snippetIds?.length) {
       obj.snippetIds = message.snippetIds;
     }
+    if (message.model !== undefined) {
+      obj.model = message.model;
+    }
     return obj;
   },
 
@@ -708,6 +714,7 @@ export const CreateTaskRequest: MessageFns<CreateTaskRequest> = {
     message.repo = object.repo ?? "";
     message.description = object.description ?? "";
     message.snippetIds = object.snippetIds?.map((e) => e) || [];
+    message.model = object.model ?? undefined;
     return message;
   },
 };
@@ -1951,7 +1958,7 @@ export const DeleteRepoResponse: MessageFns<DeleteRepoResponse> = {
 };
 
 function createBasePromptSnippet(): PromptSnippet {
-  return { id: "", name: "", text: "" };
+  return { id: "", name: "", text: "", suggestedPermissionMode: undefined };
 }
 
 export const PromptSnippet: MessageFns<PromptSnippet> = {
@@ -1960,6 +1967,11 @@ export const PromptSnippet: MessageFns<PromptSnippet> = {
       id: isSet(object.id) ? globalThis.String(object.id) : "",
       name: isSet(object.name) ? globalThis.String(object.name) : "",
       text: isSet(object.text) ? globalThis.String(object.text) : "",
+      suggestedPermissionMode: isSet(object.suggestedPermissionMode)
+        ? globalThis.String(object.suggestedPermissionMode)
+        : isSet(object.suggested_permission_mode)
+        ? globalThis.String(object.suggested_permission_mode)
+        : undefined,
     };
   },
 
@@ -1974,6 +1986,9 @@ export const PromptSnippet: MessageFns<PromptSnippet> = {
     if (message.text !== "") {
       obj.text = message.text;
     }
+    if (message.suggestedPermissionMode !== undefined) {
+      obj.suggestedPermissionMode = message.suggestedPermissionMode;
+    }
     return obj;
   },
 
@@ -1985,6 +2000,7 @@ export const PromptSnippet: MessageFns<PromptSnippet> = {
     message.id = object.id ?? "";
     message.name = object.name ?? "";
     message.text = object.text ?? "";
+    message.suggestedPermissionMode = object.suggestedPermissionMode ?? undefined;
     return message;
   },
 };
