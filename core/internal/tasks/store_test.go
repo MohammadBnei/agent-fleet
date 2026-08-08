@@ -410,7 +410,7 @@ func TestSoftDelete_HidesFromGetAndList(t *testing.T) {
 	ctx := context.Background()
 	store := NewStore(pool)
 
-	id, err := store.CreateTask(ctx, "dream-analyst", "to be deleted", "", nil, nil)
+	id, err := store.CreateTask(ctx, "dream-analyst", "to be deleted", "", "", nil, nil)
 	if err != nil {
 		t.Fatalf("create task: %v", err)
 	}
@@ -446,7 +446,7 @@ func TestMarkStopRequested_DoesNotResetAnExistingTimestamp(t *testing.T) {
 	ctx := context.Background()
 	store := NewStore(pool)
 
-	id, err := store.CreateTask(ctx, "dream-analyst", "task", "", nil, nil)
+	id, err := store.CreateTask(ctx, "dream-analyst", "task", "", "", nil, nil)
 	if err != nil {
 		t.Fatalf("create task: %v", err)
 	}
@@ -485,7 +485,7 @@ func TestRefreshLease_ClearsStaleStopRequest(t *testing.T) {
 	ctx := context.Background()
 	store := NewStore(pool)
 
-	id, err := store.CreateTask(ctx, "dream-analyst", "task", "", nil, nil)
+	id, err := store.CreateTask(ctx, "dream-analyst", "task", "", "", nil, nil)
 	if err != nil {
 		t.Fatalf("create task: %v", err)
 	}
