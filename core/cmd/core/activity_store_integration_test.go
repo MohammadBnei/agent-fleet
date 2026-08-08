@@ -51,6 +51,7 @@ func newActivityTestPool(t *testing.T) *pgxpool.Pool {
 			id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 			repo            TEXT NOT NULL,
 			description     TEXT NOT NULL,
+			guidance        TEXT NOT NULL DEFAULT '',
 			status          TEXT NOT NULL DEFAULT 'pending',
 			discord_channel_id TEXT,
 			last_active_at  TIMESTAMPTZ,
