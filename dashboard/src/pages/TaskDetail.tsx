@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { client } from "../connectClient";
 import type { Task } from "../gen/agentfleet/v1/dashboard_pb";
-import { podStateBadge, staleBadge, heartbeatLabel, prBadge } from "./TaskList";
+import { podStateBadge, staleBadge, heartbeatLabel, prBadge, isPodPhaseLive } from "./TaskList";
 import { TranscriptEntryType, type TranscriptEntry } from "../gen/agentfleet/v1/transcript_pb";
 import {
   parseQuestions,
   parseAnswers,
   findPendingQuestion,
   findPendingPermissions,
+  isCogitating,
   latestToolCallSummary,
   latestSlashCommands,
   parseSdkSystemInfo,
@@ -444,6 +445,7 @@ export function TaskDetail({
     pendingParsed && pendingParsed.length === 1 && !pendingParsed[0].multiSelect ? pendingParsed[0] : null;
   const changes = latestToolCallSummary(entries)?.files ?? null;
   const pendingPermissions = findPendingPermissions(entries);
+  const cogitating = isCogitating(entries, isPodPhaseLive(task.podPhase), pendingPermissions.length > 0, pendingQuestion !== null);
   const toolCallPairs = buildToolCallPairs(entries);
   const toolCallPairsBySeq = new Map(toolCallPairs.map((p) => [p.call.seq, p]));
   const consumedResultSeqs = pairedResultSeqs(toolCallPairs);
@@ -469,6 +471,12 @@ export function TaskDetail({
               title={task.podMessage || undefined}
             >
               POD {podBadge.label}
+            </span>
+          )}
+          {cogitating && (
+            <span className="px-2 py-0.5 rounded text-[9.5px] font-semibold border tracking-wide border-info/45 bg-info/10 text-info flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-info animate-fpulse" />
+              THINKING
             </span>
           )}
           {staleTag && (

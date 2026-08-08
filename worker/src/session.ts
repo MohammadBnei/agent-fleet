@@ -241,6 +241,15 @@ export async function runTask(task: Task): Promise<TaskResult> {
         "mcp__agent-fleet-sidecar__kill_env",
         "mcp__agent-fleet-sidecar__*",
       ],
+      // The SDK's own built-in "AskUserQuestion" (distinct from the
+      // mcp__agent-fleet-sidecar__ one above) is available by default and
+      // has the same name/shape docs/adr/0018 deliberately mirrored — the
+      // model reaches for whichever it sees first, and the native one
+      // falls through canUseTool into the generic PermissionCard (raw
+      // JSON + Allow/Deny) instead of the dashboard's QUESTION form, with
+      // no way to actually deliver a chosen answer back. Removing it from
+      // context forces the only question tool that's actually wired up.
+      disallowedTools: ["AskUserQuestion"],
       // No tool classification here at all — the SDK's own permission mode
       // already decides when canUseTool gets invoked (bypassPermissions
       // skips it entirely, acceptEdits skips it for file edits, plan blocks
