@@ -294,7 +294,8 @@ export function MobileTaskDetail({
   const todos = latestTodos(entries) ?? [];
   const done = todos.filter((t) => t.status === "completed").length;
   const prLink = prBadge(task);
-  const podBadge = podStateBadge(task);
+  // Hide PROVISIONING badge if we already have transcript entries (agent is responding)
+  const podBadge = task.podPhase === "POD_PHASE_PROVISIONING" && entries.length > 0 ? null : podStateBadge(task);
   const staleTag = staleBadge(task);
   const pendingQuestion = findPendingQuestion(entries);
   const pendingParsed = pendingQuestion ? parseQuestions(pendingQuestion.text) : null;
@@ -330,7 +331,7 @@ export function MobileTaskDetail({
             ‹
           </button>
           <div className="min-w-0 flex-1">
-            <div className="text-[13px] font-semibold text-base-content leading-tight break-words">
+            <div className="text-[13px] font-semibold text-base-content leading-tight break-words line-clamp-2">
               {task.description}
             </div>
             <div className="text-[10px] text-base-content/50 mt-1 flex items-center gap-2 flex-wrap">

@@ -4,14 +4,21 @@ import { useCallback, useEffect, useRef, useState } from "react";
 // streams in, and a reader scrolled up to review history shouldn't have to
 // hunt for the end. Runs the check after every render (not just onScroll)
 // so content growing while already at the bottom doesn't flip the button on.
-export function useAtBottom<T extends HTMLElement>(threshold = 24) {
+export function useAtBottom<T extends HTMLElement>(threshold = 100) {
   const ref = useRef<T>(null);
   const [atBottom, setAtBottom] = useState(true);
 
   const checkAtBottom = useCallback(() => {
     const el = ref.current;
     if (!el) return;
-    setAtBottom(el.scrollHeight - el.scrollTop - el.clientHeight < threshold);
+
+    // Use requestAnimationFrame for more reliable scroll measurements,
+    // especially on mobile where scroll events can fire before layout completes
+    requestAnimationFrame(() => {
+      if (!el) return;
+      const isAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight < threshold;
+      setAtBottom(isAtBottom);
+    });
   }, [threshold]);
 
   useEffect(() => {
