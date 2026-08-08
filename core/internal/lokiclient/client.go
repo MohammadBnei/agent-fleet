@@ -61,7 +61,7 @@ type LogEntry struct {
 // Query executes a LogQL query and returns parsed log entries.
 func (c *Client) Query(ctx context.Context, req QueryRequest) ([]LogEntry, error) {
 	if c.baseURL == "" {
-		return nil, fmt.Errorf("Loki not configured (LOKI_URL is empty)")
+		return nil, fmt.Errorf("loki not configured (LOKI_URL is empty)")
 	}
 
 	// Build LogQL query
@@ -93,11 +93,13 @@ func (c *Client) Query(ctx context.Context, req QueryRequest) ([]LogEntry, error
 	if err != nil {
 		return nil, fmt.Errorf("query Loki: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("Loki returned status %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("loki returned status %d: %s", resp.StatusCode, string(body))
 	}
 
 	// Parse response
@@ -134,7 +136,7 @@ func parseResponse(body []byte, namespace, component string) ([]LogEntry, error)
 	}
 
 	if resp.Status != "success" {
-		return nil, fmt.Errorf("Loki returned status: %s", resp.Status)
+		return nil, fmt.Errorf("loki returned status: %s", resp.Status)
 	}
 
 	var entries []LogEntry
