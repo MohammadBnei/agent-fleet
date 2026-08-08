@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { client } from "../connectClient";
 import type { Task } from "../gen/agentfleet/v1/dashboard_pb";
 import { podStateBadge, staleBadge, heartbeatLabel, prBadge, isPodPhaseLive } from "./TaskList";
@@ -38,8 +38,7 @@ import { ActionsMenu } from "../components/ActionsMenu";
 // ASSISTANT/USER (tool_use/tool_result) aren't handled here — they move to
 // the right panel's TOOL CALLS section as paired ToolCallItems instead of
 // two unrelated bubbles in the feed. Cosmetic only: no new state, no new RPCs.
-// Memoized to prevent re-rendering entries that haven't changed.
-const EntryBubble = memo(function EntryBubble({ entry }: { entry: TranscriptEntry }) {
+function EntryBubble({ entry }: { entry: TranscriptEntry }) {
   if (entry.type === TranscriptEntryType.SYSTEM) {
     const info = parseSdkSystemInfo(entry.text);
     return (
@@ -94,7 +93,7 @@ const EntryBubble = memo(function EntryBubble({ entry }: { entry: TranscriptEntr
       </div>
     </div>
   );
-});
+}
 
 // Renders one AskUserQuestion batch as a form (already answered: shows what
 // was submitted instead). One question per fieldset, chip-style buttons for
