@@ -136,45 +136,45 @@ func (s *Server) AskUserQuestion(ctx context.Context, req *agentfleetv1.AskUserQ
 	}
 }
 
-// RequestE2eEnv/KillE2eEnv proxy to the provisioner (docs/adr/0020's
+// RequestE2EEnv/KillE2EEnv proxy to the provisioner (docs/adr/0020's
 // hub-and-spoke rule — the sidecar never talks to the provisioner
 // directly, even for e2e requests that used to be a direct MCP call).
 
-func (s *Server) RequestE2eEnv(ctx context.Context, req *agentfleetv1.RequestE2EEnvRequest) (*agentfleetv1.RequestE2EEnvResponse, error) {
+func (s *Server) RequestE2EEnv(ctx context.Context, req *agentfleetv1.RequestE2EEnvRequest) (*agentfleetv1.RequestE2EEnvResponse, error) {
 	t, err := s.tasks.GetTask(ctx, req.GetTaskId())
 	if err != nil {
-		return nil, fmt.Errorf("RequestE2eEnv: get task: %w", err)
+		return nil, fmt.Errorf("RequestE2EEnv: get task: %w", err)
 	}
 	if t == nil {
-		return nil, fmt.Errorf("RequestE2eEnv: task %s not found", req.GetTaskId())
+		return nil, fmt.Errorf("RequestE2EEnv: task %s not found", req.GetTaskId())
 	}
 	status, previewURL, err := s.provisioner.CreateE2eSession(ctx, req.GetTaskId(), t.Repo)
 	if err != nil {
-		return nil, fmt.Errorf("RequestE2eEnv: %w", err)
+		return nil, fmt.Errorf("RequestE2EEnv: %w", err)
 	}
 	return &agentfleetv1.RequestE2EEnvResponse{Status: status, PreviewUrl: previewURL}, nil
 }
 
-func (s *Server) KillE2eEnv(ctx context.Context, req *agentfleetv1.KillE2EEnvRequest) (*agentfleetv1.KillE2EEnvResponse, error) {
+func (s *Server) KillE2EEnv(ctx context.Context, req *agentfleetv1.KillE2EEnvRequest) (*agentfleetv1.KillE2EEnvResponse, error) {
 	killed, err := s.provisioner.KillSession(ctx, req.GetTaskId(), uuid.NewString())
 	if err != nil {
-		return nil, fmt.Errorf("KillE2eEnv: %w", err)
+		return nil, fmt.Errorf("KillE2EEnv: %w", err)
 	}
 	return &agentfleetv1.KillE2EEnvResponse{Killed: killed}, nil
 }
 
-func (s *Server) ListE2eTools(ctx context.Context, req *agentfleetv1.ListE2EToolsRequest) (*agentfleetv1.ListE2EToolsResponse, error) {
+func (s *Server) ListE2ETools(ctx context.Context, req *agentfleetv1.ListE2EToolsRequest) (*agentfleetv1.ListE2EToolsResponse, error) {
 	tools, err := s.provisioner.ListE2eTools(ctx, req.GetTaskId())
 	if err != nil {
-		return nil, fmt.Errorf("ListE2eTools: %w", err)
+		return nil, fmt.Errorf("ListE2ETools: %w", err)
 	}
 	return &agentfleetv1.ListE2EToolsResponse{Tools: tools}, nil
 }
 
-func (s *Server) CallE2eTool(ctx context.Context, req *agentfleetv1.CallE2EToolRequest) (*agentfleetv1.CallE2EToolResponse, error) {
+func (s *Server) CallE2ETool(ctx context.Context, req *agentfleetv1.CallE2EToolRequest) (*agentfleetv1.CallE2EToolResponse, error) {
 	resultJSON, isError, err := s.provisioner.CallE2eTool(ctx, req.GetTaskId(), req.GetToolName(), req.GetArgumentsJson())
 	if err != nil {
-		return nil, fmt.Errorf("CallE2eTool: %w", err)
+		return nil, fmt.Errorf("CallE2ETool: %w", err)
 	}
 	return &agentfleetv1.CallE2EToolResponse{ResultJson: resultJSON, IsError: isError}, nil
 }
