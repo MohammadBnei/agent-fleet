@@ -254,7 +254,12 @@ func protoTypeToString(t agentfleetv1.TranscriptEntryType) string {
 	}
 }
 
-func viewLogsHandler(core *coreclient.Client) server.ToolHandlerFunc {
+// LogViewer is the interface for viewing logs. Implemented by *coreclient.Client and mockable in tests.
+type LogViewer interface {
+	ViewLogs(ctx context.Context, component, appName, namespace, level, duration string, limit int32, startTime, endTime string) (string, error)
+}
+
+func viewLogsHandler(core LogViewer) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		component := req.GetString("component", "")
 		if component == "" {
