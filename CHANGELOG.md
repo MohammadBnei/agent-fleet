@@ -1,5 +1,25 @@
 # Changelog
 
+# [1.24.0](https://github.com/MohammadBnei/agent-fleet/compare/1.23.5...1.24.0) (2026-08-08)
+
+
+### Bug Fixes
+
+* add LogViewer interface for testability in mcpserver ([e4c90b2](https://github.com/MohammadBnei/agent-fleet/commit/e4c90b204a4e5a77a7f646df8f3eea77f7d6305a))
+* add missing loki param in server_test.go line 88 and fix TextContent type assertion ([85023c6](https://github.com/MohammadBnei/agent-fleet/commit/85023c6c71aedf5ce7a15113afe36ab7ebc40d18))
+* add missing loki parameter to coreserver New() calls in integration tests ([0cbf576](https://github.com/MohammadBnei/agent-fleet/commit/0cbf576a4c9200c65a7f3138f825b3a3e46b168f))
+* add missing loki parameter to dashboard NewServer test calls ([1643cec](https://github.com/MohammadBnei/agent-fleet/commit/1643ceccaca4d6266f727f20935b0a4dcbdd0493))
+* address linter errors in lokiclient ([fc14fc5](https://github.com/MohammadBnei/agent-fleet/commit/fc14fc5c331ebc414fc73e9b273b79694009d270))
+* correct CallToolRequest construction in view_logs_test ([0fae7bf](https://github.com/MohammadBnei/agent-fleet/commit/0fae7bfa8917f7eb920a48296e970623266d706f))
+* include pod name in formatted log output ([f06753f](https://github.com/MohammadBnei/agent-fleet/commit/f06753f409f2f4f7372aa8e429a22d73315bcb14))
+* update test mocks and interfaces for Loki Querier ([e6a5858](https://github.com/MohammadBnei/agent-fleet/commit/e6a5858d9a0a020f1645bb39689cec399cfab877))
+
+
+### Features
+
+* **core:** add Loki log viewer for fleet components and deployed apps ([44ce897](https://github.com/MohammadBnei/agent-fleet/commit/44ce8975f299c1fbfd0c4e1fa997717786c91e09))
+* **core:** add RFC3339 timestamp support to view_logs tool ([ec2a3a9](https://github.com/MohammadBnei/agent-fleet/commit/ec2a3a91aa3dff8a2e28d73be7cef1a8e54cf8bf))
+
 ## [1.23.5](https://github.com/MohammadBnei/agent-fleet/compare/1.23.4...1.23.5) (2026-08-08)
 
 ## [1.23.4](https://github.com/MohammadBnei/agent-fleet/compare/1.23.3...1.23.4) (2026-08-08)
