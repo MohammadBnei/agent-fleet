@@ -61,6 +61,22 @@ export async function saveSessionId(sessionId: string, model: string): Promise<v
   await postJSON("/session-id", { sessionId, model });
 }
 
+export async function getTask(): Promise<{
+  description: string;
+  guidance: string;
+  baseBranch: string;
+  permissionMode?: string;
+  model?: string;
+}> {
+  const res = await fetch(`${base()}/task`);
+  if (!res.ok) throw new Error(`sidecar /task failed: ${res.status} ${await res.text()}`);
+  return res.json();
+}
+
+export async function savePermissionMode(mode: string): Promise<void> {
+  await postJSON("/permission-mode", { mode });
+}
+
 export async function stillHoldsLease(leaseId: string): Promise<boolean> {
   const res = await fetch(`${base()}/still-holds-lease?leaseId=${encodeURIComponent(leaseId)}`);
   if (!res.ok) throw new Error(`sidecar still-holds-lease failed: ${res.status}`);

@@ -49,6 +49,8 @@ func New(core *coreclient.Client) http.Handler {
 	mux.HandleFunc("POST /telemetry", telemetryHandler(core))
 	mux.HandleFunc("POST /message", messageHandler(core))
 	mux.HandleFunc("GET /human-messages", humanMessagesHandler(core))
+	mux.HandleFunc("GET /task", taskHandler(core))
+	mux.HandleFunc("POST /permission-mode", permissionModeHandler(core))
 	return mux
 }
 
@@ -349,5 +351,56 @@ func protoTypeToString(t agentfleetv1.TranscriptEntryType) string {
 		return "permission_response"
 	default:
 		return ""
+	}
+}
+
+// taskHandler fetches task details from the database via the dashboard API,
+// including model and permission_mode. Used by the worker on startup to get
+// fresh task data instead of relying on stale environment variables.
+func taskHandler(core *coreclient.Client) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		task, err := core.GetTask(r.Context())
+		if err != nil {
+			writeError(w, http.StatusBadGateway, err)
+			return
+		}
+		// Return only the fields the worker needs
+		response := map[string]interface{}{
+			"description": task.GetDescription(),
+			"guidance":    "",
+			"baseBranch":  "main",
+		}
+		// Add optional fields if they exist
+		// Note: We need to find the repo's base branch from somewhere
+		// For now, we'll use "main" as default since it's not in the Task proto
+		if task.PermissionMode != nil {
+			response["permissionMode"] = *task.PermissionMode
+		}
+		// Model field will be added when proto regenerates
+		writeJSON(w, http.StatusOK, response)
+	}
+}
+
+// permissionModeHandler persists the current permission mode to the database.
+// Used by the worker to save the initial "default" mode or when the mode
+// changes.
+func permissionModeHandler(core *coreclient.Client) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Mode string `json:"mode"`
+		}
+		if err := decodeJSON(r, &body); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		if body.Mode == "" {
+			writeError(w, http.StatusBadRequest, errors.New("mode is required"))
+			return
+		}
+		if err := core.SetPermissionMode(r.Context(), body.Mode); err != nil {
+			writeError(w, http.StatusBadGateway, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	}
 }
