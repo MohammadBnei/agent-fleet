@@ -203,14 +203,16 @@ message QueryLogsResponse {
   int32 total_count = 2;
 }
 
-// For agents via MCP tool - simplified interface with duration
+// For agents via MCP tool - supports both duration and explicit timestamps
 message ViewLogsRequest {
   string component = 1;       // Required
   string app_name = 2;        // Optional
   string namespace = 3;       // Optional (default "agent-fleet")
   string level = 4;           // Optional (empty = all)
-  string duration = 5;        // "1h"|"30m"|"24h" (default "1h")
-  int32 limit = 6;            // Default 50
+  string duration = 5;        // "1h"|"30m"|"24h" (default "1h") - ignored if start_time set
+  int32 limit = 6;            // Default 50, max 1000
+  string start_time = 7;      // Optional: RFC3339 timestamp, overrides duration
+  string end_time = 8;        // Optional: RFC3339 timestamp (default: now)
 }
 
 message ViewLogsResponse {
