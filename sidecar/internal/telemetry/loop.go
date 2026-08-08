@@ -37,8 +37,9 @@ type summary struct {
 func Run(ctx context.Context, core *coreclient.Client, worktreePath string, interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
+	var lastBody string
 	for {
-		push(ctx, core, worktreePath)
+		lastBody = push(ctx, core, worktreePath, lastBody)
 		select {
 		case <-ctx.Done():
 			return
@@ -47,23 +48,34 @@ func Run(ctx context.Context, core *coreclient.Client, worktreePath string, inte
 	}
 }
 
-func push(ctx context.Context, core *coreclient.Client, worktreePath string) {
+// push skips re-sending a snapshot identical to lastBody — the diff sits
+// unchanged for many ticks in a row while the agent is mid-thought, and
+// without this the dashboard's feed renders one duplicate line per tick
+// (ToolCallLine has no render-side dedup, and core's Append is a pure
+// insert). Returns the body actually pushed (or lastBody unchanged) so the
+// caller can carry it into the next tick.
+func push(ctx context.Context, core *coreclient.Client, worktreePath, lastBody string) string {
 	s, err := computeSummary(worktreePath)
 	if err != nil {
 		slog.Warn("telemetry: compute diff summary failed", "error", err)
-		return
+		return lastBody
 	}
 	if len(s.Files) == 0 {
-		return // nothing changed since the worktree was created — no point pushing an empty snapshot every tick
+		return lastBody // nothing changed since the worktree was created — no point pushing an empty snapshot every tick
 	}
 	body, err := json.Marshal(s)
 	if err != nil {
 		slog.Warn("telemetry: marshal summary failed", "error", err)
-		return
+		return lastBody
+	}
+	if string(body) == lastBody {
+		return lastBody
 	}
 	if err := core.PushToolTelemetry(ctx, string(body)); err != nil {
 		slog.Warn("telemetry: push failed", "error", err)
+		return lastBody
 	}
+	return string(body)
 }
 
 func computeSummary(worktreePath string) (summary, error) {

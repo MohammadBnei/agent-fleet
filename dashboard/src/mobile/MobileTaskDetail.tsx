@@ -244,7 +244,8 @@ export function MobileTaskDetail({
     useAtBottom<HTMLDivElement>();
 
   // See TaskDetail.tsx's identical effect for the rationale: new human
-  // entries jump to the bottom, new agent entries only pulse the button.
+  // entries jump to the bottom; new agent entries follow too when the
+  // reader was already at the bottom, otherwise just pulse the button.
   const [hasNewAiMessage, setHasNewAiMessage] = useState(false);
   const prevEntriesLenRef = useRef<number | null>(null);
   useEffect(() => {
@@ -254,10 +255,10 @@ export function MobileTaskDetail({
     }
     if (entries.length > prevEntriesLenRef.current) {
       const latest = entries[entries.length - 1];
-      if (latest.from === "human") {
+      if (latest.from === "human" || feedAtBottom) {
         feedScrollToBottom();
         setHasNewAiMessage(false);
-      } else if (!feedAtBottom) {
+      } else {
         setHasNewAiMessage(true);
       }
     }
