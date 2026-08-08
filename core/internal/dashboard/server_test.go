@@ -85,7 +85,7 @@ func TestServer_RespondToPermission(t *testing.T) {
 // here since it returns before ever reaching tasks.Store.
 
 func TestServer_Discuss_EmptyText(t *testing.T) {
-	s := NewServer(nil, &recordingStore{}, nil, nil, nil, nil, nil, 5)
+	s := NewServer(nil, &recordingStore{}, nil, nil, nil, nil, nil, 5, nil)
 
 	req := connect.NewRequest(&agentfleetv1.DiscussRequest{TaskId: "task-1", Text: ""})
 	if _, err := s.Discuss(context.Background(), req); connect.CodeOf(err) != connect.CodeInvalidArgument {

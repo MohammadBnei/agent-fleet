@@ -42,9 +42,9 @@ func TestViewLogsHandler(t *testing.T) {
 				if len(result.Content) == 0 {
 					t.Fatal("expected content, got empty")
 				}
-				text, ok := result.Content[0].(*mcp.TextContent)
+				text, ok := result.Content[0].(mcp.TextContent)
 				if !ok {
-					t.Fatal("expected TextContent")
+					t.Fatalf("expected TextContent, got %T", result.Content[0])
 				}
 				if !strings.Contains(text.Text, "test error") {
 					t.Error("output should contain 'test error'")
@@ -64,9 +64,9 @@ func TestViewLogsHandler(t *testing.T) {
 				if len(result.Content) == 0 {
 					t.Fatal("expected content, got empty")
 				}
-				text, ok := result.Content[0].(*mcp.TextContent)
+				text, ok := result.Content[0].(mcp.TextContent)
 				if !ok {
-					t.Fatal("expected TextContent")
+					t.Fatalf("expected TextContent, got %T", result.Content[0])
 				}
 				if !strings.Contains(text.Text, "app started") {
 					t.Error("output should contain 'app started'")
