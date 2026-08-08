@@ -1,5 +1,12 @@
 # Changelog
 
+# [1.22.0](https://github.com/MohammadBnei/agent-fleet/compare/1.21.3...1.22.0) (2026-08-08)
+
+
+### Features
+
+* **dashboard:** passage-level annotation on plan review cards ([#63](https://github.com/MohammadBnei/agent-fleet/issues/63)) ([208ce15](https://github.com/MohammadBnei/agent-fleet/commit/208ce15a097bdfe17892dd80de68412f0fdaeed3))
+
 ## [1.21.3](https://github.com/MohammadBnei/agent-fleet/compare/1.21.2...1.21.3) (2026-08-08)
 
 
