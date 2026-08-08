@@ -1,3 +1,4 @@
+import { memo } from "react";
 import type { ToolCallPair, SdkToolUse, SdkToolResult } from "../transcript";
 import { summarizeToolInput } from "../transcript";
 import { JsonView } from "./JsonView";
@@ -60,7 +61,8 @@ function needsDetail(tool: string | undefined, isError: boolean, resultInfo: Sdk
   return content != null;
 }
 
-export function ToolCallItem({ pair }: { pair: ToolCallPair }) {
+// Memoized to prevent re-rendering when the pair hasn't changed.
+export const ToolCallItem = memo(function ToolCallItem({ pair }: { pair: ToolCallPair }) {
   const { callInfo, result, resultInfo } = pair;
   const isError = resultInfo?.isError ?? false;
   const tool = callInfo.tool ?? "tool";
@@ -97,4 +99,4 @@ export function ToolCallItem({ pair }: { pair: ToolCallPair }) {
       </div>
     </Collapse>
   );
-}
+});
