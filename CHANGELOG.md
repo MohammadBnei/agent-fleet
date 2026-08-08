@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.21.1](https://github.com/MohammadBnei/agent-fleet/compare/1.21.0...1.21.1) (2026-08-08)
+
+
+### Bug Fixes
+
+* **dashboard:** stop duplicate file-change lines and follow feed at bottom ([#62](https://github.com/MohammadBnei/agent-fleet/issues/62)) ([ae84fee](https://github.com/MohammadBnei/agent-fleet/commit/ae84feefde52f452e6bcac5423e18f6443ca7d8a))
+
 # [1.21.0](https://github.com/MohammadBnei/agent-fleet/compare/1.20.0...1.21.0) (2026-08-08)
 
 
