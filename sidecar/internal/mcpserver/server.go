@@ -77,13 +77,15 @@ func New(core *coreclient.Client) http.Handler {
 	), killEnvHandler(core))
 
 	s.AddTool(mcp.NewTool("view_logs",
-		mcp.WithDescription("View recent logs from fleet components or deployed apps. Returns formatted log entries. Use this to debug issues with worker, sidecar, or the deployed application during e2e tests."),
+		mcp.WithDescription("View recent logs from fleet components or deployed apps. Returns formatted log entries. Use this to debug issues with worker, sidecar, or the deployed application during e2e tests. Supports both duration-based queries (duration) and explicit time ranges (start_time/end_time in RFC3339 format)."),
 		mcp.WithString("component", mcp.Required(), mcp.Description("Which component: worker|sidecar|core|provisioner|e2e|app")),
 		mcp.WithString("app_name", mcp.Description("For component=app, specify app name: dream-analyst|vos-monolith")),
 		mcp.WithString("namespace", mcp.Description("Kubernetes namespace (default: agent-fleet, use 'default' for deployed apps)")),
 		mcp.WithString("level", mcp.Description("Filter by level: debug|info|warn|error (default: all)")),
-		mcp.WithString("duration", mcp.Description("How far back: 1h|30m|6h|24h (default: 1h)")),
+		mcp.WithString("duration", mcp.Description("How far back: 1h|30m|6h|24h (default: 1h) - ignored if start_time is set")),
 		mcp.WithNumber("limit", mcp.Description("Max entries to return (default 50, max 1000)")),
+		mcp.WithString("start_time", mcp.Description("Optional: RFC3339 timestamp (e.g., '2024-01-15T10:30:00Z') - overrides duration")),
+		mcp.WithString("end_time", mcp.Description("Optional: RFC3339 timestamp (default: now)")),
 	), viewLogsHandler(core))
 
 	return server.NewStreamableHTTPServer(s)
@@ -264,10 +266,12 @@ func viewLogsHandler(core *coreclient.Client) server.ToolHandlerFunc {
 		level := req.GetString("level", "")
 		duration := req.GetString("duration", "1h")
 		limit := int32(req.GetInt("limit", 50))
+		startTime := req.GetString("start_time", "")
+		endTime := req.GetString("end_time", "")
 
-		slog.Info("mcp view_logs", "component", component, "namespace", namespace, "level", level, "duration", duration)
+		slog.Info("mcp view_logs", "component", component, "namespace", namespace, "level", level, "duration", duration, "start_time", startTime, "end_time", endTime)
 
-		logsText, err := core.ViewLogs(ctx, component, appName, namespace, level, duration, limit)
+		logsText, err := core.ViewLogs(ctx, component, appName, namespace, level, duration, limit, startTime, endTime)
 		if err != nil {
 			slog.Error("mcp view_logs", "error", err)
 			return nil, fmt.Errorf("view_logs: %w", err)

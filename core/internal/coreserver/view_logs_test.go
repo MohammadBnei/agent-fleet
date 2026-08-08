@@ -24,6 +24,7 @@ func (m *mockLokiClient) Query(ctx context.Context, req lokiclient.QueryRequest)
 
 func TestViewLogs(t *testing.T) {
 	now := time.Now()
+	start := now.Add(-1 * time.Hour)
 
 	tests := []struct {
 		name        string
@@ -33,7 +34,7 @@ func TestViewLogs(t *testing.T) {
 		checkOutput func(t *testing.T, output string)
 	}{
 		{
-			name: "successful query with logs",
+			name: "successful query with duration",
 			request: &agentfleetv1.ViewLogsRequest{
 				Component: "worker",
 				Namespace: "agent-fleet",
@@ -71,6 +72,47 @@ func TestViewLogs(t *testing.T) {
 					t.Error("output should contain pod name")
 				}
 			},
+		},
+		{
+			name: "explicit start and end timestamps",
+			request: &agentfleetv1.ViewLogsRequest{
+				Component: "sidecar",
+				StartTime: start.Format(time.RFC3339),
+				EndTime:   now.Format(time.RFC3339),
+				Limit:     100,
+			},
+			mockLogs: []lokiclient.LogEntry{
+				{
+					Timestamp: start.Add(30 * time.Minute),
+					Level:     "info",
+					Msg:       "specific timerange log",
+					Component: "sidecar",
+					PodName:   "worker-xyz",
+					Namespace: "agent-fleet",
+				},
+			},
+			wantErr: false,
+			checkOutput: func(t *testing.T, output string) {
+				if !strings.Contains(output, "specific timerange log") {
+					t.Error("output should contain log from specific timerange")
+				}
+			},
+		},
+		{
+			name: "invalid start timestamp",
+			request: &agentfleetv1.ViewLogsRequest{
+				Component: "worker",
+				StartTime: "not-a-timestamp",
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid end timestamp",
+			request: &agentfleetv1.ViewLogsRequest{
+				Component: "worker",
+				EndTime:   "invalid",
+			},
+			wantErr: true,
 		},
 		{
 			name: "empty result",

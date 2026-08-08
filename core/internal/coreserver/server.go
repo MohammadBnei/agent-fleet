@@ -441,6 +441,7 @@ func protoTypeToString(t agentfleetv1.TranscriptEntryType) string {
 // --- Log querying (Loki queries, docs/adr/0013) ---
 
 // ViewLogs queries Loki for logs and returns formatted text for agent consumption.
+// Supports both duration-based queries (e.g., "last 1h") and explicit timestamp ranges.
 func (s *Server) ViewLogs(ctx context.Context, req *agentfleetv1.ViewLogsRequest) (*agentfleetv1.ViewLogsResponse, error) {
 	if req.GetComponent() == "" {
 		return nil, fmt.Errorf("component is required")
@@ -449,9 +450,32 @@ func (s *Server) ViewLogs(ctx context.Context, req *agentfleetv1.ViewLogsRequest
 	// Extract taskId from context metadata (sidecar includes it)
 	taskID := extractTaskIDFromMetadata(ctx)
 
-	// Parse duration -> start time
-	duration := parseDuration(req.GetDuration(), time.Hour) // default 1h
-	start := time.Now().Add(-duration)
+	// Determine time range: explicit timestamps override duration
+	var start, end time.Time
+	if req.GetStartTime() != "" {
+		// Parse explicit start timestamp (RFC3339)
+		var err error
+		start, err = time.Parse(time.RFC3339, req.GetStartTime())
+		if err != nil {
+			return nil, fmt.Errorf("invalid start_time (must be RFC3339): %w", err)
+		}
+	} else {
+		// Use duration to calculate start time
+		duration := parseDuration(req.GetDuration(), time.Hour) // default 1h
+		start = time.Now().Add(-duration)
+	}
+
+	if req.GetEndTime() != "" {
+		// Parse explicit end timestamp (RFC3339)
+		var err error
+		end, err = time.Parse(time.RFC3339, req.GetEndTime())
+		if err != nil {
+			return nil, fmt.Errorf("invalid end_time (must be RFC3339): %w", err)
+		}
+	} else {
+		// Default to now
+		end = time.Now()
+	}
 
 	// Apply defaults
 	namespace := req.GetNamespace()
@@ -462,6 +486,9 @@ func (s *Server) ViewLogs(ctx context.Context, req *agentfleetv1.ViewLogsRequest
 	if limit <= 0 {
 		limit = 50
 	}
+	if limit > 1000 {
+		limit = 1000
+	}
 
 	// Query Loki
 	entries, err := s.loki.Query(ctx, lokiclient.QueryRequest{
@@ -471,7 +498,7 @@ func (s *Server) ViewLogs(ctx context.Context, req *agentfleetv1.ViewLogsRequest
 		AppName:   req.GetAppName(),
 		Level:     req.GetLevel(),
 		Start:     start,
-		End:       time.Now(),
+		End:       end,
 		Limit:     limit,
 	})
 	if err != nil {
