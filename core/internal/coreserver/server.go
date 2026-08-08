@@ -539,8 +539,8 @@ func formatLogsForAgent(entries []lokiclient.LogEntry) string {
 	}
 
 	var b strings.Builder
-	b.WriteString("Timestamp            Level  Message\n")
-	b.WriteString("-------------------  -----  -------\n")
+	b.WriteString("Timestamp            Pod                  Level  Message\n")
+	b.WriteString("-------------------  -------------------  -----  -------\n")
 
 	for _, entry := range entries {
 		ts := entry.Timestamp.Format("2006-01-02 15:04:05")
@@ -548,12 +548,17 @@ func formatLogsForAgent(entries []lokiclient.LogEntry) string {
 		if level == "" {
 			level = "info"
 		}
+		// Truncate pod name for display
+		podName := entry.PodName
+		if len(podName) > 19 {
+			podName = podName[:16] + "..."
+		}
 		// Truncate long messages
 		msg := entry.Msg
 		if len(msg) > 80 {
 			msg = msg[:77] + "..."
 		}
-		fmt.Fprintf(&b, "%s  %-5s  %s\n", ts, level, msg)
+		fmt.Fprintf(&b, "%s  %-19s  %-5s  %s\n", ts, podName, level, msg)
 	}
 
 	fmt.Fprintf(&b, "\nShowing %d entries", len(entries))
