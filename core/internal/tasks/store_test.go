@@ -376,7 +376,7 @@ func TestCreateTask_NilChannelAndThread(t *testing.T) {
 	ctx := context.Background()
 	store := NewStore(pool)
 
-	id, err := store.CreateTask(ctx, "dream-analyst", "task from dashboard", "", nil, nil)
+	id, err := store.CreateTask(ctx, "dream-analyst", "task from dashboard", "", "", nil, nil)
 	if err != nil {
 		t.Fatalf("create task: %v", err)
 	}
