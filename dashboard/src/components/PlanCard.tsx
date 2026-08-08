@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { Markdown } from "./Markdown";
 
 type Annotation = { quote: string; comment: string };
@@ -60,7 +60,7 @@ export function PlanCard({
         <span className="badge badge-ghost badge-xs flex-none">plan approved</span>
         {isExpanded ? (
           <div className="flex-1 min-w-0">
-            <Markdown content={plan} />
+            <Markdown text={plan} />
           </div>
         ) : (
           <span className="truncate flex-1">{plan.split("\n")[0]}</span>

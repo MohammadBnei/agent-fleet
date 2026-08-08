@@ -8,6 +8,7 @@ test("Markdown component is exported", () => {
 
 test("Markdown component accepts text prop", () => {
   // Type check - if this compiles, the component accepts the correct props
-  const _component = <Markdown text="test" />;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const component = <Markdown text="test" />;
   expect(true).toBe(true);
 });
