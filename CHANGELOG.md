@@ -1,5 +1,21 @@
 # Changelog
 
+# [1.25.0](https://github.com/MohammadBnei/agent-fleet/compare/1.24.1...1.25.0) (2026-08-08)
+
+
+### Bug Fixes
+
+* add missing getTask and savePermissionMode to test mocks ([53eff64](https://github.com/MohammadBnei/agent-fleet/commit/53eff64bedb86bd50702e753c374e6c2a7dc67df))
+* add suggested_permission_mode column to promptsnippets test schema ([7705002](https://github.com/MohammadBnei/agent-fleet/commit/77050020fe9ffc0e5a433aa91ff288fdacc4a37e))
+* complete CreateTask test updates with model parameter ([0cdfdf9](https://github.com/MohammadBnei/agent-fleet/commit/0cdfdf95a4c35de381f93d405bd59de0f3d8b2f4))
+* update CreateTask calls in tests to include model parameter ([966f059](https://github.com/MohammadBnei/agent-fleet/commit/966f05920ea9ca8b6ea63ca018f0696f782decee))
+
+
+### Features
+
+* implement model selection and auto-set permission mode from snippets ([10e0217](https://github.com/MohammadBnei/agent-fleet/commit/10e0217b1078e8af05e92036f50d74d8c020fa0d))
+* use database as source of truth for task configuration ([1ed8dc9](https://github.com/MohammadBnei/agent-fleet/commit/1ed8dc92478ae1f63bf5d7cbfb278da805af5794))
+
 ## [1.24.1](https://github.com/MohammadBnei/agent-fleet/compare/1.24.0...1.24.1) (2026-08-08)
 
 
