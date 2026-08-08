@@ -1,5 +1,12 @@
 # Changelog
 
+# [1.21.0](https://github.com/MohammadBnei/agent-fleet/compare/1.20.0...1.21.0) (2026-08-08)
+
+
+### Features
+
+* session-not-task permission model, dashboard-driven guidance, human-only session ending ([#60](https://github.com/MohammadBnei/agent-fleet/issues/60)) ([5fa13a8](https://github.com/MohammadBnei/agent-fleet/commit/5fa13a8588b6d9ffc5392b688ea1ce80a3c09c39))
+
 # [1.20.0](https://github.com/MohammadBnei/agent-fleet/compare/1.19.2...1.20.0) (2026-08-07)
 
 
