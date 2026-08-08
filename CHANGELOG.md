@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.23.1](https://github.com/MohammadBnei/agent-fleet/compare/1.23.0...1.23.1) (2026-08-08)
+
+
+### Bug Fixes
+
+* **dashboard:** improve mobile UI responsiveness and auto-scroll ([#67](https://github.com/MohammadBnei/agent-fleet/issues/67)) ([3a500f1](https://github.com/MohammadBnei/agent-fleet/commit/3a500f10b1dd8988449dc3eed8b1ca611bcfc125))
+
 # [1.23.0](https://github.com/MohammadBnei/agent-fleet/compare/1.22.1...1.23.0) (2026-08-08)
 
 
