@@ -10,6 +10,10 @@ const (
 	AppPort        = 3000
 	CodeServerPort = 8080
 	PlaywrightPort = 8931
+	// ExecPort is the e2e pod's first-party run_command MCP listener
+	// (execmcp) — distinct from PlaywrightPort's third-party server, which
+	// we can't add tools to.
+	ExecPort = 8932
 	// SidecarMCPPort is agent-facing (local MCP server, the Agent SDK's
 	// mcpServers config), SidecarAPIPort is wrapper-facing (plain local
 	// HTTP/JSON, docs/adr/0020 point 5's two local surfaces).
@@ -35,7 +39,13 @@ func StartCmdFor(repo string) (string, error) {
 		return v, nil
 	}
 	switch repo {
-	case "dream-analyst", "vos-monolith":
+	// dream-analyst's Bun/SvelteKit app lives under front/, not the
+	// worktree root (confirmed live: "bun install" at the root fails with
+	// "could not find a package.json file to install from" — the repo
+	// root only has compose.yml/helm/front, no package.json).
+	case "dream-analyst":
+		return "cd front && bun install && bun run dev", nil
+	case "vos-monolith":
 		return "bun install && bun run dev", nil
 	default:
 		return "", fmt.Errorf("no e2e start command configured for repo %q", repo)
@@ -64,6 +74,10 @@ func shortID(taskID string) string {
 
 func PlaywrightURLFor(namespace, taskID string) string {
 	return fmt.Sprintf("http://%s.%s.svc.cluster.local:%d/mcp", ResourceName(taskID), namespace, PlaywrightPort)
+}
+
+func ExecURLFor(namespace, taskID string) string {
+	return fmt.Sprintf("http://%s.%s.svc.cluster.local:%d/mcp", ResourceName(taskID), namespace, ExecPort)
 }
 
 func PreviewURLFor(host, taskID string) string {

@@ -56,7 +56,10 @@ func main() {
 		slog.Error("k8s client init failed", "error", err)
 		os.Exit(1)
 	}
-	proxy := mcpproxy.New(func(taskID string) string { return k8s.PlaywrightURLFor(cfg.Namespace, taskID) })
+	proxy := mcpproxy.New(
+		func(taskID string) string { return k8s.PlaywrightURLFor(cfg.Namespace, taskID) },
+		func(taskID string) string { return k8s.ExecURLFor(cfg.Namespace, taskID) },
+	)
 	gitMgr := git.NewManager(cfg.WorktreesRoot)
 	if err := gitMgr.ConfigureAuth(ctx); err != nil {
 		slog.Error("git auth configuration failed", "error", err)

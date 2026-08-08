@@ -61,6 +61,7 @@ jobs:
               - 'worker/**'
             e2e-runner:
               - 'e2e-runner/**'
+              - 'proto/**'
             proto:
               - 'proto/**'
             core:
@@ -248,7 +249,7 @@ jobs:
         with:
           platforms: ${{ env.PLATFORMS }}
           push: ${{ github.event_name == 'push' }}
-          context: e2e-runner
+          context: .
           file: e2e-runner/Dockerfile
           tags: >-
             ${{ env.DOCKERHUB_USERNAME }}/agent-fleet-e2e-runner:${{ steps.tag.outputs.value }},

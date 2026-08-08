@@ -452,8 +452,13 @@ func (x *AskUserQuestionResponse) GetQuestionSeq() int64 {
 }
 
 type RequestE2EEnvRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	TaskId        string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	TaskId string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	// Shell command that installs deps and starts the app, run via
+	// `bash -lc` from the worktree root (e.g. "cd front && bun install &&
+	// bun run dev"). Optional — falls back to the provisioner's
+	// per-repo default (StartCmdFor) when empty.
+	StartCmd      string `protobuf:"bytes,2,opt,name=start_cmd,json=startCmd,proto3" json:"start_cmd,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -491,6 +496,13 @@ func (*RequestE2EEnvRequest) Descriptor() ([]byte, []int) {
 func (x *RequestE2EEnvRequest) GetTaskId() string {
 	if x != nil {
 		return x.TaskId
+	}
+	return ""
+}
+
+func (x *RequestE2EEnvRequest) GetStartCmd() string {
+	if x != nil {
+		return x.StartCmd
 	}
 	return ""
 }
@@ -1310,9 +1322,10 @@ const file_agentfleet_v1_core_proto_rawDesc = "" +
 	"\x17AskUserQuestionResponse\x12\x16\n" +
 	"\x06status\x18\x01 \x01(\tR\x06status\x12!\n" +
 	"\fanswers_json\x18\x02 \x01(\tR\vanswersJson\x12!\n" +
-	"\fquestion_seq\x18\x03 \x01(\x03R\vquestionSeq\"/\n" +
+	"\fquestion_seq\x18\x03 \x01(\x03R\vquestionSeq\"L\n" +
 	"\x14RequestE2eEnvRequest\x12\x17\n" +
-	"\atask_id\x18\x01 \x01(\tR\x06taskId\"P\n" +
+	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x1b\n" +
+	"\tstart_cmd\x18\x02 \x01(\tR\bstartCmd\"P\n" +
 	"\x15RequestE2eEnvResponse\x12\x1f\n" +
 	"\vpreview_url\x18\x01 \x01(\tR\n" +
 	"previewUrl\x12\x16\n" +

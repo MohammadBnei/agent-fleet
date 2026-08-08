@@ -69,6 +69,7 @@ func New(core *coreclient.Client) http.Handler {
 
 	s.AddTool(mcp.NewTool("request_e2e_env",
 		mcp.WithDescription("Request an on-demand e2e test environment for this task: a live pod running the app on this branch, code-server for human review, and a Playwright MCP server. Returns the preview URL. Safe to call again if one is already running — returns the existing session's URL."),
+		mcp.WithString("startCmd", mcp.Description("Shell command that installs deps and starts the app, run via bash -lc from the worktree root (e.g. \"cd front && bun install && bun run dev\"). You know the repo's actual layout better than any static default — supply this whenever the app doesn't live at the worktree root. Omit to use the repo's configured default.")),
 	), requestE2eEnvHandler(core, s))
 
 	s.AddTool(mcp.NewTool("kill_env",
@@ -150,8 +151,9 @@ func askUserQuestionHandler(core *coreclient.Client) func(ctx context.Context, r
 
 func requestE2eEnvHandler(core *coreclient.Client, s *server.MCPServer) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		slog.Info("mcp request_e2e_env")
-		previewURL, _, err := core.RequestE2eEnv(ctx)
+		startCmd := req.GetString("startCmd", "")
+		slog.Info("mcp request_e2e_env", "startCmd", startCmd)
+		previewURL, _, err := core.RequestE2eEnv(ctx, startCmd)
 		if err != nil {
 			slog.Error("mcp request_e2e_env", "error", err)
 			return mcp.NewToolResultError(err.Error()), nil
