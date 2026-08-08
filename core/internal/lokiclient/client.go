@@ -10,11 +10,20 @@ import (
 	"time"
 )
 
+// Querier is the interface for querying Loki logs.
+// Implemented by *Client and can be mocked in tests.
+type Querier interface {
+	Query(ctx context.Context, req QueryRequest) ([]LogEntry, error)
+}
+
 // Client queries Loki for log entries via its HTTP API.
 type Client struct {
 	baseURL    string
 	httpClient *http.Client
 }
+
+// Ensure Client implements Querier interface.
+var _ Querier = (*Client)(nil)
 
 // New creates a Loki client. lokiURL should be the base URL (e.g., http://loki.monitoring.svc.cluster.local:3100).
 func New(lokiURL string) *Client {

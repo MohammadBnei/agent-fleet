@@ -2,7 +2,6 @@ package lokiclient
 
 import (
 	"testing"
-	"time"
 )
 
 func TestBuildLogQL(t *testing.T) {
