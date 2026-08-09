@@ -52,6 +52,7 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type DashboardServiceClient interface {
 	ListTasks(ctx context.Context, in *ListTasksRequest, opts ...grpc.CallOption) (*ListTasksResponse, error)
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	GetTask(ctx context.Context, in *GetTaskRequest, opts ...grpc.CallOption) (*GetTaskResponse, error)
 	CreateTask(ctx context.Context, in *CreateTaskRequest, opts ...grpc.CallOption) (*CreateTaskResponse, error)
 	// Reuses transcript.proto's ReadTranscriptSinceRequest/Response rather
@@ -67,6 +68,7 @@ type DashboardServiceClient interface {
 	StreamTranscript(ctx context.Context, in *StreamTranscriptRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[TranscriptEntry], error)
 	GetE2EStatus(ctx context.Context, in *GetE2EStatusRequest, opts ...grpc.CallOption) (*GetE2EStatusResponse, error)
 	Stop(ctx context.Context, in *StopRequest, opts ...grpc.CallOption) (*StopResponse, error)
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	SetPermissionMode(ctx context.Context, in *SetPermissionModeRequest, opts ...grpc.CallOption) (*SetPermissionModeResponse, error)
 	Warm(ctx context.Context, in *WarmRequest, opts ...grpc.CallOption) (*WarmResponse, error)
 	KillE2E(ctx context.Context, in *KillE2ERequest, opts ...grpc.CallOption) (*KillE2EResponse, error)
@@ -381,6 +383,7 @@ func (c *dashboardServiceClient) QueryLogs(ctx context.Context, in *QueryLogsReq
 // for forward compatibility.
 type DashboardServiceServer interface {
 	ListTasks(context.Context, *ListTasksRequest) (*ListTasksResponse, error)
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	GetTask(context.Context, *GetTaskRequest) (*GetTaskResponse, error)
 	CreateTask(context.Context, *CreateTaskRequest) (*CreateTaskResponse, error)
 	// Reuses transcript.proto's ReadTranscriptSinceRequest/Response rather
@@ -396,6 +399,7 @@ type DashboardServiceServer interface {
 	StreamTranscript(*StreamTranscriptRequest, grpc.ServerStreamingServer[TranscriptEntry]) error
 	GetE2EStatus(context.Context, *GetE2EStatusRequest) (*GetE2EStatusResponse, error)
 	Stop(context.Context, *StopRequest) (*StopResponse, error)
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	SetPermissionMode(context.Context, *SetPermissionModeRequest) (*SetPermissionModeResponse, error)
 	Warm(context.Context, *WarmRequest) (*WarmResponse, error)
 	KillE2E(context.Context, *KillE2ERequest) (*KillE2EResponse, error)

@@ -8,7 +8,7 @@ import { ManagePromptSnippetsModal } from "./components/ManagePromptSnippetsModa
 import { MobileTaskList } from "./mobile/MobileTaskList";
 import { MobileTaskDetail } from "./mobile/MobileTaskDetail";
 import { client } from "./connectClient";
-import type { Task } from "./gen/agentfleet/v1/dashboard_pb";
+import type { Task } from "./gen/agentfleet/v1/core_pb";
 import { findPendingQuestion, latestTodos, type TodoItem } from "./transcript";
 import { ErrorModal } from "./components/ErrorModal";
 import { ConfirmModal } from "./components/ConfirmModal";

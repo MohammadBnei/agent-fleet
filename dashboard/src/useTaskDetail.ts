@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Code, ConnectError } from "@connectrpc/connect";
 import { client, subscribeTranscript } from "./connectClient";
-import type { Task } from "./gen/agentfleet/v1/dashboard_pb";
+import type { Task } from "./gen/agentfleet/v1/core_pb";
 import type { TranscriptEntry } from "./gen/agentfleet/v1/transcript_pb";
 
 // Shared data-loading for a single task's session view — used by both the

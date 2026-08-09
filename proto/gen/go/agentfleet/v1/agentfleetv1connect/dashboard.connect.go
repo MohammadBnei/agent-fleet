@@ -114,6 +114,7 @@ const (
 // DashboardServiceClient is a client for the agentfleet.v1.DashboardService service.
 type DashboardServiceClient interface {
 	ListTasks(context.Context, *connect.Request[v1.ListTasksRequest]) (*connect.Response[v1.ListTasksResponse], error)
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	GetTask(context.Context, *connect.Request[v1.GetTaskRequest]) (*connect.Response[v1.GetTaskResponse], error)
 	CreateTask(context.Context, *connect.Request[v1.CreateTaskRequest]) (*connect.Response[v1.CreateTaskResponse], error)
 	// Reuses transcript.proto's ReadTranscriptSinceRequest/Response rather
@@ -129,6 +130,7 @@ type DashboardServiceClient interface {
 	StreamTranscript(context.Context, *connect.Request[v1.StreamTranscriptRequest]) (*connect.ServerStreamForClient[v1.TranscriptEntry], error)
 	GetE2EStatus(context.Context, *connect.Request[v1.GetE2EStatusRequest]) (*connect.Response[v1.GetE2EStatusResponse], error)
 	Stop(context.Context, *connect.Request[v1.StopRequest]) (*connect.Response[v1.StopResponse], error)
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	SetPermissionMode(context.Context, *connect.Request[v1.SetPermissionModeRequest]) (*connect.Response[v1.SetPermissionModeResponse], error)
 	Warm(context.Context, *connect.Request[v1.WarmRequest]) (*connect.Response[v1.WarmResponse], error)
 	KillE2E(context.Context, *connect.Request[v1.KillE2ERequest]) (*connect.Response[v1.KillE2EResponse], error)
@@ -494,6 +496,7 @@ func (c *dashboardServiceClient) QueryLogs(ctx context.Context, req *connect.Req
 // DashboardServiceHandler is an implementation of the agentfleet.v1.DashboardService service.
 type DashboardServiceHandler interface {
 	ListTasks(context.Context, *connect.Request[v1.ListTasksRequest]) (*connect.Response[v1.ListTasksResponse], error)
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	GetTask(context.Context, *connect.Request[v1.GetTaskRequest]) (*connect.Response[v1.GetTaskResponse], error)
 	CreateTask(context.Context, *connect.Request[v1.CreateTaskRequest]) (*connect.Response[v1.CreateTaskResponse], error)
 	// Reuses transcript.proto's ReadTranscriptSinceRequest/Response rather
@@ -509,6 +512,7 @@ type DashboardServiceHandler interface {
 	StreamTranscript(context.Context, *connect.Request[v1.StreamTranscriptRequest], *connect.ServerStream[v1.TranscriptEntry]) error
 	GetE2EStatus(context.Context, *connect.Request[v1.GetE2EStatusRequest]) (*connect.Response[v1.GetE2EStatusResponse], error)
 	Stop(context.Context, *connect.Request[v1.StopRequest]) (*connect.Response[v1.StopResponse], error)
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	SetPermissionMode(context.Context, *connect.Request[v1.SetPermissionModeRequest]) (*connect.Response[v1.SetPermissionModeResponse], error)
 	Warm(context.Context, *connect.Request[v1.WarmRequest]) (*connect.Response[v1.WarmResponse], error)
 	KillE2E(context.Context, *connect.Request[v1.KillE2ERequest]) (*connect.Response[v1.KillE2EResponse], error)

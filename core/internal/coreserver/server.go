@@ -22,6 +22,7 @@ import (
 
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 
+	"github.com/MohammadBnei/agent-fleet/core/internal/dashboard"
 	"github.com/MohammadBnei/agent-fleet/core/internal/journal"
 	"github.com/MohammadBnei/agent-fleet/core/internal/lokiclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/provisionerclient"
@@ -184,6 +185,33 @@ func (s *Server) CallE2ETool(ctx context.Context, req *agentfleetv1.CallE2EToolR
 
 // --- wrapper-facing (never agent-initiated, docs/adr/0020 point 5's third
 // sidecar responsibility) — replaces worker/src/db.ts's direct SQL ---
+
+// GetTask lets a worker pod fetch its own fresh task row on startup instead
+// of relying on stale environment variables. Same message shapes as
+// DashboardService.GetTask (core.proto's comment on Task/GetTaskRequest),
+// reusing its taskToProto mapper rather than duplicating the field list.
+func (s *Server) GetTask(ctx context.Context, req *agentfleetv1.GetTaskRequest) (*agentfleetv1.GetTaskResponse, error) {
+	t, err := s.tasks.GetTask(ctx, req.GetId())
+	if err != nil {
+		return nil, fmt.Errorf("GetTask: %w", err)
+	}
+	if t == nil {
+		return nil, fmt.Errorf("GetTask: task %s not found", req.GetId())
+	}
+	return &agentfleetv1.GetTaskResponse{Task: dashboard.TaskToProto(*t)}, nil
+}
+
+// SetPermissionMode persists a worker pod's own permission mode (the
+// initial "default" on startup, or a change it made itself) — a plain
+// column write. Unlike DashboardService.SetPermissionMode, it does not
+// append a transcript entry: there's no other running worker to notify,
+// the caller *is* the session whose mode this is.
+func (s *Server) SetPermissionMode(ctx context.Context, req *agentfleetv1.SetPermissionModeRequest) (*agentfleetv1.SetPermissionModeResponse, error) {
+	if err := s.tasks.SetPermissionMode(ctx, req.GetTaskId(), req.GetMode()); err != nil {
+		return nil, fmt.Errorf("SetPermissionMode: %w", err)
+	}
+	return &agentfleetv1.SetPermissionModeResponse{Status: "ok"}, nil
+}
 
 func (s *Server) Heartbeat(ctx context.Context, req *agentfleetv1.HeartbeatRequest) (*agentfleetv1.HeartbeatResponse, error) {
 	if err := s.tasks.UpdateHeartbeat(ctx, req.GetTaskId(), req.GetLeaseId()); err != nil {
