@@ -84,14 +84,15 @@ infisical:
   projectSlug: "agent-fleet-nygh"
   envSlug: dev
 
-# Applies db/migrations/ via the dedicated `migration` image — a plain
+# Applies db/migrations/ via the dedicated `migration` image — a
 # migrate/migrate CLI image with db/migrations/ COPY'd in at build time
 # (see migration/Dockerfile, docs/adr/0030). core itself no longer embeds
 # or applies any schema. AGENTFLEET_DB_* comes from the same Infisical
 # secret the main container gets (common-app-chart's jobContainer helper
-# injects it into every hook via envFrom whenever infisical.enabled) —
-# Kubernetes expands $(VAR) from the container's own env inside each arg
-# string below.
+# injects it into every hook via envFrom whenever infisical.enabled) — the
+# image's entrypoint.sh reads those vars directly and URL-encodes user/
+# password with jq before building the postgres:// DSN, so special
+# characters in the password can't be misparsed by migrate's URL parser.
 hooks:
   migrate:
     type: PreSync
@@ -99,10 +100,6 @@ hooks:
       repository: mohammaddocker/agent-fleet-migration
       tag: "1.25.3"
     args:
-      - "-path"
-      - "/migrations"
-      - "-database"
-      - "postgres://$(AGENTFLEET_DB_USER):$(AGENTFLEET_DB_PASSWORD)@$(AGENTFLEET_DB_HOST):$(AGENTFLEET_DB_PORT)/$(AGENTFLEET_DB_NAME)?sslmode=disable"
       - "up"
 
 # Per-app Grafana dashboard (infra-bootstrap's grafana-ops skill / gitops/
