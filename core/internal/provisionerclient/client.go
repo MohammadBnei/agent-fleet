@@ -80,10 +80,11 @@ func (c *Client) GetSessionStatus(ctx context.Context, taskID string) (status, p
 // CreateE2eSession asks the provisioner to spin up an on-demand e2e preview
 // pod for taskID (docs/adr/0012), proxied from CoreService.RequestE2eEnv —
 // the sidecar/worker never call this directly (docs/adr/0020 hub-and-spoke).
-func (c *Client) CreateE2eSession(ctx context.Context, taskID, repo string) (status, previewURL string, err error) {
+func (c *Client) CreateE2eSession(ctx context.Context, taskID, repo, startCmd string) (status, previewURL string, err error) {
 	resp, err := c.rpc.CreateE2ESession(ctx, &agentfleetv1.CreateE2ESessionRequest{
-		TaskId: taskID,
-		Repo:   repo,
+		TaskId:   taskID,
+		Repo:     repo,
+		StartCmd: startCmd,
 	})
 	if err != nil {
 		return "", "", fmt.Errorf("CreateE2ESession: %w", err)

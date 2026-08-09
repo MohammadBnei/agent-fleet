@@ -52,7 +52,8 @@ tiers instead of a fleet-imposed Write/Edit approval gate.
 | `dashboard/` | React + Vite + TypeScript + Tailwind/DaisyUI SPA, talks to `core` via a generated ConnectRPC client, built into `core`'s binary — not deployed on its own |
 | `worker/` | The Claude Code worker (TS/Bun; `src/session.ts`, renamed from `planning.ts`) — **single-shot**: one pod per warm, one continuous streaming-input session spanning planning+implementation (resumable via `RESUME_SESSION_ID`), then exits. Talks only to its own pod's `localhost` sidecar |
 | `proto/` | buf-managed `.proto` schema: `CoreService`, `ProvisionerService`, `DashboardService` — shared by `core`/`provisioner` (Go codegen) and `worker`/`dashboard` (TS codegen) |
-| `db/schema.sql` | Shared `tasks`/`knowledge_journal`/`transcript` tables (`agentfleetdb`). `e2e_sessions` still exists in the schema but is dead code — see `docs/ARCHITECTURE.md` §6 |
+| `db/migrations/` | Sole source of truth for the shared `tasks`/`knowledge_journal`/`transcript` schema (`agentfleetdb`), applied via golang-migrate — see `docs/adr/0030`. `e2e_sessions` still exists in the schema but is dead code — see `docs/ARCHITECTURE.md` §6 |
+| `migration/` | The image that applies `db/migrations/` (`FROM migrate/migrate:latest`) — run as `k8s/core.yaml`'s `hooks.migrate` PreSync job, not part of `core` itself |
 | `k8s/` | `core.yaml` (Helm values, `common-app-chart`) + `provisioner/` (standalone plain manifests: Deployment/Service/ServiceAccount/Role/InfisicalSecret/NetworkPolicy/PVC) |
 
 ## Locked decisions (condensed — full detail + rationale in `docs/DECISIONS.md` and `docs/adr/`)
@@ -143,6 +144,14 @@ is a "manage repos" entry in the dashboard, not new k8s manifests.
   shape, `bufconn` for gRPC roundtrips, and `testcontainers-go`-backed
   integration tests (gated `-tags=integration`) against a real Postgres —
   see `.github/workflows/go.yml`. `golangci-lint` runs alongside.
+- The Postgres schema's sole source of truth is `db/migrations/` — a
+  schema change is always a new numbered `.up.sql`/`.down.sql` pair,
+  applied via golang-migrate (see `migration/Dockerfile`), never an edit
+  to an existing migration file, a hand-rolled `CREATE TABLE` test
+  fixture, or any other copy of the schema. Integration tests use
+  `core/internal/dbtest.NewPool(t)`. This is CI-enforced by construction
+  (one real source, not a diff-check) after two separate incidents where a
+  hand-copied schema shipped without a column — see `docs/adr/0030`.
 
 ## Skills
 

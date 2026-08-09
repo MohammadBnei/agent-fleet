@@ -35,6 +35,7 @@ export function PermissionCard({
   edgeClassName: string;
 }) {
   const [reason, setReason] = useState("");
+  const [isExpanded, setIsExpanded] = useState(false);
   const inputJson = (() => {
     try {
       return JSON.stringify(input, null, 2);
@@ -45,10 +46,22 @@ export function PermissionCard({
 
   if (!pending) {
     return (
-      <div className="flex items-center gap-1.5 text-[10.5px] text-base-content/40">
-        <span className="badge badge-ghost badge-xs">{tool}</span>
-        <span className="truncate">permission request</span>
-      </div>
+      <button
+        type="button"
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="flex items-start gap-1.5 text-[10.5px] text-base-content/40 hover:text-base-content/60 w-full text-left group"
+      >
+        <span className="badge badge-ghost badge-xs flex-none">{tool} allowed</span>
+        {isExpanded && (
+          <pre className="flex-1 min-w-0 text-[11px] leading-relaxed text-base-content/80 bg-base-200/40 rounded-md p-3 whitespace-pre-wrap break-words">
+            {inputJson}
+          </pre>
+        )}
+        {!isExpanded && <span className="truncate flex-1">permission request</span>}
+        <span className="text-[10px] flex-none group-hover:text-base-content/60">
+          {isExpanded ? "▴" : "▾"}
+        </span>
+      </button>
     );
   }
 
@@ -62,7 +75,14 @@ export function PermissionCard({
       </pre>
       <div className="flex items-center gap-2 mt-3">
         <button type="button" className="btn btn-success btn-sm" disabled={busy} onClick={onAllow}>
-          Allow
+          {busy ? (
+            <>
+              <span className="loading loading-spinner loading-xs"></span>
+              Allowing...
+            </>
+          ) : (
+            "Allow"
+          )}
         </button>
         <button
           type="button"
@@ -73,7 +93,14 @@ export function PermissionCard({
             setReason("");
           }}
         >
-          Deny
+          {busy ? (
+            <>
+              <span className="loading loading-spinner loading-xs"></span>
+              Denying...
+            </>
+          ) : (
+            "Deny"
+          )}
         </button>
         <input
           value={reason}

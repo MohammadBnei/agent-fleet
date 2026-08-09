@@ -46,7 +46,15 @@ function MobileQuestionCard({
   onSubmit: (answers: Record<string, string>) => void;
 }) {
   const [selected, setSelected] = useState<Record<number, string[]>>({});
+  const [isCollapsed, setIsCollapsed] = useState(false);
   const questions = parseQuestions(entry.text);
+
+  // Auto-collapse when answer is received
+  useEffect(() => {
+    if (answer && !isCollapsed) {
+      setIsCollapsed(true);
+    }
+  }, [answer, isCollapsed]);
 
   if (!questions) {
     return (
@@ -88,19 +96,30 @@ function MobileQuestionCard({
         background: "linear-gradient(180deg,rgba(224,169,78,.1),rgba(224,169,78,.03))",
       }}
     >
-      <div className="flex items-center gap-2">
+      <button
+        type="button"
+        onClick={() => answer && setIsCollapsed(!isCollapsed)}
+        className="flex items-center gap-2 w-full text-left"
+        disabled={!answer}
+      >
         {!answer && <span className="w-1.5 h-1.5 rounded-full bg-primary animate-fpulse" />}
-        <span className="text-[9px] tracking-[0.09em] font-semibold text-primary">
+        <span className="text-[9px] tracking-[0.09em] font-semibold text-primary flex-1">
           {answer ? "ANSWERED" : "QUESTION"}
         </span>
-      </div>
-      <div className="flex flex-col gap-3.5 mt-2.5">
-        {questions.map((q, qIndex) => (
-          <fieldset key={qIndex} className="flex flex-col gap-2">
-            <legend className="text-[13px] leading-relaxed text-base-content">{q.question}</legend>
-            {answer ? (
-              <div className="badge badge-outline">{answer[q.question] ?? "—"}</div>
-            ) : q.multiSelect ? (
+        {answer && (
+          <span className="text-[10px] text-base-content/40">
+            {isCollapsed ? "▾" : "▴"}
+          </span>
+        )}
+      </button>
+      {!isCollapsed && (
+        <div className="flex flex-col gap-3.5 mt-2.5">
+          {questions.map((q, qIndex) => (
+            <fieldset key={qIndex} className="flex flex-col gap-2">
+              <legend className="text-[13px] leading-relaxed text-base-content">{q.question}</legend>
+              {answer ? (
+                <div className="badge badge-outline">{answer[q.question] ?? "—"}</div>
+              ) : q.multiSelect ? (
               q.options.map((opt) => (
                 <label key={opt.label} className="flex items-start gap-2 cursor-pointer text-[12px]">
                   <input
@@ -137,10 +156,18 @@ function MobileQuestionCard({
         ))}
         {!answer && (
           <button type="button" className="btn btn-primary btn-sm" disabled={busy || !allAnswered} onClick={submit}>
-            Submit answer
+            {busy ? (
+              <>
+                <span className="loading loading-spinner loading-xs"></span>
+                Submitting...
+              </>
+            ) : (
+              "Submit answer"
+            )}
           </button>
         )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -247,6 +274,7 @@ export function MobileTaskDetail({
   // entries jump to the bottom; new agent entries follow too when the
   // reader was already at the bottom, otherwise just pulse the button.
   const [hasNewAiMessage, setHasNewAiMessage] = useState(false);
+  const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
   const prevEntriesLenRef = useRef<number | null>(null);
   useEffect(() => {
     if (prevEntriesLenRef.current === null) {
@@ -294,7 +322,8 @@ export function MobileTaskDetail({
   const todos = latestTodos(entries) ?? [];
   const done = todos.filter((t) => t.status === "completed").length;
   const prLink = prBadge(task);
-  const podBadge = podStateBadge(task);
+  // Hide PROVISIONING badge if we already have transcript entries (agent is responding)
+  const podBadge = task.podPhase === "POD_PHASE_PROVISIONING" && entries.length > 0 ? null : podStateBadge(task);
   const staleTag = staleBadge(task);
   const pendingQuestion = findPendingQuestion(entries);
   const pendingParsed = pendingQuestion ? parseQuestions(pendingQuestion.text) : null;
@@ -330,9 +359,20 @@ export function MobileTaskDetail({
             ‹
           </button>
           <div className="min-w-0 flex-1">
-            <div className="text-[13px] font-semibold text-base-content leading-tight break-words">
-              {task.description}
-            </div>
+            <button
+              type="button"
+              onClick={() => setIsDescriptionExpanded(!isDescriptionExpanded)}
+              className="text-left w-full group"
+            >
+              <div className="flex items-start gap-1.5">
+                <div className={`text-[13px] font-semibold text-base-content leading-tight break-words flex-1 ${isDescriptionExpanded ? "" : "line-clamp-2"}`}>
+                  {task.description}
+                </div>
+                <span className="text-[10px] text-base-content/40 group-hover:text-base-content/60 flex-none mt-0.5">
+                  {isDescriptionExpanded ? "▴" : "▾"}
+                </span>
+              </div>
+            </button>
             <div className="text-[10px] text-base-content/50 mt-1 flex items-center gap-2 flex-wrap">
               <span className="whitespace-nowrap">
                 #{task.id.slice(0, 6)} · {task.repo}
@@ -435,6 +475,7 @@ export function MobileTaskDetail({
                   onApprove={() => respond({ behavior: "allow" })}
                   onFeedback={(text) => sendDiscuss(text)}
                   edgeClassName="-mx-4 px-4"
+                  allowAnnotate={false}
                 />
               );
             }

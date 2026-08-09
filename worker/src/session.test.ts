@@ -36,8 +36,11 @@ mock.module("./sidecarClient.js", () => ({
     pushedMessages.push({ seq, from, text, type });
     return seq;
   }),
-  saveSessionId: mock(async (id: string) => {
+  saveSessionId: mock(async (id: string, model: string) => {
     savedSessionIds.push(id);
+  }),
+  savePermissionMode: mock(async (mode: string) => {
+    // Mock implementation - just accept the call
   }),
   setStatus: mock(async (status: string) => {
     statusUpdates.push(status);
@@ -215,6 +218,11 @@ test("tool wiring: default mode, no Write/Edit in allowedTools, canUseTool prese
   expect(allowedTools).not.toContain("Bash");
   expect(allowedTools).toContain("Task");
   expect(allowedTools).toContain("mcp__agent-fleet-sidecar__AskUserQuestion");
+  // The SDK's own built-in AskUserQuestion must stay out of context — only
+  // the mcp__agent-fleet-sidecar__ one above renders as a real dashboard
+  // question form; the native one falls through to the generic raw-JSON
+  // PermissionCard with no way to deliver an answer.
+  expect(queryOptions?.disallowedTools).toContain("AskUserQuestion");
   expect(typeof queryOptions?.canUseTool).toBe("function");
   const plugins = queryOptions?.plugins as Array<{ type: string; path: string }>;
   expect(plugins.some((p) => p.type === "local" && p.path.includes("agent-fleet-planning"))).toBe(true);

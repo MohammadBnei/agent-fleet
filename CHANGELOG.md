@@ -1,5 +1,112 @@
 # Changelog
 
+## [1.25.3](https://github.com/MohammadBnei/agent-fleet/compare/1.25.2...1.25.3) (2026-08-09)
+
+
+### Bug Fixes
+
+* replace hand-copied schema (embedded_schema.sql + test fixtures) with golang-migrate ([5ca679b](https://github.com/MohammadBnei/agent-fleet/commit/5ca679bac31c1e2d8f3b74263ea5700f9c45398a))
+
+## [1.25.2](https://github.com/MohammadBnei/agent-fleet/compare/1.25.1...1.25.2) (2026-08-09)
+
+
+### Bug Fixes
+
+* **sidecar:** route GetTask/SetPermissionMode through CoreService, not DashboardService ([c48aa20](https://github.com/MohammadBnei/agent-fleet/commit/c48aa20654a3102ba9818adea288902304a63594))
+
+## [1.25.1](https://github.com/MohammadBnei/agent-fleet/compare/1.25.0...1.25.1) (2026-08-09)
+
+
+### Bug Fixes
+
+* **e2e:** expose run_command's exec port on the Service and NetworkPolicy ([d91b7a9](https://github.com/MohammadBnei/agent-fleet/commit/d91b7a9d43966ea7f54dd078757ebde6f2166d5f)), closes [#65](https://github.com/MohammadBnei/agent-fleet/issues/65)
+
+# [1.25.0](https://github.com/MohammadBnei/agent-fleet/compare/1.24.1...1.25.0) (2026-08-08)
+
+
+### Bug Fixes
+
+* add missing getTask and savePermissionMode to test mocks ([53eff64](https://github.com/MohammadBnei/agent-fleet/commit/53eff64bedb86bd50702e753c374e6c2a7dc67df))
+* add suggested_permission_mode column to promptsnippets test schema ([7705002](https://github.com/MohammadBnei/agent-fleet/commit/77050020fe9ffc0e5a433aa91ff288fdacc4a37e))
+* complete CreateTask test updates with model parameter ([0cdfdf9](https://github.com/MohammadBnei/agent-fleet/commit/0cdfdf95a4c35de381f93d405bd59de0f3d8b2f4))
+* update CreateTask calls in tests to include model parameter ([966f059](https://github.com/MohammadBnei/agent-fleet/commit/966f05920ea9ca8b6ea63ca018f0696f782decee))
+
+
+### Features
+
+* implement model selection and auto-set permission mode from snippets ([10e0217](https://github.com/MohammadBnei/agent-fleet/commit/10e0217b1078e8af05e92036f50d74d8c020fa0d))
+* use database as source of truth for task configuration ([1ed8dc9](https://github.com/MohammadBnei/agent-fleet/commit/1ed8dc92478ae1f63bf5d7cbfb278da805af5794))
+
+## [1.24.1](https://github.com/MohammadBnei/agent-fleet/compare/1.24.0...1.24.1) (2026-08-08)
+
+
+### Bug Fixes
+
+* **dashboard:** remove EntryBubble memoization to fix message display bug ([ae2fc88](https://github.com/MohammadBnei/agent-fleet/commit/ae2fc882fc065cb6fc411c61eb6bbb1b1a576022))
+
+# [1.24.0](https://github.com/MohammadBnei/agent-fleet/compare/1.23.5...1.24.0) (2026-08-08)
+
+
+### Bug Fixes
+
+* add LogViewer interface for testability in mcpserver ([e4c90b2](https://github.com/MohammadBnei/agent-fleet/commit/e4c90b204a4e5a77a7f646df8f3eea77f7d6305a))
+* add missing loki param in server_test.go line 88 and fix TextContent type assertion ([85023c6](https://github.com/MohammadBnei/agent-fleet/commit/85023c6c71aedf5ce7a15113afe36ab7ebc40d18))
+* add missing loki parameter to coreserver New() calls in integration tests ([0cbf576](https://github.com/MohammadBnei/agent-fleet/commit/0cbf576a4c9200c65a7f3138f825b3a3e46b168f))
+* add missing loki parameter to dashboard NewServer test calls ([1643cec](https://github.com/MohammadBnei/agent-fleet/commit/1643ceccaca4d6266f727f20935b0a4dcbdd0493))
+* address linter errors in lokiclient ([fc14fc5](https://github.com/MohammadBnei/agent-fleet/commit/fc14fc5c331ebc414fc73e9b273b79694009d270))
+* correct CallToolRequest construction in view_logs_test ([0fae7bf](https://github.com/MohammadBnei/agent-fleet/commit/0fae7bfa8917f7eb920a48296e970623266d706f))
+* include pod name in formatted log output ([f06753f](https://github.com/MohammadBnei/agent-fleet/commit/f06753f409f2f4f7372aa8e429a22d73315bcb14))
+* update test mocks and interfaces for Loki Querier ([e6a5858](https://github.com/MohammadBnei/agent-fleet/commit/e6a5858d9a0a020f1645bb39689cec399cfab877))
+
+
+### Features
+
+* **core:** add Loki log viewer for fleet components and deployed apps ([44ce897](https://github.com/MohammadBnei/agent-fleet/commit/44ce8975f299c1fbfd0c4e1fa997717786c91e09))
+* **core:** add RFC3339 timestamp support to view_logs tool ([ec2a3a9](https://github.com/MohammadBnei/agent-fleet/commit/ec2a3a91aa3dff8a2e28d73be7cef1a8e54cf8bf))
+
+## [1.23.5](https://github.com/MohammadBnei/agent-fleet/compare/1.23.4...1.23.5) (2026-08-08)
+
+## [1.23.4](https://github.com/MohammadBnei/agent-fleet/compare/1.23.3...1.23.4) (2026-08-08)
+
+## [1.23.3](https://github.com/MohammadBnei/agent-fleet/compare/1.23.2...1.23.3) (2026-08-08)
+
+## [1.23.2](https://github.com/MohammadBnei/agent-fleet/compare/1.23.1...1.23.2) (2026-08-08)
+
+## [1.23.1](https://github.com/MohammadBnei/agent-fleet/compare/1.23.0...1.23.1) (2026-08-08)
+
+
+### Bug Fixes
+
+* **dashboard:** improve mobile UI responsiveness and auto-scroll ([#67](https://github.com/MohammadBnei/agent-fleet/issues/67)) ([3a500f1](https://github.com/MohammadBnei/agent-fleet/commit/3a500f10b1dd8988449dc3eed8b1ca611bcfc125))
+
+# [1.23.0](https://github.com/MohammadBnei/agent-fleet/compare/1.22.1...1.23.0) (2026-08-08)
+
+
+### Features
+
+* **e2e:** agent-controlled app startup + ad-hoc run_command on the e2e pod ([#65](https://github.com/MohammadBnei/agent-fleet/issues/65)) ([11e1c4e](https://github.com/MohammadBnei/agent-fleet/commit/11e1c4e4de27bc32d9a850f33ca8e1fee07950b1))
+
+## [1.22.1](https://github.com/MohammadBnei/agent-fleet/compare/1.22.0...1.22.1) (2026-08-08)
+
+
+### Bug Fixes
+
+* **worker,dashboard:** stop native AskUserQuestion, add cogitating indicator ([#66](https://github.com/MohammadBnei/agent-fleet/issues/66)) ([f71843c](https://github.com/MohammadBnei/agent-fleet/commit/f71843c5d88c22713d38ed703fdfd0b438f3d729))
+
+# [1.22.0](https://github.com/MohammadBnei/agent-fleet/compare/1.21.3...1.22.0) (2026-08-08)
+
+
+### Features
+
+* **dashboard:** passage-level annotation on plan review cards ([#63](https://github.com/MohammadBnei/agent-fleet/issues/63)) ([208ce15](https://github.com/MohammadBnei/agent-fleet/commit/208ce15a097bdfe17892dd80de68412f0fdaeed3))
+
+## [1.21.3](https://github.com/MohammadBnei/agent-fleet/compare/1.21.2...1.21.3) (2026-08-08)
+
+
+### Bug Fixes
+
+* **core:** correct CoreServiceServer e2e method casing ([27a35c5](https://github.com/MohammadBnei/agent-fleet/commit/27a35c55ba7f3e9e9c4e3560632b8663c1b79ac4))
+
 ## [1.21.2](https://github.com/MohammadBnei/agent-fleet/compare/1.21.1...1.21.2) (2026-08-08)
 
 ## [1.21.1](https://github.com/MohammadBnei/agent-fleet/compare/1.21.0...1.21.1) (2026-08-08)

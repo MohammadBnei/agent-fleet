@@ -5,5 +5,11 @@ lint:
   use:
     - STANDARD
 breaking:
+  # PACKAGE, not FILE: message/RPC definitions get shuffled between the
+  # per-service .proto files in this one package as reuse patterns emerge
+  # (e.g. Task/GetTaskRequest moving from dashboard.proto into core.proto so
+  # CoreService and DashboardService can share it) — that's a same-package
+  # file move, wire-compatible, not a real break. FILE would flag every such
+  # move as breaking.
   use:
-    - FILE
+    - PACKAGE

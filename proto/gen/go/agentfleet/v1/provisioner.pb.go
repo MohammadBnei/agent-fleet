@@ -272,9 +272,12 @@ func (x *GetE2ESessionStatusResponse) GetPreviewUrl() string {
 // sidecar -> core (CoreService.RequestE2eEnv) -> provisioner (this RPC) —
 // core is the only caller.
 type CreateE2ESessionRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	TaskId        string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
-	Repo          string                 `protobuf:"bytes,2,opt,name=repo,proto3" json:"repo,omitempty"`
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	TaskId string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	Repo   string                 `protobuf:"bytes,2,opt,name=repo,proto3" json:"repo,omitempty"`
+	// See RequestE2eEnvRequest.start_cmd in core.proto — passed through
+	// core unchanged.
+	StartCmd      string `protobuf:"bytes,3,opt,name=start_cmd,json=startCmd,proto3" json:"start_cmd,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -319,6 +322,13 @@ func (x *CreateE2ESessionRequest) GetTaskId() string {
 func (x *CreateE2ESessionRequest) GetRepo() string {
 	if x != nil {
 		return x.Repo
+	}
+	return ""
+}
+
+func (x *CreateE2ESessionRequest) GetStartCmd() string {
+	if x != nil {
+		return x.StartCmd
 	}
 	return ""
 }
@@ -1207,10 +1217,11 @@ const file_agentfleet_v1_provisioner_proto_rawDesc = "" +
 	"\x1bGetE2eSessionStatusResponse\x12\x16\n" +
 	"\x06status\x18\x01 \x01(\tR\x06status\x12\x1f\n" +
 	"\vpreview_url\x18\x02 \x01(\tR\n" +
-	"previewUrl\"F\n" +
+	"previewUrl\"c\n" +
 	"\x17CreateE2eSessionRequest\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x12\n" +
-	"\x04repo\x18\x02 \x01(\tR\x04repo\"S\n" +
+	"\x04repo\x18\x02 \x01(\tR\x04repo\x12\x1b\n" +
+	"\tstart_cmd\x18\x03 \x01(\tR\bstartCmd\"S\n" +
 	"\x18CreateE2eSessionResponse\x12\x16\n" +
 	"\x06status\x18\x01 \x01(\tR\x06status\x12\x1f\n" +
 	"\vpreview_url\x18\x02 \x01(\tR\n" +

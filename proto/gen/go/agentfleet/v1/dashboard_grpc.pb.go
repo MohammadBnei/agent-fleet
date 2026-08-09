@@ -48,6 +48,7 @@ const (
 	DashboardService_GetFileUploadUrl_FullMethodName    = "/agentfleet.v1.DashboardService/GetFileUploadUrl"
 	DashboardService_GetFileDownloadUrl_FullMethodName  = "/agentfleet.v1.DashboardService/GetFileDownloadUrl"
 	DashboardService_DeleteFile_FullMethodName          = "/agentfleet.v1.DashboardService/DeleteFile"
+	DashboardService_QueryLogs_FullMethodName           = "/agentfleet.v1.DashboardService/QueryLogs"
 )
 
 // DashboardServiceClient is the client API for DashboardService service.
@@ -55,6 +56,7 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type DashboardServiceClient interface {
 	ListTasks(ctx context.Context, in *ListTasksRequest, opts ...grpc.CallOption) (*ListTasksResponse, error)
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	GetTask(ctx context.Context, in *GetTaskRequest, opts ...grpc.CallOption) (*GetTaskResponse, error)
 	CreateTask(ctx context.Context, in *CreateTaskRequest, opts ...grpc.CallOption) (*CreateTaskResponse, error)
 	// Reuses transcript.proto's ReadTranscriptSinceRequest/Response rather
@@ -70,6 +72,7 @@ type DashboardServiceClient interface {
 	StreamTranscript(ctx context.Context, in *StreamTranscriptRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[TranscriptEntry], error)
 	GetE2EStatus(ctx context.Context, in *GetE2EStatusRequest, opts ...grpc.CallOption) (*GetE2EStatusResponse, error)
 	Stop(ctx context.Context, in *StopRequest, opts ...grpc.CallOption) (*StopResponse, error)
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	SetPermissionMode(ctx context.Context, in *SetPermissionModeRequest, opts ...grpc.CallOption) (*SetPermissionModeResponse, error)
 	Warm(ctx context.Context, in *WarmRequest, opts ...grpc.CallOption) (*WarmResponse, error)
 	KillE2E(ctx context.Context, in *KillE2ERequest, opts ...grpc.CallOption) (*KillE2EResponse, error)
@@ -105,6 +108,9 @@ type DashboardServiceClient interface {
 	GetFileDownloadUrl(ctx context.Context, in *GetFileDownloadUrlRequest, opts ...grpc.CallOption) (*GetFileDownloadUrlResponse, error)
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	DeleteFile(ctx context.Context, in *DeleteFileRequest, opts ...grpc.CallOption) (*DeleteFileResponse, error)
+	// Reuses core.proto's QueryLogsRequest/QueryLogsResponse
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	QueryLogs(ctx context.Context, in *QueryLogsRequest, opts ...grpc.CallOption) (*QueryLogsResponse, error)
 }
 
 type dashboardServiceClient struct {
@@ -414,11 +420,22 @@ func (c *dashboardServiceClient) DeleteFile(ctx context.Context, in *DeleteFileR
 	return out, nil
 }
 
+func (c *dashboardServiceClient) QueryLogs(ctx context.Context, in *QueryLogsRequest, opts ...grpc.CallOption) (*QueryLogsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(QueryLogsResponse)
+	err := c.cc.Invoke(ctx, DashboardService_QueryLogs_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // DashboardServiceServer is the server API for DashboardService service.
 // All implementations must embed UnimplementedDashboardServiceServer
 // for forward compatibility.
 type DashboardServiceServer interface {
 	ListTasks(context.Context, *ListTasksRequest) (*ListTasksResponse, error)
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	GetTask(context.Context, *GetTaskRequest) (*GetTaskResponse, error)
 	CreateTask(context.Context, *CreateTaskRequest) (*CreateTaskResponse, error)
 	// Reuses transcript.proto's ReadTranscriptSinceRequest/Response rather
@@ -434,6 +451,7 @@ type DashboardServiceServer interface {
 	StreamTranscript(*StreamTranscriptRequest, grpc.ServerStreamingServer[TranscriptEntry]) error
 	GetE2EStatus(context.Context, *GetE2EStatusRequest) (*GetE2EStatusResponse, error)
 	Stop(context.Context, *StopRequest) (*StopResponse, error)
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	SetPermissionMode(context.Context, *SetPermissionModeRequest) (*SetPermissionModeResponse, error)
 	Warm(context.Context, *WarmRequest) (*WarmResponse, error)
 	KillE2E(context.Context, *KillE2ERequest) (*KillE2EResponse, error)
@@ -469,6 +487,9 @@ type DashboardServiceServer interface {
 	GetFileDownloadUrl(context.Context, *GetFileDownloadUrlRequest) (*GetFileDownloadUrlResponse, error)
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	DeleteFile(context.Context, *DeleteFileRequest) (*DeleteFileResponse, error)
+	// Reuses core.proto's QueryLogsRequest/QueryLogsResponse
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	QueryLogs(context.Context, *QueryLogsRequest) (*QueryLogsResponse, error)
 	mustEmbedUnimplementedDashboardServiceServer()
 }
 
@@ -565,6 +586,9 @@ func (UnimplementedDashboardServiceServer) GetFileDownloadUrl(context.Context, *
 }
 func (UnimplementedDashboardServiceServer) DeleteFile(context.Context, *DeleteFileRequest) (*DeleteFileResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeleteFile not implemented")
+}
+func (UnimplementedDashboardServiceServer) QueryLogs(context.Context, *QueryLogsRequest) (*QueryLogsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method QueryLogs not implemented")
 }
 func (UnimplementedDashboardServiceServer) mustEmbedUnimplementedDashboardServiceServer() {}
 func (UnimplementedDashboardServiceServer) testEmbeddedByValue()                          {}
@@ -1102,6 +1126,24 @@ func _DashboardService_DeleteFile_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DashboardService_QueryLogs_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryLogsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DashboardServiceServer).QueryLogs(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DashboardService_QueryLogs_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DashboardServiceServer).QueryLogs(ctx, req.(*QueryLogsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // DashboardService_ServiceDesc is the grpc.ServiceDesc for DashboardService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1220,6 +1262,10 @@ var DashboardService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DeleteFile",
 			Handler:    _DashboardService_DeleteFile_Handler,
+		},
+		{
+			MethodName: "QueryLogs",
+			Handler:    _DashboardService_QueryLogs_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

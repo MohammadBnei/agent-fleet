@@ -164,6 +164,13 @@ export interface AskUserQuestionResponse {
 
 export interface RequestE2eEnvRequest {
   taskId: string;
+  /**
+   * Shell command that installs deps and starts the app, run via
+   * `bash -lc` from the worktree root (e.g. "cd front && bun install &&
+   * bun run dev"). Optional — falls back to the provisioner's
+   * per-repo default (StartCmdFor) when empty.
+   */
+  startCmd: string;
 }
 
 export interface RequestE2eEnvResponse {
@@ -177,6 +184,102 @@ export interface KillE2eEnvRequest {
 
 export interface KillE2eEnvResponse {
   killed: boolean;
+}
+
+/**
+ * Task, GetTaskRequest/Response, and SetPermissionModeRequest/Response live
+ * here (not dashboard.proto, which imports this file) so CoreService's
+ * GetTask/SetPermissionMode below and DashboardService's same-named RPCs
+ * (dashboard.proto) can share one definition — both just return/mutate the
+ * task row, no dashboard-specific shape needed.
+ */
+export interface Task {
+  id: string;
+  repo: string;
+  description: string;
+  status: string;
+  threadId?: string | undefined;
+  prUrl?:
+    | string
+    | undefined;
+  /**
+   * Worker-pod lifecycle state (PodPhase, set via ReportPodEvents) — distinct
+   * from `status` (business state). Unset until the provisioner reports the
+   * pod's first event.
+   */
+  podPhase?: string | undefined;
+  podMessage?:
+    | string
+    | undefined;
+  /**
+   * Reclaim-eligibility signal (ClaimNextTask reclaims a claimed/running
+   * task once this is >10min stale — the exact staleness
+   * threshold the dashboard's own "stuck" badge should match). Set once at
+   * claim time, refreshed by the worker pod's own heartbeat loop; unset for
+   * a still-pending task. RFC3339, matching JournalEntry.created_at.
+   */
+  heartbeatAt?:
+    | string
+    | undefined;
+  /**
+   * How many times ClaimNextTask has reclaimed this task after a stale
+   * heartbeat (capped at MAX_TASK_RETRIES before the task goes
+   * failed_permanently instead of being reclaimed again).
+   */
+  retryCount: number;
+  lastError?:
+    | string
+    | undefined;
+  /**
+   * The Claude SDK's own session id (SaveSessionId) — resumable in a fresh
+   * pod via `resume:` (sessions redesign, supersedes docs/adr/0021/0025's
+   * phase-boundary framing). Unset until the worker's first streamed
+   * message reports it.
+   */
+  sessionId?:
+    | string
+    | undefined;
+  /**
+   * Last time a transcript entry was appended for this task — substrate
+   * for the idle-timeout backstop that tears down an unattended pod.
+   * RFC3339, matching heartbeat_at. Unset for a task with no activity yet.
+   */
+  lastActiveAt?:
+    | string
+    | undefined;
+  /**
+   * The session's current SDK permission mode ("default"|"plan"|
+   * "acceptEdits"|"bypassPermissions"|...), so the dashboard's mode picker
+   * can highlight the real active mode instead of guessing. Unset for an
+   * idle/never-warmed session.
+   */
+  permissionMode?: string | undefined;
+}
+
+export interface GetTaskRequest {
+  id: string;
+}
+
+export interface GetTaskResponse {
+  task?: Task | undefined;
+}
+
+/**
+ * Sets an arbitrary SDK permission mode on a task. Reused by two very
+ * different callers: the dashboard (docs/adr/0027 — a human flipping a
+ * running session's mode, which also appends a transcript entry the live
+ * worker reacts to; see dashboard.proto's own SetPermissionMode comment)
+ * and the sidecar (a worker pod persisting its own initial/current mode on
+ * startup, no transcript append — CoreService's handler is a plain column
+ * write, see coreserver's implementation).
+ */
+export interface SetPermissionModeRequest {
+  taskId: string;
+  mode: string;
+}
+
+export interface SetPermissionModeResponse {
+  status: string;
 }
 
 export interface HeartbeatRequest {
@@ -254,6 +357,67 @@ export interface PushToolTelemetryResponse {
 export interface StreamHumanMessagesRequest {
   taskId: string;
   sinceSeq: number;
+}
+
+export interface QueryLogsRequest {
+  /** Optional - for fleet components */
+  taskId: string;
+  /** Default "agent-fleet" */
+  namespace: string;
+  /** worker|sidecar|core|provisioner|e2e|app */
+  component: string;
+  /** Optional - for component="app" */
+  appName: string;
+  /** debug|info|warn|error (empty = all) */
+  level: string;
+  /** RFC3339, inclusive */
+  startTime: string;
+  /** RFC3339, exclusive */
+  endTime: string;
+  /** Max entries (default 100, max 1000) */
+  limit: number;
+}
+
+export interface LogEntry {
+  /** RFC3339 */
+  timestamp: string;
+  level: string;
+  msg: string;
+  component: string;
+  podName: string;
+  namespace: string;
+  /** Other slog fields as JSON */
+  fieldsJson: string;
+}
+
+export interface QueryLogsResponse {
+  entries: LogEntry[];
+  totalCount: number;
+}
+
+/** For agents via MCP tool - supports both duration and explicit timestamps */
+export interface ViewLogsRequest {
+  /** Required */
+  component: string;
+  /** Optional */
+  appName: string;
+  /** Optional (default "agent-fleet") */
+  namespace: string;
+  /** Optional (empty = all) */
+  level: string;
+  /** "1h"|"30m"|"24h" (default "1h") - ignored if start_time set */
+  duration: string;
+  /** Default 50, max 1000 */
+  limit: number;
+  /** Optional: RFC3339 timestamp, overrides duration */
+  startTime: string;
+  /** Optional: RFC3339 timestamp (default: now) */
+  endTime: string;
+}
+
+export interface ViewLogsResponse {
+  /** Formatted for agent consumption */
+  logsText: string;
 }
 
 function createBasePodEvent(): PodEvent {
@@ -519,7 +683,7 @@ export const AskUserQuestionResponse: MessageFns<AskUserQuestionResponse> = {
 };
 
 function createBaseRequestE2eEnvRequest(): RequestE2eEnvRequest {
-  return { taskId: "" };
+  return { taskId: "", startCmd: "" };
 }
 
 export const RequestE2eEnvRequest: MessageFns<RequestE2eEnvRequest> = {
@@ -530,6 +694,11 @@ export const RequestE2eEnvRequest: MessageFns<RequestE2eEnvRequest> = {
         : isSet(object.task_id)
         ? globalThis.String(object.task_id)
         : "",
+      startCmd: isSet(object.startCmd)
+        ? globalThis.String(object.startCmd)
+        : isSet(object.start_cmd)
+        ? globalThis.String(object.start_cmd)
+        : "",
     };
   },
 
@@ -537,6 +706,9 @@ export const RequestE2eEnvRequest: MessageFns<RequestE2eEnvRequest> = {
     const obj: any = {};
     if (message.taskId !== "") {
       obj.taskId = message.taskId;
+    }
+    if (message.startCmd !== "") {
+      obj.startCmd = message.startCmd;
     }
     return obj;
   },
@@ -547,6 +719,7 @@ export const RequestE2eEnvRequest: MessageFns<RequestE2eEnvRequest> = {
   fromPartial<I extends Exact<DeepPartial<RequestE2eEnvRequest>, I>>(object: I): RequestE2eEnvRequest {
     const message = createBaseRequestE2eEnvRequest();
     message.taskId = object.taskId ?? "";
+    message.startCmd = object.startCmd ?? "";
     return message;
   },
 };
@@ -645,6 +818,274 @@ export const KillE2eEnvResponse: MessageFns<KillE2eEnvResponse> = {
   fromPartial<I extends Exact<DeepPartial<KillE2eEnvResponse>, I>>(object: I): KillE2eEnvResponse {
     const message = createBaseKillE2eEnvResponse();
     message.killed = object.killed ?? false;
+    return message;
+  },
+};
+
+function createBaseTask(): Task {
+  return {
+    id: "",
+    repo: "",
+    description: "",
+    status: "",
+    threadId: undefined,
+    prUrl: undefined,
+    podPhase: undefined,
+    podMessage: undefined,
+    heartbeatAt: undefined,
+    retryCount: 0,
+    lastError: undefined,
+    sessionId: undefined,
+    lastActiveAt: undefined,
+    permissionMode: undefined,
+  };
+}
+
+export const Task: MessageFns<Task> = {
+  fromJSON(object: any): Task {
+    return {
+      id: isSet(object.id) ? globalThis.String(object.id) : "",
+      repo: isSet(object.repo) ? globalThis.String(object.repo) : "",
+      description: isSet(object.description) ? globalThis.String(object.description) : "",
+      status: isSet(object.status) ? globalThis.String(object.status) : "",
+      threadId: isSet(object.threadId)
+        ? globalThis.String(object.threadId)
+        : isSet(object.thread_id)
+        ? globalThis.String(object.thread_id)
+        : undefined,
+      prUrl: isSet(object.prUrl)
+        ? globalThis.String(object.prUrl)
+        : isSet(object.pr_url)
+        ? globalThis.String(object.pr_url)
+        : undefined,
+      podPhase: isSet(object.podPhase)
+        ? globalThis.String(object.podPhase)
+        : isSet(object.pod_phase)
+        ? globalThis.String(object.pod_phase)
+        : undefined,
+      podMessage: isSet(object.podMessage)
+        ? globalThis.String(object.podMessage)
+        : isSet(object.pod_message)
+        ? globalThis.String(object.pod_message)
+        : undefined,
+      heartbeatAt: isSet(object.heartbeatAt)
+        ? globalThis.String(object.heartbeatAt)
+        : isSet(object.heartbeat_at)
+        ? globalThis.String(object.heartbeat_at)
+        : undefined,
+      retryCount: isSet(object.retryCount)
+        ? globalThis.Number(object.retryCount)
+        : isSet(object.retry_count)
+        ? globalThis.Number(object.retry_count)
+        : 0,
+      lastError: isSet(object.lastError)
+        ? globalThis.String(object.lastError)
+        : isSet(object.last_error)
+        ? globalThis.String(object.last_error)
+        : undefined,
+      sessionId: isSet(object.sessionId)
+        ? globalThis.String(object.sessionId)
+        : isSet(object.session_id)
+        ? globalThis.String(object.session_id)
+        : undefined,
+      lastActiveAt: isSet(object.lastActiveAt)
+        ? globalThis.String(object.lastActiveAt)
+        : isSet(object.last_active_at)
+        ? globalThis.String(object.last_active_at)
+        : undefined,
+      permissionMode: isSet(object.permissionMode)
+        ? globalThis.String(object.permissionMode)
+        : isSet(object.permission_mode)
+        ? globalThis.String(object.permission_mode)
+        : undefined,
+    };
+  },
+
+  toJSON(message: Task): unknown {
+    const obj: any = {};
+    if (message.id !== "") {
+      obj.id = message.id;
+    }
+    if (message.repo !== "") {
+      obj.repo = message.repo;
+    }
+    if (message.description !== "") {
+      obj.description = message.description;
+    }
+    if (message.status !== "") {
+      obj.status = message.status;
+    }
+    if (message.threadId !== undefined) {
+      obj.threadId = message.threadId;
+    }
+    if (message.prUrl !== undefined) {
+      obj.prUrl = message.prUrl;
+    }
+    if (message.podPhase !== undefined) {
+      obj.podPhase = message.podPhase;
+    }
+    if (message.podMessage !== undefined) {
+      obj.podMessage = message.podMessage;
+    }
+    if (message.heartbeatAt !== undefined) {
+      obj.heartbeatAt = message.heartbeatAt;
+    }
+    if (message.retryCount !== 0) {
+      obj.retryCount = Math.round(message.retryCount);
+    }
+    if (message.lastError !== undefined) {
+      obj.lastError = message.lastError;
+    }
+    if (message.sessionId !== undefined) {
+      obj.sessionId = message.sessionId;
+    }
+    if (message.lastActiveAt !== undefined) {
+      obj.lastActiveAt = message.lastActiveAt;
+    }
+    if (message.permissionMode !== undefined) {
+      obj.permissionMode = message.permissionMode;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<Task>, I>>(base?: I): Task {
+    return Task.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<Task>, I>>(object: I): Task {
+    const message = createBaseTask();
+    message.id = object.id ?? "";
+    message.repo = object.repo ?? "";
+    message.description = object.description ?? "";
+    message.status = object.status ?? "";
+    message.threadId = object.threadId ?? undefined;
+    message.prUrl = object.prUrl ?? undefined;
+    message.podPhase = object.podPhase ?? undefined;
+    message.podMessage = object.podMessage ?? undefined;
+    message.heartbeatAt = object.heartbeatAt ?? undefined;
+    message.retryCount = object.retryCount ?? 0;
+    message.lastError = object.lastError ?? undefined;
+    message.sessionId = object.sessionId ?? undefined;
+    message.lastActiveAt = object.lastActiveAt ?? undefined;
+    message.permissionMode = object.permissionMode ?? undefined;
+    return message;
+  },
+};
+
+function createBaseGetTaskRequest(): GetTaskRequest {
+  return { id: "" };
+}
+
+export const GetTaskRequest: MessageFns<GetTaskRequest> = {
+  fromJSON(object: any): GetTaskRequest {
+    return { id: isSet(object.id) ? globalThis.String(object.id) : "" };
+  },
+
+  toJSON(message: GetTaskRequest): unknown {
+    const obj: any = {};
+    if (message.id !== "") {
+      obj.id = message.id;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<GetTaskRequest>, I>>(base?: I): GetTaskRequest {
+    return GetTaskRequest.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<GetTaskRequest>, I>>(object: I): GetTaskRequest {
+    const message = createBaseGetTaskRequest();
+    message.id = object.id ?? "";
+    return message;
+  },
+};
+
+function createBaseGetTaskResponse(): GetTaskResponse {
+  return { task: undefined };
+}
+
+export const GetTaskResponse: MessageFns<GetTaskResponse> = {
+  fromJSON(object: any): GetTaskResponse {
+    return { task: isSet(object.task) ? Task.fromJSON(object.task) : undefined };
+  },
+
+  toJSON(message: GetTaskResponse): unknown {
+    const obj: any = {};
+    if (message.task !== undefined) {
+      obj.task = Task.toJSON(message.task);
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<GetTaskResponse>, I>>(base?: I): GetTaskResponse {
+    return GetTaskResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<GetTaskResponse>, I>>(object: I): GetTaskResponse {
+    const message = createBaseGetTaskResponse();
+    message.task = (object.task !== undefined && object.task !== null) ? Task.fromPartial(object.task) : undefined;
+    return message;
+  },
+};
+
+function createBaseSetPermissionModeRequest(): SetPermissionModeRequest {
+  return { taskId: "", mode: "" };
+}
+
+export const SetPermissionModeRequest: MessageFns<SetPermissionModeRequest> = {
+  fromJSON(object: any): SetPermissionModeRequest {
+    return {
+      taskId: isSet(object.taskId)
+        ? globalThis.String(object.taskId)
+        : isSet(object.task_id)
+        ? globalThis.String(object.task_id)
+        : "",
+      mode: isSet(object.mode) ? globalThis.String(object.mode) : "",
+    };
+  },
+
+  toJSON(message: SetPermissionModeRequest): unknown {
+    const obj: any = {};
+    if (message.taskId !== "") {
+      obj.taskId = message.taskId;
+    }
+    if (message.mode !== "") {
+      obj.mode = message.mode;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<SetPermissionModeRequest>, I>>(base?: I): SetPermissionModeRequest {
+    return SetPermissionModeRequest.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<SetPermissionModeRequest>, I>>(object: I): SetPermissionModeRequest {
+    const message = createBaseSetPermissionModeRequest();
+    message.taskId = object.taskId ?? "";
+    message.mode = object.mode ?? "";
+    return message;
+  },
+};
+
+function createBaseSetPermissionModeResponse(): SetPermissionModeResponse {
+  return { status: "" };
+}
+
+export const SetPermissionModeResponse: MessageFns<SetPermissionModeResponse> = {
+  fromJSON(object: any): SetPermissionModeResponse {
+    return { status: isSet(object.status) ? globalThis.String(object.status) : "" };
+  },
+
+  toJSON(message: SetPermissionModeResponse): unknown {
+    const obj: any = {};
+    if (message.status !== "") {
+      obj.status = message.status;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<SetPermissionModeResponse>, I>>(base?: I): SetPermissionModeResponse {
+    return SetPermissionModeResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<SetPermissionModeResponse>, I>>(object: I): SetPermissionModeResponse {
+    const message = createBaseSetPermissionModeResponse();
+    message.status = object.status ?? "";
     return message;
   },
 };
@@ -1119,6 +1560,300 @@ export const StreamHumanMessagesRequest: MessageFns<StreamHumanMessagesRequest> 
   },
 };
 
+function createBaseQueryLogsRequest(): QueryLogsRequest {
+  return { taskId: "", namespace: "", component: "", appName: "", level: "", startTime: "", endTime: "", limit: 0 };
+}
+
+export const QueryLogsRequest: MessageFns<QueryLogsRequest> = {
+  fromJSON(object: any): QueryLogsRequest {
+    return {
+      taskId: isSet(object.taskId)
+        ? globalThis.String(object.taskId)
+        : isSet(object.task_id)
+        ? globalThis.String(object.task_id)
+        : "",
+      namespace: isSet(object.namespace) ? globalThis.String(object.namespace) : "",
+      component: isSet(object.component) ? globalThis.String(object.component) : "",
+      appName: isSet(object.appName)
+        ? globalThis.String(object.appName)
+        : isSet(object.app_name)
+        ? globalThis.String(object.app_name)
+        : "",
+      level: isSet(object.level) ? globalThis.String(object.level) : "",
+      startTime: isSet(object.startTime)
+        ? globalThis.String(object.startTime)
+        : isSet(object.start_time)
+        ? globalThis.String(object.start_time)
+        : "",
+      endTime: isSet(object.endTime)
+        ? globalThis.String(object.endTime)
+        : isSet(object.end_time)
+        ? globalThis.String(object.end_time)
+        : "",
+      limit: isSet(object.limit) ? globalThis.Number(object.limit) : 0,
+    };
+  },
+
+  toJSON(message: QueryLogsRequest): unknown {
+    const obj: any = {};
+    if (message.taskId !== "") {
+      obj.taskId = message.taskId;
+    }
+    if (message.namespace !== "") {
+      obj.namespace = message.namespace;
+    }
+    if (message.component !== "") {
+      obj.component = message.component;
+    }
+    if (message.appName !== "") {
+      obj.appName = message.appName;
+    }
+    if (message.level !== "") {
+      obj.level = message.level;
+    }
+    if (message.startTime !== "") {
+      obj.startTime = message.startTime;
+    }
+    if (message.endTime !== "") {
+      obj.endTime = message.endTime;
+    }
+    if (message.limit !== 0) {
+      obj.limit = Math.round(message.limit);
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<QueryLogsRequest>, I>>(base?: I): QueryLogsRequest {
+    return QueryLogsRequest.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<QueryLogsRequest>, I>>(object: I): QueryLogsRequest {
+    const message = createBaseQueryLogsRequest();
+    message.taskId = object.taskId ?? "";
+    message.namespace = object.namespace ?? "";
+    message.component = object.component ?? "";
+    message.appName = object.appName ?? "";
+    message.level = object.level ?? "";
+    message.startTime = object.startTime ?? "";
+    message.endTime = object.endTime ?? "";
+    message.limit = object.limit ?? 0;
+    return message;
+  },
+};
+
+function createBaseLogEntry(): LogEntry {
+  return { timestamp: "", level: "", msg: "", component: "", podName: "", namespace: "", fieldsJson: "" };
+}
+
+export const LogEntry: MessageFns<LogEntry> = {
+  fromJSON(object: any): LogEntry {
+    return {
+      timestamp: isSet(object.timestamp) ? globalThis.String(object.timestamp) : "",
+      level: isSet(object.level) ? globalThis.String(object.level) : "",
+      msg: isSet(object.msg) ? globalThis.String(object.msg) : "",
+      component: isSet(object.component) ? globalThis.String(object.component) : "",
+      podName: isSet(object.podName)
+        ? globalThis.String(object.podName)
+        : isSet(object.pod_name)
+        ? globalThis.String(object.pod_name)
+        : "",
+      namespace: isSet(object.namespace) ? globalThis.String(object.namespace) : "",
+      fieldsJson: isSet(object.fieldsJson)
+        ? globalThis.String(object.fieldsJson)
+        : isSet(object.fields_json)
+        ? globalThis.String(object.fields_json)
+        : "",
+    };
+  },
+
+  toJSON(message: LogEntry): unknown {
+    const obj: any = {};
+    if (message.timestamp !== "") {
+      obj.timestamp = message.timestamp;
+    }
+    if (message.level !== "") {
+      obj.level = message.level;
+    }
+    if (message.msg !== "") {
+      obj.msg = message.msg;
+    }
+    if (message.component !== "") {
+      obj.component = message.component;
+    }
+    if (message.podName !== "") {
+      obj.podName = message.podName;
+    }
+    if (message.namespace !== "") {
+      obj.namespace = message.namespace;
+    }
+    if (message.fieldsJson !== "") {
+      obj.fieldsJson = message.fieldsJson;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<LogEntry>, I>>(base?: I): LogEntry {
+    return LogEntry.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<LogEntry>, I>>(object: I): LogEntry {
+    const message = createBaseLogEntry();
+    message.timestamp = object.timestamp ?? "";
+    message.level = object.level ?? "";
+    message.msg = object.msg ?? "";
+    message.component = object.component ?? "";
+    message.podName = object.podName ?? "";
+    message.namespace = object.namespace ?? "";
+    message.fieldsJson = object.fieldsJson ?? "";
+    return message;
+  },
+};
+
+function createBaseQueryLogsResponse(): QueryLogsResponse {
+  return { entries: [], totalCount: 0 };
+}
+
+export const QueryLogsResponse: MessageFns<QueryLogsResponse> = {
+  fromJSON(object: any): QueryLogsResponse {
+    return {
+      entries: globalThis.Array.isArray(object?.entries) ? object.entries.map((e: any) => LogEntry.fromJSON(e)) : [],
+      totalCount: isSet(object.totalCount)
+        ? globalThis.Number(object.totalCount)
+        : isSet(object.total_count)
+        ? globalThis.Number(object.total_count)
+        : 0,
+    };
+  },
+
+  toJSON(message: QueryLogsResponse): unknown {
+    const obj: any = {};
+    if (message.entries?.length) {
+      obj.entries = message.entries.map((e) => LogEntry.toJSON(e));
+    }
+    if (message.totalCount !== 0) {
+      obj.totalCount = Math.round(message.totalCount);
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<QueryLogsResponse>, I>>(base?: I): QueryLogsResponse {
+    return QueryLogsResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<QueryLogsResponse>, I>>(object: I): QueryLogsResponse {
+    const message = createBaseQueryLogsResponse();
+    message.entries = object.entries?.map((e) => LogEntry.fromPartial(e)) || [];
+    message.totalCount = object.totalCount ?? 0;
+    return message;
+  },
+};
+
+function createBaseViewLogsRequest(): ViewLogsRequest {
+  return { component: "", appName: "", namespace: "", level: "", duration: "", limit: 0, startTime: "", endTime: "" };
+}
+
+export const ViewLogsRequest: MessageFns<ViewLogsRequest> = {
+  fromJSON(object: any): ViewLogsRequest {
+    return {
+      component: isSet(object.component) ? globalThis.String(object.component) : "",
+      appName: isSet(object.appName)
+        ? globalThis.String(object.appName)
+        : isSet(object.app_name)
+        ? globalThis.String(object.app_name)
+        : "",
+      namespace: isSet(object.namespace) ? globalThis.String(object.namespace) : "",
+      level: isSet(object.level) ? globalThis.String(object.level) : "",
+      duration: isSet(object.duration) ? globalThis.String(object.duration) : "",
+      limit: isSet(object.limit) ? globalThis.Number(object.limit) : 0,
+      startTime: isSet(object.startTime)
+        ? globalThis.String(object.startTime)
+        : isSet(object.start_time)
+        ? globalThis.String(object.start_time)
+        : "",
+      endTime: isSet(object.endTime)
+        ? globalThis.String(object.endTime)
+        : isSet(object.end_time)
+        ? globalThis.String(object.end_time)
+        : "",
+    };
+  },
+
+  toJSON(message: ViewLogsRequest): unknown {
+    const obj: any = {};
+    if (message.component !== "") {
+      obj.component = message.component;
+    }
+    if (message.appName !== "") {
+      obj.appName = message.appName;
+    }
+    if (message.namespace !== "") {
+      obj.namespace = message.namespace;
+    }
+    if (message.level !== "") {
+      obj.level = message.level;
+    }
+    if (message.duration !== "") {
+      obj.duration = message.duration;
+    }
+    if (message.limit !== 0) {
+      obj.limit = Math.round(message.limit);
+    }
+    if (message.startTime !== "") {
+      obj.startTime = message.startTime;
+    }
+    if (message.endTime !== "") {
+      obj.endTime = message.endTime;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<ViewLogsRequest>, I>>(base?: I): ViewLogsRequest {
+    return ViewLogsRequest.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<ViewLogsRequest>, I>>(object: I): ViewLogsRequest {
+    const message = createBaseViewLogsRequest();
+    message.component = object.component ?? "";
+    message.appName = object.appName ?? "";
+    message.namespace = object.namespace ?? "";
+    message.level = object.level ?? "";
+    message.duration = object.duration ?? "";
+    message.limit = object.limit ?? 0;
+    message.startTime = object.startTime ?? "";
+    message.endTime = object.endTime ?? "";
+    return message;
+  },
+};
+
+function createBaseViewLogsResponse(): ViewLogsResponse {
+  return { logsText: "" };
+}
+
+export const ViewLogsResponse: MessageFns<ViewLogsResponse> = {
+  fromJSON(object: any): ViewLogsResponse {
+    return {
+      logsText: isSet(object.logsText)
+        ? globalThis.String(object.logsText)
+        : isSet(object.logs_text)
+        ? globalThis.String(object.logs_text)
+        : "",
+    };
+  },
+
+  toJSON(message: ViewLogsResponse): unknown {
+    const obj: any = {};
+    if (message.logsText !== "") {
+      obj.logsText = message.logsText;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<ViewLogsResponse>, I>>(base?: I): ViewLogsResponse {
+    return ViewLogsResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<ViewLogsResponse>, I>>(object: I): ViewLogsResponse {
+    const message = createBaseViewLogsResponse();
+    message.logsText = object.logsText ?? "";
+    return message;
+  },
+};
+
 export interface CoreService {
   /** buf:lint:ignore RPC_REQUEST_STANDARD_NAME */
   ReportPodEvents(request: Observable<PodEvent>): Promise<ReportPodEventsResponse>;
@@ -1142,6 +1877,21 @@ export interface CoreService {
   ListE2eTools(request: ListE2eToolsRequest): Promise<ListE2eToolsResponse>;
   /** buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE */
   CallE2eTool(request: CallE2eToolRequest): Promise<CallE2eToolResponse>;
+  /**
+   * Lets a worker pod fetch its own fresh task row on startup instead of
+   * relying on stale environment variables — same message shapes
+   * DashboardService.GetTask uses, different caller (docs/adr/0029).
+   * buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+   */
+  GetTask(request: GetTaskRequest): Promise<GetTaskResponse>;
+  /**
+   * A worker pod persisting its own permission mode (initial "default" or a
+   * change it made itself) — a plain column write, unlike
+   * DashboardService.SetPermissionMode which also notifies a *different*,
+   * already-running worker via the transcript.
+   * buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+   */
+  SetPermissionMode(request: SetPermissionModeRequest): Promise<SetPermissionModeResponse>;
   Heartbeat(request: HeartbeatRequest): Promise<HeartbeatResponse>;
   SetTaskStatus(request: SetTaskStatusRequest): Promise<SetTaskStatusResponse>;
   AppendJournal(request: AppendJournalRequest): Promise<AppendJournalResponse>;
@@ -1163,6 +1913,7 @@ export interface CoreService {
   GetFileDownloadUrl(request: GetFileDownloadUrlRequest): Promise<GetFileDownloadUrlResponse>;
   /** buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE */
   DeleteFile(request: DeleteFileRequest): Promise<DeleteFileResponse>;
+  ViewLogs(request: ViewLogsRequest): Promise<ViewLogsResponse>;
 }
 
 type Builtin = Date | Function | Uint8Array | string | number | boolean | undefined;

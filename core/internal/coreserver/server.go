@@ -15,14 +15,17 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 
+	"github.com/MohammadBnei/agent-fleet/core/internal/dashboard"
 	"github.com/MohammadBnei/agent-fleet/core/internal/filestore"
 	"github.com/MohammadBnei/agent-fleet/core/internal/journal"
+	"github.com/MohammadBnei/agent-fleet/core/internal/lokiclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/provisionerclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/tasks"
 	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
@@ -40,10 +43,11 @@ type Server struct {
 	journal     *journal.Store
 	provisioner *provisionerclient.Client
 	files       filestore.Store
+	loki        lokiclient.Querier
 }
 
-func New(transcr transcript.Store, taskStore *tasks.Store, journalStore *journal.Store, provisioner *provisionerclient.Client, files filestore.Store) *Server {
-	return &Server{transcr: transcr, tasks: taskStore, journal: journalStore, provisioner: provisioner, files: files}
+func New(transcr transcript.Store, taskStore *tasks.Store, journalStore *journal.Store, provisioner *provisionerclient.Client, files filestore.Store, loki lokiclient.Querier) *Server {
+	return &Server{transcr: transcr, tasks: taskStore, journal: journalStore, provisioner: provisioner, files: files, loki: loki}
 }
 
 // --- agent-facing (proxied MCP-shaped calls) ---
@@ -150,7 +154,7 @@ func (s *Server) RequestE2EEnv(ctx context.Context, req *agentfleetv1.RequestE2E
 	if t == nil {
 		return nil, fmt.Errorf("RequestE2EEnv: task %s not found", req.GetTaskId())
 	}
-	status, previewURL, err := s.provisioner.CreateE2eSession(ctx, req.GetTaskId(), t.Repo)
+	status, previewURL, err := s.provisioner.CreateE2eSession(ctx, req.GetTaskId(), t.Repo, req.GetStartCmd())
 	if err != nil {
 		return nil, fmt.Errorf("RequestE2EEnv: %w", err)
 	}
@@ -218,6 +222,33 @@ func (s *Server) DeleteFile(ctx context.Context, req *agentfleetv1.DeleteFileReq
 // --- wrapper-facing (never agent-initiated, docs/adr/0020 point 5's third
 // sidecar responsibility) — replaces worker/src/db.ts's direct SQL ---
 
+// GetTask lets a worker pod fetch its own fresh task row on startup instead
+// of relying on stale environment variables. Same message shapes as
+// DashboardService.GetTask (core.proto's comment on Task/GetTaskRequest),
+// reusing its taskToProto mapper rather than duplicating the field list.
+func (s *Server) GetTask(ctx context.Context, req *agentfleetv1.GetTaskRequest) (*agentfleetv1.GetTaskResponse, error) {
+	t, err := s.tasks.GetTask(ctx, req.GetId())
+	if err != nil {
+		return nil, fmt.Errorf("GetTask: %w", err)
+	}
+	if t == nil {
+		return nil, fmt.Errorf("GetTask: task %s not found", req.GetId())
+	}
+	return &agentfleetv1.GetTaskResponse{Task: dashboard.TaskToProto(*t)}, nil
+}
+
+// SetPermissionMode persists a worker pod's own permission mode (the
+// initial "default" on startup, or a change it made itself) — a plain
+// column write. Unlike DashboardService.SetPermissionMode, it does not
+// append a transcript entry: there's no other running worker to notify,
+// the caller *is* the session whose mode this is.
+func (s *Server) SetPermissionMode(ctx context.Context, req *agentfleetv1.SetPermissionModeRequest) (*agentfleetv1.SetPermissionModeResponse, error) {
+	if err := s.tasks.SetPermissionMode(ctx, req.GetTaskId(), req.GetMode()); err != nil {
+		return nil, fmt.Errorf("SetPermissionMode: %w", err)
+	}
+	return &agentfleetv1.SetPermissionModeResponse{Status: "ok"}, nil
+}
+
 func (s *Server) Heartbeat(ctx context.Context, req *agentfleetv1.HeartbeatRequest) (*agentfleetv1.HeartbeatResponse, error) {
 	if err := s.tasks.UpdateHeartbeat(ctx, req.GetTaskId(), req.GetLeaseId()); err != nil {
 		return nil, fmt.Errorf("Heartbeat: %w", err)
@@ -225,7 +256,7 @@ func (s *Server) Heartbeat(ctx context.Context, req *agentfleetv1.HeartbeatReque
 	return &agentfleetv1.HeartbeatResponse{}, nil
 }
 
-// terminalTaskStatuses mirrors db/schema.sql's tasks_status_check values
+// terminalTaskStatuses mirrors db/migrations/'s tasks_status_check values
 // that end a task's lifecycle — the only statuses that should ever trigger
 // teardown.
 var terminalTaskStatuses = map[string]bool{
@@ -482,4 +513,131 @@ func protoTypeToString(t agentfleetv1.TranscriptEntryType) string {
 	default:
 		return ""
 	}
+}
+
+// --- Log querying (Loki queries, docs/adr/0013) ---
+
+// ViewLogs queries Loki for logs and returns formatted text for agent consumption.
+// Supports both duration-based queries (e.g., "last 1h") and explicit timestamp ranges.
+func (s *Server) ViewLogs(ctx context.Context, req *agentfleetv1.ViewLogsRequest) (*agentfleetv1.ViewLogsResponse, error) {
+	if req.GetComponent() == "" {
+		return nil, fmt.Errorf("component is required")
+	}
+
+	// Extract taskId from context metadata (sidecar includes it)
+	taskID := extractTaskIDFromMetadata(ctx)
+
+	// Determine time range: explicit timestamps override duration
+	var start, end time.Time
+	if req.GetStartTime() != "" {
+		// Parse explicit start timestamp (RFC3339)
+		var err error
+		start, err = time.Parse(time.RFC3339, req.GetStartTime())
+		if err != nil {
+			return nil, fmt.Errorf("invalid start_time (must be RFC3339): %w", err)
+		}
+	} else {
+		// Use duration to calculate start time
+		duration := parseDuration(req.GetDuration(), time.Hour) // default 1h
+		start = time.Now().Add(-duration)
+	}
+
+	if req.GetEndTime() != "" {
+		// Parse explicit end timestamp (RFC3339)
+		var err error
+		end, err = time.Parse(time.RFC3339, req.GetEndTime())
+		if err != nil {
+			return nil, fmt.Errorf("invalid end_time (must be RFC3339): %w", err)
+		}
+	} else {
+		// Default to now
+		end = time.Now()
+	}
+
+	// Apply defaults
+	namespace := req.GetNamespace()
+	if namespace == "" {
+		namespace = "agent-fleet"
+	}
+	limit := int(req.GetLimit())
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 1000 {
+		limit = 1000
+	}
+
+	// Query Loki
+	entries, err := s.loki.Query(ctx, lokiclient.QueryRequest{
+		TaskID:    taskID,
+		Namespace: namespace,
+		Component: req.GetComponent(),
+		AppName:   req.GetAppName(),
+		Level:     req.GetLevel(),
+		Start:     start,
+		End:       end,
+		Limit:     limit,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("query Loki: %w", err)
+	}
+
+	// Format for agent (table with timestamp, level, message)
+	text := formatLogsForAgent(entries)
+	return &agentfleetv1.ViewLogsResponse{LogsText: text}, nil
+}
+
+// extractTaskIDFromMetadata extracts task_id from gRPC metadata.
+// The sidecar includes this in every call.
+func extractTaskIDFromMetadata(ctx context.Context) string {
+	// TODO: Extract from gRPC metadata when sidecar implementation is done
+	// For now, return empty - this will cause Loki to query all pods
+	// of the specified component
+	return ""
+}
+
+// parseDuration parses a duration string like "1h", "30m", "24h".
+func parseDuration(s string, defaultDur time.Duration) time.Duration {
+	if s == "" {
+		return defaultDur
+	}
+	d, err := time.ParseDuration(s)
+	if err != nil {
+		slog.Warn("invalid duration, using default", "duration", s, "default", defaultDur)
+		return defaultDur
+	}
+	return d
+}
+
+// formatLogsForAgent formats log entries as a table for agent consumption.
+func formatLogsForAgent(entries []lokiclient.LogEntry) string {
+	if len(entries) == 0 {
+		return "No logs found."
+	}
+
+	var b strings.Builder
+	b.WriteString("Timestamp            Pod                  Level  Message\n")
+	b.WriteString("-------------------  -------------------  -----  -------\n")
+
+	for _, entry := range entries {
+		ts := entry.Timestamp.Format("2006-01-02 15:04:05")
+		level := entry.Level
+		if level == "" {
+			level = "info"
+		}
+		// Truncate pod name for display
+		podName := entry.PodName
+		if len(podName) > 19 {
+			podName = podName[:16] + "..."
+		}
+		// Truncate long messages
+		msg := entry.Msg
+		if len(msg) > 80 {
+			msg = msg[:77] + "..."
+		}
+		fmt.Fprintf(&b, "%s  %-19s  %-5s  %s\n", ts, podName, level, msg)
+	}
+
+	fmt.Fprintf(&b, "\nShowing %d entries", len(entries))
+	return b.String()
 }

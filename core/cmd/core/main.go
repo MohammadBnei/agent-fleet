@@ -11,8 +11,6 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/db"
 )
 
-// ponytail: no Cobra — one subcommand (`migrate`) doesn't earn a CLI
-// framework dependency. Add one if a second subcommand shows up.
 func main() {
 	cfg := config.Load()
 
@@ -35,15 +33,6 @@ func main() {
 		os.Exit(1)
 	}
 	defer pool.Close()
-
-	if len(os.Args) > 1 && os.Args[1] == "migrate" {
-		if err := db.ApplySchema(ctx, pool); err != nil {
-			slog.Error("migrate failed", "error", err)
-			os.Exit(1)
-		}
-		slog.Info("migrate: schema applied")
-		return
-	}
 
 	if err := run(ctx, cfg, pool); err != nil {
 		slog.Error("core exited with error", "error", err)

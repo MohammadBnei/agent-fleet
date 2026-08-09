@@ -9,3 +9,7 @@ dist/
 # local/kind testing ground: Mac-side view of the kind node's hostPath mount
 # (worktrees/clones from real local test runs) — never committed.
 local/kind/workspace-data/
+
+# Stray output of building e2e-runner/cmd/execmcp from the repo root
+# instead of its own module directory.
+/execmcp

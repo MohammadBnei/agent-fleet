@@ -6,71 +6,31 @@ import (
 	"context"
 	"errors"
 	"testing"
-	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/modules/postgres"
-	"github.com/testcontainers/testcontainers-go/wait"
+
+	"github.com/MohammadBnei/agent-fleet/core/internal/dbtest"
 )
 
-// Real Postgres — mirrors repos/store_test.go's container setup, a minimal
-// subset of db/schema.sql's prompt_snippets table.
+// dbtest.NewPool applies the real db/migrations/ (docs/adr/0030), which
+// seeds 4 default snippets into prompt_snippets — tests below use fixture
+// names outside that seeded set and assert containment/delta rather than
+// an exact empty-table count.
 func newTestPool(t *testing.T) *pgxpool.Pool {
-	t.Helper()
-	ctx := context.Background()
-
-	container, err := postgres.Run(ctx, "postgres:16",
-		postgres.WithDatabase("agentfleettest"),
-		postgres.WithUsername("test"),
-		postgres.WithPassword("test"),
-		testcontainers.WithWaitStrategy(
-			wait.ForLog("database system is ready to accept connections").
-				WithOccurrence(2).
-				WithStartupTimeout(60*time.Second),
-		),
-	)
-	if err != nil {
-		t.Fatalf("start postgres container: %v", err)
-	}
-	t.Cleanup(func() { _ = container.Terminate(ctx) })
-
-	connStr, err := container.ConnectionString(ctx, "sslmode=disable")
-	if err != nil {
-		t.Fatalf("connection string: %v", err)
-	}
-	pool, err := pgxpool.New(ctx, connStr)
-	if err != nil {
-		t.Fatalf("pgxpool.New: %v", err)
-	}
-	t.Cleanup(pool.Close)
-
-	_, err = pool.Exec(ctx, `
-		CREATE TABLE prompt_snippets (
-			id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-			name       TEXT NOT NULL UNIQUE,
-			text       TEXT NOT NULL,
-			created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-			updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-		);
-	`)
-	if err != nil {
-		t.Fatalf("apply schema: %v", err)
-	}
-	return pool
+	return dbtest.NewPool(t)
 }
 
 func TestStore_CreateGetListUpdateDelete(t *testing.T) {
 	s := NewStore(newTestPool(t))
 	ctx := context.Background()
 
-	list, err := s.List(ctx)
-	if err != nil || len(list) != 0 {
-		t.Fatalf("List before Create = (%v, %v), want ([], nil)", list, err)
+	before, err := s.List(ctx)
+	if err != nil {
+		t.Fatalf("List before Create: %v", err)
 	}
 
-	sn, err := s.Create(ctx, Snippet{Name: "Open a PR when done", Text: "push and open a PR"})
+	sn, err := s.Create(ctx, Snippet{Name: "test-snippet", Text: "push and open a PR"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -78,12 +38,21 @@ func TestStore_CreateGetListUpdateDelete(t *testing.T) {
 		t.Fatalf("Create returned empty ID")
 	}
 
-	list, err = s.List(ctx)
+	list, err := s.List(ctx)
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
-	if len(list) != 1 || list[0] != sn {
-		t.Fatalf("List = %+v, want [%+v]", list, sn)
+	if len(list) != len(before)+1 {
+		t.Fatalf("List after Create has %d entries, want %d", len(list), len(before)+1)
+	}
+	found := false
+	for _, item := range list {
+		if item == sn {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("List = %+v, want it to contain %+v", list, sn)
 	}
 
 	got, err := s.GetByIDs(ctx, []string{sn.ID})
@@ -94,7 +63,7 @@ func TestStore_CreateGetListUpdateDelete(t *testing.T) {
 		t.Fatalf("GetByIDs = %+v, want [%+v]", got, sn)
 	}
 
-	updated := Snippet{ID: sn.ID, Name: "Open a PR when done (v2)", Text: "push, then gh pr create"}
+	updated := Snippet{ID: sn.ID, Name: "test-snippet (v2)", Text: "push, then gh pr create"}
 	if err := s.Update(ctx, updated); err != nil {
 		t.Fatalf("Update: %v", err)
 	}
@@ -107,8 +76,8 @@ func TestStore_CreateGetListUpdateDelete(t *testing.T) {
 		t.Fatalf("Delete: %v", err)
 	}
 	list, err = s.List(ctx)
-	if err != nil || len(list) != 0 {
-		t.Fatalf("List after Delete = (%v, %v), want ([], nil)", list, err)
+	if err != nil || len(list) != len(before) {
+		t.Fatalf("List after Delete = (%v, %v), want %d entries", list, err, len(before))
 	}
 }
 

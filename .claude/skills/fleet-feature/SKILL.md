@@ -76,12 +76,13 @@ to an hour. If registration silently fails, check `core`'s logs for
 
 ## Adding a new task status
 
-Edit `db/schema.sql`'s `tasks_status_check` constraint using the existing
-`DROP CONSTRAINT IF EXISTS` / `ADD CONSTRAINT` pattern — not an inline
-column change. This keeps the migration idempotent and safe to re-run
-against the already-live table (applied via a `PreSync` ArgoCD hook on
-every sync of `core`'s Application, running `core migrate` — the schema is
-`go:embed`'d into `core`'s binary, see `core/internal/db/migrate.go`).
+Add a new `db/migrations/000N_*.up.sql`/`.down.sql` pair that `DROP
+CONSTRAINT IF EXISTS`/`ADD CONSTRAINT`s `tasks_status_check` with the new
+value included — never edit an already-applied migration file in place
+(docs/adr/0030). Applied via a `PreSync` ArgoCD hook on every sync of
+`core`'s Application, running the dedicated `migration` image (golang-migrate
+against `db/migrations/` — `core` itself no longer embeds or applies any
+schema, see `migration/Dockerfile`).
 Also check `core/internal/coreserver/server.go`'s `terminalTaskStatuses`
 map (`SetTaskStatus`'s opportunistic teardown trigger) if the new status
 should (or shouldn't) trigger worker-pod/e2e-session cleanup.

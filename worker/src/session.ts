@@ -215,18 +215,19 @@ export async function runTask(task: Task): Promise<TaskResult> {
     options: {
       executable: "bun",
       cwd: WORKTREE_PATH,
-      model: MODEL,
+      // Use the task's model from the database, falling back to global env
+      // var or default if not set. This allows per-task model selection.
+      model: task.model ?? MODEL,
       // Continues the prior conversation instead of starting fresh when
       // this pod is warming an existing session (Phase 4's Warm action) —
       // relies on CLAUDE_CONFIG_DIR already pointing at the shared PVC and
       // `cwd` matching exactly what it was last time (same worktree path,
       // guaranteed since it's always /workspace/worktrees/<taskId>).
       resume: RESUME_SESSION_ID,
-      // "default" — matches running `claude` locally with no flags. The
-      // dashboard's mode picker can switch to plan/acceptEdits/
-      // bypassPermissions at any point (docs/adr/0027's SetPermissionMode,
-      // reused verbatim); there's no fleet-imposed starting gate anymore.
-      permissionMode: "default",
+      // Use the task's permission mode from the database, falling back to
+      // "default" if not set. This ensures the mode is restored on resume
+      // instead of always resetting to "default".
+      permissionMode: (task.permissionMode ?? "default") as PermissionMode,
       // Write/Edit/Bash are deliberately never in this list — canUseTool
       // below is the live escalation path for all three (confirmed in
       // Phase 0's spike: allowedTools bypasses canUseTool entirely for
@@ -241,6 +242,15 @@ export async function runTask(task: Task): Promise<TaskResult> {
         "mcp__agent-fleet-sidecar__kill_env",
         "mcp__agent-fleet-sidecar__*",
       ],
+      // The SDK's own built-in "AskUserQuestion" (distinct from the
+      // mcp__agent-fleet-sidecar__ one above) is available by default and
+      // has the same name/shape docs/adr/0018 deliberately mirrored — the
+      // model reaches for whichever it sees first, and the native one
+      // falls through canUseTool into the generic PermissionCard (raw
+      // JSON + Allow/Deny) instead of the dashboard's QUESTION form, with
+      // no way to actually deliver a chosen answer back. Removing it from
+      // context forces the only question tool that's actually wired up.
+      disallowedTools: ["AskUserQuestion"],
       // No tool classification here at all — the SDK's own permission mode
       // already decides when canUseTool gets invoked (bypassPermissions
       // skips it entirely, acceptEdits skips it for file edits, plan blocks
@@ -345,9 +355,18 @@ export async function runTask(task: Task): Promise<TaskResult> {
       if (!sessionId && "session_id" in msg) {
         sessionId = msg.session_id as string;
         input.setSessionId(sessionId);
+        // Save the session ID and model to the database
+        const modelToSave = task.model ?? MODEL;
         await sidecar
-          .saveSessionId(sessionId, MODEL)
+          .saveSessionId(sessionId, modelToSave)
           .catch((err) => log("warn", "saveSessionId failed", { taskId: task.id, error: String(err) }));
+        // Also persist the initial permission mode if not already set. This
+        // ensures the mode shows up in the dashboard instead of "?".
+        if (!task.permissionMode) {
+          await sidecar
+            .savePermissionMode("default")
+            .catch((err) => log("warn", "savePermissionMode failed", { taskId: task.id, error: String(err) }));
+        }
       }
       await logSdkMessage("agent", msg as { type: string; [key: string]: unknown });
 

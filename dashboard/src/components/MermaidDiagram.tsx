@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { memo, useEffect, useId, useRef, useState } from "react";
 import mermaid from "mermaid";
 
 mermaid.initialize({ startOnLoad: false, theme: "dark" });
@@ -6,7 +6,8 @@ mermaid.initialize({ startOnLoad: false, theme: "dark" });
 // Renders a ```mermaid fence from Markdown.tsx as an actual diagram —
 // mermaid.render() is async and returns raw SVG markup, so this needs its
 // own client-side effect rather than a synchronous component.
-export function MermaidDiagram({ code }: { code: string }) {
+// Memoized to prevent re-rendering diagrams when the code hasn't changed.
+export const MermaidDiagram = memo(function MermaidDiagram({ code }: { code: string }) {
   const id = useId().replace(/:/g, "-");
   const ref = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
@@ -30,4 +31,4 @@ export function MermaidDiagram({ code }: { code: string }) {
     return <pre className="text-[10.5px] font-mono whitespace-pre-wrap text-error my-2">{error}</pre>;
   }
   return <div ref={ref} className="my-2 [&_svg]:max-w-full" />;
-}
+});

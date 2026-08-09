@@ -74,7 +74,7 @@ func newTestServer(t *testing.T) (*Server, *k8s.Client, *fakeEventReporter) {
 	t.Helper()
 	k8sc := newFakeK8sClient()
 	gitMgr := git.NewManager(t.TempDir())
-	proxy := mcpproxy.New(func(taskID string) string { return "" })
+	proxy := mcpproxy.New(func(taskID string) string { return "" }, func(taskID string) string { return "" })
 	reporter := &fakeEventReporter{}
 	return New(k8sc, gitMgr, proxy, reporter, "e2e.bnei.dev"), k8sc, reporter
 }

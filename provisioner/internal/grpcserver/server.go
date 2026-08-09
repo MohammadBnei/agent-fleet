@@ -90,7 +90,7 @@ func (s *Server) CreateE2ESession(ctx context.Context, req *agentfleetv1.CreateE
 		}, nil
 	}
 
-	taskRef := k8s.TaskRef{ID: req.GetTaskId(), Repo: req.GetRepo()}
+	taskRef := k8s.TaskRef{ID: req.GetTaskId(), Repo: req.GetRepo(), StartCmd: req.GetStartCmd()}
 	if err := s.k8sc.CreatePod(ctx, taskRef); err != nil {
 		return nil, fmt.Errorf("create e2e pod: %w", err)
 	}
@@ -186,7 +186,7 @@ func (s *Server) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWo
 	s.reportEvent(ctx, req.GetTaskId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_CREATED, "", "")
 
 	s.reportEvent(ctx, req.GetTaskId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_PROVISIONING, "", "creating pod")
-	if err := s.k8sc.CreateWorkerPod(ctx, req.GetTaskId(), req.GetRepo(), req.GetDescription(), req.GetGuidance(), req.GetLeaseId(), req.GetBaseBranch(), worktreePath, req.GetResumeSessionId(), req.GetResumeFromSeq()); err != nil {
+	if err := s.k8sc.CreateWorkerPod(ctx, req.GetTaskId(), req.GetRepo(), req.GetLeaseId(), worktreePath, req.GetResumeSessionId(), req.GetResumeFromSeq()); err != nil {
 		s.reportEvent(ctx, req.GetTaskId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_CRASHED, "", "pod create failed: "+err.Error())
 		return nil, fmt.Errorf("create worker pod: %w", err)
 	}

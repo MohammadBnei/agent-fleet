@@ -83,6 +83,11 @@ message AskUserQuestionResponse {
 
 message RequestE2eEnvRequest {
   string task_id = 1;
+  // Shell command that installs deps and starts the app, run via
+  // `bash -lc` from the worktree root (e.g. "cd front && bun install &&
+  // bun run dev"). Optional — falls back to the provisioner's
+  // per-repo default (StartCmdFor) when empty.
+  string start_cmd = 2;
 }
 
 message RequestE2eEnvResponse {
@@ -104,6 +109,74 @@ message KillE2eEnvResponse {
 
 // --- sidecar -> core: wrapper-facing (never agent-initiated, docs/adr/0020
 // point 5's third responsibility) ---
+
+// Task, GetTaskRequest/Response, and SetPermissionModeRequest/Response live
+// here (not dashboard.proto, which imports this file) so CoreService's
+// GetTask/SetPermissionMode below and DashboardService's same-named RPCs
+// (dashboard.proto) can share one definition — both just return/mutate the
+// task row, no dashboard-specific shape needed.
+message Task {
+  string id = 1;
+  string repo = 2;
+  string description = 3;
+  string status = 4;
+  optional string thread_id = 5;
+  optional string pr_url = 6;
+  // Worker-pod lifecycle state (PodPhase, set via ReportPodEvents) — distinct
+  // from `status` (business state). Unset until the provisioner reports the
+  // pod's first event.
+  optional string pod_phase = 7;
+  optional string pod_message = 8;
+  // Reclaim-eligibility signal (ClaimNextTask reclaims a claimed/running
+  // task once this is >10min stale — the exact staleness
+  // threshold the dashboard's own "stuck" badge should match). Set once at
+  // claim time, refreshed by the worker pod's own heartbeat loop; unset for
+  // a still-pending task. RFC3339, matching JournalEntry.created_at.
+  optional string heartbeat_at = 9;
+  // How many times ClaimNextTask has reclaimed this task after a stale
+  // heartbeat (capped at MAX_TASK_RETRIES before the task goes
+  // failed_permanently instead of being reclaimed again).
+  int32 retry_count = 10;
+  optional string last_error = 11;
+  // The Claude SDK's own session id (SaveSessionId) — resumable in a fresh
+  // pod via `resume:` (sessions redesign, supersedes docs/adr/0021/0025's
+  // phase-boundary framing). Unset until the worker's first streamed
+  // message reports it.
+  optional string session_id = 12;
+  // Last time a transcript entry was appended for this task — substrate
+  // for the idle-timeout backstop that tears down an unattended pod.
+  // RFC3339, matching heartbeat_at. Unset for a task with no activity yet.
+  optional string last_active_at = 13;
+  // The session's current SDK permission mode ("default"|"plan"|
+  // "acceptEdits"|"bypassPermissions"|...), so the dashboard's mode picker
+  // can highlight the real active mode instead of guessing. Unset for an
+  // idle/never-warmed session.
+  optional string permission_mode = 14;
+}
+
+message GetTaskRequest {
+  string id = 1;
+}
+
+message GetTaskResponse {
+  Task task = 1;
+}
+
+// Sets an arbitrary SDK permission mode on a task. Reused by two very
+// different callers: the dashboard (docs/adr/0027 — a human flipping a
+// running session's mode, which also appends a transcript entry the live
+// worker reacts to; see dashboard.proto's own SetPermissionMode comment)
+// and the sidecar (a worker pod persisting its own initial/current mode on
+// startup, no transcript append — CoreService's handler is a plain column
+// write, see coreserver's implementation).
+message SetPermissionModeRequest {
+  string task_id = 1;
+  string mode = 2;
+}
+
+message SetPermissionModeResponse {
+  string status = 1;
+}
 
 message HeartbeatRequest {
   string task_id = 1;
@@ -175,6 +248,50 @@ message StreamHumanMessagesRequest {
 // Reuses files.proto's message shapes verbatim — same passthrough-reuse
 // precedent ListE2eTools/CallE2eTool already set with provisioner.proto.
 
+// --- Log querying (Loki queries, docs/adr/0013) ---
+
+message QueryLogsRequest {
+  string task_id = 1;        // Optional - for fleet components
+  string namespace = 2;       // Default "agent-fleet"
+  string component = 3;       // worker|sidecar|core|provisioner|e2e|app
+  string app_name = 4;        // Optional - for component="app"
+  string level = 5;           // debug|info|warn|error (empty = all)
+  string start_time = 6;      // RFC3339, inclusive
+  string end_time = 7;        // RFC3339, exclusive
+  int32 limit = 8;            // Max entries (default 100, max 1000)
+}
+
+message LogEntry {
+  string timestamp = 1;       // RFC3339
+  string level = 2;
+  string msg = 3;
+  string component = 4;
+  string pod_name = 5;
+  string namespace = 6;
+  string fields_json = 7;     // Other slog fields as JSON
+}
+
+message QueryLogsResponse {
+  repeated LogEntry entries = 1;
+  int32 total_count = 2;
+}
+
+// For agents via MCP tool - supports both duration and explicit timestamps
+message ViewLogsRequest {
+  string component = 1;       // Required
+  string app_name = 2;        // Optional
+  string namespace = 3;       // Optional (default "agent-fleet")
+  string level = 4;           // Optional (empty = all)
+  string duration = 5;        // "1h"|"30m"|"24h" (default "1h") - ignored if start_time set
+  int32 limit = 6;            // Default 50, max 1000
+  string start_time = 7;      // Optional: RFC3339 timestamp, overrides duration
+  string end_time = 8;        // Optional: RFC3339 timestamp (default: now)
+}
+
+message ViewLogsResponse {
+  string logs_text = 1;       // Formatted for agent consumption
+}
+
 service CoreService {
   // buf:lint:ignore RPC_REQUEST_STANDARD_NAME
   rpc ReportPodEvents(stream PodEvent) returns (ReportPodEventsResponse);
@@ -196,6 +313,17 @@ service CoreService {
   // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
   rpc CallE2eTool(CallE2eToolRequest) returns (CallE2eToolResponse);
 
+  // Lets a worker pod fetch its own fresh task row on startup instead of
+  // relying on stale environment variables — same message shapes
+  // DashboardService.GetTask uses, different caller (docs/adr/0029).
+  // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+  rpc GetTask(GetTaskRequest) returns (GetTaskResponse);
+  // A worker pod persisting its own permission mode (initial "default" or a
+  // change it made itself) — a plain column write, unlike
+  // DashboardService.SetPermissionMode which also notifies a *different*,
+  // already-running worker via the transcript.
+  // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+  rpc SetPermissionMode(SetPermissionModeRequest) returns (SetPermissionModeResponse);
   rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
   rpc SetTaskStatus(SetTaskStatusRequest) returns (SetTaskStatusResponse);
   rpc AppendJournal(AppendJournalRequest) returns (AppendJournalResponse);
@@ -216,4 +344,5 @@ service CoreService {
   rpc GetFileDownloadUrl(GetFileDownloadUrlRequest) returns (GetFileDownloadUrlResponse);
   // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
   rpc DeleteFile(DeleteFileRequest) returns (DeleteFileResponse);
+  rpc ViewLogs(ViewLogsRequest) returns (ViewLogsResponse);
 }

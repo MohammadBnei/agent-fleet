@@ -51,10 +51,7 @@ func TestRelay_NudgeTriggersImmediateRelay(t *testing.T) {
 	defer cancel()
 	go relay.Run(ctx, time.Hour)
 
-	var taskID string
-	if err := pool.QueryRow(ctx, `INSERT INTO tasks DEFAULT VALUES RETURNING id`).Scan(&taskID); err != nil {
-		t.Fatalf("insert task: %v", err)
-	}
+	taskID := newTestTask(t, ctx, pool)
 
 	if _, err := store.Append(ctx, taskID, "agent", "hello", "discussion", ""); err != nil {
 		t.Fatalf("append: %v", err)
@@ -87,10 +84,7 @@ func TestRelay_AllowlistOnlyRelaysDiscordSafeTypes(t *testing.T) {
 	notifier := &fakeNotifier{}
 	ctx := context.Background()
 
-	var taskID string
-	if err := pool.QueryRow(ctx, `INSERT INTO tasks DEFAULT VALUES RETURNING id`).Scan(&taskID); err != nil {
-		t.Fatalf("insert task: %v", err)
-	}
+	taskID := newTestTask(t, ctx, pool)
 
 	discordSafe := []string{"discussion", "approve", "abort", "question", "answer"}
 	discordUnsafe := []string{"system", "assistant", "user", "result", "tool_call"}

@@ -69,6 +69,7 @@ func New(core *coreclient.Client) http.Handler {
 
 	s.AddTool(mcp.NewTool("request_e2e_env",
 		mcp.WithDescription("Request an on-demand e2e test environment for this task: a live pod running the app on this branch, code-server for human review, and a Playwright MCP server. Returns the preview URL. Safe to call again if one is already running — returns the existing session's URL."),
+		mcp.WithString("startCmd", mcp.Description("Shell command that installs deps and starts the app, run via bash -lc from the worktree root (e.g. \"cd front && bun install && bun run dev\"). You know the repo's actual layout better than any static default — supply this whenever the app doesn't live at the worktree root. Omit to use the repo's configured default.")),
 	), requestE2eEnvHandler(core, s))
 
 	s.AddTool(mcp.NewTool("kill_env",
@@ -94,6 +95,18 @@ func New(core *coreclient.Client) http.Handler {
 		mcp.WithDescription("Delete a file from the fleet-wide shared file space by its key."),
 		mcp.WithString("key", mcp.Required()),
 	), deleteSharedFileHandler(core))
+
+	s.AddTool(mcp.NewTool("view_logs",
+		mcp.WithDescription("View recent logs from fleet components or deployed apps. Returns formatted log entries. Use this to debug issues with worker, sidecar, or the deployed application during e2e tests. Supports both duration-based queries (duration) and explicit time ranges (start_time/end_time in RFC3339 format)."),
+		mcp.WithString("component", mcp.Required(), mcp.Description("Which component: worker|sidecar|core|provisioner|e2e|app")),
+		mcp.WithString("app_name", mcp.Description("For component=app, specify app name: dream-analyst|vos-monolith")),
+		mcp.WithString("namespace", mcp.Description("Kubernetes namespace (default: agent-fleet, use 'default' for deployed apps)")),
+		mcp.WithString("level", mcp.Description("Filter by level: debug|info|warn|error (default: all)")),
+		mcp.WithString("duration", mcp.Description("How far back: 1h|30m|6h|24h (default: 1h) - ignored if start_time is set")),
+		mcp.WithNumber("limit", mcp.Description("Max entries to return (default 50, max 1000)")),
+		mcp.WithString("start_time", mcp.Description("Optional: RFC3339 timestamp (e.g., '2024-01-15T10:30:00Z') - overrides duration")),
+		mcp.WithString("end_time", mcp.Description("Optional: RFC3339 timestamp (default: now)")),
+	), viewLogsHandler(core))
 
 	return server.NewStreamableHTTPServer(s)
 }
@@ -170,8 +183,9 @@ func askUserQuestionHandler(core *coreclient.Client) func(ctx context.Context, r
 
 func requestE2eEnvHandler(core *coreclient.Client, s *server.MCPServer) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		slog.Info("mcp request_e2e_env")
-		previewURL, _, err := core.RequestE2eEnv(ctx)
+		startCmd := req.GetString("startCmd", "")
+		slog.Info("mcp request_e2e_env", "startCmd", startCmd)
+		previewURL, _, err := core.RequestE2eEnv(ctx, startCmd)
 		if err != nil {
 			slog.Error("mcp request_e2e_env", "error", err)
 			return mcp.NewToolResultError(err.Error()), nil
@@ -327,5 +341,37 @@ func protoTypeToString(t agentfleetv1.TranscriptEntryType) string {
 		return "answer"
 	default:
 		return ""
+	}
+}
+
+// LogViewer is the interface for viewing logs. Implemented by *coreclient.Client and mockable in tests.
+type LogViewer interface {
+	ViewLogs(ctx context.Context, component, appName, namespace, level, duration string, limit int32, startTime, endTime string) (string, error)
+}
+
+func viewLogsHandler(core LogViewer) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		component := req.GetString("component", "")
+		if component == "" {
+			return mcp.NewToolResultError("component is required"), nil
+		}
+
+		appName := req.GetString("app_name", "")
+		namespace := req.GetString("namespace", "agent-fleet")
+		level := req.GetString("level", "")
+		duration := req.GetString("duration", "1h")
+		limit := int32(req.GetInt("limit", 50))
+		startTime := req.GetString("start_time", "")
+		endTime := req.GetString("end_time", "")
+
+		slog.Info("mcp view_logs", "component", component, "namespace", namespace, "level", level, "duration", duration, "start_time", startTime, "end_time", endTime)
+
+		logsText, err := core.ViewLogs(ctx, component, appName, namespace, level, duration, limit, startTime, endTime)
+		if err != nil {
+			slog.Error("mcp view_logs", "error", err)
+			return nil, fmt.Errorf("view_logs: %w", err)
+		}
+
+		return mcp.NewToolResultText(logsText), nil
 	}
 }

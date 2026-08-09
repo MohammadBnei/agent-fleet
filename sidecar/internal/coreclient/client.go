@@ -53,7 +53,11 @@ func New(addr, taskID string) (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("dial core: %w", err)
 	}
-	return &Client{conn: conn, rpc: agentfleetv1.NewCoreServiceClient(conn), taskID: taskID}, nil
+	return &Client{
+		conn:   conn,
+		rpc:    agentfleetv1.NewCoreServiceClient(conn),
+		taskID: taskID,
+	}, nil
 }
 
 func (c *Client) Close() error {
@@ -120,8 +124,8 @@ func (c *Client) AskUserQuestion(ctx context.Context, questionsJSON string, time
 	return resp.GetStatus(), resp.GetAnswersJson(), resp.GetQuestionSeq(), nil
 }
 
-func (c *Client) RequestE2eEnv(ctx context.Context) (previewURL, status string, err error) {
-	resp, err := c.rpc.RequestE2EEnv(ctx, &agentfleetv1.RequestE2EEnvRequest{TaskId: c.taskID})
+func (c *Client) RequestE2eEnv(ctx context.Context, startCmd string) (previewURL, status string, err error) {
+	resp, err := c.rpc.RequestE2EEnv(ctx, &agentfleetv1.RequestE2EEnvRequest{TaskId: c.taskID, StartCmd: startCmd})
 	if err != nil {
 		return "", "", fmt.Errorf("RequestE2eEnv: %w", err)
 	}
@@ -263,4 +267,57 @@ func (c *Client) StreamHumanMessages(ctx context.Context, sinceSeq int64, onEntr
 		}
 		onEntry(entry)
 	}
+}
+
+// ViewLogs queries Loki for recent logs from fleet components or deployed
+// apps. Used by the view_logs MCP tool to help agents debug issues by viewing
+// logs from worker, sidecar, or deployed applications during e2e tests.
+// Supports both duration-based queries and explicit RFC3339 timestamp ranges.
+// Returns formatted log text suitable for agent consumption.
+func (c *Client) ViewLogs(ctx context.Context, component, appName, namespace, level, duration string, limit int32, startTime, endTime string) (string, error) {
+	resp, err := c.rpc.ViewLogs(ctx, &agentfleetv1.ViewLogsRequest{
+		Component: component,
+		AppName:   appName,
+		Namespace: namespace,
+		Level:     level,
+		Duration:  duration,
+		Limit:     limit,
+		StartTime: startTime,
+		EndTime:   endTime,
+	})
+	if err != nil {
+		return "", fmt.Errorf("ViewLogs: %w", err)
+	}
+	return resp.GetLogsText(), nil
+}
+
+// GetTask fetches the task details from the database, including model and
+// permission_mode. Used by the worker on startup to fetch fresh task data
+// instead of relying on stale environment variables. CoreService.GetTask,
+// not DashboardService.GetTask — DashboardService is a ConnectRPC handler
+// mounted only on core's HTTP port, guarded by a same-origin CSRF header
+// only the dashboard SPA can set (core/internal/dashboard/interceptor.go);
+// it was never reachable over this gRPC connection at all, let alone by a
+// non-browser caller.
+func (c *Client) GetTask(ctx context.Context) (*agentfleetv1.Task, error) {
+	resp, err := c.rpc.GetTask(ctx, &agentfleetv1.GetTaskRequest{Id: c.taskID})
+	if err != nil {
+		return nil, fmt.Errorf("GetTask: %w", err)
+	}
+	return resp.GetTask(), nil
+}
+
+// SetPermissionMode persists the current permission mode to the database.
+// Used by the worker to save the initial "default" mode or when the mode is
+// changed via the dashboard. CoreService.SetPermissionMode — see GetTask's
+// comment above on why this isn't DashboardService.
+func (c *Client) SetPermissionMode(ctx context.Context, mode string) error {
+	_, err := c.rpc.SetPermissionMode(ctx, &agentfleetv1.SetPermissionModeRequest{
+		TaskId: c.taskID,
+		Mode:   mode,
+	})
+	if err != nil {
+		return fmt.Errorf("SetPermissionMode: %w", err)
+	}
+	return nil
 }

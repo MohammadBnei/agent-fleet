@@ -35,7 +35,9 @@ spec:
             - name: NAMESPACE
               value: agent-fleet
             - name: E2E_HOST
-              value: e2e.bnei.dev # unused locally — no e2e-preview flow exercised here
+              value: e2e.bnei.dev # only used to build the human preview URL string — CreateIngressRoute/CreateMiddleware still fail locally (no Traefik CRDs in kind), but CreatePod/CreateService/CallE2eTool (run_command) are fully exercisable
+            - name: E2E_RUNNER_IMAGE
+              value: agent-fleet-e2e-runner:local
             - name: PORT
               value: "8080"
             - name: GRPC_PORT

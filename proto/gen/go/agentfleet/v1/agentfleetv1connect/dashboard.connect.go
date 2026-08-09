@@ -118,11 +118,15 @@ const (
 	// DashboardServiceDeleteFileProcedure is the fully-qualified name of the DashboardService's
 	// DeleteFile RPC.
 	DashboardServiceDeleteFileProcedure = "/agentfleet.v1.DashboardService/DeleteFile"
+	// DashboardServiceQueryLogsProcedure is the fully-qualified name of the DashboardService's
+	// QueryLogs RPC.
+	DashboardServiceQueryLogsProcedure = "/agentfleet.v1.DashboardService/QueryLogs"
 )
 
 // DashboardServiceClient is a client for the agentfleet.v1.DashboardService service.
 type DashboardServiceClient interface {
 	ListTasks(context.Context, *connect.Request[v1.ListTasksRequest]) (*connect.Response[v1.ListTasksResponse], error)
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	GetTask(context.Context, *connect.Request[v1.GetTaskRequest]) (*connect.Response[v1.GetTaskResponse], error)
 	CreateTask(context.Context, *connect.Request[v1.CreateTaskRequest]) (*connect.Response[v1.CreateTaskResponse], error)
 	// Reuses transcript.proto's ReadTranscriptSinceRequest/Response rather
@@ -138,6 +142,7 @@ type DashboardServiceClient interface {
 	StreamTranscript(context.Context, *connect.Request[v1.StreamTranscriptRequest]) (*connect.ServerStreamForClient[v1.TranscriptEntry], error)
 	GetE2EStatus(context.Context, *connect.Request[v1.GetE2EStatusRequest]) (*connect.Response[v1.GetE2EStatusResponse], error)
 	Stop(context.Context, *connect.Request[v1.StopRequest]) (*connect.Response[v1.StopResponse], error)
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	SetPermissionMode(context.Context, *connect.Request[v1.SetPermissionModeRequest]) (*connect.Response[v1.SetPermissionModeResponse], error)
 	Warm(context.Context, *connect.Request[v1.WarmRequest]) (*connect.Response[v1.WarmResponse], error)
 	KillE2E(context.Context, *connect.Request[v1.KillE2ERequest]) (*connect.Response[v1.KillE2EResponse], error)
@@ -173,6 +178,9 @@ type DashboardServiceClient interface {
 	GetFileDownloadUrl(context.Context, *connect.Request[v1.GetFileDownloadUrlRequest]) (*connect.Response[v1.GetFileDownloadUrlResponse], error)
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	DeleteFile(context.Context, *connect.Request[v1.DeleteFileRequest]) (*connect.Response[v1.DeleteFileResponse], error)
+	// Reuses core.proto's QueryLogsRequest/QueryLogsResponse
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	QueryLogs(context.Context, *connect.Request[v1.QueryLogsRequest]) (*connect.Response[v1.QueryLogsResponse], error)
 }
 
 // NewDashboardServiceClient constructs a client for the agentfleet.v1.DashboardService service. By
@@ -360,6 +368,12 @@ func NewDashboardServiceClient(httpClient connect.HTTPClient, baseURL string, op
 			connect.WithSchema(dashboardServiceMethods.ByName("DeleteFile")),
 			connect.WithClientOptions(opts...),
 		),
+		queryLogs: connect.NewClient[v1.QueryLogsRequest, v1.QueryLogsResponse](
+			httpClient,
+			baseURL+DashboardServiceQueryLogsProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("QueryLogs")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -394,6 +408,7 @@ type dashboardServiceClient struct {
 	getFileUploadUrl    *connect.Client[v1.GetFileUploadUrlRequest, v1.GetFileUploadUrlResponse]
 	getFileDownloadUrl  *connect.Client[v1.GetFileDownloadUrlRequest, v1.GetFileDownloadUrlResponse]
 	deleteFile          *connect.Client[v1.DeleteFileRequest, v1.DeleteFileResponse]
+	queryLogs           *connect.Client[v1.QueryLogsRequest, v1.QueryLogsResponse]
 }
 
 // ListTasks calls agentfleet.v1.DashboardService.ListTasks.
@@ -541,9 +556,15 @@ func (c *dashboardServiceClient) DeleteFile(ctx context.Context, req *connect.Re
 	return c.deleteFile.CallUnary(ctx, req)
 }
 
+// QueryLogs calls agentfleet.v1.DashboardService.QueryLogs.
+func (c *dashboardServiceClient) QueryLogs(ctx context.Context, req *connect.Request[v1.QueryLogsRequest]) (*connect.Response[v1.QueryLogsResponse], error) {
+	return c.queryLogs.CallUnary(ctx, req)
+}
+
 // DashboardServiceHandler is an implementation of the agentfleet.v1.DashboardService service.
 type DashboardServiceHandler interface {
 	ListTasks(context.Context, *connect.Request[v1.ListTasksRequest]) (*connect.Response[v1.ListTasksResponse], error)
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	GetTask(context.Context, *connect.Request[v1.GetTaskRequest]) (*connect.Response[v1.GetTaskResponse], error)
 	CreateTask(context.Context, *connect.Request[v1.CreateTaskRequest]) (*connect.Response[v1.CreateTaskResponse], error)
 	// Reuses transcript.proto's ReadTranscriptSinceRequest/Response rather
@@ -559,6 +580,7 @@ type DashboardServiceHandler interface {
 	StreamTranscript(context.Context, *connect.Request[v1.StreamTranscriptRequest], *connect.ServerStream[v1.TranscriptEntry]) error
 	GetE2EStatus(context.Context, *connect.Request[v1.GetE2EStatusRequest]) (*connect.Response[v1.GetE2EStatusResponse], error)
 	Stop(context.Context, *connect.Request[v1.StopRequest]) (*connect.Response[v1.StopResponse], error)
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	SetPermissionMode(context.Context, *connect.Request[v1.SetPermissionModeRequest]) (*connect.Response[v1.SetPermissionModeResponse], error)
 	Warm(context.Context, *connect.Request[v1.WarmRequest]) (*connect.Response[v1.WarmResponse], error)
 	KillE2E(context.Context, *connect.Request[v1.KillE2ERequest]) (*connect.Response[v1.KillE2EResponse], error)
@@ -594,6 +616,9 @@ type DashboardServiceHandler interface {
 	GetFileDownloadUrl(context.Context, *connect.Request[v1.GetFileDownloadUrlRequest]) (*connect.Response[v1.GetFileDownloadUrlResponse], error)
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	DeleteFile(context.Context, *connect.Request[v1.DeleteFileRequest]) (*connect.Response[v1.DeleteFileResponse], error)
+	// Reuses core.proto's QueryLogsRequest/QueryLogsResponse
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	QueryLogs(context.Context, *connect.Request[v1.QueryLogsRequest]) (*connect.Response[v1.QueryLogsResponse], error)
 }
 
 // NewDashboardServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -777,6 +802,12 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 		connect.WithSchema(dashboardServiceMethods.ByName("DeleteFile")),
 		connect.WithHandlerOptions(opts...),
 	)
+	dashboardServiceQueryLogsHandler := connect.NewUnaryHandler(
+		DashboardServiceQueryLogsProcedure,
+		svc.QueryLogs,
+		connect.WithSchema(dashboardServiceMethods.ByName("QueryLogs")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/agentfleet.v1.DashboardService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case DashboardServiceListTasksProcedure:
@@ -837,6 +868,8 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 			dashboardServiceGetFileDownloadUrlHandler.ServeHTTP(w, r)
 		case DashboardServiceDeleteFileProcedure:
 			dashboardServiceDeleteFileHandler.ServeHTTP(w, r)
+		case DashboardServiceQueryLogsProcedure:
+			dashboardServiceQueryLogsHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -960,4 +993,8 @@ func (UnimplementedDashboardServiceHandler) GetFileDownloadUrl(context.Context, 
 
 func (UnimplementedDashboardServiceHandler) DeleteFile(context.Context, *connect.Request[v1.DeleteFileRequest]) (*connect.Response[v1.DeleteFileResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.DeleteFile is not implemented"))
+}
+
+func (UnimplementedDashboardServiceHandler) QueryLogs(context.Context, *connect.Request[v1.QueryLogsRequest]) (*connect.Response[v1.QueryLogsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.QueryLogs is not implemented"))
 }

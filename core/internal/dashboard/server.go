@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"strings"
 	"time"
 
@@ -22,6 +23,7 @@ import (
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/filestore"
 	"github.com/MohammadBnei/agent-fleet/core/internal/journal"
+	"github.com/MohammadBnei/agent-fleet/core/internal/lokiclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/promptsnippets"
 	"github.com/MohammadBnei/agent-fleet/core/internal/provisionerclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/repos"
@@ -39,10 +41,11 @@ type Server struct {
 	files       filestore.Store
 	hub         *Hub
 	maxInFlight int
+	loki        lokiclient.Querier
 }
 
-func NewServer(taskStore *tasks.Store, transcr transcript.Store, journalStore *journal.Store, repoStore *repos.Store, snippetStore *promptsnippets.Store, e2e *provisionerclient.Client, files filestore.Store, hub *Hub, maxInFlight int) *Server {
-	return &Server{tasks: taskStore, transcr: transcr, journal: journalStore, repos: repoStore, snippets: snippetStore, e2e: e2e, files: files, hub: hub, maxInFlight: maxInFlight}
+func NewServer(taskStore *tasks.Store, transcr transcript.Store, journalStore *journal.Store, repoStore *repos.Store, snippetStore *promptsnippets.Store, e2e *provisionerclient.Client, files filestore.Store, hub *Hub, maxInFlight int, loki lokiclient.Querier) *Server {
+	return &Server{tasks: taskStore, transcr: transcr, journal: journalStore, repos: repoStore, snippets: snippetStore, e2e: e2e, files: files, hub: hub, maxInFlight: maxInFlight, loki: loki}
 }
 
 var _ agentfleetv1connect.DashboardServiceHandler = (*Server)(nil)
@@ -61,7 +64,7 @@ func (s *Server) ListTasks(ctx context.Context, req *connect.Request[agentfleetv
 	}
 	out := make([]*agentfleetv1.Task, len(list))
 	for i, t := range list {
-		out[i] = taskToProto(t)
+		out[i] = TaskToProto(t)
 	}
 	return connect.NewResponse(&agentfleetv1.ListTasksResponse{Tasks: out}), nil
 }
@@ -75,7 +78,7 @@ func (s *Server) GetTask(ctx context.Context, req *connect.Request[agentfleetv1.
 	if t == nil {
 		return nil, connect.NewError(connect.CodeNotFound, errors.New("task not found"))
 	}
-	return connect.NewResponse(&agentfleetv1.GetTaskResponse{Task: taskToProto(*t)}), nil
+	return connect.NewResponse(&agentfleetv1.GetTaskResponse{Task: TaskToProto(*t)}), nil
 }
 
 // CreateTask lets the dashboard create a task the same way a Discord /task
@@ -99,16 +102,34 @@ func (s *Server) CreateTask(ctx context.Context, req *connect.Request[agentfleet
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("description is required"))
 	}
 
-	guidance, err := s.resolveGuidance(ctx, req.Msg.GetSnippetIds())
+	guidance, suggestedMode, err := s.resolveGuidanceAndMode(ctx, req.Msg.GetSnippetIds())
 	if err != nil {
 		slog.Error("dashboard CreateTask: snippet lookup", "repo", repo, "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
-	id, err := s.tasks.CreateTask(ctx, repo, description, guidance, nil, nil)
+	// Get model from request, validate it, and default to env if empty
+	model := req.Msg.GetModel()
+	if model == "" {
+		model = os.Getenv("CLAUDE_MODEL")
+		if model == "" {
+			model = "claude-opus-4-8"
+		}
+	} else if !isValidModel(model) {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("invalid model %q", model))
+	}
+
+	id, err := s.tasks.CreateTask(ctx, repo, description, guidance, model, nil, nil)
 	if err != nil {
 		slog.Error("dashboard CreateTask", "repo", repo, "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+
+	// If any snippet suggests a permission mode, auto-set it immediately
+	if suggestedMode != "" {
+		if err := s.tasks.SetPermissionMode(ctx, id, suggestedMode); err != nil {
+			slog.Warn("dashboard CreateTask: failed to set suggested permission mode", "taskId", id, "mode", suggestedMode, "error", err)
+		}
 	}
 	t, err := s.tasks.GetTask(ctx, id)
 	if err != nil {
@@ -116,26 +137,46 @@ func (s *Server) CreateTask(ctx context.Context, req *connect.Request[agentfleet
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	slog.Info("dashboard CreateTask", "taskId", id, "repo", repo)
-	return connect.NewResponse(&agentfleetv1.CreateTaskResponse{Task: taskToProto(*t)}), nil
+	return connect.NewResponse(&agentfleetv1.CreateTaskResponse{Task: TaskToProto(*t)}), nil
 }
 
-// resolveGuidance joins the text of the operator's selected prompt
+// resolveGuidanceAndMode joins the text of the operator's selected prompt
 // snippets, in the store's own name order, into the single guidance blob
-// stored on the task. Empty input returns "" — a task with no snippets
-// attached gets no extra guidance at all, just its own description.
-func (s *Server) resolveGuidance(ctx context.Context, snippetIDs []string) (string, error) {
+// stored on the task. Also returns the first non-empty suggested_permission_mode
+// from any of the snippets. Empty input returns "" for both — a task with no
+// snippets attached gets no extra guidance at all, just its own description.
+func (s *Server) resolveGuidanceAndMode(ctx context.Context, snippetIDs []string) (string, string, error) {
 	if len(snippetIDs) == 0 {
-		return "", nil
+		return "", "", nil
 	}
 	snippets, err := s.snippets.GetByIDs(ctx, snippetIDs)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	texts := make([]string, len(snippets))
+	suggestedMode := ""
 	for i, sn := range snippets {
 		texts[i] = sn.Text
+		// Take the first non-empty suggested mode
+		if suggestedMode == "" && sn.SuggestedPermissionMode != nil && *sn.SuggestedPermissionMode != "" {
+			suggestedMode = *sn.SuggestedPermissionMode
+		}
 	}
-	return strings.Join(texts, "\n\n"), nil
+	return strings.Join(texts, "\n\n"), suggestedMode, nil
+}
+
+// validModels is the allowlist of Claude models that can be selected per-task.
+// This prevents injection of arbitrary model names and ensures only supported
+// models are used.
+var validModels = map[string]bool{
+	"claude-opus-4-8":              true,
+	"claude-sonnet-4-5-20250929":   true,
+	"claude-opus-4-5-20251101":     true,
+	"claude-haiku-4-5-20250929":    true,
+}
+
+func isValidModel(model string) bool {
+	return validModels[model]
 }
 
 func (s *Server) GetTranscript(ctx context.Context, req *connect.Request[agentfleetv1.ReadTranscriptSinceRequest]) (*connect.Response[agentfleetv1.ReadTranscriptSinceResponse], error) {
@@ -643,7 +684,12 @@ func (s *Server) DeletePromptSnippet(ctx context.Context, req *connect.Request[a
 }
 
 func snippetToProto(sn promptsnippets.Snippet) *agentfleetv1.PromptSnippet {
-	return &agentfleetv1.PromptSnippet{Id: sn.ID, Name: sn.Name, Text: sn.Text}
+	return &agentfleetv1.PromptSnippet{
+		Id:                      sn.ID,
+		Name:                    sn.Name,
+		Text:                    sn.Text,
+		SuggestedPermissionMode: sn.SuggestedPermissionMode,
+	}
 }
 
 // --- shared file space (docs/adr/0030) — core mints presigned URLs, the
@@ -704,7 +750,7 @@ func journalEntryToProto(e journal.Entry) *agentfleetv1.JournalEntry {
 	}
 }
 
-func taskToProto(t tasks.Task) *agentfleetv1.Task {
+func TaskToProto(t tasks.Task) *agentfleetv1.Task {
 	var heartbeatAt *string
 	if t.HeartbeatAt != nil {
 		s := t.HeartbeatAt.Format(time.RFC3339)
@@ -773,4 +819,73 @@ func stringToProtoType(s string) agentfleetv1.TranscriptEntryType {
 	default:
 		return agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_UNSPECIFIED
 	}
+}
+
+// QueryLogs queries Loki for log entries from fleet components or deployed
+// apps. Used by the dashboard's Logs tab to display logs for a specific task,
+// component, or deployed application. Returns structured log entries with
+// timestamp, level, message, and other fields.
+func (s *Server) QueryLogs(ctx context.Context, req *connect.Request[agentfleetv1.QueryLogsRequest]) (*connect.Response[agentfleetv1.QueryLogsResponse], error) {
+	// Parse time strings (RFC3339)
+	start, err := time.Parse(time.RFC3339, req.Msg.GetStartTime())
+	if err != nil {
+		slog.Error("dashboard QueryLogs: invalid start_time", "start_time", req.Msg.GetStartTime(), "error", err)
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("invalid start_time: %w", err))
+	}
+	end, err := time.Parse(time.RFC3339, req.Msg.GetEndTime())
+	if err != nil {
+		slog.Error("dashboard QueryLogs: invalid end_time", "end_time", req.Msg.GetEndTime(), "error", err)
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("invalid end_time: %w", err))
+	}
+
+	// Default namespace to agent-fleet if not specified
+	namespace := req.Msg.GetNamespace()
+	if namespace == "" {
+		namespace = "agent-fleet"
+	}
+
+	// Default limit to 100 if not specified, cap at 1000
+	limit := int(req.Msg.GetLimit())
+	if limit == 0 {
+		limit = 100
+	}
+	if limit > 1000 {
+		limit = 1000
+	}
+
+	// Query Loki via lokiclient
+	entries, err := s.loki.Query(ctx, lokiclient.QueryRequest{
+		TaskID:    req.Msg.GetTaskId(),
+		Namespace: namespace,
+		Component: req.Msg.GetComponent(),
+		AppName:   req.Msg.GetAppName(),
+		Level:     req.Msg.GetLevel(),
+		Start:     start,
+		End:       end,
+		Limit:     limit,
+	})
+	if err != nil {
+		slog.Error("dashboard QueryLogs: Loki query failed", "error", err)
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("query Loki: %w", err))
+	}
+
+	// Convert to proto
+	protoEntries := make([]*agentfleetv1.LogEntry, len(entries))
+	for i, e := range entries {
+		protoEntries[i] = &agentfleetv1.LogEntry{
+			Timestamp:  e.Timestamp.Format(time.RFC3339),
+			Level:      e.Level,
+			Msg:        e.Msg,
+			Component:  e.Component,
+			PodName:    e.PodName,
+			Namespace:  e.Namespace,
+			FieldsJson: e.FieldsJSON,
+		}
+	}
+
+	slog.Info("dashboard QueryLogs", "component", req.Msg.GetComponent(), "count", len(entries))
+	return connect.NewResponse(&agentfleetv1.QueryLogsResponse{
+		Entries:    protoEntries,
+		TotalCount: int32(len(entries)),
+	}), nil
 }

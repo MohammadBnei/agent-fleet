@@ -54,6 +54,11 @@ const (
 	CoreServiceListE2EToolsProcedure = "/agentfleet.v1.CoreService/ListE2eTools"
 	// CoreServiceCallE2EToolProcedure is the fully-qualified name of the CoreService's CallE2eTool RPC.
 	CoreServiceCallE2EToolProcedure = "/agentfleet.v1.CoreService/CallE2eTool"
+	// CoreServiceGetTaskProcedure is the fully-qualified name of the CoreService's GetTask RPC.
+	CoreServiceGetTaskProcedure = "/agentfleet.v1.CoreService/GetTask"
+	// CoreServiceSetPermissionModeProcedure is the fully-qualified name of the CoreService's
+	// SetPermissionMode RPC.
+	CoreServiceSetPermissionModeProcedure = "/agentfleet.v1.CoreService/SetPermissionMode"
 	// CoreServiceHeartbeatProcedure is the fully-qualified name of the CoreService's Heartbeat RPC.
 	CoreServiceHeartbeatProcedure = "/agentfleet.v1.CoreService/Heartbeat"
 	// CoreServiceSetTaskStatusProcedure is the fully-qualified name of the CoreService's SetTaskStatus
@@ -84,6 +89,8 @@ const (
 	CoreServiceGetFileDownloadUrlProcedure = "/agentfleet.v1.CoreService/GetFileDownloadUrl"
 	// CoreServiceDeleteFileProcedure is the fully-qualified name of the CoreService's DeleteFile RPC.
 	CoreServiceDeleteFileProcedure = "/agentfleet.v1.CoreService/DeleteFile"
+	// CoreServiceViewLogsProcedure is the fully-qualified name of the CoreService's ViewLogs RPC.
+	CoreServiceViewLogsProcedure = "/agentfleet.v1.CoreService/ViewLogs"
 )
 
 // CoreServiceClient is a client for the agentfleet.v1.CoreService service.
@@ -106,6 +113,17 @@ type CoreServiceClient interface {
 	ListE2ETools(context.Context, *connect.Request[v1.ListE2EToolsRequest]) (*connect.Response[v1.ListE2EToolsResponse], error)
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	CallE2ETool(context.Context, *connect.Request[v1.CallE2EToolRequest]) (*connect.Response[v1.CallE2EToolResponse], error)
+	// Lets a worker pod fetch its own fresh task row on startup instead of
+	// relying on stale environment variables — same message shapes
+	// DashboardService.GetTask uses, different caller (docs/adr/0029).
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	GetTask(context.Context, *connect.Request[v1.GetTaskRequest]) (*connect.Response[v1.GetTaskResponse], error)
+	// A worker pod persisting its own permission mode (initial "default" or a
+	// change it made itself) — a plain column write, unlike
+	// DashboardService.SetPermissionMode which also notifies a *different*,
+	// already-running worker via the transcript.
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	SetPermissionMode(context.Context, *connect.Request[v1.SetPermissionModeRequest]) (*connect.Response[v1.SetPermissionModeResponse], error)
 	Heartbeat(context.Context, *connect.Request[v1.HeartbeatRequest]) (*connect.Response[v1.HeartbeatResponse], error)
 	SetTaskStatus(context.Context, *connect.Request[v1.SetTaskStatusRequest]) (*connect.Response[v1.SetTaskStatusResponse], error)
 	AppendJournal(context.Context, *connect.Request[v1.AppendJournalRequest]) (*connect.Response[v1.AppendJournalResponse], error)
@@ -125,6 +143,7 @@ type CoreServiceClient interface {
 	GetFileDownloadUrl(context.Context, *connect.Request[v1.GetFileDownloadUrlRequest]) (*connect.Response[v1.GetFileDownloadUrlResponse], error)
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	DeleteFile(context.Context, *connect.Request[v1.DeleteFileRequest]) (*connect.Response[v1.DeleteFileResponse], error)
+	ViewLogs(context.Context, *connect.Request[v1.ViewLogsRequest]) (*connect.Response[v1.ViewLogsResponse], error)
 }
 
 // NewCoreServiceClient constructs a client for the agentfleet.v1.CoreService service. By default,
@@ -184,6 +203,18 @@ func NewCoreServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			httpClient,
 			baseURL+CoreServiceCallE2EToolProcedure,
 			connect.WithSchema(coreServiceMethods.ByName("CallE2eTool")),
+			connect.WithClientOptions(opts...),
+		),
+		getTask: connect.NewClient[v1.GetTaskRequest, v1.GetTaskResponse](
+			httpClient,
+			baseURL+CoreServiceGetTaskProcedure,
+			connect.WithSchema(coreServiceMethods.ByName("GetTask")),
+			connect.WithClientOptions(opts...),
+		),
+		setPermissionMode: connect.NewClient[v1.SetPermissionModeRequest, v1.SetPermissionModeResponse](
+			httpClient,
+			baseURL+CoreServiceSetPermissionModeProcedure,
+			connect.WithSchema(coreServiceMethods.ByName("SetPermissionMode")),
 			connect.WithClientOptions(opts...),
 		),
 		heartbeat: connect.NewClient[v1.HeartbeatRequest, v1.HeartbeatResponse](
@@ -252,6 +283,12 @@ func NewCoreServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(coreServiceMethods.ByName("DeleteFile")),
 			connect.WithClientOptions(opts...),
 		),
+		viewLogs: connect.NewClient[v1.ViewLogsRequest, v1.ViewLogsResponse](
+			httpClient,
+			baseURL+CoreServiceViewLogsProcedure,
+			connect.WithSchema(coreServiceMethods.ByName("ViewLogs")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -265,6 +302,8 @@ type coreServiceClient struct {
 	killE2EEnv          *connect.Client[v1.KillE2EEnvRequest, v1.KillE2EEnvResponse]
 	listE2ETools        *connect.Client[v1.ListE2EToolsRequest, v1.ListE2EToolsResponse]
 	callE2ETool         *connect.Client[v1.CallE2EToolRequest, v1.CallE2EToolResponse]
+	getTask             *connect.Client[v1.GetTaskRequest, v1.GetTaskResponse]
+	setPermissionMode   *connect.Client[v1.SetPermissionModeRequest, v1.SetPermissionModeResponse]
 	heartbeat           *connect.Client[v1.HeartbeatRequest, v1.HeartbeatResponse]
 	setTaskStatus       *connect.Client[v1.SetTaskStatusRequest, v1.SetTaskStatusResponse]
 	appendJournal       *connect.Client[v1.AppendJournalRequest, v1.AppendJournalResponse]
@@ -276,6 +315,7 @@ type coreServiceClient struct {
 	getFileUploadUrl    *connect.Client[v1.GetFileUploadUrlRequest, v1.GetFileUploadUrlResponse]
 	getFileDownloadUrl  *connect.Client[v1.GetFileDownloadUrlRequest, v1.GetFileDownloadUrlResponse]
 	deleteFile          *connect.Client[v1.DeleteFileRequest, v1.DeleteFileResponse]
+	viewLogs            *connect.Client[v1.ViewLogsRequest, v1.ViewLogsResponse]
 }
 
 // ReportPodEvents calls agentfleet.v1.CoreService.ReportPodEvents.
@@ -316,6 +356,16 @@ func (c *coreServiceClient) ListE2ETools(ctx context.Context, req *connect.Reque
 // CallE2ETool calls agentfleet.v1.CoreService.CallE2eTool.
 func (c *coreServiceClient) CallE2ETool(ctx context.Context, req *connect.Request[v1.CallE2EToolRequest]) (*connect.Response[v1.CallE2EToolResponse], error) {
 	return c.callE2ETool.CallUnary(ctx, req)
+}
+
+// GetTask calls agentfleet.v1.CoreService.GetTask.
+func (c *coreServiceClient) GetTask(ctx context.Context, req *connect.Request[v1.GetTaskRequest]) (*connect.Response[v1.GetTaskResponse], error) {
+	return c.getTask.CallUnary(ctx, req)
+}
+
+// SetPermissionMode calls agentfleet.v1.CoreService.SetPermissionMode.
+func (c *coreServiceClient) SetPermissionMode(ctx context.Context, req *connect.Request[v1.SetPermissionModeRequest]) (*connect.Response[v1.SetPermissionModeResponse], error) {
+	return c.setPermissionMode.CallUnary(ctx, req)
 }
 
 // Heartbeat calls agentfleet.v1.CoreService.Heartbeat.
@@ -373,6 +423,11 @@ func (c *coreServiceClient) DeleteFile(ctx context.Context, req *connect.Request
 	return c.deleteFile.CallUnary(ctx, req)
 }
 
+// ViewLogs calls agentfleet.v1.CoreService.ViewLogs.
+func (c *coreServiceClient) ViewLogs(ctx context.Context, req *connect.Request[v1.ViewLogsRequest]) (*connect.Response[v1.ViewLogsResponse], error) {
+	return c.viewLogs.CallUnary(ctx, req)
+}
+
 // CoreServiceHandler is an implementation of the agentfleet.v1.CoreService service.
 type CoreServiceHandler interface {
 	// buf:lint:ignore RPC_REQUEST_STANDARD_NAME
@@ -393,6 +448,17 @@ type CoreServiceHandler interface {
 	ListE2ETools(context.Context, *connect.Request[v1.ListE2EToolsRequest]) (*connect.Response[v1.ListE2EToolsResponse], error)
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	CallE2ETool(context.Context, *connect.Request[v1.CallE2EToolRequest]) (*connect.Response[v1.CallE2EToolResponse], error)
+	// Lets a worker pod fetch its own fresh task row on startup instead of
+	// relying on stale environment variables — same message shapes
+	// DashboardService.GetTask uses, different caller (docs/adr/0029).
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	GetTask(context.Context, *connect.Request[v1.GetTaskRequest]) (*connect.Response[v1.GetTaskResponse], error)
+	// A worker pod persisting its own permission mode (initial "default" or a
+	// change it made itself) — a plain column write, unlike
+	// DashboardService.SetPermissionMode which also notifies a *different*,
+	// already-running worker via the transcript.
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	SetPermissionMode(context.Context, *connect.Request[v1.SetPermissionModeRequest]) (*connect.Response[v1.SetPermissionModeResponse], error)
 	Heartbeat(context.Context, *connect.Request[v1.HeartbeatRequest]) (*connect.Response[v1.HeartbeatResponse], error)
 	SetTaskStatus(context.Context, *connect.Request[v1.SetTaskStatusRequest]) (*connect.Response[v1.SetTaskStatusResponse], error)
 	AppendJournal(context.Context, *connect.Request[v1.AppendJournalRequest]) (*connect.Response[v1.AppendJournalResponse], error)
@@ -412,6 +478,7 @@ type CoreServiceHandler interface {
 	GetFileDownloadUrl(context.Context, *connect.Request[v1.GetFileDownloadUrlRequest]) (*connect.Response[v1.GetFileDownloadUrlResponse], error)
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	DeleteFile(context.Context, *connect.Request[v1.DeleteFileRequest]) (*connect.Response[v1.DeleteFileResponse], error)
+	ViewLogs(context.Context, *connect.Request[v1.ViewLogsRequest]) (*connect.Response[v1.ViewLogsResponse], error)
 }
 
 // NewCoreServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -467,6 +534,18 @@ func NewCoreServiceHandler(svc CoreServiceHandler, opts ...connect.HandlerOption
 		CoreServiceCallE2EToolProcedure,
 		svc.CallE2ETool,
 		connect.WithSchema(coreServiceMethods.ByName("CallE2eTool")),
+		connect.WithHandlerOptions(opts...),
+	)
+	coreServiceGetTaskHandler := connect.NewUnaryHandler(
+		CoreServiceGetTaskProcedure,
+		svc.GetTask,
+		connect.WithSchema(coreServiceMethods.ByName("GetTask")),
+		connect.WithHandlerOptions(opts...),
+	)
+	coreServiceSetPermissionModeHandler := connect.NewUnaryHandler(
+		CoreServiceSetPermissionModeProcedure,
+		svc.SetPermissionMode,
+		connect.WithSchema(coreServiceMethods.ByName("SetPermissionMode")),
 		connect.WithHandlerOptions(opts...),
 	)
 	coreServiceHeartbeatHandler := connect.NewUnaryHandler(
@@ -535,6 +614,12 @@ func NewCoreServiceHandler(svc CoreServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(coreServiceMethods.ByName("DeleteFile")),
 		connect.WithHandlerOptions(opts...),
 	)
+	coreServiceViewLogsHandler := connect.NewUnaryHandler(
+		CoreServiceViewLogsProcedure,
+		svc.ViewLogs,
+		connect.WithSchema(coreServiceMethods.ByName("ViewLogs")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/agentfleet.v1.CoreService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case CoreServiceReportPodEventsProcedure:
@@ -553,6 +638,10 @@ func NewCoreServiceHandler(svc CoreServiceHandler, opts ...connect.HandlerOption
 			coreServiceListE2EToolsHandler.ServeHTTP(w, r)
 		case CoreServiceCallE2EToolProcedure:
 			coreServiceCallE2EToolHandler.ServeHTTP(w, r)
+		case CoreServiceGetTaskProcedure:
+			coreServiceGetTaskHandler.ServeHTTP(w, r)
+		case CoreServiceSetPermissionModeProcedure:
+			coreServiceSetPermissionModeHandler.ServeHTTP(w, r)
 		case CoreServiceHeartbeatProcedure:
 			coreServiceHeartbeatHandler.ServeHTTP(w, r)
 		case CoreServiceSetTaskStatusProcedure:
@@ -575,6 +664,8 @@ func NewCoreServiceHandler(svc CoreServiceHandler, opts ...connect.HandlerOption
 			coreServiceGetFileDownloadUrlHandler.ServeHTTP(w, r)
 		case CoreServiceDeleteFileProcedure:
 			coreServiceDeleteFileHandler.ServeHTTP(w, r)
+		case CoreServiceViewLogsProcedure:
+			coreServiceViewLogsHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -614,6 +705,14 @@ func (UnimplementedCoreServiceHandler) ListE2ETools(context.Context, *connect.Re
 
 func (UnimplementedCoreServiceHandler) CallE2ETool(context.Context, *connect.Request[v1.CallE2EToolRequest]) (*connect.Response[v1.CallE2EToolResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.CoreService.CallE2eTool is not implemented"))
+}
+
+func (UnimplementedCoreServiceHandler) GetTask(context.Context, *connect.Request[v1.GetTaskRequest]) (*connect.Response[v1.GetTaskResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.CoreService.GetTask is not implemented"))
+}
+
+func (UnimplementedCoreServiceHandler) SetPermissionMode(context.Context, *connect.Request[v1.SetPermissionModeRequest]) (*connect.Response[v1.SetPermissionModeResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.CoreService.SetPermissionMode is not implemented"))
 }
 
 func (UnimplementedCoreServiceHandler) Heartbeat(context.Context, *connect.Request[v1.HeartbeatRequest]) (*connect.Response[v1.HeartbeatResponse], error) {
@@ -658,4 +757,8 @@ func (UnimplementedCoreServiceHandler) GetFileDownloadUrl(context.Context, *conn
 
 func (UnimplementedCoreServiceHandler) DeleteFile(context.Context, *connect.Request[v1.DeleteFileRequest]) (*connect.Response[v1.DeleteFileResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.CoreService.DeleteFile is not implemented"))
+}
+
+func (UnimplementedCoreServiceHandler) ViewLogs(context.Context, *connect.Request[v1.ViewLogsRequest]) (*connect.Response[v1.ViewLogsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.CoreService.ViewLogs is not implemented"))
 }

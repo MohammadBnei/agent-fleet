@@ -7,6 +7,15 @@
 /* eslint-disable */
 import { Observable } from "rxjs";
 import {
+  GetTaskRequest,
+  GetTaskResponse,
+  QueryLogsRequest,
+  QueryLogsResponse,
+  SetPermissionModeRequest,
+  SetPermissionModeResponse,
+  Task,
+} from "./core.js";
+import {
   DeleteFileRequest,
   DeleteFileResponse,
   GetFileDownloadUrlRequest,
@@ -21,83 +30,12 @@ import { ReadTranscriptSinceRequest, ReadTranscriptSinceResponse, TranscriptEntr
 
 export const protobufPackage = "agentfleet.v1";
 
-export interface Task {
-  id: string;
-  repo: string;
-  description: string;
-  status: string;
-  threadId?: string | undefined;
-  prUrl?:
-    | string
-    | undefined;
-  /**
-   * Worker-pod lifecycle state (PodPhase, set via ReportPodEvents) — distinct
-   * from `status` (business state). Unset until the provisioner reports the
-   * pod's first event.
-   */
-  podPhase?: string | undefined;
-  podMessage?:
-    | string
-    | undefined;
-  /**
-   * Reclaim-eligibility signal (ClaimNextTask reclaims a claimed/running
-   * task once this is >10min stale — the exact staleness
-   * threshold the dashboard's own "stuck" badge should match). Set once at
-   * claim time, refreshed by the worker pod's own heartbeat loop; unset for
-   * a still-pending task. RFC3339, matching JournalEntry.created_at.
-   */
-  heartbeatAt?:
-    | string
-    | undefined;
-  /**
-   * How many times ClaimNextTask has reclaimed this task after a stale
-   * heartbeat (capped at MAX_TASK_RETRIES before the task goes
-   * failed_permanently instead of being reclaimed again).
-   */
-  retryCount: number;
-  lastError?:
-    | string
-    | undefined;
-  /**
-   * The Claude SDK's own session id (SaveSessionId) — resumable in a fresh
-   * pod via `resume:` (sessions redesign, supersedes docs/adr/0021/0025's
-   * phase-boundary framing). Unset until the worker's first streamed
-   * message reports it.
-   */
-  sessionId?:
-    | string
-    | undefined;
-  /**
-   * Last time a transcript entry was appended for this task — substrate
-   * for the idle-timeout backstop that tears down an unattended pod.
-   * RFC3339, matching heartbeat_at. Unset for a task with no activity yet.
-   */
-  lastActiveAt?:
-    | string
-    | undefined;
-  /**
-   * The session's current SDK permission mode ("default"|"plan"|
-   * "acceptEdits"|"bypassPermissions"|...), so the dashboard's mode picker
-   * can highlight the real active mode instead of guessing. Unset for an
-   * idle/never-warmed session.
-   */
-  permissionMode?: string | undefined;
-}
-
 export interface ListTasksRequest {
   limit: number;
 }
 
 export interface ListTasksResponse {
   tasks: Task[];
-}
-
-export interface GetTaskRequest {
-  id: string;
-}
-
-export interface GetTaskResponse {
-  task?: Task | undefined;
 }
 
 /**
@@ -115,6 +53,7 @@ export interface CreateTaskRequest {
   repo: string;
   description: string;
   snippetIds: string[];
+  model?: string | undefined;
 }
 
 export interface CreateTaskResponse {
@@ -146,25 +85,6 @@ export interface StopRequest {
 }
 
 export interface StopResponse {
-  status: string;
-}
-
-/**
- * Sets an arbitrary SDK permission mode on a running task (docs/adr/0027,
- * extended by the sessions redesign supersession of docs/adr/0021/0025 —
- * Approve is gone, this is now the only mode lever). `mode` must be one of
- * "default"|"plan"|"acceptEdits"|"bypassPermissions" (validated
- * server-side); "bypassPermissions" deliberately disables the canUseTool
- * prompt-and-wait gate for this task for the rest of the session — the
- * dashboard must get explicit, typed confirmation from the human before
- * sending that value.
- */
-export interface SetPermissionModeRequest {
-  taskId: string;
-  mode: string;
-}
-
-export interface SetPermissionModeResponse {
   status: string;
 }
 
@@ -385,6 +305,7 @@ export interface PromptSnippet {
   id: string;
   name: string;
   text: string;
+  suggestedPermissionMode?: string | undefined;
 }
 
 export interface ListPromptSnippetsRequest {
@@ -420,155 +341,6 @@ export interface DeletePromptSnippetRequest {
 export interface DeletePromptSnippetResponse {
   status: string;
 }
-
-function createBaseTask(): Task {
-  return {
-    id: "",
-    repo: "",
-    description: "",
-    status: "",
-    threadId: undefined,
-    prUrl: undefined,
-    podPhase: undefined,
-    podMessage: undefined,
-    heartbeatAt: undefined,
-    retryCount: 0,
-    lastError: undefined,
-    sessionId: undefined,
-    lastActiveAt: undefined,
-    permissionMode: undefined,
-  };
-}
-
-export const Task: MessageFns<Task> = {
-  fromJSON(object: any): Task {
-    return {
-      id: isSet(object.id) ? globalThis.String(object.id) : "",
-      repo: isSet(object.repo) ? globalThis.String(object.repo) : "",
-      description: isSet(object.description) ? globalThis.String(object.description) : "",
-      status: isSet(object.status) ? globalThis.String(object.status) : "",
-      threadId: isSet(object.threadId)
-        ? globalThis.String(object.threadId)
-        : isSet(object.thread_id)
-        ? globalThis.String(object.thread_id)
-        : undefined,
-      prUrl: isSet(object.prUrl)
-        ? globalThis.String(object.prUrl)
-        : isSet(object.pr_url)
-        ? globalThis.String(object.pr_url)
-        : undefined,
-      podPhase: isSet(object.podPhase)
-        ? globalThis.String(object.podPhase)
-        : isSet(object.pod_phase)
-        ? globalThis.String(object.pod_phase)
-        : undefined,
-      podMessage: isSet(object.podMessage)
-        ? globalThis.String(object.podMessage)
-        : isSet(object.pod_message)
-        ? globalThis.String(object.pod_message)
-        : undefined,
-      heartbeatAt: isSet(object.heartbeatAt)
-        ? globalThis.String(object.heartbeatAt)
-        : isSet(object.heartbeat_at)
-        ? globalThis.String(object.heartbeat_at)
-        : undefined,
-      retryCount: isSet(object.retryCount)
-        ? globalThis.Number(object.retryCount)
-        : isSet(object.retry_count)
-        ? globalThis.Number(object.retry_count)
-        : 0,
-      lastError: isSet(object.lastError)
-        ? globalThis.String(object.lastError)
-        : isSet(object.last_error)
-        ? globalThis.String(object.last_error)
-        : undefined,
-      sessionId: isSet(object.sessionId)
-        ? globalThis.String(object.sessionId)
-        : isSet(object.session_id)
-        ? globalThis.String(object.session_id)
-        : undefined,
-      lastActiveAt: isSet(object.lastActiveAt)
-        ? globalThis.String(object.lastActiveAt)
-        : isSet(object.last_active_at)
-        ? globalThis.String(object.last_active_at)
-        : undefined,
-      permissionMode: isSet(object.permissionMode)
-        ? globalThis.String(object.permissionMode)
-        : isSet(object.permission_mode)
-        ? globalThis.String(object.permission_mode)
-        : undefined,
-    };
-  },
-
-  toJSON(message: Task): unknown {
-    const obj: any = {};
-    if (message.id !== "") {
-      obj.id = message.id;
-    }
-    if (message.repo !== "") {
-      obj.repo = message.repo;
-    }
-    if (message.description !== "") {
-      obj.description = message.description;
-    }
-    if (message.status !== "") {
-      obj.status = message.status;
-    }
-    if (message.threadId !== undefined) {
-      obj.threadId = message.threadId;
-    }
-    if (message.prUrl !== undefined) {
-      obj.prUrl = message.prUrl;
-    }
-    if (message.podPhase !== undefined) {
-      obj.podPhase = message.podPhase;
-    }
-    if (message.podMessage !== undefined) {
-      obj.podMessage = message.podMessage;
-    }
-    if (message.heartbeatAt !== undefined) {
-      obj.heartbeatAt = message.heartbeatAt;
-    }
-    if (message.retryCount !== 0) {
-      obj.retryCount = Math.round(message.retryCount);
-    }
-    if (message.lastError !== undefined) {
-      obj.lastError = message.lastError;
-    }
-    if (message.sessionId !== undefined) {
-      obj.sessionId = message.sessionId;
-    }
-    if (message.lastActiveAt !== undefined) {
-      obj.lastActiveAt = message.lastActiveAt;
-    }
-    if (message.permissionMode !== undefined) {
-      obj.permissionMode = message.permissionMode;
-    }
-    return obj;
-  },
-
-  create<I extends Exact<DeepPartial<Task>, I>>(base?: I): Task {
-    return Task.fromPartial(base ?? ({} as any));
-  },
-  fromPartial<I extends Exact<DeepPartial<Task>, I>>(object: I): Task {
-    const message = createBaseTask();
-    message.id = object.id ?? "";
-    message.repo = object.repo ?? "";
-    message.description = object.description ?? "";
-    message.status = object.status ?? "";
-    message.threadId = object.threadId ?? undefined;
-    message.prUrl = object.prUrl ?? undefined;
-    message.podPhase = object.podPhase ?? undefined;
-    message.podMessage = object.podMessage ?? undefined;
-    message.heartbeatAt = object.heartbeatAt ?? undefined;
-    message.retryCount = object.retryCount ?? 0;
-    message.lastError = object.lastError ?? undefined;
-    message.sessionId = object.sessionId ?? undefined;
-    message.lastActiveAt = object.lastActiveAt ?? undefined;
-    message.permissionMode = object.permissionMode ?? undefined;
-    return message;
-  },
-};
 
 function createBaseListTasksRequest(): ListTasksRequest {
   return { limit: 0 };
@@ -624,62 +396,8 @@ export const ListTasksResponse: MessageFns<ListTasksResponse> = {
   },
 };
 
-function createBaseGetTaskRequest(): GetTaskRequest {
-  return { id: "" };
-}
-
-export const GetTaskRequest: MessageFns<GetTaskRequest> = {
-  fromJSON(object: any): GetTaskRequest {
-    return { id: isSet(object.id) ? globalThis.String(object.id) : "" };
-  },
-
-  toJSON(message: GetTaskRequest): unknown {
-    const obj: any = {};
-    if (message.id !== "") {
-      obj.id = message.id;
-    }
-    return obj;
-  },
-
-  create<I extends Exact<DeepPartial<GetTaskRequest>, I>>(base?: I): GetTaskRequest {
-    return GetTaskRequest.fromPartial(base ?? ({} as any));
-  },
-  fromPartial<I extends Exact<DeepPartial<GetTaskRequest>, I>>(object: I): GetTaskRequest {
-    const message = createBaseGetTaskRequest();
-    message.id = object.id ?? "";
-    return message;
-  },
-};
-
-function createBaseGetTaskResponse(): GetTaskResponse {
-  return { task: undefined };
-}
-
-export const GetTaskResponse: MessageFns<GetTaskResponse> = {
-  fromJSON(object: any): GetTaskResponse {
-    return { task: isSet(object.task) ? Task.fromJSON(object.task) : undefined };
-  },
-
-  toJSON(message: GetTaskResponse): unknown {
-    const obj: any = {};
-    if (message.task !== undefined) {
-      obj.task = Task.toJSON(message.task);
-    }
-    return obj;
-  },
-
-  create<I extends Exact<DeepPartial<GetTaskResponse>, I>>(base?: I): GetTaskResponse {
-    return GetTaskResponse.fromPartial(base ?? ({} as any));
-  },
-  fromPartial<I extends Exact<DeepPartial<GetTaskResponse>, I>>(object: I): GetTaskResponse {
-    const message = createBaseGetTaskResponse();
-    message.task = (object.task !== undefined && object.task !== null) ? Task.fromPartial(object.task) : undefined;
-    return message;
-  },
-};
-
 function createBaseCreateTaskRequest(): CreateTaskRequest {
-  return { repo: "", description: "", snippetIds: [] };
+  return { repo: "", description: "", snippetIds: [], model: undefined };
 }
 
 export const CreateTaskRequest: MessageFns<CreateTaskRequest> = {
@@ -692,6 +410,7 @@ export const CreateTaskRequest: MessageFns<CreateTaskRequest> = {
         : globalThis.Array.isArray(object?.snippet_ids)
         ? object.snippet_ids.map((e: any) => globalThis.String(e))
         : [],
+      model: isSet(object.model) ? globalThis.String(object.model) : undefined,
     };
   },
 
@@ -706,6 +425,9 @@ export const CreateTaskRequest: MessageFns<CreateTaskRequest> = {
     if (message.snippetIds?.length) {
       obj.snippetIds = message.snippetIds;
     }
+    if (message.model !== undefined) {
+      obj.model = message.model;
+    }
     return obj;
   },
 
@@ -717,6 +439,7 @@ export const CreateTaskRequest: MessageFns<CreateTaskRequest> = {
     message.repo = object.repo ?? "";
     message.description = object.description ?? "";
     message.snippetIds = object.snippetIds?.map((e) => e) || [];
+    message.model = object.model ?? undefined;
     return message;
   },
 };
@@ -921,71 +644,6 @@ export const StopResponse: MessageFns<StopResponse> = {
   },
   fromPartial<I extends Exact<DeepPartial<StopResponse>, I>>(object: I): StopResponse {
     const message = createBaseStopResponse();
-    message.status = object.status ?? "";
-    return message;
-  },
-};
-
-function createBaseSetPermissionModeRequest(): SetPermissionModeRequest {
-  return { taskId: "", mode: "" };
-}
-
-export const SetPermissionModeRequest: MessageFns<SetPermissionModeRequest> = {
-  fromJSON(object: any): SetPermissionModeRequest {
-    return {
-      taskId: isSet(object.taskId)
-        ? globalThis.String(object.taskId)
-        : isSet(object.task_id)
-        ? globalThis.String(object.task_id)
-        : "",
-      mode: isSet(object.mode) ? globalThis.String(object.mode) : "",
-    };
-  },
-
-  toJSON(message: SetPermissionModeRequest): unknown {
-    const obj: any = {};
-    if (message.taskId !== "") {
-      obj.taskId = message.taskId;
-    }
-    if (message.mode !== "") {
-      obj.mode = message.mode;
-    }
-    return obj;
-  },
-
-  create<I extends Exact<DeepPartial<SetPermissionModeRequest>, I>>(base?: I): SetPermissionModeRequest {
-    return SetPermissionModeRequest.fromPartial(base ?? ({} as any));
-  },
-  fromPartial<I extends Exact<DeepPartial<SetPermissionModeRequest>, I>>(object: I): SetPermissionModeRequest {
-    const message = createBaseSetPermissionModeRequest();
-    message.taskId = object.taskId ?? "";
-    message.mode = object.mode ?? "";
-    return message;
-  },
-};
-
-function createBaseSetPermissionModeResponse(): SetPermissionModeResponse {
-  return { status: "" };
-}
-
-export const SetPermissionModeResponse: MessageFns<SetPermissionModeResponse> = {
-  fromJSON(object: any): SetPermissionModeResponse {
-    return { status: isSet(object.status) ? globalThis.String(object.status) : "" };
-  },
-
-  toJSON(message: SetPermissionModeResponse): unknown {
-    const obj: any = {};
-    if (message.status !== "") {
-      obj.status = message.status;
-    }
-    return obj;
-  },
-
-  create<I extends Exact<DeepPartial<SetPermissionModeResponse>, I>>(base?: I): SetPermissionModeResponse {
-    return SetPermissionModeResponse.fromPartial(base ?? ({} as any));
-  },
-  fromPartial<I extends Exact<DeepPartial<SetPermissionModeResponse>, I>>(object: I): SetPermissionModeResponse {
-    const message = createBaseSetPermissionModeResponse();
     message.status = object.status ?? "";
     return message;
   },
@@ -1960,7 +1618,7 @@ export const DeleteRepoResponse: MessageFns<DeleteRepoResponse> = {
 };
 
 function createBasePromptSnippet(): PromptSnippet {
-  return { id: "", name: "", text: "" };
+  return { id: "", name: "", text: "", suggestedPermissionMode: undefined };
 }
 
 export const PromptSnippet: MessageFns<PromptSnippet> = {
@@ -1969,6 +1627,11 @@ export const PromptSnippet: MessageFns<PromptSnippet> = {
       id: isSet(object.id) ? globalThis.String(object.id) : "",
       name: isSet(object.name) ? globalThis.String(object.name) : "",
       text: isSet(object.text) ? globalThis.String(object.text) : "",
+      suggestedPermissionMode: isSet(object.suggestedPermissionMode)
+        ? globalThis.String(object.suggestedPermissionMode)
+        : isSet(object.suggested_permission_mode)
+        ? globalThis.String(object.suggested_permission_mode)
+        : undefined,
     };
   },
 
@@ -1983,6 +1646,9 @@ export const PromptSnippet: MessageFns<PromptSnippet> = {
     if (message.text !== "") {
       obj.text = message.text;
     }
+    if (message.suggestedPermissionMode !== undefined) {
+      obj.suggestedPermissionMode = message.suggestedPermissionMode;
+    }
     return obj;
   },
 
@@ -1994,6 +1660,7 @@ export const PromptSnippet: MessageFns<PromptSnippet> = {
     message.id = object.id ?? "";
     message.name = object.name ?? "";
     message.text = object.text ?? "";
+    message.suggestedPermissionMode = object.suggestedPermissionMode ?? undefined;
     return message;
   },
 };
@@ -2239,6 +1906,7 @@ export const DeletePromptSnippetResponse: MessageFns<DeletePromptSnippetResponse
 
 export interface DashboardService {
   ListTasks(request: ListTasksRequest): Promise<ListTasksResponse>;
+  /** buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE */
   GetTask(request: GetTaskRequest): Promise<GetTaskResponse>;
   CreateTask(request: CreateTaskRequest): Promise<CreateTaskResponse>;
   /**
@@ -2258,6 +1926,7 @@ export interface DashboardService {
   StreamTranscript(request: StreamTranscriptRequest): Observable<TranscriptEntry>;
   GetE2eStatus(request: GetE2eStatusRequest): Promise<GetE2eStatusResponse>;
   Stop(request: StopRequest): Promise<StopResponse>;
+  /** buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE */
   SetPermissionMode(request: SetPermissionModeRequest): Promise<SetPermissionModeResponse>;
   Warm(request: WarmRequest): Promise<WarmResponse>;
   KillE2e(request: KillE2eRequest): Promise<KillE2eResponse>;
@@ -2295,6 +1964,11 @@ export interface DashboardService {
   GetFileDownloadUrl(request: GetFileDownloadUrlRequest): Promise<GetFileDownloadUrlResponse>;
   /** buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE */
   DeleteFile(request: DeleteFileRequest): Promise<DeleteFileResponse>;
+  /**
+   * Reuses core.proto's QueryLogsRequest/QueryLogsResponse
+   * buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+   */
+  QueryLogs(request: QueryLogsRequest): Promise<QueryLogsResponse>;
 }
 
 type Builtin = Date | Function | Uint8Array | string | number | boolean | undefined;

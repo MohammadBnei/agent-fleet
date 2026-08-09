@@ -1,4 +1,4 @@
-# ADR-0030: Garage S3-backed shared file space, presigned URLs minted only by core
+# ADR-0031: Garage S3-backed shared file space, presigned URLs minted only by core
 
 **Status:** Accepted
 **Date:** 2026-08-08

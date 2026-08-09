@@ -65,7 +65,7 @@ func (f *fakeQAStore) LatestSeq(context.Context, string) (int64, error) {
 // one replying to some other question, or a stale one) satisfy this call.
 func TestAskUserQuestion_IgnoresAnswerToADifferentQuestion(t *testing.T) {
 	store := &fakeQAStore{}
-	s := New(store, nil, nil, nil, nil)
+	s := New(store, nil, nil, nil, nil, nil)
 
 	// An answer to a *different* question (ReplyTo: 999) is already
 	// sitting in the transcript before this call even posts its own
@@ -89,7 +89,7 @@ func TestAskUserQuestion_IgnoresAnswerToADifferentQuestion(t *testing.T) {
 // unblock it.
 func TestAskUserQuestion_MatchesCorrectlyTaggedAnswer(t *testing.T) {
 	store := &fakeQAStore{}
-	s := New(store, nil, nil, nil, nil)
+	s := New(store, nil, nil, nil, nil, nil)
 
 	go func() {
 		// AskUserQuestion posts its own question first (seq 0, the only

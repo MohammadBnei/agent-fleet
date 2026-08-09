@@ -27,19 +27,21 @@ for why this replaced the original one-persistent-pod-per-repo design.
 - `core/` — Go: Discord ingress (`/task`/`/approve`/`/stop`/`/e2e-kill`,
   legacy `!task repo: desc`), the dispatch loop that claims tasks and
   commands the provisioner, its own gRPC server (`CoreService`), the
-  planning-transcript coordination (Postgres), and the web dashboard's
-  ConnectRPC API + static SPA. The fleet's sole holder of Postgres
-  credentials; needs zero cluster RBAC.
+  planning-transcript coordination (Postgres), Loki log queries (agents can
+  view logs from all fleet components and deployed apps via `view_logs` MCP
+  tool for self-debugging), and the web dashboard's ConnectRPC API + static
+  SPA. The fleet's sole holder of Postgres credentials; needs zero cluster
+  RBAC.
 - `provisioner/` — Go, `client-go`: the only fleet component with
   Kubernetes RBAC. Owns all pod creation — worker sessions as a
   `batch/v1.Job`, on-demand e2e-preview pods as a bare `Pod` — and the
   entire git lifecycle (clone/fetch/worktree add, reuse-not-wipe, plus a
   periodic sweep) on one shared `ReadWriteMany` PVC.
 - `sidecar/` — Go: a second container in every worker pod. Hosts a local
-  MCP server the Agent SDK session talks to, plus a local plain API for
-  the worker's own control-flow (heartbeat, status, journal, and the live
-  human-message feed that lets a Discord/dashboard reply reach the running
-  session mid-task).
+  MCP server the Agent SDK session talks to (including `view_logs` for
+  agent self-debugging), plus a local plain API for the worker's own
+  control-flow (heartbeat, status, journal, and the live human-message feed
+  that lets a Discord/dashboard reply reach the running session mid-task).
 - `worker/` — TS/Bun, the only remaining JS runtime (sole host of
   `@anthropic-ai/claude-agent-sdk`). Single-shot: handed one task at pod
   creation, runs one continuous streaming-input Agent SDK session with no
@@ -50,9 +52,10 @@ for why this replaced the original one-persistent-pod-per-repo design.
   `ProvisionerService`/`DashboardService` — the only inter-process
   protocol in the fleet (MCP is local-only, agent ↔ its own pod's
   sidecar).
-- `db/schema.sql` — the shared `tasks` queue, append-only
-  `knowledge_journal`, and `planning_transcript`, in the fleet-wide
-  `agentfleetdb` Postgres database (Pigsty).
+- `db/migrations/` — sole source of truth (golang-migrate, see
+  `docs/adr/0030`) for the shared `tasks` queue, append-only
+  `knowledge_journal`, and `transcript`, in the fleet-wide `agentfleetdb`
+  Postgres database (Pigsty).
 
 Deployment config lives in `k8s/` in this repo: `core.yaml` (Helm values, a
 two-source ArgoCD Application — chart from `infra-bootstrap`, values from

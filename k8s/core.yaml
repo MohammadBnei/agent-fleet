@@ -19,7 +19,7 @@ image:
   repository: mohammaddocker/agent-fleet-core
   # Pinned, bumped automatically by .github/workflows/docker.yml's deploy
   # job on every release tag.
-  tag: "1.21.2"
+  tag: "1.25.3"
 
 # extraPorts.grpc backs CORE_GRPC_PORT below — sidecar and provisioner both
 # dial agent-fleet-core.agent-fleet.svc.cluster.local:9090 for CoreService
@@ -84,16 +84,26 @@ infisical:
   projectSlug: "agent-fleet-nygh"
   envSlug: dev
 
-# Applies db/schema.sql (idempotent) via core's own `migrate` subcommand —
-# reuses core's own image, schema go:embed'd into the binary at build time
-# (see core/internal/db/migrate.go).
+# Applies db/migrations/ via the dedicated `migration` image — a plain
+# migrate/migrate CLI image with db/migrations/ COPY'd in at build time
+# (see migration/Dockerfile, docs/adr/0030). core itself no longer embeds
+# or applies any schema. AGENTFLEET_DB_* comes from the same Infisical
+# secret the main container gets (common-app-chart's jobContainer helper
+# injects it into every hook via envFrom whenever infisical.enabled) —
+# Kubernetes expands $(VAR) from the container's own env inside each arg
+# string below.
 hooks:
   migrate:
     type: PreSync
     image:
-      repository: mohammaddocker/agent-fleet-core
-      tag: "1.21.2"
-    command: ["/core", "migrate"]
+      repository: mohammaddocker/agent-fleet-migration
+      tag: "1.25.3"
+    command:
+      - "-path"
+      - "/migrations"
+      - "-database"
+      - "postgres://$(AGENTFLEET_DB_USER):$(AGENTFLEET_DB_PASSWORD)@$(AGENTFLEET_DB_HOST):$(AGENTFLEET_DB_PORT)/$(AGENTFLEET_DB_NAME)?sslmode=disable"
+      - "up"
 
 # Per-app Grafana dashboard (infra-bootstrap's grafana-ops skill / gitops/
 # README.md "common-app-chart" section) — renders a ConfigMap labeled

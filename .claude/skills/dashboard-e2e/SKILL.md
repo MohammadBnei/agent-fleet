@@ -53,14 +53,20 @@ until docker exec agent-fleet-e2e-pg pg_isready -U agentfleet >/dev/null 2>&1; d
 
 ## 2. Apply the schema
 
-`core`'s own `migrate` subcommand embeds `db/schema.sql`
-(`core/internal/db/embedded_schema.sql`, see `migrate.go`'s `go:embed`) —
-no separate migration tool needed.
+`db/migrations/` is the sole source of truth (docs/adr/0030) — `core`
+itself no longer embeds or applies any schema. Run the same
+`migrate/migrate` CLI image the real `migration/Dockerfile` wraps, pointed
+at the Postgres container from step 1 (`host.docker.internal` — this
+container needs to reach a port published on the Mac host, not another
+container on the same Docker network).
 
 ```bash
 export AGENTFLEET_DB_HOST=localhost AGENTFLEET_DB_PORT=5433 AGENTFLEET_DB_NAME=agentfleetdb \
        AGENTFLEET_DB_USER=agentfleet AGENTFLEET_DB_PASSWORD=agentfleet
-(cd core && go run ./cmd/core migrate)
+docker run --rm -v "$(pwd)/db/migrations:/migrations" migrate/migrate:latest \
+  -path=/migrations \
+  -database "postgres://agentfleet:agentfleet@host.docker.internal:5433/agentfleetdb?sslmode=disable" \
+  up
 ```
 
 ## 3. Run core (background)
