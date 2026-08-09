@@ -2053,7 +2053,7 @@ var File_agentfleet_v1_core_proto protoreflect.FileDescriptor
 
 const file_agentfleet_v1_core_proto_rawDesc = "" +
 	"\n" +
-	"\x18agentfleet/v1/core.proto\x12\ragentfleet.v1\x1a\x1eagentfleet/v1/transcript.proto\x1a\x1fagentfleet/v1/provisioner.proto\"\xb7\x01\n" +
+	"\x18agentfleet/v1/core.proto\x12\ragentfleet.v1\x1a\x1eagentfleet/v1/transcript.proto\x1a\x1fagentfleet/v1/provisioner.proto\x1a\x19agentfleet/v1/files.proto\"\xb7\x01\n" +
 	"\bPodEvent\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12.\n" +
 	"\x04kind\x18\x02 \x01(\x0e2\x1a.agentfleet.v1.SessionKindR\x04kind\x12-\n" +
@@ -2211,7 +2211,7 @@ const file_agentfleet_v1_core_proto_rawDesc = "" +
 	"\x11POD_PHASE_RUNNING\x10\x03\x12\x15\n" +
 	"\x11POD_PHASE_CRASHED\x10\x04\x12\x18\n" +
 	"\x14POD_PHASE_TERMINATED\x10\x05\x12\x1a\n" +
-	"\x16POD_PHASE_PROVISIONING\x10\x062\xf4\f\n" +
+	"\x16POD_PHASE_PROVISIONING\x10\x062\xe7\x0f\n" +
 	"\vCoreService\x12T\n" +
 	"\x0fReportPodEvents\x12\x17.agentfleet.v1.PodEvent\x1a&.agentfleet.v1.ReportPodEventsResponse(\x01\x12T\n" +
 	"\vSendMessage\x12!.agentfleet.v1.SendMessageRequest\x1a\".agentfleet.v1.SendMessageResponse\x12h\n" +
@@ -2230,7 +2230,12 @@ const file_agentfleet_v1_core_proto_rawDesc = "" +
 	"\rSaveSessionId\x12#.agentfleet.v1.SaveSessionIdRequest\x1a$.agentfleet.v1.SaveSessionIdResponse\x12`\n" +
 	"\x0fStillHoldsLease\x12%.agentfleet.v1.StillHoldsLeaseRequest\x1a&.agentfleet.v1.StillHoldsLeaseResponse\x12f\n" +
 	"\x11PushToolTelemetry\x12'.agentfleet.v1.PushToolTelemetryRequest\x1a(.agentfleet.v1.PushToolTelemetryResponse\x12b\n" +
-	"\x13StreamHumanMessages\x12).agentfleet.v1.StreamHumanMessagesRequest\x1a\x1e.agentfleet.v1.TranscriptEntry0\x01\x12K\n" +
+	"\x13StreamHumanMessages\x12).agentfleet.v1.StreamHumanMessagesRequest\x1a\x1e.agentfleet.v1.TranscriptEntry0\x01\x12N\n" +
+	"\tListFiles\x12\x1f.agentfleet.v1.ListFilesRequest\x1a .agentfleet.v1.ListFilesResponse\x12c\n" +
+	"\x10GetFileUploadUrl\x12&.agentfleet.v1.GetFileUploadUrlRequest\x1a'.agentfleet.v1.GetFileUploadUrlResponse\x12i\n" +
+	"\x12GetFileDownloadUrl\x12(.agentfleet.v1.GetFileDownloadUrlRequest\x1a).agentfleet.v1.GetFileDownloadUrlResponse\x12Q\n" +
+	"\n" +
+	"DeleteFile\x12 .agentfleet.v1.DeleteFileRequest\x1a!.agentfleet.v1.DeleteFileResponse\x12K\n" +
 	"\bViewLogs\x12\x1e.agentfleet.v1.ViewLogsRequest\x1a\x1f.agentfleet.v1.ViewLogsResponseBMZKgithub.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1;agentfleetv1b\x06proto3"
 
 var (
@@ -2287,10 +2292,18 @@ var file_agentfleet_v1_core_proto_goTypes = []any{
 	(*ReadTranscriptSinceRequest)(nil),  // 36: agentfleet.v1.ReadTranscriptSinceRequest
 	(*ListE2EToolsRequest)(nil),         // 37: agentfleet.v1.ListE2eToolsRequest
 	(*CallE2EToolRequest)(nil),          // 38: agentfleet.v1.CallE2eToolRequest
-	(*ReadTranscriptSinceResponse)(nil), // 39: agentfleet.v1.ReadTranscriptSinceResponse
-	(*ListE2EToolsResponse)(nil),        // 40: agentfleet.v1.ListE2eToolsResponse
-	(*CallE2EToolResponse)(nil),         // 41: agentfleet.v1.CallE2eToolResponse
-	(*TranscriptEntry)(nil),             // 42: agentfleet.v1.TranscriptEntry
+	(*ListFilesRequest)(nil),            // 39: agentfleet.v1.ListFilesRequest
+	(*GetFileUploadUrlRequest)(nil),     // 40: agentfleet.v1.GetFileUploadUrlRequest
+	(*GetFileDownloadUrlRequest)(nil),   // 41: agentfleet.v1.GetFileDownloadUrlRequest
+	(*DeleteFileRequest)(nil),           // 42: agentfleet.v1.DeleteFileRequest
+	(*ReadTranscriptSinceResponse)(nil), // 43: agentfleet.v1.ReadTranscriptSinceResponse
+	(*ListE2EToolsResponse)(nil),        // 44: agentfleet.v1.ListE2eToolsResponse
+	(*CallE2EToolResponse)(nil),         // 45: agentfleet.v1.CallE2eToolResponse
+	(*TranscriptEntry)(nil),             // 46: agentfleet.v1.TranscriptEntry
+	(*ListFilesResponse)(nil),           // 47: agentfleet.v1.ListFilesResponse
+	(*GetFileUploadUrlResponse)(nil),    // 48: agentfleet.v1.GetFileUploadUrlResponse
+	(*GetFileDownloadUrlResponse)(nil),  // 49: agentfleet.v1.GetFileDownloadUrlResponse
+	(*DeleteFileResponse)(nil),          // 50: agentfleet.v1.DeleteFileResponse
 }
 var file_agentfleet_v1_core_proto_depIdxs = []int32{
 	34, // 0: agentfleet.v1.PodEvent.kind:type_name -> agentfleet.v1.SessionKind
@@ -2315,27 +2328,35 @@ var file_agentfleet_v1_core_proto_depIdxs = []int32{
 	24, // 19: agentfleet.v1.CoreService.StillHoldsLease:input_type -> agentfleet.v1.StillHoldsLeaseRequest
 	26, // 20: agentfleet.v1.CoreService.PushToolTelemetry:input_type -> agentfleet.v1.PushToolTelemetryRequest
 	28, // 21: agentfleet.v1.CoreService.StreamHumanMessages:input_type -> agentfleet.v1.StreamHumanMessagesRequest
-	32, // 22: agentfleet.v1.CoreService.ViewLogs:input_type -> agentfleet.v1.ViewLogsRequest
-	2,  // 23: agentfleet.v1.CoreService.ReportPodEvents:output_type -> agentfleet.v1.ReportPodEventsResponse
-	4,  // 24: agentfleet.v1.CoreService.SendMessage:output_type -> agentfleet.v1.SendMessageResponse
-	39, // 25: agentfleet.v1.CoreService.WaitForMessages:output_type -> agentfleet.v1.ReadTranscriptSinceResponse
-	6,  // 26: agentfleet.v1.CoreService.AskUserQuestion:output_type -> agentfleet.v1.AskUserQuestionResponse
-	8,  // 27: agentfleet.v1.CoreService.RequestE2eEnv:output_type -> agentfleet.v1.RequestE2eEnvResponse
-	10, // 28: agentfleet.v1.CoreService.KillE2eEnv:output_type -> agentfleet.v1.KillE2eEnvResponse
-	40, // 29: agentfleet.v1.CoreService.ListE2eTools:output_type -> agentfleet.v1.ListE2eToolsResponse
-	41, // 30: agentfleet.v1.CoreService.CallE2eTool:output_type -> agentfleet.v1.CallE2eToolResponse
-	13, // 31: agentfleet.v1.CoreService.GetTask:output_type -> agentfleet.v1.GetTaskResponse
-	15, // 32: agentfleet.v1.CoreService.SetPermissionMode:output_type -> agentfleet.v1.SetPermissionModeResponse
-	17, // 33: agentfleet.v1.CoreService.Heartbeat:output_type -> agentfleet.v1.HeartbeatResponse
-	19, // 34: agentfleet.v1.CoreService.SetTaskStatus:output_type -> agentfleet.v1.SetTaskStatusResponse
-	21, // 35: agentfleet.v1.CoreService.AppendJournal:output_type -> agentfleet.v1.AppendJournalResponse
-	23, // 36: agentfleet.v1.CoreService.SaveSessionId:output_type -> agentfleet.v1.SaveSessionIdResponse
-	25, // 37: agentfleet.v1.CoreService.StillHoldsLease:output_type -> agentfleet.v1.StillHoldsLeaseResponse
-	27, // 38: agentfleet.v1.CoreService.PushToolTelemetry:output_type -> agentfleet.v1.PushToolTelemetryResponse
-	42, // 39: agentfleet.v1.CoreService.StreamHumanMessages:output_type -> agentfleet.v1.TranscriptEntry
-	33, // 40: agentfleet.v1.CoreService.ViewLogs:output_type -> agentfleet.v1.ViewLogsResponse
-	23, // [23:41] is the sub-list for method output_type
-	5,  // [5:23] is the sub-list for method input_type
+	39, // 22: agentfleet.v1.CoreService.ListFiles:input_type -> agentfleet.v1.ListFilesRequest
+	40, // 23: agentfleet.v1.CoreService.GetFileUploadUrl:input_type -> agentfleet.v1.GetFileUploadUrlRequest
+	41, // 24: agentfleet.v1.CoreService.GetFileDownloadUrl:input_type -> agentfleet.v1.GetFileDownloadUrlRequest
+	42, // 25: agentfleet.v1.CoreService.DeleteFile:input_type -> agentfleet.v1.DeleteFileRequest
+	32, // 26: agentfleet.v1.CoreService.ViewLogs:input_type -> agentfleet.v1.ViewLogsRequest
+	2,  // 27: agentfleet.v1.CoreService.ReportPodEvents:output_type -> agentfleet.v1.ReportPodEventsResponse
+	4,  // 28: agentfleet.v1.CoreService.SendMessage:output_type -> agentfleet.v1.SendMessageResponse
+	43, // 29: agentfleet.v1.CoreService.WaitForMessages:output_type -> agentfleet.v1.ReadTranscriptSinceResponse
+	6,  // 30: agentfleet.v1.CoreService.AskUserQuestion:output_type -> agentfleet.v1.AskUserQuestionResponse
+	8,  // 31: agentfleet.v1.CoreService.RequestE2eEnv:output_type -> agentfleet.v1.RequestE2eEnvResponse
+	10, // 32: agentfleet.v1.CoreService.KillE2eEnv:output_type -> agentfleet.v1.KillE2eEnvResponse
+	44, // 33: agentfleet.v1.CoreService.ListE2eTools:output_type -> agentfleet.v1.ListE2eToolsResponse
+	45, // 34: agentfleet.v1.CoreService.CallE2eTool:output_type -> agentfleet.v1.CallE2eToolResponse
+	13, // 35: agentfleet.v1.CoreService.GetTask:output_type -> agentfleet.v1.GetTaskResponse
+	15, // 36: agentfleet.v1.CoreService.SetPermissionMode:output_type -> agentfleet.v1.SetPermissionModeResponse
+	17, // 37: agentfleet.v1.CoreService.Heartbeat:output_type -> agentfleet.v1.HeartbeatResponse
+	19, // 38: agentfleet.v1.CoreService.SetTaskStatus:output_type -> agentfleet.v1.SetTaskStatusResponse
+	21, // 39: agentfleet.v1.CoreService.AppendJournal:output_type -> agentfleet.v1.AppendJournalResponse
+	23, // 40: agentfleet.v1.CoreService.SaveSessionId:output_type -> agentfleet.v1.SaveSessionIdResponse
+	25, // 41: agentfleet.v1.CoreService.StillHoldsLease:output_type -> agentfleet.v1.StillHoldsLeaseResponse
+	27, // 42: agentfleet.v1.CoreService.PushToolTelemetry:output_type -> agentfleet.v1.PushToolTelemetryResponse
+	46, // 43: agentfleet.v1.CoreService.StreamHumanMessages:output_type -> agentfleet.v1.TranscriptEntry
+	47, // 44: agentfleet.v1.CoreService.ListFiles:output_type -> agentfleet.v1.ListFilesResponse
+	48, // 45: agentfleet.v1.CoreService.GetFileUploadUrl:output_type -> agentfleet.v1.GetFileUploadUrlResponse
+	49, // 46: agentfleet.v1.CoreService.GetFileDownloadUrl:output_type -> agentfleet.v1.GetFileDownloadUrlResponse
+	50, // 47: agentfleet.v1.CoreService.DeleteFile:output_type -> agentfleet.v1.DeleteFileResponse
+	33, // 48: agentfleet.v1.CoreService.ViewLogs:output_type -> agentfleet.v1.ViewLogsResponse
+	27, // [27:49] is the sub-list for method output_type
+	5,  // [5:27] is the sub-list for method input_type
 	5,  // [5:5] is the sub-list for extension type_name
 	5,  // [5:5] is the sub-list for extension extendee
 	0,  // [0:5] is the sub-list for field type_name
@@ -2348,6 +2369,7 @@ func file_agentfleet_v1_core_proto_init() {
 	}
 	file_agentfleet_v1_transcript_proto_init()
 	file_agentfleet_v1_provisioner_proto_init()
+	file_agentfleet_v1_files_proto_init()
 	file_agentfleet_v1_core_proto_msgTypes[10].OneofWrappers = []any{}
 	file_agentfleet_v1_core_proto_msgTypes[17].OneofWrappers = []any{}
 	type x struct{}

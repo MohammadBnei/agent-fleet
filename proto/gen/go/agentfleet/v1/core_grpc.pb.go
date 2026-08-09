@@ -36,6 +36,10 @@ const (
 	CoreService_StillHoldsLease_FullMethodName     = "/agentfleet.v1.CoreService/StillHoldsLease"
 	CoreService_PushToolTelemetry_FullMethodName   = "/agentfleet.v1.CoreService/PushToolTelemetry"
 	CoreService_StreamHumanMessages_FullMethodName = "/agentfleet.v1.CoreService/StreamHumanMessages"
+	CoreService_ListFiles_FullMethodName           = "/agentfleet.v1.CoreService/ListFiles"
+	CoreService_GetFileUploadUrl_FullMethodName    = "/agentfleet.v1.CoreService/GetFileUploadUrl"
+	CoreService_GetFileDownloadUrl_FullMethodName  = "/agentfleet.v1.CoreService/GetFileDownloadUrl"
+	CoreService_DeleteFile_FullMethodName          = "/agentfleet.v1.CoreService/DeleteFile"
 	CoreService_ViewLogs_FullMethodName            = "/agentfleet.v1.CoreService/ViewLogs"
 )
 
@@ -83,6 +87,14 @@ type CoreServiceClient interface {
 	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	StreamHumanMessages(ctx context.Context, in *StreamHumanMessagesRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[TranscriptEntry], error)
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	ListFiles(ctx context.Context, in *ListFilesRequest, opts ...grpc.CallOption) (*ListFilesResponse, error)
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	GetFileUploadUrl(ctx context.Context, in *GetFileUploadUrlRequest, opts ...grpc.CallOption) (*GetFileUploadUrlResponse, error)
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	GetFileDownloadUrl(ctx context.Context, in *GetFileDownloadUrlRequest, opts ...grpc.CallOption) (*GetFileDownloadUrlResponse, error)
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	DeleteFile(ctx context.Context, in *DeleteFileRequest, opts ...grpc.CallOption) (*DeleteFileResponse, error)
 	ViewLogs(ctx context.Context, in *ViewLogsRequest, opts ...grpc.CallOption) (*ViewLogsResponse, error)
 }
 
@@ -276,6 +288,46 @@ func (c *coreServiceClient) StreamHumanMessages(ctx context.Context, in *StreamH
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type CoreService_StreamHumanMessagesClient = grpc.ServerStreamingClient[TranscriptEntry]
 
+func (c *coreServiceClient) ListFiles(ctx context.Context, in *ListFilesRequest, opts ...grpc.CallOption) (*ListFilesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListFilesResponse)
+	err := c.cc.Invoke(ctx, CoreService_ListFiles_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *coreServiceClient) GetFileUploadUrl(ctx context.Context, in *GetFileUploadUrlRequest, opts ...grpc.CallOption) (*GetFileUploadUrlResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetFileUploadUrlResponse)
+	err := c.cc.Invoke(ctx, CoreService_GetFileUploadUrl_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *coreServiceClient) GetFileDownloadUrl(ctx context.Context, in *GetFileDownloadUrlRequest, opts ...grpc.CallOption) (*GetFileDownloadUrlResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetFileDownloadUrlResponse)
+	err := c.cc.Invoke(ctx, CoreService_GetFileDownloadUrl_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *coreServiceClient) DeleteFile(ctx context.Context, in *DeleteFileRequest, opts ...grpc.CallOption) (*DeleteFileResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteFileResponse)
+	err := c.cc.Invoke(ctx, CoreService_DeleteFile_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *coreServiceClient) ViewLogs(ctx context.Context, in *ViewLogsRequest, opts ...grpc.CallOption) (*ViewLogsResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ViewLogsResponse)
@@ -330,6 +382,14 @@ type CoreServiceServer interface {
 	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	StreamHumanMessages(*StreamHumanMessagesRequest, grpc.ServerStreamingServer[TranscriptEntry]) error
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	ListFiles(context.Context, *ListFilesRequest) (*ListFilesResponse, error)
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	GetFileUploadUrl(context.Context, *GetFileUploadUrlRequest) (*GetFileUploadUrlResponse, error)
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	GetFileDownloadUrl(context.Context, *GetFileDownloadUrlRequest) (*GetFileDownloadUrlResponse, error)
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	DeleteFile(context.Context, *DeleteFileRequest) (*DeleteFileResponse, error)
 	ViewLogs(context.Context, *ViewLogsRequest) (*ViewLogsResponse, error)
 	mustEmbedUnimplementedCoreServiceServer()
 }
@@ -391,6 +451,18 @@ func (UnimplementedCoreServiceServer) PushToolTelemetry(context.Context, *PushTo
 }
 func (UnimplementedCoreServiceServer) StreamHumanMessages(*StreamHumanMessagesRequest, grpc.ServerStreamingServer[TranscriptEntry]) error {
 	return status.Error(codes.Unimplemented, "method StreamHumanMessages not implemented")
+}
+func (UnimplementedCoreServiceServer) ListFiles(context.Context, *ListFilesRequest) (*ListFilesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListFiles not implemented")
+}
+func (UnimplementedCoreServiceServer) GetFileUploadUrl(context.Context, *GetFileUploadUrlRequest) (*GetFileUploadUrlResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetFileUploadUrl not implemented")
+}
+func (UnimplementedCoreServiceServer) GetFileDownloadUrl(context.Context, *GetFileDownloadUrlRequest) (*GetFileDownloadUrlResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetFileDownloadUrl not implemented")
+}
+func (UnimplementedCoreServiceServer) DeleteFile(context.Context, *DeleteFileRequest) (*DeleteFileResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteFile not implemented")
 }
 func (UnimplementedCoreServiceServer) ViewLogs(context.Context, *ViewLogsRequest) (*ViewLogsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ViewLogs not implemented")
@@ -704,6 +776,78 @@ func _CoreService_StreamHumanMessages_Handler(srv interface{}, stream grpc.Serve
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type CoreService_StreamHumanMessagesServer = grpc.ServerStreamingServer[TranscriptEntry]
 
+func _CoreService_ListFiles_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListFilesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).ListFiles(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_ListFiles_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).ListFiles(ctx, req.(*ListFilesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CoreService_GetFileUploadUrl_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetFileUploadUrlRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).GetFileUploadUrl(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_GetFileUploadUrl_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).GetFileUploadUrl(ctx, req.(*GetFileUploadUrlRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CoreService_GetFileDownloadUrl_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetFileDownloadUrlRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).GetFileDownloadUrl(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_GetFileDownloadUrl_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).GetFileDownloadUrl(ctx, req.(*GetFileDownloadUrlRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CoreService_DeleteFile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteFileRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).DeleteFile(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_DeleteFile_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).DeleteFile(ctx, req.(*DeleteFileRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _CoreService_ViewLogs_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ViewLogsRequest)
 	if err := dec(in); err != nil {
@@ -788,6 +932,22 @@ var CoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "PushToolTelemetry",
 			Handler:    _CoreService_PushToolTelemetry_Handler,
+		},
+		{
+			MethodName: "ListFiles",
+			Handler:    _CoreService_ListFiles_Handler,
+		},
+		{
+			MethodName: "GetFileUploadUrl",
+			Handler:    _CoreService_GetFileUploadUrl_Handler,
+		},
+		{
+			MethodName: "GetFileDownloadUrl",
+			Handler:    _CoreService_GetFileDownloadUrl_Handler,
+		},
+		{
+			MethodName: "DeleteFile",
+			Handler:    _CoreService_DeleteFile_Handler,
 		},
 		{
 			MethodName: "ViewLogs",

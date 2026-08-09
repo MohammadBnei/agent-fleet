@@ -20,6 +20,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/dashboard"
 	"github.com/MohammadBnei/agent-fleet/core/internal/discord"
 	"github.com/MohammadBnei/agent-fleet/core/internal/dispatch"
+	"github.com/MohammadBnei/agent-fleet/core/internal/filestore"
 	"github.com/MohammadBnei/agent-fleet/core/internal/journal"
 	"github.com/MohammadBnei/agent-fleet/core/internal/lokiclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/promptsnippets"
@@ -59,6 +60,16 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool) error {
 		return err
 	}
 	defer func() { _ = provisioner.Close() }()
+
+	files, err := filestore.New(ctx, filestore.Config{
+		Endpoint:  cfg.GarageS3Endpoint,
+		Bucket:    cfg.GarageFilesBucket,
+		AccessKey: cfg.GarageFilesAccessKey,
+		SecretKey: cfg.GarageFilesSecret,
+	})
+	if err != nil {
+		return err
+	}
 
 	// Create Loki client for log querying (docs/adr/0013)
 	loki := lokiclient.New(cfg.LokiURL)
@@ -112,7 +123,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool) error {
 	// reaches everything else (the old /mcp HTTP surface, and the direct-SQL
 	// calls worker/src/db.ts used to make) through this same service.
 	grpcServer := grpc.NewServer(grpc.UnaryInterceptor(coreserver.AccessLogInterceptor))
-	agentfleetv1.RegisterCoreServiceServer(grpcServer, coreserver.New(activityStore, taskStore, journalStore, provisioner, loki))
+	agentfleetv1.RegisterCoreServiceServer(grpcServer, coreserver.New(activityStore, taskStore, journalStore, provisioner, files, loki))
 	grpcLis, err := net.Listen("tcp", ":"+cfg.GRPCPort)
 	if err != nil {
 		return err
@@ -127,7 +138,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool) error {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
-	dashboardSvc := dashboard.NewServer(taskStore, activityStore, journalStore, repoStore, snippetStore, provisioner, hub, cfg.MaxInFlight, loki)
+	dashboardSvc := dashboard.NewServer(taskStore, activityStore, journalStore, repoStore, snippetStore, provisioner, files, hub, cfg.MaxInFlight, loki)
 	dashboardPath, dashboardHandler := agentfleetv1connect.NewDashboardServiceHandler(
 		dashboardSvc,
 		connect.WithInterceptors(dashboard.NewCSRFInterceptor(), dashboard.NewAccessLogInterceptor()),

@@ -45,7 +45,7 @@ func (r *recordingStore) LatestSeq(context.Context, string) (int64, error) {
 
 func TestServer_RespondToPermission(t *testing.T) {
 	store := &recordingStore{}
-	s := NewServer(nil, store, nil, nil, nil, nil, nil, 5, nil)
+	s := NewServer(nil, store, nil, nil, nil, nil, nil, nil, 5, nil)
 
 	resp, err := s.RespondToPermission(context.Background(), connect.NewRequest(&agentfleetv1.RespondToPermissionRequest{
 		TaskId: "task-1", Seq: 7, DecisionJson: `{"behavior":"allow"}`,
@@ -85,7 +85,7 @@ func TestServer_RespondToPermission(t *testing.T) {
 // here since it returns before ever reaching tasks.Store.
 
 func TestServer_Discuss_EmptyText(t *testing.T) {
-	s := NewServer(nil, &recordingStore{}, nil, nil, nil, nil, nil, 5, nil)
+	s := NewServer(nil, &recordingStore{}, nil, nil, nil, nil, nil, nil, 5, nil)
 
 	req := connect.NewRequest(&agentfleetv1.DiscussRequest{TaskId: "task-1", Text: ""})
 	if _, err := s.Discuss(context.Background(), req); connect.CodeOf(err) != connect.CodeInvalidArgument {
@@ -95,7 +95,7 @@ func TestServer_Discuss_EmptyText(t *testing.T) {
 
 func TestServer_AnswerQuestion(t *testing.T) {
 	store := &recordingStore{}
-	s := NewServer(nil, store, nil, nil, nil, nil, nil, 5, nil)
+	s := NewServer(nil, store, nil, nil, nil, nil, nil, nil, 5, nil)
 
 	answersJSON := `{"answers":{"Which quality attribute wins?":"Latency"}}`
 	req := connect.NewRequest(&agentfleetv1.AnswerQuestionRequest{TaskId: "task-1", Seq: 3, AnswersJson: answersJSON})

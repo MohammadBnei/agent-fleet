@@ -23,6 +23,7 @@ import (
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/dashboard"
+	"github.com/MohammadBnei/agent-fleet/core/internal/filestore"
 	"github.com/MohammadBnei/agent-fleet/core/internal/journal"
 	"github.com/MohammadBnei/agent-fleet/core/internal/lokiclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/provisionerclient"
@@ -41,11 +42,12 @@ type Server struct {
 	tasks       *tasks.Store
 	journal     *journal.Store
 	provisioner *provisionerclient.Client
+	files       filestore.Store
 	loki        lokiclient.Querier
 }
 
-func New(transcr transcript.Store, taskStore *tasks.Store, journalStore *journal.Store, provisioner *provisionerclient.Client, loki lokiclient.Querier) *Server {
-	return &Server{transcr: transcr, tasks: taskStore, journal: journalStore, provisioner: provisioner, loki: loki}
+func New(transcr transcript.Store, taskStore *tasks.Store, journalStore *journal.Store, provisioner *provisionerclient.Client, files filestore.Store, loki lokiclient.Querier) *Server {
+	return &Server{transcr: transcr, tasks: taskStore, journal: journalStore, provisioner: provisioner, files: files, loki: loki}
 }
 
 // --- agent-facing (proxied MCP-shaped calls) ---
@@ -181,6 +183,40 @@ func (s *Server) CallE2ETool(ctx context.Context, req *agentfleetv1.CallE2EToolR
 		return nil, fmt.Errorf("CallE2ETool: %w", err)
 	}
 	return &agentfleetv1.CallE2EToolResponse{ResultJson: resultJSON, IsError: isError}, nil
+}
+
+// --- shared file space (docs/adr/0030) — core mints presigned URLs, the
+// agent's own Bash `curl` moves the actual bytes ---
+
+func (s *Server) ListFiles(ctx context.Context, _ *agentfleetv1.ListFilesRequest) (*agentfleetv1.ListFilesResponse, error) {
+	files, err := s.files.List(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("ListFiles: %w", err)
+	}
+	return &agentfleetv1.ListFilesResponse{Files: filesToProto(files)}, nil
+}
+
+func (s *Server) GetFileUploadUrl(ctx context.Context, req *agentfleetv1.GetFileUploadUrlRequest) (*agentfleetv1.GetFileUploadUrlResponse, error) {
+	url, key, expiresAt, err := s.files.PresignUpload(ctx, req.GetFilename(), req.GetContentType())
+	if err != nil {
+		return nil, fmt.Errorf("GetFileUploadUrl: %w", err)
+	}
+	return &agentfleetv1.GetFileUploadUrlResponse{UploadUrl: url, Key: key, ExpiresAt: expiresAt.Format(time.RFC3339)}, nil
+}
+
+func (s *Server) GetFileDownloadUrl(ctx context.Context, req *agentfleetv1.GetFileDownloadUrlRequest) (*agentfleetv1.GetFileDownloadUrlResponse, error) {
+	url, expiresAt, err := s.files.PresignDownload(ctx, req.GetKey())
+	if err != nil {
+		return nil, fmt.Errorf("GetFileDownloadUrl: %w", err)
+	}
+	return &agentfleetv1.GetFileDownloadUrlResponse{DownloadUrl: url, ExpiresAt: expiresAt.Format(time.RFC3339)}, nil
+}
+
+func (s *Server) DeleteFile(ctx context.Context, req *agentfleetv1.DeleteFileRequest) (*agentfleetv1.DeleteFileResponse, error) {
+	if err := s.files.Delete(ctx, req.GetKey()); err != nil {
+		return nil, fmt.Errorf("DeleteFile: %w", err)
+	}
+	return &agentfleetv1.DeleteFileResponse{Status: "deleted"}, nil
 }
 
 // --- wrapper-facing (never agent-initiated, docs/adr/0020 point 5's third
@@ -380,6 +416,19 @@ func (s *Server) ReportPodEvents(stream agentfleetv1.CoreService_ReportPodEvents
 }
 
 // --- helpers ---
+
+func filesToProto(files []filestore.FileMetadata) []*agentfleetv1.FileMetadata {
+	out := make([]*agentfleetv1.FileMetadata, len(files))
+	for i, f := range files {
+		out[i] = &agentfleetv1.FileMetadata{
+			Key:          f.Key,
+			SizeBytes:    f.SizeBytes,
+			LastModified: f.LastModified.Format(time.RFC3339),
+			ContentType:  f.ContentType,
+		}
+	}
+	return out
+}
 
 func entriesToProto(taskID string, entries []transcript.Entry) []*agentfleetv1.TranscriptEntry {
 	out := make([]*agentfleetv1.TranscriptEntry, len(entries))

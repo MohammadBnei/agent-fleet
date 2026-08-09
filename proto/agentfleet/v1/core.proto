@@ -4,6 +4,7 @@ option go_package = "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet
 
 import "agentfleet/v1/transcript.proto";
 import "agentfleet/v1/provisioner.proto";
+import "agentfleet/v1/files.proto";
 
 // core is the gRPC server here — its first (see docs/adr/0020's Context:
 // "nothing under fleet-core/ hosts one today"). Two kinds of clients:
@@ -243,6 +244,10 @@ message StreamHumanMessagesRequest {
   int64 since_seq = 2;
 }
 
+// --- sidecar -> core: shared file space, agent-facing (docs/adr/0030) ---
+// Reuses files.proto's message shapes verbatim — same passthrough-reuse
+// precedent ListE2eTools/CallE2eTool already set with provisioner.proto.
+
 // --- Log querying (Loki queries, docs/adr/0013) ---
 
 message QueryLogsRequest {
@@ -331,5 +336,13 @@ service CoreService {
   // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
   rpc StreamHumanMessages(StreamHumanMessagesRequest) returns (stream TranscriptEntry);
 
+  // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+  rpc ListFiles(ListFilesRequest) returns (ListFilesResponse);
+  // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+  rpc GetFileUploadUrl(GetFileUploadUrlRequest) returns (GetFileUploadUrlResponse);
+  // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+  rpc GetFileDownloadUrl(GetFileDownloadUrlRequest) returns (GetFileDownloadUrlResponse);
+  // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+  rpc DeleteFile(DeleteFileRequest) returns (DeleteFileResponse);
   rpc ViewLogs(ViewLogsRequest) returns (ViewLogsResponse);
 }

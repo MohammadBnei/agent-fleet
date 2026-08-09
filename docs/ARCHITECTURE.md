@@ -307,6 +307,16 @@ permission tiers instead of a second, fleet-specific gate on top of them
   across any known repo can be in flight simultaneously, up to
   `MAX_IN_FLIGHT_TASKS` (default 5) — `core`'s dispatch loop claims
   repo-agnostically (`docs/adr/0019`).
+- **Fleet-wide shared file space, backed by Garage S3** (`docs/adr/0030`).
+  A flat bucket (`agent-fleet-files`), `core` the sole credential holder —
+  it only mints short-lived presigned PUT/GET URLs
+  (`ListFiles`/`GetFileUploadUrl`/`GetFileDownloadUrl`/`DeleteFile`, on
+  both `CoreService` and `DashboardService`). Agents reach it via four new
+  sidecar MCP tools (`list_shared_files`, `get_shared_file_upload_url`,
+  `get_shared_file_download_url`, `delete_shared_file`) and move bytes
+  themselves via `curl` from Bash — the tools never carry file contents.
+  The dashboard's `Files` page does the human-side equivalent, uploading/
+  downloading directly against Garage from the browser.
 - **Crash recovery with a fast path, not just a 10-minute wait.** Worker
   sessions are single-shot `batch/v1.Job`s; the instant a `Job` reaches
   `Failed`, the provisioner's `EventReporter` pushes a crash event that
@@ -528,6 +538,9 @@ nothing external still queries it directly.
 |---|---|---|
 | `CORE_PORT` | `8080` | HTTP: `/healthz`, dashboard ConnectRPC API, static SPA |
 | `CORE_GRPC_PORT` | `9090` | `CoreService` — the provisioner's `ReportPodEvents` client and every worker pod's sidecar connect here |
+| `GARAGE_S3_ENDPOINT` | `https://s3.bnei.dev` | Must stay externally reachable, not `garage.bnei.lan` — presigned URLs sign the endpoint host in, and the dashboard's browser can't resolve a `.lan` name (`docs/adr/0030`) |
+| `GARAGE_FILES_BUCKET` | `agent-fleet-files` | The fleet-wide shared file space's one bucket |
+| `AGENTFLEET_FILES_S3_ACCESS_KEY` / `_SECRET` | – | `core`'s the sole holder — it only mints presigned PUT/GET URLs, never proxies bytes (`docs/adr/0030`) |
 | `AGENTFLEET_DB_HOST`/`PORT`/`NAME`/`USER`/`PASSWORD` | `postgres.bnei.lan`/`5432`/`agentfleetdb`/`dbuser_agentfleet`/– | the *only* component in the fleet with these |
 | `DISCORD_BOT_TOKEN` | – | |
 | `DISCORD_TRIGGER_CHANNEL_ID` | – | |

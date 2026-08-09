@@ -47,6 +47,14 @@ type Config struct {
 	// dispatch.Loop tears it down — the same TearDownSession call
 	// enforceStopGrace already makes, no status change.
 	IdleTimeout time.Duration
+	// GarageS3Endpoint must be externally reachable, not the in-cluster
+	// garage.bnei.lan host — filestore.PresignUpload/PresignDownload sign
+	// the endpoint into the URL (SigV4), and the dashboard's browser can't
+	// resolve a .lan hostname (docs/adr/0030).
+	GarageS3Endpoint     string
+	GarageFilesBucket    string
+	GarageFilesAccessKey string
+	GarageFilesSecret    string
 }
 
 func Load() Config {
@@ -67,6 +75,10 @@ func Load() Config {
 		MaxTaskRetries:        envInt("MAX_TASK_RETRIES", 3),
 		StopGrace:             time.Duration(envInt("STOP_GRACE_MS", 30000)) * time.Millisecond,
 		IdleTimeout:           time.Duration(envInt("IDLE_TIMEOUT_MS", 30*60*1000)) * time.Millisecond,
+		GarageS3Endpoint:      env("GARAGE_S3_ENDPOINT", "https://s3.bnei.dev"),
+		GarageFilesBucket:     env("GARAGE_FILES_BUCKET", "agent-fleet-files"),
+		GarageFilesAccessKey:  os.Getenv("AGENTFLEET_FILES_S3_ACCESS_KEY"),
+		GarageFilesSecret:     os.Getenv("AGENTFLEET_FILES_S3_SECRET"),
 	}
 }
 

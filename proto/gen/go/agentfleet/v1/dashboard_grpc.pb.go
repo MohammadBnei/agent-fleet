@@ -44,6 +44,10 @@ const (
 	DashboardService_CreatePromptSnippet_FullMethodName = "/agentfleet.v1.DashboardService/CreatePromptSnippet"
 	DashboardService_UpdatePromptSnippet_FullMethodName = "/agentfleet.v1.DashboardService/UpdatePromptSnippet"
 	DashboardService_DeletePromptSnippet_FullMethodName = "/agentfleet.v1.DashboardService/DeletePromptSnippet"
+	DashboardService_ListFiles_FullMethodName           = "/agentfleet.v1.DashboardService/ListFiles"
+	DashboardService_GetFileUploadUrl_FullMethodName    = "/agentfleet.v1.DashboardService/GetFileUploadUrl"
+	DashboardService_GetFileDownloadUrl_FullMethodName  = "/agentfleet.v1.DashboardService/GetFileDownloadUrl"
+	DashboardService_DeleteFile_FullMethodName          = "/agentfleet.v1.DashboardService/DeleteFile"
 	DashboardService_QueryLogs_FullMethodName           = "/agentfleet.v1.DashboardService/QueryLogs"
 )
 
@@ -96,6 +100,14 @@ type DashboardServiceClient interface {
 	CreatePromptSnippet(ctx context.Context, in *CreatePromptSnippetRequest, opts ...grpc.CallOption) (*CreatePromptSnippetResponse, error)
 	UpdatePromptSnippet(ctx context.Context, in *UpdatePromptSnippetRequest, opts ...grpc.CallOption) (*UpdatePromptSnippetResponse, error)
 	DeletePromptSnippet(ctx context.Context, in *DeletePromptSnippetRequest, opts ...grpc.CallOption) (*DeletePromptSnippetResponse, error)
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	ListFiles(ctx context.Context, in *ListFilesRequest, opts ...grpc.CallOption) (*ListFilesResponse, error)
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	GetFileUploadUrl(ctx context.Context, in *GetFileUploadUrlRequest, opts ...grpc.CallOption) (*GetFileUploadUrlResponse, error)
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	GetFileDownloadUrl(ctx context.Context, in *GetFileDownloadUrlRequest, opts ...grpc.CallOption) (*GetFileDownloadUrlResponse, error)
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	DeleteFile(ctx context.Context, in *DeleteFileRequest, opts ...grpc.CallOption) (*DeleteFileResponse, error)
 	// Reuses core.proto's QueryLogsRequest/QueryLogsResponse
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	QueryLogs(ctx context.Context, in *QueryLogsRequest, opts ...grpc.CallOption) (*QueryLogsResponse, error)
@@ -368,6 +380,46 @@ func (c *dashboardServiceClient) DeletePromptSnippet(ctx context.Context, in *De
 	return out, nil
 }
 
+func (c *dashboardServiceClient) ListFiles(ctx context.Context, in *ListFilesRequest, opts ...grpc.CallOption) (*ListFilesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListFilesResponse)
+	err := c.cc.Invoke(ctx, DashboardService_ListFiles_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dashboardServiceClient) GetFileUploadUrl(ctx context.Context, in *GetFileUploadUrlRequest, opts ...grpc.CallOption) (*GetFileUploadUrlResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetFileUploadUrlResponse)
+	err := c.cc.Invoke(ctx, DashboardService_GetFileUploadUrl_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dashboardServiceClient) GetFileDownloadUrl(ctx context.Context, in *GetFileDownloadUrlRequest, opts ...grpc.CallOption) (*GetFileDownloadUrlResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetFileDownloadUrlResponse)
+	err := c.cc.Invoke(ctx, DashboardService_GetFileDownloadUrl_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dashboardServiceClient) DeleteFile(ctx context.Context, in *DeleteFileRequest, opts ...grpc.CallOption) (*DeleteFileResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteFileResponse)
+	err := c.cc.Invoke(ctx, DashboardService_DeleteFile_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *dashboardServiceClient) QueryLogs(ctx context.Context, in *QueryLogsRequest, opts ...grpc.CallOption) (*QueryLogsResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(QueryLogsResponse)
@@ -427,6 +479,14 @@ type DashboardServiceServer interface {
 	CreatePromptSnippet(context.Context, *CreatePromptSnippetRequest) (*CreatePromptSnippetResponse, error)
 	UpdatePromptSnippet(context.Context, *UpdatePromptSnippetRequest) (*UpdatePromptSnippetResponse, error)
 	DeletePromptSnippet(context.Context, *DeletePromptSnippetRequest) (*DeletePromptSnippetResponse, error)
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	ListFiles(context.Context, *ListFilesRequest) (*ListFilesResponse, error)
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	GetFileUploadUrl(context.Context, *GetFileUploadUrlRequest) (*GetFileUploadUrlResponse, error)
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	GetFileDownloadUrl(context.Context, *GetFileDownloadUrlRequest) (*GetFileDownloadUrlResponse, error)
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	DeleteFile(context.Context, *DeleteFileRequest) (*DeleteFileResponse, error)
 	// Reuses core.proto's QueryLogsRequest/QueryLogsResponse
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	QueryLogs(context.Context, *QueryLogsRequest) (*QueryLogsResponse, error)
@@ -514,6 +574,18 @@ func (UnimplementedDashboardServiceServer) UpdatePromptSnippet(context.Context, 
 }
 func (UnimplementedDashboardServiceServer) DeletePromptSnippet(context.Context, *DeletePromptSnippetRequest) (*DeletePromptSnippetResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeletePromptSnippet not implemented")
+}
+func (UnimplementedDashboardServiceServer) ListFiles(context.Context, *ListFilesRequest) (*ListFilesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListFiles not implemented")
+}
+func (UnimplementedDashboardServiceServer) GetFileUploadUrl(context.Context, *GetFileUploadUrlRequest) (*GetFileUploadUrlResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetFileUploadUrl not implemented")
+}
+func (UnimplementedDashboardServiceServer) GetFileDownloadUrl(context.Context, *GetFileDownloadUrlRequest) (*GetFileDownloadUrlResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetFileDownloadUrl not implemented")
+}
+func (UnimplementedDashboardServiceServer) DeleteFile(context.Context, *DeleteFileRequest) (*DeleteFileResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteFile not implemented")
 }
 func (UnimplementedDashboardServiceServer) QueryLogs(context.Context, *QueryLogsRequest) (*QueryLogsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method QueryLogs not implemented")
@@ -982,6 +1054,78 @@ func _DashboardService_DeletePromptSnippet_Handler(srv interface{}, ctx context.
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DashboardService_ListFiles_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListFilesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DashboardServiceServer).ListFiles(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DashboardService_ListFiles_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DashboardServiceServer).ListFiles(ctx, req.(*ListFilesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DashboardService_GetFileUploadUrl_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetFileUploadUrlRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DashboardServiceServer).GetFileUploadUrl(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DashboardService_GetFileUploadUrl_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DashboardServiceServer).GetFileUploadUrl(ctx, req.(*GetFileUploadUrlRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DashboardService_GetFileDownloadUrl_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetFileDownloadUrlRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DashboardServiceServer).GetFileDownloadUrl(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DashboardService_GetFileDownloadUrl_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DashboardServiceServer).GetFileDownloadUrl(ctx, req.(*GetFileDownloadUrlRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DashboardService_DeleteFile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteFileRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DashboardServiceServer).DeleteFile(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DashboardService_DeleteFile_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DashboardServiceServer).DeleteFile(ctx, req.(*DeleteFileRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _DashboardService_QueryLogs_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(QueryLogsRequest)
 	if err := dec(in); err != nil {
@@ -1102,6 +1246,22 @@ var DashboardService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DeletePromptSnippet",
 			Handler:    _DashboardService_DeletePromptSnippet_Handler,
+		},
+		{
+			MethodName: "ListFiles",
+			Handler:    _DashboardService_ListFiles_Handler,
+		},
+		{
+			MethodName: "GetFileUploadUrl",
+			Handler:    _DashboardService_GetFileUploadUrl_Handler,
+		},
+		{
+			MethodName: "GetFileDownloadUrl",
+			Handler:    _DashboardService_GetFileDownloadUrl_Handler,
+		},
+		{
+			MethodName: "DeleteFile",
+			Handler:    _DashboardService_DeleteFile_Handler,
 		},
 		{
 			MethodName: "QueryLogs",

@@ -1,0 +1,56 @@
+syntax = "proto3";
+package agentfleet.v1;
+option go_package = "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1;agentfleetv1";
+
+// Message shapes only — no service here (reused by core.proto's
+// CoreService, agent-facing via the sidecar's MCP tools, and the
+// dashboard's DashboardService, human-facing) — same reuse precedent
+// transcript.proto already established. Backs a single flat, fleet-wide
+// shared file space in Garage S3 (docs/adr/0030): core is the sole holder
+// of the Garage credential and only ever mints short-lived presigned
+// URLs — actual bytes move directly between the caller (agent's `curl` in
+// Bash, or the dashboard's browser `fetch`) and Garage, never through
+// core or gRPC.
+
+message FileMetadata {
+  string key = 1;
+  int64 size_bytes = 2;
+  string last_modified = 3; // RFC3339
+  string content_type = 4;
+}
+
+message ListFilesRequest {}
+
+message ListFilesResponse {
+  repeated FileMetadata files = 1;
+}
+
+// filename becomes the object key verbatim (flat namespace, last write
+// wins — docs/adr/0030) — no per-caller scoping, no uniqueness check.
+message GetFileUploadUrlRequest {
+  string filename = 1;
+  string content_type = 2;
+}
+
+message GetFileUploadUrlResponse {
+  string upload_url = 1;
+  string key = 2;
+  string expires_at = 3; // RFC3339
+}
+
+message GetFileDownloadUrlRequest {
+  string key = 1;
+}
+
+message GetFileDownloadUrlResponse {
+  string download_url = 1;
+  string expires_at = 2; // RFC3339
+}
+
+message DeleteFileRequest {
+  string key = 1;
+}
+
+message DeleteFileResponse {
+  string status = 1;
+}

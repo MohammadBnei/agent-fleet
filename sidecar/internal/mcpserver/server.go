@@ -76,6 +76,26 @@ func New(core *coreclient.Client) http.Handler {
 		mcp.WithDescription("Tear down this task's e2e environment now, without waiting for the task to finish."),
 	), killEnvHandler(core))
 
+	s.AddTool(mcp.NewTool("list_shared_files",
+		mcp.WithDescription("List files in the fleet-wide shared file space (a single flat Garage S3 bucket, shared by every task and by the human via the dashboard). Returns each file's key, size, last-modified time, and content type."),
+	), listSharedFilesHandler(core))
+
+	s.AddTool(mcp.NewTool("get_shared_file_upload_url",
+		mcp.WithDescription("Get a short-lived presigned URL to upload a file into the fleet-wide shared file space. The filename becomes the object's key verbatim (flat namespace, last write wins). This tool does not move any bytes — after calling it, upload the actual file from Bash: curl -T <local-path> \"<uploadUrl>\"."),
+		mcp.WithString("filename", mcp.Required()),
+		mcp.WithString("contentType"),
+	), getSharedFileUploadURLHandler(core))
+
+	s.AddTool(mcp.NewTool("get_shared_file_download_url",
+		mcp.WithDescription("Get a short-lived presigned URL to download a file from the fleet-wide shared file space by its key (see list_shared_files). This tool does not move any bytes — after calling it, download from Bash: curl -o <local-path> \"<downloadUrl>\"."),
+		mcp.WithString("key", mcp.Required()),
+	), getSharedFileDownloadURLHandler(core))
+
+	s.AddTool(mcp.NewTool("delete_shared_file",
+		mcp.WithDescription("Delete a file from the fleet-wide shared file space by its key."),
+		mcp.WithString("key", mcp.Required()),
+	), deleteSharedFileHandler(core))
+
 	s.AddTool(mcp.NewTool("view_logs",
 		mcp.WithDescription("View recent logs from fleet components or deployed apps. Returns formatted log entries. Use this to debug issues with worker, sidecar, or the deployed application during e2e tests. Supports both duration-based queries (duration) and explicit time ranges (start_time/end_time in RFC3339 format)."),
 		mcp.WithString("component", mcp.Required(), mcp.Description("Which component: worker|sidecar|core|provisioner|e2e|app")),
@@ -217,6 +237,76 @@ func killEnvHandler(core *coreclient.Client) server.ToolHandlerFunc {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
 		return mcp.NewToolResultText("kill requested"), nil
+	}
+}
+
+func listSharedFilesHandler(core *coreclient.Client) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		slog.Info("mcp list_shared_files")
+		files, err := core.ListFiles(ctx)
+		if err != nil {
+			slog.Error("mcp list_shared_files", "error", err)
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		out := make([]map[string]any, 0, len(files))
+		for _, f := range files {
+			out = append(out, map[string]any{
+				"key": f.GetKey(), "sizeBytes": f.GetSizeBytes(),
+				"lastModified": f.GetLastModified(), "contentType": f.GetContentType(),
+			})
+		}
+		body, _ := json.Marshal(map[string]any{"files": out})
+		return mcp.NewToolResultText(string(body)), nil
+	}
+}
+
+func getSharedFileUploadURLHandler(core *coreclient.Client) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		filename := req.GetString("filename", "")
+		contentType := req.GetString("contentType", "")
+		if filename == "" {
+			return mcp.NewToolResultError("filename is required"), nil
+		}
+		slog.Info("mcp get_shared_file_upload_url", "filename", filename)
+		uploadURL, key, expiresAt, err := core.GetFileUploadURL(ctx, filename, contentType)
+		if err != nil {
+			slog.Error("mcp get_shared_file_upload_url", "error", err)
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		body, _ := json.Marshal(map[string]string{"uploadUrl": uploadURL, "key": key, "expiresAt": expiresAt})
+		return mcp.NewToolResultText(string(body)), nil
+	}
+}
+
+func getSharedFileDownloadURLHandler(core *coreclient.Client) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		key := req.GetString("key", "")
+		if key == "" {
+			return mcp.NewToolResultError("key is required"), nil
+		}
+		slog.Info("mcp get_shared_file_download_url", "key", key)
+		downloadURL, expiresAt, err := core.GetFileDownloadURL(ctx, key)
+		if err != nil {
+			slog.Error("mcp get_shared_file_download_url", "error", err)
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		body, _ := json.Marshal(map[string]string{"downloadUrl": downloadURL, "expiresAt": expiresAt})
+		return mcp.NewToolResultText(string(body)), nil
+	}
+}
+
+func deleteSharedFileHandler(core *coreclient.Client) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		key := req.GetString("key", "")
+		if key == "" {
+			return mcp.NewToolResultError("key is required"), nil
+		}
+		slog.Info("mcp delete_shared_file", "key", key)
+		if err := core.DeleteFile(ctx, key); err != nil {
+			slog.Error("mcp delete_shared_file", "error", err)
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		return mcp.NewToolResultText(`{"status":"deleted"}`), nil
 	}
 }
 

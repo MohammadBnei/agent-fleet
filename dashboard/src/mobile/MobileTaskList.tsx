@@ -110,6 +110,7 @@ export function MobileTaskList({
   setFilter,
   onSelect,
   onOpenWorktrees,
+  onOpenFiles,
   onCreated,
 }: {
   tasks: Task[];
@@ -123,6 +124,7 @@ export function MobileTaskList({
   setFilter: (v: string) => void;
   onSelect: (id: string) => void;
   onOpenWorktrees: () => void;
+  onOpenFiles: () => void;
   onCreated: (id: string) => void;
 }) {
   const { needsYou, working, shipped } = bucketTasks(filteredTasks, needsYouIds);
@@ -137,8 +139,15 @@ export function MobileTaskList({
           </span>
           <button
             type="button"
-            onClick={onOpenWorktrees}
+            onClick={onOpenFiles}
             className="ml-auto text-[10px] text-base-content/50 px-2 py-1 rounded-md border border-base-content/10 whitespace-nowrap"
+          >
+            Files
+          </button>
+          <button
+            type="button"
+            onClick={onOpenWorktrees}
+            className="text-[10px] text-base-content/50 px-2 py-1 rounded-md border border-base-content/10 whitespace-nowrap"
           >
             Worktrees
           </button>

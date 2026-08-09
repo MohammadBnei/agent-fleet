@@ -44,7 +44,7 @@ func TestServer_Stop_DefaultReason(t *testing.T) {
 	pool := newTestPool(t)
 	taskID := seedTask(t, pool)
 	store := &recordingStore{}
-	s := NewServer(tasks.NewStore(pool), store, nil, nil, nil, nil, nil, 5, nil)
+	s := NewServer(tasks.NewStore(pool), store, nil, nil, nil, nil, nil, nil, 5, nil)
 
 	resp, err := s.Stop(context.Background(), connect.NewRequest(&agentfleetv1.StopRequest{TaskId: taskID}))
 	if err != nil {
@@ -70,7 +70,7 @@ func TestServer_Stop_CustomReason(t *testing.T) {
 	pool := newTestPool(t)
 	taskID := seedTask(t, pool)
 	store := &recordingStore{}
-	s := NewServer(tasks.NewStore(pool), store, nil, nil, nil, nil, nil, 5, nil)
+	s := NewServer(tasks.NewStore(pool), store, nil, nil, nil, nil, nil, nil, 5, nil)
 
 	reason := "wrong direction"
 	req := connect.NewRequest(&agentfleetv1.StopRequest{TaskId: taskID, Reason: &reason})
