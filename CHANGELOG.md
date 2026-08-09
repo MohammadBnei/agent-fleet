@@ -1,5 +1,12 @@
 # Changelog
 
+# [1.26.0](https://github.com/MohammadBnei/agent-fleet/compare/1.25.4...1.26.0) (2026-08-09)
+
+
+### Features
+
+* Garage S3-backed shared file space for agents and the dashboard ([#64](https://github.com/MohammadBnei/agent-fleet/issues/64)) ([ed1ee42](https://github.com/MohammadBnei/agent-fleet/commit/ed1ee42b54a633c3f966e26fde5370c8bb2b7ac4))
+
 ## [1.25.4](https://github.com/MohammadBnei/agent-fleet/compare/1.25.3...1.25.4) (2026-08-09)
 
 
