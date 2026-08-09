@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.25.4](https://github.com/MohammadBnei/agent-fleet/compare/1.25.3...1.25.4) (2026-08-09)
+
+
+### Bug Fixes
+
+* URL-encode DB credentials in migrate hook DSN ([34f44d0](https://github.com/MohammadBnei/agent-fleet/commit/34f44d0986f69b7bfee7dead0a4e5bffd5e56a23))
+* use args not command for migrate hook flags ([67a3b7c](https://github.com/MohammadBnei/agent-fleet/commit/67a3b7c2c4e72d9e8463f899242d35f74ca097d1))
+
 ## [1.25.3](https://github.com/MohammadBnei/agent-fleet/compare/1.25.2...1.25.3) (2026-08-09)
 
 

@@ -1,6 +1,6 @@
 {
   "name": "agent-fleet",
-  "version": "1.25.3",
+  "version": "1.25.4",
   "private": true,
   "scripts": {
     "release": "release-it"
