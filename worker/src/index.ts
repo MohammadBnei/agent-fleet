@@ -30,9 +30,9 @@ if (!TASK_ID || !TARGET_REPO || !LEASE_ID) {
 async function buildTask(sidecar: Sidecar): Promise<Task> {
   const taskData = await sidecar.getTask();
   return {
-    id: TASK_ID,
-    repo: TARGET_REPO,
-    leaseId: LEASE_ID,
+    id: TASK_ID!,
+    repo: TARGET_REPO!,
+    leaseId: LEASE_ID!,
     description: taskData.description,
     guidance: taskData.guidance,
     baseBranch: taskData.baseBranch,

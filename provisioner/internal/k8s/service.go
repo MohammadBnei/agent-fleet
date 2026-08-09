@@ -19,6 +19,7 @@ func (c *Client) CreateService(ctx context.Context, taskID string) error {
 				{Name: "app", Port: AppPort, TargetPort: intstr.FromInt32(AppPort)},
 				{Name: "code-server", Port: CodeServerPort, TargetPort: intstr.FromInt32(CodeServerPort)},
 				{Name: "playwright", Port: PlaywrightPort, TargetPort: intstr.FromInt32(PlaywrightPort)},
+				{Name: "exec", Port: ExecPort, TargetPort: intstr.FromInt32(ExecPort)},
 			},
 		},
 	}

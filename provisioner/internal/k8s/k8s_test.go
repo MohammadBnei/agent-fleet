@@ -75,8 +75,8 @@ func TestCreateService_Shape(t *testing.T) {
 	if svc.Spec.Selector[TaskIDLabel] != "task-1" {
 		t.Errorf("unexpected selector: %+v", svc.Spec.Selector)
 	}
-	if len(svc.Spec.Ports) != 3 {
-		t.Errorf("expected 3 ports, got %d", len(svc.Spec.Ports))
+	if len(svc.Spec.Ports) != 4 {
+		t.Errorf("expected 4 ports, got %d", len(svc.Spec.Ports))
 	}
 }
 
