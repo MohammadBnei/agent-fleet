@@ -98,7 +98,7 @@ hooks:
     image:
       repository: mohammaddocker/agent-fleet-migration
       tag: "1.25.3"
-    command:
+    args:
       - "-path"
       - "/migrations"
       - "-database"
