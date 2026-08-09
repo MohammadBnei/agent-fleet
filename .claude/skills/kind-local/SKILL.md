@@ -70,7 +70,7 @@ the lowercase history modifier and silently mangles the tag to
 "agent-fleet-coreocal" not present locally`).
 
 ```bash
-for c in core provisioner sidecar worker; do
+for c in core provisioner sidecar worker migration; do
   docker build -f "$c/Dockerfile" -t "agent-fleet-${c}:local" .
   kind load docker-image "agent-fleet-${c}:local" --name agent-fleet-local
 done
@@ -112,19 +112,30 @@ infisical run --domain=https://infisical.bnei.dev/api \
     --from-literal=CLAUDE_CODE_OAUTH_TOKEN="$CLAUDE_CODE_OAUTH_TOKEN"'
 ```
 
-## 5. Postgres, then core + migration
+## 5. Postgres, then migration, then core
 
 ```bash
 kubectl apply -f local/kind/20-postgres.yaml
 kubectl wait --for=condition=ready pod -l app=postgres -n agent-fleet --timeout=60s
 
+# The dedicated `migration` image (docs/adr/0030) — same image prod's
+# ArgoCD PreSync hook runs, just a one-off Pod here instead of a Job. Runs
+# BEFORE core starts, not after: core no longer applies or embeds any
+# schema itself, so a stale/missing migration would surface as core
+# immediately failing every query against a table/column that doesn't
+# exist yet, not as a `core migrate` step you could retry independently.
+kubectl run agent-fleet-migrate -n agent-fleet --restart=Never \
+  --image=agent-fleet-migration:local --image-pull-policy=IfNotPresent \
+  --command -- migrate \
+  -path /migrations \
+  -database "postgres://agentfleet:agentfleet@postgres:5432/agentfleetdb?sslmode=disable" \
+  up
+kubectl wait --for=condition=ready pod/agent-fleet-migrate -n agent-fleet --timeout=60s || true
+kubectl logs -n agent-fleet agent-fleet-migrate
+kubectl delete pod -n agent-fleet agent-fleet-migrate
+
 kubectl apply -f local/kind/30-core.yaml
 kubectl wait --for=condition=available deploy/core -n agent-fleet --timeout=60s
-
-# core's own `migrate` subcommand (same as prod's ArgoCD PreSync hook) —
-# distroless has no shell, but `exec ... -- /core migrate` execs the binary
-# directly, no shell needed.
-kubectl exec -n agent-fleet deploy/core -- /core migrate
 ```
 
 ## 6. Provisioner

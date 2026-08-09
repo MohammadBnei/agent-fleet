@@ -22,10 +22,8 @@ import (
 // applied to Stop/tasks.Store).
 func TestServer_CreateTask_UnknownRepo(t *testing.T) {
 	pool := newTestPool(t)
+	// "dream-analyst" already exists — seeded by db/migrations/ (docs/adr/0030).
 	repoStore := repos.NewStore(pool)
-	if err := repoStore.Create(context.Background(), repos.Repo{Name: "dream-analyst", URL: "https://example.com/dream-analyst.git"}); err != nil {
-		t.Fatalf("seed repo: %v", err)
-	}
 	s := NewServer(tasks.NewStore(pool), nil, nil, repoStore, nil, nil, nil, 5, nil)
 
 	req := connect.NewRequest(&agentfleetv1.CreateTaskRequest{Repo: "not-a-real-repo", Description: "do something"})
@@ -36,10 +34,8 @@ func TestServer_CreateTask_UnknownRepo(t *testing.T) {
 
 func TestServer_CreateTask_EmptyDescription(t *testing.T) {
 	pool := newTestPool(t)
+	// "dream-analyst" already exists — seeded by db/migrations/ (docs/adr/0030).
 	repoStore := repos.NewStore(pool)
-	if err := repoStore.Create(context.Background(), repos.Repo{Name: "dream-analyst", URL: "https://example.com/dream-analyst.git"}); err != nil {
-		t.Fatalf("seed repo: %v", err)
-	}
 	s := NewServer(tasks.NewStore(pool), nil, nil, repoStore, nil, nil, nil, 5, nil)
 
 	req := connect.NewRequest(&agentfleetv1.CreateTaskRequest{Repo: "dream-analyst", Description: ""})

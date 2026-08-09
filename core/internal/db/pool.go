@@ -1,5 +1,7 @@
 // Package db wires the shared Postgres pool (AGENTFLEET_DB_*, same
-// convention worker/bot already use) and applies db/schema.sql.
+// convention worker/bot already use). Schema is applied separately by the
+// `migration` image (see /migration/Dockerfile and docs/adr/0030) — core
+// itself no longer embeds or applies any schema.
 package db
 
 import (

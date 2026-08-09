@@ -6,12 +6,10 @@ import (
 	"context"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/modules/postgres"
-	"github.com/testcontainers/testcontainers-go/wait"
+
+	"github.com/MohammadBnei/agent-fleet/core/internal/dbtest"
 )
 
 // This file only runs under `go test -tags=integration` (see
@@ -19,66 +17,23 @@ import (
 // proving the two properties that actually matter for the coordination
 // rewrite: the advisory lock serializes concurrent appends into a gapless
 // sequence, and the idempotency-key unique index makes a retried append a
-// true no-op rather than a duplicate message.
+// true no-op rather than a duplicate message. dbtest.NewPool applies the
+// real db/migrations/ (docs/adr/0030), which — unlike the old hand-rolled
+// stub table — makes tasks.repo/description NOT NULL, so every insert into
+// tasks in this package supplies them (see newTestTask below).
 func newTestPool(t *testing.T) *pgxpool.Pool {
+	return dbtest.NewPool(t)
+}
+
+// newTestTask inserts a minimal valid task row and returns its id — the
+// real tasks table (unlike the old bare-id stub) requires repo/description.
+func newTestTask(t *testing.T, ctx context.Context, pool *pgxpool.Pool) string {
 	t.Helper()
-	ctx := context.Background()
-
-	container, err := postgres.Run(ctx, "postgres:16",
-		postgres.WithDatabase("agentfleettest"),
-		postgres.WithUsername("test"),
-		postgres.WithPassword("test"),
-		// The official postgres image logs "database system is ready to
-		// accept connections" twice — once before an internal restart
-		// during initdb, once after. Waiting on the port alone (as this
-		// used to) lets a connection land in that gap and get a "connection
-		// reset by peer" (hit in CI, not locally — timing-dependent).
-		testcontainers.WithWaitStrategy(
-			wait.ForLog("database system is ready to accept connections").
-				WithOccurrence(2).
-				WithStartupTimeout(60*time.Second),
-		),
-	)
-	if err != nil {
-		t.Fatalf("start postgres container: %v", err)
+	var taskID string
+	if err := pool.QueryRow(ctx, `INSERT INTO tasks (repo, description) VALUES ('dream-analyst', 'task') RETURNING id`).Scan(&taskID); err != nil {
+		t.Fatalf("insert task: %v", err)
 	}
-	t.Cleanup(func() { _ = container.Terminate(ctx) })
-
-	connStr, err := container.ConnectionString(ctx, "sslmode=disable")
-	if err != nil {
-		t.Fatalf("connection string: %v", err)
-	}
-	pool, err := pgxpool.New(ctx, connStr)
-	if err != nil {
-		t.Fatalf("pgxpool.New: %v", err)
-	}
-	t.Cleanup(pool.Close)
-
-	_, err = pool.Exec(ctx, `
-		CREATE EXTENSION IF NOT EXISTS pgcrypto;
-		CREATE TABLE tasks (id UUID PRIMARY KEY DEFAULT gen_random_uuid());
-		CREATE TABLE transcript (
-			task_id            UUID NOT NULL REFERENCES tasks(id),
-			seq                BIGINT NOT NULL,
-			"from"             TEXT NOT NULL,
-			text               TEXT NOT NULL,
-			type               TEXT,
-			idempotency_key    TEXT NOT NULL,
-			created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
-			relayed_to_discord BOOLEAN NOT NULL DEFAULT false,
-			relay_attempts     INT NOT NULL DEFAULT 0,
-			relay_dead_letter  BOOLEAN NOT NULL DEFAULT false,
-			relay_last_error   TEXT,
-			reply_to_seq       BIGINT,
-			PRIMARY KEY (task_id, seq)
-		);
-		CREATE UNIQUE INDEX transcript_idempotency_idx
-			ON transcript (task_id, idempotency_key);
-	`)
-	if err != nil {
-		t.Fatalf("apply schema: %v", err)
-	}
-	return pool
+	return taskID
 }
 
 func TestPostgresStore_ConcurrentAppendsAreGaplessAndOrdered(t *testing.T) {
@@ -86,10 +41,7 @@ func TestPostgresStore_ConcurrentAppendsAreGaplessAndOrdered(t *testing.T) {
 	ctx := context.Background()
 	store := NewPostgresStore(pool)
 
-	var taskID string
-	if err := pool.QueryRow(ctx, `INSERT INTO tasks DEFAULT VALUES RETURNING id`).Scan(&taskID); err != nil {
-		t.Fatalf("insert task: %v", err)
-	}
+	taskID := newTestTask(t, ctx, pool)
 
 	const n = 20
 	var wg sync.WaitGroup
@@ -127,10 +79,7 @@ func TestPostgresStore_IdempotentAppendDoesNotDuplicate(t *testing.T) {
 	ctx := context.Background()
 	store := NewPostgresStore(pool)
 
-	var taskID string
-	if err := pool.QueryRow(ctx, `INSERT INTO tasks DEFAULT VALUES RETURNING id`).Scan(&taskID); err != nil {
-		t.Fatalf("insert task: %v", err)
-	}
+	taskID := newTestTask(t, ctx, pool)
 
 	seq1, err := store.Append(ctx, taskID, "human", "approved", "approve", "fixed-key-1")
 	if err != nil {
@@ -162,10 +111,7 @@ func TestPostgresStore_AppendReplyRoundTripsReplyTo(t *testing.T) {
 	ctx := context.Background()
 	store := NewPostgresStore(pool)
 
-	var taskID string
-	if err := pool.QueryRow(ctx, `INSERT INTO tasks DEFAULT VALUES RETURNING id`).Scan(&taskID); err != nil {
-		t.Fatalf("insert task: %v", err)
-	}
+	taskID := newTestTask(t, ctx, pool)
 
 	questionSeq, err := store.Append(ctx, taskID, "agent", `{"questions":[]}`, "question", "")
 	if err != nil {

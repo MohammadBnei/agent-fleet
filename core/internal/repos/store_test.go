@@ -6,75 +6,35 @@ import (
 	"context"
 	"errors"
 	"testing"
-	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/modules/postgres"
-	"github.com/testcontainers/testcontainers-go/wait"
+
+	"github.com/MohammadBnei/agent-fleet/core/internal/dbtest"
 )
 
-// Real Postgres — mirrors tasks/store_test.go's container setup, a minimal
-// subset of db/schema.sql's repos table.
+// dbtest.NewPool applies the real db/migrations/ (docs/adr/0030), which
+// seeds 'dream-analyst'/'vos-monolith'/'agent-fleet' rows into repos —
+// tests below use a fixture name outside that seeded set so they don't
+// collide with it.
 func newTestPool(t *testing.T) *pgxpool.Pool {
-	t.Helper()
-	ctx := context.Background()
-
-	container, err := postgres.Run(ctx, "postgres:16",
-		postgres.WithDatabase("agentfleettest"),
-		postgres.WithUsername("test"),
-		postgres.WithPassword("test"),
-		testcontainers.WithWaitStrategy(
-			wait.ForLog("database system is ready to accept connections").
-				WithOccurrence(2).
-				WithStartupTimeout(60*time.Second),
-		),
-	)
-	if err != nil {
-		t.Fatalf("start postgres container: %v", err)
-	}
-	t.Cleanup(func() { _ = container.Terminate(ctx) })
-
-	connStr, err := container.ConnectionString(ctx, "sslmode=disable")
-	if err != nil {
-		t.Fatalf("connection string: %v", err)
-	}
-	pool, err := pgxpool.New(ctx, connStr)
-	if err != nil {
-		t.Fatalf("pgxpool.New: %v", err)
-	}
-	t.Cleanup(pool.Close)
-
-	_, err = pool.Exec(ctx, `
-		CREATE TABLE repos (
-			name        TEXT PRIMARY KEY,
-			url         TEXT NOT NULL,
-			base_branch TEXT NOT NULL DEFAULT '',
-			created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-			updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
-		);
-	`)
-	if err != nil {
-		t.Fatalf("apply schema: %v", err)
-	}
-	return pool
+	return dbtest.NewPool(t)
 }
 
 func TestStore_CreateGetListUpdateDelete(t *testing.T) {
 	s := NewStore(newTestPool(t))
 	ctx := context.Background()
 
-	if got, err := s.Get(ctx, "dream-analyst"); err != nil || got != nil {
+	if got, err := s.Get(ctx, "test-repo"); err != nil || got != nil {
 		t.Fatalf("Get before Create = (%v, %v), want (nil, nil)", got, err)
 	}
 
-	r := Repo{Name: "dream-analyst", URL: "https://example.com/dream-analyst.git", BaseBranch: "dev"}
+	r := Repo{Name: "test-repo", URL: "https://example.com/test-repo.git", BaseBranch: "dev"}
 	if err := s.Create(ctx, r); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
-	got, err := s.Get(ctx, "dream-analyst")
+	got, err := s.Get(ctx, "test-repo")
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
@@ -82,27 +42,35 @@ func TestStore_CreateGetListUpdateDelete(t *testing.T) {
 		t.Fatalf("Get = %+v, want %+v", got, r)
 	}
 
+	// List includes the migration's seeded repos alongside the one just
+	// created (docs/adr/0030) — assert containment, not an exact count.
 	list, err := s.List(ctx)
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
-	if len(list) != 1 || list[0] != r {
-		t.Fatalf("List = %+v, want [%+v]", list, r)
+	found := false
+	for _, item := range list {
+		if item == r {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("List = %+v, want it to contain %+v", list, r)
 	}
 
-	updated := Repo{Name: "dream-analyst", URL: "https://example.com/dream-analyst-v2.git", BaseBranch: "main"}
+	updated := Repo{Name: "test-repo", URL: "https://example.com/test-repo-v2.git", BaseBranch: "main"}
 	if err := s.Update(ctx, updated); err != nil {
 		t.Fatalf("Update: %v", err)
 	}
-	got, err = s.Get(ctx, "dream-analyst")
+	got, err = s.Get(ctx, "test-repo")
 	if err != nil || got == nil || *got != updated {
 		t.Fatalf("Get after Update = (%+v, %v), want %+v", got, err, updated)
 	}
 
-	if err := s.Delete(ctx, "dream-analyst"); err != nil {
+	if err := s.Delete(ctx, "test-repo"); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
-	if got, err := s.Get(ctx, "dream-analyst"); err != nil || got != nil {
+	if got, err := s.Get(ctx, "test-repo"); err != nil || got != nil {
 		t.Fatalf("Get after Delete = (%v, %v), want (nil, nil)", got, err)
 	}
 }
@@ -111,7 +79,7 @@ func TestStore_CreateDuplicateName(t *testing.T) {
 	s := NewStore(newTestPool(t))
 	ctx := context.Background()
 
-	r := Repo{Name: "dream-analyst", URL: "https://example.com/dream-analyst.git"}
+	r := Repo{Name: "test-repo", URL: "https://example.com/test-repo.git"}
 	if err := s.Create(ctx, r); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -139,14 +107,14 @@ func TestStore_SetOnChange(t *testing.T) {
 	calls := 0
 	s.SetOnChange(func() { calls++ })
 
-	r := Repo{Name: "dream-analyst", URL: "https://example.com/dream-analyst.git"}
+	r := Repo{Name: "test-repo", URL: "https://example.com/test-repo.git"}
 	if err := s.Create(ctx, r); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 	if err := s.Update(ctx, r); err != nil {
 		t.Fatalf("Update: %v", err)
 	}
-	if err := s.Delete(ctx, "dream-analyst"); err != nil {
+	if err := s.Delete(ctx, "test-repo"); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
 	if calls != 3 {
