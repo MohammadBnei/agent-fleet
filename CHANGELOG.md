@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.25.2](https://github.com/MohammadBnei/agent-fleet/compare/1.25.1...1.25.2) (2026-08-09)
+
+
+### Bug Fixes
+
+* **sidecar:** route GetTask/SetPermissionMode through CoreService, not DashboardService ([c48aa20](https://github.com/MohammadBnei/agent-fleet/commit/c48aa20654a3102ba9818adea288902304a63594))
+
 ## [1.25.1](https://github.com/MohammadBnei/agent-fleet/compare/1.25.0...1.25.1) (2026-08-09)
 
 
