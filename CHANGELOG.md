@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.25.1](https://github.com/MohammadBnei/agent-fleet/compare/1.25.0...1.25.1) (2026-08-09)
+
+
+### Bug Fixes
+
+* **e2e:** expose run_command's exec port on the Service and NetworkPolicy ([d91b7a9](https://github.com/MohammadBnei/agent-fleet/commit/d91b7a9d43966ea7f54dd078757ebde6f2166d5f)), closes [#65](https://github.com/MohammadBnei/agent-fleet/issues/65)
+
 # [1.25.0](https://github.com/MohammadBnei/agent-fleet/compare/1.24.1...1.25.0) (2026-08-08)
 
 
