@@ -1,4 +1,4 @@
-import type { Task } from "../gen/agentfleet/v1/dashboard_pb";
+import type { Task } from "../gen/agentfleet/v1/core_pb";
 import { bucketTasks, prBadge, heartbeatLabel } from "../pages/TaskList";
 import { NewTaskDialog } from "../components/NewTaskDialog";
 import type { TodoItem } from "../transcript";

@@ -15,44 +15,9 @@ import "agentfleet/v1/core.proto";
 // snake_case here per proto convention; generated TS/JS renders them
 // camelCase (e.g. thread_id -> threadId).
 
-message Task {
-  string id = 1;
-  string repo = 2;
-  string description = 3;
-  string status = 4;
-  optional string thread_id = 5;
-  optional string pr_url = 6;
-  // Worker-pod lifecycle state (PodPhase, set via ReportPodEvents) — distinct
-  // from `status` (business state). Unset until the provisioner reports the
-  // pod's first event.
-  optional string pod_phase = 7;
-  optional string pod_message = 8;
-  // Reclaim-eligibility signal (ClaimNextTask reclaims a claimed/running
-  // task once this is >10min stale — the exact staleness
-  // threshold the dashboard's own "stuck" badge should match). Set once at
-  // claim time, refreshed by the worker pod's own heartbeat loop; unset for
-  // a still-pending task. RFC3339, matching JournalEntry.created_at.
-  optional string heartbeat_at = 9;
-  // How many times ClaimNextTask has reclaimed this task after a stale
-  // heartbeat (capped at MAX_TASK_RETRIES before the task goes
-  // failed_permanently instead of being reclaimed again).
-  int32 retry_count = 10;
-  optional string last_error = 11;
-  // The Claude SDK's own session id (SaveSessionId) — resumable in a fresh
-  // pod via `resume:` (sessions redesign, supersedes docs/adr/0021/0025's
-  // phase-boundary framing). Unset until the worker's first streamed
-  // message reports it.
-  optional string session_id = 12;
-  // Last time a transcript entry was appended for this task — substrate
-  // for the idle-timeout backstop that tears down an unattended pod.
-  // RFC3339, matching heartbeat_at. Unset for a task with no activity yet.
-  optional string last_active_at = 13;
-  // The session's current SDK permission mode ("default"|"plan"|
-  // "acceptEdits"|"bypassPermissions"|...), so the dashboard's mode picker
-  // can highlight the real active mode instead of guessing. Unset for an
-  // idle/never-warmed session.
-  optional string permission_mode = 14;
-}
+// Task, GetTaskRequest, and GetTaskResponse now live in core.proto (which
+// this file already imports) — CoreService.GetTask (sidecar/worker
+// self-lookup) and DashboardService.GetTask below share the same shapes.
 
 message ListTasksRequest {
   int32 limit = 1;
@@ -60,14 +25,6 @@ message ListTasksRequest {
 
 message ListTasksResponse {
   repeated Task tasks = 1;
-}
-
-message GetTaskRequest {
-  string id = 1;
-}
-
-message GetTaskResponse {
-  Task task = 1;
 }
 
 // Creates a task the same way a Discord /task command does, minus the
@@ -123,15 +80,10 @@ message StopResponse {
 // server-side); "bypassPermissions" deliberately disables the canUseTool
 // prompt-and-wait gate for this task for the rest of the session — the
 // dashboard must get explicit, typed confirmation from the human before
-// sending that value.
-message SetPermissionModeRequest {
-  string task_id = 1;
-  string mode = 2;
-}
-
-message SetPermissionModeResponse {
-  string status = 1;
-}
+// sending that value. SetPermissionModeRequest/Response now live in
+// core.proto, shared with CoreService.SetPermissionMode (the sidecar's
+// self-report use case — see that file's comment on why the two callers
+// need different server-side behavior despite the shared message shapes).
 
 // Warm boots a pod for an idle session on demand — the sessions redesign's
 // "bus" model (supersedes docs/adr/0021/0025's phase-boundary framing): a
@@ -366,6 +318,7 @@ message DeletePromptSnippetResponse {
 
 service DashboardService {
   rpc ListTasks(ListTasksRequest) returns (ListTasksResponse);
+  // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
   rpc GetTask(GetTaskRequest) returns (GetTaskResponse);
   rpc CreateTask(CreateTaskRequest) returns (CreateTaskResponse);
   // Reuses transcript.proto's ReadTranscriptSinceRequest/Response rather
@@ -381,6 +334,7 @@ service DashboardService {
   rpc StreamTranscript(StreamTranscriptRequest) returns (stream TranscriptEntry);
   rpc GetE2eStatus(GetE2eStatusRequest) returns (GetE2eStatusResponse);
   rpc Stop(StopRequest) returns (StopResponse);
+  // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
   rpc SetPermissionMode(SetPermissionModeRequest) returns (SetPermissionModeResponse);
   rpc Warm(WarmRequest) returns (WarmResponse);
   rpc KillE2e(KillE2eRequest) returns (KillE2eResponse);

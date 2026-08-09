@@ -27,6 +27,8 @@ const (
 	CoreService_KillE2EEnv_FullMethodName          = "/agentfleet.v1.CoreService/KillE2eEnv"
 	CoreService_ListE2ETools_FullMethodName        = "/agentfleet.v1.CoreService/ListE2eTools"
 	CoreService_CallE2ETool_FullMethodName         = "/agentfleet.v1.CoreService/CallE2eTool"
+	CoreService_GetTask_FullMethodName             = "/agentfleet.v1.CoreService/GetTask"
+	CoreService_SetPermissionMode_FullMethodName   = "/agentfleet.v1.CoreService/SetPermissionMode"
 	CoreService_Heartbeat_FullMethodName           = "/agentfleet.v1.CoreService/Heartbeat"
 	CoreService_SetTaskStatus_FullMethodName       = "/agentfleet.v1.CoreService/SetTaskStatus"
 	CoreService_AppendJournal_FullMethodName       = "/agentfleet.v1.CoreService/AppendJournal"
@@ -59,6 +61,17 @@ type CoreServiceClient interface {
 	ListE2ETools(ctx context.Context, in *ListE2EToolsRequest, opts ...grpc.CallOption) (*ListE2EToolsResponse, error)
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	CallE2ETool(ctx context.Context, in *CallE2EToolRequest, opts ...grpc.CallOption) (*CallE2EToolResponse, error)
+	// Lets a worker pod fetch its own fresh task row on startup instead of
+	// relying on stale environment variables — same message shapes
+	// DashboardService.GetTask uses, different caller (docs/adr/0029).
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	GetTask(ctx context.Context, in *GetTaskRequest, opts ...grpc.CallOption) (*GetTaskResponse, error)
+	// A worker pod persisting its own permission mode (initial "default" or a
+	// change it made itself) — a plain column write, unlike
+	// DashboardService.SetPermissionMode which also notifies a *different*,
+	// already-running worker via the transcript.
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	SetPermissionMode(ctx context.Context, in *SetPermissionModeRequest, opts ...grpc.CallOption) (*SetPermissionModeResponse, error)
 	Heartbeat(ctx context.Context, in *HeartbeatRequest, opts ...grpc.CallOption) (*HeartbeatResponse, error)
 	SetTaskStatus(ctx context.Context, in *SetTaskStatusRequest, opts ...grpc.CallOption) (*SetTaskStatusResponse, error)
 	AppendJournal(ctx context.Context, in *AppendJournalRequest, opts ...grpc.CallOption) (*AppendJournalResponse, error)
@@ -158,6 +171,26 @@ func (c *coreServiceClient) CallE2ETool(ctx context.Context, in *CallE2EToolRequ
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(CallE2EToolResponse)
 	err := c.cc.Invoke(ctx, CoreService_CallE2ETool_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *coreServiceClient) GetTask(ctx context.Context, in *GetTaskRequest, opts ...grpc.CallOption) (*GetTaskResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetTaskResponse)
+	err := c.cc.Invoke(ctx, CoreService_GetTask_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *coreServiceClient) SetPermissionMode(ctx context.Context, in *SetPermissionModeRequest, opts ...grpc.CallOption) (*SetPermissionModeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SetPermissionModeResponse)
+	err := c.cc.Invoke(ctx, CoreService_SetPermissionMode_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -275,6 +308,17 @@ type CoreServiceServer interface {
 	ListE2ETools(context.Context, *ListE2EToolsRequest) (*ListE2EToolsResponse, error)
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	CallE2ETool(context.Context, *CallE2EToolRequest) (*CallE2EToolResponse, error)
+	// Lets a worker pod fetch its own fresh task row on startup instead of
+	// relying on stale environment variables — same message shapes
+	// DashboardService.GetTask uses, different caller (docs/adr/0029).
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	GetTask(context.Context, *GetTaskRequest) (*GetTaskResponse, error)
+	// A worker pod persisting its own permission mode (initial "default" or a
+	// change it made itself) — a plain column write, unlike
+	// DashboardService.SetPermissionMode which also notifies a *different*,
+	// already-running worker via the transcript.
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	SetPermissionMode(context.Context, *SetPermissionModeRequest) (*SetPermissionModeResponse, error)
 	Heartbeat(context.Context, *HeartbeatRequest) (*HeartbeatResponse, error)
 	SetTaskStatus(context.Context, *SetTaskStatusRequest) (*SetTaskStatusResponse, error)
 	AppendJournal(context.Context, *AppendJournalRequest) (*AppendJournalResponse, error)
@@ -320,6 +364,12 @@ func (UnimplementedCoreServiceServer) ListE2ETools(context.Context, *ListE2ETool
 }
 func (UnimplementedCoreServiceServer) CallE2ETool(context.Context, *CallE2EToolRequest) (*CallE2EToolResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method CallE2ETool not implemented")
+}
+func (UnimplementedCoreServiceServer) GetTask(context.Context, *GetTaskRequest) (*GetTaskResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetTask not implemented")
+}
+func (UnimplementedCoreServiceServer) SetPermissionMode(context.Context, *SetPermissionModeRequest) (*SetPermissionModeResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SetPermissionMode not implemented")
 }
 func (UnimplementedCoreServiceServer) Heartbeat(context.Context, *HeartbeatRequest) (*HeartbeatResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Heartbeat not implemented")
@@ -499,6 +549,42 @@ func _CoreService_CallE2ETool_Handler(srv interface{}, ctx context.Context, dec 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CoreService_GetTask_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetTaskRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).GetTask(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_GetTask_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).GetTask(ctx, req.(*GetTaskRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CoreService_SetPermissionMode_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetPermissionModeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).SetPermissionMode(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_SetPermissionMode_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).SetPermissionMode(ctx, req.(*SetPermissionModeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _CoreService_Heartbeat_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(HeartbeatRequest)
 	if err := dec(in); err != nil {
@@ -670,6 +756,14 @@ var CoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CallE2eTool",
 			Handler:    _CoreService_CallE2ETool_Handler,
+		},
+		{
+			MethodName: "GetTask",
+			Handler:    _CoreService_GetTask_Handler,
+		},
+		{
+			MethodName: "SetPermissionMode",
+			Handler:    _CoreService_SetPermissionMode_Handler,
 		},
 		{
 			MethodName: "Heartbeat",

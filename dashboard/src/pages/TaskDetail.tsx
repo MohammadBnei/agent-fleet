@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { client } from "../connectClient";
-import type { Task } from "../gen/agentfleet/v1/dashboard_pb";
+import type { Task } from "../gen/agentfleet/v1/core_pb";
 import { podStateBadge, staleBadge, heartbeatLabel, prBadge, isPodPhaseLive } from "./TaskList";
 import { TranscriptEntryType, type TranscriptEntry } from "../gen/agentfleet/v1/transcript_pb";
 import {

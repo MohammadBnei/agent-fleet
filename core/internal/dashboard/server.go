@@ -62,7 +62,7 @@ func (s *Server) ListTasks(ctx context.Context, req *connect.Request[agentfleetv
 	}
 	out := make([]*agentfleetv1.Task, len(list))
 	for i, t := range list {
-		out[i] = taskToProto(t)
+		out[i] = TaskToProto(t)
 	}
 	return connect.NewResponse(&agentfleetv1.ListTasksResponse{Tasks: out}), nil
 }
@@ -76,7 +76,7 @@ func (s *Server) GetTask(ctx context.Context, req *connect.Request[agentfleetv1.
 	if t == nil {
 		return nil, connect.NewError(connect.CodeNotFound, errors.New("task not found"))
 	}
-	return connect.NewResponse(&agentfleetv1.GetTaskResponse{Task: taskToProto(*t)}), nil
+	return connect.NewResponse(&agentfleetv1.GetTaskResponse{Task: TaskToProto(*t)}), nil
 }
 
 // CreateTask lets the dashboard create a task the same way a Discord /task
@@ -135,7 +135,7 @@ func (s *Server) CreateTask(ctx context.Context, req *connect.Request[agentfleet
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	slog.Info("dashboard CreateTask", "taskId", id, "repo", repo)
-	return connect.NewResponse(&agentfleetv1.CreateTaskResponse{Task: taskToProto(*t)}), nil
+	return connect.NewResponse(&agentfleetv1.CreateTaskResponse{Task: TaskToProto(*t)}), nil
 }
 
 // resolveGuidanceAndMode joins the text of the operator's selected prompt
@@ -696,7 +696,7 @@ func journalEntryToProto(e journal.Entry) *agentfleetv1.JournalEntry {
 	}
 }
 
-func taskToProto(t tasks.Task) *agentfleetv1.Task {
+func TaskToProto(t tasks.Task) *agentfleetv1.Task {
 	var heartbeatAt *string
 	if t.HeartbeatAt != nil {
 		s := t.HeartbeatAt.Format(time.RFC3339)

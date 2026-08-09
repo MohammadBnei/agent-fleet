@@ -1,4 +1,4 @@
-import type { Task } from "../gen/agentfleet/v1/dashboard_pb";
+import type { Task } from "../gen/agentfleet/v1/core_pb";
 import type { TodoItem } from "../transcript";
 
 export const ACTIVE_STATUSES = new Set(["pending", "claimed", "running"]);
