@@ -50,6 +50,7 @@ jobs:
     outputs:
       worker: ${{ steps.filter.outputs.worker }}
       e2e-runner: ${{ steps.filter.outputs.e2e-runner }}
+      migration: ${{ steps.filter.outputs.migration }}
       go-components: ${{ steps.components.outputs.result }}
     steps:
       - uses: actions/checkout@v4
@@ -62,6 +63,9 @@ jobs:
             e2e-runner:
               - 'e2e-runner/**'
               - 'proto/**'
+            migration:
+              - 'migration/**'
+              - 'db/migrations/**'
             proto:
               - 'proto/**'
             core:
@@ -257,6 +261,74 @@ jobs:
           cache-from: type=registry,ref=${{ env.DOCKERHUB_USERNAME }}/agent-fleet-e2e-runner:buildcache
           cache-to: type=registry,ref=${{ env.DOCKERHUB_USERNAME }}/agent-fleet-e2e-runner:buildcache,mode=max
 
+  # Same shape as build-push-e2e-runner: a plain Dockerfile with no
+  # package.json/go.mod of its own (docs/adr/0030) — just db/migrations/
+  # COPY'd into the official migrate/migrate image. Unlike e2e-runner's
+  # deliberately floating :latest, this DOES need a real version tag: the
+  # deploy job's blanket `tag: "..."` sed bumps k8s/core.yaml's
+  # hooks.migrate.image.tag to match every release, so the image under
+  # that exact tag must already be pushed by the time deploy runs (see its
+  # `needs:` below).
+  build-push-migration:
+    needs: changes
+    if: always() && (github.event_name == 'push' || needs.changes.outputs.migration == 'true')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Infisical CLI
+        run: |
+          curl -1sLf 'https://artifacts-cli.infisical.com/setup.deb.sh' | sudo -E bash
+          sudo apt-get update && sudo apt-get install -y infisical
+
+      - name: Load secrets from Infisical
+        run: |
+          set -euo pipefail
+          while IFS='=' read -r key raw_value; do
+            [ -z "$key" ] && continue
+            value="${raw_value%\'}"
+            value="${value#\'}"
+            echo "::add-mask::$value"
+            echo "$key=$value" >> "$GITHUB_ENV"
+          done < <(infisical export --domain=https://infisical.bnei.dev/api --token="${{ secrets.INFISICAL_TOKEN }}" --projectId="$INFISICAL_PROJECT_ID" --env=dev --format=dotenv | grep -E '^DOCKERHUB_')
+
+      - name: Docker Login
+        uses: docker/login-action@v3
+        with:
+          username: ${{ env.DOCKERHUB_USERNAME }}
+          password: ${{ env.DOCKERHUB_TOKEN }}
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # No package.json here to read a version from — same PR-safe
+      # tag-computation pattern as build-push-e2e-runner.
+      - name: Compute image tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "value=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=pr-${{ github.event.pull_request.number }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          platforms: ${{ env.PLATFORMS }}
+          push: ${{ github.event_name == 'push' }}
+          context: .
+          file: migration/Dockerfile
+          tags: >-
+            ${{ env.DOCKERHUB_USERNAME }}/agent-fleet-migration:${{ steps.tag.outputs.value }},
+            ${{ env.DOCKERHUB_USERNAME }}/agent-fleet-migration:latest
+          cache-from: type=registry,ref=${{ env.DOCKERHUB_USERNAME }}/agent-fleet-migration:buildcache
+          cache-to: type=registry,ref=${{ env.DOCKERHUB_USERNAME }}/agent-fleet-migration:buildcache,mode=max
+
   # Separate job rather than folding into build-push above: these are Go
   # modules (no package.json, no bun install/test) — a go.yml workflow
   # runs the real correctness gate (vet/test/lint/buf) on every push/PR;
@@ -334,7 +406,7 @@ jobs:
           cache-to: type=registry,ref=${{ env.DOCKERHUB_USERNAME }}/agent-fleet-${{ matrix.component }}:buildcache,mode=max
 
   deploy:
-    needs: [build-push, build-push-go]
+    needs: [build-push, build-push-go, build-push-migration]
     # always() + an explicit needs.*.result check, not just
     # `if: github.event_name == 'push'` — confirmed live on the v1.1.0
     # release run: build-push and build-push-go both genuinely succeeded
@@ -345,11 +417,15 @@ jobs:
     # that default even though the direct needs were all green. always()
     # bypasses the implicit check entirely, so the explicit result
     # comparisons below are what actually guards against deploying a tag
-    # whose build genuinely failed.
+    # whose build genuinely failed. build-push-migration is included since
+    # k8s/core.yaml's hooks.migrate.image.tag gets bumped below just like
+    # image.tag — the migration image must already be pushed under that
+    # tag by the time this runs (docs/adr/0030).
     if: >-
       always() && github.event_name == 'push' &&
       needs.build-push.result == 'success' &&
-      needs.build-push-go.result == 'success'
+      needs.build-push-go.result == 'success' &&
+      needs.build-push-migration.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: write

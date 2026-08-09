@@ -57,13 +57,6 @@ func newFakeProvisioner(t *testing.T) (*fakeProvisionerServer, *provisionerclien
 	return fake, client
 }
 
-func seedRepo(t *testing.T, store *repos.Store, name string) {
-	t.Helper()
-	if err := store.Create(context.Background(), repos.Repo{Name: name, URL: "https://example.com/" + name + ".git", BaseBranch: "main"}); err != nil {
-		t.Fatalf("seed repo: %v", err)
-	}
-}
-
 // seedIdleClaimedTask is seedTask plus a status flip out of 'pending' —
 // Warm's whole premise is re-warming a session dispatch.Loop's
 // ClaimNextTask already claimed at least once before, not racing that
@@ -87,7 +80,6 @@ func TestServer_Warm_BootsNewPod(t *testing.T) {
 	ctx := context.Background()
 	taskStore := tasks.NewStore(pool)
 	repoStore := repos.NewStore(pool)
-	seedRepo(t, repoStore, "dream-analyst")
 	taskID := seedIdleClaimedTask(t, pool, taskStore)
 
 	fake, provisioner := newFakeProvisioner(t)
@@ -126,7 +118,6 @@ func TestServer_Warm_StillPending_FailedPrecondition(t *testing.T) {
 	ctx := context.Background()
 	taskStore := tasks.NewStore(pool)
 	repoStore := repos.NewStore(pool)
-	seedRepo(t, repoStore, "dream-analyst")
 	taskID := seedTask(t, pool) // left at the default 'pending' status
 
 	fake, provisioner := newFakeProvisioner(t)
@@ -150,7 +141,6 @@ func TestServer_Warm_ThreadsSavedSessionID(t *testing.T) {
 	ctx := context.Background()
 	taskStore := tasks.NewStore(pool)
 	repoStore := repos.NewStore(pool)
-	seedRepo(t, repoStore, "dream-analyst")
 	taskID := seedIdleClaimedTask(t, pool, taskStore)
 	if err := taskStore.SaveSessionID(ctx, taskID, "sess-resume-me", "claude-opus-4-8"); err != nil {
 		t.Fatalf("SaveSessionID: %v", err)
@@ -202,7 +192,6 @@ func TestServer_Warm_AtCapacity_ResourceExhausted(t *testing.T) {
 	ctx := context.Background()
 	taskStore := tasks.NewStore(pool)
 	repoStore := repos.NewStore(pool)
-	seedRepo(t, repoStore, "dream-analyst")
 
 	const cap = 2
 	for i := 0; i < cap; i++ {
@@ -234,7 +223,6 @@ func TestServer_Discuss_AutoWarmsIdleSession(t *testing.T) {
 	ctx := context.Background()
 	taskStore := tasks.NewStore(pool)
 	repoStore := repos.NewStore(pool)
-	seedRepo(t, repoStore, "dream-analyst")
 	taskID := seedIdleClaimedTask(t, pool, taskStore)
 
 	fake, provisioner := newFakeProvisioner(t)
@@ -263,7 +251,6 @@ func TestServer_Discuss_StillPending_SkipsWarmButStillSends(t *testing.T) {
 	ctx := context.Background()
 	taskStore := tasks.NewStore(pool)
 	repoStore := repos.NewStore(pool)
-	seedRepo(t, repoStore, "dream-analyst")
 	taskID := seedTask(t, pool) // left at the default 'pending' status
 
 	fake, provisioner := newFakeProvisioner(t)

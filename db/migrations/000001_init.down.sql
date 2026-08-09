@@ -1,0 +1,6 @@
+DROP TABLE IF EXISTS prompt_snippets;
+DROP TABLE IF EXISTS repos;
+DROP TABLE IF EXISTS transcript;
+DROP TABLE IF EXISTS e2e_sessions;
+DROP TABLE IF EXISTS knowledge_journal;
+DROP TABLE IF EXISTS tasks;

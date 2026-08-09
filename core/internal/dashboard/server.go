@@ -682,7 +682,12 @@ func (s *Server) DeletePromptSnippet(ctx context.Context, req *connect.Request[a
 }
 
 func snippetToProto(sn promptsnippets.Snippet) *agentfleetv1.PromptSnippet {
-	return &agentfleetv1.PromptSnippet{Id: sn.ID, Name: sn.Name, Text: sn.Text}
+	return &agentfleetv1.PromptSnippet{
+		Id:                      sn.ID,
+		Name:                    sn.Name,
+		Text:                    sn.Text,
+		SuggestedPermissionMode: sn.SuggestedPermissionMode,
+	}
 }
 
 func journalEntryToProto(e journal.Entry) *agentfleetv1.JournalEntry {

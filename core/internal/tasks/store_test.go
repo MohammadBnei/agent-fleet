@@ -9,78 +9,18 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/modules/postgres"
-	"github.com/testcontainers/testcontainers-go/wait"
+
+	"github.com/MohammadBnei/agent-fleet/core/internal/dbtest"
 )
 
 // Real Postgres, real SKIP LOCKED semantics — the property that actually
 // matters for docs/adr/0020 point 2 (core claims, then commands the
 // provisioner): concurrent dispatch-loop callers must never claim the same
-// task twice. Mirrors transcript/postgres_test.go's container setup.
+// task twice. dbtest.NewPool applies the real db/migrations/ (docs/adr/0030)
+// rather than a hand-rolled subset, so this test can't drift from the real
+// schema.
 func newTestPool(t *testing.T) *pgxpool.Pool {
-	t.Helper()
-	ctx := context.Background()
-
-	container, err := postgres.Run(ctx, "postgres:16",
-		postgres.WithDatabase("agentfleettest"),
-		postgres.WithUsername("test"),
-		postgres.WithPassword("test"),
-		testcontainers.WithWaitStrategy(
-			wait.ForLog("database system is ready to accept connections").
-				WithOccurrence(2).
-				WithStartupTimeout(60*time.Second),
-		),
-	)
-	if err != nil {
-		t.Fatalf("start postgres container: %v", err)
-	}
-	t.Cleanup(func() { _ = container.Terminate(ctx) })
-
-	connStr, err := container.ConnectionString(ctx, "sslmode=disable")
-	if err != nil {
-		t.Fatalf("connection string: %v", err)
-	}
-	pool, err := pgxpool.New(ctx, connStr)
-	if err != nil {
-		t.Fatalf("pgxpool.New: %v", err)
-	}
-	t.Cleanup(pool.Close)
-
-	// Minimal subset of db/schema.sql's tasks table — just the columns
-	// this package's queries actually touch.
-	_, err = pool.Exec(ctx, `
-		CREATE EXTENSION IF NOT EXISTS pgcrypto;
-		CREATE TABLE tasks (
-			id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-			repo               TEXT NOT NULL,
-			description        TEXT NOT NULL,
-			guidance           TEXT NOT NULL DEFAULT '',
-			status             TEXT NOT NULL DEFAULT 'pending',
-			discord_channel_id TEXT,
-			discord_thread_id  TEXT,
-			pr_url             TEXT,
-			notes              TEXT,
-			last_error         TEXT,
-			session_id         TEXT,
-			permission_mode    TEXT,
-			model              TEXT,
-			retry_count        INT NOT NULL DEFAULT 0,
-			heartbeat_at       TIMESTAMPTZ,
-			lease_id           UUID,
-			deleted_at         TIMESTAMPTZ,
-			pod_phase          TEXT,
-			pod_message        TEXT,
-			stop_requested_at  TIMESTAMPTZ,
-			last_active_at     TIMESTAMPTZ,
-			created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
-			updated_at         TIMESTAMPTZ NOT NULL DEFAULT now()
-		);
-	`)
-	if err != nil {
-		t.Fatalf("apply schema: %v", err)
-	}
-	return pool
+	return dbtest.NewPool(t)
 }
 
 func TestClaimNextTask_ConcurrentCallersNeverDoubleClaim(t *testing.T) {

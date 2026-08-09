@@ -17,11 +17,6 @@ WORKDIR /app
 COPY proto/gen/go ./proto/gen/go
 COPY core ./core
 COPY --from=spa /app/dashboard/dist ./core/internal/webui/dist
-# db/schema.sql copied in as a build-time embed source — go:embed can't
-# reach outside its own package directory, so the canonical file
-# (db/schema.sql) stays the single source of truth; this copy is what
-# `core migrate` actually applies. See internal/db/migrate.go.
-COPY db/schema.sql ./core/internal/db/embedded_schema.sql
 # A fresh, minimal go.work scoped to only what's copied into this image —
 # the repo-root go.work (dev convenience, also lists provisioner/sidecar)
 # isn't portable across a partial build context.

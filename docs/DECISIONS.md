@@ -79,6 +79,13 @@ Any doc, code, comment, or memory that contradicts this file or an
   transcript.** Pull/cursor reads only — see `adr/0013`
   (successor to the same message-loss concern `adr/0001` raised about
   Redis pub/sub, now against a gRPC/Postgres backend instead of Redis).
+- **A hand-rolled `CREATE TABLE`/partial-schema test fixture, or a second
+  copy of the schema anywhere outside `db/migrations/`.** This exact
+  pattern caused two separate live incidents (a missing `guidance` column,
+  then a missing `suggested_permission_mode` column that shipped
+  undetected because the copy that mattered was never updated). Every
+  integration test uses `core/internal/dbtest.NewPool(t)`, which applies
+  the real `db/migrations/` via golang-migrate — see `adr/0030`.
 - **An orchestration framework (Hermes, OpenClaw, or similar).** A single
   Agent SDK planning session, using real Claude Code skills
   (doubt-driven-development, architecture-interview) for structured

@@ -52,9 +52,10 @@ for why this replaced the original one-persistent-pod-per-repo design.
   `ProvisionerService`/`DashboardService` — the only inter-process
   protocol in the fleet (MCP is local-only, agent ↔ its own pod's
   sidecar).
-- `db/schema.sql` — the shared `tasks` queue, append-only
-  `knowledge_journal`, and `planning_transcript`, in the fleet-wide
-  `agentfleetdb` Postgres database (Pigsty).
+- `db/migrations/` — sole source of truth (golang-migrate, see
+  `docs/adr/0030`) for the shared `tasks` queue, append-only
+  `knowledge_journal`, and `transcript`, in the fleet-wide `agentfleetdb`
+  Postgres database (Pigsty).
 
 Deployment config lives in `k8s/` in this repo: `core.yaml` (Helm values, a
 two-source ArgoCD Application — chart from `infra-bootstrap`, values from

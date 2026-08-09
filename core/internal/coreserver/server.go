@@ -220,7 +220,7 @@ func (s *Server) Heartbeat(ctx context.Context, req *agentfleetv1.HeartbeatReque
 	return &agentfleetv1.HeartbeatResponse{}, nil
 }
 
-// terminalTaskStatuses mirrors db/schema.sql's tasks_status_check values
+// terminalTaskStatuses mirrors db/migrations/'s tasks_status_check values
 // that end a task's lifecycle — the only statuses that should ever trigger
 // teardown.
 var terminalTaskStatuses = map[string]bool{
