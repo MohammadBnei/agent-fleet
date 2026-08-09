@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.25.3](https://github.com/MohammadBnei/agent-fleet/compare/1.25.2...1.25.3) (2026-08-09)
+
+
+### Bug Fixes
+
+* replace hand-copied schema (embedded_schema.sql + test fixtures) with golang-migrate ([5ca679b](https://github.com/MohammadBnei/agent-fleet/commit/5ca679bac31c1e2d8f3b74263ea5700f9c45398a))
+
 ## [1.25.2](https://github.com/MohammadBnei/agent-fleet/compare/1.25.1...1.25.2) (2026-08-09)
 
 
