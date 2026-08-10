@@ -26,6 +26,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/lokiclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/promptsnippets"
 	"github.com/MohammadBnei/agent-fleet/core/internal/provisionerclient"
+	"github.com/MohammadBnei/agent-fleet/core/internal/repoprofiles"
 	"github.com/MohammadBnei/agent-fleet/core/internal/repos"
 	"github.com/MohammadBnei/agent-fleet/core/internal/tasks"
 	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
@@ -36,6 +37,7 @@ type Server struct {
 	transcr     transcript.Store
 	journal     *journal.Store
 	repos       *repos.Store
+	profiles    *repoprofiles.Store
 	snippets    *promptsnippets.Store
 	e2e         *provisionerclient.Client
 	files       filestore.Store
@@ -44,8 +46,24 @@ type Server struct {
 	loki        lokiclient.Querier
 }
 
-func NewServer(taskStore *tasks.Store, transcr transcript.Store, journalStore *journal.Store, repoStore *repos.Store, snippetStore *promptsnippets.Store, e2e *provisionerclient.Client, files filestore.Store, hub *Hub, maxInFlight int, loki lokiclient.Querier) *Server {
-	return &Server{tasks: taskStore, transcr: transcr, journal: journalStore, repos: repoStore, snippets: snippetStore, e2e: e2e, files: files, hub: hub, maxInFlight: maxInFlight, loki: loki}
+func NewServer(taskStore *tasks.Store, transcr transcript.Store, journalStore *journal.Store, repoStore *repos.Store, profileStore *repoprofiles.Store, snippetStore *promptsnippets.Store, e2e *provisionerclient.Client, files filestore.Store, hub *Hub, maxInFlight int, loki lokiclient.Querier) *Server {
+	return &Server{tasks: taskStore, transcr: transcr, journal: journalStore, repos: repoStore, profiles: profileStore, snippets: snippetStore, e2e: e2e, files: files, hub: hub, maxInFlight: maxInFlight, loki: loki}
+}
+
+// resolveWorkerIngredients looks up repo's "worker"-named profile
+// (docs/adr/0034) and returns its tool/service ingredients, or (nil, nil,
+// nil) when the repo has no such profile — preserves the pre-recipe pod
+// shape exactly (an empty ingredient list is a documented no-op all the
+// way down through CreateWorkerPod/pod.go).
+func (s *Server) resolveWorkerIngredients(ctx context.Context, repo string) ([]string, []repoprofiles.ServiceIngredient, error) {
+	profile, err := s.profiles.Get(ctx, repo, "worker")
+	if err != nil {
+		return nil, nil, err
+	}
+	if profile == nil {
+		return nil, nil, nil
+	}
+	return profile.Tools, profile.Services, nil
 }
 
 var _ agentfleetv1connect.DashboardServiceHandler = (*Server)(nil)
@@ -169,10 +187,10 @@ func (s *Server) resolveGuidanceAndMode(ctx context.Context, snippetIDs []string
 // This prevents injection of arbitrary model names and ensures only supported
 // models are used.
 var validModels = map[string]bool{
-	"claude-opus-4-8":              true,
-	"claude-sonnet-4-5-20250929":   true,
-	"claude-opus-4-5-20251101":     true,
-	"claude-haiku-4-5-20250929":    true,
+	"claude-opus-4-8":            true,
+	"claude-sonnet-4-5-20250929": true,
+	"claude-opus-4-5-20251101":   true,
+	"claude-haiku-4-5-20250929":  true,
 }
 
 func isValidModel(model string) bool {
@@ -261,7 +279,7 @@ func (s *Server) Stop(ctx context.Context, req *connect.Request[agentfleetv1.Sto
 // reachable through this one allowlisted lever.
 var validPermissionModes = map[string]bool{
 	"default":           true,
-	"plan":               true,
+	"plan":              true,
 	"acceptEdits":       true,
 	"dontAsk":           true,
 	"bypassPermissions": true,
@@ -451,7 +469,11 @@ func (s *Server) warmIfIdle(ctx context.Context, taskID string) (podName string,
 	if err != nil {
 		return "", connect.NewError(connect.CodeInternal, err)
 	}
-	podName, err = s.e2e.CreateWorkerPod(ctx, taskID, t.Repo, repoCfg.URL, repoCfg.BaseBranch, t.Description, t.Guidance, leaseID, resumeSessionID, resumeFromSeq)
+	toolKeys, serviceIngredients, err := s.resolveWorkerIngredients(ctx, t.Repo)
+	if err != nil {
+		return "", connect.NewError(connect.CodeInternal, err)
+	}
+	podName, err = s.e2e.CreateWorkerPod(ctx, taskID, t.Repo, repoCfg.URL, repoCfg.BaseBranch, t.Description, t.Guidance, leaseID, resumeSessionID, resumeFromSeq, toolKeys, serviceIngredients)
 	if err != nil {
 		return "", connect.NewError(connect.CodeInternal, err)
 	}
@@ -616,6 +638,144 @@ func repoToProto(r repos.Repo) *agentfleetv1.Repo {
 	return &agentfleetv1.Repo{Name: r.Name, Url: r.URL, BaseBranch: r.BaseBranch}
 }
 
+// ListRepoProfiles/CreateRepoProfile/UpdateRepoProfile/DeleteRepoProfile
+// back the dashboard's environment-recipe editor (docs/adr/0034) — same
+// CRUD RPC shape as ListRepos/CreateRepo/UpdateRepo/DeleteRepo above.
+// Ingredient key/scope-mode validation happens at pod-materialization time
+// in the provisioner (its catalog is the source of truth for what's
+// known), not here — core has no shared package with the provisioner to
+// validate against (a deliberate scope call, docs/adr/0034: add a
+// ListIngredientCatalog RPC later if config typos become a real problem).
+
+func (s *Server) ListRepoProfiles(ctx context.Context, req *connect.Request[agentfleetv1.ListRepoProfilesRequest]) (*connect.Response[agentfleetv1.ListRepoProfilesResponse], error) {
+	list, err := s.profiles.List(ctx, req.Msg.GetRepoName())
+	if err != nil {
+		slog.Error("dashboard ListRepoProfiles", "repo", req.Msg.GetRepoName(), "error", err)
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	out := make([]*agentfleetv1.RepoProfile, len(list))
+	for i, p := range list {
+		out[i] = repoProfileToProto(p)
+	}
+	return connect.NewResponse(&agentfleetv1.ListRepoProfilesResponse{Profiles: out}), nil
+}
+
+func (s *Server) CreateRepoProfile(ctx context.Context, req *connect.Request[agentfleetv1.CreateRepoProfileRequest]) (*connect.Response[agentfleetv1.CreateRepoProfileResponse], error) {
+	repoName := req.Msg.GetRepoName()
+	name := req.Msg.GetName()
+	if repoName == "" || name == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("repo_name and name are required"))
+	}
+	p := repoProfileFromProtoCreate(req.Msg)
+	id, err := s.profiles.Create(ctx, p)
+	if err != nil {
+		if errors.Is(err, repoprofiles.ErrExists) {
+			return nil, connect.NewError(connect.CodeAlreadyExists, err)
+		}
+		slog.Error("dashboard CreateRepoProfile", "repo", repoName, "name", name, "error", err)
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	p.ID = id
+	return connect.NewResponse(&agentfleetv1.CreateRepoProfileResponse{Profile: repoProfileToProto(p)}), nil
+}
+
+func (s *Server) UpdateRepoProfile(ctx context.Context, req *connect.Request[agentfleetv1.UpdateRepoProfileRequest]) (*connect.Response[agentfleetv1.UpdateRepoProfileResponse], error) {
+	repoName := req.Msg.GetRepoName()
+	name := req.Msg.GetName()
+	if repoName == "" || name == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("repo_name and name are required"))
+	}
+	p := repoprofiles.Profile{
+		RepoName: repoName,
+		Name:     name,
+		StartCmd: req.Msg.GetStartCmd(),
+		Tools:    req.Msg.GetToolKeys(),
+		Services: serviceIngredientsFromProto(req.Msg.GetServiceIngredients()),
+	}
+	if err := s.profiles.Update(ctx, p); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("unknown profile %q for repo %q", name, repoName))
+		}
+		slog.Error("dashboard UpdateRepoProfile", "repo", repoName, "name", name, "error", err)
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	return connect.NewResponse(&agentfleetv1.UpdateRepoProfileResponse{Profile: repoProfileToProto(p)}), nil
+}
+
+func (s *Server) DeleteRepoProfile(ctx context.Context, req *connect.Request[agentfleetv1.DeleteRepoProfileRequest]) (*connect.Response[agentfleetv1.DeleteRepoProfileResponse], error) {
+	repoName := req.Msg.GetRepoName()
+	name := req.Msg.GetName()
+	if err := s.profiles.Delete(ctx, repoName, name); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("unknown profile %q for repo %q", name, repoName))
+		}
+		slog.Error("dashboard DeleteRepoProfile", "repo", repoName, "name", name, "error", err)
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	return connect.NewResponse(&agentfleetv1.DeleteRepoProfileResponse{Status: "deleted"}), nil
+}
+
+func repoProfileFromProtoCreate(msg *agentfleetv1.CreateRepoProfileRequest) repoprofiles.Profile {
+	return repoprofiles.Profile{
+		RepoName: msg.GetRepoName(),
+		Name:     msg.GetName(),
+		StartCmd: msg.GetStartCmd(),
+		Tools:    msg.GetToolKeys(),
+		Services: serviceIngredientsFromProto(msg.GetServiceIngredients()),
+	}
+}
+
+func serviceIngredientsFromProto(in []*agentfleetv1.ServiceIngredient) []repoprofiles.ServiceIngredient {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]repoprofiles.ServiceIngredient, len(in))
+	for i, si := range in {
+		out[i] = repoprofiles.ServiceIngredient{Key: si.GetKey(), ScopeMode: fromProtoScopeMode(si.GetScopeMode())}
+	}
+	return out
+}
+
+func fromProtoScopeMode(m agentfleetv1.ScopeMode) string {
+	switch m {
+	case agentfleetv1.ScopeMode_SCOPE_MODE_POD_SCOPED:
+		return "pod-scoped"
+	case agentfleetv1.ScopeMode_SCOPE_MODE_TASK_SCOPED:
+		return "task-scoped"
+	case agentfleetv1.ScopeMode_SCOPE_MODE_REPO_SCOPED:
+		return "repo-scoped"
+	default:
+		return ""
+	}
+}
+
+func toProtoScopeMode(s string) agentfleetv1.ScopeMode {
+	switch s {
+	case "pod-scoped":
+		return agentfleetv1.ScopeMode_SCOPE_MODE_POD_SCOPED
+	case "task-scoped":
+		return agentfleetv1.ScopeMode_SCOPE_MODE_TASK_SCOPED
+	case "repo-scoped":
+		return agentfleetv1.ScopeMode_SCOPE_MODE_REPO_SCOPED
+	default:
+		return agentfleetv1.ScopeMode_SCOPE_MODE_UNSPECIFIED
+	}
+}
+
+func repoProfileToProto(p repoprofiles.Profile) *agentfleetv1.RepoProfile {
+	services := make([]*agentfleetv1.ServiceIngredient, len(p.Services))
+	for i, si := range p.Services {
+		services[i] = &agentfleetv1.ServiceIngredient{Key: si.Key, ScopeMode: toProtoScopeMode(si.ScopeMode)}
+	}
+	return &agentfleetv1.RepoProfile{
+		RepoName:           p.RepoName,
+		Name:               p.Name,
+		StartCmd:           p.StartCmd,
+		ToolKeys:           p.Tools,
+		ServiceIngredients: services,
+	}
+}
+
 // ListPromptSnippets/CreatePromptSnippet/UpdatePromptSnippet/
 // DeletePromptSnippet back the dashboard's "manage guidance" UI — the
 // dashboard-editable replacement for worker/src/session.ts's old
@@ -757,19 +917,19 @@ func TaskToProto(t tasks.Task) *agentfleetv1.Task {
 		heartbeatAt = &s
 	}
 	return &agentfleetv1.Task{
-		Id:                t.ID,
-		Repo:              t.Repo,
-		Description:       t.Description,
-		Status:            t.Status,
-		ThreadId:          t.ThreadID,
-		PrUrl:             t.PrURL,
-		PodPhase:          t.PodPhase,
-		PodMessage:        t.PodMessage,
-		HeartbeatAt:       heartbeatAt,
-		RetryCount:        int32(t.RetryCount),
-		LastError:         t.LastError,
-		SessionId:         t.SessionID,
-		PermissionMode:    t.PermissionMode,
+		Id:             t.ID,
+		Repo:           t.Repo,
+		Description:    t.Description,
+		Status:         t.Status,
+		ThreadId:       t.ThreadID,
+		PrUrl:          t.PrURL,
+		PodPhase:       t.PodPhase,
+		PodMessage:     t.PodMessage,
+		HeartbeatAt:    heartbeatAt,
+		RetryCount:     int32(t.RetryCount),
+		LastError:      t.LastError,
+		SessionId:      t.SessionID,
+		PermissionMode: t.PermissionMode,
 	}
 }
 

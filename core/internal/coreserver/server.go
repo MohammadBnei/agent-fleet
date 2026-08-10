@@ -27,6 +27,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/journal"
 	"github.com/MohammadBnei/agent-fleet/core/internal/lokiclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/provisionerclient"
+	"github.com/MohammadBnei/agent-fleet/core/internal/repoprofiles"
 	"github.com/MohammadBnei/agent-fleet/core/internal/tasks"
 	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
 )
@@ -41,13 +42,14 @@ type Server struct {
 	transcr     transcript.Store
 	tasks       *tasks.Store
 	journal     *journal.Store
+	profiles    *repoprofiles.Store
 	provisioner *provisionerclient.Client
 	files       filestore.Store
 	loki        lokiclient.Querier
 }
 
-func New(transcr transcript.Store, taskStore *tasks.Store, journalStore *journal.Store, provisioner *provisionerclient.Client, files filestore.Store, loki lokiclient.Querier) *Server {
-	return &Server{transcr: transcr, tasks: taskStore, journal: journalStore, provisioner: provisioner, files: files, loki: loki}
+func New(transcr transcript.Store, taskStore *tasks.Store, journalStore *journal.Store, profileStore *repoprofiles.Store, provisioner *provisionerclient.Client, files filestore.Store, loki lokiclient.Querier) *Server {
+	return &Server{transcr: transcr, tasks: taskStore, journal: journalStore, profiles: profileStore, provisioner: provisioner, files: files, loki: loki}
 }
 
 // --- agent-facing (proxied MCP-shaped calls) ---
@@ -154,7 +156,25 @@ func (s *Server) RequestE2EEnv(ctx context.Context, req *agentfleetv1.RequestE2E
 	if t == nil {
 		return nil, fmt.Errorf("RequestE2EEnv: task %s not found", req.GetTaskId())
 	}
-	status, previewURL, err := s.provisioner.CreateE2eSession(ctx, req.GetTaskId(), t.Repo, req.GetStartCmd())
+	// Defaults to the repo's "e2e"-named profile; an agent can override
+	// with a different declared profile (e.g. a repo's "lint" profile) via
+	// the same override pattern start_cmd already establishes
+	// (docs/adr/0034). Nil (no such profile) means empty ingredients — the
+	// pre-recipe pod shape.
+	profileName := req.GetProfile()
+	if profileName == "" {
+		profileName = "e2e"
+	}
+	profile, err := s.profiles.Get(ctx, t.Repo, profileName)
+	if err != nil {
+		return nil, fmt.Errorf("RequestE2EEnv: repo profile lookup: %w", err)
+	}
+	var toolKeys []string
+	var serviceIngredients []repoprofiles.ServiceIngredient
+	if profile != nil {
+		toolKeys, serviceIngredients = profile.Tools, profile.Services
+	}
+	status, previewURL, err := s.provisioner.CreateE2eSession(ctx, req.GetTaskId(), t.Repo, req.GetStartCmd(), toolKeys, serviceIngredients)
 	if err != nil {
 		return nil, fmt.Errorf("RequestE2EEnv: %w", err)
 	}
