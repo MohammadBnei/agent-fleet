@@ -189,6 +189,71 @@ func (m *Manager) RemoveWorktree(ctx context.Context, repo, taskID, branch strin
 	return nil
 }
 
+// fleetSharedSentinel keys the repoLock used to serialize SyncFleetShared
+// calls — not a real repo name, so it can never collide with one.
+const fleetSharedSentinel = "_fleet-shared"
+
+// fleetSharedNames is the exact allowlist of top-level entries mirrored
+// from the fleet-shared git source into claudeHomeDir. Deliberately not
+// "the whole tree with --delete": claudeHomeDir (CLAUDE_CONFIG_DIR,
+// provisioner/internal/k8s/pod.go) also holds projects/, the Agent SDK's
+// per-task resume state (docs/adr/0029 point 5) — a stray commit under
+// fleet-shared/ must never be able to wipe that.
+var fleetSharedNames = []string{"CLAUDE.md", "settings.json", "skills", "plugins"}
+
+// SyncFleetShared clones (or hard-resets) a second, fleet-owned git source
+// into <root>/fleet-shared — deliberately outside <root>/repos, so it never
+// appears in ListClonedRepos (the sweep loop) or gets treated as a target
+// repo anywhere keyed on the repo string — then mirrors fleetSharedNames
+// into claudeHomeDir via `rsync -a --delete`, one item at a time, so each
+// rsync call only ever touches its own subtree of claudeHomeDir.
+//
+// This is what makes docs/adr/0019 point 6 real: the Agent SDK's
+// settingSources: ["user"] (worker/src/session.ts) natively discovers
+// CLAUDE.md/settings.json/skills/plugins under claudeHomeDir, so adding a
+// skill becomes a PR merge here, not a worker image rebuild.
+func (m *Manager) SyncFleetShared(ctx context.Context, repoURL, branch, claudeHomeDir string) error {
+	lock := m.repoLock(fleetSharedSentinel)
+	lock.Lock()
+	defer lock.Unlock()
+
+	path := filepath.Join(m.root, "fleet-shared")
+	if _, err := m.run(ctx, path, "rev-parse", "--is-inside-work-tree"); err != nil {
+		if err := os.MkdirAll(path, 0o755); err != nil {
+			return fmt.Errorf("mkdir %s: %w", path, err)
+		}
+		if _, err := m.run(ctx, "", "clone", "--branch", branch, repoURL, path); err != nil {
+			return fmt.Errorf("clone fleet-shared: %w", err)
+		}
+	} else {
+		// Hard reset, not just fetch: this working tree is provisioner-owned
+		// and never written to by a worker, so there's no uncommitted-work
+		// concern the way CreateWorktree's reuse-not-wipe logic has to guard
+		// against — and a plain fetch alone wouldn't update the tree at all.
+		if _, err := m.run(ctx, path, "fetch", "origin", branch); err != nil {
+			return fmt.Errorf("fetch fleet-shared: %w", err)
+		}
+		if _, err := m.run(ctx, path, "reset", "--hard", "origin/"+branch); err != nil {
+			return fmt.Errorf("reset fleet-shared: %w", err)
+		}
+	}
+
+	if err := os.MkdirAll(claudeHomeDir, 0o755); err != nil {
+		return fmt.Errorf("mkdir claude home %s: %w", claudeHomeDir, err)
+	}
+	for _, name := range fleetSharedNames {
+		src := filepath.Join(path, name)
+		if _, err := os.Stat(src); os.IsNotExist(err) {
+			continue
+		}
+		cmd := exec.CommandContext(ctx, "rsync", "-a", "--delete", src, claudeHomeDir+string(filepath.Separator))
+		if out, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("rsync %s: %w: %s", name, err, strings.TrimSpace(string(out)))
+		}
+	}
+	return nil
+}
+
 // ListClonedRepos returns the repo names with a local clone under
 // <root>/repos — the sweep's own repo discovery, since the provisioner
 // holds no DB credentials to ask core's tasks.KnownRepos instead

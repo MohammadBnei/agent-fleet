@@ -25,11 +25,6 @@ RUN curl -fsSL https://github.com/rtk-ai/rtk/releases/latest/download/rtk-x86_64
 RUN claude plugin marketplace add DietrichGebert/ponytail \
     && claude plugin install ponytail@ponytail
 
-# Wires rtk into every Bash tool call (PreToolUse hook) and enables ponytail
-# — same settings.json shape as Mohammad's own ~/.claude/settings.json.
-RUN mkdir -p /root/.claude
-COPY worker/claude-settings.json /root/.claude/settings.json
-
 WORKDIR /app
 COPY worker ./worker
 RUN cd worker && bun install --production

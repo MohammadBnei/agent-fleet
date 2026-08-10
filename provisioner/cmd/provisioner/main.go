@@ -78,7 +78,7 @@ func main() {
 	httpServer := &http.Server{Addr: ":" + cfg.Port, Handler: mux}
 
 	grpcSrv := grpc.NewServer(grpc.UnaryInterceptor(grpcserver.AccessLogInterceptor))
-	agentfleetv1.RegisterProvisionerServiceServer(grpcSrv, grpcserver.New(k8sc, gitMgr, proxy, core, cfg.E2eHost))
+	agentfleetv1.RegisterProvisionerServiceServer(grpcSrv, grpcserver.New(k8sc, gitMgr, proxy, core, cfg.E2eHost, cfg.FleetSharedRepoURL, cfg.FleetSharedBranch, cfg.ClaudeHomeDir))
 
 	reconcileInterval, _ := strconv.Atoi(cfg.ReconcileInterval)
 	loop := reconcile.New(k8sc, core)

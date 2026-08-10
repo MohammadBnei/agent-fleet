@@ -36,10 +36,19 @@ type Server struct {
 	proxy   *mcpproxy.Proxy
 	core    EventReporter
 	e2eHost string
+	// FleetShared* configure git.Manager.SyncFleetShared's source (docs/adr/
+	// 0031) — empty FleetSharedRepoURL disables the sync entirely (used by
+	// tests that don't care about fleet-shared content).
+	fleetSharedRepoURL string
+	fleetSharedBranch  string
+	claudeHomeDir      string
 }
 
-func New(k8sc *k8s.Client, gitMgr *git.Manager, proxy *mcpproxy.Proxy, core EventReporter, e2eHost string) *Server {
-	return &Server{k8sc: k8sc, git: gitMgr, proxy: proxy, core: core, e2eHost: e2eHost}
+func New(k8sc *k8s.Client, gitMgr *git.Manager, proxy *mcpproxy.Proxy, core EventReporter, e2eHost string, fleetSharedRepoURL, fleetSharedBranch, claudeHomeDir string) *Server {
+	return &Server{
+		k8sc: k8sc, git: gitMgr, proxy: proxy, core: core, e2eHost: e2eHost,
+		fleetSharedRepoURL: fleetSharedRepoURL, fleetSharedBranch: fleetSharedBranch, claudeHomeDir: claudeHomeDir,
+	}
 }
 
 // --- e2e sessions (unchanged behavior, k8s-backed instead of Postgres-backed) ---
@@ -184,6 +193,17 @@ func (s *Server) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWo
 		return nil, fmt.Errorf("create worktree: %w", err)
 	}
 	s.reportEvent(ctx, req.GetTaskId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_CREATED, "", "")
+
+	// Best-effort, unlike the clone/worktree steps above: stale or
+	// momentarily missing fleet-shared skills/context is a degraded worker
+	// session, not a broken one, so a sync failure here logs and continues
+	// rather than failing the whole dispatch (docs/adr/0032).
+	if s.fleetSharedRepoURL != "" {
+		s.reportEvent(ctx, req.GetTaskId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_PROVISIONING, "", "syncing fleet-shared skills")
+		if err := s.git.SyncFleetShared(ctx, s.fleetSharedRepoURL, s.fleetSharedBranch, s.claudeHomeDir); err != nil {
+			slog.Warn("grpcserver: fleet-shared sync failed, continuing with a possibly-stale copy", "taskId", req.GetTaskId(), "error", err)
+		}
+	}
 
 	s.reportEvent(ctx, req.GetTaskId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_PROVISIONING, "", "creating pod")
 	if err := s.k8sc.CreateWorkerPod(ctx, req.GetTaskId(), req.GetRepo(), req.GetLeaseId(), worktreePath, req.GetResumeSessionId(), req.GetResumeFromSeq()); err != nil {

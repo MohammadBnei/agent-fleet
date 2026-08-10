@@ -6,8 +6,5 @@
         "hooks": [{ "type": "command", "command": "rtk hook claude" }]
       }
     ]
-  },
-  "enabledPlugins": {
-    "ponytail@ponytail": true
   }
 }

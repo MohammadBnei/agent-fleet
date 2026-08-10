@@ -22,7 +22,7 @@ RUN CGO_ENABLED=0 go build -o /out/provisioner ./cmd/provisioner
 # worker/Dockerfile already installs for the same reason (git.ts's
 # configureGitAuth, ported here as git.Manager.ConfigureAuth).
 FROM debian:12-slim
-RUN apt-get update && apt-get install -y --no-install-recommends git curl ca-certificates \
+RUN apt-get update && apt-get install -y --no-install-recommends git curl ca-certificates rsync \
     && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg -o /usr/share/keyrings/githubcli-archive-keyring.gpg \
     && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list \
     && apt-get update && apt-get install -y --no-install-recommends gh \

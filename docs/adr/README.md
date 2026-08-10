@@ -41,3 +41,4 @@ Decisions with no real alternative ever on the table live in
 | [0029](0029-sessions-not-tasks-permission-prompt-not-approval-gate.md) | Sessions replace tasks as the durable unit; canUseTool becomes a live permission prompt, not a prospective approval gate | Accepted |
 | [0030](0030-single-source-schema-via-golang-migrate.md) | golang-migrate replaces the hand-copied `db/schema.sql` + test-fixture schemas | Accepted |
 | [0031](0031-garage-s3-shared-files.md) | Garage S3-backed shared file space, presigned URLs minted only by core | Accepted |
+| [0032](0032-fleet-shared-pvc-directory.md) | PVC-resident, provisioner-synced fleet-shared skills/context — implements [0019](0019-shared-pvc-and-unified-provisioner.md) point 6 | Accepted |

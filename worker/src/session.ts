@@ -28,12 +28,6 @@ const RESUME_SESSION_ID = process.env.RESUME_SESSION_ID || undefined;
 // (a real regression, caught live against a kind cluster).
 const RESUME_FROM_SEQ = process.env.RESUME_FROM_SEQ ? Number(process.env.RESUME_FROM_SEQ) : 0;
 
-// Absolute in-container path baked at image build time — the local skills
-// plugin (doubt-driven-development, architecture-interview), bundled the
-// same way as before this rewrite (see docs/adr/0017). Must be absolute:
-// the session's cwd is the target repo's worktree, not this one.
-const PLANNING_SKILLS_PLUGIN_PATH = "/app/worker/skills/agent-fleet-planning";
-
 function sidecarMcpServer() {
   return { type: "http" as const, url: `http://${SIDECAR_MCP_ADDR}/mcp` };
 }
@@ -275,7 +269,14 @@ export async function runTask(task: Task): Promise<TaskResult> {
         });
       },
       mcpServers: { "agent-fleet-sidecar": sidecarMcpServer() },
-      plugins: [{ type: "local", path: PLANNING_SKILLS_PLUGIN_PATH }],
+      // "user" (not "project"): CLAUDE_CONFIG_DIR (provisioner/internal/k8s/
+      // pod.go) points at the shared PVC, provisioner-synced by
+      // git.Manager.SyncFleetShared (docs/adr/0032) — Claude Code discovers
+      // CLAUDE.md/settings.json/skills/ there natively, no plugins: entry
+      // needed. Deliberately not "project": that would load the *target
+      // repo's own* .claude/settings.json as part of this session, a
+      // separate decision not made here.
+      settingSources: ["user"],
       maxTurns: MAX_TURNS,
       abortController,
     },

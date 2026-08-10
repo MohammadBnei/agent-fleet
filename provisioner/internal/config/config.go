@@ -31,23 +31,36 @@ type Config struct {
 	// LogLevel is one of debug/info/warn/error (case-insensitive), parsed
 	// via slog.Level.UnmarshalText in cmd/provisioner/main.go.
 	LogLevel string
+	// FleetSharedRepoURL/FleetSharedBranch are the git.Manager.SyncFleetShared
+	// source (docs/adr/0032) — the git-tracked fleet-shared/ dir mirrored
+	// into every worker pod's CLAUDE_CONFIG_DIR.
+	FleetSharedRepoURL string
+	FleetSharedBranch  string
+	// ClaudeHomeDir must equal the claudeConfigDir constant in
+	// provisioner/internal/k8s/pod.go (the value forwarded to worker pods as
+	// CLAUDE_CONFIG_DIR) — kept as a separate literal rather than threaded
+	// through k8s.Client for a smaller diff; if you change one, change both.
+	ClaudeHomeDir string
 }
 
 func Load() Config {
 	return Config{
-		Namespace:         env("NAMESPACE", "agent-fleet"),
-		E2eRunnerImage:    env("E2E_RUNNER_IMAGE", "mohammaddocker/agent-fleet-e2e-runner:latest"),
-		WorkerImage:       env("WORKER_IMAGE", "mohammaddocker/agent-fleet-worker:latest"),
-		SidecarImage:      env("SIDECAR_IMAGE", "mohammaddocker/agent-fleet-sidecar:latest"),
-		WorkspacePVC:      env("WORKSPACE_PVC", "agent-fleet-workspace"),
-		WorktreesRoot:     env("WORKTREES_ROOT", "/workspace"),
-		E2eHost:           env("E2E_HOST", "e2e.bnei.dev"),
-		Port:              env("PORT", "8080"),
-		GRPCPort:          env("GRPC_PORT", "9090"),
-		CoreGRPCAddr:      env("CORE_GRPC_ADDR", "agent-fleet-core.agent-fleet.svc.cluster.local:9090"),
-		ReconcileInterval: env("RECONCILE_INTERVAL_MS", "10000"),
-		SweepInterval:     env("SWEEP_INTERVAL_MS", "300000"),
-		LogLevel:          env("LOG_LEVEL", "info"),
+		Namespace:          env("NAMESPACE", "agent-fleet"),
+		E2eRunnerImage:     env("E2E_RUNNER_IMAGE", "mohammaddocker/agent-fleet-e2e-runner:latest"),
+		WorkerImage:        env("WORKER_IMAGE", "mohammaddocker/agent-fleet-worker:latest"),
+		SidecarImage:       env("SIDECAR_IMAGE", "mohammaddocker/agent-fleet-sidecar:latest"),
+		WorkspacePVC:       env("WORKSPACE_PVC", "agent-fleet-workspace"),
+		WorktreesRoot:      env("WORKTREES_ROOT", "/workspace"),
+		E2eHost:            env("E2E_HOST", "e2e.bnei.dev"),
+		Port:               env("PORT", "8080"),
+		GRPCPort:           env("GRPC_PORT", "9090"),
+		CoreGRPCAddr:       env("CORE_GRPC_ADDR", "agent-fleet-core.agent-fleet.svc.cluster.local:9090"),
+		ReconcileInterval:  env("RECONCILE_INTERVAL_MS", "10000"),
+		SweepInterval:      env("SWEEP_INTERVAL_MS", "300000"),
+		LogLevel:           env("LOG_LEVEL", "info"),
+		FleetSharedRepoURL: env("FLEET_SHARED_REPO_URL", "https://github.com/MohammadBnei/agent-fleet.git"),
+		FleetSharedBranch:  env("FLEET_SHARED_BRANCH", "main"),
+		ClaudeHomeDir:      env("CLAUDE_HOME_DIR", "/workspace/.claude-home"),
 	}
 }
 

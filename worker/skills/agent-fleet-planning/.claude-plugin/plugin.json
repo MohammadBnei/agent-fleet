@@ -1,5 +1,0 @@
-{
-  "name": "agent-fleet-planning",
-  "version": "0.1.0",
-  "description": "Local plugin bundling doubt-driven-development and architecture-interview for the worker's headless planning session (see docs/adr/0017)."
-}
