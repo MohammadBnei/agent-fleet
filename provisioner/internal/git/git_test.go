@@ -163,10 +163,14 @@ func TestDeleteWorktree_AlsoDeleteBranchIsOptional(t *testing.T) {
 	}
 }
 
-// newFleetSharedOriginRepo creates a real local git repo shaped like the
-// fleet-shared source dir (CLAUDE.md + a nested skill) — SyncFleetShared's
-// own fixture, distinct from newTestOriginRepo's plain README.md since the
-// mirror step only looks at a fixed name allowlist.
+// newFleetSharedOriginRepo creates a real local git repo shaped like this
+// monorepo: the fleet-shared content lives under a fleet-shared/
+// subdirectory of the repo, not at its root (repoURL is the whole
+// agent-fleet.git repo in practice, config.FleetSharedRepoURL's default) —
+// SyncFleetShared descends into that subdirectory, confirmed live via
+// kind-local after an initial version of this fixture (content at the repo
+// root) masked a real bug: mirroring straight from the clone root picked up
+// this repo's own top-level CLAUDE.md instead of fleet-shared/CLAUDE.md.
 func newFleetSharedOriginRepo(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -180,8 +184,9 @@ func newFleetSharedOriginRepo(t *testing.T) string {
 			t.Fatalf("write %s: %v", rel, err)
 		}
 	}
-	write("CLAUDE.md", "fleet context")
-	write("skills/doubt-driven-development/SKILL.md", "doubt skill")
+	write("README.md", "unrelated repo-root file — must never end up in claudeHomeDir")
+	write("fleet-shared/CLAUDE.md", "fleet context")
+	write("fleet-shared/skills/doubt-driven-development/SKILL.md", "doubt skill")
 	runGit(t, dir, "add", ".")
 	runGit(t, dir, "commit", "-m", "init")
 	return dir
@@ -202,6 +207,13 @@ func TestSyncFleetShared_ClonesThenMirrorsIntoClaudeHome(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(claudeHome, "skills", "doubt-driven-development", "SKILL.md")); err != nil {
 		t.Fatalf("expected skill mirrored: %v", err)
 	}
+	// The regression check for the real bug this fixture was built to catch
+	// (found live via kind-local): the repo-root README.md must never leak
+	// into claudeHomeDir just because the clone's root happens to also
+	// contain unrelated files.
+	if _, err := os.Stat(filepath.Join(claudeHome, "README.md")); !os.IsNotExist(err) {
+		t.Fatalf("expected repo-root README.md to NOT be mirrored, stat err: %v", err)
+	}
 }
 
 // TestSyncFleetShared_UpdateAddsAndRemovesFiles is the concrete proof that
@@ -218,13 +230,13 @@ func TestSyncFleetShared_UpdateAddsAndRemovesFiles(t *testing.T) {
 		t.Fatalf("first SyncFleetShared: %v", err)
 	}
 
-	if err := os.MkdirAll(filepath.Join(origin, "skills", "architecture-interview"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(origin, "fleet-shared", "skills", "architecture-interview"), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(origin, "skills", "architecture-interview", "SKILL.md"), []byte("interview skill"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(origin, "fleet-shared", "skills", "architecture-interview", "SKILL.md"), []byte("interview skill"), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	if err := os.RemoveAll(filepath.Join(origin, "skills", "doubt-driven-development")); err != nil {
+	if err := os.RemoveAll(filepath.Join(origin, "fleet-shared", "skills", "doubt-driven-development")); err != nil {
 		t.Fatalf("remove: %v", err)
 	}
 	runGit(t, origin, "add", ".")

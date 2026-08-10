@@ -193,7 +193,15 @@ func TestCreateWorkerPod_SyncsFleetShared(t *testing.T) {
 		}
 	}
 	run("init", "-b", "main")
-	if err := os.WriteFile(filepath.Join(fleetSharedOrigin, "CLAUDE.md"), []byte("fleet context"), 0o644); err != nil {
+	// fleetSharedRepoURL is a whole monorepo in practice (config's default
+	// points at this same repo) — content lives under a fleet-shared/
+	// subdirectory, not the clone root (git.Manager.SyncFleetShared descends
+	// into it; a flat repo-root fixture masked a real bug caught live via
+	// kind-local, see git_test.go's newFleetSharedOriginRepo).
+	if err := os.MkdirAll(filepath.Join(fleetSharedOrigin, "fleet-shared"), 0o755); err != nil {
+		t.Fatalf("mkdir fleet-shared: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(fleetSharedOrigin, "fleet-shared", "CLAUDE.md"), []byte("fleet context"), 0o644); err != nil {
 		t.Fatalf("write CLAUDE.md: %v", err)
 	}
 	run("add", ".")

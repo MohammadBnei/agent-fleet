@@ -241,8 +241,17 @@ func (m *Manager) SyncFleetShared(ctx context.Context, repoURL, branch, claudeHo
 	if err := os.MkdirAll(claudeHomeDir, 0o755); err != nil {
 		return fmt.Errorf("mkdir claude home %s: %w", claudeHomeDir, err)
 	}
+	// repoURL today is this same monorepo (config.FleetSharedRepoURL
+	// defaults to it), so the cloned working tree's root is the repo root,
+	// not the fleet-shared/ content itself — confirmed live via kind-local,
+	// where mirroring straight from the clone root picked up the repo's own
+	// top-level CLAUDE.md (a same-named, unrelated file) instead of
+	// fleet-shared/CLAUDE.md, and silently skipped skills/ (doesn't exist at
+	// the repo root). contentRoot descends into the one subdirectory that
+	// actually holds this content.
+	contentRoot := filepath.Join(path, "fleet-shared")
 	for _, name := range fleetSharedNames {
-		src := filepath.Join(path, name)
+		src := filepath.Join(contentRoot, name)
 		if _, err := os.Stat(src); os.IsNotExist(err) {
 			continue
 		}
