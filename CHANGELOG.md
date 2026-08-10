@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.30.1](https://github.com/MohammadBnei/agent-fleet/compare/1.30.0...1.30.1) (2026-08-10)
+
+
+### Bug Fixes
+
+* **dashboard:** let the human explicitly tear down a repo's shared e2e services on kill ([5e03d4c](https://github.com/MohammadBnei/agent-fleet/commit/5e03d4c467cd0e9255bc5a53cc94f56570e65cf6))
+
 # [1.30.0](https://github.com/MohammadBnei/agent-fleet/compare/1.29.2...1.30.0) (2026-08-10)
 
 
