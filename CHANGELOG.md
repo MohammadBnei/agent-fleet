@@ -1,5 +1,21 @@
 # Changelog
 
+# [1.29.0](https://github.com/MohammadBnei/agent-fleet/compare/1.28.2...1.29.0) (2026-08-10)
+
+
+### Bug Fixes
+
+* **provisioner:** satisfy errcheck on deferred conn.Close calls ([0df6ee9](https://github.com/MohammadBnei/agent-fleet/commit/0df6ee9ea4aef2e614d9fd5605de7b3236f35a55))
+* real-cluster bugs found via /kind-local, then remove StartCmdFor fallback ([9f3d79b](https://github.com/MohammadBnei/agent-fleet/commit/9f3d79bb66bfc516bebb9fc9acb488912bddf0ea))
+
+
+### Features
+
+* **core:** resolve repo profiles into worker/e2e pod dispatch ([9500760](https://github.com/MohammadBnei/agent-fleet/commit/95007600500534da7d38c60071d24f7b82eccff6))
+* **dashboard:** environment-recipe editor UI ([0c25690](https://github.com/MohammadBnei/agent-fleet/commit/0c256909f776eed254b56a4c33abe447283e8a07))
+* **provisioner:** environment recipe foundation — schema, catalog, shared-instance lifecycle ([8d83769](https://github.com/MohammadBnei/agent-fleet/commit/8d837696aaeb9fbdfbbba0a9d23bbfabd4380485))
+* **provisioner:** wire environment-recipe ingredients into pod creation ([53f8a84](https://github.com/MohammadBnei/agent-fleet/commit/53f8a84f9ea13dbb8c56e962a1b010c94e361f3d))
+
 ## [1.28.2](https://github.com/MohammadBnei/agent-fleet/compare/1.28.1...1.28.2) (2026-08-10)
 
 
