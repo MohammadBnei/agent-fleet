@@ -25,7 +25,7 @@ type Client struct {
 // Ensure Client implements Querier interface.
 var _ Querier = (*Client)(nil)
 
-// New creates a Loki client. lokiURL should be the base URL (e.g., http://loki.monitoring.svc.cluster.local:3100).
+// New creates a Loki client. lokiURL should be the base URL (e.g., http://platform-loki.monitoring.svc.cluster.local:3100).
 func New(lokiURL string) *Client {
 	return &Client{
 		baseURL: lokiURL,

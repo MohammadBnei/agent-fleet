@@ -53,7 +53,9 @@ env:
   - name: CORE_GRPC_PORT
     value: "9090"
   - name: LOKI_URL
-    value: "http://loki.monitoring.svc.cluster.local:3100"
+    # platform.applicationset.yaml templates every platform release as
+    # 'platform-{{.name}}' — the loki Service is platform-loki, not loki.
+    value: "http://platform-loki.monitoring.svc.cluster.local:3100"
   - name: PROVISIONER_GRPC_ADDR
     value: "provisioner.agent-fleet.svc.cluster.local:9090"
   - name: MAX_IN_FLIGHT_TASKS
