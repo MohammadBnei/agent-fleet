@@ -116,6 +116,25 @@ func (c *Client) CreatePod(ctx context.Context, task TaskRef) error {
 						{Name: "exec", ContainerPort: ExecPort},
 					},
 					VolumeMounts: runnerMounts,
+					// Explicit, not left to the namespace LimitRange's
+					// 512Mi container default (agent-fleet-core-limits,
+					// common-app-chart) — found live via OOMKilled: this
+					// one container runs code-server, a headless-Chromium
+					// Playwright MCP server, and the target app's own dev
+					// server (a real npm/bun install + Vite) all at once,
+					// nowhere near fitting in 512Mi. Sized close to the
+					// worker container's own 2Gi budget, which runs a
+					// comparably heavy single Claude Code session.
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("250m"),
+							corev1.ResourceMemory: resource.MustParse("512Mi"),
+						},
+						Limits: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("2000m"),
+							corev1.ResourceMemory: resource.MustParse("2Gi"),
+						},
+					},
 				},
 			},
 			Volumes: []corev1.Volume{
