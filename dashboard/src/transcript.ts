@@ -52,7 +52,15 @@ export type PendingPermission = { entry: TranscriptEntry; tool: string; input: u
 // A PERMISSION_REQUEST entry is pending until a PERMISSION_RESPONSE entry
 // replies to its own seq (real correlation, not the old "any later
 // human-originated entry" heuristic ExitPlanMode used to rely on before
-// `reply_to` existed on the wire — see docs/adr supersession of 0021/0025).
+// `reply_to` existed on the wire — see docs/adr supersession of 0021/0025),
+// OR until a later INTERRUPT/ABORT entry — worker/src/session.ts's
+// resolveAllPendingDeny denies every currently-pending permission when
+// either arrives, but only in-memory (resolving canUseTool's blocked
+// Promise directly); neither posts a real PERMISSION_RESPONSE row, since
+// there's no single request it's replying to. This is deliberately
+// position-based (later.seq > e.seq), unlike reply_to correlation — sound
+// specifically because interrupt/abort really do deny *everything* pending
+// at that moment, confirmed live against a real worker (kind-local).
 // Multiple can be pending at once now that canUseTool is a generic
 // per-tool-call gate rather than an ExitPlanMode-only special case, so this
 // returns every unresolved one, not just the latest.
@@ -67,20 +75,29 @@ export function findPendingPermissions(entries: TranscriptEntry[]): PendingPermi
       continue;
     }
     if (typeof parsed.tool !== "string") continue;
-    const resolved = entries.some((later) => later.type === TranscriptEntryType.PERMISSION_RESPONSE && later.replyTo === e.seq);
+    const resolved = entries.some(
+      (later) =>
+        (later.type === TranscriptEntryType.PERMISSION_RESPONSE && later.replyTo === e.seq) ||
+        ((later.type === TranscriptEntryType.INTERRUPT || later.type === TranscriptEntryType.ABORT) && later.seq > e.seq),
+    );
     if (!resolved) out.push({ entry: e, tool: parsed.tool, input: parsed.input });
   }
   return out;
 }
 
-// Maps a resolved PERMISSION_REQUEST's own seq to the actual allow/deny
-// decision recorded on its PERMISSION_RESPONSE, so a collapsed
-// PermissionCard/PlanCard can show what really happened instead of
-// hardcoding "allowed" (RespondToPermission's decisionJson is
-// {behavior:"allow"|"deny", ...}, mirrored verbatim into the response
-// entry's text). One pass over entries, not a per-card rescan.
-export function resolvedPermissionDecisions(entries: TranscriptEntry[]): Map<bigint, "allow" | "deny"> {
-  const out = new Map<bigint, "allow" | "deny">();
+// Maps a resolved PERMISSION_REQUEST's own seq to what actually happened to
+// it, so a collapsed PermissionCard/PlanCard can show the real outcome
+// instead of hardcoding "allowed":
+// - "allow"/"deny": RespondToPermission's decisionJson ({behavior:...}),
+//   mirrored verbatim into the response entry's text.
+// - "interrupted": no PERMISSION_RESPONSE exists at all — resolved only via
+//   a later INTERRUPT/ABORT, per findPendingPermissions' own reasoning
+//   above.
+// One pass over entries for the explicit responses, a second bounded by
+// only the still-unmapped requests for the implicit case — not a per-card
+// rescan either way.
+export function resolvedPermissionDecisions(entries: TranscriptEntry[]): Map<bigint, "allow" | "deny" | "interrupted"> {
+  const out = new Map<bigint, "allow" | "deny" | "interrupted">();
   for (const e of entries) {
     if (e.type !== TranscriptEntryType.PERMISSION_RESPONSE || e.replyTo === undefined) continue;
     try {
@@ -89,6 +106,13 @@ export function resolvedPermissionDecisions(entries: TranscriptEntry[]): Map<big
     } catch {
       // malformed payload — leave unresolved rather than guess
     }
+  }
+  for (const e of entries) {
+    if (e.type !== TranscriptEntryType.PERMISSION_REQUEST || out.has(e.seq)) continue;
+    const interruptedLater = entries.some(
+      (later) => (later.type === TranscriptEntryType.INTERRUPT || later.type === TranscriptEntryType.ABORT) && later.seq > e.seq,
+    );
+    if (interruptedLater) out.set(e.seq, "interrupted");
   }
   return out;
 }

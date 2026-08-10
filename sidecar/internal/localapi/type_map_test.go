@@ -27,6 +27,7 @@ func TestStringToProtoType_RoundTrip(t *testing.T) {
 		{"user", agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_USER},
 		{"result", agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_RESULT},
 		{"permission_mode", agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_PERMISSION_MODE},
+		{"interrupt", agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_INTERRUPT},
 	}
 	for _, c := range cases {
 		if got := stringToProtoType(c.str); got != c.enum {
@@ -54,6 +55,7 @@ func TestProtoTypeToString_RoundTrip(t *testing.T) {
 		{agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_USER, "user"},
 		{agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_RESULT, "result"},
 		{agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_PERMISSION_MODE, "permission_mode"},
+		{agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_INTERRUPT, "interrupt"},
 	}
 	for _, c := range cases {
 		if got := protoTypeToString(c.enum); got != c.str {

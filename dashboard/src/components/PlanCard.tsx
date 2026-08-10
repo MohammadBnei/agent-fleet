@@ -29,6 +29,7 @@ export function PlanCard({
   plan,
   pending,
   busy,
+  decision,
   onApprove,
   onFeedback,
   edgeClassName,
@@ -37,6 +38,13 @@ export function PlanCard({
   plan: string;
   pending: boolean;
   busy: boolean;
+  // "Request changes" never resolves the request itself (see this file's
+  // own top comment) — it stays pending and re-arms via a plain reply, so
+  // the only way `!pending` happens here without a real Approve is a later
+  // Kill/Interrupt sweeping it up unanswered (transcript.ts's
+  // resolvedPermissionDecisions). Undefined (the pre-fix legacy case) keeps
+  // the old unconditional "plan approved" fallback.
+  decision?: "allow" | "deny" | "interrupted";
   onApprove: () => void;
   onFeedback: (text: string) => void;
   edgeClassName: string;
@@ -57,7 +65,7 @@ export function PlanCard({
         onClick={() => setIsExpanded(!isExpanded)}
         className="flex items-start gap-1.5 text-[10.5px] text-base-content/40 hover:text-base-content/60 w-full text-left group"
       >
-        <span className="badge badge-ghost badge-xs flex-none">plan approved</span>
+        <span className="badge badge-ghost badge-xs flex-none">{decision === "interrupted" ? "plan interrupted" : "plan approved"}</span>
         {isExpanded ? (
           <div className="flex-1 min-w-0">
             <Markdown text={plan} />

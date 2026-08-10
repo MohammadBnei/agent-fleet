@@ -483,6 +483,7 @@ export function MobileTaskDetail({
                   plan={plan}
                   pending={isPending}
                   busy={busyKey === permissionKey}
+                  decision={permissionDecisions.get(entry.seq)}
                   onApprove={() => respond({ behavior: "allow" })}
                   onFeedback={(text) => sendDiscuss(text)}
                   edgeClassName="-mx-4 px-4"
