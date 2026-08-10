@@ -204,6 +204,30 @@ message AppendJournalRequest {
 
 message AppendJournalResponse {}
 
+// JournalEntry also backs dashboard.proto's GetJournal (imported from
+// here, same reuse pattern as Task/GetTaskRequest/GetTaskResponse below).
+message JournalEntry {
+  int64 id = 1;
+  string repo = 2;
+  string actor = 3;
+  string event_type = 4;
+  string payload_json = 5;
+  string created_at = 6; // RFC3339
+}
+
+// SearchJournal is journal_search's backing RPC (docs/adr/0032's deferred
+// "feed knowledge_journal back into a session" read path) — Postgres
+// full-text search (to_tsvector/ts_rank), not a vector/embedding search.
+message SearchJournalRequest {
+  string repo = 1; // "" matches every repo
+  string query = 2;
+  int32 limit = 3;
+}
+
+message SearchJournalResponse {
+  repeated JournalEntry entries = 1;
+}
+
 message SaveSessionIdRequest {
   string task_id = 1;
   string session_id = 2;
@@ -327,6 +351,7 @@ service CoreService {
   rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
   rpc SetTaskStatus(SetTaskStatusRequest) returns (SetTaskStatusResponse);
   rpc AppendJournal(AppendJournalRequest) returns (AppendJournalResponse);
+  rpc SearchJournal(SearchJournalRequest) returns (SearchJournalResponse);
   rpc SaveSessionId(SaveSessionIdRequest) returns (SaveSessionIdResponse);
   rpc StillHoldsLease(StillHoldsLeaseRequest) returns (StillHoldsLeaseResponse);
   rpc PushToolTelemetry(PushToolTelemetryRequest) returns (PushToolTelemetryResponse);

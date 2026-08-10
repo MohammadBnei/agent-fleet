@@ -16,7 +16,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file agentfleet/v1/core.proto.
  */
 export const file_agentfleet_v1_core: GenFile = /*@__PURE__*/
-  fileDesc("ChhhZ2VudGZsZWV0L3YxL2NvcmUucHJvdG8SDWFnZW50ZmxlZXQudjEikAEKCFBvZEV2ZW50Eg8KB3Rhc2tfaWQYASABKAkSKAoEa2luZBgCIAEoDjIaLmFnZW50ZmxlZXQudjEuU2Vzc2lvbktpbmQSJgoFcGhhc2UYAyABKA4yFy5hZ2VudGZsZWV0LnYxLlBvZFBoYXNlEhAKCHBvZF9uYW1lGAQgASgJEg8KB21lc3NhZ2UYBSABKAkiGQoXUmVwb3J0UG9kRXZlbnRzUmVzcG9uc2UijAEKElNlbmRNZXNzYWdlUmVxdWVzdBIPCgd0YXNrX2lkGAEgASgJEgwKBGZyb20YAiABKAkSDAoEdGV4dBgDIAEoCRIwCgR0eXBlGAQgASgOMiIuYWdlbnRmbGVldC52MS5UcmFuc2NyaXB0RW50cnlUeXBlEhcKD2lkZW1wb3RlbmN5X2tleRgFIAEoCSIiChNTZW5kTWVzc2FnZVJlc3BvbnNlEgsKA3NlcRgBIAEoAyJVChZBc2tVc2VyUXVlc3Rpb25SZXF1ZXN0Eg8KB3Rhc2tfaWQYASABKAkSFgoOcXVlc3Rpb25zX2pzb24YAiABKAkSEgoKdGltZW91dF9tcxgDIAEoBSJVChdBc2tVc2VyUXVlc3Rpb25SZXNwb25zZRIOCgZzdGF0dXMYASABKAkSFAoMYW5zd2Vyc19qc29uGAIgASgJEhQKDHF1ZXN0aW9uX3NlcRgDIAEoAyI6ChRSZXF1ZXN0RTJlRW52UmVxdWVzdBIPCgd0YXNrX2lkGAEgASgJEhEKCXN0YXJ0X2NtZBgCIAEoCSI8ChVSZXF1ZXN0RTJlRW52UmVzcG9uc2USEwoLcHJldmlld191cmwYASABKAkSDgoGc3RhdHVzGAIgASgJIiQKEUtpbGxFMmVFbnZSZXF1ZXN0Eg8KB3Rhc2tfaWQYASABKAkiJAoSS2lsbEUyZUVudlJlc3BvbnNlEg4KBmtpbGxlZBgBIAEoCCLOAwoEVGFzaxIKCgJpZBgBIAEoCRIMCgRyZXBvGAIgASgJEhMKC2Rlc2NyaXB0aW9uGAMgASgJEg4KBnN0YXR1cxgEIAEoCRIWCgl0aHJlYWRfaWQYBSABKAlIAIgBARITCgZwcl91cmwYBiABKAlIAYgBARIWCglwb2RfcGhhc2UYByABKAlIAogBARIYCgtwb2RfbWVzc2FnZRgIIAEoCUgDiAEBEhkKDGhlYXJ0YmVhdF9hdBgJIAEoCUgEiAEBEhMKC3JldHJ5X2NvdW50GAogASgFEhcKCmxhc3RfZXJyb3IYCyABKAlIBYgBARIXCgpzZXNzaW9uX2lkGAwgASgJSAaIAQESGwoObGFzdF9hY3RpdmVfYXQYDSABKAlIB4gBARIcCg9wZXJtaXNzaW9uX21vZGUYDiABKAlICIgBAUIMCgpfdGhyZWFkX2lkQgkKB19wcl91cmxCDAoKX3BvZF9waGFzZUIOCgxfcG9kX21lc3NhZ2VCDwoNX2hlYXJ0YmVhdF9hdEINCgtfbGFzdF9lcnJvckINCgtfc2Vzc2lvbl9pZEIRCg9fbGFzdF9hY3RpdmVfYXRCEgoQX3Blcm1pc3Npb25fbW9kZSIcCg5HZXRUYXNrUmVxdWVzdBIKCgJpZBgBIAEoCSI0Cg9HZXRUYXNrUmVzcG9uc2USIQoEdGFzaxgBIAEoCzITLmFnZW50ZmxlZXQudjEuVGFzayI5ChhTZXRQZXJtaXNzaW9uTW9kZVJlcXVlc3QSDwoHdGFza19pZBgBIAEoCRIMCgRtb2RlGAIgASgJIisKGVNldFBlcm1pc3Npb25Nb2RlUmVzcG9uc2USDgoGc3RhdHVzGAEgASgJIjUKEEhlYXJ0YmVhdFJlcXVlc3QSDwoHdGFza19pZBgBIAEoCRIQCghsZWFzZV9pZBgCIAEoCSITChFIZWFydGJlYXRSZXNwb25zZSKdAQoUU2V0VGFza1N0YXR1c1JlcXVlc3QSDwoHdGFza19pZBgBIAEoCRIOCgZzdGF0dXMYAiABKAkSEwoGcHJfdXJsGAMgASgJSACIAQESEgoFbm90ZXMYBCABKAlIAYgBARIXCgpsYXN0X2Vycm9yGAUgASgJSAKIAQFCCQoHX3ByX3VybEIICgZfbm90ZXNCDQoLX2xhc3RfZXJyb3IiFwoVU2V0VGFza1N0YXR1c1Jlc3BvbnNlIl0KFEFwcGVuZEpvdXJuYWxSZXF1ZXN0EgwKBHJlcG8YASABKAkSDQoFYWN0b3IYAiABKAkSEgoKZXZlbnRfdHlwZRgDIAEoCRIUCgxwYXlsb2FkX2pzb24YBCABKAkiFwoVQXBwZW5kSm91cm5hbFJlc3BvbnNlIkoKFFNhdmVTZXNzaW9uSWRSZXF1ZXN0Eg8KB3Rhc2tfaWQYASABKAkSEgoKc2Vzc2lvbl9pZBgCIAEoCRINCgVtb2RlbBgDIAEoCSIXChVTYXZlU2Vzc2lvbklkUmVzcG9uc2UiOwoWU3RpbGxIb2xkc0xlYXNlUmVxdWVzdBIPCgd0YXNrX2lkGAEgASgJEhAKCGxlYXNlX2lkGAIgASgJIigKF1N0aWxsSG9sZHNMZWFzZVJlc3BvbnNlEg0KBWhvbGRzGAEgASgIIkEKGFB1c2hUb29sVGVsZW1ldHJ5UmVxdWVzdBIPCgd0YXNrX2lkGAEgASgJEhQKDHN1bW1hcnlfanNvbhgCIAEoCSIbChlQdXNoVG9vbFRlbGVtZXRyeVJlc3BvbnNlIkAKGlN0cmVhbUh1bWFuTWVzc2FnZXNSZXF1ZXN0Eg8KB3Rhc2tfaWQYASABKAkSEQoJc2luY2Vfc2VxGAIgASgDIp8BChBRdWVyeUxvZ3NSZXF1ZXN0Eg8KB3Rhc2tfaWQYASABKAkSEQoJbmFtZXNwYWNlGAIgASgJEhEKCWNvbXBvbmVudBgDIAEoCRIQCghhcHBfbmFtZRgEIAEoCRINCgVsZXZlbBgFIAEoCRISCgpzdGFydF90aW1lGAYgASgJEhAKCGVuZF90aW1lGAcgASgJEg0KBWxpbWl0GAggASgFIoYBCghMb2dFbnRyeRIRCgl0aW1lc3RhbXAYASABKAkSDQoFbGV2ZWwYAiABKAkSCwoDbXNnGAMgASgJEhEKCWNvbXBvbmVudBgEIAEoCRIQCghwb2RfbmFtZRgFIAEoCRIRCgluYW1lc3BhY2UYBiABKAkSEwoLZmllbGRzX2pzb24YByABKAkiUgoRUXVlcnlMb2dzUmVzcG9uc2USKAoHZW50cmllcxgBIAMoCzIXLmFnZW50ZmxlZXQudjEuTG9nRW50cnkSEwoLdG90YWxfY291bnQYAiABKAUinwEKD1ZpZXdMb2dzUmVxdWVzdBIRCgljb21wb25lbnQYASABKAkSEAoIYXBwX25hbWUYAiABKAkSEQoJbmFtZXNwYWNlGAMgASgJEg0KBWxldmVsGAQgASgJEhAKCGR1cmF0aW9uGAUgASgJEg0KBWxpbWl0GAYgASgFEhIKCnN0YXJ0X3RpbWUYByABKAkSEAoIZW5kX3RpbWUYCCABKAkiJQoQVmlld0xvZ3NSZXNwb25zZRIRCglsb2dzX3RleHQYASABKAkquQEKCFBvZFBoYXNlEhkKFVBPRF9QSEFTRV9VTlNQRUNJRklFRBAAEhUKEVBPRF9QSEFTRV9DUkVBVEVEEAESFwoTUE9EX1BIQVNFX1NDSEVEVUxFRBACEhUKEVBPRF9QSEFTRV9SVU5OSU5HEAMSFQoRUE9EX1BIQVNFX0NSQVNIRUQQBBIYChRQT0RfUEhBU0VfVEVSTUlOQVRFRBAFEhoKFlBPRF9QSEFTRV9QUk9WSVNJT05JTkcQBjLnDwoLQ29yZVNlcnZpY2USVAoPUmVwb3J0UG9kRXZlbnRzEhcuYWdlbnRmbGVldC52MS5Qb2RFdmVudBomLmFnZW50ZmxlZXQudjEuUmVwb3J0UG9kRXZlbnRzUmVzcG9uc2UoARJUCgtTZW5kTWVzc2FnZRIhLmFnZW50ZmxlZXQudjEuU2VuZE1lc3NhZ2VSZXF1ZXN0GiIuYWdlbnRmbGVldC52MS5TZW5kTWVzc2FnZVJlc3BvbnNlEmgKD1dhaXRGb3JNZXNzYWdlcxIpLmFnZW50ZmxlZXQudjEuUmVhZFRyYW5zY3JpcHRTaW5jZVJlcXVlc3QaKi5hZ2VudGZsZWV0LnYxLlJlYWRUcmFuc2NyaXB0U2luY2VSZXNwb25zZRJgCg9Bc2tVc2VyUXVlc3Rpb24SJS5hZ2VudGZsZWV0LnYxLkFza1VzZXJRdWVzdGlvblJlcXVlc3QaJi5hZ2VudGZsZWV0LnYxLkFza1VzZXJRdWVzdGlvblJlc3BvbnNlEloKDVJlcXVlc3RFMmVFbnYSIy5hZ2VudGZsZWV0LnYxLlJlcXVlc3RFMmVFbnZSZXF1ZXN0GiQuYWdlbnRmbGVldC52MS5SZXF1ZXN0RTJlRW52UmVzcG9uc2USUQoKS2lsbEUyZUVudhIgLmFnZW50ZmxlZXQudjEuS2lsbEUyZUVudlJlcXVlc3QaIS5hZ2VudGZsZWV0LnYxLktpbGxFMmVFbnZSZXNwb25zZRJXCgxMaXN0RTJlVG9vbHMSIi5hZ2VudGZsZWV0LnYxLkxpc3RFMmVUb29sc1JlcXVlc3QaIy5hZ2VudGZsZWV0LnYxLkxpc3RFMmVUb29sc1Jlc3BvbnNlElQKC0NhbGxFMmVUb29sEiEuYWdlbnRmbGVldC52MS5DYWxsRTJlVG9vbFJlcXVlc3QaIi5hZ2VudGZsZWV0LnYxLkNhbGxFMmVUb29sUmVzcG9uc2USSAoHR2V0VGFzaxIdLmFnZW50ZmxlZXQudjEuR2V0VGFza1JlcXVlc3QaHi5hZ2VudGZsZWV0LnYxLkdldFRhc2tSZXNwb25zZRJmChFTZXRQZXJtaXNzaW9uTW9kZRInLmFnZW50ZmxlZXQudjEuU2V0UGVybWlzc2lvbk1vZGVSZXF1ZXN0GiguYWdlbnRmbGVldC52MS5TZXRQZXJtaXNzaW9uTW9kZVJlc3BvbnNlEk4KCUhlYXJ0YmVhdBIfLmFnZW50ZmxlZXQudjEuSGVhcnRiZWF0UmVxdWVzdBogLmFnZW50ZmxlZXQudjEuSGVhcnRiZWF0UmVzcG9uc2USWgoNU2V0VGFza1N0YXR1cxIjLmFnZW50ZmxlZXQudjEuU2V0VGFza1N0YXR1c1JlcXVlc3QaJC5hZ2VudGZsZWV0LnYxLlNldFRhc2tTdGF0dXNSZXNwb25zZRJaCg1BcHBlbmRKb3VybmFsEiMuYWdlbnRmbGVldC52MS5BcHBlbmRKb3VybmFsUmVxdWVzdBokLmFnZW50ZmxlZXQudjEuQXBwZW5kSm91cm5hbFJlc3BvbnNlEloKDVNhdmVTZXNzaW9uSWQSIy5hZ2VudGZsZWV0LnYxLlNhdmVTZXNzaW9uSWRSZXF1ZXN0GiQuYWdlbnRmbGVldC52MS5TYXZlU2Vzc2lvbklkUmVzcG9uc2USYAoPU3RpbGxIb2xkc0xlYXNlEiUuYWdlbnRmbGVldC52MS5TdGlsbEhvbGRzTGVhc2VSZXF1ZXN0GiYuYWdlbnRmbGVldC52MS5TdGlsbEhvbGRzTGVhc2VSZXNwb25zZRJmChFQdXNoVG9vbFRlbGVtZXRyeRInLmFnZW50ZmxlZXQudjEuUHVzaFRvb2xUZWxlbWV0cnlSZXF1ZXN0GiguYWdlbnRmbGVldC52MS5QdXNoVG9vbFRlbGVtZXRyeVJlc3BvbnNlEmIKE1N0cmVhbUh1bWFuTWVzc2FnZXMSKS5hZ2VudGZsZWV0LnYxLlN0cmVhbUh1bWFuTWVzc2FnZXNSZXF1ZXN0Gh4uYWdlbnRmbGVldC52MS5UcmFuc2NyaXB0RW50cnkwARJOCglMaXN0RmlsZXMSHy5hZ2VudGZsZWV0LnYxLkxpc3RGaWxlc1JlcXVlc3QaIC5hZ2VudGZsZWV0LnYxLkxpc3RGaWxlc1Jlc3BvbnNlEmMKEEdldEZpbGVVcGxvYWRVcmwSJi5hZ2VudGZsZWV0LnYxLkdldEZpbGVVcGxvYWRVcmxSZXF1ZXN0GicuYWdlbnRmbGVldC52MS5HZXRGaWxlVXBsb2FkVXJsUmVzcG9uc2USaQoSR2V0RmlsZURvd25sb2FkVXJsEiguYWdlbnRmbGVldC52MS5HZXRGaWxlRG93bmxvYWRVcmxSZXF1ZXN0GikuYWdlbnRmbGVldC52MS5HZXRGaWxlRG93bmxvYWRVcmxSZXNwb25zZRJRCgpEZWxldGVGaWxlEiAuYWdlbnRmbGVldC52MS5EZWxldGVGaWxlUmVxdWVzdBohLmFnZW50ZmxlZXQudjEuRGVsZXRlRmlsZVJlc3BvbnNlEksKCFZpZXdMb2dzEh4uYWdlbnRmbGVldC52MS5WaWV3TG9nc1JlcXVlc3QaHy5hZ2VudGZsZWV0LnYxLlZpZXdMb2dzUmVzcG9uc2VCTVpLZ2l0aHViLmNvbS9Nb2hhbW1hZEJuZWkvYWdlbnQtZmxlZXQvcHJvdG8vZ2VuL2dvL2FnZW50ZmxlZXQvdjE7YWdlbnRmbGVldHYxYgZwcm90bzM", [file_agentfleet_v1_transcript, file_agentfleet_v1_provisioner, file_agentfleet_v1_files]);
+  fileDesc("ChhhZ2VudGZsZWV0L3YxL2NvcmUucHJvdG8SDWFnZW50ZmxlZXQudjEikAEKCFBvZEV2ZW50Eg8KB3Rhc2tfaWQYASABKAkSKAoEa2luZBgCIAEoDjIaLmFnZW50ZmxlZXQudjEuU2Vzc2lvbktpbmQSJgoFcGhhc2UYAyABKA4yFy5hZ2VudGZsZWV0LnYxLlBvZFBoYXNlEhAKCHBvZF9uYW1lGAQgASgJEg8KB21lc3NhZ2UYBSABKAkiGQoXUmVwb3J0UG9kRXZlbnRzUmVzcG9uc2UijAEKElNlbmRNZXNzYWdlUmVxdWVzdBIPCgd0YXNrX2lkGAEgASgJEgwKBGZyb20YAiABKAkSDAoEdGV4dBgDIAEoCRIwCgR0eXBlGAQgASgOMiIuYWdlbnRmbGVldC52MS5UcmFuc2NyaXB0RW50cnlUeXBlEhcKD2lkZW1wb3RlbmN5X2tleRgFIAEoCSIiChNTZW5kTWVzc2FnZVJlc3BvbnNlEgsKA3NlcRgBIAEoAyJVChZBc2tVc2VyUXVlc3Rpb25SZXF1ZXN0Eg8KB3Rhc2tfaWQYASABKAkSFgoOcXVlc3Rpb25zX2pzb24YAiABKAkSEgoKdGltZW91dF9tcxgDIAEoBSJVChdBc2tVc2VyUXVlc3Rpb25SZXNwb25zZRIOCgZzdGF0dXMYASABKAkSFAoMYW5zd2Vyc19qc29uGAIgASgJEhQKDHF1ZXN0aW9uX3NlcRgDIAEoAyI6ChRSZXF1ZXN0RTJlRW52UmVxdWVzdBIPCgd0YXNrX2lkGAEgASgJEhEKCXN0YXJ0X2NtZBgCIAEoCSI8ChVSZXF1ZXN0RTJlRW52UmVzcG9uc2USEwoLcHJldmlld191cmwYASABKAkSDgoGc3RhdHVzGAIgASgJIiQKEUtpbGxFMmVFbnZSZXF1ZXN0Eg8KB3Rhc2tfaWQYASABKAkiJAoSS2lsbEUyZUVudlJlc3BvbnNlEg4KBmtpbGxlZBgBIAEoCCLOAwoEVGFzaxIKCgJpZBgBIAEoCRIMCgRyZXBvGAIgASgJEhMKC2Rlc2NyaXB0aW9uGAMgASgJEg4KBnN0YXR1cxgEIAEoCRIWCgl0aHJlYWRfaWQYBSABKAlIAIgBARITCgZwcl91cmwYBiABKAlIAYgBARIWCglwb2RfcGhhc2UYByABKAlIAogBARIYCgtwb2RfbWVzc2FnZRgIIAEoCUgDiAEBEhkKDGhlYXJ0YmVhdF9hdBgJIAEoCUgEiAEBEhMKC3JldHJ5X2NvdW50GAogASgFEhcKCmxhc3RfZXJyb3IYCyABKAlIBYgBARIXCgpzZXNzaW9uX2lkGAwgASgJSAaIAQESGwoObGFzdF9hY3RpdmVfYXQYDSABKAlIB4gBARIcCg9wZXJtaXNzaW9uX21vZGUYDiABKAlICIgBAUIMCgpfdGhyZWFkX2lkQgkKB19wcl91cmxCDAoKX3BvZF9waGFzZUIOCgxfcG9kX21lc3NhZ2VCDwoNX2hlYXJ0YmVhdF9hdEINCgtfbGFzdF9lcnJvckINCgtfc2Vzc2lvbl9pZEIRCg9fbGFzdF9hY3RpdmVfYXRCEgoQX3Blcm1pc3Npb25fbW9kZSIcCg5HZXRUYXNrUmVxdWVzdBIKCgJpZBgBIAEoCSI0Cg9HZXRUYXNrUmVzcG9uc2USIQoEdGFzaxgBIAEoCzITLmFnZW50ZmxlZXQudjEuVGFzayI5ChhTZXRQZXJtaXNzaW9uTW9kZVJlcXVlc3QSDwoHdGFza19pZBgBIAEoCRIMCgRtb2RlGAIgASgJIisKGVNldFBlcm1pc3Npb25Nb2RlUmVzcG9uc2USDgoGc3RhdHVzGAEgASgJIjUKEEhlYXJ0YmVhdFJlcXVlc3QSDwoHdGFza19pZBgBIAEoCRIQCghsZWFzZV9pZBgCIAEoCSITChFIZWFydGJlYXRSZXNwb25zZSKdAQoUU2V0VGFza1N0YXR1c1JlcXVlc3QSDwoHdGFza19pZBgBIAEoCRIOCgZzdGF0dXMYAiABKAkSEwoGcHJfdXJsGAMgASgJSACIAQESEgoFbm90ZXMYBCABKAlIAYgBARIXCgpsYXN0X2Vycm9yGAUgASgJSAKIAQFCCQoHX3ByX3VybEIICgZfbm90ZXNCDQoLX2xhc3RfZXJyb3IiFwoVU2V0VGFza1N0YXR1c1Jlc3BvbnNlIl0KFEFwcGVuZEpvdXJuYWxSZXF1ZXN0EgwKBHJlcG8YASABKAkSDQoFYWN0b3IYAiABKAkSEgoKZXZlbnRfdHlwZRgDIAEoCRIUCgxwYXlsb2FkX2pzb24YBCABKAkiFwoVQXBwZW5kSm91cm5hbFJlc3BvbnNlInUKDEpvdXJuYWxFbnRyeRIKCgJpZBgBIAEoAxIMCgRyZXBvGAIgASgJEg0KBWFjdG9yGAMgASgJEhIKCmV2ZW50X3R5cGUYBCABKAkSFAoMcGF5bG9hZF9qc29uGAUgASgJEhIKCmNyZWF0ZWRfYXQYBiABKAkiQgoUU2VhcmNoSm91cm5hbFJlcXVlc3QSDAoEcmVwbxgBIAEoCRINCgVxdWVyeRgCIAEoCRINCgVsaW1pdBgDIAEoBSJFChVTZWFyY2hKb3VybmFsUmVzcG9uc2USLAoHZW50cmllcxgBIAMoCzIbLmFnZW50ZmxlZXQudjEuSm91cm5hbEVudHJ5IkoKFFNhdmVTZXNzaW9uSWRSZXF1ZXN0Eg8KB3Rhc2tfaWQYASABKAkSEgoKc2Vzc2lvbl9pZBgCIAEoCRINCgVtb2RlbBgDIAEoCSIXChVTYXZlU2Vzc2lvbklkUmVzcG9uc2UiOwoWU3RpbGxIb2xkc0xlYXNlUmVxdWVzdBIPCgd0YXNrX2lkGAEgASgJEhAKCGxlYXNlX2lkGAIgASgJIigKF1N0aWxsSG9sZHNMZWFzZVJlc3BvbnNlEg0KBWhvbGRzGAEgASgIIkEKGFB1c2hUb29sVGVsZW1ldHJ5UmVxdWVzdBIPCgd0YXNrX2lkGAEgASgJEhQKDHN1bW1hcnlfanNvbhgCIAEoCSIbChlQdXNoVG9vbFRlbGVtZXRyeVJlc3BvbnNlIkAKGlN0cmVhbUh1bWFuTWVzc2FnZXNSZXF1ZXN0Eg8KB3Rhc2tfaWQYASABKAkSEQoJc2luY2Vfc2VxGAIgASgDIp8BChBRdWVyeUxvZ3NSZXF1ZXN0Eg8KB3Rhc2tfaWQYASABKAkSEQoJbmFtZXNwYWNlGAIgASgJEhEKCWNvbXBvbmVudBgDIAEoCRIQCghhcHBfbmFtZRgEIAEoCRINCgVsZXZlbBgFIAEoCRISCgpzdGFydF90aW1lGAYgASgJEhAKCGVuZF90aW1lGAcgASgJEg0KBWxpbWl0GAggASgFIoYBCghMb2dFbnRyeRIRCgl0aW1lc3RhbXAYASABKAkSDQoFbGV2ZWwYAiABKAkSCwoDbXNnGAMgASgJEhEKCWNvbXBvbmVudBgEIAEoCRIQCghwb2RfbmFtZRgFIAEoCRIRCgluYW1lc3BhY2UYBiABKAkSEwoLZmllbGRzX2pzb24YByABKAkiUgoRUXVlcnlMb2dzUmVzcG9uc2USKAoHZW50cmllcxgBIAMoCzIXLmFnZW50ZmxlZXQudjEuTG9nRW50cnkSEwoLdG90YWxfY291bnQYAiABKAUinwEKD1ZpZXdMb2dzUmVxdWVzdBIRCgljb21wb25lbnQYASABKAkSEAoIYXBwX25hbWUYAiABKAkSEQoJbmFtZXNwYWNlGAMgASgJEg0KBWxldmVsGAQgASgJEhAKCGR1cmF0aW9uGAUgASgJEg0KBWxpbWl0GAYgASgFEhIKCnN0YXJ0X3RpbWUYByABKAkSEAoIZW5kX3RpbWUYCCABKAkiJQoQVmlld0xvZ3NSZXNwb25zZRIRCglsb2dzX3RleHQYASABKAkquQEKCFBvZFBoYXNlEhkKFVBPRF9QSEFTRV9VTlNQRUNJRklFRBAAEhUKEVBPRF9QSEFTRV9DUkVBVEVEEAESFwoTUE9EX1BIQVNFX1NDSEVEVUxFRBACEhUKEVBPRF9QSEFTRV9SVU5OSU5HEAMSFQoRUE9EX1BIQVNFX0NSQVNIRUQQBBIYChRQT0RfUEhBU0VfVEVSTUlOQVRFRBAFEhoKFlBPRF9QSEFTRV9QUk9WSVNJT05JTkcQBjLDEAoLQ29yZVNlcnZpY2USVAoPUmVwb3J0UG9kRXZlbnRzEhcuYWdlbnRmbGVldC52MS5Qb2RFdmVudBomLmFnZW50ZmxlZXQudjEuUmVwb3J0UG9kRXZlbnRzUmVzcG9uc2UoARJUCgtTZW5kTWVzc2FnZRIhLmFnZW50ZmxlZXQudjEuU2VuZE1lc3NhZ2VSZXF1ZXN0GiIuYWdlbnRmbGVldC52MS5TZW5kTWVzc2FnZVJlc3BvbnNlEmgKD1dhaXRGb3JNZXNzYWdlcxIpLmFnZW50ZmxlZXQudjEuUmVhZFRyYW5zY3JpcHRTaW5jZVJlcXVlc3QaKi5hZ2VudGZsZWV0LnYxLlJlYWRUcmFuc2NyaXB0U2luY2VSZXNwb25zZRJgCg9Bc2tVc2VyUXVlc3Rpb24SJS5hZ2VudGZsZWV0LnYxLkFza1VzZXJRdWVzdGlvblJlcXVlc3QaJi5hZ2VudGZsZWV0LnYxLkFza1VzZXJRdWVzdGlvblJlc3BvbnNlEloKDVJlcXVlc3RFMmVFbnYSIy5hZ2VudGZsZWV0LnYxLlJlcXVlc3RFMmVFbnZSZXF1ZXN0GiQuYWdlbnRmbGVldC52MS5SZXF1ZXN0RTJlRW52UmVzcG9uc2USUQoKS2lsbEUyZUVudhIgLmFnZW50ZmxlZXQudjEuS2lsbEUyZUVudlJlcXVlc3QaIS5hZ2VudGZsZWV0LnYxLktpbGxFMmVFbnZSZXNwb25zZRJXCgxMaXN0RTJlVG9vbHMSIi5hZ2VudGZsZWV0LnYxLkxpc3RFMmVUb29sc1JlcXVlc3QaIy5hZ2VudGZsZWV0LnYxLkxpc3RFMmVUb29sc1Jlc3BvbnNlElQKC0NhbGxFMmVUb29sEiEuYWdlbnRmbGVldC52MS5DYWxsRTJlVG9vbFJlcXVlc3QaIi5hZ2VudGZsZWV0LnYxLkNhbGxFMmVUb29sUmVzcG9uc2USSAoHR2V0VGFzaxIdLmFnZW50ZmxlZXQudjEuR2V0VGFza1JlcXVlc3QaHi5hZ2VudGZsZWV0LnYxLkdldFRhc2tSZXNwb25zZRJmChFTZXRQZXJtaXNzaW9uTW9kZRInLmFnZW50ZmxlZXQudjEuU2V0UGVybWlzc2lvbk1vZGVSZXF1ZXN0GiguYWdlbnRmbGVldC52MS5TZXRQZXJtaXNzaW9uTW9kZVJlc3BvbnNlEk4KCUhlYXJ0YmVhdBIfLmFnZW50ZmxlZXQudjEuSGVhcnRiZWF0UmVxdWVzdBogLmFnZW50ZmxlZXQudjEuSGVhcnRiZWF0UmVzcG9uc2USWgoNU2V0VGFza1N0YXR1cxIjLmFnZW50ZmxlZXQudjEuU2V0VGFza1N0YXR1c1JlcXVlc3QaJC5hZ2VudGZsZWV0LnYxLlNldFRhc2tTdGF0dXNSZXNwb25zZRJaCg1BcHBlbmRKb3VybmFsEiMuYWdlbnRmbGVldC52MS5BcHBlbmRKb3VybmFsUmVxdWVzdBokLmFnZW50ZmxlZXQudjEuQXBwZW5kSm91cm5hbFJlc3BvbnNlEloKDVNlYXJjaEpvdXJuYWwSIy5hZ2VudGZsZWV0LnYxLlNlYXJjaEpvdXJuYWxSZXF1ZXN0GiQuYWdlbnRmbGVldC52MS5TZWFyY2hKb3VybmFsUmVzcG9uc2USWgoNU2F2ZVNlc3Npb25JZBIjLmFnZW50ZmxlZXQudjEuU2F2ZVNlc3Npb25JZFJlcXVlc3QaJC5hZ2VudGZsZWV0LnYxLlNhdmVTZXNzaW9uSWRSZXNwb25zZRJgCg9TdGlsbEhvbGRzTGVhc2USJS5hZ2VudGZsZWV0LnYxLlN0aWxsSG9sZHNMZWFzZVJlcXVlc3QaJi5hZ2VudGZsZWV0LnYxLlN0aWxsSG9sZHNMZWFzZVJlc3BvbnNlEmYKEVB1c2hUb29sVGVsZW1ldHJ5EicuYWdlbnRmbGVldC52MS5QdXNoVG9vbFRlbGVtZXRyeVJlcXVlc3QaKC5hZ2VudGZsZWV0LnYxLlB1c2hUb29sVGVsZW1ldHJ5UmVzcG9uc2USYgoTU3RyZWFtSHVtYW5NZXNzYWdlcxIpLmFnZW50ZmxlZXQudjEuU3RyZWFtSHVtYW5NZXNzYWdlc1JlcXVlc3QaHi5hZ2VudGZsZWV0LnYxLlRyYW5zY3JpcHRFbnRyeTABEk4KCUxpc3RGaWxlcxIfLmFnZW50ZmxlZXQudjEuTGlzdEZpbGVzUmVxdWVzdBogLmFnZW50ZmxlZXQudjEuTGlzdEZpbGVzUmVzcG9uc2USYwoQR2V0RmlsZVVwbG9hZFVybBImLmFnZW50ZmxlZXQudjEuR2V0RmlsZVVwbG9hZFVybFJlcXVlc3QaJy5hZ2VudGZsZWV0LnYxLkdldEZpbGVVcGxvYWRVcmxSZXNwb25zZRJpChJHZXRGaWxlRG93bmxvYWRVcmwSKC5hZ2VudGZsZWV0LnYxLkdldEZpbGVEb3dubG9hZFVybFJlcXVlc3QaKS5hZ2VudGZsZWV0LnYxLkdldEZpbGVEb3dubG9hZFVybFJlc3BvbnNlElEKCkRlbGV0ZUZpbGUSIC5hZ2VudGZsZWV0LnYxLkRlbGV0ZUZpbGVSZXF1ZXN0GiEuYWdlbnRmbGVldC52MS5EZWxldGVGaWxlUmVzcG9uc2USSwoIVmlld0xvZ3MSHi5hZ2VudGZsZWV0LnYxLlZpZXdMb2dzUmVxdWVzdBofLmFnZW50ZmxlZXQudjEuVmlld0xvZ3NSZXNwb25zZUJNWktnaXRodWIuY29tL01vaGFtbWFkQm5laS9hZ2VudC1mbGVldC9wcm90by9nZW4vZ28vYWdlbnRmbGVldC92MTthZ2VudGZsZWV0djFiBnByb3RvMw", [file_agentfleet_v1_transcript, file_agentfleet_v1_provisioner, file_agentfleet_v1_files]);
 
 /**
  * @generated from message agentfleet.v1.PodEvent
@@ -607,6 +607,103 @@ export const AppendJournalResponseSchema: GenMessage<AppendJournalResponse> = /*
   messageDesc(file_agentfleet_v1_core, 20);
 
 /**
+ * JournalEntry also backs dashboard.proto's GetJournal (imported from
+ * here, same reuse pattern as Task/GetTaskRequest/GetTaskResponse below).
+ *
+ * @generated from message agentfleet.v1.JournalEntry
+ */
+export type JournalEntry = Message<"agentfleet.v1.JournalEntry"> & {
+  /**
+   * @generated from field: int64 id = 1;
+   */
+  id: bigint;
+
+  /**
+   * @generated from field: string repo = 2;
+   */
+  repo: string;
+
+  /**
+   * @generated from field: string actor = 3;
+   */
+  actor: string;
+
+  /**
+   * @generated from field: string event_type = 4;
+   */
+  eventType: string;
+
+  /**
+   * @generated from field: string payload_json = 5;
+   */
+  payloadJson: string;
+
+  /**
+   * RFC3339
+   *
+   * @generated from field: string created_at = 6;
+   */
+  createdAt: string;
+};
+
+/**
+ * Describes the message agentfleet.v1.JournalEntry.
+ * Use `create(JournalEntrySchema)` to create a new message.
+ */
+export const JournalEntrySchema: GenMessage<JournalEntry> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_core, 21);
+
+/**
+ * SearchJournal is journal_search's backing RPC (docs/adr/0032's deferred
+ * "feed knowledge_journal back into a session" read path) — Postgres
+ * full-text search (to_tsvector/ts_rank), not a vector/embedding search.
+ *
+ * @generated from message agentfleet.v1.SearchJournalRequest
+ */
+export type SearchJournalRequest = Message<"agentfleet.v1.SearchJournalRequest"> & {
+  /**
+   * "" matches every repo
+   *
+   * @generated from field: string repo = 1;
+   */
+  repo: string;
+
+  /**
+   * @generated from field: string query = 2;
+   */
+  query: string;
+
+  /**
+   * @generated from field: int32 limit = 3;
+   */
+  limit: number;
+};
+
+/**
+ * Describes the message agentfleet.v1.SearchJournalRequest.
+ * Use `create(SearchJournalRequestSchema)` to create a new message.
+ */
+export const SearchJournalRequestSchema: GenMessage<SearchJournalRequest> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_core, 22);
+
+/**
+ * @generated from message agentfleet.v1.SearchJournalResponse
+ */
+export type SearchJournalResponse = Message<"agentfleet.v1.SearchJournalResponse"> & {
+  /**
+   * @generated from field: repeated agentfleet.v1.JournalEntry entries = 1;
+   */
+  entries: JournalEntry[];
+};
+
+/**
+ * Describes the message agentfleet.v1.SearchJournalResponse.
+ * Use `create(SearchJournalResponseSchema)` to create a new message.
+ */
+export const SearchJournalResponseSchema: GenMessage<SearchJournalResponse> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_core, 23);
+
+/**
  * @generated from message agentfleet.v1.SaveSessionIdRequest
  */
 export type SaveSessionIdRequest = Message<"agentfleet.v1.SaveSessionIdRequest"> & {
@@ -631,7 +728,7 @@ export type SaveSessionIdRequest = Message<"agentfleet.v1.SaveSessionIdRequest">
  * Use `create(SaveSessionIdRequestSchema)` to create a new message.
  */
 export const SaveSessionIdRequestSchema: GenMessage<SaveSessionIdRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_core, 21);
+  messageDesc(file_agentfleet_v1_core, 24);
 
 /**
  * @generated from message agentfleet.v1.SaveSessionIdResponse
@@ -644,7 +741,7 @@ export type SaveSessionIdResponse = Message<"agentfleet.v1.SaveSessionIdResponse
  * Use `create(SaveSessionIdResponseSchema)` to create a new message.
  */
 export const SaveSessionIdResponseSchema: GenMessage<SaveSessionIdResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_core, 22);
+  messageDesc(file_agentfleet_v1_core, 25);
 
 /**
  * Checked immediately before the irreversible push/PR step (mirrors
@@ -671,7 +768,7 @@ export type StillHoldsLeaseRequest = Message<"agentfleet.v1.StillHoldsLeaseReque
  * Use `create(StillHoldsLeaseRequestSchema)` to create a new message.
  */
 export const StillHoldsLeaseRequestSchema: GenMessage<StillHoldsLeaseRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_core, 23);
+  messageDesc(file_agentfleet_v1_core, 26);
 
 /**
  * @generated from message agentfleet.v1.StillHoldsLeaseResponse
@@ -688,7 +785,7 @@ export type StillHoldsLeaseResponse = Message<"agentfleet.v1.StillHoldsLeaseResp
  * Use `create(StillHoldsLeaseResponseSchema)` to create a new message.
  */
 export const StillHoldsLeaseResponseSchema: GenMessage<StillHoldsLeaseResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_core, 24);
+  messageDesc(file_agentfleet_v1_core, 27);
 
 /**
  * Git diff/branch/elapsed-time/tool-call-summary telemetry, pushed by the
@@ -715,7 +812,7 @@ export type PushToolTelemetryRequest = Message<"agentfleet.v1.PushToolTelemetryR
  * Use `create(PushToolTelemetryRequestSchema)` to create a new message.
  */
 export const PushToolTelemetryRequestSchema: GenMessage<PushToolTelemetryRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_core, 25);
+  messageDesc(file_agentfleet_v1_core, 28);
 
 /**
  * @generated from message agentfleet.v1.PushToolTelemetryResponse
@@ -728,7 +825,7 @@ export type PushToolTelemetryResponse = Message<"agentfleet.v1.PushToolTelemetry
  * Use `create(PushToolTelemetryResponseSchema)` to create a new message.
  */
 export const PushToolTelemetryResponseSchema: GenMessage<PushToolTelemetryResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_core, 26);
+  messageDesc(file_agentfleet_v1_core, 29);
 
 /**
  * The mechanism that lets the sidecar deliver new human input to the
@@ -754,7 +851,7 @@ export type StreamHumanMessagesRequest = Message<"agentfleet.v1.StreamHumanMessa
  * Use `create(StreamHumanMessagesRequestSchema)` to create a new message.
  */
 export const StreamHumanMessagesRequestSchema: GenMessage<StreamHumanMessagesRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_core, 27);
+  messageDesc(file_agentfleet_v1_core, 30);
 
 /**
  * @generated from message agentfleet.v1.QueryLogsRequest
@@ -822,7 +919,7 @@ export type QueryLogsRequest = Message<"agentfleet.v1.QueryLogsRequest"> & {
  * Use `create(QueryLogsRequestSchema)` to create a new message.
  */
 export const QueryLogsRequestSchema: GenMessage<QueryLogsRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_core, 28);
+  messageDesc(file_agentfleet_v1_core, 31);
 
 /**
  * @generated from message agentfleet.v1.LogEntry
@@ -873,7 +970,7 @@ export type LogEntry = Message<"agentfleet.v1.LogEntry"> & {
  * Use `create(LogEntrySchema)` to create a new message.
  */
 export const LogEntrySchema: GenMessage<LogEntry> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_core, 29);
+  messageDesc(file_agentfleet_v1_core, 32);
 
 /**
  * @generated from message agentfleet.v1.QueryLogsResponse
@@ -895,7 +992,7 @@ export type QueryLogsResponse = Message<"agentfleet.v1.QueryLogsResponse"> & {
  * Use `create(QueryLogsResponseSchema)` to create a new message.
  */
 export const QueryLogsResponseSchema: GenMessage<QueryLogsResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_core, 30);
+  messageDesc(file_agentfleet_v1_core, 33);
 
 /**
  * For agents via MCP tool - supports both duration and explicit timestamps
@@ -965,7 +1062,7 @@ export type ViewLogsRequest = Message<"agentfleet.v1.ViewLogsRequest"> & {
  * Use `create(ViewLogsRequestSchema)` to create a new message.
  */
 export const ViewLogsRequestSchema: GenMessage<ViewLogsRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_core, 31);
+  messageDesc(file_agentfleet_v1_core, 34);
 
 /**
  * @generated from message agentfleet.v1.ViewLogsResponse
@@ -984,7 +1081,7 @@ export type ViewLogsResponse = Message<"agentfleet.v1.ViewLogsResponse"> & {
  * Use `create(ViewLogsResponseSchema)` to create a new message.
  */
 export const ViewLogsResponseSchema: GenMessage<ViewLogsResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_core, 32);
+  messageDesc(file_agentfleet_v1_core, 35);
 
 /**
  * @generated from enum agentfleet.v1.PodPhase
@@ -1174,6 +1271,14 @@ export const CoreService: GenService<{
     methodKind: "unary";
     input: typeof AppendJournalRequestSchema;
     output: typeof AppendJournalResponseSchema;
+  },
+  /**
+   * @generated from rpc agentfleet.v1.CoreService.SearchJournal
+   */
+  searchJournal: {
+    methodKind: "unary";
+    input: typeof SearchJournalRequestSchema;
+    output: typeof SearchJournalResponseSchema;
   },
   /**
    * @generated from rpc agentfleet.v1.CoreService.SaveSessionId

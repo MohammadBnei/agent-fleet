@@ -32,6 +32,7 @@ const (
 	CoreService_Heartbeat_FullMethodName           = "/agentfleet.v1.CoreService/Heartbeat"
 	CoreService_SetTaskStatus_FullMethodName       = "/agentfleet.v1.CoreService/SetTaskStatus"
 	CoreService_AppendJournal_FullMethodName       = "/agentfleet.v1.CoreService/AppendJournal"
+	CoreService_SearchJournal_FullMethodName       = "/agentfleet.v1.CoreService/SearchJournal"
 	CoreService_SaveSessionId_FullMethodName       = "/agentfleet.v1.CoreService/SaveSessionId"
 	CoreService_StillHoldsLease_FullMethodName     = "/agentfleet.v1.CoreService/StillHoldsLease"
 	CoreService_PushToolTelemetry_FullMethodName   = "/agentfleet.v1.CoreService/PushToolTelemetry"
@@ -79,6 +80,7 @@ type CoreServiceClient interface {
 	Heartbeat(ctx context.Context, in *HeartbeatRequest, opts ...grpc.CallOption) (*HeartbeatResponse, error)
 	SetTaskStatus(ctx context.Context, in *SetTaskStatusRequest, opts ...grpc.CallOption) (*SetTaskStatusResponse, error)
 	AppendJournal(ctx context.Context, in *AppendJournalRequest, opts ...grpc.CallOption) (*AppendJournalResponse, error)
+	SearchJournal(ctx context.Context, in *SearchJournalRequest, opts ...grpc.CallOption) (*SearchJournalResponse, error)
 	SaveSessionId(ctx context.Context, in *SaveSessionIdRequest, opts ...grpc.CallOption) (*SaveSessionIdResponse, error)
 	StillHoldsLease(ctx context.Context, in *StillHoldsLeaseRequest, opts ...grpc.CallOption) (*StillHoldsLeaseResponse, error)
 	PushToolTelemetry(ctx context.Context, in *PushToolTelemetryRequest, opts ...grpc.CallOption) (*PushToolTelemetryResponse, error)
@@ -239,6 +241,16 @@ func (c *coreServiceClient) AppendJournal(ctx context.Context, in *AppendJournal
 	return out, nil
 }
 
+func (c *coreServiceClient) SearchJournal(ctx context.Context, in *SearchJournalRequest, opts ...grpc.CallOption) (*SearchJournalResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SearchJournalResponse)
+	err := c.cc.Invoke(ctx, CoreService_SearchJournal_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *coreServiceClient) SaveSessionId(ctx context.Context, in *SaveSessionIdRequest, opts ...grpc.CallOption) (*SaveSessionIdResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(SaveSessionIdResponse)
@@ -374,6 +386,7 @@ type CoreServiceServer interface {
 	Heartbeat(context.Context, *HeartbeatRequest) (*HeartbeatResponse, error)
 	SetTaskStatus(context.Context, *SetTaskStatusRequest) (*SetTaskStatusResponse, error)
 	AppendJournal(context.Context, *AppendJournalRequest) (*AppendJournalResponse, error)
+	SearchJournal(context.Context, *SearchJournalRequest) (*SearchJournalResponse, error)
 	SaveSessionId(context.Context, *SaveSessionIdRequest) (*SaveSessionIdResponse, error)
 	StillHoldsLease(context.Context, *StillHoldsLeaseRequest) (*StillHoldsLeaseResponse, error)
 	PushToolTelemetry(context.Context, *PushToolTelemetryRequest) (*PushToolTelemetryResponse, error)
@@ -439,6 +452,9 @@ func (UnimplementedCoreServiceServer) SetTaskStatus(context.Context, *SetTaskSta
 }
 func (UnimplementedCoreServiceServer) AppendJournal(context.Context, *AppendJournalRequest) (*AppendJournalResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method AppendJournal not implemented")
+}
+func (UnimplementedCoreServiceServer) SearchJournal(context.Context, *SearchJournalRequest) (*SearchJournalResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SearchJournal not implemented")
 }
 func (UnimplementedCoreServiceServer) SaveSessionId(context.Context, *SaveSessionIdRequest) (*SaveSessionIdResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SaveSessionId not implemented")
@@ -711,6 +727,24 @@ func _CoreService_AppendJournal_Handler(srv interface{}, ctx context.Context, de
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CoreService_SearchJournal_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SearchJournalRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).SearchJournal(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_SearchJournal_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).SearchJournal(ctx, req.(*SearchJournalRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _CoreService_SaveSessionId_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(SaveSessionIdRequest)
 	if err := dec(in); err != nil {
@@ -920,6 +954,10 @@ var CoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "AppendJournal",
 			Handler:    _CoreService_AppendJournal_Handler,
+		},
+		{
+			MethodName: "SearchJournal",
+			Handler:    _CoreService_SearchJournal_Handler,
 		},
 		{
 			MethodName: "SaveSessionId",

@@ -87,3 +87,36 @@ func (s *Store) List(ctx context.Context, repo string, sinceID int64, limit int)
 	}
 	return entries, rows.Err()
 }
+
+// Search ranks entries by relevance to query via Postgres full-text search
+// (to_tsvector/ts_rank against the same expression knowledge_journal_fts_idx
+// covers, db/migrations/000002_journal_fts.up.sql) — no embedding model or
+// vector store, backing the journal_search MCP tool (docs/adr/0032's
+// deferred "feed knowledge_journal back into a session" read path). Same
+// repo == "" matches-all semantics as List.
+func (s *Store) Search(ctx context.Context, repo, query string, limit int) ([]Entry, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, COALESCE(repo, ''), actor, event_type, payload::text, created_at
+		FROM knowledge_journal
+		WHERE ($1 = '' OR repo = $1)
+		  AND to_tsvector('english', event_type || ' ' || payload::text) @@ plainto_tsquery('english', $2)
+		ORDER BY ts_rank(to_tsvector('english', event_type || ' ' || payload::text), plainto_tsquery('english', $2)) DESC
+		LIMIT $3
+	`, repo, query, limit)
+	if err != nil {
+		slog.Error("journal Search", "repo", repo, "query", query, "error", err)
+		return nil, fmt.Errorf("search journal: %w", err)
+	}
+	defer rows.Close()
+
+	entries := []Entry{}
+	for rows.Next() {
+		var e Entry
+		if err := rows.Scan(&e.ID, &e.Repo, &e.Actor, &e.EventType, &e.PayloadJSON, &e.CreatedAt); err != nil {
+			slog.Error("journal Search: scan", "error", err)
+			return nil, fmt.Errorf("scan journal entry: %w", err)
+		}
+		entries = append(entries, e)
+	}
+	return entries, rows.Err()
+}

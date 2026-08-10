@@ -297,6 +297,29 @@ func (s *Server) AppendJournal(ctx context.Context, req *agentfleetv1.AppendJour
 	return &agentfleetv1.AppendJournalResponse{}, nil
 }
 
+func (s *Server) SearchJournal(ctx context.Context, req *agentfleetv1.SearchJournalRequest) (*agentfleetv1.SearchJournalResponse, error) {
+	limit := int(req.GetLimit())
+	if limit <= 0 {
+		limit = 50
+	}
+	entries, err := s.journal.Search(ctx, req.GetRepo(), req.GetQuery(), limit)
+	if err != nil {
+		return nil, fmt.Errorf("SearchJournal: %w", err)
+	}
+	out := make([]*agentfleetv1.JournalEntry, len(entries))
+	for i, e := range entries {
+		out[i] = &agentfleetv1.JournalEntry{
+			Id:          e.ID,
+			Repo:        e.Repo,
+			Actor:       e.Actor,
+			EventType:   e.EventType,
+			PayloadJson: e.PayloadJSON,
+			CreatedAt:   e.CreatedAt.Format(time.RFC3339),
+		}
+	}
+	return &agentfleetv1.SearchJournalResponse{Entries: out}, nil
+}
+
 func (s *Server) SaveSessionId(ctx context.Context, req *agentfleetv1.SaveSessionIdRequest) (*agentfleetv1.SaveSessionIdResponse, error) {
 	if err := s.tasks.SaveSessionID(ctx, req.GetTaskId(), req.GetSessionId(), req.GetModel()); err != nil {
 		return nil, fmt.Errorf("SaveSessionId: %w", err)
