@@ -14,16 +14,21 @@ import (
 // framing). One choke point at construction time beats patching every RPC
 // call site that appends (coreserver's SendMessage/AskUserQuestion/
 // SetPermissionMode/ReportPodEvents, dashboard's Discuss/RespondToPermission/
-// AnswerQuestion/Stop/...).
+// AnswerQuestion/Kill/...).
 //
-// Deliberately untyped by entry type — every append counts, not just
-// human-authored ones. During active autonomous work the worker relays
-// every SDK message as its own entry (tool_use, tool_result, assistant
-// text), so a session that's genuinely busy keeps touching this on its
-// own; only a session with nothing happening at all — agent idle, human
-// silent — actually goes stale. Splitting "human activity" from "agent
-// activity" here would make an actively-coding pod look idle just because
-// the human hasn't typed anything in 20 minutes, which is exactly wrong.
+// Deliberately untyped by entry type for last_active_at — every append
+// counts, not just human-authored ones. During active autonomous work the
+// worker relays every SDK message as its own entry (tool_use, tool_result,
+// assistant text), so a session that's genuinely busy keeps touching this
+// on its own; only a session with nothing happening at all — agent idle,
+// human silent — actually goes stale. Splitting "human activity" from
+// "agent activity" here would make an actively-coding pod look idle just
+// because the human hasn't typed anything in 20 minutes, which is exactly
+// wrong.
+//
+// tasks.awaiting_human is the one exception that IS typed by entry type
+// (see awaitHuman below) — unlike last_active_at, it must reflect a real
+// pending-decision state, not "something happened recently".
 type activityTrackingStore struct {
 	transcript.Store
 	tasks *tasks.Store
@@ -44,10 +49,34 @@ func (s activityTrackingStore) touch(taskID string) {
 	}()
 }
 
+// awaitHuman sets/clears tasks.awaiting_human based on msgType — a
+// permission_request/question opens the wait, its permission_response/
+// answer resolves it, and abort clears it too (a killed session denies
+// every pending permission itself, so nothing stays waiting on a human who
+// can no longer be asked). Every other msgType is a no-op: not every
+// transcript append is a decision point, unlike last_active_at above.
+func (s activityTrackingStore) awaitHuman(taskID, msgType string) {
+	var awaiting bool
+	switch msgType {
+	case "permission_request", "question":
+		awaiting = true
+	case "permission_response", "answer", "abort":
+		awaiting = false
+	default:
+		return
+	}
+	go func() {
+		if err := s.tasks.SetAwaitingHuman(context.Background(), taskID, awaiting); err != nil {
+			slog.Warn("activityTrackingStore: set awaiting human failed", "taskId", taskID, "error", err)
+		}
+	}()
+}
+
 func (s activityTrackingStore) Append(ctx context.Context, taskID, from, text, msgType, idempotencyKey string) (int64, error) {
 	seq, err := s.Store.Append(ctx, taskID, from, text, msgType, idempotencyKey)
 	if err == nil {
 		s.touch(taskID)
+		s.awaitHuman(taskID, msgType)
 	}
 	return seq, err
 }
@@ -56,6 +85,7 @@ func (s activityTrackingStore) AppendReply(ctx context.Context, taskID, from, te
 	seq, err := s.Store.AppendReply(ctx, taskID, from, text, msgType, idempotencyKey, replyToSeq)
 	if err == nil {
 		s.touch(taskID)
+		s.awaitHuman(taskID, msgType)
 	}
 	return seq, err
 }

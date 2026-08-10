@@ -12,7 +12,13 @@ export function useTaskDetail(taskId: string) {
   const [entries, setEntries] = useState<TranscriptEntry[]>([]);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [branch, setBranch] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  // Keyed, not a plain boolean — a click on one PermissionCard/PlanCard used
+  // to disable every other pending card and the whole ActionsMenu at once.
+  // Each caller passes its own key to run() (a permission/question's own
+  // seq, or a fixed string for ActionsMenu's page-level actions, which
+  // still disable together on purpose); "actions" callers still tie
+  // themselves to busyKey !== null, not a specific key.
+  const [busyKey, setBusyKey] = useState<string | null>(null);
   // Optimistic echo for a just-sent human message — client.discuss() plus
   // the streamTranscript round trip to see it reflected back is enough
   // latency to feel laggy, so this shows the message immediately with a
@@ -101,22 +107,22 @@ export function useTaskDetail(taskId: string) {
     };
   }, [taskId]);
 
-  async function run(action: () => Promise<unknown>) {
-    setBusy(true);
+  async function run(action: () => Promise<unknown>, key: string) {
+    setBusyKey(key);
     setActionError(null);
     try {
       await action();
     } catch (err) {
       setActionError((err as Error).message);
     } finally {
-      setBusy(false);
+      setBusyKey(null);
     }
   }
 
   async function sendDiscuss(text: string) {
     pendingRef.current = text;
     setPendingMessage(text);
-    setBusy(true);
+    setBusyKey("discuss");
     setActionError(null);
     try {
       await client.discuss({ taskId, text });
@@ -125,7 +131,7 @@ export function useTaskDetail(taskId: string) {
       pendingRef.current = null;
       setPendingMessage(null);
     } finally {
-      setBusy(false);
+      setBusyKey(null);
     }
   }
 
@@ -134,7 +140,7 @@ export function useTaskDetail(taskId: string) {
     entries,
     previewUrl,
     branch,
-    busy,
+    busyKey,
     loadError,
     actionError,
     pendingMessage,

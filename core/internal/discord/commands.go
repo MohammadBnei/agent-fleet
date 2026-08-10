@@ -36,8 +36,8 @@ func commandDefs(repoNames []string) []*discordgo.ApplicationCommand {
 			},
 		},
 		{
-			Name:        "stop",
-			Description: "Abort this task",
+			Name:        "kill",
+			Description: "Kill this task's session",
 			Options: []*discordgo.ApplicationCommandOption{
 				{Type: discordgo.ApplicationCommandOptionString, Name: "reason", Description: "Why"},
 			},

@@ -157,6 +157,12 @@ message Task {
   // can highlight the real active mode instead of guessing. Unset for an
   // idle/never-warmed session.
   optional string permission_mode = 14;
+  // True while an unresolved PERMISSION_REQUEST or QUESTION entry is
+  // outstanding — set/cleared by core's activityTrackingStore decorator on
+  // every transcript Append/AppendReply, the same choke point that already
+  // maintains last_active_at. Lets the dashboard's task list show which
+  // tasks need a human decision without an N+1 per-task transcript fetch.
+  bool awaiting_human = 15;
 }
 
 message GetTaskRequest {

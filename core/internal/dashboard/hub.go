@@ -112,13 +112,7 @@ func (h *Hub) pollOnce(ctx context.Context, store transcript.Store) {
 			continue
 		}
 		for _, e := range entries {
-			h.broadcast(id, &agentfleetv1.TranscriptEntry{
-				TaskId: id,
-				Seq:    e.Seq,
-				From:   e.From,
-				Text:   e.Text,
-				Type:   stringToProtoType(e.Type),
-			})
+			h.broadcast(id, entryToProto(id, e))
 		}
 		h.mu.Lock()
 		if _, stillSubscribed := h.seen[id]; stillSubscribed {

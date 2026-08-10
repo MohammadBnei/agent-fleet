@@ -65,12 +65,25 @@ message GetE2eStatusResponse {
   string preview_url = 2;
 }
 
-message StopRequest {
+message KillRequest {
   string task_id = 1;
   optional string reason = 2;
 }
 
-message StopResponse {
+message KillResponse {
+  string status = 1;
+}
+
+// Interrupt stops only the current turn (the in-flight API exchange/tool
+// call) via the SDK's own q.interrupt() — unlike Kill, the session and pod
+// survive and stay ready for the next message. Posted as a distinct
+// "interrupt" transcript entry (never "abort") so the worker can tell the
+// two apart and only Kill tears the whole session down.
+message InterruptRequest {
+  string task_id = 1;
+}
+
+message InterruptResponse {
   string status = 1;
 }
 
@@ -160,7 +173,7 @@ message AnswerQuestionResponse {
 // streamHumanMessages SSE the same way a Discord reply already is (no
 // worker/sidecar changes needed, it's a plain cursor-based transcript
 // stream, not Discord-specific). `from`/`type` are hardcoded server-side,
-// same pattern as Stop hardcoding "human"/"abort" — the dashboard has no
+// same pattern as Kill hardcoding "human"/"abort" — the dashboard has no
 // need to expose them.
 message DiscussRequest {
   string task_id = 1;
@@ -172,7 +185,7 @@ message DiscussResponse {
 }
 
 // Soft-deletes the task (see db/schema.sql's tasks.deleted_at) after
-// force-tearing down any live worker/e2e pod — unlike Stop, which only
+// force-tearing down any live worker/e2e pod — unlike Kill, which only
 // posts an "abort" transcript entry the worker pod must be alive and
 // cooperative to react to, this calls ProvisionerService.TearDownSession
 // directly so a wedged/crashed pod doesn't block removal. Doesn't touch
@@ -390,7 +403,8 @@ service DashboardService {
   // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
   rpc StreamTranscript(StreamTranscriptRequest) returns (stream TranscriptEntry);
   rpc GetE2eStatus(GetE2eStatusRequest) returns (GetE2eStatusResponse);
-  rpc Stop(StopRequest) returns (StopResponse);
+  rpc Kill(KillRequest) returns (KillResponse);
+  rpc Interrupt(InterruptRequest) returns (InterruptResponse);
   // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
   rpc SetPermissionMode(SetPermissionModeRequest) returns (SetPermissionModeResponse);
   rpc Warm(WarmRequest) returns (WarmResponse);

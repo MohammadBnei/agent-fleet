@@ -13,3 +13,9 @@ itself.
 - Before non-trivial work on a repo, `journal_search` it for past
   learnings; `journal_write` one when you hit a gotcha, decision, or dead
   end worth a future session knowing.
+- Mermaid diagrams (```mermaid fences) render natively on GitHub — use
+  them in PR descriptions, docs, or ADRs where a diagram clarifies more
+  than prose.
+- Prefer `Read`/`Glob`/`Grep` over `Bash` (`cat`/`head`/`ls`/etc.) for
+  read-only file access — `Bash` always triggers a live human permission
+  prompt, `Read`/`Glob`/`Grep` don't.

@@ -17,7 +17,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/tasks"
 )
 
-// Real Postgres — Stop now writes to tasks.Store (MarkStopRequested), a
+// Real Postgres — Kill now writes to tasks.Store (MarkStopRequested), a
 // concrete Postgres-backed type server_test.go's recordingStore-style fake
 // can't stand in for. dbtest.NewPool applies the real db/migrations/
 // (docs/adr/0030) rather than a hand-rolled subset.
@@ -37,24 +37,24 @@ func seedTask(t *testing.T, pool *pgxpool.Pool) string {
 	return id
 }
 
-// TestServer_Stop_DefaultReason covers the plain-unit test this replaces
-// (server_test.go, before Stop also wrote to tasks.Store), plus the new
+// TestServer_Kill_DefaultReason covers the plain-unit test this replaces
+// (server_test.go, before Kill also wrote to tasks.Store), plus the new
 // side effect: stop_requested_at gets set on the task row.
-func TestServer_Stop_DefaultReason(t *testing.T) {
+func TestServer_Kill_DefaultReason(t *testing.T) {
 	pool := newTestPool(t)
 	taskID := seedTask(t, pool)
 	store := &recordingStore{}
 	s := NewServer(tasks.NewStore(pool), store, nil, nil, nil, nil, nil, nil, nil, 5, nil)
 
-	resp, err := s.Stop(context.Background(), connect.NewRequest(&agentfleetv1.StopRequest{TaskId: taskID}))
+	resp, err := s.Kill(context.Background(), connect.NewRequest(&agentfleetv1.KillRequest{TaskId: taskID}))
 	if err != nil {
-		t.Fatalf("Stop: %v", err)
+		t.Fatalf("Kill: %v", err)
 	}
-	if resp.Msg.GetStatus() != "stopping" {
-		t.Errorf("status = %q, want %q", resp.Msg.GetStatus(), "stopping")
+	if resp.Msg.GetStatus() != "killing" {
+		t.Errorf("status = %q, want %q", resp.Msg.GetStatus(), "killing")
 	}
-	if store.lastText != "stopped by human" || store.lastType != "abort" {
-		t.Errorf("got (%q, %q), want (stopped by human, abort)", store.lastText, store.lastType)
+	if store.lastText != "killed by human" || store.lastType != "abort" {
+		t.Errorf("got (%q, %q), want (killed by human, abort)", store.lastText, store.lastType)
 	}
 
 	var stopRequestedAt *time.Time
@@ -62,20 +62,20 @@ func TestServer_Stop_DefaultReason(t *testing.T) {
 		t.Fatalf("read stop_requested_at: %v", err)
 	}
 	if stopRequestedAt == nil {
-		t.Error("expected stop_requested_at to be set after Stop")
+		t.Error("expected stop_requested_at to be set after Kill")
 	}
 }
 
-func TestServer_Stop_CustomReason(t *testing.T) {
+func TestServer_Kill_CustomReason(t *testing.T) {
 	pool := newTestPool(t)
 	taskID := seedTask(t, pool)
 	store := &recordingStore{}
 	s := NewServer(tasks.NewStore(pool), store, nil, nil, nil, nil, nil, nil, nil, 5, nil)
 
 	reason := "wrong direction"
-	req := connect.NewRequest(&agentfleetv1.StopRequest{TaskId: taskID, Reason: &reason})
-	if _, err := s.Stop(context.Background(), req); err != nil {
-		t.Fatalf("Stop: %v", err)
+	req := connect.NewRequest(&agentfleetv1.KillRequest{TaskId: taskID, Reason: &reason})
+	if _, err := s.Kill(context.Background(), req); err != nil {
+		t.Fatalf("Kill: %v", err)
 	}
 	if store.lastText != "wrong direction" {
 		t.Errorf("text = %q, want %q", store.lastText, "wrong direction")

@@ -12,7 +12,7 @@ import (
 )
 
 // recordingStore captures the arguments its last Append call was made
-// with — enough to verify Server.Stop/RespondToPermission call
+// with — enough to verify Server.Kill/RespondToPermission call
 // transcript.Store the same way core/internal/discord/handlers.go's
 // Discord commands do
 // (see docs/adr/0014, docs/adr/0015), without needing a real Postgres for
@@ -63,8 +63,8 @@ func TestServer_RespondToPermission(t *testing.T) {
 	}
 }
 
-// Stop's own tests moved to stop_integration_test.go (build tag
-// integration): Stop now also calls tasks.Store.MarkStopRequested (the
+// Kill's own tests moved to kill_integration_test.go (build tag
+// integration): Kill now also calls tasks.Store.MarkStopRequested (the
 // grace-period-then-force-kill fix), and tasks.Store is a concrete
 // Postgres-backed type here, not an interface a nil/fake can stand in for
 // like recordingStore does for transcript.Store — same reasoning
@@ -74,14 +74,14 @@ func TestServer_RespondToPermission(t *testing.T) {
 // TestServer_CreateTask_UnknownRepo/EmptyDescription moved to
 // create_task_integration_test.go — CreateTask now validates the repo via
 // s.repos.Get (docs/adr/0028), a concrete Postgres-backed store, not a map
-// lookup a nil store can stand in for (same reasoning stop_integration_
-// test.go's own comment gives for Stop/tasks.Store).
+// lookup a nil store can stand in for (same reasoning kill_integration_
+// test.go's own comment gives for Kill/tasks.Store).
 
 // TestServer_Discuss's happy-path coverage moved to
 // warm_integration_test.go (TestServer_Discuss_LivePod_NoWarmAttempt) —
 // Discuss now also calls warmIfIdle, which touches tasks.Store (concrete,
 // not an interface a nil store can stand in for), same reasoning
-// stop_integration_test.go's own comment gives for Stop. EmptyText stays
+// kill_integration_test.go's own comment gives for Kill. EmptyText stays
 // here since it returns before ever reaching tasks.Store.
 
 func TestServer_Discuss_EmptyText(t *testing.T) {

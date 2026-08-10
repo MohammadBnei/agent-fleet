@@ -27,15 +27,15 @@ func (c *Client) onInteractionCreate(s *discordgo.Session, i *discordgo.Interact
 		description := data.Options[1].StringValue()
 		c.startTask(ctx, s, i, repo, description)
 
-	case "stop":
-		reason := "stopped by human"
+	case "kill":
+		reason := "killed by human"
 		if opt := data.GetOption("reason"); opt != nil {
 			reason = opt.StringValue()
 		}
 		c.withTaskFromThread(ctx, s, i, func(taskID string) {
 			c.relay(ctx, taskID, "human", reason, "abort")
 		})
-		respond(s, i, "Stopping.")
+		respond(s, i, "Killing.")
 
 	case "e2e-kill":
 		c.withTaskFromThread(ctx, s, i, func(taskID string) {

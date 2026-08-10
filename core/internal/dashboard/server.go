@@ -239,35 +239,51 @@ func (s *Server) GetE2EStatus(ctx context.Context, req *connect.Request[agentfle
 	return connect.NewResponse(&agentfleetv1.GetE2EStatusResponse{Status: status, PreviewUrl: previewURL}), nil
 }
 
-// Stop and KillE2E below call the exact same store methods
-// core/internal/discord/handlers.go's /stop and /e2e-kill commands already
+// Kill and KillE2E below call the exact same store methods
+// core/internal/discord/handlers.go's /kill and /e2e-kill commands already
 // call — no new business logic, just a second caller (see docs/adr/0014,
 // docs/adr/0015). Approve is gone as of the sessions redesign (supersedes
 // docs/adr/0021/0025's phase-boundary framing) — there's no plan->default
 // flip left to fix a button to; SetPermissionMode below covers mode
 // switching, RespondToPermission covers per-tool-call decisions.
 
-// Stop posts a cooperative abort message (the worker pod notices it via
+// Kill posts a cooperative abort message (the worker pod notices it via
 // streamHumanMessages and exits cleanly if it's alive and responsive) and
 // also durably marks when the stop was requested — dispatch.Loop's
 // grace-period sweep force-tears-down the pod via TearDownSession if it
 // hasn't gone terminal within the grace window, covering the hung/crashed/
-// unreachable-pod case a bare abort message can never reach.
-func (s *Server) Stop(ctx context.Context, req *connect.Request[agentfleetv1.StopRequest]) (*connect.Response[agentfleetv1.StopResponse], error) {
+// unreachable-pod case a bare abort message can never reach. Ends the
+// whole session/pod — Interrupt below is the softer, session-preserving
+// sibling.
+func (s *Server) Kill(ctx context.Context, req *connect.Request[agentfleetv1.KillRequest]) (*connect.Response[agentfleetv1.KillResponse], error) {
 	taskID := req.Msg.GetTaskId()
-	reason := "stopped by human"
+	reason := "killed by human"
 	if req.Msg.Reason != nil && *req.Msg.Reason != "" {
 		reason = req.Msg.GetReason()
 	}
 	if _, err := s.transcr.Append(ctx, taskID, "human", reason, "abort", uuid.NewString()); err != nil {
-		slog.Error("dashboard Stop", "taskId", taskID, "error", err)
+		slog.Error("dashboard Kill", "taskId", taskID, "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	if err := s.tasks.MarkStopRequested(ctx, taskID); err != nil {
-		slog.Error("dashboard Stop: mark stop requested", "taskId", taskID, "error", err)
+		slog.Error("dashboard Kill: mark stop requested", "taskId", taskID, "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
-	return connect.NewResponse(&agentfleetv1.StopResponse{Status: "stopping"}), nil
+	return connect.NewResponse(&agentfleetv1.KillResponse{Status: "killing"}), nil
+}
+
+// Interrupt posts an "interrupt" transcript entry — the worker calls the
+// SDK's q.interrupt() on just the current turn and keeps the session/pod
+// alive for the next message, unlike Kill. Deliberately doesn't touch
+// tasks.stop_requested_at/pod lifecycle: there's nothing for
+// dispatch.Loop's grace-period sweep to force-teardown here.
+func (s *Server) Interrupt(ctx context.Context, req *connect.Request[agentfleetv1.InterruptRequest]) (*connect.Response[agentfleetv1.InterruptResponse], error) {
+	taskID := req.Msg.GetTaskId()
+	if _, err := s.transcr.Append(ctx, taskID, "human", "interrupted by human", "interrupt", uuid.NewString()); err != nil {
+		slog.Error("dashboard Interrupt", "taskId", taskID, "error", err)
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	return connect.NewResponse(&agentfleetv1.InterruptResponse{Status: "interrupting"}), nil
 }
 
 // validPermissionModes is an allowlist, not a passthrough — the value ends
@@ -942,6 +958,7 @@ func TaskToProto(t tasks.Task) *agentfleetv1.Task {
 		LastError:      t.LastError,
 		SessionId:      t.SessionID,
 		PermissionMode: t.PermissionMode,
+		AwaitingHuman:  t.AwaitingHuman,
 	}
 }
 
@@ -988,6 +1005,8 @@ func stringToProtoType(s string) agentfleetv1.TranscriptEntryType {
 		return agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_PERMISSION_REQUEST
 	case "permission_response":
 		return agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_PERMISSION_RESPONSE
+	case "interrupt":
+		return agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_INTERRUPT
 	default:
 		return agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_UNSPECIFIED
 	}

@@ -50,6 +50,11 @@ enum TranscriptEntryType {
   // The human's allow/deny decision for a PERMISSION_REQUEST entry —
   // `text` is a JSON {decision, updatedInput?} payload.
   TRANSCRIPT_ENTRY_TYPE_PERMISSION_RESPONSE = 13;
+  // Human-authored, from DashboardService.Interrupt (or Discord) — stops
+  // only the current turn via the worker's q.interrupt(), unlike ABORT
+  // which ends the whole session/pod. `text` is a free-text reason, same
+  // convention ABORT already uses.
+  TRANSCRIPT_ENTRY_TYPE_INTERRUPT = 14;
 }
 
 message TranscriptEntry {

@@ -15,7 +15,7 @@ type Entry struct {
 	Seq  int64  `json:"seq"`
 	From string `json:"from"`
 	Text string `json:"text"`
-	Type string `json:"type"` // "" | "discussion" | "approve" | "abort" | "question" | "answer"
+	Type string `json:"type"` // "" | "discussion" | "approve" | "abort" | "question" | "answer" | "interrupt"
 	// ReplyTo is non-nil only for an "answer" entry replying to a specific
 	// "question" entry's own seq (reliability-findings.md #0's question-seq
 	// correlation) — without it, "any pending question + any reply"

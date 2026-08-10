@@ -8,6 +8,7 @@ import {
   parseAnswers,
   findPendingQuestion,
   findPendingPermissions,
+  resolvedPermissionDecisions,
   isCogitating,
   latestToolCallSummary,
   latestSlashCommands,
@@ -73,8 +74,16 @@ function EntryBubble({ entry }: { entry: TranscriptEntry }) {
   if (entry.type === TranscriptEntryType.ABORT) {
     return (
       <div className="text-[10.5px] text-base-content/40 flex items-center gap-1.5">
-        <span className="badge badge-warning badge-xs">stopped</span>
-        {entry.text || "task stopped"}
+        <span className="badge badge-warning badge-xs">killed</span>
+        {entry.text || "task killed"}
+      </div>
+    );
+  }
+  if (entry.type === TranscriptEntryType.INTERRUPT) {
+    return (
+      <div className="text-[10.5px] text-base-content/40 flex items-center gap-1.5">
+        <span className="badge badge-info badge-xs">interrupted</span>
+        {entry.text || "current turn interrupted"}
       </div>
     );
   }
@@ -249,7 +258,7 @@ export function TaskDetail({
     entries,
     previewUrl,
     branch,
-    busy,
+    busyKey,
     loadError,
     actionError,
     pendingMessage,
@@ -445,6 +454,7 @@ export function TaskDetail({
     pendingParsed && pendingParsed.length === 1 && !pendingParsed[0].multiSelect ? pendingParsed[0] : null;
   const changes = latestToolCallSummary(entries)?.files ?? null;
   const pendingPermissions = findPendingPermissions(entries);
+  const permissionDecisions = resolvedPermissionDecisions(entries);
   const cogitating = isCogitating(entries, isPodPhaseLive(task.podPhase), pendingPermissions.length > 0, pendingQuestion !== null);
   const toolCallPairs = buildToolCallPairs(entries);
   const toolCallPairsBySeq = new Map(toolCallPairs.map((p) => [p.call.seq, p]));
@@ -545,8 +555,9 @@ export function TaskDetail({
                 }
                 if (typeof parsed.tool !== "string") return null;
                 const isPending = pendingPermissions.some((p) => p.entry.seq === entry.seq);
+                const permissionKey = `permission:${entry.seq}`;
                 const respond = (decision: { behavior: "allow" | "deny"; message?: string }) =>
-                  run(() => client.respondToPermission({ taskId, seq: entry.seq, decisionJson: JSON.stringify(decision) }));
+                  run(() => client.respondToPermission({ taskId, seq: entry.seq, decisionJson: JSON.stringify(decision) }), permissionKey);
                 if (parsed.tool === "ExitPlanMode") {
                   const plan = (parsed.input as { plan?: string } | undefined)?.plan;
                   if (typeof plan !== "string") return null;
@@ -555,7 +566,7 @@ export function TaskDetail({
                       key={String(entry.seq)}
                       plan={plan}
                       pending={isPending}
-                      busy={busy}
+                      busy={busyKey === permissionKey}
                       onApprove={() => respond({ behavior: "allow" })}
                       onFeedback={(text) => sendDiscuss(text)}
                       edgeClassName="-mx-6 px-6"
@@ -568,7 +579,8 @@ export function TaskDetail({
                     tool={parsed.tool}
                     input={parsed.input}
                     pending={isPending}
-                    busy={busy}
+                    busy={busyKey === permissionKey}
+                    decision={permissionDecisions.get(entry.seq)}
                     onAllow={() => respond({ behavior: "allow" })}
                     onDeny={(message) => respond({ behavior: "deny", message })}
                     edgeClassName="-mx-6 px-6"
@@ -590,15 +602,17 @@ export function TaskDetail({
 
               if (entry.type === TranscriptEntryType.QUESTION) {
                 const answerEntry = entries.slice(idx + 1).find((e) => e.type === TranscriptEntryType.ANSWER);
+                const questionKey = `question:${entry.seq}`;
                 return (
                   <QuestionCard
                     key={String(entry.seq)}
                     entry={entry}
                     answer={answerEntry ? parseAnswers(answerEntry.text) : null}
-                    busy={busy}
+                    busy={busyKey === questionKey}
                     onSubmit={(answers) =>
-                      run(() =>
-                        client.answerQuestion({ taskId, seq: entry.seq, answersJson: JSON.stringify({ answers }) }),
+                      run(
+                        () => client.answerQuestion({ taskId, seq: entry.seq, answersJson: JSON.stringify({ answers }) }),
+                        questionKey,
                       )
                     }
                   />
@@ -642,16 +656,18 @@ export function TaskDetail({
                   <button
                     key={opt.label}
                     type="button"
-                    disabled={busy}
+                    disabled={busyKey !== null}
                     title={opt.description}
                     onClick={() =>
                       pendingQuestion &&
-                      run(() =>
-                        client.answerQuestion({
-                          taskId,
-                          seq: pendingQuestion.seq,
-                          answersJson: JSON.stringify({ answers: { [chipQuestion.question]: opt.label } }),
-                        }),
+                      run(
+                        () =>
+                          client.answerQuestion({
+                            taskId,
+                            seq: pendingQuestion.seq,
+                            answersJson: JSON.stringify({ answers: { [chipQuestion.question]: opt.label } }),
+                          }),
+                        `question:${pendingQuestion.seq}`,
                       )
                     }
                     className="px-2.5 py-1 rounded-full text-[10.5px] border border-base-content/15 text-base-content/70 hover:border-primary/50 hover:text-primary cursor-pointer disabled:opacity-40"
@@ -681,7 +697,7 @@ export function TaskDetail({
               onCancel={() => setBypassOpen(false)}
               onConfirm={() => {
                 setBypassOpen(false);
-                run(() => client.setPermissionMode({ taskId, mode: "bypassPermissions" }));
+                run(() => client.setPermissionMode({ taskId, mode: "bypassPermissions" }), "bypass");
               }}
             />
             <div className="flex items-stretch gap-2">
@@ -693,13 +709,13 @@ export function TaskDetail({
                   onKeyDown={(e) => {
                     if (e.key === "Enter") sendMessage();
                   }}
-                  disabled={busy}
+                  disabled={busyKey !== null}
                   placeholder="message the agent…"
                   className="flex-1 bg-transparent outline-none text-[12px] placeholder:text-base-content/40"
                 />
                 <button
                   type="button"
-                  disabled={busy || !message.trim()}
+                  disabled={busyKey !== null || !message.trim()}
                   onClick={sendMessage}
                   className="text-[11px] text-primary font-medium disabled:opacity-30 disabled:cursor-not-allowed"
                 >
@@ -718,7 +734,7 @@ export function TaskDetail({
                 <h3 className="font-semibold text-base mb-3">Actions</h3>
                 <ActionsMenu
                   taskId={taskId}
-                  busy={busy}
+                  busy={busyKey !== null}
                   run={run}
                   previewUrl={previewUrl}
                   currentMode={task.permissionMode}

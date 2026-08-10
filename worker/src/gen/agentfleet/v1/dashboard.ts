@@ -85,12 +85,27 @@ export interface GetE2eStatusResponse {
   previewUrl: string;
 }
 
-export interface StopRequest {
+export interface KillRequest {
   taskId: string;
   reason?: string | undefined;
 }
 
-export interface StopResponse {
+export interface KillResponse {
+  status: string;
+}
+
+/**
+ * Interrupt stops only the current turn (the in-flight API exchange/tool
+ * call) via the SDK's own q.interrupt() — unlike Kill, the session and pod
+ * survive and stay ready for the next message. Posted as a distinct
+ * "interrupt" transcript entry (never "abort") so the worker can tell the
+ * two apart and only Kill tears the whole session down.
+ */
+export interface InterruptRequest {
+  taskId: string;
+}
+
+export interface InterruptResponse {
   status: string;
 }
 
@@ -177,7 +192,7 @@ export interface AnswerQuestionResponse {
  * streamHumanMessages SSE the same way a Discord reply already is (no
  * worker/sidecar changes needed, it's a plain cursor-based transcript
  * stream, not Discord-specific). `from`/`type` are hardcoded server-side,
- * same pattern as Stop hardcoding "human"/"abort" — the dashboard has no
+ * same pattern as Kill hardcoding "human"/"abort" — the dashboard has no
  * need to expose them.
  */
 export interface DiscussRequest {
@@ -191,7 +206,7 @@ export interface DiscussResponse {
 
 /**
  * Soft-deletes the task (see db/schema.sql's tasks.deleted_at) after
- * force-tearing down any live worker/e2e pod — unlike Stop, which only
+ * force-tearing down any live worker/e2e pod — unlike Kill, which only
  * posts an "abort" transcript entry the worker pod must be alive and
  * cooperative to react to, this calls ProvisionerService.TearDownSession
  * directly so a wedged/crashed pod doesn't block removal. Doesn't touch
@@ -646,12 +661,12 @@ export const GetE2eStatusResponse: MessageFns<GetE2eStatusResponse> = {
   },
 };
 
-function createBaseStopRequest(): StopRequest {
+function createBaseKillRequest(): KillRequest {
   return { taskId: "", reason: undefined };
 }
 
-export const StopRequest: MessageFns<StopRequest> = {
-  fromJSON(object: any): StopRequest {
+export const KillRequest: MessageFns<KillRequest> = {
+  fromJSON(object: any): KillRequest {
     return {
       taskId: isSet(object.taskId)
         ? globalThis.String(object.taskId)
@@ -662,7 +677,7 @@ export const StopRequest: MessageFns<StopRequest> = {
     };
   },
 
-  toJSON(message: StopRequest): unknown {
+  toJSON(message: KillRequest): unknown {
     const obj: any = {};
     if (message.taskId !== "") {
       obj.taskId = message.taskId;
@@ -673,27 +688,27 @@ export const StopRequest: MessageFns<StopRequest> = {
     return obj;
   },
 
-  create<I extends Exact<DeepPartial<StopRequest>, I>>(base?: I): StopRequest {
-    return StopRequest.fromPartial(base ?? ({} as any));
+  create<I extends Exact<DeepPartial<KillRequest>, I>>(base?: I): KillRequest {
+    return KillRequest.fromPartial(base ?? ({} as any));
   },
-  fromPartial<I extends Exact<DeepPartial<StopRequest>, I>>(object: I): StopRequest {
-    const message = createBaseStopRequest();
+  fromPartial<I extends Exact<DeepPartial<KillRequest>, I>>(object: I): KillRequest {
+    const message = createBaseKillRequest();
     message.taskId = object.taskId ?? "";
     message.reason = object.reason ?? undefined;
     return message;
   },
 };
 
-function createBaseStopResponse(): StopResponse {
+function createBaseKillResponse(): KillResponse {
   return { status: "" };
 }
 
-export const StopResponse: MessageFns<StopResponse> = {
-  fromJSON(object: any): StopResponse {
+export const KillResponse: MessageFns<KillResponse> = {
+  fromJSON(object: any): KillResponse {
     return { status: isSet(object.status) ? globalThis.String(object.status) : "" };
   },
 
-  toJSON(message: StopResponse): unknown {
+  toJSON(message: KillResponse): unknown {
     const obj: any = {};
     if (message.status !== "") {
       obj.status = message.status;
@@ -701,11 +716,71 @@ export const StopResponse: MessageFns<StopResponse> = {
     return obj;
   },
 
-  create<I extends Exact<DeepPartial<StopResponse>, I>>(base?: I): StopResponse {
-    return StopResponse.fromPartial(base ?? ({} as any));
+  create<I extends Exact<DeepPartial<KillResponse>, I>>(base?: I): KillResponse {
+    return KillResponse.fromPartial(base ?? ({} as any));
   },
-  fromPartial<I extends Exact<DeepPartial<StopResponse>, I>>(object: I): StopResponse {
-    const message = createBaseStopResponse();
+  fromPartial<I extends Exact<DeepPartial<KillResponse>, I>>(object: I): KillResponse {
+    const message = createBaseKillResponse();
+    message.status = object.status ?? "";
+    return message;
+  },
+};
+
+function createBaseInterruptRequest(): InterruptRequest {
+  return { taskId: "" };
+}
+
+export const InterruptRequest: MessageFns<InterruptRequest> = {
+  fromJSON(object: any): InterruptRequest {
+    return {
+      taskId: isSet(object.taskId)
+        ? globalThis.String(object.taskId)
+        : isSet(object.task_id)
+        ? globalThis.String(object.task_id)
+        : "",
+    };
+  },
+
+  toJSON(message: InterruptRequest): unknown {
+    const obj: any = {};
+    if (message.taskId !== "") {
+      obj.taskId = message.taskId;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<InterruptRequest>, I>>(base?: I): InterruptRequest {
+    return InterruptRequest.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<InterruptRequest>, I>>(object: I): InterruptRequest {
+    const message = createBaseInterruptRequest();
+    message.taskId = object.taskId ?? "";
+    return message;
+  },
+};
+
+function createBaseInterruptResponse(): InterruptResponse {
+  return { status: "" };
+}
+
+export const InterruptResponse: MessageFns<InterruptResponse> = {
+  fromJSON(object: any): InterruptResponse {
+    return { status: isSet(object.status) ? globalThis.String(object.status) : "" };
+  },
+
+  toJSON(message: InterruptResponse): unknown {
+    const obj: any = {};
+    if (message.status !== "") {
+      obj.status = message.status;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<InterruptResponse>, I>>(base?: I): InterruptResponse {
+    return InterruptResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<InterruptResponse>, I>>(object: I): InterruptResponse {
+    const message = createBaseInterruptResponse();
     message.status = object.status ?? "";
     return message;
   },
@@ -2327,7 +2402,8 @@ export interface DashboardService {
    */
   StreamTranscript(request: StreamTranscriptRequest): Observable<TranscriptEntry>;
   GetE2eStatus(request: GetE2eStatusRequest): Promise<GetE2eStatusResponse>;
-  Stop(request: StopRequest): Promise<StopResponse>;
+  Kill(request: KillRequest): Promise<KillResponse>;
+  Interrupt(request: InterruptRequest): Promise<InterruptResponse>;
   /** buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE */
   SetPermissionMode(request: SetPermissionModeRequest): Promise<SetPermissionModeResponse>;
   Warm(request: WarmRequest): Promise<WarmResponse>;

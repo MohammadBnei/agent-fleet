@@ -64,7 +64,7 @@ func (r *Relay) Run(ctx context.Context, pollInterval time.Duration) {
 // file contents, tool_use input). A denylist of exactly one type
 // (tool_call) meant any *new* type nobody remembered to exclude would
 // spam every task thread by default; an allowlist fails closed instead.
-var discordSafeTypes = []string{"", "discussion", "approve", "abort", "question", "answer"}
+var discordSafeTypes = []string{"", "discussion", "approve", "abort", "question", "answer", "interrupt"}
 
 func relayPending(ctx context.Context, pool *pgxpool.Pool, notifier Notifier) {
 	// Everything not on the allowlist is flipped to relayed without ever

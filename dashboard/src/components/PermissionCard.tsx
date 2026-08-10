@@ -22,6 +22,7 @@ export function PermissionCard({
   input,
   pending,
   busy,
+  decision,
   onAllow,
   onDeny,
   edgeClassName,
@@ -30,6 +31,10 @@ export function PermissionCard({
   input: unknown;
   pending: boolean;
   busy: boolean;
+  // The real recorded outcome once resolved (transcript.ts's
+  // resolvedPermissionDecisions) — undefined only for a pre-fix legacy row
+  // with no matching response yet, where "allowed" stays the fallback.
+  decision?: "allow" | "deny";
   onAllow: () => void;
   onDeny: (message: string) => void;
   edgeClassName: string;
@@ -51,7 +56,7 @@ export function PermissionCard({
         onClick={() => setIsExpanded(!isExpanded)}
         className="flex items-start gap-1.5 text-[10.5px] text-base-content/40 hover:text-base-content/60 w-full text-left group"
       >
-        <span className="badge badge-ghost badge-xs flex-none">{tool} allowed</span>
+        <span className="badge badge-ghost badge-xs flex-none">{tool} {decision === "deny" ? "denied" : "allowed"}</span>
         {isExpanded && (
           <pre className="flex-1 min-w-0 text-[11px] leading-relaxed text-base-content/80 bg-base-200/40 rounded-md p-3 whitespace-pre-wrap break-words">
             {inputJson}

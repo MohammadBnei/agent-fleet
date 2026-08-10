@@ -60,6 +60,13 @@ export enum TranscriptEntryType {
    * `text` is a JSON {decision, updatedInput?} payload.
    */
   TRANSCRIPT_ENTRY_TYPE_PERMISSION_RESPONSE = 13,
+  /**
+   * TRANSCRIPT_ENTRY_TYPE_INTERRUPT - Human-authored, from DashboardService.Interrupt (or Discord) — stops
+   * only the current turn via the worker's q.interrupt(), unlike ABORT
+   * which ends the whole session/pod. `text` is a free-text reason, same
+   * convention ABORT already uses.
+   */
+  TRANSCRIPT_ENTRY_TYPE_INTERRUPT = 14,
   UNRECOGNIZED = -1,
 }
 
@@ -107,6 +114,9 @@ export function transcriptEntryTypeFromJSON(object: any): TranscriptEntryType {
     case 13:
     case "TRANSCRIPT_ENTRY_TYPE_PERMISSION_RESPONSE":
       return TranscriptEntryType.TRANSCRIPT_ENTRY_TYPE_PERMISSION_RESPONSE;
+    case 14:
+    case "TRANSCRIPT_ENTRY_TYPE_INTERRUPT":
+      return TranscriptEntryType.TRANSCRIPT_ENTRY_TYPE_INTERRUPT;
     case -1:
     case "UNRECOGNIZED":
     default:
@@ -144,6 +154,8 @@ export function transcriptEntryTypeToJSON(object: TranscriptEntryType): string {
       return "TRANSCRIPT_ENTRY_TYPE_PERMISSION_REQUEST";
     case TranscriptEntryType.TRANSCRIPT_ENTRY_TYPE_PERMISSION_RESPONSE:
       return "TRANSCRIPT_ENTRY_TYPE_PERMISSION_RESPONSE";
+    case TranscriptEntryType.TRANSCRIPT_ENTRY_TYPE_INTERRUPT:
+      return "TRANSCRIPT_ENTRY_TYPE_INTERRUPT";
     case TranscriptEntryType.UNRECOGNIZED:
     default:
       return "UNRECOGNIZED";
