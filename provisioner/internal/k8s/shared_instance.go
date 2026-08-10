@@ -363,7 +363,7 @@ func pingPostgres(ctx context.Context, host string, port int32, user, password s
 	if err != nil {
 		return err
 	}
-	defer conn.Close(dialCtx)
+	defer func() { _ = conn.Close(dialCtx) }()
 	return conn.Ping(dialCtx)
 }
 
@@ -374,7 +374,7 @@ func pingRedis(ctx context.Context, host string, port int32, password string) er
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	if _, err := conn.Write(respCommand("PING")); err != nil {
 		return err
@@ -394,11 +394,11 @@ func dialRedisAuthenticated(ctx context.Context, host string, port int32, passwo
 	_ = conn.SetDeadline(time.Now().Add(3 * time.Second))
 
 	if _, err := conn.Write(respCommand("AUTH", password)); err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return nil, err
 	}
 	if err := readRESPStatus(conn); err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return nil, fmt.Errorf("AUTH: %w", err)
 	}
 	return conn, nil
