@@ -40,6 +40,10 @@ const (
 	DashboardService_CreateRepo_FullMethodName          = "/agentfleet.v1.DashboardService/CreateRepo"
 	DashboardService_UpdateRepo_FullMethodName          = "/agentfleet.v1.DashboardService/UpdateRepo"
 	DashboardService_DeleteRepo_FullMethodName          = "/agentfleet.v1.DashboardService/DeleteRepo"
+	DashboardService_ListRepoProfiles_FullMethodName    = "/agentfleet.v1.DashboardService/ListRepoProfiles"
+	DashboardService_CreateRepoProfile_FullMethodName   = "/agentfleet.v1.DashboardService/CreateRepoProfile"
+	DashboardService_UpdateRepoProfile_FullMethodName   = "/agentfleet.v1.DashboardService/UpdateRepoProfile"
+	DashboardService_DeleteRepoProfile_FullMethodName   = "/agentfleet.v1.DashboardService/DeleteRepoProfile"
 	DashboardService_ListPromptSnippets_FullMethodName  = "/agentfleet.v1.DashboardService/ListPromptSnippets"
 	DashboardService_CreatePromptSnippet_FullMethodName = "/agentfleet.v1.DashboardService/CreatePromptSnippet"
 	DashboardService_UpdatePromptSnippet_FullMethodName = "/agentfleet.v1.DashboardService/UpdatePromptSnippet"
@@ -96,6 +100,10 @@ type DashboardServiceClient interface {
 	CreateRepo(ctx context.Context, in *CreateRepoRequest, opts ...grpc.CallOption) (*CreateRepoResponse, error)
 	UpdateRepo(ctx context.Context, in *UpdateRepoRequest, opts ...grpc.CallOption) (*UpdateRepoResponse, error)
 	DeleteRepo(ctx context.Context, in *DeleteRepoRequest, opts ...grpc.CallOption) (*DeleteRepoResponse, error)
+	ListRepoProfiles(ctx context.Context, in *ListRepoProfilesRequest, opts ...grpc.CallOption) (*ListRepoProfilesResponse, error)
+	CreateRepoProfile(ctx context.Context, in *CreateRepoProfileRequest, opts ...grpc.CallOption) (*CreateRepoProfileResponse, error)
+	UpdateRepoProfile(ctx context.Context, in *UpdateRepoProfileRequest, opts ...grpc.CallOption) (*UpdateRepoProfileResponse, error)
+	DeleteRepoProfile(ctx context.Context, in *DeleteRepoProfileRequest, opts ...grpc.CallOption) (*DeleteRepoProfileResponse, error)
 	ListPromptSnippets(ctx context.Context, in *ListPromptSnippetsRequest, opts ...grpc.CallOption) (*ListPromptSnippetsResponse, error)
 	CreatePromptSnippet(ctx context.Context, in *CreatePromptSnippetRequest, opts ...grpc.CallOption) (*CreatePromptSnippetResponse, error)
 	UpdatePromptSnippet(ctx context.Context, in *UpdatePromptSnippetRequest, opts ...grpc.CallOption) (*UpdatePromptSnippetResponse, error)
@@ -340,6 +348,46 @@ func (c *dashboardServiceClient) DeleteRepo(ctx context.Context, in *DeleteRepoR
 	return out, nil
 }
 
+func (c *dashboardServiceClient) ListRepoProfiles(ctx context.Context, in *ListRepoProfilesRequest, opts ...grpc.CallOption) (*ListRepoProfilesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListRepoProfilesResponse)
+	err := c.cc.Invoke(ctx, DashboardService_ListRepoProfiles_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dashboardServiceClient) CreateRepoProfile(ctx context.Context, in *CreateRepoProfileRequest, opts ...grpc.CallOption) (*CreateRepoProfileResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateRepoProfileResponse)
+	err := c.cc.Invoke(ctx, DashboardService_CreateRepoProfile_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dashboardServiceClient) UpdateRepoProfile(ctx context.Context, in *UpdateRepoProfileRequest, opts ...grpc.CallOption) (*UpdateRepoProfileResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateRepoProfileResponse)
+	err := c.cc.Invoke(ctx, DashboardService_UpdateRepoProfile_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dashboardServiceClient) DeleteRepoProfile(ctx context.Context, in *DeleteRepoProfileRequest, opts ...grpc.CallOption) (*DeleteRepoProfileResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteRepoProfileResponse)
+	err := c.cc.Invoke(ctx, DashboardService_DeleteRepoProfile_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *dashboardServiceClient) ListPromptSnippets(ctx context.Context, in *ListPromptSnippetsRequest, opts ...grpc.CallOption) (*ListPromptSnippetsResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListPromptSnippetsResponse)
@@ -475,6 +523,10 @@ type DashboardServiceServer interface {
 	CreateRepo(context.Context, *CreateRepoRequest) (*CreateRepoResponse, error)
 	UpdateRepo(context.Context, *UpdateRepoRequest) (*UpdateRepoResponse, error)
 	DeleteRepo(context.Context, *DeleteRepoRequest) (*DeleteRepoResponse, error)
+	ListRepoProfiles(context.Context, *ListRepoProfilesRequest) (*ListRepoProfilesResponse, error)
+	CreateRepoProfile(context.Context, *CreateRepoProfileRequest) (*CreateRepoProfileResponse, error)
+	UpdateRepoProfile(context.Context, *UpdateRepoProfileRequest) (*UpdateRepoProfileResponse, error)
+	DeleteRepoProfile(context.Context, *DeleteRepoProfileRequest) (*DeleteRepoProfileResponse, error)
 	ListPromptSnippets(context.Context, *ListPromptSnippetsRequest) (*ListPromptSnippetsResponse, error)
 	CreatePromptSnippet(context.Context, *CreatePromptSnippetRequest) (*CreatePromptSnippetResponse, error)
 	UpdatePromptSnippet(context.Context, *UpdatePromptSnippetRequest) (*UpdatePromptSnippetResponse, error)
@@ -562,6 +614,18 @@ func (UnimplementedDashboardServiceServer) UpdateRepo(context.Context, *UpdateRe
 }
 func (UnimplementedDashboardServiceServer) DeleteRepo(context.Context, *DeleteRepoRequest) (*DeleteRepoResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeleteRepo not implemented")
+}
+func (UnimplementedDashboardServiceServer) ListRepoProfiles(context.Context, *ListRepoProfilesRequest) (*ListRepoProfilesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListRepoProfiles not implemented")
+}
+func (UnimplementedDashboardServiceServer) CreateRepoProfile(context.Context, *CreateRepoProfileRequest) (*CreateRepoProfileResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CreateRepoProfile not implemented")
+}
+func (UnimplementedDashboardServiceServer) UpdateRepoProfile(context.Context, *UpdateRepoProfileRequest) (*UpdateRepoProfileResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpdateRepoProfile not implemented")
+}
+func (UnimplementedDashboardServiceServer) DeleteRepoProfile(context.Context, *DeleteRepoProfileRequest) (*DeleteRepoProfileResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteRepoProfile not implemented")
 }
 func (UnimplementedDashboardServiceServer) ListPromptSnippets(context.Context, *ListPromptSnippetsRequest) (*ListPromptSnippetsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListPromptSnippets not implemented")
@@ -982,6 +1046,78 @@ func _DashboardService_DeleteRepo_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DashboardService_ListRepoProfiles_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListRepoProfilesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DashboardServiceServer).ListRepoProfiles(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DashboardService_ListRepoProfiles_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DashboardServiceServer).ListRepoProfiles(ctx, req.(*ListRepoProfilesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DashboardService_CreateRepoProfile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateRepoProfileRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DashboardServiceServer).CreateRepoProfile(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DashboardService_CreateRepoProfile_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DashboardServiceServer).CreateRepoProfile(ctx, req.(*CreateRepoProfileRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DashboardService_UpdateRepoProfile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateRepoProfileRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DashboardServiceServer).UpdateRepoProfile(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DashboardService_UpdateRepoProfile_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DashboardServiceServer).UpdateRepoProfile(ctx, req.(*UpdateRepoProfileRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DashboardService_DeleteRepoProfile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteRepoProfileRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DashboardServiceServer).DeleteRepoProfile(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DashboardService_DeleteRepoProfile_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DashboardServiceServer).DeleteRepoProfile(ctx, req.(*DeleteRepoProfileRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _DashboardService_ListPromptSnippets_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ListPromptSnippetsRequest)
 	if err := dec(in); err != nil {
@@ -1230,6 +1366,22 @@ var DashboardService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DeleteRepo",
 			Handler:    _DashboardService_DeleteRepo_Handler,
+		},
+		{
+			MethodName: "ListRepoProfiles",
+			Handler:    _DashboardService_ListRepoProfiles_Handler,
+		},
+		{
+			MethodName: "CreateRepoProfile",
+			Handler:    _DashboardService_CreateRepoProfile_Handler,
+		},
+		{
+			MethodName: "UpdateRepoProfile",
+			Handler:    _DashboardService_UpdateRepoProfile_Handler,
+		},
+		{
+			MethodName: "DeleteRepoProfile",
+			Handler:    _DashboardService_DeleteRepoProfile_Handler,
 		},
 		{
 			MethodName: "ListPromptSnippets",

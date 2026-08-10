@@ -94,6 +94,18 @@ const (
 	// DashboardServiceDeleteRepoProcedure is the fully-qualified name of the DashboardService's
 	// DeleteRepo RPC.
 	DashboardServiceDeleteRepoProcedure = "/agentfleet.v1.DashboardService/DeleteRepo"
+	// DashboardServiceListRepoProfilesProcedure is the fully-qualified name of the DashboardService's
+	// ListRepoProfiles RPC.
+	DashboardServiceListRepoProfilesProcedure = "/agentfleet.v1.DashboardService/ListRepoProfiles"
+	// DashboardServiceCreateRepoProfileProcedure is the fully-qualified name of the DashboardService's
+	// CreateRepoProfile RPC.
+	DashboardServiceCreateRepoProfileProcedure = "/agentfleet.v1.DashboardService/CreateRepoProfile"
+	// DashboardServiceUpdateRepoProfileProcedure is the fully-qualified name of the DashboardService's
+	// UpdateRepoProfile RPC.
+	DashboardServiceUpdateRepoProfileProcedure = "/agentfleet.v1.DashboardService/UpdateRepoProfile"
+	// DashboardServiceDeleteRepoProfileProcedure is the fully-qualified name of the DashboardService's
+	// DeleteRepoProfile RPC.
+	DashboardServiceDeleteRepoProfileProcedure = "/agentfleet.v1.DashboardService/DeleteRepoProfile"
 	// DashboardServiceListPromptSnippetsProcedure is the fully-qualified name of the DashboardService's
 	// ListPromptSnippets RPC.
 	DashboardServiceListPromptSnippetsProcedure = "/agentfleet.v1.DashboardService/ListPromptSnippets"
@@ -166,6 +178,10 @@ type DashboardServiceClient interface {
 	CreateRepo(context.Context, *connect.Request[v1.CreateRepoRequest]) (*connect.Response[v1.CreateRepoResponse], error)
 	UpdateRepo(context.Context, *connect.Request[v1.UpdateRepoRequest]) (*connect.Response[v1.UpdateRepoResponse], error)
 	DeleteRepo(context.Context, *connect.Request[v1.DeleteRepoRequest]) (*connect.Response[v1.DeleteRepoResponse], error)
+	ListRepoProfiles(context.Context, *connect.Request[v1.ListRepoProfilesRequest]) (*connect.Response[v1.ListRepoProfilesResponse], error)
+	CreateRepoProfile(context.Context, *connect.Request[v1.CreateRepoProfileRequest]) (*connect.Response[v1.CreateRepoProfileResponse], error)
+	UpdateRepoProfile(context.Context, *connect.Request[v1.UpdateRepoProfileRequest]) (*connect.Response[v1.UpdateRepoProfileResponse], error)
+	DeleteRepoProfile(context.Context, *connect.Request[v1.DeleteRepoProfileRequest]) (*connect.Response[v1.DeleteRepoProfileResponse], error)
 	ListPromptSnippets(context.Context, *connect.Request[v1.ListPromptSnippetsRequest]) (*connect.Response[v1.ListPromptSnippetsResponse], error)
 	CreatePromptSnippet(context.Context, *connect.Request[v1.CreatePromptSnippetRequest]) (*connect.Response[v1.CreatePromptSnippetResponse], error)
 	UpdatePromptSnippet(context.Context, *connect.Request[v1.UpdatePromptSnippetRequest]) (*connect.Response[v1.UpdatePromptSnippetResponse], error)
@@ -320,6 +336,30 @@ func NewDashboardServiceClient(httpClient connect.HTTPClient, baseURL string, op
 			connect.WithSchema(dashboardServiceMethods.ByName("DeleteRepo")),
 			connect.WithClientOptions(opts...),
 		),
+		listRepoProfiles: connect.NewClient[v1.ListRepoProfilesRequest, v1.ListRepoProfilesResponse](
+			httpClient,
+			baseURL+DashboardServiceListRepoProfilesProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("ListRepoProfiles")),
+			connect.WithClientOptions(opts...),
+		),
+		createRepoProfile: connect.NewClient[v1.CreateRepoProfileRequest, v1.CreateRepoProfileResponse](
+			httpClient,
+			baseURL+DashboardServiceCreateRepoProfileProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("CreateRepoProfile")),
+			connect.WithClientOptions(opts...),
+		),
+		updateRepoProfile: connect.NewClient[v1.UpdateRepoProfileRequest, v1.UpdateRepoProfileResponse](
+			httpClient,
+			baseURL+DashboardServiceUpdateRepoProfileProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("UpdateRepoProfile")),
+			connect.WithClientOptions(opts...),
+		),
+		deleteRepoProfile: connect.NewClient[v1.DeleteRepoProfileRequest, v1.DeleteRepoProfileResponse](
+			httpClient,
+			baseURL+DashboardServiceDeleteRepoProfileProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("DeleteRepoProfile")),
+			connect.WithClientOptions(opts...),
+		),
 		listPromptSnippets: connect.NewClient[v1.ListPromptSnippetsRequest, v1.ListPromptSnippetsResponse](
 			httpClient,
 			baseURL+DashboardServiceListPromptSnippetsProcedure,
@@ -400,6 +440,10 @@ type dashboardServiceClient struct {
 	createRepo          *connect.Client[v1.CreateRepoRequest, v1.CreateRepoResponse]
 	updateRepo          *connect.Client[v1.UpdateRepoRequest, v1.UpdateRepoResponse]
 	deleteRepo          *connect.Client[v1.DeleteRepoRequest, v1.DeleteRepoResponse]
+	listRepoProfiles    *connect.Client[v1.ListRepoProfilesRequest, v1.ListRepoProfilesResponse]
+	createRepoProfile   *connect.Client[v1.CreateRepoProfileRequest, v1.CreateRepoProfileResponse]
+	updateRepoProfile   *connect.Client[v1.UpdateRepoProfileRequest, v1.UpdateRepoProfileResponse]
+	deleteRepoProfile   *connect.Client[v1.DeleteRepoProfileRequest, v1.DeleteRepoProfileResponse]
 	listPromptSnippets  *connect.Client[v1.ListPromptSnippetsRequest, v1.ListPromptSnippetsResponse]
 	createPromptSnippet *connect.Client[v1.CreatePromptSnippetRequest, v1.CreatePromptSnippetResponse]
 	updatePromptSnippet *connect.Client[v1.UpdatePromptSnippetRequest, v1.UpdatePromptSnippetResponse]
@@ -516,6 +560,26 @@ func (c *dashboardServiceClient) DeleteRepo(ctx context.Context, req *connect.Re
 	return c.deleteRepo.CallUnary(ctx, req)
 }
 
+// ListRepoProfiles calls agentfleet.v1.DashboardService.ListRepoProfiles.
+func (c *dashboardServiceClient) ListRepoProfiles(ctx context.Context, req *connect.Request[v1.ListRepoProfilesRequest]) (*connect.Response[v1.ListRepoProfilesResponse], error) {
+	return c.listRepoProfiles.CallUnary(ctx, req)
+}
+
+// CreateRepoProfile calls agentfleet.v1.DashboardService.CreateRepoProfile.
+func (c *dashboardServiceClient) CreateRepoProfile(ctx context.Context, req *connect.Request[v1.CreateRepoProfileRequest]) (*connect.Response[v1.CreateRepoProfileResponse], error) {
+	return c.createRepoProfile.CallUnary(ctx, req)
+}
+
+// UpdateRepoProfile calls agentfleet.v1.DashboardService.UpdateRepoProfile.
+func (c *dashboardServiceClient) UpdateRepoProfile(ctx context.Context, req *connect.Request[v1.UpdateRepoProfileRequest]) (*connect.Response[v1.UpdateRepoProfileResponse], error) {
+	return c.updateRepoProfile.CallUnary(ctx, req)
+}
+
+// DeleteRepoProfile calls agentfleet.v1.DashboardService.DeleteRepoProfile.
+func (c *dashboardServiceClient) DeleteRepoProfile(ctx context.Context, req *connect.Request[v1.DeleteRepoProfileRequest]) (*connect.Response[v1.DeleteRepoProfileResponse], error) {
+	return c.deleteRepoProfile.CallUnary(ctx, req)
+}
+
 // ListPromptSnippets calls agentfleet.v1.DashboardService.ListPromptSnippets.
 func (c *dashboardServiceClient) ListPromptSnippets(ctx context.Context, req *connect.Request[v1.ListPromptSnippetsRequest]) (*connect.Response[v1.ListPromptSnippetsResponse], error) {
 	return c.listPromptSnippets.CallUnary(ctx, req)
@@ -604,6 +668,10 @@ type DashboardServiceHandler interface {
 	CreateRepo(context.Context, *connect.Request[v1.CreateRepoRequest]) (*connect.Response[v1.CreateRepoResponse], error)
 	UpdateRepo(context.Context, *connect.Request[v1.UpdateRepoRequest]) (*connect.Response[v1.UpdateRepoResponse], error)
 	DeleteRepo(context.Context, *connect.Request[v1.DeleteRepoRequest]) (*connect.Response[v1.DeleteRepoResponse], error)
+	ListRepoProfiles(context.Context, *connect.Request[v1.ListRepoProfilesRequest]) (*connect.Response[v1.ListRepoProfilesResponse], error)
+	CreateRepoProfile(context.Context, *connect.Request[v1.CreateRepoProfileRequest]) (*connect.Response[v1.CreateRepoProfileResponse], error)
+	UpdateRepoProfile(context.Context, *connect.Request[v1.UpdateRepoProfileRequest]) (*connect.Response[v1.UpdateRepoProfileResponse], error)
+	DeleteRepoProfile(context.Context, *connect.Request[v1.DeleteRepoProfileRequest]) (*connect.Response[v1.DeleteRepoProfileResponse], error)
 	ListPromptSnippets(context.Context, *connect.Request[v1.ListPromptSnippetsRequest]) (*connect.Response[v1.ListPromptSnippetsResponse], error)
 	CreatePromptSnippet(context.Context, *connect.Request[v1.CreatePromptSnippetRequest]) (*connect.Response[v1.CreatePromptSnippetResponse], error)
 	UpdatePromptSnippet(context.Context, *connect.Request[v1.UpdatePromptSnippetRequest]) (*connect.Response[v1.UpdatePromptSnippetResponse], error)
@@ -754,6 +822,30 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 		connect.WithSchema(dashboardServiceMethods.ByName("DeleteRepo")),
 		connect.WithHandlerOptions(opts...),
 	)
+	dashboardServiceListRepoProfilesHandler := connect.NewUnaryHandler(
+		DashboardServiceListRepoProfilesProcedure,
+		svc.ListRepoProfiles,
+		connect.WithSchema(dashboardServiceMethods.ByName("ListRepoProfiles")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dashboardServiceCreateRepoProfileHandler := connect.NewUnaryHandler(
+		DashboardServiceCreateRepoProfileProcedure,
+		svc.CreateRepoProfile,
+		connect.WithSchema(dashboardServiceMethods.ByName("CreateRepoProfile")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dashboardServiceUpdateRepoProfileHandler := connect.NewUnaryHandler(
+		DashboardServiceUpdateRepoProfileProcedure,
+		svc.UpdateRepoProfile,
+		connect.WithSchema(dashboardServiceMethods.ByName("UpdateRepoProfile")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dashboardServiceDeleteRepoProfileHandler := connect.NewUnaryHandler(
+		DashboardServiceDeleteRepoProfileProcedure,
+		svc.DeleteRepoProfile,
+		connect.WithSchema(dashboardServiceMethods.ByName("DeleteRepoProfile")),
+		connect.WithHandlerOptions(opts...),
+	)
 	dashboardServiceListPromptSnippetsHandler := connect.NewUnaryHandler(
 		DashboardServiceListPromptSnippetsProcedure,
 		svc.ListPromptSnippets,
@@ -852,6 +944,14 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 			dashboardServiceUpdateRepoHandler.ServeHTTP(w, r)
 		case DashboardServiceDeleteRepoProcedure:
 			dashboardServiceDeleteRepoHandler.ServeHTTP(w, r)
+		case DashboardServiceListRepoProfilesProcedure:
+			dashboardServiceListRepoProfilesHandler.ServeHTTP(w, r)
+		case DashboardServiceCreateRepoProfileProcedure:
+			dashboardServiceCreateRepoProfileHandler.ServeHTTP(w, r)
+		case DashboardServiceUpdateRepoProfileProcedure:
+			dashboardServiceUpdateRepoProfileHandler.ServeHTTP(w, r)
+		case DashboardServiceDeleteRepoProfileProcedure:
+			dashboardServiceDeleteRepoProfileHandler.ServeHTTP(w, r)
 		case DashboardServiceListPromptSnippetsProcedure:
 			dashboardServiceListPromptSnippetsHandler.ServeHTTP(w, r)
 		case DashboardServiceCreatePromptSnippetProcedure:
@@ -961,6 +1061,22 @@ func (UnimplementedDashboardServiceHandler) UpdateRepo(context.Context, *connect
 
 func (UnimplementedDashboardServiceHandler) DeleteRepo(context.Context, *connect.Request[v1.DeleteRepoRequest]) (*connect.Response[v1.DeleteRepoResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.DeleteRepo is not implemented"))
+}
+
+func (UnimplementedDashboardServiceHandler) ListRepoProfiles(context.Context, *connect.Request[v1.ListRepoProfilesRequest]) (*connect.Response[v1.ListRepoProfilesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.ListRepoProfiles is not implemented"))
+}
+
+func (UnimplementedDashboardServiceHandler) CreateRepoProfile(context.Context, *connect.Request[v1.CreateRepoProfileRequest]) (*connect.Response[v1.CreateRepoProfileResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.CreateRepoProfile is not implemented"))
+}
+
+func (UnimplementedDashboardServiceHandler) UpdateRepoProfile(context.Context, *connect.Request[v1.UpdateRepoProfileRequest]) (*connect.Response[v1.UpdateRepoProfileResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.UpdateRepoProfile is not implemented"))
+}
+
+func (UnimplementedDashboardServiceHandler) DeleteRepoProfile(context.Context, *connect.Request[v1.DeleteRepoProfileRequest]) (*connect.Response[v1.DeleteRepoProfileResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.DeleteRepoProfile is not implemented"))
 }
 
 func (UnimplementedDashboardServiceHandler) ListPromptSnippets(context.Context, *connect.Request[v1.ListPromptSnippetsRequest]) (*connect.Response[v1.ListPromptSnippetsResponse], error) {

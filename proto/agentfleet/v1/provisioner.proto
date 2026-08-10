@@ -12,6 +12,24 @@ option go_package = "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet
 // calls it directly, including for e2e requests (those are proxied through
 // core.proto's CoreService instead).
 
+// How a service ingredient (postgres/redis) is shared across pods/tasks —
+// docs/adr/0034. pod-scoped: a native sidecar in the requesting pod alone,
+// localhost-only, dies with it. task-scoped: a per-task database minted
+// inside a shared per-repo instance, reused by every pod belonging to the
+// same task. repo-scoped: the same shared instance with no per-task
+// minting, every task against the repo hits the same database.
+enum ScopeMode {
+  SCOPE_MODE_UNSPECIFIED = 0;
+  SCOPE_MODE_POD_SCOPED = 1;
+  SCOPE_MODE_TASK_SCOPED = 2;
+  SCOPE_MODE_REPO_SCOPED = 3;
+}
+
+message ServiceIngredient {
+  string key = 1; // "postgres" | "redis" — provisioner/internal/catalog.go
+  ScopeMode scope_mode = 2;
+}
+
 message KillE2eSessionRequest {
   string task_id = 1;
   string idempotency_key = 2;
@@ -42,6 +60,12 @@ message CreateE2eSessionRequest {
   // See RequestE2eEnvRequest.start_cmd in core.proto — passed through
   // core unchanged.
   string start_cmd = 3;
+  // Resolved from the repo's "e2e" profile (or an agent-overridden
+  // profile) by core before this call — docs/adr/0034. The provisioner
+  // holds no DB, so it never resolves a profile name itself, only the
+  // already-resolved ingredient list.
+  repeated string tool_keys = 4;
+  repeated ServiceIngredient service_ingredients = 5;
 }
 
 message CreateE2eSessionResponse {
@@ -96,6 +120,11 @@ message CreateWorkerPodRequest {
   // as description above. Empty when no snippets were attached; the
   // worker's own taskPrompt() then falls back to just the bare description.
   string guidance = 9;
+  // Resolved from the repo's "worker" profile by core before this call —
+  // docs/adr/0034. Empty when the repo has no "worker" profile row, which
+  // preserves today's exact pod shape (fully backward compatible).
+  repeated string tool_keys = 10;
+  repeated ServiceIngredient service_ingredients = 11;
 }
 
 message CreateWorkerPodResponse {

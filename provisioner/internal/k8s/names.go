@@ -25,9 +25,16 @@ const (
 	// belongs to (needed to remove its worktree) from the pod itself —
 	// the provisioner holds no DB credentials to look it up any other way
 	// (docs/adr/0020 point 1), so Kubernetes has to carry it.
-	RepoLabel       = "agent-fleet.dev/repo"
-	ComponentE2eRun = "e2e-runner"
-	ComponentWorker = "worker"
+	RepoLabel               = "agent-fleet.dev/repo"
+	ComponentE2eRun         = "e2e-runner"
+	ComponentWorker         = "worker"
+	ComponentSharedInstance = "shared-instance"
+	// ServiceKeyLabel/LastUsedAtAnnotation are the shared-instance idle-GC
+	// substrate (docs/adr/0034) — the provisioner has no Postgres column to
+	// put a last-active timestamp in, so reconcile.Loop compares this
+	// annotation against SharedInstanceIdleTimeoutMs instead.
+	ServiceKeyLabel      = "agent-fleet.dev/service-key"
+	LastUsedAtAnnotation = "agent-fleet.dev/last-used-at"
 )
 
 // StartCmdFor mirrors REPO_START_CMD in the TS k8s.ts: a per-repo lookup,
@@ -89,6 +96,27 @@ func Labels(taskID string) map[string]string {
 		ComponentLabel: ComponentE2eRun,
 		TaskIDLabel:    taskID,
 		"app":          "e2e-" + shortID(taskID),
+	}
+}
+
+// SharedInstanceName is deterministic per (repo, serviceKey) — no
+// task/randomness involved, since a shared instance's whole point is being
+// found again on a later request, not created fresh each time
+// (docs/adr/0034). repo/serviceKey are already short slugs (repo names and
+// catalog keys), no truncation needed unlike task-ID-derived names.
+func SharedInstanceName(repo, serviceKey string) string {
+	return "svc-" + repo + "-" + serviceKey
+}
+
+func SharedInstanceAdminSecretName(repo, serviceKey string) string {
+	return SharedInstanceName(repo, serviceKey) + "-admin"
+}
+
+func SharedInstanceLabels(repo, serviceKey string) map[string]string {
+	return map[string]string{
+		ComponentLabel:  ComponentSharedInstance,
+		RepoLabel:       repo,
+		ServiceKeyLabel: serviceKey,
 	}
 }
 
