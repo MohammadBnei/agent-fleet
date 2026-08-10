@@ -1,5 +1,17 @@
 # Changelog
 
+# [1.27.0](https://github.com/MohammadBnei/agent-fleet/compare/1.26.0...1.27.0) (2026-08-10)
+
+
+### Bug Fixes
+
+* **provisioner:** mirror fleet-shared content from the repo subdirectory, not clone root ([40e30f6](https://github.com/MohammadBnei/agent-fleet/commit/40e30f6ef171ccca0e9b7ca7d5d806d33eedaaf4))
+
+
+### Features
+
+* **fleet:** PVC-resident, provisioner-synced fleet-shared skills/context ([92e2869](https://github.com/MohammadBnei/agent-fleet/commit/92e28699da98393d413b94ac9e17a1e21dacd8c4))
+
 # [1.26.0](https://github.com/MohammadBnei/agent-fleet/compare/1.25.4...1.26.0) (2026-08-09)
 
 
