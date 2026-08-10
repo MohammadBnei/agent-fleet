@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.28.2](https://github.com/MohammadBnei/agent-fleet/compare/1.28.1...1.28.2) (2026-08-10)
+
+
+### Bug Fixes
+
+* **core:** use job label for worker logs, app label for e2e logs ([5441c16](https://github.com/MohammadBnei/agent-fleet/commit/5441c16187e25d17deb7d3847dbeeadf84e793f6))
+
 ## [1.28.1](https://github.com/MohammadBnei/agent-fleet/compare/1.28.0...1.28.1) (2026-08-10)
 
 
