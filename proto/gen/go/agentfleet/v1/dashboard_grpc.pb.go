@@ -25,7 +25,8 @@ const (
 	DashboardService_GetTranscript_FullMethodName       = "/agentfleet.v1.DashboardService/GetTranscript"
 	DashboardService_StreamTranscript_FullMethodName    = "/agentfleet.v1.DashboardService/StreamTranscript"
 	DashboardService_GetE2EStatus_FullMethodName        = "/agentfleet.v1.DashboardService/GetE2eStatus"
-	DashboardService_Stop_FullMethodName                = "/agentfleet.v1.DashboardService/Stop"
+	DashboardService_Kill_FullMethodName                = "/agentfleet.v1.DashboardService/Kill"
+	DashboardService_Interrupt_FullMethodName           = "/agentfleet.v1.DashboardService/Interrupt"
 	DashboardService_SetPermissionMode_FullMethodName   = "/agentfleet.v1.DashboardService/SetPermissionMode"
 	DashboardService_Warm_FullMethodName                = "/agentfleet.v1.DashboardService/Warm"
 	DashboardService_KillE2E_FullMethodName             = "/agentfleet.v1.DashboardService/KillE2e"
@@ -75,7 +76,8 @@ type DashboardServiceClient interface {
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	StreamTranscript(ctx context.Context, in *StreamTranscriptRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[TranscriptEntry], error)
 	GetE2EStatus(ctx context.Context, in *GetE2EStatusRequest, opts ...grpc.CallOption) (*GetE2EStatusResponse, error)
-	Stop(ctx context.Context, in *StopRequest, opts ...grpc.CallOption) (*StopResponse, error)
+	Kill(ctx context.Context, in *KillRequest, opts ...grpc.CallOption) (*KillResponse, error)
+	Interrupt(ctx context.Context, in *InterruptRequest, opts ...grpc.CallOption) (*InterruptResponse, error)
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	SetPermissionMode(ctx context.Context, in *SetPermissionModeRequest, opts ...grpc.CallOption) (*SetPermissionModeResponse, error)
 	Warm(ctx context.Context, in *WarmRequest, opts ...grpc.CallOption) (*WarmResponse, error)
@@ -198,10 +200,20 @@ func (c *dashboardServiceClient) GetE2EStatus(ctx context.Context, in *GetE2ESta
 	return out, nil
 }
 
-func (c *dashboardServiceClient) Stop(ctx context.Context, in *StopRequest, opts ...grpc.CallOption) (*StopResponse, error) {
+func (c *dashboardServiceClient) Kill(ctx context.Context, in *KillRequest, opts ...grpc.CallOption) (*KillResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(StopResponse)
-	err := c.cc.Invoke(ctx, DashboardService_Stop_FullMethodName, in, out, cOpts...)
+	out := new(KillResponse)
+	err := c.cc.Invoke(ctx, DashboardService_Kill_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dashboardServiceClient) Interrupt(ctx context.Context, in *InterruptRequest, opts ...grpc.CallOption) (*InterruptResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(InterruptResponse)
+	err := c.cc.Invoke(ctx, DashboardService_Interrupt_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -498,7 +510,8 @@ type DashboardServiceServer interface {
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	StreamTranscript(*StreamTranscriptRequest, grpc.ServerStreamingServer[TranscriptEntry]) error
 	GetE2EStatus(context.Context, *GetE2EStatusRequest) (*GetE2EStatusResponse, error)
-	Stop(context.Context, *StopRequest) (*StopResponse, error)
+	Kill(context.Context, *KillRequest) (*KillResponse, error)
+	Interrupt(context.Context, *InterruptRequest) (*InterruptResponse, error)
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	SetPermissionMode(context.Context, *SetPermissionModeRequest) (*SetPermissionModeResponse, error)
 	Warm(context.Context, *WarmRequest) (*WarmResponse, error)
@@ -570,8 +583,11 @@ func (UnimplementedDashboardServiceServer) StreamTranscript(*StreamTranscriptReq
 func (UnimplementedDashboardServiceServer) GetE2EStatus(context.Context, *GetE2EStatusRequest) (*GetE2EStatusResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetE2EStatus not implemented")
 }
-func (UnimplementedDashboardServiceServer) Stop(context.Context, *StopRequest) (*StopResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method Stop not implemented")
+func (UnimplementedDashboardServiceServer) Kill(context.Context, *KillRequest) (*KillResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Kill not implemented")
+}
+func (UnimplementedDashboardServiceServer) Interrupt(context.Context, *InterruptRequest) (*InterruptResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Interrupt not implemented")
 }
 func (UnimplementedDashboardServiceServer) SetPermissionMode(context.Context, *SetPermissionModeRequest) (*SetPermissionModeResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SetPermissionMode not implemented")
@@ -776,20 +792,38 @@ func _DashboardService_GetE2EStatus_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
-func _DashboardService_Stop_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(StopRequest)
+func _DashboardService_Kill_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(KillRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(DashboardServiceServer).Stop(ctx, in)
+		return srv.(DashboardServiceServer).Kill(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: DashboardService_Stop_FullMethodName,
+		FullMethod: DashboardService_Kill_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(DashboardServiceServer).Stop(ctx, req.(*StopRequest))
+		return srv.(DashboardServiceServer).Kill(ctx, req.(*KillRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DashboardService_Interrupt_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(InterruptRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DashboardServiceServer).Interrupt(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DashboardService_Interrupt_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DashboardServiceServer).Interrupt(ctx, req.(*InterruptRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1308,8 +1342,12 @@ var DashboardService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _DashboardService_GetE2EStatus_Handler,
 		},
 		{
-			MethodName: "Stop",
-			Handler:    _DashboardService_Stop_Handler,
+			MethodName: "Kill",
+			Handler:    _DashboardService_Kill_Handler,
+		},
+		{
+			MethodName: "Interrupt",
+			Handler:    _DashboardService_Interrupt_Handler,
 		},
 		{
 			MethodName: "SetPermissionMode",

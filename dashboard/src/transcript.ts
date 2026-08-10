@@ -73,6 +73,26 @@ export function findPendingPermissions(entries: TranscriptEntry[]): PendingPermi
   return out;
 }
 
+// Maps a resolved PERMISSION_REQUEST's own seq to the actual allow/deny
+// decision recorded on its PERMISSION_RESPONSE, so a collapsed
+// PermissionCard/PlanCard can show what really happened instead of
+// hardcoding "allowed" (RespondToPermission's decisionJson is
+// {behavior:"allow"|"deny", ...}, mirrored verbatim into the response
+// entry's text). One pass over entries, not a per-card rescan.
+export function resolvedPermissionDecisions(entries: TranscriptEntry[]): Map<bigint, "allow" | "deny"> {
+  const out = new Map<bigint, "allow" | "deny">();
+  for (const e of entries) {
+    if (e.type !== TranscriptEntryType.PERMISSION_RESPONSE || e.replyTo === undefined) continue;
+    try {
+      const decision = JSON.parse(e.text) as { behavior?: unknown };
+      if (decision.behavior === "allow" || decision.behavior === "deny") out.set(e.replyTo, decision.behavior);
+    } catch {
+      // malformed payload — leave unresolved rather than guess
+    }
+  }
+  return out;
+}
+
 // No SDK message marks "a turn started generating" — the earliest signal
 // is whatever human-originated entry last unblocked the worker's `for
 // await` loop (the initial dispatch, a sent message, an answered question,

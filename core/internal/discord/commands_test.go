@@ -14,13 +14,13 @@ import (
 func TestStaleCommands(t *testing.T) {
 	current := []*discordgo.ApplicationCommand{
 		{Name: "task"},
-		{Name: "stop"},
+		{Name: "kill"},
 		{Name: "e2e-kill"},
 	}
 	existing := []*discordgo.ApplicationCommand{
 		{ID: "1", Name: "task"},
 		{ID: "2", Name: "approve"}, // dropped from commandDefs, still registered
-		{ID: "3", Name: "stop"},
+		{ID: "3", Name: "kill"},
 		{ID: "4", Name: "e2e-kill"},
 	}
 
@@ -31,8 +31,8 @@ func TestStaleCommands(t *testing.T) {
 }
 
 func TestStaleCommands_NothingStale(t *testing.T) {
-	current := []*discordgo.ApplicationCommand{{Name: "task"}, {Name: "stop"}}
-	existing := []*discordgo.ApplicationCommand{{ID: "1", Name: "task"}, {ID: "2", Name: "stop"}}
+	current := []*discordgo.ApplicationCommand{{Name: "task"}, {Name: "kill"}}
+	existing := []*discordgo.ApplicationCommand{{ID: "1", Name: "task"}, {ID: "2", Name: "kill"}}
 
 	if stale := staleCommands(current, existing); len(stale) != 0 {
 		t.Fatalf("staleCommands = %+v, want none", stale)

@@ -10,7 +10,7 @@ import { MobileTaskList } from "./mobile/MobileTaskList";
 import { MobileTaskDetail } from "./mobile/MobileTaskDetail";
 import { client } from "./connectClient";
 import type { Task } from "./gen/agentfleet/v1/core_pb";
-import { findPendingQuestion, latestTodos, type TodoItem } from "./transcript";
+import { latestTodos, type TodoItem } from "./transcript";
 import { ErrorModal } from "./components/ErrorModal";
 import { ConfirmModal } from "./components/ConfirmModal";
 import { useMediaQuery } from "./useMediaQuery";
@@ -53,7 +53,6 @@ export default function App() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [tasksError, setTasksError] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
-  const [needsYouIds, setNeedsYouIds] = useState<Set<string>>(new Set());
   const [todosById, setTodosById] = useState<Map<string, TodoItem[]>>(new Map());
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 
@@ -70,20 +69,22 @@ export default function App() {
     return () => clearInterval(interval);
   }, [loadTasks]);
 
-  // "Needs you" has no backend flag (yet) — derived here from the same
-  // transcript state TaskDetail.tsx already uses to decide whether to show
-  // a QuestionCard: the latest QUESTION entry with no later ANSWER. Scoped
-  // to ACTIVE_STATUSES tasks only, bounded by the fleet's default
-  // concurrency cap of 5 (see CLAUDE.md), on the same 5s poll cadence as
-  // loadTasks — an extra live stream per active task just for this would
-  // contradict this file's own "plain polling, not a stream" call above.
-  // Same fetch also derives each task's real todos (latest TodoWrite call)
-  // for the list cards' progress bars — one more field off data already in
-  // hand, not a second round of per-task requests.
+  // Straight off the already-polled task list — core's activityTrackingStore
+  // decorator (cmd/core/activity_store.go) maintains awaiting_human on every
+  // permission_request/question append and clears it on the matching
+  // resolution, so this needs no per-task fetch at all (it used to, before
+  // that backend field existed — see git history if resurrecting the old
+  // question-only, N+1-getTranscript version is ever needed).
+  const needsYouIds = useMemo(() => new Set(tasks.filter((t) => t.awaitingHuman).map((t) => t.id)), [tasks]);
+
+  // Each task's real todos (latest TodoWrite call) for the list cards'
+  // progress bars — still needs a per-task transcript fetch (no backend
+  // summary field for this one), scoped to ACTIVE_STATUSES tasks only,
+  // bounded by the fleet's default concurrency cap of 5 (see CLAUDE.md), on
+  // the same 5s poll cadence as loadTasks.
   useEffect(() => {
     const active = tasks.filter((t) => ACTIVE_STATUSES.has(t.status));
     if (active.length === 0) {
-      setNeedsYouIds(new Set());
       setTodosById(new Map());
       return;
     }
@@ -92,12 +93,11 @@ export default function App() {
       active.map((t) =>
         client
           .getTranscript({ taskId: t.id, sinceSeq: 0n })
-          .then((res) => ({ id: t.id, pending: findPendingQuestion(res.entries) !== null, todos: latestTodos(res.entries) }))
-          .catch(() => ({ id: t.id, pending: false, todos: null as TodoItem[] | null })),
+          .then((res) => ({ id: t.id, todos: latestTodos(res.entries) }))
+          .catch(() => ({ id: t.id, todos: null as TodoItem[] | null })),
       ),
     ).then((results) => {
       if (cancelled) return;
-      setNeedsYouIds(new Set(results.filter((r) => r.pending).map((r) => r.id)));
       setTodosById(new Map(results.filter((r): r is typeof r & { todos: TodoItem[] } => r.todos !== null).map((r) => [r.id, r.todos])));
     });
     return () => {

@@ -63,6 +63,11 @@ const (
 	// The human's allow/deny decision for a PERMISSION_REQUEST entry —
 	// `text` is a JSON {decision, updatedInput?} payload.
 	TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_PERMISSION_RESPONSE TranscriptEntryType = 13
+	// Human-authored, from DashboardService.Interrupt (or Discord) — stops
+	// only the current turn via the worker's q.interrupt(), unlike ABORT
+	// which ends the whole session/pod. `text` is a free-text reason, same
+	// convention ABORT already uses.
+	TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_INTERRUPT TranscriptEntryType = 14
 )
 
 // Enum value maps for TranscriptEntryType.
@@ -82,6 +87,7 @@ var (
 		11: "TRANSCRIPT_ENTRY_TYPE_PERMISSION_MODE",
 		12: "TRANSCRIPT_ENTRY_TYPE_PERMISSION_REQUEST",
 		13: "TRANSCRIPT_ENTRY_TYPE_PERMISSION_RESPONSE",
+		14: "TRANSCRIPT_ENTRY_TYPE_INTERRUPT",
 	}
 	TranscriptEntryType_value = map[string]int32{
 		"TRANSCRIPT_ENTRY_TYPE_UNSPECIFIED":         0,
@@ -98,6 +104,7 @@ var (
 		"TRANSCRIPT_ENTRY_TYPE_PERMISSION_MODE":     11,
 		"TRANSCRIPT_ENTRY_TYPE_PERMISSION_REQUEST":  12,
 		"TRANSCRIPT_ENTRY_TYPE_PERMISSION_RESPONSE": 13,
+		"TRANSCRIPT_ENTRY_TYPE_INTERRUPT":           14,
 	}
 )
 
@@ -431,7 +438,7 @@ const file_agentfleet_v1_transcript_proto_rawDesc = "" +
 	"timeout_ms\x18\x03 \x01(\x05R\ttimeoutMs\"r\n" +
 	"\x1bReadTranscriptSinceResponse\x128\n" +
 	"\aentries\x18\x01 \x03(\v2\x1e.agentfleet.v1.TranscriptEntryR\aentries\x12\x19\n" +
-	"\bnext_seq\x18\x02 \x01(\x03R\anextSeq*\xa2\x04\n" +
+	"\bnext_seq\x18\x02 \x01(\x03R\anextSeq*\xc7\x04\n" +
 	"\x13TranscriptEntryType\x12%\n" +
 	"!TRANSCRIPT_ENTRY_TYPE_UNSPECIFIED\x10\x00\x12$\n" +
 	" TRANSCRIPT_ENTRY_TYPE_DISCUSSION\x10\x01\x12!\n" +
@@ -447,7 +454,8 @@ const file_agentfleet_v1_transcript_proto_rawDesc = "" +
 	"\x12)\n" +
 	"%TRANSCRIPT_ENTRY_TYPE_PERMISSION_MODE\x10\v\x12,\n" +
 	"(TRANSCRIPT_ENTRY_TYPE_PERMISSION_REQUEST\x10\f\x12-\n" +
-	")TRANSCRIPT_ENTRY_TYPE_PERMISSION_RESPONSE\x10\rBMZKgithub.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1;agentfleetv1b\x06proto3"
+	")TRANSCRIPT_ENTRY_TYPE_PERMISSION_RESPONSE\x10\r\x12#\n" +
+	"\x1fTRANSCRIPT_ENTRY_TYPE_INTERRUPT\x10\x0eBMZKgithub.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1;agentfleetv1b\x06proto3"
 
 var (
 	file_agentfleet_v1_transcript_proto_rawDescOnce sync.Once

@@ -260,7 +260,17 @@ export interface Task {
    * can highlight the real active mode instead of guessing. Unset for an
    * idle/never-warmed session.
    */
-  permissionMode?: string | undefined;
+  permissionMode?:
+    | string
+    | undefined;
+  /**
+   * True while an unresolved PERMISSION_REQUEST or QUESTION entry is
+   * outstanding — set/cleared by core's activityTrackingStore decorator on
+   * every transcript Append/AppendReply, the same choke point that already
+   * maintains last_active_at. Lets the dashboard's task list show which
+   * tasks need a human decision without an N+1 per-task transcript fetch.
+   */
+  awaitingHuman: boolean;
 }
 
 export interface GetTaskRequest {
@@ -880,6 +890,7 @@ function createBaseTask(): Task {
     sessionId: undefined,
     lastActiveAt: undefined,
     permissionMode: undefined,
+    awaitingHuman: false,
   };
 }
 
@@ -940,6 +951,11 @@ export const Task: MessageFns<Task> = {
         : isSet(object.permission_mode)
         ? globalThis.String(object.permission_mode)
         : undefined,
+      awaitingHuman: isSet(object.awaitingHuman)
+        ? globalThis.Boolean(object.awaitingHuman)
+        : isSet(object.awaiting_human)
+        ? globalThis.Boolean(object.awaiting_human)
+        : false,
     };
   },
 
@@ -987,6 +1003,9 @@ export const Task: MessageFns<Task> = {
     if (message.permissionMode !== undefined) {
       obj.permissionMode = message.permissionMode;
     }
+    if (message.awaitingHuman !== false) {
+      obj.awaitingHuman = message.awaitingHuman;
+    }
     return obj;
   },
 
@@ -1009,6 +1028,7 @@ export const Task: MessageFns<Task> = {
     message.sessionId = object.sessionId ?? undefined;
     message.lastActiveAt = object.lastActiveAt ?? undefined;
     message.permissionMode = object.permissionMode ?? undefined;
+    message.awaitingHuman = object.awaitingHuman ?? false;
     return message;
   },
 };

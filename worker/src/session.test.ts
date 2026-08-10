@@ -511,6 +511,34 @@ test("the session keeps consuming successful rounds indefinitely until a human s
   expect(result.aborted).toBe(true);
 }, 10000);
 
+test("a soft interrupt calls q.interrupt(), swallows the following non-success result, and the session survives for a later round", async () => {
+  const task = makeTask();
+  const promise = runTask(task);
+  await Bun.sleep(20); // round 1: plain success, session now idle waiting for input
+
+  pushHuman("stop the current turn", "interrupt");
+  await Bun.sleep(20);
+  expect(interruptCalls).toBe(1);
+
+  // Round 2's result looks like a genuine failure — without the
+  // interrupt's softInterrupted flag this would throw a plain Error (see
+  // "a genuine non-success result throws a plain Error" below).
+  forceResult = { subtype: "error_max_turns", num_turns: 5, total_cost_usd: 0.42 };
+  pushHuman("continue please", "discussion");
+  await Bun.sleep(20);
+
+  // Round 3 proves the session is still alive and accepting input, not
+  // silently dead — a plain break/return would leave `promise` unresolved
+  // forever instead, so this also guards against a false-positive pass.
+  forceResult = null;
+  pushHuman("one more round", "discussion");
+  await Bun.sleep(20);
+
+  pushHuman("", "abort");
+  const result = await promise;
+  expect(result.aborted).toBe(true);
+}, 10000);
+
 test("a 0-turn/$0 result is classified transient", async () => {
   const task = makeTask();
   forceResult = { subtype: "error_during_execution", num_turns: 0, total_cost_usd: 0 };

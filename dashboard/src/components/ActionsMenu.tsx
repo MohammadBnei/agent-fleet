@@ -13,13 +13,21 @@ const MODES = [
   { value: "acceptEdits", label: "Accept edits" },
 ] as const;
 
-// The Stop/Kill e2e/Mode/Open-code-server button row, shared between
-// desktop and mobile — both render it inside a Modal, opened from a small
-// icon button rather than either platform picking its own layout. Approve
-// is gone as of the sessions redesign (supersedes docs/adr/0021/0025's
-// phase-boundary framing) — there's no plan->default flip left to fix a
-// button to; the Mode dropdown below is the only lever now, and highlights
-// whichever mode is actually active instead of just offering to change it.
+// The Kill/Interrupt/Kill-e2e/Mode/Open-code-server button row, shared
+// between desktop and mobile — both render it inside a Modal, opened from a
+// small icon button rather than either platform picking its own layout.
+// Approve is gone as of the sessions redesign (supersedes docs/adr/0021/
+// 0025's phase-boundary framing) — there's no plan->default flip left to
+// fix a button to; the Mode dropdown below is the only lever now, and
+// highlights whichever mode is actually active instead of just offering to
+// change it.
+//
+// Kill (was "Stop") ends the whole session/pod — a cooperative abort with a
+// grace-period force-teardown backstop, per DashboardService.Kill.
+// Interrupt is the lighter sibling: stops only the current turn via the
+// SDK's own q.interrupt(), session/pod stay alive, per
+// DashboardService.Interrupt — also covers cancelling a single in-flight
+// tool call, since that tool call *is* the current turn.
 // hideToolsInFeed/hideChangesInFeed only ever change what mobile's inline
 // exchange-zone feed shows (desktop keeps these in dedicated panels
 // regardless), but the toggle itself lives here — the one place both
@@ -41,8 +49,12 @@ export function ActionsMenu({
   onHideChangesInFeedChange,
 }: {
   taskId: string;
+  // Whether ANY action anywhere on the page is in flight, not just this
+  // menu's own — these buttons are page-level/singular (Kill especially),
+  // so they stay conservative and disable together with everything else
+  // rather than getting their own independent key.
   busy: boolean;
-  run: (action: () => Promise<unknown>) => void;
+  run: (action: () => Promise<unknown>, key: string) => void;
   previewUrl: string | null;
   // Unset for an idle/never-warmed session — no mode has been explicitly
   // chosen yet (the SDK itself starts a fresh session in "default", but
@@ -94,20 +106,30 @@ export function ActionsMenu({
       )}
       <div className="flex items-center gap-2 flex-wrap">
       {live ? (
-        <button
-          type="button"
-          className="btn btn-warning btn-xs"
-          disabled={busy}
-          onClick={() => run(() => client.stop({ taskId }))}
-        >
-          Stop
-        </button>
+        <>
+          <button
+            type="button"
+            className="btn btn-info btn-xs"
+            disabled={busy}
+            onClick={() => run(() => client.interrupt({ taskId }), "actions")}
+          >
+            Interrupt
+          </button>
+          <button
+            type="button"
+            className="btn btn-error btn-xs"
+            disabled={busy}
+            onClick={() => run(() => client.kill({ taskId }), "actions")}
+          >
+            Kill
+          </button>
+        </>
       ) : (
         <button
           type="button"
           className="btn btn-success btn-xs"
           disabled={busy}
-          onClick={() => run(() => client.warm({ taskId }))}
+          onClick={() => run(() => client.warm({ taskId }), "actions")}
         >
           Warm
         </button>
@@ -116,7 +138,7 @@ export function ActionsMenu({
         type="button"
         className="btn btn-outline btn-xs"
         disabled={busy}
-        onClick={() => run(() => client.killE2e({ taskId, alsoTeardownServices }))}
+        onClick={() => run(() => client.killE2e({ taskId, alsoTeardownServices }), "actions")}
       >
         Kill e2e
       </button>
@@ -157,7 +179,7 @@ export function ActionsMenu({
             <button
               type="button"
               className={m.value === currentMode ? "active" : undefined}
-              onClick={() => run(() => client.setPermissionMode({ taskId, mode: m.value }))}
+              onClick={() => run(() => client.setPermissionMode({ taskId, mode: m.value }), "actions")}
             >
               {m.value === currentMode ? "✓ " : ""}
               {m.label}

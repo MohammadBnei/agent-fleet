@@ -58,6 +58,12 @@ type Task struct {
 	// (DashboardService.SetPermissionMode) so the dashboard's mode picker
 	// can show the real active mode instead of inferring it from history.
 	PermissionMode *string `json:"permissionMode,omitempty"`
+	// AwaitingHuman is true while an unresolved permission_request/question
+	// transcript entry is outstanding — set/cleared by activityTrackingStore
+	// (cmd/core/activity_store.go) alongside its existing last_active_at
+	// touch, so the dashboard's task list can show which tasks need a human
+	// decision without an N+1 per-task transcript fetch.
+	AwaitingHuman bool `json:"awaitingHuman"`
 }
 
 type Store struct {
@@ -126,10 +132,10 @@ func (s *Store) GetTask(ctx context.Context, id string) (*Task, error) {
 	var t Task
 	err := s.pool.QueryRow(ctx, `
 		SELECT id, repo, description, guidance, status, discord_thread_id, pr_url, pod_phase, pod_message,
-		       heartbeat_at, retry_count, last_error, session_id, model, permission_mode
+		       heartbeat_at, retry_count, last_error, session_id, model, permission_mode, awaiting_human
 		FROM tasks WHERE id = $1 AND deleted_at IS NULL
 	`, id).Scan(&t.ID, &t.Repo, &t.Description, &t.Guidance, &t.Status, &t.ThreadID, &t.PrURL, &t.PodPhase, &t.PodMessage,
-		&t.HeartbeatAt, &t.RetryCount, &t.LastError, &t.SessionID, &t.Model, &t.PermissionMode)
+		&t.HeartbeatAt, &t.RetryCount, &t.LastError, &t.SessionID, &t.Model, &t.PermissionMode, &t.AwaitingHuman)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
@@ -173,7 +179,7 @@ func (s *Store) GetTaskStatusInfo(ctx context.Context, id string) (*TaskStatusIn
 func (s *Store) ListRecentTasks(ctx context.Context, limit int) ([]Task, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT id, repo, description, guidance, status, discord_thread_id, pr_url, pod_phase, pod_message,
-		       heartbeat_at, retry_count, last_error, session_id, model, permission_mode
+		       heartbeat_at, retry_count, last_error, session_id, model, permission_mode, awaiting_human
 		FROM tasks WHERE deleted_at IS NULL ORDER BY created_at DESC LIMIT $1
 	`, limit)
 	if err != nil {
@@ -189,7 +195,7 @@ func (s *Store) ListRecentTasks(ctx context.Context, limit int) ([]Task, error) 
 	for rows.Next() {
 		var t Task
 		if err := rows.Scan(&t.ID, &t.Repo, &t.Description, &t.Guidance, &t.Status, &t.ThreadID, &t.PrURL, &t.PodPhase, &t.PodMessage,
-			&t.HeartbeatAt, &t.RetryCount, &t.LastError, &t.SessionID, &t.Model, &t.PermissionMode); err != nil {
+			&t.HeartbeatAt, &t.RetryCount, &t.LastError, &t.SessionID, &t.Model, &t.PermissionMode, &t.AwaitingHuman); err != nil {
 			slog.Error("tasks ListRecentTasks: scan", "error", err)
 			return nil, fmt.Errorf("scan task: %w", err)
 		}
@@ -413,11 +419,11 @@ func (s *Store) SetStatus(ctx context.Context, id, status string, prURL, notes, 
 	return nil
 }
 
-// MarkStopRequested records when a human first asked to stop this task
-// (DashboardService.Stop) — the durable half of stop's grace-period
-// force-kill (a bug report: Stop only posted a cooperative abort message,
+// MarkStopRequested records when a human first asked to kill this task
+// (DashboardService.Kill) — the durable half of kill's grace-period
+// force-kill (a bug report: Kill only posted a cooperative abort message,
 // so a hung/unreachable worker pod never actually died). Guarded by
-// `stop_requested_at IS NULL` so repeated Stop clicks don't keep resetting
+// `stop_requested_at IS NULL` so repeated Kill clicks don't keep resetting
 // the grace window a task has already been sitting in.
 func (s *Store) MarkStopRequested(ctx context.Context, id string) error {
 	_, err := s.pool.Exec(ctx, `
@@ -539,6 +545,22 @@ func (s *Store) SetPermissionMode(ctx context.Context, id, mode string) error {
 	if err != nil {
 		slog.Error("tasks SetPermissionMode", "taskId", id, "mode", mode, "error", err)
 		return fmt.Errorf("set permission mode: %w", err)
+	}
+	return nil
+}
+
+// SetAwaitingHuman is called by activityTrackingStore (cmd/core/
+// activity_store.go) fire-and-forget, the same choke point that already
+// maintains last_active_at — true when a permission_request/question entry
+// is appended, false when its permission_response/answer/abort resolution
+// is.
+func (s *Store) SetAwaitingHuman(ctx context.Context, id string, awaiting bool) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE tasks SET awaiting_human = $2, updated_at = now() WHERE id = $1
+	`, id, awaiting)
+	if err != nil {
+		slog.Error("tasks SetAwaitingHuman", "taskId", id, "awaiting", awaiting, "error", err)
+		return fmt.Errorf("set awaiting human: %w", err)
 	}
 	return nil
 }

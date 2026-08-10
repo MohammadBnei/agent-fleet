@@ -153,10 +153,10 @@ func (l *Loop) tick(ctx context.Context) {
 }
 
 // enforceStopGrace force-tears-down any task whose stop was requested
-// (DashboardService.Stop, via tasks.Store.MarkStopRequested) more than
+// (DashboardService.Kill, via tasks.Store.MarkStopRequested) more than
 // stopGrace ago and still hasn't reached a terminal status — the fix for
 // a hung/crashed/unreachable worker pod that never noticed the cooperative
-// abort message Stop also posts. Mirrors the exact two-call TearDownSession
+// abort message Kill also posts. Mirrors the exact two-call TearDownSession
 // pattern DashboardService.DeleteTask and CoreService.SetTaskStatus's
 // opportunistic-teardown block already use.
 func (l *Loop) enforceStopGrace(ctx context.Context) {

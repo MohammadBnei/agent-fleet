@@ -167,6 +167,18 @@ export type TaskResult = { aborted: boolean; summary: string };
 // restart at the approval boundary.
 export async function runTask(task: Task): Promise<TaskResult> {
   let aborted = false;
+  // Set by an "interrupt" entry (DashboardService.Interrupt) — stops only
+  // the current turn via q.interrupt(), unlike "abort" which ends the
+  // whole session. Consumed by the very next `result` message so that
+  // turn's non-"success" subtype is treated as an expected soft-stop, not
+  // a real failure, without the session ending.
+  // ponytail: a soft-interrupt clicked while genuinely idle (no active
+  // turn to interrupt) is a no-op that leaves this flag stale until
+  // whatever `result` comes next — harmless in the common case (that
+  // result is a real success either way) but would incorrectly swallow a
+  // genuine error on the very next round. Add explicit turn-active
+  // tracking if this idle-click race ever actually bites.
+  let softInterrupted = false;
   let finalText = "";
 
   // Generalizes ExitPlanMode's old bespoke pendingPlanDecision var to every
@@ -305,6 +317,22 @@ export async function runTask(task: Task): Promise<TaskResult> {
         abortController.abort();
         return;
       }
+      // A soft interrupt (DashboardService.Interrupt) — stops only the
+      // current turn, session/pod stay alive. Denying any pending
+      // permission with interrupt:true is the SDK's own mid-permission-
+      // prompt stop signal (the model can't be interrupted out of a
+      // canUseTool call any other way, since that call is blocked on our
+      // own Promise, not the SDK's internal generation loop); q.interrupt()
+      // additionally covers the plain-generation/already-approved-tool
+      // case where nothing is pending.
+      if (entry.type === "interrupt") {
+        softInterrupted = true;
+        if (pendingPermissions.size > 0) {
+          resolveAllPendingDeny(entry.text || "Mohammad interrupted the current turn.", true);
+        }
+        await q.interrupt().catch((err) => log("warn", "soft interrupt failed", { taskId: task.id, error: String(err) }));
+        return;
+      }
       // The human's allow/deny decision for a specific permission_request,
       // correlated by seq — DashboardService.RespondToPermission (a
       // generalization of AskUserQuestion's own ask-and-answer plumbing).
@@ -380,6 +408,10 @@ export async function runTask(task: Task): Promise<TaskResult> {
 
       if (msg.type === "result") {
         if (aborted) break;
+        if (softInterrupted) {
+          softInterrupted = false;
+          continue;
+        }
         // Uniform non-success handling (reliability-findings.md #8) — no
         // more approved/!approved branch split, since there's no longer a
         // fleet-imposed phase boundary to split on. A non-success result
