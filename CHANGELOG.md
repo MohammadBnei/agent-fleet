@@ -1,5 +1,12 @@
 # Changelog
 
+# [1.30.0](https://github.com/MohammadBnei/agent-fleet/compare/1.29.2...1.30.0) (2026-08-10)
+
+
+### Features
+
+* **provisioner:** cache Go/Bun deps for e2e-preview pods on the shared PVC ([5384a63](https://github.com/MohammadBnei/agent-fleet/commit/5384a630206c4f50fe80e30e6fb83bdd71a60018))
+
 ## [1.29.2](https://github.com/MohammadBnei/agent-fleet/compare/1.29.1...1.29.2) (2026-08-10)
 
 
