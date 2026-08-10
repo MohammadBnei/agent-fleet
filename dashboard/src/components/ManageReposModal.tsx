@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { client } from "../connectClient";
 import { Modal } from "./Modal";
 import { ConfirmModal } from "./ConfirmModal";
+import { ManageRepoProfilesModal } from "./ManageRepoProfilesModal";
 import type { Repo } from "../gen/agentfleet/v1/dashboard_pb";
 
 // Dashboard-editable target-repo config (docs/adr/0028) — replaces the old
@@ -54,6 +55,7 @@ function RepoRow({ repo, onSaved, onRequestDelete, onError }: {
       >
         Save
       </button>
+      <ManageRepoProfilesModal repoName={repo.name} />
       <button type="button" onClick={() => onRequestDelete(repo)} className="btn btn-sm btn-error flex-none">
         Delete
       </button>
