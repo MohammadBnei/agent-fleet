@@ -9,6 +9,7 @@ import { Observable } from "rxjs";
 import {
   GetTaskRequest,
   GetTaskResponse,
+  JournalEntry,
   QueryLogsRequest,
   QueryLogsResponse,
   SetPermissionModeRequest,
@@ -221,17 +222,9 @@ export interface ListWorktreesViewResponse {
  * Typed request/response, same pull/cursor shape as GetTranscript, not a
  * generic Query(bytes) returns (bytes) dispatcher — two concrete gaps
  * don't justify throwing away protobuf's type safety for a general one.
+ * JournalEntry itself now lives in core.proto (imported above) — reused by
+ * SearchJournal too, same pattern as Task/GetTaskRequest/GetTaskResponse.
  */
-export interface JournalEntry {
-  id: number;
-  repo: string;
-  actor: string;
-  eventType: string;
-  payloadJson: string;
-  /** RFC3339 */
-  createdAt: string;
-}
-
 export interface GetJournalRequest {
   /** "" matches every repo */
   repo: string;
@@ -1177,72 +1170,6 @@ export const ListWorktreesViewResponse: MessageFns<ListWorktreesViewResponse> = 
   fromPartial<I extends Exact<DeepPartial<ListWorktreesViewResponse>, I>>(object: I): ListWorktreesViewResponse {
     const message = createBaseListWorktreesViewResponse();
     message.worktrees = object.worktrees?.map((e) => WorktreeView.fromPartial(e)) || [];
-    return message;
-  },
-};
-
-function createBaseJournalEntry(): JournalEntry {
-  return { id: 0, repo: "", actor: "", eventType: "", payloadJson: "", createdAt: "" };
-}
-
-export const JournalEntry: MessageFns<JournalEntry> = {
-  fromJSON(object: any): JournalEntry {
-    return {
-      id: isSet(object.id) ? globalThis.Number(object.id) : 0,
-      repo: isSet(object.repo) ? globalThis.String(object.repo) : "",
-      actor: isSet(object.actor) ? globalThis.String(object.actor) : "",
-      eventType: isSet(object.eventType)
-        ? globalThis.String(object.eventType)
-        : isSet(object.event_type)
-        ? globalThis.String(object.event_type)
-        : "",
-      payloadJson: isSet(object.payloadJson)
-        ? globalThis.String(object.payloadJson)
-        : isSet(object.payload_json)
-        ? globalThis.String(object.payload_json)
-        : "",
-      createdAt: isSet(object.createdAt)
-        ? globalThis.String(object.createdAt)
-        : isSet(object.created_at)
-        ? globalThis.String(object.created_at)
-        : "",
-    };
-  },
-
-  toJSON(message: JournalEntry): unknown {
-    const obj: any = {};
-    if (message.id !== 0) {
-      obj.id = Math.round(message.id);
-    }
-    if (message.repo !== "") {
-      obj.repo = message.repo;
-    }
-    if (message.actor !== "") {
-      obj.actor = message.actor;
-    }
-    if (message.eventType !== "") {
-      obj.eventType = message.eventType;
-    }
-    if (message.payloadJson !== "") {
-      obj.payloadJson = message.payloadJson;
-    }
-    if (message.createdAt !== "") {
-      obj.createdAt = message.createdAt;
-    }
-    return obj;
-  },
-
-  create<I extends Exact<DeepPartial<JournalEntry>, I>>(base?: I): JournalEntry {
-    return JournalEntry.fromPartial(base ?? ({} as any));
-  },
-  fromPartial<I extends Exact<DeepPartial<JournalEntry>, I>>(object: I): JournalEntry {
-    const message = createBaseJournalEntry();
-    message.id = object.id ?? 0;
-    message.repo = object.repo ?? "";
-    message.actor = object.actor ?? "";
-    message.eventType = object.eventType ?? "";
-    message.payloadJson = object.payloadJson ?? "";
-    message.createdAt = object.createdAt ?? "";
     return message;
   },
 };

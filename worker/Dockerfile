@@ -18,16 +18,21 @@ RUN bun install -g @anthropic-ai/claude-code
 RUN curl -fsSL https://github.com/rtk-ai/rtk/releases/latest/download/rtk-x86_64-unknown-linux-musl.tar.gz \
     | tar -xz -C /usr/local/bin rtk
 
-# ponytail plugin (lean-code persona, matches Mohammad's own local Claude
-# Code setup — github.com/DietrichGebert/ponytail). Marketplace add/install
-# are git-clone + file-copy operations, no Anthropic auth needed at build
-# time.
+# ponytail + caveman plugins (lean-code / terse-output personas, match
+# Mohammad's own local Claude Code setup — github.com/DietrichGebert/ponytail,
+# github.com/JuliusBrussee/caveman). Marketplace add/install are git-clone +
+# file-copy operations, no Anthropic auth needed at build time. Installed
+# here into the image's default $HOME (/root/.claude); worker/entrypoint.sh
+# copies that once into $CLAUDE_CONFIG_DIR at pod startup, since that's the
+# PVC path Claude Code actually reads at runtime (docs/adr/0033).
 RUN claude plugin marketplace add DietrichGebert/ponytail \
     && claude plugin install ponytail@ponytail
+RUN claude plugin marketplace add JuliusBrussee/caveman \
+    && claude plugin install caveman@caveman
 
 WORKDIR /app
 COPY worker ./worker
-RUN cd worker && bun install --production
+RUN cd worker && bun install --production && chmod +x entrypoint.sh
 
 WORKDIR /app/worker
-CMD ["bun", "run", "src/index.ts"]
+CMD ["./entrypoint.sh"]

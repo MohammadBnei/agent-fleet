@@ -206,15 +206,8 @@ message ListWorktreesViewResponse {
 // Typed request/response, same pull/cursor shape as GetTranscript, not a
 // generic Query(bytes) returns (bytes) dispatcher — two concrete gaps
 // don't justify throwing away protobuf's type safety for a general one.
-message JournalEntry {
-  int64 id = 1;
-  string repo = 2;
-  string actor = 3;
-  string event_type = 4;
-  string payload_json = 5;
-  string created_at = 6; // RFC3339
-}
-
+// JournalEntry itself now lives in core.proto (imported above) — reused by
+// SearchJournal too, same pattern as Task/GetTaskRequest/GetTaskResponse.
 message GetJournalRequest {
   string repo = 1; // "" matches every repo
   int64 since_id = 2;

@@ -96,6 +96,19 @@ func New(core *coreclient.Client) http.Handler {
 		mcp.WithString("key", mcp.Required()),
 	), deleteSharedFileHandler(core))
 
+	s.AddTool(mcp.NewTool("journal_write",
+		mcp.WithDescription("Write a note to this repo's knowledge journal — something worth a future session on the same repo knowing (a gotcha, a decision, a dead end). Not for routine progress updates; use send_message for those. Searchable later via journal_search."),
+		mcp.WithString("repo", mcp.Required()),
+		mcp.WithString("note", mcp.Required()),
+	), journalWriteHandler(core))
+
+	s.AddTool(mcp.NewTool("journal_search",
+		mcp.WithDescription("Search this repo's knowledge journal for past entries relevant to a query (Postgres full-text search, ranked by relevance). Use before starting non-trivial work on a repo to check for prior learnings."),
+		mcp.WithString("repo", mcp.Required()),
+		mcp.WithString("query", mcp.Required()),
+		mcp.WithNumber("limit"),
+	), journalSearchHandler(core))
+
 	s.AddTool(mcp.NewTool("view_logs",
 		mcp.WithDescription("View recent logs from fleet components or deployed apps. Returns formatted log entries. Use this to debug issues with worker, sidecar, or the deployed application during e2e tests. Supports both duration-based queries (duration) and explicit time ranges (start_time/end_time in RFC3339 format)."),
 		mcp.WithString("component", mcp.Required(), mcp.Description("Which component: worker|sidecar|core|provisioner|e2e|app")),
@@ -150,6 +163,52 @@ func waitForMessagesHandler(core *coreclient.Client) server.ToolHandlerFunc {
 			messages = append(messages, map[string]any{"from": e.GetFrom(), "text": e.GetText(), "type": protoTypeToString(e.GetType())})
 		}
 		body, _ := json.Marshal(map[string]any{"messages": messages, "nextIndex": nextSeq})
+		return mcp.NewToolResultText(string(body)), nil
+	}
+}
+
+func journalWriteHandler(core *coreclient.Client) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		repo := req.GetString("repo", "")
+		note := req.GetString("note", "")
+		if repo == "" || note == "" {
+			return mcp.NewToolResultError("repo and note are required"), nil
+		}
+		payload, err := json.Marshal(map[string]string{"note": note})
+		if err != nil {
+			return nil, fmt.Errorf("journal_write: marshal note: %w", err)
+		}
+		slog.Info("mcp journal_write", "repo", repo)
+		if err := core.AppendJournal(ctx, repo, "worker", "agent_note", string(payload)); err != nil {
+			slog.Error("mcp journal_write", "error", err)
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		return mcp.NewToolResultText(`{"status":"written"}`), nil
+	}
+}
+
+func journalSearchHandler(core *coreclient.Client) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		repo := req.GetString("repo", "")
+		query := req.GetString("query", "")
+		if repo == "" || query == "" {
+			return mcp.NewToolResultError("repo and query are required"), nil
+		}
+		limit := int32(req.GetInt("limit", 20))
+		slog.Info("mcp journal_search", "repo", repo, "query", query)
+		entries, err := core.SearchJournal(ctx, repo, query, limit)
+		if err != nil {
+			slog.Error("mcp journal_search", "error", err)
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		out := make([]map[string]any, 0, len(entries))
+		for _, e := range entries {
+			out = append(out, map[string]any{
+				"actor": e.GetActor(), "eventType": e.GetEventType(),
+				"payloadJson": e.GetPayloadJson(), "createdAt": e.GetCreatedAt(),
+			})
+		}
+		body, _ := json.Marshal(map[string]any{"entries": out})
 		return mcp.NewToolResultText(string(body)), nil
 	}
 }

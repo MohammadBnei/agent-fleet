@@ -67,6 +67,9 @@ const (
 	// CoreServiceAppendJournalProcedure is the fully-qualified name of the CoreService's AppendJournal
 	// RPC.
 	CoreServiceAppendJournalProcedure = "/agentfleet.v1.CoreService/AppendJournal"
+	// CoreServiceSearchJournalProcedure is the fully-qualified name of the CoreService's SearchJournal
+	// RPC.
+	CoreServiceSearchJournalProcedure = "/agentfleet.v1.CoreService/SearchJournal"
 	// CoreServiceSaveSessionIdProcedure is the fully-qualified name of the CoreService's SaveSessionId
 	// RPC.
 	CoreServiceSaveSessionIdProcedure = "/agentfleet.v1.CoreService/SaveSessionId"
@@ -127,6 +130,7 @@ type CoreServiceClient interface {
 	Heartbeat(context.Context, *connect.Request[v1.HeartbeatRequest]) (*connect.Response[v1.HeartbeatResponse], error)
 	SetTaskStatus(context.Context, *connect.Request[v1.SetTaskStatusRequest]) (*connect.Response[v1.SetTaskStatusResponse], error)
 	AppendJournal(context.Context, *connect.Request[v1.AppendJournalRequest]) (*connect.Response[v1.AppendJournalResponse], error)
+	SearchJournal(context.Context, *connect.Request[v1.SearchJournalRequest]) (*connect.Response[v1.SearchJournalResponse], error)
 	SaveSessionId(context.Context, *connect.Request[v1.SaveSessionIdRequest]) (*connect.Response[v1.SaveSessionIdResponse], error)
 	StillHoldsLease(context.Context, *connect.Request[v1.StillHoldsLeaseRequest]) (*connect.Response[v1.StillHoldsLeaseResponse], error)
 	PushToolTelemetry(context.Context, *connect.Request[v1.PushToolTelemetryRequest]) (*connect.Response[v1.PushToolTelemetryResponse], error)
@@ -235,6 +239,12 @@ func NewCoreServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(coreServiceMethods.ByName("AppendJournal")),
 			connect.WithClientOptions(opts...),
 		),
+		searchJournal: connect.NewClient[v1.SearchJournalRequest, v1.SearchJournalResponse](
+			httpClient,
+			baseURL+CoreServiceSearchJournalProcedure,
+			connect.WithSchema(coreServiceMethods.ByName("SearchJournal")),
+			connect.WithClientOptions(opts...),
+		),
 		saveSessionId: connect.NewClient[v1.SaveSessionIdRequest, v1.SaveSessionIdResponse](
 			httpClient,
 			baseURL+CoreServiceSaveSessionIdProcedure,
@@ -307,6 +317,7 @@ type coreServiceClient struct {
 	heartbeat           *connect.Client[v1.HeartbeatRequest, v1.HeartbeatResponse]
 	setTaskStatus       *connect.Client[v1.SetTaskStatusRequest, v1.SetTaskStatusResponse]
 	appendJournal       *connect.Client[v1.AppendJournalRequest, v1.AppendJournalResponse]
+	searchJournal       *connect.Client[v1.SearchJournalRequest, v1.SearchJournalResponse]
 	saveSessionId       *connect.Client[v1.SaveSessionIdRequest, v1.SaveSessionIdResponse]
 	stillHoldsLease     *connect.Client[v1.StillHoldsLeaseRequest, v1.StillHoldsLeaseResponse]
 	pushToolTelemetry   *connect.Client[v1.PushToolTelemetryRequest, v1.PushToolTelemetryResponse]
@@ -381,6 +392,11 @@ func (c *coreServiceClient) SetTaskStatus(ctx context.Context, req *connect.Requ
 // AppendJournal calls agentfleet.v1.CoreService.AppendJournal.
 func (c *coreServiceClient) AppendJournal(ctx context.Context, req *connect.Request[v1.AppendJournalRequest]) (*connect.Response[v1.AppendJournalResponse], error) {
 	return c.appendJournal.CallUnary(ctx, req)
+}
+
+// SearchJournal calls agentfleet.v1.CoreService.SearchJournal.
+func (c *coreServiceClient) SearchJournal(ctx context.Context, req *connect.Request[v1.SearchJournalRequest]) (*connect.Response[v1.SearchJournalResponse], error) {
+	return c.searchJournal.CallUnary(ctx, req)
 }
 
 // SaveSessionId calls agentfleet.v1.CoreService.SaveSessionId.
@@ -462,6 +478,7 @@ type CoreServiceHandler interface {
 	Heartbeat(context.Context, *connect.Request[v1.HeartbeatRequest]) (*connect.Response[v1.HeartbeatResponse], error)
 	SetTaskStatus(context.Context, *connect.Request[v1.SetTaskStatusRequest]) (*connect.Response[v1.SetTaskStatusResponse], error)
 	AppendJournal(context.Context, *connect.Request[v1.AppendJournalRequest]) (*connect.Response[v1.AppendJournalResponse], error)
+	SearchJournal(context.Context, *connect.Request[v1.SearchJournalRequest]) (*connect.Response[v1.SearchJournalResponse], error)
 	SaveSessionId(context.Context, *connect.Request[v1.SaveSessionIdRequest]) (*connect.Response[v1.SaveSessionIdResponse], error)
 	StillHoldsLease(context.Context, *connect.Request[v1.StillHoldsLeaseRequest]) (*connect.Response[v1.StillHoldsLeaseResponse], error)
 	PushToolTelemetry(context.Context, *connect.Request[v1.PushToolTelemetryRequest]) (*connect.Response[v1.PushToolTelemetryResponse], error)
@@ -566,6 +583,12 @@ func NewCoreServiceHandler(svc CoreServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(coreServiceMethods.ByName("AppendJournal")),
 		connect.WithHandlerOptions(opts...),
 	)
+	coreServiceSearchJournalHandler := connect.NewUnaryHandler(
+		CoreServiceSearchJournalProcedure,
+		svc.SearchJournal,
+		connect.WithSchema(coreServiceMethods.ByName("SearchJournal")),
+		connect.WithHandlerOptions(opts...),
+	)
 	coreServiceSaveSessionIdHandler := connect.NewUnaryHandler(
 		CoreServiceSaveSessionIdProcedure,
 		svc.SaveSessionId,
@@ -648,6 +671,8 @@ func NewCoreServiceHandler(svc CoreServiceHandler, opts ...connect.HandlerOption
 			coreServiceSetTaskStatusHandler.ServeHTTP(w, r)
 		case CoreServiceAppendJournalProcedure:
 			coreServiceAppendJournalHandler.ServeHTTP(w, r)
+		case CoreServiceSearchJournalProcedure:
+			coreServiceSearchJournalHandler.ServeHTTP(w, r)
 		case CoreServiceSaveSessionIdProcedure:
 			coreServiceSaveSessionIdHandler.ServeHTTP(w, r)
 		case CoreServiceStillHoldsLeaseProcedure:
@@ -725,6 +750,10 @@ func (UnimplementedCoreServiceHandler) SetTaskStatus(context.Context, *connect.R
 
 func (UnimplementedCoreServiceHandler) AppendJournal(context.Context, *connect.Request[v1.AppendJournalRequest]) (*connect.Response[v1.AppendJournalResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.CoreService.AppendJournal is not implemented"))
+}
+
+func (UnimplementedCoreServiceHandler) SearchJournal(context.Context, *connect.Request[v1.SearchJournalRequest]) (*connect.Response[v1.SearchJournalResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.CoreService.SearchJournal is not implemented"))
 }
 
 func (UnimplementedCoreServiceHandler) SaveSessionId(context.Context, *connect.Request[v1.SaveSessionIdRequest]) (*connect.Response[v1.SaveSessionIdResponse], error) {

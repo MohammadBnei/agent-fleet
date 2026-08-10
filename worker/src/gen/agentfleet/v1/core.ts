@@ -311,6 +311,36 @@ export interface AppendJournalRequest {
 export interface AppendJournalResponse {
 }
 
+/**
+ * JournalEntry also backs dashboard.proto's GetJournal (imported from
+ * here, same reuse pattern as Task/GetTaskRequest/GetTaskResponse below).
+ */
+export interface JournalEntry {
+  id: number;
+  repo: string;
+  actor: string;
+  eventType: string;
+  payloadJson: string;
+  /** RFC3339 */
+  createdAt: string;
+}
+
+/**
+ * SearchJournal is journal_search's backing RPC (docs/adr/0032's deferred
+ * "feed knowledge_journal back into a session" read path) — Postgres
+ * full-text search (to_tsvector/ts_rank), not a vector/embedding search.
+ */
+export interface SearchJournalRequest {
+  /** "" matches every repo */
+  repo: string;
+  query: string;
+  limit: number;
+}
+
+export interface SearchJournalResponse {
+  entries: JournalEntry[];
+}
+
 export interface SaveSessionIdRequest {
   taskId: string;
   sessionId: string;
@@ -1314,6 +1344,142 @@ export const AppendJournalResponse: MessageFns<AppendJournalResponse> = {
   },
 };
 
+function createBaseJournalEntry(): JournalEntry {
+  return { id: 0, repo: "", actor: "", eventType: "", payloadJson: "", createdAt: "" };
+}
+
+export const JournalEntry: MessageFns<JournalEntry> = {
+  fromJSON(object: any): JournalEntry {
+    return {
+      id: isSet(object.id) ? globalThis.Number(object.id) : 0,
+      repo: isSet(object.repo) ? globalThis.String(object.repo) : "",
+      actor: isSet(object.actor) ? globalThis.String(object.actor) : "",
+      eventType: isSet(object.eventType)
+        ? globalThis.String(object.eventType)
+        : isSet(object.event_type)
+        ? globalThis.String(object.event_type)
+        : "",
+      payloadJson: isSet(object.payloadJson)
+        ? globalThis.String(object.payloadJson)
+        : isSet(object.payload_json)
+        ? globalThis.String(object.payload_json)
+        : "",
+      createdAt: isSet(object.createdAt)
+        ? globalThis.String(object.createdAt)
+        : isSet(object.created_at)
+        ? globalThis.String(object.created_at)
+        : "",
+    };
+  },
+
+  toJSON(message: JournalEntry): unknown {
+    const obj: any = {};
+    if (message.id !== 0) {
+      obj.id = Math.round(message.id);
+    }
+    if (message.repo !== "") {
+      obj.repo = message.repo;
+    }
+    if (message.actor !== "") {
+      obj.actor = message.actor;
+    }
+    if (message.eventType !== "") {
+      obj.eventType = message.eventType;
+    }
+    if (message.payloadJson !== "") {
+      obj.payloadJson = message.payloadJson;
+    }
+    if (message.createdAt !== "") {
+      obj.createdAt = message.createdAt;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<JournalEntry>, I>>(base?: I): JournalEntry {
+    return JournalEntry.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<JournalEntry>, I>>(object: I): JournalEntry {
+    const message = createBaseJournalEntry();
+    message.id = object.id ?? 0;
+    message.repo = object.repo ?? "";
+    message.actor = object.actor ?? "";
+    message.eventType = object.eventType ?? "";
+    message.payloadJson = object.payloadJson ?? "";
+    message.createdAt = object.createdAt ?? "";
+    return message;
+  },
+};
+
+function createBaseSearchJournalRequest(): SearchJournalRequest {
+  return { repo: "", query: "", limit: 0 };
+}
+
+export const SearchJournalRequest: MessageFns<SearchJournalRequest> = {
+  fromJSON(object: any): SearchJournalRequest {
+    return {
+      repo: isSet(object.repo) ? globalThis.String(object.repo) : "",
+      query: isSet(object.query) ? globalThis.String(object.query) : "",
+      limit: isSet(object.limit) ? globalThis.Number(object.limit) : 0,
+    };
+  },
+
+  toJSON(message: SearchJournalRequest): unknown {
+    const obj: any = {};
+    if (message.repo !== "") {
+      obj.repo = message.repo;
+    }
+    if (message.query !== "") {
+      obj.query = message.query;
+    }
+    if (message.limit !== 0) {
+      obj.limit = Math.round(message.limit);
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<SearchJournalRequest>, I>>(base?: I): SearchJournalRequest {
+    return SearchJournalRequest.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<SearchJournalRequest>, I>>(object: I): SearchJournalRequest {
+    const message = createBaseSearchJournalRequest();
+    message.repo = object.repo ?? "";
+    message.query = object.query ?? "";
+    message.limit = object.limit ?? 0;
+    return message;
+  },
+};
+
+function createBaseSearchJournalResponse(): SearchJournalResponse {
+  return { entries: [] };
+}
+
+export const SearchJournalResponse: MessageFns<SearchJournalResponse> = {
+  fromJSON(object: any): SearchJournalResponse {
+    return {
+      entries: globalThis.Array.isArray(object?.entries)
+        ? object.entries.map((e: any) => JournalEntry.fromJSON(e))
+        : [],
+    };
+  },
+
+  toJSON(message: SearchJournalResponse): unknown {
+    const obj: any = {};
+    if (message.entries?.length) {
+      obj.entries = message.entries.map((e) => JournalEntry.toJSON(e));
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<SearchJournalResponse>, I>>(base?: I): SearchJournalResponse {
+    return SearchJournalResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<SearchJournalResponse>, I>>(object: I): SearchJournalResponse {
+    const message = createBaseSearchJournalResponse();
+    message.entries = object.entries?.map((e) => JournalEntry.fromPartial(e)) || [];
+    return message;
+  },
+};
+
 function createBaseSaveSessionIdRequest(): SaveSessionIdRequest {
   return { taskId: "", sessionId: "", model: "" };
 }
@@ -1895,6 +2061,7 @@ export interface CoreService {
   Heartbeat(request: HeartbeatRequest): Promise<HeartbeatResponse>;
   SetTaskStatus(request: SetTaskStatusRequest): Promise<SetTaskStatusResponse>;
   AppendJournal(request: AppendJournalRequest): Promise<AppendJournalResponse>;
+  SearchJournal(request: SearchJournalRequest): Promise<SearchJournalResponse>;
   SaveSessionId(request: SaveSessionIdRequest): Promise<SaveSessionIdResponse>;
   StillHoldsLease(request: StillHoldsLeaseRequest): Promise<StillHoldsLeaseResponse>;
   PushToolTelemetry(request: PushToolTelemetryRequest): Promise<PushToolTelemetryResponse>;
