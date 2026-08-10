@@ -39,7 +39,7 @@ func (c *Client) onInteractionCreate(s *discordgo.Session, i *discordgo.Interact
 
 	case "e2e-kill":
 		c.withTaskFromThread(ctx, s, i, func(taskID string) {
-			if _, err := c.e2e.KillSession(ctx, taskID, uuid.NewString()); err != nil {
+			if _, _, err := c.e2e.KillSession(ctx, taskID, uuid.NewString(), "", false); err != nil {
 				slog.Error("e2e-kill failed", "taskId", taskID, "error", err)
 			}
 		})

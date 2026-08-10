@@ -33,10 +33,21 @@ message ServiceIngredient {
 message KillE2eSessionRequest {
   string task_id = 1;
   string idempotency_key = 2;
+  // repo/also_teardown_services (docs/adr/0034 follow-up) — the shared
+  // postgres/redis instance backing this task's services is keyed by repo,
+  // not task, and can be in use by other tasks against the same repo (its
+  // own worker pod included), so tearing it down is opt-in, explicit, and
+  // human-confirmed (the dashboard's "kill e2e" checkbox), never implied by
+  // killing one task's e2e session alone.
+  string repo = 3;
+  bool also_teardown_services = 4;
 }
 
 message KillE2eSessionResponse {
   bool killed = 1; // false = no active session for this task
+  // Set only when also_teardown_services was requested — the (repo,
+  // service_key) pairs actually deleted, for the dashboard to report back.
+  repeated string services_torn_down = 2;
 }
 
 message GetE2eSessionStatusRequest {

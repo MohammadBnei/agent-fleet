@@ -695,10 +695,15 @@ func (x *RespondToPermissionResponse) GetStatus() string {
 }
 
 type KillE2ERequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	TaskId        string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	TaskId string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	// also_teardown_services (docs/adr/0034 follow-up): also delete the
+	// repo's shared postgres/redis instances if this task used any —
+	// human-confirmed opt-in, since those are shared across every task
+	// against the repo, not owned by this one task alone.
+	AlsoTeardownServices bool `protobuf:"varint,2,opt,name=also_teardown_services,json=alsoTeardownServices,proto3" json:"also_teardown_services,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *KillE2ERequest) Reset() {
@@ -738,11 +743,19 @@ func (x *KillE2ERequest) GetTaskId() string {
 	return ""
 }
 
+func (x *KillE2ERequest) GetAlsoTeardownServices() bool {
+	if x != nil {
+		return x.AlsoTeardownServices
+	}
+	return false
+}
+
 type KillE2EResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Killed        bool                   `protobuf:"varint,1,opt,name=killed,proto3" json:"killed,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	Killed           bool                   `protobuf:"varint,1,opt,name=killed,proto3" json:"killed,omitempty"`
+	ServicesTornDown []string               `protobuf:"bytes,2,rep,name=services_torn_down,json=servicesTornDown,proto3" json:"services_torn_down,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *KillE2EResponse) Reset() {
@@ -780,6 +793,13 @@ func (x *KillE2EResponse) GetKilled() bool {
 		return x.Killed
 	}
 	return false
+}
+
+func (x *KillE2EResponse) GetServicesTornDown() []string {
+	if x != nil {
+		return x.ServicesTornDown
+	}
+	return nil
 }
 
 // Answers a pending QUESTION-type transcript entry (posted by the agent's
@@ -2792,11 +2812,13 @@ const file_agentfleet_v1_dashboard_proto_rawDesc = "" +
 	"\x03seq\x18\x02 \x01(\x03R\x03seq\x12#\n" +
 	"\rdecision_json\x18\x03 \x01(\tR\fdecisionJson\"5\n" +
 	"\x1bRespondToPermissionResponse\x12\x16\n" +
-	"\x06status\x18\x01 \x01(\tR\x06status\")\n" +
+	"\x06status\x18\x01 \x01(\tR\x06status\"_\n" +
 	"\x0eKillE2eRequest\x12\x17\n" +
-	"\atask_id\x18\x01 \x01(\tR\x06taskId\")\n" +
+	"\atask_id\x18\x01 \x01(\tR\x06taskId\x124\n" +
+	"\x16also_teardown_services\x18\x02 \x01(\bR\x14alsoTeardownServices\"W\n" +
 	"\x0fKillE2eResponse\x12\x16\n" +
-	"\x06killed\x18\x01 \x01(\bR\x06killed\"e\n" +
+	"\x06killed\x18\x01 \x01(\bR\x06killed\x12,\n" +
+	"\x12services_torn_down\x18\x02 \x03(\tR\x10servicesTornDown\"e\n" +
 	"\x15AnswerQuestionRequest\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x10\n" +
 	"\x03seq\x18\x02 \x01(\x03R\x03seq\x12!\n" +

@@ -187,8 +187,16 @@ type KillE2ESessionRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	TaskId         string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
 	IdempotencyKey string                 `protobuf:"bytes,2,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// repo/also_teardown_services (docs/adr/0034 follow-up) — the shared
+	// postgres/redis instance backing this task's services is keyed by repo,
+	// not task, and can be in use by other tasks against the same repo (its
+	// own worker pod included), so tearing it down is opt-in, explicit, and
+	// human-confirmed (the dashboard's "kill e2e" checkbox), never implied by
+	// killing one task's e2e session alone.
+	Repo                 string `protobuf:"bytes,3,opt,name=repo,proto3" json:"repo,omitempty"`
+	AlsoTeardownServices bool   `protobuf:"varint,4,opt,name=also_teardown_services,json=alsoTeardownServices,proto3" json:"also_teardown_services,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *KillE2ESessionRequest) Reset() {
@@ -235,11 +243,28 @@ func (x *KillE2ESessionRequest) GetIdempotencyKey() string {
 	return ""
 }
 
+func (x *KillE2ESessionRequest) GetRepo() string {
+	if x != nil {
+		return x.Repo
+	}
+	return ""
+}
+
+func (x *KillE2ESessionRequest) GetAlsoTeardownServices() bool {
+	if x != nil {
+		return x.AlsoTeardownServices
+	}
+	return false
+}
+
 type KillE2ESessionResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Killed        bool                   `protobuf:"varint,1,opt,name=killed,proto3" json:"killed,omitempty"` // false = no active session for this task
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	Killed bool                   `protobuf:"varint,1,opt,name=killed,proto3" json:"killed,omitempty"` // false = no active session for this task
+	// Set only when also_teardown_services was requested — the (repo,
+	// service_key) pairs actually deleted, for the dashboard to report back.
+	ServicesTornDown []string `protobuf:"bytes,2,rep,name=services_torn_down,json=servicesTornDown,proto3" json:"services_torn_down,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *KillE2ESessionResponse) Reset() {
@@ -277,6 +302,13 @@ func (x *KillE2ESessionResponse) GetKilled() bool {
 		return x.Killed
 	}
 	return false
+}
+
+func (x *KillE2ESessionResponse) GetServicesTornDown() []string {
+	if x != nil {
+		return x.ServicesTornDown
+	}
+	return nil
 }
 
 type GetE2ESessionStatusRequest struct {
@@ -1359,12 +1391,15 @@ const file_agentfleet_v1_provisioner_proto_rawDesc = "" +
 	"\x11ServiceIngredient\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x127\n" +
 	"\n" +
-	"scope_mode\x18\x02 \x01(\x0e2\x18.agentfleet.v1.ScopeModeR\tscopeMode\"Y\n" +
+	"scope_mode\x18\x02 \x01(\x0e2\x18.agentfleet.v1.ScopeModeR\tscopeMode\"\xa3\x01\n" +
 	"\x15KillE2eSessionRequest\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12'\n" +
-	"\x0fidempotency_key\x18\x02 \x01(\tR\x0eidempotencyKey\"0\n" +
+	"\x0fidempotency_key\x18\x02 \x01(\tR\x0eidempotencyKey\x12\x12\n" +
+	"\x04repo\x18\x03 \x01(\tR\x04repo\x124\n" +
+	"\x16also_teardown_services\x18\x04 \x01(\bR\x14alsoTeardownServices\"^\n" +
 	"\x16KillE2eSessionResponse\x12\x16\n" +
-	"\x06killed\x18\x01 \x01(\bR\x06killed\"5\n" +
+	"\x06killed\x18\x01 \x01(\bR\x06killed\x12,\n" +
+	"\x12services_torn_down\x18\x02 \x03(\tR\x10servicesTornDown\"5\n" +
 	"\x1aGetE2eSessionStatusRequest\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\tR\x06taskId\"V\n" +
 	"\x1bGetE2eSessionStatusResponse\x12\x16\n" +

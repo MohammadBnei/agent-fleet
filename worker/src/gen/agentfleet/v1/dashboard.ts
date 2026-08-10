@@ -136,10 +136,18 @@ export interface RespondToPermissionResponse {
 
 export interface KillE2eRequest {
   taskId: string;
+  /**
+   * also_teardown_services (docs/adr/0034 follow-up): also delete the
+   * repo's shared postgres/redis instances if this task used any —
+   * human-confirmed opt-in, since those are shared across every task
+   * against the repo, not owned by this one task alone.
+   */
+  alsoTeardownServices: boolean;
 }
 
 export interface KillE2eResponse {
   killed: boolean;
+  servicesTornDown: string[];
 }
 
 /**
@@ -849,7 +857,7 @@ export const RespondToPermissionResponse: MessageFns<RespondToPermissionResponse
 };
 
 function createBaseKillE2eRequest(): KillE2eRequest {
-  return { taskId: "" };
+  return { taskId: "", alsoTeardownServices: false };
 }
 
 export const KillE2eRequest: MessageFns<KillE2eRequest> = {
@@ -860,6 +868,11 @@ export const KillE2eRequest: MessageFns<KillE2eRequest> = {
         : isSet(object.task_id)
         ? globalThis.String(object.task_id)
         : "",
+      alsoTeardownServices: isSet(object.alsoTeardownServices)
+        ? globalThis.Boolean(object.alsoTeardownServices)
+        : isSet(object.also_teardown_services)
+        ? globalThis.Boolean(object.also_teardown_services)
+        : false,
     };
   },
 
@@ -867,6 +880,9 @@ export const KillE2eRequest: MessageFns<KillE2eRequest> = {
     const obj: any = {};
     if (message.taskId !== "") {
       obj.taskId = message.taskId;
+    }
+    if (message.alsoTeardownServices !== false) {
+      obj.alsoTeardownServices = message.alsoTeardownServices;
     }
     return obj;
   },
@@ -877,23 +893,34 @@ export const KillE2eRequest: MessageFns<KillE2eRequest> = {
   fromPartial<I extends Exact<DeepPartial<KillE2eRequest>, I>>(object: I): KillE2eRequest {
     const message = createBaseKillE2eRequest();
     message.taskId = object.taskId ?? "";
+    message.alsoTeardownServices = object.alsoTeardownServices ?? false;
     return message;
   },
 };
 
 function createBaseKillE2eResponse(): KillE2eResponse {
-  return { killed: false };
+  return { killed: false, servicesTornDown: [] };
 }
 
 export const KillE2eResponse: MessageFns<KillE2eResponse> = {
   fromJSON(object: any): KillE2eResponse {
-    return { killed: isSet(object.killed) ? globalThis.Boolean(object.killed) : false };
+    return {
+      killed: isSet(object.killed) ? globalThis.Boolean(object.killed) : false,
+      servicesTornDown: globalThis.Array.isArray(object?.servicesTornDown)
+        ? object.servicesTornDown.map((e: any) => globalThis.String(e))
+        : globalThis.Array.isArray(object?.services_torn_down)
+        ? object.services_torn_down.map((e: any) => globalThis.String(e))
+        : [],
+    };
   },
 
   toJSON(message: KillE2eResponse): unknown {
     const obj: any = {};
     if (message.killed !== false) {
       obj.killed = message.killed;
+    }
+    if (message.servicesTornDown?.length) {
+      obj.servicesTornDown = message.servicesTornDown;
     }
     return obj;
   },
@@ -904,6 +931,7 @@ export const KillE2eResponse: MessageFns<KillE2eResponse> = {
   fromPartial<I extends Exact<DeepPartial<KillE2eResponse>, I>>(object: I): KillE2eResponse {
     const message = createBaseKillE2eResponse();
     message.killed = object.killed ?? false;
+    message.servicesTornDown = object.servicesTornDown?.map((e) => e) || [];
     return message;
   },
 };

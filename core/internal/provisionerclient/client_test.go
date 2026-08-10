@@ -18,10 +18,18 @@ type fakeProvisionerServer struct {
 	killed        bool
 	sawDeadline   bool
 	deadlineHadDL bool
+	// lastKillReq lets tests assert what KillSession actually put on the
+	// wire (repo/also_teardown_services) without a second fake type.
+	lastKillReq *agentfleetv1.KillE2ESessionRequest
 }
 
 func (f *fakeProvisionerServer) KillE2ESession(ctx context.Context, req *agentfleetv1.KillE2ESessionRequest) (*agentfleetv1.KillE2ESessionResponse, error) {
-	return &agentfleetv1.KillE2ESessionResponse{Killed: f.killed}, nil
+	f.lastKillReq = req
+	resp := &agentfleetv1.KillE2ESessionResponse{Killed: f.killed}
+	if req.GetAlsoTeardownServices() {
+		resp.ServicesTornDown = []string{"postgres", "redis"}
+	}
+	return resp, nil
 }
 
 func (f *fakeProvisionerServer) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWorkerPodRequest) (*agentfleetv1.CreateWorkerPodResponse, error) {
@@ -40,8 +48,9 @@ func TestClient_KillSession(t *testing.T) {
 	lis := bufconn.Listen(1024 * 1024)
 	t.Cleanup(func() { _ = lis.Close() })
 
+	fake := &fakeProvisionerServer{killed: true}
 	srv := grpc.NewServer()
-	agentfleetv1.RegisterProvisionerServiceServer(srv, &fakeProvisionerServer{killed: true})
+	agentfleetv1.RegisterProvisionerServiceServer(srv, fake)
 	go func() { _ = srv.Serve(lis) }()
 	t.Cleanup(srv.Stop)
 
@@ -55,12 +64,32 @@ func TestClient_KillSession(t *testing.T) {
 	t.Cleanup(func() { _ = conn.Close() })
 
 	c := &Client{conn: conn, rpc: agentfleetv1.NewProvisionerServiceClient(conn)}
-	killed, err := c.KillSession(context.Background(), "task-1", "idem-1")
+	killed, servicesTornDown, err := c.KillSession(context.Background(), "task-1", "idem-1", "", false)
 	if err != nil {
 		t.Fatalf("KillSession: %v", err)
 	}
 	if !killed {
 		t.Errorf("expected killed=true")
+	}
+	if len(servicesTornDown) != 0 {
+		t.Errorf("expected no services torn down when alsoTeardownServices=false, got %v", servicesTornDown)
+	}
+	if fake.lastKillReq.GetRepo() != "" || fake.lastKillReq.GetAlsoTeardownServices() {
+		t.Errorf("expected repo/alsoTeardownServices not sent when opted out, got %+v", fake.lastKillReq)
+	}
+
+	// Opting in to also_teardown_services threads repo onto the wire and
+	// surfaces the provisioner's reported services_torn_down back to the
+	// caller — the human-confirmed "kill e2e" checkbox path.
+	_, servicesTornDown, err = c.KillSession(context.Background(), "task-1", "idem-2", "dream-analyst", true)
+	if err != nil {
+		t.Fatalf("KillSession (also teardown services): %v", err)
+	}
+	if fake.lastKillReq.GetRepo() != "dream-analyst" || !fake.lastKillReq.GetAlsoTeardownServices() {
+		t.Errorf("expected repo=dream-analyst, alsoTeardownServices=true on the wire, got %+v", fake.lastKillReq)
+	}
+	if len(servicesTornDown) != 2 {
+		t.Errorf("expected servicesTornDown to come back from the fake, got %v", servicesTornDown)
 	}
 }
 

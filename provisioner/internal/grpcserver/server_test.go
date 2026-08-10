@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	appsv1 "k8s.io/api/apps/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -136,6 +137,78 @@ func TestKillE2ESession_ActiveSession(t *testing.T) {
 	}
 	if !resp.GetKilled() {
 		t.Errorf("expected killed=true")
+	}
+}
+
+// seedFakeSharedInstance creates just enough of a shared-instance
+// Deployment (labels only — no real container needed) for
+// ListSharedInstances/DeleteSharedInstance to find and remove it. Real
+// materialization (EnsureSharedInstance) blocks on an actual Postgres/Redis
+// connection, which the fake clientset can't provide (see
+// shared_instance_test.go's own comment) — this stays a label-shaped fake
+// deliberately narrower than that.
+func seedFakeSharedInstance(ctx context.Context, t *testing.T, k8sc *k8s.Client, repo, serviceKey string) {
+	t.Helper()
+	name := k8s.SharedInstanceName(repo, serviceKey)
+	dep := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: k8sc.Namespace, Labels: k8s.SharedInstanceLabels(repo, serviceKey)},
+	}
+	if _, err := k8sc.Core.AppsV1().Deployments(k8sc.Namespace).Create(ctx, dep, metav1.CreateOptions{}); err != nil {
+		t.Fatalf("seed shared instance deployment: %v", err)
+	}
+}
+
+// TestKillE2ESession_AlsoTeardownServices covers the "kill e2e" dashboard
+// checkbox path (docs/adr/0034 follow-up): a human-confirmed opt-in that
+// also deletes the repo's shared postgres/redis instances, since those are
+// keyed by repo (not task) and outlive any single task's e2e session
+// otherwise.
+func TestKillE2ESession_AlsoTeardownServices(t *testing.T) {
+	s, k8sc, _ := newTestServer(t)
+	ctx := context.Background()
+
+	if _, err := s.CreateE2ESession(ctx, &agentfleetv1.CreateE2ESessionRequest{TaskId: "t1", Repo: "dream-analyst", StartCmd: "bun run dev"}); err != nil {
+		t.Fatalf("CreateE2ESession: %v", err)
+	}
+	seedFakeSharedInstance(ctx, t, k8sc, "dream-analyst", "postgres")
+
+	resp, err := s.KillE2ESession(ctx, &agentfleetv1.KillE2ESessionRequest{TaskId: "t1", Repo: "dream-analyst", AlsoTeardownServices: true})
+	if err != nil {
+		t.Fatalf("KillE2ESession: %v", err)
+	}
+	if !resp.GetKilled() {
+		t.Errorf("expected killed=true")
+	}
+	if len(resp.GetServicesTornDown()) != 1 || resp.GetServicesTornDown()[0] != "postgres" {
+		t.Errorf("expected services_torn_down=[postgres], got %v", resp.GetServicesTornDown())
+	}
+
+	if _, err := k8sc.Core.AppsV1().Deployments("agent-fleet").Get(ctx, k8s.SharedInstanceName("dream-analyst", "postgres"), metav1.GetOptions{}); err == nil {
+		t.Error("expected the shared postgres Deployment to be gone")
+	}
+}
+
+// TestKillE2ESession_TeardownServicesNotRequested covers the default
+// (unchecked-checkbox) path: a shared instance for the same repo must
+// survive an ordinary kill.
+func TestKillE2ESession_TeardownServicesNotRequested(t *testing.T) {
+	s, k8sc, _ := newTestServer(t)
+	ctx := context.Background()
+
+	if _, err := s.CreateE2ESession(ctx, &agentfleetv1.CreateE2ESessionRequest{TaskId: "t1", Repo: "dream-analyst", StartCmd: "bun run dev"}); err != nil {
+		t.Fatalf("CreateE2ESession: %v", err)
+	}
+	seedFakeSharedInstance(ctx, t, k8sc, "dream-analyst", "postgres")
+
+	resp, err := s.KillE2ESession(ctx, &agentfleetv1.KillE2ESessionRequest{TaskId: "t1"})
+	if err != nil {
+		t.Fatalf("KillE2ESession: %v", err)
+	}
+	if len(resp.GetServicesTornDown()) != 0 {
+		t.Errorf("expected no services torn down without the opt-in flag, got %v", resp.GetServicesTornDown())
+	}
+	if _, err := k8sc.Core.AppsV1().Deployments("agent-fleet").Get(ctx, k8s.SharedInstanceName("dream-analyst", "postgres"), metav1.GetOptions{}); err != nil {
+		t.Errorf("expected the shared postgres Deployment to survive an ordinary kill: %v", err)
 	}
 }
 
