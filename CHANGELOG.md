@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.28.1](https://github.com/MohammadBnei/agent-fleet/compare/1.28.0...1.28.1) (2026-08-10)
+
+
+### Bug Fixes
+
+* **core:** point LOKI_URL at the actual platform-loki Service ([917710f](https://github.com/MohammadBnei/agent-fleet/commit/917710f4b993fb81297d92d48286ab3f30344d89))
+
 # [1.28.0](https://github.com/MohammadBnei/agent-fleet/compare/1.27.0...1.28.0) (2026-08-10)
 
 
