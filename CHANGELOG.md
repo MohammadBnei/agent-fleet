@@ -1,5 +1,17 @@
 # Changelog
 
+# [1.31.0](https://github.com/MohammadBnei/agent-fleet/compare/1.30.1...1.31.0) (2026-08-10)
+
+
+### Bug Fixes
+
+* **fleet:** propagate the interrupt transcript type through coreserver's own copy, and treat it as an implicit permission resolution ([7de48be](https://github.com/MohammadBnei/agent-fleet/commit/7de48be0fc8d28c4001e45e517c28dc2c37442a2))
+
+
+### Features
+
+* **dashboard:** add soft interrupt, fix live permission-card bug, surface pending permissions in task list ([a3a14f9](https://github.com/MohammadBnei/agent-fleet/commit/a3a14f9c84ac0c3497caef7760770c1792746c23))
+
 ## [1.30.1](https://github.com/MohammadBnei/agent-fleet/compare/1.30.0...1.30.1) (2026-08-10)
 
 
