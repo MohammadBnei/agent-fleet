@@ -1,5 +1,12 @@
 # Changelog
 
+# [1.28.0](https://github.com/MohammadBnei/agent-fleet/compare/1.27.0...1.28.0) (2026-08-10)
+
+
+### Features
+
+* **worker:** journal search/write tools, live ponytail+caveman plugins, accurate fleet-shared context ([f7268a1](https://github.com/MohammadBnei/agent-fleet/commit/f7268a1c27c13203fb5e09665e554ba490e56979))
+
 # [1.27.0](https://github.com/MohammadBnei/agent-fleet/compare/1.26.0...1.27.0) (2026-08-10)
 
 
