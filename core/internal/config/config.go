@@ -69,7 +69,7 @@ func Load() Config {
 		DBPassword:            os.Getenv("AGENTFLEET_DB_PASSWORD"),
 		DiscordBotToken:       os.Getenv("DISCORD_BOT_TOKEN"),
 		DiscordTriggerChannel: os.Getenv("DISCORD_TRIGGER_CHANNEL_ID"),
-		LokiURL:               env("LOKI_URL", "http://loki.monitoring.svc.cluster.local:3100"),
+		LokiURL:               env("LOKI_URL", "http://platform-loki.monitoring.svc.cluster.local:3100"),
 		ProvisionerGRPCAddr:   env("PROVISIONER_GRPC_ADDR", "provisioner.agent-fleet.svc.cluster.local:9090"),
 		MaxInFlight:           envInt("MAX_IN_FLIGHT_TASKS", 5),
 		MaxTaskRetries:        envInt("MAX_TASK_RETRIES", 3),
