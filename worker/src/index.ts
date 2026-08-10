@@ -62,6 +62,15 @@ async function run(cmd: string[], cwd: string): Promise<string> {
 // place whenever it decides to.
 async function defaultConfigureGitAuth(): Promise<void> {
   if (!process.env.GH_TOKEN) return; // falls back to whatever ambient git auth is configured
+  // The worktree was created by the provisioner's own container (a
+  // different UID — worker runs non-root, required for Claude Code's
+  // bypassPermissions mode, see worker/Dockerfile) — git's own
+  // ownership-mismatch guard (CVE-2022-24765 mitigation) refuses every
+  // command otherwise, "detected dubious ownership", regardless of the
+  // worktree's actual file permissions. Confirmed live against a real
+  // Longhorn-backed PVC: file perms alone (provisioner's umask 0) were not
+  // sufficient, this config is a second, separate requirement.
+  await run(["git", "config", "--global", "--add", "safe.directory", WORKTREE_PATH], WORKTREE_PATH);
   await run(["gh", "auth", "setup-git"], WORKTREE_PATH);
   const login = await run(["gh", "api", "user", "--jq", ".login"], WORKTREE_PATH);
   await run(["git", "config", "--global", "user.name", login], WORKTREE_PATH);
