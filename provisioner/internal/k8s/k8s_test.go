@@ -20,13 +20,16 @@ func newTestClient() *Client {
 		ingressRouteGVR: "IngressRouteList",
 	}
 	return &Client{
-		Core:         fake.NewSimpleClientset(),
-		Dynamic:      dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme, listKinds),
-		Namespace:    "agent-fleet",
-		RunnerImage:  "mohammaddocker/agent-fleet-e2e-runner:latest",
-		WorkerImage:  "mohammaddocker/agent-fleet-worker:latest",
-		SidecarImage: "mohammaddocker/agent-fleet-sidecar:latest",
-		WorkspacePVC: "agent-fleet-workspace",
+		Core:                  fake.NewSimpleClientset(),
+		Dynamic:               dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme, listKinds),
+		Namespace:             "agent-fleet",
+		RunnerImage:           "mohammaddocker/agent-fleet-e2e-runner:latest",
+		WorkerImage:           "mohammaddocker/agent-fleet-worker:latest",
+		SidecarImage:          "mohammaddocker/agent-fleet-sidecar:latest",
+		WorkspacePVC:          "agent-fleet-workspace",
+		PostgresImage:         "postgres:16-alpine",
+		RedisImage:            "redis:7-alpine",
+		SharedInstancePVCSize: "2Gi",
 	}
 }
 

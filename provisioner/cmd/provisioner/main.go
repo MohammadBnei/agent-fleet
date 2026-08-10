@@ -45,12 +45,15 @@ func main() {
 	// holds no DB credentials at all (docs/adr/0020 point 1). Kubernetes
 	// itself is the durable source of truth for pod/session state.
 	k8sc, err := k8s.New(cfg.Namespace, k8s.Images{
-		RunnerImage:  cfg.E2eRunnerImage,
-		WorkerImage:  cfg.WorkerImage,
-		SidecarImage: cfg.SidecarImage,
-		WorkspacePVC: cfg.WorkspacePVC,
-		LogLevel:     cfg.LogLevel,
-		CoreGRPCAddr: cfg.CoreGRPCAddr,
+		RunnerImage:           cfg.E2eRunnerImage,
+		WorkerImage:           cfg.WorkerImage,
+		SidecarImage:          cfg.SidecarImage,
+		WorkspacePVC:          cfg.WorkspacePVC,
+		LogLevel:              cfg.LogLevel,
+		CoreGRPCAddr:          cfg.CoreGRPCAddr,
+		PostgresImage:         cfg.PostgresImage,
+		RedisImage:            cfg.RedisImage,
+		SharedInstancePVCSize: cfg.SharedInstancePVCSize,
 	})
 	if err != nil {
 		slog.Error("k8s client init failed", "error", err)

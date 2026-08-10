@@ -9,6 +9,59 @@
 export const protobufPackage = "agentfleet.v1";
 
 /**
+ * How a service ingredient (postgres/redis) is shared across pods/tasks —
+ * docs/adr/0034. pod-scoped: a native sidecar in the requesting pod alone,
+ * localhost-only, dies with it. task-scoped: a per-task database minted
+ * inside a shared per-repo instance, reused by every pod belonging to the
+ * same task. repo-scoped: the same shared instance with no per-task
+ * minting, every task against the repo hits the same database.
+ */
+export enum ScopeMode {
+  SCOPE_MODE_UNSPECIFIED = 0,
+  SCOPE_MODE_POD_SCOPED = 1,
+  SCOPE_MODE_TASK_SCOPED = 2,
+  SCOPE_MODE_REPO_SCOPED = 3,
+  UNRECOGNIZED = -1,
+}
+
+export function scopeModeFromJSON(object: any): ScopeMode {
+  switch (object) {
+    case 0:
+    case "SCOPE_MODE_UNSPECIFIED":
+      return ScopeMode.SCOPE_MODE_UNSPECIFIED;
+    case 1:
+    case "SCOPE_MODE_POD_SCOPED":
+      return ScopeMode.SCOPE_MODE_POD_SCOPED;
+    case 2:
+    case "SCOPE_MODE_TASK_SCOPED":
+      return ScopeMode.SCOPE_MODE_TASK_SCOPED;
+    case 3:
+    case "SCOPE_MODE_REPO_SCOPED":
+      return ScopeMode.SCOPE_MODE_REPO_SCOPED;
+    case -1:
+    case "UNRECOGNIZED":
+    default:
+      return ScopeMode.UNRECOGNIZED;
+  }
+}
+
+export function scopeModeToJSON(object: ScopeMode): string {
+  switch (object) {
+    case ScopeMode.SCOPE_MODE_UNSPECIFIED:
+      return "SCOPE_MODE_UNSPECIFIED";
+    case ScopeMode.SCOPE_MODE_POD_SCOPED:
+      return "SCOPE_MODE_POD_SCOPED";
+    case ScopeMode.SCOPE_MODE_TASK_SCOPED:
+      return "SCOPE_MODE_TASK_SCOPED";
+    case ScopeMode.SCOPE_MODE_REPO_SCOPED:
+      return "SCOPE_MODE_REPO_SCOPED";
+    case ScopeMode.UNRECOGNIZED:
+    default:
+      return "UNRECOGNIZED";
+  }
+}
+
+/**
  * Which kind of session/pod an operation targets — worker pods and e2e
  * preview pods share the provisioner's reconcile/teardown machinery
  * (docs/adr/0019) but are tracked and torn down independently.
@@ -52,6 +105,12 @@ export function sessionKindToJSON(object: SessionKind): string {
   }
 }
 
+export interface ServiceIngredient {
+  /** "postgres" | "redis" — provisioner/internal/catalog.go */
+  key: string;
+  scopeMode: ScopeMode;
+}
+
 export interface KillE2eSessionRequest {
   taskId: string;
   idempotencyKey: string;
@@ -88,6 +147,14 @@ export interface CreateE2eSessionRequest {
    * core unchanged.
    */
   startCmd: string;
+  /**
+   * Resolved from the repo's "e2e" profile (or an agent-overridden
+   * profile) by core before this call — docs/adr/0034. The provisioner
+   * holds no DB, so it never resolves a profile name itself, only the
+   * already-resolved ingredient list.
+   */
+  toolKeys: string[];
+  serviceIngredients: ServiceIngredient[];
 }
 
 export interface CreateE2eSessionResponse {
@@ -143,6 +210,13 @@ export interface CreateWorkerPodRequest {
    * worker's own taskPrompt() then falls back to just the bare description.
    */
   guidance: string;
+  /**
+   * Resolved from the repo's "worker" profile by core before this call —
+   * docs/adr/0034. Empty when the repo has no "worker" profile row, which
+   * preserves today's exact pod shape (fully backward compatible).
+   */
+  toolKeys: string[];
+  serviceIngredients: ServiceIngredient[];
 }
 
 export interface CreateWorkerPodResponse {
@@ -236,6 +310,44 @@ export interface DeleteWorktreeRequest {
 export interface DeleteWorktreeResponse {
   deleted: boolean;
 }
+
+function createBaseServiceIngredient(): ServiceIngredient {
+  return { key: "", scopeMode: 0 };
+}
+
+export const ServiceIngredient: MessageFns<ServiceIngredient> = {
+  fromJSON(object: any): ServiceIngredient {
+    return {
+      key: isSet(object.key) ? globalThis.String(object.key) : "",
+      scopeMode: isSet(object.scopeMode)
+        ? scopeModeFromJSON(object.scopeMode)
+        : isSet(object.scope_mode)
+        ? scopeModeFromJSON(object.scope_mode)
+        : 0,
+    };
+  },
+
+  toJSON(message: ServiceIngredient): unknown {
+    const obj: any = {};
+    if (message.key !== "") {
+      obj.key = message.key;
+    }
+    if (message.scopeMode !== 0) {
+      obj.scopeMode = scopeModeToJSON(message.scopeMode);
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<ServiceIngredient>, I>>(base?: I): ServiceIngredient {
+    return ServiceIngredient.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<ServiceIngredient>, I>>(object: I): ServiceIngredient {
+    const message = createBaseServiceIngredient();
+    message.key = object.key ?? "";
+    message.scopeMode = object.scopeMode ?? 0;
+    return message;
+  },
+};
 
 function createBaseKillE2eSessionRequest(): KillE2eSessionRequest {
   return { taskId: "", idempotencyKey: "" };
@@ -378,7 +490,7 @@ export const GetE2eSessionStatusResponse: MessageFns<GetE2eSessionStatusResponse
 };
 
 function createBaseCreateE2eSessionRequest(): CreateE2eSessionRequest {
-  return { taskId: "", repo: "", startCmd: "" };
+  return { taskId: "", repo: "", startCmd: "", toolKeys: [], serviceIngredients: [] };
 }
 
 export const CreateE2eSessionRequest: MessageFns<CreateE2eSessionRequest> = {
@@ -395,6 +507,18 @@ export const CreateE2eSessionRequest: MessageFns<CreateE2eSessionRequest> = {
         : isSet(object.start_cmd)
         ? globalThis.String(object.start_cmd)
         : "",
+      toolKeys: globalThis.Array.isArray(object?.toolKeys)
+        ? object.toolKeys.map((e: any) => globalThis.String(e))
+        : globalThis.Array.isArray(object?.tool_keys)
+        ? object.tool_keys.map((e: any) => globalThis.String(e))
+        : [],
+      serviceIngredients: globalThis.Array.isArray(object?.serviceIngredients)
+        ? object.serviceIngredients.map((e: any) => ServiceIngredient.fromJSON(e))
+        : globalThis.Array.isArray(object?.service_ingredients)
+        ? object.service_ingredients.map((e: any) =>
+          ServiceIngredient.fromJSON(e)
+        )
+        : [],
     };
   },
 
@@ -409,6 +533,12 @@ export const CreateE2eSessionRequest: MessageFns<CreateE2eSessionRequest> = {
     if (message.startCmd !== "") {
       obj.startCmd = message.startCmd;
     }
+    if (message.toolKeys?.length) {
+      obj.toolKeys = message.toolKeys;
+    }
+    if (message.serviceIngredients?.length) {
+      obj.serviceIngredients = message.serviceIngredients.map((e) => ServiceIngredient.toJSON(e));
+    }
     return obj;
   },
 
@@ -420,6 +550,8 @@ export const CreateE2eSessionRequest: MessageFns<CreateE2eSessionRequest> = {
     message.taskId = object.taskId ?? "";
     message.repo = object.repo ?? "";
     message.startCmd = object.startCmd ?? "";
+    message.toolKeys = object.toolKeys?.map((e) => e) || [];
+    message.serviceIngredients = object.serviceIngredients?.map((e) => ServiceIngredient.fromPartial(e)) || [];
     return message;
   },
 };
@@ -473,6 +605,8 @@ function createBaseCreateWorkerPodRequest(): CreateWorkerPodRequest {
     resumeSessionId: "",
     resumeFromSeq: 0,
     guidance: "",
+    toolKeys: [],
+    serviceIngredients: [],
   };
 }
 
@@ -512,6 +646,16 @@ export const CreateWorkerPodRequest: MessageFns<CreateWorkerPodRequest> = {
         ? globalThis.Number(object.resume_from_seq)
         : 0,
       guidance: isSet(object.guidance) ? globalThis.String(object.guidance) : "",
+      toolKeys: globalThis.Array.isArray(object?.toolKeys)
+        ? object.toolKeys.map((e: any) => globalThis.String(e))
+        : globalThis.Array.isArray(object?.tool_keys)
+        ? object.tool_keys.map((e: any) => globalThis.String(e))
+        : [],
+      serviceIngredients: globalThis.Array.isArray(object?.serviceIngredients)
+        ? object.serviceIngredients.map((e: any) => ServiceIngredient.fromJSON(e))
+        : globalThis.Array.isArray(object?.service_ingredients)
+        ? object.service_ingredients.map((e: any) => ServiceIngredient.fromJSON(e))
+        : [],
     };
   },
 
@@ -544,6 +688,12 @@ export const CreateWorkerPodRequest: MessageFns<CreateWorkerPodRequest> = {
     if (message.guidance !== "") {
       obj.guidance = message.guidance;
     }
+    if (message.toolKeys?.length) {
+      obj.toolKeys = message.toolKeys;
+    }
+    if (message.serviceIngredients?.length) {
+      obj.serviceIngredients = message.serviceIngredients.map((e) => ServiceIngredient.toJSON(e));
+    }
     return obj;
   },
 
@@ -561,6 +711,8 @@ export const CreateWorkerPodRequest: MessageFns<CreateWorkerPodRequest> = {
     message.resumeSessionId = object.resumeSessionId ?? "";
     message.resumeFromSeq = object.resumeFromSeq ?? 0;
     message.guidance = object.guidance ?? "";
+    message.toolKeys = object.toolKeys?.map((e) => e) || [];
+    message.serviceIngredients = object.serviceIngredients?.map((e) => ServiceIngredient.fromPartial(e)) || [];
     return message;
   },
 };

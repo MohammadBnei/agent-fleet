@@ -167,10 +167,17 @@ export interface RequestE2eEnvRequest {
   /**
    * Shell command that installs deps and starts the app, run via
    * `bash -lc` from the worktree root (e.g. "cd front && bun install &&
-   * bun run dev"). Optional — falls back to the provisioner's
-   * per-repo default (StartCmdFor) when empty.
+   * bun run dev"). Optional — falls back to the resolved profile's own
+   * start_cmd when empty (docs/adr/0034).
    */
   startCmd: string;
+  /**
+   * Which named repo_profiles row to resolve — optional, defaults to
+   * "e2e" when empty. Lets the agent request a different declared profile
+   * (e.g. a repo's "lint" profile) for the same request_e2e_env MCP tool
+   * call, reusing this same start_cmd-override pattern (docs/adr/0034).
+   */
+  profile: string;
 }
 
 export interface RequestE2eEnvResponse {
@@ -713,7 +720,7 @@ export const AskUserQuestionResponse: MessageFns<AskUserQuestionResponse> = {
 };
 
 function createBaseRequestE2eEnvRequest(): RequestE2eEnvRequest {
-  return { taskId: "", startCmd: "" };
+  return { taskId: "", startCmd: "", profile: "" };
 }
 
 export const RequestE2eEnvRequest: MessageFns<RequestE2eEnvRequest> = {
@@ -729,6 +736,7 @@ export const RequestE2eEnvRequest: MessageFns<RequestE2eEnvRequest> = {
         : isSet(object.start_cmd)
         ? globalThis.String(object.start_cmd)
         : "",
+      profile: isSet(object.profile) ? globalThis.String(object.profile) : "",
     };
   },
 
@@ -740,6 +748,9 @@ export const RequestE2eEnvRequest: MessageFns<RequestE2eEnvRequest> = {
     if (message.startCmd !== "") {
       obj.startCmd = message.startCmd;
     }
+    if (message.profile !== "") {
+      obj.profile = message.profile;
+    }
     return obj;
   },
 
@@ -750,6 +761,7 @@ export const RequestE2eEnvRequest: MessageFns<RequestE2eEnvRequest> = {
     const message = createBaseRequestE2eEnvRequest();
     message.taskId = object.taskId ?? "";
     message.startCmd = object.startCmd ?? "";
+    message.profile = object.profile ?? "";
     return message;
   },
 };

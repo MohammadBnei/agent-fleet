@@ -26,7 +26,12 @@ import {
   ListFilesRequest,
   ListFilesResponse,
 } from "./files.js";
-import { DeleteWorktreeRequest, DeleteWorktreeResponse, ListWorktreesRequest } from "./provisioner.js";
+import {
+  DeleteWorktreeRequest,
+  DeleteWorktreeResponse,
+  ListWorktreesRequest,
+  ServiceIngredient,
+} from "./provisioner.js";
 import { ReadTranscriptSinceRequest, ReadTranscriptSinceResponse, TranscriptEntry } from "./transcript.js";
 
 export const protobufPackage = "agentfleet.v1";
@@ -282,6 +287,62 @@ export interface DeleteRepoRequest {
 }
 
 export interface DeleteRepoResponse {
+  status: string;
+}
+
+/**
+ * RepoProfile is a dashboard-editable named environment recipe for a repo
+ * (docs/adr/0034) — replaces the hardcoded per-repo StartCmdFor switch.
+ * Reuses provisioner.proto's ServiceIngredient message (already imported
+ * here) rather than redefining it.
+ */
+export interface RepoProfile {
+  repoName: string;
+  /** "worker" | "e2e" | "lint" | ... */
+  name: string;
+  startCmd: string;
+  toolKeys: string[];
+  serviceIngredients: ServiceIngredient[];
+}
+
+export interface ListRepoProfilesRequest {
+  repoName: string;
+}
+
+export interface ListRepoProfilesResponse {
+  profiles: RepoProfile[];
+}
+
+export interface CreateRepoProfileRequest {
+  repoName: string;
+  name: string;
+  startCmd: string;
+  toolKeys: string[];
+  serviceIngredients: ServiceIngredient[];
+}
+
+export interface CreateRepoProfileResponse {
+  profile?: RepoProfile | undefined;
+}
+
+export interface UpdateRepoProfileRequest {
+  repoName: string;
+  name: string;
+  startCmd: string;
+  toolKeys: string[];
+  serviceIngredients: ServiceIngredient[];
+}
+
+export interface UpdateRepoProfileResponse {
+  profile?: RepoProfile | undefined;
+}
+
+export interface DeleteRepoProfileRequest {
+  repoName: string;
+  name: string;
+}
+
+export interface DeleteRepoProfileResponse {
   status: string;
 }
 
@@ -1544,6 +1605,392 @@ export const DeleteRepoResponse: MessageFns<DeleteRepoResponse> = {
   },
 };
 
+function createBaseRepoProfile(): RepoProfile {
+  return { repoName: "", name: "", startCmd: "", toolKeys: [], serviceIngredients: [] };
+}
+
+export const RepoProfile: MessageFns<RepoProfile> = {
+  fromJSON(object: any): RepoProfile {
+    return {
+      repoName: isSet(object.repoName)
+        ? globalThis.String(object.repoName)
+        : isSet(object.repo_name)
+        ? globalThis.String(object.repo_name)
+        : "",
+      name: isSet(object.name) ? globalThis.String(object.name) : "",
+      startCmd: isSet(object.startCmd)
+        ? globalThis.String(object.startCmd)
+        : isSet(object.start_cmd)
+        ? globalThis.String(object.start_cmd)
+        : "",
+      toolKeys: globalThis.Array.isArray(object?.toolKeys)
+        ? object.toolKeys.map((e: any) => globalThis.String(e))
+        : globalThis.Array.isArray(object?.tool_keys)
+        ? object.tool_keys.map((e: any) => globalThis.String(e))
+        : [],
+      serviceIngredients: globalThis.Array.isArray(object?.serviceIngredients)
+        ? object.serviceIngredients.map((e: any) => ServiceIngredient.fromJSON(e))
+        : globalThis.Array.isArray(object?.service_ingredients)
+        ? object.service_ingredients.map((e: any) => ServiceIngredient.fromJSON(e))
+        : [],
+    };
+  },
+
+  toJSON(message: RepoProfile): unknown {
+    const obj: any = {};
+    if (message.repoName !== "") {
+      obj.repoName = message.repoName;
+    }
+    if (message.name !== "") {
+      obj.name = message.name;
+    }
+    if (message.startCmd !== "") {
+      obj.startCmd = message.startCmd;
+    }
+    if (message.toolKeys?.length) {
+      obj.toolKeys = message.toolKeys;
+    }
+    if (message.serviceIngredients?.length) {
+      obj.serviceIngredients = message.serviceIngredients.map((e) => ServiceIngredient.toJSON(e));
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<RepoProfile>, I>>(base?: I): RepoProfile {
+    return RepoProfile.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<RepoProfile>, I>>(object: I): RepoProfile {
+    const message = createBaseRepoProfile();
+    message.repoName = object.repoName ?? "";
+    message.name = object.name ?? "";
+    message.startCmd = object.startCmd ?? "";
+    message.toolKeys = object.toolKeys?.map((e) => e) || [];
+    message.serviceIngredients = object.serviceIngredients?.map((e) => ServiceIngredient.fromPartial(e)) || [];
+    return message;
+  },
+};
+
+function createBaseListRepoProfilesRequest(): ListRepoProfilesRequest {
+  return { repoName: "" };
+}
+
+export const ListRepoProfilesRequest: MessageFns<ListRepoProfilesRequest> = {
+  fromJSON(object: any): ListRepoProfilesRequest {
+    return {
+      repoName: isSet(object.repoName)
+        ? globalThis.String(object.repoName)
+        : isSet(object.repo_name)
+        ? globalThis.String(object.repo_name)
+        : "",
+    };
+  },
+
+  toJSON(message: ListRepoProfilesRequest): unknown {
+    const obj: any = {};
+    if (message.repoName !== "") {
+      obj.repoName = message.repoName;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<ListRepoProfilesRequest>, I>>(base?: I): ListRepoProfilesRequest {
+    return ListRepoProfilesRequest.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<ListRepoProfilesRequest>, I>>(object: I): ListRepoProfilesRequest {
+    const message = createBaseListRepoProfilesRequest();
+    message.repoName = object.repoName ?? "";
+    return message;
+  },
+};
+
+function createBaseListRepoProfilesResponse(): ListRepoProfilesResponse {
+  return { profiles: [] };
+}
+
+export const ListRepoProfilesResponse: MessageFns<ListRepoProfilesResponse> = {
+  fromJSON(object: any): ListRepoProfilesResponse {
+    return {
+      profiles: globalThis.Array.isArray(object?.profiles)
+        ? object.profiles.map((e: any) => RepoProfile.fromJSON(e))
+        : [],
+    };
+  },
+
+  toJSON(message: ListRepoProfilesResponse): unknown {
+    const obj: any = {};
+    if (message.profiles?.length) {
+      obj.profiles = message.profiles.map((e) => RepoProfile.toJSON(e));
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<ListRepoProfilesResponse>, I>>(base?: I): ListRepoProfilesResponse {
+    return ListRepoProfilesResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<ListRepoProfilesResponse>, I>>(object: I): ListRepoProfilesResponse {
+    const message = createBaseListRepoProfilesResponse();
+    message.profiles = object.profiles?.map((e) => RepoProfile.fromPartial(e)) || [];
+    return message;
+  },
+};
+
+function createBaseCreateRepoProfileRequest(): CreateRepoProfileRequest {
+  return { repoName: "", name: "", startCmd: "", toolKeys: [], serviceIngredients: [] };
+}
+
+export const CreateRepoProfileRequest: MessageFns<CreateRepoProfileRequest> = {
+  fromJSON(object: any): CreateRepoProfileRequest {
+    return {
+      repoName: isSet(object.repoName)
+        ? globalThis.String(object.repoName)
+        : isSet(object.repo_name)
+        ? globalThis.String(object.repo_name)
+        : "",
+      name: isSet(object.name) ? globalThis.String(object.name) : "",
+      startCmd: isSet(object.startCmd)
+        ? globalThis.String(object.startCmd)
+        : isSet(object.start_cmd)
+        ? globalThis.String(object.start_cmd)
+        : "",
+      toolKeys: globalThis.Array.isArray(object?.toolKeys)
+        ? object.toolKeys.map((e: any) => globalThis.String(e))
+        : globalThis.Array.isArray(object?.tool_keys)
+        ? object.tool_keys.map((e: any) => globalThis.String(e))
+        : [],
+      serviceIngredients: globalThis.Array.isArray(object?.serviceIngredients)
+        ? object.serviceIngredients.map((e: any) => ServiceIngredient.fromJSON(e))
+        : globalThis.Array.isArray(object?.service_ingredients)
+        ? object.service_ingredients.map((e: any) =>
+          ServiceIngredient.fromJSON(e)
+        )
+        : [],
+    };
+  },
+
+  toJSON(message: CreateRepoProfileRequest): unknown {
+    const obj: any = {};
+    if (message.repoName !== "") {
+      obj.repoName = message.repoName;
+    }
+    if (message.name !== "") {
+      obj.name = message.name;
+    }
+    if (message.startCmd !== "") {
+      obj.startCmd = message.startCmd;
+    }
+    if (message.toolKeys?.length) {
+      obj.toolKeys = message.toolKeys;
+    }
+    if (message.serviceIngredients?.length) {
+      obj.serviceIngredients = message.serviceIngredients.map((e) => ServiceIngredient.toJSON(e));
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<CreateRepoProfileRequest>, I>>(base?: I): CreateRepoProfileRequest {
+    return CreateRepoProfileRequest.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<CreateRepoProfileRequest>, I>>(object: I): CreateRepoProfileRequest {
+    const message = createBaseCreateRepoProfileRequest();
+    message.repoName = object.repoName ?? "";
+    message.name = object.name ?? "";
+    message.startCmd = object.startCmd ?? "";
+    message.toolKeys = object.toolKeys?.map((e) => e) || [];
+    message.serviceIngredients = object.serviceIngredients?.map((e) => ServiceIngredient.fromPartial(e)) || [];
+    return message;
+  },
+};
+
+function createBaseCreateRepoProfileResponse(): CreateRepoProfileResponse {
+  return { profile: undefined };
+}
+
+export const CreateRepoProfileResponse: MessageFns<CreateRepoProfileResponse> = {
+  fromJSON(object: any): CreateRepoProfileResponse {
+    return { profile: isSet(object.profile) ? RepoProfile.fromJSON(object.profile) : undefined };
+  },
+
+  toJSON(message: CreateRepoProfileResponse): unknown {
+    const obj: any = {};
+    if (message.profile !== undefined) {
+      obj.profile = RepoProfile.toJSON(message.profile);
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<CreateRepoProfileResponse>, I>>(base?: I): CreateRepoProfileResponse {
+    return CreateRepoProfileResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<CreateRepoProfileResponse>, I>>(object: I): CreateRepoProfileResponse {
+    const message = createBaseCreateRepoProfileResponse();
+    message.profile = (object.profile !== undefined && object.profile !== null)
+      ? RepoProfile.fromPartial(object.profile)
+      : undefined;
+    return message;
+  },
+};
+
+function createBaseUpdateRepoProfileRequest(): UpdateRepoProfileRequest {
+  return { repoName: "", name: "", startCmd: "", toolKeys: [], serviceIngredients: [] };
+}
+
+export const UpdateRepoProfileRequest: MessageFns<UpdateRepoProfileRequest> = {
+  fromJSON(object: any): UpdateRepoProfileRequest {
+    return {
+      repoName: isSet(object.repoName)
+        ? globalThis.String(object.repoName)
+        : isSet(object.repo_name)
+        ? globalThis.String(object.repo_name)
+        : "",
+      name: isSet(object.name) ? globalThis.String(object.name) : "",
+      startCmd: isSet(object.startCmd)
+        ? globalThis.String(object.startCmd)
+        : isSet(object.start_cmd)
+        ? globalThis.String(object.start_cmd)
+        : "",
+      toolKeys: globalThis.Array.isArray(object?.toolKeys)
+        ? object.toolKeys.map((e: any) => globalThis.String(e))
+        : globalThis.Array.isArray(object?.tool_keys)
+        ? object.tool_keys.map((e: any) => globalThis.String(e))
+        : [],
+      serviceIngredients: globalThis.Array.isArray(object?.serviceIngredients)
+        ? object.serviceIngredients.map((e: any) => ServiceIngredient.fromJSON(e))
+        : globalThis.Array.isArray(object?.service_ingredients)
+        ? object.service_ingredients.map((e: any) =>
+          ServiceIngredient.fromJSON(e)
+        )
+        : [],
+    };
+  },
+
+  toJSON(message: UpdateRepoProfileRequest): unknown {
+    const obj: any = {};
+    if (message.repoName !== "") {
+      obj.repoName = message.repoName;
+    }
+    if (message.name !== "") {
+      obj.name = message.name;
+    }
+    if (message.startCmd !== "") {
+      obj.startCmd = message.startCmd;
+    }
+    if (message.toolKeys?.length) {
+      obj.toolKeys = message.toolKeys;
+    }
+    if (message.serviceIngredients?.length) {
+      obj.serviceIngredients = message.serviceIngredients.map((e) => ServiceIngredient.toJSON(e));
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<UpdateRepoProfileRequest>, I>>(base?: I): UpdateRepoProfileRequest {
+    return UpdateRepoProfileRequest.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<UpdateRepoProfileRequest>, I>>(object: I): UpdateRepoProfileRequest {
+    const message = createBaseUpdateRepoProfileRequest();
+    message.repoName = object.repoName ?? "";
+    message.name = object.name ?? "";
+    message.startCmd = object.startCmd ?? "";
+    message.toolKeys = object.toolKeys?.map((e) => e) || [];
+    message.serviceIngredients = object.serviceIngredients?.map((e) => ServiceIngredient.fromPartial(e)) || [];
+    return message;
+  },
+};
+
+function createBaseUpdateRepoProfileResponse(): UpdateRepoProfileResponse {
+  return { profile: undefined };
+}
+
+export const UpdateRepoProfileResponse: MessageFns<UpdateRepoProfileResponse> = {
+  fromJSON(object: any): UpdateRepoProfileResponse {
+    return { profile: isSet(object.profile) ? RepoProfile.fromJSON(object.profile) : undefined };
+  },
+
+  toJSON(message: UpdateRepoProfileResponse): unknown {
+    const obj: any = {};
+    if (message.profile !== undefined) {
+      obj.profile = RepoProfile.toJSON(message.profile);
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<UpdateRepoProfileResponse>, I>>(base?: I): UpdateRepoProfileResponse {
+    return UpdateRepoProfileResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<UpdateRepoProfileResponse>, I>>(object: I): UpdateRepoProfileResponse {
+    const message = createBaseUpdateRepoProfileResponse();
+    message.profile = (object.profile !== undefined && object.profile !== null)
+      ? RepoProfile.fromPartial(object.profile)
+      : undefined;
+    return message;
+  },
+};
+
+function createBaseDeleteRepoProfileRequest(): DeleteRepoProfileRequest {
+  return { repoName: "", name: "" };
+}
+
+export const DeleteRepoProfileRequest: MessageFns<DeleteRepoProfileRequest> = {
+  fromJSON(object: any): DeleteRepoProfileRequest {
+    return {
+      repoName: isSet(object.repoName)
+        ? globalThis.String(object.repoName)
+        : isSet(object.repo_name)
+        ? globalThis.String(object.repo_name)
+        : "",
+      name: isSet(object.name) ? globalThis.String(object.name) : "",
+    };
+  },
+
+  toJSON(message: DeleteRepoProfileRequest): unknown {
+    const obj: any = {};
+    if (message.repoName !== "") {
+      obj.repoName = message.repoName;
+    }
+    if (message.name !== "") {
+      obj.name = message.name;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<DeleteRepoProfileRequest>, I>>(base?: I): DeleteRepoProfileRequest {
+    return DeleteRepoProfileRequest.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<DeleteRepoProfileRequest>, I>>(object: I): DeleteRepoProfileRequest {
+    const message = createBaseDeleteRepoProfileRequest();
+    message.repoName = object.repoName ?? "";
+    message.name = object.name ?? "";
+    return message;
+  },
+};
+
+function createBaseDeleteRepoProfileResponse(): DeleteRepoProfileResponse {
+  return { status: "" };
+}
+
+export const DeleteRepoProfileResponse: MessageFns<DeleteRepoProfileResponse> = {
+  fromJSON(object: any): DeleteRepoProfileResponse {
+    return { status: isSet(object.status) ? globalThis.String(object.status) : "" };
+  },
+
+  toJSON(message: DeleteRepoProfileResponse): unknown {
+    const obj: any = {};
+    if (message.status !== "") {
+      obj.status = message.status;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<DeleteRepoProfileResponse>, I>>(base?: I): DeleteRepoProfileResponse {
+    return DeleteRepoProfileResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<DeleteRepoProfileResponse>, I>>(object: I): DeleteRepoProfileResponse {
+    const message = createBaseDeleteRepoProfileResponse();
+    message.status = object.status ?? "";
+    return message;
+  },
+};
+
 function createBasePromptSnippet(): PromptSnippet {
   return { id: "", name: "", text: "", suggestedPermissionMode: undefined };
 }
@@ -1879,6 +2326,10 @@ export interface DashboardService {
   CreateRepo(request: CreateRepoRequest): Promise<CreateRepoResponse>;
   UpdateRepo(request: UpdateRepoRequest): Promise<UpdateRepoResponse>;
   DeleteRepo(request: DeleteRepoRequest): Promise<DeleteRepoResponse>;
+  ListRepoProfiles(request: ListRepoProfilesRequest): Promise<ListRepoProfilesResponse>;
+  CreateRepoProfile(request: CreateRepoProfileRequest): Promise<CreateRepoProfileResponse>;
+  UpdateRepoProfile(request: UpdateRepoProfileRequest): Promise<UpdateRepoProfileResponse>;
+  DeleteRepoProfile(request: DeleteRepoProfileRequest): Promise<DeleteRepoProfileResponse>;
   ListPromptSnippets(request: ListPromptSnippetsRequest): Promise<ListPromptSnippetsResponse>;
   CreatePromptSnippet(request: CreatePromptSnippetRequest): Promise<CreatePromptSnippetResponse>;
   UpdatePromptSnippet(request: UpdatePromptSnippetRequest): Promise<UpdatePromptSnippetResponse>;

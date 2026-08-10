@@ -39,6 +39,12 @@ type Client struct {
 	// wherever core's Service actually lives (e.g. prod's release-prefixed
 	// name vs kind-local's unprefixed one).
 	CoreGRPCAddr string
+	// PostgresImage/RedisImage/SharedInstancePVCSize back
+	// EnsureSharedInstance (docs/adr/0034) — see catalog.ServiceDef's own
+	// comment for why the image tag lives in config, not the catalog.
+	PostgresImage         string
+	RedisImage            string
+	SharedInstancePVCSize string
 }
 
 // New builds an in-cluster client. client-go's rest.InClusterConfig()
@@ -63,6 +69,8 @@ func New(namespace string, cfg Images) (*Client, error) {
 		RunnerImage: cfg.RunnerImage, WorkerImage: cfg.WorkerImage,
 		SidecarImage: cfg.SidecarImage, WorkspacePVC: cfg.WorkspacePVC,
 		LogLevel: cfg.LogLevel, CoreGRPCAddr: cfg.CoreGRPCAddr,
+		PostgresImage: cfg.PostgresImage, RedisImage: cfg.RedisImage,
+		SharedInstancePVCSize: cfg.SharedInstancePVCSize,
 	}, nil
 }
 
@@ -71,10 +79,13 @@ func New(namespace string, cfg Images) (*Client, error) {
 // two of them (RunnerImage/WorkerImage/SidecarImage are string-identical
 // types).
 type Images struct {
-	RunnerImage  string
-	WorkerImage  string
-	SidecarImage string
-	WorkspacePVC string
-	LogLevel     string
-	CoreGRPCAddr string
+	RunnerImage           string
+	WorkerImage           string
+	SidecarImage          string
+	WorkspacePVC          string
+	LogLevel              string
+	CoreGRPCAddr          string
+	PostgresImage         string
+	RedisImage            string
+	SharedInstancePVCSize string
 }

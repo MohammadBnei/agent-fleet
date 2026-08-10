@@ -263,6 +263,59 @@ message DeleteRepoResponse {
   string status = 1;
 }
 
+// RepoProfile is a dashboard-editable named environment recipe for a repo
+// (docs/adr/0034) — replaces the hardcoded per-repo StartCmdFor switch.
+// Reuses provisioner.proto's ServiceIngredient message (already imported
+// here) rather than redefining it.
+message RepoProfile {
+  string repo_name = 1;
+  string name = 2; // "worker" | "e2e" | "lint" | ...
+  string start_cmd = 3;
+  repeated string tool_keys = 4;
+  repeated ServiceIngredient service_ingredients = 5;
+}
+
+message ListRepoProfilesRequest {
+  string repo_name = 1;
+}
+
+message ListRepoProfilesResponse {
+  repeated RepoProfile profiles = 1;
+}
+
+message CreateRepoProfileRequest {
+  string repo_name = 1;
+  string name = 2;
+  string start_cmd = 3;
+  repeated string tool_keys = 4;
+  repeated ServiceIngredient service_ingredients = 5;
+}
+
+message CreateRepoProfileResponse {
+  RepoProfile profile = 1;
+}
+
+message UpdateRepoProfileRequest {
+  string repo_name = 1;
+  string name = 2;
+  string start_cmd = 3;
+  repeated string tool_keys = 4;
+  repeated ServiceIngredient service_ingredients = 5;
+}
+
+message UpdateRepoProfileResponse {
+  RepoProfile profile = 1;
+}
+
+message DeleteRepoProfileRequest {
+  string repo_name = 1;
+  string name = 2;
+}
+
+message DeleteRepoProfileResponse {
+  string status = 1;
+}
+
 // PromptSnippet is dashboard-editable, reusable guidance text (same
 // no-redeploy pattern as Repo above), backed by the `prompt_snippets`
 // table (db/schema.sql). An operator optionally attaches a set of these to
@@ -356,6 +409,10 @@ service DashboardService {
   rpc CreateRepo(CreateRepoRequest) returns (CreateRepoResponse);
   rpc UpdateRepo(UpdateRepoRequest) returns (UpdateRepoResponse);
   rpc DeleteRepo(DeleteRepoRequest) returns (DeleteRepoResponse);
+  rpc ListRepoProfiles(ListRepoProfilesRequest) returns (ListRepoProfilesResponse);
+  rpc CreateRepoProfile(CreateRepoProfileRequest) returns (CreateRepoProfileResponse);
+  rpc UpdateRepoProfile(UpdateRepoProfileRequest) returns (UpdateRepoProfileResponse);
+  rpc DeleteRepoProfile(DeleteRepoProfileRequest) returns (DeleteRepoProfileResponse);
   rpc ListPromptSnippets(ListPromptSnippetsRequest) returns (ListPromptSnippetsResponse);
   rpc CreatePromptSnippet(CreatePromptSnippetRequest) returns (CreatePromptSnippetResponse);
   rpc UpdatePromptSnippet(UpdatePromptSnippetRequest) returns (UpdatePromptSnippetResponse);
