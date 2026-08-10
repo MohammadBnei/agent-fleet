@@ -230,6 +230,11 @@ export async function runTask(task: Task): Promise<TaskResult> {
       // `cwd` matching exactly what it was last time (same worktree path,
       // guaranteed since it's always /workspace/worktrees/<taskId>).
       resume: RESUME_SESSION_ID,
+      // Without this, a crash only ever surfaces as the SDK's generic
+      // "Claude Code process exited with code 1" (worker/src/index.ts's
+      // catch) — the child process's actual stderr (auth failure, bad
+      // resume session, etc.) is otherwise discarded, not just unlogged.
+      stderr: (data) => log("error", "claude stderr", { taskId: task.id, data }),
       // Use the task's permission mode from the database, falling back to
       // "default" if not set. This ensures the mode is restored on resume
       // instead of always resetting to "default".
