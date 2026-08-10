@@ -15,6 +15,7 @@ import (
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/provisionerclient"
+	"github.com/MohammadBnei/agent-fleet/core/internal/repoprofiles"
 	"github.com/MohammadBnei/agent-fleet/core/internal/repos"
 	"github.com/MohammadBnei/agent-fleet/core/internal/tasks"
 	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
@@ -29,6 +30,7 @@ type Loop struct {
 	tasks          *tasks.Store
 	transcr        transcript.Store
 	repos          *repos.Store
+	profiles       *repoprofiles.Store
 	provisioner    *provisionerclient.Client
 	maxInFlight    int
 	maxTaskRetries int
@@ -37,9 +39,9 @@ type Loop struct {
 	nudge          chan struct{}
 }
 
-func New(taskStore *tasks.Store, transcr transcript.Store, repoStore *repos.Store, provisioner *provisionerclient.Client, maxInFlight, maxTaskRetries int, stopGrace, idleTimeout time.Duration) *Loop {
+func New(taskStore *tasks.Store, transcr transcript.Store, repoStore *repos.Store, profileStore *repoprofiles.Store, provisioner *provisionerclient.Client, maxInFlight, maxTaskRetries int, stopGrace, idleTimeout time.Duration) *Loop {
 	return &Loop{
-		tasks: taskStore, transcr: transcr, repos: repoStore, provisioner: provisioner,
+		tasks: taskStore, transcr: transcr, repos: repoStore, profiles: profileStore, provisioner: provisioner,
 		maxInFlight: maxInFlight, maxTaskRetries: maxTaskRetries,
 		stopGrace:   stopGrace,
 		idleTimeout: idleTimeout,
@@ -130,7 +132,19 @@ func (l *Loop) tick(ctx context.Context) {
 		slog.Error("dispatch: latest seq lookup failed", "taskId", task.ID, "error", err)
 		return
 	}
-	podName, err := l.provisioner.CreateWorkerPod(ctx, task.ID, task.Repo, repoCfg.URL, repoCfg.BaseBranch, task.Description, task.Guidance, task.LeaseID, resumeSessionID, resumeFromSeq)
+	// Resolved from the repo's "worker"-named profile (docs/adr/0034) — nil
+	// (no such profile) means today's exact pod shape, empty ingredients.
+	profile, err := l.profiles.Get(ctx, task.Repo, "worker")
+	if err != nil {
+		slog.Error("dispatch: repo profile lookup failed", "taskId", task.ID, "repo", task.Repo, "error", err)
+		return
+	}
+	var toolKeys []string
+	var serviceIngredients []repoprofiles.ServiceIngredient
+	if profile != nil {
+		toolKeys, serviceIngredients = profile.Tools, profile.Services
+	}
+	podName, err := l.provisioner.CreateWorkerPod(ctx, task.ID, task.Repo, repoCfg.URL, repoCfg.BaseBranch, task.Description, task.Guidance, task.LeaseID, resumeSessionID, resumeFromSeq, toolKeys, serviceIngredients)
 	if err != nil {
 		slog.Error("dispatch: CreateWorkerPod failed", "taskId", task.ID, "error", err)
 		return

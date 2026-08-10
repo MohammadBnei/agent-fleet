@@ -16,6 +16,8 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
+
+	"github.com/MohammadBnei/agent-fleet/core/internal/repoprofiles"
 )
 
 type Client struct {
@@ -80,16 +82,58 @@ func (c *Client) GetSessionStatus(ctx context.Context, taskID string) (status, p
 // CreateE2eSession asks the provisioner to spin up an on-demand e2e preview
 // pod for taskID (docs/adr/0012), proxied from CoreService.RequestE2eEnv —
 // the sidecar/worker never call this directly (docs/adr/0020 hub-and-spoke).
-func (c *Client) CreateE2eSession(ctx context.Context, taskID, repo, startCmd string) (status, previewURL string, err error) {
+// toolKeys/serviceIngredients are the repo's resolved "e2e" profile
+// (docs/adr/0034, empty when it has none — preserves the pre-recipe pod
+// shape); the provisioner mints any non-pod-scoped service credentials
+// itself, core never sees them.
+func (c *Client) CreateE2eSession(ctx context.Context, taskID, repo, startCmd string, toolKeys []string, serviceIngredients []repoprofiles.ServiceIngredient) (status, previewURL string, err error) {
+	protoIngredients, err := toProtoServiceIngredients(serviceIngredients)
+	if err != nil {
+		return "", "", fmt.Errorf("CreateE2ESession: %w", err)
+	}
 	resp, err := c.rpc.CreateE2ESession(ctx, &agentfleetv1.CreateE2ESessionRequest{
-		TaskId:   taskID,
-		Repo:     repo,
-		StartCmd: startCmd,
+		TaskId:             taskID,
+		Repo:               repo,
+		StartCmd:           startCmd,
+		ToolKeys:           toolKeys,
+		ServiceIngredients: protoIngredients,
 	})
 	if err != nil {
 		return "", "", fmt.Errorf("CreateE2ESession: %w", err)
 	}
 	return resp.GetStatus(), resp.GetPreviewUrl(), nil
+}
+
+// toProtoServiceIngredients/toProtoScopeMode convert repoprofiles' plain
+// string scope-mode ("pod-scoped"/"task-scoped"/"repo-scoped", the same
+// values stored in repo_profile_services.scope_mode) into the proto
+// ScopeMode enum the provisioner's wire format expects.
+func toProtoServiceIngredients(in []repoprofiles.ServiceIngredient) ([]*agentfleetv1.ServiceIngredient, error) {
+	if len(in) == 0 {
+		return nil, nil
+	}
+	out := make([]*agentfleetv1.ServiceIngredient, 0, len(in))
+	for _, si := range in {
+		mode, err := toProtoScopeMode(si.ScopeMode)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, &agentfleetv1.ServiceIngredient{Key: si.Key, ScopeMode: mode})
+	}
+	return out, nil
+}
+
+func toProtoScopeMode(s string) (agentfleetv1.ScopeMode, error) {
+	switch s {
+	case "pod-scoped":
+		return agentfleetv1.ScopeMode_SCOPE_MODE_POD_SCOPED, nil
+	case "task-scoped":
+		return agentfleetv1.ScopeMode_SCOPE_MODE_TASK_SCOPED, nil
+	case "repo-scoped":
+		return agentfleetv1.ScopeMode_SCOPE_MODE_REPO_SCOPED, nil
+	default:
+		return agentfleetv1.ScopeMode_SCOPE_MODE_UNSPECIFIED, fmt.Errorf("unknown scope mode %q", s)
+	}
 }
 
 // ListE2eTools/CallE2eTool proxy the e2e pod's runtime-discovered Playwright
@@ -120,20 +164,28 @@ func (c *Client) CallE2eTool(ctx context.Context, taskID, toolName, argumentsJSO
 // worker pod for taskID, returning once the pod is scheduled. Called only
 // from core's own dispatch loop, immediately after it claims the task
 // (docs/adr/0020 point 2 — core claims, then commands; the provisioner
-// never claims tasks itself).
-func (c *Client) CreateWorkerPod(ctx context.Context, taskID, repo, repoURL, baseBranch, description, guidance, leaseID, resumeSessionID string, resumeFromSeq int64) (podName string, err error) {
+// never claims tasks itself). toolKeys/serviceIngredients are the repo's
+// resolved "worker" profile (docs/adr/0034, empty when it has none —
+// preserves the pre-recipe pod shape).
+func (c *Client) CreateWorkerPod(ctx context.Context, taskID, repo, repoURL, baseBranch, description, guidance, leaseID, resumeSessionID string, resumeFromSeq int64, toolKeys []string, serviceIngredients []repoprofiles.ServiceIngredient) (podName string, err error) {
 	ctx, cancel := context.WithTimeout(ctx, sessionCallTimeout)
 	defer cancel()
+	protoIngredients, err := toProtoServiceIngredients(serviceIngredients)
+	if err != nil {
+		return "", fmt.Errorf("CreateWorkerPod: %w", err)
+	}
 	resp, err := c.rpc.CreateWorkerPod(ctx, &agentfleetv1.CreateWorkerPodRequest{
-		TaskId:          taskID,
-		Repo:            repo,
-		RepoUrl:         repoURL,
-		BaseBranch:      baseBranch,
-		Description:     description,
-		Guidance:        guidance,
-		LeaseId:         leaseID,
-		ResumeSessionId: resumeSessionID,
-		ResumeFromSeq:   resumeFromSeq,
+		TaskId:             taskID,
+		Repo:               repo,
+		RepoUrl:            repoURL,
+		BaseBranch:         baseBranch,
+		Description:        description,
+		Guidance:           guidance,
+		LeaseId:            leaseID,
+		ResumeSessionId:    resumeSessionID,
+		ResumeFromSeq:      resumeFromSeq,
+		ToolKeys:           toolKeys,
+		ServiceIngredients: protoIngredients,
 	})
 	if err != nil {
 		return "", fmt.Errorf("CreateWorkerPod: %w", err)
