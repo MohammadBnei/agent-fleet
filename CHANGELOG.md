@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.31.2](https://github.com/MohammadBnei/agent-fleet/compare/1.31.1...1.31.2) (2026-08-10)
+
+
+### Bug Fixes
+
+* **worker:** add git safe.directory exception for the non-root worktree ([1256205](https://github.com/MohammadBnei/agent-fleet/commit/12562052b1ddbf70c176a745d2abc67e57de36d9))
+* **worker:** run worker container as non-root for bypassPermissions mode ([6c1e491](https://github.com/MohammadBnei/agent-fleet/commit/6c1e491d0599782bcd4b249a35c9fd4b15482314))
+
 ## [1.31.1](https://github.com/MohammadBnei/agent-fleet/compare/1.31.0...1.31.1) (2026-08-10)
 
 
