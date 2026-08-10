@@ -134,7 +134,7 @@ func mintPostgres(ctx context.Context, host string, port int32, adminPassword, n
 	if err != nil {
 		return "", fmt.Errorf("connect as admin: %w", err)
 	}
-	defer conn.Close(ctx)
+	defer func() { _ = conn.Close(ctx) }()
 
 	// Plain sequential statements, not a transaction: Postgres can't run
 	// CREATE DATABASE inside a transaction block.
@@ -199,7 +199,7 @@ func mintRedis(ctx context.Context, host string, port int32, adminPassword, name
 	if err != nil {
 		return "", fmt.Errorf("connect as admin: %w", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	if _, err := conn.Write(respCommand("ACL", "SETUSER", name, "on", ">"+password, "allkeys", "allcommands")); err != nil {
 		return "", fmt.Errorf("acl setuser: %w", err)
