@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"strings"
@@ -56,7 +57,16 @@ func (c *Client) EnsureSharedInstance(ctx context.Context, repo, serviceKey stri
 
 	host = fmt.Sprintf("%s.%s.svc.cluster.local", name, c.Namespace)
 	if err := waitReady(ctx, serviceKey, def, host, adminPassword); err != nil {
-		return "", 0, "", fmt.Errorf("wait for %s ready: %w", serviceKey, err)
+		// The bare connection error alone ("connection refused", "timed
+		// out") tells an operator nothing about *why* the instance never
+		// came up — found live: a postgres pod stuck crash-looping on
+		// "initdb: error: directory ... exists but is not empty" produced
+		// no signal at all in the provisioner's own logs, only in the
+		// instance pod's own logs a human had to go find manually. Folding
+		// the failing pod's own state/log tail into this error means it
+		// shows up in the provisioner's logs directly, one hop closer to
+		// where an operator is already looking.
+		return "", 0, "", fmt.Errorf("wait for %s ready: %w (%s)", serviceKey, err, c.describeSharedInstanceFailure(ctx, repo, serviceKey))
 	}
 
 	if err := c.touchLastUsedAt(ctx, name); err != nil {
@@ -185,9 +195,19 @@ func (c *Client) ensureSharedDeployment(ctx context.Context, name string, labels
 	return err
 }
 
-// postgresDataMountPath matches the postgres image's default PGDATA
-// location — no PGDATA env override needed.
-const postgresDataMountPath = "/var/lib/postgresql/data"
+// postgresDataMountPath is the PVC mount point; postgresPGDATA is a
+// SUBDIRECTORY of it, set explicitly via the PGDATA env var below — found
+// live: mounting a PVC directly at postgres's default PGDATA
+// (/var/lib/postgresql/data) makes initdb fail with "directory ... exists
+// but is not empty" the moment the underlying volume's filesystem has a
+// lost+found directory at its root (standard for a freshly-formatted ext4
+// volume, not something this cluster's storage class avoids). A
+// subdirectory starts genuinely empty regardless of what's sitting
+// alongside it at the mount root.
+const (
+	postgresDataMountPath = "/var/lib/postgresql/data"
+	postgresPGDATA        = postgresDataMountPath + "/pgdata"
+)
 
 func serviceEnv(serviceKey string, def catalog.ServiceDef, adminPassword string) []corev1.EnvVar {
 	if serviceKey == "redis" {
@@ -201,6 +221,7 @@ func serviceEnv(serviceKey string, def catalog.ServiceDef, adminPassword string)
 		{Name: "POSTGRES_USER", Value: def.AdminUser},
 		{Name: "POSTGRES_PASSWORD", Value: adminPassword},
 		{Name: "POSTGRES_DB", Value: "postgres"},
+		{Name: "PGDATA", Value: postgresPGDATA},
 	}
 }
 
@@ -331,6 +352,45 @@ func (c *Client) DeleteSharedInstance(ctx context.Context, repo, serviceKey stri
 	}
 	slog.Info("k8s DeleteSharedInstance", "repo", repo, "serviceKey", serviceKey)
 	return nil
+}
+
+// describeSharedInstanceFailure best-effort summarizes why a shared
+// instance's own pod isn't up — container waiting/terminated
+// reason+message plus a short log tail, the same things an operator would
+// otherwise have to go find manually via a separate `kubectl describe`/
+// `kubectl logs`. Called only on the already-failed path in
+// EnsureSharedInstance, so a further failure here (pod gone, RBAC hiccup,
+// whatever) just degrades to a shorter message — never promoted to a
+// second error, the original connection failure is still the one that
+// matters.
+func (c *Client) describeSharedInstanceFailure(ctx context.Context, repo, serviceKey string) string {
+	selector := fmt.Sprintf("%s=%s,%s=%s", RepoLabel, repo, ServiceKeyLabel, serviceKey)
+	pods, err := c.Core.CoreV1().Pods(c.Namespace).List(ctx, metav1.ListOptions{LabelSelector: selector})
+	if err != nil || len(pods.Items) == 0 {
+		return "no pod found for diagnostics"
+	}
+	pod := pods.Items[0]
+
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "pod %s phase=%s", pod.Name, pod.Status.Phase)
+	for _, cs := range pod.Status.ContainerStatuses {
+		switch {
+		case cs.State.Waiting != nil:
+			fmt.Fprintf(&sb, "; container %s waiting: %s: %s", cs.Name, cs.State.Waiting.Reason, cs.State.Waiting.Message)
+		case cs.State.Terminated != nil:
+			fmt.Fprintf(&sb, "; container %s terminated: %s: %s", cs.Name, cs.State.Terminated.Reason, cs.State.Terminated.Message)
+		}
+	}
+
+	tailLines := int64(20)
+	stream, err := c.Core.CoreV1().Pods(c.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{TailLines: &tailLines}).Stream(ctx)
+	if err == nil {
+		defer func() { _ = stream.Close() }()
+		if logs, readErr := io.ReadAll(stream); readErr == nil && len(logs) > 0 {
+			fmt.Fprintf(&sb, "; recent logs:\n%s", string(logs))
+		}
+	}
+	return sb.String()
 }
 
 // waitReady blocks until the shared instance actually accepts connections

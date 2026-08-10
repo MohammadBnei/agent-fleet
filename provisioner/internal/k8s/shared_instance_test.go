@@ -2,8 +2,10 @@ package k8s
 
 import (
 	"context"
+	"strings"
 	"testing"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/catalog"
@@ -66,6 +68,25 @@ func TestEnsureSharedDeployment_PostgresGetsPVC(t *testing.T) {
 	}
 	if len(dep.Spec.Template.Spec.Volumes) != 1 {
 		t.Errorf("expected 1 volume (PVC-backed data dir), got %d", len(dep.Spec.Template.Spec.Volumes))
+	}
+
+	// Regression test: found live — mounting the PVC directly at postgres's
+	// default PGDATA makes initdb fail the moment the volume's filesystem
+	// has a lost+found dir at its root (standard for a freshly-formatted
+	// volume). PGDATA must point at a subdirectory of the mount, which
+	// starts genuinely empty regardless of what's alongside it.
+	container := dep.Spec.Template.Spec.Containers[0]
+	foundPGDATA := false
+	for _, e := range container.Env {
+		if e.Name == "PGDATA" {
+			foundPGDATA = true
+			if e.Value == postgresDataMountPath {
+				t.Errorf("PGDATA = %q, must be a SUBDIRECTORY of the mount path, not the mount path itself", e.Value)
+			}
+		}
+	}
+	if !foundPGDATA {
+		t.Error("expected a PGDATA env var pointing at a subdirectory of the PVC mount")
 	}
 
 	if _, err := c.Core.CoreV1().PersistentVolumeClaims(c.Namespace).Get(ctx, name, metav1.GetOptions{}); err != nil {
@@ -152,6 +173,52 @@ func TestTouchLastUsedAt_UpdatesAnnotation(t *testing.T) {
 	}
 	if dep.Spec.Template.Annotations[LastUsedAtAnnotation] == "" {
 		t.Error("expected last-used-at annotation to be set")
+	}
+}
+
+// TestDescribeSharedInstanceFailure_SurfacesContainerWaitingReason covers
+// the fix for a real observability gap found live: EnsureSharedInstance's
+// timeout error used to carry only the bare connection-level symptom
+// ("connection refused"), never why the instance pod itself was actually
+// failing (e.g. postgres crash-looping on an initdb error) — an operator
+// had to go find that manually via a separate kubectl invocation. This
+// asserts the container's own waiting reason/message end up in the
+// description string that now gets folded into the returned error.
+func TestDescribeSharedInstanceFailure_SurfacesContainerWaitingReason(t *testing.T) {
+	c := newTestClient()
+	ctx := context.Background()
+	labels := SharedInstanceLabels("dream-analyst", "postgres")
+
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "svc-dream-analyst-postgres-abc123", Namespace: c.Namespace, Labels: labels},
+		Status: corev1.PodStatus{
+			Phase: corev1.PodPending,
+			ContainerStatuses: []corev1.ContainerStatus{{
+				Name: "postgres",
+				State: corev1.ContainerState{
+					Waiting: &corev1.ContainerStateWaiting{
+						Reason:  "CrashLoopBackOff",
+						Message: "back-off 40s restarting failed container",
+					},
+				},
+			}},
+		},
+	}
+	if _, err := c.Core.CoreV1().Pods(c.Namespace).Create(ctx, pod, metav1.CreateOptions{}); err != nil {
+		t.Fatalf("seed pod: %v", err)
+	}
+
+	desc := c.describeSharedInstanceFailure(ctx, "dream-analyst", "postgres")
+	if !strings.Contains(desc, "CrashLoopBackOff") || !strings.Contains(desc, "back-off 40s restarting failed container") {
+		t.Errorf("description = %q, want it to contain the container's waiting reason/message", desc)
+	}
+}
+
+func TestDescribeSharedInstanceFailure_NoPodFound(t *testing.T) {
+	c := newTestClient()
+	desc := c.describeSharedInstanceFailure(context.Background(), "dream-analyst", "postgres")
+	if desc == "" {
+		t.Error("expected a non-empty fallback description when no pod exists")
 	}
 }
 
