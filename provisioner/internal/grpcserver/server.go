@@ -12,12 +12,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 
+	"github.com/MohammadBnei/agent-fleet/provisioner/internal/catalog"
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/git"
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/k8s"
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/mcpproxy"
@@ -165,10 +165,11 @@ func (s *Server) resolveServiceIngredients(ctx context.Context, repo, taskID str
 		if err != nil {
 			return nil, nil, fmt.Errorf("mint credentials for %s (%s): %w", si.GetKey(), mode, err)
 		}
-		extraEnv = append(extraEnv, corev1.EnvVar{
-			Name:  fmt.Sprintf("SERVICE_%s_URL", strings.ToUpper(si.GetKey())),
-			Value: url,
-		})
+		def, ok := catalog.Services[si.GetKey()]
+		if !ok {
+			return nil, nil, fmt.Errorf("unknown service ingredient %q", si.GetKey())
+		}
+		extraEnv = append(extraEnv, corev1.EnvVar{Name: def.EnvVarName, Value: url})
 	}
 	return refs, extraEnv, nil
 }

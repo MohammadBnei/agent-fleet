@@ -77,12 +77,12 @@ func TestBuildIngredients_PodScopedServiceProducesNativeSidecar(t *testing.T) {
 	}
 	found := false
 	for _, e := range env {
-		if e.Name == "SERVICE_POSTGRES_URL" {
+		if e.Name == "DATABASE_URL" {
 			found = true
 		}
 	}
 	if !found {
-		t.Error("expected SERVICE_POSTGRES_URL env var")
+		t.Error("expected DATABASE_URL env var")
 	}
 }
 
@@ -148,19 +148,19 @@ func TestCreateWorkerPod_WithPodScopedService(t *testing.T) {
 	worker := job.Spec.Template.Spec.Containers[0]
 	found := false
 	for _, e := range worker.Env {
-		if e.Name == "SERVICE_REDIS_URL" {
+		if e.Name == "REDIS_URL" {
 			found = true
 		}
 	}
 	if !found {
-		t.Error("expected SERVICE_REDIS_URL on the worker container's env")
+		t.Error("expected REDIS_URL on the worker container's env")
 	}
 }
 
 func TestCreateWorkerPod_WithExtraEnv(t *testing.T) {
 	c := newTestClient()
 	ctx := context.Background()
-	extraEnv := []corev1.EnvVar{{Name: "SERVICE_POSTGRES_URL", Value: "postgresql://task_abc:pw@svc-dream-analyst-postgres:5432/task_abc"}}
+	extraEnv := []corev1.EnvVar{{Name: "DATABASE_URL", Value: "postgresql://task_abc:pw@svc-dream-analyst-postgres:5432/task_abc"}}
 
 	if err := c.CreateWorkerPod(ctx, "task-extra", "dream-analyst", "lease-1", "/workspace/worktrees/task-extra", "", 0, nil, nil, extraEnv); err != nil {
 		t.Fatalf("CreateWorkerPod: %v", err)
@@ -172,11 +172,11 @@ func TestCreateWorkerPod_WithExtraEnv(t *testing.T) {
 	worker := job.Spec.Template.Spec.Containers[0]
 	found := false
 	for _, e := range worker.Env {
-		if e.Name == "SERVICE_POSTGRES_URL" && e.Value == extraEnv[0].Value {
+		if e.Name == "DATABASE_URL" && e.Value == extraEnv[0].Value {
 			found = true
 		}
 	}
 	if !found {
-		t.Error("expected already-minted SERVICE_POSTGRES_URL to be passed through onto the worker container")
+		t.Error("expected already-minted DATABASE_URL to be passed through onto the worker container")
 	}
 }

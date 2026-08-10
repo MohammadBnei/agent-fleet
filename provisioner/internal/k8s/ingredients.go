@@ -109,14 +109,14 @@ func podScopedServiceSidecar(key string, def catalog.ServiceDef) (corev1.Contain
 		}
 		probeCmd = []string{"pg_isready", "-U", podScopedServiceCred}
 		connEnv = []corev1.EnvVar{{
-			Name:  "SERVICE_POSTGRES_URL",
+			Name:  def.EnvVarName,
 			Value: fmt.Sprintf("postgresql://%s:%s@localhost:%d/%s?sslmode=disable", podScopedServiceCred, podScopedServiceCred, def.Port, podScopedServiceCred),
 		}}
 	case "redis":
 		image = "redis:7-alpine"
 		probeCmd = []string{"redis-cli", "-a", podScopedServiceCred, "ping"}
 		connEnv = []corev1.EnvVar{{
-			Name:  "SERVICE_REDIS_URL",
+			Name:  def.EnvVarName,
 			Value: fmt.Sprintf("redis://:%s@localhost:%d", podScopedServiceCred, def.Port),
 		}}
 	}

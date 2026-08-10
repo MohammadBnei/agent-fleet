@@ -2,7 +2,6 @@ package k8s
 
 import (
 	"fmt"
-	"os"
 	"strings"
 )
 
@@ -36,28 +35,6 @@ const (
 	ServiceKeyLabel      = "agent-fleet.dev/service-key"
 	LastUsedAtAnnotation = "agent-fleet.dev/last-used-at"
 )
-
-// StartCmdFor mirrors REPO_START_CMD in the TS k8s.ts: a per-repo lookup,
-// env-overridable via E2E_START_CMD_<REPO> (upper-snake-cased), not a
-// config file — two repos today, not worth more than this.
-func StartCmdFor(repo string) (string, error) {
-	envVar := "E2E_START_CMD_" + strings.ToUpper(strings.ReplaceAll(repo, "-", "_"))
-	if v := os.Getenv(envVar); v != "" {
-		return v, nil
-	}
-	switch repo {
-	// dream-analyst's Bun/SvelteKit app lives under front/, not the
-	// worktree root (confirmed live: "bun install" at the root fails with
-	// "could not find a package.json file to install from" — the repo
-	// root only has compose.yml/helm/front, no package.json).
-	case "dream-analyst":
-		return "cd front && bun install && bun run dev", nil
-	case "vos-monolith":
-		return "bun install && bun run dev", nil
-	default:
-		return "", fmt.Errorf("no e2e start command configured for repo %q", repo)
-	}
-}
 
 // ResourceName mirrors resourceName: short, DNS-safe, deterministic.
 func ResourceName(taskID string) string {

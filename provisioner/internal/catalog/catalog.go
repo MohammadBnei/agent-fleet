@@ -55,11 +55,19 @@ type ServiceDef struct {
 	// NeedsPVC is true for postgres (durable data directory) and false for
 	// redis (pure cache, an emptyDir is enough and one less PVC to manage).
 	NeedsPVC bool
+	// EnvVarName is the connection-URL env var the consuming app actually
+	// looks for — the de facto standard name for that specific technology
+	// (Prisma/most ORMs read DATABASE_URL, ioredis/most Redis clients read
+	// REDIS_URL), not a made-up SERVICE_<KEY>_URL scheme. Confirmed the
+	// hard way via /kind-local: dream-analyst's own Prisma config errored
+	// with "Cannot resolve environment variable: DATABASE_URL" until this
+	// matched what the app itself expects.
+	EnvVarName string
 }
 
 var Services = map[string]ServiceDef{
-	"postgres": {Port: 5432, AdminUser: "postgres", NeedsPVC: true},
-	"redis":    {Port: 6379, NeedsPVC: false},
+	"postgres": {Port: 5432, AdminUser: "postgres", NeedsPVC: true, EnvVarName: "DATABASE_URL"},
+	"redis":    {Port: 6379, NeedsPVC: false, EnvVarName: "REDIS_URL"},
 }
 
 // KnownToolKey and KnownServiceKey are the fail-loud membership checks used

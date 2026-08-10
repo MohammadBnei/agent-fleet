@@ -33,7 +33,13 @@ rules:
   verbs: ["create", "get", "list", "watch", "delete"]
 - apiGroups: ["apps"]
   resources: ["deployments"]
-  verbs: ["create", "get", "list", "watch", "delete"]
+  # update (not just create/get/list/watch/delete): EnsureSharedInstance's
+  # touchLastUsedAt PATCHes the Deployment's own annotation on every reuse
+  # (docs/adr/0034's idle-GC substrate) — found live via /kind-local, the
+  # first version of this grant omitted it and every touch silently 403'd
+  # (logged as a non-fatal WARN by design, but every instance was
+  # perpetually "never used" from the GC pass's point of view).
+  verbs: ["create", "get", "list", "watch", "update", "delete"]
 - apiGroups: ["batch"]
   resources: ["jobs"]
   verbs: ["create", "get", "list", "watch", "delete"]

@@ -98,7 +98,7 @@ func TestCreateE2ESession_Idempotent(t *testing.T) {
 	s, k8sc, _ := newTestServer(t)
 	ctx := context.Background()
 
-	first, err := s.CreateE2ESession(ctx, &agentfleetv1.CreateE2ESessionRequest{TaskId: "t1", Repo: "dream-analyst"})
+	first, err := s.CreateE2ESession(ctx, &agentfleetv1.CreateE2ESessionRequest{TaskId: "t1", Repo: "dream-analyst", StartCmd: "bun run dev"})
 	if err != nil {
 		t.Fatalf("first CreateE2ESession: %v", err)
 	}
@@ -106,7 +106,7 @@ func TestCreateE2ESession_Idempotent(t *testing.T) {
 		t.Fatal("expected a preview URL on first creation")
 	}
 
-	second, err := s.CreateE2ESession(ctx, &agentfleetv1.CreateE2ESessionRequest{TaskId: "t1", Repo: "dream-analyst"})
+	second, err := s.CreateE2ESession(ctx, &agentfleetv1.CreateE2ESessionRequest{TaskId: "t1", Repo: "dream-analyst", StartCmd: "bun run dev"})
 	if err != nil {
 		t.Fatalf("second CreateE2ESession: %v", err)
 	}
@@ -127,7 +127,7 @@ func TestKillE2ESession_ActiveSession(t *testing.T) {
 	s, _, _ := newTestServer(t)
 	ctx := context.Background()
 
-	if _, err := s.CreateE2ESession(ctx, &agentfleetv1.CreateE2ESessionRequest{TaskId: "t1", Repo: "dream-analyst"}); err != nil {
+	if _, err := s.CreateE2ESession(ctx, &agentfleetv1.CreateE2ESessionRequest{TaskId: "t1", Repo: "dream-analyst", StartCmd: "bun run dev"}); err != nil {
 		t.Fatalf("CreateE2ESession: %v", err)
 	}
 	resp, err := s.KillE2ESession(ctx, &agentfleetv1.KillE2ESessionRequest{TaskId: "t1"})

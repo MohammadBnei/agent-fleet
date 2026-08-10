@@ -47,9 +47,12 @@ type CreatedE2ePod struct {
 type TaskRef struct {
 	ID   string
 	Repo string
-	// StartCmd, when set, overrides StartCmdFor's per-repo default —
-	// the agent supplying its own command (it knows the worktree's actual
-	// layout right now) beats a static guess made at pod-creation time.
+	// StartCmd is always resolved by the caller now (core resolves the
+	// repo's "e2e" profile, or an agent-supplied override — docs/adr/0034)
+	// — the old per-repo StartCmdFor Go-switch fallback is gone, verified
+	// working end-to-end via /kind-local before removal. Empty fails loud
+	// at CreatePod, mirroring e2e-runner/entrypoint.sh's own
+	// E2E_START_CMD:?required contract one hop earlier.
 	StartCmd string
 	// ToolKeys/ServiceIngredients are the repo's resolved "e2e" profile
 	// (docs/adr/0034) — core resolves the profile name, this package only
@@ -67,11 +70,7 @@ type TaskRef struct {
 func (c *Client) CreatePod(ctx context.Context, task TaskRef) error {
 	startCmd := task.StartCmd
 	if startCmd == "" {
-		var err error
-		startCmd, err = StartCmdFor(task.Repo)
-		if err != nil {
-			return err
-		}
+		return fmt.Errorf("no start command for repo %q — its profile needs a non-empty start_cmd", task.Repo)
 	}
 	name := ResourceName(task.ID)
 	labels := Labels(task.ID)
