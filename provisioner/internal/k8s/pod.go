@@ -87,12 +87,27 @@ func (c *Client) CreatePod(ctx context.Context, task TaskRef) error {
 		{Name: "E2E_CODE_SERVER_PORT", Value: fmt.Sprint(CodeServerPort)},
 		{Name: "E2E_PLAYWRIGHT_PORT", Value: fmt.Sprint(PlaywrightPort)},
 		{Name: "E2E_EXEC_PORT", Value: fmt.Sprint(ExecPort)},
+		// Persisted on the shared PVC under cache/<repo>/ (see the
+		// "cache" VolumeMount below) so a repo's Go/Bun deps only get
+		// downloaded once, not on every e2e session — GOCACHE/GOMODCACHE
+		// and BUN_INSTALL_CACHE_DIR are real env vars both toolchains
+		// already read natively, and both create the directory on first
+		// write, so no init container is needed. E2E_START_CMD inherits
+		// these as container env, same as every other var here.
+		// ponytail: no fleet-level lock — two concurrent e2e pods for the
+		// same repo share this dir relying on Go/Bun's own cache-safe
+		// locking; add a mutex (mirroring internal/git's per-repo one) if
+		// that ever proves flaky in practice.
+		{Name: "GOMODCACHE", Value: "/cache/go-mod"},
+		{Name: "GOCACHE", Value: "/cache/go-build"},
+		{Name: "BUN_INSTALL_CACHE_DIR", Value: "/cache/bun"},
 	}
 	runnerEnv = append(runnerEnv, ingredientEnv...)
 	runnerEnv = append(runnerEnv, task.ExtraEnv...)
 
 	runnerMounts := []corev1.VolumeMount{
 		{Name: "workspace", MountPath: "/workspace", SubPath: "worktrees/" + task.ID},
+		{Name: "workspace", MountPath: "/cache", SubPath: "cache/" + task.Repo},
 		{Name: "dshm", MountPath: "/dev/shm"},
 	}
 	if toolsMount != nil {

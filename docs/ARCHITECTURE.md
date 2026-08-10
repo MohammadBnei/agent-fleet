@@ -335,12 +335,15 @@ permission tiers instead of a second, fleet-specific gate on top of them
 **One shared `ReadWriteMany` PVC** (`agent-fleet-workspace`, owned by the
 provisioner's own manifests) replaces the old two per-repo workspace PVCs
 (`docs/adr/0019`). Layout: `<root>/repos/<repo>/` (one clone per repo,
-fetched in place, never re-cloned per task) and
-`<root>/worktrees/<taskId>/` (one worktree per task, keyed by the
-already-globally-unique task ID, not nested per repo). Only the
-provisioner (clone/fetch/worktree add, reuse-not-wipe, `adr/0023`) and each
-task's worker+sidecar pod ever touch it — `core` holds zero PVC access,
-matching its zero-RBAC design. The old
+fetched in place, never re-cloned per task), `<root>/worktrees/<taskId>/`
+(one worktree per task, keyed by the already-globally-unique task ID, not
+nested per repo), and `<root>/cache/<repo>/` (per-repo Go module/build and
+Bun install caches, mounted into e2e-preview pods only at `/cache` via
+`GOMODCACHE`/`GOCACHE`/`BUN_INSTALL_CACHE_DIR`, so `E2E_START_CMD`'s
+`go mod`/`bun install` step doesn't re-download from scratch on every
+session). Only the provisioner (clone/fetch/worktree add, reuse-not-wipe,
+`adr/0023`) and each task's worker+sidecar/e2e-runner pod ever touch it —
+`core` holds zero PVC access, matching its zero-RBAC design. The old
 `agent-fleet-shared-pvc` (`/mnt/fleet-shared`, skills/journal-mirror/MCP
 configs) is dropped entirely — confirmed via a full-repo grep that nothing
 in `core`/`provisioner`/`sidecar`/`worker` references it anymore; the

@@ -94,8 +94,12 @@ func TestCreatePod_ShapeMatchesTSVersion(t *testing.T) {
 		t.Errorf("expected RestartPolicy Never, got %s", pod.Spec.RestartPolicy)
 	}
 	container := pod.Spec.Containers[0]
-	if len(container.VolumeMounts) != 2 || container.VolumeMounts[0].SubPath != "worktrees/"+task.ID {
+	if len(container.VolumeMounts) != 3 || container.VolumeMounts[0].SubPath != "worktrees/"+task.ID {
 		t.Errorf("unexpected volume mounts: %+v", container.VolumeMounts)
+	}
+	cacheMount := container.VolumeMounts[1]
+	if cacheMount.MountPath != "/cache" || cacheMount.SubPath != "cache/"+task.Repo {
+		t.Errorf("unexpected cache volume mount: %+v", cacheMount)
 	}
 	if container.Ports[0].ContainerPort != AppPort || container.Ports[1].ContainerPort != CodeServerPort || container.Ports[2].ContainerPort != PlaywrightPort {
 		t.Errorf("unexpected ports: %+v", container.Ports)
@@ -103,6 +107,22 @@ func TestCreatePod_ShapeMatchesTSVersion(t *testing.T) {
 	dshmVol := pod.Spec.Volumes[1]
 	if dshmVol.EmptyDir == nil || dshmVol.EmptyDir.Medium != "Memory" || dshmVol.EmptyDir.SizeLimit.String() != "1Gi" {
 		t.Errorf("unexpected dshm volume: %+v", dshmVol)
+	}
+	wantCacheEnv := map[string]string{
+		"GOMODCACHE":            "/cache/go-mod",
+		"GOCACHE":               "/cache/go-build",
+		"BUN_INSTALL_CACHE_DIR": "/cache/bun",
+	}
+	gotCacheEnv := map[string]string{}
+	for _, e := range container.Env {
+		if _, ok := wantCacheEnv[e.Name]; ok {
+			gotCacheEnv[e.Name] = e.Value
+		}
+	}
+	for name, want := range wantCacheEnv {
+		if gotCacheEnv[name] != want {
+			t.Errorf("env %s = %q, want %q", name, gotCacheEnv[name], want)
+		}
 	}
 }
 
