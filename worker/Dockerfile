@@ -24,15 +24,28 @@ RUN curl -fsSL https://github.com/rtk-ai/rtk/releases/latest/download/rtk-x86_64
 # file-copy operations, no Anthropic auth needed at build time. Installed
 # here into the image's default $HOME (/root/.claude); worker/entrypoint.sh
 # copies that once into $CLAUDE_CONFIG_DIR at pod startup, since that's the
-# PVC path Claude Code actually reads at runtime (docs/adr/0033).
+# PVC path Claude Code actually reads at runtime (docs/adr/0033). Perms
+# opened up (not just this dir — see the `worker` user creation below) so
+# the non-root `worker` user can still read it to do that copy.
 RUN claude plugin marketplace add DietrichGebert/ponytail \
     && claude plugin install ponytail@ponytail
 RUN claude plugin marketplace add JuliusBrussee/caveman \
     && claude plugin install caveman@caveman
 
+# Claude Code refuses to run with permissionMode "bypassPermissions"
+# (`--dangerously-skip-permissions`) as root/sudo — a real crash hit live
+# (task 405e2cd0, 2026-08-10) once a task's mode got set to
+# bypassPermissions via the dashboard and every resume inherited it. `git`/
+# `gh` push still work non-root; auth is a token (GH_TOKEN), not an
+# OS-level credential. Reuses the base image's own `bun` user (uid 1000)
+# rather than creating a new one. chmod opens /root so entrypoint.sh's
+# plugin copy (above) still works post-USER-switch.
+RUN chmod -R o+rX /root
+
 WORKDIR /app
 COPY worker ./worker
-RUN cd worker && bun install --production && chmod +x entrypoint.sh
+RUN cd worker && bun install --production && chmod +x entrypoint.sh && chown -R bun:bun /app
 
 WORKDIR /app/worker
+USER bun
 CMD ["./entrypoint.sh"]

@@ -41,6 +41,16 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	// Every file/dir this process creates on the shared workspace PVC
+	// (git clone, worktree add — internal/git) must stay writable by the
+	// worker container too, which runs as a non-root user (required for
+	// Claude Code's own bypassPermissions mode — it refuses to run as
+	// root/sudo). Provisioner and worker are separate containers with no
+	// coordinated UID/GID, so world-writable is the simplest fix that
+	// doesn't need fsGroup/GID plumbing across two services on a
+	// single-tenant, internal-only PVC.
+	syscall.Umask(0)
+
 	// No Postgres connection anywhere in this process — the provisioner
 	// holds no DB credentials at all (docs/adr/0020 point 1). Kubernetes
 	// itself is the durable source of truth for pod/session state.
