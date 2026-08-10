@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.29.2](https://github.com/MohammadBnei/agent-fleet/compare/1.29.1...1.29.2) (2026-08-10)
+
+
+### Bug Fixes
+
+* **provisioner:** give e2e-runner an explicit, real memory limit ([70709af](https://github.com/MohammadBnei/agent-fleet/commit/70709afac772fece3c19e28a4e0bb45658816e09))
+
 ## [1.29.1](https://github.com/MohammadBnei/agent-fleet/compare/1.29.0...1.29.1) (2026-08-10)
 
 
