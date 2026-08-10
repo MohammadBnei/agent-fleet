@@ -17,7 +17,7 @@ func TestBuildLogQL(t *testing.T) {
 				Component: "worker",
 				Level:     "error",
 			},
-			want: `{namespace="agent-fleet", app=~"worker-.*"} | json | level="error"`,
+			want: `{namespace="agent-fleet", job=~"worker-.*"} | json | level="error"`,
 		},
 		{
 			name: "core without filters",
@@ -44,7 +44,7 @@ func TestBuildLogQL(t *testing.T) {
 				TaskID:    "abc-123",
 				Level:     "warn",
 			},
-			want: `{namespace="agent-fleet", app=~"worker-.*"} | task_id="abc-123" | json | level="warn"`,
+			want: `{namespace="agent-fleet", job=~"worker-.*"} | task_id="abc-123" | json | level="warn"`,
 		},
 		{
 			name: "default namespace",
@@ -77,13 +77,13 @@ func TestBuildSelector(t *testing.T) {
 			name:      "worker",
 			namespace: "agent-fleet",
 			component: "worker",
-			want:      `{namespace="agent-fleet", app=~"worker-.*"}`,
+			want:      `{namespace="agent-fleet", job=~"worker-.*"}`,
 		},
 		{
 			name:      "sidecar",
 			namespace: "agent-fleet",
 			component: "sidecar",
-			want:      `{namespace="agent-fleet", app=~"worker-.*"}`,
+			want:      `{namespace="agent-fleet", job=~"worker-.*"}`,
 		},
 		{
 			name:      "core",

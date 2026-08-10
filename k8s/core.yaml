@@ -195,7 +195,7 @@ dashboards:
             "gridPos": { "h": 6, "w": 4, "x": 12, "y": 8 },
             "datasource": { "type": "loki", "uid": "ds-loki" },
             "targets": [
-              { "expr": "sum(count_over_time({namespace=\"agent-fleet\", pod=~\"$pod_filter\"} | json | level=\"ERROR\" [$__range]))", "instant": true, "refId": "A", "datasource": { "type": "loki", "uid": "ds-loki" } }
+              { "expr": "sum(count_over_time({namespace=\"agent-fleet\"} |~ \"$pod_filter\" | json | level=\"ERROR\" [$__range]))", "instant": true, "refId": "A", "datasource": { "type": "loki", "uid": "ds-loki" } }
             ]
           },
           {
@@ -205,7 +205,7 @@ dashboards:
             "gridPos": { "h": 6, "w": 8, "x": 16, "y": 8 },
             "datasource": { "type": "loki", "uid": "ds-loki" },
             "targets": [
-              { "expr": "sum(rate({namespace=\"agent-fleet\", pod=~\"$pod_filter\"} | json | level=\"ERROR\" [5m])) by (pod)", "legendFormat": "{{pod}}", "refId": "A", "datasource": { "type": "loki", "uid": "ds-loki" } }
+              { "expr": "sum(rate({namespace=\"agent-fleet\"} |~ \"$pod_filter\" | json | level=\"ERROR\" [5m])) by (pod)", "legendFormat": "{{pod}}", "refId": "A", "datasource": { "type": "loki", "uid": "ds-loki" } }
             ]
           },
           {
@@ -216,7 +216,7 @@ dashboards:
             "datasource": { "type": "loki", "uid": "ds-loki" },
             "options": { "showTime": true, "sortOrder": "Descending", "wrapLogMessage": false, "enableLogDetails": true },
             "targets": [
-              { "expr": "{namespace=\"agent-fleet\", pod=~\"$pod_filter\"} | json", "refId": "A", "datasource": { "type": "loki", "uid": "ds-loki" } }
+              { "expr": "{namespace=\"agent-fleet\"} |~ \"$pod_filter\" | json", "refId": "A", "datasource": { "type": "loki", "uid": "ds-loki" } }
             ]
           }
         ]

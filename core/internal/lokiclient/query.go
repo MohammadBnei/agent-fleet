@@ -42,11 +42,11 @@ func buildSelector(namespace, component, appName string) string {
 
 	switch component {
 	case "worker":
-		// Worker pods: app label includes task ID, so use regex match
-		selector += `, app=~"worker-.*"`
+		// Worker pods: job label (auto-added by k8s Job controller) includes task ID
+		selector += `, job=~"worker-.*"`
 	case "sidecar":
-		// Sidecar runs in same pod as worker, same app label
-		selector += `, app=~"worker-.*"`
+		// Sidecar runs in same pod as worker, same job label
+		selector += `, job=~"worker-.*"`
 	case "core":
 		selector += `, app="core"`
 	case "provisioner":

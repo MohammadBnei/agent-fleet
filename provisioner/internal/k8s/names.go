@@ -85,7 +85,11 @@ func PreviewURLFor(host, taskID string) string {
 }
 
 func Labels(taskID string) map[string]string {
-	return map[string]string{ComponentLabel: ComponentE2eRun, TaskIDLabel: taskID}
+	return map[string]string{
+		ComponentLabel: ComponentE2eRun,
+		TaskIDLabel:    taskID,
+		"app":          "e2e-" + shortID(taskID),
+	}
 }
 
 func WorkerLabels(taskID, repo string) map[string]string {
