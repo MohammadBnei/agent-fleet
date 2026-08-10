@@ -59,15 +59,49 @@ func (s *Server) KillE2ESession(ctx context.Context, req *agentfleetv1.KillE2ESe
 	if err != nil {
 		return nil, err
 	}
-	if !exists {
-		return &agentfleetv1.KillE2ESessionResponse{Killed: false}, nil
+	killed := false
+	if exists {
+		if err := s.k8sc.DeleteAll(ctx, req.GetTaskId()); err != nil {
+			return nil, err
+		}
+		s.proxy.DropClient(req.GetTaskId())
+		slog.Info("grpcserver KillE2ESession", "taskId", req.GetTaskId())
+		killed = true
 	}
-	if err := s.k8sc.DeleteAll(ctx, req.GetTaskId()); err != nil {
-		return nil, err
+
+	var servicesTornDown []string
+	if req.GetAlsoTeardownServices() && req.GetRepo() != "" {
+		servicesTornDown, err = s.tearDownRepoSharedInstances(ctx, req.GetRepo())
+		if err != nil {
+			return nil, err
+		}
 	}
-	s.proxy.DropClient(req.GetTaskId())
-	slog.Info("grpcserver KillE2ESession", "taskId", req.GetTaskId())
-	return &agentfleetv1.KillE2ESessionResponse{Killed: true}, nil
+
+	return &agentfleetv1.KillE2ESessionResponse{Killed: killed, ServicesTornDown: servicesTornDown}, nil
+}
+
+// tearDownRepoSharedInstances deletes every shared service instance
+// (docs/adr/0034) belonging to repo — human-confirmed opt-in only (the
+// dashboard's "kill e2e" checkbox), since a shared instance is keyed by
+// repo, not task, and can be in use by other tasks against the same repo
+// (that task's own worker pod included).
+func (s *Server) tearDownRepoSharedInstances(ctx context.Context, repo string) ([]string, error) {
+	instances, err := s.k8sc.ListSharedInstances(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list shared instances: %w", err)
+	}
+	var torn []string
+	for _, inst := range instances {
+		if inst.Repo != repo {
+			continue
+		}
+		if err := s.k8sc.DeleteSharedInstance(ctx, inst.Repo, inst.ServiceKey); err != nil {
+			return nil, fmt.Errorf("delete shared instance %s/%s: %w", inst.Repo, inst.ServiceKey, err)
+		}
+		slog.Info("grpcserver KillE2ESession: tore down shared instance", "repo", inst.Repo, "serviceKey", inst.ServiceKey)
+		torn = append(torn, inst.ServiceKey)
+	}
+	return torn, nil
 }
 
 func (s *Server) GetE2ESessionStatus(ctx context.Context, req *agentfleetv1.GetE2ESessionStatusRequest) (*agentfleetv1.GetE2ESessionStatusResponse, error) {

@@ -192,7 +192,7 @@ func (s *Server) RequestE2EEnv(ctx context.Context, req *agentfleetv1.RequestE2E
 }
 
 func (s *Server) KillE2EEnv(ctx context.Context, req *agentfleetv1.KillE2EEnvRequest) (*agentfleetv1.KillE2EEnvResponse, error) {
-	killed, err := s.provisioner.KillSession(ctx, req.GetTaskId(), uuid.NewString())
+	killed, _, err := s.provisioner.KillSession(ctx, req.GetTaskId(), uuid.NewString(), "", false)
 	if err != nil {
 		return nil, fmt.Errorf("KillE2EEnv: %w", err)
 	}

@@ -313,12 +313,24 @@ func (s *Server) SetPermissionMode(ctx context.Context, req *connect.Request[age
 }
 
 func (s *Server) KillE2E(ctx context.Context, req *connect.Request[agentfleetv1.KillE2ERequest]) (*connect.Response[agentfleetv1.KillE2EResponse], error) {
-	killed, err := s.e2e.KillSession(ctx, req.Msg.GetTaskId(), uuid.NewString())
+	taskID := req.Msg.GetTaskId()
+	var repo string
+	if req.Msg.GetAlsoTeardownServices() {
+		t, err := s.tasks.GetTask(ctx, taskID)
+		if err != nil {
+			slog.Error("dashboard KillE2E: get task for repo", "taskId", taskID, "error", err)
+			return nil, connect.NewError(connect.CodeInternal, err)
+		}
+		if t != nil {
+			repo = t.Repo
+		}
+	}
+	killed, servicesTornDown, err := s.e2e.KillSession(ctx, taskID, uuid.NewString(), repo, req.Msg.GetAlsoTeardownServices())
 	if err != nil {
-		slog.Error("dashboard KillE2E", "taskId", req.Msg.GetTaskId(), "error", err)
+		slog.Error("dashboard KillE2E", "taskId", taskID, "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
-	return connect.NewResponse(&agentfleetv1.KillE2EResponse{Killed: killed}), nil
+	return connect.NewResponse(&agentfleetv1.KillE2EResponse{Killed: killed, ServicesTornDown: servicesTornDown}), nil
 }
 
 // AnswerQuestion appends the human's answer to a pending QUESTION-type

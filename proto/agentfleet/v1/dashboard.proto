@@ -124,10 +124,16 @@ message RespondToPermissionResponse {
 
 message KillE2eRequest {
   string task_id = 1;
+  // also_teardown_services (docs/adr/0034 follow-up): also delete the
+  // repo's shared postgres/redis instances if this task used any —
+  // human-confirmed opt-in, since those are shared across every task
+  // against the repo, not owned by this one task alone.
+  bool also_teardown_services = 2;
 }
 
 message KillE2eResponse {
   bool killed = 1;
+  repeated string services_torn_down = 2;
 }
 
 // Answers a pending QUESTION-type transcript entry (posted by the agent's

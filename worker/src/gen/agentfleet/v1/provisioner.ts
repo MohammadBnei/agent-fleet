@@ -114,11 +114,26 @@ export interface ServiceIngredient {
 export interface KillE2eSessionRequest {
   taskId: string;
   idempotencyKey: string;
+  /**
+   * repo/also_teardown_services (docs/adr/0034 follow-up) — the shared
+   * postgres/redis instance backing this task's services is keyed by repo,
+   * not task, and can be in use by other tasks against the same repo (its
+   * own worker pod included), so tearing it down is opt-in, explicit, and
+   * human-confirmed (the dashboard's "kill e2e" checkbox), never implied by
+   * killing one task's e2e session alone.
+   */
+  repo: string;
+  alsoTeardownServices: boolean;
 }
 
 export interface KillE2eSessionResponse {
   /** false = no active session for this task */
   killed: boolean;
+  /**
+   * Set only when also_teardown_services was requested — the (repo,
+   * service_key) pairs actually deleted, for the dashboard to report back.
+   */
+  servicesTornDown: string[];
 }
 
 export interface GetE2eSessionStatusRequest {
@@ -350,7 +365,7 @@ export const ServiceIngredient: MessageFns<ServiceIngredient> = {
 };
 
 function createBaseKillE2eSessionRequest(): KillE2eSessionRequest {
-  return { taskId: "", idempotencyKey: "" };
+  return { taskId: "", idempotencyKey: "", repo: "", alsoTeardownServices: false };
 }
 
 export const KillE2eSessionRequest: MessageFns<KillE2eSessionRequest> = {
@@ -366,6 +381,12 @@ export const KillE2eSessionRequest: MessageFns<KillE2eSessionRequest> = {
         : isSet(object.idempotency_key)
         ? globalThis.String(object.idempotency_key)
         : "",
+      repo: isSet(object.repo) ? globalThis.String(object.repo) : "",
+      alsoTeardownServices: isSet(object.alsoTeardownServices)
+        ? globalThis.Boolean(object.alsoTeardownServices)
+        : isSet(object.also_teardown_services)
+        ? globalThis.Boolean(object.also_teardown_services)
+        : false,
     };
   },
 
@@ -377,6 +398,12 @@ export const KillE2eSessionRequest: MessageFns<KillE2eSessionRequest> = {
     if (message.idempotencyKey !== "") {
       obj.idempotencyKey = message.idempotencyKey;
     }
+    if (message.repo !== "") {
+      obj.repo = message.repo;
+    }
+    if (message.alsoTeardownServices !== false) {
+      obj.alsoTeardownServices = message.alsoTeardownServices;
+    }
     return obj;
   },
 
@@ -387,23 +414,37 @@ export const KillE2eSessionRequest: MessageFns<KillE2eSessionRequest> = {
     const message = createBaseKillE2eSessionRequest();
     message.taskId = object.taskId ?? "";
     message.idempotencyKey = object.idempotencyKey ?? "";
+    message.repo = object.repo ?? "";
+    message.alsoTeardownServices = object.alsoTeardownServices ?? false;
     return message;
   },
 };
 
 function createBaseKillE2eSessionResponse(): KillE2eSessionResponse {
-  return { killed: false };
+  return { killed: false, servicesTornDown: [] };
 }
 
 export const KillE2eSessionResponse: MessageFns<KillE2eSessionResponse> = {
   fromJSON(object: any): KillE2eSessionResponse {
-    return { killed: isSet(object.killed) ? globalThis.Boolean(object.killed) : false };
+    return {
+      killed: isSet(object.killed) ? globalThis.Boolean(object.killed) : false,
+      servicesTornDown: globalThis.Array.isArray(object?.servicesTornDown)
+        ? object.servicesTornDown.map((e: any) => globalThis.String(e))
+        : globalThis.Array.isArray(object?.services_torn_down)
+        ? object.services_torn_down.map((e: any) =>
+          globalThis.String(e)
+        )
+        : [],
+    };
   },
 
   toJSON(message: KillE2eSessionResponse): unknown {
     const obj: any = {};
     if (message.killed !== false) {
       obj.killed = message.killed;
+    }
+    if (message.servicesTornDown?.length) {
+      obj.servicesTornDown = message.servicesTornDown;
     }
     return obj;
   },
@@ -414,6 +455,7 @@ export const KillE2eSessionResponse: MessageFns<KillE2eSessionResponse> = {
   fromPartial<I extends Exact<DeepPartial<KillE2eSessionResponse>, I>>(object: I): KillE2eSessionResponse {
     const message = createBaseKillE2eSessionResponse();
     message.killed = object.killed ?? false;
+    message.servicesTornDown = object.servicesTornDown?.map((e) => e) || [];
     return message;
   },
 };

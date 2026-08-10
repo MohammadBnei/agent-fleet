@@ -54,16 +54,21 @@ func (c *Client) Close() error {
 
 // KillSession requests teardown of the active e2e session for taskID.
 // Returns false if there was no active session to kill (mirrors today's
-// bot/src/db.ts's requestE2eKill return semantics).
-func (c *Client) KillSession(ctx context.Context, taskID, idempotencyKey string) (bool, error) {
+// bot/src/db.ts's requestE2eKill return semantics). alsoTeardownServices
+// additionally deletes repo's shared postgres/redis instances — opt-in,
+// human-confirmed only (the dashboard's "kill e2e" checkbox); repo is
+// ignored when alsoTeardownServices is false.
+func (c *Client) KillSession(ctx context.Context, taskID, idempotencyKey, repo string, alsoTeardownServices bool) (killed bool, servicesTornDown []string, err error) {
 	resp, err := c.rpc.KillE2ESession(ctx, &agentfleetv1.KillE2ESessionRequest{
-		TaskId:         taskID,
-		IdempotencyKey: idempotencyKey,
+		TaskId:               taskID,
+		IdempotencyKey:       idempotencyKey,
+		Repo:                 repo,
+		AlsoTeardownServices: alsoTeardownServices,
 	})
 	if err != nil {
-		return false, fmt.Errorf("KillE2ESession: %w", err)
+		return false, nil, fmt.Errorf("KillE2ESession: %w", err)
 	}
-	return resp.GetKilled(), nil
+	return resp.GetKilled(), resp.GetServicesTornDown(), nil
 }
 
 // GetSessionStatus reports the current e2e session status/preview URL for
