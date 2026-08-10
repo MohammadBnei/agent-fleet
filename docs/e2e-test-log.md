@@ -20,3 +20,4 @@ See [`local/kind/README.md`](../local/kind/README.md) and the `/kind-local` skil
 | Date       | Verified By | Notes |
 |------------|-------------|-------|
 | 2026-08-06 | Agent       | Initial log creation; establishing baseline for future test runs |
+| 2026-08-10 | Agent       | Verified fleet-shared skills sync (docs/adr/0032) in kind-local after fixing mirror-path bug |
