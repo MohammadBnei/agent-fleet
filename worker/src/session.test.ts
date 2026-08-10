@@ -196,7 +196,7 @@ function makeTask(overrides: Partial<{ id: string; repo: string; description: st
   };
 }
 
-test("tool wiring: default mode, no Write/Edit in allowedTools, canUseTool present, local skills plugin", async () => {
+test("tool wiring: default mode, no Write/Edit in allowedTools, canUseTool present, settingSources user", async () => {
   const task = makeTask();
   const promise = runTask(task);
   await Bun.sleep(20);
@@ -224,8 +224,11 @@ test("tool wiring: default mode, no Write/Edit in allowedTools, canUseTool prese
   // PermissionCard with no way to deliver an answer.
   expect(queryOptions?.disallowedTools).toContain("AskUserQuestion");
   expect(typeof queryOptions?.canUseTool).toBe("function");
-  const plugins = queryOptions?.plugins as Array<{ type: string; path: string }>;
-  expect(plugins.some((p) => p.type === "local" && p.path.includes("agent-fleet-planning"))).toBe(true);
+  // The provisioner-synced fleet-shared skills/context (docs/adr/0032) are
+  // discovered natively via settingSources, not an explicit plugins: entry
+  // — this is the actual "no session.ts change to add a skill" payoff.
+  expect(queryOptions?.settingSources).toEqual(["user"]);
+  expect(queryOptions?.plugins).toBeUndefined();
 }, 10000);
 
 test("canUseTool posts a permission_request and blocks until a matching permission_response resolves it", async () => {

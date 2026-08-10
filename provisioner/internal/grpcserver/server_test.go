@@ -70,13 +70,17 @@ func newTestOriginRepo(t *testing.T) string {
 	return dir
 }
 
+// newTestServer leaves fleetSharedRepoURL empty — SyncFleetShared is
+// disabled, so existing tests that don't care about it don't need a real
+// git origin. TestCreateWorkerPod_SyncsFleetShared below builds its own
+// Server with a real one.
 func newTestServer(t *testing.T) (*Server, *k8s.Client, *fakeEventReporter) {
 	t.Helper()
 	k8sc := newFakeK8sClient()
 	gitMgr := git.NewManager(t.TempDir())
 	proxy := mcpproxy.New(func(taskID string) string { return "" }, func(taskID string) string { return "" })
 	reporter := &fakeEventReporter{}
-	return New(k8sc, gitMgr, proxy, reporter, "e2e.bnei.dev"), k8sc, reporter
+	return New(k8sc, gitMgr, proxy, reporter, "e2e.bnei.dev", "", "", ""), k8sc, reporter
 }
 
 func TestKillE2ESession_NoActiveSession(t *testing.T) {
@@ -165,6 +169,48 @@ func TestCreateWorkerPod_ClonesAndCreatesPod(t *testing.T) {
 	}
 	if !sawScheduled {
 		t.Errorf("expected a SCHEDULED pod event to be reported, got %+v", reporter.events)
+	}
+}
+
+// TestCreateWorkerPod_SyncsFleetShared covers docs/adr/0032's wiring: a
+// dispatch with a configured fleetSharedRepoURL must sync it into
+// claudeHomeDir before the pod is created — this is the whole reason a
+// worker's settingSources: ["user"] later finds anything there.
+func TestCreateWorkerPod_SyncsFleetShared(t *testing.T) {
+	k8sc := newFakeK8sClient()
+	gitMgr := git.NewManager(t.TempDir())
+	proxy := mcpproxy.New(func(taskID string) string { return "" }, func(taskID string) string { return "" })
+	reporter := &fakeEventReporter{}
+	claudeHome := filepath.Join(t.TempDir(), "claude-home")
+
+	fleetSharedOrigin := t.TempDir()
+	run := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = fleetSharedOrigin
+		cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@test.com", "GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@test.com")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	run("init", "-b", "main")
+	if err := os.WriteFile(filepath.Join(fleetSharedOrigin, "CLAUDE.md"), []byte("fleet context"), 0o644); err != nil {
+		t.Fatalf("write CLAUDE.md: %v", err)
+	}
+	run("add", ".")
+	run("commit", "-m", "init")
+
+	s := New(k8sc, gitMgr, proxy, reporter, "e2e.bnei.dev", fleetSharedOrigin, "main", claudeHome)
+	ctx := context.Background()
+	origin := newTestOriginRepo(t)
+
+	if _, err := s.CreateWorkerPod(ctx, &agentfleetv1.CreateWorkerPodRequest{
+		TaskId: "task-1", Repo: "dream-analyst", RepoUrl: origin, BaseBranch: "main",
+	}); err != nil {
+		t.Fatalf("CreateWorkerPod: %v", err)
+	}
+
+	if b, err := os.ReadFile(filepath.Join(claudeHome, "CLAUDE.md")); err != nil || string(b) != "fleet context" {
+		t.Fatalf("expected fleet-shared CLAUDE.md mirrored into claudeHome, got %q err %v", b, err)
 	}
 }
 
