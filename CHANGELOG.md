@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.29.1](https://github.com/MohammadBnei/agent-fleet/compare/1.29.0...1.29.1) (2026-08-10)
+
+
+### Bug Fixes
+
+* **provisioner:** postgres PGDATA subdirectory + surface pod failures in errors ([f5e2bc7](https://github.com/MohammadBnei/agent-fleet/commit/f5e2bc7a9ceaf27e6cbfef78ed24288b43916ab8))
+
 # [1.29.0](https://github.com/MohammadBnei/agent-fleet/compare/1.28.2...1.29.0) (2026-08-10)
 
 
