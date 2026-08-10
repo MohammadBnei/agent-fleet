@@ -33,10 +33,23 @@ func newTestClient() *Client {
 	}
 }
 
+// TestCreatePod_EmptyStartCmd_FailsLoud covers the removal of the old
+// per-repo StartCmdFor Go-switch fallback (docs/adr/0034 §11 step 4,
+// confirmed working end-to-end via /kind-local before removal): core
+// always resolves a non-empty start_cmd now (from a repo's profile or an
+// agent override), so an empty one here is a real misconfiguration, not
+// something to silently paper over with a guessed default.
+func TestCreatePod_EmptyStartCmd_FailsLoud(t *testing.T) {
+	c := newTestClient()
+	if err := c.CreatePod(context.Background(), TaskRef{ID: "task-1", Repo: "dream-analyst"}); err == nil {
+		t.Fatal("expected an error for empty StartCmd, got nil")
+	}
+}
+
 func TestCreatePod_ShapeMatchesTSVersion(t *testing.T) {
 	c := newTestClient()
 	ctx := context.Background()
-	task := TaskRef{ID: "abc-123-def", Repo: "dream-analyst"}
+	task := TaskRef{ID: "abc-123-def", Repo: "dream-analyst", StartCmd: "bun run dev"}
 
 	if err := c.CreatePod(ctx, task); err != nil {
 		t.Fatalf("CreatePod: %v", err)
@@ -260,7 +273,7 @@ func TestGetPod_ExistsVsNotFound(t *testing.T) {
 	// GetPod is the e2e-preview-pod getter (worker sessions are Jobs now,
 	// reliability-findings.md #11) — exercised against CreatePod, not
 	// CreateWorkerPod.
-	if err := c.CreatePod(ctx, TaskRef{ID: "task-1", Repo: "dream-analyst"}); err != nil {
+	if err := c.CreatePod(ctx, TaskRef{ID: "task-1", Repo: "dream-analyst", StartCmd: "bun run dev"}); err != nil {
 		t.Fatalf("CreatePod: %v", err)
 	}
 	_, exists, err = c.GetPod(ctx, ResourceName("task-1"))
@@ -297,7 +310,7 @@ func TestListWorkerJobsByLabel_ExcludesE2ePods(t *testing.T) {
 	if err := c.CreateWorkerPod(ctx, "task-1", "dream-analyst", "lease-1", "/workspace/worktrees/task-1", "", 0, nil, nil, nil); err != nil {
 		t.Fatalf("CreateWorkerPod: %v", err)
 	}
-	if err := c.CreatePod(ctx, TaskRef{ID: "task-2", Repo: "dream-analyst"}); err != nil {
+	if err := c.CreatePod(ctx, TaskRef{ID: "task-2", Repo: "dream-analyst", StartCmd: "bun run dev"}); err != nil {
 		t.Fatalf("CreatePod (e2e): %v", err)
 	}
 

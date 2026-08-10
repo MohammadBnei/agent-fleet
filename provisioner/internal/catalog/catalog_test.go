@@ -39,6 +39,27 @@ func TestServices_MatchesDBCheckConstraint(t *testing.T) {
 		if Services[key].Port == 0 {
 			t.Errorf("service %q: Port is unset", key)
 		}
+		if Services[key].EnvVarName == "" {
+			t.Errorf("service %q: EnvVarName is unset", key)
+		}
+	}
+}
+
+// TestServices_EnvVarNamesMatchAppConventions is a regression test for a
+// bug caught live via /kind-local: the env var names this catalog injects
+// must be what the actual consuming app looks for (Prisma's DATABASE_URL,
+// ioredis's REDIS_URL), not an invented SERVICE_<KEY>_URL scheme —
+// dream-analyst's own Prisma config errored with "Cannot resolve
+// environment variable: DATABASE_URL" until this matched.
+func TestServices_EnvVarNamesMatchAppConventions(t *testing.T) {
+	want := map[string]string{
+		"postgres": "DATABASE_URL",
+		"redis":    "REDIS_URL",
+	}
+	for key, envVar := range want {
+		if got := Services[key].EnvVarName; got != envVar {
+			t.Errorf("Services[%q].EnvVarName = %q, want %q", key, got, envVar)
+		}
 	}
 }
 

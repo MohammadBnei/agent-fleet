@@ -171,10 +171,20 @@ func (s *Server) RequestE2EEnv(ctx context.Context, req *agentfleetv1.RequestE2E
 	}
 	var toolKeys []string
 	var serviceIngredients []repoprofiles.ServiceIngredient
+	// startCmd: the caller's own override wins (it knows the worktree's
+	// actual layout right now); otherwise the resolved profile's own
+	// start_cmd (found live via kind-local — this fell through to the
+	// provisioner's StartCmdFor rolling-deploy fallback instead, silently
+	// using the OLD hardcoded command even though the profile had the
+	// fixed one, because only Tools/Services were pulled off profile here).
+	startCmd := req.GetStartCmd()
 	if profile != nil {
 		toolKeys, serviceIngredients = profile.Tools, profile.Services
+		if startCmd == "" {
+			startCmd = profile.StartCmd
+		}
 	}
-	status, previewURL, err := s.provisioner.CreateE2eSession(ctx, req.GetTaskId(), t.Repo, req.GetStartCmd(), toolKeys, serviceIngredients)
+	status, previewURL, err := s.provisioner.CreateE2eSession(ctx, req.GetTaskId(), t.Repo, startCmd, toolKeys, serviceIngredients)
 	if err != nil {
 		return nil, fmt.Errorf("RequestE2EEnv: %w", err)
 	}
