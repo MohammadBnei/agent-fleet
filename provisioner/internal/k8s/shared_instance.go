@@ -267,6 +267,72 @@ func (c *Client) touchLastUsedAt(ctx context.Context, name string) error {
 
 func nowRFC3339() string { return time.Now().UTC().Format(time.RFC3339) }
 
+// LiveSharedInstance is the reconcile loop's idle-GC view of a shared
+// instance (docs/adr/0034) — Kubernetes itself is the source of truth,
+// same reasoning as LiveWorkerJob: the provisioner holds no DB to track
+// this in separately.
+type LiveSharedInstance struct {
+	Repo       string
+	ServiceKey string
+	// LastUsedAt is the zero time if the annotation is missing or
+	// unparseable — the reconcile loop treats that as "don't GC yet" (a
+	// brand-new instance mid-creation shouldn't be swept just because it
+	// hasn't been touched a second time yet).
+	LastUsedAt time.Time
+}
+
+// ListSharedInstances lists every shared-instance Deployment across all
+// repos/services — the reconcile loop's gcIdleSharedInstances pass filters
+// by LastUsedAt itself.
+func (c *Client) ListSharedInstances(ctx context.Context) ([]LiveSharedInstance, error) {
+	list, err := c.Core.AppsV1().Deployments(c.Namespace).List(ctx, metav1.ListOptions{
+		LabelSelector: ComponentLabel + "=" + ComponentSharedInstance,
+	})
+	if err != nil {
+		slog.Error("k8s ListSharedInstances", "error", err)
+		return nil, err
+	}
+	out := make([]LiveSharedInstance, 0, len(list.Items))
+	for _, dep := range list.Items {
+		repo := dep.Labels[RepoLabel]
+		serviceKey := dep.Labels[ServiceKeyLabel]
+		if repo == "" || serviceKey == "" {
+			continue
+		}
+		var lastUsed time.Time
+		if raw := dep.Spec.Template.Annotations[LastUsedAtAnnotation]; raw != "" {
+			if t, err := time.Parse(time.RFC3339, raw); err == nil {
+				lastUsed = t
+			}
+		}
+		out = append(out, LiveSharedInstance{Repo: repo, ServiceKey: serviceKey, LastUsedAt: lastUsed})
+	}
+	return out, nil
+}
+
+// DeleteSharedInstance tears down every object EnsureSharedInstance may
+// have created for (repo, serviceKey) — Deployment, Service, admin Secret,
+// and (postgres only) its PVC. Ignores not-found on each so a partially
+// materialized instance (e.g. a failed EnsureSharedInstance that got as
+// far as the Deployment but not the Service) is still fully cleaned up.
+func (c *Client) DeleteSharedInstance(ctx context.Context, repo, serviceKey string) error {
+	name := SharedInstanceName(repo, serviceKey)
+	if err := ignoreNotFound(c.Core.AppsV1().Deployments(c.Namespace).Delete(ctx, name, jobForegroundDeletion())); err != nil {
+		return fmt.Errorf("delete deployment: %w", err)
+	}
+	if err := ignoreNotFound(c.Core.CoreV1().Services(c.Namespace).Delete(ctx, name, metav1.DeleteOptions{})); err != nil {
+		return fmt.Errorf("delete service: %w", err)
+	}
+	if err := ignoreNotFound(c.Core.CoreV1().Secrets(c.Namespace).Delete(ctx, SharedInstanceAdminSecretName(repo, serviceKey), metav1.DeleteOptions{})); err != nil {
+		return fmt.Errorf("delete admin secret: %w", err)
+	}
+	if err := ignoreNotFound(c.Core.CoreV1().PersistentVolumeClaims(c.Namespace).Delete(ctx, name, metav1.DeleteOptions{})); err != nil {
+		return fmt.Errorf("delete pvc: %w", err)
+	}
+	slog.Info("k8s DeleteSharedInstance", "repo", repo, "serviceKey", serviceKey)
+	return nil
+}
+
 // waitReady blocks until the shared instance actually accepts connections
 // — a real connection attempt IS the readiness check (docs/adr/0034), not
 // a separate probe/poll layered on top.

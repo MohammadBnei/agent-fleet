@@ -1,13 +1,20 @@
 # Namespaced Role only — never a ClusterRole. Scoped to exactly what the
 # provisioner needs to create/tear down an e2e-preview pod (Pod, Service,
-# Traefik IngressRoute/Middleware) and, as of docs/adr/0019/0020, a worker
-# session. Worker sessions are batch/v1.Jobs, not bare Pods
-# (reliability-findings.md #11 — Job's own backoff/TTL semantics replace
-# the reconcile loop's hand-rolled retry/GC), so they need their own
-# apiGroup/resource grant; e2e-preview pods stay plain Pods (long-running,
-# explicitly killed, not run-to-completion — Job doesn't fit that
-# lifecycle). No Secret access: preview auth reuses the existing
-# basic-admin-auth Middleware, no per-session secret is ever minted.
+# Traefik IngressRoute/Middleware), a worker session (docs/adr/0019/0020),
+# and, as of docs/adr/0034, a repo's shared environment-recipe service
+# instances (postgres/redis). Worker sessions are batch/v1.Jobs, not bare
+# Pods (reliability-findings.md #11 — Job's own backoff/TTL semantics
+# replace the reconcile loop's hand-rolled retry/GC), so they need their
+# own apiGroup/resource grant; e2e-preview pods stay plain Pods
+# (long-running, explicitly killed, not run-to-completion — Job doesn't fit
+# that lifecycle).
+#
+# Secrets/PersistentVolumeClaims (docs/adr/0034): a shared instance's own
+# admin credentials (provisioner-generated, never AGENTFLEET_DB_*) and a
+# postgres shared instance's data volume — infrastructure the provisioner
+# itself creates and owns, distinct from the fleet-coordination-DB boundary
+# in docs/adr/0020 point 1, which is untouched. Preview-pod auth still
+# reuses the existing basic-admin-auth Middleware, unrelated to this grant.
 #
 # The worker pods themselves never get any of this — this Role is the ONLY
 # RBAC surface in the whole fleet that can create/delete cluster resources
@@ -20,6 +27,12 @@ metadata:
 rules:
 - apiGroups: [""]
   resources: ["pods", "services"]
+  verbs: ["create", "get", "list", "watch", "delete"]
+- apiGroups: [""]
+  resources: ["secrets", "persistentvolumeclaims"]
+  verbs: ["create", "get", "list", "watch", "delete"]
+- apiGroups: ["apps"]
+  resources: ["deployments"]
   verbs: ["create", "get", "list", "watch", "delete"]
 - apiGroups: ["batch"]
   resources: ["jobs"]

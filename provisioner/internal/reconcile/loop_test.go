@@ -11,8 +11,10 @@ import (
 )
 
 type fakeK8s struct {
-	jobs    []k8s.LiveWorkerJob
-	deleted []string
+	jobs             []k8s.LiveWorkerJob
+	deleted          []string
+	instances        []k8s.LiveSharedInstance
+	deletedInstances []string // "repo/serviceKey"
 }
 
 func (f *fakeK8s) ListWorkerJobsByLabel(ctx context.Context) ([]k8s.LiveWorkerJob, error) {
@@ -20,6 +22,13 @@ func (f *fakeK8s) ListWorkerJobsByLabel(ctx context.Context) ([]k8s.LiveWorkerJo
 }
 func (f *fakeK8s) DeleteWorkerJob(ctx context.Context, taskID string) error {
 	f.deleted = append(f.deleted, taskID)
+	return nil
+}
+func (f *fakeK8s) ListSharedInstances(ctx context.Context) ([]k8s.LiveSharedInstance, error) {
+	return f.instances, nil
+}
+func (f *fakeK8s) DeleteSharedInstance(ctx context.Context, repo, serviceKey string) error {
+	f.deletedInstances = append(f.deletedInstances, repo+"/"+serviceKey)
 	return nil
 }
 
@@ -39,7 +48,7 @@ func TestGcTerminalWorkerJobs_OnlyDeletesTerminalPhase(t *testing.T) {
 		{TaskID: "pending-1", JobName: "worker-4", Phase: "Pending"},
 	}}
 	reporter := &fakeEventReporter{}
-	l := New(kc, reporter)
+	l := New(kc, reporter, time.Hour)
 
 	l.gcTerminalWorkerJobs(context.Background())
 
@@ -63,7 +72,7 @@ func TestGcTerminalWorkerJobs_ReportsCrashOnlyForFailed(t *testing.T) {
 		{TaskID: "failed-1", JobName: "worker-3", Phase: "Failed"},
 	}}
 	reporter := &fakeEventReporter{}
-	l := New(kc, reporter)
+	l := New(kc, reporter, time.Hour)
 
 	l.gcTerminalWorkerJobs(context.Background())
 
@@ -82,9 +91,46 @@ func TestGcTerminalWorkerJobs_ReportsCrashOnlyForFailed(t *testing.T) {
 	}
 }
 
+func TestGcIdleSharedInstances_OnlyDeletesPastTimeout(t *testing.T) {
+	now := time.Now()
+	kc := &fakeK8s{instances: []k8s.LiveSharedInstance{
+		{Repo: "dream-analyst", ServiceKey: "postgres", LastUsedAt: now.Add(-2 * time.Hour)}, // stale, GC'd
+		{Repo: "dream-analyst", ServiceKey: "redis", LastUsedAt: now.Add(-1 * time.Minute)},  // recent, kept
+		{Repo: "agent-fleet", ServiceKey: "postgres", LastUsedAt: time.Time{}},               // no annotation yet, kept
+	}}
+	l := New(kc, &fakeEventReporter{}, time.Hour)
+
+	l.gcIdleSharedInstances(context.Background())
+
+	if len(kc.deletedInstances) != 1 || kc.deletedInstances[0] != "dream-analyst/postgres" {
+		t.Fatalf("expected exactly dream-analyst/postgres deleted, got %v", kc.deletedInstances)
+	}
+}
+
+// TestGcIdleSharedInstances_Uniform confirms task-scoped and repo-scoped
+// instances are NOT distinguished by this pass — docs/adr/0034's decision
+// to keep GC uniform rather than exempting repo-scoped as "protected."
+// LiveSharedInstance itself carries no scope-mode field at all: from the
+// GC pass's point of view a shared instance is just (repo, serviceKey,
+// lastUsedAt), regardless of which scope modes are minting inside it.
+func TestGcIdleSharedInstances_Uniform(t *testing.T) {
+	now := time.Now()
+	kc := &fakeK8s{instances: []k8s.LiveSharedInstance{
+		{Repo: "dream-analyst", ServiceKey: "postgres", LastUsedAt: now.Add(-2 * time.Hour)},
+		{Repo: "agent-fleet", ServiceKey: "postgres", LastUsedAt: now.Add(-2 * time.Hour)},
+	}}
+	l := New(kc, &fakeEventReporter{}, time.Hour)
+
+	l.gcIdleSharedInstances(context.Background())
+
+	if len(kc.deletedInstances) != 2 {
+		t.Fatalf("expected both stale instances deleted regardless of what they're used for, got %v", kc.deletedInstances)
+	}
+}
+
 func TestRun_StopsOnContextCancel(t *testing.T) {
 	kc := &fakeK8s{}
-	l := New(kc, &fakeEventReporter{})
+	l := New(kc, &fakeEventReporter{}, time.Hour)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
 	defer cancel()

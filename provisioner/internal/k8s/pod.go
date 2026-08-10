@@ -51,6 +51,17 @@ type TaskRef struct {
 	// the agent supplying its own command (it knows the worktree's actual
 	// layout right now) beats a static guess made at pod-creation time.
 	StartCmd string
+	// ToolKeys/ServiceIngredients are the repo's resolved "e2e" profile
+	// (docs/adr/0034) — core resolves the profile name, this package only
+	// ever sees the already-resolved ingredient list. ExtraEnv carries
+	// already-minted task-scoped/repo-scoped service URLs (the caller,
+	// grpcserver.go, calls MintServiceCredentials before CreatePod so a
+	// minting failure blocks pod creation entirely — pod-scoped ingredients
+	// are the only kind actually materialized inside this function, via
+	// buildIngredients).
+	ToolKeys           []string
+	ServiceIngredients []ServiceIngredientRef
+	ExtraEnv           []corev1.EnvVar
 }
 
 func (c *Client) CreatePod(ctx context.Context, task TaskRef) error {
@@ -65,32 +76,47 @@ func (c *Client) CreatePod(ctx context.Context, task TaskRef) error {
 	name := ResourceName(task.ID)
 	labels := Labels(task.ID)
 
+	initContainers, ingredientEnv, toolsVol, toolsMount, err := buildIngredients(task.ToolKeys, task.ServiceIngredients)
+	if err != nil {
+		return fmt.Errorf("build ingredients: %w", err)
+	}
+
+	runnerEnv := []corev1.EnvVar{
+		{Name: "E2E_WORKTREE_PATH", Value: "/workspace"},
+		{Name: "E2E_START_CMD", Value: startCmd},
+		{Name: "E2E_APP_PORT", Value: fmt.Sprint(AppPort)},
+		{Name: "E2E_CODE_SERVER_PORT", Value: fmt.Sprint(CodeServerPort)},
+		{Name: "E2E_PLAYWRIGHT_PORT", Value: fmt.Sprint(PlaywrightPort)},
+		{Name: "E2E_EXEC_PORT", Value: fmt.Sprint(ExecPort)},
+	}
+	runnerEnv = append(runnerEnv, ingredientEnv...)
+	runnerEnv = append(runnerEnv, task.ExtraEnv...)
+
+	runnerMounts := []corev1.VolumeMount{
+		{Name: "workspace", MountPath: "/workspace", SubPath: "worktrees/" + task.ID},
+		{Name: "dshm", MountPath: "/dev/shm"},
+	}
+	if toolsMount != nil {
+		runnerMounts = append(runnerMounts, *toolsMount)
+	}
+
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: c.Namespace, Labels: labels},
 		Spec: corev1.PodSpec{
-			RestartPolicy: corev1.RestartPolicyNever,
+			RestartPolicy:  corev1.RestartPolicyNever,
+			InitContainers: initContainers,
 			Containers: []corev1.Container{
 				{
 					Name:  "e2e-runner",
 					Image: c.RunnerImage,
-					Env: []corev1.EnvVar{
-						{Name: "E2E_WORKTREE_PATH", Value: "/workspace"},
-						{Name: "E2E_START_CMD", Value: startCmd},
-						{Name: "E2E_APP_PORT", Value: fmt.Sprint(AppPort)},
-						{Name: "E2E_CODE_SERVER_PORT", Value: fmt.Sprint(CodeServerPort)},
-						{Name: "E2E_PLAYWRIGHT_PORT", Value: fmt.Sprint(PlaywrightPort)},
-						{Name: "E2E_EXEC_PORT", Value: fmt.Sprint(ExecPort)},
-					},
+					Env:   runnerEnv,
 					Ports: []corev1.ContainerPort{
 						{Name: "app", ContainerPort: AppPort},
 						{Name: "code-server", ContainerPort: CodeServerPort},
 						{Name: "playwright", ContainerPort: PlaywrightPort},
 						{Name: "exec", ContainerPort: ExecPort},
 					},
-					VolumeMounts: []corev1.VolumeMount{
-						{Name: "workspace", MountPath: "/workspace", SubPath: "worktrees/" + task.ID},
-						{Name: "dshm", MountPath: "/dev/shm"},
-					},
+					VolumeMounts: runnerMounts,
 				},
 			},
 			Volumes: []corev1.Volume{
@@ -111,6 +137,9 @@ func (c *Client) CreatePod(ctx context.Context, task TaskRef) error {
 				},
 			},
 		},
+	}
+	if toolsVol != nil {
+		pod.Spec.Volumes = append(pod.Spec.Volumes, *toolsVol)
 	}
 
 	if _, err := c.Core.CoreV1().Pods(c.Namespace).Create(ctx, pod, metav1.CreateOptions{}); err != nil {
@@ -164,11 +193,60 @@ func (c *Client) GetPod(ctx context.Context, name string) (phase corev1.PodPhase
 // workload with no expected completion, and (per reconcile/loop.go's own
 // doc comment) they were never part of the hand-rolled GC this finding is
 // about in the first place.
-func (c *Client) CreateWorkerPod(ctx context.Context, taskID, repo, leaseID, worktreePath, resumeSessionID string, resumeFromSeq int64) error {
+// toolKeys/serviceIngredients are the repo's resolved "worker" profile
+// (docs/adr/0034, empty when the repo has no such profile — preserves
+// today's exact pod shape). extraEnv carries already-minted task-scoped/
+// repo-scoped service URLs, computed by the caller before this call so a
+// minting failure blocks pod creation entirely (grpcserver.go).
+func (c *Client) CreateWorkerPod(ctx context.Context, taskID, repo, leaseID, worktreePath, resumeSessionID string, resumeFromSeq int64, toolKeys []string, serviceIngredients []ServiceIngredientRef, extraEnv []corev1.EnvVar) error {
 	name := WorkerResourceName(taskID)
 	labels := WorkerLabels(taskID, repo)
 
 	sidecarRestartAlways := corev1.ContainerRestartPolicyAlways
+
+	ingredientInitContainers, ingredientEnv, toolsVol, toolsMount, err := buildIngredients(toolKeys, serviceIngredients)
+	if err != nil {
+		return fmt.Errorf("build ingredients: %w", err)
+	}
+
+	workerEnv := []corev1.EnvVar{
+		{Name: "TASK_ID", Value: taskID},
+		{Name: "TARGET_REPO", Value: repo},
+		{Name: "LEASE_ID", Value: leaseID},
+		{Name: "SIDECAR_MCP_ADDR", Value: fmt.Sprintf("localhost:%d", SidecarMCPPort)},
+		{Name: "SIDECAR_API_ADDR", Value: fmt.Sprintf("localhost:%d", SidecarAPIPort)},
+		// The worker's own git push/gh pr create needs auth
+		// independently of the provisioner's clone/fetch —
+		// separate containers, only /workspace is shared, not
+		// $HOME (see worker/src/index.ts's configureGitAuth).
+		// Forwarded from the provisioner's own Infisical-sourced
+		// env, same value.
+		{Name: "GH_TOKEN", Value: os.Getenv("GH_TOKEN")},
+		// The Agent SDK reads this straight from process.env
+		// (worker/src/session.ts) — without forwarding it here,
+		// no worker pod can authenticate to run Claude Code at
+		// all, since containers don't inherit env from whatever
+		// created them.
+		{Name: "CLAUDE_CODE_OAUTH_TOKEN", Value: os.Getenv("CLAUDE_CODE_OAUTH_TOKEN")},
+		{Name: "CLAUDE_MODEL", Value: os.Getenv("CLAUDE_MODEL")},
+		{Name: "MAX_TURNS", Value: os.Getenv("MAX_TURNS")},
+		{Name: "WORKTREE_PATH", Value: worktreePath},
+		{Name: "CLAUDE_CONFIG_DIR", Value: claudeConfigDir},
+		{Name: "RESUME_SESSION_ID", Value: resumeSessionID},
+		{Name: "RESUME_FROM_SEQ", Value: strconv.FormatInt(resumeFromSeq, 10)},
+		{Name: "LOG_LEVEL", Value: c.LogLevel},
+	}
+	workerEnv = append(workerEnv, ingredientEnv...)
+	workerEnv = append(workerEnv, extraEnv...)
+
+	workerMounts := []corev1.VolumeMount{
+		// Whole PVC, not a per-task SubPath — see the sidecar
+		// container's identical mount above for why.
+		{Name: "workspace", MountPath: "/workspace"},
+	}
+	if toolsMount != nil {
+		workerMounts = append(workerMounts, *toolsMount)
+	}
 
 	podSpec := corev1.PodSpec{
 		RestartPolicy: corev1.RestartPolicyNever,
@@ -251,40 +329,10 @@ func (c *Client) CreateWorkerPod(ctx context.Context, taskID, repo, leaseID, wor
 		},
 		Containers: []corev1.Container{
 			{
-				Name:  "worker",
-				Image: c.WorkerImage,
-				Env: []corev1.EnvVar{
-					{Name: "TASK_ID", Value: taskID},
-					{Name: "TARGET_REPO", Value: repo},
-					{Name: "LEASE_ID", Value: leaseID},
-					{Name: "SIDECAR_MCP_ADDR", Value: fmt.Sprintf("localhost:%d", SidecarMCPPort)},
-					{Name: "SIDECAR_API_ADDR", Value: fmt.Sprintf("localhost:%d", SidecarAPIPort)},
-					// The worker's own git push/gh pr create needs auth
-					// independently of the provisioner's clone/fetch —
-					// separate containers, only /workspace is shared, not
-					// $HOME (see worker/src/index.ts's configureGitAuth).
-					// Forwarded from the provisioner's own Infisical-sourced
-					// env, same value.
-					{Name: "GH_TOKEN", Value: os.Getenv("GH_TOKEN")},
-					// The Agent SDK reads this straight from process.env
-					// (worker/src/session.ts) — without forwarding it here,
-					// no worker pod can authenticate to run Claude Code at
-					// all, since containers don't inherit env from whatever
-					// created them.
-					{Name: "CLAUDE_CODE_OAUTH_TOKEN", Value: os.Getenv("CLAUDE_CODE_OAUTH_TOKEN")},
-					{Name: "CLAUDE_MODEL", Value: os.Getenv("CLAUDE_MODEL")},
-					{Name: "MAX_TURNS", Value: os.Getenv("MAX_TURNS")},
-					{Name: "WORKTREE_PATH", Value: worktreePath},
-					{Name: "CLAUDE_CONFIG_DIR", Value: claudeConfigDir},
-					{Name: "RESUME_SESSION_ID", Value: resumeSessionID},
-					{Name: "RESUME_FROM_SEQ", Value: strconv.FormatInt(resumeFromSeq, 10)},
-					{Name: "LOG_LEVEL", Value: c.LogLevel},
-				},
-				VolumeMounts: []corev1.VolumeMount{
-					// Whole PVC, not a per-task SubPath — see the sidecar
-					// container's identical mount above for why.
-					{Name: "workspace", MountPath: "/workspace"},
-				},
+				Name:         "worker",
+				Image:        c.WorkerImage,
+				Env:          workerEnv,
+				VolumeMounts: workerMounts,
 				Resources: corev1.ResourceRequirements{
 					Requests: corev1.ResourceList{
 						corev1.ResourceCPU:    resource.MustParse("250m"),
@@ -306,6 +354,10 @@ func (c *Client) CreateWorkerPod(ctx context.Context, taskID, repo, leaseID, wor
 			},
 		},
 	}
+	podSpec.InitContainers = append(podSpec.InitContainers, ingredientInitContainers...)
+	if toolsVol != nil {
+		podSpec.Volumes = append(podSpec.Volumes, *toolsVol)
+	}
 
 	job := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: c.Namespace, Labels: labels},
@@ -319,7 +371,7 @@ func (c *Client) CreateWorkerPod(ctx context.Context, taskID, repo, leaseID, wor
 		},
 	}
 
-	_, err := c.Core.BatchV1().Jobs(c.Namespace).Create(ctx, job, metav1.CreateOptions{})
+	_, err = c.Core.BatchV1().Jobs(c.Namespace).Create(ctx, job, metav1.CreateOptions{})
 	if err != nil {
 		slog.Error("k8s CreateWorkerPod", "taskId", taskID, "repo", repo, "error", err)
 		return err

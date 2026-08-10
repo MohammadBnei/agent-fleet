@@ -130,7 +130,7 @@ func TestCreateWorkerPod_TwoContainersSharedPVC(t *testing.T) {
 	c := newTestClient()
 	ctx := context.Background()
 
-	if err := c.CreateWorkerPod(ctx, "task-1", "dream-analyst", "lease-1", "/workspace/worktrees/task-1", "", 0); err != nil {
+	if err := c.CreateWorkerPod(ctx, "task-1", "dream-analyst", "lease-1", "/workspace/worktrees/task-1", "", 0, nil, nil, nil); err != nil {
 		t.Fatalf("CreateWorkerPod: %v", err)
 	}
 
@@ -212,7 +212,7 @@ func TestCreateWorkerPod_ResumeSession(t *testing.T) {
 	c := newTestClient()
 	ctx := context.Background()
 
-	if err := c.CreateWorkerPod(ctx, "task-1", "dream-analyst", "lease-1", "/workspace/worktrees/task-1", "sess-abc123", 42); err != nil {
+	if err := c.CreateWorkerPod(ctx, "task-1", "dream-analyst", "lease-1", "/workspace/worktrees/task-1", "sess-abc123", 42, nil, nil, nil); err != nil {
 		t.Fatalf("CreateWorkerPod: %v", err)
 	}
 	job, err := c.Core.BatchV1().Jobs("agent-fleet").Get(ctx, WorkerResourceName("task-1"), metav1.GetOptions{})
@@ -233,7 +233,7 @@ func TestCreateWorkerPod_ResumeSession(t *testing.T) {
 	// A fresh task (no prior session) must still set RESUME_SESSION_ID —
 	// present-but-empty, not omitted, so worker/src/session.ts's env read
 	// doesn't have to distinguish "unset" from "empty" itself.
-	if err := c.CreateWorkerPod(ctx, "task-2", "dream-analyst", "lease-2", "/workspace/worktrees/task-2", "", 0); err != nil {
+	if err := c.CreateWorkerPod(ctx, "task-2", "dream-analyst", "lease-2", "/workspace/worktrees/task-2", "", 0, nil, nil, nil); err != nil {
 		t.Fatalf("CreateWorkerPod: %v", err)
 	}
 	job2, err := c.Core.BatchV1().Jobs("agent-fleet").Get(ctx, WorkerResourceName("task-2"), metav1.GetOptions{})
@@ -273,7 +273,7 @@ func TestGetWorkerJobRepo_RecoversRepoFromLabel(t *testing.T) {
 	c := newTestClient()
 	ctx := context.Background()
 
-	if err := c.CreateWorkerPod(ctx, "task-1", "vos-monolith", "lease-1", "/workspace/worktrees/task-1", "", 0); err != nil {
+	if err := c.CreateWorkerPod(ctx, "task-1", "vos-monolith", "lease-1", "/workspace/worktrees/task-1", "", 0, nil, nil, nil); err != nil {
 		t.Fatalf("CreateWorkerPod: %v", err)
 	}
 	repo, exists, err := c.GetWorkerJobRepo(ctx, "task-1")
@@ -294,7 +294,7 @@ func TestListWorkerJobsByLabel_ExcludesE2ePods(t *testing.T) {
 	c := newTestClient()
 	ctx := context.Background()
 
-	if err := c.CreateWorkerPod(ctx, "task-1", "dream-analyst", "lease-1", "/workspace/worktrees/task-1", "", 0); err != nil {
+	if err := c.CreateWorkerPod(ctx, "task-1", "dream-analyst", "lease-1", "/workspace/worktrees/task-1", "", 0, nil, nil, nil); err != nil {
 		t.Fatalf("CreateWorkerPod: %v", err)
 	}
 	if err := c.CreatePod(ctx, TaskRef{ID: "task-2", Repo: "dream-analyst"}); err != nil {

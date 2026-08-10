@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 
@@ -99,7 +100,14 @@ func (s *Server) CreateE2ESession(ctx context.Context, req *agentfleetv1.CreateE
 		}, nil
 	}
 
-	taskRef := k8s.TaskRef{ID: req.GetTaskId(), Repo: req.GetRepo(), StartCmd: req.GetStartCmd()}
+	serviceRefs, extraEnv, err := s.resolveServiceIngredients(ctx, req.GetRepo(), req.GetTaskId(), req.GetServiceIngredients())
+	if err != nil {
+		return nil, fmt.Errorf("resolve service ingredients: %w", err)
+	}
+	taskRef := k8s.TaskRef{
+		ID: req.GetTaskId(), Repo: req.GetRepo(), StartCmd: req.GetStartCmd(),
+		ToolKeys: req.GetToolKeys(), ServiceIngredients: serviceRefs, ExtraEnv: extraEnv,
+	}
 	if err := s.k8sc.CreatePod(ctx, taskRef); err != nil {
 		return nil, fmt.Errorf("create e2e pod: %w", err)
 	}
@@ -117,6 +125,52 @@ func (s *Server) CreateE2ESession(ctx context.Context, req *agentfleetv1.CreateE
 		Status:     "running",
 		PreviewUrl: k8s.PreviewURLFor(s.e2eHost, req.GetTaskId()),
 	}, nil
+}
+
+// scopeModeString converts the proto ScopeMode enum into the plain string
+// package k8s works with (decoupling k8s from the proto module, same
+// reasoning as TaskRef not being a proto type).
+func scopeModeString(m agentfleetv1.ScopeMode) string {
+	switch m {
+	case agentfleetv1.ScopeMode_SCOPE_MODE_POD_SCOPED:
+		return k8s.ScopeModePodScoped
+	case agentfleetv1.ScopeMode_SCOPE_MODE_TASK_SCOPED:
+		return k8s.ScopeModeTaskScoped
+	case agentfleetv1.ScopeMode_SCOPE_MODE_REPO_SCOPED:
+		return k8s.ScopeModeRepoScoped
+	default:
+		return ""
+	}
+}
+
+// resolveServiceIngredients converts the proto ServiceIngredient list into
+// the plain k8s.ServiceIngredientRef shape CreatePod/CreateWorkerPod
+// accept, and mints credentials for every non-pod-scoped entry
+// synchronously, before the caller creates any pod — a minting failure
+// here means the RPC itself errors and the consuming pod is never created
+// (docs/adr/0034's fail-loud guarantee, stronger than a StartupProbe).
+func (s *Server) resolveServiceIngredients(ctx context.Context, repo, taskID string, in []*agentfleetv1.ServiceIngredient) ([]k8s.ServiceIngredientRef, []corev1.EnvVar, error) {
+	refs := make([]k8s.ServiceIngredientRef, 0, len(in))
+	var extraEnv []corev1.EnvVar
+	for _, si := range in {
+		mode := scopeModeString(si.GetScopeMode())
+		if mode == "" {
+			return nil, nil, fmt.Errorf("service ingredient %q: unspecified scope mode", si.GetKey())
+		}
+		refs = append(refs, k8s.ServiceIngredientRef{Key: si.GetKey(), ScopeMode: mode})
+		if mode == k8s.ScopeModePodScoped {
+			continue // materialized as a same-pod sidecar by buildIngredients instead
+		}
+		url, err := s.k8sc.MintServiceCredentials(ctx, repo, taskID, si.GetKey(), mode)
+		if err != nil {
+			return nil, nil, fmt.Errorf("mint credentials for %s (%s): %w", si.GetKey(), mode, err)
+		}
+		extraEnv = append(extraEnv, corev1.EnvVar{
+			Name:  fmt.Sprintf("SERVICE_%s_URL", strings.ToUpper(si.GetKey())),
+			Value: url,
+		})
+	}
+	return refs, extraEnv, nil
 }
 
 func e2eStatusFromPhase(phase corev1.PodPhase) string {
@@ -205,8 +259,15 @@ func (s *Server) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWo
 		}
 	}
 
+	s.reportEvent(ctx, req.GetTaskId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_PROVISIONING, "", "minting service credentials")
+	serviceRefs, extraEnv, err := s.resolveServiceIngredients(ctx, req.GetRepo(), req.GetTaskId(), req.GetServiceIngredients())
+	if err != nil {
+		s.reportEvent(ctx, req.GetTaskId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_CRASHED, "", "ingredient resolution failed: "+err.Error())
+		return nil, fmt.Errorf("resolve service ingredients: %w", err)
+	}
+
 	s.reportEvent(ctx, req.GetTaskId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_PROVISIONING, "", "creating pod")
-	if err := s.k8sc.CreateWorkerPod(ctx, req.GetTaskId(), req.GetRepo(), req.GetLeaseId(), worktreePath, req.GetResumeSessionId(), req.GetResumeFromSeq()); err != nil {
+	if err := s.k8sc.CreateWorkerPod(ctx, req.GetTaskId(), req.GetRepo(), req.GetLeaseId(), worktreePath, req.GetResumeSessionId(), req.GetResumeFromSeq(), req.GetToolKeys(), serviceRefs, extraEnv); err != nil {
 		s.reportEvent(ctx, req.GetTaskId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_CRASHED, "", "pod create failed: "+err.Error())
 		return nil, fmt.Errorf("create worker pod: %w", err)
 	}
