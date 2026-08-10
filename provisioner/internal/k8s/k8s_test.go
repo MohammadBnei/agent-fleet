@@ -6,6 +6,7 @@ import (
 
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -43,6 +44,33 @@ func TestCreatePod_EmptyStartCmd_FailsLoud(t *testing.T) {
 	c := newTestClient()
 	if err := c.CreatePod(context.Background(), TaskRef{ID: "task-1", Repo: "dream-analyst"}); err == nil {
 		t.Fatal("expected an error for empty StartCmd, got nil")
+	}
+}
+
+// TestCreatePod_MemoryLimitAboveNamespaceDefault is a regression test for
+// a bug caught live on the real cluster: the e2e-runner container ran with
+// no explicit resources, silently inheriting the agent-fleet namespace's
+// LimitRange default (512Mi) — nowhere near enough for code-server +
+// headless-Chromium Playwright + the target app's own dev server running
+// concurrently, and the pod got OOMKilled mid-run. Must be set explicitly,
+// well above that 512Mi default.
+func TestCreatePod_MemoryLimitAboveNamespaceDefault(t *testing.T) {
+	c := newTestClient()
+	ctx := context.Background()
+	task := TaskRef{ID: "mem-check", Repo: "dream-analyst", StartCmd: "bun run dev"}
+
+	if err := c.CreatePod(ctx, task); err != nil {
+		t.Fatalf("CreatePod: %v", err)
+	}
+	pod, err := c.Core.CoreV1().Pods("agent-fleet").Get(ctx, ResourceName(task.ID), metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("get pod: %v", err)
+	}
+	container := pod.Spec.Containers[0]
+	limit := container.Resources.Limits[corev1.ResourceMemory]
+	namespaceDefault := resource.MustParse("512Mi")
+	if limit.Cmp(namespaceDefault) <= 0 {
+		t.Errorf("e2e-runner memory limit = %s, want something above the namespace LimitRange default of %s", limit.String(), namespaceDefault.String())
 	}
 }
 
