@@ -567,6 +567,7 @@ export function TaskDetail({
                       plan={plan}
                       pending={isPending}
                       busy={busyKey === permissionKey}
+                      decision={permissionDecisions.get(entry.seq)}
                       onApprove={() => respond({ behavior: "allow" })}
                       onFeedback={(text) => sendDiscuss(text)}
                       edgeClassName="-mx-6 px-6"

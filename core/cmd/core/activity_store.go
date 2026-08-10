@@ -51,16 +51,19 @@ func (s activityTrackingStore) touch(taskID string) {
 
 // awaitHuman sets/clears tasks.awaiting_human based on msgType — a
 // permission_request/question opens the wait, its permission_response/
-// answer resolves it, and abort clears it too (a killed session denies
-// every pending permission itself, so nothing stays waiting on a human who
-// can no longer be asked). Every other msgType is a no-op: not every
-// transcript append is a decision point, unlike last_active_at above.
+// answer resolves it, and abort/interrupt clear it too (worker/src/
+// session.ts's resolveAllPendingDeny denies every pending permission
+// in-memory the moment either arrives, but — confirmed live against a real
+// kind-local worker — never posts a real permission_response row for it,
+// so nothing stays waiting on a human who already moved the session on).
+// Every other msgType is a no-op: not every transcript append is a
+// decision point, unlike last_active_at above.
 func (s activityTrackingStore) awaitHuman(taskID, msgType string) {
 	var awaiting bool
 	switch msgType {
 	case "permission_request", "question":
 		awaiting = true
-	case "permission_response", "answer", "abort":
+	case "permission_response", "answer", "abort", "interrupt":
 		awaiting = false
 	default:
 		return
