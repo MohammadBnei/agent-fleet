@@ -1,5 +1,12 @@
 # Changelog
 
+# [1.39.0](https://github.com/MohammadBnei/agent-fleet/compare/1.38.3...1.39.0) (2026-08-11)
+
+
+### Features
+
+* **thot:** task-detail UI handles thot sessions (ADR-0037 phase 4) ([#110](https://github.com/MohammadBnei/agent-fleet/issues/110)) ([27ebbe0](https://github.com/MohammadBnei/agent-fleet/commit/27ebbe0956394a80fd32ce5b05f369e4d83ef34d))
+
 ## [1.38.3](https://github.com/MohammadBnei/agent-fleet/compare/1.38.2...1.38.3) (2026-08-11)
 
 
