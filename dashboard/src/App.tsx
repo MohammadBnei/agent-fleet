@@ -313,7 +313,11 @@ export default function App() {
         )}
       </div>
       ) : (
-      <div className="row-start-2 min-h-0 flex flex-col">
+      // min-w-0 alongside min-h-0: a grid item defaults to min-width:auto, so
+      // any descendant with a large min-content width (a nowrap/truncate
+      // string, a long URL) silently widens this column past the viewport
+      // instead of being clipped or ellipsised.
+      <div className="row-start-2 min-h-0 min-w-0 flex flex-col">
         {view === "worktrees" ? (
           <Worktrees onBack={() => selectView("tasks")} />
         ) : view === "files" ? (

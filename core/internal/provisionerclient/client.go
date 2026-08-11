@@ -71,17 +71,20 @@ func (c *Client) KillSession(ctx context.Context, taskID, idempotencyKey, repo s
 	return resp.GetKilled(), resp.GetServicesTornDown(), nil
 }
 
-// GetSessionStatus reports the current e2e session status/preview URL for
-// taskID (status is "" when no session exists). Used by the dashboard
-// (docs/adr/0014) to decide whether a task's code-server link should show.
-func (c *Client) GetSessionStatus(ctx context.Context, taskID string) (status, previewURL string, err error) {
+// GetSessionStatus reports the current e2e session state for taskID (status
+// is "" when no session exists). Used by the dashboard (docs/adr/0014) to
+// decide whether a task's code-server link should show, and to render the
+// e2e card's live pod state. Returns the response whole rather than picking
+// fields off it — every field here is live pod truth only the provisioner
+// can read, and core is a pass-through for all of it.
+func (c *Client) GetSessionStatus(ctx context.Context, taskID string) (*agentfleetv1.GetE2ESessionStatusResponse, error) {
 	resp, err := c.rpc.GetE2ESessionStatus(ctx, &agentfleetv1.GetE2ESessionStatusRequest{
 		TaskId: taskID,
 	})
 	if err != nil {
-		return "", "", fmt.Errorf("GetE2ESessionStatus: %w", err)
+		return nil, fmt.Errorf("GetE2ESessionStatus: %w", err)
 	}
-	return resp.GetStatus(), resp.GetPreviewUrl(), nil
+	return resp, nil
 }
 
 // CreateE2eSession asks the provisioner to spin up an on-demand e2e preview

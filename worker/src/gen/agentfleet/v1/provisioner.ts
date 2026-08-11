@@ -144,6 +144,24 @@ export interface GetE2eSessionStatusResponse {
   /** "requested"|"running"|"failed"|"torn_down"|"" (none) */
   status: string;
   previewUrl: string;
+  /**
+   * Live pod truth, readable only here — the provisioner holds the fleet's
+   * sole cluster RBAC. start_cmd is read back off the pod's own
+   * E2E_START_CMD env var rather than re-resolved from the profile, so it
+   * reflects what is actually running (an approved override included).
+   *
+   * app_ready is the readiness condition from the AppPort probe: the
+   * difference between "still installing" (a cold bun install measured 782s
+   * live) and "bound the wrong port/interface and never will". Without it a
+   * broken preview is indistinguishable from a slow one.
+   */
+  startCmd: string;
+  /** "Pending"|"Running"|"Succeeded"|"Failed"|"Unknown" */
+  podPhase: string;
+  appReady: boolean;
+  restarts: number;
+  /** RFC3339 */
+  startedAt: string;
 }
 
 /**
@@ -494,7 +512,7 @@ export const GetE2eSessionStatusRequest: MessageFns<GetE2eSessionStatusRequest> 
 };
 
 function createBaseGetE2eSessionStatusResponse(): GetE2eSessionStatusResponse {
-  return { status: "", previewUrl: "" };
+  return { status: "", previewUrl: "", startCmd: "", podPhase: "", appReady: false, restarts: 0, startedAt: "" };
 }
 
 export const GetE2eSessionStatusResponse: MessageFns<GetE2eSessionStatusResponse> = {
@@ -505,6 +523,27 @@ export const GetE2eSessionStatusResponse: MessageFns<GetE2eSessionStatusResponse
         ? globalThis.String(object.previewUrl)
         : isSet(object.preview_url)
         ? globalThis.String(object.preview_url)
+        : "",
+      startCmd: isSet(object.startCmd)
+        ? globalThis.String(object.startCmd)
+        : isSet(object.start_cmd)
+        ? globalThis.String(object.start_cmd)
+        : "",
+      podPhase: isSet(object.podPhase)
+        ? globalThis.String(object.podPhase)
+        : isSet(object.pod_phase)
+        ? globalThis.String(object.pod_phase)
+        : "",
+      appReady: isSet(object.appReady)
+        ? globalThis.Boolean(object.appReady)
+        : isSet(object.app_ready)
+        ? globalThis.Boolean(object.app_ready)
+        : false,
+      restarts: isSet(object.restarts) ? globalThis.Number(object.restarts) : 0,
+      startedAt: isSet(object.startedAt)
+        ? globalThis.String(object.startedAt)
+        : isSet(object.started_at)
+        ? globalThis.String(object.started_at)
         : "",
     };
   },
@@ -517,6 +556,21 @@ export const GetE2eSessionStatusResponse: MessageFns<GetE2eSessionStatusResponse
     if (message.previewUrl !== "") {
       obj.previewUrl = message.previewUrl;
     }
+    if (message.startCmd !== "") {
+      obj.startCmd = message.startCmd;
+    }
+    if (message.podPhase !== "") {
+      obj.podPhase = message.podPhase;
+    }
+    if (message.appReady !== false) {
+      obj.appReady = message.appReady;
+    }
+    if (message.restarts !== 0) {
+      obj.restarts = Math.round(message.restarts);
+    }
+    if (message.startedAt !== "") {
+      obj.startedAt = message.startedAt;
+    }
     return obj;
   },
 
@@ -527,6 +581,11 @@ export const GetE2eSessionStatusResponse: MessageFns<GetE2eSessionStatusResponse
     const message = createBaseGetE2eSessionStatusResponse();
     message.status = object.status ?? "";
     message.previewUrl = object.previewUrl ?? "";
+    message.startCmd = object.startCmd ?? "";
+    message.podPhase = object.podPhase ?? "";
+    message.appReady = object.appReady ?? false;
+    message.restarts = object.restarts ?? 0;
+    message.startedAt = object.startedAt ?? "";
     return message;
   },
 };

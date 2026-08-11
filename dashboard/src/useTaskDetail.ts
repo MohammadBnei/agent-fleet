@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Code, ConnectError } from "@connectrpc/connect";
 import { client, subscribeTranscript } from "./connectClient";
 import type { Task } from "./gen/agentfleet/v1/core_pb";
+import type { GetE2eStatusResponse } from "./gen/agentfleet/v1/dashboard_pb";
 import type { TranscriptEntry } from "./gen/agentfleet/v1/transcript_pb";
 
 // Shared data-loading for a single task's session view — used by both the
@@ -11,6 +12,10 @@ export function useTaskDetail(taskId: string) {
   const [task, setTask] = useState<Task | null>(null);
   const [entries, setEntries] = useState<TranscriptEntry[]>([]);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  // Full e2e status, not just the preview URL: the card needs the recipe
+  // that actually ran plus the pod's live readiness to tell "still
+  // installing" apart from "bound the wrong interface and never will".
+  const [e2e, setE2e] = useState<GetE2eStatusResponse | null>(null);
   const [branch, setBranch] = useState<string | null>(null);
   // Keyed, not a plain boolean — a click on one PermissionCard/PlanCard used
   // to disable every other pending card and the whole ActionsMenu at once.
@@ -73,17 +78,27 @@ export function useTaskDetail(taskId: string) {
         setLoadError(err.code === Code.NotFound ? "Task not found." : err.message);
       });
 
-    client
-      .getE2eStatus({ taskId })
-      .then((res) => {
-        if (!cancelled && res.status === "running" && res.previewUrl) {
-          setPreviewUrl(res.previewUrl);
-        }
-      })
-      .catch(() => {
-        // No active e2e session is the common case — not worth surfacing as
-        // a page-level error.
-      });
+    // Polled, not fetched once: the interesting transitions all happen after
+    // mount — a session gets requested mid-view, and an app takes minutes to
+    // go from "installing" to actually serving (a cold bun install measured
+    // 782s on the real cluster). A one-shot read showed "not ready" forever.
+    // ponytail: fixed 5s poll of one small RPC; swap for a server-push
+    // channel only if the e2e card ever needs sub-second freshness.
+    function pollE2e() {
+      client
+        .getE2eStatus({ taskId })
+        .then((res) => {
+          if (cancelled) return;
+          setE2e(res);
+          setPreviewUrl(res.status === "running" && res.previewUrl ? res.previewUrl : null);
+        })
+        .catch(() => {
+          // No active e2e session is the common case — not worth surfacing
+          // as a page-level error.
+        });
+    }
+    pollE2e();
+    const e2eTimer = setInterval(pollE2e, 5000);
 
     let unsubscribe = () => {};
     client
@@ -103,6 +118,7 @@ export function useTaskDetail(taskId: string) {
 
     return () => {
       cancelled = true;
+      clearInterval(e2eTimer);
       unsubscribe();
     };
   }, [taskId]);
@@ -139,6 +155,7 @@ export function useTaskDetail(taskId: string) {
     task,
     entries,
     previewUrl,
+    e2e,
     branch,
     busyKey,
     loadError,

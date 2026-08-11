@@ -57,6 +57,20 @@ message GetE2eSessionStatusRequest {
 message GetE2eSessionStatusResponse {
   string status = 1; // "requested"|"running"|"failed"|"torn_down"|"" (none)
   string preview_url = 2;
+  // Live pod truth, readable only here — the provisioner holds the fleet's
+  // sole cluster RBAC. start_cmd is read back off the pod's own
+  // E2E_START_CMD env var rather than re-resolved from the profile, so it
+  // reflects what is actually running (an approved override included).
+  //
+  // app_ready is the readiness condition from the AppPort probe: the
+  // difference between "still installing" (a cold bun install measured 782s
+  // live) and "bound the wrong port/interface and never will". Without it a
+  // broken preview is indistinguishable from a slow one.
+  string start_cmd = 3;
+  string pod_phase = 4; // "Pending"|"Running"|"Succeeded"|"Failed"|"Unknown"
+  bool app_ready = 5;
+  int32 restarts = 6;
+  string started_at = 7; // RFC3339
 }
 
 // Requests an on-demand e2e preview pod for taskId (mounts the same

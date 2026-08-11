@@ -36,6 +36,20 @@ type Profile struct {
 	Services []ServiceIngredient
 }
 
+// FormatServices renders service ingredients as "<key>:<scope-mode>" for
+// display — the wire shape both the agent (RequestE2eEnvResponse) and the
+// dashboard's e2e card read, so they describe one recipe identically.
+func FormatServices(ingredients []ServiceIngredient) []string {
+	if len(ingredients) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(ingredients))
+	for _, si := range ingredients {
+		out = append(out, si.Key+":"+si.ScopeMode)
+	}
+	return out
+}
+
 type Store struct {
 	pool     *pgxpool.Pool
 	onChange func() // optional; set via SetOnChange
