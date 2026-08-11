@@ -47,3 +47,4 @@ Decisions with no real alternative ever on the table live in
 | [0035](0035-thot-cluster-agent.md) | `thot`, the fleet's cluster agent — a standing service with its own RBAC, stream and dashboard page | Superseded by 0037 |
 | [0036](0036-e2e-recipe-visible-and-override-approved.md) | The e2e recipe is readable by the agent, its `start_cmd` override needs a human yes and stays ephemeral, and the app port gets a readiness probe | Accepted |
 | [0037](0037-thot-is-a-worker-task.md) | `thot` is an ordinary worker task; cluster RBAC moves to a narrow `thot-executor`, and the hub-and-spoke exception is deleted | Accepted |
+| [0038](0038-per-task-subdomain-e2e-preview.md) | Per-task subdomains for e2e previews — app served at `/`, one `*.e2e.bnei.dev` wildcard cert via DNS-01; supersedes 0012's path routing | Accepted |

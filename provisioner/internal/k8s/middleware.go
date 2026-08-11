@@ -2,7 +2,6 @@ package k8s
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -22,12 +21,19 @@ func (c *Client) CreateMiddleware(ctx context.Context, taskID string) error {
 			"namespace": c.Namespace,
 			"labels":    toInterfaceMap(Labels(taskID)),
 		},
+		// Only /code now, and no longer task-ID-derived: as of docs/adr/0038
+		// each task gets its own hostname, so the app is served at the root
+		// with nothing stripped. code-server keeps a prefix because it is
+		// proxy-aware (it reads X-Forwarded-Prefix, which stripPrefix sets);
+		// an arbitrary target app is not, which was the original bug.
+		//
+		// ponytail: the middleware is now identical for every task, so this
+		// could be one shared object. Kept per-task because DeleteAll and
+		// Labels() already handle its lifecycle — collapsing it would be a
+		// bigger diff than it saves.
 		"spec": map[string]any{
 			"stripPrefix": map[string]any{
-				"prefixes": []any{
-					fmt.Sprintf("/%s/app", taskID),
-					fmt.Sprintf("/%s/code", taskID),
-				},
+				"prefixes": []any{"/code"},
 			},
 		},
 	}}
