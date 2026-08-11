@@ -132,27 +132,6 @@ export class ThotSession {
   }
 
   async run(): Promise<void> {
-    // Wake the session immediately with one throwaway turn.
-    //
-    // Without this the process deadlocks against its own readiness probe:
-    // streaming-input mode emits nothing until it receives input, so with
-    // an empty InputQueue no `system/init` ever arrives, `ready` stays
-    // false, and /healthz 503s forever — meaning thot could only ever
-    // become "ready" if someone asked it something first, which is
-    // exactly backwards. Confirmed live 2026-08-11 (readiness probe
-    // failed x15 on a pod with zero restarts).
-    //
-    // Routed through ask() rather than pushed directly so it takes the
-    // same queue slot ordering every other trigger does — a question that
-    // arrives during boot then queues behind it instead of interleaving.
-    // It also surfaces a bad CLAUDE_CODE_OAUTH_TOKEN at startup rather
-    // than in some user's first question (the "Not logged in · Please run
-    // /login" case, also hit live).
-    void this.ask("Reply with the single word: ready").then(
-      (answer) => console.log("thot session boot:", answer.slice(0, 120)),
-      (err) => console.error("thot session boot failed", err),
-    );
-
     const q = query({
       prompt: this.#input.stream(),
       options: {
@@ -180,9 +159,26 @@ export class ThotSession {
       },
     });
 
+    // Ready as soon as the session loop is consuming — NOT once the model
+    // has spoken.
+    //
+    // Streaming-input mode emits nothing until it receives input, so
+    // waiting for `system/init` deadlocked readiness: thot could only
+    // become ready if something asked it a question, but nothing routes to
+    // a pod that isn't ready. The obvious workaround (a throwaway boot
+    // turn) means paying Anthropic per pod start for a health check —
+    // rejected, and it wouldn't have earned its cost anyway: `init` fires
+    // even when CLAUDE_CODE_OAUTH_TOKEN is invalid (confirmed live
+    // 2026-08-11, a pod with a bad token still answered normally, with
+    // "Not logged in" as the answer text), so it never validated auth.
+    //
+    // What readiness actually promises is "an AskThot call will be
+    // accepted and queued", and that is true the moment this loop starts.
+    // A broken session surfaces as an error on the call itself.
+    this.#ready = true;
+
     for await (const msg of q) {
       if (msg.type === "system" && msg.subtype === "init") {
-        this.#ready = true;
         this.#input.setSessionId(msg.session_id);
       }
       if (msg.type === "assistant") {
