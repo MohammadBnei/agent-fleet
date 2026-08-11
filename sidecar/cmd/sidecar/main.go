@@ -29,6 +29,13 @@ func main() {
 		slog.Error("TASK_ID is required")
 		os.Exit(1)
 	}
+	// Stamp taskId onto every line from here on. Without it the sidecar's
+	// logs carry nothing tying them to a task, so core's log viewer had no
+	// way to scope a query except by parsing the pod name — which meant
+	// duplicating the provisioner's shortID() truncation rule into core.
+	// One attribute here removes that whole coupling: every fleet component
+	// is then filterable with the same `| json | taskId="..."`.
+	slog.SetDefault(slog.Default().With("taskId", taskID))
 	coreAddr := env("CORE_GRPC_ADDR", "agent-fleet-core.agent-fleet.svc.cluster.local:9090")
 	worktreePath := env("WORKTREE_PATH", "/workspace")
 	mcpPort := env("MCP_PORT", "9090")
