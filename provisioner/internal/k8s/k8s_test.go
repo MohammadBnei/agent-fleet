@@ -517,3 +517,56 @@ func TestCreateWorkerPod_InjectsThotEnvIntoSidecar(t *testing.T) {
 		t.Errorf("THOT_AUTH_TOKEN missing or wrong: %q — thot will reject the call", got["THOT_AUTH_TOKEN"])
 	}
 }
+
+// TestCreateWorkerPod_ClusterAccessReachesTheJob proves the cluster-access
+// ingredient survives all the way into the real Job spec, not just
+// buildIngredients' return value — the wiring between them is where a
+// silently-missing capability would hide (docs/adr/0037).
+func TestCreateWorkerPod_ClusterAccessReachesTheJob(t *testing.T) {
+	c := newTestClient()
+	c.ExecutorAddr = "thot-executor.thot.svc.cluster.local:9090"
+	c.ThotAuthToken = "tok"
+
+	if err := c.CreateWorkerPod(context.Background(), "task-thot", "infra-bootstrap", "lease-1",
+		"/workspace/worktrees/task-thot", "", 0, []string{"cluster-access"}, nil, nil); err != nil {
+		t.Fatalf("CreateWorkerPod: %v", err)
+	}
+
+	jobs, err := c.Core.BatchV1().Jobs("agent-fleet").List(context.Background(), metav1.ListOptions{})
+	if err != nil || len(jobs.Items) != 1 {
+		t.Fatalf("expected 1 job, got %d (err=%v)", len(jobs.Items), err)
+	}
+	spec := jobs.Items[0].Spec.Template.Spec
+
+	var staged bool
+	for _, ic := range spec.InitContainers {
+		if ic.Name == "tool-cluster-access" {
+			staged = true
+		}
+	}
+	if !staged {
+		t.Error("no tool-cluster-access init container — the kubectl shim is never staged")
+	}
+
+	// The worker container is what runs the agent's Bash, so that's where
+	// the shim's env has to land.
+	var worker *corev1.Container
+	for i, ct := range spec.Containers {
+		if ct.Name == "worker" {
+			worker = &spec.Containers[i]
+		}
+	}
+	if worker == nil {
+		t.Fatal("no worker container")
+	}
+	got := map[string]string{}
+	for _, e := range worker.Env {
+		got[e.Name] = e.Value
+	}
+	if got["EXECUTOR_ADDR"] == "" {
+		t.Error("EXECUTOR_ADDR missing from the worker container — kubectl shim exits 2")
+	}
+	if got["THOT_AUTH_TOKEN"] == "" {
+		t.Error("THOT_AUTH_TOKEN missing from the worker container — executor rejects the call")
+	}
+}
