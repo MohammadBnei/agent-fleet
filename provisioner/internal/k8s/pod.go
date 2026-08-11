@@ -394,6 +394,13 @@ func (c *Client) CreateWorkerPod(ctx context.Context, taskID, repo, leaseID, wor
 					// unprefixed one (confirmed live: sidecar stuck at
 					// /readyz 503 forever, worker never starts).
 					{Name: "CORE_GRPC_ADDR", Value: c.CoreGRPCAddr},
+					// docs/adr/0035: without these the sidecar leaves its
+					// thot client nil and never registers the ask_thot
+					// tool, so the whole worker->thot path is silently
+					// absent rather than visibly broken. That is exactly
+					// how it shipped dead in #94 — nothing set them.
+					{Name: "THOT_GRPC_ADDR", Value: c.ThotGRPCAddr},
+					{Name: "THOT_AUTH_TOKEN", Value: c.ThotAuthToken},
 				},
 				Ports: []corev1.ContainerPort{
 					{Name: "mcp", ContainerPort: SidecarMCPPort},

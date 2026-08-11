@@ -23,6 +23,11 @@ type Config struct {
 	// point 3) — the provisioner is a gRPC client of core for this one
 	// call, on top of being core's gRPC server for everything else.
 	CoreGRPCAddr      string
+	// Passed through to each worker pod's sidecar so ask_thot registers
+	// (docs/adr/0035). Empty leaves the tool unregistered — which is how
+	// the feature silently did nothing in production until this was wired.
+	ThotGRPCAddr  string
+	ThotAuthToken string
 	ReconcileInterval string
 	// SweepInterval is how often the [gone]-branch sweep runs
 	// (reliability-findings.md #2) — minutes, not seconds: it does a real
@@ -71,6 +76,8 @@ func Load() Config {
 		Port:                        env("PORT", "8080"),
 		GRPCPort:                    env("GRPC_PORT", "9090"),
 		CoreGRPCAddr:                env("CORE_GRPC_ADDR", "agent-fleet-core.agent-fleet.svc.cluster.local:9090"),
+		ThotGRPCAddr:                env("THOT_GRPC_ADDR", "thot.thot.svc.cluster.local:9090"),
+		ThotAuthToken:               env("THOT_AUTH_TOKEN", ""),
 		ReconcileInterval:           env("RECONCILE_INTERVAL_MS", "10000"),
 		SweepInterval:               env("SWEEP_INTERVAL_MS", "300000"),
 		LogLevel:                    env("LOG_LEVEL", "info"),
