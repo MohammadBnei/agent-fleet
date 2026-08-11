@@ -69,6 +69,34 @@ env:
 podLabels:
   app.kubernetes.io/part-of: agent-fleet
 
+# A LimitRange is namespace-wide, not release-scoped: this one governs
+# every pod in `agent-fleet`, including the worker/e2e pods the provisioner
+# creates directly (it is the `agent-fleet-core-limits` object
+# provisioner/internal/k8s/pod.go's resource comments refer to). Overridden
+# only to raise `max.cpu` from the chart's default of "2".
+#
+# The e2e pod is the worker's build/test sandbox as of docs/adr/0039 — it
+# runs compiles, test suites and dependency installs, not just a preview —
+# and its CPU limit was already pinned at exactly the old ceiling. A
+# container limit above max is rejected at admission, so the pod would
+# simply never be created; raising this is what makes the 4000m limit in
+# pod.go legal. Change the two together (guarded by
+# TestCreatePod_ResourcesWithinLimitRange).
+#
+# default/defaultRequest are left at the chart's values: they only apply to
+# containers that declare nothing, and every fleet container sets its own.
+limitRange:
+  enabled: true
+  default:
+    cpu: 500m
+    memory: 512Mi
+  defaultRequest:
+    cpu: 100m
+    memory: 128Mi
+  max:
+    cpu: "4"
+    memory: 4Gi
+
 resources:
   requests:
     cpu: 100m

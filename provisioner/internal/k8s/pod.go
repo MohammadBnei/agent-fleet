@@ -36,6 +36,16 @@ const workerJobTTLSeconds = 300
 // every task's cwd is already a distinct worktree path.
 const claudeConfigDir = "/workspace/.claude-home"
 
+// e2eMaxCPU/e2eMaxMemory are the e2e-runner container's limits. They must
+// stay <= limitRange.max in k8s/core.yaml — that LimitRange is
+// namespace-wide, so exceeding it means the pod is rejected at admission
+// and never exists, rather than merely being throttled. Named constants so
+// the test that pins the two files together has something to assert on.
+const (
+	e2eMaxCPU    = "4000m"
+	e2eMaxMemory = "4Gi"
+)
+
 func int32Ptr(i int32) *int32 { return &i }
 
 // CreatedE2ePod mirrors CreatedE2ePod in k8s.ts.
@@ -152,17 +162,39 @@ func (c *Client) CreatePod(ctx context.Context, task TaskRef) error {
 					// one container runs code-server, a headless-Chromium
 					// Playwright MCP server, and the target app's own dev
 					// server (a real npm/bun install + Vite) all at once,
-					// nowhere near fitting in 512Mi. Sized close to the
-					// worker container's own 2Gi budget, which runs a
-					// comparably heavy single Claude Code session.
+					// nowhere near fitting in 512Mi.
+					//
+					// Raised from 250m/512Mi req, 2000m/2Gi lim once this
+					// pod became the worker's build/test sandbox
+					// (docs/adr/0039) rather than just a preview: it now
+					// runs the compiles and test suites too, concurrently
+					// with all of the above. The old 250m request was the
+					// bigger problem of the two — it sets the CFS weight,
+					// so under any node contention the pod got a quarter
+					// core to install dependencies with.
+					//
+					// The 4000m ceiling REQUIRES limitRange.max.cpu >= 4 in
+					// k8s/core.yaml. That LimitRange is namespace-wide
+					// (created by core's release, applied to pods the
+					// provisioner creates), its chart default is cpu "2",
+					// and a container limit above the max is rejected at
+					// admission — the pod is never created at all. Change
+					// both or neither; TestCreatePod_ResourcesWithinLimitRange
+					// pins them together.
+					//
+					// Sizing note: the fleet concurrency cap is 5, so 5
+					// concurrent sandboxes reserve 5 CPU / 5Gi against
+					// worker-01+worker-02's 12 cores — the 4-core limit is
+					// burst headroom for the common idle-node case, not a
+					// reservation.
 					Resources: corev1.ResourceRequirements{
 						Requests: corev1.ResourceList{
-							corev1.ResourceCPU:    resource.MustParse("250m"),
-							corev1.ResourceMemory: resource.MustParse("512Mi"),
+							corev1.ResourceCPU:    resource.MustParse("1000m"),
+							corev1.ResourceMemory: resource.MustParse("1Gi"),
 						},
 						Limits: corev1.ResourceList{
-							corev1.ResourceCPU:    resource.MustParse("2000m"),
-							corev1.ResourceMemory: resource.MustParse("2Gi"),
+							corev1.ResourceCPU:    resource.MustParse(e2eMaxCPU),
+							corev1.ResourceMemory: resource.MustParse(e2eMaxMemory),
 						},
 					},
 				},
