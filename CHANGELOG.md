@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.40.3](https://github.com/MohammadBnei/agent-fleet/compare/1.40.2...1.40.3) (2026-08-11)
+
+
+### Bug Fixes
+
+* **worker:** install procps — the agent crashed mid-session without ps ([#119](https://github.com/MohammadBnei/agent-fleet/issues/119)) ([101b585](https://github.com/MohammadBnei/agent-fleet/commit/101b585efb67498942b7c0aa2319fa54e594f9fd))
+
 ## [1.40.2](https://github.com/MohammadBnei/agent-fleet/compare/1.40.1...1.40.2) (2026-08-11)
 
 
