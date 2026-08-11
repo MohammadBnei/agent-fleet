@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.40.2](https://github.com/MohammadBnei/agent-fleet/compare/1.40.1...1.40.2) (2026-08-11)
+
+
+### Bug Fixes
+
+* **provisioner:** the branch sweep never removed a single worktree ([#118](https://github.com/MohammadBnei/agent-fleet/issues/118)) ([9a8b9fc](https://github.com/MohammadBnei/agent-fleet/commit/9a8b9fc716dfe8659abd4bbca99218589aa8e4a5))
+
 ## [1.40.1](https://github.com/MohammadBnei/agent-fleet/compare/1.40.0...1.40.1) (2026-08-11)
 
 
