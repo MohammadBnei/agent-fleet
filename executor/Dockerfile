@@ -1,12 +1,16 @@
 # Build context must be the agent-fleet/ repo root (not executor/):
 #   docker build -f executor/Dockerfile -t <tag> .
 FROM golang:1.26 AS build
-WORKDIR /src
-# go.work resolves the local proto module, same as the other Go images.
-COPY go.work go.work.sum ./
+WORKDIR /app
 COPY proto/gen/go ./proto/gen/go
 COPY executor ./executor
-RUN cd executor && CGO_ENABLED=0 go build -o /out/executor ./cmd/executor
+# `go work init` with just these two modules, rather than COPYing the
+# repo's own go.work — that file lists core/provisioner/sidecar/e2e-runner
+# too, none of which are in this build context, and go refuses to load a
+# workspace whose members are missing. Same pattern as sidecar/Dockerfile.
+RUN go work init ./proto/gen/go ./executor
+WORKDIR /app/executor
+RUN CGO_ENABLED=0 go build -o /out/executor ./cmd/executor
 
 # kubectl is the whole point of this image: the executor is the only
 # process in the fleet holding cluster RBAC, and it reaches the API server
