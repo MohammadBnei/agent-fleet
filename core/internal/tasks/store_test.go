@@ -717,3 +717,61 @@ func TestCreateDeduped_DoesNotBlockOrdinaryTasks(t *testing.T) {
 		}
 	}
 }
+
+// The in-flight cap is the fleet's blast-radius bound, and a plain
+// concurrency test cannot guard it: CI saw 4 tasks claimed with
+// maxInFlight=2, but the same test passes locally 100 claimers deep
+// because the race needs the right interleaving. So assert the mechanism
+// instead, which is deterministic — hold the advisory lock elsewhere and
+// require the claim path to block on it.
+//
+// Delete the lock and this fails immediately rather than one CI run in
+// twenty.
+func TestClaimNextTask_SerializesOnTheAdvisoryLock(t *testing.T) {
+	pool := newTestPool(t)
+	ctx := context.Background()
+	store := NewStore(pool)
+
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO tasks (repo, description, discord_channel_id) VALUES ('dream-analyst', 'task', 'chan')
+	`); err != nil {
+		t.Fatalf("seed task: %v", err)
+	}
+
+	// A dedicated connection so the lock outlives the statement and is
+	// genuinely held while the claim below runs.
+	holder, err := pool.Acquire(ctx)
+	if err != nil {
+		t.Fatalf("acquire: %v", err)
+	}
+	defer holder.Release()
+	holderTx, err := holder.Begin(ctx)
+	if err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	if _, err := holderTx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, claimLockKey); err != nil {
+		t.Fatalf("take lock: %v", err)
+	}
+
+	blocked, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	task, err := store.ClaimNextTask(blocked, 5, 1000)
+	if err == nil && task != nil {
+		t.Fatalf("claimed task %s while the claim lock was held elsewhere — "+
+			"the read-decide-claim sequence is not serialized, so the "+
+			"in-flight cap can be exceeded under concurrency", task.ID)
+	}
+	if blocked.Err() == nil {
+		t.Fatalf("expected the claim to block until its context expired; got err=%v task=%v", err, task)
+	}
+
+	// Releasing the lock must let a claim through again — otherwise this
+	// test would pass just as well against a permanently broken claim path.
+	if err := holderTx.Rollback(ctx); err != nil {
+		t.Fatalf("release lock: %v", err)
+	}
+	after, err := store.ClaimNextTask(ctx, 5, 1000)
+	if err != nil || after == nil {
+		t.Fatalf("claim after releasing the lock: task=%v err=%v", after, err)
+	}
+}

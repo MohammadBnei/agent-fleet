@@ -279,9 +279,41 @@ func (s *Store) ListRecentTasks(ctx context.Context, limit int) ([]Task, error) 
 // 'failed_permanently' instead — a terminal state, not a claim, so this
 // method returns (nil, nil) for that row rather than handing back a task
 // to dispatch a pod for.
+// claimLockKey serializes ClaimNextTask fleet-wide. Any constant works;
+// it only has to be distinct from other advisory-lock users in this
+// database.
+const claimLockKey = 0x61676E74 // "agnt"
+
 func (s *Store) ClaimNextTask(ctx context.Context, maxInFlight, maxRetries int) (*Task, error) {
+	// The in-flight cap needs an explicit lock, and FOR UPDATE SKIP LOCKED
+	// does not provide one — it is the opposite, deliberately handing each
+	// concurrent claimer a *different* row. Under READ COMMITTED every
+	// claimer's count(*) sees the snapshot from before any of the others
+	// committed, so N simultaneous claims all read the same low count, all
+	// decide there is room, and all claim. CI caught exactly this: 4 tasks
+	// claimed with maxInFlight=2.
+	//
+	// That cap is the fleet's blast-radius bound — how many worker pods,
+	// each running an agent, can exist at once. It has to be a real
+	// ceiling, not a usually-right heuristic.
+	//
+	// An xact-scoped advisory lock serializes the read-decide-claim
+	// sequence. Cheap: dispatch claims once every couple of seconds, so
+	// there is nothing here to make concurrent.
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		slog.Error("tasks ClaimNextTask: begin", "error", err)
+		return nil, fmt.Errorf("claim next task: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, claimLockKey); err != nil {
+		slog.Error("tasks ClaimNextTask: lock", "error", err)
+		return nil, fmt.Errorf("claim next task: %w", err)
+	}
+
 	var t Task
-	err := s.pool.QueryRow(ctx, `
+	err = tx.QueryRow(ctx, `
 		UPDATE tasks
 		SET status = CASE
 		               WHEN status = 'pending' THEN 'claimed'
@@ -311,6 +343,13 @@ func (s *Store) ClaimNextTask(ctx context.Context, maxInFlight, maxRetries int) 
 	}
 	if err != nil {
 		slog.Error("tasks ClaimNextTask", "error", err)
+		return nil, fmt.Errorf("claim next task: %w", err)
+	}
+	// Commit before returning either way: the retries-exhausted branch
+	// below still wrote failed_permanently, and rolling that back would
+	// re-offer the same doomed task forever.
+	if err := tx.Commit(ctx); err != nil {
+		slog.Error("tasks ClaimNextTask: commit", "error", err)
 		return nil, fmt.Errorf("claim next task: %w", err)
 	}
 	if t.Status == "failed_permanently" {
