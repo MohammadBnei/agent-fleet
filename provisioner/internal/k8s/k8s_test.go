@@ -145,6 +145,27 @@ func TestCreateService_Shape(t *testing.T) {
 	}
 }
 
+// TestCreateService_PublishesNotReadyAddresses guards the fix that makes the
+// e2e pod usable as the worker's sandbox (docs/adr/0039). The pod's
+// ReadinessProbe watches AppPort only, so ready-gated endpoints took exec,
+// playwright and code-server down with the target app — leaving no way in
+// at the one moment anyone needs one, and silently defeating docs/adr/0036's
+// stated reason for choosing readiness over liveness.
+func TestCreateService_PublishesNotReadyAddresses(t *testing.T) {
+	c := newTestClient()
+	ctx := context.Background()
+	if err := c.CreateService(ctx, "task-1"); err != nil {
+		t.Fatalf("CreateService: %v", err)
+	}
+	svc, err := c.Core.CoreV1().Services("agent-fleet").Get(ctx, ResourceName("task-1"), metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("get service: %v", err)
+	}
+	if !svc.Spec.PublishNotReadyAddresses {
+		t.Error("publishNotReadyAddresses must be true — otherwise run_command and code-server are unreachable whenever the app isn't listening on AppPort")
+	}
+}
+
 // TestCreateService_SelectorExcludesWorkerPod is a regression test for a bug
 // caught live on the real cluster: the selector was TaskIDLabel alone, and
 // WorkerLabels carries that very same label — so the task's worker pod
