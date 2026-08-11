@@ -58,6 +58,12 @@ env:
     value: "http://platform-loki.monitoring.svc.cluster.local:3100"
   - name: PROVISIONER_GRPC_ADDR
     value: "provisioner.agent-fleet.svc.cluster.local:9090"
+  # thot (docs/adr/0035) lives in its own namespace, unlike every other
+  # fleet component. Without this the dashboard's "ask thot" returns
+  # "thot is not configured" — the code shipped in #101 but nothing ever
+  # set the var. THOT_AUTH_TOKEN comes from the Infisical secret.
+  - name: THOT_GRPC_ADDR
+    value: "thot.thot.svc.cluster.local:9090"
   - name: MAX_IN_FLIGHT_TASKS
     value: "5"
 

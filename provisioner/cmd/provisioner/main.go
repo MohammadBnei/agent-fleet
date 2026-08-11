@@ -58,6 +58,8 @@ func main() {
 		RunnerImage:           cfg.E2eRunnerImage,
 		WorkerImage:           cfg.WorkerImage,
 		SidecarImage:          cfg.SidecarImage,
+		ThotGRPCAddr:          cfg.ThotGRPCAddr,
+		ThotAuthToken:         cfg.ThotAuthToken,
 		WorkspacePVC:          cfg.WorkspacePVC,
 		LogLevel:              cfg.LogLevel,
 		CoreGRPCAddr:          cfg.CoreGRPCAddr,

@@ -473,3 +473,47 @@ func unstructuredNestedSlice(obj map[string]any, fields ...string) ([]any, bool,
 	}
 	return nil, false, nil
 }
+
+// TestCreateWorkerPod_InjectsThotEnvIntoSidecar is a regression guard for a
+// silent-nothing bug: the sidecar leaves its thot client nil when
+// THOT_GRPC_ADDR is unset, so ask_thot never registers and the whole
+// worker->thot path (docs/adr/0035) is absent rather than broken. It
+// shipped exactly that way — the code merged, nothing set the var, and no
+// test noticed because the Go side compiled fine.
+func TestCreateWorkerPod_InjectsThotEnvIntoSidecar(t *testing.T) {
+	c := newTestClient()
+	c.ThotGRPCAddr = "thot.thot.svc.cluster.local:9090"
+	c.ThotAuthToken = "test-token"
+
+	if err := c.CreateWorkerPod(context.Background(), "task-1", "dream-analyst", "lease-1", "/workspace/worktrees/task-1", "", 0, nil, nil, nil); err != nil {
+		t.Fatalf("CreateWorkerPod: %v", err)
+	}
+
+	jobs, err := c.Core.BatchV1().Jobs("agent-fleet").List(context.Background(), metav1.ListOptions{})
+	if err != nil || len(jobs.Items) != 1 {
+		t.Fatalf("expected 1 job, got %d (err=%v)", len(jobs.Items), err)
+	}
+
+	// Native sidecar: an init container with restartPolicy Always
+	// (needs K8s >= 1.29), not a regular container.
+	var sidecar *corev1.Container
+	for i, ct := range jobs.Items[0].Spec.Template.Spec.InitContainers {
+		if ct.Name == "sidecar" {
+			sidecar = &jobs.Items[0].Spec.Template.Spec.InitContainers[i]
+		}
+	}
+	if sidecar == nil {
+		t.Fatal("no sidecar container in the worker Job")
+	}
+
+	got := map[string]string{}
+	for _, e := range sidecar.Env {
+		got[e.Name] = e.Value
+	}
+	if got["THOT_GRPC_ADDR"] != "thot.thot.svc.cluster.local:9090" {
+		t.Errorf("THOT_GRPC_ADDR missing or wrong: %q — ask_thot will not register", got["THOT_GRPC_ADDR"])
+	}
+	if got["THOT_AUTH_TOKEN"] != "test-token" {
+		t.Errorf("THOT_AUTH_TOKEN missing or wrong: %q — thot will reject the call", got["THOT_AUTH_TOKEN"])
+	}
+}
