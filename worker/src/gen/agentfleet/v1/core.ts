@@ -191,6 +191,20 @@ export interface RequestE2eEnvRequest {
 export interface RequestE2eEnvResponse {
   previewUrl: string;
   status: string;
+  /**
+   * The recipe that actually got used, echoed back so the agent can see it.
+   * Before this the worker had no read access to repo_profiles at all: it
+   * guessed a start_cmd, its guess silently beat a correct profile, and the
+   * preview 502'd with nobody able to say why. An agent that can read the
+   * recipe reports "the configured command binds localhost" instead of
+   * inventing a replacement for it.
+   */
+  resolvedStartCmd: string;
+  profileName: string;
+  /** catalog keys, e.g. "bun-toolchain" */
+  tools: string[];
+  /** "<key>:<scope-mode>", e.g. "postgres:task-scoped" */
+  services: string[];
 }
 
 export interface KillE2eEnvRequest {
@@ -829,7 +843,7 @@ export const RequestE2eEnvRequest: MessageFns<RequestE2eEnvRequest> = {
 };
 
 function createBaseRequestE2eEnvResponse(): RequestE2eEnvResponse {
-  return { previewUrl: "", status: "" };
+  return { previewUrl: "", status: "", resolvedStartCmd: "", profileName: "", tools: [], services: [] };
 }
 
 export const RequestE2eEnvResponse: MessageFns<RequestE2eEnvResponse> = {
@@ -841,6 +855,22 @@ export const RequestE2eEnvResponse: MessageFns<RequestE2eEnvResponse> = {
         ? globalThis.String(object.preview_url)
         : "",
       status: isSet(object.status) ? globalThis.String(object.status) : "",
+      resolvedStartCmd: isSet(object.resolvedStartCmd)
+        ? globalThis.String(object.resolvedStartCmd)
+        : isSet(object.resolved_start_cmd)
+        ? globalThis.String(object.resolved_start_cmd)
+        : "",
+      profileName: isSet(object.profileName)
+        ? globalThis.String(object.profileName)
+        : isSet(object.profile_name)
+        ? globalThis.String(object.profile_name)
+        : "",
+      tools: globalThis.Array.isArray(object?.tools)
+        ? object.tools.map((e: any) => globalThis.String(e))
+        : [],
+      services: globalThis.Array.isArray(object?.services)
+        ? object.services.map((e: any) => globalThis.String(e))
+        : [],
     };
   },
 
@@ -852,6 +882,18 @@ export const RequestE2eEnvResponse: MessageFns<RequestE2eEnvResponse> = {
     if (message.status !== "") {
       obj.status = message.status;
     }
+    if (message.resolvedStartCmd !== "") {
+      obj.resolvedStartCmd = message.resolvedStartCmd;
+    }
+    if (message.profileName !== "") {
+      obj.profileName = message.profileName;
+    }
+    if (message.tools?.length) {
+      obj.tools = message.tools;
+    }
+    if (message.services?.length) {
+      obj.services = message.services;
+    }
     return obj;
   },
 
@@ -862,6 +904,10 @@ export const RequestE2eEnvResponse: MessageFns<RequestE2eEnvResponse> = {
     const message = createBaseRequestE2eEnvResponse();
     message.previewUrl = object.previewUrl ?? "";
     message.status = object.status ?? "";
+    message.resolvedStartCmd = object.resolvedStartCmd ?? "";
+    message.profileName = object.profileName ?? "";
+    message.tools = object.tools?.map((e) => e) || [];
+    message.services = object.services?.map((e) => e) || [];
     return message;
   },
 };

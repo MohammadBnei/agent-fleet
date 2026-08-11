@@ -79,8 +79,8 @@ func New(core *coreclient.Client, thot *thotclient.Client) http.Handler {
 	), askUserQuestionHandler(core))
 
 	s.AddTool(mcp.NewTool("request_e2e_env",
-		mcp.WithDescription("Request an on-demand e2e test environment for this task: a live pod running the app on this branch, code-server for human review, and a Playwright MCP server. Returns the preview URL. Safe to call again if one is already running — returns the existing session's URL."),
-		mcp.WithString("startCmd", mcp.Description("Shell command that installs deps and starts the app, run via bash -lc from the worktree root (e.g. \"cd front && bun install && bun run dev\"). You know the repo's actual layout better than any static default — supply this whenever the app doesn't live at the worktree root. Omit to use the repo's configured default.")),
+		mcp.WithDescription("Request an on-demand e2e test environment for this task: a live pod running the app on this branch, code-server for human review, and a Playwright MCP server. Safe to call again if one is already running — returns the existing session's URL. The response echoes back the recipe that was actually used (resolvedStartCmd, profileName, tools, services), which comes from the repo's dashboard-editable e2e profile. If the preview does not serve, read resolvedStartCmd and report what is wrong with it — do not silently substitute your own command."),
+		mcp.WithString("startCmd", mcp.Description("Optional override for the profile's start command, applied to THIS TASK ONLY and never saved back to the profile. Requires a human to approve it before anything is created — if they decline or don't answer, the profile's own command is used instead. Omit it unless you have concrete evidence the profile is wrong for this worktree; the profile is the default for good reason. Whatever runs must bind 0.0.0.0 on $PORT — a dev server left on its own default port, or bound to localhost, is unreachable from outside the pod and the preview never serves.")),
 	), requestE2eEnvHandler(core, s))
 
 	s.AddTool(mcp.NewTool("kill_env",
@@ -303,11 +303,71 @@ func askUserQuestionHandler(core *coreclient.Client) func(ctx context.Context, r
 	})
 }
 
+// startCmdOverrideQuestion and its two option labels are the wire contract
+// between this gate and the dashboard's answer payload
+// ({"answers": {"<question>": "<label>"}}), so they're constants rather than
+// inline strings — a typo here reads as "declined", which is the safe way to
+// fail but a confusing one to debug.
+const (
+	startCmdOverrideQuestion = "The agent wants to start this task's e2e app with a command that differs from the repo's configured e2e profile. Which one should run?"
+	startCmdKeepProfile      = "Use the profile"
+	startCmdUseOverride      = "Use the agent's"
+)
+
+// questionAsker is the slice of coreclient.Client confirmStartCmdOverride
+// needs — same test-seam pattern viewLogsHandler already uses in this
+// package, so the gate's decision logic is unit-testable without bufconn.
+type questionAsker interface {
+	AskUserQuestion(ctx context.Context, questionsJSON string, timeoutMs int32) (status, answersJSON string, questionSeq int64, err error)
+}
+
+// confirmStartCmdOverride blocks on a real human answer before an agent's
+// start_cmd is allowed to beat the repo's profile. Anything other than an
+// explicit pick of the override — decline, timeout, malformed answer —
+// means the profile wins, matching docs/adr/0029's rule that a decision is
+// never inferred from silence. Enforced here rather than left to the agent
+// to ask: an agent choosing whether to check is exactly how a guessed
+// command silently replaced a correct profile and 502'd the preview.
+func confirmStartCmdOverride(ctx context.Context, core questionAsker, startCmd string) bool {
+	payload, err := json.Marshal(map[string]any{"questions": []AskUserQuestionQuestion{{
+		Question: startCmdOverrideQuestion,
+		Header:   "e2e cmd",
+		Options: []AskUserQuestionOption{
+			{Label: startCmdKeepProfile, Description: "Run the repo's configured e2e profile command, as edited in the dashboard. Ignores the agent's proposal."},
+			{Label: startCmdUseOverride, Description: "Run this instead, for this task only (the profile is not modified): " + startCmd},
+		},
+	}}})
+	if err != nil {
+		slog.Error("mcp request_e2e_env: marshal override question", "error", err)
+		return false
+	}
+	status, answersJSON, _, err := core.AskUserQuestion(ctx, string(payload), 300000)
+	if err != nil {
+		slog.Error("mcp request_e2e_env: override question", "error", err)
+		return false
+	}
+	if status != "answered" {
+		slog.Info("mcp request_e2e_env: override not approved", "status", status)
+		return false
+	}
+	var parsed struct {
+		Answers map[string]string `json:"answers"`
+	}
+	if err := json.Unmarshal([]byte(answersJSON), &parsed); err != nil {
+		slog.Error("mcp request_e2e_env: parse override answer", "error", err)
+		return false
+	}
+	return parsed.Answers[startCmdOverrideQuestion] == startCmdUseOverride
+}
+
 func requestE2eEnvHandler(core *coreclient.Client, s *server.MCPServer) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		startCmd := req.GetString("startCmd", "")
-		slog.Info("mcp request_e2e_env", "startCmd", startCmd)
-		previewURL, _, err := core.RequestE2eEnv(ctx, startCmd)
+		slog.Info("mcp request_e2e_env", "startCmdOverrideProposed", startCmd != "")
+		if startCmd != "" && !confirmStartCmdOverride(ctx, core, startCmd) {
+			startCmd = ""
+		}
+		resp, err := core.RequestE2eEnv(ctx, startCmd)
 		if err != nil {
 			slog.Error("mcp request_e2e_env", "error", err)
 			return mcp.NewToolResultError(err.Error()), nil
@@ -324,7 +384,13 @@ func requestE2eEnvHandler(core *coreclient.Client, s *server.MCPServer) server.T
 			s.SendNotificationToAllClients("notifications/tools/list_changed", nil)
 		}
 
-		body, _ := json.Marshal(map[string]string{"url": previewURL})
+		body, _ := json.Marshal(map[string]any{
+			"url":              resp.GetPreviewUrl(),
+			"resolvedStartCmd": resp.GetResolvedStartCmd(),
+			"profileName":      resp.GetProfileName(),
+			"tools":            resp.GetTools(),
+			"services":         resp.GetServices(),
+		})
 		return mcp.NewToolResultText(string(body)), nil
 	}
 }

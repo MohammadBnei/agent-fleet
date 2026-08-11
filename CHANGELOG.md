@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.31.3](https://github.com/MohammadBnei/agent-fleet/compare/1.31.2...1.31.3) (2026-08-11)
+
+
+### Bug Fixes
+
+* **e2e:** make the recipe visible, gate its override, probe the app port ([#97](https://github.com/MohammadBnei/agent-fleet/issues/97)) ([3b55fe2](https://github.com/MohammadBnei/agent-fleet/commit/3b55fe23fa20fe98209aadf492b623703f006dae))
+
 ## [1.31.2](https://github.com/MohammadBnei/agent-fleet/compare/1.31.1...1.31.2) (2026-08-10)
 
 
