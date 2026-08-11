@@ -10,15 +10,38 @@ option go_package = "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet
 // that's a separate CoreService call thot's callers make on the side, not
 // something this service itself proxies.
 //
-// v1 is deliberately minimal: a health check only. AskThot (Phase 4) and
-// RunAudit (Phase 5) are added in later phases of the same implementation
-// plan, not designed blind here ahead of the code that needs them.
+// Every RPC except Healthz requires an `authorization: Bearer <token>`
+// header matching thot's THOT_AUTH_TOKEN. ADR-0035 explicitly flagged
+// that the provisioner's network-reachability-only precedent doesn't
+// scale to a component with cluster-mutation power; a shared static
+// bearer is the minimum viable step-up, with mTLS/SPIFFE as the upgrade
+// path if the threat model ever changes. Healthz stays unauthenticated so
+// kubelet probes work without wiring the secret into the probe config.
 service ThotService {
   rpc Healthz(HealthzRequest) returns (HealthzResponse);
+
+  // Called directly by a worker's sidecar mid-task — this RPC *is* the
+  // hub-and-spoke exception (docs/adr/0035). Synchronous by design: a
+  // worker asking "why did this break" needs the answer before it can
+  // decide what to do next, so a post-and-poll would just make it stall.
+  //
+  // The answer is additionally written into the asking task's own
+  // transcript by the caller, so the exchange stays in that task's audit
+  // trail instead of living only in thot's stream.
+  rpc AskThot(AskThotRequest) returns (AskThotResponse);
 }
 
 message HealthzRequest {}
 
 message HealthzResponse {
   bool ok = 1;
+}
+
+message AskThotRequest {
+  string asking_task_id = 1;
+  string question = 2;
+}
+
+message AskThotResponse {
+  string answer = 1;
 }

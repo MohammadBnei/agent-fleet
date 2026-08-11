@@ -101,6 +101,102 @@ func (x *HealthzResponse) GetOk() bool {
 	return false
 }
 
+type AskThotRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	AskingTaskId  string                 `protobuf:"bytes,1,opt,name=asking_task_id,json=askingTaskId,proto3" json:"asking_task_id,omitempty"`
+	Question      string                 `protobuf:"bytes,2,opt,name=question,proto3" json:"question,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AskThotRequest) Reset() {
+	*x = AskThotRequest{}
+	mi := &file_agentfleet_v1_thot_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AskThotRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AskThotRequest) ProtoMessage() {}
+
+func (x *AskThotRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_agentfleet_v1_thot_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AskThotRequest.ProtoReflect.Descriptor instead.
+func (*AskThotRequest) Descriptor() ([]byte, []int) {
+	return file_agentfleet_v1_thot_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *AskThotRequest) GetAskingTaskId() string {
+	if x != nil {
+		return x.AskingTaskId
+	}
+	return ""
+}
+
+func (x *AskThotRequest) GetQuestion() string {
+	if x != nil {
+		return x.Question
+	}
+	return ""
+}
+
+type AskThotResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Answer        string                 `protobuf:"bytes,1,opt,name=answer,proto3" json:"answer,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AskThotResponse) Reset() {
+	*x = AskThotResponse{}
+	mi := &file_agentfleet_v1_thot_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AskThotResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AskThotResponse) ProtoMessage() {}
+
+func (x *AskThotResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_agentfleet_v1_thot_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AskThotResponse.ProtoReflect.Descriptor instead.
+func (*AskThotResponse) Descriptor() ([]byte, []int) {
+	return file_agentfleet_v1_thot_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *AskThotResponse) GetAnswer() string {
+	if x != nil {
+		return x.Answer
+	}
+	return ""
+}
+
 var File_agentfleet_v1_thot_proto protoreflect.FileDescriptor
 
 const file_agentfleet_v1_thot_proto_rawDesc = "" +
@@ -108,9 +204,15 @@ const file_agentfleet_v1_thot_proto_rawDesc = "" +
 	"\x18agentfleet/v1/thot.proto\x12\ragentfleet.v1\"\x10\n" +
 	"\x0eHealthzRequest\"!\n" +
 	"\x0fHealthzResponse\x12\x0e\n" +
-	"\x02ok\x18\x01 \x01(\bR\x02ok2W\n" +
+	"\x02ok\x18\x01 \x01(\bR\x02ok\"R\n" +
+	"\x0eAskThotRequest\x12$\n" +
+	"\x0easking_task_id\x18\x01 \x01(\tR\faskingTaskId\x12\x1a\n" +
+	"\bquestion\x18\x02 \x01(\tR\bquestion\")\n" +
+	"\x0fAskThotResponse\x12\x16\n" +
+	"\x06answer\x18\x01 \x01(\tR\x06answer2\xa1\x01\n" +
 	"\vThotService\x12H\n" +
-	"\aHealthz\x12\x1d.agentfleet.v1.HealthzRequest\x1a\x1e.agentfleet.v1.HealthzResponseBMZKgithub.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1;agentfleetv1b\x06proto3"
+	"\aHealthz\x12\x1d.agentfleet.v1.HealthzRequest\x1a\x1e.agentfleet.v1.HealthzResponse\x12H\n" +
+	"\aAskThot\x12\x1d.agentfleet.v1.AskThotRequest\x1a\x1e.agentfleet.v1.AskThotResponseBMZKgithub.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1;agentfleetv1b\x06proto3"
 
 var (
 	file_agentfleet_v1_thot_proto_rawDescOnce sync.Once
@@ -124,16 +226,20 @@ func file_agentfleet_v1_thot_proto_rawDescGZIP() []byte {
 	return file_agentfleet_v1_thot_proto_rawDescData
 }
 
-var file_agentfleet_v1_thot_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_agentfleet_v1_thot_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_agentfleet_v1_thot_proto_goTypes = []any{
 	(*HealthzRequest)(nil),  // 0: agentfleet.v1.HealthzRequest
 	(*HealthzResponse)(nil), // 1: agentfleet.v1.HealthzResponse
+	(*AskThotRequest)(nil),  // 2: agentfleet.v1.AskThotRequest
+	(*AskThotResponse)(nil), // 3: agentfleet.v1.AskThotResponse
 }
 var file_agentfleet_v1_thot_proto_depIdxs = []int32{
 	0, // 0: agentfleet.v1.ThotService.Healthz:input_type -> agentfleet.v1.HealthzRequest
-	1, // 1: agentfleet.v1.ThotService.Healthz:output_type -> agentfleet.v1.HealthzResponse
-	1, // [1:2] is the sub-list for method output_type
-	0, // [0:1] is the sub-list for method input_type
+	2, // 1: agentfleet.v1.ThotService.AskThot:input_type -> agentfleet.v1.AskThotRequest
+	1, // 2: agentfleet.v1.ThotService.Healthz:output_type -> agentfleet.v1.HealthzResponse
+	3, // 3: agentfleet.v1.ThotService.AskThot:output_type -> agentfleet.v1.AskThotResponse
+	2, // [2:4] is the sub-list for method output_type
+	0, // [0:2] is the sub-list for method input_type
 	0, // [0:0] is the sub-list for extension type_name
 	0, // [0:0] is the sub-list for extension extendee
 	0, // [0:0] is the sub-list for field type_name
@@ -150,7 +256,7 @@ func file_agentfleet_v1_thot_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_agentfleet_v1_thot_proto_rawDesc), len(file_agentfleet_v1_thot_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   2,
+			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

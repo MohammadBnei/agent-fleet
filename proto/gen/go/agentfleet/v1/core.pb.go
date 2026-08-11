@@ -213,8 +213,14 @@ type SendMessageRequest struct {
 	Text           string                 `protobuf:"bytes,3,opt,name=text,proto3" json:"text,omitempty"`
 	Type           TranscriptEntryType    `protobuf:"varint,4,opt,name=type,proto3,enum=agentfleet.v1.TranscriptEntryType" json:"type,omitempty"`
 	IdempotencyKey string                 `protobuf:"bytes,5,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"` // core mints one server-side if empty
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// Correlates this entry to an earlier one, reusing the reply_to_seq
+	// column transcript already has for question/answer and permission
+	// pairs. Set by ask_thot so thot's answer points at the question that
+	// prompted it — the two can be minutes apart with other messages
+	// interleaving, so adjacency alone isn't enough to pair them.
+	ReplyToSeq    *int64 `protobuf:"varint,6,opt,name=reply_to_seq,json=replyToSeq,proto3,oneof" json:"reply_to_seq,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *SendMessageRequest) Reset() {
@@ -280,6 +286,13 @@ func (x *SendMessageRequest) GetIdempotencyKey() string {
 		return x.IdempotencyKey
 	}
 	return ""
+}
+
+func (x *SendMessageRequest) GetReplyToSeq() int64 {
+	if x != nil && x.ReplyToSeq != nil {
+		return *x.ReplyToSeq
+	}
+	return 0
 }
 
 type SendMessageResponse struct {
@@ -2555,13 +2568,16 @@ const file_agentfleet_v1_core_proto_rawDesc = "" +
 	"\x05phase\x18\x03 \x01(\x0e2\x17.agentfleet.v1.PodPhaseR\x05phase\x12\x19\n" +
 	"\bpod_name\x18\x04 \x01(\tR\apodName\x12\x18\n" +
 	"\amessage\x18\x05 \x01(\tR\amessage\"\x19\n" +
-	"\x17ReportPodEventsResponse\"\xb6\x01\n" +
+	"\x17ReportPodEventsResponse\"\xee\x01\n" +
 	"\x12SendMessageRequest\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x12\n" +
 	"\x04from\x18\x02 \x01(\tR\x04from\x12\x12\n" +
 	"\x04text\x18\x03 \x01(\tR\x04text\x126\n" +
 	"\x04type\x18\x04 \x01(\x0e2\".agentfleet.v1.TranscriptEntryTypeR\x04type\x12'\n" +
-	"\x0fidempotency_key\x18\x05 \x01(\tR\x0eidempotencyKey\"'\n" +
+	"\x0fidempotency_key\x18\x05 \x01(\tR\x0eidempotencyKey\x12%\n" +
+	"\freply_to_seq\x18\x06 \x01(\x03H\x00R\n" +
+	"replyToSeq\x88\x01\x01B\x0f\n" +
+	"\r_reply_to_seq\"'\n" +
 	"\x13SendMessageResponse\x12\x10\n" +
 	"\x03seq\x18\x01 \x01(\x03R\x03seq\"w\n" +
 	"\x16AskUserQuestionRequest\x12\x17\n" +
@@ -2921,6 +2937,7 @@ func file_agentfleet_v1_core_proto_init() {
 	file_agentfleet_v1_transcript_proto_init()
 	file_agentfleet_v1_provisioner_proto_init()
 	file_agentfleet_v1_files_proto_init()
+	file_agentfleet_v1_core_proto_msgTypes[2].OneofWrappers = []any{}
 	file_agentfleet_v1_core_proto_msgTypes[10].OneofWrappers = []any{}
 	file_agentfleet_v1_core_proto_msgTypes[17].OneofWrappers = []any{}
 	type x struct{}

@@ -20,6 +20,7 @@ const _ = grpc.SupportPackageIsVersion9
 
 const (
 	ThotService_Healthz_FullMethodName = "/agentfleet.v1.ThotService/Healthz"
+	ThotService_AskThot_FullMethodName = "/agentfleet.v1.ThotService/AskThot"
 )
 
 // ThotServiceClient is the client API for ThotService service.
@@ -34,11 +35,24 @@ const (
 // that's a separate CoreService call thot's callers make on the side, not
 // something this service itself proxies.
 //
-// v1 is deliberately minimal: a health check only. AskThot (Phase 4) and
-// RunAudit (Phase 5) are added in later phases of the same implementation
-// plan, not designed blind here ahead of the code that needs them.
+// Every RPC except Healthz requires an `authorization: Bearer <token>`
+// header matching thot's THOT_AUTH_TOKEN. ADR-0035 explicitly flagged
+// that the provisioner's network-reachability-only precedent doesn't
+// scale to a component with cluster-mutation power; a shared static
+// bearer is the minimum viable step-up, with mTLS/SPIFFE as the upgrade
+// path if the threat model ever changes. Healthz stays unauthenticated so
+// kubelet probes work without wiring the secret into the probe config.
 type ThotServiceClient interface {
 	Healthz(ctx context.Context, in *HealthzRequest, opts ...grpc.CallOption) (*HealthzResponse, error)
+	// Called directly by a worker's sidecar mid-task — this RPC *is* the
+	// hub-and-spoke exception (docs/adr/0035). Synchronous by design: a
+	// worker asking "why did this break" needs the answer before it can
+	// decide what to do next, so a post-and-poll would just make it stall.
+	//
+	// The answer is additionally written into the asking task's own
+	// transcript by the caller, so the exchange stays in that task's audit
+	// trail instead of living only in thot's stream.
+	AskThot(ctx context.Context, in *AskThotRequest, opts ...grpc.CallOption) (*AskThotResponse, error)
 }
 
 type thotServiceClient struct {
@@ -59,6 +73,16 @@ func (c *thotServiceClient) Healthz(ctx context.Context, in *HealthzRequest, opt
 	return out, nil
 }
 
+func (c *thotServiceClient) AskThot(ctx context.Context, in *AskThotRequest, opts ...grpc.CallOption) (*AskThotResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AskThotResponse)
+	err := c.cc.Invoke(ctx, ThotService_AskThot_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ThotServiceServer is the server API for ThotService service.
 // All implementations must embed UnimplementedThotServiceServer
 // for forward compatibility.
@@ -71,11 +95,24 @@ func (c *thotServiceClient) Healthz(ctx context.Context, in *HealthzRequest, opt
 // that's a separate CoreService call thot's callers make on the side, not
 // something this service itself proxies.
 //
-// v1 is deliberately minimal: a health check only. AskThot (Phase 4) and
-// RunAudit (Phase 5) are added in later phases of the same implementation
-// plan, not designed blind here ahead of the code that needs them.
+// Every RPC except Healthz requires an `authorization: Bearer <token>`
+// header matching thot's THOT_AUTH_TOKEN. ADR-0035 explicitly flagged
+// that the provisioner's network-reachability-only precedent doesn't
+// scale to a component with cluster-mutation power; a shared static
+// bearer is the minimum viable step-up, with mTLS/SPIFFE as the upgrade
+// path if the threat model ever changes. Healthz stays unauthenticated so
+// kubelet probes work without wiring the secret into the probe config.
 type ThotServiceServer interface {
 	Healthz(context.Context, *HealthzRequest) (*HealthzResponse, error)
+	// Called directly by a worker's sidecar mid-task — this RPC *is* the
+	// hub-and-spoke exception (docs/adr/0035). Synchronous by design: a
+	// worker asking "why did this break" needs the answer before it can
+	// decide what to do next, so a post-and-poll would just make it stall.
+	//
+	// The answer is additionally written into the asking task's own
+	// transcript by the caller, so the exchange stays in that task's audit
+	// trail instead of living only in thot's stream.
+	AskThot(context.Context, *AskThotRequest) (*AskThotResponse, error)
 	mustEmbedUnimplementedThotServiceServer()
 }
 
@@ -88,6 +125,9 @@ type UnimplementedThotServiceServer struct{}
 
 func (UnimplementedThotServiceServer) Healthz(context.Context, *HealthzRequest) (*HealthzResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Healthz not implemented")
+}
+func (UnimplementedThotServiceServer) AskThot(context.Context, *AskThotRequest) (*AskThotResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method AskThot not implemented")
 }
 func (UnimplementedThotServiceServer) mustEmbedUnimplementedThotServiceServer() {}
 func (UnimplementedThotServiceServer) testEmbeddedByValue()                     {}
@@ -128,6 +168,24 @@ func _ThotService_Healthz_Handler(srv interface{}, ctx context.Context, dec func
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ThotService_AskThot_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AskThotRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ThotServiceServer).AskThot(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ThotService_AskThot_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ThotServiceServer).AskThot(ctx, req.(*AskThotRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ThotService_ServiceDesc is the grpc.ServiceDesc for ThotService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -138,6 +196,10 @@ var ThotService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Healthz",
 			Handler:    _ThotService_Healthz_Handler,
+		},
+		{
+			MethodName: "AskThot",
+			Handler:    _ThotService_AskThot_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

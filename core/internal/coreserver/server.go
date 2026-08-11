@@ -62,7 +62,16 @@ func (s *Server) SendMessage(ctx context.Context, req *agentfleetv1.SendMessageR
 	if req.GetTaskId() == "" || req.GetFrom() == "" || req.GetText() == "" {
 		return nil, fmt.Errorf("task_id, from, and text are required")
 	}
-	seq, err := s.transcr.Append(ctx, req.GetTaskId(), req.GetFrom(), req.GetText(), protoTypeToString(req.GetType()), req.GetIdempotencyKey())
+	// AppendReply only when the caller actually asked for correlation —
+	// same reason transcript keeps these as two methods rather than one
+	// that takes a meaningless zero.
+	var seq int64
+	var err error
+	if req.ReplyToSeq != nil {
+		seq, err = s.transcr.AppendReply(ctx, req.GetTaskId(), req.GetFrom(), req.GetText(), protoTypeToString(req.GetType()), req.GetIdempotencyKey(), req.GetReplyToSeq())
+	} else {
+		seq, err = s.transcr.Append(ctx, req.GetTaskId(), req.GetFrom(), req.GetText(), protoTypeToString(req.GetType()), req.GetIdempotencyKey())
+	}
 	if err != nil {
 		return nil, fmt.Errorf("SendMessage: %w", err)
 	}

@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file agentfleet/v1/thot.proto.
  */
 export const file_agentfleet_v1_thot: GenFile = /*@__PURE__*/
-  fileDesc("ChhhZ2VudGZsZWV0L3YxL3Rob3QucHJvdG8SDWFnZW50ZmxlZXQudjEiEAoOSGVhbHRoelJlcXVlc3QiHQoPSGVhbHRoelJlc3BvbnNlEgoKAm9rGAEgASgIMlcKC1Rob3RTZXJ2aWNlEkgKB0hlYWx0aHoSHS5hZ2VudGZsZWV0LnYxLkhlYWx0aHpSZXF1ZXN0Gh4uYWdlbnRmbGVldC52MS5IZWFsdGh6UmVzcG9uc2VCTVpLZ2l0aHViLmNvbS9Nb2hhbW1hZEJuZWkvYWdlbnQtZmxlZXQvcHJvdG8vZ2VuL2dvL2FnZW50ZmxlZXQvdjE7YWdlbnRmbGVldHYxYgZwcm90bzM");
+  fileDesc("ChhhZ2VudGZsZWV0L3YxL3Rob3QucHJvdG8SDWFnZW50ZmxlZXQudjEiEAoOSGVhbHRoelJlcXVlc3QiHQoPSGVhbHRoelJlc3BvbnNlEgoKAm9rGAEgASgIIjoKDkFza1Rob3RSZXF1ZXN0EhYKDmFza2luZ190YXNrX2lkGAEgASgJEhAKCHF1ZXN0aW9uGAIgASgJIiEKD0Fza1Rob3RSZXNwb25zZRIOCgZhbnN3ZXIYASABKAkyoQEKC1Rob3RTZXJ2aWNlEkgKB0hlYWx0aHoSHS5hZ2VudGZsZWV0LnYxLkhlYWx0aHpSZXF1ZXN0Gh4uYWdlbnRmbGVldC52MS5IZWFsdGh6UmVzcG9uc2USSAoHQXNrVGhvdBIdLmFnZW50ZmxlZXQudjEuQXNrVGhvdFJlcXVlc3QaHi5hZ2VudGZsZWV0LnYxLkFza1Rob3RSZXNwb25zZUJNWktnaXRodWIuY29tL01vaGFtbWFkQm5laS9hZ2VudC1mbGVldC9wcm90by9nZW4vZ28vYWdlbnRmbGVldC92MTthZ2VudGZsZWV0djFiBnByb3RvMw");
 
 /**
  * @generated from message agentfleet.v1.HealthzRequest
@@ -43,6 +43,45 @@ export const HealthzResponseSchema: GenMessage<HealthzResponse> = /*@__PURE__*/
   messageDesc(file_agentfleet_v1_thot, 1);
 
 /**
+ * @generated from message agentfleet.v1.AskThotRequest
+ */
+export type AskThotRequest = Message<"agentfleet.v1.AskThotRequest"> & {
+  /**
+   * @generated from field: string asking_task_id = 1;
+   */
+  askingTaskId: string;
+
+  /**
+   * @generated from field: string question = 2;
+   */
+  question: string;
+};
+
+/**
+ * Describes the message agentfleet.v1.AskThotRequest.
+ * Use `create(AskThotRequestSchema)` to create a new message.
+ */
+export const AskThotRequestSchema: GenMessage<AskThotRequest> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_thot, 2);
+
+/**
+ * @generated from message agentfleet.v1.AskThotResponse
+ */
+export type AskThotResponse = Message<"agentfleet.v1.AskThotResponse"> & {
+  /**
+   * @generated from field: string answer = 1;
+   */
+  answer: string;
+};
+
+/**
+ * Describes the message agentfleet.v1.AskThotResponse.
+ * Use `create(AskThotResponseSchema)` to create a new message.
+ */
+export const AskThotResponseSchema: GenMessage<AskThotResponse> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_thot, 3);
+
+/**
  * thot is the gRPC server; worker sidecars, core, and (later) Alertmanager
  * are its callers. Per docs/adr/0035, this is the fleet's one deliberate,
  * named exception to the hub-and-spoke rule (docs/adr/0020 point 4) —
@@ -51,9 +90,13 @@ export const HealthzResponseSchema: GenMessage<HealthzResponse> = /*@__PURE__*/
  * that's a separate CoreService call thot's callers make on the side, not
  * something this service itself proxies.
  *
- * v1 is deliberately minimal: a health check only. AskThot (Phase 4) and
- * RunAudit (Phase 5) are added in later phases of the same implementation
- * plan, not designed blind here ahead of the code that needs them.
+ * Every RPC except Healthz requires an `authorization: Bearer <token>`
+ * header matching thot's THOT_AUTH_TOKEN. ADR-0035 explicitly flagged
+ * that the provisioner's network-reachability-only precedent doesn't
+ * scale to a component with cluster-mutation power; a shared static
+ * bearer is the minimum viable step-up, with mTLS/SPIFFE as the upgrade
+ * path if the threat model ever changes. Healthz stays unauthenticated so
+ * kubelet probes work without wiring the secret into the probe config.
  *
  * @generated from service agentfleet.v1.ThotService
  */
@@ -65,6 +108,23 @@ export const ThotService: GenService<{
     methodKind: "unary";
     input: typeof HealthzRequestSchema;
     output: typeof HealthzResponseSchema;
+  },
+  /**
+   * Called directly by a worker's sidecar mid-task — this RPC *is* the
+   * hub-and-spoke exception (docs/adr/0035). Synchronous by design: a
+   * worker asking "why did this break" needs the answer before it can
+   * decide what to do next, so a post-and-poll would just make it stall.
+   *
+   * The answer is additionally written into the asking task's own
+   * transcript by the caller, so the exchange stays in that task's audit
+   * trail instead of living only in thot's stream.
+   *
+   * @generated from rpc agentfleet.v1.ThotService.AskThot
+   */
+  askThot: {
+    methodKind: "unary";
+    input: typeof AskThotRequestSchema;
+    output: typeof AskThotResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_agentfleet_v1_thot, 0);
