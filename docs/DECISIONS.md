@@ -75,7 +75,6 @@ Any doc, code, comment, or memory that contradicts this file or an
 
 ## 2. Forbidden patterns (quick check — full list + reasons in `adr/`)
 
-- **Auto-merge, ever.** Every task result is a PR; a human merges.
 - **A shared writable repo PVC across tasks.** One git worktree per task,
   always — see `adr/0003`.
 - **Inferring a permission decision from silence, round completion, or
