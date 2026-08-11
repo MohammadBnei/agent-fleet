@@ -19,7 +19,7 @@ image:
   repository: mohammaddocker/agent-fleet-core
   # Pinned, bumped automatically by .github/workflows/docker.yml's deploy
   # job on every release tag.
-  tag: "1.33.0"
+  tag: "1.34.0"
 
 # extraPorts.grpc backs CORE_GRPC_PORT below — sidecar and provisioner both
 # dial agent-fleet-core.agent-fleet.svc.cluster.local:9090 for CoreService
@@ -100,7 +100,7 @@ hooks:
     type: PreSync
     image:
       repository: mohammaddocker/agent-fleet-migration
-      tag: "1.33.0"
+      tag: "1.34.0"
     args:
       - "up"
 
