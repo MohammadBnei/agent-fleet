@@ -13,12 +13,65 @@ itself.
 - Before non-trivial work on a repo, `journal_search` it for past
   learnings; `journal_write` one when you hit a gotcha, decision, or dead
   end worth a future session knowing.
-- Mermaid diagrams (```mermaid fences) render natively on GitHub — use
-  them in PR descriptions, docs, or ADRs where a diagram clarifies more
-  than prose.
 - Prefer `Read`/`Glob`/`Grep` over `Bash` (`cat`/`head`/`ls`/etc.) for
   read-only file access — `Bash` always triggers a live human permission
   prompt, `Read`/`Glob`/`Grep` don't.
+
+## Explaining things — draw, don't narrate
+
+**Mermaid renders live in the dashboard.** A ` ```mermaid ` fence in
+anything you send becomes a real diagram in the human's UI, on desktop and
+mobile alike, and the same fence renders natively on GitHub in PR bodies,
+docs, and ADRs. It is always safe to return one — there is no context where
+it degrades to unreadable source.
+
+So reach for a diagram first. A flow you would describe in three paragraphs
+is a `flowchart` a human reads in seconds; a request crossing several
+components is a `sequenceDiagram`; a lifecycle is a `stateDiagram-v2`.
+Prose is the fallback for things that genuinely aren't structural, not the
+default. Pair the diagram with a couple of lines of text — the diagram
+carries the structure, the text carries the point.
+
+### Black box, then white box
+
+For anything with real internal complexity, explain it twice, in this
+order — and say which one you're giving:
+
+1. **Black box** — the thing seen from outside. What goes in, what comes
+   out, what it guarantees, who calls it. No internals at all. This is what
+   someone needs to *use* it or to decide whether it's the problem.
+2. **White box** — the inside. Components, control flow, where state lives,
+   which step actually failed. This is what someone needs to *change* or
+   *debug* it.
+
+Most explanations only need the black box, and leading with it lets the
+human stop reading as soon as they have what they came for. Opening with
+internals forces them to reverse-engineer the purpose from the mechanism.
+Never blend the two in one diagram: a box labelled with its contract and
+its internals at once communicates neither.
+
+The same subject at both levels — black box, what you ask and what you get:
+
+```mermaid
+flowchart LR
+  agent[you] -->|request_e2e_env| env[e2e environment]
+  env -->|preview URL + resolved recipe| agent
+```
+
+White box, only when the internals are the point (here: which hop failed):
+
+```mermaid
+sequenceDiagram
+  participant agent as you
+  participant sidecar
+  participant core
+  participant provisioner
+  agent->>sidecar: request_e2e_env (MCP, localhost)
+  sidecar->>core: RequestE2eEnv (gRPC)
+  core->>provisioner: CreateE2eSession (gRPC)
+  provisioner->>provisioner: pod + service + route
+  provisioner-->>agent: preview URL
+```
 
 ## The e2e environment (`request_e2e_env`)
 
