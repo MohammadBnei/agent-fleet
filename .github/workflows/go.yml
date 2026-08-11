@@ -158,6 +158,14 @@ jobs:
         working-directory: dashboard
         run: bun install --frozen-lockfile
 
+      # thot/ is a third ts_proto target (docs/adr/0035) — buf.gen.yaml
+      # resolves its plugin from thot/node_modules, so this install is as
+      # load-bearing as worker's and dashboard's above. Missing it fails
+      # `buf generate` with "no such file or directory", not a lint error.
+      - name: Install ts-proto (thot's local TS plugin)
+        working-directory: thot
+        run: bun install --frozen-lockfile
+
       - name: buf generate
         working-directory: proto
         run: |
