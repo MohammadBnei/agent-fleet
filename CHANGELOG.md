@@ -1,5 +1,19 @@
 # Changelog
 
+# [1.33.0](https://github.com/MohammadBnei/agent-fleet/compare/1.32.0...1.33.0) (2026-08-11)
+
+
+### Features
+
+* **thot:** live permission gating + dashboard visibility (ADR-0035 phase 2) ([#99](https://github.com/MohammadBnei/agent-fleet/issues/99)) ([b7364c1](https://github.com/MohammadBnei/agent-fleet/commit/b7364c132712cf1c484056f25cb0879183c4e8f1))
+
+# [1.32.0](https://github.com/MohammadBnei/agent-fleet/compare/1.31.3...1.32.0) (2026-08-11)
+
+
+### Features
+
+* **thot:** scaffold the cluster agent component (ADR-0035 phase 1) ([#92](https://github.com/MohammadBnei/agent-fleet/issues/92)) ([87511a2](https://github.com/MohammadBnei/agent-fleet/commit/87511a2767dc1c9d88b888d84e738b829cc176db))
+
 ## [1.31.3](https://github.com/MohammadBnei/agent-fleet/compare/1.31.2...1.31.3) (2026-08-11)
 
 
