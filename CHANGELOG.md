@@ -1,5 +1,18 @@
 # Changelog
 
+# [1.42.0](https://github.com/MohammadBnei/agent-fleet/compare/1.41.0...1.42.0) (2026-08-11)
+
+
+### Bug Fixes
+
+* **core:** make MAX_IN_FLIGHT_TASKS a real ceiling under concurrency ([d52a80a](https://github.com/MohammadBnei/agent-fleet/commit/d52a80adb14a5c43c0ae2b69f4a11009d72eb421))
+
+
+### Features
+
+* **core:** machine-created thot tasks are proposals, not dispatches ([f90d133](https://github.com/MohammadBnei/agent-fleet/commit/f90d133792c874ccef0265ac0a7ae585a1913814))
+* **core:** turn firing Alertmanager alerts into thot tasks ([8a5bc7c](https://github.com/MohammadBnei/agent-fleet/commit/8a5bc7c04d6a83388ba1721a34ba0e9127bcac7b))
+
 # [1.41.0](https://github.com/MohammadBnei/agent-fleet/compare/1.40.3...1.41.0) (2026-08-11)
 
 
