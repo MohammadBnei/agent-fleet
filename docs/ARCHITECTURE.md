@@ -37,7 +37,7 @@ topology/features — the reading order is `DECISIONS.md` → this file →
 | `db/migrations/` | Shared Postgres schema (`agentfleetdb`, Pigsty-managed) — sole source of truth, applied via golang-migrate by the dedicated `migration` image on a `PreSync` hook (see [`adr/0030`](adr/0030-single-source-schema-via-golang-migrate.md)). `tasks` (the queue — gains a `failed_permanently` terminal status as of [`adr/0024`](adr/0024-crash-fast-path-and-journal-read.md), a retry-cap outcome distinct from a single attempt's `failed`), append-only `knowledge_journal` (now readable via `GetJournal`, `adr/0024`), `transcript` (renamed from `planning_transcript` — durable session transcript, pull/cursor reads, idempotency-keyed appends, a `reply_to_seq` column for question/permission-request correlation). `e2e_sessions` still exists in the schema but is **no longer read or written by any Go/TS code** — e2e-session state moved to being Kubernetes-native (pod existence/phase) as of `docs/adr/0020` point 1; see §6. |
 | `dashboard/` | React + Vite + TypeScript + Tailwind/DaisyUI SPA — task list, **task creation** (`NewTaskDialog.tsx`, `DashboardService.CreateTask` — an alternative to Discord's `/task`, not a replacement), task detail (live transcript via a Connect server-streaming RPC, Warm/Stop/kill-e2e buttons, a mode picker showing `default`/`plan`/`acceptEdits`/`bypassPermissions` with the real active mode highlighted, code-server link, `AskUserQuestion`/`PermissionCard`/`PlanCard` answer forms — `adr/0018`/`0029`), talking to `core` via a generated `@connectrpc/connect-web` client. Built into and served by `core`'s binary — not deployed on its own. |
 | `k8s/` | This repo's own deploy manifests: `core.yaml` (Helm values for `common-app-chart`, zero RBAC) and `provisioner/` (a standalone plain-manifest directory — `Deployment`/`Service`/`ServiceAccount`/`Role`/`InfisicalSecret`/`NetworkPolicy`/`PersistentVolumeClaim` — since it needs RBAC `common-app-chart` can't express). Both referenced from `infra-bootstrap`'s `gitops/` (see §9). |
-| `e2e-runner/` | One generic pod image (code-server + the target app + a Playwright MCP server, CPU-only headless Chromium for v1) the provisioner spins up per on-demand e2e request, parametrized by env vars the same way `worker/`'s image is parametrized by `TARGET_REPO`. Unchanged by this redesign. |
+| `e2e-runner/` | One generic pod image (code-server + the target app + a Playwright MCP server + `execmcp`, CPU-only headless Chromium for v1) the provisioner spins up per on-demand e2e request, parametrized by env vars the same way `worker/`'s image is parametrized by `TARGET_REPO`. Also **the worker's build/test sandbox** (`adr/0039`): it holds the repo's resolved toolchain and services (`adr/0034`), no fleet credentials, and only this task's worktree (`SubPath`) — so `execmcp`'s `run_command` is where builds, tests, linters and dependency installs belong. `git`/`gh` are deliberately absent there and stay on the worker pod's own `Bash`. |
 | `executor/` | Go — the only process in the fleet holding cluster RBAC ([`adr/0037`](adr/0037-thot-is-a-worker-task.md)). One RPC, `Exec(argv)`, run on behalf of pods that hold no credentials at all. Deployed from infra-bootstrap's `gitops/platform/thot/` as `thot-executor`, with the ClusterRole `adr/0032` reviewed. Reads are validated against a verb allowlist (nothing else checks them); mutations are a dumb pipe, because a human already approved that exact argv through `canUseTool`. |
 
 ## 2. End-to-end flow
@@ -131,6 +131,19 @@ for this). Teardown happens on the task reaching a terminal status
 (`core`'s opportunistic trigger in `SetTaskStatus`) or an explicit kill
 (`/e2e-kill` from Discord, or the agent's own `kill_env`) — never merely
 because a PR was opened.
+
+That same pod is the agent's **execution sandbox** (`adr/0039`).
+`run_command` is registered statically on the sidecar, so it exists from the
+session's first turn — including a resumed one — and provisions a pod on
+first use if none is live, meaning `request_e2e_env` is not a prerequisite
+for shelling out. It rides the same three-hop proxy and lands in
+`e2e-runner`'s `execmcp` listener. Builds, tests, linters, dependency
+installs and the dev server belong there; `git`, `gh` and PR creation stay
+on the worker pod's own `Bash`, because the sandbox deliberately has no git
+and no GitHub credentials. That absence is load-bearing: it is why
+`run_command` is allowed un-prompted (via `allowedTools`'
+`mcp__agent-fleet-sidecar__*`) while `Bash` stays `canUseTool`-gated — the
+sandbox is strictly less privileged than the pod whose shell is gated.
 
 **MCP is purely local** (agent ↔ its own pod's sidecar, over `localhost`).
 **gRPC is the only inter-process/inter-pod protocol anywhere in the
@@ -304,6 +317,9 @@ permission tiers instead of a second, fleet-specific gate on top of them
   proxied through `core` (§2) — see
   [`adr/0012`](adr/0012-e2e-provisioner-standalone-app.md). CPU-only for
   now; GPU-accelerated Chromium is a deferred fast-follow.
+- **`run_command` — a shell in that same pod, used as the agent's build/test
+  sandbox** (§2). Always registered, lazily provisioned, no git — see
+  [`adr/0039`](adr/0039-e2e-pod-is-the-worker-sandbox.md).
 - **Fleet-wide concurrency, not one task per repo.** Any number of tasks
   across any known repo can be in flight simultaneously, up to
   `MAX_IN_FLIGHT_TASKS` (default 5) — `core`'s dispatch loop claims

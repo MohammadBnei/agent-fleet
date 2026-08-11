@@ -70,6 +70,16 @@ Any doc, code, comment, or memory that contradicts this file or an
   `request_e2e_env`; a `start_cmd` override needs an explicit human yes,
   applies to that one task, and is never written back to the profile. See
   [`adr/0036`](adr/0036-e2e-recipe-visible-and-override-approved.md).
+- **The e2e pod is the worker's build/test sandbox, and it has no git.**
+  `run_command` is registered statically on the sidecar (present from the
+  session's first turn, resumed sessions included) and provisions a pod on
+  first use. Builds, tests, linters and dependency installs run there;
+  `git`/`gh`/PR work stays on the worker pod's own `Bash`. Keeping git out
+  is what lets `run_command` stay un-prompted while `Bash` is
+  `canUseTool`-gated — the sandbox holds no fleet credentials and only this
+  task's worktree, so it is strictly less privileged. Adding credentials or
+  widening its mount invalidates that and reopens the decision. See
+  [`adr/0039`](adr/0039-e2e-pod-is-the-worker-sandbox.md).
 
 ## 2. Forbidden patterns (quick check — full list + reasons in `adr/`)
 
