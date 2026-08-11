@@ -129,7 +129,21 @@ function startHttpHealthz(): void {
   Bun.serve({
     port: HTTP_PORT,
     fetch(req) {
-      if (new URL(req.url).pathname === "/healthz") {
+      const path = new URL(req.url).pathname;
+      // Liveness vs readiness, deliberately split.
+      //
+      // /livez answers 200 as long as this process is serving HTTP at all.
+      // It must NOT depend on session readiness: pointing a liveness probe
+      // at a not-yet-ready session makes kubelet SIGKILL the pod *while the
+      // session is still starting*, so it can never finish — an infinite
+      // restart loop restarting cannot fix. Confirmed live 2026-08-11:
+      // exit 137, 7 restarts, "Liveness probe failed: statuscode 503".
+      if (path === "/livez") {
+        return new Response("ok", { status: 200 });
+      }
+      // /healthz is readiness: don't route traffic here until the standing
+      // session can actually answer.
+      if (path === "/healthz") {
         return new Response(session.ready ? "ok" : "starting", { status: session.ready ? 200 : 503 });
       }
       return new Response("not found", { status: 404 });
