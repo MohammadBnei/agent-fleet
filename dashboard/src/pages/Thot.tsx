@@ -44,6 +44,8 @@ export function Thot() {
   const [pending, setPending] = useState<ThotEvent[]>([]);
   const [busyId, setBusyId] = useState<bigint | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [question, setQuestion] = useState("");
+  const [asking, setAsking] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -65,6 +67,25 @@ export function Thot() {
     return () => clearInterval(t);
   }, [load]);
 
+  async function ask() {
+    const q = question.trim();
+    if (!q || asking) return;
+    setAsking(true);
+    setError(null);
+    try {
+      // The answer isn't rendered from this response — both sides are
+      // recorded in thot_events, so the poll below picks them up and the
+      // feed stays the single source of truth for what was said.
+      await client.askThot({ question: q });
+      setQuestion("");
+      await load();
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setAsking(false);
+    }
+  }
+
   async function respond(requestId: bigint, allow: boolean, message: string) {
     setBusyId(requestId);
     try {
@@ -85,6 +106,40 @@ export function Thot() {
       </div>
 
       {error && <p className="text-error text-[12px] mb-3">{error}</p>}
+
+      <div className="flex items-start gap-2 mb-6">
+        <textarea
+          value={question}
+          onChange={(e) => setQuestion(e.target.value)}
+          onKeyDown={(e) => {
+            // Enter sends, shift+Enter newlines — same convention as the
+            // task detail composer.
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              void ask();
+            }
+          }}
+          rows={2}
+          disabled={asking}
+          placeholder="Ask thot about the cluster… (reads run without asking; anything mutating will prompt below)"
+          className="flex-1 bg-transparent border border-base-content/15 rounded-lg px-3 py-2 text-[12px] outline-none focus:border-primary/50 resize-y"
+        />
+        <button
+          type="button"
+          className="btn btn-primary btn-sm"
+          disabled={asking || question.trim() === ""}
+          onClick={() => void ask()}
+        >
+          {asking ? <span className="loading loading-spinner loading-xs"></span> : "Ask"}
+        </button>
+      </div>
+
+      {asking && (
+        <p className="text-[11px] text-base-content/50 mb-4">
+          thot is working — if it needs to run something mutating, a permission card
+          will appear below and it will wait for you.
+        </p>
+      )}
 
       {pending.length > 0 && (
         <div className="mb-6">

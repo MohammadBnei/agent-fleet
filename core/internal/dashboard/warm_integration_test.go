@@ -85,7 +85,7 @@ func TestServer_Warm_BootsNewPod(t *testing.T) {
 	taskID := seedIdleClaimedTask(t, pool, taskStore)
 
 	fake, provisioner := newFakeProvisioner(t)
-	s := NewServer(taskStore, &recordingStore{}, nil, repoStore, profileStore, nil, provisioner, nil, nil, 5, nil, nil, nil)
+	s := NewServer(taskStore, &recordingStore{}, nil, repoStore, profileStore, nil, provisioner, nil, nil, 5, nil, nil, nil, nil)
 
 	resp, err := s.Warm(ctx, connect.NewRequest(&agentfleetv1.WarmRequest{TaskId: taskID}))
 	if err != nil {
@@ -124,7 +124,7 @@ func TestServer_Warm_StillPending_FailedPrecondition(t *testing.T) {
 	taskID := seedTask(t, pool) // left at the default 'pending' status
 
 	fake, provisioner := newFakeProvisioner(t)
-	s := NewServer(taskStore, &recordingStore{}, nil, repoStore, profileStore, nil, provisioner, nil, nil, 5, nil, nil, nil)
+	s := NewServer(taskStore, &recordingStore{}, nil, repoStore, profileStore, nil, provisioner, nil, nil, 5, nil, nil, nil, nil)
 
 	_, err := s.Warm(ctx, connect.NewRequest(&agentfleetv1.WarmRequest{TaskId: taskID}))
 	if connect.CodeOf(err) != connect.CodeFailedPrecondition {
@@ -151,7 +151,7 @@ func TestServer_Warm_ThreadsSavedSessionID(t *testing.T) {
 	}
 
 	fake, provisioner := newFakeProvisioner(t)
-	s := NewServer(taskStore, &recordingStore{}, nil, repoStore, profileStore, nil, provisioner, nil, nil, 5, nil, nil, nil)
+	s := NewServer(taskStore, &recordingStore{}, nil, repoStore, profileStore, nil, provisioner, nil, nil, 5, nil, nil, nil, nil)
 
 	if _, err := s.Warm(ctx, connect.NewRequest(&agentfleetv1.WarmRequest{TaskId: taskID})); err != nil {
 		t.Fatalf("Warm: %v", err)
@@ -176,7 +176,7 @@ func TestServer_Warm_AlreadyLive_FailedPrecondition(t *testing.T) {
 	}
 
 	fake, provisioner := newFakeProvisioner(t)
-	s := NewServer(taskStore, &recordingStore{}, nil, repoStore, profileStore, nil, provisioner, nil, nil, 5, nil, nil, nil)
+	s := NewServer(taskStore, &recordingStore{}, nil, repoStore, profileStore, nil, provisioner, nil, nil, 5, nil, nil, nil, nil)
 
 	_, err := s.Warm(ctx, connect.NewRequest(&agentfleetv1.WarmRequest{TaskId: taskID}))
 	if connect.CodeOf(err) != connect.CodeFailedPrecondition {
@@ -209,7 +209,7 @@ func TestServer_Warm_AtCapacity_ResourceExhausted(t *testing.T) {
 	idleTaskID := seedIdleClaimedTask(t, pool, taskStore)
 
 	fake, provisioner := newFakeProvisioner(t)
-	s := NewServer(taskStore, &recordingStore{}, nil, repoStore, profileStore, nil, provisioner, nil, nil, cap, nil, nil, nil)
+	s := NewServer(taskStore, &recordingStore{}, nil, repoStore, profileStore, nil, provisioner, nil, nil, cap, nil, nil, nil, nil)
 
 	_, err := s.Warm(ctx, connect.NewRequest(&agentfleetv1.WarmRequest{TaskId: idleTaskID}))
 	if connect.CodeOf(err) != connect.CodeResourceExhausted {
@@ -234,7 +234,7 @@ func TestServer_Discuss_AutoWarmsIdleSession(t *testing.T) {
 
 	fake, provisioner := newFakeProvisioner(t)
 	store := &recordingStore{}
-	s := NewServer(taskStore, store, nil, repoStore, profileStore, nil, provisioner, nil, nil, 5, nil, nil, nil)
+	s := NewServer(taskStore, store, nil, repoStore, profileStore, nil, provisioner, nil, nil, 5, nil, nil, nil, nil)
 
 	if _, err := s.Discuss(ctx, connect.NewRequest(&agentfleetv1.DiscussRequest{TaskId: taskID, Text: "hey"})); err != nil {
 		t.Fatalf("Discuss: %v", err)
@@ -263,7 +263,7 @@ func TestServer_Discuss_StillPending_SkipsWarmButStillSends(t *testing.T) {
 
 	fake, provisioner := newFakeProvisioner(t)
 	store := &recordingStore{}
-	s := NewServer(taskStore, store, nil, repoStore, profileStore, nil, provisioner, nil, nil, 5, nil, nil, nil)
+	s := NewServer(taskStore, store, nil, repoStore, profileStore, nil, provisioner, nil, nil, 5, nil, nil, nil, nil)
 
 	if _, err := s.Discuss(ctx, connect.NewRequest(&agentfleetv1.DiscussRequest{TaskId: taskID, Text: "hey"})); err != nil {
 		t.Fatalf("Discuss: %v", err)
@@ -294,7 +294,7 @@ func TestServer_Discuss_LivePod_NoWarmAttempt(t *testing.T) {
 
 	fake, provisioner := newFakeProvisioner(t)
 	store := &recordingStore{}
-	s := NewServer(taskStore, store, nil, repoStore, profileStore, nil, provisioner, nil, nil, 5, nil, nil, nil)
+	s := NewServer(taskStore, store, nil, repoStore, profileStore, nil, provisioner, nil, nil, 5, nil, nil, nil, nil)
 
 	resp, err := s.Discuss(ctx, connect.NewRequest(&agentfleetv1.DiscussRequest{TaskId: taskID, Text: "what's the status?"}))
 	if err != nil {

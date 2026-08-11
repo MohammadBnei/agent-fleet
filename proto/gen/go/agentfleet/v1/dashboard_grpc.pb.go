@@ -56,6 +56,7 @@ const (
 	DashboardService_QueryLogs_FullMethodName               = "/agentfleet.v1.DashboardService/QueryLogs"
 	DashboardService_ListThotEvents_FullMethodName          = "/agentfleet.v1.DashboardService/ListThotEvents"
 	DashboardService_RespondToThotPermission_FullMethodName = "/agentfleet.v1.DashboardService/RespondToThotPermission"
+	DashboardService_AskThot_FullMethodName                 = "/agentfleet.v1.DashboardService/AskThot"
 	DashboardService_ListScheduledAudits_FullMethodName     = "/agentfleet.v1.DashboardService/ListScheduledAudits"
 	DashboardService_CreateScheduledAudit_FullMethodName    = "/agentfleet.v1.DashboardService/CreateScheduledAudit"
 	DashboardService_UpdateScheduledAudit_FullMethodName    = "/agentfleet.v1.DashboardService/UpdateScheduledAudit"
@@ -133,6 +134,16 @@ type DashboardServiceClient interface {
 	// an approval path.
 	ListThotEvents(ctx context.Context, in *ListThotEventsRequest, opts ...grpc.CallOption) (*ListThotEventsResponse, error)
 	RespondToThotPermission(ctx context.Context, in *RespondToThotPermissionRequest, opts ...grpc.CallOption) (*RespondToThotPermissionResponse, error)
+	// A human asking thot a question from the dashboard. ADR-0035 said thot
+	// is reachable by "workers, alerts, and humans" — the sidecar covered
+	// workers and the scheduler covered alerts, but humans could only ever
+	// *answer* thot's prompts, never initiate. This closes that.
+	//
+	// core proxies to ThotService.AskThot rather than the browser calling
+	// thot directly: the hub-and-spoke exception in ADR-0035 is for
+	// in-cluster callers that need real-time reachability, and a browser is
+	// neither. It also keeps thot's bearer token server-side.
+	AskThot(ctx context.Context, in *DashboardServiceAskThotRequest, opts ...grpc.CallOption) (*DashboardServiceAskThotResponse, error)
 	// Dashboard-editable schedules (docs/adr/0035) — same "edit it in the
 	// UI, no redeploy" shape ListRepos/CreateRepo established.
 	ListScheduledAudits(ctx context.Context, in *ListScheduledAuditsRequest, opts ...grpc.CallOption) (*ListScheduledAuditsResponse, error)
@@ -528,6 +539,16 @@ func (c *dashboardServiceClient) RespondToThotPermission(ctx context.Context, in
 	return out, nil
 }
 
+func (c *dashboardServiceClient) AskThot(ctx context.Context, in *DashboardServiceAskThotRequest, opts ...grpc.CallOption) (*DashboardServiceAskThotResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DashboardServiceAskThotResponse)
+	err := c.cc.Invoke(ctx, DashboardService_AskThot_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *dashboardServiceClient) ListScheduledAudits(ctx context.Context, in *ListScheduledAuditsRequest, opts ...grpc.CallOption) (*ListScheduledAuditsResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListScheduledAuditsResponse)
@@ -639,6 +660,16 @@ type DashboardServiceServer interface {
 	// an approval path.
 	ListThotEvents(context.Context, *ListThotEventsRequest) (*ListThotEventsResponse, error)
 	RespondToThotPermission(context.Context, *RespondToThotPermissionRequest) (*RespondToThotPermissionResponse, error)
+	// A human asking thot a question from the dashboard. ADR-0035 said thot
+	// is reachable by "workers, alerts, and humans" — the sidecar covered
+	// workers and the scheduler covered alerts, but humans could only ever
+	// *answer* thot's prompts, never initiate. This closes that.
+	//
+	// core proxies to ThotService.AskThot rather than the browser calling
+	// thot directly: the hub-and-spoke exception in ADR-0035 is for
+	// in-cluster callers that need real-time reachability, and a browser is
+	// neither. It also keeps thot's bearer token server-side.
+	AskThot(context.Context, *DashboardServiceAskThotRequest) (*DashboardServiceAskThotResponse, error)
 	// Dashboard-editable schedules (docs/adr/0035) — same "edit it in the
 	// UI, no redeploy" shape ListRepos/CreateRepo established.
 	ListScheduledAudits(context.Context, *ListScheduledAuditsRequest) (*ListScheduledAuditsResponse, error)
@@ -765,6 +796,9 @@ func (UnimplementedDashboardServiceServer) ListThotEvents(context.Context, *List
 }
 func (UnimplementedDashboardServiceServer) RespondToThotPermission(context.Context, *RespondToThotPermissionRequest) (*RespondToThotPermissionResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RespondToThotPermission not implemented")
+}
+func (UnimplementedDashboardServiceServer) AskThot(context.Context, *DashboardServiceAskThotRequest) (*DashboardServiceAskThotResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method AskThot not implemented")
 }
 func (UnimplementedDashboardServiceServer) ListScheduledAudits(context.Context, *ListScheduledAuditsRequest) (*ListScheduledAuditsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListScheduledAudits not implemented")
@@ -1458,6 +1492,24 @@ func _DashboardService_RespondToThotPermission_Handler(srv interface{}, ctx cont
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DashboardService_AskThot_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DashboardServiceAskThotRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DashboardServiceServer).AskThot(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DashboardService_AskThot_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DashboardServiceServer).AskThot(ctx, req.(*DashboardServiceAskThotRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _DashboardService_ListScheduledAudits_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ListScheduledAuditsRequest)
 	if err := dec(in); err != nil {
@@ -1680,6 +1732,10 @@ var DashboardService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RespondToThotPermission",
 			Handler:    _DashboardService_RespondToThotPermission_Handler,
+		},
+		{
+			MethodName: "AskThot",
+			Handler:    _DashboardService_AskThot_Handler,
 		},
 		{
 			MethodName: "ListScheduledAudits",

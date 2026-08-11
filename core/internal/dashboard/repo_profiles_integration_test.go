@@ -21,7 +21,7 @@ import (
 func TestServer_RepoProfileCRUD(t *testing.T) {
 	pool := newTestPool(t)
 	profileStore := repoprofiles.NewStore(pool)
-	s := NewServer(nil, nil, nil, nil, profileStore, nil, nil, nil, nil, 5, nil, nil, nil)
+	s := NewServer(nil, nil, nil, nil, profileStore, nil, nil, nil, nil, 5, nil, nil, nil, nil)
 	ctx := context.Background()
 
 	// "agent-fleet" is one of the three repos seeded by db/migrations/
@@ -114,7 +114,7 @@ func TestServer_RepoProfileCRUD(t *testing.T) {
 func TestServer_CreateRepoProfile_MissingFields(t *testing.T) {
 	pool := newTestPool(t)
 	profileStore := repoprofiles.NewStore(pool)
-	s := NewServer(nil, nil, nil, nil, profileStore, nil, nil, nil, nil, 5, nil, nil, nil)
+	s := NewServer(nil, nil, nil, nil, profileStore, nil, nil, nil, nil, 5, nil, nil, nil, nil)
 
 	req := connect.NewRequest(&agentfleetv1.CreateRepoProfileRequest{RepoName: "", Name: "x"})
 	if _, err := s.CreateRepoProfile(context.Background(), req); connect.CodeOf(err) != connect.CodeInvalidArgument {

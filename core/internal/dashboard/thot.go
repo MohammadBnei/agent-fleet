@@ -2,6 +2,7 @@ package dashboard
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"time"
 
@@ -78,4 +79,44 @@ func thotEventsToProto(events []thotevents.Event) []*agentfleetv1.ThotEvent {
 		})
 	}
 	return out
+}
+
+// AskThot relays a human's question from the dashboard to thot and records
+// both sides in thot_events.
+//
+// core proxies rather than letting the browser call thot directly:
+// ADR-0035's hub-and-spoke exception is for in-cluster callers needing
+// real-time reachability, which a browser is not, and this keeps thot's
+// bearer token server-side.
+//
+// The recording mirrors ask_thot's discipline in the sidecar: the question
+// is written BEFORE thot is asked, and the call aborts if that write
+// fails — an answer the feed never shows is worse than no answer.
+func (s *Server) AskThot(ctx context.Context, req *connect.Request[agentfleetv1.DashboardServiceAskThotRequest]) (*connect.Response[agentfleetv1.DashboardServiceAskThotResponse], error) {
+	question := req.Msg.GetQuestion()
+	if question == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("question is required"))
+	}
+	if s.thot == nil {
+		return nil, connect.NewError(connect.CodeUnavailable, errors.New("thot is not configured (THOT_GRPC_ADDR unset)"))
+	}
+
+	questionID, err := s.thotEvents.Append(ctx, thotevents.KindFinding, "human", question, "")
+	if err != nil {
+		slog.Error("dashboard AskThot: record question", "error", err)
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+
+	answer, err := s.thot.Ask(ctx, question)
+	if err != nil {
+		slog.Error("dashboard AskThot", "error", err)
+		return nil, connect.NewError(connect.CodeUnavailable, err)
+	}
+
+	if _, err := s.thotEvents.AppendReply(ctx, thotevents.KindFinding, "thot", answer, "", questionID); err != nil {
+		// The human still gets their answer on screen; losing the feed row
+		// is worth logging loudly but not worth failing the call.
+		slog.Error("dashboard AskThot: record answer", "error", err)
+	}
+	return connect.NewResponse(&agentfleetv1.DashboardServiceAskThotResponse{Answer: answer}), nil
 }

@@ -62,6 +62,19 @@ func (c *Client) Close() error {
 	return c.conn.Close()
 }
 
+// Ask relays a human's question from the dashboard. No asking_task_id —
+// a human isn't a task, and thot treats it as optional context.
+func (c *Client) Ask(ctx context.Context, question string) (string, error) {
+	if c.token != "" {
+		ctx = metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+c.token)
+	}
+	resp, err := c.rpc.AskThot(ctx, &agentfleetv1.AskThotRequest{Question: question})
+	if err != nil {
+		return "", fmt.Errorf("ask thot: %w", err)
+	}
+	return resp.GetAnswer(), nil
+}
+
 func (c *Client) RunAudit(ctx context.Context, auditID, name, prompt string) (string, error) {
 	if c.token != "" {
 		ctx = metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+c.token)
