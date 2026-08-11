@@ -233,16 +233,32 @@ dashboards:
 # kube-prometheus-stack's default rules (defaultRules never disabled in
 # infra-bootstrap's gitops/platform/values/prometheus/values.yaml) already
 # cover those cluster-wide and route to the same shared Discord receiver).
-# No app has used logAlerts before this — if the rule errors on evaluation
-# with "duplicate results with labels {}", that's a missing reduce step in
-# the shared common-app-chart template, fixed in infra-bootstrap, not here.
+# This was the first app to use logAlerts, and it found the bug the comment
+# here used to predict: common-app-chart wired the threshold expression
+# straight onto the range query with no reduce step, so every evaluation
+# errored and execErrState turned that error into a Discord alert. Fixed in
+# infra-bootstrap (PR #123) — nothing to do here beyond the grouping below.
 logAlerts:
   enabled: true
   datasourceUid: ds-loki
   rules:
     - uid: high-error-log-rate
       title: High error-log rate
-      expr: 'sum(count_over_time({namespace="agent-fleet"} | json | level="ERROR" [5m]))'
+      # `by (pod, msg)` is what puts the actual error in the Discord message.
+      # Grafana cannot include raw log lines in a notification — an alert
+      # query has to reduce to numbers — so the only way to see WHAT broke
+      # rather than "5 errors happened somewhere" is to promote the log's own
+      # fields to group-by labels, which the reduce step then carries into the
+      # alert instance. slog's JSON handler puts a constant string in `msg`
+      # and the variable parts in attrs, so this stays low-cardinality.
+      #
+      # Threshold semantics shift with it: 5 occurrences of the SAME message
+      # from ONE pod, not 5 errors namespace-wide. Stricter, and a systemic
+      # failure hitting many ephemeral worker pods once each now dilutes
+      # across series instead of summing. That's the deliberate trade for a
+      # message that names the error — revisit the number once there's real
+      # volume to look at.
+      expr: 'sum by (pod, msg) (count_over_time({namespace="agent-fleet"} | json | level="ERROR" [5m]))'
       threshold: 5
       for: 5m
       severity: warning
