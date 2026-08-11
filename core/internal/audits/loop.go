@@ -24,8 +24,13 @@ import (
 // task list, streams into a transcript, and can be interrupted like
 // anything else — instead of being an invisible RPC into a standing
 // service.
+//
+// CreateDeduped rather than CreateTaskOfKind: an audit is machine-created,
+// so it lands as a proposal a human approves (that method is the only one
+// that produces them), and the external key gives audits the duplicate
+// collapsing they previously had none of.
 type Runner interface {
-	CreateTaskOfKind(ctx context.Context, kind, repo, description, guidance, model string, channelID, threadID *string) (string, error)
+	CreateDeduped(ctx context.Context, kind, externalKey, repo, description string, channelID, threadID *string) (string, bool, error)
 }
 
 // auditRepo is where a thot session's worktree comes from — the repo that
@@ -86,14 +91,28 @@ func (l *Loop) tick(ctx context.Context) {
 		// Sequential, not concurrent: thot serializes everything onto one
 		// session anyway, so firing these in parallel would just queue
 		// them up on thot's side while holding more goroutines here.
-		taskID, err := l.thot.CreateTaskOfKind(ctx, "thot", auditRepo,
-			fmt.Sprintf("Scheduled audit: %s\n\n%s", a.Name, a.Prompt), "", "", nil, nil)
+		// Keyed on the audit's own ID, with no timestamp: the dedup index
+		// covers only ACTIVE rows, so this means "at most one open run per
+		// audit". A cadence tick that arrives while the previous run is
+		// still an un-approved proposal (or still running) collapses into
+		// it, and the next tick after it finishes or is dismissed creates
+		// a fresh one. Without this an un-approved audit would accumulate
+		// one row per cadence forever.
+		taskID, created, err := l.thot.CreateDeduped(ctx, "thot", "audit:"+a.ID, auditRepo,
+			fmt.Sprintf("Scheduled audit: %s\n\n%s", a.Name, a.Prompt), nil, nil)
 		status := "task " + taskID
-		if err != nil {
+		switch {
+		case err != nil:
 			slog.Error("audits: create task", "audit", a.Name, "error", err)
 			status = "error: " + err.Error()
-		} else {
-			slog.Info("audits: created task", "audit", a.Name, "taskId", taskID)
+		case !created:
+			// Recording this honestly matters: claiming "task " for a task
+			// we didn't create would make a permanently-stuck audit look
+			// like it ran every cadence.
+			slog.Info("audits: previous run still open, skipping", "audit", a.Name)
+			status = "skipped: previous run still open"
+		default:
+			slog.Info("audits: proposed task", "audit", a.Name, "taskId", taskID)
 		}
 		if err := l.store.RecordStatus(ctx, a.ID, status); err != nil {
 			slog.Error("audits: record status", "audit", a.Name, "error", err)

@@ -121,6 +121,64 @@ exception outright — the sidecar is back to exactly one outbound channel.
 
 ## Out of scope
 
-Alertmanager → thot and the proactive Discord channel. Both get simpler
-after this (an alert becomes "create a task"), so they follow rather than
-block.
+The proactive Discord channel, which turned out to need no separate bot:
+an alert-created task reuses the same per-task Discord thread a
+human-created one gets.
+
+---
+
+## Follow-up: a machine-created thot task is a proposal
+
+Alertmanager → thot landed as predicted — an alert became "create a task",
+no new plumbing. But dispatching it straight away meant an external system
+could spawn a pod running an agent with cluster access, with no human in
+the loop. A flapping metric, or anyone who can make a metric flap, was
+enough.
+
+**Machine-created thot tasks now land in a new `proposed` status, and a
+human releases them with `DashboardService.ApproveTask`.** This covers
+both machine paths — Alertmanager alerts and due scheduled audits. The two
+human paths (the dashboard's new-task dialog, Discord `/task`) stay
+ungated: approving your own click is theatre.
+
+The lever is cheap. `ClaimNextTask` only claims `pending`, and both sweeps
+key off `pod_phase`, so a proposal is invisible to dispatch with **no
+dispatch change at all**. `tasks.Store.CreateDeduped` — the sole
+machine-creation method — hardcodes the status rather than taking it as an
+argument, so it cannot be misused into an ungated dispatch by a future
+caller.
+
+**The gate lives in `warmIfIdle`, not in the `Warm` handler.** That is the
+load-bearing detail. `warmIfIdle` is one of only two callers of
+`CreateWorkerPod`, and `Discuss` reaches it unconditionally on every
+message — silently, with no status check of its own. A guard placed only
+in `Warm` passes every other test in the suite and still lets anyone spawn
+a cluster-access pod for an un-approved alert just by typing into the
+task. `TestServer_Discuss_DoesNotWarmProposal` exists specifically to fail
+if that guard ever migrates back up into the handler; it was confirmed to
+do so.
+
+Approve only flips the status; dispatch still owns the first pod. Warming
+one directly would leave the task `proposed` forever and, worse, invisible
+to `ClaimNextTask`'s in-flight `count(*)` — silently drifting
+`MAX_IN_FLIGHT_TASKS`, the fleet's blast-radius bound.
+
+**Dismiss is `DeleteTask`**, needing no new status. Its soft delete drops
+the row out of the alert dedup index, so a still-firing alert is proposed
+again on its next fire: dismissing means "not now", not "never". Permanent
+suppression stays an Alertmanager silence — a fleet that quietly stopped
+surfacing a firing alert would be discovered during an incident. Known
+ceiling: a dismissed alert that keeps firing re-proposes every
+`repeat_interval` (4h). That is a row in a list, not a pod.
+
+**Gating audits required giving them a dedup key** (`audit:<id>`), which
+they never had. Without one, an un-approved audit would add a row every
+cadence forever with nothing to collapse them. Keyed without a timestamp
+on purpose: the index covers only active rows, so it means "at most one
+open run per audit", and the next cadence after one finishes or is
+dismissed proposes again.
+
+`CoreService.SetTaskStatus` remains the only other status writer and is
+not gated. A sidecar only exists inside a pod, and a proposal has none.
+Scoping that RPC to its caller's own lease is a real but pre-existing gap,
+untouched here.

@@ -16,6 +16,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1/agentfleetv1connect"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/audits"
+	"github.com/MohammadBnei/agent-fleet/core/internal/alertwebhook"
 	"github.com/MohammadBnei/agent-fleet/core/internal/config"
 	"github.com/MohammadBnei/agent-fleet/core/internal/coreserver"
 	"github.com/MohammadBnei/agent-fleet/core/internal/dashboard"
@@ -156,6 +157,18 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool) error {
 		dashboardSvc,
 		connect.WithInterceptors(dashboard.NewCSRFInterceptor(), dashboard.NewAccessLogInterceptor()),
 	)
+	// docs/adr/0037: an alert becomes a thot task. Registered even when
+	// the token is unset — the handler then refuses with 503, which is a
+	// far better signal than a route that silently doesn't exist.
+	var threadOpener alertwebhook.ThreadOpener
+	if dc, ok := notifier.(*discord.Client); ok {
+		threadOpener = dc
+	}
+	mux.Handle("/webhook/alertmanager", alertwebhook.New(taskStore, threadOpener, alertwebhook.Config{
+		Token:     cfg.AlertWebhookToken,
+		Repo:      cfg.ThotRepo,
+		ChannelID: cfg.ThotDiscordChannel,
+	}))
 	mux.Handle(dashboardPath, dashboardHandler)
 	mux.Handle("/", webui.Handler())
 	httpServer := &http.Server{Addr: ":" + cfg.Port, Handler: mux}

@@ -157,6 +157,35 @@ export interface WarmResponse {
 }
 
 /**
+ * Releases a machine-created proposal into the ordinary dispatch queue.
+ *
+ * Alertmanager and the audit scheduler create tasks with no human in the
+ * loop, and a thot task runs an agent with cluster access — so they land
+ * in status 'proposed', which ClaimNextTask never claims. This is the one
+ * write that hands such an agent a pod.
+ *
+ * Deliberately only flips status to 'pending' and lets dispatch do the
+ * rest, rather than warming a pod directly: that reuses the existing
+ * claim/lease/in-flight-cap/retry machinery unchanged, and keeps the task
+ * counted by MAX_IN_FLIGHT_TASKS (a pod warmed behind dispatch's back is
+ * not). Rejected with CodeFailedPrecondition if the task is not an
+ * un-approved proposal — including a second click on one already
+ * approved.
+ *
+ * To decline instead, use DeleteTask: its soft delete drops the row out
+ * of the alert dedup index, so a still-firing alert is proposed again on
+ * its next fire. Dismissing means "not now", not "never" — permanent
+ * suppression is an Alertmanager silence.
+ */
+export interface ApproveTaskRequest {
+  taskId: string;
+}
+
+export interface ApproveTaskResponse {
+  status: string;
+}
+
+/**
  * Answers a pending PERMISSION_REQUEST-type transcript entry (posted by
  * canUseTool for any tool call the SDK's current permission mode would
  * prompt for — supersedes docs/adr/0021's Write/Edit-absent-from-
@@ -1019,6 +1048,66 @@ export const WarmResponse: MessageFns<WarmResponse> = {
     const message = createBaseWarmResponse();
     message.status = object.status ?? "";
     message.podName = object.podName ?? "";
+    return message;
+  },
+};
+
+function createBaseApproveTaskRequest(): ApproveTaskRequest {
+  return { taskId: "" };
+}
+
+export const ApproveTaskRequest: MessageFns<ApproveTaskRequest> = {
+  fromJSON(object: any): ApproveTaskRequest {
+    return {
+      taskId: isSet(object.taskId)
+        ? globalThis.String(object.taskId)
+        : isSet(object.task_id)
+        ? globalThis.String(object.task_id)
+        : "",
+    };
+  },
+
+  toJSON(message: ApproveTaskRequest): unknown {
+    const obj: any = {};
+    if (message.taskId !== "") {
+      obj.taskId = message.taskId;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<ApproveTaskRequest>, I>>(base?: I): ApproveTaskRequest {
+    return ApproveTaskRequest.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<ApproveTaskRequest>, I>>(object: I): ApproveTaskRequest {
+    const message = createBaseApproveTaskRequest();
+    message.taskId = object.taskId ?? "";
+    return message;
+  },
+};
+
+function createBaseApproveTaskResponse(): ApproveTaskResponse {
+  return { status: "" };
+}
+
+export const ApproveTaskResponse: MessageFns<ApproveTaskResponse> = {
+  fromJSON(object: any): ApproveTaskResponse {
+    return { status: isSet(object.status) ? globalThis.String(object.status) : "" };
+  },
+
+  toJSON(message: ApproveTaskResponse): unknown {
+    const obj: any = {};
+    if (message.status !== "") {
+      obj.status = message.status;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<ApproveTaskResponse>, I>>(base?: I): ApproveTaskResponse {
+    return ApproveTaskResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<ApproveTaskResponse>, I>>(object: I): ApproveTaskResponse {
+    const message = createBaseApproveTaskResponse();
+    message.status = object.status ?? "";
     return message;
   },
 };
@@ -2924,6 +3013,7 @@ export interface DashboardService {
   /** buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE */
   SetPermissionMode(request: SetPermissionModeRequest): Promise<SetPermissionModeResponse>;
   Warm(request: WarmRequest): Promise<WarmResponse>;
+  ApproveTask(request: ApproveTaskRequest): Promise<ApproveTaskResponse>;
   KillE2e(request: KillE2eRequest): Promise<KillE2eResponse>;
   AnswerQuestion(request: AnswerQuestionRequest): Promise<AnswerQuestionResponse>;
   RespondToPermission(request: RespondToPermissionRequest): Promise<RespondToPermissionResponse>;

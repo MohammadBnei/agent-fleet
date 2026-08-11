@@ -133,6 +133,80 @@ func (s *Store) CreateTaskOfKind(ctx context.Context, kind, repo, description, g
 	return id, nil
 }
 
+// CreateDeduped is the machine-created task path: an Alertmanager alert or
+// a due scheduled audit, keyed by an external identifier so repeat
+// deliveries collapse. Returns created=false if an ACTIVE task already
+// exists for that key.
+//
+// The dedup is enforced by a partial unique index, not by a read-then-write
+// here: Alertmanager can deliver the same group to several replicas at
+// once, and a check-then-insert would race straight through. ON CONFLICT
+// makes the database the arbiter.
+//
+// Rows land in 'proposed', never 'pending', so dispatch never sees them:
+// nothing here had a human in the loop, and these tasks run an agent with
+// cluster access. A human releases one with ApproveProposal.
+//
+// ponytail: the status is hardcoded rather than a parameter on purpose —
+// a method that cannot produce a dispatchable task cannot be misused into
+// an ungated dispatch by a future caller. Add an argument only if a
+// human-initiated deduped-creation path ever appears.
+func (s *Store) CreateDeduped(ctx context.Context, kind, externalKey, repo, description string, channelID, threadID *string) (id string, created bool, err error) {
+	err = s.pool.QueryRow(ctx, `
+		INSERT INTO tasks (kind, external_key, repo, description, discord_channel_id, discord_thread_id, status)
+		VALUES ($1, $2, $3, $4, $5, $6, 'proposed')
+		ON CONFLICT DO NOTHING
+		RETURNING id
+	`, kind, externalKey, repo, description, channelID, threadID).Scan(&id)
+	if err == pgx.ErrNoRows {
+		// The index rejected it — an active task for this key already
+		// exists. Not an error: this is the mechanism working.
+		return "", false, nil
+	}
+	if err != nil {
+		slog.Error("tasks CreateDeduped", "externalKey", externalKey, "error", err)
+		return "", false, fmt.Errorf("create deduped task: %w", err)
+	}
+	// Deliberately no nudge(): a proposal is not claimable, so waking the
+	// dispatch loop here would be a wakeup that can never produce a claim.
+	// ApproveProposal nudges instead, at the moment it actually becomes
+	// dispatchable.
+	slog.Info("tasks CreateDeduped", "taskId", id, "externalKey", externalKey, "kind", kind, "status", "proposed")
+	return id, true, nil
+}
+
+// ApproveProposal releases a machine-created proposal into the ordinary
+// dispatch queue, returning false if the task was not an un-approved
+// proposal.
+//
+// Guarded inside the UPDATE rather than read-then-write: this is the one
+// write that hands a cluster-access agent a pod, so two clicks (or two
+// humans, or a stale browser tab) must not re-queue a task dispatch has
+// already claimed. The deleted_at guard covers the dismiss path — a
+// dismissed proposal must not be resurrectable.
+//
+// Only flips the status; dispatch owns the pod. Warming one directly here
+// would leave the task 'proposed' forever and, worse, invisible to
+// ClaimNextTask's in-flight count, drifting MAX_IN_FLIGHT_TASKS.
+func (s *Store) ApproveProposal(ctx context.Context, id string) (bool, error) {
+	tag, err := s.pool.Exec(ctx, `
+		UPDATE tasks SET status = 'pending', updated_at = now()
+		WHERE id = $1 AND status = 'proposed' AND deleted_at IS NULL
+	`, id)
+	if err != nil {
+		slog.Error("tasks ApproveProposal", "taskId", id, "error", err)
+		return false, fmt.Errorf("approve proposal: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return false, nil
+	}
+	slog.Info("tasks ApproveProposal", "taskId", id)
+	if s.nudge != nil {
+		s.nudge()
+	}
+	return true, nil
+}
+
 func (s *Store) FindTaskIDByThread(ctx context.Context, threadID string) (string, error) {
 	var id string
 	err := s.pool.QueryRow(ctx, `SELECT id FROM tasks WHERE discord_thread_id = $1`, threadID).Scan(&id)
@@ -248,9 +322,41 @@ func (s *Store) ListRecentTasks(ctx context.Context, limit int) ([]Task, error) 
 // 'failed_permanently' instead — a terminal state, not a claim, so this
 // method returns (nil, nil) for that row rather than handing back a task
 // to dispatch a pod for.
+// claimLockKey serializes ClaimNextTask fleet-wide. Any constant works;
+// it only has to be distinct from other advisory-lock users in this
+// database.
+const claimLockKey = 0x61676E74 // "agnt"
+
 func (s *Store) ClaimNextTask(ctx context.Context, maxInFlight, maxRetries int) (*Task, error) {
+	// The in-flight cap needs an explicit lock, and FOR UPDATE SKIP LOCKED
+	// does not provide one — it is the opposite, deliberately handing each
+	// concurrent claimer a *different* row. Under READ COMMITTED every
+	// claimer's count(*) sees the snapshot from before any of the others
+	// committed, so N simultaneous claims all read the same low count, all
+	// decide there is room, and all claim. CI caught exactly this: 4 tasks
+	// claimed with maxInFlight=2.
+	//
+	// That cap is the fleet's blast-radius bound — how many worker pods,
+	// each running an agent, can exist at once. It has to be a real
+	// ceiling, not a usually-right heuristic.
+	//
+	// An xact-scoped advisory lock serializes the read-decide-claim
+	// sequence. Cheap: dispatch claims once every couple of seconds, so
+	// there is nothing here to make concurrent.
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		slog.Error("tasks ClaimNextTask: begin", "error", err)
+		return nil, fmt.Errorf("claim next task: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, claimLockKey); err != nil {
+		slog.Error("tasks ClaimNextTask: lock", "error", err)
+		return nil, fmt.Errorf("claim next task: %w", err)
+	}
+
 	var t Task
-	err := s.pool.QueryRow(ctx, `
+	err = tx.QueryRow(ctx, `
 		UPDATE tasks
 		SET status = CASE
 		               WHEN status = 'pending' THEN 'claimed'
@@ -280,6 +386,13 @@ func (s *Store) ClaimNextTask(ctx context.Context, maxInFlight, maxRetries int) 
 	}
 	if err != nil {
 		slog.Error("tasks ClaimNextTask", "error", err)
+		return nil, fmt.Errorf("claim next task: %w", err)
+	}
+	// Commit before returning either way: the retries-exhausted branch
+	// below still wrote failed_permanently, and rolling that back would
+	// re-offer the same doomed task forever.
+	if err := tx.Commit(ctx); err != nil {
+		slog.Error("tasks ClaimNextTask: commit", "error", err)
 		return nil, fmt.Errorf("claim next task: %w", err)
 	}
 	if t.Status == "failed_permanently" {

@@ -41,6 +41,7 @@ export function ActionsMenu({
   run,
   previewUrl,
   isThotTask = false,
+  status,
   currentMode,
   podPhase,
   onBypassClick,
@@ -60,6 +61,8 @@ export function ActionsMenu({
   // docs/adr/0037: a thot session has no e2e pod and no code-server, so
   // those controls are hidden rather than shown-and-broken.
   isThotTask?: boolean;
+  // tasks.status — only consulted to hide Warm on an unapproved proposal.
+  status?: string;
   // Unset for an idle/never-warmed session — no mode has been explicitly
   // chosen yet (the SDK itself starts a fresh session in "default", but
   // that's not durable here until SetPermissionMode is actually called).
@@ -129,14 +132,20 @@ export function ActionsMenu({
           </button>
         </>
       ) : (
-        <button
-          type="button"
-          className="btn btn-success btn-xs"
-          disabled={busy}
-          onClick={() => run(() => client.warm({ taskId }), "actions")}
-        >
-          Warm
-        </button>
+        // An unapproved proposal has no Warm: the server rejects it with
+        // FailedPrecondition (approval is what starts it), and a button
+        // that can only ever error is worse than no button. ProposalActions
+        // carries the real action for this state.
+        status !== "proposed" && (
+          <button
+            type="button"
+            className="btn btn-success btn-xs"
+            disabled={busy}
+            onClick={() => run(() => client.warm({ taskId }), "actions")}
+          >
+            Warm
+          </button>
+        )
       )}
       {!isThotTask && (
       <button

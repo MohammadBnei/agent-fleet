@@ -540,15 +540,14 @@ func unstructuredNestedString(obj map[string]any, fields ...string) (string, boo
 	return "", false, nil
 }
 
-// TestCreateWorkerPod_InjectsThotEnvIntoSidecar is a regression guard for a
-// silent-nothing bug: the sidecar leaves its thot client nil when
-// THOT_GRPC_ADDR is unset, so ask_thot never registers and the whole
-// worker->thot path (docs/adr/0035) is absent rather than broken. It
-// shipped exactly that way — the code merged, nothing set the var, and no
-// test noticed because the Go side compiled fine.
-func TestCreateWorkerPod_InjectsThotEnvIntoSidecar(t *testing.T) {
+// The inverse of the guard this replaces. ADR-0035 injected the executor
+// bearer token into every sidecar so ask_thot could register; ADR-0037
+// deleted ask_thot but the injection survived the deletion, leaving every
+// ordinary repo task holding a cluster credential it cannot use and must
+// not have. The token now belongs only to the worker container of a task
+// that actually declares cluster-access.
+func TestCreateWorkerPod_SidecarCarriesNoClusterCredential(t *testing.T) {
 	c := newTestClient()
-	c.ThotGRPCAddr = "thot.thot.svc.cluster.local:9090"
 	c.ThotAuthToken = "test-token"
 
 	if err := c.CreateWorkerPod(context.Background(), "task-1", "dream-analyst", "lease-1", "/workspace/worktrees/task-1", "", 0, nil, nil, nil); err != nil {
@@ -572,15 +571,10 @@ func TestCreateWorkerPod_InjectsThotEnvIntoSidecar(t *testing.T) {
 		t.Fatal("no sidecar container in the worker Job")
 	}
 
-	got := map[string]string{}
 	for _, e := range sidecar.Env {
-		got[e.Name] = e.Value
-	}
-	if got["THOT_GRPC_ADDR"] != "thot.thot.svc.cluster.local:9090" {
-		t.Errorf("THOT_GRPC_ADDR missing or wrong: %q — ask_thot will not register", got["THOT_GRPC_ADDR"])
-	}
-	if got["THOT_AUTH_TOKEN"] != "test-token" {
-		t.Errorf("THOT_AUTH_TOKEN missing or wrong: %q — thot will reject the call", got["THOT_AUTH_TOKEN"])
+		if strings.HasPrefix(e.Name, "THOT_") || e.Name == "EXECUTOR_ADDR" {
+			t.Errorf("sidecar carries %s=%q; cluster credentials belong only to a cluster-access worker container", e.Name, e.Value)
+		}
 	}
 }
 

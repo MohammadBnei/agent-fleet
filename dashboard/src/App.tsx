@@ -291,7 +291,7 @@ export default function App() {
             </div>
             <div className="min-w-0 min-h-0">
               {selectedId ? (
-                <TaskDetail taskId={selectedId} tasks={tasks} onSelect={selectTask} />
+                <TaskDetail taskId={selectedId} tasks={tasks} onSelect={selectTask} onClosed={clearSelection} />
               ) : (
                 <div className="h-full flex flex-col items-center justify-center gap-2 text-base-content/30">
                   <span className="text-4xl">⌕</span>

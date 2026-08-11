@@ -122,6 +122,34 @@ func channelWithRetry(lookup func() (*discordgo.Channel, error), attempts int, d
 
 // PostToThread implements transcript.Notifier — the relay loop's Discord
 // side effect.
+// OpenThread posts a message to channelID and starts a thread on it,
+// returning the thread id. Used by machinery-created thot tasks (alerts,
+// audits) so their findings stream into Discord through the SAME relay a
+// human-created task uses — rather than a second, notify-only channel
+// with its own bot and its own failure modes (which is what docs/adr/0035
+// originally specified, and docs/adr/0037 made unnecessary).
+//
+// channelID falls back to the trigger channel when empty, so a fleet that
+// hasn't configured a separate thot channel still gets the notifications
+// somewhere visible instead of silently dropping them.
+func (c *Client) OpenThread(channelID, title, body string) (string, error) {
+	if channelID == "" {
+		channelID = c.channelID
+	}
+	if channelID == "" {
+		return "", fmt.Errorf("no Discord channel configured")
+	}
+	msg, err := c.session.ChannelMessageSend(channelID, body)
+	if err != nil {
+		return "", fmt.Errorf("send message: %w", err)
+	}
+	thread, err := c.session.MessageThreadStart(channelID, msg.ID, title, 1440)
+	if err != nil {
+		return "", fmt.Errorf("start thread: %w", err)
+	}
+	return thread.ID, nil
+}
+
 func (c *Client) PostToThread(ctx context.Context, taskID string, e transcript.Entry) error {
 	t, err := c.tasks.GetTask(ctx, taskID)
 	if err != nil {
