@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.38.2](https://github.com/MohammadBnei/agent-fleet/compare/1.38.1...1.38.2) (2026-08-11)
+
+## [1.38.1](https://github.com/MohammadBnei/agent-fleet/compare/1.38.0...1.38.1) (2026-08-11)
+
+
+### Bug Fixes
+
+* **ci:** build the executor image on release tags ([#112](https://github.com/MohammadBnei/agent-fleet/issues/112)) ([48cb9d9](https://github.com/MohammadBnei/agent-fleet/commit/48cb9d922f8d67d9cf96aed9a45ed3dc0129ba97))
+
+# [1.38.0](https://github.com/MohammadBnei/agent-fleet/compare/1.37.0...1.38.0) (2026-08-11)
+
+
+### Features
+
+* **thot:** dispatch thot sessions as ordinary worker tasks (ADR-0037 phase 2) ([#108](https://github.com/MohammadBnei/agent-fleet/issues/108)) ([e753671](https://github.com/MohammadBnei/agent-fleet/commit/e75367188cb5be1ae937a4563e8636f9b9afdfb6))
+
+# [1.37.0](https://github.com/MohammadBnei/agent-fleet/compare/1.36.3...1.37.0) (2026-08-11)
+
+
+### Features
+
+* **executor:** add the thot-executor service (ADR-0037 phase 1) ([#106](https://github.com/MohammadBnei/agent-fleet/issues/106)) ([ee30cf4](https://github.com/MohammadBnei/agent-fleet/commit/ee30cf41fa2e95804de38ec1c43f2f040502491b))
+
 ## [1.36.3](https://github.com/MohammadBnei/agent-fleet/compare/1.36.2...1.36.3) (2026-08-11)
 
 

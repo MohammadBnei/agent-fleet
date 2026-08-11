@@ -349,7 +349,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        component: ${{ github.event_name == 'push' && fromJSON('["core","provisioner","sidecar"]') || fromJSON(needs.changes.outputs.go-components) }}
+        component: ${{ github.event_name == 'push' && fromJSON('["core","provisioner","sidecar","executor"]') || fromJSON(needs.changes.outputs.go-components) }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
