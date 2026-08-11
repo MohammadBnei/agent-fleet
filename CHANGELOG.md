@@ -1,5 +1,12 @@
 # Changelog
 
+# [1.34.0](https://github.com/MohammadBnei/agent-fleet/compare/1.33.0...1.34.0) (2026-08-11)
+
+
+### Features
+
+* **thot:** sidecar↔thot Q&A and real cluster access (ADR-0035 phase 3) ([#94](https://github.com/MohammadBnei/agent-fleet/issues/94)) ([9594a61](https://github.com/MohammadBnei/agent-fleet/commit/9594a610ebcf3c6c5ae3709d066ffa9f2659d6d0))
+
 # [1.33.0](https://github.com/MohammadBnei/agent-fleet/compare/1.32.0...1.33.0) (2026-08-11)
 
 
