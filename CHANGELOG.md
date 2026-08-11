@@ -1,5 +1,12 @@
 # Changelog
 
+# [1.41.0](https://github.com/MohammadBnei/agent-fleet/compare/1.40.3...1.41.0) (2026-08-11)
+
+
+### Features
+
+* **dashboard:** "Sync with git" button to clear stale worktrees ([bbad22d](https://github.com/MohammadBnei/agent-fleet/commit/bbad22d4bb0040aefcbda0608c33c6eacc0ab2d8)), closes [#118](https://github.com/MohammadBnei/agent-fleet/issues/118)
+
 ## [1.40.3](https://github.com/MohammadBnei/agent-fleet/compare/1.40.2...1.40.3) (2026-08-11)
 
 
