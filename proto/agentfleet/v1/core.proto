@@ -391,4 +391,41 @@ service CoreService {
   // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
   rpc DeleteFile(DeleteFileRequest) returns (DeleteFileResponse);
   rpc ViewLogs(ViewLogsRequest) returns (ViewLogsResponse);
+
+  // thot-facing (docs/adr/0035). thot reaches core over gRPC like every
+  // other component — that ADR's hub-and-spoke exception is about callers
+  // reaching *thot* directly, not about thot bypassing core for
+  // persistence. core remains the sole Postgres-credential holder.
+  rpc RequestThotPermission(RequestThotPermissionRequest) returns (RequestThotPermissionResponse);
+  rpc AppendThotEvent(AppendThotEventRequest) returns (AppendThotEventResponse);
+}
+
+// RequestThotPermission is thot's canUseTool prompt: appends a
+// permission_request and blocks until a human decides — the same
+// ask-and-long-poll shape AskUserQuestion already uses.
+//
+// A decision is never inferred from silence (docs/adr/0029): a timeout
+// returns status="pending" with the request id, and thot treats that as
+// "no answer yet", never as consent.
+message RequestThotPermissionRequest {
+  string tool_name = 1;
+  string input_json = 2;
+  int32 timeout_ms = 3;
+}
+
+message RequestThotPermissionResponse {
+  string status = 1;  // "allowed" | "denied" | "pending"
+  string message = 2; // the human's reason, when denied
+  int64 request_id = 3;
+}
+
+message AppendThotEventRequest {
+  string kind = 1; // finding | alert | audit_run
+  string actor = 2;
+  string payload = 3;
+  string idempotency_key = 4;
+}
+
+message AppendThotEventResponse {
+  int64 id = 1;
 }

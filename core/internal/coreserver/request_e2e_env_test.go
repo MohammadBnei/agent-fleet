@@ -81,7 +81,7 @@ func TestRequestE2EEnv_UsesResolvedProfileStartCmd(t *testing.T) {
 	}
 
 	fake, provisioner := newFakeE2eProvisioner(t)
-	srv := New(nil, taskStore, nil, profileStore, provisioner, nil, nil)
+	srv := New(nil, taskStore, nil, profileStore, provisioner, nil, nil, nil)
 
 	if _, err := srv.RequestE2EEnv(ctx, &agentfleetv1.RequestE2EEnvRequest{TaskId: taskID, Profile: "e2e-test"}); err != nil {
 		t.Fatalf("RequestE2EEnv: %v", err)
@@ -120,7 +120,7 @@ func TestRequestE2EEnv_CallerOverrideWinsOverProfile(t *testing.T) {
 	}
 
 	fake, provisioner := newFakeE2eProvisioner(t)
-	srv := New(nil, taskStore, nil, profileStore, provisioner, nil, nil)
+	srv := New(nil, taskStore, nil, profileStore, provisioner, nil, nil, nil)
 
 	if _, err := srv.RequestE2EEnv(ctx, &agentfleetv1.RequestE2EEnvRequest{TaskId: taskID, Profile: "e2e-test", StartCmd: "agent-supplied command"}); err != nil {
 		t.Fatalf("RequestE2EEnv: %v", err)
