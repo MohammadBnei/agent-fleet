@@ -43,4 +43,6 @@ Decisions with no real alternative ever on the table live in
 | [0031](0031-garage-s3-shared-files.md) | Garage S3-backed shared file space, presigned URLs minted only by core | Accepted |
 | [0032](0032-fleet-shared-pvc-directory.md) | PVC-resident, provisioner-synced fleet-shared skills/context — implements [0019](0019-shared-pvc-and-unified-provisioner.md) point 6 | Accepted |
 | [0033](0033-journal-search-and-persistent-plugins.md) | Journal search and persistent plugins | Accepted |
-| [0034](0034-environment-recipe-system.md) | Environment recipe system replaces the hardcoded e2e start-command switch — bounded tool/service ingredient catalog, three service scope modes, provisioner-minted deterministic per-task credentials | Accepted |
+| [0034](0034-environment-recipe-system.md) | Environment recipe system replaces the hardcoded e2e start-command switch — bounded tool/service ingredient catalog, three service scope modes, provisioner-minted deterministic per-task credentials | Accepted (its "nothing can report running while silently broken" claim corrected for `start_cmd` by [0036](0036-e2e-recipe-visible-and-override-approved.md)) |
+| [0035](0035-thot-cluster-agent.md) | `thot`, the fleet's cluster agent — a second, independently deployed RBAC holder, the one named exception to hub-and-spoke | Accepted |
+| [0036](0036-e2e-recipe-visible-and-override-approved.md) | The e2e recipe is readable by the agent, its `start_cmd` override needs a human yes and stays ephemeral, and the app port gets a readiness probe | Accepted |
