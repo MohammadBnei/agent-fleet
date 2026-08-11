@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.36.1](https://github.com/MohammadBnei/agent-fleet/compare/1.36.0...1.36.1) (2026-08-11)
+
+
+### Bug Fixes
+
+* **thot:** split liveness from readiness so a slow session can start ([#102](https://github.com/MohammadBnei/agent-fleet/issues/102)) ([857d98d](https://github.com/MohammadBnei/agent-fleet/commit/857d98d58a1352aefa9889b6d027d75ad947051d))
+
 # [1.36.0](https://github.com/MohammadBnei/agent-fleet/compare/1.35.0...1.36.0) (2026-08-11)
 
 
