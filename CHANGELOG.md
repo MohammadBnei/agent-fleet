@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.36.2](https://github.com/MohammadBnei/agent-fleet/compare/1.36.1...1.36.2) (2026-08-11)
+
+
+### Bug Fixes
+
+* **thot:** boot the session so readiness can ever pass ([5f2f65a](https://github.com/MohammadBnei/agent-fleet/commit/5f2f65a73344563c159beaf69b38e3bd5f3530ef))
+* **thot:** make readiness free instead of paying for a boot turn ([c2c1f0c](https://github.com/MohammadBnei/agent-fleet/commit/c2c1f0c1546706643df5b82c807b039c76149be2))
+
 ## [1.36.1](https://github.com/MohammadBnei/agent-fleet/compare/1.36.0...1.36.1) (2026-08-11)
 
 
