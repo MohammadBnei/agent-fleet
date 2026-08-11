@@ -129,6 +129,30 @@ the dashboard-editable `repos` table (`docs/adr/0028`) — no redeploy
 needed to add/edit one. No per-repo Deployment/PVC — onboarding a new repo
 is a "manage repos" entry in the dashboard, not new k8s manifests.
 
+## Verification traps (each of these shipped a bug on 2026-08-11)
+
+Green CI is necessary, not sufficient. These five failure modes were all
+*silent* — the check passed, or wasn't run, or measured the wrong thing:
+
+- **`tsc --noEmit` is NOT the build.** The real command is
+  `bun run build` (`tsc -b && vite build`), and `tsc -b` enforces
+  `noUnusedLocals`. An unused import passed the weaker check and broke
+  the core image. **Verify with `bun run build`.**
+- **A PR build never pushes an image** (`push: false`). "The image built"
+  and "the image exists" are different claims — a manifest referencing a
+  tag only a PR built will `ImagePullBackOff`. Check the registry.
+- **`kubectl apply --dry-run=server` does not create a pod.** A Deployment
+  naming a non-existent ServiceAccount validates perfectly and then never
+  schedules. ArgoCD reporting `Synced` + `Degraded` together is the
+  signature — look at pods, not sync status.
+- **Adding a component means wiring it into *every* CI path**, including
+  the hardcoded release matrix in `docker.yml` and the codegen install
+  steps in `go.yml`. Guarded by `core/internal/buildguard` — run with
+  `-count=1`, since those tests read files Go's cache cannot see.
+- **Squash-merging a stacked PR auto-closes the PR above it** (its base
+  branch is deleted, and GitHub refuses to reopen). Retarget dependent
+  PRs to `main` *before* merging the one below.
+
 ## Workflow rules
 
 - All changes via feature branch + PR. No direct push to `main`.
