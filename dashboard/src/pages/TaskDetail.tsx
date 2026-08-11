@@ -34,6 +34,7 @@ import { Panel, type PanelSize } from "../components/Panel";
 import { E2eCard } from "../components/E2eCard";
 import { Modal } from "../components/Modal";
 import { ActionsMenu } from "../components/ActionsMenu";
+import { ProposalActions } from "../components/ProposalActions";
 
 // Minimal distinct treatment for the raw SDK message types (reliability-
 // findings.md #0: "relay everything, let the UI decide") — before this,
@@ -238,6 +239,9 @@ const DEFAULT_HEIGHT = 224; // matches TODOS's prior max-h-56
 const PANEL_ORDER = ["todos", "toolcalls", "changes"] as const;
 
 const STATUS_COLOR: Record<string, string> = {
+  // Warning-toned on purpose: the fallback grey below reads as "inert",
+  // the opposite of a task waiting on a human decision.
+  proposed: "text-warning border-warning/45 bg-warning/10",
   pending: "text-base-content/60 border-base-content/20 bg-base-content/5",
   claimed: "text-info border-info/45 bg-info/10",
   running: "text-info border-info/45 bg-info/10",
@@ -250,10 +254,15 @@ export function TaskDetail({
   taskId,
   tasks,
   onSelect,
+  onClosed,
 }: {
   taskId: string;
   tasks: Task[];
   onSelect: (id: string) => void;
+  // Called when this task stops existing (dismissing a proposal soft-
+  // deletes it), so the pane doesn't sit on a row that is no longer there.
+  // Mobile's equivalent is its existing onDelete.
+  onClosed?: () => void;
 }) {
   const {
     task: fetchedTask,
@@ -529,6 +538,12 @@ export function TaskDetail({
         </div>
       </div>
 
+      {task.status === "proposed" && (
+        <div className="px-6 pb-3">
+          <ProposalActions taskId={task.id} busy={busyKey !== null} run={run} onDismissed={onClosed} />
+        </div>
+      )}
+
       <div className="grid min-h-0" style={{ gridTemplateColumns: `1fr 5px ${displaySidebarWidth}px` }}>
         <div className="min-w-0 min-h-0 flex flex-col">
           <div className="relative flex-1 min-h-0">
@@ -742,6 +757,7 @@ export function TaskDetail({
                 <h3 className="font-semibold text-base mb-3">Actions</h3>
                 <ActionsMenu
           isThotTask={isThot(task)}
+                  status={task.status}
                   taskId={taskId}
                   busy={busyKey !== null}
                   run={run}

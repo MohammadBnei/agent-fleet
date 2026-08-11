@@ -775,3 +775,171 @@ func TestClaimNextTask_SerializesOnTheAdvisoryLock(t *testing.T) {
 		t.Fatalf("claim after releasing the lock: task=%v err=%v", after, err)
 	}
 }
+
+// A machine-created task must never land dispatchable: nothing here had a
+// human in the loop, and it runs an agent with cluster access.
+func TestCreateDeduped_CreatesProposedNotPending(t *testing.T) {
+	pool := newTestPool(t)
+	ctx := context.Background()
+	store := NewStore(pool)
+
+	id, created, err := store.CreateDeduped(ctx, "thot", "fp-status", "infra-bootstrap", "etcd down", nil, nil)
+	if err != nil || !created {
+		t.Fatalf("create: id=%q created=%v err=%v", id, created, err)
+	}
+
+	var status string
+	if err := pool.QueryRow(ctx, `SELECT status FROM tasks WHERE id = $1`, id).Scan(&status); err != nil {
+		t.Fatalf("read status: %v", err)
+	}
+	if status != "proposed" {
+		t.Errorf("status = %q, want %q — a machine-created task must not be dispatchable", status, "proposed")
+	}
+}
+
+// The dispatch half of the gate. Locks ClaimNextTask's eligibility clause
+// against a future widening that would silently un-gate every alert.
+func TestClaimNextTask_IgnoresProposed(t *testing.T) {
+	pool := newTestPool(t)
+	ctx := context.Background()
+	store := NewStore(pool)
+
+	id, _, err := store.CreateDeduped(ctx, "thot", "fp-claim", "infra-bootstrap", "etcd down", nil, nil)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	task, err := store.ClaimNextTask(ctx, 5, 1000)
+	if err != nil {
+		t.Fatalf("ClaimNextTask: %v", err)
+	}
+	if task != nil {
+		t.Fatalf("claimed proposal %s — dispatch must not see unapproved tasks", task.ID)
+	}
+
+	var status string
+	if err := pool.QueryRow(ctx, `SELECT status FROM tasks WHERE id = $1`, id).Scan(&status); err != nil {
+		t.Fatalf("read status: %v", err)
+	}
+	if status != "proposed" {
+		t.Errorf("status = %q, want it untouched at %q", status, "proposed")
+	}
+}
+
+// The guarded UPDATE is the one write that hands a cluster-access agent a
+// pod, so every way it could wrongly succeed gets a row here.
+func TestApproveProposal(t *testing.T) {
+	ctx := context.Background()
+
+	cases := []struct {
+		name     string
+		setup    func(t *testing.T, pool *pgxpool.Pool, id string)
+		wantOK   bool
+		wantLast string
+	}{
+		{name: "unapproved proposal is released", wantOK: true, wantLast: "pending"},
+		{
+			name:     "already approved",
+			setup:    func(t *testing.T, pool *pgxpool.Pool, id string) { exec(t, pool, `UPDATE tasks SET status='pending' WHERE id=$1`, id) },
+			wantOK:   false,
+			wantLast: "pending",
+		},
+		{
+			name:     "already running",
+			setup:    func(t *testing.T, pool *pgxpool.Pool, id string) { exec(t, pool, `UPDATE tasks SET status='running' WHERE id=$1`, id) },
+			wantOK:   false,
+			wantLast: "running",
+		},
+		{
+			name:     "finished",
+			setup:    func(t *testing.T, pool *pgxpool.Pool, id string) { exec(t, pool, `UPDATE tasks SET status='done' WHERE id=$1`, id) },
+			wantOK:   false,
+			wantLast: "done",
+		},
+		{
+			name:     "dismissed proposal is not resurrectable",
+			setup:    func(t *testing.T, pool *pgxpool.Pool, id string) { exec(t, pool, `UPDATE tasks SET deleted_at=now() WHERE id=$1`, id) },
+			wantOK:   false,
+			wantLast: "proposed",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			pool := newTestPool(t)
+			store := NewStore(pool)
+			id, _, err := store.CreateDeduped(ctx, "thot", "fp-approve", "infra-bootstrap", "etcd down", nil, nil)
+			if err != nil {
+				t.Fatalf("create: %v", err)
+			}
+			if tc.setup != nil {
+				tc.setup(t, pool, id)
+			}
+
+			ok, err := store.ApproveProposal(ctx, id)
+			if err != nil {
+				t.Fatalf("ApproveProposal: %v", err)
+			}
+			if ok != tc.wantOK {
+				t.Errorf("approved = %v, want %v", ok, tc.wantOK)
+			}
+
+			var status string
+			if err := pool.QueryRow(ctx, `SELECT status FROM tasks WHERE id = $1`, id).Scan(&status); err != nil {
+				t.Fatalf("read status: %v", err)
+			}
+			if status != tc.wantLast {
+				t.Errorf("status = %q, want %q", status, tc.wantLast)
+			}
+		})
+	}
+}
+
+func TestApproveProposal_UnknownTask(t *testing.T) {
+	pool := newTestPool(t)
+	store := NewStore(pool)
+	ok, err := store.ApproveProposal(context.Background(), "00000000-0000-0000-0000-000000000000")
+	if err != nil {
+		t.Fatalf("ApproveProposal: %v", err)
+	}
+	if ok {
+		t.Error("approved a task that does not exist")
+	}
+}
+
+// Dismiss semantics: a soft-deleted proposal drops out of the partial
+// unique index, so a still-firing alert is proposed again next time.
+// Dismissing means "not now", not "never" — permanent suppression is an
+// Alertmanager silence, and encoding it here would make the fleet quietly
+// stop surfacing an alert that is still firing.
+func TestCreateDeduped_DismissedProposalIsReProposable(t *testing.T) {
+	pool := newTestPool(t)
+	ctx := context.Background()
+	store := NewStore(pool)
+
+	first, _, err := store.CreateDeduped(ctx, "thot", "fp-dismiss", "infra-bootstrap", "etcd down", nil, nil)
+	if err != nil {
+		t.Fatalf("first create: %v", err)
+	}
+	if err := store.SoftDelete(ctx, first); err != nil {
+		t.Fatalf("dismiss: %v", err)
+	}
+
+	second, created, err := store.CreateDeduped(ctx, "thot", "fp-dismiss", "infra-bootstrap", "etcd still down", nil, nil)
+	if err != nil {
+		t.Fatalf("second create: %v", err)
+	}
+	if !created {
+		t.Fatal("a dismissed alert must be proposable again when it fires next")
+	}
+	if second == first {
+		t.Error("expected a distinct task")
+	}
+}
+
+func exec(t *testing.T, pool *pgxpool.Pool, sql string, args ...any) {
+	t.Helper()
+	if _, err := pool.Exec(context.Background(), sql, args...); err != nil {
+		t.Fatalf("exec %q: %v", sql, err)
+	}
+}

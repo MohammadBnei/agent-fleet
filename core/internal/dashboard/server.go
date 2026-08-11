@@ -464,6 +464,9 @@ func (s *Server) Warm(ctx context.Context, req *connect.Request[agentfleetv1.War
 	if tasks.IsPodPhaseLive(t.PodPhase) {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("session already has a live pod"))
 	}
+	if t.Status == "proposed" {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("task is an unapproved proposal — approve it first"))
+	}
 	if t.Status == "pending" {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("task hasn't been claimed yet — it will dispatch automatically"))
 	}
@@ -472,6 +475,24 @@ func (s *Server) Warm(ctx context.Context, req *connect.Request[agentfleetv1.War
 		return nil, err
 	}
 	return connect.NewResponse(&agentfleetv1.WarmResponse{Status: "warming", PodName: podName}), nil
+}
+
+// ApproveTask releases a machine-created proposal into the dispatch queue
+// (see ApproveTaskRequest's proto comment). Only writes the status —
+// dispatch owns the pod, which keeps the task inside
+// MAX_IN_FLIGHT_TASKS' accounting.
+func (s *Server) ApproveTask(ctx context.Context, req *connect.Request[agentfleetv1.ApproveTaskRequest]) (*connect.Response[agentfleetv1.ApproveTaskResponse], error) {
+	approved, err := s.tasks.ApproveProposal(ctx, req.Msg.GetTaskId())
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	if !approved {
+		// Covers unknown, already-approved, already-running and dismissed
+		// alike — from the caller's side they are the same fact: there is
+		// no un-approved proposal here to release.
+		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("task is not an unapproved proposal"))
+	}
+	return connect.NewResponse(&agentfleetv1.ApproveTaskResponse{Status: "approved"}), nil
 }
 
 // warmIfIdle is Warm/Discuss's shared implementation: returns ("", nil)
@@ -505,7 +526,15 @@ func (s *Server) warmIfIdle(ctx context.Context, taskID string) (podName string,
 	// instead, since a human clicking it deserves to know why nothing
 	// happened. Once claimed (any other status), the task is exclusively
 	// this function's territory.
-	if t.Status == "pending" {
+	//
+	// 'proposed' is here for a different and much sharper reason: a
+	// machine-created task that no human has approved must not get a pod
+	// at all, and this function is the only path to one other than
+	// dispatch. Guarding it HERE rather than in the two callers is what
+	// makes the gate real — Discuss reaches this on every message, so a
+	// guard living only in Warm's handler would let anyone spawn a
+	// cluster-access pod for an un-approved alert just by typing into it.
+	if t.Status == "pending" || t.Status == "proposed" {
 		return "", nil
 	}
 	// Accepted TOCTOU window (see tasks.Store.CountLivePods' own comment):

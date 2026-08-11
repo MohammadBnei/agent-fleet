@@ -61,6 +61,9 @@ const (
 	DashboardServiceSetPermissionModeProcedure = "/agentfleet.v1.DashboardService/SetPermissionMode"
 	// DashboardServiceWarmProcedure is the fully-qualified name of the DashboardService's Warm RPC.
 	DashboardServiceWarmProcedure = "/agentfleet.v1.DashboardService/Warm"
+	// DashboardServiceApproveTaskProcedure is the fully-qualified name of the DashboardService's
+	// ApproveTask RPC.
+	DashboardServiceApproveTaskProcedure = "/agentfleet.v1.DashboardService/ApproveTask"
 	// DashboardServiceKillE2EProcedure is the fully-qualified name of the DashboardService's KillE2e
 	// RPC.
 	DashboardServiceKillE2EProcedure = "/agentfleet.v1.DashboardService/KillE2e"
@@ -173,6 +176,7 @@ type DashboardServiceClient interface {
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	SetPermissionMode(context.Context, *connect.Request[v1.SetPermissionModeRequest]) (*connect.Response[v1.SetPermissionModeResponse], error)
 	Warm(context.Context, *connect.Request[v1.WarmRequest]) (*connect.Response[v1.WarmResponse], error)
+	ApproveTask(context.Context, *connect.Request[v1.ApproveTaskRequest]) (*connect.Response[v1.ApproveTaskResponse], error)
 	KillE2E(context.Context, *connect.Request[v1.KillE2ERequest]) (*connect.Response[v1.KillE2EResponse], error)
 	AnswerQuestion(context.Context, *connect.Request[v1.AnswerQuestionRequest]) (*connect.Response[v1.AnswerQuestionResponse], error)
 	RespondToPermission(context.Context, *connect.Request[v1.RespondToPermissionRequest]) (*connect.Response[v1.RespondToPermissionResponse], error)
@@ -290,6 +294,12 @@ func NewDashboardServiceClient(httpClient connect.HTTPClient, baseURL string, op
 			httpClient,
 			baseURL+DashboardServiceWarmProcedure,
 			connect.WithSchema(dashboardServiceMethods.ByName("Warm")),
+			connect.WithClientOptions(opts...),
+		),
+		approveTask: connect.NewClient[v1.ApproveTaskRequest, v1.ApproveTaskResponse](
+			httpClient,
+			baseURL+DashboardServiceApproveTaskProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("ApproveTask")),
 			connect.WithClientOptions(opts...),
 		),
 		killE2E: connect.NewClient[v1.KillE2ERequest, v1.KillE2EResponse](
@@ -481,6 +491,7 @@ type dashboardServiceClient struct {
 	interrupt            *connect.Client[v1.InterruptRequest, v1.InterruptResponse]
 	setPermissionMode    *connect.Client[v1.SetPermissionModeRequest, v1.SetPermissionModeResponse]
 	warm                 *connect.Client[v1.WarmRequest, v1.WarmResponse]
+	approveTask          *connect.Client[v1.ApproveTaskRequest, v1.ApproveTaskResponse]
 	killE2E              *connect.Client[v1.KillE2ERequest, v1.KillE2EResponse]
 	answerQuestion       *connect.Client[v1.AnswerQuestionRequest, v1.AnswerQuestionResponse]
 	respondToPermission  *connect.Client[v1.RespondToPermissionRequest, v1.RespondToPermissionResponse]
@@ -560,6 +571,11 @@ func (c *dashboardServiceClient) SetPermissionMode(ctx context.Context, req *con
 // Warm calls agentfleet.v1.DashboardService.Warm.
 func (c *dashboardServiceClient) Warm(ctx context.Context, req *connect.Request[v1.WarmRequest]) (*connect.Response[v1.WarmResponse], error) {
 	return c.warm.CallUnary(ctx, req)
+}
+
+// ApproveTask calls agentfleet.v1.DashboardService.ApproveTask.
+func (c *dashboardServiceClient) ApproveTask(ctx context.Context, req *connect.Request[v1.ApproveTaskRequest]) (*connect.Response[v1.ApproveTaskResponse], error) {
+	return c.approveTask.CallUnary(ctx, req)
 }
 
 // KillE2E calls agentfleet.v1.DashboardService.KillE2e.
@@ -730,6 +746,7 @@ type DashboardServiceHandler interface {
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	SetPermissionMode(context.Context, *connect.Request[v1.SetPermissionModeRequest]) (*connect.Response[v1.SetPermissionModeResponse], error)
 	Warm(context.Context, *connect.Request[v1.WarmRequest]) (*connect.Response[v1.WarmResponse], error)
+	ApproveTask(context.Context, *connect.Request[v1.ApproveTaskRequest]) (*connect.Response[v1.ApproveTaskResponse], error)
 	KillE2E(context.Context, *connect.Request[v1.KillE2ERequest]) (*connect.Response[v1.KillE2EResponse], error)
 	AnswerQuestion(context.Context, *connect.Request[v1.AnswerQuestionRequest]) (*connect.Response[v1.AnswerQuestionResponse], error)
 	RespondToPermission(context.Context, *connect.Request[v1.RespondToPermissionRequest]) (*connect.Response[v1.RespondToPermissionResponse], error)
@@ -843,6 +860,12 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 		DashboardServiceWarmProcedure,
 		svc.Warm,
 		connect.WithSchema(dashboardServiceMethods.ByName("Warm")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dashboardServiceApproveTaskHandler := connect.NewUnaryHandler(
+		DashboardServiceApproveTaskProcedure,
+		svc.ApproveTask,
+		connect.WithSchema(dashboardServiceMethods.ByName("ApproveTask")),
 		connect.WithHandlerOptions(opts...),
 	)
 	dashboardServiceKillE2EHandler := connect.NewUnaryHandler(
@@ -1041,6 +1064,8 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 			dashboardServiceSetPermissionModeHandler.ServeHTTP(w, r)
 		case DashboardServiceWarmProcedure:
 			dashboardServiceWarmHandler.ServeHTTP(w, r)
+		case DashboardServiceApproveTaskProcedure:
+			dashboardServiceApproveTaskHandler.ServeHTTP(w, r)
 		case DashboardServiceKillE2EProcedure:
 			dashboardServiceKillE2EHandler.ServeHTTP(w, r)
 		case DashboardServiceAnswerQuestionProcedure:
@@ -1146,6 +1171,10 @@ func (UnimplementedDashboardServiceHandler) SetPermissionMode(context.Context, *
 
 func (UnimplementedDashboardServiceHandler) Warm(context.Context, *connect.Request[v1.WarmRequest]) (*connect.Response[v1.WarmResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.Warm is not implemented"))
+}
+
+func (UnimplementedDashboardServiceHandler) ApproveTask(context.Context, *connect.Request[v1.ApproveTaskRequest]) (*connect.Response[v1.ApproveTaskResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.ApproveTask is not implemented"))
 }
 
 func (UnimplementedDashboardServiceHandler) KillE2E(context.Context, *connect.Request[v1.KillE2ERequest]) (*connect.Response[v1.KillE2EResponse], error) {

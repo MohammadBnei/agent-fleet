@@ -133,18 +133,28 @@ func (s *Store) CreateTaskOfKind(ctx context.Context, kind, repo, description, g
 	return id, nil
 }
 
-// CreateDeduped creates a task keyed by an external identifier (an alert
-// fingerprint today), returning created=false if an ACTIVE task already
+// CreateDeduped is the machine-created task path: an Alertmanager alert or
+// a due scheduled audit, keyed by an external identifier so repeat
+// deliveries collapse. Returns created=false if an ACTIVE task already
 // exists for that key.
 //
 // The dedup is enforced by a partial unique index, not by a read-then-write
 // here: Alertmanager can deliver the same group to several replicas at
 // once, and a check-then-insert would race straight through. ON CONFLICT
 // makes the database the arbiter.
+//
+// Rows land in 'proposed', never 'pending', so dispatch never sees them:
+// nothing here had a human in the loop, and these tasks run an agent with
+// cluster access. A human releases one with ApproveProposal.
+//
+// ponytail: the status is hardcoded rather than a parameter on purpose —
+// a method that cannot produce a dispatchable task cannot be misused into
+// an ungated dispatch by a future caller. Add an argument only if a
+// human-initiated deduped-creation path ever appears.
 func (s *Store) CreateDeduped(ctx context.Context, kind, externalKey, repo, description string, channelID, threadID *string) (id string, created bool, err error) {
 	err = s.pool.QueryRow(ctx, `
-		INSERT INTO tasks (kind, external_key, repo, description, discord_channel_id, discord_thread_id)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		INSERT INTO tasks (kind, external_key, repo, description, discord_channel_id, discord_thread_id, status)
+		VALUES ($1, $2, $3, $4, $5, $6, 'proposed')
 		ON CONFLICT DO NOTHING
 		RETURNING id
 	`, kind, externalKey, repo, description, channelID, threadID).Scan(&id)
@@ -157,11 +167,44 @@ func (s *Store) CreateDeduped(ctx context.Context, kind, externalKey, repo, desc
 		slog.Error("tasks CreateDeduped", "externalKey", externalKey, "error", err)
 		return "", false, fmt.Errorf("create deduped task: %w", err)
 	}
-	slog.Info("tasks CreateDeduped", "taskId", id, "externalKey", externalKey, "kind", kind)
+	// Deliberately no nudge(): a proposal is not claimable, so waking the
+	// dispatch loop here would be a wakeup that can never produce a claim.
+	// ApproveProposal nudges instead, at the moment it actually becomes
+	// dispatchable.
+	slog.Info("tasks CreateDeduped", "taskId", id, "externalKey", externalKey, "kind", kind, "status", "proposed")
+	return id, true, nil
+}
+
+// ApproveProposal releases a machine-created proposal into the ordinary
+// dispatch queue, returning false if the task was not an un-approved
+// proposal.
+//
+// Guarded inside the UPDATE rather than read-then-write: this is the one
+// write that hands a cluster-access agent a pod, so two clicks (or two
+// humans, or a stale browser tab) must not re-queue a task dispatch has
+// already claimed. The deleted_at guard covers the dismiss path — a
+// dismissed proposal must not be resurrectable.
+//
+// Only flips the status; dispatch owns the pod. Warming one directly here
+// would leave the task 'proposed' forever and, worse, invisible to
+// ClaimNextTask's in-flight count, drifting MAX_IN_FLIGHT_TASKS.
+func (s *Store) ApproveProposal(ctx context.Context, id string) (bool, error) {
+	tag, err := s.pool.Exec(ctx, `
+		UPDATE tasks SET status = 'pending', updated_at = now()
+		WHERE id = $1 AND status = 'proposed' AND deleted_at IS NULL
+	`, id)
+	if err != nil {
+		slog.Error("tasks ApproveProposal", "taskId", id, "error", err)
+		return false, fmt.Errorf("approve proposal: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return false, nil
+	}
+	slog.Info("tasks ApproveProposal", "taskId", id)
 	if s.nudge != nil {
 		s.nudge()
 	}
-	return id, true, nil
+	return true, nil
 }
 
 func (s *Store) FindTaskIDByThread(ctx context.Context, threadID string) (string, error) {

@@ -30,6 +30,7 @@ import { JsonView } from "../components/JsonView";
 import { BypassConfirmModal } from "../components/BypassConfirmModal";
 import { Modal } from "../components/Modal";
 import { ActionsMenu } from "../components/ActionsMenu";
+import { ProposalActions } from "../components/ProposalActions";
 import { E2eCard } from "../components/E2eCard";
 import { prBadge, podStateBadge, staleBadge } from "../pages/TaskList";
 
@@ -599,6 +600,9 @@ export function MobileTaskDetail({
             ))}
           </div>
         )}
+        {task?.status === "proposed" && (
+          <ProposalActions taskId={taskId} busy={busyKey !== null} run={run} onDismissed={onDelete} />
+        )}
         <BypassConfirmModal
           open={bypassOpen}
           onCancel={() => setBypassOpen(false)}
@@ -655,6 +659,7 @@ export function MobileTaskDetail({
             <h3 className="font-semibold text-base mb-3">Actions</h3>
             <ActionsMenu
           isThotTask={isThot(task)}
+              status={task?.status}
               taskId={taskId}
               busy={busyKey !== null}
               run={run}

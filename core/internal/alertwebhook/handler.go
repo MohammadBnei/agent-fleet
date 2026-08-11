@@ -142,7 +142,7 @@ func (h *Handler) attachThread(_ context.Context, taskID string, a alert) {
 	_, err := h.discord.OpenThread(
 		h.cfg.ChannelID,
 		truncate(name, 90),
-		fmt.Sprintf("**🔥 %s** — investigating as task `%s`\n%s", name, taskID[:8], a.Annotations["summary"]),
+		fmt.Sprintf("**🔥 %s** — proposed as task `%s`, awaiting approval in the dashboard\n%s", name, taskID[:8], a.Annotations["summary"]),
 	)
 	if err != nil {
 		slog.Error("alertwebhook: open thread", "taskId", taskID, "error", err)

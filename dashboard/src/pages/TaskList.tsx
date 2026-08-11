@@ -10,7 +10,18 @@ export const SHIPPED_STATUSES = new Set(["done", "failed", "cancelled"]);
 // lands in.
 export function bucketTasks(tasks: Task[], needsYouIds: Set<string>) {
   return {
-    needsYou: tasks.filter((t) => ACTIVE_STATUSES.has(t.status) && needsYouIds.has(t.id)),
+    // A 'proposed' task is by definition a decision waiting on a human
+    // (Alertmanager or the audit scheduler created it and nobody has
+    // approved it), so it belongs here regardless of needsYouIds — that
+    // set tracks outstanding transcript questions, and a proposal has no
+    // transcript yet.
+    //
+    // Deliberately NOT added to ACTIVE_STATUSES: App.tsx uses that same
+    // set for the per-task todo fetch and the "sessions live" counter,
+    // and a proposal is neither. Without this line a proposal matches
+    // neither hardcoded set and vanishes from both the desktop and mobile
+    // lists — the one place the human is supposed to see it.
+    needsYou: tasks.filter((t) => t.status === "proposed" || (ACTIVE_STATUSES.has(t.status) && needsYouIds.has(t.id))),
     working: tasks.filter((t) => ACTIVE_STATUSES.has(t.status) && !needsYouIds.has(t.id)),
     shipped: tasks.filter((t) => SHIPPED_STATUSES.has(t.status)),
   };

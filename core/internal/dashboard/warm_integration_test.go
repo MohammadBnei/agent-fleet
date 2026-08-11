@@ -311,3 +311,123 @@ func TestServer_Discuss_LivePod_NoWarmAttempt(t *testing.T) {
 		t.Errorf("expected no warm attempt against an already-live task, got %d CreateWorkerPod calls", len(fake.calls))
 	}
 }
+
+// seedProposal is seedTask plus the status a machine-created task lands
+// in — what tasks.Store.CreateDeduped produces for an Alertmanager alert
+// or a due scheduled audit.
+func seedProposal(t *testing.T, pool *pgxpool.Pool) string {
+	t.Helper()
+	id := seedTask(t, pool)
+	if _, err := pool.Exec(context.Background(), `UPDATE tasks SET status = 'proposed' WHERE id = $1`, id); err != nil {
+		t.Fatalf("seed: set proposed: %v", err)
+	}
+	return id
+}
+
+// TestServer_Discuss_DoesNotWarmProposal is THE test for the approval
+// gate, and the reason warmIfIdle carries the guard rather than Warm's
+// handler.
+//
+// Discuss calls warmIfIdle unconditionally on every message, silently,
+// with no status check of its own. A patch that guards only the Warm
+// handler passes every other test in this suite and still lets anyone
+// spawn a pod running an agent with cluster access for an alert no human
+// approved — just by typing into the task instead of clicking Warm.
+//
+// The message must still be appended: Discuss always has something to
+// send regardless of whether a pod exists to read it.
+func TestServer_Discuss_DoesNotWarmProposal(t *testing.T) {
+	pool := newTestPool(t)
+	ctx := context.Background()
+	taskStore := tasks.NewStore(pool)
+	repoStore := repos.NewStore(pool)
+	profileStore := repoprofiles.NewStore(pool)
+	taskID := seedProposal(t, pool)
+
+	fake, provisioner := newFakeProvisioner(t)
+	store := &recordingStore{}
+	s := NewServer(taskStore, store, nil, repoStore, profileStore, nil, provisioner, nil, nil, 5, nil, nil)
+
+	if _, err := s.Discuss(ctx, connect.NewRequest(&agentfleetv1.DiscussRequest{TaskId: taskID, Text: "hey"})); err != nil {
+		t.Fatalf("Discuss: %v", err)
+	}
+	if len(fake.calls) != 0 {
+		t.Fatalf("Discuss warmed a pod for an unapproved proposal (%d CreateWorkerPod calls) — "+
+			"any human message would bypass the approval gate", len(fake.calls))
+	}
+	if store.lastText != "hey" {
+		t.Errorf("Discuss must still append the message: got %q", store.lastText)
+	}
+
+	task, err := taskStore.GetTask(ctx, taskID)
+	if err != nil {
+		t.Fatalf("GetTask: %v", err)
+	}
+	if task.Status != "proposed" {
+		t.Errorf("status = %q, want it left at %q", task.Status, "proposed")
+	}
+}
+
+// The obvious half of the same gate. Distinct from Discuss above because
+// Warm gives an explicit reason rather than silently skipping — a human
+// who clicked deserves to know why nothing happened.
+func TestServer_Warm_RejectsUnapprovedProposal(t *testing.T) {
+	pool := newTestPool(t)
+	ctx := context.Background()
+	taskStore := tasks.NewStore(pool)
+	repoStore := repos.NewStore(pool)
+	profileStore := repoprofiles.NewStore(pool)
+	taskID := seedProposal(t, pool)
+
+	fake, provisioner := newFakeProvisioner(t)
+	s := NewServer(taskStore, &recordingStore{}, nil, repoStore, profileStore, nil, provisioner, nil, nil, 5, nil, nil)
+
+	_, err := s.Warm(ctx, connect.NewRequest(&agentfleetv1.WarmRequest{TaskId: taskID}))
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Errorf("Warm on a proposal: err = %v (code %v), want FailedPrecondition", err, connect.CodeOf(err))
+	}
+	if len(fake.calls) != 0 {
+		t.Errorf("expected no CreateWorkerPod call, got %d", len(fake.calls))
+	}
+}
+
+// ApproveTask hands the task to dispatch — it must NOT warm a pod itself.
+// A pod warmed behind dispatch's back is invisible to ClaimNextTask's
+// in-flight count, which is how MAX_IN_FLIGHT_TASKS silently drifts.
+func TestServer_ApproveTask_QueuesForDispatchWithoutWarming(t *testing.T) {
+	pool := newTestPool(t)
+	ctx := context.Background()
+	taskStore := tasks.NewStore(pool)
+	repoStore := repos.NewStore(pool)
+	profileStore := repoprofiles.NewStore(pool)
+	taskID := seedProposal(t, pool)
+
+	fake, provisioner := newFakeProvisioner(t)
+	s := NewServer(taskStore, &recordingStore{}, nil, repoStore, profileStore, nil, provisioner, nil, nil, 5, nil, nil)
+
+	resp, err := s.ApproveTask(ctx, connect.NewRequest(&agentfleetv1.ApproveTaskRequest{TaskId: taskID}))
+	if err != nil {
+		t.Fatalf("ApproveTask: %v", err)
+	}
+	if resp.Msg.GetStatus() != "approved" {
+		t.Errorf("status = %q, want %q", resp.Msg.GetStatus(), "approved")
+	}
+	if len(fake.calls) != 0 {
+		t.Errorf("ApproveTask must not create a pod (dispatch owns the first one), got %d calls", len(fake.calls))
+	}
+
+	task, err := taskStore.GetTask(ctx, taskID)
+	if err != nil {
+		t.Fatalf("GetTask: %v", err)
+	}
+	if task.Status != "pending" {
+		t.Errorf("status = %q, want %q so ClaimNextTask can pick it up", task.Status, "pending")
+	}
+
+	// Second click: the guarded UPDATE matched nothing, so this must be a
+	// rejection rather than a silent re-queue of a task dispatch may
+	// already have claimed.
+	if _, err := s.ApproveTask(ctx, connect.NewRequest(&agentfleetv1.ApproveTaskRequest{TaskId: taskID})); connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Errorf("second ApproveTask: err = %v (code %v), want FailedPrecondition", err, connect.CodeOf(err))
+	}
+}
