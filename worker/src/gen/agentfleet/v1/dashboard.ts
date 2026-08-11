@@ -419,6 +419,42 @@ export interface DeletePromptSnippetResponse {
   status: string;
 }
 
+export interface ThotEvent {
+  id: number;
+  kind: string;
+  actor: string;
+  payload: string;
+  replyTo?: number | undefined;
+  createdAt: string;
+}
+
+export interface ListThotEventsRequest {
+  sinceId: number;
+  limit: number;
+}
+
+export interface ListThotEventsResponse {
+  events: ThotEvent[];
+  nextId: number;
+  /**
+   * Requests still awaiting a human decision — sent alongside the feed so
+   * a page refresh mid-prompt re-renders the pending card instead of
+   * losing it.
+   */
+  pending: ThotEvent[];
+}
+
+export interface RespondToThotPermissionRequest {
+  requestId: number;
+  allow: boolean;
+  /** reason, when denying */
+  message: string;
+}
+
+export interface RespondToThotPermissionResponse {
+  status: string;
+}
+
 function createBaseListTasksRequest(): ListTasksRequest {
   return { limit: 0 };
 }
@@ -2381,6 +2417,227 @@ export const DeletePromptSnippetResponse: MessageFns<DeletePromptSnippetResponse
   },
 };
 
+function createBaseThotEvent(): ThotEvent {
+  return { id: 0, kind: "", actor: "", payload: "", replyTo: undefined, createdAt: "" };
+}
+
+export const ThotEvent: MessageFns<ThotEvent> = {
+  fromJSON(object: any): ThotEvent {
+    return {
+      id: isSet(object.id) ? globalThis.Number(object.id) : 0,
+      kind: isSet(object.kind) ? globalThis.String(object.kind) : "",
+      actor: isSet(object.actor) ? globalThis.String(object.actor) : "",
+      payload: isSet(object.payload) ? globalThis.String(object.payload) : "",
+      replyTo: isSet(object.replyTo)
+        ? globalThis.Number(object.replyTo)
+        : isSet(object.reply_to)
+        ? globalThis.Number(object.reply_to)
+        : undefined,
+      createdAt: isSet(object.createdAt)
+        ? globalThis.String(object.createdAt)
+        : isSet(object.created_at)
+        ? globalThis.String(object.created_at)
+        : "",
+    };
+  },
+
+  toJSON(message: ThotEvent): unknown {
+    const obj: any = {};
+    if (message.id !== 0) {
+      obj.id = Math.round(message.id);
+    }
+    if (message.kind !== "") {
+      obj.kind = message.kind;
+    }
+    if (message.actor !== "") {
+      obj.actor = message.actor;
+    }
+    if (message.payload !== "") {
+      obj.payload = message.payload;
+    }
+    if (message.replyTo !== undefined) {
+      obj.replyTo = Math.round(message.replyTo);
+    }
+    if (message.createdAt !== "") {
+      obj.createdAt = message.createdAt;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<ThotEvent>, I>>(base?: I): ThotEvent {
+    return ThotEvent.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<ThotEvent>, I>>(object: I): ThotEvent {
+    const message = createBaseThotEvent();
+    message.id = object.id ?? 0;
+    message.kind = object.kind ?? "";
+    message.actor = object.actor ?? "";
+    message.payload = object.payload ?? "";
+    message.replyTo = object.replyTo ?? undefined;
+    message.createdAt = object.createdAt ?? "";
+    return message;
+  },
+};
+
+function createBaseListThotEventsRequest(): ListThotEventsRequest {
+  return { sinceId: 0, limit: 0 };
+}
+
+export const ListThotEventsRequest: MessageFns<ListThotEventsRequest> = {
+  fromJSON(object: any): ListThotEventsRequest {
+    return {
+      sinceId: isSet(object.sinceId)
+        ? globalThis.Number(object.sinceId)
+        : isSet(object.since_id)
+        ? globalThis.Number(object.since_id)
+        : 0,
+      limit: isSet(object.limit) ? globalThis.Number(object.limit) : 0,
+    };
+  },
+
+  toJSON(message: ListThotEventsRequest): unknown {
+    const obj: any = {};
+    if (message.sinceId !== 0) {
+      obj.sinceId = Math.round(message.sinceId);
+    }
+    if (message.limit !== 0) {
+      obj.limit = Math.round(message.limit);
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<ListThotEventsRequest>, I>>(base?: I): ListThotEventsRequest {
+    return ListThotEventsRequest.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<ListThotEventsRequest>, I>>(object: I): ListThotEventsRequest {
+    const message = createBaseListThotEventsRequest();
+    message.sinceId = object.sinceId ?? 0;
+    message.limit = object.limit ?? 0;
+    return message;
+  },
+};
+
+function createBaseListThotEventsResponse(): ListThotEventsResponse {
+  return { events: [], nextId: 0, pending: [] };
+}
+
+export const ListThotEventsResponse: MessageFns<ListThotEventsResponse> = {
+  fromJSON(object: any): ListThotEventsResponse {
+    return {
+      events: globalThis.Array.isArray(object?.events)
+        ? object.events.map((e: any) => ThotEvent.fromJSON(e))
+        : [],
+      nextId: isSet(object.nextId)
+        ? globalThis.Number(object.nextId)
+        : isSet(object.next_id)
+        ? globalThis.Number(object.next_id)
+        : 0,
+      pending: globalThis.Array.isArray(object?.pending)
+        ? object.pending.map((e: any) => ThotEvent.fromJSON(e))
+        : [],
+    };
+  },
+
+  toJSON(message: ListThotEventsResponse): unknown {
+    const obj: any = {};
+    if (message.events?.length) {
+      obj.events = message.events.map((e) => ThotEvent.toJSON(e));
+    }
+    if (message.nextId !== 0) {
+      obj.nextId = Math.round(message.nextId);
+    }
+    if (message.pending?.length) {
+      obj.pending = message.pending.map((e) => ThotEvent.toJSON(e));
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<ListThotEventsResponse>, I>>(base?: I): ListThotEventsResponse {
+    return ListThotEventsResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<ListThotEventsResponse>, I>>(object: I): ListThotEventsResponse {
+    const message = createBaseListThotEventsResponse();
+    message.events = object.events?.map((e) => ThotEvent.fromPartial(e)) || [];
+    message.nextId = object.nextId ?? 0;
+    message.pending = object.pending?.map((e) => ThotEvent.fromPartial(e)) || [];
+    return message;
+  },
+};
+
+function createBaseRespondToThotPermissionRequest(): RespondToThotPermissionRequest {
+  return { requestId: 0, allow: false, message: "" };
+}
+
+export const RespondToThotPermissionRequest: MessageFns<RespondToThotPermissionRequest> = {
+  fromJSON(object: any): RespondToThotPermissionRequest {
+    return {
+      requestId: isSet(object.requestId)
+        ? globalThis.Number(object.requestId)
+        : isSet(object.request_id)
+        ? globalThis.Number(object.request_id)
+        : 0,
+      allow: isSet(object.allow) ? globalThis.Boolean(object.allow) : false,
+      message: isSet(object.message) ? globalThis.String(object.message) : "",
+    };
+  },
+
+  toJSON(message: RespondToThotPermissionRequest): unknown {
+    const obj: any = {};
+    if (message.requestId !== 0) {
+      obj.requestId = Math.round(message.requestId);
+    }
+    if (message.allow !== false) {
+      obj.allow = message.allow;
+    }
+    if (message.message !== "") {
+      obj.message = message.message;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<RespondToThotPermissionRequest>, I>>(base?: I): RespondToThotPermissionRequest {
+    return RespondToThotPermissionRequest.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<RespondToThotPermissionRequest>, I>>(
+    object: I,
+  ): RespondToThotPermissionRequest {
+    const message = createBaseRespondToThotPermissionRequest();
+    message.requestId = object.requestId ?? 0;
+    message.allow = object.allow ?? false;
+    message.message = object.message ?? "";
+    return message;
+  },
+};
+
+function createBaseRespondToThotPermissionResponse(): RespondToThotPermissionResponse {
+  return { status: "" };
+}
+
+export const RespondToThotPermissionResponse: MessageFns<RespondToThotPermissionResponse> = {
+  fromJSON(object: any): RespondToThotPermissionResponse {
+    return { status: isSet(object.status) ? globalThis.String(object.status) : "" };
+  },
+
+  toJSON(message: RespondToThotPermissionResponse): unknown {
+    const obj: any = {};
+    if (message.status !== "") {
+      obj.status = message.status;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<RespondToThotPermissionResponse>, I>>(base?: I): RespondToThotPermissionResponse {
+    return RespondToThotPermissionResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<RespondToThotPermissionResponse>, I>>(
+    object: I,
+  ): RespondToThotPermissionResponse {
+    const message = createBaseRespondToThotPermissionResponse();
+    message.status = object.status ?? "";
+    return message;
+  },
+};
+
 export interface DashboardService {
   ListTasks(request: ListTasksRequest): Promise<ListTasksResponse>;
   /** buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE */
@@ -2451,6 +2708,14 @@ export interface DashboardService {
    * buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
    */
   QueryLogs(request: QueryLogsRequest): Promise<QueryLogsResponse>;
+  /**
+   * thot's activity feed + the human side of its permission prompts
+   * (docs/adr/0035). The dashboard is the *only* place a thot permission
+   * decision can be made — its Discord channel is notify-only and never
+   * an approval path.
+   */
+  ListThotEvents(request: ListThotEventsRequest): Promise<ListThotEventsResponse>;
+  RespondToThotPermission(request: RespondToThotPermissionRequest): Promise<RespondToThotPermissionResponse>;
 }
 
 type Builtin = Date | Function | Uint8Array | string | number | boolean | undefined;

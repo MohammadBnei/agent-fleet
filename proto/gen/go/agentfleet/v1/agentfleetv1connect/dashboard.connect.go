@@ -136,6 +136,12 @@ const (
 	// DashboardServiceQueryLogsProcedure is the fully-qualified name of the DashboardService's
 	// QueryLogs RPC.
 	DashboardServiceQueryLogsProcedure = "/agentfleet.v1.DashboardService/QueryLogs"
+	// DashboardServiceListThotEventsProcedure is the fully-qualified name of the DashboardService's
+	// ListThotEvents RPC.
+	DashboardServiceListThotEventsProcedure = "/agentfleet.v1.DashboardService/ListThotEvents"
+	// DashboardServiceRespondToThotPermissionProcedure is the fully-qualified name of the
+	// DashboardService's RespondToThotPermission RPC.
+	DashboardServiceRespondToThotPermissionProcedure = "/agentfleet.v1.DashboardService/RespondToThotPermission"
 )
 
 // DashboardServiceClient is a client for the agentfleet.v1.DashboardService service.
@@ -201,6 +207,12 @@ type DashboardServiceClient interface {
 	// Reuses core.proto's QueryLogsRequest/QueryLogsResponse
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	QueryLogs(context.Context, *connect.Request[v1.QueryLogsRequest]) (*connect.Response[v1.QueryLogsResponse], error)
+	// thot's activity feed + the human side of its permission prompts
+	// (docs/adr/0035). The dashboard is the *only* place a thot permission
+	// decision can be made — its Discord channel is notify-only and never
+	// an approval path.
+	ListThotEvents(context.Context, *connect.Request[v1.ListThotEventsRequest]) (*connect.Response[v1.ListThotEventsResponse], error)
+	RespondToThotPermission(context.Context, *connect.Request[v1.RespondToThotPermissionRequest]) (*connect.Response[v1.RespondToThotPermissionResponse], error)
 }
 
 // NewDashboardServiceClient constructs a client for the agentfleet.v1.DashboardService service. By
@@ -424,46 +436,60 @@ func NewDashboardServiceClient(httpClient connect.HTTPClient, baseURL string, op
 			connect.WithSchema(dashboardServiceMethods.ByName("QueryLogs")),
 			connect.WithClientOptions(opts...),
 		),
+		listThotEvents: connect.NewClient[v1.ListThotEventsRequest, v1.ListThotEventsResponse](
+			httpClient,
+			baseURL+DashboardServiceListThotEventsProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("ListThotEvents")),
+			connect.WithClientOptions(opts...),
+		),
+		respondToThotPermission: connect.NewClient[v1.RespondToThotPermissionRequest, v1.RespondToThotPermissionResponse](
+			httpClient,
+			baseURL+DashboardServiceRespondToThotPermissionProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("RespondToThotPermission")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // dashboardServiceClient implements DashboardServiceClient.
 type dashboardServiceClient struct {
-	listTasks           *connect.Client[v1.ListTasksRequest, v1.ListTasksResponse]
-	getTask             *connect.Client[v1.GetTaskRequest, v1.GetTaskResponse]
-	createTask          *connect.Client[v1.CreateTaskRequest, v1.CreateTaskResponse]
-	getTranscript       *connect.Client[v1.ReadTranscriptSinceRequest, v1.ReadTranscriptSinceResponse]
-	streamTranscript    *connect.Client[v1.StreamTranscriptRequest, v1.TranscriptEntry]
-	getE2EStatus        *connect.Client[v1.GetE2EStatusRequest, v1.GetE2EStatusResponse]
-	kill                *connect.Client[v1.KillRequest, v1.KillResponse]
-	interrupt           *connect.Client[v1.InterruptRequest, v1.InterruptResponse]
-	setPermissionMode   *connect.Client[v1.SetPermissionModeRequest, v1.SetPermissionModeResponse]
-	warm                *connect.Client[v1.WarmRequest, v1.WarmResponse]
-	killE2E             *connect.Client[v1.KillE2ERequest, v1.KillE2EResponse]
-	answerQuestion      *connect.Client[v1.AnswerQuestionRequest, v1.AnswerQuestionResponse]
-	respondToPermission *connect.Client[v1.RespondToPermissionRequest, v1.RespondToPermissionResponse]
-	discuss             *connect.Client[v1.DiscussRequest, v1.DiscussResponse]
-	deleteTask          *connect.Client[v1.DeleteTaskRequest, v1.DeleteTaskResponse]
-	listWorktrees       *connect.Client[v1.ListWorktreesRequest, v1.ListWorktreesViewResponse]
-	deleteWorktree      *connect.Client[v1.DeleteWorktreeRequest, v1.DeleteWorktreeResponse]
-	getJournal          *connect.Client[v1.GetJournalRequest, v1.GetJournalResponse]
-	listRepos           *connect.Client[v1.ListReposRequest, v1.ListReposResponse]
-	createRepo          *connect.Client[v1.CreateRepoRequest, v1.CreateRepoResponse]
-	updateRepo          *connect.Client[v1.UpdateRepoRequest, v1.UpdateRepoResponse]
-	deleteRepo          *connect.Client[v1.DeleteRepoRequest, v1.DeleteRepoResponse]
-	listRepoProfiles    *connect.Client[v1.ListRepoProfilesRequest, v1.ListRepoProfilesResponse]
-	createRepoProfile   *connect.Client[v1.CreateRepoProfileRequest, v1.CreateRepoProfileResponse]
-	updateRepoProfile   *connect.Client[v1.UpdateRepoProfileRequest, v1.UpdateRepoProfileResponse]
-	deleteRepoProfile   *connect.Client[v1.DeleteRepoProfileRequest, v1.DeleteRepoProfileResponse]
-	listPromptSnippets  *connect.Client[v1.ListPromptSnippetsRequest, v1.ListPromptSnippetsResponse]
-	createPromptSnippet *connect.Client[v1.CreatePromptSnippetRequest, v1.CreatePromptSnippetResponse]
-	updatePromptSnippet *connect.Client[v1.UpdatePromptSnippetRequest, v1.UpdatePromptSnippetResponse]
-	deletePromptSnippet *connect.Client[v1.DeletePromptSnippetRequest, v1.DeletePromptSnippetResponse]
-	listFiles           *connect.Client[v1.ListFilesRequest, v1.ListFilesResponse]
-	getFileUploadUrl    *connect.Client[v1.GetFileUploadUrlRequest, v1.GetFileUploadUrlResponse]
-	getFileDownloadUrl  *connect.Client[v1.GetFileDownloadUrlRequest, v1.GetFileDownloadUrlResponse]
-	deleteFile          *connect.Client[v1.DeleteFileRequest, v1.DeleteFileResponse]
-	queryLogs           *connect.Client[v1.QueryLogsRequest, v1.QueryLogsResponse]
+	listTasks               *connect.Client[v1.ListTasksRequest, v1.ListTasksResponse]
+	getTask                 *connect.Client[v1.GetTaskRequest, v1.GetTaskResponse]
+	createTask              *connect.Client[v1.CreateTaskRequest, v1.CreateTaskResponse]
+	getTranscript           *connect.Client[v1.ReadTranscriptSinceRequest, v1.ReadTranscriptSinceResponse]
+	streamTranscript        *connect.Client[v1.StreamTranscriptRequest, v1.TranscriptEntry]
+	getE2EStatus            *connect.Client[v1.GetE2EStatusRequest, v1.GetE2EStatusResponse]
+	kill                    *connect.Client[v1.KillRequest, v1.KillResponse]
+	interrupt               *connect.Client[v1.InterruptRequest, v1.InterruptResponse]
+	setPermissionMode       *connect.Client[v1.SetPermissionModeRequest, v1.SetPermissionModeResponse]
+	warm                    *connect.Client[v1.WarmRequest, v1.WarmResponse]
+	killE2E                 *connect.Client[v1.KillE2ERequest, v1.KillE2EResponse]
+	answerQuestion          *connect.Client[v1.AnswerQuestionRequest, v1.AnswerQuestionResponse]
+	respondToPermission     *connect.Client[v1.RespondToPermissionRequest, v1.RespondToPermissionResponse]
+	discuss                 *connect.Client[v1.DiscussRequest, v1.DiscussResponse]
+	deleteTask              *connect.Client[v1.DeleteTaskRequest, v1.DeleteTaskResponse]
+	listWorktrees           *connect.Client[v1.ListWorktreesRequest, v1.ListWorktreesViewResponse]
+	deleteWorktree          *connect.Client[v1.DeleteWorktreeRequest, v1.DeleteWorktreeResponse]
+	getJournal              *connect.Client[v1.GetJournalRequest, v1.GetJournalResponse]
+	listRepos               *connect.Client[v1.ListReposRequest, v1.ListReposResponse]
+	createRepo              *connect.Client[v1.CreateRepoRequest, v1.CreateRepoResponse]
+	updateRepo              *connect.Client[v1.UpdateRepoRequest, v1.UpdateRepoResponse]
+	deleteRepo              *connect.Client[v1.DeleteRepoRequest, v1.DeleteRepoResponse]
+	listRepoProfiles        *connect.Client[v1.ListRepoProfilesRequest, v1.ListRepoProfilesResponse]
+	createRepoProfile       *connect.Client[v1.CreateRepoProfileRequest, v1.CreateRepoProfileResponse]
+	updateRepoProfile       *connect.Client[v1.UpdateRepoProfileRequest, v1.UpdateRepoProfileResponse]
+	deleteRepoProfile       *connect.Client[v1.DeleteRepoProfileRequest, v1.DeleteRepoProfileResponse]
+	listPromptSnippets      *connect.Client[v1.ListPromptSnippetsRequest, v1.ListPromptSnippetsResponse]
+	createPromptSnippet     *connect.Client[v1.CreatePromptSnippetRequest, v1.CreatePromptSnippetResponse]
+	updatePromptSnippet     *connect.Client[v1.UpdatePromptSnippetRequest, v1.UpdatePromptSnippetResponse]
+	deletePromptSnippet     *connect.Client[v1.DeletePromptSnippetRequest, v1.DeletePromptSnippetResponse]
+	listFiles               *connect.Client[v1.ListFilesRequest, v1.ListFilesResponse]
+	getFileUploadUrl        *connect.Client[v1.GetFileUploadUrlRequest, v1.GetFileUploadUrlResponse]
+	getFileDownloadUrl      *connect.Client[v1.GetFileDownloadUrlRequest, v1.GetFileDownloadUrlResponse]
+	deleteFile              *connect.Client[v1.DeleteFileRequest, v1.DeleteFileResponse]
+	queryLogs               *connect.Client[v1.QueryLogsRequest, v1.QueryLogsResponse]
+	listThotEvents          *connect.Client[v1.ListThotEventsRequest, v1.ListThotEventsResponse]
+	respondToThotPermission *connect.Client[v1.RespondToThotPermissionRequest, v1.RespondToThotPermissionResponse]
 }
 
 // ListTasks calls agentfleet.v1.DashboardService.ListTasks.
@@ -641,6 +667,16 @@ func (c *dashboardServiceClient) QueryLogs(ctx context.Context, req *connect.Req
 	return c.queryLogs.CallUnary(ctx, req)
 }
 
+// ListThotEvents calls agentfleet.v1.DashboardService.ListThotEvents.
+func (c *dashboardServiceClient) ListThotEvents(ctx context.Context, req *connect.Request[v1.ListThotEventsRequest]) (*connect.Response[v1.ListThotEventsResponse], error) {
+	return c.listThotEvents.CallUnary(ctx, req)
+}
+
+// RespondToThotPermission calls agentfleet.v1.DashboardService.RespondToThotPermission.
+func (c *dashboardServiceClient) RespondToThotPermission(ctx context.Context, req *connect.Request[v1.RespondToThotPermissionRequest]) (*connect.Response[v1.RespondToThotPermissionResponse], error) {
+	return c.respondToThotPermission.CallUnary(ctx, req)
+}
+
 // DashboardServiceHandler is an implementation of the agentfleet.v1.DashboardService service.
 type DashboardServiceHandler interface {
 	ListTasks(context.Context, *connect.Request[v1.ListTasksRequest]) (*connect.Response[v1.ListTasksResponse], error)
@@ -704,6 +740,12 @@ type DashboardServiceHandler interface {
 	// Reuses core.proto's QueryLogsRequest/QueryLogsResponse
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	QueryLogs(context.Context, *connect.Request[v1.QueryLogsRequest]) (*connect.Response[v1.QueryLogsResponse], error)
+	// thot's activity feed + the human side of its permission prompts
+	// (docs/adr/0035). The dashboard is the *only* place a thot permission
+	// decision can be made — its Discord channel is notify-only and never
+	// an approval path.
+	ListThotEvents(context.Context, *connect.Request[v1.ListThotEventsRequest]) (*connect.Response[v1.ListThotEventsResponse], error)
+	RespondToThotPermission(context.Context, *connect.Request[v1.RespondToThotPermissionRequest]) (*connect.Response[v1.RespondToThotPermissionResponse], error)
 }
 
 // NewDashboardServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -923,6 +965,18 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 		connect.WithSchema(dashboardServiceMethods.ByName("QueryLogs")),
 		connect.WithHandlerOptions(opts...),
 	)
+	dashboardServiceListThotEventsHandler := connect.NewUnaryHandler(
+		DashboardServiceListThotEventsProcedure,
+		svc.ListThotEvents,
+		connect.WithSchema(dashboardServiceMethods.ByName("ListThotEvents")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dashboardServiceRespondToThotPermissionHandler := connect.NewUnaryHandler(
+		DashboardServiceRespondToThotPermissionProcedure,
+		svc.RespondToThotPermission,
+		connect.WithSchema(dashboardServiceMethods.ByName("RespondToThotPermission")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/agentfleet.v1.DashboardService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case DashboardServiceListTasksProcedure:
@@ -995,6 +1049,10 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 			dashboardServiceDeleteFileHandler.ServeHTTP(w, r)
 		case DashboardServiceQueryLogsProcedure:
 			dashboardServiceQueryLogsHandler.ServeHTTP(w, r)
+		case DashboardServiceListThotEventsProcedure:
+			dashboardServiceListThotEventsHandler.ServeHTTP(w, r)
+		case DashboardServiceRespondToThotPermissionProcedure:
+			dashboardServiceRespondToThotPermissionHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -1142,4 +1200,12 @@ func (UnimplementedDashboardServiceHandler) DeleteFile(context.Context, *connect
 
 func (UnimplementedDashboardServiceHandler) QueryLogs(context.Context, *connect.Request[v1.QueryLogsRequest]) (*connect.Response[v1.QueryLogsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.QueryLogs is not implemented"))
+}
+
+func (UnimplementedDashboardServiceHandler) ListThotEvents(context.Context, *connect.Request[v1.ListThotEventsRequest]) (*connect.Response[v1.ListThotEventsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.ListThotEvents is not implemented"))
+}
+
+func (UnimplementedDashboardServiceHandler) RespondToThotPermission(context.Context, *connect.Request[v1.RespondToThotPermissionRequest]) (*connect.Response[v1.RespondToThotPermissionResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.RespondToThotPermission is not implemented"))
 }

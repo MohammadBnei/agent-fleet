@@ -467,6 +467,41 @@ export interface ViewLogsResponse {
   logsText: string;
 }
 
+/**
+ * RequestThotPermission is thot's canUseTool prompt: appends a
+ * permission_request and blocks until a human decides — the same
+ * ask-and-long-poll shape AskUserQuestion already uses.
+ *
+ * A decision is never inferred from silence (docs/adr/0029): a timeout
+ * returns status="pending" with the request id, and thot treats that as
+ * "no answer yet", never as consent.
+ */
+export interface RequestThotPermissionRequest {
+  toolName: string;
+  inputJson: string;
+  timeoutMs: number;
+}
+
+export interface RequestThotPermissionResponse {
+  /** "allowed" | "denied" | "pending" */
+  status: string;
+  /** the human's reason, when denied */
+  message: string;
+  requestId: number;
+}
+
+export interface AppendThotEventRequest {
+  /** finding | alert | audit_run */
+  kind: string;
+  actor: string;
+  payload: string;
+  idempotencyKey: string;
+}
+
+export interface AppendThotEventResponse {
+  id: number;
+}
+
 function createBasePodEvent(): PodEvent {
   return { taskId: "", kind: 0, phase: 0, podName: "", message: "" };
 }
@@ -2052,6 +2087,177 @@ export const ViewLogsResponse: MessageFns<ViewLogsResponse> = {
   },
 };
 
+function createBaseRequestThotPermissionRequest(): RequestThotPermissionRequest {
+  return { toolName: "", inputJson: "", timeoutMs: 0 };
+}
+
+export const RequestThotPermissionRequest: MessageFns<RequestThotPermissionRequest> = {
+  fromJSON(object: any): RequestThotPermissionRequest {
+    return {
+      toolName: isSet(object.toolName)
+        ? globalThis.String(object.toolName)
+        : isSet(object.tool_name)
+        ? globalThis.String(object.tool_name)
+        : "",
+      inputJson: isSet(object.inputJson)
+        ? globalThis.String(object.inputJson)
+        : isSet(object.input_json)
+        ? globalThis.String(object.input_json)
+        : "",
+      timeoutMs: isSet(object.timeoutMs)
+        ? globalThis.Number(object.timeoutMs)
+        : isSet(object.timeout_ms)
+        ? globalThis.Number(object.timeout_ms)
+        : 0,
+    };
+  },
+
+  toJSON(message: RequestThotPermissionRequest): unknown {
+    const obj: any = {};
+    if (message.toolName !== "") {
+      obj.toolName = message.toolName;
+    }
+    if (message.inputJson !== "") {
+      obj.inputJson = message.inputJson;
+    }
+    if (message.timeoutMs !== 0) {
+      obj.timeoutMs = Math.round(message.timeoutMs);
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<RequestThotPermissionRequest>, I>>(base?: I): RequestThotPermissionRequest {
+    return RequestThotPermissionRequest.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<RequestThotPermissionRequest>, I>>(object: I): RequestThotPermissionRequest {
+    const message = createBaseRequestThotPermissionRequest();
+    message.toolName = object.toolName ?? "";
+    message.inputJson = object.inputJson ?? "";
+    message.timeoutMs = object.timeoutMs ?? 0;
+    return message;
+  },
+};
+
+function createBaseRequestThotPermissionResponse(): RequestThotPermissionResponse {
+  return { status: "", message: "", requestId: 0 };
+}
+
+export const RequestThotPermissionResponse: MessageFns<RequestThotPermissionResponse> = {
+  fromJSON(object: any): RequestThotPermissionResponse {
+    return {
+      status: isSet(object.status) ? globalThis.String(object.status) : "",
+      message: isSet(object.message) ? globalThis.String(object.message) : "",
+      requestId: isSet(object.requestId)
+        ? globalThis.Number(object.requestId)
+        : isSet(object.request_id)
+        ? globalThis.Number(object.request_id)
+        : 0,
+    };
+  },
+
+  toJSON(message: RequestThotPermissionResponse): unknown {
+    const obj: any = {};
+    if (message.status !== "") {
+      obj.status = message.status;
+    }
+    if (message.message !== "") {
+      obj.message = message.message;
+    }
+    if (message.requestId !== 0) {
+      obj.requestId = Math.round(message.requestId);
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<RequestThotPermissionResponse>, I>>(base?: I): RequestThotPermissionResponse {
+    return RequestThotPermissionResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<RequestThotPermissionResponse>, I>>(
+    object: I,
+  ): RequestThotPermissionResponse {
+    const message = createBaseRequestThotPermissionResponse();
+    message.status = object.status ?? "";
+    message.message = object.message ?? "";
+    message.requestId = object.requestId ?? 0;
+    return message;
+  },
+};
+
+function createBaseAppendThotEventRequest(): AppendThotEventRequest {
+  return { kind: "", actor: "", payload: "", idempotencyKey: "" };
+}
+
+export const AppendThotEventRequest: MessageFns<AppendThotEventRequest> = {
+  fromJSON(object: any): AppendThotEventRequest {
+    return {
+      kind: isSet(object.kind) ? globalThis.String(object.kind) : "",
+      actor: isSet(object.actor) ? globalThis.String(object.actor) : "",
+      payload: isSet(object.payload) ? globalThis.String(object.payload) : "",
+      idempotencyKey: isSet(object.idempotencyKey)
+        ? globalThis.String(object.idempotencyKey)
+        : isSet(object.idempotency_key)
+        ? globalThis.String(object.idempotency_key)
+        : "",
+    };
+  },
+
+  toJSON(message: AppendThotEventRequest): unknown {
+    const obj: any = {};
+    if (message.kind !== "") {
+      obj.kind = message.kind;
+    }
+    if (message.actor !== "") {
+      obj.actor = message.actor;
+    }
+    if (message.payload !== "") {
+      obj.payload = message.payload;
+    }
+    if (message.idempotencyKey !== "") {
+      obj.idempotencyKey = message.idempotencyKey;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<AppendThotEventRequest>, I>>(base?: I): AppendThotEventRequest {
+    return AppendThotEventRequest.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<AppendThotEventRequest>, I>>(object: I): AppendThotEventRequest {
+    const message = createBaseAppendThotEventRequest();
+    message.kind = object.kind ?? "";
+    message.actor = object.actor ?? "";
+    message.payload = object.payload ?? "";
+    message.idempotencyKey = object.idempotencyKey ?? "";
+    return message;
+  },
+};
+
+function createBaseAppendThotEventResponse(): AppendThotEventResponse {
+  return { id: 0 };
+}
+
+export const AppendThotEventResponse: MessageFns<AppendThotEventResponse> = {
+  fromJSON(object: any): AppendThotEventResponse {
+    return { id: isSet(object.id) ? globalThis.Number(object.id) : 0 };
+  },
+
+  toJSON(message: AppendThotEventResponse): unknown {
+    const obj: any = {};
+    if (message.id !== 0) {
+      obj.id = Math.round(message.id);
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<AppendThotEventResponse>, I>>(base?: I): AppendThotEventResponse {
+    return AppendThotEventResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<AppendThotEventResponse>, I>>(object: I): AppendThotEventResponse {
+    const message = createBaseAppendThotEventResponse();
+    message.id = object.id ?? 0;
+    return message;
+  },
+};
+
 export interface CoreService {
   /** buf:lint:ignore RPC_REQUEST_STANDARD_NAME */
   ReportPodEvents(request: Observable<PodEvent>): Promise<ReportPodEventsResponse>;
@@ -2113,6 +2319,14 @@ export interface CoreService {
   /** buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE */
   DeleteFile(request: DeleteFileRequest): Promise<DeleteFileResponse>;
   ViewLogs(request: ViewLogsRequest): Promise<ViewLogsResponse>;
+  /**
+   * thot-facing (docs/adr/0035). thot reaches core over gRPC like every
+   * other component — that ADR's hub-and-spoke exception is about callers
+   * reaching *thot* directly, not about thot bypassing core for
+   * persistence. core remains the sole Postgres-credential holder.
+   */
+  RequestThotPermission(request: RequestThotPermissionRequest): Promise<RequestThotPermissionResponse>;
+  AppendThotEvent(request: AppendThotEventRequest): Promise<AppendThotEventResponse>;
 }
 
 type Builtin = Date | Function | Uint8Array | string | number | boolean | undefined;

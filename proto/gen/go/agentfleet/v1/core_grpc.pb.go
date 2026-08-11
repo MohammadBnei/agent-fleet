@@ -19,29 +19,31 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	CoreService_ReportPodEvents_FullMethodName     = "/agentfleet.v1.CoreService/ReportPodEvents"
-	CoreService_SendMessage_FullMethodName         = "/agentfleet.v1.CoreService/SendMessage"
-	CoreService_WaitForMessages_FullMethodName     = "/agentfleet.v1.CoreService/WaitForMessages"
-	CoreService_AskUserQuestion_FullMethodName     = "/agentfleet.v1.CoreService/AskUserQuestion"
-	CoreService_RequestE2EEnv_FullMethodName       = "/agentfleet.v1.CoreService/RequestE2eEnv"
-	CoreService_KillE2EEnv_FullMethodName          = "/agentfleet.v1.CoreService/KillE2eEnv"
-	CoreService_ListE2ETools_FullMethodName        = "/agentfleet.v1.CoreService/ListE2eTools"
-	CoreService_CallE2ETool_FullMethodName         = "/agentfleet.v1.CoreService/CallE2eTool"
-	CoreService_GetTask_FullMethodName             = "/agentfleet.v1.CoreService/GetTask"
-	CoreService_SetPermissionMode_FullMethodName   = "/agentfleet.v1.CoreService/SetPermissionMode"
-	CoreService_Heartbeat_FullMethodName           = "/agentfleet.v1.CoreService/Heartbeat"
-	CoreService_SetTaskStatus_FullMethodName       = "/agentfleet.v1.CoreService/SetTaskStatus"
-	CoreService_AppendJournal_FullMethodName       = "/agentfleet.v1.CoreService/AppendJournal"
-	CoreService_SearchJournal_FullMethodName       = "/agentfleet.v1.CoreService/SearchJournal"
-	CoreService_SaveSessionId_FullMethodName       = "/agentfleet.v1.CoreService/SaveSessionId"
-	CoreService_StillHoldsLease_FullMethodName     = "/agentfleet.v1.CoreService/StillHoldsLease"
-	CoreService_PushToolTelemetry_FullMethodName   = "/agentfleet.v1.CoreService/PushToolTelemetry"
-	CoreService_StreamHumanMessages_FullMethodName = "/agentfleet.v1.CoreService/StreamHumanMessages"
-	CoreService_ListFiles_FullMethodName           = "/agentfleet.v1.CoreService/ListFiles"
-	CoreService_GetFileUploadUrl_FullMethodName    = "/agentfleet.v1.CoreService/GetFileUploadUrl"
-	CoreService_GetFileDownloadUrl_FullMethodName  = "/agentfleet.v1.CoreService/GetFileDownloadUrl"
-	CoreService_DeleteFile_FullMethodName          = "/agentfleet.v1.CoreService/DeleteFile"
-	CoreService_ViewLogs_FullMethodName            = "/agentfleet.v1.CoreService/ViewLogs"
+	CoreService_ReportPodEvents_FullMethodName       = "/agentfleet.v1.CoreService/ReportPodEvents"
+	CoreService_SendMessage_FullMethodName           = "/agentfleet.v1.CoreService/SendMessage"
+	CoreService_WaitForMessages_FullMethodName       = "/agentfleet.v1.CoreService/WaitForMessages"
+	CoreService_AskUserQuestion_FullMethodName       = "/agentfleet.v1.CoreService/AskUserQuestion"
+	CoreService_RequestE2EEnv_FullMethodName         = "/agentfleet.v1.CoreService/RequestE2eEnv"
+	CoreService_KillE2EEnv_FullMethodName            = "/agentfleet.v1.CoreService/KillE2eEnv"
+	CoreService_ListE2ETools_FullMethodName          = "/agentfleet.v1.CoreService/ListE2eTools"
+	CoreService_CallE2ETool_FullMethodName           = "/agentfleet.v1.CoreService/CallE2eTool"
+	CoreService_GetTask_FullMethodName               = "/agentfleet.v1.CoreService/GetTask"
+	CoreService_SetPermissionMode_FullMethodName     = "/agentfleet.v1.CoreService/SetPermissionMode"
+	CoreService_Heartbeat_FullMethodName             = "/agentfleet.v1.CoreService/Heartbeat"
+	CoreService_SetTaskStatus_FullMethodName         = "/agentfleet.v1.CoreService/SetTaskStatus"
+	CoreService_AppendJournal_FullMethodName         = "/agentfleet.v1.CoreService/AppendJournal"
+	CoreService_SearchJournal_FullMethodName         = "/agentfleet.v1.CoreService/SearchJournal"
+	CoreService_SaveSessionId_FullMethodName         = "/agentfleet.v1.CoreService/SaveSessionId"
+	CoreService_StillHoldsLease_FullMethodName       = "/agentfleet.v1.CoreService/StillHoldsLease"
+	CoreService_PushToolTelemetry_FullMethodName     = "/agentfleet.v1.CoreService/PushToolTelemetry"
+	CoreService_StreamHumanMessages_FullMethodName   = "/agentfleet.v1.CoreService/StreamHumanMessages"
+	CoreService_ListFiles_FullMethodName             = "/agentfleet.v1.CoreService/ListFiles"
+	CoreService_GetFileUploadUrl_FullMethodName      = "/agentfleet.v1.CoreService/GetFileUploadUrl"
+	CoreService_GetFileDownloadUrl_FullMethodName    = "/agentfleet.v1.CoreService/GetFileDownloadUrl"
+	CoreService_DeleteFile_FullMethodName            = "/agentfleet.v1.CoreService/DeleteFile"
+	CoreService_ViewLogs_FullMethodName              = "/agentfleet.v1.CoreService/ViewLogs"
+	CoreService_RequestThotPermission_FullMethodName = "/agentfleet.v1.CoreService/RequestThotPermission"
+	CoreService_AppendThotEvent_FullMethodName       = "/agentfleet.v1.CoreService/AppendThotEvent"
 )
 
 // CoreServiceClient is the client API for CoreService service.
@@ -98,6 +100,12 @@ type CoreServiceClient interface {
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	DeleteFile(ctx context.Context, in *DeleteFileRequest, opts ...grpc.CallOption) (*DeleteFileResponse, error)
 	ViewLogs(ctx context.Context, in *ViewLogsRequest, opts ...grpc.CallOption) (*ViewLogsResponse, error)
+	// thot-facing (docs/adr/0035). thot reaches core over gRPC like every
+	// other component — that ADR's hub-and-spoke exception is about callers
+	// reaching *thot* directly, not about thot bypassing core for
+	// persistence. core remains the sole Postgres-credential holder.
+	RequestThotPermission(ctx context.Context, in *RequestThotPermissionRequest, opts ...grpc.CallOption) (*RequestThotPermissionResponse, error)
+	AppendThotEvent(ctx context.Context, in *AppendThotEventRequest, opts ...grpc.CallOption) (*AppendThotEventResponse, error)
 }
 
 type coreServiceClient struct {
@@ -350,6 +358,26 @@ func (c *coreServiceClient) ViewLogs(ctx context.Context, in *ViewLogsRequest, o
 	return out, nil
 }
 
+func (c *coreServiceClient) RequestThotPermission(ctx context.Context, in *RequestThotPermissionRequest, opts ...grpc.CallOption) (*RequestThotPermissionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RequestThotPermissionResponse)
+	err := c.cc.Invoke(ctx, CoreService_RequestThotPermission_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *coreServiceClient) AppendThotEvent(ctx context.Context, in *AppendThotEventRequest, opts ...grpc.CallOption) (*AppendThotEventResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AppendThotEventResponse)
+	err := c.cc.Invoke(ctx, CoreService_AppendThotEvent_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CoreServiceServer is the server API for CoreService service.
 // All implementations must embed UnimplementedCoreServiceServer
 // for forward compatibility.
@@ -404,6 +432,12 @@ type CoreServiceServer interface {
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	DeleteFile(context.Context, *DeleteFileRequest) (*DeleteFileResponse, error)
 	ViewLogs(context.Context, *ViewLogsRequest) (*ViewLogsResponse, error)
+	// thot-facing (docs/adr/0035). thot reaches core over gRPC like every
+	// other component — that ADR's hub-and-spoke exception is about callers
+	// reaching *thot* directly, not about thot bypassing core for
+	// persistence. core remains the sole Postgres-credential holder.
+	RequestThotPermission(context.Context, *RequestThotPermissionRequest) (*RequestThotPermissionResponse, error)
+	AppendThotEvent(context.Context, *AppendThotEventRequest) (*AppendThotEventResponse, error)
 	mustEmbedUnimplementedCoreServiceServer()
 }
 
@@ -482,6 +516,12 @@ func (UnimplementedCoreServiceServer) DeleteFile(context.Context, *DeleteFileReq
 }
 func (UnimplementedCoreServiceServer) ViewLogs(context.Context, *ViewLogsRequest) (*ViewLogsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ViewLogs not implemented")
+}
+func (UnimplementedCoreServiceServer) RequestThotPermission(context.Context, *RequestThotPermissionRequest) (*RequestThotPermissionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RequestThotPermission not implemented")
+}
+func (UnimplementedCoreServiceServer) AppendThotEvent(context.Context, *AppendThotEventRequest) (*AppendThotEventResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method AppendThotEvent not implemented")
 }
 func (UnimplementedCoreServiceServer) mustEmbedUnimplementedCoreServiceServer() {}
 func (UnimplementedCoreServiceServer) testEmbeddedByValue()                     {}
@@ -900,6 +940,42 @@ func _CoreService_ViewLogs_Handler(srv interface{}, ctx context.Context, dec fun
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CoreService_RequestThotPermission_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RequestThotPermissionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).RequestThotPermission(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_RequestThotPermission_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).RequestThotPermission(ctx, req.(*RequestThotPermissionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CoreService_AppendThotEvent_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AppendThotEventRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).AppendThotEvent(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_AppendThotEvent_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).AppendThotEvent(ctx, req.(*AppendThotEventRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // CoreService_ServiceDesc is the grpc.ServiceDesc for CoreService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -990,6 +1066,14 @@ var CoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ViewLogs",
 			Handler:    _CoreService_ViewLogs_Handler,
+		},
+		{
+			MethodName: "RequestThotPermission",
+			Handler:    _CoreService_RequestThotPermission_Handler,
+		},
+		{
+			MethodName: "AppendThotEvent",
+			Handler:    _CoreService_AppendThotEvent_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

@@ -28,6 +28,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/repoprofiles"
 	"github.com/MohammadBnei/agent-fleet/core/internal/repos"
 	"github.com/MohammadBnei/agent-fleet/core/internal/tasks"
+	"github.com/MohammadBnei/agent-fleet/core/internal/thotevents"
 	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
 	"github.com/MohammadBnei/agent-fleet/core/internal/webui"
 )
@@ -50,6 +51,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool) error {
 	repoStore := repos.NewStore(pool)
 	profileStore := repoprofiles.NewStore(pool)
 	snippetStore := promptsnippets.NewStore(pool)
+	thotEventStore := thotevents.NewStore(pool)
 	// Every consumer below except SetNudge (a *PostgresStore-only method,
 	// not part of the transcript.Store interface) goes through this
 	// activity-tracking wrapper instead of `store` directly — see its own
@@ -125,7 +127,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool) error {
 	// reaches everything else (the old /mcp HTTP surface, and the direct-SQL
 	// calls worker/src/db.ts used to make) through this same service.
 	grpcServer := grpc.NewServer(grpc.UnaryInterceptor(coreserver.AccessLogInterceptor))
-	agentfleetv1.RegisterCoreServiceServer(grpcServer, coreserver.New(activityStore, taskStore, journalStore, profileStore, provisioner, files, loki))
+	agentfleetv1.RegisterCoreServiceServer(grpcServer, coreserver.New(activityStore, taskStore, journalStore, profileStore, provisioner, files, loki, thotEventStore))
 	grpcLis, err := net.Listen("tcp", ":"+cfg.GRPCPort)
 	if err != nil {
 		return err
@@ -140,7 +142,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool) error {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
-	dashboardSvc := dashboard.NewServer(taskStore, activityStore, journalStore, repoStore, profileStore, snippetStore, provisioner, files, hub, cfg.MaxInFlight, loki)
+	dashboardSvc := dashboard.NewServer(taskStore, activityStore, journalStore, repoStore, profileStore, snippetStore, provisioner, files, hub, cfg.MaxInFlight, loki, thotEventStore)
 	dashboardPath, dashboardHandler := agentfleetv1connect.NewDashboardServiceHandler(
 		dashboardSvc,
 		connect.WithInterceptors(dashboard.NewCSRFInterceptor(), dashboard.NewAccessLogInterceptor()),

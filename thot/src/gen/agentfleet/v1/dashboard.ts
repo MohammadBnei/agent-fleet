@@ -433,6 +433,42 @@ export interface DeletePromptSnippetResponse {
   status: string;
 }
 
+export interface ThotEvent {
+  id: number;
+  kind: string;
+  actor: string;
+  payload: string;
+  replyTo?: number | undefined;
+  createdAt: string;
+}
+
+export interface ListThotEventsRequest {
+  sinceId: number;
+  limit: number;
+}
+
+export interface ListThotEventsResponse {
+  events: ThotEvent[];
+  nextId: number;
+  /**
+   * Requests still awaiting a human decision — sent alongside the feed so
+   * a page refresh mid-prompt re-renders the pending card instead of
+   * losing it.
+   */
+  pending: ThotEvent[];
+}
+
+export interface RespondToThotPermissionRequest {
+  requestId: number;
+  allow: boolean;
+  /** reason, when denying */
+  message: string;
+}
+
+export interface RespondToThotPermissionResponse {
+  status: string;
+}
+
 function createBaseListTasksRequest(): ListTasksRequest {
   return { limit: 0 };
 }
@@ -4582,6 +4618,488 @@ export const DeletePromptSnippetResponse: MessageFns<DeletePromptSnippetResponse
   },
 };
 
+function createBaseThotEvent(): ThotEvent {
+  return { id: 0, kind: "", actor: "", payload: "", replyTo: undefined, createdAt: "" };
+}
+
+export const ThotEvent: MessageFns<ThotEvent> = {
+  encode(message: ThotEvent, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.id !== 0) {
+      writer.uint32(8).int64(message.id);
+    }
+    if (message.kind !== "") {
+      writer.uint32(18).string(message.kind);
+    }
+    if (message.actor !== "") {
+      writer.uint32(26).string(message.actor);
+    }
+    if (message.payload !== "") {
+      writer.uint32(34).string(message.payload);
+    }
+    if (message.replyTo !== undefined) {
+      writer.uint32(40).int64(message.replyTo);
+    }
+    if (message.createdAt !== "") {
+      writer.uint32(50).string(message.createdAt);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): ThotEvent {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseThotEvent();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 8) {
+            break;
+          }
+
+          message.id = longToNumber(reader.int64());
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.kind = reader.string();
+          continue;
+        }
+        case 3: {
+          if (tag !== 26) {
+            break;
+          }
+
+          message.actor = reader.string();
+          continue;
+        }
+        case 4: {
+          if (tag !== 34) {
+            break;
+          }
+
+          message.payload = reader.string();
+          continue;
+        }
+        case 5: {
+          if (tag !== 40) {
+            break;
+          }
+
+          message.replyTo = longToNumber(reader.int64());
+          continue;
+        }
+        case 6: {
+          if (tag !== 50) {
+            break;
+          }
+
+          message.createdAt = reader.string();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): ThotEvent {
+    return {
+      id: isSet(object.id) ? globalThis.Number(object.id) : 0,
+      kind: isSet(object.kind) ? globalThis.String(object.kind) : "",
+      actor: isSet(object.actor) ? globalThis.String(object.actor) : "",
+      payload: isSet(object.payload) ? globalThis.String(object.payload) : "",
+      replyTo: isSet(object.replyTo)
+        ? globalThis.Number(object.replyTo)
+        : isSet(object.reply_to)
+        ? globalThis.Number(object.reply_to)
+        : undefined,
+      createdAt: isSet(object.createdAt)
+        ? globalThis.String(object.createdAt)
+        : isSet(object.created_at)
+        ? globalThis.String(object.created_at)
+        : "",
+    };
+  },
+
+  toJSON(message: ThotEvent): unknown {
+    const obj: any = {};
+    if (message.id !== 0) {
+      obj.id = Math.round(message.id);
+    }
+    if (message.kind !== "") {
+      obj.kind = message.kind;
+    }
+    if (message.actor !== "") {
+      obj.actor = message.actor;
+    }
+    if (message.payload !== "") {
+      obj.payload = message.payload;
+    }
+    if (message.replyTo !== undefined) {
+      obj.replyTo = Math.round(message.replyTo);
+    }
+    if (message.createdAt !== "") {
+      obj.createdAt = message.createdAt;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<ThotEvent>, I>>(base?: I): ThotEvent {
+    return ThotEvent.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<ThotEvent>, I>>(object: I): ThotEvent {
+    const message = createBaseThotEvent();
+    message.id = object.id ?? 0;
+    message.kind = object.kind ?? "";
+    message.actor = object.actor ?? "";
+    message.payload = object.payload ?? "";
+    message.replyTo = object.replyTo ?? undefined;
+    message.createdAt = object.createdAt ?? "";
+    return message;
+  },
+};
+
+function createBaseListThotEventsRequest(): ListThotEventsRequest {
+  return { sinceId: 0, limit: 0 };
+}
+
+export const ListThotEventsRequest: MessageFns<ListThotEventsRequest> = {
+  encode(message: ListThotEventsRequest, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.sinceId !== 0) {
+      writer.uint32(8).int64(message.sinceId);
+    }
+    if (message.limit !== 0) {
+      writer.uint32(16).int32(message.limit);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): ListThotEventsRequest {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseListThotEventsRequest();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 8) {
+            break;
+          }
+
+          message.sinceId = longToNumber(reader.int64());
+          continue;
+        }
+        case 2: {
+          if (tag !== 16) {
+            break;
+          }
+
+          message.limit = reader.int32();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): ListThotEventsRequest {
+    return {
+      sinceId: isSet(object.sinceId)
+        ? globalThis.Number(object.sinceId)
+        : isSet(object.since_id)
+        ? globalThis.Number(object.since_id)
+        : 0,
+      limit: isSet(object.limit) ? globalThis.Number(object.limit) : 0,
+    };
+  },
+
+  toJSON(message: ListThotEventsRequest): unknown {
+    const obj: any = {};
+    if (message.sinceId !== 0) {
+      obj.sinceId = Math.round(message.sinceId);
+    }
+    if (message.limit !== 0) {
+      obj.limit = Math.round(message.limit);
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<ListThotEventsRequest>, I>>(base?: I): ListThotEventsRequest {
+    return ListThotEventsRequest.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<ListThotEventsRequest>, I>>(object: I): ListThotEventsRequest {
+    const message = createBaseListThotEventsRequest();
+    message.sinceId = object.sinceId ?? 0;
+    message.limit = object.limit ?? 0;
+    return message;
+  },
+};
+
+function createBaseListThotEventsResponse(): ListThotEventsResponse {
+  return { events: [], nextId: 0, pending: [] };
+}
+
+export const ListThotEventsResponse: MessageFns<ListThotEventsResponse> = {
+  encode(message: ListThotEventsResponse, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    for (const v of message.events) {
+      ThotEvent.encode(v!, writer.uint32(10).fork()).join();
+    }
+    if (message.nextId !== 0) {
+      writer.uint32(16).int64(message.nextId);
+    }
+    for (const v of message.pending) {
+      ThotEvent.encode(v!, writer.uint32(26).fork()).join();
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): ListThotEventsResponse {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseListThotEventsResponse();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.events.push(ThotEvent.decode(reader, reader.uint32()));
+          continue;
+        }
+        case 2: {
+          if (tag !== 16) {
+            break;
+          }
+
+          message.nextId = longToNumber(reader.int64());
+          continue;
+        }
+        case 3: {
+          if (tag !== 26) {
+            break;
+          }
+
+          message.pending.push(ThotEvent.decode(reader, reader.uint32()));
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): ListThotEventsResponse {
+    return {
+      events: globalThis.Array.isArray(object?.events) ? object.events.map((e: any) => ThotEvent.fromJSON(e)) : [],
+      nextId: isSet(object.nextId)
+        ? globalThis.Number(object.nextId)
+        : isSet(object.next_id)
+        ? globalThis.Number(object.next_id)
+        : 0,
+      pending: globalThis.Array.isArray(object?.pending) ? object.pending.map((e: any) => ThotEvent.fromJSON(e)) : [],
+    };
+  },
+
+  toJSON(message: ListThotEventsResponse): unknown {
+    const obj: any = {};
+    if (message.events?.length) {
+      obj.events = message.events.map((e) => ThotEvent.toJSON(e));
+    }
+    if (message.nextId !== 0) {
+      obj.nextId = Math.round(message.nextId);
+    }
+    if (message.pending?.length) {
+      obj.pending = message.pending.map((e) => ThotEvent.toJSON(e));
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<ListThotEventsResponse>, I>>(base?: I): ListThotEventsResponse {
+    return ListThotEventsResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<ListThotEventsResponse>, I>>(object: I): ListThotEventsResponse {
+    const message = createBaseListThotEventsResponse();
+    message.events = object.events?.map((e) => ThotEvent.fromPartial(e)) || [];
+    message.nextId = object.nextId ?? 0;
+    message.pending = object.pending?.map((e) => ThotEvent.fromPartial(e)) || [];
+    return message;
+  },
+};
+
+function createBaseRespondToThotPermissionRequest(): RespondToThotPermissionRequest {
+  return { requestId: 0, allow: false, message: "" };
+}
+
+export const RespondToThotPermissionRequest: MessageFns<RespondToThotPermissionRequest> = {
+  encode(message: RespondToThotPermissionRequest, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.requestId !== 0) {
+      writer.uint32(8).int64(message.requestId);
+    }
+    if (message.allow !== false) {
+      writer.uint32(16).bool(message.allow);
+    }
+    if (message.message !== "") {
+      writer.uint32(26).string(message.message);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): RespondToThotPermissionRequest {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseRespondToThotPermissionRequest();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 8) {
+            break;
+          }
+
+          message.requestId = longToNumber(reader.int64());
+          continue;
+        }
+        case 2: {
+          if (tag !== 16) {
+            break;
+          }
+
+          message.allow = reader.bool();
+          continue;
+        }
+        case 3: {
+          if (tag !== 26) {
+            break;
+          }
+
+          message.message = reader.string();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): RespondToThotPermissionRequest {
+    return {
+      requestId: isSet(object.requestId)
+        ? globalThis.Number(object.requestId)
+        : isSet(object.request_id)
+        ? globalThis.Number(object.request_id)
+        : 0,
+      allow: isSet(object.allow) ? globalThis.Boolean(object.allow) : false,
+      message: isSet(object.message) ? globalThis.String(object.message) : "",
+    };
+  },
+
+  toJSON(message: RespondToThotPermissionRequest): unknown {
+    const obj: any = {};
+    if (message.requestId !== 0) {
+      obj.requestId = Math.round(message.requestId);
+    }
+    if (message.allow !== false) {
+      obj.allow = message.allow;
+    }
+    if (message.message !== "") {
+      obj.message = message.message;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<RespondToThotPermissionRequest>, I>>(base?: I): RespondToThotPermissionRequest {
+    return RespondToThotPermissionRequest.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<RespondToThotPermissionRequest>, I>>(
+    object: I,
+  ): RespondToThotPermissionRequest {
+    const message = createBaseRespondToThotPermissionRequest();
+    message.requestId = object.requestId ?? 0;
+    message.allow = object.allow ?? false;
+    message.message = object.message ?? "";
+    return message;
+  },
+};
+
+function createBaseRespondToThotPermissionResponse(): RespondToThotPermissionResponse {
+  return { status: "" };
+}
+
+export const RespondToThotPermissionResponse: MessageFns<RespondToThotPermissionResponse> = {
+  encode(message: RespondToThotPermissionResponse, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.status !== "") {
+      writer.uint32(10).string(message.status);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): RespondToThotPermissionResponse {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseRespondToThotPermissionResponse();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.status = reader.string();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): RespondToThotPermissionResponse {
+    return { status: isSet(object.status) ? globalThis.String(object.status) : "" };
+  },
+
+  toJSON(message: RespondToThotPermissionResponse): unknown {
+    const obj: any = {};
+    if (message.status !== "") {
+      obj.status = message.status;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<RespondToThotPermissionResponse>, I>>(base?: I): RespondToThotPermissionResponse {
+    return RespondToThotPermissionResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<RespondToThotPermissionResponse>, I>>(
+    object: I,
+  ): RespondToThotPermissionResponse {
+    const message = createBaseRespondToThotPermissionResponse();
+    message.status = object.status ?? "";
+    return message;
+  },
+};
+
 export type DashboardServiceService = typeof DashboardServiceService;
 export const DashboardServiceService = {
   listTasks: {
@@ -4966,6 +5484,35 @@ export const DashboardServiceService = {
     responseSerialize: (value: QueryLogsResponse): Buffer => Buffer.from(QueryLogsResponse.encode(value).finish()),
     responseDeserialize: (value: Buffer): QueryLogsResponse => QueryLogsResponse.decode(value),
   },
+  /**
+   * thot's activity feed + the human side of its permission prompts
+   * (docs/adr/0035). The dashboard is the *only* place a thot permission
+   * decision can be made — its Discord channel is notify-only and never
+   * an approval path.
+   */
+  listThotEvents: {
+    path: "/agentfleet.v1.DashboardService/ListThotEvents" as const,
+    requestStream: false as const,
+    responseStream: false as const,
+    requestSerialize: (value: ListThotEventsRequest): Buffer =>
+      Buffer.from(ListThotEventsRequest.encode(value).finish()),
+    requestDeserialize: (value: Buffer): ListThotEventsRequest => ListThotEventsRequest.decode(value),
+    responseSerialize: (value: ListThotEventsResponse): Buffer =>
+      Buffer.from(ListThotEventsResponse.encode(value).finish()),
+    responseDeserialize: (value: Buffer): ListThotEventsResponse => ListThotEventsResponse.decode(value),
+  },
+  respondToThotPermission: {
+    path: "/agentfleet.v1.DashboardService/RespondToThotPermission" as const,
+    requestStream: false as const,
+    responseStream: false as const,
+    requestSerialize: (value: RespondToThotPermissionRequest): Buffer =>
+      Buffer.from(RespondToThotPermissionRequest.encode(value).finish()),
+    requestDeserialize: (value: Buffer): RespondToThotPermissionRequest => RespondToThotPermissionRequest.decode(value),
+    responseSerialize: (value: RespondToThotPermissionResponse): Buffer =>
+      Buffer.from(RespondToThotPermissionResponse.encode(value).finish()),
+    responseDeserialize: (value: Buffer): RespondToThotPermissionResponse =>
+      RespondToThotPermissionResponse.decode(value),
+  },
 } as const;
 
 export interface DashboardServiceServer extends UntypedServiceImplementation {
@@ -5038,6 +5585,14 @@ export interface DashboardServiceServer extends UntypedServiceImplementation {
    * buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
    */
   queryLogs: handleUnaryCall<QueryLogsRequest, QueryLogsResponse>;
+  /**
+   * thot's activity feed + the human side of its permission prompts
+   * (docs/adr/0035). The dashboard is the *only* place a thot permission
+   * decision can be made — its Discord channel is notify-only and never
+   * an approval path.
+   */
+  listThotEvents: handleUnaryCall<ListThotEventsRequest, ListThotEventsResponse>;
+  respondToThotPermission: handleUnaryCall<RespondToThotPermissionRequest, RespondToThotPermissionResponse>;
 }
 
 export interface DashboardServiceClient extends Client {
@@ -5587,6 +6142,42 @@ export interface DashboardServiceClient extends Client {
     metadata: Metadata,
     options: Partial<CallOptions>,
     callback: (error: ServiceError | null, response: QueryLogsResponse) => void,
+  ): ClientUnaryCall;
+  /**
+   * thot's activity feed + the human side of its permission prompts
+   * (docs/adr/0035). The dashboard is the *only* place a thot permission
+   * decision can be made — its Discord channel is notify-only and never
+   * an approval path.
+   */
+  listThotEvents(
+    request: ListThotEventsRequest,
+    callback: (error: ServiceError | null, response: ListThotEventsResponse) => void,
+  ): ClientUnaryCall;
+  listThotEvents(
+    request: ListThotEventsRequest,
+    metadata: Metadata,
+    callback: (error: ServiceError | null, response: ListThotEventsResponse) => void,
+  ): ClientUnaryCall;
+  listThotEvents(
+    request: ListThotEventsRequest,
+    metadata: Metadata,
+    options: Partial<CallOptions>,
+    callback: (error: ServiceError | null, response: ListThotEventsResponse) => void,
+  ): ClientUnaryCall;
+  respondToThotPermission(
+    request: RespondToThotPermissionRequest,
+    callback: (error: ServiceError | null, response: RespondToThotPermissionResponse) => void,
+  ): ClientUnaryCall;
+  respondToThotPermission(
+    request: RespondToThotPermissionRequest,
+    metadata: Metadata,
+    callback: (error: ServiceError | null, response: RespondToThotPermissionResponse) => void,
+  ): ClientUnaryCall;
+  respondToThotPermission(
+    request: RespondToThotPermissionRequest,
+    metadata: Metadata,
+    options: Partial<CallOptions>,
+    callback: (error: ServiceError | null, response: RespondToThotPermissionResponse) => void,
   ): ClientUnaryCall;
 }
 
