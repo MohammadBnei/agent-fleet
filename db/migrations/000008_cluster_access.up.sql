@@ -18,7 +18,7 @@ ALTER TABLE repo_profile_tools ADD CONSTRAINT repo_profile_tools_tool_key_check
 --    actually holds the cluster's own IaC, so a durable fix is a normal
 --    PR against it.
 INSERT INTO repos (name, url, base_branch)
-VALUES ('infra-bootstrap', 'git@github.com:MohammadBnei/infra-bootstrap.git', 'main')
+VALUES ('infra-bootstrap', 'https://github.com/MohammadBnei/infra-bootstrap.git', 'main')
 ON CONFLICT (name) DO NOTHING;
 
 -- 3. The "worker" profile for that repo grants cluster-access, which is
