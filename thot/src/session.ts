@@ -132,6 +132,27 @@ export class ThotSession {
   }
 
   async run(): Promise<void> {
+    // Wake the session immediately with one throwaway turn.
+    //
+    // Without this the process deadlocks against its own readiness probe:
+    // streaming-input mode emits nothing until it receives input, so with
+    // an empty InputQueue no `system/init` ever arrives, `ready` stays
+    // false, and /healthz 503s forever — meaning thot could only ever
+    // become "ready" if someone asked it something first, which is
+    // exactly backwards. Confirmed live 2026-08-11 (readiness probe
+    // failed x15 on a pod with zero restarts).
+    //
+    // Routed through ask() rather than pushed directly so it takes the
+    // same queue slot ordering every other trigger does — a question that
+    // arrives during boot then queues behind it instead of interleaving.
+    // It also surfaces a bad CLAUDE_CODE_OAUTH_TOKEN at startup rather
+    // than in some user's first question (the "Not logged in · Please run
+    // /login" case, also hit live).
+    void this.ask("Reply with the single word: ready").then(
+      (answer) => console.log("thot session boot:", answer.slice(0, 120)),
+      (err) => console.error("thot session boot failed", err),
+    );
+
     const q = query({
       prompt: this.#input.stream(),
       options: {
