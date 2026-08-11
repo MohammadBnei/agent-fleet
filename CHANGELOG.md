@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.42.1](https://github.com/MohammadBnei/agent-fleet/compare/1.42.0...1.42.1) (2026-08-11)
+
+
+### Bug Fixes
+
+* **logs:** the agent-facing log format spent more tokens on prefixes than on logs ([#121](https://github.com/MohammadBnei/agent-fleet/issues/121)) ([805c4e7](https://github.com/MohammadBnei/agent-fleet/commit/805c4e75c67ecceb1ad50b444934bbf4e9ddbce9))
+
 # [1.42.0](https://github.com/MohammadBnei/agent-fleet/compare/1.41.0...1.42.0) (2026-08-11)
 
 
