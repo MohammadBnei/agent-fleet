@@ -1,0 +1,49 @@
+syntax = "proto3";
+package agentfleet.v1;
+option go_package = "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1;agentfleetv1";
+
+// ExecutorService is the single most privileged surface in the fleet: it
+// holds the cluster ClusterRole (infra-bootstrap gitops/platform/thot,
+// ADR-0032) and runs kubectl on behalf of pods that hold no RBAC at all.
+//
+// This is the ADR-0012 pattern applied to thot: the thing doing the
+// reasoning never holds infra-mutation credentials — a narrow service
+// does, and is reached over the network. It is what lets a thot session
+// be an ordinary worker pod (see ADR-0037, superseding ADR-0035).
+//
+// Every RPC requires `authorization: Bearer <THOT_AUTH_TOKEN>`.
+service ExecutorService {
+  rpc Exec(ExecRequest) returns (ExecResponse);
+}
+
+message ExecRequest {
+  // argv, WITHOUT the leading "kubectl". An array, never a command
+  // string: the executor spawns it directly, so shell metacharacters are
+  // inert by construction rather than filtered. A string would put a
+  // shell somewhere in this path, which is not a risk worth taking on the
+  // fleet's most privileged process.
+  repeated string args = 1;
+
+  // read_only selects the validated path.
+  //
+  // true  — for unattended callers (the kubectl_read tool bypasses
+  //         canUseTool by design, so no human sees these). Rejected
+  //         unless the verb is a known read verb and no credential or
+  //         impersonation flags are present.
+  // false — for human-gated calls. Deliberately a dumb pipe: the human
+  //         already approved this exact argv through canUseTool, and a
+  //         second allowlist here would only duplicate that gate while
+  //         constraining what a human is permitted to decide. The
+  //         ClusterRole remains the outer boundary either way.
+  bool read_only = 2;
+}
+
+message ExecResponse {
+  string stdout = 1;
+  string stderr = 2;
+  int32 exit_code = 3;
+  // Set when the request was refused before running anything (read_only
+  // validation). Distinct from a non-zero exit_code, which means kubectl
+  // itself ran and failed.
+  string refused = 4;
+}

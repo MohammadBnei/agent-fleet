@@ -58,6 +58,8 @@ jobs:
               - 'provisioner/**'
             sidecar:
               - 'sidecar/**'
+            executor:
+              - 'executor/**'
       # A proto/ change affects every Go module's generated code, so it
       # counts as a change for all three, on top of each module's own filter.
       - name: Compute go-modules matrix
@@ -73,10 +75,12 @@ jobs:
             const coreChanged = ${{ steps.filter.outputs.core }};
             const provisioner = ${{ steps.filter.outputs.provisioner }};
             const sidecar = ${{ steps.filter.outputs.sidecar }};
+            const executor = ${{ steps.filter.outputs.executor }};
             const modules = [];
             if (proto || coreChanged) modules.push('core');
             if (proto || provisioner) modules.push('provisioner');
             if (proto || sidecar) modules.push('sidecar');
+            if (proto || executor) modules.push('executor');
             return modules;
 
   buf:

@@ -77,6 +77,8 @@ jobs:
               - 'provisioner/**'
             sidecar:
               - 'sidecar/**'
+            executor:
+              - 'executor/**'
       - name: Compute go-components matrix
         id: components
         uses: actions/github-script@v7
@@ -90,10 +92,12 @@ jobs:
             const coreChanged = ${{ steps.filter.outputs.core }};
             const provisioner = ${{ steps.filter.outputs.provisioner }};
             const sidecar = ${{ steps.filter.outputs.sidecar }};
+            const executor = ${{ steps.filter.outputs.executor }};
             const components = [];
             if (proto || coreChanged) components.push('core');
             if (proto || provisioner) components.push('provisioner');
             if (proto || sidecar) components.push('sidecar');
+            if (proto || executor) components.push('executor');
             return components;
 
   # ponytail: the job-level `if` can't skip individual matrix legs, so a
