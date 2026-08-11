@@ -1,4 +1,5 @@
-import { query, type SDKUserMessage, type PermissionResult } from "@anthropic-ai/claude-agent-sdk";
+import { query, createSdkMcpServer, type SDKUserMessage, type PermissionResult } from "@anthropic-ai/claude-agent-sdk";
+import { kubectlReadTool } from "./kubectlRead.js";
 import { requestPermission } from "./coreClient.js";
 import { SessionQueue } from "./queue.js";
 
@@ -7,8 +8,11 @@ const ASK_TIMEOUT_MS = Number(process.env.THOT_ASK_TIMEOUT_MS ?? "600000");
 
 const SYSTEM_PROMPT = `You are thot, the standing cluster agent for ukubi-cluster.
 
-You have kubectl available via Bash, authenticated as your own in-cluster
-ServiceAccount. Your RBAC is deliberately bounded: broad read across the
+Use the kubectl_read tool for ALL diagnosis — it runs read-only kubectl
+without interrupting anyone, so reach for it freely and look at as much as
+you need. Plain Bash is also available (also kubectl-authenticated), but
+every Bash call interrupts a human for approval, so use it only when you
+genuinely need to change something. Your RBAC is deliberately bounded: broad read across the
 cluster, but only 'patch' on deployments/statefulsets/daemonsets (i.e.
 rollout restart) and 'delete' on pods. You cannot read secrets, cannot
 touch RBAC objects, and cannot mutate nodes — don't try, and don't
@@ -136,19 +140,21 @@ export class ThotSession {
         systemPrompt: SYSTEM_PROMPT,
         // CLI parity. Not "plan" — thot is meant to act, under a gate.
         permissionMode: "default",
-        // Deliberately empty: anything listed here bypasses canUseTool
-        // entirely (confirmed in worker/'s own Phase 0 spike), so listing
-        // Bash would silently remove the gate rather than add one.
+        // Read freely, mutate under a gate. kubectl_read is listed here,
+        // so it bypasses canUseTool entirely — that's the whole point,
+        // since a diagnostic agent that interrupts a human for every
+        // `kubectl get pods` is unusable.
         //
-        // ponytail: this means even a read-only `kubectl get pods` needs a
-        // human click, which is slow for pure diagnosis. That's the
-        // deliberate trade-off recorded in ADR-0035 ("always wait for a
-        // human, no unattended fallback"). If the clicking becomes
-        // genuinely painful, the fix is a narrow read-only MCP tool listed
-        // here — NOT putting Bash in this list, which would un-gate
-        // mutation too.
-        allowedTools: [],
+        // Bash is deliberately NOT listed: it stays gated, which is what
+        // keeps `rollout restart` / `delete pod` blocking on a real human
+        // decision (ADR-0035's actual requirement — mutation is gated,
+        // reading never had to be). kubectl_read enforces read-only
+        // itself; it does not rely on RBAC, which grants patch/delete.
+        allowedTools: ["mcp__thot__kubectl_read"],
         settingSources: [],
+        mcpServers: {
+          thot: createSdkMcpServer({ name: "thot", tools: [kubectlReadTool] }),
+        },
         canUseTool,
       },
     });
