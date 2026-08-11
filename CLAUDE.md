@@ -101,7 +101,7 @@ tiers instead of a fleet-imposed Write/Edit approval gate.
   or round completion. A permission decision is always a real, structured
   `RespondToPermission` (or `SetPermissionMode`) call. `/approve` no
   longer exists.
-- Every result is a PR. No auto-merge, ever.
+- Every result is a PR.
 - One git worktree per task — never a shared writable repo checkout across
   concurrent tasks.
 - Git commit identity is derived live from the authenticated bot GitHub
@@ -115,7 +115,7 @@ tiers instead of a fleet-imposed Write/Edit approval gate.
 
 ## Forbidden patterns (quick check — full list + reasons in `docs/DECISIONS.md`)
 
-Auto-merge · shared writable repo PVC across tasks · inferring a permission
+Shared writable repo PVC across tasks · inferring a permission
 decision from silence · hardcoded git commit identity · committing Discord/GitHub/
 Anthropic tokens · a bespoke per-app Helm chart (reuse
 `infra-bootstrap/gitops/platform/common-app-chart`) · any component other
