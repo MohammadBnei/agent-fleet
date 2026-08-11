@@ -39,8 +39,6 @@ type Client struct {
 	// wherever core's Service actually lives (e.g. prod's release-prefixed
 	// name vs kind-local's unprefixed one).
 	CoreGRPCAddr string
-	// Forwarded into the sidecar so ask_thot registers (docs/adr/0035).
-	ThotGRPCAddr  string
 	ThotAuthToken string
 	// Where the cluster-access ingredient's kubectl shim sends argv
 	// (docs/adr/0037).
@@ -75,7 +73,7 @@ func New(namespace string, cfg Images) (*Client, error) {
 		RunnerImage: cfg.RunnerImage, WorkerImage: cfg.WorkerImage,
 		SidecarImage: cfg.SidecarImage, WorkspacePVC: cfg.WorkspacePVC,
 		LogLevel: cfg.LogLevel, CoreGRPCAddr: cfg.CoreGRPCAddr,
-		ThotGRPCAddr: cfg.ThotGRPCAddr, ThotAuthToken: cfg.ThotAuthToken,
+		ThotAuthToken: cfg.ThotAuthToken,
 		ExecutorAddr: cfg.ExecutorAddr,
 		PostgresImage: cfg.PostgresImage, RedisImage: cfg.RedisImage,
 		SharedInstancePVCSize: cfg.SharedInstancePVCSize,
@@ -93,7 +91,6 @@ type Images struct {
 	WorkspacePVC          string
 	LogLevel              string
 	CoreGRPCAddr          string
-	ThotGRPCAddr          string
 	ThotAuthToken         string
 	ExecutorAddr          string
 	PostgresImage         string

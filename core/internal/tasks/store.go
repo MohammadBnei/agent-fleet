@@ -133,6 +133,37 @@ func (s *Store) CreateTaskOfKind(ctx context.Context, kind, repo, description, g
 	return id, nil
 }
 
+// CreateDeduped creates a task keyed by an external identifier (an alert
+// fingerprint today), returning created=false if an ACTIVE task already
+// exists for that key.
+//
+// The dedup is enforced by a partial unique index, not by a read-then-write
+// here: Alertmanager can deliver the same group to several replicas at
+// once, and a check-then-insert would race straight through. ON CONFLICT
+// makes the database the arbiter.
+func (s *Store) CreateDeduped(ctx context.Context, kind, externalKey, repo, description string, channelID, threadID *string) (id string, created bool, err error) {
+	err = s.pool.QueryRow(ctx, `
+		INSERT INTO tasks (kind, external_key, repo, description, discord_channel_id, discord_thread_id)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		ON CONFLICT DO NOTHING
+		RETURNING id
+	`, kind, externalKey, repo, description, channelID, threadID).Scan(&id)
+	if err == pgx.ErrNoRows {
+		// The index rejected it — an active task for this key already
+		// exists. Not an error: this is the mechanism working.
+		return "", false, nil
+	}
+	if err != nil {
+		slog.Error("tasks CreateDeduped", "externalKey", externalKey, "error", err)
+		return "", false, fmt.Errorf("create deduped task: %w", err)
+	}
+	slog.Info("tasks CreateDeduped", "taskId", id, "externalKey", externalKey, "kind", kind)
+	if s.nudge != nil {
+		s.nudge()
+	}
+	return id, true, nil
+}
+
 func (s *Store) FindTaskIDByThread(ctx context.Context, threadID string) (string, error) {
 	var id string
 	err := s.pool.QueryRow(ctx, `SELECT id FROM tasks WHERE discord_thread_id = $1`, threadID).Scan(&id)

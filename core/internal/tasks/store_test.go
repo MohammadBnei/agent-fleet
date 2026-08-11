@@ -616,3 +616,104 @@ func TestStillHoldsLease(t *testing.T) {
 		t.Fatal("expected a mismatched lease id to not hold the lease")
 	}
 }
+
+// The dedup index is what stands between a flapping alert and an
+// unbounded stream of privileged pods. These exercise it against the real
+// migrated schema — a hand-written fixture would not have caught the
+// partial-index predicate being wrong.
+func TestCreateDeduped_SecondDeliveryOfSameAlertIsRejected(t *testing.T) {
+	pool := newTestPool(t)
+	ctx := context.Background()
+	store := NewStore(pool)
+
+	id1, created1, err := store.CreateDeduped(ctx, "thot", "fp-1", "infra-bootstrap", "etcd down", nil, nil)
+	if err != nil || !created1 || id1 == "" {
+		t.Fatalf("first create: id=%q created=%v err=%v", id1, created1, err)
+	}
+
+	id2, created2, err := store.CreateDeduped(ctx, "thot", "fp-1", "infra-bootstrap", "etcd down", nil, nil)
+	if err != nil {
+		t.Fatalf("second create: %v", err)
+	}
+	if created2 {
+		t.Errorf("second delivery created task %q; the dedup index should have rejected it", id2)
+	}
+}
+
+// Once the first investigation is finished the index must stop matching,
+// or an alert that fires again next week would be silently swallowed and
+// nobody would look at it.
+func TestCreateDeduped_SameAlertAfterCompletionCreatesNewTask(t *testing.T) {
+	pool := newTestPool(t)
+	ctx := context.Background()
+	store := NewStore(pool)
+
+	id1, _, err := store.CreateDeduped(ctx, "thot", "fp-2", "infra-bootstrap", "etcd down", nil, nil)
+	if err != nil {
+		t.Fatalf("first create: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE tasks SET status = 'done' WHERE id = $1`, id1); err != nil {
+		t.Fatalf("complete task: %v", err)
+	}
+
+	id2, created, err := store.CreateDeduped(ctx, "thot", "fp-2", "infra-bootstrap", "etcd down again", nil, nil)
+	if err != nil {
+		t.Fatalf("second create: %v", err)
+	}
+	if !created {
+		t.Fatal("alert re-firing after completion must create a new task, got dedup")
+	}
+	if id2 == id1 {
+		t.Fatal("expected a distinct task")
+	}
+}
+
+// Alertmanager can deliver the same group to several core replicas at
+// once; a check-then-insert would race straight through.
+func TestCreateDeduped_ConcurrentDeliveriesCreateExactlyOne(t *testing.T) {
+	pool := newTestPool(t)
+	ctx := context.Background()
+	store := NewStore(pool)
+
+	const n = 10
+	var wg sync.WaitGroup
+	results := make([]bool, n)
+	errs := make([]error, n)
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			_, created, err := store.CreateDeduped(ctx, "thot", "fp-race", "infra-bootstrap", "boom", nil, nil)
+			results[i], errs[i] = created, err
+		}(i)
+	}
+	wg.Wait()
+
+	won := 0
+	for i := range results {
+		if errs[i] != nil {
+			t.Errorf("delivery %d errored: %v", i, errs[i])
+		}
+		if results[i] {
+			won++
+		}
+	}
+	if won != 1 {
+		t.Errorf("exactly one concurrent delivery should create a task, got %d", won)
+	}
+}
+
+// Ordinary tasks carry no external key, and NULLs must not collide with
+// each other under a unique index.
+func TestCreateDeduped_DoesNotBlockOrdinaryTasks(t *testing.T) {
+	pool := newTestPool(t)
+	ctx := context.Background()
+
+	for i := 0; i < 3; i++ {
+		if _, err := pool.Exec(ctx, `
+			INSERT INTO tasks (repo, description, discord_channel_id) VALUES ('dream-analyst', 'task', 'chan')
+		`); err != nil {
+			t.Fatalf("insert ordinary task %d: %v", i, err)
+		}
+	}
+}

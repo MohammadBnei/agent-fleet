@@ -21,6 +21,12 @@ type Config struct {
 	DBPassword            string
 	DiscordBotToken       string
 	DiscordTriggerChannel string
+	// Alert path (docs/adr/0037). An empty token disables the webhook
+	// rather than serving it unauthenticated — it creates tasks, and a
+	// thot task runs an agent with cluster access.
+	AlertWebhookToken  string
+	ThotDiscordChannel string
+	ThotRepo           string
 	LokiURL               string
 	ProvisionerGRPCAddr   string
 	// MaxInFlight caps fleet-wide concurrent tasks (docs/adr/0019: ~5, the
@@ -69,6 +75,9 @@ func Load() Config {
 		DBPassword:            os.Getenv("AGENTFLEET_DB_PASSWORD"),
 		DiscordBotToken:       os.Getenv("DISCORD_BOT_TOKEN"),
 		DiscordTriggerChannel: os.Getenv("DISCORD_TRIGGER_CHANNEL_ID"),
+		AlertWebhookToken:     os.Getenv("ALERT_WEBHOOK_TOKEN"),
+		ThotDiscordChannel:    os.Getenv("THOT_DISCORD_CHANNEL_ID"),
+		ThotRepo:              env("THOT_REPO", "infra-bootstrap"),
 		LokiURL:               env("LOKI_URL", "http://platform-loki.monitoring.svc.cluster.local:3100"),
 		ProvisionerGRPCAddr:   env("PROVISIONER_GRPC_ADDR", "provisioner.agent-fleet.svc.cluster.local:9090"),
 		MaxInFlight:           envInt("MAX_IN_FLIGHT_TASKS", 5),

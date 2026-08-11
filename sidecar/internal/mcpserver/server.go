@@ -124,12 +124,8 @@ func New(core *coreclient.Client) http.Handler {
 	return server.NewStreamableHTTPServer(s)
 }
 
-// askThotHandler proxies the question to thot directly (the hub-and-spoke
-// exception) and then writes BOTH sides back into this task's own
-// transcript through core. That second write is not optional bookkeeping:
-// docs/adr/0035 makes it a hard constraint, since a direct call would
-// otherwise leave the task's audit trail with a silent gap where the
-// agent's reasoning changed direction.
+// sendMessageHandler writes one transcript entry through core and returns
+// the cursor a caller should resume from.
 func sendMessageHandler(core *coreclient.Client) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		from := req.GetString("from", "")
