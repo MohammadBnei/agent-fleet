@@ -105,7 +105,7 @@ func (s *Server) tearDownRepoSharedInstances(ctx context.Context, repo string) (
 }
 
 func (s *Server) GetE2ESessionStatus(ctx context.Context, req *agentfleetv1.GetE2ESessionStatusRequest) (*agentfleetv1.GetE2ESessionStatusResponse, error) {
-	phase, exists, err := s.k8sc.GetPod(ctx, k8s.ResourceName(req.GetTaskId()))
+	state, exists, err := s.k8sc.GetPod(ctx, k8s.ResourceName(req.GetTaskId()))
 	if err != nil {
 		return nil, err
 	}
@@ -113,8 +113,13 @@ func (s *Server) GetE2ESessionStatus(ctx context.Context, req *agentfleetv1.GetE
 		return &agentfleetv1.GetE2ESessionStatusResponse{}, nil
 	}
 	return &agentfleetv1.GetE2ESessionStatusResponse{
-		Status:     e2eStatusFromPhase(phase),
+		Status:     e2eStatusFromPhase(state.Phase),
 		PreviewUrl: k8s.PreviewURLFor(s.e2eHost, req.GetTaskId()),
+		StartCmd:   state.StartCmd,
+		PodPhase:   string(state.Phase),
+		AppReady:   state.AppReady,
+		Restarts:   state.Restarts,
+		StartedAt:  state.StartedAt,
 	}, nil
 }
 
@@ -123,13 +128,13 @@ func (s *Server) GetE2ESessionStatus(ctx context.Context, req *agentfleetv1.GetE
 // not a create-and-handle-AlreadyExists, since it also needs to report the
 // existing session's own status/URL, not just "yes it exists."
 func (s *Server) CreateE2ESession(ctx context.Context, req *agentfleetv1.CreateE2ESessionRequest) (*agentfleetv1.CreateE2ESessionResponse, error) {
-	phase, exists, err := s.k8sc.GetPod(ctx, k8s.ResourceName(req.GetTaskId()))
+	state, exists, err := s.k8sc.GetPod(ctx, k8s.ResourceName(req.GetTaskId()))
 	if err != nil {
 		return nil, err
 	}
 	if exists {
 		return &agentfleetv1.CreateE2ESessionResponse{
-			Status:     e2eStatusFromPhase(phase),
+			Status:     e2eStatusFromPhase(state.Phase),
 			PreviewUrl: k8s.PreviewURLFor(s.e2eHost, req.GetTaskId()),
 		}, nil
 	}

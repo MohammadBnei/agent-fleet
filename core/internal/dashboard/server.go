@@ -231,12 +231,41 @@ func (s *Server) StreamTranscript(ctx context.Context, req *connect.Request[agen
 }
 
 func (s *Server) GetE2EStatus(ctx context.Context, req *connect.Request[agentfleetv1.GetE2EStatusRequest]) (*connect.Response[agentfleetv1.GetE2EStatusResponse], error) {
-	status, previewURL, err := s.e2e.GetSessionStatus(ctx, req.Msg.GetTaskId())
+	live, err := s.e2e.GetSessionStatus(ctx, req.Msg.GetTaskId())
 	if err != nil {
 		slog.Error("dashboard GetE2EStatus", "taskId", req.Msg.GetTaskId(), "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
-	return connect.NewResponse(&agentfleetv1.GetE2EStatusResponse{Status: status, PreviewUrl: previewURL}), nil
+	resp := &agentfleetv1.GetE2EStatusResponse{
+		Status:     live.GetStatus(),
+		PreviewUrl: live.GetPreviewUrl(),
+		StartCmd:   live.GetStartCmd(),
+		PodPhase:   live.GetPodPhase(),
+		AppReady:   live.GetAppReady(),
+		Restarts:   live.GetRestarts(),
+		StartedAt:  live.GetStartedAt(),
+	}
+	// The declared recipe is core's half — the provisioner holds no DB
+	// credentials (docs/adr/0020 point 1) and can't read repo_profiles.
+	// Best-effort: a missing task or profile still leaves the live pod state
+	// worth rendering, so it's logged, not fatal.
+	if t, err := s.tasks.GetTask(ctx, req.Msg.GetTaskId()); err != nil {
+		slog.Warn("dashboard GetE2EStatus: get task", "taskId", req.Msg.GetTaskId(), "error", err)
+	} else if t != nil {
+		if profile, err := s.profiles.Get(ctx, t.Repo, "e2e"); err != nil {
+			slog.Warn("dashboard GetE2EStatus: profile lookup", "repo", t.Repo, "error", err)
+		} else if profile != nil {
+			resp.ProfileName = profile.Name
+			resp.Tools = profile.Tools
+			resp.Services = repoprofiles.FormatServices(profile.Services)
+			// A running start_cmd that isn't the profile's means a
+			// human-approved per-task override is in effect. Surfacing that
+			// is the point: an unsurfaced override is what made the
+			// original preview 502 impossible to explain.
+			resp.StartCmdOverridden = resp.StartCmd != "" && resp.StartCmd != profile.StartCmd
+		}
+	}
+	return connect.NewResponse(resp), nil
 }
 
 // Kill and KillE2E below call the exact same store methods

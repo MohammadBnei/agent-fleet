@@ -30,6 +30,7 @@ import { ErrorModal } from "../components/ErrorModal";
 import { Markdown } from "../components/Markdown";
 import { BypassConfirmModal } from "../components/BypassConfirmModal";
 import { Panel, type PanelSize } from "../components/Panel";
+import { E2eCard } from "../components/E2eCard";
 import { Modal } from "../components/Modal";
 import { ActionsMenu } from "../components/ActionsMenu";
 
@@ -257,6 +258,7 @@ export function TaskDetail({
     task: fetchedTask,
     entries,
     previewUrl,
+    e2e,
     branch,
     busyKey,
     loadError,
@@ -332,6 +334,10 @@ export function TaskDetail({
   // Measurement refs for the "fit height" button below — real rendered
   // DOM, not assumed pixel constants.
   const sidebarRef = useRef<HTMLDivElement>(null);
+  // Wraps the fit button *and* the e2e card — anything fixed-height that
+  // isn't in PANEL_ORDER has to live in here, so fitPanels counts it as
+  // overhead (and as one flex child, one gap) instead of handing the panels
+  // more height than the sidebar actually has.
   const fitButtonRef = useRef<HTMLDivElement>(null);
   const panelRootRefs = useRef<Record<string, HTMLDivElement | null>>({});
   // Sidebar/exchange-zone split width — persisted only on drag-end (one
@@ -761,23 +767,26 @@ export function TaskDetail({
         />
 
         <div ref={sidebarRef} className="border-l border-base-content/10 bg-base-200 px-1.5 py-1.5 overflow-y-auto min-h-0 flex flex-col gap-1.5">
-          <div ref={fitButtonRef} className="flex items-center justify-end">
-            <button
-              type="button"
-              onClick={toggleAutoFit}
-              title={
-                autoFit
-                  ? "Following window resizes — click to stop"
-                  : "Fill available height with the expanded panel(s) — split evenly if more than one, and keep following window resizes"
-              }
-              className={`flex-none text-[9px] px-1.5 py-0.5 rounded border cursor-pointer ${
-                autoFit
-                  ? "text-primary border-primary/40 bg-primary/10"
-                  : "text-base-content/50 hover:text-base-content/80 border-base-content/10 hover:border-base-content/25"
-              }`}
-            >
-              ⇕ {autoFit ? "following" : "fit height"}
-            </button>
+          <div ref={fitButtonRef} className="flex flex-col gap-1.5">
+            <div className="flex items-center justify-end">
+              <button
+                type="button"
+                onClick={toggleAutoFit}
+                title={
+                  autoFit
+                    ? "Following window resizes — click to stop"
+                    : "Fill available height with the expanded panel(s) — split evenly if more than one, and keep following window resizes"
+                }
+                className={`flex-none text-[9px] px-1.5 py-0.5 rounded border cursor-pointer ${
+                  autoFit
+                    ? "text-primary border-primary/40 bg-primary/10"
+                    : "text-base-content/50 hover:text-base-content/80 border-base-content/10 hover:border-base-content/25"
+                }`}
+              >
+                ⇕ {autoFit ? "following" : "fit height"}
+              </button>
+            </div>
+            <E2eCard e2e={e2e} />
           </div>
           <Panel
             id="todos"

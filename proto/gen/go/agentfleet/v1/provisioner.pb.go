@@ -356,9 +356,23 @@ func (x *GetE2ESessionStatusRequest) GetTaskId() string {
 }
 
 type GetE2ESessionStatusResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Status        string                 `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"` // "requested"|"running"|"failed"|"torn_down"|"" (none)
-	PreviewUrl    string                 `protobuf:"bytes,2,opt,name=preview_url,json=previewUrl,proto3" json:"preview_url,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	Status     string                 `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"` // "requested"|"running"|"failed"|"torn_down"|"" (none)
+	PreviewUrl string                 `protobuf:"bytes,2,opt,name=preview_url,json=previewUrl,proto3" json:"preview_url,omitempty"`
+	// Live pod truth, readable only here — the provisioner holds the fleet's
+	// sole cluster RBAC. start_cmd is read back off the pod's own
+	// E2E_START_CMD env var rather than re-resolved from the profile, so it
+	// reflects what is actually running (an approved override included).
+	//
+	// app_ready is the readiness condition from the AppPort probe: the
+	// difference between "still installing" (a cold bun install measured 782s
+	// live) and "bound the wrong port/interface and never will". Without it a
+	// broken preview is indistinguishable from a slow one.
+	StartCmd      string `protobuf:"bytes,3,opt,name=start_cmd,json=startCmd,proto3" json:"start_cmd,omitempty"`
+	PodPhase      string `protobuf:"bytes,4,opt,name=pod_phase,json=podPhase,proto3" json:"pod_phase,omitempty"` // "Pending"|"Running"|"Succeeded"|"Failed"|"Unknown"
+	AppReady      bool   `protobuf:"varint,5,opt,name=app_ready,json=appReady,proto3" json:"app_ready,omitempty"`
+	Restarts      int32  `protobuf:"varint,6,opt,name=restarts,proto3" json:"restarts,omitempty"`
+	StartedAt     string `protobuf:"bytes,7,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"` // RFC3339
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -403,6 +417,41 @@ func (x *GetE2ESessionStatusResponse) GetStatus() string {
 func (x *GetE2ESessionStatusResponse) GetPreviewUrl() string {
 	if x != nil {
 		return x.PreviewUrl
+	}
+	return ""
+}
+
+func (x *GetE2ESessionStatusResponse) GetStartCmd() string {
+	if x != nil {
+		return x.StartCmd
+	}
+	return ""
+}
+
+func (x *GetE2ESessionStatusResponse) GetPodPhase() string {
+	if x != nil {
+		return x.PodPhase
+	}
+	return ""
+}
+
+func (x *GetE2ESessionStatusResponse) GetAppReady() bool {
+	if x != nil {
+		return x.AppReady
+	}
+	return false
+}
+
+func (x *GetE2ESessionStatusResponse) GetRestarts() int32 {
+	if x != nil {
+		return x.Restarts
+	}
+	return 0
+}
+
+func (x *GetE2ESessionStatusResponse) GetStartedAt() string {
+	if x != nil {
+		return x.StartedAt
 	}
 	return ""
 }
@@ -1401,11 +1450,17 @@ const file_agentfleet_v1_provisioner_proto_rawDesc = "" +
 	"\x06killed\x18\x01 \x01(\bR\x06killed\x12,\n" +
 	"\x12services_torn_down\x18\x02 \x03(\tR\x10servicesTornDown\"5\n" +
 	"\x1aGetE2eSessionStatusRequest\x12\x17\n" +
-	"\atask_id\x18\x01 \x01(\tR\x06taskId\"V\n" +
+	"\atask_id\x18\x01 \x01(\tR\x06taskId\"\xe8\x01\n" +
 	"\x1bGetE2eSessionStatusResponse\x12\x16\n" +
 	"\x06status\x18\x01 \x01(\tR\x06status\x12\x1f\n" +
 	"\vpreview_url\x18\x02 \x01(\tR\n" +
-	"previewUrl\"\xd3\x01\n" +
+	"previewUrl\x12\x1b\n" +
+	"\tstart_cmd\x18\x03 \x01(\tR\bstartCmd\x12\x1b\n" +
+	"\tpod_phase\x18\x04 \x01(\tR\bpodPhase\x12\x1b\n" +
+	"\tapp_ready\x18\x05 \x01(\bR\bappReady\x12\x1a\n" +
+	"\brestarts\x18\x06 \x01(\x05R\brestarts\x12\x1d\n" +
+	"\n" +
+	"started_at\x18\a \x01(\tR\tstartedAt\"\xd3\x01\n" +
 	"\x17CreateE2eSessionRequest\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x12\n" +
 	"\x04repo\x18\x02 \x01(\tR\x04repo\x12\x1b\n" +
