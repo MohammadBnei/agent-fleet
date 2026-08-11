@@ -30,23 +30,44 @@ func (c *Client) CreateIngressRoute(ctx context.Context, host, taskID string) er
 		},
 		"spec": map[string]any{
 			"entryPoints": []any{"websecure"},
-			"tls":         map[string]any{"certResolver": "le"},
+			// le-dns, not le: TLS-ALPN-01 structurally cannot issue a
+			// wildcard, only DNS-01 can. Declared explicitly so every task
+			// asks for the same *.<host> cert and ACME orders it exactly
+			// once — see PreviewDomainFor for why per-task certs are not an
+			// option. infra-bootstrap's ADR-0033 adds the resolver.
+			"tls": map[string]any{
+				"certResolver": "le-dns",
+				"domains":      []any{map[string]any{"main": PreviewDomainFor(host)}},
+			},
 			"routes": []any{
+				// code-server keeps a path prefix — it is proxy-aware and
+				// handles X-Forwarded-Prefix correctly, unlike an arbitrary
+				// target app. Priority is explicit: rule length would already
+				// order these correctly, but leaving it implicit makes a
+				// target app that owns /code a silent coin flip.
+				//
+				// ponytail: an app with its own /code route is shadowed here.
+				// Give code-server its own <id>-code subdomain if that bites —
+				// free now, since the wildcard cert covers any label.
 				map[string]any{
-					"match": fmt.Sprintf("Host(`%s`) && PathPrefix(`/%s/app`)", host, taskID),
-					"kind":  "Rule",
-					"services": []any{
-						map[string]any{"name": name, "namespace": c.Namespace, "port": int64(AppPort)},
-					},
-					"middlewares": middlewares,
-				},
-				map[string]any{
-					"match": fmt.Sprintf("Host(`%s`) && PathPrefix(`/%s/code`)", host, taskID),
-					"kind":  "Rule",
+					"match":    fmt.Sprintf("Host(`%s`) && PathPrefix(`/code`)", PreviewHostFor(host, taskID)),
+					"kind":     "Rule",
+					"priority": int64(200),
 					"services": []any{
 						map[string]any{"name": name, "namespace": c.Namespace, "port": int64(CodeServerPort)},
 					},
 					"middlewares": middlewares,
+				},
+				// The app at the root of its own hostname, with NO stripPrefix
+				// — that is the whole point of docs/adr/0038.
+				map[string]any{
+					"match":    fmt.Sprintf("Host(`%s`)", PreviewHostFor(host, taskID)),
+					"kind":     "Rule",
+					"priority": int64(100),
+					"services": []any{
+						map[string]any{"name": name, "namespace": c.Namespace, "port": int64(AppPort)},
+					},
+					"middlewares": []any{basicAuthMiddleware},
 				},
 			},
 		},
