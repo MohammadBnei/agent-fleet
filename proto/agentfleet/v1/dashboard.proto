@@ -472,6 +472,17 @@ service DashboardService {
   rpc ListThotEvents(ListThotEventsRequest) returns (ListThotEventsResponse);
   rpc RespondToThotPermission(RespondToThotPermissionRequest) returns (RespondToThotPermissionResponse);
 
+  // A human asking thot a question from the dashboard. ADR-0035 said thot
+  // is reachable by "workers, alerts, and humans" — the sidecar covered
+  // workers and the scheduler covered alerts, but humans could only ever
+  // *answer* thot's prompts, never initiate. This closes that.
+  //
+  // core proxies to ThotService.AskThot rather than the browser calling
+  // thot directly: the hub-and-spoke exception in ADR-0035 is for
+  // in-cluster callers that need real-time reachability, and a browser is
+  // neither. It also keeps thot's bearer token server-side.
+  rpc AskThot(DashboardServiceAskThotRequest) returns (DashboardServiceAskThotResponse);
+
   // Dashboard-editable schedules (docs/adr/0035) — same "edit it in the
   // UI, no redeploy" shape ListRepos/CreateRepo established.
   rpc ListScheduledAudits(ListScheduledAuditsRequest) returns (ListScheduledAuditsResponse);
@@ -558,4 +569,15 @@ message RespondToThotPermissionRequest {
 
 message RespondToThotPermissionResponse {
   string status = 1;
+}
+
+// Named DashboardService-prefixed per buf's RPC_REQUEST_STANDARD_NAME rule,
+// since the plain AskThotRequest name is already taken by thot.proto. It
+// carries no asking_task_id — a human is not a task.
+message DashboardServiceAskThotRequest {
+  string question = 1;
+}
+
+message DashboardServiceAskThotResponse {
+  string answer = 1;
 }

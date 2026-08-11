@@ -523,6 +523,19 @@ export interface RespondToThotPermissionResponse {
   status: string;
 }
 
+/**
+ * Named DashboardService-prefixed per buf's RPC_REQUEST_STANDARD_NAME rule,
+ * since the plain AskThotRequest name is already taken by thot.proto. It
+ * carries no asking_task_id — a human is not a task.
+ */
+export interface DashboardServiceAskThotRequest {
+  question: string;
+}
+
+export interface DashboardServiceAskThotResponse {
+  answer: string;
+}
+
 function createBaseListTasksRequest(): ListTasksRequest {
   return { limit: 0 };
 }
@@ -3142,6 +3155,64 @@ export const RespondToThotPermissionResponse: MessageFns<RespondToThotPermission
   },
 };
 
+function createBaseDashboardServiceAskThotRequest(): DashboardServiceAskThotRequest {
+  return { question: "" };
+}
+
+export const DashboardServiceAskThotRequest: MessageFns<DashboardServiceAskThotRequest> = {
+  fromJSON(object: any): DashboardServiceAskThotRequest {
+    return { question: isSet(object.question) ? globalThis.String(object.question) : "" };
+  },
+
+  toJSON(message: DashboardServiceAskThotRequest): unknown {
+    const obj: any = {};
+    if (message.question !== "") {
+      obj.question = message.question;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<DashboardServiceAskThotRequest>, I>>(base?: I): DashboardServiceAskThotRequest {
+    return DashboardServiceAskThotRequest.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<DashboardServiceAskThotRequest>, I>>(
+    object: I,
+  ): DashboardServiceAskThotRequest {
+    const message = createBaseDashboardServiceAskThotRequest();
+    message.question = object.question ?? "";
+    return message;
+  },
+};
+
+function createBaseDashboardServiceAskThotResponse(): DashboardServiceAskThotResponse {
+  return { answer: "" };
+}
+
+export const DashboardServiceAskThotResponse: MessageFns<DashboardServiceAskThotResponse> = {
+  fromJSON(object: any): DashboardServiceAskThotResponse {
+    return { answer: isSet(object.answer) ? globalThis.String(object.answer) : "" };
+  },
+
+  toJSON(message: DashboardServiceAskThotResponse): unknown {
+    const obj: any = {};
+    if (message.answer !== "") {
+      obj.answer = message.answer;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<DashboardServiceAskThotResponse>, I>>(base?: I): DashboardServiceAskThotResponse {
+    return DashboardServiceAskThotResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<DashboardServiceAskThotResponse>, I>>(
+    object: I,
+  ): DashboardServiceAskThotResponse {
+    const message = createBaseDashboardServiceAskThotResponse();
+    message.answer = object.answer ?? "";
+    return message;
+  },
+};
+
 export interface DashboardService {
   ListTasks(request: ListTasksRequest): Promise<ListTasksResponse>;
   /** buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE */
@@ -3220,6 +3291,18 @@ export interface DashboardService {
    */
   ListThotEvents(request: ListThotEventsRequest): Promise<ListThotEventsResponse>;
   RespondToThotPermission(request: RespondToThotPermissionRequest): Promise<RespondToThotPermissionResponse>;
+  /**
+   * A human asking thot a question from the dashboard. ADR-0035 said thot
+   * is reachable by "workers, alerts, and humans" — the sidecar covered
+   * workers and the scheduler covered alerts, but humans could only ever
+   * *answer* thot's prompts, never initiate. This closes that.
+   *
+   * core proxies to ThotService.AskThot rather than the browser calling
+   * thot directly: the hub-and-spoke exception in ADR-0035 is for
+   * in-cluster callers that need real-time reachability, and a browser is
+   * neither. It also keeps thot's bearer token server-side.
+   */
+  AskThot(request: DashboardServiceAskThotRequest): Promise<DashboardServiceAskThotResponse>;
   /**
    * Dashboard-editable schedules (docs/adr/0035) — same "edit it in the
    * UI, no redeploy" shape ListRepos/CreateRepo established.

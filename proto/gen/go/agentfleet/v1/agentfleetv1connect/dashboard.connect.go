@@ -142,6 +142,9 @@ const (
 	// DashboardServiceRespondToThotPermissionProcedure is the fully-qualified name of the
 	// DashboardService's RespondToThotPermission RPC.
 	DashboardServiceRespondToThotPermissionProcedure = "/agentfleet.v1.DashboardService/RespondToThotPermission"
+	// DashboardServiceAskThotProcedure is the fully-qualified name of the DashboardService's AskThot
+	// RPC.
+	DashboardServiceAskThotProcedure = "/agentfleet.v1.DashboardService/AskThot"
 	// DashboardServiceListScheduledAuditsProcedure is the fully-qualified name of the
 	// DashboardService's ListScheduledAudits RPC.
 	DashboardServiceListScheduledAuditsProcedure = "/agentfleet.v1.DashboardService/ListScheduledAudits"
@@ -225,6 +228,16 @@ type DashboardServiceClient interface {
 	// an approval path.
 	ListThotEvents(context.Context, *connect.Request[v1.ListThotEventsRequest]) (*connect.Response[v1.ListThotEventsResponse], error)
 	RespondToThotPermission(context.Context, *connect.Request[v1.RespondToThotPermissionRequest]) (*connect.Response[v1.RespondToThotPermissionResponse], error)
+	// A human asking thot a question from the dashboard. ADR-0035 said thot
+	// is reachable by "workers, alerts, and humans" — the sidecar covered
+	// workers and the scheduler covered alerts, but humans could only ever
+	// *answer* thot's prompts, never initiate. This closes that.
+	//
+	// core proxies to ThotService.AskThot rather than the browser calling
+	// thot directly: the hub-and-spoke exception in ADR-0035 is for
+	// in-cluster callers that need real-time reachability, and a browser is
+	// neither. It also keeps thot's bearer token server-side.
+	AskThot(context.Context, *connect.Request[v1.DashboardServiceAskThotRequest]) (*connect.Response[v1.DashboardServiceAskThotResponse], error)
 	// Dashboard-editable schedules (docs/adr/0035) — same "edit it in the
 	// UI, no redeploy" shape ListRepos/CreateRepo established.
 	ListScheduledAudits(context.Context, *connect.Request[v1.ListScheduledAuditsRequest]) (*connect.Response[v1.ListScheduledAuditsResponse], error)
@@ -466,6 +479,12 @@ func NewDashboardServiceClient(httpClient connect.HTTPClient, baseURL string, op
 			connect.WithSchema(dashboardServiceMethods.ByName("RespondToThotPermission")),
 			connect.WithClientOptions(opts...),
 		),
+		askThot: connect.NewClient[v1.DashboardServiceAskThotRequest, v1.DashboardServiceAskThotResponse](
+			httpClient,
+			baseURL+DashboardServiceAskThotProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("AskThot")),
+			connect.WithClientOptions(opts...),
+		),
 		listScheduledAudits: connect.NewClient[v1.ListScheduledAuditsRequest, v1.ListScheduledAuditsResponse](
 			httpClient,
 			baseURL+DashboardServiceListScheduledAuditsProcedure,
@@ -532,6 +551,7 @@ type dashboardServiceClient struct {
 	queryLogs               *connect.Client[v1.QueryLogsRequest, v1.QueryLogsResponse]
 	listThotEvents          *connect.Client[v1.ListThotEventsRequest, v1.ListThotEventsResponse]
 	respondToThotPermission *connect.Client[v1.RespondToThotPermissionRequest, v1.RespondToThotPermissionResponse]
+	askThot                 *connect.Client[v1.DashboardServiceAskThotRequest, v1.DashboardServiceAskThotResponse]
 	listScheduledAudits     *connect.Client[v1.ListScheduledAuditsRequest, v1.ListScheduledAuditsResponse]
 	createScheduledAudit    *connect.Client[v1.CreateScheduledAuditRequest, v1.CreateScheduledAuditResponse]
 	updateScheduledAudit    *connect.Client[v1.UpdateScheduledAuditRequest, v1.UpdateScheduledAuditResponse]
@@ -723,6 +743,11 @@ func (c *dashboardServiceClient) RespondToThotPermission(ctx context.Context, re
 	return c.respondToThotPermission.CallUnary(ctx, req)
 }
 
+// AskThot calls agentfleet.v1.DashboardService.AskThot.
+func (c *dashboardServiceClient) AskThot(ctx context.Context, req *connect.Request[v1.DashboardServiceAskThotRequest]) (*connect.Response[v1.DashboardServiceAskThotResponse], error) {
+	return c.askThot.CallUnary(ctx, req)
+}
+
 // ListScheduledAudits calls agentfleet.v1.DashboardService.ListScheduledAudits.
 func (c *dashboardServiceClient) ListScheduledAudits(ctx context.Context, req *connect.Request[v1.ListScheduledAuditsRequest]) (*connect.Response[v1.ListScheduledAuditsResponse], error) {
 	return c.listScheduledAudits.CallUnary(ctx, req)
@@ -812,6 +837,16 @@ type DashboardServiceHandler interface {
 	// an approval path.
 	ListThotEvents(context.Context, *connect.Request[v1.ListThotEventsRequest]) (*connect.Response[v1.ListThotEventsResponse], error)
 	RespondToThotPermission(context.Context, *connect.Request[v1.RespondToThotPermissionRequest]) (*connect.Response[v1.RespondToThotPermissionResponse], error)
+	// A human asking thot a question from the dashboard. ADR-0035 said thot
+	// is reachable by "workers, alerts, and humans" — the sidecar covered
+	// workers and the scheduler covered alerts, but humans could only ever
+	// *answer* thot's prompts, never initiate. This closes that.
+	//
+	// core proxies to ThotService.AskThot rather than the browser calling
+	// thot directly: the hub-and-spoke exception in ADR-0035 is for
+	// in-cluster callers that need real-time reachability, and a browser is
+	// neither. It also keeps thot's bearer token server-side.
+	AskThot(context.Context, *connect.Request[v1.DashboardServiceAskThotRequest]) (*connect.Response[v1.DashboardServiceAskThotResponse], error)
 	// Dashboard-editable schedules (docs/adr/0035) — same "edit it in the
 	// UI, no redeploy" shape ListRepos/CreateRepo established.
 	ListScheduledAudits(context.Context, *connect.Request[v1.ListScheduledAuditsRequest]) (*connect.Response[v1.ListScheduledAuditsResponse], error)
@@ -1049,6 +1084,12 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 		connect.WithSchema(dashboardServiceMethods.ByName("RespondToThotPermission")),
 		connect.WithHandlerOptions(opts...),
 	)
+	dashboardServiceAskThotHandler := connect.NewUnaryHandler(
+		DashboardServiceAskThotProcedure,
+		svc.AskThot,
+		connect.WithSchema(dashboardServiceMethods.ByName("AskThot")),
+		connect.WithHandlerOptions(opts...),
+	)
 	dashboardServiceListScheduledAuditsHandler := connect.NewUnaryHandler(
 		DashboardServiceListScheduledAuditsProcedure,
 		svc.ListScheduledAudits,
@@ -1149,6 +1190,8 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 			dashboardServiceListThotEventsHandler.ServeHTTP(w, r)
 		case DashboardServiceRespondToThotPermissionProcedure:
 			dashboardServiceRespondToThotPermissionHandler.ServeHTTP(w, r)
+		case DashboardServiceAskThotProcedure:
+			dashboardServiceAskThotHandler.ServeHTTP(w, r)
 		case DashboardServiceListScheduledAuditsProcedure:
 			dashboardServiceListScheduledAuditsHandler.ServeHTTP(w, r)
 		case DashboardServiceCreateScheduledAuditProcedure:
@@ -1312,6 +1355,10 @@ func (UnimplementedDashboardServiceHandler) ListThotEvents(context.Context, *con
 
 func (UnimplementedDashboardServiceHandler) RespondToThotPermission(context.Context, *connect.Request[v1.RespondToThotPermissionRequest]) (*connect.Response[v1.RespondToThotPermissionResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.RespondToThotPermission is not implemented"))
+}
+
+func (UnimplementedDashboardServiceHandler) AskThot(context.Context, *connect.Request[v1.DashboardServiceAskThotRequest]) (*connect.Response[v1.DashboardServiceAskThotResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.AskThot is not implemented"))
 }
 
 func (UnimplementedDashboardServiceHandler) ListScheduledAudits(context.Context, *connect.Request[v1.ListScheduledAuditsRequest]) (*connect.Response[v1.ListScheduledAuditsResponse], error) {
