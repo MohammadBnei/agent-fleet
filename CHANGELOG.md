@@ -1,5 +1,12 @@
 # Changelog
 
+# [1.32.0](https://github.com/MohammadBnei/agent-fleet/compare/1.31.3...1.32.0) (2026-08-11)
+
+
+### Features
+
+* **thot:** scaffold the cluster agent component (ADR-0035 phase 1) ([#92](https://github.com/MohammadBnei/agent-fleet/issues/92)) ([87511a2](https://github.com/MohammadBnei/agent-fleet/commit/87511a2767dc1c9d88b888d84e738b829cc176db))
+
 ## [1.31.3](https://github.com/MohammadBnei/agent-fleet/compare/1.31.2...1.31.3) (2026-08-11)
 
 
