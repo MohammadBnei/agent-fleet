@@ -1,5 +1,23 @@
 # Changelog
 
+# [1.43.0](https://github.com/MohammadBnei/agent-fleet/compare/1.42.1...1.43.0) (2026-08-11)
+
+
+### Bug Fixes
+
+* **alerts:** the error-log alert never said which error ([16b27f0](https://github.com/MohammadBnei/agent-fleet/commit/16b27f0ee42a0e1172386b99c21a3e081f04b958)), closes [#123](https://github.com/MohammadBnei/agent-fleet/issues/123)
+* **e2e:** publish not-ready addresses so the pod stays reachable while the app is down ([08c1b55](https://github.com/MohammadBnei/agent-fleet/commit/08c1b555c9329bafe34c6d4d8b1ac4f818049cdb))
+
+
+### Features
+
+* **e2e:** make the e2e pod the worker's build/test sandbox ([8a4c5ce](https://github.com/MohammadBnei/agent-fleet/commit/8a4c5ce294bad86a10f4bea4db783e237a27619f))
+
+
+### Performance Improvements
+
+* **e2e:** size the sandbox for building, raising the namespace LimitRange ([bc5da8f](https://github.com/MohammadBnei/agent-fleet/commit/bc5da8f9ea2b18a79105172a29e0ba2ae7e19ca2))
+
 ## [1.42.1](https://github.com/MohammadBnei/agent-fleet/compare/1.42.0...1.42.1) (2026-08-11)
 
 
