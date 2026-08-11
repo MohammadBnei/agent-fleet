@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.38.3](https://github.com/MohammadBnei/agent-fleet/compare/1.38.2...1.38.3) (2026-08-11)
+
+
+### Bug Fixes
+
+* **thot:** seed infra-bootstrap with an HTTPS URL, not SSH ([#113](https://github.com/MohammadBnei/agent-fleet/issues/113)) ([14f0b3b](https://github.com/MohammadBnei/agent-fleet/commit/14f0b3b69eba59cfaff1e67949a2d5a5b3c88dfb))
+
 ## [1.38.2](https://github.com/MohammadBnei/agent-fleet/compare/1.38.1...1.38.2) (2026-08-11)
 
 ## [1.38.1](https://github.com/MohammadBnei/agent-fleet/compare/1.38.0...1.38.1) (2026-08-11)
