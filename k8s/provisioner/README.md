@@ -52,10 +52,17 @@ holder and the only thing that ever calls this service — hub-and-spoke).
 
 ## One-time human setup (not something this repo/ArgoCD can do)
 
-1. Point a DNS record for `e2e.bnei.dev` at the cluster's Traefik ingress —
-   no wildcard DNS exists anywhere in this cluster, so this is one static
-   hostname with path-based routing per task (`e2e.bnei.dev/<taskId>/app/`,
-   `/<taskId>/code/`), not a per-task subdomain.
+1. **Already done** — a `*.e2e.bnei.dev` wildcard A record points at the
+   cluster's Traefik ingress (`infra-bootstrap` ADR-0033 moved `bnei.dev` to
+   Cloudflare). Each task gets its own subdomain,
+   `https://<shortId>.e2e.bnei.dev/`, serving the app at the **root** path with
+   nothing stripped — code-server stays at `/code` on the same hostname
+   (docs/adr/0038). Nothing to do per task; adding a preview needs no DNS change.
+
+   The certificate is a single `*.e2e.bnei.dev` wildcard issued by Traefik's
+   `le-dns` resolver (ACME DNS-01 via Cloudflare), also defined in
+   `infra-bootstrap`. If previews ever fail TLS, check that resolver first —
+   the failure appears in Traefik's ACME logs, not anywhere in this repo.
 2. Apply the pointer Application in infra-bootstrap once (or let its
    `gitops/bootstrap/`'s self-sync pick it up — no manual `kubectl apply`
    needed beyond the one-time bootstrap already documented there).

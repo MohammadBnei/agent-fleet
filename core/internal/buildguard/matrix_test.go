@@ -89,6 +89,25 @@ func TestEveryDockerfileComponentIsWiredIntoCI(t *testing.T) {
 	}
 }
 
+// TestWorkerImageHasProcps asserts the worker image installs procps.
+//
+// Same shape as the two above — missing exactly where nobody looks. The
+// bundled Claude Code CLI kills subprocess trees with tree-kill, which on
+// Linux shells out to `ps --ppid <pid>`; oven/bun:1-slim has no `ps`, and
+// Bun's spawn throws ENOENT synchronously instead of emitting the 'error'
+// event tree-kill expects. The CLI process just dies, and the only symptom
+// the fleet sees is "Claude Code process exited with code 1".
+func TestWorkerImageHasProcps(t *testing.T) {
+	dockerfile, err := os.ReadFile(filepath.Join(repoRoot(t), "worker", "Dockerfile"))
+	if err != nil {
+		t.Fatalf("read worker/Dockerfile: %v", err)
+	}
+	if !strings.Contains(string(dockerfile), "procps") {
+		t.Error("worker/Dockerfile no longer installs procps — the Claude Code CLI needs `ps` " +
+			"to kill subprocess trees, and without it the agent crashes mid-session")
+	}
+}
+
 // TestEveryCodegenTargetHasAnInstallStep asserts that every local plugin
 // buf.gen.yaml resolves out of a component's node_modules has a matching
 // dependency install in the workflow that runs `buf generate`.

@@ -1,6 +1,10 @@
 # ADR-0012: On-demand e2e test environments via a standalone e2e-provisioner
 
-**Status:** Accepted
+**Status:** Accepted — except its **path-based routing** decision, superseded by
+[ADR-0038](0038-per-task-subdomain-e2e-preview.md). Previews are now one
+subdomain per task with the app at `/`; the "no wildcard DNS exists anywhere in
+this cluster" premise below stopped being true when `bnei.dev` moved to
+Cloudflare (`infra-bootstrap` ADR-0033). Everything else here stands.
 **Date:** 2026-08-01
 
 ## Context

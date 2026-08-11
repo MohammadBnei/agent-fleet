@@ -1,5 +1,33 @@
 # Changelog
 
+## [1.40.3](https://github.com/MohammadBnei/agent-fleet/compare/1.40.2...1.40.3) (2026-08-11)
+
+
+### Bug Fixes
+
+* **worker:** install procps — the agent crashed mid-session without ps ([#119](https://github.com/MohammadBnei/agent-fleet/issues/119)) ([101b585](https://github.com/MohammadBnei/agent-fleet/commit/101b585efb67498942b7c0aa2319fa54e594f9fd))
+
+## [1.40.2](https://github.com/MohammadBnei/agent-fleet/compare/1.40.1...1.40.2) (2026-08-11)
+
+
+### Bug Fixes
+
+* **provisioner:** the branch sweep never removed a single worktree ([#118](https://github.com/MohammadBnei/agent-fleet/issues/118)) ([9a8b9fc](https://github.com/MohammadBnei/agent-fleet/commit/9a8b9fc716dfe8659abd4bbca99218589aa8e4a5))
+
+## [1.40.1](https://github.com/MohammadBnei/agent-fleet/compare/1.40.0...1.40.1) (2026-08-11)
+
+
+### Bug Fixes
+
+* **logs:** the log viewer never returned anything — six bugs ([#117](https://github.com/MohammadBnei/agent-fleet/issues/117)) ([4a08b7a](https://github.com/MohammadBnei/agent-fleet/commit/4a08b7a9ae68db3f29674fac7120359d9db7c50d))
+
+# [1.40.0](https://github.com/MohammadBnei/agent-fleet/compare/1.39.1...1.40.0) (2026-08-11)
+
+
+### Features
+
+* **e2e:** per-task subdomains, app served at the root path ([#116](https://github.com/MohammadBnei/agent-fleet/issues/116)) ([260c2b6](https://github.com/MohammadBnei/agent-fleet/commit/260c2b6bb350bf460873f7ba8c454ba82b109814))
+
 ## [1.39.1](https://github.com/MohammadBnei/agent-fleet/compare/1.39.0...1.39.1) (2026-08-11)
 
 # [1.39.0](https://github.com/MohammadBnei/agent-fleet/compare/1.38.3...1.39.0) (2026-08-11)

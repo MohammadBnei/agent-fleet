@@ -64,8 +64,33 @@ func ExecURLFor(namespace, taskID string) string {
 	return fmt.Sprintf("http://%s.%s.svc.cluster.local:%d/mcp", ResourceName(taskID), namespace, ExecPort)
 }
 
+// PreviewURLFor is a per-task subdomain serving the app at the ROOT path —
+// nothing is stripped, so an app emitting root-absolute URLs (/assets/...,
+// /api/..., client-side router links) resolves correctly. The previous form,
+// https://<host>/<taskID>/app/, relied on a stripPrefix middleware and gave
+// the app no way to learn its public base path, so those apps 404'd even when
+// the pod was healthy (docs/adr/0038).
+//
+// host is the wildcard base domain (E2E_HOST, e.g. e2e.bnei.dev); shortID is
+// already DNS-safe (dashes stripped, truncated to 20), so it drops straight in
+// as a label. Covered by the single *.e2e.bnei.dev cert — see PreviewDomainFor.
 func PreviewURLFor(host, taskID string) string {
-	return fmt.Sprintf("https://%s/%s/app/", host, taskID)
+	return fmt.Sprintf("https://%s.%s/", shortID(taskID), host)
+}
+
+// PreviewHostFor is the bare hostname behind PreviewURLFor, for Host() rules.
+func PreviewHostFor(host, taskID string) string {
+	return fmt.Sprintf("%s.%s", shortID(taskID), host)
+}
+
+// PreviewDomainFor is the wildcard every task's IngressRoute asks for. Every
+// task requesting the SAME wildcard is the point: ACME orders it once and
+// reuses it forever. Left implicit, Traefik would derive the concrete per-task
+// hostname from the Host() rule and order a cert per session — Let's Encrypt
+// allows 50 per registered domain per 7 days, shared with every other
+// bnei.dev host, so that would exhaust issuance cluster-wide (docs/adr/0038).
+func PreviewDomainFor(host string) string {
+	return "*." + host
 }
 
 func Labels(taskID string) map[string]string {

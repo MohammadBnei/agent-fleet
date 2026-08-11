@@ -14,7 +14,27 @@ function currentLevel(): Level {
   return envLevel && envLevel in LEVELS ? envLevel : "info";
 }
 
+// taskId is stamped onto every line, mirroring the sidecar's
+// slog.Default().With("taskId", ...). Without it a worker's logs carry
+// nothing tying them to a task, so core's log viewer had no way to scope a
+// query except by parsing the pod name — which meant duplicating the
+// provisioner's shortID() truncation rule into core. One field here removes
+// that coupling: every fleet component is filterable with the same
+// `| json | taskId="..."`. Read per-call rather than cached at import so
+// tests can set it after loading this module.
+//
+// Explicit `fields` still wins: several call sites already pass a taskId
+// (their own, or another task's), and those must not be clobbered.
 export function log(level: Level, message: string, fields: Record<string, unknown> = {}): void {
   if (LEVELS[level] < LEVELS[currentLevel()]) return;
-  console.log(JSON.stringify({ time: new Date().toISOString(), level: level.toUpperCase(), msg: message, ...fields }));
+  const taskId = process.env.TASK_ID;
+  console.log(
+    JSON.stringify({
+      time: new Date().toISOString(),
+      level: level.toUpperCase(),
+      msg: message,
+      ...(taskId ? { taskId } : {}),
+      ...fields,
+    }),
+  );
 }

@@ -565,7 +565,7 @@ nothing external still queries it directly.
 | `SIDECAR_IMAGE` | `mohammaddocker/agent-fleet-sidecar:latest` | pinned by the deploy job in practice |
 | `WORKSPACE_PVC` | `agent-fleet-workspace` | the one shared RWX PVC name |
 | `WORKTREES_ROOT` | `/workspace` | where that PVC is mounted inside the provisioner's own pod |
-| `E2E_HOST` | `e2e.bnei.dev` | static host, path-routed per task |
+| `E2E_HOST` | `e2e.bnei.dev` | wildcard **base domain**, not a host: each task gets `<shortId>.e2e.bnei.dev` serving the app at `/` with nothing stripped, code-server at `/code` ([`adr/0038`](adr/0038-per-task-subdomain-e2e-preview.md)). One `*.e2e.bnei.dev` cert via Traefik's `le-dns` DNS-01 resolver, defined in `infra-bootstrap` |
 | `E2E_START_CMD_DREAM_ANALYST`, `E2E_START_CMD_VOS_MONOLITH` | `bun install && bun run dev` | per-repo build/run command |
 | `PORT` | `8080` | HTTP (currently unused beyond health, kept for parity) |
 | `GRPC_PORT` | `9090` | `ProvisionerService` |

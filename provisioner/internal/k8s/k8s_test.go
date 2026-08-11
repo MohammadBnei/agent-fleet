@@ -210,6 +210,10 @@ func TestCreatePod_ReadinessProbeOnAppPort(t *testing.T) {
 	}
 }
 
+// Only /code is stripped now. The app is served at the root of its own
+// hostname (docs/adr/0038), so stripping anything from it is exactly the bug
+// this replaced — an app emitting /assets/... 404'd because it was never told
+// its public base path.
 func TestCreateMiddleware_StripPrefixPaths(t *testing.T) {
 	c := newTestClient()
 	ctx := context.Background()
@@ -221,8 +225,20 @@ func TestCreateMiddleware_StripPrefixPaths(t *testing.T) {
 		t.Fatalf("get middleware: %v", err)
 	}
 	prefixes, _, _ := unstructuredNestedSlice(obj.Object, "spec", "stripPrefix", "prefixes")
-	if len(prefixes) != 2 || prefixes[0] != "/task-1/app" || prefixes[1] != "/task-1/code" {
-		t.Errorf("unexpected prefixes: %+v", prefixes)
+	if len(prefixes) != 1 || prefixes[0] != "/code" {
+		t.Errorf("expected exactly [/code], got %+v", prefixes)
+	}
+}
+
+// PreviewURLFor is the single string the whole per-task-subdomain fix hinges
+// on: root path, own hostname, no prefix anywhere.
+func TestPreviewURLFor_RootPathSubdomain(t *testing.T) {
+	got := PreviewURLFor("e2e.bnei.dev", "task-1")
+	if want := "https://task1.e2e.bnei.dev/"; got != want {
+		t.Errorf("PreviewURLFor = %q, want %q", got, want)
+	}
+	if strings.Contains(got, "/app") {
+		t.Errorf("PreviewURLFor still carries a path prefix: %q", got)
 	}
 }
 
@@ -236,13 +252,45 @@ func TestCreateIngressRoute_Routes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get ingressroute: %v", err)
 	}
+
+	// The wildcard must be declared explicitly, or Traefik derives the
+	// concrete per-task hostname from the Host() rule and orders one cert per
+	// session — against a 50-per-registered-domain-per-week budget shared with
+	// every other bnei.dev host.
+	resolver, _, _ := unstructuredNestedString(obj.Object, "spec", "tls", "certResolver")
+	if resolver != "le-dns" {
+		t.Errorf("certResolver = %q, want le-dns (TLS-ALPN-01 cannot issue a wildcard)", resolver)
+	}
+	domains, _, _ := unstructuredNestedSlice(obj.Object, "spec", "tls", "domains")
+	if len(domains) != 1 || domains[0].(map[string]any)["main"] != "*.e2e.bnei.dev" {
+		t.Fatalf("expected a single *.e2e.bnei.dev wildcard, got %+v", domains)
+	}
+
 	routes, _, _ := unstructuredNestedSlice(obj.Object, "spec", "routes")
 	if len(routes) != 2 {
 		t.Fatalf("expected 2 routes, got %d", len(routes))
 	}
-	route0 := routes[0].(map[string]any)
-	if route0["match"] != "Host(`e2e.bnei.dev`) && PathPrefix(`/task-1/app`)" {
-		t.Errorf("unexpected match: %v", route0["match"])
+
+	code := routes[0].(map[string]any)
+	if code["match"] != "Host(`task1.e2e.bnei.dev`) && PathPrefix(`/code`)" {
+		t.Errorf("unexpected code-server match: %v", code["match"])
+	}
+
+	app := routes[1].(map[string]any)
+	if app["match"] != "Host(`task1.e2e.bnei.dev`)" {
+		t.Errorf("unexpected app match: %v", app["match"])
+	}
+	// The load-bearing assertion: no stripPrefix on the app route. Adding one
+	// back reintroduces the base-path bug for every target app.
+	for _, mw := range app["middlewares"].([]any) {
+		if name := mw.(map[string]any)["name"]; name == stripPrefixName("task-1") {
+			t.Errorf("app route must NOT carry stripPrefix — it is served at the root")
+		}
+	}
+	// code-server must outrank the app route, else a target app owning /code
+	// wins on a rule-length tiebreak.
+	if code["priority"].(int64) <= app["priority"].(int64) {
+		t.Errorf("code route priority %v must exceed app route %v", code["priority"], app["priority"])
 	}
 }
 
@@ -473,6 +521,23 @@ func unstructuredNestedSlice(obj map[string]any, fields ...string) ([]any, bool,
 		cur = next
 	}
 	return nil, false, nil
+}
+
+// same, for a nested string read
+func unstructuredNestedString(obj map[string]any, fields ...string) (string, bool, error) {
+	cur := obj
+	for i, f := range fields {
+		if i == len(fields)-1 {
+			v, ok := cur[f].(string)
+			return v, ok, nil
+		}
+		next, ok := cur[f].(map[string]any)
+		if !ok {
+			return "", false, nil
+		}
+		cur = next
+	}
+	return "", false, nil
 }
 
 // The inverse of the guard this replaces. ADR-0035 injected the executor
