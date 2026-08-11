@@ -58,6 +58,12 @@ message SendMessageRequest {
   string text = 3;
   TranscriptEntryType type = 4;
   string idempotency_key = 5; // core mints one server-side if empty
+  // Correlates this entry to an earlier one, reusing the reply_to_seq
+  // column transcript already has for question/answer and permission
+  // pairs. Set by ask_thot so thot's answer points at the question that
+  // prompted it — the two can be minutes apart with other messages
+  // interleaving, so adjacency alone isn't enough to pair them.
+  optional int64 reply_to_seq = 6;
 }
 
 message SendMessageResponse {

@@ -104,6 +104,20 @@ func (c *Client) SendMessage(ctx context.Context, from, text string, msgType age
 	return resp.GetSeq(), nil
 }
 
+// AppendReplyMessage is SendMessage plus reply-to correlation — the same
+// two-method split transcript.Store itself uses, so the many callers that
+// don't need correlation aren't forced to pass a meaningless seq.
+func (c *Client) AppendReplyMessage(ctx context.Context, from, text string, msgType agentfleetv1.TranscriptEntryType, idempotencyKey string, replyToSeq int64) (int64, error) {
+	resp, err := c.rpc.SendMessage(ctx, &agentfleetv1.SendMessageRequest{
+		TaskId: c.taskID, From: from, Text: text, Type: msgType,
+		IdempotencyKey: idempotencyKey, ReplyToSeq: &replyToSeq,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("AppendReplyMessage: %w", err)
+	}
+	return resp.GetSeq(), nil
+}
+
 func (c *Client) WaitForMessages(ctx context.Context, sinceSeq int64, timeoutMs int32) ([]*agentfleetv1.TranscriptEntry, int64, error) {
 	resp, err := c.rpc.WaitForMessages(ctx, &agentfleetv1.ReadTranscriptSinceRequest{
 		TaskId: c.taskID, SinceSeq: sinceSeq, TimeoutMs: timeoutMs,

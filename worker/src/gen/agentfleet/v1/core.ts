@@ -134,6 +134,14 @@ export interface SendMessageRequest {
   type: TranscriptEntryType;
   /** core mints one server-side if empty */
   idempotencyKey: string;
+  /**
+   * Correlates this entry to an earlier one, reusing the reply_to_seq
+   * column transcript already has for question/answer and permission
+   * pairs. Set by ask_thot so thot's answer points at the question that
+   * prompted it — the two can be minutes apart with other messages
+   * interleaving, so adjacency alone isn't enough to pair them.
+   */
+  replyToSeq?: number | undefined;
 }
 
 export interface SendMessageResponse {
@@ -583,7 +591,7 @@ export const ReportPodEventsResponse: MessageFns<ReportPodEventsResponse> = {
 };
 
 function createBaseSendMessageRequest(): SendMessageRequest {
-  return { taskId: "", from: "", text: "", type: 0, idempotencyKey: "" };
+  return { taskId: "", from: "", text: "", type: 0, idempotencyKey: "", replyToSeq: undefined };
 }
 
 export const SendMessageRequest: MessageFns<SendMessageRequest> = {
@@ -602,6 +610,11 @@ export const SendMessageRequest: MessageFns<SendMessageRequest> = {
         : isSet(object.idempotency_key)
         ? globalThis.String(object.idempotency_key)
         : "",
+      replyToSeq: isSet(object.replyToSeq)
+        ? globalThis.Number(object.replyToSeq)
+        : isSet(object.reply_to_seq)
+        ? globalThis.Number(object.reply_to_seq)
+        : undefined,
     };
   },
 
@@ -622,6 +635,9 @@ export const SendMessageRequest: MessageFns<SendMessageRequest> = {
     if (message.idempotencyKey !== "") {
       obj.idempotencyKey = message.idempotencyKey;
     }
+    if (message.replyToSeq !== undefined) {
+      obj.replyToSeq = Math.round(message.replyToSeq);
+    }
     return obj;
   },
 
@@ -635,6 +651,7 @@ export const SendMessageRequest: MessageFns<SendMessageRequest> = {
     message.text = object.text ?? "";
     message.type = object.type ?? 0;
     message.idempotencyKey = object.idempotencyKey ?? "";
+    message.replyToSeq = object.replyToSeq ?? undefined;
     return message;
   },
 };

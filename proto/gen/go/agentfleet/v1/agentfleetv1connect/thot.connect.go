@@ -35,11 +35,22 @@ const (
 const (
 	// ThotServiceHealthzProcedure is the fully-qualified name of the ThotService's Healthz RPC.
 	ThotServiceHealthzProcedure = "/agentfleet.v1.ThotService/Healthz"
+	// ThotServiceAskThotProcedure is the fully-qualified name of the ThotService's AskThot RPC.
+	ThotServiceAskThotProcedure = "/agentfleet.v1.ThotService/AskThot"
 )
 
 // ThotServiceClient is a client for the agentfleet.v1.ThotService service.
 type ThotServiceClient interface {
 	Healthz(context.Context, *connect.Request[v1.HealthzRequest]) (*connect.Response[v1.HealthzResponse], error)
+	// Called directly by a worker's sidecar mid-task — this RPC *is* the
+	// hub-and-spoke exception (docs/adr/0035). Synchronous by design: a
+	// worker asking "why did this break" needs the answer before it can
+	// decide what to do next, so a post-and-poll would just make it stall.
+	//
+	// The answer is additionally written into the asking task's own
+	// transcript by the caller, so the exchange stays in that task's audit
+	// trail instead of living only in thot's stream.
+	AskThot(context.Context, *connect.Request[v1.AskThotRequest]) (*connect.Response[v1.AskThotResponse], error)
 }
 
 // NewThotServiceClient constructs a client for the agentfleet.v1.ThotService service. By default,
@@ -59,12 +70,19 @@ func NewThotServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(thotServiceMethods.ByName("Healthz")),
 			connect.WithClientOptions(opts...),
 		),
+		askThot: connect.NewClient[v1.AskThotRequest, v1.AskThotResponse](
+			httpClient,
+			baseURL+ThotServiceAskThotProcedure,
+			connect.WithSchema(thotServiceMethods.ByName("AskThot")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // thotServiceClient implements ThotServiceClient.
 type thotServiceClient struct {
 	healthz *connect.Client[v1.HealthzRequest, v1.HealthzResponse]
+	askThot *connect.Client[v1.AskThotRequest, v1.AskThotResponse]
 }
 
 // Healthz calls agentfleet.v1.ThotService.Healthz.
@@ -72,9 +90,23 @@ func (c *thotServiceClient) Healthz(ctx context.Context, req *connect.Request[v1
 	return c.healthz.CallUnary(ctx, req)
 }
 
+// AskThot calls agentfleet.v1.ThotService.AskThot.
+func (c *thotServiceClient) AskThot(ctx context.Context, req *connect.Request[v1.AskThotRequest]) (*connect.Response[v1.AskThotResponse], error) {
+	return c.askThot.CallUnary(ctx, req)
+}
+
 // ThotServiceHandler is an implementation of the agentfleet.v1.ThotService service.
 type ThotServiceHandler interface {
 	Healthz(context.Context, *connect.Request[v1.HealthzRequest]) (*connect.Response[v1.HealthzResponse], error)
+	// Called directly by a worker's sidecar mid-task — this RPC *is* the
+	// hub-and-spoke exception (docs/adr/0035). Synchronous by design: a
+	// worker asking "why did this break" needs the answer before it can
+	// decide what to do next, so a post-and-poll would just make it stall.
+	//
+	// The answer is additionally written into the asking task's own
+	// transcript by the caller, so the exchange stays in that task's audit
+	// trail instead of living only in thot's stream.
+	AskThot(context.Context, *connect.Request[v1.AskThotRequest]) (*connect.Response[v1.AskThotResponse], error)
 }
 
 // NewThotServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -90,10 +122,18 @@ func NewThotServiceHandler(svc ThotServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(thotServiceMethods.ByName("Healthz")),
 		connect.WithHandlerOptions(opts...),
 	)
+	thotServiceAskThotHandler := connect.NewUnaryHandler(
+		ThotServiceAskThotProcedure,
+		svc.AskThot,
+		connect.WithSchema(thotServiceMethods.ByName("AskThot")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/agentfleet.v1.ThotService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case ThotServiceHealthzProcedure:
 			thotServiceHealthzHandler.ServeHTTP(w, r)
+		case ThotServiceAskThotProcedure:
+			thotServiceAskThotHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -105,4 +145,8 @@ type UnimplementedThotServiceHandler struct{}
 
 func (UnimplementedThotServiceHandler) Healthz(context.Context, *connect.Request[v1.HealthzRequest]) (*connect.Response[v1.HealthzResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.ThotService.Healthz is not implemented"))
+}
+
+func (UnimplementedThotServiceHandler) AskThot(context.Context, *connect.Request[v1.AskThotRequest]) (*connect.Response[v1.AskThotResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.ThotService.AskThot is not implemented"))
 }

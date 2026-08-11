@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/MohammadBnei/agent-fleet/sidecar/internal/coreclient"
+	"github.com/MohammadBnei/agent-fleet/sidecar/internal/thotclient"
 	"github.com/MohammadBnei/agent-fleet/sidecar/internal/localapi"
 	"github.com/MohammadBnei/agent-fleet/sidecar/internal/mcpserver"
 	"github.com/MohammadBnei/agent-fleet/sidecar/internal/telemetry"
@@ -37,6 +38,22 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	// docs/adr/0035: a SECOND outbound connection, the fleet's one
+	// deliberate exception to adr/0020 point 5's single-upstream-channel
+	// shape. Left nil when THOT_GRPC_ADDR is unset, which makes the
+	// ask_thot tool simply not register — a fleet without thot deployed
+	// behaves exactly as before.
+	var thot *thotclient.Client
+	if thotAddr := os.Getenv("THOT_GRPC_ADDR"); thotAddr != "" {
+		c, err := thotclient.New(thotAddr, taskID, os.Getenv("THOT_AUTH_TOKEN"))
+		if err != nil {
+			slog.Error("thot client", "error", err)
+			os.Exit(1)
+		}
+		thot = c
+		defer func() { _ = thot.Close() }()
+	}
+
 	core, err := coreclient.New(coreAddr, taskID)
 	if err != nil {
 		slog.Error("core client init failed", "error", err)
@@ -57,7 +74,7 @@ func main() {
 
 	go telemetry.Run(ctx, core, worktreePath, 5*time.Second)
 
-	mcpServer := &http.Server{Addr: ":" + mcpPort, Handler: withAccessLog("sidecar mcp", mcpserver.New(core))}
+	mcpServer := &http.Server{Addr: ":" + mcpPort, Handler: withAccessLog("sidecar mcp", mcpserver.New(core, thot))}
 	localAPIServer := &http.Server{Addr: ":" + localAPIPort, Handler: withAccessLog("sidecar local api", localapi.New(core))}
 
 	go func() {

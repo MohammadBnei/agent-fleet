@@ -28,6 +28,15 @@ export interface HealthzResponse {
   ok: boolean;
 }
 
+export interface AskThotRequest {
+  askingTaskId: string;
+  question: string;
+}
+
+export interface AskThotResponse {
+  answer: string;
+}
+
 function createBaseHealthzRequest(): HealthzRequest {
   return {};
 }
@@ -129,6 +138,144 @@ export const HealthzResponse: MessageFns<HealthzResponse> = {
   },
 };
 
+function createBaseAskThotRequest(): AskThotRequest {
+  return { askingTaskId: "", question: "" };
+}
+
+export const AskThotRequest: MessageFns<AskThotRequest> = {
+  encode(message: AskThotRequest, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.askingTaskId !== "") {
+      writer.uint32(10).string(message.askingTaskId);
+    }
+    if (message.question !== "") {
+      writer.uint32(18).string(message.question);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): AskThotRequest {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseAskThotRequest();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.askingTaskId = reader.string();
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.question = reader.string();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): AskThotRequest {
+    return {
+      askingTaskId: isSet(object.askingTaskId)
+        ? globalThis.String(object.askingTaskId)
+        : isSet(object.asking_task_id)
+        ? globalThis.String(object.asking_task_id)
+        : "",
+      question: isSet(object.question) ? globalThis.String(object.question) : "",
+    };
+  },
+
+  toJSON(message: AskThotRequest): unknown {
+    const obj: any = {};
+    if (message.askingTaskId !== "") {
+      obj.askingTaskId = message.askingTaskId;
+    }
+    if (message.question !== "") {
+      obj.question = message.question;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<AskThotRequest>, I>>(base?: I): AskThotRequest {
+    return AskThotRequest.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<AskThotRequest>, I>>(object: I): AskThotRequest {
+    const message = createBaseAskThotRequest();
+    message.askingTaskId = object.askingTaskId ?? "";
+    message.question = object.question ?? "";
+    return message;
+  },
+};
+
+function createBaseAskThotResponse(): AskThotResponse {
+  return { answer: "" };
+}
+
+export const AskThotResponse: MessageFns<AskThotResponse> = {
+  encode(message: AskThotResponse, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.answer !== "") {
+      writer.uint32(10).string(message.answer);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): AskThotResponse {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseAskThotResponse();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.answer = reader.string();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): AskThotResponse {
+    return { answer: isSet(object.answer) ? globalThis.String(object.answer) : "" };
+  },
+
+  toJSON(message: AskThotResponse): unknown {
+    const obj: any = {};
+    if (message.answer !== "") {
+      obj.answer = message.answer;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<AskThotResponse>, I>>(base?: I): AskThotResponse {
+    return AskThotResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<AskThotResponse>, I>>(object: I): AskThotResponse {
+    const message = createBaseAskThotResponse();
+    message.answer = object.answer ?? "";
+    return message;
+  },
+};
+
 /**
  * thot is the gRPC server; worker sidecars, core, and (later) Alertmanager
  * are its callers. Per docs/adr/0035, this is the fleet's one deliberate,
@@ -138,9 +285,13 @@ export const HealthzResponse: MessageFns<HealthzResponse> = {
  * that's a separate CoreService call thot's callers make on the side, not
  * something this service itself proxies.
  *
- * v1 is deliberately minimal: a health check only. AskThot (Phase 4) and
- * RunAudit (Phase 5) are added in later phases of the same implementation
- * plan, not designed blind here ahead of the code that needs them.
+ * Every RPC except Healthz requires an `authorization: Bearer <token>`
+ * header matching thot's THOT_AUTH_TOKEN. ADR-0035 explicitly flagged
+ * that the provisioner's network-reachability-only precedent doesn't
+ * scale to a component with cluster-mutation power; a shared static
+ * bearer is the minimum viable step-up, with mTLS/SPIFFE as the upgrade
+ * path if the threat model ever changes. Healthz stays unauthenticated so
+ * kubelet probes work without wiring the secret into the probe config.
  */
 export type ThotServiceService = typeof ThotServiceService;
 export const ThotServiceService = {
@@ -153,10 +304,40 @@ export const ThotServiceService = {
     responseSerialize: (value: HealthzResponse): Buffer => Buffer.from(HealthzResponse.encode(value).finish()),
     responseDeserialize: (value: Buffer): HealthzResponse => HealthzResponse.decode(value),
   },
+  /**
+   * Called directly by a worker's sidecar mid-task — this RPC *is* the
+   * hub-and-spoke exception (docs/adr/0035). Synchronous by design: a
+   * worker asking "why did this break" needs the answer before it can
+   * decide what to do next, so a post-and-poll would just make it stall.
+   *
+   * The answer is additionally written into the asking task's own
+   * transcript by the caller, so the exchange stays in that task's audit
+   * trail instead of living only in thot's stream.
+   */
+  askThot: {
+    path: "/agentfleet.v1.ThotService/AskThot" as const,
+    requestStream: false as const,
+    responseStream: false as const,
+    requestSerialize: (value: AskThotRequest): Buffer => Buffer.from(AskThotRequest.encode(value).finish()),
+    requestDeserialize: (value: Buffer): AskThotRequest => AskThotRequest.decode(value),
+    responseSerialize: (value: AskThotResponse): Buffer => Buffer.from(AskThotResponse.encode(value).finish()),
+    responseDeserialize: (value: Buffer): AskThotResponse => AskThotResponse.decode(value),
+  },
 } as const;
 
 export interface ThotServiceServer extends UntypedServiceImplementation {
   healthz: handleUnaryCall<HealthzRequest, HealthzResponse>;
+  /**
+   * Called directly by a worker's sidecar mid-task — this RPC *is* the
+   * hub-and-spoke exception (docs/adr/0035). Synchronous by design: a
+   * worker asking "why did this break" needs the answer before it can
+   * decide what to do next, so a post-and-poll would just make it stall.
+   *
+   * The answer is additionally written into the asking task's own
+   * transcript by the caller, so the exchange stays in that task's audit
+   * trail instead of living only in thot's stream.
+   */
+  askThot: handleUnaryCall<AskThotRequest, AskThotResponse>;
 }
 
 export interface ThotServiceClient extends Client {
@@ -174,6 +355,31 @@ export interface ThotServiceClient extends Client {
     metadata: Metadata,
     options: Partial<CallOptions>,
     callback: (error: ServiceError | null, response: HealthzResponse) => void,
+  ): ClientUnaryCall;
+  /**
+   * Called directly by a worker's sidecar mid-task — this RPC *is* the
+   * hub-and-spoke exception (docs/adr/0035). Synchronous by design: a
+   * worker asking "why did this break" needs the answer before it can
+   * decide what to do next, so a post-and-poll would just make it stall.
+   *
+   * The answer is additionally written into the asking task's own
+   * transcript by the caller, so the exchange stays in that task's audit
+   * trail instead of living only in thot's stream.
+   */
+  askThot(
+    request: AskThotRequest,
+    callback: (error: ServiceError | null, response: AskThotResponse) => void,
+  ): ClientUnaryCall;
+  askThot(
+    request: AskThotRequest,
+    metadata: Metadata,
+    callback: (error: ServiceError | null, response: AskThotResponse) => void,
+  ): ClientUnaryCall;
+  askThot(
+    request: AskThotRequest,
+    metadata: Metadata,
+    options: Partial<CallOptions>,
+    callback: (error: ServiceError | null, response: AskThotResponse) => void,
   ): ClientUnaryCall;
 }
 
