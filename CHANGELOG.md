@@ -1,5 +1,13 @@
 # Changelog
 
+# [1.35.0](https://github.com/MohammadBnei/agent-fleet/compare/1.34.1...1.35.0) (2026-08-11)
+
+
+### Features
+
+* **thot:** dashboard-editable scheduled audits (ADR-0035 phase 4) ([#95](https://github.com/MohammadBnei/agent-fleet/issues/95)) ([05b2c0c](https://github.com/MohammadBnei/agent-fleet/commit/05b2c0c18cd5841abfcb481a284d6315d67ce1c1))
+* **thot:** let thot read freely, keep mutation gated ([#96](https://github.com/MohammadBnei/agent-fleet/issues/96)) ([78019cf](https://github.com/MohammadBnei/agent-fleet/commit/78019cf6539d09ae7bef90901fab6fe61b871513))
+
 ## [1.34.1](https://github.com/MohammadBnei/agent-fleet/compare/1.34.0...1.34.1) (2026-08-11)
 
 
