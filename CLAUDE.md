@@ -51,6 +51,7 @@ tiers instead of a fleet-imposed Write/Edit approval gate.
 | `sidecar/` | Go — new second container in every worker pod. Local MCP server (agent-facing) + local plain HTTP/JSON API (wrapper-facing, including the live human-message SSE feed) + an independent telemetry loop, all funneled through one outbound gRPC connection to `core` |
 | `dashboard/` | React + Vite + TypeScript + Tailwind/DaisyUI SPA, talks to `core` via a generated ConnectRPC client, built into `core`'s binary — not deployed on its own |
 | `worker/` | The Claude Code worker (TS/Bun; `src/session.ts`, renamed from `planning.ts`) — **single-shot**: one pod per warm, one continuous streaming-input session spanning planning+implementation (resumable via `RESUME_SESSION_ID`), then exits. Talks only to its own pod's `localhost` sidecar |
+| `e2e-runner/` | The e2e pod's image (code-server + the target app + Playwright MCP + `execmcp`). Also the worker's build/test **sandbox** — `execmcp`'s `run_command` is where builds/tests/installs run. No git, no fleet credentials, only this task's worktree — see `docs/adr/0039` |
 | `proto/` | buf-managed `.proto` schema: `CoreService`, `ProvisionerService`, `DashboardService` — shared by `core`/`provisioner` (Go codegen) and `worker`/`dashboard` (TS codegen) |
 | `db/migrations/` | Sole source of truth for the shared `tasks`/`knowledge_journal`/`transcript` schema (`agentfleetdb`), applied via golang-migrate — see `docs/adr/0030`. `e2e_sessions` still exists in the schema but is dead code — see `docs/ARCHITECTURE.md` §6 |
 | `migration/` | The image that applies `db/migrations/` (`FROM migrate/migrate:latest`) — run as `k8s/core.yaml`'s `hooks.migrate` PreSync job, not part of `core` itself |
@@ -97,6 +98,15 @@ tiers instead of a fleet-imposed Write/Edit approval gate.
   or round completion. A permission decision is always a real, structured
   `RespondToPermission` (or `SetPermissionMode`) call. `/approve` no
   longer exists.
+- **The e2e pod is the worker's build/test sandbox, and it has no git**
+  (`docs/adr/0039`). `run_command` is registered statically on the sidecar
+  (present from turn one, resumed sessions included) and provisions a pod on
+  first use — `request_e2e_env` is not a prerequisite. Builds/tests/lints/
+  installs go there; `git`/`gh`/PR work stays on the worker pod's `Bash`.
+  Keeping git out is what justifies `run_command` being un-prompted while
+  `Bash` is `canUseTool`-gated: the sandbox holds no fleet credentials and
+  only this task's worktree. Adding credentials or widening its mount
+  reopens that decision.
 - Every result is a PR.
 - One git worktree per task — never a shared writable repo checkout across
   concurrent tasks.

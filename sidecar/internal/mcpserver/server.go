@@ -76,6 +76,17 @@ func New(core *coreclient.Client) http.Handler {
 		mcp.WithDescription("Tear down this task's e2e environment now, without waiting for the task to finish."),
 	), killEnvHandler(core))
 
+	// Registered statically, unlike the Playwright tools below it: this is
+	// the worker's build/test sandbox (docs/adr/0039), so it has to exist
+	// from the session's first turn rather than appear only after a
+	// request_e2e_env call — which also meant it never came back at all on a
+	// resumed session, and depended on notifications/tools/list_changed
+	// being honored (a risk docs/adr/0012 flagged and never verified).
+	s.AddTool(mcp.NewTool("run_command",
+		mcp.WithDescription("Run a shell command in this task's sandbox — a separate pod that already has the repo's toolchain, its services (Postgres/Redis), a warm dependency cache, and the app's dev server, sharing this task's worktree. Prefer this over Bash for anything that builds, tests, lints, installs dependencies, or runs the app. Starts the sandbox on first use if it isn't running yet, so no separate setup call is needed. Returns stdout, stderr and exit code — a nonzero exit is not an error, it's information. The sandbox has NO git and no GitHub credentials on purpose: run git, gh and anything that opens the PR through Bash instead. A long-running process (e.g. a dev server) should background itself (trailing &) rather than block this call; timeout is 15 minutes."),
+		mcp.WithString("command", mcp.Required(), mcp.Description("Shell command, run via bash -lc from the worktree root")),
+	), runCommandHandler(core))
+
 	s.AddTool(mcp.NewTool("list_shared_files",
 		mcp.WithDescription("List files in the fleet-wide shared file space (a single flat Garage S3 bucket, shared by every task and by the human via the dashboard). Returns each file's key, size, last-modified time, and content type."),
 	), listSharedFilesHandler(core))
@@ -318,6 +329,14 @@ func requestE2eEnvHandler(core *coreclient.Client, s *server.MCPServer) server.T
 		tools, err := core.ListE2eTools(ctx)
 		if err == nil {
 			for _, t := range tools {
+				// A provisioner still on the old image lists run_command
+				// here; registering it would overwrite New()'s static,
+				// pod-provisioning handler with a plain passthrough. The
+				// two run as separate images, so this window is real on
+				// every rolling deploy, not just theoretical.
+				if t.GetName() == runCommandToolName {
+					continue
+				}
 				addProxiedTool(s, core, t)
 			}
 			s.SendNotificationToAllClients("notifications/tools/list_changed", nil)
@@ -334,6 +353,94 @@ func requestE2eEnvHandler(core *coreclient.Client, s *server.MCPServer) server.T
 	}
 }
 
+// runCommandToolName is the tool served by the e2e pod's own execmcp
+// listener, proxied through core (provisioner/internal/mcpproxy routes it).
+const runCommandToolName = "run_command"
+
+// e2eRunner is the slice of coreclient.Client runCommandHandler needs —
+// same test-seam pattern viewLogsHandler and confirmStartCmdOverride
+// already use in this package, so the retry logic is unit-testable without
+// bufconn.
+type e2eRunner interface {
+	CallE2eTool(ctx context.Context, toolName, argumentsJSON string) (resultJSON string, isError bool, err error)
+	RequestE2eEnv(ctx context.Context, startCmd string) (*agentfleetv1.RequestE2EEnvResponse, error)
+}
+
+// runCommandHandler runs the command in this task's e2e pod, provisioning
+// one first if there isn't a live one yet.
+//
+// Ordering is deliberate: call first, provision only if the call fails.
+// RequestE2eEnv is idempotent (CreateE2eSession short-circuits on an
+// existing pod), so provisioning up-front would have worked too — but it
+// would put two extra gRPC hops and a Postgres profile lookup in front of
+// every single command, to fix a state that only exists once per session.
+// Doing it on failure also self-heals after kill_env, which a
+// provisioned-once flag would not.
+func runCommandHandler(core e2eRunner) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		command := req.GetString("command", "")
+		if command == "" {
+			return mcp.NewToolResultError("command is required"), nil
+		}
+		argsJSON, err := json.Marshal(map[string]any{"command": command})
+		if err != nil {
+			return nil, fmt.Errorf("marshal run_command arguments: %w", err)
+		}
+
+		resultJSON, isError, err := core.CallE2eTool(ctx, runCommandToolName, string(argsJSON))
+		if err == nil {
+			return e2eToolResult(resultJSON, isError, "")
+		}
+
+		// execmcp reports a nonzero exit as an ordinary result, never as an
+		// error, so reaching here means the call didn't land at all — no
+		// live sandbox pod. Start one and try once more.
+		slog.Info("mcp run_command: no live sandbox, provisioning one", "error", err)
+		env, provErr := core.RequestE2eEnv(ctx, "")
+		if provErr != nil {
+			slog.Error("mcp run_command: provisioning failed", "error", provErr)
+			return mcp.NewToolResultError(fmt.Sprintf("run_command: no sandbox running and one could not be started: %v", provErr)), nil
+		}
+		resultJSON, isError, err = core.CallE2eTool(ctx, runCommandToolName, string(argsJSON))
+		if err != nil {
+			slog.Error("mcp run_command: still unreachable after provisioning", "error", err)
+			return mcp.NewToolResultError(fmt.Sprintf("run_command: sandbox started but is not reachable: %v", err)), nil
+		}
+		// Tell the agent what it just landed in. Without this the sandbox
+		// appears out of nowhere with an unknown toolchain and an unknown
+		// start command — the same blindness docs/adr/0036 added
+		// resolvedStartCmd to request_e2e_env's response to fix.
+		recipe, _ := json.Marshal(map[string]any{
+			"startedSandbox":   true,
+			"previewUrl":       env.GetPreviewUrl(),
+			"profileName":      env.GetProfileName(),
+			"resolvedStartCmd": env.GetResolvedStartCmd(),
+			"tools":            env.GetTools(),
+			"services":         env.GetServices(),
+		})
+		return e2eToolResult(resultJSON, isError, string(recipe))
+	}
+}
+
+// e2eToolResult rebuilds the proxied CallToolResult, optionally prefixing a
+// note of its own as an extra leading text block.
+func e2eToolResult(resultJSON string, isError bool, note string) (*mcp.CallToolResult, error) {
+	var result mcp.CallToolResult
+	if err := json.Unmarshal([]byte(resultJSON), &result); err != nil {
+		return nil, fmt.Errorf("unmarshal tool result: %w", err)
+	}
+	result.IsError = isError
+	if note != "" {
+		result.Content = append([]mcp.Content{mcp.NewTextContent(note)}, result.Content...)
+	}
+	return &result, nil
+}
+
+// addProxiedTool registers one runtime-discovered e2e tool (Playwright's
+// set) as a straight passthrough. run_command is deliberately absent from
+// what ProxiedTools returns — it's registered statically in New() with a
+// handler that can provision a pod, and re-registering it here would
+// replace that with a passthrough that can't (docs/adr/0039).
 func addProxiedTool(s *server.MCPServer, core *coreclient.Client, desc *agentfleetv1.E2EToolDescriptor) {
 	var schema mcp.ToolInputSchema
 	_ = json.Unmarshal([]byte(desc.GetInputSchemaJson()), &schema)
@@ -347,12 +454,7 @@ func addProxiedTool(s *server.MCPServer, core *coreclient.Client, desc *agentfle
 		if err != nil {
 			return nil, err
 		}
-		var result mcp.CallToolResult
-		if err := json.Unmarshal([]byte(resultJSON), &result); err != nil {
-			return nil, fmt.Errorf("unmarshal tool result: %w", err)
-		}
-		result.IsError = isError
-		return &result, nil
+		return e2eToolResult(resultJSON, isError, "")
 	})
 }
 

@@ -251,6 +251,15 @@ export async function runTask(task: Task): Promise<TaskResult> {
         "mcp__agent-fleet-sidecar__AskUserQuestion",
         "mcp__agent-fleet-sidecar__request_e2e_env",
         "mcp__agent-fleet-sidecar__kill_env",
+        // Named explicitly, though the wildcard below already covers it,
+        // because "an un-prompted shell while Bash is gated" reads as an
+        // oversight otherwise. It's deliberate (docs/adr/0039): run_command
+        // lands in the e2e pod, which holds no GH_TOKEN, no
+        // CLAUDE_CODE_OAUTH_TOKEN, only this task's worktree, and no git —
+        // strictly less privileged than this pod, whose Bash is gated.
+        // If that pod ever gains credentials or a wider mount, this entry
+        // is the thing to remove.
+        "mcp__agent-fleet-sidecar__run_command",
         "mcp__agent-fleet-sidecar__*",
       ],
       // The SDK's own built-in "AskUserQuestion" (distinct from the

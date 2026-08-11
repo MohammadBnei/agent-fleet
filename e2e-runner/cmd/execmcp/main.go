@@ -29,7 +29,12 @@ import (
 // commandTimeout bounds a single run_command call — a caller wanting a
 // long-running process (a dev server) backgrounds it itself inside the
 // command string, same convention entrypoint.sh already uses for the app.
-const commandTimeout = 5 * time.Minute
+// 15 minutes, not 5: this pod is the worker's build/test sandbox
+// (docs/adr/0039), and a cold `bun install` on the shared cache measured
+// 782s live (docs/adr/0036) — the one command the sandbox most exists to
+// run was longer than its own timeout. Nothing upstream bounds this;
+// core's sessionCallTimeout covers CreateWorkerPod/TearDownSession only.
+const commandTimeout = 15 * time.Minute
 
 func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
