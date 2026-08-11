@@ -688,35 +688,61 @@ func parseDuration(s string, defaultDur time.Duration) time.Duration {
 	return d
 }
 
-// formatLogsForAgent formats log entries as a table for agent consumption.
+// formatLogsForAgent formats log entries compactly for agent consumption.
+// Anything constant across the whole result — the pod name, the date — is
+// hoisted into one header line instead of being restated on every row: the old
+// table spent ~45 characters per line repeating them, which for a typical e2e
+// pod dump was more tokens than the log content itself. Blank-message rows are
+// dropped for the same reason.
 func formatLogsForAgent(entries []lokiclient.LogEntry) string {
-	if len(entries) == 0 {
+	rows := make([]lokiclient.LogEntry, 0, len(entries))
+	pods := map[string]struct{}{}
+	dates := map[string]struct{}{}
+	for _, e := range entries {
+		if strings.TrimSpace(e.Msg) == "" {
+			continue
+		}
+		rows = append(rows, e)
+		pods[e.PodName] = struct{}{}
+		dates[e.Timestamp.Format("2006-01-02")] = struct{}{}
+	}
+	if len(rows) == 0 {
 		return "No logs found."
 	}
 
 	var b strings.Builder
-	b.WriteString("Timestamp            Pod                  Level  Message\n")
-	b.WriteString("-------------------  -------------------  -----  -------\n")
+	fmt.Fprintf(&b, "%d entries", len(rows))
+	if len(pods) == 1 {
+		fmt.Fprintf(&b, " · %s", rows[0].PodName)
+	}
+	if len(dates) == 1 {
+		fmt.Fprintf(&b, " · %s", rows[0].Timestamp.Format("2006-01-02"))
+	}
+	b.WriteString("\n")
 
-	for _, entry := range entries {
-		ts := entry.Timestamp.Format("2006-01-02 15:04:05")
-		level := entry.Level
+	// Only carry the date per-row when the result actually spans days.
+	layout := "15:04:05"
+	if len(dates) > 1 {
+		layout = "01-02 15:04:05"
+	}
+	for _, e := range rows {
+		level := strings.ToLower(e.Level)
 		if level == "" {
 			level = "info"
 		}
-		// Truncate pod name for display
-		podName := entry.PodName
-		if len(podName) > 19 {
-			podName = podName[:16] + "..."
-		}
-		// Truncate long messages
-		msg := entry.Msg
+		msg := strings.TrimSpace(e.Msg)
 		if len(msg) > 80 {
 			msg = msg[:77] + "..."
 		}
-		fmt.Fprintf(&b, "%s  %-19s  %-5s  %s\n", ts, podName, level, msg)
+		fmt.Fprintf(&b, "%s %-5s %s", e.Timestamp.Format(layout), level, msg)
+		if len(pods) > 1 {
+			podName := e.PodName
+			if len(podName) > 19 {
+				podName = podName[:16] + "..."
+			}
+			fmt.Fprintf(&b, " [%s]", podName)
+		}
+		b.WriteString("\n")
 	}
-
-	fmt.Fprintf(&b, "\nShowing %d entries", len(entries))
 	return b.String()
 }

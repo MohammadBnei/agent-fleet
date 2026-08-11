@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 	"github.com/MohammadBnei/agent-fleet/core/internal/lokiclient"
+	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 )
 
 // mockLokiClient is a test double for lokiclient.Client
@@ -221,4 +221,47 @@ func TestParseDuration(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestFormatLogsForAgent(t *testing.T) {
+	at := func(s string) time.Time {
+		ts, err := time.Parse(time.RFC3339, s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return ts
+	}
+
+	t.Run("single pod, single day: no per-row pod or date", func(t *testing.T) {
+		got := formatLogsForAgent([]lokiclient.LogEntry{
+			{Timestamp: at("2026-08-11T22:16:42Z"), Level: "INFO", Msg: "execmcp listening", PodName: "e2e-41b11fd47642"},
+			{Timestamp: at("2026-08-11T22:16:44Z"), Msg: "  ", PodName: "e2e-41b11fd47642"},
+			{Timestamp: at("2026-08-11T22:16:44Z"), Level: "info", Msg: "Listening on http://localhost:8931", PodName: "e2e-41b11fd47642"},
+		})
+		want := "2 entries · e2e-41b11fd47642 · 2026-08-11\n" +
+			"22:16:42 info  execmcp listening\n" +
+			"22:16:44 info  Listening on http://localhost:8931\n"
+		if got != want {
+			t.Errorf("got:\n%s\nwant:\n%s", got, want)
+		}
+	})
+
+	t.Run("multiple pods across days: both carried per row", func(t *testing.T) {
+		got := formatLogsForAgent([]lokiclient.LogEntry{
+			{Timestamp: at("2026-08-11T22:16:42Z"), Level: "info", Msg: "a", PodName: "worker-1"},
+			{Timestamp: at("2026-08-12T01:02:03Z"), Level: "error", Msg: "b", PodName: "worker-2"},
+		})
+		want := "2 entries\n" +
+			"08-11 22:16:42 info  a [worker-1]\n" +
+			"08-12 01:02:03 error b [worker-2]\n"
+		if got != want {
+			t.Errorf("got:\n%s\nwant:\n%s", got, want)
+		}
+	})
+
+	t.Run("nothing but blank messages reads as empty", func(t *testing.T) {
+		if got := formatLogsForAgent([]lokiclient.LogEntry{{Msg: "\n"}}); got != "No logs found." {
+			t.Errorf("got %q", got)
+		}
+	})
 }
