@@ -63,6 +63,21 @@ message GetE2eStatusRequest {
 message GetE2eStatusResponse {
   string status = 1;
   string preview_url = 2;
+  // Fields 3-7 are pass-through from ProvisionerService.GetE2eSessionStatus
+  // (live pod truth — core holds no cluster RBAC and must not read pods);
+  // 8-11 are core's own, resolved from repo_profiles.
+  string start_cmd = 3;
+  string pod_phase = 4;
+  bool app_ready = 5;
+  int32 restarts = 6;
+  string started_at = 7; // RFC3339
+  string profile_name = 8;
+  repeated string tools = 9;
+  repeated string services = 10;
+  // True when the running pod's start_cmd differs from the profile's — i.e.
+  // a human-approved per-task override is in effect. Surfacing this is the
+  // point: a silent override is what caused the bug this card exists for.
+  bool start_cmd_overridden = 11;
 }
 
 message KillRequest {
