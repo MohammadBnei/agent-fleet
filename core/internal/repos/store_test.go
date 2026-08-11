@@ -121,3 +121,33 @@ func TestStore_SetOnChange(t *testing.T) {
 		t.Fatalf("onChange called %d times, want 3", calls)
 	}
 }
+
+// The bug this prevents: an SSH URL is syntactically valid, stores fine,
+// and only fails ten minutes later when a dispatched task tries to clone
+// — surfacing as failed_permanently with "clone/fetch failed" and no
+// obvious cause. Confirmed live 2026-08-11 with infra-bootstrap.
+func TestCreate_RejectsSSHURL(t *testing.T) {
+	ctx := context.Background()
+	s := NewStore(newTestPool(t))
+
+	for _, url := range []string{
+		"git@github.com:MohammadBnei/infra-bootstrap.git",
+		"ssh://git@github.com/MohammadBnei/infra-bootstrap.git",
+	} {
+		err := s.Create(ctx, Repo{Name: "ssh-repo", URL: url, BaseBranch: "main"})
+		if !errors.Is(err, ErrSSHURL) {
+			t.Errorf("Create(%q) = %v, want ErrSSHURL — an SSH URL can never authenticate here", url, err)
+		}
+	}
+}
+
+func TestCreate_AcceptsHTTPSURL(t *testing.T) {
+	ctx := context.Background()
+	s := NewStore(newTestPool(t))
+
+	if err := s.Create(ctx, Repo{
+		Name: "https-repo", URL: "https://github.com/MohammadBnei/x.git", BaseBranch: "main",
+	}); err != nil {
+		t.Fatalf("Create with an https URL should succeed, got %v", err)
+	}
+}
