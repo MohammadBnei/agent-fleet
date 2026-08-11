@@ -32,7 +32,7 @@ func (c *Client) CreateMiddleware(ctx context.Context, taskID string) error {
 		},
 	}}
 	_, err := c.Dynamic.Resource(middlewareGVR).Namespace(c.Namespace).Create(ctx, obj, createOpts())
-	if err != nil {
+	if err = ignoreAlreadyExists(err); err != nil {
 		slog.Error("k8s CreateMiddleware", "taskId", taskID, "error", err)
 		return err
 	}

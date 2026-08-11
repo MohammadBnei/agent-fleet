@@ -28,7 +28,7 @@ func (c *Client) CreateService(ctx context.Context, taskID string) error {
 		},
 	}
 	_, err := c.Core.CoreV1().Services(c.Namespace).Create(ctx, svc, metav1.CreateOptions{})
-	if err != nil {
+	if err = ignoreAlreadyExists(err); err != nil {
 		slog.Error("k8s CreateService", "taskId", taskID, "error", err)
 		return err
 	}

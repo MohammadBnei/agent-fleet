@@ -208,6 +208,36 @@ func (c *Client) DeletePod(ctx context.Context, taskID string) error {
 	return nil
 }
 
+// WaitForPodGone blocks until the named pod is fully deleted, or timeout.
+// Needed because pod deletion is asynchronous: the API object survives its
+// whole terminationGracePeriod, so "kill_env then request_e2e_env" — the
+// single most common agent sequence — would otherwise find the dying pod
+// still present and hand back its preview URL.
+//
+// ponytail: a 1s poll, no informer/watch. The wait is bounded, happens on
+// one RPC, and the provisioner already polls elsewhere; a shared informer
+// cache is only worth it if this ever runs hot.
+func (c *Client) WaitForPodGone(ctx context.Context, name string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for {
+		_, err := c.Core.CoreV1().Pods(c.Namespace).Get(ctx, name, metav1.GetOptions{})
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("pod %s still terminating after %s", name, timeout)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Second):
+		}
+	}
+}
+
 // PodState is what an e2e pod can say about itself. Phase alone was the
 // whole story until a preview 502'd for 20 minutes while the pod sat at
 // Running: AppReady (the AppPort readiness probe) is what distinguishes a
@@ -220,6 +250,13 @@ type PodState struct {
 	Restarts  int32
 	StartedAt string // RFC3339, empty until scheduled
 	StartCmd  string
+	// Terminating is the difference between "a session is live" and "a
+	// session is on its way out". A pod with a deletionTimestamp still
+	// exists and still reports Phase=Running for its whole grace period, so
+	// an existence check alone reads a dying pod as a healthy session —
+	// CreateE2eSession used to return that pod's preview URL and the caller
+	// never learned the pod was about to vanish.
+	Terminating bool
 }
 
 // GetPod returns the pod's current state, or exists=false if it doesn't —
@@ -237,7 +274,7 @@ func (c *Client) GetPod(ctx context.Context, name string) (state PodState, exist
 		slog.Error("k8s GetPod", "name", name, "error", err)
 		return PodState{}, false, err
 	}
-	state = PodState{Phase: pod.Status.Phase}
+	state = PodState{Phase: pod.Status.Phase, Terminating: pod.DeletionTimestamp != nil}
 	if pod.Status.StartTime != nil {
 		state.StartedAt = pod.Status.StartTime.UTC().Format(time.RFC3339)
 	}
@@ -501,6 +538,25 @@ func resourcePtr(qty string) *resource.Quantity {
 
 func ignoreNotFound(err error) error {
 	if apierrors.IsNotFound(err) {
+		return nil
+	}
+	return err
+}
+
+// ignoreAlreadyExists makes the e2e session's non-pod resources
+// create-if-absent. All three (Service, Middleware, IngressRoute) are
+// deterministic from the task ID alone, so an existing one is already the
+// one we would have created. Needed because a pod can go away on its own —
+// eviction, node drain, OOM — leaving its siblings behind; without this,
+// the next request_e2e_env dies on "services \"e2e-<id>\" already exists"
+// after having successfully recreated the pod, leaving a half-built
+// session. Caught by TestCreateE2ESession_TerminatingPodIsNotAnExistingSession.
+//
+// ponytail: no reconcile-to-match. If a provisioner upgrade ever changes a
+// port or a route, a session created before it keeps the old shape until
+// it's torn down — switch to a server-side apply if that stops being fine.
+func ignoreAlreadyExists(err error) error {
+	if apierrors.IsAlreadyExists(err) {
 		return nil
 	}
 	return err

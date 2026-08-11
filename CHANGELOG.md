@@ -1,5 +1,33 @@
 # Changelog
 
+## [1.34.1](https://github.com/MohammadBnei/agent-fleet/compare/1.34.0...1.34.1) (2026-08-11)
+
+
+### Bug Fixes
+
+* **e2e:** treat a terminating pod as no session, and document the shared worktree ([#100](https://github.com/MohammadBnei/agent-fleet/issues/100)) ([22837e2](https://github.com/MohammadBnei/agent-fleet/commit/22837e27a6f9d66453bedd17e4713b6b1255b772))
+
+# [1.34.0](https://github.com/MohammadBnei/agent-fleet/compare/1.33.0...1.34.0) (2026-08-11)
+
+
+### Features
+
+* **thot:** sidecar↔thot Q&A and real cluster access (ADR-0035 phase 3) ([#94](https://github.com/MohammadBnei/agent-fleet/issues/94)) ([9594a61](https://github.com/MohammadBnei/agent-fleet/commit/9594a610ebcf3c6c5ae3709d066ffa9f2659d6d0))
+
+# [1.33.0](https://github.com/MohammadBnei/agent-fleet/compare/1.32.0...1.33.0) (2026-08-11)
+
+
+### Features
+
+* **thot:** live permission gating + dashboard visibility (ADR-0035 phase 2) ([#99](https://github.com/MohammadBnei/agent-fleet/issues/99)) ([b7364c1](https://github.com/MohammadBnei/agent-fleet/commit/b7364c132712cf1c484056f25cb0879183c4e8f1))
+
+# [1.32.0](https://github.com/MohammadBnei/agent-fleet/compare/1.31.3...1.32.0) (2026-08-11)
+
+
+### Features
+
+* **thot:** scaffold the cluster agent component (ADR-0035 phase 1) ([#92](https://github.com/MohammadBnei/agent-fleet/issues/92)) ([87511a2](https://github.com/MohammadBnei/agent-fleet/commit/87511a2767dc1c9d88b888d84e738b829cc176db))
+
 ## [1.31.3](https://github.com/MohammadBnei/agent-fleet/compare/1.31.2...1.31.3) (2026-08-11)
 
 

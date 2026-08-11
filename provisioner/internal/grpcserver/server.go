@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 
@@ -112,11 +113,19 @@ func (s *Server) GetE2ESessionStatus(ctx context.Context, req *agentfleetv1.GetE
 	if !exists {
 		return &agentfleetv1.GetE2ESessionStatusResponse{}, nil
 	}
+	// Terminating wins over phase: kubelet keeps reporting Running for the
+	// whole grace period, and "running" for a pod that is going away is the
+	// same lie CreateE2ESession used to tell.
+	status := e2eStatusFromPhase(state.Phase)
+	podPhase := string(state.Phase)
+	if state.Terminating {
+		status, podPhase = "terminating", "Terminating"
+	}
 	return &agentfleetv1.GetE2ESessionStatusResponse{
-		Status:     e2eStatusFromPhase(state.Phase),
+		Status:     status,
 		PreviewUrl: k8s.PreviewURLFor(s.e2eHost, req.GetTaskId()),
 		StartCmd:   state.StartCmd,
-		PodPhase:   string(state.Phase),
+		PodPhase:   podPhase,
 		AppReady:   state.AppReady,
 		Restarts:   state.Restarts,
 		StartedAt:  state.StartedAt,
@@ -128,9 +137,23 @@ func (s *Server) GetE2ESessionStatus(ctx context.Context, req *agentfleetv1.GetE
 // not a create-and-handle-AlreadyExists, since it also needs to report the
 // existing session's own status/URL, not just "yes it exists."
 func (s *Server) CreateE2ESession(ctx context.Context, req *agentfleetv1.CreateE2ESessionRequest) (*agentfleetv1.CreateE2ESessionResponse, error) {
-	state, exists, err := s.k8sc.GetPod(ctx, k8s.ResourceName(req.GetTaskId()))
+	name := k8s.ResourceName(req.GetTaskId())
+	state, exists, err := s.k8sc.GetPod(ctx, name)
 	if err != nil {
 		return nil, err
+	}
+	// A terminating pod is not an existing session. It still exists and
+	// still reports Phase=Running for its whole grace period, so the
+	// exists-check below used to return its preview URL for a pod that was
+	// seconds from vanishing — the caller saw a success and got nothing.
+	// "kill_env then request_e2e_env" hits this every time. Wait it out and
+	// build a fresh session instead.
+	if exists && state.Terminating {
+		slog.Info("grpcserver CreateE2ESession: waiting for the previous pod to finish terminating", "taskId", req.GetTaskId())
+		if err := s.k8sc.WaitForPodGone(ctx, name, 2*time.Minute); err != nil {
+			return nil, fmt.Errorf("previous e2e pod for task %s did not finish terminating: %w", req.GetTaskId(), err)
+		}
+		exists = false
 	}
 	if exists {
 		return &agentfleetv1.CreateE2ESessionResponse{
