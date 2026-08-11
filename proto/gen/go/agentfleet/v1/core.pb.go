@@ -759,6 +759,9 @@ type Task struct {
 	// maintains last_active_at. Lets the dashboard's task list show which
 	// tasks need a human decision without an N+1 per-task transcript fetch.
 	AwaitingHuman bool `protobuf:"varint,15,opt,name=awaiting_human,json=awaitingHuman,proto3" json:"awaiting_human,omitempty"`
+	// "worker" | "thot" (docs/adr/0037). A UI label and gate only — the
+	// dispatch path never branches on it.
+	Kind          string `protobuf:"bytes,16,opt,name=kind,proto3" json:"kind,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -896,6 +899,13 @@ func (x *Task) GetAwaitingHuman() bool {
 		return x.AwaitingHuman
 	}
 	return false
+}
+
+func (x *Task) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
 }
 
 type GetTaskRequest struct {
@@ -2604,7 +2614,7 @@ const file_agentfleet_v1_core_proto_rawDesc = "" +
 	"\x11KillE2eEnvRequest\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\tR\x06taskId\",\n" +
 	"\x12KillE2eEnvResponse\x12\x16\n" +
-	"\x06killed\x18\x01 \x01(\bR\x06killed\"\x88\x05\n" +
+	"\x06killed\x18\x01 \x01(\bR\x06killed\"\x9c\x05\n" +
 	"\x04Task\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04repo\x18\x02 \x01(\tR\x04repo\x12 \n" +
@@ -2625,7 +2635,8 @@ const file_agentfleet_v1_core_proto_rawDesc = "" +
 	"session_id\x18\f \x01(\tH\x06R\tsessionId\x88\x01\x01\x12)\n" +
 	"\x0elast_active_at\x18\r \x01(\tH\aR\flastActiveAt\x88\x01\x01\x12,\n" +
 	"\x0fpermission_mode\x18\x0e \x01(\tH\bR\x0epermissionMode\x88\x01\x01\x12%\n" +
-	"\x0eawaiting_human\x18\x0f \x01(\bR\rawaitingHumanB\f\n" +
+	"\x0eawaiting_human\x18\x0f \x01(\bR\rawaitingHuman\x12\x12\n" +
+	"\x04kind\x18\x10 \x01(\tR\x04kindB\f\n" +
 	"\n" +
 	"_thread_idB\t\n" +
 	"\a_pr_urlB\f\n" +

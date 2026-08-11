@@ -982,6 +982,7 @@ func TaskToProto(t tasks.Task) *agentfleetv1.Task {
 		heartbeatAt = &s
 	}
 	return &agentfleetv1.Task{
+		Kind: t.Kind,
 		Id:             t.ID,
 		Repo:           t.Repo,
 		Description:    t.Description,

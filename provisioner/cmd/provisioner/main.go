@@ -60,6 +60,7 @@ func main() {
 		SidecarImage:          cfg.SidecarImage,
 		ThotGRPCAddr:          cfg.ThotGRPCAddr,
 		ThotAuthToken:         cfg.ThotAuthToken,
+		ExecutorAddr:          cfg.ExecutorAddr,
 		WorkspacePVC:          cfg.WorkspacePVC,
 		LogLevel:              cfg.LogLevel,
 		CoreGRPCAddr:          cfg.CoreGRPCAddr,

@@ -76,7 +76,7 @@ func (c *Client) CreatePod(ctx context.Context, task TaskRef) error {
 	name := ResourceName(task.ID)
 	labels := Labels(task.ID)
 
-	initContainers, ingredientEnv, toolsVol, toolsMount, err := buildIngredients(task.ToolKeys, task.ServiceIngredients)
+	initContainers, ingredientEnv, toolsVol, toolsMount, err := buildIngredients(task.ToolKeys, task.ServiceIngredients, ClusterAccess{ExecutorAddr: c.ExecutorAddr, AuthToken: c.ThotAuthToken})
 	if err != nil {
 		return fmt.Errorf("build ingredients: %w", err)
 	}
@@ -321,7 +321,7 @@ func (c *Client) CreateWorkerPod(ctx context.Context, taskID, repo, leaseID, wor
 
 	sidecarRestartAlways := corev1.ContainerRestartPolicyAlways
 
-	ingredientInitContainers, ingredientEnv, toolsVol, toolsMount, err := buildIngredients(toolKeys, serviceIngredients)
+	ingredientInitContainers, ingredientEnv, toolsVol, toolsMount, err := buildIngredients(toolKeys, serviceIngredients, ClusterAccess{ExecutorAddr: c.ExecutorAddr, AuthToken: c.ThotAuthToken})
 	if err != nil {
 		return fmt.Errorf("build ingredients: %w", err)
 	}

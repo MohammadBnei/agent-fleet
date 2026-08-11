@@ -1,0 +1,2 @@
+DROP INDEX IF EXISTS idx_tasks_kind;
+ALTER TABLE tasks DROP COLUMN IF EXISTS kind;
