@@ -75,7 +75,7 @@ func TestReportPodEvents_CrashedWorkerMarksNonTerminalTaskCrashed(t *testing.T) 
 	pool := newTestPool(t)
 	ctx := context.Background()
 	taskStore := tasks.NewStore(pool)
-	srv := New(nil, taskStore, journal.NewStore(pool), nil, nil, nil, nil, nil)
+	srv := New(nil, taskStore, journal.NewStore(pool), nil, nil, nil, nil)
 
 	var taskID string
 	if err := pool.QueryRow(ctx, `
@@ -107,7 +107,7 @@ func TestReportPodEvents_CrashedWorkerMarksNonTerminalTaskCrashed(t *testing.T) 
 func TestReportPodEvents_CrashedWorkerNoopsForTerminalTask(t *testing.T) {
 	pool := newTestPool(t)
 	ctx := context.Background()
-	srv := New(nil, tasks.NewStore(pool), journal.NewStore(pool), nil, nil, nil, nil, nil)
+	srv := New(nil, tasks.NewStore(pool), journal.NewStore(pool), nil, nil, nil, nil)
 
 	var taskID string
 	if err := pool.QueryRow(ctx, `
@@ -136,7 +136,7 @@ func TestReportPodEvents_CrashedWorkerNoopsForTerminalTask(t *testing.T) {
 func TestReportPodEvents_NonCrashedEventDoesNotMarkCrashed(t *testing.T) {
 	pool := newTestPool(t)
 	ctx := context.Background()
-	srv := New(nil, tasks.NewStore(pool), journal.NewStore(pool), nil, nil, nil, nil, nil)
+	srv := New(nil, tasks.NewStore(pool), journal.NewStore(pool), nil, nil, nil, nil)
 
 	var taskID string
 	if err := pool.QueryRow(ctx, `

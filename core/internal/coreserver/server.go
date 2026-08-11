@@ -29,7 +29,6 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/provisionerclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/repoprofiles"
 	"github.com/MohammadBnei/agent-fleet/core/internal/tasks"
-	"github.com/MohammadBnei/agent-fleet/core/internal/thotevents"
 	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
 )
 
@@ -47,11 +46,10 @@ type Server struct {
 	provisioner *provisionerclient.Client
 	files       filestore.Store
 	loki        lokiclient.Querier
-	thotEvents  *thotevents.Store
 }
 
-func New(transcr transcript.Store, taskStore *tasks.Store, journalStore *journal.Store, profileStore *repoprofiles.Store, provisioner *provisionerclient.Client, files filestore.Store, loki lokiclient.Querier, thotEventStore *thotevents.Store) *Server {
-	return &Server{transcr: transcr, tasks: taskStore, journal: journalStore, profiles: profileStore, provisioner: provisioner, files: files, loki: loki, thotEvents: thotEventStore}
+func New(transcr transcript.Store, taskStore *tasks.Store, journalStore *journal.Store, profileStore *repoprofiles.Store, provisioner *provisionerclient.Client, files filestore.Store, loki lokiclient.Querier) *Server {
+	return &Server{transcr: transcr, tasks: taskStore, journal: journalStore, profiles: profileStore, provisioner: provisioner, files: files, loki: loki}
 }
 
 // --- agent-facing (proxied MCP-shaped calls) ---

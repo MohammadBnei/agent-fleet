@@ -10,17 +10,27 @@ package audits
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"time"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/scheduledaudits"
 )
 
-// Runner is the thot-facing half, narrowed to what this loop needs so the
-// tick logic is testable without a real gRPC connection.
+// Runner creates the task an audit runs as. Narrowed to what this loop
+// needs so the tick logic is testable without a database.
+//
+// docs/adr/0037: an audit is now just a thot task. It shows up in the
+// task list, streams into a transcript, and can be interrupted like
+// anything else — instead of being an invisible RPC into a standing
+// service.
 type Runner interface {
-	RunAudit(ctx context.Context, auditID, name, prompt string) (string, error)
+	CreateTaskOfKind(ctx context.Context, kind, repo, description, guidance, model string, channelID, threadID *string) (string, error)
 }
+
+// auditRepo is where a thot session's worktree comes from — the repo that
+// holds the cluster's own IaC, so a durable fix is a normal PR (adr/0037).
+const auditRepo = "infra-bootstrap"
 
 type Loop struct {
 	store *scheduledaudits.Store
@@ -47,7 +57,7 @@ func (l *Loop) Run(ctx context.Context, pollInterval time.Duration) {
 	// rows and drop them on the floor, advancing next_run_at for audits
 	// that never ran. Don't start at all.
 	if l.thot == nil {
-		slog.Info("audits: no thot configured, scheduler disabled")
+		slog.Info("audits: no task store configured, scheduler disabled")
 		return
 	}
 
@@ -76,12 +86,14 @@ func (l *Loop) tick(ctx context.Context) {
 		// Sequential, not concurrent: thot serializes everything onto one
 		// session anyway, so firing these in parallel would just queue
 		// them up on thot's side while holding more goroutines here.
-		status, err := l.thot.RunAudit(ctx, a.ID, a.Name, a.Prompt)
+		taskID, err := l.thot.CreateTaskOfKind(ctx, "thot", auditRepo,
+			fmt.Sprintf("Scheduled audit: %s\n\n%s", a.Name, a.Prompt), "", "", nil, nil)
+		status := "task " + taskID
 		if err != nil {
-			slog.Error("audits: run", "audit", a.Name, "error", err)
+			slog.Error("audits: create task", "audit", a.Name, "error", err)
 			status = "error: " + err.Error()
 		} else {
-			slog.Info("audits: ran", "audit", a.Name, "status", status)
+			slog.Info("audits: created task", "audit", a.Name, "taskId", taskID)
 		}
 		if err := l.store.RecordStatus(ctx, a.ID, status); err != nil {
 			slog.Error("audits: record status", "audit", a.Name, "error", err)

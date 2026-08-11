@@ -94,12 +94,6 @@ const (
 	CoreServiceDeleteFileProcedure = "/agentfleet.v1.CoreService/DeleteFile"
 	// CoreServiceViewLogsProcedure is the fully-qualified name of the CoreService's ViewLogs RPC.
 	CoreServiceViewLogsProcedure = "/agentfleet.v1.CoreService/ViewLogs"
-	// CoreServiceRequestThotPermissionProcedure is the fully-qualified name of the CoreService's
-	// RequestThotPermission RPC.
-	CoreServiceRequestThotPermissionProcedure = "/agentfleet.v1.CoreService/RequestThotPermission"
-	// CoreServiceAppendThotEventProcedure is the fully-qualified name of the CoreService's
-	// AppendThotEvent RPC.
-	CoreServiceAppendThotEventProcedure = "/agentfleet.v1.CoreService/AppendThotEvent"
 )
 
 // CoreServiceClient is a client for the agentfleet.v1.CoreService service.
@@ -154,12 +148,6 @@ type CoreServiceClient interface {
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	DeleteFile(context.Context, *connect.Request[v1.DeleteFileRequest]) (*connect.Response[v1.DeleteFileResponse], error)
 	ViewLogs(context.Context, *connect.Request[v1.ViewLogsRequest]) (*connect.Response[v1.ViewLogsResponse], error)
-	// thot-facing (docs/adr/0035). thot reaches core over gRPC like every
-	// other component — that ADR's hub-and-spoke exception is about callers
-	// reaching *thot* directly, not about thot bypassing core for
-	// persistence. core remains the sole Postgres-credential holder.
-	RequestThotPermission(context.Context, *connect.Request[v1.RequestThotPermissionRequest]) (*connect.Response[v1.RequestThotPermissionResponse], error)
-	AppendThotEvent(context.Context, *connect.Request[v1.AppendThotEventRequest]) (*connect.Response[v1.AppendThotEventResponse], error)
 }
 
 // NewCoreServiceClient constructs a client for the agentfleet.v1.CoreService service. By default,
@@ -311,48 +299,34 @@ func NewCoreServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(coreServiceMethods.ByName("ViewLogs")),
 			connect.WithClientOptions(opts...),
 		),
-		requestThotPermission: connect.NewClient[v1.RequestThotPermissionRequest, v1.RequestThotPermissionResponse](
-			httpClient,
-			baseURL+CoreServiceRequestThotPermissionProcedure,
-			connect.WithSchema(coreServiceMethods.ByName("RequestThotPermission")),
-			connect.WithClientOptions(opts...),
-		),
-		appendThotEvent: connect.NewClient[v1.AppendThotEventRequest, v1.AppendThotEventResponse](
-			httpClient,
-			baseURL+CoreServiceAppendThotEventProcedure,
-			connect.WithSchema(coreServiceMethods.ByName("AppendThotEvent")),
-			connect.WithClientOptions(opts...),
-		),
 	}
 }
 
 // coreServiceClient implements CoreServiceClient.
 type coreServiceClient struct {
-	reportPodEvents       *connect.Client[v1.PodEvent, v1.ReportPodEventsResponse]
-	sendMessage           *connect.Client[v1.SendMessageRequest, v1.SendMessageResponse]
-	waitForMessages       *connect.Client[v1.ReadTranscriptSinceRequest, v1.ReadTranscriptSinceResponse]
-	askUserQuestion       *connect.Client[v1.AskUserQuestionRequest, v1.AskUserQuestionResponse]
-	requestE2EEnv         *connect.Client[v1.RequestE2EEnvRequest, v1.RequestE2EEnvResponse]
-	killE2EEnv            *connect.Client[v1.KillE2EEnvRequest, v1.KillE2EEnvResponse]
-	listE2ETools          *connect.Client[v1.ListE2EToolsRequest, v1.ListE2EToolsResponse]
-	callE2ETool           *connect.Client[v1.CallE2EToolRequest, v1.CallE2EToolResponse]
-	getTask               *connect.Client[v1.GetTaskRequest, v1.GetTaskResponse]
-	setPermissionMode     *connect.Client[v1.SetPermissionModeRequest, v1.SetPermissionModeResponse]
-	heartbeat             *connect.Client[v1.HeartbeatRequest, v1.HeartbeatResponse]
-	setTaskStatus         *connect.Client[v1.SetTaskStatusRequest, v1.SetTaskStatusResponse]
-	appendJournal         *connect.Client[v1.AppendJournalRequest, v1.AppendJournalResponse]
-	searchJournal         *connect.Client[v1.SearchJournalRequest, v1.SearchJournalResponse]
-	saveSessionId         *connect.Client[v1.SaveSessionIdRequest, v1.SaveSessionIdResponse]
-	stillHoldsLease       *connect.Client[v1.StillHoldsLeaseRequest, v1.StillHoldsLeaseResponse]
-	pushToolTelemetry     *connect.Client[v1.PushToolTelemetryRequest, v1.PushToolTelemetryResponse]
-	streamHumanMessages   *connect.Client[v1.StreamHumanMessagesRequest, v1.TranscriptEntry]
-	listFiles             *connect.Client[v1.ListFilesRequest, v1.ListFilesResponse]
-	getFileUploadUrl      *connect.Client[v1.GetFileUploadUrlRequest, v1.GetFileUploadUrlResponse]
-	getFileDownloadUrl    *connect.Client[v1.GetFileDownloadUrlRequest, v1.GetFileDownloadUrlResponse]
-	deleteFile            *connect.Client[v1.DeleteFileRequest, v1.DeleteFileResponse]
-	viewLogs              *connect.Client[v1.ViewLogsRequest, v1.ViewLogsResponse]
-	requestThotPermission *connect.Client[v1.RequestThotPermissionRequest, v1.RequestThotPermissionResponse]
-	appendThotEvent       *connect.Client[v1.AppendThotEventRequest, v1.AppendThotEventResponse]
+	reportPodEvents     *connect.Client[v1.PodEvent, v1.ReportPodEventsResponse]
+	sendMessage         *connect.Client[v1.SendMessageRequest, v1.SendMessageResponse]
+	waitForMessages     *connect.Client[v1.ReadTranscriptSinceRequest, v1.ReadTranscriptSinceResponse]
+	askUserQuestion     *connect.Client[v1.AskUserQuestionRequest, v1.AskUserQuestionResponse]
+	requestE2EEnv       *connect.Client[v1.RequestE2EEnvRequest, v1.RequestE2EEnvResponse]
+	killE2EEnv          *connect.Client[v1.KillE2EEnvRequest, v1.KillE2EEnvResponse]
+	listE2ETools        *connect.Client[v1.ListE2EToolsRequest, v1.ListE2EToolsResponse]
+	callE2ETool         *connect.Client[v1.CallE2EToolRequest, v1.CallE2EToolResponse]
+	getTask             *connect.Client[v1.GetTaskRequest, v1.GetTaskResponse]
+	setPermissionMode   *connect.Client[v1.SetPermissionModeRequest, v1.SetPermissionModeResponse]
+	heartbeat           *connect.Client[v1.HeartbeatRequest, v1.HeartbeatResponse]
+	setTaskStatus       *connect.Client[v1.SetTaskStatusRequest, v1.SetTaskStatusResponse]
+	appendJournal       *connect.Client[v1.AppendJournalRequest, v1.AppendJournalResponse]
+	searchJournal       *connect.Client[v1.SearchJournalRequest, v1.SearchJournalResponse]
+	saveSessionId       *connect.Client[v1.SaveSessionIdRequest, v1.SaveSessionIdResponse]
+	stillHoldsLease     *connect.Client[v1.StillHoldsLeaseRequest, v1.StillHoldsLeaseResponse]
+	pushToolTelemetry   *connect.Client[v1.PushToolTelemetryRequest, v1.PushToolTelemetryResponse]
+	streamHumanMessages *connect.Client[v1.StreamHumanMessagesRequest, v1.TranscriptEntry]
+	listFiles           *connect.Client[v1.ListFilesRequest, v1.ListFilesResponse]
+	getFileUploadUrl    *connect.Client[v1.GetFileUploadUrlRequest, v1.GetFileUploadUrlResponse]
+	getFileDownloadUrl  *connect.Client[v1.GetFileDownloadUrlRequest, v1.GetFileDownloadUrlResponse]
+	deleteFile          *connect.Client[v1.DeleteFileRequest, v1.DeleteFileResponse]
+	viewLogs            *connect.Client[v1.ViewLogsRequest, v1.ViewLogsResponse]
 }
 
 // ReportPodEvents calls agentfleet.v1.CoreService.ReportPodEvents.
@@ -470,16 +444,6 @@ func (c *coreServiceClient) ViewLogs(ctx context.Context, req *connect.Request[v
 	return c.viewLogs.CallUnary(ctx, req)
 }
 
-// RequestThotPermission calls agentfleet.v1.CoreService.RequestThotPermission.
-func (c *coreServiceClient) RequestThotPermission(ctx context.Context, req *connect.Request[v1.RequestThotPermissionRequest]) (*connect.Response[v1.RequestThotPermissionResponse], error) {
-	return c.requestThotPermission.CallUnary(ctx, req)
-}
-
-// AppendThotEvent calls agentfleet.v1.CoreService.AppendThotEvent.
-func (c *coreServiceClient) AppendThotEvent(ctx context.Context, req *connect.Request[v1.AppendThotEventRequest]) (*connect.Response[v1.AppendThotEventResponse], error) {
-	return c.appendThotEvent.CallUnary(ctx, req)
-}
-
 // CoreServiceHandler is an implementation of the agentfleet.v1.CoreService service.
 type CoreServiceHandler interface {
 	// buf:lint:ignore RPC_REQUEST_STANDARD_NAME
@@ -532,12 +496,6 @@ type CoreServiceHandler interface {
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	DeleteFile(context.Context, *connect.Request[v1.DeleteFileRequest]) (*connect.Response[v1.DeleteFileResponse], error)
 	ViewLogs(context.Context, *connect.Request[v1.ViewLogsRequest]) (*connect.Response[v1.ViewLogsResponse], error)
-	// thot-facing (docs/adr/0035). thot reaches core over gRPC like every
-	// other component — that ADR's hub-and-spoke exception is about callers
-	// reaching *thot* directly, not about thot bypassing core for
-	// persistence. core remains the sole Postgres-credential holder.
-	RequestThotPermission(context.Context, *connect.Request[v1.RequestThotPermissionRequest]) (*connect.Response[v1.RequestThotPermissionResponse], error)
-	AppendThotEvent(context.Context, *connect.Request[v1.AppendThotEventRequest]) (*connect.Response[v1.AppendThotEventResponse], error)
 }
 
 // NewCoreServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -685,18 +643,6 @@ func NewCoreServiceHandler(svc CoreServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(coreServiceMethods.ByName("ViewLogs")),
 		connect.WithHandlerOptions(opts...),
 	)
-	coreServiceRequestThotPermissionHandler := connect.NewUnaryHandler(
-		CoreServiceRequestThotPermissionProcedure,
-		svc.RequestThotPermission,
-		connect.WithSchema(coreServiceMethods.ByName("RequestThotPermission")),
-		connect.WithHandlerOptions(opts...),
-	)
-	coreServiceAppendThotEventHandler := connect.NewUnaryHandler(
-		CoreServiceAppendThotEventProcedure,
-		svc.AppendThotEvent,
-		connect.WithSchema(coreServiceMethods.ByName("AppendThotEvent")),
-		connect.WithHandlerOptions(opts...),
-	)
 	return "/agentfleet.v1.CoreService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case CoreServiceReportPodEventsProcedure:
@@ -745,10 +691,6 @@ func NewCoreServiceHandler(svc CoreServiceHandler, opts ...connect.HandlerOption
 			coreServiceDeleteFileHandler.ServeHTTP(w, r)
 		case CoreServiceViewLogsProcedure:
 			coreServiceViewLogsHandler.ServeHTTP(w, r)
-		case CoreServiceRequestThotPermissionProcedure:
-			coreServiceRequestThotPermissionHandler.ServeHTTP(w, r)
-		case CoreServiceAppendThotEventProcedure:
-			coreServiceAppendThotEventHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -848,12 +790,4 @@ func (UnimplementedCoreServiceHandler) DeleteFile(context.Context, *connect.Requ
 
 func (UnimplementedCoreServiceHandler) ViewLogs(context.Context, *connect.Request[v1.ViewLogsRequest]) (*connect.Response[v1.ViewLogsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.CoreService.ViewLogs is not implemented"))
-}
-
-func (UnimplementedCoreServiceHandler) RequestThotPermission(context.Context, *connect.Request[v1.RequestThotPermissionRequest]) (*connect.Response[v1.RequestThotPermissionResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.CoreService.RequestThotPermission is not implemented"))
-}
-
-func (UnimplementedCoreServiceHandler) AppendThotEvent(context.Context, *connect.Request[v1.AppendThotEventRequest]) (*connect.Response[v1.AppendThotEventResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.CoreService.AppendThotEvent is not implemented"))
 }
