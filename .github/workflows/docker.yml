@@ -49,6 +49,7 @@ jobs:
       pull-requests: read
     outputs:
       worker: ${{ steps.filter.outputs.worker }}
+      thot: ${{ steps.filter.outputs.thot }}
       e2e-runner: ${{ steps.filter.outputs.e2e-runner }}
       migration: ${{ steps.filter.outputs.migration }}
       go-components: ${{ steps.components.outputs.result }}
@@ -60,6 +61,8 @@ jobs:
           filters: |
             worker:
               - 'worker/**'
+            thot:
+              - 'thot/**'
             e2e-runner:
               - 'e2e-runner/**'
               - 'proto/**'
@@ -93,14 +96,19 @@ jobs:
             if (proto || sidecar) components.push('sidecar');
             return components;
 
+  # ponytail: the job-level `if` can't skip individual matrix legs, so a
+  # worker-only PR now also rebuilds thot (and vice versa) — both are Bun
+  # components with identical steps, so this is wasted CI time, not a
+  # correctness issue. Split into its own job (like build-push-e2e-runner)
+  # only if that waste actually starts to matter.
   build-push:
     needs: changes
-    if: always() && (github.event_name == 'push' || needs.changes.outputs.worker == 'true')
+    if: always() && (github.event_name == 'push' || needs.changes.outputs.worker == 'true' || needs.changes.outputs.thot == 'true')
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false # one image's test/build failure shouldn't hide the other's status
       matrix:
-        component: [worker]
+        component: [worker, thot]
     steps:
       - name: Checkout
         uses: actions/checkout@v4

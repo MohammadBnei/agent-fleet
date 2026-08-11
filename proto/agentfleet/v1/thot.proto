@@ -1,0 +1,24 @@
+syntax = "proto3";
+package agentfleet.v1;
+option go_package = "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1;agentfleetv1";
+
+// thot is the gRPC server; worker sidecars, core, and (later) Alertmanager
+// are its callers. Per docs/adr/0035, this is the fleet's one deliberate,
+// named exception to the hub-and-spoke rule (docs/adr/0020 point 4) —
+// callers reach thot directly, not proxied through core. thot's findings
+// still persist through core (docs/adr/0035's audit-trail constraint), but
+// that's a separate CoreService call thot's callers make on the side, not
+// something this service itself proxies.
+//
+// v1 is deliberately minimal: a health check only. AskThot (Phase 4) and
+// RunAudit (Phase 5) are added in later phases of the same implementation
+// plan, not designed blind here ahead of the code that needs them.
+service ThotService {
+  rpc Healthz(HealthzRequest) returns (HealthzResponse);
+}
+
+message HealthzRequest {}
+
+message HealthzResponse {
+  bool ok = 1;
+}
