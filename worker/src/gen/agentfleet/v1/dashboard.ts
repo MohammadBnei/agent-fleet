@@ -419,6 +419,54 @@ export interface DeletePromptSnippetResponse {
   status: string;
 }
 
+export interface ScheduledAudit {
+  id: string;
+  name: string;
+  prompt: string;
+  intervalSeconds: number;
+  enabled: boolean;
+  nextRunAt: string;
+  lastRunAt: string;
+  lastStatus: string;
+}
+
+export interface ListScheduledAuditsRequest {
+}
+
+export interface ListScheduledAuditsResponse {
+  audits: ScheduledAudit[];
+}
+
+export interface CreateScheduledAuditRequest {
+  name: string;
+  prompt: string;
+  intervalSeconds: number;
+}
+
+export interface CreateScheduledAuditResponse {
+  audit?: ScheduledAudit | undefined;
+}
+
+export interface UpdateScheduledAuditRequest {
+  id: string;
+  name: string;
+  prompt: string;
+  intervalSeconds: number;
+  enabled: boolean;
+}
+
+export interface UpdateScheduledAuditResponse {
+  audit?: ScheduledAudit | undefined;
+}
+
+export interface DeleteScheduledAuditRequest {
+  id: string;
+}
+
+export interface DeleteScheduledAuditResponse {
+  status: string;
+}
+
 export interface ThotEvent {
   id: number;
   kind: string;
@@ -2417,6 +2465,357 @@ export const DeletePromptSnippetResponse: MessageFns<DeletePromptSnippetResponse
   },
 };
 
+function createBaseScheduledAudit(): ScheduledAudit {
+  return {
+    id: "",
+    name: "",
+    prompt: "",
+    intervalSeconds: 0,
+    enabled: false,
+    nextRunAt: "",
+    lastRunAt: "",
+    lastStatus: "",
+  };
+}
+
+export const ScheduledAudit: MessageFns<ScheduledAudit> = {
+  fromJSON(object: any): ScheduledAudit {
+    return {
+      id: isSet(object.id) ? globalThis.String(object.id) : "",
+      name: isSet(object.name) ? globalThis.String(object.name) : "",
+      prompt: isSet(object.prompt) ? globalThis.String(object.prompt) : "",
+      intervalSeconds: isSet(object.intervalSeconds)
+        ? globalThis.Number(object.intervalSeconds)
+        : isSet(object.interval_seconds)
+        ? globalThis.Number(object.interval_seconds)
+        : 0,
+      enabled: isSet(object.enabled) ? globalThis.Boolean(object.enabled) : false,
+      nextRunAt: isSet(object.nextRunAt)
+        ? globalThis.String(object.nextRunAt)
+        : isSet(object.next_run_at)
+        ? globalThis.String(object.next_run_at)
+        : "",
+      lastRunAt: isSet(object.lastRunAt)
+        ? globalThis.String(object.lastRunAt)
+        : isSet(object.last_run_at)
+        ? globalThis.String(object.last_run_at)
+        : "",
+      lastStatus: isSet(object.lastStatus)
+        ? globalThis.String(object.lastStatus)
+        : isSet(object.last_status)
+        ? globalThis.String(object.last_status)
+        : "",
+    };
+  },
+
+  toJSON(message: ScheduledAudit): unknown {
+    const obj: any = {};
+    if (message.id !== "") {
+      obj.id = message.id;
+    }
+    if (message.name !== "") {
+      obj.name = message.name;
+    }
+    if (message.prompt !== "") {
+      obj.prompt = message.prompt;
+    }
+    if (message.intervalSeconds !== 0) {
+      obj.intervalSeconds = Math.round(message.intervalSeconds);
+    }
+    if (message.enabled !== false) {
+      obj.enabled = message.enabled;
+    }
+    if (message.nextRunAt !== "") {
+      obj.nextRunAt = message.nextRunAt;
+    }
+    if (message.lastRunAt !== "") {
+      obj.lastRunAt = message.lastRunAt;
+    }
+    if (message.lastStatus !== "") {
+      obj.lastStatus = message.lastStatus;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<ScheduledAudit>, I>>(base?: I): ScheduledAudit {
+    return ScheduledAudit.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<ScheduledAudit>, I>>(object: I): ScheduledAudit {
+    const message = createBaseScheduledAudit();
+    message.id = object.id ?? "";
+    message.name = object.name ?? "";
+    message.prompt = object.prompt ?? "";
+    message.intervalSeconds = object.intervalSeconds ?? 0;
+    message.enabled = object.enabled ?? false;
+    message.nextRunAt = object.nextRunAt ?? "";
+    message.lastRunAt = object.lastRunAt ?? "";
+    message.lastStatus = object.lastStatus ?? "";
+    return message;
+  },
+};
+
+function createBaseListScheduledAuditsRequest(): ListScheduledAuditsRequest {
+  return {};
+}
+
+export const ListScheduledAuditsRequest: MessageFns<ListScheduledAuditsRequest> = {
+  fromJSON(_: any): ListScheduledAuditsRequest {
+    return {};
+  },
+
+  toJSON(_: ListScheduledAuditsRequest): unknown {
+    const obj: any = {};
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<ListScheduledAuditsRequest>, I>>(base?: I): ListScheduledAuditsRequest {
+    return ListScheduledAuditsRequest.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<ListScheduledAuditsRequest>, I>>(_: I): ListScheduledAuditsRequest {
+    const message = createBaseListScheduledAuditsRequest();
+    return message;
+  },
+};
+
+function createBaseListScheduledAuditsResponse(): ListScheduledAuditsResponse {
+  return { audits: [] };
+}
+
+export const ListScheduledAuditsResponse: MessageFns<ListScheduledAuditsResponse> = {
+  fromJSON(object: any): ListScheduledAuditsResponse {
+    return {
+      audits: globalThis.Array.isArray(object?.audits)
+        ? object.audits.map((e: any) => ScheduledAudit.fromJSON(e))
+        : [],
+    };
+  },
+
+  toJSON(message: ListScheduledAuditsResponse): unknown {
+    const obj: any = {};
+    if (message.audits?.length) {
+      obj.audits = message.audits.map((e) => ScheduledAudit.toJSON(e));
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<ListScheduledAuditsResponse>, I>>(base?: I): ListScheduledAuditsResponse {
+    return ListScheduledAuditsResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<ListScheduledAuditsResponse>, I>>(object: I): ListScheduledAuditsResponse {
+    const message = createBaseListScheduledAuditsResponse();
+    message.audits = object.audits?.map((e) => ScheduledAudit.fromPartial(e)) || [];
+    return message;
+  },
+};
+
+function createBaseCreateScheduledAuditRequest(): CreateScheduledAuditRequest {
+  return { name: "", prompt: "", intervalSeconds: 0 };
+}
+
+export const CreateScheduledAuditRequest: MessageFns<CreateScheduledAuditRequest> = {
+  fromJSON(object: any): CreateScheduledAuditRequest {
+    return {
+      name: isSet(object.name) ? globalThis.String(object.name) : "",
+      prompt: isSet(object.prompt) ? globalThis.String(object.prompt) : "",
+      intervalSeconds: isSet(object.intervalSeconds)
+        ? globalThis.Number(object.intervalSeconds)
+        : isSet(object.interval_seconds)
+        ? globalThis.Number(object.interval_seconds)
+        : 0,
+    };
+  },
+
+  toJSON(message: CreateScheduledAuditRequest): unknown {
+    const obj: any = {};
+    if (message.name !== "") {
+      obj.name = message.name;
+    }
+    if (message.prompt !== "") {
+      obj.prompt = message.prompt;
+    }
+    if (message.intervalSeconds !== 0) {
+      obj.intervalSeconds = Math.round(message.intervalSeconds);
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<CreateScheduledAuditRequest>, I>>(base?: I): CreateScheduledAuditRequest {
+    return CreateScheduledAuditRequest.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<CreateScheduledAuditRequest>, I>>(object: I): CreateScheduledAuditRequest {
+    const message = createBaseCreateScheduledAuditRequest();
+    message.name = object.name ?? "";
+    message.prompt = object.prompt ?? "";
+    message.intervalSeconds = object.intervalSeconds ?? 0;
+    return message;
+  },
+};
+
+function createBaseCreateScheduledAuditResponse(): CreateScheduledAuditResponse {
+  return { audit: undefined };
+}
+
+export const CreateScheduledAuditResponse: MessageFns<CreateScheduledAuditResponse> = {
+  fromJSON(object: any): CreateScheduledAuditResponse {
+    return { audit: isSet(object.audit) ? ScheduledAudit.fromJSON(object.audit) : undefined };
+  },
+
+  toJSON(message: CreateScheduledAuditResponse): unknown {
+    const obj: any = {};
+    if (message.audit !== undefined) {
+      obj.audit = ScheduledAudit.toJSON(message.audit);
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<CreateScheduledAuditResponse>, I>>(base?: I): CreateScheduledAuditResponse {
+    return CreateScheduledAuditResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<CreateScheduledAuditResponse>, I>>(object: I): CreateScheduledAuditResponse {
+    const message = createBaseCreateScheduledAuditResponse();
+    message.audit = (object.audit !== undefined && object.audit !== null)
+      ? ScheduledAudit.fromPartial(object.audit)
+      : undefined;
+    return message;
+  },
+};
+
+function createBaseUpdateScheduledAuditRequest(): UpdateScheduledAuditRequest {
+  return { id: "", name: "", prompt: "", intervalSeconds: 0, enabled: false };
+}
+
+export const UpdateScheduledAuditRequest: MessageFns<UpdateScheduledAuditRequest> = {
+  fromJSON(object: any): UpdateScheduledAuditRequest {
+    return {
+      id: isSet(object.id) ? globalThis.String(object.id) : "",
+      name: isSet(object.name) ? globalThis.String(object.name) : "",
+      prompt: isSet(object.prompt) ? globalThis.String(object.prompt) : "",
+      intervalSeconds: isSet(object.intervalSeconds)
+        ? globalThis.Number(object.intervalSeconds)
+        : isSet(object.interval_seconds)
+        ? globalThis.Number(object.interval_seconds)
+        : 0,
+      enabled: isSet(object.enabled) ? globalThis.Boolean(object.enabled) : false,
+    };
+  },
+
+  toJSON(message: UpdateScheduledAuditRequest): unknown {
+    const obj: any = {};
+    if (message.id !== "") {
+      obj.id = message.id;
+    }
+    if (message.name !== "") {
+      obj.name = message.name;
+    }
+    if (message.prompt !== "") {
+      obj.prompt = message.prompt;
+    }
+    if (message.intervalSeconds !== 0) {
+      obj.intervalSeconds = Math.round(message.intervalSeconds);
+    }
+    if (message.enabled !== false) {
+      obj.enabled = message.enabled;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<UpdateScheduledAuditRequest>, I>>(base?: I): UpdateScheduledAuditRequest {
+    return UpdateScheduledAuditRequest.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<UpdateScheduledAuditRequest>, I>>(object: I): UpdateScheduledAuditRequest {
+    const message = createBaseUpdateScheduledAuditRequest();
+    message.id = object.id ?? "";
+    message.name = object.name ?? "";
+    message.prompt = object.prompt ?? "";
+    message.intervalSeconds = object.intervalSeconds ?? 0;
+    message.enabled = object.enabled ?? false;
+    return message;
+  },
+};
+
+function createBaseUpdateScheduledAuditResponse(): UpdateScheduledAuditResponse {
+  return { audit: undefined };
+}
+
+export const UpdateScheduledAuditResponse: MessageFns<UpdateScheduledAuditResponse> = {
+  fromJSON(object: any): UpdateScheduledAuditResponse {
+    return { audit: isSet(object.audit) ? ScheduledAudit.fromJSON(object.audit) : undefined };
+  },
+
+  toJSON(message: UpdateScheduledAuditResponse): unknown {
+    const obj: any = {};
+    if (message.audit !== undefined) {
+      obj.audit = ScheduledAudit.toJSON(message.audit);
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<UpdateScheduledAuditResponse>, I>>(base?: I): UpdateScheduledAuditResponse {
+    return UpdateScheduledAuditResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<UpdateScheduledAuditResponse>, I>>(object: I): UpdateScheduledAuditResponse {
+    const message = createBaseUpdateScheduledAuditResponse();
+    message.audit = (object.audit !== undefined && object.audit !== null)
+      ? ScheduledAudit.fromPartial(object.audit)
+      : undefined;
+    return message;
+  },
+};
+
+function createBaseDeleteScheduledAuditRequest(): DeleteScheduledAuditRequest {
+  return { id: "" };
+}
+
+export const DeleteScheduledAuditRequest: MessageFns<DeleteScheduledAuditRequest> = {
+  fromJSON(object: any): DeleteScheduledAuditRequest {
+    return { id: isSet(object.id) ? globalThis.String(object.id) : "" };
+  },
+
+  toJSON(message: DeleteScheduledAuditRequest): unknown {
+    const obj: any = {};
+    if (message.id !== "") {
+      obj.id = message.id;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<DeleteScheduledAuditRequest>, I>>(base?: I): DeleteScheduledAuditRequest {
+    return DeleteScheduledAuditRequest.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<DeleteScheduledAuditRequest>, I>>(object: I): DeleteScheduledAuditRequest {
+    const message = createBaseDeleteScheduledAuditRequest();
+    message.id = object.id ?? "";
+    return message;
+  },
+};
+
+function createBaseDeleteScheduledAuditResponse(): DeleteScheduledAuditResponse {
+  return { status: "" };
+}
+
+export const DeleteScheduledAuditResponse: MessageFns<DeleteScheduledAuditResponse> = {
+  fromJSON(object: any): DeleteScheduledAuditResponse {
+    return { status: isSet(object.status) ? globalThis.String(object.status) : "" };
+  },
+
+  toJSON(message: DeleteScheduledAuditResponse): unknown {
+    const obj: any = {};
+    if (message.status !== "") {
+      obj.status = message.status;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<DeleteScheduledAuditResponse>, I>>(base?: I): DeleteScheduledAuditResponse {
+    return DeleteScheduledAuditResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<DeleteScheduledAuditResponse>, I>>(object: I): DeleteScheduledAuditResponse {
+    const message = createBaseDeleteScheduledAuditResponse();
+    message.status = object.status ?? "";
+    return message;
+  },
+};
+
 function createBaseThotEvent(): ThotEvent {
   return { id: 0, kind: "", actor: "", payload: "", replyTo: undefined, createdAt: "" };
 }
@@ -2716,6 +3115,14 @@ export interface DashboardService {
    */
   ListThotEvents(request: ListThotEventsRequest): Promise<ListThotEventsResponse>;
   RespondToThotPermission(request: RespondToThotPermissionRequest): Promise<RespondToThotPermissionResponse>;
+  /**
+   * Dashboard-editable schedules (docs/adr/0035) — same "edit it in the
+   * UI, no redeploy" shape ListRepos/CreateRepo established.
+   */
+  ListScheduledAudits(request: ListScheduledAuditsRequest): Promise<ListScheduledAuditsResponse>;
+  CreateScheduledAudit(request: CreateScheduledAuditRequest): Promise<CreateScheduledAuditResponse>;
+  UpdateScheduledAudit(request: UpdateScheduledAuditRequest): Promise<UpdateScheduledAuditResponse>;
+  DeleteScheduledAudit(request: DeleteScheduledAuditRequest): Promise<DeleteScheduledAuditResponse>;
 }
 
 type Builtin = Date | Function | Uint8Array | string | number | boolean | undefined;

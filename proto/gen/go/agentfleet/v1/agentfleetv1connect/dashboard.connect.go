@@ -142,6 +142,18 @@ const (
 	// DashboardServiceRespondToThotPermissionProcedure is the fully-qualified name of the
 	// DashboardService's RespondToThotPermission RPC.
 	DashboardServiceRespondToThotPermissionProcedure = "/agentfleet.v1.DashboardService/RespondToThotPermission"
+	// DashboardServiceListScheduledAuditsProcedure is the fully-qualified name of the
+	// DashboardService's ListScheduledAudits RPC.
+	DashboardServiceListScheduledAuditsProcedure = "/agentfleet.v1.DashboardService/ListScheduledAudits"
+	// DashboardServiceCreateScheduledAuditProcedure is the fully-qualified name of the
+	// DashboardService's CreateScheduledAudit RPC.
+	DashboardServiceCreateScheduledAuditProcedure = "/agentfleet.v1.DashboardService/CreateScheduledAudit"
+	// DashboardServiceUpdateScheduledAuditProcedure is the fully-qualified name of the
+	// DashboardService's UpdateScheduledAudit RPC.
+	DashboardServiceUpdateScheduledAuditProcedure = "/agentfleet.v1.DashboardService/UpdateScheduledAudit"
+	// DashboardServiceDeleteScheduledAuditProcedure is the fully-qualified name of the
+	// DashboardService's DeleteScheduledAudit RPC.
+	DashboardServiceDeleteScheduledAuditProcedure = "/agentfleet.v1.DashboardService/DeleteScheduledAudit"
 )
 
 // DashboardServiceClient is a client for the agentfleet.v1.DashboardService service.
@@ -213,6 +225,12 @@ type DashboardServiceClient interface {
 	// an approval path.
 	ListThotEvents(context.Context, *connect.Request[v1.ListThotEventsRequest]) (*connect.Response[v1.ListThotEventsResponse], error)
 	RespondToThotPermission(context.Context, *connect.Request[v1.RespondToThotPermissionRequest]) (*connect.Response[v1.RespondToThotPermissionResponse], error)
+	// Dashboard-editable schedules (docs/adr/0035) — same "edit it in the
+	// UI, no redeploy" shape ListRepos/CreateRepo established.
+	ListScheduledAudits(context.Context, *connect.Request[v1.ListScheduledAuditsRequest]) (*connect.Response[v1.ListScheduledAuditsResponse], error)
+	CreateScheduledAudit(context.Context, *connect.Request[v1.CreateScheduledAuditRequest]) (*connect.Response[v1.CreateScheduledAuditResponse], error)
+	UpdateScheduledAudit(context.Context, *connect.Request[v1.UpdateScheduledAuditRequest]) (*connect.Response[v1.UpdateScheduledAuditResponse], error)
+	DeleteScheduledAudit(context.Context, *connect.Request[v1.DeleteScheduledAuditRequest]) (*connect.Response[v1.DeleteScheduledAuditResponse], error)
 }
 
 // NewDashboardServiceClient constructs a client for the agentfleet.v1.DashboardService service. By
@@ -448,6 +466,30 @@ func NewDashboardServiceClient(httpClient connect.HTTPClient, baseURL string, op
 			connect.WithSchema(dashboardServiceMethods.ByName("RespondToThotPermission")),
 			connect.WithClientOptions(opts...),
 		),
+		listScheduledAudits: connect.NewClient[v1.ListScheduledAuditsRequest, v1.ListScheduledAuditsResponse](
+			httpClient,
+			baseURL+DashboardServiceListScheduledAuditsProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("ListScheduledAudits")),
+			connect.WithClientOptions(opts...),
+		),
+		createScheduledAudit: connect.NewClient[v1.CreateScheduledAuditRequest, v1.CreateScheduledAuditResponse](
+			httpClient,
+			baseURL+DashboardServiceCreateScheduledAuditProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("CreateScheduledAudit")),
+			connect.WithClientOptions(opts...),
+		),
+		updateScheduledAudit: connect.NewClient[v1.UpdateScheduledAuditRequest, v1.UpdateScheduledAuditResponse](
+			httpClient,
+			baseURL+DashboardServiceUpdateScheduledAuditProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("UpdateScheduledAudit")),
+			connect.WithClientOptions(opts...),
+		),
+		deleteScheduledAudit: connect.NewClient[v1.DeleteScheduledAuditRequest, v1.DeleteScheduledAuditResponse](
+			httpClient,
+			baseURL+DashboardServiceDeleteScheduledAuditProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("DeleteScheduledAudit")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -490,6 +532,10 @@ type dashboardServiceClient struct {
 	queryLogs               *connect.Client[v1.QueryLogsRequest, v1.QueryLogsResponse]
 	listThotEvents          *connect.Client[v1.ListThotEventsRequest, v1.ListThotEventsResponse]
 	respondToThotPermission *connect.Client[v1.RespondToThotPermissionRequest, v1.RespondToThotPermissionResponse]
+	listScheduledAudits     *connect.Client[v1.ListScheduledAuditsRequest, v1.ListScheduledAuditsResponse]
+	createScheduledAudit    *connect.Client[v1.CreateScheduledAuditRequest, v1.CreateScheduledAuditResponse]
+	updateScheduledAudit    *connect.Client[v1.UpdateScheduledAuditRequest, v1.UpdateScheduledAuditResponse]
+	deleteScheduledAudit    *connect.Client[v1.DeleteScheduledAuditRequest, v1.DeleteScheduledAuditResponse]
 }
 
 // ListTasks calls agentfleet.v1.DashboardService.ListTasks.
@@ -677,6 +723,26 @@ func (c *dashboardServiceClient) RespondToThotPermission(ctx context.Context, re
 	return c.respondToThotPermission.CallUnary(ctx, req)
 }
 
+// ListScheduledAudits calls agentfleet.v1.DashboardService.ListScheduledAudits.
+func (c *dashboardServiceClient) ListScheduledAudits(ctx context.Context, req *connect.Request[v1.ListScheduledAuditsRequest]) (*connect.Response[v1.ListScheduledAuditsResponse], error) {
+	return c.listScheduledAudits.CallUnary(ctx, req)
+}
+
+// CreateScheduledAudit calls agentfleet.v1.DashboardService.CreateScheduledAudit.
+func (c *dashboardServiceClient) CreateScheduledAudit(ctx context.Context, req *connect.Request[v1.CreateScheduledAuditRequest]) (*connect.Response[v1.CreateScheduledAuditResponse], error) {
+	return c.createScheduledAudit.CallUnary(ctx, req)
+}
+
+// UpdateScheduledAudit calls agentfleet.v1.DashboardService.UpdateScheduledAudit.
+func (c *dashboardServiceClient) UpdateScheduledAudit(ctx context.Context, req *connect.Request[v1.UpdateScheduledAuditRequest]) (*connect.Response[v1.UpdateScheduledAuditResponse], error) {
+	return c.updateScheduledAudit.CallUnary(ctx, req)
+}
+
+// DeleteScheduledAudit calls agentfleet.v1.DashboardService.DeleteScheduledAudit.
+func (c *dashboardServiceClient) DeleteScheduledAudit(ctx context.Context, req *connect.Request[v1.DeleteScheduledAuditRequest]) (*connect.Response[v1.DeleteScheduledAuditResponse], error) {
+	return c.deleteScheduledAudit.CallUnary(ctx, req)
+}
+
 // DashboardServiceHandler is an implementation of the agentfleet.v1.DashboardService service.
 type DashboardServiceHandler interface {
 	ListTasks(context.Context, *connect.Request[v1.ListTasksRequest]) (*connect.Response[v1.ListTasksResponse], error)
@@ -746,6 +812,12 @@ type DashboardServiceHandler interface {
 	// an approval path.
 	ListThotEvents(context.Context, *connect.Request[v1.ListThotEventsRequest]) (*connect.Response[v1.ListThotEventsResponse], error)
 	RespondToThotPermission(context.Context, *connect.Request[v1.RespondToThotPermissionRequest]) (*connect.Response[v1.RespondToThotPermissionResponse], error)
+	// Dashboard-editable schedules (docs/adr/0035) — same "edit it in the
+	// UI, no redeploy" shape ListRepos/CreateRepo established.
+	ListScheduledAudits(context.Context, *connect.Request[v1.ListScheduledAuditsRequest]) (*connect.Response[v1.ListScheduledAuditsResponse], error)
+	CreateScheduledAudit(context.Context, *connect.Request[v1.CreateScheduledAuditRequest]) (*connect.Response[v1.CreateScheduledAuditResponse], error)
+	UpdateScheduledAudit(context.Context, *connect.Request[v1.UpdateScheduledAuditRequest]) (*connect.Response[v1.UpdateScheduledAuditResponse], error)
+	DeleteScheduledAudit(context.Context, *connect.Request[v1.DeleteScheduledAuditRequest]) (*connect.Response[v1.DeleteScheduledAuditResponse], error)
 }
 
 // NewDashboardServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -977,6 +1049,30 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 		connect.WithSchema(dashboardServiceMethods.ByName("RespondToThotPermission")),
 		connect.WithHandlerOptions(opts...),
 	)
+	dashboardServiceListScheduledAuditsHandler := connect.NewUnaryHandler(
+		DashboardServiceListScheduledAuditsProcedure,
+		svc.ListScheduledAudits,
+		connect.WithSchema(dashboardServiceMethods.ByName("ListScheduledAudits")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dashboardServiceCreateScheduledAuditHandler := connect.NewUnaryHandler(
+		DashboardServiceCreateScheduledAuditProcedure,
+		svc.CreateScheduledAudit,
+		connect.WithSchema(dashboardServiceMethods.ByName("CreateScheduledAudit")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dashboardServiceUpdateScheduledAuditHandler := connect.NewUnaryHandler(
+		DashboardServiceUpdateScheduledAuditProcedure,
+		svc.UpdateScheduledAudit,
+		connect.WithSchema(dashboardServiceMethods.ByName("UpdateScheduledAudit")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dashboardServiceDeleteScheduledAuditHandler := connect.NewUnaryHandler(
+		DashboardServiceDeleteScheduledAuditProcedure,
+		svc.DeleteScheduledAudit,
+		connect.WithSchema(dashboardServiceMethods.ByName("DeleteScheduledAudit")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/agentfleet.v1.DashboardService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case DashboardServiceListTasksProcedure:
@@ -1053,6 +1149,14 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 			dashboardServiceListThotEventsHandler.ServeHTTP(w, r)
 		case DashboardServiceRespondToThotPermissionProcedure:
 			dashboardServiceRespondToThotPermissionHandler.ServeHTTP(w, r)
+		case DashboardServiceListScheduledAuditsProcedure:
+			dashboardServiceListScheduledAuditsHandler.ServeHTTP(w, r)
+		case DashboardServiceCreateScheduledAuditProcedure:
+			dashboardServiceCreateScheduledAuditHandler.ServeHTTP(w, r)
+		case DashboardServiceUpdateScheduledAuditProcedure:
+			dashboardServiceUpdateScheduledAuditHandler.ServeHTTP(w, r)
+		case DashboardServiceDeleteScheduledAuditProcedure:
+			dashboardServiceDeleteScheduledAuditHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -1208,4 +1312,20 @@ func (UnimplementedDashboardServiceHandler) ListThotEvents(context.Context, *con
 
 func (UnimplementedDashboardServiceHandler) RespondToThotPermission(context.Context, *connect.Request[v1.RespondToThotPermissionRequest]) (*connect.Response[v1.RespondToThotPermissionResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.RespondToThotPermission is not implemented"))
+}
+
+func (UnimplementedDashboardServiceHandler) ListScheduledAudits(context.Context, *connect.Request[v1.ListScheduledAuditsRequest]) (*connect.Response[v1.ListScheduledAuditsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.ListScheduledAudits is not implemented"))
+}
+
+func (UnimplementedDashboardServiceHandler) CreateScheduledAudit(context.Context, *connect.Request[v1.CreateScheduledAuditRequest]) (*connect.Response[v1.CreateScheduledAuditResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.CreateScheduledAudit is not implemented"))
+}
+
+func (UnimplementedDashboardServiceHandler) UpdateScheduledAudit(context.Context, *connect.Request[v1.UpdateScheduledAuditRequest]) (*connect.Response[v1.UpdateScheduledAuditResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.UpdateScheduledAudit is not implemented"))
+}
+
+func (UnimplementedDashboardServiceHandler) DeleteScheduledAudit(context.Context, *connect.Request[v1.DeleteScheduledAuditRequest]) (*connect.Response[v1.DeleteScheduledAuditResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.DeleteScheduledAudit is not implemented"))
 }

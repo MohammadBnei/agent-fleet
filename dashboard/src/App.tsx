@@ -4,6 +4,7 @@ import { TaskDetail } from "./pages/TaskDetail";
 import { Worktrees } from "./pages/Worktrees";
 import { Files } from "./pages/Files";
 import { Thot } from "./pages/Thot";
+import { ManageScheduledAuditsModal } from "./components/ManageScheduledAuditsModal";
 import { NewTaskDialog } from "./components/NewTaskDialog";
 import { ManageReposModal } from "./components/ManageReposModal";
 import { ManagePromptSnippetsModal } from "./components/ManagePromptSnippetsModal";
@@ -216,6 +217,7 @@ export default function App() {
               selectTask(id);
             }}
           />
+          <ManageScheduledAuditsModal />
           <ManageReposModal />
           <ManagePromptSnippetsModal />
           <span>{liveCount} sessions live</span>

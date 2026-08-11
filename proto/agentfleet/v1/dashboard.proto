@@ -456,6 +456,60 @@ service DashboardService {
   // an approval path.
   rpc ListThotEvents(ListThotEventsRequest) returns (ListThotEventsResponse);
   rpc RespondToThotPermission(RespondToThotPermissionRequest) returns (RespondToThotPermissionResponse);
+
+  // Dashboard-editable schedules (docs/adr/0035) — same "edit it in the
+  // UI, no redeploy" shape ListRepos/CreateRepo established.
+  rpc ListScheduledAudits(ListScheduledAuditsRequest) returns (ListScheduledAuditsResponse);
+  rpc CreateScheduledAudit(CreateScheduledAuditRequest) returns (CreateScheduledAuditResponse);
+  rpc UpdateScheduledAudit(UpdateScheduledAuditRequest) returns (UpdateScheduledAuditResponse);
+  rpc DeleteScheduledAudit(DeleteScheduledAuditRequest) returns (DeleteScheduledAuditResponse);
+}
+
+message ScheduledAudit {
+  string id = 1;
+  string name = 2;
+  string prompt = 3;
+  int32 interval_seconds = 4;
+  bool enabled = 5;
+  string next_run_at = 6;
+  string last_run_at = 7;
+  string last_status = 8;
+}
+
+message ListScheduledAuditsRequest {}
+
+message ListScheduledAuditsResponse {
+  repeated ScheduledAudit audits = 1;
+}
+
+message CreateScheduledAuditRequest {
+  string name = 1;
+  string prompt = 2;
+  int32 interval_seconds = 3;
+}
+
+message CreateScheduledAuditResponse {
+  ScheduledAudit audit = 1;
+}
+
+message UpdateScheduledAuditRequest {
+  string id = 1;
+  string name = 2;
+  string prompt = 3;
+  int32 interval_seconds = 4;
+  bool enabled = 5;
+}
+
+message UpdateScheduledAuditResponse {
+  ScheduledAudit audit = 1;
+}
+
+message DeleteScheduledAuditRequest {
+  string id = 1;
+}
+
+message DeleteScheduledAuditResponse {
+  string status = 1;
 }
 
 message ThotEvent {

@@ -24,6 +24,17 @@ export interface AskThotResponse {
   answer: string;
 }
 
+export interface RunAuditRequest {
+  auditId: string;
+  name: string;
+  prompt: string;
+}
+
+export interface RunAuditResponse {
+  /** "queued" | "skipped" */
+  status: string;
+}
+
 function createBaseHealthzRequest(): HealthzRequest {
   return {};
 }
@@ -139,6 +150,76 @@ export const AskThotResponse: MessageFns<AskThotResponse> = {
   },
 };
 
+function createBaseRunAuditRequest(): RunAuditRequest {
+  return { auditId: "", name: "", prompt: "" };
+}
+
+export const RunAuditRequest: MessageFns<RunAuditRequest> = {
+  fromJSON(object: any): RunAuditRequest {
+    return {
+      auditId: isSet(object.auditId)
+        ? globalThis.String(object.auditId)
+        : isSet(object.audit_id)
+        ? globalThis.String(object.audit_id)
+        : "",
+      name: isSet(object.name) ? globalThis.String(object.name) : "",
+      prompt: isSet(object.prompt) ? globalThis.String(object.prompt) : "",
+    };
+  },
+
+  toJSON(message: RunAuditRequest): unknown {
+    const obj: any = {};
+    if (message.auditId !== "") {
+      obj.auditId = message.auditId;
+    }
+    if (message.name !== "") {
+      obj.name = message.name;
+    }
+    if (message.prompt !== "") {
+      obj.prompt = message.prompt;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<RunAuditRequest>, I>>(base?: I): RunAuditRequest {
+    return RunAuditRequest.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<RunAuditRequest>, I>>(object: I): RunAuditRequest {
+    const message = createBaseRunAuditRequest();
+    message.auditId = object.auditId ?? "";
+    message.name = object.name ?? "";
+    message.prompt = object.prompt ?? "";
+    return message;
+  },
+};
+
+function createBaseRunAuditResponse(): RunAuditResponse {
+  return { status: "" };
+}
+
+export const RunAuditResponse: MessageFns<RunAuditResponse> = {
+  fromJSON(object: any): RunAuditResponse {
+    return { status: isSet(object.status) ? globalThis.String(object.status) : "" };
+  },
+
+  toJSON(message: RunAuditResponse): unknown {
+    const obj: any = {};
+    if (message.status !== "") {
+      obj.status = message.status;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<RunAuditResponse>, I>>(base?: I): RunAuditResponse {
+    return RunAuditResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<RunAuditResponse>, I>>(object: I): RunAuditResponse {
+    const message = createBaseRunAuditResponse();
+    message.status = object.status ?? "";
+    return message;
+  },
+};
+
 /**
  * thot is the gRPC server; worker sidecars, core, and (later) Alertmanager
  * are its callers. Per docs/adr/0035, this is the fleet's one deliberate,
@@ -169,6 +250,14 @@ export interface ThotService {
    * trail instead of living only in thot's stream.
    */
   AskThot(request: AskThotRequest): Promise<AskThotResponse>;
+  /**
+   * Called by core's audit loop when a scheduled_audits row comes due —
+   * core commands, thot executes, the same direction adr/0020 point 2
+   * established for the provisioner. Returns as soon as the audit is
+   * accepted onto thot's queue; findings land asynchronously in
+   * thot_events, not in this response.
+   */
+  RunAudit(request: RunAuditRequest): Promise<RunAuditResponse>;
 }
 
 type Builtin = Date | Function | Uint8Array | string | number | boolean | undefined;

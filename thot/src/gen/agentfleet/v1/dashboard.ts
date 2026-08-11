@@ -433,6 +433,54 @@ export interface DeletePromptSnippetResponse {
   status: string;
 }
 
+export interface ScheduledAudit {
+  id: string;
+  name: string;
+  prompt: string;
+  intervalSeconds: number;
+  enabled: boolean;
+  nextRunAt: string;
+  lastRunAt: string;
+  lastStatus: string;
+}
+
+export interface ListScheduledAuditsRequest {
+}
+
+export interface ListScheduledAuditsResponse {
+  audits: ScheduledAudit[];
+}
+
+export interface CreateScheduledAuditRequest {
+  name: string;
+  prompt: string;
+  intervalSeconds: number;
+}
+
+export interface CreateScheduledAuditResponse {
+  audit?: ScheduledAudit | undefined;
+}
+
+export interface UpdateScheduledAuditRequest {
+  id: string;
+  name: string;
+  prompt: string;
+  intervalSeconds: number;
+  enabled: boolean;
+}
+
+export interface UpdateScheduledAuditResponse {
+  audit?: ScheduledAudit | undefined;
+}
+
+export interface DeleteScheduledAuditRequest {
+  id: string;
+}
+
+export interface DeleteScheduledAuditResponse {
+  status: string;
+}
+
 export interface ThotEvent {
   id: number;
   kind: string;
@@ -4618,6 +4666,766 @@ export const DeletePromptSnippetResponse: MessageFns<DeletePromptSnippetResponse
   },
 };
 
+function createBaseScheduledAudit(): ScheduledAudit {
+  return {
+    id: "",
+    name: "",
+    prompt: "",
+    intervalSeconds: 0,
+    enabled: false,
+    nextRunAt: "",
+    lastRunAt: "",
+    lastStatus: "",
+  };
+}
+
+export const ScheduledAudit: MessageFns<ScheduledAudit> = {
+  encode(message: ScheduledAudit, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.id !== "") {
+      writer.uint32(10).string(message.id);
+    }
+    if (message.name !== "") {
+      writer.uint32(18).string(message.name);
+    }
+    if (message.prompt !== "") {
+      writer.uint32(26).string(message.prompt);
+    }
+    if (message.intervalSeconds !== 0) {
+      writer.uint32(32).int32(message.intervalSeconds);
+    }
+    if (message.enabled !== false) {
+      writer.uint32(40).bool(message.enabled);
+    }
+    if (message.nextRunAt !== "") {
+      writer.uint32(50).string(message.nextRunAt);
+    }
+    if (message.lastRunAt !== "") {
+      writer.uint32(58).string(message.lastRunAt);
+    }
+    if (message.lastStatus !== "") {
+      writer.uint32(66).string(message.lastStatus);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): ScheduledAudit {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseScheduledAudit();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.id = reader.string();
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.name = reader.string();
+          continue;
+        }
+        case 3: {
+          if (tag !== 26) {
+            break;
+          }
+
+          message.prompt = reader.string();
+          continue;
+        }
+        case 4: {
+          if (tag !== 32) {
+            break;
+          }
+
+          message.intervalSeconds = reader.int32();
+          continue;
+        }
+        case 5: {
+          if (tag !== 40) {
+            break;
+          }
+
+          message.enabled = reader.bool();
+          continue;
+        }
+        case 6: {
+          if (tag !== 50) {
+            break;
+          }
+
+          message.nextRunAt = reader.string();
+          continue;
+        }
+        case 7: {
+          if (tag !== 58) {
+            break;
+          }
+
+          message.lastRunAt = reader.string();
+          continue;
+        }
+        case 8: {
+          if (tag !== 66) {
+            break;
+          }
+
+          message.lastStatus = reader.string();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): ScheduledAudit {
+    return {
+      id: isSet(object.id) ? globalThis.String(object.id) : "",
+      name: isSet(object.name) ? globalThis.String(object.name) : "",
+      prompt: isSet(object.prompt) ? globalThis.String(object.prompt) : "",
+      intervalSeconds: isSet(object.intervalSeconds)
+        ? globalThis.Number(object.intervalSeconds)
+        : isSet(object.interval_seconds)
+        ? globalThis.Number(object.interval_seconds)
+        : 0,
+      enabled: isSet(object.enabled) ? globalThis.Boolean(object.enabled) : false,
+      nextRunAt: isSet(object.nextRunAt)
+        ? globalThis.String(object.nextRunAt)
+        : isSet(object.next_run_at)
+        ? globalThis.String(object.next_run_at)
+        : "",
+      lastRunAt: isSet(object.lastRunAt)
+        ? globalThis.String(object.lastRunAt)
+        : isSet(object.last_run_at)
+        ? globalThis.String(object.last_run_at)
+        : "",
+      lastStatus: isSet(object.lastStatus)
+        ? globalThis.String(object.lastStatus)
+        : isSet(object.last_status)
+        ? globalThis.String(object.last_status)
+        : "",
+    };
+  },
+
+  toJSON(message: ScheduledAudit): unknown {
+    const obj: any = {};
+    if (message.id !== "") {
+      obj.id = message.id;
+    }
+    if (message.name !== "") {
+      obj.name = message.name;
+    }
+    if (message.prompt !== "") {
+      obj.prompt = message.prompt;
+    }
+    if (message.intervalSeconds !== 0) {
+      obj.intervalSeconds = Math.round(message.intervalSeconds);
+    }
+    if (message.enabled !== false) {
+      obj.enabled = message.enabled;
+    }
+    if (message.nextRunAt !== "") {
+      obj.nextRunAt = message.nextRunAt;
+    }
+    if (message.lastRunAt !== "") {
+      obj.lastRunAt = message.lastRunAt;
+    }
+    if (message.lastStatus !== "") {
+      obj.lastStatus = message.lastStatus;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<ScheduledAudit>, I>>(base?: I): ScheduledAudit {
+    return ScheduledAudit.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<ScheduledAudit>, I>>(object: I): ScheduledAudit {
+    const message = createBaseScheduledAudit();
+    message.id = object.id ?? "";
+    message.name = object.name ?? "";
+    message.prompt = object.prompt ?? "";
+    message.intervalSeconds = object.intervalSeconds ?? 0;
+    message.enabled = object.enabled ?? false;
+    message.nextRunAt = object.nextRunAt ?? "";
+    message.lastRunAt = object.lastRunAt ?? "";
+    message.lastStatus = object.lastStatus ?? "";
+    return message;
+  },
+};
+
+function createBaseListScheduledAuditsRequest(): ListScheduledAuditsRequest {
+  return {};
+}
+
+export const ListScheduledAuditsRequest: MessageFns<ListScheduledAuditsRequest> = {
+  encode(_: ListScheduledAuditsRequest, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): ListScheduledAuditsRequest {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseListScheduledAuditsRequest();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(_: any): ListScheduledAuditsRequest {
+    return {};
+  },
+
+  toJSON(_: ListScheduledAuditsRequest): unknown {
+    const obj: any = {};
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<ListScheduledAuditsRequest>, I>>(base?: I): ListScheduledAuditsRequest {
+    return ListScheduledAuditsRequest.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<ListScheduledAuditsRequest>, I>>(_: I): ListScheduledAuditsRequest {
+    const message = createBaseListScheduledAuditsRequest();
+    return message;
+  },
+};
+
+function createBaseListScheduledAuditsResponse(): ListScheduledAuditsResponse {
+  return { audits: [] };
+}
+
+export const ListScheduledAuditsResponse: MessageFns<ListScheduledAuditsResponse> = {
+  encode(message: ListScheduledAuditsResponse, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    for (const v of message.audits) {
+      ScheduledAudit.encode(v!, writer.uint32(10).fork()).join();
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): ListScheduledAuditsResponse {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseListScheduledAuditsResponse();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.audits.push(ScheduledAudit.decode(reader, reader.uint32()));
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): ListScheduledAuditsResponse {
+    return {
+      audits: globalThis.Array.isArray(object?.audits) ? object.audits.map((e: any) => ScheduledAudit.fromJSON(e)) : [],
+    };
+  },
+
+  toJSON(message: ListScheduledAuditsResponse): unknown {
+    const obj: any = {};
+    if (message.audits?.length) {
+      obj.audits = message.audits.map((e) => ScheduledAudit.toJSON(e));
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<ListScheduledAuditsResponse>, I>>(base?: I): ListScheduledAuditsResponse {
+    return ListScheduledAuditsResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<ListScheduledAuditsResponse>, I>>(object: I): ListScheduledAuditsResponse {
+    const message = createBaseListScheduledAuditsResponse();
+    message.audits = object.audits?.map((e) => ScheduledAudit.fromPartial(e)) || [];
+    return message;
+  },
+};
+
+function createBaseCreateScheduledAuditRequest(): CreateScheduledAuditRequest {
+  return { name: "", prompt: "", intervalSeconds: 0 };
+}
+
+export const CreateScheduledAuditRequest: MessageFns<CreateScheduledAuditRequest> = {
+  encode(message: CreateScheduledAuditRequest, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.name !== "") {
+      writer.uint32(10).string(message.name);
+    }
+    if (message.prompt !== "") {
+      writer.uint32(18).string(message.prompt);
+    }
+    if (message.intervalSeconds !== 0) {
+      writer.uint32(24).int32(message.intervalSeconds);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): CreateScheduledAuditRequest {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseCreateScheduledAuditRequest();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.name = reader.string();
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.prompt = reader.string();
+          continue;
+        }
+        case 3: {
+          if (tag !== 24) {
+            break;
+          }
+
+          message.intervalSeconds = reader.int32();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): CreateScheduledAuditRequest {
+    return {
+      name: isSet(object.name) ? globalThis.String(object.name) : "",
+      prompt: isSet(object.prompt) ? globalThis.String(object.prompt) : "",
+      intervalSeconds: isSet(object.intervalSeconds)
+        ? globalThis.Number(object.intervalSeconds)
+        : isSet(object.interval_seconds)
+        ? globalThis.Number(object.interval_seconds)
+        : 0,
+    };
+  },
+
+  toJSON(message: CreateScheduledAuditRequest): unknown {
+    const obj: any = {};
+    if (message.name !== "") {
+      obj.name = message.name;
+    }
+    if (message.prompt !== "") {
+      obj.prompt = message.prompt;
+    }
+    if (message.intervalSeconds !== 0) {
+      obj.intervalSeconds = Math.round(message.intervalSeconds);
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<CreateScheduledAuditRequest>, I>>(base?: I): CreateScheduledAuditRequest {
+    return CreateScheduledAuditRequest.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<CreateScheduledAuditRequest>, I>>(object: I): CreateScheduledAuditRequest {
+    const message = createBaseCreateScheduledAuditRequest();
+    message.name = object.name ?? "";
+    message.prompt = object.prompt ?? "";
+    message.intervalSeconds = object.intervalSeconds ?? 0;
+    return message;
+  },
+};
+
+function createBaseCreateScheduledAuditResponse(): CreateScheduledAuditResponse {
+  return { audit: undefined };
+}
+
+export const CreateScheduledAuditResponse: MessageFns<CreateScheduledAuditResponse> = {
+  encode(message: CreateScheduledAuditResponse, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.audit !== undefined) {
+      ScheduledAudit.encode(message.audit, writer.uint32(10).fork()).join();
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): CreateScheduledAuditResponse {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseCreateScheduledAuditResponse();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.audit = ScheduledAudit.decode(reader, reader.uint32());
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): CreateScheduledAuditResponse {
+    return { audit: isSet(object.audit) ? ScheduledAudit.fromJSON(object.audit) : undefined };
+  },
+
+  toJSON(message: CreateScheduledAuditResponse): unknown {
+    const obj: any = {};
+    if (message.audit !== undefined) {
+      obj.audit = ScheduledAudit.toJSON(message.audit);
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<CreateScheduledAuditResponse>, I>>(base?: I): CreateScheduledAuditResponse {
+    return CreateScheduledAuditResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<CreateScheduledAuditResponse>, I>>(object: I): CreateScheduledAuditResponse {
+    const message = createBaseCreateScheduledAuditResponse();
+    message.audit = (object.audit !== undefined && object.audit !== null)
+      ? ScheduledAudit.fromPartial(object.audit)
+      : undefined;
+    return message;
+  },
+};
+
+function createBaseUpdateScheduledAuditRequest(): UpdateScheduledAuditRequest {
+  return { id: "", name: "", prompt: "", intervalSeconds: 0, enabled: false };
+}
+
+export const UpdateScheduledAuditRequest: MessageFns<UpdateScheduledAuditRequest> = {
+  encode(message: UpdateScheduledAuditRequest, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.id !== "") {
+      writer.uint32(10).string(message.id);
+    }
+    if (message.name !== "") {
+      writer.uint32(18).string(message.name);
+    }
+    if (message.prompt !== "") {
+      writer.uint32(26).string(message.prompt);
+    }
+    if (message.intervalSeconds !== 0) {
+      writer.uint32(32).int32(message.intervalSeconds);
+    }
+    if (message.enabled !== false) {
+      writer.uint32(40).bool(message.enabled);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): UpdateScheduledAuditRequest {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseUpdateScheduledAuditRequest();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.id = reader.string();
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.name = reader.string();
+          continue;
+        }
+        case 3: {
+          if (tag !== 26) {
+            break;
+          }
+
+          message.prompt = reader.string();
+          continue;
+        }
+        case 4: {
+          if (tag !== 32) {
+            break;
+          }
+
+          message.intervalSeconds = reader.int32();
+          continue;
+        }
+        case 5: {
+          if (tag !== 40) {
+            break;
+          }
+
+          message.enabled = reader.bool();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): UpdateScheduledAuditRequest {
+    return {
+      id: isSet(object.id) ? globalThis.String(object.id) : "",
+      name: isSet(object.name) ? globalThis.String(object.name) : "",
+      prompt: isSet(object.prompt) ? globalThis.String(object.prompt) : "",
+      intervalSeconds: isSet(object.intervalSeconds)
+        ? globalThis.Number(object.intervalSeconds)
+        : isSet(object.interval_seconds)
+        ? globalThis.Number(object.interval_seconds)
+        : 0,
+      enabled: isSet(object.enabled) ? globalThis.Boolean(object.enabled) : false,
+    };
+  },
+
+  toJSON(message: UpdateScheduledAuditRequest): unknown {
+    const obj: any = {};
+    if (message.id !== "") {
+      obj.id = message.id;
+    }
+    if (message.name !== "") {
+      obj.name = message.name;
+    }
+    if (message.prompt !== "") {
+      obj.prompt = message.prompt;
+    }
+    if (message.intervalSeconds !== 0) {
+      obj.intervalSeconds = Math.round(message.intervalSeconds);
+    }
+    if (message.enabled !== false) {
+      obj.enabled = message.enabled;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<UpdateScheduledAuditRequest>, I>>(base?: I): UpdateScheduledAuditRequest {
+    return UpdateScheduledAuditRequest.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<UpdateScheduledAuditRequest>, I>>(object: I): UpdateScheduledAuditRequest {
+    const message = createBaseUpdateScheduledAuditRequest();
+    message.id = object.id ?? "";
+    message.name = object.name ?? "";
+    message.prompt = object.prompt ?? "";
+    message.intervalSeconds = object.intervalSeconds ?? 0;
+    message.enabled = object.enabled ?? false;
+    return message;
+  },
+};
+
+function createBaseUpdateScheduledAuditResponse(): UpdateScheduledAuditResponse {
+  return { audit: undefined };
+}
+
+export const UpdateScheduledAuditResponse: MessageFns<UpdateScheduledAuditResponse> = {
+  encode(message: UpdateScheduledAuditResponse, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.audit !== undefined) {
+      ScheduledAudit.encode(message.audit, writer.uint32(10).fork()).join();
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): UpdateScheduledAuditResponse {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseUpdateScheduledAuditResponse();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.audit = ScheduledAudit.decode(reader, reader.uint32());
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): UpdateScheduledAuditResponse {
+    return { audit: isSet(object.audit) ? ScheduledAudit.fromJSON(object.audit) : undefined };
+  },
+
+  toJSON(message: UpdateScheduledAuditResponse): unknown {
+    const obj: any = {};
+    if (message.audit !== undefined) {
+      obj.audit = ScheduledAudit.toJSON(message.audit);
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<UpdateScheduledAuditResponse>, I>>(base?: I): UpdateScheduledAuditResponse {
+    return UpdateScheduledAuditResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<UpdateScheduledAuditResponse>, I>>(object: I): UpdateScheduledAuditResponse {
+    const message = createBaseUpdateScheduledAuditResponse();
+    message.audit = (object.audit !== undefined && object.audit !== null)
+      ? ScheduledAudit.fromPartial(object.audit)
+      : undefined;
+    return message;
+  },
+};
+
+function createBaseDeleteScheduledAuditRequest(): DeleteScheduledAuditRequest {
+  return { id: "" };
+}
+
+export const DeleteScheduledAuditRequest: MessageFns<DeleteScheduledAuditRequest> = {
+  encode(message: DeleteScheduledAuditRequest, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.id !== "") {
+      writer.uint32(10).string(message.id);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): DeleteScheduledAuditRequest {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseDeleteScheduledAuditRequest();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.id = reader.string();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): DeleteScheduledAuditRequest {
+    return { id: isSet(object.id) ? globalThis.String(object.id) : "" };
+  },
+
+  toJSON(message: DeleteScheduledAuditRequest): unknown {
+    const obj: any = {};
+    if (message.id !== "") {
+      obj.id = message.id;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<DeleteScheduledAuditRequest>, I>>(base?: I): DeleteScheduledAuditRequest {
+    return DeleteScheduledAuditRequest.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<DeleteScheduledAuditRequest>, I>>(object: I): DeleteScheduledAuditRequest {
+    const message = createBaseDeleteScheduledAuditRequest();
+    message.id = object.id ?? "";
+    return message;
+  },
+};
+
+function createBaseDeleteScheduledAuditResponse(): DeleteScheduledAuditResponse {
+  return { status: "" };
+}
+
+export const DeleteScheduledAuditResponse: MessageFns<DeleteScheduledAuditResponse> = {
+  encode(message: DeleteScheduledAuditResponse, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.status !== "") {
+      writer.uint32(10).string(message.status);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): DeleteScheduledAuditResponse {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseDeleteScheduledAuditResponse();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.status = reader.string();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): DeleteScheduledAuditResponse {
+    return { status: isSet(object.status) ? globalThis.String(object.status) : "" };
+  },
+
+  toJSON(message: DeleteScheduledAuditResponse): unknown {
+    const obj: any = {};
+    if (message.status !== "") {
+      obj.status = message.status;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<DeleteScheduledAuditResponse>, I>>(base?: I): DeleteScheduledAuditResponse {
+    return DeleteScheduledAuditResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<DeleteScheduledAuditResponse>, I>>(object: I): DeleteScheduledAuditResponse {
+    const message = createBaseDeleteScheduledAuditResponse();
+    message.status = object.status ?? "";
+    return message;
+  },
+};
+
 function createBaseThotEvent(): ThotEvent {
   return { id: 0, kind: "", actor: "", payload: "", replyTo: undefined, createdAt: "" };
 }
@@ -5513,6 +6321,54 @@ export const DashboardServiceService = {
     responseDeserialize: (value: Buffer): RespondToThotPermissionResponse =>
       RespondToThotPermissionResponse.decode(value),
   },
+  /**
+   * Dashboard-editable schedules (docs/adr/0035) — same "edit it in the
+   * UI, no redeploy" shape ListRepos/CreateRepo established.
+   */
+  listScheduledAudits: {
+    path: "/agentfleet.v1.DashboardService/ListScheduledAudits" as const,
+    requestStream: false as const,
+    responseStream: false as const,
+    requestSerialize: (value: ListScheduledAuditsRequest): Buffer =>
+      Buffer.from(ListScheduledAuditsRequest.encode(value).finish()),
+    requestDeserialize: (value: Buffer): ListScheduledAuditsRequest => ListScheduledAuditsRequest.decode(value),
+    responseSerialize: (value: ListScheduledAuditsResponse): Buffer =>
+      Buffer.from(ListScheduledAuditsResponse.encode(value).finish()),
+    responseDeserialize: (value: Buffer): ListScheduledAuditsResponse => ListScheduledAuditsResponse.decode(value),
+  },
+  createScheduledAudit: {
+    path: "/agentfleet.v1.DashboardService/CreateScheduledAudit" as const,
+    requestStream: false as const,
+    responseStream: false as const,
+    requestSerialize: (value: CreateScheduledAuditRequest): Buffer =>
+      Buffer.from(CreateScheduledAuditRequest.encode(value).finish()),
+    requestDeserialize: (value: Buffer): CreateScheduledAuditRequest => CreateScheduledAuditRequest.decode(value),
+    responseSerialize: (value: CreateScheduledAuditResponse): Buffer =>
+      Buffer.from(CreateScheduledAuditResponse.encode(value).finish()),
+    responseDeserialize: (value: Buffer): CreateScheduledAuditResponse => CreateScheduledAuditResponse.decode(value),
+  },
+  updateScheduledAudit: {
+    path: "/agentfleet.v1.DashboardService/UpdateScheduledAudit" as const,
+    requestStream: false as const,
+    responseStream: false as const,
+    requestSerialize: (value: UpdateScheduledAuditRequest): Buffer =>
+      Buffer.from(UpdateScheduledAuditRequest.encode(value).finish()),
+    requestDeserialize: (value: Buffer): UpdateScheduledAuditRequest => UpdateScheduledAuditRequest.decode(value),
+    responseSerialize: (value: UpdateScheduledAuditResponse): Buffer =>
+      Buffer.from(UpdateScheduledAuditResponse.encode(value).finish()),
+    responseDeserialize: (value: Buffer): UpdateScheduledAuditResponse => UpdateScheduledAuditResponse.decode(value),
+  },
+  deleteScheduledAudit: {
+    path: "/agentfleet.v1.DashboardService/DeleteScheduledAudit" as const,
+    requestStream: false as const,
+    responseStream: false as const,
+    requestSerialize: (value: DeleteScheduledAuditRequest): Buffer =>
+      Buffer.from(DeleteScheduledAuditRequest.encode(value).finish()),
+    requestDeserialize: (value: Buffer): DeleteScheduledAuditRequest => DeleteScheduledAuditRequest.decode(value),
+    responseSerialize: (value: DeleteScheduledAuditResponse): Buffer =>
+      Buffer.from(DeleteScheduledAuditResponse.encode(value).finish()),
+    responseDeserialize: (value: Buffer): DeleteScheduledAuditResponse => DeleteScheduledAuditResponse.decode(value),
+  },
 } as const;
 
 export interface DashboardServiceServer extends UntypedServiceImplementation {
@@ -5593,6 +6449,14 @@ export interface DashboardServiceServer extends UntypedServiceImplementation {
    */
   listThotEvents: handleUnaryCall<ListThotEventsRequest, ListThotEventsResponse>;
   respondToThotPermission: handleUnaryCall<RespondToThotPermissionRequest, RespondToThotPermissionResponse>;
+  /**
+   * Dashboard-editable schedules (docs/adr/0035) — same "edit it in the
+   * UI, no redeploy" shape ListRepos/CreateRepo established.
+   */
+  listScheduledAudits: handleUnaryCall<ListScheduledAuditsRequest, ListScheduledAuditsResponse>;
+  createScheduledAudit: handleUnaryCall<CreateScheduledAuditRequest, CreateScheduledAuditResponse>;
+  updateScheduledAudit: handleUnaryCall<UpdateScheduledAuditRequest, UpdateScheduledAuditResponse>;
+  deleteScheduledAudit: handleUnaryCall<DeleteScheduledAuditRequest, DeleteScheduledAuditResponse>;
 }
 
 export interface DashboardServiceClient extends Client {
@@ -6178,6 +7042,70 @@ export interface DashboardServiceClient extends Client {
     metadata: Metadata,
     options: Partial<CallOptions>,
     callback: (error: ServiceError | null, response: RespondToThotPermissionResponse) => void,
+  ): ClientUnaryCall;
+  /**
+   * Dashboard-editable schedules (docs/adr/0035) — same "edit it in the
+   * UI, no redeploy" shape ListRepos/CreateRepo established.
+   */
+  listScheduledAudits(
+    request: ListScheduledAuditsRequest,
+    callback: (error: ServiceError | null, response: ListScheduledAuditsResponse) => void,
+  ): ClientUnaryCall;
+  listScheduledAudits(
+    request: ListScheduledAuditsRequest,
+    metadata: Metadata,
+    callback: (error: ServiceError | null, response: ListScheduledAuditsResponse) => void,
+  ): ClientUnaryCall;
+  listScheduledAudits(
+    request: ListScheduledAuditsRequest,
+    metadata: Metadata,
+    options: Partial<CallOptions>,
+    callback: (error: ServiceError | null, response: ListScheduledAuditsResponse) => void,
+  ): ClientUnaryCall;
+  createScheduledAudit(
+    request: CreateScheduledAuditRequest,
+    callback: (error: ServiceError | null, response: CreateScheduledAuditResponse) => void,
+  ): ClientUnaryCall;
+  createScheduledAudit(
+    request: CreateScheduledAuditRequest,
+    metadata: Metadata,
+    callback: (error: ServiceError | null, response: CreateScheduledAuditResponse) => void,
+  ): ClientUnaryCall;
+  createScheduledAudit(
+    request: CreateScheduledAuditRequest,
+    metadata: Metadata,
+    options: Partial<CallOptions>,
+    callback: (error: ServiceError | null, response: CreateScheduledAuditResponse) => void,
+  ): ClientUnaryCall;
+  updateScheduledAudit(
+    request: UpdateScheduledAuditRequest,
+    callback: (error: ServiceError | null, response: UpdateScheduledAuditResponse) => void,
+  ): ClientUnaryCall;
+  updateScheduledAudit(
+    request: UpdateScheduledAuditRequest,
+    metadata: Metadata,
+    callback: (error: ServiceError | null, response: UpdateScheduledAuditResponse) => void,
+  ): ClientUnaryCall;
+  updateScheduledAudit(
+    request: UpdateScheduledAuditRequest,
+    metadata: Metadata,
+    options: Partial<CallOptions>,
+    callback: (error: ServiceError | null, response: UpdateScheduledAuditResponse) => void,
+  ): ClientUnaryCall;
+  deleteScheduledAudit(
+    request: DeleteScheduledAuditRequest,
+    callback: (error: ServiceError | null, response: DeleteScheduledAuditResponse) => void,
+  ): ClientUnaryCall;
+  deleteScheduledAudit(
+    request: DeleteScheduledAuditRequest,
+    metadata: Metadata,
+    callback: (error: ServiceError | null, response: DeleteScheduledAuditResponse) => void,
+  ): ClientUnaryCall;
+  deleteScheduledAudit(
+    request: DeleteScheduledAuditRequest,
+    metadata: Metadata,
+    options: Partial<CallOptions>,
+    callback: (error: ServiceError | null, response: DeleteScheduledAuditResponse) => void,
   ): ClientUnaryCall;
 }
 

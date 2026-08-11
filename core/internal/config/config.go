@@ -23,6 +23,11 @@ type Config struct {
 	DiscordTriggerChannel string
 	LokiURL               string
 	ProvisionerGRPCAddr   string
+	// thot (docs/adr/0035) is optional: an empty addr disables the audit
+	// scheduler entirely rather than failing startup, so a fleet deployed
+	// without thot behaves exactly as it did before.
+	ThotGRPCAddr  string
+	ThotAuthToken string
 	// MaxInFlight caps fleet-wide concurrent tasks (docs/adr/0019: ~5, the
 	// actual human-followable ceiling, not a technical limit) — the
 	// dispatch loop's own headroom check, not per-repo.
@@ -71,6 +76,8 @@ func Load() Config {
 		DiscordTriggerChannel: os.Getenv("DISCORD_TRIGGER_CHANNEL_ID"),
 		LokiURL:               env("LOKI_URL", "http://platform-loki.monitoring.svc.cluster.local:3100"),
 		ProvisionerGRPCAddr:   env("PROVISIONER_GRPC_ADDR", "provisioner.agent-fleet.svc.cluster.local:9090"),
+		ThotGRPCAddr:          env("THOT_GRPC_ADDR", ""),
+		ThotAuthToken:         env("THOT_AUTH_TOKEN", ""),
 		MaxInFlight:           envInt("MAX_IN_FLIGHT_TASKS", 5),
 		MaxTaskRetries:        envInt("MAX_TASK_RETRIES", 3),
 		StopGrace:             time.Duration(envInt("STOP_GRACE_MS", 30000)) * time.Millisecond,

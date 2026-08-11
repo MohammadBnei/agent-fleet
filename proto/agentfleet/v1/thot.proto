@@ -29,6 +29,13 @@ service ThotService {
   // transcript by the caller, so the exchange stays in that task's audit
   // trail instead of living only in thot's stream.
   rpc AskThot(AskThotRequest) returns (AskThotResponse);
+
+  // Called by core's audit loop when a scheduled_audits row comes due —
+  // core commands, thot executes, the same direction adr/0020 point 2
+  // established for the provisioner. Returns as soon as the audit is
+  // accepted onto thot's queue; findings land asynchronously in
+  // thot_events, not in this response.
+  rpc RunAudit(RunAuditRequest) returns (RunAuditResponse);
 }
 
 message HealthzRequest {}
@@ -44,4 +51,14 @@ message AskThotRequest {
 
 message AskThotResponse {
   string answer = 1;
+}
+
+message RunAuditRequest {
+  string audit_id = 1;
+  string name = 2;
+  string prompt = 3;
+}
+
+message RunAuditResponse {
+  string status = 1; // "queued" | "skipped"
 }

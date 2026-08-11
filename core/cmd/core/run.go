@@ -15,6 +15,7 @@ import (
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 	"github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1/agentfleetv1connect"
 
+	"github.com/MohammadBnei/agent-fleet/core/internal/audits"
 	"github.com/MohammadBnei/agent-fleet/core/internal/config"
 	"github.com/MohammadBnei/agent-fleet/core/internal/coreserver"
 	"github.com/MohammadBnei/agent-fleet/core/internal/dashboard"
@@ -27,7 +28,9 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/provisionerclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/repoprofiles"
 	"github.com/MohammadBnei/agent-fleet/core/internal/repos"
+	"github.com/MohammadBnei/agent-fleet/core/internal/scheduledaudits"
 	"github.com/MohammadBnei/agent-fleet/core/internal/tasks"
+	"github.com/MohammadBnei/agent-fleet/core/internal/thotclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/thotevents"
 	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
 	"github.com/MohammadBnei/agent-fleet/core/internal/webui"
@@ -52,6 +55,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool) error {
 	profileStore := repoprofiles.NewStore(pool)
 	snippetStore := promptsnippets.NewStore(pool)
 	thotEventStore := thotevents.NewStore(pool)
+	auditStore := scheduledaudits.NewStore(pool)
 	// Every consumer below except SetNudge (a *PostgresStore-only method,
 	// not part of the transcript.Store interface) goes through this
 	// activity-tracking wrapper instead of `store` directly — see its own
@@ -122,6 +126,22 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool) error {
 	// pollInterval for the common, event-driven cases.
 	taskStore.SetNudge(dispatchLoop.Nudge)
 
+	// thot's scheduler (docs/adr/0035). New(...) returns nil when
+	// THOT_GRPC_ADDR is unset, and the loop then declines to start — a
+	// fleet without thot deployed simply never schedules audits.
+	thotConn, err := thotclient.New(cfg.ThotGRPCAddr, cfg.ThotAuthToken)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = thotConn.Close() }()
+	if thotConn != nil {
+		auditLoop := audits.New(auditStore, thotConn)
+		go auditLoop.Run(ctx, 60*time.Second)
+		// Same live-refresh wiring repos uses for Discord's /task choices:
+		// a dashboard edit takes effect now, not on the next tick.
+		auditStore.SetOnChange(auditLoop.Nudge)
+	}
+
 	// core's first gRPC server (docs/adr/0020's Context) — the provisioner
 	// pushes pod-lifecycle events here, and every worker pod's sidecar
 	// reaches everything else (the old /mcp HTTP surface, and the direct-SQL
@@ -142,7 +162,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool) error {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
-	dashboardSvc := dashboard.NewServer(taskStore, activityStore, journalStore, repoStore, profileStore, snippetStore, provisioner, files, hub, cfg.MaxInFlight, loki, thotEventStore)
+	dashboardSvc := dashboard.NewServer(taskStore, activityStore, journalStore, repoStore, profileStore, snippetStore, provisioner, files, hub, cfg.MaxInFlight, loki, thotEventStore, auditStore)
 	dashboardPath, dashboardHandler := agentfleetv1connect.NewDashboardServiceHandler(
 		dashboardSvc,
 		connect.WithInterceptors(dashboard.NewCSRFInterceptor(), dashboard.NewAccessLogInterceptor()),

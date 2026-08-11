@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file agentfleet/v1/thot.proto.
  */
 export const file_agentfleet_v1_thot: GenFile = /*@__PURE__*/
-  fileDesc("ChhhZ2VudGZsZWV0L3YxL3Rob3QucHJvdG8SDWFnZW50ZmxlZXQudjEiEAoOSGVhbHRoelJlcXVlc3QiHQoPSGVhbHRoelJlc3BvbnNlEgoKAm9rGAEgASgIIjoKDkFza1Rob3RSZXF1ZXN0EhYKDmFza2luZ190YXNrX2lkGAEgASgJEhAKCHF1ZXN0aW9uGAIgASgJIiEKD0Fza1Rob3RSZXNwb25zZRIOCgZhbnN3ZXIYASABKAkyoQEKC1Rob3RTZXJ2aWNlEkgKB0hlYWx0aHoSHS5hZ2VudGZsZWV0LnYxLkhlYWx0aHpSZXF1ZXN0Gh4uYWdlbnRmbGVldC52MS5IZWFsdGh6UmVzcG9uc2USSAoHQXNrVGhvdBIdLmFnZW50ZmxlZXQudjEuQXNrVGhvdFJlcXVlc3QaHi5hZ2VudGZsZWV0LnYxLkFza1Rob3RSZXNwb25zZUJNWktnaXRodWIuY29tL01vaGFtbWFkQm5laS9hZ2VudC1mbGVldC9wcm90by9nZW4vZ28vYWdlbnRmbGVldC92MTthZ2VudGZsZWV0djFiBnByb3RvMw");
+  fileDesc("ChhhZ2VudGZsZWV0L3YxL3Rob3QucHJvdG8SDWFnZW50ZmxlZXQudjEiEAoOSGVhbHRoelJlcXVlc3QiHQoPSGVhbHRoelJlc3BvbnNlEgoKAm9rGAEgASgIIjoKDkFza1Rob3RSZXF1ZXN0EhYKDmFza2luZ190YXNrX2lkGAEgASgJEhAKCHF1ZXN0aW9uGAIgASgJIiEKD0Fza1Rob3RSZXNwb25zZRIOCgZhbnN3ZXIYASABKAkiQQoPUnVuQXVkaXRSZXF1ZXN0EhAKCGF1ZGl0X2lkGAEgASgJEgwKBG5hbWUYAiABKAkSDgoGcHJvbXB0GAMgASgJIiIKEFJ1bkF1ZGl0UmVzcG9uc2USDgoGc3RhdHVzGAEgASgJMu4BCgtUaG90U2VydmljZRJICgdIZWFsdGh6Eh0uYWdlbnRmbGVldC52MS5IZWFsdGh6UmVxdWVzdBoeLmFnZW50ZmxlZXQudjEuSGVhbHRoelJlc3BvbnNlEkgKB0Fza1Rob3QSHS5hZ2VudGZsZWV0LnYxLkFza1Rob3RSZXF1ZXN0Gh4uYWdlbnRmbGVldC52MS5Bc2tUaG90UmVzcG9uc2USSwoIUnVuQXVkaXQSHi5hZ2VudGZsZWV0LnYxLlJ1bkF1ZGl0UmVxdWVzdBofLmFnZW50ZmxlZXQudjEuUnVuQXVkaXRSZXNwb25zZUJNWktnaXRodWIuY29tL01vaGFtbWFkQm5laS9hZ2VudC1mbGVldC9wcm90by9nZW4vZ28vYWdlbnRmbGVldC92MTthZ2VudGZsZWV0djFiBnByb3RvMw");
 
 /**
  * @generated from message agentfleet.v1.HealthzRequest
@@ -82,6 +82,52 @@ export const AskThotResponseSchema: GenMessage<AskThotResponse> = /*@__PURE__*/
   messageDesc(file_agentfleet_v1_thot, 3);
 
 /**
+ * @generated from message agentfleet.v1.RunAuditRequest
+ */
+export type RunAuditRequest = Message<"agentfleet.v1.RunAuditRequest"> & {
+  /**
+   * @generated from field: string audit_id = 1;
+   */
+  auditId: string;
+
+  /**
+   * @generated from field: string name = 2;
+   */
+  name: string;
+
+  /**
+   * @generated from field: string prompt = 3;
+   */
+  prompt: string;
+};
+
+/**
+ * Describes the message agentfleet.v1.RunAuditRequest.
+ * Use `create(RunAuditRequestSchema)` to create a new message.
+ */
+export const RunAuditRequestSchema: GenMessage<RunAuditRequest> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_thot, 4);
+
+/**
+ * @generated from message agentfleet.v1.RunAuditResponse
+ */
+export type RunAuditResponse = Message<"agentfleet.v1.RunAuditResponse"> & {
+  /**
+   * "queued" | "skipped"
+   *
+   * @generated from field: string status = 1;
+   */
+  status: string;
+};
+
+/**
+ * Describes the message agentfleet.v1.RunAuditResponse.
+ * Use `create(RunAuditResponseSchema)` to create a new message.
+ */
+export const RunAuditResponseSchema: GenMessage<RunAuditResponse> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_thot, 5);
+
+/**
  * thot is the gRPC server; worker sidecars, core, and (later) Alertmanager
  * are its callers. Per docs/adr/0035, this is the fleet's one deliberate,
  * named exception to the hub-and-spoke rule (docs/adr/0020 point 4) —
@@ -125,6 +171,20 @@ export const ThotService: GenService<{
     methodKind: "unary";
     input: typeof AskThotRequestSchema;
     output: typeof AskThotResponseSchema;
+  },
+  /**
+   * Called by core's audit loop when a scheduled_audits row comes due —
+   * core commands, thot executes, the same direction adr/0020 point 2
+   * established for the provisioner. Returns as soon as the audit is
+   * accepted onto thot's queue; findings land asynchronously in
+   * thot_events, not in this response.
+   *
+   * @generated from rpc agentfleet.v1.ThotService.RunAudit
+   */
+  runAudit: {
+    methodKind: "unary";
+    input: typeof RunAuditRequestSchema;
+    output: typeof RunAuditResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_agentfleet_v1_thot, 0);

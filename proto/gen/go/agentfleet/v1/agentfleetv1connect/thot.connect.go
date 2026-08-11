@@ -37,6 +37,8 @@ const (
 	ThotServiceHealthzProcedure = "/agentfleet.v1.ThotService/Healthz"
 	// ThotServiceAskThotProcedure is the fully-qualified name of the ThotService's AskThot RPC.
 	ThotServiceAskThotProcedure = "/agentfleet.v1.ThotService/AskThot"
+	// ThotServiceRunAuditProcedure is the fully-qualified name of the ThotService's RunAudit RPC.
+	ThotServiceRunAuditProcedure = "/agentfleet.v1.ThotService/RunAudit"
 )
 
 // ThotServiceClient is a client for the agentfleet.v1.ThotService service.
@@ -51,6 +53,12 @@ type ThotServiceClient interface {
 	// transcript by the caller, so the exchange stays in that task's audit
 	// trail instead of living only in thot's stream.
 	AskThot(context.Context, *connect.Request[v1.AskThotRequest]) (*connect.Response[v1.AskThotResponse], error)
+	// Called by core's audit loop when a scheduled_audits row comes due —
+	// core commands, thot executes, the same direction adr/0020 point 2
+	// established for the provisioner. Returns as soon as the audit is
+	// accepted onto thot's queue; findings land asynchronously in
+	// thot_events, not in this response.
+	RunAudit(context.Context, *connect.Request[v1.RunAuditRequest]) (*connect.Response[v1.RunAuditResponse], error)
 }
 
 // NewThotServiceClient constructs a client for the agentfleet.v1.ThotService service. By default,
@@ -76,13 +84,20 @@ func NewThotServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(thotServiceMethods.ByName("AskThot")),
 			connect.WithClientOptions(opts...),
 		),
+		runAudit: connect.NewClient[v1.RunAuditRequest, v1.RunAuditResponse](
+			httpClient,
+			baseURL+ThotServiceRunAuditProcedure,
+			connect.WithSchema(thotServiceMethods.ByName("RunAudit")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // thotServiceClient implements ThotServiceClient.
 type thotServiceClient struct {
-	healthz *connect.Client[v1.HealthzRequest, v1.HealthzResponse]
-	askThot *connect.Client[v1.AskThotRequest, v1.AskThotResponse]
+	healthz  *connect.Client[v1.HealthzRequest, v1.HealthzResponse]
+	askThot  *connect.Client[v1.AskThotRequest, v1.AskThotResponse]
+	runAudit *connect.Client[v1.RunAuditRequest, v1.RunAuditResponse]
 }
 
 // Healthz calls agentfleet.v1.ThotService.Healthz.
@@ -93,6 +108,11 @@ func (c *thotServiceClient) Healthz(ctx context.Context, req *connect.Request[v1
 // AskThot calls agentfleet.v1.ThotService.AskThot.
 func (c *thotServiceClient) AskThot(ctx context.Context, req *connect.Request[v1.AskThotRequest]) (*connect.Response[v1.AskThotResponse], error) {
 	return c.askThot.CallUnary(ctx, req)
+}
+
+// RunAudit calls agentfleet.v1.ThotService.RunAudit.
+func (c *thotServiceClient) RunAudit(ctx context.Context, req *connect.Request[v1.RunAuditRequest]) (*connect.Response[v1.RunAuditResponse], error) {
+	return c.runAudit.CallUnary(ctx, req)
 }
 
 // ThotServiceHandler is an implementation of the agentfleet.v1.ThotService service.
@@ -107,6 +127,12 @@ type ThotServiceHandler interface {
 	// transcript by the caller, so the exchange stays in that task's audit
 	// trail instead of living only in thot's stream.
 	AskThot(context.Context, *connect.Request[v1.AskThotRequest]) (*connect.Response[v1.AskThotResponse], error)
+	// Called by core's audit loop when a scheduled_audits row comes due —
+	// core commands, thot executes, the same direction adr/0020 point 2
+	// established for the provisioner. Returns as soon as the audit is
+	// accepted onto thot's queue; findings land asynchronously in
+	// thot_events, not in this response.
+	RunAudit(context.Context, *connect.Request[v1.RunAuditRequest]) (*connect.Response[v1.RunAuditResponse], error)
 }
 
 // NewThotServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -128,12 +154,20 @@ func NewThotServiceHandler(svc ThotServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(thotServiceMethods.ByName("AskThot")),
 		connect.WithHandlerOptions(opts...),
 	)
+	thotServiceRunAuditHandler := connect.NewUnaryHandler(
+		ThotServiceRunAuditProcedure,
+		svc.RunAudit,
+		connect.WithSchema(thotServiceMethods.ByName("RunAudit")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/agentfleet.v1.ThotService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case ThotServiceHealthzProcedure:
 			thotServiceHealthzHandler.ServeHTTP(w, r)
 		case ThotServiceAskThotProcedure:
 			thotServiceAskThotHandler.ServeHTTP(w, r)
+		case ThotServiceRunAuditProcedure:
+			thotServiceRunAuditHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -149,4 +183,8 @@ func (UnimplementedThotServiceHandler) Healthz(context.Context, *connect.Request
 
 func (UnimplementedThotServiceHandler) AskThot(context.Context, *connect.Request[v1.AskThotRequest]) (*connect.Response[v1.AskThotResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.ThotService.AskThot is not implemented"))
+}
+
+func (UnimplementedThotServiceHandler) RunAudit(context.Context, *connect.Request[v1.RunAuditRequest]) (*connect.Response[v1.RunAuditResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.ThotService.RunAudit is not implemented"))
 }
