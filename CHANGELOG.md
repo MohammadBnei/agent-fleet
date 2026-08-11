@@ -1,5 +1,12 @@
 # Changelog
 
+# [1.36.0](https://github.com/MohammadBnei/agent-fleet/compare/1.35.0...1.36.0) (2026-08-11)
+
+
+### Features
+
+* **thot:** let humans ask thot directly from the dashboard ([#101](https://github.com/MohammadBnei/agent-fleet/issues/101)) ([5547978](https://github.com/MohammadBnei/agent-fleet/commit/55479784064c5c6f995e06894f40e2f85d20e0ef))
+
 # [1.35.0](https://github.com/MohammadBnei/agent-fleet/compare/1.34.1...1.35.0) (2026-08-11)
 
 
