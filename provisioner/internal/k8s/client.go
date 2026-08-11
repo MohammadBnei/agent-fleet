@@ -42,6 +42,9 @@ type Client struct {
 	// Forwarded into the sidecar so ask_thot registers (docs/adr/0035).
 	ThotGRPCAddr  string
 	ThotAuthToken string
+	// Where the cluster-access ingredient's kubectl shim sends argv
+	// (docs/adr/0037).
+	ExecutorAddr string
 	// PostgresImage/RedisImage/SharedInstancePVCSize back
 	// EnsureSharedInstance (docs/adr/0034) — see catalog.ServiceDef's own
 	// comment for why the image tag lives in config, not the catalog.
@@ -73,6 +76,7 @@ func New(namespace string, cfg Images) (*Client, error) {
 		SidecarImage: cfg.SidecarImage, WorkspacePVC: cfg.WorkspacePVC,
 		LogLevel: cfg.LogLevel, CoreGRPCAddr: cfg.CoreGRPCAddr,
 		ThotGRPCAddr: cfg.ThotGRPCAddr, ThotAuthToken: cfg.ThotAuthToken,
+		ExecutorAddr: cfg.ExecutorAddr,
 		PostgresImage: cfg.PostgresImage, RedisImage: cfg.RedisImage,
 		SharedInstancePVCSize: cfg.SharedInstancePVCSize,
 	}, nil
@@ -91,6 +95,7 @@ type Images struct {
 	CoreGRPCAddr          string
 	ThotGRPCAddr          string
 	ThotAuthToken         string
+	ExecutorAddr          string
 	PostgresImage         string
 	RedisImage            string
 	SharedInstancePVCSize string

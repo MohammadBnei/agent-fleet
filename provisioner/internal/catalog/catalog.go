@@ -39,6 +39,22 @@ var Tools = map[string]ToolDef{
 		CopyImage: "bufbuild/buf:latest",
 		CopyCmd:   []string{"sh", "-c", "mkdir -p /opt/tools/bin && cp /usr/local/bin/buf /opt/tools/bin/buf"},
 	},
+	// cluster-access is the odd one out: it stages a kubectl *shim* that
+	// forwards argv to thot-executor, the only process in the fleet
+	// holding cluster RBAC (docs/adr/0037).
+	//
+	// This is what lets a thot session be an ordinary worker pod — the pod
+	// itself has no Kubernetes credentials, so `kubectl` here is just an
+	// RPC client. The agent writes normal bash and canUseTool gates it
+	// like any other Bash call.
+	//
+	// Copied from the executor's own image so the shim and the service it
+	// talks to are always built from the same commit; a drifting pair
+	// would fail at runtime with a confusing proto error.
+	"cluster-access": {
+		CopyImage: "mohammaddocker/agent-fleet-executor:latest",
+		CopyCmd:   []string{"sh", "-c", "mkdir -p /opt/tools/bin && cp /usr/local/bin/kubectl-shim /opt/tools/bin/kubectl"},
+	},
 }
 
 // ServiceDef is a service-kind ingredient (postgres/redis) — see

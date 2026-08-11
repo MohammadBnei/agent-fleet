@@ -11,6 +11,10 @@ COPY executor ./executor
 RUN go work init ./proto/gen/go ./executor
 WORKDIR /app/executor
 RUN CGO_ENABLED=0 go build -o /out/executor ./cmd/executor
+# The kubectl shim ships in this same image so the provisioner's
+# cluster-access ingredient can copy it into a session pod, and so shim
+# and service are always the same build (docs/adr/0037).
+RUN CGO_ENABLED=0 go build -o /out/kubectl-shim ./cmd/kubectlshim
 
 # kubectl is the whole point of this image: the executor is the only
 # process in the fleet holding cluster RBAC, and it reaches the API server
@@ -23,5 +27,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certifi
     && apt-get purge -y curl && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=build /out/executor /usr/local/bin/executor
+COPY --from=build /out/kubectl-shim /usr/local/bin/kubectl-shim
 USER 65532:65532
 CMD ["executor"]

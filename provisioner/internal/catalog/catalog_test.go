@@ -7,7 +7,7 @@ import "testing"
 // guard against the two enumerations silently drifting apart (core has
 // no shared package with the provisioner to enforce this at compile time,
 // docs/adr/0034's judgment call #3).
-var dbCheckToolKeys = []string{"go-toolchain", "bun-toolchain", "golangci-lint", "buf"}
+var dbCheckToolKeys = []string{"go-toolchain", "bun-toolchain", "golangci-lint", "buf", "cluster-access"}
 var dbCheckServiceKeys = []string{"postgres", "redis"}
 
 func TestTools_MatchesDBCheckConstraint(t *testing.T) {

@@ -29,6 +29,10 @@ import (
 type Task struct {
 	ID          string     `json:"id"`
 	Repo        string     `json:"repo"`
+	// Kind is "worker" (every task the fleet has always had) or "thot" (a
+	// cluster-agent session). Purely a UI label/gate — the dispatch path
+	// never branches on it, which is the whole point of docs/adr/0037.
+	Kind        string     `json:"kind"`
 	Description string     `json:"description"`
 	// Guidance is the operator's chosen prompt_snippets, already resolved
 	// and joined at task-creation time (DashboardService.CreateTask) —
@@ -98,12 +102,26 @@ func (s *Store) SetNudge(nudge func()) {
 // description itself. model is the Claude model to use for this task; if
 // empty, the worker will fall back to the global CLAUDE_MODEL env var.
 func (s *Store) CreateTask(ctx context.Context, repo, description, guidance, model string, channelID, threadID *string) (string, error) {
+	return s.CreateTaskOfKind(ctx, KindWorker, repo, description, guidance, model, channelID, threadID)
+}
+
+// Task kinds. Constants rather than bare strings so a typo is a compile
+// error instead of a CHECK-constraint violation at insert time.
+const (
+	KindWorker = "worker"
+	KindThot   = "thot"
+)
+
+// CreateTaskOfKind is CreateTask plus an explicit kind — a separate method
+// so the ~4 existing call sites that only ever create worker tasks don't
+// all have to pass a constant.
+func (s *Store) CreateTaskOfKind(ctx context.Context, kind, repo, description, guidance, model string, channelID, threadID *string) (string, error) {
 	var id string
 	err := s.pool.QueryRow(ctx, `
-		INSERT INTO tasks (repo, description, guidance, model, discord_channel_id, discord_thread_id)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		INSERT INTO tasks (kind, repo, description, guidance, model, discord_channel_id, discord_thread_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		RETURNING id
-	`, repo, description, guidance, model, channelID, threadID).Scan(&id)
+	`, kind, repo, description, guidance, model, channelID, threadID).Scan(&id)
 	if err != nil {
 		slog.Error("tasks CreateTask", "repo", repo, "error", err)
 		return "", fmt.Errorf("create task: %w", err)
@@ -131,10 +149,10 @@ func (s *Store) FindTaskIDByThread(ctx context.Context, threadID string) (string
 func (s *Store) GetTask(ctx context.Context, id string) (*Task, error) {
 	var t Task
 	err := s.pool.QueryRow(ctx, `
-		SELECT id, repo, description, guidance, status, discord_thread_id, pr_url, pod_phase, pod_message,
+		SELECT id, kind, repo, description, guidance, status, discord_thread_id, pr_url, pod_phase, pod_message,
 		       heartbeat_at, retry_count, last_error, session_id, model, permission_mode, awaiting_human
 		FROM tasks WHERE id = $1 AND deleted_at IS NULL
-	`, id).Scan(&t.ID, &t.Repo, &t.Description, &t.Guidance, &t.Status, &t.ThreadID, &t.PrURL, &t.PodPhase, &t.PodMessage,
+	`, id).Scan(&t.ID, &t.Kind, &t.Repo, &t.Description, &t.Guidance, &t.Status, &t.ThreadID, &t.PrURL, &t.PodPhase, &t.PodMessage,
 		&t.HeartbeatAt, &t.RetryCount, &t.LastError, &t.SessionID, &t.Model, &t.PermissionMode, &t.AwaitingHuman)
 	if err == pgx.ErrNoRows {
 		return nil, nil
@@ -178,7 +196,7 @@ func (s *Store) GetTaskStatusInfo(ctx context.Context, id string) (*TaskStatusIn
 
 func (s *Store) ListRecentTasks(ctx context.Context, limit int) ([]Task, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, repo, description, guidance, status, discord_thread_id, pr_url, pod_phase, pod_message,
+		SELECT id, kind, repo, description, guidance, status, discord_thread_id, pr_url, pod_phase, pod_message,
 		       heartbeat_at, retry_count, last_error, session_id, model, permission_mode, awaiting_human
 		FROM tasks WHERE deleted_at IS NULL ORDER BY created_at DESC LIMIT $1
 	`, limit)
@@ -194,7 +212,7 @@ func (s *Store) ListRecentTasks(ctx context.Context, limit int) ([]Task, error) 
 	out := []Task{}
 	for rows.Next() {
 		var t Task
-		if err := rows.Scan(&t.ID, &t.Repo, &t.Description, &t.Guidance, &t.Status, &t.ThreadID, &t.PrURL, &t.PodPhase, &t.PodMessage,
+		if err := rows.Scan(&t.ID, &t.Kind, &t.Repo, &t.Description, &t.Guidance, &t.Status, &t.ThreadID, &t.PrURL, &t.PodPhase, &t.PodMessage,
 			&t.HeartbeatAt, &t.RetryCount, &t.LastError, &t.SessionID, &t.Model, &t.PermissionMode, &t.AwaitingHuman); err != nil {
 			slog.Error("tasks ListRecentTasks: scan", "error", err)
 			return nil, fmt.Errorf("scan task: %w", err)
@@ -255,8 +273,8 @@ func (s *Store) ClaimNextTask(ctx context.Context, maxInFlight, maxRetries int) 
 			FOR UPDATE SKIP LOCKED
 			LIMIT 1
 		)
-		RETURNING id, repo, description, guidance, status, discord_thread_id, pr_url, lease_id::text, session_id
-	`, maxInFlight, maxRetries).Scan(&t.ID, &t.Repo, &t.Description, &t.Guidance, &t.Status, &t.ThreadID, &t.PrURL, &t.LeaseID, &t.SessionID)
+		RETURNING id, kind, repo, description, guidance, status, discord_thread_id, pr_url, lease_id::text, session_id
+	`, maxInFlight, maxRetries).Scan(&t.ID, &t.Kind, &t.Repo, &t.Description, &t.Guidance, &t.Status, &t.ThreadID, &t.PrURL, &t.LeaseID, &t.SessionID)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}

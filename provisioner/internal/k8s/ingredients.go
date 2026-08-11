@@ -8,6 +8,14 @@ import (
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/catalog"
 )
 
+// ClusterAccess carries what the cluster-access ingredient's kubectl shim
+// needs to reach thot-executor. Passed in rather than read from a global
+// so a test can build a pod spec without any ambient config.
+type ClusterAccess struct {
+	ExecutorAddr string
+	AuthToken    string
+}
+
 // ServiceIngredientRef is the plain (non-proto) shape CreatePod/
 // CreateWorkerPod accept — decouples package k8s from the proto module,
 // same reasoning as TaskRef already not being a proto type.
@@ -33,7 +41,7 @@ const (
 //
 // An unknown key fails loud here, before any Kubernetes object is built —
 // catching a stale or hand-edited repo_profiles row as early as possible.
-func buildIngredients(toolKeys []string, serviceIngredients []ServiceIngredientRef) (initContainers []corev1.Container, env []corev1.EnvVar, volume *corev1.Volume, mount *corev1.VolumeMount, err error) {
+func buildIngredients(toolKeys []string, serviceIngredients []ServiceIngredientRef, cluster ClusterAccess) (initContainers []corev1.Container, env []corev1.EnvVar, volume *corev1.Volume, mount *corev1.VolumeMount, err error) {
 	hasGo := false
 	for _, key := range toolKeys {
 		def, ok := catalog.Tools[key]
@@ -50,6 +58,19 @@ func buildIngredients(toolKeys []string, serviceIngredients []ServiceIngredientR
 			VolumeMounts: []corev1.VolumeMount{{Name: toolsVolumeName, MountPath: toolsMountPath}},
 		})
 	}
+	// cluster-access's shim is useless without knowing where to call and
+	// how to authenticate. Set here rather than unconditionally on every
+	// worker pod so a normal repo task never carries the executor's
+	// token — least privilege by construction, not by convention.
+	for _, key := range toolKeys {
+		if key == "cluster-access" {
+			env = append(env,
+				corev1.EnvVar{Name: "EXECUTOR_ADDR", Value: cluster.ExecutorAddr},
+				corev1.EnvVar{Name: "THOT_AUTH_TOKEN", Value: cluster.AuthToken},
+			)
+		}
+	}
+
 	if len(toolKeys) > 0 {
 		volume = &corev1.Volume{Name: toolsVolumeName, VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}}
 		mount = &corev1.VolumeMount{Name: toolsVolumeName, MountPath: toolsMountPath}

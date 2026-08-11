@@ -28,6 +28,7 @@ type Config struct {
 	// the feature silently did nothing in production until this was wired.
 	ThotGRPCAddr  string
 	ThotAuthToken string
+	ExecutorAddr  string
 	ReconcileInterval string
 	// SweepInterval is how often the [gone]-branch sweep runs
 	// (reliability-findings.md #2) — minutes, not seconds: it does a real
@@ -78,6 +79,7 @@ func Load() Config {
 		CoreGRPCAddr:                env("CORE_GRPC_ADDR", "agent-fleet-core.agent-fleet.svc.cluster.local:9090"),
 		ThotGRPCAddr:                env("THOT_GRPC_ADDR", "thot.thot.svc.cluster.local:9090"),
 		ThotAuthToken:               env("THOT_AUTH_TOKEN", ""),
+		ExecutorAddr:                env("EXECUTOR_ADDR", "thot-executor.thot.svc.cluster.local:9090"),
 		ReconcileInterval:           env("RECONCILE_INTERVAL_MS", "10000"),
 		SweepInterval:               env("SWEEP_INTERVAL_MS", "300000"),
 		LogLevel:                    env("LOG_LEVEL", "info"),

@@ -309,6 +309,11 @@ export interface Task {
    * tasks need a human decision without an N+1 per-task transcript fetch.
    */
   awaitingHuman: boolean;
+  /**
+   * "worker" | "thot" (docs/adr/0037). A UI label and gate only — the
+   * dispatch path never branches on it.
+   */
+  kind: string;
 }
 
 export interface GetTaskRequest {
@@ -1520,6 +1525,7 @@ function createBaseTask(): Task {
     lastActiveAt: undefined,
     permissionMode: undefined,
     awaitingHuman: false,
+    kind: "",
   };
 }
 
@@ -1569,6 +1575,9 @@ export const Task: MessageFns<Task> = {
     }
     if (message.awaitingHuman !== false) {
       writer.uint32(120).bool(message.awaitingHuman);
+    }
+    if (message.kind !== "") {
+      writer.uint32(130).string(message.kind);
     }
     return writer;
   },
@@ -1700,6 +1709,14 @@ export const Task: MessageFns<Task> = {
           message.awaitingHuman = reader.bool();
           continue;
         }
+        case 16: {
+          if (tag !== 130) {
+            break;
+          }
+
+          message.kind = reader.string();
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -1770,6 +1787,7 @@ export const Task: MessageFns<Task> = {
         : isSet(object.awaiting_human)
         ? globalThis.Boolean(object.awaiting_human)
         : false,
+      kind: isSet(object.kind) ? globalThis.String(object.kind) : "",
     };
   },
 
@@ -1820,6 +1838,9 @@ export const Task: MessageFns<Task> = {
     if (message.awaitingHuman !== false) {
       obj.awaitingHuman = message.awaitingHuman;
     }
+    if (message.kind !== "") {
+      obj.kind = message.kind;
+    }
     return obj;
   },
 
@@ -1843,6 +1864,7 @@ export const Task: MessageFns<Task> = {
     message.lastActiveAt = object.lastActiveAt ?? undefined;
     message.permissionMode = object.permissionMode ?? undefined;
     message.awaitingHuman = object.awaitingHuman ?? false;
+    message.kind = object.kind ?? "";
     return message;
   },
 };
