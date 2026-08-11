@@ -1,5 +1,3 @@
-import type { Task } from "./gen/agentfleet/v1/core_pb";
-
 // docs/adr/0037: a thot session is an ordinary worker task on
 // infra-bootstrap, so `kind` is the only thing distinguishing it. These
 // helpers live here (not inline) because desktop and mobile each render
