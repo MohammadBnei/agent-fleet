@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.34.1](https://github.com/MohammadBnei/agent-fleet/compare/1.34.0...1.34.1) (2026-08-11)
+
+
+### Bug Fixes
+
+* **e2e:** treat a terminating pod as no session, and document the shared worktree ([#100](https://github.com/MohammadBnei/agent-fleet/issues/100)) ([22837e2](https://github.com/MohammadBnei/agent-fleet/commit/22837e27a6f9d66453bedd17e4713b6b1255b772))
+
 # [1.34.0](https://github.com/MohammadBnei/agent-fleet/compare/1.33.0...1.34.0) (2026-08-11)
 
 
