@@ -1,5 +1,12 @@
 # Changelog
 
+# [1.40.0](https://github.com/MohammadBnei/agent-fleet/compare/1.39.1...1.40.0) (2026-08-11)
+
+
+### Features
+
+* **e2e:** per-task subdomains, app served at the root path ([#116](https://github.com/MohammadBnei/agent-fleet/issues/116)) ([260c2b6](https://github.com/MohammadBnei/agent-fleet/commit/260c2b6bb350bf460873f7ba8c454ba82b109814))
+
 ## [1.39.1](https://github.com/MohammadBnei/agent-fleet/compare/1.39.0...1.39.1) (2026-08-11)
 
 # [1.39.0](https://github.com/MohammadBnei/agent-fleet/compare/1.38.3...1.39.0) (2026-08-11)
