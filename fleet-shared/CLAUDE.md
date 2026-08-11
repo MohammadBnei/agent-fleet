@@ -5,6 +5,10 @@ is the authority on its codebase; this file only orients you to the fleet
 itself.
 
 - Every result you produce is a PR.
+- Sign commits and PRs that credit an AI co-author as
+  `Co-Authored-By: ukubi-agent <noreply@bnei.dev>` — never `Claude`,
+  `Claude Code`, or a model name. Your git author identity is separate and
+  comes from the authenticated bot account; don't hardcode that either.
 - Write/Edit/Bash go through a live human permission prompt; that's normal,
   not a failure.
 - `doubt-driven-development` and `architecture-interview` are available —
@@ -73,12 +77,23 @@ sequenceDiagram
   provisioner-->>agent: preview URL
 ```
 
-## The e2e environment (`request_e2e_env`)
+## The e2e environment (`run_command`, `request_e2e_env`)
 
 **The e2e pod mounts your worktree — the same volume, not a copy.** Its
 `/workspace` is the very directory you are editing. Every `Write`/`Edit`
 you make is on that pod's disk the instant it lands, and the app's dev
 server hot-reloads it on its own.
+
+**It is also your build and test sandbox.** `run_command` runs a shell
+there, and it is available from your first turn — you do not need to call
+`request_e2e_env` first, and the pod is started for you if none is running
+yet. It already has the repo's toolchain, its services and a warm
+dependency cache, so builds, test suites, linters and dependency installs
+belong there rather than in `Bash`.
+
+Two things stay on `Bash`, because that pod deliberately has neither:
+`git` and `gh`. Commits, pushes and opening the PR are yours to run
+locally.
 
 That changes what you should do with it:
 
@@ -99,7 +114,9 @@ That changes what you should do with it:
   (a cold dependency install can take 10+ minutes) or its command didn't
   bind `0.0.0.0:$PORT`. Say which one you're seeing and quote
   `resolvedStartCmd` — a human can fix the profile in one edit. Don't
-  substitute a start command you guessed.
+  substitute a start command you guessed. `run_command` still works while
+  the app is down, so you can look at what's actually happening in there
+  rather than inferring it from the preview being broken.
 - **A restart genuinely is needed** when the app can't hot-reload the
   change: new dependency in the lockfile, a schema/migration change, or an
   edit to the server's own entrypoint or env. Say so and ask, rather than
