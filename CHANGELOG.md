@@ -1,5 +1,12 @@
 # Changelog
 
+# [1.38.0](https://github.com/MohammadBnei/agent-fleet/compare/1.37.0...1.38.0) (2026-08-11)
+
+
+### Features
+
+* **thot:** dispatch thot sessions as ordinary worker tasks (ADR-0037 phase 2) ([#108](https://github.com/MohammadBnei/agent-fleet/issues/108)) ([e753671](https://github.com/MohammadBnei/agent-fleet/commit/e75367188cb5be1ae937a4563e8636f9b9afdfb6))
+
 # [1.37.0](https://github.com/MohammadBnei/agent-fleet/compare/1.36.3...1.37.0) (2026-08-11)
 
 
