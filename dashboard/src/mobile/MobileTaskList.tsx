@@ -1,4 +1,5 @@
 import type { Task } from "../gen/agentfleet/v1/core_pb";
+import { repoLabel } from "../taskKind";
 import { bucketTasks, prBadge, heartbeatLabel } from "../pages/TaskList";
 import { NewTaskDialog } from "../components/NewTaskDialog";
 import type { TodoItem } from "../transcript";
@@ -20,7 +21,7 @@ function NeedsYouCard({ task, todos, onSelect }: { task: Task; todos: TodoItem[]
     >
       <div className="flex items-center gap-2 min-w-0 flex-wrap">
         <span className="text-[12px] font-semibold flex-none">#{task.id.slice(0, 6)}</span>
-        <span className="text-[10.5px] text-base-content/50 flex-1 min-w-0 break-words">{task.repo}</span>
+        <span className="text-[10.5px] text-base-content/50 flex-1 min-w-0 break-words">{repoLabel(task)}</span>
         {heartbeat && <span className="text-[10px] text-primary flex-none whitespace-nowrap">{heartbeat}</span>}
       </div>
       <div className="text-[13px] leading-relaxed mt-2 text-base-content/95 break-words">{task.description}</div>
@@ -54,7 +55,7 @@ function WorkingCard({ task, todos, onSelect }: { task: Task; todos: TodoItem[];
       <div className="flex items-center gap-2 min-w-0 flex-wrap">
         <span className="w-1.5 h-1.5 rounded-full bg-secondary animate-fpulse flex-none" />
         <span className="text-[12px] flex-none">#{task.id.slice(0, 6)}</span>
-        <span className="text-[10.5px] text-base-content/50 flex-1 min-w-0 break-words">{task.repo}</span>
+        <span className="text-[10.5px] text-base-content/50 flex-1 min-w-0 break-words">{repoLabel(task)}</span>
         {heartbeat && <span className="text-[10px] text-base-content/50 flex-none whitespace-nowrap">{heartbeat}</span>}
       </div>
       <div className="text-[12.5px] leading-relaxed mt-2 text-base-content/85 break-words">{task.description}</div>

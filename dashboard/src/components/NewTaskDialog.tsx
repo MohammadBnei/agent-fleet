@@ -11,6 +11,11 @@ export function NewTaskDialog({
   const [dialogOpen, setDialogOpen] = useState(false);
   const [repoNames, setRepoNames] = useState<string[]>([]);
   const [repo, setRepo] = useState("");
+  // docs/adr/0037: a cluster session is a normal task on infra-bootstrap
+  // with kind=thot. Surfaced as its own checkbox rather than inferred
+  // from the repo, because plain infra-bootstrap tasks are legitimate too
+  // (editing manifests without wanting cluster access).
+  const [clusterSession, setClusterSession] = useState(false);
   const [description, setDescription] = useState("");
   const [snippets, setSnippets] = useState<PromptSnippet[]>([]);
   const [snippetIds, setSnippetIds] = useState<string[]>([]);
@@ -62,7 +67,7 @@ export function NewTaskDialog({
     setSubmitting(true);
     setError(null);
     try {
-      const res = await client.createTask({ repo, description, snippetIds });
+      const res = await client.createTask({ repo: clusterSession ? "infra-bootstrap" : repo, description, snippetIds, kind: clusterSession ? "thot" : "worker" });
       setDescription("");
       setSnippetIds([]);
       close();
@@ -87,11 +92,24 @@ export function NewTaskDialog({
       <Modal open={dialogOpen} onClose={close}>
         <h3 className="font-semibold text-base mb-3">New task</h3>
         <form onSubmit={handleSubmit} className="flex flex-col gap-3">
-          <label className="flex flex-col gap-1 text-sm">
+          <label
+            className="flex items-center gap-2 text-sm cursor-pointer"
+            title="Runs on infra-bootstrap with cluster access. Reads answer without interrupting you; anything that changes the cluster asks first."
+          >
+            <input
+              type="checkbox"
+              checked={clusterSession}
+              onChange={(e) => setClusterSession(e.target.checked)}
+              className="checkbox checkbox-sm"
+            />
+            Cluster session (thot)
+          </label>
+          <label className={`flex flex-col gap-1 text-sm ${clusterSession ? "opacity-40" : ""}`}>
             Repo
             <select
               value={repo}
               onChange={(e) => setRepo(e.target.value)}
+              disabled={clusterSession}
               className="select select-bordered select-sm"
             >
               {repoNames.map((r) => (
@@ -135,7 +153,7 @@ export function NewTaskDialog({
             </button>
             <button
               type="submit"
-              disabled={submitting || !repo || !description.trim()}
+              disabled={submitting || (!clusterSession && !repo) || !description.trim()}
               className="btn btn-sm btn-primary"
             >
               {submitting ? "Creating…" : "Create"}

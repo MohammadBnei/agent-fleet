@@ -168,7 +168,7 @@ export default function App() {
     [tasks],
   );
   const repoCount = useMemo(
-    () => new Set(tasks.map((t) => t.repo)).size,
+    () => new Set(tasks.filter((t) => t.kind !== "thot").map((t) => t.repo)).size,
     [tasks],
   );
   const filteredTasks = useMemo(() => {
