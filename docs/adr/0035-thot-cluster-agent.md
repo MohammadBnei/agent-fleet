@@ -1,7 +1,14 @@
 # ADR-0035: `thot`, a standing cluster agent with its own Kubernetes RBAC
 
-**Status:** Accepted
+**Status:** Superseded by [ADR-0037](0037-thot-is-a-worker-task.md)
 **Date:** 2026-08-10
+
+> **Superseded 2026-08-11.** The decision to give thot its own standing
+> service, event stream, dashboard page and hub-and-spoke exception was
+> reversed within a day of shipping — not because it failed, but because
+> it made thot a second mental model. ADR-0037 keeps the RBAC boundary
+> and throws away everything else. The reasoning below is preserved as
+> the record of why the first shape was chosen.
 
 ## Context
 

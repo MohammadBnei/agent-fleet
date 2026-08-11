@@ -56,17 +56,15 @@ Any doc, code, comment, or memory that contradicts this file or an
   fleet-wide shared file space — it only ever mints short-lived presigned
   PUT/GET URLs, never proxies file bytes itself. See
   [`adr/0031`](adr/0031-garage-s3-shared-files.md).
-- **`thot` (design decided, not yet built) is the fleet's one named
-  exception to hub-and-spoke** — a second, independently GitOps-deployed
-  RBAC holder, reachable directly by worker sidecars/alerts/humans over its
-  own protobuf/gRPC service, never proxied through `core`. Its RBAC may
-  never include `rbac.authorization.k8s.io` verbs, blanket `secrets` read,
-  or node-level verbs, and it must never target `core`/`provisioner`'s own
-  pods or a pod holding an active git-worktree lock. `provisioner` never
-  creates `thot`'s credentials — that would be a privilege-escalation
-  primitive `provisioner` doesn't have today. `core` stays the sole
-  Postgres-credential holder regardless — `thot`'s findings still persist
-  through it. See [`adr/0035`](adr/0035-thot-cluster-agent.md).
+- **`thot` is an ordinary worker task, not a special component**
+  ([`adr/0037`](adr/0037-thot-is-a-worker-task.md), superseding
+  `adr/0035`). A thot session is a worker task on `infra-bootstrap` with
+  a `cluster-access` ingredient; the dispatch path has no idea it is
+  special. Cluster privilege lives in `thot-executor`, a standing service
+  holding the ClusterRole — thot pods themselves hold **zero Kubernetes
+  credentials**, restoring `adr/0012`'s rule that the component holding
+  write-in-git trust never also holds infra-mutation trust. There is **no
+  hub-and-spoke exception**: `adr/0020` point 5 holds unqualified again.
 - **A repo's e2e recipe lives in `repo_profiles` and is a human's to
   change.** The agent reads the resolved recipe back from
   `request_e2e_env`; a `start_cmd` override needs an explicit human yes,

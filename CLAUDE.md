@@ -85,10 +85,6 @@ tiers instead of a fleet-imposed Write/Edit approval gate.
 - **Hub-and-spoke: nothing talks to the provisioner except `core`.**
   Includes e2e-pod requests — proxied agent → sidecar (MCP) → `core`
   (gRPC) → provisioner (gRPC), not a direct path (`docs/adr/0020` point 4).
-  `thot` (design decided, not yet built) is the fleet's one named exception
-  — a second, independently GitOps-deployed RBAC holder reachable directly
-  over its own protobuf/gRPC service, never proxied through `core`, but
-  never holding a Postgres credential either — see `docs/adr/0035`.
 - **MCP is purely local** (agent ↔ its own pod's sidecar). **gRPC is the
   only inter-process/inter-pod protocol anywhere in the fleet**
   (`docs/adr/0020` point 6).
