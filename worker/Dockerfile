@@ -5,7 +5,13 @@
 # output needed) — smaller image, faster startup, per Mohammad's call to
 # standardize this repo's JS runtime on Bun.
 FROM oven/bun:1-slim
-RUN apt-get update && apt-get install -y --no-install-recommends git curl ca-certificates \
+# procps is not optional: the bundled Claude Code CLI kills subprocess trees
+# via tree-kill, which on Linux shells out to `ps -o pid --no-headers --ppid
+# <pid>`. oven/bun:1-slim ships no `ps`, and Bun's child_process.spawn throws
+# ENOENT *synchronously* (Node emits an async 'error' event tree-kill handles),
+# so the CLI died mid-session with "Claude Code process exited with code 1" —
+# task 41b11fd4, 2026-08-11, hit while requesting an e2e env.
+RUN apt-get update && apt-get install -y --no-install-recommends git curl ca-certificates procps \
     && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg -o /usr/share/keyrings/githubcli-archive-keyring.gpg \
     && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list \
     && apt-get update && apt-get install -y --no-install-recommends gh \
