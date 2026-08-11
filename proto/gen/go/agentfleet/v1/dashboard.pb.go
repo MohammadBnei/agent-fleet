@@ -119,11 +119,15 @@ func (x *ListTasksResponse) GetTasks() []*Task {
 // own guidance column (see PromptSnippet below); empty means the task gets
 // only its own description, no extra guidance.
 type CreateTaskRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Repo          string                 `protobuf:"bytes,1,opt,name=repo,proto3" json:"repo,omitempty"`
-	Description   string                 `protobuf:"bytes,2,opt,name=description,proto3" json:"description,omitempty"`
-	SnippetIds    []string               `protobuf:"bytes,3,rep,name=snippet_ids,json=snippetIds,proto3" json:"snippet_ids,omitempty"`
-	Model         *string                `protobuf:"bytes,4,opt,name=model,proto3,oneof" json:"model,omitempty"`
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Repo        string                 `protobuf:"bytes,1,opt,name=repo,proto3" json:"repo,omitempty"`
+	Description string                 `protobuf:"bytes,2,opt,name=description,proto3" json:"description,omitempty"`
+	SnippetIds  []string               `protobuf:"bytes,3,rep,name=snippet_ids,json=snippetIds,proto3" json:"snippet_ids,omitempty"`
+	Model       *string                `protobuf:"bytes,4,opt,name=model,proto3,oneof" json:"model,omitempty"`
+	// "worker" (default when empty) or "thot" — docs/adr/0037. A thot
+	// session is an ordinary worker task on infra-bootstrap; this only
+	// changes how the dashboard labels and gates it.
+	Kind          string `protobuf:"bytes,5,opt,name=kind,proto3" json:"kind,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -182,6 +186,13 @@ func (x *CreateTaskRequest) GetSnippetIds() []string {
 func (x *CreateTaskRequest) GetModel() string {
 	if x != nil && x.Model != nil {
 		return *x.Model
+	}
+	return ""
+}
+
+func (x *CreateTaskRequest) GetKind() string {
+	if x != nil {
+		return x.Kind
 	}
 	return ""
 }
@@ -3440,13 +3451,14 @@ const file_agentfleet_v1_dashboard_proto_rawDesc = "" +
 	"\x10ListTasksRequest\x12\x14\n" +
 	"\x05limit\x18\x01 \x01(\x05R\x05limit\">\n" +
 	"\x11ListTasksResponse\x12)\n" +
-	"\x05tasks\x18\x01 \x03(\v2\x13.agentfleet.v1.TaskR\x05tasks\"\x8f\x01\n" +
+	"\x05tasks\x18\x01 \x03(\v2\x13.agentfleet.v1.TaskR\x05tasks\"\xa3\x01\n" +
 	"\x11CreateTaskRequest\x12\x12\n" +
 	"\x04repo\x18\x01 \x01(\tR\x04repo\x12 \n" +
 	"\vdescription\x18\x02 \x01(\tR\vdescription\x12\x1f\n" +
 	"\vsnippet_ids\x18\x03 \x03(\tR\n" +
 	"snippetIds\x12\x19\n" +
-	"\x05model\x18\x04 \x01(\tH\x00R\x05model\x88\x01\x01B\b\n" +
+	"\x05model\x18\x04 \x01(\tH\x00R\x05model\x88\x01\x01\x12\x12\n" +
+	"\x04kind\x18\x05 \x01(\tR\x04kindB\b\n" +
 	"\x06_model\"=\n" +
 	"\x12CreateTaskResponse\x12'\n" +
 	"\x04task\x18\x01 \x01(\v2\x13.agentfleet.v1.TaskR\x04task\"O\n" +

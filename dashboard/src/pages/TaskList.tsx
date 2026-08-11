@@ -1,4 +1,5 @@
 import type { Task } from "../gen/agentfleet/v1/core_pb";
+import { repoLabel } from "../taskKind";
 import type { TodoItem } from "../transcript";
 
 export const ACTIVE_STATUSES = new Set(["pending", "claimed", "running"]);
@@ -159,7 +160,7 @@ function NeedsYouCard({
       >
         <div className="flex items-center gap-2">
           <span className="text-[11px] font-semibold">#{task.id.slice(0, 6)}</span>
-          <span className="text-[10px] text-base-content/50">{task.repo}</span>
+          <span className="text-[10px] text-base-content/50">{repoLabel(task)}</span>
           {podBadge && (
             <span className={`text-[8.5px] px-1 rounded border tracking-wide ${podBadge.className}`}>
               {podBadge.label}
@@ -213,7 +214,7 @@ function WorkingCard({
         <div className="flex items-center gap-2">
           <span className={`w-1.5 h-1.5 rounded-full ${staleTag ? "bg-error" : "bg-info animate-fpulse"}`} />
           <span className="text-[11px]">#{task.id.slice(0, 6)}</span>
-          <span className="text-[10px] text-base-content/50">{task.repo}</span>
+          <span className="text-[10px] text-base-content/50">{repoLabel(task)}</span>
           {podBadge && (
             <span className={`text-[8.5px] px-1 rounded border tracking-wide ${podBadge.className}`}>
               {podBadge.label}

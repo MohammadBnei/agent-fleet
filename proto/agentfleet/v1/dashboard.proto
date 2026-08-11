@@ -42,6 +42,10 @@ message CreateTaskRequest {
   string description = 2;
   repeated string snippet_ids = 3;
   optional string model = 4;
+  // "worker" (default when empty) or "thot" — docs/adr/0037. A thot
+  // session is an ordinary worker task on infra-bootstrap; this only
+  // changes how the dashboard labels and gates it.
+  string kind = 5;
 }
 
 message CreateTaskResponse {

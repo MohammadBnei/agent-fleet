@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { client } from "../connectClient";
+import { isThot, repoLabel } from "../taskKind";
 import { TranscriptEntryType, type TranscriptEntry } from "../gen/agentfleet/v1/transcript_pb";
 import {
   parseQuestions,
@@ -386,7 +387,7 @@ export function MobileTaskDetail({
             </button>
             <div className="text-[10px] text-base-content/50 mt-1 flex items-center gap-2 flex-wrap">
               <span className="whitespace-nowrap">
-                #{task.id.slice(0, 6)} · {task.repo}
+                #{task.id.slice(0, 6)} · {repoLabel(task)}
               </span>
               {prLink && (
                 <a href={task.prUrl} target="_blank" rel="noreferrer" className={`text-[9px] font-semibold ${prLink.className} whitespace-nowrap`}>
@@ -653,6 +654,7 @@ export function MobileTaskDetail({
           <Modal open={actionsOpen} onClose={() => setActionsOpen(false)}>
             <h3 className="font-semibold text-base mb-3">Actions</h3>
             <ActionsMenu
+          isThotTask={isThot(task)}
               taskId={taskId}
               busy={busyKey !== null}
               run={run}

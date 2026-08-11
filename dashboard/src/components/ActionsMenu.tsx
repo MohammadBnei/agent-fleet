@@ -40,6 +40,7 @@ export function ActionsMenu({
   busy,
   run,
   previewUrl,
+  isThotTask = false,
   currentMode,
   podPhase,
   onBypassClick,
@@ -56,6 +57,9 @@ export function ActionsMenu({
   busy: boolean;
   run: (action: () => Promise<unknown>, key: string) => void;
   previewUrl: string | null;
+  // docs/adr/0037: a thot session has no e2e pod and no code-server, so
+  // those controls are hidden rather than shown-and-broken.
+  isThotTask?: boolean;
   // Unset for an idle/never-warmed session — no mode has been explicitly
   // chosen yet (the SDK itself starts a fresh session in "default", but
   // that's not durable here until SetPermissionMode is actually called).
@@ -134,6 +138,7 @@ export function ActionsMenu({
           Warm
         </button>
       )}
+      {!isThotTask && (
       <button
         type="button"
         className="btn btn-outline btn-xs"
@@ -142,6 +147,8 @@ export function ActionsMenu({
       >
         Kill e2e
       </button>
+      )}
+      {!isThotTask && (
       <label
         className="flex items-center gap-1.5 text-[12px] text-base-content/70 cursor-pointer"
         title="Also delete this repo's shared postgres/redis instances — they're shared with other tasks, only tear them down if you're sure nothing else needs them"
@@ -154,6 +161,7 @@ export function ActionsMenu({
         />
         also services
       </label>
+      )}
       {/* Native Popover API + CSS anchor positioning (daisyUI v5's current
           dropdown pattern) instead of the old tabIndex/:focus-within trick —
           only one of these is ever mounted at a time (desktop xor mobile,
@@ -197,7 +205,7 @@ export function ActionsMenu({
           </button>
         </li>
       </ul>
-      {previewUrl && (
+      {!isThotTask && previewUrl && (
         <a href={previewUrl} target="_blank" rel="noreferrer" className="btn btn-outline btn-xs">
           Open code-server
         </a>

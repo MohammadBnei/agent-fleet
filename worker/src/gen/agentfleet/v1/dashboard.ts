@@ -59,7 +59,15 @@ export interface CreateTaskRequest {
   repo: string;
   description: string;
   snippetIds: string[];
-  model?: string | undefined;
+  model?:
+    | string
+    | undefined;
+  /**
+   * "worker" (default when empty) or "thot" — docs/adr/0037. A thot
+   * session is an ordinary worker task on infra-bootstrap; this only
+   * changes how the dashboard labels and gates it.
+   */
+  kind: string;
 }
 
 export interface CreateTaskResponse {
@@ -542,7 +550,7 @@ export const ListTasksResponse: MessageFns<ListTasksResponse> = {
 };
 
 function createBaseCreateTaskRequest(): CreateTaskRequest {
-  return { repo: "", description: "", snippetIds: [], model: undefined };
+  return { repo: "", description: "", snippetIds: [], model: undefined, kind: "" };
 }
 
 export const CreateTaskRequest: MessageFns<CreateTaskRequest> = {
@@ -556,6 +564,7 @@ export const CreateTaskRequest: MessageFns<CreateTaskRequest> = {
         ? object.snippet_ids.map((e: any) => globalThis.String(e))
         : [],
       model: isSet(object.model) ? globalThis.String(object.model) : undefined,
+      kind: isSet(object.kind) ? globalThis.String(object.kind) : "",
     };
   },
 
@@ -573,6 +582,9 @@ export const CreateTaskRequest: MessageFns<CreateTaskRequest> = {
     if (message.model !== undefined) {
       obj.model = message.model;
     }
+    if (message.kind !== "") {
+      obj.kind = message.kind;
+    }
     return obj;
   },
 
@@ -585,6 +597,7 @@ export const CreateTaskRequest: MessageFns<CreateTaskRequest> = {
     message.description = object.description ?? "";
     message.snippetIds = object.snippetIds?.map((e) => e) || [];
     message.model = object.model ?? undefined;
+    message.kind = object.kind ?? "";
     return message;
   },
 };

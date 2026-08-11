@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { client } from "../connectClient";
+import { isThot, repoLabel } from "../taskKind";
 import type { Task } from "../gen/agentfleet/v1/core_pb";
 import { podStateBadge, staleBadge, heartbeatLabel, prBadge, isPodPhaseLive } from "./TaskList";
 import { TranscriptEntryType, type TranscriptEntry } from "../gen/agentfleet/v1/transcript_pb";
@@ -516,7 +517,7 @@ export function TaskDetail({
         </div>
         <div className="flex flex-wrap items-center gap-3.5 mt-2 text-[10px] text-base-content/50">
           <span>#{task.id.slice(0, 6)}</span>
-          <span>{task.repo}</span>
+          <span>{repoLabel(task)}</span>
           {branch && <span>branch {branch}</span>}
           {heartbeat && <span className={staleTag ? "text-error" : undefined}>{heartbeat}</span>}
           {task.retryCount > 0 && <span>attempt {task.retryCount + 1}</span>}
@@ -740,6 +741,7 @@ export function TaskDetail({
               <Modal open={actionsOpen} onClose={() => setActionsOpen(false)}>
                 <h3 className="font-semibold text-base mb-3">Actions</h3>
                 <ActionsMenu
+          isThotTask={isThot(task)}
                   taskId={taskId}
                   busy={busyKey !== null}
                   run={run}

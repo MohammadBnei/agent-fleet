@@ -139,7 +139,16 @@ func (s *Server) CreateTask(ctx context.Context, req *connect.Request[agentfleet
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("invalid model %q", model))
 	}
 
-	id, err := s.tasks.CreateTask(ctx, repo, description, guidance, model, nil, nil)
+	// docs/adr/0037: a thot session is an ordinary worker task, so this
+	// only records which kind it is — nothing downstream branches on it.
+	kind := req.Msg.GetKind()
+	if kind == "" {
+		kind = tasks.KindWorker
+	}
+	if kind != tasks.KindWorker && kind != tasks.KindThot {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("unknown task kind %q", kind))
+	}
+	id, err := s.tasks.CreateTaskOfKind(ctx, kind, repo, description, guidance, model, nil, nil)
 	if err != nil {
 		slog.Error("dashboard CreateTask", "repo", repo, "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { isThot } from "./taskKind";
 import { Code, ConnectError } from "@connectrpc/connect";
 import { client, subscribeTranscript } from "./connectClient";
 import type { Task } from "./gen/agentfleet/v1/core_pb";
@@ -85,6 +86,9 @@ export function useTaskDetail(taskId: string) {
     // ponytail: fixed 5s poll of one small RPC; swap for a server-push
     // channel only if the e2e card ever needs sub-second freshness.
     function pollE2e() {
+      // docs/adr/0037: a thot session never has an e2e pod, so this would
+      // poll every 5s forever for something that cannot exist.
+      if (isThot(task)) return;
       client
         .getE2eStatus({ taskId })
         .then((res) => {
