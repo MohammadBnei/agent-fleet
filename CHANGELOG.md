@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.36.3](https://github.com/MohammadBnei/agent-fleet/compare/1.36.2...1.36.3) (2026-08-11)
+
+
+### Bug Fixes
+
+* **thot:** actually wire THOT_GRPC_ADDR into core and worker pods ([1c1eac8](https://github.com/MohammadBnei/agent-fleet/commit/1c1eac8c0f5378a4e7dec7619fbc5327ccbb0598)), closes [#94](https://github.com/MohammadBnei/agent-fleet/issues/94)
+
 ## [1.36.2](https://github.com/MohammadBnei/agent-fleet/compare/1.36.1...1.36.2) (2026-08-11)
 
 
