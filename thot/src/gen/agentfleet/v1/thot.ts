@@ -37,6 +37,17 @@ export interface AskThotResponse {
   answer: string;
 }
 
+export interface RunAuditRequest {
+  auditId: string;
+  name: string;
+  prompt: string;
+}
+
+export interface RunAuditResponse {
+  /** "queued" | "skipped" */
+  status: string;
+}
+
 function createBaseHealthzRequest(): HealthzRequest {
   return {};
 }
@@ -276,6 +287,160 @@ export const AskThotResponse: MessageFns<AskThotResponse> = {
   },
 };
 
+function createBaseRunAuditRequest(): RunAuditRequest {
+  return { auditId: "", name: "", prompt: "" };
+}
+
+export const RunAuditRequest: MessageFns<RunAuditRequest> = {
+  encode(message: RunAuditRequest, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.auditId !== "") {
+      writer.uint32(10).string(message.auditId);
+    }
+    if (message.name !== "") {
+      writer.uint32(18).string(message.name);
+    }
+    if (message.prompt !== "") {
+      writer.uint32(26).string(message.prompt);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): RunAuditRequest {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseRunAuditRequest();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.auditId = reader.string();
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.name = reader.string();
+          continue;
+        }
+        case 3: {
+          if (tag !== 26) {
+            break;
+          }
+
+          message.prompt = reader.string();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): RunAuditRequest {
+    return {
+      auditId: isSet(object.auditId)
+        ? globalThis.String(object.auditId)
+        : isSet(object.audit_id)
+        ? globalThis.String(object.audit_id)
+        : "",
+      name: isSet(object.name) ? globalThis.String(object.name) : "",
+      prompt: isSet(object.prompt) ? globalThis.String(object.prompt) : "",
+    };
+  },
+
+  toJSON(message: RunAuditRequest): unknown {
+    const obj: any = {};
+    if (message.auditId !== "") {
+      obj.auditId = message.auditId;
+    }
+    if (message.name !== "") {
+      obj.name = message.name;
+    }
+    if (message.prompt !== "") {
+      obj.prompt = message.prompt;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<RunAuditRequest>, I>>(base?: I): RunAuditRequest {
+    return RunAuditRequest.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<RunAuditRequest>, I>>(object: I): RunAuditRequest {
+    const message = createBaseRunAuditRequest();
+    message.auditId = object.auditId ?? "";
+    message.name = object.name ?? "";
+    message.prompt = object.prompt ?? "";
+    return message;
+  },
+};
+
+function createBaseRunAuditResponse(): RunAuditResponse {
+  return { status: "" };
+}
+
+export const RunAuditResponse: MessageFns<RunAuditResponse> = {
+  encode(message: RunAuditResponse, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.status !== "") {
+      writer.uint32(10).string(message.status);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): RunAuditResponse {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseRunAuditResponse();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.status = reader.string();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): RunAuditResponse {
+    return { status: isSet(object.status) ? globalThis.String(object.status) : "" };
+  },
+
+  toJSON(message: RunAuditResponse): unknown {
+    const obj: any = {};
+    if (message.status !== "") {
+      obj.status = message.status;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<RunAuditResponse>, I>>(base?: I): RunAuditResponse {
+    return RunAuditResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<RunAuditResponse>, I>>(object: I): RunAuditResponse {
+    const message = createBaseRunAuditResponse();
+    message.status = object.status ?? "";
+    return message;
+  },
+};
+
 /**
  * thot is the gRPC server; worker sidecars, core, and (later) Alertmanager
  * are its callers. Per docs/adr/0035, this is the fleet's one deliberate,
@@ -323,6 +488,22 @@ export const ThotServiceService = {
     responseSerialize: (value: AskThotResponse): Buffer => Buffer.from(AskThotResponse.encode(value).finish()),
     responseDeserialize: (value: Buffer): AskThotResponse => AskThotResponse.decode(value),
   },
+  /**
+   * Called by core's audit loop when a scheduled_audits row comes due —
+   * core commands, thot executes, the same direction adr/0020 point 2
+   * established for the provisioner. Returns as soon as the audit is
+   * accepted onto thot's queue; findings land asynchronously in
+   * thot_events, not in this response.
+   */
+  runAudit: {
+    path: "/agentfleet.v1.ThotService/RunAudit" as const,
+    requestStream: false as const,
+    responseStream: false as const,
+    requestSerialize: (value: RunAuditRequest): Buffer => Buffer.from(RunAuditRequest.encode(value).finish()),
+    requestDeserialize: (value: Buffer): RunAuditRequest => RunAuditRequest.decode(value),
+    responseSerialize: (value: RunAuditResponse): Buffer => Buffer.from(RunAuditResponse.encode(value).finish()),
+    responseDeserialize: (value: Buffer): RunAuditResponse => RunAuditResponse.decode(value),
+  },
 } as const;
 
 export interface ThotServiceServer extends UntypedServiceImplementation {
@@ -338,6 +519,14 @@ export interface ThotServiceServer extends UntypedServiceImplementation {
    * trail instead of living only in thot's stream.
    */
   askThot: handleUnaryCall<AskThotRequest, AskThotResponse>;
+  /**
+   * Called by core's audit loop when a scheduled_audits row comes due —
+   * core commands, thot executes, the same direction adr/0020 point 2
+   * established for the provisioner. Returns as soon as the audit is
+   * accepted onto thot's queue; findings land asynchronously in
+   * thot_events, not in this response.
+   */
+  runAudit: handleUnaryCall<RunAuditRequest, RunAuditResponse>;
 }
 
 export interface ThotServiceClient extends Client {
@@ -380,6 +569,28 @@ export interface ThotServiceClient extends Client {
     metadata: Metadata,
     options: Partial<CallOptions>,
     callback: (error: ServiceError | null, response: AskThotResponse) => void,
+  ): ClientUnaryCall;
+  /**
+   * Called by core's audit loop when a scheduled_audits row comes due —
+   * core commands, thot executes, the same direction adr/0020 point 2
+   * established for the provisioner. Returns as soon as the audit is
+   * accepted onto thot's queue; findings land asynchronously in
+   * thot_events, not in this response.
+   */
+  runAudit(
+    request: RunAuditRequest,
+    callback: (error: ServiceError | null, response: RunAuditResponse) => void,
+  ): ClientUnaryCall;
+  runAudit(
+    request: RunAuditRequest,
+    metadata: Metadata,
+    callback: (error: ServiceError | null, response: RunAuditResponse) => void,
+  ): ClientUnaryCall;
+  runAudit(
+    request: RunAuditRequest,
+    metadata: Metadata,
+    options: Partial<CallOptions>,
+    callback: (error: ServiceError | null, response: RunAuditResponse) => void,
   ): ClientUnaryCall;
 }
 

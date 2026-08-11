@@ -19,8 +19,9 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	ThotService_Healthz_FullMethodName = "/agentfleet.v1.ThotService/Healthz"
-	ThotService_AskThot_FullMethodName = "/agentfleet.v1.ThotService/AskThot"
+	ThotService_Healthz_FullMethodName  = "/agentfleet.v1.ThotService/Healthz"
+	ThotService_AskThot_FullMethodName  = "/agentfleet.v1.ThotService/AskThot"
+	ThotService_RunAudit_FullMethodName = "/agentfleet.v1.ThotService/RunAudit"
 )
 
 // ThotServiceClient is the client API for ThotService service.
@@ -53,6 +54,12 @@ type ThotServiceClient interface {
 	// transcript by the caller, so the exchange stays in that task's audit
 	// trail instead of living only in thot's stream.
 	AskThot(ctx context.Context, in *AskThotRequest, opts ...grpc.CallOption) (*AskThotResponse, error)
+	// Called by core's audit loop when a scheduled_audits row comes due —
+	// core commands, thot executes, the same direction adr/0020 point 2
+	// established for the provisioner. Returns as soon as the audit is
+	// accepted onto thot's queue; findings land asynchronously in
+	// thot_events, not in this response.
+	RunAudit(ctx context.Context, in *RunAuditRequest, opts ...grpc.CallOption) (*RunAuditResponse, error)
 }
 
 type thotServiceClient struct {
@@ -77,6 +84,16 @@ func (c *thotServiceClient) AskThot(ctx context.Context, in *AskThotRequest, opt
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(AskThotResponse)
 	err := c.cc.Invoke(ctx, ThotService_AskThot_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *thotServiceClient) RunAudit(ctx context.Context, in *RunAuditRequest, opts ...grpc.CallOption) (*RunAuditResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RunAuditResponse)
+	err := c.cc.Invoke(ctx, ThotService_RunAudit_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -113,6 +130,12 @@ type ThotServiceServer interface {
 	// transcript by the caller, so the exchange stays in that task's audit
 	// trail instead of living only in thot's stream.
 	AskThot(context.Context, *AskThotRequest) (*AskThotResponse, error)
+	// Called by core's audit loop when a scheduled_audits row comes due —
+	// core commands, thot executes, the same direction adr/0020 point 2
+	// established for the provisioner. Returns as soon as the audit is
+	// accepted onto thot's queue; findings land asynchronously in
+	// thot_events, not in this response.
+	RunAudit(context.Context, *RunAuditRequest) (*RunAuditResponse, error)
 	mustEmbedUnimplementedThotServiceServer()
 }
 
@@ -128,6 +151,9 @@ func (UnimplementedThotServiceServer) Healthz(context.Context, *HealthzRequest) 
 }
 func (UnimplementedThotServiceServer) AskThot(context.Context, *AskThotRequest) (*AskThotResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method AskThot not implemented")
+}
+func (UnimplementedThotServiceServer) RunAudit(context.Context, *RunAuditRequest) (*RunAuditResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RunAudit not implemented")
 }
 func (UnimplementedThotServiceServer) mustEmbedUnimplementedThotServiceServer() {}
 func (UnimplementedThotServiceServer) testEmbeddedByValue()                     {}
@@ -186,6 +212,24 @@ func _ThotService_AskThot_Handler(srv interface{}, ctx context.Context, dec func
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ThotService_RunAudit_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RunAuditRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ThotServiceServer).RunAudit(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ThotService_RunAudit_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ThotServiceServer).RunAudit(ctx, req.(*RunAuditRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ThotService_ServiceDesc is the grpc.ServiceDesc for ThotService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -200,6 +244,10 @@ var ThotService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "AskThot",
 			Handler:    _ThotService_AskThot_Handler,
+		},
+		{
+			MethodName: "RunAudit",
+			Handler:    _ThotService_RunAudit_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

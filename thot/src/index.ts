@@ -6,8 +6,11 @@ import {
   type HealthzResponse,
   type AskThotRequest,
   type AskThotResponse,
+  type RunAuditRequest,
+  type RunAuditResponse,
 } from "./gen/agentfleet/v1/thot.js";
 import { ThotSession } from "./session.js";
+import { appendEvent } from "./coreClient.js";
 
 const GRPC_PORT = process.env.GRPC_PORT ?? "9090";
 const HTTP_PORT = Number(process.env.HTTP_PORT ?? "8080");
@@ -76,7 +79,36 @@ function askThot(
     });
 }
 
-const serviceImpl: ThotServiceServer = { healthz, askThot };
+// Fire-and-forget by design: core's audit loop shouldn't block for however
+// long an investigation takes (it holds no lease and would just stall the
+// scheduler). The response says the audit was accepted; the findings
+// themselves land asynchronously in thot_events.
+function runAudit(
+  call: grpc.ServerUnaryCall<RunAuditRequest, RunAuditResponse>,
+  callback: grpc.sendUnaryData<RunAuditResponse>,
+): void {
+  if (!authorized(call)) return callback(unauthenticated);
+
+  const { auditId, name, prompt } = call.request;
+  if (!prompt) {
+    return callback(
+      Object.assign(new Error("prompt is required"), {
+        code: grpc.status.INVALID_ARGUMENT,
+        details: "prompt is required",
+        metadata: new grpc.Metadata(),
+      }) as grpc.ServiceError,
+    );
+  }
+
+  void session
+    .ask(`Scheduled audit "${name}" (${auditId}):\n\n${prompt}`)
+    .then((finding) => appendEvent("audit_run", `${name}: ${finding}`, "scheduler"))
+    .catch((err) => console.error("audit run failed", name, err));
+
+  callback(null, { status: "queued" });
+}
+
+const serviceImpl: ThotServiceServer = { healthz, askThot, runAudit };
 
 function startGrpcServer(): void {
   const server = new grpc.Server();

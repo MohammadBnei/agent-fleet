@@ -197,6 +197,110 @@ func (x *AskThotResponse) GetAnswer() string {
 	return ""
 }
 
+type RunAuditRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	AuditId       string                 `protobuf:"bytes,1,opt,name=audit_id,json=auditId,proto3" json:"audit_id,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Prompt        string                 `protobuf:"bytes,3,opt,name=prompt,proto3" json:"prompt,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RunAuditRequest) Reset() {
+	*x = RunAuditRequest{}
+	mi := &file_agentfleet_v1_thot_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RunAuditRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RunAuditRequest) ProtoMessage() {}
+
+func (x *RunAuditRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_agentfleet_v1_thot_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RunAuditRequest.ProtoReflect.Descriptor instead.
+func (*RunAuditRequest) Descriptor() ([]byte, []int) {
+	return file_agentfleet_v1_thot_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *RunAuditRequest) GetAuditId() string {
+	if x != nil {
+		return x.AuditId
+	}
+	return ""
+}
+
+func (x *RunAuditRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *RunAuditRequest) GetPrompt() string {
+	if x != nil {
+		return x.Prompt
+	}
+	return ""
+}
+
+type RunAuditResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Status        string                 `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"` // "queued" | "skipped"
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RunAuditResponse) Reset() {
+	*x = RunAuditResponse{}
+	mi := &file_agentfleet_v1_thot_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RunAuditResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RunAuditResponse) ProtoMessage() {}
+
+func (x *RunAuditResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_agentfleet_v1_thot_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RunAuditResponse.ProtoReflect.Descriptor instead.
+func (*RunAuditResponse) Descriptor() ([]byte, []int) {
+	return file_agentfleet_v1_thot_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *RunAuditResponse) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
 var File_agentfleet_v1_thot_proto protoreflect.FileDescriptor
 
 const file_agentfleet_v1_thot_proto_rawDesc = "" +
@@ -209,10 +313,17 @@ const file_agentfleet_v1_thot_proto_rawDesc = "" +
 	"\x0easking_task_id\x18\x01 \x01(\tR\faskingTaskId\x12\x1a\n" +
 	"\bquestion\x18\x02 \x01(\tR\bquestion\")\n" +
 	"\x0fAskThotResponse\x12\x16\n" +
-	"\x06answer\x18\x01 \x01(\tR\x06answer2\xa1\x01\n" +
+	"\x06answer\x18\x01 \x01(\tR\x06answer\"X\n" +
+	"\x0fRunAuditRequest\x12\x19\n" +
+	"\baudit_id\x18\x01 \x01(\tR\aauditId\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x16\n" +
+	"\x06prompt\x18\x03 \x01(\tR\x06prompt\"*\n" +
+	"\x10RunAuditResponse\x12\x16\n" +
+	"\x06status\x18\x01 \x01(\tR\x06status2\xee\x01\n" +
 	"\vThotService\x12H\n" +
 	"\aHealthz\x12\x1d.agentfleet.v1.HealthzRequest\x1a\x1e.agentfleet.v1.HealthzResponse\x12H\n" +
-	"\aAskThot\x12\x1d.agentfleet.v1.AskThotRequest\x1a\x1e.agentfleet.v1.AskThotResponseBMZKgithub.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1;agentfleetv1b\x06proto3"
+	"\aAskThot\x12\x1d.agentfleet.v1.AskThotRequest\x1a\x1e.agentfleet.v1.AskThotResponse\x12K\n" +
+	"\bRunAudit\x12\x1e.agentfleet.v1.RunAuditRequest\x1a\x1f.agentfleet.v1.RunAuditResponseBMZKgithub.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1;agentfleetv1b\x06proto3"
 
 var (
 	file_agentfleet_v1_thot_proto_rawDescOnce sync.Once
@@ -226,20 +337,24 @@ func file_agentfleet_v1_thot_proto_rawDescGZIP() []byte {
 	return file_agentfleet_v1_thot_proto_rawDescData
 }
 
-var file_agentfleet_v1_thot_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_agentfleet_v1_thot_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_agentfleet_v1_thot_proto_goTypes = []any{
-	(*HealthzRequest)(nil),  // 0: agentfleet.v1.HealthzRequest
-	(*HealthzResponse)(nil), // 1: agentfleet.v1.HealthzResponse
-	(*AskThotRequest)(nil),  // 2: agentfleet.v1.AskThotRequest
-	(*AskThotResponse)(nil), // 3: agentfleet.v1.AskThotResponse
+	(*HealthzRequest)(nil),   // 0: agentfleet.v1.HealthzRequest
+	(*HealthzResponse)(nil),  // 1: agentfleet.v1.HealthzResponse
+	(*AskThotRequest)(nil),   // 2: agentfleet.v1.AskThotRequest
+	(*AskThotResponse)(nil),  // 3: agentfleet.v1.AskThotResponse
+	(*RunAuditRequest)(nil),  // 4: agentfleet.v1.RunAuditRequest
+	(*RunAuditResponse)(nil), // 5: agentfleet.v1.RunAuditResponse
 }
 var file_agentfleet_v1_thot_proto_depIdxs = []int32{
 	0, // 0: agentfleet.v1.ThotService.Healthz:input_type -> agentfleet.v1.HealthzRequest
 	2, // 1: agentfleet.v1.ThotService.AskThot:input_type -> agentfleet.v1.AskThotRequest
-	1, // 2: agentfleet.v1.ThotService.Healthz:output_type -> agentfleet.v1.HealthzResponse
-	3, // 3: agentfleet.v1.ThotService.AskThot:output_type -> agentfleet.v1.AskThotResponse
-	2, // [2:4] is the sub-list for method output_type
-	0, // [0:2] is the sub-list for method input_type
+	4, // 2: agentfleet.v1.ThotService.RunAudit:input_type -> agentfleet.v1.RunAuditRequest
+	1, // 3: agentfleet.v1.ThotService.Healthz:output_type -> agentfleet.v1.HealthzResponse
+	3, // 4: agentfleet.v1.ThotService.AskThot:output_type -> agentfleet.v1.AskThotResponse
+	5, // 5: agentfleet.v1.ThotService.RunAudit:output_type -> agentfleet.v1.RunAuditResponse
+	3, // [3:6] is the sub-list for method output_type
+	0, // [0:3] is the sub-list for method input_type
 	0, // [0:0] is the sub-list for extension type_name
 	0, // [0:0] is the sub-list for extension extendee
 	0, // [0:0] is the sub-list for field type_name
@@ -256,7 +371,7 @@ func file_agentfleet_v1_thot_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_agentfleet_v1_thot_proto_rawDesc), len(file_agentfleet_v1_thot_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   4,
+			NumMessages:   6,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

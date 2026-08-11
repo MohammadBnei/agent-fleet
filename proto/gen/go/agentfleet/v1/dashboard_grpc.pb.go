@@ -56,6 +56,10 @@ const (
 	DashboardService_QueryLogs_FullMethodName               = "/agentfleet.v1.DashboardService/QueryLogs"
 	DashboardService_ListThotEvents_FullMethodName          = "/agentfleet.v1.DashboardService/ListThotEvents"
 	DashboardService_RespondToThotPermission_FullMethodName = "/agentfleet.v1.DashboardService/RespondToThotPermission"
+	DashboardService_ListScheduledAudits_FullMethodName     = "/agentfleet.v1.DashboardService/ListScheduledAudits"
+	DashboardService_CreateScheduledAudit_FullMethodName    = "/agentfleet.v1.DashboardService/CreateScheduledAudit"
+	DashboardService_UpdateScheduledAudit_FullMethodName    = "/agentfleet.v1.DashboardService/UpdateScheduledAudit"
+	DashboardService_DeleteScheduledAudit_FullMethodName    = "/agentfleet.v1.DashboardService/DeleteScheduledAudit"
 )
 
 // DashboardServiceClient is the client API for DashboardService service.
@@ -129,6 +133,12 @@ type DashboardServiceClient interface {
 	// an approval path.
 	ListThotEvents(ctx context.Context, in *ListThotEventsRequest, opts ...grpc.CallOption) (*ListThotEventsResponse, error)
 	RespondToThotPermission(ctx context.Context, in *RespondToThotPermissionRequest, opts ...grpc.CallOption) (*RespondToThotPermissionResponse, error)
+	// Dashboard-editable schedules (docs/adr/0035) — same "edit it in the
+	// UI, no redeploy" shape ListRepos/CreateRepo established.
+	ListScheduledAudits(ctx context.Context, in *ListScheduledAuditsRequest, opts ...grpc.CallOption) (*ListScheduledAuditsResponse, error)
+	CreateScheduledAudit(ctx context.Context, in *CreateScheduledAuditRequest, opts ...grpc.CallOption) (*CreateScheduledAuditResponse, error)
+	UpdateScheduledAudit(ctx context.Context, in *UpdateScheduledAuditRequest, opts ...grpc.CallOption) (*UpdateScheduledAuditResponse, error)
+	DeleteScheduledAudit(ctx context.Context, in *DeleteScheduledAuditRequest, opts ...grpc.CallOption) (*DeleteScheduledAuditResponse, error)
 }
 
 type dashboardServiceClient struct {
@@ -518,6 +528,46 @@ func (c *dashboardServiceClient) RespondToThotPermission(ctx context.Context, in
 	return out, nil
 }
 
+func (c *dashboardServiceClient) ListScheduledAudits(ctx context.Context, in *ListScheduledAuditsRequest, opts ...grpc.CallOption) (*ListScheduledAuditsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListScheduledAuditsResponse)
+	err := c.cc.Invoke(ctx, DashboardService_ListScheduledAudits_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dashboardServiceClient) CreateScheduledAudit(ctx context.Context, in *CreateScheduledAuditRequest, opts ...grpc.CallOption) (*CreateScheduledAuditResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateScheduledAuditResponse)
+	err := c.cc.Invoke(ctx, DashboardService_CreateScheduledAudit_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dashboardServiceClient) UpdateScheduledAudit(ctx context.Context, in *UpdateScheduledAuditRequest, opts ...grpc.CallOption) (*UpdateScheduledAuditResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateScheduledAuditResponse)
+	err := c.cc.Invoke(ctx, DashboardService_UpdateScheduledAudit_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dashboardServiceClient) DeleteScheduledAudit(ctx context.Context, in *DeleteScheduledAuditRequest, opts ...grpc.CallOption) (*DeleteScheduledAuditResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteScheduledAuditResponse)
+	err := c.cc.Invoke(ctx, DashboardService_DeleteScheduledAudit_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // DashboardServiceServer is the server API for DashboardService service.
 // All implementations must embed UnimplementedDashboardServiceServer
 // for forward compatibility.
@@ -589,6 +639,12 @@ type DashboardServiceServer interface {
 	// an approval path.
 	ListThotEvents(context.Context, *ListThotEventsRequest) (*ListThotEventsResponse, error)
 	RespondToThotPermission(context.Context, *RespondToThotPermissionRequest) (*RespondToThotPermissionResponse, error)
+	// Dashboard-editable schedules (docs/adr/0035) — same "edit it in the
+	// UI, no redeploy" shape ListRepos/CreateRepo established.
+	ListScheduledAudits(context.Context, *ListScheduledAuditsRequest) (*ListScheduledAuditsResponse, error)
+	CreateScheduledAudit(context.Context, *CreateScheduledAuditRequest) (*CreateScheduledAuditResponse, error)
+	UpdateScheduledAudit(context.Context, *UpdateScheduledAuditRequest) (*UpdateScheduledAuditResponse, error)
+	DeleteScheduledAudit(context.Context, *DeleteScheduledAuditRequest) (*DeleteScheduledAuditResponse, error)
 	mustEmbedUnimplementedDashboardServiceServer()
 }
 
@@ -709,6 +765,18 @@ func (UnimplementedDashboardServiceServer) ListThotEvents(context.Context, *List
 }
 func (UnimplementedDashboardServiceServer) RespondToThotPermission(context.Context, *RespondToThotPermissionRequest) (*RespondToThotPermissionResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RespondToThotPermission not implemented")
+}
+func (UnimplementedDashboardServiceServer) ListScheduledAudits(context.Context, *ListScheduledAuditsRequest) (*ListScheduledAuditsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListScheduledAudits not implemented")
+}
+func (UnimplementedDashboardServiceServer) CreateScheduledAudit(context.Context, *CreateScheduledAuditRequest) (*CreateScheduledAuditResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CreateScheduledAudit not implemented")
+}
+func (UnimplementedDashboardServiceServer) UpdateScheduledAudit(context.Context, *UpdateScheduledAuditRequest) (*UpdateScheduledAuditResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpdateScheduledAudit not implemented")
+}
+func (UnimplementedDashboardServiceServer) DeleteScheduledAudit(context.Context, *DeleteScheduledAuditRequest) (*DeleteScheduledAuditResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteScheduledAudit not implemented")
 }
 func (UnimplementedDashboardServiceServer) mustEmbedUnimplementedDashboardServiceServer() {}
 func (UnimplementedDashboardServiceServer) testEmbeddedByValue()                          {}
@@ -1390,6 +1458,78 @@ func _DashboardService_RespondToThotPermission_Handler(srv interface{}, ctx cont
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DashboardService_ListScheduledAudits_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListScheduledAuditsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DashboardServiceServer).ListScheduledAudits(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DashboardService_ListScheduledAudits_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DashboardServiceServer).ListScheduledAudits(ctx, req.(*ListScheduledAuditsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DashboardService_CreateScheduledAudit_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateScheduledAuditRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DashboardServiceServer).CreateScheduledAudit(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DashboardService_CreateScheduledAudit_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DashboardServiceServer).CreateScheduledAudit(ctx, req.(*CreateScheduledAuditRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DashboardService_UpdateScheduledAudit_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateScheduledAuditRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DashboardServiceServer).UpdateScheduledAudit(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DashboardService_UpdateScheduledAudit_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DashboardServiceServer).UpdateScheduledAudit(ctx, req.(*UpdateScheduledAuditRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DashboardService_DeleteScheduledAudit_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteScheduledAuditRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DashboardServiceServer).DeleteScheduledAudit(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DashboardService_DeleteScheduledAudit_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DashboardServiceServer).DeleteScheduledAudit(ctx, req.(*DeleteScheduledAuditRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // DashboardService_ServiceDesc is the grpc.ServiceDesc for DashboardService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1540,6 +1680,22 @@ var DashboardService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RespondToThotPermission",
 			Handler:    _DashboardService_RespondToThotPermission_Handler,
+		},
+		{
+			MethodName: "ListScheduledAudits",
+			Handler:    _DashboardService_ListScheduledAudits_Handler,
+		},
+		{
+			MethodName: "CreateScheduledAudit",
+			Handler:    _DashboardService_CreateScheduledAudit_Handler,
+		},
+		{
+			MethodName: "UpdateScheduledAudit",
+			Handler:    _DashboardService_UpdateScheduledAudit_Handler,
+		},
+		{
+			MethodName: "DeleteScheduledAudit",
+			Handler:    _DashboardService_DeleteScheduledAudit_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

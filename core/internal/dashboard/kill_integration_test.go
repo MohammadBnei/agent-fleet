@@ -44,7 +44,7 @@ func TestServer_Kill_DefaultReason(t *testing.T) {
 	pool := newTestPool(t)
 	taskID := seedTask(t, pool)
 	store := &recordingStore{}
-	s := NewServer(tasks.NewStore(pool), store, nil, nil, nil, nil, nil, nil, nil, 5, nil, nil)
+	s := NewServer(tasks.NewStore(pool), store, nil, nil, nil, nil, nil, nil, nil, 5, nil, nil, nil)
 
 	resp, err := s.Kill(context.Background(), connect.NewRequest(&agentfleetv1.KillRequest{TaskId: taskID}))
 	if err != nil {
@@ -70,7 +70,7 @@ func TestServer_Kill_CustomReason(t *testing.T) {
 	pool := newTestPool(t)
 	taskID := seedTask(t, pool)
 	store := &recordingStore{}
-	s := NewServer(tasks.NewStore(pool), store, nil, nil, nil, nil, nil, nil, nil, 5, nil, nil)
+	s := NewServer(tasks.NewStore(pool), store, nil, nil, nil, nil, nil, nil, nil, 5, nil, nil, nil)
 
 	reason := "wrong direction"
 	req := connect.NewRequest(&agentfleetv1.KillRequest{TaskId: taskID, Reason: &reason})
