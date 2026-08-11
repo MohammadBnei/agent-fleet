@@ -74,9 +74,16 @@ func TestCreateWorktree_ReuseNotWipe(t *testing.T) {
 }
 
 // TestSweepGoneBranches_RemovesWorktreeThenBranch covers the sweep's
-// [gone]-detection and the remove-before-branch-delete ordering
+// merged-branch detection and the remove-before-branch-delete ordering
 // (reliability-findings.md #2) — git refuses `branch -D` on a checked-out
 // branch, so removing the worktree first is load-bearing, not cosmetic.
+//
+// Pushes WITHOUT `-u` on purpose. The old version of this test used `-u`,
+// which repointed the upstream at origin/agent/task-1 and was the only
+// reason [gone] ever fired — in production the agent runs a plain
+// `git push`/`gh pr create`, the upstream stays origin/main, and the sweep
+// deleted nothing. Keep the plain push here or the regression comes back
+// invisibly.
 func TestSweepGoneBranches_RemovesWorktreeThenBranch(t *testing.T) {
 	origin := newTestOriginRepo(t)
 	m := NewManager(t.TempDir())
@@ -89,13 +96,19 @@ func TestSweepGoneBranches_RemovesWorktreeThenBranch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateWorktree: %v", err)
 	}
+	runGit(t, path, "push", "origin", branch)
 
-	// Push the branch, then delete it on "origin" — the trigger that makes
-	// the local branch's upstream tracking state become [gone] after the
-	// sweep's own `fetch --prune`.
-	runGit(t, path, "push", "-u", "origin", branch)
+	// First sweep: remote branch still alive, so nothing is deleted — this
+	// is the pass that records the branch as pushed.
+	if err := m.SweepGoneBranches(ctx, "repo1"); err != nil {
+		t.Fatalf("SweepGoneBranches (observe): %v", err)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("expected worktree with a live remote branch to survive, stat err: %v", err)
+	}
+
+	// PR merged: origin deletes the branch. Next sweep prunes and cleans up.
 	runGit(t, origin, "branch", "-D", branch)
-
 	if err := m.SweepGoneBranches(ctx, "repo1"); err != nil {
 		t.Fatalf("SweepGoneBranches: %v", err)
 	}

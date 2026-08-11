@@ -166,29 +166,6 @@ func (m *Manager) CreateWorktree(ctx context.Context, repo, taskID, baseBranch s
 	return path, branch, nil
 }
 
-// RemoveWorktree deletes a task's worktree and branch outright. As of
-// reliability-findings.md #2, session teardown (grpcserver.tearDownWorker)
-// no longer calls this on every terminal status — an unconditional
-// branch -D there destroyed the only reference to a never-pushed branch's
-// commits whenever a terminal status was reached via a git push failure.
-// Callers now: SweepGoneBranches below (only once a branch's upstream is
-// confirmed [gone] — i.e. actually merged/closed), and the dashboard's
-// manual DeleteWorktree RPC (an explicit human decision).
-func (m *Manager) RemoveWorktree(ctx context.Context, repo, taskID, branch string) error {
-	lock := m.repoLock(repo)
-	lock.Lock()
-	defer lock.Unlock()
-
-	repoPath := m.repoPath(repo)
-	path := m.worktreePath(taskID)
-
-	if _, err := m.run(ctx, repoPath, "worktree", "remove", "--force", path); err != nil {
-		_ = os.RemoveAll(path)
-	}
-	_, _ = m.run(ctx, repoPath, "branch", "-D", branch)
-	return nil
-}
-
 // fleetSharedSentinel keys the repoLock used to serialize SyncFleetShared
 // calls — not a real repo name, so it can never collide with one.
 const fleetSharedSentinel = "_fleet-shared"
@@ -285,17 +262,33 @@ func (m *Manager) ListClonedRepos() ([]string, error) {
 }
 
 // SweepGoneBranches deletes agent/<taskId> branches (and their worktrees)
-// whose upstream tracking branch is gone — i.e. already merged/closed on
-// GitHub (reliability-findings.md #2's automated half; the dashboard's
-// manual DeleteWorktree is the other half, and the fallback for the
-// accepted gap below).
+// that were pushed to origin and whose remote branch has since
+// disappeared — i.e. already merged/closed on GitHub
+// (reliability-findings.md #2's automated half; the dashboard's manual
+// DeleteWorktree is the other half, and the fallback for the accepted gaps
+// below).
 //
-// Accepted gap: a worktree/branch abandoned *before* its first push never
-// gets an upstream ref to compare against (`git worktree add -b <branch>
-// <path> origin/<base>` tracks origin/<base> by default, not a branch
-// that doesn't exist yet), so [gone] never fires for it — it leaks
-// forever, invisible to this sweep. Not solved by making this smarter;
-// manual dashboard delete is the primary cleanup path for that case.
+// This deliberately does NOT look at %(upstream:track) == "[gone]", which
+// is what it used to do and why it never deleted anything in production:
+// `git worktree add -b agent/<id> <path> origin/<base>` auto-tracks
+// origin/<base>, so the track state reads "[ahead N]" relative to
+// origin/main and stays that way after the PR is merged — [gone] would
+// require origin/main itself to vanish. The old unit test only passed
+// because it pushed with `-u` (repointing the upstream at
+// origin/agent/<id>), which the real agent doesn't do.
+//
+// So instead: a branch is only ever deleted once we have positively
+// observed its remote counterpart existing, and later found it pruned. The
+// upstream ref doubles as that durable "was pushed" record — pointing it
+// at origin/agent/<id> the first time we see the remote branch is both the
+// correct upstream for a feature branch and the marker that makes a later
+// [gone] real.
+//
+// Accepted gaps, both falling back to the dashboard's manual delete:
+// a branch abandoned *before* its first push never gets a remote
+// counterpart to observe, so it leaks; and one merged+deleted inside a
+// single sweep interval of its only push is never observed as pushed, so
+// it leaks too.
 func (m *Manager) SweepGoneBranches(ctx context.Context, repo string) error {
 	repoPath := m.repoPath(repo)
 
@@ -307,7 +300,7 @@ func (m *Manager) SweepGoneBranches(ctx context.Context, repo string) error {
 		return fmt.Errorf("fetch --prune: %w", err)
 	}
 
-	out, err := m.run(ctx, repoPath, "for-each-ref", "--format=%(refname:short) %(upstream:track)", "refs/heads/agent/")
+	out, err := m.run(ctx, repoPath, "for-each-ref", "--format=%(refname:short) %(upstream:short)", "refs/heads/agent/")
 	if err != nil {
 		return fmt.Errorf("for-each-ref: %w", err)
 	}
@@ -320,9 +313,23 @@ func (m *Manager) SweepGoneBranches(ctx context.Context, repo string) error {
 	defer lock.Unlock()
 
 	for line := range strings.SplitSeq(out, "\n") {
-		branch, track, ok := strings.Cut(line, " ")
-		if !ok || track != "[gone]" {
+		branch, upstream, _ := strings.Cut(line, " ")
+		if branch == "" {
 			continue
+		}
+		remote := "origin/" + branch
+		if _, err := m.run(ctx, repoPath, "rev-parse", "--verify", "--quiet", "refs/remotes/"+remote); err == nil {
+			// Remote branch still there: not merged/closed yet. Record it as
+			// pushed so a future sweep can act once it's pruned.
+			if upstream != remote {
+				if _, err := m.run(ctx, repoPath, "branch", "--set-upstream-to="+remote, branch); err != nil {
+					slog.Error("sweep: set-upstream failed", "repo", repo, "branch", branch, "error", err)
+				}
+			}
+			continue
+		}
+		if upstream != remote {
+			continue // never observed pushed — accepted gap, leave it alone
 		}
 		taskID := strings.TrimPrefix(branch, "agent/")
 		path := m.worktreePath(taskID)
