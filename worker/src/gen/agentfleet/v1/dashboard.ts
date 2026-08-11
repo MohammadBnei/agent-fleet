@@ -83,6 +83,26 @@ export interface GetE2eStatusRequest {
 export interface GetE2eStatusResponse {
   status: string;
   previewUrl: string;
+  /**
+   * Fields 3-7 are pass-through from ProvisionerService.GetE2eSessionStatus
+   * (live pod truth — core holds no cluster RBAC and must not read pods);
+   * 8-11 are core's own, resolved from repo_profiles.
+   */
+  startCmd: string;
+  podPhase: string;
+  appReady: boolean;
+  restarts: number;
+  /** RFC3339 */
+  startedAt: string;
+  profileName: string;
+  tools: string[];
+  services: string[];
+  /**
+   * True when the running pod's start_cmd differs from the profile's — i.e.
+   * a human-approved per-task override is in effect. Surfacing this is the
+   * point: a silent override is what caused the bug this card exists for.
+   */
+  startCmdOverridden: boolean;
 }
 
 export interface KillRequest {
@@ -660,7 +680,19 @@ export const GetE2eStatusRequest: MessageFns<GetE2eStatusRequest> = {
 };
 
 function createBaseGetE2eStatusResponse(): GetE2eStatusResponse {
-  return { status: "", previewUrl: "" };
+  return {
+    status: "",
+    previewUrl: "",
+    startCmd: "",
+    podPhase: "",
+    appReady: false,
+    restarts: 0,
+    startedAt: "",
+    profileName: "",
+    tools: [],
+    services: [],
+    startCmdOverridden: false,
+  };
 }
 
 export const GetE2eStatusResponse: MessageFns<GetE2eStatusResponse> = {
@@ -672,6 +704,43 @@ export const GetE2eStatusResponse: MessageFns<GetE2eStatusResponse> = {
         : isSet(object.preview_url)
         ? globalThis.String(object.preview_url)
         : "",
+      startCmd: isSet(object.startCmd)
+        ? globalThis.String(object.startCmd)
+        : isSet(object.start_cmd)
+        ? globalThis.String(object.start_cmd)
+        : "",
+      podPhase: isSet(object.podPhase)
+        ? globalThis.String(object.podPhase)
+        : isSet(object.pod_phase)
+        ? globalThis.String(object.pod_phase)
+        : "",
+      appReady: isSet(object.appReady)
+        ? globalThis.Boolean(object.appReady)
+        : isSet(object.app_ready)
+        ? globalThis.Boolean(object.app_ready)
+        : false,
+      restarts: isSet(object.restarts) ? globalThis.Number(object.restarts) : 0,
+      startedAt: isSet(object.startedAt)
+        ? globalThis.String(object.startedAt)
+        : isSet(object.started_at)
+        ? globalThis.String(object.started_at)
+        : "",
+      profileName: isSet(object.profileName)
+        ? globalThis.String(object.profileName)
+        : isSet(object.profile_name)
+        ? globalThis.String(object.profile_name)
+        : "",
+      tools: globalThis.Array.isArray(object?.tools)
+        ? object.tools.map((e: any) => globalThis.String(e))
+        : [],
+      services: globalThis.Array.isArray(object?.services)
+        ? object.services.map((e: any) => globalThis.String(e))
+        : [],
+      startCmdOverridden: isSet(object.startCmdOverridden)
+        ? globalThis.Boolean(object.startCmdOverridden)
+        : isSet(object.start_cmd_overridden)
+        ? globalThis.Boolean(object.start_cmd_overridden)
+        : false,
     };
   },
 
@@ -683,6 +752,33 @@ export const GetE2eStatusResponse: MessageFns<GetE2eStatusResponse> = {
     if (message.previewUrl !== "") {
       obj.previewUrl = message.previewUrl;
     }
+    if (message.startCmd !== "") {
+      obj.startCmd = message.startCmd;
+    }
+    if (message.podPhase !== "") {
+      obj.podPhase = message.podPhase;
+    }
+    if (message.appReady !== false) {
+      obj.appReady = message.appReady;
+    }
+    if (message.restarts !== 0) {
+      obj.restarts = Math.round(message.restarts);
+    }
+    if (message.startedAt !== "") {
+      obj.startedAt = message.startedAt;
+    }
+    if (message.profileName !== "") {
+      obj.profileName = message.profileName;
+    }
+    if (message.tools?.length) {
+      obj.tools = message.tools;
+    }
+    if (message.services?.length) {
+      obj.services = message.services;
+    }
+    if (message.startCmdOverridden !== false) {
+      obj.startCmdOverridden = message.startCmdOverridden;
+    }
     return obj;
   },
 
@@ -693,6 +789,15 @@ export const GetE2eStatusResponse: MessageFns<GetE2eStatusResponse> = {
     const message = createBaseGetE2eStatusResponse();
     message.status = object.status ?? "";
     message.previewUrl = object.previewUrl ?? "";
+    message.startCmd = object.startCmd ?? "";
+    message.podPhase = object.podPhase ?? "";
+    message.appReady = object.appReady ?? false;
+    message.restarts = object.restarts ?? 0;
+    message.startedAt = object.startedAt ?? "";
+    message.profileName = object.profileName ?? "";
+    message.tools = object.tools?.map((e) => e) || [];
+    message.services = object.services?.map((e) => e) || [];
+    message.startCmdOverridden = object.startCmdOverridden ?? false;
     return message;
   },
 };

@@ -199,7 +199,20 @@ func (s *Server) RequestE2EEnv(ctx context.Context, req *agentfleetv1.RequestE2E
 	if err != nil {
 		return nil, fmt.Errorf("RequestE2EEnv: %w", err)
 	}
-	return &agentfleetv1.RequestE2EEnvResponse{Status: status, PreviewUrl: previewURL}, nil
+	// Echo the recipe that was actually used. The agent had no read access
+	// to repo_profiles before this, so it guessed a start_cmd, its guess
+	// silently beat a correct profile, and the preview 502'd with nothing
+	// able to explain why (see the readiness probe in provisioner's pod.go
+	// for the other half of that failure).
+	resp := &agentfleetv1.RequestE2EEnvResponse{
+		Status:           status,
+		PreviewUrl:       previewURL,
+		ResolvedStartCmd: startCmd,
+		ProfileName:      profileName,
+		Tools:            toolKeys,
+		Services:         repoprofiles.FormatServices(serviceIngredients),
+	}
+	return resp, nil
 }
 
 func (s *Server) KillE2EEnv(ctx context.Context, req *agentfleetv1.KillE2EEnvRequest) (*agentfleetv1.KillE2EEnvResponse, error) {

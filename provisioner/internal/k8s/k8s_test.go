@@ -144,6 +144,71 @@ func TestCreateService_Shape(t *testing.T) {
 	}
 }
 
+// TestCreateService_SelectorExcludesWorkerPod is a regression test for a bug
+// caught live on the real cluster: the selector was TaskIDLabel alone, and
+// WorkerLabels carries that very same label — so the task's worker pod
+// joined this Service's EndpointSlice alongside the e2e pod, and roughly
+// half of Traefik's preview requests were load-balanced onto a pod with
+// nothing listening on AppPort. Symptom was an intermittent 502 that looked
+// exactly like a broken app.
+func TestCreateService_SelectorExcludesWorkerPod(t *testing.T) {
+	c := newTestClient()
+	ctx := context.Background()
+	if err := c.CreateService(ctx, "task-1"); err != nil {
+		t.Fatalf("CreateService: %v", err)
+	}
+	svc, err := c.Core.CoreV1().Services("agent-fleet").Get(ctx, ResourceName("task-1"), metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("get service: %v", err)
+	}
+	matches := func(podLabels map[string]string) bool {
+		for k, v := range svc.Spec.Selector {
+			if podLabels[k] != v {
+				return false
+			}
+		}
+		return true
+	}
+	if !matches(Labels("task-1")) {
+		t.Errorf("selector %+v must match the e2e pod's own labels", svc.Spec.Selector)
+	}
+	if matches(WorkerLabels("task-1", "dream-analyst")) {
+		t.Errorf("selector %+v also matches the worker pod for the same task — it must not", svc.Spec.Selector)
+	}
+}
+
+// TestCreatePod_ReadinessProbeOnAppPort guards the other half of that same
+// live 502: with no probe, an app that binds the wrong port or only
+// 127.0.0.1 (Vite's default, reproduced live) leaves the pod reporting
+// Running forever while the preview never serves. Readiness specifically —
+// a startup or liveness probe would kill the pod and take code-server with
+// it, removing the only way to debug the failure.
+func TestCreatePod_ReadinessProbeOnAppPort(t *testing.T) {
+	c := newTestClient()
+	ctx := context.Background()
+	task := TaskRef{ID: "probe-check", Repo: "dream-analyst", StartCmd: "bun run dev"}
+	if err := c.CreatePod(ctx, task); err != nil {
+		t.Fatalf("CreatePod: %v", err)
+	}
+	pod, err := c.Core.CoreV1().Pods("agent-fleet").Get(ctx, ResourceName(task.ID), metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("get pod: %v", err)
+	}
+	container := pod.Spec.Containers[0]
+	probe := container.ReadinessProbe
+	if probe == nil || probe.TCPSocket == nil || probe.TCPSocket.Port.IntVal != AppPort {
+		t.Fatalf("expected a TCP readiness probe on AppPort, got %+v", probe)
+	}
+	if container.StartupProbe != nil || container.LivenessProbe != nil {
+		t.Error("e2e-runner must not have a startup/liveness probe — a failing app must not kill code-server")
+	}
+	// A cold `bun install` measured 782s live; the window must comfortably
+	// exceed that or every cold cache reports a false failure.
+	if window := probe.PeriodSeconds * probe.FailureThreshold; window < 900 {
+		t.Errorf("readiness window = %ds, want >= 900s to cover a cold dependency install", window)
+	}
+}
+
 func TestCreateMiddleware_StripPrefixPaths(t *testing.T) {
 	c := newTestClient()
 	ctx := context.Background()
