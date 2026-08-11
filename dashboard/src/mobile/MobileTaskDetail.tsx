@@ -29,6 +29,7 @@ import { JsonView } from "../components/JsonView";
 import { BypassConfirmModal } from "../components/BypassConfirmModal";
 import { Modal } from "../components/Modal";
 import { ActionsMenu } from "../components/ActionsMenu";
+import { E2eCard } from "../components/E2eCard";
 import { prBadge, podStateBadge, staleBadge } from "../pages/TaskList";
 
 // Mirrors the "herd" mock's phone session screen (Agent Fleet Mobile.dc.html)
@@ -266,7 +267,7 @@ export function MobileTaskDetail({
   onBack: () => void;
   onDelete: () => void;
 }) {
-  const { task, entries, previewUrl, busyKey, loadError, actionError, pendingMessage, run, sendDiscuss, clearActionError } =
+  const { task, entries, previewUrl, e2e, busyKey, loadError, actionError, pendingMessage, run, sendDiscuss, clearActionError } =
     useTaskDetail(taskId);
   const [message, setMessage] = useState("");
   const [bypassOpen, setBypassOpen] = useState(false);
@@ -440,6 +441,12 @@ export function MobileTaskDetail({
           </span>
         </div>
       </div>
+
+      {e2e && e2e.status && (
+        <div className="flex-none px-4 py-2.5 border-b border-base-content/5 min-w-0">
+          <E2eCard e2e={e2e} />
+        </div>
+      )}
 
       {blockedTodo && (
         <div className="flex-none px-4 py-2.5 border-b border-base-content/5 bg-base-300/30 flex items-start gap-2">

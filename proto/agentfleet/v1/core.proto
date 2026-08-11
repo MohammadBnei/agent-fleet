@@ -98,6 +98,16 @@ message RequestE2eEnvRequest {
 message RequestE2eEnvResponse {
   string preview_url = 1;
   string status = 2;
+  // The recipe that actually got used, echoed back so the agent can see it.
+  // Before this the worker had no read access to repo_profiles at all: it
+  // guessed a start_cmd, its guess silently beat a correct profile, and the
+  // preview 502'd with nobody able to say why. An agent that can read the
+  // recipe reports "the configured command binds localhost" instead of
+  // inventing a replacement for it.
+  string resolved_start_cmd = 3;
+  string profile_name = 4;
+  repeated string tools = 5;    // catalog keys, e.g. "bun-toolchain"
+  repeated string services = 6; // "<key>:<scope-mode>", e.g. "postgres:task-scoped"
 }
 
 message KillE2eEnvRequest {

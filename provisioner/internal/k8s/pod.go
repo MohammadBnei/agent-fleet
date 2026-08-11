@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"strconv"
+	"time"
 
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -131,6 +132,20 @@ func (c *Client) CreatePod(ctx context.Context, task TaskRef) error {
 						{Name: "exec", ContainerPort: ExecPort},
 					},
 					VolumeMounts: runnerMounts,
+					// Readiness, deliberately not startup/liveness: a pod
+					// whose app never binds must stay alive so code-server
+					// (:8080) is still reachable to debug why. This is the
+					// only thing standing between "the recipe's start_cmd
+					// is wrong" and a preview that 502s forever while the
+					// pod reports Running — found live: Vite bound
+					// 127.0.0.1:5173 and nothing anywhere noticed.
+					// FailureThreshold is huge on purpose: a cold
+					// `bun install` on the shared cache measured 782s.
+					ReadinessProbe: &corev1.Probe{
+						ProbeHandler:     corev1.ProbeHandler{TCPSocket: &corev1.TCPSocketAction{Port: intstr.FromInt32(AppPort)}},
+						PeriodSeconds:    10,
+						FailureThreshold: 120,
+					},
 					// Explicit, not left to the namespace LimitRange's
 					// 512Mi container default (agent-fleet-core-limits,
 					// common-app-chart) — found live via OOMKilled: this
@@ -193,22 +208,54 @@ func (c *Client) DeletePod(ctx context.Context, taskID string) error {
 	return nil
 }
 
-// GetPod returns the pod's current phase, or exists=false if it doesn't —
+// PodState is what an e2e pod can say about itself. Phase alone was the
+// whole story until a preview 502'd for 20 minutes while the pod sat at
+// Running: AppReady (the AppPort readiness probe) is what distinguishes a
+// slow install from an app that bound the wrong interface, and StartCmd is
+// read back off the live pod rather than re-resolved from repo_profiles so
+// it reflects what is genuinely running, override included.
+type PodState struct {
+	Phase     corev1.PodPhase
+	AppReady  bool
+	Restarts  int32
+	StartedAt string // RFC3339, empty until scheduled
+	StartCmd  string
+}
+
+// GetPod returns the pod's current state, or exists=false if it doesn't —
 // Kubernetes itself is this fleet's durable source of truth for "is this
 // session active," now that the provisioner holds no DB credentials
 // (docs/adr/0020 point 1). A provisioner restart loses nothing: pod
-// existence and phase survive it for free, no separate in-memory or
+// existence and state survive it for free, no separate in-memory or
 // Postgres-backed tracking needed.
-func (c *Client) GetPod(ctx context.Context, name string) (phase corev1.PodPhase, exists bool, err error) {
+func (c *Client) GetPod(ctx context.Context, name string) (state PodState, exists bool, err error) {
 	pod, err := c.Core.CoreV1().Pods(c.Namespace).Get(ctx, name, metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
-		return "", false, nil
+		return PodState{}, false, nil
 	}
 	if err != nil {
 		slog.Error("k8s GetPod", "name", name, "error", err)
-		return "", false, err
+		return PodState{}, false, err
 	}
-	return pod.Status.Phase, true, nil
+	state = PodState{Phase: pod.Status.Phase}
+	if pod.Status.StartTime != nil {
+		state.StartedAt = pod.Status.StartTime.UTC().Format(time.RFC3339)
+	}
+	// Single-container pod by construction (CreatePod above), so the
+	// e2e-runner's own readiness is the pod's readiness.
+	if len(pod.Status.ContainerStatuses) > 0 {
+		state.AppReady = pod.Status.ContainerStatuses[0].Ready
+		state.Restarts = pod.Status.ContainerStatuses[0].RestartCount
+	}
+	if len(pod.Spec.Containers) > 0 {
+		for _, e := range pod.Spec.Containers[0].Env {
+			if e.Name == "E2E_START_CMD" {
+				state.StartCmd = e.Value
+				break
+			}
+		}
+	}
+	return state, true, nil
 }
 
 // CreateWorkerPod builds the two-container pod (worker + sidecar,

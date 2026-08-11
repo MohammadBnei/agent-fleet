@@ -67,6 +67,11 @@ Any doc, code, comment, or memory that contradicts this file or an
   primitive `provisioner` doesn't have today. `core` stays the sole
   Postgres-credential holder regardless — `thot`'s findings still persist
   through it. See [`adr/0035`](adr/0035-thot-cluster-agent.md).
+- **A repo's e2e recipe lives in `repo_profiles` and is a human's to
+  change.** The agent reads the resolved recipe back from
+  `request_e2e_env`; a `start_cmd` override needs an explicit human yes,
+  applies to that one task, and is never written back to the profile. See
+  [`adr/0036`](adr/0036-e2e-recipe-visible-and-override-approved.md).
 
 ## 2. Forbidden patterns (quick check — full list + reasons in `adr/`)
 
@@ -84,6 +89,10 @@ Any doc, code, comment, or memory that contradicts this file or an
   `[gone]`, or an explicit dashboard delete — removes git state; a hard-won
   lesson after uncommitted work was destroyed twice by the old design —
   see `adr/0023`.
+- **An agent silently substituting its own e2e start command for the
+  repo's profile.** The override is gated on a real human answer and never
+  persists; declining, timing out, or a malformed answer all fall back to
+  the profile — see `adr/0036`.
 - **Hardcoding git commit identity.** Always derived live from the
   authenticated bot GitHub account — see `adr/0006`.
 - **Committing Discord/GitHub/Anthropic tokens** to this repo or any

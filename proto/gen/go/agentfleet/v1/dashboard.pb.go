@@ -330,11 +330,26 @@ func (x *GetE2EStatusRequest) GetTaskId() string {
 }
 
 type GetE2EStatusResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Status        string                 `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
-	PreviewUrl    string                 `protobuf:"bytes,2,opt,name=preview_url,json=previewUrl,proto3" json:"preview_url,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	Status     string                 `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
+	PreviewUrl string                 `protobuf:"bytes,2,opt,name=preview_url,json=previewUrl,proto3" json:"preview_url,omitempty"`
+	// Fields 3-7 are pass-through from ProvisionerService.GetE2eSessionStatus
+	// (live pod truth — core holds no cluster RBAC and must not read pods);
+	// 8-11 are core's own, resolved from repo_profiles.
+	StartCmd    string   `protobuf:"bytes,3,opt,name=start_cmd,json=startCmd,proto3" json:"start_cmd,omitempty"`
+	PodPhase    string   `protobuf:"bytes,4,opt,name=pod_phase,json=podPhase,proto3" json:"pod_phase,omitempty"`
+	AppReady    bool     `protobuf:"varint,5,opt,name=app_ready,json=appReady,proto3" json:"app_ready,omitempty"`
+	Restarts    int32    `protobuf:"varint,6,opt,name=restarts,proto3" json:"restarts,omitempty"`
+	StartedAt   string   `protobuf:"bytes,7,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"` // RFC3339
+	ProfileName string   `protobuf:"bytes,8,opt,name=profile_name,json=profileName,proto3" json:"profile_name,omitempty"`
+	Tools       []string `protobuf:"bytes,9,rep,name=tools,proto3" json:"tools,omitempty"`
+	Services    []string `protobuf:"bytes,10,rep,name=services,proto3" json:"services,omitempty"`
+	// True when the running pod's start_cmd differs from the profile's — i.e.
+	// a human-approved per-task override is in effect. Surfacing this is the
+	// point: a silent override is what caused the bug this card exists for.
+	StartCmdOverridden bool `protobuf:"varint,11,opt,name=start_cmd_overridden,json=startCmdOverridden,proto3" json:"start_cmd_overridden,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *GetE2EStatusResponse) Reset() {
@@ -379,6 +394,69 @@ func (x *GetE2EStatusResponse) GetPreviewUrl() string {
 		return x.PreviewUrl
 	}
 	return ""
+}
+
+func (x *GetE2EStatusResponse) GetStartCmd() string {
+	if x != nil {
+		return x.StartCmd
+	}
+	return ""
+}
+
+func (x *GetE2EStatusResponse) GetPodPhase() string {
+	if x != nil {
+		return x.PodPhase
+	}
+	return ""
+}
+
+func (x *GetE2EStatusResponse) GetAppReady() bool {
+	if x != nil {
+		return x.AppReady
+	}
+	return false
+}
+
+func (x *GetE2EStatusResponse) GetRestarts() int32 {
+	if x != nil {
+		return x.Restarts
+	}
+	return 0
+}
+
+func (x *GetE2EStatusResponse) GetStartedAt() string {
+	if x != nil {
+		return x.StartedAt
+	}
+	return ""
+}
+
+func (x *GetE2EStatusResponse) GetProfileName() string {
+	if x != nil {
+		return x.ProfileName
+	}
+	return ""
+}
+
+func (x *GetE2EStatusResponse) GetTools() []string {
+	if x != nil {
+		return x.Tools
+	}
+	return nil
+}
+
+func (x *GetE2EStatusResponse) GetServices() []string {
+	if x != nil {
+		return x.Services
+	}
+	return nil
+}
+
+func (x *GetE2EStatusResponse) GetStartCmdOverridden() bool {
+	if x != nil {
+		return x.StartCmdOverridden
+	}
+	return false
 }
 
 type KillRequest struct {
@@ -2884,11 +2962,22 @@ const file_agentfleet_v1_dashboard_proto_rawDesc = "" +
 	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x1b\n" +
 	"\tsince_seq\x18\x02 \x01(\x03R\bsinceSeq\".\n" +
 	"\x13GetE2eStatusRequest\x12\x17\n" +
-	"\atask_id\x18\x01 \x01(\tR\x06taskId\"O\n" +
+	"\atask_id\x18\x01 \x01(\tR\x06taskId\"\xe8\x02\n" +
 	"\x14GetE2eStatusResponse\x12\x16\n" +
 	"\x06status\x18\x01 \x01(\tR\x06status\x12\x1f\n" +
 	"\vpreview_url\x18\x02 \x01(\tR\n" +
-	"previewUrl\"N\n" +
+	"previewUrl\x12\x1b\n" +
+	"\tstart_cmd\x18\x03 \x01(\tR\bstartCmd\x12\x1b\n" +
+	"\tpod_phase\x18\x04 \x01(\tR\bpodPhase\x12\x1b\n" +
+	"\tapp_ready\x18\x05 \x01(\bR\bappReady\x12\x1a\n" +
+	"\brestarts\x18\x06 \x01(\x05R\brestarts\x12\x1d\n" +
+	"\n" +
+	"started_at\x18\a \x01(\tR\tstartedAt\x12!\n" +
+	"\fprofile_name\x18\b \x01(\tR\vprofileName\x12\x14\n" +
+	"\x05tools\x18\t \x03(\tR\x05tools\x12\x1a\n" +
+	"\bservices\x18\n" +
+	" \x03(\tR\bservices\x120\n" +
+	"\x14start_cmd_overridden\x18\v \x01(\bR\x12startCmdOverridden\"N\n" +
 	"\vKillRequest\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x1b\n" +
 	"\x06reason\x18\x02 \x01(\tH\x00R\x06reason\x88\x01\x01B\t\n" +

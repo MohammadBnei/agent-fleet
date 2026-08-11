@@ -14,7 +14,11 @@ func (c *Client) CreateService(ctx context.Context, taskID string) error {
 	svc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: c.Namespace, Labels: Labels(taskID)},
 		Spec: corev1.ServiceSpec{
-			Selector: map[string]string{TaskIDLabel: taskID},
+			// Must include the component label: the worker pod carries the
+			// same task-id label, so a task-id-only selector puts it in this
+			// Service's endpoints too and ~half the preview requests land on
+			// a pod with nothing on :3000 → intermittent 502.
+			Selector: map[string]string{TaskIDLabel: taskID, ComponentLabel: ComponentE2eRun},
 			Ports: []corev1.ServicePort{
 				{Name: "app", Port: AppPort, TargetPort: intstr.FromInt32(AppPort)},
 				{Name: "code-server", Port: CodeServerPort, TargetPort: intstr.FromInt32(CodeServerPort)},
