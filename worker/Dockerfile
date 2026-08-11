@@ -50,7 +50,12 @@ RUN chmod -R o+rX /root
 
 WORKDIR /app
 COPY worker ./worker
-RUN cd worker && bun install --production && chmod +x entrypoint.sh && chown -R bun:bun /app
+# --frozen-lockfile: the SDK bundles the whole Claude Code CLI, so a version
+# drift here swaps the agent's entire runtime — including which binaries it
+# shells out to. `^0.1.0` let that happen silently on any rebuild; the version
+# is now exact in package.json and the build fails loudly if the lockfile
+# disagrees rather than resolving something new.
+RUN cd worker && bun install --production --frozen-lockfile && chmod +x entrypoint.sh && chown -R bun:bun /app
 
 WORKDIR /app/worker
 USER bun
