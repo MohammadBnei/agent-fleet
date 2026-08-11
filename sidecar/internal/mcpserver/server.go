@@ -21,7 +21,6 @@ import (
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 
 	"github.com/MohammadBnei/agent-fleet/sidecar/internal/coreclient"
-	"github.com/MohammadBnei/agent-fleet/sidecar/internal/thotclient"
 )
 
 type AskUserQuestionOption struct {
@@ -46,7 +45,7 @@ type AskUserQuestionArgs struct {
 // by request_e2e_env's handler, mirroring the exact dynamic-registration +
 // notifications/tools/list_changed pattern provisioner's old per-task
 // mcpserver already used.
-func New(core *coreclient.Client, thot *thotclient.Client) http.Handler {
+func New(core *coreclient.Client) http.Handler {
 	s := server.NewMCPServer("agent-fleet-sidecar", "0.1.0", server.WithToolCapabilities(true))
 
 	s.AddTool(mcp.NewTool("send_message",
@@ -56,16 +55,6 @@ func New(core *coreclient.Client, thot *thotclient.Client) http.Handler {
 		mcp.WithString("type", mcp.Description("'discussion' | 'approve' | 'abort'")),
 		mcp.WithString("idempotencyKey"),
 	), sendMessageHandler(core))
-
-	// docs/adr/0035: the one tool that reaches outside the sidecar's single
-	// upstream channel to core. Registered only when thot is configured, so
-	// a fleet without thot deployed simply doesn't advertise it.
-	if thot != nil {
-		s.AddTool(mcp.NewTool("ask_thot",
-			mcp.WithDescription("Ask thot, the cluster agent, about live ukubi-cluster state — e.g. why a deployment is failing, what a pod's events say, or whether an ArgoCD app is synced. thot has its own cluster-read access and answers synchronously; expect a few seconds. The exchange is recorded in this task's transcript."),
-			mcp.WithString("question", mcp.Required(), mcp.Description("A specific question about cluster state.")),
-		), askThotHandler(core, thot))
-	}
 
 	s.AddTool(mcp.NewTool("wait_for_messages",
 		mcp.WithDescription("Block (up to timeoutMs) until new transcript messages appear at or after sinceIndex, then return them. You almost never need this: new human messages already arrive live as your next input while a session is running, with no polling required. sinceIndex is INCLUSIVE and results are NOT filtered by from — if you pass the raw index a prior send_message call returned, you will see that same message come back to you. Always pass the nextIndex field from your last send_message or wait_for_messages response instead."),
@@ -141,52 +130,6 @@ func New(core *coreclient.Client, thot *thotclient.Client) http.Handler {
 // docs/adr/0035 makes it a hard constraint, since a direct call would
 // otherwise leave the task's audit trail with a silent gap where the
 // agent's reasoning changed direction.
-// Narrow interfaces over the two concrete clients, so the audit-trail
-// guarantee below is testable without standing up real gRPC servers.
-// Both *coreclient.Client and *thotclient.Client satisfy these already.
-type thotAsker interface {
-	Ask(ctx context.Context, question string) (string, error)
-}
-
-type transcriptRecorder interface {
-	SendMessage(ctx context.Context, from, text string, msgType agentfleetv1.TranscriptEntryType, idempotencyKey string) (int64, error)
-	AppendReplyMessage(ctx context.Context, from, text string, msgType agentfleetv1.TranscriptEntryType, idempotencyKey string, replyToSeq int64) (int64, error)
-}
-
-func askThotHandler(core transcriptRecorder, thot thotAsker) server.ToolHandlerFunc {
-	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		question := req.GetString("question", "")
-		if question == "" {
-			return mcp.NewToolResultError("question is required"), nil
-		}
-		slog.Info("mcp ask_thot", "question", question)
-
-		questionSeq, err := core.SendMessage(ctx, "agent", "→ thot: "+question,
-			agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_DISCUSSION, "")
-		if err != nil {
-			// Recording the question is part of the contract — if the audit
-			// trail can't be written, don't quietly proceed without it.
-			slog.Error("mcp ask_thot: record question", "error", err)
-			return nil, fmt.Errorf("ask_thot: record question: %w", err)
-		}
-
-		answer, err := thot.Ask(ctx, question)
-		if err != nil {
-			slog.Error("mcp ask_thot", "error", err)
-			return mcp.NewToolResultError(fmt.Sprintf("thot unreachable or failed: %v", err)), nil
-		}
-
-		if _, err := core.AppendReplyMessage(ctx, "thot", answer,
-			agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_DISCUSSION, "", questionSeq); err != nil {
-			// The agent still gets its answer — losing the reply's transcript
-			// row is worth logging loudly but not worth failing the call the
-			// agent is mid-decision on.
-			slog.Error("mcp ask_thot: record answer", "error", err)
-		}
-		return mcp.NewToolResultText(answer), nil
-	}
-}
-
 func sendMessageHandler(core *coreclient.Client) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		from := req.GetString("from", "")

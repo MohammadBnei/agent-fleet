@@ -465,23 +465,7 @@ service DashboardService {
   // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
   rpc QueryLogs(QueryLogsRequest) returns (QueryLogsResponse);
 
-  // thot's activity feed + the human side of its permission prompts
-  // (docs/adr/0035). The dashboard is the *only* place a thot permission
-  // decision can be made — its Discord channel is notify-only and never
-  // an approval path.
-  rpc ListThotEvents(ListThotEventsRequest) returns (ListThotEventsResponse);
-  rpc RespondToThotPermission(RespondToThotPermissionRequest) returns (RespondToThotPermissionResponse);
 
-  // A human asking thot a question from the dashboard. ADR-0035 said thot
-  // is reachable by "workers, alerts, and humans" — the sidecar covered
-  // workers and the scheduler covered alerts, but humans could only ever
-  // *answer* thot's prompts, never initiate. This closes that.
-  //
-  // core proxies to ThotService.AskThot rather than the browser calling
-  // thot directly: the hub-and-spoke exception in ADR-0035 is for
-  // in-cluster callers that need real-time reachability, and a browser is
-  // neither. It also keeps thot's bearer token server-side.
-  rpc AskThot(DashboardServiceAskThotRequest) returns (DashboardServiceAskThotResponse);
 
   // Dashboard-editable schedules (docs/adr/0035) — same "edit it in the
   // UI, no redeploy" shape ListRepos/CreateRepo established.
@@ -538,46 +522,4 @@ message DeleteScheduledAuditResponse {
   string status = 1;
 }
 
-message ThotEvent {
-  int64 id = 1;
-  string kind = 2;
-  string actor = 3;
-  string payload = 4;
-  optional int64 reply_to = 5;
-  string created_at = 6;
-}
 
-message ListThotEventsRequest {
-  int64 since_id = 1;
-  int32 limit = 2;
-}
-
-message ListThotEventsResponse {
-  repeated ThotEvent events = 1;
-  int64 next_id = 2;
-  // Requests still awaiting a human decision — sent alongside the feed so
-  // a page refresh mid-prompt re-renders the pending card instead of
-  // losing it.
-  repeated ThotEvent pending = 3;
-}
-
-message RespondToThotPermissionRequest {
-  int64 request_id = 1;
-  bool allow = 2;
-  string message = 3; // reason, when denying
-}
-
-message RespondToThotPermissionResponse {
-  string status = 1;
-}
-
-// Named DashboardService-prefixed per buf's RPC_REQUEST_STANDARD_NAME rule,
-// since the plain AskThotRequest name is already taken by thot.proto. It
-// carries no asking_task_id — a human is not a task.
-message DashboardServiceAskThotRequest {
-  string question = 1;
-}
-
-message DashboardServiceAskThotResponse {
-  string answer = 1;
-}

@@ -3,7 +3,6 @@ import { TaskList, ACTIVE_STATUSES } from "./pages/TaskList";
 import { TaskDetail } from "./pages/TaskDetail";
 import { Worktrees } from "./pages/Worktrees";
 import { Files } from "./pages/Files";
-import { Thot } from "./pages/Thot";
 import { ManageScheduledAuditsModal } from "./components/ManageScheduledAuditsModal";
 import { NewTaskDialog } from "./components/NewTaskDialog";
 import { ManageReposModal } from "./components/ManageReposModal";
@@ -27,9 +26,9 @@ function readTaskIdFromUrl(): string | null {
 // Worktrees (reliability-findings.md #2's manual cleanup view) and Files
 // (docs/adr/0030's shared file space) are additional top-level views, same
 // no-router/URL-param pattern as the task list/detail split above.
-function readViewFromUrl(): "tasks" | "worktrees" | "files" | "thot" {
+function readViewFromUrl(): "tasks" | "worktrees" | "files" {
   const v = new URLSearchParams(window.location.search).get("view");
-  return v === "worktrees" || v === "files" || v === "thot" ? v : "tasks";
+  return v === "worktrees" || v === "files" ? v : "tasks";
 }
 
 // Plain polling, not a stream — a second live feed just for the list is
@@ -48,7 +47,7 @@ export default function App() {
   // actual viewport instead of hiding one with CSS stops that duplicate
   // background streaming outright.
   const isDesktop = useMediaQuery("(min-width: 640px)");
-  const [view, setView] = useState<"tasks" | "worktrees" | "files" | "thot">(readViewFromUrl);
+  const [view, setView] = useState<"tasks" | "worktrees" | "files">(readViewFromUrl);
   const [selectedId, setSelectedId] = useState<string | null>(
     readTaskIdFromUrl,
   );
@@ -149,7 +148,7 @@ export default function App() {
       .catch((err: Error) => setTasksError(err.message));
   }
 
-  function selectView(next: "tasks" | "worktrees" | "files" | "thot") {
+  function selectView(next: "tasks" | "worktrees" | "files") {
     setView(next);
     const url = new URL(window.location.href);
     if (next !== "tasks") url.searchParams.set("view", next);
@@ -246,13 +245,6 @@ export default function App() {
           >
             Files
           </button>
-          <button
-            type="button"
-            onClick={() => selectView("thot")}
-            className={`px-2.5 py-1 rounded-md ${view === "thot" ? "bg-base-content/10 text-base-content" : "text-base-content/50 hover:text-base-content"}`}
-          >
-            thot
-          </button>
         </div>
 
         {view === "tasks" && (
@@ -285,8 +277,6 @@ export default function App() {
           <Worktrees />
         ) : view === "files" ? (
           <Files />
-        ) : view === "thot" ? (
-          <Thot />
         ) : (
           <>
             <div className="border-b lg:border-b-0 lg:border-r border-base-content/10 bg-base-200 overflow-y-auto min-h-0">
@@ -322,8 +312,6 @@ export default function App() {
           <Worktrees onBack={() => selectView("tasks")} />
         ) : view === "files" ? (
           <Files onBack={() => selectView("tasks")} />
-        ) : view === "thot" ? (
-          <Thot />
         ) : selectedId ? (
           <MobileTaskDetail taskId={selectedId} onBack={clearSelection} onDelete={() => deleteTask(selectedId)} />
         ) : (

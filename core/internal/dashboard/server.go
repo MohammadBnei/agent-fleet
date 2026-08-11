@@ -30,8 +30,6 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/repos"
 	"github.com/MohammadBnei/agent-fleet/core/internal/scheduledaudits"
 	"github.com/MohammadBnei/agent-fleet/core/internal/tasks"
-	"github.com/MohammadBnei/agent-fleet/core/internal/thotclient"
-	"github.com/MohammadBnei/agent-fleet/core/internal/thotevents"
 	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
 )
 
@@ -47,15 +45,11 @@ type Server struct {
 	hub         *Hub
 	maxInFlight int
 	loki        lokiclient.Querier
-	thotEvents  *thotevents.Store
 	audits      *scheduledaudits.Store
-	// nil when THOT_GRPC_ADDR is unset — AskThot then returns Unavailable
-	// rather than the fleet failing to start without thot deployed.
-	thot *thotclient.Client
 }
 
-func NewServer(taskStore *tasks.Store, transcr transcript.Store, journalStore *journal.Store, repoStore *repos.Store, profileStore *repoprofiles.Store, snippetStore *promptsnippets.Store, e2e *provisionerclient.Client, files filestore.Store, hub *Hub, maxInFlight int, loki lokiclient.Querier, thotEventStore *thotevents.Store, auditStore *scheduledaudits.Store, thot *thotclient.Client) *Server {
-	return &Server{tasks: taskStore, transcr: transcr, journal: journalStore, repos: repoStore, profiles: profileStore, snippets: snippetStore, e2e: e2e, files: files, hub: hub, maxInFlight: maxInFlight, loki: loki, thotEvents: thotEventStore, audits: auditStore, thot: thot}
+func NewServer(taskStore *tasks.Store, transcr transcript.Store, journalStore *journal.Store, repoStore *repos.Store, profileStore *repoprofiles.Store, snippetStore *promptsnippets.Store, e2e *provisionerclient.Client, files filestore.Store, hub *Hub, maxInFlight int, loki lokiclient.Querier, auditStore *scheduledaudits.Store) *Server {
+	return &Server{tasks: taskStore, transcr: transcr, journal: journalStore, repos: repoStore, profiles: profileStore, snippets: snippetStore, e2e: e2e, files: files, hub: hub, maxInFlight: maxInFlight, loki: loki, audits: auditStore}
 }
 
 // resolveWorkerIngredients looks up repo's "worker"-named profile

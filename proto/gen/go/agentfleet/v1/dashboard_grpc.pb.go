@@ -19,48 +19,45 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	DashboardService_ListTasks_FullMethodName               = "/agentfleet.v1.DashboardService/ListTasks"
-	DashboardService_GetTask_FullMethodName                 = "/agentfleet.v1.DashboardService/GetTask"
-	DashboardService_CreateTask_FullMethodName              = "/agentfleet.v1.DashboardService/CreateTask"
-	DashboardService_GetTranscript_FullMethodName           = "/agentfleet.v1.DashboardService/GetTranscript"
-	DashboardService_StreamTranscript_FullMethodName        = "/agentfleet.v1.DashboardService/StreamTranscript"
-	DashboardService_GetE2EStatus_FullMethodName            = "/agentfleet.v1.DashboardService/GetE2eStatus"
-	DashboardService_Kill_FullMethodName                    = "/agentfleet.v1.DashboardService/Kill"
-	DashboardService_Interrupt_FullMethodName               = "/agentfleet.v1.DashboardService/Interrupt"
-	DashboardService_SetPermissionMode_FullMethodName       = "/agentfleet.v1.DashboardService/SetPermissionMode"
-	DashboardService_Warm_FullMethodName                    = "/agentfleet.v1.DashboardService/Warm"
-	DashboardService_KillE2E_FullMethodName                 = "/agentfleet.v1.DashboardService/KillE2e"
-	DashboardService_AnswerQuestion_FullMethodName          = "/agentfleet.v1.DashboardService/AnswerQuestion"
-	DashboardService_RespondToPermission_FullMethodName     = "/agentfleet.v1.DashboardService/RespondToPermission"
-	DashboardService_Discuss_FullMethodName                 = "/agentfleet.v1.DashboardService/Discuss"
-	DashboardService_DeleteTask_FullMethodName              = "/agentfleet.v1.DashboardService/DeleteTask"
-	DashboardService_ListWorktrees_FullMethodName           = "/agentfleet.v1.DashboardService/ListWorktrees"
-	DashboardService_DeleteWorktree_FullMethodName          = "/agentfleet.v1.DashboardService/DeleteWorktree"
-	DashboardService_GetJournal_FullMethodName              = "/agentfleet.v1.DashboardService/GetJournal"
-	DashboardService_ListRepos_FullMethodName               = "/agentfleet.v1.DashboardService/ListRepos"
-	DashboardService_CreateRepo_FullMethodName              = "/agentfleet.v1.DashboardService/CreateRepo"
-	DashboardService_UpdateRepo_FullMethodName              = "/agentfleet.v1.DashboardService/UpdateRepo"
-	DashboardService_DeleteRepo_FullMethodName              = "/agentfleet.v1.DashboardService/DeleteRepo"
-	DashboardService_ListRepoProfiles_FullMethodName        = "/agentfleet.v1.DashboardService/ListRepoProfiles"
-	DashboardService_CreateRepoProfile_FullMethodName       = "/agentfleet.v1.DashboardService/CreateRepoProfile"
-	DashboardService_UpdateRepoProfile_FullMethodName       = "/agentfleet.v1.DashboardService/UpdateRepoProfile"
-	DashboardService_DeleteRepoProfile_FullMethodName       = "/agentfleet.v1.DashboardService/DeleteRepoProfile"
-	DashboardService_ListPromptSnippets_FullMethodName      = "/agentfleet.v1.DashboardService/ListPromptSnippets"
-	DashboardService_CreatePromptSnippet_FullMethodName     = "/agentfleet.v1.DashboardService/CreatePromptSnippet"
-	DashboardService_UpdatePromptSnippet_FullMethodName     = "/agentfleet.v1.DashboardService/UpdatePromptSnippet"
-	DashboardService_DeletePromptSnippet_FullMethodName     = "/agentfleet.v1.DashboardService/DeletePromptSnippet"
-	DashboardService_ListFiles_FullMethodName               = "/agentfleet.v1.DashboardService/ListFiles"
-	DashboardService_GetFileUploadUrl_FullMethodName        = "/agentfleet.v1.DashboardService/GetFileUploadUrl"
-	DashboardService_GetFileDownloadUrl_FullMethodName      = "/agentfleet.v1.DashboardService/GetFileDownloadUrl"
-	DashboardService_DeleteFile_FullMethodName              = "/agentfleet.v1.DashboardService/DeleteFile"
-	DashboardService_QueryLogs_FullMethodName               = "/agentfleet.v1.DashboardService/QueryLogs"
-	DashboardService_ListThotEvents_FullMethodName          = "/agentfleet.v1.DashboardService/ListThotEvents"
-	DashboardService_RespondToThotPermission_FullMethodName = "/agentfleet.v1.DashboardService/RespondToThotPermission"
-	DashboardService_AskThot_FullMethodName                 = "/agentfleet.v1.DashboardService/AskThot"
-	DashboardService_ListScheduledAudits_FullMethodName     = "/agentfleet.v1.DashboardService/ListScheduledAudits"
-	DashboardService_CreateScheduledAudit_FullMethodName    = "/agentfleet.v1.DashboardService/CreateScheduledAudit"
-	DashboardService_UpdateScheduledAudit_FullMethodName    = "/agentfleet.v1.DashboardService/UpdateScheduledAudit"
-	DashboardService_DeleteScheduledAudit_FullMethodName    = "/agentfleet.v1.DashboardService/DeleteScheduledAudit"
+	DashboardService_ListTasks_FullMethodName            = "/agentfleet.v1.DashboardService/ListTasks"
+	DashboardService_GetTask_FullMethodName              = "/agentfleet.v1.DashboardService/GetTask"
+	DashboardService_CreateTask_FullMethodName           = "/agentfleet.v1.DashboardService/CreateTask"
+	DashboardService_GetTranscript_FullMethodName        = "/agentfleet.v1.DashboardService/GetTranscript"
+	DashboardService_StreamTranscript_FullMethodName     = "/agentfleet.v1.DashboardService/StreamTranscript"
+	DashboardService_GetE2EStatus_FullMethodName         = "/agentfleet.v1.DashboardService/GetE2eStatus"
+	DashboardService_Kill_FullMethodName                 = "/agentfleet.v1.DashboardService/Kill"
+	DashboardService_Interrupt_FullMethodName            = "/agentfleet.v1.DashboardService/Interrupt"
+	DashboardService_SetPermissionMode_FullMethodName    = "/agentfleet.v1.DashboardService/SetPermissionMode"
+	DashboardService_Warm_FullMethodName                 = "/agentfleet.v1.DashboardService/Warm"
+	DashboardService_KillE2E_FullMethodName              = "/agentfleet.v1.DashboardService/KillE2e"
+	DashboardService_AnswerQuestion_FullMethodName       = "/agentfleet.v1.DashboardService/AnswerQuestion"
+	DashboardService_RespondToPermission_FullMethodName  = "/agentfleet.v1.DashboardService/RespondToPermission"
+	DashboardService_Discuss_FullMethodName              = "/agentfleet.v1.DashboardService/Discuss"
+	DashboardService_DeleteTask_FullMethodName           = "/agentfleet.v1.DashboardService/DeleteTask"
+	DashboardService_ListWorktrees_FullMethodName        = "/agentfleet.v1.DashboardService/ListWorktrees"
+	DashboardService_DeleteWorktree_FullMethodName       = "/agentfleet.v1.DashboardService/DeleteWorktree"
+	DashboardService_GetJournal_FullMethodName           = "/agentfleet.v1.DashboardService/GetJournal"
+	DashboardService_ListRepos_FullMethodName            = "/agentfleet.v1.DashboardService/ListRepos"
+	DashboardService_CreateRepo_FullMethodName           = "/agentfleet.v1.DashboardService/CreateRepo"
+	DashboardService_UpdateRepo_FullMethodName           = "/agentfleet.v1.DashboardService/UpdateRepo"
+	DashboardService_DeleteRepo_FullMethodName           = "/agentfleet.v1.DashboardService/DeleteRepo"
+	DashboardService_ListRepoProfiles_FullMethodName     = "/agentfleet.v1.DashboardService/ListRepoProfiles"
+	DashboardService_CreateRepoProfile_FullMethodName    = "/agentfleet.v1.DashboardService/CreateRepoProfile"
+	DashboardService_UpdateRepoProfile_FullMethodName    = "/agentfleet.v1.DashboardService/UpdateRepoProfile"
+	DashboardService_DeleteRepoProfile_FullMethodName    = "/agentfleet.v1.DashboardService/DeleteRepoProfile"
+	DashboardService_ListPromptSnippets_FullMethodName   = "/agentfleet.v1.DashboardService/ListPromptSnippets"
+	DashboardService_CreatePromptSnippet_FullMethodName  = "/agentfleet.v1.DashboardService/CreatePromptSnippet"
+	DashboardService_UpdatePromptSnippet_FullMethodName  = "/agentfleet.v1.DashboardService/UpdatePromptSnippet"
+	DashboardService_DeletePromptSnippet_FullMethodName  = "/agentfleet.v1.DashboardService/DeletePromptSnippet"
+	DashboardService_ListFiles_FullMethodName            = "/agentfleet.v1.DashboardService/ListFiles"
+	DashboardService_GetFileUploadUrl_FullMethodName     = "/agentfleet.v1.DashboardService/GetFileUploadUrl"
+	DashboardService_GetFileDownloadUrl_FullMethodName   = "/agentfleet.v1.DashboardService/GetFileDownloadUrl"
+	DashboardService_DeleteFile_FullMethodName           = "/agentfleet.v1.DashboardService/DeleteFile"
+	DashboardService_QueryLogs_FullMethodName            = "/agentfleet.v1.DashboardService/QueryLogs"
+	DashboardService_ListScheduledAudits_FullMethodName  = "/agentfleet.v1.DashboardService/ListScheduledAudits"
+	DashboardService_CreateScheduledAudit_FullMethodName = "/agentfleet.v1.DashboardService/CreateScheduledAudit"
+	DashboardService_UpdateScheduledAudit_FullMethodName = "/agentfleet.v1.DashboardService/UpdateScheduledAudit"
+	DashboardService_DeleteScheduledAudit_FullMethodName = "/agentfleet.v1.DashboardService/DeleteScheduledAudit"
 )
 
 // DashboardServiceClient is the client API for DashboardService service.
@@ -128,22 +125,6 @@ type DashboardServiceClient interface {
 	// Reuses core.proto's QueryLogsRequest/QueryLogsResponse
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	QueryLogs(ctx context.Context, in *QueryLogsRequest, opts ...grpc.CallOption) (*QueryLogsResponse, error)
-	// thot's activity feed + the human side of its permission prompts
-	// (docs/adr/0035). The dashboard is the *only* place a thot permission
-	// decision can be made — its Discord channel is notify-only and never
-	// an approval path.
-	ListThotEvents(ctx context.Context, in *ListThotEventsRequest, opts ...grpc.CallOption) (*ListThotEventsResponse, error)
-	RespondToThotPermission(ctx context.Context, in *RespondToThotPermissionRequest, opts ...grpc.CallOption) (*RespondToThotPermissionResponse, error)
-	// A human asking thot a question from the dashboard. ADR-0035 said thot
-	// is reachable by "workers, alerts, and humans" — the sidecar covered
-	// workers and the scheduler covered alerts, but humans could only ever
-	// *answer* thot's prompts, never initiate. This closes that.
-	//
-	// core proxies to ThotService.AskThot rather than the browser calling
-	// thot directly: the hub-and-spoke exception in ADR-0035 is for
-	// in-cluster callers that need real-time reachability, and a browser is
-	// neither. It also keeps thot's bearer token server-side.
-	AskThot(ctx context.Context, in *DashboardServiceAskThotRequest, opts ...grpc.CallOption) (*DashboardServiceAskThotResponse, error)
 	// Dashboard-editable schedules (docs/adr/0035) — same "edit it in the
 	// UI, no redeploy" shape ListRepos/CreateRepo established.
 	ListScheduledAudits(ctx context.Context, in *ListScheduledAuditsRequest, opts ...grpc.CallOption) (*ListScheduledAuditsResponse, error)
@@ -519,36 +500,6 @@ func (c *dashboardServiceClient) QueryLogs(ctx context.Context, in *QueryLogsReq
 	return out, nil
 }
 
-func (c *dashboardServiceClient) ListThotEvents(ctx context.Context, in *ListThotEventsRequest, opts ...grpc.CallOption) (*ListThotEventsResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(ListThotEventsResponse)
-	err := c.cc.Invoke(ctx, DashboardService_ListThotEvents_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *dashboardServiceClient) RespondToThotPermission(ctx context.Context, in *RespondToThotPermissionRequest, opts ...grpc.CallOption) (*RespondToThotPermissionResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(RespondToThotPermissionResponse)
-	err := c.cc.Invoke(ctx, DashboardService_RespondToThotPermission_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *dashboardServiceClient) AskThot(ctx context.Context, in *DashboardServiceAskThotRequest, opts ...grpc.CallOption) (*DashboardServiceAskThotResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(DashboardServiceAskThotResponse)
-	err := c.cc.Invoke(ctx, DashboardService_AskThot_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 func (c *dashboardServiceClient) ListScheduledAudits(ctx context.Context, in *ListScheduledAuditsRequest, opts ...grpc.CallOption) (*ListScheduledAuditsResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListScheduledAuditsResponse)
@@ -654,22 +605,6 @@ type DashboardServiceServer interface {
 	// Reuses core.proto's QueryLogsRequest/QueryLogsResponse
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	QueryLogs(context.Context, *QueryLogsRequest) (*QueryLogsResponse, error)
-	// thot's activity feed + the human side of its permission prompts
-	// (docs/adr/0035). The dashboard is the *only* place a thot permission
-	// decision can be made — its Discord channel is notify-only and never
-	// an approval path.
-	ListThotEvents(context.Context, *ListThotEventsRequest) (*ListThotEventsResponse, error)
-	RespondToThotPermission(context.Context, *RespondToThotPermissionRequest) (*RespondToThotPermissionResponse, error)
-	// A human asking thot a question from the dashboard. ADR-0035 said thot
-	// is reachable by "workers, alerts, and humans" — the sidecar covered
-	// workers and the scheduler covered alerts, but humans could only ever
-	// *answer* thot's prompts, never initiate. This closes that.
-	//
-	// core proxies to ThotService.AskThot rather than the browser calling
-	// thot directly: the hub-and-spoke exception in ADR-0035 is for
-	// in-cluster callers that need real-time reachability, and a browser is
-	// neither. It also keeps thot's bearer token server-side.
-	AskThot(context.Context, *DashboardServiceAskThotRequest) (*DashboardServiceAskThotResponse, error)
 	// Dashboard-editable schedules (docs/adr/0035) — same "edit it in the
 	// UI, no redeploy" shape ListRepos/CreateRepo established.
 	ListScheduledAudits(context.Context, *ListScheduledAuditsRequest) (*ListScheduledAuditsResponse, error)
@@ -790,15 +725,6 @@ func (UnimplementedDashboardServiceServer) DeleteFile(context.Context, *DeleteFi
 }
 func (UnimplementedDashboardServiceServer) QueryLogs(context.Context, *QueryLogsRequest) (*QueryLogsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method QueryLogs not implemented")
-}
-func (UnimplementedDashboardServiceServer) ListThotEvents(context.Context, *ListThotEventsRequest) (*ListThotEventsResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method ListThotEvents not implemented")
-}
-func (UnimplementedDashboardServiceServer) RespondToThotPermission(context.Context, *RespondToThotPermissionRequest) (*RespondToThotPermissionResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method RespondToThotPermission not implemented")
-}
-func (UnimplementedDashboardServiceServer) AskThot(context.Context, *DashboardServiceAskThotRequest) (*DashboardServiceAskThotResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method AskThot not implemented")
 }
 func (UnimplementedDashboardServiceServer) ListScheduledAudits(context.Context, *ListScheduledAuditsRequest) (*ListScheduledAuditsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListScheduledAudits not implemented")
@@ -1456,60 +1382,6 @@ func _DashboardService_QueryLogs_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
-func _DashboardService_ListThotEvents_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ListThotEventsRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(DashboardServiceServer).ListThotEvents(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: DashboardService_ListThotEvents_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(DashboardServiceServer).ListThotEvents(ctx, req.(*ListThotEventsRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _DashboardService_RespondToThotPermission_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(RespondToThotPermissionRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(DashboardServiceServer).RespondToThotPermission(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: DashboardService_RespondToThotPermission_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(DashboardServiceServer).RespondToThotPermission(ctx, req.(*RespondToThotPermissionRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _DashboardService_AskThot_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(DashboardServiceAskThotRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(DashboardServiceServer).AskThot(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: DashboardService_AskThot_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(DashboardServiceServer).AskThot(ctx, req.(*DashboardServiceAskThotRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 func _DashboardService_ListScheduledAudits_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ListScheduledAuditsRequest)
 	if err := dec(in); err != nil {
@@ -1724,18 +1596,6 @@ var DashboardService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "QueryLogs",
 			Handler:    _DashboardService_QueryLogs_Handler,
-		},
-		{
-			MethodName: "ListThotEvents",
-			Handler:    _DashboardService_ListThotEvents_Handler,
-		},
-		{
-			MethodName: "RespondToThotPermission",
-			Handler:    _DashboardService_RespondToThotPermission_Handler,
-		},
-		{
-			MethodName: "AskThot",
-			Handler:    _DashboardService_AskThot_Handler,
 		},
 		{
 			MethodName: "ListScheduledAudits",
