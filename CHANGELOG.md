@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.38.1](https://github.com/MohammadBnei/agent-fleet/compare/1.38.0...1.38.1) (2026-08-11)
+
+
+### Bug Fixes
+
+* **ci:** build the executor image on release tags ([#112](https://github.com/MohammadBnei/agent-fleet/issues/112)) ([48cb9d9](https://github.com/MohammadBnei/agent-fleet/commit/48cb9d922f8d67d9cf96aed9a45ed3dc0129ba97))
+
 # [1.38.0](https://github.com/MohammadBnei/agent-fleet/compare/1.37.0...1.38.0) (2026-08-11)
 
 
