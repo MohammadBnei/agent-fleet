@@ -1,5 +1,12 @@
 # Changelog
 
+# [1.44.0](https://github.com/MohammadBnei/agent-fleet/compare/1.43.3...1.44.0) (2026-08-12)
+
+
+### Features
+
+* **worker:** relay the SDK message kinds that were dropped silently ([#127](https://github.com/MohammadBnei/agent-fleet/issues/127)) ([63922e4](https://github.com/MohammadBnei/agent-fleet/commit/63922e4bd6d038d716ebd7c843dfa669f541acbf))
+
 ## [1.43.3](https://github.com/MohammadBnei/agent-fleet/compare/1.43.2...1.43.3) (2026-08-12)
 
 
