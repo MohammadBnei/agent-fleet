@@ -25,7 +25,9 @@ code-server --bind-addr "0.0.0.0:${E2E_CODE_SERVER_PORT}" --auth none "${E2E_WOR
 # ponytail: --port switches @playwright/mcp from stdio to HTTP transport —
 # verify this exact flag against the installed version (see docs/adr/0012
 # risks; not verifiable from this repo alone before a real image build).
-bunx @playwright/mcp --port "${E2E_PLAYWRIGHT_PORT}" --headless &
+# --host 0.0.0.0 fixes ADR-0039's noted bug: default ::1:8931 (IPv6 localhost)
+# made Service port routing fail, leaving Playwright tools unreachable.
+bunx @playwright/mcp --host 0.0.0.0 --port "${E2E_PLAYWRIGHT_PORT}" --headless &
 
 execmcp --port "${E2E_EXEC_PORT}" &
 

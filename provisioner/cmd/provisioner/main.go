@@ -71,6 +71,15 @@ func main() {
 		slog.Error("k8s client init failed", "error", err)
 		os.Exit(1)
 	}
+
+	// Create shared cluster-ip-whitelist middleware once at startup so
+	// worker pods can access preview URLs without basic auth prompt.
+	// Fatal on first run (missing RBAC/bad API version), idempotent after.
+	if err := k8sc.CreateClusterIPWhitelistMiddleware(ctx); err != nil {
+		slog.Error("cluster IP whitelist middleware creation failed", "error", err)
+		os.Exit(1)
+	}
+
 	proxy := mcpproxy.New(
 		func(taskID string) string { return k8s.PlaywrightURLFor(cfg.Namespace, taskID) },
 		func(taskID string) string { return k8s.ExecURLFor(cfg.Namespace, taskID) },

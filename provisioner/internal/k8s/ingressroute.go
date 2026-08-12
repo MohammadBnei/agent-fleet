@@ -15,8 +15,24 @@ var basicAuthMiddleware = map[string]any{"name": "basic-admin-auth", "namespace"
 func (c *Client) CreateIngressRoute(ctx context.Context, host, taskID string) error {
 	name := ResourceName(taskID)
 	spName := stripPrefixName(taskID)
-	middlewares := []any{
+
+	// clusterIPWhitelistMiddleware allows in-cluster traffic (worker pods) to
+	// bypass basic auth. Middleware order matters: Traefik applies them left-to-right,
+	// so IPWhiteList comes first — if source IP matches, request proceeds without
+	// hitting basic auth.
+	clusterIPWhitelistMiddleware := map[string]any{"name": "cluster-ip-whitelist", "namespace": c.Namespace}
+
+	// Code-server route: stripPrefix first, then cluster IP whitelist, then basic auth.
+	// IP whitelist short-circuits auth for in-cluster requests (worker pods).
+	codeMiddlewares := []any{
 		map[string]any{"name": spName, "namespace": c.Namespace},
+		clusterIPWhitelistMiddleware,
+		basicAuthMiddleware,
+	}
+
+	// App route: cluster IP whitelist first, then basic auth (no stripPrefix).
+	appMiddlewares := []any{
+		clusterIPWhitelistMiddleware,
 		basicAuthMiddleware,
 	}
 
@@ -56,7 +72,7 @@ func (c *Client) CreateIngressRoute(ctx context.Context, host, taskID string) er
 					"services": []any{
 						map[string]any{"name": name, "namespace": c.Namespace, "port": int64(CodeServerPort)},
 					},
-					"middlewares": middlewares,
+					"middlewares": codeMiddlewares,
 				},
 				// The app at the root of its own hostname, with NO stripPrefix
 				// — that is the whole point of docs/adr/0038.
@@ -67,7 +83,7 @@ func (c *Client) CreateIngressRoute(ctx context.Context, host, taskID string) er
 					"services": []any{
 						map[string]any{"name": name, "namespace": c.Namespace, "port": int64(AppPort)},
 					},
-					"middlewares": []any{basicAuthMiddleware},
+					"middlewares": appMiddlewares,
 				},
 			},
 		},
