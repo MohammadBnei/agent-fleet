@@ -68,12 +68,12 @@ func New(core *coreclient.Client) http.Handler {
 	), askUserQuestionHandler(core))
 
 	s.AddTool(mcp.NewTool("request_e2e_env",
-		mcp.WithDescription("Request an on-demand e2e test environment for this task: a live pod running the app on this branch, code-server for human review, and a Playwright MCP server. Safe to call again if one is already running — returns the existing session's URL. The response echoes back the recipe that was actually used (resolvedStartCmd, profileName, tools, services), which comes from the repo's dashboard-editable e2e profile. If the preview does not serve, read resolvedStartCmd and report what is wrong with it — do not silently substitute your own command."),
+		mcp.WithDescription("Request an on-demand e2e test environment for this task: a live pod running the app on this branch, code-server for human review, and a Playwright MCP server. Safe to call again if one is already running — returns the existing session's URL. The response echoes back the recipe that was actually used (resolvedStartCmd, profileName, tools, services), which comes from the repo's dashboard-editable e2e profile. If the preview does not serve, read resolvedStartCmd and report what is wrong with it — do not silently substitute your own command. IMPORTANT: Cold dependency install may take 10+ minutes. The preview URL won't serve until the app starts. You can check progress with `run_command 'ps aux'` or similar commands."),
 		mcp.WithString("startCmd", mcp.Description("Optional override for the profile's start command, applied to THIS TASK ONLY and never saved back to the profile. Requires a human to approve it before anything is created — if they decline or don't answer, the profile's own command is used instead. Omit it unless you have concrete evidence the profile is wrong for this worktree; the profile is the default for good reason. Whatever runs must bind 0.0.0.0 on $PORT — a dev server left on its own default port, or bound to localhost, is unreachable from outside the pod and the preview never serves.")),
 	), requestE2eEnvHandler(core, s))
 
 	s.AddTool(mcp.NewTool("kill_env",
-		mcp.WithDescription("Tear down this task's e2e environment now, without waiting for the task to finish."),
+		mcp.WithDescription("Permanently destroy this task's e2e environment. WARNING: Do NOT use to 'refresh' the app after editing files - the shared worktree hot-reloads automatically, just reload the preview URL in your browser. Only use kill_env when completely done with testing. Recreating the environment wastes 10+ minutes on cold dependency install."),
 	), killEnvHandler(core))
 
 	// Registered statically, unlike the Playwright tools below it: this is
@@ -85,7 +85,7 @@ func New(core *coreclient.Client) http.Handler {
 	s.AddTool(mcp.NewTool("run_command",
 		mcp.WithDescription("Run a shell command in this task's sandbox — a separate pod that already has the repo's toolchain, its services (Postgres/Redis), a warm dependency cache, and the app's dev server, sharing this task's worktree. Prefer this over Bash for anything that builds, tests, lints, installs dependencies, or runs the app. Starts the sandbox on first use if it isn't running yet, so no separate setup call is needed. Returns stdout, stderr and exit code — a nonzero exit is not an error, it's information. The sandbox has NO git and no GitHub credentials on purpose: run git, gh and anything that opens the PR through Bash instead. A long-running process (e.g. a dev server) should background itself (trailing &) rather than block this call; timeout is 15 minutes."),
 		mcp.WithString("command", mcp.Required(), mcp.Description("Shell command, run via bash -lc from the worktree root")),
-	), runCommandHandler(core))
+	), runCommandHandler(core, s))
 
 	s.AddTool(mcp.NewTool("list_shared_files",
 		mcp.WithDescription("List files in the fleet-wide shared file space (a single flat Garage S3 bucket, shared by every task and by the human via the dashboard). Returns each file's key, size, last-modified time, and content type."),
@@ -376,7 +376,7 @@ type e2eRunner interface {
 // every single command, to fix a state that only exists once per session.
 // Doing it on failure also self-heals after kill_env, which a
 // provisioned-once flag would not.
-func runCommandHandler(core e2eRunner) server.ToolHandlerFunc {
+func runCommandHandler(core e2eRunner, s *server.MCPServer) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		command := req.GetString("command", "")
 		if command == "" {
@@ -401,6 +401,13 @@ func runCommandHandler(core e2eRunner) server.ToolHandlerFunc {
 			slog.Error("mcp run_command: provisioning failed", "error", provErr)
 			return mcp.NewToolResultError(fmt.Sprintf("run_command: no sandbox running and one could not be started: %v", provErr)), nil
 		}
+
+		// Ensure Playwright tools registered for resumed sessions where
+		// notifications/tools/list_changed doesn't re-fire (ADR-0039).
+		if coreClient, ok := core.(*coreclient.Client); ok {
+			ensureE2eToolsRegistered(ctx, s, coreClient)
+		}
+
 		resultJSON, isError, err = core.CallE2eTool(ctx, runCommandToolName, string(argsJSON))
 		if err != nil {
 			slog.Error("mcp run_command: still unreachable after provisioning", "error", err)
@@ -456,6 +463,24 @@ func addProxiedTool(s *server.MCPServer, core *coreclient.Client, desc *agentfle
 		}
 		return e2eToolResult(resultJSON, isError, "")
 	})
+}
+
+// ensureE2eToolsRegistered checks if Playwright tools are registered and
+// registers them if missing — fixes resumed sessions where
+// notifications/tools/list_changed doesn't re-fire (docs/adr/0039 lines 36-40).
+func ensureE2eToolsRegistered(ctx context.Context, s *server.MCPServer, core *coreclient.Client) {
+	tools, err := core.ListE2eTools(ctx)
+	if err != nil {
+		slog.Warn("ensureE2eToolsRegistered failed", "error", err)
+		return
+	}
+	for _, t := range tools {
+		if t.GetName() == runCommandToolName {
+			continue // run_command already statically registered
+		}
+		addProxiedTool(s, core, t)
+	}
+	s.SendNotificationToAllClients("notifications/tools/list_changed", nil)
 }
 
 func killEnvHandler(core *coreclient.Client) server.ToolHandlerFunc {

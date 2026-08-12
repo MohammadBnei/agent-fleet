@@ -185,7 +185,7 @@ func TestRunCommandHandler(t *testing.T) {
 			req.Params.Name = "run_command"
 			req.Params.Arguments = tt.params
 
-			result, err := runCommandHandler(tt.mock)(context.Background(), req)
+			result, err := runCommandHandler(tt.mock, nil)(context.Background(), req)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}

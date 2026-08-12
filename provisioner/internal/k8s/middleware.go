@@ -56,6 +56,39 @@ func (c *Client) DeleteMiddleware(ctx context.Context, taskID string) error {
 	return nil
 }
 
+// CreateClusterIPWhitelistMiddleware creates a shared IPWhiteList middleware
+// that allows in-cluster traffic to bypass basic auth (worker pods accessing
+// preview URLs without password prompt). Created once at provisioner startup,
+// not per-task.
+func (c *Client) CreateClusterIPWhitelistMiddleware(ctx context.Context) error {
+	name := "cluster-ip-whitelist"
+	obj := &unstructured.Unstructured{Object: map[string]any{
+		"apiVersion": "traefik.io/v1alpha1",
+		"kind":       "Middleware",
+		"metadata": map[string]any{
+			"name":      name,
+			"namespace": c.Namespace,
+		},
+		// ponytail: Typical k8s/Docker private ranges; adjust to actual cluster CIDR.
+		"spec": map[string]any{
+			"ipWhiteList": map[string]any{
+				"sourceRange": []any{
+					"10.0.0.0/8",      // Typical Pod CIDR
+					"172.16.0.0/12",   // Docker bridge networks
+					"192.168.0.0/16",  // Private network range
+				},
+			},
+		},
+	}}
+	_, err := c.Dynamic.Resource(middlewareGVR).Namespace(c.Namespace).Create(ctx, obj, createOpts())
+	if err = ignoreAlreadyExists(err); err != nil {
+		slog.Error("k8s CreateClusterIPWhitelistMiddleware", "error", err)
+		return err
+	}
+	slog.Info("k8s CreateClusterIPWhitelistMiddleware", "name", name)
+	return nil
+}
+
 func toInterfaceMap(m map[string]string) map[string]any {
 	out := make(map[string]any, len(m))
 	for k, v := range m {
