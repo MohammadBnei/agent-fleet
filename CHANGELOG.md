@@ -1,5 +1,12 @@
 # Changelog
 
+# [1.48.0](https://github.com/MohammadBnei/agent-fleet/compare/1.47.0...1.48.0) (2026-08-12)
+
+
+### Features
+
+* send transcript timestamps, and collapse the redundant badges ([#132](https://github.com/MohammadBnei/agent-fleet/issues/132)) ([681a69a](https://github.com/MohammadBnei/agent-fleet/commit/681a69a6edf05386b6943e42b2c3dbe40c050052))
+
 # [1.47.0](https://github.com/MohammadBnei/agent-fleet/compare/1.46.0...1.47.0) (2026-08-12)
 
 
