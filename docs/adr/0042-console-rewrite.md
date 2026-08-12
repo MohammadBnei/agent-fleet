@@ -140,7 +140,41 @@ The stored theme is applied by a pre-paint inline script in `index.html`: readin
 it in a hook runs after first render, which flashes dark at every light-theme user
 on every load.
 
-### 8. A page-load failure is inline, never a modal
+### 8. Installable as a PWA — and deliberately not an offline app
+
+Mobile is now first-class, and answering a blocking decision shouldn't begin with
+finding a browser tab, so the SPA ships a manifest, maskable icons and a service
+worker: `manifest.json`, `icon-192.png`/`icon-512.png`, `sw.js`, all in
+`dashboard/public/` and therefore copied verbatim into `dist/` and embedded in
+`core`'s binary.
+
+**The service worker caches no fleet state, on purpose.** This is a live
+console: a cached task list would have someone answering a decision that is
+already resolved. So it touches same-origin GETs only — every ConnectRPC call is
+a POST to `/agentfleet.v1.*` and bypasses it by construction, with an explicit
+path check as belt-and-braces — and:
+
+- **navigations are network-first**, cache only as the offline fallback. A
+  cache-first shell is the classic PWA footgun: after a redeploy the operator
+  keeps running last week's UI against this week's API. `skipWaiting` +
+  `clients.claim` for the same reason — a console is left open for hours.
+- content-hashed `/assets/*` are cache-first, since the URL changes with content.
+- `text/event-stream` requests are never intercepted.
+
+No `vite-plugin-pwa`/workbox dependency and no build-time precache list: caching
+on first use reaches the same place for a SPA whose assets vite already
+content-hashes, and the whole worker is ~60 lines that state their own policy.
+
+Two small traps worth recording:
+
+- **`manifest.json`, not `manifest.webmanifest`.** Go's mime table has no entry
+  for `.webmanifest`, so `http.FileServer` would content-sniff it and serve
+  `text/plain`. `.json` maps to `application/json`, asserted in a test.
+- **`theme-color` has to follow the theme**, or a light-theme install gets a black
+  status bar. `useTheme` updates the meta tag, and the pre-paint script in
+  `index.html` sets it before React runs.
+
+### 9. A page-load failure is inline, never a modal
 
 `Worktrees`/`Files`/`Audits` used the shared `ErrorModal` for load failures. Now
 that the mobile tab bar is the only way out of a view, an unreachable provisioner
@@ -202,7 +236,15 @@ of bug that once pushed a mobile column to 437px is invisible to `tsc` and to
 lint. Console errors and page exceptions fail the run.
 
 Two of those specs found real defects that review had missed: the load-error
-modal trapping navigation (§8 above), and `body` never taking the theme.
+modal trapping navigation (§9 above), and `body` never taking the theme.
+
+Five further specs cover the PWA against a **production build served by `core`
+itself** (its embedded `dist/`, so the worker actually registers and the RPCs
+actually work): the manifest's install criteria and its `application/json`
+content type, the worker reaching `activated`, **no `/agentfleet.v1.` entry in any
+cache** while the shell and hashed assets are cached, an offline reload rendering
+the app shell rather than the browser's interstitial, and `theme-color` tracking
+the theme across a reload.
 
 The four new worktree fields and the PVC meter can only be exercised against a
 real provisioner — see `docs/e2e-test-log.md` for the cluster run.

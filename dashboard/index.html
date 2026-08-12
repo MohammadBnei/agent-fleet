@@ -3,15 +3,32 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>herd · agent-fleet</title>
+
+    <!-- Installable as a home-screen app: the console is checked from a phone as
+         often as from a desk, and answering a blocking decision shouldn't start
+         with finding a browser tab. See dashboard/public/sw.js for why the
+         service worker deliberately caches no fleet state. -->
+    <link rel="manifest" href="/manifest.json" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="herd" />
+    <!-- Kept in sync with the active theme by useTheme.ts — the value here is the
+         dark default, matching the pre-paint script below. -->
+    <meta name="theme-color" content="#0f0e14" />
+
     <!-- Applied before first paint, not from React — reading the stored theme
          in a hook runs after the initial render, which flashes the dark
          default at every light-theme user on every load. -->
     <script>
       try {
         var t = JSON.parse(localStorage.getItem("herd.theme") || '"herd"');
-        if (t === "herd-light") document.documentElement.dataset.theme = t;
+        if (t === "herd-light") {
+          document.documentElement.dataset.theme = t;
+          var m = document.querySelector('meta[name="theme-color"]');
+          if (m) m.setAttribute("content", "#e9e5dd");
+        }
       } catch (e) {}
     </script>
   </head>
