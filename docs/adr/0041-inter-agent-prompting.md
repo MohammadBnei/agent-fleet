@@ -52,7 +52,7 @@ question it answers better.
 
 | Guard | Why |
 |---|---|
-| **Delivery is always a `discussion` entry from `agent`** | An `answer` or `permission_response` from this path would resolve a human's decision on their behalf, quietly voiding `0029`. Structurally impossible, not merely unused. |
+| **Delivery is always a `discussion` entry from `session`** | An `answer` or `permission_response` from this path would resolve a human's decision on their behalf, quietly voiding `0029`. Structurally impossible, not merely unused. |
 | **Refuse a `blocked` target** | It is waiting on a *human*. Pushing a turn into it invites the caller to believe it had answered. |
 | **Refuse self-prompt** | A session's own messages already reach it as its next input — this is a self-feeding loop, not a no-op. |
 | **Depth cap (3), set by the sidecar, never the agent** | A→B→C→A is a livelock with no human in it. A caller that could choose its own depth could choose 0 forever. |
@@ -87,6 +87,15 @@ A timeout returns `timedOut` with the state actually reached, not an error
 target with no live pod returns immediately: nothing is running to change
 its state, so waiting the full timeout is just a slow way to say the same
 thing.
+
+`after_seq` fixes a race the first live run walked straight into: waiting
+right after prompting an already-idle target returned instantly with the
+state it held *before* the prompt landed, because that state was already in
+the settled set. A settled state now only counts once the target has
+produced activity newer than the baseline — herdr avoids the same race by
+requiring an observed change off a pre-submission baseline. The sidecar
+remembers the seq of its last prompt per target and fills it in, so the
+agent gets this without bookkeeping.
 
 ### Identity, folded in
 
