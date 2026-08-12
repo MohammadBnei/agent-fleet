@@ -51,6 +51,7 @@ jobs:
       worker: ${{ steps.filter.outputs.worker }}
       e2e-runner: ${{ steps.filter.outputs.e2e-runner }}
       migration: ${{ steps.filter.outputs.migration }}
+      dashboard: ${{ steps.filter.outputs.dashboard }}
       go-components: ${{ steps.components.outputs.result }}
     steps:
       - uses: actions/checkout@v4
@@ -70,6 +71,13 @@ jobs:
               - 'proto/**'
             core:
               - 'core/**'
+              # The SPA is compiled into core's binary (core/Dockerfile's
+              # spa stage), so a dashboard-only change still has to rebuild
+              # core's image. Without this a dashboard change triggered no
+              # build at all and CI went green having compiled nothing.
+              - 'dashboard/**'
+            dashboard:
+              - 'dashboard/**'
             provisioner:
               - 'provisioner/**'
             sidecar:
@@ -96,6 +104,30 @@ jobs:
             if (proto || sidecar) components.push('sidecar');
             if (proto || executor) components.push('executor');
             return components;
+
+  # The dashboard ships inside core's image rather than one of its own, so
+  # it has no leg in the bun matrix below (that matrix builds and pushes an
+  # image per component). core's Dockerfile already runs `bun run build`;
+  # this is the missing `bun test`, which otherwise never ran anywhere.
+  dashboard-test:
+    needs: changes
+    if: always() && (github.event_name == 'push' || needs.changes.outputs.dashboard == 'true')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: Install dependencies
+        working-directory: dashboard
+        run: bun install --frozen-lockfile
+      - name: Run tests
+        working-directory: dashboard
+        run: bun test
+      # `tsc --noEmit` is NOT this build: `bun run build` is `tsc -b &&
+      # vite build`, and only `tsc -b` enforces noUnusedLocals. An unused
+      # import has already shipped a broken core image once.
+      - name: Build
+        working-directory: dashboard
+        run: bun run build
 
   build-push:
     needs: changes
