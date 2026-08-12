@@ -3,18 +3,17 @@ import { client } from "../connectClient";
 import { isThot, repoLabel } from "../taskKind";
 import type { Task } from "../gen/agentfleet/v1/core_pb";
 import { podStateBadge, staleBadge, heartbeatLabel, prBadge, isPodPhaseLive } from "./TaskList";
-import { TranscriptEntryType, type TranscriptEntry } from "../gen/agentfleet/v1/transcript_pb";
+import { TranscriptEntryType } from "../gen/agentfleet/v1/transcript_pb";
 import {
   parseQuestions,
   parseAnswers,
   findPendingQuestion,
   findPendingPermissions,
   resolvedPermissionDecisions,
+  permissionDenyMessages,
   isCogitating,
   latestToolCallSummary,
   latestSlashCommands,
-  parseSdkSystemInfo,
-  parseSdkResultSummary,
   buildToolCallPairs,
   pairedResultSeqs,
   latestTodos,
@@ -35,205 +34,8 @@ import { E2eCard } from "../components/E2eCard";
 import { Modal } from "../components/Modal";
 import { ActionsMenu } from "../components/ActionsMenu";
 import { ProposalActions } from "../components/ProposalActions";
-
-// Minimal distinct treatment for the raw SDK message types (reliability-
-// findings.md #0: "relay everything, let the UI decide") — before this,
-// everything but QUESTION/ANSWER fell through to one generic prose bubble.
-// ASSISTANT/USER (tool_use/tool_result) aren't handled here — they move to
-// the right panel's TOOL CALLS section as paired ToolCallItems instead of
-// two unrelated bubbles in the feed. Cosmetic only: no new state, no new RPCs.
-function EntryBubble({ entry }: { entry: TranscriptEntry }) {
-  if (entry.type === TranscriptEntryType.SYSTEM) {
-    const info = parseSdkSystemInfo(entry.text);
-    return (
-      <div className="text-[10.5px] text-base-content/40 flex items-center gap-1.5">
-        <span className="badge badge-ghost badge-xs">session</span>
-        {info?.model ? `started · ${info.model}` : "session started"}
-      </div>
-    );
-  }
-  if (entry.type === TranscriptEntryType.RESULT) {
-    const r = parseSdkResultSummary(entry.text);
-    return (
-      <div className="text-[10.5px] text-base-content/40">
-        {r ? `${r.numTurns ?? "?"} turns · $${(r.totalCostUsd ?? 0).toFixed(3)}` : entry.text}
-      </div>
-    );
-  }
-  // Backend-verified events (a real transcript row core only writes after a
-  // genuine dashboard/Discord action) get the same compact log-line
-  // treatment as SYSTEM/RESULT above, distinct from the generic prose bubble
-  // below — otherwise these are indistinguishable from the model's own
-  // narration of the same claim (e.g. "good, user approved" in its own
-  // text), which is real but unverified.
-  if (entry.type === TranscriptEntryType.APPROVE) {
-    return (
-      <div className="text-[10.5px] text-base-content/40 flex items-center gap-1.5">
-        <span className="badge badge-success badge-xs">approved</span>
-        plan approved — implementing
-      </div>
-    );
-  }
-  if (entry.type === TranscriptEntryType.ABORT) {
-    return (
-      <div className="text-[10.5px] text-base-content/40 flex items-center gap-1.5">
-        <span className="badge badge-warning badge-xs">killed</span>
-        {entry.text || "task killed"}
-      </div>
-    );
-  }
-  if (entry.type === TranscriptEntryType.INTERRUPT) {
-    return (
-      <div className="text-[10.5px] text-base-content/40 flex items-center gap-1.5">
-        <span className="badge badge-info badge-xs">interrupted</span>
-        {entry.text || "current turn interrupted"}
-      </div>
-    );
-  }
-  if (entry.type === TranscriptEntryType.PERMISSION_MODE) {
-    return (
-      <div className="text-[10.5px] text-base-content/40 flex items-center gap-1.5">
-        <span className="badge badge-info badge-xs">mode</span>
-        permission mode → {entry.text}
-      </div>
-    );
-  }
-  return (
-    <div className="max-w-[760px]">
-      <div className={`text-[12px] leading-relaxed ${entry.from === "human" ? "text-primary" : "text-base-content/90"}`}>
-        <Markdown text={asDisplayMarkdown(entry)} />
-      </div>
-    </div>
-  );
-}
-
-// Renders one AskUserQuestion batch as a form (already answered: shows what
-// was submitted instead). One question per fieldset, chip-style buttons for
-// single-select options (mirrors the "herd" mock's quick-reply chips —
-// same real options the native tool sends, just restyled), checkboxes for
-// multiSelect since a chip can't represent "toggle and combine" cleanly.
-function QuestionCard({
-  entry,
-  answer,
-  busy,
-  onSubmit,
-}: {
-  entry: TranscriptEntry;
-  answer: Record<string, string> | null;
-  busy: boolean;
-  onSubmit: (answers: Record<string, string>) => void;
-}) {
-  const [selected, setSelected] = useState<Record<number, string[]>>({});
-  const questions = parseQuestions(entry.text);
-
-  if (!questions) {
-    return (
-      <div className="px-3 py-2 rounded-md bg-base-200/60 border border-base-content/10">
-        <div className="text-[12px] whitespace-pre-wrap">{entry.text}</div>
-      </div>
-    );
-  }
-
-  function toggle(qIndex: number, label: string, multiSelect: boolean | undefined) {
-    setSelected((prev) => {
-      const current = prev[qIndex] ?? [];
-      if (multiSelect) {
-        return {
-          ...prev,
-          [qIndex]: current.includes(label) ? current.filter((l) => l !== label) : [...current, label],
-        };
-      }
-      return { ...prev, [qIndex]: [label] };
-    });
-  }
-
-  const allAnswered = questions.every((_, i) => (selected[i] ?? []).length > 0);
-
-  function submit() {
-    if (!questions) return;
-    const answers: Record<string, string> = {};
-    questions.forEach((q, i) => {
-      answers[q.question] = (selected[i] ?? []).join(", ");
-    });
-    onSubmit(answers);
-  }
-
-  return (
-    <div
-      className="rounded-lg border p-4 max-w-[760px]"
-      style={{
-        borderColor: "rgba(224,169,78,.45)",
-        background: "linear-gradient(180deg,rgba(224,169,78,.09),rgba(224,169,78,.03))",
-      }}
-    >
-      <div className="flex items-center gap-2">
-        {!answer && <span className="w-1.5 h-1.5 rounded-full bg-primary animate-fpulse" />}
-        <span className="text-[9.5px] tracking-[0.1em] font-semibold text-primary">
-          {answer ? "ANSWERED" : "QUESTION"}
-        </span>
-      </div>
-      <div className="flex flex-col gap-4 mt-3">
-        {questions.map((q, qIndex) => (
-          <fieldset key={qIndex} className="flex flex-col gap-2">
-            <legend className="text-[13px] leading-relaxed text-base-content">
-              <span className="badge badge-ghost badge-sm mr-2">{q.header}</span>
-              {q.question}
-            </legend>
-            {answer ? (
-              <div className="badge badge-outline">{answer[q.question] ?? "—"}</div>
-            ) : q.multiSelect ? (
-              q.options.map((opt) => (
-                <label key={opt.label} className="flex items-start gap-2 cursor-pointer text-[11px]">
-                  <input
-                    type="checkbox"
-                    className="checkbox checkbox-sm mt-0.5"
-                    checked={(selected[qIndex] ?? []).includes(opt.label)}
-                    onChange={() => toggle(qIndex, opt.label, true)}
-                  />
-                  <span>
-                    <span className="font-medium">{opt.label}</span>
-                    {opt.description && <span className="opacity-60"> — {opt.description}</span>}
-                  </span>
-                </label>
-              ))
-            ) : (
-              <div className="flex flex-wrap gap-1.5">
-                {q.options.map((opt) => {
-                  const active = (selected[qIndex] ?? []).includes(opt.label);
-                  return (
-                    <button
-                      key={opt.label}
-                      type="button"
-                      title={opt.description}
-                      onClick={() => toggle(qIndex, opt.label, false)}
-                      className={`px-2.5 py-1 rounded-full text-[10.5px] border cursor-pointer ${
-                        active
-                          ? "border-primary/60 bg-primary/15 text-primary"
-                          : "border-base-content/15 text-base-content/70 hover:border-base-content/30"
-                      }`}
-                    >
-                      {opt.label}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </fieldset>
-        ))}
-        {!answer && (
-          <button
-            type="button"
-            className="btn btn-primary btn-sm self-start"
-            disabled={busy || !allAnswered}
-            onClick={submit}
-          >
-            Submit answer
-          </button>
-        )}
-      </div>
-    </div>
-  );
-}
+import { TranscriptEntryView } from "../components/TranscriptEntryView";
+import { QuestionCard } from "../components/QuestionCard";
 
 const DEFAULT_HEIGHT = 224; // matches TODOS's prior max-h-56
 const PANEL_ORDER = ["todos", "toolcalls", "changes"] as const;
@@ -471,6 +273,7 @@ export function TaskDetail({
   const changes = latestToolCallSummary(entries)?.files ?? null;
   const pendingPermissions = findPendingPermissions(entries);
   const permissionDecisions = resolvedPermissionDecisions(entries);
+  const denyMessages = permissionDenyMessages(entries);
   const cogitating = isCogitating(entries, isPodPhaseLive(task.podPhase), pendingPermissions.length > 0, pendingQuestion !== null);
   const toolCallPairs = buildToolCallPairs(entries);
   const toolCallPairsBySeq = new Map(toolCallPairs.map((p) => [p.call.seq, p]));
@@ -604,6 +407,7 @@ export function TaskDetail({
                     pending={isPending}
                     busy={busyKey === permissionKey}
                     decision={permissionDecisions.get(entry.seq)}
+                    denyMessage={denyMessages.get(entry.seq)}
                     onAllow={() => respond({ behavior: "allow" })}
                     onDeny={(message) => respond({ behavior: "deny", message })}
                     edgeClassName="-mx-6 px-6"
@@ -614,13 +418,22 @@ export function TaskDetail({
               // here too when the shared "Tools" toggle (Actions modal) is
               // on — same paired call+result treatment as mobile's feed.
               if (entry.type === TranscriptEntryType.ASSISTANT) {
-                if (hideToolsInFeed) return null;
                 const pair = toolCallPairsBySeq.get(entry.seq);
-                return pair ? <ToolCallItem key={String(entry.seq)} pair={pair} /> : null;
+                if (pair) return hideToolsInFeed ? null : <ToolCallItem key={String(entry.seq)} pair={pair} />;
+                // No pair means this ASSISTANT entry isn't a tool call:
+                // either a thinking block (rendered) or a TodoWrite the
+                // TODOS panel already owns (renders nothing). The "Tools"
+                // toggle deliberately doesn't hide thinking — it isn't a
+                // tool call.
+                return (
+                  <div key={String(entry.seq)}>
+                    <TranscriptEntryView entry={entry} />
+                  </div>
+                );
               }
               // Already rendered inside its pair's ToolCallItem above when
               // shown; an orphaned tool_result (no matching call) still
-              // falls through to EntryBubble's default bubble.
+              // falls through to TranscriptEntryView's orphan branch.
               if (entry.type === TranscriptEntryType.USER && consumedResultSeqs.has(entry.seq)) return null;
 
               if (entry.type === TranscriptEntryType.QUESTION) {
@@ -642,7 +455,7 @@ export function TaskDetail({
                 );
               }
 
-              return <div key={String(entry.seq)}><EntryBubble entry={entry} /></div>;
+              return <div key={String(entry.seq)}><TranscriptEntryView entry={entry} /></div>;
             })}
             {pendingMessage && (
               <div className="max-w-[760px] opacity-60">

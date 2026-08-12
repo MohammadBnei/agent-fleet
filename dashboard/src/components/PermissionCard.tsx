@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { ToolInputView } from "./ToolInputView";
 
 // Generic renderer for any PERMISSION_REQUEST entry canUseTool posts —
 // the fleet-wide replacement for docs/adr/0021's Write/Edit-absent-from-
@@ -23,6 +24,7 @@ export function PermissionCard({
   pending,
   busy,
   decision,
+  denyMessage,
   onAllow,
   onDeny,
   edgeClassName,
@@ -38,19 +40,17 @@ export function PermissionCard({
   // comment); undefined only for a pre-fix legacy row with no matching
   // response yet, where "allowed" stays the fallback.
   decision?: "allow" | "deny" | "interrupted";
+  // The human's own words when they denied — parsed from the
+  // PERMISSION_RESPONSE payload and, until now, never shown anywhere, so a
+  // denial read as an unexplained refusal in the one place its reason
+  // matters.
+  denyMessage?: string;
   onAllow: () => void;
   onDeny: (message: string) => void;
   edgeClassName: string;
 }) {
   const [reason, setReason] = useState("");
   const [isExpanded, setIsExpanded] = useState(false);
-  const inputJson = (() => {
-    try {
-      return JSON.stringify(input, null, 2);
-    } catch {
-      return String(input);
-    }
-  })();
 
   if (!pending) {
     return (
@@ -62,12 +62,14 @@ export function PermissionCard({
         <span className="badge badge-ghost badge-xs flex-none">
           {tool} {decision === "deny" ? "denied" : decision === "interrupted" ? "interrupted" : "allowed"}
         </span>
-        {isExpanded && (
-          <pre className="flex-1 min-w-0 text-[11px] leading-relaxed text-base-content/80 bg-base-200/40 rounded-md p-3 whitespace-pre-wrap break-words">
-            {inputJson}
-          </pre>
+        {isExpanded ? (
+          <div className="flex-1 min-w-0">
+            <ToolInputView tool={tool} input={input} />
+            {denyMessage && <div className="text-[10.5px] text-error/70 mt-1">reason: {denyMessage}</div>}
+          </div>
+        ) : (
+          <span className="truncate flex-1">{denyMessage || "permission request"}</span>
         )}
-        {!isExpanded && <span className="truncate flex-1">permission request</span>}
         <span className="text-[10px] flex-none group-hover:text-base-content/60">
           {isExpanded ? "▴" : "▾"}
         </span>
@@ -80,9 +82,9 @@ export function PermissionCard({
       <div className="text-[10px] tracking-[0.12em] font-semibold text-primary mb-2">
         PERMISSION — {tool.toUpperCase()}
       </div>
-      <pre className="text-[11px] leading-relaxed text-base-content/80 max-h-[30vh] overflow-y-auto bg-base-200/40 rounded-md p-3 whitespace-pre-wrap break-words">
-        {inputJson}
-      </pre>
+      <div className="max-h-[30vh] overflow-y-auto">
+        <ToolInputView tool={tool} input={input} />
+      </div>
       <div className="flex items-center gap-2 mt-3">
         <button type="button" className="btn btn-success btn-sm" disabled={busy} onClick={onAllow}>
           {busy ? (

@@ -1,17 +1,18 @@
 import { useEffect, useRef, useState } from "react";
 import { client } from "../connectClient";
 import { isThot, repoLabel } from "../taskKind";
-import { TranscriptEntryType, type TranscriptEntry } from "../gen/agentfleet/v1/transcript_pb";
+import { TranscriptEntryType } from "../gen/agentfleet/v1/transcript_pb";
+import { TranscriptEntryView } from "../components/TranscriptEntryView";
+import { QuestionCard } from "../components/QuestionCard";
 import {
   parseQuestions,
   parseAnswers,
   findPendingQuestion,
   findPendingPermissions,
+  isCogitating,
   resolvedPermissionDecisions,
+  permissionDenyMessages,
   latestSlashCommands,
-  parseSdkSystemInfo,
-  parseSdkToolResult,
-  parseSdkResultSummary,
   buildToolCallPairs,
   pairedResultSeqs,
   latestTodos,
@@ -26,240 +27,15 @@ import { PlanCard } from "../components/PlanCard";
 import { PermissionCard } from "../components/PermissionCard";
 import { ErrorModal } from "../components/ErrorModal";
 import { Markdown } from "../components/Markdown";
-import { JsonView } from "../components/JsonView";
 import { BypassConfirmModal } from "../components/BypassConfirmModal";
 import { Modal } from "../components/Modal";
 import { ActionsMenu } from "../components/ActionsMenu";
 import { ProposalActions } from "../components/ProposalActions";
 import { E2eCard } from "../components/E2eCard";
-import { prBadge, podStateBadge, staleBadge } from "../pages/TaskList";
+import { prBadge, podStateBadge, staleBadge, isPodPhaseLive } from "../pages/TaskList";
 
 // Mirrors the "herd" mock's phone session screen (Agent Fleet Mobile.dc.html)
 // minus device chrome. Single-pane (list vs. detail), unlike desktop's
-// side-by-side split — onBack returns to MobileTaskList.
-
-function MobileQuestionCard({
-  entry,
-  answer,
-  busy,
-  onSubmit,
-}: {
-  entry: TranscriptEntry;
-  answer: Record<string, string> | null;
-  busy: boolean;
-  onSubmit: (answers: Record<string, string>) => void;
-}) {
-  const [selected, setSelected] = useState<Record<number, string[]>>({});
-  const [isCollapsed, setIsCollapsed] = useState(false);
-  const questions = parseQuestions(entry.text);
-
-  // Auto-collapse when answer is received
-  useEffect(() => {
-    if (answer && !isCollapsed) {
-      setIsCollapsed(true);
-    }
-  }, [answer, isCollapsed]);
-
-  if (!questions) {
-    return (
-      <div className="px-3 py-2.5 rounded-lg bg-base-200/60 border border-base-content/10">
-        <div className="text-[12.5px] whitespace-pre-wrap">{entry.text}</div>
-      </div>
-    );
-  }
-
-  function toggle(qIndex: number, label: string, multiSelect: boolean | undefined) {
-    setSelected((prev) => {
-      const current = prev[qIndex] ?? [];
-      if (multiSelect) {
-        return {
-          ...prev,
-          [qIndex]: current.includes(label) ? current.filter((l) => l !== label) : [...current, label],
-        };
-      }
-      return { ...prev, [qIndex]: [label] };
-    });
-  }
-
-  const allAnswered = questions.every((_, i) => (selected[i] ?? []).length > 0);
-
-  function submit() {
-    if (!questions) return;
-    const answers: Record<string, string> = {};
-    questions.forEach((q, i) => {
-      answers[q.question] = (selected[i] ?? []).join(", ");
-    });
-    onSubmit(answers);
-  }
-
-  return (
-    <div
-      className="rounded-xl border p-3.5"
-      style={{
-        borderColor: "rgba(224,169,78,.45)",
-        background: "linear-gradient(180deg,rgba(224,169,78,.1),rgba(224,169,78,.03))",
-      }}
-    >
-      <button
-        type="button"
-        onClick={() => answer && setIsCollapsed(!isCollapsed)}
-        className="flex items-center gap-2 w-full text-left"
-        disabled={!answer}
-      >
-        {!answer && <span className="w-1.5 h-1.5 rounded-full bg-primary animate-fpulse" />}
-        <span className="text-[9px] tracking-[0.09em] font-semibold text-primary flex-1">
-          {answer ? "ANSWERED" : "QUESTION"}
-        </span>
-        {answer && (
-          <span className="text-[10px] text-base-content/40">
-            {isCollapsed ? "▾" : "▴"}
-          </span>
-        )}
-      </button>
-      {!isCollapsed && (
-        <div className="flex flex-col gap-3.5 mt-2.5">
-          {questions.map((q, qIndex) => (
-            <fieldset key={qIndex} className="flex flex-col gap-2">
-              <legend className="text-[13px] leading-relaxed text-base-content">{q.question}</legend>
-              {answer ? (
-                <div className="badge badge-outline">{answer[q.question] ?? "—"}</div>
-              ) : q.multiSelect ? (
-              q.options.map((opt) => (
-                <label key={opt.label} className="flex items-start gap-2 cursor-pointer text-[12px]">
-                  <input
-                    type="checkbox"
-                    className="checkbox checkbox-sm mt-0.5"
-                    checked={(selected[qIndex] ?? []).includes(opt.label)}
-                    onChange={() => toggle(qIndex, opt.label, true)}
-                  />
-                  <span className="font-medium">{opt.label}</span>
-                </label>
-              ))
-            ) : (
-              <div className="flex flex-col gap-1.5">
-                {q.options.map((opt) => {
-                  const active = (selected[qIndex] ?? []).includes(opt.label);
-                  return (
-                    <button
-                      key={opt.label}
-                      type="button"
-                      onClick={() => toggle(qIndex, opt.label, false)}
-                      className={`px-3 py-2 rounded-lg text-[12px] border text-left min-h-9 ${
-                        active
-                          ? "border-primary/60 bg-primary/15 text-primary"
-                          : "border-base-content/15 text-base-content/70"
-                      }`}
-                    >
-                      {opt.label}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </fieldset>
-        ))}
-        {!answer && (
-          <button type="button" className="btn btn-primary btn-sm" disabled={busy || !allAnswered} onClick={submit}>
-            {busy ? (
-              <>
-                <span className="loading loading-spinner loading-xs"></span>
-                Submitting...
-              </>
-            ) : (
-              "Submit answer"
-            )}
-          </button>
-        )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// Mirrors desktop TaskDetail's EntryBubble at mobile's smaller text scale —
-// same reliability-findings.md #0 rationale ("relay everything, let the UI
-// decide"), cosmetic only. ASSISTANT (tool_use) is handled by the feed loop
-// itself via ToolCallItem, not here — every ASSISTANT entry always becomes a
-// pair. USER stays here only as the orphaned-tool_result fallback (no
-// matching call, e.g. a truncated history) — the normal case is skipped by
-// the feed loop too, already folded into its pair's ToolCallItem.
-function MobileEntryBubble({ entry }: { entry: TranscriptEntry }) {
-  if (entry.type === TranscriptEntryType.SYSTEM) {
-    const info = parseSdkSystemInfo(entry.text);
-    return (
-      <div className="text-[10px] text-base-content/40 flex items-center gap-1.5">
-        <span className="badge badge-ghost badge-xs">session</span>
-        {info?.model ? `started · ${info.model}` : "session started"}
-      </div>
-    );
-  }
-  if (entry.type === TranscriptEntryType.USER) {
-    const tr = parseSdkToolResult(entry.text);
-    return (
-      <div
-        className={`rounded-md border px-2.5 py-2 ${tr?.isError ? "border-error/40 bg-error/5" : "border-base-content/10 bg-base-200/40"}`}
-      >
-        {typeof tr?.content === "string" ? (
-          <pre className="text-[10.5px] whitespace-pre-wrap font-mono text-base-content/70">{tr.content}</pre>
-        ) : (
-          <JsonView value={tr?.content ?? entry.text} />
-        )}
-      </div>
-    );
-  }
-  if (entry.type === TranscriptEntryType.RESULT) {
-    const r = parseSdkResultSummary(entry.text);
-    return (
-      <div className="text-[10px] text-base-content/40">
-        {r ? `${r.numTurns ?? "?"} turns · $${(r.totalCostUsd ?? 0).toFixed(3)}` : entry.text}
-      </div>
-    );
-  }
-  // Mirrors desktop EntryBubble's new cases — a real backend-verified event
-  // gets the same compact log-line treatment as SYSTEM/RESULT, distinct from
-  // the generic prose bubble the model's own narration of the same claim
-  // would otherwise render identically to.
-  if (entry.type === TranscriptEntryType.APPROVE) {
-    return (
-      <div className="text-[10px] text-base-content/40 flex items-center gap-1.5">
-        <span className="badge badge-success badge-xs">approved</span>
-        plan approved — implementing
-      </div>
-    );
-  }
-  if (entry.type === TranscriptEntryType.ABORT) {
-    return (
-      <div className="text-[10px] text-base-content/40 flex items-center gap-1.5">
-        <span className="badge badge-warning badge-xs">killed</span>
-        {entry.text || "task killed"}
-      </div>
-    );
-  }
-  if (entry.type === TranscriptEntryType.INTERRUPT) {
-    return (
-      <div className="text-[10px] text-base-content/40 flex items-center gap-1.5">
-        <span className="badge badge-info badge-xs">interrupted</span>
-        {entry.text || "current turn interrupted"}
-      </div>
-    );
-  }
-  if (entry.type === TranscriptEntryType.PERMISSION_MODE) {
-    return (
-      <div className="text-[10px] text-base-content/40 flex items-center gap-1.5">
-        <span className="badge badge-info badge-xs">mode</span>
-        permission mode → {entry.text}
-      </div>
-    );
-  }
-  return (
-    <div>
-      <div className={`text-[12.5px] leading-relaxed ${entry.from === "human" ? "text-primary" : "text-base-content/90"}`}>
-        <Markdown text={asDisplayMarkdown(entry)} />
-      </div>
-    </div>
-  );
-}
-
 export function MobileTaskDetail({
   taskId,
   onBack,
@@ -345,7 +121,9 @@ export function MobileTaskDetail({
     ? (todos.find((t) => t.status === "in_progress") ?? todos.find((t) => t.status !== "completed"))
     : null;
   const pendingPermissions = findPendingPermissions(entries);
+  const cogitating = isCogitating(entries, isPodPhaseLive(task.podPhase), pendingPermissions.length > 0, Boolean(pendingQuestion));
   const permissionDecisions = resolvedPermissionDecisions(entries);
+  const denyMessages = permissionDenyMessages(entries);
   // Tool calls stay inline in the mobile feed (unlike desktop's right-panel
   // move) — paired via the same call<->output id correlation, one
   // collapsible ToolCallItem per call instead of two separate bubbles.
@@ -423,9 +201,19 @@ export function MobileTaskDetail({
           </button>
         </div>
         <div className="flex items-center gap-2.5 mt-3">
-          {pendingQuestion && (
+          {/* A pending *permission* blocks the session exactly as hard as a
+              pending question; keying this on questions alone left the one
+              surface with no sidebar showing no sign that the agent was
+              stopped waiting for a click. */}
+          {(pendingQuestion || pendingPermissions.length > 0) && (
             <span className="px-1.5 py-0.5 rounded bg-primary/15 border border-primary/45 text-[9px] font-semibold text-primary tracking-wide flex-none whitespace-nowrap">
               WAITING ON YOU
+            </span>
+          )}
+          {cogitating && (
+            <span className="flex items-center gap-1 text-[9px] font-semibold text-base-content/50 tracking-wide flex-none whitespace-nowrap">
+              <span className="w-1.5 h-1.5 rounded-full bg-primary animate-fpulse" />
+              THINKING
             </span>
           )}
           <div className="flex-1 flex gap-1 min-w-0">
@@ -508,6 +296,7 @@ export function MobileTaskDetail({
                 pending={isPending}
                 busy={busyKey === permissionKey}
                 decision={permissionDecisions.get(entry.seq)}
+                denyMessage={denyMessages.get(entry.seq)}
                 onAllow={() => respond({ behavior: "allow" })}
                 onDeny={(message) => respond({ behavior: "deny", message })}
                 edgeClassName="-mx-4 px-4"
@@ -515,19 +304,26 @@ export function MobileTaskDetail({
             );
           }
           if (entry.type === TranscriptEntryType.ASSISTANT) {
-            if (hideToolsInFeed) return null;
             const pair = toolCallPairsBySeq.get(entry.seq);
-            return pair ? <ToolCallItem key={String(entry.seq)} pair={pair} /> : null;
+            if (pair) return hideToolsInFeed ? null : <ToolCallItem key={String(entry.seq)} pair={pair} />;
+            // No pair: a thinking block (rendered) or a TodoWrite the
+            // progress bar already owns (renders nothing).
+            return (
+              <div key={String(entry.seq)}>
+                <TranscriptEntryView entry={entry} compact />
+              </div>
+            );
           }
           // Normal case: already rendered inside its pair's ToolCallItem
-          // above. Falls through to MobileEntryBubble's orphan handling
-          // only if no matching call was found.
+          // above. Falls through to the orphan branch only if no matching
+          // call was found.
           if (entry.type === TranscriptEntryType.USER && consumedResultSeqs.has(entry.seq)) return null;
           if (entry.type === TranscriptEntryType.QUESTION) {
             const answerEntry = entries.slice(idx + 1).find((e) => e.type === TranscriptEntryType.ANSWER);
             const questionKey = `question:${entry.seq}`;
             return (
-              <MobileQuestionCard
+              <QuestionCard
+                compact
                 key={String(entry.seq)}
                 entry={entry}
                 answer={answerEntry ? parseAnswers(answerEntry.text) : null}
@@ -543,7 +339,7 @@ export function MobileTaskDetail({
           }
           return (
             <div key={String(entry.seq)}>
-              <MobileEntryBubble entry={entry} />
+              <TranscriptEntryView entry={entry} compact />
             </div>
           );
         })}

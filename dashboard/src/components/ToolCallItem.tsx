@@ -2,6 +2,7 @@ import { memo } from "react";
 import type { ToolCallPair, SdkToolUse, SdkToolResult } from "../transcript";
 import { summarizeToolInput } from "../transcript";
 import { JsonView } from "./JsonView";
+import { ToolInputView } from "./ToolInputView";
 import { Collapse } from "./Collapse";
 
 // Read/Write/Edit's one-line result summary (line/word counts) already says
@@ -48,17 +49,29 @@ function summarizeResult(callInfo: SdkToolUse, resultInfo: SdkToolResult | null,
   return "done";
 }
 
-// Most calls need zero interaction — Read/Write/Edit are fully described by
-// their one-liner, and a trivial/empty result has nothing further to show.
-// Only errors and non-trivial output from everything else (Bash, Grep,
-// Glob, ...) get a disclosure arrow.
-function needsDetail(tool: string | undefined, isError: boolean, resultInfo: SdkToolResult | null): boolean {
+// Most calls need zero interaction — Read's one-liner says everything, and
+// a trivial/empty result has nothing further to show. Errors, non-trivial
+// output, and anything whose *input* is worth reading (an Edit's diff, a
+// Write's content, a Bash command) get a disclosure arrow.
+function needsDetail(tool: string | undefined, isError: boolean, resultInfo: SdkToolResult | null, input: unknown): boolean {
   if (isError) return true;
+  if (hasRenderableInput(tool, input)) return true;
   if (!resultInfo) return false;
   if (tool && SELF_DESCRIBING_TOOLS.has(tool)) return false;
   const content = resultInfo.content;
   if (typeof content === "string") return content.trim().length > 0;
   return content != null;
+}
+
+// Whether expanding would reveal something the one-line summary can't say.
+// "Edit changed 3 lines for 2" is not the same as seeing which lines.
+function hasRenderableInput(tool: string | undefined, input: unknown): boolean {
+  if (!tool || !input || typeof input !== "object") return false;
+  const obj = input as Record<string, unknown>;
+  if (tool === "Edit") return typeof obj.old_string === "string" && typeof obj.new_string === "string";
+  if (tool === "Write") return typeof obj.content === "string";
+  if (tool === "Bash") return typeof obj.command === "string";
+  return false;
 }
 
 // Memoized to prevent re-rendering when the pair hasn't changed.
@@ -84,17 +97,25 @@ export const ToolCallItem = memo(function ToolCallItem({ pair }: { pair: ToolCal
     </div>
   );
 
-  if (!needsDetail(callInfo.tool, isError, resultInfo ?? null)) {
+  if (!needsDetail(callInfo.tool, isError, resultInfo ?? null, callInfo.input)) {
     return <div className="border border-base-content/10 bg-base-200/40 rounded-md">{line}</div>;
   }
 
   return (
     <Collapse summary={line} summaryClassName="p-0">
-      <div className={`text-[10.5px] font-mono ${isError ? "text-error" : ""}`}>
-        {typeof resultInfo?.content === "string" ? (
-          <div className="whitespace-pre-wrap">{resultInfo.content}</div>
-        ) : (
-          <JsonView value={resultInfo?.content} />
+      <div className="flex flex-col gap-1.5 pb-1">
+        {/* The call's own input — previously unreachable from the UI at
+            any point, so "what did it actually edit?" had no answer
+            unless the call happened to require permission. */}
+        {hasRenderableInput(callInfo.tool, callInfo.input) && <ToolInputView tool={tool} input={callInfo.input} />}
+        {resultInfo && (
+          <div className={`text-[10.5px] font-mono ${isError ? "text-error" : ""}`}>
+            {typeof resultInfo.content === "string" ? (
+              <div className="whitespace-pre-wrap">{resultInfo.content}</div>
+            ) : (
+              <JsonView value={resultInfo.content} />
+            )}
+          </div>
         )}
       </div>
     </Collapse>

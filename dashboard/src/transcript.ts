@@ -145,6 +145,27 @@ export function isCogitating(
   return false;
 }
 
+// The human's stated reason for a denial, keyed by the request's own seq.
+// Parsed alongside the decision above but kept separate so that Map's type
+// stays a plain outcome — only the collapsed card needs this. Until now the
+// message was parsed nowhere and shown nowhere, so a denial read as an
+// unexplained refusal in the one place the reason matters.
+export function permissionDenyMessages(entries: TranscriptEntry[]): Map<bigint, string> {
+  const out = new Map<bigint, string>();
+  for (const e of entries) {
+    if (e.type !== TranscriptEntryType.PERMISSION_RESPONSE || e.replyTo === undefined) continue;
+    try {
+      const decision = JSON.parse(e.text) as { behavior?: unknown; message?: unknown };
+      if (decision.behavior === "deny" && typeof decision.message === "string" && decision.message.trim()) {
+        out.set(e.replyTo, decision.message);
+      }
+    } catch {
+      // malformed payload — no reason to show
+    }
+  }
+  return out;
+}
+
 export type ToolCallSummary = { branch?: string; files?: { path: string; added: number; removed: number }[] };
 
 // The sidecar's periodic telemetry push always sends {branch, files[]}
@@ -175,10 +196,63 @@ export function latestToolCallSummary(entries: TranscriptEntry[]): ToolCallSumma
 // logSdkMessage relays verbatim (reliability-findings.md #0: "relay
 // everything, let the UI decide"). Defensive parse like the helpers above —
 // a malformed payload falls back to the raw text bubble instead of crashing.
-export type SdkSystemInfo = { model?: string; permissionMode?: string; slashCommands?: string[]; skills?: string[] };
+export type SdkSystemInfo = {
+  model?: string;
+  permissionMode?: string;
+  slashCommands?: string[];
+  skills?: string[];
+  tools?: string[];
+  mcpServers?: { name: string; status: string }[];
+  cwd?: string;
+  claudeCodeVersion?: string;
+  agents?: string[];
+  plugins?: { name: string; path: string }[];
+  outputStyle?: string;
+};
+
+// A SYSTEM entry is one of two things. Without an `sdk` key it is the
+// session-init environment (the payload above). With one it is an
+// out-of-band signal — every non-init system subtype, plus auth_status and
+// tool_progress, which worker/src/session.ts relays under the same entry
+// type rather than minting new ones (no migration, and core's Discord
+// allowlist keeps them off Discord by failing closed).
+//
+// Everything reading SYSTEM entries must therefore check `sdk` FIRST.
+// Anything that just walks back to "the latest SYSTEM entry" would now
+// almost always land on a tool_progress instead of the init payload.
+export type SdkSignal = {
+  sdk: string;
+  status?: string | null;
+  compact_metadata?: { trigger?: string; pre_tokens?: number };
+  hook_name?: string;
+  hook_event?: string;
+  exit_code?: number;
+  stdout?: string;
+  stderr?: string;
+  isAuthenticating?: boolean;
+  error?: string;
+  tool_name?: string;
+  tool_use_id?: string;
+  elapsed_time_seconds?: number;
+  parent_tool_use_id?: string | null;
+};
+
+export function parseSdkSignal(text: string): SdkSignal | null {
+  try {
+    const parsed = JSON.parse(text) as SdkSignal;
+    return parsed && typeof parsed === "object" && typeof parsed.sdk === "string" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+// Session-init payload only — null for a signal entry, so callers can't
+// mistake a tool_progress for "the session started with no model".
 export function parseSdkSystemInfo(text: string): SdkSystemInfo | null {
   try {
-    return JSON.parse(text) as SdkSystemInfo;
+    const parsed = JSON.parse(text) as SdkSystemInfo & { sdk?: unknown };
+    if (!parsed || typeof parsed !== "object" || typeof parsed.sdk === "string") return null;
+    return parsed;
   } catch {
     return null;
   }
@@ -190,16 +264,26 @@ export function parseSdkSystemInfo(text: string): SdkSystemInfo | null {
 // command browser. Same "walk backwards to the latest SYSTEM entry" pattern
 // as latestToolCallSummary/latestTodos below.
 export function latestSlashCommands(entries: TranscriptEntry[]): string[] | null {
+  const info = latestSystemInfo(entries);
+  return info?.slashCommands && info.slashCommands.length > 0 ? info.slashCommands : null;
+}
+
+// The most recent session-init payload, skipping signal entries. Stopping
+// at the first SYSTEM entry of any kind (as this used to) silently emptied
+// the command palette the moment any signal followed init.
+export function latestSystemInfo(entries: TranscriptEntry[]): SdkSystemInfo | null {
   for (let i = entries.length - 1; i >= 0; i--) {
-    if (entries[i].type === TranscriptEntryType.SYSTEM) {
-      const info = parseSdkSystemInfo(entries[i].text);
-      return info?.slashCommands && info.slashCommands.length > 0 ? info.slashCommands : null;
-    }
+    if (entries[i].type !== TranscriptEntryType.SYSTEM) continue;
+    const info = parseSdkSystemInfo(entries[i].text);
+    if (info) return info;
   }
   return null;
 }
 
-export type SdkToolUse = { id?: string; tool?: string; input?: unknown };
+// `kind: "thinking"` shares the ASSISTANT entry type with tool_use — the
+// SDK carries a thinking block's prose on `thinking`, not `text`, and the
+// worker tags it so this parser can tell the two apart.
+export type SdkToolUse = { id?: string; tool?: string; input?: unknown; kind?: string; text?: string };
 export function parseSdkToolUse(text: string): SdkToolUse | null {
   try {
     return JSON.parse(text) as SdkToolUse;
@@ -226,18 +310,29 @@ export function parseSdkToolResult(text: string): SdkToolResult | null {
 export type ToolCallPair = { call: TranscriptEntry; callInfo: SdkToolUse; result: TranscriptEntry | null; resultInfo: SdkToolResult | null };
 
 export function buildToolCallPairs(entries: TranscriptEntry[]): ToolCallPair[] {
+  // One pass to index results by tool_use_id, then one pass over the calls.
+  // This used to scan every entry per tool call — quadratic over a
+  // transcript that has no upper bound, recomputed on every render.
+  const resultsById = new Map<string, { entry: TranscriptEntry; info: SdkToolResult }>();
+  for (const entry of entries) {
+    if (entry.type !== TranscriptEntryType.USER) continue;
+    const info = parseSdkToolResult(entry.text);
+    if (info?.toolUseId) resultsById.set(info.toolUseId, { entry, info });
+  }
+
   const pairs: ToolCallPair[] = [];
   for (const entry of entries) {
     if (entry.type !== TranscriptEntryType.ASSISTANT) continue;
     const callInfo = parseSdkToolUse(entry.text) ?? {};
+    // A thinking block shares the ASSISTANT type with tool_use; it has no
+    // tool and renders as its own bubble, not as a call awaiting a result.
+    if (callInfo.kind === "thinking") continue;
     // TodoWrite has its own dedicated TODOS panel (latestTodos below) —
     // showing it again as a generic raw-JSON tool call would just be a
     // worse duplicate of the same data.
     if (callInfo.tool === "TodoWrite") continue;
-    const resultEntry = callInfo.id
-      ? (entries.find((e) => e.type === TranscriptEntryType.USER && parseSdkToolResult(e.text)?.toolUseId === callInfo.id) ?? null)
-      : null;
-    pairs.push({ call: entry, callInfo, result: resultEntry, resultInfo: resultEntry ? parseSdkToolResult(resultEntry.text) : null });
+    const found = callInfo.id ? resultsById.get(callInfo.id) : undefined;
+    pairs.push({ call: entry, callInfo, result: found?.entry ?? null, resultInfo: found?.info ?? null });
   }
   return pairs;
 }
@@ -291,7 +386,30 @@ export function summarizeToolInput(input: unknown): string {
   }
 }
 
-export type SdkResultSummary = { subtype?: string; numTurns?: number; totalCostUsd?: number };
+export type SdkModelUsage = {
+  inputTokens?: number;
+  outputTokens?: number;
+  cacheReadInputTokens?: number;
+  cacheCreationInputTokens?: number;
+  costUSD?: number;
+};
+export type SdkResultSummary = {
+  subtype?: string;
+  numTurns?: number;
+  totalCostUsd?: number;
+  durationMs?: number;
+  durationApiMs?: number;
+  isError?: boolean;
+  usage?: {
+    input_tokens?: number;
+    output_tokens?: number;
+    cache_read_input_tokens?: number;
+    cache_creation_input_tokens?: number;
+  };
+  modelUsage?: Record<string, SdkModelUsage>;
+  permissionDenials?: { tool_name?: string }[];
+  errors?: string[];
+};
 export function parseSdkResultSummary(text: string): SdkResultSummary | null {
   try {
     return JSON.parse(text) as SdkResultSummary;
