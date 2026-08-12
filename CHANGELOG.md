@@ -1,5 +1,12 @@
 # Changelog
 
+# [1.45.0](https://github.com/MohammadBnei/agent-fleet/compare/1.44.0...1.45.0) (2026-08-12)
+
+
+### Features
+
+* **dashboard:** render the whole SDK stream, once instead of twice ([#128](https://github.com/MohammadBnei/agent-fleet/issues/128)) ([b91ff27](https://github.com/MohammadBnei/agent-fleet/commit/b91ff279bd826cb2d7c4171b66f4fc2725c4579a))
+
 # [1.44.0](https://github.com/MohammadBnei/agent-fleet/compare/1.43.3...1.44.0) (2026-08-12)
 
 
