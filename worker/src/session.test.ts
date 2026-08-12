@@ -79,7 +79,7 @@ function respondToPermission(seq: number, decision: { behavior: "allow" | "deny"
 // streaming-input behavior confirmed in this session's own Phase 0 spike:
 // the same Query object keeps accepting input after interrupt().
 let mockMessageText = "mock agent message";
-let forceResult: { subtype: string; num_turns: number; total_cost_usd: number } | null = null;
+let forceResult: ({ subtype: string; num_turns: number; total_cost_usd: number } & Record<string, unknown>) | null = null;
 let crashOnRound: number | null = null;
 let includeToolResult = false;
 let capturedCanUseTool: ((toolName: string, input: unknown) => Promise<{ behavior: string; message?: string; updatedInput?: unknown }>) | null =
@@ -92,6 +92,11 @@ let queryOptions: Record<string, unknown> | null = null;
 // reached the InputQueue (i.e. became a real conversational turn), not
 // just that some other side effect (like a permission denial) happened.
 let consumedInputs: { message: { content: string } }[] = [];
+// Arbitrary extra SDK messages the fake session yields ahead of its
+// assistant message each round — lets a test drive a message shape the
+// scripted happy path never produces (auth_status, tool_progress, a
+// thinking block, …) through the real logSdkMessage.
+let extraMessages: Record<string, unknown>[] = [];
 
 mock.module("@anthropic-ai/claude-agent-sdk", () => ({
   query: ({ prompt, options }: { prompt: AsyncIterable<{ message: { content: string } }>; options: Record<string, unknown> }) => {
@@ -122,9 +127,29 @@ mock.module("@anthropic-ai/claude-agent-sdk", () => ({
         round++;
         if (!sessionId) {
           sessionId = `agent-${crypto.randomUUID()}`;
-          yield { type: "system", subtype: "init", session_id: sessionId };
+          // Mirrors the real init's field set, not just session_id — the
+          // relay forwards the whole environment and a thinner fake would
+          // let a dropped field pass unnoticed.
+          yield {
+            type: "system",
+            subtype: "init",
+            session_id: sessionId,
+            model: "claude-opus-4-8",
+            permissionMode: "default",
+            slash_commands: ["/compact"],
+            skills: ["doubt-driven-development"],
+            tools: ["Bash", "Read"],
+            mcp_servers: [{ name: "agent-fleet-sidecar", status: "connected" }],
+            cwd: "/workspace",
+            claude_code_version: "2.1.0",
+            agents: [],
+            plugins: [],
+            output_style: "default",
+          };
         }
         if (round === crashOnRound) throw new Error("simulated session crash");
+
+        for (const extra of extraMessages) yield extra;
 
         yield {
           type: "assistant",
@@ -182,6 +207,7 @@ beforeEach(() => {
   setPermissionModeCalls = [];
   queryOptions = null;
   consumedInputs = [];
+  extraMessages = [];
 });
 
 function makeTask(overrides: Partial<{ id: string; repo: string; description: string; leaseId: string; baseBranch: string; guidance: string }> = {}) {
@@ -581,6 +607,115 @@ test("tool_use, tool_result, and result messages are all relayed, not just assis
   expect(pushedMessages.some((m) => m.type === "result")).toBe(true);
   expect(pushedMessages.some((m) => m.type === "system")).toBe(true); // session-init
 }, 10000);
+
+// Every SDK message kind that used to fall off the end of logSdkMessage
+// unrelayed. These are the "why is the worker hung" answers — an expired
+// token, a rate limit, and a long-running tool were all indistinguishable
+// from silence before.
+async function relayOnce(extras: Record<string, unknown>[]): Promise<void> {
+  extraMessages = extras;
+  const promise = runTask(makeTask());
+  await Bun.sleep(20);
+  pushHuman("", "abort");
+  await promise;
+}
+
+function systemPayloads(): Record<string, unknown>[] {
+  return pushedMessages.filter((m) => m.type === "system").map((m) => JSON.parse(m.text) as Record<string, unknown>);
+}
+
+test("out-of-band SDK signals relay as system entries tagged with their sdk discriminant", async () => {
+  await relayOnce([
+    { type: "system", subtype: "status", status: "compacting", uuid: "u1", session_id: "s1" },
+    { type: "system", subtype: "compact_boundary", compact_metadata: { trigger: "auto", pre_tokens: 142_000 } },
+    { type: "system", subtype: "hook_response", hook_name: "guard", hook_event: "PreToolUse", exit_code: 2, stderr: "denied" },
+    { type: "auth_status", isAuthenticating: false, error: "token expired" },
+  ]);
+
+  const bySdk = new Map(systemPayloads().map((p) => [p.sdk, p]));
+  expect(bySdk.get("status")?.status).toBe("compacting");
+  expect((bySdk.get("compact_boundary")?.compact_metadata as { pre_tokens: number }).pre_tokens).toBe(142_000);
+  expect(bySdk.get("hook_response")?.exit_code).toBe(2);
+  expect(bySdk.get("auth_status")?.error).toBe("token expired");
+  // The envelope the transcript row already carries is not duplicated.
+  expect(bySdk.get("status")).not.toHaveProperty("uuid");
+  expect(bySdk.get("status")).not.toHaveProperty("session_id");
+});
+
+test("an SDK-level assistant error relays even though the turn has no content block for it", async () => {
+  await relayOnce([{ type: "assistant", error: "rate_limit", message: { content: [] } }]);
+
+  expect(systemPayloads().some((p) => p.sdk === "assistant_error" && p.error === "rate_limit")).toBe(true);
+});
+
+test("thinking blocks relay under assistant, distinguishable from tool_use", async () => {
+  await relayOnce([
+    { type: "assistant", message: { content: [{ type: "thinking", thinking: "weighing two options" }] } },
+  ]);
+
+  const assistant = pushedMessages.filter((m) => m.type === "assistant").map((m) => JSON.parse(m.text) as Record<string, unknown>);
+  expect(assistant.some((p) => p.kind === "thinking" && p.text === "weighing two options")).toBe(true);
+  // The scripted round still emits a real tool_use, and it must stay parseable.
+  expect(assistant.some((p) => p.kind === undefined && typeof p.tool === "string")).toBe(true);
+});
+
+test("tool_progress is throttled: nothing under 30s, then at most once a minute", async () => {
+  await relayOnce([
+    { type: "tool_progress", tool_use_id: "t1", tool_name: "Bash", elapsed_time_seconds: 5 },
+    { type: "tool_progress", tool_use_id: "t1", tool_name: "Bash", elapsed_time_seconds: 31 },
+    { type: "tool_progress", tool_use_id: "t1", tool_name: "Bash", elapsed_time_seconds: 45 },
+    { type: "tool_progress", tool_use_id: "t1", tool_name: "Bash", elapsed_time_seconds: 95 },
+  ]);
+
+  const elapsed = systemPayloads()
+    .filter((p) => p.sdk === "tool_progress")
+    .map((p) => p.elapsed_time_seconds);
+  expect(elapsed).toEqual([31, 95]);
+});
+
+test("replayed user messages are dropped instead of double-posting", async () => {
+  await relayOnce([
+    {
+      type: "user",
+      isReplay: true,
+      message: { content: [{ type: "tool_result", tool_use_id: "t9", is_error: false, content: "replayed output" }] },
+    },
+  ]);
+
+  expect(pushedMessages.some((m) => m.text.includes("replayed output"))).toBe(false);
+});
+
+test("result carries the full usage/duration/error payload, not just turns and cost", async () => {
+  forceResult = {
+    subtype: "success",
+    num_turns: 3,
+    total_cost_usd: 0.42,
+    duration_ms: 9000,
+    duration_api_ms: 7000,
+    is_error: false,
+    usage: { input_tokens: 100, output_tokens: 20 },
+    modelUsage: { "claude-opus-4-8": { inputTokens: 100 } },
+    permission_denials: [],
+    errors: [],
+  };
+  await relayOnce([]);
+
+  const result = pushedMessages.filter((m) => m.type === "result").map((m) => JSON.parse(m.text) as Record<string, unknown>);
+  expect(result.length).toBeGreaterThan(0);
+  for (const key of ["subtype", "numTurns", "totalCostUsd", "durationMs", "durationApiMs", "isError", "usage", "modelUsage", "permissionDenials", "errors"]) {
+    expect(result[0]).toHaveProperty(key);
+  }
+});
+
+test("session init relays the full environment, not four of fourteen fields", async () => {
+  await relayOnce([]);
+
+  const init = systemPayloads().find((p) => p.model !== undefined);
+  expect(init).toBeDefined();
+  for (const key of ["model", "permissionMode", "slashCommands", "skills", "tools", "mcpServers", "cwd", "claudeCodeVersion", "agents", "plugins", "outputStyle"]) {
+    expect(init).toHaveProperty(key);
+  }
+});
 
 // Undoes this file's mock.module("./sidecarClient.js", ...) once this
 // file's own tests are done — see the comment on that call for why this

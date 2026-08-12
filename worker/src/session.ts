@@ -88,6 +88,42 @@ function taskPrompt(task: Task): string {
 Task: ${task.description}${guidance}`;
 }
 
+// Last relayed `elapsed_time_seconds` per in-flight tool_use_id.
+// tool_progress fires continuously for as long as a tool runs, so relaying
+// every one would bury the transcript under a single slow Bash call — a
+// quiet call gets one entry at 30s and one a minute after that.
+// ponytail: a tool whose result never arrives leaves its key behind. One
+// pod runs one session, so the ceiling is that session's tool calls; if
+// that ever matters, evict by age instead.
+const progressEmitted = new Map<string, number>();
+const PROGRESS_FIRST_SECONDS = 30;
+const PROGRESS_EVERY_SECONDS = 60;
+
+function shouldEmitProgress(msg: { [key: string]: unknown }): boolean {
+  const id = msg.tool_use_id;
+  const elapsed = msg.elapsed_time_seconds;
+  if (typeof id !== "string" || typeof elapsed !== "number") return false;
+  if (elapsed < PROGRESS_FIRST_SECONDS) return false;
+  const last = progressEmitted.get(id);
+  if (last !== undefined && elapsed - last < PROGRESS_EVERY_SECONDS) return false;
+  progressEmitted.set(id, elapsed);
+  return true;
+}
+
+// An SDK message's own fields minus the envelope the transcript row
+// already carries, with long strings capped so a chatty hook's stdout
+// can't dominate the entry (same 2000-char cap the tool_result branch
+// uses).
+function relayFields(msg: { [key: string]: unknown }): Record<string, unknown> {
+  const envelope = new Set(["type", "subtype", "uuid", "session_id", "parent_tool_use_id"]);
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(msg)) {
+    if (envelope.has(key)) continue;
+    out[key] = typeof value === "string" && value.length > 2000 ? `${value.slice(0, 2000)}…` : value;
+  }
+  return out;
+}
+
 // Relays every SDK message, tagged by its own raw type, to the transcript
 // (reliability-findings.md #0: "relay everything, let the UI decide, no
 // pre-filtering" — before this, only assistant text blocks ever left this
@@ -118,17 +154,56 @@ async function logSdkMessage(actor: string, msg: { type: string; [key: string]: 
         permissionMode: msg.permissionMode,
         slashCommands: msg.slash_commands,
         skills: msg.skills,
+        tools: msg.tools,
+        mcpServers: msg.mcp_servers,
+        cwd: msg.cwd,
+        claudeCodeVersion: msg.claude_code_version,
+        agents: msg.agents,
+        plugins: msg.plugins,
+        outputStyle: msg.output_style,
       }),
       "system",
     );
     return;
   }
+  // Out-of-band session signals — every non-init system subtype (status,
+  // compact_boundary, hook_response), plus auth_status and tool_progress.
+  // Before this they hit none of the branches below and were dropped
+  // silently, which is why an expired OAuth token, a rate limit, and a
+  // four-minute Bash call all looked identical from the dashboard: a
+  // worker that had simply stopped talking.
+  //
+  // All relay under the existing "system" type, so this needs no migration
+  // (db/migrations/000004's CHECK already allows it) and stays
+  // dashboard-only for free (core/internal/transcript/relay.go's Discord
+  // allowlist fails closed). `sdk` is the discriminant the UI branches on,
+  // and the SDK's own field names pass through unmapped so a subtype the
+  // SDK adds next relays itself without a worker change.
+  if (msg.type === "system" || msg.type === "auth_status" || msg.type === "tool_progress") {
+    if (msg.type === "tool_progress" && !shouldEmitProgress(msg)) return;
+    log("info", `${actor} ${msg.subtype ?? msg.type}`, relayFields(msg));
+    await push(JSON.stringify({ sdk: msg.subtype ?? msg.type, ...relayFields(msg) }), "system");
+    return;
+  }
   if (msg.type === "assistant") {
+    // An SDK-level assistant error (rate_limit, billing_error,
+    // authentication_failed, server_error) arrives on the message itself,
+    // not as a content block — the turn just comes back empty otherwise.
+    if (msg.error) {
+      log("error", `${actor} assistant error`, { error: msg.error });
+      await push(JSON.stringify({ sdk: "assistant_error", error: msg.error }), "system");
+    }
     const content = (msg.message as { content?: { type: string; [k: string]: unknown }[] })?.content ?? [];
     for (const block of content) {
       if (block.type === "text" && typeof block.text === "string" && block.text.trim()) {
         log("info", `${actor} text`, { text: block.text });
         await push(block.text, "discussion");
+      }
+      // Thinking carries its prose on `thinking`, not `text`, and shares
+      // the "assistant" type with tool_use — `kind` keeps the two apart
+      // for a parser that already expects {id, tool, input} there.
+      if (block.type === "thinking" && typeof block.thinking === "string" && block.thinking.trim()) {
+        await push(JSON.stringify({ kind: "thinking", text: block.thinking }), "assistant");
       }
       if (block.type === "tool_use") {
         log("info", `${actor} tool_use`, { tool: block.name, input: block.input });
@@ -138,9 +213,13 @@ async function logSdkMessage(actor: string, msg: { type: string; [key: string]: 
     return;
   }
   if (msg.type === "user") {
+    // The SDK's own "this message is already in the messages array"
+    // marker. Relaying it posts the entry a second time.
+    if (msg.isReplay) return;
     const content = (msg.message as { content?: { type: string; [k: string]: unknown }[] })?.content ?? [];
     for (const block of content) {
       if (block.type === "tool_result") {
+        if (typeof block.tool_use_id === "string") progressEmitted.delete(block.tool_use_id);
         const isError = Boolean(block.is_error);
         const resultContent = typeof block.content === "string" ? block.content.slice(0, 2000) : block.content;
         log(isError ? "error" : "info", `${actor} tool_result`, { isError, content: resultContent });
@@ -155,8 +234,26 @@ async function logSdkMessage(actor: string, msg: { type: string; [key: string]: 
   }
   if (msg.type === "result") {
     log("info", `${actor} result`, { subtype: msg.subtype, numTurns: msg.num_turns, totalCostUsd: msg.total_cost_usd });
-    await push(JSON.stringify({ subtype: msg.subtype, numTurns: msg.num_turns, totalCostUsd: msg.total_cost_usd }), "result");
+    await push(
+      JSON.stringify({
+        subtype: msg.subtype,
+        numTurns: msg.num_turns,
+        totalCostUsd: msg.total_cost_usd,
+        durationMs: msg.duration_ms,
+        durationApiMs: msg.duration_api_ms,
+        isError: msg.is_error,
+        usage: msg.usage,
+        modelUsage: msg.modelUsage,
+        permissionDenials: msg.permission_denials,
+        errors: msg.errors,
+      }),
+      "result",
+    );
   }
+  // ponytail: `user` text/image content blocks and `stream_event` stay
+  // unrelayed. The former is the echo of a prompt the dashboard already
+  // posted as a discussion entry; the latter is per-token and belongs on a
+  // live-only channel, not in a durable Postgres transcript.
 }
 
 export type TaskResult = { aborted: boolean; summary: string };
