@@ -6,6 +6,8 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"github.com/MohammadBnei/agent-fleet/provisioner/internal/catalog"
 )
 
 func TestBuildIngredients_UnknownToolKey(t *testing.T) {
@@ -46,6 +48,32 @@ func TestBuildIngredients_ToolsProduceInitContainersAndPath(t *testing.T) {
 	}
 	if !foundGoroot {
 		t.Error("expected GOROOT env var when go-toolchain is present")
+	}
+}
+
+// Every tool init container must pin ImagePullPolicy explicitly. Left to
+// Kubernetes' default it is per-tag — IfNotPresent for a pinned tag, but
+// Always for `:latest` — so a `:latest` entry in the catalog silently
+// re-pulls from Docker Hub on every pod creation, delaying Running and
+// spending pull quota per dispatch. Asserted over the whole catalog, not a
+// fixed pair, so a tool added later is covered without touching this test.
+func TestBuildIngredients_ToolInitContainersPinPullPolicy(t *testing.T) {
+	keys := make([]string, 0, len(catalog.Tools))
+	for key := range catalog.Tools {
+		keys = append(keys, key)
+	}
+	initContainers, _, _, _, err := buildIngredients(keys, nil, ClusterAccess{})
+	if err != nil {
+		t.Fatalf("buildIngredients: %v", err)
+	}
+	if len(initContainers) != len(keys) {
+		t.Fatalf("expected %d init containers, got %d", len(keys), len(initContainers))
+	}
+	for _, c := range initContainers {
+		if c.ImagePullPolicy != corev1.PullIfNotPresent {
+			t.Errorf("%s (%s): ImagePullPolicy = %q, want %q — a `:latest` image would re-pull every dispatch",
+				c.Name, c.Image, c.ImagePullPolicy, corev1.PullIfNotPresent)
+		}
 	}
 }
 
