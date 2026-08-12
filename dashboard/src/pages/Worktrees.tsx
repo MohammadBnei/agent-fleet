@@ -52,8 +52,11 @@ function relativeMtime(mtimeUnix: bigint): string {
   return `${Math.round(hours / 24)}d ago`;
 }
 
-// Why this worktree exists and whether it's safe to remove.
-function owner(w: WorktreeView): { label: string; cls: string; orphan: boolean } {
+// Why this worktree exists and whether it's safe to remove. Exported for its
+// test: it decides whether a row reads as an orphan and whether it links to a
+// live session, and calling a still-running worktree an orphan is how someone
+// ends up deleting work in progress.
+export function owner(w: WorktreeView): { label: string; cls: string; orphan: boolean } {
   if (w.taskStatus === undefined) {
     return { label: "orphan · no session", cls: "text-warning", orphan: true };
   }
