@@ -15,6 +15,18 @@ set -euo pipefail
 : "${E2E_CODE_SERVER_PORT:?E2E_CODE_SERVER_PORT is required}"
 : "${E2E_PLAYWRIGHT_PORT:?E2E_PLAYWRIGHT_PORT is required}"
 : "${E2E_EXEC_PORT:?E2E_EXEC_PORT is required}"
+: "${E2E_SSH_PORT:?E2E_SSH_PORT is required}"
+
+# ponytail: SSH host key per-pod runtime keygen (ed25519 only, ~30ms).
+# Image ships no host keys (Dockerfile rm after openssh-server install).
+# Pods ephemeral, access via kubectl port-forward, StrictHostKeyChecking=no correct-by-design.
+mkdir -p /etc/ssh /root/.ssh
+ssh-keygen -q -t ed25519 -N "" -f /etc/ssh/ssh_host_ed25519_key
+if [ -f /ssh-authorized-keys/authorized_keys ]; then
+	cp /ssh-authorized-keys/authorized_keys /root/.ssh/
+	chmod 600 /root/.ssh/authorized_keys
+fi
+/usr/sbin/sshd -e -p "${E2E_SSH_PORT}"
 
 # Auth is enforced one layer up (Traefik + the existing basic-admin-auth
 # Middleware) — code-server's own auth would just double-prompt.

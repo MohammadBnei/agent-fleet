@@ -37,7 +37,7 @@ topology/features — the reading order is `DECISIONS.md` → this file →
 | `db/migrations/` | Shared Postgres schema (`agentfleetdb`, Pigsty-managed) — sole source of truth, applied via golang-migrate by the dedicated `migration` image on a `PreSync` hook (see [`adr/0030`](adr/0030-single-source-schema-via-golang-migrate.md)). `tasks` (the queue — gains a `failed_permanently` terminal status as of [`adr/0024`](adr/0024-crash-fast-path-and-journal-read.md), a retry-cap outcome distinct from a single attempt's `failed`), append-only `knowledge_journal` (now readable via `GetJournal`, `adr/0024`), `transcript` (renamed from `planning_transcript` — durable session transcript, pull/cursor reads, idempotency-keyed appends, a `reply_to_seq` column for question/permission-request correlation). `e2e_sessions` still exists in the schema but is **no longer read or written by any Go/TS code** — e2e-session state moved to being Kubernetes-native (pod existence/phase) as of `docs/adr/0020` point 1; see §6. |
 | `dashboard/` | React + Vite + TypeScript + Tailwind/DaisyUI SPA — task list, **task creation** (`NewTaskDialog.tsx`, `DashboardService.CreateTask` — an alternative to Discord's `/task`, not a replacement), task detail (live transcript via a Connect server-streaming RPC, Warm/Stop/kill-e2e buttons, a mode picker showing `default`/`plan`/`acceptEdits`/`bypassPermissions` with the real active mode highlighted, code-server link, `AskUserQuestion`/`PermissionCard`/`PlanCard` answer forms — `adr/0018`/`0029`), talking to `core` via a generated `@connectrpc/connect-web` client. Built into and served by `core`'s binary — not deployed on its own. |
 | `k8s/` | This repo's own deploy manifests: `core.yaml` (Helm values for `common-app-chart`, zero RBAC) and `provisioner/` (a standalone plain-manifest directory — `Deployment`/`Service`/`ServiceAccount`/`Role`/`InfisicalSecret`/`NetworkPolicy`/`PersistentVolumeClaim` — since it needs RBAC `common-app-chart` can't express). Both referenced from `infra-bootstrap`'s `gitops/` (see §9). |
-| `e2e-runner/` | One generic pod image (code-server + the target app + a Playwright MCP server + `execmcp`, CPU-only headless Chromium for v1) the provisioner spins up per on-demand e2e request, parametrized by env vars the same way `worker/`'s image is parametrized by `TARGET_REPO`. Also **the worker's build/test sandbox** (`adr/0039`): it holds the repo's resolved toolchain and services (`adr/0034`), no fleet credentials, and only this task's worktree (`SubPath`) — so `execmcp`'s `run_command` is where builds, tests, linters and dependency installs belong. `git`/`gh` are deliberately absent there and stay on the worker pod's own `Bash`. |
+| `e2e-runner/` | One generic pod image (code-server + the target app + a Playwright MCP server + `execmcp` + sshd, CPU-only headless Chromium for v1) the provisioner spins up per on-demand e2e request, parametrized by env vars the same way `worker/`'s image is parametrized by `TARGET_REPO`. Also **the worker's build/test sandbox** (`adr/0039`): it holds the repo's resolved toolchain and services (`adr/0034`), no fleet credentials, and only this task's worktree (`SubPath`) — so `execmcp`'s `run_command` is where builds, tests, linters and dependency installs belong. `git`/`gh` are deliberately absent there and stay on the worker pod's own `Bash`. SSH access (port 2222) is available via `kubectl port-forward` for human debugging with VSCode Remote-SSH, using a fleet-wide authorized_keys Secret (optional, runtime per-pod ed25519 host key generation). |
 | `executor/` | Go — the only process in the fleet holding cluster RBAC ([`adr/0037`](adr/0037-thot-is-a-worker-task.md)). One RPC, `Exec(argv)`, run on behalf of pods that hold no credentials at all. Deployed from infra-bootstrap's `gitops/platform/thot/` as `thot-executor`, with the ClusterRole `adr/0032` reviewed. Reads are validated against a verb allowlist (nothing else checks them); mutations are a dumb pipe, because a human already approved that exact argv through `canUseTool`. |
 
 ## 2. End-to-end flow
@@ -590,6 +590,40 @@ nothing external still queries it directly.
 | `GH_TOKEN` | – | for the provisioner's own clone/fetch auth (`gh auth setup-git`), and forwarded verbatim into every worker pod's `worker` container env |
 
 No `AGENTFLEET_DB_*` here at all — see §6.
+
+#### SSH access to e2e pods
+
+SSH (port 2222) is available for human debugging with VSCode Remote-SSH. Access via `kubectl port-forward`:
+
+```bash
+kubectl port-forward -n agent-fleet svc/e2e-<shortID> 2222:2222
+ssh -i ~/.ssh/<your-key> -o StrictHostKeyChecking=no -p 2222 root@localhost
+```
+
+`e2e-<shortID>` is `provisioner/internal/k8s/names.go`'s `ResourceName()` — the
+Service and the Pod share it.
+
+`StrictHostKeyChecking=no` is correct-by-design here, not a workaround: each
+pod generates its own ed25519 host key at startup (`entrypoint.sh`, and the
+image ships none — the `Dockerfile` deletes the ones `openssh-server`'s
+postinst bakes in), so the fingerprint is *supposed* to be different every
+time. Don't "fix" this by pinning a host key; that means persisting a private
+key into a pod [`adr/0039`](adr/0039-e2e-pod-is-the-worker-sandbox.md) defines
+as credential-free.
+
+Public-key auth only — there is no root password, so with no `authorized_keys`
+present SSH fails closed and the pod is otherwise unaffected. The key comes
+from Infisical (`agent-fleet-nygh`, env `dev`, **path `/e2e-ssh`**, key
+`E2E_SSH_AUTHORIZED_KEYS`), materialized by
+`k8s/provisioner/e2e-ssh-infisicalsecret.yaml` into the optional Secret
+`e2e-ssh-authorized-keys` and projected to `authorized_keys` by `pod.go`'s
+`Items:`. To grant someone access, append their public key to that one
+Infisical value.
+
+`kubectl port-forward` is the only path in: 2222 is not in the e2e-runner
+NetworkPolicy's allowlist and Traefik routes HTTP only. Port-forward is
+unaffected because it originates on the node, not from a pod — see the
+comment in `k8s/provisioner/networkpolicy.yaml`.
 
 ### `sidecar/` (per worker pod, injected by the provisioner at pod creation)
 

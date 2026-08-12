@@ -47,6 +47,7 @@ const (
 )
 
 func int32Ptr(i int32) *int32 { return &i }
+func boolPtr(b bool) *bool    { return &b }
 
 // CreatedE2ePod mirrors CreatedE2ePod in k8s.ts.
 type CreatedE2ePod struct {
@@ -98,6 +99,7 @@ func (c *Client) CreatePod(ctx context.Context, task TaskRef) error {
 		{Name: "E2E_CODE_SERVER_PORT", Value: fmt.Sprint(CodeServerPort)},
 		{Name: "E2E_PLAYWRIGHT_PORT", Value: fmt.Sprint(PlaywrightPort)},
 		{Name: "E2E_EXEC_PORT", Value: fmt.Sprint(ExecPort)},
+		{Name: "E2E_SSH_PORT", Value: fmt.Sprint(SSHPort)},
 		// Persisted on the shared PVC under cache/<repo>/ (see the
 		// "cache" VolumeMount below) so a repo's Go/Bun deps only get
 		// downloaded once, not on every e2e session — GOCACHE/GOMODCACHE
@@ -120,6 +122,7 @@ func (c *Client) CreatePod(ctx context.Context, task TaskRef) error {
 		{Name: "workspace", MountPath: "/workspace", SubPath: "worktrees/" + task.ID},
 		{Name: "workspace", MountPath: "/cache", SubPath: "cache/" + task.Repo},
 		{Name: "dshm", MountPath: "/dev/shm"},
+		{Name: "ssh-authorized-keys", MountPath: "/ssh-authorized-keys", ReadOnly: true},
 	}
 	if toolsMount != nil {
 		runnerMounts = append(runnerMounts, *toolsMount)
@@ -140,6 +143,7 @@ func (c *Client) CreatePod(ctx context.Context, task TaskRef) error {
 						{Name: "code-server", ContainerPort: CodeServerPort},
 						{Name: "playwright", ContainerPort: PlaywrightPort},
 						{Name: "exec", ContainerPort: ExecPort},
+						{Name: "ssh", ContainerPort: SSHPort},
 					},
 					VolumeMounts: runnerMounts,
 					// Readiness, deliberately not startup/liveness: a pod
@@ -212,6 +216,17 @@ func (c *Client) CreatePod(ctx context.Context, task TaskRef) error {
 						EmptyDir: &corev1.EmptyDirVolumeSource{
 							Medium:    corev1.StorageMediumMemory,
 							SizeLimit: resourcePtr("1Gi"),
+						},
+					},
+				},
+				{
+					Name: "ssh-authorized-keys",
+					VolumeSource: corev1.VolumeSource{
+						Secret: &corev1.SecretVolumeSource{
+							SecretName:  "e2e-ssh-authorized-keys",
+							Optional:    boolPtr(true),
+							Items:       []corev1.KeyToPath{{Key: "E2E_SSH_AUTHORIZED_KEYS", Path: "authorized_keys"}},
+							DefaultMode: int32Ptr(0644),
 						},
 					},
 				},

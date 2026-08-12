@@ -14,6 +14,21 @@
 # The worker pod's own code-server access is the thing this exists to deny —
 # code-server is a full IDE/terminal, a human-review-only surface, not
 # something the agent should ever be able to reach.
+#
+# sshd's 2222 (human VSCode Remote-SSH) is deliberately NOT listed. The only
+# access path is `kubectl port-forward`, which originates on the node — the
+# kubelet opens the connection from the host namespace, so no `from:`
+# selector here can match it and none is needed. Cilium's allow-localhost
+# default permits host->local-pod regardless of policy; the proof is already
+# running, since this pod's ReadinessProbe on 3000 comes from the same host
+# origin and succeeds today with no rule admitting it.
+#
+# So an ingress rule for 2222 buys nothing and costs a lot: expressed as
+# `namespaceSelector: {} + podSelector: {}` it reads "every pod in the
+# cluster", which hands worker pods a route to the sandbox's sshd — the
+# same class of reach this policy exists to deny for code-server. If
+# external SSH ever lands (the deferred TCP IngressRoute), add a rule
+# selecting the traefik namespace specifically, never an empty selector.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:

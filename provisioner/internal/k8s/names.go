@@ -13,6 +13,7 @@ const (
 	// (execmcp) — distinct from PlaywrightPort's third-party server, which
 	// we can't add tools to.
 	ExecPort = 8932
+	SSHPort  = 2222
 	// SidecarMCPPort is agent-facing (local MCP server, the Agent SDK's
 	// mcpServers config), SidecarAPIPort is wrapper-facing (plain local
 	// HTTP/JSON, docs/adr/0020 point 5's two local surfaces).
