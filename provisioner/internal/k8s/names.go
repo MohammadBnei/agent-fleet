@@ -117,7 +117,7 @@ func SharedInstanceAdminSecretName(repo, serviceKey string) string {
 
 // SSHHostKeySecretName returns per-repo SSH host key Secret name. Static host
 // key (ed25519), generated once per repo same pattern as SharedInstanceAdminSecretName.
-// Infisical CA public key (TrustedUserCAKeys) separate — fleet-wide, cached Secret.
+// Fleet-wide authorized_keys in separate Secret "e2e-ssh-authorized-keys" (optional).
 func SSHHostKeySecretName(repo string) string {
 	return "ssh-host-key-" + repo
 }

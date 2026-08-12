@@ -128,7 +128,7 @@ func (c *Client) CreatePod(ctx context.Context, task TaskRef) error {
 		{Name: "workspace", MountPath: "/cache", SubPath: "cache/" + task.Repo},
 		{Name: "dshm", MountPath: "/dev/shm"},
 		{Name: "ssh-host-keys", MountPath: "/ssh-host-keys", ReadOnly: true},
-		{Name: "ssh-ca", MountPath: "/ssh-ca", ReadOnly: true},
+		{Name: "ssh-authorized-keys", MountPath: "/ssh-authorized-keys", ReadOnly: true},
 	}
 	if toolsMount != nil {
 		runnerMounts = append(runnerMounts, *toolsMount)
@@ -235,10 +235,10 @@ func (c *Client) CreatePod(ctx context.Context, task TaskRef) error {
 					},
 				},
 				{
-					Name: "ssh-ca",
+					Name: "ssh-authorized-keys",
 					VolumeSource: corev1.VolumeSource{
 						Secret: &corev1.SecretVolumeSource{
-							SecretName:  "infisical-ssh-ca",
+							SecretName:  "e2e-ssh-authorized-keys",
 							Optional:    boolPtr(true),
 							DefaultMode: int32Ptr(0644),
 						},

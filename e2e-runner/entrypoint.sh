@@ -17,19 +17,17 @@ set -euo pipefail
 : "${E2E_EXEC_PORT:?E2E_EXEC_PORT is required}"
 : "${E2E_SSH_PORT:?E2E_SSH_PORT is required}"
 
-# ponytail: SSH host key from mounted Secret, Infisical CA from optional Secret.
+# ponytail: SSH host key from per-repo Secret, authorized_keys from optional fleet-wide Secret.
 # No runtime keygen — provisioner creates host key Secret once per repo,
 # same pattern as shared-instance admin password (idempotent, persisted).
-# Infisical CA pub key (TrustedUserCAKeys) from fleet-wide Secret if present.
-mkdir -p /etc/ssh
+mkdir -p /etc/ssh /root/.ssh
 if [ -f /ssh-host-keys/ssh_host_ed25519_key ]; then
 	cp /ssh-host-keys/ssh_host_ed25519_key /etc/ssh/
 	chmod 600 /etc/ssh/ssh_host_ed25519_key
 fi
-# ponytail: TrustedUserCAKeys only if Infisical CA Secret mounted. No CA = password-only auth.
-if [ -f /ssh-ca/infisical_ca.pub ]; then
-	cp /ssh-ca/infisical_ca.pub /etc/ssh/
-	echo "TrustedUserCAKeys /etc/ssh/infisical_ca.pub" >> /etc/ssh/sshd_config
+if [ -f /ssh-authorized-keys/authorized_keys ]; then
+	cp /ssh-authorized-keys/authorized_keys /root/.ssh/
+	chmod 600 /root/.ssh/authorized_keys
 fi
 /usr/sbin/sshd -D -e -p "${E2E_SSH_PORT}" &
 
