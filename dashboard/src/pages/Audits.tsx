@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { client } from "../connectClient";
 import type { ScheduledAudit } from "../gen/agentfleet/v1/dashboard_pb";
 import type { Task } from "../gen/agentfleet/v1/core_pb";
-import { ErrorModal } from "../components/ErrorModal";
+import { InlineError } from "../components/InlineError";
 import { ConfirmModal } from "../components/ConfirmModal";
 import { Modal } from "../components/Modal";
 import { useMediaQuery } from "../useMediaQuery";
@@ -234,7 +234,7 @@ export function Audits({
 
   return (
     <div className="flex-1 min-h-0 overflow-y-auto px-3.5 sm:px-4.5 pt-4 sm:pt-5 pb-6 flex flex-col gap-3.5">
-      <ErrorModal message={error} onClose={() => setError(null)} />
+      <InlineError message={error} onRetry={load} onDismiss={() => setError(null)} />
       {(creating || editing) && (
         <AuditForm audit={editing} onClose={() => { setCreating(false); setEditing(null); }} onSaved={load} />
       )}

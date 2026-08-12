@@ -14,14 +14,14 @@ export const ToolCallLine = memo(function ToolCallLine({ entry }: { entry: Trans
   const added = files.reduce((n, f) => n + f.added, 0);
   const removed = files.reduce((n, f) => n + f.removed, 0);
   return (
-    <div className="flex items-center gap-2 text-[11px] min-w-0">
-      <span className="text-secondary flex-none">⏺</span>
-      <span className="text-base-content/50 flex-none">files</span>
-      <span className="text-base-content/70 flex-1 truncate min-w-0">
-        {files.length} changed{summary?.branch ? ` · ${summary.branch}` : ""}
+    <div className="flex items-center gap-2.5 min-w-0">
+      <span className="text-[11px] text-dim2 whitespace-nowrap">
+        {files.length} file{files.length === 1 ? "" : "s"} changed
       </span>
-      <span className="text-success flex-none">+{added}</span>
-      {removed > 0 && <span className="text-warning flex-none">−{removed}</span>}
+      <span className="flex-1 h-px bg-line3" />
+      <span className="text-[11px] text-dim2 truncate min-w-0">{summary?.branch ?? ""}</span>
+      <span className="text-[11px] text-green-soft flex-none">+{added}</span>
+      {removed > 0 && <span className="text-[11px] text-minus flex-none">−{removed}</span>}
     </div>
   );
 });

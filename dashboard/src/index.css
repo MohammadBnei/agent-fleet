@@ -183,6 +183,12 @@
   body {
     font-family: "IBM Plex Mono", ui-monospace, monospace;
     -webkit-font-smoothing: antialiased;
+    /* The theme has to reach the canvas, not just the app's root element:
+       without this, `body` stays transparent and anything outside the root div
+       (overscroll rubber-banding, a short page) falls back to the browser's own
+       white — which reads as a flash of the wrong theme. */
+    background-color: var(--color-base-100);
+    color: var(--color-base-content);
   }
   /* The mockups are mono throughout — headings are weight, not a second
      family. `.font-display` survives as an alias so no component that used it

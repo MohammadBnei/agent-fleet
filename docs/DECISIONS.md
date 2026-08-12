@@ -102,6 +102,19 @@ Any doc, code, comment, or memory that contradicts this file or an
   the profile — see `adr/0036`.
 - **Hardcoding git commit identity.** Always derived live from the
   authenticated bot GitHub account — see `adr/0006`.
+- **A page-load failure rendered as a blocking modal.** The mobile tab bar is
+  the only way out of a view, so a modal over a failed page trapped the user
+  entirely when the provisioner or object store was unreachable. Load errors go
+  inline (`InlineError`) with a retry; modals are for decisions — see
+  `adr/0042`.
+- **Giving a new transcript entry kind the same weight as everything else.**
+  The feed's five tiers are the whole point of the rewrite: a `$0.42 · 7 turns`
+  line and the agent's prose reading identically is the failure it fixes. A new
+  kind is placed in a tier — see `adr/0042`.
+- **Duplicating feed, panel or decision rendering between desktop and mobile.**
+  They share `SessionFeed`/`SessionPanels`/`DecisionInline`; the separate
+  list/detail components exist only for the `useMediaQuery` mount gate, which
+  prevents two concurrent `StreamTranscript` subscriptions — see `adr/0042`.
 - **Committing Discord/GitHub/Anthropic tokens** to this repo or any
   target repo, in code, manifests, or CI config.
 - **A bespoke per-app Helm chart.** Always reuse

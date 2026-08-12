@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { client } from "../connectClient";
 import type { WorktreeView } from "../gen/agentfleet/v1/dashboard_pb";
-import { ErrorModal } from "../components/ErrorModal";
+import { InlineError } from "../components/InlineError";
 import { ConfirmModal } from "../components/ConfirmModal";
 import { useMediaQuery } from "../useMediaQuery";
 
@@ -220,7 +220,7 @@ export function Worktrees({ onSelectTask }: { onSelectTask: (id: string) => void
 
   return (
     <div className="flex-1 min-h-0 overflow-y-auto px-3.5 sm:px-4.5 pt-4 sm:pt-5 pb-6 flex flex-col gap-3.5">
-      <ErrorModal message={error} onClose={() => setError(null)} />
+      <InlineError message={error} onRetry={load} onDismiss={() => setError(null)} />
       <ConfirmModal
         open={syncConfirmOpen}
         title="Prune orphaned worktrees"

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { client } from "../connectClient";
 import type { FileMetadata } from "../gen/agentfleet/v1/files_pb";
-import { ErrorModal } from "../components/ErrorModal";
+import { InlineError } from "../components/InlineError";
 import { ConfirmModal } from "../components/ConfirmModal";
 import { useMediaQuery } from "../useMediaQuery";
 import { formatBytes } from "./Worktrees";
@@ -154,7 +154,7 @@ export function Files() {
         void upload(Array.from(e.dataTransfer.files));
       }}
     >
-      <ErrorModal message={error} onClose={() => setError(null)} />
+      <InlineError message={error} onRetry={load} onDismiss={() => setError(null)} />
 
       <div className="flex items-baseline gap-3 flex-wrap">
         <h2 className="text-[13.5px] sm:text-[14px] font-semibold">Shared files</h2>

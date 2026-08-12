@@ -212,29 +212,43 @@ switcher, no file attachments to the agent, no `@`-file mention, no
 
 ## 8. Design brief
 
-Where the current UI falls down, i.e. what a rewrite should fix:
+Where the current UI falls down, i.e. what a rewrite should fix.
 
-1. ~~**The two state axes are visually conflated.**~~ **Partly fixed.**
+> **All six are now addressed** by the console rewrite — see
+> [`adr/0042`](adr/0042-console-rewrite.md), which implements
+> `Agent Fleet Console.dc.html` and `Agent Fleet Console Mobile.dc.html`. The
+> items are kept below, struck through, because each records *why* a piece of the
+> current design exists; deleting them would lose the reasoning. Everything above
+> §8 is still the live contract for what the interface must express.
+
+1. ~~**The two state axes are visually conflated.**~~ **Fixed.**
    Status, live state, pod phase and staleness used to render as four
    badges of near-identical weight, producing pairs that restated each
    other (`CANCELLED TERMINATED`) or outright contradicted each other
    (`SCHEDULED DONE`). They are now a single precedence-ranked badge
    (`sessionBadge` in `pages/TaskList.tsx`), ordered by what a human needs
    to know first: needs-you → crashed → stale → stalled → done → in-motion
-   → workflow status. Demoted detail survives in the tooltip. **The
-   redesign should keep the ranking and give it far more visual weight than
-   a 8.5px chip** — the top of that order is the entire product.
-2. **The feed has almost no visual hierarchy.** A `$0.42 · 7 turns` result
-   line, a compaction marker, and an agent's actual prose are all ~10px
-   grey text. Tier 1 and Tier 4 look the same.
-3. **Blocking cards don't dominate.** The one thing that needs a human
-   should own the screen when it appears, and it currently sits inline.
-4. **Density has no control.** A long session is thousands of lines with no
-   zoom-out, no jump-to-next-decision, no collapse-all-tools.
-5. **Mobile is a port, not a design.** It's the surface most likely used to
-   answer a blocking question away from a desk, and it's the weaker one.
-6. **No fleet-level overview.** With 5 concurrent sessions there is no
-   at-a-glance "who is working / blocked / done" view — only a list of rows.
+   → workflow status. Demoted detail survives in the tooltip. The ranking was
+   kept verbatim and given real weight; `sessionBadge.test.ts` still passes
+   untouched, which is the proof it survived the rewrite.
+2. ~~**The feed has almost no visual hierarchy.**~~ **Fixed.** A `$0.42 ·
+   7 turns` result line, a compaction marker, and an agent's actual prose were
+   all ~10px grey text — Tier 1 and Tier 4 looked the same. `SessionFeed` now
+   renders the five tiers differently: full-width cards, readable prose, dense
+   grouped tool rows, hairline lifecycle rules, orange alarm bars.
+3. ~~**Blocking cards don't dominate.**~~ **Fixed, and then some.** The pending
+   decision is now rendered *and answerable in the list* — an `Edit` as a real
+   diff with allow/deny — so unblocking a session costs no navigation at all. On
+   mobile it docks above the composer rather than scrolling away inline.
+4. ~~**Density has no control.**~~ **Fixed.** A three-way density control, a
+   decision spine with jump-to-entry and `↓ next decision`, and collapse-all on
+   each grouped tool run.
+5. ~~**Mobile is a port, not a design.**~~ **Fixed.** Designed from its own
+   mockup: persistent tab bar, bucket filter chips, ~44px targets, the docked
+   decision, and panels as a bottom sheet.
+6. ~~**No fleet-level overview.**~~ **Fixed.** The list is full-width and *is*
+   the overview: a live census in the header, decisions inline, a dense WORKING
+   table with per-session in-flight tool lines, and a collapsed quiet tail.
 
 Character: this is an operator's console, used for hours, mostly dark. It
 should read as calm and dense — closer to a trading terminal or a good CI

@@ -21,6 +21,7 @@ import { Markdown } from "./Markdown";
 import { Collapse } from "./Collapse";
 import { TranscriptEntryView } from "./TranscriptEntryView";
 import { ToolCallDetail } from "./ToolCallItem";
+import { ToolCallLine } from "./ToolCallLine";
 import { PermissionCard } from "./PermissionCard";
 import { PlanCard } from "./PlanCard";
 import { QuestionCard } from "./QuestionCard";
@@ -350,14 +351,16 @@ export function SessionFeed({
       continue;
     }
 
-    // The sidecar's periodic {branch, files[]} telemetry — the CHANGES panel
-    // summarises it regardless, so in the feed it's tier 4 noise.
+    // The sidecar's periodic {branch, files[]} telemetry. The CHANGES panel
+    // summarises it regardless, so in the feed it's tier 4 — a one-line rule.
+    // TranscriptEntryView has no branch for this type and would fall through to
+    // the prose renderer, dumping the raw JSON payload into the conversation.
     if (entry.type === TranscriptEntryType.TOOL_CALL) {
       if (!visibility.quiet) continue;
       flush();
       out.push(
         <div key={key}>
-          <TranscriptEntryView entry={entry} compact={compact} />
+          <ToolCallLine entry={entry} />
         </div>,
       );
       continue;
