@@ -126,6 +126,17 @@ message InterruptResponse {
 // session_id, both of which already survive teardown. Rejected with
 // CodeFailedPrecondition if the task already has a live pod (idempotent
 // double-click guard) or the fleet is already at MAX_IN_FLIGHT_TASKS.
+// Records that a human opened this session's detail view — what turns a
+// `done` live_state (finished while nobody was looking) back into `idle`.
+// Deliberately an explicit call rather than a side effect of GetTask: the
+// task list polls, and a poll marking everything seen would make `done`
+// unreachable.
+message MarkSeenRequest {
+  string task_id = 1;
+}
+
+message MarkSeenResponse {}
+
 message WarmRequest {
   string task_id = 1;
 }
@@ -454,6 +465,7 @@ service DashboardService {
   // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
   rpc SetPermissionMode(SetPermissionModeRequest) returns (SetPermissionModeResponse);
   rpc Warm(WarmRequest) returns (WarmResponse);
+  rpc MarkSeen(MarkSeenRequest) returns (MarkSeenResponse);
   rpc ApproveTask(ApproveTaskRequest) returns (ApproveTaskResponse);
   rpc KillE2e(KillE2eRequest) returns (KillE2eResponse);
   rpc AnswerQuestion(AnswerQuestionRequest) returns (AnswerQuestionResponse);

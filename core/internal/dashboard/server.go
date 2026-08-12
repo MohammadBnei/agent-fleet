@@ -447,6 +447,23 @@ func (s *Server) Discuss(ctx context.Context, req *connect.Request[agentfleetv1.
 	return connect.NewResponse(&agentfleetv1.DiscussResponse{Status: "sent"}), nil
 }
 
+// MarkSeen records that a human opened this session's detail view, which
+// is what distinguishes `idle` from `done` (docs/adr/0040) — `done` being
+// a session that finished while nobody was looking, the state worth
+// surfacing in a fleet you are not watching continuously.
+//
+// Deliberately its own RPC rather than a side effect of GetTask: the task
+// list polls GetTranscript/ListTasks every 5s, and marking seen from a
+// poll would clear the flag for every session at once and make `done`
+// unreachable. Best-effort — failing to record a look is not worth
+// failing the caller over, and the next open will record it anyway.
+func (s *Server) MarkSeen(ctx context.Context, req *connect.Request[agentfleetv1.MarkSeenRequest]) (*connect.Response[agentfleetv1.MarkSeenResponse], error) {
+	if err := s.tasks.MarkSeen(ctx, req.Msg.GetTaskId()); err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	return connect.NewResponse(&agentfleetv1.MarkSeenResponse{}), nil
+}
+
 // Warm boots a pod for an idle session on demand (see WarmRequest's own
 // proto comment) — the explicit counterpart to Discuss's auto-warm. Gives
 // an explicit, specific rejection reason for each way a click can be a
@@ -1007,11 +1024,24 @@ func journalEntryToProto(e journal.Entry) *agentfleetv1.JournalEntry {
 	}
 }
 
+// DefaultTurnStall is what TaskToProto derives live_state with. The
+// dispatch loop's own copy comes from config (TURN_STALL_MS); this
+// mirrors the default so the two agree without threading config through
+// every conversion call site, including coreserver's. Diverging only
+// changes how quickly a session reads as `stalled` in the UI — nothing is
+// torn down on this clock (docs/adr/0040).
+const DefaultTurnStall = 90 * time.Second
+
 func TaskToProto(t tasks.Task) *agentfleetv1.Task {
 	var heartbeatAt *string
 	if t.HeartbeatAt != nil {
 		s := t.HeartbeatAt.Format(time.RFC3339)
 		heartbeatAt = &s
+	}
+	var lastActiveAt *string
+	if t.LastActiveAt != nil {
+		s := t.LastActiveAt.Format(time.RFC3339)
+		lastActiveAt = &s
 	}
 	return &agentfleetv1.Task{
 		Kind: t.Kind,
@@ -1029,6 +1059,10 @@ func TaskToProto(t tasks.Task) *agentfleetv1.Task {
 		SessionId:      t.SessionID,
 		PermissionMode: t.PermissionMode,
 		AwaitingHuman:  t.AwaitingHuman,
+		LastActiveAt:   lastActiveAt,
+		// Derived per read rather than stored, so it can never disagree
+		// with the row it was computed from (docs/adr/0040).
+		LiveState: string(tasks.DeriveLiveState(&t, time.Now(), DefaultTurnStall)),
 	}
 }
 

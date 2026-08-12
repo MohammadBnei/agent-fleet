@@ -87,7 +87,7 @@ func TestTick_ResolvesWorkerProfileIngredients(t *testing.T) {
 	}
 
 	fake, provisioner := newFakeProvisioner(t)
-	l := New(taskStore, transcr, repoStore, profileStore, provisioner, 5, 3, 30*time.Second, 30*time.Minute)
+	l := New(taskStore, transcr, repoStore, profileStore, provisioner, 5, 3, 30*time.Second, 30*time.Minute, 3*time.Minute)
 
 	l.tick(ctx)
 
@@ -125,7 +125,7 @@ func TestTick_NoWorkerProfile_EmptyIngredients(t *testing.T) {
 	}
 
 	fake, provisioner := newFakeProvisioner(t)
-	l := New(taskStore, transcr, repoStore, profileStore, provisioner, 5, 3, 30*time.Second, 30*time.Minute)
+	l := New(taskStore, transcr, repoStore, profileStore, provisioner, 5, 3, 30*time.Second, 30*time.Minute, 3*time.Minute)
 
 	l.tick(ctx)
 

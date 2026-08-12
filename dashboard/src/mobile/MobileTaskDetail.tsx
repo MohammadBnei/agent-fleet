@@ -9,7 +9,6 @@ import {
   parseAnswers,
   findPendingQuestion,
   findPendingPermissions,
-  isCogitating,
   resolvedPermissionDecisions,
   permissionDenyMessages,
   latestSlashCommands,
@@ -32,7 +31,7 @@ import { Modal } from "../components/Modal";
 import { ActionsMenu } from "../components/ActionsMenu";
 import { ProposalActions } from "../components/ProposalActions";
 import { E2eCard } from "../components/E2eCard";
-import { prBadge, podStateBadge, staleBadge, isPodPhaseLive } from "../pages/TaskList";
+import { prBadge, podStateBadge, staleBadge } from "../pages/TaskList";
 
 // Mirrors the "herd" mock's phone session screen (Agent Fleet Mobile.dc.html)
 // minus device chrome. Single-pane (list vs. detail), unlike desktop's
@@ -121,7 +120,10 @@ export function MobileTaskDetail({
     ? (todos.find((t) => t.status === "in_progress") ?? todos.find((t) => t.status !== "completed"))
     : null;
   const pendingPermissions = findPendingPermissions(entries);
-  const cogitating = isCogitating(entries, isPodPhaseLive(task.podPhase), pendingPermissions.length > 0, Boolean(pendingQuestion));
+  // Server-derived (docs/adr/0040) — core owns the thresholds, so every
+  // client agrees on what "working" and "stalled" mean.
+  const cogitating = task.liveState === "working";
+  const stalled = task.liveState === "stalled";
   const permissionDecisions = resolvedPermissionDecisions(entries);
   const denyMessages = permissionDenyMessages(entries);
   // Tool calls stay inline in the mobile feed (unlike desktop's right-panel
@@ -214,6 +216,11 @@ export function MobileTaskDetail({
             <span className="flex items-center gap-1 text-[9px] font-semibold text-base-content/50 tracking-wide flex-none whitespace-nowrap">
               <span className="w-1.5 h-1.5 rounded-full bg-primary animate-fpulse" />
               THINKING
+            </span>
+          )}
+          {stalled && (
+            <span className="px-1.5 py-0.5 rounded bg-warning/15 border border-warning/45 text-[9px] font-semibold text-warning tracking-wide flex-none whitespace-nowrap">
+              STALLED
             </span>
           )}
           <div className="flex-1 flex gap-1 min-w-0">

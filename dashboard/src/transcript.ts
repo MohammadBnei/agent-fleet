@@ -117,39 +117,9 @@ export function resolvedPermissionDecisions(entries: TranscriptEntry[]): Map<big
   return out;
 }
 
-// No SDK message marks "a turn started generating" — the earliest signal
-// is whatever human-originated entry last unblocked the worker's `for
-// await` loop (the initial dispatch, a sent message, an answered question,
-// a resolved permission), and it stays true until the next RESULT entry
-// closes the turn back out to idle. A pending permission/question is its
-// own "waiting on you" state, not this one, so those short-circuit false
-// even though they're technically after a human-originated entry too.
-export function isCogitating(
-  entries: TranscriptEntry[],
-  podLive: boolean,
-  hasPendingPermission: boolean,
-  hasPendingQuestion: boolean,
-): boolean {
-  if (!podLive || hasPendingPermission || hasPendingQuestion) return false;
-  for (let i = entries.length - 1; i >= 0; i--) {
-    const e = entries[i];
-    if (e.type === TranscriptEntryType.RESULT) return false;
-    if (
-      e.type === TranscriptEntryType.ANSWER ||
-      e.type === TranscriptEntryType.PERMISSION_RESPONSE ||
-      (e.type === TranscriptEntryType.DISCUSSION && e.from === "human")
-    ) {
-      return true;
-    }
-  }
-  return false;
-}
-
 // The human's stated reason for a denial, keyed by the request's own seq.
 // Parsed alongside the decision above but kept separate so that Map's type
-// stays a plain outcome — only the collapsed card needs this. Until now the
-// message was parsed nowhere and shown nowhere, so a denial read as an
-// unexplained refusal in the one place the reason matters.
+// stays a plain outcome — only the collapsed card needs this.
 export function permissionDenyMessages(entries: TranscriptEntry[]): Map<bigint, string> {
   const out = new Map<bigint, string>();
   for (const e of entries) {

@@ -182,6 +182,16 @@ message Task {
   // "worker" | "thot" (docs/adr/0037). A UI label and gate only — the
   // dispatch path never branches on it.
   string kind = 16;
+  // Session liveness (docs/adr/0040): "" (no live pod) | "working" |
+  // "blocked" | "idle" | "done" | "stalled" | "unknown". Orthogonal to
+  // `status`, which is a workflow status — a session can be `running` and
+  // blocked, or `running` and stalled, and those are different questions.
+  //
+  // Derived server-side from the task row on every read rather than stored,
+  // so it cannot drift from the transcript; core owns the thresholds, so
+  // every client agrees on what "stalled" means instead of each
+  // re-implementing the heuristic.
+  string live_state = 17;
 }
 
 message GetTaskRequest {

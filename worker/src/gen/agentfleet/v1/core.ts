@@ -298,6 +298,18 @@ export interface Task {
    * dispatch path never branches on it.
    */
   kind: string;
+  /**
+   * Session liveness (docs/adr/0040): "" (no live pod) | "working" |
+   * "blocked" | "idle" | "done" | "stalled" | "unknown". Orthogonal to
+   * `status`, which is a workflow status — a session can be `running` and
+   * blocked, or `running` and stalled, and those are different questions.
+   *
+   * Derived server-side from the task row on every read rather than stored,
+   * so it cannot drift from the transcript; core owns the thresholds, so
+   * every client agrees on what "stalled" means instead of each
+   * re-implementing the heuristic.
+   */
+  liveState: string;
 }
 
 export interface GetTaskRequest {
@@ -960,6 +972,7 @@ function createBaseTask(): Task {
     permissionMode: undefined,
     awaitingHuman: false,
     kind: "",
+    liveState: "",
   };
 }
 
@@ -1026,6 +1039,11 @@ export const Task: MessageFns<Task> = {
         ? globalThis.Boolean(object.awaiting_human)
         : false,
       kind: isSet(object.kind) ? globalThis.String(object.kind) : "",
+      liveState: isSet(object.liveState)
+        ? globalThis.String(object.liveState)
+        : isSet(object.live_state)
+        ? globalThis.String(object.live_state)
+        : "",
     };
   },
 
@@ -1079,6 +1097,9 @@ export const Task: MessageFns<Task> = {
     if (message.kind !== "") {
       obj.kind = message.kind;
     }
+    if (message.liveState !== "") {
+      obj.liveState = message.liveState;
+    }
     return obj;
   },
 
@@ -1103,6 +1124,7 @@ export const Task: MessageFns<Task> = {
     message.permissionMode = object.permissionMode ?? undefined;
     message.awaitingHuman = object.awaitingHuman ?? false;
     message.kind = object.kind ?? "";
+    message.liveState = object.liveState ?? "";
     return message;
   },
 };

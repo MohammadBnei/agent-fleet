@@ -41,9 +41,9 @@ func newActivityTrackingStore(store transcript.Store, taskStore *tasks.Store) ac
 // touch is best-effort and fire-and-forget — a transcript append must
 // never be slowed down or failed by the activity-tracking side effect
 // (matches tasks.Store.TouchActive's own best-effort framing).
-func (s activityTrackingStore) touch(taskID string) {
+func (s activityTrackingStore) touch(taskID, from, msgType string) {
 	go func() {
-		if err := s.tasks.TouchActive(context.Background(), taskID); err != nil {
+		if err := s.tasks.TouchActive(context.Background(), taskID, from, msgType); err != nil {
 			slog.Warn("activityTrackingStore: touch active failed", "taskId", taskID, "error", err)
 		}
 	}()
@@ -78,7 +78,7 @@ func (s activityTrackingStore) awaitHuman(taskID, msgType string) {
 func (s activityTrackingStore) Append(ctx context.Context, taskID, from, text, msgType, idempotencyKey string) (int64, error) {
 	seq, err := s.Store.Append(ctx, taskID, from, text, msgType, idempotencyKey)
 	if err == nil {
-		s.touch(taskID)
+		s.touch(taskID, from, msgType)
 		s.awaitHuman(taskID, msgType)
 	}
 	return seq, err
@@ -87,7 +87,7 @@ func (s activityTrackingStore) Append(ctx context.Context, taskID, from, text, m
 func (s activityTrackingStore) AppendReply(ctx context.Context, taskID, from, text, msgType, idempotencyKey string, replyToSeq int64) (int64, error) {
 	seq, err := s.Store.AppendReply(ctx, taskID, from, text, msgType, idempotencyKey, replyToSeq)
 	if err == nil {
-		s.touch(taskID)
+		s.touch(taskID, from, msgType)
 		s.awaitHuman(taskID, msgType)
 	}
 	return seq, err

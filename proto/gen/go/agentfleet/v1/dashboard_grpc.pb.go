@@ -29,6 +29,7 @@ const (
 	DashboardService_Interrupt_FullMethodName            = "/agentfleet.v1.DashboardService/Interrupt"
 	DashboardService_SetPermissionMode_FullMethodName    = "/agentfleet.v1.DashboardService/SetPermissionMode"
 	DashboardService_Warm_FullMethodName                 = "/agentfleet.v1.DashboardService/Warm"
+	DashboardService_MarkSeen_FullMethodName             = "/agentfleet.v1.DashboardService/MarkSeen"
 	DashboardService_ApproveTask_FullMethodName          = "/agentfleet.v1.DashboardService/ApproveTask"
 	DashboardService_KillE2E_FullMethodName              = "/agentfleet.v1.DashboardService/KillE2e"
 	DashboardService_AnswerQuestion_FullMethodName       = "/agentfleet.v1.DashboardService/AnswerQuestion"
@@ -86,6 +87,7 @@ type DashboardServiceClient interface {
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	SetPermissionMode(ctx context.Context, in *SetPermissionModeRequest, opts ...grpc.CallOption) (*SetPermissionModeResponse, error)
 	Warm(ctx context.Context, in *WarmRequest, opts ...grpc.CallOption) (*WarmResponse, error)
+	MarkSeen(ctx context.Context, in *MarkSeenRequest, opts ...grpc.CallOption) (*MarkSeenResponse, error)
 	ApproveTask(ctx context.Context, in *ApproveTaskRequest, opts ...grpc.CallOption) (*ApproveTaskResponse, error)
 	KillE2E(ctx context.Context, in *KillE2ERequest, opts ...grpc.CallOption) (*KillE2EResponse, error)
 	AnswerQuestion(ctx context.Context, in *AnswerQuestionRequest, opts ...grpc.CallOption) (*AnswerQuestionResponse, error)
@@ -246,6 +248,16 @@ func (c *dashboardServiceClient) Warm(ctx context.Context, in *WarmRequest, opts
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(WarmResponse)
 	err := c.cc.Invoke(ctx, DashboardService_Warm_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dashboardServiceClient) MarkSeen(ctx context.Context, in *MarkSeenRequest, opts ...grpc.CallOption) (*MarkSeenResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MarkSeenResponse)
+	err := c.cc.Invoke(ctx, DashboardService_MarkSeen_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -577,6 +589,7 @@ type DashboardServiceServer interface {
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	SetPermissionMode(context.Context, *SetPermissionModeRequest) (*SetPermissionModeResponse, error)
 	Warm(context.Context, *WarmRequest) (*WarmResponse, error)
+	MarkSeen(context.Context, *MarkSeenRequest) (*MarkSeenResponse, error)
 	ApproveTask(context.Context, *ApproveTaskRequest) (*ApproveTaskResponse, error)
 	KillE2E(context.Context, *KillE2ERequest) (*KillE2EResponse, error)
 	AnswerQuestion(context.Context, *AnswerQuestionRequest) (*AnswerQuestionResponse, error)
@@ -663,6 +676,9 @@ func (UnimplementedDashboardServiceServer) SetPermissionMode(context.Context, *S
 }
 func (UnimplementedDashboardServiceServer) Warm(context.Context, *WarmRequest) (*WarmResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Warm not implemented")
+}
+func (UnimplementedDashboardServiceServer) MarkSeen(context.Context, *MarkSeenRequest) (*MarkSeenResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method MarkSeen not implemented")
 }
 func (UnimplementedDashboardServiceServer) ApproveTask(context.Context, *ApproveTaskRequest) (*ApproveTaskResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ApproveTask not implemented")
@@ -944,6 +960,24 @@ func _DashboardService_Warm_Handler(srv interface{}, ctx context.Context, dec fu
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(DashboardServiceServer).Warm(ctx, req.(*WarmRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DashboardService_MarkSeen_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MarkSeenRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DashboardServiceServer).MarkSeen(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DashboardService_MarkSeen_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DashboardServiceServer).MarkSeen(ctx, req.(*MarkSeenRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1530,6 +1564,10 @@ var DashboardService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Warm",
 			Handler:    _DashboardService_Warm_Handler,
+		},
+		{
+			MethodName: "MarkSeen",
+			Handler:    _DashboardService_MarkSeen_Handler,
 		},
 		{
 			MethodName: "ApproveTask",

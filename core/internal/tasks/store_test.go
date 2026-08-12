@@ -570,7 +570,7 @@ func TestTouchActive_ResetsIdleEligibility(t *testing.T) {
 		t.Fatalf("expected the seeded task to be idle-eligible before TouchActive, got %v (err=%v)", idsBefore, err)
 	}
 
-	if err := store.TouchActive(ctx, taskID); err != nil {
+	if err := store.TouchActive(ctx, taskID, "agent", "discussion"); err != nil {
 		t.Fatalf("TouchActive: %v", err)
 	}
 
@@ -941,5 +941,132 @@ func exec(t *testing.T, pool *pgxpool.Pool, sql string, args ...any) {
 	t.Helper()
 	if _, err := pool.Exec(context.Background(), sql, args...); err != nil {
 		t.Fatalf("exec %q: %v", sql, err)
+	}
+}
+
+// The startup-stall sweep's query (docs/adr/0040). The case it exists for
+// is precisely the one the idle sweep cannot see: ClaimNextTask sets
+// last_active_at = now(), so a pod that comes up and never speaks looks
+// freshly active and survives the full 30-minute idle timeout.
+func TestListStartupStalledIDs(t *testing.T) {
+	pool := newTestPool(t)
+	ctx := context.Background()
+	store := NewStore(pool)
+
+	seed := func(podPhase string, lastActiveAgo time.Duration, activitySeen bool) string {
+		var id string
+		if err := pool.QueryRow(ctx, `
+			INSERT INTO tasks (repo, description, discord_channel_id, status, pod_phase, last_active_at, activity_seen)
+			VALUES ('dream-analyst', 'task', 'chan', 'running', $1, $2, $3)
+			RETURNING id
+		`, podPhase, time.Now().Add(-lastActiveAgo), activitySeen).Scan(&id); err != nil {
+			t.Fatalf("seed task: %v", err)
+		}
+		return id
+	}
+
+	silent := seed("POD_PHASE_RUNNING", 5*time.Minute, false)
+	spoke := seed("POD_PHASE_RUNNING", 5*time.Minute, true)
+	tooRecent := seed("POD_PHASE_RUNNING", 10*time.Second, false)
+	noPod := seed("POD_PHASE_SUCCEEDED", 5*time.Minute, false)
+
+	ids, err := store.ListStartupStalledIDs(ctx, 3*time.Minute)
+	if err != nil {
+		t.Fatalf("ListStartupStalledIDs: %v", err)
+	}
+	got := map[string]bool{}
+	for _, id := range ids {
+		got[id] = true
+	}
+	if !got[silent] {
+		t.Error("a live pod past the threshold that never spoke must be swept")
+	}
+	if got[spoke] {
+		t.Error("a pod that has posted activity must never be startup-stalled, however quiet it went later — that is the idle sweep's job")
+	}
+	if got[tooRecent] {
+		t.Error("a pod still inside the threshold must be left alone to finish starting")
+	}
+	if got[noPod] {
+		t.Error("a task with no live pod has nothing to tear down")
+	}
+}
+
+// activity_seen latches on the first agent-authored entry and must survive
+// later human-authored ones — otherwise a human message would re-arm the
+// startup sweep against a pod that had demonstrably already started.
+func TestTouchActive_TracksLivenessInputs(t *testing.T) {
+	pool := newTestPool(t)
+	ctx := context.Background()
+	store := NewStore(pool)
+
+	var taskID string
+	if err := pool.QueryRow(ctx, `
+		INSERT INTO tasks (repo, description, discord_channel_id, status, pod_phase)
+		VALUES ('dream-analyst', 'task', 'chan', 'running', 'POD_PHASE_RUNNING')
+		RETURNING id
+	`).Scan(&taskID); err != nil {
+		t.Fatalf("seed task: %v", err)
+	}
+
+	if err := store.TouchActive(ctx, taskID, "human", "discussion"); err != nil {
+		t.Fatalf("TouchActive human: %v", err)
+	}
+	task, err := store.GetTask(ctx, taskID)
+	if err != nil {
+		t.Fatalf("GetTask: %v", err)
+	}
+	if task.ActivitySeen {
+		t.Error("a human message must not count as the pod having spoken — it is exactly what a silent pod receives")
+	}
+	if task.LastEntryFrom == nil || *task.LastEntryFrom != "human" || task.LastEntryType == nil || *task.LastEntryType != "discussion" {
+		t.Errorf("last entry not recorded: from=%v type=%v", task.LastEntryFrom, task.LastEntryType)
+	}
+
+	if err := store.TouchActive(ctx, taskID, "agent", "assistant"); err != nil {
+		t.Fatalf("TouchActive agent: %v", err)
+	}
+	if task, err = store.GetTask(ctx, taskID); err != nil {
+		t.Fatalf("GetTask: %v", err)
+	}
+	if !task.ActivitySeen {
+		t.Error("an agent entry must set activity_seen")
+	}
+
+	if err := store.TouchActive(ctx, taskID, "human", "discussion"); err != nil {
+		t.Fatalf("TouchActive human again: %v", err)
+	}
+	if task, err = store.GetTask(ctx, taskID); err != nil {
+		t.Fatalf("GetTask: %v", err)
+	}
+	if !task.ActivitySeen {
+		t.Error("activity_seen must latch, not flip back on the next human message")
+	}
+}
+
+// A new pod means nothing it says has been heard yet — the same reason
+// ClaimNextTask/RefreshLease clear stop_requested_at.
+func TestRefreshLease_ResetsActivitySeen(t *testing.T) {
+	pool := newTestPool(t)
+	ctx := context.Background()
+	store := NewStore(pool)
+
+	var taskID string
+	if err := pool.QueryRow(ctx, `
+		INSERT INTO tasks (repo, description, discord_channel_id, status, pod_phase, activity_seen)
+		VALUES ('dream-analyst', 'task', 'chan', 'running', 'POD_PHASE_SUCCEEDED', true)
+		RETURNING id
+	`).Scan(&taskID); err != nil {
+		t.Fatalf("seed task: %v", err)
+	}
+	if _, err := store.RefreshLease(ctx, taskID); err != nil {
+		t.Fatalf("RefreshLease: %v", err)
+	}
+	task, err := store.GetTask(ctx, taskID)
+	if err != nil {
+		t.Fatalf("GetTask: %v", err)
+	}
+	if task.ActivitySeen {
+		t.Error("warming a session must reset activity_seen — the previous pod's activity says nothing about the new one")
 	}
 }
