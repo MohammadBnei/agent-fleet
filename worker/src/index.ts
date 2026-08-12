@@ -181,12 +181,18 @@ export async function main(
       process.exitCode = 1;
       return;
     }
-    await reportStatus(sidecar, task.id, "failed", { lastError: String(err) });
-    await sidecar
-      .appendJournal(task.repo, "worker", "task.failed", { taskId: task.id, error: String(err) })
-      .catch((journalErr) => log("warn", "appendJournal(task.failed) failed", { taskId: task.id, error: String(journalErr) }));
-    log("error", "task failed", { taskId: task.id, error: String(err) });
-    process.exitCode = 1;
+    // SDK abort errors (from interrupt) are expected and already handled in
+    // session.ts catch block. Only log as error if genuinely unexpected.
+    const errStr = String(err);
+    const isAbortError = errStr.includes("Request was aborted") || errStr.includes("AbortError");
+    if (!isAbortError) {
+      await reportStatus(sidecar, task.id, "failed", { lastError: errStr });
+      await sidecar
+        .appendJournal(task.repo, "worker", "task.failed", { taskId: task.id, error: errStr })
+        .catch((journalErr) => log("warn", "appendJournal(task.failed) failed", { taskId: task.id, error: String(journalErr) }));
+      log("error", "task failed", { taskId: task.id, error: errStr });
+      process.exitCode = 1;
+    }
   } finally {
     clearInterval(heartbeat);
   }

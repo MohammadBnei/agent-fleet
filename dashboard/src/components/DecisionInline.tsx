@@ -102,6 +102,7 @@ export function DecisionInline({
 }) {
   const { busy, error, send } = useDecision(reload);
   const [reason, setReason] = useState("");
+  const [selected, setSelected] = useState<string[]>([]);
   const stacked = layout === "stacked";
   const pad = stacked ? "px-3.5 pb-3.5" : "px-4 pb-4";
 
@@ -239,7 +240,6 @@ export function DecisionInline({
     const questions = parseQuestions(questionEntry.text);
     // Single-question only answerable from list. Multi-question needs full form in session.
     const q = questions && questions.length === 1 ? questions[0] : null;
-    const [selected, setSelected] = useState<string[]>([]);
 
     const toggleSelection = (label: string) => {
       if (q?.multiSelect) {
