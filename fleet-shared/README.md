@@ -20,6 +20,14 @@ change) — that was the exact problem this directory fixes.
 Currently out of scope: a `plugins/` subdirectory (nothing today needs a
 bundle beyond a plain skill — see docs/adr/0032's "Out of scope").
 
+**Hooks do not belong in this `settings.json`.** The Agent SDK does not run
+hooks declared in settings files, with any `settingSources` — verified
+2026-08-13, after the `rtk hook claude` PreToolUse entry that lived here
+turned out to have never fired once. Only `options.hooks` callbacks run, so a
+worker hook is registered in `worker/src/session.ts` (see
+`worker/src/rtkHook.ts`). Everything else here — `CLAUDE.md`, `skills/`,
+`enabledPlugins` — is discovered natively as described above.
+
 `ponytail`/`caveman` marketplace plugins are baked into `worker/Dockerfile`
 at build time, then copied once (guarded, no runtime `plugin add`) from the
 image's baked-in location into `$CLAUDE_CONFIG_DIR/plugins` by

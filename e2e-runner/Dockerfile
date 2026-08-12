@@ -34,6 +34,21 @@ RUN bun install -g playwright @playwright/mcp \
 
 COPY --from=build /out/execmcp /usr/local/bin/execmcp
 
+# rtk (Rust Token Killer) — same binary worker/Dockerfile installs. Every
+# build/test/install the agent runs lands here via run_command
+# (docs/adr/0039), which is where the fleet's token spend actually is; the
+# worker rewrites those commands to `rtk <cmd>` (worker/src/rtkHook.ts), so
+# the binary has to exist in *this* image, not just the worker's.
+#
+# Pinned, not `releases/latest`: the tarball is the whole tool, and an
+# unpinned URL re-rolls it on every rebuild — a bad upstream release would
+# land in the fleet with no commit to point at. Bump both Dockerfiles
+# together. Static musl binary, so no Rust toolchain and no runtime deps.
+# amd64 only, matching docker.yml's PLATFORMS.
+ARG RTK_VERSION=v0.45.0
+RUN curl -fsSL https://github.com/rtk-ai/rtk/releases/download/${RTK_VERSION}/rtk-x86_64-unknown-linux-musl.tar.gz \
+    | tar -xz -C /usr/local/bin rtk
+
 WORKDIR /app
 COPY e2e-runner/entrypoint.sh ./entrypoint.sh
 RUN chmod +x ./entrypoint.sh

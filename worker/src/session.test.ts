@@ -7,6 +7,7 @@
 // resolves mock.module() calls ahead of subsequent static imports).
 import { test, expect, mock, beforeEach, afterAll } from "bun:test";
 
+
 // --- fake sidecarClient.js ---
 
 const pushedMessages: { seq: number; from: string; text: string; type?: string }[] = [];
@@ -193,6 +194,13 @@ mock.module("@anthropic-ai/claude-agent-sdk", () => ({
 const { runTask, TransientError } = await import("./session.js");
 
 beforeEach(() => {
+  // canUseTool runs the tool input through rtk before it asks (session.ts) —
+  // on a machine that actually has rtk installed that is a real subprocess,
+  // and the fixed sleeps below start racing it. These tests are about the
+  // gate, not the rewrite (rtkHook.test.ts covers that), so the rewrite is
+  // switched off. Set per test, not once at import: `bun test` shares one
+  // process, and rtkHook.test.ts needs it unset.
+  process.env.RTK_DISABLED = "1";
   pushedMessages.length = 0;
   nextSeq = 1;
   savedSessionIds.length = 0;
