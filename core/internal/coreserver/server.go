@@ -46,10 +46,27 @@ type Server struct {
 	provisioner *provisionerclient.Client
 	files       filestore.Store
 	loki        lokiclient.Querier
+	// warm boots a pod for an idle session. Injected rather than
+	// reimplemented: dashboard.Server.warmIfIdle is the only path to a
+	// worker pod outside the dispatch loop, and it carries real rules
+	// (capacity cap, the 'proposed'/'pending' gates that stop an
+	// unapproved task ever getting a pod). A second copy here would be a
+	// second dispatch implementation to keep in sync. nil disables
+	// warm-on-prompt, which only makes PromptSession fail for idle
+	// targets.
+	warm func(ctx context.Context, taskID string) (string, error)
 }
 
 func New(transcr transcript.Store, taskStore *tasks.Store, journalStore *journal.Store, profileStore *repoprofiles.Store, provisioner *provisionerclient.Client, files filestore.Store, loki lokiclient.Querier) *Server {
 	return &Server{transcr: transcr, tasks: taskStore, journal: journalStore, profiles: profileStore, provisioner: provisioner, files: files, loki: loki}
+}
+
+// SetWarmFunc wires the shared warm-an-idle-session path in after
+// construction — dashboard.Server is built later than this one in
+// cmd/core/run.go, and inverting that order would be a bigger change than
+// a setter.
+func (s *Server) SetWarmFunc(warm func(ctx context.Context, taskID string) (string, error)) {
+	s.warm = warm
 }
 
 // --- agent-facing (proxied MCP-shaped calls) ---
@@ -373,7 +390,17 @@ func (s *Server) SearchJournal(ctx context.Context, req *agentfleetv1.SearchJour
 }
 
 func (s *Server) SaveSessionId(ctx context.Context, req *agentfleetv1.SaveSessionIdRequest) (*agentfleetv1.SaveSessionIdResponse, error) {
-	if err := s.tasks.SaveSessionID(ctx, req.GetTaskId(), req.GetSessionId(), req.GetModel()); err != nil {
+	saved, err := s.tasks.SaveSessionID(ctx, req.GetTaskId(), req.GetSessionId(), req.GetModel(), req.GetLeaseId())
+	if err == nil && !saved {
+		// The pod that sent this no longer holds the lease — it was torn
+		// down and another pod owns the session now. Dropping the write is
+		// the correct outcome (docs/adr/0041): tasks.session_id is what the
+		// next resume reads, and letting a dead pod set it would resume the
+		// wrong conversation.
+		slog.Warn("coreserver: ignored SaveSessionId from a pod that no longer holds the lease",
+			"taskId", req.GetTaskId(), "sessionId", req.GetSessionId())
+	}
+	if err != nil {
 		return nil, fmt.Errorf("SaveSessionId: %w", err)
 	}
 	return &agentfleetv1.SaveSessionIdResponse{}, nil
@@ -416,7 +443,11 @@ func (s *Server) StreamHumanMessages(req *agentfleetv1.StreamHumanMessagesReques
 		}
 		cursor = nextSeq
 		for _, e := range entries {
-			if e.From != "human" {
+			// "human" is the operator; "session" is another session's
+			// prompt (docs/adr/0041). Everything else — crucially the
+			// target's own from="agent" output — must not be streamed back,
+			// or a session feeds itself forever.
+			if e.From != "human" && e.From != "session" {
 				continue
 			}
 			if err := stream.Send(entryToProto(taskID, e)); err != nil {

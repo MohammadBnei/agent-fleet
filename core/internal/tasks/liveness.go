@@ -46,7 +46,9 @@ func humanOriginatedEntry(entryType, from string) bool {
 	case "answer", "permission_response":
 		return true
 	case "discussion":
-		return from == "human"
+		// "session" is another session's prompt (docs/adr/0041) — the
+		// target owes a reply to it exactly as it would to a human.
+		return from == "human" || from == "session"
 	}
 	return false
 }

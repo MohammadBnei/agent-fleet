@@ -152,12 +152,15 @@ func sessionIDHandler(core *coreclient.Client) http.HandlerFunc {
 		var body struct {
 			SessionID string `json:"sessionId"`
 			Model     string `json:"model"`
+			// This pod's lease, so core can reject the write if this pod
+			// has already been replaced (docs/adr/0041).
+			LeaseID string `json:"leaseId"`
 		}
 		if err := decodeJSON(r, &body); err != nil {
 			writeError(w, http.StatusBadRequest, err)
 			return
 		}
-		if err := core.SaveSessionID(r.Context(), body.SessionID, body.Model); err != nil {
+		if err := core.SaveSessionID(r.Context(), body.SessionID, body.Model, body.LeaseID); err != nil {
 			writeError(w, http.StatusBadGateway, err)
 			return
 		}

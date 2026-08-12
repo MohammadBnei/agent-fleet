@@ -194,6 +194,68 @@ message Task {
   string live_state = 17;
 }
 
+// What one agent can see of another session. Deliberately not the full
+// Task: an agent needs enough to pick a target and know whether it can be
+// talked to, not another session's internals.
+message SessionSummary {
+  string task_id = 1;
+  string repo = 2;
+  string description = 3;
+  string status = 4;
+  // See Task.live_state (docs/adr/0040). This is what makes "wait until
+  // the other agent is genuinely blocked" expressible at all.
+  string live_state = 5;
+}
+
+message ListSessionsRequest {
+  // The caller's own task, excluded from the results — an agent has no use
+  // for a summary of itself and cannot prompt itself anyway.
+  string caller_task_id = 1;
+}
+
+message ListSessionsResponse {
+  repeated SessionSummary sessions = 1;
+}
+
+message PromptSessionRequest {
+  string caller_task_id = 1;
+  string target_task_id = 2;
+  string text = 3;
+  // Hop count, incremented per relay. Bounded so A->B->A cannot loop
+  // forever; an agent never sets this itself, the sidecar does.
+  int32 depth = 4;
+}
+
+message PromptSessionResponse {
+  int64 seq = 1;
+  // The target's live state immediately after delivery — usually
+  // "working", or "unknown" if a pod was just warmed for it.
+  string live_state = 2;
+  // Set when delivery warmed an idle session's pod.
+  string pod_name = 3;
+}
+
+message WaitForSessionStateRequest {
+  string target_task_id = 1;
+  // Only count a settled state once the target has produced activity newer
+  // than this transcript seq. Without it, waiting right after prompting an
+  // already-idle target returns instantly with the state it was in BEFORE
+  // the prompt — the target hasn't started the new turn yet. herdr solves
+  // the same race by requiring an observed state change off a baseline
+  // captured before submission. Pass the seq prompt_agent returned; the
+  // sidecar fills it in automatically when omitted.
+  int64 after_seq = 4;
+  // Any of these ends the wait. Empty means the settled set
+  // (idle/done/blocked/stalled) — "it stopped needing to be waited on".
+  repeated string until = 2;
+  int32 timeout_ms = 3;
+}
+
+message WaitForSessionStateResponse {
+  string live_state = 1;
+  bool timed_out = 2;
+}
+
 message GetTaskRequest {
   string id = 1;
 }
@@ -272,6 +334,12 @@ message SaveSessionIdRequest {
   string task_id = 1;
   string session_id = 2;
   string model = 3;
+  // The caller pod's lease (docs/adr/0041). Without it this write is keyed
+  // by task alone, so a pod that was torn down but is still shutting down
+  // can overwrite the identity of the pod that replaced it — and
+  // tasks.session_id is precisely what the next resume reads. Empty is
+  // accepted for compatibility with a worker image older than this field.
+  string lease_id = 4;
 }
 
 message SaveSessionIdResponse {}
@@ -410,6 +478,14 @@ service CoreService {
   // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
   rpc DeleteFile(DeleteFileRequest) returns (DeleteFileResponse);
   rpc ViewLogs(ViewLogsRequest) returns (ViewLogsResponse);
+
+  // Inter-agent coordination (docs/adr/0041). Hub-and-spoke per
+  // docs/adr/0020 point 4: the path is agent -> its own sidecar (MCP) ->
+  // core (here) -> the target session. There is no worker-to-worker link
+  // and no worker-to-provisioner link.
+  rpc ListSessions(ListSessionsRequest) returns (ListSessionsResponse);
+  rpc PromptSession(PromptSessionRequest) returns (PromptSessionResponse);
+  rpc WaitForSessionState(WaitForSessionStateRequest) returns (WaitForSessionStateResponse);
 
 }
 

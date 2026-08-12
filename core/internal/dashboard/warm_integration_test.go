@@ -146,7 +146,7 @@ func TestServer_Warm_ThreadsSavedSessionID(t *testing.T) {
 	repoStore := repos.NewStore(pool)
 	profileStore := repoprofiles.NewStore(pool)
 	taskID := seedIdleClaimedTask(t, pool, taskStore)
-	if err := taskStore.SaveSessionID(ctx, taskID, "sess-resume-me", "claude-opus-4-8"); err != nil {
+	if _, err := taskStore.SaveSessionID(ctx, taskID, "sess-resume-me", "claude-opus-4-8", ""); err != nil {
 		t.Fatalf("SaveSessionID: %v", err)
 	}
 

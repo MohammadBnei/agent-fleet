@@ -254,9 +254,9 @@ func (c *Client) SearchJournal(ctx context.Context, repo, query string, limit in
 	return resp.GetEntries(), nil
 }
 
-func (c *Client) SaveSessionID(ctx context.Context, sessionID, model string) error {
+func (c *Client) SaveSessionID(ctx context.Context, sessionID, model, leaseID string) error {
 	_, err := c.rpc.SaveSessionId(ctx, &agentfleetv1.SaveSessionIdRequest{
-		TaskId: c.taskID, SessionId: sessionID, Model: model,
+		TaskId: c.taskID, SessionId: sessionID, Model: model, LeaseId: leaseID,
 	})
 	if err != nil {
 		return fmt.Errorf("SaveSessionId: %w", err)
@@ -349,4 +349,39 @@ func (c *Client) SetPermissionMode(ctx context.Context, mode string) error {
 		return fmt.Errorf("SetPermissionMode: %w", err)
 	}
 	return nil
+}
+
+// --- inter-agent coordination (docs/adr/0041) ---
+//
+// The caller's own task id is injected here rather than accepted from the
+// agent: it is this pod's identity, not an argument, and letting a prompt
+// claim to come from another session would defeat both the self-prompt
+// guard and the attribution in the delivered message.
+
+func (c *Client) ListSessions(ctx context.Context) ([]*agentfleetv1.SessionSummary, error) {
+	resp, err := c.rpc.ListSessions(ctx, &agentfleetv1.ListSessionsRequest{CallerTaskId: c.taskID})
+	if err != nil {
+		return nil, fmt.Errorf("ListSessions: %w", err)
+	}
+	return resp.GetSessions(), nil
+}
+
+func (c *Client) PromptSession(ctx context.Context, targetTaskID, text string, depth int32) (*agentfleetv1.PromptSessionResponse, error) {
+	resp, err := c.rpc.PromptSession(ctx, &agentfleetv1.PromptSessionRequest{
+		CallerTaskId: c.taskID, TargetTaskId: targetTaskID, Text: text, Depth: depth,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("PromptSession: %w", err)
+	}
+	return resp, nil
+}
+
+func (c *Client) WaitForSessionState(ctx context.Context, targetTaskID string, until []string, timeoutMs int32, afterSeq int64) (*agentfleetv1.WaitForSessionStateResponse, error) {
+	resp, err := c.rpc.WaitForSessionState(ctx, &agentfleetv1.WaitForSessionStateRequest{
+		TargetTaskId: targetTaskID, Until: until, TimeoutMs: timeoutMs, AfterSeq: afterSeq,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("WaitForSessionState: %w", err)
+	}
+	return resp, nil
 }

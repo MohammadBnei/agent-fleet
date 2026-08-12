@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -751,15 +752,34 @@ func (s *Store) ListIdleWarmTaskIDs(ctx context.Context, idleTimeout time.Durati
 	return ids, rows.Err()
 }
 
-func (s *Store) SaveSessionID(ctx context.Context, id, sessionID, model string) error {
-	_, err := s.pool.Exec(ctx, `
-		UPDATE tasks SET session_id = $2, model = $3, updated_at = now() WHERE id = $1
-	`, id, sessionID, model)
+// Scoped to the caller's lease when it supplies one (docs/adr/0041): this
+// column is what the next resume reads, so a torn-down pod still finishing
+// its shutdown must not be able to overwrite the identity of the pod that
+// replaced it. An empty leaseID keeps the old unscoped behaviour, for a
+// worker image predating the field.
+//
+// Returns false when the write was rejected because the lease no longer
+// matches — the caller logs it rather than failing, since a stale pod
+// losing this race is the correct outcome, not an error in the run that
+// won.
+func (s *Store) SaveSessionID(ctx context.Context, id, sessionID, model, leaseID string) (bool, error) {
+	var tag pgconn.CommandTag
+	var err error
+	if leaseID == "" {
+		tag, err = s.pool.Exec(ctx, `
+			UPDATE tasks SET session_id = $2, model = $3, updated_at = now() WHERE id = $1
+		`, id, sessionID, model)
+	} else {
+		tag, err = s.pool.Exec(ctx, `
+			UPDATE tasks SET session_id = $2, model = $3, updated_at = now()
+			WHERE id = $1 AND lease_id::text = $4
+		`, id, sessionID, model, leaseID)
+	}
 	if err != nil {
 		slog.Error("tasks SaveSessionID", "taskId", id, "error", err)
-		return fmt.Errorf("save session id: %w", err)
+		return false, fmt.Errorf("save session id: %w", err)
 	}
-	return nil
+	return tag.RowsAffected() > 0, nil
 }
 
 // SetPermissionMode records the session's current SDK permission mode

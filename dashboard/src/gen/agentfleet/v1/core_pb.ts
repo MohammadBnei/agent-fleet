@@ -16,7 +16,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file agentfleet/v1/core.proto.
  */
 export const file_agentfleet_v1_core: GenFile = /*@__PURE__*/
-  fileDesc("ChhhZ2VudGZsZWV0L3YxL2NvcmUucHJvdG8SDWFnZW50ZmxlZXQudjEikAEKCFBvZEV2ZW50Eg8KB3Rhc2tfaWQYASABKAkSKAoEa2luZBgCIAEoDjIaLmFnZW50ZmxlZXQudjEuU2Vzc2lvbktpbmQSJgoFcGhhc2UYAyABKA4yFy5hZ2VudGZsZWV0LnYxLlBvZFBoYXNlEhAKCHBvZF9uYW1lGAQgASgJEg8KB21lc3NhZ2UYBSABKAkiGQoXUmVwb3J0UG9kRXZlbnRzUmVzcG9uc2UiuAEKElNlbmRNZXNzYWdlUmVxdWVzdBIPCgd0YXNrX2lkGAEgASgJEgwKBGZyb20YAiABKAkSDAoEdGV4dBgDIAEoCRIwCgR0eXBlGAQgASgOMiIuYWdlbnRmbGVldC52MS5UcmFuc2NyaXB0RW50cnlUeXBlEhcKD2lkZW1wb3RlbmN5X2tleRgFIAEoCRIZCgxyZXBseV90b19zZXEYBiABKANIAIgBAUIPCg1fcmVwbHlfdG9fc2VxIiIKE1NlbmRNZXNzYWdlUmVzcG9uc2USCwoDc2VxGAEgASgDIlUKFkFza1VzZXJRdWVzdGlvblJlcXVlc3QSDwoHdGFza19pZBgBIAEoCRIWCg5xdWVzdGlvbnNfanNvbhgCIAEoCRISCgp0aW1lb3V0X21zGAMgASgFIlUKF0Fza1VzZXJRdWVzdGlvblJlc3BvbnNlEg4KBnN0YXR1cxgBIAEoCRIUCgxhbnN3ZXJzX2pzb24YAiABKAkSFAoMcXVlc3Rpb25fc2VxGAMgASgDIksKFFJlcXVlc3RFMmVFbnZSZXF1ZXN0Eg8KB3Rhc2tfaWQYASABKAkSEQoJc3RhcnRfY21kGAIgASgJEg8KB3Byb2ZpbGUYAyABKAkijwEKFVJlcXVlc3RFMmVFbnZSZXNwb25zZRITCgtwcmV2aWV3X3VybBgBIAEoCRIOCgZzdGF0dXMYAiABKAkSGgoScmVzb2x2ZWRfc3RhcnRfY21kGAMgASgJEhQKDHByb2ZpbGVfbmFtZRgEIAEoCRINCgV0b29scxgFIAMoCRIQCghzZXJ2aWNlcxgGIAMoCSIkChFLaWxsRTJlRW52UmVxdWVzdBIPCgd0YXNrX2lkGAEgASgJIiQKEktpbGxFMmVFbnZSZXNwb25zZRIOCgZraWxsZWQYASABKAgiiAQKBFRhc2sSCgoCaWQYASABKAkSDAoEcmVwbxgCIAEoCRITCgtkZXNjcmlwdGlvbhgDIAEoCRIOCgZzdGF0dXMYBCABKAkSFgoJdGhyZWFkX2lkGAUgASgJSACIAQESEwoGcHJfdXJsGAYgASgJSAGIAQESFgoJcG9kX3BoYXNlGAcgASgJSAKIAQESGAoLcG9kX21lc3NhZ2UYCCABKAlIA4gBARIZCgxoZWFydGJlYXRfYXQYCSABKAlIBIgBARITCgtyZXRyeV9jb3VudBgKIAEoBRIXCgpsYXN0X2Vycm9yGAsgASgJSAWIAQESFwoKc2Vzc2lvbl9pZBgMIAEoCUgGiAEBEhsKDmxhc3RfYWN0aXZlX2F0GA0gASgJSAeIAQESHAoPcGVybWlzc2lvbl9tb2RlGA4gASgJSAiIAQESFgoOYXdhaXRpbmdfaHVtYW4YDyABKAgSDAoEa2luZBgQIAEoCRISCgpsaXZlX3N0YXRlGBEgASgJQgwKCl90aHJlYWRfaWRCCQoHX3ByX3VybEIMCgpfcG9kX3BoYXNlQg4KDF9wb2RfbWVzc2FnZUIPCg1faGVhcnRiZWF0X2F0Qg0KC19sYXN0X2Vycm9yQg0KC19zZXNzaW9uX2lkQhEKD19sYXN0X2FjdGl2ZV9hdEISChBfcGVybWlzc2lvbl9tb2RlIhwKDkdldFRhc2tSZXF1ZXN0EgoKAmlkGAEgASgJIjQKD0dldFRhc2tSZXNwb25zZRIhCgR0YXNrGAEgASgLMhMuYWdlbnRmbGVldC52MS5UYXNrIjkKGFNldFBlcm1pc3Npb25Nb2RlUmVxdWVzdBIPCgd0YXNrX2lkGAEgASgJEgwKBG1vZGUYAiABKAkiKwoZU2V0UGVybWlzc2lvbk1vZGVSZXNwb25zZRIOCgZzdGF0dXMYASABKAkiNQoQSGVhcnRiZWF0UmVxdWVzdBIPCgd0YXNrX2lkGAEgASgJEhAKCGxlYXNlX2lkGAIgASgJIhMKEUhlYXJ0YmVhdFJlc3BvbnNlIp0BChRTZXRUYXNrU3RhdHVzUmVxdWVzdBIPCgd0YXNrX2lkGAEgASgJEg4KBnN0YXR1cxgCIAEoCRITCgZwcl91cmwYAyABKAlIAIgBARISCgVub3RlcxgEIAEoCUgBiAEBEhcKCmxhc3RfZXJyb3IYBSABKAlIAogBAUIJCgdfcHJfdXJsQggKBl9ub3Rlc0INCgtfbGFzdF9lcnJvciIXChVTZXRUYXNrU3RhdHVzUmVzcG9uc2UiXQoUQXBwZW5kSm91cm5hbFJlcXVlc3QSDAoEcmVwbxgBIAEoCRINCgVhY3RvchgCIAEoCRISCgpldmVudF90eXBlGAMgASgJEhQKDHBheWxvYWRfanNvbhgEIAEoCSIXChVBcHBlbmRKb3VybmFsUmVzcG9uc2UidQoMSm91cm5hbEVudHJ5EgoKAmlkGAEgASgDEgwKBHJlcG8YAiABKAkSDQoFYWN0b3IYAyABKAkSEgoKZXZlbnRfdHlwZRgEIAEoCRIUCgxwYXlsb2FkX2pzb24YBSABKAkSEgoKY3JlYXRlZF9hdBgGIAEoCSJCChRTZWFyY2hKb3VybmFsUmVxdWVzdBIMCgRyZXBvGAEgASgJEg0KBXF1ZXJ5GAIgASgJEg0KBWxpbWl0GAMgASgFIkUKFVNlYXJjaEpvdXJuYWxSZXNwb25zZRIsCgdlbnRyaWVzGAEgAygLMhsuYWdlbnRmbGVldC52MS5Kb3VybmFsRW50cnkiSgoUU2F2ZVNlc3Npb25JZFJlcXVlc3QSDwoHdGFza19pZBgBIAEoCRISCgpzZXNzaW9uX2lkGAIgASgJEg0KBW1vZGVsGAMgASgJIhcKFVNhdmVTZXNzaW9uSWRSZXNwb25zZSI7ChZTdGlsbEhvbGRzTGVhc2VSZXF1ZXN0Eg8KB3Rhc2tfaWQYASABKAkSEAoIbGVhc2VfaWQYAiABKAkiKAoXU3RpbGxIb2xkc0xlYXNlUmVzcG9uc2USDQoFaG9sZHMYASABKAgiQQoYUHVzaFRvb2xUZWxlbWV0cnlSZXF1ZXN0Eg8KB3Rhc2tfaWQYASABKAkSFAoMc3VtbWFyeV9qc29uGAIgASgJIhsKGVB1c2hUb29sVGVsZW1ldHJ5UmVzcG9uc2UiQAoaU3RyZWFtSHVtYW5NZXNzYWdlc1JlcXVlc3QSDwoHdGFza19pZBgBIAEoCRIRCglzaW5jZV9zZXEYAiABKAMinwEKEFF1ZXJ5TG9nc1JlcXVlc3QSDwoHdGFza19pZBgBIAEoCRIRCgluYW1lc3BhY2UYAiABKAkSEQoJY29tcG9uZW50GAMgASgJEhAKCGFwcF9uYW1lGAQgASgJEg0KBWxldmVsGAUgASgJEhIKCnN0YXJ0X3RpbWUYBiABKAkSEAoIZW5kX3RpbWUYByABKAkSDQoFbGltaXQYCCABKAUihgEKCExvZ0VudHJ5EhEKCXRpbWVzdGFtcBgBIAEoCRINCgVsZXZlbBgCIAEoCRILCgNtc2cYAyABKAkSEQoJY29tcG9uZW50GAQgASgJEhAKCHBvZF9uYW1lGAUgASgJEhEKCW5hbWVzcGFjZRgGIAEoCRITCgtmaWVsZHNfanNvbhgHIAEoCSJSChFRdWVyeUxvZ3NSZXNwb25zZRIoCgdlbnRyaWVzGAEgAygLMhcuYWdlbnRmbGVldC52MS5Mb2dFbnRyeRITCgt0b3RhbF9jb3VudBgCIAEoBSKfAQoPVmlld0xvZ3NSZXF1ZXN0EhEKCWNvbXBvbmVudBgBIAEoCRIQCghhcHBfbmFtZRgCIAEoCRIRCgluYW1lc3BhY2UYAyABKAkSDQoFbGV2ZWwYBCABKAkSEAoIZHVyYXRpb24YBSABKAkSDQoFbGltaXQYBiABKAUSEgoKc3RhcnRfdGltZRgHIAEoCRIQCghlbmRfdGltZRgIIAEoCSIlChBWaWV3TG9nc1Jlc3BvbnNlEhEKCWxvZ3NfdGV4dBgBIAEoCSq5AQoIUG9kUGhhc2USGQoVUE9EX1BIQVNFX1VOU1BFQ0lGSUVEEAASFQoRUE9EX1BIQVNFX0NSRUFURUQQARIXChNQT0RfUEhBU0VfU0NIRURVTEVEEAISFQoRUE9EX1BIQVNFX1JVTk5JTkcQAxIVChFQT0RfUEhBU0VfQ1JBU0hFRBAEEhgKFFBPRF9QSEFTRV9URVJNSU5BVEVEEAUSGgoWUE9EX1BIQVNFX1BST1ZJU0lPTklORxAGMsMQCgtDb3JlU2VydmljZRJUCg9SZXBvcnRQb2RFdmVudHMSFy5hZ2VudGZsZWV0LnYxLlBvZEV2ZW50GiYuYWdlbnRmbGVldC52MS5SZXBvcnRQb2RFdmVudHNSZXNwb25zZSgBElQKC1NlbmRNZXNzYWdlEiEuYWdlbnRmbGVldC52MS5TZW5kTWVzc2FnZVJlcXVlc3QaIi5hZ2VudGZsZWV0LnYxLlNlbmRNZXNzYWdlUmVzcG9uc2USaAoPV2FpdEZvck1lc3NhZ2VzEikuYWdlbnRmbGVldC52MS5SZWFkVHJhbnNjcmlwdFNpbmNlUmVxdWVzdBoqLmFnZW50ZmxlZXQudjEuUmVhZFRyYW5zY3JpcHRTaW5jZVJlc3BvbnNlEmAKD0Fza1VzZXJRdWVzdGlvbhIlLmFnZW50ZmxlZXQudjEuQXNrVXNlclF1ZXN0aW9uUmVxdWVzdBomLmFnZW50ZmxlZXQudjEuQXNrVXNlclF1ZXN0aW9uUmVzcG9uc2USWgoNUmVxdWVzdEUyZUVudhIjLmFnZW50ZmxlZXQudjEuUmVxdWVzdEUyZUVudlJlcXVlc3QaJC5hZ2VudGZsZWV0LnYxLlJlcXVlc3RFMmVFbnZSZXNwb25zZRJRCgpLaWxsRTJlRW52EiAuYWdlbnRmbGVldC52MS5LaWxsRTJlRW52UmVxdWVzdBohLmFnZW50ZmxlZXQudjEuS2lsbEUyZUVudlJlc3BvbnNlElcKDExpc3RFMmVUb29scxIiLmFnZW50ZmxlZXQudjEuTGlzdEUyZVRvb2xzUmVxdWVzdBojLmFnZW50ZmxlZXQudjEuTGlzdEUyZVRvb2xzUmVzcG9uc2USVAoLQ2FsbEUyZVRvb2wSIS5hZ2VudGZsZWV0LnYxLkNhbGxFMmVUb29sUmVxdWVzdBoiLmFnZW50ZmxlZXQudjEuQ2FsbEUyZVRvb2xSZXNwb25zZRJICgdHZXRUYXNrEh0uYWdlbnRmbGVldC52MS5HZXRUYXNrUmVxdWVzdBoeLmFnZW50ZmxlZXQudjEuR2V0VGFza1Jlc3BvbnNlEmYKEVNldFBlcm1pc3Npb25Nb2RlEicuYWdlbnRmbGVldC52MS5TZXRQZXJtaXNzaW9uTW9kZVJlcXVlc3QaKC5hZ2VudGZsZWV0LnYxLlNldFBlcm1pc3Npb25Nb2RlUmVzcG9uc2USTgoJSGVhcnRiZWF0Eh8uYWdlbnRmbGVldC52MS5IZWFydGJlYXRSZXF1ZXN0GiAuYWdlbnRmbGVldC52MS5IZWFydGJlYXRSZXNwb25zZRJaCg1TZXRUYXNrU3RhdHVzEiMuYWdlbnRmbGVldC52MS5TZXRUYXNrU3RhdHVzUmVxdWVzdBokLmFnZW50ZmxlZXQudjEuU2V0VGFza1N0YXR1c1Jlc3BvbnNlEloKDUFwcGVuZEpvdXJuYWwSIy5hZ2VudGZsZWV0LnYxLkFwcGVuZEpvdXJuYWxSZXF1ZXN0GiQuYWdlbnRmbGVldC52MS5BcHBlbmRKb3VybmFsUmVzcG9uc2USWgoNU2VhcmNoSm91cm5hbBIjLmFnZW50ZmxlZXQudjEuU2VhcmNoSm91cm5hbFJlcXVlc3QaJC5hZ2VudGZsZWV0LnYxLlNlYXJjaEpvdXJuYWxSZXNwb25zZRJaCg1TYXZlU2Vzc2lvbklkEiMuYWdlbnRmbGVldC52MS5TYXZlU2Vzc2lvbklkUmVxdWVzdBokLmFnZW50ZmxlZXQudjEuU2F2ZVNlc3Npb25JZFJlc3BvbnNlEmAKD1N0aWxsSG9sZHNMZWFzZRIlLmFnZW50ZmxlZXQudjEuU3RpbGxIb2xkc0xlYXNlUmVxdWVzdBomLmFnZW50ZmxlZXQudjEuU3RpbGxIb2xkc0xlYXNlUmVzcG9uc2USZgoRUHVzaFRvb2xUZWxlbWV0cnkSJy5hZ2VudGZsZWV0LnYxLlB1c2hUb29sVGVsZW1ldHJ5UmVxdWVzdBooLmFnZW50ZmxlZXQudjEuUHVzaFRvb2xUZWxlbWV0cnlSZXNwb25zZRJiChNTdHJlYW1IdW1hbk1lc3NhZ2VzEikuYWdlbnRmbGVldC52MS5TdHJlYW1IdW1hbk1lc3NhZ2VzUmVxdWVzdBoeLmFnZW50ZmxlZXQudjEuVHJhbnNjcmlwdEVudHJ5MAESTgoJTGlzdEZpbGVzEh8uYWdlbnRmbGVldC52MS5MaXN0RmlsZXNSZXF1ZXN0GiAuYWdlbnRmbGVldC52MS5MaXN0RmlsZXNSZXNwb25zZRJjChBHZXRGaWxlVXBsb2FkVXJsEiYuYWdlbnRmbGVldC52MS5HZXRGaWxlVXBsb2FkVXJsUmVxdWVzdBonLmFnZW50ZmxlZXQudjEuR2V0RmlsZVVwbG9hZFVybFJlc3BvbnNlEmkKEkdldEZpbGVEb3dubG9hZFVybBIoLmFnZW50ZmxlZXQudjEuR2V0RmlsZURvd25sb2FkVXJsUmVxdWVzdBopLmFnZW50ZmxlZXQudjEuR2V0RmlsZURvd25sb2FkVXJsUmVzcG9uc2USUQoKRGVsZXRlRmlsZRIgLmFnZW50ZmxlZXQudjEuRGVsZXRlRmlsZVJlcXVlc3QaIS5hZ2VudGZsZWV0LnYxLkRlbGV0ZUZpbGVSZXNwb25zZRJLCghWaWV3TG9ncxIeLmFnZW50ZmxlZXQudjEuVmlld0xvZ3NSZXF1ZXN0Gh8uYWdlbnRmbGVldC52MS5WaWV3TG9nc1Jlc3BvbnNlQk1aS2dpdGh1Yi5jb20vTW9oYW1tYWRCbmVpL2FnZW50LWZsZWV0L3Byb3RvL2dlbi9nby9hZ2VudGZsZWV0L3YxO2FnZW50ZmxlZXR2MWIGcHJvdG8z", [file_agentfleet_v1_transcript, file_agentfleet_v1_provisioner, file_agentfleet_v1_files]);
+  fileDesc("ChhhZ2VudGZsZWV0L3YxL2NvcmUucHJvdG8SDWFnZW50ZmxlZXQudjEikAEKCFBvZEV2ZW50Eg8KB3Rhc2tfaWQYASABKAkSKAoEa2luZBgCIAEoDjIaLmFnZW50ZmxlZXQudjEuU2Vzc2lvbktpbmQSJgoFcGhhc2UYAyABKA4yFy5hZ2VudGZsZWV0LnYxLlBvZFBoYXNlEhAKCHBvZF9uYW1lGAQgASgJEg8KB21lc3NhZ2UYBSABKAkiGQoXUmVwb3J0UG9kRXZlbnRzUmVzcG9uc2UiuAEKElNlbmRNZXNzYWdlUmVxdWVzdBIPCgd0YXNrX2lkGAEgASgJEgwKBGZyb20YAiABKAkSDAoEdGV4dBgDIAEoCRIwCgR0eXBlGAQgASgOMiIuYWdlbnRmbGVldC52MS5UcmFuc2NyaXB0RW50cnlUeXBlEhcKD2lkZW1wb3RlbmN5X2tleRgFIAEoCRIZCgxyZXBseV90b19zZXEYBiABKANIAIgBAUIPCg1fcmVwbHlfdG9fc2VxIiIKE1NlbmRNZXNzYWdlUmVzcG9uc2USCwoDc2VxGAEgASgDIlUKFkFza1VzZXJRdWVzdGlvblJlcXVlc3QSDwoHdGFza19pZBgBIAEoCRIWCg5xdWVzdGlvbnNfanNvbhgCIAEoCRISCgp0aW1lb3V0X21zGAMgASgFIlUKF0Fza1VzZXJRdWVzdGlvblJlc3BvbnNlEg4KBnN0YXR1cxgBIAEoCRIUCgxhbnN3ZXJzX2pzb24YAiABKAkSFAoMcXVlc3Rpb25fc2VxGAMgASgDIksKFFJlcXVlc3RFMmVFbnZSZXF1ZXN0Eg8KB3Rhc2tfaWQYASABKAkSEQoJc3RhcnRfY21kGAIgASgJEg8KB3Byb2ZpbGUYAyABKAkijwEKFVJlcXVlc3RFMmVFbnZSZXNwb25zZRITCgtwcmV2aWV3X3VybBgBIAEoCRIOCgZzdGF0dXMYAiABKAkSGgoScmVzb2x2ZWRfc3RhcnRfY21kGAMgASgJEhQKDHByb2ZpbGVfbmFtZRgEIAEoCRINCgV0b29scxgFIAMoCRIQCghzZXJ2aWNlcxgGIAMoCSIkChFLaWxsRTJlRW52UmVxdWVzdBIPCgd0YXNrX2lkGAEgASgJIiQKEktpbGxFMmVFbnZSZXNwb25zZRIOCgZraWxsZWQYASABKAgiiAQKBFRhc2sSCgoCaWQYASABKAkSDAoEcmVwbxgCIAEoCRITCgtkZXNjcmlwdGlvbhgDIAEoCRIOCgZzdGF0dXMYBCABKAkSFgoJdGhyZWFkX2lkGAUgASgJSACIAQESEwoGcHJfdXJsGAYgASgJSAGIAQESFgoJcG9kX3BoYXNlGAcgASgJSAKIAQESGAoLcG9kX21lc3NhZ2UYCCABKAlIA4gBARIZCgxoZWFydGJlYXRfYXQYCSABKAlIBIgBARITCgtyZXRyeV9jb3VudBgKIAEoBRIXCgpsYXN0X2Vycm9yGAsgASgJSAWIAQESFwoKc2Vzc2lvbl9pZBgMIAEoCUgGiAEBEhsKDmxhc3RfYWN0aXZlX2F0GA0gASgJSAeIAQESHAoPcGVybWlzc2lvbl9tb2RlGA4gASgJSAiIAQESFgoOYXdhaXRpbmdfaHVtYW4YDyABKAgSDAoEa2luZBgQIAEoCRISCgpsaXZlX3N0YXRlGBEgASgJQgwKCl90aHJlYWRfaWRCCQoHX3ByX3VybEIMCgpfcG9kX3BoYXNlQg4KDF9wb2RfbWVzc2FnZUIPCg1faGVhcnRiZWF0X2F0Qg0KC19sYXN0X2Vycm9yQg0KC19zZXNzaW9uX2lkQhEKD19sYXN0X2FjdGl2ZV9hdEISChBfcGVybWlzc2lvbl9tb2RlImgKDlNlc3Npb25TdW1tYXJ5Eg8KB3Rhc2tfaWQYASABKAkSDAoEcmVwbxgCIAEoCRITCgtkZXNjcmlwdGlvbhgDIAEoCRIOCgZzdGF0dXMYBCABKAkSEgoKbGl2ZV9zdGF0ZRgFIAEoCSItChNMaXN0U2Vzc2lvbnNSZXF1ZXN0EhYKDmNhbGxlcl90YXNrX2lkGAEgASgJIkcKFExpc3RTZXNzaW9uc1Jlc3BvbnNlEi8KCHNlc3Npb25zGAEgAygLMh0uYWdlbnRmbGVldC52MS5TZXNzaW9uU3VtbWFyeSJjChRQcm9tcHRTZXNzaW9uUmVxdWVzdBIWCg5jYWxsZXJfdGFza19pZBgBIAEoCRIWCg50YXJnZXRfdGFza19pZBgCIAEoCRIMCgR0ZXh0GAMgASgJEg0KBWRlcHRoGAQgASgFIkoKFVByb21wdFNlc3Npb25SZXNwb25zZRILCgNzZXEYASABKAMSEgoKbGl2ZV9zdGF0ZRgCIAEoCRIQCghwb2RfbmFtZRgDIAEoCSJqChpXYWl0Rm9yU2Vzc2lvblN0YXRlUmVxdWVzdBIWCg50YXJnZXRfdGFza19pZBgBIAEoCRIRCglhZnRlcl9zZXEYBCABKAMSDQoFdW50aWwYAiADKAkSEgoKdGltZW91dF9tcxgDIAEoBSJEChtXYWl0Rm9yU2Vzc2lvblN0YXRlUmVzcG9uc2USEgoKbGl2ZV9zdGF0ZRgBIAEoCRIRCgl0aW1lZF9vdXQYAiABKAgiHAoOR2V0VGFza1JlcXVlc3QSCgoCaWQYASABKAkiNAoPR2V0VGFza1Jlc3BvbnNlEiEKBHRhc2sYASABKAsyEy5hZ2VudGZsZWV0LnYxLlRhc2siOQoYU2V0UGVybWlzc2lvbk1vZGVSZXF1ZXN0Eg8KB3Rhc2tfaWQYASABKAkSDAoEbW9kZRgCIAEoCSIrChlTZXRQZXJtaXNzaW9uTW9kZVJlc3BvbnNlEg4KBnN0YXR1cxgBIAEoCSI1ChBIZWFydGJlYXRSZXF1ZXN0Eg8KB3Rhc2tfaWQYASABKAkSEAoIbGVhc2VfaWQYAiABKAkiEwoRSGVhcnRiZWF0UmVzcG9uc2UinQEKFFNldFRhc2tTdGF0dXNSZXF1ZXN0Eg8KB3Rhc2tfaWQYASABKAkSDgoGc3RhdHVzGAIgASgJEhMKBnByX3VybBgDIAEoCUgAiAEBEhIKBW5vdGVzGAQgASgJSAGIAQESFwoKbGFzdF9lcnJvchgFIAEoCUgCiAEBQgkKB19wcl91cmxCCAoGX25vdGVzQg0KC19sYXN0X2Vycm9yIhcKFVNldFRhc2tTdGF0dXNSZXNwb25zZSJdChRBcHBlbmRKb3VybmFsUmVxdWVzdBIMCgRyZXBvGAEgASgJEg0KBWFjdG9yGAIgASgJEhIKCmV2ZW50X3R5cGUYAyABKAkSFAoMcGF5bG9hZF9qc29uGAQgASgJIhcKFUFwcGVuZEpvdXJuYWxSZXNwb25zZSJ1CgxKb3VybmFsRW50cnkSCgoCaWQYASABKAMSDAoEcmVwbxgCIAEoCRINCgVhY3RvchgDIAEoCRISCgpldmVudF90eXBlGAQgASgJEhQKDHBheWxvYWRfanNvbhgFIAEoCRISCgpjcmVhdGVkX2F0GAYgASgJIkIKFFNlYXJjaEpvdXJuYWxSZXF1ZXN0EgwKBHJlcG8YASABKAkSDQoFcXVlcnkYAiABKAkSDQoFbGltaXQYAyABKAUiRQoVU2VhcmNoSm91cm5hbFJlc3BvbnNlEiwKB2VudHJpZXMYASADKAsyGy5hZ2VudGZsZWV0LnYxLkpvdXJuYWxFbnRyeSJcChRTYXZlU2Vzc2lvbklkUmVxdWVzdBIPCgd0YXNrX2lkGAEgASgJEhIKCnNlc3Npb25faWQYAiABKAkSDQoFbW9kZWwYAyABKAkSEAoIbGVhc2VfaWQYBCABKAkiFwoVU2F2ZVNlc3Npb25JZFJlc3BvbnNlIjsKFlN0aWxsSG9sZHNMZWFzZVJlcXVlc3QSDwoHdGFza19pZBgBIAEoCRIQCghsZWFzZV9pZBgCIAEoCSIoChdTdGlsbEhvbGRzTGVhc2VSZXNwb25zZRINCgVob2xkcxgBIAEoCCJBChhQdXNoVG9vbFRlbGVtZXRyeVJlcXVlc3QSDwoHdGFza19pZBgBIAEoCRIUCgxzdW1tYXJ5X2pzb24YAiABKAkiGwoZUHVzaFRvb2xUZWxlbWV0cnlSZXNwb25zZSJAChpTdHJlYW1IdW1hbk1lc3NhZ2VzUmVxdWVzdBIPCgd0YXNrX2lkGAEgASgJEhEKCXNpbmNlX3NlcRgCIAEoAyKfAQoQUXVlcnlMb2dzUmVxdWVzdBIPCgd0YXNrX2lkGAEgASgJEhEKCW5hbWVzcGFjZRgCIAEoCRIRCgljb21wb25lbnQYAyABKAkSEAoIYXBwX25hbWUYBCABKAkSDQoFbGV2ZWwYBSABKAkSEgoKc3RhcnRfdGltZRgGIAEoCRIQCghlbmRfdGltZRgHIAEoCRINCgVsaW1pdBgIIAEoBSKGAQoITG9nRW50cnkSEQoJdGltZXN0YW1wGAEgASgJEg0KBWxldmVsGAIgASgJEgsKA21zZxgDIAEoCRIRCgljb21wb25lbnQYBCABKAkSEAoIcG9kX25hbWUYBSABKAkSEQoJbmFtZXNwYWNlGAYgASgJEhMKC2ZpZWxkc19qc29uGAcgASgJIlIKEVF1ZXJ5TG9nc1Jlc3BvbnNlEigKB2VudHJpZXMYASADKAsyFy5hZ2VudGZsZWV0LnYxLkxvZ0VudHJ5EhMKC3RvdGFsX2NvdW50GAIgASgFIp8BCg9WaWV3TG9nc1JlcXVlc3QSEQoJY29tcG9uZW50GAEgASgJEhAKCGFwcF9uYW1lGAIgASgJEhEKCW5hbWVzcGFjZRgDIAEoCRINCgVsZXZlbBgEIAEoCRIQCghkdXJhdGlvbhgFIAEoCRINCgVsaW1pdBgGIAEoBRISCgpzdGFydF90aW1lGAcgASgJEhAKCGVuZF90aW1lGAggASgJIiUKEFZpZXdMb2dzUmVzcG9uc2USEQoJbG9nc190ZXh0GAEgASgJKrkBCghQb2RQaGFzZRIZChVQT0RfUEhBU0VfVU5TUEVDSUZJRUQQABIVChFQT0RfUEhBU0VfQ1JFQVRFRBABEhcKE1BPRF9QSEFTRV9TQ0hFRFVMRUQQAhIVChFQT0RfUEhBU0VfUlVOTklORxADEhUKEVBPRF9QSEFTRV9DUkFTSEVEEAQSGAoUUE9EX1BIQVNFX1RFUk1JTkFURUQQBRIaChZQT0RfUEhBU0VfUFJPVklTSU9OSU5HEAYy5hIKC0NvcmVTZXJ2aWNlElQKD1JlcG9ydFBvZEV2ZW50cxIXLmFnZW50ZmxlZXQudjEuUG9kRXZlbnQaJi5hZ2VudGZsZWV0LnYxLlJlcG9ydFBvZEV2ZW50c1Jlc3BvbnNlKAESVAoLU2VuZE1lc3NhZ2USIS5hZ2VudGZsZWV0LnYxLlNlbmRNZXNzYWdlUmVxdWVzdBoiLmFnZW50ZmxlZXQudjEuU2VuZE1lc3NhZ2VSZXNwb25zZRJoCg9XYWl0Rm9yTWVzc2FnZXMSKS5hZ2VudGZsZWV0LnYxLlJlYWRUcmFuc2NyaXB0U2luY2VSZXF1ZXN0GiouYWdlbnRmbGVldC52MS5SZWFkVHJhbnNjcmlwdFNpbmNlUmVzcG9uc2USYAoPQXNrVXNlclF1ZXN0aW9uEiUuYWdlbnRmbGVldC52MS5Bc2tVc2VyUXVlc3Rpb25SZXF1ZXN0GiYuYWdlbnRmbGVldC52MS5Bc2tVc2VyUXVlc3Rpb25SZXNwb25zZRJaCg1SZXF1ZXN0RTJlRW52EiMuYWdlbnRmbGVldC52MS5SZXF1ZXN0RTJlRW52UmVxdWVzdBokLmFnZW50ZmxlZXQudjEuUmVxdWVzdEUyZUVudlJlc3BvbnNlElEKCktpbGxFMmVFbnYSIC5hZ2VudGZsZWV0LnYxLktpbGxFMmVFbnZSZXF1ZXN0GiEuYWdlbnRmbGVldC52MS5LaWxsRTJlRW52UmVzcG9uc2USVwoMTGlzdEUyZVRvb2xzEiIuYWdlbnRmbGVldC52MS5MaXN0RTJlVG9vbHNSZXF1ZXN0GiMuYWdlbnRmbGVldC52MS5MaXN0RTJlVG9vbHNSZXNwb25zZRJUCgtDYWxsRTJlVG9vbBIhLmFnZW50ZmxlZXQudjEuQ2FsbEUyZVRvb2xSZXF1ZXN0GiIuYWdlbnRmbGVldC52MS5DYWxsRTJlVG9vbFJlc3BvbnNlEkgKB0dldFRhc2sSHS5hZ2VudGZsZWV0LnYxLkdldFRhc2tSZXF1ZXN0Gh4uYWdlbnRmbGVldC52MS5HZXRUYXNrUmVzcG9uc2USZgoRU2V0UGVybWlzc2lvbk1vZGUSJy5hZ2VudGZsZWV0LnYxLlNldFBlcm1pc3Npb25Nb2RlUmVxdWVzdBooLmFnZW50ZmxlZXQudjEuU2V0UGVybWlzc2lvbk1vZGVSZXNwb25zZRJOCglIZWFydGJlYXQSHy5hZ2VudGZsZWV0LnYxLkhlYXJ0YmVhdFJlcXVlc3QaIC5hZ2VudGZsZWV0LnYxLkhlYXJ0YmVhdFJlc3BvbnNlEloKDVNldFRhc2tTdGF0dXMSIy5hZ2VudGZsZWV0LnYxLlNldFRhc2tTdGF0dXNSZXF1ZXN0GiQuYWdlbnRmbGVldC52MS5TZXRUYXNrU3RhdHVzUmVzcG9uc2USWgoNQXBwZW5kSm91cm5hbBIjLmFnZW50ZmxlZXQudjEuQXBwZW5kSm91cm5hbFJlcXVlc3QaJC5hZ2VudGZsZWV0LnYxLkFwcGVuZEpvdXJuYWxSZXNwb25zZRJaCg1TZWFyY2hKb3VybmFsEiMuYWdlbnRmbGVldC52MS5TZWFyY2hKb3VybmFsUmVxdWVzdBokLmFnZW50ZmxlZXQudjEuU2VhcmNoSm91cm5hbFJlc3BvbnNlEloKDVNhdmVTZXNzaW9uSWQSIy5hZ2VudGZsZWV0LnYxLlNhdmVTZXNzaW9uSWRSZXF1ZXN0GiQuYWdlbnRmbGVldC52MS5TYXZlU2Vzc2lvbklkUmVzcG9uc2USYAoPU3RpbGxIb2xkc0xlYXNlEiUuYWdlbnRmbGVldC52MS5TdGlsbEhvbGRzTGVhc2VSZXF1ZXN0GiYuYWdlbnRmbGVldC52MS5TdGlsbEhvbGRzTGVhc2VSZXNwb25zZRJmChFQdXNoVG9vbFRlbGVtZXRyeRInLmFnZW50ZmxlZXQudjEuUHVzaFRvb2xUZWxlbWV0cnlSZXF1ZXN0GiguYWdlbnRmbGVldC52MS5QdXNoVG9vbFRlbGVtZXRyeVJlc3BvbnNlEmIKE1N0cmVhbUh1bWFuTWVzc2FnZXMSKS5hZ2VudGZsZWV0LnYxLlN0cmVhbUh1bWFuTWVzc2FnZXNSZXF1ZXN0Gh4uYWdlbnRmbGVldC52MS5UcmFuc2NyaXB0RW50cnkwARJOCglMaXN0RmlsZXMSHy5hZ2VudGZsZWV0LnYxLkxpc3RGaWxlc1JlcXVlc3QaIC5hZ2VudGZsZWV0LnYxLkxpc3RGaWxlc1Jlc3BvbnNlEmMKEEdldEZpbGVVcGxvYWRVcmwSJi5hZ2VudGZsZWV0LnYxLkdldEZpbGVVcGxvYWRVcmxSZXF1ZXN0GicuYWdlbnRmbGVldC52MS5HZXRGaWxlVXBsb2FkVXJsUmVzcG9uc2USaQoSR2V0RmlsZURvd25sb2FkVXJsEiguYWdlbnRmbGVldC52MS5HZXRGaWxlRG93bmxvYWRVcmxSZXF1ZXN0GikuYWdlbnRmbGVldC52MS5HZXRGaWxlRG93bmxvYWRVcmxSZXNwb25zZRJRCgpEZWxldGVGaWxlEiAuYWdlbnRmbGVldC52MS5EZWxldGVGaWxlUmVxdWVzdBohLmFnZW50ZmxlZXQudjEuRGVsZXRlRmlsZVJlc3BvbnNlEksKCFZpZXdMb2dzEh4uYWdlbnRmbGVldC52MS5WaWV3TG9nc1JlcXVlc3QaHy5hZ2VudGZsZWV0LnYxLlZpZXdMb2dzUmVzcG9uc2USVwoMTGlzdFNlc3Npb25zEiIuYWdlbnRmbGVldC52MS5MaXN0U2Vzc2lvbnNSZXF1ZXN0GiMuYWdlbnRmbGVldC52MS5MaXN0U2Vzc2lvbnNSZXNwb25zZRJaCg1Qcm9tcHRTZXNzaW9uEiMuYWdlbnRmbGVldC52MS5Qcm9tcHRTZXNzaW9uUmVxdWVzdBokLmFnZW50ZmxlZXQudjEuUHJvbXB0U2Vzc2lvblJlc3BvbnNlEmwKE1dhaXRGb3JTZXNzaW9uU3RhdGUSKS5hZ2VudGZsZWV0LnYxLldhaXRGb3JTZXNzaW9uU3RhdGVSZXF1ZXN0GiouYWdlbnRmbGVldC52MS5XYWl0Rm9yU2Vzc2lvblN0YXRlUmVzcG9uc2VCTVpLZ2l0aHViLmNvbS9Nb2hhbW1hZEJuZWkvYWdlbnQtZmxlZXQvcHJvdG8vZ2VuL2dvL2FnZW50ZmxlZXQvdjE7YWdlbnRmbGVldHYxYgZwcm90bzM", [file_agentfleet_v1_transcript, file_agentfleet_v1_provisioner, file_agentfleet_v1_files]);
 
 /**
  * @generated from message agentfleet.v1.PodEvent
@@ -482,6 +482,219 @@ export const TaskSchema: GenMessage<Task> = /*@__PURE__*/
   messageDesc(file_agentfleet_v1_core, 10);
 
 /**
+ * What one agent can see of another session. Deliberately not the full
+ * Task: an agent needs enough to pick a target and know whether it can be
+ * talked to, not another session's internals.
+ *
+ * @generated from message agentfleet.v1.SessionSummary
+ */
+export type SessionSummary = Message<"agentfleet.v1.SessionSummary"> & {
+  /**
+   * @generated from field: string task_id = 1;
+   */
+  taskId: string;
+
+  /**
+   * @generated from field: string repo = 2;
+   */
+  repo: string;
+
+  /**
+   * @generated from field: string description = 3;
+   */
+  description: string;
+
+  /**
+   * @generated from field: string status = 4;
+   */
+  status: string;
+
+  /**
+   * See Task.live_state (docs/adr/0040). This is what makes "wait until
+   * the other agent is genuinely blocked" expressible at all.
+   *
+   * @generated from field: string live_state = 5;
+   */
+  liveState: string;
+};
+
+/**
+ * Describes the message agentfleet.v1.SessionSummary.
+ * Use `create(SessionSummarySchema)` to create a new message.
+ */
+export const SessionSummarySchema: GenMessage<SessionSummary> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_core, 11);
+
+/**
+ * @generated from message agentfleet.v1.ListSessionsRequest
+ */
+export type ListSessionsRequest = Message<"agentfleet.v1.ListSessionsRequest"> & {
+  /**
+   * The caller's own task, excluded from the results — an agent has no use
+   * for a summary of itself and cannot prompt itself anyway.
+   *
+   * @generated from field: string caller_task_id = 1;
+   */
+  callerTaskId: string;
+};
+
+/**
+ * Describes the message agentfleet.v1.ListSessionsRequest.
+ * Use `create(ListSessionsRequestSchema)` to create a new message.
+ */
+export const ListSessionsRequestSchema: GenMessage<ListSessionsRequest> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_core, 12);
+
+/**
+ * @generated from message agentfleet.v1.ListSessionsResponse
+ */
+export type ListSessionsResponse = Message<"agentfleet.v1.ListSessionsResponse"> & {
+  /**
+   * @generated from field: repeated agentfleet.v1.SessionSummary sessions = 1;
+   */
+  sessions: SessionSummary[];
+};
+
+/**
+ * Describes the message agentfleet.v1.ListSessionsResponse.
+ * Use `create(ListSessionsResponseSchema)` to create a new message.
+ */
+export const ListSessionsResponseSchema: GenMessage<ListSessionsResponse> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_core, 13);
+
+/**
+ * @generated from message agentfleet.v1.PromptSessionRequest
+ */
+export type PromptSessionRequest = Message<"agentfleet.v1.PromptSessionRequest"> & {
+  /**
+   * @generated from field: string caller_task_id = 1;
+   */
+  callerTaskId: string;
+
+  /**
+   * @generated from field: string target_task_id = 2;
+   */
+  targetTaskId: string;
+
+  /**
+   * @generated from field: string text = 3;
+   */
+  text: string;
+
+  /**
+   * Hop count, incremented per relay. Bounded so A->B->A cannot loop
+   * forever; an agent never sets this itself, the sidecar does.
+   *
+   * @generated from field: int32 depth = 4;
+   */
+  depth: number;
+};
+
+/**
+ * Describes the message agentfleet.v1.PromptSessionRequest.
+ * Use `create(PromptSessionRequestSchema)` to create a new message.
+ */
+export const PromptSessionRequestSchema: GenMessage<PromptSessionRequest> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_core, 14);
+
+/**
+ * @generated from message agentfleet.v1.PromptSessionResponse
+ */
+export type PromptSessionResponse = Message<"agentfleet.v1.PromptSessionResponse"> & {
+  /**
+   * @generated from field: int64 seq = 1;
+   */
+  seq: bigint;
+
+  /**
+   * The target's live state immediately after delivery — usually
+   * "working", or "unknown" if a pod was just warmed for it.
+   *
+   * @generated from field: string live_state = 2;
+   */
+  liveState: string;
+
+  /**
+   * Set when delivery warmed an idle session's pod.
+   *
+   * @generated from field: string pod_name = 3;
+   */
+  podName: string;
+};
+
+/**
+ * Describes the message agentfleet.v1.PromptSessionResponse.
+ * Use `create(PromptSessionResponseSchema)` to create a new message.
+ */
+export const PromptSessionResponseSchema: GenMessage<PromptSessionResponse> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_core, 15);
+
+/**
+ * @generated from message agentfleet.v1.WaitForSessionStateRequest
+ */
+export type WaitForSessionStateRequest = Message<"agentfleet.v1.WaitForSessionStateRequest"> & {
+  /**
+   * @generated from field: string target_task_id = 1;
+   */
+  targetTaskId: string;
+
+  /**
+   * Only count a settled state once the target has produced activity newer
+   * than this transcript seq. Without it, waiting right after prompting an
+   * already-idle target returns instantly with the state it was in BEFORE
+   * the prompt — the target hasn't started the new turn yet. herdr solves
+   * the same race by requiring an observed state change off a baseline
+   * captured before submission. Pass the seq prompt_agent returned; the
+   * sidecar fills it in automatically when omitted.
+   *
+   * @generated from field: int64 after_seq = 4;
+   */
+  afterSeq: bigint;
+
+  /**
+   * Any of these ends the wait. Empty means the settled set
+   * (idle/done/blocked/stalled) — "it stopped needing to be waited on".
+   *
+   * @generated from field: repeated string until = 2;
+   */
+  until: string[];
+
+  /**
+   * @generated from field: int32 timeout_ms = 3;
+   */
+  timeoutMs: number;
+};
+
+/**
+ * Describes the message agentfleet.v1.WaitForSessionStateRequest.
+ * Use `create(WaitForSessionStateRequestSchema)` to create a new message.
+ */
+export const WaitForSessionStateRequestSchema: GenMessage<WaitForSessionStateRequest> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_core, 16);
+
+/**
+ * @generated from message agentfleet.v1.WaitForSessionStateResponse
+ */
+export type WaitForSessionStateResponse = Message<"agentfleet.v1.WaitForSessionStateResponse"> & {
+  /**
+   * @generated from field: string live_state = 1;
+   */
+  liveState: string;
+
+  /**
+   * @generated from field: bool timed_out = 2;
+   */
+  timedOut: boolean;
+};
+
+/**
+ * Describes the message agentfleet.v1.WaitForSessionStateResponse.
+ * Use `create(WaitForSessionStateResponseSchema)` to create a new message.
+ */
+export const WaitForSessionStateResponseSchema: GenMessage<WaitForSessionStateResponse> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_core, 17);
+
+/**
  * @generated from message agentfleet.v1.GetTaskRequest
  */
 export type GetTaskRequest = Message<"agentfleet.v1.GetTaskRequest"> & {
@@ -496,7 +709,7 @@ export type GetTaskRequest = Message<"agentfleet.v1.GetTaskRequest"> & {
  * Use `create(GetTaskRequestSchema)` to create a new message.
  */
 export const GetTaskRequestSchema: GenMessage<GetTaskRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_core, 11);
+  messageDesc(file_agentfleet_v1_core, 18);
 
 /**
  * @generated from message agentfleet.v1.GetTaskResponse
@@ -513,7 +726,7 @@ export type GetTaskResponse = Message<"agentfleet.v1.GetTaskResponse"> & {
  * Use `create(GetTaskResponseSchema)` to create a new message.
  */
 export const GetTaskResponseSchema: GenMessage<GetTaskResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_core, 12);
+  messageDesc(file_agentfleet_v1_core, 19);
 
 /**
  * Sets an arbitrary SDK permission mode on a task. Reused by two very
@@ -543,7 +756,7 @@ export type SetPermissionModeRequest = Message<"agentfleet.v1.SetPermissionModeR
  * Use `create(SetPermissionModeRequestSchema)` to create a new message.
  */
 export const SetPermissionModeRequestSchema: GenMessage<SetPermissionModeRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_core, 13);
+  messageDesc(file_agentfleet_v1_core, 20);
 
 /**
  * @generated from message agentfleet.v1.SetPermissionModeResponse
@@ -560,7 +773,7 @@ export type SetPermissionModeResponse = Message<"agentfleet.v1.SetPermissionMode
  * Use `create(SetPermissionModeResponseSchema)` to create a new message.
  */
 export const SetPermissionModeResponseSchema: GenMessage<SetPermissionModeResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_core, 14);
+  messageDesc(file_agentfleet_v1_core, 21);
 
 /**
  * @generated from message agentfleet.v1.HeartbeatRequest
@@ -582,7 +795,7 @@ export type HeartbeatRequest = Message<"agentfleet.v1.HeartbeatRequest"> & {
  * Use `create(HeartbeatRequestSchema)` to create a new message.
  */
 export const HeartbeatRequestSchema: GenMessage<HeartbeatRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_core, 15);
+  messageDesc(file_agentfleet_v1_core, 22);
 
 /**
  * @generated from message agentfleet.v1.HeartbeatResponse
@@ -595,7 +808,7 @@ export type HeartbeatResponse = Message<"agentfleet.v1.HeartbeatResponse"> & {
  * Use `create(HeartbeatResponseSchema)` to create a new message.
  */
 export const HeartbeatResponseSchema: GenMessage<HeartbeatResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_core, 16);
+  messageDesc(file_agentfleet_v1_core, 23);
 
 /**
  * @generated from message agentfleet.v1.SetTaskStatusRequest
@@ -632,7 +845,7 @@ export type SetTaskStatusRequest = Message<"agentfleet.v1.SetTaskStatusRequest">
  * Use `create(SetTaskStatusRequestSchema)` to create a new message.
  */
 export const SetTaskStatusRequestSchema: GenMessage<SetTaskStatusRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_core, 17);
+  messageDesc(file_agentfleet_v1_core, 24);
 
 /**
  * @generated from message agentfleet.v1.SetTaskStatusResponse
@@ -645,7 +858,7 @@ export type SetTaskStatusResponse = Message<"agentfleet.v1.SetTaskStatusResponse
  * Use `create(SetTaskStatusResponseSchema)` to create a new message.
  */
 export const SetTaskStatusResponseSchema: GenMessage<SetTaskStatusResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_core, 18);
+  messageDesc(file_agentfleet_v1_core, 25);
 
 /**
  * @generated from message agentfleet.v1.AppendJournalRequest
@@ -677,7 +890,7 @@ export type AppendJournalRequest = Message<"agentfleet.v1.AppendJournalRequest">
  * Use `create(AppendJournalRequestSchema)` to create a new message.
  */
 export const AppendJournalRequestSchema: GenMessage<AppendJournalRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_core, 19);
+  messageDesc(file_agentfleet_v1_core, 26);
 
 /**
  * @generated from message agentfleet.v1.AppendJournalResponse
@@ -690,7 +903,7 @@ export type AppendJournalResponse = Message<"agentfleet.v1.AppendJournalResponse
  * Use `create(AppendJournalResponseSchema)` to create a new message.
  */
 export const AppendJournalResponseSchema: GenMessage<AppendJournalResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_core, 20);
+  messageDesc(file_agentfleet_v1_core, 27);
 
 /**
  * JournalEntry also backs dashboard.proto's GetJournal (imported from
@@ -737,7 +950,7 @@ export type JournalEntry = Message<"agentfleet.v1.JournalEntry"> & {
  * Use `create(JournalEntrySchema)` to create a new message.
  */
 export const JournalEntrySchema: GenMessage<JournalEntry> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_core, 21);
+  messageDesc(file_agentfleet_v1_core, 28);
 
 /**
  * SearchJournal is journal_search's backing RPC (docs/adr/0032's deferred
@@ -770,7 +983,7 @@ export type SearchJournalRequest = Message<"agentfleet.v1.SearchJournalRequest">
  * Use `create(SearchJournalRequestSchema)` to create a new message.
  */
 export const SearchJournalRequestSchema: GenMessage<SearchJournalRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_core, 22);
+  messageDesc(file_agentfleet_v1_core, 29);
 
 /**
  * @generated from message agentfleet.v1.SearchJournalResponse
@@ -787,7 +1000,7 @@ export type SearchJournalResponse = Message<"agentfleet.v1.SearchJournalResponse
  * Use `create(SearchJournalResponseSchema)` to create a new message.
  */
 export const SearchJournalResponseSchema: GenMessage<SearchJournalResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_core, 23);
+  messageDesc(file_agentfleet_v1_core, 30);
 
 /**
  * @generated from message agentfleet.v1.SaveSessionIdRequest
@@ -807,6 +1020,17 @@ export type SaveSessionIdRequest = Message<"agentfleet.v1.SaveSessionIdRequest">
    * @generated from field: string model = 3;
    */
   model: string;
+
+  /**
+   * The caller pod's lease (docs/adr/0041). Without it this write is keyed
+   * by task alone, so a pod that was torn down but is still shutting down
+   * can overwrite the identity of the pod that replaced it — and
+   * tasks.session_id is precisely what the next resume reads. Empty is
+   * accepted for compatibility with a worker image older than this field.
+   *
+   * @generated from field: string lease_id = 4;
+   */
+  leaseId: string;
 };
 
 /**
@@ -814,7 +1038,7 @@ export type SaveSessionIdRequest = Message<"agentfleet.v1.SaveSessionIdRequest">
  * Use `create(SaveSessionIdRequestSchema)` to create a new message.
  */
 export const SaveSessionIdRequestSchema: GenMessage<SaveSessionIdRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_core, 24);
+  messageDesc(file_agentfleet_v1_core, 31);
 
 /**
  * @generated from message agentfleet.v1.SaveSessionIdResponse
@@ -827,7 +1051,7 @@ export type SaveSessionIdResponse = Message<"agentfleet.v1.SaveSessionIdResponse
  * Use `create(SaveSessionIdResponseSchema)` to create a new message.
  */
 export const SaveSessionIdResponseSchema: GenMessage<SaveSessionIdResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_core, 25);
+  messageDesc(file_agentfleet_v1_core, 32);
 
 /**
  * Checked immediately before the irreversible push/PR step (mirrors
@@ -854,7 +1078,7 @@ export type StillHoldsLeaseRequest = Message<"agentfleet.v1.StillHoldsLeaseReque
  * Use `create(StillHoldsLeaseRequestSchema)` to create a new message.
  */
 export const StillHoldsLeaseRequestSchema: GenMessage<StillHoldsLeaseRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_core, 26);
+  messageDesc(file_agentfleet_v1_core, 33);
 
 /**
  * @generated from message agentfleet.v1.StillHoldsLeaseResponse
@@ -871,7 +1095,7 @@ export type StillHoldsLeaseResponse = Message<"agentfleet.v1.StillHoldsLeaseResp
  * Use `create(StillHoldsLeaseResponseSchema)` to create a new message.
  */
 export const StillHoldsLeaseResponseSchema: GenMessage<StillHoldsLeaseResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_core, 27);
+  messageDesc(file_agentfleet_v1_core, 34);
 
 /**
  * Git diff/branch/elapsed-time/tool-call-summary telemetry, pushed by the
@@ -898,7 +1122,7 @@ export type PushToolTelemetryRequest = Message<"agentfleet.v1.PushToolTelemetryR
  * Use `create(PushToolTelemetryRequestSchema)` to create a new message.
  */
 export const PushToolTelemetryRequestSchema: GenMessage<PushToolTelemetryRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_core, 28);
+  messageDesc(file_agentfleet_v1_core, 35);
 
 /**
  * @generated from message agentfleet.v1.PushToolTelemetryResponse
@@ -911,7 +1135,7 @@ export type PushToolTelemetryResponse = Message<"agentfleet.v1.PushToolTelemetry
  * Use `create(PushToolTelemetryResponseSchema)` to create a new message.
  */
 export const PushToolTelemetryResponseSchema: GenMessage<PushToolTelemetryResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_core, 29);
+  messageDesc(file_agentfleet_v1_core, 36);
 
 /**
  * The mechanism that lets the sidecar deliver new human input to the
@@ -937,7 +1161,7 @@ export type StreamHumanMessagesRequest = Message<"agentfleet.v1.StreamHumanMessa
  * Use `create(StreamHumanMessagesRequestSchema)` to create a new message.
  */
 export const StreamHumanMessagesRequestSchema: GenMessage<StreamHumanMessagesRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_core, 30);
+  messageDesc(file_agentfleet_v1_core, 37);
 
 /**
  * @generated from message agentfleet.v1.QueryLogsRequest
@@ -1005,7 +1229,7 @@ export type QueryLogsRequest = Message<"agentfleet.v1.QueryLogsRequest"> & {
  * Use `create(QueryLogsRequestSchema)` to create a new message.
  */
 export const QueryLogsRequestSchema: GenMessage<QueryLogsRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_core, 31);
+  messageDesc(file_agentfleet_v1_core, 38);
 
 /**
  * @generated from message agentfleet.v1.LogEntry
@@ -1056,7 +1280,7 @@ export type LogEntry = Message<"agentfleet.v1.LogEntry"> & {
  * Use `create(LogEntrySchema)` to create a new message.
  */
 export const LogEntrySchema: GenMessage<LogEntry> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_core, 32);
+  messageDesc(file_agentfleet_v1_core, 39);
 
 /**
  * @generated from message agentfleet.v1.QueryLogsResponse
@@ -1078,7 +1302,7 @@ export type QueryLogsResponse = Message<"agentfleet.v1.QueryLogsResponse"> & {
  * Use `create(QueryLogsResponseSchema)` to create a new message.
  */
 export const QueryLogsResponseSchema: GenMessage<QueryLogsResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_core, 33);
+  messageDesc(file_agentfleet_v1_core, 40);
 
 /**
  * For agents via MCP tool - supports both duration and explicit timestamps
@@ -1148,7 +1372,7 @@ export type ViewLogsRequest = Message<"agentfleet.v1.ViewLogsRequest"> & {
  * Use `create(ViewLogsRequestSchema)` to create a new message.
  */
 export const ViewLogsRequestSchema: GenMessage<ViewLogsRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_core, 34);
+  messageDesc(file_agentfleet_v1_core, 41);
 
 /**
  * @generated from message agentfleet.v1.ViewLogsResponse
@@ -1167,7 +1391,7 @@ export type ViewLogsResponse = Message<"agentfleet.v1.ViewLogsResponse"> & {
  * Use `create(ViewLogsResponseSchema)` to create a new message.
  */
 export const ViewLogsResponseSchema: GenMessage<ViewLogsResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_core, 35);
+  messageDesc(file_agentfleet_v1_core, 42);
 
 /**
  * @generated from enum agentfleet.v1.PodPhase
@@ -1450,6 +1674,35 @@ export const CoreService: GenService<{
     methodKind: "unary";
     input: typeof ViewLogsRequestSchema;
     output: typeof ViewLogsResponseSchema;
+  },
+  /**
+   * Inter-agent coordination (docs/adr/0041). Hub-and-spoke per
+   * docs/adr/0020 point 4: the path is agent -> its own sidecar (MCP) ->
+   * core (here) -> the target session. There is no worker-to-worker link
+   * and no worker-to-provisioner link.
+   *
+   * @generated from rpc agentfleet.v1.CoreService.ListSessions
+   */
+  listSessions: {
+    methodKind: "unary";
+    input: typeof ListSessionsRequestSchema;
+    output: typeof ListSessionsResponseSchema;
+  },
+  /**
+   * @generated from rpc agentfleet.v1.CoreService.PromptSession
+   */
+  promptSession: {
+    methodKind: "unary";
+    input: typeof PromptSessionRequestSchema;
+    output: typeof PromptSessionResponseSchema;
+  },
+  /**
+   * @generated from rpc agentfleet.v1.CoreService.WaitForSessionState
+   */
+  waitForSessionState: {
+    methodKind: "unary";
+    input: typeof WaitForSessionStateRequestSchema;
+    output: typeof WaitForSessionStateResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_agentfleet_v1_core, 0);
