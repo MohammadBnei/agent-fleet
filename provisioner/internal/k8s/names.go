@@ -13,6 +13,7 @@ const (
 	// (execmcp) — distinct from PlaywrightPort's third-party server, which
 	// we can't add tools to.
 	ExecPort = 8932
+	SSHPort  = 2222
 	// SidecarMCPPort is agent-facing (local MCP server, the Agent SDK's
 	// mcpServers config), SidecarAPIPort is wrapper-facing (plain local
 	// HTTP/JSON, docs/adr/0020 point 5's two local surfaces).
@@ -112,6 +113,13 @@ func SharedInstanceName(repo, serviceKey string) string {
 
 func SharedInstanceAdminSecretName(repo, serviceKey string) string {
 	return SharedInstanceName(repo, serviceKey) + "-admin"
+}
+
+// SSHHostKeySecretName returns per-repo SSH host key Secret name. Static host
+// key (ed25519), generated once per repo same pattern as SharedInstanceAdminSecretName.
+// Infisical CA public key (TrustedUserCAKeys) separate — fleet-wide, cached Secret.
+func SSHHostKeySecretName(repo string) string {
+	return "ssh-host-key-" + repo
 }
 
 func SharedInstanceLabels(repo, serviceKey string) map[string]string {

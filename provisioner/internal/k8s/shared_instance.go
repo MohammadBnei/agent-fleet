@@ -2,8 +2,10 @@ package k8s
 
 import (
 	"context"
+	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/pem"
 	"fmt"
 	"io"
 	"log/slog"
@@ -12,6 +14,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"golang.org/x/crypto/ssh"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -137,6 +140,62 @@ func randomPassword() (string, error) {
 		return "", err
 	}
 	return base64.RawURLEncoding.EncodeToString(buf), nil
+}
+
+// ensureSSHHostKey returns or generates ed25519 host key for repo. Idempotent,
+// same pattern as ensureAdminSecret. Returns PEM-encoded private key bytes.
+func (c *Client) ensureSSHHostKey(ctx context.Context, repo string) ([]byte, error) {
+	name := SSHHostKeySecretName(repo)
+	secrets := c.Core.CoreV1().Secrets(c.Namespace)
+
+	existing, err := secrets.Get(ctx, name, metav1.GetOptions{})
+	if err == nil {
+		return existing.Data["ssh_host_ed25519_key"], nil
+	}
+	if !apierrors.IsNotFound(err) {
+		return nil, err
+	}
+
+	pubKey, privKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		return nil, fmt.Errorf("generate ed25519 key: %w", err)
+	}
+
+	// Marshal to OpenSSH format for sshd.
+	sshPubKey, err := ssh.NewPublicKey(pubKey)
+	if err != nil {
+		return nil, fmt.Errorf("marshal public key: %w", err)
+	}
+	pubKeyBytes := ssh.MarshalAuthorizedKey(sshPubKey)
+
+	// Private key in OpenSSH format (what sshd reads).
+	privKeyBytes, err := ssh.MarshalPrivateKey(privKey, "")
+	if err != nil {
+		return nil, fmt.Errorf("marshal private key: %w", err)
+	}
+
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: c.Namespace,
+			Labels:    map[string]string{RepoLabel: repo},
+		},
+		Data: map[string][]byte{
+			"ssh_host_ed25519_key":     pem.EncodeToMemory(privKeyBytes),
+			"ssh_host_ed25519_key.pub": pubKeyBytes,
+		},
+	}
+	if _, err := secrets.Create(ctx, secret, metav1.CreateOptions{}); err != nil {
+		if apierrors.IsAlreadyExists(err) {
+			existing, getErr := secrets.Get(ctx, name, metav1.GetOptions{})
+			if getErr != nil {
+				return nil, getErr
+			}
+			return existing.Data["ssh_host_ed25519_key"], nil
+		}
+		return nil, err
+	}
+	return pem.EncodeToMemory(privKeyBytes), nil
 }
 
 func (c *Client) ensureSharedDeployment(ctx context.Context, name string, labels map[string]string, def catalog.ServiceDef, image, serviceKey, adminPassword string) error {

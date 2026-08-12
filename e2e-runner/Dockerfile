@@ -20,7 +20,7 @@ RUN CGO_ENABLED=0 go build -o /out/execmcp ./cmd/execmcp
 FROM oven/bun:1-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      curl ca-certificates git \
+      curl ca-certificates git openssh-server \
     && rm -rf /var/lib/apt/lists/*
 
 # code-server — the human-review-only IDE surface.

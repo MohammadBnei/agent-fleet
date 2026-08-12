@@ -15,6 +15,23 @@ set -euo pipefail
 : "${E2E_CODE_SERVER_PORT:?E2E_CODE_SERVER_PORT is required}"
 : "${E2E_PLAYWRIGHT_PORT:?E2E_PLAYWRIGHT_PORT is required}"
 : "${E2E_EXEC_PORT:?E2E_EXEC_PORT is required}"
+: "${E2E_SSH_PORT:?E2E_SSH_PORT is required}"
+
+# ponytail: SSH host key from mounted Secret, Infisical CA from optional Secret.
+# No runtime keygen — provisioner creates host key Secret once per repo,
+# same pattern as shared-instance admin password (idempotent, persisted).
+# Infisical CA pub key (TrustedUserCAKeys) from fleet-wide Secret if present.
+mkdir -p /etc/ssh
+if [ -f /ssh-host-keys/ssh_host_ed25519_key ]; then
+	cp /ssh-host-keys/ssh_host_ed25519_key /etc/ssh/
+	chmod 600 /etc/ssh/ssh_host_ed25519_key
+fi
+# ponytail: TrustedUserCAKeys only if Infisical CA Secret mounted. No CA = password-only auth.
+if [ -f /ssh-ca/infisical_ca.pub ]; then
+	cp /ssh-ca/infisical_ca.pub /etc/ssh/
+	echo "TrustedUserCAKeys /etc/ssh/infisical_ca.pub" >> /etc/ssh/sshd_config
+fi
+/usr/sbin/sshd -D -e -p "${E2E_SSH_PORT}" &
 
 # Auth is enforced one layer up (Traefik + the existing basic-admin-auth
 # Middleware) — code-server's own auth would just double-prompt.
