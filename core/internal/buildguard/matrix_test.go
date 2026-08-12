@@ -150,3 +150,47 @@ func TestEveryCodegenTargetHasAnInstallStep(t *testing.T) {
 		}
 	}
 }
+
+// TestComponentsBuiltIntoAnotherImageAreWiredIntoCI covers the blind spot in
+// TestEveryDockerfileComponentIsWiredIntoCI above: that one only inspects
+// directories that ship a Dockerfile of their own. A component compiled
+// *into* someone else's image has none, so it is invisible there — and was.
+//
+// dashboard/ builds into core's binary (core/Dockerfile's spa stage COPYs
+// dashboard/ and runs `bun run build`, then the Go stage COPYs the dist into
+// core/internal/webui/dist). Until this was fixed, docker.yml's `core` path
+// filter matched only 'core/**', so a dashboard-only PR built no image, ran
+// no test, and reported green having compiled nothing at all.
+func TestComponentsBuiltIntoAnotherImageAreWiredIntoCI(t *testing.T) {
+	root := repoRoot(t)
+
+	workflow, err := os.ReadFile(filepath.Join(root, ".github", "workflows", "docker.yml"))
+	if err != nil {
+		t.Fatalf("read docker.yml: %v", err)
+	}
+	got := string(workflow)
+
+	// Each entry: a source directory with no Dockerfile of its own, and the
+	// image whose Dockerfile consumes it.
+	embedded := map[string]string{"dashboard": "core"}
+
+	for component, host := range embedded {
+		dockerfile, err := os.ReadFile(filepath.Join(root, host, "Dockerfile"))
+		if err != nil {
+			t.Fatalf("read %s/Dockerfile: %v", host, err)
+		}
+		if !strings.Contains(string(dockerfile), component+"/") {
+			t.Errorf(
+				"%s/Dockerfile no longer references %s/ — this guard is now describing a coupling that doesn't exist; "+
+					"delete the entry rather than leaving a test that asserts nothing",
+				host, component)
+			continue
+		}
+		if !strings.Contains(got, "'"+component+"/**'") {
+			t.Errorf(
+				"%s/ is compiled into %s's image but no path filter in .github/workflows/docker.yml matches '%s/**' — "+
+					"a %s-only change will build nothing and pass CI having compiled nothing",
+				component, host, component, component)
+		}
+	}
+}
