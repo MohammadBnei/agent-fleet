@@ -1,5 +1,12 @@
 # Changelog
 
+# [1.46.0](https://github.com/MohammadBnei/agent-fleet/compare/1.45.0...1.46.0) (2026-08-12)
+
+
+### Features
+
+* **core:** derive session liveness, tear down pods that never start ([#129](https://github.com/MohammadBnei/agent-fleet/issues/129)) ([cc3fc5d](https://github.com/MohammadBnei/agent-fleet/commit/cc3fc5db2524fa782b7f894738068f78c353fb5a))
+
 # [1.45.0](https://github.com/MohammadBnei/agent-fleet/compare/1.44.0...1.45.0) (2026-08-12)
 
 
