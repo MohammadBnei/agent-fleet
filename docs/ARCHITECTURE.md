@@ -596,11 +596,34 @@ No `AGENTFLEET_DB_*` here at all — see §6.
 SSH (port 2222) is available for human debugging with VSCode Remote-SSH. Access via `kubectl port-forward`:
 
 ```bash
-kubectl port-forward -n agent-fleet pod/<pod-name> 2222:2222
-ssh -p 2222 root@localhost
+kubectl port-forward -n agent-fleet svc/e2e-<shortID> 2222:2222
+ssh -i ~/.ssh/<your-key> -o StrictHostKeyChecking=no -p 2222 root@localhost
 ```
 
-Pod name format: `e2e-<shortID>` (see `provisioner/internal/k8s/names.go`'s `ResourceName()`). Requires fleet-wide SSH public key in Infisical (`agent-fleet-nygh` project, `dev` env, key `E2E_SSH_AUTHORIZED_KEYS`), materialized as Secret `e2e-ssh-authorized-keys` (optional). Each pod generates its own ed25519 host key at runtime (`entrypoint.sh`), so `StrictHostKeyChecking=no` is correct for ephemeral pods.
+`e2e-<shortID>` is `provisioner/internal/k8s/names.go`'s `ResourceName()` — the
+Service and the Pod share it.
+
+`StrictHostKeyChecking=no` is correct-by-design here, not a workaround: each
+pod generates its own ed25519 host key at startup (`entrypoint.sh`, and the
+image ships none — the `Dockerfile` deletes the ones `openssh-server`'s
+postinst bakes in), so the fingerprint is *supposed* to be different every
+time. Don't "fix" this by pinning a host key; that means persisting a private
+key into a pod [`adr/0039`](adr/0039-e2e-pod-is-the-worker-sandbox.md) defines
+as credential-free.
+
+Public-key auth only — there is no root password, so with no `authorized_keys`
+present SSH fails closed and the pod is otherwise unaffected. The key comes
+from Infisical (`agent-fleet-nygh`, env `dev`, **path `/e2e-ssh`**, key
+`E2E_SSH_AUTHORIZED_KEYS`), materialized by
+`k8s/provisioner/e2e-ssh-infisicalsecret.yaml` into the optional Secret
+`e2e-ssh-authorized-keys` and projected to `authorized_keys` by `pod.go`'s
+`Items:`. To grant someone access, append their public key to that one
+Infisical value.
+
+`kubectl port-forward` is the only path in: 2222 is not in the e2e-runner
+NetworkPolicy's allowlist and Traefik routes HTTP only. Port-forward is
+unaffected because it originates on the node, not from a pod — see the
+comment in `k8s/provisioner/networkpolicy.yaml`.
 
 ### `sidecar/` (per worker pod, injected by the provisioner at pod creation)
 
