@@ -250,7 +250,7 @@ export function DecisionInline({
           client.answerQuestion({
             taskId: task.id,
             seq: questionEntry.seq,
-            answersJson: JSON.stringify({ answers: { [q.question]: label } }),
+            answersJson: JSON.stringify({ answers: { [q!.question]: label } }),
           }),
         );
       }

@@ -250,16 +250,9 @@ export function MobileTaskDetail({
                   type="button"
                   disabled={busyKey !== null}
                   onClick={() => respond(pendingPermission.entry.seq, "allow")}
-                  className="flex-1 py-3 text-center text-[13.5px] font-semibold bg-primary text-primary-content disabled:opacity-50"
+                  className="w-full py-3 text-center text-[13.5px] font-semibold bg-primary text-primary-content disabled:opacity-50"
                 >
                   approve plan
-                </button>
-                <button
-                  type="button"
-                  onClick={onOpenSession}
-                  className="flex-1 py-3 text-center text-[13.5px] border border-acc-line"
-                >
-                  read it first
                 </button>
               </div>
             </div>
