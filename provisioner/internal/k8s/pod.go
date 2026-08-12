@@ -225,6 +225,7 @@ func (c *Client) CreatePod(ctx context.Context, task TaskRef) error {
 						Secret: &corev1.SecretVolumeSource{
 							SecretName:  "e2e-ssh-authorized-keys",
 							Optional:    boolPtr(true),
+							Items:       []corev1.KeyToPath{{Key: "E2E_SSH_AUTHORIZED_KEYS", Path: "authorized_keys"}},
 							DefaultMode: int32Ptr(0644),
 						},
 					},

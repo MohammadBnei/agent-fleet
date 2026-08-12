@@ -5,12 +5,13 @@
 # either localhost-only (sidecar's MCP/API ports, same pod) or outbound
 # gRPC to core, neither of which an ingress-only policy needs to gate.
 #
-# Three separate ingress rules, not one combined rule, because each source
+# Four separate ingress rules, not one combined rule, because each source
 # is allowed a different port subset:
 #   - Traefik (human preview, gated by basic-admin-auth at L7): app + code-server
 #   - worker pods (curl for API/backend testing): app port only, never code-server
 #   - provisioner itself (Playwright + run_command MCP proxying): playwright
 #     + exec ports
+#   - kubectl port-forward (human SSH access): SSH port (2222)
 # The worker pod's own code-server access is the thing this exists to deny —
 # code-server is a full IDE/terminal, a human-review-only surface, not
 # something the agent should ever be able to reach.
@@ -51,3 +52,9 @@ spec:
       port: 8931
     - protocol: TCP
       port: 8932
+  - from:
+    - namespaceSelector: {}
+      podSelector: {}
+    ports:
+    - protocol: TCP
+      port: 2222

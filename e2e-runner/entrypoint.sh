@@ -17,11 +17,11 @@ set -euo pipefail
 : "${E2E_EXEC_PORT:?E2E_EXEC_PORT is required}"
 : "${E2E_SSH_PORT:?E2E_SSH_PORT is required}"
 
-# ponytail: SSH host key runtime keygen (pod ephemeral), authorized_keys from optional Secret.
-# No host key Secret — pods die fast, nobody verifies fingerprint, ssh -o StrictHostKeyChecking=no.
-# Simpler than per-repo Secret + RBAC + ADR-0039 revisit.
+# ponytail: SSH host key per-pod runtime keygen (ed25519 only, ~30ms).
+# Image ships no host keys (Dockerfile rm after openssh-server install).
+# Pods ephemeral, access via kubectl port-forward, StrictHostKeyChecking=no correct-by-design.
 mkdir -p /etc/ssh /root/.ssh
-ssh-keygen -A
+ssh-keygen -q -t ed25519 -N "" -f /etc/ssh/ssh_host_ed25519_key
 if [ -f /ssh-authorized-keys/authorized_keys ]; then
 	cp /ssh-authorized-keys/authorized_keys /root/.ssh/
 	chmod 600 /root/.ssh/authorized_keys
