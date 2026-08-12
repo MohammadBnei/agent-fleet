@@ -52,10 +52,22 @@ func buildIngredients(toolKeys []string, serviceIngredients []ServiceIngredientR
 			hasGo = true
 		}
 		initContainers = append(initContainers, corev1.Container{
-			Name:         "tool-" + key,
-			Image:        def.CopyImage,
-			Command:      def.CopyCmd,
-			VolumeMounts: []corev1.VolumeMount{{Name: toolsVolumeName, MountPath: toolsMountPath}},
+			Name:  "tool-" + key,
+			Image: def.CopyImage,
+			// Explicit, not left to Kubernetes' default — that default is
+			// per-tag: IfNotPresent for a pinned tag, but Always for
+			// `:latest`. Three of the catalog's images are `:latest`
+			// (golangci-lint, buf, agent-fleet-executor), so they were
+			// re-pulled from Docker Hub on every single pod creation even
+			// though the layers were already on the node. That pull is
+			// serial and blocks the pod reaching Running, and it spends
+			// Docker Hub pull quota per dispatch rather than per node.
+			// These images are content-staging only: the init container
+			// copies a binary out and exits, so a stale cached layer is
+			// exactly as correct as a freshly pulled one.
+			ImagePullPolicy: corev1.PullIfNotPresent,
+			Command:         def.CopyCmd,
+			VolumeMounts:    []corev1.VolumeMount{{Name: toolsVolumeName, MountPath: toolsMountPath}},
 		})
 	}
 	// cluster-access's shim is useless without knowing where to call and
