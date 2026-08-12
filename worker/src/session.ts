@@ -479,6 +479,31 @@ export async function runTask(task: Task): Promise<TaskResult> {
     for await (const msg of q) {
       if (!sessionId && "session_id" in msg) {
         sessionId = msg.session_id as string;
+        // Identity re-check (docs/adr/0041). We asked the SDK to resume a
+        // specific session; if what came back is a different id, the resume
+        // did not happen and this agent is starting from nothing — no prior
+        // context, no history — while every outside signal (task row, pod,
+        // transcript) still says "resumed". Overwriting tasks.session_id
+        // silently, as this used to, made the two cases identical.
+        //
+        // The new session is still saved and the run continues: a fresh
+        // session that works beats refusing to run. But it says so, loudly
+        // and durably, so a session that quietly forgot everything is
+        // visible rather than merely confusing.
+        if (RESUME_SESSION_ID && RESUME_SESSION_ID !== sessionId) {
+          log("error", "resume failed: SDK returned a different session id", {
+            taskId: task.id,
+            requested: RESUME_SESSION_ID,
+            got: sessionId,
+          });
+          await sidecar
+            .pushMessage(
+              "agent",
+              JSON.stringify({ sdk: "resume_failed", requested: RESUME_SESSION_ID, got: sessionId }),
+              "system",
+            )
+            .catch(() => {});
+        }
         input.setSessionId(sessionId);
         // Save the session ID and model to the database
         const modelToSave = task.model ?? MODEL;

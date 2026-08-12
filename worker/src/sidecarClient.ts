@@ -57,8 +57,11 @@ export async function appendJournal(
   await postJSON("/journal", { repo, actor, eventType, payload });
 }
 
+// leaseId lets core reject this write if the pod has already been replaced
+// (docs/adr/0041) — tasks.session_id is what the next resume reads, so a
+// dead pod setting it would resume the wrong conversation.
 export async function saveSessionId(sessionId: string, model: string): Promise<void> {
-  await postJSON("/session-id", { sessionId, model });
+  await postJSON("/session-id", { sessionId, model, leaseId: process.env.LEASE_ID ?? "" });
 }
 
 export async function getTask(): Promise<{

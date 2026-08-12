@@ -94,6 +94,15 @@ const (
 	CoreServiceDeleteFileProcedure = "/agentfleet.v1.CoreService/DeleteFile"
 	// CoreServiceViewLogsProcedure is the fully-qualified name of the CoreService's ViewLogs RPC.
 	CoreServiceViewLogsProcedure = "/agentfleet.v1.CoreService/ViewLogs"
+	// CoreServiceListSessionsProcedure is the fully-qualified name of the CoreService's ListSessions
+	// RPC.
+	CoreServiceListSessionsProcedure = "/agentfleet.v1.CoreService/ListSessions"
+	// CoreServicePromptSessionProcedure is the fully-qualified name of the CoreService's PromptSession
+	// RPC.
+	CoreServicePromptSessionProcedure = "/agentfleet.v1.CoreService/PromptSession"
+	// CoreServiceWaitForSessionStateProcedure is the fully-qualified name of the CoreService's
+	// WaitForSessionState RPC.
+	CoreServiceWaitForSessionStateProcedure = "/agentfleet.v1.CoreService/WaitForSessionState"
 )
 
 // CoreServiceClient is a client for the agentfleet.v1.CoreService service.
@@ -148,6 +157,13 @@ type CoreServiceClient interface {
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	DeleteFile(context.Context, *connect.Request[v1.DeleteFileRequest]) (*connect.Response[v1.DeleteFileResponse], error)
 	ViewLogs(context.Context, *connect.Request[v1.ViewLogsRequest]) (*connect.Response[v1.ViewLogsResponse], error)
+	// Inter-agent coordination (docs/adr/0041). Hub-and-spoke per
+	// docs/adr/0020 point 4: the path is agent -> its own sidecar (MCP) ->
+	// core (here) -> the target session. There is no worker-to-worker link
+	// and no worker-to-provisioner link.
+	ListSessions(context.Context, *connect.Request[v1.ListSessionsRequest]) (*connect.Response[v1.ListSessionsResponse], error)
+	PromptSession(context.Context, *connect.Request[v1.PromptSessionRequest]) (*connect.Response[v1.PromptSessionResponse], error)
+	WaitForSessionState(context.Context, *connect.Request[v1.WaitForSessionStateRequest]) (*connect.Response[v1.WaitForSessionStateResponse], error)
 }
 
 // NewCoreServiceClient constructs a client for the agentfleet.v1.CoreService service. By default,
@@ -299,6 +315,24 @@ func NewCoreServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(coreServiceMethods.ByName("ViewLogs")),
 			connect.WithClientOptions(opts...),
 		),
+		listSessions: connect.NewClient[v1.ListSessionsRequest, v1.ListSessionsResponse](
+			httpClient,
+			baseURL+CoreServiceListSessionsProcedure,
+			connect.WithSchema(coreServiceMethods.ByName("ListSessions")),
+			connect.WithClientOptions(opts...),
+		),
+		promptSession: connect.NewClient[v1.PromptSessionRequest, v1.PromptSessionResponse](
+			httpClient,
+			baseURL+CoreServicePromptSessionProcedure,
+			connect.WithSchema(coreServiceMethods.ByName("PromptSession")),
+			connect.WithClientOptions(opts...),
+		),
+		waitForSessionState: connect.NewClient[v1.WaitForSessionStateRequest, v1.WaitForSessionStateResponse](
+			httpClient,
+			baseURL+CoreServiceWaitForSessionStateProcedure,
+			connect.WithSchema(coreServiceMethods.ByName("WaitForSessionState")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -327,6 +361,9 @@ type coreServiceClient struct {
 	getFileDownloadUrl  *connect.Client[v1.GetFileDownloadUrlRequest, v1.GetFileDownloadUrlResponse]
 	deleteFile          *connect.Client[v1.DeleteFileRequest, v1.DeleteFileResponse]
 	viewLogs            *connect.Client[v1.ViewLogsRequest, v1.ViewLogsResponse]
+	listSessions        *connect.Client[v1.ListSessionsRequest, v1.ListSessionsResponse]
+	promptSession       *connect.Client[v1.PromptSessionRequest, v1.PromptSessionResponse]
+	waitForSessionState *connect.Client[v1.WaitForSessionStateRequest, v1.WaitForSessionStateResponse]
 }
 
 // ReportPodEvents calls agentfleet.v1.CoreService.ReportPodEvents.
@@ -444,6 +481,21 @@ func (c *coreServiceClient) ViewLogs(ctx context.Context, req *connect.Request[v
 	return c.viewLogs.CallUnary(ctx, req)
 }
 
+// ListSessions calls agentfleet.v1.CoreService.ListSessions.
+func (c *coreServiceClient) ListSessions(ctx context.Context, req *connect.Request[v1.ListSessionsRequest]) (*connect.Response[v1.ListSessionsResponse], error) {
+	return c.listSessions.CallUnary(ctx, req)
+}
+
+// PromptSession calls agentfleet.v1.CoreService.PromptSession.
+func (c *coreServiceClient) PromptSession(ctx context.Context, req *connect.Request[v1.PromptSessionRequest]) (*connect.Response[v1.PromptSessionResponse], error) {
+	return c.promptSession.CallUnary(ctx, req)
+}
+
+// WaitForSessionState calls agentfleet.v1.CoreService.WaitForSessionState.
+func (c *coreServiceClient) WaitForSessionState(ctx context.Context, req *connect.Request[v1.WaitForSessionStateRequest]) (*connect.Response[v1.WaitForSessionStateResponse], error) {
+	return c.waitForSessionState.CallUnary(ctx, req)
+}
+
 // CoreServiceHandler is an implementation of the agentfleet.v1.CoreService service.
 type CoreServiceHandler interface {
 	// buf:lint:ignore RPC_REQUEST_STANDARD_NAME
@@ -496,6 +548,13 @@ type CoreServiceHandler interface {
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	DeleteFile(context.Context, *connect.Request[v1.DeleteFileRequest]) (*connect.Response[v1.DeleteFileResponse], error)
 	ViewLogs(context.Context, *connect.Request[v1.ViewLogsRequest]) (*connect.Response[v1.ViewLogsResponse], error)
+	// Inter-agent coordination (docs/adr/0041). Hub-and-spoke per
+	// docs/adr/0020 point 4: the path is agent -> its own sidecar (MCP) ->
+	// core (here) -> the target session. There is no worker-to-worker link
+	// and no worker-to-provisioner link.
+	ListSessions(context.Context, *connect.Request[v1.ListSessionsRequest]) (*connect.Response[v1.ListSessionsResponse], error)
+	PromptSession(context.Context, *connect.Request[v1.PromptSessionRequest]) (*connect.Response[v1.PromptSessionResponse], error)
+	WaitForSessionState(context.Context, *connect.Request[v1.WaitForSessionStateRequest]) (*connect.Response[v1.WaitForSessionStateResponse], error)
 }
 
 // NewCoreServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -643,6 +702,24 @@ func NewCoreServiceHandler(svc CoreServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(coreServiceMethods.ByName("ViewLogs")),
 		connect.WithHandlerOptions(opts...),
 	)
+	coreServiceListSessionsHandler := connect.NewUnaryHandler(
+		CoreServiceListSessionsProcedure,
+		svc.ListSessions,
+		connect.WithSchema(coreServiceMethods.ByName("ListSessions")),
+		connect.WithHandlerOptions(opts...),
+	)
+	coreServicePromptSessionHandler := connect.NewUnaryHandler(
+		CoreServicePromptSessionProcedure,
+		svc.PromptSession,
+		connect.WithSchema(coreServiceMethods.ByName("PromptSession")),
+		connect.WithHandlerOptions(opts...),
+	)
+	coreServiceWaitForSessionStateHandler := connect.NewUnaryHandler(
+		CoreServiceWaitForSessionStateProcedure,
+		svc.WaitForSessionState,
+		connect.WithSchema(coreServiceMethods.ByName("WaitForSessionState")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/agentfleet.v1.CoreService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case CoreServiceReportPodEventsProcedure:
@@ -691,6 +768,12 @@ func NewCoreServiceHandler(svc CoreServiceHandler, opts ...connect.HandlerOption
 			coreServiceDeleteFileHandler.ServeHTTP(w, r)
 		case CoreServiceViewLogsProcedure:
 			coreServiceViewLogsHandler.ServeHTTP(w, r)
+		case CoreServiceListSessionsProcedure:
+			coreServiceListSessionsHandler.ServeHTTP(w, r)
+		case CoreServicePromptSessionProcedure:
+			coreServicePromptSessionHandler.ServeHTTP(w, r)
+		case CoreServiceWaitForSessionStateProcedure:
+			coreServiceWaitForSessionStateHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -790,4 +873,16 @@ func (UnimplementedCoreServiceHandler) DeleteFile(context.Context, *connect.Requ
 
 func (UnimplementedCoreServiceHandler) ViewLogs(context.Context, *connect.Request[v1.ViewLogsRequest]) (*connect.Response[v1.ViewLogsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.CoreService.ViewLogs is not implemented"))
+}
+
+func (UnimplementedCoreServiceHandler) ListSessions(context.Context, *connect.Request[v1.ListSessionsRequest]) (*connect.Response[v1.ListSessionsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.CoreService.ListSessions is not implemented"))
+}
+
+func (UnimplementedCoreServiceHandler) PromptSession(context.Context, *connect.Request[v1.PromptSessionRequest]) (*connect.Response[v1.PromptSessionResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.CoreService.PromptSession is not implemented"))
+}
+
+func (UnimplementedCoreServiceHandler) WaitForSessionState(context.Context, *connect.Request[v1.WaitForSessionStateRequest]) (*connect.Response[v1.WaitForSessionStateResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.CoreService.WaitForSessionState is not implemented"))
 }

@@ -42,6 +42,9 @@ const (
 	CoreService_GetFileDownloadUrl_FullMethodName  = "/agentfleet.v1.CoreService/GetFileDownloadUrl"
 	CoreService_DeleteFile_FullMethodName          = "/agentfleet.v1.CoreService/DeleteFile"
 	CoreService_ViewLogs_FullMethodName            = "/agentfleet.v1.CoreService/ViewLogs"
+	CoreService_ListSessions_FullMethodName        = "/agentfleet.v1.CoreService/ListSessions"
+	CoreService_PromptSession_FullMethodName       = "/agentfleet.v1.CoreService/PromptSession"
+	CoreService_WaitForSessionState_FullMethodName = "/agentfleet.v1.CoreService/WaitForSessionState"
 )
 
 // CoreServiceClient is the client API for CoreService service.
@@ -98,6 +101,13 @@ type CoreServiceClient interface {
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	DeleteFile(ctx context.Context, in *DeleteFileRequest, opts ...grpc.CallOption) (*DeleteFileResponse, error)
 	ViewLogs(ctx context.Context, in *ViewLogsRequest, opts ...grpc.CallOption) (*ViewLogsResponse, error)
+	// Inter-agent coordination (docs/adr/0041). Hub-and-spoke per
+	// docs/adr/0020 point 4: the path is agent -> its own sidecar (MCP) ->
+	// core (here) -> the target session. There is no worker-to-worker link
+	// and no worker-to-provisioner link.
+	ListSessions(ctx context.Context, in *ListSessionsRequest, opts ...grpc.CallOption) (*ListSessionsResponse, error)
+	PromptSession(ctx context.Context, in *PromptSessionRequest, opts ...grpc.CallOption) (*PromptSessionResponse, error)
+	WaitForSessionState(ctx context.Context, in *WaitForSessionStateRequest, opts ...grpc.CallOption) (*WaitForSessionStateResponse, error)
 }
 
 type coreServiceClient struct {
@@ -350,6 +360,36 @@ func (c *coreServiceClient) ViewLogs(ctx context.Context, in *ViewLogsRequest, o
 	return out, nil
 }
 
+func (c *coreServiceClient) ListSessions(ctx context.Context, in *ListSessionsRequest, opts ...grpc.CallOption) (*ListSessionsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListSessionsResponse)
+	err := c.cc.Invoke(ctx, CoreService_ListSessions_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *coreServiceClient) PromptSession(ctx context.Context, in *PromptSessionRequest, opts ...grpc.CallOption) (*PromptSessionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PromptSessionResponse)
+	err := c.cc.Invoke(ctx, CoreService_PromptSession_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *coreServiceClient) WaitForSessionState(ctx context.Context, in *WaitForSessionStateRequest, opts ...grpc.CallOption) (*WaitForSessionStateResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(WaitForSessionStateResponse)
+	err := c.cc.Invoke(ctx, CoreService_WaitForSessionState_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CoreServiceServer is the server API for CoreService service.
 // All implementations must embed UnimplementedCoreServiceServer
 // for forward compatibility.
@@ -404,6 +444,13 @@ type CoreServiceServer interface {
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	DeleteFile(context.Context, *DeleteFileRequest) (*DeleteFileResponse, error)
 	ViewLogs(context.Context, *ViewLogsRequest) (*ViewLogsResponse, error)
+	// Inter-agent coordination (docs/adr/0041). Hub-and-spoke per
+	// docs/adr/0020 point 4: the path is agent -> its own sidecar (MCP) ->
+	// core (here) -> the target session. There is no worker-to-worker link
+	// and no worker-to-provisioner link.
+	ListSessions(context.Context, *ListSessionsRequest) (*ListSessionsResponse, error)
+	PromptSession(context.Context, *PromptSessionRequest) (*PromptSessionResponse, error)
+	WaitForSessionState(context.Context, *WaitForSessionStateRequest) (*WaitForSessionStateResponse, error)
 	mustEmbedUnimplementedCoreServiceServer()
 }
 
@@ -482,6 +529,15 @@ func (UnimplementedCoreServiceServer) DeleteFile(context.Context, *DeleteFileReq
 }
 func (UnimplementedCoreServiceServer) ViewLogs(context.Context, *ViewLogsRequest) (*ViewLogsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ViewLogs not implemented")
+}
+func (UnimplementedCoreServiceServer) ListSessions(context.Context, *ListSessionsRequest) (*ListSessionsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListSessions not implemented")
+}
+func (UnimplementedCoreServiceServer) PromptSession(context.Context, *PromptSessionRequest) (*PromptSessionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method PromptSession not implemented")
+}
+func (UnimplementedCoreServiceServer) WaitForSessionState(context.Context, *WaitForSessionStateRequest) (*WaitForSessionStateResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method WaitForSessionState not implemented")
 }
 func (UnimplementedCoreServiceServer) mustEmbedUnimplementedCoreServiceServer() {}
 func (UnimplementedCoreServiceServer) testEmbeddedByValue()                     {}
@@ -900,6 +956,60 @@ func _CoreService_ViewLogs_Handler(srv interface{}, ctx context.Context, dec fun
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CoreService_ListSessions_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListSessionsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).ListSessions(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_ListSessions_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).ListSessions(ctx, req.(*ListSessionsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CoreService_PromptSession_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PromptSessionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).PromptSession(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_PromptSession_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).PromptSession(ctx, req.(*PromptSessionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CoreService_WaitForSessionState_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(WaitForSessionStateRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).WaitForSessionState(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_WaitForSessionState_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).WaitForSessionState(ctx, req.(*WaitForSessionStateRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // CoreService_ServiceDesc is the grpc.ServiceDesc for CoreService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -990,6 +1100,18 @@ var CoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ViewLogs",
 			Handler:    _CoreService_ViewLogs_Handler,
+		},
+		{
+			MethodName: "ListSessions",
+			Handler:    _CoreService_ListSessions_Handler,
+		},
+		{
+			MethodName: "PromptSession",
+			Handler:    _CoreService_PromptSession_Handler,
+		},
+		{
+			MethodName: "WaitForSessionState",
+			Handler:    _CoreService_WaitForSessionState_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

@@ -438,7 +438,7 @@ func (s *Server) Discuss(ctx context.Context, req *connect.Request[agentfleetv1.
 	if text == "" {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("text is required"))
 	}
-	if _, err := s.warmIfIdle(ctx, taskID); err != nil {
+	if _, err := s.WarmIfIdle(ctx, taskID); err != nil {
 		return nil, err
 	}
 	if _, err := s.transcr.Append(ctx, taskID, "human", text, "discussion", uuid.NewString()); err != nil {
@@ -487,7 +487,7 @@ func (s *Server) Warm(ctx context.Context, req *connect.Request[agentfleetv1.War
 	if t.Status == "pending" {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("task hasn't been claimed yet — it will dispatch automatically"))
 	}
-	podName, err := s.warmIfIdle(ctx, taskID)
+	podName, err := s.WarmIfIdle(ctx, taskID)
 	if err != nil {
 		return nil, err
 	}
@@ -520,7 +520,9 @@ func (s *Server) ApproveTask(ctx context.Context, req *connect.Request[agentflee
 // status is a loose UI-freshness signal now, not control flow (sessions
 // redesign, supersedes docs/adr/0021/0025's phase-boundary framing); pod
 // lifecycle is pod_phase alone.
-func (s *Server) warmIfIdle(ctx context.Context, taskID string) (podName string, err error) {
+// WarmIfIdle is exported so coreserver's PromptSession can reuse the one
+// real warm path instead of duplicating it (docs/adr/0041).
+func (s *Server) WarmIfIdle(ctx context.Context, taskID string) (podName string, err error) {
 	t, err := s.tasks.GetTask(ctx, taskID)
 	if err != nil {
 		return "", connect.NewError(connect.CodeInternal, err)

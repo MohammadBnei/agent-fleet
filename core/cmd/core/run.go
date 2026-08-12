@@ -137,7 +137,8 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool) error {
 	// reaches everything else (the old /mcp HTTP surface, and the direct-SQL
 	// calls worker/src/db.ts used to make) through this same service.
 	grpcServer := grpc.NewServer(grpc.UnaryInterceptor(coreserver.AccessLogInterceptor))
-	agentfleetv1.RegisterCoreServiceServer(grpcServer, coreserver.New(activityStore, taskStore, journalStore, profileStore, provisioner, files, loki))
+	coreSvc := coreserver.New(activityStore, taskStore, journalStore, profileStore, provisioner, files, loki)
+	agentfleetv1.RegisterCoreServiceServer(grpcServer, coreSvc)
 	grpcLis, err := net.Listen("tcp", ":"+cfg.GRPCPort)
 	if err != nil {
 		return err
@@ -153,6 +154,13 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool) error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
 	dashboardSvc := dashboard.NewServer(taskStore, activityStore, journalStore, repoStore, profileStore, snippetStore, provisioner, files, hub, cfg.MaxInFlight, loki, auditStore)
+	// PromptSession warms an idle target through the dashboard server's own
+	// warmIfIdle rather than a second copy of it (docs/adr/0041) — that
+	// function carries the capacity cap and the proposed/pending gates that
+	// stop an unapproved task ever getting a pod, and two implementations
+	// of pod dispatch is exactly the drift docs/adr/0020 point 2 exists to
+	// prevent.
+	coreSvc.SetWarmFunc(dashboardSvc.WarmIfIdle)
 	dashboardPath, dashboardHandler := agentfleetv1connect.NewDashboardServiceHandler(
 		dashboardSvc,
 		connect.WithInterceptors(dashboard.NewCSRFInterceptor(), dashboard.NewAccessLogInterceptor()),

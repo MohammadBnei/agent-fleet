@@ -120,6 +120,26 @@ func New(core *coreclient.Client) http.Handler {
 		mcp.WithNumber("limit"),
 	), journalSearchHandler(core))
 
+	// Inter-agent coordination (docs/adr/0041). Registered statically for
+	// the same reason run_command is: a resumed session must have them from
+	// turn one, not only after some other call happens to register them.
+	s.AddTool(mcp.NewTool("list_sessions",
+		mcp.WithDescription("List the fleet's other sessions — task id, repo, description, status, and liveState. liveState is what tells you whether a session can be talked to: 'working' (busy), 'blocked' (waiting on a HUMAN decision — you cannot prompt it and must not try to answer for it), 'idle'/'done' (finished), 'stalled' (owes a reply and hasn't produced one), 'unknown' (pod starting), or '' (no live pod — prompting one warms it). Your own session is never listed."),
+	), listSessionsHandler(core))
+
+	s.AddTool(mcp.NewTool("prompt_agent",
+		mcp.WithDescription("Send a message to another session, as yourself. It arrives in that session's transcript attributed to you, and warms its pod if it was idle so it is actually read. Use this to hand off work or ask a question of a session that owns a different repo — not to chat. The target sees your message the same way it sees a human's, so say what you need concretely. REFUSED if the target is 'blocked': it is waiting on a human decision, and that decision is not yours to resolve. Also refused for your own session, and beyond a small relay depth so chains cannot loop. To wait for a reply, follow with wait_for_agent."),
+		mcp.WithString("taskId", mcp.Required(), mcp.Description("Target session's task id, from list_sessions")),
+		mcp.WithString("text", mcp.Required()),
+	), promptSessionHandler(core))
+
+	s.AddTool(mcp.NewTool("wait_for_agent",
+		mcp.WithDescription("Block until another session reaches a given liveness state, or the timeout expires. With no `until`, waits for it to settle (idle, done, blocked or stalled). `until: blocked` is the useful one after prompting: it returns when that session genuinely needs a human, which is the moment worth surfacing. A timeout is not an error — the response says timedOut with the state it actually reached, and 'still working' is a legitimate answer to act on."),
+		mcp.WithString("taskId", mcp.Required()),
+		mcp.WithString("until", mcp.Description("working | blocked | idle | done | stalled | unknown. Omit to wait for any settled state.")),
+		mcp.WithNumber("timeoutMs", mcp.Description("Default 120000.")),
+	), waitForSessionHandler(core))
+
 	s.AddTool(mcp.NewTool("view_logs",
 		mcp.WithDescription("View recent logs from fleet components or deployed apps. Returns formatted log entries. Use this to debug issues with worker, sidecar, or the deployed application during e2e tests. Supports both duration-based queries (duration) and explicit time ranges (start_time/end_time in RFC3339 format)."),
 		mcp.WithString("component", mcp.Required(), mcp.Description("Which component: worker|sidecar|core|provisioner|e2e|app")),

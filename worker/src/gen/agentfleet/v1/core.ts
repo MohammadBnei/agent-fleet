@@ -312,6 +312,72 @@ export interface Task {
   liveState: string;
 }
 
+/**
+ * What one agent can see of another session. Deliberately not the full
+ * Task: an agent needs enough to pick a target and know whether it can be
+ * talked to, not another session's internals.
+ */
+export interface SessionSummary {
+  taskId: string;
+  repo: string;
+  description: string;
+  status: string;
+  /**
+   * See Task.live_state (docs/adr/0040). This is what makes "wait until
+   * the other agent is genuinely blocked" expressible at all.
+   */
+  liveState: string;
+}
+
+export interface ListSessionsRequest {
+  /**
+   * The caller's own task, excluded from the results — an agent has no use
+   * for a summary of itself and cannot prompt itself anyway.
+   */
+  callerTaskId: string;
+}
+
+export interface ListSessionsResponse {
+  sessions: SessionSummary[];
+}
+
+export interface PromptSessionRequest {
+  callerTaskId: string;
+  targetTaskId: string;
+  text: string;
+  /**
+   * Hop count, incremented per relay. Bounded so A->B->A cannot loop
+   * forever; an agent never sets this itself, the sidecar does.
+   */
+  depth: number;
+}
+
+export interface PromptSessionResponse {
+  seq: number;
+  /**
+   * The target's live state immediately after delivery — usually
+   * "working", or "unknown" if a pod was just warmed for it.
+   */
+  liveState: string;
+  /** Set when delivery warmed an idle session's pod. */
+  podName: string;
+}
+
+export interface WaitForSessionStateRequest {
+  targetTaskId: string;
+  /**
+   * Any of these ends the wait. Empty means the settled set
+   * (idle/done/blocked/stalled) — "it stopped needing to be waited on".
+   */
+  until: string[];
+  timeoutMs: number;
+}
+
+export interface WaitForSessionStateResponse {
+  liveState: string;
+  timedOut: boolean;
+}
+
 export interface GetTaskRequest {
   id: string;
 }
@@ -401,6 +467,14 @@ export interface SaveSessionIdRequest {
   taskId: string;
   sessionId: string;
   model: string;
+  /**
+   * The caller pod's lease (docs/adr/0041). Without it this write is keyed
+   * by task alone, so a pod that was torn down but is still shutting down
+   * can overwrite the identity of the pod that replaced it — and
+   * tasks.session_id is precisely what the next resume reads. Empty is
+   * accepted for compatibility with a worker image older than this field.
+   */
+  leaseId: string;
 }
 
 export interface SaveSessionIdResponse {
@@ -1129,6 +1203,317 @@ export const Task: MessageFns<Task> = {
   },
 };
 
+function createBaseSessionSummary(): SessionSummary {
+  return { taskId: "", repo: "", description: "", status: "", liveState: "" };
+}
+
+export const SessionSummary: MessageFns<SessionSummary> = {
+  fromJSON(object: any): SessionSummary {
+    return {
+      taskId: isSet(object.taskId)
+        ? globalThis.String(object.taskId)
+        : isSet(object.task_id)
+        ? globalThis.String(object.task_id)
+        : "",
+      repo: isSet(object.repo) ? globalThis.String(object.repo) : "",
+      description: isSet(object.description) ? globalThis.String(object.description) : "",
+      status: isSet(object.status) ? globalThis.String(object.status) : "",
+      liveState: isSet(object.liveState)
+        ? globalThis.String(object.liveState)
+        : isSet(object.live_state)
+        ? globalThis.String(object.live_state)
+        : "",
+    };
+  },
+
+  toJSON(message: SessionSummary): unknown {
+    const obj: any = {};
+    if (message.taskId !== "") {
+      obj.taskId = message.taskId;
+    }
+    if (message.repo !== "") {
+      obj.repo = message.repo;
+    }
+    if (message.description !== "") {
+      obj.description = message.description;
+    }
+    if (message.status !== "") {
+      obj.status = message.status;
+    }
+    if (message.liveState !== "") {
+      obj.liveState = message.liveState;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<SessionSummary>, I>>(base?: I): SessionSummary {
+    return SessionSummary.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<SessionSummary>, I>>(object: I): SessionSummary {
+    const message = createBaseSessionSummary();
+    message.taskId = object.taskId ?? "";
+    message.repo = object.repo ?? "";
+    message.description = object.description ?? "";
+    message.status = object.status ?? "";
+    message.liveState = object.liveState ?? "";
+    return message;
+  },
+};
+
+function createBaseListSessionsRequest(): ListSessionsRequest {
+  return { callerTaskId: "" };
+}
+
+export const ListSessionsRequest: MessageFns<ListSessionsRequest> = {
+  fromJSON(object: any): ListSessionsRequest {
+    return {
+      callerTaskId: isSet(object.callerTaskId)
+        ? globalThis.String(object.callerTaskId)
+        : isSet(object.caller_task_id)
+        ? globalThis.String(object.caller_task_id)
+        : "",
+    };
+  },
+
+  toJSON(message: ListSessionsRequest): unknown {
+    const obj: any = {};
+    if (message.callerTaskId !== "") {
+      obj.callerTaskId = message.callerTaskId;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<ListSessionsRequest>, I>>(base?: I): ListSessionsRequest {
+    return ListSessionsRequest.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<ListSessionsRequest>, I>>(object: I): ListSessionsRequest {
+    const message = createBaseListSessionsRequest();
+    message.callerTaskId = object.callerTaskId ?? "";
+    return message;
+  },
+};
+
+function createBaseListSessionsResponse(): ListSessionsResponse {
+  return { sessions: [] };
+}
+
+export const ListSessionsResponse: MessageFns<ListSessionsResponse> = {
+  fromJSON(object: any): ListSessionsResponse {
+    return {
+      sessions: globalThis.Array.isArray(object?.sessions)
+        ? object.sessions.map((e: any) => SessionSummary.fromJSON(e))
+        : [],
+    };
+  },
+
+  toJSON(message: ListSessionsResponse): unknown {
+    const obj: any = {};
+    if (message.sessions?.length) {
+      obj.sessions = message.sessions.map((e) => SessionSummary.toJSON(e));
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<ListSessionsResponse>, I>>(base?: I): ListSessionsResponse {
+    return ListSessionsResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<ListSessionsResponse>, I>>(object: I): ListSessionsResponse {
+    const message = createBaseListSessionsResponse();
+    message.sessions = object.sessions?.map((e) => SessionSummary.fromPartial(e)) || [];
+    return message;
+  },
+};
+
+function createBasePromptSessionRequest(): PromptSessionRequest {
+  return { callerTaskId: "", targetTaskId: "", text: "", depth: 0 };
+}
+
+export const PromptSessionRequest: MessageFns<PromptSessionRequest> = {
+  fromJSON(object: any): PromptSessionRequest {
+    return {
+      callerTaskId: isSet(object.callerTaskId)
+        ? globalThis.String(object.callerTaskId)
+        : isSet(object.caller_task_id)
+        ? globalThis.String(object.caller_task_id)
+        : "",
+      targetTaskId: isSet(object.targetTaskId)
+        ? globalThis.String(object.targetTaskId)
+        : isSet(object.target_task_id)
+        ? globalThis.String(object.target_task_id)
+        : "",
+      text: isSet(object.text) ? globalThis.String(object.text) : "",
+      depth: isSet(object.depth) ? globalThis.Number(object.depth) : 0,
+    };
+  },
+
+  toJSON(message: PromptSessionRequest): unknown {
+    const obj: any = {};
+    if (message.callerTaskId !== "") {
+      obj.callerTaskId = message.callerTaskId;
+    }
+    if (message.targetTaskId !== "") {
+      obj.targetTaskId = message.targetTaskId;
+    }
+    if (message.text !== "") {
+      obj.text = message.text;
+    }
+    if (message.depth !== 0) {
+      obj.depth = Math.round(message.depth);
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<PromptSessionRequest>, I>>(base?: I): PromptSessionRequest {
+    return PromptSessionRequest.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<PromptSessionRequest>, I>>(object: I): PromptSessionRequest {
+    const message = createBasePromptSessionRequest();
+    message.callerTaskId = object.callerTaskId ?? "";
+    message.targetTaskId = object.targetTaskId ?? "";
+    message.text = object.text ?? "";
+    message.depth = object.depth ?? 0;
+    return message;
+  },
+};
+
+function createBasePromptSessionResponse(): PromptSessionResponse {
+  return { seq: 0, liveState: "", podName: "" };
+}
+
+export const PromptSessionResponse: MessageFns<PromptSessionResponse> = {
+  fromJSON(object: any): PromptSessionResponse {
+    return {
+      seq: isSet(object.seq) ? globalThis.Number(object.seq) : 0,
+      liveState: isSet(object.liveState)
+        ? globalThis.String(object.liveState)
+        : isSet(object.live_state)
+        ? globalThis.String(object.live_state)
+        : "",
+      podName: isSet(object.podName)
+        ? globalThis.String(object.podName)
+        : isSet(object.pod_name)
+        ? globalThis.String(object.pod_name)
+        : "",
+    };
+  },
+
+  toJSON(message: PromptSessionResponse): unknown {
+    const obj: any = {};
+    if (message.seq !== 0) {
+      obj.seq = Math.round(message.seq);
+    }
+    if (message.liveState !== "") {
+      obj.liveState = message.liveState;
+    }
+    if (message.podName !== "") {
+      obj.podName = message.podName;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<PromptSessionResponse>, I>>(base?: I): PromptSessionResponse {
+    return PromptSessionResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<PromptSessionResponse>, I>>(object: I): PromptSessionResponse {
+    const message = createBasePromptSessionResponse();
+    message.seq = object.seq ?? 0;
+    message.liveState = object.liveState ?? "";
+    message.podName = object.podName ?? "";
+    return message;
+  },
+};
+
+function createBaseWaitForSessionStateRequest(): WaitForSessionStateRequest {
+  return { targetTaskId: "", until: [], timeoutMs: 0 };
+}
+
+export const WaitForSessionStateRequest: MessageFns<WaitForSessionStateRequest> = {
+  fromJSON(object: any): WaitForSessionStateRequest {
+    return {
+      targetTaskId: isSet(object.targetTaskId)
+        ? globalThis.String(object.targetTaskId)
+        : isSet(object.target_task_id)
+        ? globalThis.String(object.target_task_id)
+        : "",
+      until: globalThis.Array.isArray(object?.until)
+        ? object.until.map((e: any) => globalThis.String(e))
+        : [],
+      timeoutMs: isSet(object.timeoutMs)
+        ? globalThis.Number(object.timeoutMs)
+        : isSet(object.timeout_ms)
+        ? globalThis.Number(object.timeout_ms)
+        : 0,
+    };
+  },
+
+  toJSON(message: WaitForSessionStateRequest): unknown {
+    const obj: any = {};
+    if (message.targetTaskId !== "") {
+      obj.targetTaskId = message.targetTaskId;
+    }
+    if (message.until?.length) {
+      obj.until = message.until;
+    }
+    if (message.timeoutMs !== 0) {
+      obj.timeoutMs = Math.round(message.timeoutMs);
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<WaitForSessionStateRequest>, I>>(base?: I): WaitForSessionStateRequest {
+    return WaitForSessionStateRequest.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<WaitForSessionStateRequest>, I>>(object: I): WaitForSessionStateRequest {
+    const message = createBaseWaitForSessionStateRequest();
+    message.targetTaskId = object.targetTaskId ?? "";
+    message.until = object.until?.map((e) => e) || [];
+    message.timeoutMs = object.timeoutMs ?? 0;
+    return message;
+  },
+};
+
+function createBaseWaitForSessionStateResponse(): WaitForSessionStateResponse {
+  return { liveState: "", timedOut: false };
+}
+
+export const WaitForSessionStateResponse: MessageFns<WaitForSessionStateResponse> = {
+  fromJSON(object: any): WaitForSessionStateResponse {
+    return {
+      liveState: isSet(object.liveState)
+        ? globalThis.String(object.liveState)
+        : isSet(object.live_state)
+        ? globalThis.String(object.live_state)
+        : "",
+      timedOut: isSet(object.timedOut)
+        ? globalThis.Boolean(object.timedOut)
+        : isSet(object.timed_out)
+        ? globalThis.Boolean(object.timed_out)
+        : false,
+    };
+  },
+
+  toJSON(message: WaitForSessionStateResponse): unknown {
+    const obj: any = {};
+    if (message.liveState !== "") {
+      obj.liveState = message.liveState;
+    }
+    if (message.timedOut !== false) {
+      obj.timedOut = message.timedOut;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<WaitForSessionStateResponse>, I>>(base?: I): WaitForSessionStateResponse {
+    return WaitForSessionStateResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<WaitForSessionStateResponse>, I>>(object: I): WaitForSessionStateResponse {
+    const message = createBaseWaitForSessionStateResponse();
+    message.liveState = object.liveState ?? "";
+    message.timedOut = object.timedOut ?? false;
+    return message;
+  },
+};
+
 function createBaseGetTaskRequest(): GetTaskRequest {
   return { id: "" };
 }
@@ -1609,7 +1994,7 @@ export const SearchJournalResponse: MessageFns<SearchJournalResponse> = {
 };
 
 function createBaseSaveSessionIdRequest(): SaveSessionIdRequest {
-  return { taskId: "", sessionId: "", model: "" };
+  return { taskId: "", sessionId: "", model: "", leaseId: "" };
 }
 
 export const SaveSessionIdRequest: MessageFns<SaveSessionIdRequest> = {
@@ -1626,6 +2011,11 @@ export const SaveSessionIdRequest: MessageFns<SaveSessionIdRequest> = {
         ? globalThis.String(object.session_id)
         : "",
       model: isSet(object.model) ? globalThis.String(object.model) : "",
+      leaseId: isSet(object.leaseId)
+        ? globalThis.String(object.leaseId)
+        : isSet(object.lease_id)
+        ? globalThis.String(object.lease_id)
+        : "",
     };
   },
 
@@ -1640,6 +2030,9 @@ export const SaveSessionIdRequest: MessageFns<SaveSessionIdRequest> = {
     if (message.model !== "") {
       obj.model = message.model;
     }
+    if (message.leaseId !== "") {
+      obj.leaseId = message.leaseId;
+    }
     return obj;
   },
 
@@ -1651,6 +2044,7 @@ export const SaveSessionIdRequest: MessageFns<SaveSessionIdRequest> = {
     message.taskId = object.taskId ?? "";
     message.sessionId = object.sessionId ?? "";
     message.model = object.model ?? "";
+    message.leaseId = object.leaseId ?? "";
     return message;
   },
 };
@@ -2209,6 +2603,15 @@ export interface CoreService {
   /** buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE */
   DeleteFile(request: DeleteFileRequest): Promise<DeleteFileResponse>;
   ViewLogs(request: ViewLogsRequest): Promise<ViewLogsResponse>;
+  /**
+   * Inter-agent coordination (docs/adr/0041). Hub-and-spoke per
+   * docs/adr/0020 point 4: the path is agent -> its own sidecar (MCP) ->
+   * core (here) -> the target session. There is no worker-to-worker link
+   * and no worker-to-provisioner link.
+   */
+  ListSessions(request: ListSessionsRequest): Promise<ListSessionsResponse>;
+  PromptSession(request: PromptSessionRequest): Promise<PromptSessionResponse>;
+  WaitForSessionState(request: WaitForSessionStateRequest): Promise<WaitForSessionStateResponse>;
 }
 
 type Builtin = Date | Function | Uint8Array | string | number | boolean | undefined;
