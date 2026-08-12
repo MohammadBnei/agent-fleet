@@ -8,12 +8,12 @@ export type Theme = "herd" | "herd-light";
 // this key changes, change it there too.
 const THEME_KEY = "herd.theme";
 
-// The installed PWA paints its window chrome (status bar, task switcher) from
-// theme-color, so it has to follow the theme or a light-theme install gets a
-// black status bar. Same values as the themes' --color-base-100.
+// --panel, not --bg: theme-color paints the OS/browser chrome butted against the
+// app's own top bar, which is bg-base-200. An installed PWA uses it for the
+// status bar, so a light-theme install with a dark value gets a black strip.
 const THEME_COLOR: Record<Theme, string> = {
-  herd: "#0f0e14",
-  "herd-light": "#e9e5dd",
+  herd: "#14121a",
+  "herd-light": "#f8f6f2",
 };
 
 export function useTheme() {
@@ -21,6 +21,14 @@ export function useTheme() {
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     document.querySelector('meta[name="theme-color"]')?.setAttribute("content", THEME_COLOR[theme]);
+    // The two SVG favicon links resolve by `prefers-color-scheme`, but the app's
+    // theme is an explicit choice that can disagree with the OS. Make the
+    // matching one win outright rather than shipping a light mark on a dark tab.
+    const light = theme === "herd-light";
+    for (const link of document.querySelectorAll<HTMLLinkElement>('link[rel="icon"][type="image/svg+xml"]')) {
+      const isLight = link.getAttribute("href")?.includes("light") ?? false;
+      link.setAttribute("media", isLight === light ? "all" : "not all");
+    }
   }, [theme]);
   return [theme, setTheme] as const;
 }

@@ -19,8 +19,9 @@
 // vite-plugin-pwa dependency: caching on first use gets the same result for a
 // single-page app whose assets are already content-hashed by vite.
 
-// Bump to evict everything from older workers.
-const CACHE = "herd-v1";
+// Bump to evict everything from older workers. v2: the icon set moved to
+// /icons/ and the manifest was renamed, so v1's entries are all stale.
+const CACHE = "herd-v2";
 
 // Populated on first navigation; served when the network is gone.
 const SHELL = "/";

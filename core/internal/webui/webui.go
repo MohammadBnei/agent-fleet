@@ -8,11 +8,27 @@ package webui
 import (
 	"embed"
 	"io/fs"
+	"mime"
 	"net/http"
 )
 
 //go:embed all:dist
 var distFS embed.FS
+
+// Go's built-in mime table covers .html/.css/.js/.json/.png/.svg but not these
+// two, so http.FileServer would fall back to content sniffing and serve the web
+// app manifest as text/plain. Chrome tolerates that but logs a warning, and the
+// spec type is application/manifest+json.
+func init() {
+	for ext, typ := range map[string]string{
+		".webmanifest": "application/manifest+json",
+		".ico":         "image/x-icon",
+	} {
+		if mime.TypeByExtension(ext) == "" {
+			_ = mime.AddExtensionType(ext, typ)
+		}
+	}
+}
 
 // Handler serves the SPA's static assets, falling back to index.html for
 // any path that isn't a real file so client-side routing (e.g. a

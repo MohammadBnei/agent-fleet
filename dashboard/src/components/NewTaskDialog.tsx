@@ -8,11 +8,16 @@ export function NewTaskDialog({
   // Mobile's top bar has room for a glyph, not a label — the console mobile
   // mockup shows this as a bare "+".
   compact = false,
+  // The manifest's "New task" app shortcut lands on /?new=1 and expects the
+  // form to be open on arrival; a shortcut that just shows the list would be a
+  // dead affordance.
+  autoOpen = false,
 }: {
   onCreated: (taskId: string) => void;
   compact?: boolean;
+  autoOpen?: boolean;
 }) {
-  const [dialogOpen, setDialogOpen] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(autoOpen);
   const [repoNames, setRepoNames] = useState<string[]>([]);
   const [repo, setRepo] = useState("");
   // docs/adr/0037: a cluster session is a normal task on infra-bootstrap

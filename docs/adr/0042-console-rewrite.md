@@ -143,10 +143,24 @@ on every load.
 ### 8. Installable as a PWA — and deliberately not an offline app
 
 Mobile is now first-class, and answering a blocking decision shouldn't begin with
-finding a browser tab, so the SPA ships a manifest, maskable icons and a service
-worker: `manifest.json`, `icon-192.png`/`icon-512.png`, `sw.js`, all in
-`dashboard/public/` and therefore copied verbatim into `dist/` and embedded in
-`core`'s binary.
+finding a browser tab, so the SPA ships an icon set, a manifest and a service
+worker — `dashboard/public/icons/` plus `public/sw.js`, copied verbatim into
+`dist/` and embedded in `core`'s binary.
+
+The icon set comes from the design project's own `Herd Icons.dc.html`: **a colony
+of six cells around a nucleus, one lit in the console's pink.** The mark is a
+session waiting on a human, in the same colour the whole UI uses for `blocked` —
+it is the product's one job drawn at 16px. Its `head.html` and `site.webmanifest`
+are used as given; the PNG rasters and the multi-size `favicon.ico` (16·32·48) are
+generated from the set's own `favicon.svg` so the vector stays the single source
+of truth. The intermediate sizes the project also ships (`icon-16` … `icon-128`,
+`icon-256`, `icon-384`) are **not** imported: nothing in `head.html` or the
+manifest references them, `favicon.ico` already carries 16/32/48, and every file
+here is embedded in a Go binary.
+
+`any` and `maskable` are separate files rather than one entry claiming both
+purposes: a maskable icon is inset for a circle crop and looks wrong used
+unpadded.
 
 **The service worker caches no fleet state, on purpose.** This is a live
 console: a cached task list would have someone answering a decision that is
@@ -165,14 +179,28 @@ No `vite-plugin-pwa`/workbox dependency and no build-time precache list: caching
 on first use reaches the same place for a SPA whose assets vite already
 content-hashes, and the whole worker is ~60 lines that state their own policy.
 
-Two small traps worth recording:
+Four small traps worth recording:
 
-- **`manifest.json`, not `manifest.webmanifest`.** Go's mime table has no entry
-  for `.webmanifest`, so `http.FileServer` would content-sniff it and serve
-  `text/plain`. `.json` maps to `application/json`, asserted in a test.
-- **`theme-color` has to follow the theme**, or a light-theme install gets a black
-  status bar. `useTheme` updates the meta tag, and the pre-paint script in
-  `index.html` sets it before React runs.
+- **Go's mime table has no `.webmanifest` or `.ico`**, so `http.FileServer` would
+  content-sniff both and serve the manifest as `text/plain`. `webui.go` registers
+  them in an `init()`, which is what lets the design's own filenames stand and the
+  manifest be served as the spec's `application/manifest+json`. Asserted in a test,
+  because the failure is a console warning rather than a broken page.
+- **`theme-color` is `--panel` (`#14121a`), not `--bg`.** It paints the OS/browser
+  chrome butted against the app's own top bar, which is `bg-base-200`. The
+  manifest's `background_color` stays `--bg`, since that one is the splash screen.
+- **`theme-color` and the favicon must follow the *app* theme, not the OS.** The
+  two SVG favicon links resolve by `prefers-color-scheme`, but the theme here is
+  an explicit choice that can disagree with it; `useTheme` flips the losing link's
+  `media` to `not all`, and the pre-paint script does the same before React runs.
+  Otherwise a light-theme install gets a dark status bar and the wrong mark.
+- **The manifest's two app shortcuts had to be made real.** `/?filter=blocked` and
+  `/?new=1` were dead URLs — the console read neither. `?new=1` now opens the task
+  form on arrival, `?filter=blocked` narrows the list to sessions needing a human
+  **with a visible way to clear it** (a filter switched on by a shortcut rather
+  than a click is otherwise a trap), and both params are scrubbed from the URL once
+  honoured so a reload isn't a second surprise. Shipping a shortcut that silently
+  does nothing would have been worse than shipping none.
 
 ### 9. A page-load failure is inline, never a modal
 
@@ -238,13 +266,17 @@ lint. Console errors and page exceptions fail the run.
 Two of those specs found real defects that review had missed: the load-error
 modal trapping navigation (§9 above), and `body` never taking the theme.
 
-Five further specs cover the PWA against a **production build served by `core`
+Seven further specs cover the PWA against a **production build served by `core`
 itself** (its embedded `dist/`, so the worker actually registers and the RPCs
-actually work): the manifest's install criteria and its `application/json`
-content type, the worker reaching `activated`, **no `/agentfleet.v1.` entry in any
-cache** while the shell and hashed assets are cached, an offline reload rendering
-the app shell rather than the browser's interstitial, and `theme-color` tracking
-the theme across a reload.
+actually work): every icon the markup names being fetchable with the right content
+type, the `favicon.ico` really containing three sizes (its ICONDIR is parsed), the
+manifest's install criteria and its `application/manifest+json` type, the any vs
+maskable split, **both shortcuts doing something** — the form open on `?new=1`, the
+list narrowed and clearable on `?filter=blocked`, both params scrubbed — the worker
+reaching `activated`, **no `/agentfleet.v1.` entry in any cache** while the shell
+and hashed assets are cached, an offline reload rendering the app shell rather than
+the browser's interstitial, and `theme-color` plus the active favicon tracking the
+theme across a reload.
 
 The four new worktree fields and the PVC meter can only be exercised against a
 real provisioner — see `docs/e2e-test-log.md` for the cluster run.

@@ -2,21 +2,24 @@
 <html lang="en" data-theme="herd">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>herd · agent-fleet</title>
 
-    <!-- Installable as a home-screen app: the console is checked from a phone as
-         often as from a desk, and answering a blocking decision shouldn't start
-         with finding a browser tab. See dashboard/public/sw.js for why the
-         service worker deliberately caches no fleet state. -->
-    <link rel="manifest" href="/manifest.json" />
-    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <!-- The icon set from the design project's `Herd Icons.dc.html`: a colony of
+         six cells around a nucleus, one lit in the console's own pink — the mark
+         is a session waiting on a human. These links are its `head.html`
+         verbatim; the media queries are the no-JS default, and useTheme.ts flips
+         them when the chosen app theme disagrees with the OS preference. -->
+    <link rel="icon" href="/icons/favicon.ico" sizes="48x48" />
+    <link rel="icon" href="/icons/favicon.svg" type="image/svg+xml" media="(prefers-color-scheme: dark)" />
+    <link rel="icon" href="/icons/favicon-light.svg" type="image/svg+xml" media="(prefers-color-scheme: light)" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <link rel="manifest" href="/icons/site.webmanifest" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="herd" />
-    <!-- Kept in sync with the active theme by useTheme.ts — the value here is the
-         dark default, matching the pre-paint script below. -->
-    <meta name="theme-color" content="#0f0e14" />
+    <!-- --panel, not --bg: this paints the OS/browser chrome butted against the
+         app's own top bar, which is bg-base-200. Kept in sync by useTheme.ts. -->
+    <meta name="theme-color" content="#14121a" />
 
     <!-- Applied before first paint, not from React — reading the stored theme
          in a hook runs after the initial render, which flashes the dark
@@ -24,11 +27,16 @@
     <script>
       try {
         var t = JSON.parse(localStorage.getItem("herd.theme") || '"herd"');
-        if (t === "herd-light") {
-          document.documentElement.dataset.theme = t;
-          var m = document.querySelector('meta[name="theme-color"]');
-          if (m) m.setAttribute("content", "#e9e5dd");
-        }
+        var light = t === "herd-light";
+        if (light) document.documentElement.dataset.theme = t;
+        var m = document.querySelector('meta[name="theme-color"]');
+        if (m && light) m.setAttribute("content", "#f8f6f2");
+        // The favicon links above resolve by OS preference; the app's theme is
+        // an explicit choice, so make the matching one win outright.
+        document.querySelectorAll('link[rel="icon"][type="image/svg+xml"]').forEach(function (l) {
+          var isLight = l.getAttribute("href").indexOf("light") !== -1;
+          l.setAttribute("media", isLight === light ? "all" : "not all");
+        });
       } catch (e) {}
     </script>
   </head>

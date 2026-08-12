@@ -27,6 +27,15 @@ function readTaskIdFromUrl(): string | null {
 
 export type View = "tasks" | "audits" | "worktrees" | "files";
 
+// The manifest's app shortcuts (icons/site.webmanifest) land here. Read once on
+// mount: they're an entry point, not persistent state, and the params are
+// dropped from the URL as soon as they've been honoured so a refresh doesn't
+// re-trigger them.
+function readShortcut(): { needsYouOnly: boolean; newTask: boolean } {
+  const p = new URLSearchParams(window.location.search);
+  return { needsYouOnly: p.get("filter") === "blocked", newTask: p.get("new") === "1" };
+}
+
 function readViewFromUrl(): View {
   const v = new URLSearchParams(window.location.search).get("view");
   return v === "worktrees" || v === "files" || v === "audits" ? v : "tasks";
@@ -69,6 +78,18 @@ export default function App() {
   const [summaries, setSummaries] = useState<Map<string, ListSummary>>(new Map());
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [logTaskId, setLogTaskId] = useState<string | null>(null);
+  const [shortcut] = useState(readShortcut);
+  const [needsYouOnly, setNeedsYouOnly] = useState(shortcut.needsYouOnly);
+
+  // Honour the shortcut, then scrub its params so a reload lands on the plain
+  // console rather than silently re-filtering or reopening the form.
+  useEffect(() => {
+    if (!shortcut.needsYouOnly && !shortcut.newTask) return;
+    const url = new URL(window.location.href);
+    url.searchParams.delete("filter");
+    url.searchParams.delete("new");
+    window.history.replaceState({}, "", url);
+  }, [shortcut]);
 
   const loadTasks = useCallback(() => {
     return client
@@ -197,12 +218,18 @@ export default function App() {
   );
 
   const filteredTasks = useMemo(() => {
+    // needsYouOnly is the manifest's "Waiting on you" shortcut. Mobile already
+    // opens on its needs-you bucket, so this only changes the desktop list —
+    // but it narrows the shared array either way, which keeps the two honest.
+    const base = needsYouOnly
+      ? tasks.filter((t) => t.awaitingHuman || t.status === "proposed")
+      : tasks;
     const q = filter.trim().toLowerCase();
-    if (!q) return tasks;
-    return tasks.filter(
+    if (!q) return base;
+    return base.filter(
       (t) => t.repo.toLowerCase().includes(q) || t.description.toLowerCase().includes(q),
     );
-  }, [tasks, filter]);
+  }, [tasks, filter, needsYouOnly]);
 
   const proposed = useMemo(() => tasks.filter((t) => t.status === "proposed"), [tasks]);
 
@@ -230,17 +257,35 @@ export default function App() {
           </span>
           <Segmented value={view} options={NAV} onChange={selectView} className="ml-1" />
 
-          {counts.waiting > 0 && (
-            <button
-              type="button"
-              onClick={() => selectView("tasks")}
-              className="flex items-center gap-2 cursor-pointer ml-auto"
-            >
-              <span className="w-[7px] h-[7px] rounded-full bg-error ring-glow animate-fpulse" />
-              <span className="text-[12.5px] font-medium text-error whitespace-nowrap">
-                {counts.waiting} waiting on you
-              </span>
-            </button>
+          {(counts.waiting > 0 || needsYouOnly) && (
+            <div className="flex items-center gap-2 ml-auto">
+              <button
+                type="button"
+                onClick={() => {
+                  selectView("tasks");
+                  setNeedsYouOnly(true);
+                }}
+                className="flex items-center gap-2 cursor-pointer"
+              >
+                <span className="w-[7px] h-[7px] rounded-full bg-error ring-glow animate-fpulse" />
+                <span className="text-[12.5px] font-medium text-error whitespace-nowrap">
+                  {counts.waiting} waiting on you
+                </span>
+              </button>
+              {/* A filter with no visible way out is a trap — especially when an
+                  app shortcut, not a click, is what turned it on. */}
+              {needsYouOnly && (
+                <button
+                  type="button"
+                  onClick={() => setNeedsYouOnly(false)}
+                  title="Show every session"
+                  aria-label="Clear the waiting-on-you filter"
+                  className="text-[11px] text-dim2 hover:text-base-content border border-line px-1.5 py-0.5"
+                >
+                  only ✕
+                </button>
+              )}
+            </div>
           )}
           <span className={`text-[11.5px] text-dim2 whitespace-nowrap ${counts.waiting > 0 ? "" : "ml-auto"}`}>
             {counts.working} working · {counts.done} done · {counts.idle} idle
@@ -259,6 +304,7 @@ export default function App() {
             </label>
           )}
           <NewTaskDialog
+            autoOpen={shortcut.newTask}
             onCreated={(id) => {
               loadTasks();
               selectTask(id);
@@ -294,6 +340,7 @@ export default function App() {
             </button>
             <NewTaskDialog
               compact
+              autoOpen={shortcut.newTask}
               onCreated={(id) => {
                 loadTasks();
                 selectTask(id);
