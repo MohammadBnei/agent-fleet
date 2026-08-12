@@ -17,19 +17,16 @@ set -euo pipefail
 : "${E2E_EXEC_PORT:?E2E_EXEC_PORT is required}"
 : "${E2E_SSH_PORT:?E2E_SSH_PORT is required}"
 
-# ponytail: SSH host key from per-repo Secret, authorized_keys from optional fleet-wide Secret.
-# No runtime keygen — provisioner creates host key Secret once per repo,
-# same pattern as shared-instance admin password (idempotent, persisted).
+# ponytail: SSH host key runtime keygen (pod ephemeral), authorized_keys from optional Secret.
+# No host key Secret — pods die fast, nobody verifies fingerprint, ssh -o StrictHostKeyChecking=no.
+# Simpler than per-repo Secret + RBAC + ADR-0039 revisit.
 mkdir -p /etc/ssh /root/.ssh
-if [ -f /ssh-host-keys/ssh_host_ed25519_key ]; then
-	cp /ssh-host-keys/ssh_host_ed25519_key /etc/ssh/
-	chmod 600 /etc/ssh/ssh_host_ed25519_key
-fi
+ssh-keygen -A
 if [ -f /ssh-authorized-keys/authorized_keys ]; then
 	cp /ssh-authorized-keys/authorized_keys /root/.ssh/
 	chmod 600 /root/.ssh/authorized_keys
 fi
-/usr/sbin/sshd -D -e -p "${E2E_SSH_PORT}" &
+/usr/sbin/sshd -e -p "${E2E_SSH_PORT}"
 
 # Auth is enforced one layer up (Traefik + the existing basic-admin-auth
 # Middleware) — code-server's own auth would just double-prompt.

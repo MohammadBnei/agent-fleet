@@ -115,13 +115,6 @@ func SharedInstanceAdminSecretName(repo, serviceKey string) string {
 	return SharedInstanceName(repo, serviceKey) + "-admin"
 }
 
-// SSHHostKeySecretName returns per-repo SSH host key Secret name. Static host
-// key (ed25519), generated once per repo same pattern as SharedInstanceAdminSecretName.
-// Fleet-wide authorized_keys in separate Secret "e2e-ssh-authorized-keys" (optional).
-func SSHHostKeySecretName(repo string) string {
-	return "ssh-host-key-" + repo
-}
-
 func SharedInstanceLabels(repo, serviceKey string) map[string]string {
 	return map[string]string{
 		ComponentLabel:  ComponentSharedInstance,

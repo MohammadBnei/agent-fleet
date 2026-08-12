@@ -87,11 +87,6 @@ func (c *Client) CreatePod(ctx context.Context, task TaskRef) error {
 	name := ResourceName(task.ID)
 	labels := Labels(task.ID)
 
-	// ponytail: SSH host key per repo, idempotent. Not used yet but wired for VSCode SSH.
-	if _, err := c.ensureSSHHostKey(ctx, task.Repo); err != nil {
-		return fmt.Errorf("ensure SSH host key: %w", err)
-	}
-
 	initContainers, ingredientEnv, toolsVol, toolsMount, err := buildIngredients(task.ToolKeys, task.ServiceIngredients, ClusterAccess{ExecutorAddr: c.ExecutorAddr, AuthToken: c.ThotAuthToken})
 	if err != nil {
 		return fmt.Errorf("build ingredients: %w", err)
@@ -127,7 +122,6 @@ func (c *Client) CreatePod(ctx context.Context, task TaskRef) error {
 		{Name: "workspace", MountPath: "/workspace", SubPath: "worktrees/" + task.ID},
 		{Name: "workspace", MountPath: "/cache", SubPath: "cache/" + task.Repo},
 		{Name: "dshm", MountPath: "/dev/shm"},
-		{Name: "ssh-host-keys", MountPath: "/ssh-host-keys", ReadOnly: true},
 		{Name: "ssh-authorized-keys", MountPath: "/ssh-authorized-keys", ReadOnly: true},
 	}
 	if toolsMount != nil {
@@ -222,15 +216,6 @@ func (c *Client) CreatePod(ctx context.Context, task TaskRef) error {
 						EmptyDir: &corev1.EmptyDirVolumeSource{
 							Medium:    corev1.StorageMediumMemory,
 							SizeLimit: resourcePtr("1Gi"),
-						},
-					},
-				},
-				{
-					Name: "ssh-host-keys",
-					VolumeSource: corev1.VolumeSource{
-						Secret: &corev1.SecretVolumeSource{
-							SecretName:  SSHHostKeySecretName(task.Repo),
-							DefaultMode: int32Ptr(0600),
 						},
 					},
 				},

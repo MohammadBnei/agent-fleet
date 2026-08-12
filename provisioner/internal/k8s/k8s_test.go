@@ -95,15 +95,28 @@ func TestCreatePod_ShapeMatchesTSVersion(t *testing.T) {
 		t.Errorf("expected RestartPolicy Never, got %s", pod.Spec.RestartPolicy)
 	}
 	container := pod.Spec.Containers[0]
-	if len(container.VolumeMounts) != 3 || container.VolumeMounts[0].SubPath != "worktrees/"+task.ID {
-		t.Errorf("unexpected volume mounts: %+v", container.VolumeMounts)
+	if len(container.VolumeMounts) != 4 {
+		t.Errorf("expected 4 volume mounts, got %d: %+v", len(container.VolumeMounts), container.VolumeMounts)
+	}
+	if container.VolumeMounts[0].SubPath != "worktrees/"+task.ID {
+		t.Errorf("unexpected worktree mount: %+v", container.VolumeMounts[0])
 	}
 	cacheMount := container.VolumeMounts[1]
 	if cacheMount.MountPath != "/cache" || cacheMount.SubPath != "cache/"+task.Repo {
 		t.Errorf("unexpected cache volume mount: %+v", cacheMount)
 	}
+	sshAuthKeysMount := container.VolumeMounts[3]
+	if sshAuthKeysMount.MountPath != "/ssh-authorized-keys" || !sshAuthKeysMount.ReadOnly {
+		t.Errorf("unexpected ssh-authorized-keys mount: %+v", sshAuthKeysMount)
+	}
+	if len(container.Ports) != 5 {
+		t.Errorf("expected 5 ports, got %d: %+v", len(container.Ports), container.Ports)
+	}
 	if container.Ports[0].ContainerPort != AppPort || container.Ports[1].ContainerPort != CodeServerPort || container.Ports[2].ContainerPort != PlaywrightPort {
-		t.Errorf("unexpected ports: %+v", container.Ports)
+		t.Errorf("unexpected first 3 ports: %+v", container.Ports[:3])
+	}
+	if container.Ports[4].ContainerPort != SSHPort || container.Ports[4].Name != "ssh" {
+		t.Errorf("unexpected ssh port: %+v", container.Ports[4])
 	}
 	dshmVol := pod.Spec.Volumes[1]
 	if dshmVol.EmptyDir == nil || dshmVol.EmptyDir.Medium != "Memory" || dshmVol.EmptyDir.SizeLimit.String() != "1Gi" {
@@ -140,8 +153,12 @@ func TestCreateService_Shape(t *testing.T) {
 	if svc.Spec.Selector[TaskIDLabel] != "task-1" {
 		t.Errorf("unexpected selector: %+v", svc.Spec.Selector)
 	}
-	if len(svc.Spec.Ports) != 4 {
-		t.Errorf("expected 4 ports, got %d", len(svc.Spec.Ports))
+	if len(svc.Spec.Ports) != 5 {
+		t.Errorf("expected 5 ports, got %d", len(svc.Spec.Ports))
+	}
+	sshPort := svc.Spec.Ports[4]
+	if sshPort.Port != SSHPort || sshPort.Name != "ssh" {
+		t.Errorf("unexpected ssh port: %+v", sshPort)
 	}
 }
 
