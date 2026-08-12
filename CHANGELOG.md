@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.49.1](https://github.com/MohammadBnei/agent-fleet/compare/1.49.0...1.49.1) (2026-08-12)
+
+
+### Bug Fixes
+
+* ci build errors - null checks + remove undefined var ([e087e17](https://github.com/MohammadBnei/agent-fleet/commit/e087e172ceb9407c1187423bc5c779854148ed93))
+* dashboard UI improvements ([744100f](https://github.com/MohammadBnei/agent-fleet/commit/744100f010f90232173f6acb39e4445ffc85aaaf))
+* review fixes - useState hoisting, O(n) filtering, abort error suppression ([2757afb](https://github.com/MohammadBnei/agent-fleet/commit/2757afbc1750e7e97c5354f81f39d26983954012))
+
 # [1.49.0](https://github.com/MohammadBnei/agent-fleet/compare/1.48.0...1.49.0) (2026-08-12)
 
 
