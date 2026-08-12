@@ -659,18 +659,31 @@ test("thinking blocks relay under assistant, distinguishable from tool_use", asy
   expect(assistant.some((p) => p.kind === undefined && typeof p.tool === "string")).toBe(true);
 });
 
-test("tool_progress is throttled: nothing under 30s, then at most once a minute", async () => {
+// Shapes taken verbatim from a live 100s Bash call in the kind cluster.
+// The ids really are synthetic and unique per emission — an earlier
+// version of this relay throttled on tool_use_id and therefore never
+// deduped anything, which no unit test could catch while it fed the same
+// id three times. The SDK's own 30s gate is the throttle.
+test("tool_progress relays every emission the SDK sends, synthetic ids and all", async () => {
   await relayOnce([
-    { type: "tool_progress", tool_use_id: "t1", tool_name: "Bash", elapsed_time_seconds: 5 },
-    { type: "tool_progress", tool_use_id: "t1", tool_name: "Bash", elapsed_time_seconds: 31 },
-    { type: "tool_progress", tool_use_id: "t1", tool_name: "Bash", elapsed_time_seconds: 45 },
-    { type: "tool_progress", tool_use_id: "t1", tool_name: "Bash", elapsed_time_seconds: 95 },
+    { type: "tool_progress", tool_use_id: "bash-progress-30", tool_name: "Bash", elapsed_time_seconds: 32 },
+    { type: "tool_progress", tool_use_id: "bash-progress-60", tool_name: "Bash", elapsed_time_seconds: 62 },
+    { type: "tool_progress", tool_use_id: "bash-progress-90", tool_name: "Bash", elapsed_time_seconds: 92 },
   ]);
 
-  const elapsed = systemPayloads()
-    .filter((p) => p.sdk === "tool_progress")
-    .map((p) => p.elapsed_time_seconds);
-  expect(elapsed).toEqual([31, 95]);
+  const progress = systemPayloads().filter((p) => p.sdk === "tool_progress");
+  expect(progress.map((p) => p.elapsed_time_seconds)).toEqual([32, 62, 92]);
+  expect(progress.map((p) => p.tool_use_id)).toEqual(["bash-progress-30", "bash-progress-60", "bash-progress-90"]);
+});
+
+// parent_tool_use_id is the stream's only subagent attribution, so unlike
+// uuid/session_id it must survive the envelope strip.
+test("parent_tool_use_id survives relaying", async () => {
+  await relayOnce([
+    { type: "tool_progress", tool_use_id: "bash-progress-30", tool_name: "Bash", elapsed_time_seconds: 32, parent_tool_use_id: "toolu_parent" },
+  ]);
+
+  expect(systemPayloads().find((p) => p.sdk === "tool_progress")?.parent_tool_use_id).toBe("toolu_parent");
 });
 
 test("replayed user messages are dropped instead of double-posting", async () => {

@@ -88,34 +88,14 @@ function taskPrompt(task: Task): string {
 Task: ${task.description}${guidance}`;
 }
 
-// Last relayed `elapsed_time_seconds` per in-flight tool_use_id.
-// tool_progress fires continuously for as long as a tool runs, so relaying
-// every one would bury the transcript under a single slow Bash call — a
-// quiet call gets one entry at 30s and one a minute after that.
-// ponytail: a tool whose result never arrives leaves its key behind. One
-// pod runs one session, so the ceiling is that session's tool calls; if
-// that ever matters, evict by age instead.
-const progressEmitted = new Map<string, number>();
-const PROGRESS_FIRST_SECONDS = 30;
-const PROGRESS_EVERY_SECONDS = 60;
-
-function shouldEmitProgress(msg: { [key: string]: unknown }): boolean {
-  const id = msg.tool_use_id;
-  const elapsed = msg.elapsed_time_seconds;
-  if (typeof id !== "string" || typeof elapsed !== "number") return false;
-  if (elapsed < PROGRESS_FIRST_SECONDS) return false;
-  const last = progressEmitted.get(id);
-  if (last !== undefined && elapsed - last < PROGRESS_EVERY_SECONDS) return false;
-  progressEmitted.set(id, elapsed);
-  return true;
-}
-
 // An SDK message's own fields minus the envelope the transcript row
 // already carries, with long strings capped so a chatty hook's stdout
 // can't dominate the entry (same 2000-char cap the tool_result branch
-// uses).
+// uses). parent_tool_use_id deliberately survives: it is the stream's only
+// subagent attribution, and unlike uuid/session_id the transcript row
+// carries no equivalent of it.
 function relayFields(msg: { [key: string]: unknown }): Record<string, unknown> {
-  const envelope = new Set(["type", "subtype", "uuid", "session_id", "parent_tool_use_id"]);
+  const envelope = new Set(["type", "subtype", "uuid", "session_id"]);
   const out: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(msg)) {
     if (envelope.has(key)) continue;
@@ -179,8 +159,14 @@ async function logSdkMessage(actor: string, msg: { type: string; [key: string]: 
   // allowlist fails closed). `sdk` is the discriminant the UI branches on,
   // and the SDK's own field names pass through unmapped so a subtype the
   // SDK adds next relays itself without a worker change.
+  //
+  // tool_progress needs no throttling here: the SDK emits at most one per
+  // 30s (verified live — a 100s Bash produced exactly three), and it only
+  // emits them at all when CLAUDE_CODE_CONTAINER_ID is set, which the
+  // provisioner now does. Its `tool_use_id` is synthetic and unique per
+  // emission ("bash-progress-30", "-60", …), NOT the originating
+  // toolu_… id, so nothing downstream should try to pair on it.
   if (msg.type === "system" || msg.type === "auth_status" || msg.type === "tool_progress") {
-    if (msg.type === "tool_progress" && !shouldEmitProgress(msg)) return;
     log("info", `${actor} ${msg.subtype ?? msg.type}`, relayFields(msg));
     await push(JSON.stringify({ sdk: msg.subtype ?? msg.type, ...relayFields(msg) }), "system");
     return;
@@ -219,7 +205,6 @@ async function logSdkMessage(actor: string, msg: { type: string; [key: string]: 
     const content = (msg.message as { content?: { type: string; [k: string]: unknown }[] })?.content ?? [];
     for (const block of content) {
       if (block.type === "tool_result") {
-        if (typeof block.tool_use_id === "string") progressEmitted.delete(block.tool_use_id);
         const isError = Boolean(block.is_error);
         const resultContent = typeof block.content === "string" ? block.content.slice(0, 2000) : block.content;
         log(isError ? "error" : "info", `${actor} tool_result`, { isError, content: resultContent });
