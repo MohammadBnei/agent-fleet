@@ -1,5 +1,12 @@
 # Changelog
 
+# [1.47.0](https://github.com/MohammadBnei/agent-fleet/compare/1.46.0...1.47.0) (2026-08-12)
+
+
+### Features
+
+* let one session prompt another, and prove a pod is still the pod ([#130](https://github.com/MohammadBnei/agent-fleet/issues/130)) ([44a67ce](https://github.com/MohammadBnei/agent-fleet/commit/44a67ce11debc3acc84a0fb8c2820fcd3685f33c))
+
 # [1.46.0](https://github.com/MohammadBnei/agent-fleet/compare/1.45.0...1.46.0) (2026-08-12)
 
 
