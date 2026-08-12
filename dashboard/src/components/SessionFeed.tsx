@@ -9,6 +9,7 @@ import {
   parseAnswers,
   parseSdkSignal,
   parseSdkSystemInfo,
+  parseSdkToolResult,
   parseSdkToolUse,
   permissionDenyMessages,
   resolvedPermissionDecisions,
@@ -169,6 +170,17 @@ export function SessionFeed({
   const denyMessages = permissionDenyMessages(entries);
   const edge = compact ? "-mx-3.5 px-3.5" : "-mx-4.5 px-4.5";
 
+  // Build TodoWrite toolUseId set upfront to avoid O(n²) scan
+  const todoWriteToolUseIds = new Set<string>();
+  for (const e of entries) {
+    if (e.type === TranscriptEntryType.ASSISTANT) {
+      const info = parseSdkToolUse(e.text);
+      if (info?.tool === "TodoWrite" && info.id) {
+        todoWriteToolUseIds.add(info.id);
+      }
+    }
+  }
+
   const out: React.ReactNode[] = [];
   // Consecutive tool calls accumulate here and flush as one ToolGroup the
   // moment anything else appears, so the grouping follows the real
@@ -189,6 +201,14 @@ export function SessionFeed({
     if (entry.type === TranscriptEntryType.ANSWER) continue;
     if (entry.type === TranscriptEntryType.PERMISSION_RESPONSE) continue;
     if (entry.type === TranscriptEntryType.USER && consumedResults.has(entry.seq)) continue;
+    // TodoWrite results: the call is already filtered (transcript.ts L303), so
+    // its result isn't in consumedResults. Filter using precomputed set.
+    if (entry.type === TranscriptEntryType.USER) {
+      const result = parseSdkToolResult(entry.text);
+      if (result?.toolUseId && todoWriteToolUseIds.has(result.toolUseId)) {
+        continue;
+      }
+    }
 
     // --- tier 1: decisions ---------------------------------------------------
     if (entry.type === TranscriptEntryType.PERMISSION_REQUEST) {
