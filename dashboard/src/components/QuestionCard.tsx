@@ -73,7 +73,7 @@ export function QuestionCard({
       <button
         type="button"
         onClick={() => compact && answer && setIsCollapsed(!isCollapsed)}
-        className="flex items-center gap-2 w-full text-left"
+        className="flex items-center gap-2 w-full text-left cursor-pointer disabled:cursor-default"
         disabled={!compact || !answer}
       >
         {!answer && <span className="w-1.5 h-1.5 rounded-full bg-error animate-fpulse" />}

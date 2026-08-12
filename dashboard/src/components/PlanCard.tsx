@@ -71,7 +71,9 @@ export function PlanCard({
             <Markdown text={plan} />
           </div>
         ) : (
-          <span className="truncate flex-1">{plan.split("\n")[0]}</span>
+          <div className="truncate flex-1">
+            <Markdown text={plan.split("\n")[0]} />
+          </div>
         )}
         <span className="text-[10px] flex-none group-hover:text-dim">
           {isExpanded ? "▴" : "▾"}

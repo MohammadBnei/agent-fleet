@@ -236,7 +236,36 @@ export function MobileTaskDetail({
           docked ? "mt-2 border-t border-pink-line bg-pink-bg relative" : "border-t border-line"
         }`}
       >
-        {docked && pendingPermission && (
+        {docked && pendingPermission && pendingPermission.tool === "ExitPlanMode" && (
+          <>
+            <div className="absolute -top-[7px] left-3.5 px-[7px] bg-base-200 text-error text-[10px] tracking-[0.1em] whitespace-nowrap">
+              ◉ PLAN — NEEDS YOUR REVIEW
+            </div>
+            <div className="px-3.5 pt-3.5">
+              <div className="text-[12.5px] leading-[1.7] text-text2 line-clamp-3">
+                {(pendingPermission.input as { plan?: string } | undefined)?.plan?.split("\n").slice(0, 4).join(" ") ?? ""}
+              </div>
+              <div className="flex gap-2.5 mt-3">
+                <button
+                  type="button"
+                  disabled={busyKey !== null}
+                  onClick={() => respond(pendingPermission.entry.seq, "allow")}
+                  className="flex-1 py-3 text-center text-[13.5px] font-semibold bg-primary text-primary-content disabled:opacity-50"
+                >
+                  approve plan
+                </button>
+                <button
+                  type="button"
+                  onClick={onOpenSession}
+                  className="flex-1 py-3 text-center text-[13.5px] border border-acc-line"
+                >
+                  read it first
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+        {docked && pendingPermission && pendingPermission.tool !== "ExitPlanMode" && (
           <>
             <div className="absolute -top-[7px] left-3.5 px-[7px] bg-base-200 text-error text-[10px] tracking-[0.1em] whitespace-nowrap">
               ◉ PERMISSION · {pendingPermission.tool.toUpperCase()}

@@ -9,6 +9,7 @@ import {
   parseAnswers,
   parseSdkSignal,
   parseSdkSystemInfo,
+  parseSdkToolResult,
   parseSdkToolUse,
   permissionDenyMessages,
   resolvedPermissionDecisions,
@@ -189,6 +190,20 @@ export function SessionFeed({
     if (entry.type === TranscriptEntryType.ANSWER) continue;
     if (entry.type === TranscriptEntryType.PERMISSION_RESPONSE) continue;
     if (entry.type === TranscriptEntryType.USER && consumedResults.has(entry.seq)) continue;
+    // TodoWrite results: the call is already filtered (transcript.ts L303), so
+    // its result isn't in consumedResults. Filter it here by checking if the
+    // result's toolUseId matches a TodoWrite call.
+    if (entry.type === TranscriptEntryType.USER) {
+      const result = parseSdkToolResult(entry.text);
+      if (result?.toolUseId) {
+        const matchingCall = entries.find(
+          e => e.type === TranscriptEntryType.ASSISTANT &&
+               parseSdkToolUse(e.text)?.id === result.toolUseId &&
+               parseSdkToolUse(e.text)?.tool === "TodoWrite"
+        );
+        if (matchingCall) continue;
+      }
+    }
 
     // --- tier 1: decisions ---------------------------------------------------
     if (entry.type === TranscriptEntryType.PERMISSION_REQUEST) {

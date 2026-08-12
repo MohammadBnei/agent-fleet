@@ -237,18 +237,36 @@ export function DecisionInline({
 
   if (questionEntry) {
     const questions = parseQuestions(questionEntry.text);
-    // Only the single-question, single-select shape is answerable in one tap
-    // from the list. Anything richer is a form, and a form belongs in the
-    // session — offering half of one here would submit a partial answer.
-    const q = questions && questions.length === 1 && !questions[0].multiSelect ? questions[0] : null;
-    const answer = (label: string) =>
+    // Single-question only answerable from list. Multi-question needs full form in session.
+    const q = questions && questions.length === 1 ? questions[0] : null;
+    const [selected, setSelected] = useState<string[]>([]);
+
+    const toggleSelection = (label: string) => {
+      if (q?.multiSelect) {
+        setSelected(prev => prev.includes(label) ? prev.filter(l => l !== label) : [...prev, label]);
+      } else {
+        // Single-select: submit immediately
+        send(() =>
+          client.answerQuestion({
+            taskId: task.id,
+            seq: questionEntry.seq,
+            answersJson: JSON.stringify({ answers: { [q.question]: label } }),
+          }),
+        );
+      }
+    };
+
+    const submitAnswer = () => {
+      const answer = q?.multiSelect ? selected.join(", ") : selected[0];
       send(() =>
         client.answerQuestion({
           taskId: task.id,
           seq: questionEntry.seq,
-          answersJson: JSON.stringify({ answers: { [q!.question]: label } }),
+          answersJson: JSON.stringify({ answers: { [q!.question]: answer } }),
         }),
       );
+      setSelected([]);
+    };
 
     if (!q) {
       return (
@@ -261,22 +279,47 @@ export function DecisionInline({
       );
     }
 
-    const options = (
+    const options = q.multiSelect ? (
       <>
         {q.options.map((opt) => (
-          <button
-            key={opt.label}
-            type="button"
-            disabled={busy}
-            title={opt.description}
-            onClick={() => answer(opt.label)}
-            className={`border border-acc-line hover:border-primary hover:text-primary cursor-pointer disabled:opacity-50 ${
-              stacked ? "w-full text-left px-3.5 py-3 text-[13px]" : "px-3.5 py-2 text-[12.5px]"
-            }`}
-          >
-            {opt.label}
-          </button>
+          <label key={opt.label} className={`flex items-start gap-2 cursor-pointer ${stacked ? "w-full px-3.5 py-3 border border-acc-line" : "px-3.5 py-2"}`}>
+            <input
+              type="checkbox"
+              className="checkbox checkbox-sm mt-0.5"
+              checked={selected.includes(opt.label)}
+              onChange={() => toggleSelection(opt.label)}
+              disabled={busy}
+            />
+            <span className="text-[13px]">
+              <span className="font-medium">{opt.label}</span>
+              {opt.description && <span className="text-dim2"> — {opt.description}</span>}
+            </span>
+          </label>
         ))}
+      </>
+    ) : (
+      <>
+        {q.options.map((opt) => {
+          const isSelected = selected.includes(opt.label);
+          return (
+            <button
+              key={opt.label}
+              type="button"
+              disabled={busy}
+              title={opt.description}
+              onClick={() => toggleSelection(opt.label)}
+              className={`border cursor-pointer disabled:opacity-50 ${
+                stacked ? "w-full text-left px-3.5 py-3 text-[13px]" : "px-3.5 py-2 text-[12.5px]"
+              } ${
+                isSelected
+                  ? "border-primary bg-primary/15 text-primary"
+                  : "border-acc-line hover:border-primary hover:text-primary"
+              }`}
+            >
+              {opt.label}
+            </button>
+          );
+        })}
       </>
     );
 
@@ -299,6 +342,16 @@ export function DecisionInline({
         <div className="text-[13px] leading-relaxed">{q.question}</div>
         {error && <div className="text-[11.5px] text-error">{error}</div>}
         <div className="flex flex-col gap-2">{options}</div>
+        {q.multiSelect && (
+          <button
+            type="button"
+            disabled={busy || selected.length === 0}
+            onClick={submitAnswer}
+            className="w-full py-3 text-center text-[13.5px] font-semibold bg-primary text-primary-content disabled:opacity-50"
+          >
+            submit answer
+          </button>
+        )}
         {footer}
       </div>
     ) : (

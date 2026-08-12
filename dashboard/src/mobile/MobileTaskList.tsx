@@ -190,7 +190,9 @@ function WorkingCard({
               }`
             : stale
               ? stale.label.toLowerCase()
-              : "idle"}
+              : task.liveState === "working"
+                ? "working"
+                : "idle"}
       </div>
       {provisioning ? (
         <div className="h-[3px] bar-provisioning mt-1.5" />
