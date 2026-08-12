@@ -5,7 +5,10 @@
 // silently drop messages the way pub/sub could.
 package transcript
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // Entry is one transcript message, seq-ordered per task. JSON
 // tags: also serialized directly by the dashboard API (internal/dashboard,
@@ -22,6 +25,11 @@ type Entry struct {
 	// (today's actual behavior) lets an unrelated message satisfy a
 	// blocked AskUserQuestion call.
 	ReplyTo *int64 `json:"replyTo,omitempty"`
+	// When the entry was appended. Stored since the first migration and
+	// read back only now: without it no client can say when anything
+	// happened, order a feed by time, or show how long a turn took —
+	// `seq` gives order but not duration.
+	CreatedAt time.Time `json:"createdAt"`
 }
 
 // Store is the durable, per-task append/read-since transcript.
@@ -50,4 +58,14 @@ type Store interface {
 	// aborted within seconds every time). Returns 0 for a task with no
 	// transcript yet.
 	LatestSeq(ctx context.Context, taskID string) (int64, error)
+}
+
+// RFC3339OrEmpty formats a timestamp for the wire, mapping the zero value
+// to "" rather than year 1 — a client must be able to distinguish "no
+// timestamp" from a real one.
+func RFC3339OrEmpty(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.Format(time.RFC3339)
 }

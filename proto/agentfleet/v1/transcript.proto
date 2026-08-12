@@ -69,6 +69,12 @@ message TranscriptEntry {
   // entry had no reply correlation at all; only AskUserQuestion's
   // in-process poll loop ever saw it.
   optional int64 reply_to = 6;
+  // When the entry was appended (RFC3339, matching JournalEntry.created_at
+  // and Task.heartbeat_at). Stored in Postgres since the first migration
+  // but never sent until now, which left every client unable to say when
+  // anything happened or how long a turn took — `seq` orders a feed, it
+  // does not time one.
+  string created_at = 7;
 }
 
 message AppendTranscriptEntryRequest {

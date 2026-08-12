@@ -552,6 +552,9 @@ func entryToProto(taskID string, e transcript.Entry) *agentfleetv1.TranscriptEnt
 		Text:    e.Text,
 		Type:    stringToProtoType(e.Type),
 		ReplyTo: e.ReplyTo,
+		// Zero time would serialize as year 1 — send "" so a client can
+		// tell "no timestamp" from "the epoch".
+		CreatedAt: transcript.RFC3339OrEmpty(e.CreatedAt),
 	}
 }
 

@@ -147,7 +147,13 @@ type TranscriptEntry struct {
 	// transcript.Entry.ReplyTo server-side) — without this, a live-streamed
 	// entry had no reply correlation at all; only AskUserQuestion's
 	// in-process poll loop ever saw it.
-	ReplyTo       *int64 `protobuf:"varint,6,opt,name=reply_to,json=replyTo,proto3,oneof" json:"reply_to,omitempty"`
+	ReplyTo *int64 `protobuf:"varint,6,opt,name=reply_to,json=replyTo,proto3,oneof" json:"reply_to,omitempty"`
+	// When the entry was appended (RFC3339, matching JournalEntry.created_at
+	// and Task.heartbeat_at). Stored in Postgres since the first migration
+	// but never sent until now, which left every client unable to say when
+	// anything happened or how long a turn took — `seq` orders a feed, it
+	// does not time one.
+	CreatedAt     string `protobuf:"bytes,7,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -222,6 +228,13 @@ func (x *TranscriptEntry) GetReplyTo() int64 {
 		return *x.ReplyTo
 	}
 	return 0
+}
+
+func (x *TranscriptEntry) GetCreatedAt() string {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return ""
 }
 
 type AppendTranscriptEntryRequest struct {
@@ -416,14 +429,16 @@ var File_agentfleet_v1_transcript_proto protoreflect.FileDescriptor
 
 const file_agentfleet_v1_transcript_proto_rawDesc = "" +
 	"\n" +
-	"\x1eagentfleet/v1/transcript.proto\x12\ragentfleet.v1\"\xc9\x01\n" +
+	"\x1eagentfleet/v1/transcript.proto\x12\ragentfleet.v1\"\xe8\x01\n" +
 	"\x0fTranscriptEntry\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x10\n" +
 	"\x03seq\x18\x02 \x01(\x03R\x03seq\x12\x12\n" +
 	"\x04from\x18\x03 \x01(\tR\x04from\x12\x12\n" +
 	"\x04text\x18\x04 \x01(\tR\x04text\x126\n" +
 	"\x04type\x18\x05 \x01(\x0e2\".agentfleet.v1.TranscriptEntryTypeR\x04type\x12\x1e\n" +
-	"\breply_to\x18\x06 \x01(\x03H\x00R\areplyTo\x88\x01\x01B\v\n" +
+	"\breply_to\x18\x06 \x01(\x03H\x00R\areplyTo\x88\x01\x01\x12\x1d\n" +
+	"\n" +
+	"created_at\x18\a \x01(\tR\tcreatedAtB\v\n" +
 	"\t_reply_to\"\xc0\x01\n" +
 	"\x1cAppendTranscriptEntryRequest\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x12\n" +

@@ -44,7 +44,7 @@ func New(taskStore *tasks.Store, transcr transcript.Store, repoStore *repos.Stor
 	return &Loop{
 		tasks: taskStore, transcr: transcr, repos: repoStore, profiles: profileStore, provisioner: provisioner,
 		maxInFlight: maxInFlight, maxTaskRetries: maxTaskRetries,
-		stopGrace:   stopGrace,
+		stopGrace:    stopGrace,
 		idleTimeout:  idleTimeout,
 		startupStall: startupStall,
 		nudge:        make(chan struct{}, 1),

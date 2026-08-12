@@ -176,7 +176,17 @@ export interface TranscriptEntry {
    * entry had no reply correlation at all; only AskUserQuestion's
    * in-process poll loop ever saw it.
    */
-  replyTo?: number | undefined;
+  replyTo?:
+    | number
+    | undefined;
+  /**
+   * When the entry was appended (RFC3339, matching JournalEntry.created_at
+   * and Task.heartbeat_at). Stored in Postgres since the first migration
+   * but never sent until now, which left every client unable to say when
+   * anything happened or how long a turn took — `seq` orders a feed, it
+   * does not time one.
+   */
+  createdAt: string;
 }
 
 export interface AppendTranscriptEntryRequest {
@@ -200,7 +210,7 @@ export interface ReadTranscriptSinceResponse {
 }
 
 function createBaseTranscriptEntry(): TranscriptEntry {
-  return { taskId: "", seq: 0, from: "", text: "", type: 0, replyTo: undefined };
+  return { taskId: "", seq: 0, from: "", text: "", type: 0, replyTo: undefined, createdAt: "" };
 }
 
 export const TranscriptEntry: MessageFns<TranscriptEntry> = {
@@ -220,6 +230,11 @@ export const TranscriptEntry: MessageFns<TranscriptEntry> = {
         : isSet(object.reply_to)
         ? globalThis.Number(object.reply_to)
         : undefined,
+      createdAt: isSet(object.createdAt)
+        ? globalThis.String(object.createdAt)
+        : isSet(object.created_at)
+        ? globalThis.String(object.created_at)
+        : "",
     };
   },
 
@@ -243,6 +258,9 @@ export const TranscriptEntry: MessageFns<TranscriptEntry> = {
     if (message.replyTo !== undefined) {
       obj.replyTo = Math.round(message.replyTo);
     }
+    if (message.createdAt !== "") {
+      obj.createdAt = message.createdAt;
+    }
     return obj;
   },
 
@@ -257,6 +275,7 @@ export const TranscriptEntry: MessageFns<TranscriptEntry> = {
     message.text = object.text ?? "";
     message.type = object.type ?? 0;
     message.replyTo = object.replyTo ?? undefined;
+    message.createdAt = object.createdAt ?? "";
     return message;
   },
 };

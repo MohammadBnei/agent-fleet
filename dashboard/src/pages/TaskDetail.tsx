@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { client } from "../connectClient";
 import { isThot, repoLabel } from "../taskKind";
 import type { Task } from "../gen/agentfleet/v1/core_pb";
-import { podStateBadge, staleBadge, heartbeatLabel, prBadge } from "./TaskList";
+import { sessionBadge, staleBadge, heartbeatLabel, prBadge } from "./TaskList";
 import { TranscriptEntryType } from "../gen/agentfleet/v1/transcript_pb";
 import {
   parseQuestions,
@@ -39,17 +39,6 @@ import { QuestionCard } from "../components/QuestionCard";
 const DEFAULT_HEIGHT = 224; // matches TODOS's prior max-h-56
 const PANEL_ORDER = ["todos", "toolcalls", "changes"] as const;
 
-const STATUS_COLOR: Record<string, string> = {
-  // Warning-toned on purpose: the fallback grey below reads as "inert",
-  // the opposite of a task waiting on a human decision.
-  proposed: "text-warning border-warning/45 bg-warning/10",
-  pending: "text-base-content/60 border-base-content/20 bg-base-content/5",
-  claimed: "text-info border-info/45 bg-info/10",
-  running: "text-info border-info/45 bg-info/10",
-  done: "text-success border-success/45 bg-success/10",
-  failed: "text-warning border-warning/45 bg-warning/10",
-  cancelled: "text-warning border-warning/45 bg-warning/10",
-};
 
 export function TaskDetail({
   taskId,
@@ -252,7 +241,7 @@ export function TaskDetail({
   const task = tasks.find((t) => t.id === taskId) ?? fetchedTask;
 
   const siblings = tasks.filter((t) => t.id !== taskId);
-  const podBadge = podStateBadge(task);
+  const badge = sessionBadge(task);
   const staleTag = staleBadge(task);
   const heartbeat = heartbeatLabel(task);
   const prLink = prBadge(task);
@@ -276,7 +265,6 @@ export function TaskDetail({
   // Server-derived (docs/adr/0040) — core owns the thresholds, so every
   // client agrees on what "working" and "stalled" mean.
   const cogitating = task.liveState === "working";
-  const stalled = task.liveState === "stalled";
   const toolCallPairs = buildToolCallPairs(entries);
   const toolCallPairsBySeq = new Map(toolCallPairs.map((p) => [p.call.seq, p]));
   const consumedResultSeqs = pairedResultSeqs(toolCallPairs);
@@ -293,40 +281,27 @@ export function TaskDetail({
       <div className="px-6 pt-4 pb-3.5 border-b border-base-content/10">
         <div className="flex items-center gap-2.5">
           <h2 className="font-display font-semibold text-[19px]">{task.description}</h2>
-          <span className={`px-2 py-0.5 rounded text-[9.5px] font-semibold border tracking-wide ${STATUS_COLOR[task.status] ?? "border-base-content/20"}`}>
-            {task.status.toUpperCase()}
-          </span>
-          {podBadge && (
+          {/* One badge, not five. The header used to carry status, pod
+              phase, THINKING, STALLED and staleness side by side at equal
+              weight — four of which restate each other, and the one that
+              means "a human is needed" did not stand out from them.
+              sessionBadge ranks them; the rest survives in its tooltip. */}
+          {badge && (
             <span
-              className={`px-2 py-0.5 rounded text-[9.5px] font-semibold border tracking-wide ${podBadge.className}`}
-              title={task.podMessage || undefined}
+              className={`px-2 py-0.5 rounded text-[9.5px] font-semibold border tracking-wide ${badge.className}`}
+              title={badge.title ?? task.podMessage ?? undefined}
             >
-              POD {podBadge.label}
+              {badge.label}
             </span>
           )}
+          {/* Kept alongside it because it is motion, not state: it changes
+              second to second while the badge holds still, and "is it
+              actually doing something right now" is a different question
+              from "what is this session's status". */}
           {cogitating && (
-            <span className="px-2 py-0.5 rounded text-[9.5px] font-semibold border tracking-wide border-info/45 bg-info/10 text-info flex items-center gap-1">
+            <span className="flex items-center gap-1 text-[9.5px] font-semibold tracking-wide text-info/80">
               <span className="w-1.5 h-1.5 rounded-full bg-info animate-fpulse" />
               THINKING
-            </span>
-          )}
-          {/* The agent owes a reply and hasn't produced one. Not a
-              verdict — a slow turn is not a dead one — so this offers the
-              controls rather than acting on its own. */}
-          {stalled && (
-            <span
-              className="px-2 py-0.5 rounded text-[9.5px] font-semibold border tracking-wide border-warning/45 bg-warning/10 text-warning"
-              title="no response since the last thing sent — interrupt or kill it from Actions"
-            >
-              STALLED
-            </span>
-          )}
-          {staleTag && (
-            <span
-              className={`px-2 py-0.5 rounded text-[9.5px] font-semibold border tracking-wide ${staleTag.className}`}
-              title={staleTag.title}
-            >
-              {staleTag.label}
             </span>
           )}
           {prLink && (
@@ -738,7 +713,10 @@ export function TaskDetail({
         <div className="flex-none border-t border-base-content/10 bg-base-200 px-6 py-2.5 flex items-center gap-2.5 overflow-x-auto">
           <span className="text-[9.5px] tracking-[0.1em] text-base-content/40 flex-none">REST OF THE HERD</span>
           {siblings.map((t) => {
-            const siblingPodBadge = podStateBadge(t);
+            // Was status + pod phase per sibling, which produced pairs like
+            // "CANCELLED TERMINATED" and "SCHEDULED DONE" — the second badge
+            // either restating the first or contradicting it.
+            const siblingBadge = sessionBadge(t);
             return (
               <button
                 key={t.id}
@@ -747,15 +725,12 @@ export function TaskDetail({
                 className="flex-none flex items-center gap-2 px-2.5 py-1.5 border border-base-content/10 rounded-md hover:border-base-content/25 cursor-pointer"
               >
                 <span className="text-[10.5px]">#{t.id.slice(0, 6)}</span>
-                <span className={`px-1.5 py-0.5 rounded text-[9px] font-semibold border tracking-wide ${STATUS_COLOR[t.status] ?? "border-base-content/20"}`}>
-                  {t.status.toUpperCase()}
-                </span>
-                {siblingPodBadge && (
+                {siblingBadge && (
                   <span
-                    className={`px-1.5 py-0.5 rounded text-[9px] font-semibold border tracking-wide ${siblingPodBadge.className}`}
-                    title={t.podMessage || undefined}
+                    className={`px-1.5 py-0.5 rounded text-[9px] font-semibold border tracking-wide ${siblingBadge.className}`}
+                    title={siblingBadge.title ?? t.podMessage ?? undefined}
                   >
-                    {siblingPodBadge.label}
+                    {siblingBadge.label}
                   </span>
                 )}
               </button>

@@ -46,35 +46,6 @@ export function isPodPhaseLive(phase?: string): boolean {
   return phase === "POD_PHASE_PROVISIONING" || phase === "POD_PHASE_CREATED" || phase === "POD_PHASE_SCHEDULED" || phase === "POD_PHASE_RUNNING";
 }
 
-// Worker-pod lifecycle (PodPhase, reported by the provisioner) — distinct
-// from `task.status` (business state). Unset until the pod's first event
-// arrives, so this is null more often than not for a brand-new task.
-export function podStateBadge(task: Task): { label: string; className: string } | null {
-  const phase = task.podPhase;
-  if (!phase || phase === "POD_PHASE_UNSPECIFIED") return null;
-  const label = phase.replace("POD_PHASE_", "");
-  // PROVISIONING's message carries the current sub-step (cloning repo /
-  // adding worktree / creating pod) — the precise in-flight step, not a
-  // crash reason like other phases' message. Shown inline in the label
-  // itself, not just a tooltip: this is the exact gap that made today's
-  // incident invisible (claimed for 20+ minutes with no pod event at all
-  // looked identical to a task that had just been claimed a second ago).
-  if (label === "PROVISIONING") {
-    return {
-      label: task.podMessage ? `PROVISIONING: ${task.podMessage}` : "PROVISIONING",
-      className: "text-info border-info/45 bg-info/10 animate-pulse",
-    };
-  }
-  const className =
-    label === "CRASHED"
-      ? "text-error border-error/45 bg-error/10"
-      : label === "RUNNING"
-        ? "text-success border-success/45 bg-success/10"
-        : label === "TERMINATED"
-          ? "text-base-content/50 border-base-content/20 bg-base-content/5"
-          : "text-info border-info/45 bg-info/10"; // CREATED / SCHEDULED
-  return { label, className };
-}
 
 // Matches core's own reclaim threshold (tasks.Store.ClaimNextTask reclaims
 // a claimed/running task once its heartbeat is this stale) —
@@ -84,37 +55,79 @@ export function podStateBadge(task: Task): { label: string; className: string } 
 // minutes and nothing in the UI showed it).
 const STALE_THRESHOLD_MS = 10 * 60 * 1000;
 
-// Server-derived session liveness (docs/adr/0040), distinct from status
-// and pod phase: whether the agent is working, waiting on you, stalled, or
-// finished while you weren't looking. Deliberately renders nothing for
-// `working` and `idle` — those are the unremarkable states, and a badge on
-// every row is a badge on none.
-export function liveStateBadge(task: Task): { label: string; className: string; title?: string } | null {
-  switch (task.liveState) {
-    case "blocked":
-      return { label: "NEEDS YOU", className: "text-primary border-primary/45 bg-primary/10" };
-    case "done":
-      return {
-        label: "DONE",
-        className: "text-success border-success/45 bg-success/10",
-        title: "finished while you weren't looking — opening it marks it seen",
-      };
-    case "stalled":
-      return {
-        label: "STALLED",
-        className: "text-warning border-warning/45 bg-warning/10",
-        title: "no response since the last thing sent to the agent",
-      };
-    case "unknown":
-      return {
-        label: "STARTING",
-        className: "text-base-content/60 border-base-content/20 bg-base-content/5",
-        title: "pod is up but the agent hasn't said anything yet",
-      };
-    default:
-      return null;
+// ONE badge per session, chosen by precedence.
+//
+// Status, pod phase, liveness and staleness were four independently
+// rendered badges of near-identical weight, and they overlap hard: a
+// `claimed`/`running` status means "there is a live pod", which is what the
+// pod badge already says; `unknown` liveness renders "STARTING", which is
+// what `PROVISIONING`/`SCHEDULED` already says. Four badges that mostly
+// restate each other read as noise, and the one that matters — a session
+// waiting on a human — does not stand out from the three that don't.
+//
+// The order below is "what does a human need to know first", not the order
+// the data happens to arrive in. Everything demoted out of the label
+// survives in the tooltip, so nothing is lost, only ranked.
+export function sessionBadge(task: Task): { label: string; className: string; title?: string } | null {
+  const stale = staleBadge(task);
+  const phase = task.podPhase?.replace("POD_PHASE_", "");
+
+  // 1. Needs a human. Always wins: nothing else about this session matters
+  //    until someone clicks, and this is the product's whole job.
+  if (task.liveState === "blocked") {
+    return { label: "NEEDS YOU", className: "text-primary border-primary/45 bg-primary/10", title: "waiting on your decision" };
   }
+  // 2. Something is wrong, in order of how wrong.
+  if (phase === "CRASHED") {
+    return { label: "CRASHED", className: "text-error border-error/45 bg-error/10", title: task.podMessage || task.lastError || undefined };
+  }
+  if (stale) return stale;
+  if (task.liveState === "stalled") {
+    return { label: "STALLED", className: "text-warning border-warning/45 bg-warning/10", title: "no response since the last thing sent to the agent" };
+  }
+  // 3. Finished while nobody was looking — the "welcome back" state.
+  if (task.liveState === "done") {
+    return { label: "DONE", className: "text-success border-success/45 bg-success/10", title: "finished while you weren't looking — opening it marks it seen" };
+  }
+  // 4. Healthy and in motion. PROVISIONING keeps its sub-step inline: the
+  //    difference between "cloning repo" and no event for 20 minutes is the
+  //    exact gap that made a real incident invisible.
+  if (phase === "PROVISIONING") {
+    return {
+      label: task.podMessage ? `PROVISIONING: ${task.podMessage}` : "PROVISIONING",
+      className: "text-info border-info/45 bg-info/10 animate-pulse",
+    };
+  }
+  if (task.liveState === "working") {
+    return { label: "WORKING", className: "text-info border-info/45 bg-info/10", title: `pod ${phase?.toLowerCase() ?? "live"}` };
+  }
+  if (task.liveState === "unknown") {
+    return { label: "STARTING", className: "text-info border-info/45 bg-info/10", title: "pod is up, the agent hasn't spoken yet" };
+  }
+  if (task.liveState === "idle") {
+    return { label: "IDLE", className: "text-base-content/50 border-base-content/20 bg-base-content/5", title: "pod live, nothing in flight" };
+  }
+  // 5. No live pod: the workflow status is the only thing left to say, and
+  //    now it has the badge to itself instead of competing with three
+  //    others.
+  if (task.status === "proposed") {
+    return { label: "PROPOSED", className: "text-warning border-warning/45 bg-warning/10", title: "machine-created — approve it to dispatch" };
+  }
+  if (task.status === "pending") {
+    return { label: "QUEUED", className: "text-base-content/60 border-base-content/20 bg-base-content/5" };
+  }
+  if (task.status === "failed" || task.status === "failed_permanently") {
+    return { label: task.status === "failed" ? "FAILED" : "FAILED (final)", className: "text-error border-error/45 bg-error/10", title: task.lastError || undefined };
+  }
+  if (task.status === "cancelled") {
+    return { label: "CANCELLED", className: "text-warning border-warning/45 bg-warning/10" };
+  }
+  if (task.status === "done") {
+    return { label: "DONE", className: "text-success border-success/45 bg-success/10" };
+  }
+  return null;
 }
+
 
 export function staleBadge(task: Task): { label: string; className: string; title?: string } | null {
   if (!ACTIVE_STATUSES.has(task.status) || !task.heartbeatAt) return null;
@@ -189,9 +202,7 @@ function NeedsYouCard({
 }) {
   const heartbeat = heartbeatLabel(task);
   const progress = todos.filter((t) => t.status === "completed").length;
-  const podBadge = podStateBadge(task);
-  const staleTag = staleBadge(task);
-  const liveTag = liveStateBadge(task);
+  const badge = sessionBadge(task);
   return (
     <div className="relative">
       <button
@@ -205,19 +216,9 @@ function NeedsYouCard({
         <div className="flex items-center gap-2">
           <span className="text-[11px] font-semibold">#{task.id.slice(0, 6)}</span>
           <span className="text-[10px] text-base-content/50">{repoLabel(task)}</span>
-          {podBadge && (
-            <span className={`text-[8.5px] px-1 rounded border tracking-wide ${podBadge.className}`}>
-              {podBadge.label}
-            </span>
-          )}
-          {liveTag && (
-            <span className={`text-[8.5px] px-1 rounded border tracking-wide ${liveTag.className}`} title={liveTag.title}>
-              {liveTag.label}
-            </span>
-          )}
-          {staleTag && (
-            <span className={`text-[8.5px] px-1 rounded border tracking-wide ${staleTag.className}`} title={staleTag.title}>
-              {staleTag.label}
+          {badge && (
+            <span className={`text-[8.5px] px-1 rounded border tracking-wide ${badge.className}`} title={badge.title}>
+              {badge.label}
             </span>
           )}
           {heartbeat && <span className="ml-auto text-[9.5px] text-primary">{heartbeat}</span>}
@@ -249,9 +250,7 @@ function WorkingCard({
 }) {
   const progress = todos.filter((t) => t.status === "completed").length;
   const pct = Math.round((progress / Math.max(todos.length, 1)) * 100);
-  const podBadge = podStateBadge(task);
-  const staleTag = staleBadge(task);
-  const liveTag = liveStateBadge(task);
+  const badge = sessionBadge(task);
   return (
     <div className="relative">
       <button
@@ -262,22 +261,12 @@ function WorkingCard({
         }`}
       >
         <div className="flex items-center gap-2">
-          <span className={`w-1.5 h-1.5 rounded-full ${staleTag ? "bg-error" : "bg-info animate-fpulse"}`} />
+          <span className={`w-1.5 h-1.5 rounded-full ${staleBadge(task) ? "bg-error" : "bg-info animate-fpulse"}`} />
           <span className="text-[11px]">#{task.id.slice(0, 6)}</span>
           <span className="text-[10px] text-base-content/50">{repoLabel(task)}</span>
-          {podBadge && (
-            <span className={`text-[8.5px] px-1 rounded border tracking-wide ${podBadge.className}`}>
-              {podBadge.label}
-            </span>
-          )}
-          {liveTag && (
-            <span className={`text-[8.5px] px-1 rounded border tracking-wide ${liveTag.className}`} title={liveTag.title}>
-              {liveTag.label}
-            </span>
-          )}
-          {staleTag && (
-            <span className={`text-[8.5px] px-1 rounded border tracking-wide ${staleTag.className}`} title={staleTag.title}>
-              {staleTag.label}
+          {badge && (
+            <span className={`text-[8.5px] px-1 rounded border tracking-wide ${badge.className}`} title={badge.title}>
+              {badge.label}
             </span>
           )}
         </div>
