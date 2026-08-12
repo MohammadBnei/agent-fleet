@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.43.3](https://github.com/MohammadBnei/agent-fleet/compare/1.43.2...1.43.3) (2026-08-12)
+
+
+### Bug Fixes
+
+* **provisioner:** pin ImagePullPolicy on tool init containers ([b2d1ab1](https://github.com/MohammadBnei/agent-fleet/commit/b2d1ab18dca849681eac88264089e492a58adf8b))
+
 ## [1.43.2](https://github.com/MohammadBnei/agent-fleet/compare/1.43.1...1.43.2) (2026-08-12)
 
 
