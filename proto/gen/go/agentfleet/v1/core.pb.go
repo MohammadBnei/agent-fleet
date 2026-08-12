@@ -1232,6 +1232,14 @@ func (x *PromptSessionResponse) GetPodName() string {
 type WaitForSessionStateRequest struct {
 	state        protoimpl.MessageState `protogen:"open.v1"`
 	TargetTaskId string                 `protobuf:"bytes,1,opt,name=target_task_id,json=targetTaskId,proto3" json:"target_task_id,omitempty"`
+	// Only count a settled state once the target has produced activity newer
+	// than this transcript seq. Without it, waiting right after prompting an
+	// already-idle target returns instantly with the state it was in BEFORE
+	// the prompt — the target hasn't started the new turn yet. herdr solves
+	// the same race by requiring an observed state change off a baseline
+	// captured before submission. Pass the seq prompt_agent returned; the
+	// sidecar fills it in automatically when omitted.
+	AfterSeq int64 `protobuf:"varint,4,opt,name=after_seq,json=afterSeq,proto3" json:"after_seq,omitempty"`
 	// Any of these ends the wait. Empty means the settled set
 	// (idle/done/blocked/stalled) — "it stopped needing to be waited on".
 	Until         []string `protobuf:"bytes,2,rep,name=until,proto3" json:"until,omitempty"`
@@ -1275,6 +1283,13 @@ func (x *WaitForSessionStateRequest) GetTargetTaskId() string {
 		return x.TargetTaskId
 	}
 	return ""
+}
+
+func (x *WaitForSessionStateRequest) GetAfterSeq() int64 {
+	if x != nil {
+		return x.AfterSeq
+	}
+	return 0
 }
 
 func (x *WaitForSessionStateRequest) GetUntil() []string {
@@ -2879,9 +2894,10 @@ const file_agentfleet_v1_core_proto_rawDesc = "" +
 	"\x03seq\x18\x01 \x01(\x03R\x03seq\x12\x1d\n" +
 	"\n" +
 	"live_state\x18\x02 \x01(\tR\tliveState\x12\x19\n" +
-	"\bpod_name\x18\x03 \x01(\tR\apodName\"w\n" +
+	"\bpod_name\x18\x03 \x01(\tR\apodName\"\x94\x01\n" +
 	"\x1aWaitForSessionStateRequest\x12$\n" +
-	"\x0etarget_task_id\x18\x01 \x01(\tR\ftargetTaskId\x12\x14\n" +
+	"\x0etarget_task_id\x18\x01 \x01(\tR\ftargetTaskId\x12\x1b\n" +
+	"\tafter_seq\x18\x04 \x01(\x03R\bafterSeq\x12\x14\n" +
 	"\x05until\x18\x02 \x03(\tR\x05until\x12\x1d\n" +
 	"\n" +
 	"timeout_ms\x18\x03 \x01(\x05R\ttimeoutMs\"Y\n" +

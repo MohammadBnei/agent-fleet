@@ -138,6 +138,7 @@ func New(core *coreclient.Client) http.Handler {
 		mcp.WithString("taskId", mcp.Required()),
 		mcp.WithString("until", mcp.Description("working | blocked | idle | done | stalled | unknown. Omit to wait for any settled state.")),
 		mcp.WithNumber("timeoutMs", mcp.Description("Default 120000.")),
+		mcp.WithNumber("afterSeq", mcp.Description("Only count a settled state once the target produces activity newer than this transcript seq. Filled in automatically from your last prompt_agent call to the same target, so you normally omit it — without it, waiting right after prompting can return the state the target held BEFORE your message landed.")),
 	), waitForSessionHandler(core))
 
 	s.AddTool(mcp.NewTool("view_logs",

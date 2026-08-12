@@ -64,6 +64,20 @@ That function carries the capacity cap and the `proposed`/`pending` gates;
 two implementations of pod dispatch is precisely the drift `0020` point 2
 exists to prevent.
 
+### Prompts are authored `session`, not `agent`
+
+A worker relays its own output as `from: "agent"`, and the human-message
+stream filters those out precisely so a session cannot feed itself in a
+loop. Delivering prompts as `"agent"` therefore never reached a live target
+at all — the entry landed in the transcript and the running agent never saw
+it. Found on a real cluster, not by any test: every unit and integration
+test asserted the entry was *written*, which it was.
+
+`"session"` is deliverable (core's stream and the worker both accept
+`human` or `session`) and still unmistakably not the target's own voice.
+It also counts as owing a reply for `0040`'s stall derivation, exactly as a
+human message does.
+
 ### `wait_for_agent` polls, and a timeout is an answer
 
 Polls Postgres every 2 s rather than subscribing, for `0013`'s reason: a

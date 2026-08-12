@@ -113,8 +113,15 @@ func (s *Server) PromptSession(ctx context.Context, req *agentfleetv1.PromptSess
 	// `permission_response`: those resolve human decisions, and an agent
 	// answering another agent's prompt would silently void docs/adr/0029's
 	// guarantee that a permission decision is always a real human one.
+	// Authored as "session", not "agent". The distinction is load-bearing:
+	// a worker relays its own output as from="agent", and the human-message
+	// stream filters those out precisely so a session cannot feed itself in
+	// a loop. Delivering prompts as "agent" therefore never reached a live
+	// target at all (found on a real cluster — the entry landed in the
+	// transcript and the running agent never saw it). "session" is
+	// deliverable and still unmistakably not the session's own voice.
 	body := fmt.Sprintf("[from session %s]\n\n%s", caller, text)
-	seq, err := s.transcr.Append(ctx, target, "agent", body, "discussion", fmt.Sprintf("prompt-%s-%s-%d", caller, target, time.Now().UnixNano()))
+	seq, err := s.transcr.Append(ctx, target, "session", body, "discussion", fmt.Sprintf("prompt-%s-%s-%d", caller, target, time.Now().UnixNano()))
 	if err != nil {
 		return nil, fmt.Errorf("append prompt: %w", err)
 	}
@@ -167,7 +174,19 @@ func (s *Server) WaitForSessionState(ctx context.Context, req *agentfleetv1.Wait
 		if err != nil {
 			return nil, err
 		}
-		if wanted[string(state)] {
+		// A settled state only counts once the target has actually moved
+		// past the baseline. Otherwise "prompt, then wait for it to settle"
+		// answers with the state it held before the prompt landed, which is
+		// the exact race herdr's own two-phase wait exists to avoid.
+		progressed := true
+		if req.GetAfterSeq() > 0 {
+			latest, err := s.transcr.LatestSeq(ctx, target)
+			if err != nil {
+				return nil, fmt.Errorf("latest seq: %w", err)
+			}
+			progressed = latest > req.GetAfterSeq()
+		}
+		if progressed && wanted[string(state)] {
 			return &agentfleetv1.WaitForSessionStateResponse{LiveState: string(state)}, nil
 		}
 		// A target with no live pod will never move on its own — nothing is

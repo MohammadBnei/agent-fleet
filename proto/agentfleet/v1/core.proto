@@ -237,6 +237,14 @@ message PromptSessionResponse {
 
 message WaitForSessionStateRequest {
   string target_task_id = 1;
+  // Only count a settled state once the target has produced activity newer
+  // than this transcript seq. Without it, waiting right after prompting an
+  // already-idle target returns instantly with the state it was in BEFORE
+  // the prompt — the target hasn't started the new turn yet. herdr solves
+  // the same race by requiring an observed state change off a baseline
+  // captured before submission. Pass the seq prompt_agent returned; the
+  // sidecar fills it in automatically when omitted.
+  int64 after_seq = 4;
   // Any of these ends the wait. Empty means the settled set
   // (idle/done/blocked/stalled) — "it stopped needing to be waited on".
   repeated string until = 2;

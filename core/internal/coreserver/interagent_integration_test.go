@@ -139,8 +139,11 @@ func TestPromptSession_DeliversAsAttributedDiscussion(t *testing.T) {
 		if e.Type != "discussion" {
 			t.Errorf("delivered as type %q, want discussion — this path must never produce a decision entry", e.Type)
 		}
-		if e.From != "agent" {
-			t.Errorf("delivered from %q, want agent", e.From)
+		// "session", not "agent": the human-message stream filters out
+		// from="agent" so a session cannot echo itself, so delivering as
+		// "agent" never reaches a live target at all.
+		if e.From != "session" {
+			t.Errorf("delivered from %q, want session — from=agent is filtered out of the stream a live worker reads", e.From)
 		}
 		if !strings.Contains(e.Text, caller) {
 			t.Error("delivered message must name its source session, or the target cannot tell who is asking")

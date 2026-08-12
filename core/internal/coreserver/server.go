@@ -443,7 +443,11 @@ func (s *Server) StreamHumanMessages(req *agentfleetv1.StreamHumanMessagesReques
 		}
 		cursor = nextSeq
 		for _, e := range entries {
-			if e.From != "human" {
+			// "human" is the operator; "session" is another session's
+			// prompt (docs/adr/0041). Everything else — crucially the
+			// target's own from="agent" output — must not be streamed back,
+			// or a session feeds itself forever.
+			if e.From != "human" && e.From != "session" {
 				continue
 			}
 			if err := stream.Send(entryToProto(taskID, e)); err != nil {

@@ -376,9 +376,9 @@ func (c *Client) PromptSession(ctx context.Context, targetTaskID, text string, d
 	return resp, nil
 }
 
-func (c *Client) WaitForSessionState(ctx context.Context, targetTaskID string, until []string, timeoutMs int32) (*agentfleetv1.WaitForSessionStateResponse, error) {
+func (c *Client) WaitForSessionState(ctx context.Context, targetTaskID string, until []string, timeoutMs int32, afterSeq int64) (*agentfleetv1.WaitForSessionStateResponse, error) {
 	resp, err := c.rpc.WaitForSessionState(ctx, &agentfleetv1.WaitForSessionStateRequest{
-		TargetTaskId: targetTaskID, Until: until, TimeoutMs: timeoutMs,
+		TargetTaskId: targetTaskID, Until: until, TimeoutMs: timeoutMs, AfterSeq: afterSeq,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("WaitForSessionState: %w", err)

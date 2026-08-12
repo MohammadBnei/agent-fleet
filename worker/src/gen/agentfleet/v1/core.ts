@@ -366,6 +366,16 @@ export interface PromptSessionResponse {
 export interface WaitForSessionStateRequest {
   targetTaskId: string;
   /**
+   * Only count a settled state once the target has produced activity newer
+   * than this transcript seq. Without it, waiting right after prompting an
+   * already-idle target returns instantly with the state it was in BEFORE
+   * the prompt — the target hasn't started the new turn yet. herdr solves
+   * the same race by requiring an observed state change off a baseline
+   * captured before submission. Pass the seq prompt_agent returned; the
+   * sidecar fills it in automatically when omitted.
+   */
+  afterSeq: number;
+  /**
    * Any of these ends the wait. Empty means the settled set
    * (idle/done/blocked/stalled) — "it stopped needing to be waited on".
    */
@@ -1424,7 +1434,7 @@ export const PromptSessionResponse: MessageFns<PromptSessionResponse> = {
 };
 
 function createBaseWaitForSessionStateRequest(): WaitForSessionStateRequest {
-  return { targetTaskId: "", until: [], timeoutMs: 0 };
+  return { targetTaskId: "", afterSeq: 0, until: [], timeoutMs: 0 };
 }
 
 export const WaitForSessionStateRequest: MessageFns<WaitForSessionStateRequest> = {
@@ -1435,6 +1445,11 @@ export const WaitForSessionStateRequest: MessageFns<WaitForSessionStateRequest> 
         : isSet(object.target_task_id)
         ? globalThis.String(object.target_task_id)
         : "",
+      afterSeq: isSet(object.afterSeq)
+        ? globalThis.Number(object.afterSeq)
+        : isSet(object.after_seq)
+        ? globalThis.Number(object.after_seq)
+        : 0,
       until: globalThis.Array.isArray(object?.until)
         ? object.until.map((e: any) => globalThis.String(e))
         : [],
@@ -1451,6 +1466,9 @@ export const WaitForSessionStateRequest: MessageFns<WaitForSessionStateRequest> 
     if (message.targetTaskId !== "") {
       obj.targetTaskId = message.targetTaskId;
     }
+    if (message.afterSeq !== 0) {
+      obj.afterSeq = Math.round(message.afterSeq);
+    }
     if (message.until?.length) {
       obj.until = message.until;
     }
@@ -1466,6 +1484,7 @@ export const WaitForSessionStateRequest: MessageFns<WaitForSessionStateRequest> 
   fromPartial<I extends Exact<DeepPartial<WaitForSessionStateRequest>, I>>(object: I): WaitForSessionStateRequest {
     const message = createBaseWaitForSessionStateRequest();
     message.targetTaskId = object.targetTaskId ?? "";
+    message.afterSeq = object.afterSeq ?? 0;
     message.until = object.until?.map((e) => e) || [];
     message.timeoutMs = object.timeoutMs ?? 0;
     return message;

@@ -395,7 +395,10 @@ export async function runTask(task: Task): Promise<TaskResult> {
   const humanMessagesAbort = new AbortController();
   const humanMessagesDone = sidecar
     .streamHumanMessages(async (entry) => {
-      if (entry.from !== "human") return;
+      // "session" is another session's prompt, relayed by core
+      // (docs/adr/0041). Our own output is from="agent" and must never be
+      // fed back in — that is what this filter is for.
+      if (entry.from !== "human" && entry.from !== "session") return;
       if (entry.type === "answer") return; // consumed by the blocked AskUserQuestion tool call server-side
       if (entry.type === "abort") {
         aborted = true;

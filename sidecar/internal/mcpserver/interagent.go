@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"sync"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -16,6 +17,28 @@ import (
 // core over this pod's single outbound gRPC connection — the agent never
 // learns another pod's address, and there is no inter-pod MCP anywhere
 // (docs/adr/0020 point 6).
+
+// Seq of the last prompt this pod sent to each target. wait_for_agent uses
+// it as the baseline so "prompt, then wait" cannot answer with the state
+// the target held before the prompt landed — the agent gets that for free
+// instead of having to pass the seq back itself. One pod runs one session,
+// so this is bounded by the targets that session talks to.
+var (
+	lastPromptMu  sync.Mutex
+	lastPromptSeq = map[string]int64{}
+)
+
+func rememberPrompt(target string, seq int64) {
+	lastPromptMu.Lock()
+	defer lastPromptMu.Unlock()
+	lastPromptSeq[target] = seq
+}
+
+func promptBaseline(target string) int64 {
+	lastPromptMu.Lock()
+	defer lastPromptMu.Unlock()
+	return lastPromptSeq[target]
+}
 
 func listSessionsHandler(core *coreclient.Client) server.ToolHandlerFunc {
 	return func(ctx context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -57,6 +80,7 @@ func promptSessionHandler(core *coreclient.Client) server.ToolHandlerFunc {
 			slog.Error("mcp prompt_agent", "targetTaskId", target, "error", err)
 			return mcp.NewToolResultError(err.Error()), nil
 		}
+		rememberPrompt(target, resp.GetSeq())
 		body, err := json.Marshal(map[string]any{
 			"seq":       resp.GetSeq(),
 			"liveState": resp.GetLiveState(),
@@ -81,7 +105,11 @@ func waitForSessionHandler(core *coreclient.Client) server.ToolHandlerFunc {
 			until = []string{raw}
 		}
 		timeoutMs := int32(req.GetInt("timeoutMs", 120000))
-		resp, err := core.WaitForSessionState(ctx, target, until, timeoutMs)
+		afterSeq := int64(req.GetInt("afterSeq", 0))
+		if afterSeq == 0 {
+			afterSeq = promptBaseline(target)
+		}
+		resp, err := core.WaitForSessionState(ctx, target, until, timeoutMs, afterSeq)
 		if err != nil {
 			slog.Error("mcp wait_for_agent", "targetTaskId", target, "error", err)
 			return mcp.NewToolResultError(err.Error()), nil
