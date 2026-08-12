@@ -1046,7 +1046,7 @@ func TaskToProto(t tasks.Task) *agentfleetv1.Task {
 		lastActiveAt = &s
 	}
 	return &agentfleetv1.Task{
-		Kind: t.Kind,
+		Kind:           t.Kind,
 		Id:             t.ID,
 		Repo:           t.Repo,
 		Description:    t.Description,
@@ -1076,6 +1076,9 @@ func entryToProto(taskID string, e transcript.Entry) *agentfleetv1.TranscriptEnt
 		Text:    e.Text,
 		Type:    stringToProtoType(e.Type),
 		ReplyTo: e.ReplyTo,
+		// Zero time would serialize as year 1 — send "" so a client can
+		// tell "no timestamp" from "the epoch".
+		CreatedAt: transcript.RFC3339OrEmpty(e.CreatedAt),
 	}
 }
 

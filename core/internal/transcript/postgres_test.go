@@ -6,6 +6,7 @@ import (
 	"context"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -134,5 +135,47 @@ func TestPostgresStore_AppendReplyRoundTripsReplyTo(t *testing.T) {
 	}
 	if entries[0].ReplyTo != nil {
 		t.Fatalf("expected the question entry's own ReplyTo to be nil, got %v", *entries[0].ReplyTo)
+	}
+}
+
+// created_at has been stored since the first migration and was never read
+// back, so no client could say when anything happened or how long a turn
+// took — seq orders a feed, it does not time one.
+func TestReadSince_ReturnsCreatedAt(t *testing.T) {
+	pool := newTestPool(t)
+	ctx := context.Background()
+	store := NewPostgresStore(pool)
+	taskID := newTestTask(t, ctx, pool)
+
+	before := time.Now().Add(-2 * time.Second)
+	if _, err := store.Append(ctx, taskID, "human", "hello", "discussion", "k1"); err != nil {
+		t.Fatalf("Append: %v", err)
+	}
+
+	entries, _, err := store.ReadSince(ctx, taskID, 0, 10)
+	if err != nil {
+		t.Fatalf("ReadSince: %v", err)
+	}
+	if len(entries) == 0 {
+		t.Fatal("no entries")
+	}
+	got := entries[0].CreatedAt
+	if got.IsZero() {
+		t.Fatal("CreatedAt is zero — the column is selected but never reaches the caller")
+	}
+	if got.Before(before) || got.After(time.Now().Add(2*time.Second)) {
+		t.Errorf("CreatedAt %s is not around now", got)
+	}
+}
+
+// A zero time must serialize as "" rather than year 1 — a client has to be
+// able to tell "no timestamp" from a real one.
+func TestRFC3339OrEmpty(t *testing.T) {
+	if got := RFC3339OrEmpty(time.Time{}); got != "" {
+		t.Errorf("zero time formatted as %q, want empty", got)
+	}
+	ts := time.Date(2026, 8, 12, 10, 30, 0, 0, time.UTC)
+	if got := RFC3339OrEmpty(ts); got != "2026-08-12T10:30:00Z" {
+		t.Errorf("got %q, want 2026-08-12T10:30:00Z", got)
 	}
 }

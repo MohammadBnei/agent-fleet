@@ -31,7 +31,7 @@ import { Modal } from "../components/Modal";
 import { ActionsMenu } from "../components/ActionsMenu";
 import { ProposalActions } from "../components/ProposalActions";
 import { E2eCard } from "../components/E2eCard";
-import { prBadge, podStateBadge, staleBadge } from "../pages/TaskList";
+import { prBadge, sessionBadge } from "../pages/TaskList";
 
 // Mirrors the "herd" mock's phone session screen (Agent Fleet Mobile.dc.html)
 // minus device chrome. Single-pane (list vs. detail), unlike desktop's
@@ -110,8 +110,12 @@ export function MobileTaskDetail({
   const done = todos.filter((t) => t.status === "completed").length;
   const prLink = prBadge(task);
   // Hide PROVISIONING badge if we already have transcript entries (agent is responding)
-  const podBadge = task.podPhase === "POD_PHASE_PROVISIONING" && entries.length > 0 ? null : podStateBadge(task);
-  const staleTag = staleBadge(task);
+  // One ranked badge instead of pod phase + staleness side by side
+  // (docs/dashboard-spec.md's first design failure). The old special case
+  // — hide PROVISIONING once entries exist — is unnecessary now: liveness
+  // outranks pod phase, so a session that has said anything shows what it
+  // is doing rather than that its pod is still marked provisioning.
+  const badge = sessionBadge(task);
   const pendingQuestion = findPendingQuestion(entries);
   const pendingParsed = pendingQuestion ? parseQuestions(pendingQuestion.text) : null;
   const chipQuestion =
@@ -123,7 +127,6 @@ export function MobileTaskDetail({
   // Server-derived (docs/adr/0040) — core owns the thresholds, so every
   // client agrees on what "working" and "stalled" mean.
   const cogitating = task.liveState === "working";
-  const stalled = task.liveState === "stalled";
   const permissionDecisions = resolvedPermissionDecisions(entries);
   const denyMessages = permissionDenyMessages(entries);
   // Tool calls stay inline in the mobile feed (unlike desktop's right-panel
@@ -175,20 +178,12 @@ export function MobileTaskDetail({
                   {prLink.label}
                 </a>
               )}
-              {podBadge && (
+              {badge && (
                 <span
-                  className={`px-1.5 py-0.5 rounded text-[9px] font-semibold border tracking-wide ${podBadge.className} whitespace-nowrap`}
-                  title={task.podMessage || undefined}
+                  className={`px-1.5 py-0.5 rounded text-[9px] font-semibold border tracking-wide ${badge.className} whitespace-nowrap`}
+                  title={badge.title ?? task.podMessage ?? undefined}
                 >
-                  POD {podBadge.label}
-                </span>
-              )}
-              {staleTag && (
-                <span
-                  className={`px-1.5 py-0.5 rounded text-[9px] font-semibold border tracking-wide ${staleTag.className} whitespace-nowrap`}
-                  title={staleTag.title}
-                >
-                  {staleTag.label}
+                  {badge.label}
                 </span>
               )}
             </div>
@@ -207,20 +202,10 @@ export function MobileTaskDetail({
               pending question; keying this on questions alone left the one
               surface with no sidebar showing no sign that the agent was
               stopped waiting for a click. */}
-          {(pendingQuestion || pendingPermissions.length > 0) && (
-            <span className="px-1.5 py-0.5 rounded bg-primary/15 border border-primary/45 text-[9px] font-semibold text-primary tracking-wide flex-none whitespace-nowrap">
-              WAITING ON YOU
-            </span>
-          )}
           {cogitating && (
             <span className="flex items-center gap-1 text-[9px] font-semibold text-base-content/50 tracking-wide flex-none whitespace-nowrap">
               <span className="w-1.5 h-1.5 rounded-full bg-primary animate-fpulse" />
               THINKING
-            </span>
-          )}
-          {stalled && (
-            <span className="px-1.5 py-0.5 rounded bg-warning/15 border border-warning/45 text-[9px] font-semibold text-warning tracking-wide flex-none whitespace-nowrap">
-              STALLED
             </span>
           )}
           <div className="flex-1 flex gap-1 min-w-0">

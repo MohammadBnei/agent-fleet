@@ -214,9 +214,16 @@ switcher, no file attachments to the agent, no `@`-file mention, no
 
 Where the current UI falls down, i.e. what a rewrite should fix:
 
-1. **The two state axes are visually conflated.** Status, live state, pod
-   phase and staleness are four badges of near-identical weight in a row.
-   A user cannot tell "needs me" from "still booting" at a glance.
+1. ~~**The two state axes are visually conflated.**~~ **Partly fixed.**
+   Status, live state, pod phase and staleness used to render as four
+   badges of near-identical weight, producing pairs that restated each
+   other (`CANCELLED TERMINATED`) or outright contradicted each other
+   (`SCHEDULED DONE`). They are now a single precedence-ranked badge
+   (`sessionBadge` in `pages/TaskList.tsx`), ordered by what a human needs
+   to know first: needs-you → crashed → stale → stalled → done → in-motion
+   → workflow status. Demoted detail survives in the tooltip. **The
+   redesign should keep the ranking and give it far more visual weight than
+   a 8.5px chip** — the top of that order is the entire product.
 2. **The feed has almost no visual hierarchy.** A `$0.42 · 7 turns` result
    line, a compaction marker, and an agent's actual prose are all ~10px
    grey text. Tier 1 and Tier 4 look the same.
