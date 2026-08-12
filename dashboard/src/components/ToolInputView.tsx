@@ -5,7 +5,7 @@ import { JsonView } from "./JsonView";
 // Allow, so an Edit has to show what changes — a permission prompt whose
 // content is unreadable trains people to approve without looking.
 
-type Line = { kind: "context" | "add" | "remove"; text: string };
+export type Line = { kind: "context" | "add" | "remove"; text: string };
 
 // Line-level LCS. No diff library: the inputs here are one tool call's
 // before/after strings, and the whole thing is shorter than the adapter

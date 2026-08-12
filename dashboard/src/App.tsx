@@ -3,59 +3,72 @@ import { TaskList, ACTIVE_STATUSES } from "./pages/TaskList";
 import { TaskDetail } from "./pages/TaskDetail";
 import { Worktrees } from "./pages/Worktrees";
 import { Files } from "./pages/Files";
-import { ManageScheduledAuditsModal } from "./components/ManageScheduledAuditsModal";
+import { Audits } from "./pages/Audits";
 import { NewTaskDialog } from "./components/NewTaskDialog";
-import { ManageReposModal } from "./components/ManageReposModal";
-import { ManagePromptSnippetsModal } from "./components/ManagePromptSnippetsModal";
+import { SettingsMenu } from "./components/SettingsMenu";
+import { Segmented } from "./components/Segmented";
 import { MobileTaskList } from "./mobile/MobileTaskList";
 import { MobileTaskDetail } from "./mobile/MobileTaskDetail";
 import { client } from "./connectClient";
 import type { Task } from "./gen/agentfleet/v1/core_pb";
-import { latestTodos, type TodoItem } from "./transcript";
+import { listSummary, type ListSummary } from "./transcript";
 import { ErrorModal } from "./components/ErrorModal";
 import { ConfirmModal } from "./components/ConfirmModal";
+import { LogDrawer } from "./components/LogDrawer";
 import { useMediaQuery } from "./useMediaQuery";
+import { useTheme } from "./useTheme";
 
-// No router library for two views (see docs/adr/0013's plan) — state
-// mirrored to ?task=<id> so a task's detail view is still bookmarkable/
-// shareable without pulling in react-router for this little surface.
+// No router library (see docs/adr/0013's plan) — state mirrored to
+// ?view=/?task= so a session is still bookmarkable/shareable without pulling
+// in react-router for this surface.
 function readTaskIdFromUrl(): string | null {
   return new URLSearchParams(window.location.search).get("task");
 }
 
-// Worktrees (reliability-findings.md #2's manual cleanup view) and Files
-// (docs/adr/0030's shared file space) are additional top-level views, same
-// no-router/URL-param pattern as the task list/detail split above.
-function readViewFromUrl(): "tasks" | "worktrees" | "files" {
+export type View = "tasks" | "audits" | "worktrees" | "files";
+
+function readViewFromUrl(): View {
   const v = new URLSearchParams(window.location.search).get("view");
-  return v === "worktrees" || v === "files" ? v : "tasks";
+  return v === "worktrees" || v === "files" || v === "audits" ? v : "tasks";
 }
 
+const NAV: readonly { value: View; label: string }[] = [
+  { value: "tasks", label: "tasks" },
+  { value: "audits", label: "audits" },
+  { value: "worktrees", label: "worktrees" },
+  { value: "files", label: "files" },
+];
+
+// Mobile's bottom bar has less room; "trees" is the console mockup's own label.
+const MOBILE_NAV: readonly { value: View; label: string }[] = [
+  { value: "tasks", label: "tasks" },
+  { value: "audits", label: "audits" },
+  { value: "worktrees", label: "trees" },
+  { value: "files", label: "files" },
+];
+
 // Plain polling, not a stream — a second live feed just for the list is
-// unjustified scope for v1 (see docs/adr/0014); the detail view's
-// StreamTranscript RPC is where "live" actually matters. Lives here (not
-// inside TaskList) so TaskDetail's "rest of the herd" strip can share the
-// same fetched list instead of each view polling independently.
+// unjustified scope (docs/adr/0014); the detail view's StreamTranscript RPC is
+// where "live" actually matters. Lives here rather than inside TaskList so the
+// detail view can share the same fetched list instead of polling again.
 const POLL_INTERVAL_MS = 5000;
 
 export default function App() {
-  // Matches Tailwind's `sm:` breakpoint. Desktop (TaskDetail) and mobile
-  // (MobileTaskDetail) used to both mount unconditionally, just CSS-hidden
-  // via `hidden sm:*`/`sm:hidden` — each ran its own useTaskDetail, meaning
-  // two independent StreamTranscript subscriptions polling the same task
-  // concurrently whenever a task was open. Gating the mount itself on the
-  // actual viewport instead of hiding one with CSS stops that duplicate
-  // background streaming outright.
+  // Matches Tailwind's `sm:`. Desktop and mobile detail views used to both
+  // mount, CSS-hidden — each ran its own useTaskDetail, so two independent
+  // StreamTranscript subscriptions polled the same task concurrently whenever
+  // one was open. Gating the mount on the real viewport is what stops that.
   const isDesktop = useMediaQuery("(min-width: 640px)");
-  const [view, setView] = useState<"tasks" | "worktrees" | "files">(readViewFromUrl);
-  const [selectedId, setSelectedId] = useState<string | null>(
-    readTaskIdFromUrl,
-  );
+  const [theme, setTheme] = useTheme();
+  const [view, setView] = useState<View>(readViewFromUrl);
+  const [selectedId, setSelectedId] = useState<string | null>(readTaskIdFromUrl);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [tasksError, setTasksError] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
-  const [todosById, setTodosById] = useState<Map<string, TodoItem[]>>(new Map());
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [summaries, setSummaries] = useState<Map<string, ListSummary>>(new Map());
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const [logTaskId, setLogTaskId] = useState<string | null>(null);
 
   const loadTasks = useCallback(() => {
     return client
@@ -70,23 +83,25 @@ export default function App() {
     return () => clearInterval(interval);
   }, [loadTasks]);
 
-  // Straight off the already-polled task list — core's activityTrackingStore
-  // decorator (cmd/core/activity_store.go) maintains awaiting_human on every
-  // permission_request/question append and clears it on the matching
-  // resolution, so this needs no per-task fetch at all (it used to, before
-  // that backend field existed — see git history if resurrecting the old
-  // question-only, N+1-getTranscript version is ever needed).
-  const needsYouIds = useMemo(() => new Set(tasks.filter((t) => t.awaitingHuman).map((t) => t.id)), [tasks]);
+  // Straight off the already-polled list — core's activityTrackingStore
+  // maintains awaiting_human on every permission_request/question append and
+  // clears it on the matching resolution, so this needs no per-task fetch.
+  const needsYouIds = useMemo(
+    () => new Set(tasks.filter((t) => t.awaitingHuman).map((t) => t.id)),
+    [tasks],
+  );
 
-  // Each task's real todos (latest TodoWrite call) for the list cards'
-  // progress bars — still needs a per-task transcript fetch (no backend
-  // summary field for this one), scoped to ACTIVE_STATUSES tasks only,
-  // bounded by the fleet's default concurrency cap of 5 (see CLAUDE.md), on
-  // the same 5s poll cadence as loadTasks.
+  // One transcript fetch per active session, feeding everything both list views
+  // show beyond the Task row itself: the todo bar, the in-flight tool line, and
+  // — the point of the rewrite — the actual pending decision, rendered inline so
+  // a blocked session can be answered without opening it. Scoped to
+  // ACTIVE_STATUSES, so it's bounded by the fleet's concurrency cap of 5, on the
+  // same 5s cadence as loadTasks. No new RPC: this fetch already existed for the
+  // todo bars alone.
   useEffect(() => {
     const active = tasks.filter((t) => ACTIVE_STATUSES.has(t.status));
     if (active.length === 0) {
-      setTodosById(new Map());
+      setSummaries(new Map());
       return;
     }
     let cancelled = false;
@@ -94,43 +109,52 @@ export default function App() {
       active.map((t) =>
         client
           .getTranscript({ taskId: t.id, sinceSeq: 0n })
-          .then((res) => ({ id: t.id, todos: latestTodos(res.entries) }))
-          .catch(() => ({ id: t.id, todos: null as TodoItem[] | null })),
+          .then((res) => [t.id, listSummary(res.entries)] as const)
+          .catch(() => null),
       ),
     ).then((results) => {
       if (cancelled) return;
-      setTodosById(new Map(results.filter((r): r is typeof r & { todos: TodoItem[] } => r.todos !== null).map((r) => [r.id, r.todos])));
+      setSummaries(new Map(results.filter((r): r is NonNullable<typeof r> => r !== null)));
     });
     return () => {
       cancelled = true;
     };
   }, [tasks]);
 
+  function pushUrl(next: View, taskId: string | null) {
+    const url = new URL(window.location.href);
+    if (next !== "tasks") url.searchParams.set("view", next);
+    else url.searchParams.delete("view");
+    if (taskId) url.searchParams.set("task", taskId);
+    else url.searchParams.delete("task");
+    window.history.pushState({}, "", url);
+  }
+
   function selectTask(id: string) {
     setSelectedId(id);
     setView("tasks");
-    const url = new URL(window.location.href);
-    url.searchParams.set("task", id);
-    url.searchParams.delete("view");
-    window.history.pushState({}, "", url);
+    pushUrl("tasks", id);
   }
 
-  // Only real caller today is the mobile back button — desktop's split-pane
-  // layout has no "go back", it just leaves the "select a task" placeholder
-  // showing when nothing's selected.
+  // The console's detail view is full-width, so unlike the old split-pane
+  // layout every form factor now has a real "back to the list".
   function clearSelection() {
     setSelectedId(null);
-    const url = new URL(window.location.href);
-    url.searchParams.delete("task");
-    window.history.pushState({}, "", url);
+    pushUrl(view === "tasks" ? "tasks" : view, null);
   }
 
-  // Force-tears-down any live session then soft-deletes the task (see
-  // docs/adr for DashboardService.DeleteTask) — used by both the desktop
-  // TaskList's per-row delete button and the mobile session screen's "⋯".
-  // Confirmation is a ConfirmModal, not window.confirm (native dialogs
-  // can't be themed and block the render thread) — deleteTask just opens
-  // it; confirmDeleteTask does the actual call.
+  function selectView(next: View) {
+    setView(next);
+    // Leaving the tasks view drops the open session: the nav is between
+    // top-level places, and coming back to a stale ?task= would be surprising.
+    const keepTask = next === "tasks" ? selectedId : null;
+    if (next !== "tasks") setSelectedId(null);
+    pushUrl(next, keepTask);
+  }
+
+  // Force-tears-down any live session then soft-deletes the task. Confirmation
+  // is a ConfirmModal, not window.confirm (native dialogs can't be themed and
+  // block the render thread).
   function deleteTask(id: string) {
     setPendingDeleteId(id);
   }
@@ -148,119 +172,148 @@ export default function App() {
       .catch((err: Error) => setTasksError(err.message));
   }
 
-  function selectView(next: "tasks" | "worktrees" | "files") {
-    setView(next);
-    const url = new URL(window.location.href);
-    if (next !== "tasks") url.searchParams.set("view", next);
-    else url.searchParams.delete("view");
-    window.history.pushState({}, "", url);
-  }
+  const retryTask = useCallback(
+    (id: string) => {
+      client
+        .retryTask({ taskId: id })
+        .then(() => loadTasks())
+        .catch((err: Error) => setTasksError(err.message));
+    },
+    [loadTasks],
+  );
 
-  const needsYouCount = useMemo(
-    () => tasks.filter((t) => needsYouIds.has(t.id)).length,
-    [tasks, needsYouIds],
-  );
-  // "sessions live" means running, not "ever returned by listTasks" — the
-  // backend keeps returning done/failed/cancelled tasks (list history), so
-  // tasks.length alone never decrements.
-  const liveCount = useMemo(
-    () => tasks.filter((t) => ACTIVE_STATUSES.has(t.status)).length,
-    [tasks],
-  );
+  // The header's live census. `liveState` is server-derived (docs/adr/0040), so
+  // every client agrees on what "working" means.
+  const counts = useMemo(() => {
+    const waiting = tasks.filter((t) => t.awaitingHuman || t.status === "proposed").length;
+    const working = tasks.filter((t) => ACTIVE_STATUSES.has(t.status) && !t.awaitingHuman).length;
+    const done = tasks.filter((t) => t.liveState === "done").length;
+    return { waiting, working, done, idle: Math.max(0, tasks.length - waiting - working - done) };
+  }, [tasks]);
+
   const repoCount = useMemo(
     () => new Set(tasks.filter((t) => t.kind !== "thot").map((t) => t.repo)).size,
     [tasks],
   );
+
   const filteredTasks = useMemo(() => {
     const q = filter.trim().toLowerCase();
     if (!q) return tasks;
     return tasks.filter(
-      (t) =>
-        t.repo.toLowerCase().includes(q) ||
-        t.description.toLowerCase().includes(q),
+      (t) => t.repo.toLowerCase().includes(q) || t.description.toLowerCase().includes(q),
     );
   }, [tasks, filter]);
 
+  const proposed = useMemo(() => tasks.filter((t) => t.status === "proposed"), [tasks]);
+
+  const shared = {
+    tasks: filteredTasks,
+    summaries,
+    needsYouIds,
+    onSelect: selectTask,
+    onDelete: deleteTask,
+    onRetry: retryTask,
+    onOpenLogs: setLogTaskId,
+    reload: loadTasks,
+  };
+
   return (
-    // h-dvh (dynamic viewport height), not h-screen (100vh) — 100vh is
-    // pinned to the largest possible viewport on mobile browsers, so it
-    // doesn't shrink when the on-screen keyboard opens; the composer at the
-    // bottom of the flex column ends up rendered underneath the keyboard
-    // instead of above it. h-dvh tracks the actual visible viewport.
-    <div className="h-dvh overflow-hidden bg-base-100 grid grid-rows-[auto_1fr]">
-      {/* Desktop chrome — the mobile view (below) has its own header inside
-          MobileTaskList/MobileTaskDetail, matching the "herd" mock's phone
-          screens, which don't share this row at all. */}
-      {isDesktop && (
-      <div className="flex row-start-1 items-center gap-5 px-5 h-13 border-b border-base-content/10 bg-base-200">
-        <div className="flex items-baseline gap-2">
-          <span className="font-display font-semibold text-base">herd</span>
-          <span className="text-[10.5px] text-base-content/50">
-            agent-fleet · ukubi-cluster
+    // h-dvh, not h-screen: 100vh is pinned to the largest possible viewport on
+    // mobile browsers, so it doesn't shrink when the keyboard opens and the
+    // composer ends up underneath it. h-dvh tracks the visible viewport.
+    <div className="h-dvh overflow-hidden bg-base-100 text-base-content flex flex-col">
+      {isDesktop ? (
+        <div className="flex-none flex items-center gap-4 px-4.5 py-3 border-b border-line bg-base-200">
+          <span className="text-[15px] font-semibold tracking-[0.02em] text-primary">herd</span>
+          <span className="text-[11.5px] text-dim2 whitespace-nowrap">
+            ukubi-cluster · {repoCount} repos
           </span>
-        </div>
+          <Segmented value={view} options={NAV} onChange={selectView} className="ml-1" />
 
-        {needsYouCount > 0 && (
-          <div className="flex items-center gap-2 px-2.5 py-1 rounded-md border border-primary/45 bg-primary/10">
-            <span className="w-1.5 h-1.5 rounded-full bg-primary animate-fpulse" />
-            <span className="text-[10.5px] text-primary font-medium">
-              {needsYouCount} waiting on you
-            </span>
-          </div>
-        )}
+          {counts.waiting > 0 && (
+            <button
+              type="button"
+              onClick={() => selectView("tasks")}
+              className="flex items-center gap-2 cursor-pointer ml-auto"
+            >
+              <span className="w-[7px] h-[7px] rounded-full bg-error ring-glow animate-fpulse" />
+              <span className="text-[12.5px] font-medium text-error whitespace-nowrap">
+                {counts.waiting} waiting on you
+              </span>
+            </button>
+          )}
+          <span className={`text-[11.5px] text-dim2 whitespace-nowrap ${counts.waiting > 0 ? "" : "ml-auto"}`}>
+            {counts.working} working · {counts.done} done · {counts.idle} idle
+          </span>
 
-        <div className="flex items-center gap-4 text-[10.5px] text-base-content/50">
+          {view === "tasks" && (
+            <label className="flex items-center gap-2 border border-line px-2.5 py-1 w-[150px] text-[11.5px] text-dim2 focus-within:border-primary/60">
+              <span aria-hidden>⌕</span>
+              <input
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+                placeholder="filter"
+                aria-label="filter sessions"
+                className="bg-transparent outline-none min-w-0 flex-1 text-base-content placeholder:text-dim2"
+              />
+            </label>
+          )}
           <NewTaskDialog
             onCreated={(id) => {
               loadTasks();
               selectTask(id);
             }}
           />
-          <ManageScheduledAuditsModal />
-          <ManageReposModal />
-          <ManagePromptSnippetsModal />
-          <span>{liveCount} sessions live</span>
-          <span>{repoCount} repos</span>
+          <SettingsMenu theme={theme} onThemeChange={setTheme} />
         </div>
-
-        <div className="flex items-center gap-1 text-[10.5px]">
-          <button
-            type="button"
-            onClick={() => selectView("tasks")}
-            className={`px-2.5 py-1 rounded-md ${view === "tasks" ? "bg-base-content/10 text-base-content" : "text-base-content/50 hover:text-base-content"}`}
-          >
-            Tasks
-          </button>
-          <button
-            type="button"
-            onClick={() => selectView("worktrees")}
-            className={`px-2.5 py-1 rounded-md ${view === "worktrees" ? "bg-base-content/10 text-base-content" : "text-base-content/50 hover:text-base-content"}`}
-          >
-            Worktrees
-          </button>
-          <button
-            type="button"
-            onClick={() => selectView("files")}
-            className={`px-2.5 py-1 rounded-md ${view === "files" ? "bg-base-content/10 text-base-content" : "text-base-content/50 hover:text-base-content"}`}
-          >
-            Files
-          </button>
-        </div>
-
-        {view === "tasks" && (
-          <div className="ml-auto flex items-center gap-2.5">
-            <div className="flex items-center gap-2 px-2.5 py-1.5 border border-base-content/10 rounded-md text-[10.5px] text-base-content/50 w-48 focus-within:border-base-content/25">
-              <span>⌕</span>
+      ) : (
+        <div className="flex-none border-b border-line bg-base-200">
+          <div className="flex items-center gap-2.5 px-3.5 py-2.5">
+            <span className="text-[15px] font-semibold text-primary">herd</span>
+            <span className="text-[10.5px] text-dim2">ukubi</span>
+            {counts.waiting > 0 && (
+              <button
+                type="button"
+                onClick={() => selectView("tasks")}
+                className="ml-auto flex items-center gap-1.5 border border-pink-line bg-pink-chip px-2 py-[3px] cursor-pointer"
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-error ring-glow animate-fpulse" />
+                <span className="text-[12px] font-medium text-error whitespace-nowrap">
+                  {counts.waiting} waiting
+                </span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setSearchOpen((v) => !v)}
+              aria-label="Filter sessions"
+              aria-expanded={searchOpen}
+              className={`text-[14px] px-1 ${counts.waiting > 0 ? "" : "ml-auto"} ${searchOpen ? "text-primary" : "text-dim"}`}
+            >
+              ⌕
+            </button>
+            <NewTaskDialog
+              compact
+              onCreated={(id) => {
+                loadTasks();
+                selectTask(id);
+              }}
+            />
+            <SettingsMenu theme={theme} onThemeChange={setTheme} />
+          </div>
+          {searchOpen && (
+            <div className="px-3.5 pb-2.5">
               <input
+                autoFocus
                 value={filter}
                 onChange={(e) => setFilter(e.target.value)}
                 placeholder="filter sessions"
-                className="bg-transparent outline-none flex-1 text-base-content placeholder:text-base-content/40"
+                aria-label="filter sessions"
+                className="w-full border border-line bg-transparent px-2.5 py-2 text-[12px] outline-none focus:border-primary/60 placeholder:text-dim2"
               />
             </div>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
       )}
 
       <ErrorModal message={tasksError} onClose={() => setTasksError(null)} />
@@ -270,71 +323,40 @@ export default function App() {
         onConfirm={confirmDeleteTask}
         onCancel={() => setPendingDeleteId(null)}
       />
+      <LogDrawer taskId={logTaskId} onClose={() => setLogTaskId(null)} />
 
-      {isDesktop ? (
-      <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] row-start-2 min-h-0">
+      {/* min-w-0 alongside min-h-0: a flex item's min-width defaults to auto, so
+          any descendant with a large min-content width (a long URL, a nowrap
+          string) silently widens this past the viewport instead of clipping. */}
+      <div className="flex-1 min-h-0 min-w-0 flex flex-col">
         {view === "worktrees" ? (
-          <Worktrees />
+          <Worktrees onSelectTask={selectTask} />
         ) : view === "files" ? (
           <Files />
-        ) : (
-          <>
-            <div className="border-b lg:border-b-0 lg:border-r border-base-content/10 bg-base-200 overflow-y-auto min-h-0">
-              <TaskList
-                tasks={filteredTasks}
-                selectedId={selectedId}
-                needsYouIds={needsYouIds}
-                todosById={todosById}
-                onSelect={selectTask}
-                onDelete={deleteTask}
-              />
-            </div>
-            <div className="min-w-0 min-h-0">
-              {selectedId ? (
-                <TaskDetail taskId={selectedId} tasks={tasks} onSelect={selectTask} onClosed={clearSelection} />
-              ) : (
-                <div className="h-full flex flex-col items-center justify-center gap-2 text-base-content/30">
-                  <span className="text-4xl">⌕</span>
-                  <span className="text-[12px]">Select a task to view details</span>
-                </div>
-              )}
-            </div>
-          </>
-        )}
-      </div>
-      ) : (
-      // min-w-0 alongside min-h-0: a grid item defaults to min-width:auto, so
-      // any descendant with a large min-content width (a nowrap/truncate
-      // string, a long URL) silently widens this column past the viewport
-      // instead of being clipped or ellipsised.
-      <div className="row-start-2 min-h-0 min-w-0 flex flex-col">
-        {view === "worktrees" ? (
-          <Worktrees onBack={() => selectView("tasks")} />
-        ) : view === "files" ? (
-          <Files onBack={() => selectView("tasks")} />
+        ) : view === "audits" ? (
+          <Audits proposed={proposed} onSelectTask={selectTask} reloadTasks={loadTasks} />
         ) : selectedId ? (
-          <MobileTaskDetail taskId={selectedId} onBack={clearSelection} onDelete={() => deleteTask(selectedId)} />
+          isDesktop ? (
+            <TaskDetail taskId={selectedId} tasks={tasks} onBack={clearSelection} onClosed={clearSelection} />
+          ) : (
+            <MobileTaskDetail taskId={selectedId} onBack={clearSelection} onDelete={() => deleteTask(selectedId)} />
+          )
+        ) : isDesktop ? (
+          <TaskList {...shared} />
         ) : (
-          <MobileTaskList
-            tasks={tasks}
-            filteredTasks={filteredTasks}
-            needsYouIds={needsYouIds}
-            todosById={todosById}
-            needsYouCount={needsYouCount}
-            liveCount={liveCount}
-            repoCount={repoCount}
-            filter={filter}
-            setFilter={setFilter}
-            onSelect={selectTask}
-            onOpenWorktrees={() => selectView("worktrees")}
-            onOpenFiles={() => selectView("files")}
-            onCreated={(id) => {
-              loadTasks();
-              selectTask(id);
-            }}
-          />
+          <MobileTaskList {...shared} />
         )}
       </div>
+
+      {!isDesktop && (
+        <Segmented
+          value={view}
+          options={MOBILE_NAV}
+          onChange={selectView}
+          grow
+          size="lg"
+          className="flex-none border-x-0 border-b-0 border-t"
+        />
       )}
     </div>
   );

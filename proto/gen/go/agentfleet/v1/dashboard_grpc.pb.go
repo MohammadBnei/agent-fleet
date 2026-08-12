@@ -60,6 +60,8 @@ const (
 	DashboardService_CreateScheduledAudit_FullMethodName = "/agentfleet.v1.DashboardService/CreateScheduledAudit"
 	DashboardService_UpdateScheduledAudit_FullMethodName = "/agentfleet.v1.DashboardService/UpdateScheduledAudit"
 	DashboardService_DeleteScheduledAudit_FullMethodName = "/agentfleet.v1.DashboardService/DeleteScheduledAudit"
+	DashboardService_RunScheduledAuditNow_FullMethodName = "/agentfleet.v1.DashboardService/RunScheduledAuditNow"
+	DashboardService_RetryTask_FullMethodName            = "/agentfleet.v1.DashboardService/RetryTask"
 )
 
 // DashboardServiceClient is the client API for DashboardService service.
@@ -135,6 +137,8 @@ type DashboardServiceClient interface {
 	CreateScheduledAudit(ctx context.Context, in *CreateScheduledAuditRequest, opts ...grpc.CallOption) (*CreateScheduledAuditResponse, error)
 	UpdateScheduledAudit(ctx context.Context, in *UpdateScheduledAuditRequest, opts ...grpc.CallOption) (*UpdateScheduledAuditResponse, error)
 	DeleteScheduledAudit(ctx context.Context, in *DeleteScheduledAuditRequest, opts ...grpc.CallOption) (*DeleteScheduledAuditResponse, error)
+	RunScheduledAuditNow(ctx context.Context, in *RunScheduledAuditNowRequest, opts ...grpc.CallOption) (*RunScheduledAuditNowResponse, error)
+	RetryTask(ctx context.Context, in *RetryTaskRequest, opts ...grpc.CallOption) (*RetryTaskResponse, error)
 }
 
 type dashboardServiceClient struct {
@@ -564,6 +568,26 @@ func (c *dashboardServiceClient) DeleteScheduledAudit(ctx context.Context, in *D
 	return out, nil
 }
 
+func (c *dashboardServiceClient) RunScheduledAuditNow(ctx context.Context, in *RunScheduledAuditNowRequest, opts ...grpc.CallOption) (*RunScheduledAuditNowResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RunScheduledAuditNowResponse)
+	err := c.cc.Invoke(ctx, DashboardService_RunScheduledAuditNow_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dashboardServiceClient) RetryTask(ctx context.Context, in *RetryTaskRequest, opts ...grpc.CallOption) (*RetryTaskResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RetryTaskResponse)
+	err := c.cc.Invoke(ctx, DashboardService_RetryTask_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // DashboardServiceServer is the server API for DashboardService service.
 // All implementations must embed UnimplementedDashboardServiceServer
 // for forward compatibility.
@@ -637,6 +661,8 @@ type DashboardServiceServer interface {
 	CreateScheduledAudit(context.Context, *CreateScheduledAuditRequest) (*CreateScheduledAuditResponse, error)
 	UpdateScheduledAudit(context.Context, *UpdateScheduledAuditRequest) (*UpdateScheduledAuditResponse, error)
 	DeleteScheduledAudit(context.Context, *DeleteScheduledAuditRequest) (*DeleteScheduledAuditResponse, error)
+	RunScheduledAuditNow(context.Context, *RunScheduledAuditNowRequest) (*RunScheduledAuditNowResponse, error)
+	RetryTask(context.Context, *RetryTaskRequest) (*RetryTaskResponse, error)
 	mustEmbedUnimplementedDashboardServiceServer()
 }
 
@@ -769,6 +795,12 @@ func (UnimplementedDashboardServiceServer) UpdateScheduledAudit(context.Context,
 }
 func (UnimplementedDashboardServiceServer) DeleteScheduledAudit(context.Context, *DeleteScheduledAuditRequest) (*DeleteScheduledAuditResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeleteScheduledAudit not implemented")
+}
+func (UnimplementedDashboardServiceServer) RunScheduledAuditNow(context.Context, *RunScheduledAuditNowRequest) (*RunScheduledAuditNowResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RunScheduledAuditNow not implemented")
+}
+func (UnimplementedDashboardServiceServer) RetryTask(context.Context, *RetryTaskRequest) (*RetryTaskResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RetryTask not implemented")
 }
 func (UnimplementedDashboardServiceServer) mustEmbedUnimplementedDashboardServiceServer() {}
 func (UnimplementedDashboardServiceServer) testEmbeddedByValue()                          {}
@@ -1522,6 +1554,42 @@ func _DashboardService_DeleteScheduledAudit_Handler(srv interface{}, ctx context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DashboardService_RunScheduledAuditNow_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RunScheduledAuditNowRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DashboardServiceServer).RunScheduledAuditNow(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DashboardService_RunScheduledAuditNow_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DashboardServiceServer).RunScheduledAuditNow(ctx, req.(*RunScheduledAuditNowRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DashboardService_RetryTask_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RetryTaskRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DashboardServiceServer).RetryTask(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DashboardService_RetryTask_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DashboardServiceServer).RetryTask(ctx, req.(*RetryTaskRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // DashboardService_ServiceDesc is the grpc.ServiceDesc for DashboardService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1688,6 +1756,14 @@ var DashboardService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DeleteScheduledAudit",
 			Handler:    _DashboardService_DeleteScheduledAudit_Handler,
+		},
+		{
+			MethodName: "RunScheduledAuditNow",
+			Handler:    _DashboardService_RunScheduledAuditNow_Handler,
+		},
+		{
+			MethodName: "RetryTask",
+			Handler:    _DashboardService_RetryTask_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

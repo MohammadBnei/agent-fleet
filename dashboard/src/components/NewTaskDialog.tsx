@@ -5,8 +5,12 @@ import type { PromptSnippet } from "../gen/agentfleet/v1/dashboard_pb";
 
 export function NewTaskDialog({
   onCreated,
+  // Mobile's top bar has room for a glyph, not a label — the console mobile
+  // mockup shows this as a bare "+".
+  compact = false,
 }: {
   onCreated: (taskId: string) => void;
+  compact?: boolean;
 }) {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [repoNames, setRepoNames] = useState<string[]>([]);
@@ -84,9 +88,14 @@ export function NewTaskDialog({
       <button
         type="button"
         onClick={open}
-        className="px-3 py-1.5 rounded-md bg-base-content text-base-100 text-[11px] font-semibold hover:opacity-90"
+        aria-label="Send a task"
+        className={
+          compact
+            ? "text-[15px] text-dim hover:text-primary px-1 flex-none"
+            : "flex-none border border-acc-line px-3 py-1.5 text-[11.5px] hover:border-primary hover:text-primary"
+        }
       >
-        + send a task
+        {compact ? "+" : "+ send a task"}
       </button>
 
       <Modal open={dialogOpen} onClose={close}>

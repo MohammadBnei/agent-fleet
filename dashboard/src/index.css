@@ -1,36 +1,182 @@
-@import url("https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600&family=IBM+Plex+Mono:wght@400;500;600&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap");
 @import "tailwindcss";
 @plugin "daisyui" {
   themes: false;
 }
+
+/* Two themes, both straight out of the console mockups (Agent Fleet
+   Console.dc.html / Agent Fleet Console Mobile.dc.html, which ship the
+   identical token blocks). The mockups' semantic intent, so every existing
+   component reskins without being touched:
+     acc/--primary  violet   the interactive accent
+     pink/--error   pink     BLOCKED — a session waiting on a human
+     orange/--warning        alarms (auth failure, model error, resume failed)
+     green/--success         shipped
+     amber/--info            in motion (working, provisioning)
+   Radius is 0 everywhere: the mockups are square-cornered throughout. */
 @plugin "daisyui/theme" {
   name: "herd";
   default: true;
   color-scheme: dark;
-  --color-base-100: #100f0c;
-  --color-base-200: #14130f;
-  --color-base-300: #1c1b15;
-  --color-base-content: #eae7de;
-  --color-primary: #e0a94e;
-  --color-primary-content: #100f0c;
-  --color-secondary: #7ba3dd;
-  --color-secondary-content: #100f0c;
-  --color-accent: #7ba3dd;
-  --color-accent-content: #100f0c;
-  --color-neutral: #1c1b15;
-  --color-neutral-content: #eae7de;
-  --color-info: #7ba3dd;
-  --color-info-content: #100f0c;
-  --color-success: #7fa07c;
-  --color-success-content: #100f0c;
-  --color-warning: #c58b6a;
-  --color-warning-content: #100f0c;
-  --color-error: #c58b6a;
-  --color-error-content: #100f0c;
-  --radius-selector: 0.35rem;
-  --radius-field: 0.35rem;
-  --radius-box: 0.5rem;
+  --color-base-100: #0f0e14;
+  --color-base-200: #14121a;
+  --color-base-300: #1a1722;
+  --color-base-content: #d7d1e0;
+  --color-primary: #b9a2f7;
+  --color-primary-content: #14121a;
+  --color-secondary: #a49cb5;
+  --color-secondary-content: #14121a;
+  --color-accent: #b9a2f7;
+  --color-accent-content: #14121a;
+  --color-neutral: #1a1722;
+  --color-neutral-content: #d7d1e0;
+  --color-info: #e2be6a;
+  --color-info-content: #14121a;
+  --color-success: #6ee7a8;
+  --color-success-content: #14121a;
+  --color-warning: #e8845f;
+  --color-warning-content: #14121a;
+  --color-error: #f2749b;
+  --color-error-content: #14121a;
+  --radius-selector: 0;
+  --radius-field: 0;
+  --radius-box: 0;
   --border: 1px;
+}
+
+@plugin "daisyui/theme" {
+  name: "herd-light";
+  color-scheme: light;
+  --color-base-100: #e9e5dd;
+  --color-base-200: #f8f6f2;
+  --color-base-300: #efebe4;
+  --color-base-content: #262330;
+  --color-primary: #6a4fd0;
+  --color-primary-content: #ffffff;
+  --color-secondary: #4a4557;
+  --color-secondary-content: #ffffff;
+  --color-accent: #6a4fd0;
+  --color-accent-content: #ffffff;
+  --color-neutral: #efebe4;
+  --color-neutral-content: #262330;
+  --color-info: #96690a;
+  --color-info-content: #ffffff;
+  --color-success: #1d7a51;
+  --color-success-content: #ffffff;
+  --color-warning: #ac4f1c;
+  --color-warning-content: #ffffff;
+  --color-error: #c0325f;
+  --color-error-content: #ffffff;
+  --radius-selector: 0;
+  --radius-field: 0;
+  --radius-box: 0;
+  --border: 1px;
+}
+
+/* The mockups' remaining tokens — the derived shades DaisyUI has no name for
+   (hairlines at three depths, the muted text ramp, and the tinted
+   surface/border pair each status colour carries). Kept as raw custom
+   properties rather than approximated with `base-content/NN` opacity so the
+   ported markup can use the same values the mockups do; the opacity ramp
+   already in the codebase is left alone and still reads correctly on both
+   backgrounds. */
+[data-theme="herd"] {
+  --line: #2e2839;
+  --line2: #242030;
+  --line3: #1e1a28;
+  --text2: #a49cb5;
+  --dim: #837b96;
+  --dim2: #6f6880;
+  --code: #100f16;
+  --acc-hi: #d3c3ff;
+  --acc-line: #3d3550;
+  --pink-line: #6b3c50;
+  --pink-bg: #1a1520;
+  --pink-dim: #a4849a;
+  --pink-wash: rgba(242, 116, 155, 0.07);
+  --pink-chip: rgba(242, 116, 155, 0.09);
+  --pink-glow: rgba(242, 116, 155, 0.16);
+  --minus: #e88098;
+  --green-soft: #7fd6a4;
+  --green-dot: #3f6f57;
+  --green-line: #2b4a3c;
+  --green-bg: #141c19;
+  --plus-bg: rgba(110, 231, 168, 0.06);
+  --orange-line: #5a3340;
+  --orange-bg: #1a1418;
+  --orange-wash: rgba(232, 132, 95, 0.05);
+}
+
+[data-theme="herd-light"] {
+  --line: #cdc6b9;
+  --line2: #ded8cd;
+  --line3: #e6e1d8;
+  --text2: #4a4557;
+  --dim: #6d6779;
+  --dim2: #7b7488;
+  --code: #f3f0ea;
+  --acc-hi: #5540b5;
+  --acc-line: #c8bcee;
+  --pink-line: #e3b6c4;
+  --pink-bg: #fdf2f5;
+  --pink-dim: #96566d;
+  --pink-wash: rgba(192, 50, 95, 0.07);
+  --pink-chip: rgba(192, 50, 95, 0.09);
+  --pink-glow: rgba(192, 50, 95, 0.18);
+  --minus: #b93f65;
+  --green-soft: #23855a;
+  --green-dot: #4aa478;
+  --green-line: #b6d9c4;
+  --green-bg: #f0f7f2;
+  --plus-bg: rgba(29, 122, 81, 0.09);
+  --orange-line: #e5c2ab;
+  --orange-bg: #fdf4ee;
+  --orange-wash: rgba(172, 79, 28, 0.06);
+}
+
+/* Tailwind's `rounded-*` scale is independent of DaisyUI's --radius-* tokens:
+   zeroing those squares DaisyUI's own components (btn, modal, badge) but leaves
+   every explicit `rounded-md`/`rounded-lg` in the codebase rounded. The mockups
+   are square throughout, so zero the scale here rather than hunt ~200 class
+   names. `rounded-full` is deliberately untouched — Tailwind hardcodes it, and
+   the status dots are genuinely circles. */
+@theme {
+  --radius-xs: 0;
+  --radius-sm: 0;
+  --radius-md: 0;
+  --radius-lg: 0;
+  --radius-xl: 0;
+  --radius-2xl: 0;
+  --radius-3xl: 0;
+  --radius-4xl: 0;
+}
+
+/* `inline` so the generated utilities emit `var(--line)` rather than copying
+   the value — that's what lets one class follow the theme switch. */
+@theme inline {
+  --color-line: var(--line);
+  --color-line2: var(--line2);
+  --color-line3: var(--line3);
+  --color-text2: var(--text2);
+  --color-dim: var(--dim);
+  --color-dim2: var(--dim2);
+  --color-code: var(--code);
+  --color-acc-hi: var(--acc-hi);
+  --color-acc-line: var(--acc-line);
+  --color-pink-line: var(--pink-line);
+  --color-pink-bg: var(--pink-bg);
+  --color-pink-dim: var(--pink-dim);
+  --color-pink-wash: var(--pink-wash);
+  --color-pink-chip: var(--pink-chip);
+  --color-minus: var(--minus);
+  --color-green-soft: var(--green-soft);
+  --color-green-dot: var(--green-dot);
+  --color-green-line: var(--green-line);
+  --color-green-bg: var(--green-bg);
+  --color-plus-bg: var(--plus-bg);
+  --color-orange-line: var(--orange-line);
+  --color-orange-bg: var(--orange-bg);
+  --color-orange-wash: var(--orange-wash);
 }
 
 @layer base {
@@ -38,11 +184,14 @@
     font-family: "IBM Plex Mono", ui-monospace, monospace;
     -webkit-font-smoothing: antialiased;
   }
+  /* The mockups are mono throughout — headings are weight, not a second
+     family. `.font-display` survives as an alias so no component that used it
+     needs editing. */
   h1,
   h2,
   h3,
   .font-display {
-    font-family: "Bricolage Grotesque", sans-serif;
+    font-weight: 600;
     letter-spacing: -0.01em;
   }
   ::selection {
@@ -63,4 +212,14 @@
 
 .animate-fpulse {
   animation: fpulse 1.8s infinite;
+}
+
+/* The pink halo on the "waiting on you" dot, and the striped indeterminate bar
+   a PROVISIONING row uses in place of a todo tick bar. */
+.ring-glow {
+  box-shadow: 0 0 0 3px var(--pink-glow);
+}
+
+.bar-provisioning {
+  background: repeating-linear-gradient(90deg, var(--acc-line) 0 7px, var(--line3) 7px 14px);
 }

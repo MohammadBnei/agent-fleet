@@ -217,6 +217,37 @@ func (s *Store) ApproveProposal(ctx context.Context, id string) (bool, error) {
 	return true, nil
 }
 
+// Retry puts a terminally-failed task back in the dispatch queue, returning
+// false if it wasn't in a failed state. Retry used to be automatic-only:
+// ClaimNextTask reclaims a stale-heartbeat task until retry_count hits the cap,
+// then sets failed_permanently — which had no path back, so a task that died of
+// an expired OAuth token stayed dead after the token was fixed.
+//
+// Guarded inside the UPDATE for the same reason ApproveProposal is: two clicks
+// must not queue one task twice. Resetting retry_count is the point — leaving it
+// at the cap means ClaimNextTask's very first reclaim sends it straight back to
+// failed_permanently. last_error is kept: it's the evidence of what went wrong,
+// and a retry that fails the same way should read as a second occurrence, not a
+// first.
+func (s *Store) Retry(ctx context.Context, id string) (bool, error) {
+	tag, err := s.pool.Exec(ctx, `
+		UPDATE tasks SET status = 'pending', retry_count = 0, updated_at = now()
+		WHERE id = $1 AND status IN ('failed', 'failed_permanently') AND deleted_at IS NULL
+	`, id)
+	if err != nil {
+		slog.Error("tasks Retry", "taskId", id, "error", err)
+		return false, fmt.Errorf("retry task: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return false, nil
+	}
+	slog.Info("tasks Retry", "taskId", id)
+	if s.nudge != nil {
+		s.nudge()
+	}
+	return true, nil
+}
+
 func (s *Store) FindTaskIDByThread(ctx context.Context, threadID string) (string, error) {
 	var id string
 	err := s.pool.QueryRow(ctx, `SELECT id FROM tasks WHERE discord_thread_id = $1`, threadID).Scan(&id)

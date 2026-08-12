@@ -1,10 +1,19 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="herd">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>herd · agent-fleet</title>
+    <!-- Applied before first paint, not from React — reading the stored theme
+         in a hook runs after the initial render, which flashes the dark
+         default at every light-theme user on every load. -->
+    <script>
+      try {
+        var t = JSON.parse(localStorage.getItem("herd.theme") || '"herd"');
+        if (t === "herd-light") document.documentElement.dataset.theme = t;
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>

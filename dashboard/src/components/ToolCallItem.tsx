@@ -74,6 +74,33 @@ function hasRenderableInput(tool: string | undefined, input: unknown): boolean {
   return false;
 }
 
+// Just the expanded body — the call's own input and its result — with no
+// summary line or collapse wrapper. SessionFeed's grouped tool block renders
+// its own dense summary rows (the mockups' 70px-name layout) and needs only
+// this when one is opened, rather than a second nested disclosure.
+export function ToolCallDetail({ pair }: { pair: ToolCallPair }) {
+  const { callInfo, resultInfo } = pair;
+  const isError = resultInfo?.isError ?? false;
+  return (
+    <div className="flex flex-col gap-1.5">
+      {hasRenderableInput(callInfo.tool, callInfo.input) && (
+        <ToolInputView tool={callInfo.tool ?? "tool"} input={callInfo.input} />
+      )}
+      {resultInfo ? (
+        <div className={`text-[11px] font-mono ${isError ? "text-error" : "text-dim"}`}>
+          {typeof resultInfo.content === "string" ? (
+            <div className="whitespace-pre-wrap break-words">{resultInfo.content}</div>
+          ) : (
+            <JsonView value={resultInfo.content} />
+          )}
+        </div>
+      ) : (
+        <div className="text-[11px] text-dim2">still running — no output yet.</div>
+      )}
+    </div>
+  );
+}
+
 // Memoized to prevent re-rendering when the pair hasn't changed.
 export const ToolCallItem = memo(function ToolCallItem({ pair }: { pair: ToolCallPair }) {
   const { callInfo, result, resultInfo } = pair;

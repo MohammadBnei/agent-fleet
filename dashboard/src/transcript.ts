@@ -387,3 +387,197 @@ export function parseSdkResultSummary(text: string): SdkResultSummary | null {
     return null;
   }
 }
+
+// --- shared derivations for the console rewrite ------------------------------
+// Everything below is consumed by both form factors. It lives here, not in a
+// component, for the same reason the parsers above do: the desktop and mobile
+// views are separately authored, and any logic they duplicate is logic they can
+// silently disagree about.
+
+// Wall-clock label for a spine/feed entry. `created_at` is on the wire, but a
+// transcript predating that field carries "" — no label beats a fake one.
+export function entryTime(entry: TranscriptEntry): string | null {
+  if (!entry.createdAt) return null;
+  const d = new Date(entry.createdAt);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+export function latestResultSummary(entries: TranscriptEntry[]): SdkResultSummary | null {
+  for (let i = entries.length - 1; i >= 0; i--) {
+    if (entries[i].type !== TranscriptEntryType.RESULT) continue;
+    const parsed = parseSdkResultSummary(entries[i].text);
+    if (parsed) return parsed;
+  }
+  return null;
+}
+
+export type InFlightTool = { tool: string; summary: string; elapsedSeconds: number | null };
+
+// The "⟳ bash · pytest tests/cache · 32s" line on a WORKING row: the newest
+// tool call with no result yet. Elapsed comes from the SDK's own tool_progress
+// signal when one has arrived (that's what the field is for) and falls back to
+// the entry's own timestamp, so a long call still shows a duration before its
+// first progress signal.
+export function inFlightTool(entries: TranscriptEntry[]): InFlightTool | null {
+  const pairs = buildToolCallPairs(entries);
+  for (let i = pairs.length - 1; i >= 0; i--) {
+    const p = pairs[i];
+    if (p.result) continue;
+    const tool = p.callInfo.tool;
+    if (!tool) continue;
+
+    let elapsedSeconds: number | null = null;
+    for (let j = entries.length - 1; j >= 0; j--) {
+      const e = entries[j];
+      if (e.type !== TranscriptEntryType.SYSTEM) continue;
+      const sig = parseSdkSignal(e.text);
+      if (sig?.sdk === "tool_progress" && sig.tool_use_id && sig.tool_use_id === p.callInfo.id) {
+        elapsedSeconds = sig.elapsed_time_seconds ?? null;
+        break;
+      }
+    }
+    if (elapsedSeconds === null && p.call.createdAt) {
+      const started = new Date(p.call.createdAt).getTime();
+      if (!Number.isNaN(started)) elapsedSeconds = Math.max(0, Math.round((Date.now() - started) / 1000));
+    }
+    return { tool, summary: summarizeToolInput(p.callInfo.input), elapsedSeconds };
+  }
+  return null;
+}
+
+export type ListSummary = {
+  todos: TodoItem[];
+  pendingPermission: PendingPermission | null;
+  pendingQuestion: TranscriptEntry | null;
+  inFlight: InFlightTool | null;
+};
+
+// Everything both list views need per active session, from the one transcript
+// fetch App.tsx already makes for the todo bars. Rendering a blocked session's
+// actual decision in the list — rather than making the human open it to find
+// out what it wants — is the whole point, and it costs no extra RPC.
+//
+// Only the FIRST pending permission: the list card shows one decision, and a
+// session blocked on several still only needs the human to start somewhere.
+export function listSummary(entries: TranscriptEntry[]): ListSummary {
+  return {
+    todos: latestTodos(entries) ?? [],
+    pendingPermission: findPendingPermissions(entries)[0] ?? null,
+    pendingQuestion: findPendingQuestion(entries),
+    inFlight: inFlightTool(entries),
+  };
+}
+
+export type SpineKind = "allow" | "deny" | "plan" | "pending" | "alarm";
+export type SpineItem = {
+  // The feed entry this item jumps to.
+  seq: bigint;
+  kind: SpineKind;
+  label: string;
+  detail: string | null;
+  time: string | null;
+};
+
+// The desktop rail: a session's decision history in one column, so "what have I
+// already told this agent, and what is it waiting on" is readable without
+// scrolling a thousand-line feed. Derived entirely from entries already parsed
+// above — no new wire data.
+//
+// Alarms are included because they answer the same question the rail exists for
+// ("why has it gone quiet"), and a failed MCP server silently removes tools.
+export function spineItems(entries: TranscriptEntry[]): SpineItem[] {
+  const decisions = resolvedPermissionDecisions(entries);
+  const denials = permissionDenyMessages(entries);
+  const pending = new Set(findPendingPermissions(entries).map((p) => p.entry.seq));
+  const out: SpineItem[] = [];
+
+  for (const e of entries) {
+    const time = entryTime(e);
+
+    if (e.type === TranscriptEntryType.PERMISSION_REQUEST) {
+      let tool = "";
+      try {
+        tool = String((JSON.parse(e.text) as { tool?: unknown }).tool ?? "");
+      } catch {
+        continue;
+      }
+      if (!tool) continue;
+      const isPlan = tool === "ExitPlanMode";
+      if (pending.has(e.seq)) {
+        out.push({
+          seq: e.seq,
+          kind: "pending",
+          label: isPlan ? "▸ plan · waiting" : `▸ permission · ${tool}`,
+          detail: "waiting now",
+          time,
+        });
+        continue;
+      }
+      const decision = decisions.get(e.seq);
+      // An unresolved request that isn't pending either (no response, no
+      // interrupt) has no outcome to state — skip rather than invent one.
+      if (!decision) continue;
+      if (isPlan) {
+        out.push({
+          seq: e.seq,
+          kind: decision === "allow" ? "plan" : "deny",
+          label: decision === "allow" ? "plan approved" : "plan · changes requested",
+          detail: denials.get(e.seq) ?? null,
+          time,
+        });
+        continue;
+      }
+      out.push({
+        seq: e.seq,
+        // "interrupted" groups with deny, not allow: the tool call never ran.
+        // Colouring it as a grant would tell the reader the opposite of what
+        // happened.
+        kind: decision === "allow" ? "allow" : "deny",
+        label: `${decision === "interrupted" ? "interrupted" : decision} · ${tool}`,
+        detail: denials.get(e.seq) ?? null,
+        time,
+      });
+      continue;
+    }
+
+    if (e.type === TranscriptEntryType.SYSTEM) {
+      const info = parseSdkSystemInfo(e.text);
+      if (info) {
+        for (const srv of info.mcpServers ?? []) {
+          if (srv.status === "connected") continue;
+          out.push({ seq: e.seq, kind: "alarm", label: `! mcp ${srv.name} ${srv.status}`, detail: null, time });
+        }
+        continue;
+      }
+      const sig = parseSdkSignal(e.text);
+      // The tier-5 alarms: an expired token, a model/rate-limit error, or a
+      // resume that silently started fresh. Not log lines — they're the answer
+      // to "why has it gone quiet".
+      if (sig?.error) {
+        out.push({ seq: e.seq, kind: "alarm", label: `! ${sig.sdk}`, detail: sig.error, time });
+      } else if (sig?.sdk === "auth_status" && sig.status && sig.status !== "ok") {
+        out.push({ seq: e.seq, kind: "alarm", label: "! authentication", detail: sig.status, time });
+      }
+    }
+  }
+  return out;
+}
+
+export type Density = "everything" | "narrative" | "decisions";
+export type FeedVisibility = { narrative: boolean; tools: boolean; quiet: boolean };
+
+// The two console mockups deliberately disagree about the third mode, so both
+// mappings live here rather than one being bent to fit the other:
+//   desktop "decisions" — tier-1 cards and alarms only, nothing else
+//   mobile  "calls"     — tool activity, which is what a phone screen has room
+//                         to scan when you're checking on a run
+// Tier-1 cards (permission/plan/question) and alarms are never gated: they're
+// the reason the screen exists.
+export function feedVisibility(density: Density, isMobile: boolean): FeedVisibility {
+  return {
+    narrative: density !== "decisions",
+    tools: density === "everything" || (isMobile && density === "decisions"),
+    quiet: density === "everything",
+  };
+}

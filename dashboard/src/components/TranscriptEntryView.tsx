@@ -24,21 +24,36 @@ import { Collapse } from "./Collapse";
 // elapsed time. Those are the "why has this gone quiet" answers, so they
 // render as real rows rather than another grey log stub.
 
+// docs/dashboard-spec.md §8 item 2: a lifecycle line and the agent's actual
+// prose used to be the same ~10px grey text. A rule with the label on the left
+// and the summary on the right reads as a boundary marker rather than as
+// something someone said.
 function LogLine({
   badge,
-  badgeClass = "badge-ghost",
+  badgeClass,
   children,
   compact,
 }: {
   badge: string;
+  // Retained for the few callers that tint the label (an error subtype, a
+  // mode change) — now a plain text colour, not a DaisyUI badge class.
   badgeClass?: string;
-  children: React.ReactNode;
+  children?: React.ReactNode;
   compact?: boolean;
 }) {
+  const size = compact ? "text-[10.5px]" : "text-[11px]";
+  const tone = badgeClass?.includes("error")
+    ? "text-error"
+    : badgeClass?.includes("warning")
+      ? "text-warning"
+      : badgeClass?.includes("info")
+        ? "text-info"
+        : "text-dim2";
   return (
-    <div className={`${compact ? "text-[10px]" : "text-[10.5px]"} text-base-content/40 flex items-center gap-1.5`}>
-      <span className={`badge badge-xs ${badgeClass}`}>{badge}</span>
-      {children}
+    <div className="flex items-center gap-2.5">
+      <span className={`${size} ${tone} whitespace-nowrap`}>{badge}</span>
+      <span className="flex-1 h-px bg-line3" />
+      {children && <span className={`${size} text-dim2 text-right min-w-0`}>{children}</span>}
     </div>
   );
 }
@@ -48,9 +63,16 @@ function LogLine({
 // relay exists to remove.
 function AlertRow({ tone, title, detail }: { tone: "error" | "warning"; title: string; detail?: string }) {
   return (
-    <div className={`rounded-md border px-2.5 py-2 ${tone === "error" ? "border-error/40 bg-error/5" : "border-warning/40 bg-warning/5"}`}>
-      <div className={`text-[11px] font-medium ${tone === "error" ? "text-error" : "text-warning"}`}>{title}</div>
-      {detail && <div className="text-[10.5px] text-base-content/60 mt-0.5 break-words">{detail}</div>}
+    <div
+      className={`border px-3 py-2.5 flex gap-2.5 items-start ${
+        tone === "error" ? "border-pink-line bg-pink-bg" : "border-orange-line bg-orange-bg"
+      }`}
+    >
+      <span className={`text-[12px] flex-none ${tone === "error" ? "text-error" : "text-warning"}`}>!</span>
+      <div className="min-w-0">
+        <div className={`text-[12.5px] ${tone === "error" ? "text-error" : "text-warning"}`}>{title}</div>
+        {detail && <div className="text-[11.5px] text-dim mt-0.5 break-words">{detail}</div>}
+      </div>
     </div>
   );
 }
@@ -83,7 +105,7 @@ function SignalView({ signal, compact }: { signal: SdkSignal; compact?: boolean 
 
     case "status":
       return signal.status ? (
-        <LogLine badge={signal.status} badgeClass="badge-info" compact={compact}>
+        <LogLine badge={signal.status} badgeClass="info" compact={compact}>
           <span className="loading loading-dots loading-xs" />
         </LogLine>
       ) : null;
@@ -116,16 +138,20 @@ function SignalView({ signal, compact }: { signal: SdkSignal; compact?: boolean 
       }
       return (
         <Collapse
-          summaryClassName="px-2 py-1"
+          className="border-0 bg-transparent"
+          summaryClassName="px-0 py-0 bg-transparent hover:bg-transparent"
+          contentClassName="px-0 pt-1.5"
           summary={
-            <span className="text-[10.5px] text-base-content/60">
-              <span className={`badge badge-xs mr-1.5 ${failed ? "badge-error" : "badge-ghost"}`}>hook</span>
-              {label}
-              {failed ? ` — exit ${signal.exit_code}` : ""}
-            </span>
+            <div className="flex items-center gap-2.5">
+              <span className={`text-[11px] whitespace-nowrap ${failed ? "text-warning" : "text-dim2"}`}>
+                ▸ hook {failed ? `failed — exit ${signal.exit_code}` : ""}
+              </span>
+              <span className="flex-1 h-px bg-line3" />
+              <span className="text-[11px] text-dim2 text-right min-w-0 truncate">{label}</span>
+            </div>
           }
         >
-          <pre className="text-[10.5px] whitespace-pre-wrap font-mono text-base-content/70">{body}</pre>
+          <pre className="text-[11px] whitespace-pre-wrap font-mono text-dim">{body}</pre>
         </Collapse>
       );
     }
@@ -136,7 +162,7 @@ function SignalView({ signal, compact }: { signal: SdkSignal; compact?: boolean 
       // not the originating toolu_ id, so there is nothing to join on.
       const elapsed = signal.elapsed_time_seconds;
       return (
-        <LogLine badge={signal.tool_name ?? "tool"} badgeClass="badge-info" compact={compact}>
+        <LogLine badge={signal.tool_name ?? "tool"} badgeClass="info" compact={compact}>
           <span className="loading loading-spinner loading-xs" />
           still running{typeof elapsed === "number" ? ` · ${elapsed}s` : ""}
         </LogLine>
@@ -148,8 +174,8 @@ function SignalView({ signal, compact }: { signal: SdkSignal; compact?: boolean 
       // worker passes unknown ones through unmapped), so show it rather
       // than swallowing it.
       return (
-        <div className="rounded-md border border-base-content/10 bg-base-200/40 px-2.5 py-2">
-          <div className="text-[10px] text-base-content/40 mb-1">{signal.sdk}</div>
+        <div className="border border-line bg-base-300/40 px-2.5 py-2">
+          <div className="text-[11px] text-dim2 mb-1">{signal.sdk}</div>
           <JsonView value={signal} />
         </div>
       );
@@ -158,7 +184,7 @@ function SignalView({ signal, compact }: { signal: SdkSignal; compact?: boolean 
 
 function ResultView({ entry, compact }: { entry: TranscriptEntry; compact?: boolean }) {
   const r = parseSdkResultSummary(entry.text);
-  if (!r) return <div className={`${compact ? "text-[10px]" : "text-[10.5px]"} text-base-content/40`}>{entry.text}</div>;
+  if (!r) return <LogLine badge="turn ended" compact={compact}>{entry.text}</LogLine>;
 
   const wall = formatDuration(r.durationMs);
   const api = formatDuration(r.durationApiMs);
@@ -177,20 +203,23 @@ function ResultView({ entry, compact }: { entry: TranscriptEntry; compact?: bool
 
   return (
     <div className="flex flex-col gap-1">
-      <div className={`${compact ? "text-[10px]" : "text-[10.5px]"} ${failed ? "text-error/80" : "text-base-content/40"} flex items-center gap-1.5 flex-wrap`}>
-        {failed && <span className="badge badge-error badge-xs">{r.subtype ?? "error"}</span>}
+      <LogLine
+        badge={failed ? `turn failed · ${r.subtype ?? "error"}` : "turn ended"}
+        badgeClass={failed ? "error" : undefined}
+        compact={compact}
+      >
         {parts.join(" · ")}
-      </div>
+      </LogLine>
       {r.errors && r.errors.length > 0 && <AlertRow tone="error" title="Session errors" detail={r.errors.join("; ")} />}
       {r.permissionDenials && r.permissionDenials.length > 0 && (
-        <div className="text-[10px] text-warning/70">
+        <div className="text-[11px] text-warning">
           {r.permissionDenials.length} permission {r.permissionDenials.length === 1 ? "denial" : "denials"}
           {": "}
           {r.permissionDenials.map((d) => d.tool_name).filter(Boolean).join(", ")}
         </div>
       )}
       {models.length > 1 && (
-        <div className="text-[10px] text-base-content/35">
+        <div className="text-[11px] text-dim2">
           {models.map(([name, u]) => `${name.replace(/-\d{8}$/, "")} $${(u.costUSD ?? 0).toFixed(3)}`).join(" · ")}
         </div>
       )}
@@ -217,24 +246,38 @@ function SessionInitView({ entry, compact }: { entry: TranscriptEntry; compact?:
 
   return (
     <Collapse
-      summaryClassName="px-2 py-1"
+      className="border-0 bg-transparent"
+      summaryClassName="px-0 py-0 bg-transparent hover:bg-transparent"
+      contentClassName="px-0 pt-1.5"
       summary={
-        <span className={`${compact ? "text-[10px]" : "text-[10.5px]"} text-base-content/40`}>
-          <span className="badge badge-ghost badge-xs mr-1.5">session</span>
-          {info.model ? `started · ${info.model}` : "session started"}
-          {/* An MCP server that failed to connect silently removes tools
-              the agent is about to be asked to use. */}
-          {offline.length > 0 && <span className="text-error ml-1.5">· {offline.length} mcp offline</span>}
-        </span>
+        <div className="flex items-center gap-2.5">
+          <span className={`${compact ? "text-[10.5px]" : "text-[11px]"} text-dim2 whitespace-nowrap`}>
+            session started
+          </span>
+          <span className="flex-1 h-px bg-line3" />
+          <span className={`${compact ? "text-[10.5px]" : "text-[11px]"} text-dim2 text-right min-w-0 truncate`}>
+            {[
+              info.model,
+              info.permissionMode && `${info.permissionMode} mode`,
+              info.tools?.length ? `${info.tools.length} tools` : null,
+              info.mcpServers?.length ? `${info.mcpServers.length} mcp` : null,
+            ]
+              .filter(Boolean)
+              .join(" · ")}
+            {/* An MCP server that failed to connect silently removes tools the
+                agent is about to be asked to use. */}
+            {offline.length > 0 && <span className="text-error"> · {offline.length} offline</span>}
+          </span>
+        </div>
       }
     >
-      <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-[10.5px]">
+      <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-[11px]">
         {rows
           .filter(([, value]) => value)
           .map(([label, value]) => (
             <div key={label} className="contents">
-              <dt className="text-base-content/40">{label}</dt>
-              <dd className="text-base-content/70 break-all">{value}</dd>
+              <dt className="text-dim2">{label}</dt>
+              <dd className="text-dim break-all">{value}</dd>
             </div>
           ))}
       </dl>
@@ -243,7 +286,7 @@ function SessionInitView({ entry, compact }: { entry: TranscriptEntry; compact?:
 }
 
 export function TranscriptEntryView({ entry, compact }: { entry: TranscriptEntry; compact?: boolean }) {
-  const logSize = compact ? "text-[10px]" : "text-[10.5px]";
+  const logSize = compact ? "text-[10.5px]" : "text-[11px]";
 
   if (entry.type === TranscriptEntryType.SYSTEM) {
     const signal = parseSdkSignal(entry.text);
@@ -256,8 +299,13 @@ export function TranscriptEntryView({ entry, compact }: { entry: TranscriptEntry
     const info = parseSdkToolUse(entry.text);
     if (info?.kind !== "thinking" || !info.text) return null;
     return (
-      <Collapse summaryClassName="px-2 py-1" summary={<span className={`${logSize} text-base-content/35 italic`}>thinking</span>}>
-        <div className="text-[11px] leading-relaxed text-base-content/50 italic whitespace-pre-wrap">{info.text}</div>
+      <Collapse
+        className="border-0 bg-transparent"
+        summaryClassName="px-0 py-0 bg-transparent hover:bg-transparent"
+        contentClassName="px-0 pt-1.5"
+        summary={<span className={`${logSize} text-dim2 hover:text-dim`}>▸ thinking</span>}
+      >
+        <div className="text-[11.5px] leading-[1.7] text-dim whitespace-pre-wrap">{info.text}</div>
       </Collapse>
     );
   }
@@ -268,9 +316,9 @@ export function TranscriptEntryView({ entry, compact }: { entry: TranscriptEntry
   if (entry.type === TranscriptEntryType.USER) {
     const tr = parseSdkToolResult(entry.text);
     return (
-      <div className={`rounded-md border px-2.5 py-2 ${tr?.isError ? "border-error/40 bg-error/5" : "border-base-content/10 bg-base-200/40"}`}>
+      <div className={`border px-2.5 py-2 ${tr?.isError ? "border-pink-line bg-pink-bg" : "border-line bg-base-300/40"}`}>
         {typeof tr?.content === "string" ? (
-          <pre className="text-[10.5px] whitespace-pre-wrap font-mono text-base-content/70">{tr.content}</pre>
+          <pre className="text-[11px] whitespace-pre-wrap font-mono text-dim">{tr.content}</pre>
         ) : (
           <JsonView value={tr?.content ?? entry.text} />
         )}
@@ -288,28 +336,28 @@ export function TranscriptEntryView({ entry, compact }: { entry: TranscriptEntry
   // unverified.
   if (entry.type === TranscriptEntryType.APPROVE) {
     return (
-      <LogLine badge="approved" badgeClass="badge-success" compact={compact}>
+      <LogLine badge="approved" badgeClass="success" compact={compact}>
         plan approved — implementing
       </LogLine>
     );
   }
   if (entry.type === TranscriptEntryType.ABORT) {
     return (
-      <LogLine badge="killed" badgeClass="badge-warning" compact={compact}>
+      <LogLine badge="killed" badgeClass="warning" compact={compact}>
         {entry.text || "task killed"}
       </LogLine>
     );
   }
   if (entry.type === TranscriptEntryType.INTERRUPT) {
     return (
-      <LogLine badge="interrupted" badgeClass="badge-info" compact={compact}>
+      <LogLine badge="interrupted" badgeClass="info" compact={compact}>
         {entry.text || "current turn interrupted"}
       </LogLine>
     );
   }
   if (entry.type === TranscriptEntryType.PERMISSION_MODE) {
     return (
-      <LogLine badge="mode" badgeClass="badge-info" compact={compact}>
+      <LogLine badge="mode" badgeClass="info" compact={compact}>
         permission mode → {entry.text}
       </LogLine>
     );
@@ -318,7 +366,7 @@ export function TranscriptEntryView({ entry, compact }: { entry: TranscriptEntry
   return (
     <div className={compact ? undefined : "max-w-[760px]"}>
       <div
-        className={`${compact ? "text-[12.5px]" : "text-[12px]"} leading-relaxed ${entry.from === "human" ? "text-primary" : "text-base-content/90"}`}
+        className={`${compact ? "text-[12.5px]" : "text-[13.5px]"} leading-[1.7] ${entry.from === "human" ? "text-primary" : ""}`}
       >
         <Markdown text={asDisplayMarkdown(entry)} />
       </div>

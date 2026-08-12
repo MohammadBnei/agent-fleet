@@ -512,6 +512,21 @@ func (s *Server) ApproveTask(ctx context.Context, req *connect.Request[agentflee
 	return connect.NewResponse(&agentfleetv1.ApproveTaskResponse{Status: "approved"}), nil
 }
 
+// RetryTask is the only path back from failed_permanently — see tasks.Retry.
+func (s *Server) RetryTask(ctx context.Context, req *connect.Request[agentfleetv1.RetryTaskRequest]) (*connect.Response[agentfleetv1.RetryTaskResponse], error) {
+	retried, err := s.tasks.Retry(ctx, req.Msg.GetTaskId())
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	if !retried {
+		// Unknown, deleted, or not in a failed state — from the caller's side
+		// the same fact: there is nothing here to retry. Guarding it matters
+		// because retrying a live session would double-dispatch it.
+		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("task is not in a failed state"))
+	}
+	return connect.NewResponse(&agentfleetv1.RetryTaskResponse{Status: "pending"}), nil
+}
+
 // warmIfIdle is Warm/Discuss's shared implementation: returns ("", nil)
 // if the task already has a live pod (a no-op, not an error — Discuss
 // calls this unconditionally on every message), the new pod's name if it
@@ -628,11 +643,12 @@ func (s *Server) DeleteTask(ctx context.Context, req *connect.Request[agentfleet
 // worktree whose task row no longer exists, exactly the orphaned case
 // this view exists to surface. An inner join would hide it.
 func (s *Server) ListWorktrees(ctx context.Context, _ *connect.Request[agentfleetv1.ListWorktreesRequest]) (*connect.Response[agentfleetv1.ListWorktreesViewResponse], error) {
-	worktrees, err := s.e2e.ListWorktrees(ctx)
+	resp, err := s.e2e.ListWorktrees(ctx)
 	if err != nil {
 		slog.Error("dashboard ListWorktrees", "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
+	worktrees := resp.GetWorktrees()
 	out := make([]*agentfleetv1.WorktreeView, len(worktrees))
 	for i, w := range worktrees {
 		view := &agentfleetv1.WorktreeView{
@@ -641,6 +657,9 @@ func (s *Server) ListWorktrees(ctx context.Context, _ *connect.Request[agentflee
 			Branch:        w.GetBranch(),
 			UpstreamTrack: w.GetUpstreamTrack(),
 			MtimeUnix:     w.GetMtimeUnix(),
+			Path:          w.GetPath(),
+			DirtyFiles:    w.GetDirtyFiles(),
+			SizeBytes:     w.GetSizeBytes(),
 		}
 		if info, err := s.tasks.GetTaskStatusInfo(ctx, w.GetTaskId()); err != nil {
 			slog.Error("dashboard ListWorktrees: GetTaskStatusInfo", "taskId", w.GetTaskId(), "error", err)
@@ -652,7 +671,11 @@ func (s *Server) ListWorktrees(ctx context.Context, _ *connect.Request[agentflee
 		}
 		out[i] = view
 	}
-	return connect.NewResponse(&agentfleetv1.ListWorktreesViewResponse{Worktrees: out}), nil
+	return connect.NewResponse(&agentfleetv1.ListWorktreesViewResponse{
+		Worktrees:     out,
+		PvcTotalBytes: resp.GetPvcTotalBytes(),
+		PvcFreeBytes:  resp.GetPvcFreeBytes(),
+	}), nil
 }
 
 func (s *Server) DeleteWorktree(ctx context.Context, req *connect.Request[agentfleetv1.DeleteWorktreeRequest]) (*connect.Response[agentfleetv1.DeleteWorktreeResponse], error) {

@@ -18,6 +18,10 @@ export function useTaskDetail(taskId: string) {
   // installing" apart from "bound the wrong interface and never will".
   const [e2e, setE2e] = useState<GetE2eStatusResponse | null>(null);
   const [branch, setBranch] = useState<string | null>(null);
+  // The worktree's real path on the shared PVC — shown in the composer's meta
+  // line so "where is this actually working" is answerable without a shell.
+  // Same (repo, task_id) lookup as `branch`; there is no path on Task itself.
+  const [worktreePath, setWorktreePath] = useState<string | null>(null);
   // Keyed, not a plain boolean — a click on one PermissionCard/PlanCard used
   // to disable every other pending card and the whole ActionsMenu at once.
   // Each caller passes its own key to run() (a permission/question's own
@@ -46,6 +50,7 @@ export function useTaskDetail(taskId: string) {
     setEntries([]);
     setPreviewUrl(null);
     setBranch(null);
+    setWorktreePath(null);
     setLoadError(null);
     setActionError(null);
     pendingRef.current = null;
@@ -72,7 +77,10 @@ export function useTaskDetail(taskId: string) {
           .then((wtRes) => {
             if (cancelled) return;
             const wt = wtRes.worktrees.find((w) => w.repo === res.task!.repo && w.taskId === res.task!.id);
-            if (wt) setBranch(wt.branch);
+            if (wt) {
+              setBranch(wt.branch);
+              if (wt.path) setWorktreePath(wt.path);
+            }
           })
           .catch(() => {
             // No worktree yet (task not claimed) is the common case — not
@@ -166,6 +174,7 @@ export function useTaskDetail(taskId: string) {
     previewUrl,
     e2e,
     branch,
+    worktreePath,
     busyKey,
     loadError,
     actionError,
