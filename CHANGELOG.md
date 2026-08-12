@@ -1,5 +1,19 @@
 # Changelog
 
+# [1.49.0](https://github.com/MohammadBnei/agent-fleet/compare/1.48.0...1.49.0) (2026-08-12)
+
+
+### Bug Fixes
+
+* **dashboard:** non-blocking load errors, quiet telemetry line, themed body ([62c0e81](https://github.com/MohammadBnei/agent-fleet/commit/62c0e81475e4fc75428f96146f4cdd51605e0681))
+
+
+### Features
+
+* **dashboard:** adopt the Herd Icons set, and make the manifest's shortcuts real ([a8f5efa](https://github.com/MohammadBnei/agent-fleet/commit/a8f5efae0c4cf874a9896496c8255bd8d1b9f702))
+* **dashboard:** make the console an installable PWA ([417e022](https://github.com/MohammadBnei/agent-fleet/commit/417e022858ff0adacebc10167d013d96f76e289e))
+* **dashboard:** rebuild the console from the design mockups ([39c7af0](https://github.com/MohammadBnei/agent-fleet/commit/39c7af0e2184f8a7a3aee208e9866af2517573f8))
+
 # [1.48.0](https://github.com/MohammadBnei/agent-fleet/compare/1.47.0...1.48.0) (2026-08-12)
 
 
