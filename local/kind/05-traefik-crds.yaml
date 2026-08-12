@@ -1,0 +1,55 @@
+# Minimal stand-ins for the two Traefik CRDs the provisioner needs to exist.
+#
+# provisioner/cmd/provisioner/main.go exits(1) at startup if
+# CreateClusterIPWhitelistMiddleware fails, and kind ships no Traefik, so
+# without these the provisioner CrashLoopBackOffs before it can serve a
+# single gRPC call. IngressRoute is here for the same reason one step later:
+# `run_command` provisions an e2e pod on first use (docs/adr/0039), and that
+# path creates one.
+#
+# Schema is deliberately unvalidated (x-kubernetes-preserve-unknown-fields):
+# nothing local reconciles these objects, they only need to be creatable so
+# the provisioner's dynamic client succeeds. This is NOT a Traefik install
+# and must not be mistaken for prod's — real CRDs come from the Traefik
+# chart in infra-bootstrap.
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: middlewares.traefik.io
+spec:
+  group: traefik.io
+  scope: Namespaced
+  names:
+    kind: Middleware
+    listKind: MiddlewareList
+    plural: middlewares
+    singular: middleware
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          x-kubernetes-preserve-unknown-fields: true
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: ingressroutes.traefik.io
+spec:
+  group: traefik.io
+  scope: Namespaced
+  names:
+    kind: IngressRoute
+    listKind: IngressRouteList
+    plural: ingressroutes
+    singular: ingressroute
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          x-kubernetes-preserve-unknown-fields: true

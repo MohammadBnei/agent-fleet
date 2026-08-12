@@ -442,6 +442,13 @@ func TestCreateWorkerPod_ResumeSession(t *testing.T) {
 	if resumeFromSeq, ok := findEnv(worker.Env, "RESUME_FROM_SEQ"); !ok || resumeFromSeq != "42" {
 		t.Errorf("RESUME_FROM_SEQ = %q (found=%v), want %q", resumeFromSeq, ok, "42")
 	}
+	// Non-empty is the whole contract: the Agent SDK drops tool_progress
+	// events entirely unless it thinks it is containerized, which makes the
+	// worker's relay for them unreachable. Verified against the SDK bundle's
+	// own `if(!process.env.CLAUDE_CODE_REMOTE&&!process.env.CLAUDE_CODE_CONTAINER_ID)break`.
+	if containerID, ok := findEnv(worker.Env, "CLAUDE_CODE_CONTAINER_ID"); !ok || containerID == "" {
+		t.Errorf("CLAUDE_CODE_CONTAINER_ID = %q (found=%v), want non-empty", containerID, ok)
+	}
 
 	// A fresh task (no prior session) must still set RESUME_SESSION_ID —
 	// present-but-empty, not omitted, so worker/src/session.ts's env read

@@ -399,6 +399,16 @@ func (c *Client) CreateWorkerPod(ctx context.Context, taskID, repo, leaseID, wor
 		{Name: "RESUME_SESSION_ID", Value: resumeSessionID},
 		{Name: "RESUME_FROM_SEQ", Value: strconv.FormatInt(resumeFromSeq, 10)},
 		{Name: "LOG_LEVEL", Value: c.LogLevel},
+		// The Agent SDK emits `tool_progress` (a long-running Bash call's
+		// elapsed time) only when it believes it is running remotely or in
+		// a container — it checks CLAUDE_CODE_REMOTE/CLAUDE_CODE_CONTAINER_ID
+		// and otherwise drops the event before it reaches the message
+		// stream. Every worker genuinely is a container, and without this
+		// the worker's tool_progress relay is unreachable code: a
+		// four-minute Bash call stays indistinguishable from a hung pod.
+		// Value is only tested for emptiness by the SDK; the task ID makes
+		// it identifiable in a log.
+		{Name: "CLAUDE_CODE_CONTAINER_ID", Value: taskID},
 	}
 	workerEnv = append(workerEnv, ingredientEnv...)
 	workerEnv = append(workerEnv, extraEnv...)
