@@ -21,7 +21,14 @@ RUN bun install -g @anthropic-ai/claude-code
 # rtk (Rust Token Killer) — same tool-output compression proxy Mohammad runs
 # locally (github.com/rtk-ai/rtk, Homebrew formula "rtk"). Static musl
 # binary from GitHub releases, no Rust toolchain needed in this image.
-RUN curl -fsSL https://github.com/rtk-ai/rtk/releases/latest/download/rtk-x86_64-unknown-linux-musl.tar.gz \
+#
+# Pinned, not `releases/latest`: the tarball is the whole tool, and an
+# unpinned URL re-rolls it on every rebuild. Keep in step with
+# e2e-runner/Dockerfile, which installs it for the same reason. The hook
+# that actually uses it lives in worker/src/rtkHook.ts — a settings.json
+# entry does nothing under the Agent SDK.
+ARG RTK_VERSION=v0.45.0
+RUN curl -fsSL https://github.com/rtk-ai/rtk/releases/download/${RTK_VERSION}/rtk-x86_64-unknown-linux-musl.tar.gz \
     | tar -xz -C /usr/local/bin rtk
 
 # ponytail + caveman plugins (lean-code / terse-output personas, match

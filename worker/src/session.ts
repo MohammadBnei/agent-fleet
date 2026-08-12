@@ -2,6 +2,7 @@ import { query, type SDKUserMessage, type PermissionResult, type PermissionMode 
 import type { Task } from "./types.js";
 import * as sidecar from "./sidecarClient.js";
 import { log } from "./log.js";
+import { rtkRewrite, rtkRunCommandHook } from "./rtkHook.js";
 
 // Thrown when an SDK result looks like a transient infra/SDK hiccup (0
 // turns, $0 cost) rather than a genuine failure — the caller leaves it for
@@ -363,6 +364,22 @@ export async function runTask(task: Task): Promise<TaskResult> {
       // Write/Edit-absent-from-allowedTools framing and adr/0025's
       // approve-signal mechanism).
       canUseTool: async (toolName, toolInput) => {
+        // The human is shown (and answers) the command the agent actually
+        // wrote — what gets parked below, and so what every resolve path
+        // hands back as updatedInput, is its rtk-compacted equivalent. Same
+        // command, a fraction of the output. Doing it here rather than in a
+        // PreToolUse hook is what keeps the gate: a hook can only rewrite a
+        // call it also allows outright (see rtkHook.ts). Modes that skip
+        // canUseTool entirely (bypassPermissions/acceptEdits) skip the
+        // rewrite too — no gate to preserve there, just no rtk either.
+        //
+        // Ahead of the push, not between it and the pendingPermissions.set:
+        // spawning rtk takes tens of milliseconds, and a decision that
+        // arrives inside that window has no resolver to find, leaving the
+        // tool call blocked forever on a permission a human already
+        // answered. Nothing may await between asking and being ready for
+        // the answer.
+        const effectiveInput = await rtkRewrite(toolName, toolInput as Record<string, unknown>);
         const seq = await sidecar
           .pushMessage("agent", JSON.stringify({ tool: toolName, input: toolInput }), "permission_request")
           .catch((err) => {
@@ -373,10 +390,17 @@ export async function runTask(task: Task): Promise<TaskResult> {
           return { behavior: "deny", message: "Could not reach the dashboard to request permission — try again." };
         }
         return new Promise<PermissionResult>((resolve) => {
-          pendingPermissions.set(seq, { resolve, input: toolInput as Record<string, unknown> });
+          pendingPermissions.set(seq, { resolve, input: effectiveInput });
         });
       },
       mcpServers: { "agent-fleet-sidecar": sidecarMcpServer() },
+      // rtk output compaction for the e2e sandbox's shell — see rtkHook.ts
+      // for why this can't live in fleet-shared/settings.json, and why
+      // `Bash` is deliberately not in this matcher (it goes through
+      // canUseTool below instead, so the human gate survives).
+      hooks: {
+        PreToolUse: [{ matcher: "mcp__agent-fleet-sidecar__run_command", hooks: [rtkRunCommandHook] }],
+      },
       // "user" (not "project"): CLAUDE_CONFIG_DIR (provisioner/internal/k8s/
       // pod.go) points at the shared PVC, provisioner-synced by
       // git.Manager.SyncFleetShared (docs/adr/0032) — Claude Code discovers

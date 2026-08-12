@@ -121,3 +121,23 @@ That changes what you should do with it:
   change: new dependency in the lockfile, a schema/migration change, or an
   edit to the server's own entrypoint or env. Say so and ask, rather than
   cycling the environment on a hunch.
+
+## Your shell output is compacted
+
+Commands you run through `Bash` and `run_command` are rewritten to run
+under `rtk`, which strips the noise from build/test/git output before you
+read it — a full `go test ./...` run arrives ~99% smaller. Write commands
+normally; the rewrite is automatic and its result is the same command.
+
+When you need the raw, unfiltered output — a compacted line dropped the
+detail you're chasing, or you're diagnosing the tool itself — prefix the
+command with `rtk proxy`:
+
+```
+rtk proxy go test ./... -run TestFlaky -v
+```
+
+That runs it untouched. Reach for it when compaction is actually in your
+way, not by default: raw output of a full test suite can be tens of
+thousands of tokens, and you pay that from the same context you need for
+the work.
