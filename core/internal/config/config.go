@@ -53,6 +53,20 @@ type Config struct {
 	// dispatch.Loop tears it down — the same TearDownSession call
 	// enforceStopGrace already makes, no status change.
 	IdleTimeout time.Duration
+	// StartupStall bounds "pod scheduled" -> "first sign of life"
+	// (docs/adr/0040). A worker that comes up and never posts anything is
+	// torn down after this instead of holding a concurrency slot for the
+	// full IdleTimeout plus a heartbeat reclaim (~40 min before this
+	// existed). Env: STARTUP_STALL_MS, default 3 min — generous next to a
+	// normal pod's few seconds to first message, but a fraction of what a
+	// silent pod used to cost.
+	StartupStall time.Duration
+	// TurnStall is how long a session may owe a response to something a
+	// human said before its derived live state reports `stalled`
+	// (docs/adr/0040). Purely informational — nothing is torn down on this
+	// clock, since a slow turn is not a dead one. Env: TURN_STALL_MS,
+	// default 90s.
+	TurnStall time.Duration
 	// GarageS3Endpoint must be externally reachable, not the in-cluster
 	// garage.bnei.lan host — filestore.PresignUpload/PresignDownload sign
 	// the endpoint into the URL (SigV4), and the dashboard's browser can't
@@ -84,6 +98,8 @@ func Load() Config {
 		MaxTaskRetries:        envInt("MAX_TASK_RETRIES", 3),
 		StopGrace:             time.Duration(envInt("STOP_GRACE_MS", 30000)) * time.Millisecond,
 		IdleTimeout:           time.Duration(envInt("IDLE_TIMEOUT_MS", 30*60*1000)) * time.Millisecond,
+		StartupStall:          time.Duration(envInt("STARTUP_STALL_MS", 3*60*1000)) * time.Millisecond,
+		TurnStall:             time.Duration(envInt("TURN_STALL_MS", 90*1000)) * time.Millisecond,
 		GarageS3Endpoint:      env("GARAGE_S3_ENDPOINT", "https://s3.bnei.dev"),
 		GarageFilesBucket:     env("GARAGE_FILES_BUCKET", "agent-fleet-files"),
 		GarageFilesAccessKey:  os.Getenv("AGENTFLEET_FILES_S3_ACCESS_KEY"),

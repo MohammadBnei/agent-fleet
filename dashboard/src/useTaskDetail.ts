@@ -52,6 +52,11 @@ export function useTaskDetail(taskId: string) {
     setPendingMessage(null);
 
     let cancelled = false;
+    // Opening a session is what marks it seen (docs/adr/0040) — the
+    // difference between `done` (finished while nobody was looking) and
+    // plain `idle`. Fire-and-forget: this is a read-receipt, and failing
+    // to record one must never block the view from loading.
+    client.markSeen({ taskId }).catch(() => {});
     client
       .getTask({ id: taskId })
       .then((res) => {

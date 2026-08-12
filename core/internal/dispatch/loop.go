@@ -36,16 +36,18 @@ type Loop struct {
 	maxTaskRetries int
 	stopGrace      time.Duration
 	idleTimeout    time.Duration
+	startupStall   time.Duration
 	nudge          chan struct{}
 }
 
-func New(taskStore *tasks.Store, transcr transcript.Store, repoStore *repos.Store, profileStore *repoprofiles.Store, provisioner *provisionerclient.Client, maxInFlight, maxTaskRetries int, stopGrace, idleTimeout time.Duration) *Loop {
+func New(taskStore *tasks.Store, transcr transcript.Store, repoStore *repos.Store, profileStore *repoprofiles.Store, provisioner *provisionerclient.Client, maxInFlight, maxTaskRetries int, stopGrace, idleTimeout, startupStall time.Duration) *Loop {
 	return &Loop{
 		tasks: taskStore, transcr: transcr, repos: repoStore, profiles: profileStore, provisioner: provisioner,
 		maxInFlight: maxInFlight, maxTaskRetries: maxTaskRetries,
 		stopGrace:   stopGrace,
-		idleTimeout: idleTimeout,
-		nudge:       make(chan struct{}, 1),
+		idleTimeout:  idleTimeout,
+		startupStall: startupStall,
+		nudge:        make(chan struct{}, 1),
 	}
 }
 
@@ -92,6 +94,7 @@ func (l *Loop) Run(ctx context.Context, pollInterval time.Duration) {
 func (l *Loop) tick(ctx context.Context) {
 	l.enforceStopGrace(ctx)
 	l.enforceIdleTimeout(ctx)
+	l.enforceStartupStall(ctx)
 
 	// The concurrency-headroom check lives inside ClaimNextTask's own query
 	// now (reliability-findings.md #6) — a separate CountInFlight call
@@ -180,6 +183,41 @@ func (l *Loop) enforceStopGrace(ctx context.Context) {
 		// Forcing a terminal "cancelled" status here would make an
 		// otherwise-resumable session look permanently dead.
 		slog.Warn("dispatch: force-stopped task past grace period", "taskId", id)
+	}
+}
+
+// enforceStartupStall tears down a pod that came up and never said
+// anything (docs/adr/0040). Nothing bounded that window before: core
+// commands the provisioner and returns without waiting for any sign of
+// life, and the idle sweep below cannot serve as the backstop because its
+// clock starts at claim time — ClaimNextTask sets last_active_at = now(),
+// so a silent pod looked freshly active for the full 30-minute idle
+// timeout, then took another 10 minutes of heartbeat staleness before
+// ClaimNextTask would reclaim it. About 40 minutes of a dead pod holding
+// one of MAX_IN_FLIGHT_TASKS slots.
+//
+// Same teardown as the other two sweeps and, like them, deliberately no
+// status change: the worktree and saved session_id survive, so the
+// session stays resumable. The existing heartbeat-reclaim path then
+// retries it as it always has, bounded by MAX_TASK_RETRIES.
+func (l *Loop) enforceStartupStall(ctx context.Context) {
+	ids, err := l.tasks.ListStartupStalledIDs(ctx, l.startupStall)
+	if err != nil {
+		slog.Error("dispatch: list startup-stalled tasks failed", "error", err)
+		return
+	}
+	for _, id := range ids {
+		if _, err := l.provisioner.TearDownSession(ctx, id, agentfleetv1.SessionKind_SESSION_KIND_WORKER); err != nil {
+			slog.Error("dispatch: enforceStartupStall worker teardown failed", "taskId", id, "error", err)
+			continue
+		}
+		if _, err := l.provisioner.TearDownSession(ctx, id, agentfleetv1.SessionKind_SESSION_KIND_E2E); err != nil {
+			slog.Error("dispatch: enforceStartupStall e2e teardown failed", "taskId", id, "error", err)
+		}
+		if err := l.tasks.SetLastError(ctx, id, "worker pod never reported any activity"); err != nil {
+			slog.Error("dispatch: enforceStartupStall set last error failed", "taskId", id, "error", err)
+		}
+		slog.Warn("dispatch: tore down a worker pod that never reported activity", "taskId", id, "after", l.startupStall)
 	}
 }
 

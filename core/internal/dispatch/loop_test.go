@@ -11,7 +11,7 @@ import (
 // nudges before Run's select drains any of them must collapse into at
 // most one pending tick, not pile up or block.
 func TestLoop_NudgeIsNonBlockingAndBuffered(t *testing.T) {
-	l := New(nil, nil, nil, nil, nil, 1, 3, 30*time.Second, 30*time.Minute)
+	l := New(nil, nil, nil, nil, nil, 1, 3, 30*time.Second, 30*time.Minute, 3*time.Minute)
 
 	done := make(chan struct{})
 	go func() {

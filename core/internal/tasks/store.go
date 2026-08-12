@@ -68,6 +68,15 @@ type Task struct {
 	// touch, so the dashboard's task list can show which tasks need a human
 	// decision without an N+1 per-task transcript fetch.
 	AwaitingHuman bool `json:"awaitingHuman"`
+	// Liveness inputs (docs/adr/0040). All four are maintained by the same
+	// activityTrackingStore decorator that already writes last_active_at
+	// and awaiting_human, so DeriveLiveState (liveness.go) can be a pure
+	// function of this row instead of a cached column that drifts.
+	LastEntryType *string    `json:"lastEntryType,omitempty"`
+	LastEntryFrom *string    `json:"lastEntryFrom,omitempty"`
+	ActivitySeen  bool       `json:"activitySeen"`
+	SeenAt        *time.Time `json:"seenAt,omitempty"`
+	LastActiveAt  *time.Time `json:"lastActiveAt,omitempty"`
 }
 
 type Store struct {
@@ -224,10 +233,12 @@ func (s *Store) GetTask(ctx context.Context, id string) (*Task, error) {
 	var t Task
 	err := s.pool.QueryRow(ctx, `
 		SELECT id, kind, repo, description, guidance, status, discord_thread_id, pr_url, pod_phase, pod_message,
-		       heartbeat_at, retry_count, last_error, session_id, model, permission_mode, awaiting_human
+		       heartbeat_at, retry_count, last_error, session_id, model, permission_mode, awaiting_human,
+		       last_entry_type, last_entry_from, activity_seen, seen_at, last_active_at
 		FROM tasks WHERE id = $1 AND deleted_at IS NULL
 	`, id).Scan(&t.ID, &t.Kind, &t.Repo, &t.Description, &t.Guidance, &t.Status, &t.ThreadID, &t.PrURL, &t.PodPhase, &t.PodMessage,
-		&t.HeartbeatAt, &t.RetryCount, &t.LastError, &t.SessionID, &t.Model, &t.PermissionMode, &t.AwaitingHuman)
+		&t.HeartbeatAt, &t.RetryCount, &t.LastError, &t.SessionID, &t.Model, &t.PermissionMode, &t.AwaitingHuman,
+		&t.LastEntryType, &t.LastEntryFrom, &t.ActivitySeen, &t.SeenAt, &t.LastActiveAt)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
@@ -271,7 +282,8 @@ func (s *Store) GetTaskStatusInfo(ctx context.Context, id string) (*TaskStatusIn
 func (s *Store) ListRecentTasks(ctx context.Context, limit int) ([]Task, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT id, kind, repo, description, guidance, status, discord_thread_id, pr_url, pod_phase, pod_message,
-		       heartbeat_at, retry_count, last_error, session_id, model, permission_mode, awaiting_human
+		       heartbeat_at, retry_count, last_error, session_id, model, permission_mode, awaiting_human,
+		       last_entry_type, last_entry_from, activity_seen, seen_at, last_active_at
 		FROM tasks WHERE deleted_at IS NULL ORDER BY created_at DESC LIMIT $1
 	`, limit)
 	if err != nil {
@@ -287,7 +299,8 @@ func (s *Store) ListRecentTasks(ctx context.Context, limit int) ([]Task, error) 
 	for rows.Next() {
 		var t Task
 		if err := rows.Scan(&t.ID, &t.Kind, &t.Repo, &t.Description, &t.Guidance, &t.Status, &t.ThreadID, &t.PrURL, &t.PodPhase, &t.PodMessage,
-			&t.HeartbeatAt, &t.RetryCount, &t.LastError, &t.SessionID, &t.Model, &t.PermissionMode, &t.AwaitingHuman); err != nil {
+			&t.HeartbeatAt, &t.RetryCount, &t.LastError, &t.SessionID, &t.Model, &t.PermissionMode, &t.AwaitingHuman,
+		&t.LastEntryType, &t.LastEntryFrom, &t.ActivitySeen, &t.SeenAt, &t.LastActiveAt); err != nil {
 			slog.Error("tasks ListRecentTasks: scan", "error", err)
 			return nil, fmt.Errorf("scan task: %w", err)
 		}
@@ -367,6 +380,12 @@ func (s *Store) ClaimNextTask(ctx context.Context, maxInFlight, maxRetries int) 
 		    lease_id = gen_random_uuid(),
 		    last_active_at = now(),
 		    stop_requested_at = NULL,
+		    -- A fresh pod is about to be dispatched; nothing it says has
+		    -- been heard yet. Reset alongside stop_requested_at for the
+		    -- same reason that one is reset here: both describe the
+		    -- previous pod, and leaving either behind makes a sweep act on
+		    -- the new one (docs/adr/0040).
+		    activity_seen = false,
 		    retry_count = CASE WHEN status != 'pending' THEN retry_count + 1 ELSE retry_count END,
 		    updated_at = now()
 		WHERE id = (
@@ -418,7 +437,7 @@ func (s *Store) ClaimNextTask(ctx context.Context, maxInFlight, maxRetries int) 
 // ClaimNextTask does — this pod is live now, not stale.
 func (s *Store) RefreshLease(ctx context.Context, id string) (leaseID string, err error) {
 	err = s.pool.QueryRow(ctx, `
-		UPDATE tasks SET lease_id = gen_random_uuid(), heartbeat_at = now(), last_active_at = now(), stop_requested_at = NULL, updated_at = now()
+		UPDATE tasks SET lease_id = gen_random_uuid(), heartbeat_at = now(), last_active_at = now(), stop_requested_at = NULL, activity_seen = false, updated_at = now()
 		WHERE id = $1
 		RETURNING lease_id::text
 	`, id).Scan(&leaseID)
@@ -617,13 +636,91 @@ func (s *Store) ListOverdueStopIDs(ctx context.Context, grace time.Duration) ([]
 // UpdateHeartbeat: a missed touch just means one sweep tick sees slightly
 // stale activity, not a correctness issue worth failing the caller's own
 // request over.
-func (s *Store) TouchActive(ctx context.Context, id string) error {
-	_, err := s.pool.Exec(ctx, `UPDATE tasks SET last_active_at = now() WHERE id = $1`, id)
+// Now also records what that entry was, for DeriveLiveState (docs/adr/
+// 0040) — same UPDATE, no extra round trip, and no second write path that
+// could disagree with last_active_at about what just happened.
+//
+// activity_seen latches true on the first agent-authored entry and is
+// reset only when a new pod is dispatched (ClaimNextTask/RefreshLease).
+// It is what separates "this pod has never said anything" from "this pod
+// has gone quiet", which last_active_at alone cannot express: claiming a
+// task sets last_active_at to now(), so a pod that never starts looks
+// freshly active for the whole idle timeout.
+func (s *Store) TouchActive(ctx context.Context, id, from, entryType string) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE tasks
+		SET last_active_at = now(),
+		    last_entry_type = $2,
+		    last_entry_from = $3,
+		    activity_seen = activity_seen OR $3 = 'agent'
+		WHERE id = $1
+	`, id, entryType, from)
 	if err != nil {
 		slog.Error("tasks TouchActive", "taskId", id, "error", err)
 		return fmt.Errorf("touch active: %w", err)
 	}
 	return nil
+}
+
+// SetLastError records why a sweep acted on a task, without touching its
+// status — the sweeps deliberately leave a session resumable (see
+// dispatch.Loop), so last_error is the only place the reason can surface.
+// Best-effort, same framing as TouchActive: failing to record the reason
+// must not abort the teardown that already happened.
+func (s *Store) SetLastError(ctx context.Context, id, message string) error {
+	_, err := s.pool.Exec(ctx, `UPDATE tasks SET last_error = $2, updated_at = now() WHERE id = $1`, id, message)
+	if err != nil {
+		slog.Error("tasks SetLastError", "taskId", id, "error", err)
+		return fmt.Errorf("set last error: %w", err)
+	}
+	return nil
+}
+
+// MarkSeen records that a human opened this session's detail view, which
+// is what turns `done` back into `idle` (docs/adr/0040). Deliberately an
+// explicit call from opening one task, not a side effect of the task
+// list's poll — otherwise having the list on screen would mark every
+// finished session as seen and the state would never be reachable.
+func (s *Store) MarkSeen(ctx context.Context, id string) error {
+	_, err := s.pool.Exec(ctx, `UPDATE tasks SET seen_at = now() WHERE id = $1`, id)
+	if err != nil {
+		slog.Error("tasks MarkSeen", "taskId", id, "error", err)
+		return fmt.Errorf("mark seen: %w", err)
+	}
+	return nil
+}
+
+// ListStartupStalledIDs returns tasks whose pod is live but whose agent
+// has never posted anything, past startupStall (docs/adr/0040).
+//
+// Before this, nothing bounded the window between "pod scheduled" and
+// "first sign of life". The only backstop was ListIdleWarmTaskIDs, whose
+// clock starts at claim time (ClaimNextTask sets last_active_at = now()),
+// so a worker that came up and never spoke burned the full 30-minute idle
+// timeout and then a further 10-minute heartbeat reclaim before anything
+// noticed — roughly 40 minutes of a silent pod holding a concurrency slot.
+func (s *Store) ListStartupStalledIDs(ctx context.Context, startupStall time.Duration) ([]string, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT id FROM tasks
+		WHERE pod_phase = ANY($1)
+		  AND NOT activity_seen
+		  AND (last_active_at IS NULL OR last_active_at < now() - ($2 * interval '1 second'))
+		  AND deleted_at IS NULL
+	`, livePodPhases, startupStall.Seconds())
+	if err != nil {
+		slog.Error("tasks ListStartupStalledIDs", "error", err)
+		return nil, fmt.Errorf("list startup stalled: %w", err)
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("list startup stalled: scan: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
 }
 
 // ListIdleWarmTaskIDs mirrors ListOverdueStopIDs' shape exactly — a task

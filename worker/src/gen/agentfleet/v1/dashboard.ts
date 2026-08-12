@@ -146,7 +146,19 @@ export interface InterruptResponse {
  * session_id, both of which already survive teardown. Rejected with
  * CodeFailedPrecondition if the task already has a live pod (idempotent
  * double-click guard) or the fleet is already at MAX_IN_FLIGHT_TASKS.
+ * Records that a human opened this session's detail view — what turns a
+ * `done` live_state (finished while nobody was looking) back into `idle`.
+ * Deliberately an explicit call rather than a side effect of GetTask: the
+ * task list polls, and a poll marking everything seen would make `done`
+ * unreachable.
  */
+export interface MarkSeenRequest {
+  taskId: string;
+}
+
+export interface MarkSeenResponse {
+}
+
 export interface WarmRequest {
   taskId: string;
 }
@@ -977,6 +989,62 @@ export const InterruptResponse: MessageFns<InterruptResponse> = {
   fromPartial<I extends Exact<DeepPartial<InterruptResponse>, I>>(object: I): InterruptResponse {
     const message = createBaseInterruptResponse();
     message.status = object.status ?? "";
+    return message;
+  },
+};
+
+function createBaseMarkSeenRequest(): MarkSeenRequest {
+  return { taskId: "" };
+}
+
+export const MarkSeenRequest: MessageFns<MarkSeenRequest> = {
+  fromJSON(object: any): MarkSeenRequest {
+    return {
+      taskId: isSet(object.taskId)
+        ? globalThis.String(object.taskId)
+        : isSet(object.task_id)
+        ? globalThis.String(object.task_id)
+        : "",
+    };
+  },
+
+  toJSON(message: MarkSeenRequest): unknown {
+    const obj: any = {};
+    if (message.taskId !== "") {
+      obj.taskId = message.taskId;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<MarkSeenRequest>, I>>(base?: I): MarkSeenRequest {
+    return MarkSeenRequest.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<MarkSeenRequest>, I>>(object: I): MarkSeenRequest {
+    const message = createBaseMarkSeenRequest();
+    message.taskId = object.taskId ?? "";
+    return message;
+  },
+};
+
+function createBaseMarkSeenResponse(): MarkSeenResponse {
+  return {};
+}
+
+export const MarkSeenResponse: MessageFns<MarkSeenResponse> = {
+  fromJSON(_: any): MarkSeenResponse {
+    return {};
+  },
+
+  toJSON(_: MarkSeenResponse): unknown {
+    const obj: any = {};
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<MarkSeenResponse>, I>>(base?: I): MarkSeenResponse {
+    return MarkSeenResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<MarkSeenResponse>, I>>(_: I): MarkSeenResponse {
+    const message = createBaseMarkSeenResponse();
     return message;
   },
 };
@@ -3013,6 +3081,7 @@ export interface DashboardService {
   /** buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE */
   SetPermissionMode(request: SetPermissionModeRequest): Promise<SetPermissionModeResponse>;
   Warm(request: WarmRequest): Promise<WarmResponse>;
+  MarkSeen(request: MarkSeenRequest): Promise<MarkSeenResponse>;
   ApproveTask(request: ApproveTaskRequest): Promise<ApproveTaskResponse>;
   KillE2e(request: KillE2eRequest): Promise<KillE2eResponse>;
   AnswerQuestion(request: AnswerQuestionRequest): Promise<AnswerQuestionResponse>;

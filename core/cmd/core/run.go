@@ -110,7 +110,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool) error {
 
 	// docs/adr/0020 point 2: core claims, then commands the provisioner —
 	// the provisioner never claims tasks or decides to spawn on its own.
-	dispatchLoop := dispatch.New(taskStore, activityStore, repoStore, profileStore, provisioner, cfg.MaxInFlight, cfg.MaxTaskRetries, cfg.StopGrace, cfg.IdleTimeout)
+	dispatchLoop := dispatch.New(taskStore, activityStore, repoStore, profileStore, provisioner, cfg.MaxInFlight, cfg.MaxTaskRetries, cfg.StopGrace, cfg.IdleTimeout, cfg.StartupStall)
 	// CreateTask/SetStatus/MarkCrashed all nudge (below) for the responsive
 	// path, so this interval is now purely a fallback: recovery for a
 	// dropped nudge, plus the passive path for a worker that vanished

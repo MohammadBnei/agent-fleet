@@ -84,6 +84,38 @@ export function podStateBadge(task: Task): { label: string; className: string } 
 // minutes and nothing in the UI showed it).
 const STALE_THRESHOLD_MS = 10 * 60 * 1000;
 
+// Server-derived session liveness (docs/adr/0040), distinct from status
+// and pod phase: whether the agent is working, waiting on you, stalled, or
+// finished while you weren't looking. Deliberately renders nothing for
+// `working` and `idle` — those are the unremarkable states, and a badge on
+// every row is a badge on none.
+export function liveStateBadge(task: Task): { label: string; className: string; title?: string } | null {
+  switch (task.liveState) {
+    case "blocked":
+      return { label: "NEEDS YOU", className: "text-primary border-primary/45 bg-primary/10" };
+    case "done":
+      return {
+        label: "DONE",
+        className: "text-success border-success/45 bg-success/10",
+        title: "finished while you weren't looking — opening it marks it seen",
+      };
+    case "stalled":
+      return {
+        label: "STALLED",
+        className: "text-warning border-warning/45 bg-warning/10",
+        title: "no response since the last thing sent to the agent",
+      };
+    case "unknown":
+      return {
+        label: "STARTING",
+        className: "text-base-content/60 border-base-content/20 bg-base-content/5",
+        title: "pod is up but the agent hasn't said anything yet",
+      };
+    default:
+      return null;
+  }
+}
+
 export function staleBadge(task: Task): { label: string; className: string; title?: string } | null {
   if (!ACTIVE_STATUSES.has(task.status) || !task.heartbeatAt) return null;
   const elapsedMs = Date.now() - new Date(task.heartbeatAt).getTime();
@@ -159,6 +191,7 @@ function NeedsYouCard({
   const progress = todos.filter((t) => t.status === "completed").length;
   const podBadge = podStateBadge(task);
   const staleTag = staleBadge(task);
+  const liveTag = liveStateBadge(task);
   return (
     <div className="relative">
       <button
@@ -175,6 +208,11 @@ function NeedsYouCard({
           {podBadge && (
             <span className={`text-[8.5px] px-1 rounded border tracking-wide ${podBadge.className}`}>
               {podBadge.label}
+            </span>
+          )}
+          {liveTag && (
+            <span className={`text-[8.5px] px-1 rounded border tracking-wide ${liveTag.className}`} title={liveTag.title}>
+              {liveTag.label}
             </span>
           )}
           {staleTag && (
@@ -213,6 +251,7 @@ function WorkingCard({
   const pct = Math.round((progress / Math.max(todos.length, 1)) * 100);
   const podBadge = podStateBadge(task);
   const staleTag = staleBadge(task);
+  const liveTag = liveStateBadge(task);
   return (
     <div className="relative">
       <button
@@ -229,6 +268,11 @@ function WorkingCard({
           {podBadge && (
             <span className={`text-[8.5px] px-1 rounded border tracking-wide ${podBadge.className}`}>
               {podBadge.label}
+            </span>
+          )}
+          {liveTag && (
+            <span className={`text-[8.5px] px-1 rounded border tracking-wide ${liveTag.className}`} title={liveTag.title}>
+              {liveTag.label}
             </span>
           )}
           {staleTag && (

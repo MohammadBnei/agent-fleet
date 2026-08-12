@@ -61,6 +61,9 @@ const (
 	DashboardServiceSetPermissionModeProcedure = "/agentfleet.v1.DashboardService/SetPermissionMode"
 	// DashboardServiceWarmProcedure is the fully-qualified name of the DashboardService's Warm RPC.
 	DashboardServiceWarmProcedure = "/agentfleet.v1.DashboardService/Warm"
+	// DashboardServiceMarkSeenProcedure is the fully-qualified name of the DashboardService's MarkSeen
+	// RPC.
+	DashboardServiceMarkSeenProcedure = "/agentfleet.v1.DashboardService/MarkSeen"
 	// DashboardServiceApproveTaskProcedure is the fully-qualified name of the DashboardService's
 	// ApproveTask RPC.
 	DashboardServiceApproveTaskProcedure = "/agentfleet.v1.DashboardService/ApproveTask"
@@ -176,6 +179,7 @@ type DashboardServiceClient interface {
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	SetPermissionMode(context.Context, *connect.Request[v1.SetPermissionModeRequest]) (*connect.Response[v1.SetPermissionModeResponse], error)
 	Warm(context.Context, *connect.Request[v1.WarmRequest]) (*connect.Response[v1.WarmResponse], error)
+	MarkSeen(context.Context, *connect.Request[v1.MarkSeenRequest]) (*connect.Response[v1.MarkSeenResponse], error)
 	ApproveTask(context.Context, *connect.Request[v1.ApproveTaskRequest]) (*connect.Response[v1.ApproveTaskResponse], error)
 	KillE2E(context.Context, *connect.Request[v1.KillE2ERequest]) (*connect.Response[v1.KillE2EResponse], error)
 	AnswerQuestion(context.Context, *connect.Request[v1.AnswerQuestionRequest]) (*connect.Response[v1.AnswerQuestionResponse], error)
@@ -294,6 +298,12 @@ func NewDashboardServiceClient(httpClient connect.HTTPClient, baseURL string, op
 			httpClient,
 			baseURL+DashboardServiceWarmProcedure,
 			connect.WithSchema(dashboardServiceMethods.ByName("Warm")),
+			connect.WithClientOptions(opts...),
+		),
+		markSeen: connect.NewClient[v1.MarkSeenRequest, v1.MarkSeenResponse](
+			httpClient,
+			baseURL+DashboardServiceMarkSeenProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("MarkSeen")),
 			connect.WithClientOptions(opts...),
 		),
 		approveTask: connect.NewClient[v1.ApproveTaskRequest, v1.ApproveTaskResponse](
@@ -491,6 +501,7 @@ type dashboardServiceClient struct {
 	interrupt            *connect.Client[v1.InterruptRequest, v1.InterruptResponse]
 	setPermissionMode    *connect.Client[v1.SetPermissionModeRequest, v1.SetPermissionModeResponse]
 	warm                 *connect.Client[v1.WarmRequest, v1.WarmResponse]
+	markSeen             *connect.Client[v1.MarkSeenRequest, v1.MarkSeenResponse]
 	approveTask          *connect.Client[v1.ApproveTaskRequest, v1.ApproveTaskResponse]
 	killE2E              *connect.Client[v1.KillE2ERequest, v1.KillE2EResponse]
 	answerQuestion       *connect.Client[v1.AnswerQuestionRequest, v1.AnswerQuestionResponse]
@@ -571,6 +582,11 @@ func (c *dashboardServiceClient) SetPermissionMode(ctx context.Context, req *con
 // Warm calls agentfleet.v1.DashboardService.Warm.
 func (c *dashboardServiceClient) Warm(ctx context.Context, req *connect.Request[v1.WarmRequest]) (*connect.Response[v1.WarmResponse], error) {
 	return c.warm.CallUnary(ctx, req)
+}
+
+// MarkSeen calls agentfleet.v1.DashboardService.MarkSeen.
+func (c *dashboardServiceClient) MarkSeen(ctx context.Context, req *connect.Request[v1.MarkSeenRequest]) (*connect.Response[v1.MarkSeenResponse], error) {
+	return c.markSeen.CallUnary(ctx, req)
 }
 
 // ApproveTask calls agentfleet.v1.DashboardService.ApproveTask.
@@ -746,6 +762,7 @@ type DashboardServiceHandler interface {
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	SetPermissionMode(context.Context, *connect.Request[v1.SetPermissionModeRequest]) (*connect.Response[v1.SetPermissionModeResponse], error)
 	Warm(context.Context, *connect.Request[v1.WarmRequest]) (*connect.Response[v1.WarmResponse], error)
+	MarkSeen(context.Context, *connect.Request[v1.MarkSeenRequest]) (*connect.Response[v1.MarkSeenResponse], error)
 	ApproveTask(context.Context, *connect.Request[v1.ApproveTaskRequest]) (*connect.Response[v1.ApproveTaskResponse], error)
 	KillE2E(context.Context, *connect.Request[v1.KillE2ERequest]) (*connect.Response[v1.KillE2EResponse], error)
 	AnswerQuestion(context.Context, *connect.Request[v1.AnswerQuestionRequest]) (*connect.Response[v1.AnswerQuestionResponse], error)
@@ -860,6 +877,12 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 		DashboardServiceWarmProcedure,
 		svc.Warm,
 		connect.WithSchema(dashboardServiceMethods.ByName("Warm")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dashboardServiceMarkSeenHandler := connect.NewUnaryHandler(
+		DashboardServiceMarkSeenProcedure,
+		svc.MarkSeen,
+		connect.WithSchema(dashboardServiceMethods.ByName("MarkSeen")),
 		connect.WithHandlerOptions(opts...),
 	)
 	dashboardServiceApproveTaskHandler := connect.NewUnaryHandler(
@@ -1064,6 +1087,8 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 			dashboardServiceSetPermissionModeHandler.ServeHTTP(w, r)
 		case DashboardServiceWarmProcedure:
 			dashboardServiceWarmHandler.ServeHTTP(w, r)
+		case DashboardServiceMarkSeenProcedure:
+			dashboardServiceMarkSeenHandler.ServeHTTP(w, r)
 		case DashboardServiceApproveTaskProcedure:
 			dashboardServiceApproveTaskHandler.ServeHTTP(w, r)
 		case DashboardServiceKillE2EProcedure:
@@ -1171,6 +1196,10 @@ func (UnimplementedDashboardServiceHandler) SetPermissionMode(context.Context, *
 
 func (UnimplementedDashboardServiceHandler) Warm(context.Context, *connect.Request[v1.WarmRequest]) (*connect.Response[v1.WarmResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.Warm is not implemented"))
+}
+
+func (UnimplementedDashboardServiceHandler) MarkSeen(context.Context, *connect.Request[v1.MarkSeenRequest]) (*connect.Response[v1.MarkSeenResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.MarkSeen is not implemented"))
 }
 
 func (UnimplementedDashboardServiceHandler) ApproveTask(context.Context, *connect.Request[v1.ApproveTaskRequest]) (*connect.Response[v1.ApproveTaskResponse], error) {

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { client } from "../connectClient";
 import { isThot, repoLabel } from "../taskKind";
 import type { Task } from "../gen/agentfleet/v1/core_pb";
-import { podStateBadge, staleBadge, heartbeatLabel, prBadge, isPodPhaseLive } from "./TaskList";
+import { podStateBadge, staleBadge, heartbeatLabel, prBadge } from "./TaskList";
 import { TranscriptEntryType } from "../gen/agentfleet/v1/transcript_pb";
 import {
   parseQuestions,
@@ -11,7 +11,6 @@ import {
   findPendingPermissions,
   resolvedPermissionDecisions,
   permissionDenyMessages,
-  isCogitating,
   latestToolCallSummary,
   latestSlashCommands,
   buildToolCallPairs,
@@ -274,7 +273,10 @@ export function TaskDetail({
   const pendingPermissions = findPendingPermissions(entries);
   const permissionDecisions = resolvedPermissionDecisions(entries);
   const denyMessages = permissionDenyMessages(entries);
-  const cogitating = isCogitating(entries, isPodPhaseLive(task.podPhase), pendingPermissions.length > 0, pendingQuestion !== null);
+  // Server-derived (docs/adr/0040) — core owns the thresholds, so every
+  // client agrees on what "working" and "stalled" mean.
+  const cogitating = task.liveState === "working";
+  const stalled = task.liveState === "stalled";
   const toolCallPairs = buildToolCallPairs(entries);
   const toolCallPairsBySeq = new Map(toolCallPairs.map((p) => [p.call.seq, p]));
   const consumedResultSeqs = pairedResultSeqs(toolCallPairs);
@@ -306,6 +308,17 @@ export function TaskDetail({
             <span className="px-2 py-0.5 rounded text-[9.5px] font-semibold border tracking-wide border-info/45 bg-info/10 text-info flex items-center gap-1">
               <span className="w-1.5 h-1.5 rounded-full bg-info animate-fpulse" />
               THINKING
+            </span>
+          )}
+          {/* The agent owes a reply and hasn't produced one. Not a
+              verdict — a slow turn is not a dead one — so this offers the
+              controls rather than acting on its own. */}
+          {stalled && (
+            <span
+              className="px-2 py-0.5 rounded text-[9.5px] font-semibold border tracking-wide border-warning/45 bg-warning/10 text-warning"
+              title="no response since the last thing sent — interrupt or kill it from Actions"
+            >
+              STALLED
             </span>
           )}
           {staleTag && (
