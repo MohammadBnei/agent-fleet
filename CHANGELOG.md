@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.49.2](https://github.com/MohammadBnei/agent-fleet/compare/1.49.1...1.49.2) (2026-08-12)
+
+
+### Bug Fixes
+
+* **dashboard:** close the settings menu on an outside click ([78d4747](https://github.com/MohammadBnei/agent-fleet/commit/78d474746ec6ef5b743f6b05e416826a62f326e5))
+* **worker:** actually run rtk — settings.json hooks never fire under the SDK ([c3dbafe](https://github.com/MohammadBnei/agent-fleet/commit/c3dbafe9e1f8f1af5ba80b02301886a96fdde0fe))
+
 ## [1.49.1](https://github.com/MohammadBnei/agent-fleet/compare/1.49.0...1.49.1) (2026-08-12)
 
 
