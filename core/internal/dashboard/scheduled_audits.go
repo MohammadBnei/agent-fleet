@@ -73,6 +73,21 @@ func (s *Server) UpdateScheduledAudit(ctx context.Context, req *connect.Request[
 	return connect.NewResponse(&agentfleetv1.UpdateScheduledAuditResponse{Audit: auditToProto(a)}), nil
 }
 
+func (s *Server) RunScheduledAuditNow(ctx context.Context, req *connect.Request[agentfleetv1.RunScheduledAuditNowRequest]) (*connect.Response[agentfleetv1.RunScheduledAuditNowResponse], error) {
+	if req.Msg.GetId() == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("id is required"))
+	}
+	a, err := s.audits.RunNow(ctx, req.Msg.GetId())
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, connect.NewError(connect.CodeNotFound, err)
+		}
+		slog.Error("dashboard RunScheduledAuditNow", "id", req.Msg.GetId(), "error", err)
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	return connect.NewResponse(&agentfleetv1.RunScheduledAuditNowResponse{Audit: auditToProto(a)}), nil
+}
+
 func (s *Server) DeleteScheduledAudit(ctx context.Context, req *connect.Request[agentfleetv1.DeleteScheduledAuditRequest]) (*connect.Response[agentfleetv1.DeleteScheduledAuditResponse], error) {
 	if err := s.audits.Delete(ctx, req.Msg.GetId()); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

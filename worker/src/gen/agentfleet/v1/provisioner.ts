@@ -328,10 +328,27 @@ export interface WorktreeInfo {
   /** e.g. "[gone]", "[ahead 2]", "" */
   upstreamTrack: string;
   mtimeUnix: number;
+  /** absolute path on the shared PVC */
+  path: string;
+  /**
+   * Uncommitted entries (`git status --porcelain` lines). Deleting a
+   * worktree throws this work away, so it's the warning shown next to the
+   * delete button, not decoration.
+   */
+  dirtyFiles: number;
+  sizeBytes: number;
 }
 
 export interface ListWorktreesResponse {
   worktrees: WorktreeInfo[];
+  /**
+   * Total/available bytes of the filesystem holding the worktrees root (the
+   * shared workspace PVC) — free space is what decides whether an orphan has
+   * to be pruned now or can wait. Response-level, not per-worktree: it's one
+   * filesystem, and repeating it per row would imply otherwise.
+   */
+  pvcTotalBytes: number;
+  pvcFreeBytes: number;
 }
 
 export interface DeleteWorktreeRequest {
@@ -1144,7 +1161,7 @@ export const ListWorktreesRequest: MessageFns<ListWorktreesRequest> = {
 };
 
 function createBaseWorktreeInfo(): WorktreeInfo {
-  return { taskId: "", repo: "", branch: "", upstreamTrack: "", mtimeUnix: 0 };
+  return { taskId: "", repo: "", branch: "", upstreamTrack: "", mtimeUnix: 0, path: "", dirtyFiles: 0, sizeBytes: 0 };
 }
 
 export const WorktreeInfo: MessageFns<WorktreeInfo> = {
@@ -1167,6 +1184,17 @@ export const WorktreeInfo: MessageFns<WorktreeInfo> = {
         : isSet(object.mtime_unix)
         ? globalThis.Number(object.mtime_unix)
         : 0,
+      path: isSet(object.path) ? globalThis.String(object.path) : "",
+      dirtyFiles: isSet(object.dirtyFiles)
+        ? globalThis.Number(object.dirtyFiles)
+        : isSet(object.dirty_files)
+        ? globalThis.Number(object.dirty_files)
+        : 0,
+      sizeBytes: isSet(object.sizeBytes)
+        ? globalThis.Number(object.sizeBytes)
+        : isSet(object.size_bytes)
+        ? globalThis.Number(object.size_bytes)
+        : 0,
     };
   },
 
@@ -1187,6 +1215,15 @@ export const WorktreeInfo: MessageFns<WorktreeInfo> = {
     if (message.mtimeUnix !== 0) {
       obj.mtimeUnix = Math.round(message.mtimeUnix);
     }
+    if (message.path !== "") {
+      obj.path = message.path;
+    }
+    if (message.dirtyFiles !== 0) {
+      obj.dirtyFiles = Math.round(message.dirtyFiles);
+    }
+    if (message.sizeBytes !== 0) {
+      obj.sizeBytes = Math.round(message.sizeBytes);
+    }
     return obj;
   },
 
@@ -1200,12 +1237,15 @@ export const WorktreeInfo: MessageFns<WorktreeInfo> = {
     message.branch = object.branch ?? "";
     message.upstreamTrack = object.upstreamTrack ?? "";
     message.mtimeUnix = object.mtimeUnix ?? 0;
+    message.path = object.path ?? "";
+    message.dirtyFiles = object.dirtyFiles ?? 0;
+    message.sizeBytes = object.sizeBytes ?? 0;
     return message;
   },
 };
 
 function createBaseListWorktreesResponse(): ListWorktreesResponse {
-  return { worktrees: [] };
+  return { worktrees: [], pvcTotalBytes: 0, pvcFreeBytes: 0 };
 }
 
 export const ListWorktreesResponse: MessageFns<ListWorktreesResponse> = {
@@ -1214,6 +1254,16 @@ export const ListWorktreesResponse: MessageFns<ListWorktreesResponse> = {
       worktrees: globalThis.Array.isArray(object?.worktrees)
         ? object.worktrees.map((e: any) => WorktreeInfo.fromJSON(e))
         : [],
+      pvcTotalBytes: isSet(object.pvcTotalBytes)
+        ? globalThis.Number(object.pvcTotalBytes)
+        : isSet(object.pvc_total_bytes)
+        ? globalThis.Number(object.pvc_total_bytes)
+        : 0,
+      pvcFreeBytes: isSet(object.pvcFreeBytes)
+        ? globalThis.Number(object.pvcFreeBytes)
+        : isSet(object.pvc_free_bytes)
+        ? globalThis.Number(object.pvc_free_bytes)
+        : 0,
     };
   },
 
@@ -1221,6 +1271,12 @@ export const ListWorktreesResponse: MessageFns<ListWorktreesResponse> = {
     const obj: any = {};
     if (message.worktrees?.length) {
       obj.worktrees = message.worktrees.map((e) => WorktreeInfo.toJSON(e));
+    }
+    if (message.pvcTotalBytes !== 0) {
+      obj.pvcTotalBytes = Math.round(message.pvcTotalBytes);
+    }
+    if (message.pvcFreeBytes !== 0) {
+      obj.pvcFreeBytes = Math.round(message.pvcFreeBytes);
     }
     return obj;
   },
@@ -1231,6 +1287,8 @@ export const ListWorktreesResponse: MessageFns<ListWorktreesResponse> = {
   fromPartial<I extends Exact<DeepPartial<ListWorktreesResponse>, I>>(object: I): ListWorktreesResponse {
     const message = createBaseListWorktreesResponse();
     message.worktrees = object.worktrees?.map((e) => WorktreeInfo.fromPartial(e)) || [];
+    message.pvcTotalBytes = object.pvcTotalBytes ?? 0;
+    message.pvcFreeBytes = object.pvcFreeBytes ?? 0;
     return message;
   },
 };

@@ -9,12 +9,14 @@ package git
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 )
 
 // Manager runs git commands against repo clones rooted at root (the shared
@@ -355,6 +357,55 @@ type WorktreeInfo struct {
 	Branch        string
 	UpstreamTrack string // e.g. "[gone]", "[ahead 2]", ""
 	MtimeUnix     int64
+	Path          string // absolute path on the shared PVC
+	DirtyFiles    int32  // uncommitted entries, i.e. `git status --porcelain` lines
+	SizeBytes     int64  // recursive size on disk
+}
+
+// dirtyFiles counts uncommitted entries in a worktree. Deleting an orphaned
+// worktree throws this work away, so it's the warning the dashboard shows
+// next to the delete button — not decoration.
+func (m *Manager) dirtyFiles(ctx context.Context, path string) int32 {
+	out, err := m.run(ctx, path, "status", "--porcelain")
+	if err != nil || out == "" {
+		return 0
+	}
+	return int32(strings.Count(out, "\n") + 1)
+}
+
+// dirSize sums a worktree's on-disk bytes.
+//
+// ponytail: a full WalkDir per worktree per call, no cache. Affordable only
+// because ListWorktrees has no poller behind it — the dashboard's Worktrees
+// page fetches on mount and on an explicit refresh click, so this is paid per
+// human action, not per tick. If anything ever polls ListWorktrees, cache this
+// by (path, mtime) or move it behind a request flag first.
+func dirSize(root string) int64 {
+	var total int64
+	// Errors are ignored per-entry rather than aborting: a worktree being
+	// written to by a live agent will race us, and a partial size is more
+	// useful to a human deciding what to delete than no size at all.
+	_ = filepath.WalkDir(root, func(_ string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil //nolint:nilerr // skip unreadable entries, keep walking
+		}
+		if fi, statErr := d.Info(); statErr == nil {
+			total += fi.Size()
+		}
+		return nil
+	})
+	return total
+}
+
+// DiskUsage reports total/free bytes for the filesystem holding the
+// worktrees root — the shared workspace PVC. Free space is what decides
+// whether an orphan has to be pruned now or can wait.
+func (m *Manager) DiskUsage() (total uint64, free uint64, err error) {
+	var st syscall.Statfs_t
+	if err := syscall.Statfs(filepath.Join(m.root, "worktrees"), &st); err != nil {
+		return 0, 0, fmt.Errorf("statfs: %w", err)
+	}
+	return st.Blocks * uint64(st.Bsize), st.Bavail * uint64(st.Bsize), nil
 }
 
 // ListWorktrees enumerates agent/<taskId> worktrees for repo, read-only
@@ -384,6 +435,9 @@ func (m *Manager) ListWorktrees(ctx context.Context, repo string) ([]WorktreeInf
 			Repo:          repo,
 			Branch:        branch,
 			UpstreamTrack: track,
+			Path:          path,
+			DirtyFiles:    m.dirtyFiles(ctx, path),
+			SizeBytes:     dirSize(path),
 		}
 		if fi, statErr := os.Stat(path); statErr == nil {
 			info.MtimeUnix = fi.ModTime().Unix()

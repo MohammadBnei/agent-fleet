@@ -270,10 +270,15 @@ message WorktreeView {
   optional string task_status = 6;
   optional string task_error = 7;
   optional string pr_url = 8;
+  string path = 9;
+  int32 dirty_files = 10;
+  int64 size_bytes = 11;
 }
 
 message ListWorktreesViewResponse {
   repeated WorktreeView worktrees = 1;
+  uint64 pvc_total_bytes = 2;
+  uint64 pvc_free_bytes = 3;
 }
 
 // GetJournal is the read path reliability-findings.md #1/#7 both call out
@@ -517,6 +522,37 @@ service DashboardService {
   rpc CreateScheduledAudit(CreateScheduledAuditRequest) returns (CreateScheduledAuditResponse);
   rpc UpdateScheduledAudit(UpdateScheduledAuditRequest) returns (UpdateScheduledAuditResponse);
   rpc DeleteScheduledAudit(DeleteScheduledAuditRequest) returns (DeleteScheduledAuditResponse);
+  rpc RunScheduledAuditNow(RunScheduledAuditNowRequest) returns (RunScheduledAuditNowResponse);
+  rpc RetryTask(RetryTaskRequest) returns (RetryTaskResponse);
+}
+
+// Brings an audit's next run forward to now rather than adding a second
+// dispatch path: it only moves next_run_at and nudges the existing loop, so
+// the run itself goes through exactly the same ClaimDue → CreateDeduped path
+// a scheduled one does (including landing as `proposed`, and including the
+// dedup that skips it while a previous run is still open).
+message RunScheduledAuditNowRequest {
+  string id = 1;
+}
+
+message RunScheduledAuditNowResponse {
+  ScheduledAudit audit = 1;
+}
+
+// Puts a terminally-failed task back in the queue. Retry was automatic-only:
+// ClaimNextTask reclaims a stale-heartbeat task until retry_count hits the
+// cap, then sets failed_permanently, which had no path back — a task that
+// died of an expired token stayed dead even after the token was fixed.
+// Resets retry_count so the reclaim budget starts over.
+//
+// Rejected with CodeFailedPrecondition unless the task is in a terminal
+// failed state — retrying a live session would double-dispatch it.
+message RetryTaskRequest {
+  string task_id = 1;
+}
+
+message RetryTaskResponse {
+  string status = 1;
 }
 
 message ScheduledAudit {

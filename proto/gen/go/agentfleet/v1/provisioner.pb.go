@@ -1215,6 +1215,12 @@ type WorktreeInfo struct {
 	Branch        string                 `protobuf:"bytes,3,opt,name=branch,proto3" json:"branch,omitempty"`
 	UpstreamTrack string                 `protobuf:"bytes,4,opt,name=upstream_track,json=upstreamTrack,proto3" json:"upstream_track,omitempty"` // e.g. "[gone]", "[ahead 2]", ""
 	MtimeUnix     int64                  `protobuf:"varint,5,opt,name=mtime_unix,json=mtimeUnix,proto3" json:"mtime_unix,omitempty"`
+	Path          string                 `protobuf:"bytes,6,opt,name=path,proto3" json:"path,omitempty"` // absolute path on the shared PVC
+	// Uncommitted entries (`git status --porcelain` lines). Deleting a
+	// worktree throws this work away, so it's the warning shown next to the
+	// delete button, not decoration.
+	DirtyFiles    int32 `protobuf:"varint,7,opt,name=dirty_files,json=dirtyFiles,proto3" json:"dirty_files,omitempty"`
+	SizeBytes     int64 `protobuf:"varint,8,opt,name=size_bytes,json=sizeBytes,proto3" json:"size_bytes,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1284,9 +1290,36 @@ func (x *WorktreeInfo) GetMtimeUnix() int64 {
 	return 0
 }
 
+func (x *WorktreeInfo) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *WorktreeInfo) GetDirtyFiles() int32 {
+	if x != nil {
+		return x.DirtyFiles
+	}
+	return 0
+}
+
+func (x *WorktreeInfo) GetSizeBytes() int64 {
+	if x != nil {
+		return x.SizeBytes
+	}
+	return 0
+}
+
 type ListWorktreesResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Worktrees     []*WorktreeInfo        `protobuf:"bytes,1,rep,name=worktrees,proto3" json:"worktrees,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Worktrees []*WorktreeInfo        `protobuf:"bytes,1,rep,name=worktrees,proto3" json:"worktrees,omitempty"`
+	// Total/available bytes of the filesystem holding the worktrees root (the
+	// shared workspace PVC) — free space is what decides whether an orphan has
+	// to be pruned now or can wait. Response-level, not per-worktree: it's one
+	// filesystem, and repeating it per row would imply otherwise.
+	PvcTotalBytes uint64 `protobuf:"varint,2,opt,name=pvc_total_bytes,json=pvcTotalBytes,proto3" json:"pvc_total_bytes,omitempty"`
+	PvcFreeBytes  uint64 `protobuf:"varint,3,opt,name=pvc_free_bytes,json=pvcFreeBytes,proto3" json:"pvc_free_bytes,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1326,6 +1359,20 @@ func (x *ListWorktreesResponse) GetWorktrees() []*WorktreeInfo {
 		return x.Worktrees
 	}
 	return nil
+}
+
+func (x *ListWorktreesResponse) GetPvcTotalBytes() uint64 {
+	if x != nil {
+		return x.PvcTotalBytes
+	}
+	return 0
+}
+
+func (x *ListWorktreesResponse) GetPvcFreeBytes() uint64 {
+	if x != nil {
+		return x.PvcFreeBytes
+	}
+	return 0
 }
 
 type DeleteWorktreeRequest struct {
@@ -1508,16 +1555,23 @@ const file_agentfleet_v1_provisioner_proto_rawDesc = "" +
 	"\vresult_json\x18\x01 \x01(\tR\n" +
 	"resultJson\x12\x19\n" +
 	"\bis_error\x18\x02 \x01(\bR\aisError\"\x16\n" +
-	"\x14ListWorktreesRequest\"\x99\x01\n" +
+	"\x14ListWorktreesRequest\"\xed\x01\n" +
 	"\fWorktreeInfo\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x12\n" +
 	"\x04repo\x18\x02 \x01(\tR\x04repo\x12\x16\n" +
 	"\x06branch\x18\x03 \x01(\tR\x06branch\x12%\n" +
 	"\x0eupstream_track\x18\x04 \x01(\tR\rupstreamTrack\x12\x1d\n" +
 	"\n" +
-	"mtime_unix\x18\x05 \x01(\x03R\tmtimeUnix\"R\n" +
+	"mtime_unix\x18\x05 \x01(\x03R\tmtimeUnix\x12\x12\n" +
+	"\x04path\x18\x06 \x01(\tR\x04path\x12\x1f\n" +
+	"\vdirty_files\x18\a \x01(\x05R\n" +
+	"dirtyFiles\x12\x1d\n" +
+	"\n" +
+	"size_bytes\x18\b \x01(\x03R\tsizeBytes\"\xa0\x01\n" +
 	"\x15ListWorktreesResponse\x129\n" +
-	"\tworktrees\x18\x01 \x03(\v2\x1b.agentfleet.v1.WorktreeInfoR\tworktrees\"r\n" +
+	"\tworktrees\x18\x01 \x03(\v2\x1b.agentfleet.v1.WorktreeInfoR\tworktrees\x12&\n" +
+	"\x0fpvc_total_bytes\x18\x02 \x01(\x04R\rpvcTotalBytes\x12$\n" +
+	"\x0epvc_free_bytes\x18\x03 \x01(\x04R\fpvcFreeBytes\"r\n" +
 	"\x15DeleteWorktreeRequest\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x12\n" +
 	"\x04repo\x18\x02 \x01(\tR\x04repo\x12,\n" +

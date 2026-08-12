@@ -57,20 +57,24 @@ export function PermissionCard({
       <button
         type="button"
         onClick={() => setIsExpanded(!isExpanded)}
-        className="flex items-start gap-1.5 text-[10.5px] text-base-content/40 hover:text-base-content/60 w-full text-left group"
+        className="flex items-start gap-2 text-[11px] text-dim2 hover:text-dim w-full text-left group"
       >
-        <span className="badge badge-ghost badge-xs flex-none">
+        <span
+          className={`flex-none border px-1 ${
+            decision === "deny" || decision === "interrupted" ? "border-pink-line text-error" : "border-line text-dim"
+          }`}
+        >
           {tool} {decision === "deny" ? "denied" : decision === "interrupted" ? "interrupted" : "allowed"}
         </span>
         {isExpanded ? (
           <div className="flex-1 min-w-0">
             <ToolInputView tool={tool} input={input} />
-            {denyMessage && <div className="text-[10.5px] text-error/70 mt-1">reason: {denyMessage}</div>}
+            {denyMessage && <div className="text-[11px] text-error mt-1">reason: {denyMessage}</div>}
           </div>
         ) : (
           <span className="truncate flex-1">{denyMessage || "permission request"}</span>
         )}
-        <span className="text-[10px] flex-none group-hover:text-base-content/60">
+        <span className="text-[10px] flex-none group-hover:text-dim">
           {isExpanded ? "▴" : "▾"}
         </span>
       </button>
@@ -78,41 +82,33 @@ export function PermissionCard({
   }
 
   return (
-    <div className={`border-y-2 border-primary/40 bg-primary/[0.04] py-4 ${edgeClassName}`}>
-      <div className="text-[10px] tracking-[0.12em] font-semibold text-primary mb-2">
-        PERMISSION — {tool.toUpperCase()}
+    <div className={`border-y border-pink-line bg-pink-bg py-4 ${edgeClassName}`}>
+      <div className="flex items-center gap-2 mb-2.5">
+        <span className="w-1.5 h-1.5 rounded-full bg-error animate-fpulse flex-none" />
+        <span className="text-[10.5px] tracking-[0.1em] text-error">◉ PERMISSION REQUEST · {tool.toUpperCase()}</span>
       </div>
       <div className="max-h-[30vh] overflow-y-auto">
         <ToolInputView tool={tool} input={input} />
       </div>
-      <div className="flex items-center gap-2 mt-3">
-        <button type="button" className="btn btn-success btn-sm" disabled={busy} onClick={onAllow}>
-          {busy ? (
-            <>
-              <span className="loading loading-spinner loading-xs"></span>
-              Allowing...
-            </>
-          ) : (
-            "Allow"
-          )}
+      <div className="flex items-center gap-2.5 mt-3.5 flex-wrap">
+        <button
+          type="button"
+          className="bg-primary text-primary-content px-6 py-2 text-[13px] font-semibold disabled:opacity-50"
+          disabled={busy}
+          onClick={onAllow}
+        >
+          {busy ? "…" : "allow"}
         </button>
         <button
           type="button"
-          className="btn btn-outline btn-sm"
+          className="border border-acc-line px-6 py-2 text-[13px] hover:border-error hover:text-error disabled:opacity-50"
           disabled={busy}
           onClick={() => {
             onDeny(reason || "denied");
             setReason("");
           }}
         >
-          {busy ? (
-            <>
-              <span className="loading loading-spinner loading-xs"></span>
-              Denying...
-            </>
-          ) : (
-            "Deny"
-          )}
+          {busy ? "…" : "deny"}
         </button>
         <input
           value={reason}
@@ -123,9 +119,10 @@ export function PermissionCard({
               setReason("");
             }
           }}
-          placeholder="why not? (optional)"
+          placeholder="reason (optional) — sent back to the agent"
+          aria-label="denial reason"
           disabled={busy}
-          className="flex-1 bg-transparent border border-base-content/15 rounded-lg px-3 py-2 text-[12px] outline-none focus:border-primary/50"
+          className="flex-1 min-w-[180px] bg-transparent border border-line px-3 py-2 text-[12px] outline-none focus:border-primary/60 placeholder:text-dim2"
         />
       </div>
     </div>

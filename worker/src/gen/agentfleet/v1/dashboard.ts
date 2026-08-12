@@ -306,10 +306,15 @@ export interface WorktreeView {
   taskStatus?: string | undefined;
   taskError?: string | undefined;
   prUrl?: string | undefined;
+  path: string;
+  dirtyFiles: number;
+  sizeBytes: number;
 }
 
 export interface ListWorktreesViewResponse {
   worktrees: WorktreeView[];
+  pvcTotalBytes: number;
+  pvcFreeBytes: number;
 }
 
 /**
@@ -485,6 +490,39 @@ export interface DeletePromptSnippetRequest {
 }
 
 export interface DeletePromptSnippetResponse {
+  status: string;
+}
+
+/**
+ * Brings an audit's next run forward to now rather than adding a second
+ * dispatch path: it only moves next_run_at and nudges the existing loop, so
+ * the run itself goes through exactly the same ClaimDue → CreateDeduped path
+ * a scheduled one does (including landing as `proposed`, and including the
+ * dedup that skips it while a previous run is still open).
+ */
+export interface RunScheduledAuditNowRequest {
+  id: string;
+}
+
+export interface RunScheduledAuditNowResponse {
+  audit?: ScheduledAudit | undefined;
+}
+
+/**
+ * Puts a terminally-failed task back in the queue. Retry was automatic-only:
+ * ClaimNextTask reclaims a stale-heartbeat task until retry_count hits the
+ * cap, then sets failed_permanently, which had no path back — a task that
+ * died of an expired token stayed dead even after the token was fixed.
+ * Resets retry_count so the reclaim budget starts over.
+ *
+ * Rejected with CodeFailedPrecondition unless the task is in a terminal
+ * failed state — retrying a live session would double-dispatch it.
+ */
+export interface RetryTaskRequest {
+  taskId: string;
+}
+
+export interface RetryTaskResponse {
   status: string;
 }
 
@@ -1543,6 +1581,9 @@ function createBaseWorktreeView(): WorktreeView {
     taskStatus: undefined,
     taskError: undefined,
     prUrl: undefined,
+    path: "",
+    dirtyFiles: 0,
+    sizeBytes: 0,
   };
 }
 
@@ -1581,6 +1622,17 @@ export const WorktreeView: MessageFns<WorktreeView> = {
         : isSet(object.pr_url)
         ? globalThis.String(object.pr_url)
         : undefined,
+      path: isSet(object.path) ? globalThis.String(object.path) : "",
+      dirtyFiles: isSet(object.dirtyFiles)
+        ? globalThis.Number(object.dirtyFiles)
+        : isSet(object.dirty_files)
+        ? globalThis.Number(object.dirty_files)
+        : 0,
+      sizeBytes: isSet(object.sizeBytes)
+        ? globalThis.Number(object.sizeBytes)
+        : isSet(object.size_bytes)
+        ? globalThis.Number(object.size_bytes)
+        : 0,
     };
   },
 
@@ -1610,6 +1662,15 @@ export const WorktreeView: MessageFns<WorktreeView> = {
     if (message.prUrl !== undefined) {
       obj.prUrl = message.prUrl;
     }
+    if (message.path !== "") {
+      obj.path = message.path;
+    }
+    if (message.dirtyFiles !== 0) {
+      obj.dirtyFiles = Math.round(message.dirtyFiles);
+    }
+    if (message.sizeBytes !== 0) {
+      obj.sizeBytes = Math.round(message.sizeBytes);
+    }
     return obj;
   },
 
@@ -1626,12 +1687,15 @@ export const WorktreeView: MessageFns<WorktreeView> = {
     message.taskStatus = object.taskStatus ?? undefined;
     message.taskError = object.taskError ?? undefined;
     message.prUrl = object.prUrl ?? undefined;
+    message.path = object.path ?? "";
+    message.dirtyFiles = object.dirtyFiles ?? 0;
+    message.sizeBytes = object.sizeBytes ?? 0;
     return message;
   },
 };
 
 function createBaseListWorktreesViewResponse(): ListWorktreesViewResponse {
-  return { worktrees: [] };
+  return { worktrees: [], pvcTotalBytes: 0, pvcFreeBytes: 0 };
 }
 
 export const ListWorktreesViewResponse: MessageFns<ListWorktreesViewResponse> = {
@@ -1640,6 +1704,16 @@ export const ListWorktreesViewResponse: MessageFns<ListWorktreesViewResponse> = 
       worktrees: globalThis.Array.isArray(object?.worktrees)
         ? object.worktrees.map((e: any) => WorktreeView.fromJSON(e))
         : [],
+      pvcTotalBytes: isSet(object.pvcTotalBytes)
+        ? globalThis.Number(object.pvcTotalBytes)
+        : isSet(object.pvc_total_bytes)
+        ? globalThis.Number(object.pvc_total_bytes)
+        : 0,
+      pvcFreeBytes: isSet(object.pvcFreeBytes)
+        ? globalThis.Number(object.pvcFreeBytes)
+        : isSet(object.pvc_free_bytes)
+        ? globalThis.Number(object.pvc_free_bytes)
+        : 0,
     };
   },
 
@@ -1647,6 +1721,12 @@ export const ListWorktreesViewResponse: MessageFns<ListWorktreesViewResponse> = 
     const obj: any = {};
     if (message.worktrees?.length) {
       obj.worktrees = message.worktrees.map((e) => WorktreeView.toJSON(e));
+    }
+    if (message.pvcTotalBytes !== 0) {
+      obj.pvcTotalBytes = Math.round(message.pvcTotalBytes);
+    }
+    if (message.pvcFreeBytes !== 0) {
+      obj.pvcFreeBytes = Math.round(message.pvcFreeBytes);
     }
     return obj;
   },
@@ -1657,6 +1737,8 @@ export const ListWorktreesViewResponse: MessageFns<ListWorktreesViewResponse> = 
   fromPartial<I extends Exact<DeepPartial<ListWorktreesViewResponse>, I>>(object: I): ListWorktreesViewResponse {
     const message = createBaseListWorktreesViewResponse();
     message.worktrees = object.worktrees?.map((e) => WorktreeView.fromPartial(e)) || [];
+    message.pvcTotalBytes = object.pvcTotalBytes ?? 0;
+    message.pvcFreeBytes = object.pvcFreeBytes ?? 0;
     return message;
   },
 };
@@ -2704,6 +2786,122 @@ export const DeletePromptSnippetResponse: MessageFns<DeletePromptSnippetResponse
   },
 };
 
+function createBaseRunScheduledAuditNowRequest(): RunScheduledAuditNowRequest {
+  return { id: "" };
+}
+
+export const RunScheduledAuditNowRequest: MessageFns<RunScheduledAuditNowRequest> = {
+  fromJSON(object: any): RunScheduledAuditNowRequest {
+    return { id: isSet(object.id) ? globalThis.String(object.id) : "" };
+  },
+
+  toJSON(message: RunScheduledAuditNowRequest): unknown {
+    const obj: any = {};
+    if (message.id !== "") {
+      obj.id = message.id;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<RunScheduledAuditNowRequest>, I>>(base?: I): RunScheduledAuditNowRequest {
+    return RunScheduledAuditNowRequest.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<RunScheduledAuditNowRequest>, I>>(object: I): RunScheduledAuditNowRequest {
+    const message = createBaseRunScheduledAuditNowRequest();
+    message.id = object.id ?? "";
+    return message;
+  },
+};
+
+function createBaseRunScheduledAuditNowResponse(): RunScheduledAuditNowResponse {
+  return { audit: undefined };
+}
+
+export const RunScheduledAuditNowResponse: MessageFns<RunScheduledAuditNowResponse> = {
+  fromJSON(object: any): RunScheduledAuditNowResponse {
+    return { audit: isSet(object.audit) ? ScheduledAudit.fromJSON(object.audit) : undefined };
+  },
+
+  toJSON(message: RunScheduledAuditNowResponse): unknown {
+    const obj: any = {};
+    if (message.audit !== undefined) {
+      obj.audit = ScheduledAudit.toJSON(message.audit);
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<RunScheduledAuditNowResponse>, I>>(base?: I): RunScheduledAuditNowResponse {
+    return RunScheduledAuditNowResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<RunScheduledAuditNowResponse>, I>>(object: I): RunScheduledAuditNowResponse {
+    const message = createBaseRunScheduledAuditNowResponse();
+    message.audit = (object.audit !== undefined && object.audit !== null)
+      ? ScheduledAudit.fromPartial(object.audit)
+      : undefined;
+    return message;
+  },
+};
+
+function createBaseRetryTaskRequest(): RetryTaskRequest {
+  return { taskId: "" };
+}
+
+export const RetryTaskRequest: MessageFns<RetryTaskRequest> = {
+  fromJSON(object: any): RetryTaskRequest {
+    return {
+      taskId: isSet(object.taskId)
+        ? globalThis.String(object.taskId)
+        : isSet(object.task_id)
+        ? globalThis.String(object.task_id)
+        : "",
+    };
+  },
+
+  toJSON(message: RetryTaskRequest): unknown {
+    const obj: any = {};
+    if (message.taskId !== "") {
+      obj.taskId = message.taskId;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<RetryTaskRequest>, I>>(base?: I): RetryTaskRequest {
+    return RetryTaskRequest.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<RetryTaskRequest>, I>>(object: I): RetryTaskRequest {
+    const message = createBaseRetryTaskRequest();
+    message.taskId = object.taskId ?? "";
+    return message;
+  },
+};
+
+function createBaseRetryTaskResponse(): RetryTaskResponse {
+  return { status: "" };
+}
+
+export const RetryTaskResponse: MessageFns<RetryTaskResponse> = {
+  fromJSON(object: any): RetryTaskResponse {
+    return { status: isSet(object.status) ? globalThis.String(object.status) : "" };
+  },
+
+  toJSON(message: RetryTaskResponse): unknown {
+    const obj: any = {};
+    if (message.status !== "") {
+      obj.status = message.status;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<RetryTaskResponse>, I>>(base?: I): RetryTaskResponse {
+    return RetryTaskResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<RetryTaskResponse>, I>>(object: I): RetryTaskResponse {
+    const message = createBaseRetryTaskResponse();
+    message.status = object.status ?? "";
+    return message;
+  },
+};
+
 function createBaseScheduledAudit(): ScheduledAudit {
   return {
     id: "",
@@ -3135,6 +3333,8 @@ export interface DashboardService {
   CreateScheduledAudit(request: CreateScheduledAuditRequest): Promise<CreateScheduledAuditResponse>;
   UpdateScheduledAudit(request: UpdateScheduledAuditRequest): Promise<UpdateScheduledAuditResponse>;
   DeleteScheduledAudit(request: DeleteScheduledAuditRequest): Promise<DeleteScheduledAuditResponse>;
+  RunScheduledAuditNow(request: RunScheduledAuditNowRequest): Promise<RunScheduledAuditNowResponse>;
+  RetryTask(request: RetryTaskRequest): Promise<RetryTaskResponse>;
 }
 
 type Builtin = Date | Function | Uint8Array | string | number | boolean | undefined;

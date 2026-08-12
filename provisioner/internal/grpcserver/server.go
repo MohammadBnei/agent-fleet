@@ -415,10 +415,20 @@ func (s *Server) ListWorktrees(ctx context.Context, _ *agentfleetv1.ListWorktree
 				Branch:        info.Branch,
 				UpstreamTrack: info.UpstreamTrack,
 				MtimeUnix:     info.MtimeUnix,
+				Path:          info.Path,
+				DirtyFiles:    info.DirtyFiles,
+				SizeBytes:     info.SizeBytes,
 			})
 		}
 	}
-	return &agentfleetv1.ListWorktreesResponse{Worktrees: out}, nil
+	// Non-fatal: the worktree list is the point of this call, and a statfs
+	// failure (an odd mount, a path that isn't there yet) shouldn't blank the
+	// whole page — the dashboard just omits the capacity meter when total is 0.
+	total, free, err := s.git.DiskUsage()
+	if err != nil {
+		slog.Warn("grpcserver ListWorktrees: disk usage unavailable", "error", err)
+	}
+	return &agentfleetv1.ListWorktreesResponse{Worktrees: out, PvcTotalBytes: total, PvcFreeBytes: free}, nil
 }
 
 func (s *Server) DeleteWorktree(ctx context.Context, req *agentfleetv1.DeleteWorktreeRequest) (*agentfleetv1.DeleteWorktreeResponse, error) {

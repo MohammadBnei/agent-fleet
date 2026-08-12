@@ -7,6 +7,11 @@ import {
   parseSdkSystemInfo,
   permissionDenyMessages,
   buildToolCallPairs,
+  feedVisibility,
+  listSummary,
+  inFlightTool,
+  spineItems,
+  entryTime,
 } from "./transcript";
 
 let nextSeq = 0n;
@@ -70,4 +75,139 @@ test("a call still awaiting its result pairs with null, not with someone else's 
 
   const pairs = buildToolCallPairs([inFlight, otherResult]);
   expect(pairs[0].result).toBeNull();
+});
+
+// --- console rewrite derivations ---------------------------------------------
+
+// The shared fixture above omits created_at/reply_to; these derivations read
+// both, so they get their own builder rather than loosening that one.
+function full(
+  type: TranscriptEntryType,
+  text: string,
+  opts: { from?: string; replyTo?: bigint; createdAt?: string } = {},
+): TranscriptEntry {
+  nextSeq += 1n;
+  return {
+    $typeName: "agentfleet.v1.TranscriptEntry",
+    taskId: "t",
+    seq: nextSeq,
+    from: opts.from ?? "agent",
+    text,
+    type,
+    replyTo: opts.replyTo,
+    createdAt: opts.createdAt ?? "",
+  } as TranscriptEntry;
+}
+
+const perm = (tool: string, input: unknown = {}) =>
+  full(TranscriptEntryType.PERMISSION_REQUEST, JSON.stringify({ tool, input }));
+const respond = (replyTo: bigint, behavior: "allow" | "deny", message?: string) =>
+  full(TranscriptEntryType.PERMISSION_RESPONSE, JSON.stringify({ behavior, message }), { from: "human", replyTo });
+const toolUse = (id: string, tool: string, input: unknown = {}) =>
+  full(TranscriptEntryType.ASSISTANT, JSON.stringify({ id, tool, input }));
+const toolResult = (toolUseId: string) =>
+  full(TranscriptEntryType.USER, JSON.stringify({ toolUseId, content: "ok" }));
+
+// The two mockups' renderVals() disagree on the third mode on purpose: mobile's
+// "calls" shows tool activity, desktop's "decisions" shows nothing but the
+// tier-1 cards. Encoding one and reusing it for both is the bug this guards.
+test("feedVisibility: mobile 'decisions' keeps tools, desktop 'decisions' does not", () => {
+  expect(feedVisibility("decisions", false)).toEqual({ narrative: false, tools: false, quiet: false });
+  expect(feedVisibility("decisions", true)).toEqual({ narrative: false, tools: true, quiet: false });
+  // The other two modes agree across form factors.
+  for (const isMobile of [false, true]) {
+    expect(feedVisibility("everything", isMobile)).toEqual({ narrative: true, tools: true, quiet: true });
+    expect(feedVisibility("narrative", isMobile)).toEqual({ narrative: true, tools: false, quiet: false });
+  }
+});
+
+test("listSummary surfaces the pending permission, question and in-flight tool", () => {
+  const entries = [
+    full(TranscriptEntryType.ASSISTANT, JSON.stringify({ id: "t1", tool: "TodoWrite", input: { todos: [
+      { content: "a", status: "completed", activeForm: "a" },
+      { content: "b", status: "in_progress", activeForm: "b" },
+    ] } })),
+    toolUse("call-done", "Grep", { pattern: "x" }),
+    toolResult("call-done"),
+    toolUse("call-live", "Bash", { command: "pytest tests/ingest" }),
+    perm("Edit", { file_path: "a.py" }),
+    full(TranscriptEntryType.QUESTION, JSON.stringify({ questions: [{ question: "q?", header: "h", options: [] }] })),
+  ];
+  const s = listSummary(entries);
+  expect(s.todos.length).toBe(2);
+  expect(s.pendingPermission?.tool).toBe("Edit");
+  expect(s.pendingQuestion).not.toBeNull();
+  // The unresolved call, not the completed one before it.
+  expect(s.inFlight?.tool).toBe("Bash");
+  expect(s.inFlight?.summary).toContain("pytest");
+});
+
+test("listSummary reports no in-flight tool once every call has a result", () => {
+  const entries = [toolUse("c1", "Grep"), toolResult("c1")];
+  expect(listSummary(entries).inFlight).toBeNull();
+});
+
+test("inFlightTool prefers the SDK's own tool_progress elapsed time", () => {
+  const call = toolUse("c1", "Bash", { command: "sleep 60" });
+  const progress = full(
+    TranscriptEntryType.SYSTEM,
+    JSON.stringify({ sdk: "tool_progress", tool_use_id: "c1", elapsed_time_seconds: 32 }),
+  );
+  expect(inFlightTool([call, progress])?.elapsedSeconds).toBe(32);
+});
+
+test("spineItems ranks a pending permission as pending and carries a denial's reason", () => {
+  const allowed = perm("Bash", { command: "ls" });
+  const denied = perm("WebFetch", { url: "http://x" });
+  const waiting = perm("Edit", { file_path: "a.py" });
+  const entries = [
+    allowed,
+    respond(allowed.seq, "allow"),
+    denied,
+    respond(denied.seq, "deny", "use the local fixture"),
+    waiting,
+  ];
+  const items = spineItems(entries);
+  expect(items.map((i) => i.kind)).toEqual(["allow", "deny", "pending"]);
+  expect(items[0].label).toBe("allow · Bash");
+  expect(items[1].detail).toBe("use the local fixture");
+  expect(items[2].label).toBe("▸ permission · Edit");
+  // The rail is a jump target: every item has to point at a real entry.
+  expect(items[2].seq).toBe(waiting.seq);
+});
+
+test("spineItems renders an approved ExitPlanMode as a plan, not a permission", () => {
+  const plan = perm("ExitPlanMode", { plan: "do the thing" });
+  const items = spineItems([plan, respond(plan.seq, "allow")]);
+  expect(items).toEqual([{ seq: plan.seq, kind: "plan", label: "plan approved", detail: null, time: null }]);
+});
+
+// A failed MCP server silently removes its tools from the session — the exact
+// class of thing that makes a run go quiet for a reason nothing else reports.
+test("spineItems raises an alarm for a non-connected mcp server and an sdk error", () => {
+  const init = full(
+    TranscriptEntryType.SYSTEM,
+    JSON.stringify({ model: "opus", mcpServers: [{ name: "sidecar", status: "connected" }, { name: "playwright", status: "failed" }] }),
+  );
+  const err = full(TranscriptEntryType.SYSTEM, JSON.stringify({ sdk: "model_error", error: "rate limit" }));
+  const items = spineItems([init, err]);
+  expect(items.map((i) => i.label)).toEqual(["! mcp playwright failed", "! model_error"]);
+  expect(items[1].detail).toBe("rate limit");
+});
+
+test("entryTime returns null rather than a fake time for a transcript with no timestamp", () => {
+  expect(entryTime(full(TranscriptEntryType.ASSISTANT, "{}"))).toBeNull();
+  expect(entryTime(full(TranscriptEntryType.ASSISTANT, "{}", { createdAt: "not-a-date" }))).toBeNull();
+  expect(entryTime(full(TranscriptEntryType.ASSISTANT, "{}", { createdAt: "2026-08-12T12:04:00Z" }))).not.toBeNull();
+});
+
+// An interrupt denies every pending permission (worker/src/session.ts's
+// resolveAllPendingDeny) without posting a PERMISSION_RESPONSE. The tool never
+// ran, so the rail must not colour it like a grant.
+test("spineItems groups an interrupted permission with deny, not allow", () => {
+  const p = perm("Bash", { command: "rm -rf /" });
+  const items = spineItems([p, full(TranscriptEntryType.INTERRUPT, "", { from: "human" })]);
+  expect(items).toHaveLength(1);
+  expect(items[0].kind).toBe("deny");
+  expect(items[0].label).toBe("interrupted · Bash");
 });

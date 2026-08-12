@@ -219,10 +219,22 @@ message WorktreeInfo {
   string branch = 3;
   string upstream_track = 4; // e.g. "[gone]", "[ahead 2]", ""
   int64 mtime_unix = 5;
+  string path = 6; // absolute path on the shared PVC
+  // Uncommitted entries (`git status --porcelain` lines). Deleting a
+  // worktree throws this work away, so it's the warning shown next to the
+  // delete button, not decoration.
+  int32 dirty_files = 7;
+  int64 size_bytes = 8;
 }
 
 message ListWorktreesResponse {
   repeated WorktreeInfo worktrees = 1;
+  // Total/available bytes of the filesystem holding the worktrees root (the
+  // shared workspace PVC) — free space is what decides whether an orphan has
+  // to be pruned now or can wait. Response-level, not per-worktree: it's one
+  // filesystem, and repeating it per row would imply otherwise.
+  uint64 pvc_total_bytes = 2;
+  uint64 pvc_free_bytes = 3;
 }
 
 message DeleteWorktreeRequest {

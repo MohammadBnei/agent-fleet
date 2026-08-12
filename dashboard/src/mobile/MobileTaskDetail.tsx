@@ -1,40 +1,44 @@
 import { useEffect, useRef, useState } from "react";
 import { client } from "../connectClient";
 import { isThot, repoLabel } from "../taskKind";
-import { TranscriptEntryType } from "../gen/agentfleet/v1/transcript_pb";
-import { TranscriptEntryView } from "../components/TranscriptEntryView";
-import { QuestionCard } from "../components/QuestionCard";
 import {
-  parseQuestions,
-  parseAnswers,
-  findPendingQuestion,
+  feedVisibility,
   findPendingPermissions,
-  resolvedPermissionDecisions,
-  permissionDenyMessages,
+  findPendingQuestion,
   latestSlashCommands,
-  buildToolCallPairs,
-  pairedResultSeqs,
+  latestToolCallSummary,
   latestTodos,
-  asDisplayMarkdown,
+  parseQuestions,
+  type Density,
 } from "../transcript";
 import { useTaskDetail } from "../useTaskDetail";
-import { useLocalStorageState } from "../useLocalStorageState";
 import { useAtBottom } from "../useAtBottom";
-import { ToolCallItem } from "../components/ToolCallItem";
-import { ToolCallLine } from "../components/ToolCallLine";
-import { PlanCard } from "../components/PlanCard";
-import { PermissionCard } from "../components/PermissionCard";
+import { useLocalStorageState } from "../useLocalStorageState";
+import { sessionBadge } from "../pages/TaskList";
 import { ErrorModal } from "../components/ErrorModal";
-import { Markdown } from "../components/Markdown";
 import { BypassConfirmModal } from "../components/BypassConfirmModal";
 import { Modal } from "../components/Modal";
-import { ActionsMenu } from "../components/ActionsMenu";
-import { ProposalActions } from "../components/ProposalActions";
-import { E2eCard } from "../components/E2eCard";
-import { prBadge, sessionBadge } from "../pages/TaskList";
+import { Segmented } from "../components/Segmented";
+import { SessionFeed } from "../components/SessionFeed";
+import { DiffLines } from "../components/DiffLines";
+import { TickBar, todoProgress } from "../components/TickBar";
+import { TodosPanel, ChangesPanel, E2ePanel, SessionPanel } from "../components/SessionPanels";
+import { summarizeToolInput } from "../transcript";
 
-// Mirrors the "herd" mock's phone session screen (Agent Fleet Mobile.dc.html)
-// minus device chrome. Single-pane (list vs. detail), unlike desktop's
+// The phone session screen from Agent Fleet Console Mobile.dc.html.
+//
+// The structural difference from desktop is the **decision dock**: when the
+// agent is waiting on a human, its request pins to the bottom above the
+// composer instead of sitting inline in the feed. On a phone an inline card
+// scrolls away, and this is the surface most likely used to unblock a session
+// away from a desk (docs/dashboard-spec.md §8 items 3 and 5).
+
+const DENSITY: readonly { value: Density; label: string; title: string }[] = [
+  { value: "everything", label: "all", title: "everything" },
+  { value: "narrative", label: "talk", title: "the readable conversation only" },
+  { value: "decisions", label: "calls", title: "tool activity and decisions" },
+];
+
 export function MobileTaskDetail({
   taskId,
   onBack,
@@ -44,98 +48,72 @@ export function MobileTaskDetail({
   onBack: () => void;
   onDelete: () => void;
 }) {
-  const { task, entries, previewUrl, e2e, busyKey, loadError, actionError, pendingMessage, run, sendDiscuss, clearActionError } =
-    useTaskDetail(taskId);
+  const {
+    task,
+    entries,
+    previewUrl,
+    e2e,
+    branch,
+    busyKey,
+    loadError,
+    actionError,
+    pendingMessage,
+    run,
+    sendDiscuss,
+    clearActionError,
+  } = useTaskDetail(taskId);
   const [message, setMessage] = useState("");
+  const [panelsOpen, setPanelsOpen] = useState(false);
   const [bypassOpen, setBypassOpen] = useState(false);
-  const [actionsOpen, setActionsOpen] = useState(false);
-  // Plain show/hide for tool calls in this feed — settable here (via the
-  // Actions modal, no sidebar on mobile) or from desktop's TOOL CALLS panel
-  // header, same localStorage key either way.
-  const [hideToolsInFeed, setHideToolsInFeed] = useLocalStorageState<boolean>("taskDetail.hideToolsInFeed", false);
-  const [hideChangesInFeed, setHideChangesInFeed] = useLocalStorageState<boolean>("taskDetail.hideChangesInFeed", false);
-  const { ref: feedRef, atBottom: feedAtBottom, onScroll: feedOnScroll, scrollToBottom: feedScrollToBottom } =
-    useAtBottom<HTMLDivElement>();
+  const [density, setDensity] = useLocalStorageState<Density>("taskDetail.density", "everything");
+  const { ref: feedRef, atBottom, onScroll, scrollToBottom } = useAtBottom<HTMLDivElement>();
 
-  // See TaskDetail.tsx's identical effect for the rationale: new human
-  // entries jump to the bottom; new agent entries follow too when the
-  // reader was already at the bottom, otherwise just pulse the button.
-  const [hasNewAiMessage, setHasNewAiMessage] = useState(false);
-  const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
-  const prevEntriesLenRef = useRef<number | null>(null);
+  const prevLen = useRef<number | null>(null);
   useEffect(() => {
-    if (prevEntriesLenRef.current === null) {
-      prevEntriesLenRef.current = entries.length;
+    if (prevLen.current === null) {
+      prevLen.current = entries.length;
       return;
     }
-    if (entries.length > prevEntriesLenRef.current) {
+    if (entries.length > prevLen.current) {
       const latest = entries[entries.length - 1];
-      if (latest.from === "human" || feedAtBottom) {
-        feedScrollToBottom();
-        setHasNewAiMessage(false);
-      } else {
-        setHasNewAiMessage(true);
-      }
+      if (latest.from === "human" || atBottom) scrollToBottom();
     }
-    prevEntriesLenRef.current = entries.length;
-  }, [entries, feedAtBottom, feedScrollToBottom]);
-  useEffect(() => {
-    if (feedAtBottom) setHasNewAiMessage(false);
-  }, [feedAtBottom]);
+    prevLen.current = entries.length;
+  }, [entries, atBottom, scrollToBottom]);
 
-  // See TaskDetail.tsx's identical effect: land on the latest message when
-  // a task is opened, instant (not smooth) since this is "arriving," not
-  // "a new message came in."
-  const scrolledForTaskRef = useRef<string | null>(null);
+  const scrolledFor = useRef<string | null>(null);
   useEffect(() => {
-    if (entries.length === 0 || scrolledForTaskRef.current === taskId) return;
-    scrolledForTaskRef.current = taskId;
+    if (entries.length === 0 || scrolledFor.current === taskId) return;
+    scrolledFor.current = taskId;
     const el = feedRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [taskId, entries, feedRef]);
 
   if (loadError) {
     return (
-      <div className="p-4">
-        <button type="button" onClick={onBack} className="text-[13px] text-base-content/60 mb-3">
-          ‹ back
+      <div className="flex-1 min-h-0 p-3.5">
+        <button type="button" onClick={onBack} className="text-[13px] text-dim mb-3">
+          ←
         </button>
-        <div className="alert alert-error">{loadError}</div>
+        <div className="border border-pink-line bg-pink-bg px-3 py-2.5 text-[12.5px] text-error">{loadError}</div>
       </div>
     );
   }
-  if (!task) return <div className="p-4">Loading…</div>;
+  if (!task) return <div className="flex-1 p-4 text-[13px] text-dim">Loading…</div>;
 
-  const todos = latestTodos(entries) ?? [];
-  const done = todos.filter((t) => t.status === "completed").length;
-  const prLink = prBadge(task);
-  // Hide PROVISIONING badge if we already have transcript entries (agent is responding)
-  // One ranked badge instead of pod phase + staleness side by side
-  // (docs/dashboard-spec.md's first design failure). The old special case
-  // — hide PROVISIONING once entries exist — is unnecessary now: liveness
-  // outranks pod phase, so a session that has said anything shows what it
-  // is doing rather than that its pod is still marked provisioning.
+  const blocked = task.liveState === "blocked";
   const badge = sessionBadge(task);
+  const visibility = feedVisibility(density, true);
+  const todos = latestTodos(entries) ?? [];
+  const changes = latestToolCallSummary(entries)?.files ?? null;
+
+  const pendingPermission = findPendingPermissions(entries)[0] ?? null;
   const pendingQuestion = findPendingQuestion(entries);
-  const pendingParsed = pendingQuestion ? parseQuestions(pendingQuestion.text) : null;
-  const chipQuestion =
-    pendingParsed && pendingParsed.length === 1 && !pendingParsed[0].multiSelect ? pendingParsed[0] : null;
-  const blockedTodo = pendingQuestion
-    ? (todos.find((t) => t.status === "in_progress") ?? todos.find((t) => t.status !== "completed"))
-    : null;
-  const pendingPermissions = findPendingPermissions(entries);
-  // Server-derived (docs/adr/0040) — core owns the thresholds, so every
-  // client agrees on what "working" and "stalled" mean.
-  const cogitating = task.liveState === "working";
-  const permissionDecisions = resolvedPermissionDecisions(entries);
-  const denyMessages = permissionDenyMessages(entries);
-  // Tool calls stay inline in the mobile feed (unlike desktop's right-panel
-  // move) — paired via the same call<->output id correlation, one
-  // collapsible ToolCallItem per call instead of two separate bubbles.
-  const toolCallPairs = buildToolCallPairs(entries);
-  const toolCallPairsBySeq = new Map(toolCallPairs.map((p) => [p.call.seq, p]));
-  const consumedResultSeqs = pairedResultSeqs(toolCallPairs);
-  // Lean name-only autocomplete, same rationale as desktop TaskDetail.
+  const pendingQuestions = pendingQuestion ? parseQuestions(pendingQuestion.text) : null;
+  const dockQuestion =
+    pendingQuestions && pendingQuestions.length === 1 && !pendingQuestions[0].multiSelect ? pendingQuestions[0] : null;
+  const docked = Boolean(pendingPermission || dockQuestion);
+
   const slashCommands = message.startsWith("/")
     ? (latestSlashCommands(entries) ?? []).filter((c) => c.toLowerCase().startsWith(message.slice(1).toLowerCase()))
     : [];
@@ -147,275 +125,247 @@ export function MobileTaskDetail({
     sendDiscuss(text);
   }
 
+  function respond(seq: bigint, behavior: "allow" | "deny", msg?: string) {
+    run(
+      () => client.respondToPermission({ taskId, seq, decisionJson: JSON.stringify({ behavior, message: msg }) }),
+      `permission:${seq}`,
+    );
+  }
+
+  // Edit/Write get a real diff; anything else its one-line summary. A prompt
+  // whose content is unreadable trains people to approve without looking.
+  const permInput = (pendingPermission?.input ?? {}) as {
+    file_path?: string;
+    old_string?: string;
+    new_string?: string;
+    content?: string;
+  };
+  const permIsDiff =
+    pendingPermission &&
+    (pendingPermission.tool === "Edit" || pendingPermission.tool === "Write") &&
+    typeof (permInput.new_string ?? permInput.content) === "string";
+
   return (
-    <div className="flex flex-col h-full bg-base-100">
-      <div className="flex-none px-4 pt-3.5 pb-3 border-b border-base-content/10 bg-base-200">
-        <div className="flex items-start gap-2.5">
-          <button type="button" onClick={onBack} className="text-[17px] text-base-content/60 w-7 h-8 flex items-center flex-none">
-            ‹
+    <div className="flex-1 min-h-0 flex flex-col">
+      <div className="flex-none px-3.5 py-2.5 border-b border-line">
+        <div className="flex items-center gap-2.5">
+          <button type="button" onClick={onBack} aria-label="Back to sessions" className="text-[13px] text-dim">
+            ←
           </button>
-          <div className="min-w-0 flex-1">
-            <button
-              type="button"
-              onClick={() => setIsDescriptionExpanded(!isDescriptionExpanded)}
-              className="text-left w-full group"
-            >
-              <div className="flex items-start gap-1.5">
-                <div className={`text-[13px] font-semibold text-base-content leading-tight break-words flex-1 ${isDescriptionExpanded ? "" : "line-clamp-2"}`}>
-                  {task.description}
-                </div>
-                <span className="text-[10px] text-base-content/40 group-hover:text-base-content/60 flex-none mt-0.5">
-                  {isDescriptionExpanded ? "▴" : "▾"}
-                </span>
-              </div>
-            </button>
-            <div className="text-[10px] text-base-content/50 mt-1 flex items-center gap-2 flex-wrap">
-              <span className="whitespace-nowrap">
-                #{task.id.slice(0, 6)} · {repoLabel(task)}
+          <span className="text-[13px] font-semibold min-w-0 truncate">
+            #{task.id.slice(0, 6)} {task.description}
+          </span>
+          {blocked ? (
+            <span className="ml-auto flex items-center gap-1.5 border border-pink-line bg-pink-chip px-2 py-0.5 flex-none">
+              <span className="w-[5px] h-[5px] rounded-full bg-error animate-fpulse" />
+              <span className="text-[11px] font-medium text-error">blocked</span>
+            </span>
+          ) : (
+            badge && (
+              <span className={`ml-auto flex-none text-[10px] px-1 border tracking-wide ${badge.className}`}>
+                {badge.label}
               </span>
-              {prLink && (
-                <a href={task.prUrl} target="_blank" rel="noreferrer" className={`text-[9px] font-semibold ${prLink.className} whitespace-nowrap`}>
-                  {prLink.label}
-                </a>
-              )}
-              {badge && (
-                <span
-                  className={`px-1.5 py-0.5 rounded text-[9px] font-semibold border tracking-wide ${badge.className} whitespace-nowrap`}
-                  title={badge.title ?? task.podMessage ?? undefined}
-                >
-                  {badge.label}
-                </span>
-              )}
-            </div>
-          </div>
+            )
+          )}
+        </div>
+
+        <div className="flex items-center gap-2 mt-2">
+          <span className="text-[10.5px] text-dim2 min-w-0 truncate">
+            {repoLabel(task)}
+            {branch && ` · ${branch}`}
+          </span>
+          <Segmented value={density} options={DENSITY} onChange={setDensity} size="sm" className="ml-auto flex-none" />
+        </div>
+
+        <div className="flex items-center gap-2 mt-2.5">
+          {todos.length > 0 ? (
+            <>
+              <TickBar todos={todos} blocked={blocked} className="flex-1" />
+              <span className="text-[10.5px] text-dim2 flex-none">{todoProgress(todos)} todos</span>
+            </>
+          ) : (
+            <span className="text-[10.5px] text-dim2 flex-1">no todos yet</span>
+          )}
           <button
             type="button"
-            onClick={onDelete}
-            className="w-8 h-8 border border-base-content/10 rounded-lg flex items-center justify-center text-[13px] text-base-content/60 flex-none"
-            title="Delete this session"
+            onClick={() => setPanelsOpen(true)}
+            className="text-[10.5px] text-dim flex-none"
           >
-            ⋯
+            panels ▸
           </button>
         </div>
-        <div className="flex items-center gap-2.5 mt-3">
-          {/* A pending *permission* blocks the session exactly as hard as a
-              pending question; keying this on questions alone left the one
-              surface with no sidebar showing no sign that the agent was
-              stopped waiting for a click. */}
-          {cogitating && (
-            <span className="flex items-center gap-1 text-[9px] font-semibold text-base-content/50 tracking-wide flex-none whitespace-nowrap">
-              <span className="w-1.5 h-1.5 rounded-full bg-primary animate-fpulse" />
-              THINKING
-            </span>
-          )}
-          <div className="flex-1 flex gap-1 min-w-0">
-            {todos.map((t, i) => (
-              <div
-                key={i}
-                className={`flex-1 h-1 rounded ${
-                  t.status === "completed" ? "bg-secondary" : t.status === "in_progress" ? "bg-primary" : "bg-base-content/10"
-                }`}
-              />
-            ))}
-          </div>
-          <span className="text-[10px] text-base-content/50 flex-none whitespace-nowrap">
-            {done}/{todos.length}
-          </span>
-        </div>
       </div>
 
-      {e2e && e2e.status && (
-        <div className="flex-none px-4 py-2.5 border-b border-base-content/5 min-w-0">
-          <E2eCard e2e={e2e} />
-        </div>
-      )}
-
-      {blockedTodo && (
-        <div className="flex-none px-4 py-2.5 border-b border-base-content/5 bg-base-300/30 flex items-start gap-2">
-          <span className="text-[10px] text-primary flex-none mt-0.5">→</span>
-          <div className="min-w-0">
-            <div className="text-[11.5px] text-base-content/90">{blockedTodo.content}</div>
-            <div className="text-[9.5px] text-primary mt-0.5">blocked on your answer</div>
+      <div ref={feedRef} onScroll={onScroll} className="flex-1 min-h-0 overflow-y-auto px-3.5 py-3.5 flex flex-col gap-3.5">
+        <SessionFeed
+          entries={entries}
+          visibility={visibility}
+          density={density}
+          busyKey={busyKey}
+          compact
+          dockPendingDecision
+          onRespond={(seq, decision) => respond(seq, decision.behavior, decision.message)}
+          onAnswer={(seq, answers) =>
+            run(() => client.answerQuestion({ taskId, seq, answersJson: JSON.stringify({ answers }) }), `question:${seq}`)
+          }
+          onPlanFeedback={(text) => sendDiscuss(text)}
+        />
+        {pendingMessage && (
+          <div className="flex gap-2.5 items-baseline opacity-60">
+            <span className="text-primary flex-none text-[12.5px]">❯</span>
+            <div className="text-[12.5px] leading-[1.7] text-text2 min-w-0 flex-1">{pendingMessage}</div>
+            <span className="loading loading-spinner loading-xs flex-none" />
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       <ErrorModal message={actionError} onClose={clearActionError} />
+      <BypassConfirmModal
+        open={bypassOpen}
+        onCancel={() => setBypassOpen(false)}
+        onConfirm={() => {
+          setBypassOpen(false);
+          run(() => client.setPermissionMode({ taskId, mode: "bypassPermissions" }), "bypass");
+        }}
+      />
 
-      <div className="relative flex-1 min-h-0">
-      <div ref={feedRef} onScroll={feedOnScroll} className="absolute inset-0 overflow-y-auto px-4 py-3.5 flex flex-col gap-3">
-        {entries.map((entry, idx) => {
-          if (entry.type === TranscriptEntryType.ANSWER) return null;
-          if (entry.type === TranscriptEntryType.TOOL_CALL) {
-            if (hideChangesInFeed) return null;
-            return <ToolCallLine key={String(entry.seq)} entry={entry} />;
-          }
-          if (entry.type === TranscriptEntryType.PERMISSION_RESPONSE) return null;
-          if (entry.type === TranscriptEntryType.PERMISSION_REQUEST) {
-            let parsed: { tool?: string; input?: unknown } = {};
-            try {
-              parsed = JSON.parse(entry.text);
-            } catch {
-              return null;
-            }
-            if (typeof parsed.tool !== "string") return null;
-            const isPending = pendingPermissions.some((p) => p.entry.seq === entry.seq);
-            const permissionKey = `permission:${entry.seq}`;
-            const respond = (decision: { behavior: "allow" | "deny"; message?: string }) =>
-              run(() => client.respondToPermission({ taskId, seq: entry.seq, decisionJson: JSON.stringify(decision) }), permissionKey);
-            if (parsed.tool === "ExitPlanMode") {
-              const plan = (parsed.input as { plan?: string } | undefined)?.plan;
-              if (typeof plan !== "string") return null;
-              return (
-                <PlanCard
-                  key={String(entry.seq)}
-                  plan={plan}
-                  pending={isPending}
-                  busy={busyKey === permissionKey}
-                  decision={permissionDecisions.get(entry.seq)}
-                  onApprove={() => respond({ behavior: "allow" })}
-                  onFeedback={(text) => sendDiscuss(text)}
-                  edgeClassName="-mx-4 px-4"
-                  allowAnnotate={false}
-                />
-              );
-            }
-            return (
-              <PermissionCard
-                key={String(entry.seq)}
-                tool={parsed.tool}
-                input={parsed.input}
-                pending={isPending}
-                busy={busyKey === permissionKey}
-                decision={permissionDecisions.get(entry.seq)}
-                denyMessage={denyMessages.get(entry.seq)}
-                onAllow={() => respond({ behavior: "allow" })}
-                onDeny={(message) => respond({ behavior: "deny", message })}
-                edgeClassName="-mx-4 px-4"
-              />
-            );
-          }
-          if (entry.type === TranscriptEntryType.ASSISTANT) {
-            const pair = toolCallPairsBySeq.get(entry.seq);
-            if (pair) return hideToolsInFeed ? null : <ToolCallItem key={String(entry.seq)} pair={pair} />;
-            // No pair: a thinking block (rendered) or a TodoWrite the
-            // progress bar already owns (renders nothing).
-            return (
-              <div key={String(entry.seq)}>
-                <TranscriptEntryView entry={entry} compact />
-              </div>
-            );
-          }
-          // Normal case: already rendered inside its pair's ToolCallItem
-          // above. Falls through to the orphan branch only if no matching
-          // call was found.
-          if (entry.type === TranscriptEntryType.USER && consumedResultSeqs.has(entry.seq)) return null;
-          if (entry.type === TranscriptEntryType.QUESTION) {
-            const answerEntry = entries.slice(idx + 1).find((e) => e.type === TranscriptEntryType.ANSWER);
-            const questionKey = `question:${entry.seq}`;
-            return (
-              <QuestionCard
-                compact
-                key={String(entry.seq)}
-                entry={entry}
-                answer={answerEntry ? parseAnswers(answerEntry.text) : null}
-                busy={busyKey === questionKey}
-                onSubmit={(answers) =>
-                  run(
-                    () => client.answerQuestion({ taskId, seq: entry.seq, answersJson: JSON.stringify({ answers }) }),
-                    questionKey,
-                  )
-                }
-              />
-            );
-          }
-          return (
-            <div key={String(entry.seq)}>
-              <TranscriptEntryView entry={entry} compact />
+      {/* The decision dock. Pinned, not inline: a blocked session is stalled
+          until someone taps, so its request must not be scrollable-away. */}
+      <div
+        className={`flex-none ${
+          docked ? "mt-2 border-t border-pink-line bg-pink-bg relative" : "border-t border-line"
+        }`}
+      >
+        {docked && pendingPermission && (
+          <>
+            <div className="absolute -top-[7px] left-3.5 px-[7px] bg-base-200 text-error text-[10px] tracking-[0.1em] whitespace-nowrap">
+              ◉ PERMISSION · {pendingPermission.tool.toUpperCase()}
             </div>
-          );
-        })}
-        {pendingMessage && (
-          <div className="opacity-60">
-            <div className="text-[12.5px] leading-relaxed text-primary flex items-start gap-2">
-              <div className="flex-1 min-w-0">
-                <Markdown text={asDisplayMarkdown({ from: "human", text: pendingMessage })} />
+            <div className="px-3.5 pt-3.5">
+              <div className="text-[11px] text-dim break-all">
+                {pendingPermission.tool}
+                {permInput.file_path && (
+                  <>
+                    {" · "}
+                    <span className="text-text2">{permInput.file_path}</span>
+                  </>
+                )}
               </div>
-              <span className="loading loading-spinner loading-xs flex-none mt-1" />
+              <div className="mt-2">
+                {permIsDiff ? (
+                  <DiffLines
+                    before={permInput.old_string ?? ""}
+                    after={(permInput.new_string ?? permInput.content) as string}
+                    maxLines={3}
+                    compact
+                  />
+                ) : (
+                  <div className="border border-line bg-code px-2.5 py-1 text-[11.5px] text-text2 whitespace-pre-wrap break-all">
+                    {summarizeToolInput(pendingPermission.input)}
+                  </div>
+                )}
+              </div>
+              <div className="flex gap-2.5 mt-3">
+                <button
+                  type="button"
+                  disabled={busyKey !== null}
+                  onClick={() => respond(pendingPermission.entry.seq, "allow")}
+                  className="flex-1 py-3 text-center text-[13.5px] font-semibold bg-primary text-primary-content disabled:opacity-50"
+                >
+                  allow
+                </button>
+                <button
+                  type="button"
+                  disabled={busyKey !== null}
+                  onClick={() => respond(pendingPermission.entry.seq, "deny", "denied")}
+                  className="flex-1 py-3 text-center text-[13.5px] border border-acc-line disabled:opacity-50"
+                >
+                  deny
+                </button>
+              </div>
             </div>
-          </div>
+          </>
         )}
-      </div>
-      {!feedAtBottom && (
-        <button
-          type="button"
-          onClick={feedScrollToBottom}
-          className="btn btn-circle btn-xs absolute bottom-3 left-1/2 -translate-x-1/2 bg-base-300 border-base-content/20 shadow-md"
-          title="Scroll to bottom"
-        >
-          ↓
-          {hasNewAiMessage && (
-            <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-primary animate-fpulse" />
-          )}
-        </button>
-      )}
-      </div>
 
-      <div className="flex-none border-t border-base-content/10 bg-base-200 px-4 pt-3 pb-2.5 flex flex-col gap-2.5">
-        {chipQuestion && (
-          <div className="flex gap-1.5 overflow-x-auto">
-            {chipQuestion.options.map((opt) => (
+        {docked && !pendingPermission && dockQuestion && pendingQuestion && (
+          <>
+            <div className="absolute -top-[7px] left-3.5 px-[7px] bg-base-200 text-error text-[10px] tracking-[0.1em] whitespace-nowrap">
+              ◉ QUESTION
+            </div>
+            <div className="px-3.5 pt-3.5">
+              <div className="text-[13px] leading-[1.6]">{dockQuestion.question}</div>
+              <div className="flex flex-col gap-2 mt-3">
+                {dockQuestion.options.map((opt) => (
+                  <button
+                    key={opt.label}
+                    type="button"
+                    disabled={busyKey !== null}
+                    onClick={() =>
+                      run(
+                        () =>
+                          client.answerQuestion({
+                            taskId,
+                            seq: pendingQuestion.seq,
+                            answersJson: JSON.stringify({ answers: { [dockQuestion.question]: opt.label } }),
+                          }),
+                        `question:${pendingQuestion.seq}`,
+                      )
+                    }
+                    className="w-full text-left border border-acc-line px-3.5 py-3 text-[13px] disabled:opacity-50"
+                  >
+                    {opt.label}
+                    {opt.description && <div className="text-[11px] text-dim2 mt-0.5">{opt.description}</div>}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
+
+        {(docked || slashCommands.length > 0) && (
+          <div className="flex gap-2 px-3.5 pt-2.5 overflow-x-auto">
+            {docked && pendingPermission && (
               <button
-                key={opt.label}
                 type="button"
                 disabled={busyKey !== null}
-                onClick={() =>
-                  pendingQuestion &&
-                  run(
-                    () =>
-                      client.answerQuestion({
-                        taskId,
-                        seq: pendingQuestion.seq,
-                        answersJson: JSON.stringify({ answers: { [chipQuestion.question]: opt.label } }),
-                      }),
-                    `question:${pendingQuestion.seq}`,
-                  )
-                }
-                className="flex-none px-3.5 py-2 rounded-2xl border border-primary/45 text-[11px] text-primary font-medium min-h-9 disabled:opacity-40"
+                onClick={() => respond(pendingPermission.entry.seq, "deny", "use the fixture")}
+                className="flex-none border border-line text-dim px-2.5 py-1.5 text-[11px] whitespace-nowrap"
               >
-                {opt.label}
+                deny — use the fixture
               </button>
-            ))}
-          </div>
-        )}
-        {task?.status === "proposed" && (
-          <ProposalActions taskId={taskId} busy={busyKey !== null} run={run} onDismissed={onDelete} />
-        )}
-        <BypassConfirmModal
-          open={bypassOpen}
-          onCancel={() => setBypassOpen(false)}
-          onConfirm={() => {
-            setBypassOpen(false);
-            run(() => client.setPermissionMode({ taskId, mode: "bypassPermissions" }), "bypass");
-          }}
-        />
-        {slashCommands.length > 0 && (
-          <div className="flex gap-1.5 overflow-x-auto">
+            )}
+            <button
+              type="button"
+              disabled={busyKey !== null}
+              onClick={() => run(() => client.interrupt({ taskId }), "actions")}
+              className="flex-none border border-line text-dim px-2.5 py-1.5 text-[11px] whitespace-nowrap"
+            >
+              /interrupt
+            </button>
+            <button
+              type="button"
+              disabled={busyKey !== null}
+              onClick={() => run(() => client.setPermissionMode({ taskId, mode: "plan" }), "actions")}
+              className="flex-none border border-line text-dim px-2.5 py-1.5 text-[11px] whitespace-nowrap"
+            >
+              /mode plan
+            </button>
             {slashCommands.map((c) => (
               <button
                 key={c}
                 type="button"
                 onClick={() => setMessage(`/${c} `)}
-                className="flex-none px-3.5 py-2 rounded-2xl border border-base-content/15 text-[11px] text-base-content/70 min-h-9"
+                className="flex-none border border-line text-dim px-2.5 py-1.5 text-[11px] whitespace-nowrap"
               >
                 /{c}
               </button>
             ))}
           </div>
         )}
-        <div className="flex items-stretch gap-2">
-          <div className="flex-1 flex items-center gap-2.5 px-3.5 py-3 border border-base-content/15 rounded-lg bg-base-300/40 min-h-11">
-            <span className="text-primary font-semibold text-[13px]">&gt;</span>
+
+        <div className="px-3.5 py-2.5">
+          <div className="flex gap-2.5 items-center border border-line bg-base-200 px-3 py-2.5 focus-within:border-primary/60">
+            <span className="text-primary text-[13px]">❯</span>
             <input
               value={message}
               onChange={(e) => setMessage(e.target.value)}
@@ -423,49 +373,48 @@ export function MobileTaskDetail({
                 if (e.key === "Enter") sendMessage();
               }}
               disabled={busyKey !== null}
-              placeholder="message the agent…"
-              className="flex-1 bg-transparent outline-none text-[12px] placeholder:text-base-content/40"
+              placeholder="message the agent"
+              aria-label="message the agent"
+              className="flex-1 min-w-0 bg-transparent outline-none text-[12.5px] placeholder:text-dim2"
             />
             <button
               type="button"
               disabled={busyKey !== null || !message.trim()}
               onClick={sendMessage}
-              className="text-[11px] text-primary font-medium disabled:opacity-30 disabled:cursor-not-allowed"
+              className="text-[11px] text-dim2 disabled:opacity-40 flex-none"
             >
-              Send
+              send
             </button>
           </div>
-          <button
-            type="button"
-            onClick={() => setActionsOpen(true)}
-            title="Actions"
-            className="flex-none flex items-center justify-center px-3 border border-base-content/15 rounded-lg text-base-content/60 hover:text-base-content cursor-pointer"
-          >
-            ⚙
-          </button>
-          <Modal open={actionsOpen} onClose={() => setActionsOpen(false)}>
-            <h3 className="font-semibold text-base mb-3">Actions</h3>
-            <ActionsMenu
-          isThotTask={isThot(task)}
-              status={task?.status}
-              taskId={taskId}
-              busy={busyKey !== null}
-              run={run}
-              previewUrl={previewUrl}
-              currentMode={task.permissionMode}
-              podPhase={task.podPhase}
-              onBypassClick={() => {
-                setActionsOpen(false);
-                setBypassOpen(true);
-              }}
-              hideToolsInFeed={hideToolsInFeed}
-              onHideToolsInFeedChange={setHideToolsInFeed}
-              hideChangesInFeed={hideChangesInFeed}
-              onHideChangesInFeedChange={setHideChangesInFeed}
-            />
-          </Modal>
         </div>
       </div>
+
+      {/* Everything the desktop right column carries, as a bottom sheet. */}
+      <Modal open={panelsOpen} onClose={() => setPanelsOpen(false)}>
+        <div className="flex flex-col gap-5">
+          <TodosPanel todos={todos} blocked={blocked} />
+          <ChangesPanel branch={branch} changes={changes} />
+          <E2ePanel e2e={e2e} />
+          <SessionPanel
+            task={task}
+            busy={busyKey !== null}
+            run={run}
+            previewUrl={previewUrl}
+            isThotTask={isThot(task)}
+            onBypassClick={() => {
+              setPanelsOpen(false);
+              setBypassOpen(true);
+            }}
+          />
+          <button
+            type="button"
+            onClick={onDelete}
+            className="border border-pink-line text-error px-3 py-2.5 text-[12px] self-start"
+          >
+            Delete session
+          </button>
+        </div>
+      </Modal>
     </div>
   );
 }

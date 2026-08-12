@@ -222,12 +222,15 @@ func (c *Client) TearDownSession(ctx context.Context, taskID string, kind agentf
 // ListWorktrees/DeleteWorktree back the dashboard's manual worktree
 // cleanup view (reliability-findings.md #2) — core has no PVC access
 // itself, so this is a pure passthrough to the provisioner's own git.Manager.
-func (c *Client) ListWorktrees(ctx context.Context) ([]*agentfleetv1.WorktreeInfo, error) {
+// Returns the whole response, not just the slice: it now also carries the
+// shared PVC's total/free bytes, which belong to the filesystem rather than to
+// any one worktree.
+func (c *Client) ListWorktrees(ctx context.Context) (*agentfleetv1.ListWorktreesResponse, error) {
 	resp, err := c.rpc.ListWorktrees(ctx, &agentfleetv1.ListWorktreesRequest{})
 	if err != nil {
 		return nil, fmt.Errorf("ListWorktrees: %w", err)
 	}
-	return resp.GetWorktrees(), nil
+	return resp, nil
 }
 
 func (c *Client) DeleteWorktree(ctx context.Context, taskID, repo string, alsoDeleteBranch bool) (deleted bool, err error) {

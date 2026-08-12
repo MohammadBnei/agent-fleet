@@ -99,6 +99,31 @@ func (s *Store) Create(ctx context.Context, name, prompt string, intervalSeconds
 // Update rewrites the editable fields. next_run_at is deliberately
 // recomputed from now(): shortening an interval should take effect
 // immediately, not after the old (possibly much longer) one elapses.
+// RunNow brings an audit's next run forward instead of dispatching one
+// directly. changed() nudges the loop, whose ClaimDue then picks this row up on
+// the spot — so a manual run takes the identical path a scheduled one does,
+// including landing as `proposed` and including the dedup that skips it while a
+// previous run is still open. Nothing here knows how to create a task.
+//
+// Deliberately ignores `enabled`: "run now" on a paused audit is a one-off, and
+// pausing is about the schedule, not about forbidding manual runs.
+func (s *Store) RunNow(ctx context.Context, id string) (Audit, error) {
+	a, err := scan(s.pool.QueryRow(ctx, `
+		UPDATE scheduled_audits
+		SET next_run_at = now(), updated_at = now()
+		WHERE id = $1
+		RETURNING `+columns, id))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Audit{}, pgx.ErrNoRows
+		}
+		slog.Error("scheduledaudits RunNow", "error", err)
+		return Audit{}, fmt.Errorf("run scheduled audit now: %w", err)
+	}
+	s.changed()
+	return a, nil
+}
+
 func (s *Store) Update(ctx context.Context, id, name, prompt string, intervalSeconds int32, enabled bool) (Audit, error) {
 	a, err := scan(s.pool.QueryRow(ctx, `
 		UPDATE scheduled_audits

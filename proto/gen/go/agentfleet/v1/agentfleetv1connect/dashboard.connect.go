@@ -154,6 +154,12 @@ const (
 	// DashboardServiceDeleteScheduledAuditProcedure is the fully-qualified name of the
 	// DashboardService's DeleteScheduledAudit RPC.
 	DashboardServiceDeleteScheduledAuditProcedure = "/agentfleet.v1.DashboardService/DeleteScheduledAudit"
+	// DashboardServiceRunScheduledAuditNowProcedure is the fully-qualified name of the
+	// DashboardService's RunScheduledAuditNow RPC.
+	DashboardServiceRunScheduledAuditNowProcedure = "/agentfleet.v1.DashboardService/RunScheduledAuditNow"
+	// DashboardServiceRetryTaskProcedure is the fully-qualified name of the DashboardService's
+	// RetryTask RPC.
+	DashboardServiceRetryTaskProcedure = "/agentfleet.v1.DashboardService/RetryTask"
 )
 
 // DashboardServiceClient is a client for the agentfleet.v1.DashboardService service.
@@ -227,6 +233,8 @@ type DashboardServiceClient interface {
 	CreateScheduledAudit(context.Context, *connect.Request[v1.CreateScheduledAuditRequest]) (*connect.Response[v1.CreateScheduledAuditResponse], error)
 	UpdateScheduledAudit(context.Context, *connect.Request[v1.UpdateScheduledAuditRequest]) (*connect.Response[v1.UpdateScheduledAuditResponse], error)
 	DeleteScheduledAudit(context.Context, *connect.Request[v1.DeleteScheduledAuditRequest]) (*connect.Response[v1.DeleteScheduledAuditResponse], error)
+	RunScheduledAuditNow(context.Context, *connect.Request[v1.RunScheduledAuditNowRequest]) (*connect.Response[v1.RunScheduledAuditNowResponse], error)
+	RetryTask(context.Context, *connect.Request[v1.RetryTaskRequest]) (*connect.Response[v1.RetryTaskResponse], error)
 }
 
 // NewDashboardServiceClient constructs a client for the agentfleet.v1.DashboardService service. By
@@ -486,6 +494,18 @@ func NewDashboardServiceClient(httpClient connect.HTTPClient, baseURL string, op
 			connect.WithSchema(dashboardServiceMethods.ByName("DeleteScheduledAudit")),
 			connect.WithClientOptions(opts...),
 		),
+		runScheduledAuditNow: connect.NewClient[v1.RunScheduledAuditNowRequest, v1.RunScheduledAuditNowResponse](
+			httpClient,
+			baseURL+DashboardServiceRunScheduledAuditNowProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("RunScheduledAuditNow")),
+			connect.WithClientOptions(opts...),
+		),
+		retryTask: connect.NewClient[v1.RetryTaskRequest, v1.RetryTaskResponse](
+			httpClient,
+			baseURL+DashboardServiceRetryTaskProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("RetryTask")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -532,6 +552,8 @@ type dashboardServiceClient struct {
 	createScheduledAudit *connect.Client[v1.CreateScheduledAuditRequest, v1.CreateScheduledAuditResponse]
 	updateScheduledAudit *connect.Client[v1.UpdateScheduledAuditRequest, v1.UpdateScheduledAuditResponse]
 	deleteScheduledAudit *connect.Client[v1.DeleteScheduledAuditRequest, v1.DeleteScheduledAuditResponse]
+	runScheduledAuditNow *connect.Client[v1.RunScheduledAuditNowRequest, v1.RunScheduledAuditNowResponse]
+	retryTask            *connect.Client[v1.RetryTaskRequest, v1.RetryTaskResponse]
 }
 
 // ListTasks calls agentfleet.v1.DashboardService.ListTasks.
@@ -739,6 +761,16 @@ func (c *dashboardServiceClient) DeleteScheduledAudit(ctx context.Context, req *
 	return c.deleteScheduledAudit.CallUnary(ctx, req)
 }
 
+// RunScheduledAuditNow calls agentfleet.v1.DashboardService.RunScheduledAuditNow.
+func (c *dashboardServiceClient) RunScheduledAuditNow(ctx context.Context, req *connect.Request[v1.RunScheduledAuditNowRequest]) (*connect.Response[v1.RunScheduledAuditNowResponse], error) {
+	return c.runScheduledAuditNow.CallUnary(ctx, req)
+}
+
+// RetryTask calls agentfleet.v1.DashboardService.RetryTask.
+func (c *dashboardServiceClient) RetryTask(ctx context.Context, req *connect.Request[v1.RetryTaskRequest]) (*connect.Response[v1.RetryTaskResponse], error) {
+	return c.retryTask.CallUnary(ctx, req)
+}
+
 // DashboardServiceHandler is an implementation of the agentfleet.v1.DashboardService service.
 type DashboardServiceHandler interface {
 	ListTasks(context.Context, *connect.Request[v1.ListTasksRequest]) (*connect.Response[v1.ListTasksResponse], error)
@@ -810,6 +842,8 @@ type DashboardServiceHandler interface {
 	CreateScheduledAudit(context.Context, *connect.Request[v1.CreateScheduledAuditRequest]) (*connect.Response[v1.CreateScheduledAuditResponse], error)
 	UpdateScheduledAudit(context.Context, *connect.Request[v1.UpdateScheduledAuditRequest]) (*connect.Response[v1.UpdateScheduledAuditResponse], error)
 	DeleteScheduledAudit(context.Context, *connect.Request[v1.DeleteScheduledAuditRequest]) (*connect.Response[v1.DeleteScheduledAuditResponse], error)
+	RunScheduledAuditNow(context.Context, *connect.Request[v1.RunScheduledAuditNowRequest]) (*connect.Response[v1.RunScheduledAuditNowResponse], error)
+	RetryTask(context.Context, *connect.Request[v1.RetryTaskRequest]) (*connect.Response[v1.RetryTaskResponse], error)
 }
 
 // NewDashboardServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -1065,6 +1099,18 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 		connect.WithSchema(dashboardServiceMethods.ByName("DeleteScheduledAudit")),
 		connect.WithHandlerOptions(opts...),
 	)
+	dashboardServiceRunScheduledAuditNowHandler := connect.NewUnaryHandler(
+		DashboardServiceRunScheduledAuditNowProcedure,
+		svc.RunScheduledAuditNow,
+		connect.WithSchema(dashboardServiceMethods.ByName("RunScheduledAuditNow")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dashboardServiceRetryTaskHandler := connect.NewUnaryHandler(
+		DashboardServiceRetryTaskProcedure,
+		svc.RetryTask,
+		connect.WithSchema(dashboardServiceMethods.ByName("RetryTask")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/agentfleet.v1.DashboardService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case DashboardServiceListTasksProcedure:
@@ -1149,6 +1195,10 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 			dashboardServiceUpdateScheduledAuditHandler.ServeHTTP(w, r)
 		case DashboardServiceDeleteScheduledAuditProcedure:
 			dashboardServiceDeleteScheduledAuditHandler.ServeHTTP(w, r)
+		case DashboardServiceRunScheduledAuditNowProcedure:
+			dashboardServiceRunScheduledAuditNowHandler.ServeHTTP(w, r)
+		case DashboardServiceRetryTaskProcedure:
+			dashboardServiceRetryTaskHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -1320,4 +1370,12 @@ func (UnimplementedDashboardServiceHandler) UpdateScheduledAudit(context.Context
 
 func (UnimplementedDashboardServiceHandler) DeleteScheduledAudit(context.Context, *connect.Request[v1.DeleteScheduledAuditRequest]) (*connect.Response[v1.DeleteScheduledAuditResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.DeleteScheduledAudit is not implemented"))
+}
+
+func (UnimplementedDashboardServiceHandler) RunScheduledAuditNow(context.Context, *connect.Request[v1.RunScheduledAuditNowRequest]) (*connect.Response[v1.RunScheduledAuditNowResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.RunScheduledAuditNow is not implemented"))
+}
+
+func (UnimplementedDashboardServiceHandler) RetryTask(context.Context, *connect.Request[v1.RetryTaskRequest]) (*connect.Response[v1.RetryTaskResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.RetryTask is not implemented"))
 }
