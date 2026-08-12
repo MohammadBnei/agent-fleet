@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.43.2](https://github.com/MohammadBnei/agent-fleet/compare/1.43.1...1.43.2) (2026-08-12)
+
+
+### Bug Fixes
+
+* **e2e-ssh:** scope Infisical path to /e2e-ssh, drop cluster-wide 2222 rule ([5bd34b6](https://github.com/MohammadBnei/agent-fleet/commit/5bd34b6cd7cd73c7097e592681a4b8cef7fa8f5c))
+* PR [#125](https://github.com/MohammadBnei/agent-fleet/issues/125) review comments - key remap, NetworkPolicy, docs ([a2d94a8](https://github.com/MohammadBnei/agent-fleet/commit/a2d94a83384fd43176dd2521a8c0a1745ba71509))
+
 ## [1.43.1](https://github.com/MohammadBnei/agent-fleet/compare/1.43.0...1.43.1) (2026-08-12)
 
 # [1.43.0](https://github.com/MohammadBnei/agent-fleet/compare/1.42.1...1.43.0) (2026-08-11)
