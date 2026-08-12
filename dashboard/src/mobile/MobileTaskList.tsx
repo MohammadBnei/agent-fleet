@@ -1,6 +1,6 @@
 import type { Task } from "../gen/agentfleet/v1/core_pb";
 import { repoLabel } from "../taskKind";
-import { bucketTasks, prBadge, heartbeatLabel } from "../pages/TaskList";
+import { bucketTasks, prBadge, heartbeatLabel, sessionBadge } from "../pages/TaskList";
 import { NewTaskDialog } from "../components/NewTaskDialog";
 import type { TodoItem } from "../transcript";
 
@@ -44,6 +44,10 @@ function NeedsYouCard({ task, todos, onSelect }: { task: Task; todos: TodoItem[]
 
 function WorkingCard({ task, todos, onSelect }: { task: Task; todos: TodoItem[]; onSelect: () => void }) {
   const heartbeat = heartbeatLabel(task);
+  // Mobile carried no state at all: crashed, stalled and idle cards were
+  // visually identical, on the surface most likely used to triage away from
+  // a desk. Same single ranked badge as desktop.
+  const badge = sessionBadge(task);
   const done = todos.filter((t) => t.status === "completed").length;
   const pct = Math.round((done / Math.max(todos.length, 1)) * 100);
   return (
@@ -57,6 +61,14 @@ function WorkingCard({ task, todos, onSelect }: { task: Task; todos: TodoItem[];
         <span className="text-[12px] flex-none">#{task.id.slice(0, 6)}</span>
         <span className="text-[10.5px] text-base-content/50 flex-1 min-w-0 break-words">{repoLabel(task)}</span>
         {heartbeat && <span className="text-[10px] text-base-content/50 flex-none whitespace-nowrap">{heartbeat}</span>}
+        {badge && (
+          <span
+            className={`text-[9px] px-1 rounded border tracking-wide flex-none whitespace-nowrap overflow-hidden text-ellipsis max-w-[160px] ${badge.className}`}
+            title={badge.title ?? badge.label}
+          >
+            {badge.label}
+          </span>
+        )}
       </div>
       <div className="text-[12.5px] leading-relaxed mt-2 text-base-content/85 break-words">{task.description}</div>
       <div className="flex items-center gap-2 mt-2">

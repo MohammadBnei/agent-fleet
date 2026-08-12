@@ -217,7 +217,10 @@ function NeedsYouCard({
           <span className="text-[11px] font-semibold">#{task.id.slice(0, 6)}</span>
           <span className="text-[10px] text-base-content/50">{repoLabel(task)}</span>
           {badge && (
-            <span className={`text-[8.5px] px-1 rounded border tracking-wide ${badge.className}`} title={badge.title}>
+            <span
+              className={`text-[8.5px] px-1 rounded border tracking-wide whitespace-nowrap overflow-hidden text-ellipsis max-w-[140px] flex-none ${badge.className}`}
+              title={badge.title ?? badge.label}
+            >
               {badge.label}
             </span>
           )}
@@ -265,7 +268,10 @@ function WorkingCard({
           <span className="text-[11px]">#{task.id.slice(0, 6)}</span>
           <span className="text-[10px] text-base-content/50">{repoLabel(task)}</span>
           {badge && (
-            <span className={`text-[8.5px] px-1 rounded border tracking-wide ${badge.className}`} title={badge.title}>
+            <span
+              className={`text-[8.5px] px-1 rounded border tracking-wide whitespace-nowrap overflow-hidden text-ellipsis max-w-[140px] flex-none ${badge.className}`}
+              title={badge.title ?? badge.label}
+            >
               {badge.label}
             </span>
           )}

@@ -727,7 +727,7 @@ export function TaskDetail({
                 <span className="text-[10.5px]">#{t.id.slice(0, 6)}</span>
                 {siblingBadge && (
                   <span
-                    className={`px-1.5 py-0.5 rounded text-[9px] font-semibold border tracking-wide ${siblingBadge.className}`}
+                    className={`px-1.5 py-0.5 rounded text-[9px] font-semibold border tracking-wide whitespace-nowrap overflow-hidden text-ellipsis max-w-[180px] ${siblingBadge.className}`}
                     title={siblingBadge.title ?? t.podMessage ?? undefined}
                   >
                     {siblingBadge.label}
