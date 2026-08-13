@@ -281,17 +281,51 @@ export async function runTask(task: Task): Promise<TaskResult> {
     return true;
   }
 
+  // Records a decision this wrapper made on the human's behalf, so it exists
+  // somewhere other than this process's memory.
+  //
+  // Everything downstream — the dashboard's feed card, its dock, its list
+  // row — derives "is this still waiting on a human" from the transcript
+  // alone: a PERMISSION_RESPONSE replying to the request's seq, or a later
+  // INTERRUPT/ABORT. The two sweeps below resolved the SDK's blocked
+  // canUseTool promise and wrote nothing, so a plan answered by requesting
+  // changes stayed pending forever on every one of those surfaces — the big
+  // plan card could only ever be dismissed by approving it.
+  //
+  // from "agent", not "human": the human typed feedback, not a structured
+  // decision, and core streams from=="human" entries back into this very
+  // session as new input (StreamHumanMessages' own filter). Writing these as
+  // human would feed the wrapper its own bookkeeping.
+  //
+  // Fire-and-forget on purpose. The callers resolve a blocked canUseTool and
+  // must not await between asking and being ready for the answer; a failed
+  // write is worth a log line, never a stalled permission.
+  function recordResolution(seq: number, decision: { behavior: "allow" | "deny"; message?: string }): void {
+    void sidecar
+      .pushMessage("agent", JSON.stringify(decision), "permission_response", seq)
+      .catch((err) => log("warn", "recording auto-resolved permission failed", { taskId: task.id, seq, error: String(err) }));
+  }
+
   // A permission-mode switch (the dashboard's mode picker) pre-empts
   // whatever's currently pending — mirrors Claude Code CLI's own
   // ExitPlanMode prompt, where picking "yes, and don't ask again for
   // edits" both answers the pending call and changes the mode in one move.
   function resolveAllPendingAllow(): void {
-    for (const pending of pendingPermissions.values()) pending.resolve({ behavior: "allow", updatedInput: pending.input });
+    for (const [seq, pending] of pendingPermissions) {
+      pending.resolve({ behavior: "allow", updatedInput: pending.input });
+      recordResolution(seq, { behavior: "allow", message: "Allowed by a permission-mode change." });
+    }
     pendingPermissions.clear();
   }
 
   function resolveAllPendingDeny(message: string, interrupt = false): void {
-    for (const pending of pendingPermissions.values()) pending.resolve({ behavior: "deny", message, ...(interrupt ? { interrupt: true } : {}) });
+    for (const [seq, pending] of pendingPermissions) {
+      pending.resolve({ behavior: "deny", message, ...(interrupt ? { interrupt: true } : {}) });
+      // An interrupt/abort already leaves its own entry, and the dashboard
+      // reads that as resolving everything pending at that moment — writing
+      // a second record for the same event would be redundant, not clearer.
+      if (!interrupt) recordResolution(seq, { behavior: "deny", message });
+    }
     pendingPermissions.clear();
   }
 

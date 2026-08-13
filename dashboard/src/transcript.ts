@@ -55,9 +55,12 @@ export type PendingPermission = { entry: TranscriptEntry; tool: string; input: u
 // `reply_to` existed on the wire — see docs/adr supersession of 0021/0025),
 // OR until a later INTERRUPT/ABORT entry — worker/src/session.ts's
 // resolveAllPendingDeny denies every currently-pending permission when
-// either arrives, but only in-memory (resolving canUseTool's blocked
-// Promise directly); neither posts a real PERMISSION_RESPONSE row, since
-// there's no single request it's replying to. This is deliberately
+// either arrives, and for those two it posts no PERMISSION_RESPONSE row,
+// since there's no single request it's replying to. (Its *other* caller —
+// a plain human reply, which resolves the same way — does post one now, so
+// that case needs no positional rule; see recordResolution. Before it did,
+// requesting changes on a plan left the request pending forever here.)
+// This is deliberately
 // position-based (later.seq > e.seq), unlike reply_to correlation — sound
 // specifically because interrupt/abort really do deny *everything* pending
 // at that moment, confirmed live against a real worker (kind-local).

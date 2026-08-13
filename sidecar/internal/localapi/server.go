@@ -214,6 +214,13 @@ func messageHandler(core *coreclient.Client) http.HandlerFunc {
 			From string `json:"from"`
 			Text string `json:"text"`
 			Type string `json:"type"`
+			// Correlates this entry to an earlier one, the same
+			// reply_to_seq the dashboard's own permission_response and
+			// answer entries carry. The wrapper needs it to record a
+			// permission it resolved on the human's behalf — without it,
+			// that resolution existed only in the worker's memory and every
+			// dashboard surface went on showing the request as pending.
+			ReplyTo int64 `json:"replyTo"`
 		}
 		if err := decodeJSON(r, &body); err != nil {
 			writeError(w, http.StatusBadRequest, err)
@@ -223,7 +230,13 @@ func messageHandler(core *coreclient.Client) http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, errors.New("from and text are required"))
 			return
 		}
-		seq, err := core.SendMessage(r.Context(), body.From, body.Text, stringToProtoType(body.Type), "")
+		var seq int64
+		var err error
+		if body.ReplyTo > 0 {
+			seq, err = core.AppendReplyMessage(r.Context(), body.From, body.Text, stringToProtoType(body.Type), "", body.ReplyTo)
+		} else {
+			seq, err = core.SendMessage(r.Context(), body.From, body.Text, stringToProtoType(body.Type), "")
+		}
 		if err != nil {
 			writeError(w, http.StatusBadGateway, err)
 			return

@@ -106,9 +106,11 @@ func waitForAwaitingHuman(t *testing.T, ctx context.Context, pool *pgxpool.Pool,
 // TestActivityTrackingStore_AwaitingHuman covers the exact regression
 // caught live (kind-local): a Kill/Interrupt entry must clear
 // awaiting_human even though it never posts a real permission_response —
-// worker/src/session.ts's resolveAllPendingDeny only resolves the pending
-// canUseTool call in-memory, so this decorator is the only place that
-// state gets reflected back into the durable task row at all.
+// worker/src/session.ts's resolveAllPendingDeny leaves those two resolved
+// in-memory only, so this decorator is the only place that state gets
+// reflected back into the durable task row. Its other caller (a plain
+// human reply denying a pending permission) does post a real
+// permission_response now, and clears the wait through that row instead.
 func TestActivityTrackingStore_AwaitingHuman(t *testing.T) {
 	pool := newActivityTestPool(t)
 	ctx := context.Background()

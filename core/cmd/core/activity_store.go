@@ -51,11 +51,19 @@ func (s activityTrackingStore) touch(taskID, from, msgType string) {
 
 // awaitHuman sets/clears tasks.awaiting_human based on msgType — a
 // permission_request/question opens the wait, its permission_response/
-// answer resolves it, and abort/interrupt clear it too (worker/src/
-// session.ts's resolveAllPendingDeny denies every pending permission
-// in-memory the moment either arrives, but — confirmed live against a real
-// kind-local worker — never posts a real permission_response row for it,
-// so nothing stays waiting on a human who already moved the session on).
+// answer resolves it, and abort/interrupt clear it too.
+//
+// abort/interrupt stay in the clearing list because those two really do
+// deny everything pending at that moment and leave their own entry instead
+// of a permission_response. The other case they used to cover — a plain
+// human reply, which worker/src/session.ts's resolveAllPendingDeny also
+// treats as a denial — no longer needs covering here: that sweep now posts
+// a real permission_response row (session.ts's recordResolution), which
+// lands on AppendReply below and clears the wait through the normal path.
+// Before it did, that resolution existed only in the worker's memory, so
+// the request stayed "pending" on every dashboard surface and the plan card
+// could only be dismissed by approving it.
+//
 // Every other msgType is a no-op: not every transcript append is a
 // decision point, unlike last_active_at above.
 func (s activityTrackingStore) awaitHuman(taskID, msgType string) {
