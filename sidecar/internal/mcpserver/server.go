@@ -23,6 +23,7 @@ import (
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 
 	"github.com/MohammadBnei/agent-fleet/sidecar/internal/coreclient"
+	"github.com/MohammadBnei/agent-fleet/sidecar/internal/e2eclient"
 )
 
 type AskUserQuestionOption struct {
@@ -48,8 +49,9 @@ type AskUserQuestionArgs struct {
 // nothing depends on notifications/tools/list_changed; a tool the agent
 // cannot see is a tool that does not exist, and lazy registration lost that
 // race three different ways. See registerPlaywrightTools.
-func New(core *coreclient.Client) http.Handler {
+func New(core *coreclient.Client, e2e directDialer) http.Handler {
 	s := server.NewMCPServer("agent-fleet-sidecar", "0.1.0", server.WithToolCapabilities(true))
+	sb := sandbox{core: core, e2e: e2e}
 
 	s.AddTool(mcp.NewTool("send_message",
 		mcp.WithDescription("Append a message to this task's shared transcript (visible to the human via dashboard/Discord). The response's nextIndex is the sinceIndex for wait_for_messages."),
@@ -78,7 +80,7 @@ func New(core *coreclient.Client) http.Handler {
 
 	s.AddTool(mcp.NewTool("kill_env",
 		mcp.WithDescription("Permanently destroy this task's e2e environment. Do NOT use it to 'refresh' the app after editing files — the shared worktree hot-reloads, just reload the preview URL. Only when completely done: recreating costs 10+ minutes of cold install."),
-	), killEnvHandler(core))
+	), killEnvHandler(core, e2e))
 
 	// Registered statically, unlike the Playwright tools below it: this is
 	// the worker's build/test sandbox (docs/adr/0039), so it has to exist
@@ -89,7 +91,7 @@ func New(core *coreclient.Client) http.Handler {
 	s.AddTool(mcp.NewTool("run_command",
 		mcp.WithDescription("Run a shell command in this task's sandbox — a separate pod with the repo's toolchain, its services (Postgres/Redis), a warm dependency cache and the app's dev server, sharing this task's worktree. Prefer this over Bash for anything that builds, tests, lints, installs, or runs the app; it starts the sandbox on first use, so no setup call is needed. Returns stdout, stderr, exitCode — a nonzero exit is information, not an error. The sandbox has NO git and no GitHub credentials on purpose: run git, gh and PR work through Bash. Background long-running processes with a trailing &; timeout 15 minutes. Large output is truncated with the full log's path in fullOutputPath — tail/grep it with this same tool."),
 		mcp.WithString("command", mcp.Required(), mcp.Description("Shell command, run via bash -lc from the worktree root")),
-	), runCommandHandler(core, s))
+	), runCommandHandler(sb, s))
 
 	s.AddTool(mcp.NewTool("list_shared_files",
 		mcp.WithDescription("List files in the fleet-wide shared file space (a single flat Garage S3 bucket, shared by every task and by the human via the dashboard). Returns each file's key, size, last-modified time, and content type."),
@@ -162,7 +164,7 @@ func New(core *coreclient.Client) http.Handler {
 	// that is fine and deliberate — the call fails loudly if nothing is behind
 	// it, which beats the tool being invisible and the agent concluding it has
 	// no browser.
-	registerPlaywrightTools(s, core)
+	registerPlaywrightTools(s, sb)
 
 	return server.NewStreamableHTTPServer(s)
 }
@@ -480,6 +482,63 @@ type e2eRunner interface {
 	RequestE2eEnv(ctx context.Context, startCmd, profile string) (*agentfleetv1.RequestE2EEnvResponse, error)
 }
 
+// directDialer is the e2eclient half, as an interface for the same reason:
+// the routing decision below is worth testing without a live MCP server.
+type directDialer interface {
+	Has(name string) bool
+	CallTool(ctx context.Context, endpointName, toolName string, args map[string]any) (resultJSON string, isError bool, err error)
+	SetEndpoints(endpoints []e2eclient.Endpoint)
+	DropAll()
+}
+
+// sandbox routes one tool call to this task's sandbox: directly when the
+// roster knows the endpoint, through core's relay when it does not
+// (docs/adr/0045).
+//
+// The fallback is not politeness — it is the deploy-skew contract. core, the
+// provisioner and the worker image ship as separate ArgoCD Applications, so a
+// sidecar carrying this code WILL meet a provisioner too old to send a roster
+// on some rolling deploy. Without the fallback that combination breaks every
+// run_command in the fleet, and the same hazard is already documented one
+// function up for the pre-adr/0044 registration race.
+//
+// It disappears with the relay itself, once the fleet has drained of pods
+// running a sidecar older than the roster.
+type sandbox struct {
+	core e2eRunner
+	e2e  directDialer
+}
+
+func (sb sandbox) callTool(ctx context.Context, endpointName, toolName string, args map[string]any) (resultJSON string, isError bool, err error) {
+	if sb.e2e != nil && sb.e2e.Has(endpointName) {
+		return sb.e2e.CallTool(ctx, endpointName, toolName, args)
+	}
+	argsJSON, err := json.Marshal(args)
+	if err != nil {
+		return "", false, fmt.Errorf("marshal tool arguments: %w", err)
+	}
+	slog.Debug("mcp: no roster for endpoint, relaying through core", "endpoint", endpointName, "tool", toolName)
+	return sb.core.CallE2eTool(ctx, toolName, string(argsJSON))
+}
+
+// refreshRoster keeps the roster current from every provision response. The
+// address can legitimately change under a running pod (a namespace move, a
+// port change), and a sidecar that only ever read its startup env would keep
+// dialing the old one.
+func (sb sandbox) refreshRoster(env *agentfleetv1.RequestE2EEnvResponse) {
+	if sb.e2e == nil || env == nil {
+		return
+	}
+	out := make([]e2eclient.Endpoint, 0, len(env.GetEndpoints()))
+	for _, e := range env.GetEndpoints() {
+		out = append(out, e2eclient.Endpoint{
+			Name: e.GetName(), Address: e.GetAddress(),
+			Protocol: e.GetProtocol(), Path: e.GetPath(), Token: e.GetToken(),
+		})
+	}
+	sb.e2e.SetEndpoints(out)
+}
+
 // runCommandHandler runs the command in this task's e2e pod, provisioning
 // one first if there isn't a live one yet.
 //
@@ -490,18 +549,16 @@ type e2eRunner interface {
 // every single command, to fix a state that only exists once per session.
 // Doing it on failure also self-heals after kill_env, which a
 // provisioned-once flag would not.
-func runCommandHandler(core e2eRunner, s *server.MCPServer) server.ToolHandlerFunc {
+func runCommandHandler(sb sandbox, s *server.MCPServer) server.ToolHandlerFunc {
+	core := sb.core
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		command := req.GetString("command", "")
 		if command == "" {
 			return mcp.NewToolResultError("command is required"), nil
 		}
-		argsJSON, err := json.Marshal(map[string]any{"command": command})
-		if err != nil {
-			return nil, fmt.Errorf("marshal run_command arguments: %w", err)
-		}
+		args := map[string]any{"command": command}
 
-		resultJSON, isError, err := core.CallE2eTool(ctx, runCommandToolName, string(argsJSON))
+		resultJSON, isError, err := sb.callTool(ctx, e2eclient.EndpointExec, runCommandToolName, args)
 		if err == nil {
 			return e2eToolResult(resultJSON, isError, "")
 		}
@@ -530,8 +587,13 @@ func runCommandHandler(core e2eRunner, s *server.MCPServer) server.ToolHandlerFu
 				slog.Error("mcp run_command: provisioning failed", "error", provErr)
 				return mcp.NewToolResultError(fmt.Sprintf("run_command: no sandbox running and one could not be started: %v", provErr)), nil
 			}
+			// The provision response is also the roster's refresh point: a
+			// sandbox that just moved (recreated after adr/0044's Failed
+			// path, or a kill_env rebuild) is reachable at whatever this
+			// says, not at whatever the startup env said.
+			sb.refreshRoster(env)
 
-			resultJSON, isError, err = core.CallE2eTool(ctx, runCommandToolName, string(argsJSON))
+			resultJSON, isError, err = sb.callTool(ctx, e2eclient.EndpointExec, runCommandToolName, args)
 			if err == nil {
 				break
 			}
@@ -631,7 +693,7 @@ type playwrightTool struct {
 // Static registration also drops the dependency on the client honoring
 // notifications/tools/list_changed, which docs/adr/0012 flagged as a risk and
 // nobody ever verified.
-func registerPlaywrightTools(s *server.MCPServer, core *coreclient.Client) {
+func registerPlaywrightTools(s *server.MCPServer, sb sandbox) {
 	var tools []playwrightTool
 	if err := json.Unmarshal(playwrightToolsJSON, &tools); err != nil {
 		// Embedded and covered by a test, so this is a build-time bug, not a
@@ -644,7 +706,7 @@ func registerPlaywrightTools(s *server.MCPServer, core *coreclient.Client) {
 		if t.Name == runCommandToolName {
 			continue // never shadow New()'s pod-provisioning handler
 		}
-		addProxiedTool(s, core, t)
+		addProxiedTool(s, sb, t)
 	}
 	slog.Info("mcp: registered Playwright tools", "count", len(tools))
 }
@@ -654,16 +716,12 @@ func registerPlaywrightTools(s *server.MCPServer, core *coreclient.Client) {
 // not exist yet: the tool is advertised from turn one and the call fails
 // loudly if there's nothing behind it, which is strictly better than the tool
 // being absent and the agent concluding it cannot use a browser at all.
-func addProxiedTool(s *server.MCPServer, core *coreclient.Client, desc playwrightTool) {
+func addProxiedTool(s *server.MCPServer, sb sandbox, desc playwrightTool) {
 	var schema mcp.ToolInputSchema
 	_ = json.Unmarshal(desc.InputSchema, &schema)
 	tool := mcp.Tool{Name: desc.Name, Description: desc.Description, InputSchema: schema}
 	s.AddTool(tool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		argsJSON, err := json.Marshal(req.GetArguments())
-		if err != nil {
-			return nil, fmt.Errorf("marshal tool arguments: %w", err)
-		}
-		resultJSON, isError, err := core.CallE2eTool(ctx, desc.Name, string(argsJSON))
+		resultJSON, isError, err := sb.callTool(ctx, e2eclient.EndpointPlaywright, desc.Name, req.GetArguments())
 		if err != nil {
 			return nil, err
 		}
@@ -671,12 +729,22 @@ func addProxiedTool(s *server.MCPServer, core *coreclient.Client, desc playwrigh
 	})
 }
 
-func killEnvHandler(core *coreclient.Client) server.ToolHandlerFunc {
+func killEnvHandler(core *coreclient.Client, e2e directDialer) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		slog.Info("mcp kill_env")
 		if _, err := core.KillE2eEnv(ctx); err != nil {
 			slog.Error("mcp kill_env", "error", err)
 			return mcp.NewToolResultError(err.Error()), nil
+		}
+		// Every cached client now points at a pod that is going away. A
+		// re-provisioned sandbox gets a NEW ClusterIP behind the same Service
+		// name, so a surviving client would not error fast — it would hang
+		// against the dead address until its context expired, turning the
+		// next run_command into a timeout instead of a rebuild. The
+		// provisioner has had this exact call since adr/0044; the sidecar
+		// needs its own now that it holds the connections.
+		if e2e != nil {
+			e2e.DropAll()
 		}
 		return mcp.NewToolResultText("kill requested"), nil
 	}

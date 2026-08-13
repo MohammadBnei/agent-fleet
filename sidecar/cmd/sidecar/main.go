@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/MohammadBnei/agent-fleet/sidecar/internal/coreclient"
+	"github.com/MohammadBnei/agent-fleet/sidecar/internal/e2eclient"
 	"github.com/MohammadBnei/agent-fleet/sidecar/internal/localapi"
 	"github.com/MohammadBnei/agent-fleet/sidecar/internal/mcpserver"
 	"github.com/MohammadBnei/agent-fleet/sidecar/internal/telemetry"
@@ -64,7 +65,20 @@ func main() {
 
 	go telemetry.Run(ctx, core, worktreePath, 5*time.Second)
 
-	mcpServer := &http.Server{Addr: ":" + mcpPort, Handler: withAccessLog("sidecar mcp", mcpserver.New(core))}
+	// Where this task's sandbox answers, injected by the provisioner at pod
+	// creation (docs/adr/0045). It is available before any sandbox exists
+	// because the address is derived from names, which is what lets the very
+	// first run_command dial directly instead of relaying to bootstrap one.
+	//
+	// An absent or malformed value is deliberately not fatal: the roster
+	// stays empty and every sandbox call falls back through core, which is
+	// also exactly the deploy-skew path when this sidecar meets a provisioner
+	// too old to set the variable.
+	e2e := e2eclient.New()
+	e2e.SetEndpoints(e2eclient.ParseEndpoints(os.Getenv("FLEET_ENDPOINTS")))
+	defer e2e.DropAll()
+
+	mcpServer := &http.Server{Addr: ":" + mcpPort, Handler: withAccessLog("sidecar mcp", mcpserver.New(core, e2e))}
 	localAPIServer := &http.Server{Addr: ":" + localAPIPort, Handler: withAccessLog("sidecar local api", localapi.New(core))}
 
 	go func() {
