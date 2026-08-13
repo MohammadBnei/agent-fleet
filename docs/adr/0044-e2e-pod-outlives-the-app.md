@@ -67,7 +67,7 @@ return.
 
 ## Decision
 
-**The e2e pod is a sandbox that may also run an app.** Six parts:
+**The e2e pod is a sandbox that may also run an app.** Eight parts:
 
 ### 1. PID 1 outlives every child; nothing inside the container ends the pod
 
@@ -174,7 +174,64 @@ that profile carries `cluster-access`, and granting the sandbox cluster reach
 would break the strictly-less-privileged-than-the-worker premise ADR-0039
 rests `run_command` being un-prompted on.
 
-### 7. e2e pods are garbage-collected
+### 7. The browser tools are registered statically, from an embedded snapshot
+
+`@playwright/mcp`'s tool set is a snapshot committed at
+`sidecar/internal/mcpserver/playwright_tools.json` and registered in `New()`,
+exactly as ADR-0039 did for `run_command` and for the same reason: **a tool
+the agent cannot see is a tool that does not exist.**
+
+Two independent bugs made browser automation unavailable for the fleet's
+entire history, and both were silent because `ProxiedTools` collapses any
+failure into a `nil` list at log level `Info`:
+
+**a. Every provisioner call got a 403.** `@playwright/mcp` defaults
+`--allowed-hosts` to the host it is bound to and rejects every other `Host`
+header. Measured against a real image:
+
+| `Host` header | Response |
+|---|---|
+| `localhost:8931` | `200` |
+| `e2e-abc.agent-fleet.svc.cluster.local:8931` (what the provisioner sends) | `403 Access is only allowed at localhost:8931` |
+| the same, with `--allowed-hosts '*'` | `200` |
+
+This is why ADR-0012/0036/0039 kept carrying an unverified risk about the
+`--port` flag. The flag was always fine; the Host check was the problem.
+Passing `'*'` disables a DNS-rebinding guard whose threat model — a browser on
+a user's machine reaching a localhost server — cannot occur here:
+`k8s/provisioner/networkpolicy.yaml` admits `:8931` from the provisioner pod
+**only**, and the port has no IngressRoute. Cilium enforcing L3 is a strictly
+stronger boundary than a `Host` string match. If `:8931` ever gains an
+IngressRoute, narrow this to the pod's own service DNS name.
+
+**b. Runtime discovery lost the race, three ways.** Both registration sites
+fired immediately after `RequestE2eEnv` returned — i.e. when the pod *object*
+existed, not when it served. Measured: `execmcp` binds at **t+2s**,
+`@playwright/mcp` at **t+5s**. So (1) discovery landed in that gap and got
+connection-refused; (2) `run_command` breaks out of its retry loop the moment
+`execmcp` answers, so no later attempt happened; (3) on a resumed session with
+a warm pod, `run_command`'s first call succeeds, so the provisioning branch —
+the only thing that registered anything — was never reached at all.
+
+Static registration removes the race and, with it, the dependency on the
+client honoring `notifications/tools/list_changed` — a risk ADR-0012 flagged
+and nobody ever verified. The tools now proxy to a pod that may not exist yet;
+that is deliberate, and a loud failure beats an invisible tool.
+
+Cost: the snapshot drifts from the installed `@playwright/mcp`. Bounded and
+one-directional — a tool that disappeared upstream fails loudly at the real
+server on first call, a new one is merely invisible until someone refreshes
+the file. `sidecar/internal/mcpserver/playwright_tools_test.go` pins that it
+parses, is populated, carries real schemas, contains the core browser tools,
+and never contains `run_command`.
+
+**Rejected: retrying discovery on every `run_command` until it sticks.** It
+self-heals cold start and resumed sessions, and it is fewer lines — but it
+still rests on `list_changed` being honored, which is precisely the unverified
+assumption that let this rot undetected. Static registration answers the
+question instead of re-betting on it.
+
+### 8. e2e pods are garbage-collected
 
 A third `reconcile` pass, reusing `gcIdleSharedInstances`' shape and the
 already-present-but-callerless `ListPodsByLabel`: terminal-phase pods and pods
@@ -237,14 +294,19 @@ the GC sweep — are covered by Go tests against the fake clientset):
 | `pkill -9 execmcp` | Container survived; `supervise()` logged `execmcp exited (137), restarting in 5s`; the listener came back and served. |
 | `run_command 'sleep 300 & echo ok'` | Returned in **1.025s** — precisely `cmd.WaitDelay`, confirming both that the inherited pipe really was held open and that the fix releases it. Before this change the same call blocked for the full 15-minute `commandTimeout`. |
 
-**Resolved a long-standing unverified risk:** `@playwright/mcp --port` *does*
-work — `:8931` was bound in every run. ADR-0012, ADR-0036 and ADR-0039 all
-carried this as an open question ("not verifiable from this repo alone before
-a real image build"); it is now verified, and the `ponytail:` comment in
-`entrypoint.sh` says so.
+**Resolved a long-standing unverified risk, and found the real one behind
+it:** `@playwright/mcp --port` *does* work — `:8931` was bound in every run,
+closing the open question ADR-0012/0036/0039 all carried. But binding is not
+reachability: the server then 403'd every request whose `Host` header was not
+its own bind address, which is every request the provisioner has ever made.
+See decision 7a.
 - The sweep's age bound is fleet-wide, not per-repo. A legitimately long
   session hitting 24h loses its sandbox and gets a fresh one on the next
   `run_command`, which is a cold install.
 - `run_command`'s description now lives in two places (the sidecar's and
   execmcp's own). They already drifted once — 15 minutes vs 5 — and are
   re-synced here.
+- The Playwright tool snapshot is a committed file, so bumping
+  `@playwright/mcp` needs a manual refresh (decision 7). Nothing detects the
+  drift automatically; the tests only pin that the file is well-formed and
+  plausible.

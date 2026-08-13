@@ -163,13 +163,12 @@ func (c *Client) KillE2eEnv(ctx context.Context) (bool, error) {
 	return resp.GetKilled(), nil
 }
 
-func (c *Client) ListE2eTools(ctx context.Context) ([]*agentfleetv1.E2EToolDescriptor, error) {
-	resp, err := c.rpc.ListE2ETools(ctx, &agentfleetv1.ListE2EToolsRequest{TaskId: c.taskID})
-	if err != nil {
-		return nil, fmt.Errorf("ListE2eTools: %w", err)
-	}
-	return resp.GetTools(), nil
-}
+// ListE2eTools is deliberately absent: the sidecar no longer discovers the
+// e2e pod's tools at runtime (docs/adr/0044 — they're a static embedded
+// snapshot in mcpserver, because discovery always lost the race against the
+// pod becoming reachable). The CoreService/ProvisionerService RPCs stay —
+// they're the diagnostic that answers "what does the live pod actually
+// serve", which is exactly what a snapshot refresh needs.
 
 func (c *Client) CallE2eTool(ctx context.Context, toolName, argumentsJSON string) (resultJSON string, isError bool, err error) {
 	resp, err := c.rpc.CallE2ETool(ctx, &agentfleetv1.CallE2EToolRequest{

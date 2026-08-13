@@ -10,6 +10,7 @@ package mcpserver
 
 import (
 	"context"
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -41,11 +42,12 @@ type AskUserQuestionArgs struct {
 	TimeoutMs int                       `json:"timeoutMs,omitempty" jsonschema_description:"How long to block waiting for an answer before returning {\"status\":\"pending\"} (default 60000). Call the tool again with the same questions to keep waiting."`
 }
 
-// New builds the sidecar's local MCP HTTP handler. Playwright's tool set
-// (discovered at runtime once an e2e session is live) is registered lazily
-// by request_e2e_env's handler, mirroring the exact dynamic-registration +
-// notifications/tools/list_changed pattern provisioner's old per-task
-// mcpserver already used.
+// New builds the sidecar's local MCP HTTP handler. Every tool the agent will
+// ever see is registered here, at startup — including Playwright's set, from
+// an embedded snapshot (docs/adr/0044). Nothing is discovered at runtime and
+// nothing depends on notifications/tools/list_changed; a tool the agent
+// cannot see is a tool that does not exist, and lazy registration lost that
+// race three different ways. See registerPlaywrightTools.
 func New(core *coreclient.Client) http.Handler {
 	s := server.NewMCPServer("agent-fleet-sidecar", "0.1.0", server.WithToolCapabilities(true))
 
@@ -154,6 +156,13 @@ func New(core *coreclient.Client) http.Handler {
 		mcp.WithString("start_time", mcp.Description("Optional: RFC3339 timestamp (e.g., '2024-01-15T10:30:00Z') - overrides duration")),
 		mcp.WithString("end_time", mcp.Description("Optional: RFC3339 timestamp (default: now)")),
 	), viewLogsHandler(core))
+
+	// Browser tools, same static treatment as run_command above and for the
+	// same reason (docs/adr/0044). They proxy to a pod that may not exist yet;
+	// that is fine and deliberate — the call fails loudly if nothing is behind
+	// it, which beats the tool being invisible and the agent concluding it has
+	// no browser.
+	registerPlaywrightTools(s, core)
 
 	return server.NewStreamableHTTPServer(s)
 }
@@ -397,24 +406,10 @@ func requestE2eEnvHandler(core *coreclient.Client, s *server.MCPServer) server.T
 			return mcp.NewToolResultError(err.Error()), nil
 		}
 
-		// New Playwright tools just became reachable — register them and
-		// tell the client the tool list changed (see docs/adr/0012's
-		// flagged risk: verify this is actually honored by the Agent SDK).
-		tools, err := core.ListE2eTools(ctx)
-		if err == nil {
-			for _, t := range tools {
-				// A provisioner still on the old image lists run_command
-				// here; registering it would overwrite New()'s static,
-				// pod-provisioning handler with a plain passthrough. The
-				// two run as separate images, so this window is real on
-				// every rolling deploy, not just theoretical.
-				if t.GetName() == runCommandToolName {
-					continue
-				}
-				addProxiedTool(s, core, t)
-			}
-			s.SendNotificationToAllClients("notifications/tools/list_changed", nil)
-		}
+		// Nothing to register here anymore: the Playwright tools are static
+		// (New() above, docs/adr/0044). This used to discover them live and
+		// fire notifications/tools/list_changed, which could not work — see
+		// registerPlaywrightTools for the three ways it missed.
 
 		body, _ := json.Marshal(map[string]any{
 			"url":              resp.GetPreviewUrl(),
@@ -502,12 +497,6 @@ func runCommandHandler(core e2eRunner, s *server.MCPServer) server.ToolHandlerFu
 				return mcp.NewToolResultError(fmt.Sprintf("run_command: no sandbox running and one could not be started: %v", provErr)), nil
 			}
 
-			// Ensure Playwright tools registered for resumed sessions where
-			// notifications/tools/list_changed doesn't re-fire (ADR-0039).
-			if coreClient, ok := core.(*coreclient.Client); ok {
-				ensureE2eToolsRegistered(ctx, s, coreClient)
-			}
-
 			resultJSON, isError, err = core.CallE2eTool(ctx, runCommandToolName, string(argsJSON))
 			if err == nil {
 				break
@@ -560,44 +549,92 @@ func e2eToolResult(resultJSON string, isError bool, note string) (*mcp.CallToolR
 	return &result, nil
 }
 
-// addProxiedTool registers one runtime-discovered e2e tool (Playwright's
-// set) as a straight passthrough. run_command is deliberately absent from
-// what ProxiedTools returns — it's registered statically in New() with a
-// handler that can provision a pod, and re-registering it here would
-// replace that with a passthrough that can't (docs/adr/0039).
-func addProxiedTool(s *server.MCPServer, core *coreclient.Client, desc *agentfleetv1.E2EToolDescriptor) {
+// playwrightToolsJSON is a snapshot of @playwright/mcp's tools/list, taken
+// from the e2e-runner image. Embedded rather than discovered at runtime —
+// see registerPlaywrightTools.
+//
+// To refresh after bumping @playwright/mcp, run a container off
+// e2e-runner/Dockerfile, POST tools/list to its :8931, and write the sorted
+// `result.tools` array here. Drift is a degradation, never a break: a tool
+// that disappeared upstream fails loudly at the real server on first call, a
+// new one is merely invisible until this file is refreshed.
+//
+//go:embed playwright_tools.json
+var playwrightToolsJSON []byte
+
+// playwrightTool is the subset of an MCP tool descriptor the snapshot carries.
+// InputSchema stays raw so it round-trips whatever @playwright/mcp declares,
+// without this package needing to model JSON Schema.
+type playwrightTool struct {
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	InputSchema json.RawMessage `json:"inputSchema"`
+}
+
+// registerPlaywrightTools registers the browser tools statically, at startup,
+// exactly as docs/adr/0039 did for run_command and for the same reason: a
+// tool the agent cannot see is a tool that does not exist.
+//
+// These used to be discovered live and registered after request_e2e_env, then
+// again from run_command's provisioning branch. That could not work, three
+// ways over (docs/adr/0044):
+//
+//  1. Both call sites fire immediately after RequestE2eEnv returns — which is
+//     when the pod object exists, not when it serves. Measured on the real
+//     image: execmcp binds at t+2s, @playwright/mcp at t+5s. The discovery
+//     call lands in that gap and gets connection-refused.
+//  2. run_command breaks out of its retry loop the moment execmcp answers, so
+//     the later attempts that might have caught :8931 never happen.
+//  3. On a resumed session with a warm pod, run_command's very first call
+//     succeeds, so the provisioning branch — the only thing that registered
+//     anything — is never reached at all.
+//
+// And all three were moot anyway, because @playwright/mcp answered every
+// provisioner request with 403 until --allowed-hosts landed. ProxiedTools
+// swallows any of that into a nil list at log level Info, so the whole thing
+// failed silently for the agent's entire session.
+//
+// Static registration also drops the dependency on the client honoring
+// notifications/tools/list_changed, which docs/adr/0012 flagged as a risk and
+// nobody ever verified.
+func registerPlaywrightTools(s *server.MCPServer, core *coreclient.Client) {
+	var tools []playwrightTool
+	if err := json.Unmarshal(playwrightToolsJSON, &tools); err != nil {
+		// Embedded and covered by a test, so this is a build-time bug, not a
+		// runtime condition — but a sidecar that starts without browser tools
+		// must say so rather than look normal.
+		slog.Error("mcp: embedded Playwright tool snapshot is unreadable — browser tools unavailable", "error", err)
+		return
+	}
+	for _, t := range tools {
+		if t.Name == runCommandToolName {
+			continue // never shadow New()'s pod-provisioning handler
+		}
+		addProxiedTool(s, core, t)
+	}
+	slog.Info("mcp: registered Playwright tools", "count", len(tools))
+}
+
+// addProxiedTool registers one Playwright tool as a straight passthrough to
+// the e2e pod, via core (docs/adr/0020's hub-and-spoke rule). The pod need
+// not exist yet: the tool is advertised from turn one and the call fails
+// loudly if there's nothing behind it, which is strictly better than the tool
+// being absent and the agent concluding it cannot use a browser at all.
+func addProxiedTool(s *server.MCPServer, core *coreclient.Client, desc playwrightTool) {
 	var schema mcp.ToolInputSchema
-	_ = json.Unmarshal([]byte(desc.GetInputSchemaJson()), &schema)
-	tool := mcp.Tool{Name: desc.GetName(), Description: desc.GetDescription(), InputSchema: schema}
+	_ = json.Unmarshal(desc.InputSchema, &schema)
+	tool := mcp.Tool{Name: desc.Name, Description: desc.Description, InputSchema: schema}
 	s.AddTool(tool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		argsJSON, err := json.Marshal(req.GetArguments())
 		if err != nil {
 			return nil, fmt.Errorf("marshal tool arguments: %w", err)
 		}
-		resultJSON, isError, err := core.CallE2eTool(ctx, desc.GetName(), string(argsJSON))
+		resultJSON, isError, err := core.CallE2eTool(ctx, desc.Name, string(argsJSON))
 		if err != nil {
 			return nil, err
 		}
 		return e2eToolResult(resultJSON, isError, "")
 	})
-}
-
-// ensureE2eToolsRegistered checks if Playwright tools are registered and
-// registers them if missing — fixes resumed sessions where
-// notifications/tools/list_changed doesn't re-fire (docs/adr/0039 lines 36-40).
-func ensureE2eToolsRegistered(ctx context.Context, s *server.MCPServer, core *coreclient.Client) {
-	tools, err := core.ListE2eTools(ctx)
-	if err != nil {
-		slog.Warn("ensureE2eToolsRegistered failed", "error", err)
-		return
-	}
-	for _, t := range tools {
-		if t.GetName() == runCommandToolName {
-			continue // run_command already statically registered
-		}
-		addProxiedTool(s, core, t)
-	}
-	s.SendNotificationToAllClients("notifications/tools/list_changed", nil)
 }
 
 func killEnvHandler(core *coreclient.Client) server.ToolHandlerFunc {

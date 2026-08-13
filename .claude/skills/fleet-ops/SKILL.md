@@ -57,6 +57,44 @@ the dashboard-editable `repos` table (`docs/adr/0028`), not Go source:
    means a build/test sandbox with no app and no preview URL, which is the
    right shape for a repo whose sandbox exists to compile and test.
 
+### Refreshing the Playwright tool snapshot
+
+The browser tools the agent sees come from a committed snapshot,
+`sidecar/internal/mcpserver/playwright_tools.json`, not from runtime
+discovery (`docs/adr/0044` — discovery always lost the race against the pod
+becoming reachable). **Bumping `@playwright/mcp` in `e2e-runner/Dockerfile`
+means refreshing this file too**, or new tools stay invisible to every agent.
+
+```bash
+docker build -f e2e-runner/Dockerfile -t e2e-runner:snap .
+docker run -d --name pw-snap --entrypoint bash -p 18931:8931 e2e-runner:snap \
+  -c 'bunx @playwright/mcp --host 0.0.0.0 --port 8931 --headless --allowed-hosts "*"'
+sleep 15
+
+# initialize, keep the session id, then list
+SID=$(curl -s -o /dev/null -D - -X POST http://localhost:18931/mcp \
+  -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"snap","version":"1"}}}' \
+  | grep -i '^mcp-session-id:' | tr -d '\r' | awk '{print $2}')
+
+curl -s -X POST http://localhost:18931/mcp \
+  -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
+  -H "mcp-session-id: $SID" -d '{"jsonrpc":"2.0","method":"notifications/initialized"}' >/dev/null
+
+curl -s -X POST http://localhost:18931/mcp \
+  -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
+  -H "mcp-session-id: $SID" -d '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' \
+  | sed 's/^data: //' | grep '^{' \
+  | python3 -c 'import json,sys; json.dump(sorted(json.load(sys.stdin)["result"]["tools"], key=lambda t: t["name"]), open("sidecar/internal/mcpserver/playwright_tools.json","w"), indent=2, sort_keys=True)'
+
+docker rm -f pw-snap
+cd sidecar && go test ./internal/mcpserver/... -count=1   # pins shape + the run_command invariant
+```
+
+`--allowed-hosts '*'` is not optional there or in the entrypoint: without it
+`@playwright/mcp` answers anything but its own bind address with
+`403 Access is only allowed at localhost:8931`.
+
 No `infra-bootstrap` edit needed (that repo only knows about `core`'s and
 `provisioner`'s own Applications, not individual target repos). Unlike the
 old code-review-gated flow, a dashboard-added repo is live immediately —
