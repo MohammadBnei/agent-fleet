@@ -21,7 +21,8 @@
 
 // Bump to evict everything from older workers. v2: the icon set moved to
 // /icons/ and the manifest was renamed, so v1's entries are all stale.
-const CACHE = "herd-v2";
+// v3: force manifest+icon refresh for PWA install fix.
+const CACHE = "herd-v3";
 
 // Populated on first navigation; served when the network is gone.
 const SHELL = "/";
