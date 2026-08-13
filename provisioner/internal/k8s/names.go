@@ -57,12 +57,22 @@ func shortID(taskID string) string {
 	return name
 }
 
+// The trailing dot on `svc.cluster.local.` is load-bearing, not a typo.
+//
+// Kubernetes writes `ndots:5` into every pod's resolv.conf. These names have
+// four dots, so without the terminating dot the resolver treats them as
+// relative and walks the search list first — `…svc.cluster.local.agent-fleet.
+// svc.cluster.local`, then `.svc.cluster.local`, then `.cluster.local` — three
+// NXDOMAIN round-trips (six queries, counting AAAA) before the one that
+// answers. The dot marks the name absolute, so it is one query.
+//
+// This is paid per resolution, on the fleet's most-used tool path.
 func PlaywrightURLFor(namespace, taskID string) string {
-	return fmt.Sprintf("http://%s.%s.svc.cluster.local:%d/mcp", ResourceName(taskID), namespace, PlaywrightPort)
+	return fmt.Sprintf("http://%s.%s.svc.cluster.local.:%d/mcp", ResourceName(taskID), namespace, PlaywrightPort)
 }
 
 func ExecURLFor(namespace, taskID string) string {
-	return fmt.Sprintf("http://%s.%s.svc.cluster.local:%d/mcp", ResourceName(taskID), namespace, ExecPort)
+	return fmt.Sprintf("http://%s.%s.svc.cluster.local.:%d/mcp", ResourceName(taskID), namespace, ExecPort)
 }
 
 // PreviewURLFor is a per-task subdomain serving the app at the ROOT path —

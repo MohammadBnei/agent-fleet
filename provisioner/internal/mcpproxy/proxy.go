@@ -40,36 +40,83 @@ func New(urlForTask, execURLForTask func(taskID string) string) *Proxy {
 }
 
 func (p *Proxy) clientFor(ctx context.Context, taskID string) (*client.Client, error) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
+	return p.cachedClient(ctx, taskID, p.urlForTask(taskID))
+}
 
-	if c, ok := p.clients[taskID]; ok {
+// execCacheKey namespaces the exec client in the same map as the Playwright
+// one. A second map plus a second mutex would buy nothing — DropClient has to
+// evict both together anyway, since both point at the same pod.
+func execCacheKey(taskID string) string { return taskID + "|exec" }
+
+// cachedClient builds at most one live MCP client per key.
+//
+// The dial + handshake deliberately happens OUTSIDE the mutex. It used to run
+// under it, on this one fleet-wide Proxy, which meant that while any single
+// task was connecting — up to the context deadline, against a sandbox that may
+// not be listening yet — every other task's CallTool and ProxiedTools blocked
+// behind the same lock. One wedged sandbox stalled tool calls fleet-wide. That
+// is a far better explanation of "tool calls feel slow" than the 0-1ms of gRPC
+// relay docs/adr/0045 measured.
+//
+// The cost of dialing outside the lock is that two callers can race and both
+// build a client. That is fine and cheap: the loser is closed, the winner is
+// shared. Losing a redundant handshake beats serializing every task.
+func (p *Proxy) cachedClient(ctx context.Context, key, url string) (*client.Client, error) {
+	p.mu.Lock()
+	c, ok := p.clients[key]
+	p.mu.Unlock()
+	if ok {
 		return c, nil
 	}
-	c, err := client.NewStreamableHttpClient(p.urlForTask(taskID))
+
+	fresh, err := client.NewStreamableHttpClient(url)
 	if err != nil {
 		return nil, err
 	}
-	if err := c.Start(ctx); err != nil {
+	if err := fresh.Start(ctx); err != nil {
 		return nil, err
 	}
-	if _, err := c.Initialize(ctx, mcp.InitializeRequest{}); err != nil {
+	if _, err := fresh.Initialize(ctx, mcp.InitializeRequest{}); err != nil {
 		return nil, err
 	}
-	p.clients[taskID] = c
-	return c, nil
+
+	p.mu.Lock()
+	winner, lost := p.clients[key]
+	if !lost {
+		p.clients[key] = fresh
+	}
+	p.mu.Unlock()
+
+	if lost {
+		// Closed outside the lock — Close does I/O, and holding the mutex
+		// across I/O is the whole bug this function exists to avoid.
+		_ = fresh.Close()
+		return winner, nil
+	}
+	return fresh, nil
 }
 
 // DropClient mirrors dropClient — called on teardown so a stale client
 // isn't reused against a pod that no longer exists.
+//
+// Both of the task's clients go: Playwright and exec point at the same pod, so
+// any event that invalidates one invalidates the other. Dropping only the
+// Playwright key would leave the exec client holding a session bound to a
+// corpse, which is the exact failure DropClient exists to prevent.
 func (p *Proxy) DropClient(taskID string) {
 	p.mu.Lock()
-	c, ok := p.clients[taskID]
-	delete(p.clients, taskID)
+	stale := make([]*client.Client, 0, 2)
+	for _, key := range []string{taskID, execCacheKey(taskID)} {
+		if c, ok := p.clients[key]; ok {
+			stale = append(stale, c)
+			delete(p.clients, key)
+		}
+	}
 	p.mu.Unlock()
-	if ok {
+
+	for _, c := range stale {
 		if err := c.Close(); err != nil {
-			slog.Error("failed closing playwright mcp client", "taskId", taskID, "error", err)
+			slog.Error("failed closing e2e mcp client", "taskId", taskID, "error", err)
 		}
 	}
 }
@@ -122,10 +169,13 @@ func (p *Proxy) CallTool(ctx context.Context, taskID, name string, args map[stri
 	return result, nil
 }
 
-// callExec is a one-shot client, not a cached one — run_command is a
-// single fixed tool with nothing to discover, so there's no lifecycle to
-// manage the way the Playwright client's ListTools-then-repeated-CallTool
-// pattern needs.
+// callExec caches its client, like the Playwright path does.
+//
+// It used to build a one-shot client per call, reasoning that run_command has
+// a fixed tool set with nothing to discover. That is true of *discovery* and
+// false of *cost*: it paid a dial + Start + Initialize on every single
+// run_command, which is the fleet's most-used tool. Nothing about having one
+// fixed tool makes a fresh TCP connection and MCP handshake free.
 //
 // It logs `init_ms` (dial + MCP handshake) separately from `call_ms` (the
 // command's own runtime) because only the first is overhead this fleet can
@@ -141,15 +191,8 @@ func (p *Proxy) CallTool(ctx context.Context, taskID, name string, args map[stri
 // cut-over silently stops being a comparison.
 func (p *Proxy) callExec(ctx context.Context, taskID string, args map[string]any) (*mcp.CallToolResult, error) {
 	initStart := time.Now()
-	c, err := client.NewStreamableHttpClient(p.execURLForTask(taskID))
+	c, err := p.cachedClient(ctx, execCacheKey(taskID), p.execURLForTask(taskID))
 	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = c.Close() }()
-	if err := c.Start(ctx); err != nil {
-		return nil, err
-	}
-	if _, err := c.Initialize(ctx, mcp.InitializeRequest{}); err != nil {
 		return nil, err
 	}
 	initMS := time.Since(initStart).Milliseconds()
@@ -163,7 +206,16 @@ func (p *Proxy) callExec(ctx context.Context, taskID string, args map[string]any
 		"init_ms", initMS,
 		"call_ms", time.Since(callStart).Milliseconds(),
 		"error", errString(err))
-	return result, err
+	if err != nil {
+		// Same reasoning as the Playwright path above: a cached client
+		// outlives the pod it was bound to, and every replace-the-pod path
+		// would otherwise leave it pointing at a corpse. Caching without this
+		// would trade one handshake per call for a wedged session per pod
+		// replacement — a strictly worse deal.
+		p.DropClient(taskID)
+		return nil, err
+	}
+	return result, nil
 }
 
 func errString(err error) string {
