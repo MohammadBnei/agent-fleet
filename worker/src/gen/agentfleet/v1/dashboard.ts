@@ -350,6 +350,13 @@ export interface Repo {
   url: string;
   /** "" means the provisioner defaults to "main" */
   baseBranch: string;
+  /**
+   * Which repo_profiles row the e2e sandbox is built from (docs/adr/0044).
+   * "" means the "e2e" convention. Exists because core used to hardcode that
+   * name, so a repo whose recipe is called something else — agent-fleet's
+   * "lint" — got a sandbox with no toolchain at all.
+   */
+  e2eProfile: string;
 }
 
 export interface ListReposRequest {
@@ -363,6 +370,7 @@ export interface CreateRepoRequest {
   name: string;
   url: string;
   baseBranch: string;
+  e2eProfile: string;
 }
 
 export interface CreateRepoResponse {
@@ -373,6 +381,7 @@ export interface UpdateRepoRequest {
   name: string;
   url: string;
   baseBranch: string;
+  e2eProfile: string;
 }
 
 export interface UpdateRepoResponse {
@@ -1827,7 +1836,7 @@ export const GetJournalResponse: MessageFns<GetJournalResponse> = {
 };
 
 function createBaseRepo(): Repo {
-  return { name: "", url: "", baseBranch: "" };
+  return { name: "", url: "", baseBranch: "", e2eProfile: "" };
 }
 
 export const Repo: MessageFns<Repo> = {
@@ -1839,6 +1848,11 @@ export const Repo: MessageFns<Repo> = {
         ? globalThis.String(object.baseBranch)
         : isSet(object.base_branch)
         ? globalThis.String(object.base_branch)
+        : "",
+      e2eProfile: isSet(object.e2eProfile)
+        ? globalThis.String(object.e2eProfile)
+        : isSet(object.e2e_profile)
+        ? globalThis.String(object.e2e_profile)
         : "",
     };
   },
@@ -1854,6 +1868,9 @@ export const Repo: MessageFns<Repo> = {
     if (message.baseBranch !== "") {
       obj.baseBranch = message.baseBranch;
     }
+    if (message.e2eProfile !== "") {
+      obj.e2eProfile = message.e2eProfile;
+    }
     return obj;
   },
 
@@ -1865,6 +1882,7 @@ export const Repo: MessageFns<Repo> = {
     message.name = object.name ?? "";
     message.url = object.url ?? "";
     message.baseBranch = object.baseBranch ?? "";
+    message.e2eProfile = object.e2eProfile ?? "";
     return message;
   },
 };
@@ -1920,7 +1938,7 @@ export const ListReposResponse: MessageFns<ListReposResponse> = {
 };
 
 function createBaseCreateRepoRequest(): CreateRepoRequest {
-  return { name: "", url: "", baseBranch: "" };
+  return { name: "", url: "", baseBranch: "", e2eProfile: "" };
 }
 
 export const CreateRepoRequest: MessageFns<CreateRepoRequest> = {
@@ -1932,6 +1950,11 @@ export const CreateRepoRequest: MessageFns<CreateRepoRequest> = {
         ? globalThis.String(object.baseBranch)
         : isSet(object.base_branch)
         ? globalThis.String(object.base_branch)
+        : "",
+      e2eProfile: isSet(object.e2eProfile)
+        ? globalThis.String(object.e2eProfile)
+        : isSet(object.e2e_profile)
+        ? globalThis.String(object.e2e_profile)
         : "",
     };
   },
@@ -1947,6 +1970,9 @@ export const CreateRepoRequest: MessageFns<CreateRepoRequest> = {
     if (message.baseBranch !== "") {
       obj.baseBranch = message.baseBranch;
     }
+    if (message.e2eProfile !== "") {
+      obj.e2eProfile = message.e2eProfile;
+    }
     return obj;
   },
 
@@ -1958,6 +1984,7 @@ export const CreateRepoRequest: MessageFns<CreateRepoRequest> = {
     message.name = object.name ?? "";
     message.url = object.url ?? "";
     message.baseBranch = object.baseBranch ?? "";
+    message.e2eProfile = object.e2eProfile ?? "";
     return message;
   },
 };
@@ -1990,7 +2017,7 @@ export const CreateRepoResponse: MessageFns<CreateRepoResponse> = {
 };
 
 function createBaseUpdateRepoRequest(): UpdateRepoRequest {
-  return { name: "", url: "", baseBranch: "" };
+  return { name: "", url: "", baseBranch: "", e2eProfile: "" };
 }
 
 export const UpdateRepoRequest: MessageFns<UpdateRepoRequest> = {
@@ -2002,6 +2029,11 @@ export const UpdateRepoRequest: MessageFns<UpdateRepoRequest> = {
         ? globalThis.String(object.baseBranch)
         : isSet(object.base_branch)
         ? globalThis.String(object.base_branch)
+        : "",
+      e2eProfile: isSet(object.e2eProfile)
+        ? globalThis.String(object.e2eProfile)
+        : isSet(object.e2e_profile)
+        ? globalThis.String(object.e2e_profile)
         : "",
     };
   },
@@ -2017,6 +2049,9 @@ export const UpdateRepoRequest: MessageFns<UpdateRepoRequest> = {
     if (message.baseBranch !== "") {
       obj.baseBranch = message.baseBranch;
     }
+    if (message.e2eProfile !== "") {
+      obj.e2eProfile = message.e2eProfile;
+    }
     return obj;
   },
 
@@ -2028,6 +2063,7 @@ export const UpdateRepoRequest: MessageFns<UpdateRepoRequest> = {
     message.name = object.name ?? "";
     message.url = object.url ?? "";
     message.baseBranch = object.baseBranch ?? "";
+    message.e2eProfile = object.e2eProfile ?? "";
     return message;
   },
 };

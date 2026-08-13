@@ -308,6 +308,11 @@ message Repo {
   string name = 1;
   string url = 2;
   string base_branch = 3; // "" means the provisioner defaults to "main"
+  // Which repo_profiles row the e2e sandbox is built from (docs/adr/0044).
+  // "" means the "e2e" convention. Exists because core used to hardcode that
+  // name, so a repo whose recipe is called something else — agent-fleet's
+  // "lint" — got a sandbox with no toolchain at all.
+  string e2e_profile = 4;
 }
 
 message ListReposRequest {}
@@ -320,6 +325,7 @@ message CreateRepoRequest {
   string name = 1;
   string url = 2;
   string base_branch = 3;
+  string e2e_profile = 4;
 }
 
 message CreateRepoResponse {
@@ -330,6 +336,7 @@ message UpdateRepoRequest {
   string name = 1;
   string url = 2;
   string base_branch = 3;
+  string e2e_profile = 4;
 }
 
 message UpdateRepoResponse {

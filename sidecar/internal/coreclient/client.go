@@ -139,12 +139,16 @@ func (c *Client) AskUserQuestion(ctx context.Context, questionsJSON string, time
 }
 
 // RequestE2eEnv returns the response whole so the caller can echo the
-// resolved recipe back to the agent — startCmd stays a parameter, but the
-// mcpserver handler only passes a non-empty one after a human has approved
-// it (docs/adr/0034 follow-up: an unapproved, unreadable override is what
-// let a guessed command silently beat a correct profile).
-func (c *Client) RequestE2eEnv(ctx context.Context, startCmd string) (*agentfleetv1.RequestE2EEnvResponse, error) {
-	resp, err := c.rpc.RequestE2EEnv(ctx, &agentfleetv1.RequestE2EEnvRequest{TaskId: c.taskID, StartCmd: startCmd})
+// resolved recipe back to the agent — startCmd and profile stay parameters,
+// but the mcpserver handler only passes a non-empty one after a human has
+// approved it (docs/adr/0034 follow-up: an unapproved, unreadable override is
+// what let a guessed command silently beat a correct profile).
+//
+// profile was a wire field core already honored with no producer anywhere
+// (docs/adr/0044) — so ADR-0034's documented agent-selectable profile was
+// unreachable, and every request resolved to the literal name "e2e".
+func (c *Client) RequestE2eEnv(ctx context.Context, startCmd, profile string) (*agentfleetv1.RequestE2EEnvResponse, error) {
+	resp, err := c.rpc.RequestE2EEnv(ctx, &agentfleetv1.RequestE2EEnvRequest{TaskId: c.taskID, StartCmd: startCmd, Profile: profile})
 	if err != nil {
 		return nil, fmt.Errorf("RequestE2eEnv: %w", err)
 	}

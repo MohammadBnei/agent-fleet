@@ -1801,10 +1801,15 @@ func (x *GetJournalResponse) GetNextId() int64 {
 // table (db/schema.sql). No timestamps exposed: the dashboard's repo list
 // is small and unordered, unlike Task/JournalEntry which need cursor state.
 type Repo struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Url           string                 `protobuf:"bytes,2,opt,name=url,proto3" json:"url,omitempty"`
-	BaseBranch    string                 `protobuf:"bytes,3,opt,name=base_branch,json=baseBranch,proto3" json:"base_branch,omitempty"` // "" means the provisioner defaults to "main"
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	Name       string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Url        string                 `protobuf:"bytes,2,opt,name=url,proto3" json:"url,omitempty"`
+	BaseBranch string                 `protobuf:"bytes,3,opt,name=base_branch,json=baseBranch,proto3" json:"base_branch,omitempty"` // "" means the provisioner defaults to "main"
+	// Which repo_profiles row the e2e sandbox is built from (docs/adr/0044).
+	// "" means the "e2e" convention. Exists because core used to hardcode that
+	// name, so a repo whose recipe is called something else — agent-fleet's
+	// "lint" — got a sandbox with no toolchain at all.
+	E2EProfile    string `protobuf:"bytes,4,opt,name=e2e_profile,json=e2eProfile,proto3" json:"e2e_profile,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1856,6 +1861,13 @@ func (x *Repo) GetUrl() string {
 func (x *Repo) GetBaseBranch() string {
 	if x != nil {
 		return x.BaseBranch
+	}
+	return ""
+}
+
+func (x *Repo) GetE2EProfile() string {
+	if x != nil {
+		return x.E2EProfile
 	}
 	return ""
 }
@@ -1945,6 +1957,7 @@ type CreateRepoRequest struct {
 	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 	Url           string                 `protobuf:"bytes,2,opt,name=url,proto3" json:"url,omitempty"`
 	BaseBranch    string                 `protobuf:"bytes,3,opt,name=base_branch,json=baseBranch,proto3" json:"base_branch,omitempty"`
+	E2EProfile    string                 `protobuf:"bytes,4,opt,name=e2e_profile,json=e2eProfile,proto3" json:"e2e_profile,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2000,6 +2013,13 @@ func (x *CreateRepoRequest) GetBaseBranch() string {
 	return ""
 }
 
+func (x *CreateRepoRequest) GetE2EProfile() string {
+	if x != nil {
+		return x.E2EProfile
+	}
+	return ""
+}
+
 type CreateRepoResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Repo          *Repo                  `protobuf:"bytes,1,opt,name=repo,proto3" json:"repo,omitempty"`
@@ -2049,6 +2069,7 @@ type UpdateRepoRequest struct {
 	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 	Url           string                 `protobuf:"bytes,2,opt,name=url,proto3" json:"url,omitempty"`
 	BaseBranch    string                 `protobuf:"bytes,3,opt,name=base_branch,json=baseBranch,proto3" json:"base_branch,omitempty"`
+	E2EProfile    string                 `protobuf:"bytes,4,opt,name=e2e_profile,json=e2eProfile,proto3" json:"e2e_profile,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2100,6 +2121,13 @@ func (x *UpdateRepoRequest) GetUrl() string {
 func (x *UpdateRepoRequest) GetBaseBranch() string {
 	if x != nil {
 		return x.BaseBranch
+	}
+	return ""
+}
+
+func (x *UpdateRepoRequest) GetE2EProfile() string {
+	if x != nil {
+		return x.E2EProfile
 	}
 	return ""
 }
@@ -3983,27 +4011,33 @@ const file_agentfleet_v1_dashboard_proto_rawDesc = "" +
 	"\x05limit\x18\x03 \x01(\x05R\x05limit\"d\n" +
 	"\x12GetJournalResponse\x125\n" +
 	"\aentries\x18\x01 \x03(\v2\x1b.agentfleet.v1.JournalEntryR\aentries\x12\x17\n" +
-	"\anext_id\x18\x02 \x01(\x03R\x06nextId\"M\n" +
+	"\anext_id\x18\x02 \x01(\x03R\x06nextId\"n\n" +
 	"\x04Repo\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x10\n" +
 	"\x03url\x18\x02 \x01(\tR\x03url\x12\x1f\n" +
 	"\vbase_branch\x18\x03 \x01(\tR\n" +
-	"baseBranch\"\x12\n" +
+	"baseBranch\x12\x1f\n" +
+	"\ve2e_profile\x18\x04 \x01(\tR\n" +
+	"e2eProfile\"\x12\n" +
 	"\x10ListReposRequest\">\n" +
 	"\x11ListReposResponse\x12)\n" +
-	"\x05repos\x18\x01 \x03(\v2\x13.agentfleet.v1.RepoR\x05repos\"Z\n" +
+	"\x05repos\x18\x01 \x03(\v2\x13.agentfleet.v1.RepoR\x05repos\"{\n" +
 	"\x11CreateRepoRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x10\n" +
 	"\x03url\x18\x02 \x01(\tR\x03url\x12\x1f\n" +
 	"\vbase_branch\x18\x03 \x01(\tR\n" +
-	"baseBranch\"=\n" +
+	"baseBranch\x12\x1f\n" +
+	"\ve2e_profile\x18\x04 \x01(\tR\n" +
+	"e2eProfile\"=\n" +
 	"\x12CreateRepoResponse\x12'\n" +
-	"\x04repo\x18\x01 \x01(\v2\x13.agentfleet.v1.RepoR\x04repo\"Z\n" +
+	"\x04repo\x18\x01 \x01(\v2\x13.agentfleet.v1.RepoR\x04repo\"{\n" +
 	"\x11UpdateRepoRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x10\n" +
 	"\x03url\x18\x02 \x01(\tR\x03url\x12\x1f\n" +
 	"\vbase_branch\x18\x03 \x01(\tR\n" +
-	"baseBranch\"=\n" +
+	"baseBranch\x12\x1f\n" +
+	"\ve2e_profile\x18\x04 \x01(\tR\n" +
+	"e2eProfile\"=\n" +
 	"\x12UpdateRepoResponse\x12'\n" +
 	"\x04repo\x18\x01 \x01(\v2\x13.agentfleet.v1.RepoR\x04repo\"'\n" +
 	"\x11DeleteRepoRequest\x12\x12\n" +

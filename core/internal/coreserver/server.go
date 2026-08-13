@@ -28,6 +28,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/lokiclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/provisionerclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/repoprofiles"
+	"github.com/MohammadBnei/agent-fleet/core/internal/repos"
 	"github.com/MohammadBnei/agent-fleet/core/internal/tasks"
 	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
 )
@@ -39,10 +40,12 @@ const pollInterval = 500 * time.Millisecond
 
 type Server struct {
 	agentfleetv1.UnimplementedCoreServiceServer
-	transcr     transcript.Store
-	tasks       *tasks.Store
-	journal     *journal.Store
-	profiles    *repoprofiles.Store
+	transcr  transcript.Store
+	tasks    *tasks.Store
+	journal  *journal.Store
+	profiles *repoprofiles.Store
+	// repos supplies the per-repo default e2e profile name (docs/adr/0044).
+	repos       *repos.Store
 	provisioner *provisionerclient.Client
 	files       filestore.Store
 	loki        lokiclient.Querier
@@ -57,8 +60,8 @@ type Server struct {
 	warm func(ctx context.Context, taskID string) (string, error)
 }
 
-func New(transcr transcript.Store, taskStore *tasks.Store, journalStore *journal.Store, profileStore *repoprofiles.Store, provisioner *provisionerclient.Client, files filestore.Store, loki lokiclient.Querier) *Server {
-	return &Server{transcr: transcr, tasks: taskStore, journal: journalStore, profiles: profileStore, provisioner: provisioner, files: files, loki: loki}
+func New(transcr transcript.Store, taskStore *tasks.Store, journalStore *journal.Store, profileStore *repoprofiles.Store, repoStore *repos.Store, provisioner *provisionerclient.Client, files filestore.Store, loki lokiclient.Querier) *Server {
+	return &Server{transcr: transcr, tasks: taskStore, journal: journalStore, profiles: profileStore, repos: repoStore, provisioner: provisioner, files: files, loki: loki}
 }
 
 // SetWarmFunc wires the shared warm-an-idle-session path in after
@@ -182,12 +185,29 @@ func (s *Server) RequestE2EEnv(ctx context.Context, req *agentfleetv1.RequestE2E
 	if t == nil {
 		return nil, fmt.Errorf("RequestE2EEnv: task %s not found", req.GetTaskId())
 	}
-	// Defaults to the repo's "e2e"-named profile; an agent can override
-	// with a different declared profile (e.g. a repo's "lint" profile) via
-	// the same override pattern start_cmd already establishes
-	// (docs/adr/0034). Nil (no such profile) means empty ingredients — the
-	// pre-recipe pod shape.
+	// Profile resolution, in order (docs/adr/0044):
+	//   1. the agent's override — approval-gated in the sidecar, same as
+	//      start_cmd, so a task branch still cannot silently change what the
+	//      provisioner builds (docs/adr/0034's rule);
+	//   2. the repo's own e2e_profile column, set by a human in the
+	//      dashboard — this is the one that was missing, and its absence is
+	//      why agent-fleet's sandbox came up with no toolchain: its recipe is
+	//      named "lint", and the name here was hardcoded;
+	//   3. the "e2e" convention.
+	//
+	// Nil (no such profile) is not an error: it means empty ingredients and
+	// no app command, which since 0044 is a working sandbox rather than a
+	// failed pod.
 	profileName := req.GetProfile()
+	if profileName == "" {
+		r, err := s.repos.Get(ctx, t.Repo)
+		if err != nil {
+			return nil, fmt.Errorf("RequestE2EEnv: repo lookup: %w", err)
+		}
+		if r != nil {
+			profileName = r.E2eProfile
+		}
+	}
 	if profileName == "" {
 		profileName = "e2e"
 	}

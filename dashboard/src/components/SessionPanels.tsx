@@ -92,11 +92,20 @@ export function ChangesPanel({ branch, changes }: { branch: string | null; chang
 export function E2ePanel({ e2e }: { e2e: GetE2eStatusResponse | null }) {
   if (!e2e || !e2e.status) return null;
   const running = e2e.podPhase === "Running";
-  const state = e2e.appReady
-    ? { text: "ready", dot: "bg-success", cls: "text-green-soft" }
-    : running
-      ? { text: "starting", dot: "bg-info", cls: "text-info" }
-      : { text: e2e.podPhase.toLowerCase() || e2e.status, dot: "border border-dim2", cls: "text-dim2" };
+  // A pod with no start command is a sandbox, not a broken preview
+  // (docs/adr/0044): run_command works, nothing will ever bind the app port,
+  // and the readiness probe therefore never passes. Without this it read
+  // "starting" forever and offered a preview link to a 502.
+  const sandboxOnly = !e2e.startCmd;
+  const state = sandboxOnly
+    ? running
+      ? { text: "sandbox · no app", dot: "bg-info", cls: "text-info" }
+      : { text: e2e.podPhase.toLowerCase() || e2e.status, dot: "border border-dim2", cls: "text-dim2" }
+    : e2e.appReady
+      ? { text: "ready", dot: "bg-success", cls: "text-green-soft" }
+      : running
+        ? { text: "starting", dot: "bg-info", cls: "text-info" }
+        : { text: e2e.podPhase.toLowerCase() || e2e.status, dot: "border border-dim2", cls: "text-dim2" };
 
   const ingredients = [...e2e.tools, ...e2e.services];
 
@@ -132,7 +141,13 @@ export function E2ePanel({ e2e }: { e2e: GetE2eStatusResponse | null }) {
         </a>
       )}
 
-      {running && !e2e.appReady && (
+      {running && sandboxOnly && (
+        <div className="text-xs text-dim2 leading-snug min-w-0">
+          No app command in this profile — builds and tests only, no preview.
+        </div>
+      )}
+
+      {running && !sandboxOnly && !e2e.appReady && (
         <div className="text-xs text-dim2 leading-snug min-w-0">
           Nothing on the app port yet — installing, or the command never binds{" "}
           <span className="text-dim">0.0.0.0:$PORT</span>.

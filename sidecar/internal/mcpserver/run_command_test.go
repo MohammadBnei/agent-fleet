@@ -46,7 +46,7 @@ func (m *mockE2eRunner) CallE2eTool(_ context.Context, _, _ string) (string, boo
 	return okResult("", 0), m.callIsError, nil
 }
 
-func (m *mockE2eRunner) RequestE2eEnv(_ context.Context, _ string) (*agentfleetv1.RequestE2EEnvResponse, error) {
+func (m *mockE2eRunner) RequestE2eEnv(_ context.Context, _, _ string) (*agentfleetv1.RequestE2EEnvResponse, error) {
 	m.provisioned++
 	if m.provisionErr != nil {
 		return nil, m.provisionErr

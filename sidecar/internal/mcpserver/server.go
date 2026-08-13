@@ -71,6 +71,7 @@ func New(core *coreclient.Client) http.Handler {
 	s.AddTool(mcp.NewTool("request_e2e_env",
 		mcp.WithDescription("Request an on-demand e2e test environment for this task: a live pod running the app on this branch, code-server for human review, and a Playwright MCP server. Safe to call again if one is already running — returns the existing session's URL. The response echoes back the recipe that was actually used (resolvedStartCmd, profileName, tools, services), which comes from the repo's dashboard-editable e2e profile. If the preview does not serve, read resolvedStartCmd and report what is wrong with it — do not silently substitute your own command. IMPORTANT: Cold dependency install may take 10+ minutes. The preview URL won't serve until the app starts. You can check progress with `run_command 'ps aux'` or similar commands."),
 		mcp.WithString("startCmd", mcp.Description("Optional override for the profile's start command, applied to THIS TASK ONLY and never saved back to the profile. Requires a human to approve it before anything is created — if they decline or don't answer, the profile's own command is used instead. Omit it unless you have concrete evidence the profile is wrong for this worktree; the profile is the default for good reason. Whatever runs must bind 0.0.0.0 on $PORT — a dev server left on its own default port, or bound to localhost, is unreachable from outside the pod and the preview never serves.")),
+		mcp.WithString("profile", mcp.Description("Optional override for WHICH of the repo's profiles to build the environment from (e.g. \"lint\" instead of the repo's configured default). Applied to THIS TASK ONLY and never saved. Like startCmd, it requires a human to approve it first — if they decline or don't answer, the repo's configured profile is used. Omit it unless you have concrete evidence you need a different toolchain than the one you got; the response's profileName/tools tell you what you actually have.")),
 	), requestE2eEnvHandler(core, s))
 
 	s.AddTool(mcp.NewTool("kill_env",
@@ -284,6 +285,15 @@ const (
 	startCmdOverrideQuestion = "The agent wants to start this task's e2e app with a command that differs from the repo's configured e2e profile. Which one should run?"
 	startCmdKeepProfile      = "Use the profile"
 	startCmdUseOverride      = "Use the agent's"
+
+	// The profile-name override (docs/adr/0044) reuses the same gate rather
+	// than growing a second approval mechanism: ADR-0034's rule is that a
+	// task branch must never silently change what the provisioner builds, and
+	// which profile is used is a strictly bigger lever than which command it
+	// runs — it decides the toolchain and the services too.
+	profileOverrideQuestion = "The agent wants to build this task's e2e environment from a different profile than the repo's configured one. Which should be used?"
+	profileKeepConfigured   = "Use the configured profile"
+	profileUseOverride      = "Use the agent's"
 )
 
 // questionAsker is the slice of coreclient.Client confirmStartCmdOverride
@@ -301,12 +311,49 @@ type questionAsker interface {
 // to ask: an agent choosing whether to check is exactly how a guessed
 // command silently replaced a correct profile and 502'd the preview.
 func confirmStartCmdOverride(ctx context.Context, core questionAsker, startCmd string) bool {
+	return confirmOverride(ctx, core, overrideQuestion{
+		question:    startCmdOverrideQuestion,
+		header:      "e2e cmd",
+		keepLabel:   startCmdKeepProfile,
+		keepDesc:    "Run the repo's configured e2e profile command, as edited in the dashboard. Ignores the agent's proposal.",
+		acceptLabel: startCmdUseOverride,
+		acceptDesc:  "Run this instead, for this task only (the profile is not modified): " + startCmd,
+	})
+}
+
+// confirmProfileOverride is the same gate for the profile-name override
+// (docs/adr/0044) — the agent picking a different recipe entirely.
+func confirmProfileOverride(ctx context.Context, core questionAsker, profile string) bool {
+	return confirmOverride(ctx, core, overrideQuestion{
+		question:    profileOverrideQuestion,
+		header:      "e2e profile",
+		keepLabel:   profileKeepConfigured,
+		keepDesc:    "Build the environment from the profile configured for this repo in the dashboard. Ignores the agent's proposal.",
+		acceptLabel: profileUseOverride,
+		acceptDesc:  "Build it from this profile instead, for this task only (nothing is saved): " + profile,
+	})
+}
+
+type overrideQuestion struct {
+	question, header        string
+	keepLabel, keepDesc     string
+	acceptLabel, acceptDesc string
+}
+
+// confirmOverride blocks on a real human answer before an agent's proposal is
+// allowed to beat the repo's configuration. Anything other than an explicit
+// pick of the override — decline, timeout, malformed answer — means the
+// configuration wins, matching docs/adr/0029's rule that a decision is never
+// inferred from silence. Enforced here rather than left to the agent to ask:
+// an agent choosing whether to check is exactly how a guessed command
+// silently replaced a correct profile and 502'd the preview.
+func confirmOverride(ctx context.Context, core questionAsker, q overrideQuestion) bool {
 	payload, err := json.Marshal(map[string]any{"questions": []AskUserQuestionQuestion{{
-		Question: startCmdOverrideQuestion,
-		Header:   "e2e cmd",
+		Question: q.question,
+		Header:   q.header,
 		Options: []AskUserQuestionOption{
-			{Label: startCmdKeepProfile, Description: "Run the repo's configured e2e profile command, as edited in the dashboard. Ignores the agent's proposal."},
-			{Label: startCmdUseOverride, Description: "Run this instead, for this task only (the profile is not modified): " + startCmd},
+			{Label: q.keepLabel, Description: q.keepDesc},
+			{Label: q.acceptLabel, Description: q.acceptDesc},
 		},
 	}}})
 	if err != nil {
@@ -329,17 +376,22 @@ func confirmStartCmdOverride(ctx context.Context, core questionAsker, startCmd s
 		slog.Error("mcp request_e2e_env: parse override answer", "error", err)
 		return false
 	}
-	return parsed.Answers[startCmdOverrideQuestion] == startCmdUseOverride
+	return parsed.Answers[q.question] == q.acceptLabel
 }
 
 func requestE2eEnvHandler(core *coreclient.Client, s *server.MCPServer) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		startCmd := req.GetString("startCmd", "")
-		slog.Info("mcp request_e2e_env", "startCmdOverrideProposed", startCmd != "")
+		profile := req.GetString("profile", "")
+		slog.Info("mcp request_e2e_env",
+			"startCmdOverrideProposed", startCmd != "", "profileOverrideProposed", profile != "")
 		if startCmd != "" && !confirmStartCmdOverride(ctx, core, startCmd) {
 			startCmd = ""
 		}
-		resp, err := core.RequestE2eEnv(ctx, startCmd)
+		if profile != "" && !confirmProfileOverride(ctx, core, profile) {
+			profile = ""
+		}
+		resp, err := core.RequestE2eEnv(ctx, startCmd, profile)
 		if err != nil {
 			slog.Error("mcp request_e2e_env", "error", err)
 			return mcp.NewToolResultError(err.Error()), nil
@@ -396,7 +448,7 @@ const runCommandToolName = "run_command"
 // bufconn.
 type e2eRunner interface {
 	CallE2eTool(ctx context.Context, toolName, argumentsJSON string) (resultJSON string, isError bool, err error)
-	RequestE2eEnv(ctx context.Context, startCmd string) (*agentfleetv1.RequestE2EEnvResponse, error)
+	RequestE2eEnv(ctx context.Context, startCmd, profile string) (*agentfleetv1.RequestE2EEnvResponse, error)
 }
 
 // runCommandHandler runs the command in this task's e2e pod, provisioning
@@ -444,7 +496,7 @@ func runCommandHandler(core e2eRunner, s *server.MCPServer) server.ToolHandlerFu
 		var env *agentfleetv1.RequestE2EEnvResponse
 		var provErr error
 		for i, delay := range runCommandRetryDelays {
-			env, provErr = core.RequestE2eEnv(ctx, "")
+			env, provErr = core.RequestE2eEnv(ctx, "", "")
 			if provErr != nil {
 				slog.Error("mcp run_command: provisioning failed", "error", provErr)
 				return mcp.NewToolResultError(fmt.Sprintf("run_command: no sandbox running and one could not be started: %v", provErr)), nil

@@ -733,7 +733,7 @@ func (s *Server) CreateRepo(ctx context.Context, req *connect.Request[agentfleet
 	if name == "" || url == "" {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("name and url are required"))
 	}
-	r := repos.Repo{Name: name, URL: url, BaseBranch: req.Msg.GetBaseBranch()}
+	r := repos.Repo{Name: name, URL: url, BaseBranch: req.Msg.GetBaseBranch(), E2eProfile: req.Msg.GetE2EProfile()}
 	if err := s.repos.Create(ctx, r); err != nil {
 		if errors.Is(err, repos.ErrExists) {
 			return nil, connect.NewError(connect.CodeAlreadyExists, err)
@@ -750,7 +750,7 @@ func (s *Server) UpdateRepo(ctx context.Context, req *connect.Request[agentfleet
 	if name == "" || url == "" {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("name and url are required"))
 	}
-	r := repos.Repo{Name: name, URL: url, BaseBranch: req.Msg.GetBaseBranch()}
+	r := repos.Repo{Name: name, URL: url, BaseBranch: req.Msg.GetBaseBranch(), E2eProfile: req.Msg.GetE2EProfile()}
 	if err := s.repos.Update(ctx, r); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("unknown repo %q", name))
@@ -774,7 +774,7 @@ func (s *Server) DeleteRepo(ctx context.Context, req *connect.Request[agentfleet
 }
 
 func repoToProto(r repos.Repo) *agentfleetv1.Repo {
-	return &agentfleetv1.Repo{Name: r.Name, Url: r.URL, BaseBranch: r.BaseBranch}
+	return &agentfleetv1.Repo{Name: r.Name, Url: r.URL, BaseBranch: r.BaseBranch, E2EProfile: r.E2eProfile}
 }
 
 // ListRepoProfiles/CreateRepoProfile/UpdateRepoProfile/DeleteRepoProfile

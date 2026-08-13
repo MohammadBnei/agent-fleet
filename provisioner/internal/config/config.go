@@ -22,12 +22,12 @@ type Config struct {
 	// CoreGRPCAddr is where ReportPodEvents streams to (docs/adr/0020
 	// point 3) — the provisioner is a gRPC client of core for this one
 	// call, on top of being core's gRPC server for everything else.
-	CoreGRPCAddr      string
+	CoreGRPCAddr string
 	// Passed through to each worker pod's sidecar so ask_thot registers
 	// (docs/adr/0035). Empty leaves the tool unregistered — which is how
 	// the feature silently did nothing in production until this was wired.
-	ThotAuthToken string
-	ExecutorAddr  string
+	ThotAuthToken     string
+	ExecutorAddr      string
 	ReconcileInterval string
 	// SweepInterval is how often the [gone]-branch sweep runs
 	// (reliability-findings.md #2) — minutes, not seconds: it does a real
@@ -96,7 +96,7 @@ func Load() Config {
 		RedisImage:                  env("REDIS_IMAGE", "redis:7-alpine"),
 		SharedInstancePVCSize:       env("SHARED_INSTANCE_PVC_SIZE", "2Gi"),
 		SharedInstanceIdleTimeoutMs: env("SHARED_INSTANCE_IDLE_TIMEOUT_MS", "43200000"), // 12h
-		E2eMaxAgeMs:                 env("E2E_MAX_AGE_MS", "86400000"),                 // 24h
+		E2eMaxAgeMs:                 env("E2E_MAX_AGE_MS", "86400000"),                  // 24h
 	}
 }
 
