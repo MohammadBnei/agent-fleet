@@ -145,6 +145,19 @@ and no GitHub credentials. That absence is load-bearing: it is why
 `mcp__agent-fleet-sidecar__*`) while `Bash` stays `canUseTool`-gated — the
 sandbox is strictly less privileged than the pod whose shell is gated.
 
+Because the sandbox is the pod's *primary* job and the app preview its
+secondary one, the pod's lifetime is decoupled from the app's process
+(`adr/0044`). PID 1 outlives every child: code-server, the Playwright MCP
+server and `execmcp` are supervised and restarted; the app command runs
+**once**, its output tee'd to `/tmp/e2e-app.log` and the pod's stdout, and is
+never restarted for the agent. An app is optional — a repo whose profile has
+no `start_cmd` gets a working sandbox with no preview, which is what makes
+`run_command` usable on every repo rather than only those with an `"e2e"`
+profile. Nothing inside the container ends the pod; that belongs to
+`kill_env`, core's teardowns, and the reconcile sweep that GCs terminal-phase
+and past-max-age sandboxes. Which profile builds the sandbox comes from the
+repo's `e2e_profile` column, with an approval-gated agent override.
+
 **MCP is purely local** (agent ↔ its own pod's sidecar, over `localhost`).
 **gRPC is the only inter-process/inter-pod protocol anywhere in the
 fleet** — there is no direct HTTP MCP surface reachable across a pod
@@ -319,7 +332,10 @@ permission tiers instead of a second, fleet-specific gate on top of them
   now; GPU-accelerated Chromium is a deferred fast-follow.
 - **`run_command` — a shell in that same pod, used as the agent's build/test
   sandbox** (§2). Always registered, lazily provisioned, no git — see
-  [`adr/0039`](adr/0039-e2e-pod-is-the-worker-sandbox.md).
+  [`adr/0039`](adr/0039-e2e-pod-is-the-worker-sandbox.md). Provisioning waits
+  for the pod with a bounded backoff rather than failing on a cold one, and
+  the final error names the pod's real phase — see
+  [`adr/0044`](adr/0044-e2e-pod-outlives-the-app.md).
 - **Fleet-wide concurrency, not one task per repo.** Any number of tasks
   across any known repo can be in flight simultaneously, up to
   `MAX_IN_FLIGHT_TASKS` (default 5) — `core`'s dispatch loop claims

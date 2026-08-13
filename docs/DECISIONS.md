@@ -68,8 +68,12 @@ Any doc, code, comment, or memory that contradicts this file or an
 - **A repo's e2e recipe lives in `repo_profiles` and is a human's to
   change.** The agent reads the resolved recipe back from
   `request_e2e_env`; a `start_cmd` override needs an explicit human yes,
-  applies to that one task, and is never written back to the profile. See
-  [`adr/0036`](adr/0036-e2e-recipe-visible-and-override-approved.md).
+  applies to that one task, and is never written back to the profile. Which
+  profile is used is the same kind of setting: it comes from the repo's own
+  `e2e_profile` column (dashboard-editable), and the agent's `profile`
+  override goes through the same approval gate. See
+  [`adr/0036`](adr/0036-e2e-recipe-visible-and-override-approved.md) and
+  [`adr/0044`](adr/0044-e2e-pod-outlives-the-app.md).
 - **The e2e pod is the worker's build/test sandbox, and it has no git.**
   `run_command` is registered statically on the sidecar (present from the
   session's first turn, resumed sessions included) and provisions a pod on
@@ -80,6 +84,17 @@ Any doc, code, comment, or memory that contradicts this file or an
   task's worktree, so it is strictly less privileged. Adding credentials or
   widening its mount invalidates that and reopens the decision. See
   [`adr/0039`](adr/0039-e2e-pod-is-the-worker-sandbox.md).
+- **The e2e pod is a sandbox that may also run an app — never the other way
+  round.** PID 1 outlives every child: the three servers are supervised, the
+  app runs **once** (logged to `/tmp/e2e-app.log` and stdout, never
+  restarted), and nothing inside the container decides to end the pod. An app
+  is optional — an empty `start_cmd` is a working sandbox, not a failed pod.
+  A `Failed`/`Succeeded` pod is not an existing session; it is replaced. The
+  readiness probe stays **unconditional** on the app port, because
+  `app_ready: false` is the honest answer for a sandbox with no app and
+  removing the probe would make it claim `true`. Sandboxes are GC'd on
+  terminal phase and age. See
+  [`adr/0044`](adr/0044-e2e-pod-outlives-the-app.md).
 
 ## 2. Forbidden patterns (quick check — full list + reasons in `adr/`)
 
@@ -96,10 +111,13 @@ Any doc, code, comment, or memory that contradicts this file or an
   `[gone]`, or an explicit dashboard delete — removes git state; a hard-won
   lesson after uncommitted work was destroyed twice by the old design —
   see `adr/0023`.
-- **An agent silently substituting its own e2e start command for the
-  repo's profile.** The override is gated on a real human answer and never
-  persists; declining, timing out, or a malformed answer all fall back to
-  the profile — see `adr/0036`.
+- **An agent silently substituting its own e2e start command, or its own
+  e2e profile, for the repo's configured one.** Both overrides are gated on a
+  real human answer and never persist; declining, timing out, or a malformed
+  answer all fall back to the configured value — see `adr/0036`, `adr/0044`.
+- **Anything inside the e2e container deciding to end the pod.** PID 1
+  outlives every child; pod lifetime belongs to `kill_env`, core's teardowns
+  and the reconcile sweep — see `adr/0044`.
 - **Hardcoding git commit identity.** Always derived live from the
   authenticated bot GitHub account — see `adr/0006`.
 - **A page-load failure rendered as a blocking modal.** The mobile tab bar is
