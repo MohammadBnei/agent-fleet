@@ -136,7 +136,7 @@ export function ManageReposModal({ onChanged }: { onChanged?: () => void }) {
       <button
         type="button"
         onClick={open}
-        className="px-3 py-1.5 rounded-md border border-base-content/10 text-[11px] font-medium hover:bg-base-content/5"
+        className="px-3 py-1.5 rounded-md border border-base-content/10 text-xs font-medium hover:bg-base-content/5"
       >
         manage repos
       </button>
@@ -148,7 +148,7 @@ export function ManageReposModal({ onChanged }: { onChanged?: () => void }) {
           {repos.map((r) => (
             <RepoRow key={r.name} repo={r} onSaved={refresh} onRequestDelete={setPendingDelete} onError={setError} />
           ))}
-          {repos.length === 0 && <p className="text-sm text-base-content/50 py-2">No repos configured yet.</p>}
+          {repos.length === 0 && <p className="text-sm text-dim py-2">No repos configured yet.</p>}
         </div>
 
         <form onSubmit={handleCreate} className="flex items-center gap-2 mt-3 pt-3 border-t border-base-content/10">

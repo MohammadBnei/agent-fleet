@@ -49,9 +49,9 @@ const CROSS_SESSION = /^\[from session ([^\]]+)\]\s*/;
 function QuietRule({ label, detail }: { label: string; detail?: string | null }) {
   return (
     <div className="flex items-center gap-2.5">
-      <span className="text-[10.5px] sm:text-[11px] text-dim2 whitespace-nowrap">{label}</span>
+      <span className="text-2xs sm:text-xs text-dim2 whitespace-nowrap">{label}</span>
       <span className="flex-1 h-px bg-line3" />
-      {detail && <span className="text-[10.5px] sm:text-[11px] text-dim2 text-right">{detail}</span>}
+      {detail && <span className="text-2xs sm:text-xs text-dim2 text-right">{detail}</span>}
     </div>
   );
 }
@@ -59,8 +59,8 @@ function QuietRule({ label, detail }: { label: string; detail?: string | null })
 function AlarmBar({ text, detail, compact }: { text: React.ReactNode; detail?: string | null; compact?: boolean }) {
   return (
     <div className="border border-orange-line bg-orange-bg px-3 py-2.5 flex gap-2.5 items-start">
-      <span className="text-warning text-[12px] flex-none">!</span>
-      <div className={`text-warning ${compact ? "text-[11.5px]" : "text-[12.5px]"} leading-[1.55] min-w-0`}>
+      <span className="text-warning text-sm flex-none">!</span>
+      <div className={`text-warning ${compact ? "text-xs" : "text-sm"} leading-[1.55] min-w-0`}>
         {text}
         {detail && <div className="text-dim mt-0.5 break-words">{detail}</div>}
       </div>
@@ -78,14 +78,14 @@ function ToolGroup({ pairs, compact }: { pairs: ToolCallPair[]; compact?: boolea
   return (
     <div>
       <div className="flex items-center gap-2.5 mb-1.5">
-        <span className="text-[10.5px] tracking-[0.1em] text-dim2 whitespace-nowrap">
+        <span className="text-2xs tracking-[0.1em] text-dim2 whitespace-nowrap">
           {pairs.length} TOOL CALL{pairs.length === 1 ? "" : "S"}
         </span>
         <span className="flex-1 h-px bg-line3 sm:order-none order-last" />
         <button
           type="button"
           onClick={() => setCollapsed((v) => !v)}
-          className="text-[10.5px] sm:text-[11px] text-dim hover:text-primary cursor-pointer whitespace-nowrap"
+          className="text-2xs sm:text-xs text-dim hover:text-primary cursor-pointer whitespace-nowrap"
         >
           {collapsed ? "expand" : "collapse"}
         </button>
@@ -111,14 +111,14 @@ function ToolGroup({ pairs, compact }: { pairs: ToolCallPair[]; compact?: boolea
                       failed ? "bg-warning" : inFlight ? "bg-info animate-fpulse" : "bg-green-dot"
                     }`}
                   />
-                  <span className={`text-text2 flex-none ${compact ? "text-[11.5px] w-11" : "text-[12px] w-[70px]"}`}>
+                  <span className={`text-text2 flex-none ${compact ? "text-xs w-11" : "text-sm w-[70px]"}`}>
                     {info.tool}
                   </span>
-                  <span className={`text-dim flex-1 min-w-0 truncate ${compact ? "text-[11.5px]" : "text-[12px]"}`}>
+                  <span className={`text-dim flex-1 min-w-0 truncate ${compact ? "text-xs" : "text-sm"}`}>
                     {summarizeToolInput(info.input)}
                   </span>
                   <span
-                    className={`flex-none ${compact ? "text-[11px]" : "text-[11.5px]"} ${
+                    className={`flex-none text-xs ${
                       failed ? "text-warning" : inFlight ? "text-info" : "text-dim2"
                     }`}
                   >
@@ -355,12 +355,12 @@ export function SessionFeed({
               summaryClassName="px-0 py-0 bg-transparent hover:bg-transparent"
               contentClassName="px-0 pt-1.5"
               summary={
-                <span className="text-[11px] sm:text-[11.5px] text-dim2 hover:text-dim">
+                <span className="text-xs text-dim2 hover:text-dim">
                   ▸ thinking{info.text.length > 0 ? ` · ${Math.max(1, Math.round(info.text.length / 4 / 100) / 10)}k tokens` : ""}
                 </span>
               }
             >
-              <div className="text-[11.5px] leading-[1.7] text-dim whitespace-pre-wrap">{info.text}</div>
+              <div className="text-xs leading-[1.7] text-dim whitespace-pre-wrap">{info.text}</div>
             </Collapse>
           </div>,
         );
@@ -412,8 +412,8 @@ export function SessionFeed({
     if (cross) {
       out.push(
         <div key={key} id={`entry-${key}`} className="flex gap-2.5 items-baseline">
-          <span className="text-green-soft text-[11.5px] sm:text-[12px] flex-none">↘</span>
-          <div className={`text-dim leading-[1.65] min-w-0 ${compact ? "text-[11.5px]" : "text-[12.5px]"}`}>
+          <span className="text-green-soft text-xs sm:text-sm flex-none">↘</span>
+          <div className={`text-dim leading-[1.65] min-w-0 ${compact ? "text-xs" : "text-sm"}`}>
             from <span className="text-text2">#{cross[1].slice(0, 6)}</span> — {entry.text.replace(CROSS_SESSION, "")}
           </div>
         </div>,
@@ -424,8 +424,8 @@ export function SessionFeed({
     if (entry.from === "human") {
       out.push(
         <div key={key} id={`entry-${key}`} className="flex gap-2.5 items-baseline">
-          <span className="text-primary flex-none text-[12.5px] sm:text-[13.5px]">❯</span>
-          <div className={`text-text2 leading-[1.7] min-w-0 ${compact ? "text-[12.5px]" : "text-[13.5px]"}`}>
+          <span className="text-primary flex-none text-sm sm:text-base">❯</span>
+          <div className={`text-text2 leading-[1.7] min-w-0 ${compact ? "text-sm" : "text-base"}`}>
             {entry.text}
           </div>
         </div>,
@@ -437,7 +437,7 @@ export function SessionFeed({
       <div key={key} id={`entry-${key}`} className="flex gap-2.5">
         <span className="w-1.5 h-1.5 rounded-full bg-warning mt-[7px] flex-none" />
         <div
-          className={`leading-[1.7] min-w-0 ${compact ? "text-[12.5px]" : "text-[13.5px] max-w-[760px]"}`}
+          className={`leading-[1.7] min-w-0 ${compact ? "text-sm" : "text-base max-w-[760px]"}`}
           title={entryTime(entry) ?? undefined}
         >
           <Markdown text={asDisplayMarkdown(entry)} />
@@ -449,7 +449,7 @@ export function SessionFeed({
 
   if (out.length === 0) {
     return (
-      <div className="text-[12px] text-dim2">
+      <div className="text-sm text-dim2">
         {density === "everything"
           ? "Nothing in this session yet."
           : "Nothing at this density — switch back to see the full feed."}

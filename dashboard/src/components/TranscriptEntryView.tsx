@@ -41,7 +41,7 @@ function LogLine({
   children?: React.ReactNode;
   compact?: boolean;
 }) {
-  const size = compact ? "text-[10.5px]" : "text-[11px]";
+  const size = compact ? "text-2xs" : "text-xs";
   const tone = badgeClass?.includes("error")
     ? "text-error"
     : badgeClass?.includes("warning")
@@ -68,10 +68,10 @@ function AlertRow({ tone, title, detail }: { tone: "error" | "warning"; title: s
         tone === "error" ? "border-pink-line bg-pink-bg" : "border-orange-line bg-orange-bg"
       }`}
     >
-      <span className={`text-[12px] flex-none ${tone === "error" ? "text-error" : "text-warning"}`}>!</span>
+      <span className={`text-sm flex-none ${tone === "error" ? "text-error" : "text-warning"}`}>!</span>
       <div className="min-w-0">
-        <div className={`text-[12.5px] ${tone === "error" ? "text-error" : "text-warning"}`}>{title}</div>
-        {detail && <div className="text-[11.5px] text-dim mt-0.5 break-words">{detail}</div>}
+        <div className={`text-sm ${tone === "error" ? "text-error" : "text-warning"}`}>{title}</div>
+        {detail && <div className="text-xs text-dim mt-0.5 break-words">{detail}</div>}
       </div>
     </div>
   );
@@ -115,7 +115,7 @@ function SignalView({ signal, compact }: { signal: SdkSignal; compact?: boolean 
       return (
         <div className="flex items-center gap-2 py-1">
           <div className="h-px flex-1 bg-warning/30" />
-          <span className="text-[9.5px] tracking-[0.09em] text-warning/80 whitespace-nowrap">
+          <span className="text-2xs tracking-[0.09em] text-warning/80 whitespace-nowrap">
             CONTEXT COMPACTED{signal.compact_metadata?.trigger ? ` · ${signal.compact_metadata.trigger}` : ""}
             {pre ? ` · ${pre} tokens before` : ""}
           </span>
@@ -143,15 +143,15 @@ function SignalView({ signal, compact }: { signal: SdkSignal; compact?: boolean 
           contentClassName="px-0 pt-1.5"
           summary={
             <div className="flex items-center gap-2.5">
-              <span className={`text-[11px] whitespace-nowrap ${failed ? "text-warning" : "text-dim2"}`}>
+              <span className={`text-xs whitespace-nowrap ${failed ? "text-warning" : "text-dim2"}`}>
                 ▸ hook {failed ? `failed — exit ${signal.exit_code}` : ""}
               </span>
               <span className="flex-1 h-px bg-line3" />
-              <span className="text-[11px] text-dim2 text-right min-w-0 truncate">{label}</span>
+              <span className="text-xs text-dim2 text-right min-w-0 truncate">{label}</span>
             </div>
           }
         >
-          <pre className="text-[11px] whitespace-pre-wrap font-mono text-dim">{body}</pre>
+          <pre className="text-xs whitespace-pre-wrap font-mono text-dim">{body}</pre>
         </Collapse>
       );
     }
@@ -175,7 +175,7 @@ function SignalView({ signal, compact }: { signal: SdkSignal; compact?: boolean 
       // than swallowing it.
       return (
         <div className="border border-line bg-base-300/40 px-2.5 py-2">
-          <div className="text-[11px] text-dim2 mb-1">{signal.sdk}</div>
+          <div className="text-xs text-dim2 mb-1">{signal.sdk}</div>
           <JsonView value={signal} />
         </div>
       );
@@ -212,14 +212,14 @@ function ResultView({ entry, compact }: { entry: TranscriptEntry; compact?: bool
       </LogLine>
       {r.errors && r.errors.length > 0 && <AlertRow tone="error" title="Session errors" detail={r.errors.join("; ")} />}
       {r.permissionDenials && r.permissionDenials.length > 0 && (
-        <div className="text-[11px] text-warning">
+        <div className="text-xs text-warning">
           {r.permissionDenials.length} permission {r.permissionDenials.length === 1 ? "denial" : "denials"}
           {": "}
           {r.permissionDenials.map((d) => d.tool_name).filter(Boolean).join(", ")}
         </div>
       )}
       {models.length > 1 && (
-        <div className="text-[11px] text-dim2">
+        <div className="text-xs text-dim2">
           {models.map(([name, u]) => `${name.replace(/-\d{8}$/, "")} $${(u.costUSD ?? 0).toFixed(3)}`).join(" · ")}
         </div>
       )}
@@ -251,11 +251,11 @@ function SessionInitView({ entry, compact }: { entry: TranscriptEntry; compact?:
       contentClassName="px-0 pt-1.5"
       summary={
         <div className="flex items-center gap-2.5">
-          <span className={`${compact ? "text-[10.5px]" : "text-[11px]"} text-dim2 whitespace-nowrap`}>
+          <span className={`${compact ? "text-2xs" : "text-xs"} text-dim2 whitespace-nowrap`}>
             session started
           </span>
           <span className="flex-1 h-px bg-line3" />
-          <span className={`${compact ? "text-[10.5px]" : "text-[11px]"} text-dim2 text-right min-w-0 truncate`}>
+          <span className={`${compact ? "text-2xs" : "text-xs"} text-dim2 text-right min-w-0 truncate`}>
             {[
               info.model,
               info.permissionMode && `${info.permissionMode} mode`,
@@ -271,7 +271,7 @@ function SessionInitView({ entry, compact }: { entry: TranscriptEntry; compact?:
         </div>
       }
     >
-      <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-[11px]">
+      <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-xs">
         {rows
           .filter(([, value]) => value)
           .map(([label, value]) => (
@@ -286,7 +286,7 @@ function SessionInitView({ entry, compact }: { entry: TranscriptEntry; compact?:
 }
 
 export function TranscriptEntryView({ entry, compact }: { entry: TranscriptEntry; compact?: boolean }) {
-  const logSize = compact ? "text-[10.5px]" : "text-[11px]";
+  const logSize = compact ? "text-2xs" : "text-xs";
 
   if (entry.type === TranscriptEntryType.SYSTEM) {
     const signal = parseSdkSignal(entry.text);
@@ -305,7 +305,7 @@ export function TranscriptEntryView({ entry, compact }: { entry: TranscriptEntry
         contentClassName="px-0 pt-1.5"
         summary={<span className={`${logSize} text-dim2 hover:text-dim`}>▸ thinking</span>}
       >
-        <div className="text-[11.5px] leading-[1.7] text-dim whitespace-pre-wrap">{info.text}</div>
+        <div className="text-xs leading-[1.7] text-dim whitespace-pre-wrap">{info.text}</div>
       </Collapse>
     );
   }
@@ -318,7 +318,7 @@ export function TranscriptEntryView({ entry, compact }: { entry: TranscriptEntry
     return (
       <div className={`border px-2.5 py-2 ${tr?.isError ? "border-pink-line bg-pink-bg" : "border-line bg-base-300/40"}`}>
         {typeof tr?.content === "string" ? (
-          <pre className="text-[11px] whitespace-pre-wrap font-mono text-dim">{tr.content}</pre>
+          <pre className="text-xs whitespace-pre-wrap font-mono text-dim">{tr.content}</pre>
         ) : (
           <JsonView value={tr?.content ?? entry.text} />
         )}
@@ -366,7 +366,7 @@ export function TranscriptEntryView({ entry, compact }: { entry: TranscriptEntry
   return (
     <div className={compact ? undefined : "max-w-[760px]"}>
       <div
-        className={`${compact ? "text-[12.5px]" : "text-[13.5px]"} leading-[1.7] ${entry.from === "human" ? "text-primary" : ""}`}
+        className={`${compact ? "text-sm" : "text-base"} leading-[1.7] ${entry.from === "human" ? "text-primary" : ""}`}
       >
         <Markdown text={asDisplayMarkdown(entry)} />
       </div>

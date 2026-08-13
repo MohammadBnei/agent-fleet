@@ -117,8 +117,8 @@ export function TaskDetail({
     if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
   }, []);
 
-  if (loadError) return <div className="m-4 border border-pink-line bg-pink-bg px-4 py-3 text-[13px] text-error">{loadError}</div>;
-  if (!fetchedTask) return <div className="p-4 text-[13px] text-dim">Loading…</div>;
+  if (loadError) return <div className="m-4 border border-pink-line bg-pink-bg px-4 py-3 text-base text-error">{loadError}</div>;
+  if (!fetchedTask) return <div className="p-4 text-base text-dim">Loading…</div>;
 
   // `tasks` is App.tsx's already-polled (5s) list — preferring it keeps
   // pod_phase/status live without a second poll loop just for this page; falls
@@ -170,29 +170,29 @@ export function TaskDetail({
 
       <div className="flex-1 min-w-0 flex flex-col border-r border-line">
         <div className="flex-none flex items-center gap-3 px-4.5 py-3 border-b border-line flex-wrap">
-          <button type="button" onClick={onBack} className="text-[12.5px] text-dim hover:text-primary cursor-pointer">
+          <button type="button" onClick={onBack} className="text-sm text-dim hover:text-primary cursor-pointer">
             ← all sessions
           </button>
-          <h2 className="text-[14.5px] font-semibold min-w-0 break-words">
+          <h2 className="text-lg font-semibold min-w-0 break-words">
             #{task.id.slice(0, 6)} {task.description}
           </h2>
           {blocked ? (
             <span className="flex items-center gap-1.5 border border-pink-line bg-pink-chip px-2 py-0.5 flex-none">
               <span className="w-1.5 h-1.5 rounded-full bg-error animate-fpulse" />
-              <span className="text-[11.5px] font-medium text-error">blocked</span>
+              <span className="text-xs font-medium text-error">blocked</span>
             </span>
           ) : (
             badge && (
               <span
-                className={`text-[11px] px-1.5 py-px border tracking-wide flex-none ${badge.className}`}
+                className={`text-xs px-1.5 py-px border tracking-wide flex-none ${badge.className}`}
                 title={badge.title ?? task.podMessage ?? undefined}
               >
                 {badge.label}
               </span>
             )
           )}
-          <span className="text-[11px] text-dim2 border border-line px-1.5 py-px flex-none">{task.status}</span>
-          <span className="text-[11.5px] text-dim2 min-w-0 truncate">
+          <span className="text-xs text-dim2 border border-line px-1.5 py-px flex-none">{task.status}</span>
+          <span className="text-xs text-dim2 min-w-0 truncate">
             {repoLabel(task)}
             {branch && ` · ${branch}`}
             {heartbeat && (
@@ -205,13 +205,13 @@ export function TaskDetail({
               href={task.prUrl}
               target="_blank"
               rel="noreferrer"
-              className={`text-[11.5px] border border-current px-1.5 py-px flex-none ${prLink.className}`}
+              className={`text-xs border border-current px-1.5 py-px flex-none ${prLink.className}`}
             >
               {prLink.label}
             </a>
           )}
           <div className="ml-auto flex items-center gap-2 flex-none">
-            <span className="text-[10.5px] tracking-[0.1em] text-dim2">DENSITY</span>
+            <span className="text-2xs tracking-[0.1em] text-dim2">DENSITY</span>
             <Segmented value={density} options={DENSITY} onChange={setDensity} />
           </div>
         </div>
@@ -252,8 +252,8 @@ export function TaskDetail({
             />
             {pendingMessage && (
               <div className="flex gap-2.5 items-baseline opacity-60">
-                <span className="text-primary flex-none text-[13.5px]">❯</span>
-                <div className="flex-1 min-w-0 text-[13.5px] leading-[1.7] text-text2">
+                <span className="text-primary flex-none text-base">❯</span>
+                <div className="flex-1 min-w-0 text-base leading-[1.7] text-text2">
                   <Markdown text={asDisplayMarkdown({ from: "human", text: pendingMessage })} />
                 </div>
                 <span className="loading loading-spinner loading-xs flex-none" />
@@ -264,7 +264,7 @@ export function TaskDetail({
             <button
               type="button"
               onClick={feedScrollToBottom}
-              className="absolute bottom-3 left-1/2 -translate-x-1/2 border border-line bg-base-300 px-2 py-1 text-[12px] shadow-md"
+              className="absolute bottom-3 left-1/2 -translate-x-1/2 border border-line bg-base-300 px-2 py-1 text-sm shadow-md"
               title="Scroll to bottom"
             >
               ↓
@@ -306,7 +306,7 @@ export function TaskDetail({
                       `question:${pendingQuestion.seq}`,
                     )
                   }
-                  className="border border-pink-line text-error px-3 py-1 text-[11.5px] cursor-pointer hover:bg-pink-chip disabled:opacity-40"
+                  className="border border-pink-line text-error px-3 py-1 text-xs cursor-pointer hover:bg-pink-chip disabled:opacity-40"
                 >
                   {opt.label}
                 </button>
@@ -316,7 +316,7 @@ export function TaskDetail({
                   key={c}
                   type="button"
                   onClick={() => setMessage(`/${c} `)}
-                  className="border border-line text-dim px-3 py-1 text-[11.5px] cursor-pointer hover:text-base-content"
+                  className="border border-line text-dim px-3 py-1 text-xs cursor-pointer hover:text-base-content"
                 >
                   /{c}
                 </button>
@@ -325,7 +325,7 @@ export function TaskDetail({
           )}
 
           <div className="flex gap-3 items-center border border-line px-3 py-2.5 focus-within:border-primary/60">
-            <span className="text-primary text-[13.5px]">❯</span>
+            <span className="text-primary text-base">❯</span>
             <input
               value={message}
               onChange={(e) => setMessage(e.target.value)}
@@ -335,19 +335,19 @@ export function TaskDetail({
               disabled={busyKey !== null}
               placeholder="message the agent — / for commands"
               aria-label="message the agent"
-              className="flex-1 min-w-0 bg-transparent outline-none text-[13px] placeholder:text-dim2"
+              className="flex-1 min-w-0 bg-transparent outline-none text-base placeholder:text-dim2"
             />
             <button
               type="button"
               disabled={busyKey !== null || !message.trim()}
               onClick={sendMessage}
-              className="text-[11.5px] text-dim2 hover:text-primary disabled:opacity-40 disabled:hover:text-dim2 cursor-pointer flex-none"
+              className="text-xs text-dim2 hover:text-primary disabled:opacity-40 disabled:hover:text-dim2 cursor-pointer flex-none"
             >
               ⏎ send
             </button>
           </div>
 
-          <div className="flex gap-3.5 mt-2 text-[11px] text-dim2 flex-wrap">
+          <div className="flex gap-3.5 mt-2 text-xs text-dim2 flex-wrap">
             {worktreePath && <span className="truncate max-w-[320px]" title={worktreePath}>{worktreePath}</span>}
             {branch && <span>{branch}</span>}
             {result && (

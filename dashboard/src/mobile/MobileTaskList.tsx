@@ -58,14 +58,14 @@ function NeedsYouCard({
     >
       <div className="px-3.5 pt-3.5">
         <div className="flex items-baseline gap-2">
-          <span className="text-[12.5px] font-semibold">#{task.id.slice(0, 6)}</span>
-          <span className="text-[11px] text-dim2 min-w-0 truncate">{repoLabel(task)}</span>
+          <span className="text-sm font-semibold">#{task.id.slice(0, 6)}</span>
+          <span className="text-xs text-dim2 min-w-0 truncate">{repoLabel(task)}</span>
           {todos.length > 0 && <TickBar todos={todos} blocked cell="w-[11px]" className="ml-auto flex-none" />}
         </div>
         <button
           type="button"
           onClick={onSelect}
-          className="text-[13px] leading-[1.55] mt-1.5 text-left w-full break-words cursor-pointer"
+          className="text-base leading-[1.55] mt-1.5 text-left w-full break-words cursor-pointer"
         >
           {task.description}
         </button>
@@ -100,33 +100,33 @@ function FinishedCard({
     <div className={`border px-3.5 py-3 ${failed ? "border-orange-line bg-orange-bg" : "border-green-line bg-green-bg"}`}>
       <div className="flex items-center gap-2">
         <span className={`w-1.5 h-1.5 rounded-full flex-none ${failed ? "bg-warning" : "bg-success"}`} />
-        <span className="text-[12.5px] font-semibold">#{task.id.slice(0, 6)}</span>
-        {when && <span className="text-[11px] text-dim2 ml-auto flex-none">{when}</span>}
+        <span className="text-sm font-semibold">#{task.id.slice(0, 6)}</span>
+        {when && <span className="text-xs text-dim2 ml-auto flex-none">{when}</span>}
       </div>
       <button
         type="button"
         onClick={onSelect}
-        className="text-[12.5px] leading-[1.5] mt-1.5 text-left w-full break-words cursor-pointer"
+        className="text-sm leading-[1.5] mt-1.5 text-left w-full break-words cursor-pointer"
       >
         {task.description}
       </button>
       {failed ? (
         <>
-          <div className="text-[11.5px] text-warning mt-1.5 leading-[1.5] break-words">
+          <div className="text-xs text-warning mt-1.5 leading-[1.5] break-words">
             {task.status === "failed_permanently" ? "failed permanently" : "failed"}
             {task.lastError ? ` · ${task.lastError}` : ""}
           </div>
           <div className="flex gap-2 mt-2.5">
-            <button type="button" onClick={onOpenLogs} className="border border-acc-line px-3 py-2 text-[11.5px] flex-1">
+            <button type="button" onClick={onOpenLogs} className="border border-acc-line px-3 py-2 text-xs flex-1">
               read log
             </button>
-            <button type="button" onClick={onRetry} className="border border-acc-line px-3 py-2 text-[11.5px] flex-1">
+            <button type="button" onClick={onRetry} className="border border-acc-line px-3 py-2 text-xs flex-1">
               retry
             </button>
           </div>
         </>
       ) : (
-        <div className="text-[11.5px] text-dim mt-1.5">
+        <div className="text-xs text-dim mt-1.5">
           {pr ? pr.label : "no PR"}
           {task.prUrl && (
             <>
@@ -171,17 +171,17 @@ function WorkingCard({
             stale ? "bg-error" : live ? "bg-info animate-fpulse" : "border border-dim2"
           }`}
         />
-        <span className={`text-[12px] flex-none ${live ? "text-text2" : "text-dim2"}`}>#{task.id.slice(0, 6)}</span>
-        <span className={`text-[12.5px] min-w-0 truncate ${live ? "" : "text-dim"}`}>{task.description}</span>
+        <span className={`text-sm flex-none ${live ? "text-text2" : "text-dim2"}`}>#{task.id.slice(0, 6)}</span>
+        <span className={`text-sm min-w-0 truncate ${live ? "" : "text-dim"}`}>{task.description}</span>
         {task.permissionMode === "bypassPermissions" ? (
-          <span className="text-[10.5px] text-warning border border-orange-line px-1.5 py-px ml-auto flex-none">
+          <span className="text-2xs text-warning border border-orange-line px-1.5 py-px ml-auto flex-none">
             bypass
           </span>
         ) : (
-          todos.length > 0 && <span className="text-[11px] text-dim2 ml-auto flex-none">{todoProgress(todos)}</span>
+          todos.length > 0 && <span className="text-xs text-dim2 ml-auto flex-none">{todoProgress(todos)}</span>
         )}
       </div>
-      <div className="text-[11px] text-dim mt-1.5 truncate">
+      <div className="text-xs text-dim mt-1.5 truncate">
         {provisioning
           ? `booting${task.podMessage ? ` · ${task.podMessage}` : ""}`
           : inFlight
@@ -207,7 +207,7 @@ function QuietGroup({ title, tasks, onSelect }: { title: string; tasks: Task[]; 
   if (tasks.length === 0) return null;
   return (
     <Collapse
-      summary={<span className="text-[11.5px] text-dim2">▸ {title} · {tasks.length}</span>}
+      summary={<span className="text-xs text-dim2">▸ {title} · {tasks.length}</span>}
       summaryClassName="py-1.5"
       contentClassName="pl-2 pb-1 flex flex-col"
     >
@@ -220,10 +220,10 @@ function QuietGroup({ title, tasks, onSelect }: { title: string; tasks: Task[]; 
             onClick={() => onSelect(t.id)}
             className="flex items-center gap-2 text-left py-2"
           >
-            <span className="text-[11px] text-dim2 flex-none">#{t.id.slice(0, 6)}</span>
-            <span className="text-[12px] text-dim min-w-0 truncate flex-1">{t.description}</span>
+            <span className="text-xs text-dim2 flex-none">#{t.id.slice(0, 6)}</span>
+            <span className="text-sm text-dim min-w-0 truncate flex-1">{t.description}</span>
             {badge && (
-              <span className={`text-[10px] px-1 border tracking-wide flex-none ${badge.className}`}>{badge.label}</span>
+              <span className={`text-2xs px-1 border tracking-wide flex-none ${badge.className}`}>{badge.label}</span>
             )}
           </button>
         );
@@ -278,7 +278,7 @@ export function MobileTaskList({
             type="button"
             aria-pressed={bucket === c.value}
             onClick={() => setBucket(c.value)}
-            className={`px-2.5 py-1 text-[11.5px] whitespace-nowrap border flex-none ${
+            className={`px-2.5 py-1 text-xs whitespace-nowrap border flex-none ${
               bucket === c.value
                 ? c.value === "needsYou"
                   ? "border-pink-line bg-pink-chip text-error"
@@ -292,7 +292,7 @@ export function MobileTaskList({
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto px-3.5 pt-4 pb-5 flex flex-col gap-3.5">
-        {tasks.length === 0 && <div className="text-[13px] text-dim">No sessions.</div>}
+        {tasks.length === 0 && <div className="text-base text-dim">No sessions.</div>}
 
         {showNeedsYou &&
           visibleNeedsYou.map((t) => (

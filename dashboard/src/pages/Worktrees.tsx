@@ -100,7 +100,7 @@ function DeleteWorktree({
         type="button"
         onClick={() => setConfirmOpen(true)}
         disabled={deleting}
-        className={`border px-2.5 py-1 text-[11.5px] disabled:opacity-50 ${
+        className={`border px-2.5 py-1 text-xs disabled:opacity-50 ${
           dirty ? "border-orange-line text-warning" : "border-line text-dim hover:text-error"
         }`}
       >
@@ -123,7 +123,7 @@ function DeleteWorktree({
         onConfirm={handleDelete}
         onCancel={() => setConfirmOpen(false)}
       />
-      <label className="flex items-center gap-1 text-[10.5px] text-dim2 whitespace-nowrap cursor-pointer">
+      <label className="flex items-center gap-1 text-2xs text-dim2 whitespace-nowrap cursor-pointer">
         <input
           type="checkbox"
           checked={alsoDeleteBranch}
@@ -188,8 +188,8 @@ export function Worktrees({ onSelectTask }: { onSelectTask: (id: string) => void
 
   const header = (
     <div className="flex items-baseline gap-3 flex-wrap">
-      <h2 className="text-[13.5px] sm:text-[14px] font-semibold">Worktrees</h2>
-      <span className="text-[11px] sm:text-[11.5px] text-dim2">
+      <h2 className="text-base font-semibold">Worktrees</h2>
+      <span className="text-xs text-dim2">
         {isDesktop && "git worktrees on the shared volume · "}
         {worktrees.length} tree{worktrees.length === 1 ? "" : "s"}
         {pvc.total > 0 && ` · ${formatBytes(used)} of ${formatBytes(pvc.total)}`}
@@ -205,7 +205,7 @@ export function Worktrees({ onSelectTask }: { onSelectTask: (id: string) => void
           onClick={() => setSyncConfirmOpen(true)}
           disabled={loading || syncing || stale.length === 0}
           title="Remove the on-disk checkouts of finished and orphaned tasks (branches are kept)"
-          className="border border-acc-line px-3 py-1.5 text-[11.5px] hover:border-primary hover:text-primary disabled:opacity-40"
+          className="border border-acc-line px-3 py-1.5 text-xs hover:border-primary hover:text-primary disabled:opacity-40"
         >
           {syncing ? "pruning…" : `prune orphans (${stale.length})`}
         </button>
@@ -213,7 +213,7 @@ export function Worktrees({ onSelectTask }: { onSelectTask: (id: string) => void
           type="button"
           onClick={load}
           disabled={loading}
-          className="border border-line px-3 py-1.5 text-[11.5px] text-dim hover:text-base-content disabled:opacity-40"
+          className="border border-line px-3 py-1.5 text-xs text-dim hover:text-base-content disabled:opacity-40"
         >
           {loading ? "…" : "refresh"}
         </button>
@@ -237,13 +237,13 @@ export function Worktrees({ onSelectTask }: { onSelectTask: (id: string) => void
       {header}
 
       {!loading && worktrees.length === 0 && !error && (
-        <div className="text-[12.5px] text-dim2">No worktrees on disk.</div>
+        <div className="text-sm text-dim2">No worktrees on disk.</div>
       )}
 
       {worktrees.length > 0 &&
         (isDesktop ? (
           <div className="border border-line2">
-            <div className={`grid ${COLS} gap-3.5 px-3.5 py-2 border-b border-line text-[10.5px] tracking-[0.1em] text-dim2`}>
+            <div className={`grid ${COLS} gap-3.5 px-3.5 py-2 border-b border-line text-2xs tracking-[0.1em] text-dim2`}>
               <div />
               <div>PATH</div>
               <div>REPO</div>
@@ -267,11 +267,11 @@ export function Worktrees({ onSelectTask }: { onSelectTask: (id: string) => void
                       o.orphan ? "bg-warning" : TERMINAL_STATUSES.has(w.taskStatus ?? "") ? "bg-success" : "bg-info"
                     }`}
                   />
-                  <div className="text-[12.5px] min-w-0 truncate" title={w.path}>
+                  <div className="text-sm min-w-0 truncate" title={w.path}>
                     {w.path || "—"}
                   </div>
-                  <div className="text-[12px] text-dim min-w-0 truncate">{w.repo}</div>
-                  <div className="text-[12px] text-text2 min-w-0 truncate" title={w.branch}>
+                  <div className="text-sm text-dim min-w-0 truncate">{w.repo}</div>
+                  <div className="text-sm text-text2 min-w-0 truncate" title={w.branch}>
                     {w.branch}{" "}
                     {w.dirtyFiles > 0 ? (
                       <span className="text-warning">·{w.dirtyFiles} dirty</span>
@@ -281,29 +281,29 @@ export function Worktrees({ onSelectTask }: { onSelectTask: (id: string) => void
                   </div>
                   <div className="min-w-0 truncate">
                     {o.orphan ? (
-                      <span className={`text-[12px] ${o.cls}`}>{o.label}</span>
+                      <span className={`text-sm ${o.cls}`}>{o.label}</span>
                     ) : (
                       <button
                         type="button"
                         onClick={() => onSelectTask(w.taskId)}
-                        className={`text-[12px] ${o.cls} hover:text-primary cursor-pointer`}
+                        className={`text-sm ${o.cls} hover:text-primary cursor-pointer`}
                       >
                         {o.label} ▸
                       </button>
                     )}
                     {w.taskError && (
-                      <div className="text-[11px] text-warning truncate" title={w.taskError}>
+                      <div className="text-xs text-warning truncate" title={w.taskError}>
                         {w.taskError}
                       </div>
                     )}
                   </div>
-                  <div className="text-[12px] text-dim">{formatBytes(w.sizeBytes)}</div>
-                  <div className="text-[12px] text-dim">{relativeMtime(w.mtimeUnix)}</div>
+                  <div className="text-sm text-dim">{formatBytes(w.sizeBytes)}</div>
+                  <div className="text-sm text-dim">{relativeMtime(w.mtimeUnix)}</div>
                   <div className="flex gap-1.5 justify-end items-center flex-wrap">
                     {isStaleWorktree(w, Date.now() / 1000) ? (
                       <DeleteWorktree worktree={w} onDeleted={load} onError={setError} />
                     ) : (
-                      <span className="text-[11.5px] text-dim2">in use</span>
+                      <span className="text-xs text-dim2">in use</span>
                     )}
                   </div>
                 </div>
@@ -324,12 +324,12 @@ export function Worktrees({ onSelectTask }: { onSelectTask: (id: string) => void
                       o.orphan ? "bg-warning" : TERMINAL_STATUSES.has(w.taskStatus ?? "") ? "bg-success" : "bg-info"
                     }`}
                   />
-                  <span className="text-[12.5px] min-w-0 truncate" title={w.path}>
+                  <span className="text-sm min-w-0 truncate" title={w.path}>
                     {w.path || w.branch}
                   </span>
-                  <span className="text-[11px] text-dim2 ml-auto flex-none">{formatBytes(w.sizeBytes)}</span>
+                  <span className="text-xs text-dim2 ml-auto flex-none">{formatBytes(w.sizeBytes)}</span>
                 </div>
-                <div className="text-[11.5px] text-text2 mt-1.5 min-w-0 truncate">
+                <div className="text-xs text-text2 mt-1.5 min-w-0 truncate">
                   {w.branch}{" "}
                   {w.dirtyFiles > 0 ? (
                     <span className="text-warning">· {w.dirtyFiles} dirty</span>
@@ -339,22 +339,22 @@ export function Worktrees({ onSelectTask }: { onSelectTask: (id: string) => void
                 </div>
                 <div className="flex items-center gap-2 mt-2 flex-wrap">
                   {o.orphan ? (
-                    <span className={`text-[11px] ${o.cls}`}>{o.label}</span>
+                    <span className={`text-xs ${o.cls}`}>{o.label}</span>
                   ) : (
                     <button
                       type="button"
                       onClick={() => onSelectTask(w.taskId)}
-                      className={`text-[11.5px] ${o.cls}`}
+                      className={`text-xs ${o.cls}`}
                     >
                       {o.label} ▸
                     </button>
                   )}
-                  <span className="text-[11px] text-dim2">{relativeMtime(w.mtimeUnix)}</span>
+                  <span className="text-xs text-dim2">{relativeMtime(w.mtimeUnix)}</span>
                   <div className="ml-auto flex items-center gap-2">
                     {isStaleWorktree(w, Date.now() / 1000) ? (
                       <DeleteWorktree worktree={w} onDeleted={load} onError={setError} />
                     ) : (
-                      <span className="text-[11px] text-dim2">in use</span>
+                      <span className="text-xs text-dim2">in use</span>
                     )}
                   </div>
                 </div>
@@ -364,7 +364,7 @@ export function Worktrees({ onSelectTask }: { onSelectTask: (id: string) => void
         ))}
 
       {worktrees.length > 0 && (
-        <div className="text-[11px] sm:text-[11.5px] text-dim2 leading-[1.6]">
+        <div className="text-xs text-dim2 leading-[1.6]">
           An orphan is a tree whose session is gone. Deleting one drops uncommitted work — the dirty count is the
           warning.
         </div>

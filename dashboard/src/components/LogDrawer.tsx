@@ -46,21 +46,21 @@ export function LogDrawer({ taskId, onClose }: { taskId: string | null; onClose:
 
   return (
     <Modal open={taskId !== null} onClose={onClose} boxClassName="max-w-4xl">
-      <h3 className="text-[13px] font-semibold mb-1">Logs · #{taskId?.slice(0, 6)}</h3>
-      <p className="text-[11px] text-dim2 mb-3">
+      <h3 className="text-base font-semibold mb-1">Logs · #{taskId?.slice(0, 6)}</h3>
+      <p className="text-xs text-dim2 mb-3">
         Newest 200 lines from Loki for this session's pods.
       </p>
-      {loading && <div className="text-[12px] text-dim">Loading…</div>}
-      {error && <div className="text-[12px] text-error">{error}</div>}
+      {loading && <div className="text-sm text-dim">Loading…</div>}
+      {error && <div className="text-sm text-error">{error}</div>}
       {!loading && !error && entries.length === 0 && (
-        <div className="text-[12px] text-dim2">
+        <div className="text-sm text-dim2">
           No log lines for this session — its pod may already be gone past Loki's retention.
         </div>
       )}
       {entries.length > 0 && (
         <div className="border border-line bg-code max-h-[60vh] overflow-auto">
           {entries.map((e, i) => (
-            <div key={i} className="flex gap-2.5 px-2.5 py-[3px] text-[11px] whitespace-pre-wrap break-all">
+            <div key={i} className="flex gap-2.5 px-2.5 py-[3px] text-xs whitespace-pre-wrap break-all">
               <span className="text-dim2 flex-none">{e.timestamp?.slice(11, 19) || "—"}</span>
               <span className={`flex-none w-10 ${LEVEL_COLOR[e.level?.toLowerCase()] ?? "text-dim2"}`}>
                 {e.level || "—"}

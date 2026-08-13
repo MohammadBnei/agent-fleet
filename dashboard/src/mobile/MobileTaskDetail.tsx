@@ -92,14 +92,14 @@ export function MobileTaskDetail({
   if (loadError) {
     return (
       <div className="flex-1 min-h-0 p-3.5">
-        <button type="button" onClick={onBack} className="text-[13px] text-dim mb-3">
+        <button type="button" onClick={onBack} className="text-base text-dim mb-3">
           ←
         </button>
-        <div className="border border-pink-line bg-pink-bg px-3 py-2.5 text-[12.5px] text-error">{loadError}</div>
+        <div className="border border-pink-line bg-pink-bg px-3 py-2.5 text-sm text-error">{loadError}</div>
       </div>
     );
   }
-  if (!task) return <div className="flex-1 p-4 text-[13px] text-dim">Loading…</div>;
+  if (!task) return <div className="flex-1 p-4 text-base text-dim">Loading…</div>;
 
   const blocked = task.liveState === "blocked";
   const badge = sessionBadge(task);
@@ -149,20 +149,20 @@ export function MobileTaskDetail({
     <div className="flex-1 min-h-0 flex flex-col">
       <div className="flex-none px-3.5 py-2.5 border-b border-line">
         <div className="flex items-center gap-2.5">
-          <button type="button" onClick={onBack} aria-label="Back to sessions" className="text-[13px] text-dim">
+          <button type="button" onClick={onBack} aria-label="Back to sessions" className="text-base text-dim">
             ←
           </button>
-          <span className="text-[13px] font-semibold min-w-0 truncate">
+          <span className="text-base font-semibold min-w-0 truncate">
             #{task.id.slice(0, 6)} {task.description}
           </span>
           {blocked ? (
             <span className="ml-auto flex items-center gap-1.5 border border-pink-line bg-pink-chip px-2 py-0.5 flex-none">
               <span className="w-[5px] h-[5px] rounded-full bg-error animate-fpulse" />
-              <span className="text-[11px] font-medium text-error">blocked</span>
+              <span className="text-xs font-medium text-error">blocked</span>
             </span>
           ) : (
             badge && (
-              <span className={`ml-auto flex-none text-[10px] px-1 border tracking-wide ${badge.className}`}>
+              <span className={`ml-auto flex-none text-2xs px-1 border tracking-wide ${badge.className}`}>
                 {badge.label}
               </span>
             )
@@ -170,7 +170,7 @@ export function MobileTaskDetail({
         </div>
 
         <div className="flex items-center gap-2 mt-2">
-          <span className="text-[10.5px] text-dim2 min-w-0 truncate">
+          <span className="text-2xs text-dim2 min-w-0 truncate">
             {repoLabel(task)}
             {branch && ` · ${branch}`}
           </span>
@@ -181,15 +181,15 @@ export function MobileTaskDetail({
           {todos.length > 0 ? (
             <>
               <TickBar todos={todos} blocked={blocked} className="flex-1" />
-              <span className="text-[10.5px] text-dim2 flex-none">{todoProgress(todos)} todos</span>
+              <span className="text-2xs text-dim2 flex-none">{todoProgress(todos)} todos</span>
             </>
           ) : (
-            <span className="text-[10.5px] text-dim2 flex-1">no todos yet</span>
+            <span className="text-2xs text-dim2 flex-1">no todos yet</span>
           )}
           <button
             type="button"
             onClick={() => setPanelsOpen(true)}
-            className="text-[10.5px] text-dim flex-none"
+            className="text-2xs text-dim flex-none"
           >
             panels ▸
           </button>
@@ -212,8 +212,8 @@ export function MobileTaskDetail({
         />
         {pendingMessage && (
           <div className="flex gap-2.5 items-baseline opacity-60">
-            <span className="text-primary flex-none text-[12.5px]">❯</span>
-            <div className="text-[12.5px] leading-[1.7] text-text2 min-w-0 flex-1">{pendingMessage}</div>
+            <span className="text-primary flex-none text-sm">❯</span>
+            <div className="text-sm leading-[1.7] text-text2 min-w-0 flex-1">{pendingMessage}</div>
             <span className="loading loading-spinner loading-xs flex-none" />
           </div>
         )}
@@ -238,11 +238,11 @@ export function MobileTaskDetail({
       >
         {docked && pendingPermission && pendingPermission.tool === "ExitPlanMode" && (
           <>
-            <div className="absolute -top-[7px] left-3.5 px-[7px] bg-base-200 text-error text-[10px] tracking-[0.1em] whitespace-nowrap">
+            <div className="absolute -top-[7px] left-3.5 px-[7px] bg-base-200 text-error text-2xs tracking-[0.1em] whitespace-nowrap">
               ◉ PLAN — NEEDS YOUR REVIEW
             </div>
             <div className="px-3.5 pt-3.5">
-              <div className="text-[12.5px] leading-[1.7] text-text2 line-clamp-3">
+              <div className="text-sm leading-[1.7] text-text2 line-clamp-3">
                 {(pendingPermission.input as { plan?: string } | undefined)?.plan?.split("\n").slice(0, 4).join(" ") ?? ""}
               </div>
               <div className="flex gap-2.5 mt-3">
@@ -250,7 +250,7 @@ export function MobileTaskDetail({
                   type="button"
                   disabled={busyKey !== null}
                   onClick={() => respond(pendingPermission.entry.seq, "allow")}
-                  className="w-full py-3 text-center text-[13.5px] font-semibold bg-primary text-primary-content disabled:opacity-50"
+                  className="w-full py-3 text-center text-base font-semibold bg-primary text-primary-content disabled:opacity-50"
                 >
                   approve plan
                 </button>
@@ -260,11 +260,11 @@ export function MobileTaskDetail({
         )}
         {docked && pendingPermission && pendingPermission.tool !== "ExitPlanMode" && (
           <>
-            <div className="absolute -top-[7px] left-3.5 px-[7px] bg-base-200 text-error text-[10px] tracking-[0.1em] whitespace-nowrap">
+            <div className="absolute -top-[7px] left-3.5 px-[7px] bg-base-200 text-error text-2xs tracking-[0.1em] whitespace-nowrap">
               ◉ PERMISSION · {pendingPermission.tool.toUpperCase()}
             </div>
             <div className="px-3.5 pt-3.5">
-              <div className="text-[11px] text-dim break-all">
+              <div className="text-xs text-dim break-all">
                 {pendingPermission.tool}
                 {permInput.file_path && (
                   <>
@@ -282,7 +282,7 @@ export function MobileTaskDetail({
                     compact
                   />
                 ) : (
-                  <div className="border border-line bg-code px-2.5 py-1 text-[11.5px] text-text2 whitespace-pre-wrap break-all">
+                  <div className="border border-line bg-code px-2.5 py-1 text-xs text-text2 whitespace-pre-wrap break-all">
                     {summarizeToolInput(pendingPermission.input)}
                   </div>
                 )}
@@ -292,7 +292,7 @@ export function MobileTaskDetail({
                   type="button"
                   disabled={busyKey !== null}
                   onClick={() => respond(pendingPermission.entry.seq, "allow")}
-                  className="flex-1 py-3 text-center text-[13.5px] font-semibold bg-primary text-primary-content disabled:opacity-50"
+                  className="flex-1 py-3 text-center text-base font-semibold bg-primary text-primary-content disabled:opacity-50"
                 >
                   allow
                 </button>
@@ -300,7 +300,7 @@ export function MobileTaskDetail({
                   type="button"
                   disabled={busyKey !== null}
                   onClick={() => respond(pendingPermission.entry.seq, "deny", "denied")}
-                  className="flex-1 py-3 text-center text-[13.5px] border border-acc-line disabled:opacity-50"
+                  className="flex-1 py-3 text-center text-base border border-acc-line disabled:opacity-50"
                 >
                   deny
                 </button>
@@ -311,11 +311,11 @@ export function MobileTaskDetail({
 
         {docked && !pendingPermission && dockQuestion && pendingQuestion && (
           <>
-            <div className="absolute -top-[7px] left-3.5 px-[7px] bg-base-200 text-error text-[10px] tracking-[0.1em] whitespace-nowrap">
+            <div className="absolute -top-[7px] left-3.5 px-[7px] bg-base-200 text-error text-2xs tracking-[0.1em] whitespace-nowrap">
               ◉ QUESTION
             </div>
             <div className="px-3.5 pt-3.5">
-              <div className="text-[13px] leading-[1.6]">{dockQuestion.question}</div>
+              <div className="text-base leading-[1.6]">{dockQuestion.question}</div>
               <div className="flex flex-col gap-2 mt-3">
                 {dockQuestion.options.map((opt) => (
                   <button
@@ -333,10 +333,10 @@ export function MobileTaskDetail({
                         `question:${pendingQuestion.seq}`,
                       )
                     }
-                    className="w-full text-left border border-acc-line px-3.5 py-3 text-[13px] disabled:opacity-50"
+                    className="w-full text-left border border-acc-line px-3.5 py-3 text-base disabled:opacity-50"
                   >
                     {opt.label}
-                    {opt.description && <div className="text-[11px] text-dim2 mt-0.5">{opt.description}</div>}
+                    {opt.description && <div className="text-xs text-dim2 mt-0.5">{opt.description}</div>}
                   </button>
                 ))}
               </div>
@@ -351,7 +351,7 @@ export function MobileTaskDetail({
                 type="button"
                 disabled={busyKey !== null}
                 onClick={() => respond(pendingPermission.entry.seq, "deny", "use the fixture")}
-                className="flex-none border border-line text-dim px-2.5 py-1.5 text-[11px] whitespace-nowrap"
+                className="flex-none border border-line text-dim px-2.5 py-1.5 text-xs whitespace-nowrap"
               >
                 deny — use the fixture
               </button>
@@ -360,7 +360,7 @@ export function MobileTaskDetail({
               type="button"
               disabled={busyKey !== null}
               onClick={() => run(() => client.interrupt({ taskId }), "actions")}
-              className="flex-none border border-line text-dim px-2.5 py-1.5 text-[11px] whitespace-nowrap"
+              className="flex-none border border-line text-dim px-2.5 py-1.5 text-xs whitespace-nowrap"
             >
               /interrupt
             </button>
@@ -368,7 +368,7 @@ export function MobileTaskDetail({
               type="button"
               disabled={busyKey !== null}
               onClick={() => run(() => client.setPermissionMode({ taskId, mode: "plan" }), "actions")}
-              className="flex-none border border-line text-dim px-2.5 py-1.5 text-[11px] whitespace-nowrap"
+              className="flex-none border border-line text-dim px-2.5 py-1.5 text-xs whitespace-nowrap"
             >
               /mode plan
             </button>
@@ -377,7 +377,7 @@ export function MobileTaskDetail({
                 key={c}
                 type="button"
                 onClick={() => setMessage(`/${c} `)}
-                className="flex-none border border-line text-dim px-2.5 py-1.5 text-[11px] whitespace-nowrap"
+                className="flex-none border border-line text-dim px-2.5 py-1.5 text-xs whitespace-nowrap"
               >
                 /{c}
               </button>
@@ -387,7 +387,7 @@ export function MobileTaskDetail({
 
         <div className="px-3.5 py-2.5">
           <div className="flex gap-2.5 items-center border border-line bg-base-200 px-3 py-2.5 focus-within:border-primary/60">
-            <span className="text-primary text-[13px]">❯</span>
+            <span className="text-primary text-base">❯</span>
             <input
               value={message}
               onChange={(e) => setMessage(e.target.value)}
@@ -397,13 +397,13 @@ export function MobileTaskDetail({
               disabled={busyKey !== null}
               placeholder="message the agent"
               aria-label="message the agent"
-              className="flex-1 min-w-0 bg-transparent outline-none text-[12.5px] placeholder:text-dim2"
+              className="flex-1 min-w-0 bg-transparent outline-none text-sm placeholder:text-dim2"
             />
             <button
               type="button"
               disabled={busyKey !== null || !message.trim()}
               onClick={sendMessage}
-              className="text-[11px] text-dim2 disabled:opacity-40 flex-none"
+              className="text-xs text-dim2 disabled:opacity-40 flex-none"
             >
               send
             </button>
@@ -431,7 +431,7 @@ export function MobileTaskDetail({
           <button
             type="button"
             onClick={onDelete}
-            className="border border-pink-line text-error px-3 py-2.5 text-[12px] self-start"
+            className="border border-pink-line text-error px-3 py-2.5 text-sm self-start"
           >
             Delete session
           </button>

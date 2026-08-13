@@ -87,7 +87,7 @@ export function ToolCallDetail({ pair }: { pair: ToolCallPair }) {
         <ToolInputView tool={callInfo.tool ?? "tool"} input={callInfo.input} />
       )}
       {resultInfo ? (
-        <div className={`text-[11px] font-mono ${isError ? "text-error" : "text-dim"}`}>
+        <div className={`text-xs font-mono ${isError ? "text-error" : "text-dim"}`}>
           {typeof resultInfo.content === "string" ? (
             <div className="whitespace-pre-wrap break-words">{resultInfo.content}</div>
           ) : (
@@ -95,7 +95,7 @@ export function ToolCallDetail({ pair }: { pair: ToolCallPair }) {
           )}
         </div>
       ) : (
-        <div className="text-[11px] text-dim2">still running — no output yet.</div>
+        <div className="text-xs text-dim2">still running — no output yet.</div>
       )}
     </div>
   );
@@ -110,7 +110,7 @@ export const ToolCallItem = memo(function ToolCallItem({ pair }: { pair: ToolCal
   const resultLabel = summarizeResult(callInfo, resultInfo ?? null, isError);
 
   const line = (
-    <div className="flex items-center gap-1.5 py-1 px-2 text-[11px]">
+    <div className="flex items-center gap-1.5 py-1 px-2 text-xs">
       {!result ? (
         <span className="loading loading-spinner loading-xs flex-none opacity-60" />
       ) : (
@@ -136,7 +136,7 @@ export const ToolCallItem = memo(function ToolCallItem({ pair }: { pair: ToolCal
             unless the call happened to require permission. */}
         {hasRenderableInput(callInfo.tool, callInfo.input) && <ToolInputView tool={tool} input={callInfo.input} />}
         {resultInfo && (
-          <div className={`text-[10.5px] font-mono ${isError ? "text-error" : ""}`}>
+          <div className={`text-2xs font-mono ${isError ? "text-error" : ""}`}>
             {typeof resultInfo.content === "string" ? (
               <div className="whitespace-pre-wrap">{resultInfo.content}</div>
             ) : (

@@ -31,10 +31,10 @@ export function DecisionSpine({
 
   return (
     <div className="w-[186px] flex-none border-r border-line px-3 py-3.5 flex flex-col gap-3 overflow-y-auto">
-      <div className="text-[10.5px] tracking-[0.12em] text-dim2 flex-none">DECISION SPINE</div>
+      <div className="text-2xs tracking-[0.12em] text-dim2 flex-none">DECISION SPINE</div>
 
       {items.length === 0 && (
-        <div className="text-[11px] text-dim2 leading-relaxed">
+        <div className="text-xs text-dim2 leading-relaxed">
           No decisions yet — nothing has needed you in this session.
         </div>
       )}
@@ -49,9 +49,9 @@ export function DecisionSpine({
             title="Jump to this point in the feed"
             className={`text-left border-l-2 pl-2.5 py-0.5 cursor-pointer hover:bg-base-300/50 ${tone.edge} ${tone.bg}`}
           >
-            <div className={`text-[11.5px] leading-[1.5] break-words ${tone.text}`}>{item.label}</div>
+            <div className={`text-xs leading-[1.5] break-words ${tone.text}`}>{item.label}</div>
             {(item.detail || item.time) && (
-              <div className={`text-[11px] break-words ${item.kind === "pending" ? "text-pink-dim" : "text-dim2"}`}>
+              <div className={`text-xs break-words ${item.kind === "pending" ? "text-pink-dim" : "text-dim2"}`}>
                 {item.detail ? `“${item.detail}”` : item.time}
               </div>
             )}
@@ -64,12 +64,12 @@ export function DecisionSpine({
           <button
             type="button"
             onClick={onNextDecision}
-            className="border border-acc-line py-1.5 text-center text-[11.5px] cursor-pointer hover:border-primary hover:text-primary"
+            className="border border-acc-line py-1.5 text-center text-xs cursor-pointer hover:border-primary hover:text-primary"
           >
             ↓ next decision
           </button>
         )}
-        <div className="text-[11px] text-dim2 leading-[1.6]">
+        <div className="text-xs text-dim2 leading-[1.6]">
           {resolved} resolved · {open} open
           {alarms > 0 && (
             <>

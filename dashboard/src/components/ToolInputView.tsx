@@ -46,7 +46,7 @@ export function DiffView({ before, after }: { before: string; after: string }) {
   const lines = diffLines(before, after);
   return (
     <div className="overflow-x-auto rounded-md bg-base-200/40">
-      <pre className="text-[10.5px] leading-[1.5] font-mono min-w-full w-max">
+      <pre className="text-2xs leading-[1.5] font-mono min-w-full w-max">
         {lines.map((line, idx) => (
           <div
             key={idx}
@@ -55,7 +55,7 @@ export function DiffView({ before, after }: { before: string; after: string }) {
                 ? "bg-success/15 text-success"
                 : line.kind === "remove"
                   ? "bg-error/15 text-error"
-                  : "text-base-content/50"
+                  : "text-dim"
             }
           >
             <span className="select-none opacity-50">{line.kind === "add" ? "+" : line.kind === "remove" ? "-" : " "} </span>
@@ -69,9 +69,9 @@ export function DiffView({ before, after }: { before: string; after: string }) {
 
 function Field({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex gap-2 text-[10.5px]">
-      <span className="text-base-content/40 flex-none">{label}</span>
-      <span className="text-base-content/80 break-all">{value}</span>
+    <div className="flex gap-2 text-2xs">
+      <span className="text-dim flex-none">{label}</span>
+      <span className="text-text2 break-all">{value}</span>
     </div>
   );
 }
@@ -105,9 +105,9 @@ export function ToolInputView({ tool, input }: { tool: string; input: unknown })
   if (tool === "Bash" && typeof obj.command === "string") {
     return (
       <div className="flex flex-col gap-1.5">
-        {str("description") && <div className="text-[10.5px] text-base-content/50">{str("description")}</div>}
+        {str("description") && <div className="text-2xs text-dim">{str("description")}</div>}
         <div className="overflow-x-auto rounded-md bg-base-200/40 p-2">
-          <pre className="text-[11px] font-mono text-base-content/90 w-max min-w-full">{obj.command}</pre>
+          <pre className="text-xs font-mono text-base-content w-max min-w-full">{obj.command}</pre>
         </div>
         {obj.run_in_background === true && <Field label="mode" value="background" />}
       </div>
@@ -131,7 +131,7 @@ export function ToolInputView({ tool, input }: { tool: string; input: unknown })
         {simple.map(([label, value]) => (
           <Field key={label} label={label} value={value} />
         ))}
-        {str("description") && <div className="text-[10.5px] text-base-content/50">{str("description")}</div>}
+        {str("description") && <div className="text-2xs text-dim">{str("description")}</div>}
       </div>
     );
   }

@@ -20,7 +20,7 @@ export function Segmented<T extends string>({
   className?: string;
 }) {
   const pad =
-    size === "sm" ? "px-2 py-0.5 text-[10.5px]" : size === "lg" ? "px-0 py-2.5 text-[11.5px]" : "px-3 py-1 text-[11.5px]";
+    size === "sm" ? "px-2 py-0.5 text-2xs" : size === "lg" ? "px-0 py-2.5 text-xs" : "px-3 py-1 text-xs";
   return (
     <div className={`flex border border-line ${className}`}>
       {options.map((opt, i) => {
