@@ -25,8 +25,6 @@ const (
 	CoreService_AskUserQuestion_FullMethodName     = "/agentfleet.v1.CoreService/AskUserQuestion"
 	CoreService_RequestE2EEnv_FullMethodName       = "/agentfleet.v1.CoreService/RequestE2eEnv"
 	CoreService_KillE2EEnv_FullMethodName          = "/agentfleet.v1.CoreService/KillE2eEnv"
-	CoreService_ListE2ETools_FullMethodName        = "/agentfleet.v1.CoreService/ListE2eTools"
-	CoreService_CallE2ETool_FullMethodName         = "/agentfleet.v1.CoreService/CallE2eTool"
 	CoreService_GetTask_FullMethodName             = "/agentfleet.v1.CoreService/GetTask"
 	CoreService_SetPermissionMode_FullMethodName   = "/agentfleet.v1.CoreService/SetPermissionMode"
 	CoreService_Heartbeat_FullMethodName           = "/agentfleet.v1.CoreService/Heartbeat"
@@ -63,17 +61,6 @@ type CoreServiceClient interface {
 	AskUserQuestion(ctx context.Context, in *AskUserQuestionRequest, opts ...grpc.CallOption) (*AskUserQuestionResponse, error)
 	RequestE2EEnv(ctx context.Context, in *RequestE2EEnvRequest, opts ...grpc.CallOption) (*RequestE2EEnvResponse, error)
 	KillE2EEnv(ctx context.Context, in *KillE2EEnvRequest, opts ...grpc.CallOption) (*KillE2EEnvResponse, error)
-	// Deprecated: Do not use.
-	// Reuses provisioner.proto's message shapes — same passthrough, one hop
-	// further down the chain (see that file's own comment).
-	// DEPRECATED (docs/adr/0045) — the sidecar dials the sandbox directly from
-	// RequestE2eEnvResponse.endpoints. Kept only for the deploy-skew window in
-	// which a live pod still runs an older sidecar. Do not add callers.
-	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
-	ListE2ETools(ctx context.Context, in *ListE2EToolsRequest, opts ...grpc.CallOption) (*ListE2EToolsResponse, error)
-	// Deprecated: Do not use.
-	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
-	CallE2ETool(ctx context.Context, in *CallE2EToolRequest, opts ...grpc.CallOption) (*CallE2EToolResponse, error)
 	// Lets a worker pod fetch its own fresh task row on startup instead of
 	// relying on stale environment variables — same message shapes
 	// DashboardService.GetTask uses, different caller (docs/adr/0029).
@@ -180,28 +167,6 @@ func (c *coreServiceClient) KillE2EEnv(ctx context.Context, in *KillE2EEnvReques
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(KillE2EEnvResponse)
 	err := c.cc.Invoke(ctx, CoreService_KillE2EEnv_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-// Deprecated: Do not use.
-func (c *coreServiceClient) ListE2ETools(ctx context.Context, in *ListE2EToolsRequest, opts ...grpc.CallOption) (*ListE2EToolsResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(ListE2EToolsResponse)
-	err := c.cc.Invoke(ctx, CoreService_ListE2ETools_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-// Deprecated: Do not use.
-func (c *coreServiceClient) CallE2ETool(ctx context.Context, in *CallE2EToolRequest, opts ...grpc.CallOption) (*CallE2EToolResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(CallE2EToolResponse)
-	err := c.cc.Invoke(ctx, CoreService_CallE2ETool_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -413,17 +378,6 @@ type CoreServiceServer interface {
 	AskUserQuestion(context.Context, *AskUserQuestionRequest) (*AskUserQuestionResponse, error)
 	RequestE2EEnv(context.Context, *RequestE2EEnvRequest) (*RequestE2EEnvResponse, error)
 	KillE2EEnv(context.Context, *KillE2EEnvRequest) (*KillE2EEnvResponse, error)
-	// Deprecated: Do not use.
-	// Reuses provisioner.proto's message shapes — same passthrough, one hop
-	// further down the chain (see that file's own comment).
-	// DEPRECATED (docs/adr/0045) — the sidecar dials the sandbox directly from
-	// RequestE2eEnvResponse.endpoints. Kept only for the deploy-skew window in
-	// which a live pod still runs an older sidecar. Do not add callers.
-	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
-	ListE2ETools(context.Context, *ListE2EToolsRequest) (*ListE2EToolsResponse, error)
-	// Deprecated: Do not use.
-	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
-	CallE2ETool(context.Context, *CallE2EToolRequest) (*CallE2EToolResponse, error)
 	// Lets a worker pod fetch its own fresh task row on startup instead of
 	// relying on stale environment variables — same message shapes
 	// DashboardService.GetTask uses, different caller (docs/adr/0029).
@@ -490,12 +444,6 @@ func (UnimplementedCoreServiceServer) RequestE2EEnv(context.Context, *RequestE2E
 }
 func (UnimplementedCoreServiceServer) KillE2EEnv(context.Context, *KillE2EEnvRequest) (*KillE2EEnvResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method KillE2EEnv not implemented")
-}
-func (UnimplementedCoreServiceServer) ListE2ETools(context.Context, *ListE2EToolsRequest) (*ListE2EToolsResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method ListE2ETools not implemented")
-}
-func (UnimplementedCoreServiceServer) CallE2ETool(context.Context, *CallE2EToolRequest) (*CallE2EToolResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method CallE2ETool not implemented")
 }
 func (UnimplementedCoreServiceServer) GetTask(context.Context, *GetTaskRequest) (*GetTaskResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetTask not implemented")
@@ -665,42 +613,6 @@ func _CoreService_KillE2EEnv_Handler(srv interface{}, ctx context.Context, dec f
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(CoreServiceServer).KillE2EEnv(ctx, req.(*KillE2EEnvRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _CoreService_ListE2ETools_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ListE2EToolsRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(CoreServiceServer).ListE2ETools(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: CoreService_ListE2ETools_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(CoreServiceServer).ListE2ETools(ctx, req.(*ListE2EToolsRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _CoreService_CallE2ETool_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(CallE2EToolRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(CoreServiceServer).CallE2ETool(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: CoreService_CallE2ETool_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(CoreServiceServer).CallE2ETool(ctx, req.(*CallE2EToolRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1048,14 +960,6 @@ var CoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "KillE2eEnv",
 			Handler:    _CoreService_KillE2EEnv_Handler,
-		},
-		{
-			MethodName: "ListE2eTools",
-			Handler:    _CoreService_ListE2ETools_Handler,
-		},
-		{
-			MethodName: "CallE2eTool",
-			Handler:    _CoreService_CallE2ETool_Handler,
 		},
 		{
 			MethodName: "GetTask",

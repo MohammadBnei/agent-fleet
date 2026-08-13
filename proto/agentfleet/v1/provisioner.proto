@@ -215,41 +215,6 @@ message TearDownSessionResponse {
   bool torn_down = 1; // false = nothing to tear down
 }
 
-// DEPRECATED (docs/adr/0045) — the sidecar dials the sandbox directly from
-// a ServiceEndpoint roster now, and these are deleted once every live pod
-// runs a sidecar that does. Do not add callers.
-//
-// ADR-0020 accepted the extra hop for consistency and left a revisit
-// trigger ("if that hop proves materially slow"). It was measured twice and
-// the trigger never fired: the fleet's entire overhead around a tool call is
-// ~1ms. These go for coupling, not speed — a passthrough on core costs a
-// proto pair and a handler per service, and routes a shell command through
-// the fleet's Postgres-credential holder for no reason involving credentials.
-message ListE2eToolsRequest {
-  string task_id = 1;
-}
-
-message E2eToolDescriptor {
-  string name = 1;
-  string description = 2;
-  string input_schema_json = 3;
-}
-
-message ListE2eToolsResponse {
-  repeated E2eToolDescriptor tools = 1;
-}
-
-message CallE2eToolRequest {
-  string task_id = 1;
-  string tool_name = 2;
-  string arguments_json = 3;
-}
-
-message CallE2eToolResponse {
-  string result_json = 1;
-  bool is_error = 2;
-}
-
 // Worktree/branch lifecycle (reliability-findings.md #2): a task's
 // worktree is no longer deleted as a side effect of TearDownSession (that
 // destroyed never-pushed commits whenever a terminal status was reached
@@ -298,22 +263,10 @@ service ProvisionerService {
   rpc KillE2eSession(KillE2eSessionRequest) returns (KillE2eSessionResponse);
   rpc GetE2eSessionStatus(GetE2eSessionStatusRequest) returns (GetE2eSessionStatusResponse);
   rpc CreateE2eSession(CreateE2eSessionRequest) returns (CreateE2eSessionResponse);
-  // Reused by core.proto's own ListE2eTools/CallE2eTool one hop further
-  // down the passthrough chain (see that file's comment).
-  // DEPRECATED (docs/adr/0045) — deleted once every live pod runs a sidecar
-  // that dials the sandbox itself.
-  // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
-  rpc ListE2eTools(ListE2eToolsRequest) returns (ListE2eToolsResponse) {
-    option deprecated = true;
-  }
-  // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
-  rpc CallE2eTool(CallE2eToolRequest) returns (CallE2eToolResponse) {
-    option deprecated = true;
-  }
   rpc CreateWorkerPod(CreateWorkerPodRequest) returns (CreateWorkerPodResponse);
   rpc TearDownSession(TearDownSessionRequest) returns (TearDownSessionResponse);
   // Reused as-is by dashboard.proto's own ListWorktrees (identical empty
-  // request shape) — same passthrough pattern as ListE2eTools above.
+  // request shape) — cross-file message reuse, not a call passthrough.
   // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
   rpc ListWorktrees(ListWorktreesRequest) returns (ListWorktreesResponse);
   // Reused as-is by dashboard.proto's own DeleteWorktree (identical

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
@@ -47,69 +48,50 @@ func (f *fakeDialer) SetEndpoints(endpoints []e2eclient.Endpoint) {
 
 func (f *fakeDialer) DropAll() { f.dropped = true }
 
-// relayRecorder is the core-side half.
-type relayRecorder struct {
-	calls int
-}
+// coreStub is the core-side half. It no longer has a tool-call method at
+// all — that is the deletion this file exists to pin.
+type coreStub struct{}
 
-func (r *relayRecorder) CallE2eTool(context.Context, string, string) (string, bool, error) {
-	r.calls++
-	return `{"content":[{"type":"text","text":"relayed"}]}`, false, nil
-}
-
-func (r *relayRecorder) RequestE2eEnv(context.Context, string, string) (*agentfleetv1.RequestE2EEnvResponse, error) {
+func (coreStub) RequestE2eEnv(context.Context, string, string) (*agentfleetv1.RequestE2EEnvResponse, error) {
 	return &agentfleetv1.RequestE2EEnvResponse{}, nil
 }
 
-// An empty roster MUST keep working through core. This is the deploy-skew
-// contract and the single most dangerous thing in docs/adr/0045: core, the
-// provisioner and the worker image are separate ArgoCD Applications, so a
-// sidecar carrying this code will meet a provisioner too old to send a roster
-// on some rolling deploy. If this test ever goes green by accident — because
-// the fallback was "cleaned up" — every run_command in the fleet fails during
-// that window.
-func TestSandbox_EmptyRosterFallsBackToTheRelay(t *testing.T) {
-	relay := &relayRecorder{}
-	sb := sandbox{core: relay, e2e: &fakeDialer{}} // dialer present, knows nothing
+// An empty roster used to fall back to core's relay. That relay is gone
+// (docs/adr/0045), so this must now fail — and fail legibly, naming the env
+// var that should have carried the roster.
+//
+// The roster is injected at pod creation, before a sandbox can exist, so an
+// empty one is a real misconfiguration rather than a timing condition. Silently
+// routing around it is exactly what is no longer possible.
+func TestSandbox_EmptyRosterFailsLoudly(t *testing.T) {
+	sb := sandbox{core: coreStub{}, e2e: &fakeDialer{}} // dialer present, knows nothing
 
-	out, _, err := sb.callTool(context.Background(), e2eclient.EndpointExec, "run_command", map[string]any{"command": "true"})
-	if err != nil {
-		t.Fatalf("callTool: %v", err)
+	_, _, err := sb.callTool(context.Background(), e2eclient.EndpointExec, "run_command", map[string]any{"command": "true"})
+	if err == nil {
+		t.Fatal("an empty roster must fail — there is no relay left to fall back to")
 	}
-	if relay.calls != 1 {
-		t.Errorf("relay calls = %d, want 1 — an unknown endpoint must route through core", relay.calls)
-	}
-	if !contains(out, "relayed") {
-		t.Errorf("got %q, want the relay's result", out)
+	if !strings.Contains(err.Error(), "FLEET_ENDPOINTS") {
+		t.Errorf("error %q should name the env var that carries the roster", err)
 	}
 }
 
-// A nil dialer is the same contract, for the case where the sidecar could not
-// build one at all.
-func TestSandbox_NilDialerFallsBackToTheRelay(t *testing.T) {
-	relay := &relayRecorder{}
-	sb := sandbox{core: relay}
-	if _, _, err := sb.callTool(context.Background(), e2eclient.EndpointExec, "run_command", nil); err != nil {
-		t.Fatalf("callTool: %v", err)
-	}
-	if relay.calls != 1 {
-		t.Errorf("relay calls = %d, want 1", relay.calls)
+// Same for a sidecar that could not build a dialer at all.
+func TestSandbox_NilDialerFailsLoudly(t *testing.T) {
+	sb := sandbox{core: coreStub{}}
+	if _, _, err := sb.callTool(context.Background(), e2eclient.EndpointExec, "run_command", nil); err == nil {
+		t.Fatal("a missing dialer must fail rather than silently doing nothing")
 	}
 }
 
 // With a roster, core must be out of the path entirely — that absence is the
 // whole point of the ADR.
-func TestSandbox_KnownEndpointBypassesCore(t *testing.T) {
-	relay := &relayRecorder{}
+func TestSandbox_KnownEndpointDialsDirectly(t *testing.T) {
 	dialer := &fakeDialer{known: map[string]bool{e2eclient.EndpointExec: true}}
-	sb := sandbox{core: relay, e2e: dialer}
+	sb := sandbox{core: coreStub{}, e2e: dialer}
 
 	out, _, err := sb.callTool(context.Background(), e2eclient.EndpointExec, "run_command", map[string]any{"command": "true"})
 	if err != nil {
 		t.Fatalf("callTool: %v", err)
-	}
-	if relay.calls != 0 {
-		t.Errorf("relay calls = %d, want 0 — a known endpoint must not touch core", relay.calls)
 	}
 	if len(dialer.calls) != 1 || dialer.calls[0] != "exec/run_command" {
 		t.Errorf("direct calls = %v, want one exec/run_command", dialer.calls)
@@ -127,7 +109,7 @@ func TestSandbox_RoutesPlaywrightToItsOwnEndpoint(t *testing.T) {
 		e2eclient.EndpointExec:       true,
 		e2eclient.EndpointPlaywright: true,
 	}}
-	sb := sandbox{core: &relayRecorder{}, e2e: dialer}
+	sb := sandbox{core: coreStub{}, e2e: dialer}
 
 	if _, _, err := sb.callTool(context.Background(), e2eclient.EndpointPlaywright, "browser_navigate", nil); err != nil {
 		t.Fatalf("callTool: %v", err)
@@ -142,7 +124,7 @@ func TestSandbox_RoutesPlaywrightToItsOwnEndpoint(t *testing.T) {
 // address without restarting the pod.
 func TestSandbox_RefreshRosterAdoptsProvisionResponse(t *testing.T) {
 	dialer := &fakeDialer{}
-	sb := sandbox{core: &relayRecorder{}, e2e: dialer}
+	sb := sandbox{core: coreStub{}, e2e: dialer}
 
 	sb.refreshRoster(&agentfleetv1.RequestE2EEnvResponse{
 		Endpoints: []*agentfleetv1.ServiceEndpoint{
@@ -159,12 +141,13 @@ func TestSandbox_RefreshRosterAdoptsProvisionResponse(t *testing.T) {
 }
 
 // A response with no endpoints (an older provisioner) must not wipe a roster
-// the sidecar already has. Downgrading to empty here would silently send a
-// working session back to the relay — and after the relay is deleted, break
-// it outright.
+// the sidecar already has. With the relay deleted, downgrading to empty here
+// would take a working session straight to "no exec endpoint" on its next
+// command — the roster is the only path now, so losing it is fatal rather
+// than merely slower.
 func TestSandbox_RefreshRosterIgnoresEmptyResponse(t *testing.T) {
 	dialer := &fakeDialer{known: map[string]bool{e2eclient.EndpointExec: true}}
-	sb := sandbox{core: &relayRecorder{}, e2e: dialer}
+	sb := sandbox{core: coreStub{}, e2e: dialer}
 
 	sb.refreshRoster(&agentfleetv1.RequestE2EEnvResponse{})
 
@@ -184,9 +167,10 @@ func TestE2eClient_SetEndpointsIgnoresEmpty(t *testing.T) {
 	}
 }
 
-// A malformed FLEET_ENDPOINTS degrades to the relay rather than killing the
-// pod — a sidecar that cannot run commands at all is a worse outcome than one
-// taking the old path.
+// A malformed FLEET_ENDPOINTS must not kill the sidecar at startup: the pod
+// still has to come up so the human can see the error and the agent can use
+// every non-sandbox tool. The failure surfaces per run_command instead, naming
+// the variable — a legible tool error beats a CrashLoopBackOff.
 func TestParseEndpoints_BadInputIsNotFatal(t *testing.T) {
 	for _, raw := range []string{"", "not json", "{}", "[{]"} {
 		if got := e2eclient.ParseEndpoints(raw); len(got) != 0 {
@@ -226,20 +210,19 @@ func TestKillEnv_DropsCachedClients(t *testing.T) {
 	}
 }
 
-// A failed direct call must surface the error rather than silently retrying
-// through core: falling back on *failure* would mask a broken sandbox behind a
-// path that is about to be deleted, and hide exactly the breakage the
-// cut-over needs to be visible.
-func TestSandbox_DirectFailureDoesNotSilentlyRelay(t *testing.T) {
-	relay := &relayRecorder{}
+// A failed direct call surfaces its error. There is nothing left to fall back
+// to, which is the point: a broken sandbox now looks broken instead of being
+// masked by a second path.
+func TestSandbox_DirectFailureSurfaces(t *testing.T) {
 	dialer := &fakeDialer{known: map[string]bool{e2eclient.EndpointExec: true}, err: errors.New("connection refused")}
-	sb := sandbox{core: relay, e2e: dialer}
+	sb := sandbox{core: coreStub{}, e2e: dialer}
 
-	if _, _, err := sb.callTool(context.Background(), e2eclient.EndpointExec, "run_command", nil); err == nil {
+	_, _, err := sb.callTool(context.Background(), e2eclient.EndpointExec, "run_command", nil)
+	if err == nil {
 		t.Fatal("a failed direct call must return its error")
 	}
-	if relay.calls != 0 {
-		t.Errorf("relay calls = %d, want 0 — the fallback is for an ABSENT roster, not a failed dial", relay.calls)
+	if !strings.Contains(err.Error(), "connection refused") {
+		t.Errorf("error %q should carry the underlying cause", err)
 	}
 }
 

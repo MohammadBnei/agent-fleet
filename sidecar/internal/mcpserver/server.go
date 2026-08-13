@@ -1,8 +1,9 @@
 // Package mcpserver hosts the sidecar's local (localhost-only) MCP server —
 // the Agent SDK session's mcpServers config points here, never at core
-// directly (docs/adr/0020/0021: MCP is purely local, gRPC is the only
-// inter-pod protocol). Every tool here proxies onward to core over the
-// sidecar's one outbound gRPC connection. Tool contracts are preserved
+// directly. Most tools proxy onward to core over the sidecar's one outbound
+// gRPC connection; the sandbox tools do not, and dial this task's own e2e pod
+// over MCP instead (docs/adr/0045, superseding docs/adr/0020 point 6's
+// MCP-is-purely-local rule). Tool contracts are preserved
 // verbatim from core/internal/coreserver's old fleet-core mcpserver and
 // provisioner's old per-task mcpserver — just without a taskId parameter,
 // since one sidecar only ever serves the one task its pod was created for.
@@ -478,7 +479,6 @@ const runCommandToolName = "run_command"
 // already use in this package, so the retry logic is unit-testable without
 // bufconn.
 type e2eRunner interface {
-	CallE2eTool(ctx context.Context, toolName, argumentsJSON string) (resultJSON string, isError bool, err error)
 	RequestE2eEnv(ctx context.Context, startCmd, profile string) (*agentfleetv1.RequestE2EEnvResponse, error)
 }
 
@@ -491,40 +491,29 @@ type directDialer interface {
 	DropAll()
 }
 
-// sandbox routes one tool call to this task's sandbox: directly when the
-// roster knows the endpoint, through core's relay when it does not
-// (docs/adr/0045).
+// sandbox routes one tool call to this task's sandbox (docs/adr/0045).
 //
-// The fallback is not politeness — it is the deploy-skew contract. core, the
-// provisioner and the worker image ship as separate ArgoCD Applications, so a
-// sidecar carrying this code WILL meet a provisioner too old to send a roster
-// on some rolling deploy. Without the fallback that combination breaks every
-// run_command in the fleet, and the same hazard is already documented one
-// function up for the pre-adr/0044 registration race.
-//
-// It disappears with the relay itself, once the fleet has drained of pods
-// running a sidecar older than the roster.
+// There is no relay to fall back to any more: core's ListE2eTools/CallE2eTool
+// are gone, and the roster is delivered before a sandbox can even exist —
+// injected as FLEET_ENDPOINTS at pod creation, because the address is derived
+// from names rather than read off a live object. An empty roster now means a
+// genuine misconfiguration, and the error says so instead of quietly taking a
+// second path that no longer exists.
 type sandbox struct {
 	core e2eRunner
 	e2e  directDialer
 }
 
 func (sb sandbox) callTool(ctx context.Context, endpointName, toolName string, args map[string]any) (resultJSON string, isError bool, err error) {
-	if sb.e2e != nil && sb.e2e.Has(endpointName) {
-		return sb.e2e.CallTool(ctx, endpointName, toolName, args)
+	if sb.e2e == nil {
+		return "", false, fmt.Errorf("run_command: no sandbox dialer configured on this sidecar")
 	}
-	argsJSON, err := json.Marshal(args)
-	if err != nil {
-		return "", false, fmt.Errorf("marshal tool arguments: %w", err)
+	if !sb.e2e.Has(endpointName) {
+		return "", false, fmt.Errorf("run_command: no %q endpoint in this task's roster — FLEET_ENDPOINTS was empty or malformed at sidecar startup", endpointName)
 	}
-	slog.Debug("mcp: no roster for endpoint, relaying through core", "endpoint", endpointName, "tool", toolName)
-	return sb.core.CallE2eTool(ctx, toolName, string(argsJSON))
+	return sb.e2e.CallTool(ctx, endpointName, toolName, args)
 }
 
-// refreshRoster keeps the roster current from every provision response. The
-// address can legitimately change under a running pod (a namespace move, a
-// port change), and a sidecar that only ever read its startup env would keep
-// dialing the old one.
 func (sb sandbox) refreshRoster(env *agentfleetv1.RequestE2EEnvResponse) {
 	if sb.e2e == nil || env == nil {
 		return

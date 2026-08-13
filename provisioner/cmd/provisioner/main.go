@@ -20,7 +20,6 @@ import (
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/git"
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/grpcserver"
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/k8s"
-	"github.com/MohammadBnei/agent-fleet/provisioner/internal/mcpproxy"
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/reconcile"
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/sweep"
 )
@@ -80,10 +79,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	proxy := mcpproxy.New(
-		func(taskID string) string { return k8s.PlaywrightURLFor(cfg.Namespace, taskID) },
-		func(taskID string) string { return k8s.ExecURLFor(cfg.Namespace, taskID) },
-	)
 	gitMgr := git.NewManager(cfg.WorktreesRoot)
 	if err := gitMgr.ConfigureAuth(ctx); err != nil {
 		slog.Error("git auth configuration failed", "error", err)
@@ -102,7 +97,7 @@ func main() {
 	httpServer := &http.Server{Addr: ":" + cfg.Port, Handler: mux}
 
 	grpcSrv := grpc.NewServer(grpc.UnaryInterceptor(grpcserver.AccessLogInterceptor))
-	agentfleetv1.RegisterProvisionerServiceServer(grpcSrv, grpcserver.New(k8sc, gitMgr, proxy, core, cfg.E2eHost, cfg.FleetSharedRepoURL, cfg.FleetSharedBranch, cfg.ClaudeHomeDir))
+	agentfleetv1.RegisterProvisionerServiceServer(grpcSrv, grpcserver.New(k8sc, gitMgr, core, cfg.E2eHost, cfg.FleetSharedRepoURL, cfg.FleetSharedBranch, cfg.ClaudeHomeDir))
 
 	reconcileInterval, _ := strconv.Atoi(cfg.ReconcileInterval)
 	sharedInstanceIdleTimeout, _ := strconv.Atoi(cfg.SharedInstanceIdleTimeoutMs)

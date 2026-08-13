@@ -9,7 +9,6 @@ package grpcserver
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"time"
@@ -21,7 +20,6 @@ import (
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/catalog"
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/git"
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/k8s"
-	"github.com/MohammadBnei/agent-fleet/provisioner/internal/mcpproxy"
 )
 
 // EventReporter is the narrow slice of coreclient.Client this server
@@ -35,7 +33,6 @@ type Server struct {
 	agentfleetv1.UnimplementedProvisionerServiceServer
 	k8sc    *k8s.Client
 	git     *git.Manager
-	proxy   *mcpproxy.Proxy
 	core    EventReporter
 	e2eHost string
 	// FleetShared* configure git.Manager.SyncFleetShared's source (docs/adr/
@@ -46,9 +43,9 @@ type Server struct {
 	claudeHomeDir      string
 }
 
-func New(k8sc *k8s.Client, gitMgr *git.Manager, proxy *mcpproxy.Proxy, core EventReporter, e2eHost string, fleetSharedRepoURL, fleetSharedBranch, claudeHomeDir string) *Server {
+func New(k8sc *k8s.Client, gitMgr *git.Manager, core EventReporter, e2eHost string, fleetSharedRepoURL, fleetSharedBranch, claudeHomeDir string) *Server {
 	return &Server{
-		k8sc: k8sc, git: gitMgr, proxy: proxy, core: core, e2eHost: e2eHost,
+		k8sc: k8sc, git: gitMgr, core: core, e2eHost: e2eHost,
 		fleetSharedRepoURL: fleetSharedRepoURL, fleetSharedBranch: fleetSharedBranch, claudeHomeDir: claudeHomeDir,
 	}
 }
@@ -65,7 +62,6 @@ func (s *Server) KillE2ESession(ctx context.Context, req *agentfleetv1.KillE2ESe
 		if err := s.k8sc.DeleteAll(ctx, req.GetTaskId()); err != nil {
 			return nil, err
 		}
-		s.proxy.DropClient(req.GetTaskId())
 		slog.Info("grpcserver KillE2ESession", "taskId", req.GetTaskId())
 		killed = true
 	}
@@ -316,44 +312,6 @@ func e2eStatusFromPhase(phase corev1.PodPhase) string {
 	}
 }
 
-// --- Playwright tool passthrough (docs/adr/0020's third hop) ---
-
-func (s *Server) ListE2ETools(ctx context.Context, req *agentfleetv1.ListE2EToolsRequest) (*agentfleetv1.ListE2EToolsResponse, error) {
-	tools := s.proxy.ProxiedTools(ctx, req.GetTaskId())
-	out := make([]*agentfleetv1.E2EToolDescriptor, len(tools))
-	for i, t := range tools {
-		schemaJSON, err := json.Marshal(t.InputSchema)
-		if err != nil {
-			return nil, fmt.Errorf("marshal input schema for tool %s: %w", t.Name, err)
-		}
-		out[i] = &agentfleetv1.E2EToolDescriptor{
-			Name:            t.Name,
-			Description:     t.Description,
-			InputSchemaJson: string(schemaJSON),
-		}
-	}
-	return &agentfleetv1.ListE2EToolsResponse{Tools: out}, nil
-}
-
-func (s *Server) CallE2ETool(ctx context.Context, req *agentfleetv1.CallE2EToolRequest) (*agentfleetv1.CallE2EToolResponse, error) {
-	var args map[string]any
-	if req.GetArgumentsJson() != "" {
-		if err := json.Unmarshal([]byte(req.GetArgumentsJson()), &args); err != nil {
-			return nil, fmt.Errorf("unmarshal tool arguments: %w", err)
-		}
-	}
-	result, err := s.proxy.CallTool(ctx, req.GetTaskId(), req.GetToolName(), args)
-	if err != nil {
-		return nil, err
-	}
-	slog.Debug("grpcserver CallE2ETool", "taskId", req.GetTaskId(), "tool", req.GetToolName())
-	resultJSON, err := json.Marshal(result)
-	if err != nil {
-		return nil, fmt.Errorf("marshal tool result: %w", err)
-	}
-	return &agentfleetv1.CallE2EToolResponse{ResultJson: string(resultJSON), IsError: result.IsError}, nil
-}
-
 // --- worker pods (new, docs/adr/0019/0020) ---
 
 func (s *Server) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWorkerPodRequest) (*agentfleetv1.CreateWorkerPodResponse, error) {
@@ -457,7 +415,6 @@ func (s *Server) tearDownE2e(ctx context.Context, taskID string) (*agentfleetv1.
 	if err := s.k8sc.DeleteAll(ctx, taskID); err != nil {
 		return nil, err
 	}
-	s.proxy.DropClient(taskID)
 	slog.Info("grpcserver tearDownE2e", "taskId", taskID)
 	return &agentfleetv1.TearDownSessionResponse{TornDown: true}, nil
 }

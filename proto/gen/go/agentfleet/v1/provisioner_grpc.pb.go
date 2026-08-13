@@ -22,8 +22,6 @@ const (
 	ProvisionerService_KillE2ESession_FullMethodName      = "/agentfleet.v1.ProvisionerService/KillE2eSession"
 	ProvisionerService_GetE2ESessionStatus_FullMethodName = "/agentfleet.v1.ProvisionerService/GetE2eSessionStatus"
 	ProvisionerService_CreateE2ESession_FullMethodName    = "/agentfleet.v1.ProvisionerService/CreateE2eSession"
-	ProvisionerService_ListE2ETools_FullMethodName        = "/agentfleet.v1.ProvisionerService/ListE2eTools"
-	ProvisionerService_CallE2ETool_FullMethodName         = "/agentfleet.v1.ProvisionerService/CallE2eTool"
 	ProvisionerService_CreateWorkerPod_FullMethodName     = "/agentfleet.v1.ProvisionerService/CreateWorkerPod"
 	ProvisionerService_TearDownSession_FullMethodName     = "/agentfleet.v1.ProvisionerService/TearDownSession"
 	ProvisionerService_ListWorktrees_FullMethodName       = "/agentfleet.v1.ProvisionerService/ListWorktrees"
@@ -37,20 +35,10 @@ type ProvisionerServiceClient interface {
 	KillE2ESession(ctx context.Context, in *KillE2ESessionRequest, opts ...grpc.CallOption) (*KillE2ESessionResponse, error)
 	GetE2ESessionStatus(ctx context.Context, in *GetE2ESessionStatusRequest, opts ...grpc.CallOption) (*GetE2ESessionStatusResponse, error)
 	CreateE2ESession(ctx context.Context, in *CreateE2ESessionRequest, opts ...grpc.CallOption) (*CreateE2ESessionResponse, error)
-	// Deprecated: Do not use.
-	// Reused by core.proto's own ListE2eTools/CallE2eTool one hop further
-	// down the passthrough chain (see that file's comment).
-	// DEPRECATED (docs/adr/0045) — deleted once every live pod runs a sidecar
-	// that dials the sandbox itself.
-	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
-	ListE2ETools(ctx context.Context, in *ListE2EToolsRequest, opts ...grpc.CallOption) (*ListE2EToolsResponse, error)
-	// Deprecated: Do not use.
-	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
-	CallE2ETool(ctx context.Context, in *CallE2EToolRequest, opts ...grpc.CallOption) (*CallE2EToolResponse, error)
 	CreateWorkerPod(ctx context.Context, in *CreateWorkerPodRequest, opts ...grpc.CallOption) (*CreateWorkerPodResponse, error)
 	TearDownSession(ctx context.Context, in *TearDownSessionRequest, opts ...grpc.CallOption) (*TearDownSessionResponse, error)
 	// Reused as-is by dashboard.proto's own ListWorktrees (identical empty
-	// request shape) — same passthrough pattern as ListE2eTools above.
+	// request shape) — cross-file message reuse, not a call passthrough.
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	ListWorktrees(ctx context.Context, in *ListWorktreesRequest, opts ...grpc.CallOption) (*ListWorktreesResponse, error)
 	// Reused as-is by dashboard.proto's own DeleteWorktree (identical
@@ -91,28 +79,6 @@ func (c *provisionerServiceClient) CreateE2ESession(ctx context.Context, in *Cre
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(CreateE2ESessionResponse)
 	err := c.cc.Invoke(ctx, ProvisionerService_CreateE2ESession_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-// Deprecated: Do not use.
-func (c *provisionerServiceClient) ListE2ETools(ctx context.Context, in *ListE2EToolsRequest, opts ...grpc.CallOption) (*ListE2EToolsResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(ListE2EToolsResponse)
-	err := c.cc.Invoke(ctx, ProvisionerService_ListE2ETools_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-// Deprecated: Do not use.
-func (c *provisionerServiceClient) CallE2ETool(ctx context.Context, in *CallE2EToolRequest, opts ...grpc.CallOption) (*CallE2EToolResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(CallE2EToolResponse)
-	err := c.cc.Invoke(ctx, ProvisionerService_CallE2ETool_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -166,20 +132,10 @@ type ProvisionerServiceServer interface {
 	KillE2ESession(context.Context, *KillE2ESessionRequest) (*KillE2ESessionResponse, error)
 	GetE2ESessionStatus(context.Context, *GetE2ESessionStatusRequest) (*GetE2ESessionStatusResponse, error)
 	CreateE2ESession(context.Context, *CreateE2ESessionRequest) (*CreateE2ESessionResponse, error)
-	// Deprecated: Do not use.
-	// Reused by core.proto's own ListE2eTools/CallE2eTool one hop further
-	// down the passthrough chain (see that file's comment).
-	// DEPRECATED (docs/adr/0045) — deleted once every live pod runs a sidecar
-	// that dials the sandbox itself.
-	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
-	ListE2ETools(context.Context, *ListE2EToolsRequest) (*ListE2EToolsResponse, error)
-	// Deprecated: Do not use.
-	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
-	CallE2ETool(context.Context, *CallE2EToolRequest) (*CallE2EToolResponse, error)
 	CreateWorkerPod(context.Context, *CreateWorkerPodRequest) (*CreateWorkerPodResponse, error)
 	TearDownSession(context.Context, *TearDownSessionRequest) (*TearDownSessionResponse, error)
 	// Reused as-is by dashboard.proto's own ListWorktrees (identical empty
-	// request shape) — same passthrough pattern as ListE2eTools above.
+	// request shape) — cross-file message reuse, not a call passthrough.
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	ListWorktrees(context.Context, *ListWorktreesRequest) (*ListWorktreesResponse, error)
 	// Reused as-is by dashboard.proto's own DeleteWorktree (identical
@@ -204,12 +160,6 @@ func (UnimplementedProvisionerServiceServer) GetE2ESessionStatus(context.Context
 }
 func (UnimplementedProvisionerServiceServer) CreateE2ESession(context.Context, *CreateE2ESessionRequest) (*CreateE2ESessionResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method CreateE2ESession not implemented")
-}
-func (UnimplementedProvisionerServiceServer) ListE2ETools(context.Context, *ListE2EToolsRequest) (*ListE2EToolsResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method ListE2ETools not implemented")
-}
-func (UnimplementedProvisionerServiceServer) CallE2ETool(context.Context, *CallE2EToolRequest) (*CallE2EToolResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method CallE2ETool not implemented")
 }
 func (UnimplementedProvisionerServiceServer) CreateWorkerPod(context.Context, *CreateWorkerPodRequest) (*CreateWorkerPodResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method CreateWorkerPod not implemented")
@@ -294,42 +244,6 @@ func _ProvisionerService_CreateE2ESession_Handler(srv interface{}, ctx context.C
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(ProvisionerServiceServer).CreateE2ESession(ctx, req.(*CreateE2ESessionRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _ProvisionerService_ListE2ETools_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ListE2EToolsRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(ProvisionerServiceServer).ListE2ETools(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: ProvisionerService_ListE2ETools_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ProvisionerServiceServer).ListE2ETools(ctx, req.(*ListE2EToolsRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _ProvisionerService_CallE2ETool_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(CallE2EToolRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(ProvisionerServiceServer).CallE2ETool(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: ProvisionerService_CallE2ETool_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ProvisionerServiceServer).CallE2ETool(ctx, req.(*CallE2EToolRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -424,14 +338,6 @@ var ProvisionerService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CreateE2eSession",
 			Handler:    _ProvisionerService_CreateE2ESession_Handler,
-		},
-		{
-			MethodName: "ListE2eTools",
-			Handler:    _ProvisionerService_ListE2ETools_Handler,
-		},
-		{
-			MethodName: "CallE2eTool",
-			Handler:    _ProvisionerService_CallE2ETool_Handler,
 		},
 		{
 			MethodName: "CreateWorkerPod",

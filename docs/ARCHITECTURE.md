@@ -123,11 +123,11 @@ request — `discordSafeTypes` deliberately excludes
 
 During implementation, the agent can call `request_e2e_env`/`kill_env` — a
 three-hop proxy (agent → sidecar's local MCP → `core`'s `CoreService` →
-`provisioner`'s `ProvisionerService`) to spin up a live preview pod and
-drive Playwright browser tests against it, per `docs/adr/0012`'s original
-design (RBAC boundary unchanged) as extended by `docs/adr/0020`'s
-hub-and-spoke rule (no direct worker→provisioner path exists anymore, even
-for this). Teardown happens on the task reaching a terminal status
+`provisioner`'s `ProvisionerService`) to spin up a live preview pod, per
+`docs/adr/0012`'s original design (RBAC boundary unchanged) as extended by
+`docs/adr/0020`'s hub-and-spoke rule (no direct worker→provisioner path
+exists anymore, even for this). **Provisioning** still routes that way;
+**tool calls into the pod no longer do** — see below. Teardown happens on the task reaching a terminal status
 (`core`'s opportunistic trigger in `SetTaskStatus`) or an explicit kill
 (`/e2e-kill` from Discord, or the agent's own `kill_env`) — never merely
 because a PR was opened.
@@ -136,8 +136,13 @@ That same pod is the agent's **execution sandbox** (`adr/0039`).
 `run_command` is registered statically on the sidecar, so it exists from the
 session's first turn — including a resumed one — and provisions a pod on
 first use if none is live, meaning `request_e2e_env` is not a prerequisite
-for shelling out. It rides the same three-hop proxy and lands in
-`e2e-runner`'s `execmcp` listener. Builds, tests, linters, dependency
+for shelling out. The **call itself goes straight to the sandbox**
+(`docs/adr/0045`): the sidecar dials `e2e-runner`'s `execmcp` listener over
+MCP, using a `ServiceEndpoint` roster injected as `FLEET_ENDPOINTS` at pod
+creation and refreshed from each provision response. Browser tools take the
+same path to the Playwright listener, and `core` dials the same way for its
+own dashboard actions (`RestartE2EApp`/`GetE2EAppLog`). No component relays
+another's tool calls. Builds, tests, linters, dependency
 installs and the dev server belong there; `git`, `gh` and PR creation stay
 on the worker pod's own `Bash`, because the sandbox deliberately has no git
 and no GitHub credentials. That absence is load-bearing: it is why
@@ -158,10 +163,17 @@ profile. Nothing inside the container ends the pod; that belongs to
 and past-max-age sandboxes. Which profile builds the sandbox comes from the
 repo's `e2e_profile` column, with an approval-gated agent override.
 
-**MCP is purely local** (agent ↔ its own pod's sidecar, over `localhost`).
-**gRPC is the only inter-process/inter-pod protocol anywhere in the
-fleet** — there is no direct HTTP MCP surface reachable across a pod
-boundary anymore (`docs/adr/0020` point 6).
+**MCP is local except sandbox tool calls** (`docs/adr/0045`, superseding
+`docs/adr/0020` point 6). The agent still reaches only its own pod's sidecar
+over `localhost`; the sidecar — and `core`, for its two dashboard actions —
+dials that task's sandbox directly. gRPC remains the only protocol *between
+fleet components*, and the provisioner no longer speaks MCP at all (pinned by
+a `buildguard` import test).
+
+Reachability is fenced structurally rather than by convention: the
+provisioner creates a per-task NetworkPolicy alongside each sandbox admitting
+**only that task's own worker** on `:8931`/`:8932`. Verified on Cilium, not
+in `kind`, whose default CNI ignores NetworkPolicy entirely.
 
 ## 3. Permission model
 
@@ -326,8 +338,8 @@ permission tiers instead of a second, fleet-specific gate on top of them
   `[gone]`-ref detection) plus a manual "Worktrees" dashboard view for
   anything the sweep can't reach (e.g. a branch never pushed)
   (`adr/0023`).
-- On-demand e2e test environments during implementation, three-hop
-  proxied through `core` (§2) — see
+- On-demand e2e test environments during implementation — provisioning
+  proxied through `core`, tool calls dialed directly (§2) — see
   [`adr/0012`](adr/0012-e2e-provisioner-standalone-app.md). CPU-only for
   now; GPU-accelerated Chromium is a deferred fast-follow.
 - **`run_command` — a shell in that same pod, used as the agent's build/test

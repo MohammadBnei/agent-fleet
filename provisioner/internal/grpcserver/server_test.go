@@ -18,7 +18,6 @@ import (
 
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/git"
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/k8s"
-	"github.com/MohammadBnei/agent-fleet/provisioner/internal/mcpproxy"
 )
 
 func newFakeK8sClient() *k8s.Client {
@@ -79,9 +78,8 @@ func newTestServer(t *testing.T) (*Server, *k8s.Client, *fakeEventReporter) {
 	t.Helper()
 	k8sc := newFakeK8sClient()
 	gitMgr := git.NewManager(t.TempDir())
-	proxy := mcpproxy.New(func(taskID string) string { return "" }, func(taskID string) string { return "" })
 	reporter := &fakeEventReporter{}
-	return New(k8sc, gitMgr, proxy, reporter, "e2e.bnei.dev", "", "", ""), k8sc, reporter
+	return New(k8sc, gitMgr, reporter, "e2e.bnei.dev", "", "", ""), k8sc, reporter
 }
 
 func TestKillE2ESession_NoActiveSession(t *testing.T) {
@@ -252,7 +250,6 @@ func TestCreateWorkerPod_ClonesAndCreatesPod(t *testing.T) {
 func TestCreateWorkerPod_SyncsFleetShared(t *testing.T) {
 	k8sc := newFakeK8sClient()
 	gitMgr := git.NewManager(t.TempDir())
-	proxy := mcpproxy.New(func(taskID string) string { return "" }, func(taskID string) string { return "" })
 	reporter := &fakeEventReporter{}
 	claudeHome := filepath.Join(t.TempDir(), "claude-home")
 
@@ -280,7 +277,7 @@ func TestCreateWorkerPod_SyncsFleetShared(t *testing.T) {
 	run("add", ".")
 	run("commit", "-m", "init")
 
-	s := New(k8sc, gitMgr, proxy, reporter, "e2e.bnei.dev", fleetSharedOrigin, "main", claudeHome)
+	s := New(k8sc, gitMgr, reporter, "e2e.bnei.dev", fleetSharedOrigin, "main", claudeHome)
 	ctx := context.Background()
 	origin := newTestOriginRepo(t)
 

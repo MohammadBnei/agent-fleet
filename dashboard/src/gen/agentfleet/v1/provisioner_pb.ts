@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file agentfleet/v1/provisioner.proto.
  */
 export const file_agentfleet_v1_provisioner: GenFile = /*@__PURE__*/
-  fileDesc("Ch9hZ2VudGZsZWV0L3YxL3Byb3Zpc2lvbmVyLnByb3RvEg1hZ2VudGZsZWV0LnYxIk4KEVNlcnZpY2VJbmdyZWRpZW50EgsKA2tleRgBIAEoCRIsCgpzY29wZV9tb2RlGAIgASgOMhguYWdlbnRmbGVldC52MS5TY29wZU1vZGUibwoVS2lsbEUyZVNlc3Npb25SZXF1ZXN0Eg8KB3Rhc2tfaWQYASABKAkSFwoPaWRlbXBvdGVuY3lfa2V5GAIgASgJEgwKBHJlcG8YAyABKAkSHgoWYWxzb190ZWFyZG93bl9zZXJ2aWNlcxgEIAEoCCJEChZLaWxsRTJlU2Vzc2lvblJlc3BvbnNlEg4KBmtpbGxlZBgBIAEoCBIaChJzZXJ2aWNlc190b3JuX2Rvd24YAiADKAkiLQoaR2V0RTJlU2Vzc2lvblN0YXR1c1JlcXVlc3QSDwoHdGFza19pZBgBIAEoCSLtAQobR2V0RTJlU2Vzc2lvblN0YXR1c1Jlc3BvbnNlEg4KBnN0YXR1cxgBIAEoCRITCgtwcmV2aWV3X3VybBgCIAEoCRIRCglzdGFydF9jbWQYAyABKAkSEQoJcG9kX3BoYXNlGAQgASgJEhEKCWFwcF9yZWFkeRgFIAEoCBIQCghyZXN0YXJ0cxgGIAEoBRISCgpzdGFydGVkX2F0GAcgASgJEhcKD2NvZGVfc2VydmVyX3VybBgIIAEoCRIxCgllbmRwb2ludHMYCSADKAsyHi5hZ2VudGZsZWV0LnYxLlNlcnZpY2VFbmRwb2ludCJfCg9TZXJ2aWNlRW5kcG9pbnQSDAoEbmFtZRgBIAEoCRIPCgdhZGRyZXNzGAIgASgJEhAKCHByb3RvY29sGAMgASgJEgwKBHBhdGgYBCABKAkSDQoFdG9rZW4YBSABKAkinQEKF0NyZWF0ZUUyZVNlc3Npb25SZXF1ZXN0Eg8KB3Rhc2tfaWQYASABKAkSDAoEcmVwbxgCIAEoCRIRCglzdGFydF9jbWQYAyABKAkSEQoJdG9vbF9rZXlzGAQgAygJEj0KE3NlcnZpY2VfaW5ncmVkaWVudHMYBSADKAsyIC5hZ2VudGZsZWV0LnYxLlNlcnZpY2VJbmdyZWRpZW50InIKGENyZWF0ZUUyZVNlc3Npb25SZXNwb25zZRIOCgZzdGF0dXMYASABKAkSEwoLcHJldmlld191cmwYAiABKAkSMQoJZW5kcG9pbnRzGAMgAygLMh4uYWdlbnRmbGVldC52MS5TZXJ2aWNlRW5kcG9pbnQinQIKFkNyZWF0ZVdvcmtlclBvZFJlcXVlc3QSDwoHdGFza19pZBgBIAEoCRIMCgRyZXBvGAIgASgJEhAKCHJlcG9fdXJsGAMgASgJEhMKC2Jhc2VfYnJhbmNoGAQgASgJEhMKC2Rlc2NyaXB0aW9uGAUgASgJEhAKCGxlYXNlX2lkGAYgASgJEhkKEXJlc3VtZV9zZXNzaW9uX2lkGAcgASgJEhcKD3Jlc3VtZV9mcm9tX3NlcRgIIAEoAxIQCghndWlkYW5jZRgJIAEoCRIRCgl0b29sX2tleXMYCiADKAkSPQoTc2VydmljZV9pbmdyZWRpZW50cxgLIAMoCzIgLmFnZW50ZmxlZXQudjEuU2VydmljZUluZ3JlZGllbnQiKwoXQ3JlYXRlV29ya2VyUG9kUmVzcG9uc2USEAoIcG9kX25hbWUYASABKAkiUwoWVGVhckRvd25TZXNzaW9uUmVxdWVzdBIPCgd0YXNrX2lkGAEgASgJEigKBGtpbmQYAiABKA4yGi5hZ2VudGZsZWV0LnYxLlNlc3Npb25LaW5kIiwKF1RlYXJEb3duU2Vzc2lvblJlc3BvbnNlEhEKCXRvcm5fZG93bhgBIAEoCCImChNMaXN0RTJlVG9vbHNSZXF1ZXN0Eg8KB3Rhc2tfaWQYASABKAkiUQoRRTJlVG9vbERlc2NyaXB0b3ISDAoEbmFtZRgBIAEoCRITCgtkZXNjcmlwdGlvbhgCIAEoCRIZChFpbnB1dF9zY2hlbWFfanNvbhgDIAEoCSJHChRMaXN0RTJlVG9vbHNSZXNwb25zZRIvCgV0b29scxgBIAMoCzIgLmFnZW50ZmxlZXQudjEuRTJlVG9vbERlc2NyaXB0b3IiUAoSQ2FsbEUyZVRvb2xSZXF1ZXN0Eg8KB3Rhc2tfaWQYASABKAkSEQoJdG9vbF9uYW1lGAIgASgJEhYKDmFyZ3VtZW50c19qc29uGAMgASgJIjwKE0NhbGxFMmVUb29sUmVzcG9uc2USEwoLcmVzdWx0X2pzb24YASABKAkSEAoIaXNfZXJyb3IYAiABKAgiFgoUTGlzdFdvcmt0cmVlc1JlcXVlc3QioAEKDFdvcmt0cmVlSW5mbxIPCgd0YXNrX2lkGAEgASgJEgwKBHJlcG8YAiABKAkSDgoGYnJhbmNoGAMgASgJEhYKDnVwc3RyZWFtX3RyYWNrGAQgASgJEhIKCm10aW1lX3VuaXgYBSABKAMSDAoEcGF0aBgGIAEoCRITCgtkaXJ0eV9maWxlcxgHIAEoBRISCgpzaXplX2J5dGVzGAggASgDIngKFUxpc3RXb3JrdHJlZXNSZXNwb25zZRIuCgl3b3JrdHJlZXMYASADKAsyGy5hZ2VudGZsZWV0LnYxLldvcmt0cmVlSW5mbxIXCg9wdmNfdG90YWxfYnl0ZXMYAiABKAQSFgoOcHZjX2ZyZWVfYnl0ZXMYAyABKAQiUgoVRGVsZXRlV29ya3RyZWVSZXF1ZXN0Eg8KB3Rhc2tfaWQYASABKAkSDAoEcmVwbxgCIAEoCRIaChJhbHNvX2RlbGV0ZV9icmFuY2gYAyABKAgiKQoWRGVsZXRlV29ya3RyZWVSZXNwb25zZRIPCgdkZWxldGVkGAEgASgIKnoKCVNjb3BlTW9kZRIaChZTQ09QRV9NT0RFX1VOU1BFQ0lGSUVEEAASGQoVU0NPUEVfTU9ERV9QT0RfU0NPUEVEEAESGgoWU0NPUEVfTU9ERV9UQVNLX1NDT1BFRBACEhoKFlNDT1BFX01PREVfUkVQT19TQ09QRUQQAypaCgtTZXNzaW9uS2luZBIcChhTRVNTSU9OX0tJTkRfVU5TUEVDSUZJRUQQABIXChNTRVNTSU9OX0tJTkRfV09SS0VSEAESFAoQU0VTU0lPTl9LSU5EX0UyRRACMv4GChJQcm92aXNpb25lclNlcnZpY2USXQoOS2lsbEUyZVNlc3Npb24SJC5hZ2VudGZsZWV0LnYxLktpbGxFMmVTZXNzaW9uUmVxdWVzdBolLmFnZW50ZmxlZXQudjEuS2lsbEUyZVNlc3Npb25SZXNwb25zZRJsChNHZXRFMmVTZXNzaW9uU3RhdHVzEikuYWdlbnRmbGVldC52MS5HZXRFMmVTZXNzaW9uU3RhdHVzUmVxdWVzdBoqLmFnZW50ZmxlZXQudjEuR2V0RTJlU2Vzc2lvblN0YXR1c1Jlc3BvbnNlEmMKEENyZWF0ZUUyZVNlc3Npb24SJi5hZ2VudGZsZWV0LnYxLkNyZWF0ZUUyZVNlc3Npb25SZXF1ZXN0GicuYWdlbnRmbGVldC52MS5DcmVhdGVFMmVTZXNzaW9uUmVzcG9uc2USXAoMTGlzdEUyZVRvb2xzEiIuYWdlbnRmbGVldC52MS5MaXN0RTJlVG9vbHNSZXF1ZXN0GiMuYWdlbnRmbGVldC52MS5MaXN0RTJlVG9vbHNSZXNwb25zZSIDiAIBElkKC0NhbGxFMmVUb29sEiEuYWdlbnRmbGVldC52MS5DYWxsRTJlVG9vbFJlcXVlc3QaIi5hZ2VudGZsZWV0LnYxLkNhbGxFMmVUb29sUmVzcG9uc2UiA4gCARJgCg9DcmVhdGVXb3JrZXJQb2QSJS5hZ2VudGZsZWV0LnYxLkNyZWF0ZVdvcmtlclBvZFJlcXVlc3QaJi5hZ2VudGZsZWV0LnYxLkNyZWF0ZVdvcmtlclBvZFJlc3BvbnNlEmAKD1RlYXJEb3duU2Vzc2lvbhIlLmFnZW50ZmxlZXQudjEuVGVhckRvd25TZXNzaW9uUmVxdWVzdBomLmFnZW50ZmxlZXQudjEuVGVhckRvd25TZXNzaW9uUmVzcG9uc2USWgoNTGlzdFdvcmt0cmVlcxIjLmFnZW50ZmxlZXQudjEuTGlzdFdvcmt0cmVlc1JlcXVlc3QaJC5hZ2VudGZsZWV0LnYxLkxpc3RXb3JrdHJlZXNSZXNwb25zZRJdCg5EZWxldGVXb3JrdHJlZRIkLmFnZW50ZmxlZXQudjEuRGVsZXRlV29ya3RyZWVSZXF1ZXN0GiUuYWdlbnRmbGVldC52MS5EZWxldGVXb3JrdHJlZVJlc3BvbnNlQk1aS2dpdGh1Yi5jb20vTW9oYW1tYWRCbmVpL2FnZW50LWZsZWV0L3Byb3RvL2dlbi9nby9hZ2VudGZsZWV0L3YxO2FnZW50ZmxlZXR2MWIGcHJvdG8z");
+  fileDesc("Ch9hZ2VudGZsZWV0L3YxL3Byb3Zpc2lvbmVyLnByb3RvEg1hZ2VudGZsZWV0LnYxIk4KEVNlcnZpY2VJbmdyZWRpZW50EgsKA2tleRgBIAEoCRIsCgpzY29wZV9tb2RlGAIgASgOMhguYWdlbnRmbGVldC52MS5TY29wZU1vZGUibwoVS2lsbEUyZVNlc3Npb25SZXF1ZXN0Eg8KB3Rhc2tfaWQYASABKAkSFwoPaWRlbXBvdGVuY3lfa2V5GAIgASgJEgwKBHJlcG8YAyABKAkSHgoWYWxzb190ZWFyZG93bl9zZXJ2aWNlcxgEIAEoCCJEChZLaWxsRTJlU2Vzc2lvblJlc3BvbnNlEg4KBmtpbGxlZBgBIAEoCBIaChJzZXJ2aWNlc190b3JuX2Rvd24YAiADKAkiLQoaR2V0RTJlU2Vzc2lvblN0YXR1c1JlcXVlc3QSDwoHdGFza19pZBgBIAEoCSLtAQobR2V0RTJlU2Vzc2lvblN0YXR1c1Jlc3BvbnNlEg4KBnN0YXR1cxgBIAEoCRITCgtwcmV2aWV3X3VybBgCIAEoCRIRCglzdGFydF9jbWQYAyABKAkSEQoJcG9kX3BoYXNlGAQgASgJEhEKCWFwcF9yZWFkeRgFIAEoCBIQCghyZXN0YXJ0cxgGIAEoBRISCgpzdGFydGVkX2F0GAcgASgJEhcKD2NvZGVfc2VydmVyX3VybBgIIAEoCRIxCgllbmRwb2ludHMYCSADKAsyHi5hZ2VudGZsZWV0LnYxLlNlcnZpY2VFbmRwb2ludCJfCg9TZXJ2aWNlRW5kcG9pbnQSDAoEbmFtZRgBIAEoCRIPCgdhZGRyZXNzGAIgASgJEhAKCHByb3RvY29sGAMgASgJEgwKBHBhdGgYBCABKAkSDQoFdG9rZW4YBSABKAkinQEKF0NyZWF0ZUUyZVNlc3Npb25SZXF1ZXN0Eg8KB3Rhc2tfaWQYASABKAkSDAoEcmVwbxgCIAEoCRIRCglzdGFydF9jbWQYAyABKAkSEQoJdG9vbF9rZXlzGAQgAygJEj0KE3NlcnZpY2VfaW5ncmVkaWVudHMYBSADKAsyIC5hZ2VudGZsZWV0LnYxLlNlcnZpY2VJbmdyZWRpZW50InIKGENyZWF0ZUUyZVNlc3Npb25SZXNwb25zZRIOCgZzdGF0dXMYASABKAkSEwoLcHJldmlld191cmwYAiABKAkSMQoJZW5kcG9pbnRzGAMgAygLMh4uYWdlbnRmbGVldC52MS5TZXJ2aWNlRW5kcG9pbnQinQIKFkNyZWF0ZVdvcmtlclBvZFJlcXVlc3QSDwoHdGFza19pZBgBIAEoCRIMCgRyZXBvGAIgASgJEhAKCHJlcG9fdXJsGAMgASgJEhMKC2Jhc2VfYnJhbmNoGAQgASgJEhMKC2Rlc2NyaXB0aW9uGAUgASgJEhAKCGxlYXNlX2lkGAYgASgJEhkKEXJlc3VtZV9zZXNzaW9uX2lkGAcgASgJEhcKD3Jlc3VtZV9mcm9tX3NlcRgIIAEoAxIQCghndWlkYW5jZRgJIAEoCRIRCgl0b29sX2tleXMYCiADKAkSPQoTc2VydmljZV9pbmdyZWRpZW50cxgLIAMoCzIgLmFnZW50ZmxlZXQudjEuU2VydmljZUluZ3JlZGllbnQiKwoXQ3JlYXRlV29ya2VyUG9kUmVzcG9uc2USEAoIcG9kX25hbWUYASABKAkiUwoWVGVhckRvd25TZXNzaW9uUmVxdWVzdBIPCgd0YXNrX2lkGAEgASgJEigKBGtpbmQYAiABKA4yGi5hZ2VudGZsZWV0LnYxLlNlc3Npb25LaW5kIiwKF1RlYXJEb3duU2Vzc2lvblJlc3BvbnNlEhEKCXRvcm5fZG93bhgBIAEoCCIWChRMaXN0V29ya3RyZWVzUmVxdWVzdCKgAQoMV29ya3RyZWVJbmZvEg8KB3Rhc2tfaWQYASABKAkSDAoEcmVwbxgCIAEoCRIOCgZicmFuY2gYAyABKAkSFgoOdXBzdHJlYW1fdHJhY2sYBCABKAkSEgoKbXRpbWVfdW5peBgFIAEoAxIMCgRwYXRoGAYgASgJEhMKC2RpcnR5X2ZpbGVzGAcgASgFEhIKCnNpemVfYnl0ZXMYCCABKAMieAoVTGlzdFdvcmt0cmVlc1Jlc3BvbnNlEi4KCXdvcmt0cmVlcxgBIAMoCzIbLmFnZW50ZmxlZXQudjEuV29ya3RyZWVJbmZvEhcKD3B2Y190b3RhbF9ieXRlcxgCIAEoBBIWCg5wdmNfZnJlZV9ieXRlcxgDIAEoBCJSChVEZWxldGVXb3JrdHJlZVJlcXVlc3QSDwoHdGFza19pZBgBIAEoCRIMCgRyZXBvGAIgASgJEhoKEmFsc29fZGVsZXRlX2JyYW5jaBgDIAEoCCIpChZEZWxldGVXb3JrdHJlZVJlc3BvbnNlEg8KB2RlbGV0ZWQYASABKAgqegoJU2NvcGVNb2RlEhoKFlNDT1BFX01PREVfVU5TUEVDSUZJRUQQABIZChVTQ09QRV9NT0RFX1BPRF9TQ09QRUQQARIaChZTQ09QRV9NT0RFX1RBU0tfU0NPUEVEEAISGgoWU0NPUEVfTU9ERV9SRVBPX1NDT1BFRBADKloKC1Nlc3Npb25LaW5kEhwKGFNFU1NJT05fS0lORF9VTlNQRUNJRklFRBAAEhcKE1NFU1NJT05fS0lORF9XT1JLRVIQARIUChBTRVNTSU9OX0tJTkRfRTJFEAIyxQUKElByb3Zpc2lvbmVyU2VydmljZRJdCg5LaWxsRTJlU2Vzc2lvbhIkLmFnZW50ZmxlZXQudjEuS2lsbEUyZVNlc3Npb25SZXF1ZXN0GiUuYWdlbnRmbGVldC52MS5LaWxsRTJlU2Vzc2lvblJlc3BvbnNlEmwKE0dldEUyZVNlc3Npb25TdGF0dXMSKS5hZ2VudGZsZWV0LnYxLkdldEUyZVNlc3Npb25TdGF0dXNSZXF1ZXN0GiouYWdlbnRmbGVldC52MS5HZXRFMmVTZXNzaW9uU3RhdHVzUmVzcG9uc2USYwoQQ3JlYXRlRTJlU2Vzc2lvbhImLmFnZW50ZmxlZXQudjEuQ3JlYXRlRTJlU2Vzc2lvblJlcXVlc3QaJy5hZ2VudGZsZWV0LnYxLkNyZWF0ZUUyZVNlc3Npb25SZXNwb25zZRJgCg9DcmVhdGVXb3JrZXJQb2QSJS5hZ2VudGZsZWV0LnYxLkNyZWF0ZVdvcmtlclBvZFJlcXVlc3QaJi5hZ2VudGZsZWV0LnYxLkNyZWF0ZVdvcmtlclBvZFJlc3BvbnNlEmAKD1RlYXJEb3duU2Vzc2lvbhIlLmFnZW50ZmxlZXQudjEuVGVhckRvd25TZXNzaW9uUmVxdWVzdBomLmFnZW50ZmxlZXQudjEuVGVhckRvd25TZXNzaW9uUmVzcG9uc2USWgoNTGlzdFdvcmt0cmVlcxIjLmFnZW50ZmxlZXQudjEuTGlzdFdvcmt0cmVlc1JlcXVlc3QaJC5hZ2VudGZsZWV0LnYxLkxpc3RXb3JrdHJlZXNSZXNwb25zZRJdCg5EZWxldGVXb3JrdHJlZRIkLmFnZW50ZmxlZXQudjEuRGVsZXRlV29ya3RyZWVSZXF1ZXN0GiUuYWdlbnRmbGVldC52MS5EZWxldGVXb3JrdHJlZVJlc3BvbnNlQk1aS2dpdGh1Yi5jb20vTW9oYW1tYWRCbmVpL2FnZW50LWZsZWV0L3Byb3RvL2dlbi9nby9hZ2VudGZsZWV0L3YxO2FnZW50ZmxlZXR2MWIGcHJvdG8z");
 
 /**
  * @generated from message agentfleet.v1.ServiceIngredient
@@ -524,127 +524,6 @@ export const TearDownSessionResponseSchema: GenMessage<TearDownSessionResponse> 
   messageDesc(file_agentfleet_v1_provisioner, 11);
 
 /**
- * DEPRECATED (docs/adr/0045) — the sidecar dials the sandbox directly from
- * a ServiceEndpoint roster now, and these are deleted once every live pod
- * runs a sidecar that does. Do not add callers.
- *
- * ADR-0020 accepted the extra hop for consistency and left a revisit
- * trigger ("if that hop proves materially slow"). It was measured twice and
- * the trigger never fired: the fleet's entire overhead around a tool call is
- * ~1ms. These go for coupling, not speed — a passthrough on core costs a
- * proto pair and a handler per service, and routes a shell command through
- * the fleet's Postgres-credential holder for no reason involving credentials.
- *
- * @generated from message agentfleet.v1.ListE2eToolsRequest
- */
-export type ListE2eToolsRequest = Message<"agentfleet.v1.ListE2eToolsRequest"> & {
-  /**
-   * @generated from field: string task_id = 1;
-   */
-  taskId: string;
-};
-
-/**
- * Describes the message agentfleet.v1.ListE2eToolsRequest.
- * Use `create(ListE2eToolsRequestSchema)` to create a new message.
- */
-export const ListE2eToolsRequestSchema: GenMessage<ListE2eToolsRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 12);
-
-/**
- * @generated from message agentfleet.v1.E2eToolDescriptor
- */
-export type E2eToolDescriptor = Message<"agentfleet.v1.E2eToolDescriptor"> & {
-  /**
-   * @generated from field: string name = 1;
-   */
-  name: string;
-
-  /**
-   * @generated from field: string description = 2;
-   */
-  description: string;
-
-  /**
-   * @generated from field: string input_schema_json = 3;
-   */
-  inputSchemaJson: string;
-};
-
-/**
- * Describes the message agentfleet.v1.E2eToolDescriptor.
- * Use `create(E2eToolDescriptorSchema)` to create a new message.
- */
-export const E2eToolDescriptorSchema: GenMessage<E2eToolDescriptor> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 13);
-
-/**
- * @generated from message agentfleet.v1.ListE2eToolsResponse
- */
-export type ListE2eToolsResponse = Message<"agentfleet.v1.ListE2eToolsResponse"> & {
-  /**
-   * @generated from field: repeated agentfleet.v1.E2eToolDescriptor tools = 1;
-   */
-  tools: E2eToolDescriptor[];
-};
-
-/**
- * Describes the message agentfleet.v1.ListE2eToolsResponse.
- * Use `create(ListE2eToolsResponseSchema)` to create a new message.
- */
-export const ListE2eToolsResponseSchema: GenMessage<ListE2eToolsResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 14);
-
-/**
- * @generated from message agentfleet.v1.CallE2eToolRequest
- */
-export type CallE2eToolRequest = Message<"agentfleet.v1.CallE2eToolRequest"> & {
-  /**
-   * @generated from field: string task_id = 1;
-   */
-  taskId: string;
-
-  /**
-   * @generated from field: string tool_name = 2;
-   */
-  toolName: string;
-
-  /**
-   * @generated from field: string arguments_json = 3;
-   */
-  argumentsJson: string;
-};
-
-/**
- * Describes the message agentfleet.v1.CallE2eToolRequest.
- * Use `create(CallE2eToolRequestSchema)` to create a new message.
- */
-export const CallE2eToolRequestSchema: GenMessage<CallE2eToolRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 15);
-
-/**
- * @generated from message agentfleet.v1.CallE2eToolResponse
- */
-export type CallE2eToolResponse = Message<"agentfleet.v1.CallE2eToolResponse"> & {
-  /**
-   * @generated from field: string result_json = 1;
-   */
-  resultJson: string;
-
-  /**
-   * @generated from field: bool is_error = 2;
-   */
-  isError: boolean;
-};
-
-/**
- * Describes the message agentfleet.v1.CallE2eToolResponse.
- * Use `create(CallE2eToolResponseSchema)` to create a new message.
- */
-export const CallE2eToolResponseSchema: GenMessage<CallE2eToolResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 16);
-
-/**
  * Worktree/branch lifecycle (reliability-findings.md #2): a task's
  * worktree is no longer deleted as a side effect of TearDownSession (that
  * destroyed never-pushed commits whenever a terminal status was reached
@@ -664,7 +543,7 @@ export type ListWorktreesRequest = Message<"agentfleet.v1.ListWorktreesRequest">
  * Use `create(ListWorktreesRequestSchema)` to create a new message.
  */
 export const ListWorktreesRequestSchema: GenMessage<ListWorktreesRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 17);
+  messageDesc(file_agentfleet_v1_provisioner, 12);
 
 /**
  * @generated from message agentfleet.v1.WorktreeInfo
@@ -724,7 +603,7 @@ export type WorktreeInfo = Message<"agentfleet.v1.WorktreeInfo"> & {
  * Use `create(WorktreeInfoSchema)` to create a new message.
  */
 export const WorktreeInfoSchema: GenMessage<WorktreeInfo> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 18);
+  messageDesc(file_agentfleet_v1_provisioner, 13);
 
 /**
  * @generated from message agentfleet.v1.ListWorktreesResponse
@@ -756,7 +635,7 @@ export type ListWorktreesResponse = Message<"agentfleet.v1.ListWorktreesResponse
  * Use `create(ListWorktreesResponseSchema)` to create a new message.
  */
 export const ListWorktreesResponseSchema: GenMessage<ListWorktreesResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 19);
+  messageDesc(file_agentfleet_v1_provisioner, 14);
 
 /**
  * @generated from message agentfleet.v1.DeleteWorktreeRequest
@@ -783,7 +662,7 @@ export type DeleteWorktreeRequest = Message<"agentfleet.v1.DeleteWorktreeRequest
  * Use `create(DeleteWorktreeRequestSchema)` to create a new message.
  */
 export const DeleteWorktreeRequestSchema: GenMessage<DeleteWorktreeRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 20);
+  messageDesc(file_agentfleet_v1_provisioner, 15);
 
 /**
  * @generated from message agentfleet.v1.DeleteWorktreeResponse
@@ -800,7 +679,7 @@ export type DeleteWorktreeResponse = Message<"agentfleet.v1.DeleteWorktreeRespon
  * Use `create(DeleteWorktreeResponseSchema)` to create a new message.
  */
 export const DeleteWorktreeResponseSchema: GenMessage<DeleteWorktreeResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 21);
+  messageDesc(file_agentfleet_v1_provisioner, 16);
 
 /**
  * How a service ingredient (postgres/redis) is shared across pods/tasks —
@@ -899,32 +778,6 @@ export const ProvisionerService: GenService<{
     output: typeof CreateE2eSessionResponseSchema;
   },
   /**
-   * Reused by core.proto's own ListE2eTools/CallE2eTool one hop further
-   * down the passthrough chain (see that file's comment).
-   * DEPRECATED (docs/adr/0045) — deleted once every live pod runs a sidecar
-   * that dials the sandbox itself.
-   * buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
-   *
-   * @generated from rpc agentfleet.v1.ProvisionerService.ListE2eTools
-   * @deprecated
-   */
-  listE2eTools: {
-    methodKind: "unary";
-    input: typeof ListE2eToolsRequestSchema;
-    output: typeof ListE2eToolsResponseSchema;
-  },
-  /**
-   * buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
-   *
-   * @generated from rpc agentfleet.v1.ProvisionerService.CallE2eTool
-   * @deprecated
-   */
-  callE2eTool: {
-    methodKind: "unary";
-    input: typeof CallE2eToolRequestSchema;
-    output: typeof CallE2eToolResponseSchema;
-  },
-  /**
    * @generated from rpc agentfleet.v1.ProvisionerService.CreateWorkerPod
    */
   createWorkerPod: {
@@ -942,7 +795,7 @@ export const ProvisionerService: GenService<{
   },
   /**
    * Reused as-is by dashboard.proto's own ListWorktrees (identical empty
-   * request shape) — same passthrough pattern as ListE2eTools above.
+   * request shape) — cross-file message reuse, not a call passthrough.
    * buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
    *
    * @generated from rpc agentfleet.v1.ProvisionerService.ListWorktrees

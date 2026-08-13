@@ -16,16 +16,7 @@ import {
   ListFilesRequest,
   ListFilesResponse,
 } from "./files.js";
-import {
-  CallE2eToolRequest,
-  CallE2eToolResponse,
-  ListE2eToolsRequest,
-  ListE2eToolsResponse,
-  ServiceEndpoint,
-  SessionKind,
-  sessionKindFromJSON,
-  sessionKindToJSON,
-} from "./provisioner.js";
+import { ServiceEndpoint, SessionKind, sessionKindFromJSON, sessionKindToJSON } from "./provisioner.js";
 import {
   ReadTranscriptSinceRequest,
   ReadTranscriptSinceResponse,
@@ -2590,24 +2581,15 @@ export interface CoreService {
   WaitForMessages(request: ReadTranscriptSinceRequest): Promise<ReadTranscriptSinceResponse>;
   AskUserQuestion(request: AskUserQuestionRequest): Promise<AskUserQuestionResponse>;
   RequestE2eEnv(request: RequestE2eEnvRequest): Promise<RequestE2eEnvResponse>;
+  /**
+   * ListE2eTools/CallE2eTool used to live here — the sandbox tool-call relay.
+   * Deleted in docs/adr/0045: the sidecar and core each dial their task's
+   * sandbox directly from a ServiceEndpoint roster, so core is no longer in
+   * the path of a shell command. RequestE2eEnv/KillE2eEnv above stay, because
+   * those are real work only core can do (profile resolution from Postgres,
+   * commanding the provisioner) rather than a passthrough.
+   */
   KillE2eEnv(request: KillE2eEnvRequest): Promise<KillE2eEnvResponse>;
-  /**
-   * Reuses provisioner.proto's message shapes — same passthrough, one hop
-   * further down the chain (see that file's own comment).
-   * DEPRECATED (docs/adr/0045) — the sidecar dials the sandbox directly from
-   * RequestE2eEnvResponse.endpoints. Kept only for the deploy-skew window in
-   * which a live pod still runs an older sidecar. Do not add callers.
-   * buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
-   *
-   * @deprecated
-   */
-  ListE2eTools(request: ListE2eToolsRequest): Promise<ListE2eToolsResponse>;
-  /**
-   * buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
-   *
-   * @deprecated
-   */
-  CallE2eTool(request: CallE2eToolRequest): Promise<CallE2eToolResponse>;
   /**
    * Lets a worker pod fetch its own fresh task row on startup instead of
    * relying on stale environment variables — same message shapes

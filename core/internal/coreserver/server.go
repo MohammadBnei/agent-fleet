@@ -236,22 +236,6 @@ func (s *Server) KillE2EEnv(ctx context.Context, req *agentfleetv1.KillE2EEnvReq
 	return &agentfleetv1.KillE2EEnvResponse{Killed: killed}, nil
 }
 
-func (s *Server) ListE2ETools(ctx context.Context, req *agentfleetv1.ListE2EToolsRequest) (*agentfleetv1.ListE2EToolsResponse, error) {
-	tools, err := s.provisioner.ListE2eTools(ctx, req.GetTaskId())
-	if err != nil {
-		return nil, fmt.Errorf("ListE2ETools: %w", err)
-	}
-	return &agentfleetv1.ListE2EToolsResponse{Tools: tools}, nil
-}
-
-func (s *Server) CallE2ETool(ctx context.Context, req *agentfleetv1.CallE2EToolRequest) (*agentfleetv1.CallE2EToolResponse, error) {
-	resultJSON, isError, err := s.provisioner.CallE2eTool(ctx, req.GetTaskId(), req.GetToolName(), req.GetArgumentsJson())
-	if err != nil {
-		return nil, fmt.Errorf("CallE2ETool: %w", err)
-	}
-	return &agentfleetv1.CallE2EToolResponse{ResultJson: resultJSON, IsError: isError}, nil
-}
-
 // --- shared file space (docs/adr/0030) — core mints presigned URLs, the
 // agent's own Bash `curl` moves the actual bytes ---
 
