@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.51.1](https://github.com/MohammadBnei/agent-fleet/compare/1.51.0...1.51.1) (2026-08-13)
+
+
+### Performance Improvements
+
+* **provisioner:** stop serializing every task behind one MCP dial ([#144](https://github.com/MohammadBnei/agent-fleet/issues/144)) ([67a6f2f](https://github.com/MohammadBnei/agent-fleet/commit/67a6f2f15846e0f2d16228196b51b4b47452cec6))
+
 # [1.51.0](https://github.com/MohammadBnei/agent-fleet/compare/1.50.0...1.51.0) (2026-08-13)
 
 
