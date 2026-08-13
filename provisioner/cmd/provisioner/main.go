@@ -106,7 +106,10 @@ func main() {
 
 	reconcileInterval, _ := strconv.Atoi(cfg.ReconcileInterval)
 	sharedInstanceIdleTimeout, _ := strconv.Atoi(cfg.SharedInstanceIdleTimeoutMs)
-	loop := reconcile.New(k8sc, core, time.Duration(sharedInstanceIdleTimeout)*time.Millisecond)
+	e2eMaxAge, _ := strconv.Atoi(cfg.E2eMaxAgeMs)
+	loop := reconcile.New(k8sc, core,
+		time.Duration(sharedInstanceIdleTimeout)*time.Millisecond,
+		time.Duration(e2eMaxAge)*time.Millisecond)
 	go loop.Run(ctx, time.Duration(reconcileInterval)*time.Millisecond)
 
 	sweepInterval, _ := strconv.Atoi(cfg.SweepInterval)

@@ -62,6 +62,14 @@ type Config struct {
 	// — reconcile.Loop compares this against a last-used-at annotation
 	// instead (docs/adr/0034).
 	SharedInstanceIdleTimeoutMs string
+	// E2eMaxAgeMs bounds how long an e2e sandbox pod may live before the
+	// reconcile sweep deletes it (docs/adr/0044, reversing ADR-0039's "e2e
+	// pods are never GC'd" accepted gap). Age, not idleness: the provisioner
+	// holds no DB (docs/adr/0020 point 1), so there is nowhere to record when
+	// a sandbox was last used. Generous by design — at 1000m/1Gi requests
+	// each, the cost of leaking these is the NEXT pod sitting Pending
+	// forever, which is indistinguishable from "the sandbox won't start".
+	E2eMaxAgeMs string
 }
 
 func Load() Config {
@@ -88,6 +96,7 @@ func Load() Config {
 		RedisImage:                  env("REDIS_IMAGE", "redis:7-alpine"),
 		SharedInstancePVCSize:       env("SHARED_INSTANCE_PVC_SIZE", "2Gi"),
 		SharedInstanceIdleTimeoutMs: env("SHARED_INSTANCE_IDLE_TIMEOUT_MS", "43200000"), // 12h
+		E2eMaxAgeMs:                 env("E2E_MAX_AGE_MS", "86400000"),                 // 24h
 	}
 }
 
