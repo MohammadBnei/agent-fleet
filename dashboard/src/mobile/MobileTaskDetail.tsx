@@ -3,27 +3,24 @@ import { client } from "../connectClient";
 import { isThot, repoLabel } from "../taskKind";
 import {
   feedVisibility,
-  findPendingPermissions,
-  findPendingQuestion,
   latestSlashCommands,
   latestToolCallSummary,
   latestTodos,
-  parseQuestions,
   type Density,
+  hasPendingDecision,
 } from "../transcript";
 import { useTaskDetail } from "../useTaskDetail";
 import { useAtBottom } from "../useAtBottom";
 import { useLocalStorageState } from "../useLocalStorageState";
 import { sessionBadge } from "../pages/TaskList";
+import { DecisionDock } from "../components/DecisionDock";
 import { ErrorModal } from "../components/ErrorModal";
 import { BypassConfirmModal } from "../components/BypassConfirmModal";
 import { Modal } from "../components/Modal";
 import { Segmented } from "../components/Segmented";
 import { SessionFeed } from "../components/SessionFeed";
-import { DiffLines } from "../components/DiffLines";
 import { TickBar, todoProgress } from "../components/TickBar";
 import { TodosPanel, ChangesPanel, E2ePanel, SessionPanel } from "../components/SessionPanels";
-import { summarizeToolInput } from "../transcript";
 
 // The phone session screen from Agent Fleet Console Mobile.dc.html.
 //
@@ -107,12 +104,7 @@ export function MobileTaskDetail({
   const todos = latestTodos(entries) ?? [];
   const changes = latestToolCallSummary(entries)?.files ?? null;
 
-  const pendingPermission = findPendingPermissions(entries)[0] ?? null;
-  const pendingQuestion = findPendingQuestion(entries);
-  const pendingQuestions = pendingQuestion ? parseQuestions(pendingQuestion.text) : null;
-  const dockQuestion =
-    pendingQuestions && pendingQuestions.length === 1 && !pendingQuestions[0].multiSelect ? pendingQuestions[0] : null;
-  const docked = Boolean(pendingPermission || dockQuestion);
+  const docked = hasPendingDecision(entries);
 
   const slashCommands = message.startsWith("/")
     ? (latestSlashCommands(entries) ?? []).filter((c) => c.toLowerCase().startsWith(message.slice(1).toLowerCase()))
@@ -131,19 +123,6 @@ export function MobileTaskDetail({
       `permission:${seq}`,
     );
   }
-
-  // Edit/Write get a real diff; anything else its one-line summary. A prompt
-  // whose content is unreadable trains people to approve without looking.
-  const permInput = (pendingPermission?.input ?? {}) as {
-    file_path?: string;
-    old_string?: string;
-    new_string?: string;
-    content?: string;
-  };
-  const permIsDiff =
-    pendingPermission &&
-    (pendingPermission.tool === "Edit" || pendingPermission.tool === "Write") &&
-    typeof (permInput.new_string ?? permInput.content) === "string";
 
   return (
     <div className="flex-1 min-h-0 flex flex-col">
@@ -229,133 +208,20 @@ export function MobileTaskDetail({
         }}
       />
 
-      {/* The decision dock. Pinned, not inline: a blocked session is stalled
-          until someone taps, so its request must not be scrollable-away. */}
-      <div
-        className={`flex-none ${
-          docked ? "mt-2 border-t border-pink-line bg-pink-bg relative" : "border-t border-line"
-        }`}
-      >
-        {docked && pendingPermission && pendingPermission.tool === "ExitPlanMode" && (
-          <>
-            <div className="absolute -top-[7px] left-3.5 px-[7px] bg-base-200 text-error text-2xs tracking-[0.1em] whitespace-nowrap">
-              ◉ PLAN — NEEDS YOUR REVIEW
-            </div>
-            <div className="px-3.5 pt-3.5">
-              <div className="text-sm leading-[1.7] text-text2 line-clamp-3">
-                {(pendingPermission.input as { plan?: string } | undefined)?.plan?.split("\n").slice(0, 4).join(" ") ?? ""}
-              </div>
-              <div className="flex gap-2.5 mt-3">
-                <button
-                  type="button"
-                  disabled={busyKey !== null}
-                  onClick={() => respond(pendingPermission.entry.seq, "allow")}
-                  className="w-full py-3 text-center text-base font-semibold bg-primary text-primary-content disabled:opacity-50"
-                >
-                  approve plan
-                </button>
-              </div>
-            </div>
-          </>
-        )}
-        {docked && pendingPermission && pendingPermission.tool !== "ExitPlanMode" && (
-          <>
-            <div className="absolute -top-[7px] left-3.5 px-[7px] bg-base-200 text-error text-2xs tracking-[0.1em] whitespace-nowrap">
-              ◉ PERMISSION · {pendingPermission.tool.toUpperCase()}
-            </div>
-            <div className="px-3.5 pt-3.5">
-              <div className="text-xs text-dim break-all">
-                {pendingPermission.tool}
-                {permInput.file_path && (
-                  <>
-                    {" · "}
-                    <span className="text-text2">{permInput.file_path}</span>
-                  </>
-                )}
-              </div>
-              <div className="mt-2">
-                {permIsDiff ? (
-                  <DiffLines
-                    before={permInput.old_string ?? ""}
-                    after={(permInput.new_string ?? permInput.content) as string}
-                    maxLines={3}
-                    compact
-                  />
-                ) : (
-                  <div className="border border-line bg-code px-2.5 py-1 text-xs text-text2 whitespace-pre-wrap break-all">
-                    {summarizeToolInput(pendingPermission.input)}
-                  </div>
-                )}
-              </div>
-              <div className="flex gap-2.5 mt-3">
-                <button
-                  type="button"
-                  disabled={busyKey !== null}
-                  onClick={() => respond(pendingPermission.entry.seq, "allow")}
-                  className="flex-1 py-3 text-center text-base font-semibold bg-primary text-primary-content disabled:opacity-50"
-                >
-                  allow
-                </button>
-                <button
-                  type="button"
-                  disabled={busyKey !== null}
-                  onClick={() => respond(pendingPermission.entry.seq, "deny", "denied")}
-                  className="flex-1 py-3 text-center text-base border border-acc-line disabled:opacity-50"
-                >
-                  deny
-                </button>
-              </div>
-            </div>
-          </>
-        )}
+      <DecisionDock
+        entries={entries}
+        busyKey={busyKey}
+        compact
+        onRespond={(seq, decision) => respond(seq, decision.behavior, decision.message)}
+        onAnswer={(seq, answers) =>
+          run(() => client.answerQuestion({ taskId, seq, answersJson: JSON.stringify({ answers }) }), `question:${seq}`)
+        }
+        onPlanFeedback={(text) => sendDiscuss(text)}
+      />
 
-        {docked && !pendingPermission && dockQuestion && pendingQuestion && (
-          <>
-            <div className="absolute -top-[7px] left-3.5 px-[7px] bg-base-200 text-error text-2xs tracking-[0.1em] whitespace-nowrap">
-              ◉ QUESTION
-            </div>
-            <div className="px-3.5 pt-3.5">
-              <div className="text-base leading-[1.6]">{dockQuestion.question}</div>
-              <div className="flex flex-col gap-2 mt-3">
-                {dockQuestion.options.map((opt) => (
-                  <button
-                    key={opt.label}
-                    type="button"
-                    disabled={busyKey !== null}
-                    onClick={() =>
-                      run(
-                        () =>
-                          client.answerQuestion({
-                            taskId,
-                            seq: pendingQuestion.seq,
-                            answersJson: JSON.stringify({ answers: { [dockQuestion.question]: opt.label } }),
-                          }),
-                        `question:${pendingQuestion.seq}`,
-                      )
-                    }
-                    className="w-full text-left border border-acc-line px-3.5 py-3 text-base disabled:opacity-50"
-                  >
-                    {opt.label}
-                    {opt.description && <div className="text-xs text-dim2 mt-0.5">{opt.description}</div>}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </>
-        )}
-
+      <div className="flex-none border-t border-line">
         {(docked || slashCommands.length > 0) && (
           <div className="flex gap-2 px-3.5 pt-2.5 overflow-x-auto">
-            {docked && pendingPermission && (
-              <button
-                type="button"
-                disabled={busyKey !== null}
-                onClick={() => respond(pendingPermission.entry.seq, "deny", "use the fixture")}
-                className="flex-none border border-line text-dim px-2.5 py-1.5 text-xs whitespace-nowrap"
-              >
-                deny — use the fixture
-              </button>
-            )}
             <button
               type="button"
               disabled={busyKey !== null}

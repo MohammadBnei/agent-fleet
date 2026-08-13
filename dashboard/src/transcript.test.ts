@@ -10,7 +10,7 @@ import {
   feedVisibility,
   listSummary,
   inFlightTool,
-  spineItems,
+  hasPendingDecision,
   entryTime,
 } from "./transcript";
 
@@ -156,58 +156,22 @@ test("inFlightTool prefers the SDK's own tool_progress elapsed time", () => {
   expect(inFlightTool([call, progress])?.elapsedSeconds).toBe(32);
 });
 
-test("spineItems ranks a pending permission as pending and carries a denial's reason", () => {
-  const allowed = perm("Bash", { command: "ls" });
-  const denied = perm("WebFetch", { url: "http://x" });
-  const waiting = perm("Edit", { file_path: "a.py" });
-  const entries = [
-    allowed,
-    respond(allowed.seq, "allow"),
-    denied,
-    respond(denied.seq, "deny", "use the local fixture"),
-    waiting,
-  ];
-  const items = spineItems(entries);
-  expect(items.map((i) => i.kind)).toEqual(["allow", "deny", "pending"]);
-  expect(items[0].label).toBe("allow · Bash");
-  expect(items[1].detail).toBe("use the local fixture");
-  expect(items[2].label).toBe("▸ permission · Edit");
-  // The rail is a jump target: every item has to point at a real entry.
-  expect(items[2].seq).toBe(waiting.seq);
-});
-
-test("spineItems renders an approved ExitPlanMode as a plan, not a permission", () => {
-  const plan = perm("ExitPlanMode", { plan: "do the thing" });
-  const items = spineItems([plan, respond(plan.seq, "allow")]);
-  expect(items).toEqual([{ seq: plan.seq, kind: "plan", label: "plan approved", detail: null, time: null }]);
-});
-
-// A failed MCP server silently removes its tools from the session — the exact
-// class of thing that makes a run go quiet for a reason nothing else reports.
-test("spineItems raises an alarm for a non-connected mcp server and an sdk error", () => {
-  const init = full(
-    TranscriptEntryType.SYSTEM,
-    JSON.stringify({ model: "opus", mcpServers: [{ name: "sidecar", status: "connected" }, { name: "playwright", status: "failed" }] }),
-  );
-  const err = full(TranscriptEntryType.SYSTEM, JSON.stringify({ sdk: "model_error", error: "rate limit" }));
-  const items = spineItems([init, err]);
-  expect(items.map((i) => i.label)).toEqual(["! mcp playwright failed", "! model_error"]);
-  expect(items[1].detail).toBe("rate limit");
-});
-
 test("entryTime returns null rather than a fake time for a transcript with no timestamp", () => {
   expect(entryTime(full(TranscriptEntryType.ASSISTANT, "{}"))).toBeNull();
   expect(entryTime(full(TranscriptEntryType.ASSISTANT, "{}", { createdAt: "not-a-date" }))).toBeNull();
   expect(entryTime(full(TranscriptEntryType.ASSISTANT, "{}", { createdAt: "2026-08-12T12:04:00Z" }))).not.toBeNull();
 });
 
-// An interrupt denies every pending permission (worker/src/session.ts's
-// resolveAllPendingDeny) without posting a PERMISSION_RESPONSE. The tool never
-// ran, so the rail must not colour it like a grant.
-test("spineItems groups an interrupted permission with deny, not allow", () => {
-  const p = perm("Bash", { command: "rm -rf /" });
-  const items = spineItems([p, full(TranscriptEntryType.INTERRUPT, "", { from: "human" })]);
-  expect(items).toHaveLength(1);
-  expect(items[0].kind).toBe("deny");
-  expect(items[0].label).toBe("interrupted · Bash");
+// What the dock keys off: it is the only surface a decision is answerable from
+// now, so "is anything waiting on a human" has to be right for both shapes.
+test("hasPendingDecision covers an unanswered permission and an unanswered question", () => {
+  const waiting = perm("Edit", { file_path: "a.py" });
+  expect(hasPendingDecision([waiting])).toBe(true);
+  expect(hasPendingDecision([waiting, respond(waiting.seq, "allow")])).toBe(false);
+
+  const asked = full(TranscriptEntryType.QUESTION, JSON.stringify({ questions: [{ question: "which?" }] }));
+  expect(hasPendingDecision([asked])).toBe(true);
+  expect(hasPendingDecision([asked, full(TranscriptEntryType.ANSWER, "{}")])).toBe(false);
+
+  expect(hasPendingDecision([])).toBe(false);
 });

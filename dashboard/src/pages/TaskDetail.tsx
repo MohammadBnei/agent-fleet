@@ -1,17 +1,14 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { client } from "../connectClient";
 import { isThot, repoLabel } from "../taskKind";
 import type { Task } from "../gen/agentfleet/v1/core_pb";
 import { sessionBadge, staleBadge, heartbeatLabel, prBadge } from "./TaskList";
 import {
   feedVisibility,
-  findPendingQuestion,
   latestResultSummary,
   latestSlashCommands,
   latestToolCallSummary,
   latestTodos,
-  parseQuestions,
-  spineItems,
   type Density,
 } from "../transcript";
 import { useTaskDetail } from "../useTaskDetail";
@@ -21,16 +18,21 @@ import { ErrorModal } from "../components/ErrorModal";
 import { Markdown } from "../components/Markdown";
 import { BypassConfirmModal } from "../components/BypassConfirmModal";
 import { Segmented } from "../components/Segmented";
-import { DecisionSpine } from "../components/DecisionSpine";
+import { DecisionDock } from "../components/DecisionDock";
 import { DecisionInline } from "../components/DecisionInline";
 import { NotchCard } from "../components/NotchCard";
 import { SessionFeed } from "../components/SessionFeed";
 import { TodosPanel, ChangesPanel, E2ePanel, SessionPanel } from "../components/SessionPanels";
 import { asDisplayMarkdown } from "../transcript";
 
-// The console's desktop session view: decision-spine rail · feed · fixed panel
-// column. Full-width — the permanent 320px task-list sidebar is gone, and the
-// rich list view is the fleet overview it used to stand in for.
+// The console's desktop session view: feed · decision dock · composer, beside a
+// fixed panel column. Full-width — the permanent 320px task-list sidebar is
+// gone, and the rich list view is the fleet overview it used to stand in for.
+//
+// The pending decision lives in the dock and nowhere else (docs/adr/0043): it
+// used to render inline in the feed *and* as a spine item *and* as an answer
+// chip above the composer. `dockPendingDecision` is what keeps the feed from
+// rendering it a second time.
 
 const DENSITY: readonly { value: Density; label: string; title: string }[] = [
   { value: "everything", label: "everything", title: "every entry, including tool calls and lifecycle lines" },
@@ -110,13 +112,6 @@ export function TaskDetail({
     if (feedAtBottom) setHasNewAiMessage(false);
   }, [feedAtBottom]);
 
-  // Spine → feed. The feed tags each row with the entry seq, so this lands on
-  // the real entry rather than an estimated offset.
-  const jumpToEntry = useCallback((seq: bigint) => {
-    const el = document.getElementById(`entry-${seq}`);
-    if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
-  }, []);
-
   if (loadError) return <div className="m-4 border border-pink-line bg-pink-bg px-4 py-3 text-base text-error">{loadError}</div>;
   if (!fetchedTask) return <div className="p-4 text-base text-dim">Loading…</div>;
 
@@ -131,8 +126,6 @@ export function TaskDetail({
   const prLink = prBadge(task);
   const blocked = task.liveState === "blocked";
   const visibility = feedVisibility(density, false);
-  const items = spineItems(entries);
-  const firstPending = items.find((i) => i.kind === "pending") ?? null;
 
   const todos = latestTodos(entries) ?? [];
   const changes = latestToolCallSummary(entries)?.files ?? null;
@@ -142,10 +135,6 @@ export function TaskDetail({
     (result?.usage?.cache_read_input_tokens ?? 0) +
     (result?.usage?.cache_creation_input_tokens ?? 0);
 
-  const pendingQuestion = findPendingQuestion(entries);
-  const pendingParsed = pendingQuestion ? parseQuestions(pendingQuestion.text) : null;
-  const chipQuestion =
-    pendingParsed && pendingParsed.length === 1 && !pendingParsed[0].multiSelect ? pendingParsed[0] : null;
   // Lean name-only autocomplete (the SDK's init message carries no descriptions
   // or argument hints at runtime, docs/adr/0027) — only while the draft looks
   // like a command, filtered by what's typed so far.
@@ -162,12 +151,6 @@ export function TaskDetail({
 
   return (
     <div className="flex-1 min-h-0 flex">
-      <DecisionSpine
-        items={items}
-        onJump={jumpToEntry}
-        onNextDecision={firstPending ? () => jumpToEntry(firstPending.seq) : null}
-      />
-
       <div className="flex-1 min-w-0 flex flex-col border-r border-line">
         <div className="flex-none flex items-center gap-3 px-4.5 py-3 border-b border-line flex-wrap">
           <button type="button" onClick={onBack} className="text-sm text-dim hover:text-primary cursor-pointer">
@@ -239,6 +222,7 @@ export function TaskDetail({
               visibility={visibility}
               density={density}
               busyKey={busyKey}
+              dockPendingDecision
               onRespond={(seq, decision) =>
                 run(
                   () => client.respondToPermission({ taskId, seq, decisionJson: JSON.stringify(decision) }),
@@ -275,6 +259,21 @@ export function TaskDetail({
           )}
         </div>
 
+        <DecisionDock
+          entries={entries}
+          busyKey={busyKey}
+          onRespond={(seq, decision) =>
+            run(
+              () => client.respondToPermission({ taskId, seq, decisionJson: JSON.stringify(decision) }),
+              `permission:${seq}`,
+            )
+          }
+          onAnswer={(seq, answers) =>
+            run(() => client.answerQuestion({ taskId, seq, answersJson: JSON.stringify({ answers }) }), `question:${seq}`)
+          }
+          onPlanFeedback={(text) => sendDiscuss(text)}
+        />
+
         <div className="flex-none px-4.5 py-3 border-t border-line">
           <ErrorModal message={actionError} onClose={clearActionError} />
           <BypassConfirmModal
@@ -286,31 +285,8 @@ export function TaskDetail({
             }}
           />
 
-          {(chipQuestion || slashCommands.length > 0) && (
+          {slashCommands.length > 0 && (
             <div className="flex gap-2 mb-2.5 flex-wrap">
-              {chipQuestion?.options.map((opt) => (
-                <button
-                  key={opt.label}
-                  type="button"
-                  disabled={busyKey !== null}
-                  title={opt.description}
-                  onClick={() =>
-                    pendingQuestion &&
-                    run(
-                      () =>
-                        client.answerQuestion({
-                          taskId,
-                          seq: pendingQuestion.seq,
-                          answersJson: JSON.stringify({ answers: { [chipQuestion.question]: opt.label } }),
-                        }),
-                      `question:${pendingQuestion.seq}`,
-                    )
-                  }
-                  className="border border-pink-line text-error px-3 py-1 text-xs cursor-pointer hover:bg-pink-chip disabled:opacity-40"
-                >
-                  {opt.label}
-                </button>
-              ))}
               {slashCommands.map((c) => (
                 <button
                   key={c}
