@@ -1,5 +1,12 @@
 # Changelog
 
+# [1.53.0](https://github.com/MohammadBnei/agent-fleet/compare/1.52.0...1.53.0) (2026-08-13)
+
+
+### Features
+
+* **provisioner:** per-task NetworkPolicy for the sandbox MCP ports ([#148](https://github.com/MohammadBnei/agent-fleet/issues/148)) ([48a1d65](https://github.com/MohammadBnei/agent-fleet/commit/48a1d65d09d09a8bbf5c4b1e0b6ab3fdb6f8ac48))
+
 # [1.52.0](https://github.com/MohammadBnei/agent-fleet/compare/1.51.2...1.52.0) (2026-08-13)
 
 
