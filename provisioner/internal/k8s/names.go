@@ -79,6 +79,66 @@ func shortID(taskID string) string {
 // once per session rather than per call. Kept because it is free and correct,
 // not because it is where the time goes — that is `call_ms`, the command
 // itself (docs/adr/0045).
+// Endpoint names, as they appear in a ServiceEndpoint roster. Callers select
+// by these rather than by port number, which is the point of shipping the
+// roster instead of letting each caller rebuild the address itself.
+const (
+	EndpointPlaywright = "playwright"
+	EndpointExec       = "exec"
+)
+
+// ProtocolMCPStreamableHTTP is the only protocol the sandbox speaks today.
+// It travels on the wire so a caller dispatches on the roster rather than on
+// a port number it hardcoded.
+const ProtocolMCPStreamableHTTP = "mcp-streamable-http"
+
+// ServiceEndpoint is the plain-Go half of the wire message in
+// provisioner.proto. This package stays free of generated wire types — the
+// same boundary every other package here keeps, with grpcserver doing the
+// mapping — so the addressing rules live next to the naming rules they
+// derive from rather than next to the transport.
+type ServiceEndpoint struct {
+	Name     string
+	Address  string
+	Protocol string
+	Path     string
+}
+
+// EndpointsFor is the fleet's service-discovery resolution step
+// (docs/adr/0045), and it is a pure function of (namespace, taskID) — the
+// same inputs that name the Service the provisioner just created.
+//
+// That is exactly why there is no registry to keep in sync: the Service
+// object *is* the registration, and this derives its address rather than
+// looking one up. Kubernetes stays the single source of truth for whether a
+// sandbox exists.
+//
+// These ports and the ones CreateService actually publishes are now coupled.
+// A drift test pins them together, because a roster naming a port no Service
+// exposes fails at dial time in the caller — far from the mistake.
+func EndpointsFor(namespace, taskID string) []ServiceEndpoint {
+	return []ServiceEndpoint{
+		{
+			Name:     EndpointPlaywright,
+			Address:  serviceHostPort(namespace, taskID, PlaywrightPort),
+			Protocol: ProtocolMCPStreamableHTTP,
+			Path:     "/mcp",
+		},
+		{
+			Name:     EndpointExec,
+			Address:  serviceHostPort(namespace, taskID, ExecPort),
+			Protocol: ProtocolMCPStreamableHTTP,
+			Path:     "/mcp",
+		},
+	}
+}
+
+// serviceHostPort carries the same trailing dot as the URL builders below,
+// for the same reason.
+func serviceHostPort(namespace, taskID string, port int) string {
+	return fmt.Sprintf("%s.%s.svc.cluster.local.:%d", ResourceName(taskID), namespace, port)
+}
+
 func PlaywrightURLFor(namespace, taskID string) string {
 	return fmt.Sprintf("http://%s.%s.svc.cluster.local.:%d/mcp", ResourceName(taskID), namespace, PlaywrightPort)
 }

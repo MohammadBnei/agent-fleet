@@ -378,6 +378,11 @@ type GetE2ESessionStatusResponse struct {
 	// button was pointed at preview_url — the app root — and so had never once
 	// opened code-server (docs/adr/0044).
 	CodeServerUrl string `protobuf:"bytes,8,opt,name=code_server_url,json=codeServerUrl,proto3" json:"code_server_url,omitempty"`
+	// docs/adr/0045 — see ServiceEndpoint. Present here as well as on
+	// CreateE2eSession because core's own dashboard path (runInE2ePod, backing
+	// GetE2EAppLog and the human run-command surface) needs to reach the
+	// sandbox without provisioning one.
+	Endpoints     []*ServiceEndpoint `protobuf:"bytes,9,rep,name=endpoints,proto3" json:"endpoints,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -468,6 +473,110 @@ func (x *GetE2ESessionStatusResponse) GetCodeServerUrl() string {
 	return ""
 }
 
+func (x *GetE2ESessionStatusResponse) GetEndpoints() []*ServiceEndpoint {
+	if x != nil {
+		return x.Endpoints
+	}
+	return nil
+}
+
+// A directly-dialable address for one service, resolved by the component that
+// knows it exists and handed to whoever needs to call it (docs/adr/0045).
+//
+// This is the fleet's whole service-discovery mechanism, and it is
+// deliberately not a registry: there is no lookup RPC and no `services`
+// table. Kubernetes is already ground truth for whether a pod exists — a row
+// survives an OOMKill, a Service endpoint does not, so a table would be a
+// cache that lies. The provisioner computes these from (namespace, taskID),
+// the same pure function that names the Service it just created, and they
+// ride back on responses core already sends.
+//
+// Fields NOT here, and why:
+//   - who may call it — authorization is a per-task NetworkPolicy. A field
+//     the caller reads is advice; a policy the CNI enforces is not.
+//   - ttl/expires_at — validity is implied by delivery. A failed dial
+//     re-resolves through the provision path that already exists.
+//   - scope — a roster reaches one sidecar serving one task. The delivery
+//     channel *is* the scope.
+type ServiceEndpoint struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Name     string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`         // "playwright" | "exec"
+	Address  string                 `protobuf:"bytes,2,opt,name=address,proto3" json:"address,omitempty"`   // host:port, host fully qualified with a trailing dot
+	Protocol string                 `protobuf:"bytes,3,opt,name=protocol,proto3" json:"protocol,omitempty"` // "mcp-streamable-http" | "grpc"
+	Path     string                 `protobuf:"bytes,4,opt,name=path,proto3" json:"path,omitempty"`         // "/mcp" for MCP, "" for gRPC
+	// Bearer token, when a service authenticates its callers at all. Empty for
+	// the sandbox, deliberately: docs/adr/0039 rests on the e2e pod holding no
+	// fleet credentials, so reachability there is fenced structurally instead.
+	Token         string `protobuf:"bytes,5,opt,name=token,proto3" json:"token,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ServiceEndpoint) Reset() {
+	*x = ServiceEndpoint{}
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ServiceEndpoint) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ServiceEndpoint) ProtoMessage() {}
+
+func (x *ServiceEndpoint) ProtoReflect() protoreflect.Message {
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ServiceEndpoint.ProtoReflect.Descriptor instead.
+func (*ServiceEndpoint) Descriptor() ([]byte, []int) {
+	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *ServiceEndpoint) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *ServiceEndpoint) GetAddress() string {
+	if x != nil {
+		return x.Address
+	}
+	return ""
+}
+
+func (x *ServiceEndpoint) GetProtocol() string {
+	if x != nil {
+		return x.Protocol
+	}
+	return ""
+}
+
+func (x *ServiceEndpoint) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *ServiceEndpoint) GetToken() string {
+	if x != nil {
+		return x.Token
+	}
+	return ""
+}
+
 // Requests an on-demand e2e preview pod for taskId (mounts the same
 // worktree the task's worker pod is using, docs/adr/0012). Was previously
 // triggered by the worker calling e2e-provisioner's /mcp/:taskId directly;
@@ -493,7 +602,7 @@ type CreateE2ESessionRequest struct {
 
 func (x *CreateE2ESessionRequest) Reset() {
 	*x = CreateE2ESessionRequest{}
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[5]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -505,7 +614,7 @@ func (x *CreateE2ESessionRequest) String() string {
 func (*CreateE2ESessionRequest) ProtoMessage() {}
 
 func (x *CreateE2ESessionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[5]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -518,7 +627,7 @@ func (x *CreateE2ESessionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateE2ESessionRequest.ProtoReflect.Descriptor instead.
 func (*CreateE2ESessionRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{5}
+	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *CreateE2ESessionRequest) GetTaskId() string {
@@ -557,16 +666,21 @@ func (x *CreateE2ESessionRequest) GetServiceIngredients() []*ServiceIngredient {
 }
 
 type CreateE2ESessionResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Status        string                 `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
-	PreviewUrl    string                 `protobuf:"bytes,2,opt,name=preview_url,json=previewUrl,proto3" json:"preview_url,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	Status     string                 `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
+	PreviewUrl string                 `protobuf:"bytes,2,opt,name=preview_url,json=previewUrl,proto3" json:"preview_url,omitempty"`
+	// docs/adr/0045. Filled on BOTH the fresh-create path and the
+	// already-exists short-circuit — a resumed session that skips creation
+	// still needs to know where to dial, and returning them only on creation
+	// is the obvious way to break exactly that case.
+	Endpoints     []*ServiceEndpoint `protobuf:"bytes,3,rep,name=endpoints,proto3" json:"endpoints,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *CreateE2ESessionResponse) Reset() {
 	*x = CreateE2ESessionResponse{}
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[6]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -578,7 +692,7 @@ func (x *CreateE2ESessionResponse) String() string {
 func (*CreateE2ESessionResponse) ProtoMessage() {}
 
 func (x *CreateE2ESessionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[6]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -591,7 +705,7 @@ func (x *CreateE2ESessionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateE2ESessionResponse.ProtoReflect.Descriptor instead.
 func (*CreateE2ESessionResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{6}
+	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *CreateE2ESessionResponse) GetStatus() string {
@@ -606,6 +720,13 @@ func (x *CreateE2ESessionResponse) GetPreviewUrl() string {
 		return x.PreviewUrl
 	}
 	return ""
+}
+
+func (x *CreateE2ESessionResponse) GetEndpoints() []*ServiceEndpoint {
+	if x != nil {
+		return x.Endpoints
+	}
+	return nil
 }
 
 // Provisioner does the clone/fetch/worktree-add (docs/adr/0019 point 2 —
@@ -658,7 +779,7 @@ type CreateWorkerPodRequest struct {
 
 func (x *CreateWorkerPodRequest) Reset() {
 	*x = CreateWorkerPodRequest{}
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[7]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -670,7 +791,7 @@ func (x *CreateWorkerPodRequest) String() string {
 func (*CreateWorkerPodRequest) ProtoMessage() {}
 
 func (x *CreateWorkerPodRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[7]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -683,7 +804,7 @@ func (x *CreateWorkerPodRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateWorkerPodRequest.ProtoReflect.Descriptor instead.
 func (*CreateWorkerPodRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{7}
+	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *CreateWorkerPodRequest) GetTaskId() string {
@@ -772,7 +893,7 @@ type CreateWorkerPodResponse struct {
 
 func (x *CreateWorkerPodResponse) Reset() {
 	*x = CreateWorkerPodResponse{}
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[8]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -784,7 +905,7 @@ func (x *CreateWorkerPodResponse) String() string {
 func (*CreateWorkerPodResponse) ProtoMessage() {}
 
 func (x *CreateWorkerPodResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[8]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -797,7 +918,7 @@ func (x *CreateWorkerPodResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateWorkerPodResponse.ProtoReflect.Descriptor instead.
 func (*CreateWorkerPodResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{8}
+	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *CreateWorkerPodResponse) GetPodName() string {
@@ -823,7 +944,7 @@ type TearDownSessionRequest struct {
 
 func (x *TearDownSessionRequest) Reset() {
 	*x = TearDownSessionRequest{}
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[9]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -835,7 +956,7 @@ func (x *TearDownSessionRequest) String() string {
 func (*TearDownSessionRequest) ProtoMessage() {}
 
 func (x *TearDownSessionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[9]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -848,7 +969,7 @@ func (x *TearDownSessionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TearDownSessionRequest.ProtoReflect.Descriptor instead.
 func (*TearDownSessionRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{9}
+	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *TearDownSessionRequest) GetTaskId() string {
@@ -874,7 +995,7 @@ type TearDownSessionResponse struct {
 
 func (x *TearDownSessionResponse) Reset() {
 	*x = TearDownSessionResponse{}
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[10]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -886,7 +1007,7 @@ func (x *TearDownSessionResponse) String() string {
 func (*TearDownSessionResponse) ProtoMessage() {}
 
 func (x *TearDownSessionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[10]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -899,7 +1020,7 @@ func (x *TearDownSessionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TearDownSessionResponse.ProtoReflect.Descriptor instead.
 func (*TearDownSessionResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{10}
+	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *TearDownSessionResponse) GetTornDown() bool {
@@ -909,13 +1030,16 @@ func (x *TearDownSessionResponse) GetTornDown() bool {
 	return false
 }
 
-// The e2e pod's own MCP server (Playwright automation) exposes a tool set
-// discovered at runtime, not a fixed enumerable list — these two RPCs are
-// a generic passthrough, mirroring what today's mcpproxy.Proxy already
-// does in-process. Proxied sidecar -> core -> provisioner -> e2e pod,
-// same hub-and-spoke rule as everything else (docs/adr/0020) — the extra
-// hop's latency cost was already named and accepted in that ADR's
-// Alternatives, not an oversight here.
+// DEPRECATED (docs/adr/0045) — the sidecar dials the sandbox directly from
+// a ServiceEndpoint roster now, and these are deleted once every live pod
+// runs a sidecar that does. Do not add callers.
+//
+// ADR-0020 accepted the extra hop for consistency and left a revisit
+// trigger ("if that hop proves materially slow"). It was measured twice and
+// the trigger never fired: the fleet's entire overhead around a tool call is
+// ~1ms. These go for coupling, not speed — a passthrough on core costs a
+// proto pair and a handler per service, and routes a shell command through
+// the fleet's Postgres-credential holder for no reason involving credentials.
 type ListE2EToolsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	TaskId        string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
@@ -925,7 +1049,7 @@ type ListE2EToolsRequest struct {
 
 func (x *ListE2EToolsRequest) Reset() {
 	*x = ListE2EToolsRequest{}
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[11]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -937,7 +1061,7 @@ func (x *ListE2EToolsRequest) String() string {
 func (*ListE2EToolsRequest) ProtoMessage() {}
 
 func (x *ListE2EToolsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[11]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -950,7 +1074,7 @@ func (x *ListE2EToolsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListE2EToolsRequest.ProtoReflect.Descriptor instead.
 func (*ListE2EToolsRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{11}
+	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *ListE2EToolsRequest) GetTaskId() string {
@@ -971,7 +1095,7 @@ type E2EToolDescriptor struct {
 
 func (x *E2EToolDescriptor) Reset() {
 	*x = E2EToolDescriptor{}
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[12]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -983,7 +1107,7 @@ func (x *E2EToolDescriptor) String() string {
 func (*E2EToolDescriptor) ProtoMessage() {}
 
 func (x *E2EToolDescriptor) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[12]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -996,7 +1120,7 @@ func (x *E2EToolDescriptor) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use E2EToolDescriptor.ProtoReflect.Descriptor instead.
 func (*E2EToolDescriptor) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{12}
+	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *E2EToolDescriptor) GetName() string {
@@ -1029,7 +1153,7 @@ type ListE2EToolsResponse struct {
 
 func (x *ListE2EToolsResponse) Reset() {
 	*x = ListE2EToolsResponse{}
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[13]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1041,7 +1165,7 @@ func (x *ListE2EToolsResponse) String() string {
 func (*ListE2EToolsResponse) ProtoMessage() {}
 
 func (x *ListE2EToolsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[13]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1054,7 +1178,7 @@ func (x *ListE2EToolsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListE2EToolsResponse.ProtoReflect.Descriptor instead.
 func (*ListE2EToolsResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{13}
+	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *ListE2EToolsResponse) GetTools() []*E2EToolDescriptor {
@@ -1075,7 +1199,7 @@ type CallE2EToolRequest struct {
 
 func (x *CallE2EToolRequest) Reset() {
 	*x = CallE2EToolRequest{}
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[14]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1087,7 +1211,7 @@ func (x *CallE2EToolRequest) String() string {
 func (*CallE2EToolRequest) ProtoMessage() {}
 
 func (x *CallE2EToolRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[14]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1100,7 +1224,7 @@ func (x *CallE2EToolRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CallE2EToolRequest.ProtoReflect.Descriptor instead.
 func (*CallE2EToolRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{14}
+	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *CallE2EToolRequest) GetTaskId() string {
@@ -1134,7 +1258,7 @@ type CallE2EToolResponse struct {
 
 func (x *CallE2EToolResponse) Reset() {
 	*x = CallE2EToolResponse{}
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[15]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1146,7 +1270,7 @@ func (x *CallE2EToolResponse) String() string {
 func (*CallE2EToolResponse) ProtoMessage() {}
 
 func (x *CallE2EToolResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[15]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1159,7 +1283,7 @@ func (x *CallE2EToolResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CallE2EToolResponse.ProtoReflect.Descriptor instead.
 func (*CallE2EToolResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{15}
+	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *CallE2EToolResponse) GetResultJson() string {
@@ -1192,7 +1316,7 @@ type ListWorktreesRequest struct {
 
 func (x *ListWorktreesRequest) Reset() {
 	*x = ListWorktreesRequest{}
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[16]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1204,7 +1328,7 @@ func (x *ListWorktreesRequest) String() string {
 func (*ListWorktreesRequest) ProtoMessage() {}
 
 func (x *ListWorktreesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[16]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1217,7 +1341,7 @@ func (x *ListWorktreesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListWorktreesRequest.ProtoReflect.Descriptor instead.
 func (*ListWorktreesRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{16}
+	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{17}
 }
 
 type WorktreeInfo struct {
@@ -1239,7 +1363,7 @@ type WorktreeInfo struct {
 
 func (x *WorktreeInfo) Reset() {
 	*x = WorktreeInfo{}
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[17]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1251,7 +1375,7 @@ func (x *WorktreeInfo) String() string {
 func (*WorktreeInfo) ProtoMessage() {}
 
 func (x *WorktreeInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[17]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1264,7 +1388,7 @@ func (x *WorktreeInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorktreeInfo.ProtoReflect.Descriptor instead.
 func (*WorktreeInfo) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{17}
+	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *WorktreeInfo) GetTaskId() string {
@@ -1338,7 +1462,7 @@ type ListWorktreesResponse struct {
 
 func (x *ListWorktreesResponse) Reset() {
 	*x = ListWorktreesResponse{}
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[18]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1350,7 +1474,7 @@ func (x *ListWorktreesResponse) String() string {
 func (*ListWorktreesResponse) ProtoMessage() {}
 
 func (x *ListWorktreesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[18]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1363,7 +1487,7 @@ func (x *ListWorktreesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListWorktreesResponse.ProtoReflect.Descriptor instead.
 func (*ListWorktreesResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{18}
+	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *ListWorktreesResponse) GetWorktrees() []*WorktreeInfo {
@@ -1398,7 +1522,7 @@ type DeleteWorktreeRequest struct {
 
 func (x *DeleteWorktreeRequest) Reset() {
 	*x = DeleteWorktreeRequest{}
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[19]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1410,7 +1534,7 @@ func (x *DeleteWorktreeRequest) String() string {
 func (*DeleteWorktreeRequest) ProtoMessage() {}
 
 func (x *DeleteWorktreeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[19]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1423,7 +1547,7 @@ func (x *DeleteWorktreeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteWorktreeRequest.ProtoReflect.Descriptor instead.
 func (*DeleteWorktreeRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{19}
+	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *DeleteWorktreeRequest) GetTaskId() string {
@@ -1456,7 +1580,7 @@ type DeleteWorktreeResponse struct {
 
 func (x *DeleteWorktreeResponse) Reset() {
 	*x = DeleteWorktreeResponse{}
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[20]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1468,7 +1592,7 @@ func (x *DeleteWorktreeResponse) String() string {
 func (*DeleteWorktreeResponse) ProtoMessage() {}
 
 func (x *DeleteWorktreeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[20]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1481,7 +1605,7 @@ func (x *DeleteWorktreeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteWorktreeResponse.ProtoReflect.Descriptor instead.
 func (*DeleteWorktreeResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{20}
+	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *DeleteWorktreeResponse) GetDeleted() bool {
@@ -1509,7 +1633,7 @@ const file_agentfleet_v1_provisioner_proto_rawDesc = "" +
 	"\x06killed\x18\x01 \x01(\bR\x06killed\x12,\n" +
 	"\x12services_torn_down\x18\x02 \x03(\tR\x10servicesTornDown\"5\n" +
 	"\x1aGetE2eSessionStatusRequest\x12\x17\n" +
-	"\atask_id\x18\x01 \x01(\tR\x06taskId\"\x90\x02\n" +
+	"\atask_id\x18\x01 \x01(\tR\x06taskId\"\xce\x02\n" +
 	"\x1bGetE2eSessionStatusResponse\x12\x16\n" +
 	"\x06status\x18\x01 \x01(\tR\x06status\x12\x1f\n" +
 	"\vpreview_url\x18\x02 \x01(\tR\n" +
@@ -1520,17 +1644,25 @@ const file_agentfleet_v1_provisioner_proto_rawDesc = "" +
 	"\brestarts\x18\x06 \x01(\x05R\brestarts\x12\x1d\n" +
 	"\n" +
 	"started_at\x18\a \x01(\tR\tstartedAt\x12&\n" +
-	"\x0fcode_server_url\x18\b \x01(\tR\rcodeServerUrl\"\xd3\x01\n" +
+	"\x0fcode_server_url\x18\b \x01(\tR\rcodeServerUrl\x12<\n" +
+	"\tendpoints\x18\t \x03(\v2\x1e.agentfleet.v1.ServiceEndpointR\tendpoints\"\x85\x01\n" +
+	"\x0fServiceEndpoint\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x18\n" +
+	"\aaddress\x18\x02 \x01(\tR\aaddress\x12\x1a\n" +
+	"\bprotocol\x18\x03 \x01(\tR\bprotocol\x12\x12\n" +
+	"\x04path\x18\x04 \x01(\tR\x04path\x12\x14\n" +
+	"\x05token\x18\x05 \x01(\tR\x05token\"\xd3\x01\n" +
 	"\x17CreateE2eSessionRequest\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x12\n" +
 	"\x04repo\x18\x02 \x01(\tR\x04repo\x12\x1b\n" +
 	"\tstart_cmd\x18\x03 \x01(\tR\bstartCmd\x12\x1b\n" +
 	"\ttool_keys\x18\x04 \x03(\tR\btoolKeys\x12Q\n" +
-	"\x13service_ingredients\x18\x05 \x03(\v2 .agentfleet.v1.ServiceIngredientR\x12serviceIngredients\"S\n" +
+	"\x13service_ingredients\x18\x05 \x03(\v2 .agentfleet.v1.ServiceIngredientR\x12serviceIngredients\"\x91\x01\n" +
 	"\x18CreateE2eSessionResponse\x12\x16\n" +
 	"\x06status\x18\x01 \x01(\tR\x06status\x12\x1f\n" +
 	"\vpreview_url\x18\x02 \x01(\tR\n" +
-	"previewUrl\"\x9e\x03\n" +
+	"previewUrl\x12<\n" +
+	"\tendpoints\x18\x03 \x03(\v2\x1e.agentfleet.v1.ServiceEndpointR\tendpoints\"\x9e\x03\n" +
 	"\x16CreateWorkerPodRequest\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x12\n" +
 	"\x04repo\x18\x02 \x01(\tR\x04repo\x12\x19\n" +
@@ -1599,13 +1731,13 @@ const file_agentfleet_v1_provisioner_proto_rawDesc = "" +
 	"\vSessionKind\x12\x1c\n" +
 	"\x18SESSION_KIND_UNSPECIFIED\x10\x00\x12\x17\n" +
 	"\x13SESSION_KIND_WORKER\x10\x01\x12\x14\n" +
-	"\x10SESSION_KIND_E2E\x10\x022\xf4\x06\n" +
+	"\x10SESSION_KIND_E2E\x10\x022\xfe\x06\n" +
 	"\x12ProvisionerService\x12]\n" +
 	"\x0eKillE2eSession\x12$.agentfleet.v1.KillE2eSessionRequest\x1a%.agentfleet.v1.KillE2eSessionResponse\x12l\n" +
 	"\x13GetE2eSessionStatus\x12).agentfleet.v1.GetE2eSessionStatusRequest\x1a*.agentfleet.v1.GetE2eSessionStatusResponse\x12c\n" +
-	"\x10CreateE2eSession\x12&.agentfleet.v1.CreateE2eSessionRequest\x1a'.agentfleet.v1.CreateE2eSessionResponse\x12W\n" +
-	"\fListE2eTools\x12\".agentfleet.v1.ListE2eToolsRequest\x1a#.agentfleet.v1.ListE2eToolsResponse\x12T\n" +
-	"\vCallE2eTool\x12!.agentfleet.v1.CallE2eToolRequest\x1a\".agentfleet.v1.CallE2eToolResponse\x12`\n" +
+	"\x10CreateE2eSession\x12&.agentfleet.v1.CreateE2eSessionRequest\x1a'.agentfleet.v1.CreateE2eSessionResponse\x12\\\n" +
+	"\fListE2eTools\x12\".agentfleet.v1.ListE2eToolsRequest\x1a#.agentfleet.v1.ListE2eToolsResponse\"\x03\x88\x02\x01\x12Y\n" +
+	"\vCallE2eTool\x12!.agentfleet.v1.CallE2eToolRequest\x1a\".agentfleet.v1.CallE2eToolResponse\"\x03\x88\x02\x01\x12`\n" +
 	"\x0fCreateWorkerPod\x12%.agentfleet.v1.CreateWorkerPodRequest\x1a&.agentfleet.v1.CreateWorkerPodResponse\x12`\n" +
 	"\x0fTearDownSession\x12%.agentfleet.v1.TearDownSessionRequest\x1a&.agentfleet.v1.TearDownSessionResponse\x12Z\n" +
 	"\rListWorktrees\x12#.agentfleet.v1.ListWorktreesRequest\x1a$.agentfleet.v1.ListWorktreesResponse\x12]\n" +
@@ -1624,7 +1756,7 @@ func file_agentfleet_v1_provisioner_proto_rawDescGZIP() []byte {
 }
 
 var file_agentfleet_v1_provisioner_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_agentfleet_v1_provisioner_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
+var file_agentfleet_v1_provisioner_proto_msgTypes = make([]protoimpl.MessageInfo, 22)
 var file_agentfleet_v1_provisioner_proto_goTypes = []any{
 	(ScopeMode)(0),                      // 0: agentfleet.v1.ScopeMode
 	(SessionKind)(0),                    // 1: agentfleet.v1.SessionKind
@@ -1633,53 +1765,56 @@ var file_agentfleet_v1_provisioner_proto_goTypes = []any{
 	(*KillE2ESessionResponse)(nil),      // 4: agentfleet.v1.KillE2eSessionResponse
 	(*GetE2ESessionStatusRequest)(nil),  // 5: agentfleet.v1.GetE2eSessionStatusRequest
 	(*GetE2ESessionStatusResponse)(nil), // 6: agentfleet.v1.GetE2eSessionStatusResponse
-	(*CreateE2ESessionRequest)(nil),     // 7: agentfleet.v1.CreateE2eSessionRequest
-	(*CreateE2ESessionResponse)(nil),    // 8: agentfleet.v1.CreateE2eSessionResponse
-	(*CreateWorkerPodRequest)(nil),      // 9: agentfleet.v1.CreateWorkerPodRequest
-	(*CreateWorkerPodResponse)(nil),     // 10: agentfleet.v1.CreateWorkerPodResponse
-	(*TearDownSessionRequest)(nil),      // 11: agentfleet.v1.TearDownSessionRequest
-	(*TearDownSessionResponse)(nil),     // 12: agentfleet.v1.TearDownSessionResponse
-	(*ListE2EToolsRequest)(nil),         // 13: agentfleet.v1.ListE2eToolsRequest
-	(*E2EToolDescriptor)(nil),           // 14: agentfleet.v1.E2eToolDescriptor
-	(*ListE2EToolsResponse)(nil),        // 15: agentfleet.v1.ListE2eToolsResponse
-	(*CallE2EToolRequest)(nil),          // 16: agentfleet.v1.CallE2eToolRequest
-	(*CallE2EToolResponse)(nil),         // 17: agentfleet.v1.CallE2eToolResponse
-	(*ListWorktreesRequest)(nil),        // 18: agentfleet.v1.ListWorktreesRequest
-	(*WorktreeInfo)(nil),                // 19: agentfleet.v1.WorktreeInfo
-	(*ListWorktreesResponse)(nil),       // 20: agentfleet.v1.ListWorktreesResponse
-	(*DeleteWorktreeRequest)(nil),       // 21: agentfleet.v1.DeleteWorktreeRequest
-	(*DeleteWorktreeResponse)(nil),      // 22: agentfleet.v1.DeleteWorktreeResponse
+	(*ServiceEndpoint)(nil),             // 7: agentfleet.v1.ServiceEndpoint
+	(*CreateE2ESessionRequest)(nil),     // 8: agentfleet.v1.CreateE2eSessionRequest
+	(*CreateE2ESessionResponse)(nil),    // 9: agentfleet.v1.CreateE2eSessionResponse
+	(*CreateWorkerPodRequest)(nil),      // 10: agentfleet.v1.CreateWorkerPodRequest
+	(*CreateWorkerPodResponse)(nil),     // 11: agentfleet.v1.CreateWorkerPodResponse
+	(*TearDownSessionRequest)(nil),      // 12: agentfleet.v1.TearDownSessionRequest
+	(*TearDownSessionResponse)(nil),     // 13: agentfleet.v1.TearDownSessionResponse
+	(*ListE2EToolsRequest)(nil),         // 14: agentfleet.v1.ListE2eToolsRequest
+	(*E2EToolDescriptor)(nil),           // 15: agentfleet.v1.E2eToolDescriptor
+	(*ListE2EToolsResponse)(nil),        // 16: agentfleet.v1.ListE2eToolsResponse
+	(*CallE2EToolRequest)(nil),          // 17: agentfleet.v1.CallE2eToolRequest
+	(*CallE2EToolResponse)(nil),         // 18: agentfleet.v1.CallE2eToolResponse
+	(*ListWorktreesRequest)(nil),        // 19: agentfleet.v1.ListWorktreesRequest
+	(*WorktreeInfo)(nil),                // 20: agentfleet.v1.WorktreeInfo
+	(*ListWorktreesResponse)(nil),       // 21: agentfleet.v1.ListWorktreesResponse
+	(*DeleteWorktreeRequest)(nil),       // 22: agentfleet.v1.DeleteWorktreeRequest
+	(*DeleteWorktreeResponse)(nil),      // 23: agentfleet.v1.DeleteWorktreeResponse
 }
 var file_agentfleet_v1_provisioner_proto_depIdxs = []int32{
 	0,  // 0: agentfleet.v1.ServiceIngredient.scope_mode:type_name -> agentfleet.v1.ScopeMode
-	2,  // 1: agentfleet.v1.CreateE2eSessionRequest.service_ingredients:type_name -> agentfleet.v1.ServiceIngredient
-	2,  // 2: agentfleet.v1.CreateWorkerPodRequest.service_ingredients:type_name -> agentfleet.v1.ServiceIngredient
-	1,  // 3: agentfleet.v1.TearDownSessionRequest.kind:type_name -> agentfleet.v1.SessionKind
-	14, // 4: agentfleet.v1.ListE2eToolsResponse.tools:type_name -> agentfleet.v1.E2eToolDescriptor
-	19, // 5: agentfleet.v1.ListWorktreesResponse.worktrees:type_name -> agentfleet.v1.WorktreeInfo
-	3,  // 6: agentfleet.v1.ProvisionerService.KillE2eSession:input_type -> agentfleet.v1.KillE2eSessionRequest
-	5,  // 7: agentfleet.v1.ProvisionerService.GetE2eSessionStatus:input_type -> agentfleet.v1.GetE2eSessionStatusRequest
-	7,  // 8: agentfleet.v1.ProvisionerService.CreateE2eSession:input_type -> agentfleet.v1.CreateE2eSessionRequest
-	13, // 9: agentfleet.v1.ProvisionerService.ListE2eTools:input_type -> agentfleet.v1.ListE2eToolsRequest
-	16, // 10: agentfleet.v1.ProvisionerService.CallE2eTool:input_type -> agentfleet.v1.CallE2eToolRequest
-	9,  // 11: agentfleet.v1.ProvisionerService.CreateWorkerPod:input_type -> agentfleet.v1.CreateWorkerPodRequest
-	11, // 12: agentfleet.v1.ProvisionerService.TearDownSession:input_type -> agentfleet.v1.TearDownSessionRequest
-	18, // 13: agentfleet.v1.ProvisionerService.ListWorktrees:input_type -> agentfleet.v1.ListWorktreesRequest
-	21, // 14: agentfleet.v1.ProvisionerService.DeleteWorktree:input_type -> agentfleet.v1.DeleteWorktreeRequest
-	4,  // 15: agentfleet.v1.ProvisionerService.KillE2eSession:output_type -> agentfleet.v1.KillE2eSessionResponse
-	6,  // 16: agentfleet.v1.ProvisionerService.GetE2eSessionStatus:output_type -> agentfleet.v1.GetE2eSessionStatusResponse
-	8,  // 17: agentfleet.v1.ProvisionerService.CreateE2eSession:output_type -> agentfleet.v1.CreateE2eSessionResponse
-	15, // 18: agentfleet.v1.ProvisionerService.ListE2eTools:output_type -> agentfleet.v1.ListE2eToolsResponse
-	17, // 19: agentfleet.v1.ProvisionerService.CallE2eTool:output_type -> agentfleet.v1.CallE2eToolResponse
-	10, // 20: agentfleet.v1.ProvisionerService.CreateWorkerPod:output_type -> agentfleet.v1.CreateWorkerPodResponse
-	12, // 21: agentfleet.v1.ProvisionerService.TearDownSession:output_type -> agentfleet.v1.TearDownSessionResponse
-	20, // 22: agentfleet.v1.ProvisionerService.ListWorktrees:output_type -> agentfleet.v1.ListWorktreesResponse
-	22, // 23: agentfleet.v1.ProvisionerService.DeleteWorktree:output_type -> agentfleet.v1.DeleteWorktreeResponse
-	15, // [15:24] is the sub-list for method output_type
-	6,  // [6:15] is the sub-list for method input_type
-	6,  // [6:6] is the sub-list for extension type_name
-	6,  // [6:6] is the sub-list for extension extendee
-	0,  // [0:6] is the sub-list for field type_name
+	7,  // 1: agentfleet.v1.GetE2eSessionStatusResponse.endpoints:type_name -> agentfleet.v1.ServiceEndpoint
+	2,  // 2: agentfleet.v1.CreateE2eSessionRequest.service_ingredients:type_name -> agentfleet.v1.ServiceIngredient
+	7,  // 3: agentfleet.v1.CreateE2eSessionResponse.endpoints:type_name -> agentfleet.v1.ServiceEndpoint
+	2,  // 4: agentfleet.v1.CreateWorkerPodRequest.service_ingredients:type_name -> agentfleet.v1.ServiceIngredient
+	1,  // 5: agentfleet.v1.TearDownSessionRequest.kind:type_name -> agentfleet.v1.SessionKind
+	15, // 6: agentfleet.v1.ListE2eToolsResponse.tools:type_name -> agentfleet.v1.E2eToolDescriptor
+	20, // 7: agentfleet.v1.ListWorktreesResponse.worktrees:type_name -> agentfleet.v1.WorktreeInfo
+	3,  // 8: agentfleet.v1.ProvisionerService.KillE2eSession:input_type -> agentfleet.v1.KillE2eSessionRequest
+	5,  // 9: agentfleet.v1.ProvisionerService.GetE2eSessionStatus:input_type -> agentfleet.v1.GetE2eSessionStatusRequest
+	8,  // 10: agentfleet.v1.ProvisionerService.CreateE2eSession:input_type -> agentfleet.v1.CreateE2eSessionRequest
+	14, // 11: agentfleet.v1.ProvisionerService.ListE2eTools:input_type -> agentfleet.v1.ListE2eToolsRequest
+	17, // 12: agentfleet.v1.ProvisionerService.CallE2eTool:input_type -> agentfleet.v1.CallE2eToolRequest
+	10, // 13: agentfleet.v1.ProvisionerService.CreateWorkerPod:input_type -> agentfleet.v1.CreateWorkerPodRequest
+	12, // 14: agentfleet.v1.ProvisionerService.TearDownSession:input_type -> agentfleet.v1.TearDownSessionRequest
+	19, // 15: agentfleet.v1.ProvisionerService.ListWorktrees:input_type -> agentfleet.v1.ListWorktreesRequest
+	22, // 16: agentfleet.v1.ProvisionerService.DeleteWorktree:input_type -> agentfleet.v1.DeleteWorktreeRequest
+	4,  // 17: agentfleet.v1.ProvisionerService.KillE2eSession:output_type -> agentfleet.v1.KillE2eSessionResponse
+	6,  // 18: agentfleet.v1.ProvisionerService.GetE2eSessionStatus:output_type -> agentfleet.v1.GetE2eSessionStatusResponse
+	9,  // 19: agentfleet.v1.ProvisionerService.CreateE2eSession:output_type -> agentfleet.v1.CreateE2eSessionResponse
+	16, // 20: agentfleet.v1.ProvisionerService.ListE2eTools:output_type -> agentfleet.v1.ListE2eToolsResponse
+	18, // 21: agentfleet.v1.ProvisionerService.CallE2eTool:output_type -> agentfleet.v1.CallE2eToolResponse
+	11, // 22: agentfleet.v1.ProvisionerService.CreateWorkerPod:output_type -> agentfleet.v1.CreateWorkerPodResponse
+	13, // 23: agentfleet.v1.ProvisionerService.TearDownSession:output_type -> agentfleet.v1.TearDownSessionResponse
+	21, // 24: agentfleet.v1.ProvisionerService.ListWorktrees:output_type -> agentfleet.v1.ListWorktreesResponse
+	23, // 25: agentfleet.v1.ProvisionerService.DeleteWorktree:output_type -> agentfleet.v1.DeleteWorktreeResponse
+	17, // [17:26] is the sub-list for method output_type
+	8,  // [8:17] is the sub-list for method input_type
+	8,  // [8:8] is the sub-list for extension type_name
+	8,  // [8:8] is the sub-list for extension extendee
+	0,  // [0:8] is the sub-list for field type_name
 }
 
 func init() { file_agentfleet_v1_provisioner_proto_init() }
@@ -1693,7 +1828,7 @@ func file_agentfleet_v1_provisioner_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_agentfleet_v1_provisioner_proto_rawDesc), len(file_agentfleet_v1_provisioner_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   21,
+			NumMessages:   22,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -422,15 +422,18 @@ func (s *Server) StartE2E(ctx context.Context, req *connect.Request[agentfleetv1
 		slog.Error("dashboard StartE2E: resolve recipe", "taskId", taskID, "repo", t.Repo, "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
-	status, previewURL, err := s.e2e.CreateE2eSession(ctx, taskID, t.Repo, recipe.StartCmd, recipe.ToolKeys, recipe.Services)
+	created, err := s.e2e.CreateE2eSession(ctx, taskID, t.Repo, recipe.StartCmd, recipe.ToolKeys, recipe.Services)
 	if err != nil {
 		slog.Error("dashboard StartE2E", "taskId", taskID, "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	slog.Info("dashboard StartE2E", "taskId", taskID, "repo", t.Repo, "profile", recipe.ProfileName)
+	// The roster is deliberately not surfaced to the browser: a dashboard
+	// user has no route to a ClusterIP, and the endpoints are only useful to
+	// in-cluster callers (docs/adr/0045).
 	return connect.NewResponse(&agentfleetv1.StartE2EResponse{
-		Status:           status,
-		PreviewUrl:       previewURL,
+		Status:           created.GetStatus(),
+		PreviewUrl:       created.GetPreviewUrl(),
 		ResolvedStartCmd: recipe.StartCmd,
 		ProfileName:      recipe.ProfileName,
 	}), nil

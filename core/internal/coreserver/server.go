@@ -203,7 +203,7 @@ func (s *Server) RequestE2EEnv(ctx context.Context, req *agentfleetv1.RequestE2E
 		startCmd = recipe.StartCmd
 	}
 	profileName, toolKeys, serviceIngredients := recipe.ProfileName, recipe.ToolKeys, recipe.Services
-	status, previewURL, err := s.provisioner.CreateE2eSession(ctx, req.GetTaskId(), t.Repo, startCmd, toolKeys, serviceIngredients)
+	created, err := s.provisioner.CreateE2eSession(ctx, req.GetTaskId(), t.Repo, startCmd, toolKeys, serviceIngredients)
 	if err != nil {
 		return nil, fmt.Errorf("RequestE2EEnv: %w", err)
 	}
@@ -213,12 +213,17 @@ func (s *Server) RequestE2EEnv(ctx context.Context, req *agentfleetv1.RequestE2E
 	// able to explain why (see the readiness probe in provisioner's pod.go
 	// for the other half of that failure).
 	resp := &agentfleetv1.RequestE2EEnvResponse{
-		Status:           status,
-		PreviewUrl:       previewURL,
+		Status:           created.GetStatus(),
+		PreviewUrl:       created.GetPreviewUrl(),
 		ResolvedStartCmd: startCmd,
 		ProfileName:      profileName,
 		Tools:            toolKeys,
 		Services:         repoprofiles.FormatServices(serviceIngredients),
+		// Forwarded byte-for-byte from the provisioner (docs/adr/0045). core
+		// does not build, cache, validate or interpret these — it does not
+		// know what MCP is. That is what makes this a field passthrough
+		// rather than the call passthrough it replaces.
+		Endpoints: created.GetEndpoints(),
 	}
 	return resp, nil
 }

@@ -130,6 +130,11 @@ func (s *Server) GetE2ESessionStatus(ctx context.Context, req *agentfleetv1.GetE
 		AppReady:      state.AppReady,
 		Restarts:      state.Restarts,
 		StartedAt:     state.StartedAt,
+		// Only when a pod exists — the early return above already covers the
+		// no-session case with an empty response. This is how core's own
+		// dashboard path (runInE2ePod) reaches a sandbox it did not provision
+		// (docs/adr/0045).
+		Endpoints: s.endpointsFor(req.GetTaskId()),
 	}, nil
 }
 
@@ -174,9 +179,14 @@ func (s *Server) CreateE2ESession(ctx context.Context, req *agentfleetv1.CreateE
 		exists = false
 	}
 	if exists {
+		// The roster goes out on this path too, not just on creation
+		// (docs/adr/0045). A resumed session short-circuits here every time,
+		// so returning endpoints only from the create path below would leave
+		// exactly the long-lived sessions unable to dial.
 		return &agentfleetv1.CreateE2ESessionResponse{
 			Status:     e2eStatusFromPhase(state.Phase),
 			PreviewUrl: k8s.PreviewURLFor(s.e2eHost, req.GetTaskId()),
+			Endpoints:  s.endpointsFor(req.GetTaskId()),
 		}, nil
 	}
 
@@ -208,7 +218,32 @@ func (s *Server) CreateE2ESession(ctx context.Context, req *agentfleetv1.CreateE
 	return &agentfleetv1.CreateE2ESessionResponse{
 		Status:     "requested",
 		PreviewUrl: k8s.PreviewURLFor(s.e2eHost, req.GetTaskId()),
+		Endpoints:  s.endpointsFor(req.GetTaskId()),
 	}, nil
+}
+
+// endpointsFor maps k8s's plain addressing structs onto the wire type — the
+// same boundary scopeModeString keeps in the other direction, so the k8s
+// package never imports generated code.
+//
+// Deliberately unconditional: the roster describes where the sandbox *would*
+// answer, derived from names, not whether it is answering yet. A caller that
+// dials too early gets a connection error and retries, which is a state the
+// sidecar's run_command backoff already models (docs/adr/0044). Gating the
+// roster on readiness instead would swap that legible failure for an empty
+// list meaning both "not ready" and "no such service".
+func (s *Server) endpointsFor(taskID string) []*agentfleetv1.ServiceEndpoint {
+	resolved := k8s.EndpointsFor(s.k8sc.Namespace, taskID)
+	out := make([]*agentfleetv1.ServiceEndpoint, 0, len(resolved))
+	for _, e := range resolved {
+		out = append(out, &agentfleetv1.ServiceEndpoint{
+			Name:     e.Name,
+			Address:  e.Address,
+			Protocol: e.Protocol,
+			Path:     e.Path,
+		})
+	}
+	return out
 }
 
 // scopeModeString converts the proto ScopeMode enum into the plain string

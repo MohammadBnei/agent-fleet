@@ -76,6 +76,40 @@ message GetE2eSessionStatusResponse {
   // button was pointed at preview_url — the app root — and so had never once
   // opened code-server (docs/adr/0044).
   string code_server_url = 8;
+  // docs/adr/0045 — see ServiceEndpoint. Present here as well as on
+  // CreateE2eSession because core's own dashboard path (runInE2ePod, backing
+  // GetE2EAppLog and the human run-command surface) needs to reach the
+  // sandbox without provisioning one.
+  repeated ServiceEndpoint endpoints = 9;
+}
+
+// A directly-dialable address for one service, resolved by the component that
+// knows it exists and handed to whoever needs to call it (docs/adr/0045).
+//
+// This is the fleet's whole service-discovery mechanism, and it is
+// deliberately not a registry: there is no lookup RPC and no `services`
+// table. Kubernetes is already ground truth for whether a pod exists — a row
+// survives an OOMKill, a Service endpoint does not, so a table would be a
+// cache that lies. The provisioner computes these from (namespace, taskID),
+// the same pure function that names the Service it just created, and they
+// ride back on responses core already sends.
+//
+// Fields NOT here, and why:
+//   - who may call it — authorization is a per-task NetworkPolicy. A field
+//     the caller reads is advice; a policy the CNI enforces is not.
+//   - ttl/expires_at — validity is implied by delivery. A failed dial
+//     re-resolves through the provision path that already exists.
+//   - scope — a roster reaches one sidecar serving one task. The delivery
+//     channel *is* the scope.
+message ServiceEndpoint {
+  string name = 1;     // "playwright" | "exec"
+  string address = 2;  // host:port, host fully qualified with a trailing dot
+  string protocol = 3; // "mcp-streamable-http" | "grpc"
+  string path = 4;     // "/mcp" for MCP, "" for gRPC
+  // Bearer token, when a service authenticates its callers at all. Empty for
+  // the sandbox, deliberately: docs/adr/0039 rests on the e2e pod holding no
+  // fleet credentials, so reachability there is fenced structurally instead.
+  string token = 5;
 }
 
 // Requests an on-demand e2e preview pod for taskId (mounts the same
@@ -101,6 +135,11 @@ message CreateE2eSessionRequest {
 message CreateE2eSessionResponse {
   string status = 1;
   string preview_url = 2;
+  // docs/adr/0045. Filled on BOTH the fresh-create path and the
+  // already-exists short-circuit — a resumed session that skips creation
+  // still needs to know where to dial, and returning them only on creation
+  // is the obvious way to break exactly that case.
+  repeated ServiceEndpoint endpoints = 3;
 }
 
 // Which kind of session/pod an operation targets — worker pods and e2e
@@ -176,13 +215,16 @@ message TearDownSessionResponse {
   bool torn_down = 1; // false = nothing to tear down
 }
 
-// The e2e pod's own MCP server (Playwright automation) exposes a tool set
-// discovered at runtime, not a fixed enumerable list — these two RPCs are
-// a generic passthrough, mirroring what today's mcpproxy.Proxy already
-// does in-process. Proxied sidecar -> core -> provisioner -> e2e pod,
-// same hub-and-spoke rule as everything else (docs/adr/0020) — the extra
-// hop's latency cost was already named and accepted in that ADR's
-// Alternatives, not an oversight here.
+// DEPRECATED (docs/adr/0045) — the sidecar dials the sandbox directly from
+// a ServiceEndpoint roster now, and these are deleted once every live pod
+// runs a sidecar that does. Do not add callers.
+//
+// ADR-0020 accepted the extra hop for consistency and left a revisit
+// trigger ("if that hop proves materially slow"). It was measured twice and
+// the trigger never fired: the fleet's entire overhead around a tool call is
+// ~1ms. These go for coupling, not speed — a passthrough on core costs a
+// proto pair and a handler per service, and routes a shell command through
+// the fleet's Postgres-credential holder for no reason involving credentials.
 message ListE2eToolsRequest {
   string task_id = 1;
 }
@@ -258,10 +300,16 @@ service ProvisionerService {
   rpc CreateE2eSession(CreateE2eSessionRequest) returns (CreateE2eSessionResponse);
   // Reused by core.proto's own ListE2eTools/CallE2eTool one hop further
   // down the passthrough chain (see that file's comment).
+  // DEPRECATED (docs/adr/0045) — deleted once every live pod runs a sidecar
+  // that dials the sandbox itself.
   // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
-  rpc ListE2eTools(ListE2eToolsRequest) returns (ListE2eToolsResponse);
+  rpc ListE2eTools(ListE2eToolsRequest) returns (ListE2eToolsResponse) {
+    option deprecated = true;
+  }
   // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
-  rpc CallE2eTool(CallE2eToolRequest) returns (CallE2eToolResponse);
+  rpc CallE2eTool(CallE2eToolRequest) returns (CallE2eToolResponse) {
+    option deprecated = true;
+  }
   rpc CreateWorkerPod(CreateWorkerPodRequest) returns (CreateWorkerPodResponse);
   rpc TearDownSession(TearDownSessionRequest) returns (TearDownSessionResponse);
   // Reused as-is by dashboard.proto's own ListWorktrees (identical empty

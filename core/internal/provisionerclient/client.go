@@ -106,10 +106,14 @@ func (c *Client) GetSessionStatus(ctx context.Context, taskID string) (*agentfle
 // (docs/adr/0034, empty when it has none — preserves the pre-recipe pod
 // shape); the provisioner mints any non-pod-scoped service credentials
 // itself, core never sees them.
-func (c *Client) CreateE2eSession(ctx context.Context, taskID, repo, startCmd string, toolKeys []string, serviceIngredients []repoprofiles.ServiceIngredient) (status, previewURL string, err error) {
+// Returns the response whole, for the same reason GetSessionStatus does: it
+// now carries the ServiceEndpoint roster (docs/adr/0045), which core forwards
+// untouched. Picking two fields off it here is what would make the roster
+// core's business.
+func (c *Client) CreateE2eSession(ctx context.Context, taskID, repo, startCmd string, toolKeys []string, serviceIngredients []repoprofiles.ServiceIngredient) (*agentfleetv1.CreateE2ESessionResponse, error) {
 	protoIngredients, err := toProtoServiceIngredients(serviceIngredients)
 	if err != nil {
-		return "", "", fmt.Errorf("CreateE2ESession: %w", err)
+		return nil, fmt.Errorf("CreateE2ESession: %w", err)
 	}
 	ctx, cancel := context.WithTimeout(ctx, e2eCreateTimeout)
 	defer cancel()
@@ -121,9 +125,9 @@ func (c *Client) CreateE2eSession(ctx context.Context, taskID, repo, startCmd st
 		ServiceIngredients: protoIngredients,
 	})
 	if err != nil {
-		return "", "", fmt.Errorf("CreateE2ESession: %w", err)
+		return nil, fmt.Errorf("CreateE2ESession: %w", err)
 	}
-	return resp.GetStatus(), resp.GetPreviewUrl(), nil
+	return resp, nil
 }
 
 // toProtoServiceIngredients/toProtoScopeMode convert repoprofiles' plain
@@ -161,7 +165,19 @@ func toProtoScopeMode(s string) (agentfleetv1.ScopeMode, error) {
 // ListE2eTools/CallE2eTool proxy the e2e pod's runtime-discovered Playwright
 // tool set (docs/adr/0020 hub-and-spoke — sidecar -> core -> provisioner ->
 // e2e pod, this is the third hop).
+//
+// DEPRECATED (docs/adr/0045). These two are the relay being deleted; the
+// sidecar dials the sandbox itself from RequestE2eEnvResponse.endpoints. They
+// survive only for the window in which a live worker pod still runs an older
+// sidecar image, and go once the fleet has drained of those.
+//
+// The staticcheck exemptions below are deliberately per-call rather than a
+// file-level or config-level suppression: the wire methods are marked
+// deprecated precisely so a *new* caller fails the build, and these are the
+// two known ones with a removal date. Widening the suppression would switch
+// off the signal that makes the deprecation worth anything.
 func (c *Client) ListE2eTools(ctx context.Context, taskID string) ([]*agentfleetv1.E2EToolDescriptor, error) {
+	//nolint:staticcheck // SA1019: deprecated by adr/0045, deleted after the fleet drains of pre-roster sidecars
 	resp, err := c.rpc.ListE2ETools(ctx, &agentfleetv1.ListE2EToolsRequest{TaskId: taskID})
 	if err != nil {
 		return nil, fmt.Errorf("ListE2ETools: %w", err)
@@ -170,6 +186,7 @@ func (c *Client) ListE2eTools(ctx context.Context, taskID string) ([]*agentfleet
 }
 
 func (c *Client) CallE2eTool(ctx context.Context, taskID, toolName, argumentsJSON string) (resultJSON string, isError bool, err error) {
+	//nolint:staticcheck // SA1019: deprecated by adr/0045, deleted after the fleet drains of pre-roster sidecars
 	resp, err := c.rpc.CallE2ETool(ctx, &agentfleetv1.CallE2EToolRequest{
 		TaskId:        taskID,
 		ToolName:      toolName,
