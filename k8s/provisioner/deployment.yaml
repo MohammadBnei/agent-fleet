@@ -33,7 +33,7 @@ spec:
       serviceAccountName: provisioner
       containers:
       - name: provisioner
-        image: mohammaddocker/agent-fleet-provisioner:1.51.0
+        image: mohammaddocker/agent-fleet-provisioner:1.51.1
         ports:
         - containerPort: 8080
           name: http
@@ -55,9 +55,9 @@ spec:
         # clones/worktrees onto, and where core's own gRPC server
         # (ReportPodEvents) lives.
         - name: WORKER_IMAGE
-          value: mohammaddocker/agent-fleet-worker:1.51.0
+          value: mohammaddocker/agent-fleet-worker:1.51.1
         - name: SIDECAR_IMAGE
-          value: mohammaddocker/agent-fleet-sidecar:1.51.0
+          value: mohammaddocker/agent-fleet-sidecar:1.51.1
         - name: WORKSPACE_PVC
           value: agent-fleet-workspace
         - name: WORKTREES_ROOT
