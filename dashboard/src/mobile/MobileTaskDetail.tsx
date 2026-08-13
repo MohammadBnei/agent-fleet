@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { client } from "../connectClient";
 import { isThot, repoLabel } from "../taskKind";
 import {
@@ -81,13 +81,22 @@ export function MobileTaskDetail({
     prevLen.current = entries.length;
   }, [entries, atBottom, scrollToBottom]);
 
+  // Before the first paint of this task's feed, not after — as a plain effect
+  // it painted the top of the history and then visibly scrolled down. Same
+  // reasoning as TaskDetail's copy.
   const scrolledFor = useRef<string | null>(null);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (entries.length === 0 || scrolledFor.current === taskId) return;
     scrolledFor.current = taskId;
     const el = feedRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [taskId, entries, feedRef]);
+
+  // The optimistic echo renders before the server has the message; without
+  // this, a send only scrolled once the real entry came back over the stream.
+  useEffect(() => {
+    if (pendingMessage !== null) scrollToBottom();
+  }, [pendingMessage, scrollToBottom]);
 
   if (loadError) {
     return (
