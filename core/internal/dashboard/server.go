@@ -22,6 +22,7 @@ import (
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 	"github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1/agentfleetv1connect"
 
+	"github.com/MohammadBnei/agent-fleet/core/internal/e2edial"
 	"github.com/MohammadBnei/agent-fleet/core/internal/e2erecipe"
 	"github.com/MohammadBnei/agent-fleet/core/internal/filestore"
 	"github.com/MohammadBnei/agent-fleet/core/internal/journal"
@@ -481,15 +482,45 @@ func (s *Server) GetE2EAppLog(ctx context.Context, req *connect.Request[agentfle
 	return connect.NewResponse(&agentfleetv1.GetE2EAppLogResponse{Log: out}), nil
 }
 
-// runInE2ePod is the shared half of the two handlers above: run one command
-// in the task's e2e pod through the existing run_command passthrough and
-// unwrap execmcp's {stdout,stderr,exitCode} envelope.
-func (s *Server) runInE2ePod(ctx context.Context, taskID, command string) (output string, exitCode int32, err error) {
+// runViaSandbox dials the task's sandbox directly, falling back to the
+// provisioner relay when the roster is empty (docs/adr/0045).
+//
+// The roster arrives on GetE2eSessionStatus, which this already had to call —
+// it needs the pod's live state anyway to know whether there is anything to
+// run in. So direct dial costs core no extra round trip here, unlike the
+// sidecar, which had to be handed its roster at pod creation.
+//
+// Same contract as the sidecar's: the fallback is for an ABSENT roster (a
+// provisioner too old to send one, during a rolling deploy), never for a
+// FAILED dial. Retrying a failed dial through a path that is about to be
+// deleted would hide the breakage the cut-over needs visible.
+func (s *Server) runViaSandbox(ctx context.Context, taskID, command string) (string, error) {
+	status, err := s.e2e.GetSessionStatus(ctx, taskID)
+	if err != nil {
+		return "", err
+	}
+	endpoints := make([]e2edial.Endpoint, 0, len(status.GetEndpoints()))
+	for _, e := range status.GetEndpoints() {
+		endpoints = append(endpoints, e2edial.Endpoint{Name: e.GetName(), Address: e.GetAddress(), Path: e.GetPath()})
+	}
+	if ep, ok := e2edial.Find(endpoints, e2edial.EndpointExec); ok {
+		return e2edial.RunCommand(ctx, ep, command)
+	}
+
+	slog.Info("dashboard runInE2ePod: no endpoint roster, relaying through the provisioner", "taskId", taskID)
 	argsJSON, err := json.Marshal(map[string]any{"command": command})
 	if err != nil {
-		return "", 0, err
+		return "", err
 	}
 	resultJSON, _, err := s.e2e.CallE2eTool(ctx, taskID, "run_command", string(argsJSON))
+	return resultJSON, err
+}
+
+// runInE2ePod is the shared half of the two handlers above: run one command
+// in the task's e2e pod and unwrap execmcp's {stdout,stderr,exitCode}
+// envelope.
+func (s *Server) runInE2ePod(ctx context.Context, taskID, command string) (output string, exitCode int32, err error) {
+	resultJSON, err := s.runViaSandbox(ctx, taskID, command)
 	if err != nil {
 		return "", 0, err
 	}
