@@ -24,7 +24,7 @@ sidecar) with a git worktree already prepared on a shared PVC, up to
 [`docs/adr/0019`](./docs/adr/0019-shared-pvc-and-unified-provisioner.md)
 for why this replaced the original one-persistent-pod-per-repo design.
 
-- `core/` — Go: Discord ingress (`/task`/`/approve`/`/stop`/`/e2e-kill`,
+- `core/` — Go: Discord ingress (`/task`/`/stop`/`/e2e-kill`,
   legacy `!task repo: desc`), the dispatch loop that claims tasks and
   commands the provisioner, its own gRPC server (`CoreService`), the
   planning-transcript coordination (Postgres), Loki log queries (agents can
