@@ -103,9 +103,22 @@ func (p *Proxy) CallTool(ctx context.Context, taskID, name string, args map[stri
 	if err != nil {
 		return nil, err
 	}
-	return c.CallTool(ctx, mcp.CallToolRequest{
+	result, err := c.CallTool(ctx, mcp.CallToolRequest{
 		Params: mcp.CallToolParams{Name: name, Arguments: args},
 	})
+	if err != nil {
+		// The cached client holds an MCP session bound to one pod. Every path
+		// that replaces a pod under a live task — kill_env, the terminating
+		// recreate, docs/adr/0044's Failed recreate, the reconcile sweep —
+		// otherwise leaves this client pointing at a corpse, and only
+		// kill_env/tearDownE2e ever called DropClient. Dropping on any call
+		// error covers all of them in one place: the next call rebuilds
+		// against whatever pod is live now.
+		slog.Info("dropping playwright mcp client after a failed call", "taskId", taskID, "tool", name, "error", err)
+		p.DropClient(taskID)
+		return nil, err
+	}
+	return result, nil
 }
 
 // callExec is a one-shot client, not a cached one — run_command is a

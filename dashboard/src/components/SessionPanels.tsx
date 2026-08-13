@@ -1,9 +1,11 @@
+import { useState } from "react";
 import type { Task } from "../gen/agentfleet/v1/core_pb";
 import type { GetE2eStatusResponse } from "../gen/agentfleet/v1/dashboard_pb";
 import type { ToolCallSummary, TodoItem } from "../transcript";
 import { TickBar, todoProgress } from "./TickBar";
 import { NotchCard } from "./NotchCard";
 import { ActionsMenu } from "./ActionsMenu";
+import { E2eManageDrawer } from "./E2eManageDrawer";
 
 // TODOS / CHANGES / E2E PREVIEW / SESSION. Desktop puts these in a fixed 266px
 // right column, mobile behind "panels ▸" as a bottom sheet — one component so
@@ -89,14 +91,56 @@ export function ChangesPanel({ branch, changes }: { branch: string | null; chang
 // the whole URL. Without it a flex item refuses to shrink below that, and this
 // card silently widened the mobile column to 437px on a 390px viewport — caught
 // by measuring rects in Playwright, invisible to tsc and to lint.
-export function E2ePanel({ e2e }: { e2e: GetE2eStatusResponse | null }) {
+export function E2ePanel({
+  e2e,
+  taskId,
+  onChanged,
+}: {
+  e2e: GetE2eStatusResponse | null;
+  // Optional so a caller that only wants the read-only card still compiles —
+  // without both, Manage is simply not offered rather than opening a drawer
+  // whose buttons would all fail.
+  taskId?: string;
+  onChanged?: () => void;
+}) {
+  const [manageOpen, setManageOpen] = useState(false);
+  const canManage = Boolean(taskId);
+  // A task with no sandbox still needs the card, because Start lives in the
+  // drawer — this used to render nothing at all, which is why starting one
+  // from the dashboard was impossible (docs/adr/0044).
+  if ((!e2e || !e2e.status) && canManage) {
+    return (
+      <NotchCard label="E2E PREVIEW" className="px-3 pt-3.5 pb-3 min-w-0">
+        <div className="text-xs text-dim2 mb-2">No sandbox running.</div>
+        <button type="button" className="btn btn-xs btn-outline w-full" onClick={() => setManageOpen(true)}>
+          Manage…
+        </button>
+        <E2eManageDrawer
+          taskId={taskId!}
+          e2e={e2e}
+          open={manageOpen}
+          onClose={() => setManageOpen(false)}
+          onChanged={onChanged ?? (() => {})}
+        />
+      </NotchCard>
+    );
+  }
   if (!e2e || !e2e.status) return null;
   const running = e2e.podPhase === "Running";
-  const state = e2e.appReady
-    ? { text: "ready", dot: "bg-success", cls: "text-green-soft" }
-    : running
-      ? { text: "starting", dot: "bg-info", cls: "text-info" }
-      : { text: e2e.podPhase.toLowerCase() || e2e.status, dot: "border border-dim2", cls: "text-dim2" };
+  // A pod with no start command is a sandbox, not a broken preview
+  // (docs/adr/0044): run_command works, nothing will ever bind the app port,
+  // and the readiness probe therefore never passes. Without this it read
+  // "starting" forever and offered a preview link to a 502.
+  const sandboxOnly = !e2e.startCmd;
+  const state = sandboxOnly
+    ? running
+      ? { text: "sandbox · no app", dot: "bg-info", cls: "text-info" }
+      : { text: e2e.podPhase.toLowerCase() || e2e.status, dot: "border border-dim2", cls: "text-dim2" }
+    : e2e.appReady
+      ? { text: "ready", dot: "bg-success", cls: "text-green-soft" }
+      : running
+        ? { text: "starting", dot: "bg-info", cls: "text-info" }
+        : { text: e2e.podPhase.toLowerCase() || e2e.status, dot: "border border-dim2", cls: "text-dim2" };
 
   const ingredients = [...e2e.tools, ...e2e.services];
 
@@ -132,7 +176,13 @@ export function E2ePanel({ e2e }: { e2e: GetE2eStatusResponse | null }) {
         </a>
       )}
 
-      {running && !e2e.appReady && (
+      {running && sandboxOnly && (
+        <div className="text-xs text-dim2 leading-snug min-w-0">
+          No app command in this profile — builds and tests only, no preview.
+        </div>
+      )}
+
+      {running && !sandboxOnly && !e2e.appReady && (
         <div className="text-xs text-dim2 leading-snug min-w-0">
           Nothing on the app port yet — installing, or the command never binds{" "}
           <span className="text-dim">0.0.0.0:$PORT</span>.
@@ -161,6 +211,28 @@ export function E2ePanel({ e2e }: { e2e: GetE2eStatusResponse | null }) {
           ))}
         </div>
       )}
+
+      {canManage && (
+        <>
+          {/* Controls and the app log live in a drawer, not on this card: at
+              266px a log line wraps three times, and reading the log is the
+              point of having it at all. */}
+          <button
+            type="button"
+            className="btn btn-xs btn-outline w-full mt-2.5"
+            onClick={() => setManageOpen(true)}
+          >
+            Manage…
+          </button>
+          <E2eManageDrawer
+            taskId={taskId!}
+            e2e={e2e}
+            open={manageOpen}
+            onClose={() => setManageOpen(false)}
+            onChanged={onChanged ?? (() => {})}
+          />
+        </>
+      )}
     </NotchCard>
   );
 }
@@ -170,7 +242,7 @@ export function SessionPanel({
   busy,
   busyKey,
   run,
-  previewUrl,
+  codeServerUrl,
   isThotTask,
   onBypassClick,
 }: {
@@ -178,7 +250,7 @@ export function SessionPanel({
   busy: boolean;
   busyKey: string | null;
   run: (action: () => Promise<unknown>, key: string) => void;
-  previewUrl: string | null;
+  codeServerUrl?: string | null;
   isThotTask: boolean;
   onBypassClick: () => void;
 }) {
@@ -195,7 +267,7 @@ export function SessionPanel({
         busy={busy}
         busyKey={busyKey}
         run={run}
-        previewUrl={previewUrl}
+        codeServerUrl={codeServerUrl}
         isThotTask={isThotTask}
         status={task.status}
         currentMode={task.permissionMode}

@@ -18,13 +18,15 @@ function RepoRow({ repo, onSaved, onRequestDelete, onError }: {
 }) {
   const [url, setUrl] = useState(repo.url);
   const [baseBranch, setBaseBranch] = useState(repo.baseBranch);
+  const [e2eProfile, setE2eProfile] = useState(repo.e2eProfile);
   const [saving, setSaving] = useState(false);
-  const dirty = url !== repo.url || baseBranch !== repo.baseBranch;
+  const dirty =
+    url !== repo.url || baseBranch !== repo.baseBranch || e2eProfile !== repo.e2eProfile;
 
   async function save() {
     setSaving(true);
     try {
-      await client.updateRepo({ name: repo.name, url, baseBranch });
+      await client.updateRepo({ name: repo.name, url, baseBranch, e2eProfile });
       onSaved();
     } catch (err) {
       onError(err instanceof Error ? err.message : String(err));
@@ -45,6 +47,16 @@ function RepoRow({ repo, onSaved, onRequestDelete, onError }: {
         value={baseBranch}
         onChange={(e) => setBaseBranch(e.target.value)}
         placeholder="main"
+        className="input input-sm input-bordered w-24 flex-none"
+      />
+      {/* Which profile the e2e sandbox is built from (docs/adr/0044). Empty
+          means the "e2e" convention; agent-fleet points at "lint", where its
+          toolchain actually lives. */}
+      <input
+        value={e2eProfile}
+        onChange={(e) => setE2eProfile(e.target.value)}
+        placeholder="e2e"
+        title="Profile the e2e sandbox is built from — blank means the profile named 'e2e'"
         className="input input-sm input-bordered w-24 flex-none"
       />
       <button
@@ -70,6 +82,7 @@ export function ManageReposModal({ onChanged }: { onChanged?: () => void }) {
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
   const [baseBranch, setBaseBranch] = useState("");
+  const [e2eProfile, setE2eProfile] = useState("");
   const [creating, setCreating] = useState(false);
   // Rendered as a sibling of <Modal> below, never nested inside it — a
   // <dialog> nested inside another open <dialog> closes both together on
@@ -119,7 +132,7 @@ export function ManageReposModal({ onChanged }: { onChanged?: () => void }) {
     setCreating(true);
     setError(null);
     try {
-      await client.createRepo({ name, url, baseBranch });
+      await client.createRepo({ name, url, baseBranch, e2eProfile });
       setName("");
       setUrl("");
       setBaseBranch("");
@@ -170,6 +183,13 @@ export function ManageReposModal({ onChanged }: { onChanged?: () => void }) {
             value={baseBranch}
             onChange={(e) => setBaseBranch(e.target.value)}
             placeholder="main"
+            className="input input-sm input-bordered w-24 flex-none"
+          />
+          <input
+            value={e2eProfile}
+            onChange={(e) => setE2eProfile(e.target.value)}
+            placeholder="e2e"
+            title="Profile the e2e sandbox is built from — blank means the profile named 'e2e'"
             className="input input-sm input-bordered w-24 flex-none"
           />
           <button type="submit" disabled={creating || !name.trim() || !url.trim()} className="btn btn-sm btn-primary flex-none">

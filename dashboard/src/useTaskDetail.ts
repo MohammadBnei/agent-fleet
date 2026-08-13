@@ -14,11 +14,13 @@ import { TranscriptEntryType, type TranscriptEntry } from "./gen/agentfleet/v1/t
 export function useTaskDetail(taskId: string) {
   const [task, setTask] = useState<Task | null>(null);
   const [entries, setEntries] = useState<TranscriptEntry[]>([]);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   // Full e2e status, not just the preview URL: the card needs the recipe
   // that actually ran plus the pod's live readiness to tell "still
   // installing" apart from "bound the wrong interface and never will".
   const [e2e, setE2e] = useState<GetE2eStatusResponse | null>(null);
+  // Set by the effect below, which owns the actual fetch; a ref rather than
+  // state so reassigning it never re-renders.
+  const refreshE2eRef = useRef<() => void>(() => {});
   const [branch, setBranch] = useState<string | null>(null);
   // The worktree's real path on the shared PVC — shown in the composer's meta
   // line so "where is this actually working" is answerable without a shell.
@@ -57,7 +59,7 @@ export function useTaskDetail(taskId: string) {
   useEffect(() => {
     setTask(null);
     setEntries([]);
-    setPreviewUrl(null);
+    setE2e(null);
     setBranch(null);
     setWorktreePath(null);
     setLoadError(null);
@@ -115,14 +117,22 @@ export function useTaskDetail(taskId: string) {
         .getE2eStatus({ taskId })
         .then((res) => {
           if (cancelled) return;
+          // The full status object is the single source for the card, the
+          // drawer and the code-server link; a separately-derived previewUrl
+          // used to live here too, and having two of them is how the
+          // "Open code-server" button ended up pointed at the app root.
           setE2e(res);
-          setPreviewUrl(res.status === "running" && res.previewUrl ? res.previewUrl : null);
         })
         .catch(() => {
           // No active e2e session is the common case — not worth surfacing
           // as a page-level error.
         });
     }
+    // Exposed so a control that just changed the pod (start/stop/recreate)
+    // can refresh immediately instead of leaving the card stale for up to a
+    // full poll interval — the same "tell the clicker their click
+    // registered" reasoning busyKey already encodes.
+    refreshE2eRef.current = pollE2e;
     const stopE2ePoll = pollVisible(pollE2e, 5000);
 
     let unsubscribe = () => {};
@@ -233,8 +243,8 @@ export function useTaskDetail(taskId: string) {
   return {
     task,
     entries: withOptimistic(entries, optimistic),
-    previewUrl,
     e2e,
+    refreshE2e: () => refreshE2eRef.current(),
     branch,
     worktreePath,
     busyKey,

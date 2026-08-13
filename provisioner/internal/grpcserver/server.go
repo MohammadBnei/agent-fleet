@@ -122,13 +122,14 @@ func (s *Server) GetE2ESessionStatus(ctx context.Context, req *agentfleetv1.GetE
 		status, podPhase = "terminating", "Terminating"
 	}
 	return &agentfleetv1.GetE2ESessionStatusResponse{
-		Status:     status,
-		PreviewUrl: k8s.PreviewURLFor(s.e2eHost, req.GetTaskId()),
-		StartCmd:   state.StartCmd,
-		PodPhase:   podPhase,
-		AppReady:   state.AppReady,
-		Restarts:   state.Restarts,
-		StartedAt:  state.StartedAt,
+		Status:        status,
+		PreviewUrl:    k8s.PreviewURLFor(s.e2eHost, req.GetTaskId()),
+		CodeServerUrl: k8s.CodeServerURLFor(s.e2eHost, req.GetTaskId()),
+		StartCmd:      state.StartCmd,
+		PodPhase:      podPhase,
+		AppReady:      state.AppReady,
+		Restarts:      state.Restarts,
+		StartedAt:     state.StartedAt,
 	}, nil
 }
 
@@ -148,7 +149,24 @@ func (s *Server) CreateE2ESession(ctx context.Context, req *agentfleetv1.CreateE
 	// seconds from vanishing — the caller saw a success and got nothing.
 	// "kill_env then request_e2e_env" hits this every time. Wait it out and
 	// build a fresh session instead.
-	if exists && state.Terminating {
+	// A pod that reached a terminal phase is not an existing session either
+	// (docs/adr/0044). It still reports exists=true and non-Terminating
+	// forever, so the check below used to hand back the corpse's preview URL
+	// on every subsequent call — and run_command's retry then failed against
+	// an unreachable pod for the rest of the session, with nothing GC-ing it.
+	// Same remedy as Terminating: get rid of it and build a fresh one.
+	dead := exists && (state.Phase == corev1.PodFailed || state.Phase == corev1.PodSucceeded)
+	if dead {
+		slog.Warn("grpcserver CreateE2ESession: replacing a dead e2e pod",
+			"taskId", req.GetTaskId(), "phase", state.Phase, "detail", state.Detail)
+		// Only the pod — Service/Middleware/IngressRoute are create-if-absent
+		// (ignoreAlreadyExists), so leaving them keeps the preview URL stable
+		// and avoids Traefik churn on every recreate.
+		if err := s.k8sc.DeletePod(ctx, req.GetTaskId()); err != nil {
+			return nil, fmt.Errorf("delete dead e2e pod for task %s: %w", req.GetTaskId(), err)
+		}
+	}
+	if exists && (state.Terminating || dead) {
 		slog.Info("grpcserver CreateE2ESession: waiting for the previous pod to finish terminating", "taskId", req.GetTaskId())
 		if err := s.k8sc.WaitForPodGone(ctx, name, 2*time.Minute); err != nil {
 			return nil, fmt.Errorf("previous e2e pod for task %s did not finish terminating: %w", req.GetTaskId(), err)
@@ -183,8 +201,12 @@ func (s *Server) CreateE2ESession(ctx context.Context, req *agentfleetv1.CreateE
 		return nil, fmt.Errorf("create e2e ingressroute: %w", err)
 	}
 	slog.Info("grpcserver CreateE2ESession", "taskId", req.GetTaskId(), "repo", req.GetRepo())
+	// "requested", not "running": the pod object exists, but it is Pending —
+	// image pull, init containers, scheduling all still ahead of it. Claiming
+	// "running" here told the agent the preview was live and then handed it a
+	// 502 for the next 10-20 minutes (docs/adr/0044).
 	return &agentfleetv1.CreateE2ESessionResponse{
-		Status:     "running",
+		Status:     "requested",
 		PreviewUrl: k8s.PreviewURLFor(s.e2eHost, req.GetTaskId()),
 	}, nil
 }
@@ -244,8 +266,12 @@ func e2eStatusFromPhase(phase corev1.PodPhase) string {
 		return "running"
 	case corev1.PodFailed:
 		return "failed"
+	case corev1.PodSucceeded:
+		return "exited"
 	default:
-		return "running"
+		// PodUnknown and anything unrecognized. This used to answer
+		// "running", which is the one thing it definitely is not known to be.
+		return "unknown"
 	}
 }
 

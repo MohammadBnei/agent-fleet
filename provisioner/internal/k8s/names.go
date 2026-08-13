@@ -84,6 +84,18 @@ func PreviewHostFor(host, taskID string) string {
 	return fmt.Sprintf("%s.%s", shortID(taskID), host)
 }
 
+// CodeServerURLFor is where a human actually reaches the in-browser IDE: the
+// /code prefix route the IngressRoute sends to CodeServerPort (docs/adr/0038).
+//
+// It exists because the dashboard's "Open code-server" button was wired to
+// PreviewURLFor — the app root — so it had never once opened code-server. A
+// URL scheme defined in ingressroute.go and re-derived by string concatenation
+// in a React component is exactly how that happens, so it's constructed here,
+// next to the route that serves it, and travels on the wire.
+func CodeServerURLFor(host, taskID string) string {
+	return fmt.Sprintf("https://%s.%s/code/", shortID(taskID), host)
+}
+
 // PreviewDomainFor is the wildcard every task's IngressRoute asks for. Every
 // task requesting the SAME wildcard is the point: ACME orders it once and
 // reuses it forever. Left implicit, Traefik would derive the concrete per-task

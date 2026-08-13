@@ -70,6 +70,15 @@ const (
 	// DashboardServiceKillE2EProcedure is the fully-qualified name of the DashboardService's KillE2e
 	// RPC.
 	DashboardServiceKillE2EProcedure = "/agentfleet.v1.DashboardService/KillE2e"
+	// DashboardServiceStartE2EProcedure is the fully-qualified name of the DashboardService's StartE2e
+	// RPC.
+	DashboardServiceStartE2EProcedure = "/agentfleet.v1.DashboardService/StartE2e"
+	// DashboardServiceRestartE2EAppProcedure is the fully-qualified name of the DashboardService's
+	// RestartE2eApp RPC.
+	DashboardServiceRestartE2EAppProcedure = "/agentfleet.v1.DashboardService/RestartE2eApp"
+	// DashboardServiceGetE2EAppLogProcedure is the fully-qualified name of the DashboardService's
+	// GetE2eAppLog RPC.
+	DashboardServiceGetE2EAppLogProcedure = "/agentfleet.v1.DashboardService/GetE2eAppLog"
 	// DashboardServiceAnswerQuestionProcedure is the fully-qualified name of the DashboardService's
 	// AnswerQuestion RPC.
 	DashboardServiceAnswerQuestionProcedure = "/agentfleet.v1.DashboardService/AnswerQuestion"
@@ -188,6 +197,9 @@ type DashboardServiceClient interface {
 	MarkSeen(context.Context, *connect.Request[v1.MarkSeenRequest]) (*connect.Response[v1.MarkSeenResponse], error)
 	ApproveTask(context.Context, *connect.Request[v1.ApproveTaskRequest]) (*connect.Response[v1.ApproveTaskResponse], error)
 	KillE2E(context.Context, *connect.Request[v1.KillE2ERequest]) (*connect.Response[v1.KillE2EResponse], error)
+	StartE2E(context.Context, *connect.Request[v1.StartE2ERequest]) (*connect.Response[v1.StartE2EResponse], error)
+	RestartE2EApp(context.Context, *connect.Request[v1.RestartE2EAppRequest]) (*connect.Response[v1.RestartE2EAppResponse], error)
+	GetE2EAppLog(context.Context, *connect.Request[v1.GetE2EAppLogRequest]) (*connect.Response[v1.GetE2EAppLogResponse], error)
 	AnswerQuestion(context.Context, *connect.Request[v1.AnswerQuestionRequest]) (*connect.Response[v1.AnswerQuestionResponse], error)
 	RespondToPermission(context.Context, *connect.Request[v1.RespondToPermissionRequest]) (*connect.Response[v1.RespondToPermissionResponse], error)
 	Discuss(context.Context, *connect.Request[v1.DiscussRequest]) (*connect.Response[v1.DiscussResponse], error)
@@ -324,6 +336,24 @@ func NewDashboardServiceClient(httpClient connect.HTTPClient, baseURL string, op
 			httpClient,
 			baseURL+DashboardServiceKillE2EProcedure,
 			connect.WithSchema(dashboardServiceMethods.ByName("KillE2e")),
+			connect.WithClientOptions(opts...),
+		),
+		startE2E: connect.NewClient[v1.StartE2ERequest, v1.StartE2EResponse](
+			httpClient,
+			baseURL+DashboardServiceStartE2EProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("StartE2e")),
+			connect.WithClientOptions(opts...),
+		),
+		restartE2EApp: connect.NewClient[v1.RestartE2EAppRequest, v1.RestartE2EAppResponse](
+			httpClient,
+			baseURL+DashboardServiceRestartE2EAppProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("RestartE2eApp")),
+			connect.WithClientOptions(opts...),
+		),
+		getE2EAppLog: connect.NewClient[v1.GetE2EAppLogRequest, v1.GetE2EAppLogResponse](
+			httpClient,
+			baseURL+DashboardServiceGetE2EAppLogProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("GetE2eAppLog")),
 			connect.WithClientOptions(opts...),
 		),
 		answerQuestion: connect.NewClient[v1.AnswerQuestionRequest, v1.AnswerQuestionResponse](
@@ -524,6 +554,9 @@ type dashboardServiceClient struct {
 	markSeen             *connect.Client[v1.MarkSeenRequest, v1.MarkSeenResponse]
 	approveTask          *connect.Client[v1.ApproveTaskRequest, v1.ApproveTaskResponse]
 	killE2E              *connect.Client[v1.KillE2ERequest, v1.KillE2EResponse]
+	startE2E             *connect.Client[v1.StartE2ERequest, v1.StartE2EResponse]
+	restartE2EApp        *connect.Client[v1.RestartE2EAppRequest, v1.RestartE2EAppResponse]
+	getE2EAppLog         *connect.Client[v1.GetE2EAppLogRequest, v1.GetE2EAppLogResponse]
 	answerQuestion       *connect.Client[v1.AnswerQuestionRequest, v1.AnswerQuestionResponse]
 	respondToPermission  *connect.Client[v1.RespondToPermissionRequest, v1.RespondToPermissionResponse]
 	discuss              *connect.Client[v1.DiscussRequest, v1.DiscussResponse]
@@ -619,6 +652,21 @@ func (c *dashboardServiceClient) ApproveTask(ctx context.Context, req *connect.R
 // KillE2E calls agentfleet.v1.DashboardService.KillE2e.
 func (c *dashboardServiceClient) KillE2E(ctx context.Context, req *connect.Request[v1.KillE2ERequest]) (*connect.Response[v1.KillE2EResponse], error) {
 	return c.killE2E.CallUnary(ctx, req)
+}
+
+// StartE2E calls agentfleet.v1.DashboardService.StartE2e.
+func (c *dashboardServiceClient) StartE2E(ctx context.Context, req *connect.Request[v1.StartE2ERequest]) (*connect.Response[v1.StartE2EResponse], error) {
+	return c.startE2E.CallUnary(ctx, req)
+}
+
+// RestartE2EApp calls agentfleet.v1.DashboardService.RestartE2eApp.
+func (c *dashboardServiceClient) RestartE2EApp(ctx context.Context, req *connect.Request[v1.RestartE2EAppRequest]) (*connect.Response[v1.RestartE2EAppResponse], error) {
+	return c.restartE2EApp.CallUnary(ctx, req)
+}
+
+// GetE2EAppLog calls agentfleet.v1.DashboardService.GetE2eAppLog.
+func (c *dashboardServiceClient) GetE2EAppLog(ctx context.Context, req *connect.Request[v1.GetE2EAppLogRequest]) (*connect.Response[v1.GetE2EAppLogResponse], error) {
+	return c.getE2EAppLog.CallUnary(ctx, req)
 }
 
 // AnswerQuestion calls agentfleet.v1.DashboardService.AnswerQuestion.
@@ -797,6 +845,9 @@ type DashboardServiceHandler interface {
 	MarkSeen(context.Context, *connect.Request[v1.MarkSeenRequest]) (*connect.Response[v1.MarkSeenResponse], error)
 	ApproveTask(context.Context, *connect.Request[v1.ApproveTaskRequest]) (*connect.Response[v1.ApproveTaskResponse], error)
 	KillE2E(context.Context, *connect.Request[v1.KillE2ERequest]) (*connect.Response[v1.KillE2EResponse], error)
+	StartE2E(context.Context, *connect.Request[v1.StartE2ERequest]) (*connect.Response[v1.StartE2EResponse], error)
+	RestartE2EApp(context.Context, *connect.Request[v1.RestartE2EAppRequest]) (*connect.Response[v1.RestartE2EAppResponse], error)
+	GetE2EAppLog(context.Context, *connect.Request[v1.GetE2EAppLogRequest]) (*connect.Response[v1.GetE2EAppLogResponse], error)
 	AnswerQuestion(context.Context, *connect.Request[v1.AnswerQuestionRequest]) (*connect.Response[v1.AnswerQuestionResponse], error)
 	RespondToPermission(context.Context, *connect.Request[v1.RespondToPermissionRequest]) (*connect.Response[v1.RespondToPermissionResponse], error)
 	Discuss(context.Context, *connect.Request[v1.DiscussRequest]) (*connect.Response[v1.DiscussResponse], error)
@@ -929,6 +980,24 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 		DashboardServiceKillE2EProcedure,
 		svc.KillE2E,
 		connect.WithSchema(dashboardServiceMethods.ByName("KillE2e")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dashboardServiceStartE2EHandler := connect.NewUnaryHandler(
+		DashboardServiceStartE2EProcedure,
+		svc.StartE2E,
+		connect.WithSchema(dashboardServiceMethods.ByName("StartE2e")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dashboardServiceRestartE2EAppHandler := connect.NewUnaryHandler(
+		DashboardServiceRestartE2EAppProcedure,
+		svc.RestartE2EApp,
+		connect.WithSchema(dashboardServiceMethods.ByName("RestartE2eApp")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dashboardServiceGetE2EAppLogHandler := connect.NewUnaryHandler(
+		DashboardServiceGetE2EAppLogProcedure,
+		svc.GetE2EAppLog,
+		connect.WithSchema(dashboardServiceMethods.ByName("GetE2eAppLog")),
 		connect.WithHandlerOptions(opts...),
 	)
 	dashboardServiceAnswerQuestionHandler := connect.NewUnaryHandler(
@@ -1139,6 +1208,12 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 			dashboardServiceApproveTaskHandler.ServeHTTP(w, r)
 		case DashboardServiceKillE2EProcedure:
 			dashboardServiceKillE2EHandler.ServeHTTP(w, r)
+		case DashboardServiceStartE2EProcedure:
+			dashboardServiceStartE2EHandler.ServeHTTP(w, r)
+		case DashboardServiceRestartE2EAppProcedure:
+			dashboardServiceRestartE2EAppHandler.ServeHTTP(w, r)
+		case DashboardServiceGetE2EAppLogProcedure:
+			dashboardServiceGetE2EAppLogHandler.ServeHTTP(w, r)
 		case DashboardServiceAnswerQuestionProcedure:
 			dashboardServiceAnswerQuestionHandler.ServeHTTP(w, r)
 		case DashboardServiceRespondToPermissionProcedure:
@@ -1258,6 +1333,18 @@ func (UnimplementedDashboardServiceHandler) ApproveTask(context.Context, *connec
 
 func (UnimplementedDashboardServiceHandler) KillE2E(context.Context, *connect.Request[v1.KillE2ERequest]) (*connect.Response[v1.KillE2EResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.KillE2e is not implemented"))
+}
+
+func (UnimplementedDashboardServiceHandler) StartE2E(context.Context, *connect.Request[v1.StartE2ERequest]) (*connect.Response[v1.StartE2EResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.StartE2e is not implemented"))
+}
+
+func (UnimplementedDashboardServiceHandler) RestartE2EApp(context.Context, *connect.Request[v1.RestartE2EAppRequest]) (*connect.Response[v1.RestartE2EAppResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.RestartE2eApp is not implemented"))
+}
+
+func (UnimplementedDashboardServiceHandler) GetE2EAppLog(context.Context, *connect.Request[v1.GetE2EAppLogRequest]) (*connect.Response[v1.GetE2EAppLogResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.GetE2eAppLog is not implemented"))
 }
 
 func (UnimplementedDashboardServiceHandler) AnswerQuestion(context.Context, *connect.Request[v1.AnswerQuestionRequest]) (*connect.Response[v1.AnswerQuestionResponse], error) {

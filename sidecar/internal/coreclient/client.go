@@ -139,12 +139,16 @@ func (c *Client) AskUserQuestion(ctx context.Context, questionsJSON string, time
 }
 
 // RequestE2eEnv returns the response whole so the caller can echo the
-// resolved recipe back to the agent — startCmd stays a parameter, but the
-// mcpserver handler only passes a non-empty one after a human has approved
-// it (docs/adr/0034 follow-up: an unapproved, unreadable override is what
-// let a guessed command silently beat a correct profile).
-func (c *Client) RequestE2eEnv(ctx context.Context, startCmd string) (*agentfleetv1.RequestE2EEnvResponse, error) {
-	resp, err := c.rpc.RequestE2EEnv(ctx, &agentfleetv1.RequestE2EEnvRequest{TaskId: c.taskID, StartCmd: startCmd})
+// resolved recipe back to the agent — startCmd and profile stay parameters,
+// but the mcpserver handler only passes a non-empty one after a human has
+// approved it (docs/adr/0034 follow-up: an unapproved, unreadable override is
+// what let a guessed command silently beat a correct profile).
+//
+// profile was a wire field core already honored with no producer anywhere
+// (docs/adr/0044) — so ADR-0034's documented agent-selectable profile was
+// unreachable, and every request resolved to the literal name "e2e".
+func (c *Client) RequestE2eEnv(ctx context.Context, startCmd, profile string) (*agentfleetv1.RequestE2EEnvResponse, error) {
+	resp, err := c.rpc.RequestE2EEnv(ctx, &agentfleetv1.RequestE2EEnvRequest{TaskId: c.taskID, StartCmd: startCmd, Profile: profile})
 	if err != nil {
 		return nil, fmt.Errorf("RequestE2eEnv: %w", err)
 	}
@@ -159,13 +163,12 @@ func (c *Client) KillE2eEnv(ctx context.Context) (bool, error) {
 	return resp.GetKilled(), nil
 }
 
-func (c *Client) ListE2eTools(ctx context.Context) ([]*agentfleetv1.E2EToolDescriptor, error) {
-	resp, err := c.rpc.ListE2ETools(ctx, &agentfleetv1.ListE2EToolsRequest{TaskId: c.taskID})
-	if err != nil {
-		return nil, fmt.Errorf("ListE2eTools: %w", err)
-	}
-	return resp.GetTools(), nil
-}
+// ListE2eTools is deliberately absent: the sidecar no longer discovers the
+// e2e pod's tools at runtime (docs/adr/0044 — they're a static embedded
+// snapshot in mcpserver, because discovery always lost the race against the
+// pod becoming reachable). The CoreService/ProvisionerService RPCs stay —
+// they're the diagnostic that answers "what does the live pod actually
+// serve", which is exactly what a snapshot refresh needs.
 
 func (c *Client) CallE2eTool(ctx context.Context, toolName, argumentsJSON string) (resultJSON string, isError bool, err error) {
 	resp, err := c.rpc.CallE2ETool(ctx, &agentfleetv1.CallE2EToolRequest{

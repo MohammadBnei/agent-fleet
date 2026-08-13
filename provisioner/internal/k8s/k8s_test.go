@@ -35,16 +35,44 @@ func newTestClient() *Client {
 	}
 }
 
-// TestCreatePod_EmptyStartCmd_FailsLoud covers the removal of the old
-// per-repo StartCmdFor Go-switch fallback (docs/adr/0034 §11 step 4,
-// confirmed working end-to-end via /kind-local before removal): core
-// always resolves a non-empty start_cmd now (from a repo's profile or an
-// agent override), so an empty one here is a real misconfiguration, not
-// something to silently paper over with a guessed default.
-func TestCreatePod_EmptyStartCmd_FailsLoud(t *testing.T) {
+// TestCreatePod_EmptyStartCmdIsASandboxOnlyPod is the inverse of the old
+// TestCreatePod_EmptyStartCmd_FailsLoud (docs/adr/0044). An empty start_cmd
+// used to be a hard error, which meant every repo without an "e2e" profile —
+// agent-fleet and infra-bootstrap among them — could never start a sandbox at
+// all, even though run_command is registered for every session from turn one
+// (docs/adr/0039). Empty now means "no app", not "no pod".
+//
+// The readiness probe deliberately stays on AppPort even here: nothing will
+// ever bind it, so the pod stays NotReady, and NotReady is the honest answer
+// for a sandbox with no app. publishNotReadyAddresses keeps exec/code-server
+// routable regardless, and app_ready=false is exactly what the dashboard card
+// should show.
+func TestCreatePod_EmptyStartCmdIsASandboxOnlyPod(t *testing.T) {
 	c := newTestClient()
-	if err := c.CreatePod(context.Background(), TaskRef{ID: "task-1", Repo: "dream-analyst"}); err == nil {
-		t.Fatal("expected an error for empty StartCmd, got nil")
+	ctx := context.Background()
+	if err := c.CreatePod(ctx, TaskRef{ID: "task-1", Repo: "dream-analyst"}); err != nil {
+		t.Fatalf("a sandbox-only pod must be created, got %v", err)
+	}
+
+	pod, err := c.Core.CoreV1().Pods(c.Namespace).Get(ctx, ResourceName("task-1"), metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("get pod: %v", err)
+	}
+	container := pod.Spec.Containers[0]
+	var startCmd *corev1.EnvVar
+	for i := range container.Env {
+		if container.Env[i].Name == "E2E_START_CMD" {
+			startCmd = &container.Env[i]
+		}
+	}
+	if startCmd == nil {
+		t.Fatal("E2E_START_CMD must still be present so GetPod can read it back")
+	}
+	if startCmd.Value != "" {
+		t.Errorf("expected an empty E2E_START_CMD, got %q", startCmd.Value)
+	}
+	if container.ReadinessProbe == nil {
+		t.Error("the readiness probe must stay unconditional — it is what keeps app_ready honest")
 	}
 }
 

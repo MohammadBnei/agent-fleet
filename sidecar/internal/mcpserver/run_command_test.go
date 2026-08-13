@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mark3labs/mcp-go/mcp"
 
@@ -45,7 +46,7 @@ func (m *mockE2eRunner) CallE2eTool(_ context.Context, _, _ string) (string, boo
 	return okResult("", 0), m.callIsError, nil
 }
 
-func (m *mockE2eRunner) RequestE2eEnv(_ context.Context, _ string) (*agentfleetv1.RequestE2EEnvResponse, error) {
+func (m *mockE2eRunner) RequestE2eEnv(_ context.Context, _, _ string) (*agentfleetv1.RequestE2EEnvResponse, error) {
 	m.provisioned++
 	if m.provisionErr != nil {
 		return nil, m.provisionErr
@@ -149,16 +150,51 @@ func TestRunCommandHandler(t *testing.T) {
 			},
 		},
 		{
-			name:   "still unreachable after provisioning errors out",
+			// A cold pod is Pending for a while after RequestE2eEnv returns
+			// (docs/adr/0044): the retry loop must keep waiting rather than
+			// declaring the sandbox broken on the first miss, which is what
+			// the old single zero-delay retry did on most first commands.
+			name:   "keeps retrying while the sandbox is still coming up",
+			params: map[string]any{"command": "bun install"},
+			// Initial call fails (no pod), first retry still fails (Pending),
+			// second retry lands.
+			mock: &mockE2eRunner{
+				callErrs:    []error{transport, transport},
+				callResults: []string{"", "", okResult("installed\n", 0)},
+				env:         &agentfleetv1.RequestE2EEnvResponse{ProfileName: "e2e", Status: "requested"},
+			},
+			wantCalls:      3,
+			wantProvisions: 2,
+			check: func(t *testing.T, result *mcp.CallToolResult) {
+				if result.IsError {
+					t.Fatalf("expected the third attempt to succeed, got %v", textOf(t, result, 0))
+				}
+			},
+		},
+		{
+			name:   "still unreachable after every attempt errors out",
 			params: map[string]any{"command": "make build"},
 			mock: &mockE2eRunner{
-				callErrs: []error{transport, transport},
+				callErrs: []error{transport, transport, transport, transport, transport},
+				env: &agentfleetv1.RequestE2EEnvResponse{
+					Status:           "failed",
+					ProfileName:      "e2e",
+					ResolvedStartCmd: "bun run dev",
+				},
 			},
-			wantCalls:      2,
-			wantProvisions: 1,
+			wantCalls:      1 + len(runCommandRetryDelays),
+			wantProvisions: len(runCommandRetryDelays),
 			check: func(t *testing.T, result *mcp.CallToolResult) {
 				if !result.IsError {
 					t.Fatal("expected an error result")
+				}
+				// The pod's real state and the recipe have to be in the
+				// message — "not reachable" alone was the dead end.
+				got := textOf(t, result, 0)
+				for _, want := range []string{"failed", "bun run dev", "kill_env"} {
+					if !strings.Contains(got, want) {
+						t.Errorf("final error missing %q, got %q", want, got)
+					}
 				}
 			},
 		},
@@ -178,6 +214,12 @@ func TestRunCommandHandler(t *testing.T) {
 			},
 		},
 	}
+
+	// The real delays add up to ~65s of genuine sleeping; the pacing isn't
+	// what's under test, the call/provision sequencing is.
+	restore := runCommandRetryDelays
+	runCommandRetryDelays = []time.Duration{0, 0, 0, 0}
+	t.Cleanup(func() { runCommandRetryDelays = restore })
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -7,6 +7,7 @@ package dashboard
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -21,6 +22,7 @@ import (
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 	"github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1/agentfleetv1connect"
 
+	"github.com/MohammadBnei/agent-fleet/core/internal/e2erecipe"
 	"github.com/MohammadBnei/agent-fleet/core/internal/filestore"
 	"github.com/MohammadBnei/agent-fleet/core/internal/journal"
 	"github.com/MohammadBnei/agent-fleet/core/internal/lokiclient"
@@ -248,32 +250,39 @@ func (s *Server) GetE2EStatus(ctx context.Context, req *connect.Request[agentfle
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	resp := &agentfleetv1.GetE2EStatusResponse{
-		Status:     live.GetStatus(),
-		PreviewUrl: live.GetPreviewUrl(),
-		StartCmd:   live.GetStartCmd(),
-		PodPhase:   live.GetPodPhase(),
-		AppReady:   live.GetAppReady(),
-		Restarts:   live.GetRestarts(),
-		StartedAt:  live.GetStartedAt(),
+		Status:        live.GetStatus(),
+		PreviewUrl:    live.GetPreviewUrl(),
+		CodeServerUrl: live.GetCodeServerUrl(),
+		StartCmd:      live.GetStartCmd(),
+		PodPhase:      live.GetPodPhase(),
+		AppReady:      live.GetAppReady(),
+		Restarts:      live.GetRestarts(),
+		StartedAt:     live.GetStartedAt(),
 	}
 	// The declared recipe is core's half — the provisioner holds no DB
 	// credentials (docs/adr/0020 point 1) and can't read repo_profiles.
 	// Best-effort: a missing task or profile still leaves the live pod state
 	// worth rendering, so it's logged, not fatal.
+	//
+	// Resolved through e2erecipe rather than the hardcoded "e2e" this used to
+	// pass: that name is only correct for repos whose recipe happens to be
+	// called that, so this card reported the wrong profile (and a spurious
+	// "overridden" badge) for any repo pointing its e2e_profile column
+	// elsewhere — agent-fleet at "lint", for one. docs/adr/0044.
 	if t, err := s.tasks.GetTask(ctx, req.Msg.GetTaskId()); err != nil {
 		slog.Warn("dashboard GetE2EStatus: get task", "taskId", req.Msg.GetTaskId(), "error", err)
 	} else if t != nil {
-		if profile, err := s.profiles.Get(ctx, t.Repo, "e2e"); err != nil {
-			slog.Warn("dashboard GetE2EStatus: profile lookup", "repo", t.Repo, "error", err)
-		} else if profile != nil {
-			resp.ProfileName = profile.Name
-			resp.Tools = profile.Tools
-			resp.Services = repoprofiles.FormatServices(profile.Services)
+		if recipe, err := e2erecipe.Resolve(ctx, s.repos, s.profiles, t.Repo, ""); err != nil {
+			slog.Warn("dashboard GetE2EStatus: resolve recipe", "repo", t.Repo, "error", err)
+		} else {
+			resp.ProfileName = recipe.ProfileName
+			resp.Tools = recipe.ToolKeys
+			resp.Services = repoprofiles.FormatServices(recipe.Services)
 			// A running start_cmd that isn't the profile's means a
 			// human-approved per-task override is in effect. Surfacing that
 			// is the point: an unsurfaced override is what made the
 			// original preview 502 impossible to explain.
-			resp.StartCmdOverridden = resp.StartCmd != "" && resp.StartCmd != profile.StartCmd
+			resp.StartCmdOverridden = resp.StartCmd != "" && resp.StartCmd != recipe.StartCmd
 		}
 	}
 	return connect.NewResponse(resp), nil
@@ -387,6 +396,124 @@ func (s *Server) KillE2E(ctx context.Context, req *connect.Request[agentfleetv1.
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	return connect.NewResponse(&agentfleetv1.KillE2EResponse{Killed: killed, ServicesTornDown: servicesTornDown}), nil
+}
+
+// StartE2E creates the sandbox from the dashboard. Until now a human could
+// Kill an e2e env but never start one — the only way to get a sandbox was to
+// ask the agent to call request_e2e_env, which is a strange dependency when
+// the sandbox is precisely what a human wants in order to look at a broken
+// preview themselves (docs/adr/0044).
+//
+// Resolution goes through e2erecipe, the same path CoreService.RequestE2EEnv
+// uses. Deliberately not a reimplementation: the hardcoded-"e2e" bug that
+// package exists to prevent had already been copied into GetE2EStatus below.
+func (s *Server) StartE2E(ctx context.Context, req *connect.Request[agentfleetv1.StartE2ERequest]) (*connect.Response[agentfleetv1.StartE2EResponse], error) {
+	taskID := req.Msg.GetTaskId()
+	t, err := s.tasks.GetTask(ctx, taskID)
+	if err != nil {
+		slog.Error("dashboard StartE2E: get task", "taskId", taskID, "error", err)
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	if t == nil {
+		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("task %s not found", taskID))
+	}
+	recipe, err := e2erecipe.Resolve(ctx, s.repos, s.profiles, t.Repo, "")
+	if err != nil {
+		slog.Error("dashboard StartE2E: resolve recipe", "taskId", taskID, "repo", t.Repo, "error", err)
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	status, previewURL, err := s.e2e.CreateE2eSession(ctx, taskID, t.Repo, recipe.StartCmd, recipe.ToolKeys, recipe.Services)
+	if err != nil {
+		slog.Error("dashboard StartE2E", "taskId", taskID, "error", err)
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	slog.Info("dashboard StartE2E", "taskId", taskID, "repo", t.Repo, "profile", recipe.ProfileName)
+	return connect.NewResponse(&agentfleetv1.StartE2EResponse{
+		Status:           status,
+		PreviewUrl:       previewURL,
+		ResolvedStartCmd: recipe.StartCmd,
+		ProfileName:      recipe.ProfileName,
+	}), nil
+}
+
+// RestartE2EApp re-runs the app inside the live pod via the e2e-restart-app
+// helper on the image's PATH. It restarts the APP, not the pod — the warm
+// dependency cache and the worktree survive, so it costs seconds where
+// recreating the sandbox costs a 10+ minute cold install (docs/adr/0044).
+//
+// Routed through run_command rather than a new ProvisionerService RPC: the
+// passthrough already exists, and the logic that actually matters (signalling
+// the app's whole process group, so a dev server's children don't keep $PORT
+// bound) belongs in the image next to the thing it restarts, where the agent
+// can invoke it too.
+func (s *Server) RestartE2EApp(ctx context.Context, req *connect.Request[agentfleetv1.RestartE2EAppRequest]) (*connect.Response[agentfleetv1.RestartE2EAppResponse], error) {
+	out, exitCode, err := s.runInE2ePod(ctx, req.Msg.GetTaskId(), "e2e-restart-app")
+	if err != nil {
+		slog.Error("dashboard RestartE2EApp", "taskId", req.Msg.GetTaskId(), "error", err)
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	slog.Info("dashboard RestartE2EApp", "taskId", req.Msg.GetTaskId(), "exitCode", exitCode)
+	return connect.NewResponse(&agentfleetv1.RestartE2EAppResponse{Output: out, ExitCode: exitCode}), nil
+}
+
+// GetE2EAppLog reads the app's own stdout out of the live pod. Not Loki: this
+// works regardless of retention, and it carries the explicit "app command
+// exited with status N" marker the entrypoint writes — the single question
+// the e2e card could never answer.
+func (s *Server) GetE2EAppLog(ctx context.Context, req *connect.Request[agentfleetv1.GetE2EAppLogRequest]) (*connect.Response[agentfleetv1.GetE2EAppLogResponse], error) {
+	lines := req.Msg.GetLines()
+	if lines <= 0 {
+		lines = 200
+	}
+	if lines > 2000 {
+		lines = 2000
+	}
+	out, _, err := s.runInE2ePod(ctx, req.Msg.GetTaskId(), fmt.Sprintf("tail -n %d /tmp/e2e-app.log", lines))
+	if err != nil {
+		// A pod that isn't up yet is the common case, not a page-level error —
+		// same reasoning useTaskDetail's own poll already applies.
+		slog.Info("dashboard GetE2EAppLog: no readable pod", "taskId", req.Msg.GetTaskId(), "error", err)
+		return connect.NewResponse(&agentfleetv1.GetE2EAppLogResponse{}), nil
+	}
+	return connect.NewResponse(&agentfleetv1.GetE2EAppLogResponse{Log: out}), nil
+}
+
+// runInE2ePod is the shared half of the two handlers above: run one command
+// in the task's e2e pod through the existing run_command passthrough and
+// unwrap execmcp's {stdout,stderr,exitCode} envelope.
+func (s *Server) runInE2ePod(ctx context.Context, taskID, command string) (output string, exitCode int32, err error) {
+	argsJSON, err := json.Marshal(map[string]any{"command": command})
+	if err != nil {
+		return "", 0, err
+	}
+	resultJSON, _, err := s.e2e.CallE2eTool(ctx, taskID, "run_command", string(argsJSON))
+	if err != nil {
+		return "", 0, err
+	}
+	// execmcp answers as an MCP CallToolResult whose single text block is the
+	// JSON payload — unwrapped here so the dashboard never sees MCP framing.
+	var result struct {
+		Content []struct {
+			Text string `json:"text"`
+		} `json:"content"`
+	}
+	if err := json.Unmarshal([]byte(resultJSON), &result); err != nil {
+		return "", 0, fmt.Errorf("unmarshal tool result: %w", err)
+	}
+	if len(result.Content) == 0 {
+		return "", 0, nil
+	}
+	var payload struct {
+		Stdout   string `json:"stdout"`
+		Stderr   string `json:"stderr"`
+		ExitCode int32  `json:"exitCode"`
+	}
+	if err := json.Unmarshal([]byte(result.Content[0].Text), &payload); err != nil {
+		// Not the envelope we expected — hand back the raw text rather than
+		// an error, since it's still the most useful thing we have.
+		return result.Content[0].Text, 0, nil
+	}
+	return payload.Stdout + payload.Stderr, payload.ExitCode, nil
 }
 
 // AnswerQuestion appends the human's answer to a pending QUESTION-type
@@ -733,7 +860,7 @@ func (s *Server) CreateRepo(ctx context.Context, req *connect.Request[agentfleet
 	if name == "" || url == "" {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("name and url are required"))
 	}
-	r := repos.Repo{Name: name, URL: url, BaseBranch: req.Msg.GetBaseBranch()}
+	r := repos.Repo{Name: name, URL: url, BaseBranch: req.Msg.GetBaseBranch(), E2eProfile: req.Msg.GetE2EProfile()}
 	if err := s.repos.Create(ctx, r); err != nil {
 		if errors.Is(err, repos.ErrExists) {
 			return nil, connect.NewError(connect.CodeAlreadyExists, err)
@@ -750,7 +877,7 @@ func (s *Server) UpdateRepo(ctx context.Context, req *connect.Request[agentfleet
 	if name == "" || url == "" {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("name and url are required"))
 	}
-	r := repos.Repo{Name: name, URL: url, BaseBranch: req.Msg.GetBaseBranch()}
+	r := repos.Repo{Name: name, URL: url, BaseBranch: req.Msg.GetBaseBranch(), E2eProfile: req.Msg.GetE2EProfile()}
 	if err := s.repos.Update(ctx, r); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("unknown repo %q", name))
@@ -774,7 +901,7 @@ func (s *Server) DeleteRepo(ctx context.Context, req *connect.Request[agentfleet
 }
 
 func repoToProto(r repos.Repo) *agentfleetv1.Repo {
-	return &agentfleetv1.Repo{Name: r.Name, Url: r.URL, BaseBranch: r.BaseBranch}
+	return &agentfleetv1.Repo{Name: r.Name, Url: r.URL, BaseBranch: r.BaseBranch, E2EProfile: r.E2eProfile}
 }
 
 // ListRepoProfiles/CreateRepoProfile/UpdateRepoProfile/DeleteRepoProfile

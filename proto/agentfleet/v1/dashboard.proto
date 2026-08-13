@@ -82,6 +82,59 @@ message GetE2eStatusResponse {
   // a human-approved per-task override is in effect. Surfacing this is the
   // point: a silent override is what caused the bug this card exists for.
   bool start_cmd_overridden = 11;
+  // The /code route, not the app root — see provisioner.proto's field of the
+  // same name for why this travels rather than being rebuilt client-side.
+  string code_server_url = 12;
+}
+
+// --- e2e environment control (docs/adr/0044) ---
+//
+// The dashboard could already Kill an e2e env but never start one: creating a
+// sandbox was reachable only by asking the agent to call request_e2e_env,
+// which is a strange thing to need when the sandbox is exactly what a human
+// wants in order to look at a broken preview themselves.
+
+message StartE2eRequest {
+  string task_id = 1;
+}
+
+message StartE2eResponse {
+  string status = 1;
+  string preview_url = 2;
+  // Echoed for the same reason request_e2e_env echoes it to the agent: the
+  // recipe that was actually used is the first thing anyone needs when the
+  // preview doesn't serve.
+  string resolved_start_cmd = 3;
+  string profile_name = 4;
+}
+
+// RestartE2eApp re-runs the profile's start command INSIDE the live pod, via
+// the e2e-restart-app helper on its PATH. Deliberately distinct from
+// stop+start: the pod, its warm dependency cache and the worktree all survive,
+// so this costs seconds where recreating the sandbox costs a 10+ minute cold
+// install. Conflating the two in one "restart" button is how a human ends up
+// paying that install to fix a dev server that just needed rebooting.
+message RestartE2eAppRequest {
+  string task_id = 1;
+}
+
+message RestartE2eAppResponse {
+  string output = 1;
+  int32 exit_code = 2;
+}
+
+// GetE2eAppLog reads /tmp/e2e-app.log out of the pod — the app's own stdout,
+// which is the first thing to look at when a preview 502s and the single
+// question the e2e card could never answer. Not Loki: this is readable while
+// the pod is alive regardless of retention, and it carries the explicit
+// "app command exited with status N" marker the entrypoint writes.
+message GetE2eAppLogRequest {
+  string task_id = 1;
+  int32 lines = 2; // default 200
+}
+
+message GetE2eAppLogResponse {
+  string log = 1;
 }
 
 message KillRequest {
@@ -308,6 +361,11 @@ message Repo {
   string name = 1;
   string url = 2;
   string base_branch = 3; // "" means the provisioner defaults to "main"
+  // Which repo_profiles row the e2e sandbox is built from (docs/adr/0044).
+  // "" means the "e2e" convention. Exists because core used to hardcode that
+  // name, so a repo whose recipe is called something else — agent-fleet's
+  // "lint" — got a sandbox with no toolchain at all.
+  string e2e_profile = 4;
 }
 
 message ListReposRequest {}
@@ -320,6 +378,7 @@ message CreateRepoRequest {
   string name = 1;
   string url = 2;
   string base_branch = 3;
+  string e2e_profile = 4;
 }
 
 message CreateRepoResponse {
@@ -330,6 +389,7 @@ message UpdateRepoRequest {
   string name = 1;
   string url = 2;
   string base_branch = 3;
+  string e2e_profile = 4;
 }
 
 message UpdateRepoResponse {
@@ -473,6 +533,9 @@ service DashboardService {
   rpc MarkSeen(MarkSeenRequest) returns (MarkSeenResponse);
   rpc ApproveTask(ApproveTaskRequest) returns (ApproveTaskResponse);
   rpc KillE2e(KillE2eRequest) returns (KillE2eResponse);
+  rpc StartE2e(StartE2eRequest) returns (StartE2eResponse);
+  rpc RestartE2eApp(RestartE2eAppRequest) returns (RestartE2eAppResponse);
+  rpc GetE2eAppLog(GetE2eAppLogRequest) returns (GetE2eAppLogResponse);
   rpc AnswerQuestion(AnswerQuestionRequest) returns (AnswerQuestionResponse);
   rpc RespondToPermission(RespondToPermissionRequest) returns (RespondToPermissionResponse);
   rpc Discuss(DiscussRequest) returns (DiscussResponse);

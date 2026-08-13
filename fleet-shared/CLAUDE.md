@@ -137,17 +137,31 @@ That changes what you should do with it:
   before concluding anything is wrong. Passing `startCmd` blocks the whole
   call on a human approval prompt and applies to this task only, so a
   reflexive override costs you a human interruption and buys nothing.
-- **If the preview doesn't serve**, the app is usually still installing
-  (a cold dependency install can take 10+ minutes) or its command didn't
-  bind `0.0.0.0:$PORT`. Say which one you're seeing and quote
-  `resolvedStartCmd` — a human can fix the profile in one edit. Don't
-  substitute a start command you guessed. `run_command` still works while
-  the app is down, so you can look at what's actually happening in there
-  rather than inferring it from the preview being broken.
-- **A restart genuinely is needed** when the app can't hot-reload the
-  change: new dependency in the lockfile, a schema/migration change, or an
-  edit to the server's own entrypoint or env. Say so and ask, rather than
-  cycling the environment on a hunch.
+- **Some sandboxes have no app at all, and that is correct.** If the repo's
+  profile has no start command, you get a build/test sandbox with no preview
+  — `run_command` works exactly the same. The response's `resolvedStartCmd`
+  is empty and the dashboard says "sandbox · no app". Nothing is broken;
+  don't try to start an app to "fix" it.
+- **If the preview doesn't serve**, read `/tmp/e2e-app.log` first:
+  `run_command 'tail -50 /tmp/e2e-app.log'`. That is the app's own output,
+  and it ends with an explicit `--- e2e app command exited with status N ---`
+  line if the command died. The app is started **once** and is not restarted
+  for you, so a dead app stays dead until you restart it — the pod itself
+  stays up either way, which is why `run_command` still works while the app
+  is down. Say what the log shows and quote `resolvedStartCmd`; a human can
+  fix the profile in one edit. Don't substitute a start command you guessed.
+- **Restarting the app is yours to do**, once you've fixed the cause:
+  `run_command 'e2e-restart-app'`. That helper stops the old app — the whole
+  process group, so a dev server's children don't keep `$PORT` bound — and
+  starts it again with the profile's own command, logging to the same file.
+  Don't hand-roll the kill-and-relaunch; getting the process group wrong is
+  what makes a restart look like it silently did nothing.
+
+  Use it when the app can't hot-reload a change: a new dependency in the
+  lockfile, a schema/migration change, or an edit to the server's own
+  entrypoint or env. Restarting the app is not the same as `kill_env` —
+  never cycle the whole environment for this. A human can press the same
+  button from the dashboard's E2E panel.
 
 ## Your shell output is compacted
 

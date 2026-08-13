@@ -15,8 +15,8 @@ import (
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 	"github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1/agentfleetv1connect"
 
-	"github.com/MohammadBnei/agent-fleet/core/internal/audits"
 	"github.com/MohammadBnei/agent-fleet/core/internal/alertwebhook"
+	"github.com/MohammadBnei/agent-fleet/core/internal/audits"
 	"github.com/MohammadBnei/agent-fleet/core/internal/config"
 	"github.com/MohammadBnei/agent-fleet/core/internal/coreserver"
 	"github.com/MohammadBnei/agent-fleet/core/internal/dashboard"
@@ -137,7 +137,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool) error {
 	// reaches everything else (the old /mcp HTTP surface, and the direct-SQL
 	// calls worker/src/db.ts used to make) through this same service.
 	grpcServer := grpc.NewServer(grpc.UnaryInterceptor(coreserver.AccessLogInterceptor))
-	coreSvc := coreserver.New(activityStore, taskStore, journalStore, profileStore, provisioner, files, loki)
+	coreSvc := coreserver.New(activityStore, taskStore, journalStore, profileStore, repoStore, provisioner, files, loki)
 	agentfleetv1.RegisterCoreServiceServer(grpcServer, coreSvc)
 	grpcLis, err := net.Listen("tcp", ":"+cfg.GRPCPort)
 	if err != nil {

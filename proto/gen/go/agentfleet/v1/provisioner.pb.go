@@ -368,11 +368,16 @@ type GetE2ESessionStatusResponse struct {
 	// difference between "still installing" (a cold bun install measured 782s
 	// live) and "bound the wrong port/interface and never will". Without it a
 	// broken preview is indistinguishable from a slow one.
-	StartCmd      string `protobuf:"bytes,3,opt,name=start_cmd,json=startCmd,proto3" json:"start_cmd,omitempty"`
-	PodPhase      string `protobuf:"bytes,4,opt,name=pod_phase,json=podPhase,proto3" json:"pod_phase,omitempty"` // "Pending"|"Running"|"Succeeded"|"Failed"|"Unknown"
-	AppReady      bool   `protobuf:"varint,5,opt,name=app_ready,json=appReady,proto3" json:"app_ready,omitempty"`
-	Restarts      int32  `protobuf:"varint,6,opt,name=restarts,proto3" json:"restarts,omitempty"`
-	StartedAt     string `protobuf:"bytes,7,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"` // RFC3339
+	StartCmd  string `protobuf:"bytes,3,opt,name=start_cmd,json=startCmd,proto3" json:"start_cmd,omitempty"`
+	PodPhase  string `protobuf:"bytes,4,opt,name=pod_phase,json=podPhase,proto3" json:"pod_phase,omitempty"` // "Pending"|"Running"|"Succeeded"|"Failed"|"Unknown"
+	AppReady  bool   `protobuf:"varint,5,opt,name=app_ready,json=appReady,proto3" json:"app_ready,omitempty"`
+	Restarts  int32  `protobuf:"varint,6,opt,name=restarts,proto3" json:"restarts,omitempty"`
+	StartedAt string `protobuf:"bytes,7,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"` // RFC3339
+	// Where a human reaches the in-browser IDE (the /code prefix route). On the
+	// wire rather than rebuilt by the caller: the dashboard's "Open code-server"
+	// button was pointed at preview_url — the app root — and so had never once
+	// opened code-server (docs/adr/0044).
+	CodeServerUrl string `protobuf:"bytes,8,opt,name=code_server_url,json=codeServerUrl,proto3" json:"code_server_url,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -452,6 +457,13 @@ func (x *GetE2ESessionStatusResponse) GetRestarts() int32 {
 func (x *GetE2ESessionStatusResponse) GetStartedAt() string {
 	if x != nil {
 		return x.StartedAt
+	}
+	return ""
+}
+
+func (x *GetE2ESessionStatusResponse) GetCodeServerUrl() string {
+	if x != nil {
+		return x.CodeServerUrl
 	}
 	return ""
 }
@@ -1497,7 +1509,7 @@ const file_agentfleet_v1_provisioner_proto_rawDesc = "" +
 	"\x06killed\x18\x01 \x01(\bR\x06killed\x12,\n" +
 	"\x12services_torn_down\x18\x02 \x03(\tR\x10servicesTornDown\"5\n" +
 	"\x1aGetE2eSessionStatusRequest\x12\x17\n" +
-	"\atask_id\x18\x01 \x01(\tR\x06taskId\"\xe8\x01\n" +
+	"\atask_id\x18\x01 \x01(\tR\x06taskId\"\x90\x02\n" +
 	"\x1bGetE2eSessionStatusResponse\x12\x16\n" +
 	"\x06status\x18\x01 \x01(\tR\x06status\x12\x1f\n" +
 	"\vpreview_url\x18\x02 \x01(\tR\n" +
@@ -1507,7 +1519,8 @@ const file_agentfleet_v1_provisioner_proto_rawDesc = "" +
 	"\tapp_ready\x18\x05 \x01(\bR\bappReady\x12\x1a\n" +
 	"\brestarts\x18\x06 \x01(\x05R\brestarts\x12\x1d\n" +
 	"\n" +
-	"started_at\x18\a \x01(\tR\tstartedAt\"\xd3\x01\n" +
+	"started_at\x18\a \x01(\tR\tstartedAt\x12&\n" +
+	"\x0fcode_server_url\x18\b \x01(\tR\rcodeServerUrl\"\xd3\x01\n" +
 	"\x17CreateE2eSessionRequest\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x12\n" +
 	"\x04repo\x18\x02 \x01(\tR\x04repo\x12\x1b\n" +

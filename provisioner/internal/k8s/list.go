@@ -3,6 +3,7 @@ package k8s
 import (
 	"context"
 	"log/slog"
+	"time"
 
 	batchv1 "k8s.io/api/batch/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -15,6 +16,13 @@ func deleteOpts() metav1.DeleteOptions { return metav1.DeleteOptions{} }
 type LiveE2ePod struct {
 	TaskID  string
 	PodName string
+	// Phase/CreatedAt back reconcile's gcDeadE2ePods sweep (docs/adr/0044,
+	// reversing ADR-0039's "e2e pods are never GC'd" accepted gap). Age is
+	// the only idle signal available here — the provisioner holds no DB
+	// (docs/adr/0020 point 1), so there is nothing to ask when a sandbox was
+	// last used.
+	Phase     string
+	CreatedAt time.Time
 }
 
 // ListPodsByLabel mirrors listE2ePodsByLabel — the reconcile loop's
@@ -33,7 +41,12 @@ func (c *Client) ListPodsByLabel(ctx context.Context) ([]LiveE2ePod, error) {
 		if taskID == "" {
 			continue
 		}
-		out = append(out, LiveE2ePod{TaskID: taskID, PodName: pod.Name})
+		out = append(out, LiveE2ePod{
+			TaskID:    taskID,
+			PodName:   pod.Name,
+			Phase:     string(pod.Status.Phase),
+			CreatedAt: pod.CreationTimestamp.Time,
+		})
 	}
 	return out, nil
 }

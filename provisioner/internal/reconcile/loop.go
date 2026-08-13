@@ -7,11 +7,14 @@
 // mechanism (that's coreserver.SetTaskStatus's opportunistic trigger, in
 // core/) — and, as of docs/adr/0034, garbage-collect shared environment-
 // recipe service instances that have sat idle past a configured timeout.
-// e2e pods still have no natural "done" signal from k8s alone (they run
-// until explicitly killed) and no external tracking left to compare
-// against, so they're not GC'd here — an accepted gap, not a silent one: a
-// leaked e2e pod would need a different mechanism entirely, deferred as
-// future scope.
+// As of docs/adr/0044 there is a third pass: e2e sandbox pods. They still
+// have no natural "done" signal from k8s (they run until explicitly killed)
+// and the provisioner still has no external tracking to compare against, so
+// the sweep uses the two signals Kubernetes does provide — a terminal phase,
+// and age past e2eMaxAge. That's coarser than the worker Jobs' real done
+// signal, and deliberately so: the cost of leaking these is the NEXT sandbox
+// sitting Pending forever against a full node, which presents to a human as
+// "the e2e pod won't start" and was one of the motivating symptoms.
 package reconcile
 
 import (
@@ -42,6 +45,12 @@ type JobLister interface {
 	// second interface for two more methods.
 	ListSharedInstances(ctx context.Context) ([]k8s.LiveSharedInstance, error)
 	DeleteSharedInstance(ctx context.Context, repo, serviceKey string) error
+	// ListPodsByLabel/DeleteAll back gcDeadE2ePods (docs/adr/0044) — same
+	// "grown, not split" reasoning as the shared-instance pair above.
+	// ListPodsByLabel already existed and had no caller; DeleteAll (rather
+	// than DeletePod) so the Service/Middleware/IngressRoute go with it.
+	ListPodsByLabel(ctx context.Context) ([]k8s.LiveE2ePod, error)
+	DeleteAll(ctx context.Context, taskID string) error
 }
 
 // EventReporter is the narrow slice of coreclient.Client this package
@@ -58,10 +67,16 @@ type Loop struct {
 	k8sc                      JobLister
 	core                      EventReporter
 	sharedInstanceIdleTimeout time.Duration
+	e2eMaxAge                 time.Duration
 }
 
-func New(k8sc JobLister, core EventReporter, sharedInstanceIdleTimeout time.Duration) *Loop {
-	return &Loop{k8sc: k8sc, core: core, sharedInstanceIdleTimeout: sharedInstanceIdleTimeout}
+func New(k8sc JobLister, core EventReporter, sharedInstanceIdleTimeout, e2eMaxAge time.Duration) *Loop {
+	return &Loop{
+		k8sc:                      k8sc,
+		core:                      core,
+		sharedInstanceIdleTimeout: sharedInstanceIdleTimeout,
+		e2eMaxAge:                 e2eMaxAge,
+	}
 }
 
 func (l *Loop) gcTerminalWorkerJobs(ctx context.Context) {
@@ -131,12 +146,63 @@ func (l *Loop) gcIdleSharedInstances(ctx context.Context) {
 	}
 }
 
+// gcDeadE2ePods deletes e2e sandbox pods that reached a terminal phase, and
+// those older than e2eMaxAge (docs/adr/0044).
+//
+// The terminal-phase half should be close to dead code after 0044 — the
+// entrypoint no longer lets an app crash take the pod with it, and
+// CreateE2ESession replaces a corpse on the next request. It stays for the
+// cases the container can't survive at all: OOMKilled, eviction, node loss.
+// The age half is the one that actually reclaims capacity, since a healthy
+// sandbox now runs until something deletes it.
+func (l *Loop) gcDeadE2ePods(ctx context.Context) {
+	pods, err := l.k8sc.ListPodsByLabel(ctx)
+	if err != nil {
+		slog.Error("reconcile: list e2e pods failed", "error", err)
+		return
+	}
+	for _, pod := range pods {
+		terminal := pod.Phase == "Succeeded" || pod.Phase == "Failed"
+		aged := !pod.CreatedAt.IsZero() && time.Since(pod.CreatedAt) > l.e2eMaxAge
+		if !terminal && !aged {
+			continue
+		}
+		slog.Info("reconcile: gc'ing e2e pod", "taskId", pod.TaskID, "podName", pod.PodName,
+			"phase", pod.Phase, "createdAt", pod.CreatedAt, "reason", gcReason(terminal))
+		// DeleteAll, not DeletePod: the Service/Middleware/IngressRoute are
+		// this task's too, and unlike the recreate path in grpcserver there is
+		// no follow-up create to leave them standing for.
+		if err := l.k8sc.DeleteAll(ctx, pod.TaskID); err != nil {
+			slog.Error("reconcile: delete e2e pod failed", "taskId", pod.TaskID, "error", err)
+			continue
+		}
+		// Reported so the deletion lands in the knowledge journal — an agent
+		// whose sandbox vanished mid-session otherwise has no way to find out
+		// why run_command started failing.
+		l.core.ReportEvent(ctx, &agentfleetv1.PodEvent{
+			TaskId:  pod.TaskID,
+			Kind:    agentfleetv1.SessionKind_SESSION_KIND_E2E,
+			Phase:   agentfleetv1.PodPhase_POD_PHASE_TERMINATED,
+			PodName: pod.PodName,
+			Message: "e2e sandbox pod garbage-collected: " + gcReason(terminal),
+		})
+	}
+}
+
+func gcReason(terminal bool) string {
+	if terminal {
+		return "terminal phase"
+	}
+	return "older than the configured max age"
+}
+
 func (l *Loop) Run(ctx context.Context, pollInterval time.Duration) {
 	ticker := time.NewTicker(pollInterval)
 	defer ticker.Stop()
 	for {
 		l.gcTerminalWorkerJobs(ctx)
 		l.gcIdleSharedInstances(ctx)
+		l.gcDeadE2ePods(ctx)
 		select {
 		case <-ctx.Done():
 			return

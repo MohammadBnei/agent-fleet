@@ -116,6 +116,48 @@ broken link, not the planning logic itself — check `relayed_to_discord`/
 `relay_attempts`/`relay_dead_letter`/`relay_last_error` on the relevant
 rows, and `core`'s own logs for Discord API errors.
 
+## 5. The e2e sandbox (`run_command`, the preview)
+
+Since `docs/adr/0039` the e2e pod is the agent's build/test sandbox, so
+"`run_command` is failing" is a task-blocking bug, not a preview cosmetics
+one. `docs/adr/0044` reshaped it — check in this order:
+
+```bash
+# Is there a pod at all, and what phase?
+kubectl -n agent-fleet get pods -l app.kubernetes.io/component=e2e-run
+
+# Why is it not Running? (ImagePullBackOff, OOMKilled, admission rejection)
+kubectl -n agent-fleet describe pod e2e-<first 20 chars of task id>
+
+# The app's own output — the first thing to read when the preview 502s.
+# Ends with an explicit exit-status marker if the command died.
+kubectl -n agent-fleet exec e2e-<id> -- tail -50 /tmp/e2e-app.log
+```
+
+- **The pod stays up even when the app is dead — that is by design**
+  (`adr/0044`). A `Running` pod whose preview 502s is the *normal* shape of
+  a broken start command, not a second bug. `run_command` and code-server
+  both still work; use them.
+- **`app_ready: false` with an empty `start_cmd` is not a failure.** It's a
+  sandbox-only pod: the repo's profile has no app command, nothing binds the
+  app port, and the readiness probe correctly never passes. The dashboard
+  card says `sandbox · no app`.
+- **The app is never restarted automatically.** A dead app stays dead for the
+  rest of the session unless the agent restarts it via `run_command`.
+- **`run_command` "not reachable" on the first call of a session** is usually
+  just a cold pod — the sidecar retries with backoff for ~65s, and the final
+  error names the pod's actual phase. `requested` means still pulling/
+  installing; `failed` means call `kill_env` and let it rebuild.
+- **A sandbox that vanished mid-session** was probably swept: the reconcile
+  loop GCs terminal-phase pods and any pod older than `E2E_MAX_AGE_MS`
+  (default 24h). It reports a `SESSION_KIND_E2E` event, so it's in the
+  journal.
+- **Which profile the sandbox was built from** comes from the repo's
+  `e2e_profile` column, not a hardcoded `"e2e"`. A sandbox missing a
+  toolchain almost always means that column points at the wrong profile (or
+  the profile lacks the tool). `request_e2e_env`'s response echoes
+  `profileName`/`tools`/`services` — read it before assuming a bug.
+
 ## Known failure modes
 
 - **Missing `allowedTools` entry** → silent permission denial, burned

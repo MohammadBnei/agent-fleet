@@ -5,10 +5,10 @@ package repos
 
 import (
 	"context"
-	"strings"
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -36,6 +36,12 @@ type Repo struct {
 	Name       string
 	URL        string
 	BaseBranch string // "" means the provisioner defaults to "main"
+	// E2eProfile names the repo_profiles row the e2e sandbox is built from
+	// (docs/adr/0044). "" means the "e2e" convention. It exists because core
+	// used to hardcode that name, which left a repo whose recipe is called
+	// something else — agent-fleet's "lint" — with a sandbox that resolved to
+	// no profile and therefore no toolchain at all.
+	E2eProfile string
 }
 
 type Store struct {
@@ -55,7 +61,7 @@ func (s *Store) SetOnChange(onChange func()) {
 }
 
 func (s *Store) List(ctx context.Context) ([]Repo, error) {
-	rows, err := s.pool.Query(ctx, `SELECT name, url, base_branch FROM repos ORDER BY name`)
+	rows, err := s.pool.Query(ctx, `SELECT name, url, base_branch, e2e_profile FROM repos ORDER BY name`)
 	if err != nil {
 		slog.Error("repos List", "error", err)
 		return nil, fmt.Errorf("list repos: %w", err)
@@ -68,7 +74,7 @@ func (s *Store) List(ctx context.Context) ([]Repo, error) {
 	result := []Repo{}
 	for rows.Next() {
 		var r Repo
-		if err := rows.Scan(&r.Name, &r.URL, &r.BaseBranch); err != nil {
+		if err := rows.Scan(&r.Name, &r.URL, &r.BaseBranch, &r.E2eProfile); err != nil {
 			slog.Error("repos List: scan", "error", err)
 			return nil, fmt.Errorf("scan repo: %w", err)
 		}
@@ -80,8 +86,8 @@ func (s *Store) List(ctx context.Context) ([]Repo, error) {
 // Get returns nil, nil when no repo with this name exists.
 func (s *Store) Get(ctx context.Context, name string) (*Repo, error) {
 	var r Repo
-	err := s.pool.QueryRow(ctx, `SELECT name, url, base_branch FROM repos WHERE name = $1`, name).
-		Scan(&r.Name, &r.URL, &r.BaseBranch)
+	err := s.pool.QueryRow(ctx, `SELECT name, url, base_branch, e2e_profile FROM repos WHERE name = $1`, name).
+		Scan(&r.Name, &r.URL, &r.BaseBranch, &r.E2eProfile)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
@@ -96,8 +102,8 @@ func (s *Store) Create(ctx context.Context, r Repo) error {
 	if err := validateURL(r.URL); err != nil {
 		return err
 	}
-	_, err := s.pool.Exec(ctx, `INSERT INTO repos (name, url, base_branch) VALUES ($1, $2, $3)`,
-		r.Name, r.URL, r.BaseBranch)
+	_, err := s.pool.Exec(ctx, `INSERT INTO repos (name, url, base_branch, e2e_profile) VALUES ($1, $2, $3, $4)`,
+		r.Name, r.URL, r.BaseBranch, r.E2eProfile)
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
@@ -119,8 +125,8 @@ func (s *Store) Update(ctx context.Context, r Repo) error {
 		return err
 	}
 	tag, err := s.pool.Exec(ctx, `
-		UPDATE repos SET url = $2, base_branch = $3, updated_at = now() WHERE name = $1
-	`, r.Name, r.URL, r.BaseBranch)
+		UPDATE repos SET url = $2, base_branch = $3, e2e_profile = $4, updated_at = now() WHERE name = $1
+	`, r.Name, r.URL, r.BaseBranch, r.E2eProfile)
 	if err != nil {
 		slog.Error("repos Update", "name", r.Name, "error", err)
 		return fmt.Errorf("update repo: %w", err)

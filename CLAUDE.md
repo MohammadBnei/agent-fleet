@@ -151,10 +151,12 @@ the dashboard-editable `repos` table (`docs/adr/0028`) — no redeploy
 needed to add/edit one. No per-repo Deployment/PVC — onboarding a new repo
 is a "manage repos" entry in the dashboard, not new k8s manifests.
 
-## Verification traps (each of these shipped a bug on 2026-08-11)
+## Verification traps
 
-Green CI is necessary, not sufficient. These five failure modes were all
-*silent* — the check passed, or wasn't run, or measured the wrong thing:
+Green CI is necessary, not sufficient. These failure modes were all *silent* —
+the check passed, or wasn't run, or measured the wrong thing. The first five
+each shipped a bug on 2026-08-11; the last one had been shipping since the
+feature was written:
 
 - **`tsc --noEmit` is NOT the build.** The real command is
   `bun run build` (`tsc -b && vite build`), and `tsc -b` enforces
@@ -174,6 +176,18 @@ Green CI is necessary, not sufficient. These five failure modes were all
 - **Squash-merging a stacked PR auto-closes the PR above it** (its base
   branch is deleted, and GitHub refuses to reopen). Retarget dependent
   PRs to `main` *before* merging the one below.
+- **A bound port is not a reachable service is not a working capability.**
+  Browser automation was dead for the fleet's entire history behind three
+  stacked failures, and each layer of checking passed the one below it
+  (`docs/adr/0044`): the port was *bound* (so `--port` looked verified), but
+  the server 403'd every non-localhost `Host`; once reachable, the tool list
+  was fetched 3s before the server came up; once registered, the browser
+  binary `@playwright/mcp` resolves wasn't installed. Only an actual
+  `browser_navigate` found the last one. **When a component's whole job is to
+  do something, verify it doing that thing** — not that its process is up,
+  its port is open, or its handshake succeeds. Applies to anything reached
+  through the agent → sidecar → core → provisioner → pod proxy chain, where a
+  failure at any hop is swallowed into an empty result.
 
 ## Workflow rules
 

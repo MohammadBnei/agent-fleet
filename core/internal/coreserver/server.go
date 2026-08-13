@@ -23,11 +23,13 @@ import (
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/dashboard"
+	"github.com/MohammadBnei/agent-fleet/core/internal/e2erecipe"
 	"github.com/MohammadBnei/agent-fleet/core/internal/filestore"
 	"github.com/MohammadBnei/agent-fleet/core/internal/journal"
 	"github.com/MohammadBnei/agent-fleet/core/internal/lokiclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/provisionerclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/repoprofiles"
+	"github.com/MohammadBnei/agent-fleet/core/internal/repos"
 	"github.com/MohammadBnei/agent-fleet/core/internal/tasks"
 	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
 )
@@ -39,10 +41,12 @@ const pollInterval = 500 * time.Millisecond
 
 type Server struct {
 	agentfleetv1.UnimplementedCoreServiceServer
-	transcr     transcript.Store
-	tasks       *tasks.Store
-	journal     *journal.Store
-	profiles    *repoprofiles.Store
+	transcr  transcript.Store
+	tasks    *tasks.Store
+	journal  *journal.Store
+	profiles *repoprofiles.Store
+	// repos supplies the per-repo default e2e profile name (docs/adr/0044).
+	repos       *repos.Store
 	provisioner *provisionerclient.Client
 	files       filestore.Store
 	loki        lokiclient.Querier
@@ -57,8 +61,8 @@ type Server struct {
 	warm func(ctx context.Context, taskID string) (string, error)
 }
 
-func New(transcr transcript.Store, taskStore *tasks.Store, journalStore *journal.Store, profileStore *repoprofiles.Store, provisioner *provisionerclient.Client, files filestore.Store, loki lokiclient.Querier) *Server {
-	return &Server{transcr: transcr, tasks: taskStore, journal: journalStore, profiles: profileStore, provisioner: provisioner, files: files, loki: loki}
+func New(transcr transcript.Store, taskStore *tasks.Store, journalStore *journal.Store, profileStore *repoprofiles.Store, repoStore *repos.Store, provisioner *provisionerclient.Client, files filestore.Store, loki lokiclient.Querier) *Server {
+	return &Server{transcr: transcr, tasks: taskStore, journal: journalStore, profiles: profileStore, repos: repoStore, provisioner: provisioner, files: files, loki: loki}
 }
 
 // SetWarmFunc wires the shared warm-an-idle-session path in after
@@ -182,21 +186,12 @@ func (s *Server) RequestE2EEnv(ctx context.Context, req *agentfleetv1.RequestE2E
 	if t == nil {
 		return nil, fmt.Errorf("RequestE2EEnv: task %s not found", req.GetTaskId())
 	}
-	// Defaults to the repo's "e2e"-named profile; an agent can override
-	// with a different declared profile (e.g. a repo's "lint" profile) via
-	// the same override pattern start_cmd already establishes
-	// (docs/adr/0034). Nil (no such profile) means empty ingredients — the
-	// pre-recipe pod shape.
-	profileName := req.GetProfile()
-	if profileName == "" {
-		profileName = "e2e"
-	}
-	profile, err := s.profiles.Get(ctx, t.Repo, profileName)
+	// Resolution order lives in e2erecipe, shared with the dashboard's own
+	// Start button — see that package for why it isn't inlined here.
+	recipe, err := e2erecipe.Resolve(ctx, s.repos, s.profiles, t.Repo, req.GetProfile())
 	if err != nil {
-		return nil, fmt.Errorf("RequestE2EEnv: repo profile lookup: %w", err)
+		return nil, fmt.Errorf("RequestE2EEnv: %w", err)
 	}
-	var toolKeys []string
-	var serviceIngredients []repoprofiles.ServiceIngredient
 	// startCmd: the caller's own override wins (it knows the worktree's
 	// actual layout right now); otherwise the resolved profile's own
 	// start_cmd (found live via kind-local — this fell through to the
@@ -204,12 +199,10 @@ func (s *Server) RequestE2EEnv(ctx context.Context, req *agentfleetv1.RequestE2E
 	// using the OLD hardcoded command even though the profile had the
 	// fixed one, because only Tools/Services were pulled off profile here).
 	startCmd := req.GetStartCmd()
-	if profile != nil {
-		toolKeys, serviceIngredients = profile.Tools, profile.Services
-		if startCmd == "" {
-			startCmd = profile.StartCmd
-		}
+	if startCmd == "" {
+		startCmd = recipe.StartCmd
 	}
+	profileName, toolKeys, serviceIngredients := recipe.ProfileName, recipe.ToolKeys, recipe.Services
 	status, previewURL, err := s.provisioner.CreateE2eSession(ctx, req.GetTaskId(), t.Repo, startCmd, toolKeys, serviceIngredients)
 	if err != nil {
 		return nil, fmt.Errorf("RequestE2EEnv: %w", err)

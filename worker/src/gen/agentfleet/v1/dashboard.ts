@@ -111,6 +111,61 @@ export interface GetE2eStatusResponse {
    * point: a silent override is what caused the bug this card exists for.
    */
   startCmdOverridden: boolean;
+  /**
+   * The /code route, not the app root — see provisioner.proto's field of the
+   * same name for why this travels rather than being rebuilt client-side.
+   */
+  codeServerUrl: string;
+}
+
+export interface StartE2eRequest {
+  taskId: string;
+}
+
+export interface StartE2eResponse {
+  status: string;
+  previewUrl: string;
+  /**
+   * Echoed for the same reason request_e2e_env echoes it to the agent: the
+   * recipe that was actually used is the first thing anyone needs when the
+   * preview doesn't serve.
+   */
+  resolvedStartCmd: string;
+  profileName: string;
+}
+
+/**
+ * RestartE2eApp re-runs the profile's start command INSIDE the live pod, via
+ * the e2e-restart-app helper on its PATH. Deliberately distinct from
+ * stop+start: the pod, its warm dependency cache and the worktree all survive,
+ * so this costs seconds where recreating the sandbox costs a 10+ minute cold
+ * install. Conflating the two in one "restart" button is how a human ends up
+ * paying that install to fix a dev server that just needed rebooting.
+ */
+export interface RestartE2eAppRequest {
+  taskId: string;
+}
+
+export interface RestartE2eAppResponse {
+  output: string;
+  exitCode: number;
+}
+
+/**
+ * GetE2eAppLog reads /tmp/e2e-app.log out of the pod — the app's own stdout,
+ * which is the first thing to look at when a preview 502s and the single
+ * question the e2e card could never answer. Not Loki: this is readable while
+ * the pod is alive regardless of retention, and it carries the explicit
+ * "app command exited with status N" marker the entrypoint writes.
+ */
+export interface GetE2eAppLogRequest {
+  taskId: string;
+  /** default 200 */
+  lines: number;
+}
+
+export interface GetE2eAppLogResponse {
+  log: string;
 }
 
 export interface KillRequest {
@@ -350,6 +405,13 @@ export interface Repo {
   url: string;
   /** "" means the provisioner defaults to "main" */
   baseBranch: string;
+  /**
+   * Which repo_profiles row the e2e sandbox is built from (docs/adr/0044).
+   * "" means the "e2e" convention. Exists because core used to hardcode that
+   * name, so a repo whose recipe is called something else — agent-fleet's
+   * "lint" — got a sandbox with no toolchain at all.
+   */
+  e2eProfile: string;
 }
 
 export interface ListReposRequest {
@@ -363,6 +425,7 @@ export interface CreateRepoRequest {
   name: string;
   url: string;
   baseBranch: string;
+  e2eProfile: string;
 }
 
 export interface CreateRepoResponse {
@@ -373,6 +436,7 @@ export interface UpdateRepoRequest {
   name: string;
   url: string;
   baseBranch: string;
+  e2eProfile: string;
 }
 
 export interface UpdateRepoResponse {
@@ -796,6 +860,7 @@ function createBaseGetE2eStatusResponse(): GetE2eStatusResponse {
     tools: [],
     services: [],
     startCmdOverridden: false,
+    codeServerUrl: "",
   };
 }
 
@@ -845,6 +910,11 @@ export const GetE2eStatusResponse: MessageFns<GetE2eStatusResponse> = {
         : isSet(object.start_cmd_overridden)
         ? globalThis.Boolean(object.start_cmd_overridden)
         : false,
+      codeServerUrl: isSet(object.codeServerUrl)
+        ? globalThis.String(object.codeServerUrl)
+        : isSet(object.code_server_url)
+        ? globalThis.String(object.code_server_url)
+        : "",
     };
   },
 
@@ -883,6 +953,9 @@ export const GetE2eStatusResponse: MessageFns<GetE2eStatusResponse> = {
     if (message.startCmdOverridden !== false) {
       obj.startCmdOverridden = message.startCmdOverridden;
     }
+    if (message.codeServerUrl !== "") {
+      obj.codeServerUrl = message.codeServerUrl;
+    }
     return obj;
   },
 
@@ -902,6 +975,232 @@ export const GetE2eStatusResponse: MessageFns<GetE2eStatusResponse> = {
     message.tools = object.tools?.map((e) => e) || [];
     message.services = object.services?.map((e) => e) || [];
     message.startCmdOverridden = object.startCmdOverridden ?? false;
+    message.codeServerUrl = object.codeServerUrl ?? "";
+    return message;
+  },
+};
+
+function createBaseStartE2eRequest(): StartE2eRequest {
+  return { taskId: "" };
+}
+
+export const StartE2eRequest: MessageFns<StartE2eRequest> = {
+  fromJSON(object: any): StartE2eRequest {
+    return {
+      taskId: isSet(object.taskId)
+        ? globalThis.String(object.taskId)
+        : isSet(object.task_id)
+        ? globalThis.String(object.task_id)
+        : "",
+    };
+  },
+
+  toJSON(message: StartE2eRequest): unknown {
+    const obj: any = {};
+    if (message.taskId !== "") {
+      obj.taskId = message.taskId;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<StartE2eRequest>, I>>(base?: I): StartE2eRequest {
+    return StartE2eRequest.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<StartE2eRequest>, I>>(object: I): StartE2eRequest {
+    const message = createBaseStartE2eRequest();
+    message.taskId = object.taskId ?? "";
+    return message;
+  },
+};
+
+function createBaseStartE2eResponse(): StartE2eResponse {
+  return { status: "", previewUrl: "", resolvedStartCmd: "", profileName: "" };
+}
+
+export const StartE2eResponse: MessageFns<StartE2eResponse> = {
+  fromJSON(object: any): StartE2eResponse {
+    return {
+      status: isSet(object.status) ? globalThis.String(object.status) : "",
+      previewUrl: isSet(object.previewUrl)
+        ? globalThis.String(object.previewUrl)
+        : isSet(object.preview_url)
+        ? globalThis.String(object.preview_url)
+        : "",
+      resolvedStartCmd: isSet(object.resolvedStartCmd)
+        ? globalThis.String(object.resolvedStartCmd)
+        : isSet(object.resolved_start_cmd)
+        ? globalThis.String(object.resolved_start_cmd)
+        : "",
+      profileName: isSet(object.profileName)
+        ? globalThis.String(object.profileName)
+        : isSet(object.profile_name)
+        ? globalThis.String(object.profile_name)
+        : "",
+    };
+  },
+
+  toJSON(message: StartE2eResponse): unknown {
+    const obj: any = {};
+    if (message.status !== "") {
+      obj.status = message.status;
+    }
+    if (message.previewUrl !== "") {
+      obj.previewUrl = message.previewUrl;
+    }
+    if (message.resolvedStartCmd !== "") {
+      obj.resolvedStartCmd = message.resolvedStartCmd;
+    }
+    if (message.profileName !== "") {
+      obj.profileName = message.profileName;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<StartE2eResponse>, I>>(base?: I): StartE2eResponse {
+    return StartE2eResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<StartE2eResponse>, I>>(object: I): StartE2eResponse {
+    const message = createBaseStartE2eResponse();
+    message.status = object.status ?? "";
+    message.previewUrl = object.previewUrl ?? "";
+    message.resolvedStartCmd = object.resolvedStartCmd ?? "";
+    message.profileName = object.profileName ?? "";
+    return message;
+  },
+};
+
+function createBaseRestartE2eAppRequest(): RestartE2eAppRequest {
+  return { taskId: "" };
+}
+
+export const RestartE2eAppRequest: MessageFns<RestartE2eAppRequest> = {
+  fromJSON(object: any): RestartE2eAppRequest {
+    return {
+      taskId: isSet(object.taskId)
+        ? globalThis.String(object.taskId)
+        : isSet(object.task_id)
+        ? globalThis.String(object.task_id)
+        : "",
+    };
+  },
+
+  toJSON(message: RestartE2eAppRequest): unknown {
+    const obj: any = {};
+    if (message.taskId !== "") {
+      obj.taskId = message.taskId;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<RestartE2eAppRequest>, I>>(base?: I): RestartE2eAppRequest {
+    return RestartE2eAppRequest.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<RestartE2eAppRequest>, I>>(object: I): RestartE2eAppRequest {
+    const message = createBaseRestartE2eAppRequest();
+    message.taskId = object.taskId ?? "";
+    return message;
+  },
+};
+
+function createBaseRestartE2eAppResponse(): RestartE2eAppResponse {
+  return { output: "", exitCode: 0 };
+}
+
+export const RestartE2eAppResponse: MessageFns<RestartE2eAppResponse> = {
+  fromJSON(object: any): RestartE2eAppResponse {
+    return {
+      output: isSet(object.output) ? globalThis.String(object.output) : "",
+      exitCode: isSet(object.exitCode)
+        ? globalThis.Number(object.exitCode)
+        : isSet(object.exit_code)
+        ? globalThis.Number(object.exit_code)
+        : 0,
+    };
+  },
+
+  toJSON(message: RestartE2eAppResponse): unknown {
+    const obj: any = {};
+    if (message.output !== "") {
+      obj.output = message.output;
+    }
+    if (message.exitCode !== 0) {
+      obj.exitCode = Math.round(message.exitCode);
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<RestartE2eAppResponse>, I>>(base?: I): RestartE2eAppResponse {
+    return RestartE2eAppResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<RestartE2eAppResponse>, I>>(object: I): RestartE2eAppResponse {
+    const message = createBaseRestartE2eAppResponse();
+    message.output = object.output ?? "";
+    message.exitCode = object.exitCode ?? 0;
+    return message;
+  },
+};
+
+function createBaseGetE2eAppLogRequest(): GetE2eAppLogRequest {
+  return { taskId: "", lines: 0 };
+}
+
+export const GetE2eAppLogRequest: MessageFns<GetE2eAppLogRequest> = {
+  fromJSON(object: any): GetE2eAppLogRequest {
+    return {
+      taskId: isSet(object.taskId)
+        ? globalThis.String(object.taskId)
+        : isSet(object.task_id)
+        ? globalThis.String(object.task_id)
+        : "",
+      lines: isSet(object.lines) ? globalThis.Number(object.lines) : 0,
+    };
+  },
+
+  toJSON(message: GetE2eAppLogRequest): unknown {
+    const obj: any = {};
+    if (message.taskId !== "") {
+      obj.taskId = message.taskId;
+    }
+    if (message.lines !== 0) {
+      obj.lines = Math.round(message.lines);
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<GetE2eAppLogRequest>, I>>(base?: I): GetE2eAppLogRequest {
+    return GetE2eAppLogRequest.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<GetE2eAppLogRequest>, I>>(object: I): GetE2eAppLogRequest {
+    const message = createBaseGetE2eAppLogRequest();
+    message.taskId = object.taskId ?? "";
+    message.lines = object.lines ?? 0;
+    return message;
+  },
+};
+
+function createBaseGetE2eAppLogResponse(): GetE2eAppLogResponse {
+  return { log: "" };
+}
+
+export const GetE2eAppLogResponse: MessageFns<GetE2eAppLogResponse> = {
+  fromJSON(object: any): GetE2eAppLogResponse {
+    return { log: isSet(object.log) ? globalThis.String(object.log) : "" };
+  },
+
+  toJSON(message: GetE2eAppLogResponse): unknown {
+    const obj: any = {};
+    if (message.log !== "") {
+      obj.log = message.log;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<GetE2eAppLogResponse>, I>>(base?: I): GetE2eAppLogResponse {
+    return GetE2eAppLogResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<GetE2eAppLogResponse>, I>>(object: I): GetE2eAppLogResponse {
+    const message = createBaseGetE2eAppLogResponse();
+    message.log = object.log ?? "";
     return message;
   },
 };
@@ -1827,7 +2126,7 @@ export const GetJournalResponse: MessageFns<GetJournalResponse> = {
 };
 
 function createBaseRepo(): Repo {
-  return { name: "", url: "", baseBranch: "" };
+  return { name: "", url: "", baseBranch: "", e2eProfile: "" };
 }
 
 export const Repo: MessageFns<Repo> = {
@@ -1839,6 +2138,11 @@ export const Repo: MessageFns<Repo> = {
         ? globalThis.String(object.baseBranch)
         : isSet(object.base_branch)
         ? globalThis.String(object.base_branch)
+        : "",
+      e2eProfile: isSet(object.e2eProfile)
+        ? globalThis.String(object.e2eProfile)
+        : isSet(object.e2e_profile)
+        ? globalThis.String(object.e2e_profile)
         : "",
     };
   },
@@ -1854,6 +2158,9 @@ export const Repo: MessageFns<Repo> = {
     if (message.baseBranch !== "") {
       obj.baseBranch = message.baseBranch;
     }
+    if (message.e2eProfile !== "") {
+      obj.e2eProfile = message.e2eProfile;
+    }
     return obj;
   },
 
@@ -1865,6 +2172,7 @@ export const Repo: MessageFns<Repo> = {
     message.name = object.name ?? "";
     message.url = object.url ?? "";
     message.baseBranch = object.baseBranch ?? "";
+    message.e2eProfile = object.e2eProfile ?? "";
     return message;
   },
 };
@@ -1920,7 +2228,7 @@ export const ListReposResponse: MessageFns<ListReposResponse> = {
 };
 
 function createBaseCreateRepoRequest(): CreateRepoRequest {
-  return { name: "", url: "", baseBranch: "" };
+  return { name: "", url: "", baseBranch: "", e2eProfile: "" };
 }
 
 export const CreateRepoRequest: MessageFns<CreateRepoRequest> = {
@@ -1932,6 +2240,11 @@ export const CreateRepoRequest: MessageFns<CreateRepoRequest> = {
         ? globalThis.String(object.baseBranch)
         : isSet(object.base_branch)
         ? globalThis.String(object.base_branch)
+        : "",
+      e2eProfile: isSet(object.e2eProfile)
+        ? globalThis.String(object.e2eProfile)
+        : isSet(object.e2e_profile)
+        ? globalThis.String(object.e2e_profile)
         : "",
     };
   },
@@ -1947,6 +2260,9 @@ export const CreateRepoRequest: MessageFns<CreateRepoRequest> = {
     if (message.baseBranch !== "") {
       obj.baseBranch = message.baseBranch;
     }
+    if (message.e2eProfile !== "") {
+      obj.e2eProfile = message.e2eProfile;
+    }
     return obj;
   },
 
@@ -1958,6 +2274,7 @@ export const CreateRepoRequest: MessageFns<CreateRepoRequest> = {
     message.name = object.name ?? "";
     message.url = object.url ?? "";
     message.baseBranch = object.baseBranch ?? "";
+    message.e2eProfile = object.e2eProfile ?? "";
     return message;
   },
 };
@@ -1990,7 +2307,7 @@ export const CreateRepoResponse: MessageFns<CreateRepoResponse> = {
 };
 
 function createBaseUpdateRepoRequest(): UpdateRepoRequest {
-  return { name: "", url: "", baseBranch: "" };
+  return { name: "", url: "", baseBranch: "", e2eProfile: "" };
 }
 
 export const UpdateRepoRequest: MessageFns<UpdateRepoRequest> = {
@@ -2002,6 +2319,11 @@ export const UpdateRepoRequest: MessageFns<UpdateRepoRequest> = {
         ? globalThis.String(object.baseBranch)
         : isSet(object.base_branch)
         ? globalThis.String(object.base_branch)
+        : "",
+      e2eProfile: isSet(object.e2eProfile)
+        ? globalThis.String(object.e2eProfile)
+        : isSet(object.e2e_profile)
+        ? globalThis.String(object.e2e_profile)
         : "",
     };
   },
@@ -2017,6 +2339,9 @@ export const UpdateRepoRequest: MessageFns<UpdateRepoRequest> = {
     if (message.baseBranch !== "") {
       obj.baseBranch = message.baseBranch;
     }
+    if (message.e2eProfile !== "") {
+      obj.e2eProfile = message.e2eProfile;
+    }
     return obj;
   },
 
@@ -2028,6 +2353,7 @@ export const UpdateRepoRequest: MessageFns<UpdateRepoRequest> = {
     message.name = object.name ?? "";
     message.url = object.url ?? "";
     message.baseBranch = object.baseBranch ?? "";
+    message.e2eProfile = object.e2eProfile ?? "";
     return message;
   },
 };
@@ -3282,6 +3608,9 @@ export interface DashboardService {
   MarkSeen(request: MarkSeenRequest): Promise<MarkSeenResponse>;
   ApproveTask(request: ApproveTaskRequest): Promise<ApproveTaskResponse>;
   KillE2e(request: KillE2eRequest): Promise<KillE2eResponse>;
+  StartE2e(request: StartE2eRequest): Promise<StartE2eResponse>;
+  RestartE2eApp(request: RestartE2eAppRequest): Promise<RestartE2eAppResponse>;
+  GetE2eAppLog(request: GetE2eAppLogRequest): Promise<GetE2eAppLogResponse>;
   AnswerQuestion(request: AnswerQuestionRequest): Promise<AnswerQuestionResponse>;
   RespondToPermission(request: RespondToPermissionRequest): Promise<RespondToPermissionResponse>;
   Discuss(request: DiscussRequest): Promise<DiscussResponse>;

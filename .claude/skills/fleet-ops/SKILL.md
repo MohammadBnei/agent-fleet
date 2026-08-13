@@ -40,14 +40,60 @@ the dashboard-editable `repos` table (`docs/adr/0028`), not Go source:
    push/PR) has collaborator access to open PRs there. The rest of the
    secrets (`CLAUDE_CODE_OAUTH_TOKEN`, `AGENTFLEET_DB_*`) are already
    shared across the `agent-fleet-nygh` Infisical project.
-3. **Confirm the repo's own test/build command** if it needs anything
-   beyond what the agent can infer — there's no per-repo e2e start-command
-   config file, just `provisioner/internal/k8s/names.go`'s `StartCmdFor`
-   (a small `switch`, env-overridable via `E2E_START_CMD_<REPO>`) for the
-   on-demand e2e-preview pod's app-start command, if this repo will use
-   that feature. This one's still a Go-source/redeploy change — the
-   provisioner holds no DB credentials (`docs/adr/0020` point 1), so it
-   can't read the `repos` table directly.
+3. **Give the repo an environment profile** in the dashboard's "manage
+   repo profiles" — its toolchain (go/bun/golangci-lint/buf), any services
+   it needs, and the app's start command if it will use the e2e preview.
+   Dashboard data, not code: the old `provisioner/internal/k8s/names.go`
+   `StartCmdFor` switch and `E2E_START_CMD_<REPO>` were deleted by
+   `docs/adr/0034`, so this needs no redeploy.
+
+   Name the profile `e2e`, or set the repo's **e2e profile** field to
+   whichever profile the sandbox should use (`docs/adr/0044` —
+   `agent-fleet` points at its `lint` profile, for instance). Leaving both
+   unset is not fatal: the repo still gets a sandbox, just with the base
+   image's toolchain and no preview. `run_command` works either way.
+
+   A profile with **no start command is a legitimate configuration** — it
+   means a build/test sandbox with no app and no preview URL, which is the
+   right shape for a repo whose sandbox exists to compile and test.
+
+### Refreshing the Playwright tool snapshot
+
+The browser tools the agent sees come from a committed snapshot,
+`sidecar/internal/mcpserver/playwright_tools.json`, not from runtime
+discovery (`docs/adr/0044` — discovery always lost the race against the pod
+becoming reachable). **Bumping `@playwright/mcp` in `e2e-runner/Dockerfile`
+means refreshing this file too**, or new tools stay invisible to every agent.
+
+```bash
+docker build -f e2e-runner/Dockerfile -t e2e-runner:snap .
+docker run -d --name pw-snap --entrypoint bash -p 18931:8931 e2e-runner:snap \
+  -c 'bunx @playwright/mcp --host 0.0.0.0 --port 8931 --headless --allowed-hosts "*"'
+sleep 15
+
+# initialize, keep the session id, then list
+SID=$(curl -s -o /dev/null -D - -X POST http://localhost:18931/mcp \
+  -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"snap","version":"1"}}}' \
+  | grep -i '^mcp-session-id:' | tr -d '\r' | awk '{print $2}')
+
+curl -s -X POST http://localhost:18931/mcp \
+  -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
+  -H "mcp-session-id: $SID" -d '{"jsonrpc":"2.0","method":"notifications/initialized"}' >/dev/null
+
+curl -s -X POST http://localhost:18931/mcp \
+  -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
+  -H "mcp-session-id: $SID" -d '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' \
+  | sed 's/^data: //' | grep '^{' \
+  | python3 -c 'import json,sys; json.dump(sorted(json.load(sys.stdin)["result"]["tools"], key=lambda t: t["name"]), open("sidecar/internal/mcpserver/playwright_tools.json","w"), indent=2, sort_keys=True)'
+
+docker rm -f pw-snap
+cd sidecar && go test ./internal/mcpserver/... -count=1   # pins shape + the run_command invariant
+```
+
+`--allowed-hosts '*'` is not optional there or in the entrypoint: without it
+`@playwright/mcp` answers anything but its own bind address with
+`403 Access is only allowed at localhost:8931`.
 
 No `infra-bootstrap` edit needed (that repo only knows about `core`'s and
 `provisioner`'s own Applications, not individual target repos). Unlike the

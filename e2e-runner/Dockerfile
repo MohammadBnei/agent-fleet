@@ -28,9 +28,28 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN curl -fsSL https://code-server.dev/install.sh | sh
 
 # Playwright + its own MCP server. `--with-deps` pulls the apt packages
-# Chromium needs on Debian; no GPU driver packages, CPU-only rendering.
+# Chromium needs on Debian; no GPU driver packages, CPU-only rendering. This
+# browser is for the TARGET REPO's own Playwright tests, run via run_command.
+#
+# @playwright/mcp needs its own, separately: it bundles a different
+# playwright-core, so it resolves a different browser build number and refuses
+# to start on the one installed above. Found by actually driving a
+# browser_navigate (docs/adr/0044) — every cheaper check passed:
+#
+#   default channel  -> Chromium distribution 'chrome' is not found at
+#                       /opt/google/chrome/chrome   (it wants BRANDED Chrome,
+#                       which nothing here installs)
+#   --browser chromium, without the line below
+#                    -> Browser "chrome-for-testing" is not installed;
+#                       expected .../chromium-1237/...  (image had 1234)
+#
+# So the entrypoint passes --browser chromium AND this installs the build that
+# @playwright/mcp itself resolves. ~110MB on top of the above; the alternative
+# is pinning the two packages' playwright-core versions together by hand,
+# which breaks silently on the next bump instead of loudly at build time.
 RUN bun install -g playwright @playwright/mcp \
-    && bunx playwright install --with-deps chromium
+    && bunx playwright install --with-deps chromium \
+    && bunx @playwright/mcp install-browser chrome-for-testing
 
 COPY --from=build /out/execmcp /usr/local/bin/execmcp
 
@@ -51,8 +70,14 @@ RUN curl -fsSL https://github.com/rtk-ai/rtk/releases/download/${RTK_VERSION}/rt
 
 WORKDIR /app
 COPY e2e-runner/entrypoint.sh ./entrypoint.sh
-RUN chmod +x ./entrypoint.sh
+# On PATH, so "restart the app" is one command with one definition wherever
+# it's invoked from: the entrypoint, the dashboard's Restart button (via
+# run_command), or the agent typing it directly (docs/adr/0044).
+COPY e2e-runner/bin/e2e-run-app e2e-runner/bin/e2e-restart-app /usr/local/bin/
+RUN chmod +x ./entrypoint.sh /usr/local/bin/e2e-run-app /usr/local/bin/e2e-restart-app
 
-# ponytail: no process supervisor (pm2/supervisord) — the whole pod gets
-# deleted on teardown, nothing inside it needs restart-on-crash.
+# ponytail: no process supervisor (pm2/supervisord/s6) — entrypoint.sh's own
+# supervise() is a 6-line while-loop over the three servers, and the app is
+# deliberately NOT restarted (docs/adr/0044). Bring in a real supervisor only
+# if something needs dependency ordering or per-process backoff policy.
 ENTRYPOINT ["./entrypoint.sh"]

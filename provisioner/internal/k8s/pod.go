@@ -62,9 +62,13 @@ type TaskRef struct {
 	// StartCmd is always resolved by the caller now (core resolves the
 	// repo's "e2e" profile, or an agent-supplied override — docs/adr/0034)
 	// — the old per-repo StartCmdFor Go-switch fallback is gone, verified
-	// working end-to-end via /kind-local before removal. Empty fails loud
-	// at CreatePod, mirroring e2e-runner/entrypoint.sh's own
-	// E2E_START_CMD:?required contract one hop earlier.
+	// working end-to-end via /kind-local before removal.
+	//
+	// Empty is VALID (docs/adr/0044): it means a sandbox-only pod — no app,
+	// no preview, run_command fully working. It used to be a hard error
+	// here, which made every repo without an "e2e" profile (agent-fleet,
+	// infra-bootstrap) unable to start a sandbox at all, even though
+	// run_command is registered for every session from turn one.
 	StartCmd string
 	// ToolKeys/ServiceIngredients are the repo's resolved "e2e" profile
 	// (docs/adr/0034) — core resolves the profile name, this package only
@@ -81,9 +85,6 @@ type TaskRef struct {
 
 func (c *Client) CreatePod(ctx context.Context, task TaskRef) error {
 	startCmd := task.StartCmd
-	if startCmd == "" {
-		return fmt.Errorf("no start command for repo %q — its profile needs a non-empty start_cmd", task.Repo)
-	}
 	name := ResourceName(task.ID)
 	labels := Labels(task.ID)
 
@@ -304,6 +305,12 @@ type PodState struct {
 	// CreateE2eSession used to return that pod's preview URL and the caller
 	// never learned the pod was about to vanish.
 	Terminating bool
+	// Detail is the human-readable reason behind a stuck or dead pod —
+	// ImagePullBackOff, OOMKilled, an admission rejection. It exists so the
+	// log line on docs/adr/0044's Failed-pod recreate says WHY the corpse was
+	// replaced; deleting the pod also deletes its `kubectl logs`, so without
+	// this the only remaining trace is whatever reached Loki.
+	Detail string
 }
 
 // GetPod returns the pod's current state, or exists=false if it doesn't —
@@ -328,8 +335,19 @@ func (c *Client) GetPod(ctx context.Context, name string) (state PodState, exist
 	// Single-container pod by construction (CreatePod above), so the
 	// e2e-runner's own readiness is the pod's readiness.
 	if len(pod.Status.ContainerStatuses) > 0 {
-		state.AppReady = pod.Status.ContainerStatuses[0].Ready
-		state.Restarts = pod.Status.ContainerStatuses[0].RestartCount
+		cs := pod.Status.ContainerStatuses[0]
+		state.AppReady = cs.Ready
+		state.Restarts = cs.RestartCount
+		switch {
+		case cs.State.Waiting != nil:
+			state.Detail = cs.State.Waiting.Reason + ": " + cs.State.Waiting.Message
+		case cs.State.Terminated != nil:
+			state.Detail = fmt.Sprintf("%s (exit %d): %s",
+				cs.State.Terminated.Reason, cs.State.Terminated.ExitCode, cs.State.Terminated.Message)
+		}
+	}
+	if state.Detail == "" {
+		state.Detail = pod.Status.Reason
 	}
 	if len(pod.Spec.Containers) > 0 {
 		for _, e := range pod.Spec.Containers[0].Env {
