@@ -355,6 +355,25 @@ the GC sweep — are covered by Go tests against the fake clientset):
 | `browser_navigate` through the real Playwright MCP, using the in-cluster `Host` header, on a clean container off the final image | **Chromium launched, page loaded, snapshot produced.** The first time browser automation has worked in this fleet. |
 | snapshot vs. live `tools/list` | 24 tools, exact match, no drift. |
 
+Re-verified against a **real provisioner and real pods** in a kind cluster
+(`/kind-local`), driving the dashboard RPCs rather than the unit-test fakes:
+
+| Case | Result |
+|---|---|
+| `StartE2e` on a repo whose `e2e_profile` is `preview` | Resolved that profile (not the hardcoded `"e2e"`), created a real pod, returned `"requested"` — the truthful phase, not the old `"running"` lie. |
+| `GetE2eStatus` | `codeServerUrl` came back as the `/code/` route, `profileName: preview`, `appReady: true`. |
+| `GetE2eAppLog` | Read `/tmp/e2e-app.log` out of the live pod through the `run_command` passthrough. |
+| `RestartE2eApp` | Replaced the app's process group (PIDs 36/84 → 103/110), port rebound with no `EADDRINUSE`, and the pod's own `restartCount` stayed **0** — the pod never bounced. |
+| App killed outright, then `RestartE2eApp` | Pod stayed `Running` with `restartCount: 0` and the sandbox stayed usable while the app was dead; one RPC brought it back. |
+| A repo with **no profile at all** | Pod created and usable — `0/1 Running`, since nothing binds the app port and NotReady is the honest answer. This is the case that used to fail pod creation outright. |
+| `KillE2e`, then `StartE2e` (the drawer's Recreate) | Kill returned `killed: true`; the immediately-following create waited out the terminating pod (31s in `WaitForPodGone`) and built a fresh one that served. |
+
+Not reproducible live: a lingering `Failed` pod. `kill -9 1` is ignored inside
+the container's PID namespace, and forcing the phase via the status subresource
+made the API server delete the pod outright. That the corpse state is now hard
+to even *produce* is the point of decision 1; the replacement path is covered
+by unit tests against both terminal phases instead.
+
 **Resolved a long-standing unverified risk, and found the real one behind
 it:** `@playwright/mcp --port` *does* work — `:8931` was bound in every run,
 closing the open question ADR-0012/0036/0039 all carried. But binding is not
@@ -371,3 +390,10 @@ See decision 7a.
   `@playwright/mcp` needs a manual refresh (decision 7). Nothing detects the
   drift automatically; the tests only pin that the file is well-formed and
   plausible.
+- **`app_ready` is slow to go false.** The readiness probe's
+  `failureThreshold: 120` × `periodSeconds: 10` is ~20 minutes, deliberately,
+  so a 782s cold install isn't reported as a broken app (ADR-0036). The
+  consequence, confirmed live in kind: after an app dies, the card keeps
+  saying "ready" for up to 20 minutes. The app log now answers the question
+  the badge can't, which is the mitigation — lowering the threshold would
+  trade a slow-true for a fast-wrong on every cold start.
