@@ -117,6 +117,38 @@ export function resolvedPermissionDecisions(entries: TranscriptEntry[]): Map<big
   return out;
 }
 
+// A decision the human has made but the server hasn't echoed back yet.
+//
+// Every surface that shows a decision — the feed card, the dock, the list
+// row — derives its state from `entries` alone, so the honest way to make a
+// click land immediately is to put the answer *in* entries and let all
+// three agree, rather than teaching each one about a separate "pending"
+// flag. Answering a permission is two round trips before anything visibly
+// changes (respondToPermission, then the response entry arriving on the
+// transcript stream), which is the window where a card sat there still
+// offering allow/deny as though the click never happened.
+//
+// An optimistic entry is dropped the moment the real one supersedes it, so
+// the server always wins: this only ever fills the gap, it never invents a
+// decision the fleet didn't record.
+export function withOptimistic(real: TranscriptEntry[], optimistic: TranscriptEntry[]): TranscriptEntry[] {
+  if (optimistic.length === 0) return real;
+  const kept = optimistic.filter((o) => {
+    const answers = o.replyTo;
+    if (answers === undefined) return false;
+    return !real.some(
+      (e) =>
+        // core appends both kinds via AppendReply, so the real entry carries
+        // the same reply_to this one was built with.
+        (e.type === o.type && e.replyTo === answers) ||
+        // ...or the agent stopped waiting for the decision altogether, which
+        // resolves it just as firmly as an answer does.
+        ((e.type === TranscriptEntryType.INTERRUPT || e.type === TranscriptEntryType.ABORT) && e.seq > answers),
+    );
+  });
+  return kept.length === 0 ? real : [...real, ...kept];
+}
+
 // The human's stated reason for a denial, keyed by the request's own seq.
 // Parsed alongside the decision above but kept separate so that Map's type
 // stays a plain outcome — only the collapsed card needs this.

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { TranscriptEntry } from "../gen/agentfleet/v1/transcript_pb";
 import { parseQuestions } from "../transcript";
+import { ActionButton } from "./ActionButton";
 
 // One AskUserQuestion batch as a form (already answered: shows what was
 // submitted instead). One question per fieldset, chip-style buttons for
@@ -147,16 +148,16 @@ export function QuestionCard({
             </fieldset>
           ))}
           {!answer && (
-            <button
-              type="button"
+            <ActionButton
               className={`bg-primary text-primary-content font-semibold disabled:opacity-50 ${
                 compact ? "w-full py-3 text-base" : "self-start px-5 py-2 text-sm"
               }`}
-              disabled={busy || !allAnswered}
+              busy={busy}
+              disabled={!allAnswered}
               onClick={submit}
             >
               submit answer
-            </button>
+            </ActionButton>
           )}
         </div>
       )}

@@ -66,6 +66,8 @@ export function TaskDetail({
     pendingMessage,
     run,
     sendDiscuss,
+    respondToPermission,
+    answerQuestion,
     clearActionError,
   } = useTaskDetail(taskId);
   const [message, setMessage] = useState("");
@@ -223,15 +225,8 @@ export function TaskDetail({
               density={density}
               busyKey={busyKey}
               dockPendingDecision
-              onRespond={(seq, decision) =>
-                run(
-                  () => client.respondToPermission({ taskId, seq, decisionJson: JSON.stringify(decision) }),
-                  `permission:${seq}`,
-                )
-              }
-              onAnswer={(seq, answers) =>
-                run(() => client.answerQuestion({ taskId, seq, answersJson: JSON.stringify({ answers }) }), `question:${seq}`)
-              }
+              onRespond={respondToPermission}
+              onAnswer={answerQuestion}
               onPlanFeedback={(text) => sendDiscuss(text)}
             />
             {pendingMessage && (
@@ -262,15 +257,8 @@ export function TaskDetail({
         <DecisionDock
           entries={entries}
           busyKey={busyKey}
-          onRespond={(seq, decision) =>
-            run(
-              () => client.respondToPermission({ taskId, seq, decisionJson: JSON.stringify(decision) }),
-              `permission:${seq}`,
-            )
-          }
-          onAnswer={(seq, answers) =>
-            run(() => client.answerQuestion({ taskId, seq, answersJson: JSON.stringify({ answers }) }), `question:${seq}`)
-          }
+          onRespond={respondToPermission}
+          onAnswer={answerQuestion}
           onPlanFeedback={(text) => sendDiscuss(text)}
         />
 
@@ -349,6 +337,7 @@ export function TaskDetail({
           <SessionPanel
             task={task}
             busy={busyKey !== null}
+            busyKey={busyKey}
             run={run}
             previewUrl={previewUrl}
             isThotTask={isThot(task)}

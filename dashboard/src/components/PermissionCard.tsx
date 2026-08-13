@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { ActionButton } from "./ActionButton";
 import { ToolInputView } from "./ToolInputView";
 
 // Generic renderer for any PERMISSION_REQUEST entry canUseTool posts —
@@ -91,25 +92,23 @@ export function PermissionCard({
         <ToolInputView tool={tool} input={input} />
       </div>
       <div className="flex items-center gap-2.5 mt-3.5 flex-wrap">
-        <button
-          type="button"
+        <ActionButton
           className="bg-primary text-primary-content px-6 py-2 text-base font-semibold disabled:opacity-50"
-          disabled={busy}
+          busy={busy}
           onClick={onAllow}
         >
-          {busy ? "…" : "allow"}
-        </button>
-        <button
-          type="button"
+          allow
+        </ActionButton>
+        <ActionButton
           className="border border-acc-line px-6 py-2 text-base hover:border-error hover:text-error disabled:opacity-50"
-          disabled={busy}
+          busy={busy}
           onClick={() => {
             onDeny(reason || "denied");
             setReason("");
           }}
         >
-          {busy ? "…" : "deny"}
-        </button>
+          deny
+        </ActionButton>
         <input
           value={reason}
           onChange={(e) => setReason(e.target.value)}

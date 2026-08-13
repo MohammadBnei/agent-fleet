@@ -13,6 +13,9 @@ import {
   hasPendingDecision,
   entryTime,
   resultDelta,
+  withOptimistic,
+  findPendingPermissions,
+  resolvedPermissionDecisions,
 } from "./transcript";
 
 let nextSeq = 0n;
@@ -217,4 +220,64 @@ test("resultDelta clamps instead of going negative when a resumed session restar
   expect(d.totalCostUsd).toBe(0);
   expect(d.durationApiMs).toBe(0);
   expect(d.modelUsage?.sonnet.costUSD).toBe(0);
+});
+
+// --- optimistic decisions ----------------------------------------------------
+
+// Answering is two round trips (the RPC, then the entry arriving on the
+// stream) before anything visibly changes. These cover the gap-filling: it
+// must make the decision look answered everywhere at once, and it must lose
+// to the server the instant the server has an opinion.
+const optimisticResponse = (replyTo: bigint, behavior: "allow" | "deny") =>
+  full(TranscriptEntryType.PERMISSION_RESPONSE, JSON.stringify({ behavior }), { from: "human", replyTo });
+
+test("an optimistic response resolves the permission for every surface at once", () => {
+  const request = perm("Edit", { file_path: "a.py" });
+  const merged = withOptimistic([request], [optimisticResponse(request.seq, "allow")]);
+
+  expect(findPendingPermissions(merged)).toEqual([]);
+  expect(resolvedPermissionDecisions(merged).get(request.seq)).toBe("allow");
+  expect(hasPendingDecision(merged)).toBe(false);
+});
+
+test("the real response supersedes the optimistic one instead of doubling it", () => {
+  const request = perm("Edit");
+  const real = respond(request.seq, "allow");
+  const merged = withOptimistic([request, real], [optimisticResponse(request.seq, "allow")]);
+
+  expect(merged.filter((e) => e.type === TranscriptEntryType.PERMISSION_RESPONSE).length).toBe(1);
+  expect(merged).toEqual([request, real]);
+});
+
+test("an interrupt supersedes an unanswered optimistic response", () => {
+  // The agent stopped waiting: showing "allowed" for a decision the fleet
+  // never applied is the one failure worse than showing it late.
+  const request = perm("Bash");
+  const interrupt = full(TranscriptEntryType.INTERRUPT, "stopped");
+  const merged = withOptimistic([request, interrupt], [optimisticResponse(request.seq, "allow")]);
+
+  expect(merged.filter((e) => e.type === TranscriptEntryType.PERMISSION_RESPONSE).length).toBe(0);
+  expect(resolvedPermissionDecisions(merged).get(request.seq)).toBe("interrupted");
+});
+
+test("an optimistic answer resolves its question, and the real answer replaces it", () => {
+  const asked = full(TranscriptEntryType.QUESTION, JSON.stringify({ questions: [{ question: "which?" }] }));
+  const echo = full(TranscriptEntryType.ANSWER, JSON.stringify({ answers: { "which?": "a" } }), {
+    from: "human",
+    replyTo: asked.seq,
+  });
+  expect(hasPendingDecision(withOptimistic([asked], [echo]))).toBe(false);
+
+  const realAnswer = full(TranscriptEntryType.ANSWER, "{}", { from: "human", replyTo: asked.seq });
+  const merged = withOptimistic([asked, realAnswer], [echo]);
+  expect(merged.filter((e) => e.type === TranscriptEntryType.ANSWER).length).toBe(1);
+});
+
+test("withOptimistic returns the original array when it has nothing to add", () => {
+  const request = perm("Edit");
+  const real = respond(request.seq, "allow");
+  const entries = [request, real];
+  // Same reference, so React's own change detection sees no update.
+  expect(withOptimistic(entries, [])).toBe(entries);
+  expect(withOptimistic(entries, [optimisticResponse(request.seq, "allow")])).toBe(entries);
 });

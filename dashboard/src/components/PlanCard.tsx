@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import { Markdown } from "./Markdown";
+import { ActionButton } from "./ActionButton";
 
 type Annotation = { quote: string; comment: string };
 type SelectionPopover = { quote: string; x: number; y: number; editing: boolean };
@@ -204,14 +205,13 @@ export function PlanCard({
         </div>
       )}
       <div className="flex items-center gap-2 mt-3">
-        <button
-          type="button"
+        <ActionButton
           className="bg-primary text-primary-content px-6 py-2 text-base font-semibold disabled:opacity-50"
-          disabled={busy}
+          busy={busy}
           onClick={onApprove}
         >
-          {busy ? "…" : "approve"}
-        </button>
+          approve
+        </ActionButton>
         <button
           type="button"
           className="border border-acc-line px-6 py-2 text-base hover:border-error hover:text-error disabled:opacity-50"
@@ -234,14 +234,14 @@ export function PlanCard({
             disabled={busy}
             className="flex-1 min-w-0 bg-transparent border border-line px-3 py-2 text-sm outline-none focus:border-primary/60 placeholder:text-dim2"
           />
-          <button
-            type="button"
+          <ActionButton
             className="bg-primary text-primary-content px-4 py-2 text-sm font-semibold disabled:opacity-50 flex-none"
-            disabled={busy || (!feedback.trim() && annotations.length === 0)}
+            busy={busy}
+            disabled={!feedback.trim() && annotations.length === 0}
             onClick={send}
           >
-            {busy ? "…" : "send"}
-          </button>
+            send
+          </ActionButton>
         </div>
       )}
     </div>

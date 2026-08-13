@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { ActionButton } from "./ActionButton";
 import { client } from "../connectClient";
 import type { Task } from "../gen/agentfleet/v1/core_pb";
 import { parseQuestions, type ListSummary } from "../transcript";
@@ -19,18 +20,30 @@ import { summarizeToolInput } from "../transcript";
 
 type Layout = "wide" | "stacked";
 
+// `pending` names the button whose call is in flight, so the spinner lands on
+// the one that was clicked rather than every button dimming together.
+//
+// `answered` is the seq of a decision this list row has already sent. The
+// answer takes a round trip, and then reload() takes another before the row's
+// summary stops reporting the decision as pending — a window in which the same
+// allow/deny buttons sat there, fully live, inviting a second click on a
+// question that was already answered.
 function useDecision(reload: () => void) {
-  const [busy, setBusy] = useState(false);
+  const [pending, setPending] = useState<string | null>(null);
+  const [answered, setAnswered] = useState<bigint | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const send = (action: () => Promise<unknown>) => {
-    setBusy(true);
+  const send = (key: string, action: () => Promise<unknown>, decidedSeq?: bigint) => {
+    setPending(key);
     setError(null);
     action()
-      .then(() => reload())
+      .then(() => {
+        if (decidedSeq !== undefined) setAnswered(decidedSeq);
+        reload();
+      })
       .catch((err: Error) => setError(err.message))
-      .finally(() => setBusy(false));
+      .finally(() => setPending(null));
   };
-  return { busy, error, send };
+  return { busy: pending !== null, pending, answered, error, send };
 }
 
 function OpenSession({ onOpenSession, layout }: { onOpenSession: () => void; layout: Layout }) {
@@ -100,7 +113,7 @@ export function DecisionInline({
   onAskLater?: () => void;
   onDismissed?: () => void;
 }) {
-  const { busy, error, send } = useDecision(reload);
+  const { busy, pending, answered, error, send } = useDecision(reload);
   const [reason, setReason] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
   const stacked = layout === "stacked";
@@ -127,22 +140,27 @@ export function DecisionInline({
         </div>
         {error && <div className="text-xs text-error">{error}</div>}
         <div className={`flex gap-2.5 ${stacked ? "" : "items-center"}`}>
-          <button type="button" disabled={busy} className={primaryBtn} onClick={() => send(() => client.approveTask({ taskId: task.id }))}>
+          <ActionButton
+            busy={pending === "approve"}
+            disabled={busy}
+            className={primaryBtn}
+            onClick={() => send("approve", () => client.approveTask({ taskId: task.id }))}
+          >
             approve &amp; dispatch
-          </button>
-          <button
-            type="button"
+          </ActionButton>
+          <ActionButton
+            busy={pending === "dismiss"}
             disabled={busy}
             className={secondaryBtn}
             onClick={() =>
-              send(async () => {
+              send("dismiss", async () => {
                 await client.deleteTask({ taskId: task.id });
                 onDismissed?.();
               })
             }
           >
             dismiss
-          </button>
+          </ActionButton>
         </div>
       </div>
     );
@@ -151,15 +169,30 @@ export function DecisionInline({
   const permission = summary?.pendingPermission ?? null;
   const questionEntry = summary?.pendingQuestion ?? null;
 
+  // Answered, but the summary still says pending — the answer is on the wire
+  // and reload() hasn't come back yet. Keyed by the decision's own seq, so a
+  // *different* decision arriving next renders normally with no reset logic.
+  if (answered !== null && (permission?.entry.seq === answered || questionEntry?.seq === answered)) {
+    return (
+      <div className={`${pad} flex items-center gap-2 text-sm text-dim`}>
+        <span className="loading loading-spinner loading-xs flex-none" />
+        sent — waiting for the agent to pick it up
+      </div>
+    );
+  }
+
   if (permission) {
     const isPlan = permission.tool === "ExitPlanMode";
     const respond = (behavior: "allow" | "deny", message?: string) =>
-      send(() =>
-        client.respondToPermission({
-          taskId: task.id,
-          seq: permission.entry.seq,
-          decisionJson: JSON.stringify({ behavior, message }),
-        }),
+      send(
+        behavior,
+        () =>
+          client.respondToPermission({
+            taskId: task.id,
+            seq: permission.entry.seq,
+            decisionJson: JSON.stringify({ behavior, message }),
+          }),
+        permission.entry.seq,
       );
 
     // A plan is prose, not a diff — deciding on it means reading it, so the list
@@ -173,9 +206,9 @@ export function DecisionInline({
           <div className="text-sm text-text2 leading-relaxed line-clamp-3">{plan.split("\n").slice(0, 4).join(" ")}</div>
           {error && <div className="text-xs text-error">{error}</div>}
           <div className={`flex gap-2.5 ${stacked ? "" : "items-center"}`}>
-            <button type="button" disabled={busy} className={primaryBtn} onClick={() => respond("allow")}>
+            <ActionButton busy={pending === "allow"} disabled={busy} className={primaryBtn} onClick={() => respond("allow")}>
               approve plan
-            </button>
+            </ActionButton>
             <button type="button" onClick={onOpenSession} className={secondaryBtn}>
               read it first
             </button>
@@ -188,11 +221,11 @@ export function DecisionInline({
       <>
         {error && <div className="text-xs text-error">{error}</div>}
         <div className="flex gap-2.5">
-          <button type="button" disabled={busy} className={primaryBtn} onClick={() => respond("allow")}>
+          <ActionButton busy={pending === "allow"} disabled={busy} className={primaryBtn} onClick={() => respond("allow")}>
             allow
-          </button>
-          <button
-            type="button"
+          </ActionButton>
+          <ActionButton
+            busy={pending === "deny"}
             disabled={busy}
             className={secondaryBtn}
             onClick={() => {
@@ -201,7 +234,7 @@ export function DecisionInline({
             }}
           >
             deny
-          </button>
+          </ActionButton>
         </div>
         <input
           value={reason}
@@ -246,24 +279,30 @@ export function DecisionInline({
         setSelected(prev => prev.includes(label) ? prev.filter(l => l !== label) : [...prev, label]);
       } else {
         // Single-select: submit immediately
-        send(() =>
-          client.answerQuestion({
-            taskId: task.id,
-            seq: questionEntry.seq,
-            answersJson: JSON.stringify({ answers: { [q!.question]: label } }),
-          }),
+        send(
+          "answer",
+          () =>
+            client.answerQuestion({
+              taskId: task.id,
+              seq: questionEntry.seq,
+              answersJson: JSON.stringify({ answers: { [q!.question]: label } }),
+            }),
+          questionEntry.seq,
         );
       }
     };
 
     const submitAnswer = () => {
       const answer = q?.multiSelect ? selected.join(", ") : selected[0];
-      send(() =>
-        client.answerQuestion({
-          taskId: task.id,
-          seq: questionEntry.seq,
-          answersJson: JSON.stringify({ answers: { [q!.question]: answer } }),
-        }),
+      send(
+        "answer",
+        () =>
+          client.answerQuestion({
+            taskId: task.id,
+            seq: questionEntry.seq,
+            answersJson: JSON.stringify({ answers: { [q!.question]: answer } }),
+          }),
+        questionEntry.seq,
       );
       setSelected([]);
     };
