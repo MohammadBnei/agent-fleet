@@ -170,7 +170,12 @@ func (c *Client) KillE2eEnv(ctx context.Context) (bool, error) {
 // they're the diagnostic that answers "what does the live pod actually
 // serve", which is exactly what a snapshot refresh needs.
 
+// DEPRECATED (docs/adr/0045): this is the relay itself. The sidecar dials the
+// sandbox directly from RequestE2eEnvResponse.endpoints once that path lands;
+// this stays only as the fallback for the deploy-skew window, where a new
+// sidecar can meet a provisioner too old to send a roster.
 func (c *Client) CallE2eTool(ctx context.Context, toolName, argumentsJSON string) (resultJSON string, isError bool, err error) {
+	//nolint:staticcheck // SA1019: deprecated by adr/0045, deleted after the fleet drains of pre-roster sidecars
 	resp, err := c.rpc.CallE2ETool(ctx, &agentfleetv1.CallE2EToolRequest{
 		TaskId: c.taskID, ToolName: toolName, ArgumentsJson: argumentsJSON,
 	})

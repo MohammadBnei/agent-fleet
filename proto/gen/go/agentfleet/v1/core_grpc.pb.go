@@ -63,10 +63,15 @@ type CoreServiceClient interface {
 	AskUserQuestion(ctx context.Context, in *AskUserQuestionRequest, opts ...grpc.CallOption) (*AskUserQuestionResponse, error)
 	RequestE2EEnv(ctx context.Context, in *RequestE2EEnvRequest, opts ...grpc.CallOption) (*RequestE2EEnvResponse, error)
 	KillE2EEnv(ctx context.Context, in *KillE2EEnvRequest, opts ...grpc.CallOption) (*KillE2EEnvResponse, error)
+	// Deprecated: Do not use.
 	// Reuses provisioner.proto's message shapes — same passthrough, one hop
 	// further down the chain (see that file's own comment).
+	// DEPRECATED (docs/adr/0045) — the sidecar dials the sandbox directly from
+	// RequestE2eEnvResponse.endpoints. Kept only for the deploy-skew window in
+	// which a live pod still runs an older sidecar. Do not add callers.
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	ListE2ETools(ctx context.Context, in *ListE2EToolsRequest, opts ...grpc.CallOption) (*ListE2EToolsResponse, error)
+	// Deprecated: Do not use.
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	CallE2ETool(ctx context.Context, in *CallE2EToolRequest, opts ...grpc.CallOption) (*CallE2EToolResponse, error)
 	// Lets a worker pod fetch its own fresh task row on startup instead of
@@ -181,6 +186,7 @@ func (c *coreServiceClient) KillE2EEnv(ctx context.Context, in *KillE2EEnvReques
 	return out, nil
 }
 
+// Deprecated: Do not use.
 func (c *coreServiceClient) ListE2ETools(ctx context.Context, in *ListE2EToolsRequest, opts ...grpc.CallOption) (*ListE2EToolsResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListE2EToolsResponse)
@@ -191,6 +197,7 @@ func (c *coreServiceClient) ListE2ETools(ctx context.Context, in *ListE2EToolsRe
 	return out, nil
 }
 
+// Deprecated: Do not use.
 func (c *coreServiceClient) CallE2ETool(ctx context.Context, in *CallE2EToolRequest, opts ...grpc.CallOption) (*CallE2EToolResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(CallE2EToolResponse)
@@ -406,10 +413,15 @@ type CoreServiceServer interface {
 	AskUserQuestion(context.Context, *AskUserQuestionRequest) (*AskUserQuestionResponse, error)
 	RequestE2EEnv(context.Context, *RequestE2EEnvRequest) (*RequestE2EEnvResponse, error)
 	KillE2EEnv(context.Context, *KillE2EEnvRequest) (*KillE2EEnvResponse, error)
+	// Deprecated: Do not use.
 	// Reuses provisioner.proto's message shapes — same passthrough, one hop
 	// further down the chain (see that file's own comment).
+	// DEPRECATED (docs/adr/0045) — the sidecar dials the sandbox directly from
+	// RequestE2eEnvResponse.endpoints. Kept only for the deploy-skew window in
+	// which a live pod still runs an older sidecar. Do not add callers.
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	ListE2ETools(context.Context, *ListE2EToolsRequest) (*ListE2EToolsResponse, error)
+	// Deprecated: Do not use.
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	CallE2ETool(context.Context, *CallE2EToolRequest) (*CallE2EToolResponse, error)
 	// Lets a worker pod fetch its own fresh task row on startup instead of

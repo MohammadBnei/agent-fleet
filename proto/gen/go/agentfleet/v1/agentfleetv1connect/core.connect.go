@@ -121,9 +121,16 @@ type CoreServiceClient interface {
 	KillE2EEnv(context.Context, *connect.Request[v1.KillE2EEnvRequest]) (*connect.Response[v1.KillE2EEnvResponse], error)
 	// Reuses provisioner.proto's message shapes — same passthrough, one hop
 	// further down the chain (see that file's own comment).
+	// DEPRECATED (docs/adr/0045) — the sidecar dials the sandbox directly from
+	// RequestE2eEnvResponse.endpoints. Kept only for the deploy-skew window in
+	// which a live pod still runs an older sidecar. Do not add callers.
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	//
+	// Deprecated: do not use.
 	ListE2ETools(context.Context, *connect.Request[v1.ListE2EToolsRequest]) (*connect.Response[v1.ListE2EToolsResponse], error)
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	//
+	// Deprecated: do not use.
 	CallE2ETool(context.Context, *connect.Request[v1.CallE2EToolRequest]) (*connect.Response[v1.CallE2EToolResponse], error)
 	// Lets a worker pod fetch its own fresh task row on startup instead of
 	// relying on stale environment variables — same message shapes
@@ -397,11 +404,15 @@ func (c *coreServiceClient) KillE2EEnv(ctx context.Context, req *connect.Request
 }
 
 // ListE2ETools calls agentfleet.v1.CoreService.ListE2eTools.
+//
+// Deprecated: do not use.
 func (c *coreServiceClient) ListE2ETools(ctx context.Context, req *connect.Request[v1.ListE2EToolsRequest]) (*connect.Response[v1.ListE2EToolsResponse], error) {
 	return c.listE2ETools.CallUnary(ctx, req)
 }
 
 // CallE2ETool calls agentfleet.v1.CoreService.CallE2eTool.
+//
+// Deprecated: do not use.
 func (c *coreServiceClient) CallE2ETool(ctx context.Context, req *connect.Request[v1.CallE2EToolRequest]) (*connect.Response[v1.CallE2EToolResponse], error) {
 	return c.callE2ETool.CallUnary(ctx, req)
 }
@@ -512,9 +523,16 @@ type CoreServiceHandler interface {
 	KillE2EEnv(context.Context, *connect.Request[v1.KillE2EEnvRequest]) (*connect.Response[v1.KillE2EEnvResponse], error)
 	// Reuses provisioner.proto's message shapes — same passthrough, one hop
 	// further down the chain (see that file's own comment).
+	// DEPRECATED (docs/adr/0045) — the sidecar dials the sandbox directly from
+	// RequestE2eEnvResponse.endpoints. Kept only for the deploy-skew window in
+	// which a live pod still runs an older sidecar. Do not add callers.
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	//
+	// Deprecated: do not use.
 	ListE2ETools(context.Context, *connect.Request[v1.ListE2EToolsRequest]) (*connect.Response[v1.ListE2EToolsResponse], error)
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	//
+	// Deprecated: do not use.
 	CallE2ETool(context.Context, *connect.Request[v1.CallE2EToolRequest]) (*connect.Response[v1.CallE2EToolResponse], error)
 	// Lets a worker pod fetch its own fresh task row on startup instead of
 	// relying on stale environment variables — same message shapes

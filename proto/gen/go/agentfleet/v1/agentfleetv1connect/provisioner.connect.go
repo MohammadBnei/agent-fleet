@@ -69,9 +69,15 @@ type ProvisionerServiceClient interface {
 	CreateE2ESession(context.Context, *connect.Request[v1.CreateE2ESessionRequest]) (*connect.Response[v1.CreateE2ESessionResponse], error)
 	// Reused by core.proto's own ListE2eTools/CallE2eTool one hop further
 	// down the passthrough chain (see that file's comment).
+	// DEPRECATED (docs/adr/0045) — deleted once every live pod runs a sidecar
+	// that dials the sandbox itself.
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	//
+	// Deprecated: do not use.
 	ListE2ETools(context.Context, *connect.Request[v1.ListE2EToolsRequest]) (*connect.Response[v1.ListE2EToolsResponse], error)
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	//
+	// Deprecated: do not use.
 	CallE2ETool(context.Context, *connect.Request[v1.CallE2EToolRequest]) (*connect.Response[v1.CallE2EToolResponse], error)
 	CreateWorkerPod(context.Context, *connect.Request[v1.CreateWorkerPodRequest]) (*connect.Response[v1.CreateWorkerPodResponse], error)
 	TearDownSession(context.Context, *connect.Request[v1.TearDownSessionRequest]) (*connect.Response[v1.TearDownSessionResponse], error)
@@ -182,11 +188,15 @@ func (c *provisionerServiceClient) CreateE2ESession(ctx context.Context, req *co
 }
 
 // ListE2ETools calls agentfleet.v1.ProvisionerService.ListE2eTools.
+//
+// Deprecated: do not use.
 func (c *provisionerServiceClient) ListE2ETools(ctx context.Context, req *connect.Request[v1.ListE2EToolsRequest]) (*connect.Response[v1.ListE2EToolsResponse], error) {
 	return c.listE2ETools.CallUnary(ctx, req)
 }
 
 // CallE2ETool calls agentfleet.v1.ProvisionerService.CallE2eTool.
+//
+// Deprecated: do not use.
 func (c *provisionerServiceClient) CallE2ETool(ctx context.Context, req *connect.Request[v1.CallE2EToolRequest]) (*connect.Response[v1.CallE2EToolResponse], error) {
 	return c.callE2ETool.CallUnary(ctx, req)
 }
@@ -218,9 +228,15 @@ type ProvisionerServiceHandler interface {
 	CreateE2ESession(context.Context, *connect.Request[v1.CreateE2ESessionRequest]) (*connect.Response[v1.CreateE2ESessionResponse], error)
 	// Reused by core.proto's own ListE2eTools/CallE2eTool one hop further
 	// down the passthrough chain (see that file's comment).
+	// DEPRECATED (docs/adr/0045) — deleted once every live pod runs a sidecar
+	// that dials the sandbox itself.
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	//
+	// Deprecated: do not use.
 	ListE2ETools(context.Context, *connect.Request[v1.ListE2EToolsRequest]) (*connect.Response[v1.ListE2EToolsResponse], error)
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	//
+	// Deprecated: do not use.
 	CallE2ETool(context.Context, *connect.Request[v1.CallE2EToolRequest]) (*connect.Response[v1.CallE2EToolResponse], error)
 	CreateWorkerPod(context.Context, *connect.Request[v1.CreateWorkerPodRequest]) (*connect.Response[v1.CreateWorkerPodResponse], error)
 	TearDownSession(context.Context, *connect.Request[v1.TearDownSessionRequest]) (*connect.Response[v1.TearDownSessionResponse], error)

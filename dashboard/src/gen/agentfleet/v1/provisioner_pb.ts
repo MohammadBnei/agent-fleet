@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file agentfleet/v1/provisioner.proto.
  */
 export const file_agentfleet_v1_provisioner: GenFile = /*@__PURE__*/
-  fileDesc("Ch9hZ2VudGZsZWV0L3YxL3Byb3Zpc2lvbmVyLnByb3RvEg1hZ2VudGZsZWV0LnYxIk4KEVNlcnZpY2VJbmdyZWRpZW50EgsKA2tleRgBIAEoCRIsCgpzY29wZV9tb2RlGAIgASgOMhguYWdlbnRmbGVldC52MS5TY29wZU1vZGUibwoVS2lsbEUyZVNlc3Npb25SZXF1ZXN0Eg8KB3Rhc2tfaWQYASABKAkSFwoPaWRlbXBvdGVuY3lfa2V5GAIgASgJEgwKBHJlcG8YAyABKAkSHgoWYWxzb190ZWFyZG93bl9zZXJ2aWNlcxgEIAEoCCJEChZLaWxsRTJlU2Vzc2lvblJlc3BvbnNlEg4KBmtpbGxlZBgBIAEoCBIaChJzZXJ2aWNlc190b3JuX2Rvd24YAiADKAkiLQoaR2V0RTJlU2Vzc2lvblN0YXR1c1JlcXVlc3QSDwoHdGFza19pZBgBIAEoCSK6AQobR2V0RTJlU2Vzc2lvblN0YXR1c1Jlc3BvbnNlEg4KBnN0YXR1cxgBIAEoCRITCgtwcmV2aWV3X3VybBgCIAEoCRIRCglzdGFydF9jbWQYAyABKAkSEQoJcG9kX3BoYXNlGAQgASgJEhEKCWFwcF9yZWFkeRgFIAEoCBIQCghyZXN0YXJ0cxgGIAEoBRISCgpzdGFydGVkX2F0GAcgASgJEhcKD2NvZGVfc2VydmVyX3VybBgIIAEoCSKdAQoXQ3JlYXRlRTJlU2Vzc2lvblJlcXVlc3QSDwoHdGFza19pZBgBIAEoCRIMCgRyZXBvGAIgASgJEhEKCXN0YXJ0X2NtZBgDIAEoCRIRCgl0b29sX2tleXMYBCADKAkSPQoTc2VydmljZV9pbmdyZWRpZW50cxgFIAMoCzIgLmFnZW50ZmxlZXQudjEuU2VydmljZUluZ3JlZGllbnQiPwoYQ3JlYXRlRTJlU2Vzc2lvblJlc3BvbnNlEg4KBnN0YXR1cxgBIAEoCRITCgtwcmV2aWV3X3VybBgCIAEoCSKdAgoWQ3JlYXRlV29ya2VyUG9kUmVxdWVzdBIPCgd0YXNrX2lkGAEgASgJEgwKBHJlcG8YAiABKAkSEAoIcmVwb191cmwYAyABKAkSEwoLYmFzZV9icmFuY2gYBCABKAkSEwoLZGVzY3JpcHRpb24YBSABKAkSEAoIbGVhc2VfaWQYBiABKAkSGQoRcmVzdW1lX3Nlc3Npb25faWQYByABKAkSFwoPcmVzdW1lX2Zyb21fc2VxGAggASgDEhAKCGd1aWRhbmNlGAkgASgJEhEKCXRvb2xfa2V5cxgKIAMoCRI9ChNzZXJ2aWNlX2luZ3JlZGllbnRzGAsgAygLMiAuYWdlbnRmbGVldC52MS5TZXJ2aWNlSW5ncmVkaWVudCIrChdDcmVhdGVXb3JrZXJQb2RSZXNwb25zZRIQCghwb2RfbmFtZRgBIAEoCSJTChZUZWFyRG93blNlc3Npb25SZXF1ZXN0Eg8KB3Rhc2tfaWQYASABKAkSKAoEa2luZBgCIAEoDjIaLmFnZW50ZmxlZXQudjEuU2Vzc2lvbktpbmQiLAoXVGVhckRvd25TZXNzaW9uUmVzcG9uc2USEQoJdG9ybl9kb3duGAEgASgIIiYKE0xpc3RFMmVUb29sc1JlcXVlc3QSDwoHdGFza19pZBgBIAEoCSJRChFFMmVUb29sRGVzY3JpcHRvchIMCgRuYW1lGAEgASgJEhMKC2Rlc2NyaXB0aW9uGAIgASgJEhkKEWlucHV0X3NjaGVtYV9qc29uGAMgASgJIkcKFExpc3RFMmVUb29sc1Jlc3BvbnNlEi8KBXRvb2xzGAEgAygLMiAuYWdlbnRmbGVldC52MS5FMmVUb29sRGVzY3JpcHRvciJQChJDYWxsRTJlVG9vbFJlcXVlc3QSDwoHdGFza19pZBgBIAEoCRIRCgl0b29sX25hbWUYAiABKAkSFgoOYXJndW1lbnRzX2pzb24YAyABKAkiPAoTQ2FsbEUyZVRvb2xSZXNwb25zZRITCgtyZXN1bHRfanNvbhgBIAEoCRIQCghpc19lcnJvchgCIAEoCCIWChRMaXN0V29ya3RyZWVzUmVxdWVzdCKgAQoMV29ya3RyZWVJbmZvEg8KB3Rhc2tfaWQYASABKAkSDAoEcmVwbxgCIAEoCRIOCgZicmFuY2gYAyABKAkSFgoOdXBzdHJlYW1fdHJhY2sYBCABKAkSEgoKbXRpbWVfdW5peBgFIAEoAxIMCgRwYXRoGAYgASgJEhMKC2RpcnR5X2ZpbGVzGAcgASgFEhIKCnNpemVfYnl0ZXMYCCABKAMieAoVTGlzdFdvcmt0cmVlc1Jlc3BvbnNlEi4KCXdvcmt0cmVlcxgBIAMoCzIbLmFnZW50ZmxlZXQudjEuV29ya3RyZWVJbmZvEhcKD3B2Y190b3RhbF9ieXRlcxgCIAEoBBIWCg5wdmNfZnJlZV9ieXRlcxgDIAEoBCJSChVEZWxldGVXb3JrdHJlZVJlcXVlc3QSDwoHdGFza19pZBgBIAEoCRIMCgRyZXBvGAIgASgJEhoKEmFsc29fZGVsZXRlX2JyYW5jaBgDIAEoCCIpChZEZWxldGVXb3JrdHJlZVJlc3BvbnNlEg8KB2RlbGV0ZWQYASABKAgqegoJU2NvcGVNb2RlEhoKFlNDT1BFX01PREVfVU5TUEVDSUZJRUQQABIZChVTQ09QRV9NT0RFX1BPRF9TQ09QRUQQARIaChZTQ09QRV9NT0RFX1RBU0tfU0NPUEVEEAISGgoWU0NPUEVfTU9ERV9SRVBPX1NDT1BFRBADKloKC1Nlc3Npb25LaW5kEhwKGFNFU1NJT05fS0lORF9VTlNQRUNJRklFRBAAEhcKE1NFU1NJT05fS0lORF9XT1JLRVIQARIUChBTRVNTSU9OX0tJTkRfRTJFEAIy9AYKElByb3Zpc2lvbmVyU2VydmljZRJdCg5LaWxsRTJlU2Vzc2lvbhIkLmFnZW50ZmxlZXQudjEuS2lsbEUyZVNlc3Npb25SZXF1ZXN0GiUuYWdlbnRmbGVldC52MS5LaWxsRTJlU2Vzc2lvblJlc3BvbnNlEmwKE0dldEUyZVNlc3Npb25TdGF0dXMSKS5hZ2VudGZsZWV0LnYxLkdldEUyZVNlc3Npb25TdGF0dXNSZXF1ZXN0GiouYWdlbnRmbGVldC52MS5HZXRFMmVTZXNzaW9uU3RhdHVzUmVzcG9uc2USYwoQQ3JlYXRlRTJlU2Vzc2lvbhImLmFnZW50ZmxlZXQudjEuQ3JlYXRlRTJlU2Vzc2lvblJlcXVlc3QaJy5hZ2VudGZsZWV0LnYxLkNyZWF0ZUUyZVNlc3Npb25SZXNwb25zZRJXCgxMaXN0RTJlVG9vbHMSIi5hZ2VudGZsZWV0LnYxLkxpc3RFMmVUb29sc1JlcXVlc3QaIy5hZ2VudGZsZWV0LnYxLkxpc3RFMmVUb29sc1Jlc3BvbnNlElQKC0NhbGxFMmVUb29sEiEuYWdlbnRmbGVldC52MS5DYWxsRTJlVG9vbFJlcXVlc3QaIi5hZ2VudGZsZWV0LnYxLkNhbGxFMmVUb29sUmVzcG9uc2USYAoPQ3JlYXRlV29ya2VyUG9kEiUuYWdlbnRmbGVldC52MS5DcmVhdGVXb3JrZXJQb2RSZXF1ZXN0GiYuYWdlbnRmbGVldC52MS5DcmVhdGVXb3JrZXJQb2RSZXNwb25zZRJgCg9UZWFyRG93blNlc3Npb24SJS5hZ2VudGZsZWV0LnYxLlRlYXJEb3duU2Vzc2lvblJlcXVlc3QaJi5hZ2VudGZsZWV0LnYxLlRlYXJEb3duU2Vzc2lvblJlc3BvbnNlEloKDUxpc3RXb3JrdHJlZXMSIy5hZ2VudGZsZWV0LnYxLkxpc3RXb3JrdHJlZXNSZXF1ZXN0GiQuYWdlbnRmbGVldC52MS5MaXN0V29ya3RyZWVzUmVzcG9uc2USXQoORGVsZXRlV29ya3RyZWUSJC5hZ2VudGZsZWV0LnYxLkRlbGV0ZVdvcmt0cmVlUmVxdWVzdBolLmFnZW50ZmxlZXQudjEuRGVsZXRlV29ya3RyZWVSZXNwb25zZUJNWktnaXRodWIuY29tL01vaGFtbWFkQm5laS9hZ2VudC1mbGVldC9wcm90by9nZW4vZ28vYWdlbnRmbGVldC92MTthZ2VudGZsZWV0djFiBnByb3RvMw");
+  fileDesc("Ch9hZ2VudGZsZWV0L3YxL3Byb3Zpc2lvbmVyLnByb3RvEg1hZ2VudGZsZWV0LnYxIk4KEVNlcnZpY2VJbmdyZWRpZW50EgsKA2tleRgBIAEoCRIsCgpzY29wZV9tb2RlGAIgASgOMhguYWdlbnRmbGVldC52MS5TY29wZU1vZGUibwoVS2lsbEUyZVNlc3Npb25SZXF1ZXN0Eg8KB3Rhc2tfaWQYASABKAkSFwoPaWRlbXBvdGVuY3lfa2V5GAIgASgJEgwKBHJlcG8YAyABKAkSHgoWYWxzb190ZWFyZG93bl9zZXJ2aWNlcxgEIAEoCCJEChZLaWxsRTJlU2Vzc2lvblJlc3BvbnNlEg4KBmtpbGxlZBgBIAEoCBIaChJzZXJ2aWNlc190b3JuX2Rvd24YAiADKAkiLQoaR2V0RTJlU2Vzc2lvblN0YXR1c1JlcXVlc3QSDwoHdGFza19pZBgBIAEoCSLtAQobR2V0RTJlU2Vzc2lvblN0YXR1c1Jlc3BvbnNlEg4KBnN0YXR1cxgBIAEoCRITCgtwcmV2aWV3X3VybBgCIAEoCRIRCglzdGFydF9jbWQYAyABKAkSEQoJcG9kX3BoYXNlGAQgASgJEhEKCWFwcF9yZWFkeRgFIAEoCBIQCghyZXN0YXJ0cxgGIAEoBRISCgpzdGFydGVkX2F0GAcgASgJEhcKD2NvZGVfc2VydmVyX3VybBgIIAEoCRIxCgllbmRwb2ludHMYCSADKAsyHi5hZ2VudGZsZWV0LnYxLlNlcnZpY2VFbmRwb2ludCJfCg9TZXJ2aWNlRW5kcG9pbnQSDAoEbmFtZRgBIAEoCRIPCgdhZGRyZXNzGAIgASgJEhAKCHByb3RvY29sGAMgASgJEgwKBHBhdGgYBCABKAkSDQoFdG9rZW4YBSABKAkinQEKF0NyZWF0ZUUyZVNlc3Npb25SZXF1ZXN0Eg8KB3Rhc2tfaWQYASABKAkSDAoEcmVwbxgCIAEoCRIRCglzdGFydF9jbWQYAyABKAkSEQoJdG9vbF9rZXlzGAQgAygJEj0KE3NlcnZpY2VfaW5ncmVkaWVudHMYBSADKAsyIC5hZ2VudGZsZWV0LnYxLlNlcnZpY2VJbmdyZWRpZW50InIKGENyZWF0ZUUyZVNlc3Npb25SZXNwb25zZRIOCgZzdGF0dXMYASABKAkSEwoLcHJldmlld191cmwYAiABKAkSMQoJZW5kcG9pbnRzGAMgAygLMh4uYWdlbnRmbGVldC52MS5TZXJ2aWNlRW5kcG9pbnQinQIKFkNyZWF0ZVdvcmtlclBvZFJlcXVlc3QSDwoHdGFza19pZBgBIAEoCRIMCgRyZXBvGAIgASgJEhAKCHJlcG9fdXJsGAMgASgJEhMKC2Jhc2VfYnJhbmNoGAQgASgJEhMKC2Rlc2NyaXB0aW9uGAUgASgJEhAKCGxlYXNlX2lkGAYgASgJEhkKEXJlc3VtZV9zZXNzaW9uX2lkGAcgASgJEhcKD3Jlc3VtZV9mcm9tX3NlcRgIIAEoAxIQCghndWlkYW5jZRgJIAEoCRIRCgl0b29sX2tleXMYCiADKAkSPQoTc2VydmljZV9pbmdyZWRpZW50cxgLIAMoCzIgLmFnZW50ZmxlZXQudjEuU2VydmljZUluZ3JlZGllbnQiKwoXQ3JlYXRlV29ya2VyUG9kUmVzcG9uc2USEAoIcG9kX25hbWUYASABKAkiUwoWVGVhckRvd25TZXNzaW9uUmVxdWVzdBIPCgd0YXNrX2lkGAEgASgJEigKBGtpbmQYAiABKA4yGi5hZ2VudGZsZWV0LnYxLlNlc3Npb25LaW5kIiwKF1RlYXJEb3duU2Vzc2lvblJlc3BvbnNlEhEKCXRvcm5fZG93bhgBIAEoCCImChNMaXN0RTJlVG9vbHNSZXF1ZXN0Eg8KB3Rhc2tfaWQYASABKAkiUQoRRTJlVG9vbERlc2NyaXB0b3ISDAoEbmFtZRgBIAEoCRITCgtkZXNjcmlwdGlvbhgCIAEoCRIZChFpbnB1dF9zY2hlbWFfanNvbhgDIAEoCSJHChRMaXN0RTJlVG9vbHNSZXNwb25zZRIvCgV0b29scxgBIAMoCzIgLmFnZW50ZmxlZXQudjEuRTJlVG9vbERlc2NyaXB0b3IiUAoSQ2FsbEUyZVRvb2xSZXF1ZXN0Eg8KB3Rhc2tfaWQYASABKAkSEQoJdG9vbF9uYW1lGAIgASgJEhYKDmFyZ3VtZW50c19qc29uGAMgASgJIjwKE0NhbGxFMmVUb29sUmVzcG9uc2USEwoLcmVzdWx0X2pzb24YASABKAkSEAoIaXNfZXJyb3IYAiABKAgiFgoUTGlzdFdvcmt0cmVlc1JlcXVlc3QioAEKDFdvcmt0cmVlSW5mbxIPCgd0YXNrX2lkGAEgASgJEgwKBHJlcG8YAiABKAkSDgoGYnJhbmNoGAMgASgJEhYKDnVwc3RyZWFtX3RyYWNrGAQgASgJEhIKCm10aW1lX3VuaXgYBSABKAMSDAoEcGF0aBgGIAEoCRITCgtkaXJ0eV9maWxlcxgHIAEoBRISCgpzaXplX2J5dGVzGAggASgDIngKFUxpc3RXb3JrdHJlZXNSZXNwb25zZRIuCgl3b3JrdHJlZXMYASADKAsyGy5hZ2VudGZsZWV0LnYxLldvcmt0cmVlSW5mbxIXCg9wdmNfdG90YWxfYnl0ZXMYAiABKAQSFgoOcHZjX2ZyZWVfYnl0ZXMYAyABKAQiUgoVRGVsZXRlV29ya3RyZWVSZXF1ZXN0Eg8KB3Rhc2tfaWQYASABKAkSDAoEcmVwbxgCIAEoCRIaChJhbHNvX2RlbGV0ZV9icmFuY2gYAyABKAgiKQoWRGVsZXRlV29ya3RyZWVSZXNwb25zZRIPCgdkZWxldGVkGAEgASgIKnoKCVNjb3BlTW9kZRIaChZTQ09QRV9NT0RFX1VOU1BFQ0lGSUVEEAASGQoVU0NPUEVfTU9ERV9QT0RfU0NPUEVEEAESGgoWU0NPUEVfTU9ERV9UQVNLX1NDT1BFRBACEhoKFlNDT1BFX01PREVfUkVQT19TQ09QRUQQAypaCgtTZXNzaW9uS2luZBIcChhTRVNTSU9OX0tJTkRfVU5TUEVDSUZJRUQQABIXChNTRVNTSU9OX0tJTkRfV09SS0VSEAESFAoQU0VTU0lPTl9LSU5EX0UyRRACMv4GChJQcm92aXNpb25lclNlcnZpY2USXQoOS2lsbEUyZVNlc3Npb24SJC5hZ2VudGZsZWV0LnYxLktpbGxFMmVTZXNzaW9uUmVxdWVzdBolLmFnZW50ZmxlZXQudjEuS2lsbEUyZVNlc3Npb25SZXNwb25zZRJsChNHZXRFMmVTZXNzaW9uU3RhdHVzEikuYWdlbnRmbGVldC52MS5HZXRFMmVTZXNzaW9uU3RhdHVzUmVxdWVzdBoqLmFnZW50ZmxlZXQudjEuR2V0RTJlU2Vzc2lvblN0YXR1c1Jlc3BvbnNlEmMKEENyZWF0ZUUyZVNlc3Npb24SJi5hZ2VudGZsZWV0LnYxLkNyZWF0ZUUyZVNlc3Npb25SZXF1ZXN0GicuYWdlbnRmbGVldC52MS5DcmVhdGVFMmVTZXNzaW9uUmVzcG9uc2USXAoMTGlzdEUyZVRvb2xzEiIuYWdlbnRmbGVldC52MS5MaXN0RTJlVG9vbHNSZXF1ZXN0GiMuYWdlbnRmbGVldC52MS5MaXN0RTJlVG9vbHNSZXNwb25zZSIDiAIBElkKC0NhbGxFMmVUb29sEiEuYWdlbnRmbGVldC52MS5DYWxsRTJlVG9vbFJlcXVlc3QaIi5hZ2VudGZsZWV0LnYxLkNhbGxFMmVUb29sUmVzcG9uc2UiA4gCARJgCg9DcmVhdGVXb3JrZXJQb2QSJS5hZ2VudGZsZWV0LnYxLkNyZWF0ZVdvcmtlclBvZFJlcXVlc3QaJi5hZ2VudGZsZWV0LnYxLkNyZWF0ZVdvcmtlclBvZFJlc3BvbnNlEmAKD1RlYXJEb3duU2Vzc2lvbhIlLmFnZW50ZmxlZXQudjEuVGVhckRvd25TZXNzaW9uUmVxdWVzdBomLmFnZW50ZmxlZXQudjEuVGVhckRvd25TZXNzaW9uUmVzcG9uc2USWgoNTGlzdFdvcmt0cmVlcxIjLmFnZW50ZmxlZXQudjEuTGlzdFdvcmt0cmVlc1JlcXVlc3QaJC5hZ2VudGZsZWV0LnYxLkxpc3RXb3JrdHJlZXNSZXNwb25zZRJdCg5EZWxldGVXb3JrdHJlZRIkLmFnZW50ZmxlZXQudjEuRGVsZXRlV29ya3RyZWVSZXF1ZXN0GiUuYWdlbnRmbGVldC52MS5EZWxldGVXb3JrdHJlZVJlc3BvbnNlQk1aS2dpdGh1Yi5jb20vTW9oYW1tYWRCbmVpL2FnZW50LWZsZWV0L3Byb3RvL2dlbi9nby9hZ2VudGZsZWV0L3YxO2FnZW50ZmxlZXR2MWIGcHJvdG8z");
 
 /**
  * @generated from message agentfleet.v1.ServiceIngredient
@@ -183,6 +183,16 @@ export type GetE2eSessionStatusResponse = Message<"agentfleet.v1.GetE2eSessionSt
    * @generated from field: string code_server_url = 8;
    */
   codeServerUrl: string;
+
+  /**
+   * docs/adr/0045 — see ServiceEndpoint. Present here as well as on
+   * CreateE2eSession because core's own dashboard path (runInE2ePod, backing
+   * GetE2EAppLog and the human run-command surface) needs to reach the
+   * sandbox without provisioning one.
+   *
+   * @generated from field: repeated agentfleet.v1.ServiceEndpoint endpoints = 9;
+   */
+  endpoints: ServiceEndpoint[];
 };
 
 /**
@@ -191,6 +201,74 @@ export type GetE2eSessionStatusResponse = Message<"agentfleet.v1.GetE2eSessionSt
  */
 export const GetE2eSessionStatusResponseSchema: GenMessage<GetE2eSessionStatusResponse> = /*@__PURE__*/
   messageDesc(file_agentfleet_v1_provisioner, 4);
+
+/**
+ * A directly-dialable address for one service, resolved by the component that
+ * knows it exists and handed to whoever needs to call it (docs/adr/0045).
+ *
+ * This is the fleet's whole service-discovery mechanism, and it is
+ * deliberately not a registry: there is no lookup RPC and no `services`
+ * table. Kubernetes is already ground truth for whether a pod exists — a row
+ * survives an OOMKill, a Service endpoint does not, so a table would be a
+ * cache that lies. The provisioner computes these from (namespace, taskID),
+ * the same pure function that names the Service it just created, and they
+ * ride back on responses core already sends.
+ *
+ * Fields NOT here, and why:
+ *   - who may call it — authorization is a per-task NetworkPolicy. A field
+ *     the caller reads is advice; a policy the CNI enforces is not.
+ *   - ttl/expires_at — validity is implied by delivery. A failed dial
+ *     re-resolves through the provision path that already exists.
+ *   - scope — a roster reaches one sidecar serving one task. The delivery
+ *     channel *is* the scope.
+ *
+ * @generated from message agentfleet.v1.ServiceEndpoint
+ */
+export type ServiceEndpoint = Message<"agentfleet.v1.ServiceEndpoint"> & {
+  /**
+   * "playwright" | "exec"
+   *
+   * @generated from field: string name = 1;
+   */
+  name: string;
+
+  /**
+   * host:port, host fully qualified with a trailing dot
+   *
+   * @generated from field: string address = 2;
+   */
+  address: string;
+
+  /**
+   * "mcp-streamable-http" | "grpc"
+   *
+   * @generated from field: string protocol = 3;
+   */
+  protocol: string;
+
+  /**
+   * "/mcp" for MCP, "" for gRPC
+   *
+   * @generated from field: string path = 4;
+   */
+  path: string;
+
+  /**
+   * Bearer token, when a service authenticates its callers at all. Empty for
+   * the sandbox, deliberately: docs/adr/0039 rests on the e2e pod holding no
+   * fleet credentials, so reachability there is fenced structurally instead.
+   *
+   * @generated from field: string token = 5;
+   */
+  token: string;
+};
+
+/**
+ * Describes the message agentfleet.v1.ServiceEndpoint.
+ * Use `create(ServiceEndpointSchema)` to create a new message.
+ */
+export const ServiceEndpointSchema: GenMessage<ServiceEndpoint> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_provisioner, 5);
 
 /**
  * Requests an on-demand e2e preview pod for taskId (mounts the same
@@ -242,7 +320,7 @@ export type CreateE2eSessionRequest = Message<"agentfleet.v1.CreateE2eSessionReq
  * Use `create(CreateE2eSessionRequestSchema)` to create a new message.
  */
 export const CreateE2eSessionRequestSchema: GenMessage<CreateE2eSessionRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 5);
+  messageDesc(file_agentfleet_v1_provisioner, 6);
 
 /**
  * @generated from message agentfleet.v1.CreateE2eSessionResponse
@@ -257,6 +335,16 @@ export type CreateE2eSessionResponse = Message<"agentfleet.v1.CreateE2eSessionRe
    * @generated from field: string preview_url = 2;
    */
   previewUrl: string;
+
+  /**
+   * docs/adr/0045. Filled on BOTH the fresh-create path and the
+   * already-exists short-circuit — a resumed session that skips creation
+   * still needs to know where to dial, and returning them only on creation
+   * is the obvious way to break exactly that case.
+   *
+   * @generated from field: repeated agentfleet.v1.ServiceEndpoint endpoints = 3;
+   */
+  endpoints: ServiceEndpoint[];
 };
 
 /**
@@ -264,7 +352,7 @@ export type CreateE2eSessionResponse = Message<"agentfleet.v1.CreateE2eSessionRe
  * Use `create(CreateE2eSessionResponseSchema)` to create a new message.
  */
 export const CreateE2eSessionResponseSchema: GenMessage<CreateE2eSessionResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 6);
+  messageDesc(file_agentfleet_v1_provisioner, 7);
 
 /**
  * Provisioner does the clone/fetch/worktree-add (docs/adr/0019 point 2 —
@@ -368,7 +456,7 @@ export type CreateWorkerPodRequest = Message<"agentfleet.v1.CreateWorkerPodReque
  * Use `create(CreateWorkerPodRequestSchema)` to create a new message.
  */
 export const CreateWorkerPodRequestSchema: GenMessage<CreateWorkerPodRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 7);
+  messageDesc(file_agentfleet_v1_provisioner, 8);
 
 /**
  * @generated from message agentfleet.v1.CreateWorkerPodResponse
@@ -385,7 +473,7 @@ export type CreateWorkerPodResponse = Message<"agentfleet.v1.CreateWorkerPodResp
  * Use `create(CreateWorkerPodResponseSchema)` to create a new message.
  */
 export const CreateWorkerPodResponseSchema: GenMessage<CreateWorkerPodResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 8);
+  messageDesc(file_agentfleet_v1_provisioner, 9);
 
 /**
  * core owns `tasks` and therefore decides when a session should tear
@@ -414,7 +502,7 @@ export type TearDownSessionRequest = Message<"agentfleet.v1.TearDownSessionReque
  * Use `create(TearDownSessionRequestSchema)` to create a new message.
  */
 export const TearDownSessionRequestSchema: GenMessage<TearDownSessionRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 9);
+  messageDesc(file_agentfleet_v1_provisioner, 10);
 
 /**
  * @generated from message agentfleet.v1.TearDownSessionResponse
@@ -433,16 +521,19 @@ export type TearDownSessionResponse = Message<"agentfleet.v1.TearDownSessionResp
  * Use `create(TearDownSessionResponseSchema)` to create a new message.
  */
 export const TearDownSessionResponseSchema: GenMessage<TearDownSessionResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 10);
+  messageDesc(file_agentfleet_v1_provisioner, 11);
 
 /**
- * The e2e pod's own MCP server (Playwright automation) exposes a tool set
- * discovered at runtime, not a fixed enumerable list — these two RPCs are
- * a generic passthrough, mirroring what today's mcpproxy.Proxy already
- * does in-process. Proxied sidecar -> core -> provisioner -> e2e pod,
- * same hub-and-spoke rule as everything else (docs/adr/0020) — the extra
- * hop's latency cost was already named and accepted in that ADR's
- * Alternatives, not an oversight here.
+ * DEPRECATED (docs/adr/0045) — the sidecar dials the sandbox directly from
+ * a ServiceEndpoint roster now, and these are deleted once every live pod
+ * runs a sidecar that does. Do not add callers.
+ *
+ * ADR-0020 accepted the extra hop for consistency and left a revisit
+ * trigger ("if that hop proves materially slow"). It was measured twice and
+ * the trigger never fired: the fleet's entire overhead around a tool call is
+ * ~1ms. These go for coupling, not speed — a passthrough on core costs a
+ * proto pair and a handler per service, and routes a shell command through
+ * the fleet's Postgres-credential holder for no reason involving credentials.
  *
  * @generated from message agentfleet.v1.ListE2eToolsRequest
  */
@@ -458,7 +549,7 @@ export type ListE2eToolsRequest = Message<"agentfleet.v1.ListE2eToolsRequest"> &
  * Use `create(ListE2eToolsRequestSchema)` to create a new message.
  */
 export const ListE2eToolsRequestSchema: GenMessage<ListE2eToolsRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 11);
+  messageDesc(file_agentfleet_v1_provisioner, 12);
 
 /**
  * @generated from message agentfleet.v1.E2eToolDescriptor
@@ -485,7 +576,7 @@ export type E2eToolDescriptor = Message<"agentfleet.v1.E2eToolDescriptor"> & {
  * Use `create(E2eToolDescriptorSchema)` to create a new message.
  */
 export const E2eToolDescriptorSchema: GenMessage<E2eToolDescriptor> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 12);
+  messageDesc(file_agentfleet_v1_provisioner, 13);
 
 /**
  * @generated from message agentfleet.v1.ListE2eToolsResponse
@@ -502,7 +593,7 @@ export type ListE2eToolsResponse = Message<"agentfleet.v1.ListE2eToolsResponse">
  * Use `create(ListE2eToolsResponseSchema)` to create a new message.
  */
 export const ListE2eToolsResponseSchema: GenMessage<ListE2eToolsResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 13);
+  messageDesc(file_agentfleet_v1_provisioner, 14);
 
 /**
  * @generated from message agentfleet.v1.CallE2eToolRequest
@@ -529,7 +620,7 @@ export type CallE2eToolRequest = Message<"agentfleet.v1.CallE2eToolRequest"> & {
  * Use `create(CallE2eToolRequestSchema)` to create a new message.
  */
 export const CallE2eToolRequestSchema: GenMessage<CallE2eToolRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 14);
+  messageDesc(file_agentfleet_v1_provisioner, 15);
 
 /**
  * @generated from message agentfleet.v1.CallE2eToolResponse
@@ -551,7 +642,7 @@ export type CallE2eToolResponse = Message<"agentfleet.v1.CallE2eToolResponse"> &
  * Use `create(CallE2eToolResponseSchema)` to create a new message.
  */
 export const CallE2eToolResponseSchema: GenMessage<CallE2eToolResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 15);
+  messageDesc(file_agentfleet_v1_provisioner, 16);
 
 /**
  * Worktree/branch lifecycle (reliability-findings.md #2): a task's
@@ -573,7 +664,7 @@ export type ListWorktreesRequest = Message<"agentfleet.v1.ListWorktreesRequest">
  * Use `create(ListWorktreesRequestSchema)` to create a new message.
  */
 export const ListWorktreesRequestSchema: GenMessage<ListWorktreesRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 16);
+  messageDesc(file_agentfleet_v1_provisioner, 17);
 
 /**
  * @generated from message agentfleet.v1.WorktreeInfo
@@ -633,7 +724,7 @@ export type WorktreeInfo = Message<"agentfleet.v1.WorktreeInfo"> & {
  * Use `create(WorktreeInfoSchema)` to create a new message.
  */
 export const WorktreeInfoSchema: GenMessage<WorktreeInfo> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 17);
+  messageDesc(file_agentfleet_v1_provisioner, 18);
 
 /**
  * @generated from message agentfleet.v1.ListWorktreesResponse
@@ -665,7 +756,7 @@ export type ListWorktreesResponse = Message<"agentfleet.v1.ListWorktreesResponse
  * Use `create(ListWorktreesResponseSchema)` to create a new message.
  */
 export const ListWorktreesResponseSchema: GenMessage<ListWorktreesResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 18);
+  messageDesc(file_agentfleet_v1_provisioner, 19);
 
 /**
  * @generated from message agentfleet.v1.DeleteWorktreeRequest
@@ -692,7 +783,7 @@ export type DeleteWorktreeRequest = Message<"agentfleet.v1.DeleteWorktreeRequest
  * Use `create(DeleteWorktreeRequestSchema)` to create a new message.
  */
 export const DeleteWorktreeRequestSchema: GenMessage<DeleteWorktreeRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 19);
+  messageDesc(file_agentfleet_v1_provisioner, 20);
 
 /**
  * @generated from message agentfleet.v1.DeleteWorktreeResponse
@@ -709,7 +800,7 @@ export type DeleteWorktreeResponse = Message<"agentfleet.v1.DeleteWorktreeRespon
  * Use `create(DeleteWorktreeResponseSchema)` to create a new message.
  */
 export const DeleteWorktreeResponseSchema: GenMessage<DeleteWorktreeResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 20);
+  messageDesc(file_agentfleet_v1_provisioner, 21);
 
 /**
  * How a service ingredient (postgres/redis) is shared across pods/tasks —
@@ -810,9 +901,12 @@ export const ProvisionerService: GenService<{
   /**
    * Reused by core.proto's own ListE2eTools/CallE2eTool one hop further
    * down the passthrough chain (see that file's comment).
+   * DEPRECATED (docs/adr/0045) — deleted once every live pod runs a sidecar
+   * that dials the sandbox itself.
    * buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
    *
    * @generated from rpc agentfleet.v1.ProvisionerService.ListE2eTools
+   * @deprecated
    */
   listE2eTools: {
     methodKind: "unary";
@@ -823,6 +917,7 @@ export const ProvisionerService: GenService<{
    * buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
    *
    * @generated from rpc agentfleet.v1.ProvisionerService.CallE2eTool
+   * @deprecated
    */
   callE2eTool: {
     methodKind: "unary";

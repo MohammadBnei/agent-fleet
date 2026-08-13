@@ -37,10 +37,14 @@ type ProvisionerServiceClient interface {
 	KillE2ESession(ctx context.Context, in *KillE2ESessionRequest, opts ...grpc.CallOption) (*KillE2ESessionResponse, error)
 	GetE2ESessionStatus(ctx context.Context, in *GetE2ESessionStatusRequest, opts ...grpc.CallOption) (*GetE2ESessionStatusResponse, error)
 	CreateE2ESession(ctx context.Context, in *CreateE2ESessionRequest, opts ...grpc.CallOption) (*CreateE2ESessionResponse, error)
+	// Deprecated: Do not use.
 	// Reused by core.proto's own ListE2eTools/CallE2eTool one hop further
 	// down the passthrough chain (see that file's comment).
+	// DEPRECATED (docs/adr/0045) — deleted once every live pod runs a sidecar
+	// that dials the sandbox itself.
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	ListE2ETools(ctx context.Context, in *ListE2EToolsRequest, opts ...grpc.CallOption) (*ListE2EToolsResponse, error)
+	// Deprecated: Do not use.
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	CallE2ETool(ctx context.Context, in *CallE2EToolRequest, opts ...grpc.CallOption) (*CallE2EToolResponse, error)
 	CreateWorkerPod(ctx context.Context, in *CreateWorkerPodRequest, opts ...grpc.CallOption) (*CreateWorkerPodResponse, error)
@@ -93,6 +97,7 @@ func (c *provisionerServiceClient) CreateE2ESession(ctx context.Context, in *Cre
 	return out, nil
 }
 
+// Deprecated: Do not use.
 func (c *provisionerServiceClient) ListE2ETools(ctx context.Context, in *ListE2EToolsRequest, opts ...grpc.CallOption) (*ListE2EToolsResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListE2EToolsResponse)
@@ -103,6 +108,7 @@ func (c *provisionerServiceClient) ListE2ETools(ctx context.Context, in *ListE2E
 	return out, nil
 }
 
+// Deprecated: Do not use.
 func (c *provisionerServiceClient) CallE2ETool(ctx context.Context, in *CallE2EToolRequest, opts ...grpc.CallOption) (*CallE2EToolResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(CallE2EToolResponse)
@@ -160,10 +166,14 @@ type ProvisionerServiceServer interface {
 	KillE2ESession(context.Context, *KillE2ESessionRequest) (*KillE2ESessionResponse, error)
 	GetE2ESessionStatus(context.Context, *GetE2ESessionStatusRequest) (*GetE2ESessionStatusResponse, error)
 	CreateE2ESession(context.Context, *CreateE2ESessionRequest) (*CreateE2ESessionResponse, error)
+	// Deprecated: Do not use.
 	// Reused by core.proto's own ListE2eTools/CallE2eTool one hop further
 	// down the passthrough chain (see that file's comment).
+	// DEPRECATED (docs/adr/0045) — deleted once every live pod runs a sidecar
+	// that dials the sandbox itself.
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	ListE2ETools(context.Context, *ListE2EToolsRequest) (*ListE2EToolsResponse, error)
+	// Deprecated: Do not use.
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	CallE2ETool(context.Context, *CallE2EToolRequest) (*CallE2EToolResponse, error)
 	CreateWorkerPod(context.Context, *CreateWorkerPodRequest) (*CreateWorkerPodResponse, error)

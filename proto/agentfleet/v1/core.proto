@@ -114,6 +114,11 @@ message RequestE2eEnvResponse {
   string profile_name = 4;
   repeated string tools = 5;    // catalog keys, e.g. "bun-toolchain"
   repeated string services = 6; // "<key>:<scope-mode>", e.g. "postgres:task-scoped"
+  // Where to dial the sandbox, passed straight through from the provisioner
+  // (docs/adr/0045). core does not build, cache or interpret these — it does
+  // not know what MCP is. That is what keeps this a *field* passthrough
+  // rather than the *call* passthrough it replaces.
+  repeated ServiceEndpoint endpoints = 7;
 }
 
 message KillE2eEnvRequest {
@@ -440,10 +445,17 @@ service CoreService {
   rpc KillE2eEnv(KillE2eEnvRequest) returns (KillE2eEnvResponse);
   // Reuses provisioner.proto's message shapes — same passthrough, one hop
   // further down the chain (see that file's own comment).
+  // DEPRECATED (docs/adr/0045) — the sidecar dials the sandbox directly from
+  // RequestE2eEnvResponse.endpoints. Kept only for the deploy-skew window in
+  // which a live pod still runs an older sidecar. Do not add callers.
   // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
-  rpc ListE2eTools(ListE2eToolsRequest) returns (ListE2eToolsResponse);
+  rpc ListE2eTools(ListE2eToolsRequest) returns (ListE2eToolsResponse) {
+    option deprecated = true;
+  }
   // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
-  rpc CallE2eTool(CallE2eToolRequest) returns (CallE2eToolResponse);
+  rpc CallE2eTool(CallE2eToolRequest) returns (CallE2eToolResponse) {
+    option deprecated = true;
+  }
 
   // Lets a worker pod fetch its own fresh task row on startup instead of
   // relying on stale environment variables — same message shapes

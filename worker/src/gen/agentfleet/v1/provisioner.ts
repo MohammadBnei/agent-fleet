@@ -169,6 +169,50 @@ export interface GetE2eSessionStatusResponse {
    * opened code-server (docs/adr/0044).
    */
   codeServerUrl: string;
+  /**
+   * docs/adr/0045 — see ServiceEndpoint. Present here as well as on
+   * CreateE2eSession because core's own dashboard path (runInE2ePod, backing
+   * GetE2EAppLog and the human run-command surface) needs to reach the
+   * sandbox without provisioning one.
+   */
+  endpoints: ServiceEndpoint[];
+}
+
+/**
+ * A directly-dialable address for one service, resolved by the component that
+ * knows it exists and handed to whoever needs to call it (docs/adr/0045).
+ *
+ * This is the fleet's whole service-discovery mechanism, and it is
+ * deliberately not a registry: there is no lookup RPC and no `services`
+ * table. Kubernetes is already ground truth for whether a pod exists — a row
+ * survives an OOMKill, a Service endpoint does not, so a table would be a
+ * cache that lies. The provisioner computes these from (namespace, taskID),
+ * the same pure function that names the Service it just created, and they
+ * ride back on responses core already sends.
+ *
+ * Fields NOT here, and why:
+ *   - who may call it — authorization is a per-task NetworkPolicy. A field
+ *     the caller reads is advice; a policy the CNI enforces is not.
+ *   - ttl/expires_at — validity is implied by delivery. A failed dial
+ *     re-resolves through the provision path that already exists.
+ *   - scope — a roster reaches one sidecar serving one task. The delivery
+ *     channel *is* the scope.
+ */
+export interface ServiceEndpoint {
+  /** "playwright" | "exec" */
+  name: string;
+  /** host:port, host fully qualified with a trailing dot */
+  address: string;
+  /** "mcp-streamable-http" | "grpc" */
+  protocol: string;
+  /** "/mcp" for MCP, "" for gRPC */
+  path: string;
+  /**
+   * Bearer token, when a service authenticates its callers at all. Empty for
+   * the sandbox, deliberately: docs/adr/0039 rests on the e2e pod holding no
+   * fleet credentials, so reachability there is fenced structurally instead.
+   */
+  token: string;
 }
 
 /**
@@ -200,6 +244,13 @@ export interface CreateE2eSessionRequest {
 export interface CreateE2eSessionResponse {
   status: string;
   previewUrl: string;
+  /**
+   * docs/adr/0045. Filled on BOTH the fresh-create path and the
+   * already-exists short-circuit — a resumed session that skips creation
+   * still needs to know where to dial, and returning them only on creation
+   * is the obvious way to break exactly that case.
+   */
+  endpoints: ServiceEndpoint[];
 }
 
 /**
@@ -282,13 +333,16 @@ export interface TearDownSessionResponse {
 }
 
 /**
- * The e2e pod's own MCP server (Playwright automation) exposes a tool set
- * discovered at runtime, not a fixed enumerable list — these two RPCs are
- * a generic passthrough, mirroring what today's mcpproxy.Proxy already
- * does in-process. Proxied sidecar -> core -> provisioner -> e2e pod,
- * same hub-and-spoke rule as everything else (docs/adr/0020) — the extra
- * hop's latency cost was already named and accepted in that ADR's
- * Alternatives, not an oversight here.
+ * DEPRECATED (docs/adr/0045) — the sidecar dials the sandbox directly from
+ * a ServiceEndpoint roster now, and these are deleted once every live pod
+ * runs a sidecar that does. Do not add callers.
+ *
+ * ADR-0020 accepted the extra hop for consistency and left a revisit
+ * trigger ("if that hop proves materially slow"). It was measured twice and
+ * the trigger never fired: the fleet's entire overhead around a tool call is
+ * ~1ms. These go for coupling, not speed — a passthrough on core costs a
+ * proto pair and a handler per service, and routes a shell command through
+ * the fleet's Postgres-credential holder for no reason involving credentials.
  */
 export interface ListE2eToolsRequest {
   taskId: string;
@@ -545,6 +599,7 @@ function createBaseGetE2eSessionStatusResponse(): GetE2eSessionStatusResponse {
     restarts: 0,
     startedAt: "",
     codeServerUrl: "",
+    endpoints: [],
   };
 }
 
@@ -583,6 +638,9 @@ export const GetE2eSessionStatusResponse: MessageFns<GetE2eSessionStatusResponse
         : isSet(object.code_server_url)
         ? globalThis.String(object.code_server_url)
         : "",
+      endpoints: globalThis.Array.isArray(object?.endpoints)
+        ? object.endpoints.map((e: any) => ServiceEndpoint.fromJSON(e))
+        : [],
     };
   },
 
@@ -612,6 +670,9 @@ export const GetE2eSessionStatusResponse: MessageFns<GetE2eSessionStatusResponse
     if (message.codeServerUrl !== "") {
       obj.codeServerUrl = message.codeServerUrl;
     }
+    if (message.endpoints?.length) {
+      obj.endpoints = message.endpoints.map((e) => ServiceEndpoint.toJSON(e));
+    }
     return obj;
   },
 
@@ -628,6 +689,56 @@ export const GetE2eSessionStatusResponse: MessageFns<GetE2eSessionStatusResponse
     message.restarts = object.restarts ?? 0;
     message.startedAt = object.startedAt ?? "";
     message.codeServerUrl = object.codeServerUrl ?? "";
+    message.endpoints = object.endpoints?.map((e) => ServiceEndpoint.fromPartial(e)) || [];
+    return message;
+  },
+};
+
+function createBaseServiceEndpoint(): ServiceEndpoint {
+  return { name: "", address: "", protocol: "", path: "", token: "" };
+}
+
+export const ServiceEndpoint: MessageFns<ServiceEndpoint> = {
+  fromJSON(object: any): ServiceEndpoint {
+    return {
+      name: isSet(object.name) ? globalThis.String(object.name) : "",
+      address: isSet(object.address) ? globalThis.String(object.address) : "",
+      protocol: isSet(object.protocol) ? globalThis.String(object.protocol) : "",
+      path: isSet(object.path) ? globalThis.String(object.path) : "",
+      token: isSet(object.token) ? globalThis.String(object.token) : "",
+    };
+  },
+
+  toJSON(message: ServiceEndpoint): unknown {
+    const obj: any = {};
+    if (message.name !== "") {
+      obj.name = message.name;
+    }
+    if (message.address !== "") {
+      obj.address = message.address;
+    }
+    if (message.protocol !== "") {
+      obj.protocol = message.protocol;
+    }
+    if (message.path !== "") {
+      obj.path = message.path;
+    }
+    if (message.token !== "") {
+      obj.token = message.token;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<ServiceEndpoint>, I>>(base?: I): ServiceEndpoint {
+    return ServiceEndpoint.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<ServiceEndpoint>, I>>(object: I): ServiceEndpoint {
+    const message = createBaseServiceEndpoint();
+    message.name = object.name ?? "";
+    message.address = object.address ?? "";
+    message.protocol = object.protocol ?? "";
+    message.path = object.path ?? "";
+    message.token = object.token ?? "";
     return message;
   },
 };
@@ -700,7 +811,7 @@ export const CreateE2eSessionRequest: MessageFns<CreateE2eSessionRequest> = {
 };
 
 function createBaseCreateE2eSessionResponse(): CreateE2eSessionResponse {
-  return { status: "", previewUrl: "" };
+  return { status: "", previewUrl: "", endpoints: [] };
 }
 
 export const CreateE2eSessionResponse: MessageFns<CreateE2eSessionResponse> = {
@@ -712,6 +823,9 @@ export const CreateE2eSessionResponse: MessageFns<CreateE2eSessionResponse> = {
         : isSet(object.preview_url)
         ? globalThis.String(object.preview_url)
         : "",
+      endpoints: globalThis.Array.isArray(object?.endpoints)
+        ? object.endpoints.map((e: any) => ServiceEndpoint.fromJSON(e))
+        : [],
     };
   },
 
@@ -723,6 +837,9 @@ export const CreateE2eSessionResponse: MessageFns<CreateE2eSessionResponse> = {
     if (message.previewUrl !== "") {
       obj.previewUrl = message.previewUrl;
     }
+    if (message.endpoints?.length) {
+      obj.endpoints = message.endpoints.map((e) => ServiceEndpoint.toJSON(e));
+    }
     return obj;
   },
 
@@ -733,6 +850,7 @@ export const CreateE2eSessionResponse: MessageFns<CreateE2eSessionResponse> = {
     const message = createBaseCreateE2eSessionResponse();
     message.status = object.status ?? "";
     message.previewUrl = object.previewUrl ?? "";
+    message.endpoints = object.endpoints?.map((e) => ServiceEndpoint.fromPartial(e)) || [];
     return message;
   },
 };
@@ -1399,10 +1517,18 @@ export interface ProvisionerService {
   /**
    * Reused by core.proto's own ListE2eTools/CallE2eTool one hop further
    * down the passthrough chain (see that file's comment).
+   * DEPRECATED (docs/adr/0045) — deleted once every live pod runs a sidecar
+   * that dials the sandbox itself.
    * buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+   *
+   * @deprecated
    */
   ListE2eTools(request: ListE2eToolsRequest): Promise<ListE2eToolsResponse>;
-  /** buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE */
+  /**
+   * buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+   *
+   * @deprecated
+   */
   CallE2eTool(request: CallE2eToolRequest): Promise<CallE2eToolResponse>;
   CreateWorkerPod(request: CreateWorkerPodRequest): Promise<CreateWorkerPodResponse>;
   TearDownSession(request: TearDownSessionRequest): Promise<TearDownSessionResponse>;

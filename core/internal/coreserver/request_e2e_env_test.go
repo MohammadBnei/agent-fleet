@@ -27,9 +27,22 @@ type fakeE2eProvisionerServer struct {
 	calls []*agentfleetv1.CreateE2ESessionRequest
 }
 
+// fakeEndpoints stands in for what k8s.EndpointsFor would produce. The values
+// are deliberately not the real ones — a test that reproduces the production
+// address format would still pass if core started rebuilding endpoints itself
+// instead of forwarding them, which is precisely the regression to catch.
+var fakeEndpoints = []*agentfleetv1.ServiceEndpoint{
+	{Name: "exec", Address: "sentinel-exec.invalid.:1", Protocol: "mcp-streamable-http", Path: "/mcp"},
+	{Name: "playwright", Address: "sentinel-pw.invalid.:2", Protocol: "mcp-streamable-http", Path: "/mcp"},
+}
+
 func (f *fakeE2eProvisionerServer) CreateE2ESession(ctx context.Context, req *agentfleetv1.CreateE2ESessionRequest) (*agentfleetv1.CreateE2ESessionResponse, error) {
 	f.calls = append(f.calls, req)
-	return &agentfleetv1.CreateE2ESessionResponse{Status: "running", PreviewUrl: "https://example.test/preview"}, nil
+	return &agentfleetv1.CreateE2ESessionResponse{
+		Status:     "running",
+		PreviewUrl: "https://example.test/preview",
+		Endpoints:  fakeEndpoints,
+	}, nil
 }
 
 func newFakeE2eProvisioner(t *testing.T) (*fakeE2eProvisionerServer, *provisionerclient.Client) {
@@ -95,6 +108,50 @@ func TestRequestE2EEnv_UsesResolvedProfileStartCmd(t *testing.T) {
 	want := "cd front && bun install && bunx vite dev --host 0.0.0.0 --port $PORT"
 	if got != want {
 		t.Errorf("CreateE2ESession start_cmd = %q, want %q (resolved profile's own start_cmd)", got, want)
+	}
+}
+
+// TestRequestE2EEnv_ForwardsEndpointsUntouched pins docs/adr/0045's central
+// claim: core is a *field* passthrough for the roster, not a participant in
+// it. It must not build, reorder, filter or normalise these — it does not
+// know what MCP is, and the moment it starts caring the relay it just deleted
+// is back in a different shape.
+//
+// The sentinel addresses are unresolvable on purpose, so the only way this
+// passes is by forwarding exactly what the provisioner sent.
+func TestRequestE2EEnv_ForwardsEndpointsUntouched(t *testing.T) {
+	pool := newTestPool(t)
+	ctx := context.Background()
+	taskStore := tasks.NewStore(pool)
+	profileStore := repoprofiles.NewStore(pool)
+
+	taskID, err := taskStore.CreateTask(ctx, "dream-analyst", "verify endpoint passthrough", "", "claude-opus-4-8", nil, nil)
+	if err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+
+	_, provisioner := newFakeE2eProvisioner(t)
+	srv := New(nil, taskStore, nil, profileStore, repos.NewStore(pool), provisioner, nil, nil)
+
+	resp, err := srv.RequestE2EEnv(ctx, &agentfleetv1.RequestE2EEnvRequest{TaskId: taskID})
+	if err != nil {
+		t.Fatalf("RequestE2EEnv: %v", err)
+	}
+
+	got := resp.GetEndpoints()
+	if len(got) != len(fakeEndpoints) {
+		t.Fatalf("got %d endpoints, want %d — core dropped or added some", len(got), len(fakeEndpoints))
+	}
+	for i, want := range fakeEndpoints {
+		if got[i].GetName() != want.GetName() {
+			t.Errorf("endpoint %d name = %q, want %q (order must survive too)", i, got[i].GetName(), want.GetName())
+		}
+		if got[i].GetAddress() != want.GetAddress() {
+			t.Errorf("endpoint %d address = %q, want %q — core must not rewrite addresses", i, got[i].GetAddress(), want.GetAddress())
+		}
+		if got[i].GetProtocol() != want.GetProtocol() || got[i].GetPath() != want.GetPath() {
+			t.Errorf("endpoint %d protocol/path = %q %q, want %q %q", i, got[i].GetProtocol(), got[i].GetPath(), want.GetProtocol(), want.GetPath())
+		}
 	}
 }
 

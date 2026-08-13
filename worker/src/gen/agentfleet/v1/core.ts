@@ -21,6 +21,7 @@ import {
   CallE2eToolResponse,
   ListE2eToolsRequest,
   ListE2eToolsResponse,
+  ServiceEndpoint,
   SessionKind,
   sessionKindFromJSON,
   sessionKindToJSON,
@@ -205,6 +206,13 @@ export interface RequestE2eEnvResponse {
   tools: string[];
   /** "<key>:<scope-mode>", e.g. "postgres:task-scoped" */
   services: string[];
+  /**
+   * Where to dial the sandbox, passed straight through from the provisioner
+   * (docs/adr/0045). core does not build, cache or interpret these — it does
+   * not know what MCP is. That is what keeps this a *field* passthrough
+   * rather than the *call* passthrough it replaces.
+   */
+  endpoints: ServiceEndpoint[];
 }
 
 export interface KillE2eEnvRequest {
@@ -909,7 +917,7 @@ export const RequestE2eEnvRequest: MessageFns<RequestE2eEnvRequest> = {
 };
 
 function createBaseRequestE2eEnvResponse(): RequestE2eEnvResponse {
-  return { previewUrl: "", status: "", resolvedStartCmd: "", profileName: "", tools: [], services: [] };
+  return { previewUrl: "", status: "", resolvedStartCmd: "", profileName: "", tools: [], services: [], endpoints: [] };
 }
 
 export const RequestE2eEnvResponse: MessageFns<RequestE2eEnvResponse> = {
@@ -937,6 +945,9 @@ export const RequestE2eEnvResponse: MessageFns<RequestE2eEnvResponse> = {
       services: globalThis.Array.isArray(object?.services)
         ? object.services.map((e: any) => globalThis.String(e))
         : [],
+      endpoints: globalThis.Array.isArray(object?.endpoints)
+        ? object.endpoints.map((e: any) => ServiceEndpoint.fromJSON(e))
+        : [],
     };
   },
 
@@ -960,6 +971,9 @@ export const RequestE2eEnvResponse: MessageFns<RequestE2eEnvResponse> = {
     if (message.services?.length) {
       obj.services = message.services;
     }
+    if (message.endpoints?.length) {
+      obj.endpoints = message.endpoints.map((e) => ServiceEndpoint.toJSON(e));
+    }
     return obj;
   },
 
@@ -974,6 +988,7 @@ export const RequestE2eEnvResponse: MessageFns<RequestE2eEnvResponse> = {
     message.profileName = object.profileName ?? "";
     message.tools = object.tools?.map((e) => e) || [];
     message.services = object.services?.map((e) => e) || [];
+    message.endpoints = object.endpoints?.map((e) => ServiceEndpoint.fromPartial(e)) || [];
     return message;
   },
 };
@@ -2579,10 +2594,19 @@ export interface CoreService {
   /**
    * Reuses provisioner.proto's message shapes — same passthrough, one hop
    * further down the chain (see that file's own comment).
+   * DEPRECATED (docs/adr/0045) — the sidecar dials the sandbox directly from
+   * RequestE2eEnvResponse.endpoints. Kept only for the deploy-skew window in
+   * which a live pod still runs an older sidecar. Do not add callers.
    * buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+   *
+   * @deprecated
    */
   ListE2eTools(request: ListE2eToolsRequest): Promise<ListE2eToolsResponse>;
-  /** buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE */
+  /**
+   * buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+   *
+   * @deprecated
+   */
   CallE2eTool(request: CallE2eToolRequest): Promise<CallE2eToolResponse>;
   /**
    * Lets a worker pod fetch its own fresh task row on startup instead of
