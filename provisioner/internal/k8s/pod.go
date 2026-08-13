@@ -36,6 +36,50 @@ const workerJobTTLSeconds = 300
 // every task's cwd is already a distinct worktree path.
 const claudeConfigDir = "/workspace/.claude-home"
 
+// contextBudgetEnv tunes the Agent SDK's own context-management machinery
+// for the fleet's usage pattern (ADR-0046). All four are read directly by
+// the bundled cli.js; none of them exist as `Options` fields, so env is the
+// only way to set them.
+//
+// The problem they solve: Claude Code's microcompaction — the mechanism
+// that silently drops stale tool results mid-session — operates on a
+// hardcoded tool set (Read, Bash, Grep, Glob, WebSearch, WebFetch, Edit,
+// Write). No MCP tool is in it. ADR-0039 routed every build/test/install
+// through `run_command`, an MCP tool, so the fleet's single largest
+// context consumer is precisely the one microcompaction never touches. A
+// local Claude Code session sheds build output automatically; a worker
+// accumulates it until auto-compact summarizes the whole conversation away.
+func contextBudgetEnv() []corev1.EnvVar {
+	return []corev1.EnvVar{
+		// Per-result ceiling for MCP tools. The CLI's default is 25000
+		// tokens (~100KB), which is bounded but far too generous when a
+		// single verbose test run can hit it and then stay in context
+		// permanently. 10000 still fits a real stack trace.
+		{Name: "MAX_MCP_OUTPUT_TOKENS", Value: "10000"},
+		// Server-side context editing (clear_tool_uses_20250919, beta
+		// context-management-2025-06-27). USE_API_CLEAR_TOOL_USES rather
+		// than USE_API_CLEAR_TOOL_RESULTS *specifically*: this variant
+		// sends exclude_tools=[Edit, Write, NotebookEdit], so everything
+		// not on that list — including MCP tools — becomes clearable. The
+		// other variant sends clear_tool_inputs naming only built-ins and
+		// would miss run_command entirely, i.e. it would do nothing for
+		// the exact problem this is here to fix.
+		//
+		// Unverified under subscription OAuth: the beta may be rejected
+		// for non-API-key auth. Failure is silent and harmless (the
+		// request proceeds without the edit), which is why the other
+		// layers here don't depend on it. Confirm via the sawtooth in the
+		// worker's `inputTokens` log field, not by assuming.
+		{Name: "USE_API_CLEAR_TOOL_USES", Value: "1"},
+		// Trigger clearing at 120k input tokens instead of the CLI's 180k
+		// default, and clear back down toward 40k. Fleet sessions are
+		// long-lived and resumable, so they reach the ceiling far more
+		// often than an interactive session does.
+		{Name: "API_MAX_INPUT_TOKENS", Value: "120000"},
+		{Name: "API_TARGET_INPUT_TOKENS", Value: "40000"},
+	}
+}
+
 // e2eMaxCPU/e2eMaxMemory are the e2e-runner container's limits. They must
 // stay <= limitRange.max in k8s/core.yaml — that LimitRange is
 // namespace-wide, so exceeding it means the pod is rejected at admission
@@ -428,6 +472,7 @@ func (c *Client) CreateWorkerPod(ctx context.Context, taskID, repo, leaseID, wor
 		// it identifiable in a log.
 		{Name: "CLAUDE_CODE_CONTAINER_ID", Value: taskID},
 	}
+	workerEnv = append(workerEnv, contextBudgetEnv()...)
 	workerEnv = append(workerEnv, ingredientEnv...)
 	workerEnv = append(workerEnv, extraEnv...)
 

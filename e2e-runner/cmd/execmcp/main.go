@@ -16,6 +16,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -36,6 +37,45 @@ import (
 // core's sessionCallTimeout covers CreateWorkerPod/TearDownSession only.
 const commandTimeout = 15 * time.Minute
 
+// maxStreamBytes caps how much of each stream reaches the agent's context.
+// 15000 per stream ≈ Claude Code's own 30000-char Bash ceiling in
+// aggregate, and well inside the 10000-token MAX_MCP_OUTPUT_TOKENS the
+// provisioner sets — that CLI-side cap is a blunt tail-chop with no way
+// back to the lost bytes, so cutting here first means the agent gets a
+// pointer instead of a cliff (ADR-0046).
+//
+// This is a build/test sandbox: `bun install` and a verbose test suite both
+// produce far more than this, and under ADR-0039 all of it lands in a
+// session that never sheds it (MCP results are not microcompactable).
+const maxStreamBytes = 15000
+
+// headBuffer keeps the first max bytes written to it and counts the rest.
+// Head rather than tail: a build failure's first error is the real one, and
+// the full stream is preserved on disk anyway.
+type headBuffer struct {
+	buf     bytes.Buffer
+	max     int
+	dropped int
+}
+
+func (h *headBuffer) Write(p []byte) (int, error) {
+	room := h.max - h.buf.Len()
+	switch {
+	case room <= 0:
+		h.dropped += len(p)
+	case len(p) <= room:
+		h.buf.Write(p)
+	default:
+		h.buf.Write(p[:room])
+		h.dropped += len(p) - room
+	}
+	// Always claim the full write. A short count makes io.MultiWriter treat
+	// this as ErrShortWrite and abort the whole fan-out, which would take
+	// the on-disk log down with it — the exact thing the truncation notice
+	// promises is still there.
+	return len(p), nil
+}
+
 func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
 
@@ -54,7 +94,7 @@ func main() {
 
 	s := server.NewMCPServer("agent-fleet-e2e-exec", "0.1.0", server.WithToolCapabilities(true))
 	s.AddTool(mcp.NewTool("run_command",
-		mcp.WithDescription("Run a shell command in the e2e pod's worktree (bash -lc), for anything the app needs beyond its initial start: installing a missed dependency, restarting the dev server, running the app's own tests, inspecting a failure. Returns stdout, stderr, and exit code — a nonzero exit is not an error, it's information. A long-running process (e.g. a dev server) should background itself (trailing &) rather than block this call; timeout is 15 minutes."),
+		mcp.WithDescription("Run a shell command in the e2e pod's worktree (bash -lc): installing a dependency, restarting the dev server, running tests, inspecting a failure. Returns stdout, stderr, exitCode — a nonzero exit is information, not an error. Background long-running processes with a trailing &; timeout 15 minutes. Large output is truncated and the full log's path returned in fullOutputPath — tail/grep it with this same tool."),
 		mcp.WithString("command", mcp.Required(), mcp.Description("Shell command, run via bash -lc from the worktree root")),
 	), runCommandHandler(worktreePath))
 
@@ -78,9 +118,40 @@ func runCommandHandler(worktreePath string) server.ToolHandlerFunc {
 
 		cmd := exec.CommandContext(runCtx, "bash", "-lc", command)
 		cmd.Dir = worktreePath
-		var stdout, stderr bytes.Buffer
-		cmd.Stdout = &stdout
-		cmd.Stderr = &stderr
+		stdout := &headBuffer{max: maxStreamBytes}
+		stderr := &headBuffer{max: maxStreamBytes}
+		// The full, interleaved stream also goes to a file in the sandbox,
+		// which is what makes truncation safe: /tmp persists across
+		// run_command calls in this container (docs/adr/0044 already relies
+		// on that for /tmp/e2e-app.log), so the agent recovers the dropped
+		// bytes with an ordinary `tail`/`grep` through this same tool. No new
+		// MCP tool, no new RPC, no pagination cursor to maintain.
+		//
+		// Interleaving is real here in a way the two separate buffers can't
+		// be: both streams share one file handle, so the log preserves the
+		// order the command actually produced.
+		var logPath string
+		if logFile, err := os.CreateTemp("/tmp", "run-*.log"); err != nil {
+			// Non-fatal: the command still runs and still returns. The agent
+			// is told the rest is unrecoverable rather than being handed a
+			// path that isn't there.
+			slog.Warn("run_command: could not open full-output log", "error", err)
+			cmd.Stdout = stdout
+			cmd.Stderr = stderr
+		} else {
+			// Not `_ = Close()`: this file is the recovery path the
+			// truncation notice promises, so a failed close is the one case
+			// where the agent may have been handed a path to incomplete
+			// content. Worth a line in the sandbox's own logs.
+			defer func() {
+				if cerr := logFile.Close(); cerr != nil {
+					slog.Warn("run_command: closing full-output log failed", "path", logFile.Name(), "error", cerr)
+				}
+			}()
+			logPath = logFile.Name()
+			cmd.Stdout = io.MultiWriter(stdout, logFile)
+			cmd.Stderr = io.MultiWriter(stderr, logFile)
+		}
 		// Without this, `run_command 'bun run dev &'` blocks for the full
 		// commandTimeout and then still doesn't return: Stdout/Stderr are
 		// buffers rather than *os.File, so os/exec wires real OS pipes and
@@ -112,11 +183,30 @@ func runCommandHandler(worktreePath string) server.ToolHandlerFunc {
 			}
 		}
 
-		result, err := json.Marshal(map[string]any{
-			"stdout":   stdout.String(),
-			"stderr":   stderr.String(),
+		payload := map[string]any{
+			"stdout":   stdout.buf.String(),
+			"stderr":   stderr.buf.String(),
 			"exitCode": exitCode,
-		})
+		}
+		// A truncation the agent isn't told about is worse than no
+		// truncation: it works from partial build output believing it saw
+		// everything. Wording deliberately mirrors Claude Code's own MCP
+		// truncation notice, which tells the model to reach for the server's
+		// pagination/filtering tools — here that's this same tool plus a path.
+		if dropped := stdout.dropped + stderr.dropped; dropped > 0 {
+			payload["truncated"] = true
+			payload["droppedBytes"] = dropped
+			if logPath == "" {
+				payload["note"] = fmt.Sprintf(
+					"[OUTPUT TRUNCATED - %d bytes dropped] The full output could not be saved, so the rest is unrecoverable. Treat these results as incomplete and say so.", dropped)
+			} else {
+				payload["fullOutputPath"] = logPath
+				payload["note"] = fmt.Sprintf(
+					"[OUTPUT TRUNCATED - first %d bytes per stream kept, %d bytes dropped] The complete interleaved stdout+stderr is at %s in this sandbox. Retrieve the rest with run_command, e.g. `tail -n 200 %s` or `grep -n error %s`. Do not conclude the command succeeded or failed on the truncated text alone if the answer isn't in it.",
+					maxStreamBytes, dropped, logPath, logPath, logPath)
+			}
+		}
+		result, err := json.Marshal(payload)
 		if err != nil {
 			return nil, err
 		}

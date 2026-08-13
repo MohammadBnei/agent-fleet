@@ -52,7 +52,7 @@ func New(core *coreclient.Client) http.Handler {
 	s := server.NewMCPServer("agent-fleet-sidecar", "0.1.0", server.WithToolCapabilities(true))
 
 	s.AddTool(mcp.NewTool("send_message",
-		mcp.WithDescription("Append a message to this task's shared transcript (visible to the human via the dashboard/Discord relay). The response's nextIndex is the sinceIndex to use if you ever call wait_for_messages afterward — see that tool's own description for why."),
+		mcp.WithDescription("Append a message to this task's shared transcript (visible to the human via dashboard/Discord). The response's nextIndex is the sinceIndex for wait_for_messages."),
 		mcp.WithString("from", mcp.Required(), mcp.Description("'agent' | 'human'")),
 		mcp.WithString("text", mcp.Required()),
 		mcp.WithString("type", mcp.Description("'discussion' | 'approve' | 'abort'")),
@@ -60,7 +60,7 @@ func New(core *coreclient.Client) http.Handler {
 	), sendMessageHandler(core))
 
 	s.AddTool(mcp.NewTool("wait_for_messages",
-		mcp.WithDescription("Block (up to timeoutMs) until new transcript messages appear at or after sinceIndex, then return them. You almost never need this: new human messages already arrive live as your next input while a session is running, with no polling required. sinceIndex is INCLUSIVE and results are NOT filtered by from — if you pass the raw index a prior send_message call returned, you will see that same message come back to you. Always pass the nextIndex field from your last send_message or wait_for_messages response instead."),
+		mcp.WithDescription("Block (up to timeoutMs) until transcript messages appear at or after sinceIndex. You almost never need this — human messages already arrive live as your next input, no polling required. sinceIndex is INCLUSIVE and NOT filtered by `from`, so a raw send_message index returns your own message back to you; always pass the previous response's nextIndex."),
 		mcp.WithNumber("sinceIndex"),
 		mcp.WithNumber("timeoutMs"),
 	), waitForMessagesHandler(core))
@@ -71,13 +71,13 @@ func New(core *coreclient.Client) http.Handler {
 	), askUserQuestionHandler(core))
 
 	s.AddTool(mcp.NewTool("request_e2e_env",
-		mcp.WithDescription("Request an on-demand e2e test environment for this task: a live pod running the app on this branch, code-server for human review, and a Playwright MCP server. Safe to call again if one is already running — returns the existing session's URL. The response echoes back the recipe that was actually used (resolvedStartCmd, profileName, tools, services), which comes from the repo's dashboard-editable e2e profile. If the preview does not serve, read resolvedStartCmd and report what is wrong with it — do not silently substitute your own command. IMPORTANT: Cold dependency install may take 10+ minutes. The preview URL won't serve until the app starts. You can check progress with `run_command 'ps aux'` or similar commands."),
-		mcp.WithString("startCmd", mcp.Description("Optional override for the profile's start command, applied to THIS TASK ONLY and never saved back to the profile. Requires a human to approve it before anything is created — if they decline or don't answer, the profile's own command is used instead. Omit it unless you have concrete evidence the profile is wrong for this worktree; the profile is the default for good reason. Whatever runs must bind 0.0.0.0 on $PORT — a dev server left on its own default port, or bound to localhost, is unreachable from outside the pod and the preview never serves.")),
-		mcp.WithString("profile", mcp.Description("Optional override for WHICH of the repo's profiles to build the environment from (e.g. \"lint\" instead of the repo's configured default). Applied to THIS TASK ONLY and never saved. Like startCmd, it requires a human to approve it first — if they decline or don't answer, the repo's configured profile is used. Omit it unless you have concrete evidence you need a different toolchain than the one you got; the response's profileName/tools tell you what you actually have.")),
+		mcp.WithDescription("Request this task's e2e environment: a pod running the app on this branch, plus code-server and Playwright. Safe to call again — returns the existing session's URL. The response echoes the recipe actually used (resolvedStartCmd, profileName, tools, services) from the repo's dashboard-editable profile. If the preview does not serve, read resolvedStartCmd and report what is wrong — do not silently substitute your own command. Cold install takes 10+ minutes and the URL won't serve until the app starts; check with run_command 'ps aux'."),
+		mcp.WithString("startCmd", mcp.Description("Override the profile's start command, THIS TASK ONLY, never saved. Requires human approval first; if declined or unanswered, the profile's own command is used. Omit unless you have concrete evidence the profile is wrong. Whatever runs must bind 0.0.0.0 on $PORT — a localhost or default-port bind is unreachable from outside the pod and the preview never serves.")),
+		mcp.WithString("profile", mcp.Description("Override WHICH of the repo's profiles to build from (e.g. \"lint\"). THIS TASK ONLY, never saved, and requires human approval like startCmd. Omit unless you need a different toolchain than the one you got — the response's profileName/tools tell you what you actually have.")),
 	), requestE2eEnvHandler(core, s))
 
 	s.AddTool(mcp.NewTool("kill_env",
-		mcp.WithDescription("Permanently destroy this task's e2e environment. WARNING: Do NOT use to 'refresh' the app after editing files - the shared worktree hot-reloads automatically, just reload the preview URL in your browser. Only use kill_env when completely done with testing. Recreating the environment wastes 10+ minutes on cold dependency install."),
+		mcp.WithDescription("Permanently destroy this task's e2e environment. Do NOT use it to 'refresh' the app after editing files — the shared worktree hot-reloads, just reload the preview URL. Only when completely done: recreating costs 10+ minutes of cold install."),
 	), killEnvHandler(core))
 
 	// Registered statically, unlike the Playwright tools below it: this is
@@ -87,7 +87,7 @@ func New(core *coreclient.Client) http.Handler {
 	// resumed session, and depended on notifications/tools/list_changed
 	// being honored (a risk docs/adr/0012 flagged and never verified).
 	s.AddTool(mcp.NewTool("run_command",
-		mcp.WithDescription("Run a shell command in this task's sandbox — a separate pod that already has the repo's toolchain, its services (Postgres/Redis), a warm dependency cache, and the app's dev server, sharing this task's worktree. Prefer this over Bash for anything that builds, tests, lints, installs dependencies, or runs the app. Starts the sandbox on first use if it isn't running yet, so no separate setup call is needed. Returns stdout, stderr and exit code — a nonzero exit is not an error, it's information. The sandbox has NO git and no GitHub credentials on purpose: run git, gh and anything that opens the PR through Bash instead. A long-running process (e.g. a dev server) should background itself (trailing &) rather than block this call; timeout is 15 minutes."),
+		mcp.WithDescription("Run a shell command in this task's sandbox — a separate pod with the repo's toolchain, its services (Postgres/Redis), a warm dependency cache and the app's dev server, sharing this task's worktree. Prefer this over Bash for anything that builds, tests, lints, installs, or runs the app; it starts the sandbox on first use, so no setup call is needed. Returns stdout, stderr, exitCode — a nonzero exit is information, not an error. The sandbox has NO git and no GitHub credentials on purpose: run git, gh and PR work through Bash. Background long-running processes with a trailing &; timeout 15 minutes. Large output is truncated with the full log's path in fullOutputPath — tail/grep it with this same tool."),
 		mcp.WithString("command", mcp.Required(), mcp.Description("Shell command, run via bash -lc from the worktree root")),
 	), runCommandHandler(core, s))
 
@@ -96,7 +96,7 @@ func New(core *coreclient.Client) http.Handler {
 	), listSharedFilesHandler(core))
 
 	s.AddTool(mcp.NewTool("get_shared_file_upload_url",
-		mcp.WithDescription("Get a short-lived presigned URL to upload a file into the fleet-wide shared file space. The filename becomes the object's key verbatim (flat namespace, last write wins). This tool does not move any bytes — after calling it, upload the actual file from Bash: curl -T <local-path> \"<uploadUrl>\"."),
+		mcp.WithDescription("Presigned URL to upload a file into the fleet-wide shared file space. The filename becomes the object key verbatim (flat namespace, last write wins). Moves no bytes — upload from Bash: curl -T <local-path> \"<uploadUrl>\"."),
 		mcp.WithString("filename", mcp.Required()),
 		mcp.WithString("contentType"),
 	), getSharedFileUploadURLHandler(core))
@@ -132,21 +132,21 @@ func New(core *coreclient.Client) http.Handler {
 	), listSessionsHandler(core))
 
 	s.AddTool(mcp.NewTool("prompt_agent",
-		mcp.WithDescription("Send a message to another session, as yourself. It arrives in that session's transcript attributed to you, and warms its pod if it was idle so it is actually read. Use this to hand off work or ask a question of a session that owns a different repo — not to chat. The target sees your message the same way it sees a human's, so say what you need concretely. REFUSED if the target is 'blocked': it is waiting on a human decision, and that decision is not yours to resolve. Also refused for your own session, and beyond a small relay depth so chains cannot loop. To wait for a reply, follow with wait_for_agent."),
+		mcp.WithDescription("Send a message to another session, as yourself. It lands in that session's transcript attributed to you and warms its pod if idle. Use it to hand off work or ask a question of a session owning a different repo — not to chat; the target reads it the way it reads a human's, so be concrete. REFUSED if the target is 'blocked' (it is waiting on a human decision that is not yours to resolve), for your own session, and beyond a small relay depth so chains cannot loop. Follow with wait_for_agent to await a reply."),
 		mcp.WithString("taskId", mcp.Required(), mcp.Description("Target session's task id, from list_sessions")),
 		mcp.WithString("text", mcp.Required()),
 	), promptSessionHandler(core))
 
 	s.AddTool(mcp.NewTool("wait_for_agent",
-		mcp.WithDescription("Block until another session reaches a given liveness state, or the timeout expires. With no `until`, waits for it to settle (idle, done, blocked or stalled). `until: blocked` is the useful one after prompting: it returns when that session genuinely needs a human, which is the moment worth surfacing. A timeout is not an error — the response says timedOut with the state it actually reached, and 'still working' is a legitimate answer to act on."),
+		mcp.WithDescription("Block until another session reaches a liveness state, or the timeout expires. With no `until`, waits for it to settle (idle, done, blocked, stalled). `until: blocked` is the useful one after prompting — it returns when that session genuinely needs a human. A timeout is not an error: the response reports timedOut plus the state actually reached, and 'still working' is a legitimate answer to act on."),
 		mcp.WithString("taskId", mcp.Required()),
 		mcp.WithString("until", mcp.Description("working | blocked | idle | done | stalled | unknown. Omit to wait for any settled state.")),
 		mcp.WithNumber("timeoutMs", mcp.Description("Default 120000.")),
-		mcp.WithNumber("afterSeq", mcp.Description("Only count a settled state once the target produces activity newer than this transcript seq. Filled in automatically from your last prompt_agent call to the same target, so you normally omit it — without it, waiting right after prompting can return the state the target held BEFORE your message landed.")),
+		mcp.WithNumber("afterSeq", mcp.Description("Only count a settled state once the target produces activity newer than this transcript seq. Filled in automatically from your last prompt_agent to the same target, so normally omit it — without it, waiting right after prompting can return the state held BEFORE your message landed.")),
 	), waitForSessionHandler(core))
 
 	s.AddTool(mcp.NewTool("view_logs",
-		mcp.WithDescription("View recent logs from fleet components or deployed apps. Returns formatted log entries. Use this to debug issues with worker, sidecar, or the deployed application during e2e tests. Supports both duration-based queries (duration) and explicit time ranges (start_time/end_time in RFC3339 format)."),
+		mcp.WithDescription("View recent logs from fleet components or deployed apps. Use to debug worker, sidecar, or the deployed app during e2e tests. Supports duration-based queries (duration) or explicit ranges (start_time/end_time, RFC3339)."),
 		mcp.WithString("component", mcp.Required(), mcp.Description("Which component: worker|sidecar|core|provisioner|e2e|app")),
 		mcp.WithString("app_name", mcp.Description("For component=app, the deployed app's name — usually this task's own repo name. Repos are dashboard-managed (docs/adr/0028), so there is no fixed list.")),
 		mcp.WithString("namespace", mcp.Description("Kubernetes namespace (default: agent-fleet, use 'default' for deployed apps)")),
@@ -165,6 +165,36 @@ func New(core *coreclient.Client) http.Handler {
 	registerPlaywrightTools(s, core)
 
 	return server.NewStreamableHTTPServer(s)
+}
+
+// Per-result caps for the two tools here that can return arbitrarily much
+// (ADR-0046). Neither is bounded by anything upstream: view_logs' limit is
+// an entry count, not a byte count, and a structured log line has no length
+// bound at all; wait_for_messages returns whatever text a human or another
+// session wrote.
+//
+// This matters more here than it would in a normal MCP server because
+// nothing downstream ever sheds these bytes again: Claude Code's
+// microcompaction operates on a hardcoded built-in tool set and never
+// touches MCP results, so every one of these stays in the session verbatim
+// until auto-compact summarizes the entire conversation.
+const (
+	maxLogsBytes         = 15000
+	maxMessageEntryBytes = 2000
+)
+
+// truncate cuts s to max bytes and appends note, which must tell the caller
+// how to get the rest. Claude Code's own MCP truncation notice reads "If
+// this MCP server provides pagination or filtering tools, use them to
+// retrieve specific portions of the data" — that instruction is addressed
+// to this function. A cap without a stated way back leaves the agent
+// working from partial data without knowing it, which is a worse failure
+// than a large context.
+func truncate(s string, max int, note string) string {
+	if len(s) <= max {
+		return s
+	}
+	return fmt.Sprintf("%s\n\n[OUTPUT TRUNCATED - first %d of %d bytes shown] %s", s[:max], max, len(s), note)
 }
 
 // sendMessageHandler writes one transcript entry through core and returns
@@ -205,7 +235,11 @@ func waitForMessagesHandler(core *coreclient.Client) server.ToolHandlerFunc {
 		}
 		messages := make([]map[string]any, 0, len(entries))
 		for _, e := range entries {
-			messages = append(messages, map[string]any{"from": e.GetFrom(), "text": e.GetText(), "type": protoTypeToString(e.GetType())})
+			// Per entry, not per batch: one pasted stack trace shouldn't
+			// crowd out the five short directives that came after it.
+			text := truncate(e.GetText(), maxMessageEntryBytes,
+				"This one message was long; the rest of the batch is intact. Ask the sender to re-send the specific part you need.")
+			messages = append(messages, map[string]any{"from": e.GetFrom(), "text": text, "type": protoTypeToString(e.GetType())})
 		}
 		body, _ := json.Marshal(map[string]any{"messages": messages, "nextIndex": nextSeq})
 		return mcp.NewToolResultText(string(body)), nil
@@ -780,6 +814,13 @@ func viewLogsHandler(core LogViewer) server.ToolHandlerFunc {
 			return nil, fmt.Errorf("view_logs: %w", err)
 		}
 
-		return mcp.NewToolResultText(logsText), nil
+		// view_logs already has the filtering tools the truncation notice
+		// should point at — limit, level, duration, start_time/end_time. No
+		// offset cursor is added here on purpose: narrowing the window or
+		// the level is how you actually page logs, and a cursor would mean a
+		// proto change plus a core change to buy nothing the existing
+		// parameters don't already do.
+		return mcp.NewToolResultText(truncate(logsText, maxLogsBytes,
+			"Narrow the query rather than re-running it as-is: lower `limit`, raise `level`, shorten `duration`, or set `start_time`/`end_time` around the window you care about.")), nil
 	}
 }

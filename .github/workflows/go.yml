@@ -60,6 +60,8 @@ jobs:
               - 'sidecar/**'
             executor:
               - 'executor/**'
+            e2e-runner:
+              - 'e2e-runner/**'
       # A proto/ change affects every Go module's generated code, so it
       # counts as a change for all three, on top of each module's own filter.
       - name: Compute go-modules matrix
@@ -76,11 +78,17 @@ jobs:
             const provisioner = ${{ steps.filter.outputs.provisioner }};
             const sidecar = ${{ steps.filter.outputs.sidecar }};
             const executor = ${{ steps.filter.outputs.executor }};
+            // e2e-runner is a go.work module like the rest, but was never
+            // in this matrix — so its Go code (execmcp, the worker's whole
+            // build/test sandbox) was never vetted, linted or tested by CI.
+            // It takes no proto dependency, hence no `proto ||` here.
+            const e2eRunner = ${{ steps.filter.outputs['e2e-runner'] }};
             const modules = [];
             if (proto || coreChanged) modules.push('core');
             if (proto || provisioner) modules.push('provisioner');
             if (proto || sidecar) modules.push('sidecar');
             if (proto || executor) modules.push('executor');
+            if (e2eRunner) modules.push('e2e-runner');
             return modules;
 
   buf:

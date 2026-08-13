@@ -89,6 +89,53 @@ func TestEveryDockerfileComponentIsWiredIntoCI(t *testing.T) {
 	}
 }
 
+// TestEveryGoWorkModuleIsInTheGoWorkflow asserts that every module listed
+// in go.work is mentioned in go.yml.
+//
+// Third instance of the same shape, found 2026-08-13: `e2e-runner/` was a
+// go.work module — building locally, part of `go build ./...` — but had no
+// paths-filter entry and no matrix entry in go.yml, so its Go code was
+// never vetted, linted or tested by CI. That code is execmcp, the worker's
+// entire build/test sandbox. A test added to it would have reported nothing
+// forever.
+//
+// The sibling test above guards docker.yml against a missing *image*; this
+// guards go.yml against a missing *module*. Same loose "mentioned anywhere"
+// approach, same reason: a strict matrix parse would be brittle enough to
+// get deleted, and the failure worth catching is absence, not arrangement.
+func TestEveryGoWorkModuleIsInTheGoWorkflow(t *testing.T) {
+	root := repoRoot(t)
+
+	goWork, err := os.ReadFile(filepath.Join(root, "go.work"))
+	if err != nil {
+		t.Fatalf("read go.work: %v", err)
+	}
+	workflow, err := os.ReadFile(filepath.Join(root, ".github", "workflows", "go.yml"))
+	if err != nil {
+		t.Fatalf("read go.yml: %v", err)
+	}
+	got := string(workflow)
+
+	for _, line := range strings.Split(string(goWork), "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "./") {
+			continue
+		}
+		// "./proto/gen/go" is generated code compiled as part of its
+		// dependents, not a module with its own CI job.
+		module := strings.TrimPrefix(line, "./")
+		if strings.Contains(module, "/") {
+			continue
+		}
+		if !strings.Contains(got, module) {
+			t.Errorf(
+				"go.work lists %q but .github/workflows/go.yml never mentions it — "+
+					"its code is never vetted, linted or tested in CI, and any test in it silently never runs",
+				module)
+		}
+	}
+}
+
 // TestWorkerImageHasProcps asserts the worker image installs procps.
 //
 // Same shape as the two above — missing exactly where nobody looks. The

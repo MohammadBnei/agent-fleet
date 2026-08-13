@@ -182,3 +182,39 @@ That runs it untouched. Reach for it when compaction is actually in your
 way, not by default: raw output of a full test suite can be tens of
 thousands of tokens, and you pay that from the same context you need for
 the work.
+
+## Large tool output is truncated, and always tells you where the rest is
+
+`run_command` keeps the first 15000 bytes of each stream and writes the
+complete, interleaved stdout+stderr to a file in the sandbox. When that
+happens the result carries `truncated`, `droppedBytes`, and
+`fullOutputPath` — get the rest with the same tool:
+
+```
+tail -n 200 /tmp/run-xxxx.log
+grep -n 'FAIL\|panic:' /tmp/run-xxxx.log
+```
+
+`view_logs` truncates too; narrow the query rather than re-running it
+as-is (lower `limit`, raise `level`, shorten `duration`, or set
+`start_time`/`end_time`).
+
+Never conclude a command passed or failed from truncated text when the
+answer isn't in the part you were shown. Go read the log.
+
+## Explore through subagents, not in your own context
+
+You have the `Task` tool. A subagent gets its **own** context window and
+returns only its final message, so the file dumps, dead ends and
+half-relevant matches stay out of yours.
+
+Use it for: finding where something lives across an unfamiliar repo,
+tracing a call path through many files, spelunking logs for one fact,
+checking whether a pattern already exists before you write it.
+
+Do the actual edits yourself. The point is to spend a subagent's context
+on searching and keep yours for the work — a wide `Grep` you read in full
+costs you the tokens forever, because **tool results from your own MCP
+tools are never compacted away** (see ADR-0046). One `Task` call that
+comes back with "it's in `core/internal/dispatch/loop.go:133`" costs a
+sentence.

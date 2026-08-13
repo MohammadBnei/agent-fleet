@@ -168,7 +168,16 @@ async function logSdkMessage(actor: string, msg: { type: string; [key: string]: 
   // emission ("bash-progress-30", "-60", …), NOT the originating
   // toolu_… id, so nothing downstream should try to pair on it.
   if (msg.type === "system" || msg.type === "auth_status" || msg.type === "tool_progress") {
-    log("info", `${actor} ${msg.subtype ?? msg.type}`, relayFields(msg));
+    // compact_boundary is the only one of these that costs something: the
+    // session just lost its detailed history to a summary. It carries the
+    // pre-compaction token count, which is the single most useful context
+    // metric the SDK emits — surface it at warn so it's greppable in Loki
+    // rather than buried in a system entry nothing reads (ADR-0046).
+    const compactPreTokens = (msg.compact_metadata as { pre_tokens?: number } | undefined)?.pre_tokens;
+    log(compactPreTokens === undefined ? "info" : "warn", `${actor} ${msg.subtype ?? msg.type}`, {
+      ...relayFields(msg),
+      ...(compactPreTokens === undefined ? {} : { preTokens: compactPreTokens }),
+    });
     await push(JSON.stringify({ sdk: msg.subtype ?? msg.type, ...relayFields(msg) }), "system");
     return;
   }
@@ -219,7 +228,24 @@ async function logSdkMessage(actor: string, msg: { type: string; [key: string]: 
     return;
   }
   if (msg.type === "result") {
-    log("info", `${actor} result`, { subtype: msg.subtype, numTurns: msg.num_turns, totalCostUsd: msg.total_cost_usd });
+    // Token fields ride the log line, not just the transcript row: `usage`
+    // has always been stored at :usage below, but only the transcript saw
+    // it, so the fleet had no queryable context metric at all. inputTokens
+    // is the number the context budget is judged on — a session that climbs
+    // monotonically toward the compact threshold shows up here first
+    // (ADR-0046). cacheReadInputTokens separates "context is large" from
+    // "context is large AND being re-read uncached", which cost differently.
+    const usage = msg.usage as
+      | { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number }
+      | undefined;
+    log("info", `${actor} result`, {
+      subtype: msg.subtype,
+      numTurns: msg.num_turns,
+      totalCostUsd: msg.total_cost_usd,
+      inputTokens: usage?.input_tokens,
+      outputTokens: usage?.output_tokens,
+      cacheReadInputTokens: usage?.cache_read_input_tokens,
+    });
     await push(
       JSON.stringify({
         subtype: msg.subtype,
