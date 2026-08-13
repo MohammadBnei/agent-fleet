@@ -63,6 +63,13 @@ func (c *Client) DeleteAll(ctx context.Context, taskID string) error {
 	if err := c.DeleteService(ctx, taskID); err != nil {
 		return err
 	}
+	// Here rather than in each teardown caller: every path that removes a
+	// sandbox already funnels through DeleteAll, so one line covers kill_env,
+	// core's terminal-status teardown, the dashboard delete and the reconcile
+	// sweep at once (docs/adr/0045).
+	if err := c.DeleteNetworkPolicy(ctx, taskID); err != nil {
+		return err
+	}
 	if err := c.DeletePod(ctx, taskID); err != nil {
 		return err
 	}

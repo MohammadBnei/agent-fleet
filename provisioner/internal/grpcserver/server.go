@@ -204,6 +204,12 @@ func (s *Server) CreateE2ESession(ctx context.Context, req *agentfleetv1.CreateE
 	if err := s.k8sc.CreateService(ctx, req.GetTaskId()); err != nil {
 		return nil, fmt.Errorf("create e2e service: %w", err)
 	}
+	// Fenced before it is reachable: the Service above is what makes the MCP
+	// ports resolvable, so the policy has to exist by the time anyone can
+	// dial them (docs/adr/0045).
+	if err := s.k8sc.CreateNetworkPolicy(ctx, req.GetTaskId()); err != nil {
+		return nil, fmt.Errorf("create e2e networkpolicy: %w", err)
+	}
 	if err := s.k8sc.CreateMiddleware(ctx, req.GetTaskId()); err != nil {
 		return nil, fmt.Errorf("create e2e middleware: %w", err)
 	}

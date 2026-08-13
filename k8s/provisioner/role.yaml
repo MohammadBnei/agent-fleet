@@ -46,6 +46,19 @@ rules:
 - apiGroups: ["traefik.io"]
   resources: ["ingressroutes", "middlewares"]
   verbs: ["create", "get", "list", "watch", "delete"]
+# docs/adr/0045: once a sidecar dials its own task's sandbox directly, "which
+# worker may reach which sandbox" has to be enforced by something. This grant
+# lets the provisioner create one narrow per-task NetworkPolicy alongside each
+# sandbox Service, rather than handing the sandbox a bearer token to verify —
+# docs/adr/0039's un-prompted run_command depends on that pod holding no fleet
+# credentials at all.
+#
+# Strictly less powerful than the secrets/PVC grant above, and it stays inside
+# docs/adr/0034's boundary: the worker pod still holds zero RBAC, and dialing a
+# Service needs DNS and a network path, not permissions.
+- apiGroups: ["networking.k8s.io"]
+  resources: ["networkpolicies"]
+  verbs: ["create", "get", "list", "watch", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
