@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.49.6](https://github.com/MohammadBnei/agent-fleet/compare/1.49.5...1.49.6) (2026-08-13)
+
+
+### Bug Fixes
+
+* **worker:** record the permission a plain reply resolves, so the plan card can leave ([#138](https://github.com/MohammadBnei/agent-fleet/issues/138)) ([fb7e0a0](https://github.com/MohammadBnei/agent-fleet/commit/fb7e0a0a77973f40aaa162c053a178591b6bc8e5))
+
 ## [1.49.5](https://github.com/MohammadBnei/agent-fleet/compare/1.49.4...1.49.5) (2026-08-13)
 
 
