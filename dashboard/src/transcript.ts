@@ -469,99 +469,11 @@ export function listSummary(entries: TranscriptEntry[]): ListSummary {
   };
 }
 
-export type SpineKind = "allow" | "deny" | "plan" | "pending" | "alarm";
-export type SpineItem = {
-  // The feed entry this item jumps to.
-  seq: bigint;
-  kind: SpineKind;
-  label: string;
-  detail: string | null;
-  time: string | null;
-};
-
-// The desktop rail: a session's decision history in one column, so "what have I
-// already told this agent, and what is it waiting on" is readable without
-// scrolling a thousand-line feed. Derived entirely from entries already parsed
-// above — no new wire data.
-//
-// Alarms are included because they answer the same question the rail exists for
-// ("why has it gone quiet"), and a failed MCP server silently removes tools.
-export function spineItems(entries: TranscriptEntry[]): SpineItem[] {
-  const decisions = resolvedPermissionDecisions(entries);
-  const denials = permissionDenyMessages(entries);
-  const pending = new Set(findPendingPermissions(entries).map((p) => p.entry.seq));
-  const out: SpineItem[] = [];
-
-  for (const e of entries) {
-    const time = entryTime(e);
-
-    if (e.type === TranscriptEntryType.PERMISSION_REQUEST) {
-      let tool = "";
-      try {
-        tool = String((JSON.parse(e.text) as { tool?: unknown }).tool ?? "");
-      } catch {
-        continue;
-      }
-      if (!tool) continue;
-      const isPlan = tool === "ExitPlanMode";
-      if (pending.has(e.seq)) {
-        out.push({
-          seq: e.seq,
-          kind: "pending",
-          label: isPlan ? "▸ plan · waiting" : `▸ permission · ${tool}`,
-          detail: "waiting now",
-          time,
-        });
-        continue;
-      }
-      const decision = decisions.get(e.seq);
-      // An unresolved request that isn't pending either (no response, no
-      // interrupt) has no outcome to state — skip rather than invent one.
-      if (!decision) continue;
-      if (isPlan) {
-        out.push({
-          seq: e.seq,
-          kind: decision === "allow" ? "plan" : "deny",
-          label: decision === "allow" ? "plan approved" : "plan · changes requested",
-          detail: denials.get(e.seq) ?? null,
-          time,
-        });
-        continue;
-      }
-      out.push({
-        seq: e.seq,
-        // "interrupted" groups with deny, not allow: the tool call never ran.
-        // Colouring it as a grant would tell the reader the opposite of what
-        // happened.
-        kind: decision === "allow" ? "allow" : "deny",
-        label: `${decision === "interrupted" ? "interrupted" : decision} · ${tool}`,
-        detail: denials.get(e.seq) ?? null,
-        time,
-      });
-      continue;
-    }
-
-    if (e.type === TranscriptEntryType.SYSTEM) {
-      const info = parseSdkSystemInfo(e.text);
-      if (info) {
-        for (const srv of info.mcpServers ?? []) {
-          if (srv.status === "connected") continue;
-          out.push({ seq: e.seq, kind: "alarm", label: `! mcp ${srv.name} ${srv.status}`, detail: null, time });
-        }
-        continue;
-      }
-      const sig = parseSdkSignal(e.text);
-      // The tier-5 alarms: an expired token, a model/rate-limit error, or a
-      // resume that silently started fresh. Not log lines — they're the answer
-      // to "why has it gone quiet".
-      if (sig?.error) {
-        out.push({ seq: e.seq, kind: "alarm", label: `! ${sig.sdk}`, detail: sig.error, time });
-      } else if (sig?.sdk === "auth_status" && sig.status && sig.status !== "ok") {
-        out.push({ seq: e.seq, kind: "alarm", label: "! authentication", detail: sig.status, time });
-      }
-    }
-  }
-  return out;
+// True when the session is stalled on a human: a permission the agent's own
+// tool call is blocked on, or an unanswered question. Both detail views use
+// this to decide whether the decision dock exists at all.
+export function hasPendingDecision(entries: TranscriptEntry[]): boolean {
+  return findPendingPermissions(entries).length > 0 || findPendingQuestion(entries) !== null;
 }
 
 export type Density = "everything" | "narrative" | "decisions";

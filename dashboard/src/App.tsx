@@ -251,7 +251,7 @@ export default function App() {
     <div className="h-dvh overflow-hidden bg-base-100 text-base-content flex flex-col">
       {isDesktop ? (
         <div className="flex-none flex items-center gap-4 px-4.5 py-3 border-b border-line bg-base-200">
-          <a href="/" className="flex items-center gap-2 text-[15px] font-semibold tracking-[0.02em] text-primary hover:opacity-80">
+          <a href="/" className="flex items-center gap-2 text-lg font-semibold tracking-[0.02em] text-primary hover:opacity-80">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="18" height="18" className="flex-none">
               <line x1="32" y1="32" x2="49.85" y2="42.3" stroke="currentColor" strokeOpacity="0.38" strokeWidth="2.65"></line>
               <line x1="32" y1="32" x2="32" y2="52.61" stroke="#f2749b" strokeOpacity="0.7" strokeWidth="2.65"></line>
@@ -269,7 +269,7 @@ export default function App() {
             </svg>
             herd
           </a>
-          <span className="text-[11.5px] text-dim2 whitespace-nowrap">
+          <span className="text-xs text-dim2 whitespace-nowrap">
             ukubi-cluster · {repoCount} repos
           </span>
           <Segmented value={view} options={NAV} onChange={selectView} className="ml-1" />
@@ -285,7 +285,7 @@ export default function App() {
                 className="flex items-center gap-2 cursor-pointer"
               >
                 <span className="w-[7px] h-[7px] rounded-full bg-error ring-glow animate-fpulse" />
-                <span className="text-[12.5px] font-medium text-error whitespace-nowrap">
+                <span className="text-sm font-medium text-error whitespace-nowrap">
                   {counts.waiting} waiting on you
                 </span>
               </button>
@@ -297,19 +297,19 @@ export default function App() {
                   onClick={() => setNeedsYouOnly(false)}
                   title="Show every session"
                   aria-label="Clear the waiting-on-you filter"
-                  className="text-[11px] text-dim2 hover:text-base-content border border-line px-1.5 py-0.5"
+                  className="text-xs text-dim2 hover:text-base-content border border-line px-1.5 py-0.5"
                 >
                   only ✕
                 </button>
               )}
             </div>
           )}
-          <span className={`text-[11.5px] text-dim2 whitespace-nowrap ${counts.waiting > 0 ? "" : "ml-auto"}`}>
+          <span className={`text-xs text-dim2 whitespace-nowrap ${counts.waiting > 0 ? "" : "ml-auto"}`}>
             {counts.working} working · {counts.done} done · {counts.idle} idle
           </span>
 
           {view === "tasks" && (
-            <label className="flex items-center gap-2 border border-line px-2.5 py-1 w-[150px] text-[11.5px] text-dim2 focus-within:border-primary/60">
+            <label className="flex items-center gap-2 border border-line px-2.5 py-1 w-[150px] text-xs text-dim2 focus-within:border-primary/60">
               <span aria-hidden>⌕</span>
               <input
                 value={filter}
@@ -332,7 +332,7 @@ export default function App() {
       ) : (
         <div className="flex-none border-b border-line bg-base-200">
           <div className="flex items-center gap-2.5 px-3.5 py-2.5">
-            <a href="/" className="flex items-center gap-1.5 text-[15px] font-semibold text-primary">
+            <a href="/" className="flex items-center gap-1.5 text-lg font-semibold text-primary">
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="16" height="16" className="flex-none">
                 <line x1="32" y1="32" x2="49.85" y2="42.3" stroke="currentColor" strokeOpacity="0.38" strokeWidth="2.65"></line>
                 <line x1="32" y1="32" x2="32" y2="52.61" stroke="#f2749b" strokeOpacity="0.7" strokeWidth="2.65"></line>
@@ -350,7 +350,7 @@ export default function App() {
               </svg>
               herd
             </a>
-            <span className="text-[10.5px] text-dim2">ukubi</span>
+            <span className="text-2xs text-dim2">ukubi</span>
             {counts.waiting > 0 && (
               <button
                 type="button"
@@ -358,7 +358,7 @@ export default function App() {
                 className="ml-auto flex items-center gap-1.5 border border-pink-line bg-pink-chip px-2 py-[3px] cursor-pointer"
               >
                 <span className="w-1.5 h-1.5 rounded-full bg-error ring-glow animate-fpulse" />
-                <span className="text-[12px] font-medium text-error whitespace-nowrap">
+                <span className="text-sm font-medium text-error whitespace-nowrap">
                   {counts.waiting} waiting
                 </span>
               </button>
@@ -368,7 +368,7 @@ export default function App() {
               onClick={() => setSearchOpen((v) => !v)}
               aria-label="Filter sessions"
               aria-expanded={searchOpen}
-              className={`text-[14px] px-1 ${counts.waiting > 0 ? "" : "ml-auto"} ${searchOpen ? "text-primary" : "text-dim"}`}
+              className={`text-base px-1 ${counts.waiting > 0 ? "" : "ml-auto"} ${searchOpen ? "text-primary" : "text-dim"}`}
             >
               ⌕
             </button>
@@ -390,7 +390,7 @@ export default function App() {
                 onChange={(e) => setFilter(e.target.value)}
                 placeholder="filter sessions"
                 aria-label="filter sessions"
-                className="w-full border border-line bg-transparent px-2.5 py-2 text-[12px] outline-none focus:border-primary/60 placeholder:text-dim2"
+                className="w-full border border-line bg-transparent px-2.5 py-2 text-sm outline-none focus:border-primary/60 placeholder:text-dim2"
               />
             </div>
           )}

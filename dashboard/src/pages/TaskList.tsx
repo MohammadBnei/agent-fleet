@@ -201,9 +201,9 @@ export function SectionHeading({
   const color = tone === "pink" ? "text-error" : tone === "green" ? "text-success" : "text-dim2";
   return (
     <div className={`flex items-center gap-2.5 ${className}`}>
-      <span className={`text-[11px] tracking-[0.14em] ${color} whitespace-nowrap`}>{title}</span>
+      <span className={`text-xs tracking-[0.14em] ${color} whitespace-nowrap`}>{title}</span>
       <span className={`flex-1 h-px ${tone === "pink" ? "bg-line" : "bg-line2"}`} />
-      {note && <span className="text-[11px] text-dim2 whitespace-nowrap">{note}</span>}
+      {note && <span className="text-xs text-dim2 whitespace-nowrap">{note}</span>}
     </div>
   );
 }
@@ -215,7 +215,7 @@ function DeleteButton({ onDelete }: { onDelete: () => void }) {
       onClick={onDelete}
       title="Delete this session"
       aria-label="Delete this session"
-      className="absolute top-1.5 right-1.5 w-5 h-5 flex items-center justify-center text-dim2 hover:text-error hover:bg-pink-chip text-[11px]"
+      className="absolute top-1.5 right-1.5 w-5 h-5 flex items-center justify-center text-dim2 hover:text-error hover:bg-pink-chip text-xs"
     >
       ✕
     </button>
@@ -250,20 +250,20 @@ function NeedsYouCard({
         tone="pink"
       >
         <div className="flex items-center gap-3 px-4 pt-3.5 pb-2.5 flex-wrap">
-          <span className="text-[13px] font-semibold">#{task.id.slice(0, 6)}</span>
+          <span className="text-base font-semibold">#{task.id.slice(0, 6)}</span>
           <button
             type="button"
             onClick={onSelect}
-            className="text-[13.5px] text-left hover:text-primary cursor-pointer min-w-0 break-words"
+            className="text-base text-left hover:text-primary cursor-pointer min-w-0 break-words"
           >
             {task.description}
           </button>
-          <span className="text-[11.5px] text-dim2">{repoLabel(task)}</span>
-          <span className="text-[11px] text-dim2 border border-line px-1.5 py-px">{task.status}</span>
+          <span className="text-xs text-dim2">{repoLabel(task)}</span>
+          <span className="text-xs text-dim2 border border-line px-1.5 py-px">{task.status}</span>
           {todos.length > 0 && (
             <div className="ml-auto flex items-center gap-2">
               <TickBar todos={todos} blocked cell="w-4" />
-              <span className="text-[11px] text-dim2">{todoProgress(todos)}</span>
+              <span className="text-xs text-dim2">{todoProgress(todos)}</span>
             </div>
           )}
         </div>
@@ -300,25 +300,25 @@ function FinishedRow({
         }`}
       >
         <span className={`w-[7px] h-[7px] rounded-full flex-none ${failed ? "bg-warning" : "bg-success"}`} />
-        <span className="text-[13px] font-semibold">#{task.id.slice(0, 6)}</span>
-        <button type="button" onClick={onSelect} className="text-[13.5px] text-left hover:text-primary cursor-pointer min-w-0 break-words">
+        <span className="text-base font-semibold">#{task.id.slice(0, 6)}</span>
+        <button type="button" onClick={onSelect} className="text-base text-left hover:text-primary cursor-pointer min-w-0 break-words">
           {task.description}
         </button>
-        <span className="text-[11.5px] text-dim2">{repoLabel(task)}</span>
+        <span className="text-xs text-dim2">{repoLabel(task)}</span>
         {failed ? (
-          <span className="ml-auto text-[12px] text-warning min-w-0 truncate" title={task.lastError}>
+          <span className="ml-auto text-sm text-warning min-w-0 truncate" title={task.lastError}>
             {task.status === "failed_permanently" ? "failed permanently" : "failed"}
             {task.lastError ? ` · ${task.lastError}` : ""}
           </span>
         ) : (
-          <span className="ml-auto text-[12px] text-dim">{pr ? pr.label : "no PR"}</span>
+          <span className="ml-auto text-sm text-dim">{pr ? pr.label : "no PR"}</span>
         )}
         {failed ? (
           <>
-            <button type="button" onClick={onOpenLogs} className="flex-none border border-acc-line px-3 py-1 text-[12px] hover:border-primary hover:text-primary">
+            <button type="button" onClick={onOpenLogs} className="flex-none border border-acc-line px-3 py-1 text-sm hover:border-primary hover:text-primary">
               read log
             </button>
-            <button type="button" onClick={onRetry} className="flex-none border border-acc-line px-3 py-1 text-[12px] hover:border-primary hover:text-primary">
+            <button type="button" onClick={onRetry} className="flex-none border border-acc-line px-3 py-1 text-sm hover:border-primary hover:text-primary">
               retry
             </button>
           </>
@@ -327,7 +327,7 @@ function FinishedRow({
             href={task.prUrl}
             target="_blank"
             rel="noreferrer"
-            className="flex-none border border-acc-line px-3 py-1 text-[12px] hover:border-primary hover:text-primary"
+            className="flex-none border border-acc-line px-3 py-1 text-sm hover:border-primary hover:text-primary"
           >
             review
           </a>
@@ -368,18 +368,18 @@ function WorkingRow({
             stale ? "bg-error" : live ? "bg-info animate-fpulse" : "border border-dim2"
           }`}
         />
-        <span className={`text-[12.5px] flex-none ${live ? "text-text2" : "text-dim2"}`}>#{task.id.slice(0, 6)}</span>
+        <span className={`text-sm flex-none ${live ? "text-text2" : "text-dim2"}`}>#{task.id.slice(0, 6)}</span>
         <button
           type="button"
           onClick={onSelect}
-          className={`text-[13px] text-left hover:text-primary cursor-pointer min-w-0 truncate ${live ? "" : "text-dim"}`}
+          className={`text-base text-left hover:text-primary cursor-pointer min-w-0 truncate ${live ? "" : "text-dim"}`}
         >
           {task.description}
         </button>
-        <span className="text-[11.5px] text-dim2 flex-none">{repoLabel(task)}</span>
+        <span className="text-xs text-dim2 flex-none">{repoLabel(task)}</span>
         {task.permissionMode === "bypassPermissions" && (
           <span
-            className="text-[11px] text-warning border border-orange-line px-1.5 py-px flex-none"
+            className="text-xs text-warning border border-orange-line px-1.5 py-px flex-none"
             title="every tool call runs without asking"
           >
             bypass
@@ -388,15 +388,15 @@ function WorkingRow({
 
         {provisioning ? (
           <>
-            <span className="ml-auto text-[12px] text-dim2 min-w-0 truncate">
+            <span className="ml-auto text-sm text-dim2 min-w-0 truncate">
               booting{task.podMessage ? ` · ${task.podMessage}` : ""}
             </span>
             <span className="w-[105px] h-[3px] bar-provisioning flex-none" />
-            <span className="text-[11px] text-dim2 w-6 text-right flex-none">—</span>
+            <span className="text-xs text-dim2 w-6 text-right flex-none">—</span>
           </>
         ) : (
           <>
-            <span className="ml-auto text-[12px] text-dim min-w-0 truncate">
+            <span className="ml-auto text-sm text-dim min-w-0 truncate">
               {inFlight
                 ? `⟳ ${inFlight.tool.toLowerCase()} · ${inFlight.summary}${
                     inFlight.elapsedSeconds !== null ? ` · ${inFlight.elapsedSeconds}s` : ""
@@ -406,7 +406,7 @@ function WorkingRow({
                   : "idle"}
             </span>
             <TickBar todos={todos} cell="w-4" className="flex-none" />
-            <span className="text-[11px] text-dim2 w-6 text-right flex-none">
+            <span className="text-xs text-dim2 w-6 text-right flex-none">
               {todos.length > 0 ? todoProgress(todos) : "—"}
             </span>
           </>
@@ -431,7 +431,7 @@ function QuietGroup({
   if (tasks.length === 0) return null;
   return (
     <Collapse
-      summary={<span className="text-[11.5px] text-dim2">▸ {title} · {tasks.length}</span>}
+      summary={<span className="text-xs text-dim2">▸ {title} · {tasks.length}</span>}
       summaryClassName="py-1"
       contentClassName="pl-3 py-1 flex flex-col gap-1"
     >
@@ -444,10 +444,10 @@ function QuietGroup({
             onClick={() => onSelect(t.id)}
             className="flex items-center gap-2.5 text-left hover:text-primary cursor-pointer"
           >
-            <span className="text-[11px] text-dim2 flex-none">#{t.id.slice(0, 6)}</span>
-            <span className="text-[12px] text-dim min-w-0 truncate flex-1">{t.description}</span>
+            <span className="text-xs text-dim2 flex-none">#{t.id.slice(0, 6)}</span>
+            <span className="text-sm text-dim min-w-0 truncate flex-1">{t.description}</span>
             {badge && (
-              <span className={`text-[10px] px-1 border tracking-wide flex-none ${badge.className}`} title={badge.title}>
+              <span className={`text-2xs px-1 border tracking-wide flex-none ${badge.className}`} title={badge.title}>
                 {badge.label}
               </span>
             )}
@@ -480,7 +480,7 @@ export function TaskList({
   const { needsYou, working, finished, stalled, proposed, quiet } = bucketTasks(tasks, needsYouIds);
 
   if (tasks.length === 0) {
-    return <div className="p-5 text-[13px] text-dim">No sessions.</div>;
+    return <div className="p-5 text-base text-dim">No sessions.</div>;
   }
 
   return (

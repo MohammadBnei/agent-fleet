@@ -38,7 +38,7 @@ function OpenSession({ onOpenSession, layout }: { onOpenSession: () => void; lay
     <button
       type="button"
       onClick={onOpenSession}
-      className={`text-[11.5px] text-dim hover:text-primary cursor-pointer ${
+      className={`text-xs text-dim hover:text-primary cursor-pointer ${
         layout === "stacked" ? "text-center w-full py-1" : "text-left"
       }`}
     >
@@ -57,7 +57,7 @@ function PermissionBody({ tool, input }: { tool: string; input: unknown }) {
 
   return (
     <>
-      <div className="text-[11px] text-dim tracking-[0.05em] break-all">
+      <div className="text-xs text-dim tracking-[0.05em] break-all">
         PERMISSION · {tool}
         {path && (
           <>
@@ -70,7 +70,7 @@ function PermissionBody({ tool, input }: { tool: string; input: unknown }) {
         {isDiff ? (
           <DiffLines before={i.old_string ?? ""} after={(i.new_string ?? i.content) as string} maxLines={4} />
         ) : (
-          <div className="border border-line bg-code px-2.5 py-[3px] text-[12px] text-text2 overflow-x-auto whitespace-pre-wrap break-all">
+          <div className="border border-line bg-code px-2.5 py-[3px] text-sm text-text2 overflow-x-auto whitespace-pre-wrap break-all">
             {summarizeToolInput(input)}
           </div>
         )}
@@ -109,10 +109,10 @@ export function DecisionInline({
   // Touch targets: the mobile mockup's allow/deny are ~44px tall, because this
   // is the surface most likely used to unblock a session away from a desk.
   const primaryBtn = `text-center font-semibold cursor-pointer bg-primary text-primary-content disabled:opacity-50 ${
-    stacked ? "py-3 text-[13.5px] flex-1" : "py-2 px-6 text-[13px]"
+    stacked ? "py-3 text-base flex-1" : "py-2 px-6 text-base"
   }`;
   const secondaryBtn = `text-center cursor-pointer border border-acc-line hover:border-error hover:text-error disabled:opacity-50 ${
-    stacked ? "py-3 text-[13.5px] flex-1" : "py-2 px-6 text-[13px]"
+    stacked ? "py-3 text-base flex-1" : "py-2 px-6 text-base"
   }`;
 
   // A proposal has no transcript yet — the decision is whether to dispatch at
@@ -122,10 +122,10 @@ export function DecisionInline({
   if (task.status === "proposed") {
     return (
       <div className={`${pad} flex flex-col gap-3`}>
-        <div className="text-[12px] text-dim leading-relaxed">
+        <div className="text-sm text-dim leading-relaxed">
           Machine-created and not dispatched — nothing runs until you approve it.
         </div>
-        {error && <div className="text-[11.5px] text-error">{error}</div>}
+        {error && <div className="text-xs text-error">{error}</div>}
         <div className={`flex gap-2.5 ${stacked ? "" : "items-center"}`}>
           <button type="button" disabled={busy} className={primaryBtn} onClick={() => send(() => client.approveTask({ taskId: task.id }))}>
             approve &amp; dispatch
@@ -169,9 +169,9 @@ export function DecisionInline({
       const plan = (permission.input as { plan?: string } | undefined)?.plan ?? "";
       return (
         <div className={`${pad} flex flex-col gap-2.5`}>
-          <div className="text-[11px] text-dim tracking-[0.05em]">PLAN · waiting for approval</div>
-          <div className="text-[12.5px] text-text2 leading-relaxed line-clamp-3">{plan.split("\n").slice(0, 4).join(" ")}</div>
-          {error && <div className="text-[11.5px] text-error">{error}</div>}
+          <div className="text-xs text-dim tracking-[0.05em]">PLAN · waiting for approval</div>
+          <div className="text-sm text-text2 leading-relaxed line-clamp-3">{plan.split("\n").slice(0, 4).join(" ")}</div>
+          {error && <div className="text-xs text-error">{error}</div>}
           <div className={`flex gap-2.5 ${stacked ? "" : "items-center"}`}>
             <button type="button" disabled={busy} className={primaryBtn} onClick={() => respond("allow")}>
               approve plan
@@ -186,7 +186,7 @@ export function DecisionInline({
 
     const actions = (
       <>
-        {error && <div className="text-[11.5px] text-error">{error}</div>}
+        {error && <div className="text-xs text-error">{error}</div>}
         <div className="flex gap-2.5">
           <button type="button" disabled={busy} className={primaryBtn} onClick={() => respond("allow")}>
             allow
@@ -215,7 +215,7 @@ export function DecisionInline({
           disabled={busy}
           placeholder="reason (optional) — sent to the agent"
           aria-label="denial reason"
-          className="border border-line px-2.5 py-[7px] text-[11.5px] bg-transparent outline-none focus:border-primary/60 placeholder:text-dim2 w-full"
+          className="border border-line px-2.5 py-[7px] text-xs bg-transparent outline-none focus:border-primary/60 placeholder:text-dim2 w-full"
         />
         <OpenSession onOpenSession={onOpenSession} layout={layout} />
       </>
@@ -271,7 +271,7 @@ export function DecisionInline({
     if (!q) {
       return (
         <div className={`${pad} flex flex-col gap-2.5`}>
-          <div className="text-[11px] text-dim tracking-[0.05em]">
+          <div className="text-xs text-dim tracking-[0.05em]">
             QUESTION · {questions?.length ?? 1} to answer
           </div>
           <OpenSession onOpenSession={onOpenSession} layout={layout} />
@@ -290,7 +290,7 @@ export function DecisionInline({
               onChange={() => toggleSelection(opt.label)}
               disabled={busy}
             />
-            <span className="text-[13px]">
+            <span className="text-base">
               <span className="font-medium">{opt.label}</span>
               {opt.description && <span className="text-dim2"> — {opt.description}</span>}
             </span>
@@ -309,7 +309,7 @@ export function DecisionInline({
               title={opt.description}
               onClick={() => toggleSelection(opt.label)}
               className={`border cursor-pointer disabled:opacity-50 ${
-                stacked ? "w-full text-left px-3.5 py-3 text-[13px]" : "px-3.5 py-2 text-[12.5px]"
+                stacked ? "w-full text-left px-3.5 py-3 text-base" : "px-3.5 py-2 text-sm"
               } ${
                 isSelected
                   ? "border-primary bg-primary/15 text-primary"
@@ -325,11 +325,11 @@ export function DecisionInline({
 
     const footer = (
       <div className={`flex gap-3.5 ${stacked ? "justify-center pt-1" : "items-center"}`}>
-        <button type="button" onClick={onOpenSession} className="text-[11.5px] text-dim hover:text-primary cursor-pointer py-1">
+        <button type="button" onClick={onOpenSession} className="text-xs text-dim hover:text-primary cursor-pointer py-1">
           write a reply
         </button>
         {onAskLater && (
-          <button type="button" onClick={onAskLater} className="text-[11.5px] text-dim2 hover:text-dim cursor-pointer py-1">
+          <button type="button" onClick={onAskLater} className="text-xs text-dim2 hover:text-dim cursor-pointer py-1">
             ask me later
           </button>
         )}
@@ -338,16 +338,16 @@ export function DecisionInline({
 
     return stacked ? (
       <div className={`${pad} flex flex-col gap-3`}>
-        <div className="text-[11px] text-dim tracking-[0.05em]">QUESTION · 1 of 1</div>
-        <div className="text-[13px] leading-relaxed">{q.question}</div>
-        {error && <div className="text-[11.5px] text-error">{error}</div>}
+        <div className="text-xs text-dim tracking-[0.05em]">QUESTION · 1 of 1</div>
+        <div className="text-base leading-relaxed">{q.question}</div>
+        {error && <div className="text-xs text-error">{error}</div>}
         <div className="flex flex-col gap-2">{options}</div>
         {q.multiSelect && (
           <button
             type="button"
             disabled={busy || selected.length === 0}
             onClick={submitAnswer}
-            className="w-full py-3 text-center text-[13.5px] font-semibold bg-primary text-primary-content disabled:opacity-50"
+            className="w-full py-3 text-center text-base font-semibold bg-primary text-primary-content disabled:opacity-50"
           >
             submit answer
           </button>
@@ -357,9 +357,9 @@ export function DecisionInline({
     ) : (
       <div className={`${pad} flex gap-4.5 items-center`}>
         <div className="flex-1 min-w-0">
-          <div className="text-[11px] text-dim tracking-[0.05em]">QUESTION · 1 of 1</div>
-          <div className="text-[13.5px] leading-relaxed mt-1.5">{q.question}</div>
-          {error && <div className="text-[11.5px] text-error mt-1.5">{error}</div>}
+          <div className="text-xs text-dim tracking-[0.05em]">QUESTION · 1 of 1</div>
+          <div className="text-base leading-relaxed mt-1.5">{q.question}</div>
+          {error && <div className="text-xs text-error mt-1.5">{error}</div>}
         </div>
         <div className="w-[320px] flex-none flex flex-wrap gap-2 items-center">
           {options}
@@ -374,7 +374,7 @@ export function DecisionInline({
   // decision shape the list can't render. Either way: say so and offer the door.
   return (
     <div className={`${pad} flex flex-col gap-2`}>
-      <div className="text-[12px] text-dim">A decision is waiting in this session.</div>
+      <div className="text-sm text-dim">A decision is waiting in this session.</div>
       <OpenSession onOpenSession={onOpenSession} layout={layout} />
     </div>
   );

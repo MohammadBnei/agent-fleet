@@ -41,7 +41,7 @@ export function DiffLines({
 
   const shown = expanded ? all : all.slice(0, maxLines);
   const hidden = all.length - shown.length;
-  const row = compact ? "px-[9px] py-[3px] text-[11.5px]" : "px-[11px] py-[3px] text-[12px]";
+  const row = compact ? "px-[9px] py-[3px] text-xs" : "px-[11px] py-[3px] text-sm";
 
   return (
     <div className="border border-line bg-code overflow-x-auto">

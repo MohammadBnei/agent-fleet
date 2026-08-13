@@ -86,7 +86,7 @@ export function ActionsMenu({
   return (
     <div className="flex flex-col gap-3">
       {(onHideToolsInFeedChange || onHideChangesInFeedChange) && (
-        <div className="flex items-center gap-3 text-[12px] text-base-content/70">
+        <div className="flex items-center gap-3 text-sm text-text2">
           {onHideToolsInFeedChange && (
             <label className="flex items-center gap-1.5 cursor-pointer">
               <input
@@ -159,7 +159,7 @@ export function ActionsMenu({
       )}
       {!isThotTask && (
       <label
-        className="flex items-center gap-1.5 text-[12px] text-base-content/70 cursor-pointer"
+        className="flex items-center gap-1.5 text-sm text-text2 cursor-pointer"
         title="Also delete this repo's shared postgres/redis instances — they're shared with other tasks, only tear them down if you're sure nothing else needs them"
       >
         <input

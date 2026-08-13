@@ -42,7 +42,7 @@ function RowActions({
 }) {
   const [deleting, setDeleting] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const btn = "border border-line px-2.5 py-1 text-[11.5px] text-dim hover:text-base-content disabled:opacity-50";
+  const btn = "border border-line px-2.5 py-1 text-xs text-dim hover:text-base-content disabled:opacity-50";
 
   async function download() {
     try {
@@ -74,7 +74,7 @@ function RowActions({
         type="button"
         onClick={() => setConfirmOpen(true)}
         disabled={deleting}
-        className="border border-line px-2.5 py-1 text-[11.5px] text-dim hover:text-error disabled:opacity-50"
+        className="border border-line px-2.5 py-1 text-xs text-dim hover:text-error disabled:opacity-50"
       >
         {deleting ? "…" : "delete"}
       </button>
@@ -157,12 +157,12 @@ export function Files() {
       <InlineError message={error} onRetry={load} onDismiss={() => setError(null)} />
 
       <div className="flex items-baseline gap-3 flex-wrap">
-        <h2 className="text-[13.5px] sm:text-[14px] font-semibold">Shared files</h2>
-        <span className="text-[11px] sm:text-[11.5px] text-dim2">
+        <h2 className="text-base font-semibold">Shared files</h2>
+        <span className="text-xs text-dim2">
           {isDesktop && "one flat space · every session and you can read, write and delete · "}
           {files.length} file{files.length === 1 ? "" : "s"} · {formatBytes(totalBytes)}
         </span>
-        <label className="ml-auto flex items-center gap-2 border border-line px-2.5 py-1.5 text-[11.5px] text-dim2 focus-within:border-primary/60">
+        <label className="ml-auto flex items-center gap-2 border border-line px-2.5 py-1.5 text-xs text-dim2 focus-within:border-primary/60">
           <span aria-hidden>⌕</span>
           <input
             value={filter}
@@ -193,11 +193,11 @@ export function Files() {
           dragging ? "border-primary bg-primary/5" : "border-acc-line"
         }`}
       >
-        <div className="text-[12px] sm:text-[12.5px] text-dim">
+        <div className="text-sm text-dim">
           {uploading ? "uploading…" : isDesktop ? "drop files here — or " : "upload a file"}
           {!uploading && isDesktop && <span className="text-primary">choose from your machine</span>}
         </div>
-        <div className="text-[10.5px] sm:text-[11px] text-dim2 mt-1.5">
+        <div className="text-2xs sm:text-xs text-dim2 mt-1.5">
           {isDesktop ? (
             <>
               an agent reads them with <span className="text-dim">list_shared_files</span> /{" "}
@@ -210,16 +210,16 @@ export function Files() {
       </button>
 
       {!loading && files.length === 0 && !error && (
-        <div className="text-[12.5px] text-dim2">No files in the shared space yet.</div>
+        <div className="text-sm text-dim2">No files in the shared space yet.</div>
       )}
       {files.length > 0 && shown.length === 0 && (
-        <div className="text-[12.5px] text-dim2">No file matches “{filter}”.</div>
+        <div className="text-sm text-dim2">No file matches “{filter}”.</div>
       )}
 
       {shown.length > 0 &&
         (isDesktop ? (
           <div className="border border-line2">
-            <div className={`grid ${COLS} gap-3.5 px-3.5 py-2 border-b border-line text-[10.5px] tracking-[0.1em] text-dim2`}>
+            <div className={`grid ${COLS} gap-3.5 px-3.5 py-2 border-b border-line text-2xs tracking-[0.1em] text-dim2`}>
               <div />
               <div>NAME</div>
               <div>SIZE</div>
@@ -233,14 +233,14 @@ export function Files() {
                   i === shown.length - 1 ? "" : "border-b border-line3"
                 }`}
               >
-                <span className="text-[12px] text-dim2" aria-hidden>
+                <span className="text-sm text-dim2" aria-hidden>
                   ▤
                 </span>
-                <div className="text-[12.5px] min-w-0 truncate" title={f.key}>
+                <div className="text-sm min-w-0 truncate" title={f.key}>
                   {f.key}
                 </div>
-                <div className="text-[12px] text-dim">{formatBytes(f.sizeBytes)}</div>
-                <div className="text-[12px] text-dim">{relative(f.lastModified)}</div>
+                <div className="text-sm text-dim">{formatBytes(f.sizeBytes)}</div>
+                <div className="text-sm text-dim">{relative(f.lastModified)}</div>
                 <div className="flex gap-1.5 justify-end">
                   <RowActions file={f} onDeleted={load} onError={setError} />
                 </div>
@@ -251,13 +251,13 @@ export function Files() {
           shown.map((f) => (
             <div key={f.key} className="border border-line2 px-3.5 py-3">
               <div className="flex items-baseline gap-2">
-                <span className="text-[12.5px] min-w-0 truncate" title={f.key}>
+                <span className="text-sm min-w-0 truncate" title={f.key}>
                   {f.key}
                 </span>
-                <span className="text-[11px] text-dim2 ml-auto flex-none">{formatBytes(f.sizeBytes)}</span>
+                <span className="text-xs text-dim2 ml-auto flex-none">{formatBytes(f.sizeBytes)}</span>
               </div>
               <div className="flex items-center gap-2 mt-2">
-                <span className="text-[11px] text-dim2">{relative(f.lastModified)}</span>
+                <span className="text-xs text-dim2">{relative(f.lastModified)}</span>
                 <div className="ml-auto flex gap-1.5">
                   <RowActions file={f} onDeleted={load} onError={setError} />
                 </div>

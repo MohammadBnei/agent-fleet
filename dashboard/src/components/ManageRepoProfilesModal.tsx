@@ -239,7 +239,7 @@ export function ManageRepoProfilesModal({ repoName }: { repoName: string }) {
 
       <Modal open={dialogOpen} onClose={close} boxClassName="max-w-2xl">
         <h3 className="font-semibold text-base mb-1">Environment recipes — {repoName}</h3>
-        <p className="text-xs text-base-content/50 mb-3">
+        <p className="text-xs text-dim mb-3">
           Named profiles ("worker", "e2e", "lint", ...) a task's pod resolves its tools/services from.
         </p>
 
@@ -253,7 +253,7 @@ export function ManageRepoProfilesModal({ repoName }: { repoName: string }) {
               onError={setError}
             />
           ))}
-          {profiles.length === 0 && <p className="text-sm text-base-content/50 py-2">No profiles configured yet.</p>}
+          {profiles.length === 0 && <p className="text-sm text-dim py-2">No profiles configured yet.</p>}
         </div>
 
         <form onSubmit={handleCreate} className="flex flex-col gap-1.5 mt-3 pt-3 border-t border-base-content/10">

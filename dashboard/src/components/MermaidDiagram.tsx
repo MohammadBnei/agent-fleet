@@ -28,7 +28,7 @@ export const MermaidDiagram = memo(function MermaidDiagram({ code }: { code: str
   }, [id, code]);
 
   if (error) {
-    return <pre className="text-[10.5px] font-mono whitespace-pre-wrap text-error my-2">{error}</pre>;
+    return <pre className="text-2xs font-mono whitespace-pre-wrap text-error my-2">{error}</pre>;
   }
   return <div ref={ref} className="my-2 [&_svg]:max-w-full" />;
 });

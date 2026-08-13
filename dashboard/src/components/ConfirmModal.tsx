@@ -41,7 +41,7 @@ export function ConfirmModal({
   return (
     <Modal open={open} onClose={onCancel}>
       <h3 className="font-semibold text-base mb-2">{title}</h3>
-      <p className="text-sm text-base-content/70">{message}</p>
+      <p className="text-sm text-text2">{message}</p>
       {confirmWord && (
         <>
           <p className="text-sm mt-3">

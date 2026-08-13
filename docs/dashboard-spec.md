@@ -240,9 +240,11 @@ Where the current UI falls down, i.e. what a rewrite should fix.
    decision is now rendered *and answerable in the list* — an `Edit` as a real
    diff with allow/deny — so unblocking a session costs no navigation at all. On
    mobile it docks above the composer rather than scrolling away inline.
-4. ~~**Density has no control.**~~ **Fixed.** A three-way density control, a
-   decision spine with jump-to-entry and `↓ next decision`, and collapse-all on
-   each grouped tool run.
+4. ~~**Density has no control.**~~ **Fixed.** A three-way density control
+   (whose `decisions` mode is the session's zoom-out) and collapse-all on each
+   grouped tool run. The decision spine this originally shipped with was
+   deleted in [adr/0043](adr/0043-one-decision-surface.md) — it was a second,
+   weaker implementation of that same density mode.
 5. ~~**Mobile is a port, not a design.**~~ **Fixed.** Designed from its own
    mockup: persistent tab bar, bucket filter chips, ~44px targets, the docked
    decision, and panels as a bottom sheet.

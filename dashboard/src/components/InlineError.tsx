@@ -17,13 +17,13 @@ export function InlineError({
   if (!message) return null;
   return (
     <div className="border border-orange-line bg-orange-bg px-3.5 py-3 flex gap-2.5 items-start">
-      <span className="text-warning text-[12px] flex-none">!</span>
-      <div className="text-[12px] text-warning leading-[1.55] min-w-0 flex-1 break-words">{message}</div>
+      <span className="text-warning text-sm flex-none">!</span>
+      <div className="text-sm text-warning leading-[1.55] min-w-0 flex-1 break-words">{message}</div>
       {onRetry && (
         <button
           type="button"
           onClick={onRetry}
-          className="flex-none border border-orange-line px-2.5 py-1 text-[11.5px] text-warning"
+          className="flex-none border border-orange-line px-2.5 py-1 text-xs text-warning"
         >
           retry
         </button>
@@ -33,7 +33,7 @@ export function InlineError({
           type="button"
           onClick={onDismiss}
           aria-label="Dismiss error"
-          className="flex-none text-dim2 hover:text-warning text-[11px]"
+          className="flex-none text-dim2 hover:text-warning text-xs"
         >
           ✕
         </button>

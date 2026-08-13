@@ -33,7 +33,7 @@ export function NotchCard({
   return (
     <div className={`relative border ${t.border} ${t.bg} ${className}`}>
       <div
-        className={`absolute -top-[7px] left-3 sm:left-3.5 px-[7px] text-[10px] sm:text-[10.5px] tracking-[0.1em] whitespace-nowrap ${labelBg} ${t.label}`}
+        className={`absolute -top-[7px] left-3 sm:left-3.5 px-[7px] text-2xs tracking-[0.1em] whitespace-nowrap ${labelBg} ${t.label}`}
       >
         {label}
       </div>

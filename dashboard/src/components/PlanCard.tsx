@@ -63,7 +63,7 @@ export function PlanCard({
       <button
         type="button"
         onClick={() => setIsExpanded(!isExpanded)}
-        className="flex items-start gap-2 text-[11px] text-dim2 hover:text-dim w-full text-left group"
+        className="flex items-start gap-2 text-xs text-dim2 hover:text-dim w-full text-left group"
       >
         <span className={`flex-none border px-1 ${decision === "interrupted" ? "border-pink-line text-error" : "border-green-line text-green-soft"}`}>{decision === "interrupted" ? "plan interrupted" : "plan approved"}</span>
         {isExpanded ? (
@@ -75,7 +75,7 @@ export function PlanCard({
             <Markdown text={plan.split("\n")[0]} />
           </div>
         )}
-        <span className="text-[10px] flex-none group-hover:text-dim">
+        <span className="text-2xs flex-none group-hover:text-dim">
           {isExpanded ? "▴" : "▾"}
         </span>
       </button>
@@ -141,12 +141,12 @@ export function PlanCard({
     <div className={`border-y border-pink-line bg-pink-bg py-4 ${edgeClassName}`}>
       <div className="flex items-center gap-2 mb-2.5">
         <span className="w-1.5 h-1.5 rounded-full bg-error animate-fpulse flex-none" />
-        <span className="text-[10.5px] tracking-[0.1em] text-error">◉ PLAN — NEEDS YOUR REVIEW</span>
+        <span className="text-2xs tracking-[0.1em] text-error">◉ PLAN — NEEDS YOUR REVIEW</span>
       </div>
       <div ref={wrapperRef} className="relative">
         <div
           onMouseUp={handleMouseUp}
-          className="text-[13px] leading-[1.7] max-h-[50vh] overflow-y-auto"
+          className="text-base leading-[1.7] max-h-[50vh] overflow-y-auto"
         >
           <Markdown text={plan} />
         </div>
@@ -166,16 +166,16 @@ export function PlanCard({
                   }}
                   placeholder="comment on selection…"
                   autoFocus
-                  className="w-48 bg-transparent outline-none text-[11px] px-1"
+                  className="w-48 bg-transparent outline-none text-xs px-1"
                 />
-                <button type="button" className="bg-primary text-primary-content px-2.5 py-1 text-[11px] font-semibold disabled:opacity-50" disabled={!draft.trim()} onClick={addAnnotation}>
+                <button type="button" className="bg-primary text-primary-content px-2.5 py-1 text-xs font-semibold disabled:opacity-50" disabled={!draft.trim()} onClick={addAnnotation}>
                   add
                 </button>
               </div>
             ) : (
               <button
                 type="button"
-                className="bg-primary text-primary-content px-2.5 py-1 text-[11px] font-semibold"
+                className="bg-primary text-primary-content px-2.5 py-1 text-xs font-semibold"
                 onClick={() => setSelection((s) => (s ? { ...s, editing: true } : s))}
               >
                 + comment
@@ -187,7 +187,7 @@ export function PlanCard({
       {annotations.length > 0 && (
         <div className="flex flex-col gap-1.5 mt-3">
           {annotations.map((a, i) => (
-            <div key={i} className="flex items-start gap-2 text-[11.5px] border border-line bg-base-200/50 px-2.5 py-1.5">
+            <div key={i} className="flex items-start gap-2 text-xs border border-line bg-base-200/50 px-2.5 py-1.5">
               <div className="flex-1 min-w-0">
                 <div className="text-dim2 italic truncate">&quot;{a.quote}&quot;</div>
                 <div className="text-text2">{a.comment}</div>
@@ -206,7 +206,7 @@ export function PlanCard({
       <div className="flex items-center gap-2 mt-3">
         <button
           type="button"
-          className="bg-primary text-primary-content px-6 py-2 text-[13px] font-semibold disabled:opacity-50"
+          className="bg-primary text-primary-content px-6 py-2 text-base font-semibold disabled:opacity-50"
           disabled={busy}
           onClick={onApprove}
         >
@@ -214,7 +214,7 @@ export function PlanCard({
         </button>
         <button
           type="button"
-          className="border border-acc-line px-6 py-2 text-[13px] hover:border-error hover:text-error disabled:opacity-50"
+          className="border border-acc-line px-6 py-2 text-base hover:border-error hover:text-error disabled:opacity-50"
           disabled={busy}
           onClick={() => setFeedbackOpen((v) => !v)}
         >
@@ -232,11 +232,11 @@ export function PlanCard({
             placeholder={annotations.length > 0 ? "add an overall comment (optional)…" : "what should change?"}
             autoFocus
             disabled={busy}
-            className="flex-1 min-w-0 bg-transparent border border-line px-3 py-2 text-[12px] outline-none focus:border-primary/60 placeholder:text-dim2"
+            className="flex-1 min-w-0 bg-transparent border border-line px-3 py-2 text-sm outline-none focus:border-primary/60 placeholder:text-dim2"
           />
           <button
             type="button"
-            className="bg-primary text-primary-content px-4 py-2 text-[12.5px] font-semibold disabled:opacity-50 flex-none"
+            className="bg-primary text-primary-content px-4 py-2 text-sm font-semibold disabled:opacity-50 flex-none"
             disabled={busy || (!feedback.trim() && annotations.length === 0)}
             onClick={send}
           >

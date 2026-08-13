@@ -2,7 +2,7 @@ import { memo, useMemo } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import { MermaidDiagram } from "./MermaidDiagram";
 
-// Hand-styled to match the existing text-[12px] text-base-content/90
+// Hand-styled to match the existing text-sm text-base-content
 // message-bubble baseline (no @tailwindcss/typography — this app has one
 // hardcoded-dark DaisyUI theme, prose/prose-invert buys nothing here).
 // Using useMemo to avoid recreating this object on every render, which
@@ -20,9 +20,9 @@ function useMarkdownComponents(): Components {
       ol: (props) => <ol className="pl-5 list-decimal mb-2" {...props} />,
       li: (props) => <li className="mb-0.5" {...props} />,
       a: (props) => <a className="text-primary underline" target="_blank" rel="noreferrer" {...props} />,
-      h1: (props) => <h1 className="font-semibold text-[13px] mt-2 mb-1" {...props} />,
-      h2: (props) => <h2 className="font-semibold text-[13px] mt-2 mb-1" {...props} />,
-      h3: (props) => <h3 className="font-semibold text-[13px] mt-2 mb-1" {...props} />,
+      h1: (props) => <h1 className="font-semibold text-base mt-2 mb-1" {...props} />,
+      h2: (props) => <h2 className="font-semibold text-base mt-2 mb-1" {...props} />,
+      h3: (props) => <h3 className="font-semibold text-base mt-2 mb-1" {...props} />,
       // Also the human-message treatment — see asDisplayMarkdown in transcript.ts,
       // which is the only thing that ever produces a blockquote in this app.
       // Colored to match the composer's ">"/Send button (text-primary) — this
@@ -40,12 +40,12 @@ function useMarkdownComponents(): Components {
         if (lang === "mermaid") return <MermaidDiagram code={text} />;
         if (lang) {
           return (
-            <pre className="bg-base-300/40 rounded-md p-2 overflow-x-auto font-mono text-[11px] my-2">
+            <pre className="bg-base-300/40 rounded-md p-2 overflow-x-auto font-mono text-xs my-2">
               <code>{text}</code>
             </pre>
           );
         }
-        return <code className="bg-base-content/10 rounded px-1 font-mono text-[11px]">{children}</code>;
+        return <code className="bg-base-content/10 rounded px-1 font-mono text-xs">{children}</code>;
       },
     }),
     [], // Empty deps - components object is stable

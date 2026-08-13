@@ -17,7 +17,7 @@ import { ActionsMenu } from "./ActionsMenu";
 function PanelHeading({ title, extra }: { title: string; extra?: React.ReactNode }) {
   return (
     <div className="flex items-baseline gap-2 mb-2.5">
-      <span className="text-[10.5px] tracking-[0.12em] text-dim2">{title}</span>
+      <span className="text-2xs tracking-[0.12em] text-dim2">{title}</span>
       {extra}
     </div>
   );
@@ -28,10 +28,10 @@ export function TodosPanel({ todos, blocked }: { todos: TodoItem[]; blocked: boo
     <div>
       <PanelHeading
         title="TODOS"
-        extra={todos.length > 0 && <span className="text-[11px] text-dim2 ml-auto">{todoProgress(todos)}</span>}
+        extra={todos.length > 0 && <span className="text-xs text-dim2 ml-auto">{todoProgress(todos)}</span>}
       />
       {todos.length === 0 ? (
-        <div className="text-[11.5px] text-dim2">no todos yet</div>
+        <div className="text-xs text-dim2">no todos yet</div>
       ) : (
         <>
           <TickBar todos={todos} blocked={blocked} className="mb-3" />
@@ -39,7 +39,7 @@ export function TodosPanel({ todos, blocked }: { todos: TodoItem[]; blocked: boo
             {todos.map((t, i) => (
               <div
                 key={i}
-                className={`text-[12px] leading-[1.5] ${
+                className={`text-sm leading-[1.5] ${
                   t.status === "in_progress" ? (blocked ? "text-error" : "text-base-content") : "text-dim2"
                 }`}
               >
@@ -64,13 +64,13 @@ export function ChangesPanel({ branch, changes }: { branch: string | null; chang
   return (
     <div className="min-w-0">
       <PanelHeading title="CHANGES" />
-      {branch && <div className="text-[11.5px] text-dim2 mb-2 truncate">{branch}</div>}
+      {branch && <div className="text-xs text-dim2 mb-2 truncate">{branch}</div>}
       {!changes || changes.length === 0 ? (
-        <div className="text-[11.5px] text-dim2">no changes yet</div>
+        <div className="text-xs text-dim2">no changes yet</div>
       ) : (
         <div className="flex flex-col gap-1.5">
           {changes.map((c, i) => (
-            <div key={i} className="flex gap-2 text-[12px] min-w-0">
+            <div key={i} className="flex gap-2 text-sm min-w-0">
               <span className="text-dim flex-1 min-w-0 truncate" title={c.path}>
                 {c.path}
               </span>
@@ -104,16 +104,16 @@ export function E2ePanel({ e2e }: { e2e: GetE2eStatusResponse | null }) {
     <NotchCard label="E2E PREVIEW" className="px-3 pt-3.5 pb-3 min-w-0">
       <div className="flex items-center gap-2 mb-2 min-w-0">
         <span className={`w-1.5 h-1.5 rounded-full flex-none ${state.dot}`} />
-        <span className={`text-[12px] flex-none ${state.cls}`}>{state.text}</span>
+        <span className={`text-sm flex-none ${state.cls}`}>{state.text}</span>
         {e2e.restarts > 0 && (
-          <span className="text-[11.5px] text-warning flex-none">
+          <span className="text-xs text-warning flex-none">
             · {e2e.restarts} restart{e2e.restarts === 1 ? "" : "s"}
           </span>
         )}
         {e2e.startCmdOverridden && (
           <span
             title="A human-approved override is running for this task only; the repo's profile is unchanged."
-            className="ml-auto flex-none text-[10px] text-warning border border-orange-line px-1"
+            className="ml-auto flex-none text-2xs text-warning border border-orange-line px-1"
           >
             overridden
           </span>
@@ -126,20 +126,20 @@ export function E2ePanel({ e2e }: { e2e: GetE2eStatusResponse | null }) {
           target="_blank"
           rel="noreferrer"
           title={e2e.previewUrl}
-          className="block text-[12px] text-primary hover:underline truncate min-w-0"
+          className="block text-sm text-primary hover:underline truncate min-w-0"
         >
           {e2e.previewUrl}
         </a>
       )}
 
       {running && !e2e.appReady && (
-        <div className="text-[11px] text-dim2 leading-snug min-w-0">
+        <div className="text-xs text-dim2 leading-snug min-w-0">
           Nothing on the app port yet — installing, or the command never binds{" "}
           <span className="text-dim">0.0.0.0:$PORT</span>.
         </div>
       )}
 
-      <div className="text-[11.5px] text-dim2 mt-2 leading-[1.6] min-w-0">
+      <div className="text-xs text-dim2 mt-2 leading-[1.6] min-w-0">
         profile: {e2e.profileName || "none"}
         {e2e.startCmd && (
           <>
@@ -155,7 +155,7 @@ export function E2ePanel({ e2e }: { e2e: GetE2eStatusResponse | null }) {
       {ingredients.length > 0 && (
         <div className="flex flex-wrap gap-1 mt-2 min-w-0">
           {ingredients.map((i) => (
-            <span key={i} className="text-[10.5px] border border-line text-dim2 px-1">
+            <span key={i} className="text-2xs border border-line text-dim2 px-1">
               {i}
             </span>
           ))}
@@ -183,7 +183,7 @@ export function SessionPanel({
   return (
     <div>
       <PanelHeading title="SESSION" />
-      <div className="text-[11.5px] text-dim2 leading-[1.6] mb-2.5">
+      <div className="text-xs text-dim2 leading-[1.6] mb-2.5">
         mode <span className="text-text2">{task.permissionMode || "default"}</span>
         {task.retryCount > 0 && ` · attempt ${task.retryCount + 1}`}
         {task.podPhase && ` · pod ${task.podPhase.replace("POD_PHASE_", "")}`}

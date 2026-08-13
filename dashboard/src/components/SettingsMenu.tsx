@@ -45,7 +45,7 @@ export function SettingsMenu({
         aria-label="Settings"
         popoverTarget="popover-settings"
         style={{ anchorName: "--anchor-settings" } as CSSProperties}
-        className="flex-none cursor-pointer px-1.5 py-1 text-[13px] text-dim hover:text-base-content"
+        className="flex-none cursor-pointer px-1.5 py-1 text-base text-dim hover:text-base-content"
       >
         ⚙
       </button>
@@ -56,11 +56,11 @@ export function SettingsMenu({
         className="dropdown dropdown-end mt-1 w-56 border border-line bg-base-200 p-3 flex flex-col gap-3 shadow-lg"
       >
         <div className="flex flex-col gap-1.5">
-          <span className="text-[10px] tracking-[0.12em] text-dim2">THEME</span>
+          <span className="text-2xs tracking-[0.12em] text-dim2">THEME</span>
           <Segmented value={theme} options={THEMES} onChange={onThemeChange} grow size="sm" />
         </div>
         <div className="flex flex-col gap-1.5">
-          <span className="text-[10px] tracking-[0.12em] text-dim2">MANAGE</span>
+          <span className="text-2xs tracking-[0.12em] text-dim2">MANAGE</span>
           <ManageReposModal />
           <ManagePromptSnippetsModal />
         </div>

@@ -51,21 +51,21 @@
   --color-base-200: #f8f6f2;
   --color-base-300: #efebe4;
   --color-base-content: #262330;
-  --color-primary: #6a4fd0;
+  --color-primary: #6345ce;
   --color-primary-content: #ffffff;
   --color-secondary: #4a4557;
   --color-secondary-content: #ffffff;
-  --color-accent: #6a4fd0;
+  --color-accent: #6345ce;
   --color-accent-content: #ffffff;
   --color-neutral: #efebe4;
   --color-neutral-content: #262330;
-  --color-info: #96690a;
+  --color-info: #7e5808;
   --color-info-content: #ffffff;
-  --color-success: #1d7a51;
+  --color-success: #196c49;
   --color-success-content: #ffffff;
-  --color-warning: #ac4f1c;
+  --color-warning: #9a4719;
   --color-warning-content: #ffffff;
-  --color-error: #c0325f;
+  --color-error: #ad2d56;
   --color-error-content: #ffffff;
   --radius-selector: 0;
   --radius-field: 0;
@@ -77,16 +77,30 @@
    (hairlines at three depths, the muted text ramp, and the tinted
    surface/border pair each status colour carries). Kept as raw custom
    properties rather than approximated with `base-content/NN` opacity so the
-   ported markup can use the same values the mockups do; the opacity ramp
-   already in the codebase is left alone and still reads correctly on both
-   backgrounds. */
+   ported markup can use the same values the mockups do. This is the app's
+   ONLY muted text ramp -- the parallel `text-base-content/NN` one that used
+   to coexist with it was never contrast-checked (light /50 measured 2.96:1)
+   and has been folded into these tokens.
+
+   The ramp is 244 usages and almost all of it is 11-13px, so the 4.5:1 AA bar
+   applies rather than the large-text 3:1 one. The mockups' original values
+   missed it (dark --dim2 was 3.34:1), so every text token below clears 4.5:1
+   against the *worst* surface it actually lands on -- which is never the page
+   background: in dark it's the collapsed group row (base-300/40 composited,
+   ~#1e1c24), in light the tinted card/row washes (--pink-glow over base-200,
+   --orange-wash over base-100). Those surfaces were measured in the running
+   app, not derived, and that distinction is the whole point: tuning against
+   base-100 alone still left --color-error at 4.19:1 on the decision spine's
+   own pink card and --dim2 at 4.41:1 on that group row. Ratios in the
+   comments are against the worst surface. Hue and saturation are unchanged
+   from the mockups; only lightness moved. */
 [data-theme="herd"] {
   --line: #2e2839;
   --line2: #242030;
   --line3: #1e1a28;
-  --text2: #a49cb5;
-  --dim: #837b96;
-  --dim2: #6f6880;
+  --text2: #a7a0b8; /* 7.03 on base-300 */
+  --dim: #9a94a9; /* 6.04 */
+  --dim2: #89839a; /* 4.63 */
   --code: #100f16;
   --acc-hi: #d3c3ff;
   --acc-line: #3d3550;
@@ -111,20 +125,20 @@
   --line: #cdc6b9;
   --line2: #ded8cd;
   --line3: #e6e1d8;
-  --text2: #4a4557;
-  --dim: #6d6779;
-  --dim2: #7b7488;
+  --text2: #4a4557; /* 7.33 on base-100 -- already passed, untouched */
+  --dim: #575261; /* 6.00 */
+  --dim2: #615d6c; /* 4.61 */
   --code: #f3f0ea;
   --acc-hi: #5540b5;
   --acc-line: #c8bcee;
   --pink-line: #e3b6c4;
   --pink-bg: #fdf2f5;
-  --pink-dim: #96566d;
+  --pink-dim: #864e62; /* 4.61 */
   --pink-wash: rgba(192, 50, 95, 0.07);
   --pink-chip: rgba(192, 50, 95, 0.09);
   --pink-glow: rgba(192, 50, 95, 0.18);
-  --minus: #b93f65;
-  --green-soft: #23855a;
+  --minus: #a53759; /* 4.63 */
+  --green-soft: #1c6c49; /* 4.62 */
   --green-dot: #4aa478;
   --green-line: #b6d9c4;
   --green-bg: #f0f7f2;
@@ -134,13 +148,39 @@
   --orange-wash: rgba(172, 79, 28, 0.06);
 }
 
-/* Tailwind's `rounded-*` scale is independent of DaisyUI's --radius-* tokens:
-   zeroing those squares DaisyUI's own components (btn, modal, badge) but leaves
-   every explicit `rounded-md`/`rounded-lg` in the codebase rounded. The mockups
-   are square throughout, so zero the scale here rather than hunt ~200 class
-   names. `rounded-full` is deliberately untouched — Tailwind hardcodes it, and
-   the status dots are genuinely circles. */
+/* The console's type scale. Before this, every size in the app was a hardcoded
+   `text-[Npx]` arbitrary value -- ~380 of them at 12 distinct sizes with 0.5px
+   steps, which is an accretion, not a scale, and left no single place to
+   retune. `--fs` is that place: raise it to grow the whole app without
+   disturbing any step's relationship to the others.
+
+   Line-heights are explicit because the arbitrary classes these replaced
+   carried none, so small text fell back to the font's `normal` (~1.3 for IBM
+   Plex Mono) -- tight for 11px mono. Components that need something else still
+   set `leading-*`, which wins via --tw-leading.
+
+   `xs`/`sm`/`base` deliberately shadow Tailwind's defaults: the modals that
+   predate the ADR-0042 console rewrite use those names and were rendering
+   2-5px larger than the console behind them. */
 @theme {
+  --fs: 1.15;
+  --text-2xs: calc(10.5px * var(--fs));
+  --text-2xs--line-height: 1.4;
+  --text-xs: calc(11.5px * var(--fs));
+  --text-xs--line-height: 1.4;
+  --text-sm: calc(12.5px * var(--fs));
+  --text-sm--line-height: 1.45;
+  --text-base: calc(13.5px * var(--fs));
+  --text-base--line-height: 1.45;
+  --text-lg: calc(15px * var(--fs));
+  --text-lg--line-height: 1.4;
+
+  /* Tailwind's `rounded-*` scale is independent of DaisyUI's --radius-* tokens:
+     zeroing those squares DaisyUI's own components (btn, modal, badge) but
+     leaves every explicit `rounded-md`/`rounded-lg` in the codebase rounded.
+     The mockups are square throughout, so zero the scale here rather than hunt
+     ~200 class names. `rounded-full` is deliberately untouched — Tailwind
+     hardcodes it, and the status dots are genuinely circles. */
   --radius-xs: 0;
   --radius-sm: 0;
   --radius-md: 0;
@@ -182,7 +222,9 @@
 @layer base {
   body {
     font-family: "IBM Plex Mono", ui-monospace, monospace;
-    -webkit-font-smoothing: antialiased;
+    /* Deliberately no `-webkit-font-smoothing: antialiased` -- on macOS it
+       thins glyphs, which is the wrong direction for light-on-dark mono at
+       11-13px and works against the contrast tuning above. */
     /* The theme has to reach the canvas, not just the app's root element:
        without this, `body` stays transparent and anything outside the root div
        (overscroll rubber-banding, a short page) falls back to the browser's own
@@ -204,6 +246,19 @@
     background: var(--color-primary);
     color: var(--color-primary-content);
   }
+}
+
+/* DaisyUI sizes its buttons off its own `--fontsize`, not the `--text-*` scale
+   above, so `btn-sm`/`btn-xs` stayed at a flat 12px/11px while the rest of the
+   console grew — the modals ended up with buttons smaller than their own body
+   text. Rebinding the component's documented variable keeps them on the one
+   knob. Unlayered on purpose: DaisyUI ships these in `@layer components`, and
+   unlayered rules outrank any layer. */
+.btn-sm {
+  --fontsize: var(--text-sm);
+}
+.btn-xs {
+  --fontsize: var(--text-xs);
 }
 
 @keyframes fpulse {

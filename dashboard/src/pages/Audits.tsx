@@ -79,8 +79,8 @@ function AuditForm({
 
   return (
     <Modal open onClose={onClose} boxClassName="max-w-lg">
-      <h3 className="text-[13.5px] font-semibold mb-1">{audit ? "Edit audit" : "New audit"}</h3>
-      <p className="text-[11px] text-dim2 mb-3.5">
+      <h3 className="text-base font-semibold mb-1">{audit ? "Edit audit" : "New audit"}</h3>
+      <p className="text-xs text-dim2 mb-3.5">
         A periodic check the cluster agent runs on its own. Each run still asks for permission before any mutating
         action, and lands as a proposal you approve.
       </p>
@@ -90,7 +90,7 @@ function AuditForm({
           onChange={(e) => setName(e.target.value)}
           placeholder="name (e.g. etcd-health)"
           aria-label="audit name"
-          className="border border-line bg-transparent px-2.5 py-2 text-[12.5px] outline-none focus:border-primary/60 placeholder:text-dim2"
+          className="border border-line bg-transparent px-2.5 py-2 text-sm outline-none focus:border-primary/60 placeholder:text-dim2"
         />
         <textarea
           value={prompt}
@@ -98,7 +98,7 @@ function AuditForm({
           rows={4}
           placeholder="what should it check?"
           aria-label="audit prompt"
-          className="border border-line bg-transparent px-2.5 py-2 text-[12.5px] outline-none focus:border-primary/60 placeholder:text-dim2"
+          className="border border-line bg-transparent px-2.5 py-2 text-sm outline-none focus:border-primary/60 placeholder:text-dim2"
         />
         <div className="flex items-center gap-2.5">
           <input
@@ -107,23 +107,23 @@ function AuditForm({
             value={intervalSeconds}
             onChange={(e) => setIntervalSeconds(Number(e.target.value))}
             aria-label="interval in seconds"
-            className="w-28 border border-line bg-transparent px-2.5 py-2 text-[12.5px] outline-none focus:border-primary/60"
+            className="w-28 border border-line bg-transparent px-2.5 py-2 text-sm outline-none focus:border-primary/60"
           />
-          <span className="text-[11.5px] text-dim2">
+          <span className="text-xs text-dim2">
             seconds between runs — {humanInterval(Math.max(60, intervalSeconds))} (minimum 60)
           </span>
         </div>
-        {error && <div className="text-[12px] text-error">{error}</div>}
+        {error && <div className="text-sm text-error">{error}</div>}
         <div className="flex gap-2.5 mt-1">
           <button
             type="button"
             disabled={busy || !name.trim() || !prompt.trim() || intervalSeconds < 60}
             onClick={() => void save()}
-            className="bg-primary text-primary-content px-4 py-2 text-[12.5px] font-semibold disabled:opacity-50"
+            className="bg-primary text-primary-content px-4 py-2 text-sm font-semibold disabled:opacity-50"
           >
             {audit ? "Save" : "Create"}
           </button>
-          <button type="button" onClick={onClose} className="border border-line px-4 py-2 text-[12.5px] text-dim">
+          <button type="button" onClick={onClose} className="border border-line px-4 py-2 text-sm text-dim">
             Cancel
           </button>
         </div>
@@ -145,7 +145,7 @@ function auditActions(
   onDelete: () => void,
   busy: boolean,
 ) {
-  const btn = "border border-line px-2.5 py-1 text-[11.5px] text-dim hover:text-base-content disabled:opacity-50";
+  const btn = "border border-line px-2.5 py-1 text-xs text-dim hover:text-base-content disabled:opacity-50";
   return (
     <>
       <button type="button" disabled={busy} onClick={() => act(() => client.runScheduledAuditNow({ id: audit.id }))} className={btn}>
@@ -175,7 +175,7 @@ function auditActions(
       <button
         type="button"
         onClick={onDelete}
-        className="border border-line px-2.5 py-1 text-[11.5px] text-dim hover:text-error"
+        className="border border-line px-2.5 py-1 text-xs text-dim hover:text-error"
       >
         delete
       </button>
@@ -252,9 +252,9 @@ export function Audits({
       />
 
       <div className="flex items-baseline gap-3 flex-wrap">
-        <h2 className="text-[13.5px] sm:text-[14px] font-semibold">Scheduled audits</h2>
+        <h2 className="text-base font-semibold">Scheduled audits</h2>
         {isDesktop && (
-          <span className="text-[11.5px] text-dim2">
+          <span className="text-xs text-dim2">
             recurring tasks · a run lands in the task list as <span className="text-primary">proposed</span> and waits
             for you
           </span>
@@ -262,7 +262,7 @@ export function Audits({
         <button
           type="button"
           onClick={() => setCreating(true)}
-          className="ml-auto border border-acc-line px-3 py-1.5 text-[11.5px] hover:border-primary hover:text-primary"
+          className="ml-auto border border-acc-line px-3 py-1.5 text-xs hover:border-primary hover:text-primary"
         >
           + new audit
         </button>
@@ -273,7 +273,7 @@ export function Audits({
         <div className="border border-acc-line bg-pink-bg px-3.5 py-3">
           <div className="flex items-center gap-2.5 flex-wrap">
             <span className="w-[7px] h-[7px] rounded-full bg-primary flex-none" />
-            <span className="text-[12.5px]">
+            <span className="text-sm">
               {proposed.length} proposed run{proposed.length === 1 ? "" : "s"} waiting for approval
             </span>
           </div>
@@ -283,7 +283,7 @@ export function Audits({
                 <button
                   type="button"
                   onClick={() => onSelectTask(t.id)}
-                  className="text-[12px] text-dim hover:text-primary text-left min-w-0 truncate flex-1"
+                  className="text-sm text-dim hover:text-primary text-left min-w-0 truncate flex-1"
                 >
                   #{t.id.slice(0, 6)} {t.description}
                 </button>
@@ -291,7 +291,7 @@ export function Audits({
                   type="button"
                   disabled={busy}
                   onClick={() => proposeAct(() => client.approveTask({ taskId: t.id }))}
-                  className="flex-none bg-primary text-primary-content px-3.5 py-1.5 text-[12px] font-semibold disabled:opacity-50"
+                  className="flex-none bg-primary text-primary-content px-3.5 py-1.5 text-sm font-semibold disabled:opacity-50"
                 >
                   approve &amp; dispatch
                 </button>
@@ -299,7 +299,7 @@ export function Audits({
                   type="button"
                   disabled={busy}
                   onClick={() => proposeAct(() => client.deleteTask({ taskId: t.id }))}
-                  className="flex-none border border-acc-line px-3.5 py-1.5 text-[12px] hover:border-error hover:text-error disabled:opacity-50"
+                  className="flex-none border border-acc-line px-3.5 py-1.5 text-sm hover:border-error hover:text-error disabled:opacity-50"
                 >
                   dismiss
                 </button>
@@ -309,13 +309,13 @@ export function Audits({
         </div>
       )}
 
-      {loading && audits.length === 0 && <div className="text-[12.5px] text-dim">Loading…</div>}
-      {!loading && audits.length === 0 && <div className="text-[12.5px] text-dim2">No audits scheduled.</div>}
+      {loading && audits.length === 0 && <div className="text-sm text-dim">Loading…</div>}
+      {!loading && audits.length === 0 && <div className="text-sm text-dim2">No audits scheduled.</div>}
 
       {audits.length > 0 &&
         (isDesktop ? (
           <div className="border border-line2">
-            <div className={`grid ${COLS} gap-3.5 px-3.5 py-2 border-b border-line text-[10.5px] tracking-[0.1em] text-dim2`}>
+            <div className={`grid ${COLS} gap-3.5 px-3.5 py-2 border-b border-line text-2xs tracking-[0.1em] text-dim2`}>
               <div />
               <div>AUDIT</div>
               <div>SCHEDULE</div>
@@ -332,28 +332,28 @@ export function Audits({
               >
                 <StatusDot audit={a} />
                 <div className="min-w-0">
-                  <div className="text-[13px] truncate">{a.name}</div>
-                  <div className="text-[11px] text-dim2 mt-0.5 truncate" title={a.prompt}>
+                  <div className="text-base truncate">{a.name}</div>
+                  <div className="text-xs text-dim2 mt-0.5 truncate" title={a.prompt}>
                     {a.prompt.split("\n")[0]}
                   </div>
                 </div>
-                <div className="text-[12px] text-dim">{humanInterval(a.intervalSeconds)}</div>
+                <div className="text-sm text-dim">{humanInterval(a.intervalSeconds)}</div>
                 <div className="min-w-0">
                   {a.lastRunAt ? (
                     <>
-                      <div className="text-[12px] text-text2">{relative(a.lastRunAt)}</div>
+                      <div className="text-sm text-text2">{relative(a.lastRunAt)}</div>
                       <div
-                        className={`text-[11px] mt-0.5 truncate ${a.lastStatus.startsWith("error") ? "text-warning" : "text-dim2"}`}
+                        className={`text-xs mt-0.5 truncate ${a.lastStatus.startsWith("error") ? "text-warning" : "text-dim2"}`}
                         title={a.lastStatus}
                       >
                         {a.lastStatus || "no status"}
                       </div>
                     </>
                   ) : (
-                    <span className="text-[12px] text-dim2">never</span>
+                    <span className="text-sm text-dim2">never</span>
                   )}
                 </div>
-                <div className="text-[12px] text-dim">{a.enabled ? relative(a.nextRunAt) : "paused"}</div>
+                <div className="text-sm text-dim">{a.enabled ? relative(a.nextRunAt) : "paused"}</div>
                 <div className="flex gap-1.5 justify-end flex-wrap">
                   {auditActions(a, act, () => setEditing(a), () => setPendingDelete(a), busy)}
                 </div>
@@ -370,17 +370,17 @@ export function Audits({
             >
               <div className="flex items-center gap-2">
                 <StatusDot audit={a} />
-                <span className="text-[12.5px] min-w-0 truncate">{a.name}</span>
-                <span className="text-[11px] text-dim2 ml-auto flex-none">
+                <span className="text-sm min-w-0 truncate">{a.name}</span>
+                <span className="text-xs text-dim2 ml-auto flex-none">
                   {a.enabled ? relative(a.nextRunAt) : "paused"}
                 </span>
               </div>
-              <div className="text-[11.5px] text-dim mt-1.5 leading-[1.6]">
+              <div className="text-xs text-dim mt-1.5 leading-[1.6]">
                 {humanInterval(a.intervalSeconds)}
                 <br />
                 <span className="text-dim2">{a.prompt.split("\n")[0]}</span>
               </div>
-              <div className={`text-[11.5px] mt-1.5 ${a.lastStatus.startsWith("error") ? "text-warning" : "text-text2"}`}>
+              <div className={`text-xs mt-1.5 ${a.lastStatus.startsWith("error") ? "text-warning" : "text-text2"}`}>
                 {a.lastRunAt ? `last: ${relative(a.lastRunAt)} · ${a.lastStatus || "no status"}` : "never run"}
               </div>
               <div className="flex gap-2 mt-2.5 flex-wrap">

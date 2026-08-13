@@ -96,8 +96,8 @@ export function NewTaskDialog({
         aria-label="Send a task"
         className={
           compact
-            ? "text-[15px] text-dim hover:text-primary px-1 flex-none"
-            : "flex-none border border-acc-line px-3 py-1.5 text-[11.5px] hover:border-primary hover:text-primary"
+            ? "text-lg text-dim hover:text-primary px-1 flex-none"
+            : "flex-none border border-acc-line px-3 py-1.5 text-xs hover:border-primary hover:text-primary"
         }
       >
         {compact ? "+" : "+ send a task"}
@@ -148,7 +148,7 @@ export function NewTaskDialog({
             <fieldset className="flex flex-col gap-1 text-sm">
               <legend className="mb-1">Guidance (optional)</legend>
               {snippets.map((s) => (
-                <label key={s.id} className="flex items-center gap-2 text-[12px]">
+                <label key={s.id} className="flex items-center gap-2 text-sm">
                   <input
                     type="checkbox"
                     checked={snippetIds.includes(s.id)}
