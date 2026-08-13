@@ -2,7 +2,10 @@ package mcpproxy
 
 import (
 	"context"
+	"net"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/mark3labs/mcp-go/client"
 )
@@ -48,6 +51,67 @@ func TestCallTool_RoutesRunCommandToExec(t *testing.T) {
 	}
 	if playwrightDialed {
 		t.Error("run_command must not go through the Playwright client")
+	}
+}
+
+// TestCachedClient_DoesNotSerializeAcrossTasks pins the reason cachedClient
+// dials outside the mutex. The Proxy is fleet-wide, so when the dial and MCP
+// handshake ran under the lock, one task connecting to a sandbox that wasn't
+// listening yet blocked every other task's tool calls until its context
+// expired — a wedged sandbox stalled the whole fleet.
+//
+// The assertion is deliberately not a stopwatch. The listener accepts
+// connections and then never answers, so under the old code the second task
+// never reaches the network at all: it is parked on p.mu.Lock() while the
+// first hangs. Counting arrivals is exact where timing would be flaky.
+func TestCachedClient_DoesNotSerializeAcrossTasks(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer func() { _ = ln.Close() }()
+
+	var mu sync.Mutex
+	var held []net.Conn
+	arrived := make(chan struct{}, 4)
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			mu.Lock()
+			held = append(held, conn)
+			mu.Unlock()
+			arrived <- struct{}{} // accepted, and deliberately never answered
+		}
+	}()
+	defer func() {
+		mu.Lock()
+		for _, c := range held {
+			_ = c.Close()
+		}
+		mu.Unlock()
+	}()
+
+	url := "http://" + ln.Addr().String() + "/mcp"
+	p := New(func(string) string { return url }, func(string) string { return url })
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	for _, taskID := range []string{"task-a", "task-b"} {
+		go func() {
+			//nolint:errcheck // the call never completes; reaching the listener is the assertion
+			_, _ = p.CallTool(ctx, taskID, "browser_navigate", map[string]any{"url": "http://localhost"})
+		}()
+	}
+
+	for i := range 2 {
+		select {
+		case <-arrived:
+		case <-time.After(5 * time.Second):
+			t.Fatalf("only %d of 2 tasks reached the listener — the other is blocked behind the proxy mutex", i)
+		}
 	}
 }
 
