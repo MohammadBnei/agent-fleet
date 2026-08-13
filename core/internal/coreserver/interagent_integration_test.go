@@ -25,7 +25,7 @@ func newInterAgentServer(t *testing.T) (*Server, *tasks.Store, transcript.Store,
 	pool := dbtest.NewPool(t)
 	taskStore := tasks.NewStore(pool)
 	transcr := transcript.NewPostgresStore(pool)
-	return New(transcr, taskStore, nil, nil, nil, nil, nil), taskStore, transcr, context.Background()
+	return New(transcr, taskStore, nil, nil, nil, nil, nil, nil), taskStore, transcr, context.Background()
 }
 
 func seedSession(t *testing.T, ctx context.Context, store *tasks.Store, status string) string {
