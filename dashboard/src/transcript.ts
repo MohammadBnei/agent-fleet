@@ -117,6 +117,38 @@ export function resolvedPermissionDecisions(entries: TranscriptEntry[]): Map<big
   return out;
 }
 
+// A decision the human has made but the server hasn't echoed back yet.
+//
+// Every surface that shows a decision — the feed card, the dock, the list
+// row — derives its state from `entries` alone, so the honest way to make a
+// click land immediately is to put the answer *in* entries and let all
+// three agree, rather than teaching each one about a separate "pending"
+// flag. Answering a permission is two round trips before anything visibly
+// changes (respondToPermission, then the response entry arriving on the
+// transcript stream), which is the window where a card sat there still
+// offering allow/deny as though the click never happened.
+//
+// An optimistic entry is dropped the moment the real one supersedes it, so
+// the server always wins: this only ever fills the gap, it never invents a
+// decision the fleet didn't record.
+export function withOptimistic(real: TranscriptEntry[], optimistic: TranscriptEntry[]): TranscriptEntry[] {
+  if (optimistic.length === 0) return real;
+  const kept = optimistic.filter((o) => {
+    const answers = o.replyTo;
+    if (answers === undefined) return false;
+    return !real.some(
+      (e) =>
+        // core appends both kinds via AppendReply, so the real entry carries
+        // the same reply_to this one was built with.
+        (e.type === o.type && e.replyTo === answers) ||
+        // ...or the agent stopped waiting for the decision altogether, which
+        // resolves it just as firmly as an answer does.
+        ((e.type === TranscriptEntryType.INTERRUPT || e.type === TranscriptEntryType.ABORT) && e.seq > answers),
+    );
+  });
+  return kept.length === 0 ? real : [...real, ...kept];
+}
+
 // The human's stated reason for a denial, keyed by the request's own seq.
 // Parsed alongside the decision above but kept separate so that Map's type
 // stays a plain outcome — only the collapsed card needs this.
@@ -401,6 +433,32 @@ export function entryTime(entry: TranscriptEntry): string | null {
   const d = new Date(entry.createdAt);
   if (Number.isNaN(d.getTime())) return null;
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+// The SDK's result message carries two kinds of number and gives no hint
+// which is which: per-result (num_turns, duration_ms, usage) and
+// session-cumulative (total_cost_usd, duration_api_ms, modelUsage costs).
+// Printed side by side on one "turn ended" line they read as one receipt,
+// so a 3.9-second turn that emitted 44 tokens showed up as "$1.546 · 3.9s
+// (7m24s api)" — the whole session's spend, attributed to its cheapest
+// turn. Subtracting the previous result gives each line its own share;
+// the session totals still live in the task header.
+//
+// `prev` can exceed `cur` when a session resumes and the SDK's counters
+// restart, hence the clamp — a negative cost is worse than a flat 0.
+export function resultDelta(cur: SdkResultSummary, prev: SdkResultSummary | null): SdkResultSummary {
+  if (!prev) return cur;
+  const sub = (a?: number, b?: number) => Math.max(0, (a ?? 0) - (b ?? 0));
+  const modelUsage: Record<string, SdkModelUsage> = {};
+  for (const [name, usage] of Object.entries(cur.modelUsage ?? {})) {
+    modelUsage[name] = { ...usage, costUSD: sub(usage.costUSD, prev.modelUsage?.[name]?.costUSD) };
+  }
+  return {
+    ...cur,
+    totalCostUsd: sub(cur.totalCostUsd, prev.totalCostUsd),
+    durationApiMs: sub(cur.durationApiMs, prev.durationApiMs),
+    modelUsage: cur.modelUsage ? modelUsage : undefined,
+  };
 }
 
 export function latestResultSummary(entries: TranscriptEntry[]): SdkResultSummary | null {

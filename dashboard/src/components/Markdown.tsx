@@ -12,12 +12,14 @@ function useMarkdownComponents(): Components {
     () => ({
       p: (props) => <p className="mb-2 last:mb-0" {...props} />,
       ul: (props) => <ul className="pl-4 list-disc mb-2" {...props} />,
-      // pl-5, not pl-4 like ul — "1."/"2."/"3." markers (list-style-position:
-      // outside, the browser default) need more gutter than a bullet glyph
-      // does; at pl-4 the digit clips against the container edge (visible in
-      // PlanCard's full-bleed layout, but the same underlying gutter applies
-      // everywhere this renders).
-      ol: (props) => <ol className="pl-5 list-decimal mb-2" {...props} />,
+      // The gutter is sized in `ch` because the body font is IBM Plex Mono:
+      // a marker is "10." wide at worst, plus the browser's own marker gap,
+      // and 4ch covers that exactly at any font size. pl-4 clipped the digit
+      // outright; pl-5 (a fixed 20px) still cut it roughly in half on a
+      // phone — visible in any numbered plan, which is most of them. Guessing
+      // a px gutter for a proportional-ish marker is what kept getting this
+      // wrong; `ch` measures the thing actually being fitted.
+      ol: (props) => <ol className="pl-[4ch] list-decimal mb-2" {...props} />,
       li: (props) => <li className="mb-0.5" {...props} />,
       a: (props) => <a className="text-primary underline" target="_blank" rel="noreferrer" {...props} />,
       h1: (props) => <h1 className="font-semibold text-base mt-2 mb-1" {...props} />,

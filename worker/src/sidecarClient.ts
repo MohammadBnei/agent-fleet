@@ -131,9 +131,19 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
 // and was never called again — permanently ending the task's ability to
 // receive another human message (a permission decision, Discuss, even Abort) for the
 // rest of its life, with nothing but one easy-to-miss log line as
-// evidence. lastSeq tracks how far we've actually delivered so a
+// evidence. nextSeq tracks how far we've actually delivered so a
 // reconnect resumes exactly there via the sidecar's sinceSeq query param
 // — no replayed or skipped messages.
+//
+// sinceSeq is the first *unread* seq, not the last read one: core's
+// ReadSince is `WHERE seq >= $1` (internal/transcript/postgres.go) and
+// hands back `nextSeq = lastEntry.Seq + 1`, the same convention the
+// dispatch path (LatestSeq -> RESUME_FROM_SEQ) and the dashboard's own
+// cursor use. Storing entry.seq here instead re-delivered the newest
+// human message on every single reconnect, and the SDK takes a repeated
+// streamed input as a fresh user turn — so the agent visibly answered the
+// same question twice, minutes apart, with nothing in the transcript
+// explaining why.
 //
 // startSeq seeds the initial cursor (default 0, a brand-new task's
 // natural starting point) — a resumed/warmed pod must pass its own
@@ -145,22 +155,22 @@ export async function streamHumanMessages(
   signal: AbortSignal,
   startSeq = 0,
 ): Promise<void> {
-  let lastSeq = startSeq;
+  let nextSeq = startSeq;
   while (!signal.aborted) {
     try {
       await streamOnce(
-        lastSeq,
+        nextSeq,
         async (entry) => {
           await onEntry(entry);
-          lastSeq = entry.seq;
+          nextSeq = entry.seq + 1;
         },
         signal,
       );
       if (signal.aborted) return;
-      log("warn", "human-messages stream ended, reconnecting", { lastSeq });
+      log("warn", "human-messages stream ended, reconnecting", { nextSeq });
     } catch (err) {
       if (signal.aborted) return;
-      log("warn", "human-messages stream failed, reconnecting", { lastSeq, error: String(err) });
+      log("warn", "human-messages stream failed, reconnecting", { nextSeq, error: String(err) });
     }
     await sleep(RECONNECT_DELAY_MS, signal);
   }

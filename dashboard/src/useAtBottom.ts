@@ -25,9 +25,12 @@ export function useAtBottom<T extends HTMLElement>(threshold = 100) {
     checkAtBottom();
   });
 
-  function scrollToBottom() {
+  // useCallback, so an effect can honestly depend on it: as a plain function
+  // this got a new identity every render, which quietly made every effect
+  // listing it in its deps an every-render effect.
+  const scrollToBottom = useCallback(() => {
     ref.current?.scrollTo({ top: ref.current.scrollHeight, behavior: "smooth" });
-  }
+  }, []);
 
   return { ref, atBottom, onScroll: checkAtBottom, scrollToBottom };
 }

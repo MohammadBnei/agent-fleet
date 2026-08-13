@@ -60,12 +60,26 @@ afterEach(() => {
 // not yet pinned down; see
 // https://github.com/MohammadBnei/agent-fleet/issues/59. Skipped in CI
 // until that's resolved — un-skip once the underlying hang is fixed.
-test.skip("reconnects after the server ends the stream cleanly, resuming from the last delivered seq", async () => {
+test.skip("reconnects after the server ends the stream cleanly, resuming past the last delivered seq", async () => {
+  // The fake serves `seq >= sinceSeq` because that is what the real one
+  // does (core's ReadSince, internal/transcript/postgres.go) — an
+  // exclusive fake would happily pass while the cursor was off by one.
+  // sinceSeq is the first *unread* seq; sending back the last *read* one
+  // replays it, and the SDK treats a repeated streamed input as a fresh
+  // user turn (observed in prod: the agent answered the same question
+  // twice, minutes apart).
+  const corpus = [
+    { seq: 1, from: "human", text: "first", type: "discussion" },
+    { seq: 2, from: "human", text: "second", type: "discussion" },
+  ];
   let call = 0;
-  handler = () => {
-    call++;
-    if (call === 1) return sseResponse([dataLine({ seq: 1, from: "human", text: "first", type: "discussion" })]);
-    return sseResponse([dataLine({ seq: 2, from: "human", text: "second", type: "discussion" })]);
+  handler = (req) => {
+    const since = Number(new URL(req.url).searchParams.get("sinceSeq") ?? 0);
+    const available = corpus.filter((e) => e.seq >= since);
+    // One entry per connection, so the reconnect cursor is what decides
+    // what arrives next rather than a single response carrying both.
+    const next = available.slice(0, ++call === 1 ? 1 : available.length);
+    return sseResponse(next.map(dataLine));
   };
 
   const entries: { seq: number; text: string }[] = [];
@@ -79,10 +93,10 @@ test.skip("reconnects after the server ends the stream cleanly, resuming from th
 
   expect(entries).toEqual([
     { seq: 1, text: "first" },
-    { seq: 2, text: "second" },
+    { seq: 2, text: "second" }, // not [1, 1, 2] — seq 1 is not re-delivered
   ]);
   expect(receivedSinceSeqs[0]).toBe("0");
-  expect(receivedSinceSeqs[1]).toBe("1"); // resumed from the last delivered seq, not replayed from 0
+  expect(receivedSinceSeqs[1]).toBe("2"); // one past the last delivered seq
 }, 10000);
 
 test.skip("startSeq seeds the initial cursor instead of always requesting from 0", async () => {

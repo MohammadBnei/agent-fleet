@@ -6,6 +6,7 @@ import {
   parseSdkSystemInfo,
   parseSdkToolResult,
   parseSdkToolUse,
+  type SdkResultSummary,
   type SdkSignal,
 } from "../transcript";
 import { Markdown } from "./Markdown";
@@ -182,8 +183,21 @@ function SignalView({ signal, compact }: { signal: SdkSignal; compact?: boolean 
   }
 }
 
-function ResultView({ entry, compact }: { entry: TranscriptEntry; compact?: boolean }) {
-  const r = parseSdkResultSummary(entry.text);
+// `result` is the summary with its session-cumulative fields already
+// reduced to this turn's share (SessionFeed owns that, since only the walk
+// knows which result came before). Falling back to the raw parse keeps the
+// component usable on its own — at the cost of the cumulative reading, so
+// prefer passing it.
+function ResultView({
+  entry,
+  compact,
+  result,
+}: {
+  entry: TranscriptEntry;
+  compact?: boolean;
+  result?: SdkResultSummary | null;
+}) {
+  const r = result ?? parseSdkResultSummary(entry.text);
   if (!r) return <LogLine badge="turn ended" compact={compact}>{entry.text}</LogLine>;
 
   const wall = formatDuration(r.durationMs);
@@ -285,7 +299,15 @@ function SessionInitView({ entry, compact }: { entry: TranscriptEntry; compact?:
   );
 }
 
-export function TranscriptEntryView({ entry, compact }: { entry: TranscriptEntry; compact?: boolean }) {
+export function TranscriptEntryView({
+  entry,
+  compact,
+  result,
+}: {
+  entry: TranscriptEntry;
+  compact?: boolean;
+  result?: SdkResultSummary | null;
+}) {
   const logSize = compact ? "text-2xs" : "text-xs";
 
   if (entry.type === TranscriptEntryType.SYSTEM) {
@@ -326,7 +348,8 @@ export function TranscriptEntryView({ entry, compact }: { entry: TranscriptEntry
     );
   }
 
-  if (entry.type === TranscriptEntryType.RESULT) return <ResultView entry={entry} compact={compact} />;
+  if (entry.type === TranscriptEntryType.RESULT)
+    return <ResultView entry={entry} compact={compact} result={result} />;
 
   // Backend-verified events (a real transcript row core only writes after a
   // genuine dashboard/Discord action) get a compact log-line treatment

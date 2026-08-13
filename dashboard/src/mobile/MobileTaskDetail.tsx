@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { client } from "../connectClient";
 import { isThot, repoLabel } from "../taskKind";
 import {
@@ -13,6 +13,7 @@ import { useTaskDetail } from "../useTaskDetail";
 import { useAtBottom } from "../useAtBottom";
 import { useLocalStorageState } from "../useLocalStorageState";
 import { sessionBadge } from "../pages/TaskList";
+import { ActionButton } from "../components/ActionButton";
 import { DecisionDock } from "../components/DecisionDock";
 import { ErrorModal } from "../components/ErrorModal";
 import { BypassConfirmModal } from "../components/BypassConfirmModal";
@@ -57,6 +58,8 @@ export function MobileTaskDetail({
     pendingMessage,
     run,
     sendDiscuss,
+    respondToPermission,
+    answerQuestion,
     clearActionError,
   } = useTaskDetail(taskId);
   const [message, setMessage] = useState("");
@@ -78,13 +81,22 @@ export function MobileTaskDetail({
     prevLen.current = entries.length;
   }, [entries, atBottom, scrollToBottom]);
 
+  // Before the first paint of this task's feed, not after — as a plain effect
+  // it painted the top of the history and then visibly scrolled down. Same
+  // reasoning as TaskDetail's copy.
   const scrolledFor = useRef<string | null>(null);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (entries.length === 0 || scrolledFor.current === taskId) return;
     scrolledFor.current = taskId;
     const el = feedRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [taskId, entries, feedRef]);
+
+  // The optimistic echo renders before the server has the message; without
+  // this, a send only scrolled once the real entry came back over the stream.
+  useEffect(() => {
+    if (pendingMessage !== null) scrollToBottom();
+  }, [pendingMessage, scrollToBottom]);
 
   if (loadError) {
     return (
@@ -115,13 +127,6 @@ export function MobileTaskDetail({
     if (!text) return;
     setMessage("");
     sendDiscuss(text);
-  }
-
-  function respond(seq: bigint, behavior: "allow" | "deny", msg?: string) {
-    run(
-      () => client.respondToPermission({ taskId, seq, decisionJson: JSON.stringify({ behavior, message: msg }) }),
-      `permission:${seq}`,
-    );
   }
 
   return (
@@ -183,10 +188,8 @@ export function MobileTaskDetail({
           busyKey={busyKey}
           compact
           dockPendingDecision
-          onRespond={(seq, decision) => respond(seq, decision.behavior, decision.message)}
-          onAnswer={(seq, answers) =>
-            run(() => client.answerQuestion({ taskId, seq, answersJson: JSON.stringify({ answers }) }), `question:${seq}`)
-          }
+          onRespond={respondToPermission}
+          onAnswer={answerQuestion}
           onPlanFeedback={(text) => sendDiscuss(text)}
         />
         {pendingMessage && (
@@ -212,32 +215,30 @@ export function MobileTaskDetail({
         entries={entries}
         busyKey={busyKey}
         compact
-        onRespond={(seq, decision) => respond(seq, decision.behavior, decision.message)}
-        onAnswer={(seq, answers) =>
-          run(() => client.answerQuestion({ taskId, seq, answersJson: JSON.stringify({ answers }) }), `question:${seq}`)
-        }
+        onRespond={respondToPermission}
+        onAnswer={answerQuestion}
         onPlanFeedback={(text) => sendDiscuss(text)}
       />
 
       <div className="flex-none border-t border-line">
         {(docked || slashCommands.length > 0) && (
           <div className="flex gap-2 px-3.5 pt-2.5 overflow-x-auto">
-            <button
-              type="button"
+            <ActionButton
+              busy={busyKey === "action:interrupt"}
               disabled={busyKey !== null}
-              onClick={() => run(() => client.interrupt({ taskId }), "actions")}
+              onClick={() => run(() => client.interrupt({ taskId }), "action:interrupt")}
               className="flex-none border border-line text-dim px-2.5 py-1.5 text-xs whitespace-nowrap"
             >
               /interrupt
-            </button>
-            <button
-              type="button"
+            </ActionButton>
+            <ActionButton
+              busy={busyKey === "action:mode"}
               disabled={busyKey !== null}
-              onClick={() => run(() => client.setPermissionMode({ taskId, mode: "plan" }), "actions")}
+              onClick={() => run(() => client.setPermissionMode({ taskId, mode: "plan" }), "action:mode")}
               className="flex-none border border-line text-dim px-2.5 py-1.5 text-xs whitespace-nowrap"
             >
               /mode plan
-            </button>
+            </ActionButton>
             {slashCommands.map((c) => (
               <button
                 key={c}
@@ -286,6 +287,7 @@ export function MobileTaskDetail({
           <SessionPanel
             task={task}
             busy={busyKey !== null}
+            busyKey={busyKey}
             run={run}
             previewUrl={previewUrl}
             isThotTask={isThot(task)}

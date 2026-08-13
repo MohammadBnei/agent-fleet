@@ -12,6 +12,10 @@ import {
   inFlightTool,
   hasPendingDecision,
   entryTime,
+  resultDelta,
+  withOptimistic,
+  findPendingPermissions,
+  resolvedPermissionDecisions,
 } from "./transcript";
 
 let nextSeq = 0n;
@@ -174,4 +178,106 @@ test("hasPendingDecision covers an unanswered permission and an unanswered quest
   expect(hasPendingDecision([asked, full(TranscriptEntryType.ANSWER, "{}")])).toBe(false);
 
   expect(hasPendingDecision([])).toBe(false);
+});
+
+// The three real turns that exposed this: cost/api-time climbed
+// monotonically across turns whose own wall clock was 1m16s, 21s and 3.9s,
+// so the last line claimed $1.546 and 7m24s of API time for four seconds
+// of work.
+test("resultDelta charges each turn only its own share of a cumulative total", () => {
+  const first = {
+    numTurns: 10,
+    totalCostUsd: 1.425,
+    durationMs: 76_000,
+    durationApiMs: 422_000,
+    modelUsage: { haiku: { costUSD: 0.068 }, sonnet: { costUSD: 1.357 } },
+  };
+  const second = {
+    numTurns: 4,
+    totalCostUsd: 1.52,
+    durationMs: 21_000,
+    durationApiMs: 440_000,
+    modelUsage: { haiku: { costUSD: 0.073 }, sonnet: { costUSD: 1.448 } },
+  };
+
+  // No predecessor: the first result of a session is already its own share.
+  expect(resultDelta(first, null)).toBe(first);
+
+  const d = resultDelta(second, first);
+  expect(d.totalCostUsd).toBeCloseTo(0.095, 5);
+  expect(d.durationApiMs).toBe(18_000);
+  expect(d.modelUsage?.sonnet.costUSD).toBeCloseTo(0.091, 5);
+  // Per-result fields pass through untouched — they were never cumulative.
+  expect(d.numTurns).toBe(4);
+  expect(d.durationMs).toBe(21_000);
+});
+
+test("resultDelta clamps instead of going negative when a resumed session restarts its counters", () => {
+  const before = { totalCostUsd: 1.546, durationApiMs: 444_000, modelUsage: { sonnet: { costUSD: 1.473 } } };
+  const afterResume = { totalCostUsd: 0.02, durationApiMs: 3_000, modelUsage: { sonnet: { costUSD: 0.02 } } };
+
+  const d = resultDelta(afterResume, before);
+  expect(d.totalCostUsd).toBe(0);
+  expect(d.durationApiMs).toBe(0);
+  expect(d.modelUsage?.sonnet.costUSD).toBe(0);
+});
+
+// --- optimistic decisions ----------------------------------------------------
+
+// Answering is two round trips (the RPC, then the entry arriving on the
+// stream) before anything visibly changes. These cover the gap-filling: it
+// must make the decision look answered everywhere at once, and it must lose
+// to the server the instant the server has an opinion.
+const optimisticResponse = (replyTo: bigint, behavior: "allow" | "deny") =>
+  full(TranscriptEntryType.PERMISSION_RESPONSE, JSON.stringify({ behavior }), { from: "human", replyTo });
+
+test("an optimistic response resolves the permission for every surface at once", () => {
+  const request = perm("Edit", { file_path: "a.py" });
+  const merged = withOptimistic([request], [optimisticResponse(request.seq, "allow")]);
+
+  expect(findPendingPermissions(merged)).toEqual([]);
+  expect(resolvedPermissionDecisions(merged).get(request.seq)).toBe("allow");
+  expect(hasPendingDecision(merged)).toBe(false);
+});
+
+test("the real response supersedes the optimistic one instead of doubling it", () => {
+  const request = perm("Edit");
+  const real = respond(request.seq, "allow");
+  const merged = withOptimistic([request, real], [optimisticResponse(request.seq, "allow")]);
+
+  expect(merged.filter((e) => e.type === TranscriptEntryType.PERMISSION_RESPONSE).length).toBe(1);
+  expect(merged).toEqual([request, real]);
+});
+
+test("an interrupt supersedes an unanswered optimistic response", () => {
+  // The agent stopped waiting: showing "allowed" for a decision the fleet
+  // never applied is the one failure worse than showing it late.
+  const request = perm("Bash");
+  const interrupt = full(TranscriptEntryType.INTERRUPT, "stopped");
+  const merged = withOptimistic([request, interrupt], [optimisticResponse(request.seq, "allow")]);
+
+  expect(merged.filter((e) => e.type === TranscriptEntryType.PERMISSION_RESPONSE).length).toBe(0);
+  expect(resolvedPermissionDecisions(merged).get(request.seq)).toBe("interrupted");
+});
+
+test("an optimistic answer resolves its question, and the real answer replaces it", () => {
+  const asked = full(TranscriptEntryType.QUESTION, JSON.stringify({ questions: [{ question: "which?" }] }));
+  const echo = full(TranscriptEntryType.ANSWER, JSON.stringify({ answers: { "which?": "a" } }), {
+    from: "human",
+    replyTo: asked.seq,
+  });
+  expect(hasPendingDecision(withOptimistic([asked], [echo]))).toBe(false);
+
+  const realAnswer = full(TranscriptEntryType.ANSWER, "{}", { from: "human", replyTo: asked.seq });
+  const merged = withOptimistic([asked, realAnswer], [echo]);
+  expect(merged.filter((e) => e.type === TranscriptEntryType.ANSWER).length).toBe(1);
+});
+
+test("withOptimistic returns the original array when it has nothing to add", () => {
+  const request = perm("Edit");
+  const real = respond(request.seq, "allow");
+  const entries = [request, real];
+  // Same reference, so React's own change detection sees no update.
+  expect(withOptimistic(entries, [])).toBe(entries);
+  expect(withOptimistic(entries, [optimisticResponse(request.seq, "allow")])).toBe(entries);
 });

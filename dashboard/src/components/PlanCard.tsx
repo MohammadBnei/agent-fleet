@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import { Markdown } from "./Markdown";
+import { ActionButton } from "./ActionButton";
 
 type Annotation = { quote: string; comment: string };
 type SelectionPopover = { quote: string; x: number; y: number; editing: boolean };
@@ -34,10 +35,18 @@ export function PlanCard({
   onFeedback,
   edgeClassName,
   allowAnnotate = true,
+  docked = false,
 }: {
   plan: string;
   pending: boolean;
   busy: boolean;
+  // The dock already caps its own height and scrolls (that is the whole of
+  // what that wrapper does), so the plan body must NOT bring a second
+  // scroller inside it. Nested, the inner box was taller than the dock
+  // itself — 422px of plan inside a 379px dock on a phone — so dragging the
+  // plan text only ever moved the inner box, and Approve / request changes
+  // sat permanently below the fold with no way to drag to them.
+  docked?: boolean;
   // "Request changes" never resolves the request itself (see this file's
   // own top comment) — it stays pending and re-arms via a plain reply, so
   // the only way `!pending` happens here without a real Approve is a later
@@ -146,7 +155,7 @@ export function PlanCard({
       <div ref={wrapperRef} className="relative">
         <div
           onMouseUp={handleMouseUp}
-          className="text-base leading-[1.7] max-h-[50vh] overflow-y-auto"
+          className={`text-base leading-[1.7] ${docked ? "" : "max-h-[50vh] overflow-y-auto"}`}
         >
           <Markdown text={plan} />
         </div>
@@ -204,14 +213,13 @@ export function PlanCard({
         </div>
       )}
       <div className="flex items-center gap-2 mt-3">
-        <button
-          type="button"
+        <ActionButton
           className="bg-primary text-primary-content px-6 py-2 text-base font-semibold disabled:opacity-50"
-          disabled={busy}
+          busy={busy}
           onClick={onApprove}
         >
-          {busy ? "…" : "approve"}
-        </button>
+          approve
+        </ActionButton>
         <button
           type="button"
           className="border border-acc-line px-6 py-2 text-base hover:border-error hover:text-error disabled:opacity-50"
@@ -234,14 +242,14 @@ export function PlanCard({
             disabled={busy}
             className="flex-1 min-w-0 bg-transparent border border-line px-3 py-2 text-sm outline-none focus:border-primary/60 placeholder:text-dim2"
           />
-          <button
-            type="button"
+          <ActionButton
             className="bg-primary text-primary-content px-4 py-2 text-sm font-semibold disabled:opacity-50 flex-none"
-            disabled={busy || (!feedback.trim() && annotations.length === 0)}
+            busy={busy}
+            disabled={!feedback.trim() && annotations.length === 0}
             onClick={send}
           >
-            {busy ? "…" : "send"}
-          </button>
+            send
+          </ActionButton>
         </div>
       )}
     </div>

@@ -2,9 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import { isThot } from "./taskKind";
 import { Code, ConnectError } from "@connectrpc/connect";
 import { client, subscribeTranscript } from "./connectClient";
+import { pollVisible } from "./pollVisible";
+import { withOptimistic } from "./transcript";
 import type { Task } from "./gen/agentfleet/v1/core_pb";
 import type { GetE2eStatusResponse } from "./gen/agentfleet/v1/dashboard_pb";
-import type { TranscriptEntry } from "./gen/agentfleet/v1/transcript_pb";
+import { TranscriptEntryType, type TranscriptEntry } from "./gen/agentfleet/v1/transcript_pb";
 
 // Shared data-loading for a single task's session view — used by both the
 // desktop TaskDetail and the mobile MobileTaskDetail, which differ only in
@@ -37,6 +39,13 @@ export function useTaskDetail(taskId: string) {
   // latest value without needing to resubscribe on every keystroke/send).
   const [pendingMessage, setPendingMessage] = useState<string | null>(null);
   const pendingRef = useRef<string | null>(null);
+  // The same idea as pendingMessage, for decisions: answering a permission
+  // is two round trips (the RPC, then the response entry arriving on the
+  // stream) before the card stops offering allow/deny. Holding the answer
+  // here and merging it into `entries` means every surface that derives
+  // from entries — feed card, dock, list row — agrees instantly, and the
+  // real entry supersedes it the moment it lands. See withOptimistic.
+  const [optimistic, setOptimistic] = useState<TranscriptEntry[]>([]);
   // Two states, not one: loadError blocks rendering (nothing to show
   // without a task), actionError is inline while the loaded view stays up.
   // Collapsing these into one `error` state previously left the error
@@ -114,8 +123,7 @@ export function useTaskDetail(taskId: string) {
           // as a page-level error.
         });
     }
-    pollE2e();
-    const e2eTimer = setInterval(pollE2e, 5000);
+    const stopE2ePoll = pollVisible(pollE2e, 5000);
 
     let unsubscribe = () => {};
     client
@@ -135,22 +143,76 @@ export function useTaskDetail(taskId: string) {
 
     return () => {
       cancelled = true;
-      clearInterval(e2eTimer);
+      stopE2ePoll();
       unsubscribe();
     };
   }, [taskId]);
 
-  async function run(action: () => Promise<unknown>, key: string) {
+  // Returns whether the call actually succeeded, so a caller holding
+  // optimistic state knows whether to keep or roll it back. Callers that
+  // don't care can keep ignoring it.
+  async function run(action: () => Promise<unknown>, key: string): Promise<boolean> {
     setBusyKey(key);
     setActionError(null);
     try {
       await action();
+      return true;
     } catch (err) {
       setActionError((err as Error).message);
+      return false;
     } finally {
       setBusyKey(null);
     }
   }
+
+  // Both decisions go through here so the optimistic entry and the RPC can
+  // never drift apart — a card showing "allowed" for a call that failed to
+  // send is worse than a slow card.
+  function decide(
+    seq: bigint,
+    type: TranscriptEntryType.PERMISSION_RESPONSE | TranscriptEntryType.ANSWER,
+    text: string,
+    action: () => Promise<unknown>,
+    key: string,
+  ) {
+    const echo: TranscriptEntry = {
+      $typeName: "agentfleet.v1.TranscriptEntry",
+      taskId,
+      // Sorts after everything real so far; it is never rendered directly
+      // (the feed skips both types), only read by the derivations.
+      seq: entries.reduce((max, e) => (e.seq > max ? e.seq : max), seq) + 1n,
+      from: "human",
+      text,
+      type,
+      replyTo: seq,
+      createdAt: "",
+    } as TranscriptEntry;
+
+    setOptimistic((prev) => [...prev, echo]);
+    return run(action, key).then((ok) => {
+      // Rolled back on failure — run() has already surfaced the error, and
+      // leaving the echo would show a decision that never reached the fleet.
+      if (!ok) setOptimistic((prev) => prev.filter((e) => e !== echo));
+    });
+  }
+
+  const respondToPermission = (seq: bigint, decision: { behavior: "allow" | "deny"; message?: string }) =>
+    decide(
+      seq,
+      TranscriptEntryType.PERMISSION_RESPONSE,
+      JSON.stringify(decision),
+      () => client.respondToPermission({ taskId, seq, decisionJson: JSON.stringify(decision) }),
+      `permission:${seq}`,
+    );
+
+  const answerQuestion = (seq: bigint, answers: Record<string, string>) =>
+    decide(
+      seq,
+      TranscriptEntryType.ANSWER,
+      JSON.stringify({ answers }),
+      () => client.answerQuestion({ taskId, seq, answersJson: JSON.stringify({ answers }) }),
+      `question:${seq}`,
+    );
 
   async function sendDiscuss(text: string) {
     pendingRef.current = text;
@@ -170,7 +232,7 @@ export function useTaskDetail(taskId: string) {
 
   return {
     task,
-    entries,
+    entries: withOptimistic(entries, optimistic),
     previewUrl,
     e2e,
     branch,
@@ -181,6 +243,8 @@ export function useTaskDetail(taskId: string) {
     pendingMessage,
     run,
     sendDiscuss,
+    respondToPermission,
+    answerQuestion,
     clearActionError: () => setActionError(null),
   };
 }

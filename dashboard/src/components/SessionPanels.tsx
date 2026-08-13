@@ -168,6 +168,7 @@ export function E2ePanel({ e2e }: { e2e: GetE2eStatusResponse | null }) {
 export function SessionPanel({
   task,
   busy,
+  busyKey,
   run,
   previewUrl,
   isThotTask,
@@ -175,6 +176,7 @@ export function SessionPanel({
 }: {
   task: Task;
   busy: boolean;
+  busyKey: string | null;
   run: (action: () => Promise<unknown>, key: string) => void;
   previewUrl: string | null;
   isThotTask: boolean;
@@ -191,6 +193,7 @@ export function SessionPanel({
       <ActionsMenu
         taskId={task.id}
         busy={busy}
+        busyKey={busyKey}
         run={run}
         previewUrl={previewUrl}
         isThotTask={isThotTask}

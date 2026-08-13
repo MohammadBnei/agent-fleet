@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { client } from "../connectClient";
 import { isThot, repoLabel } from "../taskKind";
 import type { Task } from "../gen/agentfleet/v1/core_pb";
@@ -66,6 +66,8 @@ export function TaskDetail({
     pendingMessage,
     run,
     sendDiscuss,
+    respondToPermission,
+    answerQuestion,
     clearActionError,
   } = useTaskDetail(taskId);
   const [message, setMessage] = useState("");
@@ -98,16 +100,29 @@ export function TaskDetail({
     prevEntriesLenRef.current = entries.length;
   }, [entries, feedAtBottom, feedScrollToBottom]);
 
-  // Land on the latest message when a task is opened. This component instance
-  // is reused across task switches (App.tsx doesn't key it by id), so track
-  // which task we've already jumped for instead of scrolling every render.
+  // Land on the latest message when a task is opened — *before* the first
+  // paint of that task's feed, not after it. As a plain effect this ran
+  // post-paint, so opening a session showed the top of the history for a
+  // frame and then visibly scrolled down; useLayoutEffect means you simply
+  // arrive at the bottom. This component instance is reused across task
+  // switches (App.tsx doesn't key it by id), so track which task we've
+  // already jumped for instead of scrolling every render.
   const scrolledForTaskRef = useRef<string | null>(null);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (entries.length === 0 || scrolledForTaskRef.current === taskId) return;
     scrolledForTaskRef.current = taskId;
     const el = feedRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [taskId, entries, feedRef]);
+
+  // The optimistic echo of a just-sent message (useTaskDetail's
+  // pendingMessage) renders immediately but below the fold. Only the entries
+  // effect above scrolled, and that waits for the real entry to come back
+  // over the stream — so a send appeared to do nothing until the round trip
+  // finished, and then jumped.
+  useEffect(() => {
+    if (pendingMessage !== null) feedScrollToBottom();
+  }, [pendingMessage, feedScrollToBottom]);
   useEffect(() => {
     if (feedAtBottom) setHasNewAiMessage(false);
   }, [feedAtBottom]);
@@ -223,15 +238,8 @@ export function TaskDetail({
               density={density}
               busyKey={busyKey}
               dockPendingDecision
-              onRespond={(seq, decision) =>
-                run(
-                  () => client.respondToPermission({ taskId, seq, decisionJson: JSON.stringify(decision) }),
-                  `permission:${seq}`,
-                )
-              }
-              onAnswer={(seq, answers) =>
-                run(() => client.answerQuestion({ taskId, seq, answersJson: JSON.stringify({ answers }) }), `question:${seq}`)
-              }
+              onRespond={respondToPermission}
+              onAnswer={answerQuestion}
               onPlanFeedback={(text) => sendDiscuss(text)}
             />
             {pendingMessage && (
@@ -262,15 +270,8 @@ export function TaskDetail({
         <DecisionDock
           entries={entries}
           busyKey={busyKey}
-          onRespond={(seq, decision) =>
-            run(
-              () => client.respondToPermission({ taskId, seq, decisionJson: JSON.stringify(decision) }),
-              `permission:${seq}`,
-            )
-          }
-          onAnswer={(seq, answers) =>
-            run(() => client.answerQuestion({ taskId, seq, answersJson: JSON.stringify({ answers }) }), `question:${seq}`)
-          }
+          onRespond={respondToPermission}
+          onAnswer={answerQuestion}
           onPlanFeedback={(text) => sendDiscuss(text)}
         />
 
@@ -349,6 +350,7 @@ export function TaskDetail({
           <SessionPanel
             task={task}
             busy={busyKey !== null}
+            busyKey={busyKey}
             run={run}
             previewUrl={previewUrl}
             isThotTask={isThot(task)}

@@ -1,5 +1,6 @@
 import { useState, type CSSProperties } from "react";
 import { client } from "../connectClient";
+import { ActionButton } from "./ActionButton";
 import { isPodPhaseLive } from "../pages/TaskList";
 
 // The user-facing SDK modes worth a direct button — "delegate"/"dontAsk"
@@ -38,6 +39,7 @@ const MODES = [
 export function ActionsMenu({
   taskId,
   busy,
+  busyKey,
   run,
   previewUrl,
   isThotTask = false,
@@ -56,6 +58,10 @@ export function ActionsMenu({
   // so they stay conservative and disable together with everything else
   // rather than getting their own independent key.
   busy: boolean;
+  // Which one is in flight, so the spinner lands on the button that was
+  // actually clicked instead of every button greying out together — the
+  // whole point being to tell the clicker their click registered.
+  busyKey: string | null;
   run: (action: () => Promise<unknown>, key: string) => void;
   previewUrl: string | null;
   // docs/adr/0037: a thot session has no e2e pod and no code-server, so
@@ -114,22 +120,22 @@ export function ActionsMenu({
       <div className="flex items-center gap-2 flex-wrap">
       {live ? (
         <>
-          <button
-            type="button"
+          <ActionButton
             className="btn btn-info btn-xs"
+            busy={busyKey === "action:interrupt"}
             disabled={busy}
-            onClick={() => run(() => client.interrupt({ taskId }), "actions")}
+            onClick={() => run(() => client.interrupt({ taskId }), "action:interrupt")}
           >
             Interrupt
-          </button>
-          <button
-            type="button"
+          </ActionButton>
+          <ActionButton
             className="btn btn-error btn-xs"
+            busy={busyKey === "action:kill"}
             disabled={busy}
-            onClick={() => run(() => client.kill({ taskId }), "actions")}
+            onClick={() => run(() => client.kill({ taskId }), "action:kill")}
           >
             Kill
-          </button>
+          </ActionButton>
         </>
       ) : (
         // An unapproved proposal has no Warm: the server rejects it with
@@ -137,25 +143,25 @@ export function ActionsMenu({
         // that can only ever error is worse than no button. ProposalActions
         // carries the real action for this state.
         status !== "proposed" && (
-          <button
-            type="button"
+          <ActionButton
             className="btn btn-success btn-xs"
+            busy={busyKey === "action:warm"}
             disabled={busy}
-            onClick={() => run(() => client.warm({ taskId }), "actions")}
+            onClick={() => run(() => client.warm({ taskId }), "action:warm")}
           >
             Warm
-          </button>
+          </ActionButton>
         )
       )}
       {!isThotTask && (
-      <button
-        type="button"
+      <ActionButton
         className="btn btn-outline btn-xs"
+        busy={busyKey === "action:kill-e2e"}
         disabled={busy}
-        onClick={() => run(() => client.killE2e({ taskId, alsoTeardownServices }), "actions")}
+        onClick={() => run(() => client.killE2e({ taskId, alsoTeardownServices }), "action:kill-e2e")}
       >
         Kill e2e
-      </button>
+      </ActionButton>
       )}
       {!isThotTask && (
       <label
@@ -176,15 +182,15 @@ export function ActionsMenu({
           only one of these is ever mounted at a time (desktop xor mobile,
           see useMediaQuery in App.tsx), so a static anchor/id pair is safe;
           give it a unique name if a second dropdown ever gets added. */}
-      <button
-        type="button"
+      <ActionButton
         className="btn btn-outline btn-xs"
+        busy={busyKey === "action:mode"}
         disabled={busy}
         popoverTarget="popover-mode"
         style={{ anchorName: "--anchor-mode" } as CSSProperties}
       >
         Mode: {MODES.find((m) => m.value === currentMode)?.label ?? currentMode ?? "?"} ▾
-      </button>
+      </ActionButton>
       <ul
         className="dropdown menu menu-sm bg-base-100 rounded-box shadow w-44 p-1"
         popover="auto"
@@ -196,7 +202,13 @@ export function ActionsMenu({
             <button
               type="button"
               className={m.value === currentMode ? "active" : undefined}
-              onClick={() => run(() => client.setPermissionMode({ taskId, mode: m.value }), "actions")}
+              // Dismiss on pick, natively. The mode itself only changes on
+              // the wire, and tasks.permissionMode arrives with the next
+              // 5s poll — leaving the menu open over an unchanged label is
+              // what made this feel like the click was dropped.
+              popoverTarget="popover-mode"
+              popoverTargetAction="hide"
+              onClick={() => run(() => client.setPermissionMode({ taskId, mode: m.value }), "action:mode")}
             >
               {m.value === currentMode ? "✓ " : ""}
               {m.label}
