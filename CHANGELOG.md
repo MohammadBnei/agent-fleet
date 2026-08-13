@@ -1,5 +1,12 @@
 # Changelog
 
+# [1.51.0](https://github.com/MohammadBnei/agent-fleet/compare/1.50.0...1.51.0) (2026-08-13)
+
+
+### Features
+
+* **observability:** split init from call time in the exec MCP hop ([#143](https://github.com/MohammadBnei/agent-fleet/issues/143)) ([1b9e374](https://github.com/MohammadBnei/agent-fleet/commit/1b9e374a301f37309097992b523f158238d206d2))
+
 # [1.50.0](https://github.com/MohammadBnei/agent-fleet/compare/1.49.6...1.50.0) (2026-08-13)
 
 
