@@ -1,5 +1,17 @@
 # Changelog
 
+# [2.0.0](https://github.com/MohammadBnei/agent-fleet/compare/1.56.0...2.0.0) (2026-08-13)
+
+
+* refactor!: delete the e2e tool relay (#152) ([29e6ed2](https://github.com/MohammadBnei/agent-fleet/commit/29e6ed22b49c61e092e14c6e3cca2d45b6088d38)), closes [#152](https://github.com/MohammadBnei/agent-fleet/issues/152) [#149](https://github.com/MohammadBnei/agent-fleet/issues/149) [#148](https://github.com/MohammadBnei/agent-fleet/issues/148)
+
+
+### BREAKING CHANGES
+
+* CoreService.ListE2eTools/CallE2eTool and
+ProvisionerService.ListE2eTools/CallE2eTool are removed, along with their
+four message types and E2eToolDescriptor. Nothing calls them: the sidecar
+
 # [1.56.0](https://github.com/MohammadBnei/agent-fleet/compare/1.55.0...1.56.0) (2026-08-13)
 
 
