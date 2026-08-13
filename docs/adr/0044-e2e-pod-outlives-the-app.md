@@ -202,10 +202,17 @@ real done-signal, deliberately.
   left the cache pointing at a corpse.
 - `run_command`'s first call in a session now costs up to ~65s of waiting
   instead of returning a misleading error immediately.
-- **Deploy ordering is load-bearing.** The e2e-runner image must be in the
-  registry *before* the provisioner starts sending an empty `E2E_START_CMD`:
-  the old entrypoint's `:?` guard fails the container instantly. Same class of
-  rolling-deploy window as ADR-0039's proxy/sidecar one.
+- **There is a rolling-deploy window, and it self-heals.** If the new
+  provisioner sends an empty `E2E_START_CMD` while the old e2e-runner image is
+  still what gets pulled, that image's `E2E_START_CMD:?` guard fails the
+  container instantly. It is bounded rather than sticky because
+  `E2E_RUNNER_IMAGE` is a floating `:latest` (`k8s/provisioner/deployment.yaml`
+  — an accepted v1 trade-off, see that directory's README), so
+  `imagePullPolicy: Always` re-pulls, and decision 4 above means the failed pod
+  is replaced on the agent's next `run_command` instead of being handed back
+  forever. Worst case is one wasted sandbox creation on a repo with no
+  profile, during the minutes between the two images landing. Still worth
+  merging with the e2e-runner build green.
 
 ## Known gaps
 
