@@ -49,7 +49,7 @@ export function MobileTaskDetail({
   const {
     task,
     entries,
-    previewUrl,
+    refreshE2e,
     e2e,
     branch,
     busyKey,
@@ -283,13 +283,17 @@ export function MobileTaskDetail({
         <div className="flex flex-col gap-5">
           <TodosPanel todos={todos} blocked={blocked} />
           <ChangesPanel branch={branch} changes={changes} />
-          <E2ePanel e2e={e2e} />
+          <E2ePanel
+            e2e={e2e}
+            taskId={task.id}
+            onChanged={refreshE2e}
+          />
           <SessionPanel
             task={task}
             busy={busyKey !== null}
             busyKey={busyKey}
             run={run}
-            previewUrl={previewUrl}
+            codeServerUrl={e2e?.codeServerUrl}
             isThotTask={isThot(task)}
             onBypassClick={() => {
               setPanelsOpen(false);

@@ -41,7 +41,7 @@ export function ActionsMenu({
   busy,
   busyKey,
   run,
-  previewUrl,
+  codeServerUrl,
   isThotTask = false,
   status,
   currentMode,
@@ -63,7 +63,7 @@ export function ActionsMenu({
   // whole point being to tell the clicker their click registered.
   busyKey: string | null;
   run: (action: () => Promise<unknown>, key: string) => void;
-  previewUrl: string | null;
+  codeServerUrl?: string | null;
   // docs/adr/0037: a thot session has no e2e pod and no code-server, so
   // those controls are hidden rather than shown-and-broken.
   isThotTask?: boolean;
@@ -226,8 +226,14 @@ export function ActionsMenu({
           </button>
         </li>
       </ul>
-      {!isThotTask && previewUrl && (
-        <a href={previewUrl} target="_blank" rel="noreferrer" className="btn btn-outline btn-xs">
+      {/* codeServerUrl, not previewUrl: this button said "Open code-server"
+          and opened the APP root — code-server is served at the /code prefix
+          (docs/adr/0038), so it had never once opened the IDE. The URL is
+          built by the provisioner and travels on the wire rather than being
+          re-derived here, which is how it drifted in the first place
+          (docs/adr/0044). */}
+      {!isThotTask && codeServerUrl && (
+        <a href={codeServerUrl} target="_blank" rel="noreferrer" className="btn btn-outline btn-xs">
           Open code-server
         </a>
       )}

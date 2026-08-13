@@ -71,6 +71,11 @@ message GetE2eSessionStatusResponse {
   bool app_ready = 5;
   int32 restarts = 6;
   string started_at = 7; // RFC3339
+  // Where a human reaches the in-browser IDE (the /code prefix route). On the
+  // wire rather than rebuilt by the caller: the dashboard's "Open code-server"
+  // button was pointed at preview_url — the app root — and so had never once
+  // opened code-server (docs/adr/0044).
+  string code_server_url = 8;
 }
 
 // Requests an on-demand e2e preview pod for taskId (mounts the same

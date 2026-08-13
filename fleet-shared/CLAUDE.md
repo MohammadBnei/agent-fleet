@@ -124,12 +124,17 @@ That changes what you should do with it:
   is down. Say what the log shows and quote `resolvedStartCmd`; a human can
   fix the profile in one edit. Don't substitute a start command you guessed.
 - **Restarting the app is yours to do**, once you've fixed the cause:
-  `run_command 'cd $E2E_WORKTREE_PATH && PORT=3000 <the resolved start cmd> &'`.
-  Background it with a trailing `&` or it will block the call. This is also
-  what to do when the app can't hot-reload a change: a new dependency in the
+  `run_command 'e2e-restart-app'`. That helper stops the old app — the whole
+  process group, so a dev server's children don't keep `$PORT` bound — and
+  starts it again with the profile's own command, logging to the same file.
+  Don't hand-roll the kill-and-relaunch; getting the process group wrong is
+  what makes a restart look like it silently did nothing.
+
+  Use it when the app can't hot-reload a change: a new dependency in the
   lockfile, a schema/migration change, or an edit to the server's own
   entrypoint or env. Restarting the app is not the same as `kill_env` —
-  never cycle the whole environment for this.
+  never cycle the whole environment for this. A human can press the same
+  button from the dashboard's E2E panel.
 
 ## Your shell output is compacted
 

@@ -56,7 +56,7 @@ export function TaskDetail({
   const {
     task: fetchedTask,
     entries,
-    previewUrl,
+    refreshE2e,
     e2e,
     branch,
     worktreePath,
@@ -345,14 +345,18 @@ export function TaskDetail({
       <div className="w-[266px] flex-none overflow-y-auto px-3.5 py-3.5 flex flex-col gap-4.5 min-w-0">
         <TodosPanel todos={todos} blocked={blocked} />
         <ChangesPanel branch={branch} changes={changes} />
-        <E2ePanel e2e={e2e} />
+        <E2ePanel
+          e2e={e2e}
+          taskId={task.id}
+          onChanged={refreshE2e}
+        />
         <div className="mt-auto">
           <SessionPanel
             task={task}
             busy={busyKey !== null}
             busyKey={busyKey}
             run={run}
-            previewUrl={previewUrl}
+            codeServerUrl={e2e?.codeServerUrl}
             isThotTask={isThot(task)}
             onBypassClick={() => setBypassOpen(true)}
           />

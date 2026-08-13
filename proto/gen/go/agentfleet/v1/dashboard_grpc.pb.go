@@ -32,6 +32,9 @@ const (
 	DashboardService_MarkSeen_FullMethodName             = "/agentfleet.v1.DashboardService/MarkSeen"
 	DashboardService_ApproveTask_FullMethodName          = "/agentfleet.v1.DashboardService/ApproveTask"
 	DashboardService_KillE2E_FullMethodName              = "/agentfleet.v1.DashboardService/KillE2e"
+	DashboardService_StartE2E_FullMethodName             = "/agentfleet.v1.DashboardService/StartE2e"
+	DashboardService_RestartE2EApp_FullMethodName        = "/agentfleet.v1.DashboardService/RestartE2eApp"
+	DashboardService_GetE2EAppLog_FullMethodName         = "/agentfleet.v1.DashboardService/GetE2eAppLog"
 	DashboardService_AnswerQuestion_FullMethodName       = "/agentfleet.v1.DashboardService/AnswerQuestion"
 	DashboardService_RespondToPermission_FullMethodName  = "/agentfleet.v1.DashboardService/RespondToPermission"
 	DashboardService_Discuss_FullMethodName              = "/agentfleet.v1.DashboardService/Discuss"
@@ -92,6 +95,9 @@ type DashboardServiceClient interface {
 	MarkSeen(ctx context.Context, in *MarkSeenRequest, opts ...grpc.CallOption) (*MarkSeenResponse, error)
 	ApproveTask(ctx context.Context, in *ApproveTaskRequest, opts ...grpc.CallOption) (*ApproveTaskResponse, error)
 	KillE2E(ctx context.Context, in *KillE2ERequest, opts ...grpc.CallOption) (*KillE2EResponse, error)
+	StartE2E(ctx context.Context, in *StartE2ERequest, opts ...grpc.CallOption) (*StartE2EResponse, error)
+	RestartE2EApp(ctx context.Context, in *RestartE2EAppRequest, opts ...grpc.CallOption) (*RestartE2EAppResponse, error)
+	GetE2EAppLog(ctx context.Context, in *GetE2EAppLogRequest, opts ...grpc.CallOption) (*GetE2EAppLogResponse, error)
 	AnswerQuestion(ctx context.Context, in *AnswerQuestionRequest, opts ...grpc.CallOption) (*AnswerQuestionResponse, error)
 	RespondToPermission(ctx context.Context, in *RespondToPermissionRequest, opts ...grpc.CallOption) (*RespondToPermissionResponse, error)
 	Discuss(ctx context.Context, in *DiscussRequest, opts ...grpc.CallOption) (*DiscussResponse, error)
@@ -282,6 +288,36 @@ func (c *dashboardServiceClient) KillE2E(ctx context.Context, in *KillE2ERequest
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(KillE2EResponse)
 	err := c.cc.Invoke(ctx, DashboardService_KillE2E_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dashboardServiceClient) StartE2E(ctx context.Context, in *StartE2ERequest, opts ...grpc.CallOption) (*StartE2EResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(StartE2EResponse)
+	err := c.cc.Invoke(ctx, DashboardService_StartE2E_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dashboardServiceClient) RestartE2EApp(ctx context.Context, in *RestartE2EAppRequest, opts ...grpc.CallOption) (*RestartE2EAppResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RestartE2EAppResponse)
+	err := c.cc.Invoke(ctx, DashboardService_RestartE2EApp_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dashboardServiceClient) GetE2EAppLog(ctx context.Context, in *GetE2EAppLogRequest, opts ...grpc.CallOption) (*GetE2EAppLogResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetE2EAppLogResponse)
+	err := c.cc.Invoke(ctx, DashboardService_GetE2EAppLog_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -616,6 +652,9 @@ type DashboardServiceServer interface {
 	MarkSeen(context.Context, *MarkSeenRequest) (*MarkSeenResponse, error)
 	ApproveTask(context.Context, *ApproveTaskRequest) (*ApproveTaskResponse, error)
 	KillE2E(context.Context, *KillE2ERequest) (*KillE2EResponse, error)
+	StartE2E(context.Context, *StartE2ERequest) (*StartE2EResponse, error)
+	RestartE2EApp(context.Context, *RestartE2EAppRequest) (*RestartE2EAppResponse, error)
+	GetE2EAppLog(context.Context, *GetE2EAppLogRequest) (*GetE2EAppLogResponse, error)
 	AnswerQuestion(context.Context, *AnswerQuestionRequest) (*AnswerQuestionResponse, error)
 	RespondToPermission(context.Context, *RespondToPermissionRequest) (*RespondToPermissionResponse, error)
 	Discuss(context.Context, *DiscussRequest) (*DiscussResponse, error)
@@ -711,6 +750,15 @@ func (UnimplementedDashboardServiceServer) ApproveTask(context.Context, *Approve
 }
 func (UnimplementedDashboardServiceServer) KillE2E(context.Context, *KillE2ERequest) (*KillE2EResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method KillE2E not implemented")
+}
+func (UnimplementedDashboardServiceServer) StartE2E(context.Context, *StartE2ERequest) (*StartE2EResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method StartE2E not implemented")
+}
+func (UnimplementedDashboardServiceServer) RestartE2EApp(context.Context, *RestartE2EAppRequest) (*RestartE2EAppResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RestartE2EApp not implemented")
+}
+func (UnimplementedDashboardServiceServer) GetE2EAppLog(context.Context, *GetE2EAppLogRequest) (*GetE2EAppLogResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetE2EAppLog not implemented")
 }
 func (UnimplementedDashboardServiceServer) AnswerQuestion(context.Context, *AnswerQuestionRequest) (*AnswerQuestionResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method AnswerQuestion not implemented")
@@ -1046,6 +1094,60 @@ func _DashboardService_KillE2E_Handler(srv interface{}, ctx context.Context, dec
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(DashboardServiceServer).KillE2E(ctx, req.(*KillE2ERequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DashboardService_StartE2E_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StartE2ERequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DashboardServiceServer).StartE2E(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DashboardService_StartE2E_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DashboardServiceServer).StartE2E(ctx, req.(*StartE2ERequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DashboardService_RestartE2EApp_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RestartE2EAppRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DashboardServiceServer).RestartE2EApp(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DashboardService_RestartE2EApp_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DashboardServiceServer).RestartE2EApp(ctx, req.(*RestartE2EAppRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DashboardService_GetE2EAppLog_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetE2EAppLogRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DashboardServiceServer).GetE2EAppLog(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DashboardService_GetE2EAppLog_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DashboardServiceServer).GetE2EAppLog(ctx, req.(*GetE2EAppLogRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1644,6 +1746,18 @@ var DashboardService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "KillE2e",
 			Handler:    _DashboardService_KillE2E_Handler,
+		},
+		{
+			MethodName: "StartE2e",
+			Handler:    _DashboardService_StartE2E_Handler,
+		},
+		{
+			MethodName: "RestartE2eApp",
+			Handler:    _DashboardService_RestartE2EApp_Handler,
+		},
+		{
+			MethodName: "GetE2eAppLog",
+			Handler:    _DashboardService_GetE2EAppLog_Handler,
 		},
 		{
 			MethodName: "AnswerQuestion",

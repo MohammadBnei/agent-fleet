@@ -113,28 +113,24 @@ supervise playwright-mcp \
 
 supervise execmcp execmcp --port "${E2E_EXEC_PORT}" &
 
-# ponytail: the app runs ONCE and is never restarted. Its failures are
-# deterministic — a failing `bun install`, a command binding 127.0.0.1, a
-# stale profile — so a restart loop would re-run a 782s install (ADR-0036)
-# forever AND hide the failure: a crashlooping app looks identical to a slow
-# one on the dashboard card. The agent just edited this code and has
-# run_command; restarting is its deliberate call. Supervise with backoff only
-# if "the app died and nobody noticed" shows up in practice.
-if [ -n "${E2E_START_CMD}" ]; then
-	# tee, not a plain redirect: the same output has to reach both the file the
-	# agent tails and this container's stdout, which is what Loki indexes
-	# (view_logs component=e2e). PIPESTATUS[0], not $?, because $? is tee's.
-	(
-		cd "${E2E_WORKTREE_PATH}" || exit
-		PORT="${E2E_APP_PORT}" bash -lc "${E2E_START_CMD}" 2>&1 | tee "${APP_LOG}"
-		# Captured immediately: the next pipeline overwrites PIPESTATUS.
-		app_status=${PIPESTATUS[0]}
-		echo "--- e2e app command exited with status ${app_status} ---" | tee -a "${APP_LOG}"
-		echo "--- the sandbox stays up; fix the cause, then restart it with run_command ---" | tee -a "${APP_LOG}"
-	) &
-else
-	echo "e2e-runner: no E2E_START_CMD — sandbox-only pod (no app, no preview). run_command is unaffected." | tee "${APP_LOG}"
-fi
+# One tail, so everything any app run ever writes reaches this container's
+# stdout — which is what Loki indexes (view_logs component=e2e). Doing it here
+# rather than in e2e-run-app is what lets that script be called from anywhere
+# (the dashboard's Restart button, the agent's run_command) without needing to
+# know it isn't PID 1's child and without its output being swallowed by
+# execmcp's response pipe.
+: >"${APP_LOG}"
+supervise app-log-tail tail -n +1 -F "${APP_LOG}" &
+
+# ponytail: the app runs ONCE and is never restarted automatically. Its
+# failures are deterministic — a failing `bun install`, a command binding
+# 127.0.0.1, a stale profile — so a restart loop would re-run a 782s install
+# (ADR-0036) forever AND hide the failure: a crashlooping app looks identical
+# to a slow one on the dashboard card. Restarting is a deliberate human or
+# agent act, which is what e2e-restart-app exists for.
+#
+# e2e-run-app handles the empty-E2E_START_CMD case itself (sandbox-only pod).
+e2e-run-app
 
 # Bare `wait`: blocks on every background job. The supervise loops never
 # return, so this never returns either — PID 1 outliving the app is the whole

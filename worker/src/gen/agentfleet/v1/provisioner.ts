@@ -162,6 +162,13 @@ export interface GetE2eSessionStatusResponse {
   restarts: number;
   /** RFC3339 */
   startedAt: string;
+  /**
+   * Where a human reaches the in-browser IDE (the /code prefix route). On the
+   * wire rather than rebuilt by the caller: the dashboard's "Open code-server"
+   * button was pointed at preview_url — the app root — and so had never once
+   * opened code-server (docs/adr/0044).
+   */
+  codeServerUrl: string;
 }
 
 /**
@@ -529,7 +536,16 @@ export const GetE2eSessionStatusRequest: MessageFns<GetE2eSessionStatusRequest> 
 };
 
 function createBaseGetE2eSessionStatusResponse(): GetE2eSessionStatusResponse {
-  return { status: "", previewUrl: "", startCmd: "", podPhase: "", appReady: false, restarts: 0, startedAt: "" };
+  return {
+    status: "",
+    previewUrl: "",
+    startCmd: "",
+    podPhase: "",
+    appReady: false,
+    restarts: 0,
+    startedAt: "",
+    codeServerUrl: "",
+  };
 }
 
 export const GetE2eSessionStatusResponse: MessageFns<GetE2eSessionStatusResponse> = {
@@ -562,6 +578,11 @@ export const GetE2eSessionStatusResponse: MessageFns<GetE2eSessionStatusResponse
         : isSet(object.started_at)
         ? globalThis.String(object.started_at)
         : "",
+      codeServerUrl: isSet(object.codeServerUrl)
+        ? globalThis.String(object.codeServerUrl)
+        : isSet(object.code_server_url)
+        ? globalThis.String(object.code_server_url)
+        : "",
     };
   },
 
@@ -588,6 +609,9 @@ export const GetE2eSessionStatusResponse: MessageFns<GetE2eSessionStatusResponse
     if (message.startedAt !== "") {
       obj.startedAt = message.startedAt;
     }
+    if (message.codeServerUrl !== "") {
+      obj.codeServerUrl = message.codeServerUrl;
+    }
     return obj;
   },
 
@@ -603,6 +627,7 @@ export const GetE2eSessionStatusResponse: MessageFns<GetE2eSessionStatusResponse
     message.appReady = object.appReady ?? false;
     message.restarts = object.restarts ?? 0;
     message.startedAt = object.startedAt ?? "";
+    message.codeServerUrl = object.codeServerUrl ?? "";
     return message;
   },
 };

@@ -23,6 +23,7 @@ import (
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/dashboard"
+	"github.com/MohammadBnei/agent-fleet/core/internal/e2erecipe"
 	"github.com/MohammadBnei/agent-fleet/core/internal/filestore"
 	"github.com/MohammadBnei/agent-fleet/core/internal/journal"
 	"github.com/MohammadBnei/agent-fleet/core/internal/lokiclient"
@@ -185,38 +186,12 @@ func (s *Server) RequestE2EEnv(ctx context.Context, req *agentfleetv1.RequestE2E
 	if t == nil {
 		return nil, fmt.Errorf("RequestE2EEnv: task %s not found", req.GetTaskId())
 	}
-	// Profile resolution, in order (docs/adr/0044):
-	//   1. the agent's override — approval-gated in the sidecar, same as
-	//      start_cmd, so a task branch still cannot silently change what the
-	//      provisioner builds (docs/adr/0034's rule);
-	//   2. the repo's own e2e_profile column, set by a human in the
-	//      dashboard — this is the one that was missing, and its absence is
-	//      why agent-fleet's sandbox came up with no toolchain: its recipe is
-	//      named "lint", and the name here was hardcoded;
-	//   3. the "e2e" convention.
-	//
-	// Nil (no such profile) is not an error: it means empty ingredients and
-	// no app command, which since 0044 is a working sandbox rather than a
-	// failed pod.
-	profileName := req.GetProfile()
-	if profileName == "" {
-		r, err := s.repos.Get(ctx, t.Repo)
-		if err != nil {
-			return nil, fmt.Errorf("RequestE2EEnv: repo lookup: %w", err)
-		}
-		if r != nil {
-			profileName = r.E2eProfile
-		}
-	}
-	if profileName == "" {
-		profileName = "e2e"
-	}
-	profile, err := s.profiles.Get(ctx, t.Repo, profileName)
+	// Resolution order lives in e2erecipe, shared with the dashboard's own
+	// Start button — see that package for why it isn't inlined here.
+	recipe, err := e2erecipe.Resolve(ctx, s.repos, s.profiles, t.Repo, req.GetProfile())
 	if err != nil {
-		return nil, fmt.Errorf("RequestE2EEnv: repo profile lookup: %w", err)
+		return nil, fmt.Errorf("RequestE2EEnv: %w", err)
 	}
-	var toolKeys []string
-	var serviceIngredients []repoprofiles.ServiceIngredient
 	// startCmd: the caller's own override wins (it knows the worktree's
 	// actual layout right now); otherwise the resolved profile's own
 	// start_cmd (found live via kind-local — this fell through to the
@@ -224,12 +199,10 @@ func (s *Server) RequestE2EEnv(ctx context.Context, req *agentfleetv1.RequestE2E
 	// using the OLD hardcoded command even though the profile had the
 	// fixed one, because only Tools/Services were pulled off profile here).
 	startCmd := req.GetStartCmd()
-	if profile != nil {
-		toolKeys, serviceIngredients = profile.Tools, profile.Services
-		if startCmd == "" {
-			startCmd = profile.StartCmd
-		}
+	if startCmd == "" {
+		startCmd = recipe.StartCmd
 	}
+	profileName, toolKeys, serviceIngredients := recipe.ProfileName, recipe.ToolKeys, recipe.Services
 	status, previewURL, err := s.provisioner.CreateE2eSession(ctx, req.GetTaskId(), t.Repo, startCmd, toolKeys, serviceIngredients)
 	if err != nil {
 		return nil, fmt.Errorf("RequestE2EEnv: %w", err)

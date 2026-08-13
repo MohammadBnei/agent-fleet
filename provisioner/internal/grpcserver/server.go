@@ -122,13 +122,14 @@ func (s *Server) GetE2ESessionStatus(ctx context.Context, req *agentfleetv1.GetE
 		status, podPhase = "terminating", "Terminating"
 	}
 	return &agentfleetv1.GetE2ESessionStatusResponse{
-		Status:     status,
-		PreviewUrl: k8s.PreviewURLFor(s.e2eHost, req.GetTaskId()),
-		StartCmd:   state.StartCmd,
-		PodPhase:   podPhase,
-		AppReady:   state.AppReady,
-		Restarts:   state.Restarts,
-		StartedAt:  state.StartedAt,
+		Status:        status,
+		PreviewUrl:    k8s.PreviewURLFor(s.e2eHost, req.GetTaskId()),
+		CodeServerUrl: k8s.CodeServerURLFor(s.e2eHost, req.GetTaskId()),
+		StartCmd:      state.StartCmd,
+		PodPhase:      podPhase,
+		AppReady:      state.AppReady,
+		Restarts:      state.Restarts,
+		StartedAt:     state.StartedAt,
 	}, nil
 }
 

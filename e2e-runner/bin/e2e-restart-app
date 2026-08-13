@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# Stop the target app (whole process group) and start it again.
+#
+# This is what the dashboard's "Restart app" button runs, and what the agent
+# should run after changing something the dev server can't hot-reload — a new
+# dependency in the lockfile, a schema change, an edit to the server's own
+# entrypoint or env.
+#
+# It restarts the APP, not the pod. The pod, its warm dependency cache and the
+# worktree all survive, so this costs seconds where recreating the sandbox
+# costs a 10+ minute cold install (docs/adr/0044).
+set -uo pipefail
+
+APP_LOG=${E2E_APP_LOG:-/tmp/e2e-app.log}
+APP_PGID_FILE=${E2E_APP_PGID_FILE:-/tmp/e2e-app.pgid}
+
+stop_app() {
+	[ -f "${APP_PGID_FILE}" ] || return 0
+	local pgid
+	pgid=$(cat "${APP_PGID_FILE}" 2>/dev/null) || return 0
+	[ -n "${pgid}" ] || return 0
+	# Negative PID = signal the whole process group. Without this, a dev
+	# server's children keep $PORT bound and the restart appears to do nothing.
+	kill -TERM -- "-${pgid}" 2>/dev/null || return 0
+
+	# Give it a moment to close the port, then insist. 5s rather than a bare
+	# SIGKILL so a server with a real shutdown hook gets to run it.
+	for _ in $(seq 1 10); do
+		kill -0 -- "-${pgid}" 2>/dev/null || return 0
+		sleep 0.5
+	done
+	echo "--- app did not stop on SIGTERM, sending SIGKILL ---" >>"${APP_LOG}"
+	kill -KILL -- "-${pgid}" 2>/dev/null || true
+}
+
+echo "--- restarting app (requested $(date -u +%FT%TZ)) ---" >>"${APP_LOG}"
+stop_app
+rm -f "${APP_PGID_FILE}"
+exec e2e-run-app

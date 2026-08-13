@@ -70,7 +70,11 @@ RUN curl -fsSL https://github.com/rtk-ai/rtk/releases/download/${RTK_VERSION}/rt
 
 WORKDIR /app
 COPY e2e-runner/entrypoint.sh ./entrypoint.sh
-RUN chmod +x ./entrypoint.sh
+# On PATH, so "restart the app" is one command with one definition wherever
+# it's invoked from: the entrypoint, the dashboard's Restart button (via
+# run_command), or the agent typing it directly (docs/adr/0044).
+COPY e2e-runner/bin/e2e-run-app e2e-runner/bin/e2e-restart-app /usr/local/bin/
+RUN chmod +x ./entrypoint.sh /usr/local/bin/e2e-run-app /usr/local/bin/e2e-restart-app
 
 # ponytail: no process supervisor (pm2/supervisord/s6) — entrypoint.sh's own
 # supervise() is a 6-line while-loop over the three servers, and the app is

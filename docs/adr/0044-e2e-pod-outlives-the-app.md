@@ -67,7 +67,7 @@ return.
 
 ## Decision
 
-**The e2e pod is a sandbox that may also run an app.** Eight parts:
+**The e2e pod is a sandbox that may also run an app.** Nine parts:
 
 ### 1. PID 1 outlives every child; nothing inside the container ends the pod
 
@@ -248,7 +248,49 @@ still rests on `list_changed` being honored, which is precisely the unverified
 assumption that let this rot undetected. Static registration answers the
 question instead of re-betting on it.
 
-### 8. e2e pods are garbage-collected
+### 8. A human can drive the sandbox, not just the agent
+
+The dashboard could Kill an e2e env but never start one: creating a sandbox
+was reachable only by asking the agent to call `request_e2e_env` — a strange
+dependency, since the sandbox is exactly what a human wants in order to
+inspect a broken preview themselves. The E2E card in the detail view's panel
+column gains a **Manage** drawer with `Start` / `Restart app` / `Stop` /
+`Recreate pod`, the code-server link, and the app log.
+
+**Restart app and Recreate pod are separate buttons on purpose.** Restarting
+re-runs the start command inside the live pod (seconds, keeps the warm
+dependency cache); recreating throws that cache away for a 10+ minute cold
+install. One "Restart" button covering both is how a human pays that install
+to fix a dev server that just needed rebooting — so recreate is the only
+action behind a confirm, and the copy names the cost.
+
+The restart logic lives in the image as `e2e-restart-app`, not in the
+dashboard: the part that actually matters is signalling the app's whole
+process group, so a dev server's children don't survive holding `$PORT` and
+make the next start fail with `EADDRINUSE`. Putting it next to the thing it
+restarts means the agent invokes the same command (`fleet-shared/CLAUDE.md`
+tells it to) instead of each caller hand-composing a shell line.
+
+The log comes from `/tmp/e2e-app.log` via the existing `run_command`
+passthrough — no new ProvisionerService RPC — and is a drawer rather than more
+rows on the card because at the panel column's 266px every log line wraps
+three times.
+
+Two bugs surfaced while building it, both from re-deriving on the client what
+the server already knows:
+
+- **"Open code-server" opened the app.** It was wired to `preview_url` (the
+  app root); code-server is served at the `/code` prefix (ADR-0038). It had
+  never once opened the IDE. `code_server_url` is now constructed next to the
+  route that serves it and travels on the wire.
+- **The e2e card reported the wrong profile.** `GetE2EStatus` had its own copy
+  of the hardcoded `"e2e"` lookup, so for any repo whose `e2e_profile` points
+  elsewhere it named a profile the pod wasn't built from — and computed a
+  spurious `start_cmd_overridden` badge off it. Both callers now go through
+  `core/internal/e2erecipe`, which exists precisely because that rule had
+  already been copied and had already drifted.
+
+### 9. e2e pods are garbage-collected
 
 A third `reconcile` pass, reusing `gcIdleSharedInstances`' shape and the
 already-present-but-callerless `ListPodsByLabel`: terminal-phase pods and pods
