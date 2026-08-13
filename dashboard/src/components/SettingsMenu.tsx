@@ -31,6 +31,17 @@ const THEMES: readonly { value: Theme; label: string }[] = [
 // panel out from under it (verified in Chrome — the failure mode would be a
 // modal vanishing mid-edit, since a display:none ancestor takes its
 // top-layer descendants with it).
+//
+// ponytail: the layout utilities live on an inner wrapper, NOT on the
+// popover element. daisyUI hides a closed popover with
+// `.dropdown[popover]:not(:popover-open){display:none}`, emitted inside
+// `@layer utilities{@layer daisyui.l1.l2.l3{…}}`; Tailwind's `.flex` is
+// emitted *unlayered* in `@layer utilities`, and unlayered declarations
+// beat their own layer's sublayers regardless of specificity. A `flex` on
+// the popover itself therefore wins, and the closed panel stays
+// display:flex — invisible (opacity:0) but laid out and hit-testable, a
+// w-56 box parked under the ⚙ eating taps meant for the buttons beside it.
+// Any Tailwind *display* utility here re-breaks it; put them on the child.
 export function SettingsMenu({
   theme,
   onThemeChange,
@@ -53,16 +64,18 @@ export function SettingsMenu({
         id="popover-settings"
         popover="auto"
         style={{ positionAnchor: "--anchor-settings" } as CSSProperties}
-        className="dropdown dropdown-end mt-1 w-56 border border-line bg-base-200 p-3 flex flex-col gap-3 shadow-lg"
+        className="dropdown dropdown-end mt-1 w-56 border border-line bg-base-200 p-3 shadow-lg"
       >
-        <div className="flex flex-col gap-1.5">
-          <span className="text-2xs tracking-[0.12em] text-dim2">THEME</span>
-          <Segmented value={theme} options={THEMES} onChange={onThemeChange} grow size="sm" />
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <span className="text-2xs tracking-[0.12em] text-dim2">MANAGE</span>
-          <ManageReposModal />
-          <ManagePromptSnippetsModal />
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-1.5">
+            <span className="text-2xs tracking-[0.12em] text-dim2">THEME</span>
+            <Segmented value={theme} options={THEMES} onChange={onThemeChange} grow size="sm" />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <span className="text-2xs tracking-[0.12em] text-dim2">MANAGE</span>
+            <ManageReposModal />
+            <ManagePromptSnippetsModal />
+          </div>
         </div>
       </div>
     </>

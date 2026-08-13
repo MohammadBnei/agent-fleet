@@ -11,9 +11,12 @@ import {
   parseSdkSystemInfo,
   parseSdkToolResult,
   parseSdkToolUse,
+  parseSdkResultSummary,
   permissionDenyMessages,
   resolvedPermissionDecisions,
+  resultDelta,
   summarizeToolInput,
+  type SdkResultSummary,
   type Density,
   type FeedVisibility,
   type ToolCallPair,
@@ -193,6 +196,21 @@ export function SessionFeed({
     out.push(<ToolGroup key={`tools-${group[0].call.seq}`} pairs={group} compact={compact} />);
   };
 
+  // Both of these track the *previous* occurrence of their entry kind as the
+  // walk proceeds, because neither line means anything on its own:
+  //
+  // - `lastInit`: the SDK re-emits system/init at the head of every turn in
+  //   streaming-input mode, not once per session. Rendering each one as
+  //   "session started" put a false session boundary between every prompt
+  //   and its answer. Only a *changed* init is news.
+  // - `lastResult`: a result's cost/api-time fields are session-cumulative,
+  //   so each line needs the one before it to show its own share.
+  //
+  // A changed init means the SDK really did re-initialise, so the result
+  // counters restart with it — that's why lastResult resets there.
+  let lastInit: string | null = null;
+  let lastResult: SdkResultSummary | null = null;
+
   for (let idx = 0; idx < entries.length; idx++) {
     const entry = entries[idx];
     const key = String(entry.seq);
@@ -303,8 +321,20 @@ export function SessionFeed({
             </div>,
           );
         }
-        // The rest of session-init is tier 4.
-        if (visibility.quiet) {
+        // The rest of session-init is tier 4 — and only when it differs
+        // from the last one shown. The alarm above deliberately stays
+        // outside this check: a broken MCP server should shout on every
+        // turn it is still broken.
+        const fingerprint = [
+          info.model,
+          info.permissionMode,
+          info.tools?.length,
+          (info.mcpServers ?? []).map((s) => `${s.name}:${s.status}`).join(","),
+        ].join("|");
+        const changed = fingerprint !== lastInit;
+        lastInit = fingerprint;
+        if (changed) lastResult = null;
+        if (visibility.quiet && changed) {
           out.push(
             <div key={key}>
               <TranscriptEntryView entry={entry} compact={compact} />
@@ -387,8 +417,28 @@ export function SessionFeed({
     }
 
     // --- tier 4: lifecycle ---------------------------------------------------
+    // A result carries session-cumulative cost/api-time, so it renders as a
+    // delta against the previous one. The baseline advances outside the
+    // visibility gate: it describes the session, not what is on screen.
+    if (entry.type === TranscriptEntryType.RESULT) {
+      const summary = parseSdkResultSummary(entry.text);
+      const prev = lastResult;
+      if (summary) lastResult = summary;
+      if (!visibility.quiet) continue;
+      flush();
+      out.push(
+        <div key={key} id={`entry-${key}`}>
+          <TranscriptEntryView
+            entry={entry}
+            compact={compact}
+            result={summary ? resultDelta(summary, prev) : null}
+          />
+        </div>,
+      );
+      continue;
+    }
+
     if (
-      entry.type === TranscriptEntryType.RESULT ||
       entry.type === TranscriptEntryType.APPROVE ||
       entry.type === TranscriptEntryType.ABORT ||
       entry.type === TranscriptEntryType.INTERRUPT ||

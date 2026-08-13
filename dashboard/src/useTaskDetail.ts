@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { isThot } from "./taskKind";
 import { Code, ConnectError } from "@connectrpc/connect";
 import { client, subscribeTranscript } from "./connectClient";
+import { pollVisible } from "./pollVisible";
 import type { Task } from "./gen/agentfleet/v1/core_pb";
 import type { GetE2eStatusResponse } from "./gen/agentfleet/v1/dashboard_pb";
 import type { TranscriptEntry } from "./gen/agentfleet/v1/transcript_pb";
@@ -114,8 +115,7 @@ export function useTaskDetail(taskId: string) {
           // as a page-level error.
         });
     }
-    pollE2e();
-    const e2eTimer = setInterval(pollE2e, 5000);
+    const stopE2ePoll = pollVisible(pollE2e, 5000);
 
     let unsubscribe = () => {};
     client
@@ -135,7 +135,7 @@ export function useTaskDetail(taskId: string) {
 
     return () => {
       cancelled = true;
-      clearInterval(e2eTimer);
+      stopE2ePoll();
       unsubscribe();
     };
   }, [taskId]);

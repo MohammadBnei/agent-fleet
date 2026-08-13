@@ -33,40 +33,55 @@ const RECONNECT_DELAY_MS = 1000;
 // silently regress a property the architecture already paid for.
 //
 // Page visibility handling: when the page becomes hidden (tab switched,
-// app backgrounded on mobile), we pause the stream by aborting the current
-// subscription. When the page becomes visible again, we resume from the
-// last cursor position. This prevents "failed to fetch" errors when mobile
-// browsers suspend network connections for backgrounded tabs.
+// app backgrounded on mobile), the in-flight subscription is aborted, and
+// becoming visible again resumes from the last cursor position. This
+// prevents "failed to fetch" errors when mobile browsers suspend network
+// connections for backgrounded tabs.
+//
+// Each attempt needs its OWN AbortController, chained to the outer one:
+// aborting on hide has to leave something left to abort with on unmount,
+// and the outer controller is a one-shot. Pausing without aborting (what
+// this used to do) only gated the *next* loop iteration — the open stream
+// stayed open, the phone suspended its socket underneath it, and the throw
+// arrived anyway, followed by a 1s retry loop hammering a network that
+// wasn't there.
 export function subscribeTranscript(
   taskId: string,
   since: bigint,
   onEntry: (entry: TranscriptEntry) => void,
 ): () => void {
   const controller = new AbortController();
-  let paused = false;
+  let attempt: AbortController | null = null;
   let cursor = since;
 
   async function streamLoop() {
     while (!controller.signal.aborted) {
-      // Wait while paused (page is hidden)
-      if (paused) {
+      // Wait while hidden (mobile background, tab switch) — no request is
+      // in flight here, so nothing to fail.
+      if (document.hidden) {
         await new Promise((resolve) => setTimeout(resolve, 100));
         continue;
       }
 
+      attempt = new AbortController();
+      const abortAttempt = () => attempt?.abort();
+      controller.signal.addEventListener("abort", abortAttempt, { once: true });
       try {
         for await (const entry of client.streamTranscript(
           { taskId, sinceSeq: cursor },
-          { signal: controller.signal },
+          { signal: attempt.signal },
         )) {
           cursor = entry.seq + 1n;
           onEntry(entry);
         }
-      } catch (err) {
+      } catch {
         // stream ended or dropped — fall through to the resubscribe delay
         // below unless we were deliberately aborted (cleanup, not a retry).
         // Distinguishing abort from network error helps avoid noise in logs.
         if (controller.signal.aborted) return;
+      } finally {
+        controller.signal.removeEventListener("abort", abortAttempt);
+        attempt = null;
       }
       if (controller.signal.aborted) return;
       await new Promise((resolve) => setTimeout(resolve, RECONNECT_DELAY_MS));
@@ -74,15 +89,16 @@ export function subscribeTranscript(
   }
 
   function handleVisibilityChange() {
-    paused = document.hidden;
-    // When becoming visible again after being hidden, the stream will
-    // automatically reconnect on the next iteration of streamLoop.
+    // Drop the connection now rather than letting the OS kill it and
+    // surface as an error. `cursor` survives, so the loop resubscribes
+    // without loss once the page is visible again.
+    if (document.hidden) attempt?.abort();
   }
 
-  // Listen for page visibility changes (tab switch, app backgrounding)
+  // Listen for page visibility changes (tab switch, app backgrounding).
+  // No initial-state seeding needed — streamLoop reads document.hidden
+  // itself on every iteration.
   document.addEventListener("visibilitychange", handleVisibilityChange);
-  // Initialize paused state based on current visibility
-  paused = document.hidden;
 
   void streamLoop();
 

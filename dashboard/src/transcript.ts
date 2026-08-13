@@ -403,6 +403,32 @@ export function entryTime(entry: TranscriptEntry): string | null {
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
+// The SDK's result message carries two kinds of number and gives no hint
+// which is which: per-result (num_turns, duration_ms, usage) and
+// session-cumulative (total_cost_usd, duration_api_ms, modelUsage costs).
+// Printed side by side on one "turn ended" line they read as one receipt,
+// so a 3.9-second turn that emitted 44 tokens showed up as "$1.546 · 3.9s
+// (7m24s api)" — the whole session's spend, attributed to its cheapest
+// turn. Subtracting the previous result gives each line its own share;
+// the session totals still live in the task header.
+//
+// `prev` can exceed `cur` when a session resumes and the SDK's counters
+// restart, hence the clamp — a negative cost is worse than a flat 0.
+export function resultDelta(cur: SdkResultSummary, prev: SdkResultSummary | null): SdkResultSummary {
+  if (!prev) return cur;
+  const sub = (a?: number, b?: number) => Math.max(0, (a ?? 0) - (b ?? 0));
+  const modelUsage: Record<string, SdkModelUsage> = {};
+  for (const [name, usage] of Object.entries(cur.modelUsage ?? {})) {
+    modelUsage[name] = { ...usage, costUSD: sub(usage.costUSD, prev.modelUsage?.[name]?.costUSD) };
+  }
+  return {
+    ...cur,
+    totalCostUsd: sub(cur.totalCostUsd, prev.totalCostUsd),
+    durationApiMs: sub(cur.durationApiMs, prev.durationApiMs),
+    modelUsage: cur.modelUsage ? modelUsage : undefined,
+  };
+}
+
 export function latestResultSummary(entries: TranscriptEntry[]): SdkResultSummary | null {
   for (let i = entries.length - 1; i >= 0; i--) {
     if (entries[i].type !== TranscriptEntryType.RESULT) continue;

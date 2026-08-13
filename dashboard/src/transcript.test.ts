@@ -12,6 +12,7 @@ import {
   inFlightTool,
   hasPendingDecision,
   entryTime,
+  resultDelta,
 } from "./transcript";
 
 let nextSeq = 0n;
@@ -174,4 +175,46 @@ test("hasPendingDecision covers an unanswered permission and an unanswered quest
   expect(hasPendingDecision([asked, full(TranscriptEntryType.ANSWER, "{}")])).toBe(false);
 
   expect(hasPendingDecision([])).toBe(false);
+});
+
+// The three real turns that exposed this: cost/api-time climbed
+// monotonically across turns whose own wall clock was 1m16s, 21s and 3.9s,
+// so the last line claimed $1.546 and 7m24s of API time for four seconds
+// of work.
+test("resultDelta charges each turn only its own share of a cumulative total", () => {
+  const first = {
+    numTurns: 10,
+    totalCostUsd: 1.425,
+    durationMs: 76_000,
+    durationApiMs: 422_000,
+    modelUsage: { haiku: { costUSD: 0.068 }, sonnet: { costUSD: 1.357 } },
+  };
+  const second = {
+    numTurns: 4,
+    totalCostUsd: 1.52,
+    durationMs: 21_000,
+    durationApiMs: 440_000,
+    modelUsage: { haiku: { costUSD: 0.073 }, sonnet: { costUSD: 1.448 } },
+  };
+
+  // No predecessor: the first result of a session is already its own share.
+  expect(resultDelta(first, null)).toBe(first);
+
+  const d = resultDelta(second, first);
+  expect(d.totalCostUsd).toBeCloseTo(0.095, 5);
+  expect(d.durationApiMs).toBe(18_000);
+  expect(d.modelUsage?.sonnet.costUSD).toBeCloseTo(0.091, 5);
+  // Per-result fields pass through untouched — they were never cumulative.
+  expect(d.numTurns).toBe(4);
+  expect(d.durationMs).toBe(21_000);
+});
+
+test("resultDelta clamps instead of going negative when a resumed session restarts its counters", () => {
+  const before = { totalCostUsd: 1.546, durationApiMs: 444_000, modelUsage: { sonnet: { costUSD: 1.473 } } };
+  const afterResume = { totalCostUsd: 0.02, durationApiMs: 3_000, modelUsage: { sonnet: { costUSD: 0.02 } } };
+
+  const d = resultDelta(afterResume, before);
+  expect(d.totalCostUsd).toBe(0);
+  expect(d.durationApiMs).toBe(0);
+  expect(d.modelUsage?.sonnet.costUSD).toBe(0);
 });

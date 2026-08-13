@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TaskList, ACTIVE_STATUSES } from "./pages/TaskList";
 import { TaskDetail } from "./pages/TaskDetail";
 import { Worktrees } from "./pages/Worktrees";
@@ -16,6 +16,7 @@ import { ErrorModal } from "./components/ErrorModal";
 import { ConfirmModal } from "./components/ConfirmModal";
 import { LogDrawer } from "./components/LogDrawer";
 import { useMediaQuery } from "./useMediaQuery";
+import { pollVisible } from "./pollVisible";
 import { useTheme } from "./useTheme";
 
 // No router library (see docs/adr/0013's plan) — state mirrored to
@@ -91,18 +92,29 @@ export default function App() {
     window.history.replaceState({}, "", url);
   }, [shortcut]);
 
+  // A single failed poll is not news: this runs every 5s, the next one
+  // almost always succeeds, and a modal for each one made the console
+  // unusable on a phone with patchy signal (or one that had just been
+  // unlocked — see pollVisible). Two consecutive failures is 10s of real
+  // outage, which is worth interrupting for. User-initiated actions below
+  // (delete, retry) still surface on the very first failure — someone is
+  // watching for that result. Deliberately no auto-clear on success: the
+  // same modal carries those action errors, and a poll succeeding 5s later
+  // would yank a delete failure off the screen before it was read.
+  const pollFailures = useRef(0);
   const loadTasks = useCallback(() => {
     return client
       .listTasks({})
-      .then((res) => setTasks(res.tasks))
-      .catch((err: Error) => setTasksError(err.message));
+      .then((res) => {
+        pollFailures.current = 0;
+        setTasks(res.tasks);
+      })
+      .catch((err: Error) => {
+        if (++pollFailures.current >= 2) setTasksError(err.message);
+      });
   }, []);
 
-  useEffect(() => {
-    loadTasks();
-    const interval = setInterval(loadTasks, POLL_INTERVAL_MS);
-    return () => clearInterval(interval);
-  }, [loadTasks]);
+  useEffect(() => pollVisible(loadTasks, POLL_INTERVAL_MS), [loadTasks]);
 
   // Straight off the already-polled list — core's activityTrackingStore
   // maintains awaiting_human on every permission_request/question append and
