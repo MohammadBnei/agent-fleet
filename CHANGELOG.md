@@ -1,5 +1,12 @@
 # Changelog
 
+# [1.55.0](https://github.com/MohammadBnei/agent-fleet/compare/1.54.0...1.55.0) (2026-08-13)
+
+
+### Features
+
+* **sidecar:** dial the sandbox directly from the endpoint roster ([#149](https://github.com/MohammadBnei/agent-fleet/issues/149)) ([37d2384](https://github.com/MohammadBnei/agent-fleet/commit/37d238461f02e403d5adff1e49001d0fa205ed3b))
+
 # [1.54.0](https://github.com/MohammadBnei/agent-fleet/compare/1.53.0...1.54.0) (2026-08-13)
 
 
