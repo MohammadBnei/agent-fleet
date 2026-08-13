@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.49.5](https://github.com/MohammadBnei/agent-fleet/compare/1.49.4...1.49.5) (2026-08-13)
+
+
+### Bug Fixes
+
+* **dashboard:** PWA icon not showing on install ([#139](https://github.com/MohammadBnei/agent-fleet/issues/139)) ([d89117a](https://github.com/MohammadBnei/agent-fleet/commit/d89117ab6c58a03b230abfcb304cca63a9a982dc))
+
 ## [1.49.4](https://github.com/MohammadBnei/agent-fleet/compare/1.49.3...1.49.4) (2026-08-13)
 
 
