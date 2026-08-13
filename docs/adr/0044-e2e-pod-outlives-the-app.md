@@ -211,6 +211,13 @@ real done-signal, deliberately.
 
 - `sshd` daemonizes and is not supervised — a break-glass convenience, not a
   fleet dependency. Use code-server if it dies.
+- A server that fails *immediately and always* now restart-loops every 5s
+  instead of killing the pod. That is the intended trade (the pod stays
+  debuggable), but it churns the log. The live candidate is
+  `@playwright/mcp`'s `--port` flag, still unverified against the installed
+  version — if it's wrong, expect a 5s restart line rather than silence.
+  `supervise()` logs every restart with its label, so this is visible in Loki
+  rather than mysterious.
 - The sweep's age bound is fleet-wide, not per-repo. A legitimately long
   session hitting 24h loses its sandbox and gets a fresh one on the next
   `run_command`, which is a cold install.
