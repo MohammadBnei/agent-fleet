@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.49.4](https://github.com/MohammadBnei/agent-fleet/compare/1.49.3...1.49.4) (2026-08-13)
+
+
+### Bug Fixes
+
+* **console:** a replayed message, four lying surfaces, and actions that felt dropped ([#137](https://github.com/MohammadBnei/agent-fleet/issues/137)) ([0f8df89](https://github.com/MohammadBnei/agent-fleet/commit/0f8df8915d8495400477b9e7419f1312ed4d06ff))
+
 ## [1.49.3](https://github.com/MohammadBnei/agent-fleet/compare/1.49.2...1.49.3) (2026-08-13)
 
 
