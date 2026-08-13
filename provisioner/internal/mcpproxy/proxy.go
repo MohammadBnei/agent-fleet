@@ -9,6 +9,7 @@ import (
 	"context"
 	"log/slog"
 	"sync"
+	"time"
 
 	"github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/mcp"
@@ -125,7 +126,21 @@ func (p *Proxy) CallTool(ctx context.Context, taskID, name string, args map[stri
 // single fixed tool with nothing to discover, so there's no lifecycle to
 // manage the way the Playwright client's ListTools-then-repeated-CallTool
 // pattern needs.
+//
+// It logs `init_ms` (dial + MCP handshake) separately from `call_ms` (the
+// command's own runtime) because only the first is overhead this fleet can
+// remove — the two hops around it were measured at 0-1ms (docs/adr/0045), so
+// if a run_command "feels slow" the answer is in one of these two numbers,
+// not in the topology. Read with:
+//
+//	{namespace="agent-fleet", service_name="provisioner"} | json
+//	  |= "mcp exec call" | unwrap init_ms
+//
+// docs/adr/0045 pins this field shape: whatever ends up owning the dial must
+// emit the same two names, or the before/after comparison across the
+// cut-over silently stops being a comparison.
 func (p *Proxy) callExec(ctx context.Context, taskID string, args map[string]any) (*mcp.CallToolResult, error) {
+	initStart := time.Now()
 	c, err := client.NewStreamableHttpClient(p.execURLForTask(taskID))
 	if err != nil {
 		return nil, err
@@ -137,7 +152,23 @@ func (p *Proxy) callExec(ctx context.Context, taskID string, args map[string]any
 	if _, err := c.Initialize(ctx, mcp.InitializeRequest{}); err != nil {
 		return nil, err
 	}
-	return c.CallTool(ctx, mcp.CallToolRequest{
+	initMS := time.Since(initStart).Milliseconds()
+
+	callStart := time.Now()
+	result, err := c.CallTool(ctx, mcp.CallToolRequest{
 		Params: mcp.CallToolParams{Name: RunCommandTool, Arguments: args},
 	})
+	slog.Info("mcp exec call",
+		"taskId", taskID,
+		"init_ms", initMS,
+		"call_ms", time.Since(callStart).Milliseconds(),
+		"error", errString(err))
+	return result, err
+}
+
+func errString(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }
