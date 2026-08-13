@@ -45,10 +45,23 @@ const RECONNECT_DELAY_MS = 1000;
 // stayed open, the phone suspended its socket underneath it, and the throw
 // arrived anyway, followed by a 1s retry loop hammering a network that
 // wasn't there.
+// What opens one stream attempt. Defaulted to the real client below; the
+// only reason it is a parameter at all is that this loop's actual job —
+// pause on hide, drop the connection, resume from the cursor — is worth
+// testing without a server or a browser, and mocking the module instead
+// turned out to depend on bun-version-specific `mock.module` timing (it
+// silently didn't apply on CI's bun, so the "test" exercised the real
+// transport against a relative URL). Production callers pass three args.
+type OpenStream = (
+  req: { taskId: string; sinceSeq: bigint },
+  opts: { signal: AbortSignal },
+) => AsyncIterable<TranscriptEntry>;
+
 export function subscribeTranscript(
   taskId: string,
   since: bigint,
   onEntry: (entry: TranscriptEntry) => void,
+  openStream: OpenStream = (req, opts) => client.streamTranscript(req, opts),
 ): () => void {
   const controller = new AbortController();
   let attempt: AbortController | null = null;
@@ -67,10 +80,7 @@ export function subscribeTranscript(
       const abortAttempt = () => attempt?.abort();
       controller.signal.addEventListener("abort", abortAttempt, { once: true });
       try {
-        for await (const entry of client.streamTranscript(
-          { taskId, sinceSeq: cursor },
-          { signal: attempt.signal },
-        )) {
+        for await (const entry of openStream({ taskId, sinceSeq: cursor }, { signal: attempt.signal })) {
           cursor = entry.seq + 1n;
           onEntry(entry);
         }

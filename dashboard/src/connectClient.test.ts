@@ -1,41 +1,19 @@
-// Drives subscribeTranscript against a fake Connect client, rather than
-// grepping its source for expected substrings the way this file used to.
-// The grep version asserted `code.toContain("if (paused)")` — it passed
-// happily while the pause it was checking for did nothing: `paused` only
-// gated the *next* loop iteration, so a backgrounded phone kept an open
-// stream the OS then killed underneath it, which is the "connection lost"
-// people actually saw.
-import { describe, test, expect, beforeEach, afterEach, mock } from "bun:test";
+// Drives subscribeTranscript against a fake stream, rather than grepping its
+// source for expected substrings the way this file used to. The grep version
+// asserted `code.toContain("if (paused)")` — it passed happily while the
+// pause it was checking for did nothing: `paused` only gated the *next* loop
+// iteration, so a backgrounded phone kept an open stream the OS then killed
+// underneath it, which is the "connection lost" people actually saw.
+//
+// The fake arrives through subscribeTranscript's own `openStream` parameter
+// rather than `mock.module`. Mocking the module passed locally and silently
+// did not apply on CI's bun, where the "test" then exercised the real
+// transport against a relative URL and reported an empty call list.
+import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import type { TranscriptEntry } from "./gen/agentfleet/v1/transcript_pb";
+import { subscribeTranscript } from "./connectClient";
 
 type Call = { sinceSeq: bigint; signal: AbortSignal };
-const calls: Call[] = [];
-// Entries the next stream attempt should yield before it goes quiet.
-let queued: Partial<TranscriptEntry>[] = [];
-
-mock.module("@connectrpc/connect-web", () => ({
-  createConnectTransport: () => ({}),
-}));
-mock.module("@connectrpc/connect", () => ({
-  createClient: () => ({
-    streamTranscript(
-      req: { taskId: string; sinceSeq: bigint },
-      opts: { signal: AbortSignal },
-    ): AsyncIterable<TranscriptEntry> {
-      calls.push({ sinceSeq: req.sinceSeq, signal: opts.signal });
-      const toYield = queued;
-      queued = [];
-      return (async function* () {
-        for (const entry of toYield) yield entry as TranscriptEntry;
-        // Then stay open, exactly like a live stream with nothing new to
-        // say — until somebody aborts it.
-        await new Promise((_resolve, reject) => {
-          opts.signal.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
-        });
-      })();
-    },
-  }),
-}));
 
 const mockDocument = {
   hidden: false,
@@ -47,29 +25,40 @@ const mockDocument = {
   removeEventListener(event: string, listener: EventListener) {
     this._listeners.get(event)?.delete(listener);
   },
-  _trigger(event: string) {
-    this._listeners.get(event)?.forEach((listener) => listener(new Event(event)));
-  },
   _setHidden(hidden: boolean) {
     this.hidden = hidden;
-    this._trigger("visibilitychange");
+    this._listeners.get("visibilitychange")?.forEach((l) => l(new Event("visibilitychange")));
   },
 };
-
-const { subscribeTranscript } = await import("./connectClient");
 
 const tick = (ms = 20) => new Promise((resolve) => setTimeout(resolve, ms));
 
 describe("subscribeTranscript visibility handling", () => {
   let originalDocument: typeof document;
+  let calls: Call[];
+  let queued: Partial<TranscriptEntry>[];
+
+  // Yields whatever is queued for this attempt, then stays open exactly like
+  // a live stream with nothing new to say — until somebody aborts it.
+  const openStream = (req: { taskId: string; sinceSeq: bigint }, opts: { signal: AbortSignal }) => {
+    calls.push({ sinceSeq: req.sinceSeq, signal: opts.signal });
+    const toYield = queued;
+    queued = [];
+    return (async function* () {
+      for (const entry of toYield) yield entry as TranscriptEntry;
+      await new Promise((_resolve, reject) => {
+        opts.signal.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+      });
+    })();
+  };
 
   beforeEach(() => {
     originalDocument = global.document;
-    // @ts-expect-error — a stand-in with only the two members this uses
+    // @ts-expect-error — a stand-in with only the members this uses
     global.document = mockDocument;
     mockDocument.hidden = false;
     mockDocument._listeners.clear();
-    calls.length = 0;
+    calls = [];
     queued = [];
   });
 
@@ -80,7 +69,7 @@ describe("subscribeTranscript visibility handling", () => {
   test("aborts the in-flight stream when the page is hidden, and resumes from the cursor", async () => {
     queued = [{ seq: 7n } as TranscriptEntry];
     const seen: bigint[] = [];
-    const unsubscribe = subscribeTranscript("task-1", 0n, (entry) => seen.push(entry.seq));
+    const unsubscribe = subscribeTranscript("task-1", 0n, (entry) => seen.push(entry.seq), openStream);
 
     await tick();
     expect(calls).toHaveLength(1);
@@ -106,7 +95,7 @@ describe("subscribeTranscript visibility handling", () => {
   }, 10000);
 
   test("unsubscribe aborts the live attempt and unregisters the listener", async () => {
-    const unsubscribe = subscribeTranscript("task-2", 3n, () => {});
+    const unsubscribe = subscribeTranscript("task-2", 3n, () => {}, openStream);
     await tick();
     expect(calls).toHaveLength(1);
 
