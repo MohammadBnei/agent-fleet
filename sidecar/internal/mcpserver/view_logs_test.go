@@ -74,6 +74,35 @@ func TestViewLogsHandler(t *testing.T) {
 			},
 		},
 		{
+			// A cap that silently drops the tail is worse than no cap: the
+			// agent reasons from partial logs believing it saw the window it
+			// asked for. The notice, and the fact that it names the existing
+			// filtering parameters, is the actual contract here (ADR-0046).
+			name: "oversized logs are truncated with a recovery hint",
+			params: map[string]any{
+				"component": "worker",
+			},
+			mockResult: strings.Repeat("2024-01-01 10:00:00 | info | noisy line\n", 2000),
+			wantErr:    false,
+			checkResult: func(t *testing.T, result *mcp.CallToolResult) {
+				text, ok := result.Content[0].(mcp.TextContent)
+				if !ok {
+					t.Fatalf("expected TextContent, got %T", result.Content[0])
+				}
+				if len(text.Text) > maxLogsBytes+500 {
+					t.Errorf("result is %d bytes, expected roughly maxLogsBytes (%d) plus a short notice", len(text.Text), maxLogsBytes)
+				}
+				if !strings.Contains(text.Text, "OUTPUT TRUNCATED") {
+					t.Error("truncated output must say so — silent truncation is the failure mode this guards")
+				}
+				for _, knob := range []string{"limit", "level", "duration", "start_time"} {
+					if !strings.Contains(text.Text, knob) {
+						t.Errorf("truncation notice should name the %q parameter as a way to narrow the query", knob)
+					}
+				}
+			},
+		},
+		{
 			name:    "missing component",
 			params:  map[string]any{},
 			wantErr: false, // Returns error result, not error
