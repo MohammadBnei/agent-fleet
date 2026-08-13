@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -374,6 +375,17 @@ func requestE2eEnvHandler(core *coreclient.Client, s *server.MCPServer) server.T
 	}
 }
 
+// runCommandRetryDelays paces the wait for a freshly provisioned sandbox to
+// become reachable: ~65s total, which covers a normal image pull without
+// making a genuinely broken pod cost the agent minutes before it hears about
+// it. A var, not a const array, so tests can zero it.
+var runCommandRetryDelays = []time.Duration{
+	5 * time.Second,
+	10 * time.Second,
+	20 * time.Second,
+	30 * time.Second,
+}
+
 // runCommandToolName is the tool served by the e2e pod's own execmcp
 // listener, proxied through core (provisioner/internal/mcpproxy routes it).
 const runCommandToolName = "run_command"
@@ -415,24 +427,56 @@ func runCommandHandler(core e2eRunner, s *server.MCPServer) server.ToolHandlerFu
 
 		// execmcp reports a nonzero exit as an ordinary result, never as an
 		// error, so reaching here means the call didn't land at all — no
-		// live sandbox pod. Start one and try once more.
+		// live sandbox pod. Start one and wait for it to come up.
 		slog.Info("mcp run_command: no live sandbox, provisioning one", "error", err)
-		env, provErr := core.RequestE2eEnv(ctx, "")
-		if provErr != nil {
-			slog.Error("mcp run_command: provisioning failed", "error", provErr)
-			return mcp.NewToolResultError(fmt.Sprintf("run_command: no sandbox running and one could not be started: %v", provErr)), nil
-		}
 
-		// Ensure Playwright tools registered for resumed sessions where
-		// notifications/tools/list_changed doesn't re-fire (ADR-0039).
-		if coreClient, ok := core.(*coreclient.Client); ok {
-			ensureE2eToolsRegistered(ctx, s, coreClient)
-		}
+		// This used to be one provision plus one immediate retry, which could
+		// essentially never succeed: RequestE2eEnv returns as soon as the pod
+		// OBJECT exists (Pending — scheduling, image pull, init containers all
+		// still ahead of it), so a zero-delay retry always hit an unreachable
+		// exec listener and the agent was told the sandbox was broken on the
+		// very first command of most sessions (docs/adr/0044).
+		//
+		// RequestE2eEnv is idempotent, so re-calling it each round is both the
+		// wait and the status probe: env.Status carries the pod's real phase,
+		// which is what makes the final error message diagnostic rather than
+		// just "not reachable".
+		var env *agentfleetv1.RequestE2EEnvResponse
+		var provErr error
+		for i, delay := range runCommandRetryDelays {
+			env, provErr = core.RequestE2eEnv(ctx, "")
+			if provErr != nil {
+				slog.Error("mcp run_command: provisioning failed", "error", provErr)
+				return mcp.NewToolResultError(fmt.Sprintf("run_command: no sandbox running and one could not be started: %v", provErr)), nil
+			}
 
-		resultJSON, isError, err = core.CallE2eTool(ctx, runCommandToolName, string(argsJSON))
+			// Ensure Playwright tools registered for resumed sessions where
+			// notifications/tools/list_changed doesn't re-fire (ADR-0039).
+			if coreClient, ok := core.(*coreclient.Client); ok {
+				ensureE2eToolsRegistered(ctx, s, coreClient)
+			}
+
+			resultJSON, isError, err = core.CallE2eTool(ctx, runCommandToolName, string(argsJSON))
+			if err == nil {
+				break
+			}
+			slog.Info("mcp run_command: sandbox not reachable yet, waiting",
+				"attempt", i+1, "of", len(runCommandRetryDelays), "podStatus", env.GetStatus(), "error", err)
+			select {
+			case <-ctx.Done():
+				return mcp.NewToolResultError(fmt.Sprintf("run_command: gave up waiting for the sandbox: %v", ctx.Err())), nil
+			case <-time.After(delay):
+			}
+		}
 		if err != nil {
-			slog.Error("mcp run_command: still unreachable after provisioning", "error", err)
-			return mcp.NewToolResultError(fmt.Sprintf("run_command: sandbox started but is not reachable: %v", err)), nil
+			slog.Error("mcp run_command: still unreachable after provisioning", "error", err, "podStatus", env.GetStatus())
+			return mcp.NewToolResultError(fmt.Sprintf(
+				"run_command: the sandbox pod is %q and its exec listener is still unreachable after %d attempts: %v\n"+
+					"resolvedStartCmd: %q (profile %q)\n"+
+					"A pod stuck at \"requested\" is usually still pulling the image or installing dependencies — try again shortly. "+
+					"A %q or %q pod is broken: call kill_env and then run_command again to rebuild it.",
+				env.GetStatus(), len(runCommandRetryDelays), err,
+				env.GetResolvedStartCmd(), env.GetProfileName(), "failed", "unknown")), nil
 		}
 		// Tell the agent what it just landed in. Without this the sandbox
 		// appears out of nowhere with an unknown toolchain and an unknown

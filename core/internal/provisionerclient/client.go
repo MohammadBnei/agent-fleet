@@ -37,6 +37,18 @@ type Client struct {
 // pod ever created, and every other pending task stuck behind it).
 const sessionCallTimeout = 2 * time.Minute
 
+// e2eCreateTimeout bounds CreateE2eSession, which had no deadline at all
+// until docs/adr/0044 — the same defect sessionCallTimeout was introduced to
+// fix, just on the path nobody had audited. Its blast radius is different:
+// this call is driven by an agent's MCP tool call, so a wedged provisioner
+// hangs the agent's turn rather than the dispatch loop.
+//
+// It cannot simply reuse sessionCallTimeout: the provisioner-side work here
+// legitimately includes a 2-minute WaitForPodGone on a replaced pod plus up
+// to 60s per EnsureSharedInstance and the credential-mint retries behind it.
+// Must stay strictly greater than the sum of those bounded waits.
+const e2eCreateTimeout = 5 * time.Minute
+
 // New dials addr (in-cluster ClusterIP, no TLS needed — Cilium's own
 // network policy is the trust boundary here, same as every other
 // in-cluster call in this fleet).
@@ -99,6 +111,8 @@ func (c *Client) CreateE2eSession(ctx context.Context, taskID, repo, startCmd st
 	if err != nil {
 		return "", "", fmt.Errorf("CreateE2ESession: %w", err)
 	}
+	ctx, cancel := context.WithTimeout(ctx, e2eCreateTimeout)
+	defer cancel()
 	resp, err := c.rpc.CreateE2ESession(ctx, &agentfleetv1.CreateE2ESessionRequest{
 		TaskId:             taskID,
 		Repo:               repo,
