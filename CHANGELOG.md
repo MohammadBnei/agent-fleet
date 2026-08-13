@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.49.3](https://github.com/MohammadBnei/agent-fleet/compare/1.49.2...1.49.3) (2026-08-13)
+
+
+### Bug Fixes
+
+* **dashboard:** give the console a real type scale and AA-clean text tokens ([a22045f](https://github.com/MohammadBnei/agent-fleet/commit/a22045f9d7c3a7935741b0625701e0a85e049a72)), closes [#1e1c24](https://github.com/MohammadBnei/agent-fleet/issues/1e1c24)
+
 ## [1.49.2](https://github.com/MohammadBnei/agent-fleet/compare/1.49.1...1.49.2) (2026-08-12)
 
 
