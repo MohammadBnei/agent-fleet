@@ -1,5 +1,12 @@
 # Changelog
 
+# [1.52.0](https://github.com/MohammadBnei/agent-fleet/compare/1.51.2...1.52.0) (2026-08-13)
+
+
+### Features
+
+* **proto:** ServiceEndpoint roster on the e2e provisioning responses ([#147](https://github.com/MohammadBnei/agent-fleet/issues/147)) ([b029a5c](https://github.com/MohammadBnei/agent-fleet/commit/b029a5c67bec79e641087f608637670f79af9b40))
+
 ## [1.51.2](https://github.com/MohammadBnei/agent-fleet/compare/1.51.1...1.51.2) (2026-08-13)
 
 ## [1.51.1](https://github.com/MohammadBnei/agent-fleet/compare/1.51.0...1.51.1) (2026-08-13)
