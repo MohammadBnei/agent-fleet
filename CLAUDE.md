@@ -10,6 +10,12 @@ This file is a condensed summary for quick orientation — if they disagree,
 `docs/ARCHITECTURE.md` wins for specs, `docs/DECISIONS.md`/`docs/adr/` win
 for decisions. When in doubt, open those files.
 
+`VISION.md` sits above all of them and is subordinate to all of them: it
+states what the fleet is *for*, and audits which of the organism's
+principles are already structural here versus still only asked for
+(`infra-bootstrap/VISION.md` is the parent). Read it when deciding
+*whether* to build something; read the others when deciding *what*.
+
 This repo is submoduled into
 [`infra-bootstrap`](https://github.com/MohammadBnei/infra-bootstrap) at
 `agent-fleet/` — that repo owns the cluster (Kubernetes, ArgoCD, ingress,
