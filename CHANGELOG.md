@@ -1,5 +1,12 @@
 # Changelog
 
+# [1.56.0](https://github.com/MohammadBnei/agent-fleet/compare/1.55.0...1.56.0) (2026-08-13)
+
+
+### Features
+
+* **core:** dial the sandbox directly for its own dashboard path ([#150](https://github.com/MohammadBnei/agent-fleet/issues/150)) ([d6f025a](https://github.com/MohammadBnei/agent-fleet/commit/d6f025aaba36d91b158443b0e86a5232163bd839)), closes [#149](https://github.com/MohammadBnei/agent-fleet/issues/149) [#147](https://github.com/MohammadBnei/agent-fleet/issues/147)
+
 # [1.55.0](https://github.com/MohammadBnei/agent-fleet/compare/1.54.0...1.55.0) (2026-08-13)
 
 
