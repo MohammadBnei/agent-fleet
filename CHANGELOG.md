@@ -1,5 +1,12 @@
 # Changelog
 
+# [1.50.0](https://github.com/MohammadBnei/agent-fleet/compare/1.49.6...1.50.0) (2026-08-13)
+
+
+### Features
+
+* **e2e:** the sandbox is a sandbox — decouple the pod's life from the app's ([#140](https://github.com/MohammadBnei/agent-fleet/issues/140)) ([fe760b8](https://github.com/MohammadBnei/agent-fleet/commit/fe760b8f74b4681010052e4412fc3b42296c3780))
+
 ## [1.49.6](https://github.com/MohammadBnei/agent-fleet/compare/1.49.5...1.49.6) (2026-08-13)
 
 
