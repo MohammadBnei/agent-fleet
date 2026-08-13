@@ -65,6 +65,22 @@ Any doc, code, comment, or memory that contradicts this file or an
   credentials**, restoring `adr/0012`'s rule that the component holding
   write-in-git trust never also holds infra-mutation trust. There is **no
   hub-and-spoke exception**: `adr/0020` point 5 holds unqualified again.
+  (As of [`adr/0045`](adr/0045-service-endpoint-roster-direct-dial.md)
+  direct dial is no longer an *exception* at all — it is the general rule,
+  which is what makes `thot-executor`'s direct path ordinary rather than
+  special. Point 5's "one upstream channel" now means one outbound *gRPC*
+  connection; the sidecar also speaks MCP to its own task's sandbox.)
+- **A service that needs no `core` state is dialed directly, from a
+  `ServiceEndpoint` roster** — not proxied through `core`
+  ([`adr/0045`](adr/0045-service-endpoint-roster-direct-dial.md)). The
+  roster rides responses `core` already sends (`RequestE2eEnv`,
+  `CreateE2eSession`) or arrives as `FLEET_ENDPOINTS` at pod spawn; there is
+  no lookup RPC and no `services` table, because Kubernetes is ground truth
+  for whether a pod exists. Reachability is fenced by a per-task
+  NetworkPolicy, never by a token the callee would have to hold — that would
+  put a credential in the sandbox `adr/0039` depends on being empty.
+  Measured before deciding: the deleted hop cost **0–1 ms** of a 751 ms p50
+  tool call, so this is a coupling fix, **not** a performance one.
 - **A repo's e2e recipe lives in `repo_profiles` and is a human's to
   change.** The agent reads the resolved recipe back from
   `request_e2e_env`; a `start_cmd` override needs an explicit human yes,
@@ -153,6 +169,13 @@ Any doc, code, comment, or memory that contradicts this file or an
   (doubt-driven-development, architecture-interview) for structured
   review/elicitation instead of a second independent session or an
   external orchestrator — see `adr/0002` (superseded) and `adr/0017`.
+- **A new passthrough RPC on `core` for a service that needs no `core`
+  state.** If `core` would open no connection, write no row and resolve
+  nothing, it does not belong in the path — add a `ServiceEndpoint` roster
+  entry and a NetworkPolicy rule instead. This is the cost that produced
+  `adr/0035`'s named exception; `adr/0045` removes the cost rather than the
+  rule. A *field* passed through an existing response is fine — a *call*
+  relayed through a new one is not.
 - **Fleet-managed `infra-bootstrap` cluster ops.** That repo's own
   `CLAUDE.md` states a human runs kubespray/ansible/pigsty personally;
   this fleet does not touch that, full stop, until that decision is
