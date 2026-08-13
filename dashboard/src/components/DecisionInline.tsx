@@ -4,6 +4,7 @@ import { client } from "../connectClient";
 import type { Task } from "../gen/agentfleet/v1/core_pb";
 import { parseQuestions, type ListSummary } from "../transcript";
 import { DiffLines } from "./DiffLines";
+import { Markdown } from "./Markdown";
 import { summarizeToolInput } from "../transcript";
 
 // The pending decision, answerable from the list.
@@ -198,12 +199,22 @@ export function DecisionInline({
     // A plan is prose, not a diff — deciding on it means reading it, so the list
     // sends you into the session rather than pretending a 3-line preview is
     // enough to approve on.
+    //
+    // It still has to be *readable* prose, though. This used to join the first
+    // four lines into one paragraph and clamp that to three lines, which on a
+    // phone showed about a sentence and a half — with the raw `## ` heading
+    // markers still in it, since it never went through the markdown renderer.
+    // Approving from a teaser like that is approving blind. Now it renders as
+    // markdown in a scroll box: enough to actually judge a short plan from the
+    // list, and "read it first" still exists for a long one.
     if (isPlan) {
       const plan = (permission.input as { plan?: string } | undefined)?.plan ?? "";
       return (
         <div className={`${pad} flex flex-col gap-2.5`}>
           <div className="text-xs text-dim tracking-[0.05em]">PLAN · waiting for approval</div>
-          <div className="text-sm text-text2 leading-relaxed line-clamp-3">{plan.split("\n").slice(0, 4).join(" ")}</div>
+          <div className={`text-sm text-text2 overflow-y-auto ${stacked ? "max-h-[40vh]" : "max-h-[30vh]"}`}>
+            <Markdown text={plan} />
+          </div>
           {error && <div className="text-xs text-error">{error}</div>}
           <div className={`flex gap-2.5 ${stacked ? "" : "items-center"}`}>
             <ActionButton busy={pending === "allow"} disabled={busy} className={primaryBtn} onClick={() => respond("allow")}>

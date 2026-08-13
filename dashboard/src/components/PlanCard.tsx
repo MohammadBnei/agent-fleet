@@ -35,10 +35,18 @@ export function PlanCard({
   onFeedback,
   edgeClassName,
   allowAnnotate = true,
+  docked = false,
 }: {
   plan: string;
   pending: boolean;
   busy: boolean;
+  // The dock already caps its own height and scrolls (that is the whole of
+  // what that wrapper does), so the plan body must NOT bring a second
+  // scroller inside it. Nested, the inner box was taller than the dock
+  // itself — 422px of plan inside a 379px dock on a phone — so dragging the
+  // plan text only ever moved the inner box, and Approve / request changes
+  // sat permanently below the fold with no way to drag to them.
+  docked?: boolean;
   // "Request changes" never resolves the request itself (see this file's
   // own top comment) — it stays pending and re-arms via a plain reply, so
   // the only way `!pending` happens here without a real Approve is a later
@@ -147,7 +155,7 @@ export function PlanCard({
       <div ref={wrapperRef} className="relative">
         <div
           onMouseUp={handleMouseUp}
-          className="text-base leading-[1.7] max-h-[50vh] overflow-y-auto"
+          className={`text-base leading-[1.7] ${docked ? "" : "max-h-[50vh] overflow-y-auto"}`}
         >
           <Markdown text={plan} />
         </div>

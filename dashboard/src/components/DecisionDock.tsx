@@ -45,6 +45,7 @@ export function DecisionDock({
           <PlanCard
             plan={(permission.input as { plan?: string } | undefined)?.plan ?? ""}
             pending
+            docked
             busy={busyKey === `permission:${permission.entry.seq}`}
             onApprove={() => onRespond(permission.entry.seq, { behavior: "allow" })}
             onFeedback={onPlanFeedback}
