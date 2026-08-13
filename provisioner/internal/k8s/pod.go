@@ -514,6 +514,21 @@ func (c *Client) CreateWorkerPod(ctx context.Context, taskID, repo, leaseID, wor
 					// unprefixed one (confirmed live: sidecar stuck at
 					// /readyz 503 forever, worker never starts).
 					{Name: "CORE_GRPC_ADDR", Value: c.CoreGRPCAddr},
+					// Where this task's sandbox will answer, so the sidecar
+					// can dial it directly instead of relaying tool calls
+					// through core (docs/adr/0045).
+					//
+					// Injectable at worker-pod creation only because
+					// EndpointsFor derives addresses from names: the sandbox
+					// does not exist yet, and may never — the roster says
+					// where it *would* answer. That is precisely what lets
+					// the first run_command of a session dial directly rather
+					// than needing the relay to bootstrap an address.
+					//
+					// Refreshed from RequestE2eEnvResponse.endpoints on every
+					// provision, so a namespace or port change reaches a
+					// running pod without a restart.
+					{Name: "FLEET_ENDPOINTS", Value: EndpointsJSON(c.Namespace, taskID)},
 					// Deliberately no THOT_* here. ADR-0035's ask_thot is
 					// gone, and the executor token now belongs only to the
 					// worker container of a cluster-access task (see

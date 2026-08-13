@@ -1,7 +1,9 @@
 package k8s
 
 import (
+	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 )
 
@@ -97,11 +99,38 @@ const ProtocolMCPStreamableHTTP = "mcp-streamable-http"
 // same boundary every other package here keeps, with grpcserver doing the
 // mapping — so the addressing rules live next to the naming rules they
 // derive from rather than next to the transport.
+// The json tags are wire format, not decoration: this struct is marshalled
+// into the sidecar's FLEET_ENDPOINTS env var (see EndpointsJSON), and the
+// sidecar unmarshals the same field names it gets back from
+// RequestE2eEnvResponse. One shape, two delivery channels, one parser.
 type ServiceEndpoint struct {
-	Name     string
-	Address  string
-	Protocol string
-	Path     string
+	Name     string `json:"name"`
+	Address  string `json:"address"`
+	Protocol string `json:"protocol"`
+	Path     string `json:"path"`
+}
+
+// EndpointsJSON is the roster as the sidecar receives it at pod creation.
+//
+// This is only possible because EndpointsFor derives addresses from names
+// rather than reading them back from a live object: the sandbox does not
+// exist yet when a worker pod is created, and will not exist until the agent
+// asks for one. The roster describes where it *would* answer.
+//
+// That is what lets the very first run_command of a session dial directly
+// instead of needing the relay to bootstrap itself. Without it the first call
+// of every session would have no address, which is exactly the hole that
+// makes deleting the relay impossible.
+func EndpointsJSON(namespace, taskID string) string {
+	b, err := json.Marshal(EndpointsFor(namespace, taskID))
+	if err != nil {
+		// Unreachable: the input is a fixed slice of plain structs. Logged
+		// rather than propagated so a marshalling bug degrades to the relay
+		// fallback instead of failing pod creation outright.
+		slog.Error("k8s EndpointsJSON", "taskId", taskID, "error", err)
+		return ""
+	}
+	return string(b)
 }
 
 // EndpointsFor is the fleet's service-discovery resolution step

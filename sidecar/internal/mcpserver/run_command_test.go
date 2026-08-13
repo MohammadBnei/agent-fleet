@@ -227,7 +227,10 @@ func TestRunCommandHandler(t *testing.T) {
 			req.Params.Name = "run_command"
 			req.Params.Arguments = tt.params
 
-			result, err := runCommandHandler(tt.mock, nil)(context.Background(), req)
+			// Nil dialer = empty roster = the relay path, which is what these
+			// cases have always exercised. docs/adr/0045's direct-dial
+			// routing is covered separately in sandbox_test.go.
+			result, err := runCommandHandler(sandbox{core: tt.mock}, nil)(context.Background(), req)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
