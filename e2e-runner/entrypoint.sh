@@ -102,8 +102,14 @@ supervise code-server \
 # port has no IngressRoute. Cilium enforcing L3 is a strictly stronger
 # boundary than a Host header string match. If :8931 ever gains an
 # IngressRoute, narrow this to the pod's own service DNS name instead.
+#
+# --browser chromium because the default is the *branded* Chrome channel
+# (/opt/google/chrome/chrome), which this image does not and should not ship.
+# Pairs with the Dockerfile's `install-browser chrome-for-testing` — see the
+# comment there for the two distinct errors these two lines fix.
 supervise playwright-mcp \
-	bunx @playwright/mcp --host 0.0.0.0 --port "${E2E_PLAYWRIGHT_PORT}" --headless --allowed-hosts '*' &
+	bunx @playwright/mcp --host 0.0.0.0 --port "${E2E_PLAYWRIGHT_PORT}" --headless \
+	--allowed-hosts '*' --browser chromium &
 
 supervise execmcp execmcp --port "${E2E_EXEC_PORT}" &
 

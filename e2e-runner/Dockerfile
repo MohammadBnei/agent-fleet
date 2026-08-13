@@ -28,9 +28,28 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN curl -fsSL https://code-server.dev/install.sh | sh
 
 # Playwright + its own MCP server. `--with-deps` pulls the apt packages
-# Chromium needs on Debian; no GPU driver packages, CPU-only rendering.
+# Chromium needs on Debian; no GPU driver packages, CPU-only rendering. This
+# browser is for the TARGET REPO's own Playwright tests, run via run_command.
+#
+# @playwright/mcp needs its own, separately: it bundles a different
+# playwright-core, so it resolves a different browser build number and refuses
+# to start on the one installed above. Found by actually driving a
+# browser_navigate (docs/adr/0044) — every cheaper check passed:
+#
+#   default channel  -> Chromium distribution 'chrome' is not found at
+#                       /opt/google/chrome/chrome   (it wants BRANDED Chrome,
+#                       which nothing here installs)
+#   --browser chromium, without the line below
+#                    -> Browser "chrome-for-testing" is not installed;
+#                       expected .../chromium-1237/...  (image had 1234)
+#
+# So the entrypoint passes --browser chromium AND this installs the build that
+# @playwright/mcp itself resolves. ~110MB on top of the above; the alternative
+# is pinning the two packages' playwright-core versions together by hand,
+# which breaks silently on the next bump instead of loudly at build time.
 RUN bun install -g playwright @playwright/mcp \
-    && bunx playwright install --with-deps chromium
+    && bunx playwright install --with-deps chromium \
+    && bunx @playwright/mcp install-browser chrome-for-testing
 
 COPY --from=build /out/execmcp /usr/local/bin/execmcp
 

@@ -218,6 +218,23 @@ client honoring `notifications/tools/list_changed` — a risk ADR-0012 flagged
 and nobody ever verified. The tools now proxy to a pod that may not exist yet;
 that is deliberate, and a loud failure beats an invisible tool.
 
+**c. The browser itself was never installed.** Only surfaced by actually
+driving a `browser_navigate` — every cheaper check (port bound, MCP
+`initialize`, `tools/list`) passed:
+
+| Configuration | Error |
+|---|---|
+| default channel | `Chromium distribution 'chrome' is not found at /opt/google/chrome/chrome` — it wants **branded** Chrome, which the image neither ships nor should |
+| `--browser chromium` alone | `Browser "chrome-for-testing" is not installed; expected .../chromium-1237/...` — the image had `chromium-1234` |
+
+`@playwright/mcp` bundles a different `playwright-core` than the global
+`playwright` package, so it resolves a different browser build number. Fixed
+by passing `--browser chromium` **and** adding
+`bunx @playwright/mcp install-browser chrome-for-testing` to the Dockerfile,
+which lets @playwright/mcp resolve its own build rather than pinning the two
+packages' `playwright-core` versions by hand — that would break silently on
+the next bump instead of loudly at build time. ~110MB.
+
 Cost: the snapshot drifts from the installed `@playwright/mcp`. Bounded and
 one-directional — a tool that disappeared upstream fails loudly at the real
 server on first call, a new one is merely invisible until someone refreshes
@@ -293,6 +310,8 @@ the GC sweep — are covered by Go tests against the fake clientset):
 | A real serving app | App served on `:3000`, `run_command` worked concurrently against it. |
 | `pkill -9 execmcp` | Container survived; `supervise()` logged `execmcp exited (137), restarting in 5s`; the listener came back and served. |
 | `run_command 'sleep 300 & echo ok'` | Returned in **1.025s** — precisely `cmd.WaitDelay`, confirming both that the inherited pipe really was held open and that the fix releases it. Before this change the same call blocked for the full 15-minute `commandTimeout`. |
+| `browser_navigate` through the real Playwright MCP, using the in-cluster `Host` header, on a clean container off the final image | **Chromium launched, page loaded, snapshot produced.** The first time browser automation has worked in this fleet. |
+| snapshot vs. live `tools/list` | 24 tools, exact match, no drift. |
 
 **Resolved a long-standing unverified risk, and found the real one behind
 it:** `@playwright/mcp --port` *does* work — `:8931` was bound in every run,
