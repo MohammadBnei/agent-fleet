@@ -66,3 +66,23 @@ spec:
       port: 8931
     - protocol: TCP
       port: 8932
+  # core reaches :8932 for its own human-facing path — runInE2ePod, backing
+  # GetE2EAppLog and the dashboard run-command surface (docs/adr/0044). Unlike
+  # a worker, core is not task-scoped, so this belongs here rather than in the
+  # per-task policy the provisioner now creates (docs/adr/0045).
+  #
+  # Listed ahead of the code that uses it: core still reaches the sandbox via
+  # the provisioner relay today. A permission that arrives after the caller
+  # fails as a timeout with no useful signal, so it lands first.
+  #
+  # The label is `agent-fleet-core`, not `core` — common-app-chart derives
+  # app.kubernetes.io/name from the release name. Verified against the live
+  # pod rather than assumed; `-l app.kubernetes.io/name=core` matches nothing,
+  # and a selector that matches nothing is a policy that silently denies.
+  - from:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: agent-fleet-core
+    ports:
+    - protocol: TCP
+      port: 8932
