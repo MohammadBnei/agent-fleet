@@ -1,5 +1,12 @@
 # Changelog
 
+# [1.54.0](https://github.com/MohammadBnei/agent-fleet/compare/1.53.0...1.54.0) (2026-08-13)
+
+
+### Features
+
+* **context:** cap tool output at the source, always with a way back ([#146](https://github.com/MohammadBnei/agent-fleet/issues/146)) ([878269d](https://github.com/MohammadBnei/agent-fleet/commit/878269d1c9dbdd349ed19316893e04232f7c05fd))
+
 # [1.53.0](https://github.com/MohammadBnei/agent-fleet/compare/1.52.0...1.53.0) (2026-08-13)
 
 
