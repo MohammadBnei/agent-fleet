@@ -49,11 +49,6 @@ const (
 	CoreServiceRequestE2EEnvProcedure = "/agentfleet.v1.CoreService/RequestE2eEnv"
 	// CoreServiceKillE2EEnvProcedure is the fully-qualified name of the CoreService's KillE2eEnv RPC.
 	CoreServiceKillE2EEnvProcedure = "/agentfleet.v1.CoreService/KillE2eEnv"
-	// CoreServiceListE2EToolsProcedure is the fully-qualified name of the CoreService's ListE2eTools
-	// RPC.
-	CoreServiceListE2EToolsProcedure = "/agentfleet.v1.CoreService/ListE2eTools"
-	// CoreServiceCallE2EToolProcedure is the fully-qualified name of the CoreService's CallE2eTool RPC.
-	CoreServiceCallE2EToolProcedure = "/agentfleet.v1.CoreService/CallE2eTool"
 	// CoreServiceGetTaskProcedure is the fully-qualified name of the CoreService's GetTask RPC.
 	CoreServiceGetTaskProcedure = "/agentfleet.v1.CoreService/GetTask"
 	// CoreServiceSetPermissionModeProcedure is the fully-qualified name of the CoreService's
@@ -119,19 +114,6 @@ type CoreServiceClient interface {
 	AskUserQuestion(context.Context, *connect.Request[v1.AskUserQuestionRequest]) (*connect.Response[v1.AskUserQuestionResponse], error)
 	RequestE2EEnv(context.Context, *connect.Request[v1.RequestE2EEnvRequest]) (*connect.Response[v1.RequestE2EEnvResponse], error)
 	KillE2EEnv(context.Context, *connect.Request[v1.KillE2EEnvRequest]) (*connect.Response[v1.KillE2EEnvResponse], error)
-	// Reuses provisioner.proto's message shapes — same passthrough, one hop
-	// further down the chain (see that file's own comment).
-	// DEPRECATED (docs/adr/0045) — the sidecar dials the sandbox directly from
-	// RequestE2eEnvResponse.endpoints. Kept only for the deploy-skew window in
-	// which a live pod still runs an older sidecar. Do not add callers.
-	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
-	//
-	// Deprecated: do not use.
-	ListE2ETools(context.Context, *connect.Request[v1.ListE2EToolsRequest]) (*connect.Response[v1.ListE2EToolsResponse], error)
-	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
-	//
-	// Deprecated: do not use.
-	CallE2ETool(context.Context, *connect.Request[v1.CallE2EToolRequest]) (*connect.Response[v1.CallE2EToolResponse], error)
 	// Lets a worker pod fetch its own fresh task row on startup instead of
 	// relying on stale environment variables — same message shapes
 	// DashboardService.GetTask uses, different caller (docs/adr/0029).
@@ -218,18 +200,6 @@ func NewCoreServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			httpClient,
 			baseURL+CoreServiceKillE2EEnvProcedure,
 			connect.WithSchema(coreServiceMethods.ByName("KillE2eEnv")),
-			connect.WithClientOptions(opts...),
-		),
-		listE2ETools: connect.NewClient[v1.ListE2EToolsRequest, v1.ListE2EToolsResponse](
-			httpClient,
-			baseURL+CoreServiceListE2EToolsProcedure,
-			connect.WithSchema(coreServiceMethods.ByName("ListE2eTools")),
-			connect.WithClientOptions(opts...),
-		),
-		callE2ETool: connect.NewClient[v1.CallE2EToolRequest, v1.CallE2EToolResponse](
-			httpClient,
-			baseURL+CoreServiceCallE2EToolProcedure,
-			connect.WithSchema(coreServiceMethods.ByName("CallE2eTool")),
 			connect.WithClientOptions(opts...),
 		),
 		getTask: connect.NewClient[v1.GetTaskRequest, v1.GetTaskResponse](
@@ -351,8 +321,6 @@ type coreServiceClient struct {
 	askUserQuestion     *connect.Client[v1.AskUserQuestionRequest, v1.AskUserQuestionResponse]
 	requestE2EEnv       *connect.Client[v1.RequestE2EEnvRequest, v1.RequestE2EEnvResponse]
 	killE2EEnv          *connect.Client[v1.KillE2EEnvRequest, v1.KillE2EEnvResponse]
-	listE2ETools        *connect.Client[v1.ListE2EToolsRequest, v1.ListE2EToolsResponse]
-	callE2ETool         *connect.Client[v1.CallE2EToolRequest, v1.CallE2EToolResponse]
 	getTask             *connect.Client[v1.GetTaskRequest, v1.GetTaskResponse]
 	setPermissionMode   *connect.Client[v1.SetPermissionModeRequest, v1.SetPermissionModeResponse]
 	heartbeat           *connect.Client[v1.HeartbeatRequest, v1.HeartbeatResponse]
@@ -401,20 +369,6 @@ func (c *coreServiceClient) RequestE2EEnv(ctx context.Context, req *connect.Requ
 // KillE2EEnv calls agentfleet.v1.CoreService.KillE2eEnv.
 func (c *coreServiceClient) KillE2EEnv(ctx context.Context, req *connect.Request[v1.KillE2EEnvRequest]) (*connect.Response[v1.KillE2EEnvResponse], error) {
 	return c.killE2EEnv.CallUnary(ctx, req)
-}
-
-// ListE2ETools calls agentfleet.v1.CoreService.ListE2eTools.
-//
-// Deprecated: do not use.
-func (c *coreServiceClient) ListE2ETools(ctx context.Context, req *connect.Request[v1.ListE2EToolsRequest]) (*connect.Response[v1.ListE2EToolsResponse], error) {
-	return c.listE2ETools.CallUnary(ctx, req)
-}
-
-// CallE2ETool calls agentfleet.v1.CoreService.CallE2eTool.
-//
-// Deprecated: do not use.
-func (c *coreServiceClient) CallE2ETool(ctx context.Context, req *connect.Request[v1.CallE2EToolRequest]) (*connect.Response[v1.CallE2EToolResponse], error) {
-	return c.callE2ETool.CallUnary(ctx, req)
 }
 
 // GetTask calls agentfleet.v1.CoreService.GetTask.
@@ -521,19 +475,6 @@ type CoreServiceHandler interface {
 	AskUserQuestion(context.Context, *connect.Request[v1.AskUserQuestionRequest]) (*connect.Response[v1.AskUserQuestionResponse], error)
 	RequestE2EEnv(context.Context, *connect.Request[v1.RequestE2EEnvRequest]) (*connect.Response[v1.RequestE2EEnvResponse], error)
 	KillE2EEnv(context.Context, *connect.Request[v1.KillE2EEnvRequest]) (*connect.Response[v1.KillE2EEnvResponse], error)
-	// Reuses provisioner.proto's message shapes — same passthrough, one hop
-	// further down the chain (see that file's own comment).
-	// DEPRECATED (docs/adr/0045) — the sidecar dials the sandbox directly from
-	// RequestE2eEnvResponse.endpoints. Kept only for the deploy-skew window in
-	// which a live pod still runs an older sidecar. Do not add callers.
-	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
-	//
-	// Deprecated: do not use.
-	ListE2ETools(context.Context, *connect.Request[v1.ListE2EToolsRequest]) (*connect.Response[v1.ListE2EToolsResponse], error)
-	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
-	//
-	// Deprecated: do not use.
-	CallE2ETool(context.Context, *connect.Request[v1.CallE2EToolRequest]) (*connect.Response[v1.CallE2EToolResponse], error)
 	// Lets a worker pod fetch its own fresh task row on startup instead of
 	// relying on stale environment variables — same message shapes
 	// DashboardService.GetTask uses, different caller (docs/adr/0029).
@@ -616,18 +557,6 @@ func NewCoreServiceHandler(svc CoreServiceHandler, opts ...connect.HandlerOption
 		CoreServiceKillE2EEnvProcedure,
 		svc.KillE2EEnv,
 		connect.WithSchema(coreServiceMethods.ByName("KillE2eEnv")),
-		connect.WithHandlerOptions(opts...),
-	)
-	coreServiceListE2EToolsHandler := connect.NewUnaryHandler(
-		CoreServiceListE2EToolsProcedure,
-		svc.ListE2ETools,
-		connect.WithSchema(coreServiceMethods.ByName("ListE2eTools")),
-		connect.WithHandlerOptions(opts...),
-	)
-	coreServiceCallE2EToolHandler := connect.NewUnaryHandler(
-		CoreServiceCallE2EToolProcedure,
-		svc.CallE2ETool,
-		connect.WithSchema(coreServiceMethods.ByName("CallE2eTool")),
 		connect.WithHandlerOptions(opts...),
 	)
 	coreServiceGetTaskHandler := connect.NewUnaryHandler(
@@ -752,10 +681,6 @@ func NewCoreServiceHandler(svc CoreServiceHandler, opts ...connect.HandlerOption
 			coreServiceRequestE2EEnvHandler.ServeHTTP(w, r)
 		case CoreServiceKillE2EEnvProcedure:
 			coreServiceKillE2EEnvHandler.ServeHTTP(w, r)
-		case CoreServiceListE2EToolsProcedure:
-			coreServiceListE2EToolsHandler.ServeHTTP(w, r)
-		case CoreServiceCallE2EToolProcedure:
-			coreServiceCallE2EToolHandler.ServeHTTP(w, r)
 		case CoreServiceGetTaskProcedure:
 			coreServiceGetTaskHandler.ServeHTTP(w, r)
 		case CoreServiceSetPermissionModeProcedure:
@@ -823,14 +748,6 @@ func (UnimplementedCoreServiceHandler) RequestE2EEnv(context.Context, *connect.R
 
 func (UnimplementedCoreServiceHandler) KillE2EEnv(context.Context, *connect.Request[v1.KillE2EEnvRequest]) (*connect.Response[v1.KillE2EEnvResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.CoreService.KillE2eEnv is not implemented"))
-}
-
-func (UnimplementedCoreServiceHandler) ListE2ETools(context.Context, *connect.Request[v1.ListE2EToolsRequest]) (*connect.Response[v1.ListE2EToolsResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.CoreService.ListE2eTools is not implemented"))
-}
-
-func (UnimplementedCoreServiceHandler) CallE2ETool(context.Context, *connect.Request[v1.CallE2EToolRequest]) (*connect.Response[v1.CallE2EToolResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.CoreService.CallE2eTool is not implemented"))
 }
 
 func (UnimplementedCoreServiceHandler) GetTask(context.Context, *connect.Request[v1.GetTaskRequest]) (*connect.Response[v1.GetTaskResponse], error) {

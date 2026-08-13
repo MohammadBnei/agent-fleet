@@ -42,12 +42,6 @@ const (
 	// ProvisionerServiceCreateE2ESessionProcedure is the fully-qualified name of the
 	// ProvisionerService's CreateE2eSession RPC.
 	ProvisionerServiceCreateE2ESessionProcedure = "/agentfleet.v1.ProvisionerService/CreateE2eSession"
-	// ProvisionerServiceListE2EToolsProcedure is the fully-qualified name of the ProvisionerService's
-	// ListE2eTools RPC.
-	ProvisionerServiceListE2EToolsProcedure = "/agentfleet.v1.ProvisionerService/ListE2eTools"
-	// ProvisionerServiceCallE2EToolProcedure is the fully-qualified name of the ProvisionerService's
-	// CallE2eTool RPC.
-	ProvisionerServiceCallE2EToolProcedure = "/agentfleet.v1.ProvisionerService/CallE2eTool"
 	// ProvisionerServiceCreateWorkerPodProcedure is the fully-qualified name of the
 	// ProvisionerService's CreateWorkerPod RPC.
 	ProvisionerServiceCreateWorkerPodProcedure = "/agentfleet.v1.ProvisionerService/CreateWorkerPod"
@@ -67,22 +61,10 @@ type ProvisionerServiceClient interface {
 	KillE2ESession(context.Context, *connect.Request[v1.KillE2ESessionRequest]) (*connect.Response[v1.KillE2ESessionResponse], error)
 	GetE2ESessionStatus(context.Context, *connect.Request[v1.GetE2ESessionStatusRequest]) (*connect.Response[v1.GetE2ESessionStatusResponse], error)
 	CreateE2ESession(context.Context, *connect.Request[v1.CreateE2ESessionRequest]) (*connect.Response[v1.CreateE2ESessionResponse], error)
-	// Reused by core.proto's own ListE2eTools/CallE2eTool one hop further
-	// down the passthrough chain (see that file's comment).
-	// DEPRECATED (docs/adr/0045) — deleted once every live pod runs a sidecar
-	// that dials the sandbox itself.
-	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
-	//
-	// Deprecated: do not use.
-	ListE2ETools(context.Context, *connect.Request[v1.ListE2EToolsRequest]) (*connect.Response[v1.ListE2EToolsResponse], error)
-	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
-	//
-	// Deprecated: do not use.
-	CallE2ETool(context.Context, *connect.Request[v1.CallE2EToolRequest]) (*connect.Response[v1.CallE2EToolResponse], error)
 	CreateWorkerPod(context.Context, *connect.Request[v1.CreateWorkerPodRequest]) (*connect.Response[v1.CreateWorkerPodResponse], error)
 	TearDownSession(context.Context, *connect.Request[v1.TearDownSessionRequest]) (*connect.Response[v1.TearDownSessionResponse], error)
 	// Reused as-is by dashboard.proto's own ListWorktrees (identical empty
-	// request shape) — same passthrough pattern as ListE2eTools above.
+	// request shape) — cross-file message reuse, not a call passthrough.
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	ListWorktrees(context.Context, *connect.Request[v1.ListWorktreesRequest]) (*connect.Response[v1.ListWorktreesResponse], error)
 	// Reused as-is by dashboard.proto's own DeleteWorktree (identical
@@ -120,18 +102,6 @@ func NewProvisionerServiceClient(httpClient connect.HTTPClient, baseURL string, 
 			connect.WithSchema(provisionerServiceMethods.ByName("CreateE2eSession")),
 			connect.WithClientOptions(opts...),
 		),
-		listE2ETools: connect.NewClient[v1.ListE2EToolsRequest, v1.ListE2EToolsResponse](
-			httpClient,
-			baseURL+ProvisionerServiceListE2EToolsProcedure,
-			connect.WithSchema(provisionerServiceMethods.ByName("ListE2eTools")),
-			connect.WithClientOptions(opts...),
-		),
-		callE2ETool: connect.NewClient[v1.CallE2EToolRequest, v1.CallE2EToolResponse](
-			httpClient,
-			baseURL+ProvisionerServiceCallE2EToolProcedure,
-			connect.WithSchema(provisionerServiceMethods.ByName("CallE2eTool")),
-			connect.WithClientOptions(opts...),
-		),
 		createWorkerPod: connect.NewClient[v1.CreateWorkerPodRequest, v1.CreateWorkerPodResponse](
 			httpClient,
 			baseURL+ProvisionerServiceCreateWorkerPodProcedure,
@@ -164,8 +134,6 @@ type provisionerServiceClient struct {
 	killE2ESession      *connect.Client[v1.KillE2ESessionRequest, v1.KillE2ESessionResponse]
 	getE2ESessionStatus *connect.Client[v1.GetE2ESessionStatusRequest, v1.GetE2ESessionStatusResponse]
 	createE2ESession    *connect.Client[v1.CreateE2ESessionRequest, v1.CreateE2ESessionResponse]
-	listE2ETools        *connect.Client[v1.ListE2EToolsRequest, v1.ListE2EToolsResponse]
-	callE2ETool         *connect.Client[v1.CallE2EToolRequest, v1.CallE2EToolResponse]
 	createWorkerPod     *connect.Client[v1.CreateWorkerPodRequest, v1.CreateWorkerPodResponse]
 	tearDownSession     *connect.Client[v1.TearDownSessionRequest, v1.TearDownSessionResponse]
 	listWorktrees       *connect.Client[v1.ListWorktreesRequest, v1.ListWorktreesResponse]
@@ -185,20 +153,6 @@ func (c *provisionerServiceClient) GetE2ESessionStatus(ctx context.Context, req 
 // CreateE2ESession calls agentfleet.v1.ProvisionerService.CreateE2eSession.
 func (c *provisionerServiceClient) CreateE2ESession(ctx context.Context, req *connect.Request[v1.CreateE2ESessionRequest]) (*connect.Response[v1.CreateE2ESessionResponse], error) {
 	return c.createE2ESession.CallUnary(ctx, req)
-}
-
-// ListE2ETools calls agentfleet.v1.ProvisionerService.ListE2eTools.
-//
-// Deprecated: do not use.
-func (c *provisionerServiceClient) ListE2ETools(ctx context.Context, req *connect.Request[v1.ListE2EToolsRequest]) (*connect.Response[v1.ListE2EToolsResponse], error) {
-	return c.listE2ETools.CallUnary(ctx, req)
-}
-
-// CallE2ETool calls agentfleet.v1.ProvisionerService.CallE2eTool.
-//
-// Deprecated: do not use.
-func (c *provisionerServiceClient) CallE2ETool(ctx context.Context, req *connect.Request[v1.CallE2EToolRequest]) (*connect.Response[v1.CallE2EToolResponse], error) {
-	return c.callE2ETool.CallUnary(ctx, req)
 }
 
 // CreateWorkerPod calls agentfleet.v1.ProvisionerService.CreateWorkerPod.
@@ -226,22 +180,10 @@ type ProvisionerServiceHandler interface {
 	KillE2ESession(context.Context, *connect.Request[v1.KillE2ESessionRequest]) (*connect.Response[v1.KillE2ESessionResponse], error)
 	GetE2ESessionStatus(context.Context, *connect.Request[v1.GetE2ESessionStatusRequest]) (*connect.Response[v1.GetE2ESessionStatusResponse], error)
 	CreateE2ESession(context.Context, *connect.Request[v1.CreateE2ESessionRequest]) (*connect.Response[v1.CreateE2ESessionResponse], error)
-	// Reused by core.proto's own ListE2eTools/CallE2eTool one hop further
-	// down the passthrough chain (see that file's comment).
-	// DEPRECATED (docs/adr/0045) — deleted once every live pod runs a sidecar
-	// that dials the sandbox itself.
-	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
-	//
-	// Deprecated: do not use.
-	ListE2ETools(context.Context, *connect.Request[v1.ListE2EToolsRequest]) (*connect.Response[v1.ListE2EToolsResponse], error)
-	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
-	//
-	// Deprecated: do not use.
-	CallE2ETool(context.Context, *connect.Request[v1.CallE2EToolRequest]) (*connect.Response[v1.CallE2EToolResponse], error)
 	CreateWorkerPod(context.Context, *connect.Request[v1.CreateWorkerPodRequest]) (*connect.Response[v1.CreateWorkerPodResponse], error)
 	TearDownSession(context.Context, *connect.Request[v1.TearDownSessionRequest]) (*connect.Response[v1.TearDownSessionResponse], error)
 	// Reused as-is by dashboard.proto's own ListWorktrees (identical empty
-	// request shape) — same passthrough pattern as ListE2eTools above.
+	// request shape) — cross-file message reuse, not a call passthrough.
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	ListWorktrees(context.Context, *connect.Request[v1.ListWorktreesRequest]) (*connect.Response[v1.ListWorktreesResponse], error)
 	// Reused as-is by dashboard.proto's own DeleteWorktree (identical
@@ -273,18 +215,6 @@ func NewProvisionerServiceHandler(svc ProvisionerServiceHandler, opts ...connect
 		ProvisionerServiceCreateE2ESessionProcedure,
 		svc.CreateE2ESession,
 		connect.WithSchema(provisionerServiceMethods.ByName("CreateE2eSession")),
-		connect.WithHandlerOptions(opts...),
-	)
-	provisionerServiceListE2EToolsHandler := connect.NewUnaryHandler(
-		ProvisionerServiceListE2EToolsProcedure,
-		svc.ListE2ETools,
-		connect.WithSchema(provisionerServiceMethods.ByName("ListE2eTools")),
-		connect.WithHandlerOptions(opts...),
-	)
-	provisionerServiceCallE2EToolHandler := connect.NewUnaryHandler(
-		ProvisionerServiceCallE2EToolProcedure,
-		svc.CallE2ETool,
-		connect.WithSchema(provisionerServiceMethods.ByName("CallE2eTool")),
 		connect.WithHandlerOptions(opts...),
 	)
 	provisionerServiceCreateWorkerPodHandler := connect.NewUnaryHandler(
@@ -319,10 +249,6 @@ func NewProvisionerServiceHandler(svc ProvisionerServiceHandler, opts ...connect
 			provisionerServiceGetE2ESessionStatusHandler.ServeHTTP(w, r)
 		case ProvisionerServiceCreateE2ESessionProcedure:
 			provisionerServiceCreateE2ESessionHandler.ServeHTTP(w, r)
-		case ProvisionerServiceListE2EToolsProcedure:
-			provisionerServiceListE2EToolsHandler.ServeHTTP(w, r)
-		case ProvisionerServiceCallE2EToolProcedure:
-			provisionerServiceCallE2EToolHandler.ServeHTTP(w, r)
 		case ProvisionerServiceCreateWorkerPodProcedure:
 			provisionerServiceCreateWorkerPodHandler.ServeHTTP(w, r)
 		case ProvisionerServiceTearDownSessionProcedure:
@@ -350,14 +276,6 @@ func (UnimplementedProvisionerServiceHandler) GetE2ESessionStatus(context.Contex
 
 func (UnimplementedProvisionerServiceHandler) CreateE2ESession(context.Context, *connect.Request[v1.CreateE2ESessionRequest]) (*connect.Response[v1.CreateE2ESessionResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.ProvisionerService.CreateE2eSession is not implemented"))
-}
-
-func (UnimplementedProvisionerServiceHandler) ListE2ETools(context.Context, *connect.Request[v1.ListE2EToolsRequest]) (*connect.Response[v1.ListE2EToolsResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.ProvisionerService.ListE2eTools is not implemented"))
-}
-
-func (UnimplementedProvisionerServiceHandler) CallE2ETool(context.Context, *connect.Request[v1.CallE2EToolRequest]) (*connect.Response[v1.CallE2EToolResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.ProvisionerService.CallE2eTool is not implemented"))
 }
 
 func (UnimplementedProvisionerServiceHandler) CreateWorkerPod(context.Context, *connect.Request[v1.CreateWorkerPodRequest]) (*connect.Response[v1.CreateWorkerPodResponse], error) {

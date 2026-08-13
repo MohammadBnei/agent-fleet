@@ -124,6 +124,17 @@ jobs:
         if: github.event_name == 'pull_request'
         working-directory: proto
         run: |
+          # A deliberate removal opts out by saying so in a commit message,
+          # rather than by weakening the check for everyone. `BREAKING CHANGE:`
+          # is not a new convention invented here — release.yml already reads
+          # it (conventional-commits) to drive the version bump, so the same
+          # footer that makes this pass also shows up in the changelog and the
+          # release. No blanket `|| true`, and the skip is visible in the log.
+          if git log --format='%B' origin/main..HEAD | grep -q '^BREAKING CHANGE:'; then
+            echo "::notice::skipping buf breaking — a commit declares BREAKING CHANGE:"
+            git log --format='%s' origin/main..HEAD | sed 's/^/  /'
+            exit 0
+          fi
           if git cat-file -e origin/main:proto 2>/dev/null; then
             buf breaking --against '../.git#ref=origin/main,subdir=proto'
           else

@@ -163,27 +163,13 @@ func (c *Client) KillE2eEnv(ctx context.Context) (bool, error) {
 	return resp.GetKilled(), nil
 }
 
-// ListE2eTools is deliberately absent: the sidecar no longer discovers the
-// e2e pod's tools at runtime (docs/adr/0044 — they're a static embedded
-// snapshot in mcpserver, because discovery always lost the race against the
-// pod becoming reachable). The CoreService/ProvisionerService RPCs stay —
-// they're the diagnostic that answers "what does the live pod actually
-// serve", which is exactly what a snapshot refresh needs.
-
-// DEPRECATED (docs/adr/0045): this is the relay itself. The sidecar dials the
-// sandbox directly from RequestE2eEnvResponse.endpoints once that path lands;
-// this stays only as the fallback for the deploy-skew window, where a new
-// sidecar can meet a provisioner too old to send a roster.
-func (c *Client) CallE2eTool(ctx context.Context, toolName, argumentsJSON string) (resultJSON string, isError bool, err error) {
-	//nolint:staticcheck // SA1019: deprecated by adr/0045, deleted after the fleet drains of pre-roster sidecars
-	resp, err := c.rpc.CallE2ETool(ctx, &agentfleetv1.CallE2EToolRequest{
-		TaskId: c.taskID, ToolName: toolName, ArgumentsJson: argumentsJSON,
-	})
-	if err != nil {
-		return "", false, fmt.Errorf("CallE2eTool: %w", err)
-	}
-	return resp.GetResultJson(), resp.GetIsError(), nil
-}
+// No sandbox tool calls here at all any more (docs/adr/0045). Tool discovery
+// went first (docs/adr/0044 — a static embedded snapshot in mcpserver, because
+// discovery always lost the race against the pod becoming reachable), and now
+// the calls themselves: the sidecar dials its own task's sandbox over MCP,
+// from the ServiceEndpoint roster, so core is no longer in the path of a shell
+// command. What survives on this client is what core alone can do — the
+// transcript, the journal, questions, and commanding a sandbox into existence.
 
 // ListFiles, GetFileUploadURL, GetFileDownloadURL, and DeleteFile back the
 // shared file space (docs/adr/0030) — the flat namespace isn't scoped to

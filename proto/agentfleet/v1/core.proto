@@ -382,8 +382,8 @@ message StreamHumanMessagesRequest {
 }
 
 // --- sidecar -> core: shared file space, agent-facing (docs/adr/0030) ---
-// Reuses files.proto's message shapes verbatim — same passthrough-reuse
-// precedent ListE2eTools/CallE2eTool already set with provisioner.proto.
+// Reuses files.proto's message shapes verbatim — the same cross-file reuse
+// ListWorktrees/DeleteWorktree also rely on.
 
 // --- Log querying (Loki queries, docs/adr/0013) ---
 
@@ -443,19 +443,12 @@ service CoreService {
   rpc AskUserQuestion(AskUserQuestionRequest) returns (AskUserQuestionResponse);
   rpc RequestE2eEnv(RequestE2eEnvRequest) returns (RequestE2eEnvResponse);
   rpc KillE2eEnv(KillE2eEnvRequest) returns (KillE2eEnvResponse);
-  // Reuses provisioner.proto's message shapes — same passthrough, one hop
-  // further down the chain (see that file's own comment).
-  // DEPRECATED (docs/adr/0045) — the sidecar dials the sandbox directly from
-  // RequestE2eEnvResponse.endpoints. Kept only for the deploy-skew window in
-  // which a live pod still runs an older sidecar. Do not add callers.
-  // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
-  rpc ListE2eTools(ListE2eToolsRequest) returns (ListE2eToolsResponse) {
-    option deprecated = true;
-  }
-  // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
-  rpc CallE2eTool(CallE2eToolRequest) returns (CallE2eToolResponse) {
-    option deprecated = true;
-  }
+  // ListE2eTools/CallE2eTool used to live here — the sandbox tool-call relay.
+  // Deleted in docs/adr/0045: the sidecar and core each dial their task's
+  // sandbox directly from a ServiceEndpoint roster, so core is no longer in
+  // the path of a shell command. RequestE2eEnv/KillE2eEnv above stay, because
+  // those are real work only core can do (profile resolution from Postgres,
+  // commanding the provisioner) rather than a passthrough.
 
   // Lets a worker pod fetch its own fresh task row on startup instead of
   // relying on stale environment variables — same message shapes

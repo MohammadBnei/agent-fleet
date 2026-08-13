@@ -11,6 +11,8 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
+
+	"github.com/MohammadBnei/agent-fleet/sidecar/internal/e2eclient"
 )
 
 // okResult is what execmcp actually returns on the wire: a CallToolResult
@@ -34,7 +36,14 @@ type mockE2eRunner struct {
 	env          *agentfleetv1.RequestE2EEnvResponse
 }
 
-func (m *mockE2eRunner) CallE2eTool(_ context.Context, _, _ string) (string, bool, error) {
+// Has/SetEndpoints/DropAll satisfy directDialer. The roster is always
+// "known" here: what these cases exercise is the provision-and-retry
+// sequencing, not the routing decision (sandbox_test.go covers that).
+func (m *mockE2eRunner) Has(string) bool                      { return true }
+func (m *mockE2eRunner) SetEndpoints([]e2eclient.Endpoint)    {}
+func (m *mockE2eRunner) DropAll()                             {}
+
+func (m *mockE2eRunner) CallTool(_ context.Context, _, _ string, _ map[string]any) (string, bool, error) {
 	i := m.calls
 	m.calls++
 	if i < len(m.callErrs) && m.callErrs[i] != nil {
@@ -227,10 +236,10 @@ func TestRunCommandHandler(t *testing.T) {
 			req.Params.Name = "run_command"
 			req.Params.Arguments = tt.params
 
-			// Nil dialer = empty roster = the relay path, which is what these
-			// cases have always exercised. docs/adr/0045's direct-dial
-			// routing is covered separately in sandbox_test.go.
-			result, err := runCommandHandler(sandbox{core: tt.mock}, nil)(context.Background(), req)
+			// One mock plays both halves — core for provisioning, dialer for
+			// the tool call — so the counters keep meaning what they did
+			// before the relay was deleted.
+			result, err := runCommandHandler(sandbox{core: tt.mock, e2e: tt.mock}, nil)(context.Background(), req)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}

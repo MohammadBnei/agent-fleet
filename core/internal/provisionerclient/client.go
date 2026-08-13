@@ -162,42 +162,6 @@ func toProtoScopeMode(s string) (agentfleetv1.ScopeMode, error) {
 	}
 }
 
-// ListE2eTools/CallE2eTool proxy the e2e pod's runtime-discovered Playwright
-// tool set (docs/adr/0020 hub-and-spoke — sidecar -> core -> provisioner ->
-// e2e pod, this is the third hop).
-//
-// DEPRECATED (docs/adr/0045). These two are the relay being deleted; the
-// sidecar dials the sandbox itself from RequestE2eEnvResponse.endpoints. They
-// survive only for the window in which a live worker pod still runs an older
-// sidecar image, and go once the fleet has drained of those.
-//
-// The staticcheck exemptions below are deliberately per-call rather than a
-// file-level or config-level suppression: the wire methods are marked
-// deprecated precisely so a *new* caller fails the build, and these are the
-// two known ones with a removal date. Widening the suppression would switch
-// off the signal that makes the deprecation worth anything.
-func (c *Client) ListE2eTools(ctx context.Context, taskID string) ([]*agentfleetv1.E2EToolDescriptor, error) {
-	//nolint:staticcheck // SA1019: deprecated by adr/0045, deleted after the fleet drains of pre-roster sidecars
-	resp, err := c.rpc.ListE2ETools(ctx, &agentfleetv1.ListE2EToolsRequest{TaskId: taskID})
-	if err != nil {
-		return nil, fmt.Errorf("ListE2ETools: %w", err)
-	}
-	return resp.GetTools(), nil
-}
-
-func (c *Client) CallE2eTool(ctx context.Context, taskID, toolName, argumentsJSON string) (resultJSON string, isError bool, err error) {
-	//nolint:staticcheck // SA1019: deprecated by adr/0045, deleted after the fleet drains of pre-roster sidecars
-	resp, err := c.rpc.CallE2ETool(ctx, &agentfleetv1.CallE2EToolRequest{
-		TaskId:        taskID,
-		ToolName:      toolName,
-		ArgumentsJson: argumentsJSON,
-	})
-	if err != nil {
-		return "", false, fmt.Errorf("CallE2ETool: %w", err)
-	}
-	return resp.GetResultJson(), resp.GetIsError(), nil
-}
-
 // CreateWorkerPod asks the provisioner to clone/fetch/worktree-add (its own
 // git-lifecycle ownership, docs/adr/0019 point 2) and spawn a two-container
 // worker pod for taskID, returning once the pod is scheduled. Called only
