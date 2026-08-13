@@ -11,7 +11,10 @@ type SelectionPopover = { quote: string; x: number; y: number; editing: boolean 
 // with an allow decision. "Request changes" reuses the existing
 // sendDiscuss flow: worker/src/session.ts already treats any human reply
 // while a permission request is pending as deny-with-feedback, re-arming
-// the agent to call ExitPlanMode again with a revised plan.
+// the agent to call ExitPlanMode again with a revised plan — and records
+// that denial as a real PERMISSION_RESPONSE, so this card resolves instead
+// of sitting in the dock until someone approves a plan they had just asked
+// to be rewritten.
 //
 // allowAnnotate (desktop only, see call sites) adds plannotator-style
 // passage-level annotation on top of that: select text in the rendered
@@ -47,12 +50,13 @@ export function PlanCard({
   // plan text only ever moved the inner box, and Approve / request changes
   // sat permanently below the fold with no way to drag to them.
   docked?: boolean;
-  // "Request changes" never resolves the request itself (see this file's
-  // own top comment) — it stays pending and re-arms via a plain reply, so
-  // the only way `!pending` happens here without a real Approve is a later
-  // Kill/Interrupt sweeping it up unanswered (transcript.ts's
-  // resolvedPermissionDecisions). Undefined (the pre-fix legacy case) keeps
-  // the old unconditional "plan approved" fallback.
+  // "deny" is what "request changes" resolves to: the wrapper treats a
+  // plain human reply as deny-with-feedback and now records it
+  // (worker/src/session.ts's recordResolution), which is what finally lets
+  // this card stop being pending without an approval. "interrupted" is a
+  // later Kill/Interrupt sweeping it up unanswered. Undefined is a
+  // pre-fix legacy row with no matching response, where "approved" stays
+  // the fallback.
   decision?: "allow" | "deny" | "interrupted";
   onApprove: () => void;
   onFeedback: (text: string) => void;
@@ -74,7 +78,20 @@ export function PlanCard({
         onClick={() => setIsExpanded(!isExpanded)}
         className="flex items-start gap-2 text-xs text-dim2 hover:text-dim w-full text-left group"
       >
-        <span className={`flex-none border px-1 ${decision === "interrupted" ? "border-pink-line text-error" : "border-green-line text-green-soft"}`}>{decision === "interrupted" ? "plan interrupted" : "plan approved"}</span>
+        {/* "deny" here is a change request — the wrapper resolves the
+            pending call that way when a human replies with feedback instead
+            of approving, and now records it (worker/src/session.ts's
+            recordResolution). Before that it was unreachable, so this
+            branch labelled every non-interrupted plan "approved"; leaving
+            it that way would have relabelled "please rework this" as
+            consent. */}
+        <span
+          className={`flex-none border px-1 ${
+            decision === "interrupted" || decision === "deny" ? "border-pink-line text-error" : "border-green-line text-green-soft"
+          }`}
+        >
+          {decision === "interrupted" ? "plan interrupted" : decision === "deny" ? "changes requested" : "plan approved"}
+        </span>
         {isExpanded ? (
           <div className="flex-1 min-w-0">
             <Markdown text={plan} />

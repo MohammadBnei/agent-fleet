@@ -10,7 +10,7 @@ import { test, expect, mock, beforeEach, afterAll } from "bun:test";
 
 // --- fake sidecarClient.js ---
 
-const pushedMessages: { seq: number; from: string; text: string; type?: string }[] = [];
+const pushedMessages: { seq: number; from: string; text: string; type?: string; replyTo?: number }[] = [];
 const savedSessionIds: string[] = [];
 const statusUpdates: string[] = [];
 let nextSeq = 1;
@@ -32,9 +32,9 @@ let humanMessageHandler: ((entry: { seq: number; from: string; text: string; typ
 // case hanging for the full 10s timeout in CI (order-dependent, so it
 // didn't reproduce locally where file execution order happened to differ).
 mock.module("./sidecarClient.js", () => ({
-  pushMessage: mock(async (from: string, text: string, type?: string) => {
+  pushMessage: mock(async (from: string, text: string, type?: string, replyTo?: number) => {
     const seq = nextSeq++;
-    pushedMessages.push({ seq, from, text, type });
+    pushedMessages.push({ seq, from, text, type, replyTo });
     return seq;
   }),
   saveSessionId: mock(async (id: string, model: string) => {
@@ -390,6 +390,22 @@ test("a plain reply while a permission request is pending denies it with the rep
   await Bun.sleep(20);
   expect(consumedInputs.some((m) => m.message.content === "actually, split this into its own PR")).toBe(true);
 
+  // ...and the resolution must exist outside this process's memory. Every
+  // dashboard surface decides "is this still waiting on a human" from a
+  // PERMISSION_RESPONSE replying to the request's seq; without one, a plan
+  // answered by requesting changes stayed pending forever and its card
+  // could only be dismissed by approving it.
+  const request = pushedMessages.find((m) => m.type === "permission_request")!;
+  const recorded = pushedMessages.find((m) => m.type === "permission_response");
+  expect(recorded).toBeDefined();
+  expect(recorded!.replyTo).toBe(request.seq);
+  expect(JSON.parse(recorded!.text).behavior).toBe("deny");
+  expect(JSON.parse(recorded!.text).message).toContain("split this into its own PR");
+  // from "agent": core streams from=="human" entries back into this session
+  // as new input, so recording it as human would feed the wrapper its own
+  // bookkeeping.
+  expect(recorded!.from).toBe("agent");
+
   pushHuman("", "abort");
   await promise;
 }, 10000);
@@ -411,6 +427,11 @@ test("a permission_mode entry sets the SDK mode and resolves any pending permiss
 
   expect(resolved!.behavior).toBe("allow");
   expect(setPermissionModeCalls).toContain("acceptEdits");
+  // Same reasoning as the plain-reply case: a mode switch answers the
+  // pending call, so the transcript has to say so or the card stays up.
+  const modeRecorded = pushedMessages.find((m) => m.type === "permission_response");
+  expect(modeRecorded).toBeDefined();
+  expect(JSON.parse(modeRecorded!.text).behavior).toBe("allow");
   // No fleet-imposed phase left to report — status stays whatever it was.
   expect(statusUpdates).not.toContain("implementing");
 

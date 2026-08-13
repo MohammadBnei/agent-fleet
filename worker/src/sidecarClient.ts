@@ -93,8 +93,11 @@ export async function stillHoldsLease(leaseId: string): Promise<boolean> {
 // core's own relay loop, uniformly with the agent's own send_message posts),
 // and canUseTool's own permission_request entries, which need the returned
 // seq back to correlate the eventual permission_response reply.
-export async function pushMessage(from: string, text: string, type?: string): Promise<number> {
-  const res = await postJSON<{ seq: number }>("/message", { from, text, type });
+// `replyTo` correlates this entry to an earlier one — used when the wrapper
+// records a permission it resolved itself, so the entry points at the
+// request it answers exactly like the dashboard's own response entries do.
+export async function pushMessage(from: string, text: string, type?: string, replyTo?: number): Promise<number> {
+  const res = await postJSON<{ seq: number }>("/message", { from, text, type, replyTo });
   return res.seq;
 }
 
