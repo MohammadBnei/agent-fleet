@@ -61,12 +61,24 @@ func shortID(taskID string) string {
 //
 // Kubernetes writes `ndots:5` into every pod's resolv.conf. These names have
 // four dots, so without the terminating dot the resolver treats them as
-// relative and walks the search list first — `…svc.cluster.local.agent-fleet.
-// svc.cluster.local`, then `.svc.cluster.local`, then `.cluster.local` — three
-// NXDOMAIN round-trips (six queries, counting AAAA) before the one that
-// answers. The dot marks the name absolute, so it is one query.
+// relative and tries every search-list entry first. Measured on a live
+// sandbox pod (2026-08-13) rather than assumed — resolv.conf there carries
+// *five* search domains, not the three this comment first claimed:
 //
-// This is paid per resolution, on the fleet's most-used tool path.
+//	search agent-fleet.svc.cluster.local svc.cluster.local cluster.local \
+//	       default.svc.cluster.local localdomain
+//	options ndots:5
+//
+// So it is five NXDOMAIN lookups before the one that answers. The dot marks
+// the name absolute: one lookup.
+//
+// The honest size of this: 20 resolutions from that pod took 40ms relative
+// vs 16ms absolute — ~1.2ms saved each, not the dramatic win the shape of
+// the bug suggests, because nodelocaldns (169.254.25.10) caches the NXDOMAINs
+// too. And since mcpproxy now caches its clients, resolution happens about
+// once per session rather than per call. Kept because it is free and correct,
+// not because it is where the time goes — that is `call_ms`, the command
+// itself (docs/adr/0045).
 func PlaywrightURLFor(namespace, taskID string) string {
 	return fmt.Sprintf("http://%s.%s.svc.cluster.local.:%d/mcp", ResourceName(taskID), namespace, PlaywrightPort)
 }
