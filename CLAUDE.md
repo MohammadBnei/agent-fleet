@@ -38,7 +38,7 @@ tiers instead of a fleet-imposed Write/Edit approval gate.
 | Runtime (`core/`, `provisioner/`, `sidecar/`) | Go, `go.work` workspace, `golangci-lint` |
 | Discord | `discordgo` (Go, in `core/`) — secondary/notification channel, not primary (`docs/adr/0029`) |
 | Coordination | Postgres `transcript` (renamed from `planning_transcript`) — pull/cursor reads via `core`'s gRPC `CoreService`, real idempotency-keyed dedup, not pub/sub (see `docs/adr/0013`/`0020`) |
-| MCP | `mark3labs/mcp-go` HTTP server, **local-only** (Go, `sidecar/` — one per worker pod, agent connects over `localhost`). No inter-pod MCP anywhere in the fleet as of `docs/adr/0020` point 6 |
+| MCP | `mark3labs/mcp-go` HTTP server (Go, `sidecar/` — one per worker pod, agent connects over `localhost`). The sidecar is also an MCP *client*, dialing its own task's sandbox directly (`docs/adr/0045`, superseding `docs/adr/0020` point 6's local-only rule); the provisioner no longer speaks MCP |
 | gRPC/proto | `buf`-managed `.proto` schema (`proto/`) — the only inter-process/inter-pod protocol in the fleet: `CoreService` (core's server — sidecar + provisioner call it), `ProvisionerService` (provisioner's server — only core calls it), plus the dashboard's ConnectRPC API (`core` ↔ `dashboard/`, `connect-go`/`connect-web`, see `adr/0015`) |
 | Kubernetes client | `client-go` (`provisioner/` — the only fleet component with cluster RBAC) |
 | Database | `jackc/pgx/v5` (`core/` only — the fleet's **sole** `AGENTFLEET_DB_*` credential holder, `docs/adr/0020` point 1). `worker/`/`sidecar/`/`provisioner/` hold zero DB credentials |
@@ -89,12 +89,21 @@ tiers instead of a fleet-imposed Write/Edit approval gate.
 - **`core` commands, the provisioner executes — never the reverse.** The
   provisioner never claims tasks or decides to spawn a pod on its own
   (`docs/adr/0020` point 2).
-- **Hub-and-spoke: nothing talks to the provisioner except `core`.**
-  Includes e2e-pod requests — proxied agent → sidecar (MCP) → `core`
-  (gRPC) → provisioner (gRPC), not a direct path (`docs/adr/0020` point 4).
-- **MCP is purely local** (agent ↔ its own pod's sidecar). **gRPC is the
-  only inter-process/inter-pod protocol anywhere in the fleet**
-  (`docs/adr/0020` point 6).
+- **Hub-and-spoke for *lifecycle*: nothing commands the provisioner except
+  `core`.** Pod creation, teardown and worktree operations all route
+  agent → sidecar → `core` → provisioner (`docs/adr/0020` point 4).
+  **Tool calls no longer do** — `docs/adr/0045` deleted that relay.
+- **A service needing no `core` state is dialed directly**, from a
+  `ServiceEndpoint` roster carried on responses `core` already sends
+  (`RequestE2eEnv`/`CreateE2eSession`) or injected as `FLEET_ENDPOINTS` at
+  spawn. No lookup RPC, no `services` table — Kubernetes is ground truth
+  for pod existence. Reachability is fenced by a **per-task
+  NetworkPolicy**, never a token the callee holds (`docs/adr/0045`).
+  Measured first: the deleted hop was **0–1 ms** of a 751 ms p50 tool
+  call — this is a coupling fix, not a performance one.
+- **MCP is local except sidecar → its own task's sandbox** (`docs/adr/0045`,
+  superseding `docs/adr/0020` point 6). gRPC remains the only protocol
+  between *fleet components*; the provisioner no longer speaks MCP at all.
 - **No prospective Write/Edit gate — `canUseTool` reproduces the Agent
   SDK's own live permission prompt instead** (`docs/adr/0029`, supersedes
   `docs/adr/0021`'s `allowedTools`-absent + in-memory-`approved`-flag
@@ -138,9 +147,11 @@ decision from silence · hardcoded git commit identity · committing Discord/Git
 Anthropic tokens · a bespoke per-app Helm chart (reuse
 `infra-bootstrap/gitops/platform/common-app-chart`) · any component other
 than `core` holding `AGENTFLEET_DB_*` credentials · a worker/sidecar
-talking to the provisioner directly (must route through `core`) · a direct
-inter-pod MCP connection (MCP is local-only; gRPC is the only inter-pod
-protocol) · fleet-managed `infra-bootstrap` cluster ops (kubespray/ansible/
+*commanding* the provisioner directly (pod lifecycle must route through
+`core`) · a new passthrough RPC on `core` for a service that needs no
+`core` state (roster entry + NetworkPolicy rule instead — `docs/adr/0045`)
+· a sidecar reaching any sandbox but its own task's · fleet-managed
+`infra-bootstrap` cluster ops (kubespray/ansible/
 pigsty — that's the parent repo's own `CLAUDE.md` boundary, explicitly
 blocked here too).
 
