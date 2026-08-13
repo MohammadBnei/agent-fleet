@@ -54,6 +54,34 @@ being slow, the suspicion was cheap to test, and it was wrong. An ADR that
 quietly claimed the speedup it was reaching for would make the next
 performance argument in this repo less trustworthy.
 
+### The follow-up measurement, which is stronger still
+
+The three fixes above shipped as v1.51.1. Measured again against a live
+session afterwards, with `call_ms` (the command's own runtime) now logged
+separately from the chain around it:
+
+| | p50 |
+|---|---|
+| `call_ms` — the command itself | 6 ms |
+| `CoreService.CallE2eTool` — the whole chain | 7 ms |
+
+**The fleet's entire overhead around a sandbox tool call — sidecar → core →
+provisioner → sandbox, both gRPC hops and the relay included — is ~1 ms.**
+`init_ms` was non-zero on 1 of 11 calls (the cold handshake after the
+provisioner restart) and 0 on the rest, confirming the client cache holds.
+
+One reading to refuse explicitly: the pre-fix p50 was 751 ms and the
+post-fix p50 is 7 ms. **That is not a 100× speedup.** It is a different
+workload — the earlier sample was builds and tests, the later one quick
+commands. The valid claims are the ~1 ms gap and the `init_ms` collapse,
+and nothing larger.
+
+So this ADR proceeds with **no latency argument whatsoever**. One millisecond
+is the whole budget. What follows is justified entirely by the coupling case
+below, and a future reader should treat any performance claim about this
+relay as already answered: it was measured twice, and both times the answer
+was "not here".
+
 ### What is actually wrong with the relay
 
 Three things, none of them milliseconds.
