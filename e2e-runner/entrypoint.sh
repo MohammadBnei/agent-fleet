@@ -86,8 +86,24 @@ supervise code-server \
 # this repo alone".
 # --host 0.0.0.0 fixes ADR-0039's noted bug: default ::1:8931 (IPv6 localhost)
 # made Service port routing fail, leaving Playwright tools unreachable.
+#
+# --allowed-hosts '*' is what actually makes it reachable, and binding was
+# never the whole story. @playwright/mcp defaults this to "the host the
+# server is bound to" and answers every other Host header with
+# `403 Access is only allowed at localhost:8931`. The provisioner dials
+# http://e2e-<id>.agent-fleet.svc.cluster.local:8931/mcp, so it got a 403 on
+# every single call — and ProxiedTools swallows that into a nil tool list at
+# log level Info, so browser automation was silently absent, not broken-loudly.
+#
+# '*' disables a DNS-rebinding guard whose threat model is a browser on a
+# user's machine reaching a localhost server. That cannot happen here:
+# k8s/provisioner/networkpolicy.yaml admits :8931 from the provisioner pod
+# ONLY (Traefik gets app+code-server, other fleet pods get :3000), and the
+# port has no IngressRoute. Cilium enforcing L3 is a strictly stronger
+# boundary than a Host header string match. If :8931 ever gains an
+# IngressRoute, narrow this to the pod's own service DNS name instead.
 supervise playwright-mcp \
-	bunx @playwright/mcp --host 0.0.0.0 --port "${E2E_PLAYWRIGHT_PORT}" --headless &
+	bunx @playwright/mcp --host 0.0.0.0 --port "${E2E_PLAYWRIGHT_PORT}" --headless --allowed-hosts '*' &
 
 supervise execmcp execmcp --port "${E2E_EXEC_PORT}" &
 
