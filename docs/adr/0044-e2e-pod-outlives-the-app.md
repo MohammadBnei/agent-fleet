@@ -220,11 +220,28 @@ real done-signal, deliberately.
   fleet dependency. Use code-server if it dies.
 - A server that fails *immediately and always* now restart-loops every 5s
   instead of killing the pod. That is the intended trade (the pod stays
-  debuggable), but it churns the log. The live candidate is
-  `@playwright/mcp`'s `--port` flag, still unverified against the installed
-  version — if it's wrong, expect a 5s restart line rather than silence.
-  `supervise()` logs every restart with its label, so this is visible in Loki
-  rather than mysterious.
+  debuggable), but it churns the log. `supervise()` logs every restart with
+  its label, so this is visible in Loki rather than mysterious.
+
+## Verified against a real container
+
+Built `e2e-runner/Dockerfile` and exercised the image directly (the
+provisioner-side halves — empty `start_cmd` accepted, terminal pod replaced,
+the GC sweep — are covered by Go tests against the fake clientset):
+
+| Case | Result |
+|---|---|
+| `start_cmd` exits non-zero (`exit 7`) | Container **stayed Running**; `/tmp/e2e-app.log` ended with `--- e2e app command exited with status 7 ---`; execmcp, code-server, Playwright and sshd all still bound. This is the regression that motivated the ADR. |
+| No `E2E_START_CMD` at all | Container ran; `run_command` fully functional; log recorded the sandbox-only state. (`go` absent, `bun` present — correct: toolchains come from the provisioner's ingredient init containers, not the image, which is exactly what the `e2e_profile` column exists to select.) |
+| A real serving app | App served on `:3000`, `run_command` worked concurrently against it. |
+| `pkill -9 execmcp` | Container survived; `supervise()` logged `execmcp exited (137), restarting in 5s`; the listener came back and served. |
+| `run_command 'sleep 300 & echo ok'` | Returned in **1.025s** — precisely `cmd.WaitDelay`, confirming both that the inherited pipe really was held open and that the fix releases it. Before this change the same call blocked for the full 15-minute `commandTimeout`. |
+
+**Resolved a long-standing unverified risk:** `@playwright/mcp --port` *does*
+work — `:8931` was bound in every run. ADR-0012, ADR-0036 and ADR-0039 all
+carried this as an open question ("not verifiable from this repo alone before
+a real image build"); it is now verified, and the `ponytail:` comment in
+`entrypoint.sh` says so.
 - The sweep's age bound is fleet-wide, not per-repo. A legitimately long
   session hitting 24h loses its sandbox and gets a fresh one on the next
   `run_command`, which is a cold install.

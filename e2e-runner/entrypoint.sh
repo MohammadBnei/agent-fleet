@@ -80,9 +80,10 @@ fi
 supervise code-server \
 	code-server --bind-addr "0.0.0.0:${E2E_CODE_SERVER_PORT}" --auth none "${E2E_WORKTREE_PATH}" &
 
-# ponytail: --port switches @playwright/mcp from stdio to HTTP transport —
-# verify this exact flag against the installed version (see docs/adr/0012
-# risks; not verifiable from this repo alone before a real image build).
+# --port switches @playwright/mcp from stdio to HTTP transport. VERIFIED
+# against a real image build (docs/adr/0044): :8931 comes up bound, closing
+# the open question ADR-0012/0036/0039 all carried as "not verifiable from
+# this repo alone".
 # --host 0.0.0.0 fixes ADR-0039's noted bug: default ::1:8931 (IPv6 localhost)
 # made Service port routing fail, leaving Playwright tools unreachable.
 supervise playwright-mcp \
