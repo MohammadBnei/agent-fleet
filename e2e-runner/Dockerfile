@@ -53,6 +53,8 @@ WORKDIR /app
 COPY e2e-runner/entrypoint.sh ./entrypoint.sh
 RUN chmod +x ./entrypoint.sh
 
-# ponytail: no process supervisor (pm2/supervisord) — the whole pod gets
-# deleted on teardown, nothing inside it needs restart-on-crash.
+# ponytail: no process supervisor (pm2/supervisord/s6) — entrypoint.sh's own
+# supervise() is a 6-line while-loop over the three servers, and the app is
+# deliberately NOT restarted (docs/adr/0044). Bring in a real supervisor only
+# if something needs dependency ordering or per-process backoff policy.
 ENTRYPOINT ["./entrypoint.sh"]
