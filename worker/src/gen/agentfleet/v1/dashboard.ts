@@ -638,6 +638,84 @@ export interface DeleteScheduledAuditResponse {
   status: string;
 }
 
+/**
+ * QueryMetrics proxies PromQL through core. Prometheus has no IngressRoute
+ * in this cluster (only Grafana and Alertmanager do), so the browser has no
+ * route to it — and giving it one would expose every cluster metric to
+ * anything that can reach the hostname. core is already behind
+ * basic-admin-auth and the dashboard CSRF header.
+ */
+export interface QueryMetricsRequest {
+  query: string;
+  /**
+   * RFC3339. Both empty means an instant query; both set means a range
+   * query. `step` is a duration string ("30s", "5m") — empty defaults to 1m,
+   * and is coarsened automatically if the range would exceed Prometheus'
+   * 11k-point ceiling.
+   */
+  startTime: string;
+  endTime: string;
+  step: string;
+}
+
+export interface QueryMetricsResponse {
+  /**
+   * Prometheus' own `data` envelope, verbatim. Not re-modelled as proto:
+   * the frontend already has to handle vector/matrix/scalar result types,
+   * and a parallel schema here would only be a second thing to keep in sync
+   * with Prometheus' API.
+   */
+  resultJson: string;
+}
+
+export interface GetFleetTopologyRequest {
+}
+
+/** A cell in the fleet: one long-lived component, or one task's pod. */
+export interface CellNode {
+  id: string;
+  /** core | provisioner | worker | e2e */
+  type: string;
+  /** healthy | degraded | failing | idle */
+  status: string;
+  /**
+   * Free-form so the view can gain a number without a schema change —
+   * e.g. rps, live_pods, max_in_flight, or a task's pending count.
+   */
+  metrics: { [key: string]: number };
+  /**
+   * Set on worker/e2e cells: which task this cell is running, so clicking
+   * it can open that session. Empty on the two hub cells.
+   */
+  taskId: string;
+  repo: string;
+  /** Human-facing one-liner (a task's description, a hub's role). */
+  label: string;
+}
+
+export interface CellNode_MetricsEntry {
+  key: string;
+  value: number;
+}
+
+export interface TopologyEdge {
+  from: string;
+  to: string;
+  /** Requests/sec over the last 5m, 0 when there's no metric for this pair. */
+  rate: number;
+}
+
+export interface GetFleetTopologyResponse {
+  nodes: CellNode[];
+  edges: TopologyEdge[];
+  /**
+   * Non-fatal explanation when Prometheus was unreachable: the topology
+   * still renders from Postgres, just without rates. Silently returning
+   * zeros would read as "the fleet is idle".
+   */
+  metricsError: string;
+}
+
 function createBaseListTasksRequest(): ListTasksRequest {
   return { limit: 0 };
 }
@@ -3579,6 +3657,317 @@ export const DeleteScheduledAuditResponse: MessageFns<DeleteScheduledAuditRespon
   },
 };
 
+function createBaseQueryMetricsRequest(): QueryMetricsRequest {
+  return { query: "", startTime: "", endTime: "", step: "" };
+}
+
+export const QueryMetricsRequest: MessageFns<QueryMetricsRequest> = {
+  fromJSON(object: any): QueryMetricsRequest {
+    return {
+      query: isSet(object.query) ? globalThis.String(object.query) : "",
+      startTime: isSet(object.startTime)
+        ? globalThis.String(object.startTime)
+        : isSet(object.start_time)
+        ? globalThis.String(object.start_time)
+        : "",
+      endTime: isSet(object.endTime)
+        ? globalThis.String(object.endTime)
+        : isSet(object.end_time)
+        ? globalThis.String(object.end_time)
+        : "",
+      step: isSet(object.step) ? globalThis.String(object.step) : "",
+    };
+  },
+
+  toJSON(message: QueryMetricsRequest): unknown {
+    const obj: any = {};
+    if (message.query !== "") {
+      obj.query = message.query;
+    }
+    if (message.startTime !== "") {
+      obj.startTime = message.startTime;
+    }
+    if (message.endTime !== "") {
+      obj.endTime = message.endTime;
+    }
+    if (message.step !== "") {
+      obj.step = message.step;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<QueryMetricsRequest>, I>>(base?: I): QueryMetricsRequest {
+    return QueryMetricsRequest.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<QueryMetricsRequest>, I>>(object: I): QueryMetricsRequest {
+    const message = createBaseQueryMetricsRequest();
+    message.query = object.query ?? "";
+    message.startTime = object.startTime ?? "";
+    message.endTime = object.endTime ?? "";
+    message.step = object.step ?? "";
+    return message;
+  },
+};
+
+function createBaseQueryMetricsResponse(): QueryMetricsResponse {
+  return { resultJson: "" };
+}
+
+export const QueryMetricsResponse: MessageFns<QueryMetricsResponse> = {
+  fromJSON(object: any): QueryMetricsResponse {
+    return {
+      resultJson: isSet(object.resultJson)
+        ? globalThis.String(object.resultJson)
+        : isSet(object.result_json)
+        ? globalThis.String(object.result_json)
+        : "",
+    };
+  },
+
+  toJSON(message: QueryMetricsResponse): unknown {
+    const obj: any = {};
+    if (message.resultJson !== "") {
+      obj.resultJson = message.resultJson;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<QueryMetricsResponse>, I>>(base?: I): QueryMetricsResponse {
+    return QueryMetricsResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<QueryMetricsResponse>, I>>(object: I): QueryMetricsResponse {
+    const message = createBaseQueryMetricsResponse();
+    message.resultJson = object.resultJson ?? "";
+    return message;
+  },
+};
+
+function createBaseGetFleetTopologyRequest(): GetFleetTopologyRequest {
+  return {};
+}
+
+export const GetFleetTopologyRequest: MessageFns<GetFleetTopologyRequest> = {
+  fromJSON(_: any): GetFleetTopologyRequest {
+    return {};
+  },
+
+  toJSON(_: GetFleetTopologyRequest): unknown {
+    const obj: any = {};
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<GetFleetTopologyRequest>, I>>(base?: I): GetFleetTopologyRequest {
+    return GetFleetTopologyRequest.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<GetFleetTopologyRequest>, I>>(_: I): GetFleetTopologyRequest {
+    const message = createBaseGetFleetTopologyRequest();
+    return message;
+  },
+};
+
+function createBaseCellNode(): CellNode {
+  return { id: "", type: "", status: "", metrics: {}, taskId: "", repo: "", label: "" };
+}
+
+export const CellNode: MessageFns<CellNode> = {
+  fromJSON(object: any): CellNode {
+    return {
+      id: isSet(object.id) ? globalThis.String(object.id) : "",
+      type: isSet(object.type) ? globalThis.String(object.type) : "",
+      status: isSet(object.status) ? globalThis.String(object.status) : "",
+      metrics: isObject(object.metrics)
+        ? (globalThis.Object.entries(object.metrics) as [string, any][]).reduce(
+          (acc: { [key: string]: number }, [key, value]: [string, any]) => {
+            acc[key] = globalThis.Number(value);
+            return acc;
+          },
+          {},
+        )
+        : {},
+      taskId: isSet(object.taskId)
+        ? globalThis.String(object.taskId)
+        : isSet(object.task_id)
+        ? globalThis.String(object.task_id)
+        : "",
+      repo: isSet(object.repo) ? globalThis.String(object.repo) : "",
+      label: isSet(object.label) ? globalThis.String(object.label) : "",
+    };
+  },
+
+  toJSON(message: CellNode): unknown {
+    const obj: any = {};
+    if (message.id !== "") {
+      obj.id = message.id;
+    }
+    if (message.type !== "") {
+      obj.type = message.type;
+    }
+    if (message.status !== "") {
+      obj.status = message.status;
+    }
+    if (message.metrics) {
+      const entries = globalThis.Object.entries(message.metrics) as [string, number][];
+      if (entries.length > 0) {
+        obj.metrics = {};
+        entries.forEach(([k, v]) => {
+          obj.metrics[k] = v;
+        });
+      }
+    }
+    if (message.taskId !== "") {
+      obj.taskId = message.taskId;
+    }
+    if (message.repo !== "") {
+      obj.repo = message.repo;
+    }
+    if (message.label !== "") {
+      obj.label = message.label;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<CellNode>, I>>(base?: I): CellNode {
+    return CellNode.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<CellNode>, I>>(object: I): CellNode {
+    const message = createBaseCellNode();
+    message.id = object.id ?? "";
+    message.type = object.type ?? "";
+    message.status = object.status ?? "";
+    message.metrics = (globalThis.Object.entries(object.metrics ?? {}) as [string, number][]).reduce(
+      (acc: { [key: string]: number }, [key, value]: [string, number]) => {
+        if (value !== undefined) {
+          acc[key] = globalThis.Number(value);
+        }
+        return acc;
+      },
+      {},
+    );
+    message.taskId = object.taskId ?? "";
+    message.repo = object.repo ?? "";
+    message.label = object.label ?? "";
+    return message;
+  },
+};
+
+function createBaseCellNode_MetricsEntry(): CellNode_MetricsEntry {
+  return { key: "", value: 0 };
+}
+
+export const CellNode_MetricsEntry: MessageFns<CellNode_MetricsEntry> = {
+  fromJSON(object: any): CellNode_MetricsEntry {
+    return {
+      key: isSet(object.key) ? globalThis.String(object.key) : "",
+      value: isSet(object.value) ? globalThis.Number(object.value) : 0,
+    };
+  },
+
+  toJSON(message: CellNode_MetricsEntry): unknown {
+    const obj: any = {};
+    if (message.key !== "") {
+      obj.key = message.key;
+    }
+    if (message.value !== 0) {
+      obj.value = message.value;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<CellNode_MetricsEntry>, I>>(base?: I): CellNode_MetricsEntry {
+    return CellNode_MetricsEntry.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<CellNode_MetricsEntry>, I>>(object: I): CellNode_MetricsEntry {
+    const message = createBaseCellNode_MetricsEntry();
+    message.key = object.key ?? "";
+    message.value = object.value ?? 0;
+    return message;
+  },
+};
+
+function createBaseTopologyEdge(): TopologyEdge {
+  return { from: "", to: "", rate: 0 };
+}
+
+export const TopologyEdge: MessageFns<TopologyEdge> = {
+  fromJSON(object: any): TopologyEdge {
+    return {
+      from: isSet(object.from) ? globalThis.String(object.from) : "",
+      to: isSet(object.to) ? globalThis.String(object.to) : "",
+      rate: isSet(object.rate) ? globalThis.Number(object.rate) : 0,
+    };
+  },
+
+  toJSON(message: TopologyEdge): unknown {
+    const obj: any = {};
+    if (message.from !== "") {
+      obj.from = message.from;
+    }
+    if (message.to !== "") {
+      obj.to = message.to;
+    }
+    if (message.rate !== 0) {
+      obj.rate = message.rate;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<TopologyEdge>, I>>(base?: I): TopologyEdge {
+    return TopologyEdge.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<TopologyEdge>, I>>(object: I): TopologyEdge {
+    const message = createBaseTopologyEdge();
+    message.from = object.from ?? "";
+    message.to = object.to ?? "";
+    message.rate = object.rate ?? 0;
+    return message;
+  },
+};
+
+function createBaseGetFleetTopologyResponse(): GetFleetTopologyResponse {
+  return { nodes: [], edges: [], metricsError: "" };
+}
+
+export const GetFleetTopologyResponse: MessageFns<GetFleetTopologyResponse> = {
+  fromJSON(object: any): GetFleetTopologyResponse {
+    return {
+      nodes: globalThis.Array.isArray(object?.nodes)
+        ? object.nodes.map((e: any) => CellNode.fromJSON(e))
+        : [],
+      edges: globalThis.Array.isArray(object?.edges) ? object.edges.map((e: any) => TopologyEdge.fromJSON(e)) : [],
+      metricsError: isSet(object.metricsError)
+        ? globalThis.String(object.metricsError)
+        : isSet(object.metrics_error)
+        ? globalThis.String(object.metrics_error)
+        : "",
+    };
+  },
+
+  toJSON(message: GetFleetTopologyResponse): unknown {
+    const obj: any = {};
+    if (message.nodes?.length) {
+      obj.nodes = message.nodes.map((e) => CellNode.toJSON(e));
+    }
+    if (message.edges?.length) {
+      obj.edges = message.edges.map((e) => TopologyEdge.toJSON(e));
+    }
+    if (message.metricsError !== "") {
+      obj.metricsError = message.metricsError;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<GetFleetTopologyResponse>, I>>(base?: I): GetFleetTopologyResponse {
+    return GetFleetTopologyResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<GetFleetTopologyResponse>, I>>(object: I): GetFleetTopologyResponse {
+    const message = createBaseGetFleetTopologyResponse();
+    message.nodes = object.nodes?.map((e) => CellNode.fromPartial(e)) || [];
+    message.edges = object.edges?.map((e) => TopologyEdge.fromPartial(e)) || [];
+    message.metricsError = object.metricsError ?? "";
+    return message;
+  },
+};
+
 export interface DashboardService {
   ListTasks(request: ListTasksRequest): Promise<ListTasksResponse>;
   /** buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE */
@@ -3655,6 +4044,15 @@ export interface DashboardService {
    */
   QueryLogs(request: QueryLogsRequest): Promise<QueryLogsResponse>;
   /**
+   * Observability page (docs/adr/0047). QueryMetrics is core proxying
+   * PromQL — Prometheus has no IngressRoute in this cluster, so a browser
+   * cannot reach it directly. GetFleetTopology is the live cell view, and
+   * needs no cluster RBAC: core assembles it from the tasks table it
+   * already owns plus its own metrics.
+   */
+  QueryMetrics(request: QueryMetricsRequest): Promise<QueryMetricsResponse>;
+  GetFleetTopology(request: GetFleetTopologyRequest): Promise<GetFleetTopologyResponse>;
+  /**
    * Dashboard-editable schedules (docs/adr/0035) — same "edit it in the
    * UI, no redeploy" shape ListRepos/CreateRepo established.
    */
@@ -3677,6 +4075,10 @@ export type DeepPartial<T> = T extends Builtin ? T
 type KeysOfUnion<T> = T extends T ? keyof T : never;
 export type Exact<P, I extends P> = P extends Builtin ? P
   : P & { [K in keyof P]: Exact<P[K], I[K]> } & { [K in Exclude<keyof I, KeysOfUnion<P>>]: never };
+
+function isObject(value: any): boolean {
+  return typeof value === "object" && value !== null;
+}
 
 function isSet(value: any): boolean {
   return value !== null && value !== undefined;

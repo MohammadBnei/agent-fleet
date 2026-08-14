@@ -111,6 +111,17 @@ Any doc, code, comment, or memory that contradicts this file or an
   removing the probe would make it claim `true`. Sandboxes are GC'd on
   terminal phase and age. See
   [`adr/0044`](adr/0044-e2e-pod-outlives-the-app.md).
+- **Prometheus metrics come from `core` and the provisioner only; worker and
+  sidecar telemetry stays in Loki.** Worker pods are single-shot Jobs that
+  routinely start and exit between two 30s scrapes, so a counter on them
+  samples a random subset of sessions — authoritative-looking and wrong. Loki
+  keeps every line regardless of pod lifetime, and `session.ts` already logs
+  the SDK's turns/cost/tokens as structured fields. Scraping is by
+  **ServiceMonitor**, never `prometheus.io/*` annotations: this cluster's
+  Prometheus is the Operator with no `additionalScrapeConfigs`, so
+  annotations are inert while looking like configuration. No metric carries
+  a `task_id` label. See
+  [`adr/0047`](adr/0047-metrics-scoped-to-the-hubs.md).
 
 ## 2. Forbidden patterns (quick check — full list + reasons in `adr/`)
 
@@ -136,6 +147,16 @@ Any doc, code, comment, or memory that contradicts this file or an
   and the reconcile sweep — see `adr/0044`.
 - **Hardcoding git commit identity.** Always derived live from the
   authenticated bot GitHub account — see `adr/0006`.
+- **A declared-but-never-incremented metric.** A metric that renders as
+  absent is indistinguishable from a broken feature, and shipping twenty of
+  them is how the first attempt at the observability layer passed review.
+  Every metric is incremented at a real call site, and verification means
+  seeing a non-default value on a live `/metrics` endpoint — not that the
+  code compiles — see `adr/0047`.
+- **Granting `core` cluster RBAC to render something.** The topology view
+  gets its cells from `tasks.pod_phase`, which `ReportPodEvents` already
+  maintains; a picture is not a reason to break `adr/0020` point 1 — see
+  `adr/0047`.
 - **A page-load failure rendered as a blocking modal.** The mobile tab bar is
   the only way out of a view, so a modal over a failed page trapped the user
   entirely when the provisioner or object store was unreachable. Load errors go

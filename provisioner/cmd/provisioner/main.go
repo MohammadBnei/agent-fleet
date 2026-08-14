@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"google.golang.org/grpc"
 
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
@@ -20,6 +21,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/git"
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/grpcserver"
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/k8s"
+	"github.com/MohammadBnei/agent-fleet/provisioner/internal/metrics"
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/reconcile"
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/sweep"
 )
@@ -94,9 +96,10 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
+	mux.Handle("/metrics", promhttp.Handler())
 	httpServer := &http.Server{Addr: ":" + cfg.Port, Handler: mux}
 
-	grpcSrv := grpc.NewServer(grpc.UnaryInterceptor(grpcserver.AccessLogInterceptor))
+	grpcSrv := grpc.NewServer(grpc.ChainUnaryInterceptor(grpcserver.AccessLogInterceptor, metrics.UnaryInterceptor))
 	agentfleetv1.RegisterProvisionerServiceServer(grpcSrv, grpcserver.New(k8sc, gitMgr, core, cfg.E2eHost, cfg.FleetSharedRepoURL, cfg.FleetSharedBranch, cfg.ClaudeHomeDir))
 
 	reconcileInterval, _ := strconv.Atoi(cfg.ReconcileInterval)

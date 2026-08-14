@@ -27,8 +27,13 @@ type Config struct {
 	AlertWebhookToken  string
 	ThotDiscordChannel string
 	ThotRepo           string
-	LokiURL               string
-	ProvisionerGRPCAddr   string
+	LokiURL string
+	// PrometheusURL backs the dashboard's Observability page. The service
+	// name is the kube-prometheus-stack release's, which the chart mangles
+	// to 'kube-p' — not a typo. Confirmed live from infra-bootstrap's
+	// gitops/platform/values/prometheus/values.yaml.
+	PrometheusURL       string
+	ProvisionerGRPCAddr string
 	// MaxInFlight caps fleet-wide concurrent tasks (docs/adr/0019: ~5, the
 	// actual human-followable ceiling, not a technical limit) — the
 	// dispatch loop's own headroom check, not per-repo.
@@ -93,6 +98,7 @@ func Load() Config {
 		ThotDiscordChannel:    os.Getenv("THOT_DISCORD_CHANNEL_ID"),
 		ThotRepo:              env("THOT_REPO", "infra-bootstrap"),
 		LokiURL:               env("LOKI_URL", "http://platform-loki.monitoring.svc.cluster.local:3100"),
+		PrometheusURL:         env("PROMETHEUS_URL", "http://platform-prometheus-kube-p-prometheus.monitoring.svc.cluster.local:9090"),
 		ProvisionerGRPCAddr:   env("PROVISIONER_GRPC_ADDR", "provisioner.agent-fleet.svc.cluster.local:9090"),
 		MaxInFlight:           envInt("MAX_IN_FLIGHT_TASKS", 5),
 		MaxTaskRetries:        envInt("MAX_TASK_RETRIES", 3),

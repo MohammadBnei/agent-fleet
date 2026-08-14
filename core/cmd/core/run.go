@@ -10,6 +10,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"google.golang.org/grpc"
 
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
@@ -25,6 +26,8 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/filestore"
 	"github.com/MohammadBnei/agent-fleet/core/internal/journal"
 	"github.com/MohammadBnei/agent-fleet/core/internal/lokiclient"
+	"github.com/MohammadBnei/agent-fleet/core/internal/metrics"
+	"github.com/MohammadBnei/agent-fleet/core/internal/promclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/promptsnippets"
 	"github.com/MohammadBnei/agent-fleet/core/internal/provisionerclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/repoprofiles"
@@ -79,6 +82,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool) error {
 
 	// Create Loki client for log querying (docs/adr/0013)
 	loki := lokiclient.New(cfg.LokiURL)
+	prom := promclient.New(cfg.PrometheusURL)
 
 	var notifier transcript.Notifier = noopNotifier{}
 	if cfg.DiscordBotToken != "" {
@@ -136,7 +140,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool) error {
 	// pushes pod-lifecycle events here, and every worker pod's sidecar
 	// reaches everything else (the old /mcp HTTP surface, and the direct-SQL
 	// calls worker/src/db.ts used to make) through this same service.
-	grpcServer := grpc.NewServer(grpc.UnaryInterceptor(coreserver.AccessLogInterceptor))
+	grpcServer := grpc.NewServer(grpc.ChainUnaryInterceptor(coreserver.AccessLogInterceptor, metrics.UnaryInterceptor))
 	coreSvc := coreserver.New(activityStore, taskStore, journalStore, profileStore, repoStore, provisioner, files, loki)
 	agentfleetv1.RegisterCoreServiceServer(grpcServer, coreSvc)
 	grpcLis, err := net.Listen("tcp", ":"+cfg.GRPCPort)
@@ -153,7 +157,8 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool) error {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
-	dashboardSvc := dashboard.NewServer(taskStore, activityStore, journalStore, repoStore, profileStore, snippetStore, provisioner, files, hub, cfg.MaxInFlight, loki, auditStore)
+	mux.Handle("/metrics", promhttp.Handler())
+	dashboardSvc := dashboard.NewServer(taskStore, activityStore, journalStore, repoStore, profileStore, snippetStore, provisioner, files, hub, cfg.MaxInFlight, loki, prom, auditStore)
 	// PromptSession warms an idle target through the dashboard server's own
 	// warmIfIdle rather than a second copy of it (docs/adr/0041) — that
 	// function carries the capacity cap and the proposed/pending gates that
@@ -163,7 +168,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool) error {
 	coreSvc.SetWarmFunc(dashboardSvc.WarmIfIdle)
 	dashboardPath, dashboardHandler := agentfleetv1connect.NewDashboardServiceHandler(
 		dashboardSvc,
-		connect.WithInterceptors(dashboard.NewCSRFInterceptor(), dashboard.NewAccessLogInterceptor()),
+		connect.WithInterceptors(dashboard.NewCSRFInterceptor(), dashboard.NewAccessLogInterceptor(), metrics.NewConnectInterceptor()),
 	)
 	// docs/adr/0037: an alert becomes a thot task. Registered even when
 	// the token is unset — the handler then refuses with 503, which is a

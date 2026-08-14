@@ -1,0 +1,28 @@
+# The cluster runs kube-prometheus-stack, i.e. the Prometheus Operator, and
+# its values (infra-bootstrap gitops/platform/values/prometheus/values.yaml)
+# declare no additionalScrapeConfigs. That means the classic
+# `prometheus.io/scrape: "true"` pod annotation is ignored outright — there
+# is no kubernetes-pods job to honour it. A ServiceMonitor is the only
+# mechanism that works here.
+#
+# No `release: platform-prometheus` label needed: the same values file sets
+# serviceMonitorSelectorNilUsesHelmValues: false, so Prometheus watches
+# ServiceMonitors in every namespace regardless of release labels. If that
+# ever flips back to the chart default, this object goes silently unwatched.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: provisioner
+  namespace: agent-fleet
+  labels:
+    app.kubernetes.io/part-of: agent-fleet
+spec:
+  selector:
+    matchLabels:
+      app: provisioner
+  endpoints:
+  # Named port, not a number — the Operator resolves the name against the
+  # Service's own port list, so this keeps working if the port ever moves.
+  - port: http
+    path: /metrics
+    interval: 30s

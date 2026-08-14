@@ -573,6 +573,35 @@ func (s *Store) CountLivePods(ctx context.Context) (int, error) {
 	return count, nil
 }
 
+// CountByRepoStatus returns the live task count for every (repo, status)
+// pair that currently has one, keyed [repo, status]. Backs the
+// agentfleet_tasks_current gauge — the queue-depth view that neither Loki
+// (which sees log lines, not state) nor kube-state-metrics (which sees
+// pods, and a pending task has none) can produce.
+//
+// Pairs with zero tasks are simply absent from the map, which is why
+// metrics.SetTasksCurrent resets the gauge family before applying it.
+func (s *Store) CountByRepoStatus(ctx context.Context) (map[[2]string]int, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT repo, status, count(*) FROM tasks WHERE deleted_at IS NULL GROUP BY repo, status
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("count tasks by repo/status: %w", err)
+	}
+	defer rows.Close()
+
+	counts := make(map[[2]string]int)
+	for rows.Next() {
+		var repo, status string
+		var n int
+		if err := rows.Scan(&repo, &status, &n); err != nil {
+			return nil, fmt.Errorf("scan task counts: %w", err)
+		}
+		counts[[2]string{repo, status}] = n
+	}
+	return counts, rows.Err()
+}
+
 // SetStatus mirrors worker/src/db.ts's setTaskStatus — optional fields
 // only update when supplied (nil pointer leaves the column unchanged).
 // Nudges unconditionally rather than special-casing terminal statuses: a
