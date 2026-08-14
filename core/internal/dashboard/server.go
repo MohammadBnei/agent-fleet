@@ -884,9 +884,14 @@ func (s *Server) ListWorktrees(ctx context.Context, _ *connect.Request[agentflee
 		}
 		// Left join, deliberately: a directory whose session row is gone is
 		// exactly the orphan case this view exists to surface, so a missing
-		// session leaves live_state empty rather than failing the whole list.
+		// session leaves live_state UNSET rather than failing the whole list.
+		//
+		// Unset, not "": "" is a real live state (a session with no pod
+		// attached), so setting it here would make an orphan and a merely
+		// stopped session identical on the wire.
 		if sess, err := s.sessions.Get(ctx, w.GetSessionId()); err == nil {
-			view.LiveState = string(sessions.DeriveLiveState(sess, time.Now(), DefaultTurnStall))
+			live := string(sessions.DeriveLiveState(sess, time.Now(), DefaultTurnStall))
+			view.LiveState = &live
 			view.SessionError = sess.LastError
 		} else if !errors.Is(err, sessions.ErrNotFound) {
 			slog.Error("dashboard ListWorktrees: get session", "sessionId", w.GetSessionId(), "error", err)

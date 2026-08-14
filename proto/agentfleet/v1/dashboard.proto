@@ -369,8 +369,14 @@ message WorktreeView {
   string path = 9;
   int32 dirty_files = 10;
   int64 size_bytes = 11;
-  // "" when no session row remains — the orphan signal.
-  string live_state = 12;
+  // Absent when no session row remains — the orphan signal.
+  //
+  // `optional` rather than a bare string, because "" is a REAL live state
+  // (sessions.LiveStateNone: a session with no pod attached, which is the
+  // resting state between messages). Overloading "" to also mean "no session
+  // row" made the two indistinguishable, so the orphan check could never fire
+  // and a merely-stopped session rendered as an orphan with no link back.
+  optional string live_state = 12;
 }
 
 message ListWorktreesViewResponse {

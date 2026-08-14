@@ -11,16 +11,25 @@ import { useMediaQuery } from "../useMediaQuery";
 // against). Rows with no taskStatus are exactly that case: an orphan with no
 // task row left to explain it.
 
-// Terminal task statuses, mirroring core/internal/coreserver/server.go's
-// terminalTaskStatuses (itself mirroring db/migrations' tasks_status_check).
-const TERMINAL_STATUSES = new Set(["done", "failed", "cancelled", "failed_permanently"]);
+// Live states in which nothing is using this worktree, from
+// core/internal/sessions/liveness.go's vocabulary.
+//
+// This set used to hold the task statuses "done"/"failed"/"cancelled"/
+// "failed_permanently". Three of those no longer exist (docs/adr/0048 deleted
+// the enum), and the miss was not cosmetic: a stopped session's live state is
+// `""` — no live pod, the resting state of every session between messages —
+// so with only "done" matching, no worktree was ever reported reclaimable
+// again. The view kept showing them as in-use forever.
+//
+// `blocked` and `stalled` are deliberately absent: both still have a live pod
+// with an agent attached, waiting on a human rather than finished.
+const TERMINAL_STATUSES = new Set(["done", ""]);
 
-// ponytail: a 2-minute mtime grace instead of plumbing tasks.pod_phase all the
-// way into WorktreeView. A worker sets its terminal status just before exiting,
-// so a pod can still be mid-`git push`/`gh pr create` when its task already
-// reads "done" — yanking the checkout out from under it there would cost the PR.
-// Anything touched recently is left for the next click. Wire up pod_phase if
-// this grace ever proves too coarse.
+// ponytail: a 2-minute mtime grace instead of plumbing pod_phase all the way
+// into WorktreeView. A pod can still be mid-`git push`/`gh pr create` when its
+// session already reads as having no live pod — yanking the checkout out from
+// under it there would cost the PR. Anything touched recently is left for the
+// next click. Wire up pod_phase if this grace ever proves too coarse.
 const RECENT_SECS = 120;
 
 const COLS = "grid-cols-[20px_1.4fr_130px_1fr_150px_90px_110px_90px]";

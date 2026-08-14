@@ -2019,8 +2019,14 @@ type WorktreeView struct {
 	Path          string                 `protobuf:"bytes,9,opt,name=path,proto3" json:"path,omitempty"`
 	DirtyFiles    int32                  `protobuf:"varint,10,opt,name=dirty_files,json=dirtyFiles,proto3" json:"dirty_files,omitempty"`
 	SizeBytes     int64                  `protobuf:"varint,11,opt,name=size_bytes,json=sizeBytes,proto3" json:"size_bytes,omitempty"`
-	// "" when no session row remains — the orphan signal.
-	LiveState     string `protobuf:"bytes,12,opt,name=live_state,json=liveState,proto3" json:"live_state,omitempty"`
+	// Absent when no session row remains — the orphan signal.
+	//
+	// `optional` rather than a bare string, because "" is a REAL live state
+	// (sessions.LiveStateNone: a session with no pod attached, which is the
+	// resting state between messages). Overloading "" to also mean "no session
+	// row" made the two indistinguishable, so the orphan check could never fire
+	// and a merely-stopped session rendered as an orphan with no link back.
+	LiveState     *string `protobuf:"bytes,12,opt,name=live_state,json=liveState,proto3,oneof" json:"live_state,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2119,8 +2125,8 @@ func (x *WorktreeView) GetSizeBytes() int64 {
 }
 
 func (x *WorktreeView) GetLiveState() string {
-	if x != nil {
-		return x.LiveState
+	if x != nil && x.LiveState != nil {
+		return *x.LiveState
 	}
 	return ""
 }
@@ -4324,7 +4330,7 @@ const file_agentfleet_v1_dashboard_proto_rawDesc = "" +
 	"\x14DeleteSessionRequest\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\"\x17\n" +
-	"\x15DeleteSessionResponse\"\xef\x02\n" +
+	"\x15DeleteSessionResponse\"\x83\x03\n" +
 	"\fWorktreeView\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x12\n" +
@@ -4339,10 +4345,11 @@ const file_agentfleet_v1_dashboard_proto_rawDesc = "" +
 	" \x01(\x05R\n" +
 	"dirtyFiles\x12\x1d\n" +
 	"\n" +
-	"size_bytes\x18\v \x01(\x03R\tsizeBytes\x12\x1d\n" +
+	"size_bytes\x18\v \x01(\x03R\tsizeBytes\x12\"\n" +
 	"\n" +
-	"live_state\x18\f \x01(\tR\tliveStateB\x10\n" +
-	"\x0e_session_errorJ\x04\b\x06\x10\aJ\x04\b\b\x10\tR\vtask_statusR\x06pr_url\"\xa4\x01\n" +
+	"live_state\x18\f \x01(\tH\x01R\tliveState\x88\x01\x01B\x10\n" +
+	"\x0e_session_errorB\r\n" +
+	"\v_live_stateJ\x04\b\x06\x10\aJ\x04\b\b\x10\tR\vtask_statusR\x06pr_url\"\xa4\x01\n" +
 	"\x19ListWorktreesViewResponse\x129\n" +
 	"\tworktrees\x18\x01 \x03(\v2\x1b.agentfleet.v1.WorktreeViewR\tworktrees\x12&\n" +
 	"\x0fpvc_total_bytes\x18\x02 \x01(\x04R\rpvcTotalBytes\x12$\n" +

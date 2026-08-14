@@ -6,28 +6,35 @@ import { isStaleWorktree, formatBytes, owner } from "./Worktrees";
 const NOW = 1_800_000_000;
 const OLD = BigInt(NOW - 3600); // well outside the mtime grace
 
-function wt(taskStatus: string | undefined, mtimeUnix = OLD) {
-  return create(WorktreeViewSchema, { sessionId: "t1", repo: "r", branch: "agent/t1", taskStatus, mtimeUnix });
+function wt(liveState: string | undefined, mtimeUnix = OLD) {
+  return create(WorktreeViewSchema, { sessionId: "t1", repo: "r", branch: "agent/t1", liveState, mtimeUnix });
 }
 
-test("finished and orphaned worktrees are stale", () => {
-  for (const status of ["done", "failed", "cancelled", "failed_permanently"]) {
-    expect(isStaleWorktree(wt(status), NOW)).toBe(true);
-  }
-  // No task row at all — the orphaned case the Worktrees view exists to surface.
+// The statuses this used to enumerate ("failed", "cancelled",
+// "failed_permanently") are gone with the enum in docs/adr/0048. What matters
+// now is whether a pod is attached — and the case that regressed silently is
+// the empty live state, which is what a STOPPED session reports and therefore
+// the overwhelmingly common way a worktree becomes reclaimable.
+test("a worktree whose session has no live pod is stale", () => {
+  expect(isStaleWorktree(wt("done"), NOW)).toBe(true);
+  expect(isStaleWorktree(wt(""), NOW)).toBe(true);
+  // No session row at all — the orphaned case this view exists to surface.
   expect(isStaleWorktree(wt(undefined), NOW)).toBe(true);
 });
 
-test("live worktrees are never stale", () => {
-  for (const status of ["pending", "claimed", "running"]) {
-    expect(isStaleWorktree(wt(status), NOW)).toBe(false);
+// blocked and stalled both still have a live pod with an agent attached; they
+// are waiting on a human, not finished. Reclaiming either deletes a working
+// tree out from under a session someone is about to answer.
+test("a worktree with a live pod is never stale, including one waiting on a human", () => {
+  for (const state of ["working", "idle", "unknown", "blocked", "stalled"]) {
+    expect(isStaleWorktree(wt(state), NOW)).toBe(false);
   }
 });
 
-// The pod-still-finishing guard: a worker sets its terminal status just
-// before exiting, so a "done" task can still be mid-push. Without this the
-// sync would yank the checkout and cost the PR.
-test("a recently touched worktree is spared even when its task is done", () => {
+// The pod-still-finishing guard: a pod can still be mid-push when its session
+// already reads as having no live pod. Without this the sync would yank the
+// checkout and cost the PR.
+test("a recently touched worktree is spared even when its session has ended", () => {
   expect(isStaleWorktree(wt("done", BigInt(NOW - 5)), NOW)).toBe(false);
   expect(isStaleWorktree(wt("done", BigInt(NOW - 119)), NOW)).toBe(false);
   expect(isStaleWorktree(wt("done", BigInt(NOW - 121)), NOW)).toBe(true);
@@ -51,9 +58,9 @@ test("owner distinguishes an orphan, a live session and a finished one", () => {
   expect(orphan.orphan).toBe(true);
   expect(orphan.label).toBe("orphan · no session");
 
-  const live = owner(wt("running"));
+  const live = owner(wt("working"));
   expect(live.orphan).toBe(false);
-  expect(live.label).toBe("#t1 running");
+  expect(live.label).toBe("#t1 working");
   // Live sessions are called out in the blocked/attention colour, not dimmed.
   expect(live.cls).toBe("text-error");
 

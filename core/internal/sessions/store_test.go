@@ -81,6 +81,13 @@ func TestReserveSlot_ResetsPerPodStateForTheNewPod(t *testing.T) {
 	if err := store.SetPodPhase(ctx, id, "POD_PHASE_TERMINATED", "stopped"); err != nil {
 		t.Fatalf("phase: %v", err)
 	}
+	// A human moved this session out of default mode. That choice belongs to
+	// the session, not the pod, and must outlive the teardown — a session
+	// silently reverting to `default` on warm re-prompts for everything the
+	// human already decided not to be asked about.
+	if err := store.SetPermissionMode(ctx, id, "acceptEdits"); err != nil {
+		t.Fatalf("set mode: %v", err)
+	}
 
 	before, err := store.Get(ctx, id)
 	if err != nil {
@@ -117,6 +124,10 @@ func TestReserveSlot_ResetsPerPodStateForTheNewPod(t *testing.T) {
 	}
 	if lease2 == "" {
 		t.Error("ReserveSlot returned an empty lease")
+	}
+	if after.PermissionMode == nil || *after.PermissionMode != "acceptEdits" {
+		t.Errorf("permission mode did not survive the warm: got %v, want acceptEdits — "+
+			"the human's choice is a property of the session, not of the pod that died", after.PermissionMode)
 	}
 }
 
