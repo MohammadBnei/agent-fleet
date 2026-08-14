@@ -50,8 +50,8 @@ func (csrfInterceptor) WrapStreamingHandler(next connect.StreamingHandlerFunc) c
 	}
 }
 
-// accessLogInterceptor logs one line per RPC (method, duration, error or
-// nil) — the dashboard surface had zero request-level logging until this
+// accessLogInterceptor logs one line per RPC (method, duration, error if
+// non-nil) — the dashboard surface had zero request-level logging until this
 // was added, which is exactly what let a dashboard-created task silently
 // fail to even reach the tasks table with no trace anywhere in core's logs.
 type accessLogInterceptor struct{}
@@ -64,7 +64,11 @@ func (accessLogInterceptor) WrapUnary(next connect.UnaryFunc) connect.UnaryFunc 
 	return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
 		start := time.Now()
 		resp, err := next(ctx, req)
-		slog.Info("dashboard rpc", "procedure", req.Spec().Procedure, "duration_ms", time.Since(start).Milliseconds(), "error", errString(err))
+		attrs := []any{"procedure", req.Spec().Procedure, "duration_ms", time.Since(start).Milliseconds()}
+		if err != nil {
+			attrs = append(attrs, "error", err.Error())
+		}
+		slog.Info("dashboard rpc", attrs...)
 		return resp, err
 	}
 }
@@ -77,14 +81,11 @@ func (accessLogInterceptor) WrapStreamingHandler(next connect.StreamingHandlerFu
 	return func(ctx context.Context, conn connect.StreamingHandlerConn) error {
 		start := time.Now()
 		err := next(ctx, conn)
-		slog.Info("dashboard rpc", "procedure", conn.Spec().Procedure, "duration_ms", time.Since(start).Milliseconds(), "error", errString(err))
+		attrs := []any{"procedure", conn.Spec().Procedure, "duration_ms", time.Since(start).Milliseconds()}
+		if err != nil {
+			attrs = append(attrs, "error", err.Error())
+		}
+		slog.Info("dashboard rpc", attrs...)
 		return err
 	}
-}
-
-func errString(err error) string {
-	if err == nil {
-		return ""
-	}
-	return err.Error()
 }
