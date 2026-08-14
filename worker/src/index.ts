@@ -7,6 +7,7 @@ import { runTask as defaultRunTask, TransientError } from "./session.js";
 import * as defaultSidecar from "./sidecarClient.js";
 import { log } from "./log.js";
 import type { Task } from "./types.js";
+import * as metrics from "./metrics.js";
 
 type Sidecar = typeof defaultSidecar;
 type RunTask = typeof defaultRunTask;
@@ -202,6 +203,22 @@ export async function main(
 // index.test.ts) rather than run directly — keeps main() exported and
 // independently invokable for tests, without a top-level side effect.
 if (import.meta.main) {
+  // Start metrics HTTP server on port 9092 (worker container)
+  // ponytail: worker metrics on 9092, sidecar on 9091. Prometheus scrapes pod, not container.
+  const metricsServer = Bun.serve({
+    port: 9092,
+    fetch(req) {
+      const url = new URL(req.url);
+      if (url.pathname === "/metrics") {
+        return new Response(metrics.renderMetrics(), {
+          headers: { "Content-Type": "text/plain; version=0.0.4" },
+        });
+      }
+      return new Response("Not Found", { status: 404 });
+    },
+  });
+  log("info", "worker metrics listening", { port: 9092 });
+
   main().catch(async (err) => {
     log("error", "worker crashed", { taskId: TASK_ID, error: String(err) });
     // Last-resort attempt: everything above already guards its own status
@@ -209,6 +226,7 @@ if (import.meta.main) {
     // those guards — still worth one more try before the pod exits and
     // the task sits stuck until core's 10-min reclaim.
     await reportStatus(defaultSidecar, TASK_ID!, "failed", { lastError: String(err) });
+    metricsServer.stop();
     process.exit(1);
   });
 }

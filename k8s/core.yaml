@@ -69,6 +69,11 @@ env:
 podLabels:
   app.kubernetes.io/part-of: agent-fleet
 
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "8080"
+  prometheus.io/path: "/metrics"
+
 # A LimitRange is namespace-wide, not release-scoped: this one governs
 # every pod in `agent-fleet`, including the worker/e2e pods the provisioner
 # creates directly (it is the `agent-fleet-core-limits` object
