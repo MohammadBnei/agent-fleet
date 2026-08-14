@@ -48,7 +48,13 @@ const (
 type CoreServiceClient interface {
 	// buf:lint:ignore RPC_REQUEST_STANDARD_NAME
 	ReportPodEvents(ctx context.Context, opts ...grpc.CallOption) (grpc.ClientStreamingClient[PodEvent, ReportPodEventsResponse], error)
-	SendMessage(ctx context.Context, in *SendMessageRequest, opts ...grpc.CallOption) (*SendMessageResponse, error)
+	// Shares AppendResponse with DashboardService's three append RPCs — see
+	// that message's comment. buf's default is one response type per RPC;
+	// this repo already overrides that wherever two RPCs are genuinely the
+	// same shape (GetSession and SetPermissionMode below do the same).
+	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	SendMessage(ctx context.Context, in *SendMessageRequest, opts ...grpc.CallOption) (*AppendResponse, error)
 	// Reuses transcript.proto's ReadTranscriptSinceRequest/Response, same
 	// precedent dashboard.proto already set for GetTranscript.
 	// buf:lint:ignore RPC_REQUEST_STANDARD_NAME
@@ -120,9 +126,9 @@ func (c *coreServiceClient) ReportPodEvents(ctx context.Context, opts ...grpc.Ca
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type CoreService_ReportPodEventsClient = grpc.ClientStreamingClient[PodEvent, ReportPodEventsResponse]
 
-func (c *coreServiceClient) SendMessage(ctx context.Context, in *SendMessageRequest, opts ...grpc.CallOption) (*SendMessageResponse, error) {
+func (c *coreServiceClient) SendMessage(ctx context.Context, in *SendMessageRequest, opts ...grpc.CallOption) (*AppendResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(SendMessageResponse)
+	out := new(AppendResponse)
 	err := c.cc.Invoke(ctx, CoreService_SendMessage_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
@@ -335,7 +341,13 @@ func (c *coreServiceClient) WaitForSessionState(ctx context.Context, in *WaitFor
 type CoreServiceServer interface {
 	// buf:lint:ignore RPC_REQUEST_STANDARD_NAME
 	ReportPodEvents(grpc.ClientStreamingServer[PodEvent, ReportPodEventsResponse]) error
-	SendMessage(context.Context, *SendMessageRequest) (*SendMessageResponse, error)
+	// Shares AppendResponse with DashboardService's three append RPCs — see
+	// that message's comment. buf's default is one response type per RPC;
+	// this repo already overrides that wherever two RPCs are genuinely the
+	// same shape (GetSession and SetPermissionMode below do the same).
+	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	SendMessage(context.Context, *SendMessageRequest) (*AppendResponse, error)
 	// Reuses transcript.proto's ReadTranscriptSinceRequest/Response, same
 	// precedent dashboard.proto already set for GetTranscript.
 	// buf:lint:ignore RPC_REQUEST_STANDARD_NAME
@@ -397,7 +409,7 @@ type UnimplementedCoreServiceServer struct{}
 func (UnimplementedCoreServiceServer) ReportPodEvents(grpc.ClientStreamingServer[PodEvent, ReportPodEventsResponse]) error {
 	return status.Error(codes.Unimplemented, "method ReportPodEvents not implemented")
 }
-func (UnimplementedCoreServiceServer) SendMessage(context.Context, *SendMessageRequest) (*SendMessageResponse, error) {
+func (UnimplementedCoreServiceServer) SendMessage(context.Context, *SendMessageRequest) (*AppendResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SendMessage not implemented")
 }
 func (UnimplementedCoreServiceServer) WaitForMessages(context.Context, *ReadTranscriptSinceRequest) (*ReadTranscriptSinceResponse, error) {

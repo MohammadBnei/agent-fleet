@@ -66,15 +66,34 @@ message SendMessageRequest {
   optional int64 reply_to_seq = 6;
 }
 
-message SendMessageResponse {
+// AppendResponse is the one response shape for every RPC whose job is
+// "append an entry to a session's transcript": SendMessage here, and
+// PostMessage/AnswerQuestion/RespondToPermission on DashboardService.
+//
+// They are one operation wearing four names — a human message, an agent
+// message, an answer, and a permission decision are all a row in
+// `transcript` — so they get one shape. The seq is the only thing the
+// caller could not compute for itself, and it is the correlation key
+// everything else in the fleet keys off.
+//
+// Deliberately NOT extended to cover every RPC. Three of the four used to
+// return `string status = 1` holding a constant the server always set,
+// which duplicated the signal Connect's error channel already carries: with
+// a status inside a successful response, every caller has to check both,
+// and eventually one checks only the wrong one. The rule this settles on is
+// narrower and holds: **an RPC returns nothing, or the one thing the caller
+// cannot already know.**
+message AppendResponse {
   int64 seq = 1;
 }
 
-// Preserves the AskUserQuestion MCP tool's exact long-poll contract
-// (fleet-core/internal/mcpserver/ask_user_question.go today): appends a
-// QUESTION entry, long-polls for a matching ANSWER entry up to timeout_ms,
-// returns it verbatim if found or {status:"pending"} if not — the caller
-// re-invokes with the same questions to keep waiting, same as today.
+// Appends a QUESTION entry and long-polls for a matching ANSWER up to
+// timeout_ms, returning it verbatim if one arrives. A timeout is not an
+// error — the caller re-invokes with the same questions to keep waiting.
+//
+// This one keeps a response body rather than sharing AppendResponse,
+// because it genuinely returns something the caller cannot compute: whether
+// a human answered, and what they said.
 message AskUserQuestionRequest {
   string session_id = 1;
   string questions_json = 2;
@@ -82,8 +101,20 @@ message AskUserQuestionRequest {
 }
 
 message AskUserQuestionResponse {
-  string status = 1; // "answered" | "pending"
-  string answers_json = 2; // set only when status == "answered"
+  reserved 1;
+  reserved "status";
+
+  // Was `string status = 1` holding "answered"|"pending". A bool, because
+  // that is what it always was: a string that looks like a status code
+  // invites callers to treat a timeout as a failure, and invites the server
+  // to grow a third value nobody handles. Whether a human answered is a
+  // yes/no, and the timeout is an ordinary outcome of a long poll.
+  bool answered = 4;
+  string answers_json = 2; // set only when answered
+  // The seq of the question entry this call appended. Stable across
+  // re-invocations only if the caller passes the same questions — a
+  // re-ask mints a NEW entry with a new seq, which is what makes any
+  // control posted against an older one dead.
   int64 question_seq = 3;
 }
 
@@ -293,9 +324,7 @@ message SetPermissionModeRequest {
   string mode = 2;
 }
 
-message SetPermissionModeResponse {
-  string status = 1;
-}
+message SetPermissionModeResponse {}
 
 // HeartbeatRequest/Response and SetTaskStatusRequest/Response used to live
 // here. Both are deleted in docs/adr/0048.
@@ -438,7 +467,13 @@ service CoreService {
   // buf:lint:ignore RPC_REQUEST_STANDARD_NAME
   rpc ReportPodEvents(stream PodEvent) returns (ReportPodEventsResponse);
 
-  rpc SendMessage(SendMessageRequest) returns (SendMessageResponse);
+  // Shares AppendResponse with DashboardService's three append RPCs — see
+  // that message's comment. buf's default is one response type per RPC;
+  // this repo already overrides that wherever two RPCs are genuinely the
+  // same shape (GetSession and SetPermissionMode below do the same).
+  // buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+  // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+  rpc SendMessage(SendMessageRequest) returns (AppendResponse);
   // Reuses transcript.proto's ReadTranscriptSinceRequest/Response, same
   // precedent dashboard.proto already set for GetTranscript.
   // buf:lint:ignore RPC_REQUEST_STANDARD_NAME

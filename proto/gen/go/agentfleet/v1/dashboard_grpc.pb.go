@@ -101,9 +101,21 @@ type DashboardServiceClient interface {
 	StartE2E(ctx context.Context, in *StartE2ERequest, opts ...grpc.CallOption) (*StartE2EResponse, error)
 	RestartE2EApp(ctx context.Context, in *RestartE2EAppRequest, opts ...grpc.CallOption) (*RestartE2EAppResponse, error)
 	GetE2EAppLog(ctx context.Context, in *GetE2EAppLogRequest, opts ...grpc.CallOption) (*GetE2EAppLogResponse, error)
-	AnswerQuestion(ctx context.Context, in *AnswerQuestionRequest, opts ...grpc.CallOption) (*AnswerQuestionResponse, error)
-	RespondToPermission(ctx context.Context, in *RespondToPermissionRequest, opts ...grpc.CallOption) (*RespondToPermissionResponse, error)
-	PostMessage(ctx context.Context, in *PostMessageRequest, opts ...grpc.CallOption) (*PostMessageResponse, error)
+	// AnswerQuestion, RespondToPermission and PostMessage all mean "append an
+	// entry to this session's transcript" — a human answer, a permission
+	// decision, and a free-text message are the same row with different types.
+	// All three returned a constant `status` string until docs/adr/0048; they
+	// now return the seq, which is the one thing the caller cannot compute and
+	// is the correlation key everything else keys off.
+	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	AnswerQuestion(ctx context.Context, in *AnswerQuestionRequest, opts ...grpc.CallOption) (*AppendResponse, error)
+	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	RespondToPermission(ctx context.Context, in *RespondToPermissionRequest, opts ...grpc.CallOption) (*AppendResponse, error)
+	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	PostMessage(ctx context.Context, in *PostMessageRequest, opts ...grpc.CallOption) (*AppendResponse, error)
 	DeleteSession(ctx context.Context, in *DeleteSessionRequest, opts ...grpc.CallOption) (*DeleteSessionResponse, error)
 	// Reuses provisioner.proto's ListWorktreesRequest (identical shape,
 	// empty) and DeleteWorktreeRequest/Response (identical shape, no
@@ -359,9 +371,9 @@ func (c *dashboardServiceClient) GetE2EAppLog(ctx context.Context, in *GetE2EApp
 	return out, nil
 }
 
-func (c *dashboardServiceClient) AnswerQuestion(ctx context.Context, in *AnswerQuestionRequest, opts ...grpc.CallOption) (*AnswerQuestionResponse, error) {
+func (c *dashboardServiceClient) AnswerQuestion(ctx context.Context, in *AnswerQuestionRequest, opts ...grpc.CallOption) (*AppendResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(AnswerQuestionResponse)
+	out := new(AppendResponse)
 	err := c.cc.Invoke(ctx, DashboardService_AnswerQuestion_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
@@ -369,9 +381,9 @@ func (c *dashboardServiceClient) AnswerQuestion(ctx context.Context, in *AnswerQ
 	return out, nil
 }
 
-func (c *dashboardServiceClient) RespondToPermission(ctx context.Context, in *RespondToPermissionRequest, opts ...grpc.CallOption) (*RespondToPermissionResponse, error) {
+func (c *dashboardServiceClient) RespondToPermission(ctx context.Context, in *RespondToPermissionRequest, opts ...grpc.CallOption) (*AppendResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(RespondToPermissionResponse)
+	out := new(AppendResponse)
 	err := c.cc.Invoke(ctx, DashboardService_RespondToPermission_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
@@ -379,9 +391,9 @@ func (c *dashboardServiceClient) RespondToPermission(ctx context.Context, in *Re
 	return out, nil
 }
 
-func (c *dashboardServiceClient) PostMessage(ctx context.Context, in *PostMessageRequest, opts ...grpc.CallOption) (*PostMessageResponse, error) {
+func (c *dashboardServiceClient) PostMessage(ctx context.Context, in *PostMessageRequest, opts ...grpc.CallOption) (*AppendResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(PostMessageResponse)
+	out := new(AppendResponse)
 	err := c.cc.Invoke(ctx, DashboardService_PostMessage_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
@@ -663,9 +675,21 @@ type DashboardServiceServer interface {
 	StartE2E(context.Context, *StartE2ERequest) (*StartE2EResponse, error)
 	RestartE2EApp(context.Context, *RestartE2EAppRequest) (*RestartE2EAppResponse, error)
 	GetE2EAppLog(context.Context, *GetE2EAppLogRequest) (*GetE2EAppLogResponse, error)
-	AnswerQuestion(context.Context, *AnswerQuestionRequest) (*AnswerQuestionResponse, error)
-	RespondToPermission(context.Context, *RespondToPermissionRequest) (*RespondToPermissionResponse, error)
-	PostMessage(context.Context, *PostMessageRequest) (*PostMessageResponse, error)
+	// AnswerQuestion, RespondToPermission and PostMessage all mean "append an
+	// entry to this session's transcript" — a human answer, a permission
+	// decision, and a free-text message are the same row with different types.
+	// All three returned a constant `status` string until docs/adr/0048; they
+	// now return the seq, which is the one thing the caller cannot compute and
+	// is the correlation key everything else keys off.
+	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	AnswerQuestion(context.Context, *AnswerQuestionRequest) (*AppendResponse, error)
+	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	RespondToPermission(context.Context, *RespondToPermissionRequest) (*AppendResponse, error)
+	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	PostMessage(context.Context, *PostMessageRequest) (*AppendResponse, error)
 	DeleteSession(context.Context, *DeleteSessionRequest) (*DeleteSessionResponse, error)
 	// Reuses provisioner.proto's ListWorktreesRequest (identical shape,
 	// empty) and DeleteWorktreeRequest/Response (identical shape, no
@@ -779,13 +803,13 @@ func (UnimplementedDashboardServiceServer) RestartE2EApp(context.Context, *Resta
 func (UnimplementedDashboardServiceServer) GetE2EAppLog(context.Context, *GetE2EAppLogRequest) (*GetE2EAppLogResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetE2EAppLog not implemented")
 }
-func (UnimplementedDashboardServiceServer) AnswerQuestion(context.Context, *AnswerQuestionRequest) (*AnswerQuestionResponse, error) {
+func (UnimplementedDashboardServiceServer) AnswerQuestion(context.Context, *AnswerQuestionRequest) (*AppendResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method AnswerQuestion not implemented")
 }
-func (UnimplementedDashboardServiceServer) RespondToPermission(context.Context, *RespondToPermissionRequest) (*RespondToPermissionResponse, error) {
+func (UnimplementedDashboardServiceServer) RespondToPermission(context.Context, *RespondToPermissionRequest) (*AppendResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RespondToPermission not implemented")
 }
-func (UnimplementedDashboardServiceServer) PostMessage(context.Context, *PostMessageRequest) (*PostMessageResponse, error) {
+func (UnimplementedDashboardServiceServer) PostMessage(context.Context, *PostMessageRequest) (*AppendResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method PostMessage not implemented")
 }
 func (UnimplementedDashboardServiceServer) DeleteSession(context.Context, *DeleteSessionRequest) (*DeleteSessionResponse, error) {

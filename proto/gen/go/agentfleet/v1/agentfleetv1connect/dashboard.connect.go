@@ -205,9 +205,21 @@ type DashboardServiceClient interface {
 	StartE2E(context.Context, *connect.Request[v1.StartE2ERequest]) (*connect.Response[v1.StartE2EResponse], error)
 	RestartE2EApp(context.Context, *connect.Request[v1.RestartE2EAppRequest]) (*connect.Response[v1.RestartE2EAppResponse], error)
 	GetE2EAppLog(context.Context, *connect.Request[v1.GetE2EAppLogRequest]) (*connect.Response[v1.GetE2EAppLogResponse], error)
-	AnswerQuestion(context.Context, *connect.Request[v1.AnswerQuestionRequest]) (*connect.Response[v1.AnswerQuestionResponse], error)
-	RespondToPermission(context.Context, *connect.Request[v1.RespondToPermissionRequest]) (*connect.Response[v1.RespondToPermissionResponse], error)
-	PostMessage(context.Context, *connect.Request[v1.PostMessageRequest]) (*connect.Response[v1.PostMessageResponse], error)
+	// AnswerQuestion, RespondToPermission and PostMessage all mean "append an
+	// entry to this session's transcript" — a human answer, a permission
+	// decision, and a free-text message are the same row with different types.
+	// All three returned a constant `status` string until docs/adr/0048; they
+	// now return the seq, which is the one thing the caller cannot compute and
+	// is the correlation key everything else keys off.
+	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	AnswerQuestion(context.Context, *connect.Request[v1.AnswerQuestionRequest]) (*connect.Response[v1.AppendResponse], error)
+	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	RespondToPermission(context.Context, *connect.Request[v1.RespondToPermissionRequest]) (*connect.Response[v1.AppendResponse], error)
+	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	PostMessage(context.Context, *connect.Request[v1.PostMessageRequest]) (*connect.Response[v1.AppendResponse], error)
 	DeleteSession(context.Context, *connect.Request[v1.DeleteSessionRequest]) (*connect.Response[v1.DeleteSessionResponse], error)
 	// Reuses provisioner.proto's ListWorktreesRequest (identical shape,
 	// empty) and DeleteWorktreeRequest/Response (identical shape, no
@@ -381,19 +393,19 @@ func NewDashboardServiceClient(httpClient connect.HTTPClient, baseURL string, op
 			connect.WithSchema(dashboardServiceMethods.ByName("GetE2eAppLog")),
 			connect.WithClientOptions(opts...),
 		),
-		answerQuestion: connect.NewClient[v1.AnswerQuestionRequest, v1.AnswerQuestionResponse](
+		answerQuestion: connect.NewClient[v1.AnswerQuestionRequest, v1.AppendResponse](
 			httpClient,
 			baseURL+DashboardServiceAnswerQuestionProcedure,
 			connect.WithSchema(dashboardServiceMethods.ByName("AnswerQuestion")),
 			connect.WithClientOptions(opts...),
 		),
-		respondToPermission: connect.NewClient[v1.RespondToPermissionRequest, v1.RespondToPermissionResponse](
+		respondToPermission: connect.NewClient[v1.RespondToPermissionRequest, v1.AppendResponse](
 			httpClient,
 			baseURL+DashboardServiceRespondToPermissionProcedure,
 			connect.WithSchema(dashboardServiceMethods.ByName("RespondToPermission")),
 			connect.WithClientOptions(opts...),
 		),
-		postMessage: connect.NewClient[v1.PostMessageRequest, v1.PostMessageResponse](
+		postMessage: connect.NewClient[v1.PostMessageRequest, v1.AppendResponse](
 			httpClient,
 			baseURL+DashboardServicePostMessageProcedure,
 			connect.WithSchema(dashboardServiceMethods.ByName("PostMessage")),
@@ -567,9 +579,9 @@ type dashboardServiceClient struct {
 	startE2E             *connect.Client[v1.StartE2ERequest, v1.StartE2EResponse]
 	restartE2EApp        *connect.Client[v1.RestartE2EAppRequest, v1.RestartE2EAppResponse]
 	getE2EAppLog         *connect.Client[v1.GetE2EAppLogRequest, v1.GetE2EAppLogResponse]
-	answerQuestion       *connect.Client[v1.AnswerQuestionRequest, v1.AnswerQuestionResponse]
-	respondToPermission  *connect.Client[v1.RespondToPermissionRequest, v1.RespondToPermissionResponse]
-	postMessage          *connect.Client[v1.PostMessageRequest, v1.PostMessageResponse]
+	answerQuestion       *connect.Client[v1.AnswerQuestionRequest, v1.AppendResponse]
+	respondToPermission  *connect.Client[v1.RespondToPermissionRequest, v1.AppendResponse]
+	postMessage          *connect.Client[v1.PostMessageRequest, v1.AppendResponse]
 	deleteSession        *connect.Client[v1.DeleteSessionRequest, v1.DeleteSessionResponse]
 	listWorktrees        *connect.Client[v1.ListWorktreesRequest, v1.ListWorktreesViewResponse]
 	deleteWorktree       *connect.Client[v1.DeleteWorktreeRequest, v1.DeleteWorktreeResponse]
@@ -692,17 +704,17 @@ func (c *dashboardServiceClient) GetE2EAppLog(ctx context.Context, req *connect.
 }
 
 // AnswerQuestion calls agentfleet.v1.DashboardService.AnswerQuestion.
-func (c *dashboardServiceClient) AnswerQuestion(ctx context.Context, req *connect.Request[v1.AnswerQuestionRequest]) (*connect.Response[v1.AnswerQuestionResponse], error) {
+func (c *dashboardServiceClient) AnswerQuestion(ctx context.Context, req *connect.Request[v1.AnswerQuestionRequest]) (*connect.Response[v1.AppendResponse], error) {
 	return c.answerQuestion.CallUnary(ctx, req)
 }
 
 // RespondToPermission calls agentfleet.v1.DashboardService.RespondToPermission.
-func (c *dashboardServiceClient) RespondToPermission(ctx context.Context, req *connect.Request[v1.RespondToPermissionRequest]) (*connect.Response[v1.RespondToPermissionResponse], error) {
+func (c *dashboardServiceClient) RespondToPermission(ctx context.Context, req *connect.Request[v1.RespondToPermissionRequest]) (*connect.Response[v1.AppendResponse], error) {
 	return c.respondToPermission.CallUnary(ctx, req)
 }
 
 // PostMessage calls agentfleet.v1.DashboardService.PostMessage.
-func (c *dashboardServiceClient) PostMessage(ctx context.Context, req *connect.Request[v1.PostMessageRequest]) (*connect.Response[v1.PostMessageResponse], error) {
+func (c *dashboardServiceClient) PostMessage(ctx context.Context, req *connect.Request[v1.PostMessageRequest]) (*connect.Response[v1.AppendResponse], error) {
 	return c.postMessage.CallUnary(ctx, req)
 }
 
@@ -858,9 +870,21 @@ type DashboardServiceHandler interface {
 	StartE2E(context.Context, *connect.Request[v1.StartE2ERequest]) (*connect.Response[v1.StartE2EResponse], error)
 	RestartE2EApp(context.Context, *connect.Request[v1.RestartE2EAppRequest]) (*connect.Response[v1.RestartE2EAppResponse], error)
 	GetE2EAppLog(context.Context, *connect.Request[v1.GetE2EAppLogRequest]) (*connect.Response[v1.GetE2EAppLogResponse], error)
-	AnswerQuestion(context.Context, *connect.Request[v1.AnswerQuestionRequest]) (*connect.Response[v1.AnswerQuestionResponse], error)
-	RespondToPermission(context.Context, *connect.Request[v1.RespondToPermissionRequest]) (*connect.Response[v1.RespondToPermissionResponse], error)
-	PostMessage(context.Context, *connect.Request[v1.PostMessageRequest]) (*connect.Response[v1.PostMessageResponse], error)
+	// AnswerQuestion, RespondToPermission and PostMessage all mean "append an
+	// entry to this session's transcript" — a human answer, a permission
+	// decision, and a free-text message are the same row with different types.
+	// All three returned a constant `status` string until docs/adr/0048; they
+	// now return the seq, which is the one thing the caller cannot compute and
+	// is the correlation key everything else keys off.
+	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	AnswerQuestion(context.Context, *connect.Request[v1.AnswerQuestionRequest]) (*connect.Response[v1.AppendResponse], error)
+	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	RespondToPermission(context.Context, *connect.Request[v1.RespondToPermissionRequest]) (*connect.Response[v1.AppendResponse], error)
+	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	PostMessage(context.Context, *connect.Request[v1.PostMessageRequest]) (*connect.Response[v1.AppendResponse], error)
 	DeleteSession(context.Context, *connect.Request[v1.DeleteSessionRequest]) (*connect.Response[v1.DeleteSessionResponse], error)
 	// Reuses provisioner.proto's ListWorktreesRequest (identical shape,
 	// empty) and DeleteWorktreeRequest/Response (identical shape, no
@@ -1371,15 +1395,15 @@ func (UnimplementedDashboardServiceHandler) GetE2EAppLog(context.Context, *conne
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.GetE2eAppLog is not implemented"))
 }
 
-func (UnimplementedDashboardServiceHandler) AnswerQuestion(context.Context, *connect.Request[v1.AnswerQuestionRequest]) (*connect.Response[v1.AnswerQuestionResponse], error) {
+func (UnimplementedDashboardServiceHandler) AnswerQuestion(context.Context, *connect.Request[v1.AnswerQuestionRequest]) (*connect.Response[v1.AppendResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.AnswerQuestion is not implemented"))
 }
 
-func (UnimplementedDashboardServiceHandler) RespondToPermission(context.Context, *connect.Request[v1.RespondToPermissionRequest]) (*connect.Response[v1.RespondToPermissionResponse], error) {
+func (UnimplementedDashboardServiceHandler) RespondToPermission(context.Context, *connect.Request[v1.RespondToPermissionRequest]) (*connect.Response[v1.AppendResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.RespondToPermission is not implemented"))
 }
 
-func (UnimplementedDashboardServiceHandler) PostMessage(context.Context, *connect.Request[v1.PostMessageRequest]) (*connect.Response[v1.PostMessageResponse], error) {
+func (UnimplementedDashboardServiceHandler) PostMessage(context.Context, *connect.Request[v1.PostMessageRequest]) (*connect.Response[v1.AppendResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.PostMessage is not implemented"))
 }
 

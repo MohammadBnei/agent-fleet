@@ -295,27 +295,44 @@ func (x *SendMessageRequest) GetReplyToSeq() int64 {
 	return 0
 }
 
-type SendMessageResponse struct {
+// AppendResponse is the one response shape for every RPC whose job is
+// "append an entry to a session's transcript": SendMessage here, and
+// PostMessage/AnswerQuestion/RespondToPermission on DashboardService.
+//
+// They are one operation wearing four names — a human message, an agent
+// message, an answer, and a permission decision are all a row in
+// `transcript` — so they get one shape. The seq is the only thing the
+// caller could not compute for itself, and it is the correlation key
+// everything else in the fleet keys off.
+//
+// Deliberately NOT extended to cover every RPC. Three of the four used to
+// return `string status = 1` holding a constant the server always set,
+// which duplicated the signal Connect's error channel already carries: with
+// a status inside a successful response, every caller has to check both,
+// and eventually one checks only the wrong one. The rule this settles on is
+// narrower and holds: **an RPC returns nothing, or the one thing the caller
+// cannot already know.**
+type AppendResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Seq           int64                  `protobuf:"varint,1,opt,name=seq,proto3" json:"seq,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *SendMessageResponse) Reset() {
-	*x = SendMessageResponse{}
+func (x *AppendResponse) Reset() {
+	*x = AppendResponse{}
 	mi := &file_agentfleet_v1_core_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *SendMessageResponse) String() string {
+func (x *AppendResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*SendMessageResponse) ProtoMessage() {}
+func (*AppendResponse) ProtoMessage() {}
 
-func (x *SendMessageResponse) ProtoReflect() protoreflect.Message {
+func (x *AppendResponse) ProtoReflect() protoreflect.Message {
 	mi := &file_agentfleet_v1_core_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -327,23 +344,25 @@ func (x *SendMessageResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use SendMessageResponse.ProtoReflect.Descriptor instead.
-func (*SendMessageResponse) Descriptor() ([]byte, []int) {
+// Deprecated: Use AppendResponse.ProtoReflect.Descriptor instead.
+func (*AppendResponse) Descriptor() ([]byte, []int) {
 	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{3}
 }
 
-func (x *SendMessageResponse) GetSeq() int64 {
+func (x *AppendResponse) GetSeq() int64 {
 	if x != nil {
 		return x.Seq
 	}
 	return 0
 }
 
-// Preserves the AskUserQuestion MCP tool's exact long-poll contract
-// (fleet-core/internal/mcpserver/ask_user_question.go today): appends a
-// QUESTION entry, long-polls for a matching ANSWER entry up to timeout_ms,
-// returns it verbatim if found or {status:"pending"} if not — the caller
-// re-invokes with the same questions to keep waiting, same as today.
+// Appends a QUESTION entry and long-polls for a matching ANSWER up to
+// timeout_ms, returning it verbatim if one arrives. A timeout is not an
+// error — the caller re-invokes with the same questions to keep waiting.
+//
+// This one keeps a response body rather than sharing AppendResponse,
+// because it genuinely returns something the caller cannot compute: whether
+// a human answered, and what they said.
 type AskUserQuestionRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
@@ -405,10 +424,19 @@ func (x *AskUserQuestionRequest) GetTimeoutMs() int32 {
 }
 
 type AskUserQuestionResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Status        string                 `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`                              // "answered" | "pending"
-	AnswersJson   string                 `protobuf:"bytes,2,opt,name=answers_json,json=answersJson,proto3" json:"answers_json,omitempty"` // set only when status == "answered"
-	QuestionSeq   int64                  `protobuf:"varint,3,opt,name=question_seq,json=questionSeq,proto3" json:"question_seq,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Was `string status = 1` holding "answered"|"pending". A bool, because
+	// that is what it always was: a string that looks like a status code
+	// invites callers to treat a timeout as a failure, and invites the server
+	// to grow a third value nobody handles. Whether a human answered is a
+	// yes/no, and the timeout is an ordinary outcome of a long poll.
+	Answered    bool   `protobuf:"varint,4,opt,name=answered,proto3" json:"answered,omitempty"`
+	AnswersJson string `protobuf:"bytes,2,opt,name=answers_json,json=answersJson,proto3" json:"answers_json,omitempty"` // set only when answered
+	// The seq of the question entry this call appended. Stable across
+	// re-invocations only if the caller passes the same questions — a
+	// re-ask mints a NEW entry with a new seq, which is what makes any
+	// control posted against an older one dead.
+	QuestionSeq   int64 `protobuf:"varint,3,opt,name=question_seq,json=questionSeq,proto3" json:"question_seq,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -443,11 +471,11 @@ func (*AskUserQuestionResponse) Descriptor() ([]byte, []int) {
 	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{5}
 }
 
-func (x *AskUserQuestionResponse) GetStatus() string {
+func (x *AskUserQuestionResponse) GetAnswered() bool {
 	if x != nil {
-		return x.Status
+		return x.Answered
 	}
-	return ""
+	return false
 }
 
 func (x *AskUserQuestionResponse) GetAnswersJson() string {
@@ -1506,7 +1534,6 @@ func (x *SetPermissionModeRequest) GetMode() string {
 
 type SetPermissionModeResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Status        string                 `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1539,13 +1566,6 @@ func (x *SetPermissionModeResponse) ProtoReflect() protoreflect.Message {
 // Deprecated: Use SetPermissionModeResponse.ProtoReflect.Descriptor instead.
 func (*SetPermissionModeResponse) Descriptor() ([]byte, []int) {
 	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{21}
-}
-
-func (x *SetPermissionModeResponse) GetStatus() string {
-	if x != nil {
-		return x.Status
-	}
-	return ""
 }
 
 type AppendJournalRequest struct {
@@ -2512,19 +2532,19 @@ const file_agentfleet_v1_core_proto_rawDesc = "" +
 	"\x0fidempotency_key\x18\x05 \x01(\tR\x0eidempotencyKey\x12%\n" +
 	"\freply_to_seq\x18\x06 \x01(\x03H\x00R\n" +
 	"replyToSeq\x88\x01\x01B\x0f\n" +
-	"\r_reply_to_seq\"'\n" +
-	"\x13SendMessageResponse\x12\x10\n" +
+	"\r_reply_to_seq\"\"\n" +
+	"\x0eAppendResponse\x12\x10\n" +
 	"\x03seq\x18\x01 \x01(\x03R\x03seq\"}\n" +
 	"\x16AskUserQuestionRequest\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12%\n" +
 	"\x0equestions_json\x18\x02 \x01(\tR\rquestionsJson\x12\x1d\n" +
 	"\n" +
-	"timeout_ms\x18\x03 \x01(\x05R\ttimeoutMs\"w\n" +
-	"\x17AskUserQuestionResponse\x12\x16\n" +
-	"\x06status\x18\x01 \x01(\tR\x06status\x12!\n" +
+	"timeout_ms\x18\x03 \x01(\x05R\ttimeoutMs\"\x89\x01\n" +
+	"\x17AskUserQuestionResponse\x12\x1a\n" +
+	"\banswered\x18\x04 \x01(\bR\banswered\x12!\n" +
 	"\fanswers_json\x18\x02 \x01(\tR\vanswersJson\x12!\n" +
-	"\fquestion_seq\x18\x03 \x01(\x03R\vquestionSeq\"l\n" +
+	"\fquestion_seq\x18\x03 \x01(\x03R\vquestionSeqJ\x04\b\x01\x10\x02R\x06status\"l\n" +
 	"\x14RequestE2eEnvRequest\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x1b\n" +
@@ -2617,9 +2637,8 @@ const file_agentfleet_v1_core_proto_rawDesc = "" +
 	"\x18SetPermissionModeRequest\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x12\n" +
-	"\x04mode\x18\x02 \x01(\tR\x04mode\"3\n" +
-	"\x19SetPermissionModeResponse\x12\x16\n" +
-	"\x06status\x18\x01 \x01(\tR\x06status\"\x82\x01\n" +
+	"\x04mode\x18\x02 \x01(\tR\x04mode\"\x1b\n" +
+	"\x19SetPermissionModeResponse\"\x82\x01\n" +
 	"\x14AppendJournalRequest\x12\x12\n" +
 	"\x04repo\x18\x01 \x01(\tR\x04repo\x12\x14\n" +
 	"\x05actor\x18\x02 \x01(\tR\x05actor\x12\x1d\n" +
@@ -2701,10 +2720,10 @@ const file_agentfleet_v1_core_proto_rawDesc = "" +
 	"\x11POD_PHASE_RUNNING\x10\x03\x12\x15\n" +
 	"\x11POD_PHASE_CRASHED\x10\x04\x12\x18\n" +
 	"\x14POD_PHASE_TERMINATED\x10\x05\x12\x1a\n" +
-	"\x16POD_PHASE_PROVISIONING\x10\x062\xcd\x0f\n" +
+	"\x16POD_PHASE_PROVISIONING\x10\x062\xc8\x0f\n" +
 	"\vCoreService\x12T\n" +
-	"\x0fReportPodEvents\x12\x17.agentfleet.v1.PodEvent\x1a&.agentfleet.v1.ReportPodEventsResponse(\x01\x12T\n" +
-	"\vSendMessage\x12!.agentfleet.v1.SendMessageRequest\x1a\".agentfleet.v1.SendMessageResponse\x12h\n" +
+	"\x0fReportPodEvents\x12\x17.agentfleet.v1.PodEvent\x1a&.agentfleet.v1.ReportPodEventsResponse(\x01\x12O\n" +
+	"\vSendMessage\x12!.agentfleet.v1.SendMessageRequest\x1a\x1d.agentfleet.v1.AppendResponse\x12h\n" +
 	"\x0fWaitForMessages\x12).agentfleet.v1.ReadTranscriptSinceRequest\x1a*.agentfleet.v1.ReadTranscriptSinceResponse\x12`\n" +
 	"\x0fAskUserQuestion\x12%.agentfleet.v1.AskUserQuestionRequest\x1a&.agentfleet.v1.AskUserQuestionResponse\x12Z\n" +
 	"\rRequestE2eEnv\x12#.agentfleet.v1.RequestE2eEnvRequest\x1a$.agentfleet.v1.RequestE2eEnvResponse\x12Q\n" +
@@ -2747,7 +2766,7 @@ var file_agentfleet_v1_core_proto_goTypes = []any{
 	(*PodEvent)(nil),                    // 1: agentfleet.v1.PodEvent
 	(*ReportPodEventsResponse)(nil),     // 2: agentfleet.v1.ReportPodEventsResponse
 	(*SendMessageRequest)(nil),          // 3: agentfleet.v1.SendMessageRequest
-	(*SendMessageResponse)(nil),         // 4: agentfleet.v1.SendMessageResponse
+	(*AppendResponse)(nil),              // 4: agentfleet.v1.AppendResponse
 	(*AskUserQuestionRequest)(nil),      // 5: agentfleet.v1.AskUserQuestionRequest
 	(*AskUserQuestionResponse)(nil),     // 6: agentfleet.v1.AskUserQuestionResponse
 	(*RequestE2EEnvRequest)(nil),        // 7: agentfleet.v1.RequestE2eEnvRequest
@@ -2827,7 +2846,7 @@ var file_agentfleet_v1_core_proto_depIdxs = []int32{
 	15, // 27: agentfleet.v1.CoreService.PromptSession:input_type -> agentfleet.v1.PromptSessionRequest
 	17, // 28: agentfleet.v1.CoreService.WaitForSessionState:input_type -> agentfleet.v1.WaitForSessionStateRequest
 	2,  // 29: agentfleet.v1.CoreService.ReportPodEvents:output_type -> agentfleet.v1.ReportPodEventsResponse
-	4,  // 30: agentfleet.v1.CoreService.SendMessage:output_type -> agentfleet.v1.SendMessageResponse
+	4,  // 30: agentfleet.v1.CoreService.SendMessage:output_type -> agentfleet.v1.AppendResponse
 	46, // 31: agentfleet.v1.CoreService.WaitForMessages:output_type -> agentfleet.v1.ReadTranscriptSinceResponse
 	6,  // 32: agentfleet.v1.CoreService.AskUserQuestion:output_type -> agentfleet.v1.AskUserQuestionResponse
 	8,  // 33: agentfleet.v1.CoreService.RequestE2eEnv:output_type -> agentfleet.v1.RequestE2eEnvResponse

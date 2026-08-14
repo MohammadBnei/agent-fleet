@@ -152,9 +152,7 @@ message StopSessionRequest {
   optional string reason = 2;
 }
 
-message StopSessionResponse {
-  string status = 1;
-}
+message StopSessionResponse {}
 
 // Interrupt stops only the current turn (the in-flight API exchange/tool
 // call) via the SDK's own q.interrupt() — unlike Kill, the session and pod
@@ -165,9 +163,7 @@ message InterruptRequest {
   string session_id = 1;
 }
 
-message InterruptResponse {
-  string status = 1;
-}
+message InterruptResponse {}
 
 // Sets an arbitrary SDK permission mode on a running task (docs/adr/0027,
 // extended by the sessions redesign supersession of docs/adr/0021/0025 —
@@ -205,7 +201,12 @@ message WarmSessionRequest {
 }
 
 message WarmSessionResponse {
-  string status = 1;
+  reserved 1;
+  reserved "status"; // was always the constant "warming"
+
+  // Empty when the session already had a live pod — an ordinary idempotent
+  // outcome, not an error, since PostMessage calls this unconditionally on
+  // every message.
   string pod_name = 2;
 }
 
@@ -293,10 +294,6 @@ message RespondToPermissionRequest {
   string decision_json = 3;
 }
 
-message RespondToPermissionResponse {
-  string status = 1;
-}
-
 message KillE2eRequest {
   string session_id = 1;
   // also_teardown_services (docs/adr/0034 follow-up): also delete the
@@ -325,10 +322,6 @@ message AnswerQuestionRequest {
   string answers_json = 3;
 }
 
-message AnswerQuestionResponse {
-  string status = 1;
-}
-
 // Discuss lets a human send an arbitrary free-text message from the
 // dashboard, full parity with a Discord thread reply — appended as a
 // "discussion" transcript entry, picked up by the worker's existing
@@ -342,10 +335,6 @@ message PostMessageRequest {
   string text = 2;
 }
 
-message PostMessageResponse {
-  string status = 1;
-}
-
 // Soft-deletes the task (see db/schema.sql's tasks.deleted_at) after
 // force-tearing down any live worker/e2e pod — unlike Kill, which only
 // posts an "abort" transcript entry the worker pod must be alive and
@@ -357,9 +346,7 @@ message DeleteSessionRequest {
   string session_id = 1;
 }
 
-message DeleteSessionResponse {
-  string status = 1;
-}
+message DeleteSessionResponse {}
 
 // WorktreeView is provisioner.proto's WorktreeInfo left-joined against
 // `sessions` (reliability-findings.md #2) — live_state/session_error are
@@ -474,9 +461,7 @@ message DeleteRepoRequest {
   string name = 1;
 }
 
-message DeleteRepoResponse {
-  string status = 1;
-}
+message DeleteRepoResponse {}
 
 // RepoProfile and its four CRUD message pairs used to live here — the
 // dashboard-editable environment recipe from docs/adr/0034, carrying a
@@ -541,9 +526,7 @@ message DeletePromptSnippetRequest {
   string id = 1;
 }
 
-message DeletePromptSnippetResponse {
-  string status = 1;
-}
+message DeletePromptSnippetResponse {}
 
 // --- shared file space, human-facing (docs/adr/0030) ---
 // Reuses files.proto's message shapes verbatim — same reuse precedent
@@ -580,9 +563,21 @@ service DashboardService {
   rpc StartE2e(StartE2eRequest) returns (StartE2eResponse);
   rpc RestartE2eApp(RestartE2eAppRequest) returns (RestartE2eAppResponse);
   rpc GetE2eAppLog(GetE2eAppLogRequest) returns (GetE2eAppLogResponse);
-  rpc AnswerQuestion(AnswerQuestionRequest) returns (AnswerQuestionResponse);
-  rpc RespondToPermission(RespondToPermissionRequest) returns (RespondToPermissionResponse);
-  rpc PostMessage(PostMessageRequest) returns (PostMessageResponse);
+  // AnswerQuestion, RespondToPermission and PostMessage all mean "append an
+  // entry to this session's transcript" — a human answer, a permission
+  // decision, and a free-text message are the same row with different types.
+  // All three returned a constant `status` string until docs/adr/0048; they
+  // now return the seq, which is the one thing the caller cannot compute and
+  // is the correlation key everything else keys off.
+  // buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+  // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+  rpc AnswerQuestion(AnswerQuestionRequest) returns (AppendResponse);
+  // buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+  // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+  rpc RespondToPermission(RespondToPermissionRequest) returns (AppendResponse);
+  // buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+  // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+  rpc PostMessage(PostMessageRequest) returns (AppendResponse);
   rpc DeleteSession(DeleteSessionRequest) returns (DeleteSessionResponse);
   // Reuses provisioner.proto's ListWorktreesRequest (identical shape,
   // empty) and DeleteWorktreeRequest/Response (identical shape, no
@@ -698,9 +693,7 @@ message DeleteScheduledAuditRequest {
   string id = 1;
 }
 
-message DeleteScheduledAuditResponse {
-  string status = 1;
-}
+message DeleteScheduledAuditResponse {}
 
 
 

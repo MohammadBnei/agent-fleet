@@ -96,7 +96,13 @@ const (
 type CoreServiceClient interface {
 	// buf:lint:ignore RPC_REQUEST_STANDARD_NAME
 	ReportPodEvents(context.Context) *connect.ClientStreamForClient[v1.PodEvent, v1.ReportPodEventsResponse]
-	SendMessage(context.Context, *connect.Request[v1.SendMessageRequest]) (*connect.Response[v1.SendMessageResponse], error)
+	// Shares AppendResponse with DashboardService's three append RPCs — see
+	// that message's comment. buf's default is one response type per RPC;
+	// this repo already overrides that wherever two RPCs are genuinely the
+	// same shape (GetSession and SetPermissionMode below do the same).
+	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	SendMessage(context.Context, *connect.Request[v1.SendMessageRequest]) (*connect.Response[v1.AppendResponse], error)
 	// Reuses transcript.proto's ReadTranscriptSinceRequest/Response, same
 	// precedent dashboard.proto already set for GetTranscript.
 	// buf:lint:ignore RPC_REQUEST_STANDARD_NAME
@@ -164,7 +170,7 @@ func NewCoreServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(coreServiceMethods.ByName("ReportPodEvents")),
 			connect.WithClientOptions(opts...),
 		),
-		sendMessage: connect.NewClient[v1.SendMessageRequest, v1.SendMessageResponse](
+		sendMessage: connect.NewClient[v1.SendMessageRequest, v1.AppendResponse](
 			httpClient,
 			baseURL+CoreServiceSendMessageProcedure,
 			connect.WithSchema(coreServiceMethods.ByName("SendMessage")),
@@ -290,7 +296,7 @@ func NewCoreServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 // coreServiceClient implements CoreServiceClient.
 type coreServiceClient struct {
 	reportPodEvents     *connect.Client[v1.PodEvent, v1.ReportPodEventsResponse]
-	sendMessage         *connect.Client[v1.SendMessageRequest, v1.SendMessageResponse]
+	sendMessage         *connect.Client[v1.SendMessageRequest, v1.AppendResponse]
 	waitForMessages     *connect.Client[v1.ReadTranscriptSinceRequest, v1.ReadTranscriptSinceResponse]
 	askUserQuestion     *connect.Client[v1.AskUserQuestionRequest, v1.AskUserQuestionResponse]
 	requestE2EEnv       *connect.Client[v1.RequestE2EEnvRequest, v1.RequestE2EEnvResponse]
@@ -318,7 +324,7 @@ func (c *coreServiceClient) ReportPodEvents(ctx context.Context) *connect.Client
 }
 
 // SendMessage calls agentfleet.v1.CoreService.SendMessage.
-func (c *coreServiceClient) SendMessage(ctx context.Context, req *connect.Request[v1.SendMessageRequest]) (*connect.Response[v1.SendMessageResponse], error) {
+func (c *coreServiceClient) SendMessage(ctx context.Context, req *connect.Request[v1.SendMessageRequest]) (*connect.Response[v1.AppendResponse], error) {
 	return c.sendMessage.CallUnary(ctx, req)
 }
 
@@ -421,7 +427,13 @@ func (c *coreServiceClient) WaitForSessionState(ctx context.Context, req *connec
 type CoreServiceHandler interface {
 	// buf:lint:ignore RPC_REQUEST_STANDARD_NAME
 	ReportPodEvents(context.Context, *connect.ClientStream[v1.PodEvent]) (*connect.Response[v1.ReportPodEventsResponse], error)
-	SendMessage(context.Context, *connect.Request[v1.SendMessageRequest]) (*connect.Response[v1.SendMessageResponse], error)
+	// Shares AppendResponse with DashboardService's three append RPCs — see
+	// that message's comment. buf's default is one response type per RPC;
+	// this repo already overrides that wherever two RPCs are genuinely the
+	// same shape (GetSession and SetPermissionMode below do the same).
+	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	SendMessage(context.Context, *connect.Request[v1.SendMessageRequest]) (*connect.Response[v1.AppendResponse], error)
 	// Reuses transcript.proto's ReadTranscriptSinceRequest/Response, same
 	// precedent dashboard.proto already set for GetTranscript.
 	// buf:lint:ignore RPC_REQUEST_STANDARD_NAME
@@ -662,7 +674,7 @@ func (UnimplementedCoreServiceHandler) ReportPodEvents(context.Context, *connect
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.CoreService.ReportPodEvents is not implemented"))
 }
 
-func (UnimplementedCoreServiceHandler) SendMessage(context.Context, *connect.Request[v1.SendMessageRequest]) (*connect.Response[v1.SendMessageResponse], error) {
+func (UnimplementedCoreServiceHandler) SendMessage(context.Context, *connect.Request[v1.SendMessageRequest]) (*connect.Response[v1.AppendResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.CoreService.SendMessage is not implemented"))
 }
 
