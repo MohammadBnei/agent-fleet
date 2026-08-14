@@ -51,6 +51,4 @@ message DeleteFileRequest {
   string key = 1;
 }
 
-message DeleteFileResponse {
-  string status = 1;
-}
+message DeleteFileResponse {}

@@ -256,9 +256,20 @@ jobs:
           # (v6 only supports v1.x).
           version: v2.12.2
 
+      # -count=1 is load-bearing, not belt-and-braces. core/internal/buildguard's
+      # tests read files OUTSIDE their module (.github/, proto/), which Go's
+      # test cache cannot see — so a cached PASS survives edits to the very
+      # files being guarded. That package's own doc records verifying it live:
+      # removing `executor` from docker.yml still reported PASS until -count=1
+      # forced a real run.
+      #
+      # CI was missing this. actions/setup-go restores ~/.cache/go-build, which
+      # is where the test cache lives, so every buildguard test has been
+      # cacheable here since it was written — the guards were guarding, and CI
+      # was free to not look.
       - name: go test
         working-directory: ${{ matrix.module }}
-        run: go test ./... -race -cover
+        run: go test ./... -race -cover -count=1
 
       - name: go test (integration, real Postgres)
         working-directory: ${{ matrix.module }}
@@ -268,4 +279,4 @@ jobs:
           AGENTFLEET_DB_NAME: agentfleetdb
           AGENTFLEET_DB_USER: agentfleet
           AGENTFLEET_DB_PASSWORD: agentfleet
-        run: go test -tags=integration ./...
+        run: go test -tags=integration ./... -count=1

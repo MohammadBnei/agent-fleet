@@ -72,6 +72,37 @@ Any doc, code, comment, or memory that contradicts this file or an
   literal — one outbound gRPC connection, MCP entirely on `localhost`.
   `thot-executor` remains the one direct path, and it is ordinary because it
   needs no `core` state.)
+- **An RPC returns nothing, or the one thing the caller cannot already
+  know.** A successful Connect/gRPC call already carries "it worked" in its
+  error channel; a `status` field inside the response body is a second
+  channel saying the same thing, and two channels means every caller has to
+  check both until one of them checks only the wrong one. So an
+  acknowledgement is `message FooResponse {}`, not `{status: "ok"}`.
+
+  Where two RPCs genuinely perform the same operation they share one
+  response message rather than growing a near-duplicate: `SendMessage`,
+  `PostMessage`, `AnswerQuestion` and `RespondToPermission` all append a row
+  to `transcript`, so all four return `AppendResponse{seq}` — the seq being
+  the correlation key nothing else can compute. buf's default is one
+  response type per RPC; overriding it with an explicit
+  `buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE` is fine when the shapes are
+  genuinely one shape, and wrong when they merely look alike today.
+
+  **Rejected: a single universal response type for every RPC.** It reads
+  simpler and is worse — folding `AskUserQuestion` and `PromptSession` in
+  (both return more than a seq) produces a bag of optional fields where
+  nothing says which are set for which call, and a `oneof` or `bytes
+  payload` throws away the typed accessors that are the whole reason for
+  codegen.
+
+  Enforced by `core/internal/buildguard`'s `TestResponseMessagesCarryInformation`,
+  because this one regressed silently: adding `string status = 1` compiles,
+  lints, and looks exactly like the response next to it. docs/adr/0048 found
+  10 ceremonial responses against 7 already-empty ones, picked between at
+  random — and the guard found an 11th in `files.proto` on its first run.
+  The rule deliberately does **not** ban `status` outright: `GetE2eStatus`'s
+  reports real pod state. It catches only a response whose *entire* content
+  is an acknowledgement.
 - **A session is the unit, and the first message boots the pod.**
   `CreateSession` makes a row and nothing else; `SendMessage` provisions on
   demand and *then* appends. There is no queue, no lease claim, no retry
@@ -144,6 +175,9 @@ Any doc, code, comment, or memory that contradicts this file or an
   `adr/0023` outlives the worktree machinery it was written about:
   uncommitted work was destroyed twice by a design that tied git state to a
   lifecycle event — see `adr/0048`.
+- **A `status` field that only means "it worked".** An acknowledgement
+  response is `{}`; the error channel already carries success. Guarded by
+  `buildguard.TestResponseMessagesCarryInformation` — see §1.
 - **The fleet storing what the agent can read off the repo.** Start commands,
   toolchain recipes and profile tables all encoded knowledge that lives in
   the working tree the agent is already sitting in. `request_service` is the
