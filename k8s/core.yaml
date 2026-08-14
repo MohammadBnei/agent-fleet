@@ -129,20 +129,26 @@ resources:
 # The selector must match the labels common-app-chart puts on its Service
 # (_helpers.tpl "common-app-chart.selectorLabels" — both keys are the release
 # name), and `port: http` is the chart's own name for service.port above.
+#
+# Templated off .Release rather than hardcoded, matching how zot's own
+# extraManifests block writes its ConfigMap: extraManifests is `tpl`-rendered,
+# so hardcoding "agent-fleet-core"/"agent-fleet" would silently select nothing
+# under any other release name or namespace — which is exactly what a
+# scratch-namespace deploy of this same values file does.
 extraManifests:
   - |
     apiVersion: monitoring.coreos.com/v1
     kind: ServiceMonitor
     metadata:
-      name: agent-fleet-core
-      namespace: agent-fleet
+      name: {{ .Release.Name }}
+      namespace: {{ .Release.Namespace }}
       labels:
         app.kubernetes.io/part-of: agent-fleet
     spec:
       selector:
         matchLabels:
-          app.kubernetes.io/name: agent-fleet-core
-          app.kubernetes.io/instance: agent-fleet-core
+          app.kubernetes.io/name: {{ .Release.Name }}
+          app.kubernetes.io/instance: {{ .Release.Name }}
       endpoints:
         - port: http
           path: /metrics
