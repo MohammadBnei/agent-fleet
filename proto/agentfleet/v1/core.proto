@@ -188,7 +188,11 @@ message Session {
   string description = 3;
   optional string title = 18;
 
-  optional string thread_id = 5;
+  // Field 5 was thread_id — the Discord thread a task relayed into. Gone
+  // with the thread machinery (docs/adr/0048): Discord is outbound-only, so
+  // there is no thread to correlate back to.
+  reserved 5;
+  reserved "thread_id";
 
   // Pod lifecycle (PodPhase, from ReportPodEvents and core's reconcile
   // loop). With `status` gone this is the fleet's only liveness signal, and

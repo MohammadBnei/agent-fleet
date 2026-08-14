@@ -68,7 +68,7 @@ func (s *PostgresStore) appendInternal(ctx context.Context, taskID, from, text, 
 	// already-assigned seq instead of appending twice.
 	var existingSeq int64
 	err = tx.QueryRow(ctx,
-		`SELECT seq FROM transcript WHERE task_id = $1 AND idempotency_key = $2`,
+		`SELECT seq FROM transcript WHERE session_id = $1 AND idempotency_key = $2`,
 		taskID, idempotencyKey,
 	).Scan(&existingSeq)
 	if err == nil {
@@ -84,9 +84,9 @@ func (s *PostgresStore) appendInternal(ctx context.Context, taskID, from, text, 
 		msgTypePtr = &msgType
 	}
 	err = tx.QueryRow(ctx, `
-		INSERT INTO transcript (task_id, seq, "from", text, type, idempotency_key, reply_to_seq)
+		INSERT INTO transcript (session_id, seq, "from", text, type, idempotency_key, reply_to_seq)
 		SELECT $1, COALESCE(MAX(seq), -1) + 1, $2, $3, $4, $5, $6
-		FROM transcript WHERE task_id = $1
+		FROM transcript WHERE session_id = $1
 		RETURNING seq
 	`, taskID, from, text, msgTypePtr, idempotencyKey, replyToSeq).Scan(&seq)
 	if err != nil {
@@ -106,7 +106,7 @@ func (s *PostgresStore) ReadSince(ctx context.Context, taskID string, sinceSeq i
 	rows, err := s.pool.Query(ctx, `
 		SELECT seq, "from", text, COALESCE(type, ''), reply_to_seq, created_at
 		FROM transcript
-		WHERE task_id = $1 AND seq >= $2
+		WHERE session_id = $1 AND seq >= $2
 		ORDER BY seq
 		LIMIT $3
 	`, taskID, sinceSeq, limit)
@@ -137,7 +137,7 @@ func (s *PostgresStore) ReadSince(ctx context.Context, taskID string, sinceSeq i
 
 func (s *PostgresStore) LatestSeq(ctx context.Context, taskID string) (int64, error) {
 	var seq int64
-	err := s.pool.QueryRow(ctx, `SELECT COALESCE(MAX(seq) + 1, 0) FROM transcript WHERE task_id = $1`, taskID).Scan(&seq)
+	err := s.pool.QueryRow(ctx, `SELECT COALESCE(MAX(seq) + 1, 0) FROM transcript WHERE session_id = $1`, taskID).Scan(&seq)
 	if err != nil {
 		return 0, fmt.Errorf("latest seq: %w", err)
 	}

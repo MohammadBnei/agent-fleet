@@ -25,9 +25,9 @@ func main() {
 		slog.Warn(warning, "value", rawLogLevel)
 	}
 
-	taskID := os.Getenv("TASK_ID")
+	taskID := os.Getenv("SESSION_ID")
 	if taskID == "" {
-		slog.Error("TASK_ID is required")
+		slog.Error("SESSION_ID is required")
 		os.Exit(1)
 	}
 	// Stamp taskId onto every line from here on. Without it the sidecar's

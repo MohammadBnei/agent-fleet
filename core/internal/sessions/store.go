@@ -52,7 +52,6 @@ type Session struct {
 	Title       *string `json:"title,omitempty"`
 	Description string  `json:"description"`
 
-	ThreadID   *string `json:"threadId,omitempty"`
 	PodPhase   *string `json:"podPhase,omitempty"`
 	PodMessage *string `json:"podMessage,omitempty"`
 	LastError  *string `json:"lastError,omitempty"`
@@ -115,7 +114,7 @@ func NewStore(pool *pgxpool.Pool) *Store {
 // pending-decision count is a correlated subquery rather than a stored
 // column for the reason given on Session.PendingDecisions.
 const selectCols = `
-	s.id, s.repo, s.title, s.description, s.thread_id,
+	s.id, s.repo, s.title, s.description,
 	s.pod_phase, s.pod_message, s.last_error, s.lease_id,
 	s.agent_session_id, s.model, s.permission_mode,
 	s.last_entry_type, s.last_entry_from, s.activity_seen, s.seen_at,
@@ -132,7 +131,7 @@ func scanSession(row pgx.Row) (*Session, error) {
 	var s Session
 	var leaseID *string
 	err := row.Scan(
-		&s.ID, &s.Repo, &s.Title, &s.Description, &s.ThreadID,
+		&s.ID, &s.Repo, &s.Title, &s.Description,
 		&s.PodPhase, &s.PodMessage, &s.LastError, &leaseID,
 		&s.AgentSessionID, &s.Model, &s.PermissionMode,
 		&s.LastEntryType, &s.LastEntryFrom, &s.ActivitySeen, &s.SeenAt,

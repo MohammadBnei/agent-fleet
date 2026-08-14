@@ -440,7 +440,7 @@ func (c *Client) CreateWorkerPod(ctx context.Context, taskID, repo, leaseID, wor
 	}
 
 	workerEnv := []corev1.EnvVar{
-		{Name: "TASK_ID", Value: taskID},
+		{Name: "SESSION_ID", Value: taskID},
 		{Name: "TARGET_REPO", Value: repo},
 		{Name: "LEASE_ID", Value: leaseID},
 		{Name: "SIDECAR_MCP_ADDR", Value: fmt.Sprintf("localhost:%d", SidecarMCPPort)},
@@ -505,7 +505,7 @@ func (c *Client) CreateWorkerPod(ctx context.Context, taskID, repo, leaseID, wor
 				Image:         c.SidecarImage,
 				RestartPolicy: &sidecarRestartAlways,
 				Env: []corev1.EnvVar{
-					{Name: "TASK_ID", Value: taskID},
+					{Name: "SESSION_ID", Value: taskID},
 					{Name: "TARGET_REPO", Value: repo},
 					{Name: "MCP_PORT", Value: fmt.Sprint(SidecarMCPPort)},
 					{Name: "LOCAL_API_PORT", Value: fmt.Sprint(SidecarAPIPort)},

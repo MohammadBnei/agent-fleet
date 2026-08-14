@@ -275,7 +275,7 @@ func (s *Server) DeleteFile(ctx context.Context, req *agentfleetv1.DeleteFileReq
 // of relying on stale environment variables. Same message shapes as
 // DashboardService.GetTask (core.proto's comment on Task/GetSessionRequest),
 // reusing its taskToProto mapper rather than duplicating the field list.
-func (s *Server) GetTask(ctx context.Context, req *agentfleetv1.GetSessionRequest) (*agentfleetv1.GetSessionResponse, error) {
+func (s *Server) GetSession(ctx context.Context, req *agentfleetv1.GetSessionRequest) (*agentfleetv1.GetSessionResponse, error) {
 	t, err := s.sessions.Get(ctx, req.GetId())
 	if err != nil {
 		return nil, fmt.Errorf("GetTask: %w", err)
@@ -345,7 +345,7 @@ func (s *Server) SearchJournal(ctx context.Context, req *agentfleetv1.SearchJour
 	return &agentfleetv1.SearchJournalResponse{Entries: out}, nil
 }
 
-func (s *Server) SaveSessionId(ctx context.Context, req *agentfleetv1.SaveAgentSessionIdRequest) (*agentfleetv1.SaveAgentSessionIdResponse, error) {
+func (s *Server) SaveAgentSessionId(ctx context.Context, req *agentfleetv1.SaveAgentSessionIdRequest) (*agentfleetv1.SaveAgentSessionIdResponse, error) {
 	saved, err := s.sessions.SaveAgentSessionID(ctx, req.GetSessionId(), req.GetSessionId(), req.GetModel(), req.GetLeaseId())
 	if err == nil && !saved {
 		// The pod that sent this no longer holds the lease — it was torn

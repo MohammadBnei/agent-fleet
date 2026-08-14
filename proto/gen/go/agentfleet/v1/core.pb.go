@@ -768,7 +768,6 @@ type Session struct {
 	// instruction is its first transcript entry.
 	Description string  `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
 	Title       *string `protobuf:"bytes,18,opt,name=title,proto3,oneof" json:"title,omitempty"`
-	ThreadId    *string `protobuf:"bytes,5,opt,name=thread_id,json=threadId,proto3,oneof" json:"thread_id,omitempty"`
 	// Pod lifecycle (PodPhase, from ReportPodEvents and core's reconcile
 	// loop). With `status` gone this is the fleet's only liveness signal, and
 	// the concurrency cap counts exactly these phases.
@@ -876,13 +875,6 @@ func (x *Session) GetDescription() string {
 func (x *Session) GetTitle() string {
 	if x != nil && x.Title != nil {
 		return *x.Title
-	}
-	return ""
-}
-
-func (x *Session) GetThreadId() string {
-	if x != nil && x.ThreadId != nil {
-		return *x.ThreadId
 	}
 	return ""
 }
@@ -2575,32 +2567,28 @@ const file_agentfleet_v1_core_proto_rawDesc = "" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\",\n" +
 	"\x12KillE2eEnvResponse\x12\x16\n" +
-	"\x06killed\x18\x01 \x01(\bR\x06killed\"\xba\x06\n" +
+	"\x06killed\x18\x01 \x01(\bR\x06killed\"\x9b\x06\n" +
 	"\aSession\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04repo\x18\x02 \x01(\tR\x04repo\x12 \n" +
 	"\vdescription\x18\x03 \x01(\tR\vdescription\x12\x19\n" +
 	"\x05title\x18\x12 \x01(\tH\x00R\x05title\x88\x01\x01\x12 \n" +
-	"\tthread_id\x18\x05 \x01(\tH\x01R\bthreadId\x88\x01\x01\x12 \n" +
-	"\tpod_phase\x18\a \x01(\tH\x02R\bpodPhase\x88\x01\x01\x12$\n" +
-	"\vpod_message\x18\b \x01(\tH\x03R\n" +
+	"\tpod_phase\x18\a \x01(\tH\x01R\bpodPhase\x88\x01\x01\x12$\n" +
+	"\vpod_message\x18\b \x01(\tH\x02R\n" +
 	"podMessage\x88\x01\x01\x12\"\n" +
 	"\n" +
-	"last_error\x18\v \x01(\tH\x04R\tlastError\x88\x01\x01\x12-\n" +
-	"\x10agent_session_id\x18\f \x01(\tH\x05R\x0eagentSessionId\x88\x01\x01\x12\x19\n" +
-	"\x05model\x18\x16 \x01(\tH\x06R\x05model\x88\x01\x01\x12)\n" +
-	"\x0elast_active_at\x18\r \x01(\tH\aR\flastActiveAt\x88\x01\x01\x12,\n" +
-	"\x0fpermission_mode\x18\x0e \x01(\tH\bR\x0epermissionMode\x88\x01\x01\x12\x1d\n" +
+	"last_error\x18\v \x01(\tH\x03R\tlastError\x88\x01\x01\x12-\n" +
+	"\x10agent_session_id\x18\f \x01(\tH\x04R\x0eagentSessionId\x88\x01\x01\x12\x19\n" +
+	"\x05model\x18\x16 \x01(\tH\x05R\x05model\x88\x01\x01\x12)\n" +
+	"\x0elast_active_at\x18\r \x01(\tH\x06R\flastActiveAt\x88\x01\x01\x12,\n" +
+	"\x0fpermission_mode\x18\x0e \x01(\tH\aR\x0epermissionMode\x88\x01\x01\x12\x1d\n" +
 	"\n" +
 	"live_state\x18\x11 \x01(\tR\tliveState\x12+\n" +
 	"\x11pending_decisions\x18\x13 \x01(\x05R\x10pendingDecisions\x12\x1e\n" +
-	"\bswept_at\x18\x14 \x01(\tH\tR\asweptAt\x88\x01\x01\x12$\n" +
-	"\varchived_at\x18\x15 \x01(\tH\n" +
-	"R\n" +
+	"\bswept_at\x18\x14 \x01(\tH\bR\asweptAt\x88\x01\x01\x12$\n" +
+	"\varchived_at\x18\x15 \x01(\tH\tR\n" +
 	"archivedAt\x88\x01\x01B\b\n" +
 	"\x06_titleB\f\n" +
-	"\n" +
-	"_thread_idB\f\n" +
 	"\n" +
 	"_pod_phaseB\x0e\n" +
 	"\f_pod_messageB\r\n" +
@@ -2612,7 +2600,7 @@ const file_agentfleet_v1_core_proto_rawDesc = "" +
 	"\t_swept_atB\x0e\n" +
 	"\f_archived_atJ\x04\b\x04\x10\x05J\x04\b\x06\x10\aJ\x04\b\t\x10\n" +
 	"J\x04\b\n" +
-	"\x10\vJ\x04\b\x0f\x10\x10J\x04\b\x10\x10\x11R\x06statusR\x06pr_urlR\fheartbeat_atR\vretry_countR\x0eawaiting_humanR\x04kind\"\x9c\x01\n" +
+	"\x10\vJ\x04\b\x0f\x10\x10J\x04\b\x10\x10\x11J\x04\b\x05\x10\x06R\x06statusR\x06pr_urlR\fheartbeat_atR\vretry_countR\x0eawaiting_humanR\x04kindR\tthread_id\"\x9c\x01\n" +
 	"\x0eSessionSummary\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x12\n" +

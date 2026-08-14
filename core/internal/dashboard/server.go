@@ -1187,7 +1187,6 @@ func SessionToProto(t sessions.Session) *agentfleetv1.Session {
 		Repo:           t.Repo,
 		Title:          t.Title,
 		Description:    t.Description,
-		ThreadId:       t.ThreadID,
 		PodPhase:       t.PodPhase,
 		PodMessage:     t.PodMessage,
 		LastError:      t.LastError,
