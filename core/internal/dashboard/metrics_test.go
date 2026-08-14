@@ -133,15 +133,18 @@ func TestCellStatus(t *testing.T) {
 	running := strptr("POD_PHASE_RUNNING")
 	tests := []struct {
 		name string
-		task tasks.Task
+		task sessions.Session
 		want string
 	}{
-		{"running and clean", tasks.Task{Status: "running", PodPhase: running}, "healthy"},
-		{"terminal failure", tasks.Task{Status: "failed_permanently", PodPhase: running}, "failing"},
+		{"running and clean", sessions.Session{PodPhase: running}, "healthy"},
+		// Was keyed on status 'failed'/'failed_permanently'. Both are gone
+		// (docs/adr/0048), and pod_phase carries the fact more directly: a
+		// crashed pod is CRASHED, which is the state a human acts on.
+		{"crashed pod", sessions.Session{PodPhase: strptr("POD_PHASE_CRASHED")}, "failing"},
 		// A pod that is up with a recorded error may still recover — that's
-		// a different colour from a task that has actually given up.
-		{"live but errored", tasks.Task{Status: "running", PodPhase: running, LastError: strptr("boom")}, "degraded"},
-		{"still provisioning", tasks.Task{Status: "running", PodPhase: strptr("POD_PHASE_PROVISIONING")}, "idle"},
+		// a different colour from one that has actually died.
+		{"live but errored", sessions.Session{PodPhase: running, LastError: strptr("boom")}, "degraded"},
+		{"still provisioning", sessions.Session{PodPhase: strptr("POD_PHASE_PROVISIONING")}, "idle"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

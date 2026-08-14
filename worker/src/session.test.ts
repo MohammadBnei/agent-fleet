@@ -17,7 +17,7 @@ let nextSeq = 1;
 
 // The human-message feed a real sidecar SSE stream would deliver — tests
 // drive this directly instead of a real HTTP connection. onEntry is
-// captured so a test can push into it at any point after runTask() starts.
+// captured so a test can push into it at any point after runSession() starts.
 let humanMessageHandler: ((entry: { seq: number; from: string; text: string; type?: string; replyTo?: number }) => void | Promise<void>) | null =
   null;
 
@@ -43,6 +43,7 @@ mock.module("./sidecarClient.js", () => ({
   savePermissionMode: mock(async (mode: string) => {
     // Mock implementation - just accept the call
   }),
+  getSession: mock(async () => ({ description: "test session", permissionMode: undefined, model: undefined })),
   setStatus: mock(async (status: string) => {
     statusUpdates.push(status);
   }),
@@ -191,7 +192,7 @@ mock.module("@anthropic-ai/claude-agent-sdk", () => ({
   },
 }));
 
-const { runTask, TransientError } = await import("./session.js");
+const { runSession } = await import("./session.js");
 
 beforeEach(() => {
   // canUseTool runs the tool input through rtk before it asks (session.ts) —
@@ -218,21 +219,12 @@ beforeEach(() => {
   extraMessages = [];
 });
 
-function makeTask(overrides: Partial<{ id: string; repo: string; description: string; leaseId: string; baseBranch: string; guidance: string }> = {}) {
-  return {
-    id: crypto.randomUUID(),
-    repo: "dream-analyst",
-    description: "test task",
-    leaseId: "lease-1",
-    baseBranch: "main",
-    guidance: "",
-    ...overrides,
-  };
-}
+// makeTask is gone: runSession takes no argument now. A session's identity
+// comes from env and its instruction from the transcript, so there is no task
+// object to construct (docs/adr/0048).
 
 test("tool wiring: default mode, no Write/Edit in allowedTools, canUseTool present, settingSources user", async () => {
-  const task = makeTask();
-  const promise = runTask(task);
+  const promise = runSession();
   await Bun.sleep(20);
   pushHuman("stop", "abort");
   await promise;
@@ -251,7 +243,12 @@ test("tool wiring: default mode, no Write/Edit in allowedTools, canUseTool prese
   expect(allowedTools).not.toContain("Edit");
   expect(allowedTools).not.toContain("Bash");
   expect(allowedTools).toContain("Task");
-  expect(allowedTools).toContain("mcp__agent-fleet-sidecar__AskUserQuestion");
+  // The wildcard, not nine explicit entries. It matters that this list is
+  // non-empty at all: the SDK's MCP tools return {behavior: "passthrough"},
+  // which its evaluator turns into "ask", so dropping the allowlist would
+  // make the agent need permission before it could ask for permission
+  // (docs/adr/0048).
+  expect(allowedTools).toContain("mcp__agent-fleet-sidecar__*");
   // The SDK's own built-in AskUserQuestion must stay out of context — only
   // the mcp__agent-fleet-sidecar__ one above renders as a real dashboard
   // question form; the native one falls through to the generic raw-JSON
@@ -266,8 +263,7 @@ test("tool wiring: default mode, no Write/Edit in allowedTools, canUseTool prese
 }, 10000);
 
 test("canUseTool posts a permission_request and blocks until a matching permission_response resolves it", async () => {
-  const task = makeTask();
-  const promise = runTask(task);
+  const promise = runSession();
   await Bun.sleep(20);
 
   let resolved: { behavior: string } | null = null;
@@ -291,8 +287,7 @@ test("canUseTool posts a permission_request and blocks until a matching permissi
 }, 10000);
 
 test("a denied permission_response carries the human's reason through to the tool result", async () => {
-  const task = makeTask();
-  const promise = runTask(task);
+  const promise = runSession();
   await Bun.sleep(20);
 
   const call = capturedCanUseTool!("Bash", { command: "rm -rf /" });
@@ -309,8 +304,7 @@ test("a denied permission_response carries the human's reason through to the too
 }, 10000);
 
 test("parallel tool calls each get their own correlated permission_request, resolved independently", async () => {
-  const task = makeTask();
-  const promise = runTask(task);
+  const promise = runSession();
   await Bun.sleep(20);
 
   let writeResolved: { behavior: string } | null = null;
@@ -342,8 +336,7 @@ test("parallel tool calls each get their own correlated permission_request, reso
 }, 10000);
 
 test("an answer-type human entry is never misread as a permission decision", async () => {
-  const task = makeTask();
-  const promise = runTask(task);
+  const promise = runSession();
   await Bun.sleep(20);
   // A human's chosen option label could itself contain JSON-ish text — an
   // "answer"-type entry must never be treated as resolving anything here,
@@ -358,8 +351,7 @@ test("an answer-type human entry is never misread as a permission decision", asy
 }, 10000);
 
 test("free text alone never resolves a pending permission request or triggers abort", async () => {
-  const task = makeTask();
-  const promise = runTask(task);
+  const promise = runSession();
   await Bun.sleep(20);
   pushHuman("I allowed a similar edit yesterday, let's stop and think about this first", "discussion");
   await Bun.sleep(20);
@@ -372,8 +364,7 @@ test("free text alone never resolves a pending permission request or triggers ab
 }, 10000);
 
 test("a plain reply while a permission request is pending denies it with the reply as feedback", async () => {
-  const task = makeTask();
-  const promise = runTask(task);
+  const promise = runSession();
   await Bun.sleep(20);
 
   const call = capturedCanUseTool!("Write", { file_path: "x" });
@@ -411,8 +402,7 @@ test("a plain reply while a permission request is pending denies it with the rep
 }, 10000);
 
 test("a permission_mode entry sets the SDK mode and resolves any pending permission requests", async () => {
-  const task = makeTask();
-  const promise = runTask(task);
+  const promise = runSession();
   await Bun.sleep(20);
 
   let resolved: { behavior: string } | null = null;
@@ -440,8 +430,7 @@ test("a permission_mode entry sets the SDK mode and resolves any pending permiss
 }, 10000);
 
 test("ExitPlanMode is gated the same as any other tool call — blocks until a permission_response arrives", async () => {
-  const task = makeTask();
-  const promise = runTask(task);
+  const promise = runSession();
   await Bun.sleep(20);
 
   let resolved: { behavior: string; updatedInput?: unknown } | null = null;
@@ -463,8 +452,7 @@ test("ExitPlanMode is gated the same as any other tool call — blocks until a p
 }, 10000);
 
 test("ExitPlanMode blocks until a permission_mode selection arrives, then allows", async () => {
-  const task = makeTask();
-  const promise = runTask(task);
+  const promise = runSession();
   await Bun.sleep(20);
 
   const planCall = capturedCanUseTool!("ExitPlanMode", { plan: "do the thing" });
@@ -480,8 +468,7 @@ test("ExitPlanMode blocks until a permission_mode selection arrives, then allows
 }, 10000);
 
 test("abort resolves every pending permission request instead of leaving them hanging", async () => {
-  const task = makeTask();
-  const promise = runTask(task);
+  const promise = runSession();
   await Bun.sleep(20);
 
   const planCall = capturedCanUseTool!("ExitPlanMode", { plan: "do the thing" });
@@ -497,8 +484,7 @@ test("abort resolves every pending permission request instead of leaving them ha
 }, 10000);
 
 test("Bash is gated by canUseTool, not silently allowed via allowedTools", async () => {
-  const task = makeTask();
-  const promise = runTask(task);
+  const promise = runSession();
   await Bun.sleep(20);
 
   const allowedTools = queryOptions?.allowedTools as string[];
@@ -515,8 +501,7 @@ test("Bash is gated by canUseTool, not silently allowed via allowedTools", async
 }, 10000);
 
 test("abort before anything is answered ends the task as aborted", async () => {
-  const task = makeTask();
-  const promise = runTask(task);
+  const promise = runSession();
   await Bun.sleep(20);
   pushHuman("", "abort");
   const result = await promise;
@@ -526,15 +511,13 @@ test("abort before anything is answered ends the task as aborted", async () => {
 }, 10000);
 
 test("a crashed session propagates the error instead of hanging", async () => {
-  const task = makeTask();
   crashOnRound = 1;
-  await expect(runTask(task)).rejects.toThrow("simulated session crash");
+  await expect(runSession()).rejects.toThrow("simulated session crash");
 }, 10000);
 
 test("a successful round never ends the session on its own — no automated completion detection", async () => {
-  const task = makeTask();
   mockMessageText = "done, opened the PR";
-  const promise = runTask(task);
+  const promise = runSession();
   await Bun.sleep(20);
 
   // The session already ran one successful round but must still be
@@ -548,8 +531,7 @@ test("a successful round never ends the session on its own — no automated comp
 }, 10000);
 
 test("the session keeps consuming successful rounds indefinitely until a human stops it", async () => {
-  const task = makeTask();
-  const promise = runTask(task);
+  const promise = runSession();
   await Bun.sleep(20);
   expect(savedSessionIds.length).toBe(1);
 
@@ -567,8 +549,7 @@ test("the session keeps consuming successful rounds indefinitely until a human s
 }, 10000);
 
 test("a soft interrupt calls q.interrupt(), swallows the following non-success result, and the session survives for a later round", async () => {
-  const task = makeTask();
-  const promise = runTask(task);
+  const promise = runSession();
   await Bun.sleep(20); // round 1: plain success, session now idle waiting for input
 
   pushHuman("stop the current turn", "interrupt");
@@ -595,15 +576,13 @@ test("a soft interrupt calls q.interrupt(), swallows the following non-success r
 }, 10000);
 
 test("a 0-turn/$0 result is classified transient", async () => {
-  const task = makeTask();
   forceResult = { subtype: "error_during_execution", num_turns: 0, total_cost_usd: 0 };
-  await expect(runTask(task)).rejects.toThrow(TransientError);
+  await expect(runSession()).rejects.toThrow(TransientError);
 }, 10000);
 
 test("a genuine non-success result throws a plain Error", async () => {
-  const task = makeTask();
   forceResult = { subtype: "error_max_turns", num_turns: 5, total_cost_usd: 0.42 };
-  const promise = runTask(task);
+  const promise = runSession();
 
   await expect(promise).rejects.toThrow("session stopped: error_max_turns after 5 turns, $0.42");
   const error = await promise.catch((e) => e);
@@ -611,9 +590,8 @@ test("a genuine non-success result throws a plain Error", async () => {
 }, 10000);
 
 test("a non-success 0-turn/$0 result is classified transient regardless of when it happens", async () => {
-  const task = makeTask();
   forceResult = { subtype: "error_during_execution", num_turns: 0, total_cost_usd: 0 };
-  const promise = runTask(task);
+  const promise = runSession();
 
   await expect(promise).rejects.toThrow(TransientError);
 }, 10000);
@@ -623,9 +601,8 @@ test("a non-success 0-turn/$0 result is classified transient regardless of when 
 // get relayed too, each tagged with its own type (dashboard-only
 // visibility; core's relay allowlist keeps them off Discord).
 test("tool_use, tool_result, and result messages are all relayed, not just assistant text", async () => {
-  const task = makeTask();
   includeToolResult = true;
-  const promise = runTask(task);
+  const promise = runSession();
   await Bun.sleep(20);
   pushHuman("", "abort");
   await promise;
@@ -643,7 +620,7 @@ test("tool_use, tool_result, and result messages are all relayed, not just assis
 // from silence before.
 async function relayOnce(extras: Record<string, unknown>[]): Promise<void> {
   extraMessages = extras;
-  const promise = runTask(makeTask());
+  const promise = runSession();
   await Bun.sleep(20);
   pushHuman("", "abort");
   await promise;

@@ -15,7 +15,7 @@ func TestCSRFInterceptor_WrapUnary(t *testing.T) {
 	called := false
 	stub := connect.UnaryFunc(func(context.Context, connect.AnyRequest) (connect.AnyResponse, error) {
 		called = true
-		return connect.NewResponse(&agentfleetv1.StopSessionResponse{Status: "ok"}), nil
+		return connect.NewResponse(&agentfleetv1.StopSessionResponse{}), nil
 	})
 	wrapped := interceptor.WrapUnary(stub)
 

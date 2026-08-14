@@ -106,11 +106,12 @@ func TestServer_DeleteFile(t *testing.T) {
 	fake := &fakeFileStore{}
 	s := NewServer(nil, nil, nil, nil, nil, nil, nil, fake, nil, 5, nil, nil, nil)
 
-	resp, err := s.DeleteFile(context.Background(), connect.NewRequest(&agentfleetv1.DeleteFileRequest{Key: "report.pdf"}))
-	if err != nil {
+	// The response is empty by design (docs/adr/0048): err == nil IS the
+	// success signal. The assertion is on the side effect.
+	if _, err := s.DeleteFile(context.Background(), connect.NewRequest(&agentfleetv1.DeleteFileRequest{Key: "report.pdf"})); err != nil {
 		t.Fatalf("DeleteFile: %v", err)
 	}
-	if resp.Msg.GetStatus() != "deleted" || fake.deletedKey != "report.pdf" {
-		t.Fatalf("unexpected response/state: resp=%+v deletedKey=%q", resp.Msg, fake.deletedKey)
+	if fake.deletedKey != "report.pdf" {
+		t.Fatalf("expected report.pdf deleted, got %q", fake.deletedKey)
 	}
 }

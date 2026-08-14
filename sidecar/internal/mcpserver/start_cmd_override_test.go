@@ -9,15 +9,15 @@ import (
 )
 
 type mockAsker struct {
-	status      string
+	answered    bool
 	answersJSON string
 	err         error
 	gotPayload  string
 }
 
-func (m *mockAsker) AskUserQuestion(_ context.Context, questionsJSON string, _ int32) (string, string, int64, error) {
+func (m *mockAsker) AskUserQuestion(_ context.Context, questionsJSON string, _ int32) (bool, string, int64, error) {
 	m.gotPayload = questionsJSON
-	return m.status, m.answersJSON, 1, m.err
+	return m.answered, m.answersJSON, 1, m.err
 }
 
 func answer(label string) string {
@@ -33,21 +33,21 @@ func answer(label string) string {
 func TestConfirmStartCmdOverride(t *testing.T) {
 	tests := []struct {
 		name        string
-		status      string
+		answered    bool
 		answersJSON string
 		err         error
 		want        bool
 	}{
-		{name: "explicit approval", status: "answered", answersJSON: answer(startCmdUseOverride), want: true},
-		{name: "explicit decline", status: "answered", answersJSON: answer(startCmdKeepProfile), want: false},
-		{name: "timed out unanswered", status: "pending", want: false},
-		{name: "answer for a different question", status: "answered", answersJSON: `{"answers":{"something else":"Use the agent's"}}`, want: false},
-		{name: "malformed answer payload", status: "answered", answersJSON: `not json`, want: false},
+		{name: "explicit approval", answered: true, answersJSON: answer(startCmdUseOverride), want: true},
+		{name: "explicit decline", answered: true, answersJSON: answer(startCmdKeepProfile), want: false},
+		{name: "timed out unanswered", answered: false, want: false},
+		{name: "answer for a different question", answered: true, answersJSON: `{"answers":{"something else":"Use the agent's"}}`, want: false},
+		{name: "malformed answer payload", answered: true, answersJSON: `not json`, want: false},
 		{name: "rpc failure", err: errors.New("core unreachable"), want: false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			m := &mockAsker{status: tt.status, answersJSON: tt.answersJSON, err: tt.err}
+			m := &mockAsker{answered: tt.answered, answersJSON: tt.answersJSON, err: tt.err}
 			if got := confirmStartCmdOverride(context.Background(), m, "bun run dev"); got != tt.want {
 				t.Errorf("confirmStartCmdOverride = %v, want %v", got, tt.want)
 			}
@@ -58,7 +58,7 @@ func TestConfirmStartCmdOverride(t *testing.T) {
 // The human deciding needs to see the command they're being asked to bless —
 // approving an override sight-unseen is the same failure with an extra click.
 func TestConfirmStartCmdOverride_QuestionShowsProposedCommand(t *testing.T) {
-	m := &mockAsker{status: "answered", answersJSON: answer(startCmdKeepProfile)}
+	m := &mockAsker{answered: true, answersJSON: answer(startCmdKeepProfile)}
 	confirmStartCmdOverride(context.Background(), m, "bunx vite dev --host 0.0.0.0 --port $PORT")
 	if !strings.Contains(m.gotPayload, "bunx vite dev --host 0.0.0.0 --port $PORT") {
 		t.Errorf("question payload must contain the proposed command, got: %s", m.gotPayload)

@@ -54,7 +54,7 @@ func TestServer_ListFiles(t *testing.T) {
 	fake := &fakeFileStore{files: []filestore.FileMetadata{
 		{Key: "notes.txt", SizeBytes: 42, LastModified: time.Unix(1000, 0), ContentType: "text/plain"},
 	}}
-	s := New(nil, nil, nil, nil, nil, nil, fake, nil)
+	s := New(nil, nil, nil, nil, nil, fake, nil)
 
 	resp, err := s.ListFiles(context.Background(), &agentfleetv1.ListFilesRequest{})
 	if err != nil {
@@ -67,7 +67,7 @@ func TestServer_ListFiles(t *testing.T) {
 
 func TestServer_ListFiles_Error(t *testing.T) {
 	fake := &fakeFileStore{presignErr: errors.New("garage unreachable")}
-	s := New(nil, nil, nil, nil, nil, nil, fake, nil)
+	s := New(nil, nil, nil, nil, nil, fake, nil)
 
 	if _, err := s.ListFiles(context.Background(), &agentfleetv1.ListFilesRequest{}); err == nil {
 		t.Fatal("expected error, got nil")
@@ -76,7 +76,7 @@ func TestServer_ListFiles_Error(t *testing.T) {
 
 func TestServer_GetFileUploadUrl(t *testing.T) {
 	fake := &fakeFileStore{}
-	s := New(nil, nil, nil, nil, nil, nil, fake, nil)
+	s := New(nil, nil, nil, nil, nil, fake, nil)
 
 	resp, err := s.GetFileUploadUrl(context.Background(), &agentfleetv1.GetFileUploadUrlRequest{Filename: "report.pdf", ContentType: "application/pdf"})
 	if err != nil {
@@ -89,7 +89,7 @@ func TestServer_GetFileUploadUrl(t *testing.T) {
 
 func TestServer_GetFileDownloadUrl(t *testing.T) {
 	fake := &fakeFileStore{}
-	s := New(nil, nil, nil, nil, nil, nil, fake, nil)
+	s := New(nil, nil, nil, nil, nil, fake, nil)
 
 	resp, err := s.GetFileDownloadUrl(context.Background(), &agentfleetv1.GetFileDownloadUrlRequest{Key: "report.pdf"})
 	if err != nil {
@@ -102,13 +102,15 @@ func TestServer_GetFileDownloadUrl(t *testing.T) {
 
 func TestServer_DeleteFile(t *testing.T) {
 	fake := &fakeFileStore{}
-	s := New(nil, nil, nil, nil, nil, nil, fake, nil)
+	s := New(nil, nil, nil, nil, nil, fake, nil)
 
-	resp, err := s.DeleteFile(context.Background(), &agentfleetv1.DeleteFileRequest{Key: "report.pdf"})
-	if err != nil {
+	// The response is empty by design (docs/adr/0048): err == nil IS the
+	// success signal, so a `status: "deleted"` field would be a second
+	// channel saying the same thing. The assertion is on the side effect.
+	if _, err := s.DeleteFile(context.Background(), &agentfleetv1.DeleteFileRequest{Key: "report.pdf"}); err != nil {
 		t.Fatalf("DeleteFile: %v", err)
 	}
-	if resp.GetStatus() != "deleted" || fake.deletedKey != "report.pdf" {
-		t.Fatalf("unexpected response/state: resp=%+v deletedKey=%q", resp, fake.deletedKey)
+	if fake.deletedKey != "report.pdf" {
+		t.Fatalf("expected report.pdf deleted, got %q", fake.deletedKey)
 	}
 }
