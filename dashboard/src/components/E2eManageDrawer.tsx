@@ -19,13 +19,13 @@ import { Modal } from "./Modal";
 type Busy = "start" | "restart" | "stop" | "log" | null;
 
 export function E2eManageDrawer({
-  taskId,
+  sessionId,
   e2e,
   open,
   onClose,
   onChanged,
 }: {
-  taskId: string;
+  sessionId: string;
   e2e: GetE2eStatusResponse | null;
   open: boolean;
   onClose: () => void;
@@ -48,7 +48,7 @@ export function E2eManageDrawer({
     setBusy("log");
     setError(null);
     try {
-      const res = await client.getE2eAppLog({ taskId, lines: 300 });
+      const res = await client.getE2eAppLog({ sessionId, lines: 300 });
       setLog(res.log);
       setLogLoaded(true);
     } catch (err) {
@@ -56,7 +56,7 @@ export function E2eManageDrawer({
     } finally {
       setBusy(null);
     }
-  }, [taskId]);
+  }, [sessionId]);
 
   // Load the log once on open, not on a timer: a poll here would run a
   // `tail` in the pod every few seconds for a drawer that is usually open for
@@ -93,11 +93,11 @@ export function E2eManageDrawer({
     }
   }
 
-  const start = () => act("start", () => client.startE2e({ taskId }));
-  const stop = () => act("stop", () => client.killE2e({ taskId, alsoTeardownServices: false }));
+  const start = () => act("start", () => client.startE2e({ sessionId }));
+  const stop = () => act("stop", () => client.killE2e({ sessionId, alsoTeardownServices: false }));
   const restartApp = () =>
     act("restart", async () => {
-      const res = await client.restartE2eApp({ taskId });
+      const res = await client.restartE2eApp({ sessionId });
       setLog((prev) => `${prev}\n${res.output}`.trim());
       // The app takes a moment to bind; re-read rather than leaving the
       // restart's own output as the last thing shown.
@@ -105,15 +105,15 @@ export function E2eManageDrawer({
     });
   const recreate = () =>
     act("start", async () => {
-      await client.killE2e({ taskId, alsoTeardownServices: false });
-      await client.startE2e({ taskId });
+      await client.killE2e({ sessionId, alsoTeardownServices: false });
+      await client.startE2e({ sessionId });
       setLog("");
       setLogLoaded(false);
     });
 
   return (
     <Modal open={open} onClose={onClose} boxClassName="max-w-3xl">
-      <h3 className="text-base font-semibold mb-1">E2E environment · #{taskId.slice(0, 6)}</h3>
+      <h3 className="text-base font-semibold mb-1">E2E environment · #{sessionId.slice(0, 6)}</h3>
       <p className="text-xs text-dim2 mb-3">
         {hasPod ? (
           <>

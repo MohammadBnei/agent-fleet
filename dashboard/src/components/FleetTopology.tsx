@@ -156,19 +156,19 @@ export function FleetTopology({ onSelectTask }: { onSelectTask: (id: string) => 
           {placed.map((p) => {
             const s = statusOf(p.status);
             const isHub = p.type === "core" || p.type === "provisioner";
-            const clickable = Boolean(p.taskId);
+            const clickable = Boolean(p.sessionId);
             return (
               <g
                 key={p.id}
                 transform={`translate(${p.x} ${p.y})`}
                 className={clickable ? "cursor-pointer" : undefined}
-                onClick={clickable ? () => onSelectTask(p.taskId) : undefined}
+                onClick={clickable ? () => onSelectTask(p.sessionId) : undefined}
                 role={clickable ? "button" : undefined}
                 tabIndex={clickable ? 0 : undefined}
                 onKeyDown={
                   clickable
                     ? (ev) => {
-                        if (ev.key === "Enter" || ev.key === " ") onSelectTask(p.taskId);
+                        if (ev.key === "Enter" || ev.key === " ") onSelectTask(p.sessionId);
                       }
                     : undefined
                 }
@@ -197,7 +197,7 @@ export function FleetTopology({ onSelectTask }: { onSelectTask: (id: string) => 
                 ) : (
                   <>
                     <text x={8} y={46} className="fill-dim text-[9px]">
-                      #{p.taskId.slice(0, 6)}
+                      #{p.sessionId.slice(0, 6)}
                     </text>
                     <text x={8} y={58} className={`text-[9px] ${s.text} fill-current`}>
                       {p.status}

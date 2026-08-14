@@ -1,11 +1,10 @@
 import { useState } from "react";
-import type { Task } from "../gen/agentfleet/v1/core_pb";
+import type { Session } from "../gen/agentfleet/v1/core_pb";
 import { repoLabel } from "../taskKind";
 import {
   bucketTasks,
-  prBadge,
   isPodPhaseLive,
-  staleBadge,
+
   sessionBadge,
   blockedForLabel,
   SectionHeading,
@@ -43,7 +42,7 @@ function NeedsYouCard({
   reload,
   onAskLater,
 }: {
-  task: Task;
+  task: Session;
   summary?: ListSummary;
   onSelect: () => void;
   reload: () => void;
@@ -53,7 +52,7 @@ function NeedsYouCard({
   const blockedFor = blockedForLabel(task);
   return (
     <NotchCard
-      label={task.status === "proposed" ? "◉ PROPOSED" : `◉ BLOCKED${blockedFor ? ` · ${blockedFor}` : ""}`}
+      label={`◉ BLOCKED${blockedFor ? ` · ${blockedFor}` : ""}`}
       tone="pink"
     >
       <div className="px-3.5 pt-3.5">
@@ -88,13 +87,12 @@ function FinishedCard({
   onRetry,
   onOpenLogs,
 }: {
-  task: Task;
+  task: Session;
   onSelect: () => void;
   onRetry: () => void;
   onOpenLogs: () => void;
 }) {
-  const failed = task.status === "failed" || task.status === "failed_permanently";
-  const pr = prBadge(task);
+  const failed = task.podPhase === "POD_PHASE_CRASHED";
   const when = relativeTime(task.lastActiveAt);
   return (
     <div className={`border px-3.5 py-3 ${failed ? "border-orange-line bg-orange-bg" : "border-green-line bg-green-bg"}`}>
@@ -113,7 +111,7 @@ function FinishedCard({
       {failed ? (
         <>
           <div className="text-xs text-warning mt-1.5 leading-[1.5] break-words">
-            {task.status === "failed_permanently" ? "failed permanently" : "failed"}
+            {"crashed"}
             {task.lastError ? ` · ${task.lastError}` : ""}
           </div>
           <div className="flex gap-2 mt-2.5">
@@ -127,15 +125,7 @@ function FinishedCard({
         </>
       ) : (
         <div className="text-xs text-dim mt-1.5">
-          {pr ? pr.label : "no PR"}
-          {task.prUrl && (
-            <>
-              {" · "}
-              <a href={task.prUrl} target="_blank" rel="noreferrer" className="text-primary">
-                review
-              </a>
-            </>
-          )}
+          {"no PR"}
         </div>
       )}
     </div>
@@ -148,7 +138,7 @@ function WorkingCard({
   last,
   onSelect,
 }: {
-  task: Task;
+  task: Session;
   summary?: ListSummary;
   last: boolean;
   onSelect: () => void;
@@ -157,7 +147,7 @@ function WorkingCard({
   const inFlight = summary?.inFlight ?? null;
   const provisioning = task.podPhase === "POD_PHASE_PROVISIONING";
   const live = isPodPhaseLive(task.podPhase) && !provisioning;
-  const stale = staleBadge(task);
+  const stale = null as { label: string; className: string } | null;
 
   return (
     <button
@@ -203,7 +193,7 @@ function WorkingCard({
   );
 }
 
-function QuietGroup({ title, tasks, onSelect }: { title: string; tasks: Task[]; onSelect: (id: string) => void }) {
+function QuietGroup({ title, tasks, onSelect }: { title: string; tasks: Session[]; onSelect: (id: string) => void }) {
   if (tasks.length === 0) return null;
   return (
     <Collapse
@@ -241,7 +231,7 @@ export function MobileTaskList({
   onOpenLogs,
   reload,
 }: {
-  tasks: Task[];
+  tasks: Session[];
   summaries: Map<string, ListSummary>;
   needsYouIds: Set<string>;
   onSelect: (id: string) => void;
@@ -255,7 +245,8 @@ export function MobileTaskList({
   // still blocked, so the card must come back on the next visit.
   const [deferred, setDeferred] = useState<Set<string>>(new Set());
 
-  const { needsYou, working, finished, stalled, proposed, quiet } = bucketTasks(tasks, needsYouIds);
+  const { needsYou, working, finished, stalled, quiet } = bucketTasks(tasks, needsYouIds);
+  const proposed: typeof tasks = [];
   const visibleNeedsYou = needsYou.filter((t) => !deferred.has(t.id));
 
   const CHIPS: readonly { value: Bucket; label: string; count: number }[] = [

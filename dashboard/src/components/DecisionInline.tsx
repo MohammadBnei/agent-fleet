@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ActionButton } from "./ActionButton";
 import { client } from "../connectClient";
-import type { Task } from "../gen/agentfleet/v1/core_pb";
+import type { Session } from "../gen/agentfleet/v1/core_pb";
 import { parseQuestions, type ListSummary } from "../transcript";
 import { DiffLines } from "./DiffLines";
 import { Markdown } from "./Markdown";
@@ -104,9 +104,9 @@ export function DecisionInline({
   onAskLater,
   // Dismissing a proposal soft-deletes the task, so a caller showing only that
   // task (the detail view) has to let go of it rather than sit on a dead row.
-  onDismissed,
+  onDismissed: _onDismissed,
 }: {
-  task: Task;
+  task: Session;
   summary?: ListSummary;
   onOpenSession: () => void;
   reload: () => void;
@@ -133,39 +133,10 @@ export function DecisionInline({
   // all. Dismiss is a soft delete, which drops the row out of the alert dedup
   // index, so a still-firing alert is proposed again next fire: "not now", not
   // "never".
-  if (task.status === "proposed") {
-    return (
-      <div className={`${pad} flex flex-col gap-3`}>
-        <div className="text-sm text-dim leading-relaxed">
-          Machine-created and not dispatched — nothing runs until you approve it.
-        </div>
-        {error && <div className="text-xs text-error">{error}</div>}
-        <div className={`flex gap-2.5 ${stacked ? "" : "items-center"}`}>
-          <ActionButton
-            busy={pending === "approve"}
-            disabled={busy}
-            className={primaryBtn}
-            onClick={() => send("approve", () => client.approveTask({ taskId: task.id }))}
-          >
-            approve &amp; dispatch
-          </ActionButton>
-          <ActionButton
-            busy={pending === "dismiss"}
-            disabled={busy}
-            className={secondaryBtn}
-            onClick={() =>
-              send("dismiss", async () => {
-                await client.deleteTask({ taskId: task.id });
-                onDismissed?.();
-              })
-            }
-          >
-            dismiss
-          </ActionButton>
-        </div>
-      </div>
-    );
-  }
+  // The inline proposal-approval card is gone. A proposal is no longer a
+  // session with a status — it is a row in its own table with its own view
+  // (docs/adr/0048), so there is no proposed session for this component to
+  // render a decision for.
 
   const permission = summary?.pendingPermission ?? null;
   const questionEntry = summary?.pendingQuestion ?? null;
@@ -189,7 +160,7 @@ export function DecisionInline({
         behavior,
         () =>
           client.respondToPermission({
-            taskId: task.id,
+            sessionId: task.id,
             seq: permission.entry.seq,
             decisionJson: JSON.stringify({ behavior, message }),
           }),
@@ -294,7 +265,7 @@ export function DecisionInline({
           "answer",
           () =>
             client.answerQuestion({
-              taskId: task.id,
+              sessionId: task.id,
               seq: questionEntry.seq,
               answersJson: JSON.stringify({ answers: { [q!.question]: label } }),
             }),
@@ -309,7 +280,7 @@ export function DecisionInline({
         "answer",
         () =>
           client.answerQuestion({
-            taskId: task.id,
+            sessionId: task.id,
             seq: questionEntry.seq,
             answersJson: JSON.stringify({ answers: { [q!.question]: answer } }),
           }),

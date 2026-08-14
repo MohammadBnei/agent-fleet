@@ -17,19 +17,19 @@ const LEVEL_COLOR: Record<string, string> = {
   debug: "text-dim2",
 };
 
-export function LogDrawer({ taskId, onClose }: { taskId: string | null; onClose: () => void }) {
+export function LogDrawer({ sessionId, onClose }: { sessionId: string | null; onClose: () => void }) {
   const [entries, setEntries] = useState<LogEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!taskId) return;
+    if (!sessionId) return;
     let cancelled = false;
     setLoading(true);
     setError(null);
     setEntries([]);
     client
-      .queryLogs({ taskId, limit: 200 })
+      .queryLogs({ sessionId, limit: 200 })
       .then((res) => {
         if (!cancelled) setEntries(res.entries);
       })
@@ -42,11 +42,11 @@ export function LogDrawer({ taskId, onClose }: { taskId: string | null; onClose:
     return () => {
       cancelled = true;
     };
-  }, [taskId]);
+  }, [sessionId]);
 
   return (
-    <Modal open={taskId !== null} onClose={onClose} boxClassName="max-w-4xl">
-      <h3 className="text-base font-semibold mb-1">Logs · #{taskId?.slice(0, 6)}</h3>
+    <Modal open={sessionId !== null} onClose={onClose} boxClassName="max-w-4xl">
+      <h3 className="text-base font-semibold mb-1">Logs · #{sessionId?.slice(0, 6)}</h3>
       <p className="text-xs text-dim2 mb-3">
         Newest 200 lines from Loki for this session's pods.
       </p>

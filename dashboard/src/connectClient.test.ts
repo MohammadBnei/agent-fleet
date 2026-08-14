@@ -40,7 +40,7 @@ describe("subscribeTranscript visibility handling", () => {
 
   // Yields whatever is queued for this attempt, then stays open exactly like
   // a live stream with nothing new to say — until somebody aborts it.
-  const openStream = (req: { taskId: string; sinceSeq: bigint }, opts: { signal: AbortSignal }) => {
+  const openStream = (req: { sessionId: string; sinceSeq: bigint }, opts: { signal: AbortSignal }) => {
     calls.push({ sinceSeq: req.sinceSeq, signal: opts.signal });
     const toYield = queued;
     queued = [];

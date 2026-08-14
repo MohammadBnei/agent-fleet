@@ -9,7 +9,7 @@ import { PermissionCard } from "./PermissionCard";
 let nextSeq = 0n;
 function entry(type: TranscriptEntryType, text: string): TranscriptEntry {
   nextSeq += 1n;
-  return { $typeName: "agentfleet.v1.TranscriptEntry", taskId: "t", seq: nextSeq, from: "agent", text, type } as TranscriptEntry;
+  return { $typeName: "agentfleet.v1.TranscriptEntry", sessionId: "t", seq: nextSeq, from: "agent", text, type } as TranscriptEntry;
 }
 
 const permission = (tool: string, input: unknown = {}) =>

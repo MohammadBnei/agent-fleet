@@ -7,7 +7,7 @@ const NOW = 1_800_000_000;
 const OLD = BigInt(NOW - 3600); // well outside the mtime grace
 
 function wt(taskStatus: string | undefined, mtimeUnix = OLD) {
-  return create(WorktreeViewSchema, { taskId: "t1", repo: "r", branch: "agent/t1", taskStatus, mtimeUnix });
+  return create(WorktreeViewSchema, { sessionId: "t1", repo: "r", branch: "agent/t1", taskStatus, mtimeUnix });
 }
 
 test("finished and orphaned worktrees are stale", () => {

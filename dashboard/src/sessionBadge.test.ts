@@ -1,8 +1,8 @@
 import { test, expect } from "bun:test";
 import { sessionBadge } from "./pages/TaskList";
-import type { Task } from "./gen/agentfleet/v1/core_pb";
+import type { Session } from "./gen/agentfleet/v1/core_pb";
 
-function task(over: Partial<Task>): Task {
+function task(over: Partial<Session>): Session {
   return {
     $typeName: "agentfleet.v1.Task",
     id: "t1", repo: "r", description: "d", status: "running", kind: "worker",

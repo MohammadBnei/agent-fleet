@@ -28,7 +28,7 @@ const COLS = "grid-cols-[20px_1.4fr_130px_1fr_150px_90px_110px_90px]";
 // A worktree is stale once its task is finished (or its task row is gone
 // entirely) and nothing has written to it recently. Exported for its test.
 export function isStaleWorktree(w: WorktreeView, nowSecs: number): boolean {
-  if (w.taskStatus !== undefined && !TERMINAL_STATUSES.has(w.taskStatus)) return false;
+  if (w.liveState !== undefined && !TERMINAL_STATUSES.has(w.liveState)) return false;
   return nowSecs - Number(w.mtimeUnix) > RECENT_SECS;
 }
 
@@ -57,12 +57,12 @@ function relativeMtime(mtimeUnix: bigint): string {
 // live session, and calling a still-running worktree an orphan is how someone
 // ends up deleting work in progress.
 export function owner(w: WorktreeView): { label: string; cls: string; orphan: boolean } {
-  if (w.taskStatus === undefined) {
+  if (w.liveState === undefined) {
     return { label: "orphan · no session", cls: "text-warning", orphan: true };
   }
-  const live = !TERMINAL_STATUSES.has(w.taskStatus);
+  const live = !TERMINAL_STATUSES.has(w.liveState);
   return {
-    label: `#${w.taskId.slice(0, 6)} ${w.taskStatus}`,
+    label: `#${w.sessionId.slice(0, 6)} ${w.liveState}`,
     cls: live ? "text-error" : "text-dim",
     orphan: false,
   };
@@ -86,7 +86,7 @@ function DeleteWorktree({
     setConfirmOpen(false);
     setDeleting(true);
     try {
-      await client.deleteWorktree({ taskId: worktree.taskId, repo: worktree.repo, alsoDeleteBranch });
+      await client.deleteWorktree({ sessionId: worktree.sessionId, repo: worktree.repo, alsoDeleteBranch });
       onDeleted();
     } catch (err) {
       onError(err instanceof Error ? err.message : String(err));
@@ -177,7 +177,7 @@ export function Worktrees({ onSelectTask }: { onSelectTask: (id: string) => void
       // reference to unpushed commits (reliability-findings.md #2). Branches are
       // the periodic sweep's job.
       for (const w of stale) {
-        await client.deleteWorktree({ taskId: w.taskId, repo: w.repo, alsoDeleteBranch: false });
+        await client.deleteWorktree({ sessionId: w.sessionId, repo: w.repo, alsoDeleteBranch: false });
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -257,14 +257,14 @@ export function Worktrees({ onSelectTask }: { onSelectTask: (id: string) => void
               const o = owner(w);
               return (
                 <div
-                  key={`${w.repo}/${w.taskId}`}
+                  key={`${w.repo}/${w.sessionId}`}
                   className={`grid ${COLS} gap-3.5 px-3.5 py-2.5 items-center ${
                     i === worktrees.length - 1 ? "" : "border-b border-line3"
                   } ${o.orphan ? "bg-orange-wash" : ""}`}
                 >
                   <span
                     className={`w-[7px] h-[7px] rounded-full flex-none ${
-                      o.orphan ? "bg-warning" : TERMINAL_STATUSES.has(w.taskStatus ?? "") ? "bg-success" : "bg-info"
+                      o.orphan ? "bg-warning" : TERMINAL_STATUSES.has(w.liveState ?? "") ? "bg-success" : "bg-info"
                     }`}
                   />
                   <div className="text-sm min-w-0 truncate" title={w.path}>
@@ -285,15 +285,15 @@ export function Worktrees({ onSelectTask }: { onSelectTask: (id: string) => void
                     ) : (
                       <button
                         type="button"
-                        onClick={() => onSelectTask(w.taskId)}
+                        onClick={() => onSelectTask(w.sessionId)}
                         className={`text-sm ${o.cls} hover:text-primary cursor-pointer`}
                       >
                         {o.label} ▸
                       </button>
                     )}
-                    {w.taskError && (
-                      <div className="text-xs text-warning truncate" title={w.taskError}>
-                        {w.taskError}
+                    {w.sessionError && (
+                      <div className="text-xs text-warning truncate" title={w.sessionError}>
+                        {w.sessionError}
                       </div>
                     )}
                   </div>
@@ -315,13 +315,13 @@ export function Worktrees({ onSelectTask }: { onSelectTask: (id: string) => void
             const o = owner(w);
             return (
               <div
-                key={`${w.repo}/${w.taskId}`}
+                key={`${w.repo}/${w.sessionId}`}
                 className={`border px-3.5 py-3 ${o.orphan ? "border-orange-line bg-orange-bg" : "border-line2"}`}
               >
                 <div className="flex items-center gap-2">
                   <span
                     className={`w-1.5 h-1.5 rounded-full flex-none ${
-                      o.orphan ? "bg-warning" : TERMINAL_STATUSES.has(w.taskStatus ?? "") ? "bg-success" : "bg-info"
+                      o.orphan ? "bg-warning" : TERMINAL_STATUSES.has(w.liveState ?? "") ? "bg-success" : "bg-info"
                     }`}
                   />
                   <span className="text-sm min-w-0 truncate" title={w.path}>
@@ -343,7 +343,7 @@ export function Worktrees({ onSelectTask }: { onSelectTask: (id: string) => void
                   ) : (
                     <button
                       type="button"
-                      onClick={() => onSelectTask(w.taskId)}
+                      onClick={() => onSelectTask(w.sessionId)}
                       className={`text-xs ${o.cls}`}
                     >
                       {o.label} ▸

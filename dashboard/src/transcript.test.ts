@@ -21,7 +21,7 @@ import {
 let nextSeq = 0n;
 function entry(type: TranscriptEntryType, from = "agent", text = ""): TranscriptEntry {
   nextSeq += 1n;
-  return { $typeName: "agentfleet.v1.TranscriptEntry", taskId: "t", seq: nextSeq, from, text, type };
+  return { $typeName: "agentfleet.v1.TranscriptEntry", sessionId: "t", seq: nextSeq, from, text, type };
 }
 
 // A SYSTEM entry is now two different things, and telling them apart is
@@ -93,7 +93,7 @@ function full(
   nextSeq += 1n;
   return {
     $typeName: "agentfleet.v1.TranscriptEntry",
-    taskId: "t",
+    sessionId: "t",
     seq: nextSeq,
     from: opts.from ?? "agent",
     text,

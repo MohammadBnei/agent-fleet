@@ -37,7 +37,7 @@ const MODES = [
 // only so ActionsMenu doesn't require them if a future caller has no use
 // for this toggle.
 export function ActionsMenu({
-  taskId,
+  sessionId,
   busy,
   busyKey,
   run,
@@ -52,7 +52,7 @@ export function ActionsMenu({
   hideChangesInFeed,
   onHideChangesInFeedChange,
 }: {
-  taskId: string;
+  sessionId: string;
   // Whether ANY action anywhere on the page is in flight, not just this
   // menu's own — these buttons are page-level/singular (Kill especially),
   // so they stay conservative and disable together with everything else
@@ -124,7 +124,7 @@ export function ActionsMenu({
             className="btn btn-info btn-xs"
             busy={busyKey === "action:interrupt"}
             disabled={busy}
-            onClick={() => run(() => client.interrupt({ taskId }), "action:interrupt")}
+            onClick={() => run(() => client.interrupt({ sessionId }), "action:interrupt")}
           >
             Interrupt
           </ActionButton>
@@ -132,7 +132,7 @@ export function ActionsMenu({
             className="btn btn-error btn-xs"
             busy={busyKey === "action:kill"}
             disabled={busy}
-            onClick={() => run(() => client.kill({ taskId }), "action:kill")}
+            onClick={() => run(() => client.stopSession({ sessionId }), "action:kill")}
           >
             Kill
           </ActionButton>
@@ -147,7 +147,7 @@ export function ActionsMenu({
             className="btn btn-success btn-xs"
             busy={busyKey === "action:warm"}
             disabled={busy}
-            onClick={() => run(() => client.warm({ taskId }), "action:warm")}
+            onClick={() => run(() => client.warmSession({ sessionId }), "action:warm")}
           >
             Warm
           </ActionButton>
@@ -158,7 +158,7 @@ export function ActionsMenu({
         className="btn btn-outline btn-xs"
         busy={busyKey === "action:kill-e2e"}
         disabled={busy}
-        onClick={() => run(() => client.killE2e({ taskId, alsoTeardownServices }), "action:kill-e2e")}
+        onClick={() => run(() => client.killE2e({ sessionId, alsoTeardownServices }), "action:kill-e2e")}
       >
         Kill e2e
       </ActionButton>
@@ -208,7 +208,7 @@ export function ActionsMenu({
               // what made this feel like the click was dropped.
               popoverTarget="popover-mode"
               popoverTargetAction="hide"
-              onClick={() => run(() => client.setPermissionMode({ taskId, mode: m.value }), "action:mode")}
+              onClick={() => run(() => client.setPermissionMode({ sessionId, mode: m.value }), "action:mode")}
             >
               {m.value === currentMode ? "✓ " : ""}
               {m.label}

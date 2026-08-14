@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { client } from "../connectClient";
 import { Modal } from "./Modal";
 import { ConfirmModal } from "./ConfirmModal";
-import { ManageRepoProfilesModal } from "./ManageRepoProfilesModal";
 import type { Repo } from "../gen/agentfleet/v1/dashboard_pb";
 
 // Dashboard-editable target-repo config (docs/adr/0028) — replaces the old
@@ -18,15 +17,15 @@ function RepoRow({ repo, onSaved, onRequestDelete, onError }: {
 }) {
   const [url, setUrl] = useState(repo.url);
   const [baseBranch, setBaseBranch] = useState(repo.baseBranch);
-  const [e2eProfile, setE2eProfile] = useState(repo.e2eProfile);
+  const [image, setImage] = useState(repo.image);
   const [saving, setSaving] = useState(false);
   const dirty =
-    url !== repo.url || baseBranch !== repo.baseBranch || e2eProfile !== repo.e2eProfile;
+    url !== repo.url || baseBranch !== repo.baseBranch || image !== repo.image;
 
   async function save() {
     setSaving(true);
     try {
-      await client.updateRepo({ name: repo.name, url, baseBranch, e2eProfile });
+      await client.updateRepo({ name: repo.name, url, baseBranch, image, clusterAccess: repo.clusterAccess });
       onSaved();
     } catch (err) {
       onError(err instanceof Error ? err.message : String(err));
@@ -53,8 +52,8 @@ function RepoRow({ repo, onSaved, onRequestDelete, onError }: {
           means the "e2e" convention; agent-fleet points at "lint", where its
           toolchain actually lives. */}
       <input
-        value={e2eProfile}
-        onChange={(e) => setE2eProfile(e.target.value)}
+        value={image}
+        onChange={(e) => setImage(e.target.value)}
         placeholder="e2e"
         title="Profile the e2e sandbox is built from — blank means the profile named 'e2e'"
         className="input input-sm input-bordered w-24 flex-none"
@@ -67,7 +66,6 @@ function RepoRow({ repo, onSaved, onRequestDelete, onError }: {
       >
         Save
       </button>
-      <ManageRepoProfilesModal repoName={repo.name} />
       <button type="button" onClick={() => onRequestDelete(repo)} className="btn btn-sm btn-error flex-none">
         Delete
       </button>
@@ -82,7 +80,7 @@ export function ManageReposModal({ onChanged }: { onChanged?: () => void }) {
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
   const [baseBranch, setBaseBranch] = useState("");
-  const [e2eProfile, setE2eProfile] = useState("");
+  const [image, setImage] = useState("");
   const [creating, setCreating] = useState(false);
   // Rendered as a sibling of <Modal> below, never nested inside it — a
   // <dialog> nested inside another open <dialog> closes both together on
@@ -132,7 +130,7 @@ export function ManageReposModal({ onChanged }: { onChanged?: () => void }) {
     setCreating(true);
     setError(null);
     try {
-      await client.createRepo({ name, url, baseBranch, e2eProfile });
+      await client.createRepo({ name, url, baseBranch, image, clusterAccess: false });
       setName("");
       setUrl("");
       setBaseBranch("");
@@ -186,8 +184,8 @@ export function ManageReposModal({ onChanged }: { onChanged?: () => void }) {
             className="input input-sm input-bordered w-24 flex-none"
           />
           <input
-            value={e2eProfile}
-            onChange={(e) => setE2eProfile(e.target.value)}
+            value={image}
+            onChange={(e) => setImage(e.target.value)}
             placeholder="e2e"
             title="Profile the e2e sandbox is built from — blank means the profile named 'e2e'"
             className="input input-sm input-bordered w-24 flex-none"

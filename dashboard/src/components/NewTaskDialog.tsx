@@ -13,7 +13,7 @@ export function NewTaskDialog({
   // dead affordance.
   autoOpen = false,
 }: {
-  onCreated: (taskId: string) => void;
+  onCreated: (sessionId: string) => void;
   compact?: boolean;
   autoOpen?: boolean;
 }) {
@@ -76,11 +76,11 @@ export function NewTaskDialog({
     setSubmitting(true);
     setError(null);
     try {
-      const res = await client.createTask({ repo: clusterSession ? "infra-bootstrap" : repo, description, snippetIds, kind: clusterSession ? "thot" : "worker" });
+      const res = await client.createSession({ repo: clusterSession ? "infra-bootstrap" : repo, description });
       setDescription("");
       setSnippetIds([]);
       close();
-      if (res.task) onCreated(res.task.id);
+      if (res.session) onCreated(res.session.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {

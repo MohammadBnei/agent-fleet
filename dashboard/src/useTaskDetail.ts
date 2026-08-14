@@ -1,18 +1,17 @@
 import { useEffect, useRef, useState } from "react";
-import { isThot } from "./taskKind";
 import { Code, ConnectError } from "@connectrpc/connect";
 import { client, subscribeTranscript } from "./connectClient";
 import { pollVisible } from "./pollVisible";
 import { withOptimistic } from "./transcript";
-import type { Task } from "./gen/agentfleet/v1/core_pb";
+import type { Session } from "./gen/agentfleet/v1/core_pb";
 import type { GetE2eStatusResponse } from "./gen/agentfleet/v1/dashboard_pb";
 import { TranscriptEntryType, type TranscriptEntry } from "./gen/agentfleet/v1/transcript_pb";
 
 // Shared data-loading for a single task's session view — used by both the
 // desktop TaskDetail and the mobile MobileTaskDetail, which differ only in
 // layout, not in what they fetch/subscribe to.
-export function useTaskDetail(taskId: string) {
-  const [task, setTask] = useState<Task | null>(null);
+export function useTaskDetail(sessionId: string) {
+  const [task, setTask] = useState<Session | null>(null);
   const [entries, setEntries] = useState<TranscriptEntry[]>([]);
   // Full e2e status, not just the preview URL: the card needs the recipe
   // that actually ran plus the pod's live readiness to tell "still
@@ -33,7 +32,7 @@ export function useTaskDetail(taskId: string) {
   // still disable together on purpose); "actions" callers still tie
   // themselves to busyKey !== null, not a specific key.
   const [busyKey, setBusyKey] = useState<string | null>(null);
-  // Optimistic echo for a just-sent human message — client.discuss() plus
+  // Optimistic echo for a just-sent human message — client.postMessage() plus
   // the streamTranscript round trip to see it reflected back is enough
   // latency to feel laggy, so this shows the message immediately with a
   // spinner instead of waiting. Cleared once the real entry arrives (ref,
@@ -72,13 +71,13 @@ export function useTaskDetail(taskId: string) {
     // difference between `done` (finished while nobody was looking) and
     // plain `idle`. Fire-and-forget: this is a read-receipt, and failing
     // to record one must never block the view from loading.
-    client.markSeen({ taskId }).catch(() => {});
+    client.markSeen({ sessionId }).catch(() => {});
     client
-      .getTask({ id: taskId })
+      .getSession({ id: sessionId })
       .then((res) => {
         if (cancelled) return;
-        setTask(res.task ?? null);
-        if (!res.task) return;
+        setTask(res.session ?? null);
+        if (!res.session) return;
         // WorktreeView has a real branch keyed by (repo, task_id) —
         // available immediately, unlike the TOOL_CALL-derived `changes`
         // (computed by the caller from `entries`) which needs the worker
@@ -87,7 +86,7 @@ export function useTaskDetail(taskId: string) {
           .listWorktrees({})
           .then((wtRes) => {
             if (cancelled) return;
-            const wt = wtRes.worktrees.find((w) => w.repo === res.task!.repo && w.taskId === res.task!.id);
+            const wt = wtRes.worktrees.find((w) => w.repo === res.session!.repo && w.sessionId === res.session!.id);
             if (wt) {
               setBranch(wt.branch);
               if (wt.path) setWorktreePath(wt.path);
@@ -112,9 +111,9 @@ export function useTaskDetail(taskId: string) {
     function pollE2e() {
       // docs/adr/0037: a thot session never has an e2e pod, so this would
       // poll every 5s forever for something that cannot exist.
-      if (isThot(task)) return;
+      if (false) return;
       client
-        .getE2eStatus({ taskId })
+        .getE2eStatus({ sessionId })
         .then((res) => {
           if (cancelled) return;
           // The full status object is the single source for the card, the
@@ -137,11 +136,11 @@ export function useTaskDetail(taskId: string) {
 
     let unsubscribe = () => {};
     client
-      .getTranscript({ taskId, sinceSeq: 0n })
+      .getTranscript({ sessionId, sinceSeq: 0n })
       .then((res) => {
         if (cancelled) return;
         setEntries(res.entries);
-        unsubscribe = subscribeTranscript(taskId, res.nextSeq, (entry) => {
+        unsubscribe = subscribeTranscript(sessionId, res.nextSeq, (entry) => {
           setEntries((prev) => [...prev, entry]);
           if (pendingRef.current !== null && entry.from === "human" && entry.text === pendingRef.current) {
             pendingRef.current = null;
@@ -156,7 +155,7 @@ export function useTaskDetail(taskId: string) {
       stopE2ePoll();
       unsubscribe();
     };
-  }, [taskId]);
+  }, [sessionId]);
 
   // Returns whether the call actually succeeded, so a caller holding
   // optimistic state knows whether to keep or roll it back. Callers that
@@ -187,7 +186,7 @@ export function useTaskDetail(taskId: string) {
   ) {
     const echo: TranscriptEntry = {
       $typeName: "agentfleet.v1.TranscriptEntry",
-      taskId,
+      sessionId,
       // Sorts after everything real so far; it is never rendered directly
       // (the feed skips both types), only read by the derivations.
       seq: entries.reduce((max, e) => (e.seq > max ? e.seq : max), seq) + 1n,
@@ -211,7 +210,7 @@ export function useTaskDetail(taskId: string) {
       seq,
       TranscriptEntryType.PERMISSION_RESPONSE,
       JSON.stringify(decision),
-      () => client.respondToPermission({ taskId, seq, decisionJson: JSON.stringify(decision) }),
+      () => client.respondToPermission({ sessionId, seq, decisionJson: JSON.stringify(decision) }),
       `permission:${seq}`,
     );
 
@@ -220,7 +219,7 @@ export function useTaskDetail(taskId: string) {
       seq,
       TranscriptEntryType.ANSWER,
       JSON.stringify({ answers }),
-      () => client.answerQuestion({ taskId, seq, answersJson: JSON.stringify({ answers }) }),
+      () => client.answerQuestion({ sessionId, seq, answersJson: JSON.stringify({ answers }) }),
       `question:${seq}`,
     );
 
@@ -230,7 +229,7 @@ export function useTaskDetail(taskId: string) {
     setBusyKey("discuss");
     setActionError(null);
     try {
-      await client.discuss({ taskId, text });
+      await client.postMessage({ sessionId, text });
     } catch (err) {
       setActionError((err as Error).message);
       pendingRef.current = null;

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { Task } from "../gen/agentfleet/v1/core_pb";
+import type { Session } from "../gen/agentfleet/v1/core_pb";
 import type { GetE2eStatusResponse } from "../gen/agentfleet/v1/dashboard_pb";
 import type { ToolCallSummary, TodoItem } from "../transcript";
 import { TickBar, todoProgress } from "./TickBar";
@@ -93,18 +93,18 @@ export function ChangesPanel({ branch, changes }: { branch: string | null; chang
 // by measuring rects in Playwright, invisible to tsc and to lint.
 export function E2ePanel({
   e2e,
-  taskId,
+  sessionId,
   onChanged,
 }: {
   e2e: GetE2eStatusResponse | null;
   // Optional so a caller that only wants the read-only card still compiles —
   // without both, Manage is simply not offered rather than opening a drawer
   // whose buttons would all fail.
-  taskId?: string;
+  sessionId?: string;
   onChanged?: () => void;
 }) {
   const [manageOpen, setManageOpen] = useState(false);
-  const canManage = Boolean(taskId);
+  const canManage = Boolean(sessionId);
   // A task with no sandbox still needs the card, because Start lives in the
   // drawer — this used to render nothing at all, which is why starting one
   // from the dashboard was impossible (docs/adr/0044).
@@ -116,7 +116,7 @@ export function E2ePanel({
           Manage…
         </button>
         <E2eManageDrawer
-          taskId={taskId!}
+          sessionId={sessionId!}
           e2e={e2e}
           open={manageOpen}
           onClose={() => setManageOpen(false)}
@@ -225,7 +225,7 @@ export function E2ePanel({
             Manage…
           </button>
           <E2eManageDrawer
-            taskId={taskId!}
+            sessionId={sessionId!}
             e2e={e2e}
             open={manageOpen}
             onClose={() => setManageOpen(false)}
@@ -246,7 +246,7 @@ export function SessionPanel({
   isThotTask,
   onBypassClick,
 }: {
-  task: Task;
+  task: Session;
   busy: boolean;
   busyKey: string | null;
   run: (action: () => Promise<unknown>, key: string) => void;
@@ -259,17 +259,17 @@ export function SessionPanel({
       <PanelHeading title="SESSION" />
       <div className="text-xs text-dim2 leading-[1.6] mb-2.5">
         mode <span className="text-text2">{task.permissionMode || "default"}</span>
-        {task.retryCount > 0 && ` · attempt ${task.retryCount + 1}`}
+        
         {task.podPhase && ` · pod ${task.podPhase.replace("POD_PHASE_", "")}`}
       </div>
       <ActionsMenu
-        taskId={task.id}
+        sessionId={task.id}
         busy={busy}
         busyKey={busyKey}
         run={run}
         codeServerUrl={codeServerUrl}
         isThotTask={isThotTask}
-        status={task.status}
+        
         currentMode={task.permissionMode}
         podPhase={task.podPhase}
         onBypassClick={onBypassClick}

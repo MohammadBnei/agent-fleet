@@ -53,12 +53,12 @@ const RECONNECT_DELAY_MS = 1000;
 // silently didn't apply on CI's bun, so the "test" exercised the real
 // transport against a relative URL). Production callers pass three args.
 type OpenStream = (
-  req: { taskId: string; sinceSeq: bigint },
+  req: { sessionId: string; sinceSeq: bigint },
   opts: { signal: AbortSignal },
 ) => AsyncIterable<TranscriptEntry>;
 
 export function subscribeTranscript(
-  taskId: string,
+  sessionId: string,
   since: bigint,
   onEntry: (entry: TranscriptEntry) => void,
   openStream: OpenStream = (req, opts) => client.streamTranscript(req, opts),
@@ -80,7 +80,7 @@ export function subscribeTranscript(
       const abortAttempt = () => attempt?.abort();
       controller.signal.addEventListener("abort", abortAttempt, { once: true });
       try {
-        for await (const entry of openStream({ taskId, sinceSeq: cursor }, { signal: attempt.signal })) {
+        for await (const entry of openStream({ sessionId, sinceSeq: cursor }, { signal: attempt.signal })) {
           cursor = entry.seq + 1n;
           onEntry(entry);
         }

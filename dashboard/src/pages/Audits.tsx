@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { client } from "../connectClient";
 import type { ScheduledAudit } from "../gen/agentfleet/v1/dashboard_pb";
-import type { Task } from "../gen/agentfleet/v1/core_pb";
+import type { Session } from "../gen/agentfleet/v1/core_pb";
 import { InlineError } from "../components/InlineError";
 import { ConfirmModal } from "../components/ConfirmModal";
 import { Modal } from "../components/Modal";
@@ -188,7 +188,7 @@ export function Audits({
   onSelectTask,
   reloadTasks,
 }: {
-  proposed: Task[];
+  proposed: Session[];
   onSelectTask: (id: string) => void;
   reloadTasks: () => void;
 }) {
@@ -290,7 +290,7 @@ export function Audits({
                 <button
                   type="button"
                   disabled={busy}
-                  onClick={() => proposeAct(() => client.approveTask({ taskId: t.id }))}
+                  onClick={() => proposeAct(() => client.openFromProposal({ proposalId: t.id }))}
                   className="flex-none bg-primary text-primary-content px-3.5 py-1.5 text-sm font-semibold disabled:opacity-50"
                 >
                   approve &amp; dispatch
@@ -298,7 +298,7 @@ export function Audits({
                 <button
                   type="button"
                   disabled={busy}
-                  onClick={() => proposeAct(() => client.deleteTask({ taskId: t.id }))}
+                  onClick={() => proposeAct(() => client.deleteSession({ sessionId: t.id }))}
                   className="flex-none border border-acc-line px-3.5 py-1.5 text-sm hover:border-error hover:text-error disabled:opacity-50"
                 >
                   dismiss

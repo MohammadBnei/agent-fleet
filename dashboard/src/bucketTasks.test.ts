@@ -1,8 +1,8 @@
 import { test, expect } from "bun:test";
-import type { Task } from "./gen/agentfleet/v1/core_pb";
+import type { Session } from "./gen/agentfleet/v1/core_pb";
 import { bucketTasks } from "./pages/TaskList";
 
-function task(id: string, status: string): Task {
+function task(id: string, status: string): Session {
   return { $typeName: "agentfleet.v1.Task", id, status } as Task;
 }
 

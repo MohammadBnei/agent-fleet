@@ -1,4 +1,4 @@
-import type { Task } from "../gen/agentfleet/v1/core_pb";
+import type { Session } from "../gen/agentfleet/v1/core_pb";
 import { repoLabel } from "../taskKind";
 import type { ListSummary } from "../transcript";
 import { TickBar, todoProgress } from "../components/TickBar";
@@ -6,63 +6,68 @@ import { Collapse } from "../components/Collapse";
 import { DecisionInline } from "../components/DecisionInline";
 import { NotchCard } from "../components/NotchCard";
 
-export const ACTIVE_STATUSES = new Set(["pending", "claimed", "running"]);
-export const SHIPPED_STATUSES = new Set(["done", "failed", "cancelled"]);
-const FAILED_STATUSES = new Set(["failed", "failed_permanently"]);
+// A session with a live pod. Replaces ACTIVE_STATUSES, which named the three
+// task statuses that meant "dispatched" — all gone with the enum
+// (docs/adr/0048). Live state is derived from the row on every read, so this
+// cannot drift from the transcript the way a cached status could.
+const LIVE_STATES = new Set(["working", "blocked", "idle", "stalled", "unknown"]);
+export const ACTIVE_STATES = LIVE_STATES;
 
 // Shared section-membership split — used by both list views so the two never
-// disagree about which bucket a task lands in.
+// disagree about which bucket a session lands in.
 //
-// The original three keys are unchanged (mobile and bucketTasks.test.ts both
-// depend on them); the console rewrite adds `finished` and `quiet`, splitting
-// the old undifferentiated "shipped" pile into the mockups' two sections:
-// "finished while you were away" (which is news) and the collapsed idle tail
-// (which isn't).
-export function bucketTasks(tasks: Task[], needsYouIds: Set<string>) {
+// Every session must land in at least one bucket. TaskList.tsx carried a
+// comment from whoever discovered that the hard way: a row matching no bucket
+// vanishes from both lists, which is the one place a human is supposed to see
+// it. bucketTasks.test.ts guards exactly this, and it is why `quiet` is
+// defined as "everything not already claimed" rather than by its own
+// predicate.
+export function bucketTasks(tasks: Session[], needsYouIds: Set<string>) {
+  // A session is blocked when it has unanswered decisions — a count now, not
+  // a boolean, because parallel tool calls each get their own pending
+  // permission and answering one must not report the rest as resolved.
   const needsYou = tasks.filter(
-    // A 'proposed' task is by definition a decision waiting on a human (an
-    // alert or the audit scheduler created it and nobody has approved it), so
-    // it belongs here regardless of needsYouIds — that set tracks outstanding
-    // transcript decisions, and a proposal has no transcript yet.
-    //
-    // Deliberately NOT added to ACTIVE_STATUSES: App.tsx uses that same set for
-    // the per-task summary fetch and the live counters, and a proposal is
-    // neither. Without this line a proposal matches no bucket at all and
-    // vanishes from both lists — the one place a human is supposed to see it.
-    (t) => t.status === "proposed" || (ACTIVE_STATUSES.has(t.status) && needsYouIds.has(t.id)),
+    (t) => t.archivedAt === undefined && (t.pendingDecisions > 0 || t.liveState === "blocked" || needsYouIds.has(t.id)),
   );
-  const working = tasks.filter((t) => ACTIVE_STATUSES.has(t.status) && !needsYouIds.has(t.id));
+  const working = tasks.filter(
+    (t) => !needsYou.includes(t) && t.liveState === "working",
+  );
+  const archived = tasks.filter((t) => t.archivedAt !== undefined);
   return {
     needsYou,
     working,
-    shipped: tasks.filter((t) => SHIPPED_STATUSES.has(t.status)),
-    // Finished-while-you-were-away: `done` liveness means it completed and
-    // nobody has opened it since (opening marks it seen, which is what turns
-    // this back into idle), and a failure is always news.
-    finished: tasks.filter((t) => t.liveState === "done" || FAILED_STATUSES.has(t.status)),
+    archived,
+    // Finished-while-you-were-away: `done` liveness means the session
+    // completed and nobody has opened it since — opening marks it seen, which
+    // is what turns this back into idle. A crashed pod is always news.
+    finished: tasks.filter(
+      (t) => !archived.includes(t) && (t.liveState === "done" || t.podPhase === "POD_PHASE_CRASHED"),
+    ),
     stalled: tasks.filter((t) => t.liveState === "stalled"),
-    proposed: tasks.filter((t) => t.status === "proposed"),
-    // Everything left: seen, finished, or dormant. The collapsed tail.
+    // Disk reclaimed by the retention GC: readable, not resumable. Rendered
+    // read-only, with no Warm button — offering one would be an action that
+    // cannot succeed.
+    swept: tasks.filter((t) => t.sweptAt !== undefined),
+    // Everything left: seen, idle, or dormant. The collapsed tail, defined by
+    // exclusion so nothing can fall through every bucket.
     quiet: tasks.filter(
       (t) =>
         !needsYou.includes(t) &&
         !working.includes(t) &&
+        !archived.includes(t) &&
         t.liveState !== "done" &&
         t.liveState !== "stalled" &&
-        !FAILED_STATUSES.has(t.status),
+        t.podPhase !== "POD_PHASE_CRASHED",
     ),
   };
 }
 
-export function prBadge(task: Task): { label: string; className: string } | null {
-  if (!task.prUrl) return null;
-  const match = /\/pull\/(\d+)/.exec(task.prUrl);
-  const number = match ? match[1] : null;
-  if (task.status === "failed") {
-    return { label: number ? `PR ${number} !` : "PR !", className: "text-warning" };
-  }
-  return { label: number ? `PR ${number} ✓` : "PR ✓", className: "text-success" };
-}
+// prBadge is gone with the pr_url column (docs/adr/0048), whose only writer
+// never actually passed it — so this badge has been rendering `null` for every
+// session in the fleet's history.
+//
+// The PR is discoverable without storing it: the agent names its own branch,
+// and a GitHub search on that branch cannot go stale the way a column can.
 
 // Mirrors core/internal/tasks/store.go's IsPodPhaseLive — the client-side half
 // of the same "does this session have a live pod right now" check the
@@ -78,7 +83,6 @@ export function isPodPhaseLive(phase?: string): boolean {
 // distinguish "about to be reclaimed" from "silently wedged forever" (see the
 // incident where a task sat claimed with no pod for 20+ minutes and nothing in
 // the UI showed it).
-const STALE_THRESHOLD_MS = 10 * 60 * 1000;
 
 // ONE badge per session, chosen by precedence.
 //
@@ -97,7 +101,7 @@ const STALE_THRESHOLD_MS = 10 * 60 * 1000;
 // Unchanged by the console rewrite, deliberately: docs/dashboard-spec.md §8
 // item 1 asks for the ranking to be kept and given more visual weight, which is
 // the callers' job, not this function's.
-export function sessionBadge(task: Task): { label: string; className: string; title?: string } | null {
+export function sessionBadge(task: Session): { label: string; className: string; title?: string } | null {
   const stale = staleBadge(task);
   const phase = task.podPhase?.replace("POD_PHASE_", "");
 
@@ -136,48 +140,44 @@ export function sessionBadge(task: Task): { label: string; className: string; ti
   if (task.liveState === "idle") {
     return { label: "IDLE", className: "text-dim2 border-line bg-transparent", title: "pod live, nothing in flight" };
   }
-  // 5. No live pod: the workflow status is the only thing left to say, and now
-  //    it has the badge to itself instead of competing with three others.
-  if (task.status === "proposed") {
-    return { label: "PROPOSED", className: "text-primary border-acc-line bg-primary/10", title: "machine-created — approve it to dispatch" };
+  // 5. No live pod. The five workflow statuses that used to be rendered here
+  //    (PROPOSED, QUEUED, FAILED, FAILED (final), CANCELLED, DONE) are gone
+  //    with the enum (docs/adr/0048): there is no queue to be QUEUED in, no
+  //    reclaim to be FAILED (final) from, and a proposal is a row in a
+  //    different table with its own view. What is left is genuinely about the
+  //    session rather than a workflow position.
+  if (task.archivedAt) {
+    return { label: "ARCHIVED", className: "text-dim2 border-line bg-transparent", title: "you marked this finished" };
   }
-  if (task.status === "pending") {
-    return { label: "QUEUED", className: "text-dim2 border-line bg-transparent" };
+  if (task.sweptAt) {
+    return {
+      label: "SWEPT",
+      className: "text-dim2 border-line bg-transparent",
+      title: "working directory reclaimed by the retention GC — readable, not resumable",
+    };
   }
-  if (task.status === "failed" || task.status === "failed_permanently") {
-    return { label: task.status === "failed" ? "FAILED" : "FAILED (final)", className: "text-warning border-orange-line bg-orange-bg", title: task.lastError || undefined };
-  }
-  if (task.status === "cancelled") {
-    return { label: "CANCELLED", className: "text-warning border-orange-line bg-orange-bg" };
-  }
-  if (task.status === "done") {
-    return { label: "DONE", className: "text-success border-green-line bg-green-bg" };
+  if (task.lastError) {
+    return { label: "ERROR", className: "text-warning border-orange-line bg-orange-bg", title: task.lastError };
   }
   return null;
 }
 
-export function staleBadge(task: Task): { label: string; className: string; title?: string } | null {
-  if (!ACTIVE_STATUSES.has(task.status) || !task.heartbeatAt) return null;
-  const elapsedMs = Date.now() - new Date(task.heartbeatAt).getTime();
-  if (elapsedMs < STALE_THRESHOLD_MS) return null;
-  const minutes = Math.floor(elapsedMs / 60_000);
-  return {
-    label: `STALE ${minutes}m`,
-    className: "text-error border-pink-line bg-pink-chip animate-pulse",
-    title: task.lastError || `no heartbeat for ${minutes}m — will be reclaimed and redispatched`,
-  };
+// staleBadge is gone with heartbeat_at. It fired when a heartbeat was 10
+// minutes stale, mirroring the reclaim threshold — but there is no heartbeat
+// and no reclaim now. The equivalent signal is CRASHED, written by the
+// reconcile loop when Kubernetes says the pod is gone (docs/adr/0048).
+function staleBadge(_: Session): { label: string; className: string; title?: string } | null {
+  return null;
 }
 
-export function heartbeatLabel(task: Task): string | null {
-  if (!task.heartbeatAt) return null;
-  const minutes = Math.floor((Date.now() - new Date(task.heartbeatAt).getTime()) / 60_000);
-  return minutes < 1 ? "heartbeat just now" : `heartbeat ${minutes}m ago`;
-}
+// heartbeatLabel is gone with heartbeat_at (docs/adr/0048). last_active_at
+// is the honest replacement: it says when something actually happened,
+// where a heartbeat only said a timer was still running.
 
 // How long a session has been blocked — the notch label's "· 4m". This is the
 // product's real cost (a blocked session is stalled until a human clicks), so
 // it's stated on the card rather than left to be inferred from a heartbeat.
-export function blockedForLabel(task: Task): string | null {
+export function blockedForLabel(task: Session): string | null {
   if (!task.lastActiveAt) return null;
   const ms = Date.now() - new Date(task.lastActiveAt).getTime();
   if (Number.isNaN(ms) || ms < 0) return null;
@@ -233,7 +233,7 @@ function NeedsYouCard({
   onDelete,
   reload,
 }: {
-  task: Task;
+  task: Session;
   summary?: ListSummary;
   onSelect: () => void;
   onDelete: () => void;
@@ -241,7 +241,7 @@ function NeedsYouCard({
 }) {
   const todos = summary?.todos ?? [];
   const blockedFor = blockedForLabel(task);
-  const isProposal = task.status === "proposed";
+  const isProposal = false;
 
   return (
     <div className="relative">
@@ -259,7 +259,7 @@ function NeedsYouCard({
             {task.description}
           </button>
           <span className="text-xs text-dim2">{repoLabel(task)}</span>
-          <span className="text-xs text-dim2 border border-line px-1.5 py-px">{task.status}</span>
+          
           {todos.length > 0 && (
             <div className="ml-auto flex items-center gap-2">
               <TickBar todos={todos} blocked cell="w-4" />
@@ -284,14 +284,14 @@ function FinishedRow({
   onOpenLogs,
   onDelete,
 }: {
-  task: Task;
+  task: Session;
   onSelect: () => void;
   onRetry: () => void;
   onOpenLogs: () => void;
   onDelete: () => void;
 }) {
-  const failed = FAILED_STATUSES.has(task.status);
-  const pr = prBadge(task);
+  const failed = task.podPhase === "POD_PHASE_CRASHED";
+  const pr = null as { label: string; className: string } | null;
   return (
     <div className="relative">
       <div
@@ -307,7 +307,7 @@ function FinishedRow({
         <span className="text-xs text-dim2">{repoLabel(task)}</span>
         {failed ? (
           <span className="ml-auto text-sm text-warning min-w-0 truncate" title={task.lastError}>
-            {task.status === "failed_permanently" ? "failed permanently" : "failed"}
+            {"crashed"}
             {task.lastError ? ` · ${task.lastError}` : ""}
           </span>
         ) : (
@@ -322,15 +322,6 @@ function FinishedRow({
               retry
             </button>
           </>
-        ) : task.prUrl ? (
-          <a
-            href={task.prUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="flex-none border border-acc-line px-3 py-1 text-sm hover:border-primary hover:text-primary"
-          >
-            review
-          </a>
         ) : null}
       </div>
       <DeleteButton onDelete={onDelete} />
@@ -348,7 +339,7 @@ function WorkingRow({
   onSelect,
   onDelete,
 }: {
-  task: Task;
+  task: Session;
   summary?: ListSummary;
   last: boolean;
   onSelect: () => void;
@@ -425,7 +416,7 @@ function QuietGroup({
   onSelect,
 }: {
   title: string;
-  tasks: Task[];
+  tasks: Session[];
   onSelect: (id: string) => void;
 }) {
   if (tasks.length === 0) return null;
@@ -468,7 +459,7 @@ export function TaskList({
   onOpenLogs,
   reload,
 }: {
-  tasks: Task[];
+  tasks: Session[];
   summaries: Map<string, ListSummary>;
   needsYouIds: Set<string>;
   onSelect: (id: string) => void;
@@ -477,7 +468,8 @@ export function TaskList({
   onOpenLogs: (id: string) => void;
   reload: () => void;
 }) {
-  const { needsYou, working, finished, stalled, proposed, quiet } = bucketTasks(tasks, needsYouIds);
+  const { needsYou, working, finished, stalled, quiet } = bucketTasks(tasks, needsYouIds);
+  const proposed: typeof tasks = [];
 
   if (tasks.length === 0) {
     return <div className="p-5 text-base text-dim">No sessions.</div>;
