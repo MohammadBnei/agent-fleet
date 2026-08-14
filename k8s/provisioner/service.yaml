@@ -2,12 +2,21 @@
 # CreateE2eSession/TearDownSession/ListE2eTools/CallE2eTool — see
 # docs/adr/0020's hub-and-spoke rule: nothing else ever calls the
 # provisioner directly, not even a worker pod); never exposed outside the
-# cluster. :8080/http is Playwright MCP proxying only.
+# cluster. :8080/http carries /healthz and /metrics.
+#
+# The labels below are not decoration: a ServiceMonitor selects Services by
+# label, and this Service had none at all, so servicemonitor.yaml would
+# match nothing and Prometheus would produce no `up` series for the
+# provisioner whatsoever — a silent no-op that looks identical to a
+# working scrape until you go looking for the metrics.
 apiVersion: v1
 kind: Service
 metadata:
   name: provisioner
   namespace: agent-fleet
+  labels:
+    app: provisioner
+    app.kubernetes.io/part-of: agent-fleet
 spec:
   selector:
     app: provisioner

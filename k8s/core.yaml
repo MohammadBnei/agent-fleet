@@ -112,6 +112,42 @@ resources:
 # workspace PVC instead (see k8s/provisioner/pvc.yaml); knowledge_journal
 # is a real Postgres table, not a PVC mirror.
 
+# Makes Prometheus scrape core's /metrics (docs/adr/0047).
+#
+# A ServiceMonitor, NOT `prometheus.io/scrape` pod annotations: the cluster
+# runs kube-prometheus-stack — the Prometheus Operator — and infra-bootstrap's
+# gitops/platform/values/prometheus/values.yaml declares no
+# additionalScrapeConfigs, so there is no kubernetes-pods job for an
+# annotation to drive. Annotations here would be inert and would read, wrongly,
+# as "scraping is configured". They were the first attempt; they scraped
+# nothing.
+#
+# No `release:` label needed — that same values file sets
+# serviceMonitorSelectorNilUsesHelmValues: false, so Prometheus watches
+# ServiceMonitors cluster-wide.
+#
+# The selector must match the labels common-app-chart puts on its Service
+# (_helpers.tpl "common-app-chart.selectorLabels" — both keys are the release
+# name), and `port: http` is the chart's own name for service.port above.
+extraManifests:
+  - |
+    apiVersion: monitoring.coreos.com/v1
+    kind: ServiceMonitor
+    metadata:
+      name: agent-fleet-core
+      namespace: agent-fleet
+      labels:
+        app.kubernetes.io/part-of: agent-fleet
+    spec:
+      selector:
+        matchLabels:
+          app.kubernetes.io/name: agent-fleet-core
+          app.kubernetes.io/instance: agent-fleet-core
+      endpoints:
+        - port: http
+          path: /metrics
+          interval: 30s
+
 # Same Infisical project as before — DISCORD_BOT_TOKEN,
 # DISCORD_TRIGGER_CHANNEL_ID, AGENTFLEET_DB_HOST/PORT/NAME/USER/PASSWORD.
 infisical:
@@ -140,12 +176,17 @@ hooks:
 # Per-app Grafana dashboard (infra-bootstrap's grafana-ops skill / gitops/
 # README.md "common-app-chart" section) — renders a ConfigMap labeled
 # grafana_dashboard: "1", picked up dynamically by Grafana's dashboards
-# sidecar, no infra-bootstrap changes needed. No custom Prometheus metrics
-# exist anywhere in the fleet's code (core/provisioner/sidecar only expose
-# /healthz), so every panel here is either a generic kube-state-metrics/
-# cAdvisor pod query or a Loki LogQL query over the fleet-wide JSON/slog
-# logs (see docs/adr — the LOG_LEVEL/access-log commit that made this
-# possible). The pod_filter variable drives both metric and log panels via
+# sidecar, no infra-bootstrap changes needed.
+#
+# Panels 1-7 predate any custom metrics and are all generic
+# kube-state-metrics/cAdvisor pod queries or Loki LogQL over the fleet-wide
+# JSON/slog logs. The "Fleet metrics" row (panels 8+) queries core's and the
+# provisioner's own agentfleet_* series, added in docs/adr/0047 — but note
+# that the two SDK panels there are still LogQL: worker pods are single-shot
+# Jobs that often live and die between two 30s scrapes, so their telemetry
+# stays in logs on purpose, not in Prometheus.
+#
+# The pod_filter variable drives both metric and log panels via
 # the shared `pod` label — Alloy only attaches namespace/pod/container/app/
 # job to Loki streams (gitops/platform/values/alloy/values.yaml), no custom
 # k8s label reaches Loki, so filtering has to go through pod-name regex
@@ -250,6 +291,96 @@ dashboards:
             "options": { "showTime": true, "sortOrder": "Descending", "wrapLogMessage": false, "enableLogDetails": true },
             "targets": [
               { "expr": "{namespace=\"agent-fleet\"} |~ \"$pod_filter\" | json", "refId": "A", "datasource": { "type": "loki", "uid": "ds-loki" } }
+            ]
+          },
+          {
+            "id": 8,
+            "type": "row",
+            "title": "Fleet metrics",
+            "collapsed": false,
+            "gridPos": { "h": 1, "w": 24, "x": 0, "y": 24 },
+            "panels": []
+          },
+          {
+            "id": 9,
+            "type": "timeseries",
+            "title": "Task queue by status",
+            "description": "core's own view of the tasks table. Nothing else in the cluster can produce this — a pending task has no pod for kube-state-metrics to count, and no log line for Loki to match.",
+            "gridPos": { "h": 8, "w": 12, "x": 0, "y": 25 },
+            "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+            "targets": [
+              { "expr": "sum by (status) (agentfleet_tasks_current)", "legendFormat": "{{status}}", "refId": "A" }
+            ]
+          },
+          {
+            "id": 10,
+            "type": "timeseries",
+            "title": "Dispatch headroom",
+            "description": "live == max with pending > 0 is a saturated fleet; pending > 0 with headroom to spare is a stalled dispatcher. Reading either alone can't tell them apart.",
+            "gridPos": { "h": 8, "w": 12, "x": 12, "y": 25 },
+            "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+            "targets": [
+              { "expr": "agentfleet_live_pods", "legendFormat": "live pods", "refId": "A" },
+              { "expr": "agentfleet_max_in_flight", "legendFormat": "cap", "refId": "B" },
+              { "expr": "sum(agentfleet_tasks_current{status=\"pending\"})", "legendFormat": "pending", "refId": "C" }
+            ]
+          },
+          {
+            "id": 11,
+            "type": "timeseries",
+            "title": "RPC rate",
+            "gridPos": { "h": 8, "w": 12, "x": 0, "y": 33 },
+            "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+            "targets": [
+              { "expr": "sum by (surface) (rate(agentfleet_grpc_requests_total[5m]))", "legendFormat": "core/{{surface}}", "refId": "A" },
+              { "expr": "sum(rate(agentfleet_provisioner_grpc_requests_total[5m]))", "legendFormat": "provisioner", "refId": "B" }
+            ]
+          },
+          {
+            "id": 12,
+            "type": "timeseries",
+            "title": "RPC errors by method",
+            "description": "Everything except status=ok (ConnectRPC) and OK (gRPC).",
+            "gridPos": { "h": 8, "w": 12, "x": 12, "y": 33 },
+            "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+            "targets": [
+              { "expr": "sum by (method, status) (rate(agentfleet_grpc_requests_total{status!~\"ok|OK\"}[5m]))", "legendFormat": "{{method}} {{status}}", "refId": "A" },
+              { "expr": "sum by (method, status) (rate(agentfleet_provisioner_grpc_requests_total{status!=\"OK\"}[5m]))", "legendFormat": "{{method}} {{status}}", "refId": "B" }
+            ]
+          },
+          {
+            "id": 13,
+            "type": "timeseries",
+            "title": "git operation p95",
+            "description": "Measured in the provisioner's Manager.run, so it covers clone/fetch/worktree alike. A slow clone is invisible as a pod metric — the pod doesn't exist yet.",
+            "gridPos": { "h": 8, "w": 12, "x": 0, "y": 41 },
+            "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+            "targets": [
+              { "expr": "histogram_quantile(0.95, sum by (le, operation) (rate(agentfleet_provisioner_git_operation_duration_seconds_bucket[5m])))", "legendFormat": "{{operation}}", "refId": "A" }
+            ]
+          },
+          {
+            "id": 14,
+            "type": "timeseries",
+            "title": "SDK cost per session (USD)",
+            "description": "LogQL, not PromQL, and deliberately so: worker pods are single-shot Jobs that routinely start and exit between two scrapes, so a Prometheus counter on them would sample a random subset of sessions. session.ts already logs the SDK result payload, and Loki keeps every line regardless of how briefly the pod lived.",
+            "gridPos": { "h": 8, "w": 12, "x": 12, "y": 41 },
+            "datasource": { "type": "loki", "uid": "ds-loki" },
+            "fieldConfig": { "defaults": { "unit": "currencyUSD" }, "overrides": [] },
+            "targets": [
+              { "expr": "sum by (taskId) (max_over_time({namespace=\"agent-fleet\", container=\"worker\"} | json | msg =~ \".+ result\" | unwrap totalCostUsd [$__interval]))", "legendFormat": "{{taskId}}", "refId": "A", "datasource": { "type": "loki", "uid": "ds-loki" } }
+            ]
+          },
+          {
+            "id": 15,
+            "type": "timeseries",
+            "title": "SDK context size (input tokens)",
+            "description": "The number the context budget is judged on — a session climbing monotonically toward the compact threshold shows up here first.",
+            "gridPos": { "h": 8, "w": 24, "x": 0, "y": 49 },
+            "datasource": { "type": "loki", "uid": "ds-loki" },
+            "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+            "targets": [
+              { "expr": "sum by (taskId) (max_over_time({namespace=\"agent-fleet\", container=\"worker\"} | json | msg =~ \".+ result\" | unwrap inputTokens [$__interval]))", "legendFormat": "{{taskId}}", "refId": "A", "datasource": { "type": "loki", "uid": "ds-loki" } }
             ]
           }
         ]
