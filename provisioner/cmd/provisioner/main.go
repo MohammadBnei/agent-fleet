@@ -23,7 +23,6 @@ import (
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/k8s"
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/metrics"
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/reconcile"
-	"github.com/MohammadBnei/agent-fleet/provisioner/internal/sweep"
 )
 
 func main() {
@@ -110,9 +109,11 @@ func main() {
 		time.Duration(e2eMaxAge)*time.Millisecond)
 	go loop.Run(ctx, time.Duration(reconcileInterval)*time.Millisecond)
 
-	sweepInterval, _ := strconv.Atoi(cfg.SweepInterval)
-	sweepLoop := sweep.New(gitMgr)
-	go sweepLoop.Run(ctx, time.Duration(sweepInterval)*time.Millisecond)
+	// The branch/worktree sweep loop is gone (docs/adr/0048 §5). It deleted
+	// worktrees on its own ticker, without telling core — which is why any
+	// claim that a session knew whether its disk still existed was false, and
+	// why swept_at could not be trusted. core is the single writer of that
+	// fact now, and the only thing that decides a session's disk should go.
 
 	go func() {
 		lis, err := net.Listen("tcp", ":"+cfg.GRPCPort)

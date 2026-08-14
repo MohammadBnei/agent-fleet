@@ -118,46 +118,36 @@ message AskUserQuestionResponse {
   int64 question_seq = 3;
 }
 
-message RequestE2eEnvRequest {
+// RequestE2eEnvRequest/Response and KillE2eEnvRequest/Response are gone with
+// the sandbox (docs/adr/0048 §6). Their whole payload was the recipe system —
+// resolved_start_cmd, profile_name, tools, services — i.e. the fleet telling
+// the agent how to run the repo the agent is already sitting in.
+//
+// What replaces them carries no recipe at all, because there is nothing to
+// resolve: the agent starts its own server and asks for a URL.
+message ExposeRequest {
   string session_id = 1;
-  // Shell command that installs deps and starts the app, run via
-  // `bash -lc` from the worktree root (e.g. "cd front && bun install &&
-  // bun run dev"). Optional — falls back to the resolved profile's own
-  // start_cmd when empty (docs/adr/0034).
-  string start_cmd = 2;
-  // Which named repo_profiles row to resolve — optional, defaults to
-  // "e2e" when empty. Lets the agent request a different declared profile
-  // (e.g. a repo's "lint" profile) for the same request_e2e_env MCP tool
-  // call, reusing this same start_cmd-override pattern (docs/adr/0034).
-  string profile = 3;
+  int32 port = 2;
 }
 
-message RequestE2eEnvResponse {
-  string preview_url = 1;
-  string status = 2;
-  // The recipe that actually got used, echoed back so the agent can see it.
-  // Before this the worker had no read access to repo_profiles at all: it
-  // guessed a start_cmd, its guess silently beat a correct profile, and the
-  // preview 502'd with nobody able to say why. An agent that can read the
-  // recipe reports "the configured command binds localhost" instead of
-  // inventing a replacement for it.
-  string resolved_start_cmd = 3;
-  string profile_name = 4;
-  repeated string tools = 5;    // catalog keys, e.g. "bun-toolchain"
-  repeated string services = 6; // "<key>:<scope-mode>", e.g. "postgres:task-scoped"
-  // Where to dial the sandbox, passed straight through from the provisioner
-  // (docs/adr/0045). core does not build, cache or interpret these — it does
-  // not know what MCP is. That is what keeps this a *field* passthrough
-  // rather than the *call* passthrough it replaces.
-  repeated ServiceEndpoint endpoints = 7;
+message ExposeResponse {
+  string url = 1;
 }
 
-message KillE2eEnvRequest {
+message UnexposeRequest {
   string session_id = 1;
 }
 
-message KillE2eEnvResponse {
-  bool killed = 1;
+message UnexposeResponse {}
+
+message RequestServiceRequest {
+  string session_id = 1;
+  // "postgres" | "redis"
+  string kind = 2;
+}
+
+message RequestServiceResponse {
+  string dsn = 1;
 }
 
 // Playwright's tool set is discovered at runtime by the e2e pod, not fixed
@@ -490,14 +480,22 @@ service CoreService {
   // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
   rpc WaitForMessages(ReadTranscriptSinceRequest) returns (ReadTranscriptSinceResponse);
   rpc AskUserQuestion(AskUserQuestionRequest) returns (AskUserQuestionResponse);
-  rpc RequestE2eEnv(RequestE2eEnvRequest) returns (RequestE2eEnvResponse);
-  rpc KillE2eEnv(KillE2eEnvRequest) returns (KillE2eEnvResponse);
-  // ListE2eTools/CallE2eTool used to live here — the sandbox tool-call relay.
-  // Deleted in docs/adr/0045: the sidecar and core each dial their task's
-  // sandbox directly from a ServiceEndpoint roster, so core is no longer in
-  // the path of a shell command. RequestE2eEnv/KillE2eEnv above stay, because
-  // those are real work only core can do (profile resolution from Postgres,
-  // commanding the provisioner) rather than a passthrough.
+
+  // RequestE2eEnv/KillE2eEnv are gone with the sandbox (docs/adr/0048 §6),
+  // as ListE2eTools/CallE2eTool went with the relay before them
+  // (docs/adr/0045). What survives is the part that was never about a second
+  // pod: two capabilities needing cluster RBAC, which core forwards to the
+  // provisioner because the session pod holds none.
+  //
+  // These are NOT passthroughs of the kind docs/adr/0045 deleted. Core is the
+  // only holder of the session row, so it is the only thing that can answer
+  // "which repo is this session on" for RequestService, and lifecycle
+  // commands to the provisioner route through core by decision
+  // (docs/adr/0020 point 4) — a Service and a route are pod lifecycle.
+  rpc Expose(ExposeRequest) returns (ExposeResponse);
+  rpc Unexpose(UnexposeRequest) returns (UnexposeResponse);
+  // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+  rpc RequestService(RequestServiceRequest) returns (RequestServiceResponse);
 
   // Lets a worker pod fetch its own fresh session row on startup instead of
   // relying on stale environment variables — same message shapes

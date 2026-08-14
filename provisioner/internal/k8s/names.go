@@ -257,3 +257,26 @@ func WorkerLabels(taskID, repo string) map[string]string {
 		"app.kubernetes.io/part-of": "agent-fleet",
 	}
 }
+
+// WorkerSelectorLabels is the subset of WorkerLabels that identifies a
+// session's pod and nothing else — what a Service selector needs.
+//
+// Deliberately NOT the whole label set: `repo` is on the pod too, and a
+// selector including it would still work today but would silently start
+// matching a second pod the moment anything else in this namespace carried the
+// same repo label. A selector is a live query, not a description.
+func WorkerSelectorLabels(taskID string) map[string]string {
+	return map[string]string{
+		ComponentLabel: ComponentWorker,
+		TaskIDLabel:    taskID,
+	}
+}
+
+// ExposeResourceName names the Service and IngressRoute backing expose().
+//
+// Distinct from WorkerResourceName so that unexposing can never delete the
+// session's Job by name collision, and so the objects are obviously not the
+// pod's own when someone is reading `kubectl get all`.
+func ExposeResourceName(sessionID string) string {
+	return "expose-" + shortID(sessionID)
+}

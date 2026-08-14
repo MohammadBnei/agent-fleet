@@ -26,6 +26,11 @@ type Client struct {
 	WorkerImage  string
 	SidecarImage string
 	WorkspacePVC string
+	// SessionStorageClass names the class for per-session working volumes
+	// (docs/adr/0048 §4). Empty means the cluster default — which on
+	// ukubi-cluster is longhorn, not a node-local class, so this must be set
+	// explicitly to get the measured node-local behaviour.
+	SessionStorageClass string
 	// LogLevel is forwarded verbatim into every worker pod's sidecar and
 	// worker containers (see CreateWorkerPod) — the provisioner's own
 	// LOG_LEVEL is the fleet's single source of truth for it, since those
@@ -72,6 +77,7 @@ func New(namespace string, cfg Images) (*Client, error) {
 		Core: core, Dynamic: dyn, Namespace: namespace,
 		RunnerImage: cfg.RunnerImage, WorkerImage: cfg.WorkerImage,
 		SidecarImage: cfg.SidecarImage, WorkspacePVC: cfg.WorkspacePVC,
+		SessionStorageClass: cfg.SessionStorageClass,
 		LogLevel: cfg.LogLevel, CoreGRPCAddr: cfg.CoreGRPCAddr,
 		ThotAuthToken: cfg.ThotAuthToken,
 		ExecutorAddr:  cfg.ExecutorAddr,
@@ -89,6 +95,7 @@ type Images struct {
 	WorkerImage           string
 	SidecarImage          string
 	WorkspacePVC          string
+	SessionStorageClass   string
 	LogLevel              string
 	CoreGRPCAddr          string
 	ThotAuthToken         string

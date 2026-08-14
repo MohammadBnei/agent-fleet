@@ -11,6 +11,8 @@ type Config struct {
 	// the old per-repo WorkspacePvcFor(repo) naming, since there's only
 	// one workspace PVC in the fleet now, not one per repo.
 	WorkspacePVC string
+	// SessionStorageClass is the StorageClass for per-session working volumes.
+	SessionStorageClass string
 	// WorktreesRoot is where that PVC is mounted inside THIS pod — the
 	// provisioner needs its own read-write mount to run git clone/fetch/
 	// worktree add before a worker pod exists (docs/adr/0019 point 2:
@@ -79,6 +81,7 @@ func Load() Config {
 		WorkerImage:                 env("WORKER_IMAGE", "mohammaddocker/agent-fleet-worker:latest"),
 		SidecarImage:                env("SIDECAR_IMAGE", "mohammaddocker/agent-fleet-sidecar:latest"),
 		WorkspacePVC:                env("WORKSPACE_PVC", "agent-fleet-workspace"),
+		SessionStorageClass:         env("SESSION_STORAGE_CLASS", ""),
 		WorktreesRoot:               env("WORKTREES_ROOT", "/workspace"),
 		E2eHost:                     env("E2E_HOST", "e2e.bnei.dev"),
 		Port:                        env("PORT", "8080"),

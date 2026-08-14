@@ -7,7 +7,6 @@ package dashboard
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -21,7 +20,6 @@ import (
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 	"github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1/agentfleetv1connect"
 
-	"github.com/MohammadBnei/agent-fleet/core/internal/e2edial"
 	"github.com/MohammadBnei/agent-fleet/core/internal/filestore"
 	"github.com/MohammadBnei/agent-fleet/core/internal/journal"
 	"github.com/MohammadBnei/agent-fleet/core/internal/lokiclient"
@@ -356,47 +354,6 @@ func (s *Server) StreamTranscript(ctx context.Context, req *connect.Request[agen
 	}
 }
 
-func (s *Server) GetE2EStatus(ctx context.Context, req *connect.Request[agentfleetv1.GetE2EStatusRequest]) (*connect.Response[agentfleetv1.GetE2EStatusResponse], error) {
-	live, err := s.e2e.GetSessionStatus(ctx, req.Msg.GetSessionId())
-	if err != nil {
-		slog.Error("dashboard GetE2EStatus", "sessionId", req.Msg.GetSessionId(), "error", err)
-		return nil, connect.NewError(connect.CodeInternal, err)
-	}
-	resp := &agentfleetv1.GetE2EStatusResponse{
-		Status:        live.GetStatus(),
-		PreviewUrl:    live.GetPreviewUrl(),
-		CodeServerUrl: live.GetCodeServerUrl(),
-		StartCmd:      live.GetStartCmd(),
-		PodPhase:      live.GetPodPhase(),
-		AppReady:      live.GetAppReady(),
-		Restarts:      live.GetRestarts(),
-		StartedAt:     live.GetStartedAt(),
-	}
-	// The declared recipe is core's half — the provisioner holds no DB
-	// credentials (docs/adr/0020 point 1) and can't read repo_profiles.
-	// The recipe fields (profile_name, tools, services, start_cmd_overridden)
-	// used to be resolved here from repo_profiles. That whole system is gone
-	// in docs/adr/0048 — the agent starts its own server, so there is no
-	// configured start command for a running one to differ from, and no
-	// profile name to report. The remaining fields are live pod truth passed
-	// straight through from the provisioner, which is all this card ever
-	// needed to answer "is the preview up".
-	//
-	// `tools` still carries something real: cluster-access, the one
-	// ingredient that survived, because it is a privilege grant rather than a
-	// toolchain (docs/adr/0037).
-	if t, err := s.sessions.Get(ctx, req.Msg.GetSessionId()); err != nil {
-		slog.Warn("dashboard GetE2EStatus: get session", "sessionId", req.Msg.GetSessionId(), "error", err)
-	} else if t != nil {
-		if keys, err := s.toolKeysFor(ctx, t.Repo); err != nil {
-			slog.Warn("dashboard GetE2EStatus: tool keys", "repo", t.Repo, "error", err)
-		} else {
-			resp.Tools = keys
-		}
-	}
-	return connect.NewResponse(resp), nil
-}
-
 // Kill and KillE2E below call the exact same store methods
 // core/internal/discord/handlers.go's /kill and /e2e-kill commands already
 // call — no new business logic, just a second caller (see docs/adr/0014,
@@ -486,179 +443,6 @@ func (s *Server) SetPermissionMode(ctx context.Context, req *connect.Request[age
 	return connect.NewResponse(&agentfleetv1.SetPermissionModeResponse{}), nil
 }
 
-func (s *Server) KillE2E(ctx context.Context, req *connect.Request[agentfleetv1.KillE2ERequest]) (*connect.Response[agentfleetv1.KillE2EResponse], error) {
-	sessionID := req.Msg.GetSessionId()
-	var repo string
-	if req.Msg.GetAlsoTeardownServices() {
-		t, err := s.sessions.Get(ctx, sessionID)
-		if err != nil {
-			slog.Error("dashboard KillE2E: get task for repo", "sessionId", sessionID, "error", err)
-			return nil, connect.NewError(connect.CodeInternal, err)
-		}
-		if t != nil {
-			repo = t.Repo
-		}
-	}
-	killed, servicesTornDown, err := s.e2e.KillSession(ctx, sessionID, uuid.NewString(), repo, req.Msg.GetAlsoTeardownServices())
-	if err != nil {
-		slog.Error("dashboard KillE2E", "sessionId", sessionID, "error", err)
-		return nil, connect.NewError(connect.CodeInternal, err)
-	}
-	return connect.NewResponse(&agentfleetv1.KillE2EResponse{Killed: killed, ServicesTornDown: servicesTornDown}), nil
-}
-
-// StartE2E creates the sandbox from the dashboard. Until now a human could
-// Kill an e2e env but never start one — the only way to get a sandbox was to
-// ask the agent to call request_e2e_env, which is a strange dependency when
-// the sandbox is precisely what a human wants in order to look at a broken
-// preview themselves (docs/adr/0044).
-//
-// Resolution goes through e2erecipe, the same path CoreService.RequestE2EEnv
-// uses. Deliberately not a reimplementation: the hardcoded-"e2e" bug that
-// package exists to prevent had already been copied into GetE2EStatus below.
-func (s *Server) StartE2E(ctx context.Context, req *connect.Request[agentfleetv1.StartE2ERequest]) (*connect.Response[agentfleetv1.StartE2EResponse], error) {
-	sessionID := req.Msg.GetSessionId()
-	t, err := s.sessions.Get(ctx, sessionID)
-	if err != nil {
-		slog.Error("dashboard StartE2E: get task", "sessionId", sessionID, "error", err)
-		return nil, connect.NewError(connect.CodeInternal, err)
-	}
-	if t == nil {
-		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("task %s not found", sessionID))
-	}
-	// No start command is resolved any more: the recipe system is deleted in
-	// docs/adr/0048, and the agent starts its own server. A sandbox with an
-	// empty start_cmd is a working sandbox, not a failed pod — that part of
-	// docs/adr/0044 survives its own supersession.
-	toolKeys, err := s.toolKeysFor(ctx, t.Repo)
-	if err != nil {
-		slog.Error("dashboard StartE2E: tool keys", "sessionId", sessionID, "repo", t.Repo, "error", err)
-		return nil, connect.NewError(connect.CodeInternal, err)
-	}
-	created, err := s.e2e.CreateE2eSession(ctx, sessionID, t.Repo, "", toolKeys)
-	if err != nil {
-		slog.Error("dashboard StartE2E", "sessionId", sessionID, "error", err)
-		return nil, connect.NewError(connect.CodeInternal, err)
-	}
-	slog.Info("dashboard StartE2E", "sessionId", sessionID, "repo", t.Repo)
-	// The roster is deliberately not surfaced to the browser: a dashboard
-	// user has no route to a ClusterIP, and the endpoints are only useful to
-	// in-cluster callers (docs/adr/0045).
-	return connect.NewResponse(&agentfleetv1.StartE2EResponse{
-		Status:     created.GetStatus(),
-		PreviewUrl: created.GetPreviewUrl(),
-	}), nil
-}
-
-// RestartE2EApp re-runs the app inside the live pod via the e2e-restart-app
-// helper on the image's PATH. It restarts the APP, not the pod — the warm
-// dependency cache and the worktree survive, so it costs seconds where
-// recreating the sandbox costs a 10+ minute cold install (docs/adr/0044).
-//
-// Routed through run_command rather than a new ProvisionerService RPC: the
-// passthrough already exists, and the logic that actually matters (signalling
-// the app's whole process group, so a dev server's children don't keep $PORT
-// bound) belongs in the image next to the thing it restarts, where the agent
-// can invoke it too.
-func (s *Server) RestartE2EApp(ctx context.Context, req *connect.Request[agentfleetv1.RestartE2EAppRequest]) (*connect.Response[agentfleetv1.RestartE2EAppResponse], error) {
-	out, exitCode, err := s.runInE2ePod(ctx, req.Msg.GetSessionId(), "e2e-restart-app")
-	if err != nil {
-		slog.Error("dashboard RestartE2EApp", "sessionId", req.Msg.GetSessionId(), "error", err)
-		return nil, connect.NewError(connect.CodeInternal, err)
-	}
-	slog.Info("dashboard RestartE2EApp", "sessionId", req.Msg.GetSessionId(), "exitCode", exitCode)
-	return connect.NewResponse(&agentfleetv1.RestartE2EAppResponse{Output: out, ExitCode: exitCode}), nil
-}
-
-// GetE2EAppLog reads the app's own stdout out of the live pod. Not Loki: this
-// works regardless of retention, and it carries the explicit "app command
-// exited with status N" marker the entrypoint writes — the single question
-// the e2e card could never answer.
-func (s *Server) GetE2EAppLog(ctx context.Context, req *connect.Request[agentfleetv1.GetE2EAppLogRequest]) (*connect.Response[agentfleetv1.GetE2EAppLogResponse], error) {
-	lines := req.Msg.GetLines()
-	if lines <= 0 {
-		lines = 200
-	}
-	if lines > 2000 {
-		lines = 2000
-	}
-	out, _, err := s.runInE2ePod(ctx, req.Msg.GetSessionId(), fmt.Sprintf("tail -n %d /tmp/e2e-app.log", lines))
-	if err != nil {
-		// A pod that isn't up yet is the common case, not a page-level error —
-		// same reasoning useTaskDetail's own poll already applies.
-		slog.Info("dashboard GetE2EAppLog: no readable pod", "sessionId", req.Msg.GetSessionId(), "error", err)
-		return connect.NewResponse(&agentfleetv1.GetE2EAppLogResponse{}), nil
-	}
-	return connect.NewResponse(&agentfleetv1.GetE2EAppLogResponse{Log: out}), nil
-}
-
-// runViaSandbox dials the task's sandbox directly (docs/adr/0045).
-//
-// The roster arrives on GetE2eSessionStatus, which this already had to call —
-// it needs the pod's live state anyway to know whether there is anything to
-// run in. So direct dial costs core no extra round trip here, unlike the
-// sidecar, which had to be handed its roster at pod creation.
-func (s *Server) runViaSandbox(ctx context.Context, sessionID, command string) (string, error) {
-	status, err := s.e2e.GetSessionStatus(ctx, sessionID)
-	if err != nil {
-		return "", err
-	}
-	endpoints := make([]e2edial.Endpoint, 0, len(status.GetEndpoints()))
-	for _, e := range status.GetEndpoints() {
-		endpoints = append(endpoints, e2edial.Endpoint{Name: e.GetName(), Address: e.GetAddress(), Path: e.GetPath()})
-	}
-	ep, ok := e2edial.Find(endpoints, e2edial.EndpointExec)
-	if !ok {
-		// No relay to fall back to any more (docs/adr/0045). The roster comes
-		// from the same GetE2eSessionStatus call above, so an absent exec
-		// endpoint means either there is no sandbox or the provisioner is too
-		// old to describe one — both worth saying plainly rather than routing
-		// around.
-		return "", fmt.Errorf("no exec endpoint for task %s: the sandbox is not running, or the provisioner predates the endpoint roster", sessionID)
-	}
-	return e2edial.RunCommand(ctx, ep, command)
-}
-
-// runInE2ePod is the shared half of the two handlers above: run one command
-// in the task's e2e pod and unwrap execmcp's {stdout,stderr,exitCode}
-// envelope.
-func (s *Server) runInE2ePod(ctx context.Context, sessionID, command string) (output string, exitCode int32, err error) {
-	resultJSON, err := s.runViaSandbox(ctx, sessionID, command)
-	if err != nil {
-		return "", 0, err
-	}
-	// execmcp answers as an MCP CallToolResult whose single text block is the
-	// JSON payload — unwrapped here so the dashboard never sees MCP framing.
-	var result struct {
-		Content []struct {
-			Text string `json:"text"`
-		} `json:"content"`
-	}
-	if err := json.Unmarshal([]byte(resultJSON), &result); err != nil {
-		return "", 0, fmt.Errorf("unmarshal tool result: %w", err)
-	}
-	if len(result.Content) == 0 {
-		return "", 0, nil
-	}
-	var payload struct {
-		Stdout   string `json:"stdout"`
-		Stderr   string `json:"stderr"`
-		ExitCode int32  `json:"exitCode"`
-	}
-	if err := json.Unmarshal([]byte(result.Content[0].Text), &payload); err != nil {
-		// Not the envelope we expected — hand back the raw text rather than
-		// an error, since it's still the most useful thing we have.
-		return result.Content[0].Text, 0, nil
-	}
-	return payload.Stdout + payload.Stderr, payload.ExitCode, nil
-}
-
-// AnswerQuestion appends the human's answer to a pending QUESTION-type
-// transcript entry (posted by the agent's AskUserQuestion MCP tool call,
-// see docs/adr/0018) via AppendReply — req.Msg.Seq is the question entry's
-// own seq, now actually used server-side for correlation
-// (reliability-findings.md #0: "any pending question + any reply" let an
-// unrelated message satisfy a blocked AskUserQuestion call).
 func (s *Server) AnswerQuestion(ctx context.Context, req *connect.Request[agentfleetv1.AnswerQuestionRequest]) (*connect.Response[agentfleetv1.AppendResponse], error) {
 	sessionID := req.Msg.GetSessionId()
 	seq, err := s.transcr.AppendReply(ctx, sessionID, "human", req.Msg.GetAnswersJson(), "answer", uuid.NewString(), req.Msg.GetSeq())
@@ -888,57 +672,6 @@ func (s *Server) DeleteSession(ctx context.Context, req *connect.Request[agentfl
 // task_status/task_error/pr_url are left unset (not an error) for a
 // worktree whose task row no longer exists, exactly the orphaned case
 // this view exists to surface. An inner join would hide it.
-func (s *Server) ListWorktrees(ctx context.Context, _ *connect.Request[agentfleetv1.ListWorktreesRequest]) (*connect.Response[agentfleetv1.ListWorktreesViewResponse], error) {
-	resp, err := s.e2e.ListWorktrees(ctx)
-	if err != nil {
-		slog.Error("dashboard ListWorktrees", "error", err)
-		return nil, connect.NewError(connect.CodeInternal, err)
-	}
-	worktrees := resp.GetWorktrees()
-	out := make([]*agentfleetv1.WorktreeView, len(worktrees))
-	for i, w := range worktrees {
-		view := &agentfleetv1.WorktreeView{
-			SessionId:     w.GetSessionId(),
-			Repo:          w.GetRepo(),
-			Branch:        w.GetBranch(),
-			UpstreamTrack: w.GetUpstreamTrack(),
-			MtimeUnix:     w.GetMtimeUnix(),
-			Path:          w.GetPath(),
-			DirtyFiles:    w.GetDirtyFiles(),
-			SizeBytes:     w.GetSizeBytes(),
-		}
-		// Left join, deliberately: a directory whose session row is gone is
-		// exactly the orphan case this view exists to surface, so a missing
-		// session leaves live_state UNSET rather than failing the whole list.
-		//
-		// Unset, not "": "" is a real live state (a session with no pod
-		// attached), so setting it here would make an orphan and a merely
-		// stopped session identical on the wire.
-		if sess, err := s.sessions.Get(ctx, w.GetSessionId()); err == nil {
-			live := string(sessions.DeriveLiveState(sess, time.Now(), DefaultTurnStall))
-			view.LiveState = &live
-			view.SessionError = sess.LastError
-		} else if !errors.Is(err, sessions.ErrNotFound) {
-			slog.Error("dashboard ListWorktrees: get session", "sessionId", w.GetSessionId(), "error", err)
-			return nil, connect.NewError(connect.CodeInternal, err)
-		}
-		out[i] = view
-	}
-	return connect.NewResponse(&agentfleetv1.ListWorktreesViewResponse{
-		Worktrees:     out,
-		PvcTotalBytes: resp.GetPvcTotalBytes(),
-		PvcFreeBytes:  resp.GetPvcFreeBytes(),
-	}), nil
-}
-
-func (s *Server) DeleteWorktree(ctx context.Context, req *connect.Request[agentfleetv1.DeleteWorktreeRequest]) (*connect.Response[agentfleetv1.DeleteWorktreeResponse], error) {
-	deleted, err := s.e2e.DeleteWorktree(ctx, req.Msg.GetSessionId(), req.Msg.GetRepo(), req.Msg.GetAlsoDeleteBranch())
-	if err != nil {
-		slog.Error("dashboard DeleteWorktree", "sessionId", req.Msg.GetSessionId(), "repo", req.Msg.GetRepo(), "error", err)
-		return nil, connect.NewError(connect.CodeInternal, err)
-	}
-	return connect.NewResponse(&agentfleetv1.DeleteWorktreeResponse{Deleted: deleted}), nil
-}
 
 // GetJournal is the read path reliability-findings.md #1/#7 both call out
 // as missing — knowledge_journal previously had no Get/List RPC anywhere.

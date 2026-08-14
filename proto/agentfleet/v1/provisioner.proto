@@ -287,20 +287,63 @@ message DeleteWorktreeResponse {
   bool deleted = 1;
 }
 
+// Publishes a session's port at <session>.e2e.bnei.dev: a Service plus a
+// Traefik IngressRoute on ADR-0033's `le-dns` wildcard. Idempotent — the
+// agent may call expose() again after a warm, and re-exposing the same port
+// must return the same URL rather than erroring.
+message ExposeSessionRequest {
+  string session_id = 1;
+  int32 port = 2;
+}
+
+message ExposeSessionResponse {
+  string url = 1;
+}
+
+message UnexposeSessionRequest {
+  string session_id = 1;
+}
+
+message UnexposeSessionResponse {}
+
+// Provisions or reuses a shared backing service. Keyed by repo, not by
+// session (ADR-0034's rule, which outlives the recipe system that introduced
+// it): instances are expensive and sessions on the same repo want the same
+// database, so tearing one down is never implied by a single session ending.
+message ProvisionServiceRequest {
+  string session_id = 1;
+  string repo = 2;
+  // "postgres" | "redis"
+  string kind = 3;
+}
+
+message ProvisionServiceResponse {
+  string dsn = 1;
+}
+
 service ProvisionerService {
-  rpc KillE2eSession(KillE2eSessionRequest) returns (KillE2eSessionResponse);
-  rpc GetE2eSessionStatus(GetE2eSessionStatusRequest) returns (GetE2eSessionStatusResponse);
-  rpc CreateE2eSession(CreateE2eSessionRequest) returns (CreateE2eSessionResponse);
   rpc CreateWorkerPod(CreateWorkerPodRequest) returns (CreateWorkerPodResponse);
   rpc TearDownSession(TearDownSessionRequest) returns (TearDownSessionResponse);
   // The liveness reconcile source — see ListWorkerPodsRequest.
   rpc ListWorkerPods(ListWorkerPodsRequest) returns (ListWorkerPodsResponse);
-  // Reused as-is by dashboard.proto's own ListWorktrees (identical empty
-  // request shape) — cross-file message reuse, not a call passthrough.
-  // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
-  rpc ListWorktrees(ListWorktreesRequest) returns (ListWorktreesResponse);
-  // Reused as-is by dashboard.proto's own DeleteWorktree (identical
-  // request/response shape, no dashboard-specific fields needed).
-  // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
-  rpc DeleteWorktree(DeleteWorktreeRequest) returns (DeleteWorktreeResponse);
+
+  // What is left of the sandbox after docs/adr/0048 §6: the two capabilities
+  // that need cluster RBAC. Everything else the e2e pod did — running the
+  // app, running builds, running a browser — happens in the session pod
+  // itself now, with plain Bash.
+  rpc ExposeSession(ExposeSessionRequest) returns (ExposeSessionResponse);
+  rpc UnexposeSession(UnexposeSessionRequest) returns (UnexposeSessionResponse);
+  rpc ProvisionService(ProvisionServiceRequest) returns (ProvisionServiceResponse);
+
+  // Deletes a session's working-tree PVC. The other half of its disk (the
+  // SDK resume state) is a directory on the shared volume, removed in the
+  // same call — the two live on different volumes because they have
+  // different access patterns, not because anything wants them apart.
+  rpc SweepSession(SweepSessionRequest) returns (SweepSessionResponse);
 }
+
+message SweepSessionRequest {
+  string session_id = 1;
+}
+
+message SweepSessionResponse {}

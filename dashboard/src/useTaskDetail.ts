@@ -1,10 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Code, ConnectError } from "@connectrpc/connect";
 import { client, subscribeTranscript } from "./connectClient";
-import { pollVisible } from "./pollVisible";
 import { withOptimistic } from "./transcript";
 import type { Session } from "./gen/agentfleet/v1/core_pb";
-import type { GetE2eStatusResponse } from "./gen/agentfleet/v1/dashboard_pb";
 import { TranscriptEntryType, type TranscriptEntry } from "./gen/agentfleet/v1/transcript_pb";
 
 // Shared data-loading for a single task's session view — used by both the
@@ -13,13 +11,8 @@ import { TranscriptEntryType, type TranscriptEntry } from "./gen/agentfleet/v1/t
 export function useTaskDetail(sessionId: string) {
   const [task, setTask] = useState<Session | null>(null);
   const [entries, setEntries] = useState<TranscriptEntry[]>([]);
-  // Full e2e status, not just the preview URL: the card needs the recipe
-  // that actually ran plus the pod's live readiness to tell "still
-  // installing" apart from "bound the wrong interface and never will".
-  const [e2e, setE2e] = useState<GetE2eStatusResponse | null>(null);
   // Set by the effect below, which owns the actual fetch; a ref rather than
   // state so reassigning it never re-renders.
-  const refreshE2eRef = useRef<() => void>(() => {});
   const [branch, setBranch] = useState<string | null>(null);
   // The worktree's real path on the shared PVC — shown in the composer's meta
   // line so "where is this actually working" is answerable without a shell.
@@ -58,7 +51,6 @@ export function useTaskDetail(sessionId: string) {
   useEffect(() => {
     setTask(null);
     setEntries([]);
-    setE2e(null);
     setBranch(null);
     setWorktreePath(null);
     setLoadError(null);
@@ -78,61 +70,25 @@ export function useTaskDetail(sessionId: string) {
         if (cancelled) return;
         setTask(res.session ?? null);
         if (!res.session) return;
-        // WorktreeView has a real branch keyed by (repo, task_id) —
-        // available immediately, unlike the TOOL_CALL-derived `changes`
-        // (computed by the caller from `entries`) which needs the worker
-        // to have pushed at least one telemetry snapshot.
-        client
-          .listWorktrees({})
-          .then((wtRes) => {
-            if (cancelled) return;
-            const wt = wtRes.worktrees.find((w) => w.repo === res.session!.repo && w.sessionId === res.session!.id);
-            if (wt) {
-              setBranch(wt.branch);
-              if (wt.path) setWorktreePath(wt.path);
-            }
-          })
-          .catch(() => {
-            // No worktree yet (task not claimed) is the common case — not
-            // worth surfacing as a page-level error.
-          });
+        // The branch lookup is gone with ListWorktrees (docs/adr/0048 §5).
+        //
+        // It read the branch off a WorktreeView keyed by (repo, task_id),
+        // which worked because the FLEET named the branch: `agent/<taskId>`,
+        // a convention it owned. It no longer creates branches at all — the
+        // agent runs `git checkout -b` for whatever it wants — so there is
+        // nothing to look up by task id, and guessing would be worse than
+        // showing nothing. `changes`, derived from the worker's own telemetry
+        // snapshots, is the honest source for what a session is touching.
       })
       .catch((err: ConnectError) => {
         if (cancelled) return;
         setLoadError(err.code === Code.NotFound ? "Task not found." : err.message);
       });
 
-    // Polled, not fetched once: the interesting transitions all happen after
-    // mount — a session gets requested mid-view, and an app takes minutes to
-    // go from "installing" to actually serving (a cold bun install measured
-    // 782s on the real cluster). A one-shot read showed "not ready" forever.
-    // ponytail: fixed 5s poll of one small RPC; swap for a server-push
-    // channel only if the e2e card ever needs sub-second freshness.
-    function pollE2e() {
-      // docs/adr/0037: a thot session never has an e2e pod, so this would
-      // poll every 5s forever for something that cannot exist.
-      if (false) return;
-      client
-        .getE2eStatus({ sessionId })
-        .then((res) => {
-          if (cancelled) return;
-          // The full status object is the single source for the card, the
-          // drawer and the code-server link; a separately-derived previewUrl
-          // used to live here too, and having two of them is how the
-          // "Open code-server" button ended up pointed at the app root.
-          setE2e(res);
-        })
-        .catch(() => {
-          // No active e2e session is the common case — not worth surfacing
-          // as a page-level error.
-        });
-    }
-    // Exposed so a control that just changed the pod (start/stop/recreate)
-    // can refresh immediately instead of leaving the card stale for up to a
-    // full poll interval — the same "tell the clicker their click
-    // registered" reasoning busyKey already encodes.
-    refreshE2eRef.current = pollE2e;
-    const stopE2ePoll = pollVisible(pollE2e, 5000);
+    // The e2e status poll is gone with the sandbox it described
+    // (docs/adr/0048 §6). It polled every 5s for a second pod's phase,
+    // preview URL and resolved recipe — none of which exist now that the app
+    // runs in the session's own pod, started by the agent with Bash.
 
     let unsubscribe = () => {};
     client
@@ -152,7 +108,6 @@ export function useTaskDetail(sessionId: string) {
 
     return () => {
       cancelled = true;
-      stopE2ePoll();
       unsubscribe();
     };
   }, [sessionId]);
@@ -242,8 +197,6 @@ export function useTaskDetail(sessionId: string) {
   return {
     task,
     entries: withOptimistic(entries, optimistic),
-    e2e,
-    refreshE2e: () => refreshE2eRef.current(),
     branch,
     worktreePath,
     busyKey,

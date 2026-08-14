@@ -35,17 +35,6 @@ type Client struct {
 // pod ever created, and every other pending task stuck behind it).
 const sessionCallTimeout = 2 * time.Minute
 
-// e2eCreateTimeout bounds CreateE2eSession, which had no deadline at all
-// until docs/adr/0044 — the same defect sessionCallTimeout was introduced to
-// fix, just on the path nobody had audited. Its blast radius is different:
-// this call is driven by an agent's MCP tool call, so a wedged provisioner
-// hangs the agent's turn rather than the dispatch loop.
-//
-// It cannot simply reuse sessionCallTimeout: the provisioner-side work here
-// legitimately includes a 2-minute WaitForPodGone on a replaced pod plus up
-// to 60s per EnsureSharedInstance and the credential-mint retries behind it.
-// Must stay strictly greater than the sum of those bounded waits.
-const e2eCreateTimeout = 5 * time.Minute
 
 // New dials addr (in-cluster ClusterIP, no TLS needed — Cilium's own
 // network policy is the trust boundary here, same as every other
@@ -62,70 +51,6 @@ func (c *Client) Close() error {
 	return c.conn.Close()
 }
 
-// KillSession requests teardown of the active e2e session for taskID.
-// Returns false if there was no active session to kill (mirrors today's
-// bot/src/db.ts's requestE2eKill return semantics). alsoTeardownServices
-// additionally deletes repo's shared postgres/redis instances — opt-in,
-// human-confirmed only (the dashboard's "kill e2e" checkbox); repo is
-// ignored when alsoTeardownServices is false.
-func (c *Client) KillSession(ctx context.Context, taskID, idempotencyKey, repo string, alsoTeardownServices bool) (killed bool, servicesTornDown []string, err error) {
-	resp, err := c.rpc.KillE2ESession(ctx, &agentfleetv1.KillE2ESessionRequest{
-		SessionId:            taskID,
-		IdempotencyKey:       idempotencyKey,
-		Repo:                 repo,
-		AlsoTeardownServices: alsoTeardownServices,
-	})
-	if err != nil {
-		return false, nil, fmt.Errorf("KillE2ESession: %w", err)
-	}
-	return resp.GetKilled(), resp.GetServicesTornDown(), nil
-}
-
-// GetSessionStatus reports the current e2e session state for taskID (status
-// is "" when no session exists). Used by the dashboard (docs/adr/0014) to
-// decide whether a task's code-server link should show, and to render the
-// e2e card's live pod state. Returns the response whole rather than picking
-// fields off it — every field here is live pod truth only the provisioner
-// can read, and core is a pass-through for all of it.
-func (c *Client) GetSessionStatus(ctx context.Context, taskID string) (*agentfleetv1.GetE2ESessionStatusResponse, error) {
-	resp, err := c.rpc.GetE2ESessionStatus(ctx, &agentfleetv1.GetE2ESessionStatusRequest{
-		SessionId: taskID,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("GetE2ESessionStatus: %w", err)
-	}
-	return resp, nil
-}
-
-// CreateE2eSession asks the provisioner to spin up an on-demand e2e preview
-// pod for taskID (docs/adr/0012), proxied from CoreService.RequestE2eEnv —
-// the sidecar/worker never call this directly (docs/adr/0020 hub-and-spoke).
-// toolKeys/serviceIngredients are the repo's resolved "e2e" profile
-// (docs/adr/0034, empty when it has none — preserves the pre-recipe pod
-// shape); the provisioner mints any non-pod-scoped service credentials
-// itself, core never sees them.
-// Returns the response whole, for the same reason GetSessionStatus does: it
-// now carries the ServiceEndpoint roster (docs/adr/0045), which core forwards
-// untouched. Picking two fields off it here is what would make the roster
-// core's business.
-func (c *Client) CreateE2eSession(ctx context.Context, sessionID, repo, startCmd string, toolKeys []string) (*agentfleetv1.CreateE2ESessionResponse, error) {
-	ctx, cancel := context.WithTimeout(ctx, e2eCreateTimeout)
-	defer cancel()
-	resp, err := c.rpc.CreateE2ESession(ctx, &agentfleetv1.CreateE2ESessionRequest{
-		SessionId: sessionID,
-		Repo:      repo,
-		StartCmd:  startCmd,
-		ToolKeys:  toolKeys,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("CreateE2ESession: %w", err)
-	}
-	return resp, nil
-}
-
-// ListWorkerPods returns sessionID -> Kubernetes Job phase for every live
-// worker Job. Backs core's reconcile loop — the safety net that replaced the
-// heartbeat (docs/adr/0048).
 func (c *Client) ListWorkerPods(ctx context.Context) (map[string]string, error) {
 	ctx, cancel := context.WithTimeout(ctx, sessionCallTimeout)
 	defer cancel()
@@ -152,7 +77,7 @@ func (c *Client) TearDownE2e(ctx context.Context, sessionID string) error {
 	return err
 }
 
-// SweepSession reclaims a session's disk: its working directory and its
+// SweepSession reclaims a session's disk: its working-tree PVC and its
 // per-session SDK state.
 //
 // Deletes whole subtrees rather than named files. An earlier design passed
@@ -161,17 +86,49 @@ func (c *Client) TearDownE2e(ctx context.Context, sessionID string) error {
 // missing the sibling `<sid>/subagents/` directory that a live installation
 // turned out to have. Removing a directory the fleet itself created needs no
 // such knowledge and cannot drift when the SDK changes.
-func (c *Client) SweepSession(ctx context.Context, sessionID, repo string) error {
+//
+// repo is no longer a parameter: there is no branch to consider deleting, and
+// the two things being removed are both keyed by session alone.
+func (c *Client) SweepSession(ctx context.Context, sessionID string) error {
 	ctx, cancel := context.WithTimeout(ctx, sessionCallTimeout)
 	defer cancel()
-	// alsoDeleteBranch is false: the fleet no longer creates branches, so it
-	// has no business deleting them. A branch the agent pushed is GitHub's to
-	// keep or drop, and one it never pushed is uncommitted work.
-	_, err := c.DeleteWorktree(ctx, sessionID, repo, false)
-	if err != nil {
+	if _, err := c.rpc.SweepSession(ctx, &agentfleetv1.SweepSessionRequest{SessionId: sessionID}); err != nil {
 		return fmt.Errorf("SweepSession: %w", err)
 	}
 	return nil
+}
+
+// ExposeSession publishes a port from a session's pod and returns its URL.
+func (c *Client) ExposeSession(ctx context.Context, sessionID string, port int32) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, sessionCallTimeout)
+	defer cancel()
+	resp, err := c.rpc.ExposeSession(ctx, &agentfleetv1.ExposeSessionRequest{SessionId: sessionID, Port: port})
+	if err != nil {
+		return "", fmt.Errorf("ExposeSession: %w", err)
+	}
+	return resp.GetUrl(), nil
+}
+
+func (c *Client) UnexposeSession(ctx context.Context, sessionID string) error {
+	ctx, cancel := context.WithTimeout(ctx, sessionCallTimeout)
+	defer cancel()
+	if _, err := c.rpc.UnexposeSession(ctx, &agentfleetv1.UnexposeSessionRequest{SessionId: sessionID}); err != nil {
+		return fmt.Errorf("UnexposeSession: %w", err)
+	}
+	return nil
+}
+
+// ProvisionService provisions or reuses a shared instance for (repo, kind).
+// The caller resolves repo from the session row — see coreserver's
+// RequestService for why that is not taken from the pod.
+func (c *Client) ProvisionService(ctx context.Context, sessionID, repo, kind string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, sessionCallTimeout)
+	defer cancel()
+	resp, err := c.rpc.ProvisionService(ctx, &agentfleetv1.ProvisionServiceRequest{SessionId: sessionID, Repo: repo, Kind: kind})
+	if err != nil {
+		return "", fmt.Errorf("ProvisionService: %w", err)
+	}
+	return resp.GetDsn(), nil
 }
 
 // ToolKeysFor is the whole of what survives docs/adr/0034's ingredient
@@ -244,28 +201,3 @@ func (c *Client) TearDownSession(ctx context.Context, taskID string, kind agentf
 	return resp.GetTornDown(), nil
 }
 
-// ListWorktrees/DeleteWorktree back the dashboard's manual worktree
-// cleanup view (reliability-findings.md #2) — core has no PVC access
-// itself, so this is a pure passthrough to the provisioner's own git.Manager.
-// Returns the whole response, not just the slice: it now also carries the
-// shared PVC's total/free bytes, which belong to the filesystem rather than to
-// any one worktree.
-func (c *Client) ListWorktrees(ctx context.Context) (*agentfleetv1.ListWorktreesResponse, error) {
-	resp, err := c.rpc.ListWorktrees(ctx, &agentfleetv1.ListWorktreesRequest{})
-	if err != nil {
-		return nil, fmt.Errorf("ListWorktrees: %w", err)
-	}
-	return resp, nil
-}
-
-func (c *Client) DeleteWorktree(ctx context.Context, taskID, repo string, alsoDeleteBranch bool) (deleted bool, err error) {
-	resp, err := c.rpc.DeleteWorktree(ctx, &agentfleetv1.DeleteWorktreeRequest{
-		SessionId:        taskID,
-		Repo:             repo,
-		AlsoDeleteBranch: alsoDeleteBranch,
-	})
-	if err != nil {
-		return false, fmt.Errorf("DeleteWorktree: %w", err)
-	}
-	return resp.GetDeleted(), nil
-}

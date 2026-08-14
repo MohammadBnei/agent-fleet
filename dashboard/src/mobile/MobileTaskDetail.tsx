@@ -21,7 +21,7 @@ import { Modal } from "../components/Modal";
 import { Segmented } from "../components/Segmented";
 import { SessionFeed } from "../components/SessionFeed";
 import { TickBar, todoProgress } from "../components/TickBar";
-import { TodosPanel, ChangesPanel, E2ePanel, SessionPanel } from "../components/SessionPanels";
+import { TodosPanel, ChangesPanel, SessionPanel } from "../components/SessionPanels";
 
 // The phone session screen from Agent Fleet Console Mobile.dc.html.
 //
@@ -49,8 +49,6 @@ export function MobileTaskDetail({
   const {
     task,
     entries,
-    refreshE2e,
-    e2e,
     branch,
     busyKey,
     loadError,
@@ -283,17 +281,12 @@ export function MobileTaskDetail({
         <div className="flex flex-col gap-5">
           <TodosPanel todos={todos} blocked={blocked} />
           <ChangesPanel branch={branch} changes={changes} />
-          <E2ePanel
-            e2e={e2e}
-            sessionId={task.id}
-            onChanged={refreshE2e}
-          />
           <SessionPanel
             task={task}
             busy={busyKey !== null}
             busyKey={busyKey}
             run={run}
-            codeServerUrl={e2e?.codeServerUrl}
+            codeServerUrl={null}
             isThotTask={false}
             onBypassClick={() => {
               setPanelsOpen(false);

@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TaskList, ACTIVE_STATES } from "./pages/TaskList";
 import { TaskDetail } from "./pages/TaskDetail";
-import { Worktrees } from "./pages/Worktrees";
 import { Files } from "./pages/Files";
 import { Audits } from "./pages/Audits";
 import { Observability } from "./pages/Observability";
@@ -28,7 +27,7 @@ function readTaskIdFromUrl(): string | null {
   return new URLSearchParams(window.location.search).get("task");
 }
 
-export type View = "tasks" | "audits" | "worktrees" | "files" | "observability";
+export type View = "tasks" | "audits" | "files" | "observability";
 
 // The manifest's app shortcuts (icons/site.webmanifest) land here. Read once on
 // mount: they're an entry point, not persistent state, and the params are
@@ -41,13 +40,12 @@ function readShortcut(): { needsYouOnly: boolean; newTask: boolean } {
 
 function readViewFromUrl(): View {
   const v = new URLSearchParams(window.location.search).get("view");
-  return v === "worktrees" || v === "files" || v === "audits" || v === "observability" ? v : "tasks";
+  return v === "files" || v === "audits" || v === "observability" ? v : "tasks";
 }
 
 const NAV: readonly { value: View; label: string }[] = [
   { value: "tasks", label: "tasks" },
   { value: "audits", label: "audits" },
-  { value: "worktrees", label: "worktrees" },
   { value: "files", label: "files" },
   { value: "observability", label: "observability" },
 ];
@@ -56,7 +54,6 @@ const NAV: readonly { value: View; label: string }[] = [
 const MOBILE_NAV: readonly { value: View; label: string }[] = [
   { value: "tasks", label: "tasks" },
   { value: "audits", label: "audits" },
-  { value: "worktrees", label: "trees" },
   { value: "files", label: "files" },
   // Same shortening rule the "trees" label above follows — the bottom bar
   // now carries five cells and has no room for the full word.
@@ -443,9 +440,13 @@ export default function App() {
           any descendant with a large min-content width (a long URL, a nowrap
           string) silently widens this past the viewport instead of clipping. */}
       <div className="flex-1 min-h-0 min-w-0 flex flex-col">
-        {view === "worktrees" ? (
-          <Worktrees onSelectTask={selectTask} />
-        ) : view === "files" ? (
+        {/*
+          The worktrees view is gone (docs/adr/0048 §5). It listed linked git
+          worktrees on one shared PVC and offered to delete them by hand; there
+          are no worktrees now, a session's tree is its own PVC, and the
+          retention GC reclaims it without anyone clicking.
+        */}
+        {view === "files" ? (
           <Files />
         ) : view === "audits" ? (
           <Audits

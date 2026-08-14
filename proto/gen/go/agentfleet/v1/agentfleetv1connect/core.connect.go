@@ -44,11 +44,13 @@ const (
 	// CoreServiceAskUserQuestionProcedure is the fully-qualified name of the CoreService's
 	// AskUserQuestion RPC.
 	CoreServiceAskUserQuestionProcedure = "/agentfleet.v1.CoreService/AskUserQuestion"
-	// CoreServiceRequestE2EEnvProcedure is the fully-qualified name of the CoreService's RequestE2eEnv
-	// RPC.
-	CoreServiceRequestE2EEnvProcedure = "/agentfleet.v1.CoreService/RequestE2eEnv"
-	// CoreServiceKillE2EEnvProcedure is the fully-qualified name of the CoreService's KillE2eEnv RPC.
-	CoreServiceKillE2EEnvProcedure = "/agentfleet.v1.CoreService/KillE2eEnv"
+	// CoreServiceExposeProcedure is the fully-qualified name of the CoreService's Expose RPC.
+	CoreServiceExposeProcedure = "/agentfleet.v1.CoreService/Expose"
+	// CoreServiceUnexposeProcedure is the fully-qualified name of the CoreService's Unexpose RPC.
+	CoreServiceUnexposeProcedure = "/agentfleet.v1.CoreService/Unexpose"
+	// CoreServiceRequestServiceProcedure is the fully-qualified name of the CoreService's
+	// RequestService RPC.
+	CoreServiceRequestServiceProcedure = "/agentfleet.v1.CoreService/RequestService"
 	// CoreServiceGetSessionProcedure is the fully-qualified name of the CoreService's GetSession RPC.
 	CoreServiceGetSessionProcedure = "/agentfleet.v1.CoreService/GetSession"
 	// CoreServiceSetPermissionModeProcedure is the fully-qualified name of the CoreService's
@@ -110,8 +112,21 @@ type CoreServiceClient interface {
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	WaitForMessages(context.Context, *connect.Request[v1.ReadTranscriptSinceRequest]) (*connect.Response[v1.ReadTranscriptSinceResponse], error)
 	AskUserQuestion(context.Context, *connect.Request[v1.AskUserQuestionRequest]) (*connect.Response[v1.AskUserQuestionResponse], error)
-	RequestE2EEnv(context.Context, *connect.Request[v1.RequestE2EEnvRequest]) (*connect.Response[v1.RequestE2EEnvResponse], error)
-	KillE2EEnv(context.Context, *connect.Request[v1.KillE2EEnvRequest]) (*connect.Response[v1.KillE2EEnvResponse], error)
+	// RequestE2eEnv/KillE2eEnv are gone with the sandbox (docs/adr/0048 §6),
+	// as ListE2eTools/CallE2eTool went with the relay before them
+	// (docs/adr/0045). What survives is the part that was never about a second
+	// pod: two capabilities needing cluster RBAC, which core forwards to the
+	// provisioner because the session pod holds none.
+	//
+	// These are NOT passthroughs of the kind docs/adr/0045 deleted. Core is the
+	// only holder of the session row, so it is the only thing that can answer
+	// "which repo is this session on" for RequestService, and lifecycle
+	// commands to the provisioner route through core by decision
+	// (docs/adr/0020 point 4) — a Service and a route are pod lifecycle.
+	Expose(context.Context, *connect.Request[v1.ExposeRequest]) (*connect.Response[v1.ExposeResponse], error)
+	Unexpose(context.Context, *connect.Request[v1.UnexposeRequest]) (*connect.Response[v1.UnexposeResponse], error)
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	RequestService(context.Context, *connect.Request[v1.RequestServiceRequest]) (*connect.Response[v1.RequestServiceResponse], error)
 	// Lets a worker pod fetch its own fresh session row on startup instead of
 	// relying on stale environment variables — same message shapes
 	// DashboardService.GetTask uses, different caller (docs/adr/0029).
@@ -188,16 +203,22 @@ func NewCoreServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(coreServiceMethods.ByName("AskUserQuestion")),
 			connect.WithClientOptions(opts...),
 		),
-		requestE2EEnv: connect.NewClient[v1.RequestE2EEnvRequest, v1.RequestE2EEnvResponse](
+		expose: connect.NewClient[v1.ExposeRequest, v1.ExposeResponse](
 			httpClient,
-			baseURL+CoreServiceRequestE2EEnvProcedure,
-			connect.WithSchema(coreServiceMethods.ByName("RequestE2eEnv")),
+			baseURL+CoreServiceExposeProcedure,
+			connect.WithSchema(coreServiceMethods.ByName("Expose")),
 			connect.WithClientOptions(opts...),
 		),
-		killE2EEnv: connect.NewClient[v1.KillE2EEnvRequest, v1.KillE2EEnvResponse](
+		unexpose: connect.NewClient[v1.UnexposeRequest, v1.UnexposeResponse](
 			httpClient,
-			baseURL+CoreServiceKillE2EEnvProcedure,
-			connect.WithSchema(coreServiceMethods.ByName("KillE2eEnv")),
+			baseURL+CoreServiceUnexposeProcedure,
+			connect.WithSchema(coreServiceMethods.ByName("Unexpose")),
+			connect.WithClientOptions(opts...),
+		),
+		requestService: connect.NewClient[v1.RequestServiceRequest, v1.RequestServiceResponse](
+			httpClient,
+			baseURL+CoreServiceRequestServiceProcedure,
+			connect.WithSchema(coreServiceMethods.ByName("RequestService")),
 			connect.WithClientOptions(opts...),
 		),
 		getSession: connect.NewClient[v1.GetSessionRequest, v1.GetSessionResponse](
@@ -299,8 +320,9 @@ type coreServiceClient struct {
 	sendMessage         *connect.Client[v1.SendMessageRequest, v1.AppendResponse]
 	waitForMessages     *connect.Client[v1.ReadTranscriptSinceRequest, v1.ReadTranscriptSinceResponse]
 	askUserQuestion     *connect.Client[v1.AskUserQuestionRequest, v1.AskUserQuestionResponse]
-	requestE2EEnv       *connect.Client[v1.RequestE2EEnvRequest, v1.RequestE2EEnvResponse]
-	killE2EEnv          *connect.Client[v1.KillE2EEnvRequest, v1.KillE2EEnvResponse]
+	expose              *connect.Client[v1.ExposeRequest, v1.ExposeResponse]
+	unexpose            *connect.Client[v1.UnexposeRequest, v1.UnexposeResponse]
+	requestService      *connect.Client[v1.RequestServiceRequest, v1.RequestServiceResponse]
 	getSession          *connect.Client[v1.GetSessionRequest, v1.GetSessionResponse]
 	setPermissionMode   *connect.Client[v1.SetPermissionModeRequest, v1.SetPermissionModeResponse]
 	appendJournal       *connect.Client[v1.AppendJournalRequest, v1.AppendJournalResponse]
@@ -338,14 +360,19 @@ func (c *coreServiceClient) AskUserQuestion(ctx context.Context, req *connect.Re
 	return c.askUserQuestion.CallUnary(ctx, req)
 }
 
-// RequestE2EEnv calls agentfleet.v1.CoreService.RequestE2eEnv.
-func (c *coreServiceClient) RequestE2EEnv(ctx context.Context, req *connect.Request[v1.RequestE2EEnvRequest]) (*connect.Response[v1.RequestE2EEnvResponse], error) {
-	return c.requestE2EEnv.CallUnary(ctx, req)
+// Expose calls agentfleet.v1.CoreService.Expose.
+func (c *coreServiceClient) Expose(ctx context.Context, req *connect.Request[v1.ExposeRequest]) (*connect.Response[v1.ExposeResponse], error) {
+	return c.expose.CallUnary(ctx, req)
 }
 
-// KillE2EEnv calls agentfleet.v1.CoreService.KillE2eEnv.
-func (c *coreServiceClient) KillE2EEnv(ctx context.Context, req *connect.Request[v1.KillE2EEnvRequest]) (*connect.Response[v1.KillE2EEnvResponse], error) {
-	return c.killE2EEnv.CallUnary(ctx, req)
+// Unexpose calls agentfleet.v1.CoreService.Unexpose.
+func (c *coreServiceClient) Unexpose(ctx context.Context, req *connect.Request[v1.UnexposeRequest]) (*connect.Response[v1.UnexposeResponse], error) {
+	return c.unexpose.CallUnary(ctx, req)
+}
+
+// RequestService calls agentfleet.v1.CoreService.RequestService.
+func (c *coreServiceClient) RequestService(ctx context.Context, req *connect.Request[v1.RequestServiceRequest]) (*connect.Response[v1.RequestServiceResponse], error) {
+	return c.requestService.CallUnary(ctx, req)
 }
 
 // GetSession calls agentfleet.v1.CoreService.GetSession.
@@ -441,8 +468,21 @@ type CoreServiceHandler interface {
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	WaitForMessages(context.Context, *connect.Request[v1.ReadTranscriptSinceRequest]) (*connect.Response[v1.ReadTranscriptSinceResponse], error)
 	AskUserQuestion(context.Context, *connect.Request[v1.AskUserQuestionRequest]) (*connect.Response[v1.AskUserQuestionResponse], error)
-	RequestE2EEnv(context.Context, *connect.Request[v1.RequestE2EEnvRequest]) (*connect.Response[v1.RequestE2EEnvResponse], error)
-	KillE2EEnv(context.Context, *connect.Request[v1.KillE2EEnvRequest]) (*connect.Response[v1.KillE2EEnvResponse], error)
+	// RequestE2eEnv/KillE2eEnv are gone with the sandbox (docs/adr/0048 §6),
+	// as ListE2eTools/CallE2eTool went with the relay before them
+	// (docs/adr/0045). What survives is the part that was never about a second
+	// pod: two capabilities needing cluster RBAC, which core forwards to the
+	// provisioner because the session pod holds none.
+	//
+	// These are NOT passthroughs of the kind docs/adr/0045 deleted. Core is the
+	// only holder of the session row, so it is the only thing that can answer
+	// "which repo is this session on" for RequestService, and lifecycle
+	// commands to the provisioner route through core by decision
+	// (docs/adr/0020 point 4) — a Service and a route are pod lifecycle.
+	Expose(context.Context, *connect.Request[v1.ExposeRequest]) (*connect.Response[v1.ExposeResponse], error)
+	Unexpose(context.Context, *connect.Request[v1.UnexposeRequest]) (*connect.Response[v1.UnexposeResponse], error)
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	RequestService(context.Context, *connect.Request[v1.RequestServiceRequest]) (*connect.Response[v1.RequestServiceResponse], error)
 	// Lets a worker pod fetch its own fresh session row on startup instead of
 	// relying on stale environment variables — same message shapes
 	// DashboardService.GetTask uses, different caller (docs/adr/0029).
@@ -515,16 +555,22 @@ func NewCoreServiceHandler(svc CoreServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(coreServiceMethods.ByName("AskUserQuestion")),
 		connect.WithHandlerOptions(opts...),
 	)
-	coreServiceRequestE2EEnvHandler := connect.NewUnaryHandler(
-		CoreServiceRequestE2EEnvProcedure,
-		svc.RequestE2EEnv,
-		connect.WithSchema(coreServiceMethods.ByName("RequestE2eEnv")),
+	coreServiceExposeHandler := connect.NewUnaryHandler(
+		CoreServiceExposeProcedure,
+		svc.Expose,
+		connect.WithSchema(coreServiceMethods.ByName("Expose")),
 		connect.WithHandlerOptions(opts...),
 	)
-	coreServiceKillE2EEnvHandler := connect.NewUnaryHandler(
-		CoreServiceKillE2EEnvProcedure,
-		svc.KillE2EEnv,
-		connect.WithSchema(coreServiceMethods.ByName("KillE2eEnv")),
+	coreServiceUnexposeHandler := connect.NewUnaryHandler(
+		CoreServiceUnexposeProcedure,
+		svc.Unexpose,
+		connect.WithSchema(coreServiceMethods.ByName("Unexpose")),
+		connect.WithHandlerOptions(opts...),
+	)
+	coreServiceRequestServiceHandler := connect.NewUnaryHandler(
+		CoreServiceRequestServiceProcedure,
+		svc.RequestService,
+		connect.WithSchema(coreServiceMethods.ByName("RequestService")),
 		connect.WithHandlerOptions(opts...),
 	)
 	coreServiceGetSessionHandler := connect.NewUnaryHandler(
@@ -627,10 +673,12 @@ func NewCoreServiceHandler(svc CoreServiceHandler, opts ...connect.HandlerOption
 			coreServiceWaitForMessagesHandler.ServeHTTP(w, r)
 		case CoreServiceAskUserQuestionProcedure:
 			coreServiceAskUserQuestionHandler.ServeHTTP(w, r)
-		case CoreServiceRequestE2EEnvProcedure:
-			coreServiceRequestE2EEnvHandler.ServeHTTP(w, r)
-		case CoreServiceKillE2EEnvProcedure:
-			coreServiceKillE2EEnvHandler.ServeHTTP(w, r)
+		case CoreServiceExposeProcedure:
+			coreServiceExposeHandler.ServeHTTP(w, r)
+		case CoreServiceUnexposeProcedure:
+			coreServiceUnexposeHandler.ServeHTTP(w, r)
+		case CoreServiceRequestServiceProcedure:
+			coreServiceRequestServiceHandler.ServeHTTP(w, r)
 		case CoreServiceGetSessionProcedure:
 			coreServiceGetSessionHandler.ServeHTTP(w, r)
 		case CoreServiceSetPermissionModeProcedure:
@@ -686,12 +734,16 @@ func (UnimplementedCoreServiceHandler) AskUserQuestion(context.Context, *connect
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.CoreService.AskUserQuestion is not implemented"))
 }
 
-func (UnimplementedCoreServiceHandler) RequestE2EEnv(context.Context, *connect.Request[v1.RequestE2EEnvRequest]) (*connect.Response[v1.RequestE2EEnvResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.CoreService.RequestE2eEnv is not implemented"))
+func (UnimplementedCoreServiceHandler) Expose(context.Context, *connect.Request[v1.ExposeRequest]) (*connect.Response[v1.ExposeResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.CoreService.Expose is not implemented"))
 }
 
-func (UnimplementedCoreServiceHandler) KillE2EEnv(context.Context, *connect.Request[v1.KillE2EEnvRequest]) (*connect.Response[v1.KillE2EEnvResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.CoreService.KillE2eEnv is not implemented"))
+func (UnimplementedCoreServiceHandler) Unexpose(context.Context, *connect.Request[v1.UnexposeRequest]) (*connect.Response[v1.UnexposeResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.CoreService.Unexpose is not implemented"))
+}
+
+func (UnimplementedCoreServiceHandler) RequestService(context.Context, *connect.Request[v1.RequestServiceRequest]) (*connect.Response[v1.RequestServiceResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.CoreService.RequestService is not implemented"))
 }
 
 func (UnimplementedCoreServiceHandler) GetSession(context.Context, *connect.Request[v1.GetSessionRequest]) (*connect.Response[v1.GetSessionResponse], error) {

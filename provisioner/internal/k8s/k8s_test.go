@@ -371,7 +371,7 @@ func TestCreateWorkerPod_TwoContainersSharedPVC(t *testing.T) {
 	c := newTestClient()
 	ctx := context.Background()
 
-	if err := c.CreateWorkerPod(ctx, "task-1", "dream-analyst", "lease-1", "/workspace/worktrees/task-1", "", 0, nil, nil, nil); err != nil {
+	if err := c.CreateWorkerPod(ctx, WorkerPodSpec{SessionID: "task-1", Repo: "dream-analyst", LeaseID: "lease-1", ResumeID: "", ResumeFromSeq: 0, ToolKeys: nil, ServiceRefs: nil, ExtraEnv: nil}); err != nil {
 		t.Fatalf("CreateWorkerPod: %v", err)
 	}
 
@@ -394,38 +394,109 @@ func TestCreateWorkerPod_TwoContainersSharedPVC(t *testing.T) {
 	if len(podSpec.Containers) != 1 || podSpec.Containers[0].Name != "worker" {
 		t.Fatalf("expected 1 container (worker), got %+v", podSpec.Containers)
 	}
-	if len(podSpec.InitContainers) != 1 || podSpec.InitContainers[0].Name != "sidecar" {
-		t.Fatalf("expected 1 init container (sidecar), got %+v", podSpec.InitContainers)
+	// clone THEN sidecar, and the order is load-bearing: a plain init
+	// container runs to completion before a native sidecar starts, so the
+	// working tree exists before anything reads it. Reversing these would
+	// start the sidecar — and therefore unblock the worker — against an empty
+	// /workspace (docs/adr/0048 §5).
+	if len(podSpec.InitContainers) != 2 {
+		t.Fatalf("expected 2 init containers (clone, sidecar), got %+v", podSpec.InitContainers)
 	}
-	sidecar := podSpec.InitContainers[0]
+	if podSpec.InitContainers[0].Name != "clone" {
+		t.Fatalf("clone must run first, got %q", podSpec.InitContainers[0].Name)
+	}
+	if podSpec.InitContainers[1].Name != "sidecar" {
+		t.Fatalf("expected sidecar second, got %q", podSpec.InitContainers[1].Name)
+	}
+	// The clone container is the only place both volumes are mounted, which is
+	// the whole reason the clone happens in the pod rather than in the
+	// provisioner.
+	clone := podSpec.InitContainers[0]
+	var sawTree, sawCache bool
+	for _, m := range clone.VolumeMounts {
+		if m.MountPath == "/workspace" && m.Name == "session" {
+			sawTree = true
+		}
+		if m.MountPath == "/repo-cache" && m.Name == "shared" && m.ReadOnly {
+			sawCache = true
+		}
+	}
+	if !sawTree || !sawCache {
+		t.Fatalf("clone container must mount the session volume rw and the repo cache ro, got %+v", clone.VolumeMounts)
+	}
+	sidecar := podSpec.InitContainers[1]
 	if sidecar.RestartPolicy == nil || *sidecar.RestartPolicy != corev1.ContainerRestartPolicyAlways {
 		t.Errorf("sidecar init container must be a native sidecar (RestartPolicy: Always), got %v", sidecar.RestartPolicy)
 	}
 	if sidecar.StartupProbe == nil || sidecar.StartupProbe.HTTPGet == nil || sidecar.StartupProbe.HTTPGet.Path != "/readyz" {
 		t.Errorf("sidecar init container must have an HTTP /readyz startup probe so the worker waits for a proven core connection, got %+v", sidecar.StartupProbe)
 	}
-	// Whole PVC, no SubPath: a linked git worktree's .git gitlink is an
-	// absolute path back to repos/<repo>/.git/worktrees/<taskId>, which a
-	// SubPath scoped to just worktrees/<taskId> would put out of reach.
-	for _, ctr := range append(append([]corev1.Container{}, podSpec.Containers...), podSpec.InitContainers...) {
-		if len(ctr.VolumeMounts) != 1 || ctr.VolumeMounts[0].SubPath != "" || ctr.VolumeMounts[0].MountPath != "/workspace" {
-			t.Errorf("container %s: unexpected volume mounts: %+v", ctr.Name, ctr.VolumeMounts)
+	// Storage split by access pattern (docs/adr/0048 §4), replacing the single
+	// whole-PVC mount every container used to share.
+	//
+	// The old shape put the working tree, node_modules and the SDK state all
+	// on one Longhorn RWX volume measured at 10 MB/s, where a cold
+	// `bun install` could not finish in three minutes. The same install takes
+	// 2.4 seconds on node-local disk. The four mounts below are that
+	// measurement expressed as a pod spec.
+	worker := podSpec.Containers[0]
+	want := map[string]struct {
+		vol      string
+		subPath  string
+		readOnly bool
+	}{
+		// Node-local, per session, and the working directory itself.
+		"/workspace": {vol: "session", subPath: "tree"},
+		// Dependency caches: same node-local volume, so the measured speed
+		// applies, and warm across every warm of this session.
+		"/cache": {vol: "session", subPath: "cache"},
+		// The clone cache every session clones from — read-only, so one
+		// session cannot corrupt it for the others.
+		"/repo-cache": {vol: "shared", subPath: "repos", readOnly: true},
+		// SDK resume state, on replicated storage because losing it loses the
+		// ability to continue the conversation at all.
+		claudeConfigDir: {vol: "shared", subPath: "claude-home/task-1"},
+	}
+	got := map[string]corev1.VolumeMount{}
+	for _, m := range worker.VolumeMounts {
+		got[m.MountPath] = m
+	}
+	for path, w := range want {
+		m, ok := got[path]
+		if !ok {
+			t.Errorf("worker is missing the %s mount", path)
+			continue
 		}
-		foundWorktreePath := false
-		for _, e := range ctr.Env {
-			if e.Name == "WORKTREE_PATH" {
-				foundWorktreePath = true
-				if e.Value != "/workspace/worktrees/task-1" {
-					t.Errorf("container %s: unexpected WORKTREE_PATH: %q", ctr.Name, e.Value)
-				}
-			}
-		}
-		if !foundWorktreePath {
-			t.Errorf("container %s: missing WORKTREE_PATH env var", ctr.Name)
+		if m.Name != w.vol || m.SubPath != w.subPath || m.ReadOnly != w.readOnly {
+			t.Errorf("worker mount %s: got volume=%q subPath=%q readOnly=%v, want volume=%q subPath=%q readOnly=%v",
+				path, m.Name, m.SubPath, m.ReadOnly, w.vol, w.subPath, w.readOnly)
 		}
 	}
-	if len(podSpec.Volumes) != 1 || podSpec.Volumes[0].PersistentVolumeClaim.ClaimName != "agent-fleet-workspace" {
-		t.Errorf("expected single shared-PVC volume, got: %+v", podSpec.Volumes)
+
+	// Every session's cwd is now the same literal path, which is exactly why
+	// claude-home has to be per-session: the SDK derives its project state
+	// directory from cwd, so without the per-session mount every session would
+	// share one `projects/-workspace/` and replay each other's conversations.
+	for _, ctr := range []corev1.Container{worker, podSpec.InitContainers[1]} {
+		for _, e := range ctr.Env {
+			if e.Name == "WORKTREE_PATH" && e.Value != "/workspace" {
+				t.Errorf("container %s: WORKTREE_PATH should be the fixed session workdir, got %q", ctr.Name, e.Value)
+			}
+		}
+	}
+
+	if len(podSpec.Volumes) != 2 {
+		t.Fatalf("expected two volumes (session, shared), got: %+v", podSpec.Volumes)
+	}
+	vols := map[string]string{}
+	for _, v := range podSpec.Volumes {
+		vols[v.Name] = v.PersistentVolumeClaim.ClaimName
+	}
+	if vols["session"] != SessionPVCName("task-1") {
+		t.Errorf("session volume should be this session's own PVC, got %q", vols["session"])
+	}
+	if vols["shared"] != "agent-fleet-workspace" {
+		t.Errorf("shared volume should be the fleet-wide PVC, got: %+v", podSpec.Volumes)
 	}
 }
 
@@ -453,7 +524,7 @@ func TestCreateWorkerPod_ResumeSession(t *testing.T) {
 	c := newTestClient()
 	ctx := context.Background()
 
-	if err := c.CreateWorkerPod(ctx, "task-1", "dream-analyst", "lease-1", "/workspace/worktrees/task-1", "sess-abc123", 42, nil, nil, nil); err != nil {
+	if err := c.CreateWorkerPod(ctx, WorkerPodSpec{SessionID: "task-1", Repo: "dream-analyst", LeaseID: "lease-1", ResumeID: "sess-abc123", ResumeFromSeq: 42, ToolKeys: nil, ServiceRefs: nil, ExtraEnv: nil}); err != nil {
 		t.Fatalf("CreateWorkerPod: %v", err)
 	}
 	job, err := c.Core.BatchV1().Jobs("agent-fleet").Get(ctx, WorkerResourceName("task-1"), metav1.GetOptions{})
@@ -481,7 +552,7 @@ func TestCreateWorkerPod_ResumeSession(t *testing.T) {
 	// A fresh task (no prior session) must still set RESUME_SESSION_ID —
 	// present-but-empty, not omitted, so worker/src/session.ts's env read
 	// doesn't have to distinguish "unset" from "empty" itself.
-	if err := c.CreateWorkerPod(ctx, "task-2", "dream-analyst", "lease-2", "/workspace/worktrees/task-2", "", 0, nil, nil, nil); err != nil {
+	if err := c.CreateWorkerPod(ctx, WorkerPodSpec{SessionID: "task-2", Repo: "dream-analyst", LeaseID: "lease-2", ResumeID: "", ResumeFromSeq: 0, ToolKeys: nil, ServiceRefs: nil, ExtraEnv: nil}); err != nil {
 		t.Fatalf("CreateWorkerPod: %v", err)
 	}
 	job2, err := c.Core.BatchV1().Jobs("agent-fleet").Get(ctx, WorkerResourceName("task-2"), metav1.GetOptions{})
@@ -521,7 +592,7 @@ func TestGetWorkerJobRepo_RecoversRepoFromLabel(t *testing.T) {
 	c := newTestClient()
 	ctx := context.Background()
 
-	if err := c.CreateWorkerPod(ctx, "task-1", "vos-monolith", "lease-1", "/workspace/worktrees/task-1", "", 0, nil, nil, nil); err != nil {
+	if err := c.CreateWorkerPod(ctx, WorkerPodSpec{SessionID: "task-1", Repo: "vos-monolith", LeaseID: "lease-1", ResumeID: "", ResumeFromSeq: 0, ToolKeys: nil, ServiceRefs: nil, ExtraEnv: nil}); err != nil {
 		t.Fatalf("CreateWorkerPod: %v", err)
 	}
 	repo, exists, err := c.GetWorkerJobRepo(ctx, "task-1")
@@ -542,7 +613,7 @@ func TestListWorkerJobsByLabel_ExcludesE2ePods(t *testing.T) {
 	c := newTestClient()
 	ctx := context.Background()
 
-	if err := c.CreateWorkerPod(ctx, "task-1", "dream-analyst", "lease-1", "/workspace/worktrees/task-1", "", 0, nil, nil, nil); err != nil {
+	if err := c.CreateWorkerPod(ctx, WorkerPodSpec{SessionID: "task-1", Repo: "dream-analyst", LeaseID: "lease-1", ResumeID: "", ResumeFromSeq: 0, ToolKeys: nil, ServiceRefs: nil, ExtraEnv: nil}); err != nil {
 		t.Fatalf("CreateWorkerPod: %v", err)
 	}
 	if err := c.CreatePod(ctx, TaskRef{ID: "task-2", Repo: "dream-analyst", StartCmd: "bun run dev"}); err != nil {
@@ -623,7 +694,7 @@ func TestCreateWorkerPod_SidecarCarriesNoClusterCredential(t *testing.T) {
 	c := newTestClient()
 	c.ThotAuthToken = "test-token"
 
-	if err := c.CreateWorkerPod(context.Background(), "task-1", "dream-analyst", "lease-1", "/workspace/worktrees/task-1", "", 0, nil, nil, nil); err != nil {
+	if err := c.CreateWorkerPod(context.Background(), WorkerPodSpec{SessionID: "task-1", Repo: "dream-analyst", LeaseID: "lease-1", ResumeID: "", ResumeFromSeq: 0, ToolKeys: nil, ServiceRefs: nil, ExtraEnv: nil}); err != nil {
 		t.Fatalf("CreateWorkerPod: %v", err)
 	}
 
@@ -660,8 +731,7 @@ func TestCreateWorkerPod_ClusterAccessReachesTheJob(t *testing.T) {
 	c.ExecutorAddr = "thot-executor.thot.svc.cluster.local:9090"
 	c.ThotAuthToken = "tok"
 
-	if err := c.CreateWorkerPod(context.Background(), "task-thot", "infra-bootstrap", "lease-1",
-		"/workspace/worktrees/task-thot", "", 0, []string{"cluster-access"}, nil, nil); err != nil {
+	if err := c.CreateWorkerPod(context.Background(), WorkerPodSpec{SessionID: "task-thot", Repo: "infra-bootstrap", LeaseID: "lease-1", ResumeID: "", ResumeFromSeq: 0, ToolKeys: []string{"cluster-access"}, ServiceRefs: nil, ExtraEnv: nil}); err != nil {
 		t.Fatalf("CreateWorkerPod: %v", err)
 	}
 

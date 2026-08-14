@@ -49,7 +49,6 @@ jobs:
       pull-requests: read
     outputs:
       worker: ${{ steps.filter.outputs.worker }}
-      e2e-runner: ${{ steps.filter.outputs.e2e-runner }}
       migration: ${{ steps.filter.outputs.migration }}
       dashboard: ${{ steps.filter.outputs.dashboard }}
       go-components: ${{ steps.components.outputs.result }}
@@ -61,8 +60,6 @@ jobs:
           filters: |
             worker:
               - 'worker/**'
-            e2e-runner:
-              - 'e2e-runner/**'
               - 'proto/**'
             migration:
               - 'migration/**'
@@ -231,76 +228,13 @@ jobs:
       #     ignore-unfixed: true
       #     cache-dir: ${{ github.workspace }}/.cache/trivy
 
-  # Separate job rather than folding into the matrix above: e2e-runner has
-  # no package.json/tests, it's a plain image build — a few duplicated
-  # steps here are cheaper than conditional-skip logic in the shared job.
-  build-push-e2e-runner:
-    needs: changes
-    if: always() && (github.event_name == 'push' || needs.changes.outputs.e2e-runner == 'true')
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install Infisical CLI
-        run: |
-          curl -1sLf 'https://artifacts-cli.infisical.com/setup.deb.sh' | sudo -E bash
-          sudo apt-get update && sudo apt-get install -y infisical
-
-      - name: Load secrets from Infisical
-        run: |
-          set -euo pipefail
-          while IFS='=' read -r key raw_value; do
-            [ -z "$key" ] && continue
-            value="${raw_value%\'}"
-            value="${value#\'}"
-            echo "::add-mask::$value"
-            echo "$key=$value" >> "$GITHUB_ENV"
-          done < <(infisical export --domain=https://infisical.bnei.dev/api --token="${{ secrets.INFISICAL_TOKEN }}" --projectId="$INFISICAL_PROJECT_ID" --env=dev --format=dotenv | grep -E '^DOCKERHUB_')
-
-      - name: Docker Login
-        uses: docker/login-action@v3
-        with:
-          username: ${{ env.DOCKERHUB_USERNAME }}
-          password: ${{ env.DOCKERHUB_TOKEN }}
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      # github.ref_name is "<PR#>/merge" on pull_request events — an invalid
-      # Docker tag (contains a slash). No package.json here to read a
-      # version from (unlike the matrix job's steps.info), so compute a safe
-      # tag directly: the pushed tag name on a real release, "pr-<number>"
-      # otherwise.
-      - name: Compute image tag
-        id: tag
-        run: |
-          if [ "${{ github.event_name }}" = "push" ]; then
-            echo "value=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "value=pr-${{ github.event.pull_request.number }}" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Build and push
-        uses: docker/build-push-action@v6
-        with:
-          platforms: ${{ env.PLATFORMS }}
-          push: ${{ github.event_name == 'push' }}
-          context: .
-          file: e2e-runner/Dockerfile
-          tags: >-
-            ${{ env.DOCKERHUB_USERNAME }}/agent-fleet-e2e-runner:${{ steps.tag.outputs.value }},
-            ${{ env.DOCKERHUB_USERNAME }}/agent-fleet-e2e-runner:latest
-          cache-from: type=registry,ref=${{ env.DOCKERHUB_USERNAME }}/agent-fleet-e2e-runner:buildcache
-          cache-to: type=registry,ref=${{ env.DOCKERHUB_USERNAME }}/agent-fleet-e2e-runner:buildcache,mode=max
-
-  # Same shape as build-push-e2e-runner: a plain Dockerfile with no
-  # package.json/go.mod of its own (docs/adr/0030) — just db/migrations/
-  # COPY'd into the official migrate/migrate image. Unlike e2e-runner's
-  # deliberately floating :latest, this DOES need a real version tag: the
+  # A plain Dockerfile with no package.json/go.mod of its own
+  # (docs/adr/0030) — just db/migrations/ COPY'd into the official
+  # migrate/migrate image.
+  #
+  # It DOES need a real version tag, unlike the e2e-runner image that used to
+  # sit above it on a deliberately floating :latest (deleted with the sandbox,
+  # docs/adr/0048 §6): the
   # deploy job's blanket `tag: "..."` sed bumps k8s/core.yaml's
   # hooks.migrate.image.tag to match every release, so the image under
   # that exact tag must already be pushed by the time deploy runs (see its
@@ -342,7 +276,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       # No package.json here to read a version from — same PR-safe
-      # tag-computation pattern as build-push-e2e-runner.
+      # tag-computation pattern as the other plain-image builds.
       - name: Compute image tag
         id: tag
         run: |
@@ -369,7 +303,7 @@ jobs:
   # modules (no package.json, no bun install/test) — a go.yml workflow
   # runs the real correctness gate (vet/test/lint/buf) on every push/PR;
   # this job's job is just the Docker packaging step, same division of
-  # labor and same PR-safe tag computation as build-push-e2e-runner.
+  # labor and same PR-safe tag computation as the other plain-image builds.
   build-push-go:
     needs: changes
     # On push (release), always the full set — go-components is only
@@ -415,7 +349,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       # No package.json here to read a version from — same PR-safe
-      # tag-computation pattern as build-push-e2e-runner.
+      # tag-computation pattern as the other plain-image builds.
       - name: Compute image tag
         id: tag
         run: |
@@ -482,7 +416,7 @@ jobs:
           # Plain-manifest shape (k8s/provisioner/deployment.yaml): image
           # refs embed repo:tag as one combined string — only bump this
           # repo's own built images (core/provisioner/worker/sidecar),
-          # never e2e-runner's deliberately floating :latest.
+          # never a deliberately floating :latest.
           sed -i -E "s#(mohammaddocker/agent-fleet-(core|provisioner|worker|sidecar)):[^[:space:]\"]+#\1:${GITHUB_REF_NAME}#g" k8s/provisioner/*.yaml
 
       # Pushing with the default GITHUB_TOKEN (via actions/checkout's

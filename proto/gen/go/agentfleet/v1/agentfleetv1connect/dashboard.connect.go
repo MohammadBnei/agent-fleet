@@ -48,9 +48,6 @@ const (
 	// DashboardServiceStreamTranscriptProcedure is the fully-qualified name of the DashboardService's
 	// StreamTranscript RPC.
 	DashboardServiceStreamTranscriptProcedure = "/agentfleet.v1.DashboardService/StreamTranscript"
-	// DashboardServiceGetE2EStatusProcedure is the fully-qualified name of the DashboardService's
-	// GetE2eStatus RPC.
-	DashboardServiceGetE2EStatusProcedure = "/agentfleet.v1.DashboardService/GetE2eStatus"
 	// DashboardServiceStopSessionProcedure is the fully-qualified name of the DashboardService's
 	// StopSession RPC.
 	DashboardServiceStopSessionProcedure = "/agentfleet.v1.DashboardService/StopSession"
@@ -78,18 +75,6 @@ const (
 	// DashboardServiceDismissProposalProcedure is the fully-qualified name of the DashboardService's
 	// DismissProposal RPC.
 	DashboardServiceDismissProposalProcedure = "/agentfleet.v1.DashboardService/DismissProposal"
-	// DashboardServiceKillE2EProcedure is the fully-qualified name of the DashboardService's KillE2e
-	// RPC.
-	DashboardServiceKillE2EProcedure = "/agentfleet.v1.DashboardService/KillE2e"
-	// DashboardServiceStartE2EProcedure is the fully-qualified name of the DashboardService's StartE2e
-	// RPC.
-	DashboardServiceStartE2EProcedure = "/agentfleet.v1.DashboardService/StartE2e"
-	// DashboardServiceRestartE2EAppProcedure is the fully-qualified name of the DashboardService's
-	// RestartE2eApp RPC.
-	DashboardServiceRestartE2EAppProcedure = "/agentfleet.v1.DashboardService/RestartE2eApp"
-	// DashboardServiceGetE2EAppLogProcedure is the fully-qualified name of the DashboardService's
-	// GetE2eAppLog RPC.
-	DashboardServiceGetE2EAppLogProcedure = "/agentfleet.v1.DashboardService/GetE2eAppLog"
 	// DashboardServiceAnswerQuestionProcedure is the fully-qualified name of the DashboardService's
 	// AnswerQuestion RPC.
 	DashboardServiceAnswerQuestionProcedure = "/agentfleet.v1.DashboardService/AnswerQuestion"
@@ -102,12 +87,6 @@ const (
 	// DashboardServiceDeleteSessionProcedure is the fully-qualified name of the DashboardService's
 	// DeleteSession RPC.
 	DashboardServiceDeleteSessionProcedure = "/agentfleet.v1.DashboardService/DeleteSession"
-	// DashboardServiceListWorktreesProcedure is the fully-qualified name of the DashboardService's
-	// ListWorktrees RPC.
-	DashboardServiceListWorktreesProcedure = "/agentfleet.v1.DashboardService/ListWorktrees"
-	// DashboardServiceDeleteWorktreeProcedure is the fully-qualified name of the DashboardService's
-	// DeleteWorktree RPC.
-	DashboardServiceDeleteWorktreeProcedure = "/agentfleet.v1.DashboardService/DeleteWorktree"
 	// DashboardServiceGetJournalProcedure is the fully-qualified name of the DashboardService's
 	// GetJournal RPC.
 	DashboardServiceGetJournalProcedure = "/agentfleet.v1.DashboardService/GetJournal"
@@ -190,7 +169,6 @@ type DashboardServiceClient interface {
 	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	StreamTranscript(context.Context, *connect.Request[v1.StreamTranscriptRequest]) (*connect.ServerStreamForClient[v1.TranscriptEntry], error)
-	GetE2EStatus(context.Context, *connect.Request[v1.GetE2EStatusRequest]) (*connect.Response[v1.GetE2EStatusResponse], error)
 	StopSession(context.Context, *connect.Request[v1.StopSessionRequest]) (*connect.Response[v1.StopSessionResponse], error)
 	Interrupt(context.Context, *connect.Request[v1.InterruptRequest]) (*connect.Response[v1.InterruptResponse], error)
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
@@ -201,10 +179,6 @@ type DashboardServiceClient interface {
 	ListProposals(context.Context, *connect.Request[v1.ListProposalsRequest]) (*connect.Response[v1.ListProposalsResponse], error)
 	OpenFromProposal(context.Context, *connect.Request[v1.OpenFromProposalRequest]) (*connect.Response[v1.OpenFromProposalResponse], error)
 	DismissProposal(context.Context, *connect.Request[v1.DismissProposalRequest]) (*connect.Response[v1.DismissProposalResponse], error)
-	KillE2E(context.Context, *connect.Request[v1.KillE2ERequest]) (*connect.Response[v1.KillE2EResponse], error)
-	StartE2E(context.Context, *connect.Request[v1.StartE2ERequest]) (*connect.Response[v1.StartE2EResponse], error)
-	RestartE2EApp(context.Context, *connect.Request[v1.RestartE2EAppRequest]) (*connect.Response[v1.RestartE2EAppResponse], error)
-	GetE2EAppLog(context.Context, *connect.Request[v1.GetE2EAppLogRequest]) (*connect.Response[v1.GetE2EAppLogResponse], error)
 	// AnswerQuestion, RespondToPermission and PostMessage all mean "append an
 	// entry to this session's transcript" — a human answer, a permission
 	// decision, and a free-text message are the same row with different types.
@@ -229,9 +203,7 @@ type DashboardServiceClient interface {
 	// reuse provisioner's own WorktreeInfo/ListWorktreesResponse as-is.
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
-	ListWorktrees(context.Context, *connect.Request[v1.ListWorktreesRequest]) (*connect.Response[v1.ListWorktreesViewResponse], error)
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
-	DeleteWorktree(context.Context, *connect.Request[v1.DeleteWorktreeRequest]) (*connect.Response[v1.DeleteWorktreeResponse], error)
 	GetJournal(context.Context, *connect.Request[v1.GetJournalRequest]) (*connect.Response[v1.GetJournalResponse], error)
 	ListRepos(context.Context, *connect.Request[v1.ListReposRequest]) (*connect.Response[v1.ListReposResponse], error)
 	CreateRepo(context.Context, *connect.Request[v1.CreateRepoRequest]) (*connect.Response[v1.CreateRepoResponse], error)
@@ -309,12 +281,6 @@ func NewDashboardServiceClient(httpClient connect.HTTPClient, baseURL string, op
 			connect.WithSchema(dashboardServiceMethods.ByName("StreamTranscript")),
 			connect.WithClientOptions(opts...),
 		),
-		getE2EStatus: connect.NewClient[v1.GetE2EStatusRequest, v1.GetE2EStatusResponse](
-			httpClient,
-			baseURL+DashboardServiceGetE2EStatusProcedure,
-			connect.WithSchema(dashboardServiceMethods.ByName("GetE2eStatus")),
-			connect.WithClientOptions(opts...),
-		),
 		stopSession: connect.NewClient[v1.StopSessionRequest, v1.StopSessionResponse](
 			httpClient,
 			baseURL+DashboardServiceStopSessionProcedure,
@@ -369,30 +335,6 @@ func NewDashboardServiceClient(httpClient connect.HTTPClient, baseURL string, op
 			connect.WithSchema(dashboardServiceMethods.ByName("DismissProposal")),
 			connect.WithClientOptions(opts...),
 		),
-		killE2E: connect.NewClient[v1.KillE2ERequest, v1.KillE2EResponse](
-			httpClient,
-			baseURL+DashboardServiceKillE2EProcedure,
-			connect.WithSchema(dashboardServiceMethods.ByName("KillE2e")),
-			connect.WithClientOptions(opts...),
-		),
-		startE2E: connect.NewClient[v1.StartE2ERequest, v1.StartE2EResponse](
-			httpClient,
-			baseURL+DashboardServiceStartE2EProcedure,
-			connect.WithSchema(dashboardServiceMethods.ByName("StartE2e")),
-			connect.WithClientOptions(opts...),
-		),
-		restartE2EApp: connect.NewClient[v1.RestartE2EAppRequest, v1.RestartE2EAppResponse](
-			httpClient,
-			baseURL+DashboardServiceRestartE2EAppProcedure,
-			connect.WithSchema(dashboardServiceMethods.ByName("RestartE2eApp")),
-			connect.WithClientOptions(opts...),
-		),
-		getE2EAppLog: connect.NewClient[v1.GetE2EAppLogRequest, v1.GetE2EAppLogResponse](
-			httpClient,
-			baseURL+DashboardServiceGetE2EAppLogProcedure,
-			connect.WithSchema(dashboardServiceMethods.ByName("GetE2eAppLog")),
-			connect.WithClientOptions(opts...),
-		),
 		answerQuestion: connect.NewClient[v1.AnswerQuestionRequest, v1.AppendResponse](
 			httpClient,
 			baseURL+DashboardServiceAnswerQuestionProcedure,
@@ -415,18 +357,6 @@ func NewDashboardServiceClient(httpClient connect.HTTPClient, baseURL string, op
 			httpClient,
 			baseURL+DashboardServiceDeleteSessionProcedure,
 			connect.WithSchema(dashboardServiceMethods.ByName("DeleteSession")),
-			connect.WithClientOptions(opts...),
-		),
-		listWorktrees: connect.NewClient[v1.ListWorktreesRequest, v1.ListWorktreesViewResponse](
-			httpClient,
-			baseURL+DashboardServiceListWorktreesProcedure,
-			connect.WithSchema(dashboardServiceMethods.ByName("ListWorktrees")),
-			connect.WithClientOptions(opts...),
-		),
-		deleteWorktree: connect.NewClient[v1.DeleteWorktreeRequest, v1.DeleteWorktreeResponse](
-			httpClient,
-			baseURL+DashboardServiceDeleteWorktreeProcedure,
-			connect.WithSchema(dashboardServiceMethods.ByName("DeleteWorktree")),
 			connect.WithClientOptions(opts...),
 		),
 		getJournal: connect.NewClient[v1.GetJournalRequest, v1.GetJournalResponse](
@@ -565,7 +495,6 @@ type dashboardServiceClient struct {
 	createSession        *connect.Client[v1.CreateSessionRequest, v1.CreateSessionResponse]
 	getTranscript        *connect.Client[v1.ReadTranscriptSinceRequest, v1.ReadTranscriptSinceResponse]
 	streamTranscript     *connect.Client[v1.StreamTranscriptRequest, v1.TranscriptEntry]
-	getE2EStatus         *connect.Client[v1.GetE2EStatusRequest, v1.GetE2EStatusResponse]
 	stopSession          *connect.Client[v1.StopSessionRequest, v1.StopSessionResponse]
 	interrupt            *connect.Client[v1.InterruptRequest, v1.InterruptResponse]
 	setPermissionMode    *connect.Client[v1.SetPermissionModeRequest, v1.SetPermissionModeResponse]
@@ -575,16 +504,10 @@ type dashboardServiceClient struct {
 	listProposals        *connect.Client[v1.ListProposalsRequest, v1.ListProposalsResponse]
 	openFromProposal     *connect.Client[v1.OpenFromProposalRequest, v1.OpenFromProposalResponse]
 	dismissProposal      *connect.Client[v1.DismissProposalRequest, v1.DismissProposalResponse]
-	killE2E              *connect.Client[v1.KillE2ERequest, v1.KillE2EResponse]
-	startE2E             *connect.Client[v1.StartE2ERequest, v1.StartE2EResponse]
-	restartE2EApp        *connect.Client[v1.RestartE2EAppRequest, v1.RestartE2EAppResponse]
-	getE2EAppLog         *connect.Client[v1.GetE2EAppLogRequest, v1.GetE2EAppLogResponse]
 	answerQuestion       *connect.Client[v1.AnswerQuestionRequest, v1.AppendResponse]
 	respondToPermission  *connect.Client[v1.RespondToPermissionRequest, v1.AppendResponse]
 	postMessage          *connect.Client[v1.PostMessageRequest, v1.AppendResponse]
 	deleteSession        *connect.Client[v1.DeleteSessionRequest, v1.DeleteSessionResponse]
-	listWorktrees        *connect.Client[v1.ListWorktreesRequest, v1.ListWorktreesViewResponse]
-	deleteWorktree       *connect.Client[v1.DeleteWorktreeRequest, v1.DeleteWorktreeResponse]
 	getJournal           *connect.Client[v1.GetJournalRequest, v1.GetJournalResponse]
 	listRepos            *connect.Client[v1.ListReposRequest, v1.ListReposResponse]
 	createRepo           *connect.Client[v1.CreateRepoRequest, v1.CreateRepoResponse]
@@ -633,11 +556,6 @@ func (c *dashboardServiceClient) StreamTranscript(ctx context.Context, req *conn
 	return c.streamTranscript.CallServerStream(ctx, req)
 }
 
-// GetE2EStatus calls agentfleet.v1.DashboardService.GetE2eStatus.
-func (c *dashboardServiceClient) GetE2EStatus(ctx context.Context, req *connect.Request[v1.GetE2EStatusRequest]) (*connect.Response[v1.GetE2EStatusResponse], error) {
-	return c.getE2EStatus.CallUnary(ctx, req)
-}
-
 // StopSession calls agentfleet.v1.DashboardService.StopSession.
 func (c *dashboardServiceClient) StopSession(ctx context.Context, req *connect.Request[v1.StopSessionRequest]) (*connect.Response[v1.StopSessionResponse], error) {
 	return c.stopSession.CallUnary(ctx, req)
@@ -683,26 +601,6 @@ func (c *dashboardServiceClient) DismissProposal(ctx context.Context, req *conne
 	return c.dismissProposal.CallUnary(ctx, req)
 }
 
-// KillE2E calls agentfleet.v1.DashboardService.KillE2e.
-func (c *dashboardServiceClient) KillE2E(ctx context.Context, req *connect.Request[v1.KillE2ERequest]) (*connect.Response[v1.KillE2EResponse], error) {
-	return c.killE2E.CallUnary(ctx, req)
-}
-
-// StartE2E calls agentfleet.v1.DashboardService.StartE2e.
-func (c *dashboardServiceClient) StartE2E(ctx context.Context, req *connect.Request[v1.StartE2ERequest]) (*connect.Response[v1.StartE2EResponse], error) {
-	return c.startE2E.CallUnary(ctx, req)
-}
-
-// RestartE2EApp calls agentfleet.v1.DashboardService.RestartE2eApp.
-func (c *dashboardServiceClient) RestartE2EApp(ctx context.Context, req *connect.Request[v1.RestartE2EAppRequest]) (*connect.Response[v1.RestartE2EAppResponse], error) {
-	return c.restartE2EApp.CallUnary(ctx, req)
-}
-
-// GetE2EAppLog calls agentfleet.v1.DashboardService.GetE2eAppLog.
-func (c *dashboardServiceClient) GetE2EAppLog(ctx context.Context, req *connect.Request[v1.GetE2EAppLogRequest]) (*connect.Response[v1.GetE2EAppLogResponse], error) {
-	return c.getE2EAppLog.CallUnary(ctx, req)
-}
-
 // AnswerQuestion calls agentfleet.v1.DashboardService.AnswerQuestion.
 func (c *dashboardServiceClient) AnswerQuestion(ctx context.Context, req *connect.Request[v1.AnswerQuestionRequest]) (*connect.Response[v1.AppendResponse], error) {
 	return c.answerQuestion.CallUnary(ctx, req)
@@ -721,16 +619,6 @@ func (c *dashboardServiceClient) PostMessage(ctx context.Context, req *connect.R
 // DeleteSession calls agentfleet.v1.DashboardService.DeleteSession.
 func (c *dashboardServiceClient) DeleteSession(ctx context.Context, req *connect.Request[v1.DeleteSessionRequest]) (*connect.Response[v1.DeleteSessionResponse], error) {
 	return c.deleteSession.CallUnary(ctx, req)
-}
-
-// ListWorktrees calls agentfleet.v1.DashboardService.ListWorktrees.
-func (c *dashboardServiceClient) ListWorktrees(ctx context.Context, req *connect.Request[v1.ListWorktreesRequest]) (*connect.Response[v1.ListWorktreesViewResponse], error) {
-	return c.listWorktrees.CallUnary(ctx, req)
-}
-
-// DeleteWorktree calls agentfleet.v1.DashboardService.DeleteWorktree.
-func (c *dashboardServiceClient) DeleteWorktree(ctx context.Context, req *connect.Request[v1.DeleteWorktreeRequest]) (*connect.Response[v1.DeleteWorktreeResponse], error) {
-	return c.deleteWorktree.CallUnary(ctx, req)
 }
 
 // GetJournal calls agentfleet.v1.DashboardService.GetJournal.
@@ -855,7 +743,6 @@ type DashboardServiceHandler interface {
 	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	StreamTranscript(context.Context, *connect.Request[v1.StreamTranscriptRequest], *connect.ServerStream[v1.TranscriptEntry]) error
-	GetE2EStatus(context.Context, *connect.Request[v1.GetE2EStatusRequest]) (*connect.Response[v1.GetE2EStatusResponse], error)
 	StopSession(context.Context, *connect.Request[v1.StopSessionRequest]) (*connect.Response[v1.StopSessionResponse], error)
 	Interrupt(context.Context, *connect.Request[v1.InterruptRequest]) (*connect.Response[v1.InterruptResponse], error)
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
@@ -866,10 +753,6 @@ type DashboardServiceHandler interface {
 	ListProposals(context.Context, *connect.Request[v1.ListProposalsRequest]) (*connect.Response[v1.ListProposalsResponse], error)
 	OpenFromProposal(context.Context, *connect.Request[v1.OpenFromProposalRequest]) (*connect.Response[v1.OpenFromProposalResponse], error)
 	DismissProposal(context.Context, *connect.Request[v1.DismissProposalRequest]) (*connect.Response[v1.DismissProposalResponse], error)
-	KillE2E(context.Context, *connect.Request[v1.KillE2ERequest]) (*connect.Response[v1.KillE2EResponse], error)
-	StartE2E(context.Context, *connect.Request[v1.StartE2ERequest]) (*connect.Response[v1.StartE2EResponse], error)
-	RestartE2EApp(context.Context, *connect.Request[v1.RestartE2EAppRequest]) (*connect.Response[v1.RestartE2EAppResponse], error)
-	GetE2EAppLog(context.Context, *connect.Request[v1.GetE2EAppLogRequest]) (*connect.Response[v1.GetE2EAppLogResponse], error)
 	// AnswerQuestion, RespondToPermission and PostMessage all mean "append an
 	// entry to this session's transcript" — a human answer, a permission
 	// decision, and a free-text message are the same row with different types.
@@ -894,9 +777,7 @@ type DashboardServiceHandler interface {
 	// reuse provisioner's own WorktreeInfo/ListWorktreesResponse as-is.
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
-	ListWorktrees(context.Context, *connect.Request[v1.ListWorktreesRequest]) (*connect.Response[v1.ListWorktreesViewResponse], error)
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
-	DeleteWorktree(context.Context, *connect.Request[v1.DeleteWorktreeRequest]) (*connect.Response[v1.DeleteWorktreeResponse], error)
 	GetJournal(context.Context, *connect.Request[v1.GetJournalRequest]) (*connect.Response[v1.GetJournalResponse], error)
 	ListRepos(context.Context, *connect.Request[v1.ListReposRequest]) (*connect.Response[v1.ListReposResponse], error)
 	CreateRepo(context.Context, *connect.Request[v1.CreateRepoRequest]) (*connect.Response[v1.CreateRepoResponse], error)
@@ -970,12 +851,6 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 		connect.WithSchema(dashboardServiceMethods.ByName("StreamTranscript")),
 		connect.WithHandlerOptions(opts...),
 	)
-	dashboardServiceGetE2EStatusHandler := connect.NewUnaryHandler(
-		DashboardServiceGetE2EStatusProcedure,
-		svc.GetE2EStatus,
-		connect.WithSchema(dashboardServiceMethods.ByName("GetE2eStatus")),
-		connect.WithHandlerOptions(opts...),
-	)
 	dashboardServiceStopSessionHandler := connect.NewUnaryHandler(
 		DashboardServiceStopSessionProcedure,
 		svc.StopSession,
@@ -1030,30 +905,6 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 		connect.WithSchema(dashboardServiceMethods.ByName("DismissProposal")),
 		connect.WithHandlerOptions(opts...),
 	)
-	dashboardServiceKillE2EHandler := connect.NewUnaryHandler(
-		DashboardServiceKillE2EProcedure,
-		svc.KillE2E,
-		connect.WithSchema(dashboardServiceMethods.ByName("KillE2e")),
-		connect.WithHandlerOptions(opts...),
-	)
-	dashboardServiceStartE2EHandler := connect.NewUnaryHandler(
-		DashboardServiceStartE2EProcedure,
-		svc.StartE2E,
-		connect.WithSchema(dashboardServiceMethods.ByName("StartE2e")),
-		connect.WithHandlerOptions(opts...),
-	)
-	dashboardServiceRestartE2EAppHandler := connect.NewUnaryHandler(
-		DashboardServiceRestartE2EAppProcedure,
-		svc.RestartE2EApp,
-		connect.WithSchema(dashboardServiceMethods.ByName("RestartE2eApp")),
-		connect.WithHandlerOptions(opts...),
-	)
-	dashboardServiceGetE2EAppLogHandler := connect.NewUnaryHandler(
-		DashboardServiceGetE2EAppLogProcedure,
-		svc.GetE2EAppLog,
-		connect.WithSchema(dashboardServiceMethods.ByName("GetE2eAppLog")),
-		connect.WithHandlerOptions(opts...),
-	)
 	dashboardServiceAnswerQuestionHandler := connect.NewUnaryHandler(
 		DashboardServiceAnswerQuestionProcedure,
 		svc.AnswerQuestion,
@@ -1076,18 +927,6 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 		DashboardServiceDeleteSessionProcedure,
 		svc.DeleteSession,
 		connect.WithSchema(dashboardServiceMethods.ByName("DeleteSession")),
-		connect.WithHandlerOptions(opts...),
-	)
-	dashboardServiceListWorktreesHandler := connect.NewUnaryHandler(
-		DashboardServiceListWorktreesProcedure,
-		svc.ListWorktrees,
-		connect.WithSchema(dashboardServiceMethods.ByName("ListWorktrees")),
-		connect.WithHandlerOptions(opts...),
-	)
-	dashboardServiceDeleteWorktreeHandler := connect.NewUnaryHandler(
-		DashboardServiceDeleteWorktreeProcedure,
-		svc.DeleteWorktree,
-		connect.WithSchema(dashboardServiceMethods.ByName("DeleteWorktree")),
 		connect.WithHandlerOptions(opts...),
 	)
 	dashboardServiceGetJournalHandler := connect.NewUnaryHandler(
@@ -1228,8 +1067,6 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 			dashboardServiceGetTranscriptHandler.ServeHTTP(w, r)
 		case DashboardServiceStreamTranscriptProcedure:
 			dashboardServiceStreamTranscriptHandler.ServeHTTP(w, r)
-		case DashboardServiceGetE2EStatusProcedure:
-			dashboardServiceGetE2EStatusHandler.ServeHTTP(w, r)
 		case DashboardServiceStopSessionProcedure:
 			dashboardServiceStopSessionHandler.ServeHTTP(w, r)
 		case DashboardServiceInterruptProcedure:
@@ -1248,14 +1085,6 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 			dashboardServiceOpenFromProposalHandler.ServeHTTP(w, r)
 		case DashboardServiceDismissProposalProcedure:
 			dashboardServiceDismissProposalHandler.ServeHTTP(w, r)
-		case DashboardServiceKillE2EProcedure:
-			dashboardServiceKillE2EHandler.ServeHTTP(w, r)
-		case DashboardServiceStartE2EProcedure:
-			dashboardServiceStartE2EHandler.ServeHTTP(w, r)
-		case DashboardServiceRestartE2EAppProcedure:
-			dashboardServiceRestartE2EAppHandler.ServeHTTP(w, r)
-		case DashboardServiceGetE2EAppLogProcedure:
-			dashboardServiceGetE2EAppLogHandler.ServeHTTP(w, r)
 		case DashboardServiceAnswerQuestionProcedure:
 			dashboardServiceAnswerQuestionHandler.ServeHTTP(w, r)
 		case DashboardServiceRespondToPermissionProcedure:
@@ -1264,10 +1093,6 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 			dashboardServicePostMessageHandler.ServeHTTP(w, r)
 		case DashboardServiceDeleteSessionProcedure:
 			dashboardServiceDeleteSessionHandler.ServeHTTP(w, r)
-		case DashboardServiceListWorktreesProcedure:
-			dashboardServiceListWorktreesHandler.ServeHTTP(w, r)
-		case DashboardServiceDeleteWorktreeProcedure:
-			dashboardServiceDeleteWorktreeHandler.ServeHTTP(w, r)
 		case DashboardServiceGetJournalProcedure:
 			dashboardServiceGetJournalHandler.ServeHTTP(w, r)
 		case DashboardServiceListReposProcedure:
@@ -1339,10 +1164,6 @@ func (UnimplementedDashboardServiceHandler) StreamTranscript(context.Context, *c
 	return connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.StreamTranscript is not implemented"))
 }
 
-func (UnimplementedDashboardServiceHandler) GetE2EStatus(context.Context, *connect.Request[v1.GetE2EStatusRequest]) (*connect.Response[v1.GetE2EStatusResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.GetE2eStatus is not implemented"))
-}
-
 func (UnimplementedDashboardServiceHandler) StopSession(context.Context, *connect.Request[v1.StopSessionRequest]) (*connect.Response[v1.StopSessionResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.StopSession is not implemented"))
 }
@@ -1379,22 +1200,6 @@ func (UnimplementedDashboardServiceHandler) DismissProposal(context.Context, *co
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.DismissProposal is not implemented"))
 }
 
-func (UnimplementedDashboardServiceHandler) KillE2E(context.Context, *connect.Request[v1.KillE2ERequest]) (*connect.Response[v1.KillE2EResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.KillE2e is not implemented"))
-}
-
-func (UnimplementedDashboardServiceHandler) StartE2E(context.Context, *connect.Request[v1.StartE2ERequest]) (*connect.Response[v1.StartE2EResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.StartE2e is not implemented"))
-}
-
-func (UnimplementedDashboardServiceHandler) RestartE2EApp(context.Context, *connect.Request[v1.RestartE2EAppRequest]) (*connect.Response[v1.RestartE2EAppResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.RestartE2eApp is not implemented"))
-}
-
-func (UnimplementedDashboardServiceHandler) GetE2EAppLog(context.Context, *connect.Request[v1.GetE2EAppLogRequest]) (*connect.Response[v1.GetE2EAppLogResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.GetE2eAppLog is not implemented"))
-}
-
 func (UnimplementedDashboardServiceHandler) AnswerQuestion(context.Context, *connect.Request[v1.AnswerQuestionRequest]) (*connect.Response[v1.AppendResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.AnswerQuestion is not implemented"))
 }
@@ -1409,14 +1214,6 @@ func (UnimplementedDashboardServiceHandler) PostMessage(context.Context, *connec
 
 func (UnimplementedDashboardServiceHandler) DeleteSession(context.Context, *connect.Request[v1.DeleteSessionRequest]) (*connect.Response[v1.DeleteSessionResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.DeleteSession is not implemented"))
-}
-
-func (UnimplementedDashboardServiceHandler) ListWorktrees(context.Context, *connect.Request[v1.ListWorktreesRequest]) (*connect.Response[v1.ListWorktreesViewResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.ListWorktrees is not implemented"))
-}
-
-func (UnimplementedDashboardServiceHandler) DeleteWorktree(context.Context, *connect.Request[v1.DeleteWorktreeRequest]) (*connect.Response[v1.DeleteWorktreeResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.DeleteWorktree is not implemented"))
 }
 
 func (UnimplementedDashboardServiceHandler) GetJournal(context.Context, *connect.Request[v1.GetJournalRequest]) (*connect.Response[v1.GetJournalResponse], error) {

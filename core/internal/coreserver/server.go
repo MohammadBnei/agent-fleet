@@ -173,65 +173,48 @@ func (s *Server) AskUserQuestion(ctx context.Context, req *agentfleetv1.AskUserQ
 	}
 }
 
-// RequestE2EEnv/KillE2EEnv proxy to the provisioner (docs/adr/0020's
-// hub-and-spoke rule — the sidecar never talks to the provisioner
-// directly, even for e2e requests that used to be a direct MCP call).
+// Expose/Unexpose/RequestService forward to the provisioner under
+// docs/adr/0020's hub-and-spoke rule: the session pod never commands the
+// provisioner directly, and all three of these are pod-lifecycle operations
+// needing cluster RBAC it does not hold.
+//
+// These are not the passthroughs docs/adr/0045 deleted. That ADR's objection
+// was to core carrying traffic that was none of its business — a shell
+// command's bytes. Here core is the only holder of the session row, so it is
+// the only thing that can answer "which repo is this session on", and it is
+// the component the lifecycle rule names.
 
-func (s *Server) RequestE2EEnv(ctx context.Context, req *agentfleetv1.RequestE2EEnvRequest) (*agentfleetv1.RequestE2EEnvResponse, error) {
+func (s *Server) Expose(ctx context.Context, req *agentfleetv1.ExposeRequest) (*agentfleetv1.ExposeResponse, error) {
+	url, err := s.provisioner.ExposeSession(ctx, req.GetSessionId(), req.GetPort())
+	if err != nil {
+		return nil, fmt.Errorf("Expose: %w", err)
+	}
+	return &agentfleetv1.ExposeResponse{Url: url}, nil
+}
+
+func (s *Server) Unexpose(ctx context.Context, req *agentfleetv1.UnexposeRequest) (*agentfleetv1.UnexposeResponse, error) {
+	if err := s.provisioner.UnexposeSession(ctx, req.GetSessionId()); err != nil {
+		return nil, fmt.Errorf("Unexpose: %w", err)
+	}
+	return &agentfleetv1.UnexposeResponse{}, nil
+}
+
+// RequestService resolves the repo from the session row rather than taking it
+// on the wire. Shared instances are keyed by repo, so a pod that could name
+// its own repo could reach another repo's database.
+func (s *Server) RequestService(ctx context.Context, req *agentfleetv1.RequestServiceRequest) (*agentfleetv1.RequestServiceResponse, error) {
 	t, err := s.sessions.Get(ctx, req.GetSessionId())
 	if err != nil {
-		return nil, fmt.Errorf("RequestE2EEnv: get task: %w", err)
+		return nil, fmt.Errorf("RequestService: get session: %w", err)
 	}
 	if t == nil {
-		return nil, fmt.Errorf("RequestE2EEnv: task %s not found", req.GetSessionId())
+		return nil, fmt.Errorf("RequestService: session %s not found", req.GetSessionId())
 	}
-	// There is no recipe to resolve any more (docs/adr/0048). The agent's
-	// own start command is whatever it decides to run in its own shell, so
-	// the caller's override is now the ONLY source — an empty one means a
-	// sandbox with no app, which docs/adr/0044 already established is a
-	// working sandbox rather than a failed pod.
-	toolKeys, err := s.toolKeysFor(ctx, t.Repo)
+	dsn, err := s.provisioner.ProvisionService(ctx, req.GetSessionId(), t.Repo, req.GetKind())
 	if err != nil {
-		return nil, fmt.Errorf("RequestE2EEnv: %w", err)
+		return nil, fmt.Errorf("RequestService: %w", err)
 	}
-	created, err := s.provisioner.CreateE2eSession(ctx, req.GetSessionId(), t.Repo, req.GetStartCmd(), toolKeys)
-	if err != nil {
-		return nil, fmt.Errorf("RequestE2EEnv: %w", err)
-	}
-	resp := &agentfleetv1.RequestE2EEnvResponse{
-		Status:           created.GetStatus(),
-		PreviewUrl:       created.GetPreviewUrl(),
-		ResolvedStartCmd: req.GetStartCmd(),
-		Tools:            toolKeys,
-		// Forwarded byte-for-byte from the provisioner (docs/adr/0045). core
-		// does not build, cache, validate or interpret these — it does not
-		// know what MCP is. That is what makes this a field passthrough
-		// rather than the call passthrough it replaces.
-		Endpoints: created.GetEndpoints(),
-	}
-	return resp, nil
-}
-
-// toolKeysFor mirrors the dashboard's helper of the same name: the only
-// ingredient that survived docs/adr/0034's recipe system is cluster-access,
-// because it is a privilege grant rather than a toolchain (docs/adr/0037).
-func (s *Server) toolKeysFor(ctx context.Context, repo string) ([]string, error) {
-	r, err := s.repos.Get(ctx, repo)
-	if err != nil {
-		return nil, err
-	}
-	if r == nil {
-		return nil, nil
-	}
-	return provisionerclient.ToolKeysFor(r.ClusterAccess), nil
-}
-
-func (s *Server) KillE2EEnv(ctx context.Context, req *agentfleetv1.KillE2EEnvRequest) (*agentfleetv1.KillE2EEnvResponse, error) {
-	killed, _, err := s.provisioner.KillSession(ctx, req.GetSessionId(), uuid.NewString(), "", false)
-	if err != nil {
-		return nil, fmt.Errorf("KillE2EEnv: %w", err)
-	}
-	return &agentfleetv1.KillE2EEnvResponse{Killed: killed}, nil
+	return &agentfleetv1.RequestServiceResponse{Dsn: dsn}, nil
 }
 
 // --- shared file space (docs/adr/0030) — core mints presigned URLs, the

@@ -1,4 +1,4 @@
-import { useState, type CSSProperties } from "react";
+import type { CSSProperties } from "react";
 import { client } from "../connectClient";
 import { ActionButton } from "./ActionButton";
 import { isPodPhaseLive } from "../pages/TaskList";
@@ -90,11 +90,6 @@ export function ActionsMenu({
   onHideChangesInFeedChange?: (value: boolean) => void;
 }) {
   const live = isPodPhaseLive(podPhase);
-  // Shared postgres/redis instances are keyed by repo, not task (docs/adr/
-  // 0034) — other tasks against the same repo (this task's own worker pod
-  // included) can still be using them, so tearing them down alongside "Kill
-  // e2e" is opt-in and human-confirmed via this checkbox, never implied.
-  const [alsoTeardownServices, setAlsoTeardownServices] = useState(false);
   return (
     <div className="flex flex-col gap-3">
       {(onHideToolsInFeedChange || onHideChangesInFeedChange) && (
@@ -182,30 +177,14 @@ export function ActionsMenu({
           Archive
         </ActionButton>
       )}
-      {!isThotTask && (
-      <ActionButton
-        className="btn btn-outline btn-xs"
-        busy={busyKey === "action:kill-e2e"}
-        disabled={busy}
-        onClick={() => run(() => client.killE2e({ sessionId, alsoTeardownServices }), "action:kill-e2e")}
-      >
-        Kill e2e
-      </ActionButton>
-      )}
-      {!isThotTask && (
-      <label
-        className="flex items-center gap-1.5 text-sm text-text2 cursor-pointer"
-        title="Also delete this repo's shared postgres/redis instances — they're shared with other tasks, only tear them down if you're sure nothing else needs them"
-      >
-        <input
-          type="checkbox"
-          checked={alsoTeardownServices}
-          onChange={(e) => setAlsoTeardownServices(e.target.checked)}
-          className="checkbox checkbox-xs"
-        />
-        also services
-      </label>
-      )}
+      {/*
+        "Kill e2e" and its "also services" checkbox are gone with the sandbox
+        (docs/adr/0048 §6). There is no second pod to kill — the agent's app
+        runs in this session's own pod and dies with it — and shared services
+        are now requested per session via request_service rather than declared
+        per repo, so there is no fleet-wide instance for a human to tear down
+        from a session's action bar.
+      */}
       {/* Native Popover API + CSS anchor positioning (daisyUI v5's current
           dropdown pattern) instead of the old tabIndex/:focus-within trick —
           only one of these is ever mounted at a time (desktop xor mobile,

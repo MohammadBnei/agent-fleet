@@ -12,7 +12,7 @@ type Provisioner interface {
 	ListWorkerPods(ctx context.Context) (map[string]string, error) // sessionID -> phase
 	TearDownWorker(ctx context.Context, sessionID string) error
 	TearDownE2e(ctx context.Context, sessionID string) error
-	SweepSession(ctx context.Context, sessionID, repo string) error
+	SweepSession(ctx context.Context, sessionID string) error
 }
 
 // Loop replaces core/internal/dispatch. What is gone is the dispatching:
@@ -200,12 +200,11 @@ func (l *Loop) collectExpired(ctx context.Context) {
 		return
 	}
 	for _, id := range ids {
-		s, err := l.sessions.Get(ctx, id)
-		if err != nil {
-			slog.Error("sessions loop: get before sweep failed", "sessionId", id, "error", err)
-			continue
-		}
-		if err := l.provisioner.SweepSession(ctx, id, s.Repo); err != nil {
+		// No repo lookup before the sweep any more: both things being deleted
+		// — the working-tree PVC and the SDK state directory — are keyed by
+		// session alone, and there is no branch left for the fleet to consider
+		// deleting alongside them (docs/adr/0048 §5).
+		if err := l.provisioner.SweepSession(ctx, id); err != nil {
 			// Do NOT mark swept — the disk is still there. Retrying next tick
 			// is correct; recording a sweep that did not happen would tell
 			// the dashboard a resumable session is gone.
@@ -216,7 +215,7 @@ func (l *Loop) collectExpired(ctx context.Context) {
 			slog.Error("sessions loop: mark swept failed", "sessionId", id, "error", err)
 			continue
 		}
-		slog.Info("sessions loop: swept session disk", "sessionId", id, "repo", s.Repo, "after", l.retention)
+		slog.Info("sessions loop: swept session disk", "sessionId", id, "after", l.retention)
 	}
 }
 

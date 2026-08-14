@@ -138,29 +138,38 @@ func (c *Client) AskUserQuestion(ctx context.Context, questionsJSON string, time
 	return resp.GetAnswered(), resp.GetAnswersJson(), resp.GetQuestionSeq(), nil
 }
 
-// RequestE2eEnv returns the response whole so the caller can echo the
-// resolved recipe back to the agent — startCmd and profile stay parameters,
-// but the mcpserver handler only passes a non-empty one after a human has
-// approved it (docs/adr/0034 follow-up: an unapproved, unreadable override is
-// what let a guessed command silently beat a correct profile).
-//
-// profile was a wire field core already honored with no producer anywhere
-// (docs/adr/0044) — so ADR-0034's documented agent-selectable profile was
-// unreachable, and every request resolved to the literal name "e2e".
-func (c *Client) RequestE2eEnv(ctx context.Context, startCmd, profile string) (*agentfleetv1.RequestE2EEnvResponse, error) {
-	resp, err := c.rpc.RequestE2EEnv(ctx, &agentfleetv1.RequestE2EEnvRequest{SessionId: c.taskID, StartCmd: startCmd, Profile: profile})
+// RequestE2eEnv and KillE2eEnv are gone with the sandbox (docs/adr/0048 §6).
+// Both carried the recipe system on their signatures — startCmd, profile, and
+// a whole resolved-recipe response the agent was meant to read back. None of
+// it survives, because none of it was ever a question the fleet was better
+// placed to answer than the agent sitting in the repo.
+
+// Expose publishes a port from this pod and returns its public URL.
+func (c *Client) Expose(ctx context.Context, port int32) (string, error) {
+	resp, err := c.rpc.Expose(ctx, &agentfleetv1.ExposeRequest{SessionId: c.taskID, Port: port})
 	if err != nil {
-		return nil, fmt.Errorf("RequestE2eEnv: %w", err)
+		return "", fmt.Errorf("Expose: %w", err)
 	}
-	return resp, nil
+	return resp.GetUrl(), nil
 }
 
-func (c *Client) KillE2eEnv(ctx context.Context) (bool, error) {
-	resp, err := c.rpc.KillE2EEnv(ctx, &agentfleetv1.KillE2EEnvRequest{SessionId: c.taskID})
-	if err != nil {
-		return false, fmt.Errorf("KillE2eEnv: %w", err)
+func (c *Client) Unexpose(ctx context.Context) error {
+	if _, err := c.rpc.Unexpose(ctx, &agentfleetv1.UnexposeRequest{SessionId: c.taskID}); err != nil {
+		return fmt.Errorf("Unexpose: %w", err)
 	}
-	return resp.GetKilled(), nil
+	return nil
+}
+
+// RequestService provisions or reuses a shared Postgres/Redis and returns its
+// connection string. The repo is not a parameter: core owns the session row,
+// so it resolves which repo this session is on rather than trusting a pod to
+// say — the same reason every other call here is keyed by taskID alone.
+func (c *Client) RequestService(ctx context.Context, kind string) (string, error) {
+	resp, err := c.rpc.RequestService(ctx, &agentfleetv1.RequestServiceRequest{SessionId: c.taskID, Kind: kind})
+	if err != nil {
+		return "", fmt.Errorf("RequestService: %w", err)
+	}
+	return resp.GetDsn(), nil
 }
 
 // No sandbox tool calls here at all any more (docs/adr/0045). Tool discovery

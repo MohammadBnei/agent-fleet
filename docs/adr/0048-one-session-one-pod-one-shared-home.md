@@ -255,10 +255,26 @@ So the split is by access pattern:
 
 ```
 /workspace          per-session `local-path` PVC   node-local, durable, auto-pinned
-/cache              per-node `local-path` PVC      warm across sessions on that node
+/cache              same PVC, subPath "cache"      node-local, warm across warms
 /repo-cache         longhorn RWX, read-only        the clone cache — small, read-mostly
 /home/bun/.claude   longhorn RWX, per-session      resume state — must survive node loss
 ```
+
+**Amended during implementation: `/cache` is a subPath of the session's own
+PVC, not a per-node one.** The original line said "per-node `local-path` PVC,
+warm across sessions on that node" — a shape Kubernetes does not have. A
+`local-path` PVC binds to exactly one node, so sessions scheduled anywhere else
+cannot mount it, and `WaitForFirstConsumer` means the node is not known until
+after the pod is scheduled, so the PVC cannot be named per-node up front. The
+only real ways to get a genuinely per-node directory are a `hostPath` mount on
+every session pod (which a restricted PodSecurity profile forbids) or a
+DaemonSet-managed volume, and neither is worth it here.
+
+What is lost is cross-session cache sharing: a brand-new session installs cold.
+What is kept is the part the measurements actually bought — node-local disk, so
+that cold install is the 2.4-second one rather than the >3-minute one — and the
+cache stays warm across every warm of the same session, since the PVC is pinned
+and reused. Sharing was never the win; the fabric was the problem.
 
 Node-local for anything write-heavy and regenerable; replicated network
 storage only for the small things whose loss actually matters.
@@ -322,13 +338,36 @@ and both options share it. The class stays `longhorn`.
 
 ### 5. The fleet leaves the git business
 
-Per session the provisioner does three things:
+**Amended during implementation — §4 and §5 were in direct conflict.** §4 was
+rewritten after the storage measurements and §5 was not updated with it. §5 had
+the provisioner run the per-session clone; §4 put the session's working tree on
+a per-session `local-path` PVC. The provisioner cannot write into that volume:
+`WaitForFirstConsumer` means it does not bind until the session pod is
+scheduled, and even after it binds the provisioner does not mount it. Nothing
+would have failed at build time — the clone would simply have landed on the
+provisioner's own view of a different volume.
+
+The resolution is an **init container in the session pod**, which is the only
+place both volumes are mounted at once:
 
 ```
-EnsureRepoCloned(repo)                          # fetch the shared cache
-git clone --shared /repo-cache/<repo> sessions/<id>
-seed claude-home/<id> from fleet-shared
+provisioner, on the shared RWX volume:
+  EnsureRepoCloned(repo)              # fetch the clone cache, gc.auto=0
+  seed claude-home/<id> from fleet-shared
+
+session pod, init container, before the sidecar:
+  git clone --shared /repo-cache/<repo> /workspace
 ```
+
+This is better than what it replaces, not merely a workaround: the clone now
+runs *on the node that owns the volume*, so it is node-local at 1 GB/s rather
+than crossing the 10 MB/s fabric, and the provisioner is out of the git
+business entirely rather than almost.
+
+`claude-home/<id>` stays a subPath on the shared RWX volume rather than a PVC
+of its own — it must survive node loss (it is the resume state), the
+provisioner has to seed it before the pod exists, and a per-session Longhorn
+PVC would mean three replicas apiece for a few megabytes.
 
 No worktree, no branch, no naming convention. The agent runs `git checkout -b`
 and `gh pr create` itself, as it already does for the PR.

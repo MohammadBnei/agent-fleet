@@ -162,16 +162,17 @@ func TestCreateWorkerPod_WithPodScopedService(t *testing.T) {
 	ctx := context.Background()
 	refs := []ServiceIngredientRef{{Key: "redis", ScopeMode: ScopeModePodScoped}}
 
-	if err := c.CreateWorkerPod(ctx, "task-svc", "dream-analyst", "lease-1", "/workspace/worktrees/task-svc", "", 0, nil, refs, nil); err != nil {
+	if err := c.CreateWorkerPod(ctx, WorkerPodSpec{SessionID: "task-svc", Repo: "dream-analyst", LeaseID: "lease-1", ResumeID: "", ResumeFromSeq: 0, ToolKeys: nil, ServiceRefs: refs, ExtraEnv: nil}); err != nil {
 		t.Fatalf("CreateWorkerPod: %v", err)
 	}
 	job, err := c.Core.BatchV1().Jobs("agent-fleet").Get(ctx, WorkerResourceName("task-svc"), metav1.GetOptions{})
 	if err != nil {
 		t.Fatalf("get job: %v", err)
 	}
-	// sidecar (existing) + redis (new) = 2 init containers.
-	if len(job.Spec.Template.Spec.InitContainers) != 2 {
-		t.Fatalf("expected 2 init containers (sidecar + redis), got %+v", job.Spec.Template.Spec.InitContainers)
+	// clone + sidecar + redis = 3 init containers (docs/adr/0048 §5 added the
+	// clone, which prepares the working tree inside the pod).
+	if len(job.Spec.Template.Spec.InitContainers) != 3 {
+		t.Fatalf("expected 3 init containers (clone + sidecar + redis), got %+v", job.Spec.Template.Spec.InitContainers)
 	}
 	worker := job.Spec.Template.Spec.Containers[0]
 	found := false
@@ -190,7 +191,7 @@ func TestCreateWorkerPod_WithExtraEnv(t *testing.T) {
 	ctx := context.Background()
 	extraEnv := []corev1.EnvVar{{Name: "DATABASE_URL", Value: "postgresql://task_abc:pw@svc-dream-analyst-postgres:5432/task_abc"}}
 
-	if err := c.CreateWorkerPod(ctx, "task-extra", "dream-analyst", "lease-1", "/workspace/worktrees/task-extra", "", 0, nil, nil, extraEnv); err != nil {
+	if err := c.CreateWorkerPod(ctx, WorkerPodSpec{SessionID: "task-extra", Repo: "dream-analyst", LeaseID: "lease-1", ResumeID: "", ResumeFromSeq: 0, ToolKeys: nil, ServiceRefs: nil, ExtraEnv: extraEnv}); err != nil {
 		t.Fatalf("CreateWorkerPod: %v", err)
 	}
 	job, err := c.Core.BatchV1().Jobs("agent-fleet").Get(ctx, WorkerResourceName("task-extra"), metav1.GetOptions{})

@@ -428,9 +428,43 @@ func (c *Client) GetPod(ctx context.Context, name string) (state PodState, exist
 // today's exact pod shape). extraEnv carries already-minted task-scoped/
 // repo-scoped service URLs, computed by the caller before this call so a
 // minting failure blocks pod creation entirely (grpcserver.go).
-func (c *Client) CreateWorkerPod(ctx context.Context, taskID, repo, leaseID, worktreePath, resumeSessionID string, resumeFromSeq int64, toolKeys []string, serviceIngredients []ServiceIngredientRef, extraEnv []corev1.EnvVar) error {
+// WorkerPodSpec is what a session's pod needs to exist. A struct rather than
+// ten positional parameters, which is what this was — and which is how
+// `worktreePath` sat in the middle of the list right up until the volume it
+// pointed at stopped existing.
+type WorkerPodSpec struct {
+	SessionID string
+	Repo      string
+	// RepoURL/BaseBranch are for the clone init container, not for this
+	// process: the working tree is cloned inside the pod now (docs/adr/0048
+	// §5), because it lives on a volume the provisioner never mounts.
+	RepoURL       string
+	BaseBranch    string
+	LeaseID       string
+	ResumeID      string
+	ResumeFromSeq int64
+	ToolKeys      []string
+	ServiceRefs   []ServiceIngredientRef
+	ExtraEnv      []corev1.EnvVar
+}
+
+func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error {
+	taskID, repo := spec.SessionID, spec.Repo
+	leaseID, resumeSessionID, resumeFromSeq := spec.LeaseID, spec.ResumeID, spec.ResumeFromSeq
+	toolKeys, serviceIngredients, extraEnv := spec.ToolKeys, spec.ServiceRefs, spec.ExtraEnv
+
 	name := WorkerResourceName(taskID)
 	labels := WorkerLabels(taskID, repo)
+
+	// The session's own working volume, created before the Job so the Job can
+	// reference it. local-path + WaitForFirstConsumer, and the pinning is the
+	// feature rather than a cost (docs/adr/0048 §4): the volume's node
+	// affinity forces every later warm of this session back to the node that
+	// already holds its tree and its warm dependency cache, with no affinity
+	// rules to write and no re-clone.
+	if err := c.EnsureSessionPVC(ctx, taskID, repo); err != nil {
+		return fmt.Errorf("ensure session pvc: %w", err)
+	}
 
 	sidecarRestartAlways := corev1.ContainerRestartPolicyAlways
 
@@ -460,7 +494,7 @@ func (c *Client) CreateWorkerPod(ctx context.Context, taskID, repo, leaseID, wor
 		{Name: "CLAUDE_CODE_OAUTH_TOKEN", Value: os.Getenv("CLAUDE_CODE_OAUTH_TOKEN")},
 		{Name: "CLAUDE_MODEL", Value: os.Getenv("CLAUDE_MODEL")},
 		{Name: "MAX_TURNS", Value: os.Getenv("MAX_TURNS")},
-		{Name: "WORKTREE_PATH", Value: worktreePath},
+		{Name: "WORKTREE_PATH", Value: sessionWorkdir},
 		{Name: "CLAUDE_CONFIG_DIR", Value: claudeConfigDir},
 		{Name: "RESUME_SESSION_ID", Value: resumeSessionID},
 		{Name: "RESUME_FROM_SEQ", Value: strconv.FormatInt(resumeFromSeq, 10)},
@@ -480,10 +514,28 @@ func (c *Client) CreateWorkerPod(ctx context.Context, taskID, repo, leaseID, wor
 	workerEnv = append(workerEnv, ingredientEnv...)
 	workerEnv = append(workerEnv, extraEnv...)
 
+	// Four mounts, split by access pattern rather than by uniformity
+	// (docs/adr/0048 §4). The old single whole-PVC mount put everything —
+	// working tree, node_modules, SDK state — on one Longhorn RWX volume
+	// measured at 10 MB/s, where a cold `bun install` could not finish in
+	// three minutes. The same install takes 2.4 seconds on node-local disk.
 	workerMounts := []corev1.VolumeMount{
-		// Whole PVC, not a per-task SubPath — see the sidecar
-		// container's identical mount above for why.
-		{Name: "workspace", MountPath: "/workspace"},
+		// Node-local, per session, durable across warms.
+		{Name: "session", MountPath: "/workspace", SubPath: "tree"},
+		// Dependency caches. Same volume, so same node-local speed, and warm
+		// across every warm of this session. Deliberately NOT shared between
+		// sessions: a per-node volume is not a shape Kubernetes offers, and
+		// sharing was never where the measured win came from.
+		{Name: "session", MountPath: "/cache", SubPath: "cache"},
+		// The clone cache, read-only. Small and read-mostly, so the network
+		// volume's latency does not matter — and read-only is a real boundary
+		// for the first time: a session cannot corrupt the cache every other
+		// session clones from.
+		{Name: "shared", MountPath: "/repo-cache", SubPath: "repos", ReadOnly: true},
+		// SDK resume state. On replicated storage because losing it loses the
+		// ability to resume the conversation at all, which is the one thing
+		// here that git is not already a backup of.
+		{Name: "shared", MountPath: claudeConfigDir, SubPath: "claude-home/" + taskID},
 	}
 	if toolsMount != nil {
 		workerMounts = append(workerMounts, *toolsMount)
@@ -500,6 +552,16 @@ func (c *Client) CreateWorkerPod(ctx context.Context, taskID, repo, leaseID, wor
 		// crashed 6ms after start, ~7s before the sidecar logged
 		// "listening").
 		InitContainers: []corev1.Container{
+			// Ordered first, and it must stay first: a plain init container
+			// runs to completion before the native sidecar below it starts,
+			// so the working tree exists before anything tries to read it.
+			//
+			// This is the only place both volumes are mounted at once, which
+			// is why the clone happens here rather than in the provisioner
+			// (docs/adr/0048 §5). It also means the clone runs on the node
+			// that owns the volume — node-local, not across the 10 MB/s
+			// fabric the provisioner would have crossed.
+			cloneInitContainer(c.WorkerImage, spec),
 			{
 				Name:          "sidecar",
 				Image:         c.SidecarImage,
@@ -509,7 +571,7 @@ func (c *Client) CreateWorkerPod(ctx context.Context, taskID, repo, leaseID, wor
 					{Name: "TARGET_REPO", Value: repo},
 					{Name: "MCP_PORT", Value: fmt.Sprint(SidecarMCPPort)},
 					{Name: "LOCAL_API_PORT", Value: fmt.Sprint(SidecarAPIPort)},
-					{Name: "WORKTREE_PATH", Value: worktreePath},
+					{Name: "WORKTREE_PATH", Value: sessionWorkdir},
 					{Name: "LOG_LEVEL", Value: c.LogLevel},
 					// Without this, the sidecar falls back to its own
 					// separately-hardcoded default, which only happens to
@@ -609,7 +671,13 @@ func (c *Client) CreateWorkerPod(ctx context.Context, taskID, repo, leaseID, wor
 		},
 		Volumes: []corev1.Volume{
 			{
-				Name: "workspace",
+				Name: "session",
+				VolumeSource: corev1.VolumeSource{
+					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: SessionPVCName(taskID)},
+				},
+			},
+			{
+				Name: "shared",
 				VolumeSource: corev1.VolumeSource{
 					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: c.WorkspacePVC},
 				},

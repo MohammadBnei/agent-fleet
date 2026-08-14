@@ -23,8 +23,9 @@ const (
 	CoreService_SendMessage_FullMethodName         = "/agentfleet.v1.CoreService/SendMessage"
 	CoreService_WaitForMessages_FullMethodName     = "/agentfleet.v1.CoreService/WaitForMessages"
 	CoreService_AskUserQuestion_FullMethodName     = "/agentfleet.v1.CoreService/AskUserQuestion"
-	CoreService_RequestE2EEnv_FullMethodName       = "/agentfleet.v1.CoreService/RequestE2eEnv"
-	CoreService_KillE2EEnv_FullMethodName          = "/agentfleet.v1.CoreService/KillE2eEnv"
+	CoreService_Expose_FullMethodName              = "/agentfleet.v1.CoreService/Expose"
+	CoreService_Unexpose_FullMethodName            = "/agentfleet.v1.CoreService/Unexpose"
+	CoreService_RequestService_FullMethodName      = "/agentfleet.v1.CoreService/RequestService"
 	CoreService_GetSession_FullMethodName          = "/agentfleet.v1.CoreService/GetSession"
 	CoreService_SetPermissionMode_FullMethodName   = "/agentfleet.v1.CoreService/SetPermissionMode"
 	CoreService_AppendJournal_FullMethodName       = "/agentfleet.v1.CoreService/AppendJournal"
@@ -62,8 +63,21 @@ type CoreServiceClient interface {
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	WaitForMessages(ctx context.Context, in *ReadTranscriptSinceRequest, opts ...grpc.CallOption) (*ReadTranscriptSinceResponse, error)
 	AskUserQuestion(ctx context.Context, in *AskUserQuestionRequest, opts ...grpc.CallOption) (*AskUserQuestionResponse, error)
-	RequestE2EEnv(ctx context.Context, in *RequestE2EEnvRequest, opts ...grpc.CallOption) (*RequestE2EEnvResponse, error)
-	KillE2EEnv(ctx context.Context, in *KillE2EEnvRequest, opts ...grpc.CallOption) (*KillE2EEnvResponse, error)
+	// RequestE2eEnv/KillE2eEnv are gone with the sandbox (docs/adr/0048 §6),
+	// as ListE2eTools/CallE2eTool went with the relay before them
+	// (docs/adr/0045). What survives is the part that was never about a second
+	// pod: two capabilities needing cluster RBAC, which core forwards to the
+	// provisioner because the session pod holds none.
+	//
+	// These are NOT passthroughs of the kind docs/adr/0045 deleted. Core is the
+	// only holder of the session row, so it is the only thing that can answer
+	// "which repo is this session on" for RequestService, and lifecycle
+	// commands to the provisioner route through core by decision
+	// (docs/adr/0020 point 4) — a Service and a route are pod lifecycle.
+	Expose(ctx context.Context, in *ExposeRequest, opts ...grpc.CallOption) (*ExposeResponse, error)
+	Unexpose(ctx context.Context, in *UnexposeRequest, opts ...grpc.CallOption) (*UnexposeResponse, error)
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	RequestService(ctx context.Context, in *RequestServiceRequest, opts ...grpc.CallOption) (*RequestServiceResponse, error)
 	// Lets a worker pod fetch its own fresh session row on startup instead of
 	// relying on stale environment variables — same message shapes
 	// DashboardService.GetTask uses, different caller (docs/adr/0029).
@@ -156,20 +170,30 @@ func (c *coreServiceClient) AskUserQuestion(ctx context.Context, in *AskUserQues
 	return out, nil
 }
 
-func (c *coreServiceClient) RequestE2EEnv(ctx context.Context, in *RequestE2EEnvRequest, opts ...grpc.CallOption) (*RequestE2EEnvResponse, error) {
+func (c *coreServiceClient) Expose(ctx context.Context, in *ExposeRequest, opts ...grpc.CallOption) (*ExposeResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(RequestE2EEnvResponse)
-	err := c.cc.Invoke(ctx, CoreService_RequestE2EEnv_FullMethodName, in, out, cOpts...)
+	out := new(ExposeResponse)
+	err := c.cc.Invoke(ctx, CoreService_Expose_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *coreServiceClient) KillE2EEnv(ctx context.Context, in *KillE2EEnvRequest, opts ...grpc.CallOption) (*KillE2EEnvResponse, error) {
+func (c *coreServiceClient) Unexpose(ctx context.Context, in *UnexposeRequest, opts ...grpc.CallOption) (*UnexposeResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(KillE2EEnvResponse)
-	err := c.cc.Invoke(ctx, CoreService_KillE2EEnv_FullMethodName, in, out, cOpts...)
+	out := new(UnexposeResponse)
+	err := c.cc.Invoke(ctx, CoreService_Unexpose_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *coreServiceClient) RequestService(ctx context.Context, in *RequestServiceRequest, opts ...grpc.CallOption) (*RequestServiceResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RequestServiceResponse)
+	err := c.cc.Invoke(ctx, CoreService_RequestService_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -355,8 +379,21 @@ type CoreServiceServer interface {
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	WaitForMessages(context.Context, *ReadTranscriptSinceRequest) (*ReadTranscriptSinceResponse, error)
 	AskUserQuestion(context.Context, *AskUserQuestionRequest) (*AskUserQuestionResponse, error)
-	RequestE2EEnv(context.Context, *RequestE2EEnvRequest) (*RequestE2EEnvResponse, error)
-	KillE2EEnv(context.Context, *KillE2EEnvRequest) (*KillE2EEnvResponse, error)
+	// RequestE2eEnv/KillE2eEnv are gone with the sandbox (docs/adr/0048 §6),
+	// as ListE2eTools/CallE2eTool went with the relay before them
+	// (docs/adr/0045). What survives is the part that was never about a second
+	// pod: two capabilities needing cluster RBAC, which core forwards to the
+	// provisioner because the session pod holds none.
+	//
+	// These are NOT passthroughs of the kind docs/adr/0045 deleted. Core is the
+	// only holder of the session row, so it is the only thing that can answer
+	// "which repo is this session on" for RequestService, and lifecycle
+	// commands to the provisioner route through core by decision
+	// (docs/adr/0020 point 4) — a Service and a route are pod lifecycle.
+	Expose(context.Context, *ExposeRequest) (*ExposeResponse, error)
+	Unexpose(context.Context, *UnexposeRequest) (*UnexposeResponse, error)
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	RequestService(context.Context, *RequestServiceRequest) (*RequestServiceResponse, error)
 	// Lets a worker pod fetch its own fresh session row on startup instead of
 	// relying on stale environment variables — same message shapes
 	// DashboardService.GetTask uses, different caller (docs/adr/0029).
@@ -418,11 +455,14 @@ func (UnimplementedCoreServiceServer) WaitForMessages(context.Context, *ReadTran
 func (UnimplementedCoreServiceServer) AskUserQuestion(context.Context, *AskUserQuestionRequest) (*AskUserQuestionResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method AskUserQuestion not implemented")
 }
-func (UnimplementedCoreServiceServer) RequestE2EEnv(context.Context, *RequestE2EEnvRequest) (*RequestE2EEnvResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method RequestE2EEnv not implemented")
+func (UnimplementedCoreServiceServer) Expose(context.Context, *ExposeRequest) (*ExposeResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Expose not implemented")
 }
-func (UnimplementedCoreServiceServer) KillE2EEnv(context.Context, *KillE2EEnvRequest) (*KillE2EEnvResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method KillE2EEnv not implemented")
+func (UnimplementedCoreServiceServer) Unexpose(context.Context, *UnexposeRequest) (*UnexposeResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Unexpose not implemented")
+}
+func (UnimplementedCoreServiceServer) RequestService(context.Context, *RequestServiceRequest) (*RequestServiceResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RequestService not implemented")
 }
 func (UnimplementedCoreServiceServer) GetSession(context.Context, *GetSessionRequest) (*GetSessionResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetSession not implemented")
@@ -551,38 +591,56 @@ func _CoreService_AskUserQuestion_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
-func _CoreService_RequestE2EEnv_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(RequestE2EEnvRequest)
+func _CoreService_Expose_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ExposeRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(CoreServiceServer).RequestE2EEnv(ctx, in)
+		return srv.(CoreServiceServer).Expose(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: CoreService_RequestE2EEnv_FullMethodName,
+		FullMethod: CoreService_Expose_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(CoreServiceServer).RequestE2EEnv(ctx, req.(*RequestE2EEnvRequest))
+		return srv.(CoreServiceServer).Expose(ctx, req.(*ExposeRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _CoreService_KillE2EEnv_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(KillE2EEnvRequest)
+func _CoreService_Unexpose_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UnexposeRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(CoreServiceServer).KillE2EEnv(ctx, in)
+		return srv.(CoreServiceServer).Unexpose(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: CoreService_KillE2EEnv_FullMethodName,
+		FullMethod: CoreService_Unexpose_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(CoreServiceServer).KillE2EEnv(ctx, req.(*KillE2EEnvRequest))
+		return srv.(CoreServiceServer).Unexpose(ctx, req.(*UnexposeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CoreService_RequestService_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RequestServiceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).RequestService(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_RequestService_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).RequestService(ctx, req.(*RequestServiceRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -870,12 +928,16 @@ var CoreService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _CoreService_AskUserQuestion_Handler,
 		},
 		{
-			MethodName: "RequestE2eEnv",
-			Handler:    _CoreService_RequestE2EEnv_Handler,
+			MethodName: "Expose",
+			Handler:    _CoreService_Expose_Handler,
 		},
 		{
-			MethodName: "KillE2eEnv",
-			Handler:    _CoreService_KillE2EEnv_Handler,
+			MethodName: "Unexpose",
+			Handler:    _CoreService_Unexpose_Handler,
+		},
+		{
+			MethodName: "RequestService",
+			Handler:    _CoreService_RequestService_Handler,
 		},
 		{
 			MethodName: "GetSession",

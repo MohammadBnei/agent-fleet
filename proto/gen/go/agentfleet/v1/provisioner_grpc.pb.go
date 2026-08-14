@@ -19,35 +19,35 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	ProvisionerService_KillE2ESession_FullMethodName      = "/agentfleet.v1.ProvisionerService/KillE2eSession"
-	ProvisionerService_GetE2ESessionStatus_FullMethodName = "/agentfleet.v1.ProvisionerService/GetE2eSessionStatus"
-	ProvisionerService_CreateE2ESession_FullMethodName    = "/agentfleet.v1.ProvisionerService/CreateE2eSession"
-	ProvisionerService_CreateWorkerPod_FullMethodName     = "/agentfleet.v1.ProvisionerService/CreateWorkerPod"
-	ProvisionerService_TearDownSession_FullMethodName     = "/agentfleet.v1.ProvisionerService/TearDownSession"
-	ProvisionerService_ListWorkerPods_FullMethodName      = "/agentfleet.v1.ProvisionerService/ListWorkerPods"
-	ProvisionerService_ListWorktrees_FullMethodName       = "/agentfleet.v1.ProvisionerService/ListWorktrees"
-	ProvisionerService_DeleteWorktree_FullMethodName      = "/agentfleet.v1.ProvisionerService/DeleteWorktree"
+	ProvisionerService_CreateWorkerPod_FullMethodName  = "/agentfleet.v1.ProvisionerService/CreateWorkerPod"
+	ProvisionerService_TearDownSession_FullMethodName  = "/agentfleet.v1.ProvisionerService/TearDownSession"
+	ProvisionerService_ListWorkerPods_FullMethodName   = "/agentfleet.v1.ProvisionerService/ListWorkerPods"
+	ProvisionerService_ExposeSession_FullMethodName    = "/agentfleet.v1.ProvisionerService/ExposeSession"
+	ProvisionerService_UnexposeSession_FullMethodName  = "/agentfleet.v1.ProvisionerService/UnexposeSession"
+	ProvisionerService_ProvisionService_FullMethodName = "/agentfleet.v1.ProvisionerService/ProvisionService"
+	ProvisionerService_SweepSession_FullMethodName     = "/agentfleet.v1.ProvisionerService/SweepSession"
 )
 
 // ProvisionerServiceClient is the client API for ProvisionerService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type ProvisionerServiceClient interface {
-	KillE2ESession(ctx context.Context, in *KillE2ESessionRequest, opts ...grpc.CallOption) (*KillE2ESessionResponse, error)
-	GetE2ESessionStatus(ctx context.Context, in *GetE2ESessionStatusRequest, opts ...grpc.CallOption) (*GetE2ESessionStatusResponse, error)
-	CreateE2ESession(ctx context.Context, in *CreateE2ESessionRequest, opts ...grpc.CallOption) (*CreateE2ESessionResponse, error)
 	CreateWorkerPod(ctx context.Context, in *CreateWorkerPodRequest, opts ...grpc.CallOption) (*CreateWorkerPodResponse, error)
 	TearDownSession(ctx context.Context, in *TearDownSessionRequest, opts ...grpc.CallOption) (*TearDownSessionResponse, error)
 	// The liveness reconcile source — see ListWorkerPodsRequest.
 	ListWorkerPods(ctx context.Context, in *ListWorkerPodsRequest, opts ...grpc.CallOption) (*ListWorkerPodsResponse, error)
-	// Reused as-is by dashboard.proto's own ListWorktrees (identical empty
-	// request shape) — cross-file message reuse, not a call passthrough.
-	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
-	ListWorktrees(ctx context.Context, in *ListWorktreesRequest, opts ...grpc.CallOption) (*ListWorktreesResponse, error)
-	// Reused as-is by dashboard.proto's own DeleteWorktree (identical
-	// request/response shape, no dashboard-specific fields needed).
-	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
-	DeleteWorktree(ctx context.Context, in *DeleteWorktreeRequest, opts ...grpc.CallOption) (*DeleteWorktreeResponse, error)
+	// What is left of the sandbox after docs/adr/0048 §6: the two capabilities
+	// that need cluster RBAC. Everything else the e2e pod did — running the
+	// app, running builds, running a browser — happens in the session pod
+	// itself now, with plain Bash.
+	ExposeSession(ctx context.Context, in *ExposeSessionRequest, opts ...grpc.CallOption) (*ExposeSessionResponse, error)
+	UnexposeSession(ctx context.Context, in *UnexposeSessionRequest, opts ...grpc.CallOption) (*UnexposeSessionResponse, error)
+	ProvisionService(ctx context.Context, in *ProvisionServiceRequest, opts ...grpc.CallOption) (*ProvisionServiceResponse, error)
+	// Deletes a session's working-tree PVC. The other half of its disk (the
+	// SDK resume state) is a directory on the shared volume, removed in the
+	// same call — the two live on different volumes because they have
+	// different access patterns, not because anything wants them apart.
+	SweepSession(ctx context.Context, in *SweepSessionRequest, opts ...grpc.CallOption) (*SweepSessionResponse, error)
 }
 
 type provisionerServiceClient struct {
@@ -56,36 +56,6 @@ type provisionerServiceClient struct {
 
 func NewProvisionerServiceClient(cc grpc.ClientConnInterface) ProvisionerServiceClient {
 	return &provisionerServiceClient{cc}
-}
-
-func (c *provisionerServiceClient) KillE2ESession(ctx context.Context, in *KillE2ESessionRequest, opts ...grpc.CallOption) (*KillE2ESessionResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(KillE2ESessionResponse)
-	err := c.cc.Invoke(ctx, ProvisionerService_KillE2ESession_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *provisionerServiceClient) GetE2ESessionStatus(ctx context.Context, in *GetE2ESessionStatusRequest, opts ...grpc.CallOption) (*GetE2ESessionStatusResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(GetE2ESessionStatusResponse)
-	err := c.cc.Invoke(ctx, ProvisionerService_GetE2ESessionStatus_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *provisionerServiceClient) CreateE2ESession(ctx context.Context, in *CreateE2ESessionRequest, opts ...grpc.CallOption) (*CreateE2ESessionResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(CreateE2ESessionResponse)
-	err := c.cc.Invoke(ctx, ProvisionerService_CreateE2ESession_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
 }
 
 func (c *provisionerServiceClient) CreateWorkerPod(ctx context.Context, in *CreateWorkerPodRequest, opts ...grpc.CallOption) (*CreateWorkerPodResponse, error) {
@@ -118,20 +88,40 @@ func (c *provisionerServiceClient) ListWorkerPods(ctx context.Context, in *ListW
 	return out, nil
 }
 
-func (c *provisionerServiceClient) ListWorktrees(ctx context.Context, in *ListWorktreesRequest, opts ...grpc.CallOption) (*ListWorktreesResponse, error) {
+func (c *provisionerServiceClient) ExposeSession(ctx context.Context, in *ExposeSessionRequest, opts ...grpc.CallOption) (*ExposeSessionResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(ListWorktreesResponse)
-	err := c.cc.Invoke(ctx, ProvisionerService_ListWorktrees_FullMethodName, in, out, cOpts...)
+	out := new(ExposeSessionResponse)
+	err := c.cc.Invoke(ctx, ProvisionerService_ExposeSession_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *provisionerServiceClient) DeleteWorktree(ctx context.Context, in *DeleteWorktreeRequest, opts ...grpc.CallOption) (*DeleteWorktreeResponse, error) {
+func (c *provisionerServiceClient) UnexposeSession(ctx context.Context, in *UnexposeSessionRequest, opts ...grpc.CallOption) (*UnexposeSessionResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(DeleteWorktreeResponse)
-	err := c.cc.Invoke(ctx, ProvisionerService_DeleteWorktree_FullMethodName, in, out, cOpts...)
+	out := new(UnexposeSessionResponse)
+	err := c.cc.Invoke(ctx, ProvisionerService_UnexposeSession_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *provisionerServiceClient) ProvisionService(ctx context.Context, in *ProvisionServiceRequest, opts ...grpc.CallOption) (*ProvisionServiceResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ProvisionServiceResponse)
+	err := c.cc.Invoke(ctx, ProvisionerService_ProvisionService_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *provisionerServiceClient) SweepSession(ctx context.Context, in *SweepSessionRequest, opts ...grpc.CallOption) (*SweepSessionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SweepSessionResponse)
+	err := c.cc.Invoke(ctx, ProvisionerService_SweepSession_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -142,21 +132,22 @@ func (c *provisionerServiceClient) DeleteWorktree(ctx context.Context, in *Delet
 // All implementations must embed UnimplementedProvisionerServiceServer
 // for forward compatibility.
 type ProvisionerServiceServer interface {
-	KillE2ESession(context.Context, *KillE2ESessionRequest) (*KillE2ESessionResponse, error)
-	GetE2ESessionStatus(context.Context, *GetE2ESessionStatusRequest) (*GetE2ESessionStatusResponse, error)
-	CreateE2ESession(context.Context, *CreateE2ESessionRequest) (*CreateE2ESessionResponse, error)
 	CreateWorkerPod(context.Context, *CreateWorkerPodRequest) (*CreateWorkerPodResponse, error)
 	TearDownSession(context.Context, *TearDownSessionRequest) (*TearDownSessionResponse, error)
 	// The liveness reconcile source — see ListWorkerPodsRequest.
 	ListWorkerPods(context.Context, *ListWorkerPodsRequest) (*ListWorkerPodsResponse, error)
-	// Reused as-is by dashboard.proto's own ListWorktrees (identical empty
-	// request shape) — cross-file message reuse, not a call passthrough.
-	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
-	ListWorktrees(context.Context, *ListWorktreesRequest) (*ListWorktreesResponse, error)
-	// Reused as-is by dashboard.proto's own DeleteWorktree (identical
-	// request/response shape, no dashboard-specific fields needed).
-	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
-	DeleteWorktree(context.Context, *DeleteWorktreeRequest) (*DeleteWorktreeResponse, error)
+	// What is left of the sandbox after docs/adr/0048 §6: the two capabilities
+	// that need cluster RBAC. Everything else the e2e pod did — running the
+	// app, running builds, running a browser — happens in the session pod
+	// itself now, with plain Bash.
+	ExposeSession(context.Context, *ExposeSessionRequest) (*ExposeSessionResponse, error)
+	UnexposeSession(context.Context, *UnexposeSessionRequest) (*UnexposeSessionResponse, error)
+	ProvisionService(context.Context, *ProvisionServiceRequest) (*ProvisionServiceResponse, error)
+	// Deletes a session's working-tree PVC. The other half of its disk (the
+	// SDK resume state) is a directory on the shared volume, removed in the
+	// same call — the two live on different volumes because they have
+	// different access patterns, not because anything wants them apart.
+	SweepSession(context.Context, *SweepSessionRequest) (*SweepSessionResponse, error)
 	mustEmbedUnimplementedProvisionerServiceServer()
 }
 
@@ -167,15 +158,6 @@ type ProvisionerServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedProvisionerServiceServer struct{}
 
-func (UnimplementedProvisionerServiceServer) KillE2ESession(context.Context, *KillE2ESessionRequest) (*KillE2ESessionResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method KillE2ESession not implemented")
-}
-func (UnimplementedProvisionerServiceServer) GetE2ESessionStatus(context.Context, *GetE2ESessionStatusRequest) (*GetE2ESessionStatusResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method GetE2ESessionStatus not implemented")
-}
-func (UnimplementedProvisionerServiceServer) CreateE2ESession(context.Context, *CreateE2ESessionRequest) (*CreateE2ESessionResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method CreateE2ESession not implemented")
-}
 func (UnimplementedProvisionerServiceServer) CreateWorkerPod(context.Context, *CreateWorkerPodRequest) (*CreateWorkerPodResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method CreateWorkerPod not implemented")
 }
@@ -185,11 +167,17 @@ func (UnimplementedProvisionerServiceServer) TearDownSession(context.Context, *T
 func (UnimplementedProvisionerServiceServer) ListWorkerPods(context.Context, *ListWorkerPodsRequest) (*ListWorkerPodsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListWorkerPods not implemented")
 }
-func (UnimplementedProvisionerServiceServer) ListWorktrees(context.Context, *ListWorktreesRequest) (*ListWorktreesResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method ListWorktrees not implemented")
+func (UnimplementedProvisionerServiceServer) ExposeSession(context.Context, *ExposeSessionRequest) (*ExposeSessionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ExposeSession not implemented")
 }
-func (UnimplementedProvisionerServiceServer) DeleteWorktree(context.Context, *DeleteWorktreeRequest) (*DeleteWorktreeResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method DeleteWorktree not implemented")
+func (UnimplementedProvisionerServiceServer) UnexposeSession(context.Context, *UnexposeSessionRequest) (*UnexposeSessionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method UnexposeSession not implemented")
+}
+func (UnimplementedProvisionerServiceServer) ProvisionService(context.Context, *ProvisionServiceRequest) (*ProvisionServiceResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ProvisionService not implemented")
+}
+func (UnimplementedProvisionerServiceServer) SweepSession(context.Context, *SweepSessionRequest) (*SweepSessionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SweepSession not implemented")
 }
 func (UnimplementedProvisionerServiceServer) mustEmbedUnimplementedProvisionerServiceServer() {}
 func (UnimplementedProvisionerServiceServer) testEmbeddedByValue()                            {}
@@ -210,60 +198,6 @@ func RegisterProvisionerServiceServer(s grpc.ServiceRegistrar, srv ProvisionerSe
 		t.testEmbeddedByValue()
 	}
 	s.RegisterService(&ProvisionerService_ServiceDesc, srv)
-}
-
-func _ProvisionerService_KillE2ESession_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(KillE2ESessionRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(ProvisionerServiceServer).KillE2ESession(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: ProvisionerService_KillE2ESession_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ProvisionerServiceServer).KillE2ESession(ctx, req.(*KillE2ESessionRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _ProvisionerService_GetE2ESessionStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(GetE2ESessionStatusRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(ProvisionerServiceServer).GetE2ESessionStatus(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: ProvisionerService_GetE2ESessionStatus_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ProvisionerServiceServer).GetE2ESessionStatus(ctx, req.(*GetE2ESessionStatusRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _ProvisionerService_CreateE2ESession_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(CreateE2ESessionRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(ProvisionerServiceServer).CreateE2ESession(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: ProvisionerService_CreateE2ESession_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ProvisionerServiceServer).CreateE2ESession(ctx, req.(*CreateE2ESessionRequest))
-	}
-	return interceptor(ctx, in, info, handler)
 }
 
 func _ProvisionerService_CreateWorkerPod_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -320,38 +254,74 @@ func _ProvisionerService_ListWorkerPods_Handler(srv interface{}, ctx context.Con
 	return interceptor(ctx, in, info, handler)
 }
 
-func _ProvisionerService_ListWorktrees_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ListWorktreesRequest)
+func _ProvisionerService_ExposeSession_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ExposeSessionRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(ProvisionerServiceServer).ListWorktrees(ctx, in)
+		return srv.(ProvisionerServiceServer).ExposeSession(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: ProvisionerService_ListWorktrees_FullMethodName,
+		FullMethod: ProvisionerService_ExposeSession_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ProvisionerServiceServer).ListWorktrees(ctx, req.(*ListWorktreesRequest))
+		return srv.(ProvisionerServiceServer).ExposeSession(ctx, req.(*ExposeSessionRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _ProvisionerService_DeleteWorktree_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(DeleteWorktreeRequest)
+func _ProvisionerService_UnexposeSession_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UnexposeSessionRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(ProvisionerServiceServer).DeleteWorktree(ctx, in)
+		return srv.(ProvisionerServiceServer).UnexposeSession(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: ProvisionerService_DeleteWorktree_FullMethodName,
+		FullMethod: ProvisionerService_UnexposeSession_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ProvisionerServiceServer).DeleteWorktree(ctx, req.(*DeleteWorktreeRequest))
+		return srv.(ProvisionerServiceServer).UnexposeSession(ctx, req.(*UnexposeSessionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ProvisionerService_ProvisionService_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ProvisionServiceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProvisionerServiceServer).ProvisionService(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ProvisionerService_ProvisionService_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProvisionerServiceServer).ProvisionService(ctx, req.(*ProvisionServiceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ProvisionerService_SweepSession_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SweepSessionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProvisionerServiceServer).SweepSession(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ProvisionerService_SweepSession_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProvisionerServiceServer).SweepSession(ctx, req.(*SweepSessionRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -363,18 +333,6 @@ var ProvisionerService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "agentfleet.v1.ProvisionerService",
 	HandlerType: (*ProvisionerServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
-		{
-			MethodName: "KillE2eSession",
-			Handler:    _ProvisionerService_KillE2ESession_Handler,
-		},
-		{
-			MethodName: "GetE2eSessionStatus",
-			Handler:    _ProvisionerService_GetE2ESessionStatus_Handler,
-		},
-		{
-			MethodName: "CreateE2eSession",
-			Handler:    _ProvisionerService_CreateE2ESession_Handler,
-		},
 		{
 			MethodName: "CreateWorkerPod",
 			Handler:    _ProvisionerService_CreateWorkerPod_Handler,
@@ -388,12 +346,20 @@ var ProvisionerService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _ProvisionerService_ListWorkerPods_Handler,
 		},
 		{
-			MethodName: "ListWorktrees",
-			Handler:    _ProvisionerService_ListWorktrees_Handler,
+			MethodName: "ExposeSession",
+			Handler:    _ProvisionerService_ExposeSession_Handler,
 		},
 		{
-			MethodName: "DeleteWorktree",
-			Handler:    _ProvisionerService_DeleteWorktree_Handler,
+			MethodName: "UnexposeSession",
+			Handler:    _ProvisionerService_UnexposeSession_Handler,
+		},
+		{
+			MethodName: "ProvisionService",
+			Handler:    _ProvisionerService_ProvisionService_Handler,
+		},
+		{
+			MethodName: "SweepSession",
+			Handler:    _ProvisionerService_SweepSession_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

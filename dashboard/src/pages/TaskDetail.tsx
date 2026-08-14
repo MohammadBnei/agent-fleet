@@ -20,7 +20,7 @@ import { BypassConfirmModal } from "../components/BypassConfirmModal";
 import { Segmented } from "../components/Segmented";
 import { DecisionDock } from "../components/DecisionDock";
 import { SessionFeed } from "../components/SessionFeed";
-import { TodosPanel, ChangesPanel, E2ePanel, SessionPanel } from "../components/SessionPanels";
+import { TodosPanel, ChangesPanel, SessionPanel } from "../components/SessionPanels";
 import { asDisplayMarkdown } from "../transcript";
 
 // The console's desktop session view: feed · decision dock · composer, beside a
@@ -54,8 +54,6 @@ export function TaskDetail({
   const {
     task: fetchedTask,
     entries,
-    refreshE2e,
-    e2e,
     branch,
     worktreePath,
     busyKey,
@@ -319,18 +317,13 @@ export function TaskDetail({
       <div className="w-[266px] flex-none overflow-y-auto px-3.5 py-3.5 flex flex-col gap-4.5 min-w-0">
         <TodosPanel todos={todos} blocked={blocked} />
         <ChangesPanel branch={branch} changes={changes} />
-        <E2ePanel
-          e2e={e2e}
-          sessionId={task.id}
-          onChanged={refreshE2e}
-        />
         <div className="mt-auto">
           <SessionPanel
             task={task}
             busy={busyKey !== null}
             busyKey={busyKey}
             run={run}
-            codeServerUrl={e2e?.codeServerUrl}
+            codeServerUrl={null}
             isThotTask={false}
             onBypassClick={() => setBypassOpen(true)}
           />

@@ -4202,7 +4202,7 @@ var File_agentfleet_v1_dashboard_proto protoreflect.FileDescriptor
 
 const file_agentfleet_v1_dashboard_proto_rawDesc = "" +
 	"\n" +
-	"\x1dagentfleet/v1/dashboard.proto\x12\ragentfleet.v1\x1a\x1fagentfleet/v1/provisioner.proto\x1a\x1eagentfleet/v1/transcript.proto\x1a\x19agentfleet/v1/files.proto\x1a\x18agentfleet/v1/core.proto\"+\n" +
+	"\x1dagentfleet/v1/dashboard.proto\x12\ragentfleet.v1\x1a\x1eagentfleet/v1/transcript.proto\x1a\x19agentfleet/v1/files.proto\x1a\x18agentfleet/v1/core.proto\"+\n" +
 	"\x13ListSessionsRequest\x12\x14\n" +
 	"\x05limit\x18\x01 \x01(\x05R\x05limit\"J\n" +
 	"\x14ListSessionsResponse\x122\n" +
@@ -4478,15 +4478,14 @@ const file_agentfleet_v1_dashboard_proto_rawDesc = "" +
 	"\x18GetFleetTopologyResponse\x12-\n" +
 	"\x05nodes\x18\x01 \x03(\v2\x17.agentfleet.v1.CellNodeR\x05nodes\x121\n" +
 	"\x05edges\x18\x02 \x03(\v2\x1b.agentfleet.v1.TopologyEdgeR\x05edges\x12#\n" +
-	"\rmetrics_error\x18\x03 \x01(\tR\fmetricsError2\xe0!\n" +
+	"\rmetrics_error\x18\x03 \x01(\tR\fmetricsError2\xfc\x1c\n" +
 	"\x10DashboardService\x12W\n" +
 	"\fListSessions\x12\".agentfleet.v1.ListSessionsRequest\x1a#.agentfleet.v1.ListSessionsResponse\x12Q\n" +
 	"\n" +
 	"GetSession\x12 .agentfleet.v1.GetSessionRequest\x1a!.agentfleet.v1.GetSessionResponse\x12Z\n" +
 	"\rCreateSession\x12#.agentfleet.v1.CreateSessionRequest\x1a$.agentfleet.v1.CreateSessionResponse\x12f\n" +
 	"\rGetTranscript\x12).agentfleet.v1.ReadTranscriptSinceRequest\x1a*.agentfleet.v1.ReadTranscriptSinceResponse\x12\\\n" +
-	"\x10StreamTranscript\x12&.agentfleet.v1.StreamTranscriptRequest\x1a\x1e.agentfleet.v1.TranscriptEntry0\x01\x12W\n" +
-	"\fGetE2eStatus\x12\".agentfleet.v1.GetE2eStatusRequest\x1a#.agentfleet.v1.GetE2eStatusResponse\x12T\n" +
+	"\x10StreamTranscript\x12&.agentfleet.v1.StreamTranscriptRequest\x1a\x1e.agentfleet.v1.TranscriptEntry0\x01\x12T\n" +
 	"\vStopSession\x12!.agentfleet.v1.StopSessionRequest\x1a\".agentfleet.v1.StopSessionResponse\x12N\n" +
 	"\tInterrupt\x12\x1f.agentfleet.v1.InterruptRequest\x1a .agentfleet.v1.InterruptResponse\x12f\n" +
 	"\x11SetPermissionMode\x12'.agentfleet.v1.SetPermissionModeRequest\x1a(.agentfleet.v1.SetPermissionModeResponse\x12T\n" +
@@ -4495,17 +4494,11 @@ const file_agentfleet_v1_dashboard_proto_rawDesc = "" +
 	"\x0eArchiveSession\x12$.agentfleet.v1.ArchiveSessionRequest\x1a%.agentfleet.v1.ArchiveSessionResponse\x12Z\n" +
 	"\rListProposals\x12#.agentfleet.v1.ListProposalsRequest\x1a$.agentfleet.v1.ListProposalsResponse\x12c\n" +
 	"\x10OpenFromProposal\x12&.agentfleet.v1.OpenFromProposalRequest\x1a'.agentfleet.v1.OpenFromProposalResponse\x12`\n" +
-	"\x0fDismissProposal\x12%.agentfleet.v1.DismissProposalRequest\x1a&.agentfleet.v1.DismissProposalResponse\x12H\n" +
-	"\aKillE2e\x12\x1d.agentfleet.v1.KillE2eRequest\x1a\x1e.agentfleet.v1.KillE2eResponse\x12K\n" +
-	"\bStartE2e\x12\x1e.agentfleet.v1.StartE2eRequest\x1a\x1f.agentfleet.v1.StartE2eResponse\x12Z\n" +
-	"\rRestartE2eApp\x12#.agentfleet.v1.RestartE2eAppRequest\x1a$.agentfleet.v1.RestartE2eAppResponse\x12W\n" +
-	"\fGetE2eAppLog\x12\".agentfleet.v1.GetE2eAppLogRequest\x1a#.agentfleet.v1.GetE2eAppLogResponse\x12U\n" +
+	"\x0fDismissProposal\x12%.agentfleet.v1.DismissProposalRequest\x1a&.agentfleet.v1.DismissProposalResponse\x12U\n" +
 	"\x0eAnswerQuestion\x12$.agentfleet.v1.AnswerQuestionRequest\x1a\x1d.agentfleet.v1.AppendResponse\x12_\n" +
 	"\x13RespondToPermission\x12).agentfleet.v1.RespondToPermissionRequest\x1a\x1d.agentfleet.v1.AppendResponse\x12O\n" +
 	"\vPostMessage\x12!.agentfleet.v1.PostMessageRequest\x1a\x1d.agentfleet.v1.AppendResponse\x12Z\n" +
-	"\rDeleteSession\x12#.agentfleet.v1.DeleteSessionRequest\x1a$.agentfleet.v1.DeleteSessionResponse\x12^\n" +
-	"\rListWorktrees\x12#.agentfleet.v1.ListWorktreesRequest\x1a(.agentfleet.v1.ListWorktreesViewResponse\x12]\n" +
-	"\x0eDeleteWorktree\x12$.agentfleet.v1.DeleteWorktreeRequest\x1a%.agentfleet.v1.DeleteWorktreeResponse\x12Q\n" +
+	"\rDeleteSession\x12#.agentfleet.v1.DeleteSessionRequest\x1a$.agentfleet.v1.DeleteSessionResponse\x12Q\n" +
 	"\n" +
 	"GetJournal\x12 .agentfleet.v1.GetJournalRequest\x1a!.agentfleet.v1.GetJournalResponse\x12N\n" +
 	"\tListRepos\x12\x1f.agentfleet.v1.ListReposRequest\x1a .agentfleet.v1.ListReposResponse\x12Q\n" +
@@ -4629,24 +4622,21 @@ var file_agentfleet_v1_dashboard_proto_goTypes = []any{
 	(*GetSessionRequest)(nil),            // 79: agentfleet.v1.GetSessionRequest
 	(*ReadTranscriptSinceRequest)(nil),   // 80: agentfleet.v1.ReadTranscriptSinceRequest
 	(*SetPermissionModeRequest)(nil),     // 81: agentfleet.v1.SetPermissionModeRequest
-	(*ListWorktreesRequest)(nil),         // 82: agentfleet.v1.ListWorktreesRequest
-	(*DeleteWorktreeRequest)(nil),        // 83: agentfleet.v1.DeleteWorktreeRequest
-	(*ListFilesRequest)(nil),             // 84: agentfleet.v1.ListFilesRequest
-	(*GetFileUploadUrlRequest)(nil),      // 85: agentfleet.v1.GetFileUploadUrlRequest
-	(*GetFileDownloadUrlRequest)(nil),    // 86: agentfleet.v1.GetFileDownloadUrlRequest
-	(*DeleteFileRequest)(nil),            // 87: agentfleet.v1.DeleteFileRequest
-	(*QueryLogsRequest)(nil),             // 88: agentfleet.v1.QueryLogsRequest
-	(*GetSessionResponse)(nil),           // 89: agentfleet.v1.GetSessionResponse
-	(*ReadTranscriptSinceResponse)(nil),  // 90: agentfleet.v1.ReadTranscriptSinceResponse
-	(*TranscriptEntry)(nil),              // 91: agentfleet.v1.TranscriptEntry
-	(*SetPermissionModeResponse)(nil),    // 92: agentfleet.v1.SetPermissionModeResponse
-	(*AppendResponse)(nil),               // 93: agentfleet.v1.AppendResponse
-	(*DeleteWorktreeResponse)(nil),       // 94: agentfleet.v1.DeleteWorktreeResponse
-	(*ListFilesResponse)(nil),            // 95: agentfleet.v1.ListFilesResponse
-	(*GetFileUploadUrlResponse)(nil),     // 96: agentfleet.v1.GetFileUploadUrlResponse
-	(*GetFileDownloadUrlResponse)(nil),   // 97: agentfleet.v1.GetFileDownloadUrlResponse
-	(*DeleteFileResponse)(nil),           // 98: agentfleet.v1.DeleteFileResponse
-	(*QueryLogsResponse)(nil),            // 99: agentfleet.v1.QueryLogsResponse
+	(*ListFilesRequest)(nil),             // 82: agentfleet.v1.ListFilesRequest
+	(*GetFileUploadUrlRequest)(nil),      // 83: agentfleet.v1.GetFileUploadUrlRequest
+	(*GetFileDownloadUrlRequest)(nil),    // 84: agentfleet.v1.GetFileDownloadUrlRequest
+	(*DeleteFileRequest)(nil),            // 85: agentfleet.v1.DeleteFileRequest
+	(*QueryLogsRequest)(nil),             // 86: agentfleet.v1.QueryLogsRequest
+	(*GetSessionResponse)(nil),           // 87: agentfleet.v1.GetSessionResponse
+	(*ReadTranscriptSinceResponse)(nil),  // 88: agentfleet.v1.ReadTranscriptSinceResponse
+	(*TranscriptEntry)(nil),              // 89: agentfleet.v1.TranscriptEntry
+	(*SetPermissionModeResponse)(nil),    // 90: agentfleet.v1.SetPermissionModeResponse
+	(*AppendResponse)(nil),               // 91: agentfleet.v1.AppendResponse
+	(*ListFilesResponse)(nil),            // 92: agentfleet.v1.ListFilesResponse
+	(*GetFileUploadUrlResponse)(nil),     // 93: agentfleet.v1.GetFileUploadUrlResponse
+	(*GetFileDownloadUrlResponse)(nil),   // 94: agentfleet.v1.GetFileDownloadUrlResponse
+	(*DeleteFileResponse)(nil),           // 95: agentfleet.v1.DeleteFileResponse
+	(*QueryLogsResponse)(nil),            // 96: agentfleet.v1.QueryLogsResponse
 }
 var file_agentfleet_v1_dashboard_proto_depIdxs = []int32{
 	77, // 0: agentfleet.v1.ListSessionsResponse.sessions:type_name -> agentfleet.v1.Session
@@ -4673,95 +4663,81 @@ var file_agentfleet_v1_dashboard_proto_depIdxs = []int32{
 	2,  // 21: agentfleet.v1.DashboardService.CreateSession:input_type -> agentfleet.v1.CreateSessionRequest
 	80, // 22: agentfleet.v1.DashboardService.GetTranscript:input_type -> agentfleet.v1.ReadTranscriptSinceRequest
 	4,  // 23: agentfleet.v1.DashboardService.StreamTranscript:input_type -> agentfleet.v1.StreamTranscriptRequest
-	5,  // 24: agentfleet.v1.DashboardService.GetE2eStatus:input_type -> agentfleet.v1.GetE2eStatusRequest
-	13, // 25: agentfleet.v1.DashboardService.StopSession:input_type -> agentfleet.v1.StopSessionRequest
-	15, // 26: agentfleet.v1.DashboardService.Interrupt:input_type -> agentfleet.v1.InterruptRequest
-	81, // 27: agentfleet.v1.DashboardService.SetPermissionMode:input_type -> agentfleet.v1.SetPermissionModeRequest
-	19, // 28: agentfleet.v1.DashboardService.WarmSession:input_type -> agentfleet.v1.WarmSessionRequest
-	17, // 29: agentfleet.v1.DashboardService.MarkSeen:input_type -> agentfleet.v1.MarkSeenRequest
-	28, // 30: agentfleet.v1.DashboardService.ArchiveSession:input_type -> agentfleet.v1.ArchiveSessionRequest
-	22, // 31: agentfleet.v1.DashboardService.ListProposals:input_type -> agentfleet.v1.ListProposalsRequest
-	24, // 32: agentfleet.v1.DashboardService.OpenFromProposal:input_type -> agentfleet.v1.OpenFromProposalRequest
-	26, // 33: agentfleet.v1.DashboardService.DismissProposal:input_type -> agentfleet.v1.DismissProposalRequest
-	31, // 34: agentfleet.v1.DashboardService.KillE2e:input_type -> agentfleet.v1.KillE2eRequest
-	7,  // 35: agentfleet.v1.DashboardService.StartE2e:input_type -> agentfleet.v1.StartE2eRequest
-	9,  // 36: agentfleet.v1.DashboardService.RestartE2eApp:input_type -> agentfleet.v1.RestartE2eAppRequest
-	11, // 37: agentfleet.v1.DashboardService.GetE2eAppLog:input_type -> agentfleet.v1.GetE2eAppLogRequest
-	33, // 38: agentfleet.v1.DashboardService.AnswerQuestion:input_type -> agentfleet.v1.AnswerQuestionRequest
-	30, // 39: agentfleet.v1.DashboardService.RespondToPermission:input_type -> agentfleet.v1.RespondToPermissionRequest
-	34, // 40: agentfleet.v1.DashboardService.PostMessage:input_type -> agentfleet.v1.PostMessageRequest
-	35, // 41: agentfleet.v1.DashboardService.DeleteSession:input_type -> agentfleet.v1.DeleteSessionRequest
-	82, // 42: agentfleet.v1.DashboardService.ListWorktrees:input_type -> agentfleet.v1.ListWorktreesRequest
-	83, // 43: agentfleet.v1.DashboardService.DeleteWorktree:input_type -> agentfleet.v1.DeleteWorktreeRequest
-	39, // 44: agentfleet.v1.DashboardService.GetJournal:input_type -> agentfleet.v1.GetJournalRequest
-	42, // 45: agentfleet.v1.DashboardService.ListRepos:input_type -> agentfleet.v1.ListReposRequest
-	44, // 46: agentfleet.v1.DashboardService.CreateRepo:input_type -> agentfleet.v1.CreateRepoRequest
-	46, // 47: agentfleet.v1.DashboardService.UpdateRepo:input_type -> agentfleet.v1.UpdateRepoRequest
-	48, // 48: agentfleet.v1.DashboardService.DeleteRepo:input_type -> agentfleet.v1.DeleteRepoRequest
-	51, // 49: agentfleet.v1.DashboardService.ListPromptSnippets:input_type -> agentfleet.v1.ListPromptSnippetsRequest
-	53, // 50: agentfleet.v1.DashboardService.CreatePromptSnippet:input_type -> agentfleet.v1.CreatePromptSnippetRequest
-	55, // 51: agentfleet.v1.DashboardService.UpdatePromptSnippet:input_type -> agentfleet.v1.UpdatePromptSnippetRequest
-	57, // 52: agentfleet.v1.DashboardService.DeletePromptSnippet:input_type -> agentfleet.v1.DeletePromptSnippetRequest
-	84, // 53: agentfleet.v1.DashboardService.ListFiles:input_type -> agentfleet.v1.ListFilesRequest
-	85, // 54: agentfleet.v1.DashboardService.GetFileUploadUrl:input_type -> agentfleet.v1.GetFileUploadUrlRequest
-	86, // 55: agentfleet.v1.DashboardService.GetFileDownloadUrl:input_type -> agentfleet.v1.GetFileDownloadUrlRequest
-	87, // 56: agentfleet.v1.DashboardService.DeleteFile:input_type -> agentfleet.v1.DeleteFileRequest
-	88, // 57: agentfleet.v1.DashboardService.QueryLogs:input_type -> agentfleet.v1.QueryLogsRequest
-	70, // 58: agentfleet.v1.DashboardService.QueryMetrics:input_type -> agentfleet.v1.QueryMetricsRequest
-	72, // 59: agentfleet.v1.DashboardService.GetFleetTopology:input_type -> agentfleet.v1.GetFleetTopologyRequest
-	62, // 60: agentfleet.v1.DashboardService.ListScheduledAudits:input_type -> agentfleet.v1.ListScheduledAuditsRequest
-	64, // 61: agentfleet.v1.DashboardService.CreateScheduledAudit:input_type -> agentfleet.v1.CreateScheduledAuditRequest
-	66, // 62: agentfleet.v1.DashboardService.UpdateScheduledAudit:input_type -> agentfleet.v1.UpdateScheduledAuditRequest
-	68, // 63: agentfleet.v1.DashboardService.DeleteScheduledAudit:input_type -> agentfleet.v1.DeleteScheduledAuditRequest
-	59, // 64: agentfleet.v1.DashboardService.RunScheduledAuditNow:input_type -> agentfleet.v1.RunScheduledAuditNowRequest
-	1,  // 65: agentfleet.v1.DashboardService.ListSessions:output_type -> agentfleet.v1.ListSessionsResponse
-	89, // 66: agentfleet.v1.DashboardService.GetSession:output_type -> agentfleet.v1.GetSessionResponse
-	3,  // 67: agentfleet.v1.DashboardService.CreateSession:output_type -> agentfleet.v1.CreateSessionResponse
-	90, // 68: agentfleet.v1.DashboardService.GetTranscript:output_type -> agentfleet.v1.ReadTranscriptSinceResponse
-	91, // 69: agentfleet.v1.DashboardService.StreamTranscript:output_type -> agentfleet.v1.TranscriptEntry
-	6,  // 70: agentfleet.v1.DashboardService.GetE2eStatus:output_type -> agentfleet.v1.GetE2eStatusResponse
-	14, // 71: agentfleet.v1.DashboardService.StopSession:output_type -> agentfleet.v1.StopSessionResponse
-	16, // 72: agentfleet.v1.DashboardService.Interrupt:output_type -> agentfleet.v1.InterruptResponse
-	92, // 73: agentfleet.v1.DashboardService.SetPermissionMode:output_type -> agentfleet.v1.SetPermissionModeResponse
-	20, // 74: agentfleet.v1.DashboardService.WarmSession:output_type -> agentfleet.v1.WarmSessionResponse
-	18, // 75: agentfleet.v1.DashboardService.MarkSeen:output_type -> agentfleet.v1.MarkSeenResponse
-	29, // 76: agentfleet.v1.DashboardService.ArchiveSession:output_type -> agentfleet.v1.ArchiveSessionResponse
-	23, // 77: agentfleet.v1.DashboardService.ListProposals:output_type -> agentfleet.v1.ListProposalsResponse
-	25, // 78: agentfleet.v1.DashboardService.OpenFromProposal:output_type -> agentfleet.v1.OpenFromProposalResponse
-	27, // 79: agentfleet.v1.DashboardService.DismissProposal:output_type -> agentfleet.v1.DismissProposalResponse
-	32, // 80: agentfleet.v1.DashboardService.KillE2e:output_type -> agentfleet.v1.KillE2eResponse
-	8,  // 81: agentfleet.v1.DashboardService.StartE2e:output_type -> agentfleet.v1.StartE2eResponse
-	10, // 82: agentfleet.v1.DashboardService.RestartE2eApp:output_type -> agentfleet.v1.RestartE2eAppResponse
-	12, // 83: agentfleet.v1.DashboardService.GetE2eAppLog:output_type -> agentfleet.v1.GetE2eAppLogResponse
-	93, // 84: agentfleet.v1.DashboardService.AnswerQuestion:output_type -> agentfleet.v1.AppendResponse
-	93, // 85: agentfleet.v1.DashboardService.RespondToPermission:output_type -> agentfleet.v1.AppendResponse
-	93, // 86: agentfleet.v1.DashboardService.PostMessage:output_type -> agentfleet.v1.AppendResponse
-	36, // 87: agentfleet.v1.DashboardService.DeleteSession:output_type -> agentfleet.v1.DeleteSessionResponse
-	38, // 88: agentfleet.v1.DashboardService.ListWorktrees:output_type -> agentfleet.v1.ListWorktreesViewResponse
-	94, // 89: agentfleet.v1.DashboardService.DeleteWorktree:output_type -> agentfleet.v1.DeleteWorktreeResponse
-	40, // 90: agentfleet.v1.DashboardService.GetJournal:output_type -> agentfleet.v1.GetJournalResponse
-	43, // 91: agentfleet.v1.DashboardService.ListRepos:output_type -> agentfleet.v1.ListReposResponse
-	45, // 92: agentfleet.v1.DashboardService.CreateRepo:output_type -> agentfleet.v1.CreateRepoResponse
-	47, // 93: agentfleet.v1.DashboardService.UpdateRepo:output_type -> agentfleet.v1.UpdateRepoResponse
-	49, // 94: agentfleet.v1.DashboardService.DeleteRepo:output_type -> agentfleet.v1.DeleteRepoResponse
-	52, // 95: agentfleet.v1.DashboardService.ListPromptSnippets:output_type -> agentfleet.v1.ListPromptSnippetsResponse
-	54, // 96: agentfleet.v1.DashboardService.CreatePromptSnippet:output_type -> agentfleet.v1.CreatePromptSnippetResponse
-	56, // 97: agentfleet.v1.DashboardService.UpdatePromptSnippet:output_type -> agentfleet.v1.UpdatePromptSnippetResponse
-	58, // 98: agentfleet.v1.DashboardService.DeletePromptSnippet:output_type -> agentfleet.v1.DeletePromptSnippetResponse
-	95, // 99: agentfleet.v1.DashboardService.ListFiles:output_type -> agentfleet.v1.ListFilesResponse
-	96, // 100: agentfleet.v1.DashboardService.GetFileUploadUrl:output_type -> agentfleet.v1.GetFileUploadUrlResponse
-	97, // 101: agentfleet.v1.DashboardService.GetFileDownloadUrl:output_type -> agentfleet.v1.GetFileDownloadUrlResponse
-	98, // 102: agentfleet.v1.DashboardService.DeleteFile:output_type -> agentfleet.v1.DeleteFileResponse
-	99, // 103: agentfleet.v1.DashboardService.QueryLogs:output_type -> agentfleet.v1.QueryLogsResponse
-	71, // 104: agentfleet.v1.DashboardService.QueryMetrics:output_type -> agentfleet.v1.QueryMetricsResponse
-	75, // 105: agentfleet.v1.DashboardService.GetFleetTopology:output_type -> agentfleet.v1.GetFleetTopologyResponse
-	63, // 106: agentfleet.v1.DashboardService.ListScheduledAudits:output_type -> agentfleet.v1.ListScheduledAuditsResponse
-	65, // 107: agentfleet.v1.DashboardService.CreateScheduledAudit:output_type -> agentfleet.v1.CreateScheduledAuditResponse
-	67, // 108: agentfleet.v1.DashboardService.UpdateScheduledAudit:output_type -> agentfleet.v1.UpdateScheduledAuditResponse
-	69, // 109: agentfleet.v1.DashboardService.DeleteScheduledAudit:output_type -> agentfleet.v1.DeleteScheduledAuditResponse
-	60, // 110: agentfleet.v1.DashboardService.RunScheduledAuditNow:output_type -> agentfleet.v1.RunScheduledAuditNowResponse
-	65, // [65:111] is the sub-list for method output_type
-	19, // [19:65] is the sub-list for method input_type
+	13, // 24: agentfleet.v1.DashboardService.StopSession:input_type -> agentfleet.v1.StopSessionRequest
+	15, // 25: agentfleet.v1.DashboardService.Interrupt:input_type -> agentfleet.v1.InterruptRequest
+	81, // 26: agentfleet.v1.DashboardService.SetPermissionMode:input_type -> agentfleet.v1.SetPermissionModeRequest
+	19, // 27: agentfleet.v1.DashboardService.WarmSession:input_type -> agentfleet.v1.WarmSessionRequest
+	17, // 28: agentfleet.v1.DashboardService.MarkSeen:input_type -> agentfleet.v1.MarkSeenRequest
+	28, // 29: agentfleet.v1.DashboardService.ArchiveSession:input_type -> agentfleet.v1.ArchiveSessionRequest
+	22, // 30: agentfleet.v1.DashboardService.ListProposals:input_type -> agentfleet.v1.ListProposalsRequest
+	24, // 31: agentfleet.v1.DashboardService.OpenFromProposal:input_type -> agentfleet.v1.OpenFromProposalRequest
+	26, // 32: agentfleet.v1.DashboardService.DismissProposal:input_type -> agentfleet.v1.DismissProposalRequest
+	33, // 33: agentfleet.v1.DashboardService.AnswerQuestion:input_type -> agentfleet.v1.AnswerQuestionRequest
+	30, // 34: agentfleet.v1.DashboardService.RespondToPermission:input_type -> agentfleet.v1.RespondToPermissionRequest
+	34, // 35: agentfleet.v1.DashboardService.PostMessage:input_type -> agentfleet.v1.PostMessageRequest
+	35, // 36: agentfleet.v1.DashboardService.DeleteSession:input_type -> agentfleet.v1.DeleteSessionRequest
+	39, // 37: agentfleet.v1.DashboardService.GetJournal:input_type -> agentfleet.v1.GetJournalRequest
+	42, // 38: agentfleet.v1.DashboardService.ListRepos:input_type -> agentfleet.v1.ListReposRequest
+	44, // 39: agentfleet.v1.DashboardService.CreateRepo:input_type -> agentfleet.v1.CreateRepoRequest
+	46, // 40: agentfleet.v1.DashboardService.UpdateRepo:input_type -> agentfleet.v1.UpdateRepoRequest
+	48, // 41: agentfleet.v1.DashboardService.DeleteRepo:input_type -> agentfleet.v1.DeleteRepoRequest
+	51, // 42: agentfleet.v1.DashboardService.ListPromptSnippets:input_type -> agentfleet.v1.ListPromptSnippetsRequest
+	53, // 43: agentfleet.v1.DashboardService.CreatePromptSnippet:input_type -> agentfleet.v1.CreatePromptSnippetRequest
+	55, // 44: agentfleet.v1.DashboardService.UpdatePromptSnippet:input_type -> agentfleet.v1.UpdatePromptSnippetRequest
+	57, // 45: agentfleet.v1.DashboardService.DeletePromptSnippet:input_type -> agentfleet.v1.DeletePromptSnippetRequest
+	82, // 46: agentfleet.v1.DashboardService.ListFiles:input_type -> agentfleet.v1.ListFilesRequest
+	83, // 47: agentfleet.v1.DashboardService.GetFileUploadUrl:input_type -> agentfleet.v1.GetFileUploadUrlRequest
+	84, // 48: agentfleet.v1.DashboardService.GetFileDownloadUrl:input_type -> agentfleet.v1.GetFileDownloadUrlRequest
+	85, // 49: agentfleet.v1.DashboardService.DeleteFile:input_type -> agentfleet.v1.DeleteFileRequest
+	86, // 50: agentfleet.v1.DashboardService.QueryLogs:input_type -> agentfleet.v1.QueryLogsRequest
+	70, // 51: agentfleet.v1.DashboardService.QueryMetrics:input_type -> agentfleet.v1.QueryMetricsRequest
+	72, // 52: agentfleet.v1.DashboardService.GetFleetTopology:input_type -> agentfleet.v1.GetFleetTopologyRequest
+	62, // 53: agentfleet.v1.DashboardService.ListScheduledAudits:input_type -> agentfleet.v1.ListScheduledAuditsRequest
+	64, // 54: agentfleet.v1.DashboardService.CreateScheduledAudit:input_type -> agentfleet.v1.CreateScheduledAuditRequest
+	66, // 55: agentfleet.v1.DashboardService.UpdateScheduledAudit:input_type -> agentfleet.v1.UpdateScheduledAuditRequest
+	68, // 56: agentfleet.v1.DashboardService.DeleteScheduledAudit:input_type -> agentfleet.v1.DeleteScheduledAuditRequest
+	59, // 57: agentfleet.v1.DashboardService.RunScheduledAuditNow:input_type -> agentfleet.v1.RunScheduledAuditNowRequest
+	1,  // 58: agentfleet.v1.DashboardService.ListSessions:output_type -> agentfleet.v1.ListSessionsResponse
+	87, // 59: agentfleet.v1.DashboardService.GetSession:output_type -> agentfleet.v1.GetSessionResponse
+	3,  // 60: agentfleet.v1.DashboardService.CreateSession:output_type -> agentfleet.v1.CreateSessionResponse
+	88, // 61: agentfleet.v1.DashboardService.GetTranscript:output_type -> agentfleet.v1.ReadTranscriptSinceResponse
+	89, // 62: agentfleet.v1.DashboardService.StreamTranscript:output_type -> agentfleet.v1.TranscriptEntry
+	14, // 63: agentfleet.v1.DashboardService.StopSession:output_type -> agentfleet.v1.StopSessionResponse
+	16, // 64: agentfleet.v1.DashboardService.Interrupt:output_type -> agentfleet.v1.InterruptResponse
+	90, // 65: agentfleet.v1.DashboardService.SetPermissionMode:output_type -> agentfleet.v1.SetPermissionModeResponse
+	20, // 66: agentfleet.v1.DashboardService.WarmSession:output_type -> agentfleet.v1.WarmSessionResponse
+	18, // 67: agentfleet.v1.DashboardService.MarkSeen:output_type -> agentfleet.v1.MarkSeenResponse
+	29, // 68: agentfleet.v1.DashboardService.ArchiveSession:output_type -> agentfleet.v1.ArchiveSessionResponse
+	23, // 69: agentfleet.v1.DashboardService.ListProposals:output_type -> agentfleet.v1.ListProposalsResponse
+	25, // 70: agentfleet.v1.DashboardService.OpenFromProposal:output_type -> agentfleet.v1.OpenFromProposalResponse
+	27, // 71: agentfleet.v1.DashboardService.DismissProposal:output_type -> agentfleet.v1.DismissProposalResponse
+	91, // 72: agentfleet.v1.DashboardService.AnswerQuestion:output_type -> agentfleet.v1.AppendResponse
+	91, // 73: agentfleet.v1.DashboardService.RespondToPermission:output_type -> agentfleet.v1.AppendResponse
+	91, // 74: agentfleet.v1.DashboardService.PostMessage:output_type -> agentfleet.v1.AppendResponse
+	36, // 75: agentfleet.v1.DashboardService.DeleteSession:output_type -> agentfleet.v1.DeleteSessionResponse
+	40, // 76: agentfleet.v1.DashboardService.GetJournal:output_type -> agentfleet.v1.GetJournalResponse
+	43, // 77: agentfleet.v1.DashboardService.ListRepos:output_type -> agentfleet.v1.ListReposResponse
+	45, // 78: agentfleet.v1.DashboardService.CreateRepo:output_type -> agentfleet.v1.CreateRepoResponse
+	47, // 79: agentfleet.v1.DashboardService.UpdateRepo:output_type -> agentfleet.v1.UpdateRepoResponse
+	49, // 80: agentfleet.v1.DashboardService.DeleteRepo:output_type -> agentfleet.v1.DeleteRepoResponse
+	52, // 81: agentfleet.v1.DashboardService.ListPromptSnippets:output_type -> agentfleet.v1.ListPromptSnippetsResponse
+	54, // 82: agentfleet.v1.DashboardService.CreatePromptSnippet:output_type -> agentfleet.v1.CreatePromptSnippetResponse
+	56, // 83: agentfleet.v1.DashboardService.UpdatePromptSnippet:output_type -> agentfleet.v1.UpdatePromptSnippetResponse
+	58, // 84: agentfleet.v1.DashboardService.DeletePromptSnippet:output_type -> agentfleet.v1.DeletePromptSnippetResponse
+	92, // 85: agentfleet.v1.DashboardService.ListFiles:output_type -> agentfleet.v1.ListFilesResponse
+	93, // 86: agentfleet.v1.DashboardService.GetFileUploadUrl:output_type -> agentfleet.v1.GetFileUploadUrlResponse
+	94, // 87: agentfleet.v1.DashboardService.GetFileDownloadUrl:output_type -> agentfleet.v1.GetFileDownloadUrlResponse
+	95, // 88: agentfleet.v1.DashboardService.DeleteFile:output_type -> agentfleet.v1.DeleteFileResponse
+	96, // 89: agentfleet.v1.DashboardService.QueryLogs:output_type -> agentfleet.v1.QueryLogsResponse
+	71, // 90: agentfleet.v1.DashboardService.QueryMetrics:output_type -> agentfleet.v1.QueryMetricsResponse
+	75, // 91: agentfleet.v1.DashboardService.GetFleetTopology:output_type -> agentfleet.v1.GetFleetTopologyResponse
+	63, // 92: agentfleet.v1.DashboardService.ListScheduledAudits:output_type -> agentfleet.v1.ListScheduledAuditsResponse
+	65, // 93: agentfleet.v1.DashboardService.CreateScheduledAudit:output_type -> agentfleet.v1.CreateScheduledAuditResponse
+	67, // 94: agentfleet.v1.DashboardService.UpdateScheduledAudit:output_type -> agentfleet.v1.UpdateScheduledAuditResponse
+	69, // 95: agentfleet.v1.DashboardService.DeleteScheduledAudit:output_type -> agentfleet.v1.DeleteScheduledAuditResponse
+	60, // 96: agentfleet.v1.DashboardService.RunScheduledAuditNow:output_type -> agentfleet.v1.RunScheduledAuditNowResponse
+	58, // [58:97] is the sub-list for method output_type
+	19, // [19:58] is the sub-list for method input_type
 	19, // [19:19] is the sub-list for extension type_name
 	19, // [19:19] is the sub-list for extension extendee
 	0,  // [0:19] is the sub-list for field type_name
@@ -4772,7 +4748,6 @@ func file_agentfleet_v1_dashboard_proto_init() {
 	if File_agentfleet_v1_dashboard_proto != nil {
 		return
 	}
-	file_agentfleet_v1_provisioner_proto_init()
 	file_agentfleet_v1_transcript_proto_init()
 	file_agentfleet_v1_files_proto_init()
 	file_agentfleet_v1_core_proto_init()

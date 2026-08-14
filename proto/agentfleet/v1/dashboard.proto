@@ -2,7 +2,6 @@ syntax = "proto3";
 package agentfleet.v1;
 option go_package = "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1;agentfleetv1";
 
-import "agentfleet/v1/provisioner.proto";
 import "agentfleet/v1/transcript.proto";
 import "agentfleet/v1/files.proto";
 import "agentfleet/v1/core.proto";
@@ -554,7 +553,6 @@ service DashboardService {
   // buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
   // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
   rpc StreamTranscript(StreamTranscriptRequest) returns (stream TranscriptEntry);
-  rpc GetE2eStatus(GetE2eStatusRequest) returns (GetE2eStatusResponse);
   rpc StopSession(StopSessionRequest) returns (StopSessionResponse);
   rpc Interrupt(InterruptRequest) returns (InterruptResponse);
   // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
@@ -565,10 +563,6 @@ service DashboardService {
   rpc ListProposals(ListProposalsRequest) returns (ListProposalsResponse);
   rpc OpenFromProposal(OpenFromProposalRequest) returns (OpenFromProposalResponse);
   rpc DismissProposal(DismissProposalRequest) returns (DismissProposalResponse);
-  rpc KillE2e(KillE2eRequest) returns (KillE2eResponse);
-  rpc StartE2e(StartE2eRequest) returns (StartE2eResponse);
-  rpc RestartE2eApp(RestartE2eAppRequest) returns (RestartE2eAppResponse);
-  rpc GetE2eAppLog(GetE2eAppLogRequest) returns (GetE2eAppLogResponse);
   // AnswerQuestion, RespondToPermission and PostMessage all mean "append an
   // entry to this session's transcript" — a human answer, a permission
   // decision, and a free-text message are the same row with different types.
@@ -593,9 +587,7 @@ service DashboardService {
   // reuse provisioner's own WorktreeInfo/ListWorktreesResponse as-is.
   // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
   // buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
-  rpc ListWorktrees(ListWorktreesRequest) returns (ListWorktreesViewResponse);
   // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
-  rpc DeleteWorktree(DeleteWorktreeRequest) returns (DeleteWorktreeResponse);
   rpc GetJournal(GetJournalRequest) returns (GetJournalResponse);
   rpc ListRepos(ListReposRequest) returns (ListReposResponse);
   rpc CreateRepo(CreateRepoRequest) returns (CreateRepoResponse);

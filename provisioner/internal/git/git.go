@@ -118,63 +118,68 @@ func (m *Manager) EnsureRepoCloned(ctx context.Context, repo, repoURL string) er
 
 	path := m.repoPath(repo)
 	if _, err := m.run(ctx, path, "rev-parse", "--is-inside-work-tree"); err == nil {
-		_, err := m.run(ctx, path, "fetch", "origin")
-		return err
+		if _, err := m.run(ctx, path, "fetch", "origin"); err != nil {
+			return err
+		}
+		return m.disableAutoGC(ctx, path)
 	}
 
 	if err := os.MkdirAll(path, 0o755); err != nil {
 		return fmt.Errorf("mkdir %s: %w", path, err)
 	}
-	_, err := m.run(ctx, "", "clone", repoURL, path)
+	if _, err := m.run(ctx, "", "clone", repoURL, path); err != nil {
+		return err
+	}
+	return m.disableAutoGC(ctx, path)
+}
+
+// disableAutoGC is the one sharp edge of the `--shared` clones the session
+// pods make from this cache (docs/adr/0048 §5).
+//
+// A `--shared` clone writes an `alternates` file pointing back here instead of
+// copying objects, so every live session is reading objects out of this
+// directory. `git gc` running here — and it runs automatically, on fetch, once
+// enough loose objects accumulate — can prune an object no branch in THIS repo
+// references but a session's own new commits do. The session then has a
+// corrupt repository, at an arbitrary later moment, with no connection to the
+// fetch that caused it. This is a documented git hazard, not a theory.
+//
+// Set on every call rather than only at clone time: the config lives in the
+// cache directory, which outlives any one provisioner and predates this rule.
+func (m *Manager) disableAutoGC(ctx context.Context, path string) error {
+	_, err := m.run(ctx, path, "config", "gc.auto", "0")
 	return err
 }
 
-// CreateWorktree adds a worktree for taskID off origin/<baseBranch> (or
-// reuses the branch if it already exists — e.g. a retry after a transient
-// dispatch failure). baseBranch defaults to "main" when empty, mirroring
-// worker/src/git.ts's BASE_BRANCH default.
+// CreateWorktree is gone (docs/adr/0048 §5). The fleet no longer creates a
+// working tree, names a branch, or knows an `agent/<id>` convention — the
+// session pod's own init container clones from this cache into its per-session
+// volume, and the agent runs `git checkout -b` for whatever it likes.
 //
-// Reuse, don't wipe, don't validate (reliability-findings.md #2): if the
-// worktree path already exists, it's returned as-is — zero git commands,
-// zero validity check. The old unconditional os.RemoveAll here destroyed
-// uncommitted work on every same-task-ID retry (e.g. after a transient
-// dispatch failure), even though the branch itself was correctly reused.
-// Stale .git/index.lock, half-written files — that's Claude Code's own
-// problem to notice via `git status`/`git log` inside its own pod (it has
-// Bash access), not this package's job to pre-empt.
-func (m *Manager) CreateWorktree(ctx context.Context, repo, taskID, baseBranch string) (path, branch string, err error) {
-	if baseBranch == "" {
-		baseBranch = "main"
-	}
-	lock := m.repoLock(repo)
-	lock.Lock()
-	defer lock.Unlock()
+// It could not have survived §4 in any case: the working tree now lives on a
+// per-session `local-path` PVC that this process never mounts, so a worktree
+// added here would have landed on a different volume entirely, silently.
+//
+// ClaudeHomePath is what remains of the per-session filesystem the provisioner
+// still owns: the SDK's resume state, which lives on the shared RWX volume
+// because it has to survive the node its pod ran on and has to be seeded
+// before that pod exists.
+func (m *Manager) ClaudeHomePath(sessionID string) string {
+	return filepath.Join(m.root, "claude-home", sessionID)
+}
 
-	repoPath := m.repoPath(repo)
-	branch = "agent/" + taskID
-	path = m.worktreePath(taskID)
-
-	if _, statErr := os.Stat(path); statErr == nil {
-		return path, branch, nil
+// DeleteSessionDir removes a session's SDK state. Its working tree is a PVC
+// and is deleted by the k8s client, not from here — the two halves of a
+// session's disk now live on two different volumes, which is the point of
+// splitting them by access pattern.
+//
+// Idempotent: sweeping something already gone is a correct no-op, and the
+// retention GC will call this again on any pass where the PVC delete failed.
+func (m *Manager) DeleteSessionDir(sessionID string) error {
+	if err := os.RemoveAll(m.ClaudeHomePath(sessionID)); err != nil {
+		return fmt.Errorf("remove claude home for %s: %w", sessionID, err)
 	}
-
-	if err := os.MkdirAll(filepath.Join(m.root, "worktrees"), 0o755); err != nil {
-		return "", "", fmt.Errorf("mkdir worktrees root: %w", err)
-	}
-
-	branchExists := false
-	if out, err := m.run(ctx, repoPath, "branch", "--list", branch); err == nil && out != "" {
-		branchExists = true
-	}
-	if branchExists {
-		_, err = m.run(ctx, repoPath, "worktree", "add", path, branch)
-	} else {
-		_, err = m.run(ctx, repoPath, "worktree", "add", "-b", branch, path, "origin/"+baseBranch)
-	}
-	if err != nil {
-		return "", "", err
-	}
-	return path, branch, nil
+	return nil
 }
 
 // fleetSharedSentinel keys the repoLock used to serialize SyncFleetShared

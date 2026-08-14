@@ -11,9 +11,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"time"
 
-	corev1 "k8s.io/api/core/v1"
 
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 
@@ -101,215 +99,69 @@ func (s *Server) tearDownRepoSharedInstances(ctx context.Context, repo string) (
 	return torn, nil
 }
 
-func (s *Server) GetE2ESessionStatus(ctx context.Context, req *agentfleetv1.GetE2ESessionStatusRequest) (*agentfleetv1.GetE2ESessionStatusResponse, error) {
-	state, exists, err := s.k8sc.GetPod(ctx, k8s.ResourceName(req.GetSessionId()))
-	if err != nil {
-		return nil, err
-	}
-	if !exists {
-		return &agentfleetv1.GetE2ESessionStatusResponse{}, nil
-	}
-	// Terminating wins over phase: kubelet keeps reporting Running for the
-	// whole grace period, and "running" for a pod that is going away is the
-	// same lie CreateE2ESession used to tell.
-	status := e2eStatusFromPhase(state.Phase)
-	podPhase := string(state.Phase)
-	if state.Terminating {
-		status, podPhase = "terminating", "Terminating"
-	}
-	return &agentfleetv1.GetE2ESessionStatusResponse{
-		Status:        status,
-		PreviewUrl:    k8s.PreviewURLFor(s.e2eHost, req.GetSessionId()),
-		CodeServerUrl: k8s.CodeServerURLFor(s.e2eHost, req.GetSessionId()),
-		StartCmd:      state.StartCmd,
-		PodPhase:      podPhase,
-		AppReady:      state.AppReady,
-		Restarts:      state.Restarts,
-		StartedAt:     state.StartedAt,
-		// Only when a pod exists — the early return above already covers the
-		// no-session case with an empty response. This is how core's own
-		// dashboard path (runInE2ePod) reaches a sandbox it did not provision
-		// (docs/adr/0045).
-		Endpoints: s.endpointsFor(req.GetSessionId()),
-	}, nil
-}
 
-// CreateE2ESession is idempotent — "safe to call again if one is already
-// running" (today's mcpserver docstring, preserved): a GET before create,
-// not a create-and-handle-AlreadyExists, since it also needs to report the
-// existing session's own status/URL, not just "yes it exists."
-func (s *Server) CreateE2ESession(ctx context.Context, req *agentfleetv1.CreateE2ESessionRequest) (*agentfleetv1.CreateE2ESessionResponse, error) {
-	name := k8s.ResourceName(req.GetSessionId())
-	state, exists, err := s.k8sc.GetPod(ctx, name)
-	if err != nil {
-		return nil, err
-	}
-	// A terminating pod is not an existing session. It still exists and
-	// still reports Phase=Running for its whole grace period, so the
-	// exists-check below used to return its preview URL for a pod that was
-	// seconds from vanishing — the caller saw a success and got nothing.
-	// "kill_env then request_e2e_env" hits this every time. Wait it out and
-	// build a fresh session instead.
-	// A pod that reached a terminal phase is not an existing session either
-	// (docs/adr/0044). It still reports exists=true and non-Terminating
-	// forever, so the check below used to hand back the corpse's preview URL
-	// on every subsequent call — and run_command's retry then failed against
-	// an unreachable pod for the rest of the session, with nothing GC-ing it.
-	// Same remedy as Terminating: get rid of it and build a fresh one.
-	dead := exists && (state.Phase == corev1.PodFailed || state.Phase == corev1.PodSucceeded)
-	if dead {
-		slog.Warn("grpcserver CreateE2ESession: replacing a dead e2e pod",
-			"sessionId", req.GetSessionId(), "phase", state.Phase, "detail", state.Detail)
-		// Only the pod — Service/Middleware/IngressRoute are create-if-absent
-		// (ignoreAlreadyExists), so leaving them keeps the preview URL stable
-		// and avoids Traefik churn on every recreate.
-		if err := s.k8sc.DeletePod(ctx, req.GetSessionId()); err != nil {
-			return nil, fmt.Errorf("delete dead e2e pod for task %s: %w", req.GetSessionId(), err)
-		}
-	}
-	if exists && (state.Terminating || dead) {
-		slog.Info("grpcserver CreateE2ESession: waiting for the previous pod to finish terminating", "sessionId", req.GetSessionId())
-		if err := s.k8sc.WaitForPodGone(ctx, name, 2*time.Minute); err != nil {
-			return nil, fmt.Errorf("previous e2e pod for task %s did not finish terminating: %w", req.GetSessionId(), err)
-		}
-		exists = false
-	}
-	if exists {
-		// The roster goes out on this path too, not just on creation
-		// (docs/adr/0045). A resumed session short-circuits here every time,
-		// so returning endpoints only from the create path below would leave
-		// exactly the long-lived sessions unable to dial.
-		return &agentfleetv1.CreateE2ESessionResponse{
-			Status:     e2eStatusFromPhase(state.Phase),
-			PreviewUrl: k8s.PreviewURLFor(s.e2eHost, req.GetSessionId()),
-			Endpoints:  s.endpointsFor(req.GetSessionId()),
-		}, nil
-	}
+// --- what replaced the sandbox (docs/adr/0048 §6) ---
 
-	serviceRefs, extraEnv, err := s.resolveServiceIngredients(ctx, req.GetRepo(), req.GetSessionId(), req.GetServiceIngredients())
-	if err != nil {
-		return nil, fmt.Errorf("resolve service ingredients: %w", err)
-	}
-	taskRef := k8s.TaskRef{
-		ID: req.GetSessionId(), Repo: req.GetRepo(), StartCmd: req.GetStartCmd(),
-		ToolKeys: req.GetToolKeys(), ServiceIngredients: serviceRefs, ExtraEnv: extraEnv,
-	}
-	if err := s.k8sc.CreatePod(ctx, taskRef); err != nil {
-		return nil, fmt.Errorf("create e2e pod: %w", err)
-	}
-	if err := s.k8sc.CreateService(ctx, req.GetSessionId()); err != nil {
-		return nil, fmt.Errorf("create e2e service: %w", err)
-	}
-	// Fenced before it is reachable: the Service above is what makes the MCP
-	// ports resolvable, so the policy has to exist by the time anyone can
-	// dial them (docs/adr/0045).
-	if err := s.k8sc.CreateNetworkPolicy(ctx, req.GetSessionId()); err != nil {
-		return nil, fmt.Errorf("create e2e networkpolicy: %w", err)
-	}
-	if err := s.k8sc.CreateMiddleware(ctx, req.GetSessionId()); err != nil {
-		return nil, fmt.Errorf("create e2e middleware: %w", err)
-	}
-	if err := s.k8sc.CreateIngressRoute(ctx, s.e2eHost, req.GetSessionId()); err != nil {
-		return nil, fmt.Errorf("create e2e ingressroute: %w", err)
-	}
-	slog.Info("grpcserver CreateE2ESession", "sessionId", req.GetSessionId(), "repo", req.GetRepo())
-	// "requested", not "running": the pod object exists, but it is Pending —
-	// image pull, init containers, scheduling all still ahead of it. Claiming
-	// "running" here told the agent the preview was live and then handed it a
-	// 502 for the next 10-20 minutes (docs/adr/0044).
-	return &agentfleetv1.CreateE2ESessionResponse{
-		Status:     "requested",
-		PreviewUrl: k8s.PreviewURLFor(s.e2eHost, req.GetSessionId()),
-		Endpoints:  s.endpointsFor(req.GetSessionId()),
-	}, nil
-}
-
-// endpointsFor maps k8s's plain addressing structs onto the wire type — the
-// same boundary scopeModeString keeps in the other direction, so the k8s
-// package never imports generated code.
+// ExposeSession publishes a port from a session's pod at a public URL.
 //
-// Deliberately unconditional: the roster describes where the sandbox *would*
-// answer, derived from names, not whether it is answering yet. A caller that
-// dials too early gets a connection error and retries, which is a state the
-// sidecar's run_command backoff already models (docs/adr/0044). Gating the
-// roster on readiness instead would swap that legible failure for an empty
-// list meaning both "not ready" and "no such service".
-func (s *Server) endpointsFor(taskID string) []*agentfleetv1.ServiceEndpoint {
-	resolved := k8s.EndpointsFor(s.k8sc.Namespace, taskID)
-	out := make([]*agentfleetv1.ServiceEndpoint, 0, len(resolved))
-	for _, e := range resolved {
-		out = append(out, &agentfleetv1.ServiceEndpoint{
-			Name:     e.Name,
-			Address:  e.Address,
-			Protocol: e.Protocol,
-			Path:     e.Path,
-		})
+// Idempotent, and that is a requirement rather than a nicety: the agent is
+// told it may call expose() again after a warm, and a session's pod changes
+// identity on every warm while its hostname must not.
+func (s *Server) ExposeSession(ctx context.Context, req *agentfleetv1.ExposeSessionRequest) (*agentfleetv1.ExposeSessionResponse, error) {
+	url, err := s.k8sc.ExposeSession(ctx, req.GetSessionId(), req.GetPort(), s.e2eHost)
+	if err != nil {
+		return nil, fmt.Errorf("expose session: %w", err)
 	}
-	return out
+	slog.Info("grpcserver ExposeSession", "sessionId", req.GetSessionId(), "port", req.GetPort(), "url", url)
+	return &agentfleetv1.ExposeSessionResponse{Url: url}, nil
 }
 
-// scopeModeString converts the proto ScopeMode enum into the plain string
-// package k8s works with (decoupling k8s from the proto module, same
-// reasoning as TaskRef not being a proto type).
-func scopeModeString(m agentfleetv1.ScopeMode) string {
-	switch m {
-	case agentfleetv1.ScopeMode_SCOPE_MODE_POD_SCOPED:
-		return k8s.ScopeModePodScoped
-	case agentfleetv1.ScopeMode_SCOPE_MODE_TASK_SCOPED:
-		return k8s.ScopeModeTaskScoped
-	case agentfleetv1.ScopeMode_SCOPE_MODE_REPO_SCOPED:
-		return k8s.ScopeModeRepoScoped
-	default:
-		return ""
+func (s *Server) UnexposeSession(ctx context.Context, req *agentfleetv1.UnexposeSessionRequest) (*agentfleetv1.UnexposeSessionResponse, error) {
+	if err := s.k8sc.UnexposeSession(ctx, req.GetSessionId()); err != nil {
+		return nil, fmt.Errorf("unexpose session: %w", err)
 	}
+	slog.Info("grpcserver UnexposeSession", "sessionId", req.GetSessionId())
+	return &agentfleetv1.UnexposeSessionResponse{}, nil
 }
 
-// resolveServiceIngredients converts the proto ServiceIngredient list into
-// the plain k8s.ServiceIngredientRef shape CreatePod/CreateWorkerPod
-// accept, and mints credentials for every non-pod-scoped entry
-// synchronously, before the caller creates any pod — a minting failure
-// here means the RPC itself errors and the consuming pod is never created
-// (docs/adr/0034's fail-loud guarantee, stronger than a StartupProbe).
-func (s *Server) resolveServiceIngredients(ctx context.Context, repo, taskID string, in []*agentfleetv1.ServiceIngredient) ([]k8s.ServiceIngredientRef, []corev1.EnvVar, error) {
-	refs := make([]k8s.ServiceIngredientRef, 0, len(in))
-	var extraEnv []corev1.EnvVar
-	for _, si := range in {
-		mode := scopeModeString(si.GetScopeMode())
-		if mode == "" {
-			return nil, nil, fmt.Errorf("service ingredient %q: unspecified scope mode", si.GetKey())
-		}
-		refs = append(refs, k8s.ServiceIngredientRef{Key: si.GetKey(), ScopeMode: mode})
-		if mode == k8s.ScopeModePodScoped {
-			continue // materialized as a same-pod sidecar by buildIngredients instead
-		}
-		url, err := s.k8sc.MintServiceCredentials(ctx, repo, taskID, si.GetKey(), mode)
-		if err != nil {
-			return nil, nil, fmt.Errorf("mint credentials for %s (%s): %w", si.GetKey(), mode, err)
-		}
-		def, ok := catalog.Services[si.GetKey()]
-		if !ok {
-			return nil, nil, fmt.Errorf("unknown service ingredient %q", si.GetKey())
-		}
-		extraEnv = append(extraEnv, corev1.EnvVar{Name: def.EnvVarName, Value: url})
+// ProvisionService is what is left of the ingredient system: a shared
+// Postgres or Redis, keyed by repo, minted on demand.
+//
+// Reuses MintServiceCredentials rather than growing a parallel path — the
+// scope rules (ADR-0034) are unchanged and were never the part that was
+// wrong. What changed is who decides a service is needed: the agent asks for
+// one when it turns out to need it, instead of a profile table declaring it
+// up front for every session on the repo.
+func (s *Server) ProvisionService(ctx context.Context, req *agentfleetv1.ProvisionServiceRequest) (*agentfleetv1.ProvisionServiceResponse, error) {
+	if _, ok := catalog.Services[req.GetKind()]; !ok {
+		return nil, fmt.Errorf("unknown service %q", req.GetKind())
 	}
-	return refs, extraEnv, nil
+	dsn, err := s.k8sc.MintServiceCredentials(ctx, req.GetRepo(), req.GetSessionId(), req.GetKind(), k8s.ScopeModeTaskScoped)
+	if err != nil {
+		return nil, fmt.Errorf("mint %s credentials: %w", req.GetKind(), err)
+	}
+	slog.Info("grpcserver ProvisionService", "sessionId", req.GetSessionId(), "repo", req.GetRepo(), "kind", req.GetKind())
+	return &agentfleetv1.ProvisionServiceResponse{Dsn: dsn}, nil
 }
 
-func e2eStatusFromPhase(phase corev1.PodPhase) string {
-	switch phase {
-	case corev1.PodPending:
-		return "requested"
-	case corev1.PodRunning:
-		return "running"
-	case corev1.PodFailed:
-		return "failed"
-	case corev1.PodSucceeded:
-		return "exited"
-	default:
-		// PodUnknown and anything unrecognized. This used to answer
-		// "running", which is the one thing it definitely is not known to be.
-		return "unknown"
+// SweepSession reclaims a session's disk — both halves, which live on
+// different volumes: the working-tree PVC and the SDK state directory.
+//
+// Both deletes are attempted even if the first fails, and the error is
+// reported afterwards. Returning early would leave core unable to mark the
+// session swept, so the next GC pass would retry the half that already
+// succeeded — harmless, but it would also never make progress on the other.
+func (s *Server) SweepSession(ctx context.Context, req *agentfleetv1.SweepSessionRequest) (*agentfleetv1.SweepSessionResponse, error) {
+	pvcErr := s.k8sc.DeleteSessionPVC(ctx, req.GetSessionId())
+	dirErr := s.git.DeleteSessionDir(req.GetSessionId())
+	if pvcErr != nil {
+		return nil, fmt.Errorf("sweep session pvc: %w", pvcErr)
 	}
+	if dirErr != nil {
+		return nil, fmt.Errorf("sweep session dir: %w", dirErr)
+	}
+	slog.Info("grpcserver SweepSession", "sessionId", req.GetSessionId())
+	return &agentfleetv1.SweepSessionResponse{}, nil
 }
 
 // --- worker pods (new, docs/adr/0019/0020) ---
@@ -328,34 +180,49 @@ func (s *Server) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWo
 		s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_CRASHED, "", "clone/fetch failed: "+err.Error())
 		return nil, fmt.Errorf("ensure repo cloned: %w", err)
 	}
-	s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_PROVISIONING, "", "adding worktree")
-	worktreePath, _, err := s.git.CreateWorktree(ctx, req.GetRepo(), req.GetSessionId(), req.GetBaseBranch())
-	if err != nil {
-		s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_CRASHED, "", "worktree add failed: "+err.Error())
-		return nil, fmt.Errorf("create worktree: %w", err)
-	}
+	// No worktree step. The session's working tree is cloned by an init
+	// container in the pod itself, because it lives on a per-session
+	// local-path PVC this process never mounts (docs/adr/0048 §4/§5) — a
+	// worktree added here would land on a different volume, silently.
 	s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_CREATED, "", "")
 
 	// Best-effort, unlike the clone/worktree steps above: stale or
 	// momentarily missing fleet-shared skills/context is a degraded worker
 	// session, not a broken one, so a sync failure here logs and continues
 	// rather than failing the whole dispatch (docs/adr/0032).
+	//
+	// Seeded into this session's OWN claude-home rather than one directory
+	// shared by every pod. That is what removes the rsync --delete race
+	// docs/adr/0048 §4 describes: the old layout rewrote settings.json and
+	// skills/ under other sessions mid-turn, with no lock. Here it is written
+	// once, before the pod exists, and nothing touches it again while the
+	// session is live.
 	if s.fleetSharedRepoURL != "" {
 		s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_PROVISIONING, "", "syncing fleet-shared skills")
-		if err := s.git.SyncFleetShared(ctx, s.fleetSharedRepoURL, s.fleetSharedBranch, s.claudeHomeDir); err != nil {
+		if err := s.git.SyncFleetShared(ctx, s.fleetSharedRepoURL, s.fleetSharedBranch, s.git.ClaudeHomePath(req.GetSessionId())); err != nil {
 			slog.Warn("grpcserver: fleet-shared sync failed, continuing with a possibly-stale copy", "sessionId", req.GetSessionId(), "error", err)
 		}
 	}
 
-	s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_PROVISIONING, "", "minting service credentials")
-	serviceRefs, extraEnv, err := s.resolveServiceIngredients(ctx, req.GetRepo(), req.GetSessionId(), req.GetServiceIngredients())
-	if err != nil {
-		s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_CRASHED, "", "ingredient resolution failed: "+err.Error())
-		return nil, fmt.Errorf("resolve service ingredients: %w", err)
-	}
+	// No service ingredients to resolve up front. A session gets a Postgres
+	// when it asks for one via request_service, not because a profile row
+	// declared that every session on this repo might want one — which is what
+	// made a shared instance the fleet's problem to mint, size and tear down
+	// on behalf of sessions that often never touched it (docs/adr/0048 §6).
 
 	s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_PROVISIONING, "", "creating pod")
-	if err := s.k8sc.CreateWorkerPod(ctx, req.GetSessionId(), req.GetRepo(), req.GetLeaseId(), worktreePath, req.GetResumeSessionId(), req.GetResumeFromSeq(), req.GetToolKeys(), serviceRefs, extraEnv); err != nil {
+	if err := s.k8sc.CreateWorkerPod(ctx, k8s.WorkerPodSpec{
+		SessionID:     req.GetSessionId(),
+		Repo:          req.GetRepo(),
+		RepoURL:       req.GetRepoUrl(),
+		BaseBranch:    req.GetBaseBranch(),
+		LeaseID:       req.GetLeaseId(),
+		ResumeID:      req.GetResumeSessionId(),
+		ResumeFromSeq: req.GetResumeFromSeq(),
+		ToolKeys:      req.GetToolKeys(),
+		ServiceRefs:   nil,
+		ExtraEnv:      nil,
+	}); err != nil {
 		s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_CRASHED, "", "pod create failed: "+err.Error())
 		return nil, fmt.Errorf("create worker pod: %w", err)
 	}
