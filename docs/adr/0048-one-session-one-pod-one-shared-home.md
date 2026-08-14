@@ -29,9 +29,10 @@
     per-session rather than one directory shared by every pod.
   - [ADR-0047](0047-metrics-scoped-to-the-hubs.md) — `TasksCurrent{repo,status}`
     has no statuses left to count.
-- **Depends on:** `infra-bootstrap` amending its own ADR-0002 and ADR-0026 to
-  permit an NFS-backed StorageClass. Per that repo's `DECISION.md` §5 those
-  change there first. Only §4 of this ADR depends on it.
+- **Depends on:** nothing outside this repo. An earlier revision required
+  `infra-bootstrap` to amend ADR-0002/0026 for an NFS-backed StorageClass;
+  §4 was rewritten after measuring, and the fleet stays on `longhorn` plus
+  `local-path`, both of which already exist. ADR-0002 stands unamended.
 
 ## Context
 
@@ -209,33 +210,115 @@ Dedup is keyed `(repo, dedup_key) WHERE dismissed_at IS NULL`. Keying it on
 "has no session yet" would free the key the moment a human opens the proposal,
 so a 1-hour audit cadence whose session runs 3 hours yields three proposals.
 
-### 4. One shared home, four mounts
+### 4. Storage is split by access pattern, not by uniformity
 
-One RWX PVC on a non-default `nfs` StorageClass, mounted four times:
+**This section was rewritten after measuring. The original decision — one
+shared RWX PVC on a new `nfs` StorageClass, holding everything including
+`node_modules` — was wrong, and the numbers say so unambiguously.**
+
+Measured 2026-08-14 in a scratch namespace, one pod on `k8s-worker-01`
+mounting all three volumes so node and CPU are identical and storage is the
+only variable. Longhorn is measured at its best case: its share-manager runs
+on that same node.
+
+| | Longhorn RWX | NFS VM | **emptyDir (node-local)** |
+|---|---|---|---|
+| Sequential write, 200 MB | 19,050 ms — 10 MB/s | 18,297 ms — 10 MB/s | **186 ms — 1069 MB/s** |
+| Create 5,000 files | 37,872 ms | 34,200 ms | **182 ms** |
+| Delete 5,000 files | 1,589 ms | **15,037 ms** | **77 ms** |
+| `bun install` | killed at >3 min | killed at >3 min | **2,375 ms** |
+| fsync latency | 9,125 µs/op | 5,205 µs/op | — |
+
+Three findings, in order of consequence:
+
+**The NFS StorageClass earns nothing.** 10% faster file creation, 9.5× *slower*
+deletion, identical bandwidth. The premise — remove Longhorn's 3-replica
+synchronous fan-out and installs get much faster — is refuted. The fan-out is
+real (fsync 9.1 ms → 5.2 ms) and it is swamped. **The fleet stays on
+`longhorn`.** The NFS VM remains available as a cluster capability; nothing
+here needs it.
+
+**The bottleneck is the fabric, not the backend.** Two independent storage
+systems on different physical hosts both cap at exactly 10 MB/s ≈ 80 Mbps,
+which is 100BASE-TX after overhead. Not confirmed from inside the cluster
+(the nodes are VMs; virtio reports no link speed) — `ethtool` on the PVE hosts
+would settle it. Either way, no choice between network storage backends can
+fix it.
+
+**Node-local disk is ~200× faster on metadata and 107× on bandwidth**, and
+that reframes docs/adr/0039's 782-second cold `bun install` entirely. That was
+never a Longhorn problem; it is a *network-storage* problem, and putting
+`node_modules` on any shared volume is the design error. The same install
+finishes in **2.4 seconds** on the node's own disk.
+
+So the split is by access pattern:
 
 ```
-PVC root                              in the session pod
-  repos/<repo>/     clone cache    →  /repo-cache          READ-ONLY
-  cache/            GLOBAL caches  →  /cache               rw  (all sessions)
-  sessions/<id>/    this tree      →  /workspace           rw  (this one only)
-  claude-home/<id>/ this SDK dir   →  /home/bun/.claude    rw  (this one only)
+/workspace          per-session `local-path` PVC   node-local, durable, auto-pinned
+/cache              per-node `local-path` PVC      warm across sessions on that node
+/repo-cache         longhorn RWX, read-only        the clone cache — small, read-mostly
+/home/bun/.claude   longhorn RWX, per-session      resume state — must survive node loss
 ```
 
-`cache/` is **global**, not per-repo — the personal-computer model. Go's module
-cache, bun's and npm's are content-addressed with atomic renames and designed
-for concurrent access.
+Node-local for anything write-heavy and regenerable; replicated network
+storage only for the small things whose loss actually matters.
+
+**`local-path` per session rather than `emptyDir`, and the pinning is the
+point.** `WaitForFirstConsumer` binds the volume to whichever node the first
+pod lands on, and the volume's own node affinity then *forces* every
+subsequent warm back to that node — so a resumed session finds its working
+tree and its warm dependency cache already there, with no affinity rules to
+write and no re-clone. GC becomes `kubectl delete pvc`.
+
+An earlier draft of this ADR rejected per-session `local-path` precisely
+because it pins. That objection inverts once the measurements are in: pinning
+is the mechanism that delivers both node-local speed and cache locality.
+
+The cost is real and accepted: **a drained node strands its sessions** until
+it returns, and `drain-self.service` runs on two of the five nodes. The
+mitigation is that git is the durable copy — which at 10 MB/s of local
+replication is the only replica worth having anyway.
+
+`/cache` stays **global across repos, per node** — the personal-computer
+model. Go's module cache, bun's and npm's are content-addressed with atomic
+renames and designed for concurrent access. The correction to the original
+design is not that sharing was wrong; it is that a personal computer's
+`~/.bun/install/cache` sits on its own SSD, not an NFS mount.
 
 Isolation becomes a real mount boundary for the first time. `claude-home/<id>`
 being per-session kills the mid-flight `rsync --delete` problem outright:
 `SyncFleetShared` seeds it once at pod creation, never while a session is live.
 
-The backing class moves from Longhorn RWX to a plain NFS export because
-Longhorn's replica fan-out is the part of the 782s that a single NFS server
-does not have: pod → nfsd → disk, once, instead of pod → nfsd → three
-synchronous replicas. **This is the only part of this ADR that depends on
-`infra-bootstrap`, and it is one line.** If the measurement there disappoints,
-`storageClassName` reverts to `longhorn` and nothing else in this decision
-changes.
+**`claude-home/<id>` being per-session is load-bearing, not tidiness.** The SDK
+derives its per-project directory from `cwd`, replacing every non-alphanumeric
+character with `-` — verified against a real installation, e.g.
+`projects/-Users-moha-Code-infra-bootstrap-agent-fleet--claude-worktrees-session-rewrite/`.
+Today every session's `cwd` is `/workspace/worktrees/<taskId>`, so those
+directories are naturally disjoint. **After the merge every session's `cwd` is
+`/workspace`, so every session encodes to the same `projects/-workspace/`.** The
+per-session mount is what keeps them apart; without it, resume state from
+different sessions would land in one directory.
+
+A session's SDK state is also **three** paths, not one — confirmed by
+inspection rather than inference:
+
+```
+projects/<encoded-cwd>/
+  <agent_session_id>.jsonl        the transcript (3.9 MB for one real session)
+  <agent_session_id>/subagents/   subagent transcripts
+```
+
+An earlier draft of this decision had the sweep delete only the `.jsonl`,
+which would have leaked the `subagents/` directory on every sweep. Sweeping
+the whole `claude-home/<id>` subtree avoids needing to know the layout at all,
+which is the point — the fleet should not be tracking the SDK's internal
+filenames.
+
+A draft of this ADR moved the backing class from Longhorn RWX to a plain NFS
+export, reasoning that Longhorn's replica fan-out was the part of the 782s a
+single NFS server does not have. That reasoning was tested and was wrong —
+see §4's table. The fan-out is real but minor; the fabric is the constraint,
+and both options share it. The class stays `longhorn`.
 
 ### 5. The fleet leaves the git business
 
@@ -335,13 +418,22 @@ sessions run.
   but also keeps the fat image split, *and* still requires the platform to know
   how to restart the app — i.e. the recipe system survives, which is most of
   the complexity.
-- **`local-path` per-session PVC.** Rejected: `WaitForFirstConsumer` binds each
-  session to one node for its whole life. Five could pile onto one node while
-  another idles, a drain strands them, and `drain-self.service` runs on two of
-  the five nodes.
-- **A node-local `emptyDir` working tree.** Rejected: loses uncommitted work at
-  the 30-minute idle timeout. `docs/DECISIONS.md` records this failure happening
-  twice already.
+- **`local-path` per-session PVC.** Rejected in draft on the grounds that
+  `WaitForFirstConsumer` binds each session to one node for its whole life —
+  then **adopted** once measured. The pinning is the mechanism, not the flaw:
+  it is what returns a warmed session to its own working tree and its own warm
+  dependency cache, with no affinity rules. The drain risk is real and
+  accepted; see Consequences.
+- **A node-local `emptyDir` working tree.** Rejected: it dies with the pod, so
+  every warm re-clones over a 10 MB/s fabric — and losing uncommitted work at
+  the 30-minute idle timeout is the failure `docs/DECISIONS.md` records
+  happening twice already. `local-path` is node-local *and* durable.
+- **One shared RWX PVC holding everything, including `node_modules`.**
+  Rejected on measurement: ~200× slower metadata than node-local disk, and it
+  is the actual cause of docs/adr/0039's 782-second cold install.
+- **An NFS-backed StorageClass to escape Longhorn's replica fan-out.**
+  Rejected on measurement: 10% faster creates, 9.5× slower deletes, identical
+  bandwidth. See §4.
 - **Auto-WIP-commit on teardown.** Rejected: writes commits to the agent's
   branch behind its back, and a failed push (conflict, no upstream, no network)
   has nowhere to report.
@@ -373,9 +465,11 @@ sessions run.
 4. **Crash containment moves to the agent.** ADR-0044's incident was a dev
    server taking PID 1. In one pod, `fleet-shared/CLAUDE.md` documents
    `setsid`/`nohup` and a log path, and the agent is responsible for it.
-5. **No replication.** One NFS VM replaces three Longhorn replicas. Git is the
-   real replica; three copies in one room is not a backup. The exposed window
-   is the session tree between commits.
+5. **A session's working tree lives on one node's disk, unreplicated**, so a
+   drained or dead node strands or loses it — and `drain-self.service` runs on
+   two of the five nodes. Git is the real replica; the exposed window is the
+   tree between commits. Accepted because the alternative costs ~200× on every
+   metadata operation, on every session, forever.
 6. **`buf breaking` fails by construction** on the `task_id` rename. The only
    opt-out is a literal `BREAKING CHANGE:` footer, which makes `release-it` cut
    a major version. Both are intended.

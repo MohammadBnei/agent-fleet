@@ -23,14 +23,13 @@ import (
 	"github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1/agentfleetv1connect"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/e2edial"
-	"github.com/MohammadBnei/agent-fleet/core/internal/e2erecipe"
 	"github.com/MohammadBnei/agent-fleet/core/internal/filestore"
 	"github.com/MohammadBnei/agent-fleet/core/internal/journal"
 	"github.com/MohammadBnei/agent-fleet/core/internal/lokiclient"
+	"github.com/MohammadBnei/agent-fleet/core/internal/proposals"
 	"github.com/MohammadBnei/agent-fleet/core/internal/promclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/promptsnippets"
 	"github.com/MohammadBnei/agent-fleet/core/internal/provisionerclient"
-	"github.com/MohammadBnei/agent-fleet/core/internal/repoprofiles"
 	"github.com/MohammadBnei/agent-fleet/core/internal/repos"
 	"github.com/MohammadBnei/agent-fleet/core/internal/scheduledaudits"
 	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
@@ -38,39 +37,42 @@ import (
 )
 
 type Server struct {
-	tasks       *tasks.Store
-	transcr     transcript.Store
-	journal     *journal.Store
-	repos       *repos.Store
-	profiles    *repoprofiles.Store
-	snippets    *promptsnippets.Store
-	e2e         *provisionerclient.Client
-	files       filestore.Store
-	hub         *Hub
-	maxInFlight int
-	loki        lokiclient.Querier
-	prom        promclient.Querier
-	audits      *scheduledaudits.Store
+	sessions  *sessions.Store
+	proposals *proposals.Store
+	transcr   transcript.Store
+	journal   *journal.Store
+	repos     *repos.Store
+	snippets  *promptsnippets.Store
+	e2e       *provisionerclient.Client
+	files     filestore.Store
+	hub       *Hub
+	// maxLive is the fleet's blast-radius bound: how many pods, each running
+	// an agent, may exist at once. Enforced inside sessions.ReserveSlot under
+	// an advisory lock rather than checked here, because a read-then-act
+	// check is exactly what let CI observe 4 tasks claimed with a cap of 2.
+	maxLive int
+	loki    lokiclient.Querier
+	prom    promclient.Querier
+	audits  *scheduledaudits.Store
 }
 
-func NewServer(taskStore *tasks.Store, transcr transcript.Store, journalStore *journal.Store, repoStore *repos.Store, profileStore *repoprofiles.Store, snippetStore *promptsnippets.Store, e2e *provisionerclient.Client, files filestore.Store, hub *Hub, maxInFlight int, loki lokiclient.Querier, prom promclient.Querier, auditStore *scheduledaudits.Store) *Server {
-	return &Server{tasks: taskStore, transcr: transcr, journal: journalStore, repos: repoStore, profiles: profileStore, snippets: snippetStore, e2e: e2e, files: files, hub: hub, maxInFlight: maxInFlight, loki: loki, prom: prom, audits: auditStore}
+func NewServer(sessionStore *sessions.Store, proposalStore *proposals.Store, transcr transcript.Store, journalStore *journal.Store, repoStore *repos.Store, snippetStore *promptsnippets.Store, e2e *provisionerclient.Client, files filestore.Store, hub *Hub, maxLive int, loki lokiclient.Querier, prom promclient.Querier, auditStore *scheduledaudits.Store) *Server {
+	return &Server{sessions: sessionStore, proposals: proposalStore, transcr: transcr, journal: journalStore, repos: repoStore, snippets: snippetStore, e2e: e2e, files: files, hub: hub, maxLive: maxLive, loki: loki, prom: prom, audits: auditStore}
 }
 
-// resolveWorkerIngredients looks up repo's "worker"-named profile
-// (docs/adr/0034) and returns its tool/service ingredients, or (nil, nil,
-// nil) when the repo has no such profile — preserves the pre-recipe pod
-// shape exactly (an empty ingredient list is a documented no-op all the
-// way down through CreateWorkerPod/pod.go).
-func (s *Server) resolveWorkerIngredients(ctx context.Context, repo string) ([]string, []repoprofiles.ServiceIngredient, error) {
-	profile, err := s.profiles.Get(ctx, repo, "worker")
+// toolKeysFor resolves the only ingredient that survived docs/adr/0034's
+// recipe system: cluster-access, which is a privilege grant rather than a
+// toolchain (docs/adr/0037, docs/adr/0048). Everything else the recipe used
+// to carry is now either the agent's own `Bash` or repos.image.
+func (s *Server) toolKeysFor(ctx context.Context, repo string) ([]string, error) {
+	r, err := s.repos.Get(ctx, repo)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	if profile == nil {
-		return nil, nil, nil
+	if r == nil {
+		return nil, nil
 	}
-	return profile.Tools, profile.Services, nil
+	return provisionerclient.ToolKeysFor(r.ClusterAccess), nil
 }
 
 var _ agentfleetv1connect.DashboardServiceHandler = (*Server)(nil)
