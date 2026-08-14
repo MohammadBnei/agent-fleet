@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.1](https://github.com/MohammadBnei/agent-fleet/compare/2.0.0...2.0.1) (2026-08-14)
+
+
+### Bug Fixes
+
+* **sidecar:** auto-retry stale MCP client calls ([#153](https://github.com/MohammadBnei/agent-fleet/issues/153)) ([3b8a713](https://github.com/MohammadBnei/agent-fleet/commit/3b8a713548015dc89cccd00d72a1875075dbf900))
+
 # [2.0.0](https://github.com/MohammadBnei/agent-fleet/compare/1.56.0...2.0.0) (2026-08-13)
 
 
