@@ -607,16 +607,19 @@ func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error 
 					{Name: "local-api", ContainerPort: SidecarAPIPort},
 				},
 				VolumeMounts: []corev1.VolumeMount{
-					// Whole PVC, not a per-task SubPath: a linked git
-					// worktree's .git file is an absolute-path gitlink
-					// back to the main clone's repos/<repo>/.git/worktrees/
-					// <taskId> admin dir (HEAD/index/commondir) — a
-					// SubPath scoped to just worktrees/<taskId> cuts that
-					// path off entirely, so every git command in this
-					// container failed with "not a git repository"
-					// (produced by design in ADR-0019 but never checked
-					// against how linked worktrees actually work).
-					{Name: "workspace", MountPath: "/workspace"},
+					// The session's working tree, for the telemetry loop's
+					// `git diff` — the sidecar needs to see the same files
+					// the agent is editing.
+					//
+					// A SubPath is fine here now, where it was actively
+					// wrong before: the old layout mounted the whole PVC
+					// because a LINKED WORKTREE's .git is an absolute-path
+					// gitlink back to repos/<repo>/.git/worktrees/<id>, so
+					// scoping the mount severed it and every git command
+					// answered "not a git repository". There are no linked
+					// worktrees any more — this is a real clone with its
+					// own .git directory (docs/adr/0048 §5).
+					{Name: "session", MountPath: sessionWorkdir, SubPath: "tree"},
 				},
 				Resources: corev1.ResourceRequirements{
 					Requests: corev1.ResourceList{

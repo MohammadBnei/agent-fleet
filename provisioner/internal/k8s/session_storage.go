@@ -125,6 +125,16 @@ func cloneInitContainer(image string, spec WorkerPodSpec) corev1.Container {
 		base = "main"
 	}
 	script := fmt.Sprintf(`set -eu
+# Git's ownership guard (CVE-2022-24765) refuses every command in a repository
+# whose directory belongs to another user. The PVC's mount point is created by
+# the kubelet as root and this container runs as the image's non-root user, so
+# without this the clone SUCCEEDS and the very next command fails with
+# "detected dubious ownership" — which is what happened the first time this
+# ran in kind. worker/src/index.ts already carries the same line for the same
+# reason; both containers need it because they do not share $HOME.
+git config --global --add safe.directory %[1]s
+git config --global --add safe.directory /repo-cache/%[2]s
+
 if [ -d %[1]s/.git ]; then
   echo "workspace already has a repository, leaving it alone"
   exit 0

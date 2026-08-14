@@ -161,59 +161,6 @@ func TestGcIdleSharedInstances_Uniform(t *testing.T) {
 // ADR-0039's "e2e pods are never GC'd" gap. A healthy, in-use sandbox must
 // survive the pass — that's the case that makes this sweep safe to run every
 // 10s against pods an agent is actively working in.
-func TestGcDeadE2ePods_DeletesTerminalAndAged(t *testing.T) {
-	now := time.Now()
-	kc := &fakeK8s{e2ePods: []k8s.LiveE2ePod{
-		{TaskID: "healthy", PodName: "e2e-1", Phase: "Running", CreatedAt: now.Add(-time.Hour)},
-		{TaskID: "crashed", PodName: "e2e-2", Phase: "Failed", CreatedAt: now.Add(-time.Minute)},
-		{TaskID: "exited", PodName: "e2e-3", Phase: "Succeeded", CreatedAt: now.Add(-time.Minute)},
-		{TaskID: "ancient", PodName: "e2e-4", Phase: "Running", CreatedAt: now.Add(-48 * time.Hour)},
-		{TaskID: "starting", PodName: "e2e-5", Phase: "Pending", CreatedAt: now},
-	}}
-	reporter := &fakeEventReporter{}
-	l := New(kc, reporter, time.Hour, 24*time.Hour)
-
-	l.gcDeadE2ePods(context.Background())
-
-	if len(kc.deletedAll) != 3 {
-		t.Fatalf("expected exactly 3 pods swept, got %v", kc.deletedAll)
-	}
-	swept := map[string]bool{}
-	for _, id := range kc.deletedAll {
-		swept[id] = true
-	}
-	for _, want := range []string{"crashed", "exited", "ancient"} {
-		if !swept[want] {
-			t.Errorf("expected %q swept, got %v", want, kc.deletedAll)
-		}
-	}
-	if swept["healthy"] || swept["starting"] {
-		t.Errorf("a live sandbox must survive the sweep, got %v", kc.deletedAll)
-	}
-	if len(reporter.events) != 3 {
-		t.Fatalf("expected one reported event per sweep, got %d", len(reporter.events))
-	}
-	if reporter.events[0].GetKind() != agentfleetv1.SessionKind_SESSION_KIND_E2E {
-		t.Errorf("expected SESSION_KIND_E2E, got %v", reporter.events[0].GetKind())
-	}
-}
-
-// A zero CreatedAt (a pod object mid-creation, or a fake that didn't set it)
-// must never read as "infinitely old" — same premature-sweep guard
-// gcIdleSharedInstances has for a missing last-used-at annotation.
-func TestGcDeadE2ePods_ZeroCreatedAtIsNotAged(t *testing.T) {
-	kc := &fakeK8s{e2ePods: []k8s.LiveE2ePod{
-		{TaskID: "no-timestamp", PodName: "e2e-1", Phase: "Running"},
-	}}
-	l := New(kc, &fakeEventReporter{}, time.Hour, time.Nanosecond)
-
-	l.gcDeadE2ePods(context.Background())
-
-	if len(kc.deletedAll) != 0 {
-		t.Fatalf("a pod with no creation timestamp must not be swept, got %v", kc.deletedAll)
-	}
-}
-
 func TestRun_StopsOnContextCancel(t *testing.T) {
 	kc := &fakeK8s{}
 	l := New(kc, &fakeEventReporter{}, time.Hour, 24*time.Hour)

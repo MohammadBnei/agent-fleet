@@ -495,6 +495,29 @@ func TestCreateWorkerPod_TwoContainersSharedPVC(t *testing.T) {
 	if vols["session"] != SessionPVCName("task-1") {
 		t.Errorf("session volume should be this session's own PVC, got %q", vols["session"])
 	}
+	// Every mount, in every container, must name a volume this pod declares.
+	//
+	// The fake clientset does not validate this — that check lives in the real
+	// API server — so renaming a volume and missing one mount produced a spec
+	// that passed every unit test here and was then rejected outright at
+	// creation: `initContainers[1].volumeMounts[0].name: Not found:
+	// "workspace"`. No Job, no pod, and the only evidence was one provisioner
+	// log line. Found in kind; this is the assertion that makes it a test
+	// failure instead.
+	declared := map[string]bool{}
+	for _, v := range podSpec.Volumes {
+		declared[v.Name] = true
+	}
+	all := append(append([]corev1.Container{}, podSpec.Containers...), podSpec.InitContainers...)
+	for _, ctr := range all {
+		for _, m := range ctr.VolumeMounts {
+			if !declared[m.Name] {
+				t.Errorf("container %s mounts volume %q, which the pod does not declare — "+
+					"the API server rejects the whole Job for this", ctr.Name, m.Name)
+			}
+		}
+	}
+
 	if vols["shared"] != "agent-fleet-workspace" {
 		t.Errorf("shared volume should be the fleet-wide PVC, got: %+v", podSpec.Volumes)
 	}

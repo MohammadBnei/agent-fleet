@@ -106,7 +106,21 @@ func (l *Loop) reconcilePodPhases(ctx context.Context) {
 		if !IsPodPhaseLive(s.PodPhase) {
 			continue
 		}
-		if _, stillThere := live[s.ID]; stillThere {
+		if k8sPhase, stillThere := live[s.ID]; stillThere {
+			// The pod exists. Reconcile UPWARDS too, not just downwards.
+			//
+			// Nothing else ever reports RUNNING: the provisioner reports
+			// SCHEDULED when it creates the Job and then only CRASHED or
+			// TERMINATED when the Job ends. A perfectly healthy session
+			// therefore sat at SCHEDULED for its entire life, and the
+			// dashboard said "SCHEDULED" for a session that had been talking
+			// to a human for an hour. Kubernetes already tells us the real
+			// phase in the same call used to detect absence.
+			if want := podPhaseFromK8s(k8sPhase); want != "" && (s.PodPhase == nil || *s.PodPhase != want) {
+				if err := l.sessions.SetPodPhase(ctx, s.ID, want, ""); err != nil {
+					slog.Error("sessions loop: phase sync failed", "sessionId", s.ID, "error", err)
+				}
+			}
 			continue
 		}
 		// The row claims a live pod; Kubernetes has none. The pod's own
@@ -125,6 +139,21 @@ func (l *Loop) reconcilePodPhases(ctx context.Context) {
 			slog.Warn("sessions loop: e2e teardown after reconcile failed", "sessionId", s.ID, "error", err)
 		}
 	}
+}
+
+// podPhaseFromK8s maps a Kubernetes pod phase onto the fleet's own enum.
+//
+// Only the phases that mean something different from what the row already
+// says are mapped. Pending is deliberately absent: a Pending pod is one this
+// loop was told about at creation as SCHEDULED, and rewriting SCHEDULED to
+// SCHEDULED every 60s is churn. Failed/Succeeded are absent for a different
+// reason — the provisioner's own GC reports those with a real message, and
+// this loop would overwrite that message with nothing.
+func podPhaseFromK8s(phase string) string {
+	if phase == "Running" {
+		return "POD_PHASE_RUNNING"
+	}
+	return ""
 }
 
 // enforceStopGrace force-tears-down a pod that ignored its cooperative abort.

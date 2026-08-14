@@ -39,7 +39,7 @@ func (f *fakeProvisioner) TearDownE2e(ctx context.Context, id string) error {
 	return nil
 }
 
-func (f *fakeProvisioner) SweepSession(ctx context.Context, id, repo string) error {
+func (f *fakeProvisioner) SweepSession(ctx context.Context, id string) error {
 	if f.sweepErr != nil {
 		return f.sweepErr
 	}
@@ -117,6 +117,58 @@ func TestReconcilePodPhases_OrphanedRunningRowIsTerminated(t *testing.T) {
 	// makes the NEXT sandbox sit Pending against a full node.
 	if len(fake.tornE2e) != 1 || fake.tornE2e[0] != orphan {
 		t.Errorf("expected exactly the orphan's e2e pod to be torn down, got %v", fake.tornE2e)
+	}
+}
+
+// The upward half of the same pass, which nothing else does.
+//
+// The provisioner reports SCHEDULED when it creates the Job and then only
+// CRASHED or TERMINATED when it ends, so without this a healthy session sat at
+// SCHEDULED for its whole life — the dashboard showed "SCHEDULED" for a
+// session that had been talking to a human for an hour. Found in kind, where
+// the pod was plainly Running and the row plainly was not.
+func TestReconcilePodPhases_SyncsScheduledUpToRunning(t *testing.T) {
+	ctx := context.Background()
+	store := NewStore(dbtest.NewPool(t))
+
+	id, err := store.Create(ctx, "agent-fleet", "", "phase sync", "")
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if err := store.SetPodPhase(ctx, id, "POD_PHASE_SCHEDULED", ""); err != nil {
+		t.Fatalf("phase: %v", err)
+	}
+
+	fake := &fakeProvisioner{livePods: map[string]string{id: "Running"}}
+	loop := NewLoop(store, fake, time.Minute, time.Minute, time.Hour, 14*24*time.Hour)
+	loop.reconcilePodPhases(ctx)
+
+	s, err := store.Get(ctx, id)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if s.PodPhase == nil || *s.PodPhase != "POD_PHASE_RUNNING" {
+		t.Fatalf("phase = %v, want RUNNING", s.PodPhase)
+	}
+
+	// A Pending pod stays SCHEDULED: rewriting it every 60s is churn, and the
+	// two mean the same thing to everything that reads them.
+	pendingID, err := store.Create(ctx, "agent-fleet", "", "still pending", "")
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if err := store.SetPodPhase(ctx, pendingID, "POD_PHASE_SCHEDULED", ""); err != nil {
+		t.Fatalf("phase: %v", err)
+	}
+	fake.livePods = map[string]string{pendingID: "Pending"}
+	loop.reconcilePodPhases(ctx)
+
+	p, err := store.Get(ctx, pendingID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if p.PodPhase == nil || *p.PodPhase != "POD_PHASE_SCHEDULED" {
+		t.Fatalf("a Pending pod should stay SCHEDULED, got %v", p.PodPhase)
 	}
 }
 

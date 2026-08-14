@@ -160,63 +160,20 @@ func (l *Loop) gcIdleSharedInstances(ctx context.Context) {
 	}
 }
 
-// gcDeadE2ePods deletes e2e sandbox pods that reached a terminal phase, and
-// those older than e2eMaxAge (docs/adr/0044).
+// gcDeadE2ePods used to sit here, reaping e2e sandbox pods that had gone
+// terminal or aged out. There are no e2e pods (docs/adr/0048 §6) — the agent's
+// app runs in the session's own pod and is reaped with it by
+// gcTerminalWorkerJobs.
 //
-// The terminal-phase half should be close to dead code after 0044 — the
-// entrypoint no longer lets an app crash take the pod with it, and
-// CreateE2ESession replaces a corpse on the next request. It stays for the
-// cases the container can't survive at all: OOMKilled, eviction, node loss.
-// The age half is the one that actually reclaims capacity, since a healthy
-// sandbox now runs until something deletes it.
-func (l *Loop) gcDeadE2ePods(ctx context.Context) {
-	pods, err := l.k8sc.ListPodsByLabel(ctx)
-	if err != nil {
-		slog.Error("reconcile: list e2e pods failed", "error", err)
-		return
-	}
-	for _, pod := range pods {
-		terminal := pod.Phase == "Succeeded" || pod.Phase == "Failed"
-		aged := !pod.CreatedAt.IsZero() && time.Since(pod.CreatedAt) > l.e2eMaxAge
-		if !terminal && !aged {
-			continue
-		}
-		slog.Info("reconcile: gc'ing e2e pod", "sessionId", pod.TaskID, "podName", pod.PodName,
-			"phase", pod.Phase, "createdAt", pod.CreatedAt, "reason", gcReason(terminal))
-		// DeleteAll, not DeletePod: the Service/Middleware/IngressRoute are
-		// this task's too, and unlike the recreate path in grpcserver there is
-		// no follow-up create to leave them standing for.
-		if err := l.k8sc.DeleteAll(ctx, pod.TaskID); err != nil {
-			slog.Error("reconcile: delete e2e pod failed", "sessionId", pod.TaskID, "error", err)
-			continue
-		}
-		// Reported so the deletion lands in the knowledge journal — an agent
-		// whose sandbox vanished mid-session otherwise has no way to find out
-		// why run_command started failing.
-		l.core.ReportEvent(ctx, &agentfleetv1.PodEvent{
-			SessionId: pod.TaskID,
-			Kind:      agentfleetv1.SessionKind_SESSION_KIND_E2E,
-			Phase:     agentfleetv1.PodPhase_POD_PHASE_TERMINATED,
-			PodName:   pod.PodName,
-			Message:   "e2e sandbox pod garbage-collected: " + gcReason(terminal),
-		})
-	}
-}
-
-func gcReason(terminal bool) string {
-	if terminal {
-		return "terminal phase"
-	}
-	return "older than the configured max age"
-}
-
+// gcIdleSharedInstances stays: shared Postgres/Redis instances still exist,
+// requested on demand via request_service rather than declared by a recipe,
+// and an idle one still needs reclaiming.
 func (l *Loop) Run(ctx context.Context, pollInterval time.Duration) {
 	ticker := time.NewTicker(pollInterval)
 	defer ticker.Stop()
 	for {
 		l.gcTerminalWorkerJobs(ctx)
 		l.gcIdleSharedInstances(ctx)
-		l.gcDeadE2ePods(ctx)
 		select {
 		case <-ctx.Done():
 			return
