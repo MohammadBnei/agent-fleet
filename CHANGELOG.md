@@ -1,5 +1,12 @@
 # Changelog
 
+# [2.1.0](https://github.com/MohammadBnei/agent-fleet/compare/2.0.2...2.1.0) (2026-08-14)
+
+
+### Features
+
+* **observability:** Prometheus metrics scoped to the hubs + Observability console view ([#154](https://github.com/MohammadBnei/agent-fleet/issues/154)) ([5dcbae5](https://github.com/MohammadBnei/agent-fleet/commit/5dcbae5eb4f018aca46ee265e319d26a2c2bb396))
+
 ## [2.0.2](https://github.com/MohammadBnei/agent-fleet/compare/2.0.1...2.0.2) (2026-08-14)
 
 
