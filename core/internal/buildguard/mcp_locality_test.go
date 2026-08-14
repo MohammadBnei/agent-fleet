@@ -61,6 +61,15 @@ func TestOnlyDesignatedComponentsDialMCP(t *testing.T) {
 			if strings.Contains(path, "/gen/") {
 				return nil
 			}
+			// local/kind/workspace-data is the kind harness's hostPath mount:
+			// after a /kind-local run it holds real git clones of the target
+			// repos, and when the target is agent-fleet itself that means a
+			// full copy of this source tree per session. Walking it reports
+			// this repo's own legitimate MCP clients back as violations —
+			// found live, six sessions in. It is gitignored; it is not source.
+			if strings.Contains(path, "local/kind/workspace-data/") {
+				return nil
+			}
 			body, readErr := os.ReadFile(path)
 			if readErr != nil {
 				return nil
