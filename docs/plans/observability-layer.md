@@ -18,9 +18,22 @@ Hub-and-spoke topology:
 - **worker**: TS/Bun, Claude SDK session, single-shot execution
 - **e2e-runner**: Sandbox (build/test), code-server, Playwright, per-task pods
 
+## Implementation Status
+
+**✅ Completed (PR #154):**
+- Step 1: Prometheus metrics endpoints (core, provisioner, sidecar, worker SDK)
+- Step 2: Prometheus scrape annotations (core, provisioner, worker pods)
+- Dependencies: `prometheus/client_golang` added
+
+**⏳ Remaining:**
+- Step 3: Grafana dashboards (metrics + cell health)
+- Step 4: Dashboard UI backend (proto RPCs: QueryMetrics, GetFleetTopology)
+- Step 5: Dashboard UI frontend (Observability page + topology view)
+- Step 6: Testing & validation (needs cluster deployment)
+
 ## Implementation Steps
 
-### Step 1: Add Prometheus Metrics Endpoints
+### Step 1: Add Prometheus Metrics Endpoints ✅
 
 #### 1.1 Core Metrics (`core/`)
 **File**: `core/internal/metrics/metrics.go` (new)
@@ -110,7 +123,7 @@ Extract SDK metrics from session results and expose via HTTP endpoint.
 - `worker/src/index.ts`: Start metrics HTTP server on port 9091 (shares sidecar's port, worker container)
 - No Prometheus client lib for Bun yet - hand-write Prometheus text format (trivial: `# TYPE\nmetric{labels} value`)
 
-### Step 2: Prometheus Scrape Configuration
+### Step 2: Prometheus Scrape Configuration ✅
 
 **File**: `k8s/core.yaml` (add ServiceMonitor annotations)
 
