@@ -14,6 +14,8 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+
+	"github.com/MohammadBnei/agent-fleet/provisioner/internal/metrics"
 )
 
 // workerJobTTLSeconds is how long a finished worker Job (and the pod it
@@ -287,6 +289,7 @@ func (c *Client) CreatePod(ctx context.Context, task TaskRef) error {
 		return err
 	}
 	slog.Info("k8s CreatePod", "taskId", task.ID)
+	metrics.PodsCreatedTotal.WithLabelValues("e2e").Inc()
 	return nil
 }
 
@@ -297,6 +300,7 @@ func (c *Client) DeletePod(ctx context.Context, taskID string) error {
 		return err
 	}
 	slog.Info("k8s DeletePod", "taskId", taskID)
+	metrics.PodsDeletedTotal.WithLabelValues("e2e").Inc()
 	return nil
 }
 
@@ -635,6 +639,7 @@ func (c *Client) CreateWorkerPod(ctx context.Context, taskID, repo, leaseID, wor
 		return err
 	}
 	slog.Info("k8s CreateWorkerPod", "taskId", taskID, "repo", repo)
+	metrics.PodsCreatedTotal.WithLabelValues("worker").Inc()
 	return nil
 }
 
@@ -653,6 +658,7 @@ func (c *Client) DeleteWorkerJob(ctx context.Context, taskID string) error {
 		return err
 	}
 	slog.Info("k8s DeleteWorkerJob", "taskId", taskID)
+	metrics.PodsDeletedTotal.WithLabelValues("worker").Inc()
 	return nil
 }
 

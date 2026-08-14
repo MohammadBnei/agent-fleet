@@ -17,6 +17,9 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
+
+	"github.com/MohammadBnei/agent-fleet/provisioner/internal/metrics"
 )
 
 // Manager runs git commands against repo clones rooted at root (the shared
@@ -88,6 +91,12 @@ func (m *Manager) worktreePath(taskID string) string {
 }
 
 func (m *Manager) run(ctx context.Context, dir string, args ...string) (string, error) {
+	// Every git command in this package routes through here, so one timer
+	// covers clone/fetch/worktree add+remove/branch without touching a
+	// single caller. Only the subcommand is labelled — the rest of the argv
+	// carries branch and task names, which are unbounded.
+	defer metrics.ObserveGit(args, time.Now())
+
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
 	out, err := cmd.CombinedOutput()

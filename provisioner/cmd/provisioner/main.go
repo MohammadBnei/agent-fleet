@@ -21,10 +21,9 @@ import (
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/git"
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/grpcserver"
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/k8s"
+	"github.com/MohammadBnei/agent-fleet/provisioner/internal/metrics"
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/reconcile"
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/sweep"
-
-	_ "github.com/MohammadBnei/agent-fleet/provisioner/internal/metrics"
 )
 
 func main() {
@@ -100,7 +99,7 @@ func main() {
 	mux.Handle("/metrics", promhttp.Handler())
 	httpServer := &http.Server{Addr: ":" + cfg.Port, Handler: mux}
 
-	grpcSrv := grpc.NewServer(grpc.UnaryInterceptor(grpcserver.AccessLogInterceptor))
+	grpcSrv := grpc.NewServer(grpc.ChainUnaryInterceptor(grpcserver.AccessLogInterceptor, metrics.UnaryInterceptor))
 	agentfleetv1.RegisterProvisionerServiceServer(grpcSrv, grpcserver.New(k8sc, gitMgr, core, cfg.E2eHost, cfg.FleetSharedRepoURL, cfg.FleetSharedBranch, cfg.ClaudeHomeDir))
 
 	reconcileInterval, _ := strconv.Atoi(cfg.ReconcileInterval)

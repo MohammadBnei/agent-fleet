@@ -27,6 +27,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/journal"
 	"github.com/MohammadBnei/agent-fleet/core/internal/lokiclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/promptsnippets"
+	"github.com/MohammadBnei/agent-fleet/core/internal/metrics"
 	"github.com/MohammadBnei/agent-fleet/core/internal/provisionerclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/repoprofiles"
 	"github.com/MohammadBnei/agent-fleet/core/internal/repos"
@@ -34,8 +35,6 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/tasks"
 	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
 	"github.com/MohammadBnei/agent-fleet/core/internal/webui"
-
-	_ "github.com/MohammadBnei/agent-fleet/core/internal/metrics"
 )
 
 // noopNotifier is the relay's target when no Discord bot token is
@@ -139,7 +138,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool) error {
 	// pushes pod-lifecycle events here, and every worker pod's sidecar
 	// reaches everything else (the old /mcp HTTP surface, and the direct-SQL
 	// calls worker/src/db.ts used to make) through this same service.
-	grpcServer := grpc.NewServer(grpc.UnaryInterceptor(coreserver.AccessLogInterceptor))
+	grpcServer := grpc.NewServer(grpc.ChainUnaryInterceptor(coreserver.AccessLogInterceptor, metrics.UnaryInterceptor))
 	coreSvc := coreserver.New(activityStore, taskStore, journalStore, profileStore, repoStore, provisioner, files, loki)
 	agentfleetv1.RegisterCoreServiceServer(grpcServer, coreSvc)
 	grpcLis, err := net.Listen("tcp", ":"+cfg.GRPCPort)
@@ -167,7 +166,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool) error {
 	coreSvc.SetWarmFunc(dashboardSvc.WarmIfIdle)
 	dashboardPath, dashboardHandler := agentfleetv1connect.NewDashboardServiceHandler(
 		dashboardSvc,
-		connect.WithInterceptors(dashboard.NewCSRFInterceptor(), dashboard.NewAccessLogInterceptor()),
+		connect.WithInterceptors(dashboard.NewCSRFInterceptor(), dashboard.NewAccessLogInterceptor(), metrics.NewConnectInterceptor()),
 	)
 	// docs/adr/0037: an alert becomes a thot task. Registered even when
 	// the token is unset — the handler then refuses with 503, which is a

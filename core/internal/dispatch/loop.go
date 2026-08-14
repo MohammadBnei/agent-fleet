@@ -14,6 +14,7 @@ import (
 
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 
+	"github.com/MohammadBnei/agent-fleet/core/internal/metrics"
 	"github.com/MohammadBnei/agent-fleet/core/internal/provisionerclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/repoprofiles"
 	"github.com/MohammadBnei/agent-fleet/core/internal/repos"
@@ -95,6 +96,7 @@ func (l *Loop) tick(ctx context.Context) {
 	l.enforceStopGrace(ctx)
 	l.enforceIdleTimeout(ctx)
 	l.enforceStartupStall(ctx)
+	l.observe(ctx)
 
 	// The concurrency-headroom check lives inside ClaimNextTask's own query
 	// now (reliability-findings.md #6) — a separate CountInFlight call
@@ -153,6 +155,30 @@ func (l *Loop) tick(ctx context.Context) {
 		return
 	}
 	slog.Info("dispatch: worker pod created", "taskId", task.ID, "repo", task.Repo, "podName", podName)
+}
+
+// observe refreshes the queue-depth and headroom gauges. It rides the
+// dispatch tick rather than a ticker of its own: this loop already wakes on
+// every poll interval *and* on every Nudge, so the gauges land within a
+// scrape interval of any real change without a second goroutine.
+//
+// A failed read logs and leaves the previous values in place — stale
+// numbers for one tick beat a gauge that drops to zero every time Postgres
+// hiccups, which would look exactly like an empty queue.
+func (l *Loop) observe(ctx context.Context) {
+	metrics.MaxInFlight.Set(float64(l.maxInFlight))
+
+	if counts, err := l.tasks.CountByRepoStatus(ctx); err != nil {
+		slog.Error("dispatch: task count for metrics failed", "error", err)
+	} else {
+		metrics.SetTasksCurrent(counts)
+	}
+
+	if live, err := l.tasks.CountLivePods(ctx); err != nil {
+		slog.Error("dispatch: live pod count for metrics failed", "error", err)
+	} else {
+		metrics.LivePods.Set(float64(live))
+	}
 }
 
 // enforceStopGrace force-tears-down any task whose stop was requested
