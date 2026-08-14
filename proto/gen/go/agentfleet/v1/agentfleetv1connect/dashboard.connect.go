@@ -151,6 +151,12 @@ const (
 	// DashboardServiceQueryLogsProcedure is the fully-qualified name of the DashboardService's
 	// QueryLogs RPC.
 	DashboardServiceQueryLogsProcedure = "/agentfleet.v1.DashboardService/QueryLogs"
+	// DashboardServiceQueryMetricsProcedure is the fully-qualified name of the DashboardService's
+	// QueryMetrics RPC.
+	DashboardServiceQueryMetricsProcedure = "/agentfleet.v1.DashboardService/QueryMetrics"
+	// DashboardServiceGetFleetTopologyProcedure is the fully-qualified name of the DashboardService's
+	// GetFleetTopology RPC.
+	DashboardServiceGetFleetTopologyProcedure = "/agentfleet.v1.DashboardService/GetFleetTopology"
 	// DashboardServiceListScheduledAuditsProcedure is the fully-qualified name of the
 	// DashboardService's ListScheduledAudits RPC.
 	DashboardServiceListScheduledAuditsProcedure = "/agentfleet.v1.DashboardService/ListScheduledAudits"
@@ -239,6 +245,13 @@ type DashboardServiceClient interface {
 	// Reuses core.proto's QueryLogsRequest/QueryLogsResponse
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	QueryLogs(context.Context, *connect.Request[v1.QueryLogsRequest]) (*connect.Response[v1.QueryLogsResponse], error)
+	// Observability page (docs/adr/0047). QueryMetrics is core proxying
+	// PromQL — Prometheus has no IngressRoute in this cluster, so a browser
+	// cannot reach it directly. GetFleetTopology is the live cell view, and
+	// needs no cluster RBAC: core assembles it from the tasks table it
+	// already owns plus its own metrics.
+	QueryMetrics(context.Context, *connect.Request[v1.QueryMetricsRequest]) (*connect.Response[v1.QueryMetricsResponse], error)
+	GetFleetTopology(context.Context, *connect.Request[v1.GetFleetTopologyRequest]) (*connect.Response[v1.GetFleetTopologyResponse], error)
 	// Dashboard-editable schedules (docs/adr/0035) — same "edit it in the
 	// UI, no redeploy" shape ListRepos/CreateRepo established.
 	ListScheduledAudits(context.Context, *connect.Request[v1.ListScheduledAuditsRequest]) (*connect.Response[v1.ListScheduledAuditsResponse], error)
@@ -500,6 +513,18 @@ func NewDashboardServiceClient(httpClient connect.HTTPClient, baseURL string, op
 			connect.WithSchema(dashboardServiceMethods.ByName("QueryLogs")),
 			connect.WithClientOptions(opts...),
 		),
+		queryMetrics: connect.NewClient[v1.QueryMetricsRequest, v1.QueryMetricsResponse](
+			httpClient,
+			baseURL+DashboardServiceQueryMetricsProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("QueryMetrics")),
+			connect.WithClientOptions(opts...),
+		),
+		getFleetTopology: connect.NewClient[v1.GetFleetTopologyRequest, v1.GetFleetTopologyResponse](
+			httpClient,
+			baseURL+DashboardServiceGetFleetTopologyProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("GetFleetTopology")),
+			connect.WithClientOptions(opts...),
+		),
 		listScheduledAudits: connect.NewClient[v1.ListScheduledAuditsRequest, v1.ListScheduledAuditsResponse](
 			httpClient,
 			baseURL+DashboardServiceListScheduledAuditsProcedure,
@@ -581,6 +606,8 @@ type dashboardServiceClient struct {
 	getFileDownloadUrl   *connect.Client[v1.GetFileDownloadUrlRequest, v1.GetFileDownloadUrlResponse]
 	deleteFile           *connect.Client[v1.DeleteFileRequest, v1.DeleteFileResponse]
 	queryLogs            *connect.Client[v1.QueryLogsRequest, v1.QueryLogsResponse]
+	queryMetrics         *connect.Client[v1.QueryMetricsRequest, v1.QueryMetricsResponse]
+	getFleetTopology     *connect.Client[v1.GetFleetTopologyRequest, v1.GetFleetTopologyResponse]
 	listScheduledAudits  *connect.Client[v1.ListScheduledAuditsRequest, v1.ListScheduledAuditsResponse]
 	createScheduledAudit *connect.Client[v1.CreateScheduledAuditRequest, v1.CreateScheduledAuditResponse]
 	updateScheduledAudit *connect.Client[v1.UpdateScheduledAuditRequest, v1.UpdateScheduledAuditResponse]
@@ -789,6 +816,16 @@ func (c *dashboardServiceClient) QueryLogs(ctx context.Context, req *connect.Req
 	return c.queryLogs.CallUnary(ctx, req)
 }
 
+// QueryMetrics calls agentfleet.v1.DashboardService.QueryMetrics.
+func (c *dashboardServiceClient) QueryMetrics(ctx context.Context, req *connect.Request[v1.QueryMetricsRequest]) (*connect.Response[v1.QueryMetricsResponse], error) {
+	return c.queryMetrics.CallUnary(ctx, req)
+}
+
+// GetFleetTopology calls agentfleet.v1.DashboardService.GetFleetTopology.
+func (c *dashboardServiceClient) GetFleetTopology(ctx context.Context, req *connect.Request[v1.GetFleetTopologyRequest]) (*connect.Response[v1.GetFleetTopologyResponse], error) {
+	return c.getFleetTopology.CallUnary(ctx, req)
+}
+
 // ListScheduledAudits calls agentfleet.v1.DashboardService.ListScheduledAudits.
 func (c *dashboardServiceClient) ListScheduledAudits(ctx context.Context, req *connect.Request[v1.ListScheduledAuditsRequest]) (*connect.Response[v1.ListScheduledAuditsResponse], error) {
 	return c.listScheduledAudits.CallUnary(ctx, req)
@@ -887,6 +924,13 @@ type DashboardServiceHandler interface {
 	// Reuses core.proto's QueryLogsRequest/QueryLogsResponse
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	QueryLogs(context.Context, *connect.Request[v1.QueryLogsRequest]) (*connect.Response[v1.QueryLogsResponse], error)
+	// Observability page (docs/adr/0047). QueryMetrics is core proxying
+	// PromQL — Prometheus has no IngressRoute in this cluster, so a browser
+	// cannot reach it directly. GetFleetTopology is the live cell view, and
+	// needs no cluster RBAC: core assembles it from the tasks table it
+	// already owns plus its own metrics.
+	QueryMetrics(context.Context, *connect.Request[v1.QueryMetricsRequest]) (*connect.Response[v1.QueryMetricsResponse], error)
+	GetFleetTopology(context.Context, *connect.Request[v1.GetFleetTopologyRequest]) (*connect.Response[v1.GetFleetTopologyResponse], error)
 	// Dashboard-editable schedules (docs/adr/0035) — same "edit it in the
 	// UI, no redeploy" shape ListRepos/CreateRepo established.
 	ListScheduledAudits(context.Context, *connect.Request[v1.ListScheduledAuditsRequest]) (*connect.Response[v1.ListScheduledAuditsResponse], error)
@@ -1144,6 +1188,18 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 		connect.WithSchema(dashboardServiceMethods.ByName("QueryLogs")),
 		connect.WithHandlerOptions(opts...),
 	)
+	dashboardServiceQueryMetricsHandler := connect.NewUnaryHandler(
+		DashboardServiceQueryMetricsProcedure,
+		svc.QueryMetrics,
+		connect.WithSchema(dashboardServiceMethods.ByName("QueryMetrics")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dashboardServiceGetFleetTopologyHandler := connect.NewUnaryHandler(
+		DashboardServiceGetFleetTopologyProcedure,
+		svc.GetFleetTopology,
+		connect.WithSchema(dashboardServiceMethods.ByName("GetFleetTopology")),
+		connect.WithHandlerOptions(opts...),
+	)
 	dashboardServiceListScheduledAuditsHandler := connect.NewUnaryHandler(
 		DashboardServiceListScheduledAuditsProcedure,
 		svc.ListScheduledAudits,
@@ -1262,6 +1318,10 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 			dashboardServiceDeleteFileHandler.ServeHTTP(w, r)
 		case DashboardServiceQueryLogsProcedure:
 			dashboardServiceQueryLogsHandler.ServeHTTP(w, r)
+		case DashboardServiceQueryMetricsProcedure:
+			dashboardServiceQueryMetricsHandler.ServeHTTP(w, r)
+		case DashboardServiceGetFleetTopologyProcedure:
+			dashboardServiceGetFleetTopologyHandler.ServeHTTP(w, r)
 		case DashboardServiceListScheduledAuditsProcedure:
 			dashboardServiceListScheduledAuditsHandler.ServeHTTP(w, r)
 		case DashboardServiceCreateScheduledAuditProcedure:
@@ -1441,6 +1501,14 @@ func (UnimplementedDashboardServiceHandler) DeleteFile(context.Context, *connect
 
 func (UnimplementedDashboardServiceHandler) QueryLogs(context.Context, *connect.Request[v1.QueryLogsRequest]) (*connect.Response[v1.QueryLogsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.QueryLogs is not implemented"))
+}
+
+func (UnimplementedDashboardServiceHandler) QueryMetrics(context.Context, *connect.Request[v1.QueryMetricsRequest]) (*connect.Response[v1.QueryMetricsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.QueryMetrics is not implemented"))
+}
+
+func (UnimplementedDashboardServiceHandler) GetFleetTopology(context.Context, *connect.Request[v1.GetFleetTopologyRequest]) (*connect.Response[v1.GetFleetTopologyResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.GetFleetTopology is not implemented"))
 }
 
 func (UnimplementedDashboardServiceHandler) ListScheduledAudits(context.Context, *connect.Request[v1.ListScheduledAuditsRequest]) (*connect.Response[v1.ListScheduledAuditsResponse], error) {

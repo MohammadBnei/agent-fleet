@@ -577,6 +577,14 @@ service DashboardService {
   // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
   rpc QueryLogs(QueryLogsRequest) returns (QueryLogsResponse);
 
+  // Observability page (docs/adr/0047). QueryMetrics is core proxying
+  // PromQL — Prometheus has no IngressRoute in this cluster, so a browser
+  // cannot reach it directly. GetFleetTopology is the live cell view, and
+  // needs no cluster RBAC: core assembles it from the tasks table it
+  // already owns plus its own metrics.
+  rpc QueryMetrics(QueryMetricsRequest) returns (QueryMetricsResponse);
+  rpc GetFleetTopology(GetFleetTopologyRequest) returns (GetFleetTopologyResponse);
+
 
 
   // Dashboard-editable schedules (docs/adr/0035) — same "edit it in the
@@ -666,3 +674,63 @@ message DeleteScheduledAuditResponse {
 }
 
 
+
+// QueryMetrics proxies PromQL through core. Prometheus has no IngressRoute
+// in this cluster (only Grafana and Alertmanager do), so the browser has no
+// route to it — and giving it one would expose every cluster metric to
+// anything that can reach the hostname. core is already behind
+// basic-admin-auth and the dashboard CSRF header.
+message QueryMetricsRequest {
+  string query = 1;
+  // RFC3339. Both empty means an instant query; both set means a range
+  // query. `step` is a duration string ("30s", "5m") — empty defaults to 1m,
+  // and is coarsened automatically if the range would exceed Prometheus'
+  // 11k-point ceiling.
+  string start_time = 2;
+  string end_time = 3;
+  string step = 4;
+}
+
+message QueryMetricsResponse {
+  // Prometheus' own `data` envelope, verbatim. Not re-modelled as proto:
+  // the frontend already has to handle vector/matrix/scalar result types,
+  // and a parallel schema here would only be a second thing to keep in sync
+  // with Prometheus' API.
+  string result_json = 1;
+}
+
+message GetFleetTopologyRequest {}
+
+// A cell in the fleet: one long-lived component, or one task's pod.
+message CellNode {
+  string id = 1;
+  // core | provisioner | worker | e2e
+  string type = 2;
+  // healthy | degraded | failing | idle
+  string status = 3;
+  // Free-form so the view can gain a number without a schema change —
+  // e.g. rps, live_pods, max_in_flight, or a task's pending count.
+  map<string, double> metrics = 4;
+  // Set on worker/e2e cells: which task this cell is running, so clicking
+  // it can open that session. Empty on the two hub cells.
+  string task_id = 5;
+  string repo = 6;
+  // Human-facing one-liner (a task's description, a hub's role).
+  string label = 7;
+}
+
+message TopologyEdge {
+  string from = 1;
+  string to = 2;
+  // Requests/sec over the last 5m, 0 when there's no metric for this pair.
+  double rate = 3;
+}
+
+message GetFleetTopologyResponse {
+  repeated CellNode nodes = 1;
+  repeated TopologyEdge edges = 2;
+  // Non-fatal explanation when Prometheus was unreachable: the topology
+  // still renders from Postgres, just without rates. Silently returning
+  // zeros would read as "the fleet is idle".
+  string metrics_error = 3;
+}

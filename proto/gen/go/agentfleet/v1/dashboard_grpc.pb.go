@@ -59,6 +59,8 @@ const (
 	DashboardService_GetFileDownloadUrl_FullMethodName   = "/agentfleet.v1.DashboardService/GetFileDownloadUrl"
 	DashboardService_DeleteFile_FullMethodName           = "/agentfleet.v1.DashboardService/DeleteFile"
 	DashboardService_QueryLogs_FullMethodName            = "/agentfleet.v1.DashboardService/QueryLogs"
+	DashboardService_QueryMetrics_FullMethodName         = "/agentfleet.v1.DashboardService/QueryMetrics"
+	DashboardService_GetFleetTopology_FullMethodName     = "/agentfleet.v1.DashboardService/GetFleetTopology"
 	DashboardService_ListScheduledAudits_FullMethodName  = "/agentfleet.v1.DashboardService/ListScheduledAudits"
 	DashboardService_CreateScheduledAudit_FullMethodName = "/agentfleet.v1.DashboardService/CreateScheduledAudit"
 	DashboardService_UpdateScheduledAudit_FullMethodName = "/agentfleet.v1.DashboardService/UpdateScheduledAudit"
@@ -137,6 +139,13 @@ type DashboardServiceClient interface {
 	// Reuses core.proto's QueryLogsRequest/QueryLogsResponse
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	QueryLogs(ctx context.Context, in *QueryLogsRequest, opts ...grpc.CallOption) (*QueryLogsResponse, error)
+	// Observability page (docs/adr/0047). QueryMetrics is core proxying
+	// PromQL — Prometheus has no IngressRoute in this cluster, so a browser
+	// cannot reach it directly. GetFleetTopology is the live cell view, and
+	// needs no cluster RBAC: core assembles it from the tasks table it
+	// already owns plus its own metrics.
+	QueryMetrics(ctx context.Context, in *QueryMetricsRequest, opts ...grpc.CallOption) (*QueryMetricsResponse, error)
+	GetFleetTopology(ctx context.Context, in *GetFleetTopologyRequest, opts ...grpc.CallOption) (*GetFleetTopologyResponse, error)
 	// Dashboard-editable schedules (docs/adr/0035) — same "edit it in the
 	// UI, no redeploy" shape ListRepos/CreateRepo established.
 	ListScheduledAudits(ctx context.Context, in *ListScheduledAuditsRequest, opts ...grpc.CallOption) (*ListScheduledAuditsResponse, error)
@@ -564,6 +573,26 @@ func (c *dashboardServiceClient) QueryLogs(ctx context.Context, in *QueryLogsReq
 	return out, nil
 }
 
+func (c *dashboardServiceClient) QueryMetrics(ctx context.Context, in *QueryMetricsRequest, opts ...grpc.CallOption) (*QueryMetricsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(QueryMetricsResponse)
+	err := c.cc.Invoke(ctx, DashboardService_QueryMetrics_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dashboardServiceClient) GetFleetTopology(ctx context.Context, in *GetFleetTopologyRequest, opts ...grpc.CallOption) (*GetFleetTopologyResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetFleetTopologyResponse)
+	err := c.cc.Invoke(ctx, DashboardService_GetFleetTopology_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *dashboardServiceClient) ListScheduledAudits(ctx context.Context, in *ListScheduledAuditsRequest, opts ...grpc.CallOption) (*ListScheduledAuditsResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListScheduledAuditsResponse)
@@ -694,6 +723,13 @@ type DashboardServiceServer interface {
 	// Reuses core.proto's QueryLogsRequest/QueryLogsResponse
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	QueryLogs(context.Context, *QueryLogsRequest) (*QueryLogsResponse, error)
+	// Observability page (docs/adr/0047). QueryMetrics is core proxying
+	// PromQL — Prometheus has no IngressRoute in this cluster, so a browser
+	// cannot reach it directly. GetFleetTopology is the live cell view, and
+	// needs no cluster RBAC: core assembles it from the tasks table it
+	// already owns plus its own metrics.
+	QueryMetrics(context.Context, *QueryMetricsRequest) (*QueryMetricsResponse, error)
+	GetFleetTopology(context.Context, *GetFleetTopologyRequest) (*GetFleetTopologyResponse, error)
 	// Dashboard-editable schedules (docs/adr/0035) — same "edit it in the
 	// UI, no redeploy" shape ListRepos/CreateRepo established.
 	ListScheduledAudits(context.Context, *ListScheduledAuditsRequest) (*ListScheduledAuditsResponse, error)
@@ -831,6 +867,12 @@ func (UnimplementedDashboardServiceServer) DeleteFile(context.Context, *DeleteFi
 }
 func (UnimplementedDashboardServiceServer) QueryLogs(context.Context, *QueryLogsRequest) (*QueryLogsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method QueryLogs not implemented")
+}
+func (UnimplementedDashboardServiceServer) QueryMetrics(context.Context, *QueryMetricsRequest) (*QueryMetricsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method QueryMetrics not implemented")
+}
+func (UnimplementedDashboardServiceServer) GetFleetTopology(context.Context, *GetFleetTopologyRequest) (*GetFleetTopologyResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetFleetTopology not implemented")
 }
 func (UnimplementedDashboardServiceServer) ListScheduledAudits(context.Context, *ListScheduledAuditsRequest) (*ListScheduledAuditsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListScheduledAudits not implemented")
@@ -1584,6 +1626,42 @@ func _DashboardService_QueryLogs_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DashboardService_QueryMetrics_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryMetricsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DashboardServiceServer).QueryMetrics(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DashboardService_QueryMetrics_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DashboardServiceServer).QueryMetrics(ctx, req.(*QueryMetricsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DashboardService_GetFleetTopology_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetFleetTopologyRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DashboardServiceServer).GetFleetTopology(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DashboardService_GetFleetTopology_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DashboardServiceServer).GetFleetTopology(ctx, req.(*GetFleetTopologyRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _DashboardService_ListScheduledAudits_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ListScheduledAuditsRequest)
 	if err := dec(in); err != nil {
@@ -1854,6 +1932,14 @@ var DashboardService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "QueryLogs",
 			Handler:    _DashboardService_QueryLogs_Handler,
+		},
+		{
+			MethodName: "QueryMetrics",
+			Handler:    _DashboardService_QueryMetrics_Handler,
+		},
+		{
+			MethodName: "GetFleetTopology",
+			Handler:    _DashboardService_GetFleetTopology_Handler,
 		},
 		{
 			MethodName: "ListScheduledAudits",

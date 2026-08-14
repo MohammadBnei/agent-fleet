@@ -27,6 +27,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/filestore"
 	"github.com/MohammadBnei/agent-fleet/core/internal/journal"
 	"github.com/MohammadBnei/agent-fleet/core/internal/lokiclient"
+	"github.com/MohammadBnei/agent-fleet/core/internal/promclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/promptsnippets"
 	"github.com/MohammadBnei/agent-fleet/core/internal/provisionerclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/repoprofiles"
@@ -48,11 +49,12 @@ type Server struct {
 	hub         *Hub
 	maxInFlight int
 	loki        lokiclient.Querier
+	prom        promclient.Querier
 	audits      *scheduledaudits.Store
 }
 
-func NewServer(taskStore *tasks.Store, transcr transcript.Store, journalStore *journal.Store, repoStore *repos.Store, profileStore *repoprofiles.Store, snippetStore *promptsnippets.Store, e2e *provisionerclient.Client, files filestore.Store, hub *Hub, maxInFlight int, loki lokiclient.Querier, auditStore *scheduledaudits.Store) *Server {
-	return &Server{tasks: taskStore, transcr: transcr, journal: journalStore, repos: repoStore, profiles: profileStore, snippets: snippetStore, e2e: e2e, files: files, hub: hub, maxInFlight: maxInFlight, loki: loki, audits: auditStore}
+func NewServer(taskStore *tasks.Store, transcr transcript.Store, journalStore *journal.Store, repoStore *repos.Store, profileStore *repoprofiles.Store, snippetStore *promptsnippets.Store, e2e *provisionerclient.Client, files filestore.Store, hub *Hub, maxInFlight int, loki lokiclient.Querier, prom promclient.Querier, auditStore *scheduledaudits.Store) *Server {
+	return &Server{tasks: taskStore, transcr: transcr, journal: journalStore, repos: repoStore, profiles: profileStore, snippets: snippetStore, e2e: e2e, files: files, hub: hub, maxInFlight: maxInFlight, loki: loki, prom: prom, audits: auditStore}
 }
 
 // resolveWorkerIngredients looks up repo's "worker"-named profile

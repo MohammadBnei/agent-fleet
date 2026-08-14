@@ -26,8 +26,9 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/filestore"
 	"github.com/MohammadBnei/agent-fleet/core/internal/journal"
 	"github.com/MohammadBnei/agent-fleet/core/internal/lokiclient"
-	"github.com/MohammadBnei/agent-fleet/core/internal/promptsnippets"
 	"github.com/MohammadBnei/agent-fleet/core/internal/metrics"
+	"github.com/MohammadBnei/agent-fleet/core/internal/promclient"
+	"github.com/MohammadBnei/agent-fleet/core/internal/promptsnippets"
 	"github.com/MohammadBnei/agent-fleet/core/internal/provisionerclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/repoprofiles"
 	"github.com/MohammadBnei/agent-fleet/core/internal/repos"
@@ -81,6 +82,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool) error {
 
 	// Create Loki client for log querying (docs/adr/0013)
 	loki := lokiclient.New(cfg.LokiURL)
+	prom := promclient.New(cfg.PrometheusURL)
 
 	var notifier transcript.Notifier = noopNotifier{}
 	if cfg.DiscordBotToken != "" {
@@ -156,7 +158,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool) error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
 	mux.Handle("/metrics", promhttp.Handler())
-	dashboardSvc := dashboard.NewServer(taskStore, activityStore, journalStore, repoStore, profileStore, snippetStore, provisioner, files, hub, cfg.MaxInFlight, loki, auditStore)
+	dashboardSvc := dashboard.NewServer(taskStore, activityStore, journalStore, repoStore, profileStore, snippetStore, provisioner, files, hub, cfg.MaxInFlight, loki, prom, auditStore)
 	// PromptSession warms an idle target through the dashboard server's own
 	// warmIfIdle rather than a second copy of it (docs/adr/0041) — that
 	// function carries the capacity cap and the proposed/pending gates that
