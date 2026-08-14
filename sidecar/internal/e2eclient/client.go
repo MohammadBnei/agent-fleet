@@ -110,6 +110,11 @@ func (c *Client) Has(name string) bool {
 // Returns the result JSON in the same envelope the relay produced, so callers
 // that already parse a CallToolResult do not care which path it came from.
 func (c *Client) CallTool(ctx context.Context, endpointName, toolName string, args map[string]any) (resultJSON string, isError bool, err error) {
+	return c.callToolWithRetry(ctx, endpointName, toolName, args, false)
+}
+
+// ponytail: single retry recovers from stale cached client
+func (c *Client) callToolWithRetry(ctx context.Context, endpointName, toolName string, args map[string]any, isRetry bool) (resultJSON string, isError bool, err error) {
 	cl, err := c.clientFor(ctx, endpointName)
 	if err != nil {
 		return "", false, err
@@ -124,8 +129,11 @@ func (c *Client) CallTool(ctx context.Context, endpointName, toolName string, ar
 		// would otherwise leave it pointing at a corpse. Dropping on any call
 		// error covers all of them in one place, the same fix adr/0044 made
 		// on the provisioner side.
-		slog.Info("e2eclient: dropping client after a failed call", "endpoint", endpointName, "tool", toolName, "error", err)
+		slog.Info("e2eclient: dropping client after a failed call", "endpoint", endpointName, "tool", toolName, "error", err, "retry", isRetry)
 		c.Drop(endpointName)
+		if !isRetry {
+			return c.callToolWithRetry(ctx, endpointName, toolName, args, true)
+		}
 		return "", false, err
 	}
 	encoded, err := json.Marshal(result)
@@ -138,13 +146,21 @@ func (c *Client) CallTool(ctx context.Context, endpointName, toolName string, ar
 // ListTools is the diagnostic half — what the live pod actually serves, as
 // opposed to the static snapshot the sidecar registers (docs/adr/0044).
 func (c *Client) ListTools(ctx context.Context, endpointName string) ([]mcp.Tool, error) {
+	return c.listToolsWithRetry(ctx, endpointName, false)
+}
+
+func (c *Client) listToolsWithRetry(ctx context.Context, endpointName string, isRetry bool) ([]mcp.Tool, error) {
 	cl, err := c.clientFor(ctx, endpointName)
 	if err != nil {
 		return nil, err
 	}
 	result, err := cl.ListTools(ctx, mcp.ListToolsRequest{})
 	if err != nil {
+		slog.Info("e2eclient: dropping client after failed list", "endpoint", endpointName, "error", err, "retry", isRetry)
 		c.Drop(endpointName)
+		if !isRetry {
+			return c.listToolsWithRetry(ctx, endpointName, true)
+		}
 		return nil, err
 	}
 	return result.Tools, nil
