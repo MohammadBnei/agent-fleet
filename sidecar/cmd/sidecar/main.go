@@ -10,15 +10,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus/promhttp"
-
 	"github.com/MohammadBnei/agent-fleet/sidecar/internal/coreclient"
 	"github.com/MohammadBnei/agent-fleet/sidecar/internal/e2eclient"
 	"github.com/MohammadBnei/agent-fleet/sidecar/internal/localapi"
 	"github.com/MohammadBnei/agent-fleet/sidecar/internal/mcpserver"
 	"github.com/MohammadBnei/agent-fleet/sidecar/internal/telemetry"
-
-	_ "github.com/MohammadBnei/agent-fleet/sidecar/internal/metrics"
 )
 
 func main() {
@@ -83,11 +79,7 @@ func main() {
 	defer e2e.DropAll()
 
 	mcpServer := &http.Server{Addr: ":" + mcpPort, Handler: withAccessLog("sidecar mcp", mcpserver.New(core, e2e))}
-
-	localAPIMux := http.NewServeMux()
-	localAPIMux.Handle("/metrics", promhttp.Handler())
-	localAPIMux.Handle("/", localapi.New(core))
-	localAPIServer := &http.Server{Addr: ":" + localAPIPort, Handler: withAccessLog("sidecar local api", localAPIMux)}
+	localAPIServer := &http.Server{Addr: ":" + localAPIPort, Handler: withAccessLog("sidecar local api", localapi.New(core))}
 
 	go func() {
 		slog.Info("sidecar mcp listening", "port", mcpPort)

@@ -3,7 +3,6 @@ import type { Task } from "./types.js";
 import * as sidecar from "./sidecarClient.js";
 import { log } from "./log.js";
 import { rtkRewrite, rtkRunCommandHook } from "./rtkHook.js";
-import * as metrics from "./metrics.js";
 
 // Thrown when an SDK result looks like a transient infra/SDK hiccup (0
 // turns, $0 cost) rather than a genuine failure — the caller leaves it for
@@ -119,7 +118,6 @@ function relayFields(msg: { [key: string]: unknown }): Record<string, unknown> {
 // own comment: only relayed_to_discord changes, dashboard renders the
 // full stream regardless).
 async function logSdkMessage(actor: string, msg: { type: string; [key: string]: unknown }): Promise<void> {
-  metrics.recordSdkMessage(msg);
   const push = (text: string, type: string) =>
     sidecar.pushMessage(actor, text, type).catch((err) => log("warn", "pushMessage failed", { actor, type, error: String(err) }));
 

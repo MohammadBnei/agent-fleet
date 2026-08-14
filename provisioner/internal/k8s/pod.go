@@ -623,15 +623,8 @@ func (c *Client) CreateWorkerPod(ctx context.Context, taskID, repo, leaseID, wor
 			BackoffLimit:            int32Ptr(0),
 			TTLSecondsAfterFinished: int32Ptr(workerJobTTLSeconds),
 			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels: labels,
-					Annotations: map[string]string{
-						"prometheus.io/scrape": "true",
-						"prometheus.io/port":   "9091",
-						"prometheus.io/path":   "/metrics",
-					},
-				},
-				Spec: podSpec,
+				ObjectMeta: metav1.ObjectMeta{Labels: labels},
+				Spec:       podSpec,
 			},
 		},
 	}

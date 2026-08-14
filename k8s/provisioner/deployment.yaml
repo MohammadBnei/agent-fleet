@@ -29,10 +29,6 @@ spec:
       labels:
         app: provisioner
         app.kubernetes.io/part-of: agent-fleet
-      annotations:
-        prometheus.io/scrape: "true"
-        prometheus.io/port: "8080"
-        prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: provisioner
       containers:
