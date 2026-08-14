@@ -269,7 +269,8 @@ export function SessionPanel({
         run={run}
         codeServerUrl={codeServerUrl}
         isThotTask={isThotTask}
-        
+        sweptAt={task.sweptAt}
+        archivedAt={task.archivedAt}
         currentMode={task.permissionMode}
         podPhase={task.podPhase}
         onBypassClick={onBypassClick}

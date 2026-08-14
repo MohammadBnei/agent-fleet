@@ -1,4 +1,5 @@
 import type { Session } from "../gen/agentfleet/v1/core_pb";
+import { client } from "../connectClient";
 import { repoLabel } from "../taskKind";
 import type { ListSummary } from "../transcript";
 import { TickBar, todoProgress } from "../components/TickBar";
@@ -23,43 +24,74 @@ export const ACTIVE_STATES = LIVE_STATES;
 // defined as "everything not already claimed" rather than by its own
 // predicate.
 export function bucketTasks(tasks: Session[], needsYouIds: Set<string>) {
-  // A session is blocked when it has unanswered decisions — a count now, not
-  // a boolean, because parallel tool calls each get their own pending
-  // permission and answering one must not report the rest as resolved.
-  const needsYou = tasks.filter(
-    (t) => t.archivedAt === undefined && (t.pendingDecisions > 0 || t.liveState === "blocked" || needsYouIds.has(t.id)),
-  );
-  const working = tasks.filter(
-    (t) => !needsYou.includes(t) && t.liveState === "working",
-  );
-  const archived = tasks.filter((t) => t.archivedAt !== undefined);
-  return {
-    needsYou,
-    working,
-    archived,
-    // Finished-while-you-were-away: `done` liveness means the session
-    // completed and nobody has opened it since — opening marks it seen, which
-    // is what turns this back into idle. A crashed pod is always news.
-    finished: tasks.filter(
-      (t) => !archived.includes(t) && (t.liveState === "done" || t.podPhase === "POD_PHASE_CRASHED"),
-    ),
-    stalled: tasks.filter((t) => t.liveState === "stalled"),
-    // Disk reclaimed by the retention GC: readable, not resumable. Rendered
-    // read-only, with no Warm button — offering one would be an action that
-    // cannot succeed.
-    swept: tasks.filter((t) => t.sweptAt !== undefined),
-    // Everything left: seen, idle, or dormant. The collapsed tail, defined by
-    // exclusion so nothing can fall through every bucket.
-    quiet: tasks.filter(
-      (t) =>
-        !needsYou.includes(t) &&
-        !working.includes(t) &&
-        !archived.includes(t) &&
-        t.liveState !== "done" &&
-        t.liveState !== "stalled" &&
-        t.podPhase !== "POD_PHASE_CRASHED",
-    ),
+  const out = {
+    needsYou: [] as Session[],
+    archived: [] as Session[],
+    swept: [] as Session[],
+    finished: [] as Session[],
+    stalled: [] as Session[],
+    working: [] as Session[],
+    quiet: [] as Session[],
   };
+
+  // One pass with explicit precedence, rather than seven independent filters
+  // that each re-derive which of the others they need to exclude.
+  //
+  // That shape had already drifted: `swept` excluded nothing, so a swept
+  // session rendered under both "idle" and "swept", and a stalled session that
+  // had been archived showed up twice as well. Each new bucket needed a new
+  // exclusion added to every filter below it, and a missed one is a duplicate
+  // row rather than an error.
+  //
+  // Assigning each session exactly once makes the buckets a partition by
+  // construction: every session lands in one and only one, which is what the
+  // list needs and what bucketTasks.test.ts asserts.
+  for (const t of tasks) {
+    // 1. A pending decision outranks everything: the session is stalled until
+    //    someone clicks, and surfacing that is the product's whole job.
+    //    pendingDecisions is a COUNT, not the old awaiting_human boolean —
+    //    parallel tool calls each get their own permission, and answering one
+    //    must not report the rest as resolved.
+    if (t.archivedAt === undefined && (t.pendingDecisions > 0 || t.liveState === "blocked" || needsYouIds.has(t.id))) {
+      out.needsYou.push(t);
+      continue;
+    }
+    // 2. The human already said they were finished with this one. Their
+    //    statement outranks anything computed about it.
+    if (t.archivedAt !== undefined) {
+      out.archived.push(t);
+      continue;
+    }
+    // 3. Disk reclaimed by the retention GC: readable, not resumable.
+    //    Rendered without a Warm button — offering one would be an action
+    //    that cannot succeed.
+    if (t.sweptAt !== undefined) {
+      out.swept.push(t);
+      continue;
+    }
+    // 4. Finished-while-you-were-away: `done` liveness means the session
+    //    completed and nobody has opened it since — opening marks it seen,
+    //    which is what turns this back into idle. A crashed pod is always
+    //    news, and with no `failed` status left it is the only thing that
+    //    says so.
+    if (t.liveState === "done" || t.podPhase === "POD_PHASE_CRASHED") {
+      out.finished.push(t);
+      continue;
+    }
+    if (t.liveState === "stalled") {
+      out.stalled.push(t);
+      continue;
+    }
+    if (t.liveState === "working") {
+      out.working.push(t);
+      continue;
+    }
+    // 5. Everything left: seen, idle, or dormant. The collapsed tail, and the
+    //    catch-all that guarantees nothing falls through.
+    out.quiet.push(t);
+  }
+
+  return out;
 }
 
 // prBadge is gone with the pr_url column (docs/adr/0048), whose only writer
@@ -283,12 +315,14 @@ function FinishedRow({
   onRetry,
   onOpenLogs,
   onDelete,
+  reload,
 }: {
   task: Session;
   onSelect: () => void;
   onRetry: () => void;
   onOpenLogs: () => void;
   onDelete: () => void;
+  reload: () => void;
 }) {
   const failed = task.podPhase === "POD_PHASE_CRASHED";
   const pr = null as { label: string; className: string } | null;
@@ -323,6 +357,21 @@ function FinishedRow({
             </button>
           </>
         ) : null}
+        {/*
+          This row is exactly the "I'm done with this" moment, and until now
+          the only thing offered here was delete — which destroys the
+          transcript, the sole record of a session that produced no PR.
+          Archiving keeps the history and is the fleet's one terminal state.
+        */}
+        <button
+          type="button"
+          onClick={() => {
+            void client.archiveSession({ sessionId: task.id }).then(reload);
+          }}
+          className="flex-none border border-acc-line px-3 py-1 text-sm hover:border-primary hover:text-primary"
+        >
+          archive
+        </button>
       </div>
       <DeleteButton onDelete={onDelete} />
     </div>
@@ -468,8 +517,15 @@ export function TaskList({
   onOpenLogs: (id: string) => void;
   reload: () => void;
 }) {
-  const { needsYou, working, finished, stalled, quiet } = bucketTasks(tasks, needsYouIds);
-  const proposed: typeof tasks = [];
+  // Every bucket bucketTasks returns must be rendered somewhere below.
+  //
+  // `archived` and `swept` were computed and then dropped, which is the exact
+  // failure the function's own comment warns about one level up: a session in
+  // no RENDERED group vanishes from the list entirely. Archived sessions —
+  // the only ones a human has explicitly finished — were invisible on both
+  // form factors. bucketTasks.test.ts pins the coverage of the destructure so
+  // the next bucket added cannot be silently dropped the same way.
+  const { needsYou, working, finished, stalled, quiet, archived, swept } = bucketTasks(tasks, needsYouIds);
 
   if (tasks.length === 0) {
     return <div className="p-5 text-base text-dim">No sessions.</div>;
@@ -504,6 +560,7 @@ export function TaskList({
               onRetry={() => onRetry(t.id)}
               onOpenLogs={() => onOpenLogs(t.id)}
               onDelete={() => onDelete(t.id)}
+              reload={reload}
             />
           ))}
         </>
@@ -527,10 +584,17 @@ export function TaskList({
         </>
       )}
 
+      {/*
+        The collapsed tail. "proposed by audits" used to sit here fed by a
+        hardcoded empty array — a group that could never contain anything,
+        left over from when a proposal was a task row. Proposals are their own
+        table with their own view on the Audits page now (docs/adr/0048).
+      */}
       <div className="flex flex-col gap-1 mt-3.5">
         <QuietGroup title="stalled" tasks={stalled} onSelect={onSelect} />
-        <QuietGroup title="proposed by audits" tasks={proposed} onSelect={onSelect} />
         <QuietGroup title="idle" tasks={quiet} onSelect={onSelect} />
+        <QuietGroup title="archived" tasks={archived} onSelect={onSelect} />
+        <QuietGroup title="swept · readable, not resumable" tasks={swept} onSelect={onSelect} />
       </div>
     </div>
   );

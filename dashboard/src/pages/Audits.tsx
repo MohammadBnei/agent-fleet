@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { client } from "../connectClient";
-import type { ScheduledAudit } from "../gen/agentfleet/v1/dashboard_pb";
-import type { Session } from "../gen/agentfleet/v1/core_pb";
+import type { ScheduledAudit, Proposal } from "../gen/agentfleet/v1/dashboard_pb";
 import { InlineError } from "../components/InlineError";
 import { ConfirmModal } from "../components/ConfirmModal";
 import { Modal } from "../components/Modal";
@@ -184,11 +183,14 @@ function auditActions(
 }
 
 export function Audits({
-  proposed,
+  proposals,
   onSelectTask,
   reloadTasks,
 }: {
-  proposed: Session[];
+  // Rows from the `proposals` table, not sessions. A proposal has no pod, no
+  // transcript and no worktree until a human opens it — which is the point:
+  // it is the gate in front of a machine-initiated run (docs/adr/0048).
+  proposals: Proposal[];
   onSelectTask: (id: string) => void;
   reloadTasks: () => void;
 }) {
@@ -268,41 +270,63 @@ export function Audits({
         </button>
       </div>
 
-      {/* Proposals aren't audit rows — they're this page's real to-do. */}
-      {proposed.length > 0 && (
+      {/*
+        Proposals aren't audit rows — they're this page's real to-do.
+
+        This block never rendered: App.tsx fed it a permanently-empty memo left
+        over from when a proposal was a task row with status='proposed'. So the
+        entire human gate in front of machine-initiated runs was unreachable
+        from the UI, and the two RPCs behind it had no caller. It now reads the
+        `proposals` table via ListProposals.
+      */}
+      {proposals.length > 0 && (
         <div className="border border-acc-line bg-pink-bg px-3.5 py-3">
           <div className="flex items-center gap-2.5 flex-wrap">
             <span className="w-[7px] h-[7px] rounded-full bg-primary flex-none" />
             <span className="text-sm">
-              {proposed.length} proposed run{proposed.length === 1 ? "" : "s"} waiting for approval
+              {proposals.length} proposed run{proposals.length === 1 ? "" : "s"} waiting for approval
             </span>
           </div>
-          <div className="flex flex-col gap-2 mt-2.5">
-            {proposed.map((t) => (
-              <div key={t.id} className="flex items-center gap-2.5 flex-wrap">
-                <button
-                  type="button"
-                  onClick={() => onSelectTask(t.id)}
-                  className="text-sm text-dim hover:text-primary text-left min-w-0 truncate flex-1"
-                >
-                  #{t.id.slice(0, 6)} {t.description}
-                </button>
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => proposeAct(() => client.openFromProposal({ proposalId: t.id }))}
-                  className="flex-none bg-primary text-primary-content px-3.5 py-1.5 text-sm font-semibold disabled:opacity-50"
-                >
-                  approve &amp; dispatch
-                </button>
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => proposeAct(() => client.deleteSession({ sessionId: t.id }))}
-                  className="flex-none border border-acc-line px-3.5 py-1.5 text-sm hover:border-error hover:text-error disabled:opacity-50"
-                >
-                  dismiss
-                </button>
+          <div className="flex flex-col gap-2.5 mt-2.5">
+            {proposals.map((p) => (
+              <div key={p.id} className="flex flex-col gap-1">
+                <div className="flex items-center gap-2.5 flex-wrap">
+                  <span className="text-sm min-w-0 truncate flex-1">
+                    <span className="text-dim2">{p.repo}</span> {p.title}
+                  </span>
+                  <span className="flex-none text-xs text-dim2 border border-line px-1.5">{p.source}</span>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    // THE human gate: the one call that can hand a
+                    // cluster-access agent a pod. It creates the session and
+                    // sends the proposal body as its first message, so the
+                    // agent's instruction is the text shown here — no wrapper.
+                    onClick={() =>
+                      proposeAct(async () => {
+                        const res = await client.openFromProposal({ proposalId: p.id });
+                        if (res.session) onSelectTask(res.session.id);
+                      })
+                    }
+                    className="flex-none bg-primary text-primary-content px-3.5 py-1.5 text-sm font-semibold disabled:opacity-50"
+                  >
+                    approve &amp; dispatch
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    // dismissProposal, not deleteSession — this used to pass a
+                    // proposal id as a sessionId, which could only ever 404
+                    // (or, worse, match an unrelated session).
+                    onClick={() => proposeAct(() => client.dismissProposal({ proposalId: p.id }))}
+                    className="flex-none border border-acc-line px-3.5 py-1.5 text-sm hover:border-error hover:text-error disabled:opacity-50"
+                  >
+                    dismiss
+                  </button>
+                </div>
+                {p.body && (
+                  <div className="text-xs text-dim whitespace-pre-wrap break-words line-clamp-4">{p.body}</div>
+                )}
               </div>
             ))}
           </div>

@@ -43,7 +43,8 @@ export function ActionsMenu({
   run,
   codeServerUrl,
   isThotTask = false,
-  status,
+  sweptAt,
+  archivedAt,
   currentMode,
   podPhase,
   onBypassClick,
@@ -67,8 +68,13 @@ export function ActionsMenu({
   // docs/adr/0037: a thot session has no e2e pod and no code-server, so
   // those controls are hidden rather than shown-and-broken.
   isThotTask?: boolean;
-  // tasks.status — only consulted to hide Warm on an unapproved proposal.
-  status?: string;
+  // Set once the retention GC has reclaimed this session's working directory
+  // (docs/adr/0048). Readable history, not resumable — so Warm is hidden
+  // rather than shown and broken.
+  sweptAt?: string;
+  // Set when a human marked this session finished — the only terminal state
+  // the fleet has, because it is the only one a machine cannot compute.
+  archivedAt?: string;
   // Unset for an idle/never-warmed session — no mode has been explicitly
   // chosen yet (the SDK itself starts a fresh session in "default", but
   // that's not durable here until SetPermissionMode is actually called).
@@ -138,11 +144,15 @@ export function ActionsMenu({
           </ActionButton>
         </>
       ) : (
-        // An unapproved proposal has no Warm: the server rejects it with
-        // FailedPrecondition (approval is what starts it), and a button
-        // that can only ever error is worse than no button. ProposalActions
-        // carries the real action for this state.
-        status !== "proposed" && (
+        // A swept session cannot be warmed: the retention GC removed its
+        // working directory and its SDK state, so the pod would come up with
+        // nothing to resume. Same reasoning the old proposal guard had — a
+        // button that can only ever error is worse than no button.
+        //
+        // An archived session CAN still be warmed. Archiving says "I'm done
+        // with this", not "this is sealed", and reopening it is the natural
+        // way to change your mind; ArchiveSession is idempotent either way.
+        !sweptAt && (
           <ActionButton
             className="btn btn-success btn-xs"
             busy={busyKey === "action:warm"}
@@ -152,6 +162,25 @@ export function ActionsMenu({
             Warm
           </ActionButton>
         )
+      )}
+      {/*
+        Archive is the human's "I'm finished with this". It is the fleet's
+        only terminal state — a polymorphic session (bug fix, explanation,
+        dead end) has no completion a machine can compute, which is exactly
+        why `done` never got a writer and the status enum went away.
+
+        Nothing offered it until now, so a session could only ever be deleted
+        (destroying its transcript) or left to idle forever.
+      */}
+      {!archivedAt && (
+        <ActionButton
+          className="btn btn-outline btn-xs"
+          busy={busyKey === "action:archive"}
+          disabled={busy}
+          onClick={() => run(() => client.archiveSession({ sessionId }), "action:archive")}
+        >
+          Archive
+        </ActionButton>
       )}
       {!isThotTask && (
       <ActionButton

@@ -23,7 +23,7 @@ function session(id: string, over: Partial<Session> = {}): Session {
 // bucket does not merely sort oddly — it vanishes from the list entirely,
 // which is the one place a human is supposed to see it. `quiet` is therefore
 // defined by exclusion rather than by its own predicate.
-test("every session lands in at least one bucket, whatever shape it is in", () => {
+test("every session lands in exactly one bucket, whatever shape it is in", () => {
   const all = [
     session("blocked", { pendingDecisions: 2 }),
     session("busy", { liveState: "working" }),
@@ -34,16 +34,45 @@ test("every session lands in at least one bucket, whatever shape it is in", () =
     session("swept", { sweptAt: "2026-08-01T00:00:00Z" }),
     session("idle", { liveState: "idle" }),
     session("blank"), // no liveState, no phase — a session created and never messaged
+    // The overlaps that used to double-render: independent filters meant a
+    // swept-and-idle session appeared under both "idle" and "swept", and an
+    // archived-and-stalled one under both "archived" and "stalled".
+    session("swept-idle", { sweptAt: "2026-08-01T00:00:00Z", liveState: "idle" }),
+    session("archived-stalled", { archivedAt: "2026-08-01T00:00:00Z", liveState: "stalled" }),
+    session("archived-swept", { archivedAt: "2026-08-01T00:00:00Z", sweptAt: "2026-08-01T00:00:00Z" }),
   ];
 
   const b = bucketTasks(all, new Set());
-  const placed = new Set(
-    [...b.needsYou, ...b.working, ...b.finished, ...b.stalled, ...b.archived, ...b.swept, ...b.quiet].map((t) => t.id),
-  );
+  const placements = [
+    ...b.needsYou,
+    ...b.working,
+    ...b.finished,
+    ...b.stalled,
+    ...b.archived,
+    ...b.swept,
+    ...b.quiet,
+  ].map((t) => t.id);
 
-  for (const s of all) {
-    expect(placed.has(s.id)).toBe(true);
-  }
+  // Exactly once: a session in no bucket vanishes from the list, and one in
+  // two buckets renders twice as if it were two different sessions.
+  expect(placements.sort()).toEqual(all.map((s) => s.id).sort());
+});
+
+// The test above passed the whole time `archived` and `swept` were computed
+// and then thrown away by the render, so an archived session — the only kind
+// a human has explicitly finished — appeared nowhere at all. Covering the
+// FUNCTION is not covering the LIST.
+//
+// This pins the set of buckets, so adding one forces a decision about where
+// it renders instead of letting it be dropped silently. If this fails, either
+// render the new bucket in TaskList's body or fold it into an existing group —
+// do not just update the list here.
+test("the bucket set is exactly what TaskList renders", () => {
+  const b = bucketTasks([], new Set());
+
+  expect(Object.keys(b).sort()).toEqual(
+    ["archived", "finished", "needsYou", "quiet", "stalled", "swept", "working"].sort(),
+  );
 });
 
 // A session with unanswered decisions is stalled until a human clicks, so it

@@ -226,7 +226,10 @@ func (s *Server) OpenFromProposal(ctx context.Context, req *connect.Request[agen
 		return nil, connect.NewError(connect.CodeNotFound, errors.New("no such proposal"))
 	}
 
-	id, err := s.sessions.Create(ctx, p.Repo, p.Title, p.Body, "")
+	// Title for both the label fields: the body is not a label, it is the
+	// instruction, and it goes out as the first message below. Putting it in
+	// `description` made the list render an entire alert payload as a row.
+	id, err := s.sessions.Create(ctx, p.Repo, p.Title, p.Title, "")
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
@@ -240,6 +243,28 @@ func (s *Server) OpenFromProposal(ctx context.Context, req *connect.Request[agen
 			}
 			return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("proposal is already opened or dismissed"))
 		}
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+
+	// The proposal's body IS the instruction, so it has to be sent as a real
+	// first message — not left in `description`, which is a human-facing label
+	// the agent never sees (a description it cannot read is one that silently
+	// drifts from what it was actually asked to do). Without this the approved
+	// session opened with no pod and nothing to do, and the finding that
+	// prompted it never reached the agent at all.
+	//
+	// Warm BEFORE appending, for the same reason PostMessage does: resumeFromSeq
+	// is computed from LatestSeq at provisioning time, so a message appended
+	// first lands below the new pod's cursor and is never delivered.
+	if _, err := s.WarmIfIdle(ctx, id); err != nil {
+		// The session and the proposal link both stand — a human can send the
+		// message by hand, or Warm it later. Rolling back here would discard
+		// the approval decision itself, which is the expensive part.
+		slog.Error("dashboard OpenFromProposal: warm failed", "sessionId", id, "proposalId", p.ID, "error", err)
+		return nil, err
+	}
+	if _, err := s.transcr.Append(ctx, id, "human", p.Body, "discussion", uuid.NewString()); err != nil {
+		slog.Error("dashboard OpenFromProposal: append failed", "sessionId", id, "proposalId", p.ID, "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 

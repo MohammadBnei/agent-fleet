@@ -12,6 +12,7 @@ import { MobileTaskList } from "./mobile/MobileTaskList";
 import { MobileTaskDetail } from "./mobile/MobileTaskDetail";
 import { client } from "./connectClient";
 import type { Session } from "./gen/agentfleet/v1/core_pb";
+import type { Proposal } from "./gen/agentfleet/v1/dashboard_pb";
 import { listSummary, type ListSummary } from "./transcript";
 import { ErrorModal } from "./components/ErrorModal";
 import { ConfirmModal } from "./components/ConfirmModal";
@@ -78,6 +79,7 @@ export default function App() {
   const [view, setView] = useState<View>(readViewFromUrl);
   const [selectedId, setSelectedId] = useState<string | null>(readTaskIdFromUrl);
   const [tasks, setTasks] = useState<Session[]>([]);
+  const [proposals, setProposals] = useState<Proposal[]>([]);
   const [tasksError, setTasksError] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
@@ -120,6 +122,22 @@ export default function App() {
   }, []);
 
   useEffect(() => pollVisible(loadTasks, POLL_INTERVAL_MS), [loadTasks]);
+
+  // Proposals are a separate table with no pod path of their own
+  // (docs/adr/0048), so they need their own fetch rather than being filtered
+  // out of the session list the way `status = 'proposed'` used to be.
+  //
+  // A failure here is deliberately quiet: an audit suggestion not appearing is
+  // not worth the modal that a failing session poll gets, and the next tick
+  // retries.
+  const loadProposals = useCallback(() => {
+    return client
+      .listProposals({})
+      .then((res) => setProposals(res.proposals))
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => pollVisible(loadProposals, POLL_INTERVAL_MS), [loadProposals]);
 
   // Straight off the already-polled list — core's activityTrackingStore
   // maintains awaiting_human on every permission_request/question append and
@@ -247,7 +265,6 @@ export default function App() {
     );
   }, [tasks, filter, needsYouOnly]);
 
-  const proposed = useMemo(() => [] as typeof tasks, []);
 
   const shared = {
     tasks: filteredTasks,
@@ -431,7 +448,14 @@ export default function App() {
         ) : view === "files" ? (
           <Files />
         ) : view === "audits" ? (
-          <Audits proposed={proposed} onSelectTask={selectTask} reloadTasks={loadTasks} />
+          <Audits
+            proposals={proposals}
+            onSelectTask={selectTask}
+            reloadTasks={() => {
+              void loadTasks();
+              void loadProposals();
+            }}
+          />
         ) : view === "observability" ? (
           <Observability onSelectTask={selectTask} />
         ) : selectedId ? (
