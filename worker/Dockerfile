@@ -18,6 +18,50 @@ RUN apt-get update && apt-get install -y --no-install-recommends git curl ca-cer
     && rm -rf /var/lib/apt/lists/*
 RUN bun install -g @anthropic-ai/claude-code
 
+# The toolchain the session's builds and tests actually run on. This used to
+# live in a second pod that the fleet staged from a per-repo "recipe"; after
+# docs/adr/0048 §6 the agent builds and tests in its own pod with plain Bash,
+# so the toolchain has to be here.
+#
+# Go is installed from upstream rather than apt: Debian slim's golang lags far
+# enough behind to fail on a modern go.mod's toolchain directive.
+ARG GO_VERSION=1.26.5
+RUN curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" | tar -xz -C /usr/local
+ENV PATH="/usr/local/go/bin:${PATH}"
+
+# Playwright and its MCP server, carrying docs/adr/0044's finding intact:
+# @playwright/mcp bundles a DIFFERENT playwright-core than `playwright` does,
+# so it resolves a different browser build number and refuses to start on the
+# one the first install put down. Both installs are required, and the server
+# must be launched with `--browser chromium` (see session.ts).
+#
+# That was found only by actually driving a browser_navigate. Every cheaper
+# check passed: the port was bound, the server answered, the handshake
+# succeeded, the tool list registered — and the browser binary was absent.
+# Browsers go to a fixed, world-readable path rather than $HOME/.cache.
+#
+# Without this they install under ROOT's cache at build time, and the session
+# runs as `bun` — so Playwright looked in /home/bun/.cache/ms-playwright and
+# reported the browser as not installed. Caught by actually driving a
+# browser_navigate in the built image; `playwright-mcp --version` and the MCP
+# handshake both passed with the browser absent, which is docs/adr/0044's
+# lesson repeating itself in a new location.
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+RUN bun install -g playwright @playwright/mcp \
+    && bunx playwright install --with-deps chromium \
+    && bunx @playwright/mcp install-browser chrome-for-testing \
+    && chmod -R o+rX /ms-playwright \
+    # bun's global install does NOT put @playwright/mcp's own bin on PATH —
+    # only `claude` and `playwright-core` end up in the global .bin, so the
+    # server was unreachable by name. Caught by running the binary in the built
+    # image rather than by trusting the install to have worked, which is the
+    # whole lesson of docs/adr/0044. Symlinked explicitly so session.ts can
+    # name a command instead of hardcoding a node_modules path.
+    && ln -s /root/.bun/install/global/node_modules/@playwright/mcp/cli.js /usr/local/bin/playwright-mcp \
+    && chmod +x /usr/local/bin/playwright-mcp \
+    # The browser lands under root's cache; the session runs as `bun`.
+    && chmod -R o+rX /root/.cache 2>/dev/null || true
+
 # rtk (Rust Token Killer) — same tool-output compression proxy Mohammad runs
 # locally (github.com/rtk-ai/rtk, Homebrew formula "rtk"). Static musl
 # binary from GitHub releases, no Rust toolchain needed in this image.

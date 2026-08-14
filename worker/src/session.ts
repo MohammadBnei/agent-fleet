@@ -35,6 +35,33 @@ function sidecarMcpServer() {
   return { type: "http" as const, url: `http://${SIDECAR_MCP_ADDR}/mcp` };
 }
 
+// Playwright, run by the SDK itself as a local stdio server in this pod
+// (docs/adr/0048 §6).
+//
+// It used to be proxied: agent → sidecar → core → provisioner → e2e pod, with
+// the tool list served from a snapshot committed into the sidecar because the
+// real list could not be fetched reliably. docs/adr/0044 records what that
+// cost — browser automation was dead for the fleet's entire history behind
+// three stacked failures, each of which the layer above it happily passed.
+//
+// Declaring it here removes all three at once: the SDK owns the process, so
+// the tool list is whatever the installed version actually exposes, there is
+// no registration racing a pod that is still starting, and a failure surfaces
+// as a real error instead of an empty result from a swallowed hop.
+function playwrightMcpServer() {
+  return {
+    type: "stdio" as const,
+    command: "playwright-mcp",
+    // --browser chromium is NOT a preference, it is the fix from
+    // docs/adr/0044: @playwright/mcp bundles its own playwright-core, and
+    // without this it looks for BRANDED Chrome at /opt/google/chrome/chrome
+    // and fails to start. The image installs the matching chrome-for-testing
+    // build alongside it (see worker/Dockerfile) — the two halves have to
+    // stay together.
+    args: ["--headless", "--isolated", "--browser", "chromium"],
+  };
+}
+
 // Feeds query()'s streaming-input mode — push() enqueues a message, the
 // async generator yields it whenever the SDK asks for the next input.
 // Verified in Phase 0's spike: the same Query object accepts further
@@ -427,6 +454,15 @@ export async function runSession(): Promise<SessionResult> {
       allowedTools: [
         "Read", "Glob", "Grep", "WebSearch", "WebFetch", "Task",
         "mcp__agent-fleet-sidecar__*",
+        // Playwright by the same wildcard rule. Every browser call would
+        // otherwise prompt — including the read-only ones a human would never
+        // want to be asked about (snapshot, console messages) — because MCP
+        // tools are passthrough → ask, not because navigating is dangerous.
+        //
+        // The browser only ever reaches what this pod can reach, and the pod's
+        // own network position is the real boundary. What it can DO with a
+        // page is bounded by the same thing bounding the agent generally.
+        "mcp__playwright__*",
       ],
       // The SDK's own built-in "AskUserQuestion" (distinct from the
       // mcp__agent-fleet-sidecar__ one above) is available by default and
@@ -476,7 +512,10 @@ export async function runSession(): Promise<SessionResult> {
           pendingPermissions.set(seq, { resolve, input: effectiveInput });
         });
       },
-      mcpServers: { "agent-fleet-sidecar": sidecarMcpServer() },
+      mcpServers: {
+        "agent-fleet-sidecar": sidecarMcpServer(),
+        playwright: playwrightMcpServer(),
+      },
       // rtk output compaction for the e2e sandbox's shell — see rtkHook.ts
       // for why this can't live in fleet-shared/settings.json, and why
       // `Bash` is deliberately not in this matcher (it goes through
