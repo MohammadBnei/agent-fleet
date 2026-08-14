@@ -1,195 +1,283 @@
--- agent-fleet shared task queue + knowledge journal.
--- Applied by the dedicated `migration` image (see migration/Dockerfile) via
--- common-app-chart's hooks.migrate PreSync job, and by golang-migrate
--- directly in core's integration tests (see core/internal/dbtest).
+-- agent-fleet schema. Applied by the dedicated `migration` image (see
+-- migration/Dockerfile) via common-app-chart's hooks.migrate PreSync job,
+-- and by golang-migrate directly in core's integration tests (see
+-- core/internal/dbtest).
 --
--- This is migration 1 of N: it captures the schema's end state as of the
--- golang-migrate cutover (docs/adr/0030), not the historical sequence of
--- ALTERs that built up the old single db/schema.sql file. Every schema
--- change from here on is a new numbered migration file — never an edit to
--- this one or any other already-applied file.
+-- This file replaces the previous 14 migrations outright (docs/adr/0048).
+-- Migrating forward would have meant a migration full of DROPs for columns
+-- added three migrations earlier, plus a permanent 15-file history
+-- describing a schema that no longer exists. The database was purged
+-- instead, which is only acceptable because this fleet had no data worth
+-- keeping — do NOT treat that as precedent. From here on the rule from
+-- docs/adr/0030 applies again unchanged: every schema change is a new
+-- numbered migration, never an edit to this file.
 
-CREATE TABLE tasks (
-  id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  repo               TEXT NOT NULL,           -- 'dream-analyst' | 'vos-monolith' | ...
-  description        TEXT NOT NULL,
-  status             TEXT NOT NULL DEFAULT 'pending'
-                       CHECK (status IN ('pending', 'claimed', 'running', 'done', 'failed', 'cancelled', 'failed_permanently')),
-  discord_channel_id TEXT,   -- NULL for tasks created from the dashboard (no Discord thread)
-  discord_thread_id  TEXT,
-  claimed_by         TEXT,
-  pr_url             TEXT,
-  notes              TEXT,
-  created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+-- ---------------------------------------------------------------------------
+-- sessions
+-- ---------------------------------------------------------------------------
+-- A session is the durable unit (docs/adr/0048, completing the rename
+-- docs/adr/0029 deferred). A pod is ephemeral compute attached to one on
+-- demand; the row, its working directory and its SDK state all outlive the
+-- pod, which is what makes a session resumable.
+--
+-- Note what is NOT here, because their absence is the decision:
+--
+--   status       -- there is no queue and no computable completion. Sessions
+--                -- are polymorphic (a bug fix, a feature, an explanation),
+--                -- so nothing can compute "done" — which is why the old
+--                -- enum's 'done' value never acquired a writer in its
+--                -- entire life. Liveness is pod_phase + DeriveLiveState.
+--   heartbeat_at -- liveness reconciles against Kubernetes every 60s. A
+--                -- heartbeat only ever proved a timer was still firing.
+--   retry_count  -- nothing retries; a failed session is resumed by a human
+--                -- who can read why it failed.
+--   pr_url       -- its only writer never passed it. The branch is
+--                -- discoverable from the session, so the dashboard links a
+--                -- PR search rather than storing a column that can go stale.
+--   guidance     -- snippets now prefill the message composer, so operator
+--                -- guidance reaches the model as text a human sent, not as
+--                -- an invisible wrapper the agent cannot see or question.
+CREATE TABLE sessions (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  repo              TEXT NOT NULL,
 
-  -- Crash recovery + resume (docs/adr/0016). session_id is the
-  -- Postgres-durable pointer to the session's own Claude SDK session; the
-  -- actual transcript lives on the worker's RWX PVC (CLAUDE_CONFIG_DIR).
-  -- heartbeat_at drives stale-claim reclaim; lease_id guards the rare
-  -- split-brain case where a reclaim raced a not-actually-dead worker.
-  session_id         TEXT,
-  retry_count        INT NOT NULL DEFAULT 0,
-  last_error         TEXT,
-  heartbeat_at       TIMESTAMPTZ,
-  lease_id           UUID,
+  -- Human-facing labels only. Deliberately never part of the prompt: a
+  -- polymorphic session's title conveys nothing the first message doesn't
+  -- say better, and a description the agent cannot see is a description
+  -- that silently drifts from what it was actually asked to do.
+  title             TEXT,
+  description       TEXT,
 
-  -- Which model actually ran this task's session (core/internal/tasks
-  -- store's SaveSessionID, called by the sidecar on the worker's behalf).
-  model              TEXT,
+  -- The Agent SDK's own session id, for `resume:`. Named agent_session_id
+  -- rather than session_id now that the row itself is a session. Written
+  -- under a lease guard (see lease_id) and NULL until the SDK emits its
+  -- first init message.
+  agent_session_id  TEXT,
+  model             TEXT,
 
-  -- DashboardService.DeleteTask soft-deletes: a hard DELETE would violate
-  -- transcript/e2e_sessions' REFERENCES tasks(id) (no cascade) the moment a
-  -- task has any transcript history, which is effectively always.
-  deleted_at         TIMESTAMPTZ,
+  -- Minted per pod. Teardown is not synchronous and the workspace is
+  -- shared, so a torn-down pod still finishing its shutdown must not be
+  -- able to overwrite the resume identity of the pod that replaced it.
+  -- Also gates the pre-push StillHoldsLease check.
+  lease_id          UUID,
 
-  -- Pod-lifecycle state (PodPhase: created/scheduled/running/crashed/
-  -- terminated), set by ReportPodEvents — distinct from `status` (business
-  -- state). Lets the dashboard show worker-pod state without kubectl.
-  pod_phase          TEXT,
-  pod_message        TEXT,
+  -- The session's SDK permission mode ("default"|"plan"|"acceptEdits"|
+  -- "bypassPermissions"|...). Restored on every warm — without it a
+  -- session a human put into acceptEdits silently reverts to default.
+  permission_mode   TEXT,
 
-  -- The session's current SDK permission mode ("default"|"plan"|
-  -- "acceptEdits"|"bypassPermissions"|...), set alongside the
-  -- 'permission_mode' transcript entry by DashboardService.SetPermissionMode.
-  -- NULL until a session's first SetPermissionMode call.
-  permission_mode    TEXT,
+  -- Pod lifecycle, written by ReportPodEvents and by core's reconcile
+  -- loop. This is the fleet's only liveness signal.
+  pod_phase         TEXT,
+  pod_message       TEXT,
+  last_error        TEXT,
 
-  -- When a human first asked to stop this task (DashboardService.Stop).
-  -- Stop only posts a cooperative abort message; dispatch.Loop's
-  -- grace-period sweep uses this to force-tear-down a pod that never
-  -- honored it, surviving a core restart since it's Postgres-durable.
-  stop_requested_at  TIMESTAMPTZ,
+  -- Activity clock, written on every transcript append. Feeds the idle
+  -- sweep, the retention GC, and DeriveLiveState.
+  last_active_at    TIMESTAMPTZ,
+  last_entry_type   TEXT,
+  last_entry_from   TEXT,
 
-  -- Bumped on every transcript append for this task, so the idle-timeout
-  -- sweep can tell "pod alive but nobody's talking to it" apart from real
-  -- activity. Distinct from heartbeat_at, which only proves the pod itself
-  -- is alive.
-  last_active_at     TIMESTAMPTZ,
+  -- A real latch, reset when a pod is provisioned — not derivable from the
+  -- transcript, because a resumed session already has agent-authored
+  -- entries, so a derived version is permanently true and the startup-stall
+  -- sweep would never fire again for a warmed session.
+  activity_seen     BOOLEAN NOT NULL DEFAULT false,
+  seen_at           TIMESTAMPTZ,
 
-  -- Resolved once at task-creation time (DashboardService.CreateTask joins
-  -- the operator's selected snippet texts) and stored alongside
-  -- description — a frozen snapshot, not a live reference to snippets that
-  -- might later be edited or deleted. No FK/join table by design.
-  guidance           TEXT NOT NULL DEFAULT ''
+  -- When a human first asked to stop. Stop posts a cooperative abort; the
+  -- grace sweep uses this to force-tear-down a pod that never honored it.
+  -- The only thing that can kill a runaway agent, since a runaway keeps
+  -- appending entries and so keeps last_active_at moving.
+  stop_requested_at TIMESTAMPTZ,
+
+  -- Disk reclaimed: the session directory and SDK state are gone, so the
+  -- session is readable but no longer resumable. Written only by core's GC,
+  -- which is the single writer of that fact.
+  swept_at          TIMESTAMPTZ,
+
+  -- The human is finished with this session. The only non-GC terminal
+  -- state, because it is the only one a machine cannot compute.
+  archived_at       TIMESTAMPTZ,
+
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX tasks_repo_status_idx ON tasks (repo, status);
+CREATE INDEX sessions_repo_idx ON sessions (repo);
+-- The live-pod count the concurrency cap gates on, and the idle/stall
+-- sweeps' hot query.
+CREATE INDEX sessions_pod_phase_idx ON sessions (pod_phase) WHERE archived_at IS NULL;
 
--- Append-only fleet knowledge journal (mirrors ai-devkit's JSON-event
--- pattern — avoids write-conflict issues a shared mutable doc would hit
--- across concurrent worker pods).
-CREATE TABLE knowledge_journal (
-  id         BIGSERIAL PRIMARY KEY,
-  repo       TEXT,
-  actor      TEXT NOT NULL,        -- 'dream-analyst-worker' | 'vos-monolith-worker' | 'bot'
-  event_type TEXT NOT NULL,
-  payload    JSONB NOT NULL DEFAULT '{}',
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+-- ---------------------------------------------------------------------------
+-- proposals
+-- ---------------------------------------------------------------------------
+-- Machine-initiated suggestions: Alertmanager webhooks and scheduled
+-- audits. A separate table rather than a status on sessions, because a
+-- proposal has no pod path at all — that is what makes "a machine may
+-- propose, never open" structural rather than a SELECT that politely skips
+-- a value (docs/adr/0048).
+--
+-- A human turns one into a session via OpenFromProposal, behind the same
+-- Traefik basic-auth as the rest of the dashboard. That is the gate that
+-- used to be ApproveProposal, and it matters most for infra-bootstrap,
+-- whose sessions carry cluster access.
+CREATE TABLE proposals (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  repo         TEXT NOT NULL,
+  source       TEXT NOT NULL CHECK (source IN ('alert', 'audit')),
+
+  -- Alertmanager fingerprint, or audit:<id>. See the partial index below.
+  dedup_key    TEXT,
+
+  title        TEXT NOT NULL,
+  body         TEXT NOT NULL,
+
+  -- Set when a human opens it. ON DELETE SET NULL rather than CASCADE: a
+  -- deleted session should not erase the record that something proposed it.
+  -- It must not be a plain FK with no action either — that is exactly the
+  -- constraint that forced the old schema into soft deletes.
+  session_id   UUID REFERENCES sessions(id) ON DELETE SET NULL,
+
+  dismissed_at TIMESTAMPTZ,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- On-demand e2e test environments: one row per requested/live/torn-down e2e
--- pod for a task — the single coordination point between the worker's tool
--- calls, the provisioner's reconcile loop, and the dashboard's kill action.
-CREATE TABLE e2e_sessions (
-  id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  task_id              UUID NOT NULL REFERENCES tasks(id),
-  status               TEXT NOT NULL DEFAULT 'requested'
-                         CHECK (status IN ('requested', 'running', 'failed', 'torn_down')),
-  pod_name             TEXT,
-  ingress_path         TEXT,
-  kill_requested       BOOLEAN NOT NULL DEFAULT false,
-  created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
-  -- Observability only (which trigger caused a teardown: human vs agent
-  -- kill_env vs terminal-status auto-teardown) — not a dedup mechanism.
-  kill_idempotency_key TEXT
-);
+-- Dedup while the proposal stands, NOT while it is un-opened. Keying it on
+-- "has no session yet" would free the key the moment a human opens it, so a
+-- 1-hour audit cadence whose session runs 3 hours would file three
+-- proposals for the same thing. Archiving a session dismisses its proposal,
+-- which is what re-arms the key.
+CREATE UNIQUE INDEX proposals_dedup_idx ON proposals (repo, dedup_key)
+  WHERE dedup_key IS NOT NULL AND dismissed_at IS NULL;
 
-CREATE INDEX e2e_sessions_task_idx ON e2e_sessions (task_id);
+CREATE INDEX proposals_open_idx ON proposals (created_at)
+  WHERE session_id IS NULL AND dismissed_at IS NULL;
 
--- The durable store for the agent/human conversation (docs/adr/0013). `seq`
--- is the per-task monotonic cursor; core computes it inside the same
+-- ---------------------------------------------------------------------------
+-- transcript
+-- ---------------------------------------------------------------------------
+-- The durable agent/human conversation (docs/adr/0013). `seq` is the
+-- per-session monotonic cursor; core computes it inside the same
 -- transaction as the insert, guarded by
--- pg_advisory_xact_lock(hashtext(task_id::text)) so a human's reply and the
--- agent's own concurrent send_message call can't race the same seq.
+-- pg_advisory_xact_lock(hashtext(session_id::text)) so a human's reply and
+-- the agent's own concurrent send_message can't race the same seq.
+--
+-- ON DELETE CASCADE is new, and it is what lets soft deletes go: the old
+-- schema carried deleted_at solely because transcript and e2e_sessions both
+-- REFERENCEd tasks with no action, so a real DELETE was impossible the
+-- moment a task had any history — which was always.
 CREATE TABLE transcript (
-  task_id            UUID NOT NULL REFERENCES tasks(id),
-  seq                BIGINT NOT NULL,
-  "from"             TEXT NOT NULL,
-  text               TEXT NOT NULL,
+  session_id      UUID NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  seq             BIGINT NOT NULL,
+  "from"          TEXT NOT NULL,
+  text            TEXT NOT NULL,
+
   -- 'question'/'answer': the AskUserQuestion MCP tool posts a 'question'
-  -- and long-polls for the matching 'answer', submitted via the dashboard.
+  -- and long-polls for the matching 'answer'.
   -- 'system'/'assistant'/'user'/'result': the SDK's own raw message
-  -- discriminants, relayed verbatim ("relay everything, let the UI decide").
+  -- discriminants, relayed verbatim.
   -- 'tool_call': PushToolTelemetry's sidecar-pushed summary.
   -- 'permission_mode': human-authored, from the dashboard's mode selector.
-  -- 'permission_request'/'permission_response': the generalized canUseTool
-  -- prompt-and-wait pair — 'permission_request' is worker-authored (a JSON
-  -- {tool, input} payload posted by canUseTool), 'permission_response' is
-  -- the dashboard's human-authored allow/deny decision, correlated back via
-  -- reply_to_seq the same way 'answer' correlates to 'question'.
-  type               TEXT
-                       CHECK (type IN (
-                         'discussion', 'approve', 'abort', 'question', 'answer',
-                         'tool_call', 'system', 'assistant', 'user', 'result', 'permission_mode',
-                         'permission_request', 'permission_response'
-                       ) OR type IS NULL),
-  idempotency_key    TEXT NOT NULL,
-  created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+  -- 'permission_request'/'permission_response': the canUseTool
+  -- prompt-and-wait pair, correlated by reply_to_seq.
+  --
+  -- 'approve' is gone: the approval gate it belonged to was deleted in
+  -- docs/adr/0029 and the value has had no writer since.
+  type            TEXT
+                    CHECK (type IN (
+                      'discussion', 'abort', 'interrupt', 'question', 'answer',
+                      'tool_call', 'system', 'assistant', 'user', 'result',
+                      'permission_mode', 'permission_request', 'permission_response'
+                    ) OR type IS NULL),
 
-  -- Retry/DLQ for the Discord-relay side effect only — the transcript
-  -- entry itself is already durable the moment this row commits; these
-  -- track whether core has successfully posted it to the Discord thread.
-  relayed_to_discord BOOLEAN NOT NULL DEFAULT false,
-  relay_attempts     INT NOT NULL DEFAULT 0,
-  relay_dead_letter  BOOLEAN NOT NULL DEFAULT false,
-  relay_last_error   TEXT,
+  idempotency_key TEXT NOT NULL,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
 
-  -- The question/request-seq correlation: NULL for every entry except an
-  -- 'answer'/'permission_response' replying to a specific
-  -- 'question'/'permission_request' entry's own seq.
-  reply_to_seq       BIGINT,
+  -- NULL for every entry except an 'answer'/'permission_response' replying
+  -- to a specific 'question'/'permission_request' entry's own seq.
+  reply_to_seq    BIGINT,
 
-  PRIMARY KEY (task_id, seq)
+  -- Whether a Discord notification has been posted for this entry. One
+  -- nullable timestamp replaces the old four-column relay/dead-letter
+  -- machine: Discord is now notification-with-a-deep-link, not a second
+  -- console, so there is nothing to retry into and nothing to dead-letter.
+  notified_at     TIMESTAMPTZ,
+
+  PRIMARY KEY (session_id, seq)
 );
-
-CREATE INDEX transcript_task_seq_idx ON transcript (task_id, seq);
 
 -- Enforces the actual idempotency guarantee: retrying an append with the
--- same (task_id, idempotency_key) must not double-post a message.
-CREATE UNIQUE INDEX transcript_idempotency_idx ON transcript (task_id, idempotency_key);
+-- same (session_id, idempotency_key) must not double-post.
+CREATE UNIQUE INDEX transcript_idempotency_idx ON transcript (session_id, idempotency_key);
 
--- Target-repo config, dashboard-editable (docs/adr/0028) — replaces a
--- hardcoded Go map so onboarding/editing a repo no longer needs a core
--- redeploy. No FK from tasks.repo: a removed repo shouldn't retroactively
--- break historical task rows.
+-- Finds unanswered questions and pending permission requests. This is what
+-- replaces the old awaiting_human boolean, which could not be correct:
+-- permissions are a LIST (parallel tool calls each get their own seq), but
+-- the column was one bool, so answering any one of them cleared "blocked"
+-- for all the others.
+CREATE INDEX transcript_pending_idx ON transcript (session_id, type, seq)
+  WHERE type IN ('question', 'permission_request');
+
+-- ---------------------------------------------------------------------------
+-- repos
+-- ---------------------------------------------------------------------------
+-- Target-repo config, dashboard-editable (docs/adr/0028). No FK from
+-- sessions.repo: removing a repo shouldn't retroactively break historical
+-- session rows.
 CREATE TABLE repos (
-  name        TEXT PRIMARY KEY,
-  url         TEXT NOT NULL,
-  base_branch TEXT NOT NULL DEFAULT '', -- '' means the provisioner defaults to "main"
-  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+  name           TEXT PRIMARY KEY,
+  url            TEXT NOT NULL,
+  base_branch    TEXT NOT NULL DEFAULT '', -- '' means the provisioner defaults to "main"
+
+  -- The container image this repo's sessions run. '' means the fleet
+  -- default. Replaces repo_profiles/repo_profile_tools' four toolchain
+  -- ingredients (go-toolchain, bun-toolchain, golangci-lint, buf), which
+  -- existed only because the worker image was generic and the sandbox was
+  -- a separate pod — an init container copying a Go toolchain onto an
+  -- emptyDir is an elaborate way of saying "this repo needs Go".
+  image          TEXT NOT NULL DEFAULT '',
+
+  -- Whether this repo's sessions get the kubectl shim that RPCs to
+  -- thot-executor (docs/adr/0037). This is the ONE ingredient that did not
+  -- collapse into `image`, because it is not a toolchain — it is a
+  -- privilege grant, and the pod still holds zero Kubernetes credentials
+  -- either way.
+  --
+  -- Kept as data rather than code for the same reason docs/adr/0037 gave:
+  -- which sessions may reach the cluster is a human's decision, editable
+  -- without a redeploy. A boolean rather than a profile row because there
+  -- is exactly one such privilege and it is not composable with anything.
+  cluster_access BOOLEAN NOT NULL DEFAULT false,
+
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-INSERT INTO repos (name, url, base_branch) VALUES
-  ('dream-analyst', 'https://github.com/MohammadBnei/dream-analyst.git', ''),
-  ('vos-monolith',  'https://github.com/MohammadBnei/vos-monolith.git', 'dev'),
-  ('agent-fleet',   'https://github.com/MohammadBnei/agent-fleet.git', '');
+INSERT INTO repos (name, url, base_branch, cluster_access) VALUES
+  ('dream-analyst',   'https://github.com/MohammadBnei/dream-analyst.git',   '',     false),
+  ('vos-monolith',    'https://github.com/MohammadBnei/vos-monolith.git',    'dev',  false),
+  ('agent-fleet',     'https://github.com/MohammadBnei/agent-fleet.git',     '',     false),
+  -- thot sessions are ordinary sessions on the repo that holds the
+  -- cluster's own IaC, so a durable fix is a normal PR against it.
+  ('infra-bootstrap', 'https://github.com/MohammadBnei/infra-bootstrap.git', 'main', true);
 
--- Dashboard-editable, reusable guidance text that an operator optionally
--- attaches to a task at creation time — a task's base prompt is just its
--- own description; anything more is one of these, picked per task.
+-- ---------------------------------------------------------------------------
+-- prompt_snippets
+-- ---------------------------------------------------------------------------
+-- Dashboard-editable, reusable guidance an operator attaches to a session.
+-- These now prefill the message composer rather than being concatenated
+-- into a hidden `guidance` column: the agent sees them as part of the
+-- message a human sent, which is both honest and editable in the moment.
 CREATE TABLE prompt_snippets (
-  id                         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  name                       TEXT NOT NULL UNIQUE,
-  text                       TEXT NOT NULL,
-  created_at                 TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at                 TIMESTAMPTZ NOT NULL DEFAULT now(),
-  -- NULL means no suggestion. When a task is created with snippets that
-  -- have this set, the first non-null suggestion is auto-applied to the
-  -- task's permission_mode.
-  suggested_permission_mode  TEXT
+  id                        UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name                      TEXT NOT NULL UNIQUE,
+  text                      TEXT NOT NULL,
+  -- NULL means no suggestion. When a session is opened with snippets that
+  -- set this, the first non-null suggestion is applied to permission_mode.
+  suggested_permission_mode TEXT,
+  created_at                TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at                TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 INSERT INTO prompt_snippets (name, text, suggested_permission_mode) VALUES
@@ -203,5 +291,51 @@ INSERT INTO prompt_snippets (name, text, suggested_permission_mode) VALUES
    'Once you have a plan, if it involves a non-trivial decision per the doubt-driven-development skill''s own "When to Use" checklist, type "/doubt-driven-development" as your next message to run it. Otherwise say why it''s skipped and move on. Its cross-model escalation step is non-interactive in this environment — skip it and announce the skip.',
    NULL),
   ('Open a PR when done',
-   'Write the code following your plan, and add or update tests — run the repo''s test suite and make it pass; if there is no test suite, add one first. Update docs if relevant. Then commit your changes with git yourself via Bash, push, and open the PR yourself: push your branch (git push -u origin <your branch>), then gh pr create --title "..." --body "..." against this task''s base branch. Your git identity is already configured — just run the commands. Confirm the PR actually exists afterward (e.g. gh pr view) before telling Mohammad it''s ready.',
+   'Write the code following your plan, and add or update tests — run the repo''s test suite and make it pass; if there is no test suite, add one first. Update docs if relevant. Then commit your changes with git yourself via Bash, push, and open the PR yourself: create your branch (git checkout -b <name>), push it (git push -u origin <name>), then gh pr create --title "..." --body "..." against this session''s base branch. Your git identity is already configured — just run the commands. Confirm the PR actually exists afterward (e.g. gh pr view) before telling Mohammad it''s ready.',
    NULL);
+
+-- ---------------------------------------------------------------------------
+-- scheduled_audits
+-- ---------------------------------------------------------------------------
+-- Dashboard-editable periodic audits thot runs against the cluster. These
+-- now file proposals rather than creating tasks directly, so the human gate
+-- is the table they land in.
+CREATE TABLE scheduled_audits (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name             TEXT NOT NULL UNIQUE,
+  prompt           TEXT NOT NULL,
+  -- Interval seconds rather than a cron expression: no cron parser exists
+  -- anywhere in this codebase, and every audit anyone has actually asked
+  -- for is "every N hours".
+  interval_seconds INT NOT NULL CHECK (interval_seconds >= 60),
+  enabled          BOOLEAN NOT NULL DEFAULT true,
+  -- The scheduler's cursor. next_run_at is what the loop queries on;
+  -- last_run_at is for the UI.
+  next_run_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_run_at      TIMESTAMPTZ,
+  last_status      TEXT,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_scheduled_audits_due ON scheduled_audits (next_run_at) WHERE enabled;
+
+-- ---------------------------------------------------------------------------
+-- knowledge_journal
+-- ---------------------------------------------------------------------------
+-- Append-only fleet memory. Deliberately not FK'd to sessions: it outlives
+-- them, and a deleted session should not erase what was learned.
+CREATE TABLE knowledge_journal (
+  id         BIGSERIAL PRIMARY KEY,
+  repo       TEXT,
+  actor      TEXT NOT NULL,
+  event_type TEXT NOT NULL,
+  payload    JSONB NOT NULL DEFAULT '{}',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Full-text search backing the journal_search MCP tool. Postgres
+-- to_tsvector/ts_rank — no new dependency, no embedding model, no vector
+-- store.
+CREATE INDEX knowledge_journal_fts_idx ON knowledge_journal
+  USING GIN (to_tsvector('english', event_type || ' ' || payload::text));
