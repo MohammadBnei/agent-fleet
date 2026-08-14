@@ -10,6 +10,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"google.golang.org/grpc"
 
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
@@ -33,6 +34,8 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/tasks"
 	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
 	"github.com/MohammadBnei/agent-fleet/core/internal/webui"
+
+	_ "github.com/MohammadBnei/agent-fleet/core/internal/metrics"
 )
 
 // noopNotifier is the relay's target when no Discord bot token is
@@ -153,6 +156,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool) error {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
+	mux.Handle("/metrics", promhttp.Handler())
 	dashboardSvc := dashboard.NewServer(taskStore, activityStore, journalStore, repoStore, profileStore, snippetStore, provisioner, files, hub, cfg.MaxInFlight, loki, auditStore)
 	// PromptSession warms an idle target through the dashboard server's own
 	// warmIfIdle rather than a second copy of it (docs/adr/0041) — that
