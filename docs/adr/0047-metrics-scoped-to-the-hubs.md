@@ -172,6 +172,23 @@ running, so a misbehaving pod is one click from its transcript.
   be matched against a rendered Service, not read; and the Observability
   page must be loaded in a real browser showing real cells, not asserted to
   have built. All three were done before merge.
+- **Confirmed against the live cluster** in a throwaway namespace
+  (`agent-fleet-obstest`, since deleted), which is the only way the
+  remaining claims could be made:
+  `serviceMonitorSelector`/`serviceMonitorNamespaceSelector` are both `{}`
+  on the live Prometheus CR (all ServiceMonitors, all namespaces, no
+  `release:` label) while `podMonitorSelector` **does** require
+  `release: platform-prometheus` — so a PodMonitor would have been the wrong
+  choice; the target reached `health: up` with `lastError: ""`;
+  `agentfleet_tasks_current{repo,status}` reached Prometheus ~20s after a
+  task was created; all four Grafana panel expressions returned series; and
+  `QueryMetrics`/`GetFleetTopology` answered from the real Prometheus,
+  confirming the `PROMETHEUS_URL` default resolves. Note the reload lag: the
+  Operator writes the scrape job into its generated config immediately, but
+  the running Prometheus is one config behind until the Secret mount
+  propagates — roughly 20s here. An empty `up` right after applying a
+  ServiceMonitor means "not reloaded yet", not "not matched"; check the
+  generated config secret before concluding the selector is wrong.
 
 ## Alternatives rejected
 
