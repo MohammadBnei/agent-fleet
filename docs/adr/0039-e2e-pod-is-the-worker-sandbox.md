@@ -1,6 +1,6 @@
 # ADR-0039: The e2e pod is the worker's execution sandbox
 
-**Status:** Accepted
+**Status:** Superseded by [0048](0048-one-session-one-pod-one-shared-home.md) — the sandbox merges into the worker pod. The un-gated `run_command` it existed to justify becomes native `Bash` under allow-rules, and the isolation it bought was one approved command deep
 **Date:** 2026-08-12
 **Builds on:** [ADR-0012](0012-e2e-provisioner-standalone-app.md) (the RBAC
 boundary and the code-server denial), [ADR-0034](0034-environment-recipe-system.md)

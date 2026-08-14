@@ -1,6 +1,6 @@
 # ADR-0016: Task crash recovery, heartbeat reclaim, and transient-error retry
 
-**Status:** Accepted
+**Status:** Superseded by [0048](0048-one-session-one-pod-one-shared-home.md) — the lease/heartbeat/retry machine is replaced by reconciling `pod_phase` against Kubernetes every 60s
 **Date:** 2026-08-04
 
 ## Context

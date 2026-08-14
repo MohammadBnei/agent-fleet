@@ -65,52 +65,54 @@ Any doc, code, comment, or memory that contradicts this file or an
   credentials**, restoring `adr/0012`'s rule that the component holding
   write-in-git trust never also holds infra-mutation trust. There is **no
   hub-and-spoke exception**: `adr/0020` point 5 holds unqualified again.
-  (As of [`adr/0045`](adr/0045-service-endpoint-roster-direct-dial.md)
-  direct dial is no longer an *exception* at all — it is the general rule,
-  which is what makes `thot-executor`'s direct path ordinary rather than
-  special. Point 5's "one upstream channel" now means one outbound *gRPC*
-  connection; the sidecar also speaks MCP to its own task's sandbox.)
-- **A service that needs no `core` state is dialed directly, from a
-  `ServiceEndpoint` roster** — not proxied through `core`
-  ([`adr/0045`](adr/0045-service-endpoint-roster-direct-dial.md)). The
-  roster rides responses `core` already sends (`RequestE2eEnv`,
-  `CreateE2eSession`) or arrives as `FLEET_ENDPOINTS` at pod spawn; there is
-  no lookup RPC and no `services` table, because Kubernetes is ground truth
-  for whether a pod exists. Reachability is fenced by a per-task
-  NetworkPolicy, never by a token the callee would have to hold — that would
-  put a credential in the sandbox `adr/0039` depends on being empty.
-  Measured before deciding: the deleted hop cost **0–1 ms** of a 751 ms p50
-  tool call, so this is a coupling fix, **not** a performance one.
-- **A repo's e2e recipe lives in `repo_profiles` and is a human's to
-  change.** The agent reads the resolved recipe back from
-  `request_e2e_env`; a `start_cmd` override needs an explicit human yes,
-  applies to that one task, and is never written back to the profile. Which
-  profile is used is the same kind of setting: it comes from the repo's own
-  `e2e_profile` column (dashboard-editable), and the agent's `profile`
-  override goes through the same approval gate. See
-  [`adr/0036`](adr/0036-e2e-recipe-visible-and-override-approved.md) and
-  [`adr/0044`](adr/0044-e2e-pod-outlives-the-app.md).
-- **The e2e pod is the worker's build/test sandbox, and it has no git.**
-  `run_command` is registered statically on the sidecar (present from the
-  session's first turn, resumed sessions included) and provisions a pod on
-  first use. Builds, tests, linters and dependency installs run there;
-  `git`/`gh`/PR work stays on the worker pod's own `Bash`. Keeping git out
-  is what lets `run_command` stay un-prompted while `Bash` is
-  `canUseTool`-gated — the sandbox holds no fleet credentials and only this
-  task's worktree, so it is strictly less privileged. Adding credentials or
-  widening its mount invalidates that and reopens the decision. See
-  [`adr/0039`](adr/0039-e2e-pod-is-the-worker-sandbox.md).
-- **The e2e pod is a sandbox that may also run an app — never the other way
-  round.** PID 1 outlives every child: the three servers are supervised, the
-  app runs **once** (logged to `/tmp/e2e-app.log` and stdout, never
-  restarted), and nothing inside the container decides to end the pod. An app
-  is optional — an empty `start_cmd` is a working sandbox, not a failed pod.
-  A `Failed`/`Succeeded` pod is not an existing session; it is replaced. The
-  readiness probe stays **unconditional** on the app port, because
-  `app_ready: false` is the honest answer for a sandbox with no app and
-  removing the probe would make it claim `true`. Sandboxes are GC'd on
-  terminal phase and age. See
-  [`adr/0044`](adr/0044-e2e-pod-outlives-the-app.md).
+  (`adr/0045` briefly made direct dial the general rule so the sidecar could
+  reach its own sandbox; with the sandbox merged into the worker pod by
+  [`adr/0048`](adr/0048-one-session-one-pod-one-shared-home.md) there is no
+  cross-pod dial left, and point 5's "one upstream channel" is once again
+  literal — one outbound gRPC connection, MCP entirely on `localhost`.
+  `thot-executor` remains the one direct path, and it is ordinary because it
+  needs no `core` state.)
+- **A session is the unit, and the first message boots the pod.**
+  `CreateSession` makes a row and nothing else; `SendMessage` provisions on
+  demand and *then* appends. There is no queue, no lease claim, no retry
+  counter and no `status` enum — liveness is `pod_phase`, reconciled against
+  Kubernetes every 60s. Ordering is **warm-then-append, never the reverse**:
+  `resumeFromSeq` is computed at dispatch, so a message appended before the
+  pod exists lands below its cursor and is never delivered. A session with no
+  message has no pod, which is what makes "a machine may propose, never open"
+  structural rather than conventional. See
+  [`adr/0048`](adr/0048-one-session-one-pod-one-shared-home.md).
+- **One pod per session, holding the agent and its app.** Builds, tests and
+  installs are native `Bash`; the un-prompted set lives in allow-rules in
+  `fleet-shared/settings.json`, the same file a CLI user edits, rather than
+  being a property of which pod a command lands in. The agent starts and stops
+  its own server and calls `expose(port)` to get an HTTPS URL — so the fleet
+  no longer stores how to build or run anything. `request_service(kind)` stays
+  fleet-side because it needs cluster RBAC and the agent has none. See
+  [`adr/0048`](adr/0048-one-session-one-pod-one-shared-home.md).
+- **`allowedTools` is load-bearing and stays.** The SDK's MCP tools return
+  `behavior: "passthrough"` and its evaluator converts passthrough to `ask`,
+  so an absent allowlist would gate `send_message` and the MCP
+  `AskUserQuestion` — the agent would need permission to ask for permission.
+  The `mcp__agent-fleet-sidecar__*` wildcard covers every present and future
+  sidecar tool; explicit per-tool entries beside it are redundant, not
+  protective.
+- **The fleet leaves the git business.** Per session the provisioner fetches
+  the shared clone cache, runs one `git clone --shared` into the session's
+  directory, and seeds its config dir. No worktree, no branch, no naming
+  convention, no sweep — the agent runs `git checkout -b` and `gh pr create`
+  itself. `gc.auto=0` on the cache clones, because a `git gc` there can prune
+  objects a live session's `alternates` still references. See
+  [`adr/0048`](adr/0048-one-session-one-pod-one-shared-home.md).
+- **One shared home: global caches, private working directory.** One PVC,
+  four subPath mounts — `repos/` read-only, `cache/` shared read-write by
+  every session, `sessions/<id>/` and `claude-home/<id>/` private to one. The
+  tool caches are **global, not per-repo**, exactly as a developer's machine
+  shares `~/.bun/install/cache` across projects. This is the first time
+  session isolation is a mount boundary rather than a directory-naming
+  convention, and it is what stops `SyncFleetShared` rewriting
+  `settings.json` and `skills/` under sessions that are mid-turn. See
+  [`adr/0048`](adr/0048-one-session-one-pod-one-shared-home.md).
 - **Prometheus metrics come from `core` and the provisioner only; worker and
   sidecar telemetry stays in Loki.** Worker pods are single-shot Jobs that
   routinely start and exit between two 30s scrapes, so a counter on them
@@ -125,23 +127,28 @@ Any doc, code, comment, or memory that contradicts this file or an
 
 ## 2. Forbidden patterns (quick check — full list + reasons in `adr/`)
 
-- **A shared writable repo PVC across tasks.** One git worktree per task,
-  always — see `adr/0003`.
+- **A session able to read or write another session's working tree.** One
+  private directory per session, enforced by the **mount**, not by naming.
+  This was violated for most of the fleet's history: the whole-PVC mount
+  existed because a linked worktree's `.git` is an absolute-path gitlink that
+  a subPath severs, so isolation was directory naming only — see `adr/0048`.
 - **Inferring a permission decision from silence, round completion, or
   free-text sentiment.** `canUseTool` prompts live and blocks for a real,
   structured `RespondToPermission` reply (or an explicit
   `SetPermissionMode` call, itself typed-confirmation gated for
   `bypassPermissions`) — never inferred from anything else. `/approve` no
   longer exists — see `adr/0005`, `adr/0027`, `adr/0029`.
-- **Deleting a worktree or branch as a side effect of a task reaching a
-  terminal status.** Only an explicit signal — the sweep's confirmed
-  `[gone]`, or an explicit dashboard delete — removes git state; a hard-won
-  lesson after uncommitted work was destroyed twice by the old design —
-  see `adr/0023`.
-- **An agent silently substituting its own e2e start command, or its own
-  e2e profile, for the repo's configured one.** Both overrides are gated on a
-  real human answer and never persist; declining, timing out, or a malformed
-  answer all fall back to the configured value — see `adr/0036`, `adr/0044`.
+- **Reclaiming a session's directory on anything but archive or the
+  retention timer.** Stop and idle-timeout tear down the pod and leave the
+  tree — that is what makes a session resumable. The underlying lesson from
+  `adr/0023` outlives the worktree machinery it was written about:
+  uncommitted work was destroyed twice by a design that tied git state to a
+  lifecycle event — see `adr/0048`.
+- **The fleet storing what the agent can read off the repo.** Start commands,
+  toolchain recipes and profile tables all encoded knowledge that lives in
+  the working tree the agent is already sitting in. `request_service` is the
+  carve-out and the test for new ones: it stays because it needs cluster RBAC
+  the agent does not have — see `adr/0048`.
 - **Anything inside the e2e container deciding to end the pod.** PID 1
   outlives every child; pod lifetime belongs to `kill_env`, core's teardowns
   and the reconcile sweep — see `adr/0044`.

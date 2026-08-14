@@ -1,6 +1,6 @@
 # ADR-0044: The e2e pod is a sandbox that may also run an app
 
-**Status:** Accepted
+**Status:** Superseded by [0048](0048-one-session-one-pod-one-shared-home.md) — with one pod there is no separate lifetime to outlive. Its `wait -n`/PID-1 lesson survives as the agent's responsibility, documented in `fleet-shared/CLAUDE.md`
 **Date:** 2026-08-13
 **Builds on:** [ADR-0034](0034-environment-recipe-system.md) (profiles are the
 source of truth), [ADR-0036](0036-e2e-recipe-visible-and-override-approved.md)
