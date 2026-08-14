@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.2](https://github.com/MohammadBnei/agent-fleet/compare/2.0.1...2.0.2) (2026-08-14)
+
+
+### Bug Fixes
+
+* **core:** omit empty error field from access logs ([#156](https://github.com/MohammadBnei/agent-fleet/issues/156)) ([c941339](https://github.com/MohammadBnei/agent-fleet/commit/c941339d590c7f9ea4a5b77e43b7235ed2748451)), closes [#155](https://github.com/MohammadBnei/agent-fleet/issues/155)
+
 ## [2.0.1](https://github.com/MohammadBnei/agent-fleet/compare/2.0.0...2.0.1) (2026-08-14)
 
 
