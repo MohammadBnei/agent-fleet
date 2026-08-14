@@ -37,7 +37,7 @@ enum PodPhase {
 }
 
 message PodEvent {
-  string task_id = 1;
+  string session_id = 1;
   SessionKind kind = 2;
   PodPhase phase = 3;
   string pod_name = 4;
@@ -53,7 +53,7 @@ message ReportPodEventsResponse {}
 // types rather than redefining them (same precedent dashboard.proto already
 // set for GetTranscript/StreamTranscript).
 message SendMessageRequest {
-  string task_id = 1;
+  string session_id = 1;
   string from = 2;
   string text = 3;
   TranscriptEntryType type = 4;
@@ -76,7 +76,7 @@ message SendMessageResponse {
 // returns it verbatim if found or {status:"pending"} if not — the caller
 // re-invokes with the same questions to keep waiting, same as today.
 message AskUserQuestionRequest {
-  string task_id = 1;
+  string session_id = 1;
   string questions_json = 2;
   int32 timeout_ms = 3; // default 60000, matching today's handler
 }
@@ -88,7 +88,7 @@ message AskUserQuestionResponse {
 }
 
 message RequestE2eEnvRequest {
-  string task_id = 1;
+  string session_id = 1;
   // Shell command that installs deps and starts the app, run via
   // `bash -lc` from the worktree root (e.g. "cd front && bun install &&
   // bun run dev"). Optional — falls back to the resolved profile's own
@@ -122,7 +122,7 @@ message RequestE2eEnvResponse {
 }
 
 message KillE2eEnvRequest {
-  string task_id = 1;
+  string session_id = 1;
 }
 
 message KillE2eEnvResponse {
@@ -136,95 +136,107 @@ message KillE2eEnvResponse {
 // --- sidecar -> core: wrapper-facing (never agent-initiated, docs/adr/0020
 // point 5's third responsibility) ---
 
-// Task, GetTaskRequest/Response, and SetPermissionModeRequest/Response live
-// here (not dashboard.proto, which imports this file) so CoreService's
-// GetTask/SetPermissionMode below and DashboardService's same-named RPCs
-// (dashboard.proto) can share one definition — both just return/mutate the
-// task row, no dashboard-specific shape needed.
-message Task {
+// Session, GetSessionRequest/Response, and SetPermissionModeRequest/Response
+// live here (not dashboard.proto, which imports this file) so CoreService's
+// GetSession/SetPermissionMode below and DashboardService's same-named RPCs
+// can share one definition — both just return/mutate the session row, no
+// dashboard-specific shape needed.
+//
+// Field numbers 4, 6, 9, 10, 15 and 16 are reserved, not reused: status,
+// pr_url, heartbeat_at, retry_count, awaiting_human and kind are all gone in
+// docs/adr/0048, and reusing their numbers would let an old client silently
+// misread a new field as the one it remembers.
+message Session {
+  reserved 4, 6, 9, 10, 15, 16;
+  reserved "status", "pr_url", "heartbeat_at", "retry_count", "awaiting_human", "kind";
+
   string id = 1;
   string repo = 2;
+  // Human-facing labels only, never part of the prompt. A session's actual
+  // instruction is its first transcript entry.
   string description = 3;
-  string status = 4;
+  optional string title = 18;
+
   optional string thread_id = 5;
-  optional string pr_url = 6;
-  // Worker-pod lifecycle state (PodPhase, set via ReportPodEvents) — distinct
-  // from `status` (business state). Unset until the provisioner reports the
-  // pod's first event.
+
+  // Pod lifecycle (PodPhase, from ReportPodEvents and core's reconcile
+  // loop). With `status` gone this is the fleet's only liveness signal, and
+  // the concurrency cap counts exactly these phases.
   optional string pod_phase = 7;
   optional string pod_message = 8;
-  // Reclaim-eligibility signal (ClaimNextTask reclaims a claimed/running
-  // task once this is >10min stale — the exact staleness
-  // threshold the dashboard's own "stuck" badge should match). Set once at
-  // claim time, refreshed by the worker pod's own heartbeat loop; unset for
-  // a still-pending task. RFC3339, matching JournalEntry.created_at.
-  optional string heartbeat_at = 9;
-  // How many times ClaimNextTask has reclaimed this task after a stale
-  // heartbeat (capped at MAX_TASK_RETRIES before the task goes
-  // failed_permanently instead of being reclaimed again).
-  int32 retry_count = 10;
   optional string last_error = 11;
-  // The Claude SDK's own session id (SaveSessionId) — resumable in a fresh
-  // pod via `resume:` (sessions redesign, supersedes docs/adr/0021/0025's
-  // phase-boundary framing). Unset until the worker's first streamed
+
+  // The Claude SDK's own session id (SaveAgentSessionId) — resumable in a
+  // fresh pod via `resume:`. Named agent_session_id, not session_id, now
+  // that the row itself is a session. Unset until the SDK's first streamed
   // message reports it.
-  optional string session_id = 12;
-  // Last time a transcript entry was appended for this task — substrate
-  // for the idle-timeout backstop that tears down an unattended pod.
-  // RFC3339, matching heartbeat_at. Unset for a task with no activity yet.
+  optional string agent_session_id = 12;
+
+  // Last time a transcript entry was appended — the clock the idle sweep and
+  // the retention GC both read. RFC3339. Unset for a session with no
+  // activity yet.
   optional string last_active_at = 13;
+
   // The session's current SDK permission mode ("default"|"plan"|
   // "acceptEdits"|"bypassPermissions"|...), so the dashboard's mode picker
-  // can highlight the real active mode instead of guessing. Unset for an
-  // idle/never-warmed session.
+  // shows the real active mode instead of guessing. Restored on every warm.
   optional string permission_mode = 14;
-  // True while an unresolved PERMISSION_REQUEST or QUESTION entry is
-  // outstanding — set/cleared by core's activityTrackingStore decorator on
-  // every transcript Append/AppendReply, the same choke point that already
-  // maintains last_active_at. Lets the dashboard's task list show which
-  // tasks need a human decision without an N+1 per-task transcript fetch.
-  bool awaiting_human = 15;
-  // "worker" | "thot" (docs/adr/0037). A UI label and gate only — the
-  // dispatch path never branches on it.
-  string kind = 16;
+
   // Session liveness (docs/adr/0040): "" (no live pod) | "working" |
-  // "blocked" | "idle" | "done" | "stalled" | "unknown". Orthogonal to
-  // `status`, which is a workflow status — a session can be `running` and
-  // blocked, or `running` and stalled, and those are different questions.
+  // "blocked" | "idle" | "done" | "stalled" | "unknown". Derived server-side
+  // from the row on every read rather than stored, so it cannot drift; core
+  // owns the thresholds, so every client agrees on what "stalled" means
+  // instead of each re-implementing the heuristic.
   //
-  // Derived server-side from the task row on every read rather than stored,
-  // so it cannot drift from the transcript; core owns the thresholds, so
-  // every client agrees on what "stalled" means instead of each
-  // re-implementing the heuristic.
+  // This is now the ONLY status. It replaces the 8-value enum whose 'done'
+  // value never acquired a writer, because a polymorphic session's
+  // completion is not something a machine can compute.
   string live_state = 17;
+
+  // How many decisions are waiting on a human right now: unanswered
+  // questions plus pending permission requests.
+  //
+  // A count, not the old awaiting_human boolean, and that is a bug fix.
+  // Permissions are a LIST — parallel tool calls each get their own seq —
+  // but the boolean was set and cleared by any single permission_response,
+  // so answering one decision marked the session unblocked while others were
+  // still waiting, and it would sit stalled with nobody notified.
+  int32 pending_decisions = 19;
+
+  // Disk reclaimed by the retention GC: readable, but no longer resumable.
+  // The dashboard must not offer Warm when this is set.
+  optional string swept_at = 20;
+  // The human is finished with this session — the only terminal state,
+  // because it is the only one a machine cannot compute.
+  optional string archived_at = 21;
 }
 
 // What one agent can see of another session. Deliberately not the full
-// Task: an agent needs enough to pick a target and know whether it can be
+// Session: an agent needs enough to pick a target and know whether it can be
 // talked to, not another session's internals.
 message SessionSummary {
-  string task_id = 1;
+  string session_id = 1;
   string repo = 2;
   string description = 3;
   string status = 4;
-  // See Task.live_state (docs/adr/0040). This is what makes "wait until
+  // See Session.live_state (docs/adr/0040). This is what makes "wait until
   // the other agent is genuinely blocked" expressible at all.
   string live_state = 5;
 }
 
-message ListSessionsRequest {
+message ListPeerSessionsRequest {
   // The caller's own task, excluded from the results — an agent has no use
   // for a summary of itself and cannot prompt itself anyway.
-  string caller_task_id = 1;
+  string caller_session_id = 1;
 }
 
-message ListSessionsResponse {
+message ListPeerSessionsResponse {
   repeated SessionSummary sessions = 1;
 }
 
 message PromptSessionRequest {
-  string caller_task_id = 1;
-  string target_task_id = 2;
+  string caller_session_id = 1;
+  string target_session_id = 2;
   string text = 3;
   // Hop count, incremented per relay. Bounded so A->B->A cannot loop
   // forever; an agent never sets this itself, the sidecar does.
@@ -241,7 +253,7 @@ message PromptSessionResponse {
 }
 
 message WaitForSessionStateRequest {
-  string target_task_id = 1;
+  string target_session_id = 1;
   // Only count a settled state once the target has produced activity newer
   // than this transcript seq. Without it, waiting right after prompting an
   // already-idle target returns instantly with the state it was in BEFORE
@@ -261,12 +273,12 @@ message WaitForSessionStateResponse {
   bool timed_out = 2;
 }
 
-message GetTaskRequest {
+message GetSessionRequest {
   string id = 1;
 }
 
-message GetTaskResponse {
-  Task task = 1;
+message GetSessionResponse {
+  Session session = 1;
 }
 
 // Sets an arbitrary SDK permission mode on a task. Reused by two very
@@ -277,7 +289,7 @@ message GetTaskResponse {
 // startup, no transcript append — CoreService's handler is a plain column
 // write, see coreserver's implementation).
 message SetPermissionModeRequest {
-  string task_id = 1;
+  string session_id = 1;
   string mode = 2;
 }
 
@@ -285,22 +297,18 @@ message SetPermissionModeResponse {
   string status = 1;
 }
 
-message HeartbeatRequest {
-  string task_id = 1;
-  string lease_id = 2;
-}
-
-message HeartbeatResponse {}
-
-message SetTaskStatusRequest {
-  string task_id = 1;
-  string status = 2;
-  optional string pr_url = 3;
-  optional string notes = 4;
-  optional string last_error = 5;
-}
-
-message SetTaskStatusResponse {}
+// HeartbeatRequest/Response and SetTaskStatusRequest/Response used to live
+// here. Both are deleted in docs/adr/0048.
+//
+// The heartbeat only ever proved a 30s timer was still firing inside the
+// worker — it could not distinguish a healthy session from a wedged one, and
+// it was refreshed by the pod being asked to report on itself. Liveness now
+// reconciles pod_phase against Kubernetes, which is the actual source of
+// truth for whether a pod exists.
+//
+// SetTaskStatus went with the `status` column. A polymorphic session has no
+// computable completion, so the worker was never in a position to report one
+// — which is why the old enum's 'done' value never acquired a writer.
 
 message AppendJournalRequest {
   string repo = 1;
@@ -312,7 +320,7 @@ message AppendJournalRequest {
 message AppendJournalResponse {}
 
 // JournalEntry also backs dashboard.proto's GetJournal (imported from
-// here, same reuse pattern as Task/GetTaskRequest/GetTaskResponse below).
+// here, same reuse pattern as Session/GetSessionRequest/GetSessionResponse below).
 message JournalEntry {
   int64 id = 1;
   string repo = 2;
@@ -335,39 +343,36 @@ message SearchJournalResponse {
   repeated JournalEntry entries = 1;
 }
 
-message SaveSessionIdRequest {
-  string task_id = 1;
-  string session_id = 2;
+message SaveAgentSessionIdRequest {
+  string session_id = 1;
+  string agent_session_id = 2;
   string model = 3;
   // The caller pod's lease (docs/adr/0041). Without it this write is keyed
   // by task alone, so a pod that was torn down but is still shutting down
   // can overwrite the identity of the pod that replaced it — and
-  // tasks.session_id is precisely what the next resume reads. Empty is
+  // sessions.agent_session_id is precisely what the next resume reads. Empty is
   // accepted for compatibility with a worker image older than this field.
   string lease_id = 4;
 }
 
-message SaveSessionIdResponse {}
+message SaveAgentSessionIdResponse {}
 
-// Checked immediately before the irreversible push/PR step (mirrors
-// worker/src/db.ts's stillHoldsLease today) — guards against a stale/
-// reclaimed pod completing work after the provisioner has already
-// respawned a fresh one for the same task.
-message StillHoldsLeaseRequest {
-  string task_id = 1;
-  string lease_id = 2;
-}
-
-message StillHoldsLeaseResponse {
-  bool holds = 1;
-}
+// StillHoldsLeaseRequest/Response used to live here — a pre-push check
+// against a stale pod finishing work after a reclaim respawned a fresh one.
+// Deleted in docs/adr/0048 along with the reclaim that created that race:
+// nothing reclaims a session any more, so no second pod is ever spawned for
+// one while the first is alive. It had no production caller either way — only
+// worker test fakes referenced it.
+//
+// lease_id itself survives on the session row, guarding SaveAgentSessionId
+// below. That guard is still needed because teardown is not synchronous.
 
 // Git diff/branch/elapsed-time/tool-call-summary telemetry, pushed by the
 // sidecar on its own schedule — entirely decoupled from agent tool calls
 // (docs/adr/0020 point 5's second bullet). Persisted as a
 // TRANSCRIPT_ENTRY_TYPE_TOOL_CALL entry, never relayed to Discord.
 message PushToolTelemetryRequest {
-  string task_id = 1;
+  string session_id = 1;
   string summary_json = 2;
 }
 
@@ -377,7 +382,7 @@ message PushToolTelemetryResponse {}
 // wrapper live, for streamInput() (docs/adr/0021 point 2) — a genuine
 // live feed, not a poll the wrapper initiates on its own schedule.
 message StreamHumanMessagesRequest {
-  string task_id = 1;
+  string session_id = 1;
   int64 since_seq = 2;
 }
 
@@ -388,7 +393,7 @@ message StreamHumanMessagesRequest {
 // --- Log querying (Loki queries, docs/adr/0013) ---
 
 message QueryLogsRequest {
-  string task_id = 1;        // Optional - for fleet components
+  string session_id = 1;        // Optional - for fleet components
   string namespace = 2;       // Default "agent-fleet"
   string component = 3;       // worker|sidecar|core|provisioner|e2e|app
   string app_name = 4;        // Optional - for component="app"
@@ -450,23 +455,23 @@ service CoreService {
   // those are real work only core can do (profile resolution from Postgres,
   // commanding the provisioner) rather than a passthrough.
 
-  // Lets a worker pod fetch its own fresh task row on startup instead of
+  // Lets a worker pod fetch its own fresh session row on startup instead of
   // relying on stale environment variables — same message shapes
   // DashboardService.GetTask uses, different caller (docs/adr/0029).
   // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
-  rpc GetTask(GetTaskRequest) returns (GetTaskResponse);
+  rpc GetSession(GetSessionRequest) returns (GetSessionResponse);
   // A worker pod persisting its own permission mode (initial "default" or a
   // change it made itself) — a plain column write, unlike
   // DashboardService.SetPermissionMode which also notifies a *different*,
   // already-running worker via the transcript.
   // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
   rpc SetPermissionMode(SetPermissionModeRequest) returns (SetPermissionModeResponse);
-  rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
-  rpc SetTaskStatus(SetTaskStatusRequest) returns (SetTaskStatusResponse);
+  // Heartbeat, SetTaskStatus and StillHoldsLease used to be here. All three
+  // are deleted in docs/adr/0048 — see their message definitions above for
+  // why each stopped being a question worth asking.
   rpc AppendJournal(AppendJournalRequest) returns (AppendJournalResponse);
   rpc SearchJournal(SearchJournalRequest) returns (SearchJournalResponse);
-  rpc SaveSessionId(SaveSessionIdRequest) returns (SaveSessionIdResponse);
-  rpc StillHoldsLease(StillHoldsLeaseRequest) returns (StillHoldsLeaseResponse);
+  rpc SaveAgentSessionId(SaveAgentSessionIdRequest) returns (SaveAgentSessionIdResponse);
   rpc PushToolTelemetry(PushToolTelemetryRequest) returns (PushToolTelemetryResponse);
   // Streams transcript.proto's TranscriptEntry directly, same precedent
   // dashboard.proto's StreamTranscript already set.
@@ -488,7 +493,7 @@ service CoreService {
   // docs/adr/0020 point 4: the path is agent -> its own sidecar (MCP) ->
   // core (here) -> the target session. There is no worker-to-worker link
   // and no worker-to-provisioner link.
-  rpc ListSessions(ListSessionsRequest) returns (ListSessionsResponse);
+  rpc ListPeerSessions(ListPeerSessionsRequest) returns (ListPeerSessionsResponse);
   rpc PromptSession(PromptSessionRequest) returns (PromptSessionResponse);
   rpc WaitForSessionState(WaitForSessionStateRequest) returns (WaitForSessionStateResponse);
 

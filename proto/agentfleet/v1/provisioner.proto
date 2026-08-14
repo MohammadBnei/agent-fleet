@@ -31,7 +31,7 @@ message ServiceIngredient {
 }
 
 message KillE2eSessionRequest {
-  string task_id = 1;
+  string session_id = 1;
   string idempotency_key = 2;
   // repo/also_teardown_services (docs/adr/0034 follow-up) — the shared
   // postgres/redis instance backing this task's services is keyed by repo,
@@ -51,7 +51,7 @@ message KillE2eSessionResponse {
 }
 
 message GetE2eSessionStatusRequest {
-  string task_id = 1;
+  string session_id = 1;
 }
 
 message GetE2eSessionStatusResponse {
@@ -119,7 +119,7 @@ message ServiceEndpoint {
 // sidecar -> core (CoreService.RequestE2eEnv) -> provisioner (this RPC) —
 // core is the only caller.
 message CreateE2eSessionRequest {
-  string task_id = 1;
+  string session_id = 1;
   string repo = 2;
   // See RequestE2eEnvRequest.start_cmd in core.proto — passed through
   // core unchanged.
@@ -159,18 +159,18 @@ enum SessionKind {
 // claiming a task — the provisioner never claims tasks itself
 // (docs/adr/0020 point 2, correcting docs/adr/0019 points 4-5).
 message CreateWorkerPodRequest {
-  string task_id = 1;
+  string session_id = 1;
   string repo = 2;
   string repo_url = 3;
   string base_branch = 4;
   // description and lease_id are handed straight through to the worker
-  // pod's env — the worker no longer fetches its own task row at all
+  // pod's env — the worker no longer fetches its own session row at all
   // (docs/adr/0020 point 1: it holds no DB credentials, direct or
   // otherwise), so whatever it needs has to arrive at pod creation time.
   string description = 5;
   string lease_id = 6;
   // Non-empty when this task already has a saved Claude SDK session
-  // (tasks.session_id) — threaded straight to the worker pod's
+  // (sessions.agent_session_id) — threaded straight to the worker pod's
   // RESUME_SESSION_ID env, which worker/src/session.ts passes as `resume:`
   // to query() so the new pod continues the prior conversation instead of
   // starting fresh (sessions redesign, supersedes docs/adr/0021/0025's
@@ -200,14 +200,14 @@ message CreateWorkerPodResponse {
   string pod_name = 1;
 }
 
-// core owns `tasks` and therefore decides when a session should tear
+// core owns `sessions` and therefore decides when a session should tear
 // down (task reached done/failed/cancelled, or an explicit kill) —
-// the provisioner no longer polls/joins against `tasks.status` itself
+// the provisioner no longer polls/joins against `the deleted status column` itself
 // (docs/adr/0020 point 1: it holds no DB credentials at all). The
 // provisioner's own reconcile loop keeps doing pure-k8s orphan detection
 // independently of this RPC.
 message TearDownSessionRequest {
-  string task_id = 1;
+  string session_id = 1;
   SessionKind kind = 2;
 }
 
@@ -226,7 +226,7 @@ message TearDownSessionResponse {
 message ListWorktreesRequest {}
 
 message WorktreeInfo {
-  string task_id = 1;
+  string session_id = 1;
   string repo = 2;
   string branch = 3;
   string upstream_track = 4; // e.g. "[gone]", "[ahead 2]", ""
@@ -250,7 +250,7 @@ message ListWorktreesResponse {
 }
 
 message DeleteWorktreeRequest {
-  string task_id = 1;
+  string session_id = 1;
   string repo = 2;
   bool also_delete_branch = 3;
 }

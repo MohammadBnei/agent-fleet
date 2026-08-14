@@ -58,7 +58,7 @@ enum TranscriptEntryType {
 }
 
 message TranscriptEntry {
-  string task_id = 1;
+  string session_id = 1;
   int64 seq = 2;
   string from = 3; // "agent" | "human"
   string text = 4;
@@ -70,7 +70,7 @@ message TranscriptEntry {
   // in-process poll loop ever saw it.
   optional int64 reply_to = 6;
   // When the entry was appended (RFC3339, matching JournalEntry.created_at
-  // and Task.heartbeat_at). Stored in Postgres since the first migration
+  // and Session.heartbeat_at). Stored in Postgres since the first migration
   // but never sent until now, which left every client unable to say when
   // anything happened or how long a turn took — `seq` orders a feed, it
   // does not time one.
@@ -78,7 +78,7 @@ message TranscriptEntry {
 }
 
 message AppendTranscriptEntryRequest {
-  string task_id = 1;
+  string session_id = 1;
   string from = 2;
   string text = 3;
   TranscriptEntryType type = 4;
@@ -86,7 +86,7 @@ message AppendTranscriptEntryRequest {
 }
 
 message ReadTranscriptSinceRequest {
-  string task_id = 1;
+  string session_id = 1;
   int64 since_seq = 2;
   int32 timeout_ms = 3;
 }
