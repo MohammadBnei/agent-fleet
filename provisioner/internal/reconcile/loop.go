@@ -89,21 +89,35 @@ func (l *Loop) gcTerminalWorkerJobs(ctx context.Context) {
 		if job.Phase != "Succeeded" && job.Phase != "Failed" {
 			continue
 		}
-		// Fast-path crash report (reliability-findings.md #1) — reported
-		// before GC-ing the Job, on top of the heartbeat-reclaim fallback
-		// core's own ClaimNextTask already has. core's own
-		// coreserver.ReportPodEvents scopes MarkCrashed to a non-terminal
-		// task, so this is a safe no-op if the task already reached a
-		// terminal status through its own SetTaskStatus call first.
+		// Terminal-phase report (reliability-findings.md #1) — reported
+		// before GC-ing the Job. core's own coreserver.ReportPodEvents
+		// scopes MarkCrashed to a non-terminal task, so this is a safe
+		// no-op if the task already reported the same phase itself.
+		//
+		// BOTH terminal phases report, not just Failed. A Succeeded Job used
+		// to be deleted silently, on the reasoning that a worker that exits
+		// cleanly writes its own terminal status first — which made this
+		// pass a fallback for crashes only. That reasoning depended on
+		// tasks.status existing: terminal status was the sole trigger for
+		// TearDownSession, and the sole thing that stopped a finished
+		// session counting against the concurrency cap. With status gone
+		// (docs/adr/0048) this loop IS the notification, and a Succeeded
+		// Job that reports nothing leaves pod_phase at RUNNING forever —
+		// which CountLivePods counts, wedging the fleet after five
+		// successful sessions and staying invisible until the sixth.
+		phase := agentfleetv1.PodPhase_POD_PHASE_TERMINATED
+		message := "worker job reached a terminal Succeeded phase"
 		if job.Phase == "Failed" {
-			l.core.ReportEvent(ctx, &agentfleetv1.PodEvent{
-				TaskId:  job.TaskID,
-				Kind:    agentfleetv1.SessionKind_SESSION_KIND_WORKER,
-				Phase:   agentfleetv1.PodPhase_POD_PHASE_CRASHED,
-				PodName: job.JobName,
-				Message: "worker job reached a terminal Failed phase",
-			})
+			phase = agentfleetv1.PodPhase_POD_PHASE_CRASHED
+			message = "worker job reached a terminal Failed phase"
 		}
+		l.core.ReportEvent(ctx, &agentfleetv1.PodEvent{
+			TaskId:  job.TaskID,
+			Kind:    agentfleetv1.SessionKind_SESSION_KIND_WORKER,
+			Phase:   phase,
+			PodName: job.JobName,
+			Message: message,
+		})
 		slog.Info("reconcile: gc'ing terminal worker job", "taskId", job.TaskID, "jobName", job.JobName, "phase", job.Phase)
 		if err := l.k8sc.DeleteWorkerJob(ctx, job.TaskID); err != nil {
 			slog.Error("reconcile: delete worker job failed", "taskId", job.TaskID, "error", err)

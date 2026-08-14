@@ -70,33 +70,53 @@ func TestGcTerminalWorkerJobs_OnlyDeletesTerminalPhase(t *testing.T) {
 	}
 }
 
-// TestGcTerminalWorkerJobs_ReportsCrashOnlyForFailed covers
-// reliability-findings.md #1's fast-path accelerant: a Failed-phase Job
-// reports a CRASHED event before GC, a Succeeded one does not (it's not a
-// crash — reporting one would falsely trigger core's MarkCrashed reclaim
-// path for a task that actually finished normally).
-func TestGcTerminalWorkerJobs_ReportsCrashOnlyForFailed(t *testing.T) {
+// TestGcTerminalWorkerJobs_ReportsBothTerminalPhases: BOTH terminal phases
+// report, and they report distinct phases.
+//
+// This test previously asserted the opposite for Succeeded — that a clean
+// exit reports nothing, because reporting would falsely trigger core's
+// MarkCrashed reclaim. That reasoning was sound only while a Succeeded
+// worker wrote its own terminal tasks.status first, which was the sole
+// trigger for TearDownSession and the sole way a finished session stopped
+// counting against the concurrency cap. docs/adr/0048 deletes status, so
+// this loop is now the only notification a clean exit produces: staying
+// silent would leave pod_phase at RUNNING forever, and CountLivePods counts
+// exactly that — the fleet would wedge after five successful sessions.
+//
+// The MarkCrashed concern does not transfer, because core scopes it to
+// POD_PHASE_CRASHED specifically (coreserver.ReportPodEvents); a TERMINATED
+// event only writes pod_phase.
+func TestGcTerminalWorkerJobs_ReportsBothTerminalPhases(t *testing.T) {
 	kc := &fakeK8s{jobs: []k8s.LiveWorkerJob{
 		{TaskID: "done-1", JobName: "worker-2", Phase: "Succeeded"},
 		{TaskID: "failed-1", JobName: "worker-3", Phase: "Failed"},
+		{TaskID: "live-1", JobName: "worker-4", Phase: "Running"},
 	}}
 	reporter := &fakeEventReporter{}
 	l := New(kc, reporter, time.Hour, 24*time.Hour)
 
 	l.gcTerminalWorkerJobs(context.Background())
 
-	if len(reporter.events) != 1 {
-		t.Fatalf("expected exactly 1 reported event, got %d: %+v", len(reporter.events), reporter.events)
+	if len(reporter.events) != 2 {
+		t.Fatalf("expected exactly 2 reported events, got %d: %+v", len(reporter.events), reporter.events)
 	}
-	e := reporter.events[0]
-	if e.GetTaskId() != "failed-1" {
-		t.Errorf("expected the crash event for failed-1, got taskId=%q", e.GetTaskId())
+
+	got := map[string]agentfleetv1.PodPhase{}
+	for _, e := range reporter.events {
+		if e.GetKind() != agentfleetv1.SessionKind_SESSION_KIND_WORKER {
+			t.Errorf("%s: expected SESSION_KIND_WORKER, got %v", e.GetTaskId(), e.GetKind())
+		}
+		got[e.GetTaskId()] = e.GetPhase()
 	}
-	if e.GetKind() != agentfleetv1.SessionKind_SESSION_KIND_WORKER {
-		t.Errorf("expected SESSION_KIND_WORKER, got %v", e.GetKind())
+
+	if p := got["failed-1"]; p != agentfleetv1.PodPhase_POD_PHASE_CRASHED {
+		t.Errorf("failed-1: expected POD_PHASE_CRASHED, got %v", p)
 	}
-	if e.GetPhase() != agentfleetv1.PodPhase_POD_PHASE_CRASHED {
-		t.Errorf("expected POD_PHASE_CRASHED, got %v", e.GetPhase())
+	if p := got["done-1"]; p != agentfleetv1.PodPhase_POD_PHASE_TERMINATED {
+		t.Errorf("done-1: expected POD_PHASE_TERMINATED, got %v", p)
+	}
+	if _, reported := got["live-1"]; reported {
+		t.Error("live-1: a Running job must not be reported or GC'd")
 	}
 }
 
