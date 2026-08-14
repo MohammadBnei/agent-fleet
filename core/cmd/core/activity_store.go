@@ -4,7 +4,7 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/MohammadBnei/agent-fleet/core/internal/tasks"
+	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
 )
 
@@ -44,7 +44,7 @@ func newActivityTrackingStore(store transcript.Store, taskStore *tasks.Store) ac
 func (s activityTrackingStore) touch(taskID, from, msgType string) {
 	go func() {
 		if err := s.tasks.TouchActive(context.Background(), taskID, from, msgType); err != nil {
-			slog.Warn("activityTrackingStore: touch active failed", "taskId", taskID, "error", err)
+			slog.Warn("activityTrackingStore: touch active failed", "sessionId", taskID, "error", err)
 		}
 	}()
 }
@@ -78,7 +78,7 @@ func (s activityTrackingStore) awaitHuman(taskID, msgType string) {
 	}
 	go func() {
 		if err := s.tasks.SetAwaitingHuman(context.Background(), taskID, awaiting); err != nil {
-			slog.Warn("activityTrackingStore: set awaiting human failed", "taskId", taskID, "error", err)
+			slog.Warn("activityTrackingStore: set awaiting human failed", "sessionId", taskID, "error", err)
 		}
 	}()
 }

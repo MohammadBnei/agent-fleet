@@ -30,7 +30,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/provisionerclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/repoprofiles"
 	"github.com/MohammadBnei/agent-fleet/core/internal/repos"
-	"github.com/MohammadBnei/agent-fleet/core/internal/tasks"
+	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
 )
 
@@ -78,7 +78,7 @@ func (s *Server) SetWarmFunc(warm func(ctx context.Context, taskID string) (stri
 // SendMessage ports internal/mcpserver/server.go's sendMessageHandler
 // verbatim, just as a gRPC method instead of an MCP tool handler.
 func (s *Server) SendMessage(ctx context.Context, req *agentfleetv1.SendMessageRequest) (*agentfleetv1.SendMessageResponse, error) {
-	if req.GetTaskId() == "" || req.GetFrom() == "" || req.GetText() == "" {
+	if req.GetSessionId() == "" || req.GetFrom() == "" || req.GetText() == "" {
 		return nil, fmt.Errorf("task_id, from, and text are required")
 	}
 	// AppendReply only when the caller actually asked for correlation —
@@ -87,9 +87,9 @@ func (s *Server) SendMessage(ctx context.Context, req *agentfleetv1.SendMessageR
 	var seq int64
 	var err error
 	if req.ReplyToSeq != nil {
-		seq, err = s.transcr.AppendReply(ctx, req.GetTaskId(), req.GetFrom(), req.GetText(), protoTypeToString(req.GetType()), req.GetIdempotencyKey(), req.GetReplyToSeq())
+		seq, err = s.transcr.AppendReply(ctx, req.GetSessionId(), req.GetFrom(), req.GetText(), protoTypeToString(req.GetType()), req.GetIdempotencyKey(), req.GetReplyToSeq())
 	} else {
-		seq, err = s.transcr.Append(ctx, req.GetTaskId(), req.GetFrom(), req.GetText(), protoTypeToString(req.GetType()), req.GetIdempotencyKey())
+		seq, err = s.transcr.Append(ctx, req.GetSessionId(), req.GetFrom(), req.GetText(), protoTypeToString(req.GetType()), req.GetIdempotencyKey())
 	}
 	if err != nil {
 		return nil, fmt.Errorf("SendMessage: %w", err)
@@ -99,7 +99,7 @@ func (s *Server) SendMessage(ctx context.Context, req *agentfleetv1.SendMessageR
 
 // WaitForMessages ports waitForMessagesHandler verbatim.
 func (s *Server) WaitForMessages(ctx context.Context, req *agentfleetv1.ReadTranscriptSinceRequest) (*agentfleetv1.ReadTranscriptSinceResponse, error) {
-	taskID := req.GetTaskId()
+	taskID := req.GetSessionId()
 	if taskID == "" {
 		return nil, fmt.Errorf("task_id is required")
 	}
@@ -132,11 +132,11 @@ func (s *Server) WaitForMessages(ctx context.Context, req *agentfleetv1.ReadTran
 // askUserQuestionHandler verbatim — same long-poll-for-a-matching-answer
 // contract, same {"status":"pending"} re-invoke semantics (docs/adr/0018).
 func (s *Server) AskUserQuestion(ctx context.Context, req *agentfleetv1.AskUserQuestionRequest) (*agentfleetv1.AskUserQuestionResponse, error) {
-	if req.GetTaskId() == "" || req.GetQuestionsJson() == "" {
+	if req.GetSessionId() == "" || req.GetQuestionsJson() == "" {
 		return nil, fmt.Errorf("task_id and questions_json are required")
 	}
 
-	seq, err := s.transcr.Append(ctx, req.GetTaskId(), "agent", req.GetQuestionsJson(), "question", uuid.NewString())
+	seq, err := s.transcr.Append(ctx, req.GetSessionId(), "agent", req.GetQuestionsJson(), "question", uuid.NewString())
 	if err != nil {
 		return nil, fmt.Errorf("AskUserQuestion: %w", err)
 	}
@@ -149,7 +149,7 @@ func (s *Server) AskUserQuestion(ctx context.Context, req *agentfleetv1.AskUserQ
 	cursor := seq
 
 	for {
-		entries, nextSeq, err := s.transcr.ReadSince(ctx, req.GetTaskId(), cursor, 1000)
+		entries, nextSeq, err := s.transcr.ReadSince(ctx, req.GetSessionId(), cursor, 1000)
 		if err != nil {
 			return nil, fmt.Errorf("AskUserQuestion: %w", err)
 		}
@@ -179,12 +179,12 @@ func (s *Server) AskUserQuestion(ctx context.Context, req *agentfleetv1.AskUserQ
 // directly, even for e2e requests that used to be a direct MCP call).
 
 func (s *Server) RequestE2EEnv(ctx context.Context, req *agentfleetv1.RequestE2EEnvRequest) (*agentfleetv1.RequestE2EEnvResponse, error) {
-	t, err := s.tasks.GetTask(ctx, req.GetTaskId())
+	t, err := s.tasks.GetTask(ctx, req.GetSessionId())
 	if err != nil {
 		return nil, fmt.Errorf("RequestE2EEnv: get task: %w", err)
 	}
 	if t == nil {
-		return nil, fmt.Errorf("RequestE2EEnv: task %s not found", req.GetTaskId())
+		return nil, fmt.Errorf("RequestE2EEnv: task %s not found", req.GetSessionId())
 	}
 	// Resolution order lives in e2erecipe, shared with the dashboard's own
 	// Start button — see that package for why it isn't inlined here.
@@ -203,7 +203,7 @@ func (s *Server) RequestE2EEnv(ctx context.Context, req *agentfleetv1.RequestE2E
 		startCmd = recipe.StartCmd
 	}
 	profileName, toolKeys, serviceIngredients := recipe.ProfileName, recipe.ToolKeys, recipe.Services
-	created, err := s.provisioner.CreateE2eSession(ctx, req.GetTaskId(), t.Repo, startCmd, toolKeys, serviceIngredients)
+	created, err := s.provisioner.CreateE2eSession(ctx, req.GetSessionId(), t.Repo, startCmd, toolKeys, serviceIngredients)
 	if err != nil {
 		return nil, fmt.Errorf("RequestE2EEnv: %w", err)
 	}
@@ -229,7 +229,7 @@ func (s *Server) RequestE2EEnv(ctx context.Context, req *agentfleetv1.RequestE2E
 }
 
 func (s *Server) KillE2EEnv(ctx context.Context, req *agentfleetv1.KillE2EEnvRequest) (*agentfleetv1.KillE2EEnvResponse, error) {
-	killed, _, err := s.provisioner.KillSession(ctx, req.GetTaskId(), uuid.NewString(), "", false)
+	killed, _, err := s.provisioner.KillSession(ctx, req.GetSessionId(), uuid.NewString(), "", false)
 	if err != nil {
 		return nil, fmt.Errorf("KillE2EEnv: %w", err)
 	}
@@ -275,9 +275,9 @@ func (s *Server) DeleteFile(ctx context.Context, req *agentfleetv1.DeleteFileReq
 
 // GetTask lets a worker pod fetch its own fresh task row on startup instead
 // of relying on stale environment variables. Same message shapes as
-// DashboardService.GetTask (core.proto's comment on Task/GetTaskRequest),
+// DashboardService.GetTask (core.proto's comment on Task/GetSessionRequest),
 // reusing its taskToProto mapper rather than duplicating the field list.
-func (s *Server) GetTask(ctx context.Context, req *agentfleetv1.GetTaskRequest) (*agentfleetv1.GetTaskResponse, error) {
+func (s *Server) GetTask(ctx context.Context, req *agentfleetv1.GetSessionRequest) (*agentfleetv1.GetSessionResponse, error) {
 	t, err := s.tasks.GetTask(ctx, req.GetId())
 	if err != nil {
 		return nil, fmt.Errorf("GetTask: %w", err)
@@ -285,7 +285,7 @@ func (s *Server) GetTask(ctx context.Context, req *agentfleetv1.GetTaskRequest) 
 	if t == nil {
 		return nil, fmt.Errorf("GetTask: task %s not found", req.GetId())
 	}
-	return &agentfleetv1.GetTaskResponse{Task: dashboard.TaskToProto(*t)}, nil
+	return &agentfleetv1.GetSessionResponse{Task: dashboard.TaskToProto(*t)}, nil
 }
 
 // SetPermissionMode persists a worker pod's own permission mode (the
@@ -294,14 +294,14 @@ func (s *Server) GetTask(ctx context.Context, req *agentfleetv1.GetTaskRequest) 
 // append a transcript entry: there's no other running worker to notify,
 // the caller *is* the session whose mode this is.
 func (s *Server) SetPermissionMode(ctx context.Context, req *agentfleetv1.SetPermissionModeRequest) (*agentfleetv1.SetPermissionModeResponse, error) {
-	if err := s.tasks.SetPermissionMode(ctx, req.GetTaskId(), req.GetMode()); err != nil {
+	if err := s.tasks.SetPermissionMode(ctx, req.GetSessionId(), req.GetMode()); err != nil {
 		return nil, fmt.Errorf("SetPermissionMode: %w", err)
 	}
 	return &agentfleetv1.SetPermissionModeResponse{Status: "ok"}, nil
 }
 
 func (s *Server) Heartbeat(ctx context.Context, req *agentfleetv1.HeartbeatRequest) (*agentfleetv1.HeartbeatResponse, error) {
-	if err := s.tasks.UpdateHeartbeat(ctx, req.GetTaskId(), req.GetLeaseId()); err != nil {
+	if err := s.tasks.UpdateHeartbeat(ctx, req.GetSessionId(), req.GetLeaseId()); err != nil {
 		return nil, fmt.Errorf("Heartbeat: %w", err)
 	}
 	return &agentfleetv1.HeartbeatResponse{}, nil
@@ -315,7 +315,7 @@ var terminalTaskStatuses = map[string]bool{
 }
 
 func (s *Server) SetTaskStatus(ctx context.Context, req *agentfleetv1.SetTaskStatusRequest) (*agentfleetv1.SetTaskStatusResponse, error) {
-	if err := s.tasks.SetStatus(ctx, req.GetTaskId(), req.GetStatus(), req.PrUrl, req.Notes, req.LastError); err != nil {
+	if err := s.tasks.SetStatus(ctx, req.GetSessionId(), req.GetStatus(), req.PrUrl, req.Notes, req.LastError); err != nil {
 		return nil, fmt.Errorf("SetTaskStatus: %w", err)
 	}
 
@@ -330,11 +330,11 @@ func (s *Server) SetTaskStatus(ctx context.Context, req *agentfleetv1.SetTaskSta
 	// not propagated: a teardown hiccup shouldn't fail the status write
 	// that's usually the last thing a finishing worker pod does.
 	if terminalTaskStatuses[req.GetStatus()] {
-		if _, err := s.provisioner.TearDownSession(ctx, req.GetTaskId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER); err != nil {
-			slog.Warn("SetTaskStatus: worker teardown failed", "taskId", req.GetTaskId(), "error", err)
+		if _, err := s.provisioner.TearDownSession(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER); err != nil {
+			slog.Warn("SetTaskStatus: worker teardown failed", "sessionId", req.GetSessionId(), "error", err)
 		}
-		if _, err := s.provisioner.TearDownSession(ctx, req.GetTaskId(), agentfleetv1.SessionKind_SESSION_KIND_E2E); err != nil {
-			slog.Warn("SetTaskStatus: e2e teardown failed", "taskId", req.GetTaskId(), "error", err)
+		if _, err := s.provisioner.TearDownSession(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_E2E); err != nil {
+			slog.Warn("SetTaskStatus: e2e teardown failed", "sessionId", req.GetSessionId(), "error", err)
 		}
 	}
 
@@ -371,8 +371,8 @@ func (s *Server) SearchJournal(ctx context.Context, req *agentfleetv1.SearchJour
 	return &agentfleetv1.SearchJournalResponse{Entries: out}, nil
 }
 
-func (s *Server) SaveSessionId(ctx context.Context, req *agentfleetv1.SaveSessionIdRequest) (*agentfleetv1.SaveSessionIdResponse, error) {
-	saved, err := s.tasks.SaveSessionID(ctx, req.GetTaskId(), req.GetSessionId(), req.GetModel(), req.GetLeaseId())
+func (s *Server) SaveSessionId(ctx context.Context, req *agentfleetv1.SaveAgentSessionIdRequest) (*agentfleetv1.SaveAgentSessionIdResponse, error) {
+	saved, err := s.tasks.SaveSessionID(ctx, req.GetSessionId(), req.GetSessionId(), req.GetModel(), req.GetLeaseId())
 	if err == nil && !saved {
 		// The pod that sent this no longer holds the lease — it was torn
 		// down and another pod owns the session now. Dropping the write is
@@ -380,16 +380,16 @@ func (s *Server) SaveSessionId(ctx context.Context, req *agentfleetv1.SaveSessio
 		// next resume reads, and letting a dead pod set it would resume the
 		// wrong conversation.
 		slog.Warn("coreserver: ignored SaveSessionId from a pod that no longer holds the lease",
-			"taskId", req.GetTaskId(), "sessionId", req.GetSessionId())
+			"sessionId", req.GetSessionId(), "sessionId", req.GetSessionId())
 	}
 	if err != nil {
 		return nil, fmt.Errorf("SaveSessionId: %w", err)
 	}
-	return &agentfleetv1.SaveSessionIdResponse{}, nil
+	return &agentfleetv1.SaveAgentSessionIdResponse{}, nil
 }
 
 func (s *Server) StillHoldsLease(ctx context.Context, req *agentfleetv1.StillHoldsLeaseRequest) (*agentfleetv1.StillHoldsLeaseResponse, error) {
-	holds, err := s.tasks.StillHoldsLease(ctx, req.GetTaskId(), req.GetLeaseId())
+	holds, err := s.tasks.StillHoldsLease(ctx, req.GetSessionId(), req.GetLeaseId())
 	if err != nil {
 		return nil, fmt.Errorf("StillHoldsLease: %w", err)
 	}
@@ -401,7 +401,7 @@ func (s *Server) StillHoldsLease(ctx context.Context, req *agentfleetv1.StillHol
 // (docs/adr/0020 point 5's second bullet) — never relayed to Discord
 // (internal/transcript/relay.go's relayPending skips this type).
 func (s *Server) PushToolTelemetry(ctx context.Context, req *agentfleetv1.PushToolTelemetryRequest) (*agentfleetv1.PushToolTelemetryResponse, error) {
-	if _, err := s.transcr.Append(ctx, req.GetTaskId(), "sidecar", req.GetSummaryJson(), "tool_call", uuid.NewString()); err != nil {
+	if _, err := s.transcr.Append(ctx, req.GetSessionId(), "sidecar", req.GetSummaryJson(), "tool_call", uuid.NewString()); err != nil {
 		return nil, fmt.Errorf("PushToolTelemetry: %w", err)
 	}
 	return &agentfleetv1.PushToolTelemetryResponse{}, nil
@@ -415,7 +415,7 @@ func (s *Server) PushToolTelemetry(ctx context.Context, req *agentfleetv1.PushTo
 // words back to itself as a user turn.
 func (s *Server) StreamHumanMessages(req *agentfleetv1.StreamHumanMessagesRequest, stream agentfleetv1.CoreService_StreamHumanMessagesServer) error {
 	ctx := stream.Context()
-	taskID := req.GetTaskId()
+	taskID := req.GetSessionId()
 	cursor := req.GetSinceSeq()
 
 	for {
@@ -466,11 +466,11 @@ func (s *Server) ReportPodEvents(stream agentfleetv1.CoreService_ReportPodEvents
 			return stream.SendAndClose(&agentfleetv1.ReportPodEventsResponse{})
 		}
 		payload, marshalErr := json.Marshal(map[string]any{
-			"taskId":  event.GetTaskId(),
-			"kind":    event.GetKind().String(),
-			"phase":   event.GetPhase().String(),
-			"podName": event.GetPodName(),
-			"message": event.GetMessage(),
+			"sessionId": event.GetSessionId(),
+			"kind":      event.GetKind().String(),
+			"phase":     event.GetPhase().String(),
+			"podName":   event.GetPodName(),
+			"message":   event.GetMessage(),
 		})
 		if marshalErr != nil {
 			return fmt.Errorf("ReportPodEvents: marshal event: %w", marshalErr)
@@ -483,8 +483,8 @@ func (s *Server) ReportPodEvents(stream agentfleetv1.CoreService_ReportPodEvents
 		// crash-reclaim fast-path below) — only worker pods have a task to
 		// attach state to; e2e pods have no matching tasks row.
 		if event.GetKind() == agentfleetv1.SessionKind_SESSION_KIND_WORKER {
-			if err := s.tasks.SetPodPhase(ctx, event.GetTaskId(), event.GetPhase().String(), event.GetMessage()); err != nil {
-				slog.Error("ReportPodEvents: set pod phase failed", "taskId", event.GetTaskId(), "error", err)
+			if err := s.tasks.SetPodPhase(ctx, event.GetSessionId(), event.GetPhase().String(), event.GetMessage()); err != nil {
+				slog.Error("ReportPodEvents: set pod phase failed", "sessionId", event.GetSessionId(), "error", err)
 			}
 		}
 
@@ -496,8 +496,8 @@ func (s *Server) ReportPodEvents(stream agentfleetv1.CoreService_ReportPodEvents
 		// through its own SetTaskStatus call before the provisioner's
 		// reconcile loop noticed the crash.
 		if event.GetKind() == agentfleetv1.SessionKind_SESSION_KIND_WORKER && event.GetPhase() == agentfleetv1.PodPhase_POD_PHASE_CRASHED {
-			if err := s.tasks.MarkCrashed(ctx, event.GetTaskId()); err != nil {
-				slog.Error("ReportPodEvents: mark crashed failed", "taskId", event.GetTaskId(), "error", err)
+			if err := s.tasks.MarkCrashed(ctx, event.GetSessionId()); err != nil {
+				slog.Error("ReportPodEvents: mark crashed failed", "sessionId", event.GetSessionId(), "error", err)
 			}
 		}
 	}
@@ -528,12 +528,12 @@ func entriesToProto(taskID string, entries []transcript.Entry) []*agentfleetv1.T
 
 func entryToProto(taskID string, e transcript.Entry) *agentfleetv1.TranscriptEntry {
 	return &agentfleetv1.TranscriptEntry{
-		TaskId:  taskID,
-		Seq:     e.Seq,
-		From:    e.From,
-		Text:    e.Text,
-		Type:    stringToProtoType(e.Type),
-		ReplyTo: e.ReplyTo,
+		SessionId: taskID,
+		Seq:       e.Seq,
+		From:      e.From,
+		Text:      e.Text,
+		Type:      stringToProtoType(e.Type),
+		ReplyTo:   e.ReplyTo,
 		// Zero time would serialize as year 1 — send "" so a client can
 		// tell "no timestamp" from "the epoch".
 		CreatedAt: transcript.RFC3339OrEmpty(e.CreatedAt),

@@ -17,7 +17,7 @@ import (
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/dbtest"
 	"github.com/MohammadBnei/agent-fleet/core/internal/journal"
-	"github.com/MohammadBnei/agent-fleet/core/internal/tasks"
+	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
 )
 
 // Real Postgres (tasks + knowledge_journal, the two tables ReportPodEvents
@@ -74,7 +74,7 @@ func sendOneEvent(t *testing.T, client agentfleetv1.CoreServiceClient, event *ag
 func TestReportPodEvents_CrashedWorkerMarksNonTerminalTaskCrashed(t *testing.T) {
 	pool := newTestPool(t)
 	ctx := context.Background()
-	taskStore := tasks.NewStore(pool)
+	taskStore := sessions.NewStore(pool)
 	srv := New(nil, taskStore, journal.NewStore(pool), nil, nil, nil, nil, nil)
 
 	var taskID string
@@ -87,7 +87,7 @@ func TestReportPodEvents_CrashedWorkerMarksNonTerminalTaskCrashed(t *testing.T) 
 	}
 
 	sendOneEvent(t, newBufconnClient(t, srv), &agentfleetv1.PodEvent{
-		TaskId: taskID, Kind: agentfleetv1.SessionKind_SESSION_KIND_WORKER,
+		SessionId: taskID, Kind: agentfleetv1.SessionKind_SESSION_KIND_WORKER,
 		Phase: agentfleetv1.PodPhase_POD_PHASE_CRASHED, PodName: "worker-abc", Message: "test crash",
 	})
 
@@ -107,7 +107,7 @@ func TestReportPodEvents_CrashedWorkerMarksNonTerminalTaskCrashed(t *testing.T) 
 func TestReportPodEvents_CrashedWorkerNoopsForTerminalTask(t *testing.T) {
 	pool := newTestPool(t)
 	ctx := context.Background()
-	srv := New(nil, tasks.NewStore(pool), journal.NewStore(pool), nil, nil, nil, nil, nil)
+	srv := New(nil, sessions.NewStore(pool), journal.NewStore(pool), nil, nil, nil, nil, nil)
 
 	var taskID string
 	if err := pool.QueryRow(ctx, `
@@ -119,7 +119,7 @@ func TestReportPodEvents_CrashedWorkerNoopsForTerminalTask(t *testing.T) {
 	}
 
 	sendOneEvent(t, newBufconnClient(t, srv), &agentfleetv1.PodEvent{
-		TaskId: taskID, Kind: agentfleetv1.SessionKind_SESSION_KIND_WORKER, Phase: agentfleetv1.PodPhase_POD_PHASE_CRASHED,
+		SessionId: taskID, Kind: agentfleetv1.SessionKind_SESSION_KIND_WORKER, Phase: agentfleetv1.PodPhase_POD_PHASE_CRASHED,
 	})
 
 	var status string
@@ -136,7 +136,7 @@ func TestReportPodEvents_CrashedWorkerNoopsForTerminalTask(t *testing.T) {
 func TestReportPodEvents_NonCrashedEventDoesNotMarkCrashed(t *testing.T) {
 	pool := newTestPool(t)
 	ctx := context.Background()
-	srv := New(nil, tasks.NewStore(pool), journal.NewStore(pool), nil, nil, nil, nil, nil)
+	srv := New(nil, sessions.NewStore(pool), journal.NewStore(pool), nil, nil, nil, nil, nil)
 
 	var taskID string
 	if err := pool.QueryRow(ctx, `
@@ -148,7 +148,7 @@ func TestReportPodEvents_NonCrashedEventDoesNotMarkCrashed(t *testing.T) {
 	}
 
 	sendOneEvent(t, newBufconnClient(t, srv), &agentfleetv1.PodEvent{
-		TaskId: taskID, Kind: agentfleetv1.SessionKind_SESSION_KIND_WORKER, Phase: agentfleetv1.PodPhase_POD_PHASE_RUNNING,
+		SessionId: taskID, Kind: agentfleetv1.SessionKind_SESSION_KIND_WORKER, Phase: agentfleetv1.PodPhase_POD_PHASE_RUNNING,
 	})
 
 	// MarkCrashed backdates heartbeat_at by 11 minutes — if it had

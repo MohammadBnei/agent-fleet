@@ -81,14 +81,14 @@ func (c *Client) ReportEvent(ctx context.Context, event *agentfleetv1.PodEvent) 
 	defer cancel()
 	stream, err := c.rpc.ReportPodEvents(ctx)
 	if err != nil {
-		slog.Warn("ReportEvent: open stream failed", "taskId", event.GetTaskId(), "error", err)
+		slog.Warn("ReportEvent: open stream failed", "sessionId", event.GetSessionId(), "error", err)
 		return
 	}
 	if err := stream.Send(event); err != nil {
-		slog.Warn("ReportEvent: send failed", "taskId", event.GetTaskId(), "error", err)
+		slog.Warn("ReportEvent: send failed", "sessionId", event.GetSessionId(), "error", err)
 		return
 	}
 	if _, err := stream.CloseAndRecv(); err != nil {
-		slog.Warn("ReportEvent: close failed", "taskId", event.GetTaskId(), "error", err)
+		slog.Warn("ReportEvent: close failed", "sessionId", event.GetSessionId(), "error", err)
 	}
 }

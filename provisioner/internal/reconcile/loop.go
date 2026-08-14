@@ -112,15 +112,15 @@ func (l *Loop) gcTerminalWorkerJobs(ctx context.Context) {
 			message = "worker job reached a terminal Failed phase"
 		}
 		l.core.ReportEvent(ctx, &agentfleetv1.PodEvent{
-			TaskId:  job.TaskID,
-			Kind:    agentfleetv1.SessionKind_SESSION_KIND_WORKER,
-			Phase:   phase,
-			PodName: job.JobName,
-			Message: message,
+			SessionId: job.TaskID,
+			Kind:      agentfleetv1.SessionKind_SESSION_KIND_WORKER,
+			Phase:     phase,
+			PodName:   job.JobName,
+			Message:   message,
 		})
-		slog.Info("reconcile: gc'ing terminal worker job", "taskId", job.TaskID, "jobName", job.JobName, "phase", job.Phase)
+		slog.Info("reconcile: gc'ing terminal worker job", "sessionId", job.TaskID, "jobName", job.JobName, "phase", job.Phase)
 		if err := l.k8sc.DeleteWorkerJob(ctx, job.TaskID); err != nil {
-			slog.Error("reconcile: delete worker job failed", "taskId", job.TaskID, "error", err)
+			slog.Error("reconcile: delete worker job failed", "sessionId", job.TaskID, "error", err)
 		}
 		// Worktree cleanup is intentionally skipped here — this pass exists
 		// for the case where core's TearDownSession call (which does clean
@@ -181,24 +181,24 @@ func (l *Loop) gcDeadE2ePods(ctx context.Context) {
 		if !terminal && !aged {
 			continue
 		}
-		slog.Info("reconcile: gc'ing e2e pod", "taskId", pod.TaskID, "podName", pod.PodName,
+		slog.Info("reconcile: gc'ing e2e pod", "sessionId", pod.TaskID, "podName", pod.PodName,
 			"phase", pod.Phase, "createdAt", pod.CreatedAt, "reason", gcReason(terminal))
 		// DeleteAll, not DeletePod: the Service/Middleware/IngressRoute are
 		// this task's too, and unlike the recreate path in grpcserver there is
 		// no follow-up create to leave them standing for.
 		if err := l.k8sc.DeleteAll(ctx, pod.TaskID); err != nil {
-			slog.Error("reconcile: delete e2e pod failed", "taskId", pod.TaskID, "error", err)
+			slog.Error("reconcile: delete e2e pod failed", "sessionId", pod.TaskID, "error", err)
 			continue
 		}
 		// Reported so the deletion lands in the knowledge journal — an agent
 		// whose sandbox vanished mid-session otherwise has no way to find out
 		// why run_command started failing.
 		l.core.ReportEvent(ctx, &agentfleetv1.PodEvent{
-			TaskId:  pod.TaskID,
-			Kind:    agentfleetv1.SessionKind_SESSION_KIND_E2E,
-			Phase:   agentfleetv1.PodPhase_POD_PHASE_TERMINATED,
-			PodName: pod.PodName,
-			Message: "e2e sandbox pod garbage-collected: " + gcReason(terminal),
+			SessionId: pod.TaskID,
+			Kind:      agentfleetv1.SessionKind_SESSION_KIND_E2E,
+			Phase:     agentfleetv1.PodPhase_POD_PHASE_TERMINATED,
+			PodName:   pod.PodName,
+			Message:   "e2e sandbox pod garbage-collected: " + gcReason(terminal),
 		})
 	}
 }

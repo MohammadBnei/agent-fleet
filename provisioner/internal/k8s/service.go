@@ -52,19 +52,19 @@ func (c *Client) CreateService(ctx context.Context, taskID string) error {
 	}
 	_, err := c.Core.CoreV1().Services(c.Namespace).Create(ctx, svc, metav1.CreateOptions{})
 	if err = ignoreAlreadyExists(err); err != nil {
-		slog.Error("k8s CreateService", "taskId", taskID, "error", err)
+		slog.Error("k8s CreateService", "sessionId", taskID, "error", err)
 		return err
 	}
-	slog.Info("k8s CreateService", "taskId", taskID)
+	slog.Info("k8s CreateService", "sessionId", taskID)
 	return nil
 }
 
 func (c *Client) DeleteService(ctx context.Context, taskID string) error {
 	err := ignoreNotFound(c.Core.CoreV1().Services(c.Namespace).Delete(ctx, ResourceName(taskID), metav1.DeleteOptions{}))
 	if err != nil {
-		slog.Error("k8s DeleteService", "taskId", taskID, "error", err)
+		slog.Error("k8s DeleteService", "sessionId", taskID, "error", err)
 		return err
 	}
-	slog.Info("k8s DeleteService", "taskId", taskID)
+	slog.Info("k8s DeleteService", "sessionId", taskID)
 	return nil
 }

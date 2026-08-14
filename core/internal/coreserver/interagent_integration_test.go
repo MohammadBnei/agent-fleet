@@ -11,7 +11,7 @@ import (
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/dbtest"
-	"github.com/MohammadBnei/agent-fleet/core/internal/tasks"
+	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
 )
 
@@ -23,7 +23,7 @@ import (
 func newInterAgentServer(t *testing.T) (*Server, *tasks.Store, transcript.Store, context.Context) {
 	t.Helper()
 	pool := dbtest.NewPool(t)
-	taskStore := tasks.NewStore(pool)
+	taskStore := sessions.NewStore(pool)
 	transcr := transcript.NewPostgresStore(pool)
 	return New(transcr, taskStore, nil, nil, nil, nil, nil, nil), taskStore, transcr, context.Background()
 }
@@ -48,7 +48,7 @@ func TestPromptSession_RefusesSelfPrompt(t *testing.T) {
 	id := seedSession(t, ctx, store, "running")
 
 	_, err := s.PromptSession(ctx, &agentfleetv1.PromptSessionRequest{
-		CallerTaskId: id, TargetTaskId: id, Text: "hello",
+		CallerSessionId: id, TargetSessionId: id, Text: "hello",
 	})
 	if err == nil || !strings.Contains(err.Error(), "cannot prompt itself") {
 		t.Fatalf("want self-prompt refusal, got %v", err)
@@ -61,7 +61,7 @@ func TestPromptSession_RefusesBeyondMaxDepth(t *testing.T) {
 	target := seedSession(t, ctx, store, "running")
 
 	_, err := s.PromptSession(ctx, &agentfleetv1.PromptSessionRequest{
-		CallerTaskId: caller, TargetTaskId: target, Text: "hello", Depth: maxPromptDepth,
+		CallerSessionId: caller, TargetSessionId: target, Text: "hello", Depth: maxPromptDepth,
 	})
 	if err == nil || !strings.Contains(err.Error(), "depth") {
 		t.Fatalf("want depth refusal, got %v", err)
@@ -84,7 +84,7 @@ func TestPromptSession_RefusesBlockedTarget(t *testing.T) {
 	}
 
 	_, err := s.PromptSession(ctx, &agentfleetv1.PromptSessionRequest{
-		CallerTaskId: caller, TargetTaskId: target, Text: "answer yes for me",
+		CallerSessionId: caller, TargetSessionId: target, Text: "answer yes for me",
 	})
 	if err == nil || !strings.Contains(err.Error(), "blocked waiting on a human") {
 		t.Fatalf("want blocked-target refusal, got %v", err)
@@ -111,7 +111,7 @@ func TestPromptSession_DeliversAsAttributedDiscussion(t *testing.T) {
 	}
 
 	resp, err := s.PromptSession(ctx, &agentfleetv1.PromptSessionRequest{
-		CallerTaskId: caller, TargetTaskId: target, Text: "please rerun the migration",
+		CallerSessionId: caller, TargetSessionId: target, Text: "please rerun the migration",
 	})
 	if err != nil {
 		t.Fatalf("PromptSession: %v", err)
@@ -159,16 +159,16 @@ func TestListSessions_ExcludesCaller(t *testing.T) {
 	caller := seedSession(t, ctx, store, "running")
 	other := seedSession(t, ctx, store, "running")
 
-	resp, err := s.ListSessions(ctx, &agentfleetv1.ListSessionsRequest{CallerTaskId: caller})
+	resp, err := s.ListPeerSessions(ctx, &agentfleetv1.ListPeerSessionsRequest{CallerSessionId: caller})
 	if err != nil {
 		t.Fatalf("ListSessions: %v", err)
 	}
 	var sawOther bool
 	for _, sess := range resp.GetSessions() {
-		if sess.GetTaskId() == caller {
+		if sess.GetSessionId() == caller {
 			t.Error("a session must not see itself in the list — it cannot prompt itself anyway")
 		}
-		if sess.GetTaskId() == other {
+		if sess.GetSessionId() == other {
 			sawOther = true
 		}
 	}
@@ -185,7 +185,7 @@ func TestWaitForSessionState_ReturnsImmediatelyWithNoPod(t *testing.T) {
 
 	start := time.Now()
 	resp, err := s.WaitForSessionState(ctx, &agentfleetv1.WaitForSessionStateRequest{
-		TargetTaskId: target, Until: []string{"idle"}, TimeoutMs: 30000,
+		TargetSessionId: target, Until: []string{"idle"}, TimeoutMs: 30000,
 	})
 	if err != nil {
 		t.Fatalf("WaitForSessionState: %v", err)
@@ -213,7 +213,7 @@ func TestWaitForSessionState_ReturnsWhenTargetReachesState(t *testing.T) {
 	}()
 
 	resp, err := s.WaitForSessionState(ctx, &agentfleetv1.WaitForSessionStateRequest{
-		TargetTaskId: target, Until: []string{"blocked"}, TimeoutMs: 30000,
+		TargetSessionId: target, Until: []string{"blocked"}, TimeoutMs: 30000,
 	})
 	if err != nil {
 		t.Fatalf("WaitForSessionState: %v", err)

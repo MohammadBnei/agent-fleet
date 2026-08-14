@@ -17,7 +17,6 @@ import (
 
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 
-	"github.com/MohammadBnei/agent-fleet/core/internal/repoprofiles"
 )
 
 type Client struct {
@@ -72,7 +71,7 @@ func (c *Client) Close() error {
 // ignored when alsoTeardownServices is false.
 func (c *Client) KillSession(ctx context.Context, taskID, idempotencyKey, repo string, alsoTeardownServices bool) (killed bool, servicesTornDown []string, err error) {
 	resp, err := c.rpc.KillE2ESession(ctx, &agentfleetv1.KillE2ESessionRequest{
-		TaskId:               taskID,
+		SessionId:            taskID,
 		IdempotencyKey:       idempotencyKey,
 		Repo:                 repo,
 		AlsoTeardownServices: alsoTeardownServices,
@@ -91,7 +90,7 @@ func (c *Client) KillSession(ctx context.Context, taskID, idempotencyKey, repo s
 // can read, and core is a pass-through for all of it.
 func (c *Client) GetSessionStatus(ctx context.Context, taskID string) (*agentfleetv1.GetE2ESessionStatusResponse, error) {
 	resp, err := c.rpc.GetE2ESessionStatus(ctx, &agentfleetv1.GetE2ESessionStatusRequest{
-		TaskId: taskID,
+		SessionId: taskID,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("GetE2ESessionStatus: %w", err)
@@ -110,19 +109,14 @@ func (c *Client) GetSessionStatus(ctx context.Context, taskID string) (*agentfle
 // now carries the ServiceEndpoint roster (docs/adr/0045), which core forwards
 // untouched. Picking two fields off it here is what would make the roster
 // core's business.
-func (c *Client) CreateE2eSession(ctx context.Context, taskID, repo, startCmd string, toolKeys []string, serviceIngredients []repoprofiles.ServiceIngredient) (*agentfleetv1.CreateE2ESessionResponse, error) {
-	protoIngredients, err := toProtoServiceIngredients(serviceIngredients)
-	if err != nil {
-		return nil, fmt.Errorf("CreateE2ESession: %w", err)
-	}
+func (c *Client) CreateE2eSession(ctx context.Context, sessionID, repo, startCmd string, toolKeys []string) (*agentfleetv1.CreateE2ESessionResponse, error) {
 	ctx, cancel := context.WithTimeout(ctx, e2eCreateTimeout)
 	defer cancel()
 	resp, err := c.rpc.CreateE2ESession(ctx, &agentfleetv1.CreateE2ESessionRequest{
-		TaskId:             taskID,
-		Repo:               repo,
-		StartCmd:           startCmd,
-		ToolKeys:           toolKeys,
-		ServiceIngredients: protoIngredients,
+		SessionId: sessionID,
+		Repo:      repo,
+		StartCmd:  startCmd,
+		ToolKeys:  toolKeys,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("CreateE2ESession: %w", err)
@@ -130,65 +124,51 @@ func (c *Client) CreateE2eSession(ctx context.Context, taskID, repo, startCmd st
 	return resp, nil
 }
 
-// toProtoServiceIngredients/toProtoScopeMode convert repoprofiles' plain
-// string scope-mode ("pod-scoped"/"task-scoped"/"repo-scoped", the same
-// values stored in repo_profile_services.scope_mode) into the proto
-// ScopeMode enum the provisioner's wire format expects.
-func toProtoServiceIngredients(in []repoprofiles.ServiceIngredient) ([]*agentfleetv1.ServiceIngredient, error) {
-	if len(in) == 0 {
-		return nil, nil
+// ToolKeysFor is the whole of what survives docs/adr/0034's ingredient
+// resolution. The recipe used to answer three questions — how to start the
+// app, what toolchain it needs, what services it needs — and docs/adr/0048
+// found that the agent can read the first two off the repo it is sitting in.
+//
+// cluster-access is the one that could not move, because it is not a
+// toolchain: it stages a kubectl shim that RPCs to thot-executor, and whether
+// a repo's sessions may do that is a human's decision about privilege, not a
+// fact about the codebase (docs/adr/0037).
+//
+// The service ingredients have no producer left at all — they become the
+// request_service MCP tool, which stays fleet-side only because provisioning
+// a shared Postgres needs cluster RBAC the agent does not have.
+func ToolKeysFor(clusterAccess bool) []string {
+	if !clusterAccess {
+		return nil
 	}
-	out := make([]*agentfleetv1.ServiceIngredient, 0, len(in))
-	for _, si := range in {
-		mode, err := toProtoScopeMode(si.ScopeMode)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, &agentfleetv1.ServiceIngredient{Key: si.Key, ScopeMode: mode})
-	}
-	return out, nil
-}
-
-func toProtoScopeMode(s string) (agentfleetv1.ScopeMode, error) {
-	switch s {
-	case "pod-scoped":
-		return agentfleetv1.ScopeMode_SCOPE_MODE_POD_SCOPED, nil
-	case "task-scoped":
-		return agentfleetv1.ScopeMode_SCOPE_MODE_TASK_SCOPED, nil
-	case "repo-scoped":
-		return agentfleetv1.ScopeMode_SCOPE_MODE_REPO_SCOPED, nil
-	default:
-		return agentfleetv1.ScopeMode_SCOPE_MODE_UNSPECIFIED, fmt.Errorf("unknown scope mode %q", s)
-	}
+	return []string{"cluster-access"}
 }
 
 // CreateWorkerPod asks the provisioner to clone/fetch/worktree-add (its own
 // git-lifecycle ownership, docs/adr/0019 point 2) and spawn a two-container
-// worker pod for taskID, returning once the pod is scheduled. Called only
-// from core's own dispatch loop, immediately after it claims the task
-// (docs/adr/0020 point 2 — core claims, then commands; the provisioner
-// never claims tasks itself). toolKeys/serviceIngredients are the repo's
-// resolved "worker" profile (docs/adr/0034, empty when it has none —
-// preserves the pre-recipe pod shape).
-func (c *Client) CreateWorkerPod(ctx context.Context, taskID, repo, repoURL, baseBranch, description, guidance, leaseID, resumeSessionID string, resumeFromSeq int64, toolKeys []string, serviceIngredients []repoprofiles.ServiceIngredient) (podName string, err error) {
+// worker pod for sessionID, returning once the pod is scheduled.
+//
+// Called when a session's first message arrives with no live pod — core
+// decides, the provisioner executes (docs/adr/0020 point 2). There is no
+// dispatch loop any more: a message is the only thing that provisions, which
+// is what keeps a machine-initiated proposal from ever producing a pod.
+//
+// toolKeys carries only cluster-access now (see ToolKeysFor); `guidance` is
+// gone with the column, since operator snippets reach the model as message
+// text a human sent rather than as a wrapper the agent cannot see.
+func (c *Client) CreateWorkerPod(ctx context.Context, sessionID, repo, repoURL, baseBranch, description, leaseID, resumeAgentSessionID string, resumeFromSeq int64, toolKeys []string) (podName string, err error) {
 	ctx, cancel := context.WithTimeout(ctx, sessionCallTimeout)
 	defer cancel()
-	protoIngredients, err := toProtoServiceIngredients(serviceIngredients)
-	if err != nil {
-		return "", fmt.Errorf("CreateWorkerPod: %w", err)
-	}
 	resp, err := c.rpc.CreateWorkerPod(ctx, &agentfleetv1.CreateWorkerPodRequest{
-		TaskId:             taskID,
-		Repo:               repo,
-		RepoUrl:            repoURL,
-		BaseBranch:         baseBranch,
-		Description:        description,
-		Guidance:           guidance,
-		LeaseId:            leaseID,
-		ResumeSessionId:    resumeSessionID,
-		ResumeFromSeq:      resumeFromSeq,
-		ToolKeys:           toolKeys,
-		ServiceIngredients: protoIngredients,
+		SessionId:       sessionID,
+		Repo:            repo,
+		RepoUrl:         repoURL,
+		BaseBranch:      baseBranch,
+		Description:     description,
+		LeaseId:         leaseID,
+		ResumeSessionId: resumeAgentSessionID,
+		ResumeFromSeq:   resumeFromSeq,
+		ToolKeys:        toolKeys,
 	})
 	if err != nil {
 		return "", fmt.Errorf("CreateWorkerPod: %w", err)
@@ -205,8 +185,8 @@ func (c *Client) TearDownSession(ctx context.Context, taskID string, kind agentf
 	ctx, cancel := context.WithTimeout(ctx, sessionCallTimeout)
 	defer cancel()
 	resp, err := c.rpc.TearDownSession(ctx, &agentfleetv1.TearDownSessionRequest{
-		TaskId: taskID,
-		Kind:   kind,
+		SessionId: taskID,
+		Kind:      kind,
 	})
 	if err != nil {
 		return false, fmt.Errorf("TearDownSession: %w", err)
@@ -230,7 +210,7 @@ func (c *Client) ListWorktrees(ctx context.Context) (*agentfleetv1.ListWorktrees
 
 func (c *Client) DeleteWorktree(ctx context.Context, taskID, repo string, alsoDeleteBranch bool) (deleted bool, err error) {
 	resp, err := c.rpc.DeleteWorktree(ctx, &agentfleetv1.DeleteWorktreeRequest{
-		TaskId:           taskID,
+		SessionId:        taskID,
 		Repo:             repo,
 		AlsoDeleteBranch: alsoDeleteBranch,
 	})

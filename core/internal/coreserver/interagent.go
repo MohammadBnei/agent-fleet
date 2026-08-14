@@ -9,7 +9,7 @@ import (
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/dashboard"
-	"github.com/MohammadBnei/agent-fleet/core/internal/tasks"
+	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
 )
 
 // Inter-agent coordination (docs/adr/0041). One agent can see the fleet's
@@ -29,10 +29,10 @@ const maxPromptDepth = 3
 // (first settled idle/done/blocked) plus `stalled`, which is this fleet's
 // own addition and just as final from a waiter's point of view.
 var settledStates = []string{
-	string(tasks.LiveStateIdle),
-	string(tasks.LiveStateDone),
-	string(tasks.LiveStateBlocked),
-	string(tasks.LiveStateStalled),
+	string(sessions.LiveStateIdle),
+	string(sessions.LiveStateDone),
+	string(sessions.LiveStateBlocked),
+	string(sessions.LiveStateStalled),
 }
 
 // waitPollInterval matches the transcript relay's own 2s cadence — this
@@ -41,7 +41,7 @@ var settledStates = []string{
 // bare watch is unrecoverable, and a poll cannot miss one.
 const waitPollInterval = 2 * time.Second
 
-func (s *Server) liveStateOf(ctx context.Context, taskID string) (*tasks.Task, tasks.LiveState, error) {
+func (s *Server) liveStateOf(ctx context.Context, taskID string) (*tasks.Task, sessions.LiveState, error) {
 	t, err := s.tasks.GetTask(ctx, taskID)
 	if err != nil {
 		return nil, "", fmt.Errorf("get task: %w", err)
@@ -49,10 +49,10 @@ func (s *Server) liveStateOf(ctx context.Context, taskID string) (*tasks.Task, t
 	if t == nil {
 		return nil, "", fmt.Errorf("session %s not found", taskID)
 	}
-	return t, tasks.DeriveLiveState(t, time.Now(), dashboard.DefaultTurnStall), nil
+	return t, sessions.DeriveLiveState(t, time.Now(), dashboard.DefaultTurnStall), nil
 }
 
-func (s *Server) ListSessions(ctx context.Context, req *agentfleetv1.ListSessionsRequest) (*agentfleetv1.ListSessionsResponse, error) {
+func (s *Server) ListPeerSessions(ctx context.Context, req *agentfleetv1.ListPeerSessionsRequest) (*agentfleetv1.ListPeerSessionsResponse, error) {
 	// Same bounded listing the dashboard uses — an agent picking a target
 	// wants the fleet's current sessions, not its entire history.
 	all, err := s.tasks.ListRecentTasks(ctx, 100)
@@ -61,25 +61,25 @@ func (s *Server) ListSessions(ctx context.Context, req *agentfleetv1.ListSession
 	}
 	out := make([]*agentfleetv1.SessionSummary, 0, len(all))
 	for _, t := range all {
-		if t.ID == req.GetCallerTaskId() {
+		if t.ID == req.GetCallerSessionId() {
 			continue
 		}
 		out = append(out, &agentfleetv1.SessionSummary{
-			TaskId:      t.ID,
+			SessionId:   t.ID,
 			Repo:        t.Repo,
 			Description: t.Description,
 			Status:      t.Status,
-			LiveState:   string(tasks.DeriveLiveState(&t, time.Now(), dashboard.DefaultTurnStall)),
+			LiveState:   string(sessions.DeriveLiveState(&t, time.Now(), dashboard.DefaultTurnStall)),
 		})
 	}
-	return &agentfleetv1.ListSessionsResponse{Sessions: out}, nil
+	return &agentfleetv1.ListPeerSessionsResponse{Sessions: out}, nil
 }
 
 // PromptSession delivers one agent's message to another session.
 //
 // The guards are the whole design; the delivery is three lines.
 func (s *Server) PromptSession(ctx context.Context, req *agentfleetv1.PromptSessionRequest) (*agentfleetv1.PromptSessionResponse, error) {
-	caller, target, text := req.GetCallerTaskId(), req.GetTargetTaskId(), req.GetText()
+	caller, target, text := req.GetCallerSessionId(), req.GetTargetSessionId(), req.GetText()
 	if caller == "" || target == "" || text == "" {
 		return nil, fmt.Errorf("caller_task_id, target_task_id and text are required")
 	}
@@ -101,7 +101,7 @@ func (s *Server) PromptSession(ctx context.Context, req *agentfleetv1.PromptSess
 	// session whose human decision is still outstanding, and (worse) invite
 	// the caller to believe it had answered it. Permission decisions are
 	// human-only by docs/adr/0029 and this must not become a side door.
-	if state == tasks.LiveStateBlocked {
+	if state == sessions.LiveStateBlocked {
 		return nil, fmt.Errorf("session %s is blocked waiting on a human decision — it cannot be prompted by an agent", target)
 	}
 	if t.Status == "proposed" {
@@ -131,7 +131,7 @@ func (s *Server) PromptSession(ctx context.Context, req *agentfleetv1.PromptSess
 	// is already durable, and the session will see it whenever it next
 	// warms, so a capacity rejection is not worth failing the delivery over.
 	var podName string
-	if s.warm != nil && !tasks.IsPodPhaseLive(t.PodPhase) {
+	if s.warm != nil && !sessions.IsPodPhaseLive(t.PodPhase) {
 		if podName, err = s.warm(ctx, target); err != nil {
 			slog.Warn("coreserver: PromptSession could not warm target", "callerTaskId", caller, "targetTaskId", target, "error", err)
 		}
@@ -150,7 +150,7 @@ func (s *Server) PromptSession(ctx context.Context, req *agentfleetv1.PromptSess
 // point: "still working after 2 minutes" is an answer, and the caller
 // decides what to do with it.
 func (s *Server) WaitForSessionState(ctx context.Context, req *agentfleetv1.WaitForSessionStateRequest) (*agentfleetv1.WaitForSessionStateResponse, error) {
-	target := req.GetTargetTaskId()
+	target := req.GetTargetSessionId()
 	if target == "" {
 		return nil, fmt.Errorf("target_task_id is required")
 	}
@@ -192,7 +192,7 @@ func (s *Server) WaitForSessionState(ctx context.Context, req *agentfleetv1.Wait
 		// A target with no live pod will never move on its own — nothing is
 		// running to change its state — so waiting the full timeout would
 		// just be a slow way to time out.
-		if state == tasks.LiveStateNone {
+		if state == sessions.LiveStateNone {
 			return &agentfleetv1.WaitForSessionStateResponse{LiveState: string(state), TimedOut: true}, nil
 		}
 		if time.Now().After(deadline) {

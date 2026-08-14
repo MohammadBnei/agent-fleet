@@ -127,7 +127,7 @@ func EndpointsJSON(namespace, taskID string) string {
 		// Unreachable: the input is a fixed slice of plain structs. Logged
 		// rather than propagated so a marshalling bug degrades to the relay
 		// fallback instead of failing pod creation outright.
-		slog.Error("k8s EndpointsJSON", "taskId", taskID, "error", err)
+		slog.Error("k8s EndpointsJSON", "sessionId", taskID, "error", err)
 		return ""
 	}
 	return string(b)

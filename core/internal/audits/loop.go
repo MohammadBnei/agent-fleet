@@ -112,7 +112,7 @@ func (l *Loop) tick(ctx context.Context) {
 			slog.Info("audits: previous run still open, skipping", "audit", a.Name)
 			status = "skipped: previous run still open"
 		default:
-			slog.Info("audits: proposed task", "audit", a.Name, "taskId", taskID)
+			slog.Info("audits: proposed task", "audit", a.Name, "sessionId", taskID)
 		}
 		if err := l.store.RecordStatus(ctx, a.ID, status); err != nil {
 			slog.Error("audits: record status", "audit", a.Name, "error", err)

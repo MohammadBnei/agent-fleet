@@ -11,7 +11,7 @@ import (
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/repos"
-	"github.com/MohammadBnei/agent-fleet/core/internal/tasks"
+	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
 )
 
 // TestServer_CreateTask_UnknownRepo/EmptyDescription cover the two
@@ -24,9 +24,9 @@ func TestServer_CreateTask_UnknownRepo(t *testing.T) {
 	pool := newTestPool(t)
 	// "dream-analyst" already exists — seeded by db/migrations/ (docs/adr/0030).
 	repoStore := repos.NewStore(pool)
-	s := NewServer(tasks.NewStore(pool), nil, nil, repoStore, nil, nil, nil, nil, nil, 5, nil, nil, nil)
+	s := NewServer(sessions.NewStore(pool), nil, nil, repoStore, nil, nil, nil, nil, nil, 5, nil, nil, nil)
 
-	req := connect.NewRequest(&agentfleetv1.CreateTaskRequest{Repo: "not-a-real-repo", Description: "do something"})
+	req := connect.NewRequest(&agentfleetv1.CreateSessionRequest{Repo: "not-a-real-repo", Description: "do something"})
 	if _, err := s.CreateTask(context.Background(), req); connect.CodeOf(err) != connect.CodeInvalidArgument {
 		t.Fatalf("CreateTask error = %v, want CodeInvalidArgument", err)
 	}
@@ -36,9 +36,9 @@ func TestServer_CreateTask_EmptyDescription(t *testing.T) {
 	pool := newTestPool(t)
 	// "dream-analyst" already exists — seeded by db/migrations/ (docs/adr/0030).
 	repoStore := repos.NewStore(pool)
-	s := NewServer(tasks.NewStore(pool), nil, nil, repoStore, nil, nil, nil, nil, nil, 5, nil, nil, nil)
+	s := NewServer(sessions.NewStore(pool), nil, nil, repoStore, nil, nil, nil, nil, nil, 5, nil, nil, nil)
 
-	req := connect.NewRequest(&agentfleetv1.CreateTaskRequest{Repo: "dream-analyst", Description: ""})
+	req := connect.NewRequest(&agentfleetv1.CreateSessionRequest{Repo: "dream-analyst", Description: ""})
 	if _, err := s.CreateTask(context.Background(), req); connect.CodeOf(err) != connect.CodeInvalidArgument {
 		t.Fatalf("CreateTask error = %v, want CodeInvalidArgument", err)
 	}

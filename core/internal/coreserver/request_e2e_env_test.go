@@ -14,7 +14,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/provisionerclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/repoprofiles"
 	"github.com/MohammadBnei/agent-fleet/core/internal/repos"
-	"github.com/MohammadBnei/agent-fleet/core/internal/tasks"
+	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
 )
 
 // fakeE2eProvisionerServer records CreateE2ESession requests — same
@@ -75,7 +75,7 @@ func newFakeE2eProvisioner(t *testing.T) (*fakeE2eProvisionerServer, *provisione
 func TestRequestE2EEnv_UsesResolvedProfileStartCmd(t *testing.T) {
 	pool := newTestPool(t)
 	ctx := context.Background()
-	taskStore := tasks.NewStore(pool)
+	taskStore := sessions.NewStore(pool)
 	profileStore := repoprofiles.NewStore(pool)
 
 	// "e2e-test", not "e2e" — dream-analyst already has a real seeded "e2e"
@@ -97,7 +97,7 @@ func TestRequestE2EEnv_UsesResolvedProfileStartCmd(t *testing.T) {
 	fake, provisioner := newFakeE2eProvisioner(t)
 	srv := New(nil, taskStore, nil, profileStore, repos.NewStore(pool), provisioner, nil, nil)
 
-	if _, err := srv.RequestE2EEnv(ctx, &agentfleetv1.RequestE2EEnvRequest{TaskId: taskID, Profile: "e2e-test"}); err != nil {
+	if _, err := srv.RequestE2EEnv(ctx, &agentfleetv1.RequestE2EEnvRequest{SessionId: taskID, Profile: "e2e-test"}); err != nil {
 		t.Fatalf("RequestE2EEnv: %v", err)
 	}
 
@@ -122,7 +122,7 @@ func TestRequestE2EEnv_UsesResolvedProfileStartCmd(t *testing.T) {
 func TestRequestE2EEnv_ForwardsEndpointsUntouched(t *testing.T) {
 	pool := newTestPool(t)
 	ctx := context.Background()
-	taskStore := tasks.NewStore(pool)
+	taskStore := sessions.NewStore(pool)
 	profileStore := repoprofiles.NewStore(pool)
 
 	taskID, err := taskStore.CreateTask(ctx, "dream-analyst", "verify endpoint passthrough", "", "claude-opus-4-8", nil, nil)
@@ -133,7 +133,7 @@ func TestRequestE2EEnv_ForwardsEndpointsUntouched(t *testing.T) {
 	_, provisioner := newFakeE2eProvisioner(t)
 	srv := New(nil, taskStore, nil, profileStore, repos.NewStore(pool), provisioner, nil, nil)
 
-	resp, err := srv.RequestE2EEnv(ctx, &agentfleetv1.RequestE2EEnvRequest{TaskId: taskID})
+	resp, err := srv.RequestE2EEnv(ctx, &agentfleetv1.RequestE2EEnvRequest{SessionId: taskID})
 	if err != nil {
 		t.Fatalf("RequestE2EEnv: %v", err)
 	}
@@ -161,7 +161,7 @@ func TestRequestE2EEnv_ForwardsEndpointsUntouched(t *testing.T) {
 func TestRequestE2EEnv_CallerOverrideWinsOverProfile(t *testing.T) {
 	pool := newTestPool(t)
 	ctx := context.Background()
-	taskStore := tasks.NewStore(pool)
+	taskStore := sessions.NewStore(pool)
 	profileStore := repoprofiles.NewStore(pool)
 
 	if _, err := profileStore.Create(ctx, repoprofiles.Profile{
@@ -180,7 +180,7 @@ func TestRequestE2EEnv_CallerOverrideWinsOverProfile(t *testing.T) {
 	fake, provisioner := newFakeE2eProvisioner(t)
 	srv := New(nil, taskStore, nil, profileStore, repos.NewStore(pool), provisioner, nil, nil)
 
-	if _, err := srv.RequestE2EEnv(ctx, &agentfleetv1.RequestE2EEnvRequest{TaskId: taskID, Profile: "e2e-test", StartCmd: "agent-supplied command"}); err != nil {
+	if _, err := srv.RequestE2EEnv(ctx, &agentfleetv1.RequestE2EEnvRequest{SessionId: taskID, Profile: "e2e-test", StartCmd: "agent-supplied command"}); err != nil {
 		t.Fatalf("RequestE2EEnv: %v", err)
 	}
 

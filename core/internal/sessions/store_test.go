@@ -1,6 +1,6 @@
 //go:build integration
 
-package tasks
+package sessions
 
 import (
 	"context"
@@ -483,11 +483,11 @@ func TestListOverdueStopIDs_ReturnsOnlyOverdueWithLivePod(t *testing.T) {
 	old := 2 * time.Minute
 	recent := 1 * time.Second
 	overdueWithLivePod := seed(phase("POD_PHASE_RUNNING"), &old)
-	seed(phase("POD_PHASE_RUNNING"), &recent)     // not yet overdue
-	seed(phase("POD_PHASE_RUNNING"), nil)         // no stop requested at all
-	seed(phase("POD_PHASE_TERMINATED"), &old)     // overdue but pod already gone
-	seed(phase("POD_PHASE_CRASHED"), &old)        // overdue but pod already gone
-	seed(nil, &old)                               // overdue but never had a pod event
+	seed(phase("POD_PHASE_RUNNING"), &recent) // not yet overdue
+	seed(phase("POD_PHASE_RUNNING"), nil)     // no stop requested at all
+	seed(phase("POD_PHASE_TERMINATED"), &old) // overdue but pod already gone
+	seed(phase("POD_PHASE_CRASHED"), &old)    // overdue but pod already gone
+	seed(nil, &old)                           // overdue but never had a pod event
 
 	ids, err := store.ListOverdueStopIDs(ctx, time.Minute)
 	if err != nil {
@@ -839,26 +839,34 @@ func TestApproveProposal(t *testing.T) {
 	}{
 		{name: "unapproved proposal is released", wantOK: true, wantLast: "pending"},
 		{
-			name:     "already approved",
-			setup:    func(t *testing.T, pool *pgxpool.Pool, id string) { exec(t, pool, `UPDATE tasks SET status='pending' WHERE id=$1`, id) },
+			name: "already approved",
+			setup: func(t *testing.T, pool *pgxpool.Pool, id string) {
+				exec(t, pool, `UPDATE tasks SET status='pending' WHERE id=$1`, id)
+			},
 			wantOK:   false,
 			wantLast: "pending",
 		},
 		{
-			name:     "already running",
-			setup:    func(t *testing.T, pool *pgxpool.Pool, id string) { exec(t, pool, `UPDATE tasks SET status='running' WHERE id=$1`, id) },
+			name: "already running",
+			setup: func(t *testing.T, pool *pgxpool.Pool, id string) {
+				exec(t, pool, `UPDATE tasks SET status='running' WHERE id=$1`, id)
+			},
 			wantOK:   false,
 			wantLast: "running",
 		},
 		{
-			name:     "finished",
-			setup:    func(t *testing.T, pool *pgxpool.Pool, id string) { exec(t, pool, `UPDATE tasks SET status='done' WHERE id=$1`, id) },
+			name: "finished",
+			setup: func(t *testing.T, pool *pgxpool.Pool, id string) {
+				exec(t, pool, `UPDATE tasks SET status='done' WHERE id=$1`, id)
+			},
 			wantOK:   false,
 			wantLast: "done",
 		},
 		{
-			name:     "dismissed proposal is not resurrectable",
-			setup:    func(t *testing.T, pool *pgxpool.Pool, id string) { exec(t, pool, `UPDATE tasks SET deleted_at=now() WHERE id=$1`, id) },
+			name: "dismissed proposal is not resurrectable",
+			setup: func(t *testing.T, pool *pgxpool.Pool, id string) {
+				exec(t, pool, `UPDATE tasks SET deleted_at=now() WHERE id=$1`, id)
+			},
 			wantOK:   false,
 			wantLast: "proposed",
 		},

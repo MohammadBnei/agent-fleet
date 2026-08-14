@@ -15,7 +15,7 @@ import (
 
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 
-	"github.com/MohammadBnei/agent-fleet/core/internal/tasks"
+	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
 )
 
 // maxMetricsRange bounds what the Observability page can ask Prometheus
@@ -102,7 +102,7 @@ func (s *Server) GetFleetTopology(ctx context.Context, _ *connect.Request[agentf
 
 	live := make([]tasks.Task, 0, len(all))
 	for _, t := range all {
-		if tasks.IsPodPhaseLive(t.PodPhase) {
+		if sessions.IsPodPhaseLive(t.PodPhase) {
 			live = append(live, t)
 		}
 	}
@@ -128,12 +128,12 @@ func (s *Server) GetFleetTopology(ctx context.Context, _ *connect.Request[agentf
 
 	for _, t := range live {
 		nodes = append(nodes, &agentfleetv1.CellNode{
-			Id:     "worker/" + t.ID,
-			Type:   "worker",
-			Status: cellStatus(t),
-			TaskId: t.ID,
-			Repo:   t.Repo,
-			Label:  t.Description,
+			Id:        "worker/" + t.ID,
+			Type:      "worker",
+			Status:    cellStatus(t),
+			SessionId: t.ID,
+			Repo:      t.Repo,
+			Label:     t.Description,
 		})
 	}
 

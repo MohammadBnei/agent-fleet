@@ -136,13 +136,13 @@ func New(core *coreclient.Client, e2e directDialer) http.Handler {
 
 	s.AddTool(mcp.NewTool("prompt_agent",
 		mcp.WithDescription("Send a message to another session, as yourself. It lands in that session's transcript attributed to you and warms its pod if idle. Use it to hand off work or ask a question of a session owning a different repo — not to chat; the target reads it the way it reads a human's, so be concrete. REFUSED if the target is 'blocked' (it is waiting on a human decision that is not yours to resolve), for your own session, and beyond a small relay depth so chains cannot loop. Follow with wait_for_agent to await a reply."),
-		mcp.WithString("taskId", mcp.Required(), mcp.Description("Target session's task id, from list_sessions")),
+		mcp.WithString("sessionId", mcp.Required(), mcp.Description("Target session's task id, from list_sessions")),
 		mcp.WithString("text", mcp.Required()),
 	), promptSessionHandler(core))
 
 	s.AddTool(mcp.NewTool("wait_for_agent",
 		mcp.WithDescription("Block until another session reaches a liveness state, or the timeout expires. With no `until`, waits for it to settle (idle, done, blocked, stalled). `until: blocked` is the useful one after prompting — it returns when that session genuinely needs a human. A timeout is not an error: the response reports timedOut plus the state actually reached, and 'still working' is a legitimate answer to act on."),
-		mcp.WithString("taskId", mcp.Required()),
+		mcp.WithString("sessionId", mcp.Required()),
 		mcp.WithString("until", mcp.Description("working | blocked | idle | done | stalled | unknown. Omit to wait for any settled state.")),
 		mcp.WithNumber("timeoutMs", mcp.Description("Default 120000.")),
 		mcp.WithNumber("afterSeq", mcp.Description("Only count a settled state once the target produces activity newer than this transcript seq. Filled in automatically from your last prompt_agent to the same target, so normally omit it — without it, waiting right after prompting can return the state held BEFORE your message landed.")),

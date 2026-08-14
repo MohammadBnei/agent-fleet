@@ -33,7 +33,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/repoprofiles"
 	"github.com/MohammadBnei/agent-fleet/core/internal/repos"
 	"github.com/MohammadBnei/agent-fleet/core/internal/scheduledaudits"
-	"github.com/MohammadBnei/agent-fleet/core/internal/tasks"
+	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
 )
 
@@ -77,7 +77,7 @@ var _ agentfleetv1connect.DashboardServiceHandler = (*Server)(nil)
 
 const defaultListLimit = 50
 
-func (s *Server) ListTasks(ctx context.Context, req *connect.Request[agentfleetv1.ListTasksRequest]) (*connect.Response[agentfleetv1.ListTasksResponse], error) {
+func (s *Server) ListTasks(ctx context.Context, req *connect.Request[agentfleetv1.ListSessionsRequest]) (*connect.Response[agentfleetv1.ListSessionsResponse], error) {
 	limit := int(req.Msg.GetLimit())
 	if limit <= 0 {
 		limit = defaultListLimit
@@ -87,23 +87,23 @@ func (s *Server) ListTasks(ctx context.Context, req *connect.Request[agentfleetv
 		slog.Error("dashboard ListTasks", "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
-	out := make([]*agentfleetv1.Task, len(list))
+	out := make([]*agentfleetv1.Session, len(list))
 	for i, t := range list {
 		out[i] = TaskToProto(t)
 	}
-	return connect.NewResponse(&agentfleetv1.ListTasksResponse{Tasks: out}), nil
+	return connect.NewResponse(&agentfleetv1.ListSessionsResponse{Sessions: out}), nil
 }
 
-func (s *Server) GetTask(ctx context.Context, req *connect.Request[agentfleetv1.GetTaskRequest]) (*connect.Response[agentfleetv1.GetTaskResponse], error) {
+func (s *Server) GetTask(ctx context.Context, req *connect.Request[agentfleetv1.GetSessionRequest]) (*connect.Response[agentfleetv1.GetSessionResponse], error) {
 	t, err := s.tasks.GetTask(ctx, req.Msg.GetId())
 	if err != nil {
-		slog.Error("dashboard GetTask", "taskId", req.Msg.GetId(), "error", err)
+		slog.Error("dashboard GetTask", "sessionId", req.Msg.GetId(), "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	if t == nil {
 		return nil, connect.NewError(connect.CodeNotFound, errors.New("task not found"))
 	}
-	return connect.NewResponse(&agentfleetv1.GetTaskResponse{Task: TaskToProto(*t)}), nil
+	return connect.NewResponse(&agentfleetv1.GetSessionResponse{Session: TaskToProto(*t)}), nil
 }
 
 // CreateTask lets the dashboard create a task the same way a Discord /task
@@ -112,7 +112,7 @@ func (s *Server) GetTask(ctx context.Context, req *connect.Request[agentfleetv1.
 // calls, just with nil channel/thread (docs/adr/0015). PostToThread
 // (core/internal/discord/session.go) already no-ops on a nil ThreadID, so
 // no other code needs to special-case a dashboard-origin task.
-func (s *Server) CreateTask(ctx context.Context, req *connect.Request[agentfleetv1.CreateTaskRequest]) (*connect.Response[agentfleetv1.CreateTaskResponse], error) {
+func (s *Server) CreateTask(ctx context.Context, req *connect.Request[agentfleetv1.CreateSessionRequest]) (*connect.Response[agentfleetv1.CreateSessionResponse], error) {
 	repo := req.Msg.GetRepo()
 	repoCfg, err := s.repos.Get(ctx, repo)
 	if err != nil {
@@ -162,16 +162,16 @@ func (s *Server) CreateTask(ctx context.Context, req *connect.Request[agentfleet
 	// If any snippet suggests a permission mode, auto-set it immediately
 	if suggestedMode != "" {
 		if err := s.tasks.SetPermissionMode(ctx, id, suggestedMode); err != nil {
-			slog.Warn("dashboard CreateTask: failed to set suggested permission mode", "taskId", id, "mode", suggestedMode, "error", err)
+			slog.Warn("dashboard CreateTask: failed to set suggested permission mode", "sessionId", id, "mode", suggestedMode, "error", err)
 		}
 	}
 	t, err := s.tasks.GetTask(ctx, id)
 	if err != nil {
-		slog.Error("dashboard CreateTask", "taskId", id, "error", err)
+		slog.Error("dashboard CreateTask", "sessionId", id, "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
-	slog.Info("dashboard CreateTask", "taskId", id, "repo", repo)
-	return connect.NewResponse(&agentfleetv1.CreateTaskResponse{Task: TaskToProto(*t)}), nil
+	slog.Info("dashboard CreateTask", "sessionId", id, "repo", repo)
+	return connect.NewResponse(&agentfleetv1.CreateSessionResponse{Session: TaskToProto(*t)}), nil
 }
 
 // resolveGuidanceAndMode joins the text of the operator's selected prompt
@@ -214,10 +214,10 @@ func isValidModel(model string) bool {
 }
 
 func (s *Server) GetTranscript(ctx context.Context, req *connect.Request[agentfleetv1.ReadTranscriptSinceRequest]) (*connect.Response[agentfleetv1.ReadTranscriptSinceResponse], error) {
-	taskID := req.Msg.GetTaskId()
+	taskID := req.Msg.GetSessionId()
 	entries, next, err := s.transcr.ReadSince(ctx, taskID, req.Msg.GetSinceSeq(), 1000)
 	if err != nil {
-		slog.Error("dashboard GetTranscript", "taskId", taskID, "error", err)
+		slog.Error("dashboard GetTranscript", "sessionId", taskID, "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	out := make([]*agentfleetv1.TranscriptEntry, len(entries))
@@ -228,7 +228,7 @@ func (s *Server) GetTranscript(ctx context.Context, req *connect.Request[agentfl
 }
 
 func (s *Server) StreamTranscript(ctx context.Context, req *connect.Request[agentfleetv1.StreamTranscriptRequest], stream *connect.ServerStream[agentfleetv1.TranscriptEntry]) error {
-	ch, cancel := s.hub.Subscribe(req.Msg.GetTaskId(), req.Msg.GetSinceSeq())
+	ch, cancel := s.hub.Subscribe(req.Msg.GetSessionId(), req.Msg.GetSinceSeq())
 	defer cancel()
 
 	for {
@@ -247,9 +247,9 @@ func (s *Server) StreamTranscript(ctx context.Context, req *connect.Request[agen
 }
 
 func (s *Server) GetE2EStatus(ctx context.Context, req *connect.Request[agentfleetv1.GetE2EStatusRequest]) (*connect.Response[agentfleetv1.GetE2EStatusResponse], error) {
-	live, err := s.e2e.GetSessionStatus(ctx, req.Msg.GetTaskId())
+	live, err := s.e2e.GetSessionStatus(ctx, req.Msg.GetSessionId())
 	if err != nil {
-		slog.Error("dashboard GetE2EStatus", "taskId", req.Msg.GetTaskId(), "error", err)
+		slog.Error("dashboard GetE2EStatus", "sessionId", req.Msg.GetSessionId(), "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	resp := &agentfleetv1.GetE2EStatusResponse{
@@ -272,8 +272,8 @@ func (s *Server) GetE2EStatus(ctx context.Context, req *connect.Request[agentfle
 	// called that, so this card reported the wrong profile (and a spurious
 	// "overridden" badge) for any repo pointing its e2e_profile column
 	// elsewhere — agent-fleet at "lint", for one. docs/adr/0044.
-	if t, err := s.tasks.GetTask(ctx, req.Msg.GetTaskId()); err != nil {
-		slog.Warn("dashboard GetE2EStatus: get task", "taskId", req.Msg.GetTaskId(), "error", err)
+	if t, err := s.tasks.GetTask(ctx, req.Msg.GetSessionId()); err != nil {
+		slog.Warn("dashboard GetE2EStatus: get task", "sessionId", req.Msg.GetSessionId(), "error", err)
 	} else if t != nil {
 		if recipe, err := e2erecipe.Resolve(ctx, s.repos, s.profiles, t.Repo, ""); err != nil {
 			slog.Warn("dashboard GetE2EStatus: resolve recipe", "repo", t.Repo, "error", err)
@@ -307,21 +307,21 @@ func (s *Server) GetE2EStatus(ctx context.Context, req *connect.Request[agentfle
 // unreachable-pod case a bare abort message can never reach. Ends the
 // whole session/pod — Interrupt below is the softer, session-preserving
 // sibling.
-func (s *Server) Kill(ctx context.Context, req *connect.Request[agentfleetv1.KillRequest]) (*connect.Response[agentfleetv1.KillResponse], error) {
-	taskID := req.Msg.GetTaskId()
+func (s *Server) Kill(ctx context.Context, req *connect.Request[agentfleetv1.StopSessionRequest]) (*connect.Response[agentfleetv1.StopSessionResponse], error) {
+	taskID := req.Msg.GetSessionId()
 	reason := "killed by human"
 	if req.Msg.Reason != nil && *req.Msg.Reason != "" {
 		reason = req.Msg.GetReason()
 	}
 	if _, err := s.transcr.Append(ctx, taskID, "human", reason, "abort", uuid.NewString()); err != nil {
-		slog.Error("dashboard Kill", "taskId", taskID, "error", err)
+		slog.Error("dashboard Kill", "sessionId", taskID, "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	if err := s.tasks.MarkStopRequested(ctx, taskID); err != nil {
-		slog.Error("dashboard Kill: mark stop requested", "taskId", taskID, "error", err)
+		slog.Error("dashboard Kill: mark stop requested", "sessionId", taskID, "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
-	return connect.NewResponse(&agentfleetv1.KillResponse{Status: "killing"}), nil
+	return connect.NewResponse(&agentfleetv1.StopSessionResponse{Status: "killing"}), nil
 }
 
 // Interrupt posts an "interrupt" transcript entry — the worker calls the
@@ -330,9 +330,9 @@ func (s *Server) Kill(ctx context.Context, req *connect.Request[agentfleetv1.Kil
 // tasks.stop_requested_at/pod lifecycle: there's nothing for
 // dispatch.Loop's grace-period sweep to force-teardown here.
 func (s *Server) Interrupt(ctx context.Context, req *connect.Request[agentfleetv1.InterruptRequest]) (*connect.Response[agentfleetv1.InterruptResponse], error) {
-	taskID := req.Msg.GetTaskId()
+	taskID := req.Msg.GetSessionId()
 	if _, err := s.transcr.Append(ctx, taskID, "human", "interrupted by human", "interrupt", uuid.NewString()); err != nil {
-		slog.Error("dashboard Interrupt", "taskId", taskID, "error", err)
+		slog.Error("dashboard Interrupt", "sessionId", taskID, "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	return connect.NewResponse(&agentfleetv1.InterruptResponse{Status: "interrupting"}), nil
@@ -364,29 +364,29 @@ var validPermissionModes = map[string]bool{
 // for the dashboard's mode picker) in addition to the transcript append
 // that actually reaches the running worker.
 func (s *Server) SetPermissionMode(ctx context.Context, req *connect.Request[agentfleetv1.SetPermissionModeRequest]) (*connect.Response[agentfleetv1.SetPermissionModeResponse], error) {
-	taskID := req.Msg.GetTaskId()
+	taskID := req.Msg.GetSessionId()
 	mode := req.Msg.GetMode()
 	if !validPermissionModes[mode] {
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("invalid permission mode %q", mode))
 	}
 	if _, err := s.transcr.Append(ctx, taskID, "human", mode, "permission_mode", uuid.NewString()); err != nil {
-		slog.Error("dashboard SetPermissionMode", "taskId", taskID, "mode", mode, "error", err)
+		slog.Error("dashboard SetPermissionMode", "sessionId", taskID, "mode", mode, "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	if err := s.tasks.SetPermissionMode(ctx, taskID, mode); err != nil {
-		slog.Error("dashboard SetPermissionMode: persist", "taskId", taskID, "mode", mode, "error", err)
+		slog.Error("dashboard SetPermissionMode: persist", "sessionId", taskID, "mode", mode, "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	return connect.NewResponse(&agentfleetv1.SetPermissionModeResponse{Status: "set"}), nil
 }
 
 func (s *Server) KillE2E(ctx context.Context, req *connect.Request[agentfleetv1.KillE2ERequest]) (*connect.Response[agentfleetv1.KillE2EResponse], error) {
-	taskID := req.Msg.GetTaskId()
+	taskID := req.Msg.GetSessionId()
 	var repo string
 	if req.Msg.GetAlsoTeardownServices() {
 		t, err := s.tasks.GetTask(ctx, taskID)
 		if err != nil {
-			slog.Error("dashboard KillE2E: get task for repo", "taskId", taskID, "error", err)
+			slog.Error("dashboard KillE2E: get task for repo", "sessionId", taskID, "error", err)
 			return nil, connect.NewError(connect.CodeInternal, err)
 		}
 		if t != nil {
@@ -395,7 +395,7 @@ func (s *Server) KillE2E(ctx context.Context, req *connect.Request[agentfleetv1.
 	}
 	killed, servicesTornDown, err := s.e2e.KillSession(ctx, taskID, uuid.NewString(), repo, req.Msg.GetAlsoTeardownServices())
 	if err != nil {
-		slog.Error("dashboard KillE2E", "taskId", taskID, "error", err)
+		slog.Error("dashboard KillE2E", "sessionId", taskID, "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	return connect.NewResponse(&agentfleetv1.KillE2EResponse{Killed: killed, ServicesTornDown: servicesTornDown}), nil
@@ -411,10 +411,10 @@ func (s *Server) KillE2E(ctx context.Context, req *connect.Request[agentfleetv1.
 // uses. Deliberately not a reimplementation: the hardcoded-"e2e" bug that
 // package exists to prevent had already been copied into GetE2EStatus below.
 func (s *Server) StartE2E(ctx context.Context, req *connect.Request[agentfleetv1.StartE2ERequest]) (*connect.Response[agentfleetv1.StartE2EResponse], error) {
-	taskID := req.Msg.GetTaskId()
+	taskID := req.Msg.GetSessionId()
 	t, err := s.tasks.GetTask(ctx, taskID)
 	if err != nil {
-		slog.Error("dashboard StartE2E: get task", "taskId", taskID, "error", err)
+		slog.Error("dashboard StartE2E: get task", "sessionId", taskID, "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	if t == nil {
@@ -422,15 +422,15 @@ func (s *Server) StartE2E(ctx context.Context, req *connect.Request[agentfleetv1
 	}
 	recipe, err := e2erecipe.Resolve(ctx, s.repos, s.profiles, t.Repo, "")
 	if err != nil {
-		slog.Error("dashboard StartE2E: resolve recipe", "taskId", taskID, "repo", t.Repo, "error", err)
+		slog.Error("dashboard StartE2E: resolve recipe", "sessionId", taskID, "repo", t.Repo, "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	created, err := s.e2e.CreateE2eSession(ctx, taskID, t.Repo, recipe.StartCmd, recipe.ToolKeys, recipe.Services)
 	if err != nil {
-		slog.Error("dashboard StartE2E", "taskId", taskID, "error", err)
+		slog.Error("dashboard StartE2E", "sessionId", taskID, "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
-	slog.Info("dashboard StartE2E", "taskId", taskID, "repo", t.Repo, "profile", recipe.ProfileName)
+	slog.Info("dashboard StartE2E", "sessionId", taskID, "repo", t.Repo, "profile", recipe.ProfileName)
 	// The roster is deliberately not surfaced to the browser: a dashboard
 	// user has no route to a ClusterIP, and the endpoints are only useful to
 	// in-cluster callers (docs/adr/0045).
@@ -453,12 +453,12 @@ func (s *Server) StartE2E(ctx context.Context, req *connect.Request[agentfleetv1
 // bound) belongs in the image next to the thing it restarts, where the agent
 // can invoke it too.
 func (s *Server) RestartE2EApp(ctx context.Context, req *connect.Request[agentfleetv1.RestartE2EAppRequest]) (*connect.Response[agentfleetv1.RestartE2EAppResponse], error) {
-	out, exitCode, err := s.runInE2ePod(ctx, req.Msg.GetTaskId(), "e2e-restart-app")
+	out, exitCode, err := s.runInE2ePod(ctx, req.Msg.GetSessionId(), "e2e-restart-app")
 	if err != nil {
-		slog.Error("dashboard RestartE2EApp", "taskId", req.Msg.GetTaskId(), "error", err)
+		slog.Error("dashboard RestartE2EApp", "sessionId", req.Msg.GetSessionId(), "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
-	slog.Info("dashboard RestartE2EApp", "taskId", req.Msg.GetTaskId(), "exitCode", exitCode)
+	slog.Info("dashboard RestartE2EApp", "sessionId", req.Msg.GetSessionId(), "exitCode", exitCode)
 	return connect.NewResponse(&agentfleetv1.RestartE2EAppResponse{Output: out, ExitCode: exitCode}), nil
 }
 
@@ -474,11 +474,11 @@ func (s *Server) GetE2EAppLog(ctx context.Context, req *connect.Request[agentfle
 	if lines > 2000 {
 		lines = 2000
 	}
-	out, _, err := s.runInE2ePod(ctx, req.Msg.GetTaskId(), fmt.Sprintf("tail -n %d /tmp/e2e-app.log", lines))
+	out, _, err := s.runInE2ePod(ctx, req.Msg.GetSessionId(), fmt.Sprintf("tail -n %d /tmp/e2e-app.log", lines))
 	if err != nil {
 		// A pod that isn't up yet is the common case, not a page-level error —
 		// same reasoning useTaskDetail's own poll already applies.
-		slog.Info("dashboard GetE2EAppLog: no readable pod", "taskId", req.Msg.GetTaskId(), "error", err)
+		slog.Info("dashboard GetE2EAppLog: no readable pod", "sessionId", req.Msg.GetSessionId(), "error", err)
 		return connect.NewResponse(&agentfleetv1.GetE2EAppLogResponse{}), nil
 	}
 	return connect.NewResponse(&agentfleetv1.GetE2EAppLogResponse{Log: out}), nil
@@ -552,9 +552,9 @@ func (s *Server) runInE2ePod(ctx context.Context, taskID, command string) (outpu
 // (reliability-findings.md #0: "any pending question + any reply" let an
 // unrelated message satisfy a blocked AskUserQuestion call).
 func (s *Server) AnswerQuestion(ctx context.Context, req *connect.Request[agentfleetv1.AnswerQuestionRequest]) (*connect.Response[agentfleetv1.AnswerQuestionResponse], error) {
-	taskID := req.Msg.GetTaskId()
+	taskID := req.Msg.GetSessionId()
 	if _, err := s.transcr.AppendReply(ctx, taskID, "human", req.Msg.GetAnswersJson(), "answer", uuid.NewString(), req.Msg.GetSeq()); err != nil {
-		slog.Error("dashboard AnswerQuestion", "taskId", taskID, "error", err)
+		slog.Error("dashboard AnswerQuestion", "sessionId", taskID, "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	return connect.NewResponse(&agentfleetv1.AnswerQuestionResponse{Status: "answered"}), nil
@@ -566,9 +566,9 @@ func (s *Server) AnswerQuestion(ctx context.Context, req *connect.Request[agentf
 // rather than overloaded onto AnswerQuestion since the payload differs
 // (allow/deny/updatedInput JSON vs. free-form answers JSON).
 func (s *Server) RespondToPermission(ctx context.Context, req *connect.Request[agentfleetv1.RespondToPermissionRequest]) (*connect.Response[agentfleetv1.RespondToPermissionResponse], error) {
-	taskID := req.Msg.GetTaskId()
+	taskID := req.Msg.GetSessionId()
 	if _, err := s.transcr.AppendReply(ctx, taskID, "human", req.Msg.GetDecisionJson(), "permission_response", uuid.NewString(), req.Msg.GetSeq()); err != nil {
-		slog.Error("dashboard RespondToPermission", "taskId", taskID, "error", err)
+		slog.Error("dashboard RespondToPermission", "sessionId", taskID, "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	return connect.NewResponse(&agentfleetv1.RespondToPermissionResponse{Status: "answered"}), nil
@@ -588,8 +588,8 @@ func (s *Server) RespondToPermission(ctx context.Context, req *connect.Request[a
 // explicitly, before the message is appended — so the pod that reads it
 // back off streamHumanMessages already exists. Silently does nothing
 // extra when a pod is already live (the common case).
-func (s *Server) Discuss(ctx context.Context, req *connect.Request[agentfleetv1.DiscussRequest]) (*connect.Response[agentfleetv1.DiscussResponse], error) {
-	taskID := req.Msg.GetTaskId()
+func (s *Server) Discuss(ctx context.Context, req *connect.Request[agentfleetv1.PostMessageRequest]) (*connect.Response[agentfleetv1.PostMessageResponse], error) {
+	taskID := req.Msg.GetSessionId()
 	text := req.Msg.GetText()
 	if text == "" {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("text is required"))
@@ -600,7 +600,7 @@ func (s *Server) Discuss(ctx context.Context, req *connect.Request[agentfleetv1.
 	if _, err := s.transcr.Append(ctx, taskID, "human", text, "discussion", uuid.NewString()); err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
-	return connect.NewResponse(&agentfleetv1.DiscussResponse{Status: "sent"}), nil
+	return connect.NewResponse(&agentfleetv1.PostMessageResponse{Status: "sent"}), nil
 }
 
 // MarkSeen records that a human opened this session's detail view, which
@@ -614,19 +614,19 @@ func (s *Server) Discuss(ctx context.Context, req *connect.Request[agentfleetv1.
 // unreachable. Best-effort — failing to record a look is not worth
 // failing the caller over, and the next open will record it anyway.
 func (s *Server) MarkSeen(ctx context.Context, req *connect.Request[agentfleetv1.MarkSeenRequest]) (*connect.Response[agentfleetv1.MarkSeenResponse], error) {
-	if err := s.tasks.MarkSeen(ctx, req.Msg.GetTaskId()); err != nil {
+	if err := s.tasks.MarkSeen(ctx, req.Msg.GetSessionId()); err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	return connect.NewResponse(&agentfleetv1.MarkSeenResponse{}), nil
 }
 
-// Warm boots a pod for an idle session on demand (see WarmRequest's own
+// Warm boots a pod for an idle session on demand (see WarmSessionRequest's own
 // proto comment) — the explicit counterpart to Discuss's auto-warm. Gives
 // an explicit, specific rejection reason for each way a click can be a
 // no-op — unlike Discuss, which shares warmIfIdle's silent-skip behavior
 // for those same cases because it has a message to send regardless.
-func (s *Server) Warm(ctx context.Context, req *connect.Request[agentfleetv1.WarmRequest]) (*connect.Response[agentfleetv1.WarmResponse], error) {
-	taskID := req.Msg.GetTaskId()
+func (s *Server) Warm(ctx context.Context, req *connect.Request[agentfleetv1.WarmSessionRequest]) (*connect.Response[agentfleetv1.WarmSessionResponse], error) {
+	taskID := req.Msg.GetSessionId()
 	t, err := s.tasks.GetTask(ctx, taskID)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
@@ -634,7 +634,7 @@ func (s *Server) Warm(ctx context.Context, req *connect.Request[agentfleetv1.War
 	if t == nil {
 		return nil, connect.NewError(connect.CodeNotFound, errors.New("task not found"))
 	}
-	if tasks.IsPodPhaseLive(t.PodPhase) {
+	if sessions.IsPodPhaseLive(t.PodPhase) {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("session already has a live pod"))
 	}
 	if t.Status == "proposed" {
@@ -647,41 +647,22 @@ func (s *Server) Warm(ctx context.Context, req *connect.Request[agentfleetv1.War
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&agentfleetv1.WarmResponse{Status: "warming", PodName: podName}), nil
+	return connect.NewResponse(&agentfleetv1.WarmSessionResponse{Status: "warming", PodName: podName}), nil
 }
 
-// ApproveTask releases a machine-created proposal into the dispatch queue
-// (see ApproveTaskRequest's proto comment). Only writes the status —
-// dispatch owns the pod, which keeps the task inside
-// MAX_IN_FLIGHT_TASKS' accounting.
-func (s *Server) ApproveTask(ctx context.Context, req *connect.Request[agentfleetv1.ApproveTaskRequest]) (*connect.Response[agentfleetv1.ApproveTaskResponse], error) {
-	approved, err := s.tasks.ApproveProposal(ctx, req.Msg.GetTaskId())
-	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
-	}
-	if !approved {
-		// Covers unknown, already-approved, already-running and dismissed
-		// alike — from the caller's side they are the same fact: there is
-		// no un-approved proposal here to release.
-		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("task is not an unapproved proposal"))
-	}
-	return connect.NewResponse(&agentfleetv1.ApproveTaskResponse{Status: "approved"}), nil
-}
-
-// RetryTask is the only path back from failed_permanently — see tasks.Retry.
-func (s *Server) RetryTask(ctx context.Context, req *connect.Request[agentfleetv1.RetryTaskRequest]) (*connect.Response[agentfleetv1.RetryTaskResponse], error) {
-	retried, err := s.tasks.Retry(ctx, req.Msg.GetTaskId())
-	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
-	}
-	if !retried {
-		// Unknown, deleted, or not in a failed state — from the caller's side
-		// the same fact: there is nothing here to retry. Guarding it matters
-		// because retrying a live session would double-dispatch it.
-		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("task is not in a failed state"))
-	}
-	return connect.NewResponse(&agentfleetv1.RetryTaskResponse{Status: "pending"}), nil
-}
+// ApproveTask and RetryTask used to live here. Both are deleted in
+// docs/adr/0048.
+//
+// ApproveTask's job — the human gate on a machine-created proposal, the one
+// write that can hand a cluster-access agent a pod — moves to
+// OpenFromProposal below. It is the same guarantee expressed in the schema
+// instead of in a status value: a proposal row has no pod path at all, so
+// there is no dispatcher to be trusted not to SELECT it.
+//
+// RetryTask was the only way back from failed_permanently, a state the
+// automatic reclaim could drive a task into with no exit. Nothing reclaims a
+// session now, so there is no dead state to resurrect one from — retrying is
+// just sending the session another message.
 
 // warmIfIdle is Warm/Discuss's shared implementation: returns ("", nil)
 // if the task already has a live pod (a no-op, not an error — Discuss
@@ -701,7 +682,7 @@ func (s *Server) WarmIfIdle(ctx context.Context, taskID string) (podName string,
 	if t == nil {
 		return "", connect.NewError(connect.CodeNotFound, errors.New("task not found"))
 	}
-	if tasks.IsPodPhaseLive(t.PodPhase) {
+	if sessions.IsPodPhaseLive(t.PodPhase) {
 		return "", nil
 	}
 	// A still-'pending' task hasn't been claimed yet — dispatch.Loop's own
@@ -774,22 +755,22 @@ func (s *Server) WarmIfIdle(ctx context.Context, taskID string) (podName string,
 // block removal like Stop's cooperative abort-signal does) and then
 // soft-deletes the task row. Doesn't touch status — see
 // tasks.Store.SoftDelete's own comment.
-func (s *Server) DeleteTask(ctx context.Context, req *connect.Request[agentfleetv1.DeleteTaskRequest]) (*connect.Response[agentfleetv1.DeleteTaskResponse], error) {
-	taskID := req.Msg.GetTaskId()
+func (s *Server) DeleteTask(ctx context.Context, req *connect.Request[agentfleetv1.DeleteSessionRequest]) (*connect.Response[agentfleetv1.DeleteSessionResponse], error) {
+	taskID := req.Msg.GetSessionId()
 	if _, err := s.e2e.TearDownSession(ctx, taskID, agentfleetv1.SessionKind_SESSION_KIND_WORKER); err != nil {
-		slog.Error("dashboard DeleteTask: worker teardown", "taskId", taskID, "error", err)
+		slog.Error("dashboard DeleteTask: worker teardown", "sessionId", taskID, "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	if _, err := s.e2e.TearDownSession(ctx, taskID, agentfleetv1.SessionKind_SESSION_KIND_E2E); err != nil {
-		slog.Error("dashboard DeleteTask: e2e teardown", "taskId", taskID, "error", err)
+		slog.Error("dashboard DeleteTask: e2e teardown", "sessionId", taskID, "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	if err := s.tasks.SoftDelete(ctx, taskID); err != nil {
-		slog.Error("dashboard DeleteTask: soft delete", "taskId", taskID, "error", err)
+		slog.Error("dashboard DeleteTask: soft delete", "sessionId", taskID, "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
-	slog.Info("dashboard DeleteTask", "taskId", taskID)
-	return connect.NewResponse(&agentfleetv1.DeleteTaskResponse{Status: "deleted"}), nil
+	slog.Info("dashboard DeleteTask", "sessionId", taskID)
+	return connect.NewResponse(&agentfleetv1.DeleteSessionResponse{Status: "deleted"}), nil
 }
 
 // ListWorktrees left-joins the provisioner's raw worktree list against
@@ -808,7 +789,7 @@ func (s *Server) ListWorktrees(ctx context.Context, _ *connect.Request[agentflee
 	out := make([]*agentfleetv1.WorktreeView, len(worktrees))
 	for i, w := range worktrees {
 		view := &agentfleetv1.WorktreeView{
-			TaskId:        w.GetTaskId(),
+			SessionId:     w.GetSessionId(),
 			Repo:          w.GetRepo(),
 			Branch:        w.GetBranch(),
 			UpstreamTrack: w.GetUpstreamTrack(),
@@ -817,12 +798,12 @@ func (s *Server) ListWorktrees(ctx context.Context, _ *connect.Request[agentflee
 			DirtyFiles:    w.GetDirtyFiles(),
 			SizeBytes:     w.GetSizeBytes(),
 		}
-		if info, err := s.tasks.GetTaskStatusInfo(ctx, w.GetTaskId()); err != nil {
-			slog.Error("dashboard ListWorktrees: GetTaskStatusInfo", "taskId", w.GetTaskId(), "error", err)
+		if info, err := s.tasks.GetTaskStatusInfo(ctx, w.GetSessionId()); err != nil {
+			slog.Error("dashboard ListWorktrees: GetTaskStatusInfo", "sessionId", w.GetSessionId(), "error", err)
 			return nil, connect.NewError(connect.CodeInternal, err)
 		} else if info != nil {
-			view.TaskStatus = &info.Status
-			view.TaskError = info.LastError
+			view.LiveState = &info.Status
+			view.SessionError = info.LastError
 			view.PrUrl = info.PrURL
 		}
 		out[i] = view
@@ -835,9 +816,9 @@ func (s *Server) ListWorktrees(ctx context.Context, _ *connect.Request[agentflee
 }
 
 func (s *Server) DeleteWorktree(ctx context.Context, req *connect.Request[agentfleetv1.DeleteWorktreeRequest]) (*connect.Response[agentfleetv1.DeleteWorktreeResponse], error) {
-	deleted, err := s.e2e.DeleteWorktree(ctx, req.Msg.GetTaskId(), req.Msg.GetRepo(), req.Msg.GetAlsoDeleteBranch())
+	deleted, err := s.e2e.DeleteWorktree(ctx, req.Msg.GetSessionId(), req.Msg.GetRepo(), req.Msg.GetAlsoDeleteBranch())
 	if err != nil {
-		slog.Error("dashboard DeleteWorktree", "taskId", req.Msg.GetTaskId(), "repo", req.Msg.GetRepo(), "error", err)
+		slog.Error("dashboard DeleteWorktree", "sessionId", req.Msg.GetSessionId(), "repo", req.Msg.GetRepo(), "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	return connect.NewResponse(&agentfleetv1.DeleteWorktreeResponse{Deleted: deleted}), nil
@@ -930,153 +911,30 @@ func (s *Server) DeleteRepo(ctx context.Context, req *connect.Request[agentfleet
 }
 
 func repoToProto(r repos.Repo) *agentfleetv1.Repo {
-	return &agentfleetv1.Repo{Name: r.Name, Url: r.URL, BaseBranch: r.BaseBranch, E2EProfile: r.E2eProfile}
-}
-
-// ListRepoProfiles/CreateRepoProfile/UpdateRepoProfile/DeleteRepoProfile
-// back the dashboard's environment-recipe editor (docs/adr/0034) — same
-// CRUD RPC shape as ListRepos/CreateRepo/UpdateRepo/DeleteRepo above.
-// Ingredient key/scope-mode validation happens at pod-materialization time
-// in the provisioner (its catalog is the source of truth for what's
-// known), not here — core has no shared package with the provisioner to
-// validate against (a deliberate scope call, docs/adr/0034: add a
-// ListIngredientCatalog RPC later if config typos become a real problem).
-
-func (s *Server) ListRepoProfiles(ctx context.Context, req *connect.Request[agentfleetv1.ListRepoProfilesRequest]) (*connect.Response[agentfleetv1.ListRepoProfilesResponse], error) {
-	list, err := s.profiles.List(ctx, req.Msg.GetRepoName())
-	if err != nil {
-		slog.Error("dashboard ListRepoProfiles", "repo", req.Msg.GetRepoName(), "error", err)
-		return nil, connect.NewError(connect.CodeInternal, err)
-	}
-	out := make([]*agentfleetv1.RepoProfile, len(list))
-	for i, p := range list {
-		out[i] = repoProfileToProto(p)
-	}
-	return connect.NewResponse(&agentfleetv1.ListRepoProfilesResponse{Profiles: out}), nil
-}
-
-func (s *Server) CreateRepoProfile(ctx context.Context, req *connect.Request[agentfleetv1.CreateRepoProfileRequest]) (*connect.Response[agentfleetv1.CreateRepoProfileResponse], error) {
-	repoName := req.Msg.GetRepoName()
-	name := req.Msg.GetName()
-	if repoName == "" || name == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("repo_name and name are required"))
-	}
-	p := repoProfileFromProtoCreate(req.Msg)
-	id, err := s.profiles.Create(ctx, p)
-	if err != nil {
-		if errors.Is(err, repoprofiles.ErrExists) {
-			return nil, connect.NewError(connect.CodeAlreadyExists, err)
-		}
-		slog.Error("dashboard CreateRepoProfile", "repo", repoName, "name", name, "error", err)
-		return nil, connect.NewError(connect.CodeInternal, err)
-	}
-	p.ID = id
-	return connect.NewResponse(&agentfleetv1.CreateRepoProfileResponse{Profile: repoProfileToProto(p)}), nil
-}
-
-func (s *Server) UpdateRepoProfile(ctx context.Context, req *connect.Request[agentfleetv1.UpdateRepoProfileRequest]) (*connect.Response[agentfleetv1.UpdateRepoProfileResponse], error) {
-	repoName := req.Msg.GetRepoName()
-	name := req.Msg.GetName()
-	if repoName == "" || name == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("repo_name and name are required"))
-	}
-	p := repoprofiles.Profile{
-		RepoName: repoName,
-		Name:     name,
-		StartCmd: req.Msg.GetStartCmd(),
-		Tools:    req.Msg.GetToolKeys(),
-		Services: serviceIngredientsFromProto(req.Msg.GetServiceIngredients()),
-	}
-	if err := s.profiles.Update(ctx, p); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("unknown profile %q for repo %q", name, repoName))
-		}
-		slog.Error("dashboard UpdateRepoProfile", "repo", repoName, "name", name, "error", err)
-		return nil, connect.NewError(connect.CodeInternal, err)
-	}
-	return connect.NewResponse(&agentfleetv1.UpdateRepoProfileResponse{Profile: repoProfileToProto(p)}), nil
-}
-
-func (s *Server) DeleteRepoProfile(ctx context.Context, req *connect.Request[agentfleetv1.DeleteRepoProfileRequest]) (*connect.Response[agentfleetv1.DeleteRepoProfileResponse], error) {
-	repoName := req.Msg.GetRepoName()
-	name := req.Msg.GetName()
-	if err := s.profiles.Delete(ctx, repoName, name); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("unknown profile %q for repo %q", name, repoName))
-		}
-		slog.Error("dashboard DeleteRepoProfile", "repo", repoName, "name", name, "error", err)
-		return nil, connect.NewError(connect.CodeInternal, err)
-	}
-	return connect.NewResponse(&agentfleetv1.DeleteRepoProfileResponse{Status: "deleted"}), nil
-}
-
-func repoProfileFromProtoCreate(msg *agentfleetv1.CreateRepoProfileRequest) repoprofiles.Profile {
-	return repoprofiles.Profile{
-		RepoName: msg.GetRepoName(),
-		Name:     msg.GetName(),
-		StartCmd: msg.GetStartCmd(),
-		Tools:    msg.GetToolKeys(),
-		Services: serviceIngredientsFromProto(msg.GetServiceIngredients()),
+	return &agentfleetv1.Repo{
+		Name:          r.Name,
+		Url:           r.URL,
+		BaseBranch:    r.BaseBranch,
+		Image:         r.Image,
+		ClusterAccess: r.ClusterAccess,
 	}
 }
 
-func serviceIngredientsFromProto(in []*agentfleetv1.ServiceIngredient) []repoprofiles.ServiceIngredient {
-	if len(in) == 0 {
-		return nil
-	}
-	out := make([]repoprofiles.ServiceIngredient, len(in))
-	for i, si := range in {
-		out[i] = repoprofiles.ServiceIngredient{Key: si.GetKey(), ScopeMode: fromProtoScopeMode(si.GetScopeMode())}
-	}
-	return out
-}
-
-func fromProtoScopeMode(m agentfleetv1.ScopeMode) string {
-	switch m {
-	case agentfleetv1.ScopeMode_SCOPE_MODE_POD_SCOPED:
-		return "pod-scoped"
-	case agentfleetv1.ScopeMode_SCOPE_MODE_TASK_SCOPED:
-		return "task-scoped"
-	case agentfleetv1.ScopeMode_SCOPE_MODE_REPO_SCOPED:
-		return "repo-scoped"
-	default:
-		return ""
-	}
-}
-
-func toProtoScopeMode(s string) agentfleetv1.ScopeMode {
-	switch s {
-	case "pod-scoped":
-		return agentfleetv1.ScopeMode_SCOPE_MODE_POD_SCOPED
-	case "task-scoped":
-		return agentfleetv1.ScopeMode_SCOPE_MODE_TASK_SCOPED
-	case "repo-scoped":
-		return agentfleetv1.ScopeMode_SCOPE_MODE_REPO_SCOPED
-	default:
-		return agentfleetv1.ScopeMode_SCOPE_MODE_UNSPECIFIED
-	}
-}
-
-func repoProfileToProto(p repoprofiles.Profile) *agentfleetv1.RepoProfile {
-	services := make([]*agentfleetv1.ServiceIngredient, len(p.Services))
-	for i, si := range p.Services {
-		services[i] = &agentfleetv1.ServiceIngredient{Key: si.Key, ScopeMode: toProtoScopeMode(si.ScopeMode)}
-	}
-	return &agentfleetv1.RepoProfile{
-		RepoName:           p.RepoName,
-		Name:               p.Name,
-		StartCmd:           p.StartCmd,
-		ToolKeys:           p.Tools,
-		ServiceIngredients: services,
-	}
-}
-
-// ListPromptSnippets/CreatePromptSnippet/UpdatePromptSnippet/
-// DeletePromptSnippet back the dashboard's "manage guidance" UI — the
-// dashboard-editable replacement for worker/src/session.ts's old
-// hardcoded taskPrompt() workflow text. Same shape as the repos CRUD
-// above, no onChange wiring needed (unlike repos, nothing outside the
-// dashboard itself reads this list live).
+// The four RepoProfile CRUD handlers and their five proto-conversion helpers
+// used to live here — the environment-recipe editor from docs/adr/0034.
+//
+// Deleted in docs/adr/0048. The recipe stored, in Postgres, what the agent
+// can read off the working tree it is already sitting in. Its three parts
+// each went somewhere different: start_cmd is the agent's own `Bash` plus an
+// expose(port) call, the toolchain keys became repos.image, and the service
+// ingredients became request_service(kind) — which stays fleet-side only
+// because it needs cluster RBAC the agent does not have.
+//
+// cluster-access is the one key that did not collapse into an image, because
+// it is a privilege grant rather than a toolchain. It is repos.cluster_access
+// now, still data rather than code for docs/adr/0037's own reason: which
+// sessions may reach the cluster is a human's decision, editable without a
+// redeploy.
 
 func (s *Server) ListPromptSnippets(ctx context.Context, _ *connect.Request[agentfleetv1.ListPromptSnippetsRequest]) (*connect.Response[agentfleetv1.ListPromptSnippetsResponse], error) {
 	list, err := s.snippets.List(ctx)
@@ -1213,7 +1071,7 @@ func journalEntryToProto(e journal.Entry) *agentfleetv1.JournalEntry {
 // torn down on this clock (docs/adr/0040).
 const DefaultTurnStall = 90 * time.Second
 
-func TaskToProto(t tasks.Task) *agentfleetv1.Task {
+func TaskToProto(t tasks.Task) *agentfleetv1.Session {
 	var heartbeatAt *string
 	if t.HeartbeatAt != nil {
 		s := t.HeartbeatAt.Format(time.RFC3339)
@@ -1224,7 +1082,7 @@ func TaskToProto(t tasks.Task) *agentfleetv1.Task {
 		s := t.LastActiveAt.Format(time.RFC3339)
 		lastActiveAt = &s
 	}
-	return &agentfleetv1.Task{
+	return &agentfleetv1.Session{
 		Kind:           t.Kind,
 		Id:             t.ID,
 		Repo:           t.Repo,
@@ -1243,18 +1101,18 @@ func TaskToProto(t tasks.Task) *agentfleetv1.Task {
 		LastActiveAt:   lastActiveAt,
 		// Derived per read rather than stored, so it can never disagree
 		// with the row it was computed from (docs/adr/0040).
-		LiveState: string(tasks.DeriveLiveState(&t, time.Now(), DefaultTurnStall)),
+		LiveState: string(sessions.DeriveLiveState(&t, time.Now(), DefaultTurnStall)),
 	}
 }
 
 func entryToProto(taskID string, e transcript.Entry) *agentfleetv1.TranscriptEntry {
 	return &agentfleetv1.TranscriptEntry{
-		TaskId:  taskID,
-		Seq:     e.Seq,
-		From:    e.From,
-		Text:    e.Text,
-		Type:    stringToProtoType(e.Type),
-		ReplyTo: e.ReplyTo,
+		SessionId: taskID,
+		Seq:       e.Seq,
+		From:      e.From,
+		Text:      e.Text,
+		Type:      stringToProtoType(e.Type),
+		ReplyTo:   e.ReplyTo,
 		// Zero time would serialize as year 1 — send "" so a client can
 		// tell "no timestamp" from "the epoch".
 		CreatedAt: transcript.RFC3339OrEmpty(e.CreatedAt),
@@ -1334,7 +1192,7 @@ func (s *Server) QueryLogs(ctx context.Context, req *connect.Request[agentfleetv
 
 	// Query Loki via lokiclient
 	entries, err := s.loki.Query(ctx, lokiclient.QueryRequest{
-		TaskID:    req.Msg.GetTaskId(),
+		TaskID:    req.Msg.GetSessionId(),
 		Namespace: namespace,
 		Component: req.Msg.GetComponent(),
 		AppName:   req.Msg.GetAppName(),

@@ -38,7 +38,7 @@ type Client struct {
 	// separately-hardcoded default that can silently drift out of sync with
 	// wherever core's Service actually lives (e.g. prod's release-prefixed
 	// name vs kind-local's unprefixed one).
-	CoreGRPCAddr string
+	CoreGRPCAddr  string
 	ThotAuthToken string
 	// Where the cluster-access ingredient's kubectl shim sends argv
 	// (docs/adr/0037).
@@ -74,7 +74,7 @@ func New(namespace string, cfg Images) (*Client, error) {
 		SidecarImage: cfg.SidecarImage, WorkspacePVC: cfg.WorkspacePVC,
 		LogLevel: cfg.LogLevel, CoreGRPCAddr: cfg.CoreGRPCAddr,
 		ThotAuthToken: cfg.ThotAuthToken,
-		ExecutorAddr: cfg.ExecutorAddr,
+		ExecutorAddr:  cfg.ExecutorAddr,
 		PostgresImage: cfg.PostgresImage, RedisImage: cfg.RedisImage,
 		SharedInstancePVCSize: cfg.SharedInstancePVCSize,
 	}, nil

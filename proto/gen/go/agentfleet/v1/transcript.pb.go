@@ -136,12 +136,12 @@ func (TranscriptEntryType) EnumDescriptor() ([]byte, []int) {
 }
 
 type TranscriptEntry struct {
-	state  protoimpl.MessageState `protogen:"open.v1"`
-	TaskId string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
-	Seq    int64                  `protobuf:"varint,2,opt,name=seq,proto3" json:"seq,omitempty"`
-	From   string                 `protobuf:"bytes,3,opt,name=from,proto3" json:"from,omitempty"` // "agent" | "human"
-	Text   string                 `protobuf:"bytes,4,opt,name=text,proto3" json:"text,omitempty"`
-	Type   TranscriptEntryType    `protobuf:"varint,5,opt,name=type,proto3,enum=agentfleet.v1.TranscriptEntryType" json:"type,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	SessionId string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	Seq       int64                  `protobuf:"varint,2,opt,name=seq,proto3" json:"seq,omitempty"`
+	From      string                 `protobuf:"bytes,3,opt,name=from,proto3" json:"from,omitempty"` // "agent" | "human"
+	Text      string                 `protobuf:"bytes,4,opt,name=text,proto3" json:"text,omitempty"`
+	Type      TranscriptEntryType    `protobuf:"varint,5,opt,name=type,proto3,enum=agentfleet.v1.TranscriptEntryType" json:"type,omitempty"`
 	// Non-nil only for an ANSWER/PERMISSION_RESPONSE entry replying to a
 	// specific QUESTION/PERMISSION_REQUEST entry's own seq (mirrors
 	// transcript.Entry.ReplyTo server-side) — without this, a live-streamed
@@ -149,7 +149,7 @@ type TranscriptEntry struct {
 	// in-process poll loop ever saw it.
 	ReplyTo *int64 `protobuf:"varint,6,opt,name=reply_to,json=replyTo,proto3,oneof" json:"reply_to,omitempty"`
 	// When the entry was appended (RFC3339, matching JournalEntry.created_at
-	// and Task.heartbeat_at). Stored in Postgres since the first migration
+	// and Session.heartbeat_at). Stored in Postgres since the first migration
 	// but never sent until now, which left every client unable to say when
 	// anything happened or how long a turn took — `seq` orders a feed, it
 	// does not time one.
@@ -188,9 +188,9 @@ func (*TranscriptEntry) Descriptor() ([]byte, []int) {
 	return file_agentfleet_v1_transcript_proto_rawDescGZIP(), []int{0}
 }
 
-func (x *TranscriptEntry) GetTaskId() string {
+func (x *TranscriptEntry) GetSessionId() string {
 	if x != nil {
-		return x.TaskId
+		return x.SessionId
 	}
 	return ""
 }
@@ -239,7 +239,7 @@ func (x *TranscriptEntry) GetCreatedAt() string {
 
 type AppendTranscriptEntryRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
-	TaskId         string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	SessionId      string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
 	From           string                 `protobuf:"bytes,2,opt,name=from,proto3" json:"from,omitempty"`
 	Text           string                 `protobuf:"bytes,3,opt,name=text,proto3" json:"text,omitempty"`
 	Type           TranscriptEntryType    `protobuf:"varint,4,opt,name=type,proto3,enum=agentfleet.v1.TranscriptEntryType" json:"type,omitempty"`
@@ -278,9 +278,9 @@ func (*AppendTranscriptEntryRequest) Descriptor() ([]byte, []int) {
 	return file_agentfleet_v1_transcript_proto_rawDescGZIP(), []int{1}
 }
 
-func (x *AppendTranscriptEntryRequest) GetTaskId() string {
+func (x *AppendTranscriptEntryRequest) GetSessionId() string {
 	if x != nil {
-		return x.TaskId
+		return x.SessionId
 	}
 	return ""
 }
@@ -315,7 +315,7 @@ func (x *AppendTranscriptEntryRequest) GetIdempotencyKey() string {
 
 type ReadTranscriptSinceRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	TaskId        string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
 	SinceSeq      int64                  `protobuf:"varint,2,opt,name=since_seq,json=sinceSeq,proto3" json:"since_seq,omitempty"`
 	TimeoutMs     int32                  `protobuf:"varint,3,opt,name=timeout_ms,json=timeoutMs,proto3" json:"timeout_ms,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -352,9 +352,9 @@ func (*ReadTranscriptSinceRequest) Descriptor() ([]byte, []int) {
 	return file_agentfleet_v1_transcript_proto_rawDescGZIP(), []int{2}
 }
 
-func (x *ReadTranscriptSinceRequest) GetTaskId() string {
+func (x *ReadTranscriptSinceRequest) GetSessionId() string {
 	if x != nil {
-		return x.TaskId
+		return x.SessionId
 	}
 	return ""
 }
@@ -429,9 +429,10 @@ var File_agentfleet_v1_transcript_proto protoreflect.FileDescriptor
 
 const file_agentfleet_v1_transcript_proto_rawDesc = "" +
 	"\n" +
-	"\x1eagentfleet/v1/transcript.proto\x12\ragentfleet.v1\"\xe8\x01\n" +
-	"\x0fTranscriptEntry\x12\x17\n" +
-	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x10\n" +
+	"\x1eagentfleet/v1/transcript.proto\x12\ragentfleet.v1\"\xee\x01\n" +
+	"\x0fTranscriptEntry\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x10\n" +
 	"\x03seq\x18\x02 \x01(\x03R\x03seq\x12\x12\n" +
 	"\x04from\x18\x03 \x01(\tR\x04from\x12\x12\n" +
 	"\x04text\x18\x04 \x01(\tR\x04text\x126\n" +
@@ -439,15 +440,17 @@ const file_agentfleet_v1_transcript_proto_rawDesc = "" +
 	"\breply_to\x18\x06 \x01(\x03H\x00R\areplyTo\x88\x01\x01\x12\x1d\n" +
 	"\n" +
 	"created_at\x18\a \x01(\tR\tcreatedAtB\v\n" +
-	"\t_reply_to\"\xc0\x01\n" +
-	"\x1cAppendTranscriptEntryRequest\x12\x17\n" +
-	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x12\n" +
+	"\t_reply_to\"\xc6\x01\n" +
+	"\x1cAppendTranscriptEntryRequest\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x12\n" +
 	"\x04from\x18\x02 \x01(\tR\x04from\x12\x12\n" +
 	"\x04text\x18\x03 \x01(\tR\x04text\x126\n" +
 	"\x04type\x18\x04 \x01(\x0e2\".agentfleet.v1.TranscriptEntryTypeR\x04type\x12'\n" +
-	"\x0fidempotency_key\x18\x05 \x01(\tR\x0eidempotencyKey\"q\n" +
-	"\x1aReadTranscriptSinceRequest\x12\x17\n" +
-	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x1b\n" +
+	"\x0fidempotency_key\x18\x05 \x01(\tR\x0eidempotencyKey\"w\n" +
+	"\x1aReadTranscriptSinceRequest\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x1b\n" +
 	"\tsince_seq\x18\x02 \x01(\x03R\bsinceSeq\x12\x1d\n" +
 	"\n" +
 	"timeout_ms\x18\x03 \x01(\x05R\ttimeoutMs\"r\n" +

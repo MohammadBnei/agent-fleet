@@ -33,15 +33,15 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
-	// DashboardServiceListTasksProcedure is the fully-qualified name of the DashboardService's
-	// ListTasks RPC.
-	DashboardServiceListTasksProcedure = "/agentfleet.v1.DashboardService/ListTasks"
-	// DashboardServiceGetTaskProcedure is the fully-qualified name of the DashboardService's GetTask
-	// RPC.
-	DashboardServiceGetTaskProcedure = "/agentfleet.v1.DashboardService/GetTask"
-	// DashboardServiceCreateTaskProcedure is the fully-qualified name of the DashboardService's
-	// CreateTask RPC.
-	DashboardServiceCreateTaskProcedure = "/agentfleet.v1.DashboardService/CreateTask"
+	// DashboardServiceListSessionsProcedure is the fully-qualified name of the DashboardService's
+	// ListSessions RPC.
+	DashboardServiceListSessionsProcedure = "/agentfleet.v1.DashboardService/ListSessions"
+	// DashboardServiceGetSessionProcedure is the fully-qualified name of the DashboardService's
+	// GetSession RPC.
+	DashboardServiceGetSessionProcedure = "/agentfleet.v1.DashboardService/GetSession"
+	// DashboardServiceCreateSessionProcedure is the fully-qualified name of the DashboardService's
+	// CreateSession RPC.
+	DashboardServiceCreateSessionProcedure = "/agentfleet.v1.DashboardService/CreateSession"
 	// DashboardServiceGetTranscriptProcedure is the fully-qualified name of the DashboardService's
 	// GetTranscript RPC.
 	DashboardServiceGetTranscriptProcedure = "/agentfleet.v1.DashboardService/GetTranscript"
@@ -51,22 +51,33 @@ const (
 	// DashboardServiceGetE2EStatusProcedure is the fully-qualified name of the DashboardService's
 	// GetE2eStatus RPC.
 	DashboardServiceGetE2EStatusProcedure = "/agentfleet.v1.DashboardService/GetE2eStatus"
-	// DashboardServiceKillProcedure is the fully-qualified name of the DashboardService's Kill RPC.
-	DashboardServiceKillProcedure = "/agentfleet.v1.DashboardService/Kill"
+	// DashboardServiceStopSessionProcedure is the fully-qualified name of the DashboardService's
+	// StopSession RPC.
+	DashboardServiceStopSessionProcedure = "/agentfleet.v1.DashboardService/StopSession"
 	// DashboardServiceInterruptProcedure is the fully-qualified name of the DashboardService's
 	// Interrupt RPC.
 	DashboardServiceInterruptProcedure = "/agentfleet.v1.DashboardService/Interrupt"
 	// DashboardServiceSetPermissionModeProcedure is the fully-qualified name of the DashboardService's
 	// SetPermissionMode RPC.
 	DashboardServiceSetPermissionModeProcedure = "/agentfleet.v1.DashboardService/SetPermissionMode"
-	// DashboardServiceWarmProcedure is the fully-qualified name of the DashboardService's Warm RPC.
-	DashboardServiceWarmProcedure = "/agentfleet.v1.DashboardService/Warm"
+	// DashboardServiceWarmSessionProcedure is the fully-qualified name of the DashboardService's
+	// WarmSession RPC.
+	DashboardServiceWarmSessionProcedure = "/agentfleet.v1.DashboardService/WarmSession"
 	// DashboardServiceMarkSeenProcedure is the fully-qualified name of the DashboardService's MarkSeen
 	// RPC.
 	DashboardServiceMarkSeenProcedure = "/agentfleet.v1.DashboardService/MarkSeen"
-	// DashboardServiceApproveTaskProcedure is the fully-qualified name of the DashboardService's
-	// ApproveTask RPC.
-	DashboardServiceApproveTaskProcedure = "/agentfleet.v1.DashboardService/ApproveTask"
+	// DashboardServiceArchiveSessionProcedure is the fully-qualified name of the DashboardService's
+	// ArchiveSession RPC.
+	DashboardServiceArchiveSessionProcedure = "/agentfleet.v1.DashboardService/ArchiveSession"
+	// DashboardServiceListProposalsProcedure is the fully-qualified name of the DashboardService's
+	// ListProposals RPC.
+	DashboardServiceListProposalsProcedure = "/agentfleet.v1.DashboardService/ListProposals"
+	// DashboardServiceOpenFromProposalProcedure is the fully-qualified name of the DashboardService's
+	// OpenFromProposal RPC.
+	DashboardServiceOpenFromProposalProcedure = "/agentfleet.v1.DashboardService/OpenFromProposal"
+	// DashboardServiceDismissProposalProcedure is the fully-qualified name of the DashboardService's
+	// DismissProposal RPC.
+	DashboardServiceDismissProposalProcedure = "/agentfleet.v1.DashboardService/DismissProposal"
 	// DashboardServiceKillE2EProcedure is the fully-qualified name of the DashboardService's KillE2e
 	// RPC.
 	DashboardServiceKillE2EProcedure = "/agentfleet.v1.DashboardService/KillE2e"
@@ -85,12 +96,12 @@ const (
 	// DashboardServiceRespondToPermissionProcedure is the fully-qualified name of the
 	// DashboardService's RespondToPermission RPC.
 	DashboardServiceRespondToPermissionProcedure = "/agentfleet.v1.DashboardService/RespondToPermission"
-	// DashboardServiceDiscussProcedure is the fully-qualified name of the DashboardService's Discuss
-	// RPC.
-	DashboardServiceDiscussProcedure = "/agentfleet.v1.DashboardService/Discuss"
-	// DashboardServiceDeleteTaskProcedure is the fully-qualified name of the DashboardService's
-	// DeleteTask RPC.
-	DashboardServiceDeleteTaskProcedure = "/agentfleet.v1.DashboardService/DeleteTask"
+	// DashboardServicePostMessageProcedure is the fully-qualified name of the DashboardService's
+	// PostMessage RPC.
+	DashboardServicePostMessageProcedure = "/agentfleet.v1.DashboardService/PostMessage"
+	// DashboardServiceDeleteSessionProcedure is the fully-qualified name of the DashboardService's
+	// DeleteSession RPC.
+	DashboardServiceDeleteSessionProcedure = "/agentfleet.v1.DashboardService/DeleteSession"
 	// DashboardServiceListWorktreesProcedure is the fully-qualified name of the DashboardService's
 	// ListWorktrees RPC.
 	DashboardServiceListWorktreesProcedure = "/agentfleet.v1.DashboardService/ListWorktrees"
@@ -112,18 +123,6 @@ const (
 	// DashboardServiceDeleteRepoProcedure is the fully-qualified name of the DashboardService's
 	// DeleteRepo RPC.
 	DashboardServiceDeleteRepoProcedure = "/agentfleet.v1.DashboardService/DeleteRepo"
-	// DashboardServiceListRepoProfilesProcedure is the fully-qualified name of the DashboardService's
-	// ListRepoProfiles RPC.
-	DashboardServiceListRepoProfilesProcedure = "/agentfleet.v1.DashboardService/ListRepoProfiles"
-	// DashboardServiceCreateRepoProfileProcedure is the fully-qualified name of the DashboardService's
-	// CreateRepoProfile RPC.
-	DashboardServiceCreateRepoProfileProcedure = "/agentfleet.v1.DashboardService/CreateRepoProfile"
-	// DashboardServiceUpdateRepoProfileProcedure is the fully-qualified name of the DashboardService's
-	// UpdateRepoProfile RPC.
-	DashboardServiceUpdateRepoProfileProcedure = "/agentfleet.v1.DashboardService/UpdateRepoProfile"
-	// DashboardServiceDeleteRepoProfileProcedure is the fully-qualified name of the DashboardService's
-	// DeleteRepoProfile RPC.
-	DashboardServiceDeleteRepoProfileProcedure = "/agentfleet.v1.DashboardService/DeleteRepoProfile"
 	// DashboardServiceListPromptSnippetsProcedure is the fully-qualified name of the DashboardService's
 	// ListPromptSnippets RPC.
 	DashboardServiceListPromptSnippetsProcedure = "/agentfleet.v1.DashboardService/ListPromptSnippets"
@@ -172,17 +171,14 @@ const (
 	// DashboardServiceRunScheduledAuditNowProcedure is the fully-qualified name of the
 	// DashboardService's RunScheduledAuditNow RPC.
 	DashboardServiceRunScheduledAuditNowProcedure = "/agentfleet.v1.DashboardService/RunScheduledAuditNow"
-	// DashboardServiceRetryTaskProcedure is the fully-qualified name of the DashboardService's
-	// RetryTask RPC.
-	DashboardServiceRetryTaskProcedure = "/agentfleet.v1.DashboardService/RetryTask"
 )
 
 // DashboardServiceClient is a client for the agentfleet.v1.DashboardService service.
 type DashboardServiceClient interface {
-	ListTasks(context.Context, *connect.Request[v1.ListTasksRequest]) (*connect.Response[v1.ListTasksResponse], error)
+	ListSessions(context.Context, *connect.Request[v1.ListSessionsRequest]) (*connect.Response[v1.ListSessionsResponse], error)
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
-	GetTask(context.Context, *connect.Request[v1.GetTaskRequest]) (*connect.Response[v1.GetTaskResponse], error)
-	CreateTask(context.Context, *connect.Request[v1.CreateTaskRequest]) (*connect.Response[v1.CreateTaskResponse], error)
+	GetSession(context.Context, *connect.Request[v1.GetSessionRequest]) (*connect.Response[v1.GetSessionResponse], error)
+	CreateSession(context.Context, *connect.Request[v1.CreateSessionRequest]) (*connect.Response[v1.CreateSessionResponse], error)
 	// Reuses transcript.proto's ReadTranscriptSinceRequest/Response rather
 	// than duplicating a byte-identical message pair.
 	// buf:lint:ignore RPC_REQUEST_STANDARD_NAME
@@ -195,26 +191,29 @@ type DashboardServiceClient interface {
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	StreamTranscript(context.Context, *connect.Request[v1.StreamTranscriptRequest]) (*connect.ServerStreamForClient[v1.TranscriptEntry], error)
 	GetE2EStatus(context.Context, *connect.Request[v1.GetE2EStatusRequest]) (*connect.Response[v1.GetE2EStatusResponse], error)
-	Kill(context.Context, *connect.Request[v1.KillRequest]) (*connect.Response[v1.KillResponse], error)
+	StopSession(context.Context, *connect.Request[v1.StopSessionRequest]) (*connect.Response[v1.StopSessionResponse], error)
 	Interrupt(context.Context, *connect.Request[v1.InterruptRequest]) (*connect.Response[v1.InterruptResponse], error)
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	SetPermissionMode(context.Context, *connect.Request[v1.SetPermissionModeRequest]) (*connect.Response[v1.SetPermissionModeResponse], error)
-	Warm(context.Context, *connect.Request[v1.WarmRequest]) (*connect.Response[v1.WarmResponse], error)
+	WarmSession(context.Context, *connect.Request[v1.WarmSessionRequest]) (*connect.Response[v1.WarmSessionResponse], error)
 	MarkSeen(context.Context, *connect.Request[v1.MarkSeenRequest]) (*connect.Response[v1.MarkSeenResponse], error)
-	ApproveTask(context.Context, *connect.Request[v1.ApproveTaskRequest]) (*connect.Response[v1.ApproveTaskResponse], error)
+	ArchiveSession(context.Context, *connect.Request[v1.ArchiveSessionRequest]) (*connect.Response[v1.ArchiveSessionResponse], error)
+	ListProposals(context.Context, *connect.Request[v1.ListProposalsRequest]) (*connect.Response[v1.ListProposalsResponse], error)
+	OpenFromProposal(context.Context, *connect.Request[v1.OpenFromProposalRequest]) (*connect.Response[v1.OpenFromProposalResponse], error)
+	DismissProposal(context.Context, *connect.Request[v1.DismissProposalRequest]) (*connect.Response[v1.DismissProposalResponse], error)
 	KillE2E(context.Context, *connect.Request[v1.KillE2ERequest]) (*connect.Response[v1.KillE2EResponse], error)
 	StartE2E(context.Context, *connect.Request[v1.StartE2ERequest]) (*connect.Response[v1.StartE2EResponse], error)
 	RestartE2EApp(context.Context, *connect.Request[v1.RestartE2EAppRequest]) (*connect.Response[v1.RestartE2EAppResponse], error)
 	GetE2EAppLog(context.Context, *connect.Request[v1.GetE2EAppLogRequest]) (*connect.Response[v1.GetE2EAppLogResponse], error)
 	AnswerQuestion(context.Context, *connect.Request[v1.AnswerQuestionRequest]) (*connect.Response[v1.AnswerQuestionResponse], error)
 	RespondToPermission(context.Context, *connect.Request[v1.RespondToPermissionRequest]) (*connect.Response[v1.RespondToPermissionResponse], error)
-	Discuss(context.Context, *connect.Request[v1.DiscussRequest]) (*connect.Response[v1.DiscussResponse], error)
-	DeleteTask(context.Context, *connect.Request[v1.DeleteTaskRequest]) (*connect.Response[v1.DeleteTaskResponse], error)
+	PostMessage(context.Context, *connect.Request[v1.PostMessageRequest]) (*connect.Response[v1.PostMessageResponse], error)
+	DeleteSession(context.Context, *connect.Request[v1.DeleteSessionRequest]) (*connect.Response[v1.DeleteSessionResponse], error)
 	// Reuses provisioner.proto's ListWorktreesRequest (identical shape,
 	// empty) and DeleteWorktreeRequest/Response (identical shape, no
 	// dashboard-specific fields needed) — same passthrough-reuse pattern
 	// core.proto's ListE2eTools/CallE2eTool already established. The
-	// response is enriched with a left-join against `tasks`, so it can't
+	// response is enriched with a left-join against `sessions`, so it can't
 	// reuse provisioner's own WorktreeInfo/ListWorktreesResponse as-is.
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
@@ -226,10 +225,6 @@ type DashboardServiceClient interface {
 	CreateRepo(context.Context, *connect.Request[v1.CreateRepoRequest]) (*connect.Response[v1.CreateRepoResponse], error)
 	UpdateRepo(context.Context, *connect.Request[v1.UpdateRepoRequest]) (*connect.Response[v1.UpdateRepoResponse], error)
 	DeleteRepo(context.Context, *connect.Request[v1.DeleteRepoRequest]) (*connect.Response[v1.DeleteRepoResponse], error)
-	ListRepoProfiles(context.Context, *connect.Request[v1.ListRepoProfilesRequest]) (*connect.Response[v1.ListRepoProfilesResponse], error)
-	CreateRepoProfile(context.Context, *connect.Request[v1.CreateRepoProfileRequest]) (*connect.Response[v1.CreateRepoProfileResponse], error)
-	UpdateRepoProfile(context.Context, *connect.Request[v1.UpdateRepoProfileRequest]) (*connect.Response[v1.UpdateRepoProfileResponse], error)
-	DeleteRepoProfile(context.Context, *connect.Request[v1.DeleteRepoProfileRequest]) (*connect.Response[v1.DeleteRepoProfileResponse], error)
 	ListPromptSnippets(context.Context, *connect.Request[v1.ListPromptSnippetsRequest]) (*connect.Response[v1.ListPromptSnippetsResponse], error)
 	CreatePromptSnippet(context.Context, *connect.Request[v1.CreatePromptSnippetRequest]) (*connect.Response[v1.CreatePromptSnippetResponse], error)
 	UpdatePromptSnippet(context.Context, *connect.Request[v1.UpdatePromptSnippetRequest]) (*connect.Response[v1.UpdatePromptSnippetResponse], error)
@@ -248,7 +243,7 @@ type DashboardServiceClient interface {
 	// Observability page (docs/adr/0047). QueryMetrics is core proxying
 	// PromQL — Prometheus has no IngressRoute in this cluster, so a browser
 	// cannot reach it directly. GetFleetTopology is the live cell view, and
-	// needs no cluster RBAC: core assembles it from the tasks table it
+	// needs no cluster RBAC: core assembles it from the sessions table it
 	// already owns plus its own metrics.
 	QueryMetrics(context.Context, *connect.Request[v1.QueryMetricsRequest]) (*connect.Response[v1.QueryMetricsResponse], error)
 	GetFleetTopology(context.Context, *connect.Request[v1.GetFleetTopologyRequest]) (*connect.Response[v1.GetFleetTopologyResponse], error)
@@ -259,7 +254,6 @@ type DashboardServiceClient interface {
 	UpdateScheduledAudit(context.Context, *connect.Request[v1.UpdateScheduledAuditRequest]) (*connect.Response[v1.UpdateScheduledAuditResponse], error)
 	DeleteScheduledAudit(context.Context, *connect.Request[v1.DeleteScheduledAuditRequest]) (*connect.Response[v1.DeleteScheduledAuditResponse], error)
 	RunScheduledAuditNow(context.Context, *connect.Request[v1.RunScheduledAuditNowRequest]) (*connect.Response[v1.RunScheduledAuditNowResponse], error)
-	RetryTask(context.Context, *connect.Request[v1.RetryTaskRequest]) (*connect.Response[v1.RetryTaskResponse], error)
 }
 
 // NewDashboardServiceClient constructs a client for the agentfleet.v1.DashboardService service. By
@@ -273,22 +267,22 @@ func NewDashboardServiceClient(httpClient connect.HTTPClient, baseURL string, op
 	baseURL = strings.TrimRight(baseURL, "/")
 	dashboardServiceMethods := v1.File_agentfleet_v1_dashboard_proto.Services().ByName("DashboardService").Methods()
 	return &dashboardServiceClient{
-		listTasks: connect.NewClient[v1.ListTasksRequest, v1.ListTasksResponse](
+		listSessions: connect.NewClient[v1.ListSessionsRequest, v1.ListSessionsResponse](
 			httpClient,
-			baseURL+DashboardServiceListTasksProcedure,
-			connect.WithSchema(dashboardServiceMethods.ByName("ListTasks")),
+			baseURL+DashboardServiceListSessionsProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("ListSessions")),
 			connect.WithClientOptions(opts...),
 		),
-		getTask: connect.NewClient[v1.GetTaskRequest, v1.GetTaskResponse](
+		getSession: connect.NewClient[v1.GetSessionRequest, v1.GetSessionResponse](
 			httpClient,
-			baseURL+DashboardServiceGetTaskProcedure,
-			connect.WithSchema(dashboardServiceMethods.ByName("GetTask")),
+			baseURL+DashboardServiceGetSessionProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("GetSession")),
 			connect.WithClientOptions(opts...),
 		),
-		createTask: connect.NewClient[v1.CreateTaskRequest, v1.CreateTaskResponse](
+		createSession: connect.NewClient[v1.CreateSessionRequest, v1.CreateSessionResponse](
 			httpClient,
-			baseURL+DashboardServiceCreateTaskProcedure,
-			connect.WithSchema(dashboardServiceMethods.ByName("CreateTask")),
+			baseURL+DashboardServiceCreateSessionProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("CreateSession")),
 			connect.WithClientOptions(opts...),
 		),
 		getTranscript: connect.NewClient[v1.ReadTranscriptSinceRequest, v1.ReadTranscriptSinceResponse](
@@ -309,10 +303,10 @@ func NewDashboardServiceClient(httpClient connect.HTTPClient, baseURL string, op
 			connect.WithSchema(dashboardServiceMethods.ByName("GetE2eStatus")),
 			connect.WithClientOptions(opts...),
 		),
-		kill: connect.NewClient[v1.KillRequest, v1.KillResponse](
+		stopSession: connect.NewClient[v1.StopSessionRequest, v1.StopSessionResponse](
 			httpClient,
-			baseURL+DashboardServiceKillProcedure,
-			connect.WithSchema(dashboardServiceMethods.ByName("Kill")),
+			baseURL+DashboardServiceStopSessionProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("StopSession")),
 			connect.WithClientOptions(opts...),
 		),
 		interrupt: connect.NewClient[v1.InterruptRequest, v1.InterruptResponse](
@@ -327,10 +321,10 @@ func NewDashboardServiceClient(httpClient connect.HTTPClient, baseURL string, op
 			connect.WithSchema(dashboardServiceMethods.ByName("SetPermissionMode")),
 			connect.WithClientOptions(opts...),
 		),
-		warm: connect.NewClient[v1.WarmRequest, v1.WarmResponse](
+		warmSession: connect.NewClient[v1.WarmSessionRequest, v1.WarmSessionResponse](
 			httpClient,
-			baseURL+DashboardServiceWarmProcedure,
-			connect.WithSchema(dashboardServiceMethods.ByName("Warm")),
+			baseURL+DashboardServiceWarmSessionProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("WarmSession")),
 			connect.WithClientOptions(opts...),
 		),
 		markSeen: connect.NewClient[v1.MarkSeenRequest, v1.MarkSeenResponse](
@@ -339,10 +333,28 @@ func NewDashboardServiceClient(httpClient connect.HTTPClient, baseURL string, op
 			connect.WithSchema(dashboardServiceMethods.ByName("MarkSeen")),
 			connect.WithClientOptions(opts...),
 		),
-		approveTask: connect.NewClient[v1.ApproveTaskRequest, v1.ApproveTaskResponse](
+		archiveSession: connect.NewClient[v1.ArchiveSessionRequest, v1.ArchiveSessionResponse](
 			httpClient,
-			baseURL+DashboardServiceApproveTaskProcedure,
-			connect.WithSchema(dashboardServiceMethods.ByName("ApproveTask")),
+			baseURL+DashboardServiceArchiveSessionProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("ArchiveSession")),
+			connect.WithClientOptions(opts...),
+		),
+		listProposals: connect.NewClient[v1.ListProposalsRequest, v1.ListProposalsResponse](
+			httpClient,
+			baseURL+DashboardServiceListProposalsProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("ListProposals")),
+			connect.WithClientOptions(opts...),
+		),
+		openFromProposal: connect.NewClient[v1.OpenFromProposalRequest, v1.OpenFromProposalResponse](
+			httpClient,
+			baseURL+DashboardServiceOpenFromProposalProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("OpenFromProposal")),
+			connect.WithClientOptions(opts...),
+		),
+		dismissProposal: connect.NewClient[v1.DismissProposalRequest, v1.DismissProposalResponse](
+			httpClient,
+			baseURL+DashboardServiceDismissProposalProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("DismissProposal")),
 			connect.WithClientOptions(opts...),
 		),
 		killE2E: connect.NewClient[v1.KillE2ERequest, v1.KillE2EResponse](
@@ -381,16 +393,16 @@ func NewDashboardServiceClient(httpClient connect.HTTPClient, baseURL string, op
 			connect.WithSchema(dashboardServiceMethods.ByName("RespondToPermission")),
 			connect.WithClientOptions(opts...),
 		),
-		discuss: connect.NewClient[v1.DiscussRequest, v1.DiscussResponse](
+		postMessage: connect.NewClient[v1.PostMessageRequest, v1.PostMessageResponse](
 			httpClient,
-			baseURL+DashboardServiceDiscussProcedure,
-			connect.WithSchema(dashboardServiceMethods.ByName("Discuss")),
+			baseURL+DashboardServicePostMessageProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("PostMessage")),
 			connect.WithClientOptions(opts...),
 		),
-		deleteTask: connect.NewClient[v1.DeleteTaskRequest, v1.DeleteTaskResponse](
+		deleteSession: connect.NewClient[v1.DeleteSessionRequest, v1.DeleteSessionResponse](
 			httpClient,
-			baseURL+DashboardServiceDeleteTaskProcedure,
-			connect.WithSchema(dashboardServiceMethods.ByName("DeleteTask")),
+			baseURL+DashboardServiceDeleteSessionProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("DeleteSession")),
 			connect.WithClientOptions(opts...),
 		),
 		listWorktrees: connect.NewClient[v1.ListWorktreesRequest, v1.ListWorktreesViewResponse](
@@ -433,30 +445,6 @@ func NewDashboardServiceClient(httpClient connect.HTTPClient, baseURL string, op
 			httpClient,
 			baseURL+DashboardServiceDeleteRepoProcedure,
 			connect.WithSchema(dashboardServiceMethods.ByName("DeleteRepo")),
-			connect.WithClientOptions(opts...),
-		),
-		listRepoProfiles: connect.NewClient[v1.ListRepoProfilesRequest, v1.ListRepoProfilesResponse](
-			httpClient,
-			baseURL+DashboardServiceListRepoProfilesProcedure,
-			connect.WithSchema(dashboardServiceMethods.ByName("ListRepoProfiles")),
-			connect.WithClientOptions(opts...),
-		),
-		createRepoProfile: connect.NewClient[v1.CreateRepoProfileRequest, v1.CreateRepoProfileResponse](
-			httpClient,
-			baseURL+DashboardServiceCreateRepoProfileProcedure,
-			connect.WithSchema(dashboardServiceMethods.ByName("CreateRepoProfile")),
-			connect.WithClientOptions(opts...),
-		),
-		updateRepoProfile: connect.NewClient[v1.UpdateRepoProfileRequest, v1.UpdateRepoProfileResponse](
-			httpClient,
-			baseURL+DashboardServiceUpdateRepoProfileProcedure,
-			connect.WithSchema(dashboardServiceMethods.ByName("UpdateRepoProfile")),
-			connect.WithClientOptions(opts...),
-		),
-		deleteRepoProfile: connect.NewClient[v1.DeleteRepoProfileRequest, v1.DeleteRepoProfileResponse](
-			httpClient,
-			baseURL+DashboardServiceDeleteRepoProfileProcedure,
-			connect.WithSchema(dashboardServiceMethods.ByName("DeleteRepoProfile")),
 			connect.WithClientOptions(opts...),
 		),
 		listPromptSnippets: connect.NewClient[v1.ListPromptSnippetsRequest, v1.ListPromptSnippetsResponse](
@@ -555,37 +543,34 @@ func NewDashboardServiceClient(httpClient connect.HTTPClient, baseURL string, op
 			connect.WithSchema(dashboardServiceMethods.ByName("RunScheduledAuditNow")),
 			connect.WithClientOptions(opts...),
 		),
-		retryTask: connect.NewClient[v1.RetryTaskRequest, v1.RetryTaskResponse](
-			httpClient,
-			baseURL+DashboardServiceRetryTaskProcedure,
-			connect.WithSchema(dashboardServiceMethods.ByName("RetryTask")),
-			connect.WithClientOptions(opts...),
-		),
 	}
 }
 
 // dashboardServiceClient implements DashboardServiceClient.
 type dashboardServiceClient struct {
-	listTasks            *connect.Client[v1.ListTasksRequest, v1.ListTasksResponse]
-	getTask              *connect.Client[v1.GetTaskRequest, v1.GetTaskResponse]
-	createTask           *connect.Client[v1.CreateTaskRequest, v1.CreateTaskResponse]
+	listSessions         *connect.Client[v1.ListSessionsRequest, v1.ListSessionsResponse]
+	getSession           *connect.Client[v1.GetSessionRequest, v1.GetSessionResponse]
+	createSession        *connect.Client[v1.CreateSessionRequest, v1.CreateSessionResponse]
 	getTranscript        *connect.Client[v1.ReadTranscriptSinceRequest, v1.ReadTranscriptSinceResponse]
 	streamTranscript     *connect.Client[v1.StreamTranscriptRequest, v1.TranscriptEntry]
 	getE2EStatus         *connect.Client[v1.GetE2EStatusRequest, v1.GetE2EStatusResponse]
-	kill                 *connect.Client[v1.KillRequest, v1.KillResponse]
+	stopSession          *connect.Client[v1.StopSessionRequest, v1.StopSessionResponse]
 	interrupt            *connect.Client[v1.InterruptRequest, v1.InterruptResponse]
 	setPermissionMode    *connect.Client[v1.SetPermissionModeRequest, v1.SetPermissionModeResponse]
-	warm                 *connect.Client[v1.WarmRequest, v1.WarmResponse]
+	warmSession          *connect.Client[v1.WarmSessionRequest, v1.WarmSessionResponse]
 	markSeen             *connect.Client[v1.MarkSeenRequest, v1.MarkSeenResponse]
-	approveTask          *connect.Client[v1.ApproveTaskRequest, v1.ApproveTaskResponse]
+	archiveSession       *connect.Client[v1.ArchiveSessionRequest, v1.ArchiveSessionResponse]
+	listProposals        *connect.Client[v1.ListProposalsRequest, v1.ListProposalsResponse]
+	openFromProposal     *connect.Client[v1.OpenFromProposalRequest, v1.OpenFromProposalResponse]
+	dismissProposal      *connect.Client[v1.DismissProposalRequest, v1.DismissProposalResponse]
 	killE2E              *connect.Client[v1.KillE2ERequest, v1.KillE2EResponse]
 	startE2E             *connect.Client[v1.StartE2ERequest, v1.StartE2EResponse]
 	restartE2EApp        *connect.Client[v1.RestartE2EAppRequest, v1.RestartE2EAppResponse]
 	getE2EAppLog         *connect.Client[v1.GetE2EAppLogRequest, v1.GetE2EAppLogResponse]
 	answerQuestion       *connect.Client[v1.AnswerQuestionRequest, v1.AnswerQuestionResponse]
 	respondToPermission  *connect.Client[v1.RespondToPermissionRequest, v1.RespondToPermissionResponse]
-	discuss              *connect.Client[v1.DiscussRequest, v1.DiscussResponse]
-	deleteTask           *connect.Client[v1.DeleteTaskRequest, v1.DeleteTaskResponse]
+	postMessage          *connect.Client[v1.PostMessageRequest, v1.PostMessageResponse]
+	deleteSession        *connect.Client[v1.DeleteSessionRequest, v1.DeleteSessionResponse]
 	listWorktrees        *connect.Client[v1.ListWorktreesRequest, v1.ListWorktreesViewResponse]
 	deleteWorktree       *connect.Client[v1.DeleteWorktreeRequest, v1.DeleteWorktreeResponse]
 	getJournal           *connect.Client[v1.GetJournalRequest, v1.GetJournalResponse]
@@ -593,10 +578,6 @@ type dashboardServiceClient struct {
 	createRepo           *connect.Client[v1.CreateRepoRequest, v1.CreateRepoResponse]
 	updateRepo           *connect.Client[v1.UpdateRepoRequest, v1.UpdateRepoResponse]
 	deleteRepo           *connect.Client[v1.DeleteRepoRequest, v1.DeleteRepoResponse]
-	listRepoProfiles     *connect.Client[v1.ListRepoProfilesRequest, v1.ListRepoProfilesResponse]
-	createRepoProfile    *connect.Client[v1.CreateRepoProfileRequest, v1.CreateRepoProfileResponse]
-	updateRepoProfile    *connect.Client[v1.UpdateRepoProfileRequest, v1.UpdateRepoProfileResponse]
-	deleteRepoProfile    *connect.Client[v1.DeleteRepoProfileRequest, v1.DeleteRepoProfileResponse]
 	listPromptSnippets   *connect.Client[v1.ListPromptSnippetsRequest, v1.ListPromptSnippetsResponse]
 	createPromptSnippet  *connect.Client[v1.CreatePromptSnippetRequest, v1.CreatePromptSnippetResponse]
 	updatePromptSnippet  *connect.Client[v1.UpdatePromptSnippetRequest, v1.UpdatePromptSnippetResponse]
@@ -613,22 +594,21 @@ type dashboardServiceClient struct {
 	updateScheduledAudit *connect.Client[v1.UpdateScheduledAuditRequest, v1.UpdateScheduledAuditResponse]
 	deleteScheduledAudit *connect.Client[v1.DeleteScheduledAuditRequest, v1.DeleteScheduledAuditResponse]
 	runScheduledAuditNow *connect.Client[v1.RunScheduledAuditNowRequest, v1.RunScheduledAuditNowResponse]
-	retryTask            *connect.Client[v1.RetryTaskRequest, v1.RetryTaskResponse]
 }
 
-// ListTasks calls agentfleet.v1.DashboardService.ListTasks.
-func (c *dashboardServiceClient) ListTasks(ctx context.Context, req *connect.Request[v1.ListTasksRequest]) (*connect.Response[v1.ListTasksResponse], error) {
-	return c.listTasks.CallUnary(ctx, req)
+// ListSessions calls agentfleet.v1.DashboardService.ListSessions.
+func (c *dashboardServiceClient) ListSessions(ctx context.Context, req *connect.Request[v1.ListSessionsRequest]) (*connect.Response[v1.ListSessionsResponse], error) {
+	return c.listSessions.CallUnary(ctx, req)
 }
 
-// GetTask calls agentfleet.v1.DashboardService.GetTask.
-func (c *dashboardServiceClient) GetTask(ctx context.Context, req *connect.Request[v1.GetTaskRequest]) (*connect.Response[v1.GetTaskResponse], error) {
-	return c.getTask.CallUnary(ctx, req)
+// GetSession calls agentfleet.v1.DashboardService.GetSession.
+func (c *dashboardServiceClient) GetSession(ctx context.Context, req *connect.Request[v1.GetSessionRequest]) (*connect.Response[v1.GetSessionResponse], error) {
+	return c.getSession.CallUnary(ctx, req)
 }
 
-// CreateTask calls agentfleet.v1.DashboardService.CreateTask.
-func (c *dashboardServiceClient) CreateTask(ctx context.Context, req *connect.Request[v1.CreateTaskRequest]) (*connect.Response[v1.CreateTaskResponse], error) {
-	return c.createTask.CallUnary(ctx, req)
+// CreateSession calls agentfleet.v1.DashboardService.CreateSession.
+func (c *dashboardServiceClient) CreateSession(ctx context.Context, req *connect.Request[v1.CreateSessionRequest]) (*connect.Response[v1.CreateSessionResponse], error) {
+	return c.createSession.CallUnary(ctx, req)
 }
 
 // GetTranscript calls agentfleet.v1.DashboardService.GetTranscript.
@@ -646,9 +626,9 @@ func (c *dashboardServiceClient) GetE2EStatus(ctx context.Context, req *connect.
 	return c.getE2EStatus.CallUnary(ctx, req)
 }
 
-// Kill calls agentfleet.v1.DashboardService.Kill.
-func (c *dashboardServiceClient) Kill(ctx context.Context, req *connect.Request[v1.KillRequest]) (*connect.Response[v1.KillResponse], error) {
-	return c.kill.CallUnary(ctx, req)
+// StopSession calls agentfleet.v1.DashboardService.StopSession.
+func (c *dashboardServiceClient) StopSession(ctx context.Context, req *connect.Request[v1.StopSessionRequest]) (*connect.Response[v1.StopSessionResponse], error) {
+	return c.stopSession.CallUnary(ctx, req)
 }
 
 // Interrupt calls agentfleet.v1.DashboardService.Interrupt.
@@ -661,9 +641,9 @@ func (c *dashboardServiceClient) SetPermissionMode(ctx context.Context, req *con
 	return c.setPermissionMode.CallUnary(ctx, req)
 }
 
-// Warm calls agentfleet.v1.DashboardService.Warm.
-func (c *dashboardServiceClient) Warm(ctx context.Context, req *connect.Request[v1.WarmRequest]) (*connect.Response[v1.WarmResponse], error) {
-	return c.warm.CallUnary(ctx, req)
+// WarmSession calls agentfleet.v1.DashboardService.WarmSession.
+func (c *dashboardServiceClient) WarmSession(ctx context.Context, req *connect.Request[v1.WarmSessionRequest]) (*connect.Response[v1.WarmSessionResponse], error) {
+	return c.warmSession.CallUnary(ctx, req)
 }
 
 // MarkSeen calls agentfleet.v1.DashboardService.MarkSeen.
@@ -671,9 +651,24 @@ func (c *dashboardServiceClient) MarkSeen(ctx context.Context, req *connect.Requ
 	return c.markSeen.CallUnary(ctx, req)
 }
 
-// ApproveTask calls agentfleet.v1.DashboardService.ApproveTask.
-func (c *dashboardServiceClient) ApproveTask(ctx context.Context, req *connect.Request[v1.ApproveTaskRequest]) (*connect.Response[v1.ApproveTaskResponse], error) {
-	return c.approveTask.CallUnary(ctx, req)
+// ArchiveSession calls agentfleet.v1.DashboardService.ArchiveSession.
+func (c *dashboardServiceClient) ArchiveSession(ctx context.Context, req *connect.Request[v1.ArchiveSessionRequest]) (*connect.Response[v1.ArchiveSessionResponse], error) {
+	return c.archiveSession.CallUnary(ctx, req)
+}
+
+// ListProposals calls agentfleet.v1.DashboardService.ListProposals.
+func (c *dashboardServiceClient) ListProposals(ctx context.Context, req *connect.Request[v1.ListProposalsRequest]) (*connect.Response[v1.ListProposalsResponse], error) {
+	return c.listProposals.CallUnary(ctx, req)
+}
+
+// OpenFromProposal calls agentfleet.v1.DashboardService.OpenFromProposal.
+func (c *dashboardServiceClient) OpenFromProposal(ctx context.Context, req *connect.Request[v1.OpenFromProposalRequest]) (*connect.Response[v1.OpenFromProposalResponse], error) {
+	return c.openFromProposal.CallUnary(ctx, req)
+}
+
+// DismissProposal calls agentfleet.v1.DashboardService.DismissProposal.
+func (c *dashboardServiceClient) DismissProposal(ctx context.Context, req *connect.Request[v1.DismissProposalRequest]) (*connect.Response[v1.DismissProposalResponse], error) {
+	return c.dismissProposal.CallUnary(ctx, req)
 }
 
 // KillE2E calls agentfleet.v1.DashboardService.KillE2e.
@@ -706,14 +701,14 @@ func (c *dashboardServiceClient) RespondToPermission(ctx context.Context, req *c
 	return c.respondToPermission.CallUnary(ctx, req)
 }
 
-// Discuss calls agentfleet.v1.DashboardService.Discuss.
-func (c *dashboardServiceClient) Discuss(ctx context.Context, req *connect.Request[v1.DiscussRequest]) (*connect.Response[v1.DiscussResponse], error) {
-	return c.discuss.CallUnary(ctx, req)
+// PostMessage calls agentfleet.v1.DashboardService.PostMessage.
+func (c *dashboardServiceClient) PostMessage(ctx context.Context, req *connect.Request[v1.PostMessageRequest]) (*connect.Response[v1.PostMessageResponse], error) {
+	return c.postMessage.CallUnary(ctx, req)
 }
 
-// DeleteTask calls agentfleet.v1.DashboardService.DeleteTask.
-func (c *dashboardServiceClient) DeleteTask(ctx context.Context, req *connect.Request[v1.DeleteTaskRequest]) (*connect.Response[v1.DeleteTaskResponse], error) {
-	return c.deleteTask.CallUnary(ctx, req)
+// DeleteSession calls agentfleet.v1.DashboardService.DeleteSession.
+func (c *dashboardServiceClient) DeleteSession(ctx context.Context, req *connect.Request[v1.DeleteSessionRequest]) (*connect.Response[v1.DeleteSessionResponse], error) {
+	return c.deleteSession.CallUnary(ctx, req)
 }
 
 // ListWorktrees calls agentfleet.v1.DashboardService.ListWorktrees.
@@ -749,26 +744,6 @@ func (c *dashboardServiceClient) UpdateRepo(ctx context.Context, req *connect.Re
 // DeleteRepo calls agentfleet.v1.DashboardService.DeleteRepo.
 func (c *dashboardServiceClient) DeleteRepo(ctx context.Context, req *connect.Request[v1.DeleteRepoRequest]) (*connect.Response[v1.DeleteRepoResponse], error) {
 	return c.deleteRepo.CallUnary(ctx, req)
-}
-
-// ListRepoProfiles calls agentfleet.v1.DashboardService.ListRepoProfiles.
-func (c *dashboardServiceClient) ListRepoProfiles(ctx context.Context, req *connect.Request[v1.ListRepoProfilesRequest]) (*connect.Response[v1.ListRepoProfilesResponse], error) {
-	return c.listRepoProfiles.CallUnary(ctx, req)
-}
-
-// CreateRepoProfile calls agentfleet.v1.DashboardService.CreateRepoProfile.
-func (c *dashboardServiceClient) CreateRepoProfile(ctx context.Context, req *connect.Request[v1.CreateRepoProfileRequest]) (*connect.Response[v1.CreateRepoProfileResponse], error) {
-	return c.createRepoProfile.CallUnary(ctx, req)
-}
-
-// UpdateRepoProfile calls agentfleet.v1.DashboardService.UpdateRepoProfile.
-func (c *dashboardServiceClient) UpdateRepoProfile(ctx context.Context, req *connect.Request[v1.UpdateRepoProfileRequest]) (*connect.Response[v1.UpdateRepoProfileResponse], error) {
-	return c.updateRepoProfile.CallUnary(ctx, req)
-}
-
-// DeleteRepoProfile calls agentfleet.v1.DashboardService.DeleteRepoProfile.
-func (c *dashboardServiceClient) DeleteRepoProfile(ctx context.Context, req *connect.Request[v1.DeleteRepoProfileRequest]) (*connect.Response[v1.DeleteRepoProfileResponse], error) {
-	return c.deleteRepoProfile.CallUnary(ctx, req)
 }
 
 // ListPromptSnippets calls agentfleet.v1.DashboardService.ListPromptSnippets.
@@ -851,17 +826,12 @@ func (c *dashboardServiceClient) RunScheduledAuditNow(ctx context.Context, req *
 	return c.runScheduledAuditNow.CallUnary(ctx, req)
 }
 
-// RetryTask calls agentfleet.v1.DashboardService.RetryTask.
-func (c *dashboardServiceClient) RetryTask(ctx context.Context, req *connect.Request[v1.RetryTaskRequest]) (*connect.Response[v1.RetryTaskResponse], error) {
-	return c.retryTask.CallUnary(ctx, req)
-}
-
 // DashboardServiceHandler is an implementation of the agentfleet.v1.DashboardService service.
 type DashboardServiceHandler interface {
-	ListTasks(context.Context, *connect.Request[v1.ListTasksRequest]) (*connect.Response[v1.ListTasksResponse], error)
+	ListSessions(context.Context, *connect.Request[v1.ListSessionsRequest]) (*connect.Response[v1.ListSessionsResponse], error)
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
-	GetTask(context.Context, *connect.Request[v1.GetTaskRequest]) (*connect.Response[v1.GetTaskResponse], error)
-	CreateTask(context.Context, *connect.Request[v1.CreateTaskRequest]) (*connect.Response[v1.CreateTaskResponse], error)
+	GetSession(context.Context, *connect.Request[v1.GetSessionRequest]) (*connect.Response[v1.GetSessionResponse], error)
+	CreateSession(context.Context, *connect.Request[v1.CreateSessionRequest]) (*connect.Response[v1.CreateSessionResponse], error)
 	// Reuses transcript.proto's ReadTranscriptSinceRequest/Response rather
 	// than duplicating a byte-identical message pair.
 	// buf:lint:ignore RPC_REQUEST_STANDARD_NAME
@@ -874,26 +844,29 @@ type DashboardServiceHandler interface {
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	StreamTranscript(context.Context, *connect.Request[v1.StreamTranscriptRequest], *connect.ServerStream[v1.TranscriptEntry]) error
 	GetE2EStatus(context.Context, *connect.Request[v1.GetE2EStatusRequest]) (*connect.Response[v1.GetE2EStatusResponse], error)
-	Kill(context.Context, *connect.Request[v1.KillRequest]) (*connect.Response[v1.KillResponse], error)
+	StopSession(context.Context, *connect.Request[v1.StopSessionRequest]) (*connect.Response[v1.StopSessionResponse], error)
 	Interrupt(context.Context, *connect.Request[v1.InterruptRequest]) (*connect.Response[v1.InterruptResponse], error)
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	SetPermissionMode(context.Context, *connect.Request[v1.SetPermissionModeRequest]) (*connect.Response[v1.SetPermissionModeResponse], error)
-	Warm(context.Context, *connect.Request[v1.WarmRequest]) (*connect.Response[v1.WarmResponse], error)
+	WarmSession(context.Context, *connect.Request[v1.WarmSessionRequest]) (*connect.Response[v1.WarmSessionResponse], error)
 	MarkSeen(context.Context, *connect.Request[v1.MarkSeenRequest]) (*connect.Response[v1.MarkSeenResponse], error)
-	ApproveTask(context.Context, *connect.Request[v1.ApproveTaskRequest]) (*connect.Response[v1.ApproveTaskResponse], error)
+	ArchiveSession(context.Context, *connect.Request[v1.ArchiveSessionRequest]) (*connect.Response[v1.ArchiveSessionResponse], error)
+	ListProposals(context.Context, *connect.Request[v1.ListProposalsRequest]) (*connect.Response[v1.ListProposalsResponse], error)
+	OpenFromProposal(context.Context, *connect.Request[v1.OpenFromProposalRequest]) (*connect.Response[v1.OpenFromProposalResponse], error)
+	DismissProposal(context.Context, *connect.Request[v1.DismissProposalRequest]) (*connect.Response[v1.DismissProposalResponse], error)
 	KillE2E(context.Context, *connect.Request[v1.KillE2ERequest]) (*connect.Response[v1.KillE2EResponse], error)
 	StartE2E(context.Context, *connect.Request[v1.StartE2ERequest]) (*connect.Response[v1.StartE2EResponse], error)
 	RestartE2EApp(context.Context, *connect.Request[v1.RestartE2EAppRequest]) (*connect.Response[v1.RestartE2EAppResponse], error)
 	GetE2EAppLog(context.Context, *connect.Request[v1.GetE2EAppLogRequest]) (*connect.Response[v1.GetE2EAppLogResponse], error)
 	AnswerQuestion(context.Context, *connect.Request[v1.AnswerQuestionRequest]) (*connect.Response[v1.AnswerQuestionResponse], error)
 	RespondToPermission(context.Context, *connect.Request[v1.RespondToPermissionRequest]) (*connect.Response[v1.RespondToPermissionResponse], error)
-	Discuss(context.Context, *connect.Request[v1.DiscussRequest]) (*connect.Response[v1.DiscussResponse], error)
-	DeleteTask(context.Context, *connect.Request[v1.DeleteTaskRequest]) (*connect.Response[v1.DeleteTaskResponse], error)
+	PostMessage(context.Context, *connect.Request[v1.PostMessageRequest]) (*connect.Response[v1.PostMessageResponse], error)
+	DeleteSession(context.Context, *connect.Request[v1.DeleteSessionRequest]) (*connect.Response[v1.DeleteSessionResponse], error)
 	// Reuses provisioner.proto's ListWorktreesRequest (identical shape,
 	// empty) and DeleteWorktreeRequest/Response (identical shape, no
 	// dashboard-specific fields needed) — same passthrough-reuse pattern
 	// core.proto's ListE2eTools/CallE2eTool already established. The
-	// response is enriched with a left-join against `tasks`, so it can't
+	// response is enriched with a left-join against `sessions`, so it can't
 	// reuse provisioner's own WorktreeInfo/ListWorktreesResponse as-is.
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
@@ -905,10 +878,6 @@ type DashboardServiceHandler interface {
 	CreateRepo(context.Context, *connect.Request[v1.CreateRepoRequest]) (*connect.Response[v1.CreateRepoResponse], error)
 	UpdateRepo(context.Context, *connect.Request[v1.UpdateRepoRequest]) (*connect.Response[v1.UpdateRepoResponse], error)
 	DeleteRepo(context.Context, *connect.Request[v1.DeleteRepoRequest]) (*connect.Response[v1.DeleteRepoResponse], error)
-	ListRepoProfiles(context.Context, *connect.Request[v1.ListRepoProfilesRequest]) (*connect.Response[v1.ListRepoProfilesResponse], error)
-	CreateRepoProfile(context.Context, *connect.Request[v1.CreateRepoProfileRequest]) (*connect.Response[v1.CreateRepoProfileResponse], error)
-	UpdateRepoProfile(context.Context, *connect.Request[v1.UpdateRepoProfileRequest]) (*connect.Response[v1.UpdateRepoProfileResponse], error)
-	DeleteRepoProfile(context.Context, *connect.Request[v1.DeleteRepoProfileRequest]) (*connect.Response[v1.DeleteRepoProfileResponse], error)
 	ListPromptSnippets(context.Context, *connect.Request[v1.ListPromptSnippetsRequest]) (*connect.Response[v1.ListPromptSnippetsResponse], error)
 	CreatePromptSnippet(context.Context, *connect.Request[v1.CreatePromptSnippetRequest]) (*connect.Response[v1.CreatePromptSnippetResponse], error)
 	UpdatePromptSnippet(context.Context, *connect.Request[v1.UpdatePromptSnippetRequest]) (*connect.Response[v1.UpdatePromptSnippetResponse], error)
@@ -927,7 +896,7 @@ type DashboardServiceHandler interface {
 	// Observability page (docs/adr/0047). QueryMetrics is core proxying
 	// PromQL — Prometheus has no IngressRoute in this cluster, so a browser
 	// cannot reach it directly. GetFleetTopology is the live cell view, and
-	// needs no cluster RBAC: core assembles it from the tasks table it
+	// needs no cluster RBAC: core assembles it from the sessions table it
 	// already owns plus its own metrics.
 	QueryMetrics(context.Context, *connect.Request[v1.QueryMetricsRequest]) (*connect.Response[v1.QueryMetricsResponse], error)
 	GetFleetTopology(context.Context, *connect.Request[v1.GetFleetTopologyRequest]) (*connect.Response[v1.GetFleetTopologyResponse], error)
@@ -938,7 +907,6 @@ type DashboardServiceHandler interface {
 	UpdateScheduledAudit(context.Context, *connect.Request[v1.UpdateScheduledAuditRequest]) (*connect.Response[v1.UpdateScheduledAuditResponse], error)
 	DeleteScheduledAudit(context.Context, *connect.Request[v1.DeleteScheduledAuditRequest]) (*connect.Response[v1.DeleteScheduledAuditResponse], error)
 	RunScheduledAuditNow(context.Context, *connect.Request[v1.RunScheduledAuditNowRequest]) (*connect.Response[v1.RunScheduledAuditNowResponse], error)
-	RetryTask(context.Context, *connect.Request[v1.RetryTaskRequest]) (*connect.Response[v1.RetryTaskResponse], error)
 }
 
 // NewDashboardServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -948,22 +916,22 @@ type DashboardServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	dashboardServiceMethods := v1.File_agentfleet_v1_dashboard_proto.Services().ByName("DashboardService").Methods()
-	dashboardServiceListTasksHandler := connect.NewUnaryHandler(
-		DashboardServiceListTasksProcedure,
-		svc.ListTasks,
-		connect.WithSchema(dashboardServiceMethods.ByName("ListTasks")),
+	dashboardServiceListSessionsHandler := connect.NewUnaryHandler(
+		DashboardServiceListSessionsProcedure,
+		svc.ListSessions,
+		connect.WithSchema(dashboardServiceMethods.ByName("ListSessions")),
 		connect.WithHandlerOptions(opts...),
 	)
-	dashboardServiceGetTaskHandler := connect.NewUnaryHandler(
-		DashboardServiceGetTaskProcedure,
-		svc.GetTask,
-		connect.WithSchema(dashboardServiceMethods.ByName("GetTask")),
+	dashboardServiceGetSessionHandler := connect.NewUnaryHandler(
+		DashboardServiceGetSessionProcedure,
+		svc.GetSession,
+		connect.WithSchema(dashboardServiceMethods.ByName("GetSession")),
 		connect.WithHandlerOptions(opts...),
 	)
-	dashboardServiceCreateTaskHandler := connect.NewUnaryHandler(
-		DashboardServiceCreateTaskProcedure,
-		svc.CreateTask,
-		connect.WithSchema(dashboardServiceMethods.ByName("CreateTask")),
+	dashboardServiceCreateSessionHandler := connect.NewUnaryHandler(
+		DashboardServiceCreateSessionProcedure,
+		svc.CreateSession,
+		connect.WithSchema(dashboardServiceMethods.ByName("CreateSession")),
 		connect.WithHandlerOptions(opts...),
 	)
 	dashboardServiceGetTranscriptHandler := connect.NewUnaryHandler(
@@ -984,10 +952,10 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 		connect.WithSchema(dashboardServiceMethods.ByName("GetE2eStatus")),
 		connect.WithHandlerOptions(opts...),
 	)
-	dashboardServiceKillHandler := connect.NewUnaryHandler(
-		DashboardServiceKillProcedure,
-		svc.Kill,
-		connect.WithSchema(dashboardServiceMethods.ByName("Kill")),
+	dashboardServiceStopSessionHandler := connect.NewUnaryHandler(
+		DashboardServiceStopSessionProcedure,
+		svc.StopSession,
+		connect.WithSchema(dashboardServiceMethods.ByName("StopSession")),
 		connect.WithHandlerOptions(opts...),
 	)
 	dashboardServiceInterruptHandler := connect.NewUnaryHandler(
@@ -1002,10 +970,10 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 		connect.WithSchema(dashboardServiceMethods.ByName("SetPermissionMode")),
 		connect.WithHandlerOptions(opts...),
 	)
-	dashboardServiceWarmHandler := connect.NewUnaryHandler(
-		DashboardServiceWarmProcedure,
-		svc.Warm,
-		connect.WithSchema(dashboardServiceMethods.ByName("Warm")),
+	dashboardServiceWarmSessionHandler := connect.NewUnaryHandler(
+		DashboardServiceWarmSessionProcedure,
+		svc.WarmSession,
+		connect.WithSchema(dashboardServiceMethods.ByName("WarmSession")),
 		connect.WithHandlerOptions(opts...),
 	)
 	dashboardServiceMarkSeenHandler := connect.NewUnaryHandler(
@@ -1014,10 +982,28 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 		connect.WithSchema(dashboardServiceMethods.ByName("MarkSeen")),
 		connect.WithHandlerOptions(opts...),
 	)
-	dashboardServiceApproveTaskHandler := connect.NewUnaryHandler(
-		DashboardServiceApproveTaskProcedure,
-		svc.ApproveTask,
-		connect.WithSchema(dashboardServiceMethods.ByName("ApproveTask")),
+	dashboardServiceArchiveSessionHandler := connect.NewUnaryHandler(
+		DashboardServiceArchiveSessionProcedure,
+		svc.ArchiveSession,
+		connect.WithSchema(dashboardServiceMethods.ByName("ArchiveSession")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dashboardServiceListProposalsHandler := connect.NewUnaryHandler(
+		DashboardServiceListProposalsProcedure,
+		svc.ListProposals,
+		connect.WithSchema(dashboardServiceMethods.ByName("ListProposals")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dashboardServiceOpenFromProposalHandler := connect.NewUnaryHandler(
+		DashboardServiceOpenFromProposalProcedure,
+		svc.OpenFromProposal,
+		connect.WithSchema(dashboardServiceMethods.ByName("OpenFromProposal")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dashboardServiceDismissProposalHandler := connect.NewUnaryHandler(
+		DashboardServiceDismissProposalProcedure,
+		svc.DismissProposal,
+		connect.WithSchema(dashboardServiceMethods.ByName("DismissProposal")),
 		connect.WithHandlerOptions(opts...),
 	)
 	dashboardServiceKillE2EHandler := connect.NewUnaryHandler(
@@ -1056,16 +1042,16 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 		connect.WithSchema(dashboardServiceMethods.ByName("RespondToPermission")),
 		connect.WithHandlerOptions(opts...),
 	)
-	dashboardServiceDiscussHandler := connect.NewUnaryHandler(
-		DashboardServiceDiscussProcedure,
-		svc.Discuss,
-		connect.WithSchema(dashboardServiceMethods.ByName("Discuss")),
+	dashboardServicePostMessageHandler := connect.NewUnaryHandler(
+		DashboardServicePostMessageProcedure,
+		svc.PostMessage,
+		connect.WithSchema(dashboardServiceMethods.ByName("PostMessage")),
 		connect.WithHandlerOptions(opts...),
 	)
-	dashboardServiceDeleteTaskHandler := connect.NewUnaryHandler(
-		DashboardServiceDeleteTaskProcedure,
-		svc.DeleteTask,
-		connect.WithSchema(dashboardServiceMethods.ByName("DeleteTask")),
+	dashboardServiceDeleteSessionHandler := connect.NewUnaryHandler(
+		DashboardServiceDeleteSessionProcedure,
+		svc.DeleteSession,
+		connect.WithSchema(dashboardServiceMethods.ByName("DeleteSession")),
 		connect.WithHandlerOptions(opts...),
 	)
 	dashboardServiceListWorktreesHandler := connect.NewUnaryHandler(
@@ -1108,30 +1094,6 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 		DashboardServiceDeleteRepoProcedure,
 		svc.DeleteRepo,
 		connect.WithSchema(dashboardServiceMethods.ByName("DeleteRepo")),
-		connect.WithHandlerOptions(opts...),
-	)
-	dashboardServiceListRepoProfilesHandler := connect.NewUnaryHandler(
-		DashboardServiceListRepoProfilesProcedure,
-		svc.ListRepoProfiles,
-		connect.WithSchema(dashboardServiceMethods.ByName("ListRepoProfiles")),
-		connect.WithHandlerOptions(opts...),
-	)
-	dashboardServiceCreateRepoProfileHandler := connect.NewUnaryHandler(
-		DashboardServiceCreateRepoProfileProcedure,
-		svc.CreateRepoProfile,
-		connect.WithSchema(dashboardServiceMethods.ByName("CreateRepoProfile")),
-		connect.WithHandlerOptions(opts...),
-	)
-	dashboardServiceUpdateRepoProfileHandler := connect.NewUnaryHandler(
-		DashboardServiceUpdateRepoProfileProcedure,
-		svc.UpdateRepoProfile,
-		connect.WithSchema(dashboardServiceMethods.ByName("UpdateRepoProfile")),
-		connect.WithHandlerOptions(opts...),
-	)
-	dashboardServiceDeleteRepoProfileHandler := connect.NewUnaryHandler(
-		DashboardServiceDeleteRepoProfileProcedure,
-		svc.DeleteRepoProfile,
-		connect.WithSchema(dashboardServiceMethods.ByName("DeleteRepoProfile")),
 		connect.WithHandlerOptions(opts...),
 	)
 	dashboardServiceListPromptSnippetsHandler := connect.NewUnaryHandler(
@@ -1230,38 +1192,38 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 		connect.WithSchema(dashboardServiceMethods.ByName("RunScheduledAuditNow")),
 		connect.WithHandlerOptions(opts...),
 	)
-	dashboardServiceRetryTaskHandler := connect.NewUnaryHandler(
-		DashboardServiceRetryTaskProcedure,
-		svc.RetryTask,
-		connect.WithSchema(dashboardServiceMethods.ByName("RetryTask")),
-		connect.WithHandlerOptions(opts...),
-	)
 	return "/agentfleet.v1.DashboardService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case DashboardServiceListTasksProcedure:
-			dashboardServiceListTasksHandler.ServeHTTP(w, r)
-		case DashboardServiceGetTaskProcedure:
-			dashboardServiceGetTaskHandler.ServeHTTP(w, r)
-		case DashboardServiceCreateTaskProcedure:
-			dashboardServiceCreateTaskHandler.ServeHTTP(w, r)
+		case DashboardServiceListSessionsProcedure:
+			dashboardServiceListSessionsHandler.ServeHTTP(w, r)
+		case DashboardServiceGetSessionProcedure:
+			dashboardServiceGetSessionHandler.ServeHTTP(w, r)
+		case DashboardServiceCreateSessionProcedure:
+			dashboardServiceCreateSessionHandler.ServeHTTP(w, r)
 		case DashboardServiceGetTranscriptProcedure:
 			dashboardServiceGetTranscriptHandler.ServeHTTP(w, r)
 		case DashboardServiceStreamTranscriptProcedure:
 			dashboardServiceStreamTranscriptHandler.ServeHTTP(w, r)
 		case DashboardServiceGetE2EStatusProcedure:
 			dashboardServiceGetE2EStatusHandler.ServeHTTP(w, r)
-		case DashboardServiceKillProcedure:
-			dashboardServiceKillHandler.ServeHTTP(w, r)
+		case DashboardServiceStopSessionProcedure:
+			dashboardServiceStopSessionHandler.ServeHTTP(w, r)
 		case DashboardServiceInterruptProcedure:
 			dashboardServiceInterruptHandler.ServeHTTP(w, r)
 		case DashboardServiceSetPermissionModeProcedure:
 			dashboardServiceSetPermissionModeHandler.ServeHTTP(w, r)
-		case DashboardServiceWarmProcedure:
-			dashboardServiceWarmHandler.ServeHTTP(w, r)
+		case DashboardServiceWarmSessionProcedure:
+			dashboardServiceWarmSessionHandler.ServeHTTP(w, r)
 		case DashboardServiceMarkSeenProcedure:
 			dashboardServiceMarkSeenHandler.ServeHTTP(w, r)
-		case DashboardServiceApproveTaskProcedure:
-			dashboardServiceApproveTaskHandler.ServeHTTP(w, r)
+		case DashboardServiceArchiveSessionProcedure:
+			dashboardServiceArchiveSessionHandler.ServeHTTP(w, r)
+		case DashboardServiceListProposalsProcedure:
+			dashboardServiceListProposalsHandler.ServeHTTP(w, r)
+		case DashboardServiceOpenFromProposalProcedure:
+			dashboardServiceOpenFromProposalHandler.ServeHTTP(w, r)
+		case DashboardServiceDismissProposalProcedure:
+			dashboardServiceDismissProposalHandler.ServeHTTP(w, r)
 		case DashboardServiceKillE2EProcedure:
 			dashboardServiceKillE2EHandler.ServeHTTP(w, r)
 		case DashboardServiceStartE2EProcedure:
@@ -1274,10 +1236,10 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 			dashboardServiceAnswerQuestionHandler.ServeHTTP(w, r)
 		case DashboardServiceRespondToPermissionProcedure:
 			dashboardServiceRespondToPermissionHandler.ServeHTTP(w, r)
-		case DashboardServiceDiscussProcedure:
-			dashboardServiceDiscussHandler.ServeHTTP(w, r)
-		case DashboardServiceDeleteTaskProcedure:
-			dashboardServiceDeleteTaskHandler.ServeHTTP(w, r)
+		case DashboardServicePostMessageProcedure:
+			dashboardServicePostMessageHandler.ServeHTTP(w, r)
+		case DashboardServiceDeleteSessionProcedure:
+			dashboardServiceDeleteSessionHandler.ServeHTTP(w, r)
 		case DashboardServiceListWorktreesProcedure:
 			dashboardServiceListWorktreesHandler.ServeHTTP(w, r)
 		case DashboardServiceDeleteWorktreeProcedure:
@@ -1292,14 +1254,6 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 			dashboardServiceUpdateRepoHandler.ServeHTTP(w, r)
 		case DashboardServiceDeleteRepoProcedure:
 			dashboardServiceDeleteRepoHandler.ServeHTTP(w, r)
-		case DashboardServiceListRepoProfilesProcedure:
-			dashboardServiceListRepoProfilesHandler.ServeHTTP(w, r)
-		case DashboardServiceCreateRepoProfileProcedure:
-			dashboardServiceCreateRepoProfileHandler.ServeHTTP(w, r)
-		case DashboardServiceUpdateRepoProfileProcedure:
-			dashboardServiceUpdateRepoProfileHandler.ServeHTTP(w, r)
-		case DashboardServiceDeleteRepoProfileProcedure:
-			dashboardServiceDeleteRepoProfileHandler.ServeHTTP(w, r)
 		case DashboardServiceListPromptSnippetsProcedure:
 			dashboardServiceListPromptSnippetsHandler.ServeHTTP(w, r)
 		case DashboardServiceCreatePromptSnippetProcedure:
@@ -1332,8 +1286,6 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 			dashboardServiceDeleteScheduledAuditHandler.ServeHTTP(w, r)
 		case DashboardServiceRunScheduledAuditNowProcedure:
 			dashboardServiceRunScheduledAuditNowHandler.ServeHTTP(w, r)
-		case DashboardServiceRetryTaskProcedure:
-			dashboardServiceRetryTaskHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -1343,16 +1295,16 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 // UnimplementedDashboardServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedDashboardServiceHandler struct{}
 
-func (UnimplementedDashboardServiceHandler) ListTasks(context.Context, *connect.Request[v1.ListTasksRequest]) (*connect.Response[v1.ListTasksResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.ListTasks is not implemented"))
+func (UnimplementedDashboardServiceHandler) ListSessions(context.Context, *connect.Request[v1.ListSessionsRequest]) (*connect.Response[v1.ListSessionsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.ListSessions is not implemented"))
 }
 
-func (UnimplementedDashboardServiceHandler) GetTask(context.Context, *connect.Request[v1.GetTaskRequest]) (*connect.Response[v1.GetTaskResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.GetTask is not implemented"))
+func (UnimplementedDashboardServiceHandler) GetSession(context.Context, *connect.Request[v1.GetSessionRequest]) (*connect.Response[v1.GetSessionResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.GetSession is not implemented"))
 }
 
-func (UnimplementedDashboardServiceHandler) CreateTask(context.Context, *connect.Request[v1.CreateTaskRequest]) (*connect.Response[v1.CreateTaskResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.CreateTask is not implemented"))
+func (UnimplementedDashboardServiceHandler) CreateSession(context.Context, *connect.Request[v1.CreateSessionRequest]) (*connect.Response[v1.CreateSessionResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.CreateSession is not implemented"))
 }
 
 func (UnimplementedDashboardServiceHandler) GetTranscript(context.Context, *connect.Request[v1.ReadTranscriptSinceRequest]) (*connect.Response[v1.ReadTranscriptSinceResponse], error) {
@@ -1367,8 +1319,8 @@ func (UnimplementedDashboardServiceHandler) GetE2EStatus(context.Context, *conne
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.GetE2eStatus is not implemented"))
 }
 
-func (UnimplementedDashboardServiceHandler) Kill(context.Context, *connect.Request[v1.KillRequest]) (*connect.Response[v1.KillResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.Kill is not implemented"))
+func (UnimplementedDashboardServiceHandler) StopSession(context.Context, *connect.Request[v1.StopSessionRequest]) (*connect.Response[v1.StopSessionResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.StopSession is not implemented"))
 }
 
 func (UnimplementedDashboardServiceHandler) Interrupt(context.Context, *connect.Request[v1.InterruptRequest]) (*connect.Response[v1.InterruptResponse], error) {
@@ -1379,16 +1331,28 @@ func (UnimplementedDashboardServiceHandler) SetPermissionMode(context.Context, *
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.SetPermissionMode is not implemented"))
 }
 
-func (UnimplementedDashboardServiceHandler) Warm(context.Context, *connect.Request[v1.WarmRequest]) (*connect.Response[v1.WarmResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.Warm is not implemented"))
+func (UnimplementedDashboardServiceHandler) WarmSession(context.Context, *connect.Request[v1.WarmSessionRequest]) (*connect.Response[v1.WarmSessionResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.WarmSession is not implemented"))
 }
 
 func (UnimplementedDashboardServiceHandler) MarkSeen(context.Context, *connect.Request[v1.MarkSeenRequest]) (*connect.Response[v1.MarkSeenResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.MarkSeen is not implemented"))
 }
 
-func (UnimplementedDashboardServiceHandler) ApproveTask(context.Context, *connect.Request[v1.ApproveTaskRequest]) (*connect.Response[v1.ApproveTaskResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.ApproveTask is not implemented"))
+func (UnimplementedDashboardServiceHandler) ArchiveSession(context.Context, *connect.Request[v1.ArchiveSessionRequest]) (*connect.Response[v1.ArchiveSessionResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.ArchiveSession is not implemented"))
+}
+
+func (UnimplementedDashboardServiceHandler) ListProposals(context.Context, *connect.Request[v1.ListProposalsRequest]) (*connect.Response[v1.ListProposalsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.ListProposals is not implemented"))
+}
+
+func (UnimplementedDashboardServiceHandler) OpenFromProposal(context.Context, *connect.Request[v1.OpenFromProposalRequest]) (*connect.Response[v1.OpenFromProposalResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.OpenFromProposal is not implemented"))
+}
+
+func (UnimplementedDashboardServiceHandler) DismissProposal(context.Context, *connect.Request[v1.DismissProposalRequest]) (*connect.Response[v1.DismissProposalResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.DismissProposal is not implemented"))
 }
 
 func (UnimplementedDashboardServiceHandler) KillE2E(context.Context, *connect.Request[v1.KillE2ERequest]) (*connect.Response[v1.KillE2EResponse], error) {
@@ -1415,12 +1379,12 @@ func (UnimplementedDashboardServiceHandler) RespondToPermission(context.Context,
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.RespondToPermission is not implemented"))
 }
 
-func (UnimplementedDashboardServiceHandler) Discuss(context.Context, *connect.Request[v1.DiscussRequest]) (*connect.Response[v1.DiscussResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.Discuss is not implemented"))
+func (UnimplementedDashboardServiceHandler) PostMessage(context.Context, *connect.Request[v1.PostMessageRequest]) (*connect.Response[v1.PostMessageResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.PostMessage is not implemented"))
 }
 
-func (UnimplementedDashboardServiceHandler) DeleteTask(context.Context, *connect.Request[v1.DeleteTaskRequest]) (*connect.Response[v1.DeleteTaskResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.DeleteTask is not implemented"))
+func (UnimplementedDashboardServiceHandler) DeleteSession(context.Context, *connect.Request[v1.DeleteSessionRequest]) (*connect.Response[v1.DeleteSessionResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.DeleteSession is not implemented"))
 }
 
 func (UnimplementedDashboardServiceHandler) ListWorktrees(context.Context, *connect.Request[v1.ListWorktreesRequest]) (*connect.Response[v1.ListWorktreesViewResponse], error) {
@@ -1449,22 +1413,6 @@ func (UnimplementedDashboardServiceHandler) UpdateRepo(context.Context, *connect
 
 func (UnimplementedDashboardServiceHandler) DeleteRepo(context.Context, *connect.Request[v1.DeleteRepoRequest]) (*connect.Response[v1.DeleteRepoResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.DeleteRepo is not implemented"))
-}
-
-func (UnimplementedDashboardServiceHandler) ListRepoProfiles(context.Context, *connect.Request[v1.ListRepoProfilesRequest]) (*connect.Response[v1.ListRepoProfilesResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.ListRepoProfiles is not implemented"))
-}
-
-func (UnimplementedDashboardServiceHandler) CreateRepoProfile(context.Context, *connect.Request[v1.CreateRepoProfileRequest]) (*connect.Response[v1.CreateRepoProfileResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.CreateRepoProfile is not implemented"))
-}
-
-func (UnimplementedDashboardServiceHandler) UpdateRepoProfile(context.Context, *connect.Request[v1.UpdateRepoProfileRequest]) (*connect.Response[v1.UpdateRepoProfileResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.UpdateRepoProfile is not implemented"))
-}
-
-func (UnimplementedDashboardServiceHandler) DeleteRepoProfile(context.Context, *connect.Request[v1.DeleteRepoProfileRequest]) (*connect.Response[v1.DeleteRepoProfileResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.DeleteRepoProfile is not implemented"))
 }
 
 func (UnimplementedDashboardServiceHandler) ListPromptSnippets(context.Context, *connect.Request[v1.ListPromptSnippetsRequest]) (*connect.Response[v1.ListPromptSnippetsResponse], error) {
@@ -1529,8 +1477,4 @@ func (UnimplementedDashboardServiceHandler) DeleteScheduledAudit(context.Context
 
 func (UnimplementedDashboardServiceHandler) RunScheduledAuditNow(context.Context, *connect.Request[v1.RunScheduledAuditNowRequest]) (*connect.Response[v1.RunScheduledAuditNowResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.RunScheduledAuditNow is not implemented"))
-}
-
-func (UnimplementedDashboardServiceHandler) RetryTask(context.Context, *connect.Request[v1.RetryTaskRequest]) (*connect.Response[v1.RetryTaskResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.RetryTask is not implemented"))
 }

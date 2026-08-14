@@ -53,16 +53,16 @@ func New(k8sc *k8s.Client, gitMgr *git.Manager, core EventReporter, e2eHost stri
 // --- e2e sessions (unchanged behavior, k8s-backed instead of Postgres-backed) ---
 
 func (s *Server) KillE2ESession(ctx context.Context, req *agentfleetv1.KillE2ESessionRequest) (*agentfleetv1.KillE2ESessionResponse, error) {
-	_, exists, err := s.k8sc.GetPod(ctx, k8s.ResourceName(req.GetTaskId()))
+	_, exists, err := s.k8sc.GetPod(ctx, k8s.ResourceName(req.GetSessionId()))
 	if err != nil {
 		return nil, err
 	}
 	killed := false
 	if exists {
-		if err := s.k8sc.DeleteAll(ctx, req.GetTaskId()); err != nil {
+		if err := s.k8sc.DeleteAll(ctx, req.GetSessionId()); err != nil {
 			return nil, err
 		}
-		slog.Info("grpcserver KillE2ESession", "taskId", req.GetTaskId())
+		slog.Info("grpcserver KillE2ESession", "sessionId", req.GetSessionId())
 		killed = true
 	}
 
@@ -102,7 +102,7 @@ func (s *Server) tearDownRepoSharedInstances(ctx context.Context, repo string) (
 }
 
 func (s *Server) GetE2ESessionStatus(ctx context.Context, req *agentfleetv1.GetE2ESessionStatusRequest) (*agentfleetv1.GetE2ESessionStatusResponse, error) {
-	state, exists, err := s.k8sc.GetPod(ctx, k8s.ResourceName(req.GetTaskId()))
+	state, exists, err := s.k8sc.GetPod(ctx, k8s.ResourceName(req.GetSessionId()))
 	if err != nil {
 		return nil, err
 	}
@@ -119,8 +119,8 @@ func (s *Server) GetE2ESessionStatus(ctx context.Context, req *agentfleetv1.GetE
 	}
 	return &agentfleetv1.GetE2ESessionStatusResponse{
 		Status:        status,
-		PreviewUrl:    k8s.PreviewURLFor(s.e2eHost, req.GetTaskId()),
-		CodeServerUrl: k8s.CodeServerURLFor(s.e2eHost, req.GetTaskId()),
+		PreviewUrl:    k8s.PreviewURLFor(s.e2eHost, req.GetSessionId()),
+		CodeServerUrl: k8s.CodeServerURLFor(s.e2eHost, req.GetSessionId()),
 		StartCmd:      state.StartCmd,
 		PodPhase:      podPhase,
 		AppReady:      state.AppReady,
@@ -130,7 +130,7 @@ func (s *Server) GetE2ESessionStatus(ctx context.Context, req *agentfleetv1.GetE
 		// no-session case with an empty response. This is how core's own
 		// dashboard path (runInE2ePod) reaches a sandbox it did not provision
 		// (docs/adr/0045).
-		Endpoints: s.endpointsFor(req.GetTaskId()),
+		Endpoints: s.endpointsFor(req.GetSessionId()),
 	}, nil
 }
 
@@ -139,7 +139,7 @@ func (s *Server) GetE2ESessionStatus(ctx context.Context, req *agentfleetv1.GetE
 // not a create-and-handle-AlreadyExists, since it also needs to report the
 // existing session's own status/URL, not just "yes it exists."
 func (s *Server) CreateE2ESession(ctx context.Context, req *agentfleetv1.CreateE2ESessionRequest) (*agentfleetv1.CreateE2ESessionResponse, error) {
-	name := k8s.ResourceName(req.GetTaskId())
+	name := k8s.ResourceName(req.GetSessionId())
 	state, exists, err := s.k8sc.GetPod(ctx, name)
 	if err != nil {
 		return nil, err
@@ -159,18 +159,18 @@ func (s *Server) CreateE2ESession(ctx context.Context, req *agentfleetv1.CreateE
 	dead := exists && (state.Phase == corev1.PodFailed || state.Phase == corev1.PodSucceeded)
 	if dead {
 		slog.Warn("grpcserver CreateE2ESession: replacing a dead e2e pod",
-			"taskId", req.GetTaskId(), "phase", state.Phase, "detail", state.Detail)
+			"sessionId", req.GetSessionId(), "phase", state.Phase, "detail", state.Detail)
 		// Only the pod — Service/Middleware/IngressRoute are create-if-absent
 		// (ignoreAlreadyExists), so leaving them keeps the preview URL stable
 		// and avoids Traefik churn on every recreate.
-		if err := s.k8sc.DeletePod(ctx, req.GetTaskId()); err != nil {
-			return nil, fmt.Errorf("delete dead e2e pod for task %s: %w", req.GetTaskId(), err)
+		if err := s.k8sc.DeletePod(ctx, req.GetSessionId()); err != nil {
+			return nil, fmt.Errorf("delete dead e2e pod for task %s: %w", req.GetSessionId(), err)
 		}
 	}
 	if exists && (state.Terminating || dead) {
-		slog.Info("grpcserver CreateE2ESession: waiting for the previous pod to finish terminating", "taskId", req.GetTaskId())
+		slog.Info("grpcserver CreateE2ESession: waiting for the previous pod to finish terminating", "sessionId", req.GetSessionId())
 		if err := s.k8sc.WaitForPodGone(ctx, name, 2*time.Minute); err != nil {
-			return nil, fmt.Errorf("previous e2e pod for task %s did not finish terminating: %w", req.GetTaskId(), err)
+			return nil, fmt.Errorf("previous e2e pod for task %s did not finish terminating: %w", req.GetSessionId(), err)
 		}
 		exists = false
 	}
@@ -181,46 +181,46 @@ func (s *Server) CreateE2ESession(ctx context.Context, req *agentfleetv1.CreateE
 		// exactly the long-lived sessions unable to dial.
 		return &agentfleetv1.CreateE2ESessionResponse{
 			Status:     e2eStatusFromPhase(state.Phase),
-			PreviewUrl: k8s.PreviewURLFor(s.e2eHost, req.GetTaskId()),
-			Endpoints:  s.endpointsFor(req.GetTaskId()),
+			PreviewUrl: k8s.PreviewURLFor(s.e2eHost, req.GetSessionId()),
+			Endpoints:  s.endpointsFor(req.GetSessionId()),
 		}, nil
 	}
 
-	serviceRefs, extraEnv, err := s.resolveServiceIngredients(ctx, req.GetRepo(), req.GetTaskId(), req.GetServiceIngredients())
+	serviceRefs, extraEnv, err := s.resolveServiceIngredients(ctx, req.GetRepo(), req.GetSessionId(), req.GetServiceIngredients())
 	if err != nil {
 		return nil, fmt.Errorf("resolve service ingredients: %w", err)
 	}
 	taskRef := k8s.TaskRef{
-		ID: req.GetTaskId(), Repo: req.GetRepo(), StartCmd: req.GetStartCmd(),
+		ID: req.GetSessionId(), Repo: req.GetRepo(), StartCmd: req.GetStartCmd(),
 		ToolKeys: req.GetToolKeys(), ServiceIngredients: serviceRefs, ExtraEnv: extraEnv,
 	}
 	if err := s.k8sc.CreatePod(ctx, taskRef); err != nil {
 		return nil, fmt.Errorf("create e2e pod: %w", err)
 	}
-	if err := s.k8sc.CreateService(ctx, req.GetTaskId()); err != nil {
+	if err := s.k8sc.CreateService(ctx, req.GetSessionId()); err != nil {
 		return nil, fmt.Errorf("create e2e service: %w", err)
 	}
 	// Fenced before it is reachable: the Service above is what makes the MCP
 	// ports resolvable, so the policy has to exist by the time anyone can
 	// dial them (docs/adr/0045).
-	if err := s.k8sc.CreateNetworkPolicy(ctx, req.GetTaskId()); err != nil {
+	if err := s.k8sc.CreateNetworkPolicy(ctx, req.GetSessionId()); err != nil {
 		return nil, fmt.Errorf("create e2e networkpolicy: %w", err)
 	}
-	if err := s.k8sc.CreateMiddleware(ctx, req.GetTaskId()); err != nil {
+	if err := s.k8sc.CreateMiddleware(ctx, req.GetSessionId()); err != nil {
 		return nil, fmt.Errorf("create e2e middleware: %w", err)
 	}
-	if err := s.k8sc.CreateIngressRoute(ctx, s.e2eHost, req.GetTaskId()); err != nil {
+	if err := s.k8sc.CreateIngressRoute(ctx, s.e2eHost, req.GetSessionId()); err != nil {
 		return nil, fmt.Errorf("create e2e ingressroute: %w", err)
 	}
-	slog.Info("grpcserver CreateE2ESession", "taskId", req.GetTaskId(), "repo", req.GetRepo())
+	slog.Info("grpcserver CreateE2ESession", "sessionId", req.GetSessionId(), "repo", req.GetRepo())
 	// "requested", not "running": the pod object exists, but it is Pending —
 	// image pull, init containers, scheduling all still ahead of it. Claiming
 	// "running" here told the agent the preview was live and then handed it a
 	// 502 for the next 10-20 minutes (docs/adr/0044).
 	return &agentfleetv1.CreateE2ESessionResponse{
 		Status:     "requested",
-		PreviewUrl: k8s.PreviewURLFor(s.e2eHost, req.GetTaskId()),
-		Endpoints:  s.endpointsFor(req.GetTaskId()),
+		PreviewUrl: k8s.PreviewURLFor(s.e2eHost, req.GetSessionId()),
+		Endpoints:  s.endpointsFor(req.GetSessionId()),
 	}, nil
 }
 
@@ -323,46 +323,46 @@ func (s *Server) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWo
 	// sub-step rather than a new enum value per step, since these are
 	// provisioner-internal detail, not states any other component branches
 	// on — see core.proto's own comment on the enum value.
-	s.reportEvent(ctx, req.GetTaskId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_PROVISIONING, "", "cloning repo")
+	s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_PROVISIONING, "", "cloning repo")
 	if err := s.git.EnsureRepoCloned(ctx, req.GetRepo(), req.GetRepoUrl()); err != nil {
-		s.reportEvent(ctx, req.GetTaskId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_CRASHED, "", "clone/fetch failed: "+err.Error())
+		s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_CRASHED, "", "clone/fetch failed: "+err.Error())
 		return nil, fmt.Errorf("ensure repo cloned: %w", err)
 	}
-	s.reportEvent(ctx, req.GetTaskId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_PROVISIONING, "", "adding worktree")
-	worktreePath, _, err := s.git.CreateWorktree(ctx, req.GetRepo(), req.GetTaskId(), req.GetBaseBranch())
+	s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_PROVISIONING, "", "adding worktree")
+	worktreePath, _, err := s.git.CreateWorktree(ctx, req.GetRepo(), req.GetSessionId(), req.GetBaseBranch())
 	if err != nil {
-		s.reportEvent(ctx, req.GetTaskId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_CRASHED, "", "worktree add failed: "+err.Error())
+		s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_CRASHED, "", "worktree add failed: "+err.Error())
 		return nil, fmt.Errorf("create worktree: %w", err)
 	}
-	s.reportEvent(ctx, req.GetTaskId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_CREATED, "", "")
+	s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_CREATED, "", "")
 
 	// Best-effort, unlike the clone/worktree steps above: stale or
 	// momentarily missing fleet-shared skills/context is a degraded worker
 	// session, not a broken one, so a sync failure here logs and continues
 	// rather than failing the whole dispatch (docs/adr/0032).
 	if s.fleetSharedRepoURL != "" {
-		s.reportEvent(ctx, req.GetTaskId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_PROVISIONING, "", "syncing fleet-shared skills")
+		s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_PROVISIONING, "", "syncing fleet-shared skills")
 		if err := s.git.SyncFleetShared(ctx, s.fleetSharedRepoURL, s.fleetSharedBranch, s.claudeHomeDir); err != nil {
-			slog.Warn("grpcserver: fleet-shared sync failed, continuing with a possibly-stale copy", "taskId", req.GetTaskId(), "error", err)
+			slog.Warn("grpcserver: fleet-shared sync failed, continuing with a possibly-stale copy", "sessionId", req.GetSessionId(), "error", err)
 		}
 	}
 
-	s.reportEvent(ctx, req.GetTaskId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_PROVISIONING, "", "minting service credentials")
-	serviceRefs, extraEnv, err := s.resolveServiceIngredients(ctx, req.GetRepo(), req.GetTaskId(), req.GetServiceIngredients())
+	s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_PROVISIONING, "", "minting service credentials")
+	serviceRefs, extraEnv, err := s.resolveServiceIngredients(ctx, req.GetRepo(), req.GetSessionId(), req.GetServiceIngredients())
 	if err != nil {
-		s.reportEvent(ctx, req.GetTaskId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_CRASHED, "", "ingredient resolution failed: "+err.Error())
+		s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_CRASHED, "", "ingredient resolution failed: "+err.Error())
 		return nil, fmt.Errorf("resolve service ingredients: %w", err)
 	}
 
-	s.reportEvent(ctx, req.GetTaskId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_PROVISIONING, "", "creating pod")
-	if err := s.k8sc.CreateWorkerPod(ctx, req.GetTaskId(), req.GetRepo(), req.GetLeaseId(), worktreePath, req.GetResumeSessionId(), req.GetResumeFromSeq(), req.GetToolKeys(), serviceRefs, extraEnv); err != nil {
-		s.reportEvent(ctx, req.GetTaskId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_CRASHED, "", "pod create failed: "+err.Error())
+	s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_PROVISIONING, "", "creating pod")
+	if err := s.k8sc.CreateWorkerPod(ctx, req.GetSessionId(), req.GetRepo(), req.GetLeaseId(), worktreePath, req.GetResumeSessionId(), req.GetResumeFromSeq(), req.GetToolKeys(), serviceRefs, extraEnv); err != nil {
+		s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_CRASHED, "", "pod create failed: "+err.Error())
 		return nil, fmt.Errorf("create worker pod: %w", err)
 	}
 
-	podName := k8s.WorkerResourceName(req.GetTaskId())
-	s.reportEvent(ctx, req.GetTaskId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_SCHEDULED, podName, "")
-	slog.Info("grpcserver CreateWorkerPod", "taskId", req.GetTaskId(), "repo", req.GetRepo(), "podName", podName)
+	podName := k8s.WorkerResourceName(req.GetSessionId())
+	s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_SCHEDULED, podName, "")
+	slog.Info("grpcserver CreateWorkerPod", "sessionId", req.GetSessionId(), "repo", req.GetRepo(), "podName", podName)
 	return &agentfleetv1.CreateWorkerPodResponse{PodName: podName}, nil
 }
 
@@ -373,9 +373,9 @@ func (s *Server) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWo
 func (s *Server) TearDownSession(ctx context.Context, req *agentfleetv1.TearDownSessionRequest) (*agentfleetv1.TearDownSessionResponse, error) {
 	switch req.GetKind() {
 	case agentfleetv1.SessionKind_SESSION_KIND_WORKER:
-		return s.tearDownWorker(ctx, req.GetTaskId())
+		return s.tearDownWorker(ctx, req.GetSessionId())
 	case agentfleetv1.SessionKind_SESSION_KIND_E2E:
-		return s.tearDownE2e(ctx, req.GetTaskId())
+		return s.tearDownE2e(ctx, req.GetSessionId())
 	default:
 		return nil, fmt.Errorf("TearDownSession: unspecified session kind")
 	}
@@ -400,7 +400,7 @@ func (s *Server) tearDownWorker(ctx context.Context, taskID string) (*agentfleet
 		return nil, err
 	}
 	s.reportEvent(ctx, taskID, agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_TERMINATED, "", "")
-	slog.Info("grpcserver tearDownWorker", "taskId", taskID)
+	slog.Info("grpcserver tearDownWorker", "sessionId", taskID)
 	return &agentfleetv1.TearDownSessionResponse{TornDown: true}, nil
 }
 
@@ -415,7 +415,7 @@ func (s *Server) tearDownE2e(ctx context.Context, taskID string) (*agentfleetv1.
 	if err := s.k8sc.DeleteAll(ctx, taskID); err != nil {
 		return nil, err
 	}
-	slog.Info("grpcserver tearDownE2e", "taskId", taskID)
+	slog.Info("grpcserver tearDownE2e", "sessionId", taskID)
 	return &agentfleetv1.TearDownSessionResponse{TornDown: true}, nil
 }
 
@@ -434,7 +434,7 @@ func (s *Server) ListWorktrees(ctx context.Context, _ *agentfleetv1.ListWorktree
 		}
 		for _, info := range infos {
 			out = append(out, &agentfleetv1.WorktreeInfo{
-				TaskId:        info.TaskID,
+				SessionId:     info.TaskID,
 				Repo:          info.Repo,
 				Branch:        info.Branch,
 				UpstreamTrack: info.UpstreamTrack,
@@ -456,7 +456,7 @@ func (s *Server) ListWorktrees(ctx context.Context, _ *agentfleetv1.ListWorktree
 }
 
 func (s *Server) DeleteWorktree(ctx context.Context, req *agentfleetv1.DeleteWorktreeRequest) (*agentfleetv1.DeleteWorktreeResponse, error) {
-	if err := s.git.DeleteWorktree(ctx, req.GetRepo(), req.GetTaskId(), req.GetAlsoDeleteBranch()); err != nil {
+	if err := s.git.DeleteWorktree(ctx, req.GetRepo(), req.GetSessionId(), req.GetAlsoDeleteBranch()); err != nil {
 		return nil, err
 	}
 	return &agentfleetv1.DeleteWorktreeResponse{Deleted: true}, nil
@@ -464,10 +464,10 @@ func (s *Server) DeleteWorktree(ctx context.Context, req *agentfleetv1.DeleteWor
 
 func (s *Server) reportEvent(ctx context.Context, taskID string, kind agentfleetv1.SessionKind, phase agentfleetv1.PodPhase, podName, message string) {
 	s.core.ReportEvent(ctx, &agentfleetv1.PodEvent{
-		TaskId:  taskID,
-		Kind:    kind,
-		Phase:   phase,
-		PodName: podName,
-		Message: message,
+		SessionId: taskID,
+		Kind:      kind,
+		Phase:     phase,
+		PodName:   podName,
+		Message:   message,
 	})
 }

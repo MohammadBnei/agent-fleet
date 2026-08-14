@@ -39,9 +39,9 @@ type mockE2eRunner struct {
 // Has/SetEndpoints/DropAll satisfy directDialer. The roster is always
 // "known" here: what these cases exercise is the provision-and-retry
 // sequencing, not the routing decision (sandbox_test.go covers that).
-func (m *mockE2eRunner) Has(string) bool                      { return true }
-func (m *mockE2eRunner) SetEndpoints([]e2eclient.Endpoint)    {}
-func (m *mockE2eRunner) DropAll()                             {}
+func (m *mockE2eRunner) Has(string) bool                   { return true }
+func (m *mockE2eRunner) SetEndpoints([]e2eclient.Endpoint) {}
+func (m *mockE2eRunner) DropAll()                          {}
 
 func (m *mockE2eRunner) CallTool(_ context.Context, _, _ string, _ map[string]any) (string, bool, error) {
 	i := m.calls

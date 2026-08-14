@@ -104,9 +104,9 @@ func TestGcTerminalWorkerJobs_ReportsBothTerminalPhases(t *testing.T) {
 	got := map[string]agentfleetv1.PodPhase{}
 	for _, e := range reporter.events {
 		if e.GetKind() != agentfleetv1.SessionKind_SESSION_KIND_WORKER {
-			t.Errorf("%s: expected SESSION_KIND_WORKER, got %v", e.GetTaskId(), e.GetKind())
+			t.Errorf("%s: expected SESSION_KIND_WORKER, got %v", e.GetSessionId(), e.GetKind())
 		}
-		got[e.GetTaskId()] = e.GetPhase()
+		got[e.GetSessionId()] = e.GetPhase()
 	}
 
 	if p := got["failed-1"]; p != agentfleetv1.PodPhase_POD_PHASE_CRASHED {

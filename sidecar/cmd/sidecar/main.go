@@ -36,7 +36,7 @@ func main() {
 	// duplicating the provisioner's shortID() truncation rule into core.
 	// One attribute here removes that whole coupling: every fleet component
 	// is then filterable with the same `| json | taskId="..."`.
-	slog.SetDefault(slog.Default().With("taskId", taskID))
+	slog.SetDefault(slog.Default().With("sessionId", taskID))
 	coreAddr := env("CORE_GRPC_ADDR", "agent-fleet-core.agent-fleet.svc.cluster.local:9090")
 	worktreePath := env("WORKTREE_PATH", "/workspace")
 	mcpPort := env("MCP_PORT", "9090")

@@ -14,7 +14,7 @@ import (
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/dbtest"
-	"github.com/MohammadBnei/agent-fleet/core/internal/tasks"
+	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
 )
 
 // Real Postgres — Kill now writes to tasks.Store (MarkStopRequested), a
@@ -44,9 +44,9 @@ func TestServer_Kill_DefaultReason(t *testing.T) {
 	pool := newTestPool(t)
 	taskID := seedTask(t, pool)
 	store := &recordingStore{}
-	s := NewServer(tasks.NewStore(pool), store, nil, nil, nil, nil, nil, nil, nil, 5, nil, nil, nil)
+	s := NewServer(sessions.NewStore(pool), store, nil, nil, nil, nil, nil, nil, nil, 5, nil, nil, nil)
 
-	resp, err := s.Kill(context.Background(), connect.NewRequest(&agentfleetv1.KillRequest{TaskId: taskID}))
+	resp, err := s.Kill(context.Background(), connect.NewRequest(&agentfleetv1.StopSessionRequest{SessionId: taskID}))
 	if err != nil {
 		t.Fatalf("Kill: %v", err)
 	}
@@ -70,10 +70,10 @@ func TestServer_Kill_CustomReason(t *testing.T) {
 	pool := newTestPool(t)
 	taskID := seedTask(t, pool)
 	store := &recordingStore{}
-	s := NewServer(tasks.NewStore(pool), store, nil, nil, nil, nil, nil, nil, nil, 5, nil, nil, nil)
+	s := NewServer(sessions.NewStore(pool), store, nil, nil, nil, nil, nil, nil, nil, 5, nil, nil, nil)
 
 	reason := "wrong direction"
-	req := connect.NewRequest(&agentfleetv1.KillRequest{TaskId: taskID, Reason: &reason})
+	req := connect.NewRequest(&agentfleetv1.StopSessionRequest{SessionId: taskID, Reason: &reason})
 	if _, err := s.Kill(context.Background(), req); err != nil {
 		t.Fatalf("Kill: %v", err)
 	}

@@ -33,7 +33,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/repoprofiles"
 	"github.com/MohammadBnei/agent-fleet/core/internal/repos"
 	"github.com/MohammadBnei/agent-fleet/core/internal/scheduledaudits"
-	"github.com/MohammadBnei/agent-fleet/core/internal/tasks"
+	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
 	"github.com/MohammadBnei/agent-fleet/core/internal/webui"
 )
@@ -51,7 +51,7 @@ func (noopNotifier) PostToThread(context.Context, string, transcript.Entry) erro
 
 func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool) error {
 	store := transcript.NewPostgresStore(pool)
-	taskStore := tasks.NewStore(pool)
+	taskStore := sessions.NewStore(pool)
 	journalStore := journal.NewStore(pool)
 	repoStore := repos.NewStore(pool)
 	profileStore := repoprofiles.NewStore(pool)

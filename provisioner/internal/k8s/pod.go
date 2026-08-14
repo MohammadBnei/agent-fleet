@@ -285,10 +285,10 @@ func (c *Client) CreatePod(ctx context.Context, task TaskRef) error {
 	}
 
 	if _, err := c.Core.CoreV1().Pods(c.Namespace).Create(ctx, pod, metav1.CreateOptions{}); err != nil {
-		slog.Error("k8s CreatePod", "taskId", task.ID, "error", err)
+		slog.Error("k8s CreatePod", "sessionId", task.ID, "error", err)
 		return err
 	}
-	slog.Info("k8s CreatePod", "taskId", task.ID)
+	slog.Info("k8s CreatePod", "sessionId", task.ID)
 	metrics.PodsCreatedTotal.WithLabelValues("e2e").Inc()
 	return nil
 }
@@ -296,10 +296,10 @@ func (c *Client) CreatePod(ctx context.Context, task TaskRef) error {
 func (c *Client) DeletePod(ctx context.Context, taskID string) error {
 	err := ignoreNotFound(c.Core.CoreV1().Pods(c.Namespace).Delete(ctx, ResourceName(taskID), metav1.DeleteOptions{}))
 	if err != nil {
-		slog.Error("k8s DeletePod", "taskId", taskID, "error", err)
+		slog.Error("k8s DeletePod", "sessionId", taskID, "error", err)
 		return err
 	}
-	slog.Info("k8s DeletePod", "taskId", taskID)
+	slog.Info("k8s DeletePod", "sessionId", taskID)
 	metrics.PodsDeletedTotal.WithLabelValues("e2e").Inc()
 	return nil
 }
@@ -635,10 +635,10 @@ func (c *Client) CreateWorkerPod(ctx context.Context, taskID, repo, leaseID, wor
 
 	_, err = c.Core.BatchV1().Jobs(c.Namespace).Create(ctx, job, metav1.CreateOptions{})
 	if err != nil {
-		slog.Error("k8s CreateWorkerPod", "taskId", taskID, "repo", repo, "error", err)
+		slog.Error("k8s CreateWorkerPod", "sessionId", taskID, "repo", repo, "error", err)
 		return err
 	}
-	slog.Info("k8s CreateWorkerPod", "taskId", taskID, "repo", repo)
+	slog.Info("k8s CreateWorkerPod", "sessionId", taskID, "repo", repo)
 	metrics.PodsCreatedTotal.WithLabelValues("worker").Inc()
 	return nil
 }
@@ -654,10 +654,10 @@ func jobForegroundDeletion() metav1.DeleteOptions {
 func (c *Client) DeleteWorkerJob(ctx context.Context, taskID string) error {
 	err := ignoreNotFound(c.Core.BatchV1().Jobs(c.Namespace).Delete(ctx, WorkerResourceName(taskID), jobForegroundDeletion()))
 	if err != nil {
-		slog.Error("k8s DeleteWorkerJob", "taskId", taskID, "error", err)
+		slog.Error("k8s DeleteWorkerJob", "sessionId", taskID, "error", err)
 		return err
 	}
-	slog.Info("k8s DeleteWorkerJob", "taskId", taskID)
+	slog.Info("k8s DeleteWorkerJob", "sessionId", taskID)
 	metrics.PodsDeletedTotal.WithLabelValues("worker").Inc()
 	return nil
 }
@@ -672,7 +672,7 @@ func (c *Client) GetWorkerJobRepo(ctx context.Context, taskID string) (repo stri
 		return "", false, nil
 	}
 	if err != nil {
-		slog.Error("k8s GetWorkerJobRepo", "taskId", taskID, "error", err)
+		slog.Error("k8s GetWorkerJobRepo", "sessionId", taskID, "error", err)
 		return "", false, err
 	}
 	return job.Labels[RepoLabel], true, nil

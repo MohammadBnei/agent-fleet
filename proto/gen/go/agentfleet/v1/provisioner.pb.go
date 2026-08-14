@@ -185,7 +185,7 @@ func (x *ServiceIngredient) GetScopeMode() ScopeMode {
 
 type KillE2ESessionRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
-	TaskId         string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	SessionId      string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
 	IdempotencyKey string                 `protobuf:"bytes,2,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
 	// repo/also_teardown_services (docs/adr/0034 follow-up) — the shared
 	// postgres/redis instance backing this task's services is keyed by repo,
@@ -229,9 +229,9 @@ func (*KillE2ESessionRequest) Descriptor() ([]byte, []int) {
 	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{1}
 }
 
-func (x *KillE2ESessionRequest) GetTaskId() string {
+func (x *KillE2ESessionRequest) GetSessionId() string {
 	if x != nil {
-		return x.TaskId
+		return x.SessionId
 	}
 	return ""
 }
@@ -313,7 +313,7 @@ func (x *KillE2ESessionResponse) GetServicesTornDown() []string {
 
 type GetE2ESessionStatusRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	TaskId        string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -348,9 +348,9 @@ func (*GetE2ESessionStatusRequest) Descriptor() ([]byte, []int) {
 	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{3}
 }
 
-func (x *GetE2ESessionStatusRequest) GetTaskId() string {
+func (x *GetE2ESessionStatusRequest) GetSessionId() string {
 	if x != nil {
-		return x.TaskId
+		return x.SessionId
 	}
 	return ""
 }
@@ -584,9 +584,9 @@ func (x *ServiceEndpoint) GetToken() string {
 // sidecar -> core (CoreService.RequestE2eEnv) -> provisioner (this RPC) —
 // core is the only caller.
 type CreateE2ESessionRequest struct {
-	state  protoimpl.MessageState `protogen:"open.v1"`
-	TaskId string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
-	Repo   string                 `protobuf:"bytes,2,opt,name=repo,proto3" json:"repo,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	SessionId string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	Repo      string                 `protobuf:"bytes,2,opt,name=repo,proto3" json:"repo,omitempty"`
 	// See RequestE2eEnvRequest.start_cmd in core.proto — passed through
 	// core unchanged.
 	StartCmd string `protobuf:"bytes,3,opt,name=start_cmd,json=startCmd,proto3" json:"start_cmd,omitempty"`
@@ -630,9 +630,9 @@ func (*CreateE2ESessionRequest) Descriptor() ([]byte, []int) {
 	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{6}
 }
 
-func (x *CreateE2ESessionRequest) GetTaskId() string {
+func (x *CreateE2ESessionRequest) GetSessionId() string {
 	if x != nil {
-		return x.TaskId
+		return x.SessionId
 	}
 	return ""
 }
@@ -738,18 +738,18 @@ func (x *CreateE2ESessionResponse) GetEndpoints() []*ServiceEndpoint {
 // (docs/adr/0020 point 2, correcting docs/adr/0019 points 4-5).
 type CreateWorkerPodRequest struct {
 	state      protoimpl.MessageState `protogen:"open.v1"`
-	TaskId     string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	SessionId  string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
 	Repo       string                 `protobuf:"bytes,2,opt,name=repo,proto3" json:"repo,omitempty"`
 	RepoUrl    string                 `protobuf:"bytes,3,opt,name=repo_url,json=repoUrl,proto3" json:"repo_url,omitempty"`
 	BaseBranch string                 `protobuf:"bytes,4,opt,name=base_branch,json=baseBranch,proto3" json:"base_branch,omitempty"`
 	// description and lease_id are handed straight through to the worker
-	// pod's env — the worker no longer fetches its own task row at all
+	// pod's env — the worker no longer fetches its own session row at all
 	// (docs/adr/0020 point 1: it holds no DB credentials, direct or
 	// otherwise), so whatever it needs has to arrive at pod creation time.
 	Description string `protobuf:"bytes,5,opt,name=description,proto3" json:"description,omitempty"`
 	LeaseId     string `protobuf:"bytes,6,opt,name=lease_id,json=leaseId,proto3" json:"lease_id,omitempty"`
 	// Non-empty when this task already has a saved Claude SDK session
-	// (tasks.session_id) — threaded straight to the worker pod's
+	// (sessions.agent_session_id) — threaded straight to the worker pod's
 	// RESUME_SESSION_ID env, which worker/src/session.ts passes as `resume:`
 	// to query() so the new pod continues the prior conversation instead of
 	// starting fresh (sessions redesign, supersedes docs/adr/0021/0025's
@@ -807,9 +807,9 @@ func (*CreateWorkerPodRequest) Descriptor() ([]byte, []int) {
 	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{8}
 }
 
-func (x *CreateWorkerPodRequest) GetTaskId() string {
+func (x *CreateWorkerPodRequest) GetSessionId() string {
 	if x != nil {
-		return x.TaskId
+		return x.SessionId
 	}
 	return ""
 }
@@ -928,15 +928,15 @@ func (x *CreateWorkerPodResponse) GetPodName() string {
 	return ""
 }
 
-// core owns `tasks` and therefore decides when a session should tear
+// core owns `sessions` and therefore decides when a session should tear
 // down (task reached done/failed/cancelled, or an explicit kill) —
-// the provisioner no longer polls/joins against `tasks.status` itself
+// the provisioner no longer polls/joins against `the deleted status column` itself
 // (docs/adr/0020 point 1: it holds no DB credentials at all). The
 // provisioner's own reconcile loop keeps doing pure-k8s orphan detection
 // independently of this RPC.
 type TearDownSessionRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	TaskId        string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
 	Kind          SessionKind            `protobuf:"varint,2,opt,name=kind,proto3,enum=agentfleet.v1.SessionKind" json:"kind,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -972,9 +972,9 @@ func (*TearDownSessionRequest) Descriptor() ([]byte, []int) {
 	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{10}
 }
 
-func (x *TearDownSessionRequest) GetTaskId() string {
+func (x *TearDownSessionRequest) GetSessionId() string {
 	if x != nil {
-		return x.TaskId
+		return x.SessionId
 	}
 	return ""
 }
@@ -1076,7 +1076,7 @@ func (*ListWorktreesRequest) Descriptor() ([]byte, []int) {
 
 type WorktreeInfo struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	TaskId        string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
 	Repo          string                 `protobuf:"bytes,2,opt,name=repo,proto3" json:"repo,omitempty"`
 	Branch        string                 `protobuf:"bytes,3,opt,name=branch,proto3" json:"branch,omitempty"`
 	UpstreamTrack string                 `protobuf:"bytes,4,opt,name=upstream_track,json=upstreamTrack,proto3" json:"upstream_track,omitempty"` // e.g. "[gone]", "[ahead 2]", ""
@@ -1121,9 +1121,9 @@ func (*WorktreeInfo) Descriptor() ([]byte, []int) {
 	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{13}
 }
 
-func (x *WorktreeInfo) GetTaskId() string {
+func (x *WorktreeInfo) GetSessionId() string {
 	if x != nil {
-		return x.TaskId
+		return x.SessionId
 	}
 	return ""
 }
@@ -1243,7 +1243,7 @@ func (x *ListWorktreesResponse) GetPvcFreeBytes() uint64 {
 
 type DeleteWorktreeRequest struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
-	TaskId           string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	SessionId        string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
 	Repo             string                 `protobuf:"bytes,2,opt,name=repo,proto3" json:"repo,omitempty"`
 	AlsoDeleteBranch bool                   `protobuf:"varint,3,opt,name=also_delete_branch,json=alsoDeleteBranch,proto3" json:"also_delete_branch,omitempty"`
 	unknownFields    protoimpl.UnknownFields
@@ -1280,9 +1280,9 @@ func (*DeleteWorktreeRequest) Descriptor() ([]byte, []int) {
 	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{15}
 }
 
-func (x *DeleteWorktreeRequest) GetTaskId() string {
+func (x *DeleteWorktreeRequest) GetSessionId() string {
 	if x != nil {
-		return x.TaskId
+		return x.SessionId
 	}
 	return ""
 }
@@ -1353,17 +1353,19 @@ const file_agentfleet_v1_provisioner_proto_rawDesc = "" +
 	"\x11ServiceIngredient\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x127\n" +
 	"\n" +
-	"scope_mode\x18\x02 \x01(\x0e2\x18.agentfleet.v1.ScopeModeR\tscopeMode\"\xa3\x01\n" +
-	"\x15KillE2eSessionRequest\x12\x17\n" +
-	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12'\n" +
+	"scope_mode\x18\x02 \x01(\x0e2\x18.agentfleet.v1.ScopeModeR\tscopeMode\"\xa9\x01\n" +
+	"\x15KillE2eSessionRequest\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12'\n" +
 	"\x0fidempotency_key\x18\x02 \x01(\tR\x0eidempotencyKey\x12\x12\n" +
 	"\x04repo\x18\x03 \x01(\tR\x04repo\x124\n" +
 	"\x16also_teardown_services\x18\x04 \x01(\bR\x14alsoTeardownServices\"^\n" +
 	"\x16KillE2eSessionResponse\x12\x16\n" +
 	"\x06killed\x18\x01 \x01(\bR\x06killed\x12,\n" +
-	"\x12services_torn_down\x18\x02 \x03(\tR\x10servicesTornDown\"5\n" +
-	"\x1aGetE2eSessionStatusRequest\x12\x17\n" +
-	"\atask_id\x18\x01 \x01(\tR\x06taskId\"\xce\x02\n" +
+	"\x12services_torn_down\x18\x02 \x03(\tR\x10servicesTornDown\";\n" +
+	"\x1aGetE2eSessionStatusRequest\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\"\xce\x02\n" +
 	"\x1bGetE2eSessionStatusResponse\x12\x16\n" +
 	"\x06status\x18\x01 \x01(\tR\x06status\x12\x1f\n" +
 	"\vpreview_url\x18\x02 \x01(\tR\n" +
@@ -1381,9 +1383,10 @@ const file_agentfleet_v1_provisioner_proto_rawDesc = "" +
 	"\aaddress\x18\x02 \x01(\tR\aaddress\x12\x1a\n" +
 	"\bprotocol\x18\x03 \x01(\tR\bprotocol\x12\x12\n" +
 	"\x04path\x18\x04 \x01(\tR\x04path\x12\x14\n" +
-	"\x05token\x18\x05 \x01(\tR\x05token\"\xd3\x01\n" +
-	"\x17CreateE2eSessionRequest\x12\x17\n" +
-	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x12\n" +
+	"\x05token\x18\x05 \x01(\tR\x05token\"\xd9\x01\n" +
+	"\x17CreateE2eSessionRequest\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x12\n" +
 	"\x04repo\x18\x02 \x01(\tR\x04repo\x12\x1b\n" +
 	"\tstart_cmd\x18\x03 \x01(\tR\bstartCmd\x12\x1b\n" +
 	"\ttool_keys\x18\x04 \x03(\tR\btoolKeys\x12Q\n" +
@@ -1392,9 +1395,10 @@ const file_agentfleet_v1_provisioner_proto_rawDesc = "" +
 	"\x06status\x18\x01 \x01(\tR\x06status\x12\x1f\n" +
 	"\vpreview_url\x18\x02 \x01(\tR\n" +
 	"previewUrl\x12<\n" +
-	"\tendpoints\x18\x03 \x03(\v2\x1e.agentfleet.v1.ServiceEndpointR\tendpoints\"\x9e\x03\n" +
-	"\x16CreateWorkerPodRequest\x12\x17\n" +
-	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x12\n" +
+	"\tendpoints\x18\x03 \x03(\v2\x1e.agentfleet.v1.ServiceEndpointR\tendpoints\"\xa4\x03\n" +
+	"\x16CreateWorkerPodRequest\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x12\n" +
 	"\x04repo\x18\x02 \x01(\tR\x04repo\x12\x19\n" +
 	"\brepo_url\x18\x03 \x01(\tR\arepoUrl\x12\x1f\n" +
 	"\vbase_branch\x18\x04 \x01(\tR\n" +
@@ -1408,15 +1412,17 @@ const file_agentfleet_v1_provisioner_proto_rawDesc = "" +
 	" \x03(\tR\btoolKeys\x12Q\n" +
 	"\x13service_ingredients\x18\v \x03(\v2 .agentfleet.v1.ServiceIngredientR\x12serviceIngredients\"4\n" +
 	"\x17CreateWorkerPodResponse\x12\x19\n" +
-	"\bpod_name\x18\x01 \x01(\tR\apodName\"a\n" +
-	"\x16TearDownSessionRequest\x12\x17\n" +
-	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12.\n" +
+	"\bpod_name\x18\x01 \x01(\tR\apodName\"g\n" +
+	"\x16TearDownSessionRequest\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12.\n" +
 	"\x04kind\x18\x02 \x01(\x0e2\x1a.agentfleet.v1.SessionKindR\x04kind\"6\n" +
 	"\x17TearDownSessionResponse\x12\x1b\n" +
 	"\ttorn_down\x18\x01 \x01(\bR\btornDown\"\x16\n" +
-	"\x14ListWorktreesRequest\"\xed\x01\n" +
-	"\fWorktreeInfo\x12\x17\n" +
-	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x12\n" +
+	"\x14ListWorktreesRequest\"\xf3\x01\n" +
+	"\fWorktreeInfo\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x12\n" +
 	"\x04repo\x18\x02 \x01(\tR\x04repo\x12\x16\n" +
 	"\x06branch\x18\x03 \x01(\tR\x06branch\x12%\n" +
 	"\x0eupstream_track\x18\x04 \x01(\tR\rupstreamTrack\x12\x1d\n" +
@@ -1430,9 +1436,10 @@ const file_agentfleet_v1_provisioner_proto_rawDesc = "" +
 	"\x15ListWorktreesResponse\x129\n" +
 	"\tworktrees\x18\x01 \x03(\v2\x1b.agentfleet.v1.WorktreeInfoR\tworktrees\x12&\n" +
 	"\x0fpvc_total_bytes\x18\x02 \x01(\x04R\rpvcTotalBytes\x12$\n" +
-	"\x0epvc_free_bytes\x18\x03 \x01(\x04R\fpvcFreeBytes\"r\n" +
-	"\x15DeleteWorktreeRequest\x12\x17\n" +
-	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x12\n" +
+	"\x0epvc_free_bytes\x18\x03 \x01(\x04R\fpvcFreeBytes\"x\n" +
+	"\x15DeleteWorktreeRequest\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x12\n" +
 	"\x04repo\x18\x02 \x01(\tR\x04repo\x12,\n" +
 	"\x12also_delete_branch\x18\x03 \x01(\bR\x10alsoDeleteBranch\"2\n" +
 	"\x16DeleteWorktreeResponse\x12\x18\n" +

@@ -40,7 +40,7 @@ func (c *Client) onInteractionCreate(s *discordgo.Session, i *discordgo.Interact
 	case "e2e-kill":
 		c.withTaskFromThread(ctx, s, i, func(taskID string) {
 			if _, _, err := c.e2e.KillSession(ctx, taskID, uuid.NewString(), "", false); err != nil {
-				slog.Error("e2e-kill failed", "taskId", taskID, "error", err)
+				slog.Error("e2e-kill failed", "sessionId", taskID, "error", err)
 			}
 		})
 		respond(s, i, "Kill requested.")
@@ -108,10 +108,10 @@ func (c *Client) onMessageCreate(s *discordgo.Session, m *discordgo.MessageCreat
 		return
 	}
 	if pendingSeq, err := c.findPendingQuestionSeq(ctx, taskID); err != nil {
-		slog.Error("find pending question failed", "taskId", taskID, "error", err)
+		slog.Error("find pending question failed", "sessionId", taskID, "error", err)
 	} else if pendingSeq > 0 {
 		if _, err := c.transcr.AppendReply(ctx, taskID, "human", m.Content, "answer", uuid.NewString(), pendingSeq); err != nil {
-			slog.Error("relay reply append failed", "taskId", taskID, "error", err)
+			slog.Error("relay reply append failed", "sessionId", taskID, "error", err)
 		}
 		return
 	}
@@ -165,7 +165,7 @@ func threadName(repo, description string) string {
 
 func (c *Client) relay(ctx context.Context, taskID, from, text, msgType string) {
 	if _, err := c.transcr.Append(ctx, taskID, from, text, msgType, uuid.NewString()); err != nil {
-		slog.Error("relay append failed", "taskId", taskID, "error", err)
+		slog.Error("relay append failed", "sessionId", taskID, "error", err)
 	}
 }
 

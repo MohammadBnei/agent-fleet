@@ -84,7 +84,7 @@ func newTestServer(t *testing.T) (*Server, *k8s.Client, *fakeEventReporter) {
 
 func TestKillE2ESession_NoActiveSession(t *testing.T) {
 	s, _, _ := newTestServer(t)
-	resp, err := s.KillE2ESession(context.Background(), &agentfleetv1.KillE2ESessionRequest{TaskId: "t1"})
+	resp, err := s.KillE2ESession(context.Background(), &agentfleetv1.KillE2ESessionRequest{SessionId: "t1"})
 	if err != nil {
 		t.Fatalf("KillE2ESession: %v", err)
 	}
@@ -97,7 +97,7 @@ func TestCreateE2ESession_Idempotent(t *testing.T) {
 	s, k8sc, _ := newTestServer(t)
 	ctx := context.Background()
 
-	first, err := s.CreateE2ESession(ctx, &agentfleetv1.CreateE2ESessionRequest{TaskId: "t1", Repo: "dream-analyst", StartCmd: "bun run dev"})
+	first, err := s.CreateE2ESession(ctx, &agentfleetv1.CreateE2ESessionRequest{SessionId: "t1", Repo: "dream-analyst", StartCmd: "bun run dev"})
 	if err != nil {
 		t.Fatalf("first CreateE2ESession: %v", err)
 	}
@@ -105,7 +105,7 @@ func TestCreateE2ESession_Idempotent(t *testing.T) {
 		t.Fatal("expected a preview URL on first creation")
 	}
 
-	second, err := s.CreateE2ESession(ctx, &agentfleetv1.CreateE2ESessionRequest{TaskId: "t1", Repo: "dream-analyst", StartCmd: "bun run dev"})
+	second, err := s.CreateE2ESession(ctx, &agentfleetv1.CreateE2ESessionRequest{SessionId: "t1", Repo: "dream-analyst", StartCmd: "bun run dev"})
 	if err != nil {
 		t.Fatalf("second CreateE2ESession: %v", err)
 	}
@@ -126,10 +126,10 @@ func TestKillE2ESession_ActiveSession(t *testing.T) {
 	s, _, _ := newTestServer(t)
 	ctx := context.Background()
 
-	if _, err := s.CreateE2ESession(ctx, &agentfleetv1.CreateE2ESessionRequest{TaskId: "t1", Repo: "dream-analyst", StartCmd: "bun run dev"}); err != nil {
+	if _, err := s.CreateE2ESession(ctx, &agentfleetv1.CreateE2ESessionRequest{SessionId: "t1", Repo: "dream-analyst", StartCmd: "bun run dev"}); err != nil {
 		t.Fatalf("CreateE2ESession: %v", err)
 	}
-	resp, err := s.KillE2ESession(ctx, &agentfleetv1.KillE2ESessionRequest{TaskId: "t1"})
+	resp, err := s.KillE2ESession(ctx, &agentfleetv1.KillE2ESessionRequest{SessionId: "t1"})
 	if err != nil {
 		t.Fatalf("KillE2ESession: %v", err)
 	}
@@ -165,12 +165,12 @@ func TestKillE2ESession_AlsoTeardownServices(t *testing.T) {
 	s, k8sc, _ := newTestServer(t)
 	ctx := context.Background()
 
-	if _, err := s.CreateE2ESession(ctx, &agentfleetv1.CreateE2ESessionRequest{TaskId: "t1", Repo: "dream-analyst", StartCmd: "bun run dev"}); err != nil {
+	if _, err := s.CreateE2ESession(ctx, &agentfleetv1.CreateE2ESessionRequest{SessionId: "t1", Repo: "dream-analyst", StartCmd: "bun run dev"}); err != nil {
 		t.Fatalf("CreateE2ESession: %v", err)
 	}
 	seedFakeSharedInstance(ctx, t, k8sc, "dream-analyst", "postgres")
 
-	resp, err := s.KillE2ESession(ctx, &agentfleetv1.KillE2ESessionRequest{TaskId: "t1", Repo: "dream-analyst", AlsoTeardownServices: true})
+	resp, err := s.KillE2ESession(ctx, &agentfleetv1.KillE2ESessionRequest{SessionId: "t1", Repo: "dream-analyst", AlsoTeardownServices: true})
 	if err != nil {
 		t.Fatalf("KillE2ESession: %v", err)
 	}
@@ -193,12 +193,12 @@ func TestKillE2ESession_TeardownServicesNotRequested(t *testing.T) {
 	s, k8sc, _ := newTestServer(t)
 	ctx := context.Background()
 
-	if _, err := s.CreateE2ESession(ctx, &agentfleetv1.CreateE2ESessionRequest{TaskId: "t1", Repo: "dream-analyst", StartCmd: "bun run dev"}); err != nil {
+	if _, err := s.CreateE2ESession(ctx, &agentfleetv1.CreateE2ESessionRequest{SessionId: "t1", Repo: "dream-analyst", StartCmd: "bun run dev"}); err != nil {
 		t.Fatalf("CreateE2ESession: %v", err)
 	}
 	seedFakeSharedInstance(ctx, t, k8sc, "dream-analyst", "postgres")
 
-	resp, err := s.KillE2ESession(ctx, &agentfleetv1.KillE2ESessionRequest{TaskId: "t1"})
+	resp, err := s.KillE2ESession(ctx, &agentfleetv1.KillE2ESessionRequest{SessionId: "t1"})
 	if err != nil {
 		t.Fatalf("KillE2ESession: %v", err)
 	}
@@ -216,7 +216,7 @@ func TestCreateWorkerPod_ClonesAndCreatesPod(t *testing.T) {
 	origin := newTestOriginRepo(t)
 
 	resp, err := s.CreateWorkerPod(ctx, &agentfleetv1.CreateWorkerPodRequest{
-		TaskId: "task-1", Repo: "dream-analyst", RepoUrl: origin, BaseBranch: "main",
+		SessionId: "task-1", Repo: "dream-analyst", RepoUrl: origin, BaseBranch: "main",
 	})
 	if err != nil {
 		t.Fatalf("CreateWorkerPod: %v", err)
@@ -282,7 +282,7 @@ func TestCreateWorkerPod_SyncsFleetShared(t *testing.T) {
 	origin := newTestOriginRepo(t)
 
 	if _, err := s.CreateWorkerPod(ctx, &agentfleetv1.CreateWorkerPodRequest{
-		TaskId: "task-1", Repo: "dream-analyst", RepoUrl: origin, BaseBranch: "main",
+		SessionId: "task-1", Repo: "dream-analyst", RepoUrl: origin, BaseBranch: "main",
 	}); err != nil {
 		t.Fatalf("CreateWorkerPod: %v", err)
 	}
@@ -295,7 +295,7 @@ func TestCreateWorkerPod_SyncsFleetShared(t *testing.T) {
 func TestTearDownSession_Worker_NoopWhenNothingToTearDown(t *testing.T) {
 	s, _, _ := newTestServer(t)
 	resp, err := s.TearDownSession(context.Background(), &agentfleetv1.TearDownSessionRequest{
-		TaskId: "never-existed", Kind: agentfleetv1.SessionKind_SESSION_KIND_WORKER,
+		SessionId: "never-existed", Kind: agentfleetv1.SessionKind_SESSION_KIND_WORKER,
 	})
 	if err != nil {
 		t.Fatalf("TearDownSession: %v", err)
@@ -317,13 +317,13 @@ func TestTearDownSession_Worker_RemovesJobButKeepsWorktree(t *testing.T) {
 	origin := newTestOriginRepo(t)
 
 	if _, err := s.CreateWorkerPod(ctx, &agentfleetv1.CreateWorkerPodRequest{
-		TaskId: "task-1", Repo: "dream-analyst", RepoUrl: origin, BaseBranch: "main",
+		SessionId: "task-1", Repo: "dream-analyst", RepoUrl: origin, BaseBranch: "main",
 	}); err != nil {
 		t.Fatalf("CreateWorkerPod: %v", err)
 	}
 
 	resp, err := s.TearDownSession(ctx, &agentfleetv1.TearDownSessionRequest{
-		TaskId: "task-1", Kind: agentfleetv1.SessionKind_SESSION_KIND_WORKER,
+		SessionId: "task-1", Kind: agentfleetv1.SessionKind_SESSION_KIND_WORKER,
 	})
 	if err != nil {
 		t.Fatalf("TearDownSession: %v", err)

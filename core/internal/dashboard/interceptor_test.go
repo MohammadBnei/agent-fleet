@@ -15,13 +15,13 @@ func TestCSRFInterceptor_WrapUnary(t *testing.T) {
 	called := false
 	stub := connect.UnaryFunc(func(context.Context, connect.AnyRequest) (connect.AnyResponse, error) {
 		called = true
-		return connect.NewResponse(&agentfleetv1.KillResponse{Status: "ok"}), nil
+		return connect.NewResponse(&agentfleetv1.StopSessionResponse{Status: "ok"}), nil
 	})
 	wrapped := interceptor.WrapUnary(stub)
 
 	t.Run("missing header is rejected", func(t *testing.T) {
 		called = false
-		req := connect.NewRequest(&agentfleetv1.KillRequest{})
+		req := connect.NewRequest(&agentfleetv1.StopSessionRequest{})
 		_, err := wrapped(context.Background(), req)
 		if connect.CodeOf(err) != connect.CodePermissionDenied {
 			t.Errorf("code = %v, want CodePermissionDenied", connect.CodeOf(err))
@@ -33,7 +33,7 @@ func TestCSRFInterceptor_WrapUnary(t *testing.T) {
 
 	t.Run("present header passes through", func(t *testing.T) {
 		called = false
-		req := connect.NewRequest(&agentfleetv1.KillRequest{})
+		req := connect.NewRequest(&agentfleetv1.StopSessionRequest{})
 		req.Header().Set(dashboardHeader, "1")
 		if _, err := wrapped(context.Background(), req); err != nil {
 			t.Fatalf("unexpected error: %v", err)

@@ -10,7 +10,7 @@ import (
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/dbtest"
 	"github.com/MohammadBnei/agent-fleet/core/internal/scheduledaudits"
-	"github.com/MohammadBnei/agent-fleet/core/internal/tasks"
+	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
 )
 
 // An audit is machine-created, so it lands as a proposal a human has to
@@ -26,7 +26,7 @@ func TestTick_SecondRunWhileProposalOpenIsSkipped(t *testing.T) {
 	pool := dbtest.NewPool(t)
 	ctx := context.Background()
 	auditStore := scheduledaudits.NewStore(pool)
-	taskStore := tasks.NewStore(pool)
+	taskStore := sessions.NewStore(pool)
 	loop := New(auditStore, taskStore)
 
 	audit, err := auditStore.Create(ctx, "etcd health", "check etcd", 60)
@@ -73,7 +73,7 @@ func TestTick_CreatesProposalNotPendingTask(t *testing.T) {
 	pool := dbtest.NewPool(t)
 	ctx := context.Background()
 	auditStore := scheduledaudits.NewStore(pool)
-	loop := New(auditStore, tasks.NewStore(pool))
+	loop := New(auditStore, sessions.NewStore(pool))
 
 	audit, err := auditStore.Create(ctx, "etcd health", "check etcd", 60)
 	if err != nil {

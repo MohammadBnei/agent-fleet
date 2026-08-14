@@ -48,7 +48,7 @@ func TestServer_RespondToPermission(t *testing.T) {
 	s := NewServer(nil, store, nil, nil, nil, nil, nil, nil, nil, 5, nil, nil, nil)
 
 	resp, err := s.RespondToPermission(context.Background(), connect.NewRequest(&agentfleetv1.RespondToPermissionRequest{
-		TaskId: "task-1", Seq: 7, DecisionJson: `{"behavior":"allow"}`,
+		SessionId: "task-1", Seq: 7, DecisionJson: `{"behavior":"allow"}`,
 	}))
 	if err != nil {
 		t.Fatalf("RespondToPermission: %v", err)
@@ -87,7 +87,7 @@ func TestServer_RespondToPermission(t *testing.T) {
 func TestServer_Discuss_EmptyText(t *testing.T) {
 	s := NewServer(nil, &recordingStore{}, nil, nil, nil, nil, nil, nil, nil, 5, nil, nil, nil)
 
-	req := connect.NewRequest(&agentfleetv1.DiscussRequest{TaskId: "task-1", Text: ""})
+	req := connect.NewRequest(&agentfleetv1.PostMessageRequest{SessionId: "task-1", Text: ""})
 	if _, err := s.Discuss(context.Background(), req); connect.CodeOf(err) != connect.CodeInvalidArgument {
 		t.Fatalf("Discuss error = %v, want CodeInvalidArgument", err)
 	}
@@ -98,7 +98,7 @@ func TestServer_AnswerQuestion(t *testing.T) {
 	s := NewServer(nil, store, nil, nil, nil, nil, nil, nil, nil, 5, nil, nil, nil)
 
 	answersJSON := `{"answers":{"Which quality attribute wins?":"Latency"}}`
-	req := connect.NewRequest(&agentfleetv1.AnswerQuestionRequest{TaskId: "task-1", Seq: 3, AnswersJson: answersJSON})
+	req := connect.NewRequest(&agentfleetv1.AnswerQuestionRequest{SessionId: "task-1", Seq: 3, AnswersJson: answersJSON})
 	resp, err := s.AnswerQuestion(context.Background(), req)
 	if err != nil {
 		t.Fatalf("AnswerQuestion: %v", err)

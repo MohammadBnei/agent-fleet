@@ -96,7 +96,7 @@ func (c *Client) WaitReady(ctx context.Context) error {
 
 func (c *Client) SendMessage(ctx context.Context, from, text string, msgType agentfleetv1.TranscriptEntryType, idempotencyKey string) (int64, error) {
 	resp, err := c.rpc.SendMessage(ctx, &agentfleetv1.SendMessageRequest{
-		TaskId: c.taskID, From: from, Text: text, Type: msgType, IdempotencyKey: idempotencyKey,
+		SessionId: c.taskID, From: from, Text: text, Type: msgType, IdempotencyKey: idempotencyKey,
 	})
 	if err != nil {
 		return 0, fmt.Errorf("SendMessage: %w", err)
@@ -109,7 +109,7 @@ func (c *Client) SendMessage(ctx context.Context, from, text string, msgType age
 // don't need correlation aren't forced to pass a meaningless seq.
 func (c *Client) AppendReplyMessage(ctx context.Context, from, text string, msgType agentfleetv1.TranscriptEntryType, idempotencyKey string, replyToSeq int64) (int64, error) {
 	resp, err := c.rpc.SendMessage(ctx, &agentfleetv1.SendMessageRequest{
-		TaskId: c.taskID, From: from, Text: text, Type: msgType,
+		SessionId: c.taskID, From: from, Text: text, Type: msgType,
 		IdempotencyKey: idempotencyKey, ReplyToSeq: &replyToSeq,
 	})
 	if err != nil {
@@ -120,7 +120,7 @@ func (c *Client) AppendReplyMessage(ctx context.Context, from, text string, msgT
 
 func (c *Client) WaitForMessages(ctx context.Context, sinceSeq int64, timeoutMs int32) ([]*agentfleetv1.TranscriptEntry, int64, error) {
 	resp, err := c.rpc.WaitForMessages(ctx, &agentfleetv1.ReadTranscriptSinceRequest{
-		TaskId: c.taskID, SinceSeq: sinceSeq, TimeoutMs: timeoutMs,
+		SessionId: c.taskID, SinceSeq: sinceSeq, TimeoutMs: timeoutMs,
 	})
 	if err != nil {
 		return nil, sinceSeq, fmt.Errorf("WaitForMessages: %w", err)
@@ -130,7 +130,7 @@ func (c *Client) WaitForMessages(ctx context.Context, sinceSeq int64, timeoutMs 
 
 func (c *Client) AskUserQuestion(ctx context.Context, questionsJSON string, timeoutMs int32) (status, answersJSON string, questionSeq int64, err error) {
 	resp, err := c.rpc.AskUserQuestion(ctx, &agentfleetv1.AskUserQuestionRequest{
-		TaskId: c.taskID, QuestionsJson: questionsJSON, TimeoutMs: timeoutMs,
+		SessionId: c.taskID, QuestionsJson: questionsJSON, TimeoutMs: timeoutMs,
 	})
 	if err != nil {
 		return "", "", 0, fmt.Errorf("AskUserQuestion: %w", err)
@@ -148,7 +148,7 @@ func (c *Client) AskUserQuestion(ctx context.Context, questionsJSON string, time
 // (docs/adr/0044) — so ADR-0034's documented agent-selectable profile was
 // unreachable, and every request resolved to the literal name "e2e".
 func (c *Client) RequestE2eEnv(ctx context.Context, startCmd, profile string) (*agentfleetv1.RequestE2EEnvResponse, error) {
-	resp, err := c.rpc.RequestE2EEnv(ctx, &agentfleetv1.RequestE2EEnvRequest{TaskId: c.taskID, StartCmd: startCmd, Profile: profile})
+	resp, err := c.rpc.RequestE2EEnv(ctx, &agentfleetv1.RequestE2EEnvRequest{SessionId: c.taskID, StartCmd: startCmd, Profile: profile})
 	if err != nil {
 		return nil, fmt.Errorf("RequestE2eEnv: %w", err)
 	}
@@ -156,7 +156,7 @@ func (c *Client) RequestE2eEnv(ctx context.Context, startCmd, profile string) (*
 }
 
 func (c *Client) KillE2eEnv(ctx context.Context) (bool, error) {
-	resp, err := c.rpc.KillE2EEnv(ctx, &agentfleetv1.KillE2EEnvRequest{TaskId: c.taskID})
+	resp, err := c.rpc.KillE2EEnv(ctx, &agentfleetv1.KillE2EEnvRequest{SessionId: c.taskID})
 	if err != nil {
 		return false, fmt.Errorf("KillE2eEnv: %w", err)
 	}
@@ -211,7 +211,7 @@ func (c *Client) DeleteFile(ctx context.Context, key string) error {
 // --- wrapper-facing (proxied by the local plain API) ---
 
 func (c *Client) Heartbeat(ctx context.Context, leaseID string) error {
-	_, err := c.rpc.Heartbeat(ctx, &agentfleetv1.HeartbeatRequest{TaskId: c.taskID, LeaseId: leaseID})
+	_, err := c.rpc.Heartbeat(ctx, &agentfleetv1.HeartbeatRequest{SessionId: c.taskID, LeaseId: leaseID})
 	if err != nil {
 		return fmt.Errorf("Heartbeat: %w", err)
 	}
@@ -220,7 +220,7 @@ func (c *Client) Heartbeat(ctx context.Context, leaseID string) error {
 
 func (c *Client) SetTaskStatus(ctx context.Context, status string, prURL, notes, lastError *string) error {
 	_, err := c.rpc.SetTaskStatus(ctx, &agentfleetv1.SetTaskStatusRequest{
-		TaskId: c.taskID, Status: status, PrUrl: prURL, Notes: notes, LastError: lastError,
+		SessionId: c.taskID, Status: status, PrUrl: prURL, Notes: notes, LastError: lastError,
 	})
 	if err != nil {
 		return fmt.Errorf("SetTaskStatus: %w", err)
@@ -249,8 +249,8 @@ func (c *Client) SearchJournal(ctx context.Context, repo, query string, limit in
 }
 
 func (c *Client) SaveSessionID(ctx context.Context, sessionID, model, leaseID string) error {
-	_, err := c.rpc.SaveSessionId(ctx, &agentfleetv1.SaveSessionIdRequest{
-		TaskId: c.taskID, SessionId: sessionID, Model: model, LeaseId: leaseID,
+	_, err := c.rpc.SaveSessionId(ctx, &agentfleetv1.SaveAgentSessionIdRequest{
+		SessionId: c.taskID, SessionId: sessionID, Model: model, LeaseId: leaseID,
 	})
 	if err != nil {
 		return fmt.Errorf("SaveSessionId: %w", err)
@@ -259,7 +259,7 @@ func (c *Client) SaveSessionID(ctx context.Context, sessionID, model, leaseID st
 }
 
 func (c *Client) StillHoldsLease(ctx context.Context, leaseID string) (bool, error) {
-	resp, err := c.rpc.StillHoldsLease(ctx, &agentfleetv1.StillHoldsLeaseRequest{TaskId: c.taskID, LeaseId: leaseID})
+	resp, err := c.rpc.StillHoldsLease(ctx, &agentfleetv1.StillHoldsLeaseRequest{SessionId: c.taskID, LeaseId: leaseID})
 	if err != nil {
 		return false, fmt.Errorf("StillHoldsLease: %w", err)
 	}
@@ -267,7 +267,7 @@ func (c *Client) StillHoldsLease(ctx context.Context, leaseID string) (bool, err
 }
 
 func (c *Client) PushToolTelemetry(ctx context.Context, summaryJSON string) error {
-	_, err := c.rpc.PushToolTelemetry(ctx, &agentfleetv1.PushToolTelemetryRequest{TaskId: c.taskID, SummaryJson: summaryJSON})
+	_, err := c.rpc.PushToolTelemetry(ctx, &agentfleetv1.PushToolTelemetryRequest{SessionId: c.taskID, SummaryJson: summaryJSON})
 	if err != nil {
 		return fmt.Errorf("PushToolTelemetry: %w", err)
 	}
@@ -279,7 +279,7 @@ func (c *Client) PushToolTelemetry(ctx context.Context, summaryJSON string) erro
 // live (docs/adr/0021 point 2). Blocks until the stream ends or ctx is
 // cancelled; callers run it in its own goroutine.
 func (c *Client) StreamHumanMessages(ctx context.Context, sinceSeq int64, onEntry func(*agentfleetv1.TranscriptEntry)) error {
-	stream, err := c.rpc.StreamHumanMessages(ctx, &agentfleetv1.StreamHumanMessagesRequest{TaskId: c.taskID, SinceSeq: sinceSeq})
+	stream, err := c.rpc.StreamHumanMessages(ctx, &agentfleetv1.StreamHumanMessagesRequest{SessionId: c.taskID, SinceSeq: sinceSeq})
 	if err != nil {
 		return fmt.Errorf("StreamHumanMessages: open: %w", err)
 	}
@@ -322,8 +322,8 @@ func (c *Client) ViewLogs(ctx context.Context, component, appName, namespace, le
 // only the dashboard SPA can set (core/internal/dashboard/interceptor.go);
 // it was never reachable over this gRPC connection at all, let alone by a
 // non-browser caller.
-func (c *Client) GetTask(ctx context.Context) (*agentfleetv1.Task, error) {
-	resp, err := c.rpc.GetTask(ctx, &agentfleetv1.GetTaskRequest{Id: c.taskID})
+func (c *Client) GetTask(ctx context.Context) (*agentfleetv1.Session, error) {
+	resp, err := c.rpc.GetTask(ctx, &agentfleetv1.GetSessionRequest{Id: c.taskID})
 	if err != nil {
 		return nil, fmt.Errorf("GetTask: %w", err)
 	}
@@ -336,8 +336,8 @@ func (c *Client) GetTask(ctx context.Context) (*agentfleetv1.Task, error) {
 // comment above on why this isn't DashboardService.
 func (c *Client) SetPermissionMode(ctx context.Context, mode string) error {
 	_, err := c.rpc.SetPermissionMode(ctx, &agentfleetv1.SetPermissionModeRequest{
-		TaskId: c.taskID,
-		Mode:   mode,
+		SessionId: c.taskID,
+		Mode:      mode,
 	})
 	if err != nil {
 		return fmt.Errorf("SetPermissionMode: %w", err)
@@ -352,8 +352,8 @@ func (c *Client) SetPermissionMode(ctx context.Context, mode string) error {
 // claim to come from another session would defeat both the self-prompt
 // guard and the attribution in the delivered message.
 
-func (c *Client) ListSessions(ctx context.Context) ([]*agentfleetv1.SessionSummary, error) {
-	resp, err := c.rpc.ListSessions(ctx, &agentfleetv1.ListSessionsRequest{CallerTaskId: c.taskID})
+func (c *Client) ListPeerSessions(ctx context.Context) ([]*agentfleetv1.SessionSummary, error) {
+	resp, err := c.rpc.ListPeerSessions(ctx, &agentfleetv1.ListPeerSessionsRequest{CallerSessionId: c.taskID})
 	if err != nil {
 		return nil, fmt.Errorf("ListSessions: %w", err)
 	}
@@ -362,7 +362,7 @@ func (c *Client) ListSessions(ctx context.Context) ([]*agentfleetv1.SessionSumma
 
 func (c *Client) PromptSession(ctx context.Context, targetTaskID, text string, depth int32) (*agentfleetv1.PromptSessionResponse, error) {
 	resp, err := c.rpc.PromptSession(ctx, &agentfleetv1.PromptSessionRequest{
-		CallerTaskId: c.taskID, TargetTaskId: targetTaskID, Text: text, Depth: depth,
+		CallerSessionId: c.taskID, TargetSessionId: targetTaskID, Text: text, Depth: depth,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("PromptSession: %w", err)
@@ -372,7 +372,7 @@ func (c *Client) PromptSession(ctx context.Context, targetTaskID, text string, d
 
 func (c *Client) WaitForSessionState(ctx context.Context, targetTaskID string, until []string, timeoutMs int32, afterSeq int64) (*agentfleetv1.WaitForSessionStateResponse, error) {
 	resp, err := c.rpc.WaitForSessionState(ctx, &agentfleetv1.WaitForSessionStateRequest{
-		TargetTaskId: targetTaskID, Until: until, TimeoutMs: timeoutMs, AfterSeq: afterSeq,
+		TargetSessionId: targetTaskID, Until: until, TimeoutMs: timeoutMs, AfterSeq: afterSeq,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("WaitForSessionState: %w", err)

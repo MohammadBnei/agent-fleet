@@ -49,28 +49,20 @@ const (
 	CoreServiceRequestE2EEnvProcedure = "/agentfleet.v1.CoreService/RequestE2eEnv"
 	// CoreServiceKillE2EEnvProcedure is the fully-qualified name of the CoreService's KillE2eEnv RPC.
 	CoreServiceKillE2EEnvProcedure = "/agentfleet.v1.CoreService/KillE2eEnv"
-	// CoreServiceGetTaskProcedure is the fully-qualified name of the CoreService's GetTask RPC.
-	CoreServiceGetTaskProcedure = "/agentfleet.v1.CoreService/GetTask"
+	// CoreServiceGetSessionProcedure is the fully-qualified name of the CoreService's GetSession RPC.
+	CoreServiceGetSessionProcedure = "/agentfleet.v1.CoreService/GetSession"
 	// CoreServiceSetPermissionModeProcedure is the fully-qualified name of the CoreService's
 	// SetPermissionMode RPC.
 	CoreServiceSetPermissionModeProcedure = "/agentfleet.v1.CoreService/SetPermissionMode"
-	// CoreServiceHeartbeatProcedure is the fully-qualified name of the CoreService's Heartbeat RPC.
-	CoreServiceHeartbeatProcedure = "/agentfleet.v1.CoreService/Heartbeat"
-	// CoreServiceSetTaskStatusProcedure is the fully-qualified name of the CoreService's SetTaskStatus
-	// RPC.
-	CoreServiceSetTaskStatusProcedure = "/agentfleet.v1.CoreService/SetTaskStatus"
 	// CoreServiceAppendJournalProcedure is the fully-qualified name of the CoreService's AppendJournal
 	// RPC.
 	CoreServiceAppendJournalProcedure = "/agentfleet.v1.CoreService/AppendJournal"
 	// CoreServiceSearchJournalProcedure is the fully-qualified name of the CoreService's SearchJournal
 	// RPC.
 	CoreServiceSearchJournalProcedure = "/agentfleet.v1.CoreService/SearchJournal"
-	// CoreServiceSaveSessionIdProcedure is the fully-qualified name of the CoreService's SaveSessionId
-	// RPC.
-	CoreServiceSaveSessionIdProcedure = "/agentfleet.v1.CoreService/SaveSessionId"
-	// CoreServiceStillHoldsLeaseProcedure is the fully-qualified name of the CoreService's
-	// StillHoldsLease RPC.
-	CoreServiceStillHoldsLeaseProcedure = "/agentfleet.v1.CoreService/StillHoldsLease"
+	// CoreServiceSaveAgentSessionIdProcedure is the fully-qualified name of the CoreService's
+	// SaveAgentSessionId RPC.
+	CoreServiceSaveAgentSessionIdProcedure = "/agentfleet.v1.CoreService/SaveAgentSessionId"
 	// CoreServicePushToolTelemetryProcedure is the fully-qualified name of the CoreService's
 	// PushToolTelemetry RPC.
 	CoreServicePushToolTelemetryProcedure = "/agentfleet.v1.CoreService/PushToolTelemetry"
@@ -89,9 +81,9 @@ const (
 	CoreServiceDeleteFileProcedure = "/agentfleet.v1.CoreService/DeleteFile"
 	// CoreServiceViewLogsProcedure is the fully-qualified name of the CoreService's ViewLogs RPC.
 	CoreServiceViewLogsProcedure = "/agentfleet.v1.CoreService/ViewLogs"
-	// CoreServiceListSessionsProcedure is the fully-qualified name of the CoreService's ListSessions
-	// RPC.
-	CoreServiceListSessionsProcedure = "/agentfleet.v1.CoreService/ListSessions"
+	// CoreServiceListPeerSessionsProcedure is the fully-qualified name of the CoreService's
+	// ListPeerSessions RPC.
+	CoreServiceListPeerSessionsProcedure = "/agentfleet.v1.CoreService/ListPeerSessions"
 	// CoreServicePromptSessionProcedure is the fully-qualified name of the CoreService's PromptSession
 	// RPC.
 	CoreServicePromptSessionProcedure = "/agentfleet.v1.CoreService/PromptSession"
@@ -114,23 +106,23 @@ type CoreServiceClient interface {
 	AskUserQuestion(context.Context, *connect.Request[v1.AskUserQuestionRequest]) (*connect.Response[v1.AskUserQuestionResponse], error)
 	RequestE2EEnv(context.Context, *connect.Request[v1.RequestE2EEnvRequest]) (*connect.Response[v1.RequestE2EEnvResponse], error)
 	KillE2EEnv(context.Context, *connect.Request[v1.KillE2EEnvRequest]) (*connect.Response[v1.KillE2EEnvResponse], error)
-	// Lets a worker pod fetch its own fresh task row on startup instead of
+	// Lets a worker pod fetch its own fresh session row on startup instead of
 	// relying on stale environment variables — same message shapes
 	// DashboardService.GetTask uses, different caller (docs/adr/0029).
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
-	GetTask(context.Context, *connect.Request[v1.GetTaskRequest]) (*connect.Response[v1.GetTaskResponse], error)
+	GetSession(context.Context, *connect.Request[v1.GetSessionRequest]) (*connect.Response[v1.GetSessionResponse], error)
 	// A worker pod persisting its own permission mode (initial "default" or a
 	// change it made itself) — a plain column write, unlike
 	// DashboardService.SetPermissionMode which also notifies a *different*,
 	// already-running worker via the transcript.
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	SetPermissionMode(context.Context, *connect.Request[v1.SetPermissionModeRequest]) (*connect.Response[v1.SetPermissionModeResponse], error)
-	Heartbeat(context.Context, *connect.Request[v1.HeartbeatRequest]) (*connect.Response[v1.HeartbeatResponse], error)
-	SetTaskStatus(context.Context, *connect.Request[v1.SetTaskStatusRequest]) (*connect.Response[v1.SetTaskStatusResponse], error)
+	// Heartbeat, SetTaskStatus and StillHoldsLease used to be here. All three
+	// are deleted in docs/adr/0048 — see their message definitions above for
+	// why each stopped being a question worth asking.
 	AppendJournal(context.Context, *connect.Request[v1.AppendJournalRequest]) (*connect.Response[v1.AppendJournalResponse], error)
 	SearchJournal(context.Context, *connect.Request[v1.SearchJournalRequest]) (*connect.Response[v1.SearchJournalResponse], error)
-	SaveSessionId(context.Context, *connect.Request[v1.SaveSessionIdRequest]) (*connect.Response[v1.SaveSessionIdResponse], error)
-	StillHoldsLease(context.Context, *connect.Request[v1.StillHoldsLeaseRequest]) (*connect.Response[v1.StillHoldsLeaseResponse], error)
+	SaveAgentSessionId(context.Context, *connect.Request[v1.SaveAgentSessionIdRequest]) (*connect.Response[v1.SaveAgentSessionIdResponse], error)
 	PushToolTelemetry(context.Context, *connect.Request[v1.PushToolTelemetryRequest]) (*connect.Response[v1.PushToolTelemetryResponse], error)
 	// Streams transcript.proto's TranscriptEntry directly, same precedent
 	// dashboard.proto's StreamTranscript already set.
@@ -150,7 +142,7 @@ type CoreServiceClient interface {
 	// docs/adr/0020 point 4: the path is agent -> its own sidecar (MCP) ->
 	// core (here) -> the target session. There is no worker-to-worker link
 	// and no worker-to-provisioner link.
-	ListSessions(context.Context, *connect.Request[v1.ListSessionsRequest]) (*connect.Response[v1.ListSessionsResponse], error)
+	ListPeerSessions(context.Context, *connect.Request[v1.ListPeerSessionsRequest]) (*connect.Response[v1.ListPeerSessionsResponse], error)
 	PromptSession(context.Context, *connect.Request[v1.PromptSessionRequest]) (*connect.Response[v1.PromptSessionResponse], error)
 	WaitForSessionState(context.Context, *connect.Request[v1.WaitForSessionStateRequest]) (*connect.Response[v1.WaitForSessionStateResponse], error)
 }
@@ -202,28 +194,16 @@ func NewCoreServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(coreServiceMethods.ByName("KillE2eEnv")),
 			connect.WithClientOptions(opts...),
 		),
-		getTask: connect.NewClient[v1.GetTaskRequest, v1.GetTaskResponse](
+		getSession: connect.NewClient[v1.GetSessionRequest, v1.GetSessionResponse](
 			httpClient,
-			baseURL+CoreServiceGetTaskProcedure,
-			connect.WithSchema(coreServiceMethods.ByName("GetTask")),
+			baseURL+CoreServiceGetSessionProcedure,
+			connect.WithSchema(coreServiceMethods.ByName("GetSession")),
 			connect.WithClientOptions(opts...),
 		),
 		setPermissionMode: connect.NewClient[v1.SetPermissionModeRequest, v1.SetPermissionModeResponse](
 			httpClient,
 			baseURL+CoreServiceSetPermissionModeProcedure,
 			connect.WithSchema(coreServiceMethods.ByName("SetPermissionMode")),
-			connect.WithClientOptions(opts...),
-		),
-		heartbeat: connect.NewClient[v1.HeartbeatRequest, v1.HeartbeatResponse](
-			httpClient,
-			baseURL+CoreServiceHeartbeatProcedure,
-			connect.WithSchema(coreServiceMethods.ByName("Heartbeat")),
-			connect.WithClientOptions(opts...),
-		),
-		setTaskStatus: connect.NewClient[v1.SetTaskStatusRequest, v1.SetTaskStatusResponse](
-			httpClient,
-			baseURL+CoreServiceSetTaskStatusProcedure,
-			connect.WithSchema(coreServiceMethods.ByName("SetTaskStatus")),
 			connect.WithClientOptions(opts...),
 		),
 		appendJournal: connect.NewClient[v1.AppendJournalRequest, v1.AppendJournalResponse](
@@ -238,16 +218,10 @@ func NewCoreServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(coreServiceMethods.ByName("SearchJournal")),
 			connect.WithClientOptions(opts...),
 		),
-		saveSessionId: connect.NewClient[v1.SaveSessionIdRequest, v1.SaveSessionIdResponse](
+		saveAgentSessionId: connect.NewClient[v1.SaveAgentSessionIdRequest, v1.SaveAgentSessionIdResponse](
 			httpClient,
-			baseURL+CoreServiceSaveSessionIdProcedure,
-			connect.WithSchema(coreServiceMethods.ByName("SaveSessionId")),
-			connect.WithClientOptions(opts...),
-		),
-		stillHoldsLease: connect.NewClient[v1.StillHoldsLeaseRequest, v1.StillHoldsLeaseResponse](
-			httpClient,
-			baseURL+CoreServiceStillHoldsLeaseProcedure,
-			connect.WithSchema(coreServiceMethods.ByName("StillHoldsLease")),
+			baseURL+CoreServiceSaveAgentSessionIdProcedure,
+			connect.WithSchema(coreServiceMethods.ByName("SaveAgentSessionId")),
 			connect.WithClientOptions(opts...),
 		),
 		pushToolTelemetry: connect.NewClient[v1.PushToolTelemetryRequest, v1.PushToolTelemetryResponse](
@@ -292,10 +266,10 @@ func NewCoreServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(coreServiceMethods.ByName("ViewLogs")),
 			connect.WithClientOptions(opts...),
 		),
-		listSessions: connect.NewClient[v1.ListSessionsRequest, v1.ListSessionsResponse](
+		listPeerSessions: connect.NewClient[v1.ListPeerSessionsRequest, v1.ListPeerSessionsResponse](
 			httpClient,
-			baseURL+CoreServiceListSessionsProcedure,
-			connect.WithSchema(coreServiceMethods.ByName("ListSessions")),
+			baseURL+CoreServiceListPeerSessionsProcedure,
+			connect.WithSchema(coreServiceMethods.ByName("ListPeerSessions")),
 			connect.WithClientOptions(opts...),
 		),
 		promptSession: connect.NewClient[v1.PromptSessionRequest, v1.PromptSessionResponse](
@@ -321,14 +295,11 @@ type coreServiceClient struct {
 	askUserQuestion     *connect.Client[v1.AskUserQuestionRequest, v1.AskUserQuestionResponse]
 	requestE2EEnv       *connect.Client[v1.RequestE2EEnvRequest, v1.RequestE2EEnvResponse]
 	killE2EEnv          *connect.Client[v1.KillE2EEnvRequest, v1.KillE2EEnvResponse]
-	getTask             *connect.Client[v1.GetTaskRequest, v1.GetTaskResponse]
+	getSession          *connect.Client[v1.GetSessionRequest, v1.GetSessionResponse]
 	setPermissionMode   *connect.Client[v1.SetPermissionModeRequest, v1.SetPermissionModeResponse]
-	heartbeat           *connect.Client[v1.HeartbeatRequest, v1.HeartbeatResponse]
-	setTaskStatus       *connect.Client[v1.SetTaskStatusRequest, v1.SetTaskStatusResponse]
 	appendJournal       *connect.Client[v1.AppendJournalRequest, v1.AppendJournalResponse]
 	searchJournal       *connect.Client[v1.SearchJournalRequest, v1.SearchJournalResponse]
-	saveSessionId       *connect.Client[v1.SaveSessionIdRequest, v1.SaveSessionIdResponse]
-	stillHoldsLease     *connect.Client[v1.StillHoldsLeaseRequest, v1.StillHoldsLeaseResponse]
+	saveAgentSessionId  *connect.Client[v1.SaveAgentSessionIdRequest, v1.SaveAgentSessionIdResponse]
 	pushToolTelemetry   *connect.Client[v1.PushToolTelemetryRequest, v1.PushToolTelemetryResponse]
 	streamHumanMessages *connect.Client[v1.StreamHumanMessagesRequest, v1.TranscriptEntry]
 	listFiles           *connect.Client[v1.ListFilesRequest, v1.ListFilesResponse]
@@ -336,7 +307,7 @@ type coreServiceClient struct {
 	getFileDownloadUrl  *connect.Client[v1.GetFileDownloadUrlRequest, v1.GetFileDownloadUrlResponse]
 	deleteFile          *connect.Client[v1.DeleteFileRequest, v1.DeleteFileResponse]
 	viewLogs            *connect.Client[v1.ViewLogsRequest, v1.ViewLogsResponse]
-	listSessions        *connect.Client[v1.ListSessionsRequest, v1.ListSessionsResponse]
+	listPeerSessions    *connect.Client[v1.ListPeerSessionsRequest, v1.ListPeerSessionsResponse]
 	promptSession       *connect.Client[v1.PromptSessionRequest, v1.PromptSessionResponse]
 	waitForSessionState *connect.Client[v1.WaitForSessionStateRequest, v1.WaitForSessionStateResponse]
 }
@@ -371,24 +342,14 @@ func (c *coreServiceClient) KillE2EEnv(ctx context.Context, req *connect.Request
 	return c.killE2EEnv.CallUnary(ctx, req)
 }
 
-// GetTask calls agentfleet.v1.CoreService.GetTask.
-func (c *coreServiceClient) GetTask(ctx context.Context, req *connect.Request[v1.GetTaskRequest]) (*connect.Response[v1.GetTaskResponse], error) {
-	return c.getTask.CallUnary(ctx, req)
+// GetSession calls agentfleet.v1.CoreService.GetSession.
+func (c *coreServiceClient) GetSession(ctx context.Context, req *connect.Request[v1.GetSessionRequest]) (*connect.Response[v1.GetSessionResponse], error) {
+	return c.getSession.CallUnary(ctx, req)
 }
 
 // SetPermissionMode calls agentfleet.v1.CoreService.SetPermissionMode.
 func (c *coreServiceClient) SetPermissionMode(ctx context.Context, req *connect.Request[v1.SetPermissionModeRequest]) (*connect.Response[v1.SetPermissionModeResponse], error) {
 	return c.setPermissionMode.CallUnary(ctx, req)
-}
-
-// Heartbeat calls agentfleet.v1.CoreService.Heartbeat.
-func (c *coreServiceClient) Heartbeat(ctx context.Context, req *connect.Request[v1.HeartbeatRequest]) (*connect.Response[v1.HeartbeatResponse], error) {
-	return c.heartbeat.CallUnary(ctx, req)
-}
-
-// SetTaskStatus calls agentfleet.v1.CoreService.SetTaskStatus.
-func (c *coreServiceClient) SetTaskStatus(ctx context.Context, req *connect.Request[v1.SetTaskStatusRequest]) (*connect.Response[v1.SetTaskStatusResponse], error) {
-	return c.setTaskStatus.CallUnary(ctx, req)
 }
 
 // AppendJournal calls agentfleet.v1.CoreService.AppendJournal.
@@ -401,14 +362,9 @@ func (c *coreServiceClient) SearchJournal(ctx context.Context, req *connect.Requ
 	return c.searchJournal.CallUnary(ctx, req)
 }
 
-// SaveSessionId calls agentfleet.v1.CoreService.SaveSessionId.
-func (c *coreServiceClient) SaveSessionId(ctx context.Context, req *connect.Request[v1.SaveSessionIdRequest]) (*connect.Response[v1.SaveSessionIdResponse], error) {
-	return c.saveSessionId.CallUnary(ctx, req)
-}
-
-// StillHoldsLease calls agentfleet.v1.CoreService.StillHoldsLease.
-func (c *coreServiceClient) StillHoldsLease(ctx context.Context, req *connect.Request[v1.StillHoldsLeaseRequest]) (*connect.Response[v1.StillHoldsLeaseResponse], error) {
-	return c.stillHoldsLease.CallUnary(ctx, req)
+// SaveAgentSessionId calls agentfleet.v1.CoreService.SaveAgentSessionId.
+func (c *coreServiceClient) SaveAgentSessionId(ctx context.Context, req *connect.Request[v1.SaveAgentSessionIdRequest]) (*connect.Response[v1.SaveAgentSessionIdResponse], error) {
+	return c.saveAgentSessionId.CallUnary(ctx, req)
 }
 
 // PushToolTelemetry calls agentfleet.v1.CoreService.PushToolTelemetry.
@@ -446,9 +402,9 @@ func (c *coreServiceClient) ViewLogs(ctx context.Context, req *connect.Request[v
 	return c.viewLogs.CallUnary(ctx, req)
 }
 
-// ListSessions calls agentfleet.v1.CoreService.ListSessions.
-func (c *coreServiceClient) ListSessions(ctx context.Context, req *connect.Request[v1.ListSessionsRequest]) (*connect.Response[v1.ListSessionsResponse], error) {
-	return c.listSessions.CallUnary(ctx, req)
+// ListPeerSessions calls agentfleet.v1.CoreService.ListPeerSessions.
+func (c *coreServiceClient) ListPeerSessions(ctx context.Context, req *connect.Request[v1.ListPeerSessionsRequest]) (*connect.Response[v1.ListPeerSessionsResponse], error) {
+	return c.listPeerSessions.CallUnary(ctx, req)
 }
 
 // PromptSession calls agentfleet.v1.CoreService.PromptSession.
@@ -475,23 +431,23 @@ type CoreServiceHandler interface {
 	AskUserQuestion(context.Context, *connect.Request[v1.AskUserQuestionRequest]) (*connect.Response[v1.AskUserQuestionResponse], error)
 	RequestE2EEnv(context.Context, *connect.Request[v1.RequestE2EEnvRequest]) (*connect.Response[v1.RequestE2EEnvResponse], error)
 	KillE2EEnv(context.Context, *connect.Request[v1.KillE2EEnvRequest]) (*connect.Response[v1.KillE2EEnvResponse], error)
-	// Lets a worker pod fetch its own fresh task row on startup instead of
+	// Lets a worker pod fetch its own fresh session row on startup instead of
 	// relying on stale environment variables — same message shapes
 	// DashboardService.GetTask uses, different caller (docs/adr/0029).
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
-	GetTask(context.Context, *connect.Request[v1.GetTaskRequest]) (*connect.Response[v1.GetTaskResponse], error)
+	GetSession(context.Context, *connect.Request[v1.GetSessionRequest]) (*connect.Response[v1.GetSessionResponse], error)
 	// A worker pod persisting its own permission mode (initial "default" or a
 	// change it made itself) — a plain column write, unlike
 	// DashboardService.SetPermissionMode which also notifies a *different*,
 	// already-running worker via the transcript.
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	SetPermissionMode(context.Context, *connect.Request[v1.SetPermissionModeRequest]) (*connect.Response[v1.SetPermissionModeResponse], error)
-	Heartbeat(context.Context, *connect.Request[v1.HeartbeatRequest]) (*connect.Response[v1.HeartbeatResponse], error)
-	SetTaskStatus(context.Context, *connect.Request[v1.SetTaskStatusRequest]) (*connect.Response[v1.SetTaskStatusResponse], error)
+	// Heartbeat, SetTaskStatus and StillHoldsLease used to be here. All three
+	// are deleted in docs/adr/0048 — see their message definitions above for
+	// why each stopped being a question worth asking.
 	AppendJournal(context.Context, *connect.Request[v1.AppendJournalRequest]) (*connect.Response[v1.AppendJournalResponse], error)
 	SearchJournal(context.Context, *connect.Request[v1.SearchJournalRequest]) (*connect.Response[v1.SearchJournalResponse], error)
-	SaveSessionId(context.Context, *connect.Request[v1.SaveSessionIdRequest]) (*connect.Response[v1.SaveSessionIdResponse], error)
-	StillHoldsLease(context.Context, *connect.Request[v1.StillHoldsLeaseRequest]) (*connect.Response[v1.StillHoldsLeaseResponse], error)
+	SaveAgentSessionId(context.Context, *connect.Request[v1.SaveAgentSessionIdRequest]) (*connect.Response[v1.SaveAgentSessionIdResponse], error)
 	PushToolTelemetry(context.Context, *connect.Request[v1.PushToolTelemetryRequest]) (*connect.Response[v1.PushToolTelemetryResponse], error)
 	// Streams transcript.proto's TranscriptEntry directly, same precedent
 	// dashboard.proto's StreamTranscript already set.
@@ -511,7 +467,7 @@ type CoreServiceHandler interface {
 	// docs/adr/0020 point 4: the path is agent -> its own sidecar (MCP) ->
 	// core (here) -> the target session. There is no worker-to-worker link
 	// and no worker-to-provisioner link.
-	ListSessions(context.Context, *connect.Request[v1.ListSessionsRequest]) (*connect.Response[v1.ListSessionsResponse], error)
+	ListPeerSessions(context.Context, *connect.Request[v1.ListPeerSessionsRequest]) (*connect.Response[v1.ListPeerSessionsResponse], error)
 	PromptSession(context.Context, *connect.Request[v1.PromptSessionRequest]) (*connect.Response[v1.PromptSessionResponse], error)
 	WaitForSessionState(context.Context, *connect.Request[v1.WaitForSessionStateRequest]) (*connect.Response[v1.WaitForSessionStateResponse], error)
 }
@@ -559,28 +515,16 @@ func NewCoreServiceHandler(svc CoreServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(coreServiceMethods.ByName("KillE2eEnv")),
 		connect.WithHandlerOptions(opts...),
 	)
-	coreServiceGetTaskHandler := connect.NewUnaryHandler(
-		CoreServiceGetTaskProcedure,
-		svc.GetTask,
-		connect.WithSchema(coreServiceMethods.ByName("GetTask")),
+	coreServiceGetSessionHandler := connect.NewUnaryHandler(
+		CoreServiceGetSessionProcedure,
+		svc.GetSession,
+		connect.WithSchema(coreServiceMethods.ByName("GetSession")),
 		connect.WithHandlerOptions(opts...),
 	)
 	coreServiceSetPermissionModeHandler := connect.NewUnaryHandler(
 		CoreServiceSetPermissionModeProcedure,
 		svc.SetPermissionMode,
 		connect.WithSchema(coreServiceMethods.ByName("SetPermissionMode")),
-		connect.WithHandlerOptions(opts...),
-	)
-	coreServiceHeartbeatHandler := connect.NewUnaryHandler(
-		CoreServiceHeartbeatProcedure,
-		svc.Heartbeat,
-		connect.WithSchema(coreServiceMethods.ByName("Heartbeat")),
-		connect.WithHandlerOptions(opts...),
-	)
-	coreServiceSetTaskStatusHandler := connect.NewUnaryHandler(
-		CoreServiceSetTaskStatusProcedure,
-		svc.SetTaskStatus,
-		connect.WithSchema(coreServiceMethods.ByName("SetTaskStatus")),
 		connect.WithHandlerOptions(opts...),
 	)
 	coreServiceAppendJournalHandler := connect.NewUnaryHandler(
@@ -595,16 +539,10 @@ func NewCoreServiceHandler(svc CoreServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(coreServiceMethods.ByName("SearchJournal")),
 		connect.WithHandlerOptions(opts...),
 	)
-	coreServiceSaveSessionIdHandler := connect.NewUnaryHandler(
-		CoreServiceSaveSessionIdProcedure,
-		svc.SaveSessionId,
-		connect.WithSchema(coreServiceMethods.ByName("SaveSessionId")),
-		connect.WithHandlerOptions(opts...),
-	)
-	coreServiceStillHoldsLeaseHandler := connect.NewUnaryHandler(
-		CoreServiceStillHoldsLeaseProcedure,
-		svc.StillHoldsLease,
-		connect.WithSchema(coreServiceMethods.ByName("StillHoldsLease")),
+	coreServiceSaveAgentSessionIdHandler := connect.NewUnaryHandler(
+		CoreServiceSaveAgentSessionIdProcedure,
+		svc.SaveAgentSessionId,
+		connect.WithSchema(coreServiceMethods.ByName("SaveAgentSessionId")),
 		connect.WithHandlerOptions(opts...),
 	)
 	coreServicePushToolTelemetryHandler := connect.NewUnaryHandler(
@@ -649,10 +587,10 @@ func NewCoreServiceHandler(svc CoreServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(coreServiceMethods.ByName("ViewLogs")),
 		connect.WithHandlerOptions(opts...),
 	)
-	coreServiceListSessionsHandler := connect.NewUnaryHandler(
-		CoreServiceListSessionsProcedure,
-		svc.ListSessions,
-		connect.WithSchema(coreServiceMethods.ByName("ListSessions")),
+	coreServiceListPeerSessionsHandler := connect.NewUnaryHandler(
+		CoreServiceListPeerSessionsProcedure,
+		svc.ListPeerSessions,
+		connect.WithSchema(coreServiceMethods.ByName("ListPeerSessions")),
 		connect.WithHandlerOptions(opts...),
 	)
 	coreServicePromptSessionHandler := connect.NewUnaryHandler(
@@ -681,22 +619,16 @@ func NewCoreServiceHandler(svc CoreServiceHandler, opts ...connect.HandlerOption
 			coreServiceRequestE2EEnvHandler.ServeHTTP(w, r)
 		case CoreServiceKillE2EEnvProcedure:
 			coreServiceKillE2EEnvHandler.ServeHTTP(w, r)
-		case CoreServiceGetTaskProcedure:
-			coreServiceGetTaskHandler.ServeHTTP(w, r)
+		case CoreServiceGetSessionProcedure:
+			coreServiceGetSessionHandler.ServeHTTP(w, r)
 		case CoreServiceSetPermissionModeProcedure:
 			coreServiceSetPermissionModeHandler.ServeHTTP(w, r)
-		case CoreServiceHeartbeatProcedure:
-			coreServiceHeartbeatHandler.ServeHTTP(w, r)
-		case CoreServiceSetTaskStatusProcedure:
-			coreServiceSetTaskStatusHandler.ServeHTTP(w, r)
 		case CoreServiceAppendJournalProcedure:
 			coreServiceAppendJournalHandler.ServeHTTP(w, r)
 		case CoreServiceSearchJournalProcedure:
 			coreServiceSearchJournalHandler.ServeHTTP(w, r)
-		case CoreServiceSaveSessionIdProcedure:
-			coreServiceSaveSessionIdHandler.ServeHTTP(w, r)
-		case CoreServiceStillHoldsLeaseProcedure:
-			coreServiceStillHoldsLeaseHandler.ServeHTTP(w, r)
+		case CoreServiceSaveAgentSessionIdProcedure:
+			coreServiceSaveAgentSessionIdHandler.ServeHTTP(w, r)
 		case CoreServicePushToolTelemetryProcedure:
 			coreServicePushToolTelemetryHandler.ServeHTTP(w, r)
 		case CoreServiceStreamHumanMessagesProcedure:
@@ -711,8 +643,8 @@ func NewCoreServiceHandler(svc CoreServiceHandler, opts ...connect.HandlerOption
 			coreServiceDeleteFileHandler.ServeHTTP(w, r)
 		case CoreServiceViewLogsProcedure:
 			coreServiceViewLogsHandler.ServeHTTP(w, r)
-		case CoreServiceListSessionsProcedure:
-			coreServiceListSessionsHandler.ServeHTTP(w, r)
+		case CoreServiceListPeerSessionsProcedure:
+			coreServiceListPeerSessionsHandler.ServeHTTP(w, r)
 		case CoreServicePromptSessionProcedure:
 			coreServicePromptSessionHandler.ServeHTTP(w, r)
 		case CoreServiceWaitForSessionStateProcedure:
@@ -750,20 +682,12 @@ func (UnimplementedCoreServiceHandler) KillE2EEnv(context.Context, *connect.Requ
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.CoreService.KillE2eEnv is not implemented"))
 }
 
-func (UnimplementedCoreServiceHandler) GetTask(context.Context, *connect.Request[v1.GetTaskRequest]) (*connect.Response[v1.GetTaskResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.CoreService.GetTask is not implemented"))
+func (UnimplementedCoreServiceHandler) GetSession(context.Context, *connect.Request[v1.GetSessionRequest]) (*connect.Response[v1.GetSessionResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.CoreService.GetSession is not implemented"))
 }
 
 func (UnimplementedCoreServiceHandler) SetPermissionMode(context.Context, *connect.Request[v1.SetPermissionModeRequest]) (*connect.Response[v1.SetPermissionModeResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.CoreService.SetPermissionMode is not implemented"))
-}
-
-func (UnimplementedCoreServiceHandler) Heartbeat(context.Context, *connect.Request[v1.HeartbeatRequest]) (*connect.Response[v1.HeartbeatResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.CoreService.Heartbeat is not implemented"))
-}
-
-func (UnimplementedCoreServiceHandler) SetTaskStatus(context.Context, *connect.Request[v1.SetTaskStatusRequest]) (*connect.Response[v1.SetTaskStatusResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.CoreService.SetTaskStatus is not implemented"))
 }
 
 func (UnimplementedCoreServiceHandler) AppendJournal(context.Context, *connect.Request[v1.AppendJournalRequest]) (*connect.Response[v1.AppendJournalResponse], error) {
@@ -774,12 +698,8 @@ func (UnimplementedCoreServiceHandler) SearchJournal(context.Context, *connect.R
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.CoreService.SearchJournal is not implemented"))
 }
 
-func (UnimplementedCoreServiceHandler) SaveSessionId(context.Context, *connect.Request[v1.SaveSessionIdRequest]) (*connect.Response[v1.SaveSessionIdResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.CoreService.SaveSessionId is not implemented"))
-}
-
-func (UnimplementedCoreServiceHandler) StillHoldsLease(context.Context, *connect.Request[v1.StillHoldsLeaseRequest]) (*connect.Response[v1.StillHoldsLeaseResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.CoreService.StillHoldsLease is not implemented"))
+func (UnimplementedCoreServiceHandler) SaveAgentSessionId(context.Context, *connect.Request[v1.SaveAgentSessionIdRequest]) (*connect.Response[v1.SaveAgentSessionIdResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.CoreService.SaveAgentSessionId is not implemented"))
 }
 
 func (UnimplementedCoreServiceHandler) PushToolTelemetry(context.Context, *connect.Request[v1.PushToolTelemetryRequest]) (*connect.Response[v1.PushToolTelemetryResponse], error) {
@@ -810,8 +730,8 @@ func (UnimplementedCoreServiceHandler) ViewLogs(context.Context, *connect.Reques
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.CoreService.ViewLogs is not implemented"))
 }
 
-func (UnimplementedCoreServiceHandler) ListSessions(context.Context, *connect.Request[v1.ListSessionsRequest]) (*connect.Response[v1.ListSessionsResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.CoreService.ListSessions is not implemented"))
+func (UnimplementedCoreServiceHandler) ListPeerSessions(context.Context, *connect.Request[v1.ListPeerSessionsRequest]) (*connect.Response[v1.ListPeerSessionsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.CoreService.ListPeerSessions is not implemented"))
 }
 
 func (UnimplementedCoreServiceHandler) PromptSession(context.Context, *connect.Request[v1.PromptSessionRequest]) (*connect.Response[v1.PromptSessionResponse], error) {

@@ -39,20 +39,20 @@ func (c *Client) CreateMiddleware(ctx context.Context, taskID string) error {
 	}}
 	_, err := c.Dynamic.Resource(middlewareGVR).Namespace(c.Namespace).Create(ctx, obj, createOpts())
 	if err = ignoreAlreadyExists(err); err != nil {
-		slog.Error("k8s CreateMiddleware", "taskId", taskID, "error", err)
+		slog.Error("k8s CreateMiddleware", "sessionId", taskID, "error", err)
 		return err
 	}
-	slog.Info("k8s CreateMiddleware", "taskId", taskID)
+	slog.Info("k8s CreateMiddleware", "sessionId", taskID)
 	return nil
 }
 
 func (c *Client) DeleteMiddleware(ctx context.Context, taskID string) error {
 	err := ignoreNotFound(c.Dynamic.Resource(middlewareGVR).Namespace(c.Namespace).Delete(ctx, stripPrefixName(taskID), deleteOpts()))
 	if err != nil {
-		slog.Error("k8s DeleteMiddleware", "taskId", taskID, "error", err)
+		slog.Error("k8s DeleteMiddleware", "sessionId", taskID, "error", err)
 		return err
 	}
-	slog.Info("k8s DeleteMiddleware", "taskId", taskID)
+	slog.Info("k8s DeleteMiddleware", "sessionId", taskID)
 	return nil
 }
 
@@ -73,9 +73,9 @@ func (c *Client) CreateClusterIPWhitelistMiddleware(ctx context.Context) error {
 		"spec": map[string]any{
 			"ipWhiteList": map[string]any{
 				"sourceRange": []any{
-					"10.0.0.0/8",      // Typical Pod CIDR
-					"172.16.0.0/12",   // Docker bridge networks
-					"192.168.0.0/16",  // Private network range
+					"10.0.0.0/8",     // Typical Pod CIDR
+					"172.16.0.0/12",  // Docker bridge networks
+					"192.168.0.0/16", // Private network range
 				},
 			},
 		},

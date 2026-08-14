@@ -1,4 +1,4 @@
-package tasks
+package sessions
 
 import (
 	"testing"
@@ -17,12 +17,12 @@ func TestDeriveLiveState(t *testing.T) {
 
 	cases := []struct {
 		name string
-		task Task
+		task Session
 		want LiveState
 	}{
 		{
 			name: "no pod means liveness does not apply",
-			task: Task{PodPhase: ptr("POD_PHASE_SUCCEEDED"), ActivitySeen: true, LastEntryType: ptr("result")},
+			task: Session{PodPhase: ptr("POD_PHASE_SUCCEEDED"), ActivitySeen: true, LastEntryType: ptr("result")},
 			want: LiveStateNone,
 		},
 		{
@@ -30,17 +30,17 @@ func TestDeriveLiveState(t *testing.T) {
 			// reported as anything else, because nothing will happen
 			// until a human clicks.
 			name: "awaiting a human wins over every timing signal",
-			task: Task{PodPhase: live, AwaitingHuman: true, ActivitySeen: true, LastActiveAt: &longAgo, LastEntryType: ptr("permission_request")},
+			task: Session{PodPhase: live, PendingDecisions: 1, ActivitySeen: true, LastActiveAt: &longAgo, LastEntryType: ptr("permission_request")},
 			want: LiveStateBlocked,
 		},
 		{
 			name: "a pod that has never spoken is unknown, not working",
-			task: Task{PodPhase: live, ActivitySeen: false, LastActiveAt: &recent},
+			task: Session{PodPhase: live, ActivitySeen: false, LastActiveAt: &recent},
 			want: LiveStateUnknown,
 		},
 		{
 			name: "mid-turn agent output is working",
-			task: Task{PodPhase: live, ActivitySeen: true, LastActiveAt: &recent, LastEntryType: ptr("assistant"), LastEntryFrom: ptr("agent")},
+			task: Session{PodPhase: live, ActivitySeen: true, LastActiveAt: &recent, LastEntryType: ptr("assistant"), LastEntryFrom: ptr("agent")},
 			want: LiveStateWorking,
 		},
 		{
@@ -48,39 +48,39 @@ func TestDeriveLiveState(t *testing.T) {
 			// moves on its own — the agent still owing a response is what
 			// distinguishes stalled from slow.
 			name: "a long-running agent turn is working, not stalled",
-			task: Task{PodPhase: live, ActivitySeen: true, LastActiveAt: &longAgo, LastEntryType: ptr("assistant"), LastEntryFrom: ptr("agent")},
+			task: Session{PodPhase: live, ActivitySeen: true, LastActiveAt: &longAgo, LastEntryType: ptr("assistant"), LastEntryFrom: ptr("agent")},
 			want: LiveStateWorking,
 		},
 		{
 			name: "a human message with no reply past the threshold is stalled",
-			task: Task{PodPhase: live, ActivitySeen: true, LastActiveAt: &longAgo, LastEntryType: ptr("discussion"), LastEntryFrom: ptr("human")},
+			task: Session{PodPhase: live, ActivitySeen: true, LastActiveAt: &longAgo, LastEntryType: ptr("discussion"), LastEntryFrom: ptr("human")},
 			want: LiveStateStalled,
 		},
 		{
 			name: "the same message inside the threshold is still working",
-			task: Task{PodPhase: live, ActivitySeen: true, LastActiveAt: &recent, LastEntryType: ptr("discussion"), LastEntryFrom: ptr("human")},
+			task: Session{PodPhase: live, ActivitySeen: true, LastActiveAt: &recent, LastEntryType: ptr("discussion"), LastEntryFrom: ptr("human")},
 			want: LiveStateWorking,
 		},
 		{
 			// An agent-authored discussion entry is the agent talking, not
 			// the agent owing a reply — only `from` separates the two.
 			name: "an agent discussion entry never counts as owing a reply",
-			task: Task{PodPhase: live, ActivitySeen: true, LastActiveAt: &longAgo, LastEntryType: ptr("discussion"), LastEntryFrom: ptr("agent")},
+			task: Session{PodPhase: live, ActivitySeen: true, LastActiveAt: &longAgo, LastEntryType: ptr("discussion"), LastEntryFrom: ptr("agent")},
 			want: LiveStateWorking,
 		},
 		{
 			name: "an answered question restarts the turn and can stall too",
-			task: Task{PodPhase: live, ActivitySeen: true, LastActiveAt: &longAgo, LastEntryType: ptr("answer"), LastEntryFrom: ptr("human")},
+			task: Session{PodPhase: live, ActivitySeen: true, LastActiveAt: &longAgo, LastEntryType: ptr("answer"), LastEntryFrom: ptr("human")},
 			want: LiveStateStalled,
 		},
 		{
 			name: "a finished turn nobody has looked at is done",
-			task: Task{PodPhase: live, ActivitySeen: true, LastActiveAt: &recent, LastEntryType: ptr("result"), LastEntryFrom: ptr("agent")},
+			task: Session{PodPhase: live, ActivitySeen: true, LastActiveAt: &recent, LastEntryType: ptr("result"), LastEntryFrom: ptr("agent")},
 			want: LiveStateDone,
 		},
 		{
 			name: "a finished turn seen since is idle",
-			task: Task{PodPhase: live, ActivitySeen: true, LastActiveAt: &longAgo, SeenAt: &recent, LastEntryType: ptr("result"), LastEntryFrom: ptr("agent")},
+			task: Session{PodPhase: live, ActivitySeen: true, LastActiveAt: &longAgo, SeenAt: &recent, LastEntryType: ptr("result"), LastEntryFrom: ptr("agent")},
 			want: LiveStateIdle,
 		},
 		{
@@ -88,7 +88,7 @@ func TestDeriveLiveState(t *testing.T) {
 			// again, otherwise one early open would permanently suppress
 			// the badge for that session.
 			name: "work finishing after the last look is done again",
-			task: Task{PodPhase: live, ActivitySeen: true, LastActiveAt: &recent, SeenAt: &longAgo, LastEntryType: ptr("result"), LastEntryFrom: ptr("agent")},
+			task: Session{PodPhase: live, ActivitySeen: true, LastActiveAt: &recent, SeenAt: &longAgo, LastEntryType: ptr("result"), LastEntryFrom: ptr("agent")},
 			want: LiveStateDone,
 		},
 	}
@@ -108,13 +108,13 @@ func TestDeriveLiveState(t *testing.T) {
 func TestDeriveLiveStateAcrossLivePodPhases(t *testing.T) {
 	now := time.Now()
 	for _, phase := range []string{"POD_PHASE_PROVISIONING", "POD_PHASE_CREATED", "POD_PHASE_SCHEDULED", "POD_PHASE_RUNNING"} {
-		task := Task{PodPhase: &phase}
+		task := Session{PodPhase: &phase}
 		if got := DeriveLiveState(&task, now, turnStall); got != LiveStateUnknown {
 			t.Errorf("phase %s: got %q, want %q", phase, got, LiveStateUnknown)
 		}
 	}
 	for _, phase := range []string{"POD_PHASE_SUCCEEDED", "POD_PHASE_CRASHED", "POD_PHASE_UNSPECIFIED"} {
-		task := Task{PodPhase: &phase, ActivitySeen: true}
+		task := Session{PodPhase: &phase, ActivitySeen: true}
 		if got := DeriveLiveState(&task, now, turnStall); got != LiveStateNone {
 			t.Errorf("phase %s: got %q, want %q", phase, got, LiveStateNone)
 		}

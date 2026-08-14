@@ -121,7 +121,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		created++
-		slog.Info("alertwebhook: created thot task", "taskId", id, "alert", a.Labels["alertname"])
+		slog.Info("alertwebhook: created thot task", "sessionId", id, "alert", a.Labels["alertname"])
 		h.attachThread(r.Context(), id, a)
 	}
 
@@ -145,7 +145,7 @@ func (h *Handler) attachThread(_ context.Context, taskID string, a alert) {
 		fmt.Sprintf("**🔥 %s** — proposed as task `%s`, awaiting approval in the dashboard\n%s", name, taskID[:8], a.Annotations["summary"]),
 	)
 	if err != nil {
-		slog.Error("alertwebhook: open thread", "taskId", taskID, "error", err)
+		slog.Error("alertwebhook: open thread", "sessionId", taskID, "error", err)
 	}
 }
 

@@ -16,7 +16,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/provisionerclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/repoprofiles"
 	"github.com/MohammadBnei/agent-fleet/core/internal/repos"
-	"github.com/MohammadBnei/agent-fleet/core/internal/tasks"
+	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
 )
 
 // fakeProvisionerServer records CreateWorkerPod calls instead of doing any
@@ -31,7 +31,7 @@ type fakeProvisionerServer struct {
 
 func (f *fakeProvisionerServer) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWorkerPodRequest) (*agentfleetv1.CreateWorkerPodResponse, error) {
 	f.calls = append(f.calls, req)
-	return &agentfleetv1.CreateWorkerPodResponse{PodName: "worker-" + req.GetTaskId()}, nil
+	return &agentfleetv1.CreateWorkerPodResponse{PodName: "worker-" + req.GetSessionId()}, nil
 }
 
 // newFakeProvisioner starts a real gRPC server on a real localhost port —
@@ -79,7 +79,7 @@ func seedIdleClaimedTask(t *testing.T, pool *pgxpool.Pool, taskStore *tasks.Stor
 func TestServer_Warm_BootsNewPod(t *testing.T) {
 	pool := newTestPool(t)
 	ctx := context.Background()
-	taskStore := tasks.NewStore(pool)
+	taskStore := sessions.NewStore(pool)
 	repoStore := repos.NewStore(pool)
 	profileStore := repoprofiles.NewStore(pool)
 	taskID := seedIdleClaimedTask(t, pool, taskStore)
@@ -87,7 +87,7 @@ func TestServer_Warm_BootsNewPod(t *testing.T) {
 	fake, provisioner := newFakeProvisioner(t)
 	s := NewServer(taskStore, &recordingStore{}, nil, repoStore, profileStore, nil, provisioner, nil, nil, 5, nil, nil, nil)
 
-	resp, err := s.Warm(ctx, connect.NewRequest(&agentfleetv1.WarmRequest{TaskId: taskID}))
+	resp, err := s.Warm(ctx, connect.NewRequest(&agentfleetv1.WarmSessionRequest{SessionId: taskID}))
 	if err != nil {
 		t.Fatalf("Warm: %v", err)
 	}
@@ -118,7 +118,7 @@ func TestServer_Warm_BootsNewPod(t *testing.T) {
 func TestServer_Warm_StillPending_FailedPrecondition(t *testing.T) {
 	pool := newTestPool(t)
 	ctx := context.Background()
-	taskStore := tasks.NewStore(pool)
+	taskStore := sessions.NewStore(pool)
 	repoStore := repos.NewStore(pool)
 	profileStore := repoprofiles.NewStore(pool)
 	taskID := seedTask(t, pool) // left at the default 'pending' status
@@ -126,7 +126,7 @@ func TestServer_Warm_StillPending_FailedPrecondition(t *testing.T) {
 	fake, provisioner := newFakeProvisioner(t)
 	s := NewServer(taskStore, &recordingStore{}, nil, repoStore, profileStore, nil, provisioner, nil, nil, 5, nil, nil, nil)
 
-	_, err := s.Warm(ctx, connect.NewRequest(&agentfleetv1.WarmRequest{TaskId: taskID}))
+	_, err := s.Warm(ctx, connect.NewRequest(&agentfleetv1.WarmSessionRequest{SessionId: taskID}))
 	if connect.CodeOf(err) != connect.CodeFailedPrecondition {
 		t.Fatalf("Warm error = %v, want CodeFailedPrecondition", err)
 	}
@@ -142,7 +142,7 @@ func TestServer_Warm_StillPending_FailedPrecondition(t *testing.T) {
 func TestServer_Warm_ThreadsSavedSessionID(t *testing.T) {
 	pool := newTestPool(t)
 	ctx := context.Background()
-	taskStore := tasks.NewStore(pool)
+	taskStore := sessions.NewStore(pool)
 	repoStore := repos.NewStore(pool)
 	profileStore := repoprofiles.NewStore(pool)
 	taskID := seedIdleClaimedTask(t, pool, taskStore)
@@ -153,7 +153,7 @@ func TestServer_Warm_ThreadsSavedSessionID(t *testing.T) {
 	fake, provisioner := newFakeProvisioner(t)
 	s := NewServer(taskStore, &recordingStore{}, nil, repoStore, profileStore, nil, provisioner, nil, nil, 5, nil, nil, nil)
 
-	if _, err := s.Warm(ctx, connect.NewRequest(&agentfleetv1.WarmRequest{TaskId: taskID})); err != nil {
+	if _, err := s.Warm(ctx, connect.NewRequest(&agentfleetv1.WarmSessionRequest{SessionId: taskID})); err != nil {
 		t.Fatalf("Warm: %v", err)
 	}
 	if len(fake.calls) != 1 || fake.calls[0].GetResumeSessionId() != "sess-resume-me" {
@@ -167,7 +167,7 @@ func TestServer_Warm_ThreadsSavedSessionID(t *testing.T) {
 func TestServer_Warm_AlreadyLive_FailedPrecondition(t *testing.T) {
 	pool := newTestPool(t)
 	ctx := context.Background()
-	taskStore := tasks.NewStore(pool)
+	taskStore := sessions.NewStore(pool)
 	repoStore := repos.NewStore(pool)
 	profileStore := repoprofiles.NewStore(pool)
 	taskID := seedTask(t, pool)
@@ -178,7 +178,7 @@ func TestServer_Warm_AlreadyLive_FailedPrecondition(t *testing.T) {
 	fake, provisioner := newFakeProvisioner(t)
 	s := NewServer(taskStore, &recordingStore{}, nil, repoStore, profileStore, nil, provisioner, nil, nil, 5, nil, nil, nil)
 
-	_, err := s.Warm(ctx, connect.NewRequest(&agentfleetv1.WarmRequest{TaskId: taskID}))
+	_, err := s.Warm(ctx, connect.NewRequest(&agentfleetv1.WarmSessionRequest{SessionId: taskID}))
 	if connect.CodeOf(err) != connect.CodeFailedPrecondition {
 		t.Fatalf("Warm error = %v, want CodeFailedPrecondition", err)
 	}
@@ -195,7 +195,7 @@ func TestServer_Warm_AlreadyLive_FailedPrecondition(t *testing.T) {
 func TestServer_Warm_AtCapacity_ResourceExhausted(t *testing.T) {
 	pool := newTestPool(t)
 	ctx := context.Background()
-	taskStore := tasks.NewStore(pool)
+	taskStore := sessions.NewStore(pool)
 	repoStore := repos.NewStore(pool)
 	profileStore := repoprofiles.NewStore(pool)
 
@@ -211,7 +211,7 @@ func TestServer_Warm_AtCapacity_ResourceExhausted(t *testing.T) {
 	fake, provisioner := newFakeProvisioner(t)
 	s := NewServer(taskStore, &recordingStore{}, nil, repoStore, profileStore, nil, provisioner, nil, nil, cap, nil, nil, nil)
 
-	_, err := s.Warm(ctx, connect.NewRequest(&agentfleetv1.WarmRequest{TaskId: idleTaskID}))
+	_, err := s.Warm(ctx, connect.NewRequest(&agentfleetv1.WarmSessionRequest{SessionId: idleTaskID}))
 	if connect.CodeOf(err) != connect.CodeResourceExhausted {
 		t.Fatalf("Warm error = %v, want CodeResourceExhausted", err)
 	}
@@ -227,7 +227,7 @@ func TestServer_Warm_AtCapacity_ResourceExhausted(t *testing.T) {
 func TestServer_Discuss_AutoWarmsIdleSession(t *testing.T) {
 	pool := newTestPool(t)
 	ctx := context.Background()
-	taskStore := tasks.NewStore(pool)
+	taskStore := sessions.NewStore(pool)
 	repoStore := repos.NewStore(pool)
 	profileStore := repoprofiles.NewStore(pool)
 	taskID := seedIdleClaimedTask(t, pool, taskStore)
@@ -236,7 +236,7 @@ func TestServer_Discuss_AutoWarmsIdleSession(t *testing.T) {
 	store := &recordingStore{}
 	s := NewServer(taskStore, store, nil, repoStore, profileStore, nil, provisioner, nil, nil, 5, nil, nil, nil)
 
-	if _, err := s.Discuss(ctx, connect.NewRequest(&agentfleetv1.DiscussRequest{TaskId: taskID, Text: "hey"})); err != nil {
+	if _, err := s.Discuss(ctx, connect.NewRequest(&agentfleetv1.PostMessageRequest{SessionId: taskID, Text: "hey"})); err != nil {
 		t.Fatalf("Discuss: %v", err)
 	}
 	if len(fake.calls) != 1 {
@@ -256,7 +256,7 @@ func TestServer_Discuss_AutoWarmsIdleSession(t *testing.T) {
 func TestServer_Discuss_StillPending_SkipsWarmButStillSends(t *testing.T) {
 	pool := newTestPool(t)
 	ctx := context.Background()
-	taskStore := tasks.NewStore(pool)
+	taskStore := sessions.NewStore(pool)
 	repoStore := repos.NewStore(pool)
 	profileStore := repoprofiles.NewStore(pool)
 	taskID := seedTask(t, pool) // left at the default 'pending' status
@@ -265,7 +265,7 @@ func TestServer_Discuss_StillPending_SkipsWarmButStillSends(t *testing.T) {
 	store := &recordingStore{}
 	s := NewServer(taskStore, store, nil, repoStore, profileStore, nil, provisioner, nil, nil, 5, nil, nil, nil)
 
-	if _, err := s.Discuss(ctx, connect.NewRequest(&agentfleetv1.DiscussRequest{TaskId: taskID, Text: "hey"})); err != nil {
+	if _, err := s.Discuss(ctx, connect.NewRequest(&agentfleetv1.PostMessageRequest{SessionId: taskID, Text: "hey"})); err != nil {
 		t.Fatalf("Discuss: %v", err)
 	}
 	if len(fake.calls) != 0 {
@@ -284,7 +284,7 @@ func TestServer_Discuss_StillPending_SkipsWarmButStillSends(t *testing.T) {
 func TestServer_Discuss_LivePod_NoWarmAttempt(t *testing.T) {
 	pool := newTestPool(t)
 	ctx := context.Background()
-	taskStore := tasks.NewStore(pool)
+	taskStore := sessions.NewStore(pool)
 	repoStore := repos.NewStore(pool)
 	profileStore := repoprofiles.NewStore(pool)
 	taskID := seedTask(t, pool)
@@ -296,7 +296,7 @@ func TestServer_Discuss_LivePod_NoWarmAttempt(t *testing.T) {
 	store := &recordingStore{}
 	s := NewServer(taskStore, store, nil, repoStore, profileStore, nil, provisioner, nil, nil, 5, nil, nil, nil)
 
-	resp, err := s.Discuss(ctx, connect.NewRequest(&agentfleetv1.DiscussRequest{TaskId: taskID, Text: "what's the status?"}))
+	resp, err := s.Discuss(ctx, connect.NewRequest(&agentfleetv1.PostMessageRequest{SessionId: taskID, Text: "what's the status?"}))
 	if err != nil {
 		t.Fatalf("Discuss: %v", err)
 	}
@@ -339,7 +339,7 @@ func seedProposal(t *testing.T, pool *pgxpool.Pool) string {
 func TestServer_Discuss_DoesNotWarmProposal(t *testing.T) {
 	pool := newTestPool(t)
 	ctx := context.Background()
-	taskStore := tasks.NewStore(pool)
+	taskStore := sessions.NewStore(pool)
 	repoStore := repos.NewStore(pool)
 	profileStore := repoprofiles.NewStore(pool)
 	taskID := seedProposal(t, pool)
@@ -348,7 +348,7 @@ func TestServer_Discuss_DoesNotWarmProposal(t *testing.T) {
 	store := &recordingStore{}
 	s := NewServer(taskStore, store, nil, repoStore, profileStore, nil, provisioner, nil, nil, 5, nil, nil, nil)
 
-	if _, err := s.Discuss(ctx, connect.NewRequest(&agentfleetv1.DiscussRequest{TaskId: taskID, Text: "hey"})); err != nil {
+	if _, err := s.Discuss(ctx, connect.NewRequest(&agentfleetv1.PostMessageRequest{SessionId: taskID, Text: "hey"})); err != nil {
 		t.Fatalf("Discuss: %v", err)
 	}
 	if len(fake.calls) != 0 {
@@ -374,7 +374,7 @@ func TestServer_Discuss_DoesNotWarmProposal(t *testing.T) {
 func TestServer_Warm_RejectsUnapprovedProposal(t *testing.T) {
 	pool := newTestPool(t)
 	ctx := context.Background()
-	taskStore := tasks.NewStore(pool)
+	taskStore := sessions.NewStore(pool)
 	repoStore := repos.NewStore(pool)
 	profileStore := repoprofiles.NewStore(pool)
 	taskID := seedProposal(t, pool)
@@ -382,7 +382,7 @@ func TestServer_Warm_RejectsUnapprovedProposal(t *testing.T) {
 	fake, provisioner := newFakeProvisioner(t)
 	s := NewServer(taskStore, &recordingStore{}, nil, repoStore, profileStore, nil, provisioner, nil, nil, 5, nil, nil, nil)
 
-	_, err := s.Warm(ctx, connect.NewRequest(&agentfleetv1.WarmRequest{TaskId: taskID}))
+	_, err := s.Warm(ctx, connect.NewRequest(&agentfleetv1.WarmSessionRequest{SessionId: taskID}))
 	if connect.CodeOf(err) != connect.CodeFailedPrecondition {
 		t.Errorf("Warm on a proposal: err = %v (code %v), want FailedPrecondition", err, connect.CodeOf(err))
 	}
@@ -397,7 +397,7 @@ func TestServer_Warm_RejectsUnapprovedProposal(t *testing.T) {
 func TestServer_ApproveTask_QueuesForDispatchWithoutWarming(t *testing.T) {
 	pool := newTestPool(t)
 	ctx := context.Background()
-	taskStore := tasks.NewStore(pool)
+	taskStore := sessions.NewStore(pool)
 	repoStore := repos.NewStore(pool)
 	profileStore := repoprofiles.NewStore(pool)
 	taskID := seedProposal(t, pool)
@@ -405,7 +405,7 @@ func TestServer_ApproveTask_QueuesForDispatchWithoutWarming(t *testing.T) {
 	fake, provisioner := newFakeProvisioner(t)
 	s := NewServer(taskStore, &recordingStore{}, nil, repoStore, profileStore, nil, provisioner, nil, nil, 5, nil, nil, nil)
 
-	resp, err := s.ApproveTask(ctx, connect.NewRequest(&agentfleetv1.ApproveTaskRequest{TaskId: taskID}))
+	resp, err := s.ApproveTask(ctx, connect.NewRequest(&agentfleetv1.ApproveTaskRequest{SessionId: taskID}))
 	if err != nil {
 		t.Fatalf("ApproveTask: %v", err)
 	}
@@ -427,7 +427,7 @@ func TestServer_ApproveTask_QueuesForDispatchWithoutWarming(t *testing.T) {
 	// Second click: the guarded UPDATE matched nothing, so this must be a
 	// rejection rather than a silent re-queue of a task dispatch may
 	// already have claimed.
-	if _, err := s.ApproveTask(ctx, connect.NewRequest(&agentfleetv1.ApproveTaskRequest{TaskId: taskID})); connect.CodeOf(err) != connect.CodeFailedPrecondition {
+	if _, err := s.ApproveTask(ctx, connect.NewRequest(&agentfleetv1.ApproveTaskRequest{SessionId: taskID})); connect.CodeOf(err) != connect.CodeFailedPrecondition {
 		t.Errorf("second ApproveTask: err = %v (code %v), want FailedPrecondition", err, connect.CodeOf(err))
 	}
 }

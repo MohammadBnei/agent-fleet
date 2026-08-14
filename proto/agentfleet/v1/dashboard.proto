@@ -416,14 +416,24 @@ message GetJournalResponse {
 // table (db/schema.sql). No timestamps exposed: the dashboard's repo list
 // is small and unordered, unlike Session/JournalEntry which need cursor state.
 message Repo {
+  reserved 4;
+  reserved "e2e_profile";
+
   string name = 1;
   string url = 2;
   string base_branch = 3; // "" means the provisioner defaults to "main"
-  // Which repo_profiles row the e2e sandbox is built from (docs/adr/0044).
-  // "" means the "e2e" convention. Exists because core used to hardcode that
-  // name, so a repo whose recipe is called something else — agent-fleet's
-  // "lint" — got a sandbox with no toolchain at all.
-  string e2e_profile = 4;
+  // Container image this repo's sessions run. "" means the fleet default.
+  // Replaces the four toolchain ingredients of docs/adr/0034's recipe
+  // system — an init container copying a Go toolchain onto an emptyDir was
+  // an elaborate way of saying "this repo needs Go".
+  string image = 5;
+  // Whether this repo's sessions get the kubectl shim that RPCs to
+  // thot-executor (docs/adr/0037). The one recipe ingredient that did NOT
+  // collapse into `image`, because it is a privilege grant rather than a
+  // toolchain — the pod still holds zero Kubernetes credentials either way,
+  // and which sessions may reach the cluster stays a human's decision,
+  // editable here without a redeploy.
+  bool cluster_access = 6;
 }
 
 message ListReposRequest {}
@@ -436,7 +446,10 @@ message CreateRepoRequest {
   string name = 1;
   string url = 2;
   string base_branch = 3;
-  string e2e_profile = 4;
+  reserved 4;
+  reserved "e2e_profile";
+  string image = 5;
+  bool cluster_access = 6;
 }
 
 message CreateRepoResponse {
@@ -447,7 +460,10 @@ message UpdateRepoRequest {
   string name = 1;
   string url = 2;
   string base_branch = 3;
-  string e2e_profile = 4;
+  reserved 4;
+  reserved "e2e_profile";
+  string image = 5;
+  bool cluster_access = 6;
 }
 
 message UpdateRepoResponse {

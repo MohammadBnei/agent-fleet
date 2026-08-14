@@ -73,7 +73,7 @@ func (c *Client) DeleteAll(ctx context.Context, taskID string) error {
 	if err := c.DeletePod(ctx, taskID); err != nil {
 		return err
 	}
-	slog.Info("k8s DeleteAll", "taskId", taskID)
+	slog.Info("k8s DeleteAll", "sessionId", taskID)
 	return nil
 }
 

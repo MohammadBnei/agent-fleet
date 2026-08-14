@@ -36,12 +36,24 @@ type Repo struct {
 	Name       string
 	URL        string
 	BaseBranch string // "" means the provisioner defaults to "main"
-	// E2eProfile names the repo_profiles row the e2e sandbox is built from
-	// (docs/adr/0044). "" means the "e2e" convention. It exists because core
-	// used to hardcode that name, which left a repo whose recipe is called
-	// something else — agent-fleet's "lint" — with a sandbox that resolved to
-	// no profile and therefore no toolchain at all.
-	E2eProfile string
+	// Image is the container image this repo's sessions run. "" means the
+	// fleet default. Replaces the four toolchain ingredients of
+	// docs/adr/0034's recipe system (go-toolchain, bun-toolchain,
+	// golangci-lint, buf), which existed only because the worker image was
+	// generic — an init container copying a Go toolchain onto an emptyDir is
+	// an elaborate way of saying "this repo needs Go".
+	Image string
+	// ClusterAccess is whether this repo's sessions get the kubectl shim that
+	// RPCs to thot-executor (docs/adr/0037) — the one recipe ingredient that
+	// did NOT collapse into Image, because it is a privilege grant rather
+	// than a toolchain. The pod still holds zero Kubernetes credentials
+	// either way; the shim is just an RPC client.
+	//
+	// Data rather than code for docs/adr/0037's own reason: which sessions
+	// may reach the cluster is a human's decision, editable without a
+	// redeploy. A bool rather than a profile row because there is exactly one
+	// such privilege and it composes with nothing.
+	ClusterAccess bool
 }
 
 type Store struct {
@@ -61,7 +73,7 @@ func (s *Store) SetOnChange(onChange func()) {
 }
 
 func (s *Store) List(ctx context.Context) ([]Repo, error) {
-	rows, err := s.pool.Query(ctx, `SELECT name, url, base_branch, e2e_profile FROM repos ORDER BY name`)
+	rows, err := s.pool.Query(ctx, `SELECT name, url, base_branch, image, cluster_access FROM repos ORDER BY name`)
 	if err != nil {
 		slog.Error("repos List", "error", err)
 		return nil, fmt.Errorf("list repos: %w", err)
@@ -74,7 +86,7 @@ func (s *Store) List(ctx context.Context) ([]Repo, error) {
 	result := []Repo{}
 	for rows.Next() {
 		var r Repo
-		if err := rows.Scan(&r.Name, &r.URL, &r.BaseBranch, &r.E2eProfile); err != nil {
+		if err := rows.Scan(&r.Name, &r.URL, &r.BaseBranch, &r.Image, &r.ClusterAccess); err != nil {
 			slog.Error("repos List: scan", "error", err)
 			return nil, fmt.Errorf("scan repo: %w", err)
 		}
@@ -86,8 +98,8 @@ func (s *Store) List(ctx context.Context) ([]Repo, error) {
 // Get returns nil, nil when no repo with this name exists.
 func (s *Store) Get(ctx context.Context, name string) (*Repo, error) {
 	var r Repo
-	err := s.pool.QueryRow(ctx, `SELECT name, url, base_branch, e2e_profile FROM repos WHERE name = $1`, name).
-		Scan(&r.Name, &r.URL, &r.BaseBranch, &r.E2eProfile)
+	err := s.pool.QueryRow(ctx, `SELECT name, url, base_branch, image, cluster_access FROM repos WHERE name = $1`, name).
+		Scan(&r.Name, &r.URL, &r.BaseBranch, &r.Image, &r.ClusterAccess)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
@@ -102,8 +114,8 @@ func (s *Store) Create(ctx context.Context, r Repo) error {
 	if err := validateURL(r.URL); err != nil {
 		return err
 	}
-	_, err := s.pool.Exec(ctx, `INSERT INTO repos (name, url, base_branch, e2e_profile) VALUES ($1, $2, $3, $4)`,
-		r.Name, r.URL, r.BaseBranch, r.E2eProfile)
+	_, err := s.pool.Exec(ctx, `INSERT INTO repos (name, url, base_branch, image, cluster_access) VALUES ($1, $2, $3, $4, $5)`,
+		r.Name, r.URL, r.BaseBranch, r.Image, r.ClusterAccess)
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
@@ -125,8 +137,8 @@ func (s *Store) Update(ctx context.Context, r Repo) error {
 		return err
 	}
 	tag, err := s.pool.Exec(ctx, `
-		UPDATE repos SET url = $2, base_branch = $3, e2e_profile = $4, updated_at = now() WHERE name = $1
-	`, r.Name, r.URL, r.BaseBranch, r.E2eProfile)
+		UPDATE repos SET url = $2, base_branch = $3, image = $4, cluster_access = $5, updated_at = now() WHERE name = $1
+	`, r.Name, r.URL, r.BaseBranch, r.Image, r.ClusterAccess)
 	if err != nil {
 		slog.Error("repos Update", "name", r.Name, "error", err)
 		return fmt.Errorf("update repo: %w", err)

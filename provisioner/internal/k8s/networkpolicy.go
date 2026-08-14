@@ -76,10 +76,10 @@ func (c *Client) CreateNetworkPolicy(ctx context.Context, taskID string) error {
 	}
 	_, err := c.Core.NetworkingV1().NetworkPolicies(c.Namespace).Create(ctx, policy, metav1.CreateOptions{})
 	if err = ignoreAlreadyExists(err); err != nil {
-		slog.Error("k8s CreateNetworkPolicy", "taskId", taskID, "error", err)
+		slog.Error("k8s CreateNetworkPolicy", "sessionId", taskID, "error", err)
 		return err
 	}
-	slog.Info("k8s CreateNetworkPolicy", "taskId", taskID, "name", name)
+	slog.Info("k8s CreateNetworkPolicy", "sessionId", taskID, "name", name)
 	return nil
 }
 
@@ -91,7 +91,7 @@ func (c *Client) DeleteNetworkPolicy(ctx context.Context, taskID string) error {
 	name := networkPolicyName(taskID)
 	err := c.Core.NetworkingV1().NetworkPolicies(c.Namespace).Delete(ctx, name, metav1.DeleteOptions{})
 	if err = ignoreNotFound(err); err != nil {
-		slog.Error("k8s DeleteNetworkPolicy", "taskId", taskID, "error", err)
+		slog.Error("k8s DeleteNetworkPolicy", "sessionId", taskID, "error", err)
 		return err
 	}
 	return nil

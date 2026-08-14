@@ -37,12 +37,12 @@ func TestGetE2ESessionStatus_TerminatingIsNotRunning(t *testing.T) {
 	s, k8sc, _ := newTestServer(t)
 	ctx := context.Background()
 
-	if _, err := s.CreateE2ESession(ctx, &agentfleetv1.CreateE2ESessionRequest{TaskId: "t1", Repo: "dream-analyst", StartCmd: "bun run dev"}); err != nil {
+	if _, err := s.CreateE2ESession(ctx, &agentfleetv1.CreateE2ESessionRequest{SessionId: "t1", Repo: "dream-analyst", StartCmd: "bun run dev"}); err != nil {
 		t.Fatalf("CreateE2ESession: %v", err)
 	}
 	markTerminating(t, k8sc, "t1")
 
-	resp, err := s.GetE2ESessionStatus(ctx, &agentfleetv1.GetE2ESessionStatusRequest{TaskId: "t1"})
+	resp, err := s.GetE2ESessionStatus(ctx, &agentfleetv1.GetE2ESessionStatusRequest{SessionId: "t1"})
 	if err != nil {
 		t.Fatalf("GetE2ESessionStatus: %v", err)
 	}
@@ -63,7 +63,7 @@ func TestCreateE2ESession_TerminatingPodIsNotAnExistingSession(t *testing.T) {
 	s, k8sc, _ := newTestServer(t)
 	ctx := context.Background()
 
-	if _, err := s.CreateE2ESession(ctx, &agentfleetv1.CreateE2ESessionRequest{TaskId: "t1", Repo: "dream-analyst", StartCmd: "bun run dev"}); err != nil {
+	if _, err := s.CreateE2ESession(ctx, &agentfleetv1.CreateE2ESessionRequest{SessionId: "t1", Repo: "dream-analyst", StartCmd: "bun run dev"}); err != nil {
 		t.Fatalf("first CreateE2ESession: %v", err)
 	}
 	markTerminating(t, k8sc, "t1")
@@ -75,7 +75,7 @@ func TestCreateE2ESession_TerminatingPodIsNotAnExistingSession(t *testing.T) {
 		_ = k8sc.Core.CoreV1().Pods("agent-fleet").Delete(ctx, k8s.ResourceName("t1"), metav1.DeleteOptions{})
 	}()
 
-	resp, err := s.CreateE2ESession(ctx, &agentfleetv1.CreateE2ESessionRequest{TaskId: "t1", Repo: "dream-analyst", StartCmd: "bun run dev"})
+	resp, err := s.CreateE2ESession(ctx, &agentfleetv1.CreateE2ESessionRequest{SessionId: "t1", Repo: "dream-analyst", StartCmd: "bun run dev"})
 	if err != nil {
 		t.Fatalf("CreateE2ESession after terminate: %v", err)
 	}
@@ -99,7 +99,7 @@ func TestCreateE2ESession_TerminatingPodThatNeverGoesAwayFailsLoudly(t *testing.
 	s, k8sc, _ := newTestServer(t)
 	ctx := context.Background()
 
-	if _, err := s.CreateE2ESession(ctx, &agentfleetv1.CreateE2ESessionRequest{TaskId: "t1", Repo: "dream-analyst", StartCmd: "bun run dev"}); err != nil {
+	if _, err := s.CreateE2ESession(ctx, &agentfleetv1.CreateE2ESessionRequest{SessionId: "t1", Repo: "dream-analyst", StartCmd: "bun run dev"}); err != nil {
 		t.Fatalf("first CreateE2ESession: %v", err)
 	}
 	markTerminating(t, k8sc, "t1")
@@ -108,7 +108,7 @@ func TestCreateE2ESession_TerminatingPodThatNeverGoesAwayFailsLoudly(t *testing.
 	cancelCtx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
 	defer cancel()
 
-	if _, err := s.CreateE2ESession(cancelCtx, &agentfleetv1.CreateE2ESessionRequest{TaskId: "t1", Repo: "dream-analyst", StartCmd: "bun run dev"}); err == nil {
+	if _, err := s.CreateE2ESession(cancelCtx, &agentfleetv1.CreateE2ESessionRequest{SessionId: "t1", Repo: "dream-analyst", StartCmd: "bun run dev"}); err == nil {
 		t.Fatal("expected an error when the previous pod never finishes terminating, got nil")
 	}
 }

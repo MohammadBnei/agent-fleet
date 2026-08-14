@@ -27,7 +27,7 @@ type Config struct {
 	AlertWebhookToken  string
 	ThotDiscordChannel string
 	ThotRepo           string
-	LokiURL string
+	LokiURL            string
 	// PrometheusURL backs the dashboard's Observability page. The service
 	// name is the kube-prometheus-stack release's, which the chart mangles
 	// to 'kube-p' — not a typo. Confirmed live from infra-bootstrap's

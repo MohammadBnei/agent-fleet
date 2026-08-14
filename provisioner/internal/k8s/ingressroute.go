@@ -90,19 +90,19 @@ func (c *Client) CreateIngressRoute(ctx context.Context, host, taskID string) er
 	}}
 	_, err := c.Dynamic.Resource(ingressRouteGVR).Namespace(c.Namespace).Create(ctx, obj, createOpts())
 	if err = ignoreAlreadyExists(err); err != nil {
-		slog.Error("k8s CreateIngressRoute", "taskId", taskID, "error", err)
+		slog.Error("k8s CreateIngressRoute", "sessionId", taskID, "error", err)
 		return err
 	}
-	slog.Info("k8s CreateIngressRoute", "taskId", taskID)
+	slog.Info("k8s CreateIngressRoute", "sessionId", taskID)
 	return nil
 }
 
 func (c *Client) DeleteIngressRoute(ctx context.Context, taskID string) error {
 	err := ignoreNotFound(c.Dynamic.Resource(ingressRouteGVR).Namespace(c.Namespace).Delete(ctx, ResourceName(taskID), deleteOpts()))
 	if err != nil {
-		slog.Error("k8s DeleteIngressRoute", "taskId", taskID, "error", err)
+		slog.Error("k8s DeleteIngressRoute", "sessionId", taskID, "error", err)
 		return err
 	}
-	slog.Info("k8s DeleteIngressRoute", "taskId", taskID)
+	slog.Info("k8s DeleteIngressRoute", "sessionId", taskID)
 	return nil
 }

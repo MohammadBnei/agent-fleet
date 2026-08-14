@@ -45,14 +45,14 @@ func TestCreateE2ESession_DeadPodIsNotAnExistingSession(t *testing.T) {
 			ctx := context.Background()
 
 			if _, err := s.CreateE2ESession(ctx, &agentfleetv1.CreateE2ESessionRequest{
-				TaskId: "t1", Repo: "dream-analyst", StartCmd: "bun run dev",
+				SessionId: "t1", Repo: "dream-analyst", StartCmd: "bun run dev",
 			}); err != nil {
 				t.Fatalf("first CreateE2ESession: %v", err)
 			}
 			markPhase(t, k8sc, "t1", phase)
 
 			resp, err := s.CreateE2ESession(ctx, &agentfleetv1.CreateE2ESessionRequest{
-				TaskId: "t1", Repo: "dream-analyst", StartCmd: "bun run dev",
+				SessionId: "t1", Repo: "dream-analyst", StartCmd: "bun run dev",
 			})
 			if err != nil {
 				t.Fatalf("CreateE2ESession over a dead pod: %v", err)
@@ -80,7 +80,7 @@ func TestCreateE2ESession_NoStartCmdStillCreatesASandbox(t *testing.T) {
 	ctx := context.Background()
 
 	resp, err := s.CreateE2ESession(ctx, &agentfleetv1.CreateE2ESessionRequest{
-		TaskId: "t1", Repo: "agent-fleet",
+		SessionId: "t1", Repo: "agent-fleet",
 	})
 	if err != nil {
 		t.Fatalf("CreateE2ESession with no start command: %v", err)

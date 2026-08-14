@@ -1,8 +1,8 @@
-package tasks
+package sessions
 
 import "time"
 
-// LiveState is a session's liveness — orthogonal to Task.Status, which is a
+// LiveState is a session's liveness — orthogonal to Session.Status, which is a
 // workflow status (proposed/pending/claimed/running/done/...). A session can
 // be `running` and blocked, or `running` and stalled; those are different
 // questions and conflating them is why "is this one stuck?" previously had
@@ -61,7 +61,7 @@ func humanOriginatedEntry(entryType, from string) bool {
 //
 // `now` is a parameter rather than a time.Now() call so the truth table in
 // liveness_test.go is a table and not a set of sleeps.
-func DeriveLiveState(t *Task, now time.Time, turnStall time.Duration) LiveState {
+func DeriveLiveState(t *Session, now time.Time, turnStall time.Duration) LiveState {
 	if !IsPodPhaseLive(t.PodPhase) {
 		return LiveStateNone
 	}
@@ -69,7 +69,14 @@ func DeriveLiveState(t *Task, now time.Time, turnStall time.Duration) LiveState 
 	// stalled, idle or working, whatever its timestamps say. Nothing will
 	// happen until someone clicks, and reporting it as anything else is
 	// what buries the one session that actually needs attention.
-	if t.AwaitingHuman {
+	//
+	// A count, not the old awaiting_human boolean. That flag was set and
+	// cleared by ANY permission_response, but permissions are a list —
+	// parallel tool calls each get their own seq — so answering one decision
+	// reported the session unblocked while the others were still waiting,
+	// and it sat there stalled with nobody notified. Counting the unanswered
+	// ones cannot go wrong that way (docs/adr/0048).
+	if t.PendingDecisions > 0 {
 		return LiveStateBlocked
 	}
 	if !t.ActivitySeen {

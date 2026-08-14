@@ -10,7 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/dbtest"
-	"github.com/MohammadBnei/agent-fleet/core/internal/tasks"
+	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
 )
 
@@ -52,7 +52,7 @@ func (f *fakeTranscriptStore) LatestSeq(context.Context, string) (int64, error) 
 func TestActivityTrackingStore_TouchesOnAppend(t *testing.T) {
 	pool := newActivityTestPool(t)
 	ctx := context.Background()
-	taskStore := tasks.NewStore(pool)
+	taskStore := sessions.NewStore(pool)
 
 	var taskID string
 	if err := pool.QueryRow(ctx, `
@@ -114,7 +114,7 @@ func waitForAwaitingHuman(t *testing.T, ctx context.Context, pool *pgxpool.Pool,
 func TestActivityTrackingStore_AwaitingHuman(t *testing.T) {
 	pool := newActivityTestPool(t)
 	ctx := context.Background()
-	taskStore := tasks.NewStore(pool)
+	taskStore := sessions.NewStore(pool)
 
 	seed := func() string {
 		var taskID string

@@ -25,14 +25,11 @@ const (
 	CoreService_AskUserQuestion_FullMethodName     = "/agentfleet.v1.CoreService/AskUserQuestion"
 	CoreService_RequestE2EEnv_FullMethodName       = "/agentfleet.v1.CoreService/RequestE2eEnv"
 	CoreService_KillE2EEnv_FullMethodName          = "/agentfleet.v1.CoreService/KillE2eEnv"
-	CoreService_GetTask_FullMethodName             = "/agentfleet.v1.CoreService/GetTask"
+	CoreService_GetSession_FullMethodName          = "/agentfleet.v1.CoreService/GetSession"
 	CoreService_SetPermissionMode_FullMethodName   = "/agentfleet.v1.CoreService/SetPermissionMode"
-	CoreService_Heartbeat_FullMethodName           = "/agentfleet.v1.CoreService/Heartbeat"
-	CoreService_SetTaskStatus_FullMethodName       = "/agentfleet.v1.CoreService/SetTaskStatus"
 	CoreService_AppendJournal_FullMethodName       = "/agentfleet.v1.CoreService/AppendJournal"
 	CoreService_SearchJournal_FullMethodName       = "/agentfleet.v1.CoreService/SearchJournal"
-	CoreService_SaveSessionId_FullMethodName       = "/agentfleet.v1.CoreService/SaveSessionId"
-	CoreService_StillHoldsLease_FullMethodName     = "/agentfleet.v1.CoreService/StillHoldsLease"
+	CoreService_SaveAgentSessionId_FullMethodName  = "/agentfleet.v1.CoreService/SaveAgentSessionId"
 	CoreService_PushToolTelemetry_FullMethodName   = "/agentfleet.v1.CoreService/PushToolTelemetry"
 	CoreService_StreamHumanMessages_FullMethodName = "/agentfleet.v1.CoreService/StreamHumanMessages"
 	CoreService_ListFiles_FullMethodName           = "/agentfleet.v1.CoreService/ListFiles"
@@ -40,7 +37,7 @@ const (
 	CoreService_GetFileDownloadUrl_FullMethodName  = "/agentfleet.v1.CoreService/GetFileDownloadUrl"
 	CoreService_DeleteFile_FullMethodName          = "/agentfleet.v1.CoreService/DeleteFile"
 	CoreService_ViewLogs_FullMethodName            = "/agentfleet.v1.CoreService/ViewLogs"
-	CoreService_ListSessions_FullMethodName        = "/agentfleet.v1.CoreService/ListSessions"
+	CoreService_ListPeerSessions_FullMethodName    = "/agentfleet.v1.CoreService/ListPeerSessions"
 	CoreService_PromptSession_FullMethodName       = "/agentfleet.v1.CoreService/PromptSession"
 	CoreService_WaitForSessionState_FullMethodName = "/agentfleet.v1.CoreService/WaitForSessionState"
 )
@@ -61,23 +58,23 @@ type CoreServiceClient interface {
 	AskUserQuestion(ctx context.Context, in *AskUserQuestionRequest, opts ...grpc.CallOption) (*AskUserQuestionResponse, error)
 	RequestE2EEnv(ctx context.Context, in *RequestE2EEnvRequest, opts ...grpc.CallOption) (*RequestE2EEnvResponse, error)
 	KillE2EEnv(ctx context.Context, in *KillE2EEnvRequest, opts ...grpc.CallOption) (*KillE2EEnvResponse, error)
-	// Lets a worker pod fetch its own fresh task row on startup instead of
+	// Lets a worker pod fetch its own fresh session row on startup instead of
 	// relying on stale environment variables — same message shapes
 	// DashboardService.GetTask uses, different caller (docs/adr/0029).
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
-	GetTask(ctx context.Context, in *GetTaskRequest, opts ...grpc.CallOption) (*GetTaskResponse, error)
+	GetSession(ctx context.Context, in *GetSessionRequest, opts ...grpc.CallOption) (*GetSessionResponse, error)
 	// A worker pod persisting its own permission mode (initial "default" or a
 	// change it made itself) — a plain column write, unlike
 	// DashboardService.SetPermissionMode which also notifies a *different*,
 	// already-running worker via the transcript.
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	SetPermissionMode(ctx context.Context, in *SetPermissionModeRequest, opts ...grpc.CallOption) (*SetPermissionModeResponse, error)
-	Heartbeat(ctx context.Context, in *HeartbeatRequest, opts ...grpc.CallOption) (*HeartbeatResponse, error)
-	SetTaskStatus(ctx context.Context, in *SetTaskStatusRequest, opts ...grpc.CallOption) (*SetTaskStatusResponse, error)
+	// Heartbeat, SetTaskStatus and StillHoldsLease used to be here. All three
+	// are deleted in docs/adr/0048 — see their message definitions above for
+	// why each stopped being a question worth asking.
 	AppendJournal(ctx context.Context, in *AppendJournalRequest, opts ...grpc.CallOption) (*AppendJournalResponse, error)
 	SearchJournal(ctx context.Context, in *SearchJournalRequest, opts ...grpc.CallOption) (*SearchJournalResponse, error)
-	SaveSessionId(ctx context.Context, in *SaveSessionIdRequest, opts ...grpc.CallOption) (*SaveSessionIdResponse, error)
-	StillHoldsLease(ctx context.Context, in *StillHoldsLeaseRequest, opts ...grpc.CallOption) (*StillHoldsLeaseResponse, error)
+	SaveAgentSessionId(ctx context.Context, in *SaveAgentSessionIdRequest, opts ...grpc.CallOption) (*SaveAgentSessionIdResponse, error)
 	PushToolTelemetry(ctx context.Context, in *PushToolTelemetryRequest, opts ...grpc.CallOption) (*PushToolTelemetryResponse, error)
 	// Streams transcript.proto's TranscriptEntry directly, same precedent
 	// dashboard.proto's StreamTranscript already set.
@@ -97,7 +94,7 @@ type CoreServiceClient interface {
 	// docs/adr/0020 point 4: the path is agent -> its own sidecar (MCP) ->
 	// core (here) -> the target session. There is no worker-to-worker link
 	// and no worker-to-provisioner link.
-	ListSessions(ctx context.Context, in *ListSessionsRequest, opts ...grpc.CallOption) (*ListSessionsResponse, error)
+	ListPeerSessions(ctx context.Context, in *ListPeerSessionsRequest, opts ...grpc.CallOption) (*ListPeerSessionsResponse, error)
 	PromptSession(ctx context.Context, in *PromptSessionRequest, opts ...grpc.CallOption) (*PromptSessionResponse, error)
 	WaitForSessionState(ctx context.Context, in *WaitForSessionStateRequest, opts ...grpc.CallOption) (*WaitForSessionStateResponse, error)
 }
@@ -173,10 +170,10 @@ func (c *coreServiceClient) KillE2EEnv(ctx context.Context, in *KillE2EEnvReques
 	return out, nil
 }
 
-func (c *coreServiceClient) GetTask(ctx context.Context, in *GetTaskRequest, opts ...grpc.CallOption) (*GetTaskResponse, error) {
+func (c *coreServiceClient) GetSession(ctx context.Context, in *GetSessionRequest, opts ...grpc.CallOption) (*GetSessionResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(GetTaskResponse)
-	err := c.cc.Invoke(ctx, CoreService_GetTask_FullMethodName, in, out, cOpts...)
+	out := new(GetSessionResponse)
+	err := c.cc.Invoke(ctx, CoreService_GetSession_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -187,26 +184,6 @@ func (c *coreServiceClient) SetPermissionMode(ctx context.Context, in *SetPermis
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(SetPermissionModeResponse)
 	err := c.cc.Invoke(ctx, CoreService_SetPermissionMode_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *coreServiceClient) Heartbeat(ctx context.Context, in *HeartbeatRequest, opts ...grpc.CallOption) (*HeartbeatResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(HeartbeatResponse)
-	err := c.cc.Invoke(ctx, CoreService_Heartbeat_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *coreServiceClient) SetTaskStatus(ctx context.Context, in *SetTaskStatusRequest, opts ...grpc.CallOption) (*SetTaskStatusResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(SetTaskStatusResponse)
-	err := c.cc.Invoke(ctx, CoreService_SetTaskStatus_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -233,20 +210,10 @@ func (c *coreServiceClient) SearchJournal(ctx context.Context, in *SearchJournal
 	return out, nil
 }
 
-func (c *coreServiceClient) SaveSessionId(ctx context.Context, in *SaveSessionIdRequest, opts ...grpc.CallOption) (*SaveSessionIdResponse, error) {
+func (c *coreServiceClient) SaveAgentSessionId(ctx context.Context, in *SaveAgentSessionIdRequest, opts ...grpc.CallOption) (*SaveAgentSessionIdResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(SaveSessionIdResponse)
-	err := c.cc.Invoke(ctx, CoreService_SaveSessionId_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *coreServiceClient) StillHoldsLease(ctx context.Context, in *StillHoldsLeaseRequest, opts ...grpc.CallOption) (*StillHoldsLeaseResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(StillHoldsLeaseResponse)
-	err := c.cc.Invoke(ctx, CoreService_StillHoldsLease_FullMethodName, in, out, cOpts...)
+	out := new(SaveAgentSessionIdResponse)
+	err := c.cc.Invoke(ctx, CoreService_SaveAgentSessionId_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -332,10 +299,10 @@ func (c *coreServiceClient) ViewLogs(ctx context.Context, in *ViewLogsRequest, o
 	return out, nil
 }
 
-func (c *coreServiceClient) ListSessions(ctx context.Context, in *ListSessionsRequest, opts ...grpc.CallOption) (*ListSessionsResponse, error) {
+func (c *coreServiceClient) ListPeerSessions(ctx context.Context, in *ListPeerSessionsRequest, opts ...grpc.CallOption) (*ListPeerSessionsResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(ListSessionsResponse)
-	err := c.cc.Invoke(ctx, CoreService_ListSessions_FullMethodName, in, out, cOpts...)
+	out := new(ListPeerSessionsResponse)
+	err := c.cc.Invoke(ctx, CoreService_ListPeerSessions_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -378,23 +345,23 @@ type CoreServiceServer interface {
 	AskUserQuestion(context.Context, *AskUserQuestionRequest) (*AskUserQuestionResponse, error)
 	RequestE2EEnv(context.Context, *RequestE2EEnvRequest) (*RequestE2EEnvResponse, error)
 	KillE2EEnv(context.Context, *KillE2EEnvRequest) (*KillE2EEnvResponse, error)
-	// Lets a worker pod fetch its own fresh task row on startup instead of
+	// Lets a worker pod fetch its own fresh session row on startup instead of
 	// relying on stale environment variables — same message shapes
 	// DashboardService.GetTask uses, different caller (docs/adr/0029).
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
-	GetTask(context.Context, *GetTaskRequest) (*GetTaskResponse, error)
+	GetSession(context.Context, *GetSessionRequest) (*GetSessionResponse, error)
 	// A worker pod persisting its own permission mode (initial "default" or a
 	// change it made itself) — a plain column write, unlike
 	// DashboardService.SetPermissionMode which also notifies a *different*,
 	// already-running worker via the transcript.
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	SetPermissionMode(context.Context, *SetPermissionModeRequest) (*SetPermissionModeResponse, error)
-	Heartbeat(context.Context, *HeartbeatRequest) (*HeartbeatResponse, error)
-	SetTaskStatus(context.Context, *SetTaskStatusRequest) (*SetTaskStatusResponse, error)
+	// Heartbeat, SetTaskStatus and StillHoldsLease used to be here. All three
+	// are deleted in docs/adr/0048 — see their message definitions above for
+	// why each stopped being a question worth asking.
 	AppendJournal(context.Context, *AppendJournalRequest) (*AppendJournalResponse, error)
 	SearchJournal(context.Context, *SearchJournalRequest) (*SearchJournalResponse, error)
-	SaveSessionId(context.Context, *SaveSessionIdRequest) (*SaveSessionIdResponse, error)
-	StillHoldsLease(context.Context, *StillHoldsLeaseRequest) (*StillHoldsLeaseResponse, error)
+	SaveAgentSessionId(context.Context, *SaveAgentSessionIdRequest) (*SaveAgentSessionIdResponse, error)
 	PushToolTelemetry(context.Context, *PushToolTelemetryRequest) (*PushToolTelemetryResponse, error)
 	// Streams transcript.proto's TranscriptEntry directly, same precedent
 	// dashboard.proto's StreamTranscript already set.
@@ -414,7 +381,7 @@ type CoreServiceServer interface {
 	// docs/adr/0020 point 4: the path is agent -> its own sidecar (MCP) ->
 	// core (here) -> the target session. There is no worker-to-worker link
 	// and no worker-to-provisioner link.
-	ListSessions(context.Context, *ListSessionsRequest) (*ListSessionsResponse, error)
+	ListPeerSessions(context.Context, *ListPeerSessionsRequest) (*ListPeerSessionsResponse, error)
 	PromptSession(context.Context, *PromptSessionRequest) (*PromptSessionResponse, error)
 	WaitForSessionState(context.Context, *WaitForSessionStateRequest) (*WaitForSessionStateResponse, error)
 	mustEmbedUnimplementedCoreServiceServer()
@@ -445,17 +412,11 @@ func (UnimplementedCoreServiceServer) RequestE2EEnv(context.Context, *RequestE2E
 func (UnimplementedCoreServiceServer) KillE2EEnv(context.Context, *KillE2EEnvRequest) (*KillE2EEnvResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method KillE2EEnv not implemented")
 }
-func (UnimplementedCoreServiceServer) GetTask(context.Context, *GetTaskRequest) (*GetTaskResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method GetTask not implemented")
+func (UnimplementedCoreServiceServer) GetSession(context.Context, *GetSessionRequest) (*GetSessionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetSession not implemented")
 }
 func (UnimplementedCoreServiceServer) SetPermissionMode(context.Context, *SetPermissionModeRequest) (*SetPermissionModeResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SetPermissionMode not implemented")
-}
-func (UnimplementedCoreServiceServer) Heartbeat(context.Context, *HeartbeatRequest) (*HeartbeatResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method Heartbeat not implemented")
-}
-func (UnimplementedCoreServiceServer) SetTaskStatus(context.Context, *SetTaskStatusRequest) (*SetTaskStatusResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method SetTaskStatus not implemented")
 }
 func (UnimplementedCoreServiceServer) AppendJournal(context.Context, *AppendJournalRequest) (*AppendJournalResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method AppendJournal not implemented")
@@ -463,11 +424,8 @@ func (UnimplementedCoreServiceServer) AppendJournal(context.Context, *AppendJour
 func (UnimplementedCoreServiceServer) SearchJournal(context.Context, *SearchJournalRequest) (*SearchJournalResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SearchJournal not implemented")
 }
-func (UnimplementedCoreServiceServer) SaveSessionId(context.Context, *SaveSessionIdRequest) (*SaveSessionIdResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method SaveSessionId not implemented")
-}
-func (UnimplementedCoreServiceServer) StillHoldsLease(context.Context, *StillHoldsLeaseRequest) (*StillHoldsLeaseResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method StillHoldsLease not implemented")
+func (UnimplementedCoreServiceServer) SaveAgentSessionId(context.Context, *SaveAgentSessionIdRequest) (*SaveAgentSessionIdResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SaveAgentSessionId not implemented")
 }
 func (UnimplementedCoreServiceServer) PushToolTelemetry(context.Context, *PushToolTelemetryRequest) (*PushToolTelemetryResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method PushToolTelemetry not implemented")
@@ -490,8 +448,8 @@ func (UnimplementedCoreServiceServer) DeleteFile(context.Context, *DeleteFileReq
 func (UnimplementedCoreServiceServer) ViewLogs(context.Context, *ViewLogsRequest) (*ViewLogsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ViewLogs not implemented")
 }
-func (UnimplementedCoreServiceServer) ListSessions(context.Context, *ListSessionsRequest) (*ListSessionsResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method ListSessions not implemented")
+func (UnimplementedCoreServiceServer) ListPeerSessions(context.Context, *ListPeerSessionsRequest) (*ListPeerSessionsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListPeerSessions not implemented")
 }
 func (UnimplementedCoreServiceServer) PromptSession(context.Context, *PromptSessionRequest) (*PromptSessionResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method PromptSession not implemented")
@@ -617,20 +575,20 @@ func _CoreService_KillE2EEnv_Handler(srv interface{}, ctx context.Context, dec f
 	return interceptor(ctx, in, info, handler)
 }
 
-func _CoreService_GetTask_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(GetTaskRequest)
+func _CoreService_GetSession_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetSessionRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(CoreServiceServer).GetTask(ctx, in)
+		return srv.(CoreServiceServer).GetSession(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: CoreService_GetTask_FullMethodName,
+		FullMethod: CoreService_GetSession_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(CoreServiceServer).GetTask(ctx, req.(*GetTaskRequest))
+		return srv.(CoreServiceServer).GetSession(ctx, req.(*GetSessionRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -649,42 +607,6 @@ func _CoreService_SetPermissionMode_Handler(srv interface{}, ctx context.Context
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(CoreServiceServer).SetPermissionMode(ctx, req.(*SetPermissionModeRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _CoreService_Heartbeat_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(HeartbeatRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(CoreServiceServer).Heartbeat(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: CoreService_Heartbeat_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(CoreServiceServer).Heartbeat(ctx, req.(*HeartbeatRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _CoreService_SetTaskStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(SetTaskStatusRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(CoreServiceServer).SetTaskStatus(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: CoreService_SetTaskStatus_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(CoreServiceServer).SetTaskStatus(ctx, req.(*SetTaskStatusRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -725,38 +647,20 @@ func _CoreService_SearchJournal_Handler(srv interface{}, ctx context.Context, de
 	return interceptor(ctx, in, info, handler)
 }
 
-func _CoreService_SaveSessionId_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(SaveSessionIdRequest)
+func _CoreService_SaveAgentSessionId_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SaveAgentSessionIdRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(CoreServiceServer).SaveSessionId(ctx, in)
+		return srv.(CoreServiceServer).SaveAgentSessionId(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: CoreService_SaveSessionId_FullMethodName,
+		FullMethod: CoreService_SaveAgentSessionId_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(CoreServiceServer).SaveSessionId(ctx, req.(*SaveSessionIdRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _CoreService_StillHoldsLease_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(StillHoldsLeaseRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(CoreServiceServer).StillHoldsLease(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: CoreService_StillHoldsLease_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(CoreServiceServer).StillHoldsLease(ctx, req.(*StillHoldsLeaseRequest))
+		return srv.(CoreServiceServer).SaveAgentSessionId(ctx, req.(*SaveAgentSessionIdRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -880,20 +784,20 @@ func _CoreService_ViewLogs_Handler(srv interface{}, ctx context.Context, dec fun
 	return interceptor(ctx, in, info, handler)
 }
 
-func _CoreService_ListSessions_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ListSessionsRequest)
+func _CoreService_ListPeerSessions_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListPeerSessionsRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(CoreServiceServer).ListSessions(ctx, in)
+		return srv.(CoreServiceServer).ListPeerSessions(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: CoreService_ListSessions_FullMethodName,
+		FullMethod: CoreService_ListPeerSessions_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(CoreServiceServer).ListSessions(ctx, req.(*ListSessionsRequest))
+		return srv.(CoreServiceServer).ListPeerSessions(ctx, req.(*ListPeerSessionsRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -962,20 +866,12 @@ var CoreService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _CoreService_KillE2EEnv_Handler,
 		},
 		{
-			MethodName: "GetTask",
-			Handler:    _CoreService_GetTask_Handler,
+			MethodName: "GetSession",
+			Handler:    _CoreService_GetSession_Handler,
 		},
 		{
 			MethodName: "SetPermissionMode",
 			Handler:    _CoreService_SetPermissionMode_Handler,
-		},
-		{
-			MethodName: "Heartbeat",
-			Handler:    _CoreService_Heartbeat_Handler,
-		},
-		{
-			MethodName: "SetTaskStatus",
-			Handler:    _CoreService_SetTaskStatus_Handler,
 		},
 		{
 			MethodName: "AppendJournal",
@@ -986,12 +882,8 @@ var CoreService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _CoreService_SearchJournal_Handler,
 		},
 		{
-			MethodName: "SaveSessionId",
-			Handler:    _CoreService_SaveSessionId_Handler,
-		},
-		{
-			MethodName: "StillHoldsLease",
-			Handler:    _CoreService_StillHoldsLease_Handler,
+			MethodName: "SaveAgentSessionId",
+			Handler:    _CoreService_SaveAgentSessionId_Handler,
 		},
 		{
 			MethodName: "PushToolTelemetry",
@@ -1018,8 +910,8 @@ var CoreService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _CoreService_ViewLogs_Handler,
 		},
 		{
-			MethodName: "ListSessions",
-			Handler:    _CoreService_ListSessions_Handler,
+			MethodName: "ListPeerSessions",
+			Handler:    _CoreService_ListPeerSessions_Handler,
 		},
 		{
 			MethodName: "PromptSession",

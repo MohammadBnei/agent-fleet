@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file agentfleet/v1/provisioner.proto.
  */
 export const file_agentfleet_v1_provisioner: GenFile = /*@__PURE__*/
-  fileDesc("Ch9hZ2VudGZsZWV0L3YxL3Byb3Zpc2lvbmVyLnByb3RvEg1hZ2VudGZsZWV0LnYxIk4KEVNlcnZpY2VJbmdyZWRpZW50EgsKA2tleRgBIAEoCRIsCgpzY29wZV9tb2RlGAIgASgOMhguYWdlbnRmbGVldC52MS5TY29wZU1vZGUibwoVS2lsbEUyZVNlc3Npb25SZXF1ZXN0Eg8KB3Rhc2tfaWQYASABKAkSFwoPaWRlbXBvdGVuY3lfa2V5GAIgASgJEgwKBHJlcG8YAyABKAkSHgoWYWxzb190ZWFyZG93bl9zZXJ2aWNlcxgEIAEoCCJEChZLaWxsRTJlU2Vzc2lvblJlc3BvbnNlEg4KBmtpbGxlZBgBIAEoCBIaChJzZXJ2aWNlc190b3JuX2Rvd24YAiADKAkiLQoaR2V0RTJlU2Vzc2lvblN0YXR1c1JlcXVlc3QSDwoHdGFza19pZBgBIAEoCSLtAQobR2V0RTJlU2Vzc2lvblN0YXR1c1Jlc3BvbnNlEg4KBnN0YXR1cxgBIAEoCRITCgtwcmV2aWV3X3VybBgCIAEoCRIRCglzdGFydF9jbWQYAyABKAkSEQoJcG9kX3BoYXNlGAQgASgJEhEKCWFwcF9yZWFkeRgFIAEoCBIQCghyZXN0YXJ0cxgGIAEoBRISCgpzdGFydGVkX2F0GAcgASgJEhcKD2NvZGVfc2VydmVyX3VybBgIIAEoCRIxCgllbmRwb2ludHMYCSADKAsyHi5hZ2VudGZsZWV0LnYxLlNlcnZpY2VFbmRwb2ludCJfCg9TZXJ2aWNlRW5kcG9pbnQSDAoEbmFtZRgBIAEoCRIPCgdhZGRyZXNzGAIgASgJEhAKCHByb3RvY29sGAMgASgJEgwKBHBhdGgYBCABKAkSDQoFdG9rZW4YBSABKAkinQEKF0NyZWF0ZUUyZVNlc3Npb25SZXF1ZXN0Eg8KB3Rhc2tfaWQYASABKAkSDAoEcmVwbxgCIAEoCRIRCglzdGFydF9jbWQYAyABKAkSEQoJdG9vbF9rZXlzGAQgAygJEj0KE3NlcnZpY2VfaW5ncmVkaWVudHMYBSADKAsyIC5hZ2VudGZsZWV0LnYxLlNlcnZpY2VJbmdyZWRpZW50InIKGENyZWF0ZUUyZVNlc3Npb25SZXNwb25zZRIOCgZzdGF0dXMYASABKAkSEwoLcHJldmlld191cmwYAiABKAkSMQoJZW5kcG9pbnRzGAMgAygLMh4uYWdlbnRmbGVldC52MS5TZXJ2aWNlRW5kcG9pbnQinQIKFkNyZWF0ZVdvcmtlclBvZFJlcXVlc3QSDwoHdGFza19pZBgBIAEoCRIMCgRyZXBvGAIgASgJEhAKCHJlcG9fdXJsGAMgASgJEhMKC2Jhc2VfYnJhbmNoGAQgASgJEhMKC2Rlc2NyaXB0aW9uGAUgASgJEhAKCGxlYXNlX2lkGAYgASgJEhkKEXJlc3VtZV9zZXNzaW9uX2lkGAcgASgJEhcKD3Jlc3VtZV9mcm9tX3NlcRgIIAEoAxIQCghndWlkYW5jZRgJIAEoCRIRCgl0b29sX2tleXMYCiADKAkSPQoTc2VydmljZV9pbmdyZWRpZW50cxgLIAMoCzIgLmFnZW50ZmxlZXQudjEuU2VydmljZUluZ3JlZGllbnQiKwoXQ3JlYXRlV29ya2VyUG9kUmVzcG9uc2USEAoIcG9kX25hbWUYASABKAkiUwoWVGVhckRvd25TZXNzaW9uUmVxdWVzdBIPCgd0YXNrX2lkGAEgASgJEigKBGtpbmQYAiABKA4yGi5hZ2VudGZsZWV0LnYxLlNlc3Npb25LaW5kIiwKF1RlYXJEb3duU2Vzc2lvblJlc3BvbnNlEhEKCXRvcm5fZG93bhgBIAEoCCIWChRMaXN0V29ya3RyZWVzUmVxdWVzdCKgAQoMV29ya3RyZWVJbmZvEg8KB3Rhc2tfaWQYASABKAkSDAoEcmVwbxgCIAEoCRIOCgZicmFuY2gYAyABKAkSFgoOdXBzdHJlYW1fdHJhY2sYBCABKAkSEgoKbXRpbWVfdW5peBgFIAEoAxIMCgRwYXRoGAYgASgJEhMKC2RpcnR5X2ZpbGVzGAcgASgFEhIKCnNpemVfYnl0ZXMYCCABKAMieAoVTGlzdFdvcmt0cmVlc1Jlc3BvbnNlEi4KCXdvcmt0cmVlcxgBIAMoCzIbLmFnZW50ZmxlZXQudjEuV29ya3RyZWVJbmZvEhcKD3B2Y190b3RhbF9ieXRlcxgCIAEoBBIWCg5wdmNfZnJlZV9ieXRlcxgDIAEoBCJSChVEZWxldGVXb3JrdHJlZVJlcXVlc3QSDwoHdGFza19pZBgBIAEoCRIMCgRyZXBvGAIgASgJEhoKEmFsc29fZGVsZXRlX2JyYW5jaBgDIAEoCCIpChZEZWxldGVXb3JrdHJlZVJlc3BvbnNlEg8KB2RlbGV0ZWQYASABKAgqegoJU2NvcGVNb2RlEhoKFlNDT1BFX01PREVfVU5TUEVDSUZJRUQQABIZChVTQ09QRV9NT0RFX1BPRF9TQ09QRUQQARIaChZTQ09QRV9NT0RFX1RBU0tfU0NPUEVEEAISGgoWU0NPUEVfTU9ERV9SRVBPX1NDT1BFRBADKloKC1Nlc3Npb25LaW5kEhwKGFNFU1NJT05fS0lORF9VTlNQRUNJRklFRBAAEhcKE1NFU1NJT05fS0lORF9XT1JLRVIQARIUChBTRVNTSU9OX0tJTkRfRTJFEAIyxQUKElByb3Zpc2lvbmVyU2VydmljZRJdCg5LaWxsRTJlU2Vzc2lvbhIkLmFnZW50ZmxlZXQudjEuS2lsbEUyZVNlc3Npb25SZXF1ZXN0GiUuYWdlbnRmbGVldC52MS5LaWxsRTJlU2Vzc2lvblJlc3BvbnNlEmwKE0dldEUyZVNlc3Npb25TdGF0dXMSKS5hZ2VudGZsZWV0LnYxLkdldEUyZVNlc3Npb25TdGF0dXNSZXF1ZXN0GiouYWdlbnRmbGVldC52MS5HZXRFMmVTZXNzaW9uU3RhdHVzUmVzcG9uc2USYwoQQ3JlYXRlRTJlU2Vzc2lvbhImLmFnZW50ZmxlZXQudjEuQ3JlYXRlRTJlU2Vzc2lvblJlcXVlc3QaJy5hZ2VudGZsZWV0LnYxLkNyZWF0ZUUyZVNlc3Npb25SZXNwb25zZRJgCg9DcmVhdGVXb3JrZXJQb2QSJS5hZ2VudGZsZWV0LnYxLkNyZWF0ZVdvcmtlclBvZFJlcXVlc3QaJi5hZ2VudGZsZWV0LnYxLkNyZWF0ZVdvcmtlclBvZFJlc3BvbnNlEmAKD1RlYXJEb3duU2Vzc2lvbhIlLmFnZW50ZmxlZXQudjEuVGVhckRvd25TZXNzaW9uUmVxdWVzdBomLmFnZW50ZmxlZXQudjEuVGVhckRvd25TZXNzaW9uUmVzcG9uc2USWgoNTGlzdFdvcmt0cmVlcxIjLmFnZW50ZmxlZXQudjEuTGlzdFdvcmt0cmVlc1JlcXVlc3QaJC5hZ2VudGZsZWV0LnYxLkxpc3RXb3JrdHJlZXNSZXNwb25zZRJdCg5EZWxldGVXb3JrdHJlZRIkLmFnZW50ZmxlZXQudjEuRGVsZXRlV29ya3RyZWVSZXF1ZXN0GiUuYWdlbnRmbGVldC52MS5EZWxldGVXb3JrdHJlZVJlc3BvbnNlQk1aS2dpdGh1Yi5jb20vTW9oYW1tYWRCbmVpL2FnZW50LWZsZWV0L3Byb3RvL2dlbi9nby9hZ2VudGZsZWV0L3YxO2FnZW50ZmxlZXR2MWIGcHJvdG8z");
+  fileDesc("Ch9hZ2VudGZsZWV0L3YxL3Byb3Zpc2lvbmVyLnByb3RvEg1hZ2VudGZsZWV0LnYxIk4KEVNlcnZpY2VJbmdyZWRpZW50EgsKA2tleRgBIAEoCRIsCgpzY29wZV9tb2RlGAIgASgOMhguYWdlbnRmbGVldC52MS5TY29wZU1vZGUicgoVS2lsbEUyZVNlc3Npb25SZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkSFwoPaWRlbXBvdGVuY3lfa2V5GAIgASgJEgwKBHJlcG8YAyABKAkSHgoWYWxzb190ZWFyZG93bl9zZXJ2aWNlcxgEIAEoCCJEChZLaWxsRTJlU2Vzc2lvblJlc3BvbnNlEg4KBmtpbGxlZBgBIAEoCBIaChJzZXJ2aWNlc190b3JuX2Rvd24YAiADKAkiMAoaR2V0RTJlU2Vzc2lvblN0YXR1c1JlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCSLtAQobR2V0RTJlU2Vzc2lvblN0YXR1c1Jlc3BvbnNlEg4KBnN0YXR1cxgBIAEoCRITCgtwcmV2aWV3X3VybBgCIAEoCRIRCglzdGFydF9jbWQYAyABKAkSEQoJcG9kX3BoYXNlGAQgASgJEhEKCWFwcF9yZWFkeRgFIAEoCBIQCghyZXN0YXJ0cxgGIAEoBRISCgpzdGFydGVkX2F0GAcgASgJEhcKD2NvZGVfc2VydmVyX3VybBgIIAEoCRIxCgllbmRwb2ludHMYCSADKAsyHi5hZ2VudGZsZWV0LnYxLlNlcnZpY2VFbmRwb2ludCJfCg9TZXJ2aWNlRW5kcG9pbnQSDAoEbmFtZRgBIAEoCRIPCgdhZGRyZXNzGAIgASgJEhAKCHByb3RvY29sGAMgASgJEgwKBHBhdGgYBCABKAkSDQoFdG9rZW4YBSABKAkioAEKF0NyZWF0ZUUyZVNlc3Npb25SZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkSDAoEcmVwbxgCIAEoCRIRCglzdGFydF9jbWQYAyABKAkSEQoJdG9vbF9rZXlzGAQgAygJEj0KE3NlcnZpY2VfaW5ncmVkaWVudHMYBSADKAsyIC5hZ2VudGZsZWV0LnYxLlNlcnZpY2VJbmdyZWRpZW50InIKGENyZWF0ZUUyZVNlc3Npb25SZXNwb25zZRIOCgZzdGF0dXMYASABKAkSEwoLcHJldmlld191cmwYAiABKAkSMQoJZW5kcG9pbnRzGAMgAygLMh4uYWdlbnRmbGVldC52MS5TZXJ2aWNlRW5kcG9pbnQioAIKFkNyZWF0ZVdvcmtlclBvZFJlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCRIMCgRyZXBvGAIgASgJEhAKCHJlcG9fdXJsGAMgASgJEhMKC2Jhc2VfYnJhbmNoGAQgASgJEhMKC2Rlc2NyaXB0aW9uGAUgASgJEhAKCGxlYXNlX2lkGAYgASgJEhkKEXJlc3VtZV9zZXNzaW9uX2lkGAcgASgJEhcKD3Jlc3VtZV9mcm9tX3NlcRgIIAEoAxIQCghndWlkYW5jZRgJIAEoCRIRCgl0b29sX2tleXMYCiADKAkSPQoTc2VydmljZV9pbmdyZWRpZW50cxgLIAMoCzIgLmFnZW50ZmxlZXQudjEuU2VydmljZUluZ3JlZGllbnQiKwoXQ3JlYXRlV29ya2VyUG9kUmVzcG9uc2USEAoIcG9kX25hbWUYASABKAkiVgoWVGVhckRvd25TZXNzaW9uUmVxdWVzdBISCgpzZXNzaW9uX2lkGAEgASgJEigKBGtpbmQYAiABKA4yGi5hZ2VudGZsZWV0LnYxLlNlc3Npb25LaW5kIiwKF1RlYXJEb3duU2Vzc2lvblJlc3BvbnNlEhEKCXRvcm5fZG93bhgBIAEoCCIWChRMaXN0V29ya3RyZWVzUmVxdWVzdCKjAQoMV29ya3RyZWVJbmZvEhIKCnNlc3Npb25faWQYASABKAkSDAoEcmVwbxgCIAEoCRIOCgZicmFuY2gYAyABKAkSFgoOdXBzdHJlYW1fdHJhY2sYBCABKAkSEgoKbXRpbWVfdW5peBgFIAEoAxIMCgRwYXRoGAYgASgJEhMKC2RpcnR5X2ZpbGVzGAcgASgFEhIKCnNpemVfYnl0ZXMYCCABKAMieAoVTGlzdFdvcmt0cmVlc1Jlc3BvbnNlEi4KCXdvcmt0cmVlcxgBIAMoCzIbLmFnZW50ZmxlZXQudjEuV29ya3RyZWVJbmZvEhcKD3B2Y190b3RhbF9ieXRlcxgCIAEoBBIWCg5wdmNfZnJlZV9ieXRlcxgDIAEoBCJVChVEZWxldGVXb3JrdHJlZVJlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCRIMCgRyZXBvGAIgASgJEhoKEmFsc29fZGVsZXRlX2JyYW5jaBgDIAEoCCIpChZEZWxldGVXb3JrdHJlZVJlc3BvbnNlEg8KB2RlbGV0ZWQYASABKAgqegoJU2NvcGVNb2RlEhoKFlNDT1BFX01PREVfVU5TUEVDSUZJRUQQABIZChVTQ09QRV9NT0RFX1BPRF9TQ09QRUQQARIaChZTQ09QRV9NT0RFX1RBU0tfU0NPUEVEEAISGgoWU0NPUEVfTU9ERV9SRVBPX1NDT1BFRBADKloKC1Nlc3Npb25LaW5kEhwKGFNFU1NJT05fS0lORF9VTlNQRUNJRklFRBAAEhcKE1NFU1NJT05fS0lORF9XT1JLRVIQARIUChBTRVNTSU9OX0tJTkRfRTJFEAIyxQUKElByb3Zpc2lvbmVyU2VydmljZRJdCg5LaWxsRTJlU2Vzc2lvbhIkLmFnZW50ZmxlZXQudjEuS2lsbEUyZVNlc3Npb25SZXF1ZXN0GiUuYWdlbnRmbGVldC52MS5LaWxsRTJlU2Vzc2lvblJlc3BvbnNlEmwKE0dldEUyZVNlc3Npb25TdGF0dXMSKS5hZ2VudGZsZWV0LnYxLkdldEUyZVNlc3Npb25TdGF0dXNSZXF1ZXN0GiouYWdlbnRmbGVldC52MS5HZXRFMmVTZXNzaW9uU3RhdHVzUmVzcG9uc2USYwoQQ3JlYXRlRTJlU2Vzc2lvbhImLmFnZW50ZmxlZXQudjEuQ3JlYXRlRTJlU2Vzc2lvblJlcXVlc3QaJy5hZ2VudGZsZWV0LnYxLkNyZWF0ZUUyZVNlc3Npb25SZXNwb25zZRJgCg9DcmVhdGVXb3JrZXJQb2QSJS5hZ2VudGZsZWV0LnYxLkNyZWF0ZVdvcmtlclBvZFJlcXVlc3QaJi5hZ2VudGZsZWV0LnYxLkNyZWF0ZVdvcmtlclBvZFJlc3BvbnNlEmAKD1RlYXJEb3duU2Vzc2lvbhIlLmFnZW50ZmxlZXQudjEuVGVhckRvd25TZXNzaW9uUmVxdWVzdBomLmFnZW50ZmxlZXQudjEuVGVhckRvd25TZXNzaW9uUmVzcG9uc2USWgoNTGlzdFdvcmt0cmVlcxIjLmFnZW50ZmxlZXQudjEuTGlzdFdvcmt0cmVlc1JlcXVlc3QaJC5hZ2VudGZsZWV0LnYxLkxpc3RXb3JrdHJlZXNSZXNwb25zZRJdCg5EZWxldGVXb3JrdHJlZRIkLmFnZW50ZmxlZXQudjEuRGVsZXRlV29ya3RyZWVSZXF1ZXN0GiUuYWdlbnRmbGVldC52MS5EZWxldGVXb3JrdHJlZVJlc3BvbnNlQk1aS2dpdGh1Yi5jb20vTW9oYW1tYWRCbmVpL2FnZW50LWZsZWV0L3Byb3RvL2dlbi9nby9hZ2VudGZsZWV0L3YxO2FnZW50ZmxlZXR2MWIGcHJvdG8z");
 
 /**
  * @generated from message agentfleet.v1.ServiceIngredient
@@ -41,9 +41,9 @@ export const ServiceIngredientSchema: GenMessage<ServiceIngredient> = /*@__PURE_
  */
 export type KillE2eSessionRequest = Message<"agentfleet.v1.KillE2eSessionRequest"> & {
   /**
-   * @generated from field: string task_id = 1;
+   * @generated from field: string session_id = 1;
    */
-  taskId: string;
+  sessionId: string;
 
   /**
    * @generated from field: string idempotency_key = 2;
@@ -107,9 +107,9 @@ export const KillE2eSessionResponseSchema: GenMessage<KillE2eSessionResponse> = 
  */
 export type GetE2eSessionStatusRequest = Message<"agentfleet.v1.GetE2eSessionStatusRequest"> & {
   /**
-   * @generated from field: string task_id = 1;
+   * @generated from field: string session_id = 1;
    */
-  taskId: string;
+  sessionId: string;
 };
 
 /**
@@ -282,9 +282,9 @@ export const ServiceEndpointSchema: GenMessage<ServiceEndpoint> = /*@__PURE__*/
  */
 export type CreateE2eSessionRequest = Message<"agentfleet.v1.CreateE2eSessionRequest"> & {
   /**
-   * @generated from field: string task_id = 1;
+   * @generated from field: string session_id = 1;
    */
-  taskId: string;
+  sessionId: string;
 
   /**
    * @generated from field: string repo = 2;
@@ -367,9 +367,9 @@ export const CreateE2eSessionResponseSchema: GenMessage<CreateE2eSessionResponse
  */
 export type CreateWorkerPodRequest = Message<"agentfleet.v1.CreateWorkerPodRequest"> & {
   /**
-   * @generated from field: string task_id = 1;
+   * @generated from field: string session_id = 1;
    */
-  taskId: string;
+  sessionId: string;
 
   /**
    * @generated from field: string repo = 2;
@@ -388,7 +388,7 @@ export type CreateWorkerPodRequest = Message<"agentfleet.v1.CreateWorkerPodReque
 
   /**
    * description and lease_id are handed straight through to the worker
-   * pod's env — the worker no longer fetches its own task row at all
+   * pod's env — the worker no longer fetches its own session row at all
    * (docs/adr/0020 point 1: it holds no DB credentials, direct or
    * otherwise), so whatever it needs has to arrive at pod creation time.
    *
@@ -403,7 +403,7 @@ export type CreateWorkerPodRequest = Message<"agentfleet.v1.CreateWorkerPodReque
 
   /**
    * Non-empty when this task already has a saved Claude SDK session
-   * (tasks.session_id) — threaded straight to the worker pod's
+   * (sessions.agent_session_id) — threaded straight to the worker pod's
    * RESUME_SESSION_ID env, which worker/src/session.ts passes as `resume:`
    * to query() so the new pod continues the prior conversation instead of
    * starting fresh (sessions redesign, supersedes docs/adr/0021/0025's
@@ -476,9 +476,9 @@ export const CreateWorkerPodResponseSchema: GenMessage<CreateWorkerPodResponse> 
   messageDesc(file_agentfleet_v1_provisioner, 9);
 
 /**
- * core owns `tasks` and therefore decides when a session should tear
+ * core owns `sessions` and therefore decides when a session should tear
  * down (task reached done/failed/cancelled, or an explicit kill) —
- * the provisioner no longer polls/joins against `tasks.status` itself
+ * the provisioner no longer polls/joins against `the deleted status column` itself
  * (docs/adr/0020 point 1: it holds no DB credentials at all). The
  * provisioner's own reconcile loop keeps doing pure-k8s orphan detection
  * independently of this RPC.
@@ -487,9 +487,9 @@ export const CreateWorkerPodResponseSchema: GenMessage<CreateWorkerPodResponse> 
  */
 export type TearDownSessionRequest = Message<"agentfleet.v1.TearDownSessionRequest"> & {
   /**
-   * @generated from field: string task_id = 1;
+   * @generated from field: string session_id = 1;
    */
-  taskId: string;
+  sessionId: string;
 
   /**
    * @generated from field: agentfleet.v1.SessionKind kind = 2;
@@ -550,9 +550,9 @@ export const ListWorktreesRequestSchema: GenMessage<ListWorktreesRequest> = /*@_
  */
 export type WorktreeInfo = Message<"agentfleet.v1.WorktreeInfo"> & {
   /**
-   * @generated from field: string task_id = 1;
+   * @generated from field: string session_id = 1;
    */
-  taskId: string;
+  sessionId: string;
 
   /**
    * @generated from field: string repo = 2;
@@ -642,9 +642,9 @@ export const ListWorktreesResponseSchema: GenMessage<ListWorktreesResponse> = /*
  */
 export type DeleteWorktreeRequest = Message<"agentfleet.v1.DeleteWorktreeRequest"> & {
   /**
-   * @generated from field: string task_id = 1;
+   * @generated from field: string session_id = 1;
    */
-  taskId: string;
+  sessionId: string;
 
   /**
    * @generated from field: string repo = 2;

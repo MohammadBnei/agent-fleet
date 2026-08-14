@@ -1,7 +1,7 @@
 name: Go and Proto
 
 # Correctness gate for the Go side of the fleet (core, provisioner, sidecar)
-# and the buf-managed proto schema they + worker's ts-proto codegen share —
+# and the buf-managed proto schema they share —
 # see docs/adr/0013, 0019, 0020. Kept separate from docker.yml: this checks
 # code quality/correctness, docker.yml handles image packaging/push/deploy
 # (same division dream-analyst's/this repo's existing workflows already
@@ -20,8 +20,8 @@ env:
 
 jobs:
   # Precise CI: only run a module's vet/lint/test against what actually
-  # changed. proto/ changes count as a change for every consumer (Go
-  # codegen + worker's ts-proto codegen both come from it). This job never
+  # changed. proto/ changes count as a change for every Go consumer. This job never
+  
   # gates a push/deploy step (go.yml only checks correctness, doesn't
   # build/push images), so it's safe to apply on every trigger, unlike
   # docker.yml's equivalent (see that file's comment on why its filtering
@@ -168,15 +168,16 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
 
-      - name: Install ts-proto (worker's local TS plugin)
-        working-directory: worker
-        run: bun install --frozen-lockfile
+      # An "Install ts-proto (worker's local TS plugin)" step used to sit here.
+      # Deleted with worker/src/gen in docs/adr/0048 — the worker never
+      # imported the generated types, so this step existed only to regenerate
+      # 8,692 lines that CI then auto-committed back onto the PR.
 
       # protoc-gen-es (dashboard's local TS plugin, Connect-ES v2 — see
       # docs/adr/0015: no separate protoc-gen-connect-es needed, protoc-gen-es
       # alone generates both messages and service descriptors) — version
       # pinned via dashboard/package.json/bun.lock, no separate env var
-      # needed, same convention as ts-proto above.
+      # needed, pinned via dashboard/package.json + bun.lock.
       - name: Install protoc-gen-es (dashboard's local TS plugin)
         working-directory: dashboard
         run: bun install --frozen-lockfile
@@ -189,13 +190,13 @@ jobs:
 
       - name: Check for drift and auto-commit
         run: |
-          if ! git diff --quiet -- proto/gen worker/src/gen dashboard/src/gen; then
+          if ! git diff --quiet -- proto/gen dashboard/src/gen; then
             echo "Generated files are out of sync with proto definitions"
             if [ "${{ github.event_name }}" = "pull_request" ]; then
               echo "Auto-committing regenerated proto files"
               git config user.name "github-actions[bot]"
               git config user.email "github-actions[bot]@users.noreply.github.com"
-              git add proto/gen worker/src/gen dashboard/src/gen
+              git add proto/gen dashboard/src/gen
               git commit -m "chore: regenerate proto files after schema changes"
               git push
             else

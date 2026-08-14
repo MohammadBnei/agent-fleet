@@ -108,7 +108,7 @@ func relayPending(ctx context.Context, pool *pgxpool.Pool, notifier Notifier) {
 
 	for _, p := range items {
 		if err := notifier.PostToThread(ctx, p.taskID, p.e); err != nil {
-			slog.Warn("relay: post failed, will retry", "taskId", p.taskID, "seq", p.e.Seq, "error", err)
+			slog.Warn("relay: post failed, will retry", "sessionId", p.taskID, "seq", p.e.Seq, "error", err)
 			_, _ = pool.Exec(ctx, `
 				UPDATE transcript
 				SET relay_attempts = relay_attempts + 1,

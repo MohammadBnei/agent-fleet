@@ -74,7 +74,7 @@ func TestAskUserQuestion_IgnoresAnswerToADifferentQuestion(t *testing.T) {
 		t.Fatalf("seed unrelated answer: %v", err)
 	}
 
-	req := &agentfleetv1.AskUserQuestionRequest{TaskId: "task-1", QuestionsJson: `{"questions":[]}`, TimeoutMs: 50}
+	req := &agentfleetv1.AskUserQuestionRequest{SessionId: "task-1", QuestionsJson: `{"questions":[]}`, TimeoutMs: 50}
 	resp, err := s.AskUserQuestion(context.Background(), req)
 	if err != nil {
 		t.Fatalf("AskUserQuestion: %v", err)
@@ -100,7 +100,7 @@ func TestAskUserQuestion_MatchesCorrectlyTaggedAnswer(t *testing.T) {
 		_, _ = store.AppendReply(context.Background(), "task-1", "human", `{"answers":{}}`, "answer", "", 0)
 	}()
 
-	req := &agentfleetv1.AskUserQuestionRequest{TaskId: "task-1", QuestionsJson: `{"questions":[]}`, TimeoutMs: 5000}
+	req := &agentfleetv1.AskUserQuestionRequest{SessionId: "task-1", QuestionsJson: `{"questions":[]}`, TimeoutMs: 5000}
 	resp, err := s.AskUserQuestion(context.Background(), req)
 	if err != nil {
 		t.Fatalf("AskUserQuestion: %v", err)
