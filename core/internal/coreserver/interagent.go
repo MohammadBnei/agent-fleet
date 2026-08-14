@@ -41,8 +41,8 @@ var settledStates = []string{
 // bare watch is unrecoverable, and a poll cannot miss one.
 const waitPollInterval = 2 * time.Second
 
-func (s *Server) liveStateOf(ctx context.Context, taskID string) (*tasks.Task, sessions.LiveState, error) {
-	t, err := s.tasks.GetTask(ctx, taskID)
+func (s *Server) liveStateOf(ctx context.Context, taskID string) (*sessions.Session, sessions.LiveState, error) {
+	t, err := s.sessions.Get(ctx, taskID)
 	if err != nil {
 		return nil, "", fmt.Errorf("get task: %w", err)
 	}
@@ -55,7 +55,7 @@ func (s *Server) liveStateOf(ctx context.Context, taskID string) (*tasks.Task, s
 func (s *Server) ListPeerSessions(ctx context.Context, req *agentfleetv1.ListPeerSessionsRequest) (*agentfleetv1.ListPeerSessionsResponse, error) {
 	// Same bounded listing the dashboard uses — an agent picking a target
 	// wants the fleet's current sessions, not its entire history.
-	all, err := s.tasks.ListRecentTasks(ctx, 100)
+	all, err := s.sessions.List(ctx, 100)
 	if err != nil {
 		return nil, fmt.Errorf("list sessions: %w", err)
 	}
@@ -68,7 +68,6 @@ func (s *Server) ListPeerSessions(ctx context.Context, req *agentfleetv1.ListPee
 			SessionId:   t.ID,
 			Repo:        t.Repo,
 			Description: t.Description,
-			Status:      t.Status,
 			LiveState:   string(sessions.DeriveLiveState(&t, time.Now(), dashboard.DefaultTurnStall)),
 		})
 	}
@@ -104,9 +103,10 @@ func (s *Server) PromptSession(ctx context.Context, req *agentfleetv1.PromptSess
 	if state == sessions.LiveStateBlocked {
 		return nil, fmt.Errorf("session %s is blocked waiting on a human decision — it cannot be prompted by an agent", target)
 	}
-	if t.Status == "proposed" {
-		return nil, fmt.Errorf("session %s is an unapproved proposal", target)
-	}
+	// The "unapproved proposal" guard that used to sit here is gone with the
+	// status: a proposal is now a row in a different table with no pod path,
+	// so a session reachable by this call has already been opened by a human
+	// (docs/adr/0048).
 
 	// Delivered as a plain discussion entry authored by "agent". It is
 	// deliberately impossible for this path to produce an `answer` or a

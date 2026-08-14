@@ -41,11 +41,8 @@ const sseKeepAliveInterval = 15 * time.Second
 func New(core *coreclient.Client) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /readyz", readyzHandler(core))
-	mux.HandleFunc("POST /heartbeat", heartbeatHandler(core))
-	mux.HandleFunc("POST /status", statusHandler(core))
 	mux.HandleFunc("POST /journal", journalHandler(core))
 	mux.HandleFunc("POST /session-id", sessionIDHandler(core))
-	mux.HandleFunc("GET /still-holds-lease", stillHoldsLeaseHandler(core))
 	mux.HandleFunc("POST /telemetry", telemetryHandler(core))
 	mux.HandleFunc("POST /message", messageHandler(core))
 	mux.HandleFunc("GET /human-messages", humanMessagesHandler(core))
@@ -85,42 +82,11 @@ func readyzHandler(core *coreclient.Client) http.HandlerFunc {
 	}
 }
 
-func heartbeatHandler(core *coreclient.Client) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		var body struct {
-			LeaseID string `json:"leaseId"`
-		}
-		if err := decodeJSON(r, &body); err != nil {
-			writeError(w, http.StatusBadRequest, err)
-			return
-		}
-		if err := core.Heartbeat(r.Context(), body.LeaseID); err != nil {
-			writeError(w, http.StatusBadGateway, err)
-			return
-		}
-		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
-	}
-}
-
-func statusHandler(core *coreclient.Client) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		var body struct {
-			Status    string  `json:"status"`
-			PrURL     *string `json:"prUrl"`
-			Notes     *string `json:"notes"`
-			LastError *string `json:"lastError"`
-		}
-		if err := decodeJSON(r, &body); err != nil {
-			writeError(w, http.StatusBadRequest, err)
-			return
-		}
-		if err := core.SetTaskStatus(r.Context(), body.Status, body.PrURL, body.Notes, body.LastError); err != nil {
-			writeError(w, http.StatusBadGateway, err)
-			return
-		}
-		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
-	}
-}
+// heartbeatHandler and statusHandler used to live here, backing POST
+// /heartbeat and POST /status. Both are deleted in docs/adr/0048 along with
+// the RPCs behind them: liveness reconciles against Kubernetes instead of a
+// 30s timer inside the worker, and a polymorphic session has no completion
+// the worker is in a position to report.
 
 func journalHandler(core *coreclient.Client) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -168,17 +134,7 @@ func sessionIDHandler(core *coreclient.Client) http.HandlerFunc {
 	}
 }
 
-func stillHoldsLeaseHandler(core *coreclient.Client) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		leaseID := r.URL.Query().Get("leaseId")
-		holds, err := core.StillHoldsLease(r.Context(), leaseID)
-		if err != nil {
-			writeError(w, http.StatusBadGateway, err)
-			return
-		}
-		writeJSON(w, http.StatusOK, map[string]bool{"holds": holds})
-	}
-}
+// stillHoldsLeaseHandler is gone with the reclaim whose race it guarded.
 
 func telemetryHandler(core *coreclient.Client) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {

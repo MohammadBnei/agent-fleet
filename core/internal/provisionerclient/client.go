@@ -16,7 +16,6 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
-
 )
 
 type Client struct {
@@ -122,6 +121,57 @@ func (c *Client) CreateE2eSession(ctx context.Context, sessionID, repo, startCmd
 		return nil, fmt.Errorf("CreateE2ESession: %w", err)
 	}
 	return resp, nil
+}
+
+// ListWorkerPods returns sessionID -> Kubernetes Job phase for every live
+// worker Job. Backs core's reconcile loop — the safety net that replaced the
+// heartbeat (docs/adr/0048).
+func (c *Client) ListWorkerPods(ctx context.Context) (map[string]string, error) {
+	ctx, cancel := context.WithTimeout(ctx, sessionCallTimeout)
+	defer cancel()
+	resp, err := c.rpc.ListWorkerPods(ctx, &agentfleetv1.ListWorkerPodsRequest{})
+	if err != nil {
+		return nil, fmt.Errorf("ListWorkerPods: %w", err)
+	}
+	out := make(map[string]string, len(resp.GetPods()))
+	for _, p := range resp.GetPods() {
+		out[p.GetSessionId()] = p.GetPhase()
+	}
+	return out, nil
+}
+
+// TearDownWorker/TearDownE2e are named wrappers over TearDownSession so the
+// reconcile loop reads as intent rather than as an enum argument.
+func (c *Client) TearDownWorker(ctx context.Context, sessionID string) error {
+	_, err := c.TearDownSession(ctx, sessionID, agentfleetv1.SessionKind_SESSION_KIND_WORKER)
+	return err
+}
+
+func (c *Client) TearDownE2e(ctx context.Context, sessionID string) error {
+	_, err := c.TearDownSession(ctx, sessionID, agentfleetv1.SessionKind_SESSION_KIND_E2E)
+	return err
+}
+
+// SweepSession reclaims a session's disk: its working directory and its
+// per-session SDK state.
+//
+// Deletes whole subtrees rather than named files. An earlier design passed
+// the SDK's session id so the provisioner could remove `<sid>.jsonl`, which
+// required the fleet to know the SDK's internal layout — and got it wrong,
+// missing the sibling `<sid>/subagents/` directory that a live installation
+// turned out to have. Removing a directory the fleet itself created needs no
+// such knowledge and cannot drift when the SDK changes.
+func (c *Client) SweepSession(ctx context.Context, sessionID, repo string) error {
+	ctx, cancel := context.WithTimeout(ctx, sessionCallTimeout)
+	defer cancel()
+	// alsoDeleteBranch is false: the fleet no longer creates branches, so it
+	// has no business deleting them. A branch the agent pushed is GitHub's to
+	// keep or drop, and one it never pushed is uncommitted work.
+	_, err := c.DeleteWorktree(ctx, sessionID, repo, false)
+	if err != nil {
+		return fmt.Errorf("SweepSession: %w", err)
+	}
+	return nil
 }
 
 // ToolKeysFor is the whole of what survives docs/adr/0034's ingredient

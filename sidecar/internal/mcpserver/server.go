@@ -309,12 +309,12 @@ func askUserQuestionHandler(core *coreclient.Client) func(ctx context.Context, r
 			timeoutMs = 60000
 		}
 		slog.Info("mcp AskUserQuestion", "questions", len(args.Questions))
-		status, answersJSON, _, err := core.AskUserQuestion(ctx, string(payload), timeoutMs)
+		answered, answersJSON, _, err := core.AskUserQuestion(ctx, string(payload), timeoutMs)
 		if err != nil {
 			slog.Error("mcp AskUserQuestion", "error", err)
 			return nil, fmt.Errorf("AskUserQuestion: %w", err)
 		}
-		if status == "answered" {
+		if answered {
 			return mcp.NewToolResultText(answersJSON), nil
 		}
 		body, _ := json.Marshal(map[string]string{"status": "pending"})
@@ -346,7 +346,7 @@ const (
 // needs — same test-seam pattern viewLogsHandler already uses in this
 // package, so the gate's decision logic is unit-testable without bufconn.
 type questionAsker interface {
-	AskUserQuestion(ctx context.Context, questionsJSON string, timeoutMs int32) (status, answersJSON string, questionSeq int64, err error)
+	AskUserQuestion(ctx context.Context, questionsJSON string, timeoutMs int32) (answered bool, answersJSON string, questionSeq int64, err error)
 }
 
 // confirmStartCmdOverride blocks on a real human answer before an agent's
@@ -406,13 +406,13 @@ func confirmOverride(ctx context.Context, core questionAsker, q overrideQuestion
 		slog.Error("mcp request_e2e_env: marshal override question", "error", err)
 		return false
 	}
-	status, answersJSON, _, err := core.AskUserQuestion(ctx, string(payload), 300000)
+	answered, answersJSON, _, err := core.AskUserQuestion(ctx, string(payload), 300000)
 	if err != nil {
 		slog.Error("mcp request_e2e_env: override question", "error", err)
 		return false
 	}
-	if status != "answered" {
-		slog.Info("mcp request_e2e_env: override not approved", "status", status)
+	if !answered {
+		slog.Info("mcp request_e2e_env: override not approved — the long poll timed out with no human answer")
 		return false
 	}
 	var parsed struct {

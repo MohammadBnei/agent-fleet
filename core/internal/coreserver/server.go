@@ -23,12 +23,10 @@ import (
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/dashboard"
-	"github.com/MohammadBnei/agent-fleet/core/internal/e2erecipe"
 	"github.com/MohammadBnei/agent-fleet/core/internal/filestore"
 	"github.com/MohammadBnei/agent-fleet/core/internal/journal"
 	"github.com/MohammadBnei/agent-fleet/core/internal/lokiclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/provisionerclient"
-	"github.com/MohammadBnei/agent-fleet/core/internal/repoprofiles"
 	"github.com/MohammadBnei/agent-fleet/core/internal/repos"
 	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
@@ -42,10 +40,11 @@ const pollInterval = 500 * time.Millisecond
 type Server struct {
 	agentfleetv1.UnimplementedCoreServiceServer
 	transcr  transcript.Store
-	tasks    *tasks.Store
+	sessions *sessions.Store
 	journal  *journal.Store
-	profiles *repoprofiles.Store
-	// repos supplies the per-repo default e2e profile name (docs/adr/0044).
+
+	// repos supplies the per-repo cluster_access grant (docs/adr/0037) —
+	// the one ingredient that outlived the recipe system.
 	repos       *repos.Store
 	provisioner *provisionerclient.Client
 	files       filestore.Store
@@ -61,8 +60,8 @@ type Server struct {
 	warm func(ctx context.Context, taskID string) (string, error)
 }
 
-func New(transcr transcript.Store, taskStore *tasks.Store, journalStore *journal.Store, profileStore *repoprofiles.Store, repoStore *repos.Store, provisioner *provisionerclient.Client, files filestore.Store, loki lokiclient.Querier) *Server {
-	return &Server{transcr: transcr, tasks: taskStore, journal: journalStore, profiles: profileStore, repos: repoStore, provisioner: provisioner, files: files, loki: loki}
+func New(transcr transcript.Store, sessionStore *sessions.Store, journalStore *journal.Store, repoStore *repos.Store, provisioner *provisionerclient.Client, files filestore.Store, loki lokiclient.Querier) *Server {
+	return &Server{transcr: transcr, sessions: sessionStore, journal: journalStore, repos: repoStore, provisioner: provisioner, files: files, loki: loki}
 }
 
 // SetWarmFunc wires the shared warm-an-idle-session path in after
@@ -77,7 +76,7 @@ func (s *Server) SetWarmFunc(warm func(ctx context.Context, taskID string) (stri
 
 // SendMessage ports internal/mcpserver/server.go's sendMessageHandler
 // verbatim, just as a gRPC method instead of an MCP tool handler.
-func (s *Server) SendMessage(ctx context.Context, req *agentfleetv1.SendMessageRequest) (*agentfleetv1.SendMessageResponse, error) {
+func (s *Server) SendMessage(ctx context.Context, req *agentfleetv1.SendMessageRequest) (*agentfleetv1.AppendResponse, error) {
 	if req.GetSessionId() == "" || req.GetFrom() == "" || req.GetText() == "" {
 		return nil, fmt.Errorf("task_id, from, and text are required")
 	}
@@ -94,7 +93,7 @@ func (s *Server) SendMessage(ctx context.Context, req *agentfleetv1.SendMessageR
 	if err != nil {
 		return nil, fmt.Errorf("SendMessage: %w", err)
 	}
-	return &agentfleetv1.SendMessageResponse{Seq: seq}, nil
+	return &agentfleetv1.AppendResponse{Seq: seq}, nil
 }
 
 // WaitForMessages ports waitForMessagesHandler verbatim.
@@ -160,11 +159,11 @@ func (s *Server) AskUserQuestion(ctx context.Context, req *agentfleetv1.AskUserQ
 			// reply" (the old check) would let an unrelated answer or a
 			// second concurrent question's answer satisfy this one.
 			if e.From == "human" && e.Type == "answer" && e.ReplyTo != nil && *e.ReplyTo == seq {
-				return &agentfleetv1.AskUserQuestionResponse{Status: "answered", AnswersJson: e.Text, QuestionSeq: seq}, nil
+				return &agentfleetv1.AskUserQuestionResponse{Answered: true, AnswersJson: e.Text, QuestionSeq: seq}, nil
 			}
 		}
 		if time.Now().After(deadline) {
-			return &agentfleetv1.AskUserQuestionResponse{Status: "pending", QuestionSeq: seq}, nil
+			return &agentfleetv1.AskUserQuestionResponse{Answered: false, QuestionSeq: seq}, nil
 		}
 		select {
 		case <-ctx.Done():
@@ -179,46 +178,31 @@ func (s *Server) AskUserQuestion(ctx context.Context, req *agentfleetv1.AskUserQ
 // directly, even for e2e requests that used to be a direct MCP call).
 
 func (s *Server) RequestE2EEnv(ctx context.Context, req *agentfleetv1.RequestE2EEnvRequest) (*agentfleetv1.RequestE2EEnvResponse, error) {
-	t, err := s.tasks.GetTask(ctx, req.GetSessionId())
+	t, err := s.sessions.Get(ctx, req.GetSessionId())
 	if err != nil {
 		return nil, fmt.Errorf("RequestE2EEnv: get task: %w", err)
 	}
 	if t == nil {
 		return nil, fmt.Errorf("RequestE2EEnv: task %s not found", req.GetSessionId())
 	}
-	// Resolution order lives in e2erecipe, shared with the dashboard's own
-	// Start button — see that package for why it isn't inlined here.
-	recipe, err := e2erecipe.Resolve(ctx, s.repos, s.profiles, t.Repo, req.GetProfile())
+	// There is no recipe to resolve any more (docs/adr/0048). The agent's
+	// own start command is whatever it decides to run in its own shell, so
+	// the caller's override is now the ONLY source — an empty one means a
+	// sandbox with no app, which docs/adr/0044 already established is a
+	// working sandbox rather than a failed pod.
+	toolKeys, err := s.toolKeysFor(ctx, t.Repo)
 	if err != nil {
 		return nil, fmt.Errorf("RequestE2EEnv: %w", err)
 	}
-	// startCmd: the caller's own override wins (it knows the worktree's
-	// actual layout right now); otherwise the resolved profile's own
-	// start_cmd (found live via kind-local — this fell through to the
-	// provisioner's StartCmdFor rolling-deploy fallback instead, silently
-	// using the OLD hardcoded command even though the profile had the
-	// fixed one, because only Tools/Services were pulled off profile here).
-	startCmd := req.GetStartCmd()
-	if startCmd == "" {
-		startCmd = recipe.StartCmd
-	}
-	profileName, toolKeys, serviceIngredients := recipe.ProfileName, recipe.ToolKeys, recipe.Services
-	created, err := s.provisioner.CreateE2eSession(ctx, req.GetSessionId(), t.Repo, startCmd, toolKeys, serviceIngredients)
+	created, err := s.provisioner.CreateE2eSession(ctx, req.GetSessionId(), t.Repo, req.GetStartCmd(), toolKeys)
 	if err != nil {
 		return nil, fmt.Errorf("RequestE2EEnv: %w", err)
 	}
-	// Echo the recipe that was actually used. The agent had no read access
-	// to repo_profiles before this, so it guessed a start_cmd, its guess
-	// silently beat a correct profile, and the preview 502'd with nothing
-	// able to explain why (see the readiness probe in provisioner's pod.go
-	// for the other half of that failure).
 	resp := &agentfleetv1.RequestE2EEnvResponse{
 		Status:           created.GetStatus(),
 		PreviewUrl:       created.GetPreviewUrl(),
-		ResolvedStartCmd: startCmd,
-		ProfileName:      profileName,
+		ResolvedStartCmd: req.GetStartCmd(),
 		Tools:            toolKeys,
-		Services:         repoprofiles.FormatServices(serviceIngredients),
 		// Forwarded byte-for-byte from the provisioner (docs/adr/0045). core
 		// does not build, cache, validate or interpret these — it does not
 		// know what MCP is. That is what makes this a field passthrough
@@ -226,6 +210,20 @@ func (s *Server) RequestE2EEnv(ctx context.Context, req *agentfleetv1.RequestE2E
 		Endpoints: created.GetEndpoints(),
 	}
 	return resp, nil
+}
+
+// toolKeysFor mirrors the dashboard's helper of the same name: the only
+// ingredient that survived docs/adr/0034's recipe system is cluster-access,
+// because it is a privilege grant rather than a toolchain (docs/adr/0037).
+func (s *Server) toolKeysFor(ctx context.Context, repo string) ([]string, error) {
+	r, err := s.repos.Get(ctx, repo)
+	if err != nil {
+		return nil, err
+	}
+	if r == nil {
+		return nil, nil
+	}
+	return provisionerclient.ToolKeysFor(r.ClusterAccess), nil
 }
 
 func (s *Server) KillE2EEnv(ctx context.Context, req *agentfleetv1.KillE2EEnvRequest) (*agentfleetv1.KillE2EEnvResponse, error) {
@@ -267,7 +265,7 @@ func (s *Server) DeleteFile(ctx context.Context, req *agentfleetv1.DeleteFileReq
 	if err := s.files.Delete(ctx, req.GetKey()); err != nil {
 		return nil, fmt.Errorf("DeleteFile: %w", err)
 	}
-	return &agentfleetv1.DeleteFileResponse{Status: "deleted"}, nil
+	return &agentfleetv1.DeleteFileResponse{}, nil
 }
 
 // --- wrapper-facing (never agent-initiated, docs/adr/0020 point 5's third
@@ -278,14 +276,14 @@ func (s *Server) DeleteFile(ctx context.Context, req *agentfleetv1.DeleteFileReq
 // DashboardService.GetTask (core.proto's comment on Task/GetSessionRequest),
 // reusing its taskToProto mapper rather than duplicating the field list.
 func (s *Server) GetTask(ctx context.Context, req *agentfleetv1.GetSessionRequest) (*agentfleetv1.GetSessionResponse, error) {
-	t, err := s.tasks.GetTask(ctx, req.GetId())
+	t, err := s.sessions.Get(ctx, req.GetId())
 	if err != nil {
 		return nil, fmt.Errorf("GetTask: %w", err)
 	}
 	if t == nil {
 		return nil, fmt.Errorf("GetTask: task %s not found", req.GetId())
 	}
-	return &agentfleetv1.GetSessionResponse{Task: dashboard.TaskToProto(*t)}, nil
+	return &agentfleetv1.GetSessionResponse{Session: dashboard.SessionToProto(*t)}, nil
 }
 
 // SetPermissionMode persists a worker pod's own permission mode (the
@@ -294,52 +292,28 @@ func (s *Server) GetTask(ctx context.Context, req *agentfleetv1.GetSessionReques
 // append a transcript entry: there's no other running worker to notify,
 // the caller *is* the session whose mode this is.
 func (s *Server) SetPermissionMode(ctx context.Context, req *agentfleetv1.SetPermissionModeRequest) (*agentfleetv1.SetPermissionModeResponse, error) {
-	if err := s.tasks.SetPermissionMode(ctx, req.GetSessionId(), req.GetMode()); err != nil {
+	if err := s.sessions.SetPermissionMode(ctx, req.GetSessionId(), req.GetMode()); err != nil {
 		return nil, fmt.Errorf("SetPermissionMode: %w", err)
 	}
-	return &agentfleetv1.SetPermissionModeResponse{Status: "ok"}, nil
+	return &agentfleetv1.SetPermissionModeResponse{}, nil
 }
 
-func (s *Server) Heartbeat(ctx context.Context, req *agentfleetv1.HeartbeatRequest) (*agentfleetv1.HeartbeatResponse, error) {
-	if err := s.tasks.UpdateHeartbeat(ctx, req.GetSessionId(), req.GetLeaseId()); err != nil {
-		return nil, fmt.Errorf("Heartbeat: %w", err)
-	}
-	return &agentfleetv1.HeartbeatResponse{}, nil
-}
-
-// terminalTaskStatuses mirrors db/migrations/'s tasks_status_check values
-// that end a task's lifecycle — the only statuses that should ever trigger
-// teardown.
-var terminalTaskStatuses = map[string]bool{
-	"done": true, "failed": true, "cancelled": true, "failed_permanently": true,
-}
-
-func (s *Server) SetTaskStatus(ctx context.Context, req *agentfleetv1.SetTaskStatusRequest) (*agentfleetv1.SetTaskStatusResponse, error) {
-	if err := s.tasks.SetStatus(ctx, req.GetSessionId(), req.GetStatus(), req.PrUrl, req.Notes, req.LastError); err != nil {
-		return nil, fmt.Errorf("SetTaskStatus: %w", err)
-	}
-
-	// Opportunistic teardown trigger: core owns `tasks`, so it's the only
-	// thing that can notice a task reaching a terminal state — the
-	// provisioner no longer polls/joins against task status itself
-	// (docs/adr/0020 point 1). Best-effort and unconditional for both kinds:
-	// TearDownSession's own contract ("false = nothing to tear down") means
-	// calling it for a task with no active worker pod, or no active e2e
-	// session, is a correct no-op, not an error — cheaper than tracking
-	// which kinds are actually active just to avoid a no-op call. Logged,
-	// not propagated: a teardown hiccup shouldn't fail the status write
-	// that's usually the last thing a finishing worker pod does.
-	if terminalTaskStatuses[req.GetStatus()] {
-		if _, err := s.provisioner.TearDownSession(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER); err != nil {
-			slog.Warn("SetTaskStatus: worker teardown failed", "sessionId", req.GetSessionId(), "error", err)
-		}
-		if _, err := s.provisioner.TearDownSession(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_E2E); err != nil {
-			slog.Warn("SetTaskStatus: e2e teardown failed", "sessionId", req.GetSessionId(), "error", err)
-		}
-	}
-
-	return &agentfleetv1.SetTaskStatusResponse{}, nil
-}
+// Heartbeat and SetTaskStatus used to live here, and their absence is the
+// single biggest behavioural change in docs/adr/0048.
+//
+// Heartbeat refreshed a timestamp every 30s from inside the worker. It only
+// ever proved a timer was still firing — it could not tell a healthy session
+// from a wedged one, and it was the pod being asked to report on itself.
+// Liveness now reconciles pod_phase against Kubernetes, which actually knows
+// whether a pod exists.
+//
+// SetTaskStatus went with the `status` column. It was also the fleet's only
+// TearDownSession trigger, which is why deleting it required teaching the
+// provisioner's reconcile pass to report POD_PHASE_TERMINATED for a Succeeded
+// Job — without that, a finished session would hold a slot forever and the
+// fleet would wedge after five. Teardown now happens in three places that all
+// observe reality rather than trusting a self-report: the reconcile loop, the
+// idle/stall sweeps, and ArchiveSession.
 
 func (s *Server) AppendJournal(ctx context.Context, req *agentfleetv1.AppendJournalRequest) (*agentfleetv1.AppendJournalResponse, error) {
 	if err := s.journal.Append(ctx, req.GetRepo(), req.GetActor(), req.GetEventType(), req.GetPayloadJson()); err != nil {
@@ -372,7 +346,7 @@ func (s *Server) SearchJournal(ctx context.Context, req *agentfleetv1.SearchJour
 }
 
 func (s *Server) SaveSessionId(ctx context.Context, req *agentfleetv1.SaveAgentSessionIdRequest) (*agentfleetv1.SaveAgentSessionIdResponse, error) {
-	saved, err := s.tasks.SaveSessionID(ctx, req.GetSessionId(), req.GetSessionId(), req.GetModel(), req.GetLeaseId())
+	saved, err := s.sessions.SaveAgentSessionID(ctx, req.GetSessionId(), req.GetSessionId(), req.GetModel(), req.GetLeaseId())
 	if err == nil && !saved {
 		// The pod that sent this no longer holds the lease — it was torn
 		// down and another pod owns the session now. Dropping the write is
@@ -388,13 +362,10 @@ func (s *Server) SaveSessionId(ctx context.Context, req *agentfleetv1.SaveAgentS
 	return &agentfleetv1.SaveAgentSessionIdResponse{}, nil
 }
 
-func (s *Server) StillHoldsLease(ctx context.Context, req *agentfleetv1.StillHoldsLeaseRequest) (*agentfleetv1.StillHoldsLeaseResponse, error) {
-	holds, err := s.tasks.StillHoldsLease(ctx, req.GetSessionId(), req.GetLeaseId())
-	if err != nil {
-		return nil, fmt.Errorf("StillHoldsLease: %w", err)
-	}
-	return &agentfleetv1.StillHoldsLeaseResponse{Holds: holds}, nil
-}
+// StillHoldsLease used to live here — a pre-push check against a stale pod
+// finishing work after a reclaim respawned a fresh one. Deleted in
+// docs/adr/0048 along with the reclaim that created that race. It had no
+// production caller either way: only worker test fakes referenced it.
 
 // PushToolTelemetry persists the sidecar's independently-scheduled git
 // diff/branch/tool-call-summary telemetry as a TOOL_CALL transcript entry
@@ -483,23 +454,26 @@ func (s *Server) ReportPodEvents(stream agentfleetv1.CoreService_ReportPodEvents
 		// crash-reclaim fast-path below) — only worker pods have a task to
 		// attach state to; e2e pods have no matching tasks row.
 		if event.GetKind() == agentfleetv1.SessionKind_SESSION_KIND_WORKER {
-			if err := s.tasks.SetPodPhase(ctx, event.GetSessionId(), event.GetPhase().String(), event.GetMessage()); err != nil {
+			if err := s.sessions.SetPodPhase(ctx, event.GetSessionId(), event.GetPhase().String(), event.GetMessage()); err != nil {
 				slog.Error("ReportPodEvents: set pod phase failed", "sessionId", event.GetSessionId(), "error", err)
 			}
 		}
 
-		// Fast-path accelerant on top of the heartbeat-reclaim fallback
-		// (reliability-findings.md #1) — without this, a mid-task crash is
-		// invisible to core for up to the full 10-minute staleness window.
-		// MarkCrashed only touches a non-terminal task itself, so this is a
-		// safe no-op if the task already reached done/failed/cancelled
-		// through its own SetTaskStatus call before the provisioner's
-		// reconcile loop noticed the crash.
-		if event.GetKind() == agentfleetv1.SessionKind_SESSION_KIND_WORKER && event.GetPhase() == agentfleetv1.PodPhase_POD_PHASE_CRASHED {
-			if err := s.tasks.MarkCrashed(ctx, event.GetSessionId()); err != nil {
-				slog.Error("ReportPodEvents: mark crashed failed", "sessionId", event.GetSessionId(), "error", err)
-			}
-		}
+		// MarkCrashed used to run here as a fast-path accelerant on top of the
+		// heartbeat-reclaim fallback: it backdated heartbeat_at so
+		// ClaimNextTask would reclaim the task without waiting out the full
+		// 10-minute staleness window.
+		//
+		// Both the heartbeat and the reclaim are gone (docs/adr/0048), and
+		// with them the reason for a fast path. The SetPodPhase write above
+		// IS the crash report now — pod_phase CRASHED frees the session's
+		// slot, surfaces as `failing` in the topology, and is what a human
+		// acts on. Nothing needs to be accelerated toward.
+		//
+		// The one thing that had to be added for this to hold is on the
+		// provisioner side: gcTerminalWorkerJobs now reports TERMINATED for a
+		// Succeeded Job too, not just CRASHED for a Failed one. Without that,
+		// a cleanly finished session would keep its slot forever.
 	}
 }
 

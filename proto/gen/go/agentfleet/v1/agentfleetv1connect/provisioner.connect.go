@@ -48,6 +48,9 @@ const (
 	// ProvisionerServiceTearDownSessionProcedure is the fully-qualified name of the
 	// ProvisionerService's TearDownSession RPC.
 	ProvisionerServiceTearDownSessionProcedure = "/agentfleet.v1.ProvisionerService/TearDownSession"
+	// ProvisionerServiceListWorkerPodsProcedure is the fully-qualified name of the ProvisionerService's
+	// ListWorkerPods RPC.
+	ProvisionerServiceListWorkerPodsProcedure = "/agentfleet.v1.ProvisionerService/ListWorkerPods"
 	// ProvisionerServiceListWorktreesProcedure is the fully-qualified name of the ProvisionerService's
 	// ListWorktrees RPC.
 	ProvisionerServiceListWorktreesProcedure = "/agentfleet.v1.ProvisionerService/ListWorktrees"
@@ -63,6 +66,8 @@ type ProvisionerServiceClient interface {
 	CreateE2ESession(context.Context, *connect.Request[v1.CreateE2ESessionRequest]) (*connect.Response[v1.CreateE2ESessionResponse], error)
 	CreateWorkerPod(context.Context, *connect.Request[v1.CreateWorkerPodRequest]) (*connect.Response[v1.CreateWorkerPodResponse], error)
 	TearDownSession(context.Context, *connect.Request[v1.TearDownSessionRequest]) (*connect.Response[v1.TearDownSessionResponse], error)
+	// The liveness reconcile source — see ListWorkerPodsRequest.
+	ListWorkerPods(context.Context, *connect.Request[v1.ListWorkerPodsRequest]) (*connect.Response[v1.ListWorkerPodsResponse], error)
 	// Reused as-is by dashboard.proto's own ListWorktrees (identical empty
 	// request shape) — cross-file message reuse, not a call passthrough.
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
@@ -114,6 +119,12 @@ func NewProvisionerServiceClient(httpClient connect.HTTPClient, baseURL string, 
 			connect.WithSchema(provisionerServiceMethods.ByName("TearDownSession")),
 			connect.WithClientOptions(opts...),
 		),
+		listWorkerPods: connect.NewClient[v1.ListWorkerPodsRequest, v1.ListWorkerPodsResponse](
+			httpClient,
+			baseURL+ProvisionerServiceListWorkerPodsProcedure,
+			connect.WithSchema(provisionerServiceMethods.ByName("ListWorkerPods")),
+			connect.WithClientOptions(opts...),
+		),
 		listWorktrees: connect.NewClient[v1.ListWorktreesRequest, v1.ListWorktreesResponse](
 			httpClient,
 			baseURL+ProvisionerServiceListWorktreesProcedure,
@@ -136,6 +147,7 @@ type provisionerServiceClient struct {
 	createE2ESession    *connect.Client[v1.CreateE2ESessionRequest, v1.CreateE2ESessionResponse]
 	createWorkerPod     *connect.Client[v1.CreateWorkerPodRequest, v1.CreateWorkerPodResponse]
 	tearDownSession     *connect.Client[v1.TearDownSessionRequest, v1.TearDownSessionResponse]
+	listWorkerPods      *connect.Client[v1.ListWorkerPodsRequest, v1.ListWorkerPodsResponse]
 	listWorktrees       *connect.Client[v1.ListWorktreesRequest, v1.ListWorktreesResponse]
 	deleteWorktree      *connect.Client[v1.DeleteWorktreeRequest, v1.DeleteWorktreeResponse]
 }
@@ -165,6 +177,11 @@ func (c *provisionerServiceClient) TearDownSession(ctx context.Context, req *con
 	return c.tearDownSession.CallUnary(ctx, req)
 }
 
+// ListWorkerPods calls agentfleet.v1.ProvisionerService.ListWorkerPods.
+func (c *provisionerServiceClient) ListWorkerPods(ctx context.Context, req *connect.Request[v1.ListWorkerPodsRequest]) (*connect.Response[v1.ListWorkerPodsResponse], error) {
+	return c.listWorkerPods.CallUnary(ctx, req)
+}
+
 // ListWorktrees calls agentfleet.v1.ProvisionerService.ListWorktrees.
 func (c *provisionerServiceClient) ListWorktrees(ctx context.Context, req *connect.Request[v1.ListWorktreesRequest]) (*connect.Response[v1.ListWorktreesResponse], error) {
 	return c.listWorktrees.CallUnary(ctx, req)
@@ -182,6 +199,8 @@ type ProvisionerServiceHandler interface {
 	CreateE2ESession(context.Context, *connect.Request[v1.CreateE2ESessionRequest]) (*connect.Response[v1.CreateE2ESessionResponse], error)
 	CreateWorkerPod(context.Context, *connect.Request[v1.CreateWorkerPodRequest]) (*connect.Response[v1.CreateWorkerPodResponse], error)
 	TearDownSession(context.Context, *connect.Request[v1.TearDownSessionRequest]) (*connect.Response[v1.TearDownSessionResponse], error)
+	// The liveness reconcile source — see ListWorkerPodsRequest.
+	ListWorkerPods(context.Context, *connect.Request[v1.ListWorkerPodsRequest]) (*connect.Response[v1.ListWorkerPodsResponse], error)
 	// Reused as-is by dashboard.proto's own ListWorktrees (identical empty
 	// request shape) — cross-file message reuse, not a call passthrough.
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
@@ -229,6 +248,12 @@ func NewProvisionerServiceHandler(svc ProvisionerServiceHandler, opts ...connect
 		connect.WithSchema(provisionerServiceMethods.ByName("TearDownSession")),
 		connect.WithHandlerOptions(opts...),
 	)
+	provisionerServiceListWorkerPodsHandler := connect.NewUnaryHandler(
+		ProvisionerServiceListWorkerPodsProcedure,
+		svc.ListWorkerPods,
+		connect.WithSchema(provisionerServiceMethods.ByName("ListWorkerPods")),
+		connect.WithHandlerOptions(opts...),
+	)
 	provisionerServiceListWorktreesHandler := connect.NewUnaryHandler(
 		ProvisionerServiceListWorktreesProcedure,
 		svc.ListWorktrees,
@@ -253,6 +278,8 @@ func NewProvisionerServiceHandler(svc ProvisionerServiceHandler, opts ...connect
 			provisionerServiceCreateWorkerPodHandler.ServeHTTP(w, r)
 		case ProvisionerServiceTearDownSessionProcedure:
 			provisionerServiceTearDownSessionHandler.ServeHTTP(w, r)
+		case ProvisionerServiceListWorkerPodsProcedure:
+			provisionerServiceListWorkerPodsHandler.ServeHTTP(w, r)
 		case ProvisionerServiceListWorktreesProcedure:
 			provisionerServiceListWorktreesHandler.ServeHTTP(w, r)
 		case ProvisionerServiceDeleteWorktreeProcedure:
@@ -284,6 +311,10 @@ func (UnimplementedProvisionerServiceHandler) CreateWorkerPod(context.Context, *
 
 func (UnimplementedProvisionerServiceHandler) TearDownSession(context.Context, *connect.Request[v1.TearDownSessionRequest]) (*connect.Response[v1.TearDownSessionResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.ProvisionerService.TearDownSession is not implemented"))
+}
+
+func (UnimplementedProvisionerServiceHandler) ListWorkerPods(context.Context, *connect.Request[v1.ListWorkerPodsRequest]) (*connect.Response[v1.ListWorkerPodsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.ProvisionerService.ListWorkerPods is not implemented"))
 }
 
 func (UnimplementedProvisionerServiceHandler) ListWorktrees(context.Context, *connect.Request[v1.ListWorktreesRequest]) (*connect.Response[v1.ListWorktreesResponse], error) {

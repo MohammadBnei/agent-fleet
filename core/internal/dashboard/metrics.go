@@ -94,13 +94,13 @@ func (s *Server) QueryMetrics(ctx context.Context, req *connect.Request[agentfle
 // still come back, with metrics_error set. Returning zeroed rates silently
 // would render an idle-looking fleet that is in fact busy.
 func (s *Server) GetFleetTopology(ctx context.Context, _ *connect.Request[agentfleetv1.GetFleetTopologyRequest]) (*connect.Response[agentfleetv1.GetFleetTopologyResponse], error) {
-	all, err := s.tasks.ListRecentTasks(ctx, defaultListLimit)
+	all, err := s.sessions.List(ctx, defaultListLimit)
 	if err != nil {
 		slog.Error("dashboard GetFleetTopology: list tasks failed", "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
-	live := make([]tasks.Task, 0, len(all))
+	live := make([]sessions.Session, 0, len(all))
 	for _, t := range all {
 		if sessions.IsPodPhaseLive(t.PodPhase) {
 			live = append(live, t)
@@ -114,8 +114,8 @@ func (s *Server) GetFleetTopology(ctx context.Context, _ *connect.Request[agentf
 			Status: "healthy", // it answered this RPC
 			Label:  "dispatch · transcript · dashboard",
 			Metrics: map[string]float64{
-				"live_pods":     float64(len(live)),
-				"max_in_flight": float64(s.maxInFlight),
+				"live_pods":         float64(len(live)),
+				"max_live_sessions": float64(s.maxLive),
 			},
 		},
 		{
@@ -152,13 +152,16 @@ func (s *Server) GetFleetTopology(ctx context.Context, _ *connect.Request[agentf
 }
 
 // cellStatus maps a task onto the four colours the topology view renders.
-// A live pod whose task last recorded an error is `degraded`, not
-// `failing` — the pod is still up and the session may well recover; a
-// worker that truly died loses its pod phase and drops out of this list
-// entirely.
-func cellStatus(t tasks.Task) string {
+// A live pod whose session last recorded an error is `degraded`, not
+// `failing` — the pod is still up and the session may well recover; a worker
+// that truly died loses its pod phase and drops out of this list entirely.
+//
+// The `failing` case used to read tasks.status for 'failed'/'failed_permanently'.
+// Both are gone (docs/adr/0048), and pod_phase carries the same fact more
+// directly: a crashed pod is CRASHED, which is the state a human acts on.
+func cellStatus(t sessions.Session) string {
 	switch {
-	case t.Status == "failed" || t.Status == "failed_permanently":
+	case t.PodPhase != nil && *t.PodPhase == "POD_PHASE_CRASHED":
 		return "failing"
 	case t.LastError != nil && *t.LastError != "":
 		return "degraded"

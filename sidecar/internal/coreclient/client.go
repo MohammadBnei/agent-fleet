@@ -128,14 +128,14 @@ func (c *Client) WaitForMessages(ctx context.Context, sinceSeq int64, timeoutMs 
 	return resp.GetEntries(), resp.GetNextSeq(), nil
 }
 
-func (c *Client) AskUserQuestion(ctx context.Context, questionsJSON string, timeoutMs int32) (status, answersJSON string, questionSeq int64, err error) {
+func (c *Client) AskUserQuestion(ctx context.Context, questionsJSON string, timeoutMs int32) (answered bool, answersJSON string, questionSeq int64, err error) {
 	resp, err := c.rpc.AskUserQuestion(ctx, &agentfleetv1.AskUserQuestionRequest{
 		SessionId: c.taskID, QuestionsJson: questionsJSON, TimeoutMs: timeoutMs,
 	})
 	if err != nil {
-		return "", "", 0, fmt.Errorf("AskUserQuestion: %w", err)
+		return false, "", 0, fmt.Errorf("AskUserQuestion: %w", err)
 	}
-	return resp.GetStatus(), resp.GetAnswersJson(), resp.GetQuestionSeq(), nil
+	return resp.GetAnswered(), resp.GetAnswersJson(), resp.GetQuestionSeq(), nil
 }
 
 // RequestE2eEnv returns the response whole so the caller can echo the
@@ -210,23 +210,10 @@ func (c *Client) DeleteFile(ctx context.Context, key string) error {
 
 // --- wrapper-facing (proxied by the local plain API) ---
 
-func (c *Client) Heartbeat(ctx context.Context, leaseID string) error {
-	_, err := c.rpc.Heartbeat(ctx, &agentfleetv1.HeartbeatRequest{SessionId: c.taskID, LeaseId: leaseID})
-	if err != nil {
-		return fmt.Errorf("Heartbeat: %w", err)
-	}
-	return nil
-}
-
-func (c *Client) SetTaskStatus(ctx context.Context, status string, prURL, notes, lastError *string) error {
-	_, err := c.rpc.SetTaskStatus(ctx, &agentfleetv1.SetTaskStatusRequest{
-		SessionId: c.taskID, Status: status, PrUrl: prURL, Notes: notes, LastError: lastError,
-	})
-	if err != nil {
-		return fmt.Errorf("SetTaskStatus: %w", err)
-	}
-	return nil
-}
+// Heartbeat and SetTaskStatus used to live here. Both are deleted in
+// docs/adr/0048: liveness reconciles against Kubernetes rather than a timer
+// inside the worker, and a polymorphic session has no completion the worker
+// is in a position to report.
 
 func (c *Client) AppendJournal(ctx context.Context, repo, actor, eventType, payloadJSON string) error {
 	_, err := c.rpc.AppendJournal(ctx, &agentfleetv1.AppendJournalRequest{
@@ -249,8 +236,8 @@ func (c *Client) SearchJournal(ctx context.Context, repo, query string, limit in
 }
 
 func (c *Client) SaveSessionID(ctx context.Context, sessionID, model, leaseID string) error {
-	_, err := c.rpc.SaveSessionId(ctx, &agentfleetv1.SaveAgentSessionIdRequest{
-		SessionId: c.taskID, SessionId: sessionID, Model: model, LeaseId: leaseID,
+	_, err := c.rpc.SaveAgentSessionId(ctx, &agentfleetv1.SaveAgentSessionIdRequest{
+		SessionId: c.taskID, AgentSessionId: sessionID, Model: model, LeaseId: leaseID,
 	})
 	if err != nil {
 		return fmt.Errorf("SaveSessionId: %w", err)
@@ -258,13 +245,8 @@ func (c *Client) SaveSessionID(ctx context.Context, sessionID, model, leaseID st
 	return nil
 }
 
-func (c *Client) StillHoldsLease(ctx context.Context, leaseID string) (bool, error) {
-	resp, err := c.rpc.StillHoldsLease(ctx, &agentfleetv1.StillHoldsLeaseRequest{SessionId: c.taskID, LeaseId: leaseID})
-	if err != nil {
-		return false, fmt.Errorf("StillHoldsLease: %w", err)
-	}
-	return resp.GetHolds(), nil
-}
+// StillHoldsLease is gone with the reclaim that created the race it guarded
+// (docs/adr/0048). It had no production caller here either way.
 
 func (c *Client) PushToolTelemetry(ctx context.Context, summaryJSON string) error {
 	_, err := c.rpc.PushToolTelemetry(ctx, &agentfleetv1.PushToolTelemetryRequest{SessionId: c.taskID, SummaryJson: summaryJSON})
@@ -323,11 +305,11 @@ func (c *Client) ViewLogs(ctx context.Context, component, appName, namespace, le
 // it was never reachable over this gRPC connection at all, let alone by a
 // non-browser caller.
 func (c *Client) GetTask(ctx context.Context) (*agentfleetv1.Session, error) {
-	resp, err := c.rpc.GetTask(ctx, &agentfleetv1.GetSessionRequest{Id: c.taskID})
+	resp, err := c.rpc.GetSession(ctx, &agentfleetv1.GetSessionRequest{Id: c.taskID})
 	if err != nil {
 		return nil, fmt.Errorf("GetTask: %w", err)
 	}
-	return resp.GetTask(), nil
+	return resp.GetSession(), nil
 }
 
 // SetPermissionMode persists the current permission mode to the database.

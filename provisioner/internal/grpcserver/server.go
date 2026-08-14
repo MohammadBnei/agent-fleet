@@ -421,6 +421,31 @@ func (s *Server) tearDownE2e(ctx context.Context, taskID string) (*agentfleetv1.
 
 // --- worktree lifecycle (reliability-findings.md #2) ---
 
+// ListWorkerPods reports which sessions Kubernetes says have a live worker
+// Job. Core reconciles pod_phase against this every 60s — the safety net that
+// replaces the deleted heartbeat (docs/adr/0048).
+//
+// A pushed pod event can be dropped, most plausibly while core itself is
+// restarting, which is precisely when a deploy is under way. A dropped
+// TERMINATED would leave a finished session holding a concurrency slot
+// forever; reconciling against this makes that self-heal in a minute instead
+// of never.
+func (s *Server) ListWorkerPods(ctx context.Context, _ *agentfleetv1.ListWorkerPodsRequest) (*agentfleetv1.ListWorkerPodsResponse, error) {
+	jobs, err := s.k8sc.ListWorkerJobsByLabel(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list worker jobs: %w", err)
+	}
+	out := make([]*agentfleetv1.LiveWorkerPod, 0, len(jobs))
+	for _, j := range jobs {
+		out = append(out, &agentfleetv1.LiveWorkerPod{
+			SessionId: j.TaskID,
+			PodName:   j.JobName,
+			Phase:     j.Phase,
+		})
+	}
+	return &agentfleetv1.ListWorkerPodsResponse{Pods: out}, nil
+}
+
 func (s *Server) ListWorktrees(ctx context.Context, _ *agentfleetv1.ListWorktreesRequest) (*agentfleetv1.ListWorktreesResponse, error) {
 	repos, err := s.git.ListClonedRepos()
 	if err != nil {

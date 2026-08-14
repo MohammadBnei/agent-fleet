@@ -10,7 +10,6 @@ package audits
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"time"
 
@@ -25,12 +24,12 @@ import (
 // anything else — instead of being an invisible RPC into a standing
 // service.
 //
-// CreateDeduped rather than CreateTaskOfKind: an audit is machine-created,
-// so it lands as a proposal a human approves (that method is the only one
-// that produces them), and the external key gives audits the duplicate
-// collapsing they previously had none of.
+// An audit files a PROPOSAL, never a session — machine-initiated work has no
+// pod path at all (docs/adr/0048), so a stuck cadence cannot accumulate
+// running agents. The dedup key gives audits the duplicate collapsing they
+// previously had none of.
 type Runner interface {
-	CreateDeduped(ctx context.Context, kind, externalKey, repo, description string, channelID, threadID *string) (string, bool, error)
+	Create(ctx context.Context, repo, source, dedupKey, title, body string) (string, bool, error)
 }
 
 // auditRepo is where a thot session's worktree comes from — the repo that
@@ -98,9 +97,9 @@ func (l *Loop) tick(ctx context.Context) {
 		// it, and the next tick after it finishes or is dismissed creates
 		// a fresh one. Without this an un-approved audit would accumulate
 		// one row per cadence forever.
-		taskID, created, err := l.thot.CreateDeduped(ctx, "thot", "audit:"+a.ID, auditRepo,
-			fmt.Sprintf("Scheduled audit: %s\n\n%s", a.Name, a.Prompt), nil, nil)
-		status := "task " + taskID
+		proposalID, created, err := l.thot.Create(ctx, auditRepo, "audit", "audit:"+a.ID,
+			"Scheduled audit: "+a.Name, a.Prompt)
+		status := "proposal " + proposalID
 		switch {
 		case err != nil:
 			slog.Error("audits: create task", "audit", a.Name, "error", err)
@@ -112,7 +111,7 @@ func (l *Loop) tick(ctx context.Context) {
 			slog.Info("audits: previous run still open, skipping", "audit", a.Name)
 			status = "skipped: previous run still open"
 		default:
-			slog.Info("audits: proposed task", "audit", a.Name, "sessionId", taskID)
+			slog.Info("audits: filed proposal", "audit", a.Name, "proposalId", proposalID)
 		}
 		if err := l.store.RecordStatus(ctx, a.ID, status); err != nil {
 			slog.Error("audits: record status", "audit", a.Name, "error", err)

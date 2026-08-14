@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file agentfleet/v1/provisioner.proto.
  */
 export const file_agentfleet_v1_provisioner: GenFile = /*@__PURE__*/
-  fileDesc("Ch9hZ2VudGZsZWV0L3YxL3Byb3Zpc2lvbmVyLnByb3RvEg1hZ2VudGZsZWV0LnYxIk4KEVNlcnZpY2VJbmdyZWRpZW50EgsKA2tleRgBIAEoCRIsCgpzY29wZV9tb2RlGAIgASgOMhguYWdlbnRmbGVldC52MS5TY29wZU1vZGUicgoVS2lsbEUyZVNlc3Npb25SZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkSFwoPaWRlbXBvdGVuY3lfa2V5GAIgASgJEgwKBHJlcG8YAyABKAkSHgoWYWxzb190ZWFyZG93bl9zZXJ2aWNlcxgEIAEoCCJEChZLaWxsRTJlU2Vzc2lvblJlc3BvbnNlEg4KBmtpbGxlZBgBIAEoCBIaChJzZXJ2aWNlc190b3JuX2Rvd24YAiADKAkiMAoaR2V0RTJlU2Vzc2lvblN0YXR1c1JlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCSLtAQobR2V0RTJlU2Vzc2lvblN0YXR1c1Jlc3BvbnNlEg4KBnN0YXR1cxgBIAEoCRITCgtwcmV2aWV3X3VybBgCIAEoCRIRCglzdGFydF9jbWQYAyABKAkSEQoJcG9kX3BoYXNlGAQgASgJEhEKCWFwcF9yZWFkeRgFIAEoCBIQCghyZXN0YXJ0cxgGIAEoBRISCgpzdGFydGVkX2F0GAcgASgJEhcKD2NvZGVfc2VydmVyX3VybBgIIAEoCRIxCgllbmRwb2ludHMYCSADKAsyHi5hZ2VudGZsZWV0LnYxLlNlcnZpY2VFbmRwb2ludCJfCg9TZXJ2aWNlRW5kcG9pbnQSDAoEbmFtZRgBIAEoCRIPCgdhZGRyZXNzGAIgASgJEhAKCHByb3RvY29sGAMgASgJEgwKBHBhdGgYBCABKAkSDQoFdG9rZW4YBSABKAkioAEKF0NyZWF0ZUUyZVNlc3Npb25SZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkSDAoEcmVwbxgCIAEoCRIRCglzdGFydF9jbWQYAyABKAkSEQoJdG9vbF9rZXlzGAQgAygJEj0KE3NlcnZpY2VfaW5ncmVkaWVudHMYBSADKAsyIC5hZ2VudGZsZWV0LnYxLlNlcnZpY2VJbmdyZWRpZW50InIKGENyZWF0ZUUyZVNlc3Npb25SZXNwb25zZRIOCgZzdGF0dXMYASABKAkSEwoLcHJldmlld191cmwYAiABKAkSMQoJZW5kcG9pbnRzGAMgAygLMh4uYWdlbnRmbGVldC52MS5TZXJ2aWNlRW5kcG9pbnQioAIKFkNyZWF0ZVdvcmtlclBvZFJlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCRIMCgRyZXBvGAIgASgJEhAKCHJlcG9fdXJsGAMgASgJEhMKC2Jhc2VfYnJhbmNoGAQgASgJEhMKC2Rlc2NyaXB0aW9uGAUgASgJEhAKCGxlYXNlX2lkGAYgASgJEhkKEXJlc3VtZV9zZXNzaW9uX2lkGAcgASgJEhcKD3Jlc3VtZV9mcm9tX3NlcRgIIAEoAxIQCghndWlkYW5jZRgJIAEoCRIRCgl0b29sX2tleXMYCiADKAkSPQoTc2VydmljZV9pbmdyZWRpZW50cxgLIAMoCzIgLmFnZW50ZmxlZXQudjEuU2VydmljZUluZ3JlZGllbnQiKwoXQ3JlYXRlV29ya2VyUG9kUmVzcG9uc2USEAoIcG9kX25hbWUYASABKAkiVgoWVGVhckRvd25TZXNzaW9uUmVxdWVzdBISCgpzZXNzaW9uX2lkGAEgASgJEigKBGtpbmQYAiABKA4yGi5hZ2VudGZsZWV0LnYxLlNlc3Npb25LaW5kIiwKF1RlYXJEb3duU2Vzc2lvblJlc3BvbnNlEhEKCXRvcm5fZG93bhgBIAEoCCIWChRMaXN0V29ya3RyZWVzUmVxdWVzdCKjAQoMV29ya3RyZWVJbmZvEhIKCnNlc3Npb25faWQYASABKAkSDAoEcmVwbxgCIAEoCRIOCgZicmFuY2gYAyABKAkSFgoOdXBzdHJlYW1fdHJhY2sYBCABKAkSEgoKbXRpbWVfdW5peBgFIAEoAxIMCgRwYXRoGAYgASgJEhMKC2RpcnR5X2ZpbGVzGAcgASgFEhIKCnNpemVfYnl0ZXMYCCABKAMieAoVTGlzdFdvcmt0cmVlc1Jlc3BvbnNlEi4KCXdvcmt0cmVlcxgBIAMoCzIbLmFnZW50ZmxlZXQudjEuV29ya3RyZWVJbmZvEhcKD3B2Y190b3RhbF9ieXRlcxgCIAEoBBIWCg5wdmNfZnJlZV9ieXRlcxgDIAEoBCJVChVEZWxldGVXb3JrdHJlZVJlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCRIMCgRyZXBvGAIgASgJEhoKEmFsc29fZGVsZXRlX2JyYW5jaBgDIAEoCCIpChZEZWxldGVXb3JrdHJlZVJlc3BvbnNlEg8KB2RlbGV0ZWQYASABKAgqegoJU2NvcGVNb2RlEhoKFlNDT1BFX01PREVfVU5TUEVDSUZJRUQQABIZChVTQ09QRV9NT0RFX1BPRF9TQ09QRUQQARIaChZTQ09QRV9NT0RFX1RBU0tfU0NPUEVEEAISGgoWU0NPUEVfTU9ERV9SRVBPX1NDT1BFRBADKloKC1Nlc3Npb25LaW5kEhwKGFNFU1NJT05fS0lORF9VTlNQRUNJRklFRBAAEhcKE1NFU1NJT05fS0lORF9XT1JLRVIQARIUChBTRVNTSU9OX0tJTkRfRTJFEAIyxQUKElByb3Zpc2lvbmVyU2VydmljZRJdCg5LaWxsRTJlU2Vzc2lvbhIkLmFnZW50ZmxlZXQudjEuS2lsbEUyZVNlc3Npb25SZXF1ZXN0GiUuYWdlbnRmbGVldC52MS5LaWxsRTJlU2Vzc2lvblJlc3BvbnNlEmwKE0dldEUyZVNlc3Npb25TdGF0dXMSKS5hZ2VudGZsZWV0LnYxLkdldEUyZVNlc3Npb25TdGF0dXNSZXF1ZXN0GiouYWdlbnRmbGVldC52MS5HZXRFMmVTZXNzaW9uU3RhdHVzUmVzcG9uc2USYwoQQ3JlYXRlRTJlU2Vzc2lvbhImLmFnZW50ZmxlZXQudjEuQ3JlYXRlRTJlU2Vzc2lvblJlcXVlc3QaJy5hZ2VudGZsZWV0LnYxLkNyZWF0ZUUyZVNlc3Npb25SZXNwb25zZRJgCg9DcmVhdGVXb3JrZXJQb2QSJS5hZ2VudGZsZWV0LnYxLkNyZWF0ZVdvcmtlclBvZFJlcXVlc3QaJi5hZ2VudGZsZWV0LnYxLkNyZWF0ZVdvcmtlclBvZFJlc3BvbnNlEmAKD1RlYXJEb3duU2Vzc2lvbhIlLmFnZW50ZmxlZXQudjEuVGVhckRvd25TZXNzaW9uUmVxdWVzdBomLmFnZW50ZmxlZXQudjEuVGVhckRvd25TZXNzaW9uUmVzcG9uc2USWgoNTGlzdFdvcmt0cmVlcxIjLmFnZW50ZmxlZXQudjEuTGlzdFdvcmt0cmVlc1JlcXVlc3QaJC5hZ2VudGZsZWV0LnYxLkxpc3RXb3JrdHJlZXNSZXNwb25zZRJdCg5EZWxldGVXb3JrdHJlZRIkLmFnZW50ZmxlZXQudjEuRGVsZXRlV29ya3RyZWVSZXF1ZXN0GiUuYWdlbnRmbGVldC52MS5EZWxldGVXb3JrdHJlZVJlc3BvbnNlQk1aS2dpdGh1Yi5jb20vTW9oYW1tYWRCbmVpL2FnZW50LWZsZWV0L3Byb3RvL2dlbi9nby9hZ2VudGZsZWV0L3YxO2FnZW50ZmxlZXR2MWIGcHJvdG8z");
+  fileDesc("Ch9hZ2VudGZsZWV0L3YxL3Byb3Zpc2lvbmVyLnByb3RvEg1hZ2VudGZsZWV0LnYxIk4KEVNlcnZpY2VJbmdyZWRpZW50EgsKA2tleRgBIAEoCRIsCgpzY29wZV9tb2RlGAIgASgOMhguYWdlbnRmbGVldC52MS5TY29wZU1vZGUicgoVS2lsbEUyZVNlc3Npb25SZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkSFwoPaWRlbXBvdGVuY3lfa2V5GAIgASgJEgwKBHJlcG8YAyABKAkSHgoWYWxzb190ZWFyZG93bl9zZXJ2aWNlcxgEIAEoCCJEChZLaWxsRTJlU2Vzc2lvblJlc3BvbnNlEg4KBmtpbGxlZBgBIAEoCBIaChJzZXJ2aWNlc190b3JuX2Rvd24YAiADKAkiMAoaR2V0RTJlU2Vzc2lvblN0YXR1c1JlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCSLtAQobR2V0RTJlU2Vzc2lvblN0YXR1c1Jlc3BvbnNlEg4KBnN0YXR1cxgBIAEoCRITCgtwcmV2aWV3X3VybBgCIAEoCRIRCglzdGFydF9jbWQYAyABKAkSEQoJcG9kX3BoYXNlGAQgASgJEhEKCWFwcF9yZWFkeRgFIAEoCBIQCghyZXN0YXJ0cxgGIAEoBRISCgpzdGFydGVkX2F0GAcgASgJEhcKD2NvZGVfc2VydmVyX3VybBgIIAEoCRIxCgllbmRwb2ludHMYCSADKAsyHi5hZ2VudGZsZWV0LnYxLlNlcnZpY2VFbmRwb2ludCJfCg9TZXJ2aWNlRW5kcG9pbnQSDAoEbmFtZRgBIAEoCRIPCgdhZGRyZXNzGAIgASgJEhAKCHByb3RvY29sGAMgASgJEgwKBHBhdGgYBCABKAkSDQoFdG9rZW4YBSABKAkioAEKF0NyZWF0ZUUyZVNlc3Npb25SZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkSDAoEcmVwbxgCIAEoCRIRCglzdGFydF9jbWQYAyABKAkSEQoJdG9vbF9rZXlzGAQgAygJEj0KE3NlcnZpY2VfaW5ncmVkaWVudHMYBSADKAsyIC5hZ2VudGZsZWV0LnYxLlNlcnZpY2VJbmdyZWRpZW50InIKGENyZWF0ZUUyZVNlc3Npb25SZXNwb25zZRIOCgZzdGF0dXMYASABKAkSEwoLcHJldmlld191cmwYAiABKAkSMQoJZW5kcG9pbnRzGAMgAygLMh4uYWdlbnRmbGVldC52MS5TZXJ2aWNlRW5kcG9pbnQioAIKFkNyZWF0ZVdvcmtlclBvZFJlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCRIMCgRyZXBvGAIgASgJEhAKCHJlcG9fdXJsGAMgASgJEhMKC2Jhc2VfYnJhbmNoGAQgASgJEhMKC2Rlc2NyaXB0aW9uGAUgASgJEhAKCGxlYXNlX2lkGAYgASgJEhkKEXJlc3VtZV9zZXNzaW9uX2lkGAcgASgJEhcKD3Jlc3VtZV9mcm9tX3NlcRgIIAEoAxIQCghndWlkYW5jZRgJIAEoCRIRCgl0b29sX2tleXMYCiADKAkSPQoTc2VydmljZV9pbmdyZWRpZW50cxgLIAMoCzIgLmFnZW50ZmxlZXQudjEuU2VydmljZUluZ3JlZGllbnQiKwoXQ3JlYXRlV29ya2VyUG9kUmVzcG9uc2USEAoIcG9kX25hbWUYASABKAkiVgoWVGVhckRvd25TZXNzaW9uUmVxdWVzdBISCgpzZXNzaW9uX2lkGAEgASgJEigKBGtpbmQYAiABKA4yGi5hZ2VudGZsZWV0LnYxLlNlc3Npb25LaW5kIiwKF1RlYXJEb3duU2Vzc2lvblJlc3BvbnNlEhEKCXRvcm5fZG93bhgBIAEoCCIXChVMaXN0V29ya2VyUG9kc1JlcXVlc3QiRAoNTGl2ZVdvcmtlclBvZBISCgpzZXNzaW9uX2lkGAEgASgJEhAKCHBvZF9uYW1lGAIgASgJEg0KBXBoYXNlGAMgASgJIkQKFkxpc3RXb3JrZXJQb2RzUmVzcG9uc2USKgoEcG9kcxgBIAMoCzIcLmFnZW50ZmxlZXQudjEuTGl2ZVdvcmtlclBvZCIWChRMaXN0V29ya3RyZWVzUmVxdWVzdCKjAQoMV29ya3RyZWVJbmZvEhIKCnNlc3Npb25faWQYASABKAkSDAoEcmVwbxgCIAEoCRIOCgZicmFuY2gYAyABKAkSFgoOdXBzdHJlYW1fdHJhY2sYBCABKAkSEgoKbXRpbWVfdW5peBgFIAEoAxIMCgRwYXRoGAYgASgJEhMKC2RpcnR5X2ZpbGVzGAcgASgFEhIKCnNpemVfYnl0ZXMYCCABKAMieAoVTGlzdFdvcmt0cmVlc1Jlc3BvbnNlEi4KCXdvcmt0cmVlcxgBIAMoCzIbLmFnZW50ZmxlZXQudjEuV29ya3RyZWVJbmZvEhcKD3B2Y190b3RhbF9ieXRlcxgCIAEoBBIWCg5wdmNfZnJlZV9ieXRlcxgDIAEoBCJVChVEZWxldGVXb3JrdHJlZVJlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCRIMCgRyZXBvGAIgASgJEhoKEmFsc29fZGVsZXRlX2JyYW5jaBgDIAEoCCIpChZEZWxldGVXb3JrdHJlZVJlc3BvbnNlEg8KB2RlbGV0ZWQYASABKAgqegoJU2NvcGVNb2RlEhoKFlNDT1BFX01PREVfVU5TUEVDSUZJRUQQABIZChVTQ09QRV9NT0RFX1BPRF9TQ09QRUQQARIaChZTQ09QRV9NT0RFX1RBU0tfU0NPUEVEEAISGgoWU0NPUEVfTU9ERV9SRVBPX1NDT1BFRBADKloKC1Nlc3Npb25LaW5kEhwKGFNFU1NJT05fS0lORF9VTlNQRUNJRklFRBAAEhcKE1NFU1NJT05fS0lORF9XT1JLRVIQARIUChBTRVNTSU9OX0tJTkRfRTJFEAIypAYKElByb3Zpc2lvbmVyU2VydmljZRJdCg5LaWxsRTJlU2Vzc2lvbhIkLmFnZW50ZmxlZXQudjEuS2lsbEUyZVNlc3Npb25SZXF1ZXN0GiUuYWdlbnRmbGVldC52MS5LaWxsRTJlU2Vzc2lvblJlc3BvbnNlEmwKE0dldEUyZVNlc3Npb25TdGF0dXMSKS5hZ2VudGZsZWV0LnYxLkdldEUyZVNlc3Npb25TdGF0dXNSZXF1ZXN0GiouYWdlbnRmbGVldC52MS5HZXRFMmVTZXNzaW9uU3RhdHVzUmVzcG9uc2USYwoQQ3JlYXRlRTJlU2Vzc2lvbhImLmFnZW50ZmxlZXQudjEuQ3JlYXRlRTJlU2Vzc2lvblJlcXVlc3QaJy5hZ2VudGZsZWV0LnYxLkNyZWF0ZUUyZVNlc3Npb25SZXNwb25zZRJgCg9DcmVhdGVXb3JrZXJQb2QSJS5hZ2VudGZsZWV0LnYxLkNyZWF0ZVdvcmtlclBvZFJlcXVlc3QaJi5hZ2VudGZsZWV0LnYxLkNyZWF0ZVdvcmtlclBvZFJlc3BvbnNlEmAKD1RlYXJEb3duU2Vzc2lvbhIlLmFnZW50ZmxlZXQudjEuVGVhckRvd25TZXNzaW9uUmVxdWVzdBomLmFnZW50ZmxlZXQudjEuVGVhckRvd25TZXNzaW9uUmVzcG9uc2USXQoOTGlzdFdvcmtlclBvZHMSJC5hZ2VudGZsZWV0LnYxLkxpc3RXb3JrZXJQb2RzUmVxdWVzdBolLmFnZW50ZmxlZXQudjEuTGlzdFdvcmtlclBvZHNSZXNwb25zZRJaCg1MaXN0V29ya3RyZWVzEiMuYWdlbnRmbGVldC52MS5MaXN0V29ya3RyZWVzUmVxdWVzdBokLmFnZW50ZmxlZXQudjEuTGlzdFdvcmt0cmVlc1Jlc3BvbnNlEl0KDkRlbGV0ZVdvcmt0cmVlEiQuYWdlbnRmbGVldC52MS5EZWxldGVXb3JrdHJlZVJlcXVlc3QaJS5hZ2VudGZsZWV0LnYxLkRlbGV0ZVdvcmt0cmVlUmVzcG9uc2VCTVpLZ2l0aHViLmNvbS9Nb2hhbW1hZEJuZWkvYWdlbnQtZmxlZXQvcHJvdG8vZ2VuL2dvL2FnZW50ZmxlZXQvdjE7YWdlbnRmbGVldHYxYgZwcm90bzM");
 
 /**
  * @generated from message agentfleet.v1.ServiceIngredient
@@ -532,7 +532,81 @@ export const TearDownSessionResponseSchema: GenMessage<TearDownSessionResponse> 
  * (dashboard-driven); the automated half is the periodic sweep
  * (provisioner/internal/sweep), which only acts once a branch's upstream
  * is confirmed [gone].
+ * ListWorkerPods reports which sessions actually have a live worker Job, as
+ * Kubernetes sees it. It is the safety net that replaces the 30-second
+ * heartbeat deleted in docs/adr/0048.
  *
+ * The heartbeat asked the pod to report on itself, which could not
+ * distinguish a healthy session from a wedged one and went silent for the
+ * same reason the pod had stopped working. Pod events are pushed instead —
+ * but a push can be dropped (core restarting, for instance, which is exactly
+ * when a deploy is happening), and a dropped TERMINATED leaves a session
+ * holding a concurrency slot forever. Core reconciles against this list every
+ * 60s so that failure self-heals rather than requiring a human to notice.
+ *
+ * Deliberately a provisioner RPC rather than core reading the API directly:
+ * core holds zero cluster RBAC (docs/adr/0020 point 1), and a liveness check
+ * is not a reason to grant it any.
+ *
+ * @generated from message agentfleet.v1.ListWorkerPodsRequest
+ */
+export type ListWorkerPodsRequest = Message<"agentfleet.v1.ListWorkerPodsRequest"> & {
+};
+
+/**
+ * Describes the message agentfleet.v1.ListWorkerPodsRequest.
+ * Use `create(ListWorkerPodsRequestSchema)` to create a new message.
+ */
+export const ListWorkerPodsRequestSchema: GenMessage<ListWorkerPodsRequest> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_provisioner, 12);
+
+/**
+ * @generated from message agentfleet.v1.LiveWorkerPod
+ */
+export type LiveWorkerPod = Message<"agentfleet.v1.LiveWorkerPod"> & {
+  /**
+   * @generated from field: string session_id = 1;
+   */
+  sessionId: string;
+
+  /**
+   * @generated from field: string pod_name = 2;
+   */
+  podName: string;
+
+  /**
+   * Kubernetes Job phase: "Running" | "Pending" | "Succeeded" | "Failed".
+   *
+   * @generated from field: string phase = 3;
+   */
+  phase: string;
+};
+
+/**
+ * Describes the message agentfleet.v1.LiveWorkerPod.
+ * Use `create(LiveWorkerPodSchema)` to create a new message.
+ */
+export const LiveWorkerPodSchema: GenMessage<LiveWorkerPod> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_provisioner, 13);
+
+/**
+ * @generated from message agentfleet.v1.ListWorkerPodsResponse
+ */
+export type ListWorkerPodsResponse = Message<"agentfleet.v1.ListWorkerPodsResponse"> & {
+  /**
+   * @generated from field: repeated agentfleet.v1.LiveWorkerPod pods = 1;
+   */
+  pods: LiveWorkerPod[];
+};
+
+/**
+ * Describes the message agentfleet.v1.ListWorkerPodsResponse.
+ * Use `create(ListWorkerPodsResponseSchema)` to create a new message.
+ */
+export const ListWorkerPodsResponseSchema: GenMessage<ListWorkerPodsResponse> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_provisioner, 14);
+
+/**
  * @generated from message agentfleet.v1.ListWorktreesRequest
  */
 export type ListWorktreesRequest = Message<"agentfleet.v1.ListWorktreesRequest"> & {
@@ -543,7 +617,7 @@ export type ListWorktreesRequest = Message<"agentfleet.v1.ListWorktreesRequest">
  * Use `create(ListWorktreesRequestSchema)` to create a new message.
  */
 export const ListWorktreesRequestSchema: GenMessage<ListWorktreesRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 12);
+  messageDesc(file_agentfleet_v1_provisioner, 15);
 
 /**
  * @generated from message agentfleet.v1.WorktreeInfo
@@ -603,7 +677,7 @@ export type WorktreeInfo = Message<"agentfleet.v1.WorktreeInfo"> & {
  * Use `create(WorktreeInfoSchema)` to create a new message.
  */
 export const WorktreeInfoSchema: GenMessage<WorktreeInfo> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 13);
+  messageDesc(file_agentfleet_v1_provisioner, 16);
 
 /**
  * @generated from message agentfleet.v1.ListWorktreesResponse
@@ -635,7 +709,7 @@ export type ListWorktreesResponse = Message<"agentfleet.v1.ListWorktreesResponse
  * Use `create(ListWorktreesResponseSchema)` to create a new message.
  */
 export const ListWorktreesResponseSchema: GenMessage<ListWorktreesResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 14);
+  messageDesc(file_agentfleet_v1_provisioner, 17);
 
 /**
  * @generated from message agentfleet.v1.DeleteWorktreeRequest
@@ -662,7 +736,7 @@ export type DeleteWorktreeRequest = Message<"agentfleet.v1.DeleteWorktreeRequest
  * Use `create(DeleteWorktreeRequestSchema)` to create a new message.
  */
 export const DeleteWorktreeRequestSchema: GenMessage<DeleteWorktreeRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 15);
+  messageDesc(file_agentfleet_v1_provisioner, 18);
 
 /**
  * @generated from message agentfleet.v1.DeleteWorktreeResponse
@@ -679,7 +753,7 @@ export type DeleteWorktreeResponse = Message<"agentfleet.v1.DeleteWorktreeRespon
  * Use `create(DeleteWorktreeResponseSchema)` to create a new message.
  */
 export const DeleteWorktreeResponseSchema: GenMessage<DeleteWorktreeResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 16);
+  messageDesc(file_agentfleet_v1_provisioner, 19);
 
 /**
  * How a service ingredient (postgres/redis) is shared across pods/tasks —
@@ -792,6 +866,16 @@ export const ProvisionerService: GenService<{
     methodKind: "unary";
     input: typeof TearDownSessionRequestSchema;
     output: typeof TearDownSessionResponseSchema;
+  },
+  /**
+   * The liveness reconcile source — see ListWorkerPodsRequest.
+   *
+   * @generated from rpc agentfleet.v1.ProvisionerService.ListWorkerPods
+   */
+  listWorkerPods: {
+    methodKind: "unary";
+    input: typeof ListWorkerPodsRequestSchema;
+    output: typeof ListWorkerPodsResponseSchema;
   },
   /**
    * Reused as-is by dashboard.proto's own ListWorktrees (identical empty

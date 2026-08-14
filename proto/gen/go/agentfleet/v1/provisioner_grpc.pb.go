@@ -24,6 +24,7 @@ const (
 	ProvisionerService_CreateE2ESession_FullMethodName    = "/agentfleet.v1.ProvisionerService/CreateE2eSession"
 	ProvisionerService_CreateWorkerPod_FullMethodName     = "/agentfleet.v1.ProvisionerService/CreateWorkerPod"
 	ProvisionerService_TearDownSession_FullMethodName     = "/agentfleet.v1.ProvisionerService/TearDownSession"
+	ProvisionerService_ListWorkerPods_FullMethodName      = "/agentfleet.v1.ProvisionerService/ListWorkerPods"
 	ProvisionerService_ListWorktrees_FullMethodName       = "/agentfleet.v1.ProvisionerService/ListWorktrees"
 	ProvisionerService_DeleteWorktree_FullMethodName      = "/agentfleet.v1.ProvisionerService/DeleteWorktree"
 )
@@ -37,6 +38,8 @@ type ProvisionerServiceClient interface {
 	CreateE2ESession(ctx context.Context, in *CreateE2ESessionRequest, opts ...grpc.CallOption) (*CreateE2ESessionResponse, error)
 	CreateWorkerPod(ctx context.Context, in *CreateWorkerPodRequest, opts ...grpc.CallOption) (*CreateWorkerPodResponse, error)
 	TearDownSession(ctx context.Context, in *TearDownSessionRequest, opts ...grpc.CallOption) (*TearDownSessionResponse, error)
+	// The liveness reconcile source — see ListWorkerPodsRequest.
+	ListWorkerPods(ctx context.Context, in *ListWorkerPodsRequest, opts ...grpc.CallOption) (*ListWorkerPodsResponse, error)
 	// Reused as-is by dashboard.proto's own ListWorktrees (identical empty
 	// request shape) — cross-file message reuse, not a call passthrough.
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
@@ -105,6 +108,16 @@ func (c *provisionerServiceClient) TearDownSession(ctx context.Context, in *Tear
 	return out, nil
 }
 
+func (c *provisionerServiceClient) ListWorkerPods(ctx context.Context, in *ListWorkerPodsRequest, opts ...grpc.CallOption) (*ListWorkerPodsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListWorkerPodsResponse)
+	err := c.cc.Invoke(ctx, ProvisionerService_ListWorkerPods_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *provisionerServiceClient) ListWorktrees(ctx context.Context, in *ListWorktreesRequest, opts ...grpc.CallOption) (*ListWorktreesResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListWorktreesResponse)
@@ -134,6 +147,8 @@ type ProvisionerServiceServer interface {
 	CreateE2ESession(context.Context, *CreateE2ESessionRequest) (*CreateE2ESessionResponse, error)
 	CreateWorkerPod(context.Context, *CreateWorkerPodRequest) (*CreateWorkerPodResponse, error)
 	TearDownSession(context.Context, *TearDownSessionRequest) (*TearDownSessionResponse, error)
+	// The liveness reconcile source — see ListWorkerPodsRequest.
+	ListWorkerPods(context.Context, *ListWorkerPodsRequest) (*ListWorkerPodsResponse, error)
 	// Reused as-is by dashboard.proto's own ListWorktrees (identical empty
 	// request shape) — cross-file message reuse, not a call passthrough.
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
@@ -166,6 +181,9 @@ func (UnimplementedProvisionerServiceServer) CreateWorkerPod(context.Context, *C
 }
 func (UnimplementedProvisionerServiceServer) TearDownSession(context.Context, *TearDownSessionRequest) (*TearDownSessionResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method TearDownSession not implemented")
+}
+func (UnimplementedProvisionerServiceServer) ListWorkerPods(context.Context, *ListWorkerPodsRequest) (*ListWorkerPodsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListWorkerPods not implemented")
 }
 func (UnimplementedProvisionerServiceServer) ListWorktrees(context.Context, *ListWorktreesRequest) (*ListWorktreesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListWorktrees not implemented")
@@ -284,6 +302,24 @@ func _ProvisionerService_TearDownSession_Handler(srv interface{}, ctx context.Co
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ProvisionerService_ListWorkerPods_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListWorkerPodsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProvisionerServiceServer).ListWorkerPods(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ProvisionerService_ListWorkerPods_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProvisionerServiceServer).ListWorkerPods(ctx, req.(*ListWorkerPodsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _ProvisionerService_ListWorktrees_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ListWorktreesRequest)
 	if err := dec(in); err != nil {
@@ -346,6 +382,10 @@ var ProvisionerService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "TearDownSession",
 			Handler:    _ProvisionerService_TearDownSession_Handler,
+		},
+		{
+			MethodName: "ListWorkerPods",
+			Handler:    _ProvisionerService_ListWorkerPods_Handler,
 		},
 		{
 			MethodName: "ListWorktrees",

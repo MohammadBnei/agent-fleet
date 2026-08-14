@@ -72,6 +72,21 @@ type Config struct {
 	// clock, since a slow turn is not a dead one. Env: TURN_STALL_MS,
 	// default 90s.
 	TurnStall time.Duration
+	// DashboardPublicURL is the externally-reachable dashboard base, used to
+	// build the deep link in a Discord notification. Empty posts the
+	// notification without a link rather than a broken one.
+	// Env: DASHBOARD_PUBLIC_URL.
+	DashboardPublicURL string
+	// SessionRetention is how long an untouched session keeps its disk — its
+	// working directory and per-session SDK state (docs/adr/0048). After
+	// this the retention GC reclaims both and marks the session swept:
+	// readable history, no longer resumable.
+	//
+	// Deliberately much longer than IdleTimeout, which only reclaims a POD.
+	// Losing a pod costs a warm-up; losing the directory costs whatever was
+	// never committed, so the two clocks are not the same kind of decision.
+	// Env: SESSION_RETENTION_MS, default 14 days.
+	SessionRetention time.Duration
 	// GarageS3Endpoint must be externally reachable, not the in-cluster
 	// garage.bnei.lan host — filestore.PresignUpload/PresignDownload sign
 	// the endpoint into the URL (SigV4), and the dashboard's browser can't
@@ -106,6 +121,8 @@ func Load() Config {
 		IdleTimeout:           time.Duration(envInt("IDLE_TIMEOUT_MS", 30*60*1000)) * time.Millisecond,
 		StartupStall:          time.Duration(envInt("STARTUP_STALL_MS", 3*60*1000)) * time.Millisecond,
 		TurnStall:             time.Duration(envInt("TURN_STALL_MS", 90*1000)) * time.Millisecond,
+		SessionRetention:      time.Duration(envInt("SESSION_RETENTION_MS", 14*24*60*60*1000)) * time.Millisecond,
+		DashboardPublicURL:    os.Getenv("DASHBOARD_PUBLIC_URL"),
 		GarageS3Endpoint:      env("GARAGE_S3_ENDPOINT", "https://s3.bnei.dev"),
 		GarageFilesBucket:     env("GARAGE_FILES_BUCKET", "agent-fleet-files"),
 		GarageFilesAccessKey:  os.Getenv("AGENTFLEET_FILES_S3_ACCESS_KEY"),

@@ -223,6 +223,34 @@ message TearDownSessionResponse {
 // (dashboard-driven); the automated half is the periodic sweep
 // (provisioner/internal/sweep), which only acts once a branch's upstream
 // is confirmed [gone].
+// ListWorkerPods reports which sessions actually have a live worker Job, as
+// Kubernetes sees it. It is the safety net that replaces the 30-second
+// heartbeat deleted in docs/adr/0048.
+//
+// The heartbeat asked the pod to report on itself, which could not
+// distinguish a healthy session from a wedged one and went silent for the
+// same reason the pod had stopped working. Pod events are pushed instead —
+// but a push can be dropped (core restarting, for instance, which is exactly
+// when a deploy is happening), and a dropped TERMINATED leaves a session
+// holding a concurrency slot forever. Core reconciles against this list every
+// 60s so that failure self-heals rather than requiring a human to notice.
+//
+// Deliberately a provisioner RPC rather than core reading the API directly:
+// core holds zero cluster RBAC (docs/adr/0020 point 1), and a liveness check
+// is not a reason to grant it any.
+message ListWorkerPodsRequest {}
+
+message LiveWorkerPod {
+  string session_id = 1;
+  string pod_name = 2;
+  // Kubernetes Job phase: "Running" | "Pending" | "Succeeded" | "Failed".
+  string phase = 3;
+}
+
+message ListWorkerPodsResponse {
+  repeated LiveWorkerPod pods = 1;
+}
+
 message ListWorktreesRequest {}
 
 message WorktreeInfo {
@@ -265,6 +293,8 @@ service ProvisionerService {
   rpc CreateE2eSession(CreateE2eSessionRequest) returns (CreateE2eSessionResponse);
   rpc CreateWorkerPod(CreateWorkerPodRequest) returns (CreateWorkerPodResponse);
   rpc TearDownSession(TearDownSessionRequest) returns (TearDownSessionResponse);
+  // The liveness reconcile source — see ListWorkerPodsRequest.
+  rpc ListWorkerPods(ListWorkerPodsRequest) returns (ListWorkerPodsResponse);
   // Reused as-is by dashboard.proto's own ListWorktrees (identical empty
   // request shape) — cross-file message reuse, not a call passthrough.
   // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
