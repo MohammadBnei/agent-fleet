@@ -34,16 +34,15 @@ type Config struct {
 	// gitops/platform/values/prometheus/values.yaml.
 	PrometheusURL       string
 	ProvisionerGRPCAddr string
-	// MaxInFlight caps fleet-wide concurrent tasks (docs/adr/0019: ~5, the
-	// actual human-followable ceiling, not a technical limit) — the
-	// dispatch loop's own headroom check, not per-repo.
+	// MaxInFlight caps fleet-wide concurrent WARM PODS (docs/adr/0019: ~5,
+	// the actual human-followable ceiling, not a technical limit).
+	//
+	// It is no longer a queue depth — nothing queues. It is enforced in
+	// sessions.ReserveSlot against CountLivePods, under an advisory lock,
+	// and a session that cannot get a slot is refused outright rather than
+	// left pending.
 	MaxInFlight int
-	// MaxTaskRetries caps ClaimNextTask's stale-heartbeat reclaim
-	// (reliability-findings.md #1) — retry_count was tracked but never
-	// capped before, so a task whose worker pod keeps crashing looped
-	// through reclaim forever instead of eventually failing permanently.
-	MaxTaskRetries int
-	// StopGrace is how long dispatch.Loop waits after a Stop request before
+	// StopGrace is how long sessions.Loop waits after a Stop request before
 	// force-tearing down a worker pod that hasn't gone terminal on its own —
 	// long enough for a healthy pod to notice the cooperative abort message
 	// and shut down cleanly, short enough that a hung/unreachable pod
@@ -116,7 +115,6 @@ func Load() Config {
 		PrometheusURL:         env("PROMETHEUS_URL", "http://platform-prometheus-kube-p-prometheus.monitoring.svc.cluster.local:9090"),
 		ProvisionerGRPCAddr:   env("PROVISIONER_GRPC_ADDR", "provisioner.agent-fleet.svc.cluster.local:9090"),
 		MaxInFlight:           envInt("MAX_IN_FLIGHT_TASKS", 5),
-		MaxTaskRetries:        envInt("MAX_TASK_RETRIES", 3),
 		StopGrace:             time.Duration(envInt("STOP_GRACE_MS", 30000)) * time.Millisecond,
 		IdleTimeout:           time.Duration(envInt("IDLE_TIMEOUT_MS", 30*60*1000)) * time.Millisecond,
 		StartupStall:          time.Duration(envInt("STARTUP_STALL_MS", 3*60*1000)) * time.Millisecond,

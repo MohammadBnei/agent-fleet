@@ -346,7 +346,14 @@ func (s *Server) SearchJournal(ctx context.Context, req *agentfleetv1.SearchJour
 }
 
 func (s *Server) SaveAgentSessionId(ctx context.Context, req *agentfleetv1.SaveAgentSessionIdRequest) (*agentfleetv1.SaveAgentSessionIdResponse, error) {
-	saved, err := s.sessions.SaveAgentSessionID(ctx, req.GetSessionId(), req.GetSessionId(), req.GetModel(), req.GetLeaseId())
+	// The two ids are NOT the same thing, and passing session_id for both is
+	// exactly the bug the task_id -> session_id rename introduced here: the
+	// fleet's own row id was written into agent_session_id, so every resume
+	// asked the SDK to continue a session that never existed. It fails
+	// silently — the pod starts, the SDK just begins a fresh conversation,
+	// and the only symptom is an agent with no memory of what was said before
+	// the Stop.
+	saved, err := s.sessions.SaveAgentSessionID(ctx, req.GetSessionId(), req.GetAgentSessionId(), req.GetModel(), req.GetLeaseId())
 	if err == nil && !saved {
 		// The pod that sent this no longer holds the lease — it was torn
 		// down and another pod owns the session now. Dropping the write is
@@ -418,12 +425,13 @@ func (s *Server) StreamHumanMessages(req *agentfleetv1.StreamHumanMessagesReques
 // --- provisioner-facing (pushed, not polled, docs/adr/0020 point 3) ---
 
 // ReportPodEvents ingests the provisioner's pushed pod-lifecycle events
-// (created/scheduled/running/crashed/terminated) into knowledge_journal
-// for logging/dashboard/future use. It is deliberately NOT the source of
-// truth for dispatch concurrency headroom — see internal/dispatch, which
-// derives that atomically inside tasks.ClaimNextTask's own claim query
-// (Postgres, survives a core restart; this stream's in-memory state would
-// not).
+// (created/scheduled/running/crashed/terminated).
+//
+// Since docs/adr/0048 this stream is not merely telemetry: pod_phase IS the
+// session lifecycle, and CountLivePods reads exactly the phases this writes.
+// A dropped event therefore leaks a concurrency slot — which is why
+// sessions.Loop re-reconciles every phase against the provisioner's Job list
+// on a 60s ticker rather than trusting the stream to be lossless.
 func (s *Server) ReportPodEvents(stream agentfleetv1.CoreService_ReportPodEventsServer) error {
 	ctx := stream.Context()
 	for {
@@ -436,45 +444,50 @@ func (s *Server) ReportPodEvents(stream agentfleetv1.CoreService_ReportPodEvents
 			// caller loop.
 			return stream.SendAndClose(&agentfleetv1.ReportPodEventsResponse{})
 		}
-		payload, marshalErr := json.Marshal(map[string]any{
-			"sessionId": event.GetSessionId(),
-			"kind":      event.GetKind().String(),
-			"phase":     event.GetPhase().String(),
-			"podName":   event.GetPodName(),
-			"message":   event.GetMessage(),
-		})
-		if marshalErr != nil {
-			return fmt.Errorf("ReportPodEvents: marshal event: %w", marshalErr)
+		if err := s.applyPodEvent(ctx, event); err != nil {
+			return err
 		}
-		if err := s.journal.Append(ctx, "", "provisioner", "pod."+event.GetPhase().String(), string(payload)); err != nil {
-			return fmt.Errorf("ReportPodEvents: %w", err)
-		}
-
-		// Live worker-pod state for the dashboard (separate from the
-		// crash-reclaim fast-path below) — only worker pods have a task to
-		// attach state to; e2e pods have no matching tasks row.
-		if event.GetKind() == agentfleetv1.SessionKind_SESSION_KIND_WORKER {
-			if err := s.sessions.SetPodPhase(ctx, event.GetSessionId(), event.GetPhase().String(), event.GetMessage()); err != nil {
-				slog.Error("ReportPodEvents: set pod phase failed", "sessionId", event.GetSessionId(), "error", err)
-			}
-		}
-
-		// MarkCrashed used to run here as a fast-path accelerant on top of the
-		// heartbeat-reclaim fallback: it backdated heartbeat_at so
-		// ClaimNextTask would reclaim the task without waiting out the full
-		// 10-minute staleness window.
-		//
-		// Both the heartbeat and the reclaim are gone (docs/adr/0048), and
-		// with them the reason for a fast path. The SetPodPhase write above
-		// IS the crash report now — pod_phase CRASHED frees the session's
-		// slot, surfaces as `failing` in the topology, and is what a human
-		// acts on. Nothing needs to be accelerated toward.
-		//
-		// The one thing that had to be added for this to hold is on the
-		// provisioner side: gcTerminalWorkerJobs now reports TERMINATED for a
-		// Succeeded Job too, not just CRASHED for a Failed one. Without that,
-		// a cleanly finished session would keep its slot forever.
 	}
+}
+
+// applyPodEvent is one event's effect, split out from the stream loop so it
+// can be tested directly — the alternative is standing up a bufconn stream to
+// assert a two-line state transition.
+func (s *Server) applyPodEvent(ctx context.Context, event *agentfleetv1.PodEvent) error {
+	payload, marshalErr := json.Marshal(map[string]any{
+		"sessionId": event.GetSessionId(),
+		"kind":      event.GetKind().String(),
+		"phase":     event.GetPhase().String(),
+		"podName":   event.GetPodName(),
+		"message":   event.GetMessage(),
+	})
+	if marshalErr != nil {
+		return fmt.Errorf("ReportPodEvents: marshal event: %w", marshalErr)
+	}
+	if err := s.journal.Append(ctx, "", "provisioner", "pod."+event.GetPhase().String(), string(payload)); err != nil {
+		return fmt.Errorf("ReportPodEvents: %w", err)
+	}
+
+	// Only worker pods have a session row to attach state to; e2e pods do not.
+	//
+	// MarkCrashed used to run here as a fast-path accelerant on top of the
+	// heartbeat-reclaim fallback: it backdated heartbeat_at so ClaimNextTask
+	// would reclaim the task without waiting out the full 10-minute staleness
+	// window. Both the heartbeat and the reclaim are gone (docs/adr/0048), and
+	// with them the reason for a fast path. This SetPodPhase write IS the
+	// crash report now — CRASHED frees the session's slot, surfaces as
+	// `failing` in the topology, and is what a human acts on.
+	//
+	// The one thing that had to be added for this to hold is on the
+	// provisioner side: gcTerminalWorkerJobs now reports TERMINATED for a
+	// Succeeded Job too, not just CRASHED for a Failed one. Without that, a
+	// cleanly finished session would keep its slot forever.
+	if event.GetKind() == agentfleetv1.SessionKind_SESSION_KIND_WORKER {
+		if err := s.sessions.SetPodPhase(ctx, event.GetSessionId(), event.GetPhase().String(), event.GetMessage()); err != nil {
+			slog.Error("ReportPodEvents: set pod phase failed", "sessionId", event.GetSessionId(), "error", err)
+		}
+	}
+	return nil
 }
 
 // --- helpers ---

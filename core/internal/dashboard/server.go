@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"strings"
 	"time"
 
 	"connectrpc.com/connect"
@@ -275,30 +274,15 @@ func proposalToProto(p proposals.Proposal) *agentfleetv1.Proposal {
 	return out
 }
 
-// resolveGuidanceAndMode joins the text of the operator's selected prompt
-// snippets, in the store's own name order, into the single guidance blob
-// stored on the task. Also returns the first non-empty suggested_permission_mode
-// from any of the snippets. Empty input returns "" for both — a task with no
-// snippets attached gets no extra guidance at all, just its own description.
-func (s *Server) resolveGuidanceAndMode(ctx context.Context, snippetIDs []string) (string, string, error) {
-	if len(snippetIDs) == 0 {
-		return "", "", nil
-	}
-	snippets, err := s.snippets.GetByIDs(ctx, snippetIDs)
-	if err != nil {
-		return "", "", err
-	}
-	texts := make([]string, len(snippets))
-	suggestedMode := ""
-	for i, sn := range snippets {
-		texts[i] = sn.Text
-		// Take the first non-empty suggested mode
-		if suggestedMode == "" && sn.SuggestedPermissionMode != nil && *sn.SuggestedPermissionMode != "" {
-			suggestedMode = *sn.SuggestedPermissionMode
-		}
-	}
-	return strings.Join(texts, "\n\n"), suggestedMode, nil
-}
+// resolveGuidanceAndMode used to live here: it joined the operator's selected
+// prompt snippets into the hidden `guidance` blob stored alongside the task's
+// description, and picked up a suggested permission mode along the way.
+//
+// Both halves are gone in docs/adr/0048. There is no `guidance` column,
+// because there is no fleet-composed prompt to hide text in — whatever the
+// human types is the turn, verbatim. Snippets survive as what they always
+// really were: text the dashboard prefills into the composer, visible and
+// editable before it is sent. ListPromptSnippets still serves them.
 
 // validModels is the allowlist of Claude models that can be selected per-task.
 // This prevents injection of arbitrary model names and ensures only supported

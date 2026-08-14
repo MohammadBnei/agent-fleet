@@ -134,8 +134,10 @@ export function TaskDetail({
   const task = tasks.find((t) => t.id === sessionId) ?? fetchedTask;
 
   const badge = sessionBadge(task);
-  const staleTag = null;
-  const heartbeat = null;
+  // staleTag/heartbeat used to render "last beat 4m ago", reddened past the
+  // reclaim threshold. Both are gone with heartbeat_at (docs/adr/0048) — the
+  // feed's own entry timestamps say when this session last did anything, and
+  // they say it about real work rather than about a timer.
   const blocked = task.liveState === "blocked";
   const visibility = feedVisibility(density, false);
 
@@ -190,10 +192,6 @@ export function TaskDetail({
           <span className="text-xs text-dim2 min-w-0 truncate">
             {repoLabel(task)}
             {branch && ` · ${branch}`}
-            {heartbeat && (
-              <span className={staleTag ? "text-error" : undefined}> · {heartbeat}</span>
-            )}
-            
           </span>
           
           <div className="ml-auto flex items-center gap-2 flex-none">

@@ -32,21 +32,12 @@ async function postJSON<T>(path: string, body: unknown): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-export async function heartbeat(leaseId: string): Promise<void> {
-  await postJSON("/heartbeat", { leaseId });
-}
-
-export async function setStatus(
-  status: string,
-  fields: { prUrl?: string | null; notes?: string | null; lastError?: string | null } = {},
-): Promise<void> {
-  await postJSON("/status", {
-    status,
-    prUrl: fields.prUrl ?? null,
-    notes: fields.notes ?? null,
-    lastError: fields.lastError ?? null,
-  });
-}
+// heartbeat() and setStatus() used to live here. Both are gone in
+// docs/adr/0048 along with the endpoints they posted to — POST /heartbeat and
+// POST /status no longer exist on the sidecar, so leaving these exported would
+// have handed a future caller a function that 404s. There is no status to set
+// (pod_phase is the lifecycle) and nothing to beat toward (the provisioner's
+// Job list is the liveness signal).
 
 export async function appendJournal(
   repo: string,

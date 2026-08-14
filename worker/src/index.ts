@@ -114,8 +114,20 @@ export async function main(
 // index.test.ts) rather than run directly — keeps main() exported and
 // independently invokable, without a top-level side effect.
 if (import.meta.main) {
-  main().catch((err) => {
-    log("error", "worker crashed", { sessionId: SESSION_ID, error: String(err) });
-    process.exit(1);
-  });
+  main()
+    .catch((err) => {
+      log("error", "worker crashed", { sessionId: SESSION_ID, error: String(err) });
+      process.exitCode = 1;
+    })
+    // process.exitCode only *requests* an exit code; the process still waits
+    // for the event loop to drain. A single lingering handle — an SSE reader
+    // mid-reconnect, an unsettled fetch — and the pod runs forever with the
+    // right exit code and no exit. That is indistinguishable from a working
+    // session to everything outside: the Job never reaches a terminal phase,
+    // pod_phase stays RUNNING, and the slot is never released. Five of those
+    // and the fleet stops accepting work.
+    //
+    // This process is single-shot by definition, so exiting explicitly here
+    // costs nothing and removes the whole failure class.
+    .finally(() => process.exit(process.exitCode ?? 0));
 }

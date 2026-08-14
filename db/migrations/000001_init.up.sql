@@ -64,7 +64,14 @@ CREATE TABLE sessions (
   -- The session's SDK permission mode ("default"|"plan"|"acceptEdits"|
   -- "bypassPermissions"|...). Restored on every warm — without it a
   -- session a human put into acceptEdits silently reverts to default.
-  permission_mode   TEXT,
+  --
+  -- NOT NULL DEFAULT 'default' rather than a bare nullable column: "sessions
+  -- start in default mode, CLI parity" is a locked decision (docs/adr/0029),
+  -- and a nullable column makes that true only as long as every reader
+  -- remembers to coalesce NULL to "default". One that forgets hands the SDK
+  -- an undefined mode. Stating it once here is the same guarantee with
+  -- nothing to forget.
+  permission_mode   TEXT NOT NULL DEFAULT 'default',
 
   -- Pod lifecycle, written by ReportPodEvents and by core's reconcile
   -- loop. This is the fleet's only liveness signal.

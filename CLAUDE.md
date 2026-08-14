@@ -199,6 +199,28 @@ feature was written:
   its port is open, or its handshake succeeds. Applies to anything reached
   through the agent → sidecar → core → provisioner → pod proxy chain, where a
   failure at any hop is swallowed into an empty result.
+- **A wide rename can silently swap two same-typed fields.** `task_id` →
+  `session_id` (docs/adr/0048) left `SaveAgentSessionId` passing
+  `req.GetSessionId()` for *both* the row key and the SDK's own conversation
+  id. Both are strings, so it compiled, linted, and passed every mocked unit
+  test — and every resume silently began a brand-new conversation, because
+  the SDK was handed an id that was never one of its own. The only symptom is
+  "the warmed agent doesn't remember anything." **After renaming a field
+  across a proto, check the call sites where the old and new names now
+  collide**, not just that it builds. Guarded by
+  `TestSaveAgentSessionId_StoresTheAgentIdNotTheSessionId`.
+- **`process.exitCode = 1` is not an exit.** It sets the code and waits for
+  the event loop to drain; one lingering handle and the worker runs forever
+  with the right exit code and no exit. From outside that is indistinguishable
+  from a working session — the Job never reaches a terminal phase, `pod_phase`
+  stays RUNNING, and the slot is never released. In a single-shot process,
+  exit explicitly. Same failure class as the `Succeeded`-Job gap below.
+- **The fleet wedges silently after `MAX_LIVE_SESSIONS`, and only then.**
+  Anything that leaves a finished session non-terminal — an unreported
+  `Succeeded` Job, a pod that never exits, an archived row still counted —
+  costs one permanent slot. Nothing errors until the sixth session, which is
+  why the check is "run six sessions and open a seventh", not "run one and
+  see that it works."
 
 ## Workflow rules
 

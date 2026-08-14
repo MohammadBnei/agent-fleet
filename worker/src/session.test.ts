@@ -12,7 +12,6 @@ import { test, expect, mock, beforeEach, afterAll } from "bun:test";
 
 const pushedMessages: { seq: number; from: string; text: string; type?: string; replyTo?: number }[] = [];
 const savedSessionIds: string[] = [];
-const statusUpdates: string[] = [];
 let nextSeq = 1;
 
 // The human-message feed a real sidecar SSE stream would deliver — tests
@@ -44,9 +43,6 @@ mock.module("./sidecarClient.js", () => ({
     // Mock implementation - just accept the call
   }),
   getSession: mock(async () => ({ description: "test session", permissionMode: undefined, model: undefined })),
-  setStatus: mock(async (status: string) => {
-    statusUpdates.push(status);
-  }),
   streamHumanMessages: mock(async (onEntry: typeof humanMessageHandler, signal: AbortSignal) => {
     humanMessageHandler = onEntry;
     // Resolves only when the caller aborts — mirrors the real SSE stream's
@@ -116,13 +112,29 @@ mock.module("@anthropic-ai/claude-agent-sdk", () => ({
         // stop yielding. Without this, the "idle, waiting for the next
         // streamed input" case (the common shape of an unprompted /stop)
         // never resolves at all.
-        const next = await Promise.race([
-          iterator.next(),
-          new Promise<never>((_, reject) => {
-            if (abortController?.signal.aborted) reject(new Error("aborted"));
-            abortController?.signal.addEventListener("abort", () => reject(new Error("aborted")));
-          }),
-        ]);
+        // The abort must interrupt this await, not merely stop the next
+        // yield — otherwise the common "idle, waiting for the next streamed
+        // input" case (an unprompted /stop) never resolves at all.
+        //
+        // It must also not leave a rejected promise nobody is holding. When
+        // runSession throws on its own (a non-success result, a crash), its
+        // finally block aborts while nothing is iterating this generator any
+        // more; letting the rejection escape produces an unhandled rejection
+        // that wedges the whole bun test file — no results, no per-test
+        // timeout, just a process that never finishes. Catching it here keeps
+        // the interrupt semantics and ends the generator cleanly.
+        let next: IteratorResult<{ message: { content: string } }>;
+        try {
+          next = await Promise.race([
+            iterator.next(),
+            new Promise<never>((_, reject) => {
+              if (abortController?.signal.aborted) reject(new Error("aborted"));
+              abortController?.signal.addEventListener("abort", () => reject(new Error("aborted")));
+            }),
+          ]);
+        } catch {
+          return;
+        }
         const { done, value } = next;
         if (done) return;
         consumedInputs.push(value as { message: { content: string } });
@@ -205,7 +217,6 @@ beforeEach(() => {
   pushedMessages.length = 0;
   nextSeq = 1;
   savedSessionIds.length = 0;
-  statusUpdates.length = 0;
   humanMessageHandler = null;
   mockMessageText = "mock agent message";
   forceResult = null;
@@ -422,8 +433,9 @@ test("a permission_mode entry sets the SDK mode and resolves any pending permiss
   const modeRecorded = pushedMessages.find((m) => m.type === "permission_response");
   expect(modeRecorded).toBeDefined();
   expect(JSON.parse(modeRecorded!.text).behavior).toBe("allow");
-  // No fleet-imposed phase left to report — status stays whatever it was.
-  expect(statusUpdates).not.toContain("implementing");
+  // This used to also assert setStatus was never called with "implementing".
+  // There is no setStatus and no status column any more (docs/adr/0048), so
+  // the assertion could only ever pass — which is worse than deleting it.
 
   pushHuman("", "abort");
   await promise;
@@ -510,14 +522,26 @@ test("abort before anything is answered ends the task as aborted", async () => {
   expect(interruptCalls).toBeGreaterThan(0);
 }, 10000);
 
+// Every test that expects a round to HAPPEN has to push a message first.
+// The input queue is deliberately never seeded (docs/adr/0048): a session
+// with no message has no turn, which is what makes "optional first message"
+// a resting state rather than a special case. Before the rewrite the task
+// description was pushed automatically, so a bare runSession() produced
+// round 1 on its own — these tests were written against that, and without
+// the push they sit forever waiting for an input that never comes.
 test("a crashed session propagates the error instead of hanging", async () => {
   crashOnRound = 1;
-  await expect(runSession()).rejects.toThrow("simulated session crash");
+  const promise = runSession();
+  await Bun.sleep(20);
+  pushHuman("start working", "discussion");
+  await expect(promise).rejects.toThrow("simulated session crash");
 }, 10000);
 
 test("a successful round never ends the session on its own — no automated completion detection", async () => {
   mockMessageText = "done, opened the PR";
   const promise = runSession();
+  await Bun.sleep(20);
+  pushHuman("go", "discussion");
   await Bun.sleep(20);
 
   // The session already ran one successful round but must still be
@@ -532,6 +556,8 @@ test("a successful round never ends the session on its own — no automated comp
 
 test("the session keeps consuming successful rounds indefinitely until a human stops it", async () => {
   const promise = runSession();
+  await Bun.sleep(20);
+  pushHuman("first message", "discussion");
   await Bun.sleep(20);
   expect(savedSessionIds.length).toBe(1);
 
@@ -575,25 +601,32 @@ test("a soft interrupt calls q.interrupt(), swallows the following non-success r
   expect(result.aborted).toBe(true);
 }, 10000);
 
-test("a 0-turn/$0 result is classified transient", async () => {
-  forceResult = { subtype: "error_during_execution", num_turns: 0, total_cost_usd: 0 };
-  await expect(runSession()).rejects.toThrow(TransientError);
-}, 10000);
-
-test("a genuine non-success result throws a plain Error", async () => {
+// The two "classified transient" tests that used to sit here are gone with
+// TransientError itself (docs/adr/0048). The distinction only ever existed to
+// pick between two dispositions — fail the task, or leave it for core's
+// reclaim to re-dispatch. Nothing re-dispatches a session now, so both
+// branches lead to the same place: exit non-zero, Job Failed, pod_phase
+// CRASHED with the message attached, and a human decides whether to warm it
+// again. A test asserting which error class we picked would be testing a
+// choice with no consequence.
+test("a non-success result fails the run, carrying the SDK's own reason", async () => {
   forceResult = { subtype: "error_max_turns", num_turns: 5, total_cost_usd: 0.42 };
   const promise = runSession();
+  await Bun.sleep(20);
+  pushHuman("start working", "discussion");
 
+  // The message matters more than the type: it is what lands in last_error
+  // and is the entirety of what a human has to go on from the dashboard.
   await expect(promise).rejects.toThrow("session stopped: error_max_turns after 5 turns, $0.42");
-  const error = await promise.catch((e) => e);
-  expect(error).not.toBeInstanceOf(TransientError);
 }, 10000);
 
-test("a non-success 0-turn/$0 result is classified transient regardless of when it happens", async () => {
+test("a 0-turn/$0 result fails the same way, with no special case", async () => {
   forceResult = { subtype: "error_during_execution", num_turns: 0, total_cost_usd: 0 };
   const promise = runSession();
+  await Bun.sleep(20);
+  pushHuman("start working", "discussion");
 
-  await expect(promise).rejects.toThrow(TransientError);
+  await expect(promise).rejects.toThrow("session stopped: error_during_execution after 0 turns, $0");
 }, 10000);
 
 // Raw-relay behavior: every SDK message reaches pushMessage, not just
@@ -603,6 +636,8 @@ test("a non-success 0-turn/$0 result is classified transient regardless of when 
 test("tool_use, tool_result, and result messages are all relayed, not just assistant text", async () => {
   includeToolResult = true;
   const promise = runSession();
+  await Bun.sleep(20);
+  pushHuman("go", "discussion");
   await Bun.sleep(20);
   pushHuman("", "abort");
   await promise;
@@ -621,6 +656,13 @@ test("tool_use, tool_result, and result messages are all relayed, not just assis
 async function relayOnce(extras: Record<string, unknown>[]): Promise<void> {
   extraMessages = extras;
   const promise = runSession();
+  await Bun.sleep(20);
+  // A real turn has to happen for anything to be relayed at all. The session
+  // does not start one on its own any more (docs/adr/0048 — an unseeded input
+  // queue is what makes "session with no message" a valid resting state), so
+  // relaying "one round" means pushing one message and letting it complete
+  // before aborting.
+  pushHuman("go", "discussion");
   await Bun.sleep(20);
   pushHuman("", "abort");
   await promise;
