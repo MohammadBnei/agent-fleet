@@ -4,6 +4,7 @@ import { TaskDetail } from "./pages/TaskDetail";
 import { Worktrees } from "./pages/Worktrees";
 import { Files } from "./pages/Files";
 import { Audits } from "./pages/Audits";
+import { Observability } from "./pages/Observability";
 import { NewTaskDialog } from "./components/NewTaskDialog";
 import { SettingsMenu } from "./components/SettingsMenu";
 import { Segmented } from "./components/Segmented";
@@ -26,7 +27,7 @@ function readTaskIdFromUrl(): string | null {
   return new URLSearchParams(window.location.search).get("task");
 }
 
-export type View = "tasks" | "audits" | "worktrees" | "files";
+export type View = "tasks" | "audits" | "worktrees" | "files" | "observability";
 
 // The manifest's app shortcuts (icons/site.webmanifest) land here. Read once on
 // mount: they're an entry point, not persistent state, and the params are
@@ -39,7 +40,7 @@ function readShortcut(): { needsYouOnly: boolean; newTask: boolean } {
 
 function readViewFromUrl(): View {
   const v = new URLSearchParams(window.location.search).get("view");
-  return v === "worktrees" || v === "files" || v === "audits" ? v : "tasks";
+  return v === "worktrees" || v === "files" || v === "audits" || v === "observability" ? v : "tasks";
 }
 
 const NAV: readonly { value: View; label: string }[] = [
@@ -47,6 +48,7 @@ const NAV: readonly { value: View; label: string }[] = [
   { value: "audits", label: "audits" },
   { value: "worktrees", label: "worktrees" },
   { value: "files", label: "files" },
+  { value: "observability", label: "observability" },
 ];
 
 // Mobile's bottom bar has less room; "trees" is the console mockup's own label.
@@ -55,6 +57,9 @@ const MOBILE_NAV: readonly { value: View; label: string }[] = [
   { value: "audits", label: "audits" },
   { value: "worktrees", label: "trees" },
   { value: "files", label: "files" },
+  // Same shortening rule the "trees" label above follows — the bottom bar
+  // now carries five cells and has no room for the full word.
+  { value: "observability", label: "obs" },
 ];
 
 // Plain polling, not a stream — a second live feed just for the list is
@@ -428,6 +433,8 @@ export default function App() {
           <Files />
         ) : view === "audits" ? (
           <Audits proposed={proposed} onSelectTask={selectTask} reloadTasks={loadTasks} />
+        ) : view === "observability" ? (
+          <Observability onSelectTask={selectTask} />
         ) : selectedId ? (
           isDesktop ? (
             <TaskDetail taskId={selectedId} tasks={tasks} onBack={clearSelection} onClosed={clearSelection} />
