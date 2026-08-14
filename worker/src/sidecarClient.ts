@@ -64,10 +64,19 @@ export async function saveSessionId(sessionId: string, model: string): Promise<v
   await postJSON("/session-id", { sessionId, model, leaseId: process.env.LEASE_ID ?? "" });
 }
 
-export async function getTask(): Promise<{
+// getSession reads the session row fresh at startup.
+//
+// It survives docs/adr/0048's cull of this API for exactly one reason:
+// permission_mode must be RESTORED on a warm. Without it, resuming a session
+// a human put into acceptEdits/plan/bypassPermissions silently reverts it to
+// "default" — and the only way to notice is to watch it start asking for
+// permission again.
+//
+// `description` comes back too but is a label, not an instruction: the
+// session's actual instruction is its first transcript entry. `guidance` and
+// `baseBranch` are gone with the columns.
+export async function getSession(): Promise<{
   description: string;
-  guidance: string;
-  baseBranch: string;
   permissionMode?: string;
   model?: string;
 }> {

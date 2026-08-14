@@ -202,6 +202,11 @@ message Session {
   // that the row itself is a session. Unset until the SDK's first streamed
   // message reports it.
   optional string agent_session_id = 12;
+  // Which Claude model this session runs. The worker reads it back on every
+  // warm and falls back to the CLAUDE_MODEL env default when unset — it was
+  // stored but never returned before, so a per-session model choice silently
+  // did nothing.
+  optional string model = 22;
 
   // Last time a transcript entry was appended — the clock the idle sweep and
   // the retention GC both read. RFC3339. Unset for a session with no

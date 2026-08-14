@@ -330,29 +330,35 @@ func protoTypeToString(t agentfleetv1.TranscriptEntryType) string {
 	}
 }
 
-// taskHandler fetches task details from the database via the dashboard API,
-// including model and permission_mode. Used by the worker on startup to get
-// fresh task data instead of relying on stale environment variables.
+// taskHandler serves the worker its own session row at startup.
+//
+// It exists for one reason that matters: permission_mode must be RESTORED on
+// a warm, or every resume of a session a human put into acceptEdits/plan/
+// bypassPermissions silently reverts to "default".
+//
+// This handler previously returned `guidance: ""` and `baseBranch: "main"`
+// hardcoded — so the operator's chosen prompt snippets, resolved and stored
+// at task-creation time, never once reached the model, and every repo's base
+// branch was reported as main regardless of its actual configuration. Both
+// fields are gone with their columns (docs/adr/0048): snippets now prefill
+// the dashboard composer, where a human can see them, and the agent reads
+// its own branch from git.
 func taskHandler(core *coreclient.Client) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		task, err := core.GetTask(r.Context())
+		session, err := core.GetTask(r.Context())
 		if err != nil {
 			writeError(w, http.StatusBadGateway, err)
 			return
 		}
-		// Return only the fields the worker needs
-		response := map[string]interface{}{
-			"description": task.GetDescription(),
-			"guidance":    "",
-			"baseBranch":  "main",
+		// description is a label, not an instruction — the session's actual
+		// instruction is its first transcript entry.
+		response := map[string]any{"description": session.GetDescription()}
+		if session.PermissionMode != nil {
+			response["permissionMode"] = *session.PermissionMode
 		}
-		// Add optional fields if they exist
-		// Note: We need to find the repo's base branch from somewhere
-		// For now, we'll use "main" as default since it's not in the Task proto
-		if task.PermissionMode != nil {
-			response["permissionMode"] = *task.PermissionMode
+		if session.Model != nil {
+			response["model"] = *session.Model
 		}
-		// Model field will be added when proto regenerates
 		writeJSON(w, http.StatusOK, response)
 	}
 }

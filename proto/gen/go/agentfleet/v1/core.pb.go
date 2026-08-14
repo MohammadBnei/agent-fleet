@@ -780,6 +780,11 @@ type Session struct {
 	// that the row itself is a session. Unset until the SDK's first streamed
 	// message reports it.
 	AgentSessionId *string `protobuf:"bytes,12,opt,name=agent_session_id,json=agentSessionId,proto3,oneof" json:"agent_session_id,omitempty"`
+	// Which Claude model this session runs. The worker reads it back on every
+	// warm and falls back to the CLAUDE_MODEL env default when unset — it was
+	// stored but never returned before, so a per-session model choice silently
+	// did nothing.
+	Model *string `protobuf:"bytes,22,opt,name=model,proto3,oneof" json:"model,omitempty"`
 	// Last time a transcript entry was appended — the clock the idle sweep and
 	// the retention GC both read. RFC3339. Unset for a session with no
 	// activity yet.
@@ -906,6 +911,13 @@ func (x *Session) GetLastError() string {
 func (x *Session) GetAgentSessionId() string {
 	if x != nil && x.AgentSessionId != nil {
 		return *x.AgentSessionId
+	}
+	return ""
+}
+
+func (x *Session) GetModel() string {
+	if x != nil && x.Model != nil {
+		return *x.Model
 	}
 	return ""
 }
@@ -2563,7 +2575,7 @@ const file_agentfleet_v1_core_proto_rawDesc = "" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\",\n" +
 	"\x12KillE2eEnvResponse\x12\x16\n" +
-	"\x06killed\x18\x01 \x01(\bR\x06killed\"\x95\x06\n" +
+	"\x06killed\x18\x01 \x01(\bR\x06killed\"\xba\x06\n" +
 	"\aSession\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04repo\x18\x02 \x01(\tR\x04repo\x12 \n" +
@@ -2575,14 +2587,16 @@ const file_agentfleet_v1_core_proto_rawDesc = "" +
 	"podMessage\x88\x01\x01\x12\"\n" +
 	"\n" +
 	"last_error\x18\v \x01(\tH\x04R\tlastError\x88\x01\x01\x12-\n" +
-	"\x10agent_session_id\x18\f \x01(\tH\x05R\x0eagentSessionId\x88\x01\x01\x12)\n" +
-	"\x0elast_active_at\x18\r \x01(\tH\x06R\flastActiveAt\x88\x01\x01\x12,\n" +
-	"\x0fpermission_mode\x18\x0e \x01(\tH\aR\x0epermissionMode\x88\x01\x01\x12\x1d\n" +
+	"\x10agent_session_id\x18\f \x01(\tH\x05R\x0eagentSessionId\x88\x01\x01\x12\x19\n" +
+	"\x05model\x18\x16 \x01(\tH\x06R\x05model\x88\x01\x01\x12)\n" +
+	"\x0elast_active_at\x18\r \x01(\tH\aR\flastActiveAt\x88\x01\x01\x12,\n" +
+	"\x0fpermission_mode\x18\x0e \x01(\tH\bR\x0epermissionMode\x88\x01\x01\x12\x1d\n" +
 	"\n" +
 	"live_state\x18\x11 \x01(\tR\tliveState\x12+\n" +
 	"\x11pending_decisions\x18\x13 \x01(\x05R\x10pendingDecisions\x12\x1e\n" +
-	"\bswept_at\x18\x14 \x01(\tH\bR\asweptAt\x88\x01\x01\x12$\n" +
-	"\varchived_at\x18\x15 \x01(\tH\tR\n" +
+	"\bswept_at\x18\x14 \x01(\tH\tR\asweptAt\x88\x01\x01\x12$\n" +
+	"\varchived_at\x18\x15 \x01(\tH\n" +
+	"R\n" +
 	"archivedAt\x88\x01\x01B\b\n" +
 	"\x06_titleB\f\n" +
 	"\n" +
@@ -2591,7 +2605,8 @@ const file_agentfleet_v1_core_proto_rawDesc = "" +
 	"_pod_phaseB\x0e\n" +
 	"\f_pod_messageB\r\n" +
 	"\v_last_errorB\x13\n" +
-	"\x11_agent_session_idB\x11\n" +
+	"\x11_agent_session_idB\b\n" +
+	"\x06_modelB\x11\n" +
 	"\x0f_last_active_atB\x12\n" +
 	"\x10_permission_modeB\v\n" +
 	"\t_swept_atB\x0e\n" +

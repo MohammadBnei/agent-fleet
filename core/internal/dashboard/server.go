@@ -1192,6 +1192,7 @@ func SessionToProto(t sessions.Session) *agentfleetv1.Session {
 		PodMessage:     t.PodMessage,
 		LastError:      t.LastError,
 		AgentSessionId: t.AgentSessionID,
+		Model:          t.Model,
 		PermissionMode: t.PermissionMode,
 		LastActiveAt:   rfc3339(t.LastActiveAt),
 		SweptAt:        rfc3339(t.SweptAt),
