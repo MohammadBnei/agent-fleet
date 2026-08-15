@@ -336,6 +336,21 @@ func (c *Client) SetPermissionMode(ctx context.Context, mode string) error {
 	return nil
 }
 
+// UpdateSessionMeta relabels this pod's OWN session's title/description. A nil
+// title or description leaves that field unchanged. taskID is this pod's
+// identity, injected here, not an argument.
+func (c *Client) UpdateSessionMeta(ctx context.Context, title, description *string) error {
+	_, err := c.rpc.UpdateSessionMeta(ctx, &agentfleetv1.UpdateSessionMetaRequest{
+		SessionId:   c.taskID,
+		Title:       title,
+		Description: description,
+	})
+	if err != nil {
+		return fmt.Errorf("UpdateSessionMeta: %w", err)
+	}
+	return nil
+}
+
 // --- inter-agent coordination (docs/adr/0041) ---
 //
 // The caller's own task id is injected here rather than accepted from the

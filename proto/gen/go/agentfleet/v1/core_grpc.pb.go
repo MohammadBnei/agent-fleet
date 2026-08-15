@@ -28,6 +28,7 @@ const (
 	CoreService_RequestService_FullMethodName      = "/agentfleet.v1.CoreService/RequestService"
 	CoreService_GetSession_FullMethodName          = "/agentfleet.v1.CoreService/GetSession"
 	CoreService_SetPermissionMode_FullMethodName   = "/agentfleet.v1.CoreService/SetPermissionMode"
+	CoreService_UpdateSessionMeta_FullMethodName   = "/agentfleet.v1.CoreService/UpdateSessionMeta"
 	CoreService_AppendJournal_FullMethodName       = "/agentfleet.v1.CoreService/AppendJournal"
 	CoreService_SearchJournal_FullMethodName       = "/agentfleet.v1.CoreService/SearchJournal"
 	CoreService_SaveAgentSessionId_FullMethodName  = "/agentfleet.v1.CoreService/SaveAgentSessionId"
@@ -89,6 +90,10 @@ type CoreServiceClient interface {
 	// already-running worker via the transcript.
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	SetPermissionMode(ctx context.Context, in *SetPermissionModeRequest, opts ...grpc.CallOption) (*SetPermissionModeResponse, error)
+	// A worker pod relabelling its own session's title/description. Plain column
+	// write, no transcript append — the caller IS the session (mirrors this
+	// service's SetPermissionMode, not DashboardService's cross-worker notify).
+	UpdateSessionMeta(ctx context.Context, in *UpdateSessionMetaRequest, opts ...grpc.CallOption) (*UpdateSessionMetaResponse, error)
 	// Heartbeat, SetTaskStatus and StillHoldsLease used to be here. All three
 	// are deleted in docs/adr/0048 — see their message definitions above for
 	// why each stopped being a question worth asking.
@@ -214,6 +219,16 @@ func (c *coreServiceClient) SetPermissionMode(ctx context.Context, in *SetPermis
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(SetPermissionModeResponse)
 	err := c.cc.Invoke(ctx, CoreService_SetPermissionMode_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *coreServiceClient) UpdateSessionMeta(ctx context.Context, in *UpdateSessionMetaRequest, opts ...grpc.CallOption) (*UpdateSessionMetaResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateSessionMetaResponse)
+	err := c.cc.Invoke(ctx, CoreService_UpdateSessionMeta_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -405,6 +420,10 @@ type CoreServiceServer interface {
 	// already-running worker via the transcript.
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	SetPermissionMode(context.Context, *SetPermissionModeRequest) (*SetPermissionModeResponse, error)
+	// A worker pod relabelling its own session's title/description. Plain column
+	// write, no transcript append — the caller IS the session (mirrors this
+	// service's SetPermissionMode, not DashboardService's cross-worker notify).
+	UpdateSessionMeta(context.Context, *UpdateSessionMetaRequest) (*UpdateSessionMetaResponse, error)
 	// Heartbeat, SetTaskStatus and StillHoldsLease used to be here. All three
 	// are deleted in docs/adr/0048 — see their message definitions above for
 	// why each stopped being a question worth asking.
@@ -469,6 +488,9 @@ func (UnimplementedCoreServiceServer) GetSession(context.Context, *GetSessionReq
 }
 func (UnimplementedCoreServiceServer) SetPermissionMode(context.Context, *SetPermissionModeRequest) (*SetPermissionModeResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SetPermissionMode not implemented")
+}
+func (UnimplementedCoreServiceServer) UpdateSessionMeta(context.Context, *UpdateSessionMetaRequest) (*UpdateSessionMetaResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpdateSessionMeta not implemented")
 }
 func (UnimplementedCoreServiceServer) AppendJournal(context.Context, *AppendJournalRequest) (*AppendJournalResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method AppendJournal not implemented")
@@ -677,6 +699,24 @@ func _CoreService_SetPermissionMode_Handler(srv interface{}, ctx context.Context
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(CoreServiceServer).SetPermissionMode(ctx, req.(*SetPermissionModeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CoreService_UpdateSessionMeta_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateSessionMetaRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).UpdateSessionMeta(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_UpdateSessionMeta_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).UpdateSessionMeta(ctx, req.(*UpdateSessionMetaRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -946,6 +986,10 @@ var CoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SetPermissionMode",
 			Handler:    _CoreService_SetPermissionMode_Handler,
+		},
+		{
+			MethodName: "UpdateSessionMeta",
+			Handler:    _CoreService_UpdateSessionMeta_Handler,
 		},
 		{
 			MethodName: "AppendJournal",

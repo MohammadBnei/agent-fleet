@@ -382,6 +382,21 @@ func (s *Server) SetPermissionMode(ctx context.Context, req *agentfleetv1.SetPer
 	return &agentfleetv1.SetPermissionModeResponse{}, nil
 }
 
+// UpdateSessionMeta persists a worker pod's own title/description. Like
+// SetPermissionMode, no transcript append: the caller is the session whose
+// labels these are, there is no other worker to notify. req.Title/Description
+// are *string (proto optional) and passed through untouched — nil means "leave
+// unchanged", so GetTitle() (which derefs to "") must NOT be used here.
+func (s *Server) UpdateSessionMeta(ctx context.Context, req *agentfleetv1.UpdateSessionMetaRequest) (*agentfleetv1.UpdateSessionMetaResponse, error) {
+	if req.GetSessionId() == "" {
+		return nil, fmt.Errorf("session_id is required")
+	}
+	if err := s.sessions.UpdateMeta(ctx, req.GetSessionId(), req.Title, req.Description); err != nil {
+		return nil, fmt.Errorf("UpdateSessionMeta: %w", err)
+	}
+	return &agentfleetv1.UpdateSessionMetaResponse{}, nil
+}
+
 // Heartbeat and SetTaskStatus used to live here, and their absence is the
 // single biggest behavioural change in docs/adr/0048.
 //
