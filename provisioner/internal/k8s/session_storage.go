@@ -145,8 +145,18 @@ func cloneInitContainer(image string, spec WorkerPodSpec) corev1.Container {
 # "detected dubious ownership" — which is what happened the first time this
 # ran in kind. worker/src/index.ts already carries the same line for the same
 # reason; both containers need it because they do not share $HOME.
-git config --global --add safe.directory %[1]s
-git config --global --add safe.directory /repo-cache/%[2]s
+#
+# The wildcard, not the two paths this used to list, because safe.directory is
+# an exact compare against the path git NAMES — and a local-transport clone
+# enters the cache as a bare gitdir, so the path it wants is
+# /repo-cache/<repo>/.git, not the directory above it. Listing the parent
+# looked right, matched nothing, and every session died on "Could not read from
+# remote repository" — the clone's report of a failure that was really the
+# ownership guard. The sidecar container next door already wildcards the same
+# way (pod.go's GIT_CONFIG_VALUE_0). This container runs as uid 1000 and
+# mounts only its own workspace plus the read-only cache; there is nothing else
+# here for a wildcard to over-trust.
+git config --global --add safe.directory '*'
 
 if [ -d %[1]s/.git ]; then
   echo "workspace already has a repository, leaving it alone"

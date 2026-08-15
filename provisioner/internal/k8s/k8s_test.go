@@ -89,6 +89,13 @@ func TestCreateWorkerPod_TwoContainersSharedPVC(t *testing.T) {
 	if !sawTree || !sawCache {
 		t.Fatalf("clone container must mount the session volume rw and the repo cache ro, got %+v", clone.VolumeMounts)
 	}
+	// The wildcard specifically, not a list of paths. safe.directory compares
+	// exactly against the path git names, and a local-transport clone names the
+	// cache's .git — so listing /repo-cache/<repo> matched nothing and every
+	// clone died with "Could not read from remote repository".
+	if !strings.Contains(strings.Join(clone.Command, "\n"), "safe.directory '*'") {
+		t.Errorf("clone container must wildcard safe.directory, got %q", clone.Command)
+	}
 	sidecar := podSpec.InitContainers[1]
 	if sidecar.RestartPolicy == nil || *sidecar.RestartPolicy != corev1.ContainerRestartPolicyAlways {
 		t.Errorf("sidecar init container must be a native sidecar (RestartPolicy: Always), got %v", sidecar.RestartPolicy)
