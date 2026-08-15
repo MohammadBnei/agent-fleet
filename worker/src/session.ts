@@ -713,6 +713,19 @@ export async function runSession(): Promise<SessionResult> {
             .savePermissionMode("default")
             .catch((err) => log("warn", "savePermissionMode failed", { taskId: SESSION_ID, error: String(err) }));
         }
+      } else if (msg.type === "system" && "session_id" in msg && (msg.session_id as string) !== sessionId) {
+        // A LATER init with a different session_id — this is what `/clear`
+        // produces (SDK emits a fresh init + new session_id when the human
+        // resets the conversation). Without re-saving it, saveSessionId would
+        // still hold the pre-`/clear` id and the next Warm would resume the
+        // OLD conversation, silently un-doing the reset. Not a resume failure
+        // (that check only guards the FIRST init), so no error log — just
+        // adopt and persist the new id so the restart survives a warm.
+        sessionId = msg.session_id as string;
+        input.setSessionId(sessionId);
+        await sidecar
+          .saveSessionId(sessionId, session.model ?? MODEL)
+          .catch((err) => log("warn", "saveSessionId failed after clear", { taskId: SESSION_ID, error: String(err) }));
       }
       await logSdkMessage("agent", msg as { type: string; [key: string]: unknown });
 

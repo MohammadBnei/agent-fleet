@@ -95,6 +95,11 @@ let consumedInputs: { message: { content: string } }[] = [];
 // scripted happy path never produces (auth_status, tool_progress, a
 // thinking block, …) through the real logSdkMessage.
 let extraMessages: Record<string, unknown>[] = [];
+// When true, the fake session emits a FRESH system init with a new
+// session_id on any round whose input is exactly "/clear" — mirroring the
+// real SDK, which resets the conversation and hands back a new session_id
+// (with a new init message) when the human sends /clear.
+let reinitOnClear = false;
 
 mock.module("@anthropic-ai/claude-agent-sdk", () => ({
   query: ({ prompt, options }: { prompt: AsyncIterable<{ message: { content: string } }>; options: Record<string, unknown> }) => {
@@ -151,6 +156,27 @@ mock.module("@anthropic-ai/claude-agent-sdk", () => ({
             model: "claude-opus-4-8",
             permissionMode: "default",
             slash_commands: ["/compact"],
+            skills: ["doubt-driven-development"],
+            tools: ["Bash", "Read"],
+            mcp_servers: [{ name: "agent-fleet-sidecar", status: "connected" }],
+            cwd: "/workspace",
+            claude_code_version: "2.1.0",
+            agents: [],
+            plugins: [],
+            output_style: "default",
+          };
+        }
+        if (reinitOnClear && (value as { message: { content: string } }).message.content === "/clear") {
+          // /clear resets the conversation: the real SDK hands back a brand
+          // new session_id in a fresh init message.
+          sessionId = `agent-${crypto.randomUUID()}`;
+          yield {
+            type: "system",
+            subtype: "init",
+            session_id: sessionId,
+            model: "claude-opus-4-8",
+            permissionMode: "default",
+            slash_commands: ["/compact", "/clear"],
             skills: ["doubt-driven-development"],
             tools: ["Bash", "Read"],
             mcp_servers: [{ name: "agent-fleet-sidecar", status: "connected" }],
@@ -228,6 +254,7 @@ beforeEach(() => {
   queryOptions = null;
   consumedInputs = [];
   extraMessages = [];
+  reinitOnClear = false;
 });
 
 // makeTask is gone: runSession takes no argument now. A session's identity
@@ -277,6 +304,31 @@ test("tool wiring: default mode, no Write/Edit in allowedTools, canUseTool prese
   expect(queryOptions?.settingSources).toEqual(["user", "project"]);
   expect(queryOptions?.settingSources).not.toContain("local");
   expect(queryOptions?.plugins).toBeUndefined();
+}, 10000);
+
+test("SavesTheNewSessionIdAfterClear: a later init with a new session_id is re-saved so /clear survives a warm", async () => {
+  reinitOnClear = true;
+  const promise = runSession();
+  await Bun.sleep(20);
+
+  // A round only runs (and the first init only fires) once an input is
+  // consumed — send a plain turn first to establish the initial session_id.
+  pushHuman("hello");
+  await Bun.sleep(30);
+  expect(savedSessionIds.length).toBe(1);
+  const firstId = savedSessionIds[0];
+
+  // The human sends /clear as a plain conversational turn — the SDK resets
+  // and emits a fresh init with a new session_id, which the driver must
+  // adopt and re-save (otherwise the next Warm resumes the old conversation).
+  pushHuman("/clear");
+  await Bun.sleep(30);
+
+  expect(savedSessionIds.length).toBe(2);
+  expect(savedSessionIds[1]).not.toBe(firstId);
+
+  pushHuman("", "abort");
+  await promise;
 }, 10000);
 
 test("canUseTool posts a permission_request and blocks until a matching permission_response resolves it", async () => {

@@ -46,6 +46,7 @@ export function ActionsMenu({
   currentMode,
   podPhase,
   onBypassClick,
+  onRestart,
   hideToolsInFeed,
   onHideToolsInFeedChange,
   hideChangesInFeed,
@@ -78,6 +79,13 @@ export function ActionsMenu({
   // now" instead of "what does it look like in the list."
   podPhase?: string;
   onBypassClick: () => void;
+  // Sends `/clear` to a live session as a plain conversational turn — the
+  // SDK/CLI intercepts `/`-prefixed streamed input and resets the
+  // conversation (docs/adr/0027). Not an RPC: it rides the same free-text
+  // Discuss path the composer uses, so the owning page hands it down.
+  // Optional + only rendered when the session is live (no pod, nothing to
+  // clear).
+  onRestart?: () => void;
   hideToolsInFeed?: boolean;
   onHideToolsInFeedChange?: (value: boolean) => void;
   hideChangesInFeed?: boolean;
@@ -131,6 +139,17 @@ export function ActionsMenu({
           >
             Kill
           </ActionButton>
+          {onRestart && (
+            <ActionButton
+              className="btn btn-outline btn-xs"
+              busy={busyKey === "discuss"}
+              disabled={busy}
+              onClick={onRestart}
+              title="Send /clear — reset the agent's conversation, keeping the same session"
+            >
+              Restart (/clear)
+            </ActionButton>
+          )}
         </>
       ) : (
         // A swept session cannot be warmed: the retention GC removed its
