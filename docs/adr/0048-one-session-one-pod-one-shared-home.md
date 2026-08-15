@@ -245,13 +245,34 @@ which is 100BASE-TX after overhead. Not confirmed from inside the cluster
 would settle it. Either way, no choice between network storage backends can
 fix it.
 
-> **Confirmed 2026-08-15.** `server1` and `ex-laptop` are on **100 Mbps
-> USB-to-Ethernet adapters**, and neither has a usable onboard NIC. The
-> hypothesis above was right, and the mechanism is now named rather than
-> inferred: `k8s-worker-02`, `k8s-cp-02` and `pg01` all run on server1 and
-> `k8s-cp-03` on ex-laptop, so with `defaultReplicaCount: 3` every synchronous
-> write is gated by the slowest replica link. That is why co-locating the
-> share-manager with the test pod on `k8s-worker-01` changed nothing.
+> **Measured 2026-08-15. The conclusion holds; the host was the other one.**
+>
+> `ethtool` on the PVE hosts — the check named above, finally run:
+>
+> | host | link | notes |
+> |---|---|---|
+> | **`.165` (bnei)** | **100 Mb/s** | the Ryzen box |
+> | `server1` | 1000 Mb/s | RTL8153 on a 5 Gb/s USB 3 port; onboard NIC dead, no carrier |
+> | `ex-laptop` | not yet measured | |
+>
+> A first pass at this note asserted the opposite — that server1 and ex-laptop
+> were the 100 Mbps hosts, on the strength of a recollection rather than a
+> measurement. `lsusb` then showed server1's adapter is a **gigabit** RTL8153,
+> and `ethtool` put it at 1000 Mb/s. Recorded here because the wrong version was
+> committed before anyone ran the command that was sitting in this very
+> paragraph.
+>
+> `.165` explains every number in the table above, because it is in every path:
+> the benchmark pod ran on **`k8s-worker-01`, which is a `.165` guest**, and the
+> Longhorn replicas span all three hosts. It also explains an observation from
+> outside this repo — a PVE **VM migration** between hosts caps at the same
+> ~10 MB/s, and that shares no code with Longhorn or NFS: no replicas, no fsync,
+> no `sync` export. Three unrelated workloads, one shared link.
+>
+> 80 Mbps is 100BASE-TX after TCP overhead, so the original inference was right
+> about the mechanism and wrong only about which machine. Still open: whether
+> `.165`'s NIC is gigabit-capable and negotiating down (a cable or switch port,
+> and therefore near-free) or genuinely 100 Mbps hardware.
 >
 > Two consequences worth stating plainly, because both are easy to re-derive
 > wrongly later:
@@ -263,10 +284,11 @@ fix it.
 > - **No storage hardware would help either.** 1069 MB/s node-local is the same
 >   disks, on the same day. The disks were never the constraint.
 >
-> Fixing the fabric — gigabit USB 3.0 adapters — is worth doing for etcd
-> stability, image pull time and Longhorn rebuild time. It is **not** what makes
-> the fleet fast: even at gigabit, network storage stays far below node-local,
-> which is why the split below went in first and independently.
+> Fixing `.165`'s link is worth doing for etcd stability, image pull time and
+> Longhorn rebuild time — it carries `k8s-worker-01`, `k8s-cp-01`, the Postgres
+> leader and the Garage S3 node. It is **not** what makes the fleet fast: even
+> at gigabit, network storage stays two orders of magnitude below node-local,
+> which is why the split below went in first and independently of it.
 
 **Node-local disk is ~200× faster on metadata and 107× on bandwidth**, and
 that reframes docs/adr/0039's 782-second cold `bun install` entirely. That was
