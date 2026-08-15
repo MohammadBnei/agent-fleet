@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.0.6](https://github.com/MohammadBnei/agent-fleet/compare/3.0.5...3.0.6) (2026-08-15)
+
+
+### Bug Fixes
+
+* **core:** stop AskUserQuestion re-invoke from losing the human's answer ([#164](https://github.com/MohammadBnei/agent-fleet/issues/164)) ([07ca7bb](https://github.com/MohammadBnei/agent-fleet/commit/07ca7bb98b9cae03d2c27cca2c13f924e73930e3))
+
 ## [3.0.5](https://github.com/MohammadBnei/agent-fleet/compare/3.0.4...3.0.5) (2026-08-15)
 
 
