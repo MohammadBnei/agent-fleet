@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.0.2](https://github.com/MohammadBnei/agent-fleet/compare/3.0.1...3.0.2) (2026-08-15)
+
+
+### Bug Fixes
+
+* **dashboard:** catch the console up with the session model ([#159](https://github.com/MohammadBnei/agent-fleet/issues/159)) ([c865beb](https://github.com/MohammadBnei/agent-fleet/commit/c865beb27bb92432f116a34557e3dfb0482fe9db))
+
 ## [3.0.1](https://github.com/MohammadBnei/agent-fleet/compare/3.0.0...3.0.1) (2026-08-15)
 
 # [3.0.0](https://github.com/MohammadBnei/agent-fleet/compare/2.1.0...3.0.0) (2026-08-15)
