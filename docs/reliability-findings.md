@@ -8,6 +8,17 @@ lands; until then, backlog.
 Status: `open` (found, undesigned) · `designing` (decision drafted) ·
 `fixed` (landed, PR linked).
 
+> **Read this first (2026-08-15).** This backlog predates
+> [`adr/0048`](adr/0048-one-session-one-pod-one-shared-home.md), which
+> resolved several findings by **deleting the mechanism they were about**
+> rather than by fixing them. Findings 1, 2, 5, 6 and 12 all concern the
+> dispatch queue, the lease/heartbeat/reclaim machine, worktree lifecycle or
+> `retry_count` — none of which exist. `CreateTask`, `ClaimNextTask` and
+> `CountInFlight` are gone with them, so any symbol below that you cannot
+> grep for was deleted, not renamed. The findings are kept as written
+> because the *reasoning* is what made the case for deleting them; treat the
+> proposed fixes as history, not as a to-do list.
+
 ---
 
 ## 0. Worker session = plain Claude Code session. Discord/dashboard = transport only.

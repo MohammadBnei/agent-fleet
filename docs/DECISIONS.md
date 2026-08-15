@@ -56,11 +56,12 @@ Any doc, code, comment, or memory that contradicts this file or an
   fleet-wide shared file space — it only ever mints short-lived presigned
   PUT/GET URLs, never proxies file bytes itself. See
   [`adr/0031`](adr/0031-garage-s3-shared-files.md).
-- **`thot` is an ordinary worker task, not a special component**
+- **`thot` is an ordinary worker session, not a special component**
   ([`adr/0037`](adr/0037-thot-is-a-worker-task.md), superseding
-  `adr/0035`). A thot session is a worker task on `infra-bootstrap` with
-  a `cluster-access` ingredient; the dispatch path has no idea it is
-  special. Cluster privilege lives in `thot-executor`, a standing service
+  `adr/0035`). A thot session is a worker session on a repo whose `repos`
+  row carries `cluster_access`; nothing in the create or provision path
+  knows it is special, and `Session.kind` is a reserved proto field with no
+  writer. Cluster privilege lives in `thot-executor`, a standing service
   holding the ClusterRole — thot pods themselves hold **zero Kubernetes
   credentials**, restoring `adr/0012`'s rule that the component holding
   write-in-git trust never also holds infra-mutation trust. There is **no
@@ -161,7 +162,7 @@ Any doc, code, comment, or memory that contradicts this file or an
   **ServiceMonitor**, never `prometheus.io/*` annotations: this cluster's
   Prometheus is the Operator with no `additionalScrapeConfigs`, so
   annotations are inert while looking like configuration. No metric carries
-  a `task_id` label. See
+  a `session_id` label. See
   [`adr/0047`](adr/0047-metrics-scoped-to-the-hubs.md).
 
 ## 2. Forbidden patterns (quick check — full list + reasons in `adr/`)
@@ -203,7 +204,7 @@ Any doc, code, comment, or memory that contradicts this file or an
   seeing a non-default value on a live `/metrics` endpoint — not that the
   code compiles — see `adr/0047`.
 - **Granting `core` cluster RBAC to render something.** The topology view
-  gets its cells from `tasks.pod_phase`, which `ReportPodEvents` already
+  gets its cells from `sessions.pod_phase`, which `ReportPodEvents` already
   maintains; a picture is not a reason to break `adr/0020` point 1 — see
   `adr/0047`.
 - **A page-load failure rendered as a blocking modal.** The mobile tab bar is
@@ -216,9 +217,11 @@ Any doc, code, comment, or memory that contradicts this file or an
   line and the agent's prose reading identically is the failure it fixes. A new
   kind is placed in a tier — see `adr/0042`.
 - **Duplicating feed, panel or decision rendering between desktop and mobile.**
-  They share `SessionFeed`/`SessionPanels`/`DecisionInline`; the separate
-  list/detail components exist only for the `useMediaQuery` mount gate, which
-  prevents two concurrent `StreamTranscript` subscriptions — see `adr/0042`.
+  They share `SessionFeed`/`SessionPanels`/`DecisionInline`/`DecisionDock`,
+  and the `bucketSessions`/`sessionLabel` helpers; the separate
+  `SessionList`/`SessionDetail` and `MobileSessionList`/`MobileSessionDetail`
+  components exist only for the `useMediaQuery` mount gate, which prevents two
+  concurrent `StreamTranscript` subscriptions — see `adr/0042`.
 - **Committing Discord/GitHub/Anthropic tokens** to this repo or any
   target repo, in code, manifests, or CI config.
 - **A bespoke per-app Helm chart.** Always reuse

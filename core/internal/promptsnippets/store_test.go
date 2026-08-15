@@ -5,6 +5,7 @@ package promptsnippets
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
@@ -55,21 +56,19 @@ func TestStore_CreateGetListUpdateDelete(t *testing.T) {
 		t.Fatalf("List = %+v, want it to contain %+v", list, sn)
 	}
 
-	got, err := s.GetByIDs(ctx, []string{sn.ID})
-	if err != nil {
-		t.Fatalf("GetByIDs: %v", err)
-	}
-	if len(got) != 1 || got[0] != sn {
-		t.Fatalf("GetByIDs = %+v, want [%+v]", got, sn)
-	}
-
+	// Read back through List rather than GetByIDs, which is deleted along with
+	// the server-side snippet resolution it existed for (docs/adr/0048).
+	// List is now the only read, so it is the only one worth asserting on.
 	updated := Snippet{ID: sn.ID, Name: "test-snippet (v2)", Text: "push, then gh pr create"}
 	if err := s.Update(ctx, updated); err != nil {
 		t.Fatalf("Update: %v", err)
 	}
-	got, err = s.GetByIDs(ctx, []string{sn.ID})
-	if err != nil || len(got) != 1 || got[0] != updated {
-		t.Fatalf("GetByIDs after Update = (%+v, %v), want [%+v]", got, err, updated)
+	list, err = s.List(ctx)
+	if err != nil {
+		t.Fatalf("List after Update: %v", err)
+	}
+	if !slices.Contains(list, updated) {
+		t.Fatalf("List after Update = %+v, want it to contain %+v", list, updated)
 	}
 
 	if err := s.Delete(ctx, sn.ID); err != nil {
@@ -103,16 +102,6 @@ func TestStore_UpdateDeleteUnknownID(t *testing.T) {
 	}
 	if err := s.Delete(ctx, nope); !errors.Is(err, pgx.ErrNoRows) {
 		t.Fatalf("Delete unknown error = %v, want pgx.ErrNoRows", err)
-	}
-}
-
-func TestStore_GetByIDsEmpty(t *testing.T) {
-	s := NewStore(newTestPool(t))
-	ctx := context.Background()
-
-	got, err := s.GetByIDs(ctx, nil)
-	if err != nil || len(got) != 0 {
-		t.Fatalf("GetByIDs(nil) = (%v, %v), want ([], nil)", got, err)
 	}
 }
 

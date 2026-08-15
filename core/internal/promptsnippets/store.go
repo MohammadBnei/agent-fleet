@@ -65,34 +65,14 @@ func (s *Store) List(ctx context.Context) ([]Snippet, error) {
 	return result, rows.Err()
 }
 
-// GetByIDs resolves a set of snippet ids to their text, in name order —
-// used by DashboardService.CreateTask to join the operator's selected
-// snippets into a task's guidance column at creation time. Unknown ids are
-// silently skipped rather than erroring: a snippet deleted between the
-// dashboard fetching its list and the task being submitted shouldn't fail
-// task creation.
-func (s *Store) GetByIDs(ctx context.Context, ids []string) ([]Snippet, error) {
-	if len(ids) == 0 {
-		return nil, nil
-	}
-	rows, err := s.pool.Query(ctx, `SELECT id, name, text, suggested_permission_mode FROM prompt_snippets WHERE id = ANY($1) ORDER BY name`, ids)
-	if err != nil {
-		slog.Error("promptsnippets GetByIDs", "error", err)
-		return nil, fmt.Errorf("get prompt snippets: %w", err)
-	}
-	defer rows.Close()
-
-	result := []Snippet{}
-	for rows.Next() {
-		var sn Snippet
-		if err := rows.Scan(&sn.ID, &sn.Name, &sn.Text, &sn.SuggestedPermissionMode); err != nil {
-			slog.Error("promptsnippets GetByIDs: scan", "error", err)
-			return nil, fmt.Errorf("scan prompt snippet: %w", err)
-		}
-		result = append(result, sn)
-	}
-	return result, rows.Err()
-}
+// GetByIDs used to live here. It resolved the operator's selected snippet ids
+// into the hidden `guidance` column CreateTask wrote at creation time.
+//
+// Both ends of that are gone: there is no `guidance` column (docs/adr/0048),
+// and `snippet_ids` is a reserved field on CreateSessionRequest. Snippets
+// prefill the dashboard's message composer instead, so their text reaches the
+// model as part of a message a human sent and could edit — which means the
+// server never sees an id to resolve. It had no non-test caller left.
 
 func (s *Store) Create(ctx context.Context, sn Snippet) (Snippet, error) {
 	err := s.pool.QueryRow(ctx, `
