@@ -22,8 +22,11 @@ const (
 )
 
 type ListSessionsRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Limit         int32                  `protobuf:"varint,1,opt,name=limit,proto3" json:"limit,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Limit int32                  `protobuf:"varint,1,opt,name=limit,proto3" json:"limit,omitempty"`
+	// Full-text search over session labels (repo/title/description) and
+	// transcript text. Empty = no filter (default listing order).
+	Query         string `protobuf:"bytes,2,opt,name=query,proto3" json:"query,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -63,6 +66,13 @@ func (x *ListSessionsRequest) GetLimit() int32 {
 		return x.Limit
 	}
 	return 0
+}
+
+func (x *ListSessionsRequest) GetQuery() string {
+	if x != nil {
+		return x.Query
+	}
+	return ""
 }
 
 type ListSessionsResponse struct {
@@ -3509,9 +3519,10 @@ var File_agentfleet_v1_dashboard_proto protoreflect.FileDescriptor
 
 const file_agentfleet_v1_dashboard_proto_rawDesc = "" +
 	"\n" +
-	"\x1dagentfleet/v1/dashboard.proto\x12\ragentfleet.v1\x1a\x1eagentfleet/v1/transcript.proto\x1a\x19agentfleet/v1/files.proto\x1a\x18agentfleet/v1/core.proto\"+\n" +
+	"\x1dagentfleet/v1/dashboard.proto\x12\ragentfleet.v1\x1a\x1eagentfleet/v1/transcript.proto\x1a\x19agentfleet/v1/files.proto\x1a\x18agentfleet/v1/core.proto\"A\n" +
 	"\x13ListSessionsRequest\x12\x14\n" +
-	"\x05limit\x18\x01 \x01(\x05R\x05limit\"J\n" +
+	"\x05limit\x18\x01 \x01(\x05R\x05limit\x12\x14\n" +
+	"\x05query\x18\x02 \x01(\tR\x05query\"J\n" +
 	"\x14ListSessionsResponse\x122\n" +
 	"\bsessions\x18\x01 \x03(\v2\x16.agentfleet.v1.SessionR\bsessions\"\xb5\x01\n" +
 	"\x14CreateSessionRequest\x12\x12\n" +

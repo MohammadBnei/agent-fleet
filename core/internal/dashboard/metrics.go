@@ -94,7 +94,7 @@ func (s *Server) QueryMetrics(ctx context.Context, req *connect.Request[agentfle
 // still come back, with metrics_error set. Returning zeroed rates silently
 // would render an idle-looking fleet that is in fact busy.
 func (s *Server) GetFleetTopology(ctx context.Context, _ *connect.Request[agentfleetv1.GetFleetTopologyRequest]) (*connect.Response[agentfleetv1.GetFleetTopologyResponse], error) {
-	all, err := s.sessions.List(ctx, defaultListLimit)
+	all, err := s.sessions.List(ctx, defaultListLimit, "")
 	if err != nil {
 		slog.Error("dashboard GetFleetTopology: list tasks failed", "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)

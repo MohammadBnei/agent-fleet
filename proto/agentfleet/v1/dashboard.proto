@@ -21,6 +21,9 @@ import "agentfleet/v1/core.proto";
 
 message ListSessionsRequest {
   int32 limit = 1;
+  // Full-text search over session labels (repo/title/description) and
+  // transcript text. Empty = no filter (default listing order).
+  string query = 2;
 }
 
 message ListSessionsResponse {

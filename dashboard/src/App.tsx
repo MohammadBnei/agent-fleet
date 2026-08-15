@@ -13,7 +13,6 @@ import { client } from "./connectClient";
 import type { Session } from "./gen/agentfleet/v1/core_pb";
 import type { Proposal } from "./gen/agentfleet/v1/dashboard_pb";
 import { listSummary, type ListSummary } from "./transcript";
-import { sessionLabel } from "./sessionLabel";
 import { ErrorModal } from "./components/ErrorModal";
 import { ConfirmModal } from "./components/ConfirmModal";
 import { LogDrawer } from "./components/LogDrawer";
@@ -114,10 +113,19 @@ export default function App() {
   // watching for that result. Deliberately no auto-clear on success: the
   // same modal carries those action errors, and a poll succeeding 5s later
   // would yank a delete failure off the screen before it was read.
+  // Search is server-side now (Postgres FTS over session labels + transcript
+  // text), so the query rides the poll. Debounced ~250ms so each keystroke
+  // isn't its own round trip; an empty query is the unfiltered listing.
+  const [debouncedFilter, setDebouncedFilter] = useState("");
+  useEffect(() => {
+    const id = setTimeout(() => setDebouncedFilter(filter.trim()), 250);
+    return () => clearTimeout(id);
+  }, [filter]);
+
   const pollFailures = useRef(0);
   const loadSessions = useCallback(() => {
     return client
-      .listSessions({})
+      .listSessions({ query: debouncedFilter })
       .then((res) => {
         pollFailures.current = 0;
         setSessions(res.sessions);
@@ -125,7 +133,7 @@ export default function App() {
       .catch((err: Error) => {
         if (++pollFailures.current >= 2) setSessionsError(err.message);
       });
-  }, []);
+  }, [debouncedFilter]);
 
   useEffect(() => pollVisible(loadSessions, POLL_INTERVAL_MS), [loadSessions]);
 
@@ -274,15 +282,13 @@ export default function App() {
     // forever when a pod dies mid-decision, so filtering on it showed sessions
     // nobody can act on — and hid nothing, since the shortcut's whole promise
     // is "these are waiting on you".
-    const base = needsYouOnly
+    // Text search is server-side now (the poll passes `query`), so this only
+    // applies the needsYouOnly live-state shortcut — a predicate the server
+    // doesn't know about.
+    return needsYouOnly
       ? sessions.filter((t) => t.archivedAt === undefined && t.liveState === "blocked")
       : sessions;
-    const q = filter.trim().toLowerCase();
-    if (!q) return base;
-    return base.filter(
-      (t) => t.repo.toLowerCase().includes(q) || sessionLabel(t).toLowerCase().includes(q),
-    );
-  }, [sessions, filter, needsYouOnly]);
+  }, [sessions, needsYouOnly]);
 
 
   const shared = {
