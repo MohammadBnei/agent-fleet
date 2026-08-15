@@ -65,8 +65,11 @@ spec:
         # RWX and the NFS VM both cap at 10 MB/s, where a cold `bun install`
         # could not finish in three minutes; the same install takes 2.4s on
         # node disk. Both network backends landing on the identical number is
-        # the fabric, not the backend — server1 and ex-laptop are on 100 Mbps
-        # USB-to-Ethernet adapters with no usable onboard NIC.
+        # the fabric, not the backend: measured 2026-08-15, `.165` links at
+        # 100 Mb/s because it reaches the Freebox through a TP-Link hop that
+        # advertises 10/100 only. `k8s-worker-01` is a `.165` guest, which is
+        # where that benchmark ran. server1 is at gigabit — an earlier version
+        # of this comment blamed it and ex-laptop, before anyone ran `ethtool`.
         #
         # local-path is WaitForFirstConsumer (confirmed live), which is what
         # makes this safe: the volume is created where the pod schedules, and a
