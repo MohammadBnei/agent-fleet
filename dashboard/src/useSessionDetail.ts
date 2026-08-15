@@ -11,12 +11,12 @@ import { TranscriptEntryType, type TranscriptEntry } from "./gen/agentfleet/v1/t
 export function useSessionDetail(sessionId: string) {
   const [session, setSession] = useState<Session | null>(null);
   const [entries, setEntries] = useState<TranscriptEntry[]>([]);
-  // Set by the effect below, which owns the actual fetch; a ref rather than
-  // state so reassigning it never re-renders.
+  // Both are permanently null: the ListWorktrees lookup that filled them is
+  // gone with the worktree model (docs/adr/0048 §5, and see the effect below).
+  // Kept as state, and rendered conditionally by both detail views, so
+  // restoring them is a matter of writing to them again rather than
+  // re-threading two values through both form factors.
   const [branch, setBranch] = useState<string | null>(null);
-  // The worktree's real path on the shared PVC — shown in the composer's meta
-  // line so "where is this actually working" is answerable without a shell.
-  // Same (repo, task_id) lookup as `branch`; there is no path on Session itself.
   const [worktreePath, setWorktreePath] = useState<string | null>(null);
   // Keyed, not a plain boolean — a click on one PermissionCard/PlanCard used
   // to disable every other pending card and the whole ActionsMenu at once.
