@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { client } from "../connectClient";
-import { repoLabel } from "../taskKind";
+import { sessionLabel } from "../sessionLabel";
 import type { Session } from "../gen/agentfleet/v1/core_pb";
 import { sessionBadge } from "./TaskList";
 import {
@@ -169,7 +169,7 @@ export function TaskDetail({
             ← all sessions
           </button>
           <h2 className="text-lg font-semibold min-w-0 break-words">
-            #{task.id.slice(0, 6)} {task.description}
+            #{task.id.slice(0, 6)} {sessionLabel(task)}
           </h2>
           {blocked ? (
             <span className="flex items-center gap-1.5 border border-pink-line bg-pink-chip px-2 py-0.5 flex-none">
@@ -188,7 +188,7 @@ export function TaskDetail({
           )}
           
           <span className="text-xs text-dim2 min-w-0 truncate">
-            {repoLabel(task)}
+            {task.repo}
             {branch && ` · ${branch}`}
           </span>
           

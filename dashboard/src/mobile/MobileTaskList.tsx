@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { Session } from "../gen/agentfleet/v1/core_pb";
 import { client } from "../connectClient";
-import { repoLabel } from "../taskKind";
+import { sessionLabel } from "../sessionLabel";
 import {
   bucketTasks,
   isPodPhaseLive,
@@ -59,7 +59,7 @@ function NeedsYouCard({
       <div className="px-3.5 pt-3.5">
         <div className="flex items-baseline gap-2">
           <span className="text-sm font-semibold">#{task.id.slice(0, 6)}</span>
-          <span className="text-xs text-dim2 min-w-0 truncate">{repoLabel(task)}</span>
+          <span className="text-xs text-dim2 min-w-0 truncate">{task.repo}</span>
           {todos.length > 0 && <TickBar todos={todos} blocked cell="w-[11px]" className="ml-auto flex-none" />}
         </div>
         <button
@@ -67,7 +67,7 @@ function NeedsYouCard({
           onClick={onSelect}
           className="text-base leading-[1.55] mt-1.5 text-left w-full break-words cursor-pointer"
         >
-          {task.description}
+          {sessionLabel(task)}
         </button>
       </div>
       <DecisionInline
@@ -109,7 +109,7 @@ function FinishedCard({
         onClick={onSelect}
         className="text-sm leading-[1.5] mt-1.5 text-left w-full break-words cursor-pointer"
       >
-        {task.description}
+        {sessionLabel(task)}
       </button>
       {failed ? (
         <>
@@ -175,7 +175,7 @@ function WorkingCard({
           }`}
         />
         <span className={`text-sm flex-none ${live ? "text-text2" : "text-dim2"}`}>#{task.id.slice(0, 6)}</span>
-        <span className={`text-sm min-w-0 truncate ${live ? "" : "text-dim"}`}>{task.description}</span>
+        <span className={`text-sm min-w-0 truncate ${live ? "" : "text-dim"}`}>{sessionLabel(task)}</span>
         {task.permissionMode === "bypassPermissions" ? (
           <span className="text-2xs text-warning border border-orange-line px-1.5 py-px ml-auto flex-none">
             bypass
@@ -224,7 +224,7 @@ function QuietGroup({ title, tasks, onSelect }: { title: string; tasks: Session[
             className="flex items-center gap-2 text-left py-2"
           >
             <span className="text-xs text-dim2 flex-none">#{t.id.slice(0, 6)}</span>
-            <span className="text-sm text-dim min-w-0 truncate flex-1">{t.description}</span>
+            <span className="text-sm text-dim min-w-0 truncate flex-1">{sessionLabel(t)}</span>
             {badge && (
               <span className={`text-2xs px-1 border tracking-wide flex-none ${badge.className}`}>{badge.label}</span>
             )}

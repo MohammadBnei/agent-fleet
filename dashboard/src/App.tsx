@@ -13,6 +13,7 @@ import { client } from "./connectClient";
 import type { Session } from "./gen/agentfleet/v1/core_pb";
 import type { Proposal } from "./gen/agentfleet/v1/dashboard_pb";
 import { listSummary, type ListSummary } from "./transcript";
+import { sessionLabel } from "./sessionLabel";
 import { ErrorModal } from "./components/ErrorModal";
 import { ConfirmModal } from "./components/ConfirmModal";
 import { LogDrawer } from "./components/LogDrawer";
@@ -262,7 +263,7 @@ export default function App() {
     const q = filter.trim().toLowerCase();
     if (!q) return base;
     return base.filter(
-      (t) => t.repo.toLowerCase().includes(q) || t.description.toLowerCase().includes(q),
+      (t) => t.repo.toLowerCase().includes(q) || sessionLabel(t).toLowerCase().includes(q),
     );
   }, [tasks, filter, needsYouOnly]);
 

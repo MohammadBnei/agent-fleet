@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { client } from "../connectClient";
-import { repoLabel } from "../taskKind";
+import { sessionLabel } from "../sessionLabel";
 import {
   feedVisibility,
   latestSlashCommands,
@@ -135,7 +135,7 @@ export function MobileTaskDetail({
             ←
           </button>
           <span className="text-base font-semibold min-w-0 truncate">
-            #{task.id.slice(0, 6)} {task.description}
+            #{task.id.slice(0, 6)} {sessionLabel(task)}
           </span>
           {blocked ? (
             <span className="ml-auto flex items-center gap-1.5 border border-pink-line bg-pink-chip px-2 py-0.5 flex-none">
@@ -153,7 +153,7 @@ export function MobileTaskDetail({
 
         <div className="flex items-center gap-2 mt-2">
           <span className="text-2xs text-dim2 min-w-0 truncate">
-            {repoLabel({ repo: task.repo })}
+            {task.repo}
             {branch && ` · ${branch}`}
           </span>
           <Segmented value={density} options={DENSITY} onChange={setDensity} size="sm" className="ml-auto flex-none" />

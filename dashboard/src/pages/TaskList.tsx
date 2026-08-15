@@ -1,6 +1,6 @@
 import type { Session } from "../gen/agentfleet/v1/core_pb";
 import { client } from "../connectClient";
-import { repoLabel } from "../taskKind";
+import { sessionLabel } from "../sessionLabel";
 import type { ListSummary } from "../transcript";
 import { TickBar, todoProgress } from "../components/TickBar";
 import { Collapse } from "../components/Collapse";
@@ -294,9 +294,9 @@ function NeedsYouCard({
             onClick={onSelect}
             className="text-base text-left hover:text-primary cursor-pointer min-w-0 break-words"
           >
-            {task.description}
+            {sessionLabel(task)}
           </button>
-          <span className="text-xs text-dim2">{repoLabel(task)}</span>
+          <span className="text-xs text-dim2">{task.repo}</span>
           
           {todos.length > 0 && (
             <div className="ml-auto flex items-center gap-2">
@@ -342,9 +342,9 @@ function FinishedRow({
         <span className={`w-[7px] h-[7px] rounded-full flex-none ${failed ? "bg-warning" : "bg-success"}`} />
         <span className="text-base font-semibold">#{task.id.slice(0, 6)}</span>
         <button type="button" onClick={onSelect} className="text-base text-left hover:text-primary cursor-pointer min-w-0 break-words">
-          {task.description}
+          {sessionLabel(task)}
         </button>
-        <span className="text-xs text-dim2">{repoLabel(task)}</span>
+        <span className="text-xs text-dim2">{task.repo}</span>
         {failed ? (
           <span className="ml-auto text-sm text-warning min-w-0 truncate" title={task.lastError}>
             {"crashed"}
@@ -420,9 +420,9 @@ function WorkingRow({
           onClick={onSelect}
           className={`text-base text-left hover:text-primary cursor-pointer min-w-0 truncate ${live ? "" : "text-dim"}`}
         >
-          {task.description}
+          {sessionLabel(task)}
         </button>
-        <span className="text-xs text-dim2 flex-none">{repoLabel(task)}</span>
+        <span className="text-xs text-dim2 flex-none">{task.repo}</span>
         {task.permissionMode === "bypassPermissions" && (
           <span
             className="text-xs text-warning border border-orange-line px-1.5 py-px flex-none"
@@ -491,7 +491,7 @@ function QuietGroup({
             className="flex items-center gap-2.5 text-left hover:text-primary cursor-pointer"
           >
             <span className="text-xs text-dim2 flex-none">#{t.id.slice(0, 6)}</span>
-            <span className="text-sm text-dim min-w-0 truncate flex-1">{t.description}</span>
+            <span className="text-sm text-dim min-w-0 truncate flex-1">{sessionLabel(t)}</span>
             {badge && (
               <span className={`text-2xs px-1 border tracking-wide flex-none ${badge.className}`} title={badge.title}>
                 {badge.label}
