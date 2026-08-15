@@ -1,7 +1,22 @@
 # agent-fleet dashboard — complete feature inventory
 
 Written as input to a UI rewrite. This is *what the interface must be able
-to express*, not how it currently looks. Everything below is live today.
+to express*, not how it currently looks.
+
+> **Dated 2026-08-08, and kept as the input it was.** The rewrite it fed
+> shipped as [`adr/0042`](adr/0042-console-rewrite.md)/[`0043`](adr/0043-one-decision-surface.md),
+> and [`adr/0048`](adr/0048-one-session-one-pod-one-shared-home.md) then
+> deleted several things it inventories. **For what the dashboard is now, read
+> [`ARCHITECTURE.md`](ARCHITECTURE.md) §1 and §4 — not this file.**
+>
+> Specifically gone, wherever they appear below: the worktrees screen (a
+> session's tree is its own PVC), repo profiles / pod recipes (one `image`
+> field), the e2e preview card and its start command, the cluster-session
+> toggle on the create form (`Session.kind` is a reserved proto field —
+> cluster access is a per-repo flag), the workflow-status enum in §3, the
+> stale-heartbeat signal, and `RetryTask`. Sections that describe a *shape* —
+> the tier ranking, the decision surfaces, the mobile rules — held up and are
+> still worth reading.
 
 ## What this product is
 
@@ -33,12 +48,11 @@ Three consequences worth designing around:
 
 | Screen | Purpose |
 |---|---|
-| **Task list** (primary) | Every session, filterable. The "which one needs me" view. |
-| **Task detail** | One session: transcript feed, blocking cards, actions, side panels. Where all the time is spent. |
-| **Worktrees** | Git worktrees on the shared volume — orphan/cleanup management. |
+| **Session list** (primary) | Every session, filterable. The "which one needs me" view. |
+| **Session detail** | One session: transcript feed, blocking cards, actions, side panels. Where all the time is spent. |
 | **Files** | A flat fleet-wide shared file space (S3), shared by every session and the human. |
-| **Audits** | Scheduled recurring tasks (cron-like). |
-| Modals | Manage repos · repo profiles (pod recipes) · prompt snippets (reusable guidance) · scheduled audits · new task · confirm/bypass/error |
+| **Audits** | Scheduled recurring checks (cron-like), plus the proposals they raise. |
+| Modals | Manage repos · prompt snippets (reusable guidance) · scheduled audits · new session · confirm/bypass/error |
 
 Desktop and mobile are both first-class. Mobile has no sidebar, so
 everything the sidebar carries must have a home there.
@@ -49,19 +63,28 @@ everything the sidebar carries must have a home there.
 
 Each session carries:
 
-`id` · `repo` · `description` · `kind` (`worker` | `thot` = cluster-agent) ·
-`status` · `live_state` · `pod_phase` · `pod_message` · `heartbeat_at` ·
-`last_active_at` · `retry_count` · `last_error` · `pr_url` · `branch` ·
-`permission_mode` · `awaiting_human` · `session_id`
+`id` · `repo` · `title` · `description` · `live_state` · `pod_phase` ·
+`pod_message` · `last_active_at` · `last_error` · `permission_mode` ·
+`pending_decisions` · `agent_session_id` · `swept_at` · `archived_at`
 
-**Two orthogonal state axes — this is the single most important modelling
-fact for the UI, and the current design conflates them:**
+> **Updated 2026-08-15.** As written, this section asked for **two orthogonal
+> state axes** — a workflow `status` and a live state — and called the
+> conflation of them the single most important modelling fact for the UI.
+> `adr/0048` resolved that by deleting one of them: there is **no `status`
+> enum**, because a polymorphic session (a bug fix, a feature, an
+> explanation) has no completion a machine can compute, which is why the old
+> enum's `done` value never acquired a writer in its entire life. `proposed`
+> became its own table; `pending`/`claimed` went with the queue;
+> `failed_permanently` went with the retry cap.
+>
+> Also gone from the list above: `kind`, `heartbeat_at`, `retry_count`,
+> `pr_url`, `branch`, `awaiting_human` (a bool where permissions are a list —
+> answering one reported all of them resolved), and `session_id` in the sense
+> used here (the SDK's resume id is `agent_session_id` now that the row is a
+> session). The one axis that survived is the one below.
 
-**A. Workflow status** — where the task is in its life:
-`proposed` (machine-created, needs human approval) · `pending` · `claimed` ·
-`running` · `done` · `failed` · `cancelled` · `failed_permanently`
-
-**B. Live state** — what the session is doing *right now*:
+**Live state** — what the session is doing *right now*, derived on read
+rather than stored, so it cannot drift from the transcript:
 
 | State | Meaning | Design weight |
 |---|---|---|
@@ -73,15 +96,17 @@ fact for the UI, and the current design conflates them:**
 | `unknown` | Pod up, agent hasn't spoken yet | Transient, starting |
 | `""` | No live pod | Neutral |
 
-A session can be `running` + `blocked`, or `running` + `stalled`. Both axes
-must be readable at a glance, and they are not the same badge.
+`blocked` is checked before everything else, and it is derived as
+live-AND-pending — so a session whose pod died mid-decision is *not*
+`blocked`, however many unanswered permissions it left behind. Keying the
+list or the census on the raw `pending_decisions` count instead pins that
+session to the top forever, offering allow/deny buttons that reach nothing.
 
-**Pod phase** is a third, lesser axis: `PROVISIONING` (carries a live
-sub-step message: cloning / adding worktree / creating pod) · `CREATED` ·
-`SCHEDULED` · `RUNNING` · `SUCCEEDED` · `CRASHED` · `TERMINATED`.
-
-Plus a **stale** signal: heartbeat older than threshold → will be reclaimed
-and redispatched.
+**Pod phase** is the second, lesser axis: `PROVISIONING` (carries a live
+sub-step message) · `CREATED` · `SCHEDULED` · `RUNNING` · `SUCCEEDED` ·
+`CRASHED` · `TERMINATED`. It is reconciled against Kubernetes every 60s, in
+both directions — the stale-heartbeat signal this section used to describe is
+gone, along with the reclaim it fed.
 
 ---
 
@@ -158,16 +183,18 @@ allow/deny a permission · approve a plan / request changes · **interrupt**
 (stop the current turn, pod survives) · **kill** (end the session) ·
 **warm** (boot a pod for an idle session) · change permission mode
 (default / plan / accept-edits / **bypass** — bypass requires typing a
-confirmation word) · open code-server (browser IDE into the live worktree)
-· kill the e2e preview environment.
+confirmation word) · archive (the one terminal state a machine cannot
+compute).
 
-**On a proposed session:** approve & dispatch · dismiss.
+**On a proposal:** open it as a session (its body is sent as the first
+message, which is what boots the pod) · dismiss, which re-arms the dedup key.
 
-**Anywhere:** create a task (repo picker, description, prompt-snippet
-picker, cluster-session toggle) · delete a session · filter/search
-sessions · toggle showing tools/changes inline · manage repos, repo
-profiles, prompt snippets, scheduled audits · upload/download/delete shared
-files · browse and delete worktrees.
+**Anywhere:** create a session — repo picker (repos carrying cluster access
+are marked), optional title, optional first message, and a prompt-snippet
+picker that *inserts snippet text into that message box* rather than sending
+ids — · delete a session · filter/search sessions · toggle showing
+tools/changes inline · manage repos, prompt snippets, scheduled audits ·
+upload/download/delete shared files.
 
 ---
 
@@ -177,8 +204,10 @@ files · browse and delete worktrees.
   with progress. Mobile renders it as a thin progress bar.
 - **TOOL CALLS** — every tool call, chronological.
 - **CHANGES** — current branch + per-file `+added/−removed`.
-- **E2E preview card** — live app URL, pod phase, readiness, restarts,
-  uptime, the resolved start command, profile name, tools and services.
+- **E2E preview card** — deleted with the sandbox and the recipe system
+  (`adr/0048`): the agent starts its own server and calls `expose(port)`, so
+  the fleet no longer knows how to build or run anything and has no start
+  command or profile to report.
 
 Panels are collapsible, drag-resizable, with a "fit height" mode. The
 sidebar itself is drag-resizable. All persisted.
@@ -189,7 +218,7 @@ sidebar itself is drag-resizable. All persisted.
 
 - Transcript arrives over a **server stream** with a resume cursor;
   reconnects with backoff, pauses when the tab is hidden.
-- Task list polls every 5s. E2E status polls every 5s.
+- The session list polls every 5s.
 - Optimistic echo for a sent message (shown greyed with a spinner until
   confirmed).
 - Auto-scroll rules: a human's own message always jumps to bottom; an agent
@@ -226,7 +255,7 @@ Where the current UI falls down, i.e. what a rewrite should fix.
    badges of near-identical weight, producing pairs that restated each
    other (`CANCELLED TERMINATED`) or outright contradicted each other
    (`SCHEDULED DONE`). They are now a single precedence-ranked badge
-   (`sessionBadge` in `pages/TaskList.tsx`), ordered by what a human needs
+   (`sessionBadge` in `pages/SessionList.tsx`), ordered by what a human needs
    to know first: needs-you → crashed → stale → stalled → done → in-motion
    → workflow status. Demoted detail survives in the tooltip. The ranking was
    kept verbatim and given real weight; `sessionBadge.test.ts` still passes

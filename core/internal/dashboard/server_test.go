@@ -63,26 +63,19 @@ func TestServer_RespondToPermission(t *testing.T) {
 	}
 }
 
-// Kill's own tests moved to kill_integration_test.go (build tag
-// integration): Kill now also calls tasks.Store.MarkStopRequested (the
-// grace-period-then-force-kill fix), and tasks.Store is a concrete
-// Postgres-backed type here, not an interface a nil/fake can stand in for
-// like recordingStore does for transcript.Store — same reasoning
-// CreateTask's own comment below already gives for pass-through logic
-// touching a real store.
-
-// TestServer_CreateTask_UnknownRepo/EmptyDescription moved to
-// create_task_integration_test.go — CreateTask now validates the repo via
-// s.repos.Get (docs/adr/0028), a concrete Postgres-backed store, not a map
-// lookup a nil store can stand in for (same reasoning kill_integration_
-// test.go's own comment gives for Kill/tasks.Store).
-
-// TestServer_Discuss's happy-path coverage moved to
-// warm_integration_test.go (TestServer_Discuss_LivePod_NoWarmAttempt) —
-// Discuss now also calls warmIfIdle, which touches tasks.Store (concrete,
-// not an interface a nil store can stand in for), same reasoning
-// kill_integration_test.go's own comment gives for Kill. EmptyText stays
-// here since it returns before ever reaching tasks.Store.
+// What can and cannot be tested in this file, since it keeps coming up:
+// `sessions.Store` and `repos.Store` are concrete Postgres-backed types, not
+// interfaces a nil or fake can stand in for the way `recordingStore` does for
+// `transcript.Store`. So anything reaching them — StopSession's
+// MarkStopRequested, CreateSession's repo validation, PostMessage's WarmIfIdle
+// — belongs in a `-tags=integration` test against a real database
+// (`core/internal/dbtest`), and only the paths that return before touching a
+// store can be unit-tested here.
+//
+// Three comments used to sit here naming kill_integration_test.go,
+// create_task_integration_test.go and warm_integration_test.go as where those
+// tests had moved. None of those files exists — they went with the dispatch
+// and worktree machinery in docs/adr/0048, and the pointers outlived them.
 
 func TestServer_Discuss_EmptyText(t *testing.T) {
 	s := NewServer(nil, nil, &recordingStore{}, nil, nil, nil, nil, nil, nil, 5, nil, nil, nil)

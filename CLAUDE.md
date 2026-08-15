@@ -1,7 +1,7 @@
 # agent-fleet
 
 A self-hosted fleet of Claude Code workers: each owns one feature end-to-end
-(plan → code → tests → docs), triggered from Discord, running on
+(plan → code → tests → docs), driven from a web console, running on
 `ukubi-cluster`.
 
 **`docs/ARCHITECTURE.md` is canonical for topology/current features;
@@ -29,6 +29,14 @@ worker pod is ephemeral compute attached to a session on demand ("warm"),
 and `canUseTool` reproduces the Agent SDK's own live permission-prompt
 tiers instead of a fleet-imposed Write/Edit approval gate.
 
+As of `docs/adr/0048` (v3.0.0), that rename is literal and a lot is simply
+gone: `tasks` → `sessions` on the wire and in the schema, no queue/lease/
+retry/status, no worktrees (a PVC per session), and no sandbox pod — it
+supersedes eight earlier ADRs outright. Liveness reconciles against
+Kubernetes every 60s rather than against a heartbeat. **If something in this
+file or in `docs/` describes a queue, a status enum, a worktree or an e2e
+sandbox, it is stale — check the code.**
+
 ## Tech stack
 
 | Layer | Tool |
@@ -36,9 +44,9 @@ tiers instead of a fleet-imposed Write/Edit approval gate.
 | Runtime (`worker/` only) | Bun (`oven/bun:1-slim`), TypeScript, no build step — Bun runs `.ts` sources directly. The sole remaining JS runtime in the fleet — it's the only process hosting the Agent SDK |
 | Worker agent runtime | `@anthropic-ai/claude-agent-sdk` `query()` in **streaming-input mode** (not `claude -p` headless, not the plain-string form) — one continuous session spans planning and implementation, starts in `"default"` permission mode (CLI parity), model `claude-opus-4-8` (see `docs/adr/0021`/`0029`) |
 | Runtime (`core/`, `provisioner/`, `sidecar/`) | Go, `go.work` workspace, `golangci-lint` |
-| Discord | `discordgo` (Go, in `core/`) — secondary/notification channel, not primary (`docs/adr/0029`) |
+| Discord | `discordgo` (Go, in `core/`) — **outbound only**: it posts when a session needs a human and links to the dashboard. The slash commands, threads and relayed replies are gone (`docs/adr/0048`), because Discord has no authorization model and an interactive control there would let anyone in the channel approve a Bash on any session |
 | Coordination | Postgres `transcript` (renamed from `planning_transcript`) — pull/cursor reads via `core`'s gRPC `CoreService`, real idempotency-keyed dedup, not pub/sub (see `docs/adr/0013`/`0020`) |
-| MCP | `mark3labs/mcp-go` HTTP server (Go, `sidecar/` — one per worker pod, agent connects over `localhost`). The sidecar is also an MCP *client*, dialing its own task's sandbox directly (`docs/adr/0045`, superseding `docs/adr/0020` point 6's local-only rule); the provisioner no longer speaks MCP |
+| MCP | `mark3labs/mcp-go` HTTP server (Go, `sidecar/` — one per worker pod, agent connects over `localhost`). Local only: the sandbox the sidecar used to dial is merged into the worker pod (`docs/adr/0048` §6), so nothing crosses a pod boundary over MCP any more |
 | gRPC/proto | `buf`-managed `.proto` schema (`proto/`) — the only inter-process/inter-pod protocol in the fleet: `CoreService` (core's server — sidecar + provisioner call it), `ProvisionerService` (provisioner's server — only core calls it), plus the dashboard's ConnectRPC API (`core` ↔ `dashboard/`, `connect-go`/`connect-web`, see `adr/0015`) |
 | Kubernetes client | `client-go` (`provisioner/` — the only fleet component with cluster RBAC) |
 | Database | `jackc/pgx/v5` (`core/` only — the fleet's **sole** `AGENTFLEET_DB_*` credential holder, `docs/adr/0020` point 1). `worker/`/`sidecar/`/`provisioner/` hold zero DB credentials |
@@ -52,14 +60,16 @@ tiers instead of a fleet-imposed Write/Edit approval gate.
 | `docs/ARCHITECTURE.md` | Canonical topology + current features (the WHAT) |
 | `docs/DECISIONS.md` | Canonical settled decisions, forbidden patterns (the WHY, short form) |
 | `docs/adr/` | One Architecture Decision Record per real decision |
-| `core/` | Go — Discord ingress + dispatch loop (claims tasks, commands the provisioner; also sweeps stop-grace and idle-timeout, both `pod_phase`-gated) + `CoreService` gRPC server + transcript coordination + Loki queries + the web dashboard's ConnectRPC API and static SPA, one binary, **no cluster RBAC**, sole Postgres-credential holder |
-| `provisioner/` | Go — the **only** fleet component with cluster RBAC. Owns all pod creation (worker pods **and** e2e-preview pods) and the entire git lifecycle (clone/fetch/worktree add+remove) on the one shared workspace PVC. Zero DB credentials — Kubernetes itself is its source of truth |
+| `core/` | Go — Discord notifications + `CoreService` gRPC server + transcript coordination + Loki/Prometheus queries + the web dashboard's ConnectRPC API and static SPA, one binary, **no cluster RBAC**, sole Postgres-credential holder. No dispatch loop and no queue (`docs/adr/0048`): a message provisions, and a 60s reconcile loop (`internal/sessions/reconcile.go`) writes `pod_phase` from what Kubernetes actually reports, then runs the stop-grace, startup-stall, idle and retention sweeps off it |
+| `provisioner/` | Go — the **only** fleet component with cluster RBAC over the fleet's own namespace. Owns all pod creation and the git lifecycle. **No worktrees** (`docs/adr/0048` §5): each session gets its own PVC holding a real clone, and the shared PVC keeps a read-only repo cache plus per-session `claude-home`. Zero DB credentials — Kubernetes itself is its source of truth |
 | `sidecar/` | Go — new second container in every worker pod. Local MCP server (agent-facing) + local plain HTTP/JSON API (wrapper-facing, including the live human-message SSE feed) + an independent telemetry loop, all funneled through one outbound gRPC connection to `core` |
-| `dashboard/` | React + Vite + TypeScript + Tailwind/DaisyUI SPA, talks to `core` via a generated ConnectRPC client, built into `core`'s binary — not deployed on its own. Rewritten as a console in `docs/adr/0042`: six full-width views (no sidebar) — the sixth, **observability**, is a live fleet topology + PromQL explorer (`docs/adr/0047`), decisions answerable **from the list**, a five-tier feed with one three-way DENSITY control, one pinned `DecisionDock` on both form factors (`docs/adr/0043` — the desktop spine is gone; `DENSITY → decisions` is the zoom-out), two themes, and an installable PWA whose service worker deliberately caches **no** fleet state (a cached task list would have someone answering a resolved decision). Desktop and mobile share `SessionFeed`/`SessionPanels`/`DecisionInline`/`DecisionDock` — put anything both surfaces need there, not in one of them |
+| `dashboard/` | React + Vite + TypeScript + Tailwind/DaisyUI SPA, talks to `core` via a generated ConnectRPC client, built into `core`'s binary — not deployed on its own. Rewritten as a console in `docs/adr/0042`: four full-width nav views (**sessions**, **audits**, **files**, **observability**) plus the session detail that replaces the list rather than sitting beside it; **observability** is a live fleet topology + PromQL explorer (`docs/adr/0047`); decisions answerable **from the list**; a five-tier feed with one three-way DENSITY control; one pinned `DecisionDock` on both form factors (`docs/adr/0043` — the desktop spine is gone; `DENSITY → decisions` is the zoom-out); two themes; and an installable PWA whose service worker deliberately caches **no** fleet state (a cached session list would have someone answering a resolved decision). URL state is `?view=`/`?session=`, with the pre-rename `?task=` still read. Desktop and mobile share `SessionFeed`/`SessionPanels`/`DecisionInline`/`DecisionDock`, plus `bucketSessions` and `sessionLabel` — put anything both surfaces need there, not in one of them. `MermaidDiagram` is `React.lazy`-loaded, deliberately: mermaid is the largest thing this app ships and almost nothing renders a diagram |
 | `worker/` | The Claude Code worker (TS/Bun; `src/session.ts`, renamed from `planning.ts`) — **single-shot**: one pod per warm, one continuous streaming-input session spanning planning+implementation (resumable via `RESUME_SESSION_ID`), then exits. Talks only to its own pod's `localhost` sidecar |
-| `e2e-runner/` | The e2e pod's image (code-server + the target app + Playwright MCP + `execmcp`). Also the worker's build/test **sandbox** — `execmcp`'s `run_command` is where builds/tests/installs run. No git, no fleet credentials, only this task's worktree — see `docs/adr/0039` |
+| `executor/` | Go — thot-executor plus the `kubectl-shim` installed into a cluster-access session as `kubectl`. The fleet's **only** process holding cluster RBAC on behalf of an agent (`docs/adr/0037`), so a thot session stays an ordinary worker pod with zero Kubernetes credentials. Its identity comes from a ServiceAccount defined in `infra-bootstrap`'s gitops, never named by the provisioner |
+| `fleet-shared/` | The git-tracked source for every worker pod's shared Claude Code context — `settings.json`, `skills/`, `CLAUDE.md`. The provisioner clones it and `SyncFleetShared` lays it into each session's own `claude-home` (`docs/adr/0032`) |
 | `proto/` | buf-managed `.proto` schema: `CoreService`, `ProvisionerService`, `DashboardService` — shared by `core`/`provisioner` (Go codegen) and `worker`/`dashboard` (TS codegen) |
-| `db/migrations/` | Sole source of truth for the shared `tasks`/`knowledge_journal`/`transcript` schema (`agentfleetdb`), applied via golang-migrate — see `docs/adr/0030`. `e2e_sessions` still exists in the schema but is dead code — see `docs/ARCHITECTURE.md` §6 |
+| `db/migrations/` | Sole source of truth for the `sessions`/`proposals`/`transcript`/`repos`/`prompt_snippets`/`scheduled_audits`/`knowledge_journal` schema (`agentfleetdb`), applied via golang-migrate — see `docs/adr/0030` |
+| `local/kind/` | The disposable kind cluster the `/kind-local` skill stands up to exercise real pod dispatch without touching `ukubi-cluster` |
 | `migration/` | The image that applies `db/migrations/` (`FROM migrate/migrate:latest`) — run as `k8s/core.yaml`'s `hooks.migrate` PreSync job, not part of `core` itself |
 | `k8s/` | `core.yaml` (Helm values, `common-app-chart`) + `provisioner/` (standalone plain manifests: Deployment/Service/ServiceAccount/Role/InfisicalSecret/NetworkPolicy/PVC) |
 
@@ -80,30 +90,22 @@ tiers instead of a fleet-imposed Write/Edit approval gate.
   on-demand (`Warm`, or a fresh dispatch), torn down on Stop or idle
   timeout, resumable later via the session's saved `session_id`
   (`docs/adr/0029`). Fleet-wide concurrency (default cap 5, reinterpreted
-  as "max warm pods"), not one-task-per-repo. Git worktree isolation
-  happens on the one shared PVC, keyed by task ID, before the pod even
-  exists (`docs/adr/0019`).
+  as "max warm pods"), not one-session-per-repo. Isolation is a **PVC per
+  session** holding a real clone — not a worktree, and not a directory inside
+  a shared writable volume (`docs/adr/0048` §4/§5).
 - **Postgres access is fully centralized in `core`.** No other
   component — provisioner, worker, or sidecar — ever holds
   `AGENTFLEET_DB_*` credentials (`docs/adr/0020` point 1).
 - **`core` commands, the provisioner executes — never the reverse.** The
-  provisioner never claims tasks or decides to spawn a pod on its own
-  (`docs/adr/0020` point 2).
+  provisioner never decides to spawn a pod on its own (`docs/adr/0020`
+  point 2). There is nothing to claim: the queue is gone.
 - **Hub-and-spoke for *lifecycle*: nothing commands the provisioner except
-  `core`.** Pod creation, teardown and worktree operations all route
-  agent → sidecar → `core` → provisioner (`docs/adr/0020` point 4).
-  **Tool calls no longer do** — `docs/adr/0045` deleted that relay.
-- **A service needing no `core` state is dialed directly**, from a
-  `ServiceEndpoint` roster carried on responses `core` already sends
-  (`RequestE2eEnv`/`CreateE2eSession`) or injected as `FLEET_ENDPOINTS` at
-  spawn. No lookup RPC, no `services` table — Kubernetes is ground truth
-  for pod existence. Reachability is fenced by a **per-task
-  NetworkPolicy**, never a token the callee holds (`docs/adr/0045`).
-  Measured first: the deleted hop was **0–1 ms** of a 751 ms p50 tool
-  call — this is a coupling fix, not a performance one.
-- **MCP is local except sidecar → its own task's sandbox** (`docs/adr/0045`,
-  superseding `docs/adr/0020` point 6). gRPC remains the only protocol
-  between *fleet components*; the provisioner no longer speaks MCP at all.
+  `core`.** Pod creation and teardown route agent → sidecar → `core` →
+  provisioner (`docs/adr/0020` point 4).
+- **MCP is local, full stop** (`docs/adr/0048` §6). The sandbox the sidecar
+  used to dial is merged into the worker pod, so no MCP call crosses a pod
+  boundary and the provisioner does not speak MCP at all. gRPC remains the
+  only protocol between fleet components.
 - **No prospective Write/Edit gate — `canUseTool` reproduces the Agent
   SDK's own live permission prompt instead** (`docs/adr/0029`, supersedes
   `docs/adr/0021`'s `allowedTools`-absent + in-memory-`approved`-flag
@@ -113,15 +115,20 @@ tiers instead of a fleet-imposed Write/Edit approval gate.
   or round completion. A permission decision is always a real, structured
   `RespondToPermission` (or `SetPermissionMode`) call. `/approve` no
   longer exists.
-- **The e2e pod is the worker's build/test sandbox, and it has no git**
-  (`docs/adr/0039`). `run_command` is registered statically on the sidecar
-  (present from turn one, resumed sessions included) and provisions a pod on
-  first use — `request_e2e_env` is not a prerequisite. Builds/tests/lints/
-  installs go there; `git`/`gh`/PR work stays on the worker pod's `Bash`.
-  Keeping git out is what justifies `run_command` being un-prompted while
-  `Bash` is `canUseTool`-gated: the sandbox holds no fleet credentials and
-  only this task's worktree. Adding credentials or widening its mount
-  reopens that decision.
+- **There is no sandbox** (`docs/adr/0048` §6, superseding `docs/adr/0039`/
+  `0044`/`0045` entirely). Builds, tests and installs run in the worker pod's
+  own `Bash`, gated by `canUseTool` like everything else — `run_command`,
+  `request_e2e_env` and `kill_env` are all deleted. Three consecutive ADRs
+  went into repairing a second pod whose entire purpose was letting **one
+  tool** skip a permission prompt; the fix was deleting the pod, not the
+  fourth repair.
+- **A session with no message has no pod, and that is the human gate**
+  (`docs/adr/0048` §1). `CreateSession` writes a row and nothing else;
+  the first message provisions. Ordering is **warm-then-append, never the
+  reverse** — `resumeFromSeq` is `LatestSeq` computed at dispatch, so a
+  message appended before the pod exists lands below its cursor and is never
+  delivered. `PostMessage`/`OpenFromProposal`/`PromptSession` all carry the
+  comment; copy it rather than re-deriving it.
 - **The dashboard is a console, and the list answers decisions** — a blocked
   session renders its actual pending permission/question inline, answerable
   without opening it, because a blocked session is stalled until a human clicks
@@ -129,8 +136,9 @@ tiers instead of a fleet-imposed Write/Edit approval gate.
   entry kind belongs in a tier, not in a uniform grey log line. Anything both
   form factors show goes in the shared components, never one of them.
 - Every result is a PR.
-- One git worktree per task — never a shared writable repo checkout across
-  concurrent tasks.
+- One PVC per session — never a shared writable repo checkout across
+  concurrent sessions. The fleet does not create branches either: the agent
+  runs its own `git checkout -b` (`docs/adr/0048` §5).
 - Git commit identity is derived live from the authenticated bot GitHub
   account (`gh api user`), never hardcoded — done independently by both
   the provisioner (clone/fetch) and the worker (push/PR), since they're
@@ -142,15 +150,17 @@ tiers instead of a fleet-imposed Write/Edit approval gate.
 
 ## Forbidden patterns (quick check — full list + reasons in `docs/DECISIONS.md`)
 
-Shared writable repo PVC across tasks · inferring a permission
-decision from silence · hardcoded git commit identity · committing Discord/GitHub/
+A shared writable repo volume across sessions · inferring a permission
+decision from silence · appending a message before the pod that must read it
+exists · sending a human's instruction as `description` (the agent never reads
+it) · hardcoded git commit identity · committing Discord/GitHub/
 Anthropic tokens · a bespoke per-app Helm chart (reuse
 `infra-bootstrap/gitops/platform/common-app-chart`) · any component other
 than `core` holding `AGENTFLEET_DB_*` credentials · a worker/sidecar
 *commanding* the provisioner directly (pod lifecycle must route through
-`core`) · a new passthrough RPC on `core` for a service that needs no
-`core` state (roster entry + NetworkPolicy rule instead — `docs/adr/0045`)
-· a sidecar reaching any sandbox but its own task's · fleet-managed
+`core`) · a second pod to let one tool skip a permission prompt
+(`docs/adr/0048` §6) · reintroducing a status enum, a queue, a lease-renewal
+heartbeat or a retry counter (`docs/adr/0048` §2) · fleet-managed
 `infra-bootstrap` cluster ops (kubespray/ansible/
 pigsty — that's the parent repo's own `CLAUDE.md` boundary, explicitly
 blocked here too).
@@ -187,6 +197,14 @@ feature was written:
 - **Squash-merging a stacked PR auto-closes the PR above it** (its base
   branch is deleted, and GitHub refuses to reopen). Retarget dependent
   PRs to `main` *before* merging the one below.
+- **A squash also drops any change the stacked branch made and then undid.**
+  Both halves of an add-then-delete cancel inside the squashed range, so the
+  net diff says nothing about that file — while `main` has meanwhile gained
+  it from the lower PR's own squash. No conflict, and the file survives a
+  merge that was supposed to remove it. `docs/plan-dashboard-session-model.md`
+  shipped to `main` exactly this way: #159 deleted the file #158 added, both
+  merged green, and the file was still there. **After merging a stack, `ls`
+  the files the upper PR claimed to delete** — the PR diff will not tell you.
 - **A bound port is not a reachable service is not a working capability.**
   Browser automation was dead for the fleet's entire history behind three
   stacked failures, and each layer of checking passed the one below it
@@ -221,6 +239,24 @@ feature was written:
   costs one permanent slot. Nothing errors until the sixth session, which is
   why the check is "run six sessions and open a seventh", not "run one and
   see that it works."
+- **A nullable column read into a plain `string` fails the whole query, not
+  the row.** `sessions.description` is nullable and `Session.Description` is a
+  `string`, so one NULL row broke `scanSession` — and `List` returns a single
+  error, so that row emptied the session list, the reconcile loop's view of
+  the fleet, and the live-state gauge at once. It went unnoticed because
+  `Create` writes `''`: "every writer passes a non-NULL" was a convention, not
+  a constraint, and `docs/adr/0048` had just made `description` a vestigial
+  label nothing sets on purpose. **A nullable column needs a nullable scan or
+  a `COALESCE`, whatever today's writers happen to do.** Guarded by
+  `TestList_SurvivesANullDescription`.
+- **A whole feature can be dead without one test noticing, if nothing drives
+  the UI.** Creating a session from the dashboard did nothing for the whole of
+  v3.0.0 — the dialog sent an instruction as `description`, a column the agent
+  never reads, so no pod booted and nothing errored. Every Go test, every
+  `bun test`, and `bun run build` passed throughout; `/dashboard-e2e` found it
+  in one click, and found a second live bug (the NULL scan above) while
+  setting up. **Run `/dashboard-e2e` after changing anything in the create,
+  decision or warm path**, not just the unit tests.
 
 ## Workflow rules
 
@@ -249,13 +285,16 @@ feature was written:
 ## Skills
 
 - `/fleet-ops` — onboard a new target repo, walk the release/deploy
-  pipeline, inspect the live task queue.
+  pipeline, inspect what is live right now.
 - `/fleet-feature` — checklist for adding functionality to `core/`,
   `provisioner/`, `sidecar/`, or `worker/` (new gRPC method, new MCP tool,
-  new slash command, new task status).
-- `/fleet-debug` — diagnose a stuck or failed task (task/journal state,
-  worker/sidecar/provisioner logs, the `transcript` table, known
+  new slash command, new transcript entry type).
+- `/fleet-debug` — diagnose a stuck or failed session (session/journal
+  state, worker/sidecar/provisioner logs, the `transcript` table, known
   failure modes).
 - `/dashboard-e2e` — spin up the minimal local stack (throwaway Postgres +
-  `core` + dashboard dev server) to Playwright-test the dashboard UI, then
-  tear it all down.
+  stub provisioner + `core` + dashboard dev server) to Playwright-test the
+  dashboard UI, then tear it all down. **Run it after touching the create,
+  decision or warm path** — see the last two Verification traps.
+- `/kind-local` — a disposable kind cluster running the real fleet, for the
+  pod-dispatch path `/dashboard-e2e`'s stub deliberately fakes.

@@ -30,20 +30,25 @@ prompt, not a prospective Write/Edit block. `/approve` does not exist.
 
 Where this disagrees with anything else, this file wins for
 topology/features — the reading order is `DECISIONS.md` → this file →
-`adr/` → source. **Sections 2–7 below still describe pre-0048 behaviour in
-places and are being brought forward; §1 is current.**
+`adr/` → source.
+
+Sections 2–7 were brought forward on 2026-08-15, together with the dashboard
+catch-up in v3.0.2. Where they describe a deleted mechanism they now do so in
+the past tense and say what replaced it — the queue, the lease/heartbeat/
+reclaim machine, worktrees and the e2e sandbox are all gone, and a sentence
+here written in the present tense about any of them is a bug in this file.
 
 ## 1. Components
 
 | Component | Role |
 |---|---|
-| `core/` | Go service: Discord ingress (secondary channel — the dashboard is primary) + `CoreService`, core's own gRPC server (agent-facing proxied MCP calls, wrapper-facing housekeeping, and the provisioner's pushed pod-lifecycle event stream) + `sessions.Loop`, a 60s reconcile/sweep pass that replaces the dispatch loop, the heartbeat and the reclaim: it syncs `pod_phase` against what Kubernetes actually has (in both directions), enforces stop-grace, startup-stall and idle timeouts, runs the retention GC, and publishes the live-state gauge + transcript coordination (Postgres) + Loki queries + the dashboard's ConnectRPC API and static SPA — one binary. **The fleet's sole holder of `AGENTFLEET_DB_*`** (`adr/0020` point 1) and the *only* caller of the provisioner (hub-and-spoke). Zero cluster RBAC. An `activityTrackingStore` decorator wraps every transcript append to maintain the activity clock the idle sweep and the GC both read. |
+| `core/` | Go service: Discord notifications (outbound only — the dashboard is the primary surface) + `CoreService`, core's own gRPC server (agent-facing proxied MCP calls, wrapper-facing housekeeping, and the provisioner's pushed pod-lifecycle event stream) + `sessions.Loop`, a 60s reconcile/sweep pass that replaces the dispatch loop, the heartbeat and the reclaim: it syncs `pod_phase` against what Kubernetes actually has (in both directions), enforces stop-grace, startup-stall and idle timeouts, runs the retention GC, and publishes the live-state gauge + transcript coordination (Postgres) + Loki queries + the dashboard's ConnectRPC API and static SPA — one binary. **The fleet's sole holder of `AGENTFLEET_DB_*`** (`adr/0020` point 1) and the *only* caller of the provisioner (hub-and-spoke). Zero cluster RBAC. An `activityTrackingStore` decorator wraps every transcript append to maintain the activity clock the idle sweep and the GC both read. |
 | `provisioner/` | Go service (`client-go`) — the only component with Kubernetes RBAC (namespaced `Role`, never a `ClusterRole`). Creates a session's `batch/v1.Job` (`BackoffLimit: 0` — a crashed session is a human's decision to warm again, not a retry) and its own `local-path` PVC, and the `Service` + Traefik `IngressRoute` that `expose()` publishes. Maintains the shared clone cache (`git clone`/`fetch`, `gc.auto=0` so a `--shared` clone's alternates can't be pruned out from under a live session) and seeds each session's own `claude-home` before its pod exists. It does **not** create working trees: that happens in an init container inside the session's pod, the only place both volumes are mounted (`adr/0048` §5). Holds **zero** Postgres credentials; Kubernetes is its durable source of truth. Hosts `ProvisionerService` (core is the only caller) and pushes `PodEvent`s back to core. |
 | `sidecar/` | Go — a second container in every session pod (`adr/0020` point 5). Two `localhost`-only surfaces and one outbound gRPC connection to core: an MCP server the Agent SDK connects to (`send_message`, `wait_for_messages`, `AskUserQuestion`, `expose`, `unexpose`, `request_service`, the shared-file tools, `view_logs`, and the inter-agent tools), and a plain HTTP/JSON API for the TS wrapper's control flow (`journal`, `session-id`, `permission-mode`, `telemetry`, `message`) — including the load-bearing `GET /human-messages` SSE feed that delivers new human input to `streamInput()` live. An independent telemetry loop pushes `git diff --numstat` stats every 5s, decoupled from what the agent does. It dials nothing but core: the sandbox it used to reach over MCP (`adr/0045`) no longer exists. |
 | `worker/` | The Claude Code worker (TS/Bun — the only JS runtime left, sole host of `@anthropic-ai/claude-agent-sdk`'s `query()`; `src/session.ts`). **Single-shot**: the provisioner hands it one `SESSION_ID`/`TARGET_REPO`/`LEASE_ID`/`RESUME_SESSION_ID` via env, pointed at a `/workspace` an init container already cloned, with `CLAUDE_CONFIG_DIR` on its own per-session volume. Runs **one continuous `query()` in streaming-input mode**, starting in the SDK's `"default"` mode and resuming via `resume:` when `RESUME_SESSION_ID` is set. The input queue is deliberately NOT seeded: there is no fleet-composed prompt, so the human's first message IS the first turn, verbatim. Its image carries the toolchain the sandbox used to (bun, Go, git, gh, Playwright + a real browser), and Playwright runs in-pod on stdio as a second `mcpServers` entry rather than being proxied. Exits explicitly — a single-shot process that merely sets `process.exitCode` can hang forever with the right code and no exit. |
 | `proto/` | buf-managed `.proto` schema (lint + breaking-change CI + generate/drift check): `CoreService` (core's gRPC server — agent/wrapper/provisioner-facing), `ProvisionerService` (the provisioner's gRPC server, renamed from `E2eProvisionerService`), and `DashboardService` (ConnectRPC, dashboard ↔ core). Generates Go (`proto/gen/go`) and TS types (`worker/src/gen`, `dashboard/src/gen`, `ts-proto`). |
 | `db/migrations/` | Shared Postgres schema (`agentfleetdb`, Pigsty-managed) — sole source of truth, applied via golang-migrate by the dedicated `migration` image on a `PreSync` hook ([`adr/0030`](adr/0030-single-source-schema-via-golang-migrate.md)). Squashed to one `000001_init` pair by `adr/0048`: `sessions` (no status enum, no lease/retry/heartbeat columns), `proposals` (the human gate in front of machine-initiated runs, with a dedup key that re-arms on dismissal or archive), `transcript` (`ON DELETE CASCADE`, which is what let soft-delete die), `repos`, `prompt_snippets`, `scheduled_audits`, `knowledge_journal`. |
-| `dashboard/` | React + Vite + TypeScript + Tailwind/DaisyUI SPA — the fleet's **primary** surface, rewritten as a console in [`adr/0042`](adr/0042-console-rewrite.md). Five full-width views (**tasks**, **audits**, **files**, **observability**, plus the session detail that replaces the list rather than sitting beside it — the 320px sidebar is gone). The list *is* the fleet overview: a live census, and a blocked session's pending decision rendered **and answerable inline** (an `Edit` as a real diff with allow/deny) off the same per-active-task transcript fetch the todo bars already used — no extra RPC. The detail view is feed · **decision dock** · composer, beside a fixed 266px panel column ([`adr/0043`](adr/0043-one-decision-surface.md) deleted the decision-spine rail: a pending decision now renders in the pinned dock and *only* there, on both form factors, via the shared `DecisionDock`); the feed ranks the twelve entry kinds into five visually distinct tiers (`SessionFeed`), gated by one three-way DENSITY control whose third mode deliberately differs between desktop and mobile (`feedVisibility`). **Mobile is designed, not ported** (`Agent Fleet Console Mobile.dc.html`): persistent top bar + bottom tab bar, bucket filter chips, ~44px targets, the blocking decision **docked above the composer**, and the panels as a bottom sheet — sharing `SessionFeed`/`SessionPanels`/`DecisionInline` with desktop so the two can't drift. Two themes (`herd` dark default, `herd-light`) from the design tokens, applied pre-paint from `index.html`. **task creation** (`NewTaskDialog.tsx`, `DashboardService.CreateTask` — an alternative to Discord's `/task`, not a replacement); live transcript via a Connect server-streaming RPC; Warm/Interrupt/Kill/**Archive**, a mode picker showing `default`/`plan`/`acceptEdits`/`bypassPermissions` with the real active mode highlighted, `AskUserQuestion`/`PermissionCard`/`PlanCard` answer forms (`adr/0018`/`0029`), a Loki log drawer, and the **proposals** gate on the audits view — `ListProposals`/`OpenFromProposal`/`DismissProposal`, the human approval in front of every machine-initiated run. **observability** ([`adr/0047`](adr/0047-metrics-scoped-to-the-hubs.md)) is a live fleet topology plus a PromQL explorer: cells are the two hubs and one per live worker pod, coloured by status, and clicking one opens that session — the thing Grafana can't do, which is why the view is deliberately thin next to it and links to it. Hand-laid-out inline SVG, no `d3`/`cytoscape`: two fixed hubs and at most `MAX_LIVE_SESSIONS` cells is a bounded shape whose positions are a loop. Talks to `core` via a generated `@connectrpc/connect-web` client. Built into and served by `core`'s binary — not deployed on its own. |
+| `dashboard/` | React + Vite + TypeScript + Tailwind/DaisyUI SPA — the fleet's **primary** surface, rewritten as a console in [`adr/0042`](adr/0042-console-rewrite.md). Four full-width nav views (**sessions**, **audits**, **files**, **observability**), plus the session detail that replaces the list rather than sitting beside it — the 320px sidebar is gone. The list *is* the fleet overview: a live census, and a blocked session's pending decision rendered **and answerable inline** (an `Edit` as a real diff with allow/deny) off the same per-active-session transcript fetch the todo bars already used — no extra RPC. URL state is `?view=`/`?session=`; the pre-rename `?task=` is still read so links shared before v3.0.0 keep resolving. The detail view is feed · **decision dock** · composer, beside a fixed 266px panel column ([`adr/0043`](adr/0043-one-decision-surface.md) deleted the decision-spine rail: a pending decision now renders in the pinned dock and *only* there, on both form factors, via the shared `DecisionDock`); the feed ranks the twelve entry kinds into five visually distinct tiers (`SessionFeed`), gated by one three-way DENSITY control whose third mode deliberately differs between desktop and mobile (`feedVisibility`). **Mobile is designed, not ported** (`Agent Fleet Console Mobile.dc.html`): persistent top bar + bottom tab bar, bucket filter chips, ~44px targets, the blocking decision **docked above the composer**, and the panels as a bottom sheet — sharing `SessionFeed`/`SessionPanels`/`DecisionInline`/`DecisionDock`, plus the `bucketSessions` partition and the `sessionLabel` fallback, with desktop so the two can't drift. Two themes (`herd` dark default, `herd-light`) from the design tokens, applied pre-paint from `index.html`. **Session creation** (`NewSessionDialog.tsx`): repo alone is enough, title and first message are both optional, and an optional message is sent as a real `PostMessage` after `CreateSession` returns — which is what boots the pod (§4 below). Prompt snippets prefill that message box client-side rather than being sent, since `snippet_ids` is a reserved proto field. Live transcript via a Connect server-streaming RPC; Warm/Interrupt/Kill/**Archive**, a mode picker showing `default`/`plan`/`acceptEdits`/`bypassPermissions` with the real active mode highlighted, `AskUserQuestion`/`PermissionCard`/`PlanCard` answer forms (`adr/0018`/`0029`), a Loki log drawer, and the **proposals** gate on the audits view — `ListProposals`/`OpenFromProposal`/`DismissProposal`, the human approval in front of every machine-initiated run. **observability** ([`adr/0047`](adr/0047-metrics-scoped-to-the-hubs.md)) is a live fleet topology plus a PromQL explorer: cells are the two hubs and one per live worker pod, coloured by status, and clicking one opens that session — the thing Grafana can't do, which is why the view is deliberately thin next to it and links to it. Hand-laid-out inline SVG, no `d3`/`cytoscape`: two fixed hubs and at most `MAX_LIVE_SESSIONS` cells is a bounded shape whose positions are a loop. Talks to `core` via a generated `@connectrpc/connect-web` client. Built into and served by `core`'s binary — not deployed on its own. |
 | `k8s/` | This repo's own deploy manifests: `core.yaml` (Helm values for `common-app-chart`, zero RBAC) and `provisioner/` (a standalone plain-manifest directory — `Deployment`/`Service`/`ServiceAccount`/`Role`/`InfisicalSecret`/`NetworkPolicy`/`PersistentVolumeClaim` — since it needs RBAC `common-app-chart` can't express). Both referenced from `infra-bootstrap`'s `gitops/` (see §9). |
 | `executor/` | Go — the only process in the fleet holding cluster RBAC ([`adr/0037`](adr/0037-thot-is-a-worker-task.md)). One RPC, `Exec(argv)`, run on behalf of pods that hold no credentials at all. Deployed from infra-bootstrap's `gitops/platform/thot/` as `thot-executor`, with the ClusterRole `adr/0032` reviewed. Reads are validated against a verb allowlist (nothing else checks them); mutations are a dumb pipe, because a human already approved that exact argv through `canUseTool`. |
 
@@ -53,8 +58,8 @@ places and are being brought forward; §1 is current.**
 sequenceDiagram
     participant Dash as Dashboard (primary interaction surface)
     participant D as Discord (secondary/notification)
-    participant C as core (dispatch, CoreService gRPC, DashboardService)
-    participant PG as Postgres (tasks + transcript)
+    participant C as core (CoreService gRPC, DashboardService, reconcile loop)
+    participant PG as Postgres (sessions + transcript)
     participant P as provisioner (ProvisionerService gRPC, git, k8s)
     participant SC as sidecar (in worker pod)
     participant W as worker (TS wrapper, in worker pod)
@@ -80,7 +85,7 @@ sequenceDiagram
     C->>PG: Append to transcript (activityTrackingStore bumps last_active_at)
     C-->>D: relay loop posts allowlisted types only (adr/0025 pt.5) — Discord is notification-only now
 
-    Dash->>C: Discuss(taskId, text) — auto-warms an idle session first if needed
+    Dash->>C: PostMessage(sessionId, text) — auto-warms an idle session first if needed
     C->>PG: Append (from=human, type=discussion)
     C-->>SC: StreamHumanMessages [gRPC server-stream]
     SC-->>W: GET /human-messages (SSE)
@@ -89,7 +94,7 @@ sequenceDiagram
     Ag->>SC: tool call the current permission mode would prompt for
     SC->>C: (via canUseTool, blocked) Append transcript entry, type=permission_request
     C-->>Dash: PermissionCard/PlanCard renders the pending request
-    Dash->>C: RespondToPermission(taskId, seq, decisionJson)
+    Dash->>C: RespondToPermission(sessionId, seq, decisionJson)
     C->>PG: AppendReply(type=permission_response, reply_to_seq=seq)
     C-->>SC: StreamHumanMessages delivers the response
     SC-->>W: SSE event, type=permission_response
@@ -179,17 +184,17 @@ an embedded tool-list snapshot. That deletes the entire class of failure
 registration racing a pod that is still starting, and no hop to swallow an
 error into an empty result.
 
-**MCP is local except sandbox tool calls** (`docs/adr/0045`, superseding
-`docs/adr/0020` point 6). The agent still reaches only its own pod's sidecar
-over `localhost`; the sidecar — and `core`, for its two dashboard actions —
-dials that task's sandbox directly. gRPC remains the only protocol *between
-fleet components*, and the provisioner no longer speaks MCP at all (pinned by
-a `buildguard` import test).
+**MCP is local, full stop** (`docs/adr/0048` §6, superseding `adr/0045` and
+restoring `adr/0020` point 6 unqualified). The agent reaches only its own
+pod's sidecar over `localhost`, and there is nothing else to reach: the
+sandbox the sidecar used to dial is merged into the worker pod. gRPC remains
+the only protocol *between fleet components*, and the provisioner does not
+speak MCP at all (pinned by a `buildguard` import test).
 
-Reachability is fenced structurally rather than by convention: the
-provisioner creates a per-task NetworkPolicy alongside each sandbox admitting
-**only that task's own worker** on `:8931`/`:8932`. Verified on Cilium, not
-in `kind`, whose default CNI ignores NetworkPolicy entirely.
+The per-sandbox NetworkPolicy that used to fence that cross-pod dial went with
+it. It was a real structural control, and worth remembering as one — but the
+thing it protected no longer exists, and a policy guarding nothing is a policy
+nobody maintains.
 
 ## 3. Permission model
 
@@ -216,7 +221,7 @@ permission tiers instead of a second, fleet-specific gate on top of them
   matches running `claude` locally with no flags. `plan` is still fully
   available, just as one selectable mode via the dashboard's mode picker
   (`default`/`plan`/`acceptEdits`/`bypassPermissions`, highlighting the
-  real active mode via a new `tasks.permission_mode` column) rather than a
+  real active mode via the `sessions.permission_mode` column) rather than a
   mandatory starting state.
 - **`Approve` no longer exists** — proto RPC, Go handler, Discord
   `/approve` command and handler are all deleted (including explicit
@@ -280,24 +285,44 @@ permission tiers instead of a second, fleet-specific gate on top of them
 
 ## 4. Current features (the golden path, working today)
 
-- `/task`, `/stop`, `/e2e-kill` Discord slash commands, guild-scoped
-  (registers instantly, no global-command propagation delay) — `/approve`
-  is deleted (`adr/0029`), and stale registrations get actively pruned on
-  every `RefreshCommands` call, not just left unhandled.
-- Legacy fallback: free-text `!task <repo>: <description>` trigger and a
-  plain "stop" reply.
-- **Tasks can also be created from the dashboard, not just Discord** —
-  `DashboardService.CreateTask` calls the exact same `tasks.Store.CreateTask`
-  path the Discord `/task` handler does, just with a nil
-  `discord_channel_id`/`discord_thread_id` (that column is nullable as of
-  this feature). No separate task-creation logic to keep in sync: a
-  dashboard-created task has no Discord thread at all, and
-  `core/internal/discord/session.go`'s `PostToThread` already no-ops when
-  `ThreadID` is nil, so relay/stop work identically regardless of which
-  surface created the task — stop for a dashboard-only task just has to
-  happen from the dashboard instead of a Discord reply, since there's no
-  thread to reply in. The dashboard is the primary interaction surface now
-  (`adr/0029`); Discord is secondary/notification-only.
+- **Discord is outbound-plus-a-link, and nothing else.** `adr/0048` cut it
+  back from a second console: the `/task`, `/stop` and `/e2e-kill` slash
+  commands, the per-task threads, the relayed free-text replies and the
+  retry/dead-letter machine behind them are all gone, leaving one package
+  (`core/internal/discord/session.go`) that posts when a session needs a
+  human and links to the dashboard.
+
+  The reason is worth keeping written down, because "add buttons to Discord"
+  is a permanently tempting idea: **no authorization exists there.** The
+  dashboard sits behind Traefik basic-auth; the bot has a token and a channel
+  id and no user allowlist, so an interactive control would let anyone who
+  can see the channel approve an arbitrary `Bash` or `Edit` on any session.
+  `adr/0029` deleted `/approve` deliberately; rebuilding it in Discord is the
+  same gate with less checking.
+- **Sessions are created from the dashboard, and creating one starts
+  nothing** (`adr/0048` §1). `DashboardService.CreateSession` writes a row —
+  no pod, no volume, no directory — and the **first `PostMessage` is what
+  provisions**. Both calls come from `NewSessionDialog`, in that order, and
+  the message is optional: a session with no message is a valid resting
+  state, and it is the human gate expressed structurally, since nothing
+  machine-initiated produces a message.
+
+  `title`/`description` are human-facing labels the agent never reads. The
+  instruction is the first transcript entry, verbatim — sending it as
+  `description` instead is a shipped bug, not a shortcut: it lands in a
+  column nothing reads, no pod boots, and nothing errors (that was v3.0.0's
+  dashboard, fixed in v3.0.2).
+
+  **Ordering is warm-then-append, never the reverse.** `WarmIfIdle` computes
+  `resumeFromSeq` from `LatestSeq` at provisioning time, so an entry written
+  before the pod exists lands below its cursor and is never delivered.
+  `PostMessage`, `OpenFromProposal` and `PromptSession` each carry that
+  comment; copy the sequence rather than re-deriving it.
+
+  The dashboard is the primary interaction surface (`adr/0029`); Discord is
+  secondary/notification-only, and a dashboard-created session has no thread
+  at all — `core/internal/discord/session.go`'s `PostToThread` already
+  no-ops on a nil `ThreadID`, so relay works regardless of origin.
 - Live relay of every message on the transcript — plan drafts, interview
   questions, doubt-cycle status, raw assistant narration — to the Discord
   thread as it's generated, via `core`'s own relay loop
@@ -534,76 +559,114 @@ inert while *looking* like configuration.
 Eight metrics, each incremented somewhere, chosen for what neither Loki
 (RPC access logs) nor kube-state-metrics/cAdvisor (pod counts, phases,
 restarts, CPU, memory) already answers. `agentfleet_tasks_current{repo,
-status}` is the load-bearing one — a pending task has no pod to count and
-writes no log line, so queue depth existed nowhere before this. No
-`task_id` label anywhere: task IDs are unbounded, and per-task detail is
-what the transcript and Loki are for.
+status}` is the load-bearing one — how many sessions are in each **live
+state** right now, which is what makes "N sessions blocked for 30m"
+alertable. Its name and its `status` label predate `adr/0048` and are
+deliberately left alone: renaming a metric breaks every Grafana panel and
+alert rule built on it, and `publishLiveStateGauge` in
+`core/internal/sessions/reconcile.go` is the single writer, so the label's
+real meaning is knowable from one place. No `session_id` label anywhere:
+session ids are unbounded, and per-session detail is what the transcript and
+Loki are for.
 
 Surfaced in two places: a "Fleet metrics" row on the existing Grafana
 dashboard (`k8s/core.yaml`), and the dashboard's own **observability** view,
 which proxies PromQL through `core` (Prometheus has no IngressRoute, so the
 browser cannot reach it directly) and renders the live topology from
-`tasks.pod_phase` — so `core` still holds zero cluster RBAC.
+`sessions.pod_phase` — so `core` still holds zero cluster RBAC.
 
 ## 6. Data model
 
 ```mermaid
 erDiagram
-    tasks {
+    sessions {
         uuid id PK
         text repo "name in repos table, adr/0028"
-        text description
-        text status "pending|claimed|running|done|failed|cancelled|failed_permanently — UI-freshness only, not control flow (adr/0029)"
-        text discord_channel_id
-        text discord_thread_id
-        text claimed_by
-        text pr_url
-        text notes
-        text session_id "Claude SDK session id — resumable via resume:, not just crash recovery (adr/0029, renamed from planning_session_id)"
-        text permission_mode "current SDK mode, for the dashboard's mode picker"
-        int retry_count
-        text last_error
-        timestamptz heartbeat_at "stale-claim reclaim, >10min"
-        uuid lease_id "split-brain guard, checked before push/PR — also refreshed by Warm"
-        text model "which model actually ran this task's session"
-        text pod_phase "live-pod source of truth for Warm/Stop/idle-timeout gating"
+        text title "human-facing label, optional — never part of the prompt"
+        text description "legacy label, nullable; new sessions leave it empty"
+        text agent_session_id "the SDK's own resume id — renamed from session_id now that the row IS a session"
+        text model
+        uuid lease_id "minted per pod; stops a dying pod overwriting its replacement's resume identity"
+        text permission_mode "NOT NULL DEFAULT 'default' — CLI parity with nothing to forget"
+        text pod_phase "the fleet's only liveness signal; reconciled against Kubernetes every 60s"
         text pod_message
-        timestamptz stop_requested_at
-        timestamptz last_active_at "idle-timeout backstop's activity signal, bumped on every transcript append"
+        text last_error
+        timestamptz last_active_at "activity clock — feeds the idle sweep, the GC and DeriveLiveState"
+        text last_entry_type
+        text last_entry_from
+        boolean activity_seen "real latch, reset on provision — a derived version never fires twice for a resumed session"
+        timestamptz seen_at "what distinguishes idle from done"
+        timestamptz stop_requested_at "when a human first asked to stop; the grace sweep force-kills off this"
+        timestamptz swept_at "retention GC reclaimed the disk — readable, not resumable"
+        timestamptz archived_at "the human is finished; the only terminal state a machine cannot compute"
+        timestamptz created_at
+        timestamptz updated_at
+    }
+    proposals {
+        uuid id PK
+        text repo
+        text source "alert | audit"
+        text dedup_key "unique per repo while open — re-arms on dismissal"
+        text title
+        text body "the instruction; OpenFromProposal sends it as the first MESSAGE, never as description"
+        uuid session_id FK "NULL until a human opens it"
+        timestamptz dismissed_at
+        timestamptz created_at
+    }
+    transcript {
+        uuid session_id FK
+        bigint seq PK
+        text from "agent|human|session"
+        text text
+        text type "discussion|abort|interrupt|question|answer|tool_call|system|assistant|user|result|permission_mode|permission_request|permission_response"
+        text idempotency_key
+        bigint reply_to_seq "answer/permission_response's back-reference to its question/permission_request"
+        timestamptz notified_at "one nullable timestamp replaces the old four-column relay/dead-letter machine"
+        timestamptz created_at
+    }
+    repos {
+        text name PK
+        text url
+        text base_branch "'' means provisioner defaults to main"
+        text image "'' means the fleet default — replaces adr/0034's recipe ingredients"
+        boolean cluster_access "the kubectl shim to thot-executor (adr/0037) — a privilege grant, not a toolchain"
+        timestamptz created_at
+        timestamptz updated_at
+    }
+    prompt_snippets {
+        uuid id PK
+        text name UK
+        text text
+        text suggested_permission_mode "NULL means no suggestion"
+        timestamptz created_at
+        timestamptz updated_at
+    }
+    scheduled_audits {
+        uuid id PK
+        text name UK
+        text prompt
+        int interval_seconds
+        boolean enabled
+        timestamptz next_run_at
+        timestamptz last_run_at
+        text last_status
         timestamptz created_at
         timestamptz updated_at
     }
     knowledge_journal {
         bigserial id PK
         text repo
-        text actor "worker | provisioner | sidecar | core (Discord relay)"
-        text event_type "task.claimed|task.done|session.result|pod.<phase>|..."
+        text actor "worker | provisioner | sidecar | core"
+        text event_type "session.*|pod.<phase>|..."
         jsonb payload
         timestamptz created_at
     }
-    transcript {
-        uuid task_id FK
-        bigint seq PK
-        text from "agent|human"
-        text text
-        text type "discussion|abort|question|answer|tool_call|system|assistant|user|result|permission_mode|permission_request|permission_response"
-        text idempotency_key
-        boolean relayed_to_discord
-        int relay_attempts
-        boolean relay_dead_letter
-        text relay_last_error
-        bigint reply_to_seq "answer/permission_response's back-reference to its question/permission_request"
-        timestamptz created_at
-    }
-    tasks ||--o{ transcript : "task_id"
-    repos {
-        text name PK
-        text url
-        text base_branch "'' means provisioner defaults to main"
-        timestamptz created_at
-        timestamptz updated_at
-    }
+    sessions ||--o{ transcript : "session_id, ON DELETE CASCADE"
+    sessions ||--o| proposals : "session_id, ON DELETE SET NULL"
 ```
+
+`knowledge_journal` is deliberately **not** FK'd to `sessions`: it outlives
+them, which is the point of an append-only fleet memory.
 
 `sessions` is the durable record of one conversation on a repo. It is not a
 queue: `adr/0048` deleted `status` (all eight values), `heartbeat_at`,
@@ -721,14 +784,13 @@ running.
 
 | Var | Default | Notes |
 |---|---|---|
-| `TASK_ID`, `TARGET_REPO`, `LEASE_ID` | *(required)* | `LEASE_ID` is refreshed by `Warm` too, not just `ClaimNextTask` — or `StillHoldsLease` would always fail against a stale/NULL `tasks.lease_id` |
-| `TASK_DESCRIPTION` | – | |
-| `BASE_BRANCH` | `main` | e.g. `dev` for `vos-monolith` |
+| `SESSION_ID`, `TARGET_REPO`, `LEASE_ID` | *(required)* | `LEASE_ID` is minted per pod by `ReserveSlot`, not by a claim — nothing claims anything (`adr/0048` §2). It is what `StillHoldsLease` checks before a push, so a torn-down pod still shutting down cannot overwrite its replacement's resume identity |
 | `SIDECAR_MCP_ADDR` | `localhost:9090` | the Agent SDK session's `mcpServers` config points here |
 | `SIDECAR_API_ADDR` | `localhost:9091` | the wrapper's own control-flow calls |
-| `WORKTREE_PATH` | `/workspace` | |
-| `CLAUDE_CONFIG_DIR` | `/workspace/.claude-home` | redirects the SDK's session-state directory onto the shared PVC — without this, `resume:` has nothing to resume from regardless of `RESUME_SESSION_ID` (`adr/0029`, completes the redirect `adr/0016` described but never wired up) |
-| `RESUME_SESSION_ID` | `""` | non-empty when this pod is warming an existing session — set from `tasks.session_id`, passed as `resume:` into `query()` (`adr/0029`) |
+| `WORKTREE_PATH` | `/workspace` | Kept its name through `adr/0048`; it is a plain clone on the session's own PVC now, not a linked worktree |
+| `CLAUDE_CONFIG_DIR` | per-session | redirects the SDK's session-state directory onto durable storage — without this, `resume:` has nothing to resume from regardless of `RESUME_SESSION_ID` (`adr/0029`, completing the redirect `adr/0016` described but never wired up). Per-session as of `adr/0048`, not one directory shared by every pod |
+| `RESUME_SESSION_ID` | `""` | non-empty when this pod is warming an existing session — set from `sessions.agent_session_id`, passed as `resume:` into `query()` (`adr/0029`) |
+| `RESUME_FROM_SEQ` | `0` | the transcript cursor this pod streams from, computed as `LatestSeq` at provisioning time. **This is why ordering is warm-then-append**: a message written before the pod exists lands below this and is never delivered |
 | `GH_TOKEN` | – | the worker's *own* `git push`/`gh pr create` auth — separate from the provisioner's, since the two are different pods that don't share `$HOME` |
 | `CLAUDE_MODEL` | `claude-opus-4-8` | |
 | `MAX_TURNS` | unbounded | opt-in cap |
@@ -741,7 +803,7 @@ env `dev`) — never committed, never in a manifest as plain text.
 
 `dream-analyst`, `vos-monolith`, `agent-fleet` — real repos, seeded into
 the `repos` table (see §6, `docs/adr/0028`). The `repos` table is the
-source of truth for which repos the `/task` command accepts and their
+source of truth for which repos a session can target, and their
 per-repo config (clone URL, base branch), dashboard-editable at
 runtime — no redeploy needed, and no Go source change either (superseding
 the old `core/internal/tasks.KnownRepos` map, itself moved from

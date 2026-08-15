@@ -109,12 +109,6 @@ func (s *Server) GetSession(ctx context.Context, req *connect.Request[agentfleet
 	return connect.NewResponse(&agentfleetv1.GetSessionResponse{Session: SessionToProto(*t)}), nil
 }
 
-// CreateTask lets the dashboard create a task the same way a Discord /task
-// command does, minus the Discord thread — it calls the exact same
-// sessions.Store.CreateTask core/internal/discord/handlers.go's startTask
-// calls, just with nil channel/thread (docs/adr/0015). PostToThread
-// (core/internal/discord/session.go) already no-ops on a nil ThreadID, so
-// no other code needs to special-case a dashboard-origin task.
 // CreateSession makes a row and nothing else — no pod, no directory, no
 // worktree. The first PostMessage is what provisions (docs/adr/0048).
 //
