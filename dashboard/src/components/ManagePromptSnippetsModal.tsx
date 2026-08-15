@@ -5,9 +5,9 @@ import { ConfirmModal } from "./ConfirmModal";
 import type { PromptSnippet } from "../gen/agentfleet/v1/dashboard_pb";
 
 // Dashboard-editable, reusable guidance text an operator optionally
-// attaches to a task at creation time (see NewTaskDialog's snippet
-// checkboxes) — replaces worker/src/session.ts's old unconditional,
-// hardcoded taskPrompt() workflow. Structurally a clone of
+// attaches to a session at creation time (see NewSessionDialog's snippet
+// checkboxes) — replaces the old unconditional, hardcoded workflow prompt in
+// worker/src/session.ts. Structurally a clone of
 // ManageReposModal.tsx, same no-redeploy CRUD pattern.
 
 function SnippetRow({ snippet, onSaved, onRequestDelete, onError }: {
@@ -138,8 +138,9 @@ export function ManagePromptSnippetsModal({ onChanged }: { onChanged?: () => voi
       <Modal open={dialogOpen} onClose={close} boxClassName="max-w-lg">
         <h3 className="font-semibold text-base mb-3">Manage guidance</h3>
         <p className="text-xs text-dim mb-3">
-          Optional, reusable instructions an operator can attach to a task at creation time — a task with none
-          attached gets just its own description, nothing more.
+          Optional, reusable instructions. Ticking one in the new-session form inserts its text into the first
+          message, where it stays visible and editable before it is sent — the agent reads it as part of what a
+          human wrote, not as a wrapper it cannot see.
         </p>
 
         <div className="flex flex-col">
@@ -185,7 +186,7 @@ export function ManagePromptSnippetsModal({ onChanged }: { onChanged?: () => voi
 
       <ConfirmModal
         open={pendingDelete !== null}
-        message={pendingDelete ? `Delete guidance snippet "${pendingDelete.name}"? Tasks already using it keep their frozen copy.` : ""}
+        message={pendingDelete ? `Delete guidance snippet "${pendingDelete.name}"? Sessions it was already inserted into keep the text in their transcript.` : ""}
         confirmWord="delete"
         onConfirm={confirmDelete}
         onCancel={() => setPendingDelete(null)}

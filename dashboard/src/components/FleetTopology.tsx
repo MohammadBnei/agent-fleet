@@ -70,7 +70,7 @@ function formatRate(rps: number): string {
   return rps < 1 ? `${rps.toFixed(2)}/s` : `${rps.toFixed(1)}/s`;
 }
 
-export function FleetTopology({ onSelectTask }: { onSelectTask: (id: string) => void }) {
+export function FleetTopology({ onSelectSession }: { onSelectSession: (id: string) => void }) {
   const [nodes, setNodes] = useState<CellNode[]>([]);
   const [edges, setEdges] = useState<TopologyEdge[]>([]);
   const [metricsError, setMetricsError] = useState("");
@@ -164,13 +164,13 @@ export function FleetTopology({ onSelectTask }: { onSelectTask: (id: string) => 
                 key={p.id}
                 transform={`translate(${p.x} ${p.y})`}
                 className={clickable ? "cursor-pointer" : undefined}
-                onClick={clickable ? () => onSelectTask(p.sessionId) : undefined}
+                onClick={clickable ? () => onSelectSession(p.sessionId) : undefined}
                 role={clickable ? "button" : undefined}
                 tabIndex={clickable ? 0 : undefined}
                 onKeyDown={
                   clickable
                     ? (ev) => {
-                        if (ev.key === "Enter" || ev.key === " ") onSelectTask(p.sessionId);
+                        if (ev.key === "Enter" || ev.key === " ") onSelectSession(p.sessionId);
                       }
                     : undefined
                 }

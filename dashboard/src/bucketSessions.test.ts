@@ -1,8 +1,8 @@
 import { test, expect } from "bun:test";
 import type { Session } from "./gen/agentfleet/v1/core_pb";
-import { bucketTasks } from "./pages/TaskList";
+import { bucketSessions } from "./pages/SessionList";
 
-// These tests used to be written against tasks.status ("proposed", "running",
+// These tests used to be written against sessions.status ("proposed", "running",
 // "done") and a `shipped` bucket. All three are gone in docs/adr/0048: a
 // polymorphic session has no computable completion, so there is no status
 // enum, and what a human actually sorts by is liveness plus whether anything
@@ -18,7 +18,7 @@ function session(id: string, over: Partial<Session> = {}): Session {
   } as Session;
 }
 
-// The reason this function is shared and tested at all: bucketTasks is the
+// The reason this function is shared and tested at all: bucketSessions is the
 // single membership split for BOTH form factors, and a session matching no
 // bucket does not merely sort oddly — it vanishes from the list entirely,
 // which is the one place a human is supposed to see it. `quiet` is therefore
@@ -42,7 +42,7 @@ test("every session lands in exactly one bucket, whatever shape it is in", () =>
     session("archived-swept", { archivedAt: "2026-08-01T00:00:00Z", sweptAt: "2026-08-01T00:00:00Z" }),
   ];
 
-  const b = bucketTasks(all, new Set());
+  const b = bucketSessions(all, new Set());
   const placements = [
     ...b.needsYou,
     ...b.working,
@@ -65,10 +65,10 @@ test("every session lands in exactly one bucket, whatever shape it is in", () =>
 //
 // This pins the set of buckets, so adding one forces a decision about where
 // it renders instead of letting it be dropped silently. If this fails, either
-// render the new bucket in TaskList's body or fold it into an existing group —
+// render the new bucket in SessionList's body or fold it into an existing group —
 // do not just update the list here.
-test("the bucket set is exactly what TaskList renders", () => {
-  const b = bucketTasks([], new Set());
+test("the bucket set is exactly what SessionList renders", () => {
+  const b = bucketSessions([], new Set());
 
   expect(Object.keys(b).sort()).toEqual(
     ["archived", "finished", "needsYou", "quiet", "stalled", "swept", "working"].sort(),
@@ -85,7 +85,7 @@ test("the bucket set is exactly what TaskList renders", () => {
 // "working" describes a state the server cannot emit, and the earlier version
 // of this test asserted exactly that.
 test("a blocked session outranks every other bucket", () => {
-  const b = bucketTasks([session("a", { pendingDecisions: 1, liveState: "blocked" })], new Set());
+  const b = bucketSessions([session("a", { pendingDecisions: 1, liveState: "blocked" })], new Set());
 
   expect(b.needsYou.map((t) => t.id)).toEqual(["a"]);
   expect(b.working).toHaveLength(0);
@@ -97,7 +97,7 @@ test("a blocked session outranks every other bucket", () => {
 // top of the list permanently, offering allow/deny buttons that reach no pod —
 // while DeriveLiveState, which checks liveness first, calls it not-live.
 test("a session whose pod is gone is not in needsYou, however many decisions it left behind", () => {
-  const b = bucketTasks([session("a", { pendingDecisions: 3, liveState: "idle" })], new Set());
+  const b = bucketSessions([session("a", { pendingDecisions: 3, liveState: "idle" })], new Set());
 
   expect(b.needsYou).toHaveLength(0);
   expect(b.quiet.map((t) => t.id)).toEqual(["a"]);
@@ -107,13 +107,13 @@ test("a session whose pod is gone is not in needsYou, however many decisions it 
 // tool calls each get their own pending permission, and answering one must
 // not report the rest as resolved — the exact bug the boolean had.
 test("a session stays in needsYou while any decision is still outstanding", () => {
-  const twoLeft = bucketTasks([session("a", { pendingDecisions: 2, liveState: "blocked" })], new Set());
+  const twoLeft = bucketSessions([session("a", { pendingDecisions: 2, liveState: "blocked" })], new Set());
   expect(twoLeft.needsYou.map((t) => t.id)).toEqual(["a"]);
 
-  const oneLeft = bucketTasks([session("a", { pendingDecisions: 1, liveState: "blocked" })], new Set());
+  const oneLeft = bucketSessions([session("a", { pendingDecisions: 1, liveState: "blocked" })], new Set());
   expect(oneLeft.needsYou.map((t) => t.id)).toEqual(["a"]);
 
-  const noneLeft = bucketTasks([session("a", { pendingDecisions: 0, liveState: "idle" })], new Set());
+  const noneLeft = bucketSessions([session("a", { pendingDecisions: 0, liveState: "idle" })], new Set());
   expect(noneLeft.needsYou).toHaveLength(0);
   expect(noneLeft.quiet.map((t) => t.id)).toEqual(["a"]);
 });
@@ -122,7 +122,7 @@ test("a session stays in needsYou while any decision is still outstanding", () =
 // fleet has, because it is the only one a machine cannot compute. It must not
 // also show up as something demanding attention.
 test("an archived session is never in needsYou, even with a pending decision", () => {
-  const b = bucketTasks([session("a", { pendingDecisions: 1, archivedAt: "2026-08-01T00:00:00Z" })], new Set());
+  const b = bucketSessions([session("a", { pendingDecisions: 1, archivedAt: "2026-08-01T00:00:00Z" })], new Set());
 
   expect(b.needsYou).toHaveLength(0);
   expect(b.archived.map((t) => t.id)).toEqual(["a"]);
@@ -131,7 +131,7 @@ test("an archived session is never in needsYou, even with a pending decision", (
 // A crashed pod is always news: nothing else tells the human their session
 // died, now that there is no `failed` status to render.
 test("a crashed session surfaces in finished rather than falling into quiet", () => {
-  const b = bucketTasks([session("a", { podPhase: "POD_PHASE_CRASHED" })], new Set());
+  const b = bucketSessions([session("a", { podPhase: "POD_PHASE_CRASHED" })], new Set());
 
   expect(b.finished.map((t) => t.id)).toEqual(["a"]);
   expect(b.quiet).toHaveLength(0);
@@ -141,7 +141,7 @@ test("a crashed session surfaces in finished rather than falling into quiet", ()
 // resumable. The bucket exists so the row can render read-only — offering a
 // Warm button would be an action that cannot succeed.
 test("a swept session is reported as swept so no Warm button is offered", () => {
-  const b = bucketTasks([session("a", { sweptAt: "2026-08-01T00:00:00Z", liveState: "idle" })], new Set());
+  const b = bucketSessions([session("a", { sweptAt: "2026-08-01T00:00:00Z", liveState: "idle" })], new Set());
 
   expect(b.swept.map((t) => t.id)).toEqual(["a"]);
 });
@@ -149,7 +149,7 @@ test("a swept session is reported as swept so no Warm button is offered", () => 
 // needsYouIds carries decisions the client knows about from the transcript
 // before the server-side count catches up on the next poll.
 test("needsYouIds alone is enough to pull a session into needsYou", () => {
-  const b = bucketTasks([session("a", { liveState: "idle" })], new Set(["a"]));
+  const b = bucketSessions([session("a", { liveState: "idle" })], new Set(["a"]));
 
   expect(b.needsYou.map((t) => t.id)).toEqual(["a"]);
   expect(b.quiet).toHaveLength(0);

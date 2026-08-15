@@ -6,7 +6,7 @@ import type { Repo } from "../gen/agentfleet/v1/dashboard_pb";
 
 // Dashboard-editable target-repo config (docs/adr/0028) — replaces the old
 // hardcoded KNOWN_REPOS array here and the equally-hardcoded
-// core/internal/tasks.KnownRepos Go map, so onboarding/editing a repo no
+// core/internal/sessions.KnownRepos Go map, so onboarding/editing a repo no
 // longer needs a core redeploy.
 
 function RepoRow({ repo, onSaved, onRequestDelete, onError }: {
@@ -213,7 +213,7 @@ export function ManageReposModal({ onChanged }: { onChanged?: () => void }) {
         open={pendingDelete !== null}
         message={
           pendingDelete
-            ? `Delete repo "${pendingDelete.name}"? Existing tasks keep their history; new tasks can no longer target it.`
+            ? `Delete repo "${pendingDelete.name}"? Existing sessions keep their history; new sessions can no longer target it.`
             : ""
         }
         confirmWord="delete"

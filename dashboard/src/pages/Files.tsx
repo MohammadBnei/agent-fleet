@@ -12,7 +12,7 @@ import { useMediaQuery } from "../useMediaQuery";
 //
 // The mockups show a "WRITTEN BY" column. There is no provenance to show: ADR
 // 0030 makes the object key the filename verbatim, with no per-caller scoping,
-// and the upload presign carries no task id. That column is omitted rather than
+// and the upload presign carries no session id. That column is omitted rather than
 // faked.
 
 const COLS = "grid-cols-[24px_1fr_110px_170px_150px]";

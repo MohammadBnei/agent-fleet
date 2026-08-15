@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { client } from "../connectClient";
 import { sessionLabel } from "../sessionLabel";
 import type { Session } from "../gen/agentfleet/v1/core_pb";
-import { sessionBadge } from "./TaskList";
+import { sessionBadge } from "./SessionList";
 import {
   feedVisibility,
   latestResultSummary,
@@ -11,7 +11,7 @@ import {
   latestTodos,
   type Density,
 } from "../transcript";
-import { useTaskDetail } from "../useTaskDetail";
+import { useSessionDetail } from "../useSessionDetail";
 import { useAtBottom } from "../useAtBottom";
 import { useLocalStorageState } from "../useLocalStorageState";
 import { ErrorModal } from "../components/ErrorModal";
@@ -24,7 +24,7 @@ import { TodosPanel, ChangesPanel, SessionPanel } from "../components/SessionPan
 import { asDisplayMarkdown } from "../transcript";
 
 // The console's desktop session view: feed · decision dock · composer, beside a
-// fixed panel column. Full-width — the permanent 320px task-list sidebar is
+// fixed panel column. Full-width — the permanent 320px session-list sidebar is
 // gone, and the rich list view is the fleet overview it used to stand in for.
 //
 // The pending decision lives in the dock and nowhere else (docs/adr/0043): it
@@ -38,21 +38,21 @@ const DENSITY: readonly { value: Density; label: string; title: string }[] = [
   { value: "decisions", label: "decisions", title: "decisions and alarms only" },
 ];
 
-export function TaskDetail({
+export function SessionDetail({
   sessionId,
-  tasks,
+  sessions,
   onBack,
   onClosed: _onClosed,
 }: {
   sessionId: string;
-  tasks: Session[];
+  sessions: Session[];
   onBack: () => void;
-  // Called when this task stops existing (dismissing a proposal soft-deletes
+  // Called when this session stops existing (dismissing a proposal soft-deletes
   // it), so the view doesn't sit on a row that is no longer there.
   onClosed?: () => void;
 }) {
   const {
-    task: fetchedTask,
+    session: fetchedSession,
     entries,
     branch,
     worktreePath,
@@ -65,9 +65,11 @@ export function TaskDetail({
     respondToPermission,
     answerQuestion,
     clearActionError,
-  } = useTaskDetail(sessionId);
+  } = useSessionDetail(sessionId);
   const [message, setMessage] = useState("");
   const [bypassOpen, setBypassOpen] = useState(false);
+  // Key deliberately not renamed with the file: it is persisted in every
+  // operator's browser, and renaming it silently resets their density choice.
   const [density, setDensity] = useLocalStorageState<Density>("taskDetail.density", "everything");
   const { ref: feedRef, atBottom: feedAtBottom, onScroll: feedOnScroll, scrollToBottom: feedScrollToBottom } =
     useAtBottom<HTMLDivElement>();
@@ -96,22 +98,22 @@ export function TaskDetail({
     prevEntriesLenRef.current = entries.length;
   }, [entries, feedAtBottom, feedScrollToBottom]);
 
-  // Land on the latest message when a task is opened — *before* the first
-  // paint of that task's feed, not after it. As a plain effect this ran
+  // Land on the latest message when a session is opened — *before* the first
+  // paint of that session's feed, not after it. As a plain effect this ran
   // post-paint, so opening a session showed the top of the history for a
   // frame and then visibly scrolled down; useLayoutEffect means you simply
-  // arrive at the bottom. This component instance is reused across task
-  // switches (App.tsx doesn't key it by id), so track which task we've
+  // arrive at the bottom. This component instance is reused across session
+  // switches (App.tsx doesn't key it by id), so track which session we've
   // already jumped for instead of scrolling every render.
-  const scrolledForTaskRef = useRef<string | null>(null);
+  const scrolledForSessionRef = useRef<string | null>(null);
   useLayoutEffect(() => {
-    if (entries.length === 0 || scrolledForTaskRef.current === sessionId) return;
-    scrolledForTaskRef.current = sessionId;
+    if (entries.length === 0 || scrolledForSessionRef.current === sessionId) return;
+    scrolledForSessionRef.current = sessionId;
     const el = feedRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [sessionId, entries, feedRef]);
 
-  // The optimistic echo of a just-sent message (useTaskDetail's
+  // The optimistic echo of a just-sent message (useSessionDetail's
   // pendingMessage) renders immediately but below the fold. Only the entries
   // effect above scrolled, and that waits for the real entry to come back
   // over the stream — so a send appeared to do nothing until the round trip
@@ -124,19 +126,19 @@ export function TaskDetail({
   }, [feedAtBottom]);
 
   if (loadError) return <div className="m-4 border border-pink-line bg-pink-bg px-4 py-3 text-base text-error">{loadError}</div>;
-  if (!fetchedTask) return <div className="p-4 text-base text-dim">Loading…</div>;
+  if (!fetchedSession) return <div className="p-4 text-base text-dim">Loading…</div>;
 
-  // `tasks` is App.tsx's already-polled (5s) list — preferring it keeps
+  // `sessions` is App.tsx's already-polled (5s) list — preferring it keeps
   // pod_phase/status live without a second poll loop just for this page; falls
   // back to the one-shot fetch for the instant before the next tick includes it.
-  const task = tasks.find((t) => t.id === sessionId) ?? fetchedTask;
+  const session = sessions.find((t) => t.id === sessionId) ?? fetchedSession;
 
-  const badge = sessionBadge(task);
+  const badge = sessionBadge(session);
   // staleTag/heartbeat used to render "last beat 4m ago", reddened past the
   // reclaim threshold. Both are gone with heartbeat_at (docs/adr/0048) — the
   // feed's own entry timestamps say when this session last did anything, and
   // they say it about real work rather than about a timer.
-  const blocked = task.liveState === "blocked";
+  const blocked = session.liveState === "blocked";
   const visibility = feedVisibility(density, false);
 
   const todos = latestTodos(entries) ?? [];
@@ -169,7 +171,7 @@ export function TaskDetail({
             ← all sessions
           </button>
           <h2 className="text-lg font-semibold min-w-0 break-words">
-            #{task.id.slice(0, 6)} {sessionLabel(task)}
+            #{session.id.slice(0, 6)} {sessionLabel(session)}
           </h2>
           {blocked ? (
             <span className="flex items-center gap-1.5 border border-pink-line bg-pink-chip px-2 py-0.5 flex-none">
@@ -180,7 +182,7 @@ export function TaskDetail({
             badge && (
               <span
                 className={`text-xs px-1.5 py-px border tracking-wide flex-none ${badge.className}`}
-                title={badge.title ?? task.podMessage ?? undefined}
+                title={badge.title ?? session.podMessage ?? undefined}
               >
                 {badge.label}
               </span>
@@ -188,7 +190,7 @@ export function TaskDetail({
           )}
           
           <span className="text-xs text-dim2 min-w-0 truncate">
-            {task.repo}
+            {session.repo}
             {branch && ` · ${branch}`}
           </span>
           
@@ -307,8 +309,8 @@ export function TaskDetail({
                 ctx {Math.round(contextTokens / 1000)}k last turn
               </span>
             )}
-            <span className={task.permissionMode === "bypassPermissions" ? "text-warning" : undefined}>
-              ▸▸ {task.permissionMode || "default"} permissions
+            <span className={session.permissionMode === "bypassPermissions" ? "text-warning" : undefined}>
+              ▸▸ {session.permissionMode || "default"} permissions
             </span>
           </div>
         </div>
@@ -319,7 +321,7 @@ export function TaskDetail({
         <ChangesPanel branch={branch} changes={changes} />
         <div className="mt-auto">
           <SessionPanel
-            task={task}
+            session={session}
             busy={busyKey !== null}
             busyKey={busyKey}
             run={run}

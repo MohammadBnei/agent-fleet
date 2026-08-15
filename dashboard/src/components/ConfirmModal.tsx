@@ -9,7 +9,7 @@ import { Modal } from "./Modal";
 // more consequential actions — confirmWord's presence is what drives the
 // stricter UX, not a blanket rule. Callers hold their own "what am I
 // confirming" state and pass open/onConfirm/onCancel — see App.tsx's
-// deleteTask, ManageReposModal.tsx's
+// deleteSession, ManageReposModal.tsx's
 // pendingDelete (typed) for both patterns.
 export function ConfirmModal({
   open,

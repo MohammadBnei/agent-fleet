@@ -36,7 +36,7 @@ export function parseAnswers(text: string): Record<string, string> | null {
   }
 }
 
-// Only one question is ever pending per task at a time (the agent's tool
+// Only one question is ever pending per session at a time (the agent's tool
 // call blocks on it) — the latest QUESTION entry with no later ANSWER.
 export function findPendingQuestion(entries: TranscriptEntry[]): TranscriptEntry | null {
   const idx = entries.findIndex(
@@ -445,7 +445,7 @@ export function entryTime(entry: TranscriptEntry): string | null {
 // so a 3.9-second turn that emitted 44 tokens showed up as "$1.546 · 3.9s
 // (7m24s api)" — the whole session's spend, attributed to its cheapest
 // turn. Subtracting the previous result gives each line its own share;
-// the session totals still live in the task header.
+// the running totals still live in the session header.
 //
 // `prev` can exceed `cur` when a session resumes and the SDK's counters
 // restart, hence the clamp — a negative cost is worse than a flat 0.

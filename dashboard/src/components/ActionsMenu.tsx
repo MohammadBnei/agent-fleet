@@ -1,7 +1,7 @@
 import type { CSSProperties } from "react";
 import { client } from "../connectClient";
 import { ActionButton } from "./ActionButton";
-import { isPodPhaseLive } from "../pages/TaskList";
+import { isPodPhaseLive } from "../pages/SessionList";
 
 // The user-facing SDK modes worth a direct button — "delegate"/"dontAsk"
 // are SDK-internal/secondary, never surfaced here. "bypassPermissions" is
@@ -73,7 +73,7 @@ export function ActionsMenu({
   // chosen yet (the SDK itself starts a fresh session in "default", but
   // that's not durable here until SetPermissionMode is actually called).
   currentMode?: string;
-  // Drives Warm vs. Stop below — the same pod_phase TaskList's own badges
+  // Drives Warm vs. Stop below — the same pod_phase SessionList's own badges
   // already read, just here to answer "is there a pod to talk to right
   // now" instead of "what does it look like in the list."
   podPhase?: string;
@@ -205,7 +205,7 @@ export function ActionsMenu({
               type="button"
               className={m.value === currentMode ? "active" : undefined}
               // Dismiss on pick, natively. The mode itself only changes on
-              // the wire, and tasks.permissionMode arrives with the next
+              // the wire, and sessions.permissionMode arrives with the next
               // 5s poll — leaving the menu open over an unchanged label is
               // what made this feel like the click was dropped.
               popoverTarget="popover-mode"

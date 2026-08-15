@@ -90,13 +90,13 @@ export function ChangesPanel({ branch, changes }: { branch: string | null; chang
 // by measuring rects in Playwright, invisible to tsc and to lint.
 
 export function SessionPanel({
-  task,
+  session,
   busy,
   busyKey,
   run,
   onBypassClick,
 }: {
-  task: Session;
+  session: Session;
   busy: boolean;
   busyKey: string | null;
   run: (action: () => Promise<unknown>, key: string) => void;
@@ -106,19 +106,19 @@ export function SessionPanel({
     <div>
       <PanelHeading title="SESSION" />
       <div className="text-xs text-dim2 leading-[1.6] mb-2.5">
-        mode <span className="text-text2">{task.permissionMode || "default"}</span>
+        mode <span className="text-text2">{session.permissionMode || "default"}</span>
         
-        {task.podPhase && ` · pod ${task.podPhase.replace("POD_PHASE_", "")}`}
+        {session.podPhase && ` · pod ${session.podPhase.replace("POD_PHASE_", "")}`}
       </div>
       <ActionsMenu
-        sessionId={task.id}
+        sessionId={session.id}
         busy={busy}
         busyKey={busyKey}
         run={run}
-        sweptAt={task.sweptAt}
-        archivedAt={task.archivedAt}
-        currentMode={task.permissionMode}
-        podPhase={task.podPhase}
+        sweptAt={session.sweptAt}
+        archivedAt={session.archivedAt}
+        currentMode={session.permissionMode}
+        podPhase={session.podPhase}
         onBypassClick={onBypassClick}
       />
     </div>

@@ -175,7 +175,7 @@ function MetricsExplorer() {
 // which stays the place for time-series work: what this adds is the live
 // cell view, where a pod maps back to the session it's running so a
 // misbehaving cell is one click from its transcript.
-export function Observability({ onSelectTask }: { onSelectTask: (id: string) => void }) {
+export function Observability({ onSelectSession }: { onSelectSession: (id: string) => void }) {
   const [tab, setTab] = useState<Tab>("topology");
 
   return (
@@ -192,7 +192,7 @@ export function Observability({ onSelectTask }: { onSelectTask: (id: string) => 
         </a>
       </div>
 
-      {tab === "topology" ? <FleetTopology onSelectTask={onSelectTask} /> : <MetricsExplorer />}
+      {tab === "topology" ? <FleetTopology onSelectSession={onSelectSession} /> : <MetricsExplorer />}
     </div>
   );
 }

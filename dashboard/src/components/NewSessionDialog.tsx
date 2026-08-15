@@ -12,12 +12,12 @@ function labelFrom(message: string): string {
   return line.length > 80 ? `${line.slice(0, 79)}…` : line;
 }
 
-export function NewTaskDialog({
+export function NewSessionDialog({
   onCreated,
   // Mobile's top bar has room for a glyph, not a label — the console mobile
   // mockup shows this as a bare "+".
   compact = false,
-  // The manifest's "New task" app shortcut lands on /?new=1 and expects the
+  // The manifest's "New session" app shortcut lands on /?new=1 and expects the
   // form to be open on arrival; a shortcut that just shows the list would be a
   // dead affordance.
   autoOpen = false,
@@ -158,18 +158,18 @@ export function NewTaskDialog({
       <button
         type="button"
         onClick={open}
-        aria-label="Send a task"
+        aria-label="New session"
         className={
           compact
             ? "text-lg text-dim hover:text-primary px-1 flex-none"
             : "flex-none border border-acc-line px-3 py-1.5 text-xs hover:border-primary hover:text-primary"
         }
       >
-        {compact ? "+" : "+ send a task"}
+        {compact ? "+" : "+ new session"}
       </button>
 
       <Modal open={dialogOpen} onClose={close}>
-        <h3 className="font-semibold text-base mb-3">New task</h3>
+        <h3 className="font-semibold text-base mb-3">New session</h3>
         <form onSubmit={handleSubmit} className="flex flex-col gap-3">
           <label className="flex flex-col gap-1 text-sm">
             Repo
