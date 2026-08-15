@@ -85,13 +85,11 @@ function NeedsYouCard({
 function FinishedCard({
   task,
   onSelect,
-  onRetry,
   onOpenLogs,
   reload,
 }: {
   task: Session;
   onSelect: () => void;
-  onRetry: () => void;
   onOpenLogs: () => void;
   reload: () => void;
 }) {
@@ -120,9 +118,6 @@ function FinishedCard({
           <div className="flex gap-2 mt-2.5">
             <button type="button" onClick={onOpenLogs} className="border border-acc-line px-3 py-2 text-xs flex-1">
               read log
-            </button>
-            <button type="button" onClick={onRetry} className="border border-acc-line px-3 py-2 text-xs flex-1">
-              retry
             </button>
           </div>
         </>
@@ -240,7 +235,6 @@ export function MobileTaskList({
   summaries,
   needsYouIds,
   onSelect,
-  onRetry,
   onOpenLogs,
   reload,
 }: {
@@ -249,7 +243,6 @@ export function MobileTaskList({
   needsYouIds: Set<string>;
   onSelect: (id: string) => void;
   onDelete: (id: string) => void;
-  onRetry: (id: string) => void;
   onOpenLogs: (id: string) => void;
   reload: () => void;
 }) {
@@ -321,7 +314,6 @@ export function MobileTaskList({
                 key={t.id}
                 task={t}
                 onSelect={() => onSelect(t.id)}
-                onRetry={() => onRetry(t.id)}
                 onOpenLogs={() => onOpenLogs(t.id)}
                 reload={reload}
               />

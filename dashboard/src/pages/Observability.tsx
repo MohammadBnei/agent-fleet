@@ -15,7 +15,11 @@ const TABS: readonly { value: Tab; label: string }[] = [
 // dashboard's other views genuinely can't answer, which is the same bar
 // core's metric set was cut down to (docs/adr/0047).
 const PRESETS: readonly { label: string; query: string }[] = [
-  { label: "queue by status", query: "sum by (status) (agentfleet_tasks_current)" },
+  // The metric name and its `status` label are core's
+  // (core/internal/metrics/metrics.go), so they stay as they are — but there
+  // is no queue any more (docs/adr/0048), and publishLiveStateGauge fills that
+  // label with live states, not queue statuses. Only the human label is wrong.
+  { label: "sessions by live state", query: "sum by (status) (agentfleet_tasks_current)" },
   { label: "headroom", query: "agentfleet_live_pods / agentfleet_max_in_flight" },
   { label: "rpc rate", query: "sum by (surface) (rate(agentfleet_grpc_requests_total[5m]))" },
   {

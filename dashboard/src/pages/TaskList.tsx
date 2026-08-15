@@ -313,19 +313,19 @@ function NeedsYouCard({
 }
 
 // One row of "finished while you were away" — green for a real result, orange
-// for a failure. A failure gets the two things a human actually needs next:
-// the log that says why, and a retry.
+// for a failure. A failure gets the log that says why; the retry button that
+// used to sit next to it is gone with docs/adr/0048's removal of
+// failed_permanently — there is no dead state to resurrect a session from,
+// and retrying is just sending it another message.
 function FinishedRow({
   task,
   onSelect,
-  onRetry,
   onOpenLogs,
   onDelete,
   reload,
 }: {
   task: Session;
   onSelect: () => void;
-  onRetry: () => void;
   onOpenLogs: () => void;
   onDelete: () => void;
   reload: () => void;
@@ -354,14 +354,9 @@ function FinishedRow({
           <span className="ml-auto text-sm text-dim">{pr ? pr.label : "no PR"}</span>
         )}
         {failed ? (
-          <>
-            <button type="button" onClick={onOpenLogs} className="flex-none border border-acc-line px-3 py-1 text-sm hover:border-primary hover:text-primary">
-              read log
-            </button>
-            <button type="button" onClick={onRetry} className="flex-none border border-acc-line px-3 py-1 text-sm hover:border-primary hover:text-primary">
-              retry
-            </button>
-          </>
+          <button type="button" onClick={onOpenLogs} className="flex-none border border-acc-line px-3 py-1 text-sm hover:border-primary hover:text-primary">
+            read log
+          </button>
         ) : null}
         {/*
           This row is exactly the "I'm done with this" moment, and until now
@@ -510,7 +505,6 @@ export function TaskList({
   needsYouIds,
   onSelect,
   onDelete,
-  onRetry,
   onOpenLogs,
   reload,
 }: {
@@ -519,7 +513,6 @@ export function TaskList({
   needsYouIds: Set<string>;
   onSelect: (id: string) => void;
   onDelete: (id: string) => void;
-  onRetry: (id: string) => void;
   onOpenLogs: (id: string) => void;
   reload: () => void;
 }) {
@@ -563,7 +556,6 @@ export function TaskList({
               key={t.id}
               task={t}
               onSelect={() => onSelect(t.id)}
-              onRetry={() => onRetry(t.id)}
               onOpenLogs={() => onOpenLogs(t.id)}
               onDelete={() => onDelete(t.id)}
               reload={reload}

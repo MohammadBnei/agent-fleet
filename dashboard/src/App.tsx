@@ -226,14 +226,12 @@ export default function App() {
       .catch((err: Error) => setTasksError(err.message));
   }
 
-  const retryTask = useCallback(
-    (id: string) => {
-      // Retry is deleted with failed_permanently — there is no dead state to
-      // resurrect a session from now. Sending it another message is the retry.
-      void id;
-    },
-    [loadTasks],
-  );
+  // retryTask used to live here, wired to a "retry" button on every crashed
+  // row. It was `void id;` — retry died with failed_permanently
+  // (docs/adr/0048), since nothing reclaims a session into a dead state any
+  // more and retrying is just sending it another message. Both buttons are
+  // gone with it; a control that silently does nothing is worse than no
+  // control.
 
   // The header's live census. `liveState` is server-derived (docs/adr/0040), so
   // every client agrees on what "working" means.
@@ -257,8 +255,14 @@ export default function App() {
     // needsYouOnly is the manifest's "Waiting on you" shortcut. Mobile already
     // opens on its needs-you bucket, so this only changes the desktop list —
     // but it narrows the shared array either way, which keeps the two honest.
+    //
+    // Same predicate as the needsYou bucket and the header count, and for the
+    // same reason: pendingDecisions is a raw count that stays above zero
+    // forever when a pod dies mid-decision, so filtering on it showed sessions
+    // nobody can act on — and hid nothing, since the shortcut's whole promise
+    // is "these are waiting on you".
     const base = needsYouOnly
-      ? tasks.filter((t) => t.pendingDecisions > 0)
+      ? tasks.filter((t) => t.archivedAt === undefined && t.liveState === "blocked")
       : tasks;
     const q = filter.trim().toLowerCase();
     if (!q) return base;
@@ -274,7 +278,6 @@ export default function App() {
     needsYouIds,
     onSelect: selectTask,
     onDelete: deleteTask,
-    onRetry: retryTask,
     onOpenLogs: setLogTaskId,
     reload: loadTasks,
   };
