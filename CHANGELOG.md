@@ -1,5 +1,12 @@
 # Changelog
 
+# [3.3.0](https://github.com/MohammadBnei/agent-fleet/compare/3.2.1...3.3.0) (2026-08-15)
+
+
+### Features
+
+* **worker,dashboard:** handle /clear by resetting the session instead of crashing ([#171](https://github.com/MohammadBnei/agent-fleet/issues/171)) ([637a5a7](https://github.com/MohammadBnei/agent-fleet/commit/637a5a74232966eb51f2cb246dc9e79c0486d6d0)), closes [#170](https://github.com/MohammadBnei/agent-fleet/issues/170)
+
 ## [3.2.1](https://github.com/MohammadBnei/agent-fleet/compare/3.2.0...3.2.1) (2026-08-15)
 
 
