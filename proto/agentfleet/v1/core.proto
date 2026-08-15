@@ -325,6 +325,19 @@ message SetPermissionModeRequest {
 
 message SetPermissionModeResponse {}
 
+// A worker pod relabelling its OWN session's human-facing title/description
+// (Session.title/description). Optional per field: an unset field leaves that
+// column unchanged, so a title can be set without clobbering a description.
+// Like SetPermissionMode, a plain column write with no transcript append — the
+// caller IS the session, there is no other worker to notify.
+message UpdateSessionMetaRequest {
+  string session_id = 1;
+  optional string title = 2;
+  optional string description = 3;
+}
+
+message UpdateSessionMetaResponse {}
+
 // HeartbeatRequest/Response and SetTaskStatusRequest/Response used to live
 // here. Both are deleted in docs/adr/0048.
 //
@@ -508,6 +521,10 @@ service CoreService {
   // already-running worker via the transcript.
   // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
   rpc SetPermissionMode(SetPermissionModeRequest) returns (SetPermissionModeResponse);
+  // A worker pod relabelling its own session's title/description. Plain column
+  // write, no transcript append — the caller IS the session (mirrors this
+  // service's SetPermissionMode, not DashboardService's cross-worker notify).
+  rpc UpdateSessionMeta(UpdateSessionMetaRequest) returns (UpdateSessionMetaResponse);
   // Heartbeat, SetTaskStatus and StillHoldsLease used to be here. All three
   // are deleted in docs/adr/0048 — see their message definitions above for
   // why each stopped being a question worth asking.

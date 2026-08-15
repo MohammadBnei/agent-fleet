@@ -526,3 +526,43 @@ func contains(ids []string, id string) bool {
 	}
 	return false
 }
+
+// UpdateMeta sets each field independently: a nil pointer must leave that
+// column alone, so the set_session_meta tool can set a title without wiping
+// the description (the whole point of the COALESCE).
+func TestUpdateMeta_LeavesOmittedFieldUnchanged(t *testing.T) {
+	ctx := context.Background()
+	store := NewStore(dbtest.NewPool(t))
+	// newSession creates with title "t", description "d".
+	id := newSession(t, ctx, store)
+
+	newTitle := "renamed"
+	if err := store.UpdateMeta(ctx, id, &newTitle, nil); err != nil {
+		t.Fatalf("update title: %v", err)
+	}
+	s, err := store.Get(ctx, id)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if s.Title == nil || *s.Title != "renamed" {
+		t.Errorf("title not updated, got %v", s.Title)
+	}
+	if s.Description != "d" {
+		t.Errorf("description clobbered by a title-only update, got %q", s.Description)
+	}
+
+	newDesc := "redescribed"
+	if err := store.UpdateMeta(ctx, id, nil, &newDesc); err != nil {
+		t.Fatalf("update description: %v", err)
+	}
+	s, err = store.Get(ctx, id)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if s.Description != "redescribed" {
+		t.Errorf("description not updated, got %q", s.Description)
+	}
+	if s.Title == nil || *s.Title != "renamed" {
+		t.Errorf("title clobbered by a description-only update, got %v", s.Title)
+	}
+}

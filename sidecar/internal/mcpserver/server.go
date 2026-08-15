@@ -136,6 +136,12 @@ func New(core *coreclient.Client) http.Handler {
 		mcp.WithNumber("limit"),
 	), journalSearchHandler(core))
 
+	s.AddTool(mcp.NewTool("set_session_meta",
+		mcp.WithDescription("Set your OWN session's human-facing title and/or description (the label shown in the dashboard session list). Both optional; an omitted or empty field is left unchanged. Applies to this session only — you cannot relabel another session."),
+		mcp.WithString("title", mcp.Description("Short human-facing title for this session")),
+		mcp.WithString("description", mcp.Description("Longer human-facing description for this session")),
+	), setSessionMetaHandler(core))
+
 	// Inter-agent coordination (docs/adr/0041). Registered statically for
 	// the same reason run_command is: a resumed session must have them from
 	// turn one, not only after some other call happens to register them.
@@ -280,6 +286,32 @@ func journalWriteHandler(core *coreclient.Client) server.ToolHandlerFunc {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
 		return mcp.NewToolResultText(`{"status":"written"}`), nil
+	}
+}
+
+// setSessionMetaHandler relabels this pod's own session. An empty/omitted arg
+// becomes a nil pointer downstream, which UpdateMeta's COALESCE leaves
+// unchanged — so a caller can set just a title without wiping the description.
+func setSessionMetaHandler(core *coreclient.Client) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		title := req.GetString("title", "")
+		description := req.GetString("description", "")
+		var titlePtr, descPtr *string
+		if title != "" {
+			titlePtr = &title
+		}
+		if description != "" {
+			descPtr = &description
+		}
+		if titlePtr == nil && descPtr == nil {
+			return mcp.NewToolResultError("provide at least one of title or description"), nil
+		}
+		slog.Info("mcp set_session_meta", "hasTitle", titlePtr != nil, "hasDescription", descPtr != nil)
+		if err := core.UpdateSessionMeta(ctx, titlePtr, descPtr); err != nil {
+			slog.Error("mcp set_session_meta", "error", err)
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		return mcp.NewToolResultText(`{"status":"updated"}`), nil
 	}
 }
 

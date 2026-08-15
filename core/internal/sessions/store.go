@@ -437,6 +437,24 @@ func (s *Store) SetPermissionMode(ctx context.Context, id, mode string) error {
 	return nil
 }
 
+// UpdateMeta relabels a session's human-facing title/description. A nil
+// pointer leaves that column untouched (COALESCE falls back to the current
+// value), so a title can be set without clobbering a description. Like
+// SetPermissionMode, a plain column write with no side effects.
+func (s *Store) UpdateMeta(ctx context.Context, id string, title, description *string) error {
+	_, err := s.pool.Exec(ctx,
+		`UPDATE sessions
+		    SET title = COALESCE($2, title),
+		        description = COALESCE($3, description),
+		        updated_at = now()
+		  WHERE id = $1`, id, title, description)
+	if err != nil {
+		slog.Error("sessions UpdateMeta", "sessionId", id, "error", err)
+		return fmt.Errorf("update session meta: %w", err)
+	}
+	return nil
+}
+
 // TouchActive maintains the activity clock on every transcript append. It
 // is the sole writer of last_active_at, last_entry_type, last_entry_from
 // and activity_seen — i.e. the clock BOTH the idle sweep and the retention

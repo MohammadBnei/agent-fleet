@@ -56,6 +56,9 @@ const (
 	// CoreServiceSetPermissionModeProcedure is the fully-qualified name of the CoreService's
 	// SetPermissionMode RPC.
 	CoreServiceSetPermissionModeProcedure = "/agentfleet.v1.CoreService/SetPermissionMode"
+	// CoreServiceUpdateSessionMetaProcedure is the fully-qualified name of the CoreService's
+	// UpdateSessionMeta RPC.
+	CoreServiceUpdateSessionMetaProcedure = "/agentfleet.v1.CoreService/UpdateSessionMeta"
 	// CoreServiceAppendJournalProcedure is the fully-qualified name of the CoreService's AppendJournal
 	// RPC.
 	CoreServiceAppendJournalProcedure = "/agentfleet.v1.CoreService/AppendJournal"
@@ -138,6 +141,10 @@ type CoreServiceClient interface {
 	// already-running worker via the transcript.
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	SetPermissionMode(context.Context, *connect.Request[v1.SetPermissionModeRequest]) (*connect.Response[v1.SetPermissionModeResponse], error)
+	// A worker pod relabelling its own session's title/description. Plain column
+	// write, no transcript append — the caller IS the session (mirrors this
+	// service's SetPermissionMode, not DashboardService's cross-worker notify).
+	UpdateSessionMeta(context.Context, *connect.Request[v1.UpdateSessionMetaRequest]) (*connect.Response[v1.UpdateSessionMetaResponse], error)
 	// Heartbeat, SetTaskStatus and StillHoldsLease used to be here. All three
 	// are deleted in docs/adr/0048 — see their message definitions above for
 	// why each stopped being a question worth asking.
@@ -233,6 +240,12 @@ func NewCoreServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(coreServiceMethods.ByName("SetPermissionMode")),
 			connect.WithClientOptions(opts...),
 		),
+		updateSessionMeta: connect.NewClient[v1.UpdateSessionMetaRequest, v1.UpdateSessionMetaResponse](
+			httpClient,
+			baseURL+CoreServiceUpdateSessionMetaProcedure,
+			connect.WithSchema(coreServiceMethods.ByName("UpdateSessionMeta")),
+			connect.WithClientOptions(opts...),
+		),
 		appendJournal: connect.NewClient[v1.AppendJournalRequest, v1.AppendJournalResponse](
 			httpClient,
 			baseURL+CoreServiceAppendJournalProcedure,
@@ -325,6 +338,7 @@ type coreServiceClient struct {
 	requestService      *connect.Client[v1.RequestServiceRequest, v1.RequestServiceResponse]
 	getSession          *connect.Client[v1.GetSessionRequest, v1.GetSessionResponse]
 	setPermissionMode   *connect.Client[v1.SetPermissionModeRequest, v1.SetPermissionModeResponse]
+	updateSessionMeta   *connect.Client[v1.UpdateSessionMetaRequest, v1.UpdateSessionMetaResponse]
 	appendJournal       *connect.Client[v1.AppendJournalRequest, v1.AppendJournalResponse]
 	searchJournal       *connect.Client[v1.SearchJournalRequest, v1.SearchJournalResponse]
 	saveAgentSessionId  *connect.Client[v1.SaveAgentSessionIdRequest, v1.SaveAgentSessionIdResponse]
@@ -383,6 +397,11 @@ func (c *coreServiceClient) GetSession(ctx context.Context, req *connect.Request
 // SetPermissionMode calls agentfleet.v1.CoreService.SetPermissionMode.
 func (c *coreServiceClient) SetPermissionMode(ctx context.Context, req *connect.Request[v1.SetPermissionModeRequest]) (*connect.Response[v1.SetPermissionModeResponse], error) {
 	return c.setPermissionMode.CallUnary(ctx, req)
+}
+
+// UpdateSessionMeta calls agentfleet.v1.CoreService.UpdateSessionMeta.
+func (c *coreServiceClient) UpdateSessionMeta(ctx context.Context, req *connect.Request[v1.UpdateSessionMetaRequest]) (*connect.Response[v1.UpdateSessionMetaResponse], error) {
+	return c.updateSessionMeta.CallUnary(ctx, req)
 }
 
 // AppendJournal calls agentfleet.v1.CoreService.AppendJournal.
@@ -494,6 +513,10 @@ type CoreServiceHandler interface {
 	// already-running worker via the transcript.
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	SetPermissionMode(context.Context, *connect.Request[v1.SetPermissionModeRequest]) (*connect.Response[v1.SetPermissionModeResponse], error)
+	// A worker pod relabelling its own session's title/description. Plain column
+	// write, no transcript append — the caller IS the session (mirrors this
+	// service's SetPermissionMode, not DashboardService's cross-worker notify).
+	UpdateSessionMeta(context.Context, *connect.Request[v1.UpdateSessionMetaRequest]) (*connect.Response[v1.UpdateSessionMetaResponse], error)
 	// Heartbeat, SetTaskStatus and StillHoldsLease used to be here. All three
 	// are deleted in docs/adr/0048 — see their message definitions above for
 	// why each stopped being a question worth asking.
@@ -583,6 +606,12 @@ func NewCoreServiceHandler(svc CoreServiceHandler, opts ...connect.HandlerOption
 		CoreServiceSetPermissionModeProcedure,
 		svc.SetPermissionMode,
 		connect.WithSchema(coreServiceMethods.ByName("SetPermissionMode")),
+		connect.WithHandlerOptions(opts...),
+	)
+	coreServiceUpdateSessionMetaHandler := connect.NewUnaryHandler(
+		CoreServiceUpdateSessionMetaProcedure,
+		svc.UpdateSessionMeta,
+		connect.WithSchema(coreServiceMethods.ByName("UpdateSessionMeta")),
 		connect.WithHandlerOptions(opts...),
 	)
 	coreServiceAppendJournalHandler := connect.NewUnaryHandler(
@@ -683,6 +712,8 @@ func NewCoreServiceHandler(svc CoreServiceHandler, opts ...connect.HandlerOption
 			coreServiceGetSessionHandler.ServeHTTP(w, r)
 		case CoreServiceSetPermissionModeProcedure:
 			coreServiceSetPermissionModeHandler.ServeHTTP(w, r)
+		case CoreServiceUpdateSessionMetaProcedure:
+			coreServiceUpdateSessionMetaHandler.ServeHTTP(w, r)
 		case CoreServiceAppendJournalProcedure:
 			coreServiceAppendJournalHandler.ServeHTTP(w, r)
 		case CoreServiceSearchJournalProcedure:
@@ -752,6 +783,10 @@ func (UnimplementedCoreServiceHandler) GetSession(context.Context, *connect.Requ
 
 func (UnimplementedCoreServiceHandler) SetPermissionMode(context.Context, *connect.Request[v1.SetPermissionModeRequest]) (*connect.Response[v1.SetPermissionModeResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.CoreService.SetPermissionMode is not implemented"))
+}
+
+func (UnimplementedCoreServiceHandler) UpdateSessionMeta(context.Context, *connect.Request[v1.UpdateSessionMetaRequest]) (*connect.Response[v1.UpdateSessionMetaResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.CoreService.UpdateSessionMeta is not implemented"))
 }
 
 func (UnimplementedCoreServiceHandler) AppendJournal(context.Context, *connect.Request[v1.AppendJournalRequest]) (*connect.Response[v1.AppendJournalResponse], error) {
