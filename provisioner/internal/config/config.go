@@ -1,6 +1,9 @@
 package config
 
-import "os"
+import (
+	"os"
+	"strings"
+)
 
 type Config struct {
 	Namespace    string
@@ -12,6 +15,14 @@ type Config struct {
 	WorkspacePVC string
 	// SessionStorageClass is the StorageClass for per-session working volumes.
 	SessionStorageClass string
+	// SessionNodeSelector constrains where session pods may be scheduled,
+	// as a single "key=value" label. Empty means no constraint.
+	//
+	// Sessions belong on nodes big enough to build on: the control-plane
+	// nodes are 2 vCPU / 4 GB with ~33 GiB allocatable, and filling one is a
+	// cluster incident rather than a session failure. Empty is what
+	// /kind-local relies on — its single node carries no label.
+	SessionNodeSelector string
 	// WorkspaceRoot is where the shared PVC is mounted inside THIS pod. The
 	// provisioner needs its own read-write mount to maintain the clone cache
 	// and to seed each session's claude-home before its pod exists.
@@ -66,6 +77,7 @@ func Load() Config {
 		SidecarImage:                env("SIDECAR_IMAGE", "mohammaddocker/agent-fleet-sidecar:latest"),
 		WorkspacePVC:                env("WORKSPACE_PVC", "agent-fleet-workspace"),
 		SessionStorageClass:         env("SESSION_STORAGE_CLASS", ""),
+		SessionNodeSelector:         env("SESSION_NODE_SELECTOR", ""),
 		WorkspaceRoot:               env("WORKSPACE_ROOT", "/workspace"),
 		E2eHost:                     env("E2E_HOST", "e2e.bnei.dev"),
 		Port:                        env("PORT", "8080"),
@@ -82,6 +94,21 @@ func Load() Config {
 		SharedInstancePVCSize:       env("SHARED_INSTANCE_PVC_SIZE", "2Gi"),
 		SharedInstanceIdleTimeoutMs: env("SHARED_INSTANCE_IDLE_TIMEOUT_MS", "43200000"), // 12h
 	}
+}
+
+// NodeSelectorMap parses SessionNodeSelector into the shape a PodSpec wants.
+//
+// Returns nil — not an empty map — for anything it cannot parse, including a
+// value with no "=". nil is the "schedule anywhere" case, so a typo degrades to
+// the previous behaviour rather than to a selector that matches no node and
+// leaves every session Pending with no explanation.
+func (c Config) NodeSelectorMap() map[string]string {
+	key, value, found := strings.Cut(c.SessionNodeSelector, "=")
+	key, value = strings.TrimSpace(key), strings.TrimSpace(value)
+	if !found || key == "" {
+		return nil
+	}
+	return map[string]string{key: value}
 }
 
 func env(key, fallback string) string {

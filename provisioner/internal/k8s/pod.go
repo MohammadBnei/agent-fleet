@@ -61,6 +61,36 @@ const claudeConfigDir = "/claude-home"
 // context consumer is precisely the one microcompaction never touches. A
 // local Claude Code session sheds build output automatically; a worker
 // accumulates it until auto-compact summarizes the whole conversation away.
+// sessionCacheDir is the per-session dependency cache mount (docs/adr/0048 §4).
+const sessionCacheDir = "/cache"
+
+// cacheEnv points every package manager's cache at the /cache mount.
+//
+// Without these the mount is real and empty: bun, Go and npm all default to
+// somewhere under $HOME, which is the container's ephemeral layer and dies with
+// the pod. So the volume survived a warm holding nothing, and every warm paid
+// for a cold install — the exact cost the storage split exists to remove. A
+// mounted directory nobody writes to is not a cache.
+//
+// Deliberately broad rather than "the languages we use today": a target repo is
+// whatever a human onboards, and the failure mode of a missing entry here is
+// silent slowness that nobody attributes to this file.
+func cacheEnv() []corev1.EnvVar {
+	return []corev1.EnvVar{
+		{Name: "BUN_INSTALL_CACHE_DIR", Value: sessionCacheDir + "/bun"},
+		{Name: "GOMODCACHE", Value: sessionCacheDir + "/go/mod"},
+		{Name: "GOCACHE", Value: sessionCacheDir + "/go/build"},
+		{Name: "npm_config_cache", Value: sessionCacheDir + "/npm"},
+		{Name: "npm_config_store_dir", Value: sessionCacheDir + "/pnpm"},
+		{Name: "YARN_CACHE_FOLDER", Value: sessionCacheDir + "/yarn"},
+		{Name: "UV_CACHE_DIR", Value: sessionCacheDir + "/uv"},
+		{Name: "PIP_CACHE_DIR", Value: sessionCacheDir + "/pip"},
+		{Name: "CARGO_HOME", Value: sessionCacheDir + "/cargo"},
+		// Catch-all for everything not named above that respects the XDG spec.
+		{Name: "XDG_CACHE_HOME", Value: sessionCacheDir + "/xdg"},
+	}
+}
+
 func contextBudgetEnv() []corev1.EnvVar {
 	return []corev1.EnvVar{
 		// Per-result ceiling for MCP tools. The CLI's default is 25000
@@ -93,6 +123,7 @@ func contextBudgetEnv() []corev1.EnvVar {
 }
 
 func int32Ptr(i int32) *int32 { return &i }
+func int64Ptr(i int64) *int64 { return &i }
 
 // CreatePod and its e2e-preview machinery used to fill most of this file:
 // a bare long-running Pod, its Service, its IngressRoute, its stripPrefix
@@ -191,6 +222,7 @@ func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error 
 		// it identifiable in a log.
 		{Name: "CLAUDE_CODE_CONTAINER_ID", Value: taskID},
 	}
+	workerEnv = append(workerEnv, cacheEnv()...)
 	workerEnv = append(workerEnv, contextBudgetEnv()...)
 	workerEnv = append(workerEnv, ingredientEnv...)
 	workerEnv = append(workerEnv, extraEnv...)
@@ -224,6 +256,26 @@ func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error 
 
 	podSpec := corev1.PodSpec{
 		RestartPolicy: corev1.RestartPolicyNever,
+		// fsGroup, and it is load-bearing rather than hardening.
+		//
+		// Kubelet creates a subPath directory root-owned 0755, and every
+		// container here runs as `bun` (uid 1000, worker/Dockerfile). Without
+		// this, the clone init container cannot write /workspace and no tool
+		// can write /cache — on a real StorageClass. It has not bitten yet
+		// only because kind's hostPath happens to be world-writable, which is
+		// the same accident that hid the "dubious ownership" bug until this
+		// ran against a real cluster.
+		//
+		// fsGroup makes kubelet chgrp the volume to this GID and set g+w, so
+		// both subPaths become writable without anything running as root.
+		SecurityContext: &corev1.PodSecurityContext{FSGroup: int64Ptr(1000)},
+		// Sessions belong on the two worker nodes. The control-plane nodes are
+		// 2 vCPU / 4 GB with ~33 GiB allocatable — too small to build anything,
+		// and filling one is a cluster incident rather than a session failure.
+		//
+		// Empty means no constraint, which is what /kind-local relies on: its
+		// single node carries no label and every pod must still schedule.
+		NodeSelector: c.SessionNodeSelector,
 		// sidecar runs as a native sidecar (K8s 1.29+, this cluster is
 		// v1.35): an init container with RestartPolicy Always plus a
 		// StartupProbe, so kubelet blocks starting the worker container

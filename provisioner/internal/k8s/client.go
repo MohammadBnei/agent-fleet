@@ -29,6 +29,9 @@ type Client struct {
 	// ukubi-cluster is longhorn, not a node-local class, so this must be set
 	// explicitly to get the measured node-local behaviour.
 	SessionStorageClass string
+	// SessionNodeSelector constrains session pods to a node carrying this
+	// "key=value" label. Empty means unconstrained.
+	SessionNodeSelector map[string]string
 	// LogLevel is forwarded verbatim into every worker pod's sidecar and
 	// worker containers (see CreateWorkerPod) — the provisioner's own
 	// LOG_LEVEL is the fleet's single source of truth for it, since those
@@ -76,6 +79,7 @@ func New(namespace string, cfg Images) (*Client, error) {
 		WorkerImage: cfg.WorkerImage,
 		SidecarImage: cfg.SidecarImage, WorkspacePVC: cfg.WorkspacePVC,
 		SessionStorageClass: cfg.SessionStorageClass,
+		SessionNodeSelector: cfg.SessionNodeSelector,
 		LogLevel: cfg.LogLevel, CoreGRPCAddr: cfg.CoreGRPCAddr,
 		ThotAuthToken: cfg.ThotAuthToken,
 		ExecutorAddr:  cfg.ExecutorAddr,
@@ -93,6 +97,7 @@ type Images struct {
 	SidecarImage          string
 	WorkspacePVC          string
 	SessionStorageClass   string
+	SessionNodeSelector   map[string]string
 	LogLevel              string
 	CoreGRPCAddr          string
 	ThotAuthToken         string

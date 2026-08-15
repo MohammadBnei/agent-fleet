@@ -245,6 +245,29 @@ which is 100BASE-TX after overhead. Not confirmed from inside the cluster
 would settle it. Either way, no choice between network storage backends can
 fix it.
 
+> **Confirmed 2026-08-15.** `server1` and `ex-laptop` are on **100 Mbps
+> USB-to-Ethernet adapters**, and neither has a usable onboard NIC. The
+> hypothesis above was right, and the mechanism is now named rather than
+> inferred: `k8s-worker-02`, `k8s-cp-02` and `pg01` all run on server1 and
+> `k8s-cp-03` on ex-laptop, so with `defaultReplicaCount: 3` every synchronous
+> write is gated by the slowest replica link. That is why co-locating the
+> share-manager with the test pod on `k8s-worker-01` changed nothing.
+>
+> Two consequences worth stating plainly, because both are easy to re-derive
+> wrongly later:
+>
+> - **The `nfs` StorageClass is not a fleet performance lever.** ADR-0036 stands
+>   on its own merits (RWX without a share-manager pod, capacity relief on the
+>   scarcest disks); it is simply not this problem's answer, and a plan to move
+>   the fleet onto it should not be written again.
+> - **No storage hardware would help either.** 1069 MB/s node-local is the same
+>   disks, on the same day. The disks were never the constraint.
+>
+> Fixing the fabric — gigabit USB 3.0 adapters — is worth doing for etcd
+> stability, image pull time and Longhorn rebuild time. It is **not** what makes
+> the fleet fast: even at gigabit, network storage stays far below node-local,
+> which is why the split below went in first and independently.
+
 **Node-local disk is ~200× faster on metadata and 107× on bandwidth**, and
 that reframes docs/adr/0039's 782-second cold `bun install` entirely. That was
 never a Longhorn problem; it is a *network-storage* problem, and putting
@@ -257,7 +280,7 @@ So the split is by access pattern:
 /workspace          per-session `local-path` PVC   node-local, durable, auto-pinned
 /cache              same PVC, subPath "cache"      node-local, warm across warms
 /repo-cache         longhorn RWX, read-only        the clone cache — small, read-mostly
-/home/bun/.claude   longhorn RWX, per-session      resume state — must survive node loss
+/claude-home        longhorn RWX, per-session      resume state — must survive node loss
 ```
 
 **Amended during implementation: `/cache` is a subPath of the session's own

@@ -25,9 +25,18 @@ import (
 const sessionWorkdir = "/workspace"
 
 // sessionPVCSize bounds one session's working tree plus its dependency caches.
-// Generous because it holds node_modules and a Go build cache, and because
-// local-path storage is the node's own disk rather than a replicated pool.
-const sessionPVCSize = "20Gi"
+//
+// 10Gi, down from 20: a working tree with node_modules and a Go build cache is
+// single-digit GB, and the two worker nodes have ~85 and ~50 GiB allocatable
+// between at most five concurrent sessions plus whatever retention has not yet
+// reclaimed.
+//
+// Under `local-path` this number is ADVISORY — the provisioner hands out a
+// hostPath directory and nothing enforces the request, so this does not stop a
+// session filling the node. SESSION_RETENTION_MS is what actually bounds the
+// disk; this is what a future non-hostPath class would honour, and what makes
+// the intent legible in `kubectl get pvc`.
+const sessionPVCSize = "10Gi"
 
 // SessionPVCName is the per-session working volume's name. Derived, not
 // stored: Kubernetes is the source of truth for whether it exists, and a
@@ -43,11 +52,15 @@ func SessionPVCName(sessionID string) string {
 // there is the normal case, not an error. It is also what makes a resumed
 // session reuse its tree instead of re-cloning.
 //
-// StorageClassName is deliberately left empty so the cluster's default class
-// applies. On ukubi-cluster that is `longhorn`, NOT `local-path` — see the
-// caveat in the ADR: this wants a WaitForFirstConsumer node-local class, and
-// naming one that does not exist in a given cluster would leave every session
-// Pending forever. Set SESSION_STORAGE_CLASS to pin it.
+// StorageClassName comes from SESSION_STORAGE_CLASS, and an unset value falls
+// through to the cluster default rather than to a hardcoded name. That is the
+// whole reason it is opt-in: naming a class that does not exist in a given
+// cluster leaves every session Pending forever, with no error anyone sees.
+//
+// On ukubi-cluster it is set to `local-path` (k8s/provisioner/deployment.yaml).
+// The default there is `longhorn`, which docs/adr/0048 §4 measured at 10 MB/s
+// against 1069 MB/s node-local — so leaving this unset in production is not a
+// neutral choice, it is a 107x one.
 func (c *Client) EnsureSessionPVC(ctx context.Context, sessionID, repo string) error {
 	name := SessionPVCName(sessionID)
 	pvc := &corev1.PersistentVolumeClaim{

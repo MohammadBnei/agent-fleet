@@ -401,7 +401,7 @@ seconds on node-local disk. So a session's pod mounts four things:
 /workspace          per-session local-path PVC, subPath "tree"   node-local, pinned
 /cache              same PVC, subPath "cache"                    node-local, warm across warms
 /repo-cache         shared RWX, subPath "repos", READ-ONLY       the clone cache
-/home/bun/.claude   shared RWX, subPath "claude-home/<id>"       SDK resume state
+/claude-home        shared RWX, subPath "claude-home/<id>"       SDK resume state
 ```
 
 The pinning is the feature: `WaitForFirstConsumer` binds the session's volume

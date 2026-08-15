@@ -61,6 +61,7 @@ func main() {
 		ExecutorAddr:          cfg.ExecutorAddr,
 		WorkspacePVC:          cfg.WorkspacePVC,
 		SessionStorageClass:   cfg.SessionStorageClass,
+		SessionNodeSelector:   cfg.NodeSelectorMap(),
 		LogLevel:              cfg.LogLevel,
 		CoreGRPCAddr:          cfg.CoreGRPCAddr,
 		PostgresImage:         cfg.PostgresImage,

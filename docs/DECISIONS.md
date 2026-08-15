@@ -135,14 +135,22 @@ Any doc, code, comment, or memory that contradicts this file or an
   itself. `gc.auto=0` on the cache clones, because a `git gc` there can prune
   objects a live session's `alternates` still references. See
   [`adr/0048`](adr/0048-one-session-one-pod-one-shared-home.md).
-- **One shared home: global caches, private working directory.** One PVC,
-  four subPath mounts — `repos/` read-only, `cache/` shared read-write by
-  every session, `sessions/<id>/` and `claude-home/<id>/` private to one. The
-  tool caches are **global, not per-repo**, exactly as a developer's machine
-  shares `~/.bun/install/cache` across projects. This is the first time
-  session isolation is a mount boundary rather than a directory-naming
-  convention, and it is what stops `SyncFleetShared` rewriting
-  `settings.json` and `skills/` under sessions that are mid-turn. See
+- **Storage is split by access pattern, not by uniformity.** Two volumes,
+  four subPath mounts: a per-session **RWO volume on a node-local class**
+  (`local-path`) carrying `/workspace` and `/cache`, and the shared **RWX
+  volume** carrying `/repo-cache` read-only and `/claude-home/<id>` private to
+  one session. This is the first time session isolation is a mount boundary
+  rather than a directory-naming convention, and it is what stops
+  `SyncFleetShared` rewriting `settings.json` and `skills/` under sessions
+  that are mid-turn.
+  <br>The caches are **per session, not global** — an earlier draft of this
+  entry said otherwise. A per-node shared cache is not a shape Kubernetes
+  offers, and sharing was never where the measured win came from: node-local
+  disk is 107x on bandwidth and ~200x on metadata, so a brand-new session
+  installs cold in seconds rather than warm in minutes. Sessions are pinned
+  to nodes big enough to hold a working tree (`SESSION_NODE_SELECTOR`), since
+  `local-path` is a hostPath on the node's OS disk and its size request is
+  advisory — `SESSION_RETENTION_MS` is what actually bounds the disk. See
   [`adr/0048`](adr/0048-one-session-one-pod-one-shared-home.md).
 - **Prometheus metrics come from `core` and the provisioner only; worker and
   sidecar telemetry stays in Loki.** Worker pods are single-shot Jobs that
