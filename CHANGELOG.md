@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.2.1](https://github.com/MohammadBnei/agent-fleet/compare/3.2.0...3.2.1) (2026-08-15)
+
+
+### Bug Fixes
+
+* **core,provisioner,dashboard:** stop mis-reporting a live session's state ([#163](https://github.com/MohammadBnei/agent-fleet/issues/163)) ([4845fb1](https://github.com/MohammadBnei/agent-fleet/commit/4845fb191b58fac6f38d8113ef709e356bffc6d0))
+
 # [3.2.0](https://github.com/MohammadBnei/agent-fleet/compare/3.0.6...3.2.0) (2026-08-15)
 
 
