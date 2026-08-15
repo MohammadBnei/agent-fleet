@@ -28,8 +28,12 @@ metadata:
   namespace: agent-fleet
 rules:
 - apiGroups: [""]
+  # update, not just create/delete: re-exposing a session on a DIFFERENT port
+  # updates the Service in place rather than recreating it, so a URL a human is
+  # looking at does not 503 mid-swap (k8s/expose.go). Without this verb the
+  # first expose() works and every later one 403s.
   resources: ["pods", "services"]
-  verbs: ["create", "get", "list", "watch", "delete"]
+  verbs: ["create", "get", "list", "watch", "update", "delete"]
 - apiGroups: [""]
   resources: ["secrets", "persistentvolumeclaims"]
   verbs: ["create", "get", "list", "watch", "delete"]

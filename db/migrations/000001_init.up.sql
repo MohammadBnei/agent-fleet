@@ -11,6 +11,28 @@
 -- keeping — do NOT treat that as precedent. From here on the rule from
 -- docs/adr/0030 applies again unchanged: every schema change is a new
 -- numbered migration, never an edit to this file.
+--
+-- ===========================================================================
+-- ONE MANUAL STEP IS REQUIRED BEFORE THIS BRANCH FIRST DEPLOYS.
+-- ===========================================================================
+-- The live agentfleetdb has schema_migrations.version = 14. `migrate up`
+-- does NOT treat a missing version 14 as "nothing to do": it looks up the
+-- current version in the source to find what comes next, gets ErrNotExist
+-- for both its up and down files, and exits non-zero. That is the PreSync
+-- hook failing, which means ArgoCD never syncs core at all — the deploy
+-- does not half-apply, it stops.
+--
+-- There is no in-tool recovery; golang-migrate has no "forget the old
+-- history" mode. Drop the schema and let this file rebuild it:
+--
+--   kubectl exec -n agent-fleet <postgres-pod> -- \
+--     psql -U agentfleet -d agentfleetdb \
+--       -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;'
+--
+-- That removes schema_migrations along with everything else, so the next
+-- PreSync run applies this file from scratch. Every session, transcript and
+-- journal entry is destroyed — which is the accepted trade above, not a
+-- surprise, but it is worth being certain of before running it.
 
 -- ---------------------------------------------------------------------------
 -- sessions
@@ -225,6 +247,14 @@ CREATE UNIQUE INDEX transcript_idempotency_idx ON transcript (session_id, idempo
 -- for all the others.
 CREATE INDEX transcript_pending_idx ON transcript (session_id, type, seq)
   WHERE type IN ('question', 'permission_request');
+
+-- The other half of that count, and the one that actually costs something.
+-- The index above finds the candidate questions; this one answers the
+-- correlated NOT EXISTS for each of them. Without it, every List() call
+-- scans the whole transcript of every session once per candidate — and
+-- List() runs on a 5s dashboard poll with limit up to 500.
+CREATE INDEX transcript_reply_to_idx ON transcript (session_id, reply_to_seq)
+  WHERE reply_to_seq IS NOT NULL;
 
 -- ---------------------------------------------------------------------------
 -- repos

@@ -95,12 +95,16 @@ func (s *Server) ListSessions(ctx context.Context, req *connect.Request[agentfle
 
 func (s *Server) GetSession(ctx context.Context, req *connect.Request[agentfleetv1.GetSessionRequest]) (*connect.Response[agentfleetv1.GetSessionResponse], error) {
 	t, err := s.sessions.Get(ctx, req.Msg.GetId())
-	if err != nil {
-		slog.Error("dashboard GetTask", "sessionId", req.Msg.GetId(), "error", err)
-		return nil, connect.NewError(connect.CodeInternal, err)
+	// ErrNotFound first: Get signals a missing row with that error, not with a
+	// nil session, so checking nil alone would map every unknown id to a 500.
+	// The nil check stays as a belt-and-braces guard against a nil-with-no-error
+	// return, which would otherwise panic one line down.
+	if errors.Is(err, sessions.ErrNotFound) || (err == nil && t == nil) {
+		return nil, connect.NewError(connect.CodeNotFound, errors.New("session not found"))
 	}
-	if t == nil {
-		return nil, connect.NewError(connect.CodeNotFound, errors.New("task not found"))
+	if err != nil {
+		slog.Error("dashboard GetSession", "sessionId", req.Msg.GetId(), "error", err)
+		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	return connect.NewResponse(&agentfleetv1.GetSessionResponse{Session: SessionToProto(*t)}), nil
 }

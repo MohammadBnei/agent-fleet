@@ -1,5 +1,3 @@
-import type { HookCallback } from "@anthropic-ai/claude-agent-sdk";
-
 // rtk (Rust Token Killer) rewrites a shell command into its own compacting
 // proxy (`go test ./...` → `rtk go test ./...`, ~99% less output). It ships
 // as a Claude Code PreToolUse hook; worker/Dockerfile installs the binary
@@ -15,7 +13,15 @@ import type { HookCallback } from "@anthropic-ai/claude-agent-sdk";
 // `rtk hook claude` reads a PreToolUse payload on stdin and answers with an
 // `updatedInput` holding the rewritten command, or with nothing at all for a
 // command it doesn't compress. It only ever looks at `tool_input.command`,
-// so the same call works for the sidecar's `run_command` as for `Bash`.
+// so the same call works for any tool carrying a shell command.
+//
+// Called from canUseTool, and ONLY from there. It used to also back a
+// PreToolUse hook scoped to the sidecar's `run_command`; that tool is gone
+// with the sandbox (docs/adr/0048 §6), and the hook could not simply be
+// repointed at `Bash`: the SDK discards a hook's `updatedInput` unless the
+// hook ALSO returns permissionDecision "allow", which for Bash would
+// silently bypass the human gate docs/adr/0029 locks in. That was safe for
+// `run_command` only because it was un-prompted by design.
 // Anything unexpected — binary missing, non-JSON output — leaves the command
 // untouched; a token optimization must never fail a tool call.
 export async function rtkRewrite(
@@ -46,31 +52,3 @@ export async function rtkRewrite(
     return toolInput;
   }
 }
-
-// Registered for the sidecar's `run_command` only — the e2e sandbox, where
-// the builds and test runs (the fleet's real token sink) happen.
-//
-// `permissionDecision: "allow"` is not optional here: the SDK drops a hook's
-// `updatedInput` entirely unless the hook also allows the call (verified the
-// same day — with "ask", or with no decision at all, the original command is
-// what runs). That is exactly why this hook is scoped to `run_command` and
-// never to `Bash`: `run_command` is already un-prompted by design
-// (docs/adr/0039), so allowing it here changes nothing, whereas doing the
-// same for `Bash` would silently bypass the human permission gate
-// docs/adr/0029 locks in. Bash gets its rewrite from canUseTool instead,
-// after the human has answered.
-export const rtkRunCommandHook: HookCallback = async (input) => {
-  const hookInput = input as unknown as { tool_name?: string; tool_input?: Record<string, unknown> };
-  const toolInput = hookInput.tool_input;
-  if (!toolInput) return {};
-  const updatedInput = await rtkRewrite(hookInput.tool_name ?? "", toolInput);
-  if (updatedInput === toolInput) return {};
-  return {
-    hookSpecificOutput: {
-      hookEventName: "PreToolUse",
-      permissionDecision: "allow",
-      permissionDecisionReason: "rtk output compaction",
-      updatedInput,
-    },
-  };
-};

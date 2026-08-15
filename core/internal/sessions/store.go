@@ -272,6 +272,21 @@ func (s *Store) ReserveSlot(ctx context.Context, id string, maxLive int) (leaseI
 		    -- startup-stall sweep would never fire again for a warmed
 		    -- session.
 		    activity_seen = false,
+		    -- The reservation itself, and the reason the cap above is a real
+		    -- ceiling rather than a usually-right heuristic.
+		    --
+		    -- The count reads pod_phase. If this transaction did not WRITE
+		    -- pod_phase, the advisory lock would serialize callers around a
+		    -- number none of them changed: the phase is otherwise only set
+		    -- asynchronously, once CreateWorkerPod reaches the provisioner and
+		    -- its event round-trips back through ReportPodEvents. Every warm
+		    -- landing inside that window would read the same stale count and
+		    -- every one of them would pass.
+		    --
+		    -- A reservation that then fails to provision is not stuck: the
+		    -- reconcile loop finds a row claiming a pod with no Job and clears
+		    -- it within 60s. That is exactly what reconciliation is for.
+		    pod_phase = 'POD_PHASE_PROVISIONING',
 		    updated_at = now()
 		WHERE id = $1 AND archived_at IS NULL
 		RETURNING lease_id::text
@@ -281,6 +296,42 @@ func (s *Store) ReserveSlot(ctx context.Context, id string, maxLive int) (leaseI
 	}
 	if err != nil {
 		return "", fmt.Errorf("reserve slot: mint lease: %w", err)
+	}
+
+	// Close out every decision the PREVIOUS pod was waiting on, for the same
+	// reason stop_requested_at and activity_seen are reset above: they all
+	// describe a pod that no longer exists.
+	//
+	// Nothing else does this. The worker denies its pending permissions on
+	// Stop, but with interrupt:true, which deliberately records no resolution;
+	// a crashed or idle-swept pod does not even get that far. The requests
+	// therefore stay unanswered forever, and pending_decisions is a live
+	// count — so the session renders as blocked, offering allow/deny buttons
+	// that reach no pod, and keeps doing so after a warm, since the new pod
+	// streams from a cursor above them and never sees them at all.
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO transcript (session_id, seq, "from", text, type, idempotency_key, reply_to_seq)
+		SELECT q.session_id,
+		       (SELECT coalesce(max(seq), 0) FROM transcript WHERE session_id = q.session_id)
+		         + row_number() OVER (ORDER BY q.seq),
+		       'system',
+		       CASE WHEN q.type = 'question'
+		            THEN 'The session was restarted before this was answered.'
+		            ELSE '{"behavior":"deny","message":"The session was restarted before this was answered."}'
+		       END,
+		       CASE WHEN q.type = 'question' THEN 'answer' ELSE 'permission_response' END,
+		       'stale-decision-' || q.session_id || '-' || q.seq,
+		       q.seq
+		  FROM transcript q
+		 WHERE q.session_id = $1
+		   AND q.type IN ('question', 'permission_request')
+		   AND NOT EXISTS (
+		         SELECT 1 FROM transcript r
+		          WHERE r.session_id = q.session_id AND r.reply_to_seq = q.seq
+		       )
+		ON CONFLICT DO NOTHING
+	`, id); err != nil {
+		return "", fmt.Errorf("reserve slot: resolve stale decisions: %w", err)
 	}
 
 	if err := tx.Commit(ctx); err != nil {

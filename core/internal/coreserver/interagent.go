@@ -120,21 +120,30 @@ func (s *Server) PromptSession(ctx context.Context, req *agentfleetv1.PromptSess
 	// target at all (found on a real cluster — the entry landed in the
 	// transcript and the running agent never saw it). "session" is
 	// deliverable and still unmistakably not the session's own voice.
+	// Warm BEFORE appending, never after.
+	//
+	// A dispatch computes resumeFromSeq = LatestSeq, and the pod streams only
+	// entries at or above that cursor. An entry appended first therefore lands
+	// one BELOW the cursor of the pod that warming is about to create, and is
+	// never delivered — the session would sit there having been prompted, with
+	// nothing to show for it. PostMessage and OpenFromProposal carry this same
+	// ordering for the same reason.
+	//
+	// Best-effort: a capacity rejection is not worth failing the delivery over,
+	// since the entry below is durable either way and a later warm will pick it
+	// up from a cursor computed after it exists.
+	var podName string
+	if s.warm != nil && !sessions.IsPodPhaseLive(t.PodPhase) {
+		var warmErr error
+		if podName, warmErr = s.warm(ctx, target); warmErr != nil {
+			slog.Warn("coreserver: PromptSession could not warm target", "callerTaskId", caller, "targetTaskId", target, "error", warmErr)
+		}
+	}
+
 	body := fmt.Sprintf("[from session %s]\n\n%s", caller, text)
 	seq, err := s.transcr.Append(ctx, target, "session", body, "discussion", fmt.Sprintf("prompt-%s-%s-%d", caller, target, time.Now().UnixNano()))
 	if err != nil {
 		return nil, fmt.Errorf("append prompt: %w", err)
-	}
-
-	// Warm an idle target so the message is actually read rather than
-	// sitting in a transcript nobody is attached to. Best-effort: the entry
-	// is already durable, and the session will see it whenever it next
-	// warms, so a capacity rejection is not worth failing the delivery over.
-	var podName string
-	if s.warm != nil && !sessions.IsPodPhaseLive(t.PodPhase) {
-		if podName, err = s.warm(ctx, target); err != nil {
-			slog.Warn("coreserver: PromptSession could not warm target", "callerTaskId", caller, "targetTaskId", target, "error", err)
-		}
 	}
 
 	slog.Info("coreserver: session prompted another session", "callerTaskId", caller, "targetTaskId", target, "seq", seq, "depth", req.GetDepth())

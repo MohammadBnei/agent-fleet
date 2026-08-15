@@ -4,6 +4,7 @@ package sessions
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -128,6 +129,100 @@ func TestReserveSlot_ResetsPerPodStateForTheNewPod(t *testing.T) {
 	if after.PermissionMode == nil || *after.PermissionMode != "acceptEdits" {
 		t.Errorf("permission mode did not survive the warm: got %v, want acceptEdits — "+
 			"the human's choice is a property of the session, not of the pod that died", after.PermissionMode)
+	}
+}
+
+// A decision the previous pod was waiting on cannot survive into the next one.
+//
+// Nothing else closes these out: the worker denies its pending permissions on
+// Stop with interrupt:true, which records no resolution, and a crashed or
+// idle-swept pod never gets that far. Since pending_decisions is a live count
+// over the transcript, an unresolved request keeps the session rendering as
+// blocked forever — with allow/deny buttons that reach no pod, and no way for
+// the replacement pod to help, because it streams from a cursor above them and
+// never sees them at all.
+func TestReserveSlot_ResolvesDecisionsTheDeadPodLeftBehind(t *testing.T) {
+	ctx := context.Background()
+	pool := dbtest.NewPool(t)
+	store := NewStore(pool)
+	id := newSession(t, ctx, store)
+
+	appendEntry := func(seq int, kind, text string, replyTo *int) {
+		t.Helper()
+		if _, err := pool.Exec(ctx,
+			`INSERT INTO transcript (session_id, seq, "from", text, type, idempotency_key, reply_to_seq)
+			 VALUES ($1, $2, 'agent', $3, $4, $5, $6)`,
+			id, seq, text, kind, fmt.Sprintf("k-%d", seq), replyTo); err != nil {
+			t.Fatalf("append %s at seq %d: %v", kind, seq, err)
+		}
+	}
+
+	answered := 3
+	appendEntry(1, "permission_request", `{"tool":"Bash"}`, nil)
+	appendEntry(2, "question", `[{"question":"which?"}]`, nil)
+	appendEntry(answered, "permission_request", `{"tool":"Edit"}`, nil)
+	appendEntry(4, "permission_response", `{"behavior":"allow"}`, &answered)
+
+	before, err := store.Get(ctx, id)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if before.PendingDecisions != 2 {
+		t.Fatalf("fixture is wrong: want 2 unanswered decisions, got %d", before.PendingDecisions)
+	}
+
+	if _, err := store.ReserveSlot(ctx, id, 5); err != nil {
+		t.Fatalf("reserve: %v", err)
+	}
+
+	after, err := store.Get(ctx, id)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if after.PendingDecisions != 0 {
+		t.Errorf("%d decision(s) still pending after a new pod was reserved — the session will "+
+			"render as blocked on a pod that no longer exists, and stay that way through every "+
+			"later warm", after.PendingDecisions)
+	}
+
+	// The already-answered request must not collect a second reply: the count
+	// would be right either way, but the transcript a human reads would show a
+	// decision being made twice, the second time by nobody.
+	var replies int
+	if err := pool.QueryRow(ctx,
+		`SELECT count(*) FROM transcript WHERE session_id = $1 AND reply_to_seq = $2`, id, answered).Scan(&replies); err != nil {
+		t.Fatalf("count replies: %v", err)
+	}
+	if replies != 1 {
+		t.Errorf("the answered request collected %d replies, want 1", replies)
+	}
+}
+
+// The cap is only a real ceiling if the transaction that checks it also writes
+// the state it counts.
+//
+// The count reads pod_phase, and the phase is otherwise set asynchronously —
+// after CreateWorkerPod reaches the provisioner and its event round-trips back.
+// Without this write the advisory lock would serialize callers around a number
+// none of them moved, so every warm arriving inside that window would read the
+// same stale count and all of them would pass.
+func TestReserveSlot_CountsAgainstTheCapImmediately(t *testing.T) {
+	ctx := context.Background()
+	pool := dbtest.NewPool(t)
+	store := NewStore(pool)
+	id := newSession(t, ctx, store)
+
+	if _, err := store.ReserveSlot(ctx, id, 5); err != nil {
+		t.Fatalf("reserve: %v", err)
+	}
+
+	live, err := store.CountLivePods(ctx)
+	if err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if live != 1 {
+		t.Errorf("live pods = %d immediately after ReserveSlot, want 1 — until the provisioner's "+
+			"event arrives the slot is invisible, and concurrent warms would all be admitted", live)
 	}
 }
 

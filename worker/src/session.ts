@@ -1,7 +1,7 @@
 import { query, type SDKUserMessage, type PermissionResult, type PermissionMode } from "@anthropic-ai/claude-agent-sdk";
 import * as sidecar from "./sidecarClient.js";
 import { log } from "./log.js";
-import { rtkRewrite, rtkRunCommandHook } from "./rtkHook.js";
+import { rtkRewrite } from "./rtkHook.js";
 
 // TransientError used to be thrown when an SDK result looked like a
 // transient hiccup (0 turns, $0 cost), so the caller could leave the task
@@ -516,13 +516,6 @@ export async function runSession(): Promise<SessionResult> {
         "agent-fleet-sidecar": sidecarMcpServer(),
         playwright: playwrightMcpServer(),
       },
-      // rtk output compaction for the e2e sandbox's shell — see rtkHook.ts
-      // for why this can't live in fleet-shared/settings.json, and why
-      // `Bash` is deliberately not in this matcher (it goes through
-      // canUseTool below instead, so the human gate survives).
-      hooks: {
-        PreToolUse: [{ matcher: "mcp__agent-fleet-sidecar__run_command", hooks: [rtkRunCommandHook] }],
-      },
       // "user" (not "project"): CLAUDE_CONFIG_DIR (provisioner/internal/k8s/
       // pod.go) points at the shared PVC, provisioner-synced by
       // git.Manager.SyncFleetShared (docs/adr/0032) — Claude Code discovers
@@ -535,6 +528,34 @@ export async function runSession(): Promise<SessionResult> {
       abortController,
     },
   });
+
+  // q.interrupt() is not guaranteed to settle, so it is never awaited bare.
+  //
+  // The SDK registers a control request and resolves it when the CLI answers.
+  // Its cleanup() clears pendingControlResponses WITHOUT rejecting them, and
+  // runs whenever the CLI message stream ends — so a request issued after the
+  // CLI has died waits on a promise nothing will ever settle, and not even the
+  // .catch() can fire. That parks this callback inside the SSE stream, which
+  // parks streamHumanMessages, which parks runSession's finally, which means
+  // index.ts never reaches process.exit: the Job never goes terminal and the
+  // concurrency slot leaks. Precisely the failure class the explicit exit was
+  // added to remove — reachable by "the CLI dies, then a human clicks Stop".
+  //
+  // 5s is far beyond a healthy round-trip; if it elapses, the channel is gone
+  // and abortController.abort() is what actually ends the session anyway.
+  const interruptSafely = async (what: string) => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([
+      q.interrupt().catch((err) => log("warn", `${what} failed`, { taskId: SESSION_ID, error: String(err) })),
+      new Promise<void>((resolve) => {
+        timer = setTimeout(() => {
+          log("warn", `${what} did not settle — the SDK control channel is gone`, { taskId: SESSION_ID });
+          resolve();
+        }, 5_000);
+      }),
+    ]);
+    clearTimeout(timer);
+  };
 
   // Delivers every new human message live (docs/adr/0021 point 2) — not a
   // poll the wrapper initiates on its own schedule.
@@ -558,7 +579,7 @@ export async function runSession(): Promise<SessionResult> {
         // loop below would otherwise hang forever waiting for a message
         // that will never come. abortController.abort() guarantees the
         // underlying session actually ends either way.
-        await q.interrupt().catch((err) => log("warn", "interrupt failed", { taskId: SESSION_ID, error: String(err) }));
+        await interruptSafely("interrupt");
         abortController.abort();
         return;
       }
@@ -575,7 +596,7 @@ export async function runSession(): Promise<SessionResult> {
         if (pendingPermissions.size > 0) {
           resolveAllPendingDeny(entry.text || "Mohammad interrupted the current turn.", true);
         }
-        await q.interrupt().catch((err) => log("warn", "soft interrupt failed", { taskId: SESSION_ID, error: String(err) }));
+        await interruptSafely("soft interrupt");
         return;
       }
       // The human's allow/deny decision for a specific permission_request,
@@ -602,7 +623,18 @@ export async function runSession(): Promise<SessionResult> {
       // time out unanswered.
       if (entry.type === "permission_mode") {
         const mode = entry.text as PermissionMode;
-        await q.setPermissionMode(mode);
+        // Caught, not bare-awaited: this is the only await in this callback
+        // that could reject, and a rejection here does not just lose the mode
+        // switch — it escapes onEntry, streamOnce rethrows, and nextSeq is
+        // only advanced AFTER onEntry resolves. The reconnect would redeliver
+        // the same entry and throw again every 2s, permanently, so no later
+        // reply, permission response or Stop would ever be delivered and
+        // anything already pending would block forever. Query.request()
+        // rejects on any non-success control response, which an unrecognized
+        // mode string is.
+        await q
+          .setPermissionMode(mode)
+          .catch((err) => log("warn", "setPermissionMode failed", { taskId: SESSION_ID, mode, error: String(err) }));
         resolveAllPendingAllow();
         return;
       }

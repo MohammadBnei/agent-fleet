@@ -46,13 +46,28 @@ What is deliberately NOT on it:
   is how a supply-chain surprise arrives un-prompted; the package managers
   above are allowed to do it because that is their job and their lockfiles
   are reviewable.
+- **`env` and `cat`.** The worker container holds `GH_TOKEN` and
+  `CLAUDE_CODE_OAUTH_TOKEN`, so `env` — or `cat /proc/self/environ` — dumps
+  both into a transcript the dashboard renders. Neither is needed: `Read` is
+  free and unprompted, and covers every legitimate use of `cat`.
+
+An allow-rule here is not a small convenience — it removes `canUseTool` from
+the path entirely for the commands it matches, which is the same authority
+`allowedTools` carries in `worker/src/session.ts`. That file deliberately
+keeps `Write`/`Edit`/`Bash` out of `allowedTools`; a rule added here is the
+one other way to undo that, so add one the way you would add an entry there.
 
 **Hooks do not belong in this `settings.json`.** The Agent SDK does not run
 hooks declared in settings files, with any `settingSources` — verified
 2026-08-13, after the `rtk hook claude` PreToolUse entry that lived here
 turned out to have never fired once. Only `options.hooks` callbacks run, so a
-worker hook is registered in `worker/src/session.ts` (see
-`worker/src/rtkHook.ts`). Everything else here — `CLAUDE.md`, `skills/`,
+worker hook was registered in `worker/src/session.ts` instead. That hook is
+now gone too: it was scoped to the sandbox's `run_command`, which no longer
+exists, and it could not be repointed at `Bash` — the SDK discards a hook's
+`updatedInput` unless the hook also returns `permissionDecision: "allow"`,
+which for `Bash` would bypass the human gate. `rtk` now runs from
+`canUseTool` only, so it compacts prompted commands and not allow-listed ones
+(see `worker/src/rtkHook.ts`). Everything else here — `CLAUDE.md`, `skills/`,
 `enabledPlugins` — is discovered natively as described above.
 
 `ponytail`/`caveman` marketplace plugins are baked into `worker/Dockerfile`

@@ -52,7 +52,13 @@ export function bucketTasks(tasks: Session[], needsYouIds: Set<string>) {
     //    pendingDecisions is a COUNT, not the old awaiting_human boolean —
     //    parallel tool calls each get their own permission, and answering one
     //    must not report the rest as resolved.
-    if (t.archivedAt === undefined && (t.pendingDecisions > 0 || t.liveState === "blocked" || needsYouIds.has(t.id))) {
+    //    Keyed on liveState, NOT on the raw pendingDecisions count. The
+    //    server derives "blocked" as live-AND-has-pending, so the count alone
+    //    disagrees with it by construction for a session whose pod is gone:
+    //    that one would pin itself to the top of the list forever, offering
+    //    allow/deny buttons that reach nothing. Live and pending always
+    //    derives to "blocked", so nothing is lost by dropping the count.
+    if (t.archivedAt === undefined && (t.liveState === "blocked" || needsYouIds.has(t.id))) {
       out.needsYou.push(t);
       continue;
     }

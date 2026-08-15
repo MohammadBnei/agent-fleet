@@ -30,12 +30,23 @@ const workerJobTTLSeconds = 300
 // nothing to resume from regardless of what session id is passed
 // (sessions redesign, supersedes docs/adr/0021/0025's phase-boundary
 // framing; the redirect itself was originally described in ADR-0016 but
-// never actually implemented until now). One shared root is safe across
-// concurrent tasks: the SDK's own per-project subdirectory is derived
-// directly from `cwd` (every non-alphanumeric character replaced with
-// `-`, confirmed against the bundled SDK's cli.js — not a hash), and
-// every task's cwd is already a distinct worktree path.
-const claudeConfigDir = "/workspace/.claude-home"
+// never actually implemented until now).
+//
+// Deliberately NOT under /workspace, and that is a correctness rule rather
+// than a preference: /workspace is the git clone the agent is told to commit
+// and push. Nested there, a plain `git add -A` sweeps full conversation
+// transcripts and the SDK's credentials into a PR, and a `git clean -xfd` — an
+// ordinary reset move — destroys the state that makes the session resumable.
+// Neither is a mistake the agent could be blamed for; the directory simply
+// must not live inside the tree it is being asked to commit.
+//
+// Per-session isolation comes from the MOUNT (subPath claude-home/<id>), not
+// from cwd. It used to come from cwd, when each task had its own worktree path
+// and the SDK derived its per-project subdirectory from that path (every
+// non-alphanumeric character replaced with `-`, confirmed against the bundled
+// cli.js — not a hash). Every session's cwd is /workspace now, so a shared
+// root would land all of them in the same `projects/-workspace/`.
+const claudeConfigDir = "/claude-home"
 
 // contextBudgetEnv tunes the Agent SDK's own context-management machinery
 // for the fleet's usage pattern (ADR-0046). All four are read directly by
@@ -263,6 +274,17 @@ func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error 
 					// buildIngredients). Putting it back on every sidecar
 					// would hand the cluster credential to tasks that have
 					// no business holding it.
+					//
+					// Git's ownership guard (CVE-2022-24765) — the same one the
+					// clone init container disables for itself. This container
+					// has no $HOME to write a gitconfig into and runs as a
+					// different user than the one that owns the tree, so every
+					// telemetry `git diff` would refuse with "detected dubious
+					// ownership". That failure surfaces only as permanently-zero
+					// diff stats, never as an error anyone sees.
+					{Name: "GIT_CONFIG_COUNT", Value: "1"},
+					{Name: "GIT_CONFIG_KEY_0", Value: "safe.directory"},
+					{Name: "GIT_CONFIG_VALUE_0", Value: "*"},
 				},
 				Ports: []corev1.ContainerPort{
 					{Name: "mcp", ContainerPort: SidecarMCPPort},
@@ -282,6 +304,13 @@ func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error 
 					// worktrees any more — this is a real clone with its
 					// own .git directory (docs/adr/0048 §5).
 					{Name: "session", MountPath: sessionWorkdir, SubPath: "tree"},
+					// ...but a `git clone --shared` does not COPY objects:
+					// .git/objects/info/alternates points back at the cache,
+					// so without this mount `git diff --numstat HEAD` cannot
+					// read the HEAD tree and the telemetry loop reports
+					// nothing for every session. Seeing the files is not the
+					// same as being able to run git on them.
+					{Name: "shared", MountPath: "/repo-cache", SubPath: "repos", ReadOnly: true},
 				},
 				Resources: corev1.ResourceRequirements{
 					Requests: corev1.ResourceList{

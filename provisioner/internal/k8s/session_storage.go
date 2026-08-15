@@ -142,10 +142,24 @@ fi
 mkdir -p %[1]s
 git clone --shared /repo-cache/%[2]s %[1]s
 cd %[1]s
-git checkout %[3]s 2>/dev/null || git checkout -b %[3]s origin/%[3]s
 # The clone's origin points at the local cache, which is useless to the agent:
 # it needs to fetch from and push to the real remote.
 git remote set-url origin %[4]s
+
+# Then take the base branch from the REAL remote, not from the cache.
+#
+# EnsureRepoCloned only ever runs "git fetch origin" on the cache, which
+# advances its remote-tracking refs and leaves its LOCAL branches frozen at
+# whenever it was first cloned. "git clone --shared" copies the source's LOCAL
+# branches — so checking out from the cache alone starts every session on a
+# base that may be months stale, and a branch created after the cache existed
+# would not be found at all. Neither failure is visible: the agent gets a
+# perfectly valid repository and branches from the wrong commit.
+#
+# Objects still arrive through the alternates link, so this transfers only the
+# delta the cache is genuinely missing.
+git fetch origin %[3]s
+git checkout -B %[3]s FETCH_HEAD
 `, sessionWorkdir, spec.Repo, base, spec.RepoURL)
 
 	return corev1.Container{

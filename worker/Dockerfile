@@ -59,8 +59,12 @@ RUN bun install -g playwright @playwright/mcp \
     # name a command instead of hardcoding a node_modules path.
     && ln -s /root/.bun/install/global/node_modules/@playwright/mcp/cli.js /usr/local/bin/playwright-mcp \
     && chmod +x /usr/local/bin/playwright-mcp \
-    # The browser lands under root's cache; the session runs as `bun`.
-    && chmod -R o+rX /root/.cache 2>/dev/null || true
+    # Braced, because `a && b || true` binds the || to the WHOLE chain: written
+    # flat, a failed `playwright install` would still exit 0 and ship an image
+    # with no browser — the exact docs/adr/0044 failure the block above exists
+    # to prevent, reintroduced by shell precedence. Only this one chmod is
+    # allowed to fail (the path may not exist), and only it.
+    && { chmod -R o+rX /root/.cache 2>/dev/null || true; }
 
 # rtk (Rust Token Killer) — same tool-output compression proxy Mohammad runs
 # locally (github.com/rtk-ai/rtk, Homebrew formula "rtk"). Static musl

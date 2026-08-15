@@ -237,8 +237,12 @@ export default function App() {
   // The header's live census. `liveState` is server-derived (docs/adr/0040), so
   // every client agrees on what "working" means.
   const counts = useMemo(() => {
-    const waiting = tasks.filter((t) => t.pendingDecisions > 0).length;
-    const working = tasks.filter((t) => ACTIVE_STATES.has(t.liveState) && t.pendingDecisions === 0).length;
+    // Same rule the needsYou bucket uses, and for the same reason: the raw
+    // pendingDecisions count counts sessions whose pod is gone (and archived
+    // ones), so the badge would show work waiting on a human that no human
+    // can act on. "blocked" is live-and-pending, already derived server-side.
+    const waiting = tasks.filter((t) => t.archivedAt === undefined && t.liveState === "blocked").length;
+    const working = tasks.filter((t) => ACTIVE_STATES.has(t.liveState) && t.liveState !== "blocked").length;
     const done = tasks.filter((t) => t.liveState === "done").length;
     return { waiting, working, done, idle: Math.max(0, tasks.length - waiting - working - done) };
   }, [tasks]);

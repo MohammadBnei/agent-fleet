@@ -60,6 +60,7 @@ func main() {
 		ThotAuthToken:         cfg.ThotAuthToken,
 		ExecutorAddr:          cfg.ExecutorAddr,
 		WorkspacePVC:          cfg.WorkspacePVC,
+		SessionStorageClass:   cfg.SessionStorageClass,
 		LogLevel:              cfg.LogLevel,
 		CoreGRPCAddr:          cfg.CoreGRPCAddr,
 		PostgresImage:         cfg.PostgresImage,

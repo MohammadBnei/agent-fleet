@@ -191,9 +191,9 @@ export function ManageReposModal({ onChanged }: { onChanged?: () => void }) {
           <input
             value={image}
             onChange={(e) => setImage(e.target.value)}
-            placeholder="e2e"
-            title="Profile the e2e sandbox is built from — blank means the profile named 'e2e'"
-            className="input input-sm input-bordered w-24 flex-none"
+            placeholder="default image"
+            title="Container image this repo's sessions run in — blank uses the fleet's default worker image"
+            className="input input-sm input-bordered w-32 flex-none"
           />
           <button type="submit" disabled={creating || !name.trim() || !url.trim()} className="btn btn-sm btn-primary flex-none">
             {creating ? "Adding…" : "Add"}

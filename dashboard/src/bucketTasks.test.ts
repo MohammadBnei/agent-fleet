@@ -25,7 +25,7 @@ function session(id: string, over: Partial<Session> = {}): Session {
 // defined by exclusion rather than by its own predicate.
 test("every session lands in exactly one bucket, whatever shape it is in", () => {
   const all = [
-    session("blocked", { pendingDecisions: 2 }),
+    session("blocked", { pendingDecisions: 2, liveState: "blocked" }),
     session("busy", { liveState: "working" }),
     session("done", { liveState: "done" }),
     session("stuck", { liveState: "stalled" }),
@@ -77,21 +77,40 @@ test("the bucket set is exactly what TaskList renders", () => {
 
 // A session with unanswered decisions is stalled until a human clicks, so it
 // is the one thing that must never be filed under anything else.
-test("pending decisions put a session in needsYou regardless of its live state", () => {
-  const b = bucketTasks([session("a", { pendingDecisions: 1, liveState: "working" })], new Set());
+//
+// Keyed on liveState "blocked", not on the raw pendingDecisions count. The
+// server derives blocked as live-AND-pending and checks it before working or
+// stalled, so a live session with a decision outstanding always arrives here
+// already labelled — a fixture pairing pendingDecisions with liveState
+// "working" describes a state the server cannot emit, and the earlier version
+// of this test asserted exactly that.
+test("a blocked session outranks every other bucket", () => {
+  const b = bucketTasks([session("a", { pendingDecisions: 1, liveState: "blocked" })], new Set());
 
   expect(b.needsYou.map((t) => t.id)).toEqual(["a"]);
   expect(b.working).toHaveLength(0);
+});
+
+// The other half of that rule, and the reason the count alone will not do.
+// Nothing resolves a pending permission when its pod dies mid-decision, so the
+// count stays above zero forever. Bucketing on it would pin that session to the
+// top of the list permanently, offering allow/deny buttons that reach no pod —
+// while DeriveLiveState, which checks liveness first, calls it not-live.
+test("a session whose pod is gone is not in needsYou, however many decisions it left behind", () => {
+  const b = bucketTasks([session("a", { pendingDecisions: 3, liveState: "idle" })], new Set());
+
+  expect(b.needsYou).toHaveLength(0);
+  expect(b.quiet.map((t) => t.id)).toEqual(["a"]);
 });
 
 // pendingDecisions is a COUNT, not the old awaiting_human boolean. Parallel
 // tool calls each get their own pending permission, and answering one must
 // not report the rest as resolved — the exact bug the boolean had.
 test("a session stays in needsYou while any decision is still outstanding", () => {
-  const twoLeft = bucketTasks([session("a", { pendingDecisions: 2 })], new Set());
+  const twoLeft = bucketTasks([session("a", { pendingDecisions: 2, liveState: "blocked" })], new Set());
   expect(twoLeft.needsYou.map((t) => t.id)).toEqual(["a"]);
 
-  const oneLeft = bucketTasks([session("a", { pendingDecisions: 1 })], new Set());
+  const oneLeft = bucketTasks([session("a", { pendingDecisions: 1, liveState: "blocked" })], new Set());
   expect(oneLeft.needsYou.map((t) => t.id)).toEqual(["a"]);
 
   const noneLeft = bucketTasks([session("a", { pendingDecisions: 0, liveState: "idle" })], new Set());

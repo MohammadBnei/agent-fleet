@@ -150,6 +150,12 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool) error {
 	// of pod dispatch is exactly the drift docs/adr/0020 point 2 exists to
 	// prevent.
 	coreSvc.SetWarmFunc(dashboardSvc.WarmIfIdle)
+	// The fleet's only outbound "a session needs you" signal. Without this
+	// wire, a session blocked on a permission decision notifies nobody and
+	// is findable only by someone already watching the dashboard.
+	if dc != nil {
+		coreSvc.SetNotifyBlockedFunc(dc.NotifyBlocked)
+	}
 	dashboardPath, dashboardHandler := agentfleetv1connect.NewDashboardServiceHandler(
 		dashboardSvc,
 		connect.WithInterceptors(dashboard.NewCSRFInterceptor(), dashboard.NewAccessLogInterceptor(), metrics.NewConnectInterceptor()),

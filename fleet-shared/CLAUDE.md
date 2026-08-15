@@ -51,7 +51,11 @@ using the same database, so namespace what you create.
 
 ## Output compaction
 
-`Bash` is auto-rewritten via `rtk` (~99% smaller). Raw: `rtk proxy <cmd>`.
+A `Bash` command that goes through a permission prompt is auto-rewritten via
+`rtk` (~99% smaller output). Commands on the un-prompted allow-list — builds,
+tests, installs — skip the prompt and so skip the rewrite too: prefix those
+with `rtk ` yourself when you expect a wall of output (`rtk go test ./...`).
+Raw, uncompacted: `rtk proxy <cmd>`.
 
 Truncation: `view_logs` truncates — narrow the query (limit/level/duration/time).
 

@@ -58,6 +58,19 @@ type Server struct {
 	// warm-on-prompt, which only makes PromptSession fail for idle
 	// targets.
 	warm func(ctx context.Context, taskID string) (string, error)
+
+	// notifyBlocked posts "this session needs a human" out of band, wired to
+	// discord.Client.NotifyBlocked. Injected as a func rather than the client
+	// so this package keeps no Discord dependency, matching warm above.
+	//
+	// This is the fleet's ONLY outbound notification for a blocked session.
+	// Without it a session stalls on a permission decision and tells nobody —
+	// the only way to find it is to already be looking at the dashboard, which
+	// is exactly backwards for the one event that needs a human. The transcript
+	// relay that used to carry this was deleted with the Discord-as-console
+	// model; the notification is not part of that, and should not have gone
+	// with it. nil disables notification and nothing else.
+	notifyBlocked func(ctx context.Context, sessionID, repo, title, summary string) error
 }
 
 func New(transcr transcript.Store, sessionStore *sessions.Store, journalStore *journal.Store, repoStore *repos.Store, provisioner *provisionerclient.Client, files filestore.Store, loki lokiclient.Querier) *Server {
@@ -70,6 +83,34 @@ func New(transcr transcript.Store, sessionStore *sessions.Store, journalStore *j
 // a setter.
 func (s *Server) SetWarmFunc(warm func(ctx context.Context, taskID string) (string, error)) {
 	s.warm = warm
+}
+
+// SetNotifyBlockedFunc wires the out-of-band "needs a human" notification.
+// Optional: nil leaves the dashboard as the only way to notice.
+func (s *Server) SetNotifyBlockedFunc(fn func(ctx context.Context, sessionID, repo, title, summary string) error) {
+	s.notifyBlocked = fn
+}
+
+// announceBlocked fires the out-of-band notification for a session that has
+// just started waiting on a human.
+//
+// Best-effort and deliberately non-fatal: the decision is already durable in
+// the transcript and visible on the dashboard, so a Discord outage must not
+// fail the agent's call and leave it unable to ask at all.
+func (s *Server) announceBlocked(ctx context.Context, sessionID, summary string) {
+	if s.notifyBlocked == nil {
+		return
+	}
+	repo, title := "", ""
+	if sess, err := s.sessions.Get(ctx, sessionID); err == nil && sess != nil {
+		repo = sess.Repo
+		if sess.Title != nil {
+			title = *sess.Title
+		}
+	}
+	if err := s.notifyBlocked(ctx, sessionID, repo, title, summary); err != nil {
+		slog.Warn("coreserver: blocked-session notification failed", "sessionId", sessionID, "error", err)
+	}
 }
 
 // --- agent-facing (proxied MCP-shaped calls) ---
@@ -92,6 +133,11 @@ func (s *Server) SendMessage(ctx context.Context, req *agentfleetv1.SendMessageR
 	}
 	if err != nil {
 		return nil, fmt.Errorf("SendMessage: %w", err)
+	}
+	// A permission request is the moment a session stops making progress and
+	// starts waiting on a person, so it is the moment worth telling them about.
+	if protoTypeToString(req.GetType()) == "permission_request" {
+		s.announceBlocked(ctx, req.GetSessionId(), "needs a permission decision")
 	}
 	return &agentfleetv1.AppendResponse{Seq: seq}, nil
 }
@@ -139,6 +185,10 @@ func (s *Server) AskUserQuestion(ctx context.Context, req *agentfleetv1.AskUserQ
 	if err != nil {
 		return nil, fmt.Errorf("AskUserQuestion: %w", err)
 	}
+	// The other way a session blocks on a human. Same notification as a
+	// permission request, since from a human's side they are the same event:
+	// nothing moves until someone answers.
+	s.announceBlocked(ctx, req.GetSessionId(), "asked a question")
 
 	timeoutMs := req.GetTimeoutMs()
 	if timeoutMs <= 0 {
