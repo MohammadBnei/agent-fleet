@@ -1011,16 +1011,29 @@ func stringToProtoType(s string) agentfleetv1.TranscriptEntryType {
 // component, or deployed application. Returns structured log entries with
 // timestamp, level, message, and other fields.
 func (s *Server) QueryLogs(ctx context.Context, req *connect.Request[agentfleetv1.QueryLogsRequest]) (*connect.Response[agentfleetv1.QueryLogsResponse], error) {
-	// Parse time strings (RFC3339)
-	start, err := time.Parse(time.RFC3339, req.Msg.GetStartTime())
-	if err != nil {
-		slog.Error("dashboard QueryLogs: invalid start_time", "start_time", req.Msg.GetStartTime(), "error", err)
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("invalid start_time: %w", err))
+	// Time strings are RFC3339 and OPTIONAL. Empty means "the default window",
+	// the same convention coreserver's ViewLogs uses — a malformed value is
+	// still an error, an absent one is not. Requiring them made the only
+	// caller (LogDrawer, which asks for "the newest 200 lines" and has no
+	// range picker) fail with an invalid_argument on every open, so the log
+	// drawer had never once returned a line.
+	//
+	// 24h rather than ViewLogs' 1h: this drawer is opened on a session that
+	// already failed, usually a while after it did.
+	start, end := time.Now().Add(-24*time.Hour), time.Now()
+	if raw := req.Msg.GetStartTime(); raw != "" {
+		var err error
+		if start, err = time.Parse(time.RFC3339, raw); err != nil {
+			slog.Error("dashboard QueryLogs: invalid start_time", "start_time", raw, "error", err)
+			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("invalid start_time: %w", err))
+		}
 	}
-	end, err := time.Parse(time.RFC3339, req.Msg.GetEndTime())
-	if err != nil {
-		slog.Error("dashboard QueryLogs: invalid end_time", "end_time", req.Msg.GetEndTime(), "error", err)
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("invalid end_time: %w", err))
+	if raw := req.Msg.GetEndTime(); raw != "" {
+		var err error
+		if end, err = time.Parse(time.RFC3339, raw); err != nil {
+			slog.Error("dashboard QueryLogs: invalid end_time", "end_time", raw, "error", err)
+			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("invalid end_time: %w", err))
+		}
 	}
 
 	// Default namespace to agent-fleet if not specified

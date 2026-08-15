@@ -151,3 +151,33 @@ func TestQueryLogs(t *testing.T) {
 		})
 	}
 }
+
+// The dashboard's LogDrawer sends only session_id and limit — no time range,
+// because it asks for "the newest 200 lines" and has no range picker. Parsing
+// the empty strings unconditionally made every open fail with
+// invalid_argument, so the drawer had never returned a line.
+func TestQueryLogsDefaultsTheTimeRange(t *testing.T) {
+	var got lokiclient.QueryRequest
+	mock := &mockLokiClient{
+		queryFunc: func(_ context.Context, req lokiclient.QueryRequest) ([]lokiclient.LogEntry, error) {
+			got = req
+			return nil, nil
+		},
+	}
+	s := &Server{loki: mock}
+
+	before := time.Now()
+	_, err := s.QueryLogs(context.Background(), connect.NewRequest(&agentfleetv1.QueryLogsRequest{
+		SessionId: "abc123",
+		Limit:     200,
+	}))
+	if err != nil {
+		t.Fatalf("query with no time range must succeed, got %v", err)
+	}
+	if !got.End.After(got.Start) {
+		t.Fatalf("defaulted window is not a window: start %v, end %v", got.Start, got.End)
+	}
+	if got.Start.After(before.Add(-23 * time.Hour)) {
+		t.Errorf("defaulted start should look back ~24h, got %v", got.Start)
+	}
+}
