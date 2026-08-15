@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.0.3](https://github.com/MohammadBnei/agent-fleet/compare/3.0.2...3.0.3) (2026-08-15)
+
+
+### Bug Fixes
+
+* **provisioner,core:** wildcard clone safe.directory, default the log window ([#160](https://github.com/MohammadBnei/agent-fleet/issues/160)) ([1ddbc22](https://github.com/MohammadBnei/agent-fleet/commit/1ddbc22f890ff9185f36eb38641b0bdfbb0ee37b))
+
 ## [3.0.2](https://github.com/MohammadBnei/agent-fleet/compare/3.0.1...3.0.2) (2026-08-15)
 
 
