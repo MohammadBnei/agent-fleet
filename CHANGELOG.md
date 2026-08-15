@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.0.5](https://github.com/MohammadBnei/agent-fleet/compare/3.0.4...3.0.5) (2026-08-15)
+
+
+### Bug Fixes
+
+* **provisioner:** make a session's claude-home writable by the worker ([#162](https://github.com/MohammadBnei/agent-fleet/issues/162)) ([0c31228](https://github.com/MohammadBnei/agent-fleet/commit/0c31228377b9062f48c9a281b9bc020e3d63d876))
+
 ## [3.0.4](https://github.com/MohammadBnei/agent-fleet/compare/3.0.3...3.0.4) (2026-08-15)
 
 ## [3.0.3](https://github.com/MohammadBnei/agent-fleet/compare/3.0.2...3.0.3) (2026-08-15)
