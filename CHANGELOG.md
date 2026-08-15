@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.4.1](https://github.com/MohammadBnei/agent-fleet/compare/3.4.0...3.4.1) (2026-08-15)
+
+
+### Bug Fixes
+
+* **core:** only a non-human append proves a pod came up ([#173](https://github.com/MohammadBnei/agent-fleet/issues/173)) ([31c2b85](https://github.com/MohammadBnei/agent-fleet/commit/31c2b85f4e9fa13e56ff0f2072a6c84369a94b73))
+
 # [3.4.0](https://github.com/MohammadBnei/agent-fleet/compare/3.3.0...3.4.0) (2026-08-15)
 
 
