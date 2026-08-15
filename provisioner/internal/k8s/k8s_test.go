@@ -307,19 +307,33 @@ func TestListWorkerJobsByLabel_SelectsWorkerJobs(t *testing.T) {
 }
 
 func TestJobPhase_DerivedFromConditions(t *testing.T) {
+	ready := func(n int32) *int32 { return &n }
 	cases := []struct {
 		name  string
 		conds []batchv1.JobCondition
+		ready *int32
 		want  string
 	}{
-		{"no conditions yet", nil, ""},
-		{"complete", []batchv1.JobCondition{{Type: batchv1.JobComplete, Status: "True"}}, "Succeeded"},
-		{"failed", []batchv1.JobCondition{{Type: batchv1.JobFailed, Status: "True"}}, "Failed"},
-		{"condition present but not True", []batchv1.JobCondition{{Type: batchv1.JobFailed, Status: "False"}}, ""},
+		{"no conditions yet", nil, nil, ""},
+		{"complete", []batchv1.JobCondition{{Type: batchv1.JobComplete, Status: "True"}}, nil, "Succeeded"},
+		{"failed", []batchv1.JobCondition{{Type: batchv1.JobFailed, Status: "True"}}, nil, "Failed"},
+		{"condition present but not True", []batchv1.JobCondition{{Type: batchv1.JobFailed, Status: "False"}}, nil, ""},
+		// The string core maps onto POD_PHASE_RUNNING. Without it the upward
+		// sync is unreachable and every healthy session sits at SCHEDULED for
+		// its whole life — which is what the fleet did until 2026-08-15,
+		// while core's test for that sync passed against a fake that returned
+		// "Running" the real thing never emitted.
+		{"pod ready", nil, ready(1), "Running"},
+		// Still pulling/scheduling: Active would be 1 here, which is why the
+		// check is on Ready.
+		{"pod not ready yet", nil, ready(0), ""},
+		// A finished Job whose last pod still reports ready must not read as
+		// live — terminal wins.
+		{"complete outranks ready", []batchv1.JobCondition{{Type: batchv1.JobComplete, Status: "True"}}, ready(1), "Succeeded"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			job := &batchv1.Job{Status: batchv1.JobStatus{Conditions: tc.conds}}
+			job := &batchv1.Job{Status: batchv1.JobStatus{Conditions: tc.conds, Ready: tc.ready}}
 			if got := jobPhase(job); got != tc.want {
 				t.Errorf("jobPhase() = %q, want %q", got, tc.want)
 			}

@@ -161,6 +161,49 @@ func TestReconcilePodPhases_SyncsScheduledUpToRunning(t *testing.T) {
 	}
 }
 
+// The warm race. A session in PROVISIONING/CREATED has no Job yet BY
+// DEFINITION — the provisioner reports those phases before the clone, the
+// fleet-shared sync and the pod create, which take tens of seconds together —
+// so "Kubernetes has no Job" is the expected answer, not an orphan.
+//
+// Observed live 2026-08-15: this loop ticked 3s after a warm and wrote
+// TERMINATED over a session whose pod was seconds from existing. The write
+// does not heal, either: TERMINATED is not a live phase, so every later pass
+// skips the row and the session shows no pod while its agent runs.
+func TestReconcilePodPhases_DoesNotOrphanASessionMidProvision(t *testing.T) {
+	ctx := context.Background()
+	store := NewStore(dbtest.NewPool(t))
+
+	for _, phase := range []string{"POD_PHASE_PROVISIONING", "POD_PHASE_CREATED"} {
+		t.Run(phase, func(t *testing.T) {
+			id, err := store.Create(ctx, "agent-fleet", "", "warming", "")
+			if err != nil {
+				t.Fatalf("create: %v", err)
+			}
+			if err := store.SetPodPhase(ctx, id, phase, "creating pod"); err != nil {
+				t.Fatalf("phase: %v", err)
+			}
+
+			// Kubernetes has nothing yet — the provisioner hasn't created the
+			// Job. Exactly the state the real race hit.
+			loop := NewLoop(store, &fakeProvisioner{livePods: map[string]string{}}, time.Minute, time.Minute, time.Hour, 14*24*time.Hour, time.Minute)
+			loop.reconcilePodPhases(ctx)
+
+			s, err := store.Get(ctx, id)
+			if err != nil {
+				t.Fatalf("get: %v", err)
+			}
+			if s.PodPhase == nil || *s.PodPhase != phase {
+				got := "<nil>"
+				if s.PodPhase != nil {
+					got = *s.PodPhase
+				}
+				t.Fatalf("a session mid-provision was reconciled to %s — its pod does not exist YET, which is not the same as gone", got)
+			}
+		})
+	}
+}
+
 // If Kubernetes cannot be reached, the correct action is none. Treating an
 // unreadable pod list as "no pods exist" would terminate every live session in
 // the fleet on a transient provisioner outage — the loop would do far more

@@ -254,7 +254,12 @@ export default function App() {
     // ones), so the badge would show work waiting on a human that no human
     // can act on. "blocked" is live-and-pending, already derived server-side.
     const waiting = sessions.filter((t) => t.archivedAt === undefined && t.liveState === "blocked").length;
-    const working = sessions.filter((t) => ACTIVE_STATES.has(t.liveState) && t.liveState !== "blocked").length;
+    // `working` means the badge says WORKING, not "has a live pod".
+    // ACTIVE_STATES is the pod-liveness set — it includes idle, unknown and
+    // stalled — so counting it here reported "1 working · 0 idle" for a fleet
+    // whose only live session was rendering an IDLE badge two lines below.
+    // The header and the row have to agree; they are read together.
+    const working = sessions.filter((t) => t.liveState === "working").length;
     const done = sessions.filter((t) => t.liveState === "done").length;
     return { waiting, working, done, idle: Math.max(0, sessions.length - waiting - working - done) };
   }, [sessions]);
