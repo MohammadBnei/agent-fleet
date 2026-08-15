@@ -653,6 +653,35 @@ export async function runSession(): Promise<SessionResult> {
         resolveAllPendingAllow();
         return;
       }
+      // `/clear` (and its CLI aliases) must NOT reach the SDK. In
+      // streaming-input mode the reader throws
+      //   "only prompt commands are supported in streaming mode"
+      // for any command whose type isn't "prompt", and `clear` is a `local`
+      // command (verified in the vendored cli.js: `name:"clear", …,
+      // supportsNonInteractive:false`). Pushing it as a user turn crashes
+      // the whole query. The SDK's Query control surface has no
+      // conversation-reset request either (runtimeTypes.d.ts) — the
+      // interactive `/clear` only wipes the REPL's in-memory state, which is
+      // unreachable from here. So the only "clear" streaming mode allows is
+      // a *fresh session*: drop the saved resume id and end this pod. The
+      // next Warm boots with no `resume`, i.e. an empty conversation. Same
+      // teardown path as abort (interrupt the current turn, then
+      // abortController.abort() so an idle between-rounds session doesn't
+      // hang), but preceded by clearing the resume identity.
+      if (/^\/(clear|reset|new)\s*$/.test(entry.text.trim())) {
+        aborted = true;
+        resolveAllPendingDeny("Conversation cleared.", true);
+        // Empty id => next warm passes resume: undefined => fresh session.
+        await sidecar
+          .saveSessionId("", session.model ?? MODEL)
+          .catch((err) => log("warn", "saveSessionId(clear) failed", { taskId: SESSION_ID, error: String(err) }));
+        await sidecar
+          .pushMessage("agent", "Conversation cleared — re-warm this session for a fresh start.", "system")
+          .catch(() => {});
+        await interruptSafely("clear");
+        abortController.abort();
+        return;
+      }
       if (pendingPermissions.size > 0) {
         // A plain reply while something's pending is feedback, not an
         // answer — deny every pending request with it (same as choosing

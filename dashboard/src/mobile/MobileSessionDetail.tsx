@@ -291,6 +291,10 @@ export function MobileSessionDetail({
               setPanelsOpen(false);
               setBypassOpen(true);
             }}
+            onRestart={() => {
+              setPanelsOpen(false);
+              sendDiscuss("/clear");
+            }}
           />
           <button
             type="button"

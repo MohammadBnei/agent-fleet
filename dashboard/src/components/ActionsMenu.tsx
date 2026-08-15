@@ -50,6 +50,7 @@ export function ActionsMenu({
   onHideToolsInFeedChange,
   hideChangesInFeed,
   onHideChangesInFeedChange,
+  onRestart,
 }: {
   sessionId: string;
   // Whether ANY action anywhere on the page is in flight, not just this
@@ -82,6 +83,11 @@ export function ActionsMenu({
   onHideToolsInFeedChange?: (value: boolean) => void;
   hideChangesInFeed?: boolean;
   onHideChangesInFeedChange?: (value: boolean) => void;
+  // Sends `/clear` down the normal Discuss path. The worker intercepts it
+  // (it can't reach the SDK — streaming-input mode rejects non-prompt
+  // commands), clears the saved resume id, and ends the pod; re-warming the
+  // session then starts a fresh conversation. Only shown while live.
+  onRestart?: () => void;
 }) {
   const live = isPodPhaseLive(podPhase);
   return (
@@ -131,6 +137,17 @@ export function ActionsMenu({
           >
             Kill
           </ActionButton>
+          {onRestart && (
+            <ActionButton
+              className="btn btn-warning btn-xs"
+              busy={busyKey === "discuss"}
+              disabled={busy}
+              onClick={onRestart}
+              title="Send /clear — end this conversation and start fresh on the next warm"
+            >
+              Restart (/clear)
+            </ActionButton>
+          )}
         </>
       ) : (
         // A swept session cannot be warmed: the retention GC removed its
