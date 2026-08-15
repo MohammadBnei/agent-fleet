@@ -138,6 +138,15 @@ func (s *Server) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWo
 	// worktree added here would land on a different volume, silently.
 	s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_CREATED, "", "")
 
+	// Fatal, and deliberately outside the fleet-shared block below: the pod
+	// cannot start at all without a writable claude-home (see
+	// git.EnsureClaudeHome), so failing here beats creating a pod that will
+	// crash-loop on its entrypoint's plugin copy.
+	if err := s.git.EnsureClaudeHome(req.GetSessionId()); err != nil {
+		s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_CRASHED, "", "claude-home setup failed: "+err.Error())
+		return nil, fmt.Errorf("ensure claude home: %w", err)
+	}
+
 	// Best-effort, unlike the clone/worktree steps above: stale or
 	// momentarily missing fleet-shared skills/context is a degraded worker
 	// session, not a broken one, so a sync failure here logs and continues

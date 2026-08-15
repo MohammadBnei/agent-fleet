@@ -176,6 +176,38 @@ func TestCreateWorkerPod_SyncsFleetShared(t *testing.T) {
 	}
 }
 
+// The worker container runs as uid 1000 and everything the provisioner creates
+// is root's, so a claude-home the worker cannot write is a crash loop before
+// the session starts: its entrypoint copies plugins in there and dies on
+// "Permission denied" under set -e (live, 2026-08-15). fsGroup does not save
+// this — the shared PVC is RWX Longhorn, NFS underneath, and gets no kubelet
+// ownership pass.
+func TestCreateWorkerPod_ClaudeHomeIsWorkerWritable(t *testing.T) {
+	s, _, _ := newTestServer(t)
+	origin := newTestOriginRepo(t)
+
+	// Pre-created 0755, the way every session dispatched before this fix was:
+	// MkdirAll alone would leave it exactly that way.
+	home := s.git.ClaudeHomePath("task-1")
+	if err := os.MkdirAll(home, 0o755); err != nil {
+		t.Fatalf("seed claude home: %v", err)
+	}
+
+	if _, err := s.CreateWorkerPod(context.Background(), &agentfleetv1.CreateWorkerPodRequest{
+		SessionId: "task-1", Repo: "dream-analyst", RepoUrl: origin, BaseBranch: "main",
+	}); err != nil {
+		t.Fatalf("CreateWorkerPod: %v", err)
+	}
+
+	info, err := os.Stat(home)
+	if err != nil {
+		t.Fatalf("stat claude home: %v", err)
+	}
+	if info.Mode().Perm() != 0o777 {
+		t.Errorf("claude-home must be writable by the worker's uid, got %v", info.Mode().Perm())
+	}
+}
+
 func TestTearDownSession_Worker_NoopWhenNothingToTearDown(t *testing.T) {
 	s, _, _ := newTestServer(t)
 	resp, err := s.TearDownSession(context.Background(), &agentfleetv1.TearDownSessionRequest{

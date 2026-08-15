@@ -169,6 +169,36 @@ func (m *Manager) ClaudeHomePath(sessionID string) string {
 	return filepath.Join(m.root, "claude-home", sessionID)
 }
 
+// EnsureClaudeHome creates a session's claude-home and makes it writable by the
+// worker container, which runs as uid 1000 while everything this process
+// creates is root's (main.go's umask(0) comment covers the policy).
+//
+// It is not optional, and it is not part of the fleet-shared sync: the worker's
+// entrypoint copies its plugins in here on first boot and the Agent SDK writes
+// its whole resume state here. Left root-owned 0755, the copy fails with
+// "cp: cannot create directory '/claude-home/plugins': Permission denied" and
+// `set -e` kills the container before the session ever starts — a crash loop
+// that says nothing about the actual fault. Confirmed live 2026-08-15.
+//
+// fsGroup does not cover this the way it covers the per-session volume: the
+// shared PVC is RWX Longhorn, which is NFS underneath, and kubelet applies no
+// ownership pass to it.
+//
+// Chmod as well as MkdirAll's mode, because MkdirAll is umask-filtered and does
+// nothing whatsoever to a directory that already exists — every session seeded
+// before this fix has a 0755 claude-home that would otherwise stay broken
+// across every warm.
+func (m *Manager) EnsureClaudeHome(sessionID string) error {
+	path := m.ClaudeHomePath(sessionID)
+	if err := os.MkdirAll(path, 0o777); err != nil {
+		return fmt.Errorf("mkdir claude home %s: %w", path, err)
+	}
+	if err := os.Chmod(path, 0o777); err != nil {
+		return fmt.Errorf("chmod claude home %s: %w", path, err)
+	}
+	return nil
+}
+
 // DeleteSessionDir removes a session's SDK state. Its working tree is a PVC
 // and is deleted by the k8s client, not from here — the two halves of a
 // session's disk now live on two different volumes, which is the point of
@@ -232,7 +262,10 @@ func (m *Manager) SyncFleetShared(ctx context.Context, repoURL, branch, claudeHo
 		}
 	}
 
-	if err := os.MkdirAll(claudeHomeDir, 0o755); err != nil {
+	// 0o777, matching EnsureClaudeHome — this runs first on a kind-local or
+	// test path where nothing called that yet, and a 0755 claude-home is a
+	// worker crash loop.
+	if err := os.MkdirAll(claudeHomeDir, 0o777); err != nil {
 		return fmt.Errorf("mkdir claude home %s: %w", claudeHomeDir, err)
 	}
 	// repoURL today is this same monorepo (config.FleetSharedRepoURL
