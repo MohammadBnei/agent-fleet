@@ -485,13 +485,34 @@ func (s *Store) UpdateMeta(ctx context.Context, id string, title, description *s
 // GC read. Deleting it would leave last_active_at NULL forever, and
 // `NULL < now() - interval` is NULL, so the GC would never fire for
 // anything.
+//
+// last_active_at and activity_seen deliberately count DIFFERENT things, and
+// conflating them made the startup-stall sweep (docs/adr/0040) dead code on
+// the only path that creates pods:
+//
+//   - last_active_at means "anything happened", human or pod. A human typing
+//     is a reason not to call a session idle, so every append bumps it.
+//   - activity_seen means "the POD said something" — it answers "did this
+//     pod ever come up?", which is a question about the pod alone.
+//
+// Setting activity_seen on human appends too made it unsettable-by-anything
+// -but-a-human, in the wrong direction: ReserveSlot clears it per pod, then
+// PostMessage warms and appends (that order is load-bearing, docs/adr/0048),
+// so the human's own provisioning message set it true milliseconds later.
+// `WHERE NOT activity_seen` in ListStartupStalledIDs then matched nothing,
+// ever, and a pod that never started — a bad repos.image, an unschedulable
+// node, an ImagePullBackOff — held its slot until the 30-minute idle sweep
+// instead of the 3-minute stall sweep written for exactly that case.
+//
+// OR'd rather than assigned, so a later human message cannot un-see a pod
+// that has already spoken.
 func (s *Store) TouchActive(ctx context.Context, id, from, entryType string) error {
 	_, err := s.pool.Exec(ctx, `
 		UPDATE sessions
 		SET last_active_at = now(),
 		    last_entry_from = $2,
 		    last_entry_type = $3,
-		    activity_seen = true,
+		    activity_seen = activity_seen OR $2 <> 'human',
 		    updated_at = now()
 		WHERE id = $1
 	`, id, from, entryType)
