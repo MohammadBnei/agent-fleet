@@ -1,6 +1,6 @@
 import type { Session } from "../gen/agentfleet/v1/core_pb";
 import { client } from "../connectClient";
-import { repoLabel } from "../taskKind";
+import { sessionLabel } from "../sessionLabel";
 import type { ListSummary } from "../transcript";
 import { TickBar, todoProgress } from "../components/TickBar";
 import { Collapse } from "../components/Collapse";
@@ -8,7 +8,7 @@ import { DecisionInline } from "../components/DecisionInline";
 import { NotchCard } from "../components/NotchCard";
 
 // A session with a live pod. Replaces ACTIVE_STATUSES, which named the three
-// task statuses that meant "dispatched" — all gone with the enum
+// session statuses that meant "dispatched" — all gone with the enum
 // (docs/adr/0048). Live state is derived from the row on every read, so this
 // cannot drift from the transcript the way a cached status could.
 const LIVE_STATES = new Set(["working", "blocked", "idle", "stalled", "unknown"]);
@@ -17,13 +17,13 @@ export const ACTIVE_STATES = LIVE_STATES;
 // Shared section-membership split — used by both list views so the two never
 // disagree about which bucket a session lands in.
 //
-// Every session must land in at least one bucket. TaskList.tsx carried a
+// Every session must land in at least one bucket. SessionList.tsx carried a
 // comment from whoever discovered that the hard way: a row matching no bucket
 // vanishes from both lists, which is the one place a human is supposed to see
-// it. bucketTasks.test.ts guards exactly this, and it is why `quiet` is
+// it. bucketSessions.test.ts guards exactly this, and it is why `quiet` is
 // defined as "everything not already claimed" rather than by its own
 // predicate.
-export function bucketTasks(tasks: Session[], needsYouIds: Set<string>) {
+export function bucketSessions(sessions: Session[], needsYouIds: Set<string>) {
   const out = {
     needsYou: [] as Session[],
     archived: [] as Session[],
@@ -45,8 +45,8 @@ export function bucketTasks(tasks: Session[], needsYouIds: Set<string>) {
   //
   // Assigning each session exactly once makes the buckets a partition by
   // construction: every session lands in one and only one, which is what the
-  // list needs and what bucketTasks.test.ts asserts.
-  for (const t of tasks) {
+  // list needs and what bucketSessions.test.ts asserts.
+  for (const t of sessions) {
     // 1. A pending decision outranks everything: the session is stalled until
     //    someone clicks, and surfacing that is the product's whole job.
     //    pendingDecisions is a COUNT, not the old awaiting_human boolean —
@@ -107,20 +107,13 @@ export function bucketTasks(tasks: Session[], needsYouIds: Set<string>) {
 // The PR is discoverable without storing it: the agent names its own branch,
 // and a GitHub search on that branch cannot go stale the way a column can.
 
-// Mirrors core/internal/tasks/store.go's IsPodPhaseLive — the client-side half
+// Mirrors core/internal/sessions/store.go's IsPodPhaseLive — the client-side half
 // of the same "does this session have a live pod right now" check the
 // Warm/Discuss handlers use, so ActionsMenu can show Warm vs Stop without a
 // round trip.
 export function isPodPhaseLive(phase?: string): boolean {
   return phase === "POD_PHASE_PROVISIONING" || phase === "POD_PHASE_CREATED" || phase === "POD_PHASE_SCHEDULED" || phase === "POD_PHASE_RUNNING";
 }
-
-// Matches core's own reclaim threshold (tasks.Store.ClaimNextTask reclaims a
-// claimed/running task once its heartbeat is this stale) — the dashboard's
-// "stuck" signal should fire at exactly the point a human can no longer
-// distinguish "about to be reclaimed" from "silently wedged forever" (see the
-// incident where a task sat claimed with no pod for 20+ minutes and nothing in
-// the UI showed it).
 
 // ONE badge per session, chosen by precedence.
 //
@@ -139,25 +132,25 @@ export function isPodPhaseLive(phase?: string): boolean {
 // Unchanged by the console rewrite, deliberately: docs/dashboard-spec.md §8
 // item 1 asks for the ranking to be kept and given more visual weight, which is
 // the callers' job, not this function's.
-export function sessionBadge(task: Session): { label: string; className: string; title?: string } | null {
-  const stale = staleBadge(task);
-  const phase = task.podPhase?.replace("POD_PHASE_", "");
+export function sessionBadge(session: Session): { label: string; className: string; title?: string } | null {
+  const stale = staleBadge(session);
+  const phase = session.podPhase?.replace("POD_PHASE_", "");
 
   // 1. Needs a human. Always wins: nothing else about this session matters
   //    until someone clicks, and this is the product's whole job.
-  if (task.liveState === "blocked") {
+  if (session.liveState === "blocked") {
     return { label: "NEEDS YOU", className: "text-error border-pink-line bg-pink-chip", title: "waiting on your decision" };
   }
   // 2. Something is wrong, in order of how wrong.
   if (phase === "CRASHED") {
-    return { label: "CRASHED", className: "text-error border-pink-line bg-pink-chip", title: task.podMessage || task.lastError || undefined };
+    return { label: "CRASHED", className: "text-error border-pink-line bg-pink-chip", title: session.podMessage || session.lastError || undefined };
   }
   if (stale) return stale;
-  if (task.liveState === "stalled") {
+  if (session.liveState === "stalled") {
     return { label: "STALLED", className: "text-warning border-orange-line bg-orange-bg", title: "no response since the last thing sent to the agent" };
   }
   // 3. Finished while nobody was looking — the "welcome back" state.
-  if (task.liveState === "done") {
+  if (session.liveState === "done") {
     return { label: "DONE", className: "text-success border-green-line bg-green-bg", title: "finished while you weren't looking — opening it marks it seen" };
   }
   // 4. Healthy and in motion. PROVISIONING keeps its sub-step inline: the
@@ -165,17 +158,17 @@ export function sessionBadge(task: Session): { label: string; className: string;
   //    exact gap that made a real incident invisible.
   if (phase === "PROVISIONING") {
     return {
-      label: task.podMessage ? `PROVISIONING: ${task.podMessage}` : "PROVISIONING",
+      label: session.podMessage ? `PROVISIONING: ${session.podMessage}` : "PROVISIONING",
       className: "text-info border-info/45 bg-info/10 animate-pulse",
     };
   }
-  if (task.liveState === "working") {
+  if (session.liveState === "working") {
     return { label: "WORKING", className: "text-info border-info/45 bg-info/10", title: `pod ${phase?.toLowerCase() ?? "live"}` };
   }
-  if (task.liveState === "unknown") {
+  if (session.liveState === "unknown") {
     return { label: "STARTING", className: "text-info border-info/45 bg-info/10", title: "pod is up, the agent hasn't spoken yet" };
   }
-  if (task.liveState === "idle") {
+  if (session.liveState === "idle") {
     return { label: "IDLE", className: "text-dim2 border-line bg-transparent", title: "pod live, nothing in flight" };
   }
   // 5. No live pod. The five workflow statuses that used to be rendered here
@@ -184,18 +177,18 @@ export function sessionBadge(task: Session): { label: string; className: string;
   //    reclaim to be FAILED (final) from, and a proposal is a row in a
   //    different table with its own view. What is left is genuinely about the
   //    session rather than a workflow position.
-  if (task.archivedAt) {
+  if (session.archivedAt) {
     return { label: "ARCHIVED", className: "text-dim2 border-line bg-transparent", title: "you marked this finished" };
   }
-  if (task.sweptAt) {
+  if (session.sweptAt) {
     return {
       label: "SWEPT",
       className: "text-dim2 border-line bg-transparent",
       title: "working directory reclaimed by the retention GC — readable, not resumable",
     };
   }
-  if (task.lastError) {
-    return { label: "ERROR", className: "text-warning border-orange-line bg-orange-bg", title: task.lastError };
+  if (session.lastError) {
+    return { label: "ERROR", className: "text-warning border-orange-line bg-orange-bg", title: session.lastError };
   }
   return null;
 }
@@ -215,9 +208,9 @@ function staleBadge(_: Session): { label: string; className: string; title?: str
 // How long a session has been blocked — the notch label's "· 4m". This is the
 // product's real cost (a blocked session is stalled until a human clicks), so
 // it's stated on the card rather than left to be inferred from a heartbeat.
-export function blockedForLabel(task: Session): string | null {
-  if (!task.lastActiveAt) return null;
-  const ms = Date.now() - new Date(task.lastActiveAt).getTime();
+export function blockedForLabel(session: Session): string | null {
+  if (!session.lastActiveAt) return null;
+  const ms = Date.now() - new Date(session.lastActiveAt).getTime();
   if (Number.isNaN(ms) || ms < 0) return null;
   const minutes = Math.floor(ms / 60_000);
   if (minutes < 1) return "just now";
@@ -265,20 +258,20 @@ function DeleteButton({ onDelete }: { onDelete: () => void }) {
 // session to find out which — the latency that costs is the product's whole
 // point (docs/dashboard-spec.md §8 item 3).
 function NeedsYouCard({
-  task,
+  session,
   summary,
   onSelect,
   onDelete,
   reload,
 }: {
-  task: Session;
+  session: Session;
   summary?: ListSummary;
   onSelect: () => void;
   onDelete: () => void;
   reload: () => void;
 }) {
   const todos = summary?.todos ?? [];
-  const blockedFor = blockedForLabel(task);
+  const blockedFor = blockedForLabel(session);
   const isProposal = false;
 
   return (
@@ -288,15 +281,15 @@ function NeedsYouCard({
         tone="pink"
       >
         <div className="flex items-center gap-3 px-4 pt-3.5 pb-2.5 flex-wrap">
-          <span className="text-base font-semibold">#{task.id.slice(0, 6)}</span>
+          <span className="text-base font-semibold">#{session.id.slice(0, 6)}</span>
           <button
             type="button"
             onClick={onSelect}
             className="text-base text-left hover:text-primary cursor-pointer min-w-0 break-words"
           >
-            {task.description}
+            {sessionLabel(session)}
           </button>
-          <span className="text-xs text-dim2">{repoLabel(task)}</span>
+          <span className="text-xs text-dim2">{session.repo}</span>
           
           {todos.length > 0 && (
             <div className="ml-auto flex items-center gap-2">
@@ -305,7 +298,7 @@ function NeedsYouCard({
             </div>
           )}
         </div>
-        <DecisionInline task={task} summary={summary} onOpenSession={onSelect} reload={reload} />
+        <DecisionInline session={session} summary={summary} onOpenSession={onSelect} reload={reload} />
       </NotchCard>
       <DeleteButton onDelete={onDelete} />
     </div>
@@ -313,24 +306,24 @@ function NeedsYouCard({
 }
 
 // One row of "finished while you were away" — green for a real result, orange
-// for a failure. A failure gets the two things a human actually needs next:
-// the log that says why, and a retry.
+// for a failure. A failure gets the log that says why; the retry button that
+// used to sit next to it is gone with docs/adr/0048's removal of
+// failed_permanently — there is no dead state to resurrect a session from,
+// and retrying is just sending it another message.
 function FinishedRow({
-  task,
+  session,
   onSelect,
-  onRetry,
   onOpenLogs,
   onDelete,
   reload,
 }: {
-  task: Session;
+  session: Session;
   onSelect: () => void;
-  onRetry: () => void;
   onOpenLogs: () => void;
   onDelete: () => void;
   reload: () => void;
 }) {
-  const failed = task.podPhase === "POD_PHASE_CRASHED";
+  const failed = session.podPhase === "POD_PHASE_CRASHED";
   const pr = null as { label: string; className: string } | null;
   return (
     <div className="relative">
@@ -340,28 +333,23 @@ function FinishedRow({
         }`}
       >
         <span className={`w-[7px] h-[7px] rounded-full flex-none ${failed ? "bg-warning" : "bg-success"}`} />
-        <span className="text-base font-semibold">#{task.id.slice(0, 6)}</span>
+        <span className="text-base font-semibold">#{session.id.slice(0, 6)}</span>
         <button type="button" onClick={onSelect} className="text-base text-left hover:text-primary cursor-pointer min-w-0 break-words">
-          {task.description}
+          {sessionLabel(session)}
         </button>
-        <span className="text-xs text-dim2">{repoLabel(task)}</span>
+        <span className="text-xs text-dim2">{session.repo}</span>
         {failed ? (
-          <span className="ml-auto text-sm text-warning min-w-0 truncate" title={task.lastError}>
+          <span className="ml-auto text-sm text-warning min-w-0 truncate" title={session.lastError}>
             {"crashed"}
-            {task.lastError ? ` · ${task.lastError}` : ""}
+            {session.lastError ? ` · ${session.lastError}` : ""}
           </span>
         ) : (
           <span className="ml-auto text-sm text-dim">{pr ? pr.label : "no PR"}</span>
         )}
         {failed ? (
-          <>
-            <button type="button" onClick={onOpenLogs} className="flex-none border border-acc-line px-3 py-1 text-sm hover:border-primary hover:text-primary">
-              read log
-            </button>
-            <button type="button" onClick={onRetry} className="flex-none border border-acc-line px-3 py-1 text-sm hover:border-primary hover:text-primary">
-              retry
-            </button>
-          </>
+          <button type="button" onClick={onOpenLogs} className="flex-none border border-acc-line px-3 py-1 text-sm hover:border-primary hover:text-primary">
+            read log
+          </button>
         ) : null}
         {/*
           This row is exactly the "I'm done with this" moment, and until now
@@ -372,7 +360,7 @@ function FinishedRow({
         <button
           type="button"
           onClick={() => {
-            void client.archiveSession({ sessionId: task.id }).then(reload);
+            void client.archiveSession({ sessionId: session.id }).then(reload);
           }}
           className="flex-none border border-acc-line px-3 py-1 text-sm hover:border-primary hover:text-primary"
         >
@@ -388,13 +376,13 @@ function FinishedRow({
 // live tool line is what makes "is it actually doing something" answerable
 // without opening the session.
 function WorkingRow({
-  task,
+  session,
   summary,
   last,
   onSelect,
   onDelete,
 }: {
-  task: Session;
+  session: Session;
   summary?: ListSummary;
   last: boolean;
   onSelect: () => void;
@@ -402,9 +390,9 @@ function WorkingRow({
 }) {
   const todos = summary?.todos ?? [];
   const inFlight = summary?.inFlight ?? null;
-  const provisioning = task.podPhase === "POD_PHASE_PROVISIONING";
-  const live = isPodPhaseLive(task.podPhase) && !provisioning;
-  const stale = staleBadge(task);
+  const provisioning = session.podPhase === "POD_PHASE_PROVISIONING";
+  const live = isPodPhaseLive(session.podPhase) && !provisioning;
+  const stale = staleBadge(session);
 
   return (
     <div className={`relative ${last ? "" : "border-b border-line3"}`}>
@@ -414,16 +402,16 @@ function WorkingRow({
             stale ? "bg-error" : live ? "bg-info animate-fpulse" : "border border-dim2"
           }`}
         />
-        <span className={`text-sm flex-none ${live ? "text-text2" : "text-dim2"}`}>#{task.id.slice(0, 6)}</span>
+        <span className={`text-sm flex-none ${live ? "text-text2" : "text-dim2"}`}>#{session.id.slice(0, 6)}</span>
         <button
           type="button"
           onClick={onSelect}
           className={`text-base text-left hover:text-primary cursor-pointer min-w-0 truncate ${live ? "" : "text-dim"}`}
         >
-          {task.description}
+          {sessionLabel(session)}
         </button>
-        <span className="text-xs text-dim2 flex-none">{repoLabel(task)}</span>
-        {task.permissionMode === "bypassPermissions" && (
+        <span className="text-xs text-dim2 flex-none">{session.repo}</span>
+        {session.permissionMode === "bypassPermissions" && (
           <span
             className="text-xs text-warning border border-orange-line px-1.5 py-px flex-none"
             title="every tool call runs without asking"
@@ -435,7 +423,7 @@ function WorkingRow({
         {provisioning ? (
           <>
             <span className="ml-auto text-sm text-dim2 min-w-0 truncate">
-              booting{task.podMessage ? ` · ${task.podMessage}` : ""}
+              booting{session.podMessage ? ` · ${session.podMessage}` : ""}
             </span>
             <span className="w-[105px] h-[3px] bar-provisioning flex-none" />
             <span className="text-xs text-dim2 w-6 text-right flex-none">—</span>
@@ -467,21 +455,21 @@ function WorkingRow({
 // honest and the row is still reachable, not to be read.
 function QuietGroup({
   title,
-  tasks,
+  sessions,
   onSelect,
 }: {
   title: string;
-  tasks: Session[];
+  sessions: Session[];
   onSelect: (id: string) => void;
 }) {
-  if (tasks.length === 0) return null;
+  if (sessions.length === 0) return null;
   return (
     <Collapse
-      summary={<span className="text-xs text-dim2">▸ {title} · {tasks.length}</span>}
+      summary={<span className="text-xs text-dim2">▸ {title} · {sessions.length}</span>}
       summaryClassName="py-1"
       contentClassName="pl-3 py-1 flex flex-col gap-1"
     >
-      {tasks.map((t) => {
+      {sessions.map((t) => {
         const badge = sessionBadge(t);
         return (
           <button
@@ -491,7 +479,7 @@ function QuietGroup({
             className="flex items-center gap-2.5 text-left hover:text-primary cursor-pointer"
           >
             <span className="text-xs text-dim2 flex-none">#{t.id.slice(0, 6)}</span>
-            <span className="text-sm text-dim min-w-0 truncate flex-1">{t.description}</span>
+            <span className="text-sm text-dim min-w-0 truncate flex-1">{sessionLabel(t)}</span>
             {badge && (
               <span className={`text-2xs px-1 border tracking-wide flex-none ${badge.className}`} title={badge.title}>
                 {badge.label}
@@ -504,36 +492,34 @@ function QuietGroup({
   );
 }
 
-export function TaskList({
-  tasks,
+export function SessionList({
+  sessions,
   summaries,
   needsYouIds,
   onSelect,
   onDelete,
-  onRetry,
   onOpenLogs,
   reload,
 }: {
-  tasks: Session[];
+  sessions: Session[];
   summaries: Map<string, ListSummary>;
   needsYouIds: Set<string>;
   onSelect: (id: string) => void;
   onDelete: (id: string) => void;
-  onRetry: (id: string) => void;
   onOpenLogs: (id: string) => void;
   reload: () => void;
 }) {
-  // Every bucket bucketTasks returns must be rendered somewhere below.
+  // Every bucket bucketSessions returns must be rendered somewhere below.
   //
   // `archived` and `swept` were computed and then dropped, which is the exact
   // failure the function's own comment warns about one level up: a session in
   // no RENDERED group vanishes from the list entirely. Archived sessions —
   // the only ones a human has explicitly finished — were invisible on both
-  // form factors. bucketTasks.test.ts pins the coverage of the destructure so
+  // form factors. bucketSessions.test.ts pins the coverage of the destructure so
   // the next bucket added cannot be silently dropped the same way.
-  const { needsYou, working, finished, stalled, quiet, archived, swept } = bucketTasks(tasks, needsYouIds);
+  const { needsYou, working, finished, stalled, quiet, archived, swept } = bucketSessions(sessions, needsYouIds);
 
-  if (tasks.length === 0) {
+  if (sessions.length === 0) {
     return <div className="p-5 text-base text-dim">No sessions.</div>;
   }
 
@@ -545,7 +531,7 @@ export function TaskList({
           {needsYou.map((t) => (
             <NeedsYouCard
               key={t.id}
-              task={t}
+              session={t}
               summary={summaries.get(t.id)}
               onSelect={() => onSelect(t.id)}
               onDelete={() => onDelete(t.id)}
@@ -561,9 +547,8 @@ export function TaskList({
           {finished.map((t) => (
             <FinishedRow
               key={t.id}
-              task={t}
+              session={t}
               onSelect={() => onSelect(t.id)}
-              onRetry={() => onRetry(t.id)}
               onOpenLogs={() => onOpenLogs(t.id)}
               onDelete={() => onDelete(t.id)}
               reload={reload}
@@ -579,7 +564,7 @@ export function TaskList({
             {working.map((t, i) => (
               <WorkingRow
                 key={t.id}
-                task={t}
+                session={t}
                 summary={summaries.get(t.id)}
                 last={i === working.length - 1}
                 onSelect={() => onSelect(t.id)}
@@ -593,14 +578,14 @@ export function TaskList({
       {/*
         The collapsed tail. "proposed by audits" used to sit here fed by a
         hardcoded empty array — a group that could never contain anything,
-        left over from when a proposal was a task row. Proposals are their own
+        left over from when a proposal was a session row. Proposals are their own
         table with their own view on the Audits page now (docs/adr/0048).
       */}
       <div className="flex flex-col gap-1 mt-3.5">
-        <QuietGroup title="stalled" tasks={stalled} onSelect={onSelect} />
-        <QuietGroup title="idle" tasks={quiet} onSelect={onSelect} />
-        <QuietGroup title="archived" tasks={archived} onSelect={onSelect} />
-        <QuietGroup title="swept · readable, not resumable" tasks={swept} onSelect={onSelect} />
+        <QuietGroup title="stalled" sessions={stalled} onSelect={onSelect} />
+        <QuietGroup title="idle" sessions={quiet} onSelect={onSelect} />
+        <QuietGroup title="archived" sessions={archived} onSelect={onSelect} />
+        <QuietGroup title="swept · readable, not resumable" sessions={swept} onSelect={onSelect} />
       </div>
     </div>
   );

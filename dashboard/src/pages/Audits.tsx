@@ -7,7 +7,7 @@ import { Modal } from "../components/Modal";
 import { useMediaQuery } from "../useMediaQuery";
 
 // Scheduled audits as a top-level view rather than a header modal (docs/adr/
-// 0035 shipped them as one). A run lands in the task list as `proposed` and
+// 0035 shipped them as one). A run lands in the session list as `proposed` and
 // waits for a human, so this page also carries the approve/dismiss for those.
 //
 // Schedule is an interval, NOT cron: db/migrations/000006 records the reason —
@@ -184,15 +184,15 @@ function auditActions(
 
 export function Audits({
   proposals,
-  onSelectTask,
-  reloadTasks,
+  onSelectSession,
+  reloadSessions,
 }: {
   // Rows from the `proposals` table, not sessions. A proposal has no pod, no
   // transcript and no worktree until a human opens it — which is the point:
   // it is the gate in front of a machine-initiated run (docs/adr/0048).
   proposals: Proposal[];
-  onSelectTask: (id: string) => void;
-  reloadTasks: () => void;
+  onSelectSession: (id: string) => void;
+  reloadSessions: () => void;
 }) {
   const isDesktop = useMediaQuery("(min-width: 640px)");
   const [audits, setAudits] = useState<ScheduledAudit[]>([]);
@@ -229,7 +229,7 @@ export function Audits({
     setBusy(true);
     setError(null);
     fn()
-      .then(() => reloadTasks())
+      .then(() => reloadSessions())
       .catch((err: Error) => setError(err.message))
       .finally(() => setBusy(false));
   };
@@ -257,8 +257,8 @@ export function Audits({
         <h2 className="text-base font-semibold">Scheduled audits</h2>
         {isDesktop && (
           <span className="text-xs text-dim2">
-            recurring tasks · a run lands in the task list as <span className="text-primary">proposed</span> and waits
-            for you
+            recurring checks · a run lands below as a <span className="text-primary">proposal</span> and waits for
+            you to open it as a session
           </span>
         )}
         <button
@@ -274,7 +274,7 @@ export function Audits({
         Proposals aren't audit rows — they're this page's real to-do.
 
         This block never rendered: App.tsx fed it a permanently-empty memo left
-        over from when a proposal was a task row with status='proposed'. So the
+        over from when a proposal was a session row with status='proposed'. So the
         entire human gate in front of machine-initiated runs was unreachable
         from the UI, and the two RPCs behind it had no caller. It now reads the
         `proposals` table via ListProposals.
@@ -305,7 +305,7 @@ export function Audits({
                     onClick={() =>
                       proposeAct(async () => {
                         const res = await client.openFromProposal({ proposalId: p.id });
-                        if (res.session) onSelectTask(res.session.id);
+                        if (res.session) onSelectSession(res.session.id);
                       })
                     }
                     className="flex-none bg-primary text-primary-content px-3.5 py-1.5 text-sm font-semibold disabled:opacity-50"

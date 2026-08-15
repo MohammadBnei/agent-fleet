@@ -476,6 +476,48 @@ func TestListRetentionExpired_NeverIncludesALivePod(t *testing.T) {
 	}
 }
 
+// description is nullable in the schema and Session.Description is a plain
+// string, so a single NULL row failed the scan — and List() returns one error
+// for the whole query, so that one row emptied the console, the reconcile
+// loop's view of the fleet, and the live-state gauge at once. Create() writes
+// '' rather than NULL, which is exactly why this went unnoticed: docs/adr/0048
+// made description a vestigial label nothing sets on purpose any more, so
+// "every writer passes a non-NULL" is a convention, not a constraint.
+//
+// Found by seeding a row with the column omitted, which is what any hand-run
+// INSERT does.
+func TestList_SurvivesANullDescription(t *testing.T) {
+	ctx := context.Background()
+	pool := dbtest.NewPool(t)
+	store := NewStore(pool)
+
+	var id string
+	if err := pool.QueryRow(ctx,
+		`INSERT INTO sessions (repo, title) VALUES ('agent-fleet', 'no description') RETURNING id`,
+	).Scan(&id); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+
+	if _, err := store.Get(ctx, id); err != nil {
+		t.Fatalf("Get with a NULL description: %v", err)
+	}
+	rows, err := store.List(ctx, 100)
+	if err != nil {
+		t.Fatalf("List with a NULL description in the table: %v", err)
+	}
+	if !contains(ids(rows), id) {
+		t.Error("the NULL-description session is missing from List")
+	}
+}
+
+func ids(rows []Session) []string {
+	out := make([]string, len(rows))
+	for i, r := range rows {
+		out[i] = r.ID
+	}
+	return out
+}
+
 func contains(ids []string, id string) bool {
 	for _, v := range ids {
 		if v == id {

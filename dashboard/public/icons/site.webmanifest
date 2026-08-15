@@ -46,7 +46,7 @@
       "url": "/?filter=blocked"
     },
     {
-      "name": "New task",
+      "name": "New session",
       "url": "/?new=1"
     }
   ]

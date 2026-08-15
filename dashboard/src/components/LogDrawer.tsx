@@ -7,7 +7,7 @@ import { Modal } from "./Modal";
 // the Loki client landed and had no UI caller at all — the reason a session had
 // gone quiet was only reachable by someone with cluster access. `task_id` is a
 // real Loki stream label (Alloy promotes the agent-fleet.dev/task-id pod
-// label), so a per-task query genuinely works, including for the e2e/app pods
+// label), so a per-session query genuinely works, including for the e2e/app pods
 // that don't log JSON.
 
 const LEVEL_COLOR: Record<string, string> = {

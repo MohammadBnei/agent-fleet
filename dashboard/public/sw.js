@@ -3,7 +3,7 @@
 // This app is a live operator console, which decides everything below: it exists
 // to make an installable home-screen app out of the dashboard, NOT to work
 // offline in any meaningful sense. Caching fleet state would be actively harmful —
-// a human acting on a cached task list would be answering a decision that may
+// a human acting on a cached session list would be answering a decision that may
 // already be resolved. So:
 //
 //   * only same-origin GETs are touched. Every ConnectRPC call is a POST to

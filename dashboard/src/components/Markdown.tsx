@@ -1,6 +1,15 @@
-import { memo, useMemo } from "react";
+import { lazy, memo, Suspense, useMemo } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
-import { MermaidDiagram } from "./MermaidDiagram";
+
+// Lazy, because mermaid is the single largest thing the dashboard ships and
+// almost nothing renders a diagram. Imported statically it put mermaid's core
+// (plus its top-level mermaid.initialize()) in the first-visit chunk of every
+// session that renders any markdown at all — which is all of them. Its own
+// diagram renderers, cytoscape and katex were already separate chunks; this is
+// the part that wasn't.
+const MermaidDiagram = lazy(() =>
+  import("./MermaidDiagram").then((m) => ({ default: m.MermaidDiagram })),
+);
 
 // Hand-styled to match the existing text-sm text-base-content
 // message-bubble baseline (no @tailwindcss/typography — this app has one
@@ -39,7 +48,14 @@ function useMarkdownComponents(): Components {
       code({ className, children }) {
         const lang = /language-(\w+)/.exec(className ?? "")?.[1];
         const text = String(children).replace(/\n$/, "");
-        if (lang === "mermaid") return <MermaidDiagram code={text} />;
+        // fallback={null}: the diagram appears when its chunk lands. A
+        // spinner here would flash on every fence in a long transcript.
+        if (lang === "mermaid")
+          return (
+            <Suspense fallback={null}>
+              <MermaidDiagram code={text} />
+            </Suspense>
+          );
         if (lang) {
           return (
             <pre className="bg-base-300/40 rounded-md p-2 overflow-x-auto font-mono text-xs my-2">

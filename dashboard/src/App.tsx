@@ -1,18 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { TaskList, ACTIVE_STATES } from "./pages/TaskList";
-import { TaskDetail } from "./pages/TaskDetail";
+import { SessionList, ACTIVE_STATES } from "./pages/SessionList";
+import { SessionDetail } from "./pages/SessionDetail";
 import { Files } from "./pages/Files";
 import { Audits } from "./pages/Audits";
 import { Observability } from "./pages/Observability";
-import { NewTaskDialog } from "./components/NewTaskDialog";
+import { NewSessionDialog } from "./components/NewSessionDialog";
 import { SettingsMenu } from "./components/SettingsMenu";
 import { Segmented } from "./components/Segmented";
-import { MobileTaskList } from "./mobile/MobileTaskList";
-import { MobileTaskDetail } from "./mobile/MobileTaskDetail";
+import { MobileSessionList } from "./mobile/MobileSessionList";
+import { MobileSessionDetail } from "./mobile/MobileSessionDetail";
 import { client } from "./connectClient";
 import type { Session } from "./gen/agentfleet/v1/core_pb";
 import type { Proposal } from "./gen/agentfleet/v1/dashboard_pb";
 import { listSummary, type ListSummary } from "./transcript";
+import { sessionLabel } from "./sessionLabel";
 import { ErrorModal } from "./components/ErrorModal";
 import { ConfirmModal } from "./components/ConfirmModal";
 import { LogDrawer } from "./components/LogDrawer";
@@ -21,30 +22,38 @@ import { pollVisible } from "./pollVisible";
 import { useTheme } from "./useTheme";
 
 // No router library (see docs/adr/0013's plan) — state mirrored to
-// ?view=/?task= so a session is still bookmarkable/shareable without pulling
+// ?view=/?session= so a session is still bookmarkable/shareable without pulling
 // in react-router for this surface.
-function readTaskIdFromUrl(): string | null {
-  return new URLSearchParams(window.location.search).get("task");
+//
+// ?task= is still read, and ?view=tasks still resolves: every link shared
+// before docs/adr/0048's rename carries them, and a bookmark that silently
+// opens the wrong thing is worse than one that 404s. Only ?session= is
+// written, so a legacy param disappears the first time the URL is pushed.
+function readSessionIdFromUrl(): string | null {
+  const p = new URLSearchParams(window.location.search);
+  return p.get("session") ?? p.get("task");
 }
 
-export type View = "tasks" | "audits" | "files" | "observability";
+export type View = "sessions" | "audits" | "files" | "observability";
 
 // The manifest's app shortcuts (icons/site.webmanifest) land here. Read once on
 // mount: they're an entry point, not persistent state, and the params are
 // dropped from the URL as soon as they've been honoured so a refresh doesn't
 // re-trigger them.
-function readShortcut(): { needsYouOnly: boolean; newTask: boolean } {
+function readShortcut(): { needsYouOnly: boolean; newSession: boolean } {
   const p = new URLSearchParams(window.location.search);
-  return { needsYouOnly: p.get("filter") === "blocked", newTask: p.get("new") === "1" };
+  return { needsYouOnly: p.get("filter") === "blocked", newSession: p.get("new") === "1" };
 }
 
 function readViewFromUrl(): View {
   const v = new URLSearchParams(window.location.search).get("view");
-  return v === "files" || v === "audits" || v === "observability" ? v : "tasks";
+  // "tasks" is the pre-rename name of this view and falls through to the
+  // default, which is the same place — listed so it reads as deliberate.
+  return v === "files" || v === "audits" || v === "observability" ? v : "sessions";
 }
 
 const NAV: readonly { value: View; label: string }[] = [
-  { value: "tasks", label: "tasks" },
+  { value: "sessions", label: "sessions" },
   { value: "audits", label: "audits" },
   { value: "files", label: "files" },
   { value: "observability", label: "observability" },
@@ -52,7 +61,7 @@ const NAV: readonly { value: View; label: string }[] = [
 
 // Mobile's bottom bar has less room; "trees" is the console mockup's own label.
 const MOBILE_NAV: readonly { value: View; label: string }[] = [
-  { value: "tasks", label: "tasks" },
+  { value: "sessions", label: "sessions" },
   { value: "audits", label: "audits" },
   { value: "files", label: "files" },
   // Same shortening rule the "trees" label above follows — the bottom bar
@@ -62,34 +71,34 @@ const MOBILE_NAV: readonly { value: View; label: string }[] = [
 
 // Plain polling, not a stream — a second live feed just for the list is
 // unjustified scope (docs/adr/0014); the detail view's StreamTranscript RPC is
-// where "live" actually matters. Lives here rather than inside TaskList so the
+// where "live" actually matters. Lives here rather than inside SessionList so the
 // detail view can share the same fetched list instead of polling again.
 const POLL_INTERVAL_MS = 5000;
 
 export default function App() {
   // Matches Tailwind's `sm:`. Desktop and mobile detail views used to both
-  // mount, CSS-hidden — each ran its own useTaskDetail, so two independent
-  // StreamTranscript subscriptions polled the same task concurrently whenever
+  // mount, CSS-hidden — each ran its own useSessionDetail, so two independent
+  // StreamTranscript subscriptions polled the same session concurrently whenever
   // one was open. Gating the mount on the real viewport is what stops that.
   const isDesktop = useMediaQuery("(min-width: 640px)");
   const [theme, setTheme] = useTheme();
   const [view, setView] = useState<View>(readViewFromUrl);
-  const [selectedId, setSelectedId] = useState<string | null>(readTaskIdFromUrl);
-  const [tasks, setTasks] = useState<Session[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(readSessionIdFromUrl);
+  const [sessions, setSessions] = useState<Session[]>([]);
   const [proposals, setProposals] = useState<Proposal[]>([]);
-  const [tasksError, setTasksError] = useState<string | null>(null);
+  const [sessionsError, setSessionsError] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [summaries, setSummaries] = useState<Map<string, ListSummary>>(new Map());
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
-  const [logTaskId, setLogTaskId] = useState<string | null>(null);
+  const [logSessionId, setLogSessionId] = useState<string | null>(null);
   const [shortcut] = useState(readShortcut);
   const [needsYouOnly, setNeedsYouOnly] = useState(shortcut.needsYouOnly);
 
   // Honour the shortcut, then scrub its params so a reload lands on the plain
   // console rather than silently re-filtering or reopening the form.
   useEffect(() => {
-    if (!shortcut.needsYouOnly && !shortcut.newTask) return;
+    if (!shortcut.needsYouOnly && !shortcut.newSession) return;
     const url = new URL(window.location.href);
     url.searchParams.delete("filter");
     url.searchParams.delete("new");
@@ -106,19 +115,19 @@ export default function App() {
   // same modal carries those action errors, and a poll succeeding 5s later
   // would yank a delete failure off the screen before it was read.
   const pollFailures = useRef(0);
-  const loadTasks = useCallback(() => {
+  const loadSessions = useCallback(() => {
     return client
       .listSessions({})
       .then((res) => {
         pollFailures.current = 0;
-        setTasks(res.sessions);
+        setSessions(res.sessions);
       })
       .catch((err: Error) => {
-        if (++pollFailures.current >= 2) setTasksError(err.message);
+        if (++pollFailures.current >= 2) setSessionsError(err.message);
       });
   }, []);
 
-  useEffect(() => pollVisible(loadTasks, POLL_INTERVAL_MS), [loadTasks]);
+  useEffect(() => pollVisible(loadSessions, POLL_INTERVAL_MS), [loadSessions]);
 
   // Proposals are a separate table with no pod path of their own
   // (docs/adr/0048), so they need their own fetch rather than being filtered
@@ -138,21 +147,21 @@ export default function App() {
 
   // Straight off the already-polled list — core's activityTrackingStore
   // maintains awaiting_human on every permission_request/question append and
-  // clears it on the matching resolution, so this needs no per-task fetch.
+  // clears it on the matching resolution, so this needs no per-session fetch.
   const needsYouIds = useMemo(
-    () => new Set(tasks.filter((t) => t.pendingDecisions > 0).map((t) => t.id)),
-    [tasks],
+    () => new Set(sessions.filter((t) => t.pendingDecisions > 0).map((t) => t.id)),
+    [sessions],
   );
 
   // One transcript fetch per active session, feeding everything both list views
-  // show beyond the Task row itself: the todo bar, the in-flight tool line, and
+  // show beyond the Session row itself: the todo bar, the in-flight tool line, and
   // — the point of the rewrite — the actual pending decision, rendered inline so
   // a blocked session can be answered without opening it. Scoped to
   // ACTIVE_STATES, so it's bounded by the fleet's concurrency cap of 5, on the
-  // same 5s cadence as loadTasks. No new RPC: this fetch already existed for the
+  // same 5s cadence as loadSessions. No new RPC: this fetch already existed for the
   // todo bars alone.
   useEffect(() => {
-    const active = tasks.filter((t) => ACTIVE_STATES.has(t.liveState));
+    const active = sessions.filter((t) => ACTIVE_STATES.has(t.liveState));
     if (active.length === 0) {
       setSummaries(new Map());
       return;
@@ -172,67 +181,70 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [tasks]);
+  }, [sessions]);
 
   function pushUrl(next: View, sessionId: string | null) {
     const url = new URL(window.location.href);
-    if (next !== "tasks") url.searchParams.set("view", next);
+    if (next !== "sessions") url.searchParams.set("view", next);
     else url.searchParams.delete("view");
-    if (sessionId) url.searchParams.set("task", sessionId);
-    else url.searchParams.delete("task");
+    if (sessionId) url.searchParams.set("session", sessionId);
+    else url.searchParams.delete("session");
+    // Unconditionally, so a legacy ?task= that was just resolved into
+    // selectedId does not linger alongside the ?session= that replaced it —
+    // two ids in one URL is the kind of thing that resolves differently in
+    // the next reader.
+    url.searchParams.delete("task");
     window.history.pushState({}, "", url);
   }
 
-  function selectTask(id: string) {
+  function selectSession(id: string) {
     setSelectedId(id);
-    setView("tasks");
-    pushUrl("tasks", id);
+    setView("sessions");
+    pushUrl("sessions", id);
   }
 
   // The console's detail view is full-width, so unlike the old split-pane
   // layout every form factor now has a real "back to the list".
   function clearSelection() {
     setSelectedId(null);
-    pushUrl(view === "tasks" ? "tasks" : view, null);
+    pushUrl(view === "sessions" ? "sessions" : view, null);
   }
 
   function selectView(next: View) {
     setView(next);
-    // Leaving the tasks view drops the open session: the nav is between
-    // top-level places, and coming back to a stale ?task= would be surprising.
-    const keepTask = next === "tasks" ? selectedId : null;
-    if (next !== "tasks") setSelectedId(null);
-    pushUrl(next, keepTask);
+    // Leaving the sessions view drops the open session: the nav is between
+    // top-level places, and coming back to a stale ?session= would be surprising.
+    const keepSession = next === "sessions" ? selectedId : null;
+    if (next !== "sessions") setSelectedId(null);
+    pushUrl(next, keepSession);
   }
 
-  // Force-tears-down any live session then soft-deletes the task. Confirmation
+  // Force-tears-down any live session then soft-deletes the session. Confirmation
   // is a ConfirmModal, not window.confirm (native dialogs can't be themed and
   // block the render thread).
-  function deleteTask(id: string) {
+  function deleteSession(id: string) {
     setPendingDeleteId(id);
   }
 
-  function confirmDeleteTask() {
+  function confirmDeleteSession() {
     const id = pendingDeleteId;
     setPendingDeleteId(null);
     if (!id) return;
     client
       .deleteSession({ sessionId: id })
       .then(() => {
-        loadTasks();
+        loadSessions();
         if (id === selectedId) clearSelection();
       })
-      .catch((err: Error) => setTasksError(err.message));
+      .catch((err: Error) => setSessionsError(err.message));
   }
 
-  const retryTask = useCallback(
-    (id: string) => {
-      // Retry is deleted with failed_permanently — there is no dead state to
-      // resurrect a session from now. Sending it another message is the retry.
-      void id;
-    },
-    [loadTasks],
-  );
+  // retryTask used to live here, wired to a "retry" button on every crashed
+  // row. It was `void id;` — retry died with failed_permanently
+  // (docs/adr/0048), since nothing reclaims a session into a dead state any
+  // more and retrying is just sending it another message. Both buttons are
+  // gone with it; a control that silently does nothing is worse than no
+  // control.
 
   // The header's live census. `liveState` is server-derived (docs/adr/0040), so
   // every client agrees on what "working" means.
@@ -241,41 +253,46 @@ export default function App() {
     // pendingDecisions count counts sessions whose pod is gone (and archived
     // ones), so the badge would show work waiting on a human that no human
     // can act on. "blocked" is live-and-pending, already derived server-side.
-    const waiting = tasks.filter((t) => t.archivedAt === undefined && t.liveState === "blocked").length;
-    const working = tasks.filter((t) => ACTIVE_STATES.has(t.liveState) && t.liveState !== "blocked").length;
-    const done = tasks.filter((t) => t.liveState === "done").length;
-    return { waiting, working, done, idle: Math.max(0, tasks.length - waiting - working - done) };
-  }, [tasks]);
+    const waiting = sessions.filter((t) => t.archivedAt === undefined && t.liveState === "blocked").length;
+    const working = sessions.filter((t) => ACTIVE_STATES.has(t.liveState) && t.liveState !== "blocked").length;
+    const done = sessions.filter((t) => t.liveState === "done").length;
+    return { waiting, working, done, idle: Math.max(0, sessions.length - waiting - working - done) };
+  }, [sessions]);
 
   const repoCount = useMemo(
-    () => new Set(tasks.filter(() => true).map((t) => t.repo)).size,
-    [tasks],
+    () => new Set(sessions.filter(() => true).map((t) => t.repo)).size,
+    [sessions],
   );
 
-  const filteredTasks = useMemo(() => {
+  const filteredSessions = useMemo(() => {
     // needsYouOnly is the manifest's "Waiting on you" shortcut. Mobile already
     // opens on its needs-you bucket, so this only changes the desktop list —
     // but it narrows the shared array either way, which keeps the two honest.
+    //
+    // Same predicate as the needsYou bucket and the header count, and for the
+    // same reason: pendingDecisions is a raw count that stays above zero
+    // forever when a pod dies mid-decision, so filtering on it showed sessions
+    // nobody can act on — and hid nothing, since the shortcut's whole promise
+    // is "these are waiting on you".
     const base = needsYouOnly
-      ? tasks.filter((t) => t.pendingDecisions > 0)
-      : tasks;
+      ? sessions.filter((t) => t.archivedAt === undefined && t.liveState === "blocked")
+      : sessions;
     const q = filter.trim().toLowerCase();
     if (!q) return base;
     return base.filter(
-      (t) => t.repo.toLowerCase().includes(q) || t.description.toLowerCase().includes(q),
+      (t) => t.repo.toLowerCase().includes(q) || sessionLabel(t).toLowerCase().includes(q),
     );
-  }, [tasks, filter, needsYouOnly]);
+  }, [sessions, filter, needsYouOnly]);
 
 
   const shared = {
-    tasks: filteredTasks,
+    sessions: filteredSessions,
     summaries,
     needsYouIds,
-    onSelect: selectTask,
-    onDelete: deleteTask,
-    onRetry: retryTask,
-    onOpenLogs: setLogTaskId,
-    reload: loadTasks,
+    onSelect: selectSession,
+    onDelete: deleteSession,
+    onOpenLogs: setLogSessionId,
+    reload: loadSessions,
   };
 
   return (
@@ -313,7 +330,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => {
-                  selectView("tasks");
+                  selectView("sessions");
                   setNeedsYouOnly(true);
                 }}
                 className="flex items-center gap-2 cursor-pointer"
@@ -342,7 +359,7 @@ export default function App() {
             {counts.working} working · {counts.done} done · {counts.idle} idle
           </span>
 
-          {view === "tasks" && (
+          {view === "sessions" && (
             <label className="flex items-center gap-2 border border-line px-2.5 py-1 w-[150px] text-xs text-dim2 focus-within:border-primary/60">
               <span aria-hidden>⌕</span>
               <input
@@ -354,11 +371,11 @@ export default function App() {
               />
             </label>
           )}
-          <NewTaskDialog
-            autoOpen={shortcut.newTask}
+          <NewSessionDialog
+            autoOpen={shortcut.newSession}
             onCreated={(id) => {
-              loadTasks();
-              selectTask(id);
+              loadSessions();
+              selectSession(id);
             }}
           />
           <SettingsMenu theme={theme} onThemeChange={setTheme} />
@@ -388,7 +405,7 @@ export default function App() {
             {counts.waiting > 0 && (
               <button
                 type="button"
-                onClick={() => selectView("tasks")}
+                onClick={() => selectView("sessions")}
                 className="ml-auto flex items-center gap-1.5 border border-pink-line bg-pink-chip px-2 py-[3px] cursor-pointer"
               >
                 <span className="w-1.5 h-1.5 rounded-full bg-error ring-glow animate-fpulse" />
@@ -406,12 +423,12 @@ export default function App() {
             >
               ⌕
             </button>
-            <NewTaskDialog
+            <NewSessionDialog
               compact
-              autoOpen={shortcut.newTask}
+              autoOpen={shortcut.newSession}
               onCreated={(id) => {
-                loadTasks();
-                selectTask(id);
+                loadSessions();
+                selectSession(id);
               }}
             />
             <SettingsMenu theme={theme} onThemeChange={setTheme} />
@@ -431,14 +448,14 @@ export default function App() {
         </div>
       )}
 
-      <ErrorModal message={tasksError} onClose={() => setTasksError(null)} />
+      <ErrorModal message={sessionsError} onClose={() => setSessionsError(null)} />
       <ConfirmModal
         open={pendingDeleteId !== null}
         message="Delete this session? This tears down any live pod and removes it from the list."
-        onConfirm={confirmDeleteTask}
+        onConfirm={confirmDeleteSession}
         onCancel={() => setPendingDeleteId(null)}
       />
-      <LogDrawer sessionId={logTaskId} onClose={() => setLogTaskId(null)} />
+      <LogDrawer sessionId={logSessionId} onClose={() => setLogSessionId(null)} />
 
       {/* min-w-0 alongside min-h-0: a flex item's min-width defaults to auto, so
           any descendant with a large min-content width (a long URL, a nowrap
@@ -455,24 +472,24 @@ export default function App() {
         ) : view === "audits" ? (
           <Audits
             proposals={proposals}
-            onSelectTask={selectTask}
-            reloadTasks={() => {
-              void loadTasks();
+            onSelectSession={selectSession}
+            reloadSessions={() => {
+              void loadSessions();
               void loadProposals();
             }}
           />
         ) : view === "observability" ? (
-          <Observability onSelectTask={selectTask} />
+          <Observability onSelectSession={selectSession} />
         ) : selectedId ? (
           isDesktop ? (
-            <TaskDetail sessionId={selectedId} tasks={tasks} onBack={clearSelection} onClosed={clearSelection} />
+            <SessionDetail sessionId={selectedId} sessions={sessions} onBack={clearSelection} onClosed={clearSelection} />
           ) : (
-            <MobileTaskDetail sessionId={selectedId} onBack={clearSelection} onDelete={() => deleteTask(selectedId)} />
+            <MobileSessionDetail sessionId={selectedId} onBack={clearSelection} onDelete={() => deleteSession(selectedId)} />
           )
         ) : isDesktop ? (
-          <TaskList {...shared} />
+          <SessionList {...shared} />
         ) : (
-          <MobileTaskList {...shared} />
+          <MobileSessionList {...shared} />
         )}
       </div>
 

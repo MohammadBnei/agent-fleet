@@ -367,7 +367,7 @@ export function TranscriptEntryView({
   if (entry.type === TranscriptEntryType.ABORT) {
     return (
       <LogLine badge="killed" badgeClass="warning" compact={compact}>
-        {entry.text || "task killed"}
+        {entry.text || "session killed"}
       </LogLine>
     );
   }

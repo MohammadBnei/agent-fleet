@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { client } from "../connectClient";
-import { repoLabel } from "../taskKind";
+import { sessionLabel } from "../sessionLabel";
 import {
   feedVisibility,
   latestSlashCommands,
@@ -9,10 +9,10 @@ import {
   type Density,
   hasPendingDecision,
 } from "../transcript";
-import { useTaskDetail } from "../useTaskDetail";
+import { useSessionDetail } from "../useSessionDetail";
 import { useAtBottom } from "../useAtBottom";
 import { useLocalStorageState } from "../useLocalStorageState";
-import { sessionBadge } from "../pages/TaskList";
+import { sessionBadge } from "../pages/SessionList";
 import { ActionButton } from "../components/ActionButton";
 import { DecisionDock } from "../components/DecisionDock";
 import { ErrorModal } from "../components/ErrorModal";
@@ -37,7 +37,7 @@ const DENSITY: readonly { value: Density; label: string; title: string }[] = [
   { value: "decisions", label: "calls", title: "tool activity and decisions" },
 ];
 
-export function MobileTaskDetail({
+export function MobileSessionDetail({
   sessionId,
   onBack,
   onDelete,
@@ -47,7 +47,7 @@ export function MobileTaskDetail({
   onDelete: () => void;
 }) {
   const {
-    task,
+    session,
     entries,
     branch,
     busyKey,
@@ -59,10 +59,11 @@ export function MobileTaskDetail({
     respondToPermission,
     answerQuestion,
     clearActionError,
-  } = useTaskDetail(sessionId);
+  } = useSessionDetail(sessionId);
   const [message, setMessage] = useState("");
   const [panelsOpen, setPanelsOpen] = useState(false);
   const [bypassOpen, setBypassOpen] = useState(false);
+  // Same persisted key as the desktop view — see SessionDetail.tsx.
   const [density, setDensity] = useLocalStorageState<Density>("taskDetail.density", "everything");
   const { ref: feedRef, atBottom, onScroll, scrollToBottom } = useAtBottom<HTMLDivElement>();
 
@@ -79,9 +80,9 @@ export function MobileTaskDetail({
     prevLen.current = entries.length;
   }, [entries, atBottom, scrollToBottom]);
 
-  // Before the first paint of this task's feed, not after — as a plain effect
+  // Before the first paint of this session's feed, not after — as a plain effect
   // it painted the top of the history and then visibly scrolled down. Same
-  // reasoning as TaskDetail's copy.
+  // reasoning as SessionDetail's copy.
   const scrolledFor = useRef<string | null>(null);
   useLayoutEffect(() => {
     if (entries.length === 0 || scrolledFor.current === sessionId) return;
@@ -106,10 +107,10 @@ export function MobileTaskDetail({
       </div>
     );
   }
-  if (!task) return <div className="flex-1 p-4 text-base text-dim">Loading…</div>;
+  if (!session) return <div className="flex-1 p-4 text-base text-dim">Loading…</div>;
 
-  const blocked = task.liveState === "blocked";
-  const badge = sessionBadge(task);
+  const blocked = session.liveState === "blocked";
+  const badge = sessionBadge(session);
   const visibility = feedVisibility(density, true);
   const todos = latestTodos(entries) ?? [];
   const changes = latestToolCallSummary(entries)?.files ?? null;
@@ -135,7 +136,7 @@ export function MobileTaskDetail({
             ←
           </button>
           <span className="text-base font-semibold min-w-0 truncate">
-            #{task.id.slice(0, 6)} {task.description}
+            #{session.id.slice(0, 6)} {sessionLabel(session)}
           </span>
           {blocked ? (
             <span className="ml-auto flex items-center gap-1.5 border border-pink-line bg-pink-chip px-2 py-0.5 flex-none">
@@ -153,7 +154,7 @@ export function MobileTaskDetail({
 
         <div className="flex items-center gap-2 mt-2">
           <span className="text-2xs text-dim2 min-w-0 truncate">
-            {repoLabel({ repo: task.repo })}
+            {session.repo}
             {branch && ` · ${branch}`}
           </span>
           <Segmented value={density} options={DENSITY} onChange={setDensity} size="sm" className="ml-auto flex-none" />
@@ -282,7 +283,7 @@ export function MobileTaskDetail({
           <TodosPanel todos={todos} blocked={blocked} />
           <ChangesPanel branch={branch} changes={changes} />
           <SessionPanel
-            task={task}
+            session={session}
             busy={busyKey !== null}
             busyKey={busyKey}
             run={run}

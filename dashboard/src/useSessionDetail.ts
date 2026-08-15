@@ -5,18 +5,18 @@ import { withOptimistic } from "./transcript";
 import type { Session } from "./gen/agentfleet/v1/core_pb";
 import { TranscriptEntryType, type TranscriptEntry } from "./gen/agentfleet/v1/transcript_pb";
 
-// Shared data-loading for a single task's session view — used by both the
-// desktop TaskDetail and the mobile MobileTaskDetail, which differ only in
+// Shared data-loading for a single session's session view — used by both the
+// desktop SessionDetail and the mobile MobileSessionDetail, which differ only in
 // layout, not in what they fetch/subscribe to.
-export function useTaskDetail(sessionId: string) {
-  const [task, setTask] = useState<Session | null>(null);
+export function useSessionDetail(sessionId: string) {
+  const [session, setSession] = useState<Session | null>(null);
   const [entries, setEntries] = useState<TranscriptEntry[]>([]);
-  // Set by the effect below, which owns the actual fetch; a ref rather than
-  // state so reassigning it never re-renders.
+  // Both are permanently null: the ListWorktrees lookup that filled them is
+  // gone with the worktree model (docs/adr/0048 §5, and see the effect below).
+  // Kept as state, and rendered conditionally by both detail views, so
+  // restoring them is a matter of writing to them again rather than
+  // re-threading two values through both form factors.
   const [branch, setBranch] = useState<string | null>(null);
-  // The worktree's real path on the shared PVC — shown in the composer's meta
-  // line so "where is this actually working" is answerable without a shell.
-  // Same (repo, task_id) lookup as `branch`; there is no path on Task itself.
   const [worktreePath, setWorktreePath] = useState<string | null>(null);
   // Keyed, not a plain boolean — a click on one PermissionCard/PlanCard used
   // to disable every other pending card and the whole ActionsMenu at once.
@@ -41,15 +41,15 @@ export function useTaskDetail(sessionId: string) {
   // real entry supersedes it the moment it lands. See withOptimistic.
   const [optimistic, setOptimistic] = useState<TranscriptEntry[]>([]);
   // Two states, not one: loadError blocks rendering (nothing to show
-  // without a task), actionError is inline while the loaded view stays up.
+  // without a session), actionError is inline while the loaded view stays up.
   // Collapsing these into one `error` state previously left the error
-  // banner unreachable — an unconditional `if (!task) return <Loading/>`
+  // banner unreachable — an unconditional `if (!session) return <Loading/>`
   // ran before it, so any load failure hung on "Loading…" forever.
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
   useEffect(() => {
-    setTask(null);
+    setSession(null);
     setEntries([]);
     setBranch(null);
     setWorktreePath(null);
@@ -68,7 +68,7 @@ export function useTaskDetail(sessionId: string) {
       .getSession({ id: sessionId })
       .then((res) => {
         if (cancelled) return;
-        setTask(res.session ?? null);
+        setSession(res.session ?? null);
         if (!res.session) return;
         // The branch lookup is gone with ListWorktrees (docs/adr/0048 §5).
         //
@@ -76,13 +76,13 @@ export function useTaskDetail(sessionId: string) {
         // which worked because the FLEET named the branch: `agent/<taskId>`,
         // a convention it owned. It no longer creates branches at all — the
         // agent runs `git checkout -b` for whatever it wants — so there is
-        // nothing to look up by task id, and guessing would be worse than
+        // nothing to look up by session id, and guessing would be worse than
         // showing nothing. `changes`, derived from the worker's own telemetry
         // snapshots, is the honest source for what a session is touching.
       })
       .catch((err: ConnectError) => {
         if (cancelled) return;
-        setLoadError(err.code === Code.NotFound ? "Task not found." : err.message);
+        setLoadError(err.code === Code.NotFound ? "Session not found." : err.message);
       });
 
     // The e2e status poll is gone with the sandbox it described
@@ -195,7 +195,7 @@ export function useTaskDetail(sessionId: string) {
   }
 
   return {
-    task,
+    session,
     entries: withOptimistic(entries, optimistic),
     branch,
     worktreePath,

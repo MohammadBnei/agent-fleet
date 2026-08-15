@@ -69,7 +69,7 @@ describe("subscribeTranscript visibility handling", () => {
   test("aborts the in-flight stream when the page is hidden, and resumes from the cursor", async () => {
     queued = [{ seq: 7n } as TranscriptEntry];
     const seen: bigint[] = [];
-    const unsubscribe = subscribeTranscript("task-1", 0n, (entry) => seen.push(entry.seq), openStream);
+    const unsubscribe = subscribeTranscript("session-1", 0n, (entry) => seen.push(entry.seq), openStream);
 
     await tick();
     expect(calls).toHaveLength(1);
@@ -95,7 +95,7 @@ describe("subscribeTranscript visibility handling", () => {
   }, 10000);
 
   test("unsubscribe aborts the live attempt and unregisters the listener", async () => {
-    const unsubscribe = subscribeTranscript("task-2", 3n, () => {}, openStream);
+    const unsubscribe = subscribeTranscript("session-2", 3n, () => {}, openStream);
     await tick();
     expect(calls).toHaveLength(1);
 

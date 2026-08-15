@@ -1,15 +1,15 @@
 import { useState } from "react";
 import type { Session } from "../gen/agentfleet/v1/core_pb";
 import { client } from "../connectClient";
-import { repoLabel } from "../taskKind";
+import { sessionLabel } from "../sessionLabel";
 import {
-  bucketTasks,
+  bucketSessions,
   isPodPhaseLive,
 
   sessionBadge,
   blockedForLabel,
   SectionHeading,
-} from "../pages/TaskList";
+} from "../pages/SessionList";
 import type { ListSummary } from "../transcript";
 import { TickBar, todoProgress } from "../components/TickBar";
 import { NotchCard } from "../components/NotchCard";
@@ -37,20 +37,20 @@ function relativeTime(iso?: string): string | null {
 }
 
 function NeedsYouCard({
-  task,
+  session,
   summary,
   onSelect,
   reload,
   onAskLater,
 }: {
-  task: Session;
+  session: Session;
   summary?: ListSummary;
   onSelect: () => void;
   reload: () => void;
   onAskLater: () => void;
 }) {
   const todos = summary?.todos ?? [];
-  const blockedFor = blockedForLabel(task);
+  const blockedFor = blockedForLabel(session);
   return (
     <NotchCard
       label={`◉ BLOCKED${blockedFor ? ` · ${blockedFor}` : ""}`}
@@ -58,8 +58,8 @@ function NeedsYouCard({
     >
       <div className="px-3.5 pt-3.5">
         <div className="flex items-baseline gap-2">
-          <span className="text-sm font-semibold">#{task.id.slice(0, 6)}</span>
-          <span className="text-xs text-dim2 min-w-0 truncate">{repoLabel(task)}</span>
+          <span className="text-sm font-semibold">#{session.id.slice(0, 6)}</span>
+          <span className="text-xs text-dim2 min-w-0 truncate">{session.repo}</span>
           {todos.length > 0 && <TickBar todos={todos} blocked cell="w-[11px]" className="ml-auto flex-none" />}
         </div>
         <button
@@ -67,11 +67,11 @@ function NeedsYouCard({
           onClick={onSelect}
           className="text-base leading-[1.55] mt-1.5 text-left w-full break-words cursor-pointer"
         >
-          {task.description}
+          {sessionLabel(session)}
         </button>
       </div>
       <DecisionInline
-        task={task}
+        session={session}
         summary={summary}
         layout="stacked"
         onOpenSession={onSelect}
@@ -83,25 +83,23 @@ function NeedsYouCard({
 }
 
 function FinishedCard({
-  task,
+  session,
   onSelect,
-  onRetry,
   onOpenLogs,
   reload,
 }: {
-  task: Session;
+  session: Session;
   onSelect: () => void;
-  onRetry: () => void;
   onOpenLogs: () => void;
   reload: () => void;
 }) {
-  const failed = task.podPhase === "POD_PHASE_CRASHED";
-  const when = relativeTime(task.lastActiveAt);
+  const failed = session.podPhase === "POD_PHASE_CRASHED";
+  const when = relativeTime(session.lastActiveAt);
   return (
     <div className={`border px-3.5 py-3 ${failed ? "border-orange-line bg-orange-bg" : "border-green-line bg-green-bg"}`}>
       <div className="flex items-center gap-2">
         <span className={`w-1.5 h-1.5 rounded-full flex-none ${failed ? "bg-warning" : "bg-success"}`} />
-        <span className="text-sm font-semibold">#{task.id.slice(0, 6)}</span>
+        <span className="text-sm font-semibold">#{session.id.slice(0, 6)}</span>
         {when && <span className="text-xs text-dim2 ml-auto flex-none">{when}</span>}
       </div>
       <button
@@ -109,20 +107,17 @@ function FinishedCard({
         onClick={onSelect}
         className="text-sm leading-[1.5] mt-1.5 text-left w-full break-words cursor-pointer"
       >
-        {task.description}
+        {sessionLabel(session)}
       </button>
       {failed ? (
         <>
           <div className="text-xs text-warning mt-1.5 leading-[1.5] break-words">
             {"crashed"}
-            {task.lastError ? ` · ${task.lastError}` : ""}
+            {session.lastError ? ` · ${session.lastError}` : ""}
           </div>
           <div className="flex gap-2 mt-2.5">
             <button type="button" onClick={onOpenLogs} className="border border-acc-line px-3 py-2 text-xs flex-1">
               read log
-            </button>
-            <button type="button" onClick={onRetry} className="border border-acc-line px-3 py-2 text-xs flex-1">
-              retry
             </button>
           </div>
         </>
@@ -131,11 +126,11 @@ function FinishedCard({
           {"no PR"}
         </div>
       )}
-      {/* Same action as the desktop row's — see TaskList.tsx's FinishedRow. */}
+      {/* Same action as the desktop row's — see SessionList.tsx's FinishedRow. */}
       <button
         type="button"
         onClick={() => {
-          void client.archiveSession({ sessionId: task.id }).then(reload);
+          void client.archiveSession({ sessionId: session.id }).then(reload);
         }}
         className="border border-acc-line px-3 py-2 text-xs w-full mt-2"
       >
@@ -146,20 +141,20 @@ function FinishedCard({
 }
 
 function WorkingCard({
-  task,
+  session,
   summary,
   last,
   onSelect,
 }: {
-  task: Session;
+  session: Session;
   summary?: ListSummary;
   last: boolean;
   onSelect: () => void;
 }) {
   const todos = summary?.todos ?? [];
   const inFlight = summary?.inFlight ?? null;
-  const provisioning = task.podPhase === "POD_PHASE_PROVISIONING";
-  const live = isPodPhaseLive(task.podPhase) && !provisioning;
+  const provisioning = session.podPhase === "POD_PHASE_PROVISIONING";
+  const live = isPodPhaseLive(session.podPhase) && !provisioning;
   const stale = null as { label: string; className: string } | null;
 
   return (
@@ -174,9 +169,9 @@ function WorkingCard({
             stale ? "bg-error" : live ? "bg-info animate-fpulse" : "border border-dim2"
           }`}
         />
-        <span className={`text-sm flex-none ${live ? "text-text2" : "text-dim2"}`}>#{task.id.slice(0, 6)}</span>
-        <span className={`text-sm min-w-0 truncate ${live ? "" : "text-dim"}`}>{task.description}</span>
-        {task.permissionMode === "bypassPermissions" ? (
+        <span className={`text-sm flex-none ${live ? "text-text2" : "text-dim2"}`}>#{session.id.slice(0, 6)}</span>
+        <span className={`text-sm min-w-0 truncate ${live ? "" : "text-dim"}`}>{sessionLabel(session)}</span>
+        {session.permissionMode === "bypassPermissions" ? (
           <span className="text-2xs text-warning border border-orange-line px-1.5 py-px ml-auto flex-none">
             bypass
           </span>
@@ -186,14 +181,14 @@ function WorkingCard({
       </div>
       <div className="text-xs text-dim mt-1.5 truncate">
         {provisioning
-          ? `booting${task.podMessage ? ` · ${task.podMessage}` : ""}`
+          ? `booting${session.podMessage ? ` · ${session.podMessage}` : ""}`
           : inFlight
             ? `⟳ ${inFlight.tool.toLowerCase()} · ${inFlight.summary}${
                 inFlight.elapsedSeconds !== null ? ` · ${inFlight.elapsedSeconds}s` : ""
               }`
             : stale
               ? stale.label.toLowerCase()
-              : task.liveState === "working"
+              : session.liveState === "working"
                 ? "working"
                 : "idle"}
       </div>
@@ -206,15 +201,15 @@ function WorkingCard({
   );
 }
 
-function QuietGroup({ title, tasks, onSelect }: { title: string; tasks: Session[]; onSelect: (id: string) => void }) {
-  if (tasks.length === 0) return null;
+function QuietGroup({ title, sessions, onSelect }: { title: string; sessions: Session[]; onSelect: (id: string) => void }) {
+  if (sessions.length === 0) return null;
   return (
     <Collapse
-      summary={<span className="text-xs text-dim2">▸ {title} · {tasks.length}</span>}
+      summary={<span className="text-xs text-dim2">▸ {title} · {sessions.length}</span>}
       summaryClassName="py-1.5"
       contentClassName="pl-2 pb-1 flex flex-col"
     >
-      {tasks.map((t) => {
+      {sessions.map((t) => {
         const badge = sessionBadge(t);
         return (
           <button
@@ -224,7 +219,7 @@ function QuietGroup({ title, tasks, onSelect }: { title: string; tasks: Session[
             className="flex items-center gap-2 text-left py-2"
           >
             <span className="text-xs text-dim2 flex-none">#{t.id.slice(0, 6)}</span>
-            <span className="text-sm text-dim min-w-0 truncate flex-1">{t.description}</span>
+            <span className="text-sm text-dim min-w-0 truncate flex-1">{sessionLabel(t)}</span>
             {badge && (
               <span className={`text-2xs px-1 border tracking-wide flex-none ${badge.className}`}>{badge.label}</span>
             )}
@@ -235,21 +230,19 @@ function QuietGroup({ title, tasks, onSelect }: { title: string; tasks: Session[
   );
 }
 
-export function MobileTaskList({
-  tasks,
+export function MobileSessionList({
+  sessions,
   summaries,
   needsYouIds,
   onSelect,
-  onRetry,
   onOpenLogs,
   reload,
 }: {
-  tasks: Session[];
+  sessions: Session[];
   summaries: Map<string, ListSummary>;
   needsYouIds: Set<string>;
   onSelect: (id: string) => void;
   onDelete: (id: string) => void;
-  onRetry: (id: string) => void;
   onOpenLogs: (id: string) => void;
   reload: () => void;
 }) {
@@ -258,18 +251,18 @@ export function MobileTaskList({
   // still blocked, so the card must come back on the next visit.
   const [deferred, setDeferred] = useState<Set<string>>(new Set());
 
-  // Same destructure as TaskList's, for the same reason: a bucket computed and
+  // Same destructure as SessionList's, for the same reason: a bucket computed and
   // not rendered is a session that vanishes from this list. Mobile had dropped
   // `archived` and `swept` too, so a session a human had finished existed on
   // neither form factor.
-  const { needsYou, working, finished, stalled, quiet, archived, swept } = bucketTasks(tasks, needsYouIds);
+  const { needsYou, working, finished, stalled, quiet, archived, swept } = bucketSessions(sessions, needsYouIds);
   const visibleNeedsYou = needsYou.filter((t) => !deferred.has(t.id));
 
   const CHIPS: readonly { value: Bucket; label: string; count: number }[] = [
     { value: "needsYou", label: "needs you", count: visibleNeedsYou.length },
     { value: "working", label: "working", count: working.length },
     { value: "done", label: "done", count: finished.length },
-    { value: "all", label: "all", count: tasks.length },
+    { value: "all", label: "all", count: sessions.length },
   ];
 
   const showNeedsYou = bucket === "needsYou" || bucket === "all";
@@ -299,13 +292,13 @@ export function MobileTaskList({
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto px-3.5 pt-4 pb-5 flex flex-col gap-3.5">
-        {tasks.length === 0 && <div className="text-base text-dim">No sessions.</div>}
+        {sessions.length === 0 && <div className="text-base text-dim">No sessions.</div>}
 
         {showNeedsYou &&
           visibleNeedsYou.map((t) => (
             <NeedsYouCard
               key={t.id}
-              task={t}
+              session={t}
               summary={summaries.get(t.id)}
               onSelect={() => onSelect(t.id)}
               reload={reload}
@@ -319,9 +312,8 @@ export function MobileTaskList({
             {finished.map((t) => (
               <FinishedCard
                 key={t.id}
-                task={t}
+                session={t}
                 onSelect={() => onSelect(t.id)}
-                onRetry={() => onRetry(t.id)}
                 onOpenLogs={() => onOpenLogs(t.id)}
                 reload={reload}
               />
@@ -336,7 +328,7 @@ export function MobileTaskList({
               {working.map((t, i) => (
                 <WorkingCard
                   key={t.id}
-                  task={t}
+                  session={t}
                   summary={summaries.get(t.id)}
                   last={i === working.length - 1}
                   onSelect={() => onSelect(t.id)}
@@ -353,10 +345,10 @@ export function MobileTaskList({
         */}
         {bucket === "all" && (
           <div className="flex flex-col mt-1">
-            <QuietGroup title="stalled" tasks={stalled} onSelect={onSelect} />
-            <QuietGroup title="idle" tasks={quiet} onSelect={onSelect} />
-            <QuietGroup title="archived" tasks={archived} onSelect={onSelect} />
-            <QuietGroup title="swept · readable, not resumable" tasks={swept} onSelect={onSelect} />
+            <QuietGroup title="stalled" sessions={stalled} onSelect={onSelect} />
+            <QuietGroup title="idle" sessions={quiet} onSelect={onSelect} />
+            <QuietGroup title="archived" sessions={archived} onSelect={onSelect} />
+            <QuietGroup title="swept · readable, not resumable" sessions={swept} onSelect={onSelect} />
           </div>
         )}
       </div>

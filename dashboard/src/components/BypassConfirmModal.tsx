@@ -26,7 +26,7 @@ export function BypassConfirmModal({
     <Modal open={open} onClose={onCancel}>
       <h3 className="font-semibold text-base text-warning mb-2">Bypass permissions?</h3>
       <p className="text-sm">
-        This disables the write/edit approval gate for this task for the rest of the session — every tool call,
+        This disables the write/edit approval gate for the rest of this session — every tool call,
         including Write and Edit, will run without asking again.
       </p>
       <p className="text-sm mt-3">

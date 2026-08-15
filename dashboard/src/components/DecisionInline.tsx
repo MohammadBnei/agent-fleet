@@ -14,7 +14,7 @@ import { summarizeToolInput } from "../transcript";
 // read. A blocked session is stalled until a human clicks, which makes that
 // latency the product's real cost (docs/dashboard-spec.md §2, §8 item 3).
 //
-// It calls the RPCs directly rather than going through useTaskDetail's `run`:
+// It calls the RPCs directly rather than going through useSessionDetail's `run`:
 // the list has no open session, and a per-card busy flag is all the state one
 // button needs. `reload` refreshes App's poll so the card leaves the NEEDS YOU
 // bucket immediately instead of on the next 5s tick.
@@ -94,7 +94,7 @@ function PermissionBody({ tool, input }: { tool: string; input: unknown }) {
 }
 
 export function DecisionInline({
-  task,
+  session,
   summary,
   onOpenSession,
   reload,
@@ -102,11 +102,11 @@ export function DecisionInline({
   // Mobile lets you defer a question without answering it. Purely local: the
   // agent stays blocked, this human just isn't dealing with it now.
   onAskLater,
-  // Dismissing a proposal soft-deletes the task, so a caller showing only that
-  // task (the detail view) has to let go of it rather than sit on a dead row.
+  // Dismissing a proposal soft-deletes the session, so a caller showing only that
+  // session (the detail view) has to let go of it rather than sit on a dead row.
   onDismissed: _onDismissed,
 }: {
-  task: Session;
+  session: Session;
   summary?: ListSummary;
   onOpenSession: () => void;
   reload: () => void;
@@ -160,7 +160,7 @@ export function DecisionInline({
         behavior,
         () =>
           client.respondToPermission({
-            sessionId: task.id,
+            sessionId: session.id,
             seq: permission.entry.seq,
             decisionJson: JSON.stringify({ behavior, message }),
           }),
@@ -265,7 +265,7 @@ export function DecisionInline({
           "answer",
           () =>
             client.answerQuestion({
-              sessionId: task.id,
+              sessionId: session.id,
               seq: questionEntry.seq,
               answersJson: JSON.stringify({ answers: { [q!.question]: label } }),
             }),
@@ -280,7 +280,7 @@ export function DecisionInline({
         "answer",
         () =>
           client.answerQuestion({
-            sessionId: task.id,
+            sessionId: session.id,
             seq: questionEntry.seq,
             answersJson: JSON.stringify({ answers: { [q!.question]: answer } }),
           }),
