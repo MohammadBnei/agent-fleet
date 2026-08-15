@@ -514,6 +514,13 @@ export async function runSession(): Promise<SessionResult> {
       },
       mcpServers: {
         "agent-fleet-sidecar": sidecarMcpServer(),
+        // Always registered, and deliberately NOT gated on the browser binaries
+        // being present. They arrive on a read-only mount rather than in the
+        // image now (worker/Dockerfile), so "not there yet" is a transient
+        // bootstrap state on a fresh cluster — and a browser_navigate that
+        // fails loudly with playwright's own "browser not installed" is worth
+        // more than a session that silently has no browser tools at all. The
+        // latter is exactly docs/adr/0044's failure mode.
         playwright: playwrightMcpServer(),
       },
       // "user": CLAUDE_CONFIG_DIR (provisioner/internal/k8s/pod.go) points

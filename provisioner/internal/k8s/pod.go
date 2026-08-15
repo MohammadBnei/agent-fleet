@@ -64,6 +64,24 @@ const claudeConfigDir = "/claude-home"
 // sessionCacheDir is the per-session dependency cache mount (docs/adr/0048 §4).
 const sessionCacheDir = "/cache"
 
+// browsersDir is where Playwright's browser builds are mounted, read-only,
+// from the shared PVC — and PLAYWRIGHT_BROWSERS_PATH is what makes Playwright
+// look there instead of in the image.
+//
+// They used to be baked into worker/Dockerfile: 2.0 GB of the image's 5.13 GB,
+// carried by every session on every node whether or not it ever opened a page,
+// and re-pulled on every image bump. They are large, version-pinned and never
+// written at runtime, which is exactly the shape a read-only shared mount is
+// for — the same shape /repo-cache already uses.
+//
+// Read-only is a real boundary, not decoration: one session cannot corrupt the
+// browser build every other session launches. Verified by driving a real
+// browser_navigate against a read-only mount before this was written.
+//
+// Populated by the browser-cache Job (browsercache.go), not by any worker.
+const browsersDir = "/ms-playwright"
+const browsersSubPath = "browsers"
+
 // cacheEnv points every package manager's cache at the /cache mount.
 //
 // Without these the mount is real and empty: bun, Go and npm all default to
@@ -226,6 +244,11 @@ func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error 
 		{Name: "MAX_TURNS", Value: os.Getenv("MAX_TURNS")},
 		{Name: "WORKTREE_PATH", Value: sessionWorkdir},
 		{Name: "CLAUDE_CONFIG_DIR", Value: claudeConfigDir},
+		// Without this Playwright looks under $HOME/.cache/ms-playwright and
+		// reports the browser as not installed — which is precisely how
+		// docs/adr/0044's last failure presented, just with the browsers in a
+		// different place. The mount above is inert unless this points at it.
+		{Name: "PLAYWRIGHT_BROWSERS_PATH", Value: browsersDir},
 		{Name: "RESUME_SESSION_ID", Value: resumeSessionID},
 		{Name: "RESUME_FROM_SEQ", Value: strconv.FormatInt(resumeFromSeq, 10)},
 		{Name: "LOG_LEVEL", Value: c.LogLevel},
@@ -267,6 +290,9 @@ func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error 
 		// ability to resume the conversation at all, which is the one thing
 		// here that git is not already a backup of.
 		{Name: "shared", MountPath: claudeConfigDir, SubPath: "claude-home/" + taskID},
+		// Playwright's browser builds, read-only. 2 GB that every session can
+		// use and no session may write — see browsersDir.
+		{Name: "shared", MountPath: browsersDir, SubPath: browsersSubPath, ReadOnly: true},
 	}
 	if toolsMount != nil {
 		workerMounts = append(workerMounts, *toolsMount)
