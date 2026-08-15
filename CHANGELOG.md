@@ -1,5 +1,22 @@
 # Changelog
 
+# [3.0.0](https://github.com/MohammadBnei/agent-fleet/compare/2.1.0...3.0.0) (2026-08-15)
+
+
+* feat!: one session, one pod, one shared home (ADR-0048) (#157) ([ff10b49](https://github.com/MohammadBnei/agent-fleet/commit/ff10b496644292551ac64216c2e17dd2571759bb)), closes [#157](https://github.com/MohammadBnei/agent-fleet/issues/157)
+
+
+### BREAKING CHANGES
+
+* task_id becomes session_id across all three gRPC services and
+the SDK resume id becomes agent_session_id. db/migrations/ collapses 14 files
+into one and requires a manual DROP SCHEMA against the deployed database before
+this deploys — `migrate up` does not no-op against a version its source no
+longer contains, it exits non-zero and fails the PreSync hook. The procedure is
+documented at the top of 000001_init.up.sql. Every session, transcript and
+journal row is destroyed. SESSION_KIND_E2E is reserved, not removed, so a
+message from an older build still decodes during rollout.
+
 # [2.1.0](https://github.com/MohammadBnei/agent-fleet/compare/2.0.2...2.1.0) (2026-08-14)
 
 
