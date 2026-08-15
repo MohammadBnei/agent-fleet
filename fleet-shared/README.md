@@ -57,6 +57,35 @@ the path entirely for the commands it matches, which is the same authority
 keeps `Write`/`Edit`/`Bash` out of `allowedTools`; a rule added here is the
 one other way to undo that, so add one the way you would add an entry there.
 
+## `permissions.ask` is what keeps a target repo from widening that
+
+Since docs/adr/0049 a session also loads the **target repo's** own
+`.claude/settings.json` (`settingSources: ["user", "project"]`), which is how
+it gets that repo's `CLAUDE.md` and `.claude/skills/`. That merges the repo's
+`permissions.allow` into the same set as this file's — so without a
+counterweight, any onboarded repo could ship `Bash(gh api:*)` in its own
+settings and approve its own outward-facing commands.
+
+The `ask` list is that counterweight. The SDK's evaluator (`Fw2` in the
+vendored `cli.js`) resolves **deny → ask → allow** and returns on the first
+match, so a rule here outranks a project-scope `allow` for the same command.
+`ask` rather than `deny` because a human should still be able to approve a
+`git push` — every result is a PR, and approving it *is* the review.
+
+The list is exactly the "deliberately NOT allowed" bullets above, made
+enforceable rather than merely absent.
+
+**There is no specificity tiebreak, so `ask` beats a narrower `allow` too.**
+`Bash(curl http://127.0.0.1:*)` and `Bash(curl http://localhost:*)` used to be
+on the allow list; `Bash(curl:*)` in `ask` matches those commands first, which
+would have made the two allow entries dead text claiming a permission they no
+longer granted. They were removed instead. Localhost `curl` now prompts like
+any other — cheap, since builds and tests are what actually run in a loop, and
+`curl` is the one entry whose un-prompted form is a supply-chain path.
+
+A pair like that is the thing to check when adding to either list: a broad
+`ask` prefix silently swallows every narrower `allow` beneath it.
+
 **Hooks do not belong in this `settings.json`.** The Agent SDK does not run
 hooks declared in settings files, with any `settingSources` — verified
 2026-08-13, after the `rtk hook claude` PreToolUse entry that lived here
