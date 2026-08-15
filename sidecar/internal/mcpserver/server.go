@@ -72,7 +72,7 @@ func New(core *coreclient.Client) http.Handler {
 	), waitForMessagesHandler(core))
 
 	s.AddTool(mcp.NewTool("AskUserQuestion",
-		mcp.WithDescription("Ask the human one or more structured multiple-choice questions. Answered via the web dashboard. Blocks (up to timeoutMs) until answered, or returns {\"status\":\"pending\"} if it times out first (call again with the same questions to keep waiting). See docs/adr/0018."),
+		mcp.WithDescription("Ask the human one or more structured multiple-choice questions. Answered via the web dashboard. Blocks (up to timeoutMs) until answered. If it returns {\"status\":\"pending\"}, the question is still live and durable: DO NOT re-invoke in a loop — end your turn. The answer is delivered to you automatically as a new message when the human replies, even days later across a pod restart. See docs/adr/0018."),
 		mcp.WithInputSchema[AskUserQuestionArgs](),
 	), askUserQuestionHandler(core))
 
@@ -363,7 +363,17 @@ func askUserQuestionHandler(core *coreclient.Client) func(ctx context.Context, r
 		if answered {
 			return mcp.NewToolResultText(answersJSON), nil
 		}
-		body, _ := json.Marshal(map[string]string{"status": "pending"})
+		// Not answered within timeoutMs. The question row is durable and the
+		// card stays live on the dashboard; the human's answer is delivered
+		// as a normal message when it lands (worker feeds the "answer" entry
+		// as a turn — see worker/src/session.ts), surviving a pod
+		// idle-teardown and warm. So the agent must END ITS TURN here, not
+		// re-invoke: re-invoking burns tokens polling for something that
+		// arrives on its own.
+		body, _ := json.Marshal(map[string]string{
+			"status": "pending",
+			"note":   "Question is live and durable. Do NOT call again — end your turn. The answer arrives as a message when the human replies, even after a restart.",
+		})
 		return mcp.NewToolResultText(string(body)), nil
 	})
 }

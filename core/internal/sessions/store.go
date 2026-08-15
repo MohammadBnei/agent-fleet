@@ -329,9 +329,9 @@ func (s *Store) ReserveSlot(ctx context.Context, id string, maxLive int) (leaseI
 		return "", fmt.Errorf("reserve slot: mint lease: %w", err)
 	}
 
-	// Close out every decision the PREVIOUS pod was waiting on, for the same
-	// reason stop_requested_at and activity_seen are reset above: they all
-	// describe a pod that no longer exists.
+	// Close out every PERMISSION request the PREVIOUS pod was waiting on, for
+	// the same reason stop_requested_at and activity_seen are reset above:
+	// they all describe a pod that no longer exists.
 	//
 	// Nothing else does this. The worker denies its pending permissions on
 	// Stop, but with interrupt:true, which deliberately records no resolution;
@@ -340,22 +340,31 @@ func (s *Store) ReserveSlot(ctx context.Context, id string, maxLive int) (leaseI
 	// count — so the session renders as blocked, offering allow/deny buttons
 	// that reach no pod, and keeps doing so after a warm, since the new pod
 	// streams from a cursor above them and never sees them at all.
+	//
+	// Questions are DELIBERATELY excluded. A permission's allow/deny buttons
+	// are bound to a specific live pod's canUseTool promise, so once that pod
+	// is gone the buttons are dead and the request must be closed. A blocking
+	// question is not: its answer is a durable transcript row keyed by the
+	// question's own seq, delivered to the NEXT pod on warm
+	// (StreamHumanMessages replays the answer above RESUME_FROM_SEQ, and
+	// worker/src/session.ts feeds it in as an ordinary turn). So a question
+	// can outlive its pod and be answered days later on the same card —
+	// stale-closing it here would auto-answer it "restarted before answered"
+	// the instant the pod warms, destroying the exact answer the human was
+	// about to give.
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO transcript (session_id, seq, "from", text, type, idempotency_key, reply_to_seq)
 		SELECT q.session_id,
 		       (SELECT coalesce(max(seq), 0) FROM transcript WHERE session_id = q.session_id)
 		         + row_number() OVER (ORDER BY q.seq),
 		       'system',
-		       CASE WHEN q.type = 'question'
-		            THEN 'The session was restarted before this was answered.'
-		            ELSE '{"behavior":"deny","message":"The session was restarted before this was answered."}'
-		       END,
-		       CASE WHEN q.type = 'question' THEN 'answer' ELSE 'permission_response' END,
+		       '{"behavior":"deny","message":"The session was restarted before this was answered."}',
+		       'permission_response',
 		       'stale-decision-' || q.session_id || '-' || q.seq,
 		       q.seq
 		  FROM transcript q
 		 WHERE q.session_id = $1
-		   AND q.type IN ('question', 'permission_request')
+		   AND q.type = 'permission_request'
 		   AND NOT EXISTS (
 		         SELECT 1 FROM transcript r
 		          WHERE r.session_id = q.session_id AND r.reply_to_seq = q.seq
@@ -485,13 +494,34 @@ func (s *Store) UpdateMeta(ctx context.Context, id string, title, description *s
 // GC read. Deleting it would leave last_active_at NULL forever, and
 // `NULL < now() - interval` is NULL, so the GC would never fire for
 // anything.
+//
+// last_active_at and activity_seen deliberately count DIFFERENT things, and
+// conflating them made the startup-stall sweep (docs/adr/0040) dead code on
+// the only path that creates pods:
+//
+//   - last_active_at means "anything happened", human or pod. A human typing
+//     is a reason not to call a session idle, so every append bumps it.
+//   - activity_seen means "the POD said something" — it answers "did this
+//     pod ever come up?", which is a question about the pod alone.
+//
+// Setting activity_seen on human appends too made it unsettable-by-anything
+// -but-a-human, in the wrong direction: ReserveSlot clears it per pod, then
+// PostMessage warms and appends (that order is load-bearing, docs/adr/0048),
+// so the human's own provisioning message set it true milliseconds later.
+// `WHERE NOT activity_seen` in ListStartupStalledIDs then matched nothing,
+// ever, and a pod that never started — a bad repos.image, an unschedulable
+// node, an ImagePullBackOff — held its slot until the 30-minute idle sweep
+// instead of the 3-minute stall sweep written for exactly that case.
+//
+// OR'd rather than assigned, so a later human message cannot un-see a pod
+// that has already spoken.
 func (s *Store) TouchActive(ctx context.Context, id, from, entryType string) error {
 	_, err := s.pool.Exec(ctx, `
 		UPDATE sessions
 		SET last_active_at = now(),
 		    last_entry_from = $2,
 		    last_entry_type = $3,
-		    activity_seen = true,
+		    activity_seen = activity_seen OR $2 <> 'human',
 		    updated_at = now()
 		WHERE id = $1
 	`, id, from, entryType)

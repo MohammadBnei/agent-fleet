@@ -60,6 +60,20 @@ The migration therefore adds **inputs**, not a state:
 |---|---|
 | `last_entry_type`, `last_entry_from` | Distinguishes "the agent closed the turn" (a `result`) from "a human said something and nothing came back". Written by the same `activityTrackingStore` UPDATE that already sets `last_active_at` — no extra round trip, no second source of truth. |
 | `activity_seen` | Latches on the first agent-authored entry, reset when a new pod is dispatched. `last_active_at` cannot express this: claiming sets it to `now()`, so a never-started pod looks freshly active. |
+
+> **Correction, v3.3.x.** "Latches on the first **agent-authored** entry" is
+> what this row always said, and is not what the code did: `TouchActive` set
+> `activity_seen = true` on every append, human ones included. Combined with
+> docs/adr/0048's load-bearing warm-then-append ordering — `ReserveSlot`
+> clears the flag, then the human's own provisioning message lands — it was
+> true again within milliseconds of every dispatch, so
+> `ListStartupStalledIDs`' `WHERE NOT activity_seen` matched nothing and this
+> whole guard was dead on the only path that creates pods. A pod that never
+> started held its slot for the 30-minute idle timeout instead of 3 minutes.
+> Found by pointing `repos.image` at an image that does not exist. Now gated
+> on `$from <> 'human'` and OR'd rather than assigned, so a later human
+> message cannot un-see a pod that has spoken. Guarded by
+> `TestListStartupStalledIDs_AHumanMessageIsNotProofOfAPod`.
 | `seen_at` | Separates `idle` from `done`. |
 
 `status` is untouched. Liveness is orthogonal, and collapsing them is what

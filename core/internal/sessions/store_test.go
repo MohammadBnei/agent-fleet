@@ -141,6 +141,14 @@ func TestReserveSlot_ResetsPerPodStateForTheNewPod(t *testing.T) {
 // blocked forever — with allow/deny buttons that reach no pod, and no way for
 // the replacement pod to help, because it streams from a cursor above them and
 // never sees them at all.
+//
+// Only permission_request is closed. A question is DELIBERATELY spared: its
+// answer is a durable transcript row keyed by the question's own seq, delivered
+// to the next pod on warm (StreamHumanMessages replays it above RESUME_FROM_SEQ
+// and worker/src/session.ts feeds it in as a turn). So a blocking question can
+// outlive its pod and be answered days later on the same card — stale-closing
+// it would auto-answer it the instant the pod warms, destroying the exact
+// answer the human was about to give.
 func TestReserveSlot_ResolvesDecisionsTheDeadPodLeftBehind(t *testing.T) {
 	ctx := context.Background()
 	pool := dbtest.NewPool(t)
@@ -179,10 +187,12 @@ func TestReserveSlot_ResolvesDecisionsTheDeadPodLeftBehind(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
-	if after.PendingDecisions != 0 {
-		t.Errorf("%d decision(s) still pending after a new pod was reserved — the session will "+
-			"render as blocked on a pod that no longer exists, and stay that way through every "+
-			"later warm", after.PendingDecisions)
+	// Exactly one decision remains: the seq-2 question. The two stranded
+	// permissions were closed; the question was spared so its human answer can
+	// still land on the next warm.
+	if after.PendingDecisions != 1 {
+		t.Errorf("%d decision(s) pending after warm, want 1 (the question survives, both "+
+			"permissions are closed)", after.PendingDecisions)
 	}
 
 	// The already-answered request must not collect a second reply: the count
@@ -195,6 +205,19 @@ func TestReserveSlot_ResolvesDecisionsTheDeadPodLeftBehind(t *testing.T) {
 	}
 	if replies != 1 {
 		t.Errorf("the answered request collected %d replies, want 1", replies)
+	}
+
+	// The question must NOT have been auto-answered — no reply may point at its
+	// seq. If it were, the human's real answer arriving later would be a second,
+	// conflicting reply to a question the dashboard already treats as resolved.
+	var questionReplies int
+	if err := pool.QueryRow(ctx,
+		`SELECT count(*) FROM transcript WHERE session_id = $1 AND reply_to_seq = 2`, id).Scan(&questionReplies); err != nil {
+		t.Fatalf("count question replies: %v", err)
+	}
+	if questionReplies != 0 {
+		t.Errorf("the question was auto-answered on warm (%d replies) — its human answer must "+
+			"still be deliverable on the next pod", questionReplies)
 	}
 }
 
@@ -360,7 +383,13 @@ func TestSweepQueries_SelectOnlyTheSessionsTheyDescribe(t *testing.T) {
 	if err := store.SetPodPhase(ctx, healthy, "POD_PHASE_RUNNING", ""); err != nil {
 		t.Fatalf("phase: %v", err)
 	}
+	// Human asks, pod answers — both halves, because they now mean different
+	// things: the human append moves last_active_at, the agent append is what
+	// proves the pod came up (see TouchActive).
 	if err := store.TouchActive(ctx, healthy, "human", "discussion"); err != nil {
+		t.Fatalf("touch: %v", err)
+	}
+	if err := store.TouchActive(ctx, healthy, "agent", "assistant"); err != nil {
 		t.Fatalf("touch: %v", err)
 	}
 
@@ -417,7 +446,8 @@ func TestSweepQueries_SelectOnlyTheSessionsTheyDescribe(t *testing.T) {
 		t.Error("the idle sweep caught a session active seconds ago — this kills live conversations")
 	}
 
-	// Startup stall is gated on activity_seen, which TouchActive sets.
+	// Startup stall is gated on activity_seen, which only a NON-human append
+	// sets — see TestListStartupStalledIDs_AHumanMessageIsNotProofOfAPod.
 	stalled, err := store.ListStartupStalledIDs(ctx, 0)
 	if err != nil {
 		t.Fatalf("stalled: %v", err)
@@ -427,6 +457,75 @@ func TestSweepQueries_SelectOnlyTheSessionsTheyDescribe(t *testing.T) {
 	}
 	if !contains(stalled, stopped) {
 		t.Error("a pod that came up and never said anything must be startup-stalled")
+	}
+}
+
+// TestListStartupStalledIDs_AHumanMessageIsNotProofOfAPod replays the exact
+// live sequence that made docs/adr/0040's startup-stall sweep dead code on the
+// only path that creates pods.
+//
+// PostMessage warms and THEN appends — that order is load-bearing (docs/adr/
+// 0048: a message appended before the pod exists lands below its cursor and is
+// never delivered). ReserveSlot clears activity_seen for the new pod; the
+// human's own provisioning message set it right back to true milliseconds
+// later, because TouchActive set it on every append regardless of origin.
+// `WHERE NOT activity_seen` then matched nothing, ever.
+//
+// Found on a kind cluster by pointing repos.image at an image that does not
+// exist: three sessions whose pods never pulled a layer all sat at
+// activity_seen = true, holding their slots until the 30-minute idle sweep
+// instead of the 3-minute stall sweep written for exactly this.
+func TestListStartupStalledIDs_AHumanMessageIsNotProofOfAPod(t *testing.T) {
+	ctx := context.Background()
+	pool := dbtest.NewPool(t)
+	store := NewStore(pool)
+
+	// The real ordering: reserve (clears activity_seen), then the human's
+	// message lands. No pod ever speaks — it is ImagePullBackOff.
+	stalled := newSession(t, ctx, store)
+	if _, err := store.ReserveSlot(ctx, stalled, 5); err != nil {
+		t.Fatalf("reserve: %v", err)
+	}
+	if err := store.SetPodPhase(ctx, stalled, "POD_PHASE_SCHEDULED", ""); err != nil {
+		t.Fatalf("phase: %v", err)
+	}
+	if err := store.TouchActive(ctx, stalled, "human", "discussion"); err != nil {
+		t.Fatalf("touch: %v", err)
+	}
+
+	ids, err := store.ListStartupStalledIDs(ctx, 0)
+	if err != nil {
+		t.Fatalf("stalled: %v", err)
+	}
+	if !contains(ids, stalled) {
+		t.Error("a pod that never spoke was not startup-stalled — the human's own " +
+			"provisioning message marked it as having reported activity, so the " +
+			"sweep can never fire and the session holds a slot until the idle timeout")
+	}
+
+	// The other direction: once the pod speaks, a later human message must not
+	// un-see it. activity_seen is OR'd, never assigned.
+	spoke := newSession(t, ctx, store)
+	if _, err := store.ReserveSlot(ctx, spoke, 5); err != nil {
+		t.Fatalf("reserve: %v", err)
+	}
+	if err := store.SetPodPhase(ctx, spoke, "POD_PHASE_RUNNING", ""); err != nil {
+		t.Fatalf("phase: %v", err)
+	}
+	if err := store.TouchActive(ctx, spoke, "agent", "assistant"); err != nil {
+		t.Fatalf("touch: %v", err)
+	}
+	if err := store.TouchActive(ctx, spoke, "human", "discussion"); err != nil {
+		t.Fatalf("touch: %v", err)
+	}
+
+	ids, err = store.ListStartupStalledIDs(ctx, 0)
+	if err != nil {
+		t.Fatalf("stalled: %v", err)
+	}
+	if contains(ids, spoke) {
+		t.Error("a human message after the pod spoke un-set activity_seen — this " +
+			"tears down a live session mid-conversation")
 	}
 }
 

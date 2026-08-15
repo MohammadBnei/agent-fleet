@@ -1,5 +1,19 @@
 # Changelog
 
+## [3.4.1](https://github.com/MohammadBnei/agent-fleet/compare/3.4.0...3.4.1) (2026-08-15)
+
+
+### Bug Fixes
+
+* **core:** only a non-human append proves a pod came up ([#173](https://github.com/MohammadBnei/agent-fleet/issues/173)) ([31c2b85](https://github.com/MohammadBnei/agent-fleet/commit/31c2b85f4e9fa13e56ff0f2072a6c84369a94b73))
+
+# [3.4.0](https://github.com/MohammadBnei/agent-fleet/compare/3.3.0...3.4.0) (2026-08-15)
+
+
+### Features
+
+* **core,worker,sidecar:** a blocking question outlives its pod ([#174](https://github.com/MohammadBnei/agent-fleet/issues/174)) ([e4272e8](https://github.com/MohammadBnei/agent-fleet/commit/e4272e8c81a3a28754e65f600935273adefa40ed))
+
 # [3.3.0](https://github.com/MohammadBnei/agent-fleet/compare/3.2.1...3.3.0) (2026-08-15)
 
 
