@@ -164,6 +164,21 @@ Any doc, code, comment, or memory that contradicts this file or an
   annotations are inert while looking like configuration. No metric carries
   a `session_id` label. See
   [`adr/0047`](adr/0047-metrics-scoped-to-the-hubs.md).
+- **A session loads `settingSources: ["user", "project"]` — never
+  `"local"`.** `"user"` is the provisioner-synced `fleet-shared/` context;
+  `"project"` is the target repo's own `CLAUDE.md` and `.claude/skills/`,
+  which no worker could see until `adr/0049` (the "target repo's CLAUDE.md
+  wins" line in `fleet-shared/CLAUDE.md` described a file the session was not
+  loading). `"local"` stays out because `.claude/settings.local.json` is
+  gitignored, so nothing about it is reviewable in the PR that lands it.
+  `"project"` also merges that repo's `permissions.allow`, which is why
+  `fleet-shared/settings.json` carries a `permissions.ask` block: the SDK
+  resolves **deny → ask → allow** and returns on the first match, so a
+  user-scope `ask` outranks a project-scope `allow`. `ask` rather than `deny`
+  because a human must still be able to approve a `git push` — every result
+  is a PR. There is no specificity tiebreak, so a broad `ask` prefix swallows
+  every narrower `allow` beneath it. See
+  [`adr/0049`](adr/0049-project-setting-source.md).
 
 ## 2. Forbidden patterns (quick check — full list + reasons in `adr/`)
 

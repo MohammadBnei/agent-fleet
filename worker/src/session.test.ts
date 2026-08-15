@@ -234,7 +234,7 @@ beforeEach(() => {
 // comes from env and its instruction from the transcript, so there is no task
 // object to construct (docs/adr/0048).
 
-test("tool wiring: default mode, no Write/Edit in allowedTools, canUseTool present, settingSources user", async () => {
+test("tool wiring: default mode, no Write/Edit in allowedTools, canUseTool present, settingSources user+project", async () => {
   const promise = runSession();
   await Bun.sleep(20);
   pushHuman("stop", "abort");
@@ -269,7 +269,13 @@ test("tool wiring: default mode, no Write/Edit in allowedTools, canUseTool prese
   // The provisioner-synced fleet-shared skills/context (docs/adr/0032) are
   // discovered natively via settingSources, not an explicit plugins: entry
   // — this is the actual "no session.ts change to add a skill" payoff.
-  expect(queryOptions?.settingSources).toEqual(["user"]);
+  //
+  // "project" is what gives a session the *target repo's* own CLAUDE.md and
+  // .claude/skills/ (docs/adr/0049). "local" must stay out: it would load
+  // .claude/settings.local.json, which is gitignored and so lands
+  // unreviewed.
+  expect(queryOptions?.settingSources).toEqual(["user", "project"]);
+  expect(queryOptions?.settingSources).not.toContain("local");
   expect(queryOptions?.plugins).toBeUndefined();
 }, 10000);
 

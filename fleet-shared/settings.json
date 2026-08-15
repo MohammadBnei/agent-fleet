@@ -57,9 +57,18 @@
       "Bash(which:*)",
       "Bash(pwd:*)",
       "Bash(ps:*)",
-      "Bash(curl http://127.0.0.1:*)",
-      "Bash(curl http://localhost:*)",
       "Bash(rtk proxy:*)"
+    ],
+    "ask": [
+      "Bash(git push:*)",
+      "Bash(gh:*)",
+      "Bash(rm:*)",
+      "Bash(sudo:*)",
+      "Bash(kubectl:*)",
+      "Bash(curl:*)",
+      "Bash(wget:*)",
+      "Bash(env:*)",
+      "Bash(cat:*)"
     ]
   },
   "enabledPlugins": {

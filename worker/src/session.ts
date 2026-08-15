@@ -516,14 +516,29 @@ export async function runSession(): Promise<SessionResult> {
         "agent-fleet-sidecar": sidecarMcpServer(),
         playwright: playwrightMcpServer(),
       },
-      // "user" (not "project"): CLAUDE_CONFIG_DIR (provisioner/internal/k8s/
-      // pod.go) points at the shared PVC, provisioner-synced by
-      // git.Manager.SyncFleetShared (docs/adr/0032) — Claude Code discovers
-      // CLAUDE.md/settings.json/skills/ there natively, no plugins: entry
-      // needed. Deliberately not "project": that would load the *target
-      // repo's own* .claude/settings.json as part of this session, a
-      // separate decision not made here.
-      settingSources: ["user"],
+      // "user": CLAUDE_CONFIG_DIR (provisioner/internal/k8s/pod.go) points
+      // at the shared PVC, provisioner-synced by git.Manager.SyncFleetShared
+      // (docs/adr/0032) — Claude Code discovers CLAUDE.md/settings.json/
+      // skills/ there natively, no plugins: entry needed.
+      //
+      // "project" (docs/adr/0049, resolving adr/0032's deferred question):
+      // the target repo's own CLAUDE.md and .claude/skills/, relative to cwd
+      // = WORKTREE_PATH. Without it a worker on agent-fleet never read
+      // agent-fleet's own CLAUDE.md — it was working from the fleet-shared
+      // one alone.
+      //
+      // It also merges the target repo's .claude/settings.json
+      // permissions.allow, and an allow rule removes canUseTool from the
+      // path entirely (same authority as allowedTools above). What stops a
+      // repo self-approving its own `gh api` is the permissions.ask block in
+      // fleet-shared/settings.json: the SDK's evaluator resolves
+      // deny → ask → allow and returns on the first match, so a user-scope
+      // ask outranks a project-scope allow. Widening that block is the same
+      // decision as adding to allowedTools.
+      //
+      // Deliberately NOT "local": .claude/settings.local.json is gitignored,
+      // so nothing about it is reviewable in the PR that lands it.
+      settingSources: ["user", "project"],
       maxTurns: MAX_TURNS,
       abortController,
     },
