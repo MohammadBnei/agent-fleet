@@ -1,5 +1,20 @@
 # Changelog
 
+# [3.2.0](https://github.com/MohammadBnei/agent-fleet/compare/3.0.6...3.2.0) (2026-08-15)
+
+
+### Bug Fixes
+
+* **dashboard:** answer any question batch from the list card ([#167](https://github.com/MohammadBnei/agent-fleet/issues/167)) ([0f1cd36](https://github.com/MohammadBnei/agent-fleet/commit/0f1cd367bd9f6b362349091f2020beea9979aab2))
+
+
+### Features
+
+* **core,dashboard:** full-text session search on ListSessions ([#168](https://github.com/MohammadBnei/agent-fleet/issues/168)) ([51f574c](https://github.com/MohammadBnei/agent-fleet/commit/51f574c1878e3e86d789ac5648e05b1915a50197))
+* **dashboard:** sort/filter the quiet session tail, pin active on top ([#169](https://github.com/MohammadBnei/agent-fleet/issues/169)) ([231a418](https://github.com/MohammadBnei/agent-fleet/commit/231a4180c2af33d85bfb8675cf2101f16d5e81ad))
+* **sidecar,core:** add set_session_meta MCP tool ([#166](https://github.com/MohammadBnei/agent-fleet/issues/166)) ([5abfbb1](https://github.com/MohammadBnei/agent-fleet/commit/5abfbb173cc80e267a0b25e2ca73150654d96461))
+* **worker,fleet-shared:** load the target repo's own project settings ([#165](https://github.com/MohammadBnei/agent-fleet/issues/165)) ([15b384e](https://github.com/MohammadBnei/agent-fleet/commit/15b384eea1fbd92c7ababad4e8f0c0836a20810f))
+
 # [3.1.0](https://github.com/MohammadBnei/agent-fleet/compare/3.0.6...3.1.0) (2026-08-15)
 
 
