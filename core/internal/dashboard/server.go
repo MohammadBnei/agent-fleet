@@ -81,7 +81,7 @@ func (s *Server) ListSessions(ctx context.Context, req *connect.Request[agentfle
 	if limit <= 0 {
 		limit = defaultListLimit
 	}
-	list, err := s.sessions.List(ctx, limit)
+	list, err := s.sessions.List(ctx, limit, req.Msg.GetQuery())
 	if err != nil {
 		slog.Error("dashboard ListTasks", "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)

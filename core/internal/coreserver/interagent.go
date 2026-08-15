@@ -55,7 +55,7 @@ func (s *Server) liveStateOf(ctx context.Context, taskID string) (*sessions.Sess
 func (s *Server) ListPeerSessions(ctx context.Context, req *agentfleetv1.ListPeerSessionsRequest) (*agentfleetv1.ListPeerSessionsResponse, error) {
 	// Same bounded listing the dashboard uses — an agent picking a target
 	// wants the fleet's current sessions, not its entire history.
-	all, err := s.sessions.List(ctx, 100)
+	all, err := s.sessions.List(ctx, 100, "")
 	if err != nil {
 		return nil, fmt.Errorf("list sessions: %w", err)
 	}

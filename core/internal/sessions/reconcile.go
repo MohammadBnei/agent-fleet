@@ -121,7 +121,7 @@ func (l *Loop) reconcilePodPhases(ctx context.Context) {
 		return
 	}
 
-	rows, err := l.sessions.List(ctx, 500)
+	rows, err := l.sessions.List(ctx, 500, "")
 	if err != nil {
 		slog.Error("sessions loop: list sessions failed", "error", err)
 		return

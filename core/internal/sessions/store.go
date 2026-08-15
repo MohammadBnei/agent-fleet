@@ -202,12 +202,36 @@ func (s *Store) Get(ctx context.Context, id string) (*Session, error) {
 // List returns the most recent sessions, newest first. Archived sessions
 // are included — the dashboard buckets them rather than hiding them, since
 // "what did I finish" is a question a human asks.
-func (s *Store) List(ctx context.Context, limit int) ([]Session, error) {
+//
+// A non-empty query is Postgres full-text search over the session's own
+// labels (repo/title/description) OR any of its transcript rows' text, ranked
+// by relevance (websearch_to_tsquery = quotes/OR/`-` support, ADR-0033's
+// journal pattern, no new pg extension). Empty query keeps the created_at
+// listing order untouched.
+func (s *Store) List(ctx context.Context, limit int, query string) ([]Session, error) {
 	if limit <= 0 {
 		limit = 100
 	}
-	rows, err := s.pool.Query(ctx,
-		`SELECT `+selectCols+` FROM sessions s ORDER BY s.created_at DESC LIMIT $1`, limit)
+	sql := `SELECT ` + selectCols + ` FROM sessions s ORDER BY s.created_at DESC LIMIT $1`
+	args := []any{limit}
+	if query != "" {
+		// tsq is reused three times (label match, transcript EXISTS, rank), so
+		// bind it once as $2. The label vector and the transcript vector are
+		// ranked together; a transcript-only hit still surfaces its session.
+		sql = `SELECT ` + selectCols + `
+			FROM sessions s
+			WHERE to_tsvector('english', s.repo || ' ' || coalesce(s.title,'') || ' ' || coalesce(s.description,'')) @@ websearch_to_tsquery('english', $2)
+			   OR EXISTS (
+			     SELECT 1 FROM transcript t
+			      WHERE t.session_id = s.id
+			        AND to_tsvector('english', t.text) @@ websearch_to_tsquery('english', $2)
+			   )
+			ORDER BY ts_rank(to_tsvector('english', s.repo || ' ' || coalesce(s.title,'') || ' ' || coalesce(s.description,'')), websearch_to_tsquery('english', $2)) DESC,
+			         s.created_at DESC
+			LIMIT $1`
+		args = append(args, query)
+	}
+	rows, err := s.pool.Query(ctx, sql, args...)
 	if err != nil {
 		slog.Error("sessions List", "error", err)
 		return nil, fmt.Errorf("list sessions: %w", err)
@@ -643,7 +667,7 @@ func (s *Store) Delete(ctx context.Context, id string) error {
 // state is what there is to count — and it is the more useful axis anyway,
 // since "blocked" and "stalled" are the two a human actually acts on.
 func (s *Store) CountByRepoLiveState(ctx context.Context, turnStall time.Duration) (map[[2]string]int, error) {
-	list, err := s.List(ctx, 500)
+	list, err := s.List(ctx, 500, "")
 	if err != nil {
 		return nil, err
 	}

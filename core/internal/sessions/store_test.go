@@ -501,12 +501,49 @@ func TestList_SurvivesANullDescription(t *testing.T) {
 	if _, err := store.Get(ctx, id); err != nil {
 		t.Fatalf("Get with a NULL description: %v", err)
 	}
-	rows, err := store.List(ctx, 100)
+	rows, err := store.List(ctx, 100, "")
 	if err != nil {
 		t.Fatalf("List with a NULL description in the table: %v", err)
 	}
 	if !contains(ids(rows), id) {
 		t.Error("the NULL-description session is missing from List")
+	}
+}
+
+// A word that appears only inside a transcript row — never in the session's
+// own labels — must still surface that session through List's query param, and
+// an empty query must leave the default ordering untouched.
+func TestList_QueryMatchesTranscriptText(t *testing.T) {
+	ctx := context.Background()
+	pool := dbtest.NewPool(t)
+	store := NewStore(pool)
+
+	hit := newSession(t, ctx, store)
+	miss := newSession(t, ctx, store)
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO transcript (session_id, seq, "from", text, type, idempotency_key)
+		VALUES ($1, 0, 'human', 'please investigate the flux capacitor', 'discussion', 'k1')`, hit); err != nil {
+		t.Fatalf("insert transcript: %v", err)
+	}
+
+	rows, err := store.List(ctx, 100, "capacitor")
+	if err != nil {
+		t.Fatalf("List with query: %v", err)
+	}
+	if !contains(ids(rows), hit) {
+		t.Error("transcript-only match missing from query results")
+	}
+	if contains(ids(rows), miss) {
+		t.Error("non-matching session leaked into query results")
+	}
+
+	// Empty query = unfiltered listing: both sessions present.
+	all, err := store.List(ctx, 100, "")
+	if err != nil {
+		t.Fatalf("List empty query: %v", err)
+	}
+	if !contains(ids(all), hit) || !contains(ids(all), miss) {
+		t.Error("empty query dropped a session")
 	}
 }
 
