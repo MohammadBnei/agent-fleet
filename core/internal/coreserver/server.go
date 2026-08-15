@@ -181,14 +181,25 @@ func (s *Server) AskUserQuestion(ctx context.Context, req *agentfleetv1.AskUserQ
 		return nil, fmt.Errorf("task_id and questions_json are required")
 	}
 
-	seq, err := s.transcr.Append(ctx, req.GetSessionId(), "agent", req.GetQuestionsJson(), "question", uuid.NewString())
+	// On timeout this tool returns {"status":"pending"} and the agent
+	// re-invokes with the *same* questions to keep waiting. A naive Append
+	// per call mints a new question seq each time, so the human's answer to
+	// the card they see (an earlier seq) never matches the seq this call
+	// polls — the answer is silently lost and the poll times out forever
+	// (plus a duplicate question card per re-invoke). Reuse the latest
+	// question with identical text instead: one seq for the whole wait, so
+	// the answer always correlates regardless of when it lands.
+	seq, reused, err := s.reuseOrAppendQuestion(ctx, req.GetSessionId(), req.GetQuestionsJson())
 	if err != nil {
 		return nil, fmt.Errorf("AskUserQuestion: %w", err)
 	}
-	// The other way a session blocks on a human. Same notification as a
-	// permission request, since from a human's side they are the same event:
-	// nothing moves until someone answers.
-	s.announceBlocked(ctx, req.GetSessionId(), "asked a question")
+	if !reused {
+		// The other way a session blocks on a human. Same notification as a
+		// permission request, since from a human's side they are the same
+		// event: nothing moves until someone answers. A re-invoke of an
+		// already-announced question must not re-notify.
+		s.announceBlocked(ctx, req.GetSessionId(), "asked a question")
+	}
 
 	timeoutMs := req.GetTimeoutMs()
 	if timeoutMs <= 0 {
@@ -221,6 +232,46 @@ func (s *Server) AskUserQuestion(ctx context.Context, req *agentfleetv1.AskUserQ
 		case <-time.After(pollInterval):
 		}
 	}
+}
+
+// reuseOrAppendQuestion returns the seq of the latest still-*unanswered*
+// "question" entry with identical text (the same AskUserQuestion the agent is
+// re-invoking to keep waiting), or appends a fresh one. reused is true when an
+// existing entry was found, so the caller can skip re-announcing.
+//
+// Only unanswered questions are reused: an agent that legitimately re-asks an
+// identical question ("Proceed?" a second time) must get a fresh card and a
+// fresh answer, not the stale reply to the first. An already-answered question
+// is done — its seq is not a live wait to rejoin. The gap this can't cover —
+// the human answering strictly between one call's timeout return and the
+// re-invoke's read — is sub-millisecond (the agent re-invokes immediately) and
+// a human can't hit it; a call still blocking when the answer lands returns it
+// directly.
+//
+// ponytail: linear scan of the transcript per call — fine at these sizes;
+// index unanswered questions by text if it ever matters.
+func (s *Server) reuseOrAppendQuestion(ctx context.Context, sessionID, questionsJSON string) (seq int64, reused bool, err error) {
+	entries, _, err := s.transcr.ReadSince(ctx, sessionID, 0, 100000)
+	if err != nil {
+		return 0, false, err
+	}
+	answered := make(map[int64]bool, len(entries))
+	for _, e := range entries {
+		if e.Type == "answer" && e.ReplyTo != nil {
+			answered[*e.ReplyTo] = true
+		}
+	}
+	for i := len(entries) - 1; i >= 0; i-- {
+		e := entries[i]
+		if e.Type == "question" && e.Text == questionsJSON && !answered[e.Seq] {
+			return e.Seq, true, nil
+		}
+	}
+	seq, err = s.transcr.Append(ctx, sessionID, "agent", questionsJSON, "question", uuid.NewString())
+	if err != nil {
+		return 0, false, err
+	}
+	return seq, false, nil
 }
 
 // Expose/Unexpose/RequestService forward to the provisioner under

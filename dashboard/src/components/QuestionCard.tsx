@@ -28,6 +28,7 @@ export function QuestionCard({
   onSubmit: (answers: Record<string, string>) => void;
 }) {
   const [selected, setSelected] = useState<Record<number, string[]>>({});
+  const [freeText, setFreeText] = useState<Record<number, string>>({});
   const [isCollapsed, setIsCollapsed] = useState(false);
   const questions = parseQuestions(entry.text);
 
@@ -58,13 +59,16 @@ export function QuestionCard({
     });
   }
 
-  const allAnswered = questions.every((_, i) => (selected[i] ?? []).length > 0);
+  // A question is answered by picking an option OR typing a free-text reply.
+  const allAnswered = questions.every((_, i) => (selected[i] ?? []).length > 0 || (freeText[i] ?? "").trim().length > 0);
 
   function submit() {
     if (!questions) return;
     const answers: Record<string, string> = {};
     questions.forEach((q, i) => {
-      answers[q.question] = (selected[i] ?? []).join(", ");
+      // Typed text wins over any selected options — it's the more specific
+      // intent when the human bothered to write something.
+      answers[q.question] = (freeText[i] ?? "").trim() || (selected[i] ?? []).join(", ");
     });
     onSubmit(answers);
   }
@@ -144,6 +148,19 @@ export function QuestionCard({
                         </div>
                       ))}
                 </div>
+              )}
+              {/* Free-form escape hatch: the human can always type a reply
+                  instead of (or as well as) picking an option. Typed text
+                  overrides the selection on submit. Also the only answer path
+                  for a question posted with no options. */}
+              {!answer && (
+                <textarea
+                  className="mt-1 w-full border border-acc-line bg-base-300/40 px-2.5 py-1.5 text-sm resize-y focus:border-primary focus:outline-none"
+                  rows={2}
+                  placeholder={q.options.length ? "or type a response…" : "type a response…"}
+                  value={freeText[qIndex] ?? ""}
+                  onChange={(e) => setFreeText((prev) => ({ ...prev, [qIndex]: e.target.value }))}
+                />
               )}
             </fieldset>
           ))}

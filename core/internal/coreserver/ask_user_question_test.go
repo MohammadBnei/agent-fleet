@@ -84,6 +84,114 @@ func TestAskUserQuestion_IgnoresAnswerToADifferentQuestion(t *testing.T) {
 	}
 }
 
+// TestAskUserQuestion_ReinvokeReusesSameQuestion covers the reported bug:
+// on timeout the tool returns {"status":"pending"} and the agent re-invokes
+// with the same questions. Each call used to Append a new question entry, so
+// the human's answer (to the first seq) never matched the seq the re-invoke
+// polled — answer lost forever. The re-invoke must reuse the first question's
+// seq, and an answer to that seq must then satisfy a later call.
+func TestAskUserQuestion_ReinvokeReusesSameQuestion(t *testing.T) {
+	store := &fakeQAStore{}
+	s := New(store, nil, nil, nil, nil, nil, nil)
+
+	const questions = `{"questions":[{"question":"pick","header":"h","options":[]}]}`
+	req := &agentfleetv1.AskUserQuestionRequest{SessionId: "task-1", QuestionsJson: questions, TimeoutMs: 30}
+
+	first, err := s.AskUserQuestion(context.Background(), req)
+	if err != nil {
+		t.Fatalf("first AskUserQuestion: %v", err)
+	}
+	if first.GetAnswered() {
+		t.Fatalf("expected first call to time out unanswered")
+	}
+
+	// Re-invoke with identical questions before anyone answers.
+	second, err := s.AskUserQuestion(context.Background(), req)
+	if err != nil {
+		t.Fatalf("second AskUserQuestion: %v", err)
+	}
+	if second.GetQuestionSeq() != first.GetQuestionSeq() {
+		t.Fatalf("re-invoke minted a new seq: first=%d second=%d", first.GetQuestionSeq(), second.GetQuestionSeq())
+	}
+
+	// Exactly one question entry exists — no duplicate cards.
+	store.mu.Lock()
+	questionCount := 0
+	for _, e := range store.entries {
+		if e.Type == "question" {
+			questionCount++
+		}
+	}
+	store.mu.Unlock()
+	if questionCount != 1 {
+		t.Fatalf("expected 1 question entry after re-invoke, got %d", questionCount)
+	}
+
+	// A human answer to the shared seq, landing while a re-invoke is still
+	// blocked, unblocks it — the round trip that was silently lost before.
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		_, _ = store.AppendReply(context.Background(), "task-1", "human", `{"answers":{"pick":"typed reply"}}`, "answer", "", first.GetQuestionSeq())
+	}()
+	waiting := &agentfleetv1.AskUserQuestionRequest{SessionId: "task-1", QuestionsJson: questions, TimeoutMs: 5000}
+	third, err := s.AskUserQuestion(context.Background(), waiting)
+	if err != nil {
+		t.Fatalf("third AskUserQuestion: %v", err)
+	}
+	if !third.GetAnswered() || third.GetAnswersJson() != `{"answers":{"pick":"typed reply"}}` {
+		t.Fatalf("answer to reused seq not received: answered=%v json=%q", third.GetAnswered(), third.GetAnswersJson())
+	}
+	if third.GetQuestionSeq() != first.GetQuestionSeq() {
+		t.Fatalf("blocked call posted a new seq instead of reusing: first=%d third=%d", first.GetQuestionSeq(), third.GetQuestionSeq())
+	}
+}
+
+// TestAskUserQuestion_ReaskAfterAnswerPostsFresh guards the regression the
+// reuse logic must NOT introduce: once a question is answered, a later
+// identical-text call is a genuine re-ask, so it must post a fresh question
+// (new seq) and block — never silently return the prior answer.
+func TestAskUserQuestion_ReaskAfterAnswerPostsFresh(t *testing.T) {
+	store := &fakeQAStore{}
+	s := New(store, nil, nil, nil, nil, nil, nil)
+
+	const questions = `{"questions":[{"question":"proceed","header":"h","options":[]}]}`
+	req := &agentfleetv1.AskUserQuestionRequest{SessionId: "task-1", QuestionsJson: questions, TimeoutMs: 30}
+
+	// Answer the first ask (question is posted at seq 0).
+	go func() {
+		time.Sleep(10 * time.Millisecond)
+		_, _ = store.AppendReply(context.Background(), "task-1", "human", `{"answers":{"proceed":"yes"}}`, "answer", "", 0)
+	}()
+	first := &agentfleetv1.AskUserQuestionRequest{SessionId: "task-1", QuestionsJson: questions, TimeoutMs: 5000}
+	if _, err := s.AskUserQuestion(context.Background(), first); err != nil {
+		t.Fatalf("first AskUserQuestion: %v", err)
+	}
+
+	// Re-ask identical text: must NOT return the stale answer, must post a
+	// fresh question and time out unanswered.
+	resp, err := s.AskUserQuestion(context.Background(), req)
+	if err != nil {
+		t.Fatalf("re-ask AskUserQuestion: %v", err)
+	}
+	if resp.GetAnswered() {
+		t.Fatalf("re-ask returned a stale answer: %q", resp.GetAnswersJson())
+	}
+	if resp.GetQuestionSeq() == 0 {
+		t.Fatalf("re-ask reused the answered seq 0 instead of posting fresh")
+	}
+	store.mu.Lock()
+	questionCount := 0
+	for _, e := range store.entries {
+		if e.Type == "question" {
+			questionCount++
+		}
+	}
+	store.mu.Unlock()
+	if questionCount != 2 {
+		t.Fatalf("expected 2 question entries after a genuine re-ask, got %d", questionCount)
+	}
+}
+
 // TestAskUserQuestion_MatchesCorrectlyTaggedAnswer is the positive case:
 // an answer whose ReplyTo matches this call's own question seq does
 // unblock it.
