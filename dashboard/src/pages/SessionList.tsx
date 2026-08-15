@@ -499,7 +499,7 @@ export function compareSessions(a: Session, b: Session, sort: SortKey): number {
     case "repo":
       return a.repo.localeCompare(b.repo) || activeMs(b) - activeMs(a);
     case "title":
-      return sessionLabel(a).localeCompare(sessionLabel(b));
+      return sessionLabel(a).localeCompare(sessionLabel(b)) || activeMs(b) - activeMs(a);
     case "status":
       return restStatus(a).localeCompare(restStatus(b)) || activeMs(b) - activeMs(a);
     default:
