@@ -1,4 +1,4 @@
-# ADR-0050 — Playwright's browsers live on the shared PVC, not in the worker image
+# ADR-0051 — Playwright's browsers live on the shared PVC, not in the worker image
 
 **Status:** Accepted
 **Date:** 2026-08-16
