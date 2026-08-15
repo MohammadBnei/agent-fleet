@@ -57,7 +57,11 @@ RUN bun install -g playwright @playwright/mcp \
     # image rather than by trusting the install to have worked, which is the
     # whole lesson of docs/adr/0044. Symlinked explicitly so session.ts can
     # name a command instead of hardcoding a node_modules path.
-    && ln -s /root/.bun/install/global/node_modules/@playwright/mcp/cli.js /usr/local/bin/playwright-mcp \
+    #
+    # -f, because whether bun links this bin itself depends on the
+    # @playwright/mcp release: a version that does link it makes a bare `ln -s`
+    # fail the build on "File exists". Overwriting is safe — same target.
+    && ln -sf /root/.bun/install/global/node_modules/@playwright/mcp/cli.js /usr/local/bin/playwright-mcp \
     && chmod +x /usr/local/bin/playwright-mcp \
     # Braced, because `a && b || true` binds the || to the WHOLE chain: written
     # flat, a failed `playwright install` would still exit 0 and ship an image
