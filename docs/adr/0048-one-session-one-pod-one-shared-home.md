@@ -270,9 +270,15 @@ fix it.
 > no `sync` export. Three unrelated workloads, one shared link.
 >
 > 80 Mbps is 100BASE-TX after TCP overhead, so the original inference was right
-> about the mechanism and wrong only about which machine. Still open: whether
-> `.165`'s NIC is gigabit-capable and negotiating down (a cable or switch port,
-> and therefore near-free) or genuinely 100 Mbps hardware.
+> about the mechanism and wrong only about which machine.
+>
+> **Cause found.** `.165`'s own NIC is gigabit (onboard RTL8168H, advertising
+> `1000baseT/Full`, zero errors). It reaches the Freebox through an extra hop
+> that the other two hosts do not have — a TP-Link device whose autonegotiation
+> advertises `10baseT` and `100baseT` only, no `1000baseT/Full`. A ~€15
+> unmanaged gigabit switch replaces it. See `infra-bootstrap`'s
+> `docs/infrastructure-actual.md` for the full diagnosis; it is that repo's
+> concern, not this one's.
 >
 > Two consequences worth stating plainly, because both are easy to re-derive
 > wrongly later:
