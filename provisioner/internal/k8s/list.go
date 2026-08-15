@@ -33,10 +33,19 @@ type LiveWorkerJob struct {
 	Phase string
 }
 
-// jobPhase derives a Pod-phase-shaped terminal status from a Job's
-// conditions (reliability-findings.md #11) — "" for anything not yet
-// finished (Running/Pending have no Job-level equivalent worth
-// distinguishing here; nothing currently needs that granularity).
+// jobPhase derives a Pod-phase-shaped status from a Job's own status
+// (reliability-findings.md #11) — "" only while the Job has neither finished
+// nor got a ready pod.
+//
+// "Running" is not cosmetic here: core's reconcile loop maps exactly that
+// string onto POD_PHASE_RUNNING, and it was the only consumer of a phase this
+// function never produced. So no session in the fleet's history ever reached
+// RUNNING — every healthy one sat at SCHEDULED for its whole life, which is
+// the bug core's own comment says the upward sync exists to fix. Its test
+// passed because the fake returned "Running" and the real thing never did.
+//
+// Ready rather than Active: Active counts pending pods too, so it would
+// report RUNNING while the image is still pulling.
 func jobPhase(job *batchv1.Job) string {
 	for _, cond := range job.Status.Conditions {
 		if cond.Status != "True" {
@@ -48,6 +57,9 @@ func jobPhase(job *batchv1.Job) string {
 		case batchv1.JobFailed:
 			return "Failed"
 		}
+	}
+	if job.Status.Ready != nil && *job.Status.Ready > 0 {
+		return "Running"
 	}
 	return ""
 }

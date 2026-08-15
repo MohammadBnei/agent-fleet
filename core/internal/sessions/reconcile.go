@@ -131,6 +131,26 @@ func (l *Loop) reconcilePodPhases(ctx context.Context) {
 		if !IsPodPhaseLive(s.PodPhase) {
 			continue
 		}
+		// PROVISIONING and CREATED mean the provisioner is still mid-call and
+		// has NOT created the Job yet — those phases are reported before the
+		// clone, the fleet-shared sync and the pod create, which take tens of
+		// seconds together. "Kubernetes has no Job" is therefore the expected
+		// answer for them, not evidence of an orphan.
+		//
+		// Without this the loop raced every warm it happened to tick during
+		// and wrote TERMINATED over a session whose pod was seconds from
+		// existing (observed live 2026-08-15, 3s after a warm). That write is
+		// not self-healing: TERMINATED is not a live phase, so the next pass
+		// skips the row at the check above and nothing ever corrects it. The
+		// session showed no pod while its agent was running.
+		//
+		// A session genuinely stuck in these phases is still caught, by
+		// enforceStartupStall — activity_seen stays false, which is exactly
+		// what that sweep looks for.
+		// PodPhase is non-nil here: IsPodPhaseLive above returns false for nil.
+		if *s.PodPhase == "POD_PHASE_PROVISIONING" || *s.PodPhase == "POD_PHASE_CREATED" {
+			continue
+		}
 		if k8sPhase, stillThere := live[s.ID]; stillThere {
 			// The pod exists. Reconcile UPWARDS too, not just downwards.
 			//
