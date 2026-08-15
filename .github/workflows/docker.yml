@@ -204,9 +204,12 @@ jobs:
         with:
           platforms: ${{ env.PLATFORMS }}
           push: ${{ github.event_name == 'push' }}
-          load: true # single-platform build — was needed to make the image
-                     # visible to the local docker daemon for the (now
-                     # disabled) Trivy scan step; harmless to leave
+          # No `load:`. It existed to make the image visible to the local
+          # docker daemon for the Trivy step disabled just below, and it is
+          # not harmless: it exports every layer out of buildkit into the
+          # daemon on each build, for an image nothing on the runner then
+          # reads. Re-add it only alongside a step that actually consumes the
+          # local image.
           context: .
           file: ${{ matrix.component }}/Dockerfile
           tags: >-
@@ -364,7 +367,7 @@ jobs:
         with:
           platforms: ${{ env.PLATFORMS }}
           push: ${{ github.event_name == 'push' }}
-          load: true
+          # No `load:` — see the worker build above.
           # Repo-root context: each Dockerfile COPYs go.work + proto/gen/go
           # as siblings alongside its own module directory.
           context: .

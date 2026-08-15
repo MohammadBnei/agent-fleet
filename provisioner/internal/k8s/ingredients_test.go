@@ -2,6 +2,7 @@ package k8s
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
@@ -24,30 +25,35 @@ func TestBuildIngredients_UnknownServiceKey(t *testing.T) {
 }
 
 func TestBuildIngredients_ToolsProduceInitContainersAndPath(t *testing.T) {
-	initContainers, env, vol, mount, err := buildIngredients([]string{"go-toolchain", "buf"}, nil, ClusterAccess{})
+	initContainers, env, vol, mount, err := buildIngredients([]string{"cluster-access"}, nil, ClusterAccess{})
 	if err != nil {
 		t.Fatalf("buildIngredients: %v", err)
 	}
-	if len(initContainers) != 2 {
-		t.Fatalf("expected 2 init containers, got %d", len(initContainers))
+	if len(initContainers) != 1 {
+		t.Fatalf("expected 1 init container, got %d", len(initContainers))
 	}
 	if vol == nil || mount == nil {
 		t.Fatal("expected a shared tools volume+mount when tool ingredients are present")
 	}
-	foundPath, foundGoroot := false, false
+	var path string
 	for _, e := range env {
-		if e.Name == "PATH" {
-			foundPath = true
-		}
-		if e.Name == "GOROOT" {
-			foundGoroot = true
+		switch e.Name {
+		case "PATH":
+			path = e.Value
+		case "GOROOT":
+			// GOROOT went with go-toolchain (docs/adr/0048 §6). Setting it
+			// would point the image's own Go at a directory nothing stages.
+			t.Error("GOROOT is back — the toolchain lives in repos.image now")
 		}
 	}
-	if !foundPath {
-		t.Error("expected PATH env var")
+	if path == "" {
+		t.Fatal("expected PATH env var")
 	}
-	if !foundGoroot {
-		t.Error("expected GOROOT env var when go-toolchain is present")
+	if strings.Contains(path, "/opt/tools/go/bin") {
+		t.Errorf("PATH = %q still carries /opt/tools/go/bin — it shadowed the worker image's own Go", path)
+	}
+	if !strings.HasPrefix(path, toolsMountPath+"/bin:") {
+		t.Errorf("PATH = %q, want it to start with %s/bin:", path, toolsMountPath)
 	}
 }
 
@@ -211,17 +217,34 @@ func TestBuildIngredients_ClusterAccessInjectsShimEnv(t *testing.T) {
 	}
 }
 
-// Least privilege: a normal repo task must never carry the executor's
-// token just because it happens to use other ingredients.
-func TestBuildIngredients_OtherToolsGetNoClusterCredentials(t *testing.T) {
-	_, env, _, _, err := buildIngredients([]string{"go-toolchain", "buf"}, nil,
-		ClusterAccess{ExecutorAddr: "should-not-appear:9090", AuthToken: "secret"})
-	if err != nil {
-		t.Fatalf("buildIngredients: %v", err)
-	}
-	for _, e := range env {
-		if e.Name == "EXECUTOR_ADDR" || e.Name == "THOT_AUTH_TOKEN" {
-			t.Errorf("%s leaked into a pod without cluster-access", e.Name)
-		}
+// Least privilege: a normal repo session must never carry the executor's
+// token. CreateWorkerPod passes ClusterAccess in unconditionally — it holds
+// the provisioner's own config, not a per-session decision — so the ONLY
+// thing keeping the token out of an ordinary pod is the cluster-access key
+// being absent. That is what this asserts.
+//
+// It used to pass other tool keys here; those are gone (docs/adr/0048 §6),
+// so the cases that remain are no ingredients at all and services-only.
+func TestBuildIngredients_WithoutClusterAccessGetsNoClusterCredentials(t *testing.T) {
+	cluster := ClusterAccess{ExecutorAddr: "should-not-appear:9090", AuthToken: "secret"}
+	for _, tc := range []struct {
+		name     string
+		toolKeys []string
+		services []ServiceIngredientRef
+	}{
+		{name: "no ingredients"},
+		{name: "services only", services: []ServiceIngredientRef{{Key: "redis", ScopeMode: ScopeModePodScoped}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, env, _, _, err := buildIngredients(tc.toolKeys, tc.services, cluster)
+			if err != nil {
+				t.Fatalf("buildIngredients: %v", err)
+			}
+			for _, e := range env {
+				if e.Name == "EXECUTOR_ADDR" || e.Name == "THOT_AUTH_TOKEN" {
+					t.Errorf("%s leaked into a pod without cluster-access", e.Name)
+				}
+			}
+		})
 	}
 }

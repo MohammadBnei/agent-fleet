@@ -113,7 +113,21 @@ type CreateWorkerPodRequest struct {
 	// are requested on demand rather than declared per repo — so
 	// service_ingredients has no producer left, and `guidance` went with the
 	// fleet-composed prompt it was hidden inside (docs/adr/0048).
-	ToolKeys      []string `protobuf:"bytes,10,rep,name=tool_keys,json=toolKeys,proto3" json:"tool_keys,omitempty"`
+	ToolKeys []string `protobuf:"bytes,10,rep,name=tool_keys,json=toolKeys,proto3" json:"tool_keys,omitempty"`
+	// The container image the worker container runs, from `repos.image` — the
+	// one column docs/adr/0048 §6 put in place of the four toolchain
+	// ingredients, on the grounds that "an init container copying a Go
+	// toolchain onto an emptyDir is an elaborate way of saying this repo needs
+	// Go". Empty means the provisioner's own WORKER_IMAGE default.
+	//
+	// The column, its dashboard input and its store round-trip all shipped
+	// with docs/adr/0048; this field is what was missing, so setting the field
+	// in the dashboard did nothing at all until now.
+	//
+	// Applies to the worker container ONLY. The clone init container and the
+	// sidecar stay on the fleet's own images: cloning is fleet-owned behavior
+	// that needs git, and a repo-supplied image is not required to have it.
+	Image         string `protobuf:"bytes,12,opt,name=image,proto3" json:"image,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -209,6 +223,13 @@ func (x *CreateWorkerPodRequest) GetToolKeys() []string {
 		return x.ToolKeys
 	}
 	return nil
+}
+
+func (x *CreateWorkerPodRequest) GetImage() string {
+	if x != nil {
+		return x.Image
+	}
+	return ""
 }
 
 type CreateWorkerPodResponse struct {
@@ -894,7 +915,7 @@ var File_agentfleet_v1_provisioner_proto protoreflect.FileDescriptor
 
 const file_agentfleet_v1_provisioner_proto_rawDesc = "" +
 	"\n" +
-	"\x1fagentfleet/v1/provisioner.proto\x12\ragentfleet.v1\"\xe0\x02\n" +
+	"\x1fagentfleet/v1/provisioner.proto\x12\ragentfleet.v1\"\xf6\x02\n" +
 	"\x16CreateWorkerPodRequest\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x12\n" +
@@ -907,7 +928,8 @@ const file_agentfleet_v1_provisioner_proto_rawDesc = "" +
 	"\x11resume_session_id\x18\a \x01(\tR\x0fresumeSessionId\x12&\n" +
 	"\x0fresume_from_seq\x18\b \x01(\x03R\rresumeFromSeq\x12\x1b\n" +
 	"\ttool_keys\x18\n" +
-	" \x03(\tR\btoolKeysJ\x04\b\t\x10\n" +
+	" \x03(\tR\btoolKeys\x12\x14\n" +
+	"\x05image\x18\f \x01(\tR\x05imageJ\x04\b\t\x10\n" +
 	"J\x04\b\v\x10\fR\bguidanceR\x13service_ingredients\"4\n" +
 	"\x17CreateWorkerPodResponse\x12\x19\n" +
 	"\bpod_name\x18\x01 \x01(\tR\apodName\"g\n" +

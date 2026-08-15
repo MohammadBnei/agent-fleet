@@ -89,6 +89,16 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Fill the shared PVC's Playwright browser cache, which every worker pod
+	// mounts read-only (pod.go's browsersDir). Best-effort and NOT fatal: a
+	// fleet whose browser cache is still filling cannot browse yet, which is
+	// strictly better than a provisioner that refuses to start over it. The
+	// Job itself is idempotent, so this is a no-op once the cache is warm.
+	if err := k8sc.EnsureBrowserCache(ctx); err != nil {
+		slog.Warn("browser cache job not ensured — sessions will have no browser until this succeeds",
+			"error", err)
+	}
+
 	core, err := coreclient.New(cfg.CoreGRPCAddr)
 	if err != nil {
 		slog.Error("core client init failed", "error", err)

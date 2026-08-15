@@ -42,14 +42,10 @@ const (
 // An unknown key fails loud here, before any Kubernetes object is built —
 // catching a stale or hand-edited repo_profiles row as early as possible.
 func buildIngredients(toolKeys []string, serviceIngredients []ServiceIngredientRef, cluster ClusterAccess) (initContainers []corev1.Container, env []corev1.EnvVar, volume *corev1.Volume, mount *corev1.VolumeMount, err error) {
-	hasGo := false
 	for _, key := range toolKeys {
 		def, ok := catalog.Tools[key]
 		if !ok {
 			return nil, nil, nil, nil, fmt.Errorf("unknown tool ingredient %q", key)
-		}
-		if key == "go-toolchain" {
-			hasGo = true
 		}
 		initContainers = append(initContainers, corev1.Container{
 			Name:  "tool-" + key,
@@ -88,15 +84,13 @@ func buildIngredients(toolKeys []string, serviceIngredients []ServiceIngredientR
 		mount = &corev1.VolumeMount{Name: toolsVolumeName, MountPath: toolsMountPath}
 		env = append(env, corev1.EnvVar{
 			Name: "PATH",
-			// /opt/tools/bin covers bun/golangci-lint/buf's single-binary
-			// copies; /opt/tools/go/bin covers the go-toolchain's own bin
-			// dir — harmless to include even when go-toolchain isn't
-			// requested, PATH entries for a nonexistent dir are a no-op.
-			Value: "/opt/tools/bin:/opt/tools/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+			// Just /opt/tools/bin now: cluster-access's kubectl shim is the
+			// only thing staged here. /opt/tools/go/bin and a GOROOT override
+			// went with the toolchain ingredients (docs/adr/0048 §6) — and
+			// they were actively harmful while they lasted, since the go entry
+			// came first and shadowed the image's own Go.
+			Value: "/opt/tools/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
 		})
-		if hasGo {
-			env = append(env, corev1.EnvVar{Name: "GOROOT", Value: "/opt/tools/go"})
-		}
 	}
 
 	for _, si := range serviceIngredients {

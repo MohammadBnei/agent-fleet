@@ -1,0 +1,39 @@
+# Every Dockerfile here builds with the repo root as its context (see the
+# header comment in worker/Dockerfile) and COPYs the two or three directories
+# it actually needs. Without this file the daemon still uploads the whole
+# repo — including node_modules, which CI materializes *before* the image
+# build: docker.yml runs `bun install --frozen-lockfile && bun test` in the
+# same workspace it then builds from.
+#
+# Only entries nothing COPYs. Check `grep '^COPY' */Dockerfile` before adding
+# to this list — dashboard/ is copied wholesale by core/Dockerfile, so its
+# sources must not appear here, only its build outputs.
+
+.git
+.github
+.claude
+.mcp.json
+
+# Dependencies and build outputs — every image installs/builds its own.
+node_modules
+**/node_modules
+dashboard/dist
+core/internal/webui/dist
+
+# Docs and prose. Nothing is COPYed from these.
+docs
+*.md
+
+# The disposable kind cluster's manifests (local/kind/), and the deploy
+# manifests ArgoCD reads straight from git.
+local
+k8s
+
+# Cloned by the provisioner at runtime from git (docs/adr/0032), never baked
+# into an image.
+fleet-shared
+
+# Test and tooling noise.
+**/*_test.go
+**/.DS_Store
+**/coverage

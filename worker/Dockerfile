@@ -29,28 +29,34 @@ ARG GO_VERSION=1.26.5
 RUN curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" | tar -xz -C /usr/local
 ENV PATH="/usr/local/go/bin:${PATH}"
 
-# Playwright and its MCP server, carrying docs/adr/0044's finding intact:
+# Playwright's MCP server and system libraries — but NOT the browser binaries.
+#
+# `playwright install --with-deps chromium` used to run here and cost 2.45 GB
+# of the image: 2.0 GB of browser builds, ~400 MB of X/graphics system libs,
+# ~40 MB of npm packages. Only the last two actually need to be baked. The
+# browsers are large, version-pinned, and never written at runtime, so they
+# live once on the shared PVC and are mounted read-only at
+# PLAYWRIGHT_BROWSERS_PATH (provisioner/internal/k8s/pod.go) instead of being
+# copied into a layer on every node for every image version.
+#
+# `install-deps` rather than `install --with-deps`: same apt packages, no
+# browser download. The deps must stay in the image regardless — they are apt
+# packages installed as root at build time, which a mounted directory cannot
+# provide.
+#
+# Verified by driving a real browser_navigate against a read-only mount, not
+# by checking that a file exists — docs/adr/0044's whole lesson.
+#
+# docs/adr/0044's finding is intact and still load-bearing:
 # @playwright/mcp bundles a DIFFERENT playwright-core than `playwright` does,
 # so it resolves a different browser build number and refuses to start on the
-# one the first install put down. Both installs are required, and the server
-# must be launched with `--browser chromium` (see session.ts).
-#
-# That was found only by actually driving a browser_navigate. Every cheaper
-# check passed: the port was bound, the server answered, the handshake
-# succeeded, the tool list registered — and the browser binary was absent.
-# Browsers go to a fixed, world-readable path rather than $HOME/.cache.
-#
-# Without this they install under ROOT's cache at build time, and the session
-# runs as `bun` — so Playwright looked in /home/bun/.cache/ms-playwright and
-# reported the browser as not installed. Caught by actually driving a
-# browser_navigate in the built image; `playwright-mcp --version` and the MCP
-# handshake both passed with the browser absent, which is docs/adr/0044's
-# lesson repeating itself in a new location.
-ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+# one the first install put down. BOTH browser builds are required, and the
+# server must be launched with `--browser chromium` (see session.ts). That is
+# now the browser-cache Job's job (provisioner/internal/k8s/browsercache.go),
+# which runs both install commands against the shared PVC — the two halves
+# still have to stay together, they just live somewhere else.
 RUN bun install -g playwright @playwright/mcp \
-    && bunx playwright install --with-deps chromium \
-    && bunx @playwright/mcp install-browser chrome-for-testing \
-    && chmod -R o+rX /ms-playwright \
+    && bunx playwright install-deps chromium \
     # bun's global install does NOT put @playwright/mcp's own bin on PATH —
     # only `claude` and `playwright-core` end up in the global .bin, so the
     # server was unreachable by name. Caught by running the binary in the built
@@ -62,13 +68,7 @@ RUN bun install -g playwright @playwright/mcp \
     # @playwright/mcp release: a version that does link it makes a bare `ln -s`
     # fail the build on "File exists". Overwriting is safe — same target.
     && ln -sf /root/.bun/install/global/node_modules/@playwright/mcp/cli.js /usr/local/bin/playwright-mcp \
-    && chmod +x /usr/local/bin/playwright-mcp \
-    # Braced, because `a && b || true` binds the || to the WHOLE chain: written
-    # flat, a failed `playwright install` would still exit 0 and ship an image
-    # with no browser — the exact docs/adr/0044 failure the block above exists
-    # to prevent, reintroduced by shell precedence. Only this one chmod is
-    # allowed to fail (the path may not exist), and only it.
-    && { chmod -R o+rX /root/.cache 2>/dev/null || true; }
+    && chmod +x /usr/local/bin/playwright-mcp
 
 # rtk (Rust Token Killer) — same tool-output compression proxy Mohammad runs
 # locally (github.com/rtk-ai/rtk, Homebrew formula "rtk"). Static musl

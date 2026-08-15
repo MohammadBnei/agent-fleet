@@ -257,6 +257,19 @@ feature was written:
   in one click, and found a second live bug (the NULL scan above) while
   setting up. **Run `/dashboard-e2e` after changing anything in the create,
   decision or warm path**, not just the unit tests.
+- **A config value can exist at every layer and still reach nothing.**
+  `repos.image` shipped with `docs/adr/0048` as a column, a store round-trip,
+  a proto message on the dashboard side and a labelled input — and no `image`
+  field on `CreateWorkerPodRequest`, so it never crossed core→provisioner and
+  `pod.go` used `WORKER_IMAGE` regardless. Editing it in "manage repos" did
+  nothing for three minor versions. Grepping the field name finds hits in
+  every layer and looks like a wired feature; the four toolchain ingredients
+  it was supposed to replace were still shipping alongside it, one of them
+  still shadowing the image's own Go on `PATH`. **For anything a human
+  configures, trace it to the thing that consumes it — a column, a UI input
+  and a passing test suite are three ways of describing intent, not
+  evidence.** Guarded by
+  `TestCreateWorkerPod_RepoImageAppliesToTheWorkerContainerOnly`.
 
 ## Workflow rules
 

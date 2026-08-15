@@ -431,3 +431,181 @@ func TestCreateWorkerPod_ClusterAccessReachesTheJob(t *testing.T) {
 		t.Error("THOT_AUTH_TOKEN missing from the worker container — executor rejects the call")
 	}
 }
+
+// The browser mount and the env var that points at it are a pair: either
+// alone is a silently browser-less session.
+//
+// This is docs/adr/0044's failure mode with the browsers in a new place. That
+// ADR's last of three stacked failures was Playwright looking under
+// $HOME/.cache/ms-playwright and reporting the browser as not installed —
+// which is exactly what happens if the mount lands and
+// PLAYWRIGHT_BROWSERS_PATH does not. The MCP server still starts, the tool
+// list still registers, and only a real browser_navigate finds out.
+//
+// Read-only is asserted too: the cache is 2 GB shared by every session, and a
+// writable mount would make one session able to corrupt the browser build all
+// the others launch — the shared-writable-volume pattern docs/DECISIONS.md
+// forbids.
+func TestCreateWorkerPod_MountsTheSharedBrowserCacheReadOnlyAndPointsPlaywrightAtIt(t *testing.T) {
+	c := newTestClient()
+	ctx := context.Background()
+
+	if err := c.CreateWorkerPod(ctx, WorkerPodSpec{
+		SessionID: "task-browsers", Repo: "dream-analyst", LeaseID: "lease-1",
+	}); err != nil {
+		t.Fatalf("CreateWorkerPod: %v", err)
+	}
+	job, err := c.Core.BatchV1().Jobs("agent-fleet").Get(ctx, WorkerResourceName("task-browsers"), metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("get job: %v", err)
+	}
+	worker := job.Spec.Template.Spec.Containers[0]
+
+	var mount *corev1.VolumeMount
+	for i, m := range worker.VolumeMounts {
+		if m.MountPath == browsersDir {
+			mount = &worker.VolumeMounts[i]
+		}
+	}
+	if mount == nil {
+		t.Fatalf("worker has no %s mount — every session is browser-less", browsersDir)
+	}
+	if mount.Name != "shared" || mount.SubPath != browsersSubPath {
+		t.Errorf("browser mount = volume %q subPath %q, want shared/%s", mount.Name, mount.SubPath, browsersSubPath)
+	}
+	if !mount.ReadOnly {
+		t.Error("the browser cache is mounted writable — one session can corrupt the browser build every other session launches")
+	}
+
+	var browsersPath string
+	for _, e := range worker.Env {
+		if e.Name == "PLAYWRIGHT_BROWSERS_PATH" {
+			browsersPath = e.Value
+		}
+	}
+	if browsersPath != browsersDir {
+		t.Errorf("PLAYWRIGHT_BROWSERS_PATH = %q, want %q — without it Playwright looks in $HOME/.cache and reports no browser installed, and the mount above is inert",
+			browsersPath, browsersDir)
+	}
+}
+
+// The cache Job must write the SAME directory the worker pods read, and must
+// run the worker image — the playwright/playwright-core versions that decide
+// which browser builds are correct live in that image's node_modules, and
+// resolving them anywhere else is how the two drift apart (docs/adr/0044).
+func TestEnsureBrowserCache_WritesWhatTheWorkersRead(t *testing.T) {
+	c := newTestClient()
+	ctx := context.Background()
+
+	if err := c.EnsureBrowserCache(ctx); err != nil {
+		t.Fatalf("EnsureBrowserCache: %v", err)
+	}
+	job, err := c.Core.BatchV1().Jobs("agent-fleet").Get(ctx, BrowserCacheJobName, metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("get browser cache job: %v", err)
+	}
+	ctr := job.Spec.Template.Spec.Containers[0]
+	if ctr.Image != c.WorkerImage {
+		t.Errorf("cache job image = %q, want the worker image %q", ctr.Image, c.WorkerImage)
+	}
+	if len(ctr.VolumeMounts) != 1 || ctr.VolumeMounts[0].SubPath != browsersSubPath {
+		t.Fatalf("cache job must write the shared PVC's %q subPath, got %+v", browsersSubPath, ctr.VolumeMounts)
+	}
+	if ctr.VolumeMounts[0].ReadOnly {
+		t.Error("the cache job's own mount is read-only — it cannot populate anything")
+	}
+	script := strings.Join(ctr.Command, "\n")
+	// BOTH installs, which is the entirety of docs/adr/0044: the two packages
+	// bundle different playwright-core versions and resolve different build
+	// numbers, so one alone leaves the MCP server unable to launch.
+	if !strings.Contains(script, "playwright install chromium") {
+		t.Error("cache job never installs chromium")
+	}
+	if !strings.Contains(script, "install-browser chrome-for-testing") {
+		t.Error("cache job skips @playwright/mcp's own browser build — docs/adr/0044: the MCP server " +
+			"resolves a different build number and refuses to start on the other one")
+	}
+
+	// Re-running against the same image must not churn the Job. It is fired on
+	// every provisioner start, and a restart loop that recreates a 2 GB
+	// download each time is worse than no cache at all.
+	if err := c.EnsureBrowserCache(ctx); err != nil {
+		t.Fatalf("second EnsureBrowserCache: %v", err)
+	}
+	jobs, err := c.Core.BatchV1().Jobs("agent-fleet").List(ctx, metav1.ListOptions{})
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	n := 0
+	for _, j := range jobs.Items {
+		if j.Name == BrowserCacheJobName {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Errorf("got %d browser cache jobs after two calls, want 1", n)
+	}
+}
+
+// TestCreateWorkerPod_RepoImageAppliesToTheWorkerContainerOnly guards
+// `repos.image`, the column docs/adr/0048 §6 put in place of the four
+// toolchain ingredients.
+//
+// The column, its store round-trip and its dashboard input all shipped with
+// that ADR — and the value never left core. There was no `image` field on
+// CreateWorkerPodRequest, so pod.go took the provisioner's WORKER_IMAGE
+// unconditionally and editing the field in the dashboard did nothing at all.
+// Nothing errored, because nothing was individually wrong: every layer was
+// correct and none of them was connected to the next.
+//
+// The second half is the other direction of the same bug. The clone init
+// container and the sidecar must stay on the fleet's own images: cloning
+// needs git, and the sidecar is a fleet binary at a fixed path. A
+// repo-supplied image owes neither. Applying the image to all three is a
+// one-token mistake (c.WorkerImage -> workerImage on the wrong line) that no
+// build or lint would catch, since all four values are plain strings — the
+// same shape as the SaveAgentSessionId swap in CLAUDE.md's traps.
+func TestCreateWorkerPod_RepoImageAppliesToTheWorkerContainerOnly(t *testing.T) {
+	const repoImage = "registry.example.test/some-repo-toolchain:v9"
+
+	for _, tc := range []struct {
+		name      string
+		specImage string
+		wantImage string
+	}{
+		{name: "repo sets an image", specImage: repoImage, wantImage: repoImage},
+		{name: "empty falls back to the fleet default", specImage: "", wantImage: "mohammaddocker/agent-fleet-worker:latest"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := newTestClient()
+			ctx := context.Background()
+
+			if err := c.CreateWorkerPod(ctx, WorkerPodSpec{
+				SessionID: "task-img", Repo: "dream-analyst", LeaseID: "lease-1", Image: tc.specImage,
+			}); err != nil {
+				t.Fatalf("CreateWorkerPod: %v", err)
+			}
+
+			job, err := c.Core.BatchV1().Jobs("agent-fleet").Get(ctx, WorkerResourceName("task-img"), metav1.GetOptions{})
+			if err != nil {
+				t.Fatalf("get job: %v", err)
+			}
+			podSpec := job.Spec.Template.Spec
+
+			if got := podSpec.Containers[0].Image; got != tc.wantImage {
+				t.Errorf("worker container image = %q, want %q", got, tc.wantImage)
+			}
+
+			byName := map[string]string{}
+			for _, ic := range podSpec.InitContainers {
+				byName[ic.Name] = ic.Image
+			}
+			if got := byName["clone"]; got != c.WorkerImage {
+				t.Errorf("clone init container image = %q, want the fleet's own %q — it needs git, which a repo image need not have", got, c.WorkerImage)
+			}
+			if got := byName["sidecar"]; got != c.SidecarImage {
+				t.Errorf("sidecar image = %q, want %q", got, c.SidecarImage)
+			}
+		})
+	}
+}

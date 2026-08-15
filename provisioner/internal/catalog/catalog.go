@@ -1,7 +1,12 @@
-// Package catalog is the bounded environment-recipe ingredient catalog
-// (docs/adr/0034) — a repo's profile picks from these six known keys,
-// never an arbitrary container. Adding a new key is a deliberate code
-// change here, never config-only.
+// Package catalog is what is left of the bounded environment-recipe
+// ingredient catalog (docs/adr/0034, superseded by docs/adr/0048): one tool
+// key and two service kinds.
+//
+// It is no longer where a repo's toolchain is declared — that is
+// `repos.image`, dashboard-editable and needing no release (docs/adr/0048
+// §6). What stays here is what genuinely cannot be expressed as "which image
+// does this repo run": a privilege grant, and two services that need cluster
+// RBAC to provision.
 package catalog
 
 // ToolDef is a pod-local ingredient: a set of binaries copied onto a
@@ -22,23 +27,17 @@ type ToolDef struct {
 	CopyCmd []string
 }
 
+// The four toolchain entries (go-toolchain, bun-toolchain, golangci-lint,
+// buf) lived here until docs/adr/0048 §6 replaced them with `repos.image` —
+// "an init container copying a Go toolchain onto an emptyDir is an elaborate
+// way of saying this repo needs Go". They had already lost their producer at
+// that point: ToolKeysFor returns only cluster-access.
+//
+// They are deleted rather than left harmless, because go-toolchain put
+// /opt/tools/go/bin FIRST on PATH — so any profile still naming it silently
+// shadowed the Go the worker image bakes, with a different patch version and
+// no error anywhere.
 var Tools = map[string]ToolDef{
-	"go-toolchain": {
-		CopyImage: "golang:1.26-alpine",
-		CopyCmd:   []string{"sh", "-c", "cp -r /usr/local/go /opt/tools/go"},
-	},
-	"bun-toolchain": {
-		CopyImage: "oven/bun:1",
-		CopyCmd:   []string{"sh", "-c", "mkdir -p /opt/tools/bin && cp /usr/local/bin/bun /opt/tools/bin/bun"},
-	},
-	"golangci-lint": {
-		CopyImage: "golangci/golangci-lint:latest",
-		CopyCmd:   []string{"sh", "-c", "mkdir -p /opt/tools/bin && cp /usr/bin/golangci-lint /opt/tools/bin/golangci-lint"},
-	},
-	"buf": {
-		CopyImage: "bufbuild/buf:latest",
-		CopyCmd:   []string{"sh", "-c", "mkdir -p /opt/tools/bin && cp /usr/local/bin/buf /opt/tools/bin/buf"},
-	},
 	// cluster-access is the odd one out: it stages a kubectl *shim* that
 	// forwards argv to thot-executor, the only process in the fleet
 	// holding cluster RBAC (docs/adr/0037).
