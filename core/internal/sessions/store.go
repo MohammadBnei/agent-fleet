@@ -329,9 +329,9 @@ func (s *Store) ReserveSlot(ctx context.Context, id string, maxLive int) (leaseI
 		return "", fmt.Errorf("reserve slot: mint lease: %w", err)
 	}
 
-	// Close out every decision the PREVIOUS pod was waiting on, for the same
-	// reason stop_requested_at and activity_seen are reset above: they all
-	// describe a pod that no longer exists.
+	// Close out every PERMISSION request the PREVIOUS pod was waiting on, for
+	// the same reason stop_requested_at and activity_seen are reset above:
+	// they all describe a pod that no longer exists.
 	//
 	// Nothing else does this. The worker denies its pending permissions on
 	// Stop, but with interrupt:true, which deliberately records no resolution;
@@ -340,22 +340,31 @@ func (s *Store) ReserveSlot(ctx context.Context, id string, maxLive int) (leaseI
 	// count — so the session renders as blocked, offering allow/deny buttons
 	// that reach no pod, and keeps doing so after a warm, since the new pod
 	// streams from a cursor above them and never sees them at all.
+	//
+	// Questions are DELIBERATELY excluded. A permission's allow/deny buttons
+	// are bound to a specific live pod's canUseTool promise, so once that pod
+	// is gone the buttons are dead and the request must be closed. A blocking
+	// question is not: its answer is a durable transcript row keyed by the
+	// question's own seq, delivered to the NEXT pod on warm
+	// (StreamHumanMessages replays the answer above RESUME_FROM_SEQ, and
+	// worker/src/session.ts feeds it in as an ordinary turn). So a question
+	// can outlive its pod and be answered days later on the same card —
+	// stale-closing it here would auto-answer it "restarted before answered"
+	// the instant the pod warms, destroying the exact answer the human was
+	// about to give.
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO transcript (session_id, seq, "from", text, type, idempotency_key, reply_to_seq)
 		SELECT q.session_id,
 		       (SELECT coalesce(max(seq), 0) FROM transcript WHERE session_id = q.session_id)
 		         + row_number() OVER (ORDER BY q.seq),
 		       'system',
-		       CASE WHEN q.type = 'question'
-		            THEN 'The session was restarted before this was answered.'
-		            ELSE '{"behavior":"deny","message":"The session was restarted before this was answered."}'
-		       END,
-		       CASE WHEN q.type = 'question' THEN 'answer' ELSE 'permission_response' END,
+		       '{"behavior":"deny","message":"The session was restarted before this was answered."}',
+		       'permission_response',
 		       'stale-decision-' || q.session_id || '-' || q.seq,
 		       q.seq
 		  FROM transcript q
 		 WHERE q.session_id = $1
-		   AND q.type IN ('question', 'permission_request')
+		   AND q.type = 'permission_request'
 		   AND NOT EXISTS (
 		         SELECT 1 FROM transcript r
 		          WHERE r.session_id = q.session_id AND r.reply_to_seq = q.seq

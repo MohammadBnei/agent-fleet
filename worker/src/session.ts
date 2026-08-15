@@ -581,7 +581,25 @@ export async function runSession(): Promise<SessionResult> {
       // (docs/adr/0041). Our own output is from="agent" and must never be
       // fed back in — that is what this filter is for.
       if (entry.from !== "human" && entry.from !== "session") return;
-      if (entry.type === "answer") return; // consumed by the blocked AskUserQuestion tool call server-side
+      // An "answer" to an AskUserQuestion. While a pod is live and its
+      // AskUserQuestion tool call is mid-flight, core's own poll loop
+      // consumes the answer and returns it as the tool_result — nothing to
+      // do here. But a blocking question can outlive its pod: the human
+      // answers days later, after the pod was idle-torn-down, so there is
+      // no live tool call and no core poll waiting. On the next warm this
+      // is the only path that delivers the choice — replayed above
+      // RESUME_FROM_SEQ like any other human entry — so feed it in as an
+      // ordinary turn ("the human answered your earlier question: ...")
+      // and let the agent continue. Pushes a labeled turn (not the raw
+      // answer JSON that input.push at the end would post) and returns.
+      // ponytail: a live blocking poll that IS mid-flight when the answer
+      // lands gets it both ways (tool_result AND this turn) — a harmless
+      // redundant turn the agent has already acted on; dedup by replyTo if
+      // it ever actually bites.
+      if (entry.type === "answer") {
+        input.push(`Answer to your earlier question (seq ${entry.replyTo ?? "?"}): ${entry.text}`);
+        return;
+      }
       if (entry.type === "abort") {
         aborted = true;
         // Nothing pending has anything left to wait for — deny it all so
