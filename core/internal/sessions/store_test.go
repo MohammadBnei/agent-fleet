@@ -141,6 +141,14 @@ func TestReserveSlot_ResetsPerPodStateForTheNewPod(t *testing.T) {
 // blocked forever — with allow/deny buttons that reach no pod, and no way for
 // the replacement pod to help, because it streams from a cursor above them and
 // never sees them at all.
+//
+// Only permission_request is closed. A question is DELIBERATELY spared: its
+// answer is a durable transcript row keyed by the question's own seq, delivered
+// to the next pod on warm (StreamHumanMessages replays it above RESUME_FROM_SEQ
+// and worker/src/session.ts feeds it in as a turn). So a blocking question can
+// outlive its pod and be answered days later on the same card — stale-closing
+// it would auto-answer it the instant the pod warms, destroying the exact
+// answer the human was about to give.
 func TestReserveSlot_ResolvesDecisionsTheDeadPodLeftBehind(t *testing.T) {
 	ctx := context.Background()
 	pool := dbtest.NewPool(t)
@@ -179,10 +187,12 @@ func TestReserveSlot_ResolvesDecisionsTheDeadPodLeftBehind(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
-	if after.PendingDecisions != 0 {
-		t.Errorf("%d decision(s) still pending after a new pod was reserved — the session will "+
-			"render as blocked on a pod that no longer exists, and stay that way through every "+
-			"later warm", after.PendingDecisions)
+	// Exactly one decision remains: the seq-2 question. The two stranded
+	// permissions were closed; the question was spared so its human answer can
+	// still land on the next warm.
+	if after.PendingDecisions != 1 {
+		t.Errorf("%d decision(s) pending after warm, want 1 (the question survives, both "+
+			"permissions are closed)", after.PendingDecisions)
 	}
 
 	// The already-answered request must not collect a second reply: the count
@@ -195,6 +205,19 @@ func TestReserveSlot_ResolvesDecisionsTheDeadPodLeftBehind(t *testing.T) {
 	}
 	if replies != 1 {
 		t.Errorf("the answered request collected %d replies, want 1", replies)
+	}
+
+	// The question must NOT have been auto-answered — no reply may point at its
+	// seq. If it were, the human's real answer arriving later would be a second,
+	// conflicting reply to a question the dashboard already treats as resolved.
+	var questionReplies int
+	if err := pool.QueryRow(ctx,
+		`SELECT count(*) FROM transcript WHERE session_id = $1 AND reply_to_seq = 2`, id).Scan(&questionReplies); err != nil {
+		t.Fatalf("count question replies: %v", err)
+	}
+	if questionReplies != 0 {
+		t.Errorf("the question was auto-answered on warm (%d replies) — its human answer must "+
+			"still be deliverable on the next pod", questionReplies)
 	}
 }
 
