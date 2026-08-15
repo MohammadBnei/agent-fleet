@@ -41,11 +41,8 @@ const sseKeepAliveInterval = 15 * time.Second
 func New(core *coreclient.Client) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /readyz", readyzHandler(core))
-	mux.HandleFunc("POST /heartbeat", heartbeatHandler(core))
-	mux.HandleFunc("POST /status", statusHandler(core))
 	mux.HandleFunc("POST /journal", journalHandler(core))
 	mux.HandleFunc("POST /session-id", sessionIDHandler(core))
-	mux.HandleFunc("GET /still-holds-lease", stillHoldsLeaseHandler(core))
 	mux.HandleFunc("POST /telemetry", telemetryHandler(core))
 	mux.HandleFunc("POST /message", messageHandler(core))
 	mux.HandleFunc("GET /human-messages", humanMessagesHandler(core))
@@ -85,42 +82,11 @@ func readyzHandler(core *coreclient.Client) http.HandlerFunc {
 	}
 }
 
-func heartbeatHandler(core *coreclient.Client) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		var body struct {
-			LeaseID string `json:"leaseId"`
-		}
-		if err := decodeJSON(r, &body); err != nil {
-			writeError(w, http.StatusBadRequest, err)
-			return
-		}
-		if err := core.Heartbeat(r.Context(), body.LeaseID); err != nil {
-			writeError(w, http.StatusBadGateway, err)
-			return
-		}
-		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
-	}
-}
-
-func statusHandler(core *coreclient.Client) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		var body struct {
-			Status    string  `json:"status"`
-			PrURL     *string `json:"prUrl"`
-			Notes     *string `json:"notes"`
-			LastError *string `json:"lastError"`
-		}
-		if err := decodeJSON(r, &body); err != nil {
-			writeError(w, http.StatusBadRequest, err)
-			return
-		}
-		if err := core.SetTaskStatus(r.Context(), body.Status, body.PrURL, body.Notes, body.LastError); err != nil {
-			writeError(w, http.StatusBadGateway, err)
-			return
-		}
-		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
-	}
-}
+// heartbeatHandler and statusHandler used to live here, backing POST
+// /heartbeat and POST /status. Both are deleted in docs/adr/0048 along with
+// the RPCs behind them: liveness reconciles against Kubernetes instead of a
+// 30s timer inside the worker, and a polymorphic session has no completion
+// the worker is in a position to report.
 
 func journalHandler(core *coreclient.Client) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -168,17 +134,7 @@ func sessionIDHandler(core *coreclient.Client) http.HandlerFunc {
 	}
 }
 
-func stillHoldsLeaseHandler(core *coreclient.Client) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		leaseID := r.URL.Query().Get("leaseId")
-		holds, err := core.StillHoldsLease(r.Context(), leaseID)
-		if err != nil {
-			writeError(w, http.StatusBadGateway, err)
-			return
-		}
-		writeJSON(w, http.StatusOK, map[string]bool{"holds": holds})
-	}
-}
+// stillHoldsLeaseHandler is gone with the reclaim whose race it guarded.
 
 func telemetryHandler(core *coreclient.Client) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -374,29 +330,35 @@ func protoTypeToString(t agentfleetv1.TranscriptEntryType) string {
 	}
 }
 
-// taskHandler fetches task details from the database via the dashboard API,
-// including model and permission_mode. Used by the worker on startup to get
-// fresh task data instead of relying on stale environment variables.
+// taskHandler serves the worker its own session row at startup.
+//
+// It exists for one reason that matters: permission_mode must be RESTORED on
+// a warm, or every resume of a session a human put into acceptEdits/plan/
+// bypassPermissions silently reverts to "default".
+//
+// This handler previously returned `guidance: ""` and `baseBranch: "main"`
+// hardcoded — so the operator's chosen prompt snippets, resolved and stored
+// at task-creation time, never once reached the model, and every repo's base
+// branch was reported as main regardless of its actual configuration. Both
+// fields are gone with their columns (docs/adr/0048): snippets now prefill
+// the dashboard composer, where a human can see them, and the agent reads
+// its own branch from git.
 func taskHandler(core *coreclient.Client) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		task, err := core.GetTask(r.Context())
+		session, err := core.GetTask(r.Context())
 		if err != nil {
 			writeError(w, http.StatusBadGateway, err)
 			return
 		}
-		// Return only the fields the worker needs
-		response := map[string]interface{}{
-			"description": task.GetDescription(),
-			"guidance":    "",
-			"baseBranch":  "main",
+		// description is a label, not an instruction — the session's actual
+		// instruction is its first transcript entry.
+		response := map[string]any{"description": session.GetDescription()}
+		if session.PermissionMode != nil {
+			response["permissionMode"] = *session.PermissionMode
 		}
-		// Add optional fields if they exist
-		// Note: We need to find the repo's base branch from somewhere
-		// For now, we'll use "main" as default since it's not in the Task proto
-		if task.PermissionMode != nil {
-			response["permissionMode"] = *task.PermissionMode
+		if session.Model != nil {
+			response["model"] = *session.Model
 		}
-		// Model field will be added when proto regenerates
 		writeJSON(w, http.StatusOK, response)
 	}
 }

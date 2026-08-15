@@ -17,40 +17,55 @@ import (
 	"strings"
 )
 
-// ThreadOpener is the Discord surface, narrowed so this package can be
-// tested without a bot session. nil disables the Discord side entirely.
-type ThreadOpener interface {
-	OpenThread(channelID, title, body string) (string, error)
+// Notifier is the Discord surface, narrowed so this package can be tested
+// without a bot session. nil disables the Discord side entirely.
+//
+// It posts a notification, and that is all it can do. This used to open a
+// thread the human could reply into; Discord is outbound-only now
+// (docs/adr/0048), so the reply happens in the dashboard.
+type Notifier interface {
+	Notify(ctx context.Context, text string) error
 }
 
-// TaskCreator is tasks.Store, narrowed to the one method used.
-type TaskCreator interface {
-	CreateDeduped(ctx context.Context, kind, externalKey, repo, description string, channelID, threadID *string) (string, bool, error)
+// ProposalCreator is proposals.Store, narrowed to the one method used.
+//
+// A firing alert files a PROPOSAL, never a session — and that is the whole
+// safety property, expressed in the schema rather than in a status value.
+// A proposal row has no pod path at all, so an alert storm cannot spawn
+// agents no matter how many times it fires; the worst it can do is fill a
+// list a human scrolls past. The old design relied on dispatch never
+// SELECTing status='proposed', which held only as long as every future query
+// remembered to exclude it.
+//
+// That matters most here specifically: this handler's repo is
+// infra-bootstrap, whose sessions carry cluster access (docs/adr/0037).
+type ProposalCreator interface {
+	Create(ctx context.Context, repo, source, dedupKey, title, body string) (string, bool, error)
 }
 
 type Config struct {
-	// Token is a shared secret Alertmanager sends as a bearer. Required in
-	// practice: this endpoint creates tasks, and a thot task runs an agent
-	// with cluster access, so an unauthenticated caller inside the cluster
-	// could spawn privileged work. Empty disables the endpoint entirely
-	// rather than serving it open.
+	// Token is a shared secret Alertmanager sends as a bearer. Still required
+	// even though this endpoint no longer creates anything runnable: an
+	// unauthenticated caller inside the cluster could otherwise flood the
+	// proposal list and bury a real alert. Empty disables the endpoint
+	// entirely rather than serving it open.
 	Token string
 	// Repo a thot session runs on (its worktree, and where a durable fix
 	// becomes a PR).
 	Repo string
-	// ChannelID for the Discord thread. Empty falls back to the trigger
-	// channel inside OpenThread.
+	// ChannelID is retained for config compatibility; notifications go to the
+	// bot's configured channel.
 	ChannelID string
 }
 
 type Handler struct {
-	tasks   TaskCreator
-	discord ThreadOpener
-	cfg     Config
+	proposals ProposalCreator
+	discord   Notifier
+	cfg       Config
 }
 
-func New(tasks TaskCreator, discord ThreadOpener, cfg Config) *Handler {
-	return &Handler{tasks: tasks, discord: discord, cfg: cfg}
+func New(p ProposalCreator, discord Notifier, cfg Config) *Handler {
+	return &Handler{proposals: p, discord: discord, cfg: cfg}
 }
 
 // payload is the subset of Alertmanager's webhook body this needs. Its
@@ -109,43 +124,45 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		id, ok, err := h.tasks.CreateDeduped(r.Context(), "thot", key, h.cfg.Repo, describe(a), nil, nil)
+		name := a.Labels["alertname"]
+		if name == "" {
+			name = "alert"
+		}
+		id, ok, err := h.proposals.Create(r.Context(), h.cfg.Repo, "alert", key, truncate(name, 120), describe(a))
 		if err != nil {
-			slog.Error("alertwebhook: create task", "fingerprint", key, "error", err)
+			slog.Error("alertwebhook: create proposal", "fingerprint", key, "error", err)
 			continue
 		}
 		if !ok {
-			// An active task for this alert already exists — the dedup
-			// index doing its job, not a failure.
+			// A proposal for this alert is already standing — the partial
+			// unique index doing its job, not a failure.
 			skipped++
 			continue
 		}
 		created++
-		slog.Info("alertwebhook: created thot task", "taskId", id, "alert", a.Labels["alertname"])
-		h.attachThread(r.Context(), id, a)
+		slog.Info("alertwebhook: filed proposal", "proposalId", id, "alert", name)
+		h.notify(r.Context(), id, name, a)
 	}
 
 	w.WriteHeader(http.StatusOK)
 	_, _ = fmt.Fprintf(w, "created=%d deduped=%d\n", created, skipped)
 }
 
-// attachThread is best-effort: losing the Discord thread must not lose the
-// task, which is already created and dispatching by this point.
-func (h *Handler) attachThread(_ context.Context, taskID string, a alert) {
+// notify is best-effort: losing the Discord ping must not lose the proposal,
+// which is already filed and visible in the dashboard by this point.
+//
+// This is the only notification a firing alert produces, which is why the
+// Discord surface could not be deleted outright when its inbound half went
+// (docs/adr/0048) — an alert nobody is told about is an alert that did not
+// fire.
+func (h *Handler) notify(ctx context.Context, proposalID, name string, a alert) {
 	if h.discord == nil {
 		return
 	}
-	name := a.Labels["alertname"]
-	if name == "" {
-		name = "alert"
-	}
-	_, err := h.discord.OpenThread(
-		h.cfg.ChannelID,
-		truncate(name, 90),
-		fmt.Sprintf("**🔥 %s** — proposed as task `%s`, awaiting approval in the dashboard\n%s", name, taskID[:8], a.Annotations["summary"]),
-	)
-	if err != nil {
-		slog.Error("alertwebhook: open thread", "taskId", taskID, "error", err)
+	msg := fmt.Sprintf("**🔥 %s** — filed as proposal `%s`, waiting for you in the dashboard\n%s",
+		name, proposalID[:8], a.Annotations["summary"])
+	if err := h.discord.Notify(ctx, msg); err != nil {
+		slog.Error("alertwebhook: notify", "proposalId", proposalID, "error", err)
 	}
 }
 

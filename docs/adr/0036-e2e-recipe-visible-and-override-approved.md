@@ -1,6 +1,6 @@
 # ADR-0036: The e2e recipe is readable by the agent, its override is human-approved, and the app port is probed
 
-**Status:** Accepted
+**Status:** Superseded by [0048](0048-one-session-one-pod-one-shared-home.md) — with the recipe system deleted there is no resolved recipe to make visible and no override to approve
 **Date:** 2026-08-11
 
 ## Context

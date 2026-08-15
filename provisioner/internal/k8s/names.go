@@ -1,21 +1,16 @@
 package k8s
 
 import (
-	"encoding/json"
 	"fmt"
-	"log/slog"
 	"strings"
 )
 
 const (
-	AppPort        = 3000
-	CodeServerPort = 8080
-	PlaywrightPort = 8931
-	// ExecPort is the e2e pod's first-party run_command MCP listener
-	// (execmcp) — distinct from PlaywrightPort's third-party server, which
-	// we can't add tools to.
-	ExecPort = 8932
-	SSHPort  = 2222
+	// AppPort, CodeServerPort, PlaywrightPort, ExecPort and SSHPort described
+	// the five listeners of the e2e pod. There is no e2e pod (docs/adr/0048
+	// §6), and the port a session serves on is now whatever the agent chose
+	// and passed to expose() — a parameter, not a constant.
+
 	// SidecarMCPPort is agent-facing (local MCP server, the Agent SDK's
 	// mcpServers config), SidecarAPIPort is wrapper-facing (plain local
 	// HTTP/JSON, docs/adr/0020 point 5's two local surfaces).
@@ -23,12 +18,10 @@ const (
 	SidecarAPIPort = 9091
 	ComponentLabel = "agent-fleet.dev/component"
 	TaskIDLabel    = "agent-fleet.dev/task-id"
-	// RepoLabel lets TearDownSession recover which repo a worker pod
-	// belongs to (needed to remove its worktree) from the pod itself —
-	// the provisioner holds no DB credentials to look it up any other way
-	// (docs/adr/0020 point 1), so Kubernetes has to carry it.
+	// RepoLabel lets the provisioner recover which repo a session's pod
+	// belongs to from the pod itself — it holds no DB credentials to look it
+	// up any other way (docs/adr/0020 point 1), so Kubernetes has to carry it.
 	RepoLabel               = "agent-fleet.dev/repo"
-	ComponentE2eRun         = "e2e-runner"
 	ComponentWorker         = "worker"
 	ComponentSharedInstance = "shared-instance"
 	// ServiceKeyLabel/LastUsedAtAnnotation are the shared-instance idle-GC
@@ -39,14 +32,11 @@ const (
 	LastUsedAtAnnotation = "agent-fleet.dev/last-used-at"
 )
 
-// ResourceName mirrors resourceName: short, DNS-safe, deterministic.
-func ResourceName(taskID string) string {
-	return "e2e-" + shortID(taskID)
-}
+// ResourceName named the e2e pod and its Service/route. Gone with them
+// (docs/adr/0048 §6); the two names left are WorkerResourceName for the
+// session's Job and ExposeResourceName for what expose() creates.
 
-// WorkerResourceName is ResourceName's worker-pod counterpart — a distinct
-// prefix so a worker pod and an e2e-preview pod for the same task never
-// collide on one Pod name.
+// WorkerResourceName is a session's Job (and therefore its pod).
 func WorkerResourceName(taskID string) string {
 	return "worker-" + shortID(taskID)
 }
@@ -59,155 +49,37 @@ func shortID(taskID string) string {
 	return name
 }
 
-// The trailing dot on `svc.cluster.local.` is load-bearing, not a typo.
+// The ServiceEndpoint roster (EndpointsFor/EndpointsJSON, the endpoint-name
+// and protocol constants, and the URL builders for the sandbox's Playwright
+// and exec listeners) used to live here. It was docs/adr/0045's whole
+// service-discovery mechanism — addresses derived from names and shipped on
+// responses core already sent, so a sidecar could dial its task's sandbox
+// without a lookup RPC.
 //
-// Kubernetes writes `ndots:5` into every pod's resolv.conf. These names have
-// four dots, so without the terminating dot the resolver treats them as
-// relative and tries every search-list entry first. Measured on a live
-// sandbox pod (2026-08-13) rather than assumed — resolv.conf there carries
-// *five* search domains, not the three this comment first claimed:
+// It is gone with the sandbox (docs/adr/0048 §6). Nothing is dialled by
+// address any more: the agent's tools are on its own pod's localhost, and its
+// app is in the same container namespace it is.
 //
-//	search agent-fleet.svc.cluster.local svc.cluster.local cluster.local \
-//	       default.svc.cluster.local localdomain
-//	options ndots:5
+// PreviewHostFor survives because expose() still needs a hostname. The rest of
+// the URL builders do not: PreviewURLFor and CodeServerURLFor described an app
+// and an IDE the fleet used to start, and it starts neither.
+
+// PreviewHostFor is a per-session subdomain, serving at the ROOT path.
 //
-// So it is five NXDOMAIN lookups before the one that answers. The dot marks
-// the name absolute: one lookup.
-//
-// The honest size of this: 20 resolutions from that pod took 40ms relative
-// vs 16ms absolute — ~1.2ms saved each, not the dramatic win the shape of
-// the bug suggests, because nodelocaldns (169.254.25.10) caches the NXDOMAINs
-// too. And since mcpproxy now caches its clients, resolution happens about
-// once per session rather than per call. Kept because it is free and correct,
-// not because it is where the time goes — that is `call_ms`, the command
-// itself (docs/adr/0045).
-// Endpoint names, as they appear in a ServiceEndpoint roster. Callers select
-// by these rather than by port number, which is the point of shipping the
-// roster instead of letting each caller rebuild the address itself.
-const (
-	EndpointPlaywright = "playwright"
-	EndpointExec       = "exec"
-)
-
-// ProtocolMCPStreamableHTTP is the only protocol the sandbox speaks today.
-// It travels on the wire so a caller dispatches on the roster rather than on
-// a port number it hardcoded.
-const ProtocolMCPStreamableHTTP = "mcp-streamable-http"
-
-// ServiceEndpoint is the plain-Go half of the wire message in
-// provisioner.proto. This package stays free of generated wire types — the
-// same boundary every other package here keeps, with grpcserver doing the
-// mapping — so the addressing rules live next to the naming rules they
-// derive from rather than next to the transport.
-// The json tags are wire format, not decoration: this struct is marshalled
-// into the sidecar's FLEET_ENDPOINTS env var (see EndpointsJSON), and the
-// sidecar unmarshals the same field names it gets back from
-// RequestE2eEnvResponse. One shape, two delivery channels, one parser.
-type ServiceEndpoint struct {
-	Name     string `json:"name"`
-	Address  string `json:"address"`
-	Protocol string `json:"protocol"`
-	Path     string `json:"path"`
-}
-
-// EndpointsJSON is the roster as the sidecar receives it at pod creation.
-//
-// This is only possible because EndpointsFor derives addresses from names
-// rather than reading them back from a live object: the sandbox does not
-// exist yet when a worker pod is created, and will not exist until the agent
-// asks for one. The roster describes where it *would* answer.
-//
-// That is what lets the very first run_command of a session dial directly
-// instead of needing the relay to bootstrap itself. Without it the first call
-// of every session would have no address, which is exactly the hole that
-// makes deleting the relay impossible.
-func EndpointsJSON(namespace, taskID string) string {
-	b, err := json.Marshal(EndpointsFor(namespace, taskID))
-	if err != nil {
-		// Unreachable: the input is a fixed slice of plain structs. Logged
-		// rather than propagated so a marshalling bug degrades to the relay
-		// fallback instead of failing pod creation outright.
-		slog.Error("k8s EndpointsJSON", "taskId", taskID, "error", err)
-		return ""
-	}
-	return string(b)
-}
-
-// EndpointsFor is the fleet's service-discovery resolution step
-// (docs/adr/0045), and it is a pure function of (namespace, taskID) — the
-// same inputs that name the Service the provisioner just created.
-//
-// That is exactly why there is no registry to keep in sync: the Service
-// object *is* the registration, and this derives its address rather than
-// looking one up. Kubernetes stays the single source of truth for whether a
-// sandbox exists.
-//
-// These ports and the ones CreateService actually publishes are now coupled.
-// A drift test pins them together, because a roster naming a port no Service
-// exposes fails at dial time in the caller — far from the mistake.
-func EndpointsFor(namespace, taskID string) []ServiceEndpoint {
-	return []ServiceEndpoint{
-		{
-			Name:     EndpointPlaywright,
-			Address:  serviceHostPort(namespace, taskID, PlaywrightPort),
-			Protocol: ProtocolMCPStreamableHTTP,
-			Path:     "/mcp",
-		},
-		{
-			Name:     EndpointExec,
-			Address:  serviceHostPort(namespace, taskID, ExecPort),
-			Protocol: ProtocolMCPStreamableHTTP,
-			Path:     "/mcp",
-		},
-	}
-}
-
-// serviceHostPort carries the same trailing dot as the URL builders below,
-// for the same reason.
-func serviceHostPort(namespace, taskID string, port int) string {
-	return fmt.Sprintf("%s.%s.svc.cluster.local.:%d", ResourceName(taskID), namespace, port)
-}
-
-func PlaywrightURLFor(namespace, taskID string) string {
-	return fmt.Sprintf("http://%s.%s.svc.cluster.local.:%d/mcp", ResourceName(taskID), namespace, PlaywrightPort)
-}
-
-func ExecURLFor(namespace, taskID string) string {
-	return fmt.Sprintf("http://%s.%s.svc.cluster.local.:%d/mcp", ResourceName(taskID), namespace, ExecPort)
-}
-
-// PreviewURLFor is a per-task subdomain serving the app at the ROOT path —
-// nothing is stripped, so an app emitting root-absolute URLs (/assets/...,
-// /api/..., client-side router links) resolves correctly. The previous form,
-// https://<host>/<taskID>/app/, relied on a stripPrefix middleware and gave
-// the app no way to learn its public base path, so those apps 404'd even when
-// the pod was healthy (docs/adr/0038).
+// Nothing is stripped, which is the point of docs/adr/0038: an app emitting
+// root-absolute URLs (/assets/..., /api/..., client-side router links) resolves
+// correctly. The previous form, https://<host>/<taskID>/app/, relied on a
+// stripPrefix middleware and gave the app no way to learn its public base
+// path, so those apps 404'd even when the pod was perfectly healthy.
 //
 // host is the wildcard base domain (E2E_HOST, e.g. e2e.bnei.dev); shortID is
 // already DNS-safe (dashes stripped, truncated to 20), so it drops straight in
 // as a label. Covered by the single *.e2e.bnei.dev cert — see PreviewDomainFor.
-func PreviewURLFor(host, taskID string) string {
-	return fmt.Sprintf("https://%s.%s/", shortID(taskID), host)
-}
-
-// PreviewHostFor is the bare hostname behind PreviewURLFor, for Host() rules.
 func PreviewHostFor(host, taskID string) string {
 	return fmt.Sprintf("%s.%s", shortID(taskID), host)
 }
 
-// CodeServerURLFor is where a human actually reaches the in-browser IDE: the
-// /code prefix route the IngressRoute sends to CodeServerPort (docs/adr/0038).
-//
-// It exists because the dashboard's "Open code-server" button was wired to
-// PreviewURLFor — the app root — so it had never once opened code-server. A
-// URL scheme defined in ingressroute.go and re-derived by string concatenation
-// in a React component is exactly how that happens, so it's constructed here,
-// next to the route that serves it, and travels on the wire.
-func CodeServerURLFor(host, taskID string) string {
-	return fmt.Sprintf("https://%s.%s/code/", shortID(taskID), host)
-}
-
-// PreviewDomainFor is the wildcard every task's IngressRoute asks for. Every
+// PreviewDomainFor is the wildcard every session's IngressRoute asks for. Every
 // task requesting the SAME wildcard is the point: ACME orders it once and
 // reuses it forever. Left implicit, Traefik would derive the concrete per-task
 // hostname from the Host() rule and order a cert per session — Let's Encrypt
@@ -217,13 +89,8 @@ func PreviewDomainFor(host string) string {
 	return "*." + host
 }
 
-func Labels(taskID string) map[string]string {
-	return map[string]string{
-		ComponentLabel: ComponentE2eRun,
-		TaskIDLabel:    taskID,
-		"app":          "e2e-" + shortID(taskID),
-	}
-}
+// Labels was the e2e pod's label set, and went with it. WorkerLabels below is
+// the one a session's pod actually carries.
 
 // SharedInstanceName is deterministic per (repo, serviceKey) — no
 // task/randomness involved, since a shared instance's whole point is being
@@ -251,9 +118,32 @@ func WorkerLabels(taskID, repo string) map[string]string {
 		ComponentLabel: ComponentWorker,
 		TaskIDLabel:    taskID,
 		RepoLabel:      repo,
-		// Required by the e2e-runner NetworkPolicy's rule 2 (agent-fleet.dev
-		// part-of selector) — without it, worker pods silently lose access
-		// to their own e2e-preview pod's app port for API testing.
+		// The standard fleet-wide selector. It was originally added because
+		// the e2e pod's NetworkPolicy matched on it; that policy is gone, but
+		// the label is the conventional one every other object here carries.
 		"app.kubernetes.io/part-of": "agent-fleet",
 	}
+}
+
+// WorkerSelectorLabels is the subset of WorkerLabels that identifies a
+// session's pod and nothing else — what a Service selector needs.
+//
+// Deliberately NOT the whole label set: `repo` is on the pod too, and a
+// selector including it would still work today but would silently start
+// matching a second pod the moment anything else in this namespace carried the
+// same repo label. A selector is a live query, not a description.
+func WorkerSelectorLabels(taskID string) map[string]string {
+	return map[string]string{
+		ComponentLabel: ComponentWorker,
+		TaskIDLabel:    taskID,
+	}
+}
+
+// ExposeResourceName names the Service and IngressRoute backing expose().
+//
+// Distinct from WorkerResourceName so that unexposing can never delete the
+// session's Job by name collision, and so the objects are obviously not the
+// pod's own when someone is reading `kubectl get all`.
+func ExposeResourceName(sessionID string) string {
+	return "expose-" + shortID(sessionID)
 }

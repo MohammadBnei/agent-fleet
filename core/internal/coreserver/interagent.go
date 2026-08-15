@@ -9,7 +9,7 @@ import (
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/dashboard"
-	"github.com/MohammadBnei/agent-fleet/core/internal/tasks"
+	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
 )
 
 // Inter-agent coordination (docs/adr/0041). One agent can see the fleet's
@@ -29,10 +29,10 @@ const maxPromptDepth = 3
 // (first settled idle/done/blocked) plus `stalled`, which is this fleet's
 // own addition and just as final from a waiter's point of view.
 var settledStates = []string{
-	string(tasks.LiveStateIdle),
-	string(tasks.LiveStateDone),
-	string(tasks.LiveStateBlocked),
-	string(tasks.LiveStateStalled),
+	string(sessions.LiveStateIdle),
+	string(sessions.LiveStateDone),
+	string(sessions.LiveStateBlocked),
+	string(sessions.LiveStateStalled),
 }
 
 // waitPollInterval matches the transcript relay's own 2s cadence — this
@@ -41,45 +41,44 @@ var settledStates = []string{
 // bare watch is unrecoverable, and a poll cannot miss one.
 const waitPollInterval = 2 * time.Second
 
-func (s *Server) liveStateOf(ctx context.Context, taskID string) (*tasks.Task, tasks.LiveState, error) {
-	t, err := s.tasks.GetTask(ctx, taskID)
+func (s *Server) liveStateOf(ctx context.Context, taskID string) (*sessions.Session, sessions.LiveState, error) {
+	t, err := s.sessions.Get(ctx, taskID)
 	if err != nil {
 		return nil, "", fmt.Errorf("get task: %w", err)
 	}
 	if t == nil {
 		return nil, "", fmt.Errorf("session %s not found", taskID)
 	}
-	return t, tasks.DeriveLiveState(t, time.Now(), dashboard.DefaultTurnStall), nil
+	return t, sessions.DeriveLiveState(t, time.Now(), dashboard.DefaultTurnStall), nil
 }
 
-func (s *Server) ListSessions(ctx context.Context, req *agentfleetv1.ListSessionsRequest) (*agentfleetv1.ListSessionsResponse, error) {
+func (s *Server) ListPeerSessions(ctx context.Context, req *agentfleetv1.ListPeerSessionsRequest) (*agentfleetv1.ListPeerSessionsResponse, error) {
 	// Same bounded listing the dashboard uses — an agent picking a target
 	// wants the fleet's current sessions, not its entire history.
-	all, err := s.tasks.ListRecentTasks(ctx, 100)
+	all, err := s.sessions.List(ctx, 100)
 	if err != nil {
 		return nil, fmt.Errorf("list sessions: %w", err)
 	}
 	out := make([]*agentfleetv1.SessionSummary, 0, len(all))
 	for _, t := range all {
-		if t.ID == req.GetCallerTaskId() {
+		if t.ID == req.GetCallerSessionId() {
 			continue
 		}
 		out = append(out, &agentfleetv1.SessionSummary{
-			TaskId:      t.ID,
+			SessionId:   t.ID,
 			Repo:        t.Repo,
 			Description: t.Description,
-			Status:      t.Status,
-			LiveState:   string(tasks.DeriveLiveState(&t, time.Now(), dashboard.DefaultTurnStall)),
+			LiveState:   string(sessions.DeriveLiveState(&t, time.Now(), dashboard.DefaultTurnStall)),
 		})
 	}
-	return &agentfleetv1.ListSessionsResponse{Sessions: out}, nil
+	return &agentfleetv1.ListPeerSessionsResponse{Sessions: out}, nil
 }
 
 // PromptSession delivers one agent's message to another session.
 //
 // The guards are the whole design; the delivery is three lines.
 func (s *Server) PromptSession(ctx context.Context, req *agentfleetv1.PromptSessionRequest) (*agentfleetv1.PromptSessionResponse, error) {
-	caller, target, text := req.GetCallerTaskId(), req.GetTargetTaskId(), req.GetText()
+	caller, target, text := req.GetCallerSessionId(), req.GetTargetSessionId(), req.GetText()
 	if caller == "" || target == "" || text == "" {
 		return nil, fmt.Errorf("caller_task_id, target_task_id and text are required")
 	}
@@ -101,12 +100,13 @@ func (s *Server) PromptSession(ctx context.Context, req *agentfleetv1.PromptSess
 	// session whose human decision is still outstanding, and (worse) invite
 	// the caller to believe it had answered it. Permission decisions are
 	// human-only by docs/adr/0029 and this must not become a side door.
-	if state == tasks.LiveStateBlocked {
+	if state == sessions.LiveStateBlocked {
 		return nil, fmt.Errorf("session %s is blocked waiting on a human decision — it cannot be prompted by an agent", target)
 	}
-	if t.Status == "proposed" {
-		return nil, fmt.Errorf("session %s is an unapproved proposal", target)
-	}
+	// The "unapproved proposal" guard that used to sit here is gone with the
+	// status: a proposal is now a row in a different table with no pod path,
+	// so a session reachable by this call has already been opened by a human
+	// (docs/adr/0048).
 
 	// Delivered as a plain discussion entry authored by "agent". It is
 	// deliberately impossible for this path to produce an `answer` or a
@@ -120,21 +120,30 @@ func (s *Server) PromptSession(ctx context.Context, req *agentfleetv1.PromptSess
 	// target at all (found on a real cluster — the entry landed in the
 	// transcript and the running agent never saw it). "session" is
 	// deliverable and still unmistakably not the session's own voice.
+	// Warm BEFORE appending, never after.
+	//
+	// A dispatch computes resumeFromSeq = LatestSeq, and the pod streams only
+	// entries at or above that cursor. An entry appended first therefore lands
+	// one BELOW the cursor of the pod that warming is about to create, and is
+	// never delivered — the session would sit there having been prompted, with
+	// nothing to show for it. PostMessage and OpenFromProposal carry this same
+	// ordering for the same reason.
+	//
+	// Best-effort: a capacity rejection is not worth failing the delivery over,
+	// since the entry below is durable either way and a later warm will pick it
+	// up from a cursor computed after it exists.
+	var podName string
+	if s.warm != nil && !sessions.IsPodPhaseLive(t.PodPhase) {
+		var warmErr error
+		if podName, warmErr = s.warm(ctx, target); warmErr != nil {
+			slog.Warn("coreserver: PromptSession could not warm target", "callerTaskId", caller, "targetTaskId", target, "error", warmErr)
+		}
+	}
+
 	body := fmt.Sprintf("[from session %s]\n\n%s", caller, text)
 	seq, err := s.transcr.Append(ctx, target, "session", body, "discussion", fmt.Sprintf("prompt-%s-%s-%d", caller, target, time.Now().UnixNano()))
 	if err != nil {
 		return nil, fmt.Errorf("append prompt: %w", err)
-	}
-
-	// Warm an idle target so the message is actually read rather than
-	// sitting in a transcript nobody is attached to. Best-effort: the entry
-	// is already durable, and the session will see it whenever it next
-	// warms, so a capacity rejection is not worth failing the delivery over.
-	var podName string
-	if s.warm != nil && !tasks.IsPodPhaseLive(t.PodPhase) {
-		if podName, err = s.warm(ctx, target); err != nil {
-			slog.Warn("coreserver: PromptSession could not warm target", "callerTaskId", caller, "targetTaskId", target, "error", err)
-		}
 	}
 
 	slog.Info("coreserver: session prompted another session", "callerTaskId", caller, "targetTaskId", target, "seq", seq, "depth", req.GetDepth())
@@ -150,7 +159,7 @@ func (s *Server) PromptSession(ctx context.Context, req *agentfleetv1.PromptSess
 // point: "still working after 2 minutes" is an answer, and the caller
 // decides what to do with it.
 func (s *Server) WaitForSessionState(ctx context.Context, req *agentfleetv1.WaitForSessionStateRequest) (*agentfleetv1.WaitForSessionStateResponse, error) {
-	target := req.GetTargetTaskId()
+	target := req.GetTargetSessionId()
 	if target == "" {
 		return nil, fmt.Errorf("target_task_id is required")
 	}
@@ -192,7 +201,7 @@ func (s *Server) WaitForSessionState(ctx context.Context, req *agentfleetv1.Wait
 		// A target with no live pod will never move on its own — nothing is
 		// running to change its state — so waiting the full timeout would
 		// just be a slow way to time out.
-		if state == tasks.LiveStateNone {
+		if state == sessions.LiveStateNone {
 			return &agentfleetv1.WaitForSessionStateResponse{LiveState: string(state), TimedOut: true}, nil
 		}
 		if time.Now().After(deadline) {

@@ -12,165 +12,50 @@ option go_package = "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet
 // calls it directly, including for e2e requests (those are proxied through
 // core.proto's CoreService instead).
 
-// How a service ingredient (postgres/redis) is shared across pods/tasks —
-// docs/adr/0034. pod-scoped: a native sidecar in the requesting pod alone,
-// localhost-only, dies with it. task-scoped: a per-task database minted
-// inside a shared per-repo instance, reused by every pod belonging to the
-// same task. repo-scoped: the same shared instance with no per-task
-// minting, every task against the repo hits the same database.
-enum ScopeMode {
-  SCOPE_MODE_UNSPECIFIED = 0;
-  SCOPE_MODE_POD_SCOPED = 1;
-  SCOPE_MODE_TASK_SCOPED = 2;
-  SCOPE_MODE_REPO_SCOPED = 3;
-}
-
-message ServiceIngredient {
-  string key = 1; // "postgres" | "redis" — provisioner/internal/catalog.go
-  ScopeMode scope_mode = 2;
-}
-
-message KillE2eSessionRequest {
-  string task_id = 1;
-  string idempotency_key = 2;
-  // repo/also_teardown_services (docs/adr/0034 follow-up) — the shared
-  // postgres/redis instance backing this task's services is keyed by repo,
-  // not task, and can be in use by other tasks against the same repo (its
-  // own worker pod included), so tearing it down is opt-in, explicit, and
-  // human-confirmed (the dashboard's "kill e2e" checkbox), never implied by
-  // killing one task's e2e session alone.
-  string repo = 3;
-  bool also_teardown_services = 4;
-}
-
-message KillE2eSessionResponse {
-  bool killed = 1; // false = no active session for this task
-  // Set only when also_teardown_services was requested — the (repo,
-  // service_key) pairs actually deleted, for the dashboard to report back.
-  repeated string services_torn_down = 2;
-}
-
-message GetE2eSessionStatusRequest {
-  string task_id = 1;
-}
-
-message GetE2eSessionStatusResponse {
-  string status = 1; // "requested"|"running"|"failed"|"torn_down"|"" (none)
-  string preview_url = 2;
-  // Live pod truth, readable only here — the provisioner holds the fleet's
-  // sole cluster RBAC. start_cmd is read back off the pod's own
-  // E2E_START_CMD env var rather than re-resolved from the profile, so it
-  // reflects what is actually running (an approved override included).
-  //
-  // app_ready is the readiness condition from the AppPort probe: the
-  // difference between "still installing" (a cold bun install measured 782s
-  // live) and "bound the wrong port/interface and never will". Without it a
-  // broken preview is indistinguishable from a slow one.
-  string start_cmd = 3;
-  string pod_phase = 4; // "Pending"|"Running"|"Succeeded"|"Failed"|"Unknown"
-  bool app_ready = 5;
-  int32 restarts = 6;
-  string started_at = 7; // RFC3339
-  // Where a human reaches the in-browser IDE (the /code prefix route). On the
-  // wire rather than rebuilt by the caller: the dashboard's "Open code-server"
-  // button was pointed at preview_url — the app root — and so had never once
-  // opened code-server (docs/adr/0044).
-  string code_server_url = 8;
-  // docs/adr/0045 — see ServiceEndpoint. Present here as well as on
-  // CreateE2eSession because core's own dashboard path (runInE2ePod, backing
-  // GetE2EAppLog and the human run-command surface) needs to reach the
-  // sandbox without provisioning one.
-  repeated ServiceEndpoint endpoints = 9;
-}
-
-// A directly-dialable address for one service, resolved by the component that
-// knows it exists and handed to whoever needs to call it (docs/adr/0045).
+// The recipe system's wire types (ScopeMode, ServiceIngredient), the e2e
+// session RPCs' messages (KillE2eSession*, GetE2eSessionStatus*,
+// CreateE2eSession*) and the ServiceEndpoint roster all lived here.
 //
-// This is the fleet's whole service-discovery mechanism, and it is
-// deliberately not a registry: there is no lookup RPC and no `services`
-// table. Kubernetes is already ground truth for whether a pod exists — a row
-// survives an OOMKill, a Service endpoint does not, so a table would be a
-// cache that lies. The provisioner computes these from (namespace, taskID),
-// the same pure function that names the Service it just created, and they
-// ride back on responses core already sends.
+// All of it is deleted (docs/adr/0048 §6). Nothing declares what toolchain or
+// services a repo needs up front — the agent asks for a service when it turns
+// out to need one — and nothing is dialled by address, because there is no
+// second pod to dial.
+
+// Which kind of pod an operation targets.
 //
-// Fields NOT here, and why:
-//   - who may call it — authorization is a per-task NetworkPolicy. A field
-//     the caller reads is advice; a policy the CNI enforces is not.
-//   - ttl/expires_at — validity is implied by delivery. A failed dial
-//     re-resolves through the provision path that already exists.
-//   - scope — a roster reaches one sidecar serving one task. The delivery
-//     channel *is* the scope.
-message ServiceEndpoint {
-  string name = 1;     // "playwright" | "exec"
-  string address = 2;  // host:port, host fully qualified with a trailing dot
-  string protocol = 3; // "mcp-streamable-http" | "grpc"
-  string path = 4;     // "/mcp" for MCP, "" for gRPC
-  // Bearer token, when a service authenticates its callers at all. Empty for
-  // the sandbox, deliberately: docs/adr/0039 rests on the e2e pod holding no
-  // fleet credentials, so reachability there is fenced structurally instead.
-  string token = 5;
-}
-
-// Requests an on-demand e2e preview pod for taskId (mounts the same
-// worktree the task's worker pod is using, docs/adr/0012). Was previously
-// triggered by the worker calling e2e-provisioner's /mcp/:taskId directly;
-// under docs/adr/0020's hub-and-spoke rule the request now routes
-// sidecar -> core (CoreService.RequestE2eEnv) -> provisioner (this RPC) —
-// core is the only caller.
-message CreateE2eSessionRequest {
-  string task_id = 1;
-  string repo = 2;
-  // See RequestE2eEnvRequest.start_cmd in core.proto — passed through
-  // core unchanged.
-  string start_cmd = 3;
-  // Resolved from the repo's "e2e" profile (or an agent-overridden
-  // profile) by core before this call — docs/adr/0034. The provisioner
-  // holds no DB, so it never resolves a profile name itself, only the
-  // already-resolved ingredient list.
-  repeated string tool_keys = 4;
-  repeated ServiceIngredient service_ingredients = 5;
-}
-
-message CreateE2eSessionResponse {
-  string status = 1;
-  string preview_url = 2;
-  // docs/adr/0045. Filled on BOTH the fresh-create path and the
-  // already-exists short-circuit — a resumed session that skips creation
-  // still needs to know where to dial, and returning them only on creation
-  // is the obvious way to break exactly that case.
-  repeated ServiceEndpoint endpoints = 3;
-}
-
-// Which kind of session/pod an operation targets — worker pods and e2e
-// preview pods share the provisioner's reconcile/teardown machinery
-// (docs/adr/0019) but are tracked and torn down independently.
+// Value 2 was SESSION_KIND_E2E, the sandbox pod (docs/adr/0048 §6). Reserved
+// rather than reused: proto3 enums are open, so an in-flight message from a
+// component on the older build still decodes — it just names a kind that
+// selects nothing. Reusing the number for something else is what would
+// actually break that rollout.
 enum SessionKind {
+  reserved 2;
+  reserved "SESSION_KIND_E2E";
+
   SESSION_KIND_UNSPECIFIED = 0;
   SESSION_KIND_WORKER = 1;
-  SESSION_KIND_E2E = 2;
 }
 
-// Provisioner does the clone/fetch/worktree-add (docs/adr/0019 point 2 —
-// the provisioner owns the entire git lifecycle on the shared PVC, worker
-// pods never touch git themselves) and the two-container pod creation
-// (worker + sidecar, docs/adr/0020 point 5) synchronously, returning once
-// the pod is scheduled. core calls this from its own dispatch loop after
-// claiming a task — the provisioner never claims tasks itself
-// (docs/adr/0020 point 2, correcting docs/adr/0019 points 4-5).
+// Fetches the repo's clone cache and creates the session's pod, synchronously,
+// returning once the pod is scheduled. core is the only caller (docs/adr/0020
+// point 2 — the provisioner never decides to spawn a pod on its own).
+//
+// It no longer adds a worktree: the session's working tree is cloned by an
+// init container inside the pod, because it lives on a per-session volume the
+// provisioner never mounts (docs/adr/0048 §4/§5).
 message CreateWorkerPodRequest {
-  string task_id = 1;
+  string session_id = 1;
   string repo = 2;
   string repo_url = 3;
   string base_branch = 4;
   // description and lease_id are handed straight through to the worker
-  // pod's env — the worker no longer fetches its own task row at all
+  // pod's env — the worker no longer fetches its own session row at all
   // (docs/adr/0020 point 1: it holds no DB credentials, direct or
   // otherwise), so whatever it needs has to arrive at pod creation time.
   string description = 5;
   string lease_id = 6;
   // Non-empty when this task already has a saved Claude SDK session
-  // (tasks.session_id) — threaded straight to the worker pod's
+  // (sessions.agent_session_id) — threaded straight to the worker pod's
   // RESUME_SESSION_ID env, which worker/src/session.ts passes as `resume:`
   // to query() so the new pod continues the prior conversation instead of
   // starting fresh (sessions redesign, supersedes docs/adr/0021/0025's
@@ -183,31 +68,30 @@ message CreateWorkerPodRequest {
   // most critically), which self-aborts a resumed session within seconds
   // of it starting. 0 for a brand-new task (nothing to skip).
   int64 resume_from_seq = 8;
-  // The task's resolved guidance text (tasks.guidance — the operator's
-  // chosen prompt_snippets, already joined at task-creation time) — handed
-  // straight through to the worker pod's TASK_GUIDANCE env, same reasoning
-  // as description above. Empty when no snippets were attached; the
-  // worker's own taskPrompt() then falls back to just the bare description.
-  string guidance = 9;
-  // Resolved from the repo's "worker" profile by core before this call —
-  // docs/adr/0034. Empty when the repo has no "worker" profile row, which
-  // preserves today's exact pod shape (fully backward compatible).
+  reserved 9, 11;
+  reserved "guidance", "service_ingredients";
+
+  // tool_keys is what survives docs/adr/0034's ingredient resolution: only
+  // "cluster-access", which is a privilege grant rather than a toolchain
+  // (docs/adr/0037). The toolchain is in the session's image now, and services
+  // are requested on demand rather than declared per repo — so
+  // service_ingredients has no producer left, and `guidance` went with the
+  // fleet-composed prompt it was hidden inside (docs/adr/0048).
   repeated string tool_keys = 10;
-  repeated ServiceIngredient service_ingredients = 11;
 }
 
 message CreateWorkerPodResponse {
   string pod_name = 1;
 }
 
-// core owns `tasks` and therefore decides when a session should tear
+// core owns `sessions` and therefore decides when a session should tear
 // down (task reached done/failed/cancelled, or an explicit kill) —
-// the provisioner no longer polls/joins against `tasks.status` itself
+// the provisioner no longer polls/joins against `the deleted status column` itself
 // (docs/adr/0020 point 1: it holds no DB credentials at all). The
 // provisioner's own reconcile loop keeps doing pure-k8s orphan detection
 // independently of this RPC.
 message TearDownSessionRequest {
-  string task_id = 1;
+  string session_id = 1;
   SessionKind kind = 2;
 }
 
@@ -223,54 +107,96 @@ message TearDownSessionResponse {
 // (dashboard-driven); the automated half is the periodic sweep
 // (provisioner/internal/sweep), which only acts once a branch's upstream
 // is confirmed [gone].
-message ListWorktreesRequest {}
+// ListWorkerPods reports which sessions actually have a live worker Job, as
+// Kubernetes sees it. It is the safety net that replaces the 30-second
+// heartbeat deleted in docs/adr/0048.
+//
+// The heartbeat asked the pod to report on itself, which could not
+// distinguish a healthy session from a wedged one and went silent for the
+// same reason the pod had stopped working. Pod events are pushed instead —
+// but a push can be dropped (core restarting, for instance, which is exactly
+// when a deploy is happening), and a dropped TERMINATED leaves a session
+// holding a concurrency slot forever. Core reconciles against this list every
+// 60s so that failure self-heals rather than requiring a human to notice.
+//
+// Deliberately a provisioner RPC rather than core reading the API directly:
+// core holds zero cluster RBAC (docs/adr/0020 point 1), and a liveness check
+// is not a reason to grant it any.
+message ListWorkerPodsRequest {}
 
-message WorktreeInfo {
-  string task_id = 1;
+message LiveWorkerPod {
+  string session_id = 1;
+  string pod_name = 2;
+  // Kubernetes Job phase: "Running" | "Pending" | "Succeeded" | "Failed".
+  string phase = 3;
+}
+
+message ListWorkerPodsResponse {
+  repeated LiveWorkerPod pods = 1;
+}
+
+// ListWorktrees/DeleteWorktree and their messages (WorktreeInfo,
+// ListWorktreesResponse, DeleteWorktree*) are gone with the worktree model
+// (docs/adr/0048 §5). A session's tree is its own PVC; nothing lists them by
+// repo, and the retention GC deletes a volume rather than a directory.
+
+// Publishes a session's port at <session>.e2e.bnei.dev: a Service plus a
+// Traefik IngressRoute on ADR-0033's `le-dns` wildcard. Idempotent — the
+// agent may call expose() again after a warm, and re-exposing the same port
+// must return the same URL rather than erroring.
+message ExposeSessionRequest {
+  string session_id = 1;
+  int32 port = 2;
+}
+
+message ExposeSessionResponse {
+  string url = 1;
+}
+
+message UnexposeSessionRequest {
+  string session_id = 1;
+}
+
+message UnexposeSessionResponse {}
+
+// Provisions or reuses a shared backing service. Keyed by repo, not by
+// session (ADR-0034's rule, which outlives the recipe system that introduced
+// it): instances are expensive and sessions on the same repo want the same
+// database, so tearing one down is never implied by a single session ending.
+message ProvisionServiceRequest {
+  string session_id = 1;
   string repo = 2;
-  string branch = 3;
-  string upstream_track = 4; // e.g. "[gone]", "[ahead 2]", ""
-  int64 mtime_unix = 5;
-  string path = 6; // absolute path on the shared PVC
-  // Uncommitted entries (`git status --porcelain` lines). Deleting a
-  // worktree throws this work away, so it's the warning shown next to the
-  // delete button, not decoration.
-  int32 dirty_files = 7;
-  int64 size_bytes = 8;
+  // "postgres" | "redis"
+  string kind = 3;
 }
 
-message ListWorktreesResponse {
-  repeated WorktreeInfo worktrees = 1;
-  // Total/available bytes of the filesystem holding the worktrees root (the
-  // shared workspace PVC) — free space is what decides whether an orphan has
-  // to be pruned now or can wait. Response-level, not per-worktree: it's one
-  // filesystem, and repeating it per row would imply otherwise.
-  uint64 pvc_total_bytes = 2;
-  uint64 pvc_free_bytes = 3;
-}
-
-message DeleteWorktreeRequest {
-  string task_id = 1;
-  string repo = 2;
-  bool also_delete_branch = 3;
-}
-
-message DeleteWorktreeResponse {
-  bool deleted = 1;
+message ProvisionServiceResponse {
+  string dsn = 1;
 }
 
 service ProvisionerService {
-  rpc KillE2eSession(KillE2eSessionRequest) returns (KillE2eSessionResponse);
-  rpc GetE2eSessionStatus(GetE2eSessionStatusRequest) returns (GetE2eSessionStatusResponse);
-  rpc CreateE2eSession(CreateE2eSessionRequest) returns (CreateE2eSessionResponse);
   rpc CreateWorkerPod(CreateWorkerPodRequest) returns (CreateWorkerPodResponse);
   rpc TearDownSession(TearDownSessionRequest) returns (TearDownSessionResponse);
-  // Reused as-is by dashboard.proto's own ListWorktrees (identical empty
-  // request shape) — cross-file message reuse, not a call passthrough.
-  // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
-  rpc ListWorktrees(ListWorktreesRequest) returns (ListWorktreesResponse);
-  // Reused as-is by dashboard.proto's own DeleteWorktree (identical
-  // request/response shape, no dashboard-specific fields needed).
-  // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
-  rpc DeleteWorktree(DeleteWorktreeRequest) returns (DeleteWorktreeResponse);
+  // The liveness reconcile source — see ListWorkerPodsRequest.
+  rpc ListWorkerPods(ListWorkerPodsRequest) returns (ListWorkerPodsResponse);
+
+  // What is left of the sandbox after docs/adr/0048 §6: the two capabilities
+  // that need cluster RBAC. Everything else the e2e pod did — running the
+  // app, running builds, running a browser — happens in the session pod
+  // itself now, with plain Bash.
+  rpc ExposeSession(ExposeSessionRequest) returns (ExposeSessionResponse);
+  rpc UnexposeSession(UnexposeSessionRequest) returns (UnexposeSessionResponse);
+  rpc ProvisionService(ProvisionServiceRequest) returns (ProvisionServiceResponse);
+
+  // Deletes a session's working-tree PVC. The other half of its disk (the
+  // SDK resume state) is a directory on the shared volume, removed in the
+  // same call — the two live on different volumes because they have
+  // different access patterns, not because anything wants them apart.
+  rpc SweepSession(SweepSessionRequest) returns (SweepSessionResponse);
 }
+
+message SweepSessionRequest {
+  string session_id = 1;
+}
+
+message SweepSessionResponse {}

@@ -7,7 +7,6 @@ import (
 
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -18,14 +17,12 @@ import (
 func newTestClient() *Client {
 	scheme := runtime.NewScheme()
 	listKinds := map[schema.GroupVersionResource]string{
-		middlewareGVR:   "MiddlewareList",
 		ingressRouteGVR: "IngressRouteList",
 	}
 	return &Client{
 		Core:                  fake.NewSimpleClientset(),
 		Dynamic:               dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme, listKinds),
 		Namespace:             "agent-fleet",
-		RunnerImage:           "mohammaddocker/agent-fleet-e2e-runner:latest",
 		WorkerImage:           "mohammaddocker/agent-fleet-worker:latest",
 		SidecarImage:          "mohammaddocker/agent-fleet-sidecar:latest",
 		WorkspacePVC:          "agent-fleet-workspace",
@@ -35,343 +32,11 @@ func newTestClient() *Client {
 	}
 }
 
-// TestCreatePod_EmptyStartCmdIsASandboxOnlyPod is the inverse of the old
-// TestCreatePod_EmptyStartCmd_FailsLoud (docs/adr/0044). An empty start_cmd
-// used to be a hard error, which meant every repo without an "e2e" profile —
-// agent-fleet and infra-bootstrap among them — could never start a sandbox at
-// all, even though run_command is registered for every session from turn one
-// (docs/adr/0039). Empty now means "no app", not "no pod".
-//
-// The readiness probe deliberately stays on AppPort even here: nothing will
-// ever bind it, so the pod stays NotReady, and NotReady is the honest answer
-// for a sandbox with no app. publishNotReadyAddresses keeps exec/code-server
-// routable regardless, and app_ready=false is exactly what the dashboard card
-// should show.
-func TestCreatePod_EmptyStartCmdIsASandboxOnlyPod(t *testing.T) {
-	c := newTestClient()
-	ctx := context.Background()
-	if err := c.CreatePod(ctx, TaskRef{ID: "task-1", Repo: "dream-analyst"}); err != nil {
-		t.Fatalf("a sandbox-only pod must be created, got %v", err)
-	}
-
-	pod, err := c.Core.CoreV1().Pods(c.Namespace).Get(ctx, ResourceName("task-1"), metav1.GetOptions{})
-	if err != nil {
-		t.Fatalf("get pod: %v", err)
-	}
-	container := pod.Spec.Containers[0]
-	var startCmd *corev1.EnvVar
-	for i := range container.Env {
-		if container.Env[i].Name == "E2E_START_CMD" {
-			startCmd = &container.Env[i]
-		}
-	}
-	if startCmd == nil {
-		t.Fatal("E2E_START_CMD must still be present so GetPod can read it back")
-	}
-	if startCmd.Value != "" {
-		t.Errorf("expected an empty E2E_START_CMD, got %q", startCmd.Value)
-	}
-	if container.ReadinessProbe == nil {
-		t.Error("the readiness probe must stay unconditional — it is what keeps app_ready honest")
-	}
-}
-
-// TestCreatePod_MemoryLimitAboveNamespaceDefault is a regression test for
-// a bug caught live on the real cluster: the e2e-runner container ran with
-// no explicit resources, silently inheriting the agent-fleet namespace's
-// LimitRange default (512Mi) — nowhere near enough for code-server +
-// headless-Chromium Playwright + the target app's own dev server running
-// concurrently, and the pod got OOMKilled mid-run. Must be set explicitly,
-// well above that 512Mi default.
-func TestCreatePod_MemoryLimitAboveNamespaceDefault(t *testing.T) {
-	c := newTestClient()
-	ctx := context.Background()
-	task := TaskRef{ID: "mem-check", Repo: "dream-analyst", StartCmd: "bun run dev"}
-
-	if err := c.CreatePod(ctx, task); err != nil {
-		t.Fatalf("CreatePod: %v", err)
-	}
-	pod, err := c.Core.CoreV1().Pods("agent-fleet").Get(ctx, ResourceName(task.ID), metav1.GetOptions{})
-	if err != nil {
-		t.Fatalf("get pod: %v", err)
-	}
-	container := pod.Spec.Containers[0]
-	limit := container.Resources.Limits[corev1.ResourceMemory]
-	namespaceDefault := resource.MustParse("512Mi")
-	if limit.Cmp(namespaceDefault) <= 0 {
-		t.Errorf("e2e-runner memory limit = %s, want something above the namespace LimitRange default of %s", limit.String(), namespaceDefault.String())
-	}
-}
-
-func TestCreatePod_ShapeMatchesTSVersion(t *testing.T) {
-	c := newTestClient()
-	ctx := context.Background()
-	task := TaskRef{ID: "abc-123-def", Repo: "dream-analyst", StartCmd: "bun run dev"}
-
-	if err := c.CreatePod(ctx, task); err != nil {
-		t.Fatalf("CreatePod: %v", err)
-	}
-
-	pod, err := c.Core.CoreV1().Pods("agent-fleet").Get(ctx, ResourceName(task.ID), metav1.GetOptions{})
-	if err != nil {
-		t.Fatalf("get pod: %v", err)
-	}
-	if pod.Labels[ComponentLabel] != "e2e-runner" || pod.Labels[TaskIDLabel] != task.ID {
-		t.Errorf("unexpected labels: %+v", pod.Labels)
-	}
-	if pod.Spec.RestartPolicy != "Never" {
-		t.Errorf("expected RestartPolicy Never, got %s", pod.Spec.RestartPolicy)
-	}
-	container := pod.Spec.Containers[0]
-	if len(container.VolumeMounts) != 4 {
-		t.Errorf("expected 4 volume mounts, got %d: %+v", len(container.VolumeMounts), container.VolumeMounts)
-	}
-	if container.VolumeMounts[0].SubPath != "worktrees/"+task.ID {
-		t.Errorf("unexpected worktree mount: %+v", container.VolumeMounts[0])
-	}
-	cacheMount := container.VolumeMounts[1]
-	if cacheMount.MountPath != "/cache" || cacheMount.SubPath != "cache/"+task.Repo {
-		t.Errorf("unexpected cache volume mount: %+v", cacheMount)
-	}
-	sshAuthKeysMount := container.VolumeMounts[3]
-	if sshAuthKeysMount.MountPath != "/ssh-authorized-keys" || !sshAuthKeysMount.ReadOnly {
-		t.Errorf("unexpected ssh-authorized-keys mount: %+v", sshAuthKeysMount)
-	}
-	if len(container.Ports) != 5 {
-		t.Errorf("expected 5 ports, got %d: %+v", len(container.Ports), container.Ports)
-	}
-	if container.Ports[0].ContainerPort != AppPort || container.Ports[1].ContainerPort != CodeServerPort || container.Ports[2].ContainerPort != PlaywrightPort {
-		t.Errorf("unexpected first 3 ports: %+v", container.Ports[:3])
-	}
-	if container.Ports[4].ContainerPort != SSHPort || container.Ports[4].Name != "ssh" {
-		t.Errorf("unexpected ssh port: %+v", container.Ports[4])
-	}
-	dshmVol := pod.Spec.Volumes[1]
-	if dshmVol.EmptyDir == nil || dshmVol.EmptyDir.Medium != "Memory" || dshmVol.EmptyDir.SizeLimit.String() != "1Gi" {
-		t.Errorf("unexpected dshm volume: %+v", dshmVol)
-	}
-	wantCacheEnv := map[string]string{
-		"GOMODCACHE":            "/cache/go-mod",
-		"GOCACHE":               "/cache/go-build",
-		"BUN_INSTALL_CACHE_DIR": "/cache/bun",
-	}
-	gotCacheEnv := map[string]string{}
-	for _, e := range container.Env {
-		if _, ok := wantCacheEnv[e.Name]; ok {
-			gotCacheEnv[e.Name] = e.Value
-		}
-	}
-	for name, want := range wantCacheEnv {
-		if gotCacheEnv[name] != want {
-			t.Errorf("env %s = %q, want %q", name, gotCacheEnv[name], want)
-		}
-	}
-}
-
-func TestCreateService_Shape(t *testing.T) {
-	c := newTestClient()
-	ctx := context.Background()
-	if err := c.CreateService(ctx, "task-1"); err != nil {
-		t.Fatalf("CreateService: %v", err)
-	}
-	svc, err := c.Core.CoreV1().Services("agent-fleet").Get(ctx, ResourceName("task-1"), metav1.GetOptions{})
-	if err != nil {
-		t.Fatalf("get service: %v", err)
-	}
-	if svc.Spec.Selector[TaskIDLabel] != "task-1" {
-		t.Errorf("unexpected selector: %+v", svc.Spec.Selector)
-	}
-	if len(svc.Spec.Ports) != 5 {
-		t.Errorf("expected 5 ports, got %d", len(svc.Spec.Ports))
-	}
-	sshPort := svc.Spec.Ports[4]
-	if sshPort.Port != SSHPort || sshPort.Name != "ssh" {
-		t.Errorf("unexpected ssh port: %+v", sshPort)
-	}
-}
-
-// TestCreateService_PublishesNotReadyAddresses guards the fix that makes the
-// e2e pod usable as the worker's sandbox (docs/adr/0039). The pod's
-// ReadinessProbe watches AppPort only, so ready-gated endpoints took exec,
-// playwright and code-server down with the target app — leaving no way in
-// at the one moment anyone needs one, and silently defeating docs/adr/0036's
-// stated reason for choosing readiness over liveness.
-func TestCreateService_PublishesNotReadyAddresses(t *testing.T) {
-	c := newTestClient()
-	ctx := context.Background()
-	if err := c.CreateService(ctx, "task-1"); err != nil {
-		t.Fatalf("CreateService: %v", err)
-	}
-	svc, err := c.Core.CoreV1().Services("agent-fleet").Get(ctx, ResourceName("task-1"), metav1.GetOptions{})
-	if err != nil {
-		t.Fatalf("get service: %v", err)
-	}
-	if !svc.Spec.PublishNotReadyAddresses {
-		t.Error("publishNotReadyAddresses must be true — otherwise run_command and code-server are unreachable whenever the app isn't listening on AppPort")
-	}
-}
-
-// TestCreateService_SelectorExcludesWorkerPod is a regression test for a bug
-// caught live on the real cluster: the selector was TaskIDLabel alone, and
-// WorkerLabels carries that very same label — so the task's worker pod
-// joined this Service's EndpointSlice alongside the e2e pod, and roughly
-// half of Traefik's preview requests were load-balanced onto a pod with
-// nothing listening on AppPort. Symptom was an intermittent 502 that looked
-// exactly like a broken app.
-func TestCreateService_SelectorExcludesWorkerPod(t *testing.T) {
-	c := newTestClient()
-	ctx := context.Background()
-	if err := c.CreateService(ctx, "task-1"); err != nil {
-		t.Fatalf("CreateService: %v", err)
-	}
-	svc, err := c.Core.CoreV1().Services("agent-fleet").Get(ctx, ResourceName("task-1"), metav1.GetOptions{})
-	if err != nil {
-		t.Fatalf("get service: %v", err)
-	}
-	matches := func(podLabels map[string]string) bool {
-		for k, v := range svc.Spec.Selector {
-			if podLabels[k] != v {
-				return false
-			}
-		}
-		return true
-	}
-	if !matches(Labels("task-1")) {
-		t.Errorf("selector %+v must match the e2e pod's own labels", svc.Spec.Selector)
-	}
-	if matches(WorkerLabels("task-1", "dream-analyst")) {
-		t.Errorf("selector %+v also matches the worker pod for the same task — it must not", svc.Spec.Selector)
-	}
-}
-
-// TestCreatePod_ReadinessProbeOnAppPort guards the other half of that same
-// live 502: with no probe, an app that binds the wrong port or only
-// 127.0.0.1 (Vite's default, reproduced live) leaves the pod reporting
-// Running forever while the preview never serves. Readiness specifically —
-// a startup or liveness probe would kill the pod and take code-server with
-// it, removing the only way to debug the failure.
-func TestCreatePod_ReadinessProbeOnAppPort(t *testing.T) {
-	c := newTestClient()
-	ctx := context.Background()
-	task := TaskRef{ID: "probe-check", Repo: "dream-analyst", StartCmd: "bun run dev"}
-	if err := c.CreatePod(ctx, task); err != nil {
-		t.Fatalf("CreatePod: %v", err)
-	}
-	pod, err := c.Core.CoreV1().Pods("agent-fleet").Get(ctx, ResourceName(task.ID), metav1.GetOptions{})
-	if err != nil {
-		t.Fatalf("get pod: %v", err)
-	}
-	container := pod.Spec.Containers[0]
-	probe := container.ReadinessProbe
-	if probe == nil || probe.TCPSocket == nil || probe.TCPSocket.Port.IntVal != AppPort {
-		t.Fatalf("expected a TCP readiness probe on AppPort, got %+v", probe)
-	}
-	if container.StartupProbe != nil || container.LivenessProbe != nil {
-		t.Error("e2e-runner must not have a startup/liveness probe — a failing app must not kill code-server")
-	}
-	// A cold `bun install` measured 782s live; the window must comfortably
-	// exceed that or every cold cache reports a false failure.
-	if window := probe.PeriodSeconds * probe.FailureThreshold; window < 900 {
-		t.Errorf("readiness window = %ds, want >= 900s to cover a cold dependency install", window)
-	}
-}
-
-// Only /code is stripped now. The app is served at the root of its own
-// hostname (docs/adr/0038), so stripping anything from it is exactly the bug
-// this replaced — an app emitting /assets/... 404'd because it was never told
-// its public base path.
-func TestCreateMiddleware_StripPrefixPaths(t *testing.T) {
-	c := newTestClient()
-	ctx := context.Background()
-	if err := c.CreateMiddleware(ctx, "task-1"); err != nil {
-		t.Fatalf("CreateMiddleware: %v", err)
-	}
-	obj, err := c.Dynamic.Resource(middlewareGVR).Namespace("agent-fleet").Get(ctx, stripPrefixName("task-1"), metav1.GetOptions{})
-	if err != nil {
-		t.Fatalf("get middleware: %v", err)
-	}
-	prefixes, _, _ := unstructuredNestedSlice(obj.Object, "spec", "stripPrefix", "prefixes")
-	if len(prefixes) != 1 || prefixes[0] != "/code" {
-		t.Errorf("expected exactly [/code], got %+v", prefixes)
-	}
-}
-
-// PreviewURLFor is the single string the whole per-task-subdomain fix hinges
-// on: root path, own hostname, no prefix anywhere.
-func TestPreviewURLFor_RootPathSubdomain(t *testing.T) {
-	got := PreviewURLFor("e2e.bnei.dev", "task-1")
-	if want := "https://task1.e2e.bnei.dev/"; got != want {
-		t.Errorf("PreviewURLFor = %q, want %q", got, want)
-	}
-	if strings.Contains(got, "/app") {
-		t.Errorf("PreviewURLFor still carries a path prefix: %q", got)
-	}
-}
-
-func TestCreateIngressRoute_Routes(t *testing.T) {
-	c := newTestClient()
-	ctx := context.Background()
-	if err := c.CreateIngressRoute(ctx, "e2e.bnei.dev", "task-1"); err != nil {
-		t.Fatalf("CreateIngressRoute: %v", err)
-	}
-	obj, err := c.Dynamic.Resource(ingressRouteGVR).Namespace("agent-fleet").Get(ctx, ResourceName("task-1"), metav1.GetOptions{})
-	if err != nil {
-		t.Fatalf("get ingressroute: %v", err)
-	}
-
-	// The wildcard must be declared explicitly, or Traefik derives the
-	// concrete per-task hostname from the Host() rule and orders one cert per
-	// session — against a 50-per-registered-domain-per-week budget shared with
-	// every other bnei.dev host.
-	resolver, _, _ := unstructuredNestedString(obj.Object, "spec", "tls", "certResolver")
-	if resolver != "le-dns" {
-		t.Errorf("certResolver = %q, want le-dns (TLS-ALPN-01 cannot issue a wildcard)", resolver)
-	}
-	domains, _, _ := unstructuredNestedSlice(obj.Object, "spec", "tls", "domains")
-	if len(domains) != 1 || domains[0].(map[string]any)["main"] != "*.e2e.bnei.dev" {
-		t.Fatalf("expected a single *.e2e.bnei.dev wildcard, got %+v", domains)
-	}
-
-	routes, _, _ := unstructuredNestedSlice(obj.Object, "spec", "routes")
-	if len(routes) != 2 {
-		t.Fatalf("expected 2 routes, got %d", len(routes))
-	}
-
-	code := routes[0].(map[string]any)
-	if code["match"] != "Host(`task1.e2e.bnei.dev`) && PathPrefix(`/code`)" {
-		t.Errorf("unexpected code-server match: %v", code["match"])
-	}
-
-	app := routes[1].(map[string]any)
-	if app["match"] != "Host(`task1.e2e.bnei.dev`)" {
-		t.Errorf("unexpected app match: %v", app["match"])
-	}
-	// The load-bearing assertion: no stripPrefix on the app route. Adding one
-	// back reintroduces the base-path bug for every target app.
-	for _, mw := range app["middlewares"].([]any) {
-		if name := mw.(map[string]any)["name"]; name == stripPrefixName("task-1") {
-			t.Errorf("app route must NOT carry stripPrefix — it is served at the root")
-		}
-	}
-	// code-server must outrank the app route, else a target app owning /code
-	// wins on a rule-length tiebreak.
-	if code["priority"].(int64) <= app["priority"].(int64) {
-		t.Errorf("code route priority %v must exceed app route %v", code["priority"], app["priority"])
-	}
-}
-
-func TestDeleteAll_IgnoresNotFound(t *testing.T) {
-	c := newTestClient()
-	if err := c.DeleteAll(context.Background(), "never-existed"); err != nil {
-		t.Fatalf("DeleteAll should ignore 404s, got: %v", err)
-	}
-}
-
 func TestCreateWorkerPod_TwoContainersSharedPVC(t *testing.T) {
 	c := newTestClient()
 	ctx := context.Background()
 
-	if err := c.CreateWorkerPod(ctx, "task-1", "dream-analyst", "lease-1", "/workspace/worktrees/task-1", "", 0, nil, nil, nil); err != nil {
+	if err := c.CreateWorkerPod(ctx, WorkerPodSpec{SessionID: "task-1", Repo: "dream-analyst", LeaseID: "lease-1", ResumeID: "", ResumeFromSeq: 0, ToolKeys: nil, ServiceRefs: nil, ExtraEnv: nil}); err != nil {
 		t.Fatalf("CreateWorkerPod: %v", err)
 	}
 
@@ -394,38 +59,132 @@ func TestCreateWorkerPod_TwoContainersSharedPVC(t *testing.T) {
 	if len(podSpec.Containers) != 1 || podSpec.Containers[0].Name != "worker" {
 		t.Fatalf("expected 1 container (worker), got %+v", podSpec.Containers)
 	}
-	if len(podSpec.InitContainers) != 1 || podSpec.InitContainers[0].Name != "sidecar" {
-		t.Fatalf("expected 1 init container (sidecar), got %+v", podSpec.InitContainers)
+	// clone THEN sidecar, and the order is load-bearing: a plain init
+	// container runs to completion before a native sidecar starts, so the
+	// working tree exists before anything reads it. Reversing these would
+	// start the sidecar — and therefore unblock the worker — against an empty
+	// /workspace (docs/adr/0048 §5).
+	if len(podSpec.InitContainers) != 2 {
+		t.Fatalf("expected 2 init containers (clone, sidecar), got %+v", podSpec.InitContainers)
 	}
-	sidecar := podSpec.InitContainers[0]
+	if podSpec.InitContainers[0].Name != "clone" {
+		t.Fatalf("clone must run first, got %q", podSpec.InitContainers[0].Name)
+	}
+	if podSpec.InitContainers[1].Name != "sidecar" {
+		t.Fatalf("expected sidecar second, got %q", podSpec.InitContainers[1].Name)
+	}
+	// The clone container is the only place both volumes are mounted, which is
+	// the whole reason the clone happens in the pod rather than in the
+	// provisioner.
+	clone := podSpec.InitContainers[0]
+	var sawTree, sawCache bool
+	for _, m := range clone.VolumeMounts {
+		if m.MountPath == "/workspace" && m.Name == "session" {
+			sawTree = true
+		}
+		if m.MountPath == "/repo-cache" && m.Name == "shared" && m.ReadOnly {
+			sawCache = true
+		}
+	}
+	if !sawTree || !sawCache {
+		t.Fatalf("clone container must mount the session volume rw and the repo cache ro, got %+v", clone.VolumeMounts)
+	}
+	sidecar := podSpec.InitContainers[1]
 	if sidecar.RestartPolicy == nil || *sidecar.RestartPolicy != corev1.ContainerRestartPolicyAlways {
 		t.Errorf("sidecar init container must be a native sidecar (RestartPolicy: Always), got %v", sidecar.RestartPolicy)
 	}
 	if sidecar.StartupProbe == nil || sidecar.StartupProbe.HTTPGet == nil || sidecar.StartupProbe.HTTPGet.Path != "/readyz" {
 		t.Errorf("sidecar init container must have an HTTP /readyz startup probe so the worker waits for a proven core connection, got %+v", sidecar.StartupProbe)
 	}
-	// Whole PVC, no SubPath: a linked git worktree's .git gitlink is an
-	// absolute path back to repos/<repo>/.git/worktrees/<taskId>, which a
-	// SubPath scoped to just worktrees/<taskId> would put out of reach.
-	for _, ctr := range append(append([]corev1.Container{}, podSpec.Containers...), podSpec.InitContainers...) {
-		if len(ctr.VolumeMounts) != 1 || ctr.VolumeMounts[0].SubPath != "" || ctr.VolumeMounts[0].MountPath != "/workspace" {
-			t.Errorf("container %s: unexpected volume mounts: %+v", ctr.Name, ctr.VolumeMounts)
+	// Storage split by access pattern (docs/adr/0048 §4), replacing the single
+	// whole-PVC mount every container used to share.
+	//
+	// The old shape put the working tree, node_modules and the SDK state all
+	// on one Longhorn RWX volume measured at 10 MB/s, where a cold
+	// `bun install` could not finish in three minutes. The same install takes
+	// 2.4 seconds on node-local disk. The four mounts below are that
+	// measurement expressed as a pod spec.
+	worker := podSpec.Containers[0]
+	want := map[string]struct {
+		vol      string
+		subPath  string
+		readOnly bool
+	}{
+		// Node-local, per session, and the working directory itself.
+		"/workspace": {vol: "session", subPath: "tree"},
+		// Dependency caches: same node-local volume, so the measured speed
+		// applies, and warm across every warm of this session.
+		"/cache": {vol: "session", subPath: "cache"},
+		// The clone cache every session clones from — read-only, so one
+		// session cannot corrupt it for the others.
+		"/repo-cache": {vol: "shared", subPath: "repos", readOnly: true},
+		// SDK resume state, on replicated storage because losing it loses the
+		// ability to continue the conversation at all.
+		claudeConfigDir: {vol: "shared", subPath: "claude-home/task-1"},
+	}
+	got := map[string]corev1.VolumeMount{}
+	for _, m := range worker.VolumeMounts {
+		got[m.MountPath] = m
+	}
+	for path, w := range want {
+		m, ok := got[path]
+		if !ok {
+			t.Errorf("worker is missing the %s mount", path)
+			continue
 		}
-		foundWorktreePath := false
-		for _, e := range ctr.Env {
-			if e.Name == "WORKTREE_PATH" {
-				foundWorktreePath = true
-				if e.Value != "/workspace/worktrees/task-1" {
-					t.Errorf("container %s: unexpected WORKTREE_PATH: %q", ctr.Name, e.Value)
-				}
-			}
-		}
-		if !foundWorktreePath {
-			t.Errorf("container %s: missing WORKTREE_PATH env var", ctr.Name)
+		if m.Name != w.vol || m.SubPath != w.subPath || m.ReadOnly != w.readOnly {
+			t.Errorf("worker mount %s: got volume=%q subPath=%q readOnly=%v, want volume=%q subPath=%q readOnly=%v",
+				path, m.Name, m.SubPath, m.ReadOnly, w.vol, w.subPath, w.readOnly)
 		}
 	}
-	if len(podSpec.Volumes) != 1 || podSpec.Volumes[0].PersistentVolumeClaim.ClaimName != "agent-fleet-workspace" {
-		t.Errorf("expected single shared-PVC volume, got: %+v", podSpec.Volumes)
+
+	// Every session's cwd is now the same literal path, which is exactly why
+	// claude-home has to be per-session: the SDK derives its project state
+	// directory from cwd, so without the per-session mount every session would
+	// share one `projects/-workspace/` and replay each other's conversations.
+	for _, ctr := range []corev1.Container{worker, podSpec.InitContainers[1]} {
+		for _, e := range ctr.Env {
+			if e.Name == "WORKTREE_PATH" && e.Value != "/workspace" {
+				t.Errorf("container %s: WORKTREE_PATH should be the fixed session workdir, got %q", ctr.Name, e.Value)
+			}
+		}
+	}
+
+	if len(podSpec.Volumes) != 2 {
+		t.Fatalf("expected two volumes (session, shared), got: %+v", podSpec.Volumes)
+	}
+	vols := map[string]string{}
+	for _, v := range podSpec.Volumes {
+		vols[v.Name] = v.PersistentVolumeClaim.ClaimName
+	}
+	if vols["session"] != SessionPVCName("task-1") {
+		t.Errorf("session volume should be this session's own PVC, got %q", vols["session"])
+	}
+	// Every mount, in every container, must name a volume this pod declares.
+	//
+	// The fake clientset does not validate this — that check lives in the real
+	// API server — so renaming a volume and missing one mount produced a spec
+	// that passed every unit test here and was then rejected outright at
+	// creation: `initContainers[1].volumeMounts[0].name: Not found:
+	// "workspace"`. No Job, no pod, and the only evidence was one provisioner
+	// log line. Found in kind; this is the assertion that makes it a test
+	// failure instead.
+	declared := map[string]bool{}
+	for _, v := range podSpec.Volumes {
+		declared[v.Name] = true
+	}
+	all := append(append([]corev1.Container{}, podSpec.Containers...), podSpec.InitContainers...)
+	for _, ctr := range all {
+		for _, m := range ctr.VolumeMounts {
+			if !declared[m.Name] {
+				t.Errorf("container %s mounts volume %q, which the pod does not declare — "+
+					"the API server rejects the whole Job for this", ctr.Name, m.Name)
+			}
+		}
+	}
+
+	if vols["shared"] != "agent-fleet-workspace" {
+		t.Errorf("shared volume should be the fleet-wide PVC, got: %+v", podSpec.Volumes)
 	}
 }
 
@@ -453,7 +212,7 @@ func TestCreateWorkerPod_ResumeSession(t *testing.T) {
 	c := newTestClient()
 	ctx := context.Background()
 
-	if err := c.CreateWorkerPod(ctx, "task-1", "dream-analyst", "lease-1", "/workspace/worktrees/task-1", "sess-abc123", 42, nil, nil, nil); err != nil {
+	if err := c.CreateWorkerPod(ctx, WorkerPodSpec{SessionID: "task-1", Repo: "dream-analyst", LeaseID: "lease-1", ResumeID: "sess-abc123", ResumeFromSeq: 42, ToolKeys: nil, ServiceRefs: nil, ExtraEnv: nil}); err != nil {
 		t.Fatalf("CreateWorkerPod: %v", err)
 	}
 	job, err := c.Core.BatchV1().Jobs("agent-fleet").Get(ctx, WorkerResourceName("task-1"), metav1.GetOptions{})
@@ -481,7 +240,7 @@ func TestCreateWorkerPod_ResumeSession(t *testing.T) {
 	// A fresh task (no prior session) must still set RESUME_SESSION_ID —
 	// present-but-empty, not omitted, so worker/src/session.ts's env read
 	// doesn't have to distinguish "unset" from "empty" itself.
-	if err := c.CreateWorkerPod(ctx, "task-2", "dream-analyst", "lease-2", "/workspace/worktrees/task-2", "", 0, nil, nil, nil); err != nil {
+	if err := c.CreateWorkerPod(ctx, WorkerPodSpec{SessionID: "task-2", Repo: "dream-analyst", LeaseID: "lease-2", ResumeID: "", ResumeFromSeq: 0, ToolKeys: nil, ServiceRefs: nil, ExtraEnv: nil}); err != nil {
 		t.Fatalf("CreateWorkerPod: %v", err)
 	}
 	job2, err := c.Core.BatchV1().Jobs("agent-fleet").Get(ctx, WorkerResourceName("task-2"), metav1.GetOptions{})
@@ -496,32 +255,11 @@ func TestCreateWorkerPod_ResumeSession(t *testing.T) {
 	}
 }
 
-func TestGetPod_ExistsVsNotFound(t *testing.T) {
-	c := newTestClient()
-	ctx := context.Background()
-
-	_, exists, err := c.GetPod(ctx, "never-existed")
-	if err != nil || exists {
-		t.Fatalf("expected exists=false for a missing pod, got exists=%v err=%v", exists, err)
-	}
-
-	// GetPod is the e2e-preview-pod getter (worker sessions are Jobs now,
-	// reliability-findings.md #11) — exercised against CreatePod, not
-	// CreateWorkerPod.
-	if err := c.CreatePod(ctx, TaskRef{ID: "task-1", Repo: "dream-analyst", StartCmd: "bun run dev"}); err != nil {
-		t.Fatalf("CreatePod: %v", err)
-	}
-	_, exists, err = c.GetPod(ctx, ResourceName("task-1"))
-	if err != nil || !exists {
-		t.Fatalf("expected exists=true for a created pod, got exists=%v err=%v", exists, err)
-	}
-}
-
 func TestGetWorkerJobRepo_RecoversRepoFromLabel(t *testing.T) {
 	c := newTestClient()
 	ctx := context.Background()
 
-	if err := c.CreateWorkerPod(ctx, "task-1", "vos-monolith", "lease-1", "/workspace/worktrees/task-1", "", 0, nil, nil, nil); err != nil {
+	if err := c.CreateWorkerPod(ctx, WorkerPodSpec{SessionID: "task-1", Repo: "vos-monolith", LeaseID: "lease-1", ResumeID: "", ResumeFromSeq: 0, ToolKeys: nil, ServiceRefs: nil, ExtraEnv: nil}); err != nil {
 		t.Fatalf("CreateWorkerPod: %v", err)
 	}
 	repo, exists, err := c.GetWorkerJobRepo(ctx, "task-1")
@@ -538,15 +276,18 @@ func TestGetWorkerJobRepo_RecoversRepoFromLabel(t *testing.T) {
 	}
 }
 
-func TestListWorkerJobsByLabel_ExcludesE2ePods(t *testing.T) {
+// This used to also create an e2e pod and assert it was excluded from the
+// listing. There are no e2e pods (docs/adr/0048 §6), so what is left to pin is
+// that the selector is a selector at all — it must match worker Jobs by label
+// rather than returning everything in the namespace, since core reconciles
+// every session's pod_phase against this answer and a listing that over- or
+// under-reports frees or holds concurrency slots wrongly.
+func TestListWorkerJobsByLabel_SelectsWorkerJobs(t *testing.T) {
 	c := newTestClient()
 	ctx := context.Background()
 
-	if err := c.CreateWorkerPod(ctx, "task-1", "dream-analyst", "lease-1", "/workspace/worktrees/task-1", "", 0, nil, nil, nil); err != nil {
+	if err := c.CreateWorkerPod(ctx, WorkerPodSpec{SessionID: "task-1", Repo: "dream-analyst", LeaseID: "lease-1", ResumeID: "", ResumeFromSeq: 0, ToolKeys: nil, ServiceRefs: nil, ExtraEnv: nil}); err != nil {
 		t.Fatalf("CreateWorkerPod: %v", err)
-	}
-	if err := c.CreatePod(ctx, TaskRef{ID: "task-2", Repo: "dream-analyst", StartCmd: "bun run dev"}); err != nil {
-		t.Fatalf("CreatePod (e2e): %v", err)
 	}
 
 	jobs, err := c.ListWorkerJobsByLabel(ctx)
@@ -580,39 +321,6 @@ func TestJobPhase_DerivedFromConditions(t *testing.T) {
 }
 
 // small helper avoiding an extra import for one nested-slice read
-func unstructuredNestedSlice(obj map[string]any, fields ...string) ([]any, bool, error) {
-	cur := obj
-	for i, f := range fields {
-		if i == len(fields)-1 {
-			v, ok := cur[f].([]any)
-			return v, ok, nil
-		}
-		next, ok := cur[f].(map[string]any)
-		if !ok {
-			return nil, false, nil
-		}
-		cur = next
-	}
-	return nil, false, nil
-}
-
-// same, for a nested string read
-func unstructuredNestedString(obj map[string]any, fields ...string) (string, bool, error) {
-	cur := obj
-	for i, f := range fields {
-		if i == len(fields)-1 {
-			v, ok := cur[f].(string)
-			return v, ok, nil
-		}
-		next, ok := cur[f].(map[string]any)
-		if !ok {
-			return "", false, nil
-		}
-		cur = next
-	}
-	return "", false, nil
-}
-
 // The inverse of the guard this replaces. ADR-0035 injected the executor
 // bearer token into every sidecar so ask_thot could register; ADR-0037
 // deleted ask_thot but the injection survived the deletion, leaving every
@@ -623,7 +331,7 @@ func TestCreateWorkerPod_SidecarCarriesNoClusterCredential(t *testing.T) {
 	c := newTestClient()
 	c.ThotAuthToken = "test-token"
 
-	if err := c.CreateWorkerPod(context.Background(), "task-1", "dream-analyst", "lease-1", "/workspace/worktrees/task-1", "", 0, nil, nil, nil); err != nil {
+	if err := c.CreateWorkerPod(context.Background(), WorkerPodSpec{SessionID: "task-1", Repo: "dream-analyst", LeaseID: "lease-1", ResumeID: "", ResumeFromSeq: 0, ToolKeys: nil, ServiceRefs: nil, ExtraEnv: nil}); err != nil {
 		t.Fatalf("CreateWorkerPod: %v", err)
 	}
 
@@ -660,8 +368,7 @@ func TestCreateWorkerPod_ClusterAccessReachesTheJob(t *testing.T) {
 	c.ExecutorAddr = "thot-executor.thot.svc.cluster.local:9090"
 	c.ThotAuthToken = "tok"
 
-	if err := c.CreateWorkerPod(context.Background(), "task-thot", "infra-bootstrap", "lease-1",
-		"/workspace/worktrees/task-thot", "", 0, []string{"cluster-access"}, nil, nil); err != nil {
+	if err := c.CreateWorkerPod(context.Background(), WorkerPodSpec{SessionID: "task-thot", Repo: "infra-bootstrap", LeaseID: "lease-1", ResumeID: "", ResumeFromSeq: 0, ToolKeys: []string{"cluster-access"}, ServiceRefs: nil, ExtraEnv: nil}); err != nil {
 		t.Fatalf("CreateWorkerPod: %v", err)
 	}
 

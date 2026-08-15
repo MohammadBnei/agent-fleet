@@ -42,7 +42,7 @@ func promptBaseline(target string) int64 {
 
 func listSessionsHandler(core *coreclient.Client) server.ToolHandlerFunc {
 	return func(ctx context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		sessions, err := core.ListSessions(ctx)
+		sessions, err := core.ListPeerSessions(ctx)
 		if err != nil {
 			slog.Error("mcp list_sessions", "error", err)
 			return mcp.NewToolResultError(err.Error()), nil
@@ -50,7 +50,7 @@ func listSessionsHandler(core *coreclient.Client) server.ToolHandlerFunc {
 		out := make([]map[string]any, 0, len(sessions))
 		for _, s := range sessions {
 			out = append(out, map[string]any{
-				"taskId":      s.GetTaskId(),
+				"sessionId":   s.GetSessionId(),
 				"repo":        s.GetRepo(),
 				"description": s.GetDescription(),
 				"status":      s.GetStatus(),
@@ -67,7 +67,7 @@ func listSessionsHandler(core *coreclient.Client) server.ToolHandlerFunc {
 
 func promptSessionHandler(core *coreclient.Client) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		target := req.GetString("taskId", "")
+		target := req.GetString("sessionId", "")
 		text := req.GetString("text", "")
 		if target == "" || text == "" {
 			return mcp.NewToolResultError("taskId and text are required"), nil
@@ -77,7 +77,7 @@ func promptSessionHandler(core *coreclient.Client) server.ToolHandlerFunc {
 		// loop guard entirely.
 		resp, err := core.PromptSession(ctx, target, text, 1)
 		if err != nil {
-			slog.Error("mcp prompt_agent", "targetTaskId", target, "error", err)
+			slog.Error("mcp prompt_agent", "targetSessionId", target, "error", err)
 			return mcp.NewToolResultError(err.Error()), nil
 		}
 		rememberPrompt(target, resp.GetSeq())
@@ -89,14 +89,14 @@ func promptSessionHandler(core *coreclient.Client) server.ToolHandlerFunc {
 		if err != nil {
 			return nil, fmt.Errorf("prompt_agent: marshal: %w", err)
 		}
-		slog.Info("mcp prompt_agent", "targetTaskId", target, "seq", resp.GetSeq())
+		slog.Info("mcp prompt_agent", "targetSessionId", target, "seq", resp.GetSeq())
 		return mcp.NewToolResultText(string(body)), nil
 	}
 }
 
 func waitForSessionHandler(core *coreclient.Client) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		target := req.GetString("taskId", "")
+		target := req.GetString("sessionId", "")
 		if target == "" {
 			return mcp.NewToolResultError("taskId is required"), nil
 		}
@@ -111,7 +111,7 @@ func waitForSessionHandler(core *coreclient.Client) server.ToolHandlerFunc {
 		}
 		resp, err := core.WaitForSessionState(ctx, target, until, timeoutMs, afterSeq)
 		if err != nil {
-			slog.Error("mcp wait_for_agent", "targetTaskId", target, "error", err)
+			slog.Error("mcp wait_for_agent", "targetSessionId", target, "error", err)
 			return mcp.NewToolResultError(err.Error()), nil
 		}
 		body, err := json.Marshal(map[string]any{

@@ -4,13 +4,11 @@
 
 import type { GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
 import { fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
-import type { DeleteWorktreeRequestSchema, DeleteWorktreeResponseSchema, ListWorktreesRequestSchema, ServiceIngredient } from "./provisioner_pb";
-import { file_agentfleet_v1_provisioner } from "./provisioner_pb";
 import type { ReadTranscriptSinceRequestSchema, ReadTranscriptSinceResponseSchema, TranscriptEntrySchema } from "./transcript_pb";
 import { file_agentfleet_v1_transcript } from "./transcript_pb";
 import type { DeleteFileRequestSchema, DeleteFileResponseSchema, GetFileDownloadUrlRequestSchema, GetFileDownloadUrlResponseSchema, GetFileUploadUrlRequestSchema, GetFileUploadUrlResponseSchema, ListFilesRequestSchema, ListFilesResponseSchema } from "./files_pb";
 import { file_agentfleet_v1_files } from "./files_pb";
-import type { GetTaskRequestSchema, GetTaskResponseSchema, JournalEntry, QueryLogsRequestSchema, QueryLogsResponseSchema, SetPermissionModeRequestSchema, SetPermissionModeResponseSchema, Task } from "./core_pb";
+import type { AppendResponseSchema, GetSessionRequestSchema, GetSessionResponseSchema, JournalEntry, QueryLogsRequestSchema, QueryLogsResponseSchema, Session, SetPermissionModeRequestSchema, SetPermissionModeResponseSchema } from "./core_pb";
 import { file_agentfleet_v1_core } from "./core_pb";
 import type { Message } from "@bufbuild/protobuf";
 
@@ -18,12 +16,12 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file agentfleet/v1/dashboard.proto.
  */
 export const file_agentfleet_v1_dashboard: GenFile = /*@__PURE__*/
-  fileDesc("Ch1hZ2VudGZsZWV0L3YxL2Rhc2hib2FyZC5wcm90bxINYWdlbnRmbGVldC52MSIhChBMaXN0VGFza3NSZXF1ZXN0Eg0KBWxpbWl0GAEgASgFIjcKEUxpc3RUYXNrc1Jlc3BvbnNlEiIKBXRhc2tzGAEgAygLMhMuYWdlbnRmbGVldC52MS5UYXNrIncKEUNyZWF0ZVRhc2tSZXF1ZXN0EgwKBHJlcG8YASABKAkSEwoLZGVzY3JpcHRpb24YAiABKAkSEwoLc25pcHBldF9pZHMYAyADKAkSEgoFbW9kZWwYBCABKAlIAIgBARIMCgRraW5kGAUgASgJQggKBl9tb2RlbCI3ChJDcmVhdGVUYXNrUmVzcG9uc2USIQoEdGFzaxgBIAEoCzITLmFnZW50ZmxlZXQudjEuVGFzayI9ChdTdHJlYW1UcmFuc2NyaXB0UmVxdWVzdBIPCgd0YXNrX2lkGAEgASgJEhEKCXNpbmNlX3NlcRgCIAEoAyImChNHZXRFMmVTdGF0dXNSZXF1ZXN0Eg8KB3Rhc2tfaWQYASABKAkiiAIKFEdldEUyZVN0YXR1c1Jlc3BvbnNlEg4KBnN0YXR1cxgBIAEoCRITCgtwcmV2aWV3X3VybBgCIAEoCRIRCglzdGFydF9jbWQYAyABKAkSEQoJcG9kX3BoYXNlGAQgASgJEhEKCWFwcF9yZWFkeRgFIAEoCBIQCghyZXN0YXJ0cxgGIAEoBRISCgpzdGFydGVkX2F0GAcgASgJEhQKDHByb2ZpbGVfbmFtZRgIIAEoCRINCgV0b29scxgJIAMoCRIQCghzZXJ2aWNlcxgKIAMoCRIcChRzdGFydF9jbWRfb3ZlcnJpZGRlbhgLIAEoCBIXCg9jb2RlX3NlcnZlcl91cmwYDCABKAkiIgoPU3RhcnRFMmVSZXF1ZXN0Eg8KB3Rhc2tfaWQYASABKAkiaQoQU3RhcnRFMmVSZXNwb25zZRIOCgZzdGF0dXMYASABKAkSEwoLcHJldmlld191cmwYAiABKAkSGgoScmVzb2x2ZWRfc3RhcnRfY21kGAMgASgJEhQKDHByb2ZpbGVfbmFtZRgEIAEoCSInChRSZXN0YXJ0RTJlQXBwUmVxdWVzdBIPCgd0YXNrX2lkGAEgASgJIjoKFVJlc3RhcnRFMmVBcHBSZXNwb25zZRIOCgZvdXRwdXQYASABKAkSEQoJZXhpdF9jb2RlGAIgASgFIjUKE0dldEUyZUFwcExvZ1JlcXVlc3QSDwoHdGFza19pZBgBIAEoCRINCgVsaW5lcxgCIAEoBSIjChRHZXRFMmVBcHBMb2dSZXNwb25zZRILCgNsb2cYASABKAkiPgoLS2lsbFJlcXVlc3QSDwoHdGFza19pZBgBIAEoCRITCgZyZWFzb24YAiABKAlIAIgBAUIJCgdfcmVhc29uIh4KDEtpbGxSZXNwb25zZRIOCgZzdGF0dXMYASABKAkiIwoQSW50ZXJydXB0UmVxdWVzdBIPCgd0YXNrX2lkGAEgASgJIiMKEUludGVycnVwdFJlc3BvbnNlEg4KBnN0YXR1cxgBIAEoCSIiCg9NYXJrU2VlblJlcXVlc3QSDwoHdGFza19pZBgBIAEoCSISChBNYXJrU2VlblJlc3BvbnNlIh4KC1dhcm1SZXF1ZXN0Eg8KB3Rhc2tfaWQYASABKAkiMAoMV2FybVJlc3BvbnNlEg4KBnN0YXR1cxgBIAEoCRIQCghwb2RfbmFtZRgCIAEoCSIlChJBcHByb3ZlVGFza1JlcXVlc3QSDwoHdGFza19pZBgBIAEoCSIlChNBcHByb3ZlVGFza1Jlc3BvbnNlEg4KBnN0YXR1cxgBIAEoCSJRChpSZXNwb25kVG9QZXJtaXNzaW9uUmVxdWVzdBIPCgd0YXNrX2lkGAEgASgJEgsKA3NlcRgCIAEoAxIVCg1kZWNpc2lvbl9qc29uGAMgASgJIi0KG1Jlc3BvbmRUb1Blcm1pc3Npb25SZXNwb25zZRIOCgZzdGF0dXMYASABKAkiQQoOS2lsbEUyZVJlcXVlc3QSDwoHdGFza19pZBgBIAEoCRIeChZhbHNvX3RlYXJkb3duX3NlcnZpY2VzGAIgASgIIj0KD0tpbGxFMmVSZXNwb25zZRIOCgZraWxsZWQYASABKAgSGgoSc2VydmljZXNfdG9ybl9kb3duGAIgAygJIksKFUFuc3dlclF1ZXN0aW9uUmVxdWVzdBIPCgd0YXNrX2lkGAEgASgJEgsKA3NlcRgCIAEoAxIUCgxhbnN3ZXJzX2pzb24YAyABKAkiKAoWQW5zd2VyUXVlc3Rpb25SZXNwb25zZRIOCgZzdGF0dXMYASABKAkiLwoORGlzY3Vzc1JlcXVlc3QSDwoHdGFza19pZBgBIAEoCRIMCgR0ZXh0GAIgASgJIiEKD0Rpc2N1c3NSZXNwb25zZRIOCgZzdGF0dXMYASABKAkiJAoRRGVsZXRlVGFza1JlcXVlc3QSDwoHdGFza19pZBgBIAEoCSIkChJEZWxldGVUYXNrUmVzcG9uc2USDgoGc3RhdHVzGAEgASgJIpICCgxXb3JrdHJlZVZpZXcSDwoHdGFza19pZBgBIAEoCRIMCgRyZXBvGAIgASgJEg4KBmJyYW5jaBgDIAEoCRIWCg51cHN0cmVhbV90cmFjaxgEIAEoCRISCgptdGltZV91bml4GAUgASgDEhgKC3Rhc2tfc3RhdHVzGAYgASgJSACIAQESFwoKdGFza19lcnJvchgHIAEoCUgBiAEBEhMKBnByX3VybBgIIAEoCUgCiAEBEgwKBHBhdGgYCSABKAkSEwoLZGlydHlfZmlsZXMYCiABKAUSEgoKc2l6ZV9ieXRlcxgLIAEoA0IOCgxfdGFza19zdGF0dXNCDQoLX3Rhc2tfZXJyb3JCCQoHX3ByX3VybCJ8ChlMaXN0V29ya3RyZWVzVmlld1Jlc3BvbnNlEi4KCXdvcmt0cmVlcxgBIAMoCzIbLmFnZW50ZmxlZXQudjEuV29ya3RyZWVWaWV3EhcKD3B2Y190b3RhbF9ieXRlcxgCIAEoBBIWCg5wdmNfZnJlZV9ieXRlcxgDIAEoBCJCChFHZXRKb3VybmFsUmVxdWVzdBIMCgRyZXBvGAEgASgJEhAKCHNpbmNlX2lkGAIgASgDEg0KBWxpbWl0GAMgASgFIlMKEkdldEpvdXJuYWxSZXNwb25zZRIsCgdlbnRyaWVzGAEgAygLMhsuYWdlbnRmbGVldC52MS5Kb3VybmFsRW50cnkSDwoHbmV4dF9pZBgCIAEoAyJLCgRSZXBvEgwKBG5hbWUYASABKAkSCwoDdXJsGAIgASgJEhMKC2Jhc2VfYnJhbmNoGAMgASgJEhMKC2UyZV9wcm9maWxlGAQgASgJIhIKEExpc3RSZXBvc1JlcXVlc3QiNwoRTGlzdFJlcG9zUmVzcG9uc2USIgoFcmVwb3MYASADKAsyEy5hZ2VudGZsZWV0LnYxLlJlcG8iWAoRQ3JlYXRlUmVwb1JlcXVlc3QSDAoEbmFtZRgBIAEoCRILCgN1cmwYAiABKAkSEwoLYmFzZV9icmFuY2gYAyABKAkSEwoLZTJlX3Byb2ZpbGUYBCABKAkiNwoSQ3JlYXRlUmVwb1Jlc3BvbnNlEiEKBHJlcG8YASABKAsyEy5hZ2VudGZsZWV0LnYxLlJlcG8iWAoRVXBkYXRlUmVwb1JlcXVlc3QSDAoEbmFtZRgBIAEoCRILCgN1cmwYAiABKAkSEwoLYmFzZV9icmFuY2gYAyABKAkSEwoLZTJlX3Byb2ZpbGUYBCABKAkiNwoSVXBkYXRlUmVwb1Jlc3BvbnNlEiEKBHJlcG8YASABKAsyEy5hZ2VudGZsZWV0LnYxLlJlcG8iIQoRRGVsZXRlUmVwb1JlcXVlc3QSDAoEbmFtZRgBIAEoCSIkChJEZWxldGVSZXBvUmVzcG9uc2USDgoGc3RhdHVzGAEgASgJIpMBCgtSZXBvUHJvZmlsZRIRCglyZXBvX25hbWUYASABKAkSDAoEbmFtZRgCIAEoCRIRCglzdGFydF9jbWQYAyABKAkSEQoJdG9vbF9rZXlzGAQgAygJEj0KE3NlcnZpY2VfaW5ncmVkaWVudHMYBSADKAsyIC5hZ2VudGZsZWV0LnYxLlNlcnZpY2VJbmdyZWRpZW50IiwKF0xpc3RSZXBvUHJvZmlsZXNSZXF1ZXN0EhEKCXJlcG9fbmFtZRgBIAEoCSJIChhMaXN0UmVwb1Byb2ZpbGVzUmVzcG9uc2USLAoIcHJvZmlsZXMYASADKAsyGi5hZ2VudGZsZWV0LnYxLlJlcG9Qcm9maWxlIqABChhDcmVhdGVSZXBvUHJvZmlsZVJlcXVlc3QSEQoJcmVwb19uYW1lGAEgASgJEgwKBG5hbWUYAiABKAkSEQoJc3RhcnRfY21kGAMgASgJEhEKCXRvb2xfa2V5cxgEIAMoCRI9ChNzZXJ2aWNlX2luZ3JlZGllbnRzGAUgAygLMiAuYWdlbnRmbGVldC52MS5TZXJ2aWNlSW5ncmVkaWVudCJIChlDcmVhdGVSZXBvUHJvZmlsZVJlc3BvbnNlEisKB3Byb2ZpbGUYASABKAsyGi5hZ2VudGZsZWV0LnYxLlJlcG9Qcm9maWxlIqABChhVcGRhdGVSZXBvUHJvZmlsZVJlcXVlc3QSEQoJcmVwb19uYW1lGAEgASgJEgwKBG5hbWUYAiABKAkSEQoJc3RhcnRfY21kGAMgASgJEhEKCXRvb2xfa2V5cxgEIAMoCRI9ChNzZXJ2aWNlX2luZ3JlZGllbnRzGAUgAygLMiAuYWdlbnRmbGVldC52MS5TZXJ2aWNlSW5ncmVkaWVudCJIChlVcGRhdGVSZXBvUHJvZmlsZVJlc3BvbnNlEisKB3Byb2ZpbGUYASABKAsyGi5hZ2VudGZsZWV0LnYxLlJlcG9Qcm9maWxlIjsKGERlbGV0ZVJlcG9Qcm9maWxlUmVxdWVzdBIRCglyZXBvX25hbWUYASABKAkSDAoEbmFtZRgCIAEoCSIrChlEZWxldGVSZXBvUHJvZmlsZVJlc3BvbnNlEg4KBnN0YXR1cxgBIAEoCSJ9Cg1Qcm9tcHRTbmlwcGV0EgoKAmlkGAEgASgJEgwKBG5hbWUYAiABKAkSDAoEdGV4dBgDIAEoCRImChlzdWdnZXN0ZWRfcGVybWlzc2lvbl9tb2RlGAQgASgJSACIAQFCHAoaX3N1Z2dlc3RlZF9wZXJtaXNzaW9uX21vZGUiGwoZTGlzdFByb21wdFNuaXBwZXRzUmVxdWVzdCJMChpMaXN0UHJvbXB0U25pcHBldHNSZXNwb25zZRIuCghzbmlwcGV0cxgBIAMoCzIcLmFnZW50ZmxlZXQudjEuUHJvbXB0U25pcHBldCI4ChpDcmVhdGVQcm9tcHRTbmlwcGV0UmVxdWVzdBIMCgRuYW1lGAEgASgJEgwKBHRleHQYAiABKAkiTAobQ3JlYXRlUHJvbXB0U25pcHBldFJlc3BvbnNlEi0KB3NuaXBwZXQYASABKAsyHC5hZ2VudGZsZWV0LnYxLlByb21wdFNuaXBwZXQiRAoaVXBkYXRlUHJvbXB0U25pcHBldFJlcXVlc3QSCgoCaWQYASABKAkSDAoEbmFtZRgCIAEoCRIMCgR0ZXh0GAMgASgJIkwKG1VwZGF0ZVByb21wdFNuaXBwZXRSZXNwb25zZRItCgdzbmlwcGV0GAEgASgLMhwuYWdlbnRmbGVldC52MS5Qcm9tcHRTbmlwcGV0IigKGkRlbGV0ZVByb21wdFNuaXBwZXRSZXF1ZXN0EgoKAmlkGAEgASgJIi0KG0RlbGV0ZVByb21wdFNuaXBwZXRSZXNwb25zZRIOCgZzdGF0dXMYASABKAkiKQobUnVuU2NoZWR1bGVkQXVkaXROb3dSZXF1ZXN0EgoKAmlkGAEgASgJIkwKHFJ1blNjaGVkdWxlZEF1ZGl0Tm93UmVzcG9uc2USLAoFYXVkaXQYASABKAsyHS5hZ2VudGZsZWV0LnYxLlNjaGVkdWxlZEF1ZGl0IiMKEFJldHJ5VGFza1JlcXVlc3QSDwoHdGFza19pZBgBIAEoCSIjChFSZXRyeVRhc2tSZXNwb25zZRIOCgZzdGF0dXMYASABKAkipAEKDlNjaGVkdWxlZEF1ZGl0EgoKAmlkGAEgASgJEgwKBG5hbWUYAiABKAkSDgoGcHJvbXB0GAMgASgJEhgKEGludGVydmFsX3NlY29uZHMYBCABKAUSDwoHZW5hYmxlZBgFIAEoCBITCgtuZXh0X3J1bl9hdBgGIAEoCRITCgtsYXN0X3J1bl9hdBgHIAEoCRITCgtsYXN0X3N0YXR1cxgIIAEoCSIcChpMaXN0U2NoZWR1bGVkQXVkaXRzUmVxdWVzdCJMChtMaXN0U2NoZWR1bGVkQXVkaXRzUmVzcG9uc2USLQoGYXVkaXRzGAEgAygLMh0uYWdlbnRmbGVldC52MS5TY2hlZHVsZWRBdWRpdCJVChtDcmVhdGVTY2hlZHVsZWRBdWRpdFJlcXVlc3QSDAoEbmFtZRgBIAEoCRIOCgZwcm9tcHQYAiABKAkSGAoQaW50ZXJ2YWxfc2Vjb25kcxgDIAEoBSJMChxDcmVhdGVTY2hlZHVsZWRBdWRpdFJlc3BvbnNlEiwKBWF1ZGl0GAEgASgLMh0uYWdlbnRmbGVldC52MS5TY2hlZHVsZWRBdWRpdCJyChtVcGRhdGVTY2hlZHVsZWRBdWRpdFJlcXVlc3QSCgoCaWQYASABKAkSDAoEbmFtZRgCIAEoCRIOCgZwcm9tcHQYAyABKAkSGAoQaW50ZXJ2YWxfc2Vjb25kcxgEIAEoBRIPCgdlbmFibGVkGAUgASgIIkwKHFVwZGF0ZVNjaGVkdWxlZEF1ZGl0UmVzcG9uc2USLAoFYXVkaXQYASABKAsyHS5hZ2VudGZsZWV0LnYxLlNjaGVkdWxlZEF1ZGl0IikKG0RlbGV0ZVNjaGVkdWxlZEF1ZGl0UmVxdWVzdBIKCgJpZBgBIAEoCSIuChxEZWxldGVTY2hlZHVsZWRBdWRpdFJlc3BvbnNlEg4KBnN0YXR1cxgBIAEoCSJYChNRdWVyeU1ldHJpY3NSZXF1ZXN0Eg0KBXF1ZXJ5GAEgASgJEhIKCnN0YXJ0X3RpbWUYAiABKAkSEAoIZW5kX3RpbWUYAyABKAkSDAoEc3RlcBgEIAEoCSIrChRRdWVyeU1ldHJpY3NSZXNwb25zZRITCgtyZXN1bHRfanNvbhgBIAEoCSIZChdHZXRGbGVldFRvcG9sb2d5UmVxdWVzdCLJAQoIQ2VsbE5vZGUSCgoCaWQYASABKAkSDAoEdHlwZRgCIAEoCRIOCgZzdGF0dXMYAyABKAkSNQoHbWV0cmljcxgEIAMoCzIkLmFnZW50ZmxlZXQudjEuQ2VsbE5vZGUuTWV0cmljc0VudHJ5Eg8KB3Rhc2tfaWQYBSABKAkSDAoEcmVwbxgGIAEoCRINCgVsYWJlbBgHIAEoCRouCgxNZXRyaWNzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgBOgI4ASI2CgxUb3BvbG9neUVkZ2USDAoEZnJvbRgBIAEoCRIKCgJ0bxgCIAEoCRIMCgRyYXRlGAMgASgBIoUBChhHZXRGbGVldFRvcG9sb2d5UmVzcG9uc2USJgoFbm9kZXMYASADKAsyFy5hZ2VudGZsZWV0LnYxLkNlbGxOb2RlEioKBWVkZ2VzGAIgAygLMhsuYWdlbnRmbGVldC52MS5Ub3BvbG9neUVkZ2USFQoNbWV0cmljc19lcnJvchgDIAEoCTLhIgoQRGFzaGJvYXJkU2VydmljZRJOCglMaXN0VGFza3MSHy5hZ2VudGZsZWV0LnYxLkxpc3RUYXNrc1JlcXVlc3QaIC5hZ2VudGZsZWV0LnYxLkxpc3RUYXNrc1Jlc3BvbnNlEkgKB0dldFRhc2sSHS5hZ2VudGZsZWV0LnYxLkdldFRhc2tSZXF1ZXN0Gh4uYWdlbnRmbGVldC52MS5HZXRUYXNrUmVzcG9uc2USUQoKQ3JlYXRlVGFzaxIgLmFnZW50ZmxlZXQudjEuQ3JlYXRlVGFza1JlcXVlc3QaIS5hZ2VudGZsZWV0LnYxLkNyZWF0ZVRhc2tSZXNwb25zZRJmCg1HZXRUcmFuc2NyaXB0EikuYWdlbnRmbGVldC52MS5SZWFkVHJhbnNjcmlwdFNpbmNlUmVxdWVzdBoqLmFnZW50ZmxlZXQudjEuUmVhZFRyYW5zY3JpcHRTaW5jZVJlc3BvbnNlElwKEFN0cmVhbVRyYW5zY3JpcHQSJi5hZ2VudGZsZWV0LnYxLlN0cmVhbVRyYW5zY3JpcHRSZXF1ZXN0Gh4uYWdlbnRmbGVldC52MS5UcmFuc2NyaXB0RW50cnkwARJXCgxHZXRFMmVTdGF0dXMSIi5hZ2VudGZsZWV0LnYxLkdldEUyZVN0YXR1c1JlcXVlc3QaIy5hZ2VudGZsZWV0LnYxLkdldEUyZVN0YXR1c1Jlc3BvbnNlEj8KBEtpbGwSGi5hZ2VudGZsZWV0LnYxLktpbGxSZXF1ZXN0GhsuYWdlbnRmbGVldC52MS5LaWxsUmVzcG9uc2USTgoJSW50ZXJydXB0Eh8uYWdlbnRmbGVldC52MS5JbnRlcnJ1cHRSZXF1ZXN0GiAuYWdlbnRmbGVldC52MS5JbnRlcnJ1cHRSZXNwb25zZRJmChFTZXRQZXJtaXNzaW9uTW9kZRInLmFnZW50ZmxlZXQudjEuU2V0UGVybWlzc2lvbk1vZGVSZXF1ZXN0GiguYWdlbnRmbGVldC52MS5TZXRQZXJtaXNzaW9uTW9kZVJlc3BvbnNlEj8KBFdhcm0SGi5hZ2VudGZsZWV0LnYxLldhcm1SZXF1ZXN0GhsuYWdlbnRmbGVldC52MS5XYXJtUmVzcG9uc2USSwoITWFya1NlZW4SHi5hZ2VudGZsZWV0LnYxLk1hcmtTZWVuUmVxdWVzdBofLmFnZW50ZmxlZXQudjEuTWFya1NlZW5SZXNwb25zZRJUCgtBcHByb3ZlVGFzaxIhLmFnZW50ZmxlZXQudjEuQXBwcm92ZVRhc2tSZXF1ZXN0GiIuYWdlbnRmbGVldC52MS5BcHByb3ZlVGFza1Jlc3BvbnNlEkgKB0tpbGxFMmUSHS5hZ2VudGZsZWV0LnYxLktpbGxFMmVSZXF1ZXN0Gh4uYWdlbnRmbGVldC52MS5LaWxsRTJlUmVzcG9uc2USSwoIU3RhcnRFMmUSHi5hZ2VudGZsZWV0LnYxLlN0YXJ0RTJlUmVxdWVzdBofLmFnZW50ZmxlZXQudjEuU3RhcnRFMmVSZXNwb25zZRJaCg1SZXN0YXJ0RTJlQXBwEiMuYWdlbnRmbGVldC52MS5SZXN0YXJ0RTJlQXBwUmVxdWVzdBokLmFnZW50ZmxlZXQudjEuUmVzdGFydEUyZUFwcFJlc3BvbnNlElcKDEdldEUyZUFwcExvZxIiLmFnZW50ZmxlZXQudjEuR2V0RTJlQXBwTG9nUmVxdWVzdBojLmFnZW50ZmxlZXQudjEuR2V0RTJlQXBwTG9nUmVzcG9uc2USXQoOQW5zd2VyUXVlc3Rpb24SJC5hZ2VudGZsZWV0LnYxLkFuc3dlclF1ZXN0aW9uUmVxdWVzdBolLmFnZW50ZmxlZXQudjEuQW5zd2VyUXVlc3Rpb25SZXNwb25zZRJsChNSZXNwb25kVG9QZXJtaXNzaW9uEikuYWdlbnRmbGVldC52MS5SZXNwb25kVG9QZXJtaXNzaW9uUmVxdWVzdBoqLmFnZW50ZmxlZXQudjEuUmVzcG9uZFRvUGVybWlzc2lvblJlc3BvbnNlEkgKB0Rpc2N1c3MSHS5hZ2VudGZsZWV0LnYxLkRpc2N1c3NSZXF1ZXN0Gh4uYWdlbnRmbGVldC52MS5EaXNjdXNzUmVzcG9uc2USUQoKRGVsZXRlVGFzaxIgLmFnZW50ZmxlZXQudjEuRGVsZXRlVGFza1JlcXVlc3QaIS5hZ2VudGZsZWV0LnYxLkRlbGV0ZVRhc2tSZXNwb25zZRJeCg1MaXN0V29ya3RyZWVzEiMuYWdlbnRmbGVldC52MS5MaXN0V29ya3RyZWVzUmVxdWVzdBooLmFnZW50ZmxlZXQudjEuTGlzdFdvcmt0cmVlc1ZpZXdSZXNwb25zZRJdCg5EZWxldGVXb3JrdHJlZRIkLmFnZW50ZmxlZXQudjEuRGVsZXRlV29ya3RyZWVSZXF1ZXN0GiUuYWdlbnRmbGVldC52MS5EZWxldGVXb3JrdHJlZVJlc3BvbnNlElEKCkdldEpvdXJuYWwSIC5hZ2VudGZsZWV0LnYxLkdldEpvdXJuYWxSZXF1ZXN0GiEuYWdlbnRmbGVldC52MS5HZXRKb3VybmFsUmVzcG9uc2USTgoJTGlzdFJlcG9zEh8uYWdlbnRmbGVldC52MS5MaXN0UmVwb3NSZXF1ZXN0GiAuYWdlbnRmbGVldC52MS5MaXN0UmVwb3NSZXNwb25zZRJRCgpDcmVhdGVSZXBvEiAuYWdlbnRmbGVldC52MS5DcmVhdGVSZXBvUmVxdWVzdBohLmFnZW50ZmxlZXQudjEuQ3JlYXRlUmVwb1Jlc3BvbnNlElEKClVwZGF0ZVJlcG8SIC5hZ2VudGZsZWV0LnYxLlVwZGF0ZVJlcG9SZXF1ZXN0GiEuYWdlbnRmbGVldC52MS5VcGRhdGVSZXBvUmVzcG9uc2USUQoKRGVsZXRlUmVwbxIgLmFnZW50ZmxlZXQudjEuRGVsZXRlUmVwb1JlcXVlc3QaIS5hZ2VudGZsZWV0LnYxLkRlbGV0ZVJlcG9SZXNwb25zZRJjChBMaXN0UmVwb1Byb2ZpbGVzEiYuYWdlbnRmbGVldC52MS5MaXN0UmVwb1Byb2ZpbGVzUmVxdWVzdBonLmFnZW50ZmxlZXQudjEuTGlzdFJlcG9Qcm9maWxlc1Jlc3BvbnNlEmYKEUNyZWF0ZVJlcG9Qcm9maWxlEicuYWdlbnRmbGVldC52MS5DcmVhdGVSZXBvUHJvZmlsZVJlcXVlc3QaKC5hZ2VudGZsZWV0LnYxLkNyZWF0ZVJlcG9Qcm9maWxlUmVzcG9uc2USZgoRVXBkYXRlUmVwb1Byb2ZpbGUSJy5hZ2VudGZsZWV0LnYxLlVwZGF0ZVJlcG9Qcm9maWxlUmVxdWVzdBooLmFnZW50ZmxlZXQudjEuVXBkYXRlUmVwb1Byb2ZpbGVSZXNwb25zZRJmChFEZWxldGVSZXBvUHJvZmlsZRInLmFnZW50ZmxlZXQudjEuRGVsZXRlUmVwb1Byb2ZpbGVSZXF1ZXN0GiguYWdlbnRmbGVldC52MS5EZWxldGVSZXBvUHJvZmlsZVJlc3BvbnNlEmkKEkxpc3RQcm9tcHRTbmlwcGV0cxIoLmFnZW50ZmxlZXQudjEuTGlzdFByb21wdFNuaXBwZXRzUmVxdWVzdBopLmFnZW50ZmxlZXQudjEuTGlzdFByb21wdFNuaXBwZXRzUmVzcG9uc2USbAoTQ3JlYXRlUHJvbXB0U25pcHBldBIpLmFnZW50ZmxlZXQudjEuQ3JlYXRlUHJvbXB0U25pcHBldFJlcXVlc3QaKi5hZ2VudGZsZWV0LnYxLkNyZWF0ZVByb21wdFNuaXBwZXRSZXNwb25zZRJsChNVcGRhdGVQcm9tcHRTbmlwcGV0EikuYWdlbnRmbGVldC52MS5VcGRhdGVQcm9tcHRTbmlwcGV0UmVxdWVzdBoqLmFnZW50ZmxlZXQudjEuVXBkYXRlUHJvbXB0U25pcHBldFJlc3BvbnNlEmwKE0RlbGV0ZVByb21wdFNuaXBwZXQSKS5hZ2VudGZsZWV0LnYxLkRlbGV0ZVByb21wdFNuaXBwZXRSZXF1ZXN0GiouYWdlbnRmbGVldC52MS5EZWxldGVQcm9tcHRTbmlwcGV0UmVzcG9uc2USTgoJTGlzdEZpbGVzEh8uYWdlbnRmbGVldC52MS5MaXN0RmlsZXNSZXF1ZXN0GiAuYWdlbnRmbGVldC52MS5MaXN0RmlsZXNSZXNwb25zZRJjChBHZXRGaWxlVXBsb2FkVXJsEiYuYWdlbnRmbGVldC52MS5HZXRGaWxlVXBsb2FkVXJsUmVxdWVzdBonLmFnZW50ZmxlZXQudjEuR2V0RmlsZVVwbG9hZFVybFJlc3BvbnNlEmkKEkdldEZpbGVEb3dubG9hZFVybBIoLmFnZW50ZmxlZXQudjEuR2V0RmlsZURvd25sb2FkVXJsUmVxdWVzdBopLmFnZW50ZmxlZXQudjEuR2V0RmlsZURvd25sb2FkVXJsUmVzcG9uc2USUQoKRGVsZXRlRmlsZRIgLmFnZW50ZmxlZXQudjEuRGVsZXRlRmlsZVJlcXVlc3QaIS5hZ2VudGZsZWV0LnYxLkRlbGV0ZUZpbGVSZXNwb25zZRJOCglRdWVyeUxvZ3MSHy5hZ2VudGZsZWV0LnYxLlF1ZXJ5TG9nc1JlcXVlc3QaIC5hZ2VudGZsZWV0LnYxLlF1ZXJ5TG9nc1Jlc3BvbnNlElcKDFF1ZXJ5TWV0cmljcxIiLmFnZW50ZmxlZXQudjEuUXVlcnlNZXRyaWNzUmVxdWVzdBojLmFnZW50ZmxlZXQudjEuUXVlcnlNZXRyaWNzUmVzcG9uc2USYwoQR2V0RmxlZXRUb3BvbG9neRImLmFnZW50ZmxlZXQudjEuR2V0RmxlZXRUb3BvbG9neVJlcXVlc3QaJy5hZ2VudGZsZWV0LnYxLkdldEZsZWV0VG9wb2xvZ3lSZXNwb25zZRJsChNMaXN0U2NoZWR1bGVkQXVkaXRzEikuYWdlbnRmbGVldC52MS5MaXN0U2NoZWR1bGVkQXVkaXRzUmVxdWVzdBoqLmFnZW50ZmxlZXQudjEuTGlzdFNjaGVkdWxlZEF1ZGl0c1Jlc3BvbnNlEm8KFENyZWF0ZVNjaGVkdWxlZEF1ZGl0EiouYWdlbnRmbGVldC52MS5DcmVhdGVTY2hlZHVsZWRBdWRpdFJlcXVlc3QaKy5hZ2VudGZsZWV0LnYxLkNyZWF0ZVNjaGVkdWxlZEF1ZGl0UmVzcG9uc2USbwoUVXBkYXRlU2NoZWR1bGVkQXVkaXQSKi5hZ2VudGZsZWV0LnYxLlVwZGF0ZVNjaGVkdWxlZEF1ZGl0UmVxdWVzdBorLmFnZW50ZmxlZXQudjEuVXBkYXRlU2NoZWR1bGVkQXVkaXRSZXNwb25zZRJvChREZWxldGVTY2hlZHVsZWRBdWRpdBIqLmFnZW50ZmxlZXQudjEuRGVsZXRlU2NoZWR1bGVkQXVkaXRSZXF1ZXN0GisuYWdlbnRmbGVldC52MS5EZWxldGVTY2hlZHVsZWRBdWRpdFJlc3BvbnNlEm8KFFJ1blNjaGVkdWxlZEF1ZGl0Tm93EiouYWdlbnRmbGVldC52MS5SdW5TY2hlZHVsZWRBdWRpdE5vd1JlcXVlc3QaKy5hZ2VudGZsZWV0LnYxLlJ1blNjaGVkdWxlZEF1ZGl0Tm93UmVzcG9uc2USTgoJUmV0cnlUYXNrEh8uYWdlbnRmbGVldC52MS5SZXRyeVRhc2tSZXF1ZXN0GiAuYWdlbnRmbGVldC52MS5SZXRyeVRhc2tSZXNwb25zZUJNWktnaXRodWIuY29tL01vaGFtbWFkQm5laS9hZ2VudC1mbGVldC9wcm90by9nZW4vZ28vYWdlbnRmbGVldC92MTthZ2VudGZsZWV0djFiBnByb3RvMw", [file_agentfleet_v1_provisioner, file_agentfleet_v1_transcript, file_agentfleet_v1_files, file_agentfleet_v1_core]);
+  fileDesc("Ch1hZ2VudGZsZWV0L3YxL2Rhc2hib2FyZC5wcm90bxINYWdlbnRmbGVldC52MSIkChNMaXN0U2Vzc2lvbnNSZXF1ZXN0Eg0KBWxpbWl0GAEgASgFIkAKFExpc3RTZXNzaW9uc1Jlc3BvbnNlEigKCHNlc3Npb25zGAEgAygLMhYuYWdlbnRmbGVldC52MS5TZXNzaW9uIpQBChRDcmVhdGVTZXNzaW9uUmVxdWVzdBIMCgRyZXBvGAEgASgJEhMKC2Rlc2NyaXB0aW9uGAIgASgJEhIKBW1vZGVsGAQgASgJSACIAQESEgoFdGl0bGUYBiABKAlIAYgBAUIICgZfbW9kZWxCCAoGX3RpdGxlSgQIAxAESgQIBRAGUgtzbmlwcGV0X2lkc1IEa2luZCJAChVDcmVhdGVTZXNzaW9uUmVzcG9uc2USJwoHc2Vzc2lvbhgBIAEoCzIWLmFnZW50ZmxlZXQudjEuU2Vzc2lvbiJAChdTdHJlYW1UcmFuc2NyaXB0UmVxdWVzdBISCgpzZXNzaW9uX2lkGAEgASgJEhEKCXNpbmNlX3NlcRgCIAEoAyJIChJTdG9wU2Vzc2lvblJlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCRITCgZyZWFzb24YAiABKAlIAIgBAUIJCgdfcmVhc29uIhUKE1N0b3BTZXNzaW9uUmVzcG9uc2UiJgoQSW50ZXJydXB0UmVxdWVzdBISCgpzZXNzaW9uX2lkGAEgASgJIhMKEUludGVycnVwdFJlc3BvbnNlIiUKD01hcmtTZWVuUmVxdWVzdBISCgpzZXNzaW9uX2lkGAEgASgJIhIKEE1hcmtTZWVuUmVzcG9uc2UiKAoSV2FybVNlc3Npb25SZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkiNQoTV2FybVNlc3Npb25SZXNwb25zZRIQCghwb2RfbmFtZRgCIAEoCUoECAEQAlIGc3RhdHVzIo0BCghQcm9wb3NhbBIKCgJpZBgBIAEoCRIMCgRyZXBvGAIgASgJEg4KBnNvdXJjZRgDIAEoCRINCgV0aXRsZRgEIAEoCRIMCgRib2R5GAUgASgJEhIKCmNyZWF0ZWRfYXQYBiABKAkSFwoKc2Vzc2lvbl9pZBgHIAEoCUgAiAEBQg0KC19zZXNzaW9uX2lkIhYKFExpc3RQcm9wb3NhbHNSZXF1ZXN0IkMKFUxpc3RQcm9wb3NhbHNSZXNwb25zZRIqCglwcm9wb3NhbHMYASADKAsyFy5hZ2VudGZsZWV0LnYxLlByb3Bvc2FsIi4KF09wZW5Gcm9tUHJvcG9zYWxSZXF1ZXN0EhMKC3Byb3Bvc2FsX2lkGAEgASgJIkMKGE9wZW5Gcm9tUHJvcG9zYWxSZXNwb25zZRInCgdzZXNzaW9uGAEgASgLMhYuYWdlbnRmbGVldC52MS5TZXNzaW9uIi0KFkRpc21pc3NQcm9wb3NhbFJlcXVlc3QSEwoLcHJvcG9zYWxfaWQYASABKAkiGQoXRGlzbWlzc1Byb3Bvc2FsUmVzcG9uc2UiKwoVQXJjaGl2ZVNlc3Npb25SZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkiGAoWQXJjaGl2ZVNlc3Npb25SZXNwb25zZSJUChpSZXNwb25kVG9QZXJtaXNzaW9uUmVxdWVzdBISCgpzZXNzaW9uX2lkGAEgASgJEgsKA3NlcRgCIAEoAxIVCg1kZWNpc2lvbl9qc29uGAMgASgJIkQKDktpbGxFMmVSZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkSHgoWYWxzb190ZWFyZG93bl9zZXJ2aWNlcxgCIAEoCCI9Cg9LaWxsRTJlUmVzcG9uc2USDgoGa2lsbGVkGAEgASgIEhoKEnNlcnZpY2VzX3Rvcm5fZG93bhgCIAMoCSJOChVBbnN3ZXJRdWVzdGlvblJlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCRILCgNzZXEYAiABKAMSFAoMYW5zd2Vyc19qc29uGAMgASgJIjYKElBvc3RNZXNzYWdlUmVxdWVzdBISCgpzZXNzaW9uX2lkGAEgASgJEgwKBHRleHQYAiABKAkiKgoURGVsZXRlU2Vzc2lvblJlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCSIXChVEZWxldGVTZXNzaW9uUmVzcG9uc2UiQgoRR2V0Sm91cm5hbFJlcXVlc3QSDAoEcmVwbxgBIAEoCRIQCghzaW5jZV9pZBgCIAEoAxINCgVsaW1pdBgDIAEoBSJTChJHZXRKb3VybmFsUmVzcG9uc2USLAoHZW50cmllcxgBIAMoCzIbLmFnZW50ZmxlZXQudjEuSm91cm5hbEVudHJ5Eg8KB25leHRfaWQYAiABKAMicAoEUmVwbxIMCgRuYW1lGAEgASgJEgsKA3VybBgCIAEoCRITCgtiYXNlX2JyYW5jaBgDIAEoCRINCgVpbWFnZRgFIAEoCRIWCg5jbHVzdGVyX2FjY2VzcxgGIAEoCEoECAQQBVILZTJlX3Byb2ZpbGUiEgoQTGlzdFJlcG9zUmVxdWVzdCI3ChFMaXN0UmVwb3NSZXNwb25zZRIiCgVyZXBvcxgBIAMoCzITLmFnZW50ZmxlZXQudjEuUmVwbyJ9ChFDcmVhdGVSZXBvUmVxdWVzdBIMCgRuYW1lGAEgASgJEgsKA3VybBgCIAEoCRITCgtiYXNlX2JyYW5jaBgDIAEoCRINCgVpbWFnZRgFIAEoCRIWCg5jbHVzdGVyX2FjY2VzcxgGIAEoCEoECAQQBVILZTJlX3Byb2ZpbGUiNwoSQ3JlYXRlUmVwb1Jlc3BvbnNlEiEKBHJlcG8YASABKAsyEy5hZ2VudGZsZWV0LnYxLlJlcG8ifQoRVXBkYXRlUmVwb1JlcXVlc3QSDAoEbmFtZRgBIAEoCRILCgN1cmwYAiABKAkSEwoLYmFzZV9icmFuY2gYAyABKAkSDQoFaW1hZ2UYBSABKAkSFgoOY2x1c3Rlcl9hY2Nlc3MYBiABKAhKBAgEEAVSC2UyZV9wcm9maWxlIjcKElVwZGF0ZVJlcG9SZXNwb25zZRIhCgRyZXBvGAEgASgLMhMuYWdlbnRmbGVldC52MS5SZXBvIiEKEURlbGV0ZVJlcG9SZXF1ZXN0EgwKBG5hbWUYASABKAkiFAoSRGVsZXRlUmVwb1Jlc3BvbnNlIn0KDVByb21wdFNuaXBwZXQSCgoCaWQYASABKAkSDAoEbmFtZRgCIAEoCRIMCgR0ZXh0GAMgASgJEiYKGXN1Z2dlc3RlZF9wZXJtaXNzaW9uX21vZGUYBCABKAlIAIgBAUIcChpfc3VnZ2VzdGVkX3Blcm1pc3Npb25fbW9kZSIbChlMaXN0UHJvbXB0U25pcHBldHNSZXF1ZXN0IkwKGkxpc3RQcm9tcHRTbmlwcGV0c1Jlc3BvbnNlEi4KCHNuaXBwZXRzGAEgAygLMhwuYWdlbnRmbGVldC52MS5Qcm9tcHRTbmlwcGV0IjgKGkNyZWF0ZVByb21wdFNuaXBwZXRSZXF1ZXN0EgwKBG5hbWUYASABKAkSDAoEdGV4dBgCIAEoCSJMChtDcmVhdGVQcm9tcHRTbmlwcGV0UmVzcG9uc2USLQoHc25pcHBldBgBIAEoCzIcLmFnZW50ZmxlZXQudjEuUHJvbXB0U25pcHBldCJEChpVcGRhdGVQcm9tcHRTbmlwcGV0UmVxdWVzdBIKCgJpZBgBIAEoCRIMCgRuYW1lGAIgASgJEgwKBHRleHQYAyABKAkiTAobVXBkYXRlUHJvbXB0U25pcHBldFJlc3BvbnNlEi0KB3NuaXBwZXQYASABKAsyHC5hZ2VudGZsZWV0LnYxLlByb21wdFNuaXBwZXQiKAoaRGVsZXRlUHJvbXB0U25pcHBldFJlcXVlc3QSCgoCaWQYASABKAkiHQobRGVsZXRlUHJvbXB0U25pcHBldFJlc3BvbnNlIikKG1J1blNjaGVkdWxlZEF1ZGl0Tm93UmVxdWVzdBIKCgJpZBgBIAEoCSJMChxSdW5TY2hlZHVsZWRBdWRpdE5vd1Jlc3BvbnNlEiwKBWF1ZGl0GAEgASgLMh0uYWdlbnRmbGVldC52MS5TY2hlZHVsZWRBdWRpdCKkAQoOU2NoZWR1bGVkQXVkaXQSCgoCaWQYASABKAkSDAoEbmFtZRgCIAEoCRIOCgZwcm9tcHQYAyABKAkSGAoQaW50ZXJ2YWxfc2Vjb25kcxgEIAEoBRIPCgdlbmFibGVkGAUgASgIEhMKC25leHRfcnVuX2F0GAYgASgJEhMKC2xhc3RfcnVuX2F0GAcgASgJEhMKC2xhc3Rfc3RhdHVzGAggASgJIhwKGkxpc3RTY2hlZHVsZWRBdWRpdHNSZXF1ZXN0IkwKG0xpc3RTY2hlZHVsZWRBdWRpdHNSZXNwb25zZRItCgZhdWRpdHMYASADKAsyHS5hZ2VudGZsZWV0LnYxLlNjaGVkdWxlZEF1ZGl0IlUKG0NyZWF0ZVNjaGVkdWxlZEF1ZGl0UmVxdWVzdBIMCgRuYW1lGAEgASgJEg4KBnByb21wdBgCIAEoCRIYChBpbnRlcnZhbF9zZWNvbmRzGAMgASgFIkwKHENyZWF0ZVNjaGVkdWxlZEF1ZGl0UmVzcG9uc2USLAoFYXVkaXQYASABKAsyHS5hZ2VudGZsZWV0LnYxLlNjaGVkdWxlZEF1ZGl0InIKG1VwZGF0ZVNjaGVkdWxlZEF1ZGl0UmVxdWVzdBIKCgJpZBgBIAEoCRIMCgRuYW1lGAIgASgJEg4KBnByb21wdBgDIAEoCRIYChBpbnRlcnZhbF9zZWNvbmRzGAQgASgFEg8KB2VuYWJsZWQYBSABKAgiTAocVXBkYXRlU2NoZWR1bGVkQXVkaXRSZXNwb25zZRIsCgVhdWRpdBgBIAEoCzIdLmFnZW50ZmxlZXQudjEuU2NoZWR1bGVkQXVkaXQiKQobRGVsZXRlU2NoZWR1bGVkQXVkaXRSZXF1ZXN0EgoKAmlkGAEgASgJIh4KHERlbGV0ZVNjaGVkdWxlZEF1ZGl0UmVzcG9uc2UiWAoTUXVlcnlNZXRyaWNzUmVxdWVzdBINCgVxdWVyeRgBIAEoCRISCgpzdGFydF90aW1lGAIgASgJEhAKCGVuZF90aW1lGAMgASgJEgwKBHN0ZXAYBCABKAkiKwoUUXVlcnlNZXRyaWNzUmVzcG9uc2USEwoLcmVzdWx0X2pzb24YASABKAkiGQoXR2V0RmxlZXRUb3BvbG9neVJlcXVlc3QizAEKCENlbGxOb2RlEgoKAmlkGAEgASgJEgwKBHR5cGUYAiABKAkSDgoGc3RhdHVzGAMgASgJEjUKB21ldHJpY3MYBCADKAsyJC5hZ2VudGZsZWV0LnYxLkNlbGxOb2RlLk1ldHJpY3NFbnRyeRISCgpzZXNzaW9uX2lkGAUgASgJEgwKBHJlcG8YBiABKAkSDQoFbGFiZWwYByABKAkaLgoMTWV0cmljc0VudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoAToCOAEiNgoMVG9wb2xvZ3lFZGdlEgwKBGZyb20YASABKAkSCgoCdG8YAiABKAkSDAoEcmF0ZRgDIAEoASKFAQoYR2V0RmxlZXRUb3BvbG9neVJlc3BvbnNlEiYKBW5vZGVzGAEgAygLMhcuYWdlbnRmbGVldC52MS5DZWxsTm9kZRIqCgVlZGdlcxgCIAMoCzIbLmFnZW50ZmxlZXQudjEuVG9wb2xvZ3lFZGdlEhUKDW1ldHJpY3NfZXJyb3IYAyABKAky/BwKEERhc2hib2FyZFNlcnZpY2USVwoMTGlzdFNlc3Npb25zEiIuYWdlbnRmbGVldC52MS5MaXN0U2Vzc2lvbnNSZXF1ZXN0GiMuYWdlbnRmbGVldC52MS5MaXN0U2Vzc2lvbnNSZXNwb25zZRJRCgpHZXRTZXNzaW9uEiAuYWdlbnRmbGVldC52MS5HZXRTZXNzaW9uUmVxdWVzdBohLmFnZW50ZmxlZXQudjEuR2V0U2Vzc2lvblJlc3BvbnNlEloKDUNyZWF0ZVNlc3Npb24SIy5hZ2VudGZsZWV0LnYxLkNyZWF0ZVNlc3Npb25SZXF1ZXN0GiQuYWdlbnRmbGVldC52MS5DcmVhdGVTZXNzaW9uUmVzcG9uc2USZgoNR2V0VHJhbnNjcmlwdBIpLmFnZW50ZmxlZXQudjEuUmVhZFRyYW5zY3JpcHRTaW5jZVJlcXVlc3QaKi5hZ2VudGZsZWV0LnYxLlJlYWRUcmFuc2NyaXB0U2luY2VSZXNwb25zZRJcChBTdHJlYW1UcmFuc2NyaXB0EiYuYWdlbnRmbGVldC52MS5TdHJlYW1UcmFuc2NyaXB0UmVxdWVzdBoeLmFnZW50ZmxlZXQudjEuVHJhbnNjcmlwdEVudHJ5MAESVAoLU3RvcFNlc3Npb24SIS5hZ2VudGZsZWV0LnYxLlN0b3BTZXNzaW9uUmVxdWVzdBoiLmFnZW50ZmxlZXQudjEuU3RvcFNlc3Npb25SZXNwb25zZRJOCglJbnRlcnJ1cHQSHy5hZ2VudGZsZWV0LnYxLkludGVycnVwdFJlcXVlc3QaIC5hZ2VudGZsZWV0LnYxLkludGVycnVwdFJlc3BvbnNlEmYKEVNldFBlcm1pc3Npb25Nb2RlEicuYWdlbnRmbGVldC52MS5TZXRQZXJtaXNzaW9uTW9kZVJlcXVlc3QaKC5hZ2VudGZsZWV0LnYxLlNldFBlcm1pc3Npb25Nb2RlUmVzcG9uc2USVAoLV2FybVNlc3Npb24SIS5hZ2VudGZsZWV0LnYxLldhcm1TZXNzaW9uUmVxdWVzdBoiLmFnZW50ZmxlZXQudjEuV2FybVNlc3Npb25SZXNwb25zZRJLCghNYXJrU2VlbhIeLmFnZW50ZmxlZXQudjEuTWFya1NlZW5SZXF1ZXN0Gh8uYWdlbnRmbGVldC52MS5NYXJrU2VlblJlc3BvbnNlEl0KDkFyY2hpdmVTZXNzaW9uEiQuYWdlbnRmbGVldC52MS5BcmNoaXZlU2Vzc2lvblJlcXVlc3QaJS5hZ2VudGZsZWV0LnYxLkFyY2hpdmVTZXNzaW9uUmVzcG9uc2USWgoNTGlzdFByb3Bvc2FscxIjLmFnZW50ZmxlZXQudjEuTGlzdFByb3Bvc2Fsc1JlcXVlc3QaJC5hZ2VudGZsZWV0LnYxLkxpc3RQcm9wb3NhbHNSZXNwb25zZRJjChBPcGVuRnJvbVByb3Bvc2FsEiYuYWdlbnRmbGVldC52MS5PcGVuRnJvbVByb3Bvc2FsUmVxdWVzdBonLmFnZW50ZmxlZXQudjEuT3BlbkZyb21Qcm9wb3NhbFJlc3BvbnNlEmAKD0Rpc21pc3NQcm9wb3NhbBIlLmFnZW50ZmxlZXQudjEuRGlzbWlzc1Byb3Bvc2FsUmVxdWVzdBomLmFnZW50ZmxlZXQudjEuRGlzbWlzc1Byb3Bvc2FsUmVzcG9uc2USVQoOQW5zd2VyUXVlc3Rpb24SJC5hZ2VudGZsZWV0LnYxLkFuc3dlclF1ZXN0aW9uUmVxdWVzdBodLmFnZW50ZmxlZXQudjEuQXBwZW5kUmVzcG9uc2USXwoTUmVzcG9uZFRvUGVybWlzc2lvbhIpLmFnZW50ZmxlZXQudjEuUmVzcG9uZFRvUGVybWlzc2lvblJlcXVlc3QaHS5hZ2VudGZsZWV0LnYxLkFwcGVuZFJlc3BvbnNlEk8KC1Bvc3RNZXNzYWdlEiEuYWdlbnRmbGVldC52MS5Qb3N0TWVzc2FnZVJlcXVlc3QaHS5hZ2VudGZsZWV0LnYxLkFwcGVuZFJlc3BvbnNlEloKDURlbGV0ZVNlc3Npb24SIy5hZ2VudGZsZWV0LnYxLkRlbGV0ZVNlc3Npb25SZXF1ZXN0GiQuYWdlbnRmbGVldC52MS5EZWxldGVTZXNzaW9uUmVzcG9uc2USUQoKR2V0Sm91cm5hbBIgLmFnZW50ZmxlZXQudjEuR2V0Sm91cm5hbFJlcXVlc3QaIS5hZ2VudGZsZWV0LnYxLkdldEpvdXJuYWxSZXNwb25zZRJOCglMaXN0UmVwb3MSHy5hZ2VudGZsZWV0LnYxLkxpc3RSZXBvc1JlcXVlc3QaIC5hZ2VudGZsZWV0LnYxLkxpc3RSZXBvc1Jlc3BvbnNlElEKCkNyZWF0ZVJlcG8SIC5hZ2VudGZsZWV0LnYxLkNyZWF0ZVJlcG9SZXF1ZXN0GiEuYWdlbnRmbGVldC52MS5DcmVhdGVSZXBvUmVzcG9uc2USUQoKVXBkYXRlUmVwbxIgLmFnZW50ZmxlZXQudjEuVXBkYXRlUmVwb1JlcXVlc3QaIS5hZ2VudGZsZWV0LnYxLlVwZGF0ZVJlcG9SZXNwb25zZRJRCgpEZWxldGVSZXBvEiAuYWdlbnRmbGVldC52MS5EZWxldGVSZXBvUmVxdWVzdBohLmFnZW50ZmxlZXQudjEuRGVsZXRlUmVwb1Jlc3BvbnNlEmkKEkxpc3RQcm9tcHRTbmlwcGV0cxIoLmFnZW50ZmxlZXQudjEuTGlzdFByb21wdFNuaXBwZXRzUmVxdWVzdBopLmFnZW50ZmxlZXQudjEuTGlzdFByb21wdFNuaXBwZXRzUmVzcG9uc2USbAoTQ3JlYXRlUHJvbXB0U25pcHBldBIpLmFnZW50ZmxlZXQudjEuQ3JlYXRlUHJvbXB0U25pcHBldFJlcXVlc3QaKi5hZ2VudGZsZWV0LnYxLkNyZWF0ZVByb21wdFNuaXBwZXRSZXNwb25zZRJsChNVcGRhdGVQcm9tcHRTbmlwcGV0EikuYWdlbnRmbGVldC52MS5VcGRhdGVQcm9tcHRTbmlwcGV0UmVxdWVzdBoqLmFnZW50ZmxlZXQudjEuVXBkYXRlUHJvbXB0U25pcHBldFJlc3BvbnNlEmwKE0RlbGV0ZVByb21wdFNuaXBwZXQSKS5hZ2VudGZsZWV0LnYxLkRlbGV0ZVByb21wdFNuaXBwZXRSZXF1ZXN0GiouYWdlbnRmbGVldC52MS5EZWxldGVQcm9tcHRTbmlwcGV0UmVzcG9uc2USTgoJTGlzdEZpbGVzEh8uYWdlbnRmbGVldC52MS5MaXN0RmlsZXNSZXF1ZXN0GiAuYWdlbnRmbGVldC52MS5MaXN0RmlsZXNSZXNwb25zZRJjChBHZXRGaWxlVXBsb2FkVXJsEiYuYWdlbnRmbGVldC52MS5HZXRGaWxlVXBsb2FkVXJsUmVxdWVzdBonLmFnZW50ZmxlZXQudjEuR2V0RmlsZVVwbG9hZFVybFJlc3BvbnNlEmkKEkdldEZpbGVEb3dubG9hZFVybBIoLmFnZW50ZmxlZXQudjEuR2V0RmlsZURvd25sb2FkVXJsUmVxdWVzdBopLmFnZW50ZmxlZXQudjEuR2V0RmlsZURvd25sb2FkVXJsUmVzcG9uc2USUQoKRGVsZXRlRmlsZRIgLmFnZW50ZmxlZXQudjEuRGVsZXRlRmlsZVJlcXVlc3QaIS5hZ2VudGZsZWV0LnYxLkRlbGV0ZUZpbGVSZXNwb25zZRJOCglRdWVyeUxvZ3MSHy5hZ2VudGZsZWV0LnYxLlF1ZXJ5TG9nc1JlcXVlc3QaIC5hZ2VudGZsZWV0LnYxLlF1ZXJ5TG9nc1Jlc3BvbnNlElcKDFF1ZXJ5TWV0cmljcxIiLmFnZW50ZmxlZXQudjEuUXVlcnlNZXRyaWNzUmVxdWVzdBojLmFnZW50ZmxlZXQudjEuUXVlcnlNZXRyaWNzUmVzcG9uc2USYwoQR2V0RmxlZXRUb3BvbG9neRImLmFnZW50ZmxlZXQudjEuR2V0RmxlZXRUb3BvbG9neVJlcXVlc3QaJy5hZ2VudGZsZWV0LnYxLkdldEZsZWV0VG9wb2xvZ3lSZXNwb25zZRJsChNMaXN0U2NoZWR1bGVkQXVkaXRzEikuYWdlbnRmbGVldC52MS5MaXN0U2NoZWR1bGVkQXVkaXRzUmVxdWVzdBoqLmFnZW50ZmxlZXQudjEuTGlzdFNjaGVkdWxlZEF1ZGl0c1Jlc3BvbnNlEm8KFENyZWF0ZVNjaGVkdWxlZEF1ZGl0EiouYWdlbnRmbGVldC52MS5DcmVhdGVTY2hlZHVsZWRBdWRpdFJlcXVlc3QaKy5hZ2VudGZsZWV0LnYxLkNyZWF0ZVNjaGVkdWxlZEF1ZGl0UmVzcG9uc2USbwoUVXBkYXRlU2NoZWR1bGVkQXVkaXQSKi5hZ2VudGZsZWV0LnYxLlVwZGF0ZVNjaGVkdWxlZEF1ZGl0UmVxdWVzdBorLmFnZW50ZmxlZXQudjEuVXBkYXRlU2NoZWR1bGVkQXVkaXRSZXNwb25zZRJvChREZWxldGVTY2hlZHVsZWRBdWRpdBIqLmFnZW50ZmxlZXQudjEuRGVsZXRlU2NoZWR1bGVkQXVkaXRSZXF1ZXN0GisuYWdlbnRmbGVldC52MS5EZWxldGVTY2hlZHVsZWRBdWRpdFJlc3BvbnNlEm8KFFJ1blNjaGVkdWxlZEF1ZGl0Tm93EiouYWdlbnRmbGVldC52MS5SdW5TY2hlZHVsZWRBdWRpdE5vd1JlcXVlc3QaKy5hZ2VudGZsZWV0LnYxLlJ1blNjaGVkdWxlZEF1ZGl0Tm93UmVzcG9uc2VCTVpLZ2l0aHViLmNvbS9Nb2hhbW1hZEJuZWkvYWdlbnQtZmxlZXQvcHJvdG8vZ2VuL2dvL2FnZW50ZmxlZXQvdjE7YWdlbnRmbGVldHYxYgZwcm90bzM", [file_agentfleet_v1_transcript, file_agentfleet_v1_files, file_agentfleet_v1_core]);
 
 /**
- * @generated from message agentfleet.v1.ListTasksRequest
+ * @generated from message agentfleet.v1.ListSessionsRequest
  */
-export type ListTasksRequest = Message<"agentfleet.v1.ListTasksRequest"> & {
+export type ListSessionsRequest = Message<"agentfleet.v1.ListSessionsRequest"> & {
   /**
    * @generated from field: int32 limit = 1;
    */
@@ -31,43 +29,54 @@ export type ListTasksRequest = Message<"agentfleet.v1.ListTasksRequest"> & {
 };
 
 /**
- * Describes the message agentfleet.v1.ListTasksRequest.
- * Use `create(ListTasksRequestSchema)` to create a new message.
+ * Describes the message agentfleet.v1.ListSessionsRequest.
+ * Use `create(ListSessionsRequestSchema)` to create a new message.
  */
-export const ListTasksRequestSchema: GenMessage<ListTasksRequest> = /*@__PURE__*/
+export const ListSessionsRequestSchema: GenMessage<ListSessionsRequest> = /*@__PURE__*/
   messageDesc(file_agentfleet_v1_dashboard, 0);
 
 /**
- * @generated from message agentfleet.v1.ListTasksResponse
+ * @generated from message agentfleet.v1.ListSessionsResponse
  */
-export type ListTasksResponse = Message<"agentfleet.v1.ListTasksResponse"> & {
+export type ListSessionsResponse = Message<"agentfleet.v1.ListSessionsResponse"> & {
   /**
-   * @generated from field: repeated agentfleet.v1.Task tasks = 1;
+   * @generated from field: repeated agentfleet.v1.Session sessions = 1;
    */
-  tasks: Task[];
+  sessions: Session[];
 };
 
 /**
- * Describes the message agentfleet.v1.ListTasksResponse.
- * Use `create(ListTasksResponseSchema)` to create a new message.
+ * Describes the message agentfleet.v1.ListSessionsResponse.
+ * Use `create(ListSessionsResponseSchema)` to create a new message.
  */
-export const ListTasksResponseSchema: GenMessage<ListTasksResponse> = /*@__PURE__*/
+export const ListSessionsResponseSchema: GenMessage<ListSessionsResponse> = /*@__PURE__*/
   messageDesc(file_agentfleet_v1_dashboard, 1);
 
 /**
- * Creates a task the same way a Discord /task command does, minus the
- * Discord thread — repo must be a name in the repos table (docs/adr/0028,
- * core/internal/repos), description must be non-empty. The created task has no
- * discord_channel_id/discord_thread_id, which core/internal/discord/
- * session.go's PostToThread already handles as a no-op relay target.
- * snippet_ids optionally names rows from the prompt_snippets table — their
- * text is resolved and joined once, at creation time, into the new task's
- * own guidance column (see PromptSnippet below); empty means the task gets
- * only its own description, no extra guidance.
+ * Creates a session row and NOTHING else — no pod, no directory, no worktree.
+ * `repo` must name a row in the repos table (docs/adr/0028); title and
+ * description are optional labels that never enter the prompt.
  *
- * @generated from message agentfleet.v1.CreateTaskRequest
+ * The pod is booted by the first PostMessage, not here, and that split is
+ * load-bearing (docs/adr/0048): nothing machine-initiated produces a message,
+ * so nothing machine-initiated produces a pod. It also means an empty session
+ * is a valid resting state rather than a broken one — which matters because
+ * the Agent SDK's streaming-input generator is never entered until an input
+ * arrives, so a pod started with nothing to do would never emit a session id,
+ * would be unresumable, and would be swept by the startup-stall guard with
+ * nothing logged to explain it.
+ *
+ * Fields 3 and 5 are reserved. snippet_ids used to be resolved server-side
+ * into a hidden `guidance` column; snippets now prefill the dashboard's
+ * message composer instead, so their text reaches the model as part of a
+ * message a human actually sent and can edit — rather than as a wrapper the
+ * agent cannot see or question. `kind` was a UI label the dispatch path never
+ * branched on; a thot session is distinguished by its repo carrying
+ * cluster_access, which is the thing that is actually true about it.
+ *
+ * @generated from message agentfleet.v1.CreateSessionRequest
  */
-export type CreateTaskRequest = Message<"agentfleet.v1.CreateTaskRequest"> & {
+export type CreateSessionRequest = Message<"agentfleet.v1.CreateSessionRequest"> & {
   /**
    * @generated from field: string repo = 1;
    */
@@ -79,47 +88,38 @@ export type CreateTaskRequest = Message<"agentfleet.v1.CreateTaskRequest"> & {
   description: string;
 
   /**
-   * @generated from field: repeated string snippet_ids = 3;
-   */
-  snippetIds: string[];
-
-  /**
    * @generated from field: optional string model = 4;
    */
   model?: string | undefined;
 
   /**
-   * "worker" (default when empty) or "thot" — docs/adr/0037. A thot
-   * session is an ordinary worker task on infra-bootstrap; this only
-   * changes how the dashboard labels and gates it.
-   *
-   * @generated from field: string kind = 5;
+   * @generated from field: optional string title = 6;
    */
-  kind: string;
+  title?: string | undefined;
 };
 
 /**
- * Describes the message agentfleet.v1.CreateTaskRequest.
- * Use `create(CreateTaskRequestSchema)` to create a new message.
+ * Describes the message agentfleet.v1.CreateSessionRequest.
+ * Use `create(CreateSessionRequestSchema)` to create a new message.
  */
-export const CreateTaskRequestSchema: GenMessage<CreateTaskRequest> = /*@__PURE__*/
+export const CreateSessionRequestSchema: GenMessage<CreateSessionRequest> = /*@__PURE__*/
   messageDesc(file_agentfleet_v1_dashboard, 2);
 
 /**
- * @generated from message agentfleet.v1.CreateTaskResponse
+ * @generated from message agentfleet.v1.CreateSessionResponse
  */
-export type CreateTaskResponse = Message<"agentfleet.v1.CreateTaskResponse"> & {
+export type CreateSessionResponse = Message<"agentfleet.v1.CreateSessionResponse"> & {
   /**
-   * @generated from field: agentfleet.v1.Task task = 1;
+   * @generated from field: agentfleet.v1.Session session = 1;
    */
-  task?: Task | undefined;
+  session?: Session | undefined;
 };
 
 /**
- * Describes the message agentfleet.v1.CreateTaskResponse.
- * Use `create(CreateTaskResponseSchema)` to create a new message.
+ * Describes the message agentfleet.v1.CreateSessionResponse.
+ * Use `create(CreateSessionResponseSchema)` to create a new message.
  */
-export const CreateTaskResponseSchema: GenMessage<CreateTaskResponse> = /*@__PURE__*/
+export const CreateSessionResponseSchema: GenMessage<CreateSessionResponse> = /*@__PURE__*/
   messageDesc(file_agentfleet_v1_dashboard, 3);
 
 /**
@@ -131,9 +131,9 @@ export const CreateTaskResponseSchema: GenMessage<CreateTaskResponse> = /*@__PUR
  */
 export type StreamTranscriptRequest = Message<"agentfleet.v1.StreamTranscriptRequest"> & {
   /**
-   * @generated from field: string task_id = 1;
+   * @generated from field: string session_id = 1;
    */
-  taskId: string;
+  sessionId: string;
 
   /**
    * @generated from field: int64 since_seq = 2;
@@ -149,261 +149,13 @@ export const StreamTranscriptRequestSchema: GenMessage<StreamTranscriptRequest> 
   messageDesc(file_agentfleet_v1_dashboard, 4);
 
 /**
- * @generated from message agentfleet.v1.GetE2eStatusRequest
+ * @generated from message agentfleet.v1.StopSessionRequest
  */
-export type GetE2eStatusRequest = Message<"agentfleet.v1.GetE2eStatusRequest"> & {
+export type StopSessionRequest = Message<"agentfleet.v1.StopSessionRequest"> & {
   /**
-   * @generated from field: string task_id = 1;
+   * @generated from field: string session_id = 1;
    */
-  taskId: string;
-};
-
-/**
- * Describes the message agentfleet.v1.GetE2eStatusRequest.
- * Use `create(GetE2eStatusRequestSchema)` to create a new message.
- */
-export const GetE2eStatusRequestSchema: GenMessage<GetE2eStatusRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 5);
-
-/**
- * @generated from message agentfleet.v1.GetE2eStatusResponse
- */
-export type GetE2eStatusResponse = Message<"agentfleet.v1.GetE2eStatusResponse"> & {
-  /**
-   * @generated from field: string status = 1;
-   */
-  status: string;
-
-  /**
-   * @generated from field: string preview_url = 2;
-   */
-  previewUrl: string;
-
-  /**
-   * Fields 3-7 are pass-through from ProvisionerService.GetE2eSessionStatus
-   * (live pod truth — core holds no cluster RBAC and must not read pods);
-   * 8-11 are core's own, resolved from repo_profiles.
-   *
-   * @generated from field: string start_cmd = 3;
-   */
-  startCmd: string;
-
-  /**
-   * @generated from field: string pod_phase = 4;
-   */
-  podPhase: string;
-
-  /**
-   * @generated from field: bool app_ready = 5;
-   */
-  appReady: boolean;
-
-  /**
-   * @generated from field: int32 restarts = 6;
-   */
-  restarts: number;
-
-  /**
-   * RFC3339
-   *
-   * @generated from field: string started_at = 7;
-   */
-  startedAt: string;
-
-  /**
-   * @generated from field: string profile_name = 8;
-   */
-  profileName: string;
-
-  /**
-   * @generated from field: repeated string tools = 9;
-   */
-  tools: string[];
-
-  /**
-   * @generated from field: repeated string services = 10;
-   */
-  services: string[];
-
-  /**
-   * True when the running pod's start_cmd differs from the profile's — i.e.
-   * a human-approved per-task override is in effect. Surfacing this is the
-   * point: a silent override is what caused the bug this card exists for.
-   *
-   * @generated from field: bool start_cmd_overridden = 11;
-   */
-  startCmdOverridden: boolean;
-
-  /**
-   * The /code route, not the app root — see provisioner.proto's field of the
-   * same name for why this travels rather than being rebuilt client-side.
-   *
-   * @generated from field: string code_server_url = 12;
-   */
-  codeServerUrl: string;
-};
-
-/**
- * Describes the message agentfleet.v1.GetE2eStatusResponse.
- * Use `create(GetE2eStatusResponseSchema)` to create a new message.
- */
-export const GetE2eStatusResponseSchema: GenMessage<GetE2eStatusResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 6);
-
-/**
- * @generated from message agentfleet.v1.StartE2eRequest
- */
-export type StartE2eRequest = Message<"agentfleet.v1.StartE2eRequest"> & {
-  /**
-   * @generated from field: string task_id = 1;
-   */
-  taskId: string;
-};
-
-/**
- * Describes the message agentfleet.v1.StartE2eRequest.
- * Use `create(StartE2eRequestSchema)` to create a new message.
- */
-export const StartE2eRequestSchema: GenMessage<StartE2eRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 7);
-
-/**
- * @generated from message agentfleet.v1.StartE2eResponse
- */
-export type StartE2eResponse = Message<"agentfleet.v1.StartE2eResponse"> & {
-  /**
-   * @generated from field: string status = 1;
-   */
-  status: string;
-
-  /**
-   * @generated from field: string preview_url = 2;
-   */
-  previewUrl: string;
-
-  /**
-   * Echoed for the same reason request_e2e_env echoes it to the agent: the
-   * recipe that was actually used is the first thing anyone needs when the
-   * preview doesn't serve.
-   *
-   * @generated from field: string resolved_start_cmd = 3;
-   */
-  resolvedStartCmd: string;
-
-  /**
-   * @generated from field: string profile_name = 4;
-   */
-  profileName: string;
-};
-
-/**
- * Describes the message agentfleet.v1.StartE2eResponse.
- * Use `create(StartE2eResponseSchema)` to create a new message.
- */
-export const StartE2eResponseSchema: GenMessage<StartE2eResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 8);
-
-/**
- * RestartE2eApp re-runs the profile's start command INSIDE the live pod, via
- * the e2e-restart-app helper on its PATH. Deliberately distinct from
- * stop+start: the pod, its warm dependency cache and the worktree all survive,
- * so this costs seconds where recreating the sandbox costs a 10+ minute cold
- * install. Conflating the two in one "restart" button is how a human ends up
- * paying that install to fix a dev server that just needed rebooting.
- *
- * @generated from message agentfleet.v1.RestartE2eAppRequest
- */
-export type RestartE2eAppRequest = Message<"agentfleet.v1.RestartE2eAppRequest"> & {
-  /**
-   * @generated from field: string task_id = 1;
-   */
-  taskId: string;
-};
-
-/**
- * Describes the message agentfleet.v1.RestartE2eAppRequest.
- * Use `create(RestartE2eAppRequestSchema)` to create a new message.
- */
-export const RestartE2eAppRequestSchema: GenMessage<RestartE2eAppRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 9);
-
-/**
- * @generated from message agentfleet.v1.RestartE2eAppResponse
- */
-export type RestartE2eAppResponse = Message<"agentfleet.v1.RestartE2eAppResponse"> & {
-  /**
-   * @generated from field: string output = 1;
-   */
-  output: string;
-
-  /**
-   * @generated from field: int32 exit_code = 2;
-   */
-  exitCode: number;
-};
-
-/**
- * Describes the message agentfleet.v1.RestartE2eAppResponse.
- * Use `create(RestartE2eAppResponseSchema)` to create a new message.
- */
-export const RestartE2eAppResponseSchema: GenMessage<RestartE2eAppResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 10);
-
-/**
- * GetE2eAppLog reads /tmp/e2e-app.log out of the pod — the app's own stdout,
- * which is the first thing to look at when a preview 502s and the single
- * question the e2e card could never answer. Not Loki: this is readable while
- * the pod is alive regardless of retention, and it carries the explicit
- * "app command exited with status N" marker the entrypoint writes.
- *
- * @generated from message agentfleet.v1.GetE2eAppLogRequest
- */
-export type GetE2eAppLogRequest = Message<"agentfleet.v1.GetE2eAppLogRequest"> & {
-  /**
-   * @generated from field: string task_id = 1;
-   */
-  taskId: string;
-
-  /**
-   * default 200
-   *
-   * @generated from field: int32 lines = 2;
-   */
-  lines: number;
-};
-
-/**
- * Describes the message agentfleet.v1.GetE2eAppLogRequest.
- * Use `create(GetE2eAppLogRequestSchema)` to create a new message.
- */
-export const GetE2eAppLogRequestSchema: GenMessage<GetE2eAppLogRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 11);
-
-/**
- * @generated from message agentfleet.v1.GetE2eAppLogResponse
- */
-export type GetE2eAppLogResponse = Message<"agentfleet.v1.GetE2eAppLogResponse"> & {
-  /**
-   * @generated from field: string log = 1;
-   */
-  log: string;
-};
-
-/**
- * Describes the message agentfleet.v1.GetE2eAppLogResponse.
- * Use `create(GetE2eAppLogResponseSchema)` to create a new message.
- */
-export const GetE2eAppLogResponseSchema: GenMessage<GetE2eAppLogResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 12);
-
-/**
- * @generated from message agentfleet.v1.KillRequest
- */
-export type KillRequest = Message<"agentfleet.v1.KillRequest"> & {
-  /**
-   * @generated from field: string task_id = 1;
-   */
-  taskId: string;
+  sessionId: string;
 
   /**
    * @generated from field: optional string reason = 2;
@@ -412,28 +164,24 @@ export type KillRequest = Message<"agentfleet.v1.KillRequest"> & {
 };
 
 /**
- * Describes the message agentfleet.v1.KillRequest.
- * Use `create(KillRequestSchema)` to create a new message.
+ * Describes the message agentfleet.v1.StopSessionRequest.
+ * Use `create(StopSessionRequestSchema)` to create a new message.
  */
-export const KillRequestSchema: GenMessage<KillRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 13);
+export const StopSessionRequestSchema: GenMessage<StopSessionRequest> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_dashboard, 5);
 
 /**
- * @generated from message agentfleet.v1.KillResponse
+ * @generated from message agentfleet.v1.StopSessionResponse
  */
-export type KillResponse = Message<"agentfleet.v1.KillResponse"> & {
-  /**
-   * @generated from field: string status = 1;
-   */
-  status: string;
+export type StopSessionResponse = Message<"agentfleet.v1.StopSessionResponse"> & {
 };
 
 /**
- * Describes the message agentfleet.v1.KillResponse.
- * Use `create(KillResponseSchema)` to create a new message.
+ * Describes the message agentfleet.v1.StopSessionResponse.
+ * Use `create(StopSessionResponseSchema)` to create a new message.
  */
-export const KillResponseSchema: GenMessage<KillResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 14);
+export const StopSessionResponseSchema: GenMessage<StopSessionResponse> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_dashboard, 6);
 
 /**
  * Interrupt stops only the current turn (the in-flight API exchange/tool
@@ -446,9 +194,9 @@ export const KillResponseSchema: GenMessage<KillResponse> = /*@__PURE__*/
  */
 export type InterruptRequest = Message<"agentfleet.v1.InterruptRequest"> & {
   /**
-   * @generated from field: string task_id = 1;
+   * @generated from field: string session_id = 1;
    */
-  taskId: string;
+  sessionId: string;
 };
 
 /**
@@ -456,16 +204,12 @@ export type InterruptRequest = Message<"agentfleet.v1.InterruptRequest"> & {
  * Use `create(InterruptRequestSchema)` to create a new message.
  */
 export const InterruptRequestSchema: GenMessage<InterruptRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 15);
+  messageDesc(file_agentfleet_v1_dashboard, 7);
 
 /**
  * @generated from message agentfleet.v1.InterruptResponse
  */
 export type InterruptResponse = Message<"agentfleet.v1.InterruptResponse"> & {
-  /**
-   * @generated from field: string status = 1;
-   */
-  status: string;
 };
 
 /**
@@ -473,17 +217,17 @@ export type InterruptResponse = Message<"agentfleet.v1.InterruptResponse"> & {
  * Use `create(InterruptResponseSchema)` to create a new message.
  */
 export const InterruptResponseSchema: GenMessage<InterruptResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 16);
+  messageDesc(file_agentfleet_v1_dashboard, 8);
 
 /**
  * Warm boots a pod for an idle session on demand — the sessions redesign's
  * "bus" model (supersedes docs/adr/0021/0025's phase-boundary framing): a
  * task's pod is ephemeral compute, not tied to the task's whole lifetime.
- * Deliberately does not touch tasks.status (a loose UI-freshness signal
+ * Deliberately does not touch the deleted status column (a loose UI-freshness signal
  * now, not control flow) — session state is the worktree + saved
  * session_id, both of which already survive teardown. Rejected with
  * CodeFailedPrecondition if the task already has a live pod (idempotent
- * double-click guard) or the fleet is already at MAX_IN_FLIGHT_TASKS.
+ * double-click guard) or the fleet is already at MAX_LIVE_SESSIONS.
  * Records that a human opened this session's detail view — what turns a
  * `done` live_state (finished while nobody was looking) back into `idle`.
  * Deliberately an explicit call rather than a side effect of GetTask: the
@@ -494,9 +238,9 @@ export const InterruptResponseSchema: GenMessage<InterruptResponse> = /*@__PURE_
  */
 export type MarkSeenRequest = Message<"agentfleet.v1.MarkSeenRequest"> & {
   /**
-   * @generated from field: string task_id = 1;
+   * @generated from field: string session_id = 1;
    */
-  taskId: string;
+  sessionId: string;
 };
 
 /**
@@ -504,7 +248,7 @@ export type MarkSeenRequest = Message<"agentfleet.v1.MarkSeenRequest"> & {
  * Use `create(MarkSeenRequestSchema)` to create a new message.
  */
 export const MarkSeenRequestSchema: GenMessage<MarkSeenRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 17);
+  messageDesc(file_agentfleet_v1_dashboard, 9);
 
 /**
  * @generated from message agentfleet.v1.MarkSeenResponse
@@ -517,100 +261,257 @@ export type MarkSeenResponse = Message<"agentfleet.v1.MarkSeenResponse"> & {
  * Use `create(MarkSeenResponseSchema)` to create a new message.
  */
 export const MarkSeenResponseSchema: GenMessage<MarkSeenResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 18);
+  messageDesc(file_agentfleet_v1_dashboard, 10);
 
 /**
- * @generated from message agentfleet.v1.WarmRequest
+ * @generated from message agentfleet.v1.WarmSessionRequest
  */
-export type WarmRequest = Message<"agentfleet.v1.WarmRequest"> & {
+export type WarmSessionRequest = Message<"agentfleet.v1.WarmSessionRequest"> & {
   /**
-   * @generated from field: string task_id = 1;
+   * @generated from field: string session_id = 1;
    */
-  taskId: string;
+  sessionId: string;
 };
 
 /**
- * Describes the message agentfleet.v1.WarmRequest.
- * Use `create(WarmRequestSchema)` to create a new message.
+ * Describes the message agentfleet.v1.WarmSessionRequest.
+ * Use `create(WarmSessionRequestSchema)` to create a new message.
  */
-export const WarmRequestSchema: GenMessage<WarmRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 19);
+export const WarmSessionRequestSchema: GenMessage<WarmSessionRequest> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_dashboard, 11);
 
 /**
- * @generated from message agentfleet.v1.WarmResponse
+ * @generated from message agentfleet.v1.WarmSessionResponse
  */
-export type WarmResponse = Message<"agentfleet.v1.WarmResponse"> & {
+export type WarmSessionResponse = Message<"agentfleet.v1.WarmSessionResponse"> & {
   /**
-   * @generated from field: string status = 1;
-   */
-  status: string;
-
-  /**
+   * Empty when the session already had a live pod — an ordinary idempotent
+   * outcome, not an error, since PostMessage calls this unconditionally on
+   * every message.
+   *
    * @generated from field: string pod_name = 2;
    */
   podName: string;
 };
 
 /**
- * Describes the message agentfleet.v1.WarmResponse.
- * Use `create(WarmResponseSchema)` to create a new message.
+ * Describes the message agentfleet.v1.WarmSessionResponse.
+ * Use `create(WarmSessionResponseSchema)` to create a new message.
  */
-export const WarmResponseSchema: GenMessage<WarmResponse> = /*@__PURE__*/
+export const WarmSessionResponseSchema: GenMessage<WarmSessionResponse> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_dashboard, 12);
+
+/**
+ * A machine-initiated suggestion, from an Alertmanager webhook or the audit
+ * scheduler (docs/adr/0048). Proposals live in their own table with no pod
+ * path at all — that is what makes "a machine may propose, never open"
+ * structural, rather than a status value that dispatch politely declines to
+ * SELECT.
+ *
+ * @generated from message agentfleet.v1.Proposal
+ */
+export type Proposal = Message<"agentfleet.v1.Proposal"> & {
+  /**
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * @generated from field: string repo = 2;
+   */
+  repo: string;
+
+  /**
+   * "alert" | "audit"
+   *
+   * @generated from field: string source = 3;
+   */
+  source: string;
+
+  /**
+   * @generated from field: string title = 4;
+   */
+  title: string;
+
+  /**
+   * @generated from field: string body = 5;
+   */
+  body: string;
+
+  /**
+   * @generated from field: string created_at = 6;
+   */
+  createdAt: string;
+
+  /**
+   * Set once a human opened it; the session it became.
+   *
+   * @generated from field: optional string session_id = 7;
+   */
+  sessionId?: string | undefined;
+};
+
+/**
+ * Describes the message agentfleet.v1.Proposal.
+ * Use `create(ProposalSchema)` to create a new message.
+ */
+export const ProposalSchema: GenMessage<Proposal> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_dashboard, 13);
+
+/**
+ * @generated from message agentfleet.v1.ListProposalsRequest
+ */
+export type ListProposalsRequest = Message<"agentfleet.v1.ListProposalsRequest"> & {
+};
+
+/**
+ * Describes the message agentfleet.v1.ListProposalsRequest.
+ * Use `create(ListProposalsRequestSchema)` to create a new message.
+ */
+export const ListProposalsRequestSchema: GenMessage<ListProposalsRequest> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_dashboard, 14);
+
+/**
+ * @generated from message agentfleet.v1.ListProposalsResponse
+ */
+export type ListProposalsResponse = Message<"agentfleet.v1.ListProposalsResponse"> & {
+  /**
+   * Open proposals only: neither opened nor dismissed.
+   *
+   * @generated from field: repeated agentfleet.v1.Proposal proposals = 1;
+   */
+  proposals: Proposal[];
+};
+
+/**
+ * Describes the message agentfleet.v1.ListProposalsResponse.
+ * Use `create(ListProposalsResponseSchema)` to create a new message.
+ */
+export const ListProposalsResponseSchema: GenMessage<ListProposalsResponse> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_dashboard, 15);
+
+/**
+ * Turns a proposal into a real session. THE human gate — this is the one
+ * call that can hand a cluster-access agent a pod, so it is reachable only
+ * from the dashboard, behind the same Traefik basic-auth as everything else.
+ * Replaces ApproveTask, which flipped a status value to release a task into
+ * the dispatch queue.
+ *
+ * Guarded inside the UPDATE rather than read-then-write, for the reason the
+ * old ApproveProposal gave and which still applies: two clicks, two humans,
+ * or one stale browser tab must not open two sessions from one proposal.
+ * Rejected with CodeFailedPrecondition if it is already opened or dismissed.
+ *
+ * Creates the session but does NOT boot a pod — the proposal body is posted
+ * as the session's first message, and that is what provisions. So a human
+ * can open a proposal, read it, and still walk away without an agent having
+ * run.
+ *
+ * @generated from message agentfleet.v1.OpenFromProposalRequest
+ */
+export type OpenFromProposalRequest = Message<"agentfleet.v1.OpenFromProposalRequest"> & {
+  /**
+   * @generated from field: string proposal_id = 1;
+   */
+  proposalId: string;
+};
+
+/**
+ * Describes the message agentfleet.v1.OpenFromProposalRequest.
+ * Use `create(OpenFromProposalRequestSchema)` to create a new message.
+ */
+export const OpenFromProposalRequestSchema: GenMessage<OpenFromProposalRequest> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_dashboard, 16);
+
+/**
+ * @generated from message agentfleet.v1.OpenFromProposalResponse
+ */
+export type OpenFromProposalResponse = Message<"agentfleet.v1.OpenFromProposalResponse"> & {
+  /**
+   * @generated from field: agentfleet.v1.Session session = 1;
+   */
+  session?: Session | undefined;
+};
+
+/**
+ * Describes the message agentfleet.v1.OpenFromProposalResponse.
+ * Use `create(OpenFromProposalResponseSchema)` to create a new message.
+ */
+export const OpenFromProposalResponseSchema: GenMessage<OpenFromProposalResponse> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_dashboard, 17);
+
+/**
+ * Declines a proposal. Dismissing re-arms the dedup key, so a still-firing
+ * alert is proposed again on its next fire — "not now", not "never".
+ * Permanent suppression is an Alertmanager silence, which is where that
+ * decision belongs.
+ *
+ * @generated from message agentfleet.v1.DismissProposalRequest
+ */
+export type DismissProposalRequest = Message<"agentfleet.v1.DismissProposalRequest"> & {
+  /**
+   * @generated from field: string proposal_id = 1;
+   */
+  proposalId: string;
+};
+
+/**
+ * Describes the message agentfleet.v1.DismissProposalRequest.
+ * Use `create(DismissProposalRequestSchema)` to create a new message.
+ */
+export const DismissProposalRequestSchema: GenMessage<DismissProposalRequest> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_dashboard, 18);
+
+/**
+ * @generated from message agentfleet.v1.DismissProposalResponse
+ */
+export type DismissProposalResponse = Message<"agentfleet.v1.DismissProposalResponse"> & {
+};
+
+/**
+ * Describes the message agentfleet.v1.DismissProposalResponse.
+ * Use `create(DismissProposalResponseSchema)` to create a new message.
+ */
+export const DismissProposalResponseSchema: GenMessage<DismissProposalResponse> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_dashboard, 19);
+
+/**
+ * The human is finished with this session. The only terminal state in the
+ * fleet, because it is the only one a machine cannot compute: a session may
+ * end in a PR, or in an explanation, or in a dead end, and nothing but a
+ * person can tell those apart.
+ *
+ * Tears down any live pod and reclaims the session's directory and SDK
+ * state, so an archived session is readable but no longer resumable.
+ *
+ * @generated from message agentfleet.v1.ArchiveSessionRequest
+ */
+export type ArchiveSessionRequest = Message<"agentfleet.v1.ArchiveSessionRequest"> & {
+  /**
+   * @generated from field: string session_id = 1;
+   */
+  sessionId: string;
+};
+
+/**
+ * Describes the message agentfleet.v1.ArchiveSessionRequest.
+ * Use `create(ArchiveSessionRequestSchema)` to create a new message.
+ */
+export const ArchiveSessionRequestSchema: GenMessage<ArchiveSessionRequest> = /*@__PURE__*/
   messageDesc(file_agentfleet_v1_dashboard, 20);
 
 /**
- * Releases a machine-created proposal into the ordinary dispatch queue.
- *
- * Alertmanager and the audit scheduler create tasks with no human in the
- * loop, and a thot task runs an agent with cluster access — so they land
- * in status 'proposed', which ClaimNextTask never claims. This is the one
- * write that hands such an agent a pod.
- *
- * Deliberately only flips status to 'pending' and lets dispatch do the
- * rest, rather than warming a pod directly: that reuses the existing
- * claim/lease/in-flight-cap/retry machinery unchanged, and keeps the task
- * counted by MAX_IN_FLIGHT_TASKS (a pod warmed behind dispatch's back is
- * not). Rejected with CodeFailedPrecondition if the task is not an
- * un-approved proposal — including a second click on one already
- * approved.
- *
- * To decline instead, use DeleteTask: its soft delete drops the row out
- * of the alert dedup index, so a still-firing alert is proposed again on
- * its next fire. Dismissing means "not now", not "never" — permanent
- * suppression is an Alertmanager silence.
- *
- * @generated from message agentfleet.v1.ApproveTaskRequest
+ * @generated from message agentfleet.v1.ArchiveSessionResponse
  */
-export type ApproveTaskRequest = Message<"agentfleet.v1.ApproveTaskRequest"> & {
-  /**
-   * @generated from field: string task_id = 1;
-   */
-  taskId: string;
+export type ArchiveSessionResponse = Message<"agentfleet.v1.ArchiveSessionResponse"> & {
 };
 
 /**
- * Describes the message agentfleet.v1.ApproveTaskRequest.
- * Use `create(ApproveTaskRequestSchema)` to create a new message.
+ * Describes the message agentfleet.v1.ArchiveSessionResponse.
+ * Use `create(ArchiveSessionResponseSchema)` to create a new message.
  */
-export const ApproveTaskRequestSchema: GenMessage<ApproveTaskRequest> = /*@__PURE__*/
+export const ArchiveSessionResponseSchema: GenMessage<ArchiveSessionResponse> = /*@__PURE__*/
   messageDesc(file_agentfleet_v1_dashboard, 21);
-
-/**
- * @generated from message agentfleet.v1.ApproveTaskResponse
- */
-export type ApproveTaskResponse = Message<"agentfleet.v1.ApproveTaskResponse"> & {
-  /**
-   * @generated from field: string status = 1;
-   */
-  status: string;
-};
-
-/**
- * Describes the message agentfleet.v1.ApproveTaskResponse.
- * Use `create(ApproveTaskResponseSchema)` to create a new message.
- */
-export const ApproveTaskResponseSchema: GenMessage<ApproveTaskResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 22);
 
 /**
  * Answers a pending PERMISSION_REQUEST-type transcript entry (posted by
@@ -627,9 +528,9 @@ export const ApproveTaskResponseSchema: GenMessage<ApproveTaskResponse> = /*@__P
  */
 export type RespondToPermissionRequest = Message<"agentfleet.v1.RespondToPermissionRequest"> & {
   /**
-   * @generated from field: string task_id = 1;
+   * @generated from field: string session_id = 1;
    */
-  taskId: string;
+  sessionId: string;
 
   /**
    * @generated from field: int64 seq = 2;
@@ -647,33 +548,16 @@ export type RespondToPermissionRequest = Message<"agentfleet.v1.RespondToPermiss
  * Use `create(RespondToPermissionRequestSchema)` to create a new message.
  */
 export const RespondToPermissionRequestSchema: GenMessage<RespondToPermissionRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 23);
-
-/**
- * @generated from message agentfleet.v1.RespondToPermissionResponse
- */
-export type RespondToPermissionResponse = Message<"agentfleet.v1.RespondToPermissionResponse"> & {
-  /**
-   * @generated from field: string status = 1;
-   */
-  status: string;
-};
-
-/**
- * Describes the message agentfleet.v1.RespondToPermissionResponse.
- * Use `create(RespondToPermissionResponseSchema)` to create a new message.
- */
-export const RespondToPermissionResponseSchema: GenMessage<RespondToPermissionResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 24);
+  messageDesc(file_agentfleet_v1_dashboard, 22);
 
 /**
  * @generated from message agentfleet.v1.KillE2eRequest
  */
 export type KillE2eRequest = Message<"agentfleet.v1.KillE2eRequest"> & {
   /**
-   * @generated from field: string task_id = 1;
+   * @generated from field: string session_id = 1;
    */
-  taskId: string;
+  sessionId: string;
 
   /**
    * also_teardown_services (docs/adr/0034 follow-up): also delete the
@@ -691,7 +575,7 @@ export type KillE2eRequest = Message<"agentfleet.v1.KillE2eRequest"> & {
  * Use `create(KillE2eRequestSchema)` to create a new message.
  */
 export const KillE2eRequestSchema: GenMessage<KillE2eRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 25);
+  messageDesc(file_agentfleet_v1_dashboard, 23);
 
 /**
  * @generated from message agentfleet.v1.KillE2eResponse
@@ -713,7 +597,7 @@ export type KillE2eResponse = Message<"agentfleet.v1.KillE2eResponse"> & {
  * Use `create(KillE2eResponseSchema)` to create a new message.
  */
 export const KillE2eResponseSchema: GenMessage<KillE2eResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 26);
+  messageDesc(file_agentfleet_v1_dashboard, 24);
 
 /**
  * Answers a pending QUESTION-type transcript entry (posted by the agent's
@@ -729,9 +613,9 @@ export const KillE2eResponseSchema: GenMessage<KillE2eResponse> = /*@__PURE__*/
  */
 export type AnswerQuestionRequest = Message<"agentfleet.v1.AnswerQuestionRequest"> & {
   /**
-   * @generated from field: string task_id = 1;
+   * @generated from field: string session_id = 1;
    */
-  taskId: string;
+  sessionId: string;
 
   /**
    * @generated from field: int64 seq = 2;
@@ -749,24 +633,7 @@ export type AnswerQuestionRequest = Message<"agentfleet.v1.AnswerQuestionRequest
  * Use `create(AnswerQuestionRequestSchema)` to create a new message.
  */
 export const AnswerQuestionRequestSchema: GenMessage<AnswerQuestionRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 27);
-
-/**
- * @generated from message agentfleet.v1.AnswerQuestionResponse
- */
-export type AnswerQuestionResponse = Message<"agentfleet.v1.AnswerQuestionResponse"> & {
-  /**
-   * @generated from field: string status = 1;
-   */
-  status: string;
-};
-
-/**
- * Describes the message agentfleet.v1.AnswerQuestionResponse.
- * Use `create(AnswerQuestionResponseSchema)` to create a new message.
- */
-export const AnswerQuestionResponseSchema: GenMessage<AnswerQuestionResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 28);
+  messageDesc(file_agentfleet_v1_dashboard, 25);
 
 /**
  * Discuss lets a human send an arbitrary free-text message from the
@@ -778,13 +645,13 @@ export const AnswerQuestionResponseSchema: GenMessage<AnswerQuestionResponse> = 
  * same pattern as Kill hardcoding "human"/"abort" — the dashboard has no
  * need to expose them.
  *
- * @generated from message agentfleet.v1.DiscussRequest
+ * @generated from message agentfleet.v1.PostMessageRequest
  */
-export type DiscussRequest = Message<"agentfleet.v1.DiscussRequest"> & {
+export type PostMessageRequest = Message<"agentfleet.v1.PostMessageRequest"> & {
   /**
-   * @generated from field: string task_id = 1;
+   * @generated from field: string session_id = 1;
    */
-  taskId: string;
+  sessionId: string;
 
   /**
    * @generated from field: string text = 2;
@@ -793,28 +660,11 @@ export type DiscussRequest = Message<"agentfleet.v1.DiscussRequest"> & {
 };
 
 /**
- * Describes the message agentfleet.v1.DiscussRequest.
- * Use `create(DiscussRequestSchema)` to create a new message.
+ * Describes the message agentfleet.v1.PostMessageRequest.
+ * Use `create(PostMessageRequestSchema)` to create a new message.
  */
-export const DiscussRequestSchema: GenMessage<DiscussRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 29);
-
-/**
- * @generated from message agentfleet.v1.DiscussResponse
- */
-export type DiscussResponse = Message<"agentfleet.v1.DiscussResponse"> & {
-  /**
-   * @generated from field: string status = 1;
-   */
-  status: string;
-};
-
-/**
- * Describes the message agentfleet.v1.DiscussResponse.
- * Use `create(DiscussResponseSchema)` to create a new message.
- */
-export const DiscussResponseSchema: GenMessage<DiscussResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 30);
+export const PostMessageRequestSchema: GenMessage<PostMessageRequest> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_dashboard, 26);
 
 /**
  * Soft-deletes the task (see db/schema.sql's tasks.deleted_at) after
@@ -825,138 +675,34 @@ export const DiscussResponseSchema: GenMessage<DiscussResponse> = /*@__PURE__*/
  * `status` — a `done` task stays `done`, it just stops appearing in
  * ListTasks.
  *
- * @generated from message agentfleet.v1.DeleteTaskRequest
+ * @generated from message agentfleet.v1.DeleteSessionRequest
  */
-export type DeleteTaskRequest = Message<"agentfleet.v1.DeleteTaskRequest"> & {
+export type DeleteSessionRequest = Message<"agentfleet.v1.DeleteSessionRequest"> & {
   /**
-   * @generated from field: string task_id = 1;
+   * @generated from field: string session_id = 1;
    */
-  taskId: string;
+  sessionId: string;
 };
 
 /**
- * Describes the message agentfleet.v1.DeleteTaskRequest.
- * Use `create(DeleteTaskRequestSchema)` to create a new message.
+ * Describes the message agentfleet.v1.DeleteSessionRequest.
+ * Use `create(DeleteSessionRequestSchema)` to create a new message.
  */
-export const DeleteTaskRequestSchema: GenMessage<DeleteTaskRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 31);
+export const DeleteSessionRequestSchema: GenMessage<DeleteSessionRequest> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_dashboard, 27);
 
 /**
- * @generated from message agentfleet.v1.DeleteTaskResponse
+ * @generated from message agentfleet.v1.DeleteSessionResponse
  */
-export type DeleteTaskResponse = Message<"agentfleet.v1.DeleteTaskResponse"> & {
-  /**
-   * @generated from field: string status = 1;
-   */
-  status: string;
+export type DeleteSessionResponse = Message<"agentfleet.v1.DeleteSessionResponse"> & {
 };
 
 /**
- * Describes the message agentfleet.v1.DeleteTaskResponse.
- * Use `create(DeleteTaskResponseSchema)` to create a new message.
+ * Describes the message agentfleet.v1.DeleteSessionResponse.
+ * Use `create(DeleteSessionResponseSchema)` to create a new message.
  */
-export const DeleteTaskResponseSchema: GenMessage<DeleteTaskResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 32);
-
-/**
- * WorktreeView is provisioner.proto's WorktreeInfo left-joined against
- * `tasks` (reliability-findings.md #2) — task_status/task_error/pr_url
- * are unset, not omitted, when the task row itself no longer exists,
- * which is exactly the orphaned-worktree case this view exists to
- * surface (an inner join would hide it).
- *
- * @generated from message agentfleet.v1.WorktreeView
- */
-export type WorktreeView = Message<"agentfleet.v1.WorktreeView"> & {
-  /**
-   * @generated from field: string task_id = 1;
-   */
-  taskId: string;
-
-  /**
-   * @generated from field: string repo = 2;
-   */
-  repo: string;
-
-  /**
-   * @generated from field: string branch = 3;
-   */
-  branch: string;
-
-  /**
-   * @generated from field: string upstream_track = 4;
-   */
-  upstreamTrack: string;
-
-  /**
-   * @generated from field: int64 mtime_unix = 5;
-   */
-  mtimeUnix: bigint;
-
-  /**
-   * @generated from field: optional string task_status = 6;
-   */
-  taskStatus?: string | undefined;
-
-  /**
-   * @generated from field: optional string task_error = 7;
-   */
-  taskError?: string | undefined;
-
-  /**
-   * @generated from field: optional string pr_url = 8;
-   */
-  prUrl?: string | undefined;
-
-  /**
-   * @generated from field: string path = 9;
-   */
-  path: string;
-
-  /**
-   * @generated from field: int32 dirty_files = 10;
-   */
-  dirtyFiles: number;
-
-  /**
-   * @generated from field: int64 size_bytes = 11;
-   */
-  sizeBytes: bigint;
-};
-
-/**
- * Describes the message agentfleet.v1.WorktreeView.
- * Use `create(WorktreeViewSchema)` to create a new message.
- */
-export const WorktreeViewSchema: GenMessage<WorktreeView> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 33);
-
-/**
- * @generated from message agentfleet.v1.ListWorktreesViewResponse
- */
-export type ListWorktreesViewResponse = Message<"agentfleet.v1.ListWorktreesViewResponse"> & {
-  /**
-   * @generated from field: repeated agentfleet.v1.WorktreeView worktrees = 1;
-   */
-  worktrees: WorktreeView[];
-
-  /**
-   * @generated from field: uint64 pvc_total_bytes = 2;
-   */
-  pvcTotalBytes: bigint;
-
-  /**
-   * @generated from field: uint64 pvc_free_bytes = 3;
-   */
-  pvcFreeBytes: bigint;
-};
-
-/**
- * Describes the message agentfleet.v1.ListWorktreesViewResponse.
- * Use `create(ListWorktreesViewResponseSchema)` to create a new message.
- */
-export const ListWorktreesViewResponseSchema: GenMessage<ListWorktreesViewResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 34);
+export const DeleteSessionResponseSchema: GenMessage<DeleteSessionResponse> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_dashboard, 28);
 
 /**
  * GetJournal is the read path reliability-findings.md #1/#7 both call out
@@ -966,7 +712,7 @@ export const ListWorktreesViewResponseSchema: GenMessage<ListWorktreesViewRespon
  * generic Query(bytes) returns (bytes) dispatcher — two concrete gaps
  * don't justify throwing away protobuf's type safety for a general one.
  * JournalEntry itself now lives in core.proto (imported above) — reused by
- * SearchJournal too, same pattern as Task/GetTaskRequest/GetTaskResponse.
+ * SearchJournal too, same pattern as Session/GetSessionRequest/GetSessionResponse.
  *
  * @generated from message agentfleet.v1.GetJournalRequest
  */
@@ -994,7 +740,7 @@ export type GetJournalRequest = Message<"agentfleet.v1.GetJournalRequest"> & {
  * Use `create(GetJournalRequestSchema)` to create a new message.
  */
 export const GetJournalRequestSchema: GenMessage<GetJournalRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 35);
+  messageDesc(file_agentfleet_v1_dashboard, 29);
 
 /**
  * @generated from message agentfleet.v1.GetJournalResponse
@@ -1016,13 +762,13 @@ export type GetJournalResponse = Message<"agentfleet.v1.GetJournalResponse"> & {
  * Use `create(GetJournalResponseSchema)` to create a new message.
  */
 export const GetJournalResponseSchema: GenMessage<GetJournalResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 36);
+  messageDesc(file_agentfleet_v1_dashboard, 30);
 
 /**
  * Repo is the dashboard-editable target-repo config (docs/adr/0028) —
  * replaces the hardcoded tasks.KnownRepos Go map, backed by the `repos`
  * table (db/schema.sql). No timestamps exposed: the dashboard's repo list
- * is small and unordered, unlike Task/JournalEntry which need cursor state.
+ * is small and unordered, unlike Session/JournalEntry which need cursor state.
  *
  * @generated from message agentfleet.v1.Repo
  */
@@ -1045,14 +791,26 @@ export type Repo = Message<"agentfleet.v1.Repo"> & {
   baseBranch: string;
 
   /**
-   * Which repo_profiles row the e2e sandbox is built from (docs/adr/0044).
-   * "" means the "e2e" convention. Exists because core used to hardcode that
-   * name, so a repo whose recipe is called something else — agent-fleet's
-   * "lint" — got a sandbox with no toolchain at all.
+   * Container image this repo's sessions run. "" means the fleet default.
+   * Replaces the four toolchain ingredients of docs/adr/0034's recipe
+   * system — an init container copying a Go toolchain onto an emptyDir was
+   * an elaborate way of saying "this repo needs Go".
    *
-   * @generated from field: string e2e_profile = 4;
+   * @generated from field: string image = 5;
    */
-  e2eProfile: string;
+  image: string;
+
+  /**
+   * Whether this repo's sessions get the kubectl shim that RPCs to
+   * thot-executor (docs/adr/0037). The one recipe ingredient that did NOT
+   * collapse into `image`, because it is a privilege grant rather than a
+   * toolchain — the pod still holds zero Kubernetes credentials either way,
+   * and which sessions may reach the cluster stays a human's decision,
+   * editable here without a redeploy.
+   *
+   * @generated from field: bool cluster_access = 6;
+   */
+  clusterAccess: boolean;
 };
 
 /**
@@ -1060,7 +818,7 @@ export type Repo = Message<"agentfleet.v1.Repo"> & {
  * Use `create(RepoSchema)` to create a new message.
  */
 export const RepoSchema: GenMessage<Repo> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 37);
+  messageDesc(file_agentfleet_v1_dashboard, 31);
 
 /**
  * @generated from message agentfleet.v1.ListReposRequest
@@ -1073,7 +831,7 @@ export type ListReposRequest = Message<"agentfleet.v1.ListReposRequest"> & {
  * Use `create(ListReposRequestSchema)` to create a new message.
  */
 export const ListReposRequestSchema: GenMessage<ListReposRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 38);
+  messageDesc(file_agentfleet_v1_dashboard, 32);
 
 /**
  * @generated from message agentfleet.v1.ListReposResponse
@@ -1090,7 +848,7 @@ export type ListReposResponse = Message<"agentfleet.v1.ListReposResponse"> & {
  * Use `create(ListReposResponseSchema)` to create a new message.
  */
 export const ListReposResponseSchema: GenMessage<ListReposResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 39);
+  messageDesc(file_agentfleet_v1_dashboard, 33);
 
 /**
  * @generated from message agentfleet.v1.CreateRepoRequest
@@ -1112,9 +870,14 @@ export type CreateRepoRequest = Message<"agentfleet.v1.CreateRepoRequest"> & {
   baseBranch: string;
 
   /**
-   * @generated from field: string e2e_profile = 4;
+   * @generated from field: string image = 5;
    */
-  e2eProfile: string;
+  image: string;
+
+  /**
+   * @generated from field: bool cluster_access = 6;
+   */
+  clusterAccess: boolean;
 };
 
 /**
@@ -1122,7 +885,7 @@ export type CreateRepoRequest = Message<"agentfleet.v1.CreateRepoRequest"> & {
  * Use `create(CreateRepoRequestSchema)` to create a new message.
  */
 export const CreateRepoRequestSchema: GenMessage<CreateRepoRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 40);
+  messageDesc(file_agentfleet_v1_dashboard, 34);
 
 /**
  * @generated from message agentfleet.v1.CreateRepoResponse
@@ -1139,7 +902,7 @@ export type CreateRepoResponse = Message<"agentfleet.v1.CreateRepoResponse"> & {
  * Use `create(CreateRepoResponseSchema)` to create a new message.
  */
 export const CreateRepoResponseSchema: GenMessage<CreateRepoResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 41);
+  messageDesc(file_agentfleet_v1_dashboard, 35);
 
 /**
  * @generated from message agentfleet.v1.UpdateRepoRequest
@@ -1161,9 +924,14 @@ export type UpdateRepoRequest = Message<"agentfleet.v1.UpdateRepoRequest"> & {
   baseBranch: string;
 
   /**
-   * @generated from field: string e2e_profile = 4;
+   * @generated from field: string image = 5;
    */
-  e2eProfile: string;
+  image: string;
+
+  /**
+   * @generated from field: bool cluster_access = 6;
+   */
+  clusterAccess: boolean;
 };
 
 /**
@@ -1171,7 +939,7 @@ export type UpdateRepoRequest = Message<"agentfleet.v1.UpdateRepoRequest"> & {
  * Use `create(UpdateRepoRequestSchema)` to create a new message.
  */
 export const UpdateRepoRequestSchema: GenMessage<UpdateRepoRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 42);
+  messageDesc(file_agentfleet_v1_dashboard, 36);
 
 /**
  * @generated from message agentfleet.v1.UpdateRepoResponse
@@ -1188,7 +956,7 @@ export type UpdateRepoResponse = Message<"agentfleet.v1.UpdateRepoResponse"> & {
  * Use `create(UpdateRepoResponseSchema)` to create a new message.
  */
 export const UpdateRepoResponseSchema: GenMessage<UpdateRepoResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 43);
+  messageDesc(file_agentfleet_v1_dashboard, 37);
 
 /**
  * @generated from message agentfleet.v1.DeleteRepoRequest
@@ -1205,16 +973,12 @@ export type DeleteRepoRequest = Message<"agentfleet.v1.DeleteRepoRequest"> & {
  * Use `create(DeleteRepoRequestSchema)` to create a new message.
  */
 export const DeleteRepoRequestSchema: GenMessage<DeleteRepoRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 44);
+  messageDesc(file_agentfleet_v1_dashboard, 38);
 
 /**
  * @generated from message agentfleet.v1.DeleteRepoResponse
  */
 export type DeleteRepoResponse = Message<"agentfleet.v1.DeleteRepoResponse"> & {
-  /**
-   * @generated from field: string status = 1;
-   */
-  status: string;
 };
 
 /**
@@ -1222,238 +986,13 @@ export type DeleteRepoResponse = Message<"agentfleet.v1.DeleteRepoResponse"> & {
  * Use `create(DeleteRepoResponseSchema)` to create a new message.
  */
 export const DeleteRepoResponseSchema: GenMessage<DeleteRepoResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 45);
-
-/**
- * RepoProfile is a dashboard-editable named environment recipe for a repo
- * (docs/adr/0034) — replaces the hardcoded per-repo StartCmdFor switch.
- * Reuses provisioner.proto's ServiceIngredient message (already imported
- * here) rather than redefining it.
- *
- * @generated from message agentfleet.v1.RepoProfile
- */
-export type RepoProfile = Message<"agentfleet.v1.RepoProfile"> & {
-  /**
-   * @generated from field: string repo_name = 1;
-   */
-  repoName: string;
-
-  /**
-   * "worker" | "e2e" | "lint" | ...
-   *
-   * @generated from field: string name = 2;
-   */
-  name: string;
-
-  /**
-   * @generated from field: string start_cmd = 3;
-   */
-  startCmd: string;
-
-  /**
-   * @generated from field: repeated string tool_keys = 4;
-   */
-  toolKeys: string[];
-
-  /**
-   * @generated from field: repeated agentfleet.v1.ServiceIngredient service_ingredients = 5;
-   */
-  serviceIngredients: ServiceIngredient[];
-};
-
-/**
- * Describes the message agentfleet.v1.RepoProfile.
- * Use `create(RepoProfileSchema)` to create a new message.
- */
-export const RepoProfileSchema: GenMessage<RepoProfile> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 46);
-
-/**
- * @generated from message agentfleet.v1.ListRepoProfilesRequest
- */
-export type ListRepoProfilesRequest = Message<"agentfleet.v1.ListRepoProfilesRequest"> & {
-  /**
-   * @generated from field: string repo_name = 1;
-   */
-  repoName: string;
-};
-
-/**
- * Describes the message agentfleet.v1.ListRepoProfilesRequest.
- * Use `create(ListRepoProfilesRequestSchema)` to create a new message.
- */
-export const ListRepoProfilesRequestSchema: GenMessage<ListRepoProfilesRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 47);
-
-/**
- * @generated from message agentfleet.v1.ListRepoProfilesResponse
- */
-export type ListRepoProfilesResponse = Message<"agentfleet.v1.ListRepoProfilesResponse"> & {
-  /**
-   * @generated from field: repeated agentfleet.v1.RepoProfile profiles = 1;
-   */
-  profiles: RepoProfile[];
-};
-
-/**
- * Describes the message agentfleet.v1.ListRepoProfilesResponse.
- * Use `create(ListRepoProfilesResponseSchema)` to create a new message.
- */
-export const ListRepoProfilesResponseSchema: GenMessage<ListRepoProfilesResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 48);
-
-/**
- * @generated from message agentfleet.v1.CreateRepoProfileRequest
- */
-export type CreateRepoProfileRequest = Message<"agentfleet.v1.CreateRepoProfileRequest"> & {
-  /**
-   * @generated from field: string repo_name = 1;
-   */
-  repoName: string;
-
-  /**
-   * @generated from field: string name = 2;
-   */
-  name: string;
-
-  /**
-   * @generated from field: string start_cmd = 3;
-   */
-  startCmd: string;
-
-  /**
-   * @generated from field: repeated string tool_keys = 4;
-   */
-  toolKeys: string[];
-
-  /**
-   * @generated from field: repeated agentfleet.v1.ServiceIngredient service_ingredients = 5;
-   */
-  serviceIngredients: ServiceIngredient[];
-};
-
-/**
- * Describes the message agentfleet.v1.CreateRepoProfileRequest.
- * Use `create(CreateRepoProfileRequestSchema)` to create a new message.
- */
-export const CreateRepoProfileRequestSchema: GenMessage<CreateRepoProfileRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 49);
-
-/**
- * @generated from message agentfleet.v1.CreateRepoProfileResponse
- */
-export type CreateRepoProfileResponse = Message<"agentfleet.v1.CreateRepoProfileResponse"> & {
-  /**
-   * @generated from field: agentfleet.v1.RepoProfile profile = 1;
-   */
-  profile?: RepoProfile | undefined;
-};
-
-/**
- * Describes the message agentfleet.v1.CreateRepoProfileResponse.
- * Use `create(CreateRepoProfileResponseSchema)` to create a new message.
- */
-export const CreateRepoProfileResponseSchema: GenMessage<CreateRepoProfileResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 50);
-
-/**
- * @generated from message agentfleet.v1.UpdateRepoProfileRequest
- */
-export type UpdateRepoProfileRequest = Message<"agentfleet.v1.UpdateRepoProfileRequest"> & {
-  /**
-   * @generated from field: string repo_name = 1;
-   */
-  repoName: string;
-
-  /**
-   * @generated from field: string name = 2;
-   */
-  name: string;
-
-  /**
-   * @generated from field: string start_cmd = 3;
-   */
-  startCmd: string;
-
-  /**
-   * @generated from field: repeated string tool_keys = 4;
-   */
-  toolKeys: string[];
-
-  /**
-   * @generated from field: repeated agentfleet.v1.ServiceIngredient service_ingredients = 5;
-   */
-  serviceIngredients: ServiceIngredient[];
-};
-
-/**
- * Describes the message agentfleet.v1.UpdateRepoProfileRequest.
- * Use `create(UpdateRepoProfileRequestSchema)` to create a new message.
- */
-export const UpdateRepoProfileRequestSchema: GenMessage<UpdateRepoProfileRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 51);
-
-/**
- * @generated from message agentfleet.v1.UpdateRepoProfileResponse
- */
-export type UpdateRepoProfileResponse = Message<"agentfleet.v1.UpdateRepoProfileResponse"> & {
-  /**
-   * @generated from field: agentfleet.v1.RepoProfile profile = 1;
-   */
-  profile?: RepoProfile | undefined;
-};
-
-/**
- * Describes the message agentfleet.v1.UpdateRepoProfileResponse.
- * Use `create(UpdateRepoProfileResponseSchema)` to create a new message.
- */
-export const UpdateRepoProfileResponseSchema: GenMessage<UpdateRepoProfileResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 52);
-
-/**
- * @generated from message agentfleet.v1.DeleteRepoProfileRequest
- */
-export type DeleteRepoProfileRequest = Message<"agentfleet.v1.DeleteRepoProfileRequest"> & {
-  /**
-   * @generated from field: string repo_name = 1;
-   */
-  repoName: string;
-
-  /**
-   * @generated from field: string name = 2;
-   */
-  name: string;
-};
-
-/**
- * Describes the message agentfleet.v1.DeleteRepoProfileRequest.
- * Use `create(DeleteRepoProfileRequestSchema)` to create a new message.
- */
-export const DeleteRepoProfileRequestSchema: GenMessage<DeleteRepoProfileRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 53);
-
-/**
- * @generated from message agentfleet.v1.DeleteRepoProfileResponse
- */
-export type DeleteRepoProfileResponse = Message<"agentfleet.v1.DeleteRepoProfileResponse"> & {
-  /**
-   * @generated from field: string status = 1;
-   */
-  status: string;
-};
-
-/**
- * Describes the message agentfleet.v1.DeleteRepoProfileResponse.
- * Use `create(DeleteRepoProfileResponseSchema)` to create a new message.
- */
-export const DeleteRepoProfileResponseSchema: GenMessage<DeleteRepoProfileResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 54);
+  messageDesc(file_agentfleet_v1_dashboard, 39);
 
 /**
  * PromptSnippet is dashboard-editable, reusable guidance text (same
  * no-redeploy pattern as Repo above), backed by the `prompt_snippets`
  * table (db/schema.sql). An operator optionally attaches a set of these to
- * a task at creation time (CreateTaskRequest.snippet_ids) — replaces
+ * a task at creation time (CreateSessionRequest.snippet_ids) — replaces
  * worker/src/session.ts's old unconditional, hardcoded workflow prompt. A
  * task's base prompt is just its own description; anything more is one of
  * these, picked per task, not forced on every task regardless of size.
@@ -1487,7 +1026,7 @@ export type PromptSnippet = Message<"agentfleet.v1.PromptSnippet"> & {
  * Use `create(PromptSnippetSchema)` to create a new message.
  */
 export const PromptSnippetSchema: GenMessage<PromptSnippet> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 55);
+  messageDesc(file_agentfleet_v1_dashboard, 40);
 
 /**
  * @generated from message agentfleet.v1.ListPromptSnippetsRequest
@@ -1500,7 +1039,7 @@ export type ListPromptSnippetsRequest = Message<"agentfleet.v1.ListPromptSnippet
  * Use `create(ListPromptSnippetsRequestSchema)` to create a new message.
  */
 export const ListPromptSnippetsRequestSchema: GenMessage<ListPromptSnippetsRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 56);
+  messageDesc(file_agentfleet_v1_dashboard, 41);
 
 /**
  * @generated from message agentfleet.v1.ListPromptSnippetsResponse
@@ -1517,7 +1056,7 @@ export type ListPromptSnippetsResponse = Message<"agentfleet.v1.ListPromptSnippe
  * Use `create(ListPromptSnippetsResponseSchema)` to create a new message.
  */
 export const ListPromptSnippetsResponseSchema: GenMessage<ListPromptSnippetsResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 57);
+  messageDesc(file_agentfleet_v1_dashboard, 42);
 
 /**
  * @generated from message agentfleet.v1.CreatePromptSnippetRequest
@@ -1539,7 +1078,7 @@ export type CreatePromptSnippetRequest = Message<"agentfleet.v1.CreatePromptSnip
  * Use `create(CreatePromptSnippetRequestSchema)` to create a new message.
  */
 export const CreatePromptSnippetRequestSchema: GenMessage<CreatePromptSnippetRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 58);
+  messageDesc(file_agentfleet_v1_dashboard, 43);
 
 /**
  * @generated from message agentfleet.v1.CreatePromptSnippetResponse
@@ -1556,7 +1095,7 @@ export type CreatePromptSnippetResponse = Message<"agentfleet.v1.CreatePromptSni
  * Use `create(CreatePromptSnippetResponseSchema)` to create a new message.
  */
 export const CreatePromptSnippetResponseSchema: GenMessage<CreatePromptSnippetResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 59);
+  messageDesc(file_agentfleet_v1_dashboard, 44);
 
 /**
  * @generated from message agentfleet.v1.UpdatePromptSnippetRequest
@@ -1583,7 +1122,7 @@ export type UpdatePromptSnippetRequest = Message<"agentfleet.v1.UpdatePromptSnip
  * Use `create(UpdatePromptSnippetRequestSchema)` to create a new message.
  */
 export const UpdatePromptSnippetRequestSchema: GenMessage<UpdatePromptSnippetRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 60);
+  messageDesc(file_agentfleet_v1_dashboard, 45);
 
 /**
  * @generated from message agentfleet.v1.UpdatePromptSnippetResponse
@@ -1600,7 +1139,7 @@ export type UpdatePromptSnippetResponse = Message<"agentfleet.v1.UpdatePromptSni
  * Use `create(UpdatePromptSnippetResponseSchema)` to create a new message.
  */
 export const UpdatePromptSnippetResponseSchema: GenMessage<UpdatePromptSnippetResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 61);
+  messageDesc(file_agentfleet_v1_dashboard, 46);
 
 /**
  * @generated from message agentfleet.v1.DeletePromptSnippetRequest
@@ -1617,16 +1156,12 @@ export type DeletePromptSnippetRequest = Message<"agentfleet.v1.DeletePromptSnip
  * Use `create(DeletePromptSnippetRequestSchema)` to create a new message.
  */
 export const DeletePromptSnippetRequestSchema: GenMessage<DeletePromptSnippetRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 62);
+  messageDesc(file_agentfleet_v1_dashboard, 47);
 
 /**
  * @generated from message agentfleet.v1.DeletePromptSnippetResponse
  */
 export type DeletePromptSnippetResponse = Message<"agentfleet.v1.DeletePromptSnippetResponse"> & {
-  /**
-   * @generated from field: string status = 1;
-   */
-  status: string;
 };
 
 /**
@@ -1634,7 +1169,7 @@ export type DeletePromptSnippetResponse = Message<"agentfleet.v1.DeletePromptSni
  * Use `create(DeletePromptSnippetResponseSchema)` to create a new message.
  */
 export const DeletePromptSnippetResponseSchema: GenMessage<DeletePromptSnippetResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 63);
+  messageDesc(file_agentfleet_v1_dashboard, 48);
 
 /**
  * Brings an audit's next run forward to now rather than adding a second
@@ -1657,7 +1192,7 @@ export type RunScheduledAuditNowRequest = Message<"agentfleet.v1.RunScheduledAud
  * Use `create(RunScheduledAuditNowRequestSchema)` to create a new message.
  */
 export const RunScheduledAuditNowRequestSchema: GenMessage<RunScheduledAuditNowRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 64);
+  messageDesc(file_agentfleet_v1_dashboard, 49);
 
 /**
  * @generated from message agentfleet.v1.RunScheduledAuditNowResponse
@@ -1674,50 +1209,7 @@ export type RunScheduledAuditNowResponse = Message<"agentfleet.v1.RunScheduledAu
  * Use `create(RunScheduledAuditNowResponseSchema)` to create a new message.
  */
 export const RunScheduledAuditNowResponseSchema: GenMessage<RunScheduledAuditNowResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 65);
-
-/**
- * Puts a terminally-failed task back in the queue. Retry was automatic-only:
- * ClaimNextTask reclaims a stale-heartbeat task until retry_count hits the
- * cap, then sets failed_permanently, which had no path back — a task that
- * died of an expired token stayed dead even after the token was fixed.
- * Resets retry_count so the reclaim budget starts over.
- *
- * Rejected with CodeFailedPrecondition unless the task is in a terminal
- * failed state — retrying a live session would double-dispatch it.
- *
- * @generated from message agentfleet.v1.RetryTaskRequest
- */
-export type RetryTaskRequest = Message<"agentfleet.v1.RetryTaskRequest"> & {
-  /**
-   * @generated from field: string task_id = 1;
-   */
-  taskId: string;
-};
-
-/**
- * Describes the message agentfleet.v1.RetryTaskRequest.
- * Use `create(RetryTaskRequestSchema)` to create a new message.
- */
-export const RetryTaskRequestSchema: GenMessage<RetryTaskRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 66);
-
-/**
- * @generated from message agentfleet.v1.RetryTaskResponse
- */
-export type RetryTaskResponse = Message<"agentfleet.v1.RetryTaskResponse"> & {
-  /**
-   * @generated from field: string status = 1;
-   */
-  status: string;
-};
-
-/**
- * Describes the message agentfleet.v1.RetryTaskResponse.
- * Use `create(RetryTaskResponseSchema)` to create a new message.
- */
-export const RetryTaskResponseSchema: GenMessage<RetryTaskResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 67);
+  messageDesc(file_agentfleet_v1_dashboard, 50);
 
 /**
  * @generated from message agentfleet.v1.ScheduledAudit
@@ -1769,7 +1261,7 @@ export type ScheduledAudit = Message<"agentfleet.v1.ScheduledAudit"> & {
  * Use `create(ScheduledAuditSchema)` to create a new message.
  */
 export const ScheduledAuditSchema: GenMessage<ScheduledAudit> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 68);
+  messageDesc(file_agentfleet_v1_dashboard, 51);
 
 /**
  * @generated from message agentfleet.v1.ListScheduledAuditsRequest
@@ -1782,7 +1274,7 @@ export type ListScheduledAuditsRequest = Message<"agentfleet.v1.ListScheduledAud
  * Use `create(ListScheduledAuditsRequestSchema)` to create a new message.
  */
 export const ListScheduledAuditsRequestSchema: GenMessage<ListScheduledAuditsRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 69);
+  messageDesc(file_agentfleet_v1_dashboard, 52);
 
 /**
  * @generated from message agentfleet.v1.ListScheduledAuditsResponse
@@ -1799,7 +1291,7 @@ export type ListScheduledAuditsResponse = Message<"agentfleet.v1.ListScheduledAu
  * Use `create(ListScheduledAuditsResponseSchema)` to create a new message.
  */
 export const ListScheduledAuditsResponseSchema: GenMessage<ListScheduledAuditsResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 70);
+  messageDesc(file_agentfleet_v1_dashboard, 53);
 
 /**
  * @generated from message agentfleet.v1.CreateScheduledAuditRequest
@@ -1826,7 +1318,7 @@ export type CreateScheduledAuditRequest = Message<"agentfleet.v1.CreateScheduled
  * Use `create(CreateScheduledAuditRequestSchema)` to create a new message.
  */
 export const CreateScheduledAuditRequestSchema: GenMessage<CreateScheduledAuditRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 71);
+  messageDesc(file_agentfleet_v1_dashboard, 54);
 
 /**
  * @generated from message agentfleet.v1.CreateScheduledAuditResponse
@@ -1843,7 +1335,7 @@ export type CreateScheduledAuditResponse = Message<"agentfleet.v1.CreateSchedule
  * Use `create(CreateScheduledAuditResponseSchema)` to create a new message.
  */
 export const CreateScheduledAuditResponseSchema: GenMessage<CreateScheduledAuditResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 72);
+  messageDesc(file_agentfleet_v1_dashboard, 55);
 
 /**
  * @generated from message agentfleet.v1.UpdateScheduledAuditRequest
@@ -1880,7 +1372,7 @@ export type UpdateScheduledAuditRequest = Message<"agentfleet.v1.UpdateScheduled
  * Use `create(UpdateScheduledAuditRequestSchema)` to create a new message.
  */
 export const UpdateScheduledAuditRequestSchema: GenMessage<UpdateScheduledAuditRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 73);
+  messageDesc(file_agentfleet_v1_dashboard, 56);
 
 /**
  * @generated from message agentfleet.v1.UpdateScheduledAuditResponse
@@ -1897,7 +1389,7 @@ export type UpdateScheduledAuditResponse = Message<"agentfleet.v1.UpdateSchedule
  * Use `create(UpdateScheduledAuditResponseSchema)` to create a new message.
  */
 export const UpdateScheduledAuditResponseSchema: GenMessage<UpdateScheduledAuditResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 74);
+  messageDesc(file_agentfleet_v1_dashboard, 57);
 
 /**
  * @generated from message agentfleet.v1.DeleteScheduledAuditRequest
@@ -1914,16 +1406,12 @@ export type DeleteScheduledAuditRequest = Message<"agentfleet.v1.DeleteScheduled
  * Use `create(DeleteScheduledAuditRequestSchema)` to create a new message.
  */
 export const DeleteScheduledAuditRequestSchema: GenMessage<DeleteScheduledAuditRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 75);
+  messageDesc(file_agentfleet_v1_dashboard, 58);
 
 /**
  * @generated from message agentfleet.v1.DeleteScheduledAuditResponse
  */
 export type DeleteScheduledAuditResponse = Message<"agentfleet.v1.DeleteScheduledAuditResponse"> & {
-  /**
-   * @generated from field: string status = 1;
-   */
-  status: string;
 };
 
 /**
@@ -1931,7 +1419,7 @@ export type DeleteScheduledAuditResponse = Message<"agentfleet.v1.DeleteSchedule
  * Use `create(DeleteScheduledAuditResponseSchema)` to create a new message.
  */
 export const DeleteScheduledAuditResponseSchema: GenMessage<DeleteScheduledAuditResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 76);
+  messageDesc(file_agentfleet_v1_dashboard, 59);
 
 /**
  * QueryMetrics proxies PromQL through core. Prometheus has no IngressRoute
@@ -1974,7 +1462,7 @@ export type QueryMetricsRequest = Message<"agentfleet.v1.QueryMetricsRequest"> &
  * Use `create(QueryMetricsRequestSchema)` to create a new message.
  */
 export const QueryMetricsRequestSchema: GenMessage<QueryMetricsRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 77);
+  messageDesc(file_agentfleet_v1_dashboard, 60);
 
 /**
  * @generated from message agentfleet.v1.QueryMetricsResponse
@@ -1996,7 +1484,7 @@ export type QueryMetricsResponse = Message<"agentfleet.v1.QueryMetricsResponse">
  * Use `create(QueryMetricsResponseSchema)` to create a new message.
  */
 export const QueryMetricsResponseSchema: GenMessage<QueryMetricsResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 78);
+  messageDesc(file_agentfleet_v1_dashboard, 61);
 
 /**
  * @generated from message agentfleet.v1.GetFleetTopologyRequest
@@ -2009,7 +1497,7 @@ export type GetFleetTopologyRequest = Message<"agentfleet.v1.GetFleetTopologyReq
  * Use `create(GetFleetTopologyRequestSchema)` to create a new message.
  */
 export const GetFleetTopologyRequestSchema: GenMessage<GetFleetTopologyRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 79);
+  messageDesc(file_agentfleet_v1_dashboard, 62);
 
 /**
  * A cell in the fleet: one long-lived component, or one task's pod.
@@ -2048,9 +1536,9 @@ export type CellNode = Message<"agentfleet.v1.CellNode"> & {
    * Set on worker/e2e cells: which task this cell is running, so clicking
    * it can open that session. Empty on the two hub cells.
    *
-   * @generated from field: string task_id = 5;
+   * @generated from field: string session_id = 5;
    */
-  taskId: string;
+  sessionId: string;
 
   /**
    * @generated from field: string repo = 6;
@@ -2070,7 +1558,7 @@ export type CellNode = Message<"agentfleet.v1.CellNode"> & {
  * Use `create(CellNodeSchema)` to create a new message.
  */
 export const CellNodeSchema: GenMessage<CellNode> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 80);
+  messageDesc(file_agentfleet_v1_dashboard, 63);
 
 /**
  * @generated from message agentfleet.v1.TopologyEdge
@@ -2099,7 +1587,7 @@ export type TopologyEdge = Message<"agentfleet.v1.TopologyEdge"> & {
  * Use `create(TopologyEdgeSchema)` to create a new message.
  */
 export const TopologyEdgeSchema: GenMessage<TopologyEdge> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 81);
+  messageDesc(file_agentfleet_v1_dashboard, 64);
 
 /**
  * @generated from message agentfleet.v1.GetFleetTopologyResponse
@@ -2130,37 +1618,37 @@ export type GetFleetTopologyResponse = Message<"agentfleet.v1.GetFleetTopologyRe
  * Use `create(GetFleetTopologyResponseSchema)` to create a new message.
  */
 export const GetFleetTopologyResponseSchema: GenMessage<GetFleetTopologyResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_dashboard, 82);
+  messageDesc(file_agentfleet_v1_dashboard, 65);
 
 /**
  * @generated from service agentfleet.v1.DashboardService
  */
 export const DashboardService: GenService<{
   /**
-   * @generated from rpc agentfleet.v1.DashboardService.ListTasks
+   * @generated from rpc agentfleet.v1.DashboardService.ListSessions
    */
-  listTasks: {
+  listSessions: {
     methodKind: "unary";
-    input: typeof ListTasksRequestSchema;
-    output: typeof ListTasksResponseSchema;
+    input: typeof ListSessionsRequestSchema;
+    output: typeof ListSessionsResponseSchema;
   },
   /**
    * buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
    *
-   * @generated from rpc agentfleet.v1.DashboardService.GetTask
+   * @generated from rpc agentfleet.v1.DashboardService.GetSession
    */
-  getTask: {
+  getSession: {
     methodKind: "unary";
-    input: typeof GetTaskRequestSchema;
-    output: typeof GetTaskResponseSchema;
+    input: typeof GetSessionRequestSchema;
+    output: typeof GetSessionResponseSchema;
   },
   /**
-   * @generated from rpc agentfleet.v1.DashboardService.CreateTask
+   * @generated from rpc agentfleet.v1.DashboardService.CreateSession
    */
-  createTask: {
+  createSession: {
     methodKind: "unary";
-    input: typeof CreateTaskRequestSchema;
-    output: typeof CreateTaskResponseSchema;
+    input: typeof CreateSessionRequestSchema;
+    output: typeof CreateSessionResponseSchema;
   },
   /**
    * Reuses transcript.proto's ReadTranscriptSinceRequest/Response rather
@@ -2190,20 +1678,12 @@ export const DashboardService: GenService<{
     output: typeof TranscriptEntrySchema;
   },
   /**
-   * @generated from rpc agentfleet.v1.DashboardService.GetE2eStatus
+   * @generated from rpc agentfleet.v1.DashboardService.StopSession
    */
-  getE2eStatus: {
+  stopSession: {
     methodKind: "unary";
-    input: typeof GetE2eStatusRequestSchema;
-    output: typeof GetE2eStatusResponseSchema;
-  },
-  /**
-   * @generated from rpc agentfleet.v1.DashboardService.Kill
-   */
-  kill: {
-    methodKind: "unary";
-    input: typeof KillRequestSchema;
-    output: typeof KillResponseSchema;
+    input: typeof StopSessionRequestSchema;
+    output: typeof StopSessionResponseSchema;
   },
   /**
    * @generated from rpc agentfleet.v1.DashboardService.Interrupt
@@ -2224,12 +1704,12 @@ export const DashboardService: GenService<{
     output: typeof SetPermissionModeResponseSchema;
   },
   /**
-   * @generated from rpc agentfleet.v1.DashboardService.Warm
+   * @generated from rpc agentfleet.v1.DashboardService.WarmSession
    */
-  warm: {
+  warmSession: {
     methodKind: "unary";
-    input: typeof WarmRequestSchema;
-    output: typeof WarmResponseSchema;
+    input: typeof WarmSessionRequestSchema;
+    output: typeof WarmSessionResponseSchema;
   },
   /**
    * @generated from rpc agentfleet.v1.DashboardService.MarkSeen
@@ -2240,105 +1720,95 @@ export const DashboardService: GenService<{
     output: typeof MarkSeenResponseSchema;
   },
   /**
-   * @generated from rpc agentfleet.v1.DashboardService.ApproveTask
+   * @generated from rpc agentfleet.v1.DashboardService.ArchiveSession
    */
-  approveTask: {
+  archiveSession: {
     methodKind: "unary";
-    input: typeof ApproveTaskRequestSchema;
-    output: typeof ApproveTaskResponseSchema;
+    input: typeof ArchiveSessionRequestSchema;
+    output: typeof ArchiveSessionResponseSchema;
   },
   /**
-   * @generated from rpc agentfleet.v1.DashboardService.KillE2e
+   * @generated from rpc agentfleet.v1.DashboardService.ListProposals
    */
-  killE2e: {
+  listProposals: {
     methodKind: "unary";
-    input: typeof KillE2eRequestSchema;
-    output: typeof KillE2eResponseSchema;
+    input: typeof ListProposalsRequestSchema;
+    output: typeof ListProposalsResponseSchema;
   },
   /**
-   * @generated from rpc agentfleet.v1.DashboardService.StartE2e
+   * @generated from rpc agentfleet.v1.DashboardService.OpenFromProposal
    */
-  startE2e: {
+  openFromProposal: {
     methodKind: "unary";
-    input: typeof StartE2eRequestSchema;
-    output: typeof StartE2eResponseSchema;
+    input: typeof OpenFromProposalRequestSchema;
+    output: typeof OpenFromProposalResponseSchema;
   },
   /**
-   * @generated from rpc agentfleet.v1.DashboardService.RestartE2eApp
+   * @generated from rpc agentfleet.v1.DashboardService.DismissProposal
    */
-  restartE2eApp: {
+  dismissProposal: {
     methodKind: "unary";
-    input: typeof RestartE2eAppRequestSchema;
-    output: typeof RestartE2eAppResponseSchema;
+    input: typeof DismissProposalRequestSchema;
+    output: typeof DismissProposalResponseSchema;
   },
   /**
-   * @generated from rpc agentfleet.v1.DashboardService.GetE2eAppLog
-   */
-  getE2eAppLog: {
-    methodKind: "unary";
-    input: typeof GetE2eAppLogRequestSchema;
-    output: typeof GetE2eAppLogResponseSchema;
-  },
-  /**
+   * AnswerQuestion, RespondToPermission and PostMessage all mean "append an
+   * entry to this session's transcript" — a human answer, a permission
+   * decision, and a free-text message are the same row with different types.
+   * All three returned a constant `status` string until docs/adr/0048; they
+   * now return the seq, which is the one thing the caller cannot compute and
+   * is the correlation key everything else keys off.
+   * buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+   * buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+   *
    * @generated from rpc agentfleet.v1.DashboardService.AnswerQuestion
    */
   answerQuestion: {
     methodKind: "unary";
     input: typeof AnswerQuestionRequestSchema;
-    output: typeof AnswerQuestionResponseSchema;
+    output: typeof AppendResponseSchema;
   },
   /**
+   * buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+   * buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+   *
    * @generated from rpc agentfleet.v1.DashboardService.RespondToPermission
    */
   respondToPermission: {
     methodKind: "unary";
     input: typeof RespondToPermissionRequestSchema;
-    output: typeof RespondToPermissionResponseSchema;
+    output: typeof AppendResponseSchema;
   },
   /**
-   * @generated from rpc agentfleet.v1.DashboardService.Discuss
+   * buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+   * buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+   *
+   * @generated from rpc agentfleet.v1.DashboardService.PostMessage
    */
-  discuss: {
+  postMessage: {
     methodKind: "unary";
-    input: typeof DiscussRequestSchema;
-    output: typeof DiscussResponseSchema;
+    input: typeof PostMessageRequestSchema;
+    output: typeof AppendResponseSchema;
   },
   /**
-   * @generated from rpc agentfleet.v1.DashboardService.DeleteTask
+   * @generated from rpc agentfleet.v1.DashboardService.DeleteSession
    */
-  deleteTask: {
+  deleteSession: {
     methodKind: "unary";
-    input: typeof DeleteTaskRequestSchema;
-    output: typeof DeleteTaskResponseSchema;
+    input: typeof DeleteSessionRequestSchema;
+    output: typeof DeleteSessionResponseSchema;
   },
   /**
    * Reuses provisioner.proto's ListWorktreesRequest (identical shape,
    * empty) and DeleteWorktreeRequest/Response (identical shape, no
    * dashboard-specific fields needed) — same passthrough-reuse pattern
    * core.proto's ListE2eTools/CallE2eTool already established. The
-   * response is enriched with a left-join against `tasks`, so it can't
+   * response is enriched with a left-join against `sessions`, so it can't
    * reuse provisioner's own WorktreeInfo/ListWorktreesResponse as-is.
    * buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
    * buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
-   *
-   * @generated from rpc agentfleet.v1.DashboardService.ListWorktrees
-   */
-  listWorktrees: {
-    methodKind: "unary";
-    input: typeof ListWorktreesRequestSchema;
-    output: typeof ListWorktreesViewResponseSchema;
-  },
-  /**
    * buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
    *
-   * @generated from rpc agentfleet.v1.DashboardService.DeleteWorktree
-   */
-  deleteWorktree: {
-    methodKind: "unary";
-    input: typeof DeleteWorktreeRequestSchema;
-    output: typeof DeleteWorktreeResponseSchema;
-  },
-  /**
    * @generated from rpc agentfleet.v1.DashboardService.GetJournal
    */
   getJournal: {
@@ -2377,38 +1847,6 @@ export const DashboardService: GenService<{
     methodKind: "unary";
     input: typeof DeleteRepoRequestSchema;
     output: typeof DeleteRepoResponseSchema;
-  },
-  /**
-   * @generated from rpc agentfleet.v1.DashboardService.ListRepoProfiles
-   */
-  listRepoProfiles: {
-    methodKind: "unary";
-    input: typeof ListRepoProfilesRequestSchema;
-    output: typeof ListRepoProfilesResponseSchema;
-  },
-  /**
-   * @generated from rpc agentfleet.v1.DashboardService.CreateRepoProfile
-   */
-  createRepoProfile: {
-    methodKind: "unary";
-    input: typeof CreateRepoProfileRequestSchema;
-    output: typeof CreateRepoProfileResponseSchema;
-  },
-  /**
-   * @generated from rpc agentfleet.v1.DashboardService.UpdateRepoProfile
-   */
-  updateRepoProfile: {
-    methodKind: "unary";
-    input: typeof UpdateRepoProfileRequestSchema;
-    output: typeof UpdateRepoProfileResponseSchema;
-  },
-  /**
-   * @generated from rpc agentfleet.v1.DashboardService.DeleteRepoProfile
-   */
-  deleteRepoProfile: {
-    methodKind: "unary";
-    input: typeof DeleteRepoProfileRequestSchema;
-    output: typeof DeleteRepoProfileResponseSchema;
   },
   /**
    * @generated from rpc agentfleet.v1.DashboardService.ListPromptSnippets
@@ -2497,7 +1935,7 @@ export const DashboardService: GenService<{
    * Observability page (docs/adr/0047). QueryMetrics is core proxying
    * PromQL — Prometheus has no IngressRoute in this cluster, so a browser
    * cannot reach it directly. GetFleetTopology is the live cell view, and
-   * needs no cluster RBAC: core assembles it from the tasks table it
+   * needs no cluster RBAC: core assembles it from the sessions table it
    * already owns plus its own metrics.
    *
    * @generated from rpc agentfleet.v1.DashboardService.QueryMetrics
@@ -2557,14 +1995,6 @@ export const DashboardService: GenService<{
     methodKind: "unary";
     input: typeof RunScheduledAuditNowRequestSchema;
     output: typeof RunScheduledAuditNowResponseSchema;
-  },
-  /**
-   * @generated from rpc agentfleet.v1.DashboardService.RetryTask
-   */
-  retryTask: {
-    methodKind: "unary";
-    input: typeof RetryTaskRequestSchema;
-    output: typeof RetryTaskResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_agentfleet_v1_dashboard, 0);

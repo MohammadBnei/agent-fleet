@@ -1,163 +1,109 @@
-// Package discord folds bot/'s Discord ingress (slash commands, thread
-// relay) into core — no separate Deployment, since it shares
-// core's trust boundary (no cluster RBAC) with transcript
-// coordination and log/introspection queries (see docs/adr/0013).
+// Package discord is the fleet's notification channel. It posts when a
+// session needs a human, and links to the dashboard where the human answers.
+//
+// It used to be a second console: slash commands that created tasks, threads
+// per task, free-text replies relayed into the transcript, and a
+// retry/dead-letter machine behind all of it. docs/adr/0048 cut that back to
+// outbound-plus-a-link, for reasons that are worth keeping written down
+// because "add buttons to Discord" is a permanently tempting idea:
+//
+//   - **No authorization exists here.** The dashboard sits behind Traefik
+//     basic-auth; this client has a bot token and a channel id, and no user
+//     allowlist. An interactive control would let anyone who can see the
+//     channel approve an arbitrary Bash or Edit on any session. ADR-0029
+//     deliberately deleted /approve; rebuilding it here would be the same
+//     gate with less checking.
+//   - **A decision's identity moves.** An unanswered AskUserQuestion re-asks
+//     every 60s and mints a NEW transcript entry each time, so any control
+//     posted against the previous seq is silently dead — an action that
+//     cannot succeed, on a surface with no way to retract it.
+//   - **A pending permission's text is the tool input**, i.e.
+//     JSON.stringify({tool, input}) — an Edit's file contents, a Bash command
+//     line. Relaying it verbatim leaks work product into a chat channel. The
+//     old discordSafeTypes allowlist existed for exactly this, and a summary
+//     is what belongs here instead.
+//
+// So: this file renders a one-line summary and a deep link, and never the
+// entry text.
 package discord
 
 import (
 	"context"
 	"fmt"
 	"log/slog"
-	"time"
+	"strings"
 
 	"github.com/bwmarrin/discordgo"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/config"
-	"github.com/MohammadBnei/agent-fleet/core/internal/provisionerclient"
-	"github.com/MohammadBnei/agent-fleet/core/internal/repos"
-	"github.com/MohammadBnei/agent-fleet/core/internal/tasks"
-	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
+	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
 )
 
 type Client struct {
 	session   *discordgo.Session
-	tasks     *tasks.Store
-	transcr   transcript.Store
-	repos     *repos.Store
-	e2e       *provisionerclient.Client
-	guildID   string
+	sessions  *sessions.Store
 	channelID string
-	appID     string
+	// dashboardURL is the base a notification links to. Empty disables the
+	// link rather than posting a broken one.
+	dashboardURL string
 }
 
-func New(cfg config.Config, taskStore *tasks.Store, transcr transcript.Store, repoStore *repos.Store, e2e *provisionerclient.Client) (*Client, error) {
+func New(cfg config.Config, sessionStore *sessions.Store) (*Client, error) {
 	s, err := discordgo.New("Bot " + cfg.DiscordBotToken)
 	if err != nil {
 		return nil, fmt.Errorf("discordgo.New: %w", err)
 	}
-	s.Identify.Intents = discordgo.IntentsGuilds | discordgo.IntentsGuildMessages | discordgo.IntentMessageContent
+	// IntentsGuilds only. IntentMessageContent is a privileged intent that
+	// existed for the deleted onMessageCreate relay; nothing reads message
+	// content now, and asking for a privileged scope you do not use is how
+	// a bot gets a permission it can later be tricked into exercising.
+	s.Identify.Intents = discordgo.IntentsGuilds
 
-	c := &Client{
-		session:   s,
-		tasks:     taskStore,
-		transcr:   transcr,
-		repos:     repoStore,
-		e2e:       e2e,
-		channelID: cfg.DiscordTriggerChannel,
-	}
-	s.AddHandler(c.onInteractionCreate)
-	s.AddHandler(c.onMessageCreate)
-	s.AddHandler(c.onReady)
-	return c, nil
+	return &Client{
+		session:      s,
+		sessions:     sessionStore,
+		channelID:    cfg.DiscordTriggerChannel,
+		dashboardURL: strings.TrimSuffix(cfg.DashboardPublicURL, "/"),
+	}, nil
 }
 
-func (c *Client) Open() error {
-	return c.session.Open()
-}
+func (c *Client) Open() error  { return c.session.Open() }
+func (c *Client) Close() error { return c.session.Close() }
 
-func (c *Client) Close() error {
-	return c.session.Close()
-}
-
-func (c *Client) onReady(s *discordgo.Session, r *discordgo.Ready) {
-	c.appID = r.Application.ID
-
-	// Guild-scoped registration, derived from the trigger channel (mirrors
-	// bot/src/index.ts) — not global, so command updates propagate
-	// immediately instead of Discord's up-to-1h global-command cache.
-	//
-	// Retried: a transient failure here used to be silent and permanent —
-	// onReady only fires once per connection, so one bad REST call meant
-	// slash commands never registered until the next pod restart, with
-	// nothing logged anywhere to explain why.
-	ch, err := channelWithRetry(func() (*discordgo.Channel, error) { return s.Channel(c.channelID) }, 3, 2*time.Second)
-	if err != nil {
-		slog.Error("onReady: channel lookup failed, giving up — slash commands not registered", "channelId", c.channelID, "error", err)
-		return
-	}
-	c.guildID = ch.GuildID
-	c.RefreshCommands(context.Background())
-}
-
-// RefreshCommands re-fetches the repo list and re-registers every slash
-// command — discordgo.ApplicationCommandCreate upserts by name, so calling
-// this again live-updates /task's repo dropdown with no restart needed.
-// Wired as repos.Store's OnChange callback (core/cmd/core/run.go) so a
-// dashboard repo add/edit/delete propagates immediately (docs/adr/0028); a
-// no-op if onReady hasn't fired yet (guildID/appID still empty).
-func (c *Client) RefreshCommands(ctx context.Context) {
-	if c.appID == "" || c.guildID == "" {
-		return
-	}
-	list, err := c.repos.List(ctx)
-	if err != nil {
-		slog.Error("RefreshCommands: repo list failed, commands not refreshed", "error", err)
-		return
-	}
-	names := make([]string, len(list))
-	for i, r := range list {
-		names[i] = r.Name
-	}
-	registerCommands(c.session, c.appID, c.guildID, names)
-}
-
-// channelWithRetry retries a transient Discord REST failure a few times
-// before giving up, logging each attempt so a startup hiccup is visible
-// instead of silently dropping command registration forever.
-func channelWithRetry(lookup func() (*discordgo.Channel, error), attempts int, delay time.Duration) (*discordgo.Channel, error) {
-	var ch *discordgo.Channel
-	var err error
-	for attempt := 1; attempt <= attempts; attempt++ {
-		ch, err = lookup()
-		if err == nil {
-			return ch, nil
-		}
-		slog.Error("onReady: channel lookup failed, retrying", "attempt", attempt, "error", err)
-		if attempt < attempts {
-			time.Sleep(delay)
-		}
-	}
-	return nil, err
-}
-
-// PostToThread implements transcript.Notifier — the relay loop's Discord
-// side effect.
-// OpenThread posts a message to channelID and starts a thread on it,
-// returning the thread id. Used by machinery-created thot tasks (alerts,
-// audits) so their findings stream into Discord through the SAME relay a
-// human-created task uses — rather than a second, notify-only channel
-// with its own bot and its own failure modes (which is what docs/adr/0035
-// originally specified, and docs/adr/0037 made unnecessary).
+// NotifyBlocked posts that a session is waiting on a human.
 //
-// channelID falls back to the trigger channel when empty, so a fleet that
-// hasn't configured a separate thot channel still gets the notifications
-// somewhere visible instead of silently dropping them.
-func (c *Client) OpenThread(channelID, title, body string) (string, error) {
-	if channelID == "" {
-		channelID = c.channelID
-	}
-	if channelID == "" {
-		return "", fmt.Errorf("no Discord channel configured")
-	}
-	msg, err := c.session.ChannelMessageSend(channelID, body)
-	if err != nil {
-		return "", fmt.Errorf("send message: %w", err)
-	}
-	thread, err := c.session.MessageThreadStart(channelID, msg.ID, title, 1440)
-	if err != nil {
-		return "", fmt.Errorf("start thread: %w", err)
-	}
-	return thread.ID, nil
-}
-
-func (c *Client) PostToThread(ctx context.Context, taskID string, e transcript.Entry) error {
-	t, err := c.tasks.GetTask(ctx, taskID)
-	if err != nil {
-		return err
-	}
-	if t == nil || t.ThreadID == nil {
+// `summary` is a rendered one-liner ("needs a permission decision for Edit"),
+// never the transcript entry's own text — see the package comment.
+func (c *Client) NotifyBlocked(ctx context.Context, sessionID, repo, title, summary string) error {
+	if c.channelID == "" {
 		return nil
 	}
-	_, err = c.session.ChannelMessageSend(*t.ThreadID, fmt.Sprintf("**%s**: %s", e.From, e.Text))
-	return err
+	label := title
+	if label == "" {
+		label = sessionID
+	}
+	msg := fmt.Sprintf("**%s** · `%s`\n%s", label, repo, summary)
+	if c.dashboardURL != "" {
+		msg += fmt.Sprintf("\n%s/sessions/%s", c.dashboardURL, sessionID)
+	}
+	if _, err := c.session.ChannelMessageSend(c.channelID, msg); err != nil {
+		return fmt.Errorf("notify blocked: %w", err)
+	}
+	slog.Info("discord: notified blocked session", "sessionId", sessionID, "repo", repo)
+	return nil
+}
+
+// Notify posts a plain message to the trigger channel — the path the
+// Alertmanager webhook uses to say an alert fired and a proposal is waiting.
+// Kept because it is the ONLY notification a firing alert produces; deleting
+// the thread machinery around it would otherwise have silenced alerts
+// entirely.
+func (c *Client) Notify(ctx context.Context, text string) error {
+	if c.channelID == "" {
+		return nil
+	}
+	if _, err := c.session.ChannelMessageSend(c.channelID, text); err != nil {
+		return fmt.Errorf("notify: %w", err)
+	}
+	return nil
 }

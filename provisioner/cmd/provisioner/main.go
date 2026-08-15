@@ -23,7 +23,6 @@ import (
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/k8s"
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/metrics"
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/reconcile"
-	"github.com/MohammadBnei/agent-fleet/provisioner/internal/sweep"
 )
 
 func main() {
@@ -56,12 +55,13 @@ func main() {
 	// holds no DB credentials at all (docs/adr/0020 point 1). Kubernetes
 	// itself is the durable source of truth for pod/session state.
 	k8sc, err := k8s.New(cfg.Namespace, k8s.Images{
-		RunnerImage:           cfg.E2eRunnerImage,
 		WorkerImage:           cfg.WorkerImage,
 		SidecarImage:          cfg.SidecarImage,
 		ThotAuthToken:         cfg.ThotAuthToken,
 		ExecutorAddr:          cfg.ExecutorAddr,
 		WorkspacePVC:          cfg.WorkspacePVC,
+		SessionStorageClass:   cfg.SessionStorageClass,
+		SessionNodeSelector:   cfg.NodeSelectorMap(),
 		LogLevel:              cfg.LogLevel,
 		CoreGRPCAddr:          cfg.CoreGRPCAddr,
 		PostgresImage:         cfg.PostgresImage,
@@ -73,15 +73,17 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Create shared cluster-ip-whitelist middleware once at startup so
-	// worker pods can access preview URLs without basic auth prompt.
-	// Fatal on first run (missing RBAC/bad API version), idempotent after.
-	if err := k8sc.CreateClusterIPWhitelistMiddleware(ctx); err != nil {
-		slog.Error("cluster IP whitelist middleware creation failed", "error", err)
-		os.Exit(1)
-	}
+	// The shared cluster-ip-whitelist Middleware used to be created here, and
+	// its failure was fatal. It existed so worker pods could reach each
+	// other's preview URLs without a basic-auth prompt — which stopped being
+	// a thing when the sandbox merged into the session pod (docs/adr/0048 §6):
+	// an agent testing its own app reaches it on localhost, in its own pod.
+	//
+	// Nothing referenced the Middleware any more; expose()'s route carries
+	// basic auth alone. Removing it also removes a startup dependency on a
+	// Traefik CRD, which is one less thing the local harness has to fake.
 
-	gitMgr := git.NewManager(cfg.WorktreesRoot)
+	gitMgr := git.NewManager(cfg.WorkspaceRoot)
 	if err := gitMgr.ConfigureAuth(ctx); err != nil {
 		slog.Error("git auth configuration failed", "error", err)
 		os.Exit(1)
@@ -100,19 +102,18 @@ func main() {
 	httpServer := &http.Server{Addr: ":" + cfg.Port, Handler: mux}
 
 	grpcSrv := grpc.NewServer(grpc.ChainUnaryInterceptor(grpcserver.AccessLogInterceptor, metrics.UnaryInterceptor))
-	agentfleetv1.RegisterProvisionerServiceServer(grpcSrv, grpcserver.New(k8sc, gitMgr, core, cfg.E2eHost, cfg.FleetSharedRepoURL, cfg.FleetSharedBranch, cfg.ClaudeHomeDir))
+	agentfleetv1.RegisterProvisionerServiceServer(grpcSrv, grpcserver.New(k8sc, gitMgr, core, cfg.E2eHost, cfg.FleetSharedRepoURL, cfg.FleetSharedBranch))
 
 	reconcileInterval, _ := strconv.Atoi(cfg.ReconcileInterval)
 	sharedInstanceIdleTimeout, _ := strconv.Atoi(cfg.SharedInstanceIdleTimeoutMs)
-	e2eMaxAge, _ := strconv.Atoi(cfg.E2eMaxAgeMs)
-	loop := reconcile.New(k8sc, core,
-		time.Duration(sharedInstanceIdleTimeout)*time.Millisecond,
-		time.Duration(e2eMaxAge)*time.Millisecond)
+	loop := reconcile.New(k8sc, core, time.Duration(sharedInstanceIdleTimeout)*time.Millisecond)
 	go loop.Run(ctx, time.Duration(reconcileInterval)*time.Millisecond)
 
-	sweepInterval, _ := strconv.Atoi(cfg.SweepInterval)
-	sweepLoop := sweep.New(gitMgr)
-	go sweepLoop.Run(ctx, time.Duration(sweepInterval)*time.Millisecond)
+	// The branch/worktree sweep loop is gone (docs/adr/0048 §5). It deleted
+	// worktrees on its own ticker, without telling core — which is why any
+	// claim that a session knew whether its disk still existed was false, and
+	// why swept_at could not be trusted. core is the single writer of that
+	// fact now, and the only thing that decides a session's disk should go.
 
 	go func() {
 		lis, err := net.Listen("tcp", ":"+cfg.GRPCPort)

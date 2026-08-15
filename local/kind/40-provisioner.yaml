@@ -35,9 +35,7 @@ spec:
             - name: NAMESPACE
               value: agent-fleet
             - name: E2E_HOST
-              value: e2e.bnei.dev # only used to build the human preview URL string — CreateIngressRoute/CreateMiddleware still fail locally (no Traefik CRDs in kind), but CreatePod/CreateService/CallE2eTool (run_command) are fully exercisable
-            - name: E2E_RUNNER_IMAGE
-              value: agent-fleet-e2e-runner:local
+              value: e2e.bnei.dev # the wildcard base domain expose() builds a session's hostname from. Nothing serves it in kind (no Traefik), but the Service it creates is real and reachable by cluster DNS.
             - name: PORT
               value: "8080"
             - name: GRPC_PORT
@@ -48,7 +46,7 @@ spec:
               value: agent-fleet-sidecar:local
             - name: WORKSPACE_PVC
               value: agent-fleet-workspace
-            - name: WORKTREES_ROOT
+            - name: WORKSPACE_ROOT
               value: /workspace
             # core's code default is "agent-fleet-core.agent-fleet.svc.
             # cluster.local:9090" — correct for prod, where core goes

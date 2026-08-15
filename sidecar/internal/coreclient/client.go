@@ -96,7 +96,7 @@ func (c *Client) WaitReady(ctx context.Context) error {
 
 func (c *Client) SendMessage(ctx context.Context, from, text string, msgType agentfleetv1.TranscriptEntryType, idempotencyKey string) (int64, error) {
 	resp, err := c.rpc.SendMessage(ctx, &agentfleetv1.SendMessageRequest{
-		TaskId: c.taskID, From: from, Text: text, Type: msgType, IdempotencyKey: idempotencyKey,
+		SessionId: c.taskID, From: from, Text: text, Type: msgType, IdempotencyKey: idempotencyKey,
 	})
 	if err != nil {
 		return 0, fmt.Errorf("SendMessage: %w", err)
@@ -109,7 +109,7 @@ func (c *Client) SendMessage(ctx context.Context, from, text string, msgType age
 // don't need correlation aren't forced to pass a meaningless seq.
 func (c *Client) AppendReplyMessage(ctx context.Context, from, text string, msgType agentfleetv1.TranscriptEntryType, idempotencyKey string, replyToSeq int64) (int64, error) {
 	resp, err := c.rpc.SendMessage(ctx, &agentfleetv1.SendMessageRequest{
-		TaskId: c.taskID, From: from, Text: text, Type: msgType,
+		SessionId: c.taskID, From: from, Text: text, Type: msgType,
 		IdempotencyKey: idempotencyKey, ReplyToSeq: &replyToSeq,
 	})
 	if err != nil {
@@ -120,7 +120,7 @@ func (c *Client) AppendReplyMessage(ctx context.Context, from, text string, msgT
 
 func (c *Client) WaitForMessages(ctx context.Context, sinceSeq int64, timeoutMs int32) ([]*agentfleetv1.TranscriptEntry, int64, error) {
 	resp, err := c.rpc.WaitForMessages(ctx, &agentfleetv1.ReadTranscriptSinceRequest{
-		TaskId: c.taskID, SinceSeq: sinceSeq, TimeoutMs: timeoutMs,
+		SessionId: c.taskID, SinceSeq: sinceSeq, TimeoutMs: timeoutMs,
 	})
 	if err != nil {
 		return nil, sinceSeq, fmt.Errorf("WaitForMessages: %w", err)
@@ -128,48 +128,57 @@ func (c *Client) WaitForMessages(ctx context.Context, sinceSeq int64, timeoutMs 
 	return resp.GetEntries(), resp.GetNextSeq(), nil
 }
 
-func (c *Client) AskUserQuestion(ctx context.Context, questionsJSON string, timeoutMs int32) (status, answersJSON string, questionSeq int64, err error) {
+func (c *Client) AskUserQuestion(ctx context.Context, questionsJSON string, timeoutMs int32) (answered bool, answersJSON string, questionSeq int64, err error) {
 	resp, err := c.rpc.AskUserQuestion(ctx, &agentfleetv1.AskUserQuestionRequest{
-		TaskId: c.taskID, QuestionsJson: questionsJSON, TimeoutMs: timeoutMs,
+		SessionId: c.taskID, QuestionsJson: questionsJSON, TimeoutMs: timeoutMs,
 	})
 	if err != nil {
-		return "", "", 0, fmt.Errorf("AskUserQuestion: %w", err)
+		return false, "", 0, fmt.Errorf("AskUserQuestion: %w", err)
 	}
-	return resp.GetStatus(), resp.GetAnswersJson(), resp.GetQuestionSeq(), nil
+	return resp.GetAnswered(), resp.GetAnswersJson(), resp.GetQuestionSeq(), nil
 }
 
-// RequestE2eEnv returns the response whole so the caller can echo the
-// resolved recipe back to the agent — startCmd and profile stay parameters,
-// but the mcpserver handler only passes a non-empty one after a human has
-// approved it (docs/adr/0034 follow-up: an unapproved, unreadable override is
-// what let a guessed command silently beat a correct profile).
+// RequestE2eEnv and KillE2eEnv are gone with the sandbox (docs/adr/0048 §6).
+// Both carried the recipe system on their signatures — startCmd, profile, and
+// a whole resolved-recipe response the agent was meant to read back. None of
+// it survives, because none of it was ever a question the fleet was better
+// placed to answer than the agent sitting in the repo.
+
+// Expose publishes a port from this pod and returns its public URL.
+func (c *Client) Expose(ctx context.Context, port int32) (string, error) {
+	resp, err := c.rpc.Expose(ctx, &agentfleetv1.ExposeRequest{SessionId: c.taskID, Port: port})
+	if err != nil {
+		return "", fmt.Errorf("Expose: %w", err)
+	}
+	return resp.GetUrl(), nil
+}
+
+func (c *Client) Unexpose(ctx context.Context) error {
+	if _, err := c.rpc.Unexpose(ctx, &agentfleetv1.UnexposeRequest{SessionId: c.taskID}); err != nil {
+		return fmt.Errorf("Unexpose: %w", err)
+	}
+	return nil
+}
+
+// RequestService provisions or reuses a shared Postgres/Redis and returns its
+// connection string. The repo is not a parameter: core owns the session row,
+// so it resolves which repo this session is on rather than trusting a pod to
+// say — the same reason every other call here is keyed by taskID alone.
+func (c *Client) RequestService(ctx context.Context, kind string) (string, error) {
+	resp, err := c.rpc.RequestService(ctx, &agentfleetv1.RequestServiceRequest{SessionId: c.taskID, Kind: kind})
+	if err != nil {
+		return "", fmt.Errorf("RequestService: %w", err)
+	}
+	return resp.GetDsn(), nil
+}
+
+// This client carries only what core alone can do: the transcript, the
+// journal, questions, and the two cluster-RBAC operations above.
 //
-// profile was a wire field core already honored with no producer anywhere
-// (docs/adr/0044) — so ADR-0034's documented agent-selectable profile was
-// unreachable, and every request resolved to the literal name "e2e".
-func (c *Client) RequestE2eEnv(ctx context.Context, startCmd, profile string) (*agentfleetv1.RequestE2EEnvResponse, error) {
-	resp, err := c.rpc.RequestE2EEnv(ctx, &agentfleetv1.RequestE2EEnvRequest{TaskId: c.taskID, StartCmd: startCmd, Profile: profile})
-	if err != nil {
-		return nil, fmt.Errorf("RequestE2eEnv: %w", err)
-	}
-	return resp, nil
-}
-
-func (c *Client) KillE2eEnv(ctx context.Context) (bool, error) {
-	resp, err := c.rpc.KillE2EEnv(ctx, &agentfleetv1.KillE2EEnvRequest{TaskId: c.taskID})
-	if err != nil {
-		return false, fmt.Errorf("KillE2eEnv: %w", err)
-	}
-	return resp.GetKilled(), nil
-}
-
-// No sandbox tool calls here at all any more (docs/adr/0045). Tool discovery
-// went first (docs/adr/0044 — a static embedded snapshot in mcpserver, because
-// discovery always lost the race against the pod becoming reachable), and now
-// the calls themselves: the sidecar dials its own task's sandbox over MCP,
-// from the ServiceEndpoint roster, so core is no longer in the path of a shell
-// command. What survives on this client is what core alone can do — the
-// transcript, the journal, questions, and commanding a sandbox into existence.
+// The sandbox tool-call relay left in two stages. docs/adr/0045 moved the
+// calls off this client so core was not in the path of a shell command, and
+// docs/adr/0048 §6 removed the sandbox itself — so there is no second pod to
+// dial, from a roster or otherwise, and the agent's tools are on its own pod.
 
 // ListFiles, GetFileUploadURL, GetFileDownloadURL, and DeleteFile back the
 // shared file space (docs/adr/0030) — the flat namespace isn't scoped to
@@ -210,23 +219,10 @@ func (c *Client) DeleteFile(ctx context.Context, key string) error {
 
 // --- wrapper-facing (proxied by the local plain API) ---
 
-func (c *Client) Heartbeat(ctx context.Context, leaseID string) error {
-	_, err := c.rpc.Heartbeat(ctx, &agentfleetv1.HeartbeatRequest{TaskId: c.taskID, LeaseId: leaseID})
-	if err != nil {
-		return fmt.Errorf("Heartbeat: %w", err)
-	}
-	return nil
-}
-
-func (c *Client) SetTaskStatus(ctx context.Context, status string, prURL, notes, lastError *string) error {
-	_, err := c.rpc.SetTaskStatus(ctx, &agentfleetv1.SetTaskStatusRequest{
-		TaskId: c.taskID, Status: status, PrUrl: prURL, Notes: notes, LastError: lastError,
-	})
-	if err != nil {
-		return fmt.Errorf("SetTaskStatus: %w", err)
-	}
-	return nil
-}
+// Heartbeat and SetTaskStatus used to live here. Both are deleted in
+// docs/adr/0048: liveness reconciles against Kubernetes rather than a timer
+// inside the worker, and a polymorphic session has no completion the worker
+// is in a position to report.
 
 func (c *Client) AppendJournal(ctx context.Context, repo, actor, eventType, payloadJSON string) error {
 	_, err := c.rpc.AppendJournal(ctx, &agentfleetv1.AppendJournalRequest{
@@ -249,8 +245,8 @@ func (c *Client) SearchJournal(ctx context.Context, repo, query string, limit in
 }
 
 func (c *Client) SaveSessionID(ctx context.Context, sessionID, model, leaseID string) error {
-	_, err := c.rpc.SaveSessionId(ctx, &agentfleetv1.SaveSessionIdRequest{
-		TaskId: c.taskID, SessionId: sessionID, Model: model, LeaseId: leaseID,
+	_, err := c.rpc.SaveAgentSessionId(ctx, &agentfleetv1.SaveAgentSessionIdRequest{
+		SessionId: c.taskID, AgentSessionId: sessionID, Model: model, LeaseId: leaseID,
 	})
 	if err != nil {
 		return fmt.Errorf("SaveSessionId: %w", err)
@@ -258,16 +254,11 @@ func (c *Client) SaveSessionID(ctx context.Context, sessionID, model, leaseID st
 	return nil
 }
 
-func (c *Client) StillHoldsLease(ctx context.Context, leaseID string) (bool, error) {
-	resp, err := c.rpc.StillHoldsLease(ctx, &agentfleetv1.StillHoldsLeaseRequest{TaskId: c.taskID, LeaseId: leaseID})
-	if err != nil {
-		return false, fmt.Errorf("StillHoldsLease: %w", err)
-	}
-	return resp.GetHolds(), nil
-}
+// StillHoldsLease is gone with the reclaim that created the race it guarded
+// (docs/adr/0048). It had no production caller here either way.
 
 func (c *Client) PushToolTelemetry(ctx context.Context, summaryJSON string) error {
-	_, err := c.rpc.PushToolTelemetry(ctx, &agentfleetv1.PushToolTelemetryRequest{TaskId: c.taskID, SummaryJson: summaryJSON})
+	_, err := c.rpc.PushToolTelemetry(ctx, &agentfleetv1.PushToolTelemetryRequest{SessionId: c.taskID, SummaryJson: summaryJSON})
 	if err != nil {
 		return fmt.Errorf("PushToolTelemetry: %w", err)
 	}
@@ -279,7 +270,7 @@ func (c *Client) PushToolTelemetry(ctx context.Context, summaryJSON string) erro
 // live (docs/adr/0021 point 2). Blocks until the stream ends or ctx is
 // cancelled; callers run it in its own goroutine.
 func (c *Client) StreamHumanMessages(ctx context.Context, sinceSeq int64, onEntry func(*agentfleetv1.TranscriptEntry)) error {
-	stream, err := c.rpc.StreamHumanMessages(ctx, &agentfleetv1.StreamHumanMessagesRequest{TaskId: c.taskID, SinceSeq: sinceSeq})
+	stream, err := c.rpc.StreamHumanMessages(ctx, &agentfleetv1.StreamHumanMessagesRequest{SessionId: c.taskID, SinceSeq: sinceSeq})
 	if err != nil {
 		return fmt.Errorf("StreamHumanMessages: open: %w", err)
 	}
@@ -322,12 +313,12 @@ func (c *Client) ViewLogs(ctx context.Context, component, appName, namespace, le
 // only the dashboard SPA can set (core/internal/dashboard/interceptor.go);
 // it was never reachable over this gRPC connection at all, let alone by a
 // non-browser caller.
-func (c *Client) GetTask(ctx context.Context) (*agentfleetv1.Task, error) {
-	resp, err := c.rpc.GetTask(ctx, &agentfleetv1.GetTaskRequest{Id: c.taskID})
+func (c *Client) GetTask(ctx context.Context) (*agentfleetv1.Session, error) {
+	resp, err := c.rpc.GetSession(ctx, &agentfleetv1.GetSessionRequest{Id: c.taskID})
 	if err != nil {
 		return nil, fmt.Errorf("GetTask: %w", err)
 	}
-	return resp.GetTask(), nil
+	return resp.GetSession(), nil
 }
 
 // SetPermissionMode persists the current permission mode to the database.
@@ -336,8 +327,8 @@ func (c *Client) GetTask(ctx context.Context) (*agentfleetv1.Task, error) {
 // comment above on why this isn't DashboardService.
 func (c *Client) SetPermissionMode(ctx context.Context, mode string) error {
 	_, err := c.rpc.SetPermissionMode(ctx, &agentfleetv1.SetPermissionModeRequest{
-		TaskId: c.taskID,
-		Mode:   mode,
+		SessionId: c.taskID,
+		Mode:      mode,
 	})
 	if err != nil {
 		return fmt.Errorf("SetPermissionMode: %w", err)
@@ -352,8 +343,8 @@ func (c *Client) SetPermissionMode(ctx context.Context, mode string) error {
 // claim to come from another session would defeat both the self-prompt
 // guard and the attribution in the delivered message.
 
-func (c *Client) ListSessions(ctx context.Context) ([]*agentfleetv1.SessionSummary, error) {
-	resp, err := c.rpc.ListSessions(ctx, &agentfleetv1.ListSessionsRequest{CallerTaskId: c.taskID})
+func (c *Client) ListPeerSessions(ctx context.Context) ([]*agentfleetv1.SessionSummary, error) {
+	resp, err := c.rpc.ListPeerSessions(ctx, &agentfleetv1.ListPeerSessionsRequest{CallerSessionId: c.taskID})
 	if err != nil {
 		return nil, fmt.Errorf("ListSessions: %w", err)
 	}
@@ -362,7 +353,7 @@ func (c *Client) ListSessions(ctx context.Context) ([]*agentfleetv1.SessionSumma
 
 func (c *Client) PromptSession(ctx context.Context, targetTaskID, text string, depth int32) (*agentfleetv1.PromptSessionResponse, error) {
 	resp, err := c.rpc.PromptSession(ctx, &agentfleetv1.PromptSessionRequest{
-		CallerTaskId: c.taskID, TargetTaskId: targetTaskID, Text: text, Depth: depth,
+		CallerSessionId: c.taskID, TargetSessionId: targetTaskID, Text: text, Depth: depth,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("PromptSession: %w", err)
@@ -372,7 +363,7 @@ func (c *Client) PromptSession(ctx context.Context, targetTaskID, text string, d
 
 func (c *Client) WaitForSessionState(ctx context.Context, targetTaskID string, until []string, timeoutMs int32, afterSeq int64) (*agentfleetv1.WaitForSessionStateResponse, error) {
 	resp, err := c.rpc.WaitForSessionState(ctx, &agentfleetv1.WaitForSessionStateRequest{
-		TargetTaskId: targetTaskID, Until: until, TimeoutMs: timeoutMs, AfterSeq: afterSeq,
+		TargetSessionId: targetTaskID, Until: until, TimeoutMs: timeoutMs, AfterSeq: afterSeq,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("WaitForSessionState: %w", err)

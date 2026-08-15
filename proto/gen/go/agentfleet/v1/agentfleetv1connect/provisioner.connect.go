@@ -33,44 +33,47 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
-	// ProvisionerServiceKillE2ESessionProcedure is the fully-qualified name of the ProvisionerService's
-	// KillE2eSession RPC.
-	ProvisionerServiceKillE2ESessionProcedure = "/agentfleet.v1.ProvisionerService/KillE2eSession"
-	// ProvisionerServiceGetE2ESessionStatusProcedure is the fully-qualified name of the
-	// ProvisionerService's GetE2eSessionStatus RPC.
-	ProvisionerServiceGetE2ESessionStatusProcedure = "/agentfleet.v1.ProvisionerService/GetE2eSessionStatus"
-	// ProvisionerServiceCreateE2ESessionProcedure is the fully-qualified name of the
-	// ProvisionerService's CreateE2eSession RPC.
-	ProvisionerServiceCreateE2ESessionProcedure = "/agentfleet.v1.ProvisionerService/CreateE2eSession"
 	// ProvisionerServiceCreateWorkerPodProcedure is the fully-qualified name of the
 	// ProvisionerService's CreateWorkerPod RPC.
 	ProvisionerServiceCreateWorkerPodProcedure = "/agentfleet.v1.ProvisionerService/CreateWorkerPod"
 	// ProvisionerServiceTearDownSessionProcedure is the fully-qualified name of the
 	// ProvisionerService's TearDownSession RPC.
 	ProvisionerServiceTearDownSessionProcedure = "/agentfleet.v1.ProvisionerService/TearDownSession"
-	// ProvisionerServiceListWorktreesProcedure is the fully-qualified name of the ProvisionerService's
-	// ListWorktrees RPC.
-	ProvisionerServiceListWorktreesProcedure = "/agentfleet.v1.ProvisionerService/ListWorktrees"
-	// ProvisionerServiceDeleteWorktreeProcedure is the fully-qualified name of the ProvisionerService's
-	// DeleteWorktree RPC.
-	ProvisionerServiceDeleteWorktreeProcedure = "/agentfleet.v1.ProvisionerService/DeleteWorktree"
+	// ProvisionerServiceListWorkerPodsProcedure is the fully-qualified name of the ProvisionerService's
+	// ListWorkerPods RPC.
+	ProvisionerServiceListWorkerPodsProcedure = "/agentfleet.v1.ProvisionerService/ListWorkerPods"
+	// ProvisionerServiceExposeSessionProcedure is the fully-qualified name of the ProvisionerService's
+	// ExposeSession RPC.
+	ProvisionerServiceExposeSessionProcedure = "/agentfleet.v1.ProvisionerService/ExposeSession"
+	// ProvisionerServiceUnexposeSessionProcedure is the fully-qualified name of the
+	// ProvisionerService's UnexposeSession RPC.
+	ProvisionerServiceUnexposeSessionProcedure = "/agentfleet.v1.ProvisionerService/UnexposeSession"
+	// ProvisionerServiceProvisionServiceProcedure is the fully-qualified name of the
+	// ProvisionerService's ProvisionService RPC.
+	ProvisionerServiceProvisionServiceProcedure = "/agentfleet.v1.ProvisionerService/ProvisionService"
+	// ProvisionerServiceSweepSessionProcedure is the fully-qualified name of the ProvisionerService's
+	// SweepSession RPC.
+	ProvisionerServiceSweepSessionProcedure = "/agentfleet.v1.ProvisionerService/SweepSession"
 )
 
 // ProvisionerServiceClient is a client for the agentfleet.v1.ProvisionerService service.
 type ProvisionerServiceClient interface {
-	KillE2ESession(context.Context, *connect.Request[v1.KillE2ESessionRequest]) (*connect.Response[v1.KillE2ESessionResponse], error)
-	GetE2ESessionStatus(context.Context, *connect.Request[v1.GetE2ESessionStatusRequest]) (*connect.Response[v1.GetE2ESessionStatusResponse], error)
-	CreateE2ESession(context.Context, *connect.Request[v1.CreateE2ESessionRequest]) (*connect.Response[v1.CreateE2ESessionResponse], error)
 	CreateWorkerPod(context.Context, *connect.Request[v1.CreateWorkerPodRequest]) (*connect.Response[v1.CreateWorkerPodResponse], error)
 	TearDownSession(context.Context, *connect.Request[v1.TearDownSessionRequest]) (*connect.Response[v1.TearDownSessionResponse], error)
-	// Reused as-is by dashboard.proto's own ListWorktrees (identical empty
-	// request shape) — cross-file message reuse, not a call passthrough.
-	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
-	ListWorktrees(context.Context, *connect.Request[v1.ListWorktreesRequest]) (*connect.Response[v1.ListWorktreesResponse], error)
-	// Reused as-is by dashboard.proto's own DeleteWorktree (identical
-	// request/response shape, no dashboard-specific fields needed).
-	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
-	DeleteWorktree(context.Context, *connect.Request[v1.DeleteWorktreeRequest]) (*connect.Response[v1.DeleteWorktreeResponse], error)
+	// The liveness reconcile source — see ListWorkerPodsRequest.
+	ListWorkerPods(context.Context, *connect.Request[v1.ListWorkerPodsRequest]) (*connect.Response[v1.ListWorkerPodsResponse], error)
+	// What is left of the sandbox after docs/adr/0048 §6: the two capabilities
+	// that need cluster RBAC. Everything else the e2e pod did — running the
+	// app, running builds, running a browser — happens in the session pod
+	// itself now, with plain Bash.
+	ExposeSession(context.Context, *connect.Request[v1.ExposeSessionRequest]) (*connect.Response[v1.ExposeSessionResponse], error)
+	UnexposeSession(context.Context, *connect.Request[v1.UnexposeSessionRequest]) (*connect.Response[v1.UnexposeSessionResponse], error)
+	ProvisionService(context.Context, *connect.Request[v1.ProvisionServiceRequest]) (*connect.Response[v1.ProvisionServiceResponse], error)
+	// Deletes a session's working-tree PVC. The other half of its disk (the
+	// SDK resume state) is a directory on the shared volume, removed in the
+	// same call — the two live on different volumes because they have
+	// different access patterns, not because anything wants them apart.
+	SweepSession(context.Context, *connect.Request[v1.SweepSessionRequest]) (*connect.Response[v1.SweepSessionResponse], error)
 }
 
 // NewProvisionerServiceClient constructs a client for the agentfleet.v1.ProvisionerService service.
@@ -84,24 +87,6 @@ func NewProvisionerServiceClient(httpClient connect.HTTPClient, baseURL string, 
 	baseURL = strings.TrimRight(baseURL, "/")
 	provisionerServiceMethods := v1.File_agentfleet_v1_provisioner_proto.Services().ByName("ProvisionerService").Methods()
 	return &provisionerServiceClient{
-		killE2ESession: connect.NewClient[v1.KillE2ESessionRequest, v1.KillE2ESessionResponse](
-			httpClient,
-			baseURL+ProvisionerServiceKillE2ESessionProcedure,
-			connect.WithSchema(provisionerServiceMethods.ByName("KillE2eSession")),
-			connect.WithClientOptions(opts...),
-		),
-		getE2ESessionStatus: connect.NewClient[v1.GetE2ESessionStatusRequest, v1.GetE2ESessionStatusResponse](
-			httpClient,
-			baseURL+ProvisionerServiceGetE2ESessionStatusProcedure,
-			connect.WithSchema(provisionerServiceMethods.ByName("GetE2eSessionStatus")),
-			connect.WithClientOptions(opts...),
-		),
-		createE2ESession: connect.NewClient[v1.CreateE2ESessionRequest, v1.CreateE2ESessionResponse](
-			httpClient,
-			baseURL+ProvisionerServiceCreateE2ESessionProcedure,
-			connect.WithSchema(provisionerServiceMethods.ByName("CreateE2eSession")),
-			connect.WithClientOptions(opts...),
-		),
 		createWorkerPod: connect.NewClient[v1.CreateWorkerPodRequest, v1.CreateWorkerPodResponse](
 			httpClient,
 			baseURL+ProvisionerServiceCreateWorkerPodProcedure,
@@ -114,16 +99,34 @@ func NewProvisionerServiceClient(httpClient connect.HTTPClient, baseURL string, 
 			connect.WithSchema(provisionerServiceMethods.ByName("TearDownSession")),
 			connect.WithClientOptions(opts...),
 		),
-		listWorktrees: connect.NewClient[v1.ListWorktreesRequest, v1.ListWorktreesResponse](
+		listWorkerPods: connect.NewClient[v1.ListWorkerPodsRequest, v1.ListWorkerPodsResponse](
 			httpClient,
-			baseURL+ProvisionerServiceListWorktreesProcedure,
-			connect.WithSchema(provisionerServiceMethods.ByName("ListWorktrees")),
+			baseURL+ProvisionerServiceListWorkerPodsProcedure,
+			connect.WithSchema(provisionerServiceMethods.ByName("ListWorkerPods")),
 			connect.WithClientOptions(opts...),
 		),
-		deleteWorktree: connect.NewClient[v1.DeleteWorktreeRequest, v1.DeleteWorktreeResponse](
+		exposeSession: connect.NewClient[v1.ExposeSessionRequest, v1.ExposeSessionResponse](
 			httpClient,
-			baseURL+ProvisionerServiceDeleteWorktreeProcedure,
-			connect.WithSchema(provisionerServiceMethods.ByName("DeleteWorktree")),
+			baseURL+ProvisionerServiceExposeSessionProcedure,
+			connect.WithSchema(provisionerServiceMethods.ByName("ExposeSession")),
+			connect.WithClientOptions(opts...),
+		),
+		unexposeSession: connect.NewClient[v1.UnexposeSessionRequest, v1.UnexposeSessionResponse](
+			httpClient,
+			baseURL+ProvisionerServiceUnexposeSessionProcedure,
+			connect.WithSchema(provisionerServiceMethods.ByName("UnexposeSession")),
+			connect.WithClientOptions(opts...),
+		),
+		provisionService: connect.NewClient[v1.ProvisionServiceRequest, v1.ProvisionServiceResponse](
+			httpClient,
+			baseURL+ProvisionerServiceProvisionServiceProcedure,
+			connect.WithSchema(provisionerServiceMethods.ByName("ProvisionService")),
+			connect.WithClientOptions(opts...),
+		),
+		sweepSession: connect.NewClient[v1.SweepSessionRequest, v1.SweepSessionResponse](
+			httpClient,
+			baseURL+ProvisionerServiceSweepSessionProcedure,
+			connect.WithSchema(provisionerServiceMethods.ByName("SweepSession")),
 			connect.WithClientOptions(opts...),
 		),
 	}
@@ -131,28 +134,13 @@ func NewProvisionerServiceClient(httpClient connect.HTTPClient, baseURL string, 
 
 // provisionerServiceClient implements ProvisionerServiceClient.
 type provisionerServiceClient struct {
-	killE2ESession      *connect.Client[v1.KillE2ESessionRequest, v1.KillE2ESessionResponse]
-	getE2ESessionStatus *connect.Client[v1.GetE2ESessionStatusRequest, v1.GetE2ESessionStatusResponse]
-	createE2ESession    *connect.Client[v1.CreateE2ESessionRequest, v1.CreateE2ESessionResponse]
-	createWorkerPod     *connect.Client[v1.CreateWorkerPodRequest, v1.CreateWorkerPodResponse]
-	tearDownSession     *connect.Client[v1.TearDownSessionRequest, v1.TearDownSessionResponse]
-	listWorktrees       *connect.Client[v1.ListWorktreesRequest, v1.ListWorktreesResponse]
-	deleteWorktree      *connect.Client[v1.DeleteWorktreeRequest, v1.DeleteWorktreeResponse]
-}
-
-// KillE2ESession calls agentfleet.v1.ProvisionerService.KillE2eSession.
-func (c *provisionerServiceClient) KillE2ESession(ctx context.Context, req *connect.Request[v1.KillE2ESessionRequest]) (*connect.Response[v1.KillE2ESessionResponse], error) {
-	return c.killE2ESession.CallUnary(ctx, req)
-}
-
-// GetE2ESessionStatus calls agentfleet.v1.ProvisionerService.GetE2eSessionStatus.
-func (c *provisionerServiceClient) GetE2ESessionStatus(ctx context.Context, req *connect.Request[v1.GetE2ESessionStatusRequest]) (*connect.Response[v1.GetE2ESessionStatusResponse], error) {
-	return c.getE2ESessionStatus.CallUnary(ctx, req)
-}
-
-// CreateE2ESession calls agentfleet.v1.ProvisionerService.CreateE2eSession.
-func (c *provisionerServiceClient) CreateE2ESession(ctx context.Context, req *connect.Request[v1.CreateE2ESessionRequest]) (*connect.Response[v1.CreateE2ESessionResponse], error) {
-	return c.createE2ESession.CallUnary(ctx, req)
+	createWorkerPod  *connect.Client[v1.CreateWorkerPodRequest, v1.CreateWorkerPodResponse]
+	tearDownSession  *connect.Client[v1.TearDownSessionRequest, v1.TearDownSessionResponse]
+	listWorkerPods   *connect.Client[v1.ListWorkerPodsRequest, v1.ListWorkerPodsResponse]
+	exposeSession    *connect.Client[v1.ExposeSessionRequest, v1.ExposeSessionResponse]
+	unexposeSession  *connect.Client[v1.UnexposeSessionRequest, v1.UnexposeSessionResponse]
+	provisionService *connect.Client[v1.ProvisionServiceRequest, v1.ProvisionServiceResponse]
+	sweepSession     *connect.Client[v1.SweepSessionRequest, v1.SweepSessionResponse]
 }
 
 // CreateWorkerPod calls agentfleet.v1.ProvisionerService.CreateWorkerPod.
@@ -165,31 +153,49 @@ func (c *provisionerServiceClient) TearDownSession(ctx context.Context, req *con
 	return c.tearDownSession.CallUnary(ctx, req)
 }
 
-// ListWorktrees calls agentfleet.v1.ProvisionerService.ListWorktrees.
-func (c *provisionerServiceClient) ListWorktrees(ctx context.Context, req *connect.Request[v1.ListWorktreesRequest]) (*connect.Response[v1.ListWorktreesResponse], error) {
-	return c.listWorktrees.CallUnary(ctx, req)
+// ListWorkerPods calls agentfleet.v1.ProvisionerService.ListWorkerPods.
+func (c *provisionerServiceClient) ListWorkerPods(ctx context.Context, req *connect.Request[v1.ListWorkerPodsRequest]) (*connect.Response[v1.ListWorkerPodsResponse], error) {
+	return c.listWorkerPods.CallUnary(ctx, req)
 }
 
-// DeleteWorktree calls agentfleet.v1.ProvisionerService.DeleteWorktree.
-func (c *provisionerServiceClient) DeleteWorktree(ctx context.Context, req *connect.Request[v1.DeleteWorktreeRequest]) (*connect.Response[v1.DeleteWorktreeResponse], error) {
-	return c.deleteWorktree.CallUnary(ctx, req)
+// ExposeSession calls agentfleet.v1.ProvisionerService.ExposeSession.
+func (c *provisionerServiceClient) ExposeSession(ctx context.Context, req *connect.Request[v1.ExposeSessionRequest]) (*connect.Response[v1.ExposeSessionResponse], error) {
+	return c.exposeSession.CallUnary(ctx, req)
+}
+
+// UnexposeSession calls agentfleet.v1.ProvisionerService.UnexposeSession.
+func (c *provisionerServiceClient) UnexposeSession(ctx context.Context, req *connect.Request[v1.UnexposeSessionRequest]) (*connect.Response[v1.UnexposeSessionResponse], error) {
+	return c.unexposeSession.CallUnary(ctx, req)
+}
+
+// ProvisionService calls agentfleet.v1.ProvisionerService.ProvisionService.
+func (c *provisionerServiceClient) ProvisionService(ctx context.Context, req *connect.Request[v1.ProvisionServiceRequest]) (*connect.Response[v1.ProvisionServiceResponse], error) {
+	return c.provisionService.CallUnary(ctx, req)
+}
+
+// SweepSession calls agentfleet.v1.ProvisionerService.SweepSession.
+func (c *provisionerServiceClient) SweepSession(ctx context.Context, req *connect.Request[v1.SweepSessionRequest]) (*connect.Response[v1.SweepSessionResponse], error) {
+	return c.sweepSession.CallUnary(ctx, req)
 }
 
 // ProvisionerServiceHandler is an implementation of the agentfleet.v1.ProvisionerService service.
 type ProvisionerServiceHandler interface {
-	KillE2ESession(context.Context, *connect.Request[v1.KillE2ESessionRequest]) (*connect.Response[v1.KillE2ESessionResponse], error)
-	GetE2ESessionStatus(context.Context, *connect.Request[v1.GetE2ESessionStatusRequest]) (*connect.Response[v1.GetE2ESessionStatusResponse], error)
-	CreateE2ESession(context.Context, *connect.Request[v1.CreateE2ESessionRequest]) (*connect.Response[v1.CreateE2ESessionResponse], error)
 	CreateWorkerPod(context.Context, *connect.Request[v1.CreateWorkerPodRequest]) (*connect.Response[v1.CreateWorkerPodResponse], error)
 	TearDownSession(context.Context, *connect.Request[v1.TearDownSessionRequest]) (*connect.Response[v1.TearDownSessionResponse], error)
-	// Reused as-is by dashboard.proto's own ListWorktrees (identical empty
-	// request shape) — cross-file message reuse, not a call passthrough.
-	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
-	ListWorktrees(context.Context, *connect.Request[v1.ListWorktreesRequest]) (*connect.Response[v1.ListWorktreesResponse], error)
-	// Reused as-is by dashboard.proto's own DeleteWorktree (identical
-	// request/response shape, no dashboard-specific fields needed).
-	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
-	DeleteWorktree(context.Context, *connect.Request[v1.DeleteWorktreeRequest]) (*connect.Response[v1.DeleteWorktreeResponse], error)
+	// The liveness reconcile source — see ListWorkerPodsRequest.
+	ListWorkerPods(context.Context, *connect.Request[v1.ListWorkerPodsRequest]) (*connect.Response[v1.ListWorkerPodsResponse], error)
+	// What is left of the sandbox after docs/adr/0048 §6: the two capabilities
+	// that need cluster RBAC. Everything else the e2e pod did — running the
+	// app, running builds, running a browser — happens in the session pod
+	// itself now, with plain Bash.
+	ExposeSession(context.Context, *connect.Request[v1.ExposeSessionRequest]) (*connect.Response[v1.ExposeSessionResponse], error)
+	UnexposeSession(context.Context, *connect.Request[v1.UnexposeSessionRequest]) (*connect.Response[v1.UnexposeSessionResponse], error)
+	ProvisionService(context.Context, *connect.Request[v1.ProvisionServiceRequest]) (*connect.Response[v1.ProvisionServiceResponse], error)
+	// Deletes a session's working-tree PVC. The other half of its disk (the
+	// SDK resume state) is a directory on the shared volume, removed in the
+	// same call — the two live on different volumes because they have
+	// different access patterns, not because anything wants them apart.
+	SweepSession(context.Context, *connect.Request[v1.SweepSessionRequest]) (*connect.Response[v1.SweepSessionResponse], error)
 }
 
 // NewProvisionerServiceHandler builds an HTTP handler from the service implementation. It returns
@@ -199,24 +205,6 @@ type ProvisionerServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewProvisionerServiceHandler(svc ProvisionerServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	provisionerServiceMethods := v1.File_agentfleet_v1_provisioner_proto.Services().ByName("ProvisionerService").Methods()
-	provisionerServiceKillE2ESessionHandler := connect.NewUnaryHandler(
-		ProvisionerServiceKillE2ESessionProcedure,
-		svc.KillE2ESession,
-		connect.WithSchema(provisionerServiceMethods.ByName("KillE2eSession")),
-		connect.WithHandlerOptions(opts...),
-	)
-	provisionerServiceGetE2ESessionStatusHandler := connect.NewUnaryHandler(
-		ProvisionerServiceGetE2ESessionStatusProcedure,
-		svc.GetE2ESessionStatus,
-		connect.WithSchema(provisionerServiceMethods.ByName("GetE2eSessionStatus")),
-		connect.WithHandlerOptions(opts...),
-	)
-	provisionerServiceCreateE2ESessionHandler := connect.NewUnaryHandler(
-		ProvisionerServiceCreateE2ESessionProcedure,
-		svc.CreateE2ESession,
-		connect.WithSchema(provisionerServiceMethods.ByName("CreateE2eSession")),
-		connect.WithHandlerOptions(opts...),
-	)
 	provisionerServiceCreateWorkerPodHandler := connect.NewUnaryHandler(
 		ProvisionerServiceCreateWorkerPodProcedure,
 		svc.CreateWorkerPod,
@@ -229,34 +217,52 @@ func NewProvisionerServiceHandler(svc ProvisionerServiceHandler, opts ...connect
 		connect.WithSchema(provisionerServiceMethods.ByName("TearDownSession")),
 		connect.WithHandlerOptions(opts...),
 	)
-	provisionerServiceListWorktreesHandler := connect.NewUnaryHandler(
-		ProvisionerServiceListWorktreesProcedure,
-		svc.ListWorktrees,
-		connect.WithSchema(provisionerServiceMethods.ByName("ListWorktrees")),
+	provisionerServiceListWorkerPodsHandler := connect.NewUnaryHandler(
+		ProvisionerServiceListWorkerPodsProcedure,
+		svc.ListWorkerPods,
+		connect.WithSchema(provisionerServiceMethods.ByName("ListWorkerPods")),
 		connect.WithHandlerOptions(opts...),
 	)
-	provisionerServiceDeleteWorktreeHandler := connect.NewUnaryHandler(
-		ProvisionerServiceDeleteWorktreeProcedure,
-		svc.DeleteWorktree,
-		connect.WithSchema(provisionerServiceMethods.ByName("DeleteWorktree")),
+	provisionerServiceExposeSessionHandler := connect.NewUnaryHandler(
+		ProvisionerServiceExposeSessionProcedure,
+		svc.ExposeSession,
+		connect.WithSchema(provisionerServiceMethods.ByName("ExposeSession")),
+		connect.WithHandlerOptions(opts...),
+	)
+	provisionerServiceUnexposeSessionHandler := connect.NewUnaryHandler(
+		ProvisionerServiceUnexposeSessionProcedure,
+		svc.UnexposeSession,
+		connect.WithSchema(provisionerServiceMethods.ByName("UnexposeSession")),
+		connect.WithHandlerOptions(opts...),
+	)
+	provisionerServiceProvisionServiceHandler := connect.NewUnaryHandler(
+		ProvisionerServiceProvisionServiceProcedure,
+		svc.ProvisionService,
+		connect.WithSchema(provisionerServiceMethods.ByName("ProvisionService")),
+		connect.WithHandlerOptions(opts...),
+	)
+	provisionerServiceSweepSessionHandler := connect.NewUnaryHandler(
+		ProvisionerServiceSweepSessionProcedure,
+		svc.SweepSession,
+		connect.WithSchema(provisionerServiceMethods.ByName("SweepSession")),
 		connect.WithHandlerOptions(opts...),
 	)
 	return "/agentfleet.v1.ProvisionerService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case ProvisionerServiceKillE2ESessionProcedure:
-			provisionerServiceKillE2ESessionHandler.ServeHTTP(w, r)
-		case ProvisionerServiceGetE2ESessionStatusProcedure:
-			provisionerServiceGetE2ESessionStatusHandler.ServeHTTP(w, r)
-		case ProvisionerServiceCreateE2ESessionProcedure:
-			provisionerServiceCreateE2ESessionHandler.ServeHTTP(w, r)
 		case ProvisionerServiceCreateWorkerPodProcedure:
 			provisionerServiceCreateWorkerPodHandler.ServeHTTP(w, r)
 		case ProvisionerServiceTearDownSessionProcedure:
 			provisionerServiceTearDownSessionHandler.ServeHTTP(w, r)
-		case ProvisionerServiceListWorktreesProcedure:
-			provisionerServiceListWorktreesHandler.ServeHTTP(w, r)
-		case ProvisionerServiceDeleteWorktreeProcedure:
-			provisionerServiceDeleteWorktreeHandler.ServeHTTP(w, r)
+		case ProvisionerServiceListWorkerPodsProcedure:
+			provisionerServiceListWorkerPodsHandler.ServeHTTP(w, r)
+		case ProvisionerServiceExposeSessionProcedure:
+			provisionerServiceExposeSessionHandler.ServeHTTP(w, r)
+		case ProvisionerServiceUnexposeSessionProcedure:
+			provisionerServiceUnexposeSessionHandler.ServeHTTP(w, r)
+		case ProvisionerServiceProvisionServiceProcedure:
+			provisionerServiceProvisionServiceHandler.ServeHTTP(w, r)
+		case ProvisionerServiceSweepSessionProcedure:
+			provisionerServiceSweepSessionHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -266,18 +272,6 @@ func NewProvisionerServiceHandler(svc ProvisionerServiceHandler, opts ...connect
 // UnimplementedProvisionerServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedProvisionerServiceHandler struct{}
 
-func (UnimplementedProvisionerServiceHandler) KillE2ESession(context.Context, *connect.Request[v1.KillE2ESessionRequest]) (*connect.Response[v1.KillE2ESessionResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.ProvisionerService.KillE2eSession is not implemented"))
-}
-
-func (UnimplementedProvisionerServiceHandler) GetE2ESessionStatus(context.Context, *connect.Request[v1.GetE2ESessionStatusRequest]) (*connect.Response[v1.GetE2ESessionStatusResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.ProvisionerService.GetE2eSessionStatus is not implemented"))
-}
-
-func (UnimplementedProvisionerServiceHandler) CreateE2ESession(context.Context, *connect.Request[v1.CreateE2ESessionRequest]) (*connect.Response[v1.CreateE2ESessionResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.ProvisionerService.CreateE2eSession is not implemented"))
-}
-
 func (UnimplementedProvisionerServiceHandler) CreateWorkerPod(context.Context, *connect.Request[v1.CreateWorkerPodRequest]) (*connect.Response[v1.CreateWorkerPodResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.ProvisionerService.CreateWorkerPod is not implemented"))
 }
@@ -286,10 +280,22 @@ func (UnimplementedProvisionerServiceHandler) TearDownSession(context.Context, *
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.ProvisionerService.TearDownSession is not implemented"))
 }
 
-func (UnimplementedProvisionerServiceHandler) ListWorktrees(context.Context, *connect.Request[v1.ListWorktreesRequest]) (*connect.Response[v1.ListWorktreesResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.ProvisionerService.ListWorktrees is not implemented"))
+func (UnimplementedProvisionerServiceHandler) ListWorkerPods(context.Context, *connect.Request[v1.ListWorkerPodsRequest]) (*connect.Response[v1.ListWorkerPodsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.ProvisionerService.ListWorkerPods is not implemented"))
 }
 
-func (UnimplementedProvisionerServiceHandler) DeleteWorktree(context.Context, *connect.Request[v1.DeleteWorktreeRequest]) (*connect.Response[v1.DeleteWorktreeResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.ProvisionerService.DeleteWorktree is not implemented"))
+func (UnimplementedProvisionerServiceHandler) ExposeSession(context.Context, *connect.Request[v1.ExposeSessionRequest]) (*connect.Response[v1.ExposeSessionResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.ProvisionerService.ExposeSession is not implemented"))
+}
+
+func (UnimplementedProvisionerServiceHandler) UnexposeSession(context.Context, *connect.Request[v1.UnexposeSessionRequest]) (*connect.Response[v1.UnexposeSessionResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.ProvisionerService.UnexposeSession is not implemented"))
+}
+
+func (UnimplementedProvisionerServiceHandler) ProvisionService(context.Context, *connect.Request[v1.ProvisionServiceRequest]) (*connect.Response[v1.ProvisionServiceResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.ProvisionerService.ProvisionService is not implemented"))
+}
+
+func (UnimplementedProvisionerServiceHandler) SweepSession(context.Context, *connect.Request[v1.SweepSessionRequest]) (*connect.Response[v1.SweepSessionResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.ProvisionerService.SweepSession is not implemented"))
 }

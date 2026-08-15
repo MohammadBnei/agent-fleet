@@ -1,4 +1,4 @@
-import { useState, type CSSProperties } from "react";
+import type { CSSProperties } from "react";
 import { client } from "../connectClient";
 import { ActionButton } from "./ActionButton";
 import { isPodPhaseLive } from "../pages/TaskList";
@@ -37,13 +37,12 @@ const MODES = [
 // only so ActionsMenu doesn't require them if a future caller has no use
 // for this toggle.
 export function ActionsMenu({
-  taskId,
+  sessionId,
   busy,
   busyKey,
   run,
-  codeServerUrl,
-  isThotTask = false,
-  status,
+  sweptAt,
+  archivedAt,
   currentMode,
   podPhase,
   onBypassClick,
@@ -52,7 +51,7 @@ export function ActionsMenu({
   hideChangesInFeed,
   onHideChangesInFeedChange,
 }: {
-  taskId: string;
+  sessionId: string;
   // Whether ANY action anywhere on the page is in flight, not just this
   // menu's own — these buttons are page-level/singular (Kill especially),
   // so they stay conservative and disable together with everything else
@@ -63,12 +62,13 @@ export function ActionsMenu({
   // whole point being to tell the clicker their click registered.
   busyKey: string | null;
   run: (action: () => Promise<unknown>, key: string) => void;
-  codeServerUrl?: string | null;
-  // docs/adr/0037: a thot session has no e2e pod and no code-server, so
-  // those controls are hidden rather than shown-and-broken.
-  isThotTask?: boolean;
-  // tasks.status — only consulted to hide Warm on an unapproved proposal.
-  status?: string;
+  // Set once the retention GC has reclaimed this session's working directory
+  // (docs/adr/0048). Readable history, not resumable — so Warm is hidden
+  // rather than shown and broken.
+  sweptAt?: string;
+  // Set when a human marked this session finished — the only terminal state
+  // the fleet has, because it is the only one a machine cannot compute.
+  archivedAt?: string;
   // Unset for an idle/never-warmed session — no mode has been explicitly
   // chosen yet (the SDK itself starts a fresh session in "default", but
   // that's not durable here until SetPermissionMode is actually called).
@@ -84,11 +84,6 @@ export function ActionsMenu({
   onHideChangesInFeedChange?: (value: boolean) => void;
 }) {
   const live = isPodPhaseLive(podPhase);
-  // Shared postgres/redis instances are keyed by repo, not task (docs/adr/
-  // 0034) — other tasks against the same repo (this task's own worker pod
-  // included) can still be using them, so tearing them down alongside "Kill
-  // e2e" is opt-in and human-confirmed via this checkbox, never implied.
-  const [alsoTeardownServices, setAlsoTeardownServices] = useState(false);
   return (
     <div className="flex flex-col gap-3">
       {(onHideToolsInFeedChange || onHideChangesInFeedChange) && (
@@ -124,7 +119,7 @@ export function ActionsMenu({
             className="btn btn-info btn-xs"
             busy={busyKey === "action:interrupt"}
             disabled={busy}
-            onClick={() => run(() => client.interrupt({ taskId }), "action:interrupt")}
+            onClick={() => run(() => client.interrupt({ sessionId }), "action:interrupt")}
           >
             Interrupt
           </ActionButton>
@@ -132,51 +127,58 @@ export function ActionsMenu({
             className="btn btn-error btn-xs"
             busy={busyKey === "action:kill"}
             disabled={busy}
-            onClick={() => run(() => client.kill({ taskId }), "action:kill")}
+            onClick={() => run(() => client.stopSession({ sessionId }), "action:kill")}
           >
             Kill
           </ActionButton>
         </>
       ) : (
-        // An unapproved proposal has no Warm: the server rejects it with
-        // FailedPrecondition (approval is what starts it), and a button
-        // that can only ever error is worse than no button. ProposalActions
-        // carries the real action for this state.
-        status !== "proposed" && (
+        // A swept session cannot be warmed: the retention GC removed its
+        // working directory and its SDK state, so the pod would come up with
+        // nothing to resume. Same reasoning the old proposal guard had — a
+        // button that can only ever error is worse than no button.
+        //
+        // An archived session CAN still be warmed. Archiving says "I'm done
+        // with this", not "this is sealed", and reopening it is the natural
+        // way to change your mind; ArchiveSession is idempotent either way.
+        !sweptAt && (
           <ActionButton
             className="btn btn-success btn-xs"
             busy={busyKey === "action:warm"}
             disabled={busy}
-            onClick={() => run(() => client.warm({ taskId }), "action:warm")}
+            onClick={() => run(() => client.warmSession({ sessionId }), "action:warm")}
           >
             Warm
           </ActionButton>
         )
       )}
-      {!isThotTask && (
-      <ActionButton
-        className="btn btn-outline btn-xs"
-        busy={busyKey === "action:kill-e2e"}
-        disabled={busy}
-        onClick={() => run(() => client.killE2e({ taskId, alsoTeardownServices }), "action:kill-e2e")}
-      >
-        Kill e2e
-      </ActionButton>
+      {/*
+        Archive is the human's "I'm finished with this". It is the fleet's
+        only terminal state — a polymorphic session (bug fix, explanation,
+        dead end) has no completion a machine can compute, which is exactly
+        why `done` never got a writer and the status enum went away.
+
+        Nothing offered it until now, so a session could only ever be deleted
+        (destroying its transcript) or left to idle forever.
+      */}
+      {!archivedAt && (
+        <ActionButton
+          className="btn btn-outline btn-xs"
+          busy={busyKey === "action:archive"}
+          disabled={busy}
+          onClick={() => run(() => client.archiveSession({ sessionId }), "action:archive")}
+        >
+          Archive
+        </ActionButton>
       )}
-      {!isThotTask && (
-      <label
-        className="flex items-center gap-1.5 text-sm text-text2 cursor-pointer"
-        title="Also delete this repo's shared postgres/redis instances — they're shared with other tasks, only tear them down if you're sure nothing else needs them"
-      >
-        <input
-          type="checkbox"
-          checked={alsoTeardownServices}
-          onChange={(e) => setAlsoTeardownServices(e.target.checked)}
-          className="checkbox checkbox-xs"
-        />
-        also services
-      </label>
-      )}
+      {/*
+        "Kill e2e" and its "also services" checkbox are gone with the sandbox
+        (docs/adr/0048 §6). There is no second pod to kill — the agent's app
+        runs in this session's own pod and dies with it — and shared services
+        are now requested per session via request_service rather than declared
+        per repo, so there is no fleet-wide instance for a human to tear down
+        from a session's action bar.
+      */}
       {/* Native Popover API + CSS anchor positioning (daisyUI v5's current
           dropdown pattern) instead of the old tabIndex/:focus-within trick —
           only one of these is ever mounted at a time (desktop xor mobile,
@@ -208,7 +210,7 @@ export function ActionsMenu({
               // what made this feel like the click was dropped.
               popoverTarget="popover-mode"
               popoverTargetAction="hide"
-              onClick={() => run(() => client.setPermissionMode({ taskId, mode: m.value }), "action:mode")}
+              onClick={() => run(() => client.setPermissionMode({ sessionId, mode: m.value }), "action:mode")}
             >
               {m.value === currentMode ? "✓ " : ""}
               {m.label}
@@ -226,17 +228,10 @@ export function ActionsMenu({
           </button>
         </li>
       </ul>
-      {/* codeServerUrl, not previewUrl: this button said "Open code-server"
-          and opened the APP root — code-server is served at the /code prefix
-          (docs/adr/0038), so it had never once opened the IDE. The URL is
-          built by the provisioner and travels on the wire rather than being
-          re-derived here, which is how it drifted in the first place
-          (docs/adr/0044). */}
-      {!isThotTask && codeServerUrl && (
-        <a href={codeServerUrl} target="_blank" rel="noreferrer" className="btn btn-outline btn-xs">
-          Open code-server
-        </a>
-      )}
+      {/* The "Open code-server" link is gone with the e2e pod that served it
+          (docs/adr/0048 §6). code-server was an IDE surface on the sandbox,
+          reached at its /code prefix; a session's pod runs the agent and the
+          app, not an IDE. */}
       </div>
     </div>
   );

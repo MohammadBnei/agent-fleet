@@ -32,21 +32,12 @@ async function postJSON<T>(path: string, body: unknown): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-export async function heartbeat(leaseId: string): Promise<void> {
-  await postJSON("/heartbeat", { leaseId });
-}
-
-export async function setStatus(
-  status: string,
-  fields: { prUrl?: string | null; notes?: string | null; lastError?: string | null } = {},
-): Promise<void> {
-  await postJSON("/status", {
-    status,
-    prUrl: fields.prUrl ?? null,
-    notes: fields.notes ?? null,
-    lastError: fields.lastError ?? null,
-  });
-}
+// heartbeat() and setStatus() used to live here. Both are gone in
+// docs/adr/0048 along with the endpoints they posted to — POST /heartbeat and
+// POST /status no longer exist on the sidecar, so leaving these exported would
+// have handed a future caller a function that 404s. There is no status to set
+// (pod_phase is the lifecycle) and nothing to beat toward (the provisioner's
+// Job list is the liveness signal).
 
 export async function appendJournal(
   repo: string,
@@ -64,10 +55,19 @@ export async function saveSessionId(sessionId: string, model: string): Promise<v
   await postJSON("/session-id", { sessionId, model, leaseId: process.env.LEASE_ID ?? "" });
 }
 
-export async function getTask(): Promise<{
+// getSession reads the session row fresh at startup.
+//
+// It survives docs/adr/0048's cull of this API for exactly one reason:
+// permission_mode must be RESTORED on a warm. Without it, resuming a session
+// a human put into acceptEdits/plan/bypassPermissions silently reverts it to
+// "default" — and the only way to notice is to watch it start asking for
+// permission again.
+//
+// `description` comes back too but is a label, not an instruction: the
+// session's actual instruction is its first transcript entry. `guidance` and
+// `baseBranch` are gone with the columns.
+export async function getSession(): Promise<{
   description: string;
-  guidance: string;
-  baseBranch: string;
   permissionMode?: string;
   model?: string;
 }> {
@@ -80,12 +80,16 @@ export async function savePermissionMode(mode: string): Promise<void> {
   await postJSON("/permission-mode", { mode });
 }
 
-export async function stillHoldsLease(leaseId: string): Promise<boolean> {
-  const res = await fetch(`${base()}/still-holds-lease?leaseId=${encodeURIComponent(leaseId)}`);
-  if (!res.ok) throw new Error(`sidecar still-holds-lease failed: ${res.status}`);
-  const body = (await res.json()) as { holds: boolean };
-  return Boolean(body.holds);
-}
+// stillHoldsLease used to live here, alongside heartbeat() and setStatus().
+// All three are gone with the reclaim loop whose races they guarded
+// (docs/adr/0048), and the sidecar no longer serves any of their endpoints —
+// so leaving this exported would hand a future caller a function that 404s.
+//
+// The lease itself survives, and still does its one job: SaveAgentSessionID is
+// lease-scoped server-side, so a torn-down pod finishing its shutdown cannot
+// overwrite the resume identity of the pod that replaced it. Nothing needs to
+// ASK whether it still holds the lease — the write simply does nothing if it
+// doesn't.
 
 // pushMessage lets the wrapper post directly into the transcript — the
 // round-cap checkpoint text, the agent's raw assistant narration (today

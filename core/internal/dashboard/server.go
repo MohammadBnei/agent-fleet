@@ -1,18 +1,16 @@
 // Package dashboard implements the web dashboard's ConnectRPC API
 // (agentfleet.v1.DashboardService, see docs/adr/0015) on top of the exact
-// same tasks.Store / transcript.Store / provisionerclient.Client that core's
+// same sessions.Store / transcript.Store / provisionerclient.Client that core's
 // Discord commands already use — no new business logic, just a second
 // caller of the same store methods.
 package dashboard
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"os"
-	"strings"
 	"time"
 
 	"connectrpc.com/connect"
@@ -22,118 +20,127 @@ import (
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 	"github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1/agentfleetv1connect"
 
-	"github.com/MohammadBnei/agent-fleet/core/internal/e2edial"
-	"github.com/MohammadBnei/agent-fleet/core/internal/e2erecipe"
 	"github.com/MohammadBnei/agent-fleet/core/internal/filestore"
 	"github.com/MohammadBnei/agent-fleet/core/internal/journal"
 	"github.com/MohammadBnei/agent-fleet/core/internal/lokiclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/promclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/promptsnippets"
+	"github.com/MohammadBnei/agent-fleet/core/internal/proposals"
 	"github.com/MohammadBnei/agent-fleet/core/internal/provisionerclient"
-	"github.com/MohammadBnei/agent-fleet/core/internal/repoprofiles"
 	"github.com/MohammadBnei/agent-fleet/core/internal/repos"
 	"github.com/MohammadBnei/agent-fleet/core/internal/scheduledaudits"
-	"github.com/MohammadBnei/agent-fleet/core/internal/tasks"
+	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
 )
 
 type Server struct {
-	tasks       *tasks.Store
-	transcr     transcript.Store
-	journal     *journal.Store
-	repos       *repos.Store
-	profiles    *repoprofiles.Store
-	snippets    *promptsnippets.Store
-	e2e         *provisionerclient.Client
-	files       filestore.Store
-	hub         *Hub
-	maxInFlight int
-	loki        lokiclient.Querier
-	prom        promclient.Querier
-	audits      *scheduledaudits.Store
+	sessions  *sessions.Store
+	proposals *proposals.Store
+	transcr   transcript.Store
+	journal   *journal.Store
+	repos     *repos.Store
+	snippets  *promptsnippets.Store
+	e2e       *provisionerclient.Client
+	files     filestore.Store
+	hub       *Hub
+	// maxLive is the fleet's blast-radius bound: how many pods, each running
+	// an agent, may exist at once. Enforced inside sessions.ReserveSlot under
+	// an advisory lock rather than checked here, because a read-then-act
+	// check is exactly what let CI observe 4 tasks claimed with a cap of 2.
+	maxLive int
+	loki    lokiclient.Querier
+	prom    promclient.Querier
+	audits  *scheduledaudits.Store
 }
 
-func NewServer(taskStore *tasks.Store, transcr transcript.Store, journalStore *journal.Store, repoStore *repos.Store, profileStore *repoprofiles.Store, snippetStore *promptsnippets.Store, e2e *provisionerclient.Client, files filestore.Store, hub *Hub, maxInFlight int, loki lokiclient.Querier, prom promclient.Querier, auditStore *scheduledaudits.Store) *Server {
-	return &Server{tasks: taskStore, transcr: transcr, journal: journalStore, repos: repoStore, profiles: profileStore, snippets: snippetStore, e2e: e2e, files: files, hub: hub, maxInFlight: maxInFlight, loki: loki, prom: prom, audits: auditStore}
+func NewServer(sessionStore *sessions.Store, proposalStore *proposals.Store, transcr transcript.Store, journalStore *journal.Store, repoStore *repos.Store, snippetStore *promptsnippets.Store, e2e *provisionerclient.Client, files filestore.Store, hub *Hub, maxLive int, loki lokiclient.Querier, prom promclient.Querier, auditStore *scheduledaudits.Store) *Server {
+	return &Server{sessions: sessionStore, proposals: proposalStore, transcr: transcr, journal: journalStore, repos: repoStore, snippets: snippetStore, e2e: e2e, files: files, hub: hub, maxLive: maxLive, loki: loki, prom: prom, audits: auditStore}
 }
 
-// resolveWorkerIngredients looks up repo's "worker"-named profile
-// (docs/adr/0034) and returns its tool/service ingredients, or (nil, nil,
-// nil) when the repo has no such profile — preserves the pre-recipe pod
-// shape exactly (an empty ingredient list is a documented no-op all the
-// way down through CreateWorkerPod/pod.go).
-func (s *Server) resolveWorkerIngredients(ctx context.Context, repo string) ([]string, []repoprofiles.ServiceIngredient, error) {
-	profile, err := s.profiles.Get(ctx, repo, "worker")
+// toolKeysFor resolves the only ingredient that survived docs/adr/0034's
+// recipe system: cluster-access, which is a privilege grant rather than a
+// toolchain (docs/adr/0037, docs/adr/0048). Everything else the recipe used
+// to carry is now either the agent's own `Bash` or repos.image.
+func (s *Server) toolKeysFor(ctx context.Context, repo string) ([]string, error) {
+	r, err := s.repos.Get(ctx, repo)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	if profile == nil {
-		return nil, nil, nil
+	if r == nil {
+		return nil, nil
 	}
-	return profile.Tools, profile.Services, nil
+	return provisionerclient.ToolKeysFor(r.ClusterAccess), nil
 }
 
 var _ agentfleetv1connect.DashboardServiceHandler = (*Server)(nil)
 
 const defaultListLimit = 50
 
-func (s *Server) ListTasks(ctx context.Context, req *connect.Request[agentfleetv1.ListTasksRequest]) (*connect.Response[agentfleetv1.ListTasksResponse], error) {
+func (s *Server) ListSessions(ctx context.Context, req *connect.Request[agentfleetv1.ListSessionsRequest]) (*connect.Response[agentfleetv1.ListSessionsResponse], error) {
 	limit := int(req.Msg.GetLimit())
 	if limit <= 0 {
 		limit = defaultListLimit
 	}
-	list, err := s.tasks.ListRecentTasks(ctx, limit)
+	list, err := s.sessions.List(ctx, limit)
 	if err != nil {
 		slog.Error("dashboard ListTasks", "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
-	out := make([]*agentfleetv1.Task, len(list))
+	out := make([]*agentfleetv1.Session, len(list))
 	for i, t := range list {
-		out[i] = TaskToProto(t)
+		out[i] = SessionToProto(t)
 	}
-	return connect.NewResponse(&agentfleetv1.ListTasksResponse{Tasks: out}), nil
+	return connect.NewResponse(&agentfleetv1.ListSessionsResponse{Sessions: out}), nil
 }
 
-func (s *Server) GetTask(ctx context.Context, req *connect.Request[agentfleetv1.GetTaskRequest]) (*connect.Response[agentfleetv1.GetTaskResponse], error) {
-	t, err := s.tasks.GetTask(ctx, req.Msg.GetId())
+func (s *Server) GetSession(ctx context.Context, req *connect.Request[agentfleetv1.GetSessionRequest]) (*connect.Response[agentfleetv1.GetSessionResponse], error) {
+	t, err := s.sessions.Get(ctx, req.Msg.GetId())
+	// ErrNotFound first: Get signals a missing row with that error, not with a
+	// nil session, so checking nil alone would map every unknown id to a 500.
+	// The nil check stays as a belt-and-braces guard against a nil-with-no-error
+	// return, which would otherwise panic one line down.
+	if errors.Is(err, sessions.ErrNotFound) || (err == nil && t == nil) {
+		return nil, connect.NewError(connect.CodeNotFound, errors.New("session not found"))
+	}
 	if err != nil {
-		slog.Error("dashboard GetTask", "taskId", req.Msg.GetId(), "error", err)
+		slog.Error("dashboard GetSession", "sessionId", req.Msg.GetId(), "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
-	if t == nil {
-		return nil, connect.NewError(connect.CodeNotFound, errors.New("task not found"))
-	}
-	return connect.NewResponse(&agentfleetv1.GetTaskResponse{Task: TaskToProto(*t)}), nil
+	return connect.NewResponse(&agentfleetv1.GetSessionResponse{Session: SessionToProto(*t)}), nil
 }
 
 // CreateTask lets the dashboard create a task the same way a Discord /task
 // command does, minus the Discord thread — it calls the exact same
-// tasks.Store.CreateTask core/internal/discord/handlers.go's startTask
+// sessions.Store.CreateTask core/internal/discord/handlers.go's startTask
 // calls, just with nil channel/thread (docs/adr/0015). PostToThread
 // (core/internal/discord/session.go) already no-ops on a nil ThreadID, so
 // no other code needs to special-case a dashboard-origin task.
-func (s *Server) CreateTask(ctx context.Context, req *connect.Request[agentfleetv1.CreateTaskRequest]) (*connect.Response[agentfleetv1.CreateTaskResponse], error) {
+// CreateSession makes a row and nothing else — no pod, no directory, no
+// worktree. The first PostMessage is what provisions (docs/adr/0048).
+//
+// That split is the human gate: nothing machine-initiated produces a message,
+// so nothing machine-initiated produces a pod. It also makes an empty session
+// a valid resting state rather than a broken one, which matters because the
+// Agent SDK's streaming-input generator is never entered until an input
+// arrives — a pod booted with nothing to do would never emit a session id,
+// would be unresumable, and would be swept as stalled with nothing logged.
+//
+// `description` is optional now, and is a label rather than an instruction:
+// the session's actual instruction is its first transcript entry. Snippets
+// are no longer resolved here into a hidden `guidance` column — the dashboard
+// prefills them into the message composer, so their text reaches the model as
+// part of a message a human sent and can edit.
+func (s *Server) CreateSession(ctx context.Context, req *connect.Request[agentfleetv1.CreateSessionRequest]) (*connect.Response[agentfleetv1.CreateSessionResponse], error) {
 	repo := req.Msg.GetRepo()
 	repoCfg, err := s.repos.Get(ctx, repo)
 	if err != nil {
-		slog.Error("dashboard CreateTask: repo lookup", "repo", repo, "error", err)
+		slog.Error("dashboard CreateSession: repo lookup", "repo", repo, "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	if repoCfg == nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("unknown repo %q", repo))
 	}
-	description := req.Msg.GetDescription()
-	if description == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("description is required"))
-	}
 
-	guidance, suggestedMode, err := s.resolveGuidanceAndMode(ctx, req.Msg.GetSnippetIds())
-	if err != nil {
-		slog.Error("dashboard CreateTask: snippet lookup", "repo", repo, "error", err)
-		return nil, connect.NewError(connect.CodeInternal, err)
-	}
-
-	// Get model from request, validate it, and default to env if empty
 	model := req.Msg.GetModel()
 	if model == "" {
 		model = os.Getenv("CLAUDE_MODEL")
@@ -144,60 +151,162 @@ func (s *Server) CreateTask(ctx context.Context, req *connect.Request[agentfleet
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("invalid model %q", model))
 	}
 
-	// docs/adr/0037: a thot session is an ordinary worker task, so this
-	// only records which kind it is — nothing downstream branches on it.
-	kind := req.Msg.GetKind()
-	if kind == "" {
-		kind = tasks.KindWorker
-	}
-	if kind != tasks.KindWorker && kind != tasks.KindThot {
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("unknown task kind %q", kind))
-	}
-	id, err := s.tasks.CreateTaskOfKind(ctx, kind, repo, description, guidance, model, nil, nil)
+	id, err := s.sessions.Create(ctx, repo, req.Msg.GetTitle(), req.Msg.GetDescription(), model)
 	if err != nil {
-		slog.Error("dashboard CreateTask", "repo", repo, "error", err)
+		slog.Error("dashboard CreateSession", "repo", repo, "error", err)
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	sess, err := s.sessions.Get(ctx, id)
+	if err != nil {
+		slog.Error("dashboard CreateSession", "sessionId", id, "error", err)
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	slog.Info("dashboard CreateSession", "sessionId", id, "repo", repo)
+	return connect.NewResponse(&agentfleetv1.CreateSessionResponse{Session: SessionToProto(*sess)}), nil
+}
+
+// ArchiveSession marks a session finished by a human — the only terminal
+// state in the fleet, because it is the only one a machine can compute.
+//
+// Tears down any live pod and dismisses the proposal that spawned it, if any:
+// that is what re-arms the dedup key so a still-firing alert or the next audit
+// tick can propose the same work again.
+func (s *Server) ArchiveSession(ctx context.Context, req *connect.Request[agentfleetv1.ArchiveSessionRequest]) (*connect.Response[agentfleetv1.ArchiveSessionResponse], error) {
+	id := req.Msg.GetSessionId()
+	if err := s.sessions.Archive(ctx, id); err != nil {
+		if errors.Is(err, sessions.ErrNotFound) {
+			return nil, connect.NewError(connect.CodeNotFound, err)
+		}
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	// Best-effort, logged not propagated: the archive itself has committed,
+	// and a teardown hiccup should not fail it. The reconcile loop notices a
+	// pod whose session is archived on its next pass anyway.
+	if _, err := s.e2e.TearDownSession(ctx, id, agentfleetv1.SessionKind_SESSION_KIND_WORKER); err != nil {
+		slog.Warn("dashboard ArchiveSession: worker teardown failed", "sessionId", id, "error", err)
+	}
+	if err := s.proposals.DismissForSession(ctx, id); err != nil {
+		slog.Warn("dashboard ArchiveSession: proposal dismiss failed", "sessionId", id, "error", err)
+	}
+	return connect.NewResponse(&agentfleetv1.ArchiveSessionResponse{}), nil
+}
+
+func (s *Server) ListProposals(ctx context.Context, _ *connect.Request[agentfleetv1.ListProposalsRequest]) (*connect.Response[agentfleetv1.ListProposalsResponse], error) {
+	list, err := s.proposals.ListOpen(ctx)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	out := make([]*agentfleetv1.Proposal, 0, len(list))
+	for _, p := range list {
+		out = append(out, proposalToProto(p))
+	}
+	return connect.NewResponse(&agentfleetv1.ListProposalsResponse{Proposals: out}), nil
+}
+
+// OpenFromProposal turns a machine-initiated suggestion into a real session.
+//
+// THE human gate — the one call that can hand a cluster-access agent a
+// session, reachable only from the dashboard behind Traefik basic-auth. It
+// replaces ApproveTask, which flipped a status value to release a task into a
+// dispatch queue that no longer exists.
+//
+// It creates the session but does NOT boot a pod: the proposal body is posted
+// as the first message, and that is what provisions. So a human can open a
+// proposal, read it, and still walk away without an agent having run.
+//
+// proposals.Open guards inside its UPDATE, so two clicks — or two humans, or
+// one stale browser tab — cannot open two sessions from one proposal.
+func (s *Server) OpenFromProposal(ctx context.Context, req *connect.Request[agentfleetv1.OpenFromProposalRequest]) (*connect.Response[agentfleetv1.OpenFromProposalResponse], error) {
+	p, err := s.proposals.Get(ctx, req.Msg.GetProposalId())
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	if p == nil {
+		return nil, connect.NewError(connect.CodeNotFound, errors.New("no such proposal"))
+	}
+
+	// Title for both the label fields: the body is not a label, it is the
+	// instruction, and it goes out as the first message below. Putting it in
+	// `description` made the list render an entire alert payload as a row.
+	id, err := s.sessions.Create(ctx, p.Repo, p.Title, p.Title, "")
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	if err := s.proposals.Open(ctx, p.ID, id); err != nil {
+		if errors.Is(err, proposals.ErrNotOpen) {
+			// Someone else won the race. Delete the session we just made
+			// rather than leaving an orphan behind — it has no pod and no
+			// transcript, so this is a clean rollback.
+			if delErr := s.sessions.Delete(ctx, id); delErr != nil {
+				slog.Warn("dashboard OpenFromProposal: rollback failed", "sessionId", id, "error", delErr)
+			}
+			return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("proposal is already opened or dismissed"))
+		}
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
-	// If any snippet suggests a permission mode, auto-set it immediately
-	if suggestedMode != "" {
-		if err := s.tasks.SetPermissionMode(ctx, id, suggestedMode); err != nil {
-			slog.Warn("dashboard CreateTask: failed to set suggested permission mode", "taskId", id, "mode", suggestedMode, "error", err)
-		}
+	// The proposal's body IS the instruction, so it has to be sent as a real
+	// first message — not left in `description`, which is a human-facing label
+	// the agent never sees (a description it cannot read is one that silently
+	// drifts from what it was actually asked to do). Without this the approved
+	// session opened with no pod and nothing to do, and the finding that
+	// prompted it never reached the agent at all.
+	//
+	// Warm BEFORE appending, for the same reason PostMessage does: resumeFromSeq
+	// is computed from LatestSeq at provisioning time, so a message appended
+	// first lands below the new pod's cursor and is never delivered.
+	if _, err := s.WarmIfIdle(ctx, id); err != nil {
+		// The session and the proposal link both stand — a human can send the
+		// message by hand, or Warm it later. Rolling back here would discard
+		// the approval decision itself, which is the expensive part.
+		slog.Error("dashboard OpenFromProposal: warm failed", "sessionId", id, "proposalId", p.ID, "error", err)
+		return nil, err
 	}
-	t, err := s.tasks.GetTask(ctx, id)
-	if err != nil {
-		slog.Error("dashboard CreateTask", "taskId", id, "error", err)
+	if _, err := s.transcr.Append(ctx, id, "human", p.Body, "discussion", uuid.NewString()); err != nil {
+		slog.Error("dashboard OpenFromProposal: append failed", "sessionId", id, "proposalId", p.ID, "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
-	slog.Info("dashboard CreateTask", "taskId", id, "repo", repo)
-	return connect.NewResponse(&agentfleetv1.CreateTaskResponse{Task: TaskToProto(*t)}), nil
+
+	sess, err := s.sessions.Get(ctx, id)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	slog.Info("dashboard OpenFromProposal", "proposalId", p.ID, "sessionId", id, "repo", p.Repo)
+	return connect.NewResponse(&agentfleetv1.OpenFromProposalResponse{Session: SessionToProto(*sess)}), nil
 }
 
-// resolveGuidanceAndMode joins the text of the operator's selected prompt
-// snippets, in the store's own name order, into the single guidance blob
-// stored on the task. Also returns the first non-empty suggested_permission_mode
-// from any of the snippets. Empty input returns "" for both — a task with no
-// snippets attached gets no extra guidance at all, just its own description.
-func (s *Server) resolveGuidanceAndMode(ctx context.Context, snippetIDs []string) (string, string, error) {
-	if len(snippetIDs) == 0 {
-		return "", "", nil
-	}
-	snippets, err := s.snippets.GetByIDs(ctx, snippetIDs)
-	if err != nil {
-		return "", "", err
-	}
-	texts := make([]string, len(snippets))
-	suggestedMode := ""
-	for i, sn := range snippets {
-		texts[i] = sn.Text
-		// Take the first non-empty suggested mode
-		if suggestedMode == "" && sn.SuggestedPermissionMode != nil && *sn.SuggestedPermissionMode != "" {
-			suggestedMode = *sn.SuggestedPermissionMode
+func (s *Server) DismissProposal(ctx context.Context, req *connect.Request[agentfleetv1.DismissProposalRequest]) (*connect.Response[agentfleetv1.DismissProposalResponse], error) {
+	if err := s.proposals.Dismiss(ctx, req.Msg.GetProposalId()); err != nil {
+		if errors.Is(err, proposals.ErrNotOpen) {
+			return nil, connect.NewError(connect.CodeFailedPrecondition, err)
 		}
+		return nil, connect.NewError(connect.CodeInternal, err)
 	}
-	return strings.Join(texts, "\n\n"), suggestedMode, nil
+	return connect.NewResponse(&agentfleetv1.DismissProposalResponse{}), nil
 }
+
+func proposalToProto(p proposals.Proposal) *agentfleetv1.Proposal {
+	out := &agentfleetv1.Proposal{
+		Id:        p.ID,
+		Repo:      p.Repo,
+		Source:    p.Source,
+		Title:     p.Title,
+		Body:      p.Body,
+		CreatedAt: p.CreatedAt.Format(time.RFC3339),
+	}
+	out.SessionId = p.SessionID
+	return out
+}
+
+// resolveGuidanceAndMode used to live here: it joined the operator's selected
+// prompt snippets into the hidden `guidance` blob stored alongside the task's
+// description, and picked up a suggested permission mode along the way.
+//
+// Both halves are gone in docs/adr/0048. There is no `guidance` column,
+// because there is no fleet-composed prompt to hide text in — whatever the
+// human types is the turn, verbatim. Snippets survive as what they always
+// really were: text the dashboard prefills into the composer, visible and
+// editable before it is sent. ListPromptSnippets still serves them.
 
 // validModels is the allowlist of Claude models that can be selected per-task.
 // This prevents injection of arbitrary model names and ensures only supported
@@ -214,21 +323,21 @@ func isValidModel(model string) bool {
 }
 
 func (s *Server) GetTranscript(ctx context.Context, req *connect.Request[agentfleetv1.ReadTranscriptSinceRequest]) (*connect.Response[agentfleetv1.ReadTranscriptSinceResponse], error) {
-	taskID := req.Msg.GetTaskId()
-	entries, next, err := s.transcr.ReadSince(ctx, taskID, req.Msg.GetSinceSeq(), 1000)
+	sessionID := req.Msg.GetSessionId()
+	entries, next, err := s.transcr.ReadSince(ctx, sessionID, req.Msg.GetSinceSeq(), 1000)
 	if err != nil {
-		slog.Error("dashboard GetTranscript", "taskId", taskID, "error", err)
+		slog.Error("dashboard GetTranscript", "sessionId", sessionID, "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	out := make([]*agentfleetv1.TranscriptEntry, len(entries))
 	for i, e := range entries {
-		out[i] = entryToProto(taskID, e)
+		out[i] = entryToProto(sessionID, e)
 	}
 	return connect.NewResponse(&agentfleetv1.ReadTranscriptSinceResponse{Entries: out, NextSeq: next}), nil
 }
 
 func (s *Server) StreamTranscript(ctx context.Context, req *connect.Request[agentfleetv1.StreamTranscriptRequest], stream *connect.ServerStream[agentfleetv1.TranscriptEntry]) error {
-	ch, cancel := s.hub.Subscribe(req.Msg.GetTaskId(), req.Msg.GetSinceSeq())
+	ch, cancel := s.hub.Subscribe(req.Msg.GetSessionId(), req.Msg.GetSinceSeq())
 	defer cancel()
 
 	for {
@@ -244,51 +353,6 @@ func (s *Server) StreamTranscript(ctx context.Context, req *connect.Request[agen
 			}
 		}
 	}
-}
-
-func (s *Server) GetE2EStatus(ctx context.Context, req *connect.Request[agentfleetv1.GetE2EStatusRequest]) (*connect.Response[agentfleetv1.GetE2EStatusResponse], error) {
-	live, err := s.e2e.GetSessionStatus(ctx, req.Msg.GetTaskId())
-	if err != nil {
-		slog.Error("dashboard GetE2EStatus", "taskId", req.Msg.GetTaskId(), "error", err)
-		return nil, connect.NewError(connect.CodeInternal, err)
-	}
-	resp := &agentfleetv1.GetE2EStatusResponse{
-		Status:        live.GetStatus(),
-		PreviewUrl:    live.GetPreviewUrl(),
-		CodeServerUrl: live.GetCodeServerUrl(),
-		StartCmd:      live.GetStartCmd(),
-		PodPhase:      live.GetPodPhase(),
-		AppReady:      live.GetAppReady(),
-		Restarts:      live.GetRestarts(),
-		StartedAt:     live.GetStartedAt(),
-	}
-	// The declared recipe is core's half — the provisioner holds no DB
-	// credentials (docs/adr/0020 point 1) and can't read repo_profiles.
-	// Best-effort: a missing task or profile still leaves the live pod state
-	// worth rendering, so it's logged, not fatal.
-	//
-	// Resolved through e2erecipe rather than the hardcoded "e2e" this used to
-	// pass: that name is only correct for repos whose recipe happens to be
-	// called that, so this card reported the wrong profile (and a spurious
-	// "overridden" badge) for any repo pointing its e2e_profile column
-	// elsewhere — agent-fleet at "lint", for one. docs/adr/0044.
-	if t, err := s.tasks.GetTask(ctx, req.Msg.GetTaskId()); err != nil {
-		slog.Warn("dashboard GetE2EStatus: get task", "taskId", req.Msg.GetTaskId(), "error", err)
-	} else if t != nil {
-		if recipe, err := e2erecipe.Resolve(ctx, s.repos, s.profiles, t.Repo, ""); err != nil {
-			slog.Warn("dashboard GetE2EStatus: resolve recipe", "repo", t.Repo, "error", err)
-		} else {
-			resp.ProfileName = recipe.ProfileName
-			resp.Tools = recipe.ToolKeys
-			resp.Services = repoprofiles.FormatServices(recipe.Services)
-			// A running start_cmd that isn't the profile's means a
-			// human-approved per-task override is in effect. Surfacing that
-			// is the point: an unsurfaced override is what made the
-			// original preview 502 impossible to explain.
-			resp.StartCmdOverridden = resp.StartCmd != "" && resp.StartCmd != recipe.StartCmd
-		}
-	}
-	return connect.NewResponse(resp), nil
 }
 
 // Kill and KillE2E below call the exact same store methods
@@ -307,21 +371,21 @@ func (s *Server) GetE2EStatus(ctx context.Context, req *connect.Request[agentfle
 // unreachable-pod case a bare abort message can never reach. Ends the
 // whole session/pod — Interrupt below is the softer, session-preserving
 // sibling.
-func (s *Server) Kill(ctx context.Context, req *connect.Request[agentfleetv1.KillRequest]) (*connect.Response[agentfleetv1.KillResponse], error) {
-	taskID := req.Msg.GetTaskId()
+func (s *Server) StopSession(ctx context.Context, req *connect.Request[agentfleetv1.StopSessionRequest]) (*connect.Response[agentfleetv1.StopSessionResponse], error) {
+	sessionID := req.Msg.GetSessionId()
 	reason := "killed by human"
 	if req.Msg.Reason != nil && *req.Msg.Reason != "" {
 		reason = req.Msg.GetReason()
 	}
-	if _, err := s.transcr.Append(ctx, taskID, "human", reason, "abort", uuid.NewString()); err != nil {
-		slog.Error("dashboard Kill", "taskId", taskID, "error", err)
+	if _, err := s.transcr.Append(ctx, sessionID, "human", reason, "abort", uuid.NewString()); err != nil {
+		slog.Error("dashboard Kill", "sessionId", sessionID, "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
-	if err := s.tasks.MarkStopRequested(ctx, taskID); err != nil {
-		slog.Error("dashboard Kill: mark stop requested", "taskId", taskID, "error", err)
+	if err := s.sessions.MarkStopRequested(ctx, sessionID); err != nil {
+		slog.Error("dashboard Kill: mark stop requested", "sessionId", sessionID, "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
-	return connect.NewResponse(&agentfleetv1.KillResponse{Status: "killing"}), nil
+	return connect.NewResponse(&agentfleetv1.StopSessionResponse{}), nil
 }
 
 // Interrupt posts an "interrupt" transcript entry — the worker calls the
@@ -330,12 +394,12 @@ func (s *Server) Kill(ctx context.Context, req *connect.Request[agentfleetv1.Kil
 // tasks.stop_requested_at/pod lifecycle: there's nothing for
 // dispatch.Loop's grace-period sweep to force-teardown here.
 func (s *Server) Interrupt(ctx context.Context, req *connect.Request[agentfleetv1.InterruptRequest]) (*connect.Response[agentfleetv1.InterruptResponse], error) {
-	taskID := req.Msg.GetTaskId()
-	if _, err := s.transcr.Append(ctx, taskID, "human", "interrupted by human", "interrupt", uuid.NewString()); err != nil {
-		slog.Error("dashboard Interrupt", "taskId", taskID, "error", err)
+	sessionID := req.Msg.GetSessionId()
+	if _, err := s.transcr.Append(ctx, sessionID, "human", "interrupted by human", "interrupt", uuid.NewString()); err != nil {
+		slog.Error("dashboard Interrupt", "sessionId", sessionID, "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
-	return connect.NewResponse(&agentfleetv1.InterruptResponse{Status: "interrupting"}), nil
+	return connect.NewResponse(&agentfleetv1.InterruptResponse{}), nil
 }
 
 // validPermissionModes is an allowlist, not a passthrough — the value ends
@@ -364,200 +428,30 @@ var validPermissionModes = map[string]bool{
 // for the dashboard's mode picker) in addition to the transcript append
 // that actually reaches the running worker.
 func (s *Server) SetPermissionMode(ctx context.Context, req *connect.Request[agentfleetv1.SetPermissionModeRequest]) (*connect.Response[agentfleetv1.SetPermissionModeResponse], error) {
-	taskID := req.Msg.GetTaskId()
+	sessionID := req.Msg.GetSessionId()
 	mode := req.Msg.GetMode()
 	if !validPermissionModes[mode] {
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("invalid permission mode %q", mode))
 	}
-	if _, err := s.transcr.Append(ctx, taskID, "human", mode, "permission_mode", uuid.NewString()); err != nil {
-		slog.Error("dashboard SetPermissionMode", "taskId", taskID, "mode", mode, "error", err)
+	if _, err := s.transcr.Append(ctx, sessionID, "human", mode, "permission_mode", uuid.NewString()); err != nil {
+		slog.Error("dashboard SetPermissionMode", "sessionId", sessionID, "mode", mode, "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
-	if err := s.tasks.SetPermissionMode(ctx, taskID, mode); err != nil {
-		slog.Error("dashboard SetPermissionMode: persist", "taskId", taskID, "mode", mode, "error", err)
+	if err := s.sessions.SetPermissionMode(ctx, sessionID, mode); err != nil {
+		slog.Error("dashboard SetPermissionMode: persist", "sessionId", sessionID, "mode", mode, "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
-	return connect.NewResponse(&agentfleetv1.SetPermissionModeResponse{Status: "set"}), nil
+	return connect.NewResponse(&agentfleetv1.SetPermissionModeResponse{}), nil
 }
 
-func (s *Server) KillE2E(ctx context.Context, req *connect.Request[agentfleetv1.KillE2ERequest]) (*connect.Response[agentfleetv1.KillE2EResponse], error) {
-	taskID := req.Msg.GetTaskId()
-	var repo string
-	if req.Msg.GetAlsoTeardownServices() {
-		t, err := s.tasks.GetTask(ctx, taskID)
-		if err != nil {
-			slog.Error("dashboard KillE2E: get task for repo", "taskId", taskID, "error", err)
-			return nil, connect.NewError(connect.CodeInternal, err)
-		}
-		if t != nil {
-			repo = t.Repo
-		}
-	}
-	killed, servicesTornDown, err := s.e2e.KillSession(ctx, taskID, uuid.NewString(), repo, req.Msg.GetAlsoTeardownServices())
+func (s *Server) AnswerQuestion(ctx context.Context, req *connect.Request[agentfleetv1.AnswerQuestionRequest]) (*connect.Response[agentfleetv1.AppendResponse], error) {
+	sessionID := req.Msg.GetSessionId()
+	seq, err := s.transcr.AppendReply(ctx, sessionID, "human", req.Msg.GetAnswersJson(), "answer", uuid.NewString(), req.Msg.GetSeq())
 	if err != nil {
-		slog.Error("dashboard KillE2E", "taskId", taskID, "error", err)
+		slog.Error("dashboard AnswerQuestion", "sessionId", sessionID, "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
-	return connect.NewResponse(&agentfleetv1.KillE2EResponse{Killed: killed, ServicesTornDown: servicesTornDown}), nil
-}
-
-// StartE2E creates the sandbox from the dashboard. Until now a human could
-// Kill an e2e env but never start one — the only way to get a sandbox was to
-// ask the agent to call request_e2e_env, which is a strange dependency when
-// the sandbox is precisely what a human wants in order to look at a broken
-// preview themselves (docs/adr/0044).
-//
-// Resolution goes through e2erecipe, the same path CoreService.RequestE2EEnv
-// uses. Deliberately not a reimplementation: the hardcoded-"e2e" bug that
-// package exists to prevent had already been copied into GetE2EStatus below.
-func (s *Server) StartE2E(ctx context.Context, req *connect.Request[agentfleetv1.StartE2ERequest]) (*connect.Response[agentfleetv1.StartE2EResponse], error) {
-	taskID := req.Msg.GetTaskId()
-	t, err := s.tasks.GetTask(ctx, taskID)
-	if err != nil {
-		slog.Error("dashboard StartE2E: get task", "taskId", taskID, "error", err)
-		return nil, connect.NewError(connect.CodeInternal, err)
-	}
-	if t == nil {
-		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("task %s not found", taskID))
-	}
-	recipe, err := e2erecipe.Resolve(ctx, s.repos, s.profiles, t.Repo, "")
-	if err != nil {
-		slog.Error("dashboard StartE2E: resolve recipe", "taskId", taskID, "repo", t.Repo, "error", err)
-		return nil, connect.NewError(connect.CodeInternal, err)
-	}
-	created, err := s.e2e.CreateE2eSession(ctx, taskID, t.Repo, recipe.StartCmd, recipe.ToolKeys, recipe.Services)
-	if err != nil {
-		slog.Error("dashboard StartE2E", "taskId", taskID, "error", err)
-		return nil, connect.NewError(connect.CodeInternal, err)
-	}
-	slog.Info("dashboard StartE2E", "taskId", taskID, "repo", t.Repo, "profile", recipe.ProfileName)
-	// The roster is deliberately not surfaced to the browser: a dashboard
-	// user has no route to a ClusterIP, and the endpoints are only useful to
-	// in-cluster callers (docs/adr/0045).
-	return connect.NewResponse(&agentfleetv1.StartE2EResponse{
-		Status:           created.GetStatus(),
-		PreviewUrl:       created.GetPreviewUrl(),
-		ResolvedStartCmd: recipe.StartCmd,
-		ProfileName:      recipe.ProfileName,
-	}), nil
-}
-
-// RestartE2EApp re-runs the app inside the live pod via the e2e-restart-app
-// helper on the image's PATH. It restarts the APP, not the pod — the warm
-// dependency cache and the worktree survive, so it costs seconds where
-// recreating the sandbox costs a 10+ minute cold install (docs/adr/0044).
-//
-// Routed through run_command rather than a new ProvisionerService RPC: the
-// passthrough already exists, and the logic that actually matters (signalling
-// the app's whole process group, so a dev server's children don't keep $PORT
-// bound) belongs in the image next to the thing it restarts, where the agent
-// can invoke it too.
-func (s *Server) RestartE2EApp(ctx context.Context, req *connect.Request[agentfleetv1.RestartE2EAppRequest]) (*connect.Response[agentfleetv1.RestartE2EAppResponse], error) {
-	out, exitCode, err := s.runInE2ePod(ctx, req.Msg.GetTaskId(), "e2e-restart-app")
-	if err != nil {
-		slog.Error("dashboard RestartE2EApp", "taskId", req.Msg.GetTaskId(), "error", err)
-		return nil, connect.NewError(connect.CodeInternal, err)
-	}
-	slog.Info("dashboard RestartE2EApp", "taskId", req.Msg.GetTaskId(), "exitCode", exitCode)
-	return connect.NewResponse(&agentfleetv1.RestartE2EAppResponse{Output: out, ExitCode: exitCode}), nil
-}
-
-// GetE2EAppLog reads the app's own stdout out of the live pod. Not Loki: this
-// works regardless of retention, and it carries the explicit "app command
-// exited with status N" marker the entrypoint writes — the single question
-// the e2e card could never answer.
-func (s *Server) GetE2EAppLog(ctx context.Context, req *connect.Request[agentfleetv1.GetE2EAppLogRequest]) (*connect.Response[agentfleetv1.GetE2EAppLogResponse], error) {
-	lines := req.Msg.GetLines()
-	if lines <= 0 {
-		lines = 200
-	}
-	if lines > 2000 {
-		lines = 2000
-	}
-	out, _, err := s.runInE2ePod(ctx, req.Msg.GetTaskId(), fmt.Sprintf("tail -n %d /tmp/e2e-app.log", lines))
-	if err != nil {
-		// A pod that isn't up yet is the common case, not a page-level error —
-		// same reasoning useTaskDetail's own poll already applies.
-		slog.Info("dashboard GetE2EAppLog: no readable pod", "taskId", req.Msg.GetTaskId(), "error", err)
-		return connect.NewResponse(&agentfleetv1.GetE2EAppLogResponse{}), nil
-	}
-	return connect.NewResponse(&agentfleetv1.GetE2EAppLogResponse{Log: out}), nil
-}
-
-// runViaSandbox dials the task's sandbox directly (docs/adr/0045).
-//
-// The roster arrives on GetE2eSessionStatus, which this already had to call —
-// it needs the pod's live state anyway to know whether there is anything to
-// run in. So direct dial costs core no extra round trip here, unlike the
-// sidecar, which had to be handed its roster at pod creation.
-func (s *Server) runViaSandbox(ctx context.Context, taskID, command string) (string, error) {
-	status, err := s.e2e.GetSessionStatus(ctx, taskID)
-	if err != nil {
-		return "", err
-	}
-	endpoints := make([]e2edial.Endpoint, 0, len(status.GetEndpoints()))
-	for _, e := range status.GetEndpoints() {
-		endpoints = append(endpoints, e2edial.Endpoint{Name: e.GetName(), Address: e.GetAddress(), Path: e.GetPath()})
-	}
-	ep, ok := e2edial.Find(endpoints, e2edial.EndpointExec)
-	if !ok {
-		// No relay to fall back to any more (docs/adr/0045). The roster comes
-		// from the same GetE2eSessionStatus call above, so an absent exec
-		// endpoint means either there is no sandbox or the provisioner is too
-		// old to describe one — both worth saying plainly rather than routing
-		// around.
-		return "", fmt.Errorf("no exec endpoint for task %s: the sandbox is not running, or the provisioner predates the endpoint roster", taskID)
-	}
-	return e2edial.RunCommand(ctx, ep, command)
-}
-
-// runInE2ePod is the shared half of the two handlers above: run one command
-// in the task's e2e pod and unwrap execmcp's {stdout,stderr,exitCode}
-// envelope.
-func (s *Server) runInE2ePod(ctx context.Context, taskID, command string) (output string, exitCode int32, err error) {
-	resultJSON, err := s.runViaSandbox(ctx, taskID, command)
-	if err != nil {
-		return "", 0, err
-	}
-	// execmcp answers as an MCP CallToolResult whose single text block is the
-	// JSON payload — unwrapped here so the dashboard never sees MCP framing.
-	var result struct {
-		Content []struct {
-			Text string `json:"text"`
-		} `json:"content"`
-	}
-	if err := json.Unmarshal([]byte(resultJSON), &result); err != nil {
-		return "", 0, fmt.Errorf("unmarshal tool result: %w", err)
-	}
-	if len(result.Content) == 0 {
-		return "", 0, nil
-	}
-	var payload struct {
-		Stdout   string `json:"stdout"`
-		Stderr   string `json:"stderr"`
-		ExitCode int32  `json:"exitCode"`
-	}
-	if err := json.Unmarshal([]byte(result.Content[0].Text), &payload); err != nil {
-		// Not the envelope we expected — hand back the raw text rather than
-		// an error, since it's still the most useful thing we have.
-		return result.Content[0].Text, 0, nil
-	}
-	return payload.Stdout + payload.Stderr, payload.ExitCode, nil
-}
-
-// AnswerQuestion appends the human's answer to a pending QUESTION-type
-// transcript entry (posted by the agent's AskUserQuestion MCP tool call,
-// see docs/adr/0018) via AppendReply — req.Msg.Seq is the question entry's
-// own seq, now actually used server-side for correlation
-// (reliability-findings.md #0: "any pending question + any reply" let an
-// unrelated message satisfy a blocked AskUserQuestion call).
-func (s *Server) AnswerQuestion(ctx context.Context, req *connect.Request[agentfleetv1.AnswerQuestionRequest]) (*connect.Response[agentfleetv1.AnswerQuestionResponse], error) {
-	taskID := req.Msg.GetTaskId()
-	if _, err := s.transcr.AppendReply(ctx, taskID, "human", req.Msg.GetAnswersJson(), "answer", uuid.NewString(), req.Msg.GetSeq()); err != nil {
-		slog.Error("dashboard AnswerQuestion", "taskId", taskID, "error", err)
-		return nil, connect.NewError(connect.CodeInternal, err)
-	}
-	return connect.NewResponse(&agentfleetv1.AnswerQuestionResponse{Status: "answered"}), nil
+	return connect.NewResponse(&agentfleetv1.AppendResponse{Seq: seq}), nil
 }
 
 // RespondToPermission answers a pending PERMISSION_REQUEST entry — the
@@ -565,13 +459,14 @@ func (s *Server) AnswerQuestion(ctx context.Context, req *connect.Request[agentf
 // AnswerQuestion, same AppendReply-by-seq shape, kept as a sibling RPC
 // rather than overloaded onto AnswerQuestion since the payload differs
 // (allow/deny/updatedInput JSON vs. free-form answers JSON).
-func (s *Server) RespondToPermission(ctx context.Context, req *connect.Request[agentfleetv1.RespondToPermissionRequest]) (*connect.Response[agentfleetv1.RespondToPermissionResponse], error) {
-	taskID := req.Msg.GetTaskId()
-	if _, err := s.transcr.AppendReply(ctx, taskID, "human", req.Msg.GetDecisionJson(), "permission_response", uuid.NewString(), req.Msg.GetSeq()); err != nil {
-		slog.Error("dashboard RespondToPermission", "taskId", taskID, "error", err)
+func (s *Server) RespondToPermission(ctx context.Context, req *connect.Request[agentfleetv1.RespondToPermissionRequest]) (*connect.Response[agentfleetv1.AppendResponse], error) {
+	sessionID := req.Msg.GetSessionId()
+	seq, err := s.transcr.AppendReply(ctx, sessionID, "human", req.Msg.GetDecisionJson(), "permission_response", uuid.NewString(), req.Msg.GetSeq())
+	if err != nil {
+		slog.Error("dashboard RespondToPermission", "sessionId", sessionID, "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
-	return connect.NewResponse(&agentfleetv1.RespondToPermissionResponse{Status: "answered"}), nil
+	return connect.NewResponse(&agentfleetv1.AppendResponse{Seq: seq}), nil
 }
 
 // Discuss appends a human-authored free-text message from the dashboard —
@@ -588,19 +483,25 @@ func (s *Server) RespondToPermission(ctx context.Context, req *connect.Request[a
 // explicitly, before the message is appended — so the pod that reads it
 // back off streamHumanMessages already exists. Silently does nothing
 // extra when a pod is already live (the common case).
-func (s *Server) Discuss(ctx context.Context, req *connect.Request[agentfleetv1.DiscussRequest]) (*connect.Response[agentfleetv1.DiscussResponse], error) {
-	taskID := req.Msg.GetTaskId()
+func (s *Server) PostMessage(ctx context.Context, req *connect.Request[agentfleetv1.PostMessageRequest]) (*connect.Response[agentfleetv1.AppendResponse], error) {
+	sessionID := req.Msg.GetSessionId()
 	text := req.Msg.GetText()
 	if text == "" {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("text is required"))
 	}
-	if _, err := s.WarmIfIdle(ctx, taskID); err != nil {
+	// Warm BEFORE appending, never after. resumeFromSeq is computed from
+	// LatestSeq at provisioning time, so a message appended first would land
+	// below the new pod's cursor and never be delivered — the pod would boot
+	// and sit there with nothing to do. This ordering is the whole mechanism
+	// by which a first message boots a session (docs/adr/0048).
+	if _, err := s.WarmIfIdle(ctx, sessionID); err != nil {
 		return nil, err
 	}
-	if _, err := s.transcr.Append(ctx, taskID, "human", text, "discussion", uuid.NewString()); err != nil {
+	seq, err := s.transcr.Append(ctx, sessionID, "human", text, "discussion", uuid.NewString())
+	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
-	return connect.NewResponse(&agentfleetv1.DiscussResponse{Status: "sent"}), nil
+	return connect.NewResponse(&agentfleetv1.AppendResponse{Seq: seq}), nil
 }
 
 // MarkSeen records that a human opened this session's detail view, which
@@ -614,129 +515,88 @@ func (s *Server) Discuss(ctx context.Context, req *connect.Request[agentfleetv1.
 // unreachable. Best-effort — failing to record a look is not worth
 // failing the caller over, and the next open will record it anyway.
 func (s *Server) MarkSeen(ctx context.Context, req *connect.Request[agentfleetv1.MarkSeenRequest]) (*connect.Response[agentfleetv1.MarkSeenResponse], error) {
-	if err := s.tasks.MarkSeen(ctx, req.Msg.GetTaskId()); err != nil {
+	if err := s.sessions.MarkSeen(ctx, req.Msg.GetSessionId()); err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	return connect.NewResponse(&agentfleetv1.MarkSeenResponse{}), nil
 }
 
-// Warm boots a pod for an idle session on demand (see WarmRequest's own
+// Warm boots a pod for an idle session on demand (see WarmSessionRequest's own
 // proto comment) — the explicit counterpart to Discuss's auto-warm. Gives
 // an explicit, specific rejection reason for each way a click can be a
 // no-op — unlike Discuss, which shares warmIfIdle's silent-skip behavior
 // for those same cases because it has a message to send regardless.
-func (s *Server) Warm(ctx context.Context, req *connect.Request[agentfleetv1.WarmRequest]) (*connect.Response[agentfleetv1.WarmResponse], error) {
-	taskID := req.Msg.GetTaskId()
-	t, err := s.tasks.GetTask(ctx, taskID)
+func (s *Server) WarmSession(ctx context.Context, req *connect.Request[agentfleetv1.WarmSessionRequest]) (*connect.Response[agentfleetv1.WarmSessionResponse], error) {
+	sessionID := req.Msg.GetSessionId()
+	t, err := s.sessions.Get(ctx, sessionID)
 	if err != nil {
+		if errors.Is(err, sessions.ErrNotFound) {
+			return nil, connect.NewError(connect.CodeNotFound, err)
+		}
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
-	if t == nil {
-		return nil, connect.NewError(connect.CodeNotFound, errors.New("task not found"))
-	}
-	if tasks.IsPodPhaseLive(t.PodPhase) {
+	// An explicit click deserves an explicit answer, where PostMessage's
+	// shared path treats the same condition as a silent no-op.
+	if sessions.IsPodPhaseLive(t.PodPhase) {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("session already has a live pod"))
 	}
-	if t.Status == "proposed" {
-		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("task is an unapproved proposal — approve it first"))
-	}
-	if t.Status == "pending" {
-		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("task hasn't been claimed yet — it will dispatch automatically"))
-	}
-	podName, err := s.WarmIfIdle(ctx, taskID)
+	podName, err := s.WarmIfIdle(ctx, sessionID)
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&agentfleetv1.WarmResponse{Status: "warming", PodName: podName}), nil
+	return connect.NewResponse(&agentfleetv1.WarmSessionResponse{PodName: podName}), nil
 }
 
-// ApproveTask releases a machine-created proposal into the dispatch queue
-// (see ApproveTaskRequest's proto comment). Only writes the status —
-// dispatch owns the pod, which keeps the task inside
-// MAX_IN_FLIGHT_TASKS' accounting.
-func (s *Server) ApproveTask(ctx context.Context, req *connect.Request[agentfleetv1.ApproveTaskRequest]) (*connect.Response[agentfleetv1.ApproveTaskResponse], error) {
-	approved, err := s.tasks.ApproveProposal(ctx, req.Msg.GetTaskId())
-	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
-	}
-	if !approved {
-		// Covers unknown, already-approved, already-running and dismissed
-		// alike — from the caller's side they are the same fact: there is
-		// no un-approved proposal here to release.
-		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("task is not an unapproved proposal"))
-	}
-	return connect.NewResponse(&agentfleetv1.ApproveTaskResponse{Status: "approved"}), nil
-}
+// ApproveTask and RetryTask used to live here. Both are deleted in
+// docs/adr/0048.
+//
+// ApproveTask's job — the human gate on a machine-created proposal, the one
+// write that can hand a cluster-access agent a pod — moves to
+// OpenFromProposal below. It is the same guarantee expressed in the schema
+// instead of in a status value: a proposal row has no pod path at all, so
+// there is no dispatcher to be trusted not to SELECT it.
+//
+// RetryTask was the only way back from failed_permanently, a state the
+// automatic reclaim could drive a task into with no exit. Nothing reclaims a
+// session now, so there is no dead state to resurrect one from — retrying is
+// just sending the session another message.
 
-// RetryTask is the only path back from failed_permanently — see tasks.Retry.
-func (s *Server) RetryTask(ctx context.Context, req *connect.Request[agentfleetv1.RetryTaskRequest]) (*connect.Response[agentfleetv1.RetryTaskResponse], error) {
-	retried, err := s.tasks.Retry(ctx, req.Msg.GetTaskId())
+// WarmIfIdle provisions a pod for a session that has none, and is a silent
+// no-op for one that already does. It is the single path to a worker pod in
+// the entire fleet — PostMessage calls it unconditionally on every message,
+// WarmSession calls it from an explicit click, and coreserver's PromptSession
+// reuses it rather than duplicating the sequence (docs/adr/0041).
+//
+// There is no longer a dispatch loop competing for that job, which removes
+// the double-dispatch hazard the old version guarded against by refusing to
+// warm 'pending' and 'proposed' tasks. Both guards are gone with the statuses:
+//
+//   - 'pending' existed because ClaimNextTask owned a fresh task's first pod.
+//     Nothing claims anything now; the first message provisions, full stop.
+//   - 'proposed' was the human gate on machine-created work. That moved into
+//     the schema: a proposal is a row in a different table with no pod path,
+//     so there is nothing here to guard. See OpenFromProposal.
+//
+// Archived sessions are refused by ReserveSlot itself.
+func (s *Server) WarmIfIdle(ctx context.Context, sessionID string) (podName string, err error) {
+	t, err := s.sessions.Get(ctx, sessionID)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
-	}
-	if !retried {
-		// Unknown, deleted, or not in a failed state — from the caller's side
-		// the same fact: there is nothing here to retry. Guarding it matters
-		// because retrying a live session would double-dispatch it.
-		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("task is not in a failed state"))
-	}
-	return connect.NewResponse(&agentfleetv1.RetryTaskResponse{Status: "pending"}), nil
-}
-
-// warmIfIdle is Warm/Discuss's shared implementation: returns ("", nil)
-// if the task already has a live pod (a no-op, not an error — Discuss
-// calls this unconditionally on every message), the new pod's name if it
-// warmed one, or a typed connect error for anything else (unknown task,
-// fleet at MAX_IN_FLIGHT_TASKS). Deliberately never touches tasks.status —
-// status is a loose UI-freshness signal now, not control flow (sessions
-// redesign, supersedes docs/adr/0021/0025's phase-boundary framing); pod
-// lifecycle is pod_phase alone.
-// WarmIfIdle is exported so coreserver's PromptSession can reuse the one
-// real warm path instead of duplicating it (docs/adr/0041).
-func (s *Server) WarmIfIdle(ctx context.Context, taskID string) (podName string, err error) {
-	t, err := s.tasks.GetTask(ctx, taskID)
-	if err != nil {
+		if errors.Is(err, sessions.ErrNotFound) {
+			return "", connect.NewError(connect.CodeNotFound, err)
+		}
 		return "", connect.NewError(connect.CodeInternal, err)
 	}
-	if t == nil {
-		return "", connect.NewError(connect.CodeNotFound, errors.New("task not found"))
-	}
-	if tasks.IsPodPhaseLive(t.PodPhase) {
+	if sessions.IsPodPhaseLive(t.PodPhase) {
 		return "", nil
 	}
-	// A still-'pending' task hasn't been claimed yet — dispatch.Loop's own
-	// ClaimNextTask owns that first pod for every fresh task (it'll pick
-	// this one up within one poll tick regardless). Warming it here too
-	// would double-dispatch: both this call and the next dispatch tick
-	// would call CreateWorkerPod for the same task independently, since
-	// neither knows about the other's in-flight attempt. A silent no-op,
-	// not an error, from this shared helper — Discuss (which calls this
-	// unconditionally on every message) must still append the message
-	// either way; Warm's own handler below gives an explicit rejection
-	// instead, since a human clicking it deserves to know why nothing
-	// happened. Once claimed (any other status), the task is exclusively
-	// this function's territory.
-	//
-	// 'proposed' is here for a different and much sharper reason: a
-	// machine-created task that no human has approved must not get a pod
-	// at all, and this function is the only path to one other than
-	// dispatch. Guarding it HERE rather than in the two callers is what
-	// makes the gate real — Discuss reaches this on every message, so a
-	// guard living only in Warm's handler would let anyone spawn a
-	// cluster-access pod for an un-approved alert just by typing into it.
-	if t.Status == "pending" || t.Status == "proposed" {
-		return "", nil
+	// A swept session has had its working directory and SDK state reclaimed,
+	// so there is nothing to resume into — booting a pod would hand the agent
+	// an empty directory and a resume id pointing at a deleted transcript.
+	if t.SweptAt != nil {
+		return "", connect.NewError(connect.CodeFailedPrecondition,
+			errors.New("session was swept by the retention GC — its working directory is gone, so it cannot be resumed"))
 	}
-	// Accepted TOCTOU window (see tasks.Store.CountLivePods' own comment):
-	// this whole function only ever runs from a low-frequency human action
-	// (a click, or a typed message), never the hot dispatch loop.
-	live, err := s.tasks.CountLivePods(ctx)
-	if err != nil {
-		return "", connect.NewError(connect.CodeInternal, err)
-	}
-	if live >= s.maxInFlight {
-		return "", connect.NewError(connect.CodeResourceExhausted, fmt.Errorf("fleet at capacity (%d/%d warm pods)", live, s.maxInFlight))
-	}
+
 	repoCfg, err := s.repos.Get(ctx, t.Repo)
 	if err != nil {
 		return "", connect.NewError(connect.CodeInternal, err)
@@ -744,52 +604,65 @@ func (s *Server) WarmIfIdle(ctx context.Context, taskID string) (podName string,
 	if repoCfg == nil {
 		return "", connect.NewError(connect.CodeInternal, fmt.Errorf("unknown repo %q", t.Repo))
 	}
-	resumeSessionID := ""
-	if t.SessionID != nil {
-		resumeSessionID = *t.SessionID
+
+	// The cap check and the lease mint happen together, under an advisory
+	// lock, inside ReserveSlot. Checking here and acting after would be the
+	// read-then-act race CI once observed as 4 tasks claimed with a cap of 2.
+	leaseID, err := s.sessions.ReserveSlot(ctx, sessionID, s.maxLive)
+	if err != nil {
+		switch {
+		case errors.Is(err, sessions.ErrAtCapacity):
+			return "", connect.NewError(connect.CodeResourceExhausted,
+				fmt.Errorf("fleet at capacity (%d live sessions) — stop one first", s.maxLive))
+		case errors.Is(err, sessions.ErrNotFound):
+			return "", connect.NewError(connect.CodeFailedPrecondition, errors.New("session is archived"))
+		}
+		return "", connect.NewError(connect.CodeInternal, err)
 	}
-	leaseID, err := s.tasks.RefreshLease(ctx, taskID)
+
+	resumeAgentSessionID := ""
+	if t.AgentSessionID != nil {
+		resumeAgentSessionID = *t.AgentSessionID
+	}
+	// Read AFTER reserving and BEFORE the caller appends: this cursor is what
+	// the new pod starts streaming from, so an entry written before the pod
+	// exists would land below it and never be delivered.
+	resumeFromSeq, err := s.transcr.LatestSeq(ctx, sessionID)
 	if err != nil {
 		return "", connect.NewError(connect.CodeInternal, err)
 	}
-	resumeFromSeq, err := s.transcr.LatestSeq(ctx, taskID)
+	toolKeys, err := s.toolKeysFor(ctx, t.Repo)
 	if err != nil {
 		return "", connect.NewError(connect.CodeInternal, err)
 	}
-	toolKeys, serviceIngredients, err := s.resolveWorkerIngredients(ctx, t.Repo)
-	if err != nil {
-		return "", connect.NewError(connect.CodeInternal, err)
-	}
-	podName, err = s.e2e.CreateWorkerPod(ctx, taskID, t.Repo, repoCfg.URL, repoCfg.BaseBranch, t.Description, t.Guidance, leaseID, resumeSessionID, resumeFromSeq, toolKeys, serviceIngredients)
+	podName, err = s.e2e.CreateWorkerPod(ctx, sessionID, t.Repo, repoCfg.URL, repoCfg.BaseBranch, t.Description, leaseID, resumeAgentSessionID, resumeFromSeq, toolKeys)
 	if err != nil {
 		return "", connect.NewError(connect.CodeInternal, err)
 	}
 	return podName, nil
 }
 
-// DeleteTask force-tears-down any live session for taskID (both kinds —
+// DeleteTask force-tears-down any live session for sessionID (both kinds —
 // mirrors the same two calls coreserver/server.go's SetTaskStatus makes on
 // a terminal status, just invoked directly instead of waiting for the
 // worker pod to reach that code path, so a wedged/crashed pod doesn't
 // block removal like Stop's cooperative abort-signal does) and then
 // soft-deletes the task row. Doesn't touch status — see
-// tasks.Store.SoftDelete's own comment.
-func (s *Server) DeleteTask(ctx context.Context, req *connect.Request[agentfleetv1.DeleteTaskRequest]) (*connect.Response[agentfleetv1.DeleteTaskResponse], error) {
-	taskID := req.Msg.GetTaskId()
-	if _, err := s.e2e.TearDownSession(ctx, taskID, agentfleetv1.SessionKind_SESSION_KIND_WORKER); err != nil {
-		slog.Error("dashboard DeleteTask: worker teardown", "taskId", taskID, "error", err)
+// sessions.Store.SoftDelete's own comment.
+func (s *Server) DeleteSession(ctx context.Context, req *connect.Request[agentfleetv1.DeleteSessionRequest]) (*connect.Response[agentfleetv1.DeleteSessionResponse], error) {
+	sessionID := req.Msg.GetSessionId()
+	if _, err := s.e2e.TearDownSession(ctx, sessionID, agentfleetv1.SessionKind_SESSION_KIND_WORKER); err != nil {
+		slog.Error("dashboard DeleteTask: worker teardown", "sessionId", sessionID, "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
-	if _, err := s.e2e.TearDownSession(ctx, taskID, agentfleetv1.SessionKind_SESSION_KIND_E2E); err != nil {
-		slog.Error("dashboard DeleteTask: e2e teardown", "taskId", taskID, "error", err)
+	// A second teardown call for the session's e2e sandbox used to follow.
+	// There is no sandbox (docs/adr/0048 §6) — one pod, one teardown.
+	if err := s.sessions.Delete(ctx, sessionID); err != nil {
+		slog.Error("dashboard DeleteSession", "sessionId", sessionID, "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
-	if err := s.tasks.SoftDelete(ctx, taskID); err != nil {
-		slog.Error("dashboard DeleteTask: soft delete", "taskId", taskID, "error", err)
-		return nil, connect.NewError(connect.CodeInternal, err)
-	}
-	slog.Info("dashboard DeleteTask", "taskId", taskID)
-	return connect.NewResponse(&agentfleetv1.DeleteTaskResponse{Status: "deleted"}), nil
+	slog.Info("dashboard DeleteTask", "sessionId", sessionID)
+	return connect.NewResponse(&agentfleetv1.DeleteSessionResponse{}), nil
 }
 
 // ListWorktrees left-joins the provisioner's raw worktree list against
@@ -798,50 +671,6 @@ func (s *Server) DeleteTask(ctx context.Context, req *connect.Request[agentfleet
 // task_status/task_error/pr_url are left unset (not an error) for a
 // worktree whose task row no longer exists, exactly the orphaned case
 // this view exists to surface. An inner join would hide it.
-func (s *Server) ListWorktrees(ctx context.Context, _ *connect.Request[agentfleetv1.ListWorktreesRequest]) (*connect.Response[agentfleetv1.ListWorktreesViewResponse], error) {
-	resp, err := s.e2e.ListWorktrees(ctx)
-	if err != nil {
-		slog.Error("dashboard ListWorktrees", "error", err)
-		return nil, connect.NewError(connect.CodeInternal, err)
-	}
-	worktrees := resp.GetWorktrees()
-	out := make([]*agentfleetv1.WorktreeView, len(worktrees))
-	for i, w := range worktrees {
-		view := &agentfleetv1.WorktreeView{
-			TaskId:        w.GetTaskId(),
-			Repo:          w.GetRepo(),
-			Branch:        w.GetBranch(),
-			UpstreamTrack: w.GetUpstreamTrack(),
-			MtimeUnix:     w.GetMtimeUnix(),
-			Path:          w.GetPath(),
-			DirtyFiles:    w.GetDirtyFiles(),
-			SizeBytes:     w.GetSizeBytes(),
-		}
-		if info, err := s.tasks.GetTaskStatusInfo(ctx, w.GetTaskId()); err != nil {
-			slog.Error("dashboard ListWorktrees: GetTaskStatusInfo", "taskId", w.GetTaskId(), "error", err)
-			return nil, connect.NewError(connect.CodeInternal, err)
-		} else if info != nil {
-			view.TaskStatus = &info.Status
-			view.TaskError = info.LastError
-			view.PrUrl = info.PrURL
-		}
-		out[i] = view
-	}
-	return connect.NewResponse(&agentfleetv1.ListWorktreesViewResponse{
-		Worktrees:     out,
-		PvcTotalBytes: resp.GetPvcTotalBytes(),
-		PvcFreeBytes:  resp.GetPvcFreeBytes(),
-	}), nil
-}
-
-func (s *Server) DeleteWorktree(ctx context.Context, req *connect.Request[agentfleetv1.DeleteWorktreeRequest]) (*connect.Response[agentfleetv1.DeleteWorktreeResponse], error) {
-	deleted, err := s.e2e.DeleteWorktree(ctx, req.Msg.GetTaskId(), req.Msg.GetRepo(), req.Msg.GetAlsoDeleteBranch())
-	if err != nil {
-		slog.Error("dashboard DeleteWorktree", "taskId", req.Msg.GetTaskId(), "repo", req.Msg.GetRepo(), "error", err)
-		return nil, connect.NewError(connect.CodeInternal, err)
-	}
-	return connect.NewResponse(&agentfleetv1.DeleteWorktreeResponse{Deleted: deleted}), nil
-}
 
 // GetJournal is the read path reliability-findings.md #1/#7 both call out
 // as missing — knowledge_journal previously had no Get/List RPC anywhere.
@@ -889,7 +718,7 @@ func (s *Server) CreateRepo(ctx context.Context, req *connect.Request[agentfleet
 	if name == "" || url == "" {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("name and url are required"))
 	}
-	r := repos.Repo{Name: name, URL: url, BaseBranch: req.Msg.GetBaseBranch(), E2eProfile: req.Msg.GetE2EProfile()}
+	r := repos.Repo{Name: name, URL: url, BaseBranch: req.Msg.GetBaseBranch(), Image: req.Msg.GetImage(), ClusterAccess: req.Msg.GetClusterAccess()}
 	if err := s.repos.Create(ctx, r); err != nil {
 		if errors.Is(err, repos.ErrExists) {
 			return nil, connect.NewError(connect.CodeAlreadyExists, err)
@@ -906,7 +735,7 @@ func (s *Server) UpdateRepo(ctx context.Context, req *connect.Request[agentfleet
 	if name == "" || url == "" {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("name and url are required"))
 	}
-	r := repos.Repo{Name: name, URL: url, BaseBranch: req.Msg.GetBaseBranch(), E2eProfile: req.Msg.GetE2EProfile()}
+	r := repos.Repo{Name: name, URL: url, BaseBranch: req.Msg.GetBaseBranch(), Image: req.Msg.GetImage(), ClusterAccess: req.Msg.GetClusterAccess()}
 	if err := s.repos.Update(ctx, r); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("unknown repo %q", name))
@@ -926,157 +755,34 @@ func (s *Server) DeleteRepo(ctx context.Context, req *connect.Request[agentfleet
 		slog.Error("dashboard DeleteRepo", "name", name, "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
-	return connect.NewResponse(&agentfleetv1.DeleteRepoResponse{Status: "deleted"}), nil
+	return connect.NewResponse(&agentfleetv1.DeleteRepoResponse{}), nil
 }
 
 func repoToProto(r repos.Repo) *agentfleetv1.Repo {
-	return &agentfleetv1.Repo{Name: r.Name, Url: r.URL, BaseBranch: r.BaseBranch, E2EProfile: r.E2eProfile}
-}
-
-// ListRepoProfiles/CreateRepoProfile/UpdateRepoProfile/DeleteRepoProfile
-// back the dashboard's environment-recipe editor (docs/adr/0034) — same
-// CRUD RPC shape as ListRepos/CreateRepo/UpdateRepo/DeleteRepo above.
-// Ingredient key/scope-mode validation happens at pod-materialization time
-// in the provisioner (its catalog is the source of truth for what's
-// known), not here — core has no shared package with the provisioner to
-// validate against (a deliberate scope call, docs/adr/0034: add a
-// ListIngredientCatalog RPC later if config typos become a real problem).
-
-func (s *Server) ListRepoProfiles(ctx context.Context, req *connect.Request[agentfleetv1.ListRepoProfilesRequest]) (*connect.Response[agentfleetv1.ListRepoProfilesResponse], error) {
-	list, err := s.profiles.List(ctx, req.Msg.GetRepoName())
-	if err != nil {
-		slog.Error("dashboard ListRepoProfiles", "repo", req.Msg.GetRepoName(), "error", err)
-		return nil, connect.NewError(connect.CodeInternal, err)
-	}
-	out := make([]*agentfleetv1.RepoProfile, len(list))
-	for i, p := range list {
-		out[i] = repoProfileToProto(p)
-	}
-	return connect.NewResponse(&agentfleetv1.ListRepoProfilesResponse{Profiles: out}), nil
-}
-
-func (s *Server) CreateRepoProfile(ctx context.Context, req *connect.Request[agentfleetv1.CreateRepoProfileRequest]) (*connect.Response[agentfleetv1.CreateRepoProfileResponse], error) {
-	repoName := req.Msg.GetRepoName()
-	name := req.Msg.GetName()
-	if repoName == "" || name == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("repo_name and name are required"))
-	}
-	p := repoProfileFromProtoCreate(req.Msg)
-	id, err := s.profiles.Create(ctx, p)
-	if err != nil {
-		if errors.Is(err, repoprofiles.ErrExists) {
-			return nil, connect.NewError(connect.CodeAlreadyExists, err)
-		}
-		slog.Error("dashboard CreateRepoProfile", "repo", repoName, "name", name, "error", err)
-		return nil, connect.NewError(connect.CodeInternal, err)
-	}
-	p.ID = id
-	return connect.NewResponse(&agentfleetv1.CreateRepoProfileResponse{Profile: repoProfileToProto(p)}), nil
-}
-
-func (s *Server) UpdateRepoProfile(ctx context.Context, req *connect.Request[agentfleetv1.UpdateRepoProfileRequest]) (*connect.Response[agentfleetv1.UpdateRepoProfileResponse], error) {
-	repoName := req.Msg.GetRepoName()
-	name := req.Msg.GetName()
-	if repoName == "" || name == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("repo_name and name are required"))
-	}
-	p := repoprofiles.Profile{
-		RepoName: repoName,
-		Name:     name,
-		StartCmd: req.Msg.GetStartCmd(),
-		Tools:    req.Msg.GetToolKeys(),
-		Services: serviceIngredientsFromProto(req.Msg.GetServiceIngredients()),
-	}
-	if err := s.profiles.Update(ctx, p); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("unknown profile %q for repo %q", name, repoName))
-		}
-		slog.Error("dashboard UpdateRepoProfile", "repo", repoName, "name", name, "error", err)
-		return nil, connect.NewError(connect.CodeInternal, err)
-	}
-	return connect.NewResponse(&agentfleetv1.UpdateRepoProfileResponse{Profile: repoProfileToProto(p)}), nil
-}
-
-func (s *Server) DeleteRepoProfile(ctx context.Context, req *connect.Request[agentfleetv1.DeleteRepoProfileRequest]) (*connect.Response[agentfleetv1.DeleteRepoProfileResponse], error) {
-	repoName := req.Msg.GetRepoName()
-	name := req.Msg.GetName()
-	if err := s.profiles.Delete(ctx, repoName, name); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("unknown profile %q for repo %q", name, repoName))
-		}
-		slog.Error("dashboard DeleteRepoProfile", "repo", repoName, "name", name, "error", err)
-		return nil, connect.NewError(connect.CodeInternal, err)
-	}
-	return connect.NewResponse(&agentfleetv1.DeleteRepoProfileResponse{Status: "deleted"}), nil
-}
-
-func repoProfileFromProtoCreate(msg *agentfleetv1.CreateRepoProfileRequest) repoprofiles.Profile {
-	return repoprofiles.Profile{
-		RepoName: msg.GetRepoName(),
-		Name:     msg.GetName(),
-		StartCmd: msg.GetStartCmd(),
-		Tools:    msg.GetToolKeys(),
-		Services: serviceIngredientsFromProto(msg.GetServiceIngredients()),
+	return &agentfleetv1.Repo{
+		Name:          r.Name,
+		Url:           r.URL,
+		BaseBranch:    r.BaseBranch,
+		Image:         r.Image,
+		ClusterAccess: r.ClusterAccess,
 	}
 }
 
-func serviceIngredientsFromProto(in []*agentfleetv1.ServiceIngredient) []repoprofiles.ServiceIngredient {
-	if len(in) == 0 {
-		return nil
-	}
-	out := make([]repoprofiles.ServiceIngredient, len(in))
-	for i, si := range in {
-		out[i] = repoprofiles.ServiceIngredient{Key: si.GetKey(), ScopeMode: fromProtoScopeMode(si.GetScopeMode())}
-	}
-	return out
-}
-
-func fromProtoScopeMode(m agentfleetv1.ScopeMode) string {
-	switch m {
-	case agentfleetv1.ScopeMode_SCOPE_MODE_POD_SCOPED:
-		return "pod-scoped"
-	case agentfleetv1.ScopeMode_SCOPE_MODE_TASK_SCOPED:
-		return "task-scoped"
-	case agentfleetv1.ScopeMode_SCOPE_MODE_REPO_SCOPED:
-		return "repo-scoped"
-	default:
-		return ""
-	}
-}
-
-func toProtoScopeMode(s string) agentfleetv1.ScopeMode {
-	switch s {
-	case "pod-scoped":
-		return agentfleetv1.ScopeMode_SCOPE_MODE_POD_SCOPED
-	case "task-scoped":
-		return agentfleetv1.ScopeMode_SCOPE_MODE_TASK_SCOPED
-	case "repo-scoped":
-		return agentfleetv1.ScopeMode_SCOPE_MODE_REPO_SCOPED
-	default:
-		return agentfleetv1.ScopeMode_SCOPE_MODE_UNSPECIFIED
-	}
-}
-
-func repoProfileToProto(p repoprofiles.Profile) *agentfleetv1.RepoProfile {
-	services := make([]*agentfleetv1.ServiceIngredient, len(p.Services))
-	for i, si := range p.Services {
-		services[i] = &agentfleetv1.ServiceIngredient{Key: si.Key, ScopeMode: toProtoScopeMode(si.ScopeMode)}
-	}
-	return &agentfleetv1.RepoProfile{
-		RepoName:           p.RepoName,
-		Name:               p.Name,
-		StartCmd:           p.StartCmd,
-		ToolKeys:           p.Tools,
-		ServiceIngredients: services,
-	}
-}
-
-// ListPromptSnippets/CreatePromptSnippet/UpdatePromptSnippet/
-// DeletePromptSnippet back the dashboard's "manage guidance" UI — the
-// dashboard-editable replacement for worker/src/session.ts's old
-// hardcoded taskPrompt() workflow text. Same shape as the repos CRUD
-// above, no onChange wiring needed (unlike repos, nothing outside the
-// dashboard itself reads this list live).
+// The four RepoProfile CRUD handlers and their five proto-conversion helpers
+// used to live here — the environment-recipe editor from docs/adr/0034.
+//
+// Deleted in docs/adr/0048. The recipe stored, in Postgres, what the agent
+// can read off the working tree it is already sitting in. Its three parts
+// each went somewhere different: start_cmd is the agent's own `Bash` plus an
+// expose(port) call, the toolchain keys became repos.image, and the service
+// ingredients became request_service(kind) — which stays fleet-side only
+// because it needs cluster RBAC the agent does not have.
+//
+// cluster-access is the one key that did not collapse into an image, because
+// it is a privilege grant rather than a toolchain. It is repos.cluster_access
+// now, still data rather than code for docs/adr/0037's own reason: which
+// sessions may reach the cluster is a human's decision, editable without a
+// redeploy.
 
 func (s *Server) ListPromptSnippets(ctx context.Context, _ *connect.Request[agentfleetv1.ListPromptSnippetsRequest]) (*connect.Response[agentfleetv1.ListPromptSnippetsResponse], error) {
 	list, err := s.snippets.List(ctx)
@@ -1135,7 +841,7 @@ func (s *Server) DeletePromptSnippet(ctx context.Context, req *connect.Request[a
 		slog.Error("dashboard DeletePromptSnippet", "id", id, "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
-	return connect.NewResponse(&agentfleetv1.DeletePromptSnippetResponse{Status: "deleted"}), nil
+	return connect.NewResponse(&agentfleetv1.DeletePromptSnippetResponse{}), nil
 }
 
 func snippetToProto(sn promptsnippets.Snippet) *agentfleetv1.PromptSnippet {
@@ -1191,7 +897,7 @@ func (s *Server) DeleteFile(ctx context.Context, req *connect.Request[agentfleet
 		slog.Error("dashboard DeleteFile", "key", req.Msg.GetKey(), "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
-	return connect.NewResponse(&agentfleetv1.DeleteFileResponse{Status: "deleted"}), nil
+	return connect.NewResponse(&agentfleetv1.DeleteFileResponse{}), nil
 }
 
 func journalEntryToProto(e journal.Entry) *agentfleetv1.JournalEntry {
@@ -1205,56 +911,56 @@ func journalEntryToProto(e journal.Entry) *agentfleetv1.JournalEntry {
 	}
 }
 
-// DefaultTurnStall is what TaskToProto derives live_state with. The
-// dispatch loop's own copy comes from config (TURN_STALL_MS); this
-// mirrors the default so the two agree without threading config through
-// every conversion call site, including coreserver's. Diverging only
-// changes how quickly a session reads as `stalled` in the UI — nothing is
-// torn down on this clock (docs/adr/0040).
+// DefaultTurnStall is what SessionToProto derives live_state with. The
+// sweeps' own copy comes from config (TURN_STALL_MS); this mirrors the
+// default so the two agree without threading config through every conversion
+// call site, including coreserver's. Diverging only changes how quickly a
+// session reads as `stalled` in the UI — nothing is torn down on this clock
+// (docs/adr/0040).
 const DefaultTurnStall = 90 * time.Second
 
-func TaskToProto(t tasks.Task) *agentfleetv1.Task {
-	var heartbeatAt *string
-	if t.HeartbeatAt != nil {
-		s := t.HeartbeatAt.Format(time.RFC3339)
-		heartbeatAt = &s
+func rfc3339(t *time.Time) *string {
+	if t == nil {
+		return nil
 	}
-	var lastActiveAt *string
-	if t.LastActiveAt != nil {
-		s := t.LastActiveAt.Format(time.RFC3339)
-		lastActiveAt = &s
-	}
-	return &agentfleetv1.Task{
-		Kind:           t.Kind,
+	s := t.Format(time.RFC3339)
+	return &s
+}
+
+func SessionToProto(t sessions.Session) *agentfleetv1.Session {
+	return &agentfleetv1.Session{
 		Id:             t.ID,
 		Repo:           t.Repo,
+		Title:          t.Title,
 		Description:    t.Description,
-		Status:         t.Status,
-		ThreadId:       t.ThreadID,
-		PrUrl:          t.PrURL,
 		PodPhase:       t.PodPhase,
 		PodMessage:     t.PodMessage,
-		HeartbeatAt:    heartbeatAt,
-		RetryCount:     int32(t.RetryCount),
 		LastError:      t.LastError,
-		SessionId:      t.SessionID,
+		AgentSessionId: t.AgentSessionID,
+		Model:          t.Model,
 		PermissionMode: t.PermissionMode,
-		AwaitingHuman:  t.AwaitingHuman,
-		LastActiveAt:   lastActiveAt,
-		// Derived per read rather than stored, so it can never disagree
-		// with the row it was computed from (docs/adr/0040).
-		LiveState: string(tasks.DeriveLiveState(&t, time.Now(), DefaultTurnStall)),
+		LastActiveAt:   rfc3339(t.LastActiveAt),
+		SweptAt:        rfc3339(t.SweptAt),
+		ArchivedAt:     rfc3339(t.ArchivedAt),
+		// A count, not a boolean. Parallel tool calls each get their own seq,
+		// so answering one decision must not report the session unblocked
+		// while others are still waiting (docs/adr/0048).
+		PendingDecisions: int32(t.PendingDecisions),
+		// Derived per read rather than stored, so it can never disagree with
+		// the row it was computed from (docs/adr/0040). With `status` gone
+		// this is the only status there is.
+		LiveState: string(sessions.DeriveLiveState(&t, time.Now(), DefaultTurnStall)),
 	}
 }
 
-func entryToProto(taskID string, e transcript.Entry) *agentfleetv1.TranscriptEntry {
+func entryToProto(sessionID string, e transcript.Entry) *agentfleetv1.TranscriptEntry {
 	return &agentfleetv1.TranscriptEntry{
-		TaskId:  taskID,
-		Seq:     e.Seq,
-		From:    e.From,
-		Text:    e.Text,
-		Type:    stringToProtoType(e.Type),
-		ReplyTo: e.ReplyTo,
+		SessionId: sessionID,
+		Seq:       e.Seq,
+		From:      e.From,
+		Text:      e.Text,
+		Type:      stringToProtoType(e.Type),
+		ReplyTo:   e.ReplyTo,
 		// Zero time would serialize as year 1 — send "" so a client can
 		// tell "no timestamp" from "the epoch".
 		CreatedAt: transcript.RFC3339OrEmpty(e.CreatedAt),
@@ -1334,7 +1040,7 @@ func (s *Server) QueryLogs(ctx context.Context, req *connect.Request[agentfleetv
 
 	// Query Loki via lokiclient
 	entries, err := s.loki.Query(ctx, lokiclient.QueryRequest{
-		TaskID:    req.Msg.GetTaskId(),
+		TaskID:    req.Msg.GetSessionId(),
 		Namespace: namespace,
 		Component: req.Msg.GetComponent(),
 		AppName:   req.Msg.GetAppName(),

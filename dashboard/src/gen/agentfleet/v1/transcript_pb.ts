@@ -10,16 +10,16 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file agentfleet/v1/transcript.proto.
  */
 export const file_agentfleet_v1_transcript: GenFile = /*@__PURE__*/
-  fileDesc("Ch5hZ2VudGZsZWV0L3YxL3RyYW5zY3JpcHQucHJvdG8SDWFnZW50ZmxlZXQudjEitQEKD1RyYW5zY3JpcHRFbnRyeRIPCgd0YXNrX2lkGAEgASgJEgsKA3NlcRgCIAEoAxIMCgRmcm9tGAMgASgJEgwKBHRleHQYBCABKAkSMAoEdHlwZRgFIAEoDjIiLmFnZW50ZmxlZXQudjEuVHJhbnNjcmlwdEVudHJ5VHlwZRIVCghyZXBseV90bxgGIAEoA0gAiAEBEhIKCmNyZWF0ZWRfYXQYByABKAlCCwoJX3JlcGx5X3RvIpYBChxBcHBlbmRUcmFuc2NyaXB0RW50cnlSZXF1ZXN0Eg8KB3Rhc2tfaWQYASABKAkSDAoEZnJvbRgCIAEoCRIMCgR0ZXh0GAMgASgJEjAKBHR5cGUYBCABKA4yIi5hZ2VudGZsZWV0LnYxLlRyYW5zY3JpcHRFbnRyeVR5cGUSFwoPaWRlbXBvdGVuY3lfa2V5GAUgASgJIlQKGlJlYWRUcmFuc2NyaXB0U2luY2VSZXF1ZXN0Eg8KB3Rhc2tfaWQYASABKAkSEQoJc2luY2Vfc2VxGAIgASgDEhIKCnRpbWVvdXRfbXMYAyABKAUiYAobUmVhZFRyYW5zY3JpcHRTaW5jZVJlc3BvbnNlEi8KB2VudHJpZXMYASADKAsyHi5hZ2VudGZsZWV0LnYxLlRyYW5zY3JpcHRFbnRyeRIQCghuZXh0X3NlcRgCIAEoAyrHBAoTVHJhbnNjcmlwdEVudHJ5VHlwZRIlCiFUUkFOU0NSSVBUX0VOVFJZX1RZUEVfVU5TUEVDSUZJRUQQABIkCiBUUkFOU0NSSVBUX0VOVFJZX1RZUEVfRElTQ1VTU0lPThABEiEKHVRSQU5TQ1JJUFRfRU5UUllfVFlQRV9BUFBST1ZFEAISHwobVFJBTlNDUklQVF9FTlRSWV9UWVBFX0FCT1JUEAMSIgoeVFJBTlNDUklQVF9FTlRSWV9UWVBFX1FVRVNUSU9OEAQSIAocVFJBTlNDUklQVF9FTlRSWV9UWVBFX0FOU1dFUhAFEiMKH1RSQU5TQ1JJUFRfRU5UUllfVFlQRV9UT09MX0NBTEwQBhIgChxUUkFOU0NSSVBUX0VOVFJZX1RZUEVfU1lTVEVNEAcSIwofVFJBTlNDUklQVF9FTlRSWV9UWVBFX0FTU0lTVEFOVBAIEh4KGlRSQU5TQ1JJUFRfRU5UUllfVFlQRV9VU0VSEAkSIAocVFJBTlNDUklQVF9FTlRSWV9UWVBFX1JFU1VMVBAKEikKJVRSQU5TQ1JJUFRfRU5UUllfVFlQRV9QRVJNSVNTSU9OX01PREUQCxIsCihUUkFOU0NSSVBUX0VOVFJZX1RZUEVfUEVSTUlTU0lPTl9SRVFVRVNUEAwSLQopVFJBTlNDUklQVF9FTlRSWV9UWVBFX1BFUk1JU1NJT05fUkVTUE9OU0UQDRIjCh9UUkFOU0NSSVBUX0VOVFJZX1RZUEVfSU5URVJSVVBUEA5CTVpLZ2l0aHViLmNvbS9Nb2hhbW1hZEJuZWkvYWdlbnQtZmxlZXQvcHJvdG8vZ2VuL2dvL2FnZW50ZmxlZXQvdjE7YWdlbnRmbGVldHYxYgZwcm90bzM");
+  fileDesc("Ch5hZ2VudGZsZWV0L3YxL3RyYW5zY3JpcHQucHJvdG8SDWFnZW50ZmxlZXQudjEiuAEKD1RyYW5zY3JpcHRFbnRyeRISCgpzZXNzaW9uX2lkGAEgASgJEgsKA3NlcRgCIAEoAxIMCgRmcm9tGAMgASgJEgwKBHRleHQYBCABKAkSMAoEdHlwZRgFIAEoDjIiLmFnZW50ZmxlZXQudjEuVHJhbnNjcmlwdEVudHJ5VHlwZRIVCghyZXBseV90bxgGIAEoA0gAiAEBEhIKCmNyZWF0ZWRfYXQYByABKAlCCwoJX3JlcGx5X3RvIpkBChxBcHBlbmRUcmFuc2NyaXB0RW50cnlSZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkSDAoEZnJvbRgCIAEoCRIMCgR0ZXh0GAMgASgJEjAKBHR5cGUYBCABKA4yIi5hZ2VudGZsZWV0LnYxLlRyYW5zY3JpcHRFbnRyeVR5cGUSFwoPaWRlbXBvdGVuY3lfa2V5GAUgASgJIlcKGlJlYWRUcmFuc2NyaXB0U2luY2VSZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkSEQoJc2luY2Vfc2VxGAIgASgDEhIKCnRpbWVvdXRfbXMYAyABKAUiYAobUmVhZFRyYW5zY3JpcHRTaW5jZVJlc3BvbnNlEi8KB2VudHJpZXMYASADKAsyHi5hZ2VudGZsZWV0LnYxLlRyYW5zY3JpcHRFbnRyeRIQCghuZXh0X3NlcRgCIAEoAyrHBAoTVHJhbnNjcmlwdEVudHJ5VHlwZRIlCiFUUkFOU0NSSVBUX0VOVFJZX1RZUEVfVU5TUEVDSUZJRUQQABIkCiBUUkFOU0NSSVBUX0VOVFJZX1RZUEVfRElTQ1VTU0lPThABEiEKHVRSQU5TQ1JJUFRfRU5UUllfVFlQRV9BUFBST1ZFEAISHwobVFJBTlNDUklQVF9FTlRSWV9UWVBFX0FCT1JUEAMSIgoeVFJBTlNDUklQVF9FTlRSWV9UWVBFX1FVRVNUSU9OEAQSIAocVFJBTlNDUklQVF9FTlRSWV9UWVBFX0FOU1dFUhAFEiMKH1RSQU5TQ1JJUFRfRU5UUllfVFlQRV9UT09MX0NBTEwQBhIgChxUUkFOU0NSSVBUX0VOVFJZX1RZUEVfU1lTVEVNEAcSIwofVFJBTlNDUklQVF9FTlRSWV9UWVBFX0FTU0lTVEFOVBAIEh4KGlRSQU5TQ1JJUFRfRU5UUllfVFlQRV9VU0VSEAkSIAocVFJBTlNDUklQVF9FTlRSWV9UWVBFX1JFU1VMVBAKEikKJVRSQU5TQ1JJUFRfRU5UUllfVFlQRV9QRVJNSVNTSU9OX01PREUQCxIsCihUUkFOU0NSSVBUX0VOVFJZX1RZUEVfUEVSTUlTU0lPTl9SRVFVRVNUEAwSLQopVFJBTlNDUklQVF9FTlRSWV9UWVBFX1BFUk1JU1NJT05fUkVTUE9OU0UQDRIjCh9UUkFOU0NSSVBUX0VOVFJZX1RZUEVfSU5URVJSVVBUEA5CTVpLZ2l0aHViLmNvbS9Nb2hhbW1hZEJuZWkvYWdlbnQtZmxlZXQvcHJvdG8vZ2VuL2dvL2FnZW50ZmxlZXQvdjE7YWdlbnRmbGVldHYxYgZwcm90bzM");
 
 /**
  * @generated from message agentfleet.v1.TranscriptEntry
  */
 export type TranscriptEntry = Message<"agentfleet.v1.TranscriptEntry"> & {
   /**
-   * @generated from field: string task_id = 1;
+   * @generated from field: string session_id = 1;
    */
-  taskId: string;
+  sessionId: string;
 
   /**
    * @generated from field: int64 seq = 2;
@@ -56,7 +56,7 @@ export type TranscriptEntry = Message<"agentfleet.v1.TranscriptEntry"> & {
 
   /**
    * When the entry was appended (RFC3339, matching JournalEntry.created_at
-   * and Task.heartbeat_at). Stored in Postgres since the first migration
+   * and Session.heartbeat_at). Stored in Postgres since the first migration
    * but never sent until now, which left every client unable to say when
    * anything happened or how long a turn took — `seq` orders a feed, it
    * does not time one.
@@ -78,9 +78,9 @@ export const TranscriptEntrySchema: GenMessage<TranscriptEntry> = /*@__PURE__*/
  */
 export type AppendTranscriptEntryRequest = Message<"agentfleet.v1.AppendTranscriptEntryRequest"> & {
   /**
-   * @generated from field: string task_id = 1;
+   * @generated from field: string session_id = 1;
    */
-  taskId: string;
+  sessionId: string;
 
   /**
    * @generated from field: string from = 2;
@@ -117,9 +117,9 @@ export const AppendTranscriptEntryRequestSchema: GenMessage<AppendTranscriptEntr
  */
 export type ReadTranscriptSinceRequest = Message<"agentfleet.v1.ReadTranscriptSinceRequest"> & {
   /**
-   * @generated from field: string task_id = 1;
+   * @generated from field: string session_id = 1;
    */
-  taskId: string;
+  sessionId: string;
 
   /**
    * @generated from field: int64 since_seq = 2;

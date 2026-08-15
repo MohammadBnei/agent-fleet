@@ -1,23 +1,25 @@
-# The one shared RWX PVC docs/adr/0019 replaces the per-repo worker PVCs
-# with: repo clones + git worktrees (one subdir per in-flight task) +
-# Claude Code sessions + skills/CLAUDE.md + per-repo Go/Bun dependency
-# caches (cache/<repo>/, e2e-preview pods only), all under one mount. Only
-# the provisioner (git clone/fetch/worktree add+remove) and each task's
-# worker+sidecar/e2e-runner pod ever touch it — core never does, holding
-# zero PVC access matches its zero-RBAC design.
+# The fleet's shared RWX volume. It holds two things now (docs/adr/0048 §4):
 #
-# Worker/sidecar mount the PVC whole, same as the provisioner — not scoped
-# to a per-task SubPath. A linked git worktree's .git file is an
-# absolute-path gitlink back to repos/<repo>/.git/worktrees/<taskId>
-# (HEAD/index/commondir); a SubPath scoped to just worktrees/<taskId>
-# severs that path and every git command in the pod fails with "not a git
-# repository" (found live, 2026-08-05). Isolation between concurrent
-# tasks' worktrees is by directory naming (keyed by task ID) only, not by
-# mount boundary.
+#   repos/<repo>/          the clone cache, mounted READ-ONLY into session pods
+#   claude-home/<session>/ that session's Agent SDK resume state
 #
-# 30Gi, bumped from 20Gi: cache/<repo>/{go-mod,go-build,bun} now adds a
-# per-repo dependency-cache footprint on top of clones/worktrees/session
-# state.
+# Both are small and read-mostly, or small and irreplaceable. What used to be
+# here and is not any more: session working trees, and the Go/Bun dependency
+# caches. Those are write-heavy, and this volume was measured at 10 MB/s —
+# where a cold `bun install` could not finish in three minutes. They now live
+# on a per-session `local-path` PVC, node-local, where the same install takes
+# 2.4 seconds.
+#
+# Session pods mount subPaths of this, not the whole volume. That used to be
+# impossible: a linked git worktree's .git is an absolute-path gitlink back to
+# repos/<repo>/.git/worktrees/<taskId>, so scoping the mount severed it and
+# every git command answered "not a git repository" (found live, 2026-08-05).
+# There are no linked worktrees any more — a session's tree is a real clone —
+# so the mount boundary is real isolation for the first time.
+#
+# Only the provisioner (clone cache maintenance, claude-home seeding) and
+# session pods touch it. core never does; holding zero PVC access matches its
+# zero-RBAC design.
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:

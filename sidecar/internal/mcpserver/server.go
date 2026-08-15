@@ -1,12 +1,16 @@
 // Package mcpserver hosts the sidecar's local (localhost-only) MCP server —
 // the Agent SDK session's mcpServers config points here, never at core
-// directly. Most tools proxy onward to core over the sidecar's one outbound
-// gRPC connection; the sandbox tools do not, and dial this task's own e2e pod
-// over MCP instead (docs/adr/0045, superseding docs/adr/0020 point 6's
-// MCP-is-purely-local rule). Tool contracts are preserved
-// verbatim from core/internal/coreserver's old fleet-core mcpserver and
-// provisioner's old per-task mcpserver — just without a taskId parameter,
-// since one sidecar only ever serves the one task its pod was created for.
+// directly. Every tool proxies onward to core over the sidecar's one outbound
+// gRPC connection.
+//
+// It is purely local again, as docs/adr/0020 point 6 originally required.
+// docs/adr/0045 carved out one exception — the sandbox tools dialled their
+// task's e2e pod over MCP — and docs/adr/0048 §6 removes it by removing the
+// sandbox: there is no second pod to dial. The carve-out is not reversed on
+// its merits; it simply has nothing left to apply to.
+//
+// One sidecar only ever serves the one session its pod was created for, which
+// is why no tool here takes a session id.
 package mcpserver
 
 import (
@@ -16,7 +20,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"time"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -24,7 +27,6 @@ import (
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 
 	"github.com/MohammadBnei/agent-fleet/sidecar/internal/coreclient"
-	"github.com/MohammadBnei/agent-fleet/sidecar/internal/e2eclient"
 )
 
 type AskUserQuestionOption struct {
@@ -45,14 +47,15 @@ type AskUserQuestionArgs struct {
 }
 
 // New builds the sidecar's local MCP HTTP handler. Every tool the agent will
-// ever see is registered here, at startup — including Playwright's set, from
-// an embedded snapshot (docs/adr/0044). Nothing is discovered at runtime and
-// nothing depends on notifications/tools/list_changed; a tool the agent
+// ever see is registered here, at startup. Nothing is discovered at runtime
+// and nothing depends on notifications/tools/list_changed; a tool the agent
 // cannot see is a tool that does not exist, and lazy registration lost that
-// race three different ways. See registerPlaywrightTools.
-func New(core *coreclient.Client, e2e directDialer) http.Handler {
+// race three different ways (docs/adr/0044).
+//
+// The e2e directDialer parameter is gone with the sandbox it dialed
+// (docs/adr/0048 §6) — this sidecar now talks only to core.
+func New(core *coreclient.Client) http.Handler {
 	s := server.NewMCPServer("agent-fleet-sidecar", "0.1.0", server.WithToolCapabilities(true))
-	sb := sandbox{core: core, e2e: e2e}
 
 	s.AddTool(mcp.NewTool("send_message",
 		mcp.WithDescription("Append a message to this task's shared transcript (visible to the human via dashboard/Discord). The response's nextIndex is the sinceIndex for wait_for_messages."),
@@ -73,26 +76,32 @@ func New(core *coreclient.Client, e2e directDialer) http.Handler {
 		mcp.WithInputSchema[AskUserQuestionArgs](),
 	), askUserQuestionHandler(core))
 
-	s.AddTool(mcp.NewTool("request_e2e_env",
-		mcp.WithDescription("Request this task's e2e environment: a pod running the app on this branch, plus code-server and Playwright. Safe to call again — returns the existing session's URL. The response echoes the recipe actually used (resolvedStartCmd, profileName, tools, services) from the repo's dashboard-editable profile. If the preview does not serve, read resolvedStartCmd and report what is wrong — do not silently substitute your own command. Cold install takes 10+ minutes and the URL won't serve until the app starts; check with run_command 'ps aux'."),
-		mcp.WithString("startCmd", mcp.Description("Override the profile's start command, THIS TASK ONLY, never saved. Requires human approval first; if declined or unanswered, the profile's own command is used. Omit unless you have concrete evidence the profile is wrong. Whatever runs must bind 0.0.0.0 on $PORT — a localhost or default-port bind is unreachable from outside the pod and the preview never serves.")),
-		mcp.WithString("profile", mcp.Description("Override WHICH of the repo's profiles to build from (e.g. \"lint\"). THIS TASK ONLY, never saved, and requires human approval like startCmd. Omit unless you need a different toolchain than the one you got — the response's profileName/tools tell you what you actually have.")),
-	), requestE2eEnvHandler(core, s))
+	// request_e2e_env, kill_env and run_command are gone (docs/adr/0048 §6).
+	//
+	// All three existed to operate a second pod, and the second pod existed so
+	// that ONE tool could skip a permission prompt. The agent's app now runs in
+	// this same pod, started with plain Bash, so there is no environment to
+	// request, nothing to kill, and no command to forward: `bun install` and
+	// `go test` are Bash calls, un-prompted via allow-rules in
+	// fleet-shared/settings.json — the same file a CLI user edits — rather than
+	// via which pod the command happened to land in.
+	//
+	// What is left is the two things the agent genuinely cannot do for itself,
+	// because both need cluster RBAC this pod deliberately does not have. Both
+	// route agent -> sidecar -> core -> provisioner.
+	s.AddTool(mcp.NewTool("expose",
+		mcp.WithDescription("Publish a port from this pod at a public HTTPS URL, and return it. Start your server first with Bash (it must bind 0.0.0.0 on that port — a localhost bind is unreachable from outside the pod), then call this. Safe to call again: re-exposing the same port returns the same URL. The URL dies with this pod, so a stopped or idle-timed-out session's preview stops serving; call expose again after a warm."),
+		mcp.WithNumber("port", mcp.Required(), mcp.Description("Port your server is listening on inside this pod")),
+	), exposeHandler(core))
 
-	s.AddTool(mcp.NewTool("kill_env",
-		mcp.WithDescription("Permanently destroy this task's e2e environment. Do NOT use it to 'refresh' the app after editing files — the shared worktree hot-reloads, just reload the preview URL. Only when completely done: recreating costs 10+ minutes of cold install."),
-	), killEnvHandler(core, e2e))
+	s.AddTool(mcp.NewTool("unexpose",
+		mcp.WithDescription("Stop publishing this session's port. Removes the Service and route; your server keeps running. Teardown does this automatically, so only call it if you want the URL gone while the session continues."),
+	), unexposeHandler(core))
 
-	// Registered statically, unlike the Playwright tools below it: this is
-	// the worker's build/test sandbox (docs/adr/0039), so it has to exist
-	// from the session's first turn rather than appear only after a
-	// request_e2e_env call — which also meant it never came back at all on a
-	// resumed session, and depended on notifications/tools/list_changed
-	// being honored (a risk docs/adr/0012 flagged and never verified).
-	s.AddTool(mcp.NewTool("run_command",
-		mcp.WithDescription("Run a shell command in this task's sandbox — a separate pod with the repo's toolchain, its services (Postgres/Redis), a warm dependency cache and the app's dev server, sharing this task's worktree. Prefer this over Bash for anything that builds, tests, lints, installs, or runs the app; it starts the sandbox on first use, so no setup call is needed. Returns stdout, stderr, exitCode — a nonzero exit is information, not an error. The sandbox has NO git and no GitHub credentials on purpose: run git, gh and PR work through Bash. Background long-running processes with a trailing &; timeout 15 minutes. Large output is truncated with the full log's path in fullOutputPath — tail/grep it with this same tool."),
-		mcp.WithString("command", mcp.Required(), mcp.Description("Shell command, run via bash -lc from the worktree root")),
-	), runCommandHandler(sb, s))
+	s.AddTool(mcp.NewTool("request_service",
+		mcp.WithDescription("Provision (or reuse) a shared backing service and return a connection string. Instances are shared per repo, not per session, so another session on this repo may already be using it — treat the database as shared and namespace what you create. This is the one thing you cannot start yourself with Bash, because it needs cluster permissions this pod does not have."),
+		mcp.WithString("kind", mcp.Required(), mcp.Description("Service to provision: \"postgres\" or \"redis\"")),
+	), requestServiceHandler(core))
 
 	s.AddTool(mcp.NewTool("list_shared_files",
 		mcp.WithDescription("List files in the fleet-wide shared file space (a single flat Garage S3 bucket, shared by every task and by the human via the dashboard). Returns each file's key, size, last-modified time, and content type."),
@@ -136,21 +145,21 @@ func New(core *coreclient.Client, e2e directDialer) http.Handler {
 
 	s.AddTool(mcp.NewTool("prompt_agent",
 		mcp.WithDescription("Send a message to another session, as yourself. It lands in that session's transcript attributed to you and warms its pod if idle. Use it to hand off work or ask a question of a session owning a different repo — not to chat; the target reads it the way it reads a human's, so be concrete. REFUSED if the target is 'blocked' (it is waiting on a human decision that is not yours to resolve), for your own session, and beyond a small relay depth so chains cannot loop. Follow with wait_for_agent to await a reply."),
-		mcp.WithString("taskId", mcp.Required(), mcp.Description("Target session's task id, from list_sessions")),
+		mcp.WithString("sessionId", mcp.Required(), mcp.Description("Target session's task id, from list_sessions")),
 		mcp.WithString("text", mcp.Required()),
 	), promptSessionHandler(core))
 
 	s.AddTool(mcp.NewTool("wait_for_agent",
 		mcp.WithDescription("Block until another session reaches a liveness state, or the timeout expires. With no `until`, waits for it to settle (idle, done, blocked, stalled). `until: blocked` is the useful one after prompting — it returns when that session genuinely needs a human. A timeout is not an error: the response reports timedOut plus the state actually reached, and 'still working' is a legitimate answer to act on."),
-		mcp.WithString("taskId", mcp.Required()),
+		mcp.WithString("sessionId", mcp.Required()),
 		mcp.WithString("until", mcp.Description("working | blocked | idle | done | stalled | unknown. Omit to wait for any settled state.")),
 		mcp.WithNumber("timeoutMs", mcp.Description("Default 120000.")),
 		mcp.WithNumber("afterSeq", mcp.Description("Only count a settled state once the target produces activity newer than this transcript seq. Filled in automatically from your last prompt_agent to the same target, so normally omit it — without it, waiting right after prompting can return the state held BEFORE your message landed.")),
 	), waitForSessionHandler(core))
 
 	s.AddTool(mcp.NewTool("view_logs",
-		mcp.WithDescription("View recent logs from fleet components or deployed apps. Use to debug worker, sidecar, or the deployed app during e2e tests. Supports duration-based queries (duration) or explicit ranges (start_time/end_time, RFC3339)."),
-		mcp.WithString("component", mcp.Required(), mcp.Description("Which component: worker|sidecar|core|provisioner|e2e|app")),
+		mcp.WithDescription("View recent logs from fleet components or deployed apps. Supports duration-based queries (duration) or explicit ranges (start_time/end_time, RFC3339). Your own session's logs are the \"worker\" component — including whatever your app writes to stdout, since it runs in this same pod."),
+		mcp.WithString("component", mcp.Required(), mcp.Description("Which component: worker|sidecar|core|provisioner|app")),
 		mcp.WithString("app_name", mcp.Description("For component=app, the deployed app's name — usually this task's own repo name. Repos are dashboard-managed (docs/adr/0028), so there is no fixed list.")),
 		mcp.WithString("namespace", mcp.Description("Kubernetes namespace (default: agent-fleet, use 'default' for deployed apps)")),
 		mcp.WithString("level", mcp.Description("Filter by level: debug|info|warn|error (default: all)")),
@@ -160,13 +169,18 @@ func New(core *coreclient.Client, e2e directDialer) http.Handler {
 		mcp.WithString("end_time", mcp.Description("Optional: RFC3339 timestamp (default: now)")),
 	), viewLogsHandler(core))
 
-	// Browser tools, same static treatment as run_command above and for the
-	// same reason (docs/adr/0044). They proxy to a pod that may not exist yet;
-	// that is fine and deliberate — the call fails loudly if nothing is behind
-	// it, which beats the tool being invisible and the agent concluding it has
-	// no browser.
-	registerPlaywrightTools(s, sb)
-
+	// The proxied Playwright tools are gone with the pod they proxied to.
+	// Playwright now runs in this pod on localhost, registered by the worker as
+	// a second `mcpServers` entry in its query() call — so the agent talks to
+	// the real server directly.
+	//
+	// That deletes the entire class of failure docs/adr/0044 documented: no
+	// embedded tool-list snapshot to drift from the installed version, no
+	// registration racing a pod that is still starting, and no proxy hop to
+	// swallow an error into an empty result. It also deletes the reason the
+	// snapshot existed — a tool the agent cannot see is a tool that does not
+	// exist, and the SDK handles a locally-configured MCP server's tool list
+	// itself.
 	return server.NewStreamableHTTPServer(s)
 }
 
@@ -309,12 +323,12 @@ func askUserQuestionHandler(core *coreclient.Client) func(ctx context.Context, r
 			timeoutMs = 60000
 		}
 		slog.Info("mcp AskUserQuestion", "questions", len(args.Questions))
-		status, answersJSON, _, err := core.AskUserQuestion(ctx, string(payload), timeoutMs)
+		answered, answersJSON, _, err := core.AskUserQuestion(ctx, string(payload), timeoutMs)
 		if err != nil {
 			slog.Error("mcp AskUserQuestion", "error", err)
 			return nil, fmt.Errorf("AskUserQuestion: %w", err)
 		}
-		if status == "answered" {
+		if answered {
 			return mcp.NewToolResultText(answersJSON), nil
 		}
 		body, _ := json.Marshal(map[string]string{"status": "pending"})
@@ -322,420 +336,73 @@ func askUserQuestionHandler(core *coreclient.Client) func(ctx context.Context, r
 	})
 }
 
-// startCmdOverrideQuestion and its two option labels are the wire contract
-// between this gate and the dashboard's answer payload
-// ({"answers": {"<question>": "<label>"}}), so they're constants rather than
-// inline strings — a typo here reads as "declined", which is the safe way to
-// fail but a confusing one to debug.
-const (
-	startCmdOverrideQuestion = "The agent wants to start this task's e2e app with a command that differs from the repo's configured e2e profile. Which one should run?"
-	startCmdKeepProfile      = "Use the profile"
-	startCmdUseOverride      = "Use the agent's"
-
-	// The profile-name override (docs/adr/0044) reuses the same gate rather
-	// than growing a second approval mechanism: ADR-0034's rule is that a
-	// task branch must never silently change what the provisioner builds, and
-	// which profile is used is a strictly bigger lever than which command it
-	// runs — it decides the toolchain and the services too.
-	profileOverrideQuestion = "The agent wants to build this task's e2e environment from a different profile than the repo's configured one. Which should be used?"
-	profileKeepConfigured   = "Use the configured profile"
-	profileUseOverride      = "Use the agent's"
-)
-
-// questionAsker is the slice of coreclient.Client confirmStartCmdOverride
-// needs — same test-seam pattern viewLogsHandler already uses in this
-// package, so the gate's decision logic is unit-testable without bufconn.
-type questionAsker interface {
-	AskUserQuestion(ctx context.Context, questionsJSON string, timeoutMs int32) (status, answersJSON string, questionSeq int64, err error)
-}
-
-// confirmStartCmdOverride blocks on a real human answer before an agent's
-// start_cmd is allowed to beat the repo's profile. Anything other than an
-// explicit pick of the override — decline, timeout, malformed answer —
-// means the profile wins, matching docs/adr/0029's rule that a decision is
-// never inferred from silence. Enforced here rather than left to the agent
-// to ask: an agent choosing whether to check is exactly how a guessed
-// command silently replaced a correct profile and 502'd the preview.
-func confirmStartCmdOverride(ctx context.Context, core questionAsker, startCmd string) bool {
-	return confirmOverride(ctx, core, overrideQuestion{
-		question:    startCmdOverrideQuestion,
-		header:      "e2e cmd",
-		keepLabel:   startCmdKeepProfile,
-		keepDesc:    "Run the repo's configured e2e profile command, as edited in the dashboard. Ignores the agent's proposal.",
-		acceptLabel: startCmdUseOverride,
-		acceptDesc:  "Run this instead, for this task only (the profile is not modified): " + startCmd,
-	})
-}
-
-// confirmProfileOverride is the same gate for the profile-name override
-// (docs/adr/0044) — the agent picking a different recipe entirely.
-func confirmProfileOverride(ctx context.Context, core questionAsker, profile string) bool {
-	return confirmOverride(ctx, core, overrideQuestion{
-		question:    profileOverrideQuestion,
-		header:      "e2e profile",
-		keepLabel:   profileKeepConfigured,
-		keepDesc:    "Build the environment from the profile configured for this repo in the dashboard. Ignores the agent's proposal.",
-		acceptLabel: profileUseOverride,
-		acceptDesc:  "Build it from this profile instead, for this task only (nothing is saved): " + profile,
-	})
-}
-
-type overrideQuestion struct {
-	question, header        string
-	keepLabel, keepDesc     string
-	acceptLabel, acceptDesc string
-}
-
-// confirmOverride blocks on a real human answer before an agent's proposal is
-// allowed to beat the repo's configuration. Anything other than an explicit
-// pick of the override — decline, timeout, malformed answer — means the
-// configuration wins, matching docs/adr/0029's rule that a decision is never
-// inferred from silence. Enforced here rather than left to the agent to ask:
-// an agent choosing whether to check is exactly how a guessed command
-// silently replaced a correct profile and 502'd the preview.
-func confirmOverride(ctx context.Context, core questionAsker, q overrideQuestion) bool {
-	payload, err := json.Marshal(map[string]any{"questions": []AskUserQuestionQuestion{{
-		Question: q.question,
-		Header:   q.header,
-		Options: []AskUserQuestionOption{
-			{Label: q.keepLabel, Description: q.keepDesc},
-			{Label: q.acceptLabel, Description: q.acceptDesc},
-		},
-	}}})
-	if err != nil {
-		slog.Error("mcp request_e2e_env: marshal override question", "error", err)
-		return false
-	}
-	status, answersJSON, _, err := core.AskUserQuestion(ctx, string(payload), 300000)
-	if err != nil {
-		slog.Error("mcp request_e2e_env: override question", "error", err)
-		return false
-	}
-	if status != "answered" {
-		slog.Info("mcp request_e2e_env: override not approved", "status", status)
-		return false
-	}
-	var parsed struct {
-		Answers map[string]string `json:"answers"`
-	}
-	if err := json.Unmarshal([]byte(answersJSON), &parsed); err != nil {
-		slog.Error("mcp request_e2e_env: parse override answer", "error", err)
-		return false
-	}
-	return parsed.Answers[q.question] == q.acceptLabel
-}
-
-func requestE2eEnvHandler(core *coreclient.Client, s *server.MCPServer) server.ToolHandlerFunc {
+// exposeHandler publishes a port from this pod at a public HTTPS URL.
+//
+// The agent starts its own server with Bash and then asks for a URL, rather
+// than the fleet knowing how to start the app. That is the whole of what
+// replaced the recipe system (docs/adr/0048 §6): three tables, an override
+// approval gate and an ingredient-env mechanism existed so the platform could
+// answer "how do I run this repo" — a question `cat package.json` answers, for
+// a reader who is already sitting in the repo.
+//
+// Routed through core to the provisioner because creating a Service and an
+// IngressRoute needs cluster RBAC, and this pod holds none by design.
+func exposeHandler(core *coreclient.Client) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		startCmd := req.GetString("startCmd", "")
-		profile := req.GetString("profile", "")
-		slog.Info("mcp request_e2e_env",
-			"startCmdOverrideProposed", startCmd != "", "profileOverrideProposed", profile != "")
-		if startCmd != "" && !confirmStartCmdOverride(ctx, core, startCmd) {
-			startCmd = ""
+		port := req.GetInt("port", 0)
+		if port <= 0 || port > 65535 {
+			return mcp.NewToolResultError("port must be between 1 and 65535"), nil
 		}
-		if profile != "" && !confirmProfileOverride(ctx, core, profile) {
-			profile = ""
-		}
-		resp, err := core.RequestE2eEnv(ctx, startCmd, profile)
+		slog.Info("mcp expose", "port", port)
+		url, err := core.Expose(ctx, int32(port))
 		if err != nil {
-			slog.Error("mcp request_e2e_env", "error", err)
-			return mcp.NewToolResultError(err.Error()), nil
+			return mcp.NewToolResultError(fmt.Sprintf("expose: %v", err)), nil
 		}
-
-		// Nothing to register here anymore: the Playwright tools are static
-		// (New() above, docs/adr/0044). This used to discover them live and
-		// fire notifications/tools/list_changed, which could not work — see
-		// registerPlaywrightTools for the three ways it missed.
-
-		body, _ := json.Marshal(map[string]any{
-			"url":              resp.GetPreviewUrl(),
-			"resolvedStartCmd": resp.GetResolvedStartCmd(),
-			"profileName":      resp.GetProfileName(),
-			"tools":            resp.GetTools(),
-			"services":         resp.GetServices(),
+		// The URL alone, with the caveat that made docs/adr/0044 an incident:
+		// a route existing is not a server answering. If the agent's process
+		// is not actually listening on 0.0.0.0, this returns a URL that 502s,
+		// and only the agent can tell the difference.
+		body, _ := json.Marshal(map[string]string{
+			"url":  url,
+			"note": "The route exists; that is not the same as your server answering. Check it yourself before reporting it as working.",
 		})
 		return mcp.NewToolResultText(string(body)), nil
 	}
 }
 
-// runCommandRetryDelays paces the wait for a freshly provisioned sandbox to
-// become reachable: ~65s total, which covers a normal image pull without
-// making a genuinely broken pod cost the agent minutes before it hears about
-// it. A var, not a const array, so tests can zero it.
-var runCommandRetryDelays = []time.Duration{
-	5 * time.Second,
-	10 * time.Second,
-	20 * time.Second,
-	30 * time.Second,
-}
-
-// runCommandToolName is the tool served by the e2e pod's own execmcp
-// listener, proxied through core (provisioner/internal/mcpproxy routes it).
-const runCommandToolName = "run_command"
-
-// e2eRunner is the slice of coreclient.Client runCommandHandler needs —
-// same test-seam pattern viewLogsHandler and confirmStartCmdOverride
-// already use in this package, so the retry logic is unit-testable without
-// bufconn.
-type e2eRunner interface {
-	RequestE2eEnv(ctx context.Context, startCmd, profile string) (*agentfleetv1.RequestE2EEnvResponse, error)
-}
-
-// directDialer is the e2eclient half, as an interface for the same reason:
-// the routing decision below is worth testing without a live MCP server.
-type directDialer interface {
-	Has(name string) bool
-	CallTool(ctx context.Context, endpointName, toolName string, args map[string]any) (resultJSON string, isError bool, err error)
-	SetEndpoints(endpoints []e2eclient.Endpoint)
-	DropAll()
-}
-
-// sandbox routes one tool call to this task's sandbox (docs/adr/0045).
-//
-// There is no relay to fall back to any more: core's ListE2eTools/CallE2eTool
-// are gone, and the roster is delivered before a sandbox can even exist —
-// injected as FLEET_ENDPOINTS at pod creation, because the address is derived
-// from names rather than read off a live object. An empty roster now means a
-// genuine misconfiguration, and the error says so instead of quietly taking a
-// second path that no longer exists.
-type sandbox struct {
-	core e2eRunner
-	e2e  directDialer
-}
-
-func (sb sandbox) callTool(ctx context.Context, endpointName, toolName string, args map[string]any) (resultJSON string, isError bool, err error) {
-	if sb.e2e == nil {
-		return "", false, fmt.Errorf("run_command: no sandbox dialer configured on this sidecar")
-	}
-	if !sb.e2e.Has(endpointName) {
-		return "", false, fmt.Errorf("run_command: no %q endpoint in this task's roster — FLEET_ENDPOINTS was empty or malformed at sidecar startup", endpointName)
-	}
-	return sb.e2e.CallTool(ctx, endpointName, toolName, args)
-}
-
-func (sb sandbox) refreshRoster(env *agentfleetv1.RequestE2EEnvResponse) {
-	if sb.e2e == nil || env == nil {
-		return
-	}
-	out := make([]e2eclient.Endpoint, 0, len(env.GetEndpoints()))
-	for _, e := range env.GetEndpoints() {
-		out = append(out, e2eclient.Endpoint{
-			Name: e.GetName(), Address: e.GetAddress(),
-			Protocol: e.GetProtocol(), Path: e.GetPath(), Token: e.GetToken(),
-		})
-	}
-	sb.e2e.SetEndpoints(out)
-}
-
-// runCommandHandler runs the command in this task's e2e pod, provisioning
-// one first if there isn't a live one yet.
-//
-// Ordering is deliberate: call first, provision only if the call fails.
-// RequestE2eEnv is idempotent (CreateE2eSession short-circuits on an
-// existing pod), so provisioning up-front would have worked too — but it
-// would put two extra gRPC hops and a Postgres profile lookup in front of
-// every single command, to fix a state that only exists once per session.
-// Doing it on failure also self-heals after kill_env, which a
-// provisioned-once flag would not.
-func runCommandHandler(sb sandbox, s *server.MCPServer) server.ToolHandlerFunc {
-	core := sb.core
+func unexposeHandler(core *coreclient.Client) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		command := req.GetString("command", "")
-		if command == "" {
-			return mcp.NewToolResultError("command is required"), nil
+		slog.Info("mcp unexpose")
+		if err := core.Unexpose(ctx); err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("unexpose: %v", err)), nil
 		}
-		args := map[string]any{"command": command}
-
-		resultJSON, isError, err := sb.callTool(ctx, e2eclient.EndpointExec, runCommandToolName, args)
-		if err == nil {
-			return e2eToolResult(resultJSON, isError, "")
-		}
-
-		// execmcp reports a nonzero exit as an ordinary result, never as an
-		// error, so reaching here means the call didn't land at all — no
-		// live sandbox pod. Start one and wait for it to come up.
-		slog.Info("mcp run_command: no live sandbox, provisioning one", "error", err)
-
-		// This used to be one provision plus one immediate retry, which could
-		// essentially never succeed: RequestE2eEnv returns as soon as the pod
-		// OBJECT exists (Pending — scheduling, image pull, init containers all
-		// still ahead of it), so a zero-delay retry always hit an unreachable
-		// exec listener and the agent was told the sandbox was broken on the
-		// very first command of most sessions (docs/adr/0044).
-		//
-		// RequestE2eEnv is idempotent, so re-calling it each round is both the
-		// wait and the status probe: env.Status carries the pod's real phase,
-		// which is what makes the final error message diagnostic rather than
-		// just "not reachable".
-		var env *agentfleetv1.RequestE2EEnvResponse
-		var provErr error
-		for i, delay := range runCommandRetryDelays {
-			env, provErr = core.RequestE2eEnv(ctx, "", "")
-			if provErr != nil {
-				slog.Error("mcp run_command: provisioning failed", "error", provErr)
-				return mcp.NewToolResultError(fmt.Sprintf("run_command: no sandbox running and one could not be started: %v", provErr)), nil
-			}
-			// The provision response is also the roster's refresh point: a
-			// sandbox that just moved (recreated after adr/0044's Failed
-			// path, or a kill_env rebuild) is reachable at whatever this
-			// says, not at whatever the startup env said.
-			sb.refreshRoster(env)
-
-			resultJSON, isError, err = sb.callTool(ctx, e2eclient.EndpointExec, runCommandToolName, args)
-			if err == nil {
-				break
-			}
-			slog.Info("mcp run_command: sandbox not reachable yet, waiting",
-				"attempt", i+1, "of", len(runCommandRetryDelays), "podStatus", env.GetStatus(), "error", err)
-			select {
-			case <-ctx.Done():
-				return mcp.NewToolResultError(fmt.Sprintf("run_command: gave up waiting for the sandbox: %v", ctx.Err())), nil
-			case <-time.After(delay):
-			}
-		}
-		if err != nil {
-			slog.Error("mcp run_command: still unreachable after provisioning", "error", err, "podStatus", env.GetStatus())
-			return mcp.NewToolResultError(fmt.Sprintf(
-				"run_command: the sandbox pod is %q and its exec listener is still unreachable after %d attempts: %v\n"+
-					"resolvedStartCmd: %q (profile %q)\n"+
-					"A pod stuck at \"requested\" is usually still pulling the image or installing dependencies — try again shortly. "+
-					"A %q or %q pod is broken: call kill_env and then run_command again to rebuild it.",
-				env.GetStatus(), len(runCommandRetryDelays), err,
-				env.GetResolvedStartCmd(), env.GetProfileName(), "failed", "unknown")), nil
-		}
-		// Tell the agent what it just landed in. Without this the sandbox
-		// appears out of nowhere with an unknown toolchain and an unknown
-		// start command — the same blindness docs/adr/0036 added
-		// resolvedStartCmd to request_e2e_env's response to fix.
-		recipe, _ := json.Marshal(map[string]any{
-			"startedSandbox":   true,
-			"previewUrl":       env.GetPreviewUrl(),
-			"profileName":      env.GetProfileName(),
-			"resolvedStartCmd": env.GetResolvedStartCmd(),
-			"tools":            env.GetTools(),
-			"services":         env.GetServices(),
-		})
-		return e2eToolResult(resultJSON, isError, string(recipe))
+		return mcp.NewToolResultText("unexposed"), nil
 	}
 }
 
-// e2eToolResult rebuilds the proxied CallToolResult, optionally prefixing a
-// note of its own as an extra leading text block.
-func e2eToolResult(resultJSON string, isError bool, note string) (*mcp.CallToolResult, error) {
-	var result mcp.CallToolResult
-	if err := json.Unmarshal([]byte(resultJSON), &result); err != nil {
-		return nil, fmt.Errorf("unmarshal tool result: %w", err)
-	}
-	result.IsError = isError
-	if note != "" {
-		result.Content = append([]mcp.Content{mcp.NewTextContent(note)}, result.Content...)
-	}
-	return &result, nil
-}
-
-// playwrightToolsJSON is a snapshot of @playwright/mcp's tools/list, taken
-// from the e2e-runner image. Embedded rather than discovered at runtime —
-// see registerPlaywrightTools.
+// requestServiceHandler provisions or reuses a shared Postgres/Redis.
 //
-// To refresh after bumping @playwright/mcp, run a container off
-// e2e-runner/Dockerfile, POST tools/list to its :8931, and write the sorted
-// `result.tools` array here. Drift is a degradation, never a break: a tool
-// that disappeared upstream fails loudly at the real server on first call, a
-// new one is merely invisible until this file is refreshed.
-//
-//go:embed playwright_tools.json
-var playwrightToolsJSON []byte
-
-// playwrightTool is the subset of an MCP tool descriptor the snapshot carries.
-// InputSchema stays raw so it round-trips whatever @playwright/mcp declares,
-// without this package needing to model JSON Schema.
-type playwrightTool struct {
-	Name        string          `json:"name"`
-	Description string          `json:"description"`
-	InputSchema json.RawMessage `json:"inputSchema"`
-}
-
-// registerPlaywrightTools registers the browser tools statically, at startup,
-// exactly as docs/adr/0039 did for run_command and for the same reason: a
-// tool the agent cannot see is a tool that does not exist.
-//
-// These used to be discovered live and registered after request_e2e_env, then
-// again from run_command's provisioning branch. That could not work, three
-// ways over (docs/adr/0044):
-//
-//  1. Both call sites fire immediately after RequestE2eEnv returns — which is
-//     when the pod object exists, not when it serves. Measured on the real
-//     image: execmcp binds at t+2s, @playwright/mcp at t+5s. The discovery
-//     call lands in that gap and gets connection-refused.
-//  2. run_command breaks out of its retry loop the moment execmcp answers, so
-//     the later attempts that might have caught :8931 never happen.
-//  3. On a resumed session with a warm pod, run_command's very first call
-//     succeeds, so the provisioning branch — the only thing that registered
-//     anything — is never reached at all.
-//
-// And all three were moot anyway, because @playwright/mcp answered every
-// provisioner request with 403 until --allowed-hosts landed. ProxiedTools
-// swallows any of that into a nil list at log level Info, so the whole thing
-// failed silently for the agent's entire session.
-//
-// Static registration also drops the dependency on the client honoring
-// notifications/tools/list_changed, which docs/adr/0012 flagged as a risk and
-// nobody ever verified.
-func registerPlaywrightTools(s *server.MCPServer, sb sandbox) {
-	var tools []playwrightTool
-	if err := json.Unmarshal(playwrightToolsJSON, &tools); err != nil {
-		// Embedded and covered by a test, so this is a build-time bug, not a
-		// runtime condition — but a sidecar that starts without browser tools
-		// must say so rather than look normal.
-		slog.Error("mcp: embedded Playwright tool snapshot is unreadable — browser tools unavailable", "error", err)
-		return
-	}
-	for _, t := range tools {
-		if t.Name == runCommandToolName {
-			continue // never shadow New()'s pod-provisioning handler
-		}
-		addProxiedTool(s, sb, t)
-	}
-	slog.Info("mcp: registered Playwright tools", "count", len(tools))
-}
-
-// addProxiedTool registers one Playwright tool as a straight passthrough to
-// the e2e pod, via core (docs/adr/0020's hub-and-spoke rule). The pod need
-// not exist yet: the tool is advertised from turn one and the call fails
-// loudly if there's nothing behind it, which is strictly better than the tool
-// being absent and the agent concluding it cannot use a browser at all.
-func addProxiedTool(s *server.MCPServer, sb sandbox, desc playwrightTool) {
-	var schema mcp.ToolInputSchema
-	_ = json.Unmarshal(desc.InputSchema, &schema)
-	tool := mcp.Tool{Name: desc.Name, Description: desc.Description, InputSchema: schema}
-	s.AddTool(tool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		resultJSON, isError, err := sb.callTool(ctx, e2eclient.EndpointPlaywright, desc.Name, req.GetArguments())
-		if err != nil {
-			return nil, err
-		}
-		return e2eToolResult(resultJSON, isError, "")
-	})
-}
-
-func killEnvHandler(core *coreclient.Client, e2e directDialer) server.ToolHandlerFunc {
+// The one capability that stays fleet-side after the sandbox merge, and it
+// stays for a specific reason rather than by omission: it needs cluster RBAC.
+// Everything else the recipe system did was the fleet reading the repo on the
+// agent's behalf, which the agent can do better because it is already there.
+func requestServiceHandler(core *coreclient.Client) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		slog.Info("mcp kill_env")
-		if _, err := core.KillE2eEnv(ctx); err != nil {
-			slog.Error("mcp kill_env", "error", err)
-			return mcp.NewToolResultError(err.Error()), nil
+		kind := req.GetString("kind", "")
+		if kind != "postgres" && kind != "redis" {
+			return mcp.NewToolResultError(`kind must be "postgres" or "redis"`), nil
 		}
-		// Every cached client now points at a pod that is going away. A
-		// re-provisioned sandbox gets a NEW ClusterIP behind the same Service
-		// name, so a surviving client would not error fast — it would hang
-		// against the dead address until its context expired, turning the
-		// next run_command into a timeout instead of a rebuild. The
-		// provisioner has had this exact call since adr/0044; the sidecar
-		// needs its own now that it holds the connections.
-		if e2e != nil {
-			e2e.DropAll()
+		slog.Info("mcp request_service", "kind", kind)
+		dsn, err := core.RequestService(ctx, kind)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("request_service: %v", err)), nil
 		}
-		return mcp.NewToolResultText("kill requested"), nil
+		body, _ := json.Marshal(map[string]string{
+			"kind": kind,
+			"dsn":  dsn,
+			"note": "Shared per repo, not per session — another session on this repo may be using it too.",
+		})
+		return mcp.NewToolResultText(string(body)), nil
 	}
 }
 

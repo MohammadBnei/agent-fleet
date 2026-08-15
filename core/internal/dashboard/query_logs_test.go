@@ -7,8 +7,8 @@ import (
 
 	"connectrpc.com/connect"
 
-	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 	"github.com/MohammadBnei/agent-fleet/core/internal/lokiclient"
+	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 )
 
 // mockLokiClient is a test double for lokiclient.Client
@@ -28,12 +28,12 @@ func TestQueryLogs(t *testing.T) {
 	start := now.Add(-1 * time.Hour)
 
 	tests := []struct {
-		name       string
-		request    *agentfleetv1.QueryLogsRequest
-		mockLogs   []lokiclient.LogEntry
-		wantCount  int32
-		wantErr    bool
-		errCode    connect.Code
+		name      string
+		request   *agentfleetv1.QueryLogsRequest
+		mockLogs  []lokiclient.LogEntry
+		wantCount int32
+		wantErr   bool
+		errCode   connect.Code
 	}{
 		{
 			name: "successful query",

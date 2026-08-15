@@ -81,10 +81,22 @@ creating a new task — see `local/kind/README.md`'s image-staleness caveat:
 worker/sidecar Jobs default to `imagePullPolicy: IfNotPresent`, so a
 forgotten reload silently reuses the old image.
 
-## 3. Namespace, workspace volume, RBAC
+## 3. Namespace, Traefik CRDs, workspace volume, RBAC
+
+`05-traefik-crds.yaml` supplies the `IngressRoute` CRD. kind has no Traefik,
+and `expose()` creates one route per published session — without the CRD that
+call fails with `the server could not find the requested resource`, so a
+session can never publish a URL locally. Everything else still works; this is
+not a startup dependency.
+
+It used to be one: the provisioner created a shared `cluster-ip-whitelist`
+Middleware at startup and `os.Exit(1)`d if it couldn't, so a missing CRD meant
+the provisioner CrashLoopBackOffed and nothing downstream could be tested at
+all. Both the Middleware and that fatal are gone (docs/adr/0048 §6).
 
 ```bash
 kubectl apply -f local/kind/00-namespace.yaml
+kubectl apply -f local/kind/05-traefik-crds.yaml
 kubectl apply -f local/kind/10-workspace-hostpath.yaml
 kubectl apply -n agent-fleet \
   -f k8s/provisioner/serviceaccount.yaml \
@@ -149,7 +161,7 @@ kubectl wait --for=condition=available deploy/provisioner -n agent-fleet --timeo
 kubectl logs -n agent-fleet deploy/provisioner --tail=50
 ```
 
-## 7. Smoke test — create a real task
+## 7. Smoke test — open a real session
 
 ```bash
 kubectl port-forward -n agent-fleet svc/core 8080:8080 &
@@ -157,26 +169,41 @@ CORE_PF_PID=$!
 until curl -sf http://localhost:8080/healthz >/dev/null 2>&1; do sleep 0.5; done
 ```
 
-**Real side effect**: creating a task against `dream-analyst`/`vos-monolith`
-(`core/internal/tasks/store.go`'s `KnownRepos`) with a real `GH_TOKEN` opens
-an actual PR on GitHub once the worker completes. For routine iteration,
-prefer a disposable scratch repo added as a third `KnownRepos` entry (same
-mechanism `/fleet-ops` documents for onboarding any repo) over repeatedly
-hitting the two real targets.
+**Real side effect**: a session against a real repo with a real `GH_TOKEN`
+can open an actual PR on GitHub — the agent runs `git push`/`gh pr create`
+itself, whenever it decides to. Target repos live in the `repos` table
+(seeded by the migration, editable from the dashboard), so for routine
+iteration prefer a disposable scratch repo added there over the real ones.
 
-Create the task via the dashboard UI at `http://localhost:8080`, or
-directly against the ConnectRPC endpoint:
+**Two calls, not one** (docs/adr/0048). `CreateSession` makes a row and
+nothing else — no pod, no directory. The FIRST MESSAGE is what provisions,
+and that ordering is load-bearing: `resumeFromSeq` is computed from
+`LatestSeq` at provisioning time, so a message appended before the pod
+exists lands below its cursor and is never delivered. There is no dispatch
+loop to wait on any more.
 
 ```bash
-curl -s http://localhost:8080/agentfleet.v1.DashboardService/CreateTask \
-  -H 'Content-Type: application/json' \
-  -d '{"repo": "<known-repo>", "description": "<task description>"}'
+SID=$(curl -s http://localhost:8080/agentfleet.v1.DashboardService/CreateSession \
+  -H 'Content-Type: application/json' -H 'X-Fleet-Dashboard: 1' \
+  -d '{"repo": "<known-repo>", "description": "<label>", "title": "<label>"}' \
+  | python3 -c "import sys,json;print(json.load(sys.stdin)['session']['id'])")
+
+# This is what boots the pod.
+curl -s http://localhost:8080/agentfleet.v1.DashboardService/PostMessage \
+  -H 'Content-Type: application/json' -H 'X-Fleet-Dashboard: 1' \
+  -d "{\"sessionId\": \"$SID\", \"text\": \"<what you want it to do>\"}"
 ```
 
-Then watch dispatch happen (core's loop polls every 2s):
+A session does not end on its own — it replies and then idles, waiting for
+the next message, until `StopSession` or the idle timeout. Don't wait for a
+Job to Complete; send a stop when you're done with it:
 
 ```bash
 kubectl get pods -n agent-fleet -w
+
+curl -s http://localhost:8080/agentfleet.v1.DashboardService/StopSession \
+  -H 'Content-Type: application/json' -H 'X-Fleet-Dashboard: 1' \
+  -d "{\"sessionId\": \"$SID\"}"
 ```
 
 Once a `Job` appears, follow both containers — the worker container only

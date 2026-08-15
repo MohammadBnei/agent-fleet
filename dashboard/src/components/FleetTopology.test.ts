@@ -9,7 +9,7 @@ function node(id: string, type: string): CellNode {
     type,
     status: "healthy",
     metrics: {},
-    taskId: "",
+    sessionId: "",
     repo: "",
     label: "",
   };

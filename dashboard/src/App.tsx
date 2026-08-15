@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { TaskList, ACTIVE_STATUSES } from "./pages/TaskList";
+import { TaskList, ACTIVE_STATES } from "./pages/TaskList";
 import { TaskDetail } from "./pages/TaskDetail";
-import { Worktrees } from "./pages/Worktrees";
 import { Files } from "./pages/Files";
 import { Audits } from "./pages/Audits";
 import { Observability } from "./pages/Observability";
@@ -11,7 +10,8 @@ import { Segmented } from "./components/Segmented";
 import { MobileTaskList } from "./mobile/MobileTaskList";
 import { MobileTaskDetail } from "./mobile/MobileTaskDetail";
 import { client } from "./connectClient";
-import type { Task } from "./gen/agentfleet/v1/core_pb";
+import type { Session } from "./gen/agentfleet/v1/core_pb";
+import type { Proposal } from "./gen/agentfleet/v1/dashboard_pb";
 import { listSummary, type ListSummary } from "./transcript";
 import { ErrorModal } from "./components/ErrorModal";
 import { ConfirmModal } from "./components/ConfirmModal";
@@ -27,7 +27,7 @@ function readTaskIdFromUrl(): string | null {
   return new URLSearchParams(window.location.search).get("task");
 }
 
-export type View = "tasks" | "audits" | "worktrees" | "files" | "observability";
+export type View = "tasks" | "audits" | "files" | "observability";
 
 // The manifest's app shortcuts (icons/site.webmanifest) land here. Read once on
 // mount: they're an entry point, not persistent state, and the params are
@@ -40,13 +40,12 @@ function readShortcut(): { needsYouOnly: boolean; newTask: boolean } {
 
 function readViewFromUrl(): View {
   const v = new URLSearchParams(window.location.search).get("view");
-  return v === "worktrees" || v === "files" || v === "audits" || v === "observability" ? v : "tasks";
+  return v === "files" || v === "audits" || v === "observability" ? v : "tasks";
 }
 
 const NAV: readonly { value: View; label: string }[] = [
   { value: "tasks", label: "tasks" },
   { value: "audits", label: "audits" },
-  { value: "worktrees", label: "worktrees" },
   { value: "files", label: "files" },
   { value: "observability", label: "observability" },
 ];
@@ -55,7 +54,6 @@ const NAV: readonly { value: View; label: string }[] = [
 const MOBILE_NAV: readonly { value: View; label: string }[] = [
   { value: "tasks", label: "tasks" },
   { value: "audits", label: "audits" },
-  { value: "worktrees", label: "trees" },
   { value: "files", label: "files" },
   // Same shortening rule the "trees" label above follows — the bottom bar
   // now carries five cells and has no room for the full word.
@@ -77,7 +75,8 @@ export default function App() {
   const [theme, setTheme] = useTheme();
   const [view, setView] = useState<View>(readViewFromUrl);
   const [selectedId, setSelectedId] = useState<string | null>(readTaskIdFromUrl);
-  const [tasks, setTasks] = useState<Task[]>([]);
+  const [tasks, setTasks] = useState<Session[]>([]);
+  const [proposals, setProposals] = useState<Proposal[]>([]);
   const [tasksError, setTasksError] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
@@ -109,10 +108,10 @@ export default function App() {
   const pollFailures = useRef(0);
   const loadTasks = useCallback(() => {
     return client
-      .listTasks({})
+      .listSessions({})
       .then((res) => {
         pollFailures.current = 0;
-        setTasks(res.tasks);
+        setTasks(res.sessions);
       })
       .catch((err: Error) => {
         if (++pollFailures.current >= 2) setTasksError(err.message);
@@ -121,11 +120,27 @@ export default function App() {
 
   useEffect(() => pollVisible(loadTasks, POLL_INTERVAL_MS), [loadTasks]);
 
+  // Proposals are a separate table with no pod path of their own
+  // (docs/adr/0048), so they need their own fetch rather than being filtered
+  // out of the session list the way `status = 'proposed'` used to be.
+  //
+  // A failure here is deliberately quiet: an audit suggestion not appearing is
+  // not worth the modal that a failing session poll gets, and the next tick
+  // retries.
+  const loadProposals = useCallback(() => {
+    return client
+      .listProposals({})
+      .then((res) => setProposals(res.proposals))
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => pollVisible(loadProposals, POLL_INTERVAL_MS), [loadProposals]);
+
   // Straight off the already-polled list — core's activityTrackingStore
   // maintains awaiting_human on every permission_request/question append and
   // clears it on the matching resolution, so this needs no per-task fetch.
   const needsYouIds = useMemo(
-    () => new Set(tasks.filter((t) => t.awaitingHuman).map((t) => t.id)),
+    () => new Set(tasks.filter((t) => t.pendingDecisions > 0).map((t) => t.id)),
     [tasks],
   );
 
@@ -133,11 +148,11 @@ export default function App() {
   // show beyond the Task row itself: the todo bar, the in-flight tool line, and
   // — the point of the rewrite — the actual pending decision, rendered inline so
   // a blocked session can be answered without opening it. Scoped to
-  // ACTIVE_STATUSES, so it's bounded by the fleet's concurrency cap of 5, on the
+  // ACTIVE_STATES, so it's bounded by the fleet's concurrency cap of 5, on the
   // same 5s cadence as loadTasks. No new RPC: this fetch already existed for the
   // todo bars alone.
   useEffect(() => {
-    const active = tasks.filter((t) => ACTIVE_STATUSES.has(t.status));
+    const active = tasks.filter((t) => ACTIVE_STATES.has(t.liveState));
     if (active.length === 0) {
       setSummaries(new Map());
       return;
@@ -146,7 +161,7 @@ export default function App() {
     Promise.all(
       active.map((t) =>
         client
-          .getTranscript({ taskId: t.id, sinceSeq: 0n })
+          .getTranscript({ sessionId: t.id, sinceSeq: 0n })
           .then((res) => [t.id, listSummary(res.entries)] as const)
           .catch(() => null),
       ),
@@ -159,11 +174,11 @@ export default function App() {
     };
   }, [tasks]);
 
-  function pushUrl(next: View, taskId: string | null) {
+  function pushUrl(next: View, sessionId: string | null) {
     const url = new URL(window.location.href);
     if (next !== "tasks") url.searchParams.set("view", next);
     else url.searchParams.delete("view");
-    if (taskId) url.searchParams.set("task", taskId);
+    if (sessionId) url.searchParams.set("task", sessionId);
     else url.searchParams.delete("task");
     window.history.pushState({}, "", url);
   }
@@ -202,7 +217,7 @@ export default function App() {
     setPendingDeleteId(null);
     if (!id) return;
     client
-      .deleteTask({ taskId: id })
+      .deleteSession({ sessionId: id })
       .then(() => {
         loadTasks();
         if (id === selectedId) clearSelection();
@@ -212,10 +227,9 @@ export default function App() {
 
   const retryTask = useCallback(
     (id: string) => {
-      client
-        .retryTask({ taskId: id })
-        .then(() => loadTasks())
-        .catch((err: Error) => setTasksError(err.message));
+      // Retry is deleted with failed_permanently — there is no dead state to
+      // resurrect a session from now. Sending it another message is the retry.
+      void id;
     },
     [loadTasks],
   );
@@ -223,14 +237,18 @@ export default function App() {
   // The header's live census. `liveState` is server-derived (docs/adr/0040), so
   // every client agrees on what "working" means.
   const counts = useMemo(() => {
-    const waiting = tasks.filter((t) => t.awaitingHuman || t.status === "proposed").length;
-    const working = tasks.filter((t) => ACTIVE_STATUSES.has(t.status) && !t.awaitingHuman).length;
+    // Same rule the needsYou bucket uses, and for the same reason: the raw
+    // pendingDecisions count counts sessions whose pod is gone (and archived
+    // ones), so the badge would show work waiting on a human that no human
+    // can act on. "blocked" is live-and-pending, already derived server-side.
+    const waiting = tasks.filter((t) => t.archivedAt === undefined && t.liveState === "blocked").length;
+    const working = tasks.filter((t) => ACTIVE_STATES.has(t.liveState) && t.liveState !== "blocked").length;
     const done = tasks.filter((t) => t.liveState === "done").length;
     return { waiting, working, done, idle: Math.max(0, tasks.length - waiting - working - done) };
   }, [tasks]);
 
   const repoCount = useMemo(
-    () => new Set(tasks.filter((t) => t.kind !== "thot").map((t) => t.repo)).size,
+    () => new Set(tasks.filter(() => true).map((t) => t.repo)).size,
     [tasks],
   );
 
@@ -239,7 +257,7 @@ export default function App() {
     // opens on its needs-you bucket, so this only changes the desktop list —
     // but it narrows the shared array either way, which keeps the two honest.
     const base = needsYouOnly
-      ? tasks.filter((t) => t.awaitingHuman || t.status === "proposed")
+      ? tasks.filter((t) => t.pendingDecisions > 0)
       : tasks;
     const q = filter.trim().toLowerCase();
     if (!q) return base;
@@ -248,7 +266,6 @@ export default function App() {
     );
   }, [tasks, filter, needsYouOnly]);
 
-  const proposed = useMemo(() => tasks.filter((t) => t.status === "proposed"), [tasks]);
 
   const shared = {
     tasks: filteredTasks,
@@ -421,25 +438,36 @@ export default function App() {
         onConfirm={confirmDeleteTask}
         onCancel={() => setPendingDeleteId(null)}
       />
-      <LogDrawer taskId={logTaskId} onClose={() => setLogTaskId(null)} />
+      <LogDrawer sessionId={logTaskId} onClose={() => setLogTaskId(null)} />
 
       {/* min-w-0 alongside min-h-0: a flex item's min-width defaults to auto, so
           any descendant with a large min-content width (a long URL, a nowrap
           string) silently widens this past the viewport instead of clipping. */}
       <div className="flex-1 min-h-0 min-w-0 flex flex-col">
-        {view === "worktrees" ? (
-          <Worktrees onSelectTask={selectTask} />
-        ) : view === "files" ? (
+        {/*
+          The worktrees view is gone (docs/adr/0048 §5). It listed linked git
+          worktrees on one shared PVC and offered to delete them by hand; there
+          are no worktrees now, a session's tree is its own PVC, and the
+          retention GC reclaims it without anyone clicking.
+        */}
+        {view === "files" ? (
           <Files />
         ) : view === "audits" ? (
-          <Audits proposed={proposed} onSelectTask={selectTask} reloadTasks={loadTasks} />
+          <Audits
+            proposals={proposals}
+            onSelectTask={selectTask}
+            reloadTasks={() => {
+              void loadTasks();
+              void loadProposals();
+            }}
+          />
         ) : view === "observability" ? (
           <Observability onSelectTask={selectTask} />
         ) : selectedId ? (
           isDesktop ? (
-            <TaskDetail taskId={selectedId} tasks={tasks} onBack={clearSelection} onClosed={clearSelection} />
+            <TaskDetail sessionId={selectedId} tasks={tasks} onBack={clearSelection} onClosed={clearSelection} />
           ) : (
-            <MobileTaskDetail taskId={selectedId} onBack={clearSelection} onDelete={() => deleteTask(selectedId)} />
+            <MobileTaskDetail sessionId={selectedId} onBack={clearSelection} onDelete={() => deleteTask(selectedId)} />
           )
         ) : isDesktop ? (
           <TaskList {...shared} />

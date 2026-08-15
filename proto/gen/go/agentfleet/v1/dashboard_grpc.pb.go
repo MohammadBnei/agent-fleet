@@ -19,37 +19,29 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	DashboardService_ListTasks_FullMethodName            = "/agentfleet.v1.DashboardService/ListTasks"
-	DashboardService_GetTask_FullMethodName              = "/agentfleet.v1.DashboardService/GetTask"
-	DashboardService_CreateTask_FullMethodName           = "/agentfleet.v1.DashboardService/CreateTask"
+	DashboardService_ListSessions_FullMethodName         = "/agentfleet.v1.DashboardService/ListSessions"
+	DashboardService_GetSession_FullMethodName           = "/agentfleet.v1.DashboardService/GetSession"
+	DashboardService_CreateSession_FullMethodName        = "/agentfleet.v1.DashboardService/CreateSession"
 	DashboardService_GetTranscript_FullMethodName        = "/agentfleet.v1.DashboardService/GetTranscript"
 	DashboardService_StreamTranscript_FullMethodName     = "/agentfleet.v1.DashboardService/StreamTranscript"
-	DashboardService_GetE2EStatus_FullMethodName         = "/agentfleet.v1.DashboardService/GetE2eStatus"
-	DashboardService_Kill_FullMethodName                 = "/agentfleet.v1.DashboardService/Kill"
+	DashboardService_StopSession_FullMethodName          = "/agentfleet.v1.DashboardService/StopSession"
 	DashboardService_Interrupt_FullMethodName            = "/agentfleet.v1.DashboardService/Interrupt"
 	DashboardService_SetPermissionMode_FullMethodName    = "/agentfleet.v1.DashboardService/SetPermissionMode"
-	DashboardService_Warm_FullMethodName                 = "/agentfleet.v1.DashboardService/Warm"
+	DashboardService_WarmSession_FullMethodName          = "/agentfleet.v1.DashboardService/WarmSession"
 	DashboardService_MarkSeen_FullMethodName             = "/agentfleet.v1.DashboardService/MarkSeen"
-	DashboardService_ApproveTask_FullMethodName          = "/agentfleet.v1.DashboardService/ApproveTask"
-	DashboardService_KillE2E_FullMethodName              = "/agentfleet.v1.DashboardService/KillE2e"
-	DashboardService_StartE2E_FullMethodName             = "/agentfleet.v1.DashboardService/StartE2e"
-	DashboardService_RestartE2EApp_FullMethodName        = "/agentfleet.v1.DashboardService/RestartE2eApp"
-	DashboardService_GetE2EAppLog_FullMethodName         = "/agentfleet.v1.DashboardService/GetE2eAppLog"
+	DashboardService_ArchiveSession_FullMethodName       = "/agentfleet.v1.DashboardService/ArchiveSession"
+	DashboardService_ListProposals_FullMethodName        = "/agentfleet.v1.DashboardService/ListProposals"
+	DashboardService_OpenFromProposal_FullMethodName     = "/agentfleet.v1.DashboardService/OpenFromProposal"
+	DashboardService_DismissProposal_FullMethodName      = "/agentfleet.v1.DashboardService/DismissProposal"
 	DashboardService_AnswerQuestion_FullMethodName       = "/agentfleet.v1.DashboardService/AnswerQuestion"
 	DashboardService_RespondToPermission_FullMethodName  = "/agentfleet.v1.DashboardService/RespondToPermission"
-	DashboardService_Discuss_FullMethodName              = "/agentfleet.v1.DashboardService/Discuss"
-	DashboardService_DeleteTask_FullMethodName           = "/agentfleet.v1.DashboardService/DeleteTask"
-	DashboardService_ListWorktrees_FullMethodName        = "/agentfleet.v1.DashboardService/ListWorktrees"
-	DashboardService_DeleteWorktree_FullMethodName       = "/agentfleet.v1.DashboardService/DeleteWorktree"
+	DashboardService_PostMessage_FullMethodName          = "/agentfleet.v1.DashboardService/PostMessage"
+	DashboardService_DeleteSession_FullMethodName        = "/agentfleet.v1.DashboardService/DeleteSession"
 	DashboardService_GetJournal_FullMethodName           = "/agentfleet.v1.DashboardService/GetJournal"
 	DashboardService_ListRepos_FullMethodName            = "/agentfleet.v1.DashboardService/ListRepos"
 	DashboardService_CreateRepo_FullMethodName           = "/agentfleet.v1.DashboardService/CreateRepo"
 	DashboardService_UpdateRepo_FullMethodName           = "/agentfleet.v1.DashboardService/UpdateRepo"
 	DashboardService_DeleteRepo_FullMethodName           = "/agentfleet.v1.DashboardService/DeleteRepo"
-	DashboardService_ListRepoProfiles_FullMethodName     = "/agentfleet.v1.DashboardService/ListRepoProfiles"
-	DashboardService_CreateRepoProfile_FullMethodName    = "/agentfleet.v1.DashboardService/CreateRepoProfile"
-	DashboardService_UpdateRepoProfile_FullMethodName    = "/agentfleet.v1.DashboardService/UpdateRepoProfile"
-	DashboardService_DeleteRepoProfile_FullMethodName    = "/agentfleet.v1.DashboardService/DeleteRepoProfile"
 	DashboardService_ListPromptSnippets_FullMethodName   = "/agentfleet.v1.DashboardService/ListPromptSnippets"
 	DashboardService_CreatePromptSnippet_FullMethodName  = "/agentfleet.v1.DashboardService/CreatePromptSnippet"
 	DashboardService_UpdatePromptSnippet_FullMethodName  = "/agentfleet.v1.DashboardService/UpdatePromptSnippet"
@@ -66,17 +58,16 @@ const (
 	DashboardService_UpdateScheduledAudit_FullMethodName = "/agentfleet.v1.DashboardService/UpdateScheduledAudit"
 	DashboardService_DeleteScheduledAudit_FullMethodName = "/agentfleet.v1.DashboardService/DeleteScheduledAudit"
 	DashboardService_RunScheduledAuditNow_FullMethodName = "/agentfleet.v1.DashboardService/RunScheduledAuditNow"
-	DashboardService_RetryTask_FullMethodName            = "/agentfleet.v1.DashboardService/RetryTask"
 )
 
 // DashboardServiceClient is the client API for DashboardService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type DashboardServiceClient interface {
-	ListTasks(ctx context.Context, in *ListTasksRequest, opts ...grpc.CallOption) (*ListTasksResponse, error)
+	ListSessions(ctx context.Context, in *ListSessionsRequest, opts ...grpc.CallOption) (*ListSessionsResponse, error)
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
-	GetTask(ctx context.Context, in *GetTaskRequest, opts ...grpc.CallOption) (*GetTaskResponse, error)
-	CreateTask(ctx context.Context, in *CreateTaskRequest, opts ...grpc.CallOption) (*CreateTaskResponse, error)
+	GetSession(ctx context.Context, in *GetSessionRequest, opts ...grpc.CallOption) (*GetSessionResponse, error)
+	CreateSession(ctx context.Context, in *CreateSessionRequest, opts ...grpc.CallOption) (*CreateSessionResponse, error)
 	// Reuses transcript.proto's ReadTranscriptSinceRequest/Response rather
 	// than duplicating a byte-identical message pair.
 	// buf:lint:ignore RPC_REQUEST_STANDARD_NAME
@@ -88,42 +79,46 @@ type DashboardServiceClient interface {
 	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	StreamTranscript(ctx context.Context, in *StreamTranscriptRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[TranscriptEntry], error)
-	GetE2EStatus(ctx context.Context, in *GetE2EStatusRequest, opts ...grpc.CallOption) (*GetE2EStatusResponse, error)
-	Kill(ctx context.Context, in *KillRequest, opts ...grpc.CallOption) (*KillResponse, error)
+	StopSession(ctx context.Context, in *StopSessionRequest, opts ...grpc.CallOption) (*StopSessionResponse, error)
 	Interrupt(ctx context.Context, in *InterruptRequest, opts ...grpc.CallOption) (*InterruptResponse, error)
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	SetPermissionMode(ctx context.Context, in *SetPermissionModeRequest, opts ...grpc.CallOption) (*SetPermissionModeResponse, error)
-	Warm(ctx context.Context, in *WarmRequest, opts ...grpc.CallOption) (*WarmResponse, error)
+	WarmSession(ctx context.Context, in *WarmSessionRequest, opts ...grpc.CallOption) (*WarmSessionResponse, error)
 	MarkSeen(ctx context.Context, in *MarkSeenRequest, opts ...grpc.CallOption) (*MarkSeenResponse, error)
-	ApproveTask(ctx context.Context, in *ApproveTaskRequest, opts ...grpc.CallOption) (*ApproveTaskResponse, error)
-	KillE2E(ctx context.Context, in *KillE2ERequest, opts ...grpc.CallOption) (*KillE2EResponse, error)
-	StartE2E(ctx context.Context, in *StartE2ERequest, opts ...grpc.CallOption) (*StartE2EResponse, error)
-	RestartE2EApp(ctx context.Context, in *RestartE2EAppRequest, opts ...grpc.CallOption) (*RestartE2EAppResponse, error)
-	GetE2EAppLog(ctx context.Context, in *GetE2EAppLogRequest, opts ...grpc.CallOption) (*GetE2EAppLogResponse, error)
-	AnswerQuestion(ctx context.Context, in *AnswerQuestionRequest, opts ...grpc.CallOption) (*AnswerQuestionResponse, error)
-	RespondToPermission(ctx context.Context, in *RespondToPermissionRequest, opts ...grpc.CallOption) (*RespondToPermissionResponse, error)
-	Discuss(ctx context.Context, in *DiscussRequest, opts ...grpc.CallOption) (*DiscussResponse, error)
-	DeleteTask(ctx context.Context, in *DeleteTaskRequest, opts ...grpc.CallOption) (*DeleteTaskResponse, error)
+	ArchiveSession(ctx context.Context, in *ArchiveSessionRequest, opts ...grpc.CallOption) (*ArchiveSessionResponse, error)
+	ListProposals(ctx context.Context, in *ListProposalsRequest, opts ...grpc.CallOption) (*ListProposalsResponse, error)
+	OpenFromProposal(ctx context.Context, in *OpenFromProposalRequest, opts ...grpc.CallOption) (*OpenFromProposalResponse, error)
+	DismissProposal(ctx context.Context, in *DismissProposalRequest, opts ...grpc.CallOption) (*DismissProposalResponse, error)
+	// AnswerQuestion, RespondToPermission and PostMessage all mean "append an
+	// entry to this session's transcript" — a human answer, a permission
+	// decision, and a free-text message are the same row with different types.
+	// All three returned a constant `status` string until docs/adr/0048; they
+	// now return the seq, which is the one thing the caller cannot compute and
+	// is the correlation key everything else keys off.
+	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	AnswerQuestion(ctx context.Context, in *AnswerQuestionRequest, opts ...grpc.CallOption) (*AppendResponse, error)
+	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	RespondToPermission(ctx context.Context, in *RespondToPermissionRequest, opts ...grpc.CallOption) (*AppendResponse, error)
+	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	PostMessage(ctx context.Context, in *PostMessageRequest, opts ...grpc.CallOption) (*AppendResponse, error)
+	DeleteSession(ctx context.Context, in *DeleteSessionRequest, opts ...grpc.CallOption) (*DeleteSessionResponse, error)
 	// Reuses provisioner.proto's ListWorktreesRequest (identical shape,
 	// empty) and DeleteWorktreeRequest/Response (identical shape, no
 	// dashboard-specific fields needed) — same passthrough-reuse pattern
 	// core.proto's ListE2eTools/CallE2eTool already established. The
-	// response is enriched with a left-join against `tasks`, so it can't
+	// response is enriched with a left-join against `sessions`, so it can't
 	// reuse provisioner's own WorktreeInfo/ListWorktreesResponse as-is.
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
-	ListWorktrees(ctx context.Context, in *ListWorktreesRequest, opts ...grpc.CallOption) (*ListWorktreesViewResponse, error)
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
-	DeleteWorktree(ctx context.Context, in *DeleteWorktreeRequest, opts ...grpc.CallOption) (*DeleteWorktreeResponse, error)
 	GetJournal(ctx context.Context, in *GetJournalRequest, opts ...grpc.CallOption) (*GetJournalResponse, error)
 	ListRepos(ctx context.Context, in *ListReposRequest, opts ...grpc.CallOption) (*ListReposResponse, error)
 	CreateRepo(ctx context.Context, in *CreateRepoRequest, opts ...grpc.CallOption) (*CreateRepoResponse, error)
 	UpdateRepo(ctx context.Context, in *UpdateRepoRequest, opts ...grpc.CallOption) (*UpdateRepoResponse, error)
 	DeleteRepo(ctx context.Context, in *DeleteRepoRequest, opts ...grpc.CallOption) (*DeleteRepoResponse, error)
-	ListRepoProfiles(ctx context.Context, in *ListRepoProfilesRequest, opts ...grpc.CallOption) (*ListRepoProfilesResponse, error)
-	CreateRepoProfile(ctx context.Context, in *CreateRepoProfileRequest, opts ...grpc.CallOption) (*CreateRepoProfileResponse, error)
-	UpdateRepoProfile(ctx context.Context, in *UpdateRepoProfileRequest, opts ...grpc.CallOption) (*UpdateRepoProfileResponse, error)
-	DeleteRepoProfile(ctx context.Context, in *DeleteRepoProfileRequest, opts ...grpc.CallOption) (*DeleteRepoProfileResponse, error)
 	ListPromptSnippets(ctx context.Context, in *ListPromptSnippetsRequest, opts ...grpc.CallOption) (*ListPromptSnippetsResponse, error)
 	CreatePromptSnippet(ctx context.Context, in *CreatePromptSnippetRequest, opts ...grpc.CallOption) (*CreatePromptSnippetResponse, error)
 	UpdatePromptSnippet(ctx context.Context, in *UpdatePromptSnippetRequest, opts ...grpc.CallOption) (*UpdatePromptSnippetResponse, error)
@@ -142,7 +137,7 @@ type DashboardServiceClient interface {
 	// Observability page (docs/adr/0047). QueryMetrics is core proxying
 	// PromQL — Prometheus has no IngressRoute in this cluster, so a browser
 	// cannot reach it directly. GetFleetTopology is the live cell view, and
-	// needs no cluster RBAC: core assembles it from the tasks table it
+	// needs no cluster RBAC: core assembles it from the sessions table it
 	// already owns plus its own metrics.
 	QueryMetrics(ctx context.Context, in *QueryMetricsRequest, opts ...grpc.CallOption) (*QueryMetricsResponse, error)
 	GetFleetTopology(ctx context.Context, in *GetFleetTopologyRequest, opts ...grpc.CallOption) (*GetFleetTopologyResponse, error)
@@ -153,7 +148,6 @@ type DashboardServiceClient interface {
 	UpdateScheduledAudit(ctx context.Context, in *UpdateScheduledAuditRequest, opts ...grpc.CallOption) (*UpdateScheduledAuditResponse, error)
 	DeleteScheduledAudit(ctx context.Context, in *DeleteScheduledAuditRequest, opts ...grpc.CallOption) (*DeleteScheduledAuditResponse, error)
 	RunScheduledAuditNow(ctx context.Context, in *RunScheduledAuditNowRequest, opts ...grpc.CallOption) (*RunScheduledAuditNowResponse, error)
-	RetryTask(ctx context.Context, in *RetryTaskRequest, opts ...grpc.CallOption) (*RetryTaskResponse, error)
 }
 
 type dashboardServiceClient struct {
@@ -164,30 +158,30 @@ func NewDashboardServiceClient(cc grpc.ClientConnInterface) DashboardServiceClie
 	return &dashboardServiceClient{cc}
 }
 
-func (c *dashboardServiceClient) ListTasks(ctx context.Context, in *ListTasksRequest, opts ...grpc.CallOption) (*ListTasksResponse, error) {
+func (c *dashboardServiceClient) ListSessions(ctx context.Context, in *ListSessionsRequest, opts ...grpc.CallOption) (*ListSessionsResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(ListTasksResponse)
-	err := c.cc.Invoke(ctx, DashboardService_ListTasks_FullMethodName, in, out, cOpts...)
+	out := new(ListSessionsResponse)
+	err := c.cc.Invoke(ctx, DashboardService_ListSessions_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *dashboardServiceClient) GetTask(ctx context.Context, in *GetTaskRequest, opts ...grpc.CallOption) (*GetTaskResponse, error) {
+func (c *dashboardServiceClient) GetSession(ctx context.Context, in *GetSessionRequest, opts ...grpc.CallOption) (*GetSessionResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(GetTaskResponse)
-	err := c.cc.Invoke(ctx, DashboardService_GetTask_FullMethodName, in, out, cOpts...)
+	out := new(GetSessionResponse)
+	err := c.cc.Invoke(ctx, DashboardService_GetSession_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *dashboardServiceClient) CreateTask(ctx context.Context, in *CreateTaskRequest, opts ...grpc.CallOption) (*CreateTaskResponse, error) {
+func (c *dashboardServiceClient) CreateSession(ctx context.Context, in *CreateSessionRequest, opts ...grpc.CallOption) (*CreateSessionResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(CreateTaskResponse)
-	err := c.cc.Invoke(ctx, DashboardService_CreateTask_FullMethodName, in, out, cOpts...)
+	out := new(CreateSessionResponse)
+	err := c.cc.Invoke(ctx, DashboardService_CreateSession_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -223,20 +217,10 @@ func (c *dashboardServiceClient) StreamTranscript(ctx context.Context, in *Strea
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type DashboardService_StreamTranscriptClient = grpc.ServerStreamingClient[TranscriptEntry]
 
-func (c *dashboardServiceClient) GetE2EStatus(ctx context.Context, in *GetE2EStatusRequest, opts ...grpc.CallOption) (*GetE2EStatusResponse, error) {
+func (c *dashboardServiceClient) StopSession(ctx context.Context, in *StopSessionRequest, opts ...grpc.CallOption) (*StopSessionResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(GetE2EStatusResponse)
-	err := c.cc.Invoke(ctx, DashboardService_GetE2EStatus_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *dashboardServiceClient) Kill(ctx context.Context, in *KillRequest, opts ...grpc.CallOption) (*KillResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(KillResponse)
-	err := c.cc.Invoke(ctx, DashboardService_Kill_FullMethodName, in, out, cOpts...)
+	out := new(StopSessionResponse)
+	err := c.cc.Invoke(ctx, DashboardService_StopSession_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -263,10 +247,10 @@ func (c *dashboardServiceClient) SetPermissionMode(ctx context.Context, in *SetP
 	return out, nil
 }
 
-func (c *dashboardServiceClient) Warm(ctx context.Context, in *WarmRequest, opts ...grpc.CallOption) (*WarmResponse, error) {
+func (c *dashboardServiceClient) WarmSession(ctx context.Context, in *WarmSessionRequest, opts ...grpc.CallOption) (*WarmSessionResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(WarmResponse)
-	err := c.cc.Invoke(ctx, DashboardService_Warm_FullMethodName, in, out, cOpts...)
+	out := new(WarmSessionResponse)
+	err := c.cc.Invoke(ctx, DashboardService_WarmSession_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -283,59 +267,49 @@ func (c *dashboardServiceClient) MarkSeen(ctx context.Context, in *MarkSeenReque
 	return out, nil
 }
 
-func (c *dashboardServiceClient) ApproveTask(ctx context.Context, in *ApproveTaskRequest, opts ...grpc.CallOption) (*ApproveTaskResponse, error) {
+func (c *dashboardServiceClient) ArchiveSession(ctx context.Context, in *ArchiveSessionRequest, opts ...grpc.CallOption) (*ArchiveSessionResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(ApproveTaskResponse)
-	err := c.cc.Invoke(ctx, DashboardService_ApproveTask_FullMethodName, in, out, cOpts...)
+	out := new(ArchiveSessionResponse)
+	err := c.cc.Invoke(ctx, DashboardService_ArchiveSession_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *dashboardServiceClient) KillE2E(ctx context.Context, in *KillE2ERequest, opts ...grpc.CallOption) (*KillE2EResponse, error) {
+func (c *dashboardServiceClient) ListProposals(ctx context.Context, in *ListProposalsRequest, opts ...grpc.CallOption) (*ListProposalsResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(KillE2EResponse)
-	err := c.cc.Invoke(ctx, DashboardService_KillE2E_FullMethodName, in, out, cOpts...)
+	out := new(ListProposalsResponse)
+	err := c.cc.Invoke(ctx, DashboardService_ListProposals_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *dashboardServiceClient) StartE2E(ctx context.Context, in *StartE2ERequest, opts ...grpc.CallOption) (*StartE2EResponse, error) {
+func (c *dashboardServiceClient) OpenFromProposal(ctx context.Context, in *OpenFromProposalRequest, opts ...grpc.CallOption) (*OpenFromProposalResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(StartE2EResponse)
-	err := c.cc.Invoke(ctx, DashboardService_StartE2E_FullMethodName, in, out, cOpts...)
+	out := new(OpenFromProposalResponse)
+	err := c.cc.Invoke(ctx, DashboardService_OpenFromProposal_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *dashboardServiceClient) RestartE2EApp(ctx context.Context, in *RestartE2EAppRequest, opts ...grpc.CallOption) (*RestartE2EAppResponse, error) {
+func (c *dashboardServiceClient) DismissProposal(ctx context.Context, in *DismissProposalRequest, opts ...grpc.CallOption) (*DismissProposalResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(RestartE2EAppResponse)
-	err := c.cc.Invoke(ctx, DashboardService_RestartE2EApp_FullMethodName, in, out, cOpts...)
+	out := new(DismissProposalResponse)
+	err := c.cc.Invoke(ctx, DashboardService_DismissProposal_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *dashboardServiceClient) GetE2EAppLog(ctx context.Context, in *GetE2EAppLogRequest, opts ...grpc.CallOption) (*GetE2EAppLogResponse, error) {
+func (c *dashboardServiceClient) AnswerQuestion(ctx context.Context, in *AnswerQuestionRequest, opts ...grpc.CallOption) (*AppendResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(GetE2EAppLogResponse)
-	err := c.cc.Invoke(ctx, DashboardService_GetE2EAppLog_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *dashboardServiceClient) AnswerQuestion(ctx context.Context, in *AnswerQuestionRequest, opts ...grpc.CallOption) (*AnswerQuestionResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(AnswerQuestionResponse)
+	out := new(AppendResponse)
 	err := c.cc.Invoke(ctx, DashboardService_AnswerQuestion_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
@@ -343,9 +317,9 @@ func (c *dashboardServiceClient) AnswerQuestion(ctx context.Context, in *AnswerQ
 	return out, nil
 }
 
-func (c *dashboardServiceClient) RespondToPermission(ctx context.Context, in *RespondToPermissionRequest, opts ...grpc.CallOption) (*RespondToPermissionResponse, error) {
+func (c *dashboardServiceClient) RespondToPermission(ctx context.Context, in *RespondToPermissionRequest, opts ...grpc.CallOption) (*AppendResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(RespondToPermissionResponse)
+	out := new(AppendResponse)
 	err := c.cc.Invoke(ctx, DashboardService_RespondToPermission_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
@@ -353,40 +327,20 @@ func (c *dashboardServiceClient) RespondToPermission(ctx context.Context, in *Re
 	return out, nil
 }
 
-func (c *dashboardServiceClient) Discuss(ctx context.Context, in *DiscussRequest, opts ...grpc.CallOption) (*DiscussResponse, error) {
+func (c *dashboardServiceClient) PostMessage(ctx context.Context, in *PostMessageRequest, opts ...grpc.CallOption) (*AppendResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(DiscussResponse)
-	err := c.cc.Invoke(ctx, DashboardService_Discuss_FullMethodName, in, out, cOpts...)
+	out := new(AppendResponse)
+	err := c.cc.Invoke(ctx, DashboardService_PostMessage_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *dashboardServiceClient) DeleteTask(ctx context.Context, in *DeleteTaskRequest, opts ...grpc.CallOption) (*DeleteTaskResponse, error) {
+func (c *dashboardServiceClient) DeleteSession(ctx context.Context, in *DeleteSessionRequest, opts ...grpc.CallOption) (*DeleteSessionResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(DeleteTaskResponse)
-	err := c.cc.Invoke(ctx, DashboardService_DeleteTask_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *dashboardServiceClient) ListWorktrees(ctx context.Context, in *ListWorktreesRequest, opts ...grpc.CallOption) (*ListWorktreesViewResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(ListWorktreesViewResponse)
-	err := c.cc.Invoke(ctx, DashboardService_ListWorktrees_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *dashboardServiceClient) DeleteWorktree(ctx context.Context, in *DeleteWorktreeRequest, opts ...grpc.CallOption) (*DeleteWorktreeResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(DeleteWorktreeResponse)
-	err := c.cc.Invoke(ctx, DashboardService_DeleteWorktree_FullMethodName, in, out, cOpts...)
+	out := new(DeleteSessionResponse)
+	err := c.cc.Invoke(ctx, DashboardService_DeleteSession_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -437,46 +391,6 @@ func (c *dashboardServiceClient) DeleteRepo(ctx context.Context, in *DeleteRepoR
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(DeleteRepoResponse)
 	err := c.cc.Invoke(ctx, DashboardService_DeleteRepo_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *dashboardServiceClient) ListRepoProfiles(ctx context.Context, in *ListRepoProfilesRequest, opts ...grpc.CallOption) (*ListRepoProfilesResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(ListRepoProfilesResponse)
-	err := c.cc.Invoke(ctx, DashboardService_ListRepoProfiles_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *dashboardServiceClient) CreateRepoProfile(ctx context.Context, in *CreateRepoProfileRequest, opts ...grpc.CallOption) (*CreateRepoProfileResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(CreateRepoProfileResponse)
-	err := c.cc.Invoke(ctx, DashboardService_CreateRepoProfile_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *dashboardServiceClient) UpdateRepoProfile(ctx context.Context, in *UpdateRepoProfileRequest, opts ...grpc.CallOption) (*UpdateRepoProfileResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(UpdateRepoProfileResponse)
-	err := c.cc.Invoke(ctx, DashboardService_UpdateRepoProfile_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *dashboardServiceClient) DeleteRepoProfile(ctx context.Context, in *DeleteRepoProfileRequest, opts ...grpc.CallOption) (*DeleteRepoProfileResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(DeleteRepoProfileResponse)
-	err := c.cc.Invoke(ctx, DashboardService_DeleteRepoProfile_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -643,24 +557,14 @@ func (c *dashboardServiceClient) RunScheduledAuditNow(ctx context.Context, in *R
 	return out, nil
 }
 
-func (c *dashboardServiceClient) RetryTask(ctx context.Context, in *RetryTaskRequest, opts ...grpc.CallOption) (*RetryTaskResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(RetryTaskResponse)
-	err := c.cc.Invoke(ctx, DashboardService_RetryTask_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 // DashboardServiceServer is the server API for DashboardService service.
 // All implementations must embed UnimplementedDashboardServiceServer
 // for forward compatibility.
 type DashboardServiceServer interface {
-	ListTasks(context.Context, *ListTasksRequest) (*ListTasksResponse, error)
+	ListSessions(context.Context, *ListSessionsRequest) (*ListSessionsResponse, error)
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
-	GetTask(context.Context, *GetTaskRequest) (*GetTaskResponse, error)
-	CreateTask(context.Context, *CreateTaskRequest) (*CreateTaskResponse, error)
+	GetSession(context.Context, *GetSessionRequest) (*GetSessionResponse, error)
+	CreateSession(context.Context, *CreateSessionRequest) (*CreateSessionResponse, error)
 	// Reuses transcript.proto's ReadTranscriptSinceRequest/Response rather
 	// than duplicating a byte-identical message pair.
 	// buf:lint:ignore RPC_REQUEST_STANDARD_NAME
@@ -672,42 +576,46 @@ type DashboardServiceServer interface {
 	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	StreamTranscript(*StreamTranscriptRequest, grpc.ServerStreamingServer[TranscriptEntry]) error
-	GetE2EStatus(context.Context, *GetE2EStatusRequest) (*GetE2EStatusResponse, error)
-	Kill(context.Context, *KillRequest) (*KillResponse, error)
+	StopSession(context.Context, *StopSessionRequest) (*StopSessionResponse, error)
 	Interrupt(context.Context, *InterruptRequest) (*InterruptResponse, error)
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	SetPermissionMode(context.Context, *SetPermissionModeRequest) (*SetPermissionModeResponse, error)
-	Warm(context.Context, *WarmRequest) (*WarmResponse, error)
+	WarmSession(context.Context, *WarmSessionRequest) (*WarmSessionResponse, error)
 	MarkSeen(context.Context, *MarkSeenRequest) (*MarkSeenResponse, error)
-	ApproveTask(context.Context, *ApproveTaskRequest) (*ApproveTaskResponse, error)
-	KillE2E(context.Context, *KillE2ERequest) (*KillE2EResponse, error)
-	StartE2E(context.Context, *StartE2ERequest) (*StartE2EResponse, error)
-	RestartE2EApp(context.Context, *RestartE2EAppRequest) (*RestartE2EAppResponse, error)
-	GetE2EAppLog(context.Context, *GetE2EAppLogRequest) (*GetE2EAppLogResponse, error)
-	AnswerQuestion(context.Context, *AnswerQuestionRequest) (*AnswerQuestionResponse, error)
-	RespondToPermission(context.Context, *RespondToPermissionRequest) (*RespondToPermissionResponse, error)
-	Discuss(context.Context, *DiscussRequest) (*DiscussResponse, error)
-	DeleteTask(context.Context, *DeleteTaskRequest) (*DeleteTaskResponse, error)
+	ArchiveSession(context.Context, *ArchiveSessionRequest) (*ArchiveSessionResponse, error)
+	ListProposals(context.Context, *ListProposalsRequest) (*ListProposalsResponse, error)
+	OpenFromProposal(context.Context, *OpenFromProposalRequest) (*OpenFromProposalResponse, error)
+	DismissProposal(context.Context, *DismissProposalRequest) (*DismissProposalResponse, error)
+	// AnswerQuestion, RespondToPermission and PostMessage all mean "append an
+	// entry to this session's transcript" — a human answer, a permission
+	// decision, and a free-text message are the same row with different types.
+	// All three returned a constant `status` string until docs/adr/0048; they
+	// now return the seq, which is the one thing the caller cannot compute and
+	// is the correlation key everything else keys off.
+	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	AnswerQuestion(context.Context, *AnswerQuestionRequest) (*AppendResponse, error)
+	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	RespondToPermission(context.Context, *RespondToPermissionRequest) (*AppendResponse, error)
+	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	PostMessage(context.Context, *PostMessageRequest) (*AppendResponse, error)
+	DeleteSession(context.Context, *DeleteSessionRequest) (*DeleteSessionResponse, error)
 	// Reuses provisioner.proto's ListWorktreesRequest (identical shape,
 	// empty) and DeleteWorktreeRequest/Response (identical shape, no
 	// dashboard-specific fields needed) — same passthrough-reuse pattern
 	// core.proto's ListE2eTools/CallE2eTool already established. The
-	// response is enriched with a left-join against `tasks`, so it can't
+	// response is enriched with a left-join against `sessions`, so it can't
 	// reuse provisioner's own WorktreeInfo/ListWorktreesResponse as-is.
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
-	ListWorktrees(context.Context, *ListWorktreesRequest) (*ListWorktreesViewResponse, error)
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
-	DeleteWorktree(context.Context, *DeleteWorktreeRequest) (*DeleteWorktreeResponse, error)
 	GetJournal(context.Context, *GetJournalRequest) (*GetJournalResponse, error)
 	ListRepos(context.Context, *ListReposRequest) (*ListReposResponse, error)
 	CreateRepo(context.Context, *CreateRepoRequest) (*CreateRepoResponse, error)
 	UpdateRepo(context.Context, *UpdateRepoRequest) (*UpdateRepoResponse, error)
 	DeleteRepo(context.Context, *DeleteRepoRequest) (*DeleteRepoResponse, error)
-	ListRepoProfiles(context.Context, *ListRepoProfilesRequest) (*ListRepoProfilesResponse, error)
-	CreateRepoProfile(context.Context, *CreateRepoProfileRequest) (*CreateRepoProfileResponse, error)
-	UpdateRepoProfile(context.Context, *UpdateRepoProfileRequest) (*UpdateRepoProfileResponse, error)
-	DeleteRepoProfile(context.Context, *DeleteRepoProfileRequest) (*DeleteRepoProfileResponse, error)
 	ListPromptSnippets(context.Context, *ListPromptSnippetsRequest) (*ListPromptSnippetsResponse, error)
 	CreatePromptSnippet(context.Context, *CreatePromptSnippetRequest) (*CreatePromptSnippetResponse, error)
 	UpdatePromptSnippet(context.Context, *UpdatePromptSnippetRequest) (*UpdatePromptSnippetResponse, error)
@@ -726,7 +634,7 @@ type DashboardServiceServer interface {
 	// Observability page (docs/adr/0047). QueryMetrics is core proxying
 	// PromQL — Prometheus has no IngressRoute in this cluster, so a browser
 	// cannot reach it directly. GetFleetTopology is the live cell view, and
-	// needs no cluster RBAC: core assembles it from the tasks table it
+	// needs no cluster RBAC: core assembles it from the sessions table it
 	// already owns plus its own metrics.
 	QueryMetrics(context.Context, *QueryMetricsRequest) (*QueryMetricsResponse, error)
 	GetFleetTopology(context.Context, *GetFleetTopologyRequest) (*GetFleetTopologyResponse, error)
@@ -737,7 +645,6 @@ type DashboardServiceServer interface {
 	UpdateScheduledAudit(context.Context, *UpdateScheduledAuditRequest) (*UpdateScheduledAuditResponse, error)
 	DeleteScheduledAudit(context.Context, *DeleteScheduledAuditRequest) (*DeleteScheduledAuditResponse, error)
 	RunScheduledAuditNow(context.Context, *RunScheduledAuditNowRequest) (*RunScheduledAuditNowResponse, error)
-	RetryTask(context.Context, *RetryTaskRequest) (*RetryTaskResponse, error)
 	mustEmbedUnimplementedDashboardServiceServer()
 }
 
@@ -748,14 +655,14 @@ type DashboardServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedDashboardServiceServer struct{}
 
-func (UnimplementedDashboardServiceServer) ListTasks(context.Context, *ListTasksRequest) (*ListTasksResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method ListTasks not implemented")
+func (UnimplementedDashboardServiceServer) ListSessions(context.Context, *ListSessionsRequest) (*ListSessionsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListSessions not implemented")
 }
-func (UnimplementedDashboardServiceServer) GetTask(context.Context, *GetTaskRequest) (*GetTaskResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method GetTask not implemented")
+func (UnimplementedDashboardServiceServer) GetSession(context.Context, *GetSessionRequest) (*GetSessionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetSession not implemented")
 }
-func (UnimplementedDashboardServiceServer) CreateTask(context.Context, *CreateTaskRequest) (*CreateTaskResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method CreateTask not implemented")
+func (UnimplementedDashboardServiceServer) CreateSession(context.Context, *CreateSessionRequest) (*CreateSessionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CreateSession not implemented")
 }
 func (UnimplementedDashboardServiceServer) GetTranscript(context.Context, *ReadTranscriptSinceRequest) (*ReadTranscriptSinceResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetTranscript not implemented")
@@ -763,11 +670,8 @@ func (UnimplementedDashboardServiceServer) GetTranscript(context.Context, *ReadT
 func (UnimplementedDashboardServiceServer) StreamTranscript(*StreamTranscriptRequest, grpc.ServerStreamingServer[TranscriptEntry]) error {
 	return status.Error(codes.Unimplemented, "method StreamTranscript not implemented")
 }
-func (UnimplementedDashboardServiceServer) GetE2EStatus(context.Context, *GetE2EStatusRequest) (*GetE2EStatusResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method GetE2EStatus not implemented")
-}
-func (UnimplementedDashboardServiceServer) Kill(context.Context, *KillRequest) (*KillResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method Kill not implemented")
+func (UnimplementedDashboardServiceServer) StopSession(context.Context, *StopSessionRequest) (*StopSessionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method StopSession not implemented")
 }
 func (UnimplementedDashboardServiceServer) Interrupt(context.Context, *InterruptRequest) (*InterruptResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Interrupt not implemented")
@@ -775,44 +679,35 @@ func (UnimplementedDashboardServiceServer) Interrupt(context.Context, *Interrupt
 func (UnimplementedDashboardServiceServer) SetPermissionMode(context.Context, *SetPermissionModeRequest) (*SetPermissionModeResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SetPermissionMode not implemented")
 }
-func (UnimplementedDashboardServiceServer) Warm(context.Context, *WarmRequest) (*WarmResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method Warm not implemented")
+func (UnimplementedDashboardServiceServer) WarmSession(context.Context, *WarmSessionRequest) (*WarmSessionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method WarmSession not implemented")
 }
 func (UnimplementedDashboardServiceServer) MarkSeen(context.Context, *MarkSeenRequest) (*MarkSeenResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method MarkSeen not implemented")
 }
-func (UnimplementedDashboardServiceServer) ApproveTask(context.Context, *ApproveTaskRequest) (*ApproveTaskResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method ApproveTask not implemented")
+func (UnimplementedDashboardServiceServer) ArchiveSession(context.Context, *ArchiveSessionRequest) (*ArchiveSessionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ArchiveSession not implemented")
 }
-func (UnimplementedDashboardServiceServer) KillE2E(context.Context, *KillE2ERequest) (*KillE2EResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method KillE2E not implemented")
+func (UnimplementedDashboardServiceServer) ListProposals(context.Context, *ListProposalsRequest) (*ListProposalsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListProposals not implemented")
 }
-func (UnimplementedDashboardServiceServer) StartE2E(context.Context, *StartE2ERequest) (*StartE2EResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method StartE2E not implemented")
+func (UnimplementedDashboardServiceServer) OpenFromProposal(context.Context, *OpenFromProposalRequest) (*OpenFromProposalResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method OpenFromProposal not implemented")
 }
-func (UnimplementedDashboardServiceServer) RestartE2EApp(context.Context, *RestartE2EAppRequest) (*RestartE2EAppResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method RestartE2EApp not implemented")
+func (UnimplementedDashboardServiceServer) DismissProposal(context.Context, *DismissProposalRequest) (*DismissProposalResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DismissProposal not implemented")
 }
-func (UnimplementedDashboardServiceServer) GetE2EAppLog(context.Context, *GetE2EAppLogRequest) (*GetE2EAppLogResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method GetE2EAppLog not implemented")
-}
-func (UnimplementedDashboardServiceServer) AnswerQuestion(context.Context, *AnswerQuestionRequest) (*AnswerQuestionResponse, error) {
+func (UnimplementedDashboardServiceServer) AnswerQuestion(context.Context, *AnswerQuestionRequest) (*AppendResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method AnswerQuestion not implemented")
 }
-func (UnimplementedDashboardServiceServer) RespondToPermission(context.Context, *RespondToPermissionRequest) (*RespondToPermissionResponse, error) {
+func (UnimplementedDashboardServiceServer) RespondToPermission(context.Context, *RespondToPermissionRequest) (*AppendResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RespondToPermission not implemented")
 }
-func (UnimplementedDashboardServiceServer) Discuss(context.Context, *DiscussRequest) (*DiscussResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method Discuss not implemented")
+func (UnimplementedDashboardServiceServer) PostMessage(context.Context, *PostMessageRequest) (*AppendResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method PostMessage not implemented")
 }
-func (UnimplementedDashboardServiceServer) DeleteTask(context.Context, *DeleteTaskRequest) (*DeleteTaskResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method DeleteTask not implemented")
-}
-func (UnimplementedDashboardServiceServer) ListWorktrees(context.Context, *ListWorktreesRequest) (*ListWorktreesViewResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method ListWorktrees not implemented")
-}
-func (UnimplementedDashboardServiceServer) DeleteWorktree(context.Context, *DeleteWorktreeRequest) (*DeleteWorktreeResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method DeleteWorktree not implemented")
+func (UnimplementedDashboardServiceServer) DeleteSession(context.Context, *DeleteSessionRequest) (*DeleteSessionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteSession not implemented")
 }
 func (UnimplementedDashboardServiceServer) GetJournal(context.Context, *GetJournalRequest) (*GetJournalResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetJournal not implemented")
@@ -828,18 +723,6 @@ func (UnimplementedDashboardServiceServer) UpdateRepo(context.Context, *UpdateRe
 }
 func (UnimplementedDashboardServiceServer) DeleteRepo(context.Context, *DeleteRepoRequest) (*DeleteRepoResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeleteRepo not implemented")
-}
-func (UnimplementedDashboardServiceServer) ListRepoProfiles(context.Context, *ListRepoProfilesRequest) (*ListRepoProfilesResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method ListRepoProfiles not implemented")
-}
-func (UnimplementedDashboardServiceServer) CreateRepoProfile(context.Context, *CreateRepoProfileRequest) (*CreateRepoProfileResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method CreateRepoProfile not implemented")
-}
-func (UnimplementedDashboardServiceServer) UpdateRepoProfile(context.Context, *UpdateRepoProfileRequest) (*UpdateRepoProfileResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method UpdateRepoProfile not implemented")
-}
-func (UnimplementedDashboardServiceServer) DeleteRepoProfile(context.Context, *DeleteRepoProfileRequest) (*DeleteRepoProfileResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method DeleteRepoProfile not implemented")
 }
 func (UnimplementedDashboardServiceServer) ListPromptSnippets(context.Context, *ListPromptSnippetsRequest) (*ListPromptSnippetsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListPromptSnippets not implemented")
@@ -889,9 +772,6 @@ func (UnimplementedDashboardServiceServer) DeleteScheduledAudit(context.Context,
 func (UnimplementedDashboardServiceServer) RunScheduledAuditNow(context.Context, *RunScheduledAuditNowRequest) (*RunScheduledAuditNowResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RunScheduledAuditNow not implemented")
 }
-func (UnimplementedDashboardServiceServer) RetryTask(context.Context, *RetryTaskRequest) (*RetryTaskResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method RetryTask not implemented")
-}
 func (UnimplementedDashboardServiceServer) mustEmbedUnimplementedDashboardServiceServer() {}
 func (UnimplementedDashboardServiceServer) testEmbeddedByValue()                          {}
 
@@ -913,56 +793,56 @@ func RegisterDashboardServiceServer(s grpc.ServiceRegistrar, srv DashboardServic
 	s.RegisterService(&DashboardService_ServiceDesc, srv)
 }
 
-func _DashboardService_ListTasks_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ListTasksRequest)
+func _DashboardService_ListSessions_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListSessionsRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(DashboardServiceServer).ListTasks(ctx, in)
+		return srv.(DashboardServiceServer).ListSessions(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: DashboardService_ListTasks_FullMethodName,
+		FullMethod: DashboardService_ListSessions_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(DashboardServiceServer).ListTasks(ctx, req.(*ListTasksRequest))
+		return srv.(DashboardServiceServer).ListSessions(ctx, req.(*ListSessionsRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _DashboardService_GetTask_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(GetTaskRequest)
+func _DashboardService_GetSession_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetSessionRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(DashboardServiceServer).GetTask(ctx, in)
+		return srv.(DashboardServiceServer).GetSession(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: DashboardService_GetTask_FullMethodName,
+		FullMethod: DashboardService_GetSession_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(DashboardServiceServer).GetTask(ctx, req.(*GetTaskRequest))
+		return srv.(DashboardServiceServer).GetSession(ctx, req.(*GetSessionRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _DashboardService_CreateTask_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(CreateTaskRequest)
+func _DashboardService_CreateSession_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateSessionRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(DashboardServiceServer).CreateTask(ctx, in)
+		return srv.(DashboardServiceServer).CreateSession(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: DashboardService_CreateTask_FullMethodName,
+		FullMethod: DashboardService_CreateSession_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(DashboardServiceServer).CreateTask(ctx, req.(*CreateTaskRequest))
+		return srv.(DashboardServiceServer).CreateSession(ctx, req.(*CreateSessionRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -996,38 +876,20 @@ func _DashboardService_StreamTranscript_Handler(srv interface{}, stream grpc.Ser
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type DashboardService_StreamTranscriptServer = grpc.ServerStreamingServer[TranscriptEntry]
 
-func _DashboardService_GetE2EStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(GetE2EStatusRequest)
+func _DashboardService_StopSession_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StopSessionRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(DashboardServiceServer).GetE2EStatus(ctx, in)
+		return srv.(DashboardServiceServer).StopSession(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: DashboardService_GetE2EStatus_FullMethodName,
+		FullMethod: DashboardService_StopSession_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(DashboardServiceServer).GetE2EStatus(ctx, req.(*GetE2EStatusRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _DashboardService_Kill_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(KillRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(DashboardServiceServer).Kill(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: DashboardService_Kill_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(DashboardServiceServer).Kill(ctx, req.(*KillRequest))
+		return srv.(DashboardServiceServer).StopSession(ctx, req.(*StopSessionRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1068,20 +930,20 @@ func _DashboardService_SetPermissionMode_Handler(srv interface{}, ctx context.Co
 	return interceptor(ctx, in, info, handler)
 }
 
-func _DashboardService_Warm_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(WarmRequest)
+func _DashboardService_WarmSession_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(WarmSessionRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(DashboardServiceServer).Warm(ctx, in)
+		return srv.(DashboardServiceServer).WarmSession(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: DashboardService_Warm_FullMethodName,
+		FullMethod: DashboardService_WarmSession_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(DashboardServiceServer).Warm(ctx, req.(*WarmRequest))
+		return srv.(DashboardServiceServer).WarmSession(ctx, req.(*WarmSessionRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1104,92 +966,74 @@ func _DashboardService_MarkSeen_Handler(srv interface{}, ctx context.Context, de
 	return interceptor(ctx, in, info, handler)
 }
 
-func _DashboardService_ApproveTask_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ApproveTaskRequest)
+func _DashboardService_ArchiveSession_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ArchiveSessionRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(DashboardServiceServer).ApproveTask(ctx, in)
+		return srv.(DashboardServiceServer).ArchiveSession(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: DashboardService_ApproveTask_FullMethodName,
+		FullMethod: DashboardService_ArchiveSession_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(DashboardServiceServer).ApproveTask(ctx, req.(*ApproveTaskRequest))
+		return srv.(DashboardServiceServer).ArchiveSession(ctx, req.(*ArchiveSessionRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _DashboardService_KillE2E_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(KillE2ERequest)
+func _DashboardService_ListProposals_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListProposalsRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(DashboardServiceServer).KillE2E(ctx, in)
+		return srv.(DashboardServiceServer).ListProposals(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: DashboardService_KillE2E_FullMethodName,
+		FullMethod: DashboardService_ListProposals_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(DashboardServiceServer).KillE2E(ctx, req.(*KillE2ERequest))
+		return srv.(DashboardServiceServer).ListProposals(ctx, req.(*ListProposalsRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _DashboardService_StartE2E_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(StartE2ERequest)
+func _DashboardService_OpenFromProposal_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(OpenFromProposalRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(DashboardServiceServer).StartE2E(ctx, in)
+		return srv.(DashboardServiceServer).OpenFromProposal(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: DashboardService_StartE2E_FullMethodName,
+		FullMethod: DashboardService_OpenFromProposal_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(DashboardServiceServer).StartE2E(ctx, req.(*StartE2ERequest))
+		return srv.(DashboardServiceServer).OpenFromProposal(ctx, req.(*OpenFromProposalRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _DashboardService_RestartE2EApp_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(RestartE2EAppRequest)
+func _DashboardService_DismissProposal_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DismissProposalRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(DashboardServiceServer).RestartE2EApp(ctx, in)
+		return srv.(DashboardServiceServer).DismissProposal(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: DashboardService_RestartE2EApp_FullMethodName,
+		FullMethod: DashboardService_DismissProposal_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(DashboardServiceServer).RestartE2EApp(ctx, req.(*RestartE2EAppRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _DashboardService_GetE2EAppLog_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(GetE2EAppLogRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(DashboardServiceServer).GetE2EAppLog(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: DashboardService_GetE2EAppLog_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(DashboardServiceServer).GetE2EAppLog(ctx, req.(*GetE2EAppLogRequest))
+		return srv.(DashboardServiceServer).DismissProposal(ctx, req.(*DismissProposalRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1230,74 +1074,38 @@ func _DashboardService_RespondToPermission_Handler(srv interface{}, ctx context.
 	return interceptor(ctx, in, info, handler)
 }
 
-func _DashboardService_Discuss_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(DiscussRequest)
+func _DashboardService_PostMessage_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PostMessageRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(DashboardServiceServer).Discuss(ctx, in)
+		return srv.(DashboardServiceServer).PostMessage(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: DashboardService_Discuss_FullMethodName,
+		FullMethod: DashboardService_PostMessage_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(DashboardServiceServer).Discuss(ctx, req.(*DiscussRequest))
+		return srv.(DashboardServiceServer).PostMessage(ctx, req.(*PostMessageRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _DashboardService_DeleteTask_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(DeleteTaskRequest)
+func _DashboardService_DeleteSession_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteSessionRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(DashboardServiceServer).DeleteTask(ctx, in)
+		return srv.(DashboardServiceServer).DeleteSession(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: DashboardService_DeleteTask_FullMethodName,
+		FullMethod: DashboardService_DeleteSession_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(DashboardServiceServer).DeleteTask(ctx, req.(*DeleteTaskRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _DashboardService_ListWorktrees_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ListWorktreesRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(DashboardServiceServer).ListWorktrees(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: DashboardService_ListWorktrees_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(DashboardServiceServer).ListWorktrees(ctx, req.(*ListWorktreesRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _DashboardService_DeleteWorktree_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(DeleteWorktreeRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(DashboardServiceServer).DeleteWorktree(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: DashboardService_DeleteWorktree_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(DashboardServiceServer).DeleteWorktree(ctx, req.(*DeleteWorktreeRequest))
+		return srv.(DashboardServiceServer).DeleteSession(ctx, req.(*DeleteSessionRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1388,78 +1196,6 @@ func _DashboardService_DeleteRepo_Handler(srv interface{}, ctx context.Context, 
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(DashboardServiceServer).DeleteRepo(ctx, req.(*DeleteRepoRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _DashboardService_ListRepoProfiles_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ListRepoProfilesRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(DashboardServiceServer).ListRepoProfiles(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: DashboardService_ListRepoProfiles_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(DashboardServiceServer).ListRepoProfiles(ctx, req.(*ListRepoProfilesRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _DashboardService_CreateRepoProfile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(CreateRepoProfileRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(DashboardServiceServer).CreateRepoProfile(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: DashboardService_CreateRepoProfile_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(DashboardServiceServer).CreateRepoProfile(ctx, req.(*CreateRepoProfileRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _DashboardService_UpdateRepoProfile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(UpdateRepoProfileRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(DashboardServiceServer).UpdateRepoProfile(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: DashboardService_UpdateRepoProfile_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(DashboardServiceServer).UpdateRepoProfile(ctx, req.(*UpdateRepoProfileRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _DashboardService_DeleteRepoProfile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(DeleteRepoProfileRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(DashboardServiceServer).DeleteRepoProfile(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: DashboardService_DeleteRepoProfile_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(DashboardServiceServer).DeleteRepoProfile(ctx, req.(*DeleteRepoProfileRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1752,24 +1488,6 @@ func _DashboardService_RunScheduledAuditNow_Handler(srv interface{}, ctx context
 	return interceptor(ctx, in, info, handler)
 }
 
-func _DashboardService_RetryTask_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(RetryTaskRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(DashboardServiceServer).RetryTask(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: DashboardService_RetryTask_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(DashboardServiceServer).RetryTask(ctx, req.(*RetryTaskRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 // DashboardService_ServiceDesc is the grpc.ServiceDesc for DashboardService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1778,28 +1496,24 @@ var DashboardService_ServiceDesc = grpc.ServiceDesc{
 	HandlerType: (*DashboardServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
-			MethodName: "ListTasks",
-			Handler:    _DashboardService_ListTasks_Handler,
+			MethodName: "ListSessions",
+			Handler:    _DashboardService_ListSessions_Handler,
 		},
 		{
-			MethodName: "GetTask",
-			Handler:    _DashboardService_GetTask_Handler,
+			MethodName: "GetSession",
+			Handler:    _DashboardService_GetSession_Handler,
 		},
 		{
-			MethodName: "CreateTask",
-			Handler:    _DashboardService_CreateTask_Handler,
+			MethodName: "CreateSession",
+			Handler:    _DashboardService_CreateSession_Handler,
 		},
 		{
 			MethodName: "GetTranscript",
 			Handler:    _DashboardService_GetTranscript_Handler,
 		},
 		{
-			MethodName: "GetE2eStatus",
-			Handler:    _DashboardService_GetE2EStatus_Handler,
-		},
-		{
-			MethodName: "Kill",
-			Handler:    _DashboardService_Kill_Handler,
+			MethodName: "StopSession",
+			Handler:    _DashboardService_StopSession_Handler,
 		},
 		{
 			MethodName: "Interrupt",
@@ -1810,32 +1524,28 @@ var DashboardService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _DashboardService_SetPermissionMode_Handler,
 		},
 		{
-			MethodName: "Warm",
-			Handler:    _DashboardService_Warm_Handler,
+			MethodName: "WarmSession",
+			Handler:    _DashboardService_WarmSession_Handler,
 		},
 		{
 			MethodName: "MarkSeen",
 			Handler:    _DashboardService_MarkSeen_Handler,
 		},
 		{
-			MethodName: "ApproveTask",
-			Handler:    _DashboardService_ApproveTask_Handler,
+			MethodName: "ArchiveSession",
+			Handler:    _DashboardService_ArchiveSession_Handler,
 		},
 		{
-			MethodName: "KillE2e",
-			Handler:    _DashboardService_KillE2E_Handler,
+			MethodName: "ListProposals",
+			Handler:    _DashboardService_ListProposals_Handler,
 		},
 		{
-			MethodName: "StartE2e",
-			Handler:    _DashboardService_StartE2E_Handler,
+			MethodName: "OpenFromProposal",
+			Handler:    _DashboardService_OpenFromProposal_Handler,
 		},
 		{
-			MethodName: "RestartE2eApp",
-			Handler:    _DashboardService_RestartE2EApp_Handler,
-		},
-		{
-			MethodName: "GetE2eAppLog",
-			Handler:    _DashboardService_GetE2EAppLog_Handler,
+			MethodName: "DismissProposal",
+			Handler:    _DashboardService_DismissProposal_Handler,
 		},
 		{
 			MethodName: "AnswerQuestion",
@@ -1846,20 +1556,12 @@ var DashboardService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _DashboardService_RespondToPermission_Handler,
 		},
 		{
-			MethodName: "Discuss",
-			Handler:    _DashboardService_Discuss_Handler,
+			MethodName: "PostMessage",
+			Handler:    _DashboardService_PostMessage_Handler,
 		},
 		{
-			MethodName: "DeleteTask",
-			Handler:    _DashboardService_DeleteTask_Handler,
-		},
-		{
-			MethodName: "ListWorktrees",
-			Handler:    _DashboardService_ListWorktrees_Handler,
-		},
-		{
-			MethodName: "DeleteWorktree",
-			Handler:    _DashboardService_DeleteWorktree_Handler,
+			MethodName: "DeleteSession",
+			Handler:    _DashboardService_DeleteSession_Handler,
 		},
 		{
 			MethodName: "GetJournal",
@@ -1880,22 +1582,6 @@ var DashboardService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DeleteRepo",
 			Handler:    _DashboardService_DeleteRepo_Handler,
-		},
-		{
-			MethodName: "ListRepoProfiles",
-			Handler:    _DashboardService_ListRepoProfiles_Handler,
-		},
-		{
-			MethodName: "CreateRepoProfile",
-			Handler:    _DashboardService_CreateRepoProfile_Handler,
-		},
-		{
-			MethodName: "UpdateRepoProfile",
-			Handler:    _DashboardService_UpdateRepoProfile_Handler,
-		},
-		{
-			MethodName: "DeleteRepoProfile",
-			Handler:    _DashboardService_DeleteRepoProfile_Handler,
 		},
 		{
 			MethodName: "ListPromptSnippets",
@@ -1960,10 +1646,6 @@ var DashboardService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RunScheduledAuditNow",
 			Handler:    _DashboardService_RunScheduledAuditNow_Handler,
-		},
-		{
-			MethodName: "RetryTask",
-			Handler:    _DashboardService_RetryTask_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

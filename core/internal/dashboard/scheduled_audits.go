@@ -96,7 +96,7 @@ func (s *Server) DeleteScheduledAudit(ctx context.Context, req *connect.Request[
 		slog.Error("dashboard DeleteScheduledAudit", "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
-	return connect.NewResponse(&agentfleetv1.DeleteScheduledAuditResponse{Status: "deleted"}), nil
+	return connect.NewResponse(&agentfleetv1.DeleteScheduledAuditResponse{}), nil
 }
 
 func auditToProto(a scheduledaudits.Audit) *agentfleetv1.ScheduledAudit {

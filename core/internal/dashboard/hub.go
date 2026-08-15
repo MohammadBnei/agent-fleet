@@ -105,7 +105,7 @@ func (h *Hub) pollOnce(ctx context.Context, store transcript.Store) {
 	for id, since := range pending {
 		entries, next, err := store.ReadSince(ctx, id, since, 100)
 		if err != nil {
-			slog.Error("dashboard stream poll failed", "taskId", id, "error", err)
+			slog.Error("dashboard stream poll failed", "sessionId", id, "error", err)
 			continue
 		}
 		if len(entries) == 0 {

@@ -1,14 +1,16 @@
 import { query, type SDKUserMessage, type PermissionResult, type PermissionMode } from "@anthropic-ai/claude-agent-sdk";
-import type { Task } from "./types.js";
 import * as sidecar from "./sidecarClient.js";
 import { log } from "./log.js";
-import { rtkRewrite, rtkRunCommandHook } from "./rtkHook.js";
+import { rtkRewrite } from "./rtkHook.js";
 
-// Thrown when an SDK result looks like a transient infra/SDK hiccup (0
-// turns, $0 cost) rather than a genuine failure — the caller leaves it for
-// core's own reclaim instead of failing the task outright. See docs/adr/0016.
-export class TransientError extends Error {}
+// TransientError used to be thrown when an SDK result looked like a
+// transient hiccup (0 turns, $0 cost), so the caller could leave the task
+// for core's reclaim instead of failing it. Deleted in docs/adr/0048 with
+// the reclaim itself: nothing re-dispatches a session, so there is no
+// second outcome for a "transient" failure to have. It exits non-zero, the
+// Job goes Failed, and a human sees CRASHED with the error attached.
 
+const SESSION_ID = process.env.SESSION_ID ?? "";
 const MODEL = process.env.CLAUDE_MODEL ?? "claude-opus-4-8";
 const MAX_TURNS = process.env.MAX_TURNS ? Number(process.env.MAX_TURNS) : undefined;
 
@@ -31,6 +33,33 @@ const RESUME_FROM_SEQ = process.env.RESUME_FROM_SEQ ? Number(process.env.RESUME_
 
 function sidecarMcpServer() {
   return { type: "http" as const, url: `http://${SIDECAR_MCP_ADDR}/mcp` };
+}
+
+// Playwright, run by the SDK itself as a local stdio server in this pod
+// (docs/adr/0048 §6).
+//
+// It used to be proxied: agent → sidecar → core → provisioner → e2e pod, with
+// the tool list served from a snapshot committed into the sidecar because the
+// real list could not be fetched reliably. docs/adr/0044 records what that
+// cost — browser automation was dead for the fleet's entire history behind
+// three stacked failures, each of which the layer above it happily passed.
+//
+// Declaring it here removes all three at once: the SDK owns the process, so
+// the tool list is whatever the installed version actually exposes, there is
+// no registration racing a pod that is still starting, and a failure surfaces
+// as a real error instead of an empty result from a swallowed hop.
+function playwrightMcpServer() {
+  return {
+    type: "stdio" as const,
+    command: "playwright-mcp",
+    // --browser chromium is NOT a preference, it is the fix from
+    // docs/adr/0044: @playwright/mcp bundles its own playwright-core, and
+    // without this it looks for BRANDED Chrome at /opt/google/chrome/chrome
+    // and fails to start. The image installs the matching chrome-for-testing
+    // build alongside it (see worker/Dockerfile) — the two halves have to
+    // stay together.
+    args: ["--headless", "--isolated", "--browser", "chromium"],
+  };
 }
 
 // Feeds query()'s streaming-input mode — push() enqueues a message, the
@@ -71,23 +100,25 @@ class InputQueue {
   }
 }
 
-// This is deliberately thin: "Claude Code, reached through a dashboard" —
-// the fleet's value is the infra (pod, worktree, dashboard access), not a
-// bespoke conversation script layered on top (supersedes docs/adr/0021/
-// 0025's phase-boundary framing and the EXPLORE/REVIEW/INTERVIEW/PLAN/
-// DOUBT/RECONCILE workflow this function used to force on every task
-// unconditionally). The agent discovers its own worktree/branch state via
-// git, and its own tools via the MCP tool list, the same way a human
-// resuming work in a terminal would — nothing here needs to say it. Any
-// process guidance (architecture-interview, doubt-driven-development,
-// posting a plan, opening a PR) is opt-in per task, via task.guidance —
-// the operator's chosen prompt_snippets (dashboard-editable, see
-// db/schema.sql), joined once at task-creation time. "" attaches nothing.
-function taskPrompt(task: Task): string {
-  const guidance = task.guidance ? `\n\n${task.guidance}` : "";
-  return `You are working on task ${task.id} in repo ${task.repo}.
-Task: ${task.description}${guidance}`;
-}
+// taskPrompt used to live here. It synthesized:
+//
+//     You are working on task <uuid> in repo <name>.
+//     Task: <description><guidance>
+//
+// and pushed it into the input queue before query() was even constructed.
+//
+// It is deleted in docs/adr/0048. There is no fleet-authored prompt at all
+// now: the first message a human sends IS the first user turn, verbatim,
+// exactly as `claude "fix the flaky test"` behaves. The session's instruction
+// arrives through the same streamHumanMessages feed as every later message,
+// so there is no first-turn branch anywhere in this file.
+//
+// That also removes the wrapper's two quiet failure modes. `guidance` was
+// always empty in practice — the sidecar hardcoded it — so the operator's
+// chosen prompt snippets never actually reached the model; they now prefill
+// the dashboard's composer, where a human can see and edit them before
+// sending. And a description the agent could not see was a description that
+// silently drifted from what it had really been asked to do.
 
 // An SDK message's own fields minus the envelope the transcript row
 // already carries, with long strings capped so a chatty hook's stdout
@@ -268,13 +299,23 @@ async function logSdkMessage(actor: string, msg: { type: string; [key: string]: 
   // live-only channel, not in a durable Postgres transcript.
 }
 
-export type TaskResult = { aborted: boolean; summary: string };
+export type SessionResult = { aborted: boolean; summary: string };
 
 // runTask is the continuous-session driver (docs/adr/0021, reliability-
 // findings.md #0): one query() call, streaming-input mode, spans planning
 // and implementation with no fleet-imposed phase boundary or teardown/
 // restart at the approval boundary.
-export async function runTask(task: Task): Promise<TaskResult> {
+export async function runSession(): Promise<SessionResult> {
+  // The session row, read fresh at startup rather than trusted from env.
+  //
+  // This is the whole reason GET /task survives docs/adr/0048's cull of the
+  // sidecar's wrapper-facing API: permission_mode has to be RESTORED on a
+  // warm. Without it, every resume of a session a human put into
+  // acceptEdits/plan/bypassPermissions would silently revert to "default",
+  // and the human would have no way to tell except by watching it start
+  // asking again.
+  const session = await sidecar.getSession();
+
   let aborted = false;
   // Set by an "interrupt" entry (DashboardService.Interrupt) — stops only
   // the current turn via q.interrupt(), unlike "abort" which ends the
@@ -329,7 +370,7 @@ export async function runTask(task: Task): Promise<TaskResult> {
   function recordResolution(seq: number, decision: { behavior: "allow" | "deny"; message?: string }): void {
     void sidecar
       .pushMessage("agent", JSON.stringify(decision), "permission_response", seq)
-      .catch((err) => log("warn", "recording auto-resolved permission failed", { taskId: task.id, seq, error: String(err) }));
+      .catch((err) => log("warn", "recording auto-resolved permission failed", { taskId: SESSION_ID, seq, error: String(err) }));
   }
 
   // A permission-mode switch (the dashboard's mode picker) pre-empts
@@ -356,7 +397,15 @@ export async function runTask(task: Task): Promise<TaskResult> {
   }
 
   const input = new InputQueue();
-  input.push(taskPrompt(task));
+  // Deliberately NOT seeded. The queue is fed exclusively by
+  // streamHumanMessages below, so the session's first message reaches the
+  // model as an ordinary human turn rather than a fleet-authored wrapper
+  // (docs/adr/0048).
+  //
+  // This is why core must warm the pod BEFORE appending that first message:
+  // RESUME_FROM_SEQ is computed at provisioning time, so a message appended
+  // first would land below this pod's cursor and never arrive — the pod
+  // would boot, find nothing to do, and be swept as stalled.
 
   const abortController = new AbortController();
   const q = query({
@@ -366,7 +415,7 @@ export async function runTask(task: Task): Promise<TaskResult> {
       cwd: WORKTREE_PATH,
       // Use the task's model from the database, falling back to global env
       // var or default if not set. This allows per-task model selection.
-      model: task.model ?? MODEL,
+      model: session.model ?? MODEL,
       // Continues the prior conversation instead of starting fresh when
       // this pod is warming an existing session (Phase 4's Warm action) —
       // relies on CLAUDE_CONFIG_DIR already pointing at the shared PVC and
@@ -377,33 +426,43 @@ export async function runTask(task: Task): Promise<TaskResult> {
       // "Claude Code process exited with code 1" (worker/src/index.ts's
       // catch) — the child process's actual stderr (auth failure, bad
       // resume session, etc.) is otherwise discarded, not just unlogged.
-      stderr: (data) => log("error", "claude stderr", { taskId: task.id, data }),
+      stderr: (data) => log("error", "claude stderr", { taskId: SESSION_ID, data }),
       // Use the task's permission mode from the database, falling back to
       // "default" if not set. This ensures the mode is restored on resume
       // instead of always resetting to "default".
-      permissionMode: (task.permissionMode ?? "default") as PermissionMode,
+      permissionMode: (session.permissionMode ?? "default") as PermissionMode,
       // Write/Edit/Bash are deliberately never in this list — canUseTool
       // below is the live escalation path for all three (confirmed in
       // Phase 0's spike: allowedTools bypasses canUseTool entirely for
       // anything it lists, so declaring them here would silently remove
       // the gate, not add one).
+      // This list is load-bearing and stays (docs/adr/0048). Deleting it was
+      // proposed on the grounds that "default" mode already auto-allows
+      // reads and prompts on writes — which is false for MCP tools. Checked
+      // against the vendored SDK: every MCP tool's checkPermissions returns
+      // {behavior: "passthrough"}, and the evaluator converts passthrough to
+      // "ask". WebSearch is passthrough too. With no allowlist, the agent
+      // would need a human's permission to call send_message, and would need
+      // permission before it could ASK for permission.
+      //
+      // The nine explicit mcp__agent-fleet-sidecar__<name> entries that used
+      // to sit here ARE gone: the wildcard beside them already matched every
+      // one (the SDK's rule matcher treats an mcp rule with toolName "*" or
+      // undefined as matching the whole server), so they were a second,
+      // hand-maintained copy of the same policy that every new tool had to
+      // be added to.
       allowedTools: [
         "Read", "Glob", "Grep", "WebSearch", "WebFetch", "Task",
-        "mcp__agent-fleet-sidecar__send_message",
-        "mcp__agent-fleet-sidecar__wait_for_messages",
-        "mcp__agent-fleet-sidecar__AskUserQuestion",
-        "mcp__agent-fleet-sidecar__request_e2e_env",
-        "mcp__agent-fleet-sidecar__kill_env",
-        // Named explicitly, though the wildcard below already covers it,
-        // because "an un-prompted shell while Bash is gated" reads as an
-        // oversight otherwise. It's deliberate (docs/adr/0039): run_command
-        // lands in the e2e pod, which holds no GH_TOKEN, no
-        // CLAUDE_CODE_OAUTH_TOKEN, only this task's worktree, and no git —
-        // strictly less privileged than this pod, whose Bash is gated.
-        // If that pod ever gains credentials or a wider mount, this entry
-        // is the thing to remove.
-        "mcp__agent-fleet-sidecar__run_command",
         "mcp__agent-fleet-sidecar__*",
+        // Playwright by the same wildcard rule. Every browser call would
+        // otherwise prompt — including the read-only ones a human would never
+        // want to be asked about (snapshot, console messages) — because MCP
+        // tools are passthrough → ask, not because navigating is dangerous.
+        //
+        // The browser only ever reaches what this pod can reach, and the pod's
+        // own network position is the real boundary. What it can DO with a
+        // page is bounded by the same thing bounding the agent generally.
+        "mcp__playwright__*",
       ],
       // The SDK's own built-in "AskUserQuestion" (distinct from the
       // mcp__agent-fleet-sidecar__ one above) is available by default and
@@ -453,13 +512,9 @@ export async function runTask(task: Task): Promise<TaskResult> {
           pendingPermissions.set(seq, { resolve, input: effectiveInput });
         });
       },
-      mcpServers: { "agent-fleet-sidecar": sidecarMcpServer() },
-      // rtk output compaction for the e2e sandbox's shell — see rtkHook.ts
-      // for why this can't live in fleet-shared/settings.json, and why
-      // `Bash` is deliberately not in this matcher (it goes through
-      // canUseTool below instead, so the human gate survives).
-      hooks: {
-        PreToolUse: [{ matcher: "mcp__agent-fleet-sidecar__run_command", hooks: [rtkRunCommandHook] }],
+      mcpServers: {
+        "agent-fleet-sidecar": sidecarMcpServer(),
+        playwright: playwrightMcpServer(),
       },
       // "user" (not "project"): CLAUDE_CONFIG_DIR (provisioner/internal/k8s/
       // pod.go) points at the shared PVC, provisioner-synced by
@@ -473,6 +528,34 @@ export async function runTask(task: Task): Promise<TaskResult> {
       abortController,
     },
   });
+
+  // q.interrupt() is not guaranteed to settle, so it is never awaited bare.
+  //
+  // The SDK registers a control request and resolves it when the CLI answers.
+  // Its cleanup() clears pendingControlResponses WITHOUT rejecting them, and
+  // runs whenever the CLI message stream ends — so a request issued after the
+  // CLI has died waits on a promise nothing will ever settle, and not even the
+  // .catch() can fire. That parks this callback inside the SSE stream, which
+  // parks streamHumanMessages, which parks runSession's finally, which means
+  // index.ts never reaches process.exit: the Job never goes terminal and the
+  // concurrency slot leaks. Precisely the failure class the explicit exit was
+  // added to remove — reachable by "the CLI dies, then a human clicks Stop".
+  //
+  // 5s is far beyond a healthy round-trip; if it elapses, the channel is gone
+  // and abortController.abort() is what actually ends the session anyway.
+  const interruptSafely = async (what: string) => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([
+      q.interrupt().catch((err) => log("warn", `${what} failed`, { taskId: SESSION_ID, error: String(err) })),
+      new Promise<void>((resolve) => {
+        timer = setTimeout(() => {
+          log("warn", `${what} did not settle — the SDK control channel is gone`, { taskId: SESSION_ID });
+          resolve();
+        }, 5_000);
+      }),
+    ]);
+    clearTimeout(timer);
+  };
 
   // Delivers every new human message live (docs/adr/0021 point 2) — not a
   // poll the wrapper initiates on its own schedule.
@@ -488,7 +571,7 @@ export async function runTask(task: Task): Promise<TaskResult> {
         aborted = true;
         // Nothing pending has anything left to wait for — deny it all so
         // no promise dangles past the session teardown below.
-        resolveAllPendingDeny("Mohammad stopped the task.", true);
+        resolveAllPendingDeny("Mohammad stopped the session.", true);
         // interrupt() is graceful but only meaningful mid-turn — if the
         // session is idle (paused between rounds, waiting for the next
         // streamed input, the common case for an unprompted /stop),
@@ -496,7 +579,7 @@ export async function runTask(task: Task): Promise<TaskResult> {
         // loop below would otherwise hang forever waiting for a message
         // that will never come. abortController.abort() guarantees the
         // underlying session actually ends either way.
-        await q.interrupt().catch((err) => log("warn", "interrupt failed", { taskId: task.id, error: String(err) }));
+        await interruptSafely("interrupt");
         abortController.abort();
         return;
       }
@@ -513,7 +596,7 @@ export async function runTask(task: Task): Promise<TaskResult> {
         if (pendingPermissions.size > 0) {
           resolveAllPendingDeny(entry.text || "Mohammad interrupted the current turn.", true);
         }
-        await q.interrupt().catch((err) => log("warn", "soft interrupt failed", { taskId: task.id, error: String(err) }));
+        await interruptSafely("soft interrupt");
         return;
       }
       // The human's allow/deny decision for a specific permission_request,
@@ -540,7 +623,18 @@ export async function runTask(task: Task): Promise<TaskResult> {
       // time out unanswered.
       if (entry.type === "permission_mode") {
         const mode = entry.text as PermissionMode;
-        await q.setPermissionMode(mode);
+        // Caught, not bare-awaited: this is the only await in this callback
+        // that could reject, and a rejection here does not just lose the mode
+        // switch — it escapes onEntry, streamOnce rethrows, and nextSeq is
+        // only advanced AFTER onEntry resolves. The reconnect would redeliver
+        // the same entry and throw again every 2s, permanently, so no later
+        // reply, permission response or Stop would ever be delivered and
+        // anything already pending would block forever. Query.request()
+        // rejects on any non-success control response, which an unrecognized
+        // mode string is.
+        await q
+          .setPermissionMode(mode)
+          .catch((err) => log("warn", "setPermissionMode failed", { taskId: SESSION_ID, mode, error: String(err) }));
         resolveAllPendingAllow();
         return;
       }
@@ -558,11 +652,11 @@ export async function runTask(task: Task): Promise<TaskResult> {
       }
       input.push(entry.text);
     }, humanMessagesAbort.signal, RESUME_FROM_SEQ)
-    .catch((err) => log("error", "human message stream failed", { taskId: task.id, error: String(err) }));
+    .catch((err) => log("error", "human message stream failed", { taskId: SESSION_ID, error: String(err) }));
 
   let sessionId = "";
 
-  async function runSession(): Promise<void> {
+  async function driveQuery(): Promise<void> {
     for await (const msg of q) {
       if (!sessionId && "session_id" in msg) {
         sessionId = msg.session_id as string;
@@ -579,7 +673,7 @@ export async function runTask(task: Task): Promise<TaskResult> {
         // visible rather than merely confusing.
         if (RESUME_SESSION_ID && RESUME_SESSION_ID !== sessionId) {
           log("error", "resume failed: SDK returned a different session id", {
-            taskId: task.id,
+            taskId: SESSION_ID,
             requested: RESUME_SESSION_ID,
             got: sessionId,
           });
@@ -593,16 +687,16 @@ export async function runTask(task: Task): Promise<TaskResult> {
         }
         input.setSessionId(sessionId);
         // Save the session ID and model to the database
-        const modelToSave = task.model ?? MODEL;
+        const modelToSave = session.model ?? MODEL;
         await sidecar
           .saveSessionId(sessionId, modelToSave)
-          .catch((err) => log("warn", "saveSessionId failed", { taskId: task.id, error: String(err) }));
+          .catch((err) => log("warn", "saveSessionId failed", { taskId: SESSION_ID, error: String(err) }));
         // Also persist the initial permission mode if not already set. This
         // ensures the mode shows up in the dashboard instead of "?".
-        if (!task.permissionMode) {
+        if (!session.permissionMode) {
           await sidecar
             .savePermissionMode("default")
-            .catch((err) => log("warn", "savePermissionMode failed", { taskId: task.id, error: String(err) }));
+            .catch((err) => log("warn", "savePermissionMode failed", { taskId: SESSION_ID, error: String(err) }));
         }
       }
       await logSdkMessage("agent", msg as { type: string; [key: string]: unknown });
@@ -633,15 +727,19 @@ export async function runTask(task: Task): Promise<TaskResult> {
           // input, exactly like an idle terminal `claude` session.
           continue;
         }
-        const transient = msg.num_turns === 0 && msg.total_cost_usd === 0;
-        const message = `session stopped: ${msg.subtype} after ${msg.num_turns} turns, $${msg.total_cost_usd}`;
-        throw transient ? new TransientError(message) : new Error(message);
+        // The 0-turns/$0 "transient" classification used to split this into
+        // two error types so core's reclaim could re-dispatch one of them.
+        // Nothing reclaims a session now, so both outcomes are identical:
+        // the pod exits non-zero and a human sees why. The turn/cost figures
+        // stay in the message, since they are what distinguishes "the SDK
+        // never got started" from "it ran and failed".
+        throw new Error(`session stopped: ${msg.subtype} after ${msg.num_turns} turns, $${msg.total_cost_usd}`);
       }
     }
   }
 
   try {
-    await runSession();
+    await driveQuery();
   } catch (err) {
     // An aborted session throws (real SDK: AbortError; the fake mock
     // mirrors this) — expected once `aborted` is already set, not a real

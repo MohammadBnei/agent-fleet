@@ -1,4 +1,0 @@
-ALTER TABLE tasks DROP COLUMN IF EXISTS seen_at;
-ALTER TABLE tasks DROP COLUMN IF EXISTS activity_seen;
-ALTER TABLE tasks DROP COLUMN IF EXISTS last_entry_from;
-ALTER TABLE tasks DROP COLUMN IF EXISTS last_entry_type;

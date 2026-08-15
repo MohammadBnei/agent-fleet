@@ -1,11 +1,11 @@
 import { useState } from "react";
-import type { Task } from "../gen/agentfleet/v1/core_pb";
+import type { Session } from "../gen/agentfleet/v1/core_pb";
+import { client } from "../connectClient";
 import { repoLabel } from "../taskKind";
 import {
   bucketTasks,
-  prBadge,
   isPodPhaseLive,
-  staleBadge,
+
   sessionBadge,
   blockedForLabel,
   SectionHeading,
@@ -43,7 +43,7 @@ function NeedsYouCard({
   reload,
   onAskLater,
 }: {
-  task: Task;
+  task: Session;
   summary?: ListSummary;
   onSelect: () => void;
   reload: () => void;
@@ -53,7 +53,7 @@ function NeedsYouCard({
   const blockedFor = blockedForLabel(task);
   return (
     <NotchCard
-      label={task.status === "proposed" ? "◉ PROPOSED" : `◉ BLOCKED${blockedFor ? ` · ${blockedFor}` : ""}`}
+      label={`◉ BLOCKED${blockedFor ? ` · ${blockedFor}` : ""}`}
       tone="pink"
     >
       <div className="px-3.5 pt-3.5">
@@ -87,14 +87,15 @@ function FinishedCard({
   onSelect,
   onRetry,
   onOpenLogs,
+  reload,
 }: {
-  task: Task;
+  task: Session;
   onSelect: () => void;
   onRetry: () => void;
   onOpenLogs: () => void;
+  reload: () => void;
 }) {
-  const failed = task.status === "failed" || task.status === "failed_permanently";
-  const pr = prBadge(task);
+  const failed = task.podPhase === "POD_PHASE_CRASHED";
   const when = relativeTime(task.lastActiveAt);
   return (
     <div className={`border px-3.5 py-3 ${failed ? "border-orange-line bg-orange-bg" : "border-green-line bg-green-bg"}`}>
@@ -113,7 +114,7 @@ function FinishedCard({
       {failed ? (
         <>
           <div className="text-xs text-warning mt-1.5 leading-[1.5] break-words">
-            {task.status === "failed_permanently" ? "failed permanently" : "failed"}
+            {"crashed"}
             {task.lastError ? ` · ${task.lastError}` : ""}
           </div>
           <div className="flex gap-2 mt-2.5">
@@ -127,17 +128,19 @@ function FinishedCard({
         </>
       ) : (
         <div className="text-xs text-dim mt-1.5">
-          {pr ? pr.label : "no PR"}
-          {task.prUrl && (
-            <>
-              {" · "}
-              <a href={task.prUrl} target="_blank" rel="noreferrer" className="text-primary">
-                review
-              </a>
-            </>
-          )}
+          {"no PR"}
         </div>
       )}
+      {/* Same action as the desktop row's — see TaskList.tsx's FinishedRow. */}
+      <button
+        type="button"
+        onClick={() => {
+          void client.archiveSession({ sessionId: task.id }).then(reload);
+        }}
+        className="border border-acc-line px-3 py-2 text-xs w-full mt-2"
+      >
+        archive
+      </button>
     </div>
   );
 }
@@ -148,7 +151,7 @@ function WorkingCard({
   last,
   onSelect,
 }: {
-  task: Task;
+  task: Session;
   summary?: ListSummary;
   last: boolean;
   onSelect: () => void;
@@ -157,7 +160,7 @@ function WorkingCard({
   const inFlight = summary?.inFlight ?? null;
   const provisioning = task.podPhase === "POD_PHASE_PROVISIONING";
   const live = isPodPhaseLive(task.podPhase) && !provisioning;
-  const stale = staleBadge(task);
+  const stale = null as { label: string; className: string } | null;
 
   return (
     <button
@@ -203,7 +206,7 @@ function WorkingCard({
   );
 }
 
-function QuietGroup({ title, tasks, onSelect }: { title: string; tasks: Task[]; onSelect: (id: string) => void }) {
+function QuietGroup({ title, tasks, onSelect }: { title: string; tasks: Session[]; onSelect: (id: string) => void }) {
   if (tasks.length === 0) return null;
   return (
     <Collapse
@@ -241,7 +244,7 @@ export function MobileTaskList({
   onOpenLogs,
   reload,
 }: {
-  tasks: Task[];
+  tasks: Session[];
   summaries: Map<string, ListSummary>;
   needsYouIds: Set<string>;
   onSelect: (id: string) => void;
@@ -255,7 +258,11 @@ export function MobileTaskList({
   // still blocked, so the card must come back on the next visit.
   const [deferred, setDeferred] = useState<Set<string>>(new Set());
 
-  const { needsYou, working, finished, stalled, proposed, quiet } = bucketTasks(tasks, needsYouIds);
+  // Same destructure as TaskList's, for the same reason: a bucket computed and
+  // not rendered is a session that vanishes from this list. Mobile had dropped
+  // `archived` and `swept` too, so a session a human had finished existed on
+  // neither form factor.
+  const { needsYou, working, finished, stalled, quiet, archived, swept } = bucketTasks(tasks, needsYouIds);
   const visibleNeedsYou = needsYou.filter((t) => !deferred.has(t.id));
 
   const CHIPS: readonly { value: Bucket; label: string; count: number }[] = [
@@ -316,6 +323,7 @@ export function MobileTaskList({
                 onSelect={() => onSelect(t.id)}
                 onRetry={() => onRetry(t.id)}
                 onOpenLogs={() => onOpenLogs(t.id)}
+                reload={reload}
               />
             ))}
           </>
@@ -338,11 +346,17 @@ export function MobileTaskList({
           </>
         )}
 
+        {/*
+          "proposed by audits" was fed by a hardcoded empty array here too — a
+          group that could never contain anything. Proposals are their own
+          table with their own view on the Audits page (docs/adr/0048).
+        */}
         {bucket === "all" && (
           <div className="flex flex-col mt-1">
             <QuietGroup title="stalled" tasks={stalled} onSelect={onSelect} />
-            <QuietGroup title="proposed by audits" tasks={proposed} onSelect={onSelect} />
             <QuietGroup title="idle" tasks={quiet} onSelect={onSelect} />
+            <QuietGroup title="archived" tasks={archived} onSelect={onSelect} />
+            <QuietGroup title="swept · readable, not resumable" tasks={swept} onSelect={onSelect} />
           </div>
         )}
       </div>

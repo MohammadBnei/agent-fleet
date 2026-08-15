@@ -8,33 +8,30 @@ import (
 )
 
 // mcpClientImport is what a component speaking MCP *outbound* imports. The
-// server half (mcp-go/server, mcp-go/mcp) is a different thing entirely and
-// is deliberately not matched: the sidecar hosts an MCP server for the agent,
-// and e2e-runner's execmcp hosts one for everyone else.
+// server half (mcp-go/server, mcp-go/mcp) is a different thing entirely and is
+// deliberately not matched: the sidecar hosts an MCP server for the agent, and
+// that is the whole point of it.
 const mcpClientImport = `"github.com/mark3labs/mcp-go/client"`
 
-// mayDialMCP are the two components that reach a sandbox for their own
-// reasons, per docs/adr/0045:
+// mayDialMCP is EMPTY, and that is the assertion.
 //
-//   - sidecar: the agent's run_command and browser tools
-//   - core:    the dashboard's RestartE2EApp / GetE2EAppLog, human-initiated
+// docs/adr/0045 allowed two entries — sidecar and core — because each dialled
+// a task's sandbox for its own reasons. docs/adr/0048 §6 deleted the sandbox,
+// so there is nothing left in this fleet to dial: the agent's tools are on its
+// own pod's localhost, and every inter-component call is gRPC.
 //
-// Neither is a relay. That distinction is the whole point of the ADR, and it
-// is why this list is two entries rather than "nobody" or "anybody".
-var mayDialMCP = map[string]bool{"sidecar": true, "core": true}
+// Left as a map rather than collapsed into "nobody" because the day someone
+// has a real reason to add an entry, the list is where the argument goes.
+var mayDialMCP = map[string]bool{}
 
-// TestOnlyDesignatedComponentsDialMCP is the structural half of docs/adr/0045.
+// TestOnlyDesignatedComponentsDialMCP keeps a deleted shape deleted.
 //
-// The ADR deleted a tool-call relay: agent -> sidecar -> core -> provisioner
-// -> sandbox, in which core and the provisioner each carried traffic that was
-// none of their business. Deleting the code is not the same as preventing its
-// return — a future change that adds an MCP client back to the provisioner
+// docs/adr/0045 removed a tool-call relay — agent -> sidecar -> core ->
+// provisioner -> sandbox — in which core and the provisioner each carried
+// traffic that was none of their business. Deleting code is not the same as
+// preventing its return: a change that adds an MCP client back to any of these
 // reintroduces the exact shape, and would look perfectly reasonable in review
 // because the call site would be small and local.
-//
-// So the rule is expressed where it cannot be quietly re-broken: the
-// provisioner must not import an MCP client at all. It no longer speaks MCP,
-// and the day it does again, this fails.
 //
 // Reads files outside this module, so like every other test in this package it
 // must run with -count=1 — a cached PASS would survive the very change it
@@ -56,9 +53,25 @@ func TestOnlyDesignatedComponentsDialMCP(t *testing.T) {
 			if err != nil || d.IsDir() || !strings.HasSuffix(path, ".go") {
 				return nil //nolint:nilerr // an unreadable tree is not this guard's business
 			}
+			// Test files are skipped, and this one has to be: it holds the
+			// import path as a string constant, so with an empty allowlist the
+			// guard reported ITSELF as the offender. A test naming the import
+			// is not a component dialling MCP.
+			if strings.HasSuffix(path, "_test.go") {
+				return nil
+			}
 			// Generated protobuf/gRPC code never imports an MCP client, and
 			// walking it is pure noise.
 			if strings.Contains(path, "/gen/") {
+				return nil
+			}
+			// local/kind/workspace-data is the kind harness's hostPath mount:
+			// after a /kind-local run it holds real git clones of the target
+			// repos, and when the target is agent-fleet itself that means a
+			// full copy of this source tree per session. Walking it reports
+			// this repo's own legitimate MCP clients back as violations —
+			// found live, six sessions in. It is gitignored; it is not source.
+			if strings.Contains(path, "local/kind/workspace-data/") {
 				return nil
 			}
 			body, readErr := os.ReadFile(path)
@@ -77,9 +90,11 @@ func TestOnlyDesignatedComponentsDialMCP(t *testing.T) {
 	}
 
 	if len(offenders) > 0 {
-		t.Errorf("these files dial MCP outbound from a component that must not (docs/adr/0045): %v\n"+
-			"Only %v may hold an MCP client, and only because each dials a sandbox for its own work. "+
-			"If a component needs a sandbox tool call, give it an endpoint from the roster — do not add a relay.",
+		t.Errorf("these files dial MCP outbound, and nothing in this fleet should (docs/adr/0048 §6): %v\n"+
+			"Currently allowed: %v (empty). There is no sandbox and no second pod — the agent's tools are on\n"+
+			"its own pod's localhost, and everything between components is gRPC. If you genuinely need an\n"+
+			"outbound MCP client, add the component to mayDialMCP with the reason, rather than letting a\n"+
+			"relay grow back.",
 			offenders, keysOf(mayDialMCP))
 	}
 }

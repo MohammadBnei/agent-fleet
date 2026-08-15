@@ -21,10 +21,10 @@ import (
 var ErrExists = errors.New("prompt snippet already exists")
 
 type Snippet struct {
-	ID                       string
-	Name                     string
-	Text                     string
-	SuggestedPermissionMode  *string
+	ID                      string
+	Name                    string
+	Text                    string
+	SuggestedPermissionMode *string
 }
 
 type Store struct {

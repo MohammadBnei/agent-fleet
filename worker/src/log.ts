@@ -27,13 +27,13 @@ function currentLevel(): Level {
 // (their own, or another task's), and those must not be clobbered.
 export function log(level: Level, message: string, fields: Record<string, unknown> = {}): void {
   if (LEVELS[level] < LEVELS[currentLevel()]) return;
-  const taskId = process.env.TASK_ID;
+  const sessionId = process.env.SESSION_ID;
   console.log(
     JSON.stringify({
       time: new Date().toISOString(),
       level: level.toUpperCase(),
       msg: message,
-      ...(taskId ? { taskId } : {}),
+      ...(sessionId ? { sessionId } : {}),
       ...fields,
     }),
   );

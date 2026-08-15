@@ -71,16 +71,18 @@ func TestBuildLogQL(t *testing.T) {
 			want: `{namespace="agent-fleet", task_id="abc-123", job=~".*/worker-.*"} | json | level="WARN"`,
 		},
 		{
-			// e2e lines are the target app's own output (vite, code-server,
-			// Chromium), not fleet JSON — so task scoping has to survive
-			// without any parsed field to filter on.
-			name: "e2e scoped to a task",
+			// The "e2e" component is gone with the pod it selected
+			// (docs/adr/0048 §6). An unknown component must NOT silently
+			// widen to every pod in the namespace while still applying the
+			// task filter — that would answer a question about one session
+			// with another session's logs.
+			name: "unknown component keeps its task scope",
 			req: QueryRequest{
 				Namespace: "agent-fleet",
 				Component: "e2e",
 				TaskID:    "abc-123",
 			},
-			want: `{namespace="agent-fleet", task_id="abc-123", job=~".*/e2e-.*"} | json`,
+			want: `{namespace="agent-fleet", task_id="abc-123"} | json`,
 		},
 		{
 			name: "default namespace",
@@ -188,10 +190,13 @@ func TestBuildSelector(t *testing.T) {
 			want:      `{namespace="agent-fleet", job=~".*/provisioner-.*"}`,
 		},
 		{
-			name:      "e2e",
+			// A component nobody serves any more falls through to the
+			// namespace alone rather than matching a job pattern that can
+			// never hit anything.
+			name:      "retired component adds no job filter",
 			namespace: "agent-fleet",
 			component: "e2e",
-			want:      `{namespace="agent-fleet", job=~".*/e2e-.*"}`,
+			want:      `{namespace="agent-fleet"}`,
 		},
 		{
 			name:      "deployed app",

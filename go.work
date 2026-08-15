@@ -5,6 +5,5 @@ use (
 	./sidecar
 	./core
 	./proto/gen/go
-	./e2e-runner
 	./executor
 )

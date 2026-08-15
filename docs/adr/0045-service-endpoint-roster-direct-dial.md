@@ -1,6 +1,6 @@
 # ADR-0045 — Direct dial via a service endpoint roster
 
-- **Status:** Accepted
+- **Status:** Superseded by [0048](0048-one-session-one-pod-one-shared-home.md) — with the sandbox merged into the worker pod there is no cross-pod dial left to route. Its finding stands: the relay was a coupling problem, not a latency one
 - **Date:** 2026-08-13
 - **Supersedes:** [ADR-0020](0020-hub-and-spoke-grpc-worker-sidecar.md) point 4
   (partially — only the e2e tool-call relay; core still commands the

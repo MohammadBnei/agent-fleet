@@ -1,6 +1,6 @@
 # ADR-0034: Environment recipe system replaces the hardcoded e2e start-command switch
 
-**Status:** Accepted
+**Status:** Superseded by [0048](0048-one-session-one-pod-one-shared-home.md) — the recipe tables stored what the agent can read off the working tree it is already sitting in; `request_service` keeps the one capability that genuinely needs cluster RBAC
 **Date:** 2026-08-10
 
 ## Context

@@ -45,16 +45,16 @@ func (r *recordingStore) LatestSeq(context.Context, string) (int64, error) {
 
 func TestServer_RespondToPermission(t *testing.T) {
 	store := &recordingStore{}
-	s := NewServer(nil, store, nil, nil, nil, nil, nil, nil, nil, 5, nil, nil, nil)
+	s := NewServer(nil, nil, store, nil, nil, nil, nil, nil, nil, 5, nil, nil, nil)
 
 	resp, err := s.RespondToPermission(context.Background(), connect.NewRequest(&agentfleetv1.RespondToPermissionRequest{
-		TaskId: "task-1", Seq: 7, DecisionJson: `{"behavior":"allow"}`,
+		SessionId: "task-1", Seq: 7, DecisionJson: `{"behavior":"allow"}`,
 	}))
 	if err != nil {
 		t.Fatalf("RespondToPermission: %v", err)
 	}
-	if resp.Msg.GetStatus() != "answered" {
-		t.Errorf("status = %q, want %q", resp.Msg.GetStatus(), "answered")
+	if resp.Msg.GetSeq() < 0 {
+		t.Errorf("status = %d, want %q", resp.Msg.GetSeq(), "answered")
 	}
 	if store.lastTaskID != "task-1" || store.lastFrom != "human" || store.lastText != `{"behavior":"allow"}` ||
 		store.lastType != "permission_response" || store.lastReplyTo != 7 {
@@ -85,26 +85,26 @@ func TestServer_RespondToPermission(t *testing.T) {
 // here since it returns before ever reaching tasks.Store.
 
 func TestServer_Discuss_EmptyText(t *testing.T) {
-	s := NewServer(nil, &recordingStore{}, nil, nil, nil, nil, nil, nil, nil, 5, nil, nil, nil)
+	s := NewServer(nil, nil, &recordingStore{}, nil, nil, nil, nil, nil, nil, 5, nil, nil, nil)
 
-	req := connect.NewRequest(&agentfleetv1.DiscussRequest{TaskId: "task-1", Text: ""})
-	if _, err := s.Discuss(context.Background(), req); connect.CodeOf(err) != connect.CodeInvalidArgument {
+	req := connect.NewRequest(&agentfleetv1.PostMessageRequest{SessionId: "task-1", Text: ""})
+	if _, err := s.PostMessage(context.Background(), req); connect.CodeOf(err) != connect.CodeInvalidArgument {
 		t.Fatalf("Discuss error = %v, want CodeInvalidArgument", err)
 	}
 }
 
 func TestServer_AnswerQuestion(t *testing.T) {
 	store := &recordingStore{}
-	s := NewServer(nil, store, nil, nil, nil, nil, nil, nil, nil, 5, nil, nil, nil)
+	s := NewServer(nil, nil, store, nil, nil, nil, nil, nil, nil, 5, nil, nil, nil)
 
 	answersJSON := `{"answers":{"Which quality attribute wins?":"Latency"}}`
-	req := connect.NewRequest(&agentfleetv1.AnswerQuestionRequest{TaskId: "task-1", Seq: 3, AnswersJson: answersJSON})
+	req := connect.NewRequest(&agentfleetv1.AnswerQuestionRequest{SessionId: "task-1", Seq: 3, AnswersJson: answersJSON})
 	resp, err := s.AnswerQuestion(context.Background(), req)
 	if err != nil {
 		t.Fatalf("AnswerQuestion: %v", err)
 	}
-	if resp.Msg.GetStatus() != "answered" {
-		t.Errorf("status = %q, want %q", resp.Msg.GetStatus(), "answered")
+	if resp.Msg.GetSeq() < 0 {
+		t.Errorf("status = %d, want %q", resp.Msg.GetSeq(), "answered")
 	}
 	if store.lastTaskID != "task-1" || store.lastFrom != "human" || store.lastText != answersJSON || store.lastType != "answer" {
 		t.Errorf("AppendReply(%q, %q, %q, %q), want (task-1, human, %s, answer)",

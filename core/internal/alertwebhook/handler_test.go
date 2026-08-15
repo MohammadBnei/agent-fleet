@@ -9,27 +9,27 @@ import (
 )
 
 type fakeTasks struct {
-	calls    []string // external keys seen
+	calls    []string // dedup keys seen
 	existing map[string]bool
 }
 
-func (f *fakeTasks) CreateDeduped(_ context.Context, kind, externalKey, _, _ string, _, _ *string) (string, bool, error) {
-	f.calls = append(f.calls, kind+":"+externalKey)
-	if f.existing[externalKey] {
+func (f *fakeTasks) Create(_ context.Context, _, source, dedupKey, _, _ string) (string, bool, error) {
+	f.calls = append(f.calls, source+":"+dedupKey)
+	if f.existing[dedupKey] {
 		return "", false, nil
 	}
 	if f.existing == nil {
 		f.existing = map[string]bool{}
 	}
-	f.existing[externalKey] = true
-	return "task-" + externalKey, true, nil
+	f.existing[dedupKey] = true
+	return "proposal-" + dedupKey, true, nil
 }
 
 type fakeDiscord struct{ threads int }
 
-func (f *fakeDiscord) OpenThread(_, _, _ string) (string, error) {
+func (f *fakeDiscord) Notify(_ context.Context, _ string) error {
 	f.threads++
-	return "thread-1", nil
+	return nil
 }
 
 func post(t *testing.T, h *Handler, token, body string) *httptest.ResponseRecorder {
@@ -87,7 +87,7 @@ func TestCreatesThotTaskForFiringAlert(t *testing.T) {
 	if rec := post(t, h, "t", firing); rec.Code != http.StatusOK {
 		t.Fatalf("got %d, want 200", rec.Code)
 	}
-	if len(tasks.calls) != 1 || tasks.calls[0] != "thot:abc123" {
+	if len(tasks.calls) != 1 || tasks.calls[0] != "alert:abc123" {
 		t.Errorf("expected one thot task keyed by fingerprint, got %v", tasks.calls)
 	}
 	if dc.threads != 1 {
@@ -154,6 +154,6 @@ func TestDiscordFailureDoesNotFailTheRequest(t *testing.T) {
 
 type failingDiscord struct{}
 
-func (failingDiscord) OpenThread(_, _, _ string) (string, error) {
-	return "", http.ErrBodyNotAllowed
+func (failingDiscord) Notify(_ context.Context, _ string) error {
+	return http.ErrBodyNotAllowed
 }

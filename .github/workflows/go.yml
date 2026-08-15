@@ -1,7 +1,7 @@
 name: Go and Proto
 
 # Correctness gate for the Go side of the fleet (core, provisioner, sidecar)
-# and the buf-managed proto schema they + worker's ts-proto codegen share —
+# and the buf-managed proto schema they share —
 # see docs/adr/0013, 0019, 0020. Kept separate from docker.yml: this checks
 # code quality/correctness, docker.yml handles image packaging/push/deploy
 # (same division dream-analyst's/this repo's existing workflows already
@@ -20,8 +20,8 @@ env:
 
 jobs:
   # Precise CI: only run a module's vet/lint/test against what actually
-  # changed. proto/ changes count as a change for every consumer (Go
-  # codegen + worker's ts-proto codegen both come from it). This job never
+  # changed. proto/ changes count as a change for every Go consumer. This job never
+  
   # gates a push/deploy step (go.yml only checks correctness, doesn't
   # build/push images), so it's safe to apply on every trigger, unlike
   # docker.yml's equivalent (see that file's comment on why its filtering
@@ -60,8 +60,6 @@ jobs:
               - 'sidecar/**'
             executor:
               - 'executor/**'
-            e2e-runner:
-              - 'e2e-runner/**'
       # A proto/ change affects every Go module's generated code, so it
       # counts as a change for all three, on top of each module's own filter.
       - name: Compute go-modules matrix
@@ -78,17 +76,11 @@ jobs:
             const provisioner = ${{ steps.filter.outputs.provisioner }};
             const sidecar = ${{ steps.filter.outputs.sidecar }};
             const executor = ${{ steps.filter.outputs.executor }};
-            // e2e-runner is a go.work module like the rest, but was never
-            // in this matrix — so its Go code (execmcp, the worker's whole
-            // build/test sandbox) was never vetted, linted or tested by CI.
-            // It takes no proto dependency, hence no `proto ||` here.
-            const e2eRunner = ${{ steps.filter.outputs['e2e-runner'] }};
             const modules = [];
             if (proto || coreChanged) modules.push('core');
             if (proto || provisioner) modules.push('provisioner');
             if (proto || sidecar) modules.push('sidecar');
             if (proto || executor) modules.push('executor');
-            if (e2eRunner) modules.push('e2e-runner');
             return modules;
 
   buf:
@@ -168,15 +160,16 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
 
-      - name: Install ts-proto (worker's local TS plugin)
-        working-directory: worker
-        run: bun install --frozen-lockfile
+      # An "Install ts-proto (worker's local TS plugin)" step used to sit here.
+      # Deleted with worker/src/gen in docs/adr/0048 — the worker never
+      # imported the generated types, so this step existed only to regenerate
+      # 8,692 lines that CI then auto-committed back onto the PR.
 
       # protoc-gen-es (dashboard's local TS plugin, Connect-ES v2 — see
       # docs/adr/0015: no separate protoc-gen-connect-es needed, protoc-gen-es
       # alone generates both messages and service descriptors) — version
       # pinned via dashboard/package.json/bun.lock, no separate env var
-      # needed, same convention as ts-proto above.
+      # needed, pinned via dashboard/package.json + bun.lock.
       - name: Install protoc-gen-es (dashboard's local TS plugin)
         working-directory: dashboard
         run: bun install --frozen-lockfile
@@ -189,13 +182,13 @@ jobs:
 
       - name: Check for drift and auto-commit
         run: |
-          if ! git diff --quiet -- proto/gen worker/src/gen dashboard/src/gen; then
+          if ! git diff --quiet -- proto/gen dashboard/src/gen; then
             echo "Generated files are out of sync with proto definitions"
             if [ "${{ github.event_name }}" = "pull_request" ]; then
               echo "Auto-committing regenerated proto files"
               git config user.name "github-actions[bot]"
               git config user.email "github-actions[bot]@users.noreply.github.com"
-              git add proto/gen worker/src/gen dashboard/src/gen
+              git add proto/gen dashboard/src/gen
               git commit -m "chore: regenerate proto files after schema changes"
               git push
             else
@@ -255,9 +248,20 @@ jobs:
           # (v6 only supports v1.x).
           version: v2.12.2
 
+      # -count=1 is load-bearing, not belt-and-braces. core/internal/buildguard's
+      # tests read files OUTSIDE their module (.github/, proto/), which Go's
+      # test cache cannot see — so a cached PASS survives edits to the very
+      # files being guarded. That package's own doc records verifying it live:
+      # removing `executor` from docker.yml still reported PASS until -count=1
+      # forced a real run.
+      #
+      # CI was missing this. actions/setup-go restores ~/.cache/go-build, which
+      # is where the test cache lives, so every buildguard test has been
+      # cacheable here since it was written — the guards were guarding, and CI
+      # was free to not look.
       - name: go test
         working-directory: ${{ matrix.module }}
-        run: go test ./... -race -cover
+        run: go test ./... -race -cover -count=1
 
       - name: go test (integration, real Postgres)
         working-directory: ${{ matrix.module }}
@@ -267,4 +271,4 @@ jobs:
           AGENTFLEET_DB_NAME: agentfleetdb
           AGENTFLEET_DB_USER: agentfleet
           AGENTFLEET_DB_PASSWORD: agentfleet
-        run: go test -tags=integration ./...
+        run: go test -tags=integration ./... -count=1

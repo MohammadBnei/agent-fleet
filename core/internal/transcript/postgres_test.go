@@ -30,11 +30,11 @@ func newTestPool(t *testing.T) *pgxpool.Pool {
 // real tasks table (unlike the old bare-id stub) requires repo/description.
 func newTestTask(t *testing.T, ctx context.Context, pool *pgxpool.Pool) string {
 	t.Helper()
-	var taskID string
-	if err := pool.QueryRow(ctx, `INSERT INTO tasks (repo, description) VALUES ('dream-analyst', 'task') RETURNING id`).Scan(&taskID); err != nil {
+	var sessionID string
+	if err := pool.QueryRow(ctx, `INSERT INTO sessions (repo, description) VALUES ('dream-analyst', 'task') RETURNING id`).Scan(&sessionID); err != nil {
 		t.Fatalf("insert task: %v", err)
 	}
-	return taskID
+	return sessionID
 }
 
 func TestPostgresStore_ConcurrentAppendsAreGaplessAndOrdered(t *testing.T) {
@@ -42,7 +42,7 @@ func TestPostgresStore_ConcurrentAppendsAreGaplessAndOrdered(t *testing.T) {
 	ctx := context.Background()
 	store := NewPostgresStore(pool)
 
-	taskID := newTestTask(t, ctx, pool)
+	sessionID := newTestTask(t, ctx, pool)
 
 	const n = 20
 	var wg sync.WaitGroup
@@ -51,7 +51,7 @@ func TestPostgresStore_ConcurrentAppendsAreGaplessAndOrdered(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			seq, err := store.Append(ctx, taskID, "proposer", "msg", "discussion", "")
+			seq, err := store.Append(ctx, sessionID, "proposer", "msg", "discussion", "")
 			if err != nil {
 				t.Errorf("append %d: %v", i, err)
 				return
@@ -80,13 +80,13 @@ func TestPostgresStore_IdempotentAppendDoesNotDuplicate(t *testing.T) {
 	ctx := context.Background()
 	store := NewPostgresStore(pool)
 
-	taskID := newTestTask(t, ctx, pool)
+	sessionID := newTestTask(t, ctx, pool)
 
-	seq1, err := store.Append(ctx, taskID, "human", "approved", "approve", "fixed-key-1")
+	seq1, err := store.Append(ctx, sessionID, "human", "allow", "permission_response", "fixed-key-1")
 	if err != nil {
 		t.Fatalf("first append: %v", err)
 	}
-	seq2, err := store.Append(ctx, taskID, "human", "approved", "approve", "fixed-key-1")
+	seq2, err := store.Append(ctx, sessionID, "human", "allow", "permission_response", "fixed-key-1")
 	if err != nil {
 		t.Fatalf("retried append: %v", err)
 	}
@@ -94,7 +94,7 @@ func TestPostgresStore_IdempotentAppendDoesNotDuplicate(t *testing.T) {
 		t.Fatalf("retried append with same idempotency key got a different seq: %d vs %d", seq1, seq2)
 	}
 
-	entries, _, err := store.ReadSince(ctx, taskID, 0, 100)
+	entries, _, err := store.ReadSince(ctx, sessionID, 0, 100)
 	if err != nil {
 		t.Fatalf("read since: %v", err)
 	}
@@ -112,17 +112,17 @@ func TestPostgresStore_AppendReplyRoundTripsReplyTo(t *testing.T) {
 	ctx := context.Background()
 	store := NewPostgresStore(pool)
 
-	taskID := newTestTask(t, ctx, pool)
+	sessionID := newTestTask(t, ctx, pool)
 
-	questionSeq, err := store.Append(ctx, taskID, "agent", `{"questions":[]}`, "question", "")
+	questionSeq, err := store.Append(ctx, sessionID, "agent", `{"questions":[]}`, "question", "")
 	if err != nil {
 		t.Fatalf("append question: %v", err)
 	}
-	if _, err := store.AppendReply(ctx, taskID, "human", `{"answers":{}}`, "answer", "", questionSeq); err != nil {
+	if _, err := store.AppendReply(ctx, sessionID, "human", `{"answers":{}}`, "answer", "", questionSeq); err != nil {
 		t.Fatalf("append reply: %v", err)
 	}
 
-	entries, _, err := store.ReadSince(ctx, taskID, 0, 100)
+	entries, _, err := store.ReadSince(ctx, sessionID, 0, 100)
 	if err != nil {
 		t.Fatalf("read since: %v", err)
 	}
@@ -145,14 +145,14 @@ func TestReadSince_ReturnsCreatedAt(t *testing.T) {
 	pool := newTestPool(t)
 	ctx := context.Background()
 	store := NewPostgresStore(pool)
-	taskID := newTestTask(t, ctx, pool)
+	sessionID := newTestTask(t, ctx, pool)
 
 	before := time.Now().Add(-2 * time.Second)
-	if _, err := store.Append(ctx, taskID, "human", "hello", "discussion", "k1"); err != nil {
+	if _, err := store.Append(ctx, sessionID, "human", "hello", "discussion", "k1"); err != nil {
 		t.Fatalf("Append: %v", err)
 	}
 
-	entries, _, err := store.ReadSince(ctx, taskID, 0, 10)
+	entries, _, err := store.ReadSince(ctx, sessionID, 0, 10)
 	if err != nil {
 		t.Fatalf("ReadSince: %v", err)
 	}

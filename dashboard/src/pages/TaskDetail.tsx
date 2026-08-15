@@ -1,8 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { client } from "../connectClient";
-import { isThot, repoLabel } from "../taskKind";
-import type { Task } from "../gen/agentfleet/v1/core_pb";
-import { sessionBadge, staleBadge, heartbeatLabel, prBadge } from "./TaskList";
+import { repoLabel } from "../taskKind";
+import type { Session } from "../gen/agentfleet/v1/core_pb";
+import { sessionBadge } from "./TaskList";
 import {
   feedVisibility,
   latestResultSummary,
@@ -19,10 +19,8 @@ import { Markdown } from "../components/Markdown";
 import { BypassConfirmModal } from "../components/BypassConfirmModal";
 import { Segmented } from "../components/Segmented";
 import { DecisionDock } from "../components/DecisionDock";
-import { DecisionInline } from "../components/DecisionInline";
-import { NotchCard } from "../components/NotchCard";
 import { SessionFeed } from "../components/SessionFeed";
-import { TodosPanel, ChangesPanel, E2ePanel, SessionPanel } from "../components/SessionPanels";
+import { TodosPanel, ChangesPanel, SessionPanel } from "../components/SessionPanels";
 import { asDisplayMarkdown } from "../transcript";
 
 // The console's desktop session view: feed · decision dock · composer, beside a
@@ -41,13 +39,13 @@ const DENSITY: readonly { value: Density; label: string; title: string }[] = [
 ];
 
 export function TaskDetail({
-  taskId,
+  sessionId,
   tasks,
   onBack,
-  onClosed,
+  onClosed: _onClosed,
 }: {
-  taskId: string;
-  tasks: Task[];
+  sessionId: string;
+  tasks: Session[];
   onBack: () => void;
   // Called when this task stops existing (dismissing a proposal soft-deletes
   // it), so the view doesn't sit on a row that is no longer there.
@@ -56,8 +54,6 @@ export function TaskDetail({
   const {
     task: fetchedTask,
     entries,
-    refreshE2e,
-    e2e,
     branch,
     worktreePath,
     busyKey,
@@ -69,7 +65,7 @@ export function TaskDetail({
     respondToPermission,
     answerQuestion,
     clearActionError,
-  } = useTaskDetail(taskId);
+  } = useTaskDetail(sessionId);
   const [message, setMessage] = useState("");
   const [bypassOpen, setBypassOpen] = useState(false);
   const [density, setDensity] = useLocalStorageState<Density>("taskDetail.density", "everything");
@@ -109,11 +105,11 @@ export function TaskDetail({
   // already jumped for instead of scrolling every render.
   const scrolledForTaskRef = useRef<string | null>(null);
   useLayoutEffect(() => {
-    if (entries.length === 0 || scrolledForTaskRef.current === taskId) return;
-    scrolledForTaskRef.current = taskId;
+    if (entries.length === 0 || scrolledForTaskRef.current === sessionId) return;
+    scrolledForTaskRef.current = sessionId;
     const el = feedRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [taskId, entries, feedRef]);
+  }, [sessionId, entries, feedRef]);
 
   // The optimistic echo of a just-sent message (useTaskDetail's
   // pendingMessage) renders immediately but below the fold. Only the entries
@@ -133,12 +129,13 @@ export function TaskDetail({
   // `tasks` is App.tsx's already-polled (5s) list — preferring it keeps
   // pod_phase/status live without a second poll loop just for this page; falls
   // back to the one-shot fetch for the instant before the next tick includes it.
-  const task = tasks.find((t) => t.id === taskId) ?? fetchedTask;
+  const task = tasks.find((t) => t.id === sessionId) ?? fetchedTask;
 
   const badge = sessionBadge(task);
-  const staleTag = staleBadge(task);
-  const heartbeat = heartbeatLabel(task);
-  const prLink = prBadge(task);
+  // staleTag/heartbeat used to render "last beat 4m ago", reddened past the
+  // reclaim threshold. Both are gone with heartbeat_at (docs/adr/0048) — the
+  // feed's own entry timestamps say when this session last did anything, and
+  // they say it about real work rather than about a timer.
   const blocked = task.liveState === "blocked";
   const visibility = feedVisibility(density, false);
 
@@ -189,25 +186,12 @@ export function TaskDetail({
               </span>
             )
           )}
-          <span className="text-xs text-dim2 border border-line px-1.5 py-px flex-none">{task.status}</span>
+          
           <span className="text-xs text-dim2 min-w-0 truncate">
             {repoLabel(task)}
             {branch && ` · ${branch}`}
-            {heartbeat && (
-              <span className={staleTag ? "text-error" : undefined}> · {heartbeat}</span>
-            )}
-            {task.retryCount > 0 && ` · attempt ${task.retryCount + 1}`}
           </span>
-          {prLink && (
-            <a
-              href={task.prUrl}
-              target="_blank"
-              rel="noreferrer"
-              className={`text-xs border border-current px-1.5 py-px flex-none ${prLink.className}`}
-            >
-              {prLink.label}
-            </a>
-          )}
+          
           <div className="ml-auto flex items-center gap-2 flex-none">
             <span className="text-2xs tracking-[0.1em] text-dim2">DENSITY</span>
             <Segmented value={density} options={DENSITY} onChange={setDensity} />
@@ -220,18 +204,6 @@ export function TaskDetail({
             onScroll={feedOnScroll}
             className="absolute inset-0 overflow-y-auto px-4.5 py-4.5 flex flex-col gap-4"
           >
-            {/* A proposal has no transcript to decide from — the decision is
-                whether to dispatch at all, so it leads the feed. */}
-            {task.status === "proposed" && (
-              <NotchCard label="◉ PROPOSED — NEEDS APPROVAL" tone="pink" labelBg="bg-base-100">
-                <DecisionInline
-                  task={task}
-                  onOpenSession={() => {}}
-                  reload={() => {}}
-                  onDismissed={onClosed}
-                />
-              </NotchCard>
-            )}
             <SessionFeed
               entries={entries}
               visibility={visibility}
@@ -282,7 +254,7 @@ export function TaskDetail({
             onCancel={() => setBypassOpen(false)}
             onConfirm={() => {
               setBypassOpen(false);
-              run(() => client.setPermissionMode({ taskId, mode: "bypassPermissions" }), "bypass");
+              run(() => client.setPermissionMode({ sessionId, mode: "bypassPermissions" }), "bypass");
             }}
           />
 
@@ -345,19 +317,12 @@ export function TaskDetail({
       <div className="w-[266px] flex-none overflow-y-auto px-3.5 py-3.5 flex flex-col gap-4.5 min-w-0">
         <TodosPanel todos={todos} blocked={blocked} />
         <ChangesPanel branch={branch} changes={changes} />
-        <E2ePanel
-          e2e={e2e}
-          taskId={task.id}
-          onChanged={refreshE2e}
-        />
         <div className="mt-auto">
           <SessionPanel
             task={task}
             busy={busyKey !== null}
             busyKey={busyKey}
             run={run}
-            codeServerUrl={e2e?.codeServerUrl}
-            isThotTask={isThot(task)}
             onBypassClick={() => setBypassOpen(true)}
           />
         </div>

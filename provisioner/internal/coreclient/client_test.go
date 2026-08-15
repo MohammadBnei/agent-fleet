@@ -68,7 +68,7 @@ func TestClient_ReportEvent_AlwaysBoundDeadline(t *testing.T) {
 	t.Cleanup(func() { _ = conn.Close() })
 
 	c := &Client{conn: conn, rpc: agentfleetv1.NewCoreServiceClient(conn)}
-	c.ReportEvent(context.Background(), &agentfleetv1.PodEvent{TaskId: "task-1", Phase: agentfleetv1.PodPhase_POD_PHASE_CREATED})
+	c.ReportEvent(context.Background(), &agentfleetv1.PodEvent{SessionId: "task-1", Phase: agentfleetv1.PodPhase_POD_PHASE_CREATED})
 
 	if !fake.sawDeadline || !fake.deadlineHadDL {
 		t.Errorf("ReportEvent: server-side stream context had no deadline — a hung stream would block the caller forever")

@@ -4,7 +4,6 @@ import type { FileMetadata } from "../gen/agentfleet/v1/files_pb";
 import { InlineError } from "../components/InlineError";
 import { ConfirmModal } from "../components/ConfirmModal";
 import { useMediaQuery } from "../useMediaQuery";
-import { formatBytes } from "./Worktrees";
 
 // Fleet-wide shared file space (docs/adr/0030): one flat Garage S3 bucket,
 // visible to every session and to the human. core mints short-lived presigned
@@ -87,6 +86,18 @@ function RowActions({
       />
     </>
   );
+}
+
+// formatBytes moved here from the deleted Worktrees page (docs/adr/0048 §5),
+// which was its only other caller. Rounds to a unit a human can compare at a
+// glance rather than printing exact bytes nobody reads.
+export function formatBytes(bytes: bigint | number): string {
+  const n = Number(bytes);
+  if (n <= 0) return "—";
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 ** 2) return `${(n / 1024).toFixed(0)} KB`;
+  if (n < 1024 ** 3) return `${(n / 1024 ** 2).toFixed(0)} MB`;
+  return `${(n / 1024 ** 3).toFixed(1)} GB`;
 }
 
 export function Files() {

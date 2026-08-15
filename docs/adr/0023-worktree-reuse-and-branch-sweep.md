@@ -1,6 +1,6 @@
 # ADR-0023: Worktree/branch lifecycle redesigned around explicit signals only
 
-**Status:** Accepted
+**Status:** Superseded by [0048](0048-one-session-one-pod-one-shared-home.md) — the fleet no longer creates or owns worktrees and branches, so it can no longer destroy them; the rule this ADR exists to state has nothing left to protect
 **Date:** 2026-08-05
 
 ## Context

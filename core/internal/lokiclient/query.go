@@ -77,12 +77,9 @@ func buildSelector(namespace, component, appName, taskID string) string {
 	case "provisioner":
 		// No app label on this Deployment — the job label is the only handle.
 		selector += `, job=~".*/provisioner-.*"`
-	case "e2e":
-		// e2e pods set a plain `app` pod label, but Alloy sources the `app`
-		// stream label from app.kubernetes.io/instance — which these pods do
-		// not set. So they reach Loki with no app label at all and the old
-		// `app=~"e2e-.*"` matched nothing. job is the handle, as above.
-		selector += `, job=~".*/e2e-.*"`
+	// "e2e" was a component here until docs/adr/0048 §6 deleted the pod it
+	// selected. A session's app now logs from the session's own pod, which is
+	// the "worker" selector above.
 	case "app":
 		// Deployed app: use appName for app label
 		if appName != "" {

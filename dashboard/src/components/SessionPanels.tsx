@@ -1,11 +1,8 @@
-import { useState } from "react";
-import type { Task } from "../gen/agentfleet/v1/core_pb";
-import type { GetE2eStatusResponse } from "../gen/agentfleet/v1/dashboard_pb";
+
+import type { Session } from "../gen/agentfleet/v1/core_pb";
 import type { ToolCallSummary, TodoItem } from "../transcript";
 import { TickBar, todoProgress } from "./TickBar";
-import { NotchCard } from "./NotchCard";
 import { ActionsMenu } from "./ActionsMenu";
-import { E2eManageDrawer } from "./E2eManageDrawer";
 
 // TODOS / CHANGES / E2E PREVIEW / SESSION. Desktop puts these in a fixed 266px
 // right column, mobile behind "panels ▸" as a bottom sheet — one component so
@@ -91,167 +88,18 @@ export function ChangesPanel({ branch, changes }: { branch: string | null; chang
 // the whole URL. Without it a flex item refuses to shrink below that, and this
 // card silently widened the mobile column to 437px on a 390px viewport — caught
 // by measuring rects in Playwright, invisible to tsc and to lint.
-export function E2ePanel({
-  e2e,
-  taskId,
-  onChanged,
-}: {
-  e2e: GetE2eStatusResponse | null;
-  // Optional so a caller that only wants the read-only card still compiles —
-  // without both, Manage is simply not offered rather than opening a drawer
-  // whose buttons would all fail.
-  taskId?: string;
-  onChanged?: () => void;
-}) {
-  const [manageOpen, setManageOpen] = useState(false);
-  const canManage = Boolean(taskId);
-  // A task with no sandbox still needs the card, because Start lives in the
-  // drawer — this used to render nothing at all, which is why starting one
-  // from the dashboard was impossible (docs/adr/0044).
-  if ((!e2e || !e2e.status) && canManage) {
-    return (
-      <NotchCard label="E2E PREVIEW" className="px-3 pt-3.5 pb-3 min-w-0">
-        <div className="text-xs text-dim2 mb-2">No sandbox running.</div>
-        <button type="button" className="btn btn-xs btn-outline w-full" onClick={() => setManageOpen(true)}>
-          Manage…
-        </button>
-        <E2eManageDrawer
-          taskId={taskId!}
-          e2e={e2e}
-          open={manageOpen}
-          onClose={() => setManageOpen(false)}
-          onChanged={onChanged ?? (() => {})}
-        />
-      </NotchCard>
-    );
-  }
-  if (!e2e || !e2e.status) return null;
-  const running = e2e.podPhase === "Running";
-  // A pod with no start command is a sandbox, not a broken preview
-  // (docs/adr/0044): run_command works, nothing will ever bind the app port,
-  // and the readiness probe therefore never passes. Without this it read
-  // "starting" forever and offered a preview link to a 502.
-  const sandboxOnly = !e2e.startCmd;
-  const state = sandboxOnly
-    ? running
-      ? { text: "sandbox · no app", dot: "bg-info", cls: "text-info" }
-      : { text: e2e.podPhase.toLowerCase() || e2e.status, dot: "border border-dim2", cls: "text-dim2" }
-    : e2e.appReady
-      ? { text: "ready", dot: "bg-success", cls: "text-green-soft" }
-      : running
-        ? { text: "starting", dot: "bg-info", cls: "text-info" }
-        : { text: e2e.podPhase.toLowerCase() || e2e.status, dot: "border border-dim2", cls: "text-dim2" };
-
-  const ingredients = [...e2e.tools, ...e2e.services];
-
-  return (
-    <NotchCard label="E2E PREVIEW" className="px-3 pt-3.5 pb-3 min-w-0">
-      <div className="flex items-center gap-2 mb-2 min-w-0">
-        <span className={`w-1.5 h-1.5 rounded-full flex-none ${state.dot}`} />
-        <span className={`text-sm flex-none ${state.cls}`}>{state.text}</span>
-        {e2e.restarts > 0 && (
-          <span className="text-xs text-warning flex-none">
-            · {e2e.restarts} restart{e2e.restarts === 1 ? "" : "s"}
-          </span>
-        )}
-        {e2e.startCmdOverridden && (
-          <span
-            title="A human-approved override is running for this task only; the repo's profile is unchanged."
-            className="ml-auto flex-none text-2xs text-warning border border-orange-line px-1"
-          >
-            overridden
-          </span>
-        )}
-      </div>
-
-      {e2e.previewUrl && e2e.appReady && (
-        <a
-          href={e2e.previewUrl}
-          target="_blank"
-          rel="noreferrer"
-          title={e2e.previewUrl}
-          className="block text-sm text-primary hover:underline truncate min-w-0"
-        >
-          {e2e.previewUrl}
-        </a>
-      )}
-
-      {running && sandboxOnly && (
-        <div className="text-xs text-dim2 leading-snug min-w-0">
-          No app command in this profile — builds and tests only, no preview.
-        </div>
-      )}
-
-      {running && !sandboxOnly && !e2e.appReady && (
-        <div className="text-xs text-dim2 leading-snug min-w-0">
-          Nothing on the app port yet — installing, or the command never binds{" "}
-          <span className="text-dim">0.0.0.0:$PORT</span>.
-        </div>
-      )}
-
-      <div className="text-xs text-dim2 mt-2 leading-[1.6] min-w-0">
-        profile: {e2e.profileName || "none"}
-        {e2e.startCmd && (
-          <>
-            <br />
-            {/* overflow-wrap:anywhere, not break-all: `anywhere` still breaks a
-                single unbreakable token so the box can shrink, but prefers
-                whitespace — break-all produced "bunx prisma mig/rate deploy". */}
-            <span className="text-dim [overflow-wrap:anywhere]">{e2e.startCmd}</span>
-          </>
-        )}
-      </div>
-
-      {ingredients.length > 0 && (
-        <div className="flex flex-wrap gap-1 mt-2 min-w-0">
-          {ingredients.map((i) => (
-            <span key={i} className="text-2xs border border-line text-dim2 px-1">
-              {i}
-            </span>
-          ))}
-        </div>
-      )}
-
-      {canManage && (
-        <>
-          {/* Controls and the app log live in a drawer, not on this card: at
-              266px a log line wraps three times, and reading the log is the
-              point of having it at all. */}
-          <button
-            type="button"
-            className="btn btn-xs btn-outline w-full mt-2.5"
-            onClick={() => setManageOpen(true)}
-          >
-            Manage…
-          </button>
-          <E2eManageDrawer
-            taskId={taskId!}
-            e2e={e2e}
-            open={manageOpen}
-            onClose={() => setManageOpen(false)}
-            onChanged={onChanged ?? (() => {})}
-          />
-        </>
-      )}
-    </NotchCard>
-  );
-}
 
 export function SessionPanel({
   task,
   busy,
   busyKey,
   run,
-  codeServerUrl,
-  isThotTask,
   onBypassClick,
 }: {
-  task: Task;
+  task: Session;
   busy: boolean;
   busyKey: string | null;
   run: (action: () => Promise<unknown>, key: string) => void;
-  codeServerUrl?: string | null;
-  isThotTask: boolean;
   onBypassClick: () => void;
 }) {
   return (
@@ -259,17 +107,16 @@ export function SessionPanel({
       <PanelHeading title="SESSION" />
       <div className="text-xs text-dim2 leading-[1.6] mb-2.5">
         mode <span className="text-text2">{task.permissionMode || "default"}</span>
-        {task.retryCount > 0 && ` · attempt ${task.retryCount + 1}`}
+        
         {task.podPhase && ` · pod ${task.podPhase.replace("POD_PHASE_", "")}`}
       </div>
       <ActionsMenu
-        taskId={task.id}
+        sessionId={task.id}
         busy={busy}
         busyKey={busyKey}
         run={run}
-        codeServerUrl={codeServerUrl}
-        isThotTask={isThotTask}
-        status={task.status}
+        sweptAt={task.sweptAt}
+        archivedAt={task.archivedAt}
         currentMode={task.permissionMode}
         podPhase={task.podPhase}
         onBypassClick={onBypassClick}

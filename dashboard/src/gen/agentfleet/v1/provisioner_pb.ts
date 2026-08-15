@@ -10,366 +10,24 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file agentfleet/v1/provisioner.proto.
  */
 export const file_agentfleet_v1_provisioner: GenFile = /*@__PURE__*/
-  fileDesc("Ch9hZ2VudGZsZWV0L3YxL3Byb3Zpc2lvbmVyLnByb3RvEg1hZ2VudGZsZWV0LnYxIk4KEVNlcnZpY2VJbmdyZWRpZW50EgsKA2tleRgBIAEoCRIsCgpzY29wZV9tb2RlGAIgASgOMhguYWdlbnRmbGVldC52MS5TY29wZU1vZGUibwoVS2lsbEUyZVNlc3Npb25SZXF1ZXN0Eg8KB3Rhc2tfaWQYASABKAkSFwoPaWRlbXBvdGVuY3lfa2V5GAIgASgJEgwKBHJlcG8YAyABKAkSHgoWYWxzb190ZWFyZG93bl9zZXJ2aWNlcxgEIAEoCCJEChZLaWxsRTJlU2Vzc2lvblJlc3BvbnNlEg4KBmtpbGxlZBgBIAEoCBIaChJzZXJ2aWNlc190b3JuX2Rvd24YAiADKAkiLQoaR2V0RTJlU2Vzc2lvblN0YXR1c1JlcXVlc3QSDwoHdGFza19pZBgBIAEoCSLtAQobR2V0RTJlU2Vzc2lvblN0YXR1c1Jlc3BvbnNlEg4KBnN0YXR1cxgBIAEoCRITCgtwcmV2aWV3X3VybBgCIAEoCRIRCglzdGFydF9jbWQYAyABKAkSEQoJcG9kX3BoYXNlGAQgASgJEhEKCWFwcF9yZWFkeRgFIAEoCBIQCghyZXN0YXJ0cxgGIAEoBRISCgpzdGFydGVkX2F0GAcgASgJEhcKD2NvZGVfc2VydmVyX3VybBgIIAEoCRIxCgllbmRwb2ludHMYCSADKAsyHi5hZ2VudGZsZWV0LnYxLlNlcnZpY2VFbmRwb2ludCJfCg9TZXJ2aWNlRW5kcG9pbnQSDAoEbmFtZRgBIAEoCRIPCgdhZGRyZXNzGAIgASgJEhAKCHByb3RvY29sGAMgASgJEgwKBHBhdGgYBCABKAkSDQoFdG9rZW4YBSABKAkinQEKF0NyZWF0ZUUyZVNlc3Npb25SZXF1ZXN0Eg8KB3Rhc2tfaWQYASABKAkSDAoEcmVwbxgCIAEoCRIRCglzdGFydF9jbWQYAyABKAkSEQoJdG9vbF9rZXlzGAQgAygJEj0KE3NlcnZpY2VfaW5ncmVkaWVudHMYBSADKAsyIC5hZ2VudGZsZWV0LnYxLlNlcnZpY2VJbmdyZWRpZW50InIKGENyZWF0ZUUyZVNlc3Npb25SZXNwb25zZRIOCgZzdGF0dXMYASABKAkSEwoLcHJldmlld191cmwYAiABKAkSMQoJZW5kcG9pbnRzGAMgAygLMh4uYWdlbnRmbGVldC52MS5TZXJ2aWNlRW5kcG9pbnQinQIKFkNyZWF0ZVdvcmtlclBvZFJlcXVlc3QSDwoHdGFza19pZBgBIAEoCRIMCgRyZXBvGAIgASgJEhAKCHJlcG9fdXJsGAMgASgJEhMKC2Jhc2VfYnJhbmNoGAQgASgJEhMKC2Rlc2NyaXB0aW9uGAUgASgJEhAKCGxlYXNlX2lkGAYgASgJEhkKEXJlc3VtZV9zZXNzaW9uX2lkGAcgASgJEhcKD3Jlc3VtZV9mcm9tX3NlcRgIIAEoAxIQCghndWlkYW5jZRgJIAEoCRIRCgl0b29sX2tleXMYCiADKAkSPQoTc2VydmljZV9pbmdyZWRpZW50cxgLIAMoCzIgLmFnZW50ZmxlZXQudjEuU2VydmljZUluZ3JlZGllbnQiKwoXQ3JlYXRlV29ya2VyUG9kUmVzcG9uc2USEAoIcG9kX25hbWUYASABKAkiUwoWVGVhckRvd25TZXNzaW9uUmVxdWVzdBIPCgd0YXNrX2lkGAEgASgJEigKBGtpbmQYAiABKA4yGi5hZ2VudGZsZWV0LnYxLlNlc3Npb25LaW5kIiwKF1RlYXJEb3duU2Vzc2lvblJlc3BvbnNlEhEKCXRvcm5fZG93bhgBIAEoCCIWChRMaXN0V29ya3RyZWVzUmVxdWVzdCKgAQoMV29ya3RyZWVJbmZvEg8KB3Rhc2tfaWQYASABKAkSDAoEcmVwbxgCIAEoCRIOCgZicmFuY2gYAyABKAkSFgoOdXBzdHJlYW1fdHJhY2sYBCABKAkSEgoKbXRpbWVfdW5peBgFIAEoAxIMCgRwYXRoGAYgASgJEhMKC2RpcnR5X2ZpbGVzGAcgASgFEhIKCnNpemVfYnl0ZXMYCCABKAMieAoVTGlzdFdvcmt0cmVlc1Jlc3BvbnNlEi4KCXdvcmt0cmVlcxgBIAMoCzIbLmFnZW50ZmxlZXQudjEuV29ya3RyZWVJbmZvEhcKD3B2Y190b3RhbF9ieXRlcxgCIAEoBBIWCg5wdmNfZnJlZV9ieXRlcxgDIAEoBCJSChVEZWxldGVXb3JrdHJlZVJlcXVlc3QSDwoHdGFza19pZBgBIAEoCRIMCgRyZXBvGAIgASgJEhoKEmFsc29fZGVsZXRlX2JyYW5jaBgDIAEoCCIpChZEZWxldGVXb3JrdHJlZVJlc3BvbnNlEg8KB2RlbGV0ZWQYASABKAgqegoJU2NvcGVNb2RlEhoKFlNDT1BFX01PREVfVU5TUEVDSUZJRUQQABIZChVTQ09QRV9NT0RFX1BPRF9TQ09QRUQQARIaChZTQ09QRV9NT0RFX1RBU0tfU0NPUEVEEAISGgoWU0NPUEVfTU9ERV9SRVBPX1NDT1BFRBADKloKC1Nlc3Npb25LaW5kEhwKGFNFU1NJT05fS0lORF9VTlNQRUNJRklFRBAAEhcKE1NFU1NJT05fS0lORF9XT1JLRVIQARIUChBTRVNTSU9OX0tJTkRfRTJFEAIyxQUKElByb3Zpc2lvbmVyU2VydmljZRJdCg5LaWxsRTJlU2Vzc2lvbhIkLmFnZW50ZmxlZXQudjEuS2lsbEUyZVNlc3Npb25SZXF1ZXN0GiUuYWdlbnRmbGVldC52MS5LaWxsRTJlU2Vzc2lvblJlc3BvbnNlEmwKE0dldEUyZVNlc3Npb25TdGF0dXMSKS5hZ2VudGZsZWV0LnYxLkdldEUyZVNlc3Npb25TdGF0dXNSZXF1ZXN0GiouYWdlbnRmbGVldC52MS5HZXRFMmVTZXNzaW9uU3RhdHVzUmVzcG9uc2USYwoQQ3JlYXRlRTJlU2Vzc2lvbhImLmFnZW50ZmxlZXQudjEuQ3JlYXRlRTJlU2Vzc2lvblJlcXVlc3QaJy5hZ2VudGZsZWV0LnYxLkNyZWF0ZUUyZVNlc3Npb25SZXNwb25zZRJgCg9DcmVhdGVXb3JrZXJQb2QSJS5hZ2VudGZsZWV0LnYxLkNyZWF0ZVdvcmtlclBvZFJlcXVlc3QaJi5hZ2VudGZsZWV0LnYxLkNyZWF0ZVdvcmtlclBvZFJlc3BvbnNlEmAKD1RlYXJEb3duU2Vzc2lvbhIlLmFnZW50ZmxlZXQudjEuVGVhckRvd25TZXNzaW9uUmVxdWVzdBomLmFnZW50ZmxlZXQudjEuVGVhckRvd25TZXNzaW9uUmVzcG9uc2USWgoNTGlzdFdvcmt0cmVlcxIjLmFnZW50ZmxlZXQudjEuTGlzdFdvcmt0cmVlc1JlcXVlc3QaJC5hZ2VudGZsZWV0LnYxLkxpc3RXb3JrdHJlZXNSZXNwb25zZRJdCg5EZWxldGVXb3JrdHJlZRIkLmFnZW50ZmxlZXQudjEuRGVsZXRlV29ya3RyZWVSZXF1ZXN0GiUuYWdlbnRmbGVldC52MS5EZWxldGVXb3JrdHJlZVJlc3BvbnNlQk1aS2dpdGh1Yi5jb20vTW9oYW1tYWRCbmVpL2FnZW50LWZsZWV0L3Byb3RvL2dlbi9nby9hZ2VudGZsZWV0L3YxO2FnZW50ZmxlZXR2MWIGcHJvdG8z");
+  fileDesc("Ch9hZ2VudGZsZWV0L3YxL3Byb3Zpc2lvbmVyLnByb3RvEg1hZ2VudGZsZWV0LnYxIvoBChZDcmVhdGVXb3JrZXJQb2RSZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkSDAoEcmVwbxgCIAEoCRIQCghyZXBvX3VybBgDIAEoCRITCgtiYXNlX2JyYW5jaBgEIAEoCRITCgtkZXNjcmlwdGlvbhgFIAEoCRIQCghsZWFzZV9pZBgGIAEoCRIZChFyZXN1bWVfc2Vzc2lvbl9pZBgHIAEoCRIXCg9yZXN1bWVfZnJvbV9zZXEYCCABKAMSEQoJdG9vbF9rZXlzGAogAygJSgQICRAKSgQICxAMUghndWlkYW5jZVITc2VydmljZV9pbmdyZWRpZW50cyIrChdDcmVhdGVXb3JrZXJQb2RSZXNwb25zZRIQCghwb2RfbmFtZRgBIAEoCSJWChZUZWFyRG93blNlc3Npb25SZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkSKAoEa2luZBgCIAEoDjIaLmFnZW50ZmxlZXQudjEuU2Vzc2lvbktpbmQiLAoXVGVhckRvd25TZXNzaW9uUmVzcG9uc2USEQoJdG9ybl9kb3duGAEgASgIIhcKFUxpc3RXb3JrZXJQb2RzUmVxdWVzdCJECg1MaXZlV29ya2VyUG9kEhIKCnNlc3Npb25faWQYASABKAkSEAoIcG9kX25hbWUYAiABKAkSDQoFcGhhc2UYAyABKAkiRAoWTGlzdFdvcmtlclBvZHNSZXNwb25zZRIqCgRwb2RzGAEgAygLMhwuYWdlbnRmbGVldC52MS5MaXZlV29ya2VyUG9kIjgKFEV4cG9zZVNlc3Npb25SZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkSDAoEcG9ydBgCIAEoBSIkChVFeHBvc2VTZXNzaW9uUmVzcG9uc2USCwoDdXJsGAEgASgJIiwKFlVuZXhwb3NlU2Vzc2lvblJlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCSIZChdVbmV4cG9zZVNlc3Npb25SZXNwb25zZSJJChdQcm92aXNpb25TZXJ2aWNlUmVxdWVzdBISCgpzZXNzaW9uX2lkGAEgASgJEgwKBHJlcG8YAiABKAkSDAoEa2luZBgDIAEoCSInChhQcm92aXNpb25TZXJ2aWNlUmVzcG9uc2USCwoDZHNuGAEgASgJIikKE1N3ZWVwU2Vzc2lvblJlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCSIWChRTd2VlcFNlc3Npb25SZXNwb25zZSpcCgtTZXNzaW9uS2luZBIcChhTRVNTSU9OX0tJTkRfVU5TUEVDSUZJRUQQABIXChNTRVNTSU9OX0tJTkRfV09SS0VSEAEiBAgCEAIqEFNFU1NJT05fS0lORF9FMkUyswUKElByb3Zpc2lvbmVyU2VydmljZRJgCg9DcmVhdGVXb3JrZXJQb2QSJS5hZ2VudGZsZWV0LnYxLkNyZWF0ZVdvcmtlclBvZFJlcXVlc3QaJi5hZ2VudGZsZWV0LnYxLkNyZWF0ZVdvcmtlclBvZFJlc3BvbnNlEmAKD1RlYXJEb3duU2Vzc2lvbhIlLmFnZW50ZmxlZXQudjEuVGVhckRvd25TZXNzaW9uUmVxdWVzdBomLmFnZW50ZmxlZXQudjEuVGVhckRvd25TZXNzaW9uUmVzcG9uc2USXQoOTGlzdFdvcmtlclBvZHMSJC5hZ2VudGZsZWV0LnYxLkxpc3RXb3JrZXJQb2RzUmVxdWVzdBolLmFnZW50ZmxlZXQudjEuTGlzdFdvcmtlclBvZHNSZXNwb25zZRJaCg1FeHBvc2VTZXNzaW9uEiMuYWdlbnRmbGVldC52MS5FeHBvc2VTZXNzaW9uUmVxdWVzdBokLmFnZW50ZmxlZXQudjEuRXhwb3NlU2Vzc2lvblJlc3BvbnNlEmAKD1VuZXhwb3NlU2Vzc2lvbhIlLmFnZW50ZmxlZXQudjEuVW5leHBvc2VTZXNzaW9uUmVxdWVzdBomLmFnZW50ZmxlZXQudjEuVW5leHBvc2VTZXNzaW9uUmVzcG9uc2USYwoQUHJvdmlzaW9uU2VydmljZRImLmFnZW50ZmxlZXQudjEuUHJvdmlzaW9uU2VydmljZVJlcXVlc3QaJy5hZ2VudGZsZWV0LnYxLlByb3Zpc2lvblNlcnZpY2VSZXNwb25zZRJXCgxTd2VlcFNlc3Npb24SIi5hZ2VudGZsZWV0LnYxLlN3ZWVwU2Vzc2lvblJlcXVlc3QaIy5hZ2VudGZsZWV0LnYxLlN3ZWVwU2Vzc2lvblJlc3BvbnNlQk1aS2dpdGh1Yi5jb20vTW9oYW1tYWRCbmVpL2FnZW50LWZsZWV0L3Byb3RvL2dlbi9nby9hZ2VudGZsZWV0L3YxO2FnZW50ZmxlZXR2MWIGcHJvdG8z");
 
 /**
- * @generated from message agentfleet.v1.ServiceIngredient
- */
-export type ServiceIngredient = Message<"agentfleet.v1.ServiceIngredient"> & {
-  /**
-   * "postgres" | "redis" — provisioner/internal/catalog.go
-   *
-   * @generated from field: string key = 1;
-   */
-  key: string;
-
-  /**
-   * @generated from field: agentfleet.v1.ScopeMode scope_mode = 2;
-   */
-  scopeMode: ScopeMode;
-};
-
-/**
- * Describes the message agentfleet.v1.ServiceIngredient.
- * Use `create(ServiceIngredientSchema)` to create a new message.
- */
-export const ServiceIngredientSchema: GenMessage<ServiceIngredient> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 0);
-
-/**
- * @generated from message agentfleet.v1.KillE2eSessionRequest
- */
-export type KillE2eSessionRequest = Message<"agentfleet.v1.KillE2eSessionRequest"> & {
-  /**
-   * @generated from field: string task_id = 1;
-   */
-  taskId: string;
-
-  /**
-   * @generated from field: string idempotency_key = 2;
-   */
-  idempotencyKey: string;
-
-  /**
-   * repo/also_teardown_services (docs/adr/0034 follow-up) — the shared
-   * postgres/redis instance backing this task's services is keyed by repo,
-   * not task, and can be in use by other tasks against the same repo (its
-   * own worker pod included), so tearing it down is opt-in, explicit, and
-   * human-confirmed (the dashboard's "kill e2e" checkbox), never implied by
-   * killing one task's e2e session alone.
-   *
-   * @generated from field: string repo = 3;
-   */
-  repo: string;
-
-  /**
-   * @generated from field: bool also_teardown_services = 4;
-   */
-  alsoTeardownServices: boolean;
-};
-
-/**
- * Describes the message agentfleet.v1.KillE2eSessionRequest.
- * Use `create(KillE2eSessionRequestSchema)` to create a new message.
- */
-export const KillE2eSessionRequestSchema: GenMessage<KillE2eSessionRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 1);
-
-/**
- * @generated from message agentfleet.v1.KillE2eSessionResponse
- */
-export type KillE2eSessionResponse = Message<"agentfleet.v1.KillE2eSessionResponse"> & {
-  /**
-   * false = no active session for this task
-   *
-   * @generated from field: bool killed = 1;
-   */
-  killed: boolean;
-
-  /**
-   * Set only when also_teardown_services was requested — the (repo,
-   * service_key) pairs actually deleted, for the dashboard to report back.
-   *
-   * @generated from field: repeated string services_torn_down = 2;
-   */
-  servicesTornDown: string[];
-};
-
-/**
- * Describes the message agentfleet.v1.KillE2eSessionResponse.
- * Use `create(KillE2eSessionResponseSchema)` to create a new message.
- */
-export const KillE2eSessionResponseSchema: GenMessage<KillE2eSessionResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 2);
-
-/**
- * @generated from message agentfleet.v1.GetE2eSessionStatusRequest
- */
-export type GetE2eSessionStatusRequest = Message<"agentfleet.v1.GetE2eSessionStatusRequest"> & {
-  /**
-   * @generated from field: string task_id = 1;
-   */
-  taskId: string;
-};
-
-/**
- * Describes the message agentfleet.v1.GetE2eSessionStatusRequest.
- * Use `create(GetE2eSessionStatusRequestSchema)` to create a new message.
- */
-export const GetE2eSessionStatusRequestSchema: GenMessage<GetE2eSessionStatusRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 3);
-
-/**
- * @generated from message agentfleet.v1.GetE2eSessionStatusResponse
- */
-export type GetE2eSessionStatusResponse = Message<"agentfleet.v1.GetE2eSessionStatusResponse"> & {
-  /**
-   * "requested"|"running"|"failed"|"torn_down"|"" (none)
-   *
-   * @generated from field: string status = 1;
-   */
-  status: string;
-
-  /**
-   * @generated from field: string preview_url = 2;
-   */
-  previewUrl: string;
-
-  /**
-   * Live pod truth, readable only here — the provisioner holds the fleet's
-   * sole cluster RBAC. start_cmd is read back off the pod's own
-   * E2E_START_CMD env var rather than re-resolved from the profile, so it
-   * reflects what is actually running (an approved override included).
-   *
-   * app_ready is the readiness condition from the AppPort probe: the
-   * difference between "still installing" (a cold bun install measured 782s
-   * live) and "bound the wrong port/interface and never will". Without it a
-   * broken preview is indistinguishable from a slow one.
-   *
-   * @generated from field: string start_cmd = 3;
-   */
-  startCmd: string;
-
-  /**
-   * "Pending"|"Running"|"Succeeded"|"Failed"|"Unknown"
-   *
-   * @generated from field: string pod_phase = 4;
-   */
-  podPhase: string;
-
-  /**
-   * @generated from field: bool app_ready = 5;
-   */
-  appReady: boolean;
-
-  /**
-   * @generated from field: int32 restarts = 6;
-   */
-  restarts: number;
-
-  /**
-   * RFC3339
-   *
-   * @generated from field: string started_at = 7;
-   */
-  startedAt: string;
-
-  /**
-   * Where a human reaches the in-browser IDE (the /code prefix route). On the
-   * wire rather than rebuilt by the caller: the dashboard's "Open code-server"
-   * button was pointed at preview_url — the app root — and so had never once
-   * opened code-server (docs/adr/0044).
-   *
-   * @generated from field: string code_server_url = 8;
-   */
-  codeServerUrl: string;
-
-  /**
-   * docs/adr/0045 — see ServiceEndpoint. Present here as well as on
-   * CreateE2eSession because core's own dashboard path (runInE2ePod, backing
-   * GetE2EAppLog and the human run-command surface) needs to reach the
-   * sandbox without provisioning one.
-   *
-   * @generated from field: repeated agentfleet.v1.ServiceEndpoint endpoints = 9;
-   */
-  endpoints: ServiceEndpoint[];
-};
-
-/**
- * Describes the message agentfleet.v1.GetE2eSessionStatusResponse.
- * Use `create(GetE2eSessionStatusResponseSchema)` to create a new message.
- */
-export const GetE2eSessionStatusResponseSchema: GenMessage<GetE2eSessionStatusResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 4);
-
-/**
- * A directly-dialable address for one service, resolved by the component that
- * knows it exists and handed to whoever needs to call it (docs/adr/0045).
+ * Fetches the repo's clone cache and creates the session's pod, synchronously,
+ * returning once the pod is scheduled. core is the only caller (docs/adr/0020
+ * point 2 — the provisioner never decides to spawn a pod on its own).
  *
- * This is the fleet's whole service-discovery mechanism, and it is
- * deliberately not a registry: there is no lookup RPC and no `services`
- * table. Kubernetes is already ground truth for whether a pod exists — a row
- * survives an OOMKill, a Service endpoint does not, so a table would be a
- * cache that lies. The provisioner computes these from (namespace, taskID),
- * the same pure function that names the Service it just created, and they
- * ride back on responses core already sends.
- *
- * Fields NOT here, and why:
- *   - who may call it — authorization is a per-task NetworkPolicy. A field
- *     the caller reads is advice; a policy the CNI enforces is not.
- *   - ttl/expires_at — validity is implied by delivery. A failed dial
- *     re-resolves through the provision path that already exists.
- *   - scope — a roster reaches one sidecar serving one task. The delivery
- *     channel *is* the scope.
- *
- * @generated from message agentfleet.v1.ServiceEndpoint
- */
-export type ServiceEndpoint = Message<"agentfleet.v1.ServiceEndpoint"> & {
-  /**
-   * "playwright" | "exec"
-   *
-   * @generated from field: string name = 1;
-   */
-  name: string;
-
-  /**
-   * host:port, host fully qualified with a trailing dot
-   *
-   * @generated from field: string address = 2;
-   */
-  address: string;
-
-  /**
-   * "mcp-streamable-http" | "grpc"
-   *
-   * @generated from field: string protocol = 3;
-   */
-  protocol: string;
-
-  /**
-   * "/mcp" for MCP, "" for gRPC
-   *
-   * @generated from field: string path = 4;
-   */
-  path: string;
-
-  /**
-   * Bearer token, when a service authenticates its callers at all. Empty for
-   * the sandbox, deliberately: docs/adr/0039 rests on the e2e pod holding no
-   * fleet credentials, so reachability there is fenced structurally instead.
-   *
-   * @generated from field: string token = 5;
-   */
-  token: string;
-};
-
-/**
- * Describes the message agentfleet.v1.ServiceEndpoint.
- * Use `create(ServiceEndpointSchema)` to create a new message.
- */
-export const ServiceEndpointSchema: GenMessage<ServiceEndpoint> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 5);
-
-/**
- * Requests an on-demand e2e preview pod for taskId (mounts the same
- * worktree the task's worker pod is using, docs/adr/0012). Was previously
- * triggered by the worker calling e2e-provisioner's /mcp/:taskId directly;
- * under docs/adr/0020's hub-and-spoke rule the request now routes
- * sidecar -> core (CoreService.RequestE2eEnv) -> provisioner (this RPC) —
- * core is the only caller.
- *
- * @generated from message agentfleet.v1.CreateE2eSessionRequest
- */
-export type CreateE2eSessionRequest = Message<"agentfleet.v1.CreateE2eSessionRequest"> & {
-  /**
-   * @generated from field: string task_id = 1;
-   */
-  taskId: string;
-
-  /**
-   * @generated from field: string repo = 2;
-   */
-  repo: string;
-
-  /**
-   * See RequestE2eEnvRequest.start_cmd in core.proto — passed through
-   * core unchanged.
-   *
-   * @generated from field: string start_cmd = 3;
-   */
-  startCmd: string;
-
-  /**
-   * Resolved from the repo's "e2e" profile (or an agent-overridden
-   * profile) by core before this call — docs/adr/0034. The provisioner
-   * holds no DB, so it never resolves a profile name itself, only the
-   * already-resolved ingredient list.
-   *
-   * @generated from field: repeated string tool_keys = 4;
-   */
-  toolKeys: string[];
-
-  /**
-   * @generated from field: repeated agentfleet.v1.ServiceIngredient service_ingredients = 5;
-   */
-  serviceIngredients: ServiceIngredient[];
-};
-
-/**
- * Describes the message agentfleet.v1.CreateE2eSessionRequest.
- * Use `create(CreateE2eSessionRequestSchema)` to create a new message.
- */
-export const CreateE2eSessionRequestSchema: GenMessage<CreateE2eSessionRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 6);
-
-/**
- * @generated from message agentfleet.v1.CreateE2eSessionResponse
- */
-export type CreateE2eSessionResponse = Message<"agentfleet.v1.CreateE2eSessionResponse"> & {
-  /**
-   * @generated from field: string status = 1;
-   */
-  status: string;
-
-  /**
-   * @generated from field: string preview_url = 2;
-   */
-  previewUrl: string;
-
-  /**
-   * docs/adr/0045. Filled on BOTH the fresh-create path and the
-   * already-exists short-circuit — a resumed session that skips creation
-   * still needs to know where to dial, and returning them only on creation
-   * is the obvious way to break exactly that case.
-   *
-   * @generated from field: repeated agentfleet.v1.ServiceEndpoint endpoints = 3;
-   */
-  endpoints: ServiceEndpoint[];
-};
-
-/**
- * Describes the message agentfleet.v1.CreateE2eSessionResponse.
- * Use `create(CreateE2eSessionResponseSchema)` to create a new message.
- */
-export const CreateE2eSessionResponseSchema: GenMessage<CreateE2eSessionResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 7);
-
-/**
- * Provisioner does the clone/fetch/worktree-add (docs/adr/0019 point 2 —
- * the provisioner owns the entire git lifecycle on the shared PVC, worker
- * pods never touch git themselves) and the two-container pod creation
- * (worker + sidecar, docs/adr/0020 point 5) synchronously, returning once
- * the pod is scheduled. core calls this from its own dispatch loop after
- * claiming a task — the provisioner never claims tasks itself
- * (docs/adr/0020 point 2, correcting docs/adr/0019 points 4-5).
+ * It no longer adds a worktree: the session's working tree is cloned by an
+ * init container inside the pod, because it lives on a per-session volume the
+ * provisioner never mounts (docs/adr/0048 §4/§5).
  *
  * @generated from message agentfleet.v1.CreateWorkerPodRequest
  */
 export type CreateWorkerPodRequest = Message<"agentfleet.v1.CreateWorkerPodRequest"> & {
   /**
-   * @generated from field: string task_id = 1;
+   * @generated from field: string session_id = 1;
    */
-  taskId: string;
+  sessionId: string;
 
   /**
    * @generated from field: string repo = 2;
@@ -388,7 +46,7 @@ export type CreateWorkerPodRequest = Message<"agentfleet.v1.CreateWorkerPodReque
 
   /**
    * description and lease_id are handed straight through to the worker
-   * pod's env — the worker no longer fetches its own task row at all
+   * pod's env — the worker no longer fetches its own session row at all
    * (docs/adr/0020 point 1: it holds no DB credentials, direct or
    * otherwise), so whatever it needs has to arrive at pod creation time.
    *
@@ -403,7 +61,7 @@ export type CreateWorkerPodRequest = Message<"agentfleet.v1.CreateWorkerPodReque
 
   /**
    * Non-empty when this task already has a saved Claude SDK session
-   * (tasks.session_id) — threaded straight to the worker pod's
+   * (sessions.agent_session_id) — threaded straight to the worker pod's
    * RESUME_SESSION_ID env, which worker/src/session.ts passes as `resume:`
    * to query() so the new pod continues the prior conversation instead of
    * starting fresh (sessions redesign, supersedes docs/adr/0021/0025's
@@ -426,29 +84,16 @@ export type CreateWorkerPodRequest = Message<"agentfleet.v1.CreateWorkerPodReque
   resumeFromSeq: bigint;
 
   /**
-   * The task's resolved guidance text (tasks.guidance — the operator's
-   * chosen prompt_snippets, already joined at task-creation time) — handed
-   * straight through to the worker pod's TASK_GUIDANCE env, same reasoning
-   * as description above. Empty when no snippets were attached; the
-   * worker's own taskPrompt() then falls back to just the bare description.
-   *
-   * @generated from field: string guidance = 9;
-   */
-  guidance: string;
-
-  /**
-   * Resolved from the repo's "worker" profile by core before this call —
-   * docs/adr/0034. Empty when the repo has no "worker" profile row, which
-   * preserves today's exact pod shape (fully backward compatible).
+   * tool_keys is what survives docs/adr/0034's ingredient resolution: only
+   * "cluster-access", which is a privilege grant rather than a toolchain
+   * (docs/adr/0037). The toolchain is in the session's image now, and services
+   * are requested on demand rather than declared per repo — so
+   * service_ingredients has no producer left, and `guidance` went with the
+   * fleet-composed prompt it was hidden inside (docs/adr/0048).
    *
    * @generated from field: repeated string tool_keys = 10;
    */
   toolKeys: string[];
-
-  /**
-   * @generated from field: repeated agentfleet.v1.ServiceIngredient service_ingredients = 11;
-   */
-  serviceIngredients: ServiceIngredient[];
 };
 
 /**
@@ -456,7 +101,7 @@ export type CreateWorkerPodRequest = Message<"agentfleet.v1.CreateWorkerPodReque
  * Use `create(CreateWorkerPodRequestSchema)` to create a new message.
  */
 export const CreateWorkerPodRequestSchema: GenMessage<CreateWorkerPodRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 8);
+  messageDesc(file_agentfleet_v1_provisioner, 0);
 
 /**
  * @generated from message agentfleet.v1.CreateWorkerPodResponse
@@ -473,12 +118,12 @@ export type CreateWorkerPodResponse = Message<"agentfleet.v1.CreateWorkerPodResp
  * Use `create(CreateWorkerPodResponseSchema)` to create a new message.
  */
 export const CreateWorkerPodResponseSchema: GenMessage<CreateWorkerPodResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 9);
+  messageDesc(file_agentfleet_v1_provisioner, 1);
 
 /**
- * core owns `tasks` and therefore decides when a session should tear
+ * core owns `sessions` and therefore decides when a session should tear
  * down (task reached done/failed/cancelled, or an explicit kill) —
- * the provisioner no longer polls/joins against `tasks.status` itself
+ * the provisioner no longer polls/joins against `the deleted status column` itself
  * (docs/adr/0020 point 1: it holds no DB credentials at all). The
  * provisioner's own reconcile loop keeps doing pure-k8s orphan detection
  * independently of this RPC.
@@ -487,9 +132,9 @@ export const CreateWorkerPodResponseSchema: GenMessage<CreateWorkerPodResponse> 
  */
 export type TearDownSessionRequest = Message<"agentfleet.v1.TearDownSessionRequest"> & {
   /**
-   * @generated from field: string task_id = 1;
+   * @generated from field: string session_id = 1;
    */
-  taskId: string;
+  sessionId: string;
 
   /**
    * @generated from field: agentfleet.v1.SessionKind kind = 2;
@@ -502,7 +147,7 @@ export type TearDownSessionRequest = Message<"agentfleet.v1.TearDownSessionReque
  * Use `create(TearDownSessionRequestSchema)` to create a new message.
  */
 export const TearDownSessionRequestSchema: GenMessage<TearDownSessionRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 10);
+  messageDesc(file_agentfleet_v1_provisioner, 2);
 
 /**
  * @generated from message agentfleet.v1.TearDownSessionResponse
@@ -521,7 +166,7 @@ export type TearDownSessionResponse = Message<"agentfleet.v1.TearDownSessionResp
  * Use `create(TearDownSessionResponseSchema)` to create a new message.
  */
 export const TearDownSessionResponseSchema: GenMessage<TearDownSessionResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 11);
+  messageDesc(file_agentfleet_v1_provisioner, 3);
 
 /**
  * Worktree/branch lifecycle (reliability-findings.md #2): a task's
@@ -532,197 +177,243 @@ export const TearDownSessionResponseSchema: GenMessage<TearDownSessionResponse> 
  * (dashboard-driven); the automated half is the periodic sweep
  * (provisioner/internal/sweep), which only acts once a branch's upstream
  * is confirmed [gone].
+ * ListWorkerPods reports which sessions actually have a live worker Job, as
+ * Kubernetes sees it. It is the safety net that replaces the 30-second
+ * heartbeat deleted in docs/adr/0048.
  *
- * @generated from message agentfleet.v1.ListWorktreesRequest
+ * The heartbeat asked the pod to report on itself, which could not
+ * distinguish a healthy session from a wedged one and went silent for the
+ * same reason the pod had stopped working. Pod events are pushed instead —
+ * but a push can be dropped (core restarting, for instance, which is exactly
+ * when a deploy is happening), and a dropped TERMINATED leaves a session
+ * holding a concurrency slot forever. Core reconciles against this list every
+ * 60s so that failure self-heals rather than requiring a human to notice.
+ *
+ * Deliberately a provisioner RPC rather than core reading the API directly:
+ * core holds zero cluster RBAC (docs/adr/0020 point 1), and a liveness check
+ * is not a reason to grant it any.
+ *
+ * @generated from message agentfleet.v1.ListWorkerPodsRequest
  */
-export type ListWorktreesRequest = Message<"agentfleet.v1.ListWorktreesRequest"> & {
+export type ListWorkerPodsRequest = Message<"agentfleet.v1.ListWorkerPodsRequest"> & {
 };
 
 /**
- * Describes the message agentfleet.v1.ListWorktreesRequest.
- * Use `create(ListWorktreesRequestSchema)` to create a new message.
+ * Describes the message agentfleet.v1.ListWorkerPodsRequest.
+ * Use `create(ListWorkerPodsRequestSchema)` to create a new message.
  */
-export const ListWorktreesRequestSchema: GenMessage<ListWorktreesRequest> = /*@__PURE__*/
+export const ListWorkerPodsRequestSchema: GenMessage<ListWorkerPodsRequest> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_provisioner, 4);
+
+/**
+ * @generated from message agentfleet.v1.LiveWorkerPod
+ */
+export type LiveWorkerPod = Message<"agentfleet.v1.LiveWorkerPod"> & {
+  /**
+   * @generated from field: string session_id = 1;
+   */
+  sessionId: string;
+
+  /**
+   * @generated from field: string pod_name = 2;
+   */
+  podName: string;
+
+  /**
+   * Kubernetes Job phase: "Running" | "Pending" | "Succeeded" | "Failed".
+   *
+   * @generated from field: string phase = 3;
+   */
+  phase: string;
+};
+
+/**
+ * Describes the message agentfleet.v1.LiveWorkerPod.
+ * Use `create(LiveWorkerPodSchema)` to create a new message.
+ */
+export const LiveWorkerPodSchema: GenMessage<LiveWorkerPod> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_provisioner, 5);
+
+/**
+ * @generated from message agentfleet.v1.ListWorkerPodsResponse
+ */
+export type ListWorkerPodsResponse = Message<"agentfleet.v1.ListWorkerPodsResponse"> & {
+  /**
+   * @generated from field: repeated agentfleet.v1.LiveWorkerPod pods = 1;
+   */
+  pods: LiveWorkerPod[];
+};
+
+/**
+ * Describes the message agentfleet.v1.ListWorkerPodsResponse.
+ * Use `create(ListWorkerPodsResponseSchema)` to create a new message.
+ */
+export const ListWorkerPodsResponseSchema: GenMessage<ListWorkerPodsResponse> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_provisioner, 6);
+
+/**
+ * Publishes a session's port at <session>.e2e.bnei.dev: a Service plus a
+ * Traefik IngressRoute on ADR-0033's `le-dns` wildcard. Idempotent — the
+ * agent may call expose() again after a warm, and re-exposing the same port
+ * must return the same URL rather than erroring.
+ *
+ * @generated from message agentfleet.v1.ExposeSessionRequest
+ */
+export type ExposeSessionRequest = Message<"agentfleet.v1.ExposeSessionRequest"> & {
+  /**
+   * @generated from field: string session_id = 1;
+   */
+  sessionId: string;
+
+  /**
+   * @generated from field: int32 port = 2;
+   */
+  port: number;
+};
+
+/**
+ * Describes the message agentfleet.v1.ExposeSessionRequest.
+ * Use `create(ExposeSessionRequestSchema)` to create a new message.
+ */
+export const ExposeSessionRequestSchema: GenMessage<ExposeSessionRequest> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_provisioner, 7);
+
+/**
+ * @generated from message agentfleet.v1.ExposeSessionResponse
+ */
+export type ExposeSessionResponse = Message<"agentfleet.v1.ExposeSessionResponse"> & {
+  /**
+   * @generated from field: string url = 1;
+   */
+  url: string;
+};
+
+/**
+ * Describes the message agentfleet.v1.ExposeSessionResponse.
+ * Use `create(ExposeSessionResponseSchema)` to create a new message.
+ */
+export const ExposeSessionResponseSchema: GenMessage<ExposeSessionResponse> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_provisioner, 8);
+
+/**
+ * @generated from message agentfleet.v1.UnexposeSessionRequest
+ */
+export type UnexposeSessionRequest = Message<"agentfleet.v1.UnexposeSessionRequest"> & {
+  /**
+   * @generated from field: string session_id = 1;
+   */
+  sessionId: string;
+};
+
+/**
+ * Describes the message agentfleet.v1.UnexposeSessionRequest.
+ * Use `create(UnexposeSessionRequestSchema)` to create a new message.
+ */
+export const UnexposeSessionRequestSchema: GenMessage<UnexposeSessionRequest> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_provisioner, 9);
+
+/**
+ * @generated from message agentfleet.v1.UnexposeSessionResponse
+ */
+export type UnexposeSessionResponse = Message<"agentfleet.v1.UnexposeSessionResponse"> & {
+};
+
+/**
+ * Describes the message agentfleet.v1.UnexposeSessionResponse.
+ * Use `create(UnexposeSessionResponseSchema)` to create a new message.
+ */
+export const UnexposeSessionResponseSchema: GenMessage<UnexposeSessionResponse> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_provisioner, 10);
+
+/**
+ * Provisions or reuses a shared backing service. Keyed by repo, not by
+ * session (ADR-0034's rule, which outlives the recipe system that introduced
+ * it): instances are expensive and sessions on the same repo want the same
+ * database, so tearing one down is never implied by a single session ending.
+ *
+ * @generated from message agentfleet.v1.ProvisionServiceRequest
+ */
+export type ProvisionServiceRequest = Message<"agentfleet.v1.ProvisionServiceRequest"> & {
+  /**
+   * @generated from field: string session_id = 1;
+   */
+  sessionId: string;
+
+  /**
+   * @generated from field: string repo = 2;
+   */
+  repo: string;
+
+  /**
+   * "postgres" | "redis"
+   *
+   * @generated from field: string kind = 3;
+   */
+  kind: string;
+};
+
+/**
+ * Describes the message agentfleet.v1.ProvisionServiceRequest.
+ * Use `create(ProvisionServiceRequestSchema)` to create a new message.
+ */
+export const ProvisionServiceRequestSchema: GenMessage<ProvisionServiceRequest> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_provisioner, 11);
+
+/**
+ * @generated from message agentfleet.v1.ProvisionServiceResponse
+ */
+export type ProvisionServiceResponse = Message<"agentfleet.v1.ProvisionServiceResponse"> & {
+  /**
+   * @generated from field: string dsn = 1;
+   */
+  dsn: string;
+};
+
+/**
+ * Describes the message agentfleet.v1.ProvisionServiceResponse.
+ * Use `create(ProvisionServiceResponseSchema)` to create a new message.
+ */
+export const ProvisionServiceResponseSchema: GenMessage<ProvisionServiceResponse> = /*@__PURE__*/
   messageDesc(file_agentfleet_v1_provisioner, 12);
 
 /**
- * @generated from message agentfleet.v1.WorktreeInfo
+ * @generated from message agentfleet.v1.SweepSessionRequest
  */
-export type WorktreeInfo = Message<"agentfleet.v1.WorktreeInfo"> & {
+export type SweepSessionRequest = Message<"agentfleet.v1.SweepSessionRequest"> & {
   /**
-   * @generated from field: string task_id = 1;
+   * @generated from field: string session_id = 1;
    */
-  taskId: string;
-
-  /**
-   * @generated from field: string repo = 2;
-   */
-  repo: string;
-
-  /**
-   * @generated from field: string branch = 3;
-   */
-  branch: string;
-
-  /**
-   * e.g. "[gone]", "[ahead 2]", ""
-   *
-   * @generated from field: string upstream_track = 4;
-   */
-  upstreamTrack: string;
-
-  /**
-   * @generated from field: int64 mtime_unix = 5;
-   */
-  mtimeUnix: bigint;
-
-  /**
-   * absolute path on the shared PVC
-   *
-   * @generated from field: string path = 6;
-   */
-  path: string;
-
-  /**
-   * Uncommitted entries (`git status --porcelain` lines). Deleting a
-   * worktree throws this work away, so it's the warning shown next to the
-   * delete button, not decoration.
-   *
-   * @generated from field: int32 dirty_files = 7;
-   */
-  dirtyFiles: number;
-
-  /**
-   * @generated from field: int64 size_bytes = 8;
-   */
-  sizeBytes: bigint;
+  sessionId: string;
 };
 
 /**
- * Describes the message agentfleet.v1.WorktreeInfo.
- * Use `create(WorktreeInfoSchema)` to create a new message.
+ * Describes the message agentfleet.v1.SweepSessionRequest.
+ * Use `create(SweepSessionRequestSchema)` to create a new message.
  */
-export const WorktreeInfoSchema: GenMessage<WorktreeInfo> = /*@__PURE__*/
+export const SweepSessionRequestSchema: GenMessage<SweepSessionRequest> = /*@__PURE__*/
   messageDesc(file_agentfleet_v1_provisioner, 13);
 
 /**
- * @generated from message agentfleet.v1.ListWorktreesResponse
+ * @generated from message agentfleet.v1.SweepSessionResponse
  */
-export type ListWorktreesResponse = Message<"agentfleet.v1.ListWorktreesResponse"> & {
-  /**
-   * @generated from field: repeated agentfleet.v1.WorktreeInfo worktrees = 1;
-   */
-  worktrees: WorktreeInfo[];
-
-  /**
-   * Total/available bytes of the filesystem holding the worktrees root (the
-   * shared workspace PVC) — free space is what decides whether an orphan has
-   * to be pruned now or can wait. Response-level, not per-worktree: it's one
-   * filesystem, and repeating it per row would imply otherwise.
-   *
-   * @generated from field: uint64 pvc_total_bytes = 2;
-   */
-  pvcTotalBytes: bigint;
-
-  /**
-   * @generated from field: uint64 pvc_free_bytes = 3;
-   */
-  pvcFreeBytes: bigint;
+export type SweepSessionResponse = Message<"agentfleet.v1.SweepSessionResponse"> & {
 };
 
 /**
- * Describes the message agentfleet.v1.ListWorktreesResponse.
- * Use `create(ListWorktreesResponseSchema)` to create a new message.
+ * Describes the message agentfleet.v1.SweepSessionResponse.
+ * Use `create(SweepSessionResponseSchema)` to create a new message.
  */
-export const ListWorktreesResponseSchema: GenMessage<ListWorktreesResponse> = /*@__PURE__*/
+export const SweepSessionResponseSchema: GenMessage<SweepSessionResponse> = /*@__PURE__*/
   messageDesc(file_agentfleet_v1_provisioner, 14);
 
 /**
- * @generated from message agentfleet.v1.DeleteWorktreeRequest
- */
-export type DeleteWorktreeRequest = Message<"agentfleet.v1.DeleteWorktreeRequest"> & {
-  /**
-   * @generated from field: string task_id = 1;
-   */
-  taskId: string;
-
-  /**
-   * @generated from field: string repo = 2;
-   */
-  repo: string;
-
-  /**
-   * @generated from field: bool also_delete_branch = 3;
-   */
-  alsoDeleteBranch: boolean;
-};
-
-/**
- * Describes the message agentfleet.v1.DeleteWorktreeRequest.
- * Use `create(DeleteWorktreeRequestSchema)` to create a new message.
- */
-export const DeleteWorktreeRequestSchema: GenMessage<DeleteWorktreeRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 15);
-
-/**
- * @generated from message agentfleet.v1.DeleteWorktreeResponse
- */
-export type DeleteWorktreeResponse = Message<"agentfleet.v1.DeleteWorktreeResponse"> & {
-  /**
-   * @generated from field: bool deleted = 1;
-   */
-  deleted: boolean;
-};
-
-/**
- * Describes the message agentfleet.v1.DeleteWorktreeResponse.
- * Use `create(DeleteWorktreeResponseSchema)` to create a new message.
- */
-export const DeleteWorktreeResponseSchema: GenMessage<DeleteWorktreeResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 16);
-
-/**
- * How a service ingredient (postgres/redis) is shared across pods/tasks —
- * docs/adr/0034. pod-scoped: a native sidecar in the requesting pod alone,
- * localhost-only, dies with it. task-scoped: a per-task database minted
- * inside a shared per-repo instance, reused by every pod belonging to the
- * same task. repo-scoped: the same shared instance with no per-task
- * minting, every task against the repo hits the same database.
+ * Which kind of pod an operation targets.
  *
- * @generated from enum agentfleet.v1.ScopeMode
- */
-export enum ScopeMode {
-  /**
-   * @generated from enum value: SCOPE_MODE_UNSPECIFIED = 0;
-   */
-  UNSPECIFIED = 0,
-
-  /**
-   * @generated from enum value: SCOPE_MODE_POD_SCOPED = 1;
-   */
-  POD_SCOPED = 1,
-
-  /**
-   * @generated from enum value: SCOPE_MODE_TASK_SCOPED = 2;
-   */
-  TASK_SCOPED = 2,
-
-  /**
-   * @generated from enum value: SCOPE_MODE_REPO_SCOPED = 3;
-   */
-  REPO_SCOPED = 3,
-}
-
-/**
- * Describes the enum agentfleet.v1.ScopeMode.
- */
-export const ScopeModeSchema: GenEnum<ScopeMode> = /*@__PURE__*/
-  enumDesc(file_agentfleet_v1_provisioner, 0);
-
-/**
- * Which kind of session/pod an operation targets — worker pods and e2e
- * preview pods share the provisioner's reconcile/teardown machinery
- * (docs/adr/0019) but are tracked and torn down independently.
+ * Value 2 was SESSION_KIND_E2E, the sandbox pod (docs/adr/0048 §6). Reserved
+ * rather than reused: proto3 enums are open, so an in-flight message from a
+ * component on the older build still decodes — it just names a kind that
+ * selects nothing. Reusing the number for something else is what would
+ * actually break that rollout.
  *
  * @generated from enum agentfleet.v1.SessionKind
  */
@@ -736,47 +427,18 @@ export enum SessionKind {
    * @generated from enum value: SESSION_KIND_WORKER = 1;
    */
   WORKER = 1,
-
-  /**
-   * @generated from enum value: SESSION_KIND_E2E = 2;
-   */
-  E2E = 2,
 }
 
 /**
  * Describes the enum agentfleet.v1.SessionKind.
  */
 export const SessionKindSchema: GenEnum<SessionKind> = /*@__PURE__*/
-  enumDesc(file_agentfleet_v1_provisioner, 1);
+  enumDesc(file_agentfleet_v1_provisioner, 0);
 
 /**
  * @generated from service agentfleet.v1.ProvisionerService
  */
 export const ProvisionerService: GenService<{
-  /**
-   * @generated from rpc agentfleet.v1.ProvisionerService.KillE2eSession
-   */
-  killE2eSession: {
-    methodKind: "unary";
-    input: typeof KillE2eSessionRequestSchema;
-    output: typeof KillE2eSessionResponseSchema;
-  },
-  /**
-   * @generated from rpc agentfleet.v1.ProvisionerService.GetE2eSessionStatus
-   */
-  getE2eSessionStatus: {
-    methodKind: "unary";
-    input: typeof GetE2eSessionStatusRequestSchema;
-    output: typeof GetE2eSessionStatusResponseSchema;
-  },
-  /**
-   * @generated from rpc agentfleet.v1.ProvisionerService.CreateE2eSession
-   */
-  createE2eSession: {
-    methodKind: "unary";
-    input: typeof CreateE2eSessionRequestSchema;
-    output: typeof CreateE2eSessionResponseSchema;
-  },
   /**
    * @generated from rpc agentfleet.v1.ProvisionerService.CreateWorkerPod
    */
@@ -794,28 +456,56 @@ export const ProvisionerService: GenService<{
     output: typeof TearDownSessionResponseSchema;
   },
   /**
-   * Reused as-is by dashboard.proto's own ListWorktrees (identical empty
-   * request shape) — cross-file message reuse, not a call passthrough.
-   * buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+   * The liveness reconcile source — see ListWorkerPodsRequest.
    *
-   * @generated from rpc agentfleet.v1.ProvisionerService.ListWorktrees
+   * @generated from rpc agentfleet.v1.ProvisionerService.ListWorkerPods
    */
-  listWorktrees: {
+  listWorkerPods: {
     methodKind: "unary";
-    input: typeof ListWorktreesRequestSchema;
-    output: typeof ListWorktreesResponseSchema;
+    input: typeof ListWorkerPodsRequestSchema;
+    output: typeof ListWorkerPodsResponseSchema;
   },
   /**
-   * Reused as-is by dashboard.proto's own DeleteWorktree (identical
-   * request/response shape, no dashboard-specific fields needed).
-   * buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+   * What is left of the sandbox after docs/adr/0048 §6: the two capabilities
+   * that need cluster RBAC. Everything else the e2e pod did — running the
+   * app, running builds, running a browser — happens in the session pod
+   * itself now, with plain Bash.
    *
-   * @generated from rpc agentfleet.v1.ProvisionerService.DeleteWorktree
+   * @generated from rpc agentfleet.v1.ProvisionerService.ExposeSession
    */
-  deleteWorktree: {
+  exposeSession: {
     methodKind: "unary";
-    input: typeof DeleteWorktreeRequestSchema;
-    output: typeof DeleteWorktreeResponseSchema;
+    input: typeof ExposeSessionRequestSchema;
+    output: typeof ExposeSessionResponseSchema;
+  },
+  /**
+   * @generated from rpc agentfleet.v1.ProvisionerService.UnexposeSession
+   */
+  unexposeSession: {
+    methodKind: "unary";
+    input: typeof UnexposeSessionRequestSchema;
+    output: typeof UnexposeSessionResponseSchema;
+  },
+  /**
+   * @generated from rpc agentfleet.v1.ProvisionerService.ProvisionService
+   */
+  provisionService: {
+    methodKind: "unary";
+    input: typeof ProvisionServiceRequestSchema;
+    output: typeof ProvisionServiceResponseSchema;
+  },
+  /**
+   * Deletes a session's working-tree PVC. The other half of its disk (the
+   * SDK resume state) is a directory on the shared volume, removed in the
+   * same call — the two live on different volumes because they have
+   * different access patterns, not because anything wants them apart.
+   *
+   * @generated from rpc agentfleet.v1.ProvisionerService.SweepSession
+   */
+  sweepSession: {
+    methodKind: "unary";
+    input: typeof SweepSessionRequestSchema;
+    output: typeof SweepSessionResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_agentfleet_v1_provisioner, 0);

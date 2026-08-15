@@ -4,7 +4,7 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/MohammadBnei/agent-fleet/core/internal/tasks"
+	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
 )
 
@@ -31,20 +31,20 @@ import (
 // pending-decision state, not "something happened recently".
 type activityTrackingStore struct {
 	transcript.Store
-	tasks *tasks.Store
+	tasks *sessions.Store
 }
 
-func newActivityTrackingStore(store transcript.Store, taskStore *tasks.Store) activityTrackingStore {
-	return activityTrackingStore{Store: store, tasks: taskStore}
+func newActivityTrackingStore(store transcript.Store, sessionStore *sessions.Store) activityTrackingStore {
+	return activityTrackingStore{Store: store, tasks: sessionStore}
 }
 
 // touch is best-effort and fire-and-forget — a transcript append must
 // never be slowed down or failed by the activity-tracking side effect
-// (matches tasks.Store.TouchActive's own best-effort framing).
+// (matches sessions.Store.TouchActive's own best-effort framing).
 func (s activityTrackingStore) touch(taskID, from, msgType string) {
 	go func() {
 		if err := s.tasks.TouchActive(context.Background(), taskID, from, msgType); err != nil {
-			slog.Warn("activityTrackingStore: touch active failed", "taskId", taskID, "error", err)
+			slog.Warn("activityTrackingStore: touch active failed", "sessionId", taskID, "error", err)
 		}
 	}()
 }
@@ -66,28 +66,21 @@ func (s activityTrackingStore) touch(taskID, from, msgType string) {
 //
 // Every other msgType is a no-op: not every transcript append is a
 // decision point, unlike last_active_at above.
-func (s activityTrackingStore) awaitHuman(taskID, msgType string) {
-	var awaiting bool
-	switch msgType {
-	case "permission_request", "question":
-		awaiting = true
-	case "permission_response", "answer", "abort", "interrupt":
-		awaiting = false
-	default:
-		return
-	}
-	go func() {
-		if err := s.tasks.SetAwaitingHuman(context.Background(), taskID, awaiting); err != nil {
-			slog.Warn("activityTrackingStore: set awaiting human failed", "taskId", taskID, "error", err)
-		}
-	}()
-}
+// awaitHuman used to flip an awaiting_human boolean on every decision-shaped
+// append. It is deleted in docs/adr/0048 because the column could not be
+// correct: permissions are a LIST — parallel tool calls each get their own
+// seq — but any single permission_response set and cleared the one flag, so
+// answering one decision marked the session unblocked while others were still
+// waiting, and it sat stalled with nobody notified.
+//
+// Replaced by a counted subquery over unanswered questions and permission
+// requests (sessions.selectCols), which cannot go wrong that way and needs no
+// second write path to keep in sync.
 
 func (s activityTrackingStore) Append(ctx context.Context, taskID, from, text, msgType, idempotencyKey string) (int64, error) {
 	seq, err := s.Store.Append(ctx, taskID, from, text, msgType, idempotencyKey)
 	if err == nil {
 		s.touch(taskID, from, msgType)
-		s.awaitHuman(taskID, msgType)
 	}
 	return seq, err
 }
@@ -96,7 +89,6 @@ func (s activityTrackingStore) AppendReply(ctx context.Context, taskID, from, te
 	seq, err := s.Store.AppendReply(ctx, taskID, from, text, msgType, idempotencyKey, replyToSeq)
 	if err == nil {
 		s.touch(taskID, from, msgType)
-		s.awaitHuman(taskID, msgType)
 	}
 	return seq, err
 }

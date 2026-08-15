@@ -93,7 +93,7 @@ func (PodPhase) EnumDescriptor() ([]byte, []int) {
 
 type PodEvent struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	TaskId        string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
 	Kind          SessionKind            `protobuf:"varint,2,opt,name=kind,proto3,enum=agentfleet.v1.SessionKind" json:"kind,omitempty"`
 	Phase         PodPhase               `protobuf:"varint,3,opt,name=phase,proto3,enum=agentfleet.v1.PodPhase" json:"phase,omitempty"`
 	PodName       string                 `protobuf:"bytes,4,opt,name=pod_name,json=podName,proto3" json:"pod_name,omitempty"`
@@ -132,9 +132,9 @@ func (*PodEvent) Descriptor() ([]byte, []int) {
 	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{0}
 }
 
-func (x *PodEvent) GetTaskId() string {
+func (x *PodEvent) GetSessionId() string {
 	if x != nil {
-		return x.TaskId
+		return x.SessionId
 	}
 	return ""
 }
@@ -208,7 +208,7 @@ func (*ReportPodEventsResponse) Descriptor() ([]byte, []int) {
 // set for GetTranscript/StreamTranscript).
 type SendMessageRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
-	TaskId         string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	SessionId      string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
 	From           string                 `protobuf:"bytes,2,opt,name=from,proto3" json:"from,omitempty"`
 	Text           string                 `protobuf:"bytes,3,opt,name=text,proto3" json:"text,omitempty"`
 	Type           TranscriptEntryType    `protobuf:"varint,4,opt,name=type,proto3,enum=agentfleet.v1.TranscriptEntryType" json:"type,omitempty"`
@@ -253,9 +253,9 @@ func (*SendMessageRequest) Descriptor() ([]byte, []int) {
 	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{2}
 }
 
-func (x *SendMessageRequest) GetTaskId() string {
+func (x *SendMessageRequest) GetSessionId() string {
 	if x != nil {
-		return x.TaskId
+		return x.SessionId
 	}
 	return ""
 }
@@ -295,27 +295,44 @@ func (x *SendMessageRequest) GetReplyToSeq() int64 {
 	return 0
 }
 
-type SendMessageResponse struct {
+// AppendResponse is the one response shape for every RPC whose job is
+// "append an entry to a session's transcript": SendMessage here, and
+// PostMessage/AnswerQuestion/RespondToPermission on DashboardService.
+//
+// They are one operation wearing four names — a human message, an agent
+// message, an answer, and a permission decision are all a row in
+// `transcript` — so they get one shape. The seq is the only thing the
+// caller could not compute for itself, and it is the correlation key
+// everything else in the fleet keys off.
+//
+// Deliberately NOT extended to cover every RPC. Three of the four used to
+// return `string status = 1` holding a constant the server always set,
+// which duplicated the signal Connect's error channel already carries: with
+// a status inside a successful response, every caller has to check both,
+// and eventually one checks only the wrong one. The rule this settles on is
+// narrower and holds: **an RPC returns nothing, or the one thing the caller
+// cannot already know.**
+type AppendResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Seq           int64                  `protobuf:"varint,1,opt,name=seq,proto3" json:"seq,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *SendMessageResponse) Reset() {
-	*x = SendMessageResponse{}
+func (x *AppendResponse) Reset() {
+	*x = AppendResponse{}
 	mi := &file_agentfleet_v1_core_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *SendMessageResponse) String() string {
+func (x *AppendResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*SendMessageResponse) ProtoMessage() {}
+func (*AppendResponse) ProtoMessage() {}
 
-func (x *SendMessageResponse) ProtoReflect() protoreflect.Message {
+func (x *AppendResponse) ProtoReflect() protoreflect.Message {
 	mi := &file_agentfleet_v1_core_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -327,26 +344,28 @@ func (x *SendMessageResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use SendMessageResponse.ProtoReflect.Descriptor instead.
-func (*SendMessageResponse) Descriptor() ([]byte, []int) {
+// Deprecated: Use AppendResponse.ProtoReflect.Descriptor instead.
+func (*AppendResponse) Descriptor() ([]byte, []int) {
 	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{3}
 }
 
-func (x *SendMessageResponse) GetSeq() int64 {
+func (x *AppendResponse) GetSeq() int64 {
 	if x != nil {
 		return x.Seq
 	}
 	return 0
 }
 
-// Preserves the AskUserQuestion MCP tool's exact long-poll contract
-// (fleet-core/internal/mcpserver/ask_user_question.go today): appends a
-// QUESTION entry, long-polls for a matching ANSWER entry up to timeout_ms,
-// returns it verbatim if found or {status:"pending"} if not — the caller
-// re-invokes with the same questions to keep waiting, same as today.
+// Appends a QUESTION entry and long-polls for a matching ANSWER up to
+// timeout_ms, returning it verbatim if one arrives. A timeout is not an
+// error — the caller re-invokes with the same questions to keep waiting.
+//
+// This one keeps a response body rather than sharing AppendResponse,
+// because it genuinely returns something the caller cannot compute: whether
+// a human answered, and what they said.
 type AskUserQuestionRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	TaskId        string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
 	QuestionsJson string                 `protobuf:"bytes,2,opt,name=questions_json,json=questionsJson,proto3" json:"questions_json,omitempty"`
 	TimeoutMs     int32                  `protobuf:"varint,3,opt,name=timeout_ms,json=timeoutMs,proto3" json:"timeout_ms,omitempty"` // default 60000, matching today's handler
 	unknownFields protoimpl.UnknownFields
@@ -383,9 +402,9 @@ func (*AskUserQuestionRequest) Descriptor() ([]byte, []int) {
 	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{4}
 }
 
-func (x *AskUserQuestionRequest) GetTaskId() string {
+func (x *AskUserQuestionRequest) GetSessionId() string {
 	if x != nil {
-		return x.TaskId
+		return x.SessionId
 	}
 	return ""
 }
@@ -405,10 +424,19 @@ func (x *AskUserQuestionRequest) GetTimeoutMs() int32 {
 }
 
 type AskUserQuestionResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Status        string                 `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`                              // "answered" | "pending"
-	AnswersJson   string                 `protobuf:"bytes,2,opt,name=answers_json,json=answersJson,proto3" json:"answers_json,omitempty"` // set only when status == "answered"
-	QuestionSeq   int64                  `protobuf:"varint,3,opt,name=question_seq,json=questionSeq,proto3" json:"question_seq,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Was `string status = 1` holding "answered"|"pending". A bool, because
+	// that is what it always was: a string that looks like a status code
+	// invites callers to treat a timeout as a failure, and invites the server
+	// to grow a third value nobody handles. Whether a human answered is a
+	// yes/no, and the timeout is an ordinary outcome of a long poll.
+	Answered    bool   `protobuf:"varint,4,opt,name=answered,proto3" json:"answered,omitempty"`
+	AnswersJson string `protobuf:"bytes,2,opt,name=answers_json,json=answersJson,proto3" json:"answers_json,omitempty"` // set only when answered
+	// The seq of the question entry this call appended. Stable across
+	// re-invocations only if the caller passes the same questions — a
+	// re-ask mints a NEW entry with a new seq, which is what makes any
+	// control posted against an older one dead.
+	QuestionSeq   int64 `protobuf:"varint,3,opt,name=question_seq,json=questionSeq,proto3" json:"question_seq,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -443,11 +471,11 @@ func (*AskUserQuestionResponse) Descriptor() ([]byte, []int) {
 	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{5}
 }
 
-func (x *AskUserQuestionResponse) GetStatus() string {
+func (x *AskUserQuestionResponse) GetAnswered() bool {
 	if x != nil {
-		return x.Status
+		return x.Answered
 	}
-	return ""
+	return false
 }
 
 func (x *AskUserQuestionResponse) GetAnswersJson() string {
@@ -464,37 +492,35 @@ func (x *AskUserQuestionResponse) GetQuestionSeq() int64 {
 	return 0
 }
 
-type RequestE2EEnvRequest struct {
-	state  protoimpl.MessageState `protogen:"open.v1"`
-	TaskId string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
-	// Shell command that installs deps and starts the app, run via
-	// `bash -lc` from the worktree root (e.g. "cd front && bun install &&
-	// bun run dev"). Optional — falls back to the resolved profile's own
-	// start_cmd when empty (docs/adr/0034).
-	StartCmd string `protobuf:"bytes,2,opt,name=start_cmd,json=startCmd,proto3" json:"start_cmd,omitempty"`
-	// Which named repo_profiles row to resolve — optional, defaults to
-	// "e2e" when empty. Lets the agent request a different declared profile
-	// (e.g. a repo's "lint" profile) for the same request_e2e_env MCP tool
-	// call, reusing this same start_cmd-override pattern (docs/adr/0034).
-	Profile       string `protobuf:"bytes,3,opt,name=profile,proto3" json:"profile,omitempty"`
+// RequestE2eEnvRequest/Response and KillE2eEnvRequest/Response are gone with
+// the sandbox (docs/adr/0048 §6). Their whole payload was the recipe system —
+// resolved_start_cmd, profile_name, tools, services — i.e. the fleet telling
+// the agent how to run the repo the agent is already sitting in.
+//
+// What replaces them carries no recipe at all, because there is nothing to
+// resolve: the agent starts its own server and asks for a URL.
+type ExposeRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	Port          int32                  `protobuf:"varint,2,opt,name=port,proto3" json:"port,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *RequestE2EEnvRequest) Reset() {
-	*x = RequestE2EEnvRequest{}
+func (x *ExposeRequest) Reset() {
+	*x = ExposeRequest{}
 	mi := &file_agentfleet_v1_core_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *RequestE2EEnvRequest) String() string {
+func (x *ExposeRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*RequestE2EEnvRequest) ProtoMessage() {}
+func (*ExposeRequest) ProtoMessage() {}
 
-func (x *RequestE2EEnvRequest) ProtoReflect() protoreflect.Message {
+func (x *ExposeRequest) ProtoReflect() protoreflect.Message {
 	mi := &file_agentfleet_v1_core_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -506,447 +532,462 @@ func (x *RequestE2EEnvRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use RequestE2EEnvRequest.ProtoReflect.Descriptor instead.
-func (*RequestE2EEnvRequest) Descriptor() ([]byte, []int) {
+// Deprecated: Use ExposeRequest.ProtoReflect.Descriptor instead.
+func (*ExposeRequest) Descriptor() ([]byte, []int) {
 	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{6}
 }
 
-func (x *RequestE2EEnvRequest) GetTaskId() string {
+func (x *ExposeRequest) GetSessionId() string {
 	if x != nil {
-		return x.TaskId
+		return x.SessionId
 	}
 	return ""
 }
 
-func (x *RequestE2EEnvRequest) GetStartCmd() string {
+func (x *ExposeRequest) GetPort() int32 {
 	if x != nil {
-		return x.StartCmd
-	}
-	return ""
-}
-
-func (x *RequestE2EEnvRequest) GetProfile() string {
-	if x != nil {
-		return x.Profile
-	}
-	return ""
-}
-
-type RequestE2EEnvResponse struct {
-	state      protoimpl.MessageState `protogen:"open.v1"`
-	PreviewUrl string                 `protobuf:"bytes,1,opt,name=preview_url,json=previewUrl,proto3" json:"preview_url,omitempty"`
-	Status     string                 `protobuf:"bytes,2,opt,name=status,proto3" json:"status,omitempty"`
-	// The recipe that actually got used, echoed back so the agent can see it.
-	// Before this the worker had no read access to repo_profiles at all: it
-	// guessed a start_cmd, its guess silently beat a correct profile, and the
-	// preview 502'd with nobody able to say why. An agent that can read the
-	// recipe reports "the configured command binds localhost" instead of
-	// inventing a replacement for it.
-	ResolvedStartCmd string   `protobuf:"bytes,3,opt,name=resolved_start_cmd,json=resolvedStartCmd,proto3" json:"resolved_start_cmd,omitempty"`
-	ProfileName      string   `protobuf:"bytes,4,opt,name=profile_name,json=profileName,proto3" json:"profile_name,omitempty"`
-	Tools            []string `protobuf:"bytes,5,rep,name=tools,proto3" json:"tools,omitempty"`       // catalog keys, e.g. "bun-toolchain"
-	Services         []string `protobuf:"bytes,6,rep,name=services,proto3" json:"services,omitempty"` // "<key>:<scope-mode>", e.g. "postgres:task-scoped"
-	// Where to dial the sandbox, passed straight through from the provisioner
-	// (docs/adr/0045). core does not build, cache or interpret these — it does
-	// not know what MCP is. That is what keeps this a *field* passthrough
-	// rather than the *call* passthrough it replaces.
-	Endpoints     []*ServiceEndpoint `protobuf:"bytes,7,rep,name=endpoints,proto3" json:"endpoints,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *RequestE2EEnvResponse) Reset() {
-	*x = RequestE2EEnvResponse{}
-	mi := &file_agentfleet_v1_core_proto_msgTypes[7]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *RequestE2EEnvResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*RequestE2EEnvResponse) ProtoMessage() {}
-
-func (x *RequestE2EEnvResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_core_proto_msgTypes[7]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use RequestE2EEnvResponse.ProtoReflect.Descriptor instead.
-func (*RequestE2EEnvResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{7}
-}
-
-func (x *RequestE2EEnvResponse) GetPreviewUrl() string {
-	if x != nil {
-		return x.PreviewUrl
-	}
-	return ""
-}
-
-func (x *RequestE2EEnvResponse) GetStatus() string {
-	if x != nil {
-		return x.Status
-	}
-	return ""
-}
-
-func (x *RequestE2EEnvResponse) GetResolvedStartCmd() string {
-	if x != nil {
-		return x.ResolvedStartCmd
-	}
-	return ""
-}
-
-func (x *RequestE2EEnvResponse) GetProfileName() string {
-	if x != nil {
-		return x.ProfileName
-	}
-	return ""
-}
-
-func (x *RequestE2EEnvResponse) GetTools() []string {
-	if x != nil {
-		return x.Tools
-	}
-	return nil
-}
-
-func (x *RequestE2EEnvResponse) GetServices() []string {
-	if x != nil {
-		return x.Services
-	}
-	return nil
-}
-
-func (x *RequestE2EEnvResponse) GetEndpoints() []*ServiceEndpoint {
-	if x != nil {
-		return x.Endpoints
-	}
-	return nil
-}
-
-type KillE2EEnvRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	TaskId        string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *KillE2EEnvRequest) Reset() {
-	*x = KillE2EEnvRequest{}
-	mi := &file_agentfleet_v1_core_proto_msgTypes[8]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *KillE2EEnvRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*KillE2EEnvRequest) ProtoMessage() {}
-
-func (x *KillE2EEnvRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_core_proto_msgTypes[8]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use KillE2EEnvRequest.ProtoReflect.Descriptor instead.
-func (*KillE2EEnvRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{8}
-}
-
-func (x *KillE2EEnvRequest) GetTaskId() string {
-	if x != nil {
-		return x.TaskId
-	}
-	return ""
-}
-
-type KillE2EEnvResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Killed        bool                   `protobuf:"varint,1,opt,name=killed,proto3" json:"killed,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *KillE2EEnvResponse) Reset() {
-	*x = KillE2EEnvResponse{}
-	mi := &file_agentfleet_v1_core_proto_msgTypes[9]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *KillE2EEnvResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*KillE2EEnvResponse) ProtoMessage() {}
-
-func (x *KillE2EEnvResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_core_proto_msgTypes[9]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use KillE2EEnvResponse.ProtoReflect.Descriptor instead.
-func (*KillE2EEnvResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{9}
-}
-
-func (x *KillE2EEnvResponse) GetKilled() bool {
-	if x != nil {
-		return x.Killed
-	}
-	return false
-}
-
-// Task, GetTaskRequest/Response, and SetPermissionModeRequest/Response live
-// here (not dashboard.proto, which imports this file) so CoreService's
-// GetTask/SetPermissionMode below and DashboardService's same-named RPCs
-// (dashboard.proto) can share one definition — both just return/mutate the
-// task row, no dashboard-specific shape needed.
-type Task struct {
-	state       protoimpl.MessageState `protogen:"open.v1"`
-	Id          string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Repo        string                 `protobuf:"bytes,2,opt,name=repo,proto3" json:"repo,omitempty"`
-	Description string                 `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
-	Status      string                 `protobuf:"bytes,4,opt,name=status,proto3" json:"status,omitempty"`
-	ThreadId    *string                `protobuf:"bytes,5,opt,name=thread_id,json=threadId,proto3,oneof" json:"thread_id,omitempty"`
-	PrUrl       *string                `protobuf:"bytes,6,opt,name=pr_url,json=prUrl,proto3,oneof" json:"pr_url,omitempty"`
-	// Worker-pod lifecycle state (PodPhase, set via ReportPodEvents) — distinct
-	// from `status` (business state). Unset until the provisioner reports the
-	// pod's first event.
-	PodPhase   *string `protobuf:"bytes,7,opt,name=pod_phase,json=podPhase,proto3,oneof" json:"pod_phase,omitempty"`
-	PodMessage *string `protobuf:"bytes,8,opt,name=pod_message,json=podMessage,proto3,oneof" json:"pod_message,omitempty"`
-	// Reclaim-eligibility signal (ClaimNextTask reclaims a claimed/running
-	// task once this is >10min stale — the exact staleness
-	// threshold the dashboard's own "stuck" badge should match). Set once at
-	// claim time, refreshed by the worker pod's own heartbeat loop; unset for
-	// a still-pending task. RFC3339, matching JournalEntry.created_at.
-	HeartbeatAt *string `protobuf:"bytes,9,opt,name=heartbeat_at,json=heartbeatAt,proto3,oneof" json:"heartbeat_at,omitempty"`
-	// How many times ClaimNextTask has reclaimed this task after a stale
-	// heartbeat (capped at MAX_TASK_RETRIES before the task goes
-	// failed_permanently instead of being reclaimed again).
-	RetryCount int32   `protobuf:"varint,10,opt,name=retry_count,json=retryCount,proto3" json:"retry_count,omitempty"`
-	LastError  *string `protobuf:"bytes,11,opt,name=last_error,json=lastError,proto3,oneof" json:"last_error,omitempty"`
-	// The Claude SDK's own session id (SaveSessionId) — resumable in a fresh
-	// pod via `resume:` (sessions redesign, supersedes docs/adr/0021/0025's
-	// phase-boundary framing). Unset until the worker's first streamed
-	// message reports it.
-	SessionId *string `protobuf:"bytes,12,opt,name=session_id,json=sessionId,proto3,oneof" json:"session_id,omitempty"`
-	// Last time a transcript entry was appended for this task — substrate
-	// for the idle-timeout backstop that tears down an unattended pod.
-	// RFC3339, matching heartbeat_at. Unset for a task with no activity yet.
-	LastActiveAt *string `protobuf:"bytes,13,opt,name=last_active_at,json=lastActiveAt,proto3,oneof" json:"last_active_at,omitempty"`
-	// The session's current SDK permission mode ("default"|"plan"|
-	// "acceptEdits"|"bypassPermissions"|...), so the dashboard's mode picker
-	// can highlight the real active mode instead of guessing. Unset for an
-	// idle/never-warmed session.
-	PermissionMode *string `protobuf:"bytes,14,opt,name=permission_mode,json=permissionMode,proto3,oneof" json:"permission_mode,omitempty"`
-	// True while an unresolved PERMISSION_REQUEST or QUESTION entry is
-	// outstanding — set/cleared by core's activityTrackingStore decorator on
-	// every transcript Append/AppendReply, the same choke point that already
-	// maintains last_active_at. Lets the dashboard's task list show which
-	// tasks need a human decision without an N+1 per-task transcript fetch.
-	AwaitingHuman bool `protobuf:"varint,15,opt,name=awaiting_human,json=awaitingHuman,proto3" json:"awaiting_human,omitempty"`
-	// "worker" | "thot" (docs/adr/0037). A UI label and gate only — the
-	// dispatch path never branches on it.
-	Kind string `protobuf:"bytes,16,opt,name=kind,proto3" json:"kind,omitempty"`
-	// Session liveness (docs/adr/0040): "" (no live pod) | "working" |
-	// "blocked" | "idle" | "done" | "stalled" | "unknown". Orthogonal to
-	// `status`, which is a workflow status — a session can be `running` and
-	// blocked, or `running` and stalled, and those are different questions.
-	//
-	// Derived server-side from the task row on every read rather than stored,
-	// so it cannot drift from the transcript; core owns the thresholds, so
-	// every client agrees on what "stalled" means instead of each
-	// re-implementing the heuristic.
-	LiveState     string `protobuf:"bytes,17,opt,name=live_state,json=liveState,proto3" json:"live_state,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *Task) Reset() {
-	*x = Task{}
-	mi := &file_agentfleet_v1_core_proto_msgTypes[10]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *Task) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*Task) ProtoMessage() {}
-
-func (x *Task) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_core_proto_msgTypes[10]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use Task.ProtoReflect.Descriptor instead.
-func (*Task) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{10}
-}
-
-func (x *Task) GetId() string {
-	if x != nil {
-		return x.Id
-	}
-	return ""
-}
-
-func (x *Task) GetRepo() string {
-	if x != nil {
-		return x.Repo
-	}
-	return ""
-}
-
-func (x *Task) GetDescription() string {
-	if x != nil {
-		return x.Description
-	}
-	return ""
-}
-
-func (x *Task) GetStatus() string {
-	if x != nil {
-		return x.Status
-	}
-	return ""
-}
-
-func (x *Task) GetThreadId() string {
-	if x != nil && x.ThreadId != nil {
-		return *x.ThreadId
-	}
-	return ""
-}
-
-func (x *Task) GetPrUrl() string {
-	if x != nil && x.PrUrl != nil {
-		return *x.PrUrl
-	}
-	return ""
-}
-
-func (x *Task) GetPodPhase() string {
-	if x != nil && x.PodPhase != nil {
-		return *x.PodPhase
-	}
-	return ""
-}
-
-func (x *Task) GetPodMessage() string {
-	if x != nil && x.PodMessage != nil {
-		return *x.PodMessage
-	}
-	return ""
-}
-
-func (x *Task) GetHeartbeatAt() string {
-	if x != nil && x.HeartbeatAt != nil {
-		return *x.HeartbeatAt
-	}
-	return ""
-}
-
-func (x *Task) GetRetryCount() int32 {
-	if x != nil {
-		return x.RetryCount
+		return x.Port
 	}
 	return 0
 }
 
-func (x *Task) GetLastError() string {
-	if x != nil && x.LastError != nil {
-		return *x.LastError
-	}
-	return ""
+type ExposeResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Url           string                 `protobuf:"bytes,1,opt,name=url,proto3" json:"url,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
-func (x *Task) GetSessionId() string {
-	if x != nil && x.SessionId != nil {
-		return *x.SessionId
-	}
-	return ""
+func (x *ExposeResponse) Reset() {
+	*x = ExposeResponse{}
+	mi := &file_agentfleet_v1_core_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
 }
 
-func (x *Task) GetLastActiveAt() string {
-	if x != nil && x.LastActiveAt != nil {
-		return *x.LastActiveAt
-	}
-	return ""
+func (x *ExposeResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
 }
 
-func (x *Task) GetPermissionMode() string {
-	if x != nil && x.PermissionMode != nil {
-		return *x.PermissionMode
-	}
-	return ""
-}
+func (*ExposeResponse) ProtoMessage() {}
 
-func (x *Task) GetAwaitingHuman() bool {
+func (x *ExposeResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_agentfleet_v1_core_proto_msgTypes[7]
 	if x != nil {
-		return x.AwaitingHuman
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
 	}
-	return false
+	return mi.MessageOf(x)
 }
 
-func (x *Task) GetKind() string {
+// Deprecated: Use ExposeResponse.ProtoReflect.Descriptor instead.
+func (*ExposeResponse) Descriptor() ([]byte, []int) {
+	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *ExposeResponse) GetUrl() string {
+	if x != nil {
+		return x.Url
+	}
+	return ""
+}
+
+type UnexposeRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UnexposeRequest) Reset() {
+	*x = UnexposeRequest{}
+	mi := &file_agentfleet_v1_core_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UnexposeRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UnexposeRequest) ProtoMessage() {}
+
+func (x *UnexposeRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_agentfleet_v1_core_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UnexposeRequest.ProtoReflect.Descriptor instead.
+func (*UnexposeRequest) Descriptor() ([]byte, []int) {
+	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *UnexposeRequest) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+type UnexposeResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UnexposeResponse) Reset() {
+	*x = UnexposeResponse{}
+	mi := &file_agentfleet_v1_core_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UnexposeResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UnexposeResponse) ProtoMessage() {}
+
+func (x *UnexposeResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_agentfleet_v1_core_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UnexposeResponse.ProtoReflect.Descriptor instead.
+func (*UnexposeResponse) Descriptor() ([]byte, []int) {
+	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{9}
+}
+
+type RequestServiceRequest struct {
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	SessionId string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	// "postgres" | "redis"
+	Kind          string `protobuf:"bytes,2,opt,name=kind,proto3" json:"kind,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RequestServiceRequest) Reset() {
+	*x = RequestServiceRequest{}
+	mi := &file_agentfleet_v1_core_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RequestServiceRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RequestServiceRequest) ProtoMessage() {}
+
+func (x *RequestServiceRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_agentfleet_v1_core_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RequestServiceRequest.ProtoReflect.Descriptor instead.
+func (*RequestServiceRequest) Descriptor() ([]byte, []int) {
+	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *RequestServiceRequest) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *RequestServiceRequest) GetKind() string {
 	if x != nil {
 		return x.Kind
 	}
 	return ""
 }
 
-func (x *Task) GetLiveState() string {
+type RequestServiceResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Dsn           string                 `protobuf:"bytes,1,opt,name=dsn,proto3" json:"dsn,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RequestServiceResponse) Reset() {
+	*x = RequestServiceResponse{}
+	mi := &file_agentfleet_v1_core_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RequestServiceResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RequestServiceResponse) ProtoMessage() {}
+
+func (x *RequestServiceResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_agentfleet_v1_core_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RequestServiceResponse.ProtoReflect.Descriptor instead.
+func (*RequestServiceResponse) Descriptor() ([]byte, []int) {
+	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *RequestServiceResponse) GetDsn() string {
+	if x != nil {
+		return x.Dsn
+	}
+	return ""
+}
+
+// Session, GetSessionRequest/Response, and SetPermissionModeRequest/Response
+// live here (not dashboard.proto, which imports this file) so CoreService's
+// GetSession/SetPermissionMode below and DashboardService's same-named RPCs
+// can share one definition — both just return/mutate the session row, no
+// dashboard-specific shape needed.
+//
+// Field numbers 4, 6, 9, 10, 15 and 16 are reserved, not reused: status,
+// pr_url, heartbeat_at, retry_count, awaiting_human and kind are all gone in
+// docs/adr/0048, and reusing their numbers would let an old client silently
+// misread a new field as the one it remembers.
+type Session struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Repo  string                 `protobuf:"bytes,2,opt,name=repo,proto3" json:"repo,omitempty"`
+	// Human-facing labels only, never part of the prompt. A session's actual
+	// instruction is its first transcript entry.
+	Description string  `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
+	Title       *string `protobuf:"bytes,18,opt,name=title,proto3,oneof" json:"title,omitempty"`
+	// Pod lifecycle (PodPhase, from ReportPodEvents and core's reconcile
+	// loop). With `status` gone this is the fleet's only liveness signal, and
+	// the concurrency cap counts exactly these phases.
+	PodPhase   *string `protobuf:"bytes,7,opt,name=pod_phase,json=podPhase,proto3,oneof" json:"pod_phase,omitempty"`
+	PodMessage *string `protobuf:"bytes,8,opt,name=pod_message,json=podMessage,proto3,oneof" json:"pod_message,omitempty"`
+	LastError  *string `protobuf:"bytes,11,opt,name=last_error,json=lastError,proto3,oneof" json:"last_error,omitempty"`
+	// The Claude SDK's own session id (SaveAgentSessionId) — resumable in a
+	// fresh pod via `resume:`. Named agent_session_id, not session_id, now
+	// that the row itself is a session. Unset until the SDK's first streamed
+	// message reports it.
+	AgentSessionId *string `protobuf:"bytes,12,opt,name=agent_session_id,json=agentSessionId,proto3,oneof" json:"agent_session_id,omitempty"`
+	// Which Claude model this session runs. The worker reads it back on every
+	// warm and falls back to the CLAUDE_MODEL env default when unset — it was
+	// stored but never returned before, so a per-session model choice silently
+	// did nothing.
+	Model *string `protobuf:"bytes,22,opt,name=model,proto3,oneof" json:"model,omitempty"`
+	// Last time a transcript entry was appended — the clock the idle sweep and
+	// the retention GC both read. RFC3339. Unset for a session with no
+	// activity yet.
+	LastActiveAt *string `protobuf:"bytes,13,opt,name=last_active_at,json=lastActiveAt,proto3,oneof" json:"last_active_at,omitempty"`
+	// The session's current SDK permission mode ("default"|"plan"|
+	// "acceptEdits"|"bypassPermissions"|...), so the dashboard's mode picker
+	// shows the real active mode instead of guessing. Restored on every warm.
+	PermissionMode *string `protobuf:"bytes,14,opt,name=permission_mode,json=permissionMode,proto3,oneof" json:"permission_mode,omitempty"`
+	// Session liveness (docs/adr/0040): "" (no live pod) | "working" |
+	// "blocked" | "idle" | "done" | "stalled" | "unknown". Derived server-side
+	// from the row on every read rather than stored, so it cannot drift; core
+	// owns the thresholds, so every client agrees on what "stalled" means
+	// instead of each re-implementing the heuristic.
+	//
+	// This is now the ONLY status. It replaces the 8-value enum whose 'done'
+	// value never acquired a writer, because a polymorphic session's
+	// completion is not something a machine can compute.
+	LiveState string `protobuf:"bytes,17,opt,name=live_state,json=liveState,proto3" json:"live_state,omitempty"`
+	// How many decisions are waiting on a human right now: unanswered
+	// questions plus pending permission requests.
+	//
+	// A count, not the old awaiting_human boolean, and that is a bug fix.
+	// Permissions are a LIST — parallel tool calls each get their own seq —
+	// but the boolean was set and cleared by any single permission_response,
+	// so answering one decision marked the session unblocked while others were
+	// still waiting, and it would sit stalled with nobody notified.
+	PendingDecisions int32 `protobuf:"varint,19,opt,name=pending_decisions,json=pendingDecisions,proto3" json:"pending_decisions,omitempty"`
+	// Disk reclaimed by the retention GC: readable, but no longer resumable.
+	// The dashboard must not offer Warm when this is set.
+	SweptAt *string `protobuf:"bytes,20,opt,name=swept_at,json=sweptAt,proto3,oneof" json:"swept_at,omitempty"`
+	// The human is finished with this session — the only terminal state,
+	// because it is the only one a machine cannot compute.
+	ArchivedAt    *string `protobuf:"bytes,21,opt,name=archived_at,json=archivedAt,proto3,oneof" json:"archived_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Session) Reset() {
+	*x = Session{}
+	mi := &file_agentfleet_v1_core_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Session) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Session) ProtoMessage() {}
+
+func (x *Session) ProtoReflect() protoreflect.Message {
+	mi := &file_agentfleet_v1_core_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Session.ProtoReflect.Descriptor instead.
+func (*Session) Descriptor() ([]byte, []int) {
+	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *Session) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *Session) GetRepo() string {
+	if x != nil {
+		return x.Repo
+	}
+	return ""
+}
+
+func (x *Session) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+func (x *Session) GetTitle() string {
+	if x != nil && x.Title != nil {
+		return *x.Title
+	}
+	return ""
+}
+
+func (x *Session) GetPodPhase() string {
+	if x != nil && x.PodPhase != nil {
+		return *x.PodPhase
+	}
+	return ""
+}
+
+func (x *Session) GetPodMessage() string {
+	if x != nil && x.PodMessage != nil {
+		return *x.PodMessage
+	}
+	return ""
+}
+
+func (x *Session) GetLastError() string {
+	if x != nil && x.LastError != nil {
+		return *x.LastError
+	}
+	return ""
+}
+
+func (x *Session) GetAgentSessionId() string {
+	if x != nil && x.AgentSessionId != nil {
+		return *x.AgentSessionId
+	}
+	return ""
+}
+
+func (x *Session) GetModel() string {
+	if x != nil && x.Model != nil {
+		return *x.Model
+	}
+	return ""
+}
+
+func (x *Session) GetLastActiveAt() string {
+	if x != nil && x.LastActiveAt != nil {
+		return *x.LastActiveAt
+	}
+	return ""
+}
+
+func (x *Session) GetPermissionMode() string {
+	if x != nil && x.PermissionMode != nil {
+		return *x.PermissionMode
+	}
+	return ""
+}
+
+func (x *Session) GetLiveState() string {
 	if x != nil {
 		return x.LiveState
 	}
 	return ""
 }
 
+func (x *Session) GetPendingDecisions() int32 {
+	if x != nil {
+		return x.PendingDecisions
+	}
+	return 0
+}
+
+func (x *Session) GetSweptAt() string {
+	if x != nil && x.SweptAt != nil {
+		return *x.SweptAt
+	}
+	return ""
+}
+
+func (x *Session) GetArchivedAt() string {
+	if x != nil && x.ArchivedAt != nil {
+		return *x.ArchivedAt
+	}
+	return ""
+}
+
 // What one agent can see of another session. Deliberately not the full
-// Task: an agent needs enough to pick a target and know whether it can be
+// Session: an agent needs enough to pick a target and know whether it can be
 // talked to, not another session's internals.
 type SessionSummary struct {
 	state       protoimpl.MessageState `protogen:"open.v1"`
-	TaskId      string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	SessionId   string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
 	Repo        string                 `protobuf:"bytes,2,opt,name=repo,proto3" json:"repo,omitempty"`
 	Description string                 `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
 	Status      string                 `protobuf:"bytes,4,opt,name=status,proto3" json:"status,omitempty"`
-	// See Task.live_state (docs/adr/0040). This is what makes "wait until
+	// See Session.live_state (docs/adr/0040). This is what makes "wait until
 	// the other agent is genuinely blocked" expressible at all.
 	LiveState     string `protobuf:"bytes,5,opt,name=live_state,json=liveState,proto3" json:"live_state,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -955,7 +996,7 @@ type SessionSummary struct {
 
 func (x *SessionSummary) Reset() {
 	*x = SessionSummary{}
-	mi := &file_agentfleet_v1_core_proto_msgTypes[11]
+	mi := &file_agentfleet_v1_core_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -967,7 +1008,7 @@ func (x *SessionSummary) String() string {
 func (*SessionSummary) ProtoMessage() {}
 
 func (x *SessionSummary) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_core_proto_msgTypes[11]
+	mi := &file_agentfleet_v1_core_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -980,12 +1021,12 @@ func (x *SessionSummary) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SessionSummary.ProtoReflect.Descriptor instead.
 func (*SessionSummary) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{11}
+	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{13}
 }
 
-func (x *SessionSummary) GetTaskId() string {
+func (x *SessionSummary) GetSessionId() string {
 	if x != nil {
-		return x.TaskId
+		return x.SessionId
 	}
 	return ""
 }
@@ -1018,30 +1059,30 @@ func (x *SessionSummary) GetLiveState() string {
 	return ""
 }
 
-type ListSessionsRequest struct {
+type ListPeerSessionsRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The caller's own task, excluded from the results — an agent has no use
 	// for a summary of itself and cannot prompt itself anyway.
-	CallerTaskId  string `protobuf:"bytes,1,opt,name=caller_task_id,json=callerTaskId,proto3" json:"caller_task_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	CallerSessionId string `protobuf:"bytes,1,opt,name=caller_session_id,json=callerSessionId,proto3" json:"caller_session_id,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
-func (x *ListSessionsRequest) Reset() {
-	*x = ListSessionsRequest{}
-	mi := &file_agentfleet_v1_core_proto_msgTypes[12]
+func (x *ListPeerSessionsRequest) Reset() {
+	*x = ListPeerSessionsRequest{}
+	mi := &file_agentfleet_v1_core_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *ListSessionsRequest) String() string {
+func (x *ListPeerSessionsRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*ListSessionsRequest) ProtoMessage() {}
+func (*ListPeerSessionsRequest) ProtoMessage() {}
 
-func (x *ListSessionsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_core_proto_msgTypes[12]
+func (x *ListPeerSessionsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_agentfleet_v1_core_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1052,40 +1093,40 @@ func (x *ListSessionsRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use ListSessionsRequest.ProtoReflect.Descriptor instead.
-func (*ListSessionsRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{12}
+// Deprecated: Use ListPeerSessionsRequest.ProtoReflect.Descriptor instead.
+func (*ListPeerSessionsRequest) Descriptor() ([]byte, []int) {
+	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{14}
 }
 
-func (x *ListSessionsRequest) GetCallerTaskId() string {
+func (x *ListPeerSessionsRequest) GetCallerSessionId() string {
 	if x != nil {
-		return x.CallerTaskId
+		return x.CallerSessionId
 	}
 	return ""
 }
 
-type ListSessionsResponse struct {
+type ListPeerSessionsResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Sessions      []*SessionSummary      `protobuf:"bytes,1,rep,name=sessions,proto3" json:"sessions,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *ListSessionsResponse) Reset() {
-	*x = ListSessionsResponse{}
-	mi := &file_agentfleet_v1_core_proto_msgTypes[13]
+func (x *ListPeerSessionsResponse) Reset() {
+	*x = ListPeerSessionsResponse{}
+	mi := &file_agentfleet_v1_core_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *ListSessionsResponse) String() string {
+func (x *ListPeerSessionsResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*ListSessionsResponse) ProtoMessage() {}
+func (*ListPeerSessionsResponse) ProtoMessage() {}
 
-func (x *ListSessionsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_core_proto_msgTypes[13]
+func (x *ListPeerSessionsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_agentfleet_v1_core_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1096,12 +1137,12 @@ func (x *ListSessionsResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use ListSessionsResponse.ProtoReflect.Descriptor instead.
-func (*ListSessionsResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{13}
+// Deprecated: Use ListPeerSessionsResponse.ProtoReflect.Descriptor instead.
+func (*ListPeerSessionsResponse) Descriptor() ([]byte, []int) {
+	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{15}
 }
 
-func (x *ListSessionsResponse) GetSessions() []*SessionSummary {
+func (x *ListPeerSessionsResponse) GetSessions() []*SessionSummary {
 	if x != nil {
 		return x.Sessions
 	}
@@ -1109,10 +1150,10 @@ func (x *ListSessionsResponse) GetSessions() []*SessionSummary {
 }
 
 type PromptSessionRequest struct {
-	state        protoimpl.MessageState `protogen:"open.v1"`
-	CallerTaskId string                 `protobuf:"bytes,1,opt,name=caller_task_id,json=callerTaskId,proto3" json:"caller_task_id,omitempty"`
-	TargetTaskId string                 `protobuf:"bytes,2,opt,name=target_task_id,json=targetTaskId,proto3" json:"target_task_id,omitempty"`
-	Text         string                 `protobuf:"bytes,3,opt,name=text,proto3" json:"text,omitempty"`
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	CallerSessionId string                 `protobuf:"bytes,1,opt,name=caller_session_id,json=callerSessionId,proto3" json:"caller_session_id,omitempty"`
+	TargetSessionId string                 `protobuf:"bytes,2,opt,name=target_session_id,json=targetSessionId,proto3" json:"target_session_id,omitempty"`
+	Text            string                 `protobuf:"bytes,3,opt,name=text,proto3" json:"text,omitempty"`
 	// Hop count, incremented per relay. Bounded so A->B->A cannot loop
 	// forever; an agent never sets this itself, the sidecar does.
 	Depth         int32 `protobuf:"varint,4,opt,name=depth,proto3" json:"depth,omitempty"`
@@ -1122,7 +1163,7 @@ type PromptSessionRequest struct {
 
 func (x *PromptSessionRequest) Reset() {
 	*x = PromptSessionRequest{}
-	mi := &file_agentfleet_v1_core_proto_msgTypes[14]
+	mi := &file_agentfleet_v1_core_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1134,7 +1175,7 @@ func (x *PromptSessionRequest) String() string {
 func (*PromptSessionRequest) ProtoMessage() {}
 
 func (x *PromptSessionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_core_proto_msgTypes[14]
+	mi := &file_agentfleet_v1_core_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1147,19 +1188,19 @@ func (x *PromptSessionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PromptSessionRequest.ProtoReflect.Descriptor instead.
 func (*PromptSessionRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{14}
+	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{16}
 }
 
-func (x *PromptSessionRequest) GetCallerTaskId() string {
+func (x *PromptSessionRequest) GetCallerSessionId() string {
 	if x != nil {
-		return x.CallerTaskId
+		return x.CallerSessionId
 	}
 	return ""
 }
 
-func (x *PromptSessionRequest) GetTargetTaskId() string {
+func (x *PromptSessionRequest) GetTargetSessionId() string {
 	if x != nil {
-		return x.TargetTaskId
+		return x.TargetSessionId
 	}
 	return ""
 }
@@ -1192,7 +1233,7 @@ type PromptSessionResponse struct {
 
 func (x *PromptSessionResponse) Reset() {
 	*x = PromptSessionResponse{}
-	mi := &file_agentfleet_v1_core_proto_msgTypes[15]
+	mi := &file_agentfleet_v1_core_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1204,7 +1245,7 @@ func (x *PromptSessionResponse) String() string {
 func (*PromptSessionResponse) ProtoMessage() {}
 
 func (x *PromptSessionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_core_proto_msgTypes[15]
+	mi := &file_agentfleet_v1_core_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1217,7 +1258,7 @@ func (x *PromptSessionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PromptSessionResponse.ProtoReflect.Descriptor instead.
 func (*PromptSessionResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{15}
+	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *PromptSessionResponse) GetSeq() int64 {
@@ -1242,8 +1283,8 @@ func (x *PromptSessionResponse) GetPodName() string {
 }
 
 type WaitForSessionStateRequest struct {
-	state        protoimpl.MessageState `protogen:"open.v1"`
-	TargetTaskId string                 `protobuf:"bytes,1,opt,name=target_task_id,json=targetTaskId,proto3" json:"target_task_id,omitempty"`
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	TargetSessionId string                 `protobuf:"bytes,1,opt,name=target_session_id,json=targetSessionId,proto3" json:"target_session_id,omitempty"`
 	// Only count a settled state once the target has produced activity newer
 	// than this transcript seq. Without it, waiting right after prompting an
 	// already-idle target returns instantly with the state it was in BEFORE
@@ -1262,7 +1303,7 @@ type WaitForSessionStateRequest struct {
 
 func (x *WaitForSessionStateRequest) Reset() {
 	*x = WaitForSessionStateRequest{}
-	mi := &file_agentfleet_v1_core_proto_msgTypes[16]
+	mi := &file_agentfleet_v1_core_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1274,7 +1315,7 @@ func (x *WaitForSessionStateRequest) String() string {
 func (*WaitForSessionStateRequest) ProtoMessage() {}
 
 func (x *WaitForSessionStateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_core_proto_msgTypes[16]
+	mi := &file_agentfleet_v1_core_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1287,12 +1328,12 @@ func (x *WaitForSessionStateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WaitForSessionStateRequest.ProtoReflect.Descriptor instead.
 func (*WaitForSessionStateRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{16}
+	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{18}
 }
 
-func (x *WaitForSessionStateRequest) GetTargetTaskId() string {
+func (x *WaitForSessionStateRequest) GetTargetSessionId() string {
 	if x != nil {
-		return x.TargetTaskId
+		return x.TargetSessionId
 	}
 	return ""
 }
@@ -1328,7 +1369,7 @@ type WaitForSessionStateResponse struct {
 
 func (x *WaitForSessionStateResponse) Reset() {
 	*x = WaitForSessionStateResponse{}
-	mi := &file_agentfleet_v1_core_proto_msgTypes[17]
+	mi := &file_agentfleet_v1_core_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1340,7 +1381,7 @@ func (x *WaitForSessionStateResponse) String() string {
 func (*WaitForSessionStateResponse) ProtoMessage() {}
 
 func (x *WaitForSessionStateResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_core_proto_msgTypes[17]
+	mi := &file_agentfleet_v1_core_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1353,7 +1394,7 @@ func (x *WaitForSessionStateResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WaitForSessionStateResponse.ProtoReflect.Descriptor instead.
 func (*WaitForSessionStateResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{17}
+	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *WaitForSessionStateResponse) GetLiveState() string {
@@ -1370,28 +1411,28 @@ func (x *WaitForSessionStateResponse) GetTimedOut() bool {
 	return false
 }
 
-type GetTaskRequest struct {
+type GetSessionRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *GetTaskRequest) Reset() {
-	*x = GetTaskRequest{}
-	mi := &file_agentfleet_v1_core_proto_msgTypes[18]
+func (x *GetSessionRequest) Reset() {
+	*x = GetSessionRequest{}
+	mi := &file_agentfleet_v1_core_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *GetTaskRequest) String() string {
+func (x *GetSessionRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*GetTaskRequest) ProtoMessage() {}
+func (*GetSessionRequest) ProtoMessage() {}
 
-func (x *GetTaskRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_core_proto_msgTypes[18]
+func (x *GetSessionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_agentfleet_v1_core_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1402,40 +1443,40 @@ func (x *GetTaskRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use GetTaskRequest.ProtoReflect.Descriptor instead.
-func (*GetTaskRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{18}
+// Deprecated: Use GetSessionRequest.ProtoReflect.Descriptor instead.
+func (*GetSessionRequest) Descriptor() ([]byte, []int) {
+	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{20}
 }
 
-func (x *GetTaskRequest) GetId() string {
+func (x *GetSessionRequest) GetId() string {
 	if x != nil {
 		return x.Id
 	}
 	return ""
 }
 
-type GetTaskResponse struct {
+type GetSessionResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Task          *Task                  `protobuf:"bytes,1,opt,name=task,proto3" json:"task,omitempty"`
+	Session       *Session               `protobuf:"bytes,1,opt,name=session,proto3" json:"session,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *GetTaskResponse) Reset() {
-	*x = GetTaskResponse{}
-	mi := &file_agentfleet_v1_core_proto_msgTypes[19]
+func (x *GetSessionResponse) Reset() {
+	*x = GetSessionResponse{}
+	mi := &file_agentfleet_v1_core_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *GetTaskResponse) String() string {
+func (x *GetSessionResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*GetTaskResponse) ProtoMessage() {}
+func (*GetSessionResponse) ProtoMessage() {}
 
-func (x *GetTaskResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_core_proto_msgTypes[19]
+func (x *GetSessionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_agentfleet_v1_core_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1446,14 +1487,14 @@ func (x *GetTaskResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use GetTaskResponse.ProtoReflect.Descriptor instead.
-func (*GetTaskResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{19}
+// Deprecated: Use GetSessionResponse.ProtoReflect.Descriptor instead.
+func (*GetSessionResponse) Descriptor() ([]byte, []int) {
+	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{21}
 }
 
-func (x *GetTaskResponse) GetTask() *Task {
+func (x *GetSessionResponse) GetSession() *Session {
 	if x != nil {
-		return x.Task
+		return x.Session
 	}
 	return nil
 }
@@ -1467,7 +1508,7 @@ func (x *GetTaskResponse) GetTask() *Task {
 // write, see coreserver's implementation).
 type SetPermissionModeRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	TaskId        string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
 	Mode          string                 `protobuf:"bytes,2,opt,name=mode,proto3" json:"mode,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1475,7 +1516,7 @@ type SetPermissionModeRequest struct {
 
 func (x *SetPermissionModeRequest) Reset() {
 	*x = SetPermissionModeRequest{}
-	mi := &file_agentfleet_v1_core_proto_msgTypes[20]
+	mi := &file_agentfleet_v1_core_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1487,7 +1528,7 @@ func (x *SetPermissionModeRequest) String() string {
 func (*SetPermissionModeRequest) ProtoMessage() {}
 
 func (x *SetPermissionModeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_core_proto_msgTypes[20]
+	mi := &file_agentfleet_v1_core_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1500,12 +1541,12 @@ func (x *SetPermissionModeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetPermissionModeRequest.ProtoReflect.Descriptor instead.
 func (*SetPermissionModeRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{20}
+	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{22}
 }
 
-func (x *SetPermissionModeRequest) GetTaskId() string {
+func (x *SetPermissionModeRequest) GetSessionId() string {
 	if x != nil {
-		return x.TaskId
+		return x.SessionId
 	}
 	return ""
 }
@@ -1519,14 +1560,13 @@ func (x *SetPermissionModeRequest) GetMode() string {
 
 type SetPermissionModeResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Status        string                 `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *SetPermissionModeResponse) Reset() {
 	*x = SetPermissionModeResponse{}
-	mi := &file_agentfleet_v1_core_proto_msgTypes[21]
+	mi := &file_agentfleet_v1_core_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1538,7 +1578,7 @@ func (x *SetPermissionModeResponse) String() string {
 func (*SetPermissionModeResponse) ProtoMessage() {}
 
 func (x *SetPermissionModeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_core_proto_msgTypes[21]
+	mi := &file_agentfleet_v1_core_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1551,214 +1591,7 @@ func (x *SetPermissionModeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetPermissionModeResponse.ProtoReflect.Descriptor instead.
 func (*SetPermissionModeResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{21}
-}
-
-func (x *SetPermissionModeResponse) GetStatus() string {
-	if x != nil {
-		return x.Status
-	}
-	return ""
-}
-
-type HeartbeatRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	TaskId        string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
-	LeaseId       string                 `protobuf:"bytes,2,opt,name=lease_id,json=leaseId,proto3" json:"lease_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *HeartbeatRequest) Reset() {
-	*x = HeartbeatRequest{}
-	mi := &file_agentfleet_v1_core_proto_msgTypes[22]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *HeartbeatRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*HeartbeatRequest) ProtoMessage() {}
-
-func (x *HeartbeatRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_core_proto_msgTypes[22]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use HeartbeatRequest.ProtoReflect.Descriptor instead.
-func (*HeartbeatRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{22}
-}
-
-func (x *HeartbeatRequest) GetTaskId() string {
-	if x != nil {
-		return x.TaskId
-	}
-	return ""
-}
-
-func (x *HeartbeatRequest) GetLeaseId() string {
-	if x != nil {
-		return x.LeaseId
-	}
-	return ""
-}
-
-type HeartbeatResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *HeartbeatResponse) Reset() {
-	*x = HeartbeatResponse{}
-	mi := &file_agentfleet_v1_core_proto_msgTypes[23]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *HeartbeatResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*HeartbeatResponse) ProtoMessage() {}
-
-func (x *HeartbeatResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_core_proto_msgTypes[23]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use HeartbeatResponse.ProtoReflect.Descriptor instead.
-func (*HeartbeatResponse) Descriptor() ([]byte, []int) {
 	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{23}
-}
-
-type SetTaskStatusRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	TaskId        string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
-	Status        string                 `protobuf:"bytes,2,opt,name=status,proto3" json:"status,omitempty"`
-	PrUrl         *string                `protobuf:"bytes,3,opt,name=pr_url,json=prUrl,proto3,oneof" json:"pr_url,omitempty"`
-	Notes         *string                `protobuf:"bytes,4,opt,name=notes,proto3,oneof" json:"notes,omitempty"`
-	LastError     *string                `protobuf:"bytes,5,opt,name=last_error,json=lastError,proto3,oneof" json:"last_error,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *SetTaskStatusRequest) Reset() {
-	*x = SetTaskStatusRequest{}
-	mi := &file_agentfleet_v1_core_proto_msgTypes[24]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *SetTaskStatusRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*SetTaskStatusRequest) ProtoMessage() {}
-
-func (x *SetTaskStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_core_proto_msgTypes[24]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use SetTaskStatusRequest.ProtoReflect.Descriptor instead.
-func (*SetTaskStatusRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{24}
-}
-
-func (x *SetTaskStatusRequest) GetTaskId() string {
-	if x != nil {
-		return x.TaskId
-	}
-	return ""
-}
-
-func (x *SetTaskStatusRequest) GetStatus() string {
-	if x != nil {
-		return x.Status
-	}
-	return ""
-}
-
-func (x *SetTaskStatusRequest) GetPrUrl() string {
-	if x != nil && x.PrUrl != nil {
-		return *x.PrUrl
-	}
-	return ""
-}
-
-func (x *SetTaskStatusRequest) GetNotes() string {
-	if x != nil && x.Notes != nil {
-		return *x.Notes
-	}
-	return ""
-}
-
-func (x *SetTaskStatusRequest) GetLastError() string {
-	if x != nil && x.LastError != nil {
-		return *x.LastError
-	}
-	return ""
-}
-
-type SetTaskStatusResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *SetTaskStatusResponse) Reset() {
-	*x = SetTaskStatusResponse{}
-	mi := &file_agentfleet_v1_core_proto_msgTypes[25]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *SetTaskStatusResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*SetTaskStatusResponse) ProtoMessage() {}
-
-func (x *SetTaskStatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_core_proto_msgTypes[25]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use SetTaskStatusResponse.ProtoReflect.Descriptor instead.
-func (*SetTaskStatusResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{25}
 }
 
 type AppendJournalRequest struct {
@@ -1773,7 +1606,7 @@ type AppendJournalRequest struct {
 
 func (x *AppendJournalRequest) Reset() {
 	*x = AppendJournalRequest{}
-	mi := &file_agentfleet_v1_core_proto_msgTypes[26]
+	mi := &file_agentfleet_v1_core_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1785,7 +1618,7 @@ func (x *AppendJournalRequest) String() string {
 func (*AppendJournalRequest) ProtoMessage() {}
 
 func (x *AppendJournalRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_core_proto_msgTypes[26]
+	mi := &file_agentfleet_v1_core_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1798,7 +1631,7 @@ func (x *AppendJournalRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AppendJournalRequest.ProtoReflect.Descriptor instead.
 func (*AppendJournalRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{26}
+	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *AppendJournalRequest) GetRepo() string {
@@ -1837,7 +1670,7 @@ type AppendJournalResponse struct {
 
 func (x *AppendJournalResponse) Reset() {
 	*x = AppendJournalResponse{}
-	mi := &file_agentfleet_v1_core_proto_msgTypes[27]
+	mi := &file_agentfleet_v1_core_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1849,7 +1682,7 @@ func (x *AppendJournalResponse) String() string {
 func (*AppendJournalResponse) ProtoMessage() {}
 
 func (x *AppendJournalResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_core_proto_msgTypes[27]
+	mi := &file_agentfleet_v1_core_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1862,11 +1695,11 @@ func (x *AppendJournalResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AppendJournalResponse.ProtoReflect.Descriptor instead.
 func (*AppendJournalResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{27}
+	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{25}
 }
 
 // JournalEntry also backs dashboard.proto's GetJournal (imported from
-// here, same reuse pattern as Task/GetTaskRequest/GetTaskResponse below).
+// here, same reuse pattern as Session/GetSessionRequest/GetSessionResponse below).
 type JournalEntry struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -1881,7 +1714,7 @@ type JournalEntry struct {
 
 func (x *JournalEntry) Reset() {
 	*x = JournalEntry{}
-	mi := &file_agentfleet_v1_core_proto_msgTypes[28]
+	mi := &file_agentfleet_v1_core_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1893,7 +1726,7 @@ func (x *JournalEntry) String() string {
 func (*JournalEntry) ProtoMessage() {}
 
 func (x *JournalEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_core_proto_msgTypes[28]
+	mi := &file_agentfleet_v1_core_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1906,7 +1739,7 @@ func (x *JournalEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JournalEntry.ProtoReflect.Descriptor instead.
 func (*JournalEntry) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{28}
+	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *JournalEntry) GetId() int64 {
@@ -1965,7 +1798,7 @@ type SearchJournalRequest struct {
 
 func (x *SearchJournalRequest) Reset() {
 	*x = SearchJournalRequest{}
-	mi := &file_agentfleet_v1_core_proto_msgTypes[29]
+	mi := &file_agentfleet_v1_core_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1977,7 +1810,7 @@ func (x *SearchJournalRequest) String() string {
 func (*SearchJournalRequest) ProtoMessage() {}
 
 func (x *SearchJournalRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_core_proto_msgTypes[29]
+	mi := &file_agentfleet_v1_core_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1990,7 +1823,7 @@ func (x *SearchJournalRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SearchJournalRequest.ProtoReflect.Descriptor instead.
 func (*SearchJournalRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{29}
+	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *SearchJournalRequest) GetRepo() string {
@@ -2023,7 +1856,7 @@ type SearchJournalResponse struct {
 
 func (x *SearchJournalResponse) Reset() {
 	*x = SearchJournalResponse{}
-	mi := &file_agentfleet_v1_core_proto_msgTypes[30]
+	mi := &file_agentfleet_v1_core_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2035,7 +1868,7 @@ func (x *SearchJournalResponse) String() string {
 func (*SearchJournalResponse) ProtoMessage() {}
 
 func (x *SearchJournalResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_core_proto_msgTypes[30]
+	mi := &file_agentfleet_v1_core_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2048,7 +1881,7 @@ func (x *SearchJournalResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SearchJournalResponse.ProtoReflect.Descriptor instead.
 func (*SearchJournalResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{30}
+	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *SearchJournalResponse) GetEntries() []*JournalEntry {
@@ -2058,36 +1891,36 @@ func (x *SearchJournalResponse) GetEntries() []*JournalEntry {
 	return nil
 }
 
-type SaveSessionIdRequest struct {
-	state     protoimpl.MessageState `protogen:"open.v1"`
-	TaskId    string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
-	SessionId string                 `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
-	Model     string                 `protobuf:"bytes,3,opt,name=model,proto3" json:"model,omitempty"`
+type SaveAgentSessionIdRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	SessionId      string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	AgentSessionId string                 `protobuf:"bytes,2,opt,name=agent_session_id,json=agentSessionId,proto3" json:"agent_session_id,omitempty"`
+	Model          string                 `protobuf:"bytes,3,opt,name=model,proto3" json:"model,omitempty"`
 	// The caller pod's lease (docs/adr/0041). Without it this write is keyed
 	// by task alone, so a pod that was torn down but is still shutting down
 	// can overwrite the identity of the pod that replaced it — and
-	// tasks.session_id is precisely what the next resume reads. Empty is
+	// sessions.agent_session_id is precisely what the next resume reads. Empty is
 	// accepted for compatibility with a worker image older than this field.
 	LeaseId       string `protobuf:"bytes,4,opt,name=lease_id,json=leaseId,proto3" json:"lease_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *SaveSessionIdRequest) Reset() {
-	*x = SaveSessionIdRequest{}
-	mi := &file_agentfleet_v1_core_proto_msgTypes[31]
+func (x *SaveAgentSessionIdRequest) Reset() {
+	*x = SaveAgentSessionIdRequest{}
+	mi := &file_agentfleet_v1_core_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *SaveSessionIdRequest) String() string {
+func (x *SaveAgentSessionIdRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*SaveSessionIdRequest) ProtoMessage() {}
+func (*SaveAgentSessionIdRequest) ProtoMessage() {}
 
-func (x *SaveSessionIdRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_core_proto_msgTypes[31]
+func (x *SaveAgentSessionIdRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_agentfleet_v1_core_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2098,60 +1931,60 @@ func (x *SaveSessionIdRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use SaveSessionIdRequest.ProtoReflect.Descriptor instead.
-func (*SaveSessionIdRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{31}
+// Deprecated: Use SaveAgentSessionIdRequest.ProtoReflect.Descriptor instead.
+func (*SaveAgentSessionIdRequest) Descriptor() ([]byte, []int) {
+	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{29}
 }
 
-func (x *SaveSessionIdRequest) GetTaskId() string {
-	if x != nil {
-		return x.TaskId
-	}
-	return ""
-}
-
-func (x *SaveSessionIdRequest) GetSessionId() string {
+func (x *SaveAgentSessionIdRequest) GetSessionId() string {
 	if x != nil {
 		return x.SessionId
 	}
 	return ""
 }
 
-func (x *SaveSessionIdRequest) GetModel() string {
+func (x *SaveAgentSessionIdRequest) GetAgentSessionId() string {
+	if x != nil {
+		return x.AgentSessionId
+	}
+	return ""
+}
+
+func (x *SaveAgentSessionIdRequest) GetModel() string {
 	if x != nil {
 		return x.Model
 	}
 	return ""
 }
 
-func (x *SaveSessionIdRequest) GetLeaseId() string {
+func (x *SaveAgentSessionIdRequest) GetLeaseId() string {
 	if x != nil {
 		return x.LeaseId
 	}
 	return ""
 }
 
-type SaveSessionIdResponse struct {
+type SaveAgentSessionIdResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *SaveSessionIdResponse) Reset() {
-	*x = SaveSessionIdResponse{}
-	mi := &file_agentfleet_v1_core_proto_msgTypes[32]
+func (x *SaveAgentSessionIdResponse) Reset() {
+	*x = SaveAgentSessionIdResponse{}
+	mi := &file_agentfleet_v1_core_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *SaveSessionIdResponse) String() string {
+func (x *SaveAgentSessionIdResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*SaveSessionIdResponse) ProtoMessage() {}
+func (*SaveAgentSessionIdResponse) ProtoMessage() {}
 
-func (x *SaveSessionIdResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_core_proto_msgTypes[32]
+func (x *SaveAgentSessionIdResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_agentfleet_v1_core_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2162,109 +1995,9 @@ func (x *SaveSessionIdResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use SaveSessionIdResponse.ProtoReflect.Descriptor instead.
-func (*SaveSessionIdResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{32}
-}
-
-// Checked immediately before the irreversible push/PR step (mirrors
-// worker/src/db.ts's stillHoldsLease today) — guards against a stale/
-// reclaimed pod completing work after the provisioner has already
-// respawned a fresh one for the same task.
-type StillHoldsLeaseRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	TaskId        string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
-	LeaseId       string                 `protobuf:"bytes,2,opt,name=lease_id,json=leaseId,proto3" json:"lease_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *StillHoldsLeaseRequest) Reset() {
-	*x = StillHoldsLeaseRequest{}
-	mi := &file_agentfleet_v1_core_proto_msgTypes[33]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *StillHoldsLeaseRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*StillHoldsLeaseRequest) ProtoMessage() {}
-
-func (x *StillHoldsLeaseRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_core_proto_msgTypes[33]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use StillHoldsLeaseRequest.ProtoReflect.Descriptor instead.
-func (*StillHoldsLeaseRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{33}
-}
-
-func (x *StillHoldsLeaseRequest) GetTaskId() string {
-	if x != nil {
-		return x.TaskId
-	}
-	return ""
-}
-
-func (x *StillHoldsLeaseRequest) GetLeaseId() string {
-	if x != nil {
-		return x.LeaseId
-	}
-	return ""
-}
-
-type StillHoldsLeaseResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Holds         bool                   `protobuf:"varint,1,opt,name=holds,proto3" json:"holds,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *StillHoldsLeaseResponse) Reset() {
-	*x = StillHoldsLeaseResponse{}
-	mi := &file_agentfleet_v1_core_proto_msgTypes[34]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *StillHoldsLeaseResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*StillHoldsLeaseResponse) ProtoMessage() {}
-
-func (x *StillHoldsLeaseResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_core_proto_msgTypes[34]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use StillHoldsLeaseResponse.ProtoReflect.Descriptor instead.
-func (*StillHoldsLeaseResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{34}
-}
-
-func (x *StillHoldsLeaseResponse) GetHolds() bool {
-	if x != nil {
-		return x.Holds
-	}
-	return false
+// Deprecated: Use SaveAgentSessionIdResponse.ProtoReflect.Descriptor instead.
+func (*SaveAgentSessionIdResponse) Descriptor() ([]byte, []int) {
+	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{30}
 }
 
 // Git diff/branch/elapsed-time/tool-call-summary telemetry, pushed by the
@@ -2273,7 +2006,7 @@ func (x *StillHoldsLeaseResponse) GetHolds() bool {
 // TRANSCRIPT_ENTRY_TYPE_TOOL_CALL entry, never relayed to Discord.
 type PushToolTelemetryRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	TaskId        string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
 	SummaryJson   string                 `protobuf:"bytes,2,opt,name=summary_json,json=summaryJson,proto3" json:"summary_json,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -2281,7 +2014,7 @@ type PushToolTelemetryRequest struct {
 
 func (x *PushToolTelemetryRequest) Reset() {
 	*x = PushToolTelemetryRequest{}
-	mi := &file_agentfleet_v1_core_proto_msgTypes[35]
+	mi := &file_agentfleet_v1_core_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2293,7 +2026,7 @@ func (x *PushToolTelemetryRequest) String() string {
 func (*PushToolTelemetryRequest) ProtoMessage() {}
 
 func (x *PushToolTelemetryRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_core_proto_msgTypes[35]
+	mi := &file_agentfleet_v1_core_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2306,12 +2039,12 @@ func (x *PushToolTelemetryRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PushToolTelemetryRequest.ProtoReflect.Descriptor instead.
 func (*PushToolTelemetryRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{35}
+	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{31}
 }
 
-func (x *PushToolTelemetryRequest) GetTaskId() string {
+func (x *PushToolTelemetryRequest) GetSessionId() string {
 	if x != nil {
-		return x.TaskId
+		return x.SessionId
 	}
 	return ""
 }
@@ -2331,7 +2064,7 @@ type PushToolTelemetryResponse struct {
 
 func (x *PushToolTelemetryResponse) Reset() {
 	*x = PushToolTelemetryResponse{}
-	mi := &file_agentfleet_v1_core_proto_msgTypes[36]
+	mi := &file_agentfleet_v1_core_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2343,7 +2076,7 @@ func (x *PushToolTelemetryResponse) String() string {
 func (*PushToolTelemetryResponse) ProtoMessage() {}
 
 func (x *PushToolTelemetryResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_core_proto_msgTypes[36]
+	mi := &file_agentfleet_v1_core_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2356,7 +2089,7 @@ func (x *PushToolTelemetryResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PushToolTelemetryResponse.ProtoReflect.Descriptor instead.
 func (*PushToolTelemetryResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{36}
+	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{32}
 }
 
 // The mechanism that lets the sidecar deliver new human input to the
@@ -2364,7 +2097,7 @@ func (*PushToolTelemetryResponse) Descriptor() ([]byte, []int) {
 // live feed, not a poll the wrapper initiates on its own schedule.
 type StreamHumanMessagesRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	TaskId        string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
 	SinceSeq      int64                  `protobuf:"varint,2,opt,name=since_seq,json=sinceSeq,proto3" json:"since_seq,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -2372,7 +2105,7 @@ type StreamHumanMessagesRequest struct {
 
 func (x *StreamHumanMessagesRequest) Reset() {
 	*x = StreamHumanMessagesRequest{}
-	mi := &file_agentfleet_v1_core_proto_msgTypes[37]
+	mi := &file_agentfleet_v1_core_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2384,7 +2117,7 @@ func (x *StreamHumanMessagesRequest) String() string {
 func (*StreamHumanMessagesRequest) ProtoMessage() {}
 
 func (x *StreamHumanMessagesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_core_proto_msgTypes[37]
+	mi := &file_agentfleet_v1_core_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2397,12 +2130,12 @@ func (x *StreamHumanMessagesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StreamHumanMessagesRequest.ProtoReflect.Descriptor instead.
 func (*StreamHumanMessagesRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{37}
+	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{33}
 }
 
-func (x *StreamHumanMessagesRequest) GetTaskId() string {
+func (x *StreamHumanMessagesRequest) GetSessionId() string {
 	if x != nil {
-		return x.TaskId
+		return x.SessionId
 	}
 	return ""
 }
@@ -2416,7 +2149,7 @@ func (x *StreamHumanMessagesRequest) GetSinceSeq() int64 {
 
 type QueryLogsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	TaskId        string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`          // Optional - for fleet components
+	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"` // Optional - for fleet components
 	Namespace     string                 `protobuf:"bytes,2,opt,name=namespace,proto3" json:"namespace,omitempty"`                  // Default "agent-fleet"
 	Component     string                 `protobuf:"bytes,3,opt,name=component,proto3" json:"component,omitempty"`                  // worker|sidecar|core|provisioner|e2e|app
 	AppName       string                 `protobuf:"bytes,4,opt,name=app_name,json=appName,proto3" json:"app_name,omitempty"`       // Optional - for component="app"
@@ -2430,7 +2163,7 @@ type QueryLogsRequest struct {
 
 func (x *QueryLogsRequest) Reset() {
 	*x = QueryLogsRequest{}
-	mi := &file_agentfleet_v1_core_proto_msgTypes[38]
+	mi := &file_agentfleet_v1_core_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2442,7 +2175,7 @@ func (x *QueryLogsRequest) String() string {
 func (*QueryLogsRequest) ProtoMessage() {}
 
 func (x *QueryLogsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_core_proto_msgTypes[38]
+	mi := &file_agentfleet_v1_core_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2455,12 +2188,12 @@ func (x *QueryLogsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QueryLogsRequest.ProtoReflect.Descriptor instead.
 func (*QueryLogsRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{38}
+	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{34}
 }
 
-func (x *QueryLogsRequest) GetTaskId() string {
+func (x *QueryLogsRequest) GetSessionId() string {
 	if x != nil {
-		return x.TaskId
+		return x.SessionId
 	}
 	return ""
 }
@@ -2529,7 +2262,7 @@ type LogEntry struct {
 
 func (x *LogEntry) Reset() {
 	*x = LogEntry{}
-	mi := &file_agentfleet_v1_core_proto_msgTypes[39]
+	mi := &file_agentfleet_v1_core_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2541,7 +2274,7 @@ func (x *LogEntry) String() string {
 func (*LogEntry) ProtoMessage() {}
 
 func (x *LogEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_core_proto_msgTypes[39]
+	mi := &file_agentfleet_v1_core_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2554,7 +2287,7 @@ func (x *LogEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LogEntry.ProtoReflect.Descriptor instead.
 func (*LogEntry) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{39}
+	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *LogEntry) GetTimestamp() string {
@@ -2616,7 +2349,7 @@ type QueryLogsResponse struct {
 
 func (x *QueryLogsResponse) Reset() {
 	*x = QueryLogsResponse{}
-	mi := &file_agentfleet_v1_core_proto_msgTypes[40]
+	mi := &file_agentfleet_v1_core_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2628,7 +2361,7 @@ func (x *QueryLogsResponse) String() string {
 func (*QueryLogsResponse) ProtoMessage() {}
 
 func (x *QueryLogsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_core_proto_msgTypes[40]
+	mi := &file_agentfleet_v1_core_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2641,7 +2374,7 @@ func (x *QueryLogsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QueryLogsResponse.ProtoReflect.Descriptor instead.
 func (*QueryLogsResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{40}
+	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *QueryLogsResponse) GetEntries() []*LogEntry {
@@ -2675,7 +2408,7 @@ type ViewLogsRequest struct {
 
 func (x *ViewLogsRequest) Reset() {
 	*x = ViewLogsRequest{}
-	mi := &file_agentfleet_v1_core_proto_msgTypes[41]
+	mi := &file_agentfleet_v1_core_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2687,7 +2420,7 @@ func (x *ViewLogsRequest) String() string {
 func (*ViewLogsRequest) ProtoMessage() {}
 
 func (x *ViewLogsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_core_proto_msgTypes[41]
+	mi := &file_agentfleet_v1_core_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2700,7 +2433,7 @@ func (x *ViewLogsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ViewLogsRequest.ProtoReflect.Descriptor instead.
 func (*ViewLogsRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{41}
+	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *ViewLogsRequest) GetComponent() string {
@@ -2768,7 +2501,7 @@ type ViewLogsResponse struct {
 
 func (x *ViewLogsResponse) Reset() {
 	*x = ViewLogsResponse{}
-	mi := &file_agentfleet_v1_core_proto_msgTypes[42]
+	mi := &file_agentfleet_v1_core_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2780,7 +2513,7 @@ func (x *ViewLogsResponse) String() string {
 func (*ViewLogsResponse) ProtoMessage() {}
 
 func (x *ViewLogsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_core_proto_msgTypes[42]
+	mi := &file_agentfleet_v1_core_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2793,7 +2526,7 @@ func (x *ViewLogsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ViewLogsResponse.ProtoReflect.Descriptor instead.
 func (*ViewLogsResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{42}
+	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *ViewLogsResponse) GetLogsText() string {
@@ -2807,109 +2540,110 @@ var File_agentfleet_v1_core_proto protoreflect.FileDescriptor
 
 const file_agentfleet_v1_core_proto_rawDesc = "" +
 	"\n" +
-	"\x18agentfleet/v1/core.proto\x12\ragentfleet.v1\x1a\x1eagentfleet/v1/transcript.proto\x1a\x1fagentfleet/v1/provisioner.proto\x1a\x19agentfleet/v1/files.proto\"\xb7\x01\n" +
-	"\bPodEvent\x12\x17\n" +
-	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12.\n" +
+	"\x18agentfleet/v1/core.proto\x12\ragentfleet.v1\x1a\x1eagentfleet/v1/transcript.proto\x1a\x1fagentfleet/v1/provisioner.proto\x1a\x19agentfleet/v1/files.proto\"\xbd\x01\n" +
+	"\bPodEvent\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12.\n" +
 	"\x04kind\x18\x02 \x01(\x0e2\x1a.agentfleet.v1.SessionKindR\x04kind\x12-\n" +
 	"\x05phase\x18\x03 \x01(\x0e2\x17.agentfleet.v1.PodPhaseR\x05phase\x12\x19\n" +
 	"\bpod_name\x18\x04 \x01(\tR\apodName\x12\x18\n" +
 	"\amessage\x18\x05 \x01(\tR\amessage\"\x19\n" +
-	"\x17ReportPodEventsResponse\"\xee\x01\n" +
-	"\x12SendMessageRequest\x12\x17\n" +
-	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x12\n" +
+	"\x17ReportPodEventsResponse\"\xf4\x01\n" +
+	"\x12SendMessageRequest\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x12\n" +
 	"\x04from\x18\x02 \x01(\tR\x04from\x12\x12\n" +
 	"\x04text\x18\x03 \x01(\tR\x04text\x126\n" +
 	"\x04type\x18\x04 \x01(\x0e2\".agentfleet.v1.TranscriptEntryTypeR\x04type\x12'\n" +
 	"\x0fidempotency_key\x18\x05 \x01(\tR\x0eidempotencyKey\x12%\n" +
 	"\freply_to_seq\x18\x06 \x01(\x03H\x00R\n" +
 	"replyToSeq\x88\x01\x01B\x0f\n" +
-	"\r_reply_to_seq\"'\n" +
-	"\x13SendMessageResponse\x12\x10\n" +
-	"\x03seq\x18\x01 \x01(\x03R\x03seq\"w\n" +
-	"\x16AskUserQuestionRequest\x12\x17\n" +
-	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12%\n" +
+	"\r_reply_to_seq\"\"\n" +
+	"\x0eAppendResponse\x12\x10\n" +
+	"\x03seq\x18\x01 \x01(\x03R\x03seq\"}\n" +
+	"\x16AskUserQuestionRequest\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12%\n" +
 	"\x0equestions_json\x18\x02 \x01(\tR\rquestionsJson\x12\x1d\n" +
 	"\n" +
-	"timeout_ms\x18\x03 \x01(\x05R\ttimeoutMs\"w\n" +
-	"\x17AskUserQuestionResponse\x12\x16\n" +
-	"\x06status\x18\x01 \x01(\tR\x06status\x12!\n" +
+	"timeout_ms\x18\x03 \x01(\x05R\ttimeoutMs\"\x89\x01\n" +
+	"\x17AskUserQuestionResponse\x12\x1a\n" +
+	"\banswered\x18\x04 \x01(\bR\banswered\x12!\n" +
 	"\fanswers_json\x18\x02 \x01(\tR\vanswersJson\x12!\n" +
-	"\fquestion_seq\x18\x03 \x01(\x03R\vquestionSeq\"f\n" +
-	"\x14RequestE2eEnvRequest\x12\x17\n" +
-	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x1b\n" +
-	"\tstart_cmd\x18\x02 \x01(\tR\bstartCmd\x12\x18\n" +
-	"\aprofile\x18\x03 \x01(\tR\aprofile\"\x91\x02\n" +
-	"\x15RequestE2eEnvResponse\x12\x1f\n" +
-	"\vpreview_url\x18\x01 \x01(\tR\n" +
-	"previewUrl\x12\x16\n" +
-	"\x06status\x18\x02 \x01(\tR\x06status\x12,\n" +
-	"\x12resolved_start_cmd\x18\x03 \x01(\tR\x10resolvedStartCmd\x12!\n" +
-	"\fprofile_name\x18\x04 \x01(\tR\vprofileName\x12\x14\n" +
-	"\x05tools\x18\x05 \x03(\tR\x05tools\x12\x1a\n" +
-	"\bservices\x18\x06 \x03(\tR\bservices\x12<\n" +
-	"\tendpoints\x18\a \x03(\v2\x1e.agentfleet.v1.ServiceEndpointR\tendpoints\",\n" +
-	"\x11KillE2eEnvRequest\x12\x17\n" +
-	"\atask_id\x18\x01 \x01(\tR\x06taskId\",\n" +
-	"\x12KillE2eEnvResponse\x12\x16\n" +
-	"\x06killed\x18\x01 \x01(\bR\x06killed\"\xbb\x05\n" +
-	"\x04Task\x12\x0e\n" +
+	"\fquestion_seq\x18\x03 \x01(\x03R\vquestionSeqJ\x04\b\x01\x10\x02R\x06status\"B\n" +
+	"\rExposeRequest\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x12\n" +
+	"\x04port\x18\x02 \x01(\x05R\x04port\"\"\n" +
+	"\x0eExposeResponse\x12\x10\n" +
+	"\x03url\x18\x01 \x01(\tR\x03url\"0\n" +
+	"\x0fUnexposeRequest\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\"\x12\n" +
+	"\x10UnexposeResponse\"J\n" +
+	"\x15RequestServiceRequest\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x12\n" +
+	"\x04kind\x18\x02 \x01(\tR\x04kind\"*\n" +
+	"\x16RequestServiceResponse\x12\x10\n" +
+	"\x03dsn\x18\x01 \x01(\tR\x03dsn\"\x9b\x06\n" +
+	"\aSession\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04repo\x18\x02 \x01(\tR\x04repo\x12 \n" +
-	"\vdescription\x18\x03 \x01(\tR\vdescription\x12\x16\n" +
-	"\x06status\x18\x04 \x01(\tR\x06status\x12 \n" +
-	"\tthread_id\x18\x05 \x01(\tH\x00R\bthreadId\x88\x01\x01\x12\x1a\n" +
-	"\x06pr_url\x18\x06 \x01(\tH\x01R\x05prUrl\x88\x01\x01\x12 \n" +
-	"\tpod_phase\x18\a \x01(\tH\x02R\bpodPhase\x88\x01\x01\x12$\n" +
-	"\vpod_message\x18\b \x01(\tH\x03R\n" +
-	"podMessage\x88\x01\x01\x12&\n" +
-	"\fheartbeat_at\x18\t \x01(\tH\x04R\vheartbeatAt\x88\x01\x01\x12\x1f\n" +
-	"\vretry_count\x18\n" +
-	" \x01(\x05R\n" +
-	"retryCount\x12\"\n" +
+	"\vdescription\x18\x03 \x01(\tR\vdescription\x12\x19\n" +
+	"\x05title\x18\x12 \x01(\tH\x00R\x05title\x88\x01\x01\x12 \n" +
+	"\tpod_phase\x18\a \x01(\tH\x01R\bpodPhase\x88\x01\x01\x12$\n" +
+	"\vpod_message\x18\b \x01(\tH\x02R\n" +
+	"podMessage\x88\x01\x01\x12\"\n" +
 	"\n" +
-	"last_error\x18\v \x01(\tH\x05R\tlastError\x88\x01\x01\x12\"\n" +
+	"last_error\x18\v \x01(\tH\x03R\tlastError\x88\x01\x01\x12-\n" +
+	"\x10agent_session_id\x18\f \x01(\tH\x04R\x0eagentSessionId\x88\x01\x01\x12\x19\n" +
+	"\x05model\x18\x16 \x01(\tH\x05R\x05model\x88\x01\x01\x12)\n" +
+	"\x0elast_active_at\x18\r \x01(\tH\x06R\flastActiveAt\x88\x01\x01\x12,\n" +
+	"\x0fpermission_mode\x18\x0e \x01(\tH\aR\x0epermissionMode\x88\x01\x01\x12\x1d\n" +
 	"\n" +
-	"session_id\x18\f \x01(\tH\x06R\tsessionId\x88\x01\x01\x12)\n" +
-	"\x0elast_active_at\x18\r \x01(\tH\aR\flastActiveAt\x88\x01\x01\x12,\n" +
-	"\x0fpermission_mode\x18\x0e \x01(\tH\bR\x0epermissionMode\x88\x01\x01\x12%\n" +
-	"\x0eawaiting_human\x18\x0f \x01(\bR\rawaitingHuman\x12\x12\n" +
-	"\x04kind\x18\x10 \x01(\tR\x04kind\x12\x1d\n" +
-	"\n" +
-	"live_state\x18\x11 \x01(\tR\tliveStateB\f\n" +
-	"\n" +
-	"_thread_idB\t\n" +
-	"\a_pr_urlB\f\n" +
+	"live_state\x18\x11 \x01(\tR\tliveState\x12+\n" +
+	"\x11pending_decisions\x18\x13 \x01(\x05R\x10pendingDecisions\x12\x1e\n" +
+	"\bswept_at\x18\x14 \x01(\tH\bR\asweptAt\x88\x01\x01\x12$\n" +
+	"\varchived_at\x18\x15 \x01(\tH\tR\n" +
+	"archivedAt\x88\x01\x01B\b\n" +
+	"\x06_titleB\f\n" +
 	"\n" +
 	"_pod_phaseB\x0e\n" +
-	"\f_pod_messageB\x0f\n" +
-	"\r_heartbeat_atB\r\n" +
-	"\v_last_errorB\r\n" +
-	"\v_session_idB\x11\n" +
+	"\f_pod_messageB\r\n" +
+	"\v_last_errorB\x13\n" +
+	"\x11_agent_session_idB\b\n" +
+	"\x06_modelB\x11\n" +
 	"\x0f_last_active_atB\x12\n" +
-	"\x10_permission_mode\"\x96\x01\n" +
-	"\x0eSessionSummary\x12\x17\n" +
-	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x12\n" +
+	"\x10_permission_modeB\v\n" +
+	"\t_swept_atB\x0e\n" +
+	"\f_archived_atJ\x04\b\x04\x10\x05J\x04\b\x06\x10\aJ\x04\b\t\x10\n" +
+	"J\x04\b\n" +
+	"\x10\vJ\x04\b\x0f\x10\x10J\x04\b\x10\x10\x11J\x04\b\x05\x10\x06R\x06statusR\x06pr_urlR\fheartbeat_atR\vretry_countR\x0eawaiting_humanR\x04kindR\tthread_id\"\x9c\x01\n" +
+	"\x0eSessionSummary\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x12\n" +
 	"\x04repo\x18\x02 \x01(\tR\x04repo\x12 \n" +
 	"\vdescription\x18\x03 \x01(\tR\vdescription\x12\x16\n" +
 	"\x06status\x18\x04 \x01(\tR\x06status\x12\x1d\n" +
 	"\n" +
-	"live_state\x18\x05 \x01(\tR\tliveState\";\n" +
-	"\x13ListSessionsRequest\x12$\n" +
-	"\x0ecaller_task_id\x18\x01 \x01(\tR\fcallerTaskId\"Q\n" +
-	"\x14ListSessionsResponse\x129\n" +
-	"\bsessions\x18\x01 \x03(\v2\x1d.agentfleet.v1.SessionSummaryR\bsessions\"\x8c\x01\n" +
-	"\x14PromptSessionRequest\x12$\n" +
-	"\x0ecaller_task_id\x18\x01 \x01(\tR\fcallerTaskId\x12$\n" +
-	"\x0etarget_task_id\x18\x02 \x01(\tR\ftargetTaskId\x12\x12\n" +
+	"live_state\x18\x05 \x01(\tR\tliveState\"E\n" +
+	"\x17ListPeerSessionsRequest\x12*\n" +
+	"\x11caller_session_id\x18\x01 \x01(\tR\x0fcallerSessionId\"U\n" +
+	"\x18ListPeerSessionsResponse\x129\n" +
+	"\bsessions\x18\x01 \x03(\v2\x1d.agentfleet.v1.SessionSummaryR\bsessions\"\x98\x01\n" +
+	"\x14PromptSessionRequest\x12*\n" +
+	"\x11caller_session_id\x18\x01 \x01(\tR\x0fcallerSessionId\x12*\n" +
+	"\x11target_session_id\x18\x02 \x01(\tR\x0ftargetSessionId\x12\x12\n" +
 	"\x04text\x18\x03 \x01(\tR\x04text\x12\x14\n" +
 	"\x05depth\x18\x04 \x01(\x05R\x05depth\"c\n" +
 	"\x15PromptSessionResponse\x12\x10\n" +
 	"\x03seq\x18\x01 \x01(\x03R\x03seq\x12\x1d\n" +
 	"\n" +
 	"live_state\x18\x02 \x01(\tR\tliveState\x12\x19\n" +
-	"\bpod_name\x18\x03 \x01(\tR\apodName\"\x94\x01\n" +
-	"\x1aWaitForSessionStateRequest\x12$\n" +
-	"\x0etarget_task_id\x18\x01 \x01(\tR\ftargetTaskId\x12\x1b\n" +
+	"\bpod_name\x18\x03 \x01(\tR\apodName\"\x9a\x01\n" +
+	"\x1aWaitForSessionStateRequest\x12*\n" +
+	"\x11target_session_id\x18\x01 \x01(\tR\x0ftargetSessionId\x12\x1b\n" +
 	"\tafter_seq\x18\x04 \x01(\x03R\bafterSeq\x12\x14\n" +
 	"\x05until\x18\x02 \x03(\tR\x05until\x12\x1d\n" +
 	"\n" +
@@ -2917,31 +2651,16 @@ const file_agentfleet_v1_core_proto_rawDesc = "" +
 	"\x1bWaitForSessionStateResponse\x12\x1d\n" +
 	"\n" +
 	"live_state\x18\x01 \x01(\tR\tliveState\x12\x1b\n" +
-	"\ttimed_out\x18\x02 \x01(\bR\btimedOut\" \n" +
-	"\x0eGetTaskRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\":\n" +
-	"\x0fGetTaskResponse\x12'\n" +
-	"\x04task\x18\x01 \x01(\v2\x13.agentfleet.v1.TaskR\x04task\"G\n" +
-	"\x18SetPermissionModeRequest\x12\x17\n" +
-	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x12\n" +
-	"\x04mode\x18\x02 \x01(\tR\x04mode\"3\n" +
-	"\x19SetPermissionModeResponse\x12\x16\n" +
-	"\x06status\x18\x01 \x01(\tR\x06status\"F\n" +
-	"\x10HeartbeatRequest\x12\x17\n" +
-	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x19\n" +
-	"\blease_id\x18\x02 \x01(\tR\aleaseId\"\x13\n" +
-	"\x11HeartbeatResponse\"\xc6\x01\n" +
-	"\x14SetTaskStatusRequest\x12\x17\n" +
-	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x16\n" +
-	"\x06status\x18\x02 \x01(\tR\x06status\x12\x1a\n" +
-	"\x06pr_url\x18\x03 \x01(\tH\x00R\x05prUrl\x88\x01\x01\x12\x19\n" +
-	"\x05notes\x18\x04 \x01(\tH\x01R\x05notes\x88\x01\x01\x12\"\n" +
+	"\ttimed_out\x18\x02 \x01(\bR\btimedOut\"#\n" +
+	"\x11GetSessionRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"F\n" +
+	"\x12GetSessionResponse\x120\n" +
+	"\asession\x18\x01 \x01(\v2\x16.agentfleet.v1.SessionR\asession\"M\n" +
+	"\x18SetPermissionModeRequest\x12\x1d\n" +
 	"\n" +
-	"last_error\x18\x05 \x01(\tH\x02R\tlastError\x88\x01\x01B\t\n" +
-	"\a_pr_urlB\b\n" +
-	"\x06_notesB\r\n" +
-	"\v_last_error\"\x17\n" +
-	"\x15SetTaskStatusResponse\"\x82\x01\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x12\n" +
+	"\x04mode\x18\x02 \x01(\tR\x04mode\"\x1b\n" +
+	"\x19SetPermissionModeResponse\"\x82\x01\n" +
 	"\x14AppendJournalRequest\x12\x12\n" +
 	"\x04repo\x18\x01 \x01(\tR\x04repo\x12\x14\n" +
 	"\x05actor\x18\x02 \x01(\tR\x05actor\x12\x1d\n" +
@@ -2963,28 +2682,26 @@ const file_agentfleet_v1_core_proto_rawDesc = "" +
 	"\x05query\x18\x02 \x01(\tR\x05query\x12\x14\n" +
 	"\x05limit\x18\x03 \x01(\x05R\x05limit\"N\n" +
 	"\x15SearchJournalResponse\x125\n" +
-	"\aentries\x18\x01 \x03(\v2\x1b.agentfleet.v1.JournalEntryR\aentries\"\x7f\n" +
-	"\x14SaveSessionIdRequest\x12\x17\n" +
-	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x1d\n" +
+	"\aentries\x18\x01 \x03(\v2\x1b.agentfleet.v1.JournalEntryR\aentries\"\x95\x01\n" +
+	"\x19SaveAgentSessionIdRequest\x12\x1d\n" +
 	"\n" +
-	"session_id\x18\x02 \x01(\tR\tsessionId\x12\x14\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12(\n" +
+	"\x10agent_session_id\x18\x02 \x01(\tR\x0eagentSessionId\x12\x14\n" +
 	"\x05model\x18\x03 \x01(\tR\x05model\x12\x19\n" +
-	"\blease_id\x18\x04 \x01(\tR\aleaseId\"\x17\n" +
-	"\x15SaveSessionIdResponse\"L\n" +
-	"\x16StillHoldsLeaseRequest\x12\x17\n" +
-	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x19\n" +
-	"\blease_id\x18\x02 \x01(\tR\aleaseId\"/\n" +
-	"\x17StillHoldsLeaseResponse\x12\x14\n" +
-	"\x05holds\x18\x01 \x01(\bR\x05holds\"V\n" +
-	"\x18PushToolTelemetryRequest\x12\x17\n" +
-	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12!\n" +
+	"\blease_id\x18\x04 \x01(\tR\aleaseId\"\x1c\n" +
+	"\x1aSaveAgentSessionIdResponse\"\\\n" +
+	"\x18PushToolTelemetryRequest\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12!\n" +
 	"\fsummary_json\x18\x02 \x01(\tR\vsummaryJson\"\x1b\n" +
-	"\x19PushToolTelemetryResponse\"R\n" +
-	"\x1aStreamHumanMessagesRequest\x12\x17\n" +
-	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x1b\n" +
-	"\tsince_seq\x18\x02 \x01(\x03R\bsinceSeq\"\xe8\x01\n" +
-	"\x10QueryLogsRequest\x12\x17\n" +
-	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x1c\n" +
+	"\x19PushToolTelemetryResponse\"X\n" +
+	"\x1aStreamHumanMessagesRequest\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x1b\n" +
+	"\tsince_seq\x18\x02 \x01(\x03R\bsinceSeq\"\xee\x01\n" +
+	"\x10QueryLogsRequest\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x1c\n" +
 	"\tnamespace\x18\x02 \x01(\tR\tnamespace\x12\x1c\n" +
 	"\tcomponent\x18\x03 \x01(\tR\tcomponent\x12\x19\n" +
 	"\bapp_name\x18\x04 \x01(\tR\aappName\x12\x14\n" +
@@ -3025,23 +2742,21 @@ const file_agentfleet_v1_core_proto_rawDesc = "" +
 	"\x11POD_PHASE_RUNNING\x10\x03\x12\x15\n" +
 	"\x11POD_PHASE_CRASHED\x10\x04\x12\x18\n" +
 	"\x14POD_PHASE_TERMINATED\x10\x05\x12\x1a\n" +
-	"\x16POD_PHASE_PROVISIONING\x10\x062\xb7\x11\n" +
+	"\x16POD_PHASE_PROVISIONING\x10\x062\x8c\x10\n" +
 	"\vCoreService\x12T\n" +
-	"\x0fReportPodEvents\x12\x17.agentfleet.v1.PodEvent\x1a&.agentfleet.v1.ReportPodEventsResponse(\x01\x12T\n" +
-	"\vSendMessage\x12!.agentfleet.v1.SendMessageRequest\x1a\".agentfleet.v1.SendMessageResponse\x12h\n" +
+	"\x0fReportPodEvents\x12\x17.agentfleet.v1.PodEvent\x1a&.agentfleet.v1.ReportPodEventsResponse(\x01\x12O\n" +
+	"\vSendMessage\x12!.agentfleet.v1.SendMessageRequest\x1a\x1d.agentfleet.v1.AppendResponse\x12h\n" +
 	"\x0fWaitForMessages\x12).agentfleet.v1.ReadTranscriptSinceRequest\x1a*.agentfleet.v1.ReadTranscriptSinceResponse\x12`\n" +
-	"\x0fAskUserQuestion\x12%.agentfleet.v1.AskUserQuestionRequest\x1a&.agentfleet.v1.AskUserQuestionResponse\x12Z\n" +
-	"\rRequestE2eEnv\x12#.agentfleet.v1.RequestE2eEnvRequest\x1a$.agentfleet.v1.RequestE2eEnvResponse\x12Q\n" +
+	"\x0fAskUserQuestion\x12%.agentfleet.v1.AskUserQuestionRequest\x1a&.agentfleet.v1.AskUserQuestionResponse\x12E\n" +
+	"\x06Expose\x12\x1c.agentfleet.v1.ExposeRequest\x1a\x1d.agentfleet.v1.ExposeResponse\x12K\n" +
+	"\bUnexpose\x12\x1e.agentfleet.v1.UnexposeRequest\x1a\x1f.agentfleet.v1.UnexposeResponse\x12]\n" +
+	"\x0eRequestService\x12$.agentfleet.v1.RequestServiceRequest\x1a%.agentfleet.v1.RequestServiceResponse\x12Q\n" +
 	"\n" +
-	"KillE2eEnv\x12 .agentfleet.v1.KillE2eEnvRequest\x1a!.agentfleet.v1.KillE2eEnvResponse\x12H\n" +
-	"\aGetTask\x12\x1d.agentfleet.v1.GetTaskRequest\x1a\x1e.agentfleet.v1.GetTaskResponse\x12f\n" +
-	"\x11SetPermissionMode\x12'.agentfleet.v1.SetPermissionModeRequest\x1a(.agentfleet.v1.SetPermissionModeResponse\x12N\n" +
-	"\tHeartbeat\x12\x1f.agentfleet.v1.HeartbeatRequest\x1a .agentfleet.v1.HeartbeatResponse\x12Z\n" +
-	"\rSetTaskStatus\x12#.agentfleet.v1.SetTaskStatusRequest\x1a$.agentfleet.v1.SetTaskStatusResponse\x12Z\n" +
+	"GetSession\x12 .agentfleet.v1.GetSessionRequest\x1a!.agentfleet.v1.GetSessionResponse\x12f\n" +
+	"\x11SetPermissionMode\x12'.agentfleet.v1.SetPermissionModeRequest\x1a(.agentfleet.v1.SetPermissionModeResponse\x12Z\n" +
 	"\rAppendJournal\x12#.agentfleet.v1.AppendJournalRequest\x1a$.agentfleet.v1.AppendJournalResponse\x12Z\n" +
-	"\rSearchJournal\x12#.agentfleet.v1.SearchJournalRequest\x1a$.agentfleet.v1.SearchJournalResponse\x12Z\n" +
-	"\rSaveSessionId\x12#.agentfleet.v1.SaveSessionIdRequest\x1a$.agentfleet.v1.SaveSessionIdResponse\x12`\n" +
-	"\x0fStillHoldsLease\x12%.agentfleet.v1.StillHoldsLeaseRequest\x1a&.agentfleet.v1.StillHoldsLeaseResponse\x12f\n" +
+	"\rSearchJournal\x12#.agentfleet.v1.SearchJournalRequest\x1a$.agentfleet.v1.SearchJournalResponse\x12i\n" +
+	"\x12SaveAgentSessionId\x12(.agentfleet.v1.SaveAgentSessionIdRequest\x1a).agentfleet.v1.SaveAgentSessionIdResponse\x12f\n" +
 	"\x11PushToolTelemetry\x12'.agentfleet.v1.PushToolTelemetryRequest\x1a(.agentfleet.v1.PushToolTelemetryResponse\x12b\n" +
 	"\x13StreamHumanMessages\x12).agentfleet.v1.StreamHumanMessagesRequest\x1a\x1e.agentfleet.v1.TranscriptEntry0\x01\x12N\n" +
 	"\tListFiles\x12\x1f.agentfleet.v1.ListFilesRequest\x1a .agentfleet.v1.ListFilesResponse\x12c\n" +
@@ -3049,8 +2764,8 @@ const file_agentfleet_v1_core_proto_rawDesc = "" +
 	"\x12GetFileDownloadUrl\x12(.agentfleet.v1.GetFileDownloadUrlRequest\x1a).agentfleet.v1.GetFileDownloadUrlResponse\x12Q\n" +
 	"\n" +
 	"DeleteFile\x12 .agentfleet.v1.DeleteFileRequest\x1a!.agentfleet.v1.DeleteFileResponse\x12K\n" +
-	"\bViewLogs\x12\x1e.agentfleet.v1.ViewLogsRequest\x1a\x1f.agentfleet.v1.ViewLogsResponse\x12W\n" +
-	"\fListSessions\x12\".agentfleet.v1.ListSessionsRequest\x1a#.agentfleet.v1.ListSessionsResponse\x12Z\n" +
+	"\bViewLogs\x12\x1e.agentfleet.v1.ViewLogsRequest\x1a\x1f.agentfleet.v1.ViewLogsResponse\x12c\n" +
+	"\x10ListPeerSessions\x12&.agentfleet.v1.ListPeerSessionsRequest\x1a'.agentfleet.v1.ListPeerSessionsResponse\x12Z\n" +
 	"\rPromptSession\x12#.agentfleet.v1.PromptSessionRequest\x1a$.agentfleet.v1.PromptSessionResponse\x12l\n" +
 	"\x13WaitForSessionState\x12).agentfleet.v1.WaitForSessionStateRequest\x1a*.agentfleet.v1.WaitForSessionStateResponseBMZKgithub.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1;agentfleetv1b\x06proto3"
 
@@ -3067,129 +2782,119 @@ func file_agentfleet_v1_core_proto_rawDescGZIP() []byte {
 }
 
 var file_agentfleet_v1_core_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_agentfleet_v1_core_proto_msgTypes = make([]protoimpl.MessageInfo, 43)
+var file_agentfleet_v1_core_proto_msgTypes = make([]protoimpl.MessageInfo, 39)
 var file_agentfleet_v1_core_proto_goTypes = []any{
 	(PodPhase)(0),                       // 0: agentfleet.v1.PodPhase
 	(*PodEvent)(nil),                    // 1: agentfleet.v1.PodEvent
 	(*ReportPodEventsResponse)(nil),     // 2: agentfleet.v1.ReportPodEventsResponse
 	(*SendMessageRequest)(nil),          // 3: agentfleet.v1.SendMessageRequest
-	(*SendMessageResponse)(nil),         // 4: agentfleet.v1.SendMessageResponse
+	(*AppendResponse)(nil),              // 4: agentfleet.v1.AppendResponse
 	(*AskUserQuestionRequest)(nil),      // 5: agentfleet.v1.AskUserQuestionRequest
 	(*AskUserQuestionResponse)(nil),     // 6: agentfleet.v1.AskUserQuestionResponse
-	(*RequestE2EEnvRequest)(nil),        // 7: agentfleet.v1.RequestE2eEnvRequest
-	(*RequestE2EEnvResponse)(nil),       // 8: agentfleet.v1.RequestE2eEnvResponse
-	(*KillE2EEnvRequest)(nil),           // 9: agentfleet.v1.KillE2eEnvRequest
-	(*KillE2EEnvResponse)(nil),          // 10: agentfleet.v1.KillE2eEnvResponse
-	(*Task)(nil),                        // 11: agentfleet.v1.Task
-	(*SessionSummary)(nil),              // 12: agentfleet.v1.SessionSummary
-	(*ListSessionsRequest)(nil),         // 13: agentfleet.v1.ListSessionsRequest
-	(*ListSessionsResponse)(nil),        // 14: agentfleet.v1.ListSessionsResponse
-	(*PromptSessionRequest)(nil),        // 15: agentfleet.v1.PromptSessionRequest
-	(*PromptSessionResponse)(nil),       // 16: agentfleet.v1.PromptSessionResponse
-	(*WaitForSessionStateRequest)(nil),  // 17: agentfleet.v1.WaitForSessionStateRequest
-	(*WaitForSessionStateResponse)(nil), // 18: agentfleet.v1.WaitForSessionStateResponse
-	(*GetTaskRequest)(nil),              // 19: agentfleet.v1.GetTaskRequest
-	(*GetTaskResponse)(nil),             // 20: agentfleet.v1.GetTaskResponse
-	(*SetPermissionModeRequest)(nil),    // 21: agentfleet.v1.SetPermissionModeRequest
-	(*SetPermissionModeResponse)(nil),   // 22: agentfleet.v1.SetPermissionModeResponse
-	(*HeartbeatRequest)(nil),            // 23: agentfleet.v1.HeartbeatRequest
-	(*HeartbeatResponse)(nil),           // 24: agentfleet.v1.HeartbeatResponse
-	(*SetTaskStatusRequest)(nil),        // 25: agentfleet.v1.SetTaskStatusRequest
-	(*SetTaskStatusResponse)(nil),       // 26: agentfleet.v1.SetTaskStatusResponse
-	(*AppendJournalRequest)(nil),        // 27: agentfleet.v1.AppendJournalRequest
-	(*AppendJournalResponse)(nil),       // 28: agentfleet.v1.AppendJournalResponse
-	(*JournalEntry)(nil),                // 29: agentfleet.v1.JournalEntry
-	(*SearchJournalRequest)(nil),        // 30: agentfleet.v1.SearchJournalRequest
-	(*SearchJournalResponse)(nil),       // 31: agentfleet.v1.SearchJournalResponse
-	(*SaveSessionIdRequest)(nil),        // 32: agentfleet.v1.SaveSessionIdRequest
-	(*SaveSessionIdResponse)(nil),       // 33: agentfleet.v1.SaveSessionIdResponse
-	(*StillHoldsLeaseRequest)(nil),      // 34: agentfleet.v1.StillHoldsLeaseRequest
-	(*StillHoldsLeaseResponse)(nil),     // 35: agentfleet.v1.StillHoldsLeaseResponse
-	(*PushToolTelemetryRequest)(nil),    // 36: agentfleet.v1.PushToolTelemetryRequest
-	(*PushToolTelemetryResponse)(nil),   // 37: agentfleet.v1.PushToolTelemetryResponse
-	(*StreamHumanMessagesRequest)(nil),  // 38: agentfleet.v1.StreamHumanMessagesRequest
-	(*QueryLogsRequest)(nil),            // 39: agentfleet.v1.QueryLogsRequest
-	(*LogEntry)(nil),                    // 40: agentfleet.v1.LogEntry
-	(*QueryLogsResponse)(nil),           // 41: agentfleet.v1.QueryLogsResponse
-	(*ViewLogsRequest)(nil),             // 42: agentfleet.v1.ViewLogsRequest
-	(*ViewLogsResponse)(nil),            // 43: agentfleet.v1.ViewLogsResponse
-	(SessionKind)(0),                    // 44: agentfleet.v1.SessionKind
-	(TranscriptEntryType)(0),            // 45: agentfleet.v1.TranscriptEntryType
-	(*ServiceEndpoint)(nil),             // 46: agentfleet.v1.ServiceEndpoint
-	(*ReadTranscriptSinceRequest)(nil),  // 47: agentfleet.v1.ReadTranscriptSinceRequest
-	(*ListFilesRequest)(nil),            // 48: agentfleet.v1.ListFilesRequest
-	(*GetFileUploadUrlRequest)(nil),     // 49: agentfleet.v1.GetFileUploadUrlRequest
-	(*GetFileDownloadUrlRequest)(nil),   // 50: agentfleet.v1.GetFileDownloadUrlRequest
-	(*DeleteFileRequest)(nil),           // 51: agentfleet.v1.DeleteFileRequest
-	(*ReadTranscriptSinceResponse)(nil), // 52: agentfleet.v1.ReadTranscriptSinceResponse
-	(*TranscriptEntry)(nil),             // 53: agentfleet.v1.TranscriptEntry
-	(*ListFilesResponse)(nil),           // 54: agentfleet.v1.ListFilesResponse
-	(*GetFileUploadUrlResponse)(nil),    // 55: agentfleet.v1.GetFileUploadUrlResponse
-	(*GetFileDownloadUrlResponse)(nil),  // 56: agentfleet.v1.GetFileDownloadUrlResponse
-	(*DeleteFileResponse)(nil),          // 57: agentfleet.v1.DeleteFileResponse
+	(*ExposeRequest)(nil),               // 7: agentfleet.v1.ExposeRequest
+	(*ExposeResponse)(nil),              // 8: agentfleet.v1.ExposeResponse
+	(*UnexposeRequest)(nil),             // 9: agentfleet.v1.UnexposeRequest
+	(*UnexposeResponse)(nil),            // 10: agentfleet.v1.UnexposeResponse
+	(*RequestServiceRequest)(nil),       // 11: agentfleet.v1.RequestServiceRequest
+	(*RequestServiceResponse)(nil),      // 12: agentfleet.v1.RequestServiceResponse
+	(*Session)(nil),                     // 13: agentfleet.v1.Session
+	(*SessionSummary)(nil),              // 14: agentfleet.v1.SessionSummary
+	(*ListPeerSessionsRequest)(nil),     // 15: agentfleet.v1.ListPeerSessionsRequest
+	(*ListPeerSessionsResponse)(nil),    // 16: agentfleet.v1.ListPeerSessionsResponse
+	(*PromptSessionRequest)(nil),        // 17: agentfleet.v1.PromptSessionRequest
+	(*PromptSessionResponse)(nil),       // 18: agentfleet.v1.PromptSessionResponse
+	(*WaitForSessionStateRequest)(nil),  // 19: agentfleet.v1.WaitForSessionStateRequest
+	(*WaitForSessionStateResponse)(nil), // 20: agentfleet.v1.WaitForSessionStateResponse
+	(*GetSessionRequest)(nil),           // 21: agentfleet.v1.GetSessionRequest
+	(*GetSessionResponse)(nil),          // 22: agentfleet.v1.GetSessionResponse
+	(*SetPermissionModeRequest)(nil),    // 23: agentfleet.v1.SetPermissionModeRequest
+	(*SetPermissionModeResponse)(nil),   // 24: agentfleet.v1.SetPermissionModeResponse
+	(*AppendJournalRequest)(nil),        // 25: agentfleet.v1.AppendJournalRequest
+	(*AppendJournalResponse)(nil),       // 26: agentfleet.v1.AppendJournalResponse
+	(*JournalEntry)(nil),                // 27: agentfleet.v1.JournalEntry
+	(*SearchJournalRequest)(nil),        // 28: agentfleet.v1.SearchJournalRequest
+	(*SearchJournalResponse)(nil),       // 29: agentfleet.v1.SearchJournalResponse
+	(*SaveAgentSessionIdRequest)(nil),   // 30: agentfleet.v1.SaveAgentSessionIdRequest
+	(*SaveAgentSessionIdResponse)(nil),  // 31: agentfleet.v1.SaveAgentSessionIdResponse
+	(*PushToolTelemetryRequest)(nil),    // 32: agentfleet.v1.PushToolTelemetryRequest
+	(*PushToolTelemetryResponse)(nil),   // 33: agentfleet.v1.PushToolTelemetryResponse
+	(*StreamHumanMessagesRequest)(nil),  // 34: agentfleet.v1.StreamHumanMessagesRequest
+	(*QueryLogsRequest)(nil),            // 35: agentfleet.v1.QueryLogsRequest
+	(*LogEntry)(nil),                    // 36: agentfleet.v1.LogEntry
+	(*QueryLogsResponse)(nil),           // 37: agentfleet.v1.QueryLogsResponse
+	(*ViewLogsRequest)(nil),             // 38: agentfleet.v1.ViewLogsRequest
+	(*ViewLogsResponse)(nil),            // 39: agentfleet.v1.ViewLogsResponse
+	(SessionKind)(0),                    // 40: agentfleet.v1.SessionKind
+	(TranscriptEntryType)(0),            // 41: agentfleet.v1.TranscriptEntryType
+	(*ReadTranscriptSinceRequest)(nil),  // 42: agentfleet.v1.ReadTranscriptSinceRequest
+	(*ListFilesRequest)(nil),            // 43: agentfleet.v1.ListFilesRequest
+	(*GetFileUploadUrlRequest)(nil),     // 44: agentfleet.v1.GetFileUploadUrlRequest
+	(*GetFileDownloadUrlRequest)(nil),   // 45: agentfleet.v1.GetFileDownloadUrlRequest
+	(*DeleteFileRequest)(nil),           // 46: agentfleet.v1.DeleteFileRequest
+	(*ReadTranscriptSinceResponse)(nil), // 47: agentfleet.v1.ReadTranscriptSinceResponse
+	(*TranscriptEntry)(nil),             // 48: agentfleet.v1.TranscriptEntry
+	(*ListFilesResponse)(nil),           // 49: agentfleet.v1.ListFilesResponse
+	(*GetFileUploadUrlResponse)(nil),    // 50: agentfleet.v1.GetFileUploadUrlResponse
+	(*GetFileDownloadUrlResponse)(nil),  // 51: agentfleet.v1.GetFileDownloadUrlResponse
+	(*DeleteFileResponse)(nil),          // 52: agentfleet.v1.DeleteFileResponse
 }
 var file_agentfleet_v1_core_proto_depIdxs = []int32{
-	44, // 0: agentfleet.v1.PodEvent.kind:type_name -> agentfleet.v1.SessionKind
+	40, // 0: agentfleet.v1.PodEvent.kind:type_name -> agentfleet.v1.SessionKind
 	0,  // 1: agentfleet.v1.PodEvent.phase:type_name -> agentfleet.v1.PodPhase
-	45, // 2: agentfleet.v1.SendMessageRequest.type:type_name -> agentfleet.v1.TranscriptEntryType
-	46, // 3: agentfleet.v1.RequestE2eEnvResponse.endpoints:type_name -> agentfleet.v1.ServiceEndpoint
-	12, // 4: agentfleet.v1.ListSessionsResponse.sessions:type_name -> agentfleet.v1.SessionSummary
-	11, // 5: agentfleet.v1.GetTaskResponse.task:type_name -> agentfleet.v1.Task
-	29, // 6: agentfleet.v1.SearchJournalResponse.entries:type_name -> agentfleet.v1.JournalEntry
-	40, // 7: agentfleet.v1.QueryLogsResponse.entries:type_name -> agentfleet.v1.LogEntry
-	1,  // 8: agentfleet.v1.CoreService.ReportPodEvents:input_type -> agentfleet.v1.PodEvent
-	3,  // 9: agentfleet.v1.CoreService.SendMessage:input_type -> agentfleet.v1.SendMessageRequest
-	47, // 10: agentfleet.v1.CoreService.WaitForMessages:input_type -> agentfleet.v1.ReadTranscriptSinceRequest
-	5,  // 11: agentfleet.v1.CoreService.AskUserQuestion:input_type -> agentfleet.v1.AskUserQuestionRequest
-	7,  // 12: agentfleet.v1.CoreService.RequestE2eEnv:input_type -> agentfleet.v1.RequestE2eEnvRequest
-	9,  // 13: agentfleet.v1.CoreService.KillE2eEnv:input_type -> agentfleet.v1.KillE2eEnvRequest
-	19, // 14: agentfleet.v1.CoreService.GetTask:input_type -> agentfleet.v1.GetTaskRequest
-	21, // 15: agentfleet.v1.CoreService.SetPermissionMode:input_type -> agentfleet.v1.SetPermissionModeRequest
-	23, // 16: agentfleet.v1.CoreService.Heartbeat:input_type -> agentfleet.v1.HeartbeatRequest
-	25, // 17: agentfleet.v1.CoreService.SetTaskStatus:input_type -> agentfleet.v1.SetTaskStatusRequest
-	27, // 18: agentfleet.v1.CoreService.AppendJournal:input_type -> agentfleet.v1.AppendJournalRequest
-	30, // 19: agentfleet.v1.CoreService.SearchJournal:input_type -> agentfleet.v1.SearchJournalRequest
-	32, // 20: agentfleet.v1.CoreService.SaveSessionId:input_type -> agentfleet.v1.SaveSessionIdRequest
-	34, // 21: agentfleet.v1.CoreService.StillHoldsLease:input_type -> agentfleet.v1.StillHoldsLeaseRequest
-	36, // 22: agentfleet.v1.CoreService.PushToolTelemetry:input_type -> agentfleet.v1.PushToolTelemetryRequest
-	38, // 23: agentfleet.v1.CoreService.StreamHumanMessages:input_type -> agentfleet.v1.StreamHumanMessagesRequest
-	48, // 24: agentfleet.v1.CoreService.ListFiles:input_type -> agentfleet.v1.ListFilesRequest
-	49, // 25: agentfleet.v1.CoreService.GetFileUploadUrl:input_type -> agentfleet.v1.GetFileUploadUrlRequest
-	50, // 26: agentfleet.v1.CoreService.GetFileDownloadUrl:input_type -> agentfleet.v1.GetFileDownloadUrlRequest
-	51, // 27: agentfleet.v1.CoreService.DeleteFile:input_type -> agentfleet.v1.DeleteFileRequest
-	42, // 28: agentfleet.v1.CoreService.ViewLogs:input_type -> agentfleet.v1.ViewLogsRequest
-	13, // 29: agentfleet.v1.CoreService.ListSessions:input_type -> agentfleet.v1.ListSessionsRequest
-	15, // 30: agentfleet.v1.CoreService.PromptSession:input_type -> agentfleet.v1.PromptSessionRequest
-	17, // 31: agentfleet.v1.CoreService.WaitForSessionState:input_type -> agentfleet.v1.WaitForSessionStateRequest
-	2,  // 32: agentfleet.v1.CoreService.ReportPodEvents:output_type -> agentfleet.v1.ReportPodEventsResponse
-	4,  // 33: agentfleet.v1.CoreService.SendMessage:output_type -> agentfleet.v1.SendMessageResponse
-	52, // 34: agentfleet.v1.CoreService.WaitForMessages:output_type -> agentfleet.v1.ReadTranscriptSinceResponse
-	6,  // 35: agentfleet.v1.CoreService.AskUserQuestion:output_type -> agentfleet.v1.AskUserQuestionResponse
-	8,  // 36: agentfleet.v1.CoreService.RequestE2eEnv:output_type -> agentfleet.v1.RequestE2eEnvResponse
-	10, // 37: agentfleet.v1.CoreService.KillE2eEnv:output_type -> agentfleet.v1.KillE2eEnvResponse
-	20, // 38: agentfleet.v1.CoreService.GetTask:output_type -> agentfleet.v1.GetTaskResponse
-	22, // 39: agentfleet.v1.CoreService.SetPermissionMode:output_type -> agentfleet.v1.SetPermissionModeResponse
-	24, // 40: agentfleet.v1.CoreService.Heartbeat:output_type -> agentfleet.v1.HeartbeatResponse
-	26, // 41: agentfleet.v1.CoreService.SetTaskStatus:output_type -> agentfleet.v1.SetTaskStatusResponse
-	28, // 42: agentfleet.v1.CoreService.AppendJournal:output_type -> agentfleet.v1.AppendJournalResponse
-	31, // 43: agentfleet.v1.CoreService.SearchJournal:output_type -> agentfleet.v1.SearchJournalResponse
-	33, // 44: agentfleet.v1.CoreService.SaveSessionId:output_type -> agentfleet.v1.SaveSessionIdResponse
-	35, // 45: agentfleet.v1.CoreService.StillHoldsLease:output_type -> agentfleet.v1.StillHoldsLeaseResponse
-	37, // 46: agentfleet.v1.CoreService.PushToolTelemetry:output_type -> agentfleet.v1.PushToolTelemetryResponse
-	53, // 47: agentfleet.v1.CoreService.StreamHumanMessages:output_type -> agentfleet.v1.TranscriptEntry
-	54, // 48: agentfleet.v1.CoreService.ListFiles:output_type -> agentfleet.v1.ListFilesResponse
-	55, // 49: agentfleet.v1.CoreService.GetFileUploadUrl:output_type -> agentfleet.v1.GetFileUploadUrlResponse
-	56, // 50: agentfleet.v1.CoreService.GetFileDownloadUrl:output_type -> agentfleet.v1.GetFileDownloadUrlResponse
-	57, // 51: agentfleet.v1.CoreService.DeleteFile:output_type -> agentfleet.v1.DeleteFileResponse
-	43, // 52: agentfleet.v1.CoreService.ViewLogs:output_type -> agentfleet.v1.ViewLogsResponse
-	14, // 53: agentfleet.v1.CoreService.ListSessions:output_type -> agentfleet.v1.ListSessionsResponse
-	16, // 54: agentfleet.v1.CoreService.PromptSession:output_type -> agentfleet.v1.PromptSessionResponse
-	18, // 55: agentfleet.v1.CoreService.WaitForSessionState:output_type -> agentfleet.v1.WaitForSessionStateResponse
-	32, // [32:56] is the sub-list for method output_type
-	8,  // [8:32] is the sub-list for method input_type
-	8,  // [8:8] is the sub-list for extension type_name
-	8,  // [8:8] is the sub-list for extension extendee
-	0,  // [0:8] is the sub-list for field type_name
+	41, // 2: agentfleet.v1.SendMessageRequest.type:type_name -> agentfleet.v1.TranscriptEntryType
+	14, // 3: agentfleet.v1.ListPeerSessionsResponse.sessions:type_name -> agentfleet.v1.SessionSummary
+	13, // 4: agentfleet.v1.GetSessionResponse.session:type_name -> agentfleet.v1.Session
+	27, // 5: agentfleet.v1.SearchJournalResponse.entries:type_name -> agentfleet.v1.JournalEntry
+	36, // 6: agentfleet.v1.QueryLogsResponse.entries:type_name -> agentfleet.v1.LogEntry
+	1,  // 7: agentfleet.v1.CoreService.ReportPodEvents:input_type -> agentfleet.v1.PodEvent
+	3,  // 8: agentfleet.v1.CoreService.SendMessage:input_type -> agentfleet.v1.SendMessageRequest
+	42, // 9: agentfleet.v1.CoreService.WaitForMessages:input_type -> agentfleet.v1.ReadTranscriptSinceRequest
+	5,  // 10: agentfleet.v1.CoreService.AskUserQuestion:input_type -> agentfleet.v1.AskUserQuestionRequest
+	7,  // 11: agentfleet.v1.CoreService.Expose:input_type -> agentfleet.v1.ExposeRequest
+	9,  // 12: agentfleet.v1.CoreService.Unexpose:input_type -> agentfleet.v1.UnexposeRequest
+	11, // 13: agentfleet.v1.CoreService.RequestService:input_type -> agentfleet.v1.RequestServiceRequest
+	21, // 14: agentfleet.v1.CoreService.GetSession:input_type -> agentfleet.v1.GetSessionRequest
+	23, // 15: agentfleet.v1.CoreService.SetPermissionMode:input_type -> agentfleet.v1.SetPermissionModeRequest
+	25, // 16: agentfleet.v1.CoreService.AppendJournal:input_type -> agentfleet.v1.AppendJournalRequest
+	28, // 17: agentfleet.v1.CoreService.SearchJournal:input_type -> agentfleet.v1.SearchJournalRequest
+	30, // 18: agentfleet.v1.CoreService.SaveAgentSessionId:input_type -> agentfleet.v1.SaveAgentSessionIdRequest
+	32, // 19: agentfleet.v1.CoreService.PushToolTelemetry:input_type -> agentfleet.v1.PushToolTelemetryRequest
+	34, // 20: agentfleet.v1.CoreService.StreamHumanMessages:input_type -> agentfleet.v1.StreamHumanMessagesRequest
+	43, // 21: agentfleet.v1.CoreService.ListFiles:input_type -> agentfleet.v1.ListFilesRequest
+	44, // 22: agentfleet.v1.CoreService.GetFileUploadUrl:input_type -> agentfleet.v1.GetFileUploadUrlRequest
+	45, // 23: agentfleet.v1.CoreService.GetFileDownloadUrl:input_type -> agentfleet.v1.GetFileDownloadUrlRequest
+	46, // 24: agentfleet.v1.CoreService.DeleteFile:input_type -> agentfleet.v1.DeleteFileRequest
+	38, // 25: agentfleet.v1.CoreService.ViewLogs:input_type -> agentfleet.v1.ViewLogsRequest
+	15, // 26: agentfleet.v1.CoreService.ListPeerSessions:input_type -> agentfleet.v1.ListPeerSessionsRequest
+	17, // 27: agentfleet.v1.CoreService.PromptSession:input_type -> agentfleet.v1.PromptSessionRequest
+	19, // 28: agentfleet.v1.CoreService.WaitForSessionState:input_type -> agentfleet.v1.WaitForSessionStateRequest
+	2,  // 29: agentfleet.v1.CoreService.ReportPodEvents:output_type -> agentfleet.v1.ReportPodEventsResponse
+	4,  // 30: agentfleet.v1.CoreService.SendMessage:output_type -> agentfleet.v1.AppendResponse
+	47, // 31: agentfleet.v1.CoreService.WaitForMessages:output_type -> agentfleet.v1.ReadTranscriptSinceResponse
+	6,  // 32: agentfleet.v1.CoreService.AskUserQuestion:output_type -> agentfleet.v1.AskUserQuestionResponse
+	8,  // 33: agentfleet.v1.CoreService.Expose:output_type -> agentfleet.v1.ExposeResponse
+	10, // 34: agentfleet.v1.CoreService.Unexpose:output_type -> agentfleet.v1.UnexposeResponse
+	12, // 35: agentfleet.v1.CoreService.RequestService:output_type -> agentfleet.v1.RequestServiceResponse
+	22, // 36: agentfleet.v1.CoreService.GetSession:output_type -> agentfleet.v1.GetSessionResponse
+	24, // 37: agentfleet.v1.CoreService.SetPermissionMode:output_type -> agentfleet.v1.SetPermissionModeResponse
+	26, // 38: agentfleet.v1.CoreService.AppendJournal:output_type -> agentfleet.v1.AppendJournalResponse
+	29, // 39: agentfleet.v1.CoreService.SearchJournal:output_type -> agentfleet.v1.SearchJournalResponse
+	31, // 40: agentfleet.v1.CoreService.SaveAgentSessionId:output_type -> agentfleet.v1.SaveAgentSessionIdResponse
+	33, // 41: agentfleet.v1.CoreService.PushToolTelemetry:output_type -> agentfleet.v1.PushToolTelemetryResponse
+	48, // 42: agentfleet.v1.CoreService.StreamHumanMessages:output_type -> agentfleet.v1.TranscriptEntry
+	49, // 43: agentfleet.v1.CoreService.ListFiles:output_type -> agentfleet.v1.ListFilesResponse
+	50, // 44: agentfleet.v1.CoreService.GetFileUploadUrl:output_type -> agentfleet.v1.GetFileUploadUrlResponse
+	51, // 45: agentfleet.v1.CoreService.GetFileDownloadUrl:output_type -> agentfleet.v1.GetFileDownloadUrlResponse
+	52, // 46: agentfleet.v1.CoreService.DeleteFile:output_type -> agentfleet.v1.DeleteFileResponse
+	39, // 47: agentfleet.v1.CoreService.ViewLogs:output_type -> agentfleet.v1.ViewLogsResponse
+	16, // 48: agentfleet.v1.CoreService.ListPeerSessions:output_type -> agentfleet.v1.ListPeerSessionsResponse
+	18, // 49: agentfleet.v1.CoreService.PromptSession:output_type -> agentfleet.v1.PromptSessionResponse
+	20, // 50: agentfleet.v1.CoreService.WaitForSessionState:output_type -> agentfleet.v1.WaitForSessionStateResponse
+	29, // [29:51] is the sub-list for method output_type
+	7,  // [7:29] is the sub-list for method input_type
+	7,  // [7:7] is the sub-list for extension type_name
+	7,  // [7:7] is the sub-list for extension extendee
+	0,  // [0:7] is the sub-list for field type_name
 }
 
 func init() { file_agentfleet_v1_core_proto_init() }
@@ -3201,15 +2906,14 @@ func file_agentfleet_v1_core_proto_init() {
 	file_agentfleet_v1_provisioner_proto_init()
 	file_agentfleet_v1_files_proto_init()
 	file_agentfleet_v1_core_proto_msgTypes[2].OneofWrappers = []any{}
-	file_agentfleet_v1_core_proto_msgTypes[10].OneofWrappers = []any{}
-	file_agentfleet_v1_core_proto_msgTypes[24].OneofWrappers = []any{}
+	file_agentfleet_v1_core_proto_msgTypes[12].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_agentfleet_v1_core_proto_rawDesc), len(file_agentfleet_v1_core_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   43,
+			NumMessages:   39,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -27,37 +27,37 @@ test("LOG_LEVEL filters out lower-severity lines", () => {
 // field the worker's lines carry nothing tying them to a task, and the only
 // alternative is parsing the pod name — which means duplicating the
 // provisioner's shortID() truncation rule into core.
-test("every line carries taskId from TASK_ID", () => {
+test("every line carries sessionId from SESSION_ID", () => {
   const lines: string[] = [];
   const origLog = console.log;
-  const origTask = process.env.TASK_ID;
+  const origSession = process.env.SESSION_ID;
   console.log = (s: string) => lines.push(s);
-  process.env.TASK_ID = "task-from-env";
+  process.env.SESSION_ID = "session-from-env";
   try {
     log("info", "no explicit fields");
-    log("info", "explicit taskId wins", { taskId: "explicit" });
+    log("info", "explicit sessionId wins", { sessionId: "explicit" });
   } finally {
     console.log = origLog;
-    process.env.TASK_ID = origTask;
+    process.env.SESSION_ID = origSession;
   }
   const parsed = lines.map((l) => JSON.parse(l));
-  expect(parsed[0].taskId).toBe("task-from-env");
-  // Several call sites already pass a taskId of their own; those must not be
+  expect(parsed[0].sessionId).toBe("session-from-env");
+  // Several call sites already pass a sessionId of their own; those must not be
   // clobbered by the ambient one.
-  expect(parsed[1].taskId).toBe("explicit");
+  expect(parsed[1].sessionId).toBe("explicit");
 });
 
-test("taskId is omitted entirely when TASK_ID is unset", () => {
+test("taskId is omitted entirely when SESSION_ID is unset", () => {
   const lines: string[] = [];
   const origLog = console.log;
-  const origTask = process.env.TASK_ID;
+  const origSession = process.env.SESSION_ID;
   console.log = (s: string) => lines.push(s);
-  delete process.env.TASK_ID;
+  delete process.env.SESSION_ID;
   try {
     log("info", "no task context");
   } finally {
     console.log = origLog;
-    if (origTask !== undefined) process.env.TASK_ID = origTask;
+    if (origSession !== undefined) process.env.SESSION_ID = origSession;
   }
   expect(JSON.parse(lines[0])).not.toHaveProperty("taskId");
 });

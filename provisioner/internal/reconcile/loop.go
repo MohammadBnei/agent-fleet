@@ -1,20 +1,20 @@
-// Package reconcile is a pure Kubernetes-native safety net now
-// (docs/adr/0020 point 1: the provisioner holds no Postgres credentials at
-// all, so there's nothing external left to reconcile pod state against).
-// Two jobs: garbage-collect worker pods that reached a terminal k8s phase
-// (Succeeded/Failed) but weren't cleaned up by core's own TearDownSession
-// call — a safety net for a missed/failed call, not the primary teardown
-// mechanism (that's coreserver.SetTaskStatus's opportunistic trigger, in
-// core/) — and, as of docs/adr/0034, garbage-collect shared environment-
-// recipe service instances that have sat idle past a configured timeout.
-// As of docs/adr/0044 there is a third pass: e2e sandbox pods. They still
-// have no natural "done" signal from k8s (they run until explicitly killed)
-// and the provisioner still has no external tracking to compare against, so
-// the sweep uses the two signals Kubernetes does provide — a terminal phase,
-// and age past e2eMaxAge. That's coarser than the worker Jobs' real done
-// signal, and deliberately so: the cost of leaking these is the NEXT sandbox
-// sitting Pending forever against a full node, which presents to a human as
-// "the e2e pod won't start" and was one of the motivating symptoms.
+// Package reconcile is a Kubernetes-native safety net (docs/adr/0020 point 1:
+// the provisioner holds no Postgres credentials, so there is nothing external
+// to reconcile pod state against).
+//
+// Two passes:
+//
+//   - gcTerminalWorkerJobs reports and reaps worker Jobs that reached a
+//     terminal phase. It is NOT just a fallback for a missed teardown: with
+//     tasks.status gone (docs/adr/0048) this pass IS the notification that a
+//     session finished, and a Succeeded Job reporting nothing would leave
+//     pod_phase at RUNNING forever — which is what the concurrency cap counts.
+//   - gcIdleSharedInstances reclaims shared Postgres/Redis instances that have
+//     sat unused past a timeout (docs/adr/0034).
+//
+// A third pass swept e2e sandbox pods by age, because they had no natural
+// "done" signal. It is gone with the sandbox (docs/adr/0048 §6) — a session's
+// pod is a Job, and a Job's terminal phase is a real done signal.
 package reconcile
 
 import (
@@ -45,12 +45,8 @@ type JobLister interface {
 	// second interface for two more methods.
 	ListSharedInstances(ctx context.Context) ([]k8s.LiveSharedInstance, error)
 	DeleteSharedInstance(ctx context.Context, repo, serviceKey string) error
-	// ListPodsByLabel/DeleteAll back gcDeadE2ePods (docs/adr/0044) — same
-	// "grown, not split" reasoning as the shared-instance pair above.
-	// ListPodsByLabel already existed and had no caller; DeleteAll (rather
-	// than DeletePod) so the Service/Middleware/IngressRoute go with it.
-	ListPodsByLabel(ctx context.Context) ([]k8s.LiveE2ePod, error)
-	DeleteAll(ctx context.Context, taskID string) error
+	// ListPodsByLabel/DeleteAll backed gcDeadE2ePods and are gone with it
+	// (docs/adr/0048 §6) — there are no e2e pods to list or reap.
 }
 
 // EventReporter is the narrow slice of coreclient.Client this package
@@ -67,15 +63,13 @@ type Loop struct {
 	k8sc                      JobLister
 	core                      EventReporter
 	sharedInstanceIdleTimeout time.Duration
-	e2eMaxAge                 time.Duration
 }
 
-func New(k8sc JobLister, core EventReporter, sharedInstanceIdleTimeout, e2eMaxAge time.Duration) *Loop {
+func New(k8sc JobLister, core EventReporter, sharedInstanceIdleTimeout time.Duration) *Loop {
 	return &Loop{
 		k8sc:                      k8sc,
 		core:                      core,
 		sharedInstanceIdleTimeout: sharedInstanceIdleTimeout,
-		e2eMaxAge:                 e2eMaxAge,
 	}
 }
 
@@ -89,32 +83,45 @@ func (l *Loop) gcTerminalWorkerJobs(ctx context.Context) {
 		if job.Phase != "Succeeded" && job.Phase != "Failed" {
 			continue
 		}
-		// Fast-path crash report (reliability-findings.md #1) — reported
-		// before GC-ing the Job, on top of the heartbeat-reclaim fallback
-		// core's own ClaimNextTask already has. core's own
-		// coreserver.ReportPodEvents scopes MarkCrashed to a non-terminal
-		// task, so this is a safe no-op if the task already reached a
-		// terminal status through its own SetTaskStatus call first.
+		// Terminal-phase report (reliability-findings.md #1) — reported
+		// before GC-ing the Job. core's own coreserver.ReportPodEvents
+		// scopes MarkCrashed to a non-terminal task, so this is a safe
+		// no-op if the task already reported the same phase itself.
+		//
+		// BOTH terminal phases report, not just Failed. A Succeeded Job used
+		// to be deleted silently, on the reasoning that a worker that exits
+		// cleanly writes its own terminal status first — which made this
+		// pass a fallback for crashes only. That reasoning depended on
+		// tasks.status existing: terminal status was the sole trigger for
+		// TearDownSession, and the sole thing that stopped a finished
+		// session counting against the concurrency cap. With status gone
+		// (docs/adr/0048) this loop IS the notification, and a Succeeded
+		// Job that reports nothing leaves pod_phase at RUNNING forever —
+		// which CountLivePods counts, wedging the fleet after five
+		// successful sessions and staying invisible until the sixth.
+		phase := agentfleetv1.PodPhase_POD_PHASE_TERMINATED
+		message := "worker job reached a terminal Succeeded phase"
 		if job.Phase == "Failed" {
-			l.core.ReportEvent(ctx, &agentfleetv1.PodEvent{
-				TaskId:  job.TaskID,
-				Kind:    agentfleetv1.SessionKind_SESSION_KIND_WORKER,
-				Phase:   agentfleetv1.PodPhase_POD_PHASE_CRASHED,
-				PodName: job.JobName,
-				Message: "worker job reached a terminal Failed phase",
-			})
+			phase = agentfleetv1.PodPhase_POD_PHASE_CRASHED
+			message = "worker job reached a terminal Failed phase"
 		}
-		slog.Info("reconcile: gc'ing terminal worker job", "taskId", job.TaskID, "jobName", job.JobName, "phase", job.Phase)
+		l.core.ReportEvent(ctx, &agentfleetv1.PodEvent{
+			SessionId: job.TaskID,
+			Kind:      agentfleetv1.SessionKind_SESSION_KIND_WORKER,
+			Phase:     phase,
+			PodName:   job.JobName,
+			Message:   message,
+		})
+		slog.Info("reconcile: gc'ing terminal worker job", "sessionId", job.TaskID, "jobName", job.JobName, "phase", job.Phase)
 		if err := l.k8sc.DeleteWorkerJob(ctx, job.TaskID); err != nil {
-			slog.Error("reconcile: delete worker job failed", "taskId", job.TaskID, "error", err)
+			slog.Error("reconcile: delete worker job failed", "sessionId", job.TaskID, "error", err)
 		}
-		// Worktree cleanup is intentionally skipped here — this pass exists
-		// for the case where core's TearDownSession call (which does clean
-		// the worktree) never fired; the job's RepoLabel would still tell us
-		// the repo, but a genuinely orphaned worktree with no task record
-		// left to explain it is a small enough leak (one directory, on a
-		// path keyed by a task ID that's already terminal) not to add a
-		// second GC path on top of the job cleanup that actually matters.
+		// The session's disk is deliberately untouched. A finished session
+		// stays resumable — its working volume and SDK state are exactly what
+		// a later warm needs — and the only thing that reclaims them is core's
+		// retention GC, through SweepSession. Deleting them here would make
+		// "the Job ended" mean "the work is gone", which is the opposite of
+		// what a session is (docs/adr/0048).
 	}
 }
 
@@ -146,63 +153,20 @@ func (l *Loop) gcIdleSharedInstances(ctx context.Context) {
 	}
 }
 
-// gcDeadE2ePods deletes e2e sandbox pods that reached a terminal phase, and
-// those older than e2eMaxAge (docs/adr/0044).
+// gcDeadE2ePods used to sit here, reaping e2e sandbox pods that had gone
+// terminal or aged out. There are no e2e pods (docs/adr/0048 §6) — the agent's
+// app runs in the session's own pod and is reaped with it by
+// gcTerminalWorkerJobs.
 //
-// The terminal-phase half should be close to dead code after 0044 — the
-// entrypoint no longer lets an app crash take the pod with it, and
-// CreateE2ESession replaces a corpse on the next request. It stays for the
-// cases the container can't survive at all: OOMKilled, eviction, node loss.
-// The age half is the one that actually reclaims capacity, since a healthy
-// sandbox now runs until something deletes it.
-func (l *Loop) gcDeadE2ePods(ctx context.Context) {
-	pods, err := l.k8sc.ListPodsByLabel(ctx)
-	if err != nil {
-		slog.Error("reconcile: list e2e pods failed", "error", err)
-		return
-	}
-	for _, pod := range pods {
-		terminal := pod.Phase == "Succeeded" || pod.Phase == "Failed"
-		aged := !pod.CreatedAt.IsZero() && time.Since(pod.CreatedAt) > l.e2eMaxAge
-		if !terminal && !aged {
-			continue
-		}
-		slog.Info("reconcile: gc'ing e2e pod", "taskId", pod.TaskID, "podName", pod.PodName,
-			"phase", pod.Phase, "createdAt", pod.CreatedAt, "reason", gcReason(terminal))
-		// DeleteAll, not DeletePod: the Service/Middleware/IngressRoute are
-		// this task's too, and unlike the recreate path in grpcserver there is
-		// no follow-up create to leave them standing for.
-		if err := l.k8sc.DeleteAll(ctx, pod.TaskID); err != nil {
-			slog.Error("reconcile: delete e2e pod failed", "taskId", pod.TaskID, "error", err)
-			continue
-		}
-		// Reported so the deletion lands in the knowledge journal — an agent
-		// whose sandbox vanished mid-session otherwise has no way to find out
-		// why run_command started failing.
-		l.core.ReportEvent(ctx, &agentfleetv1.PodEvent{
-			TaskId:  pod.TaskID,
-			Kind:    agentfleetv1.SessionKind_SESSION_KIND_E2E,
-			Phase:   agentfleetv1.PodPhase_POD_PHASE_TERMINATED,
-			PodName: pod.PodName,
-			Message: "e2e sandbox pod garbage-collected: " + gcReason(terminal),
-		})
-	}
-}
-
-func gcReason(terminal bool) string {
-	if terminal {
-		return "terminal phase"
-	}
-	return "older than the configured max age"
-}
-
+// gcIdleSharedInstances stays: shared Postgres/Redis instances still exist,
+// requested on demand via request_service rather than declared by a recipe,
+// and an idle one still needs reclaiming.
 func (l *Loop) Run(ctx context.Context, pollInterval time.Duration) {
 	ticker := time.NewTicker(pollInterval)
 	defer ticker.Stop()
 	for {
 		l.gcTerminalWorkerJobs(ctx)
 		l.gcIdleSharedInstances(ctx)
-		l.gcDeadE2ePods(ctx)
 		select {
 		case <-ctx.Done():
 			return

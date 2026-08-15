@@ -2,7 +2,6 @@ syntax = "proto3";
 package agentfleet.v1;
 option go_package = "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1;agentfleetv1";
 
-import "agentfleet/v1/provisioner.proto";
 import "agentfleet/v1/transcript.proto";
 import "agentfleet/v1/files.proto";
 import "agentfleet/v1/core.proto";
@@ -16,135 +15,75 @@ import "agentfleet/v1/core.proto";
 // snake_case here per proto convention; generated TS/JS renders them
 // camelCase (e.g. thread_id -> threadId).
 
-// Task, GetTaskRequest, and GetTaskResponse now live in core.proto (which
+// Session, GetSessionRequest, and GetSessionResponse now live in core.proto (which
 // this file already imports) — CoreService.GetTask (sidecar/worker
 // self-lookup) and DashboardService.GetTask below share the same shapes.
 
-message ListTasksRequest {
+message ListSessionsRequest {
   int32 limit = 1;
 }
 
-message ListTasksResponse {
-  repeated Task tasks = 1;
+message ListSessionsResponse {
+  repeated Session sessions = 1;
 }
 
-// Creates a task the same way a Discord /task command does, minus the
-// Discord thread — repo must be a name in the repos table (docs/adr/0028,
-// core/internal/repos), description must be non-empty. The created task has no
-// discord_channel_id/discord_thread_id, which core/internal/discord/
-// session.go's PostToThread already handles as a no-op relay target.
-// snippet_ids optionally names rows from the prompt_snippets table — their
-// text is resolved and joined once, at creation time, into the new task's
-// own guidance column (see PromptSnippet below); empty means the task gets
-// only its own description, no extra guidance.
-message CreateTaskRequest {
+// Creates a session row and NOTHING else — no pod, no directory, no worktree.
+// `repo` must name a row in the repos table (docs/adr/0028); title and
+// description are optional labels that never enter the prompt.
+//
+// The pod is booted by the first PostMessage, not here, and that split is
+// load-bearing (docs/adr/0048): nothing machine-initiated produces a message,
+// so nothing machine-initiated produces a pod. It also means an empty session
+// is a valid resting state rather than a broken one — which matters because
+// the Agent SDK's streaming-input generator is never entered until an input
+// arrives, so a pod started with nothing to do would never emit a session id,
+// would be unresumable, and would be swept by the startup-stall guard with
+// nothing logged to explain it.
+//
+// Fields 3 and 5 are reserved. snippet_ids used to be resolved server-side
+// into a hidden `guidance` column; snippets now prefill the dashboard's
+// message composer instead, so their text reaches the model as part of a
+// message a human actually sent and can edit — rather than as a wrapper the
+// agent cannot see or question. `kind` was a UI label the dispatch path never
+// branched on; a thot session is distinguished by its repo carrying
+// cluster_access, which is the thing that is actually true about it.
+message CreateSessionRequest {
+  reserved 3, 5;
+  reserved "snippet_ids", "kind";
+
   string repo = 1;
   string description = 2;
-  repeated string snippet_ids = 3;
   optional string model = 4;
-  // "worker" (default when empty) or "thot" — docs/adr/0037. A thot
-  // session is an ordinary worker task on infra-bootstrap; this only
-  // changes how the dashboard labels and gates it.
-  string kind = 5;
+  optional string title = 6;
 }
 
-message CreateTaskResponse {
-  Task task = 1;
+message CreateSessionResponse {
+  Session session = 1;
 }
 
 // Streamed directly as `stream TranscriptEntry` on the RPC below — no
 // wrapper response message, unlike the unary GetTranscript (which reuses
 // transcript.proto's ReadTranscriptSinceResponse).
 message StreamTranscriptRequest {
-  string task_id = 1;
+  string session_id = 1;
   int64 since_seq = 2;
 }
 
-message GetE2eStatusRequest {
-  string task_id = 1;
-}
-
-message GetE2eStatusResponse {
-  string status = 1;
-  string preview_url = 2;
-  // Fields 3-7 are pass-through from ProvisionerService.GetE2eSessionStatus
-  // (live pod truth — core holds no cluster RBAC and must not read pods);
-  // 8-11 are core's own, resolved from repo_profiles.
-  string start_cmd = 3;
-  string pod_phase = 4;
-  bool app_ready = 5;
-  int32 restarts = 6;
-  string started_at = 7; // RFC3339
-  string profile_name = 8;
-  repeated string tools = 9;
-  repeated string services = 10;
-  // True when the running pod's start_cmd differs from the profile's — i.e.
-  // a human-approved per-task override is in effect. Surfacing this is the
-  // point: a silent override is what caused the bug this card exists for.
-  bool start_cmd_overridden = 11;
-  // The /code route, not the app root — see provisioner.proto's field of the
-  // same name for why this travels rather than being rebuilt client-side.
-  string code_server_url = 12;
-}
-
-// --- e2e environment control (docs/adr/0044) ---
+// The e2e card's whole message set lived here: GetE2eStatus* (live pod phase,
+// preview URL and the resolved recipe), StartE2e*/RestartE2eApp* (starting the
+// app for a human, since only the agent could otherwise), and GetE2eAppLog*
+// (the app's stdout, the first thing to read when a preview 502'd).
 //
-// The dashboard could already Kill an e2e env but never start one: creating a
-// sandbox was reachable only by asking the agent to call request_e2e_env,
-// which is a strange thing to need when the sandbox is exactly what a human
-// wants in order to look at a broken preview themselves.
+// All of it is gone with the sandbox (docs/adr/0048 §6). The app runs in the
+// session's own pod, started by the agent with Bash, and what a human wants
+// from it — a URL — the agent produces with expose().
 
-message StartE2eRequest {
-  string task_id = 1;
-}
-
-message StartE2eResponse {
-  string status = 1;
-  string preview_url = 2;
-  // Echoed for the same reason request_e2e_env echoes it to the agent: the
-  // recipe that was actually used is the first thing anyone needs when the
-  // preview doesn't serve.
-  string resolved_start_cmd = 3;
-  string profile_name = 4;
-}
-
-// RestartE2eApp re-runs the profile's start command INSIDE the live pod, via
-// the e2e-restart-app helper on its PATH. Deliberately distinct from
-// stop+start: the pod, its warm dependency cache and the worktree all survive,
-// so this costs seconds where recreating the sandbox costs a 10+ minute cold
-// install. Conflating the two in one "restart" button is how a human ends up
-// paying that install to fix a dev server that just needed rebooting.
-message RestartE2eAppRequest {
-  string task_id = 1;
-}
-
-message RestartE2eAppResponse {
-  string output = 1;
-  int32 exit_code = 2;
-}
-
-// GetE2eAppLog reads /tmp/e2e-app.log out of the pod — the app's own stdout,
-// which is the first thing to look at when a preview 502s and the single
-// question the e2e card could never answer. Not Loki: this is readable while
-// the pod is alive regardless of retention, and it carries the explicit
-// "app command exited with status N" marker the entrypoint writes.
-message GetE2eAppLogRequest {
-  string task_id = 1;
-  int32 lines = 2; // default 200
-}
-
-message GetE2eAppLogResponse {
-  string log = 1;
-}
-
-message KillRequest {
-  string task_id = 1;
+message StopSessionRequest {
+  string session_id = 1;
   optional string reason = 2;
 }
 
-message KillResponse {
-  string status = 1;
-}
+message StopSessionResponse {}
 
 // Interrupt stops only the current turn (the in-flight API exchange/tool
 // call) via the SDK's own q.interrupt() — unlike Kill, the session and pod
@@ -152,12 +91,10 @@ message KillResponse {
 // "interrupt" transcript entry (never "abort") so the worker can tell the
 // two apart and only Kill tears the whole session down.
 message InterruptRequest {
-  string task_id = 1;
+  string session_id = 1;
 }
 
-message InterruptResponse {
-  string status = 1;
-}
+message InterruptResponse {}
 
 // Sets an arbitrary SDK permission mode on a running task (docs/adr/0027,
 // extended by the sessions redesign supersession of docs/adr/0021/0025 —
@@ -174,57 +111,104 @@ message InterruptResponse {
 // Warm boots a pod for an idle session on demand — the sessions redesign's
 // "bus" model (supersedes docs/adr/0021/0025's phase-boundary framing): a
 // task's pod is ephemeral compute, not tied to the task's whole lifetime.
-// Deliberately does not touch tasks.status (a loose UI-freshness signal
+// Deliberately does not touch the deleted status column (a loose UI-freshness signal
 // now, not control flow) — session state is the worktree + saved
 // session_id, both of which already survive teardown. Rejected with
 // CodeFailedPrecondition if the task already has a live pod (idempotent
-// double-click guard) or the fleet is already at MAX_IN_FLIGHT_TASKS.
+// double-click guard) or the fleet is already at MAX_LIVE_SESSIONS.
 // Records that a human opened this session's detail view — what turns a
 // `done` live_state (finished while nobody was looking) back into `idle`.
 // Deliberately an explicit call rather than a side effect of GetTask: the
 // task list polls, and a poll marking everything seen would make `done`
 // unreachable.
 message MarkSeenRequest {
-  string task_id = 1;
+  string session_id = 1;
 }
 
 message MarkSeenResponse {}
 
-message WarmRequest {
-  string task_id = 1;
+message WarmSessionRequest {
+  string session_id = 1;
 }
 
-message WarmResponse {
-  string status = 1;
+message WarmSessionResponse {
+  reserved 1;
+  reserved "status"; // was always the constant "warming"
+
+  // Empty when the session already had a live pod — an ordinary idempotent
+  // outcome, not an error, since PostMessage calls this unconditionally on
+  // every message.
   string pod_name = 2;
 }
 
-// Releases a machine-created proposal into the ordinary dispatch queue.
-//
-// Alertmanager and the audit scheduler create tasks with no human in the
-// loop, and a thot task runs an agent with cluster access — so they land
-// in status 'proposed', which ClaimNextTask never claims. This is the one
-// write that hands such an agent a pod.
-//
-// Deliberately only flips status to 'pending' and lets dispatch do the
-// rest, rather than warming a pod directly: that reuses the existing
-// claim/lease/in-flight-cap/retry machinery unchanged, and keeps the task
-// counted by MAX_IN_FLIGHT_TASKS (a pod warmed behind dispatch's back is
-// not). Rejected with CodeFailedPrecondition if the task is not an
-// un-approved proposal — including a second click on one already
-// approved.
-//
-// To decline instead, use DeleteTask: its soft delete drops the row out
-// of the alert dedup index, so a still-firing alert is proposed again on
-// its next fire. Dismissing means "not now", not "never" — permanent
-// suppression is an Alertmanager silence.
-message ApproveTaskRequest {
-  string task_id = 1;
+// A machine-initiated suggestion, from an Alertmanager webhook or the audit
+// scheduler (docs/adr/0048). Proposals live in their own table with no pod
+// path at all — that is what makes "a machine may propose, never open"
+// structural, rather than a status value that dispatch politely declines to
+// SELECT.
+message Proposal {
+  string id = 1;
+  string repo = 2;
+  string source = 3; // "alert" | "audit"
+  string title = 4;
+  string body = 5;
+  string created_at = 6;
+  // Set once a human opened it; the session it became.
+  optional string session_id = 7;
 }
 
-message ApproveTaskResponse {
-  string status = 1;
+message ListProposalsRequest {}
+
+message ListProposalsResponse {
+  // Open proposals only: neither opened nor dismissed.
+  repeated Proposal proposals = 1;
 }
+
+// Turns a proposal into a real session. THE human gate — this is the one
+// call that can hand a cluster-access agent a pod, so it is reachable only
+// from the dashboard, behind the same Traefik basic-auth as everything else.
+// Replaces ApproveTask, which flipped a status value to release a task into
+// the dispatch queue.
+//
+// Guarded inside the UPDATE rather than read-then-write, for the reason the
+// old ApproveProposal gave and which still applies: two clicks, two humans,
+// or one stale browser tab must not open two sessions from one proposal.
+// Rejected with CodeFailedPrecondition if it is already opened or dismissed.
+//
+// Creates the session but does NOT boot a pod — the proposal body is posted
+// as the session's first message, and that is what provisions. So a human
+// can open a proposal, read it, and still walk away without an agent having
+// run.
+message OpenFromProposalRequest {
+  string proposal_id = 1;
+}
+
+message OpenFromProposalResponse {
+  Session session = 1;
+}
+
+// Declines a proposal. Dismissing re-arms the dedup key, so a still-firing
+// alert is proposed again on its next fire — "not now", not "never".
+// Permanent suppression is an Alertmanager silence, which is where that
+// decision belongs.
+message DismissProposalRequest {
+  string proposal_id = 1;
+}
+
+message DismissProposalResponse {}
+
+// The human is finished with this session. The only terminal state in the
+// fleet, because it is the only one a machine cannot compute: a session may
+// end in a PR, or in an explanation, or in a dead end, and nothing but a
+// person can tell those apart.
+//
+// Tears down any live pod and reclaims the session's directory and SDK
+// state, so an archived session is readable but no longer resumable.
+message ArchiveSessionRequest {
+  string session_id = 1;
+}
+
+message ArchiveSessionResponse {}
 
 // Answers a pending PERMISSION_REQUEST-type transcript entry (posted by
 // canUseTool for any tool call the SDK's current permission mode would
@@ -236,17 +220,13 @@ message ApproveTaskResponse {
 // free-form answers JSON) and there's no real code to share beyond one
 // AppendReply call either way.
 message RespondToPermissionRequest {
-  string task_id = 1;
+  string session_id = 1;
   int64 seq = 2;
   string decision_json = 3;
 }
 
-message RespondToPermissionResponse {
-  string status = 1;
-}
-
 message KillE2eRequest {
-  string task_id = 1;
+  string session_id = 1;
   // also_teardown_services (docs/adr/0034 follow-up): also delete the
   // repo's shared postgres/redis instances if this task used any —
   // human-confirmed opt-in, since those are shared across every task
@@ -268,13 +248,9 @@ message KillE2eResponse {
 // payload, opaque to fleet-core — it's appended verbatim as the answer
 // entry's `text` and returned verbatim to the blocked MCP tool call.
 message AnswerQuestionRequest {
-  string task_id = 1;
+  string session_id = 1;
   int64 seq = 2;
   string answers_json = 3;
-}
-
-message AnswerQuestionResponse {
-  string status = 1;
 }
 
 // Discuss lets a human send an arbitrary free-text message from the
@@ -285,13 +261,9 @@ message AnswerQuestionResponse {
 // stream, not Discord-specific). `from`/`type` are hardcoded server-side,
 // same pattern as Kill hardcoding "human"/"abort" — the dashboard has no
 // need to expose them.
-message DiscussRequest {
-  string task_id = 1;
+message PostMessageRequest {
+  string session_id = 1;
   string text = 2;
-}
-
-message DiscussResponse {
-  string status = 1;
 }
 
 // Soft-deletes the task (see db/schema.sql's tasks.deleted_at) after
@@ -301,38 +273,19 @@ message DiscussResponse {
 // directly so a wedged/crashed pod doesn't block removal. Doesn't touch
 // `status` — a `done` task stays `done`, it just stops appearing in
 // ListTasks.
-message DeleteTaskRequest {
-  string task_id = 1;
+message DeleteSessionRequest {
+  string session_id = 1;
 }
 
-message DeleteTaskResponse {
-  string status = 1;
-}
+message DeleteSessionResponse {}
 
-// WorktreeView is provisioner.proto's WorktreeInfo left-joined against
-// `tasks` (reliability-findings.md #2) — task_status/task_error/pr_url
-// are unset, not omitted, when the task row itself no longer exists,
-// which is exactly the orphaned-worktree case this view exists to
-// surface (an inner join would hide it).
-message WorktreeView {
-  string task_id = 1;
-  string repo = 2;
-  string branch = 3;
-  string upstream_track = 4;
-  int64 mtime_unix = 5;
-  optional string task_status = 6;
-  optional string task_error = 7;
-  optional string pr_url = 8;
-  string path = 9;
-  int32 dirty_files = 10;
-  int64 size_bytes = 11;
-}
-
-message ListWorktreesViewResponse {
-  repeated WorktreeView worktrees = 1;
-  uint64 pvc_total_bytes = 2;
-  uint64 pvc_free_bytes = 3;
-}
+// WorktreeView and ListWorktreesViewResponse backed the worktrees page: the
+// provisioner's directory listing left-joined against `sessions`, so an
+// orphaned directory could be spotted and deleted by hand.
+//
+// There are no worktrees (docs/adr/0048 §5). A session's tree is its own PVC,
+// deleted with the session by the retention GC, so there is nothing to list
+// and nothing to orphan.
 
 // GetJournal is the read path reliability-findings.md #1/#7 both call out
 // as missing — knowledge_journal had no Get/List RPC anywhere, so even a
@@ -341,7 +294,7 @@ message ListWorktreesViewResponse {
 // generic Query(bytes) returns (bytes) dispatcher — two concrete gaps
 // don't justify throwing away protobuf's type safety for a general one.
 // JournalEntry itself now lives in core.proto (imported above) — reused by
-// SearchJournal too, same pattern as Task/GetTaskRequest/GetTaskResponse.
+// SearchJournal too, same pattern as Session/GetSessionRequest/GetSessionResponse.
 message GetJournalRequest {
   string repo = 1; // "" matches every repo
   int64 since_id = 2;
@@ -356,16 +309,26 @@ message GetJournalResponse {
 // Repo is the dashboard-editable target-repo config (docs/adr/0028) —
 // replaces the hardcoded tasks.KnownRepos Go map, backed by the `repos`
 // table (db/schema.sql). No timestamps exposed: the dashboard's repo list
-// is small and unordered, unlike Task/JournalEntry which need cursor state.
+// is small and unordered, unlike Session/JournalEntry which need cursor state.
 message Repo {
+  reserved 4;
+  reserved "e2e_profile";
+
   string name = 1;
   string url = 2;
   string base_branch = 3; // "" means the provisioner defaults to "main"
-  // Which repo_profiles row the e2e sandbox is built from (docs/adr/0044).
-  // "" means the "e2e" convention. Exists because core used to hardcode that
-  // name, so a repo whose recipe is called something else — agent-fleet's
-  // "lint" — got a sandbox with no toolchain at all.
-  string e2e_profile = 4;
+  // Container image this repo's sessions run. "" means the fleet default.
+  // Replaces the four toolchain ingredients of docs/adr/0034's recipe
+  // system — an init container copying a Go toolchain onto an emptyDir was
+  // an elaborate way of saying "this repo needs Go".
+  string image = 5;
+  // Whether this repo's sessions get the kubectl shim that RPCs to
+  // thot-executor (docs/adr/0037). The one recipe ingredient that did NOT
+  // collapse into `image`, because it is a privilege grant rather than a
+  // toolchain — the pod still holds zero Kubernetes credentials either way,
+  // and which sessions may reach the cluster stays a human's decision,
+  // editable here without a redeploy.
+  bool cluster_access = 6;
 }
 
 message ListReposRequest {}
@@ -378,7 +341,10 @@ message CreateRepoRequest {
   string name = 1;
   string url = 2;
   string base_branch = 3;
-  string e2e_profile = 4;
+  reserved 4;
+  reserved "e2e_profile";
+  string image = 5;
+  bool cluster_access = 6;
 }
 
 message CreateRepoResponse {
@@ -389,7 +355,10 @@ message UpdateRepoRequest {
   string name = 1;
   string url = 2;
   string base_branch = 3;
-  string e2e_profile = 4;
+  reserved 4;
+  reserved "e2e_profile";
+  string image = 5;
+  bool cluster_access = 6;
 }
 
 message UpdateRepoResponse {
@@ -400,67 +369,32 @@ message DeleteRepoRequest {
   string name = 1;
 }
 
-message DeleteRepoResponse {
-  string status = 1;
-}
+message DeleteRepoResponse {}
 
-// RepoProfile is a dashboard-editable named environment recipe for a repo
-// (docs/adr/0034) — replaces the hardcoded per-repo StartCmdFor switch.
-// Reuses provisioner.proto's ServiceIngredient message (already imported
-// here) rather than redefining it.
-message RepoProfile {
-  string repo_name = 1;
-  string name = 2; // "worker" | "e2e" | "lint" | ...
-  string start_cmd = 3;
-  repeated string tool_keys = 4;
-  repeated ServiceIngredient service_ingredients = 5;
-}
-
-message ListRepoProfilesRequest {
-  string repo_name = 1;
-}
-
-message ListRepoProfilesResponse {
-  repeated RepoProfile profiles = 1;
-}
-
-message CreateRepoProfileRequest {
-  string repo_name = 1;
-  string name = 2;
-  string start_cmd = 3;
-  repeated string tool_keys = 4;
-  repeated ServiceIngredient service_ingredients = 5;
-}
-
-message CreateRepoProfileResponse {
-  RepoProfile profile = 1;
-}
-
-message UpdateRepoProfileRequest {
-  string repo_name = 1;
-  string name = 2;
-  string start_cmd = 3;
-  repeated string tool_keys = 4;
-  repeated ServiceIngredient service_ingredients = 5;
-}
-
-message UpdateRepoProfileResponse {
-  RepoProfile profile = 1;
-}
-
-message DeleteRepoProfileRequest {
-  string repo_name = 1;
-  string name = 2;
-}
-
-message DeleteRepoProfileResponse {
-  string status = 1;
-}
+// RepoProfile and its four CRUD message pairs used to live here — the
+// dashboard-editable environment recipe from docs/adr/0034, carrying a
+// start_cmd, a set of tool_keys and service ingredients.
+//
+// Deleted in docs/adr/0048. The recipe stored, in Postgres, knowledge that
+// lives in the working tree the agent is already sitting in: `cat
+// package.json` answers "how do I start this app", and the agent starts its
+// own server now. The three ingredient kinds each went somewhere different:
+//
+//   start_cmd            -> the agent runs it, and calls expose(port)
+//   toolchain tool_keys  -> repos.image, one column instead of an init
+//                           container copying a Go toolchain onto an emptyDir
+//   service_ingredients  -> request_service(kind), which stays fleet-side
+//                           because it needs cluster RBAC the agent has not
+//
+// The one tool_key that did NOT collapse is cluster-access, because it is a
+// privilege grant rather than a toolchain — it is repos.cluster_access now,
+// still data rather than code for docs/adr/0037's own reason: which sessions
+// may reach the cluster is a human's decision, editable without a redeploy.
 
 // PromptSnippet is dashboard-editable, reusable guidance text (same
 // no-redeploy pattern as Repo above), backed by the `prompt_snippets`
 // table (db/schema.sql). An operator optionally attaches a set of these to
-// a task at creation time (CreateTaskRequest.snippet_ids) — replaces
+// a task at creation time (CreateSessionRequest.snippet_ids) — replaces
 // worker/src/session.ts's old unconditional, hardcoded workflow prompt. A
 // task's base prompt is just its own description; anything more is one of
 // these, picked per task, not forced on every task regardless of size.
@@ -500,19 +434,17 @@ message DeletePromptSnippetRequest {
   string id = 1;
 }
 
-message DeletePromptSnippetResponse {
-  string status = 1;
-}
+message DeletePromptSnippetResponse {}
 
 // --- shared file space, human-facing (docs/adr/0030) ---
 // Reuses files.proto's message shapes verbatim — same reuse precedent
 // ListWorktrees/DeleteWorktree already set with provisioner.proto.
 
 service DashboardService {
-  rpc ListTasks(ListTasksRequest) returns (ListTasksResponse);
+  rpc ListSessions(ListSessionsRequest) returns (ListSessionsResponse);
   // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
-  rpc GetTask(GetTaskRequest) returns (GetTaskResponse);
-  rpc CreateTask(CreateTaskRequest) returns (CreateTaskResponse);
+  rpc GetSession(GetSessionRequest) returns (GetSessionResponse);
+  rpc CreateSession(CreateSessionRequest) returns (CreateSessionResponse);
   // Reuses transcript.proto's ReadTranscriptSinceRequest/Response rather
   // than duplicating a byte-identical message pair.
   // buf:lint:ignore RPC_REQUEST_STANDARD_NAME
@@ -524,42 +456,46 @@ service DashboardService {
   // buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
   // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
   rpc StreamTranscript(StreamTranscriptRequest) returns (stream TranscriptEntry);
-  rpc GetE2eStatus(GetE2eStatusRequest) returns (GetE2eStatusResponse);
-  rpc Kill(KillRequest) returns (KillResponse);
+  rpc StopSession(StopSessionRequest) returns (StopSessionResponse);
   rpc Interrupt(InterruptRequest) returns (InterruptResponse);
   // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
   rpc SetPermissionMode(SetPermissionModeRequest) returns (SetPermissionModeResponse);
-  rpc Warm(WarmRequest) returns (WarmResponse);
+  rpc WarmSession(WarmSessionRequest) returns (WarmSessionResponse);
   rpc MarkSeen(MarkSeenRequest) returns (MarkSeenResponse);
-  rpc ApproveTask(ApproveTaskRequest) returns (ApproveTaskResponse);
-  rpc KillE2e(KillE2eRequest) returns (KillE2eResponse);
-  rpc StartE2e(StartE2eRequest) returns (StartE2eResponse);
-  rpc RestartE2eApp(RestartE2eAppRequest) returns (RestartE2eAppResponse);
-  rpc GetE2eAppLog(GetE2eAppLogRequest) returns (GetE2eAppLogResponse);
-  rpc AnswerQuestion(AnswerQuestionRequest) returns (AnswerQuestionResponse);
-  rpc RespondToPermission(RespondToPermissionRequest) returns (RespondToPermissionResponse);
-  rpc Discuss(DiscussRequest) returns (DiscussResponse);
-  rpc DeleteTask(DeleteTaskRequest) returns (DeleteTaskResponse);
+  rpc ArchiveSession(ArchiveSessionRequest) returns (ArchiveSessionResponse);
+  rpc ListProposals(ListProposalsRequest) returns (ListProposalsResponse);
+  rpc OpenFromProposal(OpenFromProposalRequest) returns (OpenFromProposalResponse);
+  rpc DismissProposal(DismissProposalRequest) returns (DismissProposalResponse);
+  // AnswerQuestion, RespondToPermission and PostMessage all mean "append an
+  // entry to this session's transcript" — a human answer, a permission
+  // decision, and a free-text message are the same row with different types.
+  // All three returned a constant `status` string until docs/adr/0048; they
+  // now return the seq, which is the one thing the caller cannot compute and
+  // is the correlation key everything else keys off.
+  // buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+  // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+  rpc AnswerQuestion(AnswerQuestionRequest) returns (AppendResponse);
+  // buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+  // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+  rpc RespondToPermission(RespondToPermissionRequest) returns (AppendResponse);
+  // buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+  // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+  rpc PostMessage(PostMessageRequest) returns (AppendResponse);
+  rpc DeleteSession(DeleteSessionRequest) returns (DeleteSessionResponse);
   // Reuses provisioner.proto's ListWorktreesRequest (identical shape,
   // empty) and DeleteWorktreeRequest/Response (identical shape, no
   // dashboard-specific fields needed) — same passthrough-reuse pattern
   // core.proto's ListE2eTools/CallE2eTool already established. The
-  // response is enriched with a left-join against `tasks`, so it can't
+  // response is enriched with a left-join against `sessions`, so it can't
   // reuse provisioner's own WorktreeInfo/ListWorktreesResponse as-is.
   // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
   // buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
-  rpc ListWorktrees(ListWorktreesRequest) returns (ListWorktreesViewResponse);
   // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
-  rpc DeleteWorktree(DeleteWorktreeRequest) returns (DeleteWorktreeResponse);
   rpc GetJournal(GetJournalRequest) returns (GetJournalResponse);
   rpc ListRepos(ListReposRequest) returns (ListReposResponse);
   rpc CreateRepo(CreateRepoRequest) returns (CreateRepoResponse);
   rpc UpdateRepo(UpdateRepoRequest) returns (UpdateRepoResponse);
   rpc DeleteRepo(DeleteRepoRequest) returns (DeleteRepoResponse);
-  rpc ListRepoProfiles(ListRepoProfilesRequest) returns (ListRepoProfilesResponse);
-  rpc CreateRepoProfile(CreateRepoProfileRequest) returns (CreateRepoProfileResponse);
-  rpc UpdateRepoProfile(UpdateRepoProfileRequest) returns (UpdateRepoProfileResponse);
-  rpc DeleteRepoProfile(DeleteRepoProfileRequest) returns (DeleteRepoProfileResponse);
   rpc ListPromptSnippets(ListPromptSnippetsRequest) returns (ListPromptSnippetsResponse);
   rpc CreatePromptSnippet(CreatePromptSnippetRequest) returns (CreatePromptSnippetResponse);
   rpc UpdatePromptSnippet(UpdatePromptSnippetRequest) returns (UpdatePromptSnippetResponse);
@@ -580,7 +516,7 @@ service DashboardService {
   // Observability page (docs/adr/0047). QueryMetrics is core proxying
   // PromQL — Prometheus has no IngressRoute in this cluster, so a browser
   // cannot reach it directly. GetFleetTopology is the live cell view, and
-  // needs no cluster RBAC: core assembles it from the tasks table it
+  // needs no cluster RBAC: core assembles it from the sessions table it
   // already owns plus its own metrics.
   rpc QueryMetrics(QueryMetricsRequest) returns (QueryMetricsResponse);
   rpc GetFleetTopology(GetFleetTopologyRequest) returns (GetFleetTopologyResponse);
@@ -594,7 +530,6 @@ service DashboardService {
   rpc UpdateScheduledAudit(UpdateScheduledAuditRequest) returns (UpdateScheduledAuditResponse);
   rpc DeleteScheduledAudit(DeleteScheduledAuditRequest) returns (DeleteScheduledAuditResponse);
   rpc RunScheduledAuditNow(RunScheduledAuditNowRequest) returns (RunScheduledAuditNowResponse);
-  rpc RetryTask(RetryTaskRequest) returns (RetryTaskResponse);
 }
 
 // Brings an audit's next run forward to now rather than adding a second
@@ -610,21 +545,11 @@ message RunScheduledAuditNowResponse {
   ScheduledAudit audit = 1;
 }
 
-// Puts a terminally-failed task back in the queue. Retry was automatic-only:
-// ClaimNextTask reclaims a stale-heartbeat task until retry_count hits the
-// cap, then sets failed_permanently, which had no path back — a task that
-// died of an expired token stayed dead even after the token was fixed.
-// Resets retry_count so the reclaim budget starts over.
-//
-// Rejected with CodeFailedPrecondition unless the task is in a terminal
-// failed state — retrying a live session would double-dispatch it.
-message RetryTaskRequest {
-  string task_id = 1;
-}
-
-message RetryTaskResponse {
-  string status = 1;
-}
+// RetryTaskRequest/Response used to live here — the only path back from
+// failed_permanently, which the automatic reclaim could drive a task into
+// with no way out. Deleted in docs/adr/0048 along with the reclaim, the
+// retry counter and the terminal status itself: there is no dead state to
+// resurrect a session from, so retrying is just sending it another message.
 
 message ScheduledAudit {
   string id = 1;
@@ -669,9 +594,7 @@ message DeleteScheduledAuditRequest {
   string id = 1;
 }
 
-message DeleteScheduledAuditResponse {
-  string status = 1;
-}
+message DeleteScheduledAuditResponse {}
 
 
 
@@ -713,7 +636,7 @@ message CellNode {
   map<string, double> metrics = 4;
   // Set on worker/e2e cells: which task this cell is running, so clicking
   // it can open that session. Empty on the two hub cells.
-  string task_id = 5;
+  string session_id = 5;
   string repo = 6;
   // Human-facing one-liner (a task's description, a hub's role).
   string label = 7;

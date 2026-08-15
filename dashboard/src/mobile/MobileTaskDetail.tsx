@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { client } from "../connectClient";
-import { isThot, repoLabel } from "../taskKind";
+import { repoLabel } from "../taskKind";
 import {
   feedVisibility,
   latestSlashCommands,
@@ -21,7 +21,7 @@ import { Modal } from "../components/Modal";
 import { Segmented } from "../components/Segmented";
 import { SessionFeed } from "../components/SessionFeed";
 import { TickBar, todoProgress } from "../components/TickBar";
-import { TodosPanel, ChangesPanel, E2ePanel, SessionPanel } from "../components/SessionPanels";
+import { TodosPanel, ChangesPanel, SessionPanel } from "../components/SessionPanels";
 
 // The phone session screen from Agent Fleet Console Mobile.dc.html.
 //
@@ -38,19 +38,17 @@ const DENSITY: readonly { value: Density; label: string; title: string }[] = [
 ];
 
 export function MobileTaskDetail({
-  taskId,
+  sessionId,
   onBack,
   onDelete,
 }: {
-  taskId: string;
+  sessionId: string;
   onBack: () => void;
   onDelete: () => void;
 }) {
   const {
     task,
     entries,
-    refreshE2e,
-    e2e,
     branch,
     busyKey,
     loadError,
@@ -61,7 +59,7 @@ export function MobileTaskDetail({
     respondToPermission,
     answerQuestion,
     clearActionError,
-  } = useTaskDetail(taskId);
+  } = useTaskDetail(sessionId);
   const [message, setMessage] = useState("");
   const [panelsOpen, setPanelsOpen] = useState(false);
   const [bypassOpen, setBypassOpen] = useState(false);
@@ -86,11 +84,11 @@ export function MobileTaskDetail({
   // reasoning as TaskDetail's copy.
   const scrolledFor = useRef<string | null>(null);
   useLayoutEffect(() => {
-    if (entries.length === 0 || scrolledFor.current === taskId) return;
-    scrolledFor.current = taskId;
+    if (entries.length === 0 || scrolledFor.current === sessionId) return;
+    scrolledFor.current = sessionId;
     const el = feedRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [taskId, entries, feedRef]);
+  }, [sessionId, entries, feedRef]);
 
   // The optimistic echo renders before the server has the message; without
   // this, a send only scrolled once the real entry came back over the stream.
@@ -155,7 +153,7 @@ export function MobileTaskDetail({
 
         <div className="flex items-center gap-2 mt-2">
           <span className="text-2xs text-dim2 min-w-0 truncate">
-            {repoLabel(task)}
+            {repoLabel({ repo: task.repo })}
             {branch && ` · ${branch}`}
           </span>
           <Segmented value={density} options={DENSITY} onChange={setDensity} size="sm" className="ml-auto flex-none" />
@@ -207,7 +205,7 @@ export function MobileTaskDetail({
         onCancel={() => setBypassOpen(false)}
         onConfirm={() => {
           setBypassOpen(false);
-          run(() => client.setPermissionMode({ taskId, mode: "bypassPermissions" }), "bypass");
+          run(() => client.setPermissionMode({ sessionId, mode: "bypassPermissions" }), "bypass");
         }}
       />
 
@@ -226,7 +224,7 @@ export function MobileTaskDetail({
             <ActionButton
               busy={busyKey === "action:interrupt"}
               disabled={busyKey !== null}
-              onClick={() => run(() => client.interrupt({ taskId }), "action:interrupt")}
+              onClick={() => run(() => client.interrupt({ sessionId }), "action:interrupt")}
               className="flex-none border border-line text-dim px-2.5 py-1.5 text-xs whitespace-nowrap"
             >
               /interrupt
@@ -234,7 +232,7 @@ export function MobileTaskDetail({
             <ActionButton
               busy={busyKey === "action:mode"}
               disabled={busyKey !== null}
-              onClick={() => run(() => client.setPermissionMode({ taskId, mode: "plan" }), "action:mode")}
+              onClick={() => run(() => client.setPermissionMode({ sessionId, mode: "plan" }), "action:mode")}
               className="flex-none border border-line text-dim px-2.5 py-1.5 text-xs whitespace-nowrap"
             >
               /mode plan
@@ -283,18 +281,11 @@ export function MobileTaskDetail({
         <div className="flex flex-col gap-5">
           <TodosPanel todos={todos} blocked={blocked} />
           <ChangesPanel branch={branch} changes={changes} />
-          <E2ePanel
-            e2e={e2e}
-            taskId={task.id}
-            onChanged={refreshE2e}
-          />
           <SessionPanel
             task={task}
             busy={busyKey !== null}
             busyKey={busyKey}
             run={run}
-            codeServerUrl={e2e?.codeServerUrl}
-            isThotTask={isThot(task)}
             onBypassClick={() => {
               setPanelsOpen(false);
               setBypassOpen(true);

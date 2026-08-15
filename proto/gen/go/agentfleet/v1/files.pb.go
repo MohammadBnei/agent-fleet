@@ -425,7 +425,6 @@ func (x *DeleteFileRequest) GetKey() string {
 
 type DeleteFileResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Status        string                 `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -460,13 +459,6 @@ func (*DeleteFileResponse) Descriptor() ([]byte, []int) {
 	return file_agentfleet_v1_files_proto_rawDescGZIP(), []int{8}
 }
 
-func (x *DeleteFileResponse) GetStatus() string {
-	if x != nil {
-		return x.Status
-	}
-	return ""
-}
-
 var File_agentfleet_v1_files_proto protoreflect.FileDescriptor
 
 const file_agentfleet_v1_files_proto_rawDesc = "" +
@@ -497,9 +489,8 @@ const file_agentfleet_v1_files_proto_rawDesc = "" +
 	"\n" +
 	"expires_at\x18\x02 \x01(\tR\texpiresAt\"%\n" +
 	"\x11DeleteFileRequest\x12\x10\n" +
-	"\x03key\x18\x01 \x01(\tR\x03key\",\n" +
-	"\x12DeleteFileResponse\x12\x16\n" +
-	"\x06status\x18\x01 \x01(\tR\x06statusBMZKgithub.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1;agentfleetv1b\x06proto3"
+	"\x03key\x18\x01 \x01(\tR\x03key\"\x14\n" +
+	"\x12DeleteFileResponseBMZKgithub.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1;agentfleetv1b\x06proto3"
 
 var (
 	file_agentfleet_v1_files_proto_rawDescOnce sync.Once

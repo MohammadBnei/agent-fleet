@@ -65,7 +65,7 @@ func (f *fakeQAStore) LatestSeq(context.Context, string) (int64, error) {
 // one replying to some other question, or a stale one) satisfy this call.
 func TestAskUserQuestion_IgnoresAnswerToADifferentQuestion(t *testing.T) {
 	store := &fakeQAStore{}
-	s := New(store, nil, nil, nil, nil, nil, nil, nil)
+	s := New(store, nil, nil, nil, nil, nil, nil)
 
 	// An answer to a *different* question (ReplyTo: 999) is already
 	// sitting in the transcript before this call even posts its own
@@ -74,13 +74,13 @@ func TestAskUserQuestion_IgnoresAnswerToADifferentQuestion(t *testing.T) {
 		t.Fatalf("seed unrelated answer: %v", err)
 	}
 
-	req := &agentfleetv1.AskUserQuestionRequest{TaskId: "task-1", QuestionsJson: `{"questions":[]}`, TimeoutMs: 50}
+	req := &agentfleetv1.AskUserQuestionRequest{SessionId: "task-1", QuestionsJson: `{"questions":[]}`, TimeoutMs: 50}
 	resp, err := s.AskUserQuestion(context.Background(), req)
 	if err != nil {
 		t.Fatalf("AskUserQuestion: %v", err)
 	}
-	if resp.GetStatus() != "pending" {
-		t.Fatalf("expected status=pending (the unrelated answer must not satisfy this question), got %q", resp.GetStatus())
+	if resp.GetAnswered() {
+		t.Fatalf("expected answered=false (the unrelated answer must not satisfy this question), got %v", resp.GetAnswered())
 	}
 }
 
@@ -89,7 +89,7 @@ func TestAskUserQuestion_IgnoresAnswerToADifferentQuestion(t *testing.T) {
 // unblock it.
 func TestAskUserQuestion_MatchesCorrectlyTaggedAnswer(t *testing.T) {
 	store := &fakeQAStore{}
-	s := New(store, nil, nil, nil, nil, nil, nil, nil)
+	s := New(store, nil, nil, nil, nil, nil, nil)
 
 	go func() {
 		// AskUserQuestion posts its own question first (seq 0, the only
@@ -100,13 +100,13 @@ func TestAskUserQuestion_MatchesCorrectlyTaggedAnswer(t *testing.T) {
 		_, _ = store.AppendReply(context.Background(), "task-1", "human", `{"answers":{}}`, "answer", "", 0)
 	}()
 
-	req := &agentfleetv1.AskUserQuestionRequest{TaskId: "task-1", QuestionsJson: `{"questions":[]}`, TimeoutMs: 5000}
+	req := &agentfleetv1.AskUserQuestionRequest{SessionId: "task-1", QuestionsJson: `{"questions":[]}`, TimeoutMs: 5000}
 	resp, err := s.AskUserQuestion(context.Background(), req)
 	if err != nil {
 		t.Fatalf("AskUserQuestion: %v", err)
 	}
-	if resp.GetStatus() != "answered" {
-		t.Fatalf("expected status=answered, got %q", resp.GetStatus())
+	if !resp.GetAnswered() {
+		t.Fatalf("expected answered=true, got %v", resp.GetAnswered())
 	}
 	if resp.GetAnswersJson() != `{"answers":{}}` {
 		t.Fatalf("unexpected answers_json: %q", resp.GetAnswersJson())

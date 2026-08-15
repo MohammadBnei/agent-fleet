@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/MohammadBnei/agent-fleet/sidecar/internal/coreclient"
-	"github.com/MohammadBnei/agent-fleet/sidecar/internal/e2eclient"
 	"github.com/MohammadBnei/agent-fleet/sidecar/internal/localapi"
 	"github.com/MohammadBnei/agent-fleet/sidecar/internal/mcpserver"
 	"github.com/MohammadBnei/agent-fleet/sidecar/internal/telemetry"
@@ -25,9 +24,9 @@ func main() {
 		slog.Warn(warning, "value", rawLogLevel)
 	}
 
-	taskID := os.Getenv("TASK_ID")
+	taskID := os.Getenv("SESSION_ID")
 	if taskID == "" {
-		slog.Error("TASK_ID is required")
+		slog.Error("SESSION_ID is required")
 		os.Exit(1)
 	}
 	// Stamp taskId onto every line from here on. Without it the sidecar's
@@ -36,7 +35,7 @@ func main() {
 	// duplicating the provisioner's shortID() truncation rule into core.
 	// One attribute here removes that whole coupling: every fleet component
 	// is then filterable with the same `| json | taskId="..."`.
-	slog.SetDefault(slog.Default().With("taskId", taskID))
+	slog.SetDefault(slog.Default().With("sessionId", taskID))
 	coreAddr := env("CORE_GRPC_ADDR", "agent-fleet-core.agent-fleet.svc.cluster.local:9090")
 	worktreePath := env("WORKTREE_PATH", "/workspace")
 	mcpPort := env("MCP_PORT", "9090")
@@ -65,20 +64,12 @@ func main() {
 
 	go telemetry.Run(ctx, core, worktreePath, 5*time.Second)
 
-	// Where this task's sandbox answers, injected by the provisioner at pod
-	// creation (docs/adr/0045). It is available before any sandbox exists
-	// because the address is derived from names, which is what lets the very
-	// first run_command dial directly instead of relaying to bootstrap one.
-	//
-	// An absent or malformed value is deliberately not fatal: the roster
-	// stays empty and every sandbox call falls back through core, which is
-	// also exactly the deploy-skew path when this sidecar meets a provisioner
-	// too old to set the variable.
-	e2e := e2eclient.New()
-	e2e.SetEndpoints(e2eclient.ParseEndpoints(os.Getenv("FLEET_ENDPOINTS")))
-	defer e2e.DropAll()
-
-	mcpServer := &http.Server{Addr: ":" + mcpPort, Handler: withAccessLog("sidecar mcp", mcpserver.New(core, e2e))}
+	// The FLEET_ENDPOINTS roster and the e2eclient that consumed it are gone
+	// with the sandbox they addressed (docs/adr/0048 §6). docs/adr/0045's
+	// direct-dial decision is not reversed — it is moot: there is no second pod
+	// to dial, so the sidecar's only outbound connection is the one to core
+	// that it always had.
+	mcpServer := &http.Server{Addr: ":" + mcpPort, Handler: withAccessLog("sidecar mcp", mcpserver.New(core))}
 	localAPIServer := &http.Server{Addr: ":" + localAPIPort, Handler: withAccessLog("sidecar local api", localapi.New(core))}
 
 	go func() {

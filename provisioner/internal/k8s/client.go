@@ -14,7 +14,6 @@ import (
 )
 
 var (
-	middlewareGVR   = schema.GroupVersionResource{Group: "traefik.io", Version: "v1alpha1", Resource: "middlewares"}
 	ingressRouteGVR = schema.GroupVersionResource{Group: "traefik.io", Version: "v1alpha1", Resource: "ingressroutes"}
 )
 
@@ -22,10 +21,17 @@ type Client struct {
 	Core         kubernetes.Interface
 	Dynamic      dynamic.Interface
 	Namespace    string
-	RunnerImage  string
 	WorkerImage  string
 	SidecarImage string
 	WorkspacePVC string
+	// SessionStorageClass names the class for per-session working volumes
+	// (docs/adr/0048 §4). Empty means the cluster default — which on
+	// ukubi-cluster is longhorn, not a node-local class, so this must be set
+	// explicitly to get the measured node-local behaviour.
+	SessionStorageClass string
+	// SessionNodeSelector constrains session pods to a node carrying this
+	// "key=value" label. Empty means unconstrained.
+	SessionNodeSelector map[string]string
 	// LogLevel is forwarded verbatim into every worker pod's sidecar and
 	// worker containers (see CreateWorkerPod) — the provisioner's own
 	// LOG_LEVEL is the fleet's single source of truth for it, since those
@@ -38,7 +44,7 @@ type Client struct {
 	// separately-hardcoded default that can silently drift out of sync with
 	// wherever core's Service actually lives (e.g. prod's release-prefixed
 	// name vs kind-local's unprefixed one).
-	CoreGRPCAddr string
+	CoreGRPCAddr  string
 	ThotAuthToken string
 	// Where the cluster-access ingredient's kubectl shim sends argv
 	// (docs/adr/0037).
@@ -70,11 +76,13 @@ func New(namespace string, cfg Images) (*Client, error) {
 	}
 	return &Client{
 		Core: core, Dynamic: dyn, Namespace: namespace,
-		RunnerImage: cfg.RunnerImage, WorkerImage: cfg.WorkerImage,
+		WorkerImage: cfg.WorkerImage,
 		SidecarImage: cfg.SidecarImage, WorkspacePVC: cfg.WorkspacePVC,
+		SessionStorageClass: cfg.SessionStorageClass,
+		SessionNodeSelector: cfg.SessionNodeSelector,
 		LogLevel: cfg.LogLevel, CoreGRPCAddr: cfg.CoreGRPCAddr,
 		ThotAuthToken: cfg.ThotAuthToken,
-		ExecutorAddr: cfg.ExecutorAddr,
+		ExecutorAddr:  cfg.ExecutorAddr,
 		PostgresImage: cfg.PostgresImage, RedisImage: cfg.RedisImage,
 		SharedInstancePVCSize: cfg.SharedInstancePVCSize,
 	}, nil
@@ -82,13 +90,14 @@ func New(namespace string, cfg Images) (*Client, error) {
 
 // Images bundles the image/PVC/log-level config New needs — named struct
 // instead of positional strings, so a call site can't silently transpose
-// two of them (RunnerImage/WorkerImage/SidecarImage are string-identical
+// two of them (WorkerImage/SidecarImage are string-identical
 // types).
 type Images struct {
-	RunnerImage           string
 	WorkerImage           string
 	SidecarImage          string
 	WorkspacePVC          string
+	SessionStorageClass   string
+	SessionNodeSelector   map[string]string
 	LogLevel              string
 	CoreGRPCAddr          string
 	ThotAuthToken         string
