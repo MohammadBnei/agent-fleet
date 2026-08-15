@@ -162,7 +162,13 @@ func ToolKeysFor(clusterAccess bool) []string {
 // toolKeys carries only cluster-access now (see ToolKeysFor); `guidance` is
 // gone with the column, since operator snippets reach the model as message
 // text a human sent rather than as a wrapper the agent cannot see.
-func (c *Client) CreateWorkerPod(ctx context.Context, sessionID, repo, repoURL, baseBranch, description, leaseID, resumeAgentSessionID string, resumeFromSeq int64, toolKeys []string) (podName string, err error) {
+//
+// image is `repos.image`, the column that replaced the four toolchain
+// ingredients (docs/adr/0048 §6). Empty means the provisioner's own default.
+// It rides here rather than being looked up provisioner-side for the same
+// reason repoURL/baseBranch do: the provisioner holds no DB credentials
+// (docs/adr/0020 point 1), so anything it needs arrives at pod-creation time.
+func (c *Client) CreateWorkerPod(ctx context.Context, sessionID, repo, repoURL, baseBranch, description, leaseID, resumeAgentSessionID string, resumeFromSeq int64, toolKeys []string, image string) (podName string, err error) {
 	ctx, cancel := context.WithTimeout(ctx, sessionCallTimeout)
 	defer cancel()
 	resp, err := c.rpc.CreateWorkerPod(ctx, &agentfleetv1.CreateWorkerPodRequest{
@@ -175,6 +181,7 @@ func (c *Client) CreateWorkerPod(ctx context.Context, sessionID, repo, repoURL, 
 		ResumeSessionId: resumeAgentSessionID,
 		ResumeFromSeq:   resumeFromSeq,
 		ToolKeys:        toolKeys,
+		Image:           image,
 	})
 	if err != nil {
 		return "", fmt.Errorf("CreateWorkerPod: %w", err)

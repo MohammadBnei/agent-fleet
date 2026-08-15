@@ -431,3 +431,66 @@ func TestCreateWorkerPod_ClusterAccessReachesTheJob(t *testing.T) {
 		t.Error("THOT_AUTH_TOKEN missing from the worker container — executor rejects the call")
 	}
 }
+
+// TestCreateWorkerPod_RepoImageAppliesToTheWorkerContainerOnly guards
+// `repos.image`, the column docs/adr/0048 §6 put in place of the four
+// toolchain ingredients.
+//
+// The column, its store round-trip and its dashboard input all shipped with
+// that ADR — and the value never left core. There was no `image` field on
+// CreateWorkerPodRequest, so pod.go took the provisioner's WORKER_IMAGE
+// unconditionally and editing the field in the dashboard did nothing at all.
+// Nothing errored, because nothing was individually wrong: every layer was
+// correct and none of them was connected to the next.
+//
+// The second half is the other direction of the same bug. The clone init
+// container and the sidecar must stay on the fleet's own images: cloning
+// needs git, and the sidecar is a fleet binary at a fixed path. A
+// repo-supplied image owes neither. Applying the image to all three is a
+// one-token mistake (c.WorkerImage -> workerImage on the wrong line) that no
+// build or lint would catch, since all four values are plain strings — the
+// same shape as the SaveAgentSessionId swap in CLAUDE.md's traps.
+func TestCreateWorkerPod_RepoImageAppliesToTheWorkerContainerOnly(t *testing.T) {
+	const repoImage = "registry.example.test/some-repo-toolchain:v9"
+
+	for _, tc := range []struct {
+		name      string
+		specImage string
+		wantImage string
+	}{
+		{name: "repo sets an image", specImage: repoImage, wantImage: repoImage},
+		{name: "empty falls back to the fleet default", specImage: "", wantImage: "mohammaddocker/agent-fleet-worker:latest"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := newTestClient()
+			ctx := context.Background()
+
+			if err := c.CreateWorkerPod(ctx, WorkerPodSpec{
+				SessionID: "task-img", Repo: "dream-analyst", LeaseID: "lease-1", Image: tc.specImage,
+			}); err != nil {
+				t.Fatalf("CreateWorkerPod: %v", err)
+			}
+
+			job, err := c.Core.BatchV1().Jobs("agent-fleet").Get(ctx, WorkerResourceName("task-img"), metav1.GetOptions{})
+			if err != nil {
+				t.Fatalf("get job: %v", err)
+			}
+			podSpec := job.Spec.Template.Spec
+
+			if got := podSpec.Containers[0].Image; got != tc.wantImage {
+				t.Errorf("worker container image = %q, want %q", got, tc.wantImage)
+			}
+
+			byName := map[string]string{}
+			for _, ic := range podSpec.InitContainers {
+				byName[ic.Name] = ic.Image
+			}
+			if got := byName["clone"]; got != c.WorkerImage {
+				t.Errorf("clone init container image = %q, want the fleet's own %q — it needs git, which a repo image need not have", got, c.WorkerImage)
+			}
+			if got := byName["sidecar"]; got != c.SidecarImage {
+				t.Errorf("sidecar image = %q, want %q", got, c.SidecarImage)
+			}
+		})
+	}
+}

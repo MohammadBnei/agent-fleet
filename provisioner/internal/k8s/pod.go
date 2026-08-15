@@ -156,14 +156,32 @@ type WorkerPodSpec struct {
 	ResumeID      string
 	ResumeFromSeq int64
 	ToolKeys      []string
-	ServiceRefs   []ServiceIngredientRef
-	ExtraEnv      []corev1.EnvVar
+	// Image is repos.image — the worker container's image for this repo, ''
+	// meaning the fleet default (docs/adr/0048 §6 replaced four toolchain
+	// ingredients with this one column). Deliberately NOT applied to the
+	// clone init container or the sidecar: see workerImage below.
+	Image       string
+	ServiceRefs []ServiceIngredientRef
+	ExtraEnv    []corev1.EnvVar
 }
 
 func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error {
 	taskID, repo := spec.SessionID, spec.Repo
 	leaseID, resumeSessionID, resumeFromSeq := spec.LeaseID, spec.ResumeID, spec.ResumeFromSeq
 	toolKeys, serviceIngredients, extraEnv := spec.ToolKeys, spec.ServiceRefs, spec.ExtraEnv
+
+	// The worker container's image, and ONLY the worker container's.
+	//
+	// The clone init container and the sidecar keep the fleet's own images
+	// below. Cloning and diff telemetry are fleet-owned behavior that needs
+	// git and a specific binary at a specific path; a repo-supplied image is
+	// not required to have either, and a repo that set `image` to something
+	// without git would otherwise fail in the init container — before the
+	// agent ever starts, with an error about the wrong thing entirely.
+	workerImage := c.WorkerImage
+	if spec.Image != "" {
+		workerImage = spec.Image
+	}
 
 	name := WorkerResourceName(taskID)
 	labels := WorkerLabels(taskID, repo)
@@ -400,7 +418,7 @@ func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error 
 		Containers: []corev1.Container{
 			{
 				Name:         "worker",
-				Image:        c.WorkerImage,
+				Image:        workerImage,
 				Env:          workerEnv,
 				VolumeMounts: workerMounts,
 				Resources: corev1.ResourceRequirements{

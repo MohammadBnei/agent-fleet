@@ -78,6 +78,21 @@ message CreateWorkerPodRequest {
   // service_ingredients has no producer left, and `guidance` went with the
   // fleet-composed prompt it was hidden inside (docs/adr/0048).
   repeated string tool_keys = 10;
+
+  // The container image the worker container runs, from `repos.image` — the
+  // one column docs/adr/0048 §6 put in place of the four toolchain
+  // ingredients, on the grounds that "an init container copying a Go
+  // toolchain onto an emptyDir is an elaborate way of saying this repo needs
+  // Go". Empty means the provisioner's own WORKER_IMAGE default.
+  //
+  // The column, its dashboard input and its store round-trip all shipped
+  // with docs/adr/0048; this field is what was missing, so setting the field
+  // in the dashboard did nothing at all until now.
+  //
+  // Applies to the worker container ONLY. The clone init container and the
+  // sidecar stay on the fleet's own images: cloning is fleet-owned behavior
+  // that needs git, and a repo-supplied image is not required to have it.
+  string image = 12;
 }
 
 message CreateWorkerPodResponse {

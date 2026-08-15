@@ -57,21 +57,6 @@ func NewServer(sessionStore *sessions.Store, proposalStore *proposals.Store, tra
 	return &Server{sessions: sessionStore, proposals: proposalStore, transcr: transcr, journal: journalStore, repos: repoStore, snippets: snippetStore, e2e: e2e, files: files, hub: hub, maxLive: maxLive, loki: loki, prom: prom, audits: auditStore}
 }
 
-// toolKeysFor resolves the only ingredient that survived docs/adr/0034's
-// recipe system: cluster-access, which is a privilege grant rather than a
-// toolchain (docs/adr/0037, docs/adr/0048). Everything else the recipe used
-// to carry is now either the agent's own `Bash` or repos.image.
-func (s *Server) toolKeysFor(ctx context.Context, repo string) ([]string, error) {
-	r, err := s.repos.Get(ctx, repo)
-	if err != nil {
-		return nil, err
-	}
-	if r == nil {
-		return nil, nil
-	}
-	return provisionerclient.ToolKeysFor(r.ClusterAccess), nil
-}
-
 var _ agentfleetv1connect.DashboardServiceHandler = (*Server)(nil)
 
 const defaultListLimit = 50
@@ -625,11 +610,12 @@ func (s *Server) WarmIfIdle(ctx context.Context, sessionID string) (podName stri
 	if err != nil {
 		return "", connect.NewError(connect.CodeInternal, err)
 	}
-	toolKeys, err := s.toolKeysFor(ctx, t.Repo)
-	if err != nil {
-		return "", connect.NewError(connect.CodeInternal, err)
-	}
-	podName, err = s.e2e.CreateWorkerPod(ctx, sessionID, t.Repo, repoCfg.URL, repoCfg.BaseBranch, t.Description, leaseID, resumeAgentSessionID, resumeFromSeq, toolKeys)
+	// Both from repoCfg, which is the row already read above. This used to
+	// re-fetch the same repo through a toolKeysFor helper — two reads of one
+	// row, which a concurrent "manage repos" edit could have straddled, so a
+	// pod could get one repo's privilege grant and another's image.
+	toolKeys := provisionerclient.ToolKeysFor(repoCfg.ClusterAccess)
+	podName, err = s.e2e.CreateWorkerPod(ctx, sessionID, t.Repo, repoCfg.URL, repoCfg.BaseBranch, t.Description, leaseID, resumeAgentSessionID, resumeFromSeq, toolKeys, repoCfg.Image)
 	if err != nil {
 		return "", connect.NewError(connect.CodeInternal, err)
 	}

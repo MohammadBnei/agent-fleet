@@ -483,6 +483,23 @@ was the fleet reading the repo on the agent's behalf.
 `repos.image` — one column replacing three tables — names the image a repo's
 sessions run.
 
+> **Amendment, v3.3.x.** This shipped only as far as Postgres. The column, its
+> store round-trip and its dashboard input all landed with this ADR, but
+> `CreateWorkerPodRequest` had no `image` field, so the value never left
+> `core` and `pod.go` took the provisioner's `WORKER_IMAGE` unconditionally.
+> For three minor versions, editing the field in "manage repos" did nothing —
+> and nothing errored, because every layer was individually correct and none
+> was connected to the next. The four toolchain ingredients this column
+> replaced stayed in `catalog.Tools` that whole time, with `go-toolchain`
+> still putting `/opt/tools/go/bin` ahead of the image's own Go on `PATH`.
+>
+> The field now exists and applies to the **worker container only** — the
+> clone init container and the sidecar stay on the fleet's own images, since
+> cloning needs `git` and the sidecar is a fleet binary at a fixed path, and a
+> repo-supplied image owes neither. The dead ingredients are deleted. Guarded
+> by `TestCreateWorkerPod_RepoImageAppliesToTheWorkerContainerOnly` and
+> `TestTools_CarriesNoToolchain`.
+
 ## Alternatives considered
 
 - **Keep the queue, delete only the dead columns.** Rejected: `pending` only

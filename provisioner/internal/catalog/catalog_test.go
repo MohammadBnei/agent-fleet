@@ -2,21 +2,25 @@ package catalog
 
 import "testing"
 
-// These lists must match db/migrations/000003_repo_profiles.up.sql's
-// tool_key/service_key CHECK constraints exactly — this test is the
-// guard against the two enumerations silently drifting apart (core has
-// no shared package with the provisioner to enforce this at compile time,
-// docs/adr/0034's judgment call #3).
-var dbCheckToolKeys = []string{"go-toolchain", "bun-toolchain", "golangci-lint", "buf", "cluster-access"}
-var dbCheckServiceKeys = []string{"postgres", "redis"}
+// These used to be checked against db/migrations/000003_repo_profiles.up.sql's
+// tool_key/service_key CHECK constraints. That migration, that table and those
+// constraints are all gone — repo_profiles was deleted in docs/adr/0048 and the
+// schema squashed into 000001_init. The old test asserted len(Tools) == 5
+// against a constraint that no longer existed, and passed only because both
+// numbers happened to still be 5.
+//
+// What is worth guarding is the shape: every tool key has to be stageable, and
+// every service key has to name the env var its client library actually reads.
+var wantToolKeys = []string{"cluster-access"}
+var wantServiceKeys = []string{"postgres", "redis"}
 
-func TestTools_MatchesDBCheckConstraint(t *testing.T) {
-	if len(Tools) != len(dbCheckToolKeys) {
-		t.Fatalf("catalog.Tools has %d entries, db CHECK constraint allows %d", len(Tools), len(dbCheckToolKeys))
+func TestTools_EveryKeyIsStageable(t *testing.T) {
+	if len(Tools) != len(wantToolKeys) {
+		t.Fatalf("catalog.Tools has %d entries, want %d (%v)", len(Tools), len(wantToolKeys), wantToolKeys)
 	}
-	for _, key := range dbCheckToolKeys {
+	for _, key := range wantToolKeys {
 		if !KnownToolKey(key) {
-			t.Errorf("db-allowed tool_key %q has no catalog.Tools entry", key)
+			t.Errorf("tool_key %q has no catalog.Tools entry", key)
 		}
 		def := Tools[key]
 		if def.CopyImage == "" {
@@ -28,13 +32,25 @@ func TestTools_MatchesDBCheckConstraint(t *testing.T) {
 	}
 }
 
-func TestServices_MatchesDBCheckConstraint(t *testing.T) {
-	if len(Services) != len(dbCheckServiceKeys) {
-		t.Fatalf("catalog.Services has %d entries, db CHECK constraint allows %d", len(Services), len(dbCheckServiceKeys))
+// TestTools_CarriesNoToolchain is the guard for docs/adr/0048 §6: a repo's
+// toolchain is repos.image, never an init container. Re-adding one here would
+// also re-add the PATH shadowing that made go-toolchain silently override the
+// worker image's own Go.
+func TestTools_CarriesNoToolchain(t *testing.T) {
+	for _, key := range []string{"go-toolchain", "bun-toolchain", "golangci-lint", "buf"} {
+		if KnownToolKey(key) {
+			t.Errorf("tool_key %q is back — a toolchain belongs in repos.image (docs/adr/0048 §6)", key)
+		}
 	}
-	for _, key := range dbCheckServiceKeys {
+}
+
+func TestServices_EveryKeyIsResolvable(t *testing.T) {
+	if len(Services) != len(wantServiceKeys) {
+		t.Fatalf("catalog.Services has %d entries, want %d (%v)", len(Services), len(wantServiceKeys), wantServiceKeys)
+	}
+	for _, key := range wantServiceKeys {
 		if !KnownServiceKey(key) {
-			t.Errorf("db-allowed service_key %q has no catalog.Services entry", key)
+			t.Errorf("service_key %q has no catalog.Services entry", key)
 		}
 		if Services[key].Port == 0 {
 			t.Errorf("service %q: Port is unset", key)

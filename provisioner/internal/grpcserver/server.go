@@ -181,6 +181,7 @@ func (s *Server) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWo
 		ResumeID:      req.GetResumeSessionId(),
 		ResumeFromSeq: req.GetResumeFromSeq(),
 		ToolKeys:      req.GetToolKeys(),
+		Image:         req.GetImage(),
 		ServiceRefs:   nil,
 		ExtraEnv:      nil,
 	}); err != nil {
