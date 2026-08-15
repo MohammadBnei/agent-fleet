@@ -383,7 +383,13 @@ func TestSweepQueries_SelectOnlyTheSessionsTheyDescribe(t *testing.T) {
 	if err := store.SetPodPhase(ctx, healthy, "POD_PHASE_RUNNING", ""); err != nil {
 		t.Fatalf("phase: %v", err)
 	}
+	// Human asks, pod answers — both halves, because they now mean different
+	// things: the human append moves last_active_at, the agent append is what
+	// proves the pod came up (see TouchActive).
 	if err := store.TouchActive(ctx, healthy, "human", "discussion"); err != nil {
+		t.Fatalf("touch: %v", err)
+	}
+	if err := store.TouchActive(ctx, healthy, "agent", "assistant"); err != nil {
 		t.Fatalf("touch: %v", err)
 	}
 
@@ -440,7 +446,8 @@ func TestSweepQueries_SelectOnlyTheSessionsTheyDescribe(t *testing.T) {
 		t.Error("the idle sweep caught a session active seconds ago — this kills live conversations")
 	}
 
-	// Startup stall is gated on activity_seen, which TouchActive sets.
+	// Startup stall is gated on activity_seen, which only a NON-human append
+	// sets — see TestListStartupStalledIDs_AHumanMessageIsNotProofOfAPod.
 	stalled, err := store.ListStartupStalledIDs(ctx, 0)
 	if err != nil {
 		t.Fatalf("stalled: %v", err)
@@ -450,6 +457,75 @@ func TestSweepQueries_SelectOnlyTheSessionsTheyDescribe(t *testing.T) {
 	}
 	if !contains(stalled, stopped) {
 		t.Error("a pod that came up and never said anything must be startup-stalled")
+	}
+}
+
+// TestListStartupStalledIDs_AHumanMessageIsNotProofOfAPod replays the exact
+// live sequence that made docs/adr/0040's startup-stall sweep dead code on the
+// only path that creates pods.
+//
+// PostMessage warms and THEN appends — that order is load-bearing (docs/adr/
+// 0048: a message appended before the pod exists lands below its cursor and is
+// never delivered). ReserveSlot clears activity_seen for the new pod; the
+// human's own provisioning message set it right back to true milliseconds
+// later, because TouchActive set it on every append regardless of origin.
+// `WHERE NOT activity_seen` then matched nothing, ever.
+//
+// Found on a kind cluster by pointing repos.image at an image that does not
+// exist: three sessions whose pods never pulled a layer all sat at
+// activity_seen = true, holding their slots until the 30-minute idle sweep
+// instead of the 3-minute stall sweep written for exactly this.
+func TestListStartupStalledIDs_AHumanMessageIsNotProofOfAPod(t *testing.T) {
+	ctx := context.Background()
+	pool := dbtest.NewPool(t)
+	store := NewStore(pool)
+
+	// The real ordering: reserve (clears activity_seen), then the human's
+	// message lands. No pod ever speaks — it is ImagePullBackOff.
+	stalled := newSession(t, ctx, store)
+	if _, err := store.ReserveSlot(ctx, stalled, 5); err != nil {
+		t.Fatalf("reserve: %v", err)
+	}
+	if err := store.SetPodPhase(ctx, stalled, "POD_PHASE_SCHEDULED", ""); err != nil {
+		t.Fatalf("phase: %v", err)
+	}
+	if err := store.TouchActive(ctx, stalled, "human", "discussion"); err != nil {
+		t.Fatalf("touch: %v", err)
+	}
+
+	ids, err := store.ListStartupStalledIDs(ctx, 0)
+	if err != nil {
+		t.Fatalf("stalled: %v", err)
+	}
+	if !contains(ids, stalled) {
+		t.Error("a pod that never spoke was not startup-stalled — the human's own " +
+			"provisioning message marked it as having reported activity, so the " +
+			"sweep can never fire and the session holds a slot until the idle timeout")
+	}
+
+	// The other direction: once the pod speaks, a later human message must not
+	// un-see it. activity_seen is OR'd, never assigned.
+	spoke := newSession(t, ctx, store)
+	if _, err := store.ReserveSlot(ctx, spoke, 5); err != nil {
+		t.Fatalf("reserve: %v", err)
+	}
+	if err := store.SetPodPhase(ctx, spoke, "POD_PHASE_RUNNING", ""); err != nil {
+		t.Fatalf("phase: %v", err)
+	}
+	if err := store.TouchActive(ctx, spoke, "agent", "assistant"); err != nil {
+		t.Fatalf("touch: %v", err)
+	}
+	if err := store.TouchActive(ctx, spoke, "human", "discussion"); err != nil {
+		t.Fatalf("touch: %v", err)
+	}
+
+	ids, err = store.ListStartupStalledIDs(ctx, 0)
+	if err != nil {
+		t.Fatalf("stalled: %v", err)
+	}
+	if contains(ids, spoke) {
+		t.Error("a human message after the pod spoke un-set activity_seen — this " +
+			"tears down a live session mid-conversation")
 	}
 }
 
