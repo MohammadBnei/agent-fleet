@@ -83,15 +83,16 @@ forgotten reload silently reuses the old image.
 
 ## 3. Namespace, Traefik CRDs, workspace volume, RBAC
 
-The Traefik CRDs are not optional here.
-`provisioner/cmd/provisioner/main.go` creates a shared
-`cluster-ip-whitelist` Middleware at startup and calls `os.Exit(1)` if it
-can't — deliberately, since in the real cluster a missing CRD or missing
-RBAC would mean preview URLs silently start prompting worker pods for basic
-auth. kind has no Traefik, so without `05-traefik-crds.yaml` the provisioner
-CrashLoopBackOffs and **nothing downstream can be tested**: no pods, no
-sessions, no worktrees. The symptom is `cluster IP whitelist middleware
-creation failed: the server could not find the requested resource`.
+`05-traefik-crds.yaml` supplies the `IngressRoute` CRD. kind has no Traefik,
+and `expose()` creates one route per published session — without the CRD that
+call fails with `the server could not find the requested resource`, so a
+session can never publish a URL locally. Everything else still works; this is
+not a startup dependency.
+
+It used to be one: the provisioner created a shared `cluster-ip-whitelist`
+Middleware at startup and `os.Exit(1)`d if it couldn't, so a missing CRD meant
+the provisioner CrashLoopBackOffed and nothing downstream could be tested at
+all. Both the Middleware and that fatal are gone (docs/adr/0048 §6).
 
 ```bash
 kubectl apply -f local/kind/00-namespace.yaml

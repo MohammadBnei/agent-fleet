@@ -3,21 +3,23 @@ package config
 import "os"
 
 type Config struct {
-	Namespace      string
-	E2eRunnerImage string
-	WorkerImage    string
-	SidecarImage   string
+	Namespace    string
+	WorkerImage  string
+	SidecarImage string
 	// WorkspacePVC is the one shared PVC name (docs/adr/0019) — replaces
 	// the old per-repo WorkspacePvcFor(repo) naming, since there's only
 	// one workspace PVC in the fleet now, not one per repo.
 	WorkspacePVC string
 	// SessionStorageClass is the StorageClass for per-session working volumes.
 	SessionStorageClass string
-	// WorktreesRoot is where that PVC is mounted inside THIS pod — the
-	// provisioner needs its own read-write mount to run git clone/fetch/
-	// worktree add before a worker pod exists (docs/adr/0019 point 2:
-	// the provisioner owns the entire git lifecycle on the shared PVC).
-	WorktreesRoot string
+	// WorkspaceRoot is where the shared PVC is mounted inside THIS pod. The
+	// provisioner needs its own read-write mount to maintain the clone cache
+	// and to seed each session's claude-home before its pod exists.
+	//
+	// It does NOT hold session working trees any more (docs/adr/0048 §4):
+	// those are per-session volumes this process never mounts, cloned into by
+	// an init container in the session's own pod.
+	WorkspaceRoot string
 	E2eHost       string
 	Port          string
 	GRPCPort      string
@@ -31,10 +33,6 @@ type Config struct {
 	ThotAuthToken     string
 	ExecutorAddr      string
 	ReconcileInterval string
-	// SweepInterval is how often the [gone]-branch sweep runs
-	// (reliability-findings.md #2) — minutes, not seconds: it does a real
-	// `git fetch` per repo, unlike the k8s-only reconcile loop.
-	SweepInterval string
 	// LogLevel is one of debug/info/warn/error (case-insensitive), parsed
 	// via slog.Level.UnmarshalText in cmd/provisioner/main.go.
 	LogLevel string
@@ -43,11 +41,6 @@ type Config struct {
 	// into every worker pod's CLAUDE_CONFIG_DIR.
 	FleetSharedRepoURL string
 	FleetSharedBranch  string
-	// ClaudeHomeDir must equal the claudeConfigDir constant in
-	// provisioner/internal/k8s/pod.go (the value forwarded to worker pods as
-	// CLAUDE_CONFIG_DIR) — kept as a separate literal rather than threaded
-	// through k8s.Client for a smaller diff; if you change one, change both.
-	ClaudeHomeDir string
 	// PostgresImage/RedisImage back the "postgres"/"redis" service
 	// ingredients' shared instances (docs/adr/0034) — operationally
 	// configurable (version/security-patch bumps) unlike a tool
@@ -64,25 +57,16 @@ type Config struct {
 	// — reconcile.Loop compares this against a last-used-at annotation
 	// instead (docs/adr/0034).
 	SharedInstanceIdleTimeoutMs string
-	// E2eMaxAgeMs bounds how long an e2e sandbox pod may live before the
-	// reconcile sweep deletes it (docs/adr/0044, reversing ADR-0039's "e2e
-	// pods are never GC'd" accepted gap). Age, not idleness: the provisioner
-	// holds no DB (docs/adr/0020 point 1), so there is nowhere to record when
-	// a sandbox was last used. Generous by design — at 1000m/1Gi requests
-	// each, the cost of leaking these is the NEXT pod sitting Pending
-	// forever, which is indistinguishable from "the sandbox won't start".
-	E2eMaxAgeMs string
 }
 
 func Load() Config {
 	return Config{
 		Namespace:                   env("NAMESPACE", "agent-fleet"),
-		E2eRunnerImage:              env("E2E_RUNNER_IMAGE", "mohammaddocker/agent-fleet-e2e-runner:latest"),
 		WorkerImage:                 env("WORKER_IMAGE", "mohammaddocker/agent-fleet-worker:latest"),
 		SidecarImage:                env("SIDECAR_IMAGE", "mohammaddocker/agent-fleet-sidecar:latest"),
 		WorkspacePVC:                env("WORKSPACE_PVC", "agent-fleet-workspace"),
 		SessionStorageClass:         env("SESSION_STORAGE_CLASS", ""),
-		WorktreesRoot:               env("WORKTREES_ROOT", "/workspace"),
+		WorkspaceRoot:               env("WORKSPACE_ROOT", "/workspace"),
 		E2eHost:                     env("E2E_HOST", "e2e.bnei.dev"),
 		Port:                        env("PORT", "8080"),
 		GRPCPort:                    env("GRPC_PORT", "9090"),
@@ -90,16 +74,13 @@ func Load() Config {
 		ThotAuthToken:               env("THOT_AUTH_TOKEN", ""),
 		ExecutorAddr:                env("EXECUTOR_ADDR", "thot-executor.thot.svc.cluster.local:9090"),
 		ReconcileInterval:           env("RECONCILE_INTERVAL_MS", "10000"),
-		SweepInterval:               env("SWEEP_INTERVAL_MS", "300000"),
 		LogLevel:                    env("LOG_LEVEL", "info"),
 		FleetSharedRepoURL:          env("FLEET_SHARED_REPO_URL", "https://github.com/MohammadBnei/agent-fleet.git"),
 		FleetSharedBranch:           env("FLEET_SHARED_BRANCH", "main"),
-		ClaudeHomeDir:               env("CLAUDE_HOME_DIR", "/workspace/.claude-home"),
 		PostgresImage:               env("POSTGRES_IMAGE", "postgres:16-alpine"),
 		RedisImage:                  env("REDIS_IMAGE", "redis:7-alpine"),
 		SharedInstancePVCSize:       env("SHARED_INSTANCE_PVC_SIZE", "2Gi"),
 		SharedInstanceIdleTimeoutMs: env("SHARED_INSTANCE_IDLE_TIMEOUT_MS", "43200000"), // 12h
-		E2eMaxAgeMs:                 env("E2E_MAX_AGE_MS", "86400000"),                  // 24h
 	}
 }
 

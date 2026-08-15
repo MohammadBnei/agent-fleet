@@ -48,15 +48,20 @@ function RepoRow({ repo, onSaved, onRequestDelete, onError }: {
         placeholder="main"
         className="input input-sm input-bordered w-24 flex-none"
       />
-      {/* Which profile the e2e sandbox is built from (docs/adr/0044). Empty
-          means the "e2e" convention; agent-fleet points at "lint", where its
-          toolchain actually lives. */}
+      {/* The container image this repo's sessions run in (repos.image,
+          docs/adr/0048 §6 — one column replacing three profile tables).
+          Blank means the fleet's default worker image, which carries bun, Go,
+          git, gh and a browser.
+
+          This input was still labelled as the e2e sandbox's build profile
+          while already writing `image`, so the UI described a field that no
+          longer existed and hid the one it was actually editing. */}
       <input
         value={image}
         onChange={(e) => setImage(e.target.value)}
-        placeholder="e2e"
-        title="Profile the e2e sandbox is built from — blank means the profile named 'e2e'"
-        className="input input-sm input-bordered w-24 flex-none"
+        placeholder="default image"
+        title="Container image this repo's sessions run in — blank uses the fleet's default worker image"
+        className="input input-sm input-bordered w-32 flex-none"
       />
       <button
         type="button"

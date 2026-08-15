@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"os"
 	"strconv"
-	"time"
 
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -82,352 +81,23 @@ func contextBudgetEnv() []corev1.EnvVar {
 	}
 }
 
-// e2eMaxCPU/e2eMaxMemory are the e2e-runner container's limits. They must
-// stay <= limitRange.max in k8s/core.yaml — that LimitRange is
-// namespace-wide, so exceeding it means the pod is rejected at admission
-// and never exists, rather than merely being throttled. Named constants so
-// the test that pins the two files together has something to assert on.
-const (
-	e2eMaxCPU    = "4000m"
-	e2eMaxMemory = "4Gi"
-)
-
 func int32Ptr(i int32) *int32 { return &i }
-func boolPtr(b bool) *bool    { return &b }
 
-// CreatedE2ePod mirrors CreatedE2ePod in k8s.ts.
-type CreatedE2ePod struct {
-	PodName     string
-	IngressPath string
-}
-
-// TaskRef is the subset of a task row this package needs.
-type TaskRef struct {
-	ID   string
-	Repo string
-	// StartCmd is always resolved by the caller now (core resolves the
-	// repo's "e2e" profile, or an agent-supplied override — docs/adr/0034)
-	// — the old per-repo StartCmdFor Go-switch fallback is gone, verified
-	// working end-to-end via /kind-local before removal.
-	//
-	// Empty is VALID (docs/adr/0044): it means a sandbox-only pod — no app,
-	// no preview, run_command fully working. It used to be a hard error
-	// here, which made every repo without an "e2e" profile (agent-fleet,
-	// infra-bootstrap) unable to start a sandbox at all, even though
-	// run_command is registered for every session from turn one.
-	StartCmd string
-	// ToolKeys/ServiceIngredients are the repo's resolved "e2e" profile
-	// (docs/adr/0034) — core resolves the profile name, this package only
-	// ever sees the already-resolved ingredient list. ExtraEnv carries
-	// already-minted task-scoped/repo-scoped service URLs (the caller,
-	// grpcserver.go, calls MintServiceCredentials before CreatePod so a
-	// minting failure blocks pod creation entirely — pod-scoped ingredients
-	// are the only kind actually materialized inside this function, via
-	// buildIngredients).
-	ToolKeys           []string
-	ServiceIngredients []ServiceIngredientRef
-	ExtraEnv           []corev1.EnvVar
-}
-
-func (c *Client) CreatePod(ctx context.Context, task TaskRef) error {
-	startCmd := task.StartCmd
-	name := ResourceName(task.ID)
-	labels := Labels(task.ID)
-
-	initContainers, ingredientEnv, toolsVol, toolsMount, err := buildIngredients(task.ToolKeys, task.ServiceIngredients, ClusterAccess{ExecutorAddr: c.ExecutorAddr, AuthToken: c.ThotAuthToken})
-	if err != nil {
-		return fmt.Errorf("build ingredients: %w", err)
-	}
-
-	runnerEnv := []corev1.EnvVar{
-		{Name: "E2E_WORKTREE_PATH", Value: "/workspace"},
-		{Name: "E2E_START_CMD", Value: startCmd},
-		{Name: "E2E_APP_PORT", Value: fmt.Sprint(AppPort)},
-		{Name: "E2E_CODE_SERVER_PORT", Value: fmt.Sprint(CodeServerPort)},
-		{Name: "E2E_PLAYWRIGHT_PORT", Value: fmt.Sprint(PlaywrightPort)},
-		{Name: "E2E_EXEC_PORT", Value: fmt.Sprint(ExecPort)},
-		{Name: "E2E_SSH_PORT", Value: fmt.Sprint(SSHPort)},
-		// Persisted on the shared PVC under cache/<repo>/ (see the
-		// "cache" VolumeMount below) so a repo's Go/Bun deps only get
-		// downloaded once, not on every e2e session — GOCACHE/GOMODCACHE
-		// and BUN_INSTALL_CACHE_DIR are real env vars both toolchains
-		// already read natively, and both create the directory on first
-		// write, so no init container is needed. E2E_START_CMD inherits
-		// these as container env, same as every other var here.
-		// ponytail: no fleet-level lock — two concurrent e2e pods for the
-		// same repo share this dir relying on Go/Bun's own cache-safe
-		// locking; add a mutex (mirroring internal/git's per-repo one) if
-		// that ever proves flaky in practice.
-		{Name: "GOMODCACHE", Value: "/cache/go-mod"},
-		{Name: "GOCACHE", Value: "/cache/go-build"},
-		{Name: "BUN_INSTALL_CACHE_DIR", Value: "/cache/bun"},
-	}
-	runnerEnv = append(runnerEnv, ingredientEnv...)
-	runnerEnv = append(runnerEnv, task.ExtraEnv...)
-
-	runnerMounts := []corev1.VolumeMount{
-		{Name: "workspace", MountPath: "/workspace", SubPath: "worktrees/" + task.ID},
-		{Name: "workspace", MountPath: "/cache", SubPath: "cache/" + task.Repo},
-		{Name: "dshm", MountPath: "/dev/shm"},
-		{Name: "ssh-authorized-keys", MountPath: "/ssh-authorized-keys", ReadOnly: true},
-	}
-	if toolsMount != nil {
-		runnerMounts = append(runnerMounts, *toolsMount)
-	}
-
-	pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: c.Namespace, Labels: labels},
-		Spec: corev1.PodSpec{
-			RestartPolicy:  corev1.RestartPolicyNever,
-			InitContainers: initContainers,
-			Containers: []corev1.Container{
-				{
-					Name:  "e2e-runner",
-					Image: c.RunnerImage,
-					Env:   runnerEnv,
-					Ports: []corev1.ContainerPort{
-						{Name: "app", ContainerPort: AppPort},
-						{Name: "code-server", ContainerPort: CodeServerPort},
-						{Name: "playwright", ContainerPort: PlaywrightPort},
-						{Name: "exec", ContainerPort: ExecPort},
-						{Name: "ssh", ContainerPort: SSHPort},
-					},
-					VolumeMounts: runnerMounts,
-					// Readiness, deliberately not startup/liveness: a pod
-					// whose app never binds must stay alive so code-server
-					// (:8080) is still reachable to debug why. This is the
-					// only thing standing between "the recipe's start_cmd
-					// is wrong" and a preview that 502s forever while the
-					// pod reports Running — found live: Vite bound
-					// 127.0.0.1:5173 and nothing anywhere noticed.
-					// FailureThreshold is huge on purpose: a cold
-					// `bun install` on the shared cache measured 782s.
-					ReadinessProbe: &corev1.Probe{
-						ProbeHandler:     corev1.ProbeHandler{TCPSocket: &corev1.TCPSocketAction{Port: intstr.FromInt32(AppPort)}},
-						PeriodSeconds:    10,
-						FailureThreshold: 120,
-					},
-					// Explicit, not left to the namespace LimitRange's
-					// 512Mi container default (agent-fleet-core-limits,
-					// common-app-chart) — found live via OOMKilled: this
-					// one container runs code-server, a headless-Chromium
-					// Playwright MCP server, and the target app's own dev
-					// server (a real npm/bun install + Vite) all at once,
-					// nowhere near fitting in 512Mi.
-					//
-					// Raised from 250m/512Mi req, 2000m/2Gi lim once this
-					// pod became the worker's build/test sandbox
-					// (docs/adr/0039) rather than just a preview: it now
-					// runs the compiles and test suites too, concurrently
-					// with all of the above. The old 250m request was the
-					// bigger problem of the two — it sets the CFS weight,
-					// so under any node contention the pod got a quarter
-					// core to install dependencies with.
-					//
-					// The 4000m ceiling REQUIRES limitRange.max.cpu >= 4 in
-					// k8s/core.yaml. That LimitRange is namespace-wide
-					// (created by core's release, applied to pods the
-					// provisioner creates), its chart default is cpu "2",
-					// and a container limit above the max is rejected at
-					// admission — the pod is never created at all. Change
-					// both or neither; TestCreatePod_ResourcesWithinLimitRange
-					// pins them together.
-					//
-					// Sizing note: the fleet concurrency cap is 5, so 5
-					// concurrent sandboxes reserve 5 CPU / 5Gi against
-					// worker-01+worker-02's 12 cores — the 4-core limit is
-					// burst headroom for the common idle-node case, not a
-					// reservation.
-					Resources: corev1.ResourceRequirements{
-						Requests: corev1.ResourceList{
-							corev1.ResourceCPU:    resource.MustParse("1000m"),
-							corev1.ResourceMemory: resource.MustParse("1Gi"),
-						},
-						Limits: corev1.ResourceList{
-							corev1.ResourceCPU:    resource.MustParse(e2eMaxCPU),
-							corev1.ResourceMemory: resource.MustParse(e2eMaxMemory),
-						},
-					},
-				},
-			},
-			Volumes: []corev1.Volume{
-				{
-					Name: "workspace",
-					VolumeSource: corev1.VolumeSource{
-						PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: c.WorkspacePVC},
-					},
-				},
-				{
-					Name: "dshm",
-					VolumeSource: corev1.VolumeSource{
-						EmptyDir: &corev1.EmptyDirVolumeSource{
-							Medium:    corev1.StorageMediumMemory,
-							SizeLimit: resourcePtr("1Gi"),
-						},
-					},
-				},
-				{
-					Name: "ssh-authorized-keys",
-					VolumeSource: corev1.VolumeSource{
-						Secret: &corev1.SecretVolumeSource{
-							SecretName:  "e2e-ssh-authorized-keys",
-							Optional:    boolPtr(true),
-							Items:       []corev1.KeyToPath{{Key: "E2E_SSH_AUTHORIZED_KEYS", Path: "authorized_keys"}},
-							DefaultMode: int32Ptr(0644),
-						},
-					},
-				},
-			},
-		},
-	}
-	if toolsVol != nil {
-		pod.Spec.Volumes = append(pod.Spec.Volumes, *toolsVol)
-	}
-
-	if _, err := c.Core.CoreV1().Pods(c.Namespace).Create(ctx, pod, metav1.CreateOptions{}); err != nil {
-		slog.Error("k8s CreatePod", "sessionId", task.ID, "error", err)
-		return err
-	}
-	slog.Info("k8s CreatePod", "sessionId", task.ID)
-	metrics.PodsCreatedTotal.WithLabelValues("e2e").Inc()
-	return nil
-}
-
-func (c *Client) DeletePod(ctx context.Context, taskID string) error {
-	err := ignoreNotFound(c.Core.CoreV1().Pods(c.Namespace).Delete(ctx, ResourceName(taskID), metav1.DeleteOptions{}))
-	if err != nil {
-		slog.Error("k8s DeletePod", "sessionId", taskID, "error", err)
-		return err
-	}
-	slog.Info("k8s DeletePod", "sessionId", taskID)
-	metrics.PodsDeletedTotal.WithLabelValues("e2e").Inc()
-	return nil
-}
-
-// WaitForPodGone blocks until the named pod is fully deleted, or timeout.
-// Needed because pod deletion is asynchronous: the API object survives its
-// whole terminationGracePeriod, so "kill_env then request_e2e_env" — the
-// single most common agent sequence — would otherwise find the dying pod
-// still present and hand back its preview URL.
+// CreatePod and its e2e-preview machinery used to fill most of this file:
+// a bare long-running Pod, its Service, its IngressRoute, its stripPrefix
+// Middleware, its per-task NetworkPolicy, a readiness probe on the app port
+// and a resource envelope pinned against the namespace LimitRange.
 //
-// ponytail: a 1s poll, no informer/watch. The wait is bounded, happens on
-// one RPC, and the provisioner already polls elsewhere; a shared informer
-// cache is only worth it if this ever runs hot.
-func (c *Client) WaitForPodGone(ctx context.Context, name string, timeout time.Duration) error {
-	deadline := time.Now().Add(timeout)
-	for {
-		_, err := c.Core.CoreV1().Pods(c.Namespace).Get(ctx, name, metav1.GetOptions{})
-		if apierrors.IsNotFound(err) {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		if time.Now().After(deadline) {
-			return fmt.Errorf("pod %s still terminating after %s", name, timeout)
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(time.Second):
-		}
-	}
-}
-
-// PodState is what an e2e pod can say about itself. Phase alone was the
-// whole story until a preview 502'd for 20 minutes while the pod sat at
-// Running: AppReady (the AppPort readiness probe) is what distinguishes a
-// slow install from an app that bound the wrong interface, and StartCmd is
-// read back off the live pod rather than re-resolved from repo_profiles so
-// it reflects what is genuinely running, override included.
-type PodState struct {
-	Phase     corev1.PodPhase
-	AppReady  bool
-	Restarts  int32
-	StartedAt string // RFC3339, empty until scheduled
-	StartCmd  string
-	// Terminating is the difference between "a session is live" and "a
-	// session is on its way out". A pod with a deletionTimestamp still
-	// exists and still reports Phase=Running for its whole grace period, so
-	// an existence check alone reads a dying pod as a healthy session —
-	// CreateE2eSession used to return that pod's preview URL and the caller
-	// never learned the pod was about to vanish.
-	Terminating bool
-	// Detail is the human-readable reason behind a stuck or dead pod —
-	// ImagePullBackOff, OOMKilled, an admission rejection. It exists so the
-	// log line on docs/adr/0044's Failed-pod recreate says WHY the corpse was
-	// replaced; deleting the pod also deletes its `kubectl logs`, so without
-	// this the only remaining trace is whatever reached Loki.
-	Detail string
-}
-
-// GetPod returns the pod's current state, or exists=false if it doesn't —
-// Kubernetes itself is this fleet's durable source of truth for "is this
-// session active," now that the provisioner holds no DB credentials
-// (docs/adr/0020 point 1). A provisioner restart loses nothing: pod
-// existence and state survive it for free, no separate in-memory or
-// Postgres-backed tracking needed.
-func (c *Client) GetPod(ctx context.Context, name string) (state PodState, exists bool, err error) {
-	pod, err := c.Core.CoreV1().Pods(c.Namespace).Get(ctx, name, metav1.GetOptions{})
-	if apierrors.IsNotFound(err) {
-		return PodState{}, false, nil
-	}
-	if err != nil {
-		slog.Error("k8s GetPod", "name", name, "error", err)
-		return PodState{}, false, err
-	}
-	state = PodState{Phase: pod.Status.Phase, Terminating: pod.DeletionTimestamp != nil}
-	if pod.Status.StartTime != nil {
-		state.StartedAt = pod.Status.StartTime.UTC().Format(time.RFC3339)
-	}
-	// Single-container pod by construction (CreatePod above), so the
-	// e2e-runner's own readiness is the pod's readiness.
-	if len(pod.Status.ContainerStatuses) > 0 {
-		cs := pod.Status.ContainerStatuses[0]
-		state.AppReady = cs.Ready
-		state.Restarts = cs.RestartCount
-		switch {
-		case cs.State.Waiting != nil:
-			state.Detail = cs.State.Waiting.Reason + ": " + cs.State.Waiting.Message
-		case cs.State.Terminated != nil:
-			state.Detail = fmt.Sprintf("%s (exit %d): %s",
-				cs.State.Terminated.Reason, cs.State.Terminated.ExitCode, cs.State.Terminated.Message)
-		}
-	}
-	if state.Detail == "" {
-		state.Detail = pod.Status.Reason
-	}
-	if len(pod.Spec.Containers) > 0 {
-		for _, e := range pod.Spec.Containers[0].Env {
-			if e.Name == "E2E_START_CMD" {
-				state.StartCmd = e.Value
-				break
-			}
-		}
-	}
-	return state, true, nil
-}
-
-// CreateWorkerPod builds the two-container pod (worker + sidecar,
-// docs/adr/0020 point 5) for a claimed task, wrapped in a batch/v1.Job
-// (reliability-findings.md #11) rather than a bare Pod — retry/backoff
-// and terminal-state GC come from Job's own semantics instead of the
-// reconcile loop hand-rolling them. BackoffLimit is deliberately 0: core's
-// heartbeat/reclaim (ClaimNextTask) stays the sole retry mechanism
-// (ADR-0020 pt.2 — the provisioner never decides pod lifecycle on its
-// own), a k8s-level retry here would silently double up against it.
+// All of it is deleted (docs/adr/0048 §6). A session has one pod, and what it
+// publishes is one Service and one route created on demand by expose().
 //
-// e2e-preview pods (CreatePod, below) deliberately stay bare Pods: they're
-// long-running/interactive, killed explicitly via KillE2eSession, not
-// run-to-completion — Job's retry/backoff/TTL semantics don't apply to a
-// workload with no expected completion, and (per reconcile/loop.go's own
-// doc comment) they were never part of the hand-rolled GC this finding is
-// about in the first place.
-// toolKeys/serviceIngredients are the repo's resolved "worker" profile
-// (docs/adr/0034, empty when the repo has no such profile — preserves
-// today's exact pod shape). extraEnv carries already-minted task-scoped/
-// repo-scoped service URLs, computed by the caller before this call so a
-// minting failure blocks pod creation entirely (grpcserver.go).
+// CreateWorkerPod builds that pod — worker + sidecar (docs/adr/0020 point 5),
+// plus the clone init container — wrapped in a batch/v1.Job
+// (reliability-findings.md #11) rather than a bare Pod, so terminal-state GC
+// comes from Job semantics instead of a hand-rolled sweep. BackoffLimit is
+// deliberately 0: a crashed session is a human's decision to warm again, and a
+// k8s-level retry would restart an agent mid-conversation with no one asking.
+//
 // WorkerPodSpec is what a session's pod needs to exist. A struct rather than
 // ten positional parameters, which is what this was — and which is how
 // `worktreePath` sat in the middle of the list right up until the volume it
@@ -580,21 +250,13 @@ func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error 
 					// unprefixed one (confirmed live: sidecar stuck at
 					// /readyz 503 forever, worker never starts).
 					{Name: "CORE_GRPC_ADDR", Value: c.CoreGRPCAddr},
-					// Where this task's sandbox will answer, so the sidecar
-					// can dial it directly instead of relaying tool calls
-					// through core (docs/adr/0045).
-					//
-					// Injectable at worker-pod creation only because
-					// EndpointsFor derives addresses from names: the sandbox
-					// does not exist yet, and may never — the roster says
-					// where it *would* answer. That is precisely what lets
-					// the first run_command of a session dial directly rather
-					// than needing the relay to bootstrap an address.
-					//
-					// Refreshed from RequestE2eEnvResponse.endpoints on every
-					// provision, so a namespace or port change reaches a
-					// running pod without a restart.
-					{Name: "FLEET_ENDPOINTS", Value: EndpointsJSON(c.Namespace, taskID)},
+					// FLEET_ENDPOINTS is gone with the roster it carried
+					// (docs/adr/0048 §6). It told the sidecar where this
+					// session's sandbox would answer, so the first run_command
+					// could dial it directly rather than relaying through
+					// core. There is no sandbox and no run_command; the
+					// sidecar's only outbound connection is the one to core
+					// it dials from CORE_GRPC_ADDR above.
 					// Deliberately no THOT_* here. ADR-0035's ask_thot is
 					// gone, and the executor token now belongs only to the
 					// worker container of a cluster-access task (see

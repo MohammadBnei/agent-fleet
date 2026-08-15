@@ -14,7 +14,6 @@ import (
 )
 
 var (
-	middlewareGVR   = schema.GroupVersionResource{Group: "traefik.io", Version: "v1alpha1", Resource: "middlewares"}
 	ingressRouteGVR = schema.GroupVersionResource{Group: "traefik.io", Version: "v1alpha1", Resource: "ingressroutes"}
 )
 
@@ -22,7 +21,6 @@ type Client struct {
 	Core         kubernetes.Interface
 	Dynamic      dynamic.Interface
 	Namespace    string
-	RunnerImage  string
 	WorkerImage  string
 	SidecarImage string
 	WorkspacePVC string
@@ -75,7 +73,7 @@ func New(namespace string, cfg Images) (*Client, error) {
 	}
 	return &Client{
 		Core: core, Dynamic: dyn, Namespace: namespace,
-		RunnerImage: cfg.RunnerImage, WorkerImage: cfg.WorkerImage,
+		WorkerImage: cfg.WorkerImage,
 		SidecarImage: cfg.SidecarImage, WorkspacePVC: cfg.WorkspacePVC,
 		SessionStorageClass: cfg.SessionStorageClass,
 		LogLevel: cfg.LogLevel, CoreGRPCAddr: cfg.CoreGRPCAddr,
@@ -88,10 +86,9 @@ func New(namespace string, cfg Images) (*Client, error) {
 
 // Images bundles the image/PVC/log-level config New needs — named struct
 // instead of positional strings, so a call site can't silently transpose
-// two of them (RunnerImage/WorkerImage/SidecarImage are string-identical
+// two of them (WorkerImage/SidecarImage are string-identical
 // types).
 type Images struct {
-	RunnerImage           string
 	WorkerImage           string
 	SidecarImage          string
 	WorkspacePVC          string

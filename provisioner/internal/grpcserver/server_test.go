@@ -21,17 +21,14 @@ import (
 
 func newFakeK8sClient() *k8s.Client {
 	scheme := runtime.NewScheme()
-	middlewareGVR := schema.GroupVersionResource{Group: "traefik.io", Version: "v1alpha1", Resource: "middlewares"}
 	ingressRouteGVR := schema.GroupVersionResource{Group: "traefik.io", Version: "v1alpha1", Resource: "ingressroutes"}
 	listKinds := map[schema.GroupVersionResource]string{
-		middlewareGVR:   "MiddlewareList",
 		ingressRouteGVR: "IngressRouteList",
 	}
 	return &k8s.Client{
 		Core:         fake.NewSimpleClientset(),
 		Dynamic:      dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme, listKinds),
 		Namespace:    "agent-fleet",
-		RunnerImage:  "mohammaddocker/agent-fleet-e2e-runner:latest",
 		WorkerImage:  "mohammaddocker/agent-fleet-worker:latest",
 		SidecarImage: "mohammaddocker/agent-fleet-sidecar:latest",
 		WorkspacePVC: "agent-fleet-workspace",
@@ -78,7 +75,7 @@ func newTestServer(t *testing.T) (*Server, *k8s.Client, *fakeEventReporter) {
 	k8sc := newFakeK8sClient()
 	gitMgr := git.NewManager(t.TempDir())
 	reporter := &fakeEventReporter{}
-	return New(k8sc, gitMgr, reporter, "e2e.bnei.dev", "", "", ""), k8sc, reporter
+	return New(k8sc, gitMgr, reporter, "e2e.bnei.dev", "", ""), k8sc, reporter
 }
 
 func TestCreateWorkerPod_ClonesAndCreatesPod(t *testing.T) {
@@ -148,7 +145,7 @@ func TestCreateWorkerPod_SyncsFleetShared(t *testing.T) {
 	run("add", ".")
 	run("commit", "-m", "init")
 
-	s := New(k8sc, gitMgr, reporter, "e2e.bnei.dev", fleetSharedOrigin, "main", claudeHome)
+	s := New(k8sc, gitMgr, reporter, "e2e.bnei.dev", fleetSharedOrigin, "main")
 	ctx := context.Background()
 	origin := newTestOriginRepo(t)
 

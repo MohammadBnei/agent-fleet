@@ -86,7 +86,7 @@ func (s *Server) QueryMetrics(ctx context.Context, req *connect.Request[agentfle
 // Assembled from what core already owns — the tasks table plus its own
 // Prometheus series — and deliberately NOT from the Kubernetes API: core
 // holds zero cluster RBAC (docs/adr/0020 point 1), and a topology view is
-// not a reason to grant it any. Every worker/e2e pod's existence is already
+// not a reason to grant it any. Every session pod's existence is already
 // mirrored into tasks.pod_phase by ReportPodEvents, which is the same
 // signal the task list renders.
 //

@@ -1,13 +1,15 @@
 # Namespaced Role only — never a ClusterRole. Scoped to exactly what the
-# provisioner needs to create/tear down an e2e-preview pod (Pod, Service,
-# Traefik IngressRoute/Middleware), a worker session (docs/adr/0019/0020),
-# and, as of docs/adr/0034, a repo's shared environment-recipe service
-# instances (postgres/redis). Worker sessions are batch/v1.Jobs, not bare
-# Pods (reliability-findings.md #11 — Job's own backoff/TTL semantics
-# replace the reconcile loop's hand-rolled retry/GC), so they need their
-# own apiGroup/resource grant; e2e-preview pods stay plain Pods
-# (long-running, explicitly killed, not run-to-completion — Job doesn't fit
-# that lifecycle).
+# provisioner needs:
+#
+#   - a session's pod, which is a batch/v1.Job (reliability-findings.md #11 —
+#     Job's own TTL semantics replace a hand-rolled GC pass) plus its own
+#     PersistentVolumeClaim (docs/adr/0048 §4)
+#   - what expose() publishes: a Service and a Traefik IngressRoute
+#   - a repo's shared postgres/redis instances (docs/adr/0034), now requested
+#     on demand via request_service rather than declared per repo
+#
+# The e2e-preview pod this Role was originally written for is gone
+# (docs/adr/0048 §6), and with it the per-task NetworkPolicy grant.
 #
 # Secrets/PersistentVolumeClaims (docs/adr/0034): a shared instance's own
 # admin credentials (provisioner-generated, never AGENTFLEET_DB_*) and a
@@ -44,21 +46,16 @@ rules:
   resources: ["jobs"]
   verbs: ["create", "get", "list", "watch", "delete"]
 - apiGroups: ["traefik.io"]
-  resources: ["ingressroutes", "middlewares"]
+  # middlewares dropped with the cluster-ip-whitelist the provisioner used to
+  # create at startup: expose()'s route references the shared basic-auth
+  # middleware in the `default` namespace, which this Role does not manage.
+  resources: ["ingressroutes"]
   verbs: ["create", "get", "list", "watch", "delete"]
-# docs/adr/0045: once a sidecar dials its own task's sandbox directly, "which
-# worker may reach which sandbox" has to be enforced by something. This grant
-# lets the provisioner create one narrow per-task NetworkPolicy alongside each
-# sandbox Service, rather than handing the sandbox a bearer token to verify —
-# docs/adr/0039's un-prompted run_command depends on that pod holding no fleet
-# credentials at all.
-#
-# Strictly less powerful than the secrets/PVC grant above, and it stays inside
-# docs/adr/0034's boundary: the worker pod still holds zero RBAC, and dialing a
-# Service needs DNS and a network path, not permissions.
-- apiGroups: ["networking.k8s.io"]
-  resources: ["networkpolicies"]
-  verbs: ["create", "get", "list", "watch", "delete"]
+# The networkpolicies grant is gone with what needed it (docs/adr/0048 §6).
+# docs/adr/0045 added it so a per-task NetworkPolicy could fence which worker
+# may reach which sandbox — enforcement in the CNI rather than a bearer token
+# the sandbox would have to verify. There is no sandbox and no cross-pod reach
+# to fence: an agent's tools and its app are both inside its own pod.
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding

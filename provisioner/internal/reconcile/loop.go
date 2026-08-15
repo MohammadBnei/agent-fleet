@@ -1,20 +1,20 @@
-// Package reconcile is a pure Kubernetes-native safety net now
-// (docs/adr/0020 point 1: the provisioner holds no Postgres credentials at
-// all, so there's nothing external left to reconcile pod state against).
-// Two jobs: garbage-collect worker pods that reached a terminal k8s phase
-// (Succeeded/Failed) but weren't cleaned up by core's own TearDownSession
-// call — a safety net for a missed/failed call, not the primary teardown
-// mechanism (that's coreserver.SetTaskStatus's opportunistic trigger, in
-// core/) — and, as of docs/adr/0034, garbage-collect shared environment-
-// recipe service instances that have sat idle past a configured timeout.
-// As of docs/adr/0044 there is a third pass: e2e sandbox pods. They still
-// have no natural "done" signal from k8s (they run until explicitly killed)
-// and the provisioner still has no external tracking to compare against, so
-// the sweep uses the two signals Kubernetes does provide — a terminal phase,
-// and age past e2eMaxAge. That's coarser than the worker Jobs' real done
-// signal, and deliberately so: the cost of leaking these is the NEXT sandbox
-// sitting Pending forever against a full node, which presents to a human as
-// "the e2e pod won't start" and was one of the motivating symptoms.
+// Package reconcile is a Kubernetes-native safety net (docs/adr/0020 point 1:
+// the provisioner holds no Postgres credentials, so there is nothing external
+// to reconcile pod state against).
+//
+// Two passes:
+//
+//   - gcTerminalWorkerJobs reports and reaps worker Jobs that reached a
+//     terminal phase. It is NOT just a fallback for a missed teardown: with
+//     tasks.status gone (docs/adr/0048) this pass IS the notification that a
+//     session finished, and a Succeeded Job reporting nothing would leave
+//     pod_phase at RUNNING forever — which is what the concurrency cap counts.
+//   - gcIdleSharedInstances reclaims shared Postgres/Redis instances that have
+//     sat unused past a timeout (docs/adr/0034).
+//
+// A third pass swept e2e sandbox pods by age, because they had no natural
+// "done" signal. It is gone with the sandbox (docs/adr/0048 §6) — a session's
+// pod is a Job, and a Job's terminal phase is a real done signal.
 package reconcile
 
 import (
@@ -45,12 +45,8 @@ type JobLister interface {
 	// second interface for two more methods.
 	ListSharedInstances(ctx context.Context) ([]k8s.LiveSharedInstance, error)
 	DeleteSharedInstance(ctx context.Context, repo, serviceKey string) error
-	// ListPodsByLabel/DeleteAll back gcDeadE2ePods (docs/adr/0044) — same
-	// "grown, not split" reasoning as the shared-instance pair above.
-	// ListPodsByLabel already existed and had no caller; DeleteAll (rather
-	// than DeletePod) so the Service/Middleware/IngressRoute go with it.
-	ListPodsByLabel(ctx context.Context) ([]k8s.LiveE2ePod, error)
-	DeleteAll(ctx context.Context, taskID string) error
+	// ListPodsByLabel/DeleteAll backed gcDeadE2ePods and are gone with it
+	// (docs/adr/0048 §6) — there are no e2e pods to list or reap.
 }
 
 // EventReporter is the narrow slice of coreclient.Client this package
@@ -67,15 +63,13 @@ type Loop struct {
 	k8sc                      JobLister
 	core                      EventReporter
 	sharedInstanceIdleTimeout time.Duration
-	e2eMaxAge                 time.Duration
 }
 
-func New(k8sc JobLister, core EventReporter, sharedInstanceIdleTimeout, e2eMaxAge time.Duration) *Loop {
+func New(k8sc JobLister, core EventReporter, sharedInstanceIdleTimeout time.Duration) *Loop {
 	return &Loop{
 		k8sc:                      k8sc,
 		core:                      core,
 		sharedInstanceIdleTimeout: sharedInstanceIdleTimeout,
-		e2eMaxAge:                 e2eMaxAge,
 	}
 }
 
@@ -122,13 +116,12 @@ func (l *Loop) gcTerminalWorkerJobs(ctx context.Context) {
 		if err := l.k8sc.DeleteWorkerJob(ctx, job.TaskID); err != nil {
 			slog.Error("reconcile: delete worker job failed", "sessionId", job.TaskID, "error", err)
 		}
-		// Worktree cleanup is intentionally skipped here — this pass exists
-		// for the case where core's TearDownSession call (which does clean
-		// the worktree) never fired; the job's RepoLabel would still tell us
-		// the repo, but a genuinely orphaned worktree with no task record
-		// left to explain it is a small enough leak (one directory, on a
-		// path keyed by a task ID that's already terminal) not to add a
-		// second GC path on top of the job cleanup that actually matters.
+		// The session's disk is deliberately untouched. A finished session
+		// stays resumable — its working volume and SDK state are exactly what
+		// a later warm needs — and the only thing that reclaims them is core's
+		// retention GC, through SweepSession. Deleting them here would make
+		// "the Job ended" mean "the work is gone", which is the opposite of
+		// what a session is (docs/adr/0048).
 	}
 }
 

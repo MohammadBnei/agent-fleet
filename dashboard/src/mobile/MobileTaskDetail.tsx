@@ -286,8 +286,6 @@ export function MobileTaskDetail({
             busy={busyKey !== null}
             busyKey={busyKey}
             run={run}
-            codeServerUrl={null}
-            isThotTask={false}
             onBypassClick={() => {
               setPanelsOpen(false);
               setBypassOpen(true);

@@ -4,6 +4,8 @@ import (
 	"context"
 	"log/slog"
 	"time"
+
+	"github.com/MohammadBnei/agent-fleet/core/internal/metrics"
 )
 
 // Provisioner is the narrow slice of provisionerclient this package needs, so
@@ -11,7 +13,6 @@ import (
 type Provisioner interface {
 	ListWorkerPods(ctx context.Context) (map[string]string, error) // sessionID -> phase
 	TearDownWorker(ctx context.Context, sessionID string) error
-	TearDownE2e(ctx context.Context, sessionID string) error
 	SweepSession(ctx context.Context, sessionID string) error
 }
 
@@ -36,9 +37,12 @@ type Loop struct {
 	startupStall time.Duration
 	idleTimeout  time.Duration
 	retention    time.Duration
+	// turnStall is DeriveLiveState's threshold for `stalled`, needed here only
+	// to compute the gauge — the sweeps above all key off their own timeouts.
+	turnStall time.Duration
 }
 
-func NewLoop(store *Store, p Provisioner, stopGrace, startupStall, idleTimeout, retention time.Duration) *Loop {
+func NewLoop(store *Store, p Provisioner, stopGrace, startupStall, idleTimeout, retention, turnStall time.Duration) *Loop {
 	return &Loop{
 		sessions:     store,
 		provisioner:  p,
@@ -46,6 +50,7 @@ func NewLoop(store *Store, p Provisioner, stopGrace, startupStall, idleTimeout, 
 		startupStall: startupStall,
 		idleTimeout:  idleTimeout,
 		retention:    retention,
+		turnStall:    turnStall,
 	}
 }
 
@@ -76,6 +81,26 @@ func (l *Loop) tick(ctx context.Context) {
 	l.enforceStartupStall(ctx)
 	l.enforceIdleTimeout(ctx)
 	l.collectExpired(ctx)
+	l.publishLiveStateGauge(ctx)
+}
+
+// publishLiveStateGauge is the one fleet fact neither Loki nor
+// kube-state-metrics can answer: how many sessions are in each live state
+// right now, which is what makes "N sessions blocked for 30m" alertable
+// (docs/adr/0047).
+//
+// It was previously unreachable. CountByRepoLiveState was written, the gauge
+// was declared, and nothing called either — so agentfleet_tasks_current has
+// been exporting an empty series set. Wired here rather than on its own timer
+// because this loop already runs on the cadence the gauge wants, and a second
+// ticker over the same table would be two answers that can disagree.
+func (l *Loop) publishLiveStateGauge(ctx context.Context) {
+	counts, err := l.sessions.CountByRepoLiveState(ctx, l.turnStall)
+	if err != nil {
+		slog.Error("sessions loop: live-state count failed", "error", err)
+		return
+	}
+	metrics.SetTasksCurrent(counts)
 }
 
 // reconcilePodPhases is what replaces the 30-second heartbeat.
@@ -132,12 +157,6 @@ func (l *Loop) reconcilePodPhases(ctx context.Context) {
 			slog.Error("sessions loop: reconcile write failed", "sessionId", s.ID, "error", err)
 			continue
 		}
-		// The e2e sandbox outlives its worker only by accident here, and
-		// leaking one is what makes the NEXT sandbox sit Pending against a
-		// full node.
-		if err := l.provisioner.TearDownE2e(ctx, s.ID); err != nil {
-			slog.Warn("sessions loop: e2e teardown after reconcile failed", "sessionId", s.ID, "error", err)
-		}
 	}
 }
 
@@ -170,7 +189,7 @@ func (l *Loop) enforceStopGrace(ctx context.Context) {
 	}
 	for _, id := range ids {
 		slog.Warn("sessions loop: stop grace expired, forcing teardown", "sessionId", id, "grace", l.stopGrace)
-		l.tearDownBoth(ctx, id)
+		l.tearDown(ctx, id)
 	}
 }
 
@@ -191,7 +210,7 @@ func (l *Loop) enforceStartupStall(ctx context.Context) {
 			"pod started but never produced any output — torn down by the startup-stall guard"); err != nil {
 			slog.Warn("sessions loop: set last error failed", "sessionId", id, "error", err)
 		}
-		l.tearDownBoth(ctx, id)
+		l.tearDown(ctx, id)
 	}
 }
 
@@ -206,7 +225,7 @@ func (l *Loop) enforceIdleTimeout(ctx context.Context) {
 	}
 	for _, id := range ids {
 		slog.Info("sessions loop: idle timeout, tearing down pod", "sessionId", id, "after", l.idleTimeout)
-		l.tearDownBoth(ctx, id)
+		l.tearDown(ctx, id)
 	}
 }
 
@@ -248,15 +267,16 @@ func (l *Loop) collectExpired(ctx context.Context) {
 	}
 }
 
-// tearDownBoth removes a session's worker pod and its e2e sandbox. Both are
-// best-effort and logged rather than propagated: TearDownSession's contract is
-// that tearing down something already gone is a correct no-op, so a failure
-// here means a transient provisioner problem the next tick will retry.
-func (l *Loop) tearDownBoth(ctx context.Context, id string) {
+// tearDown removes a session's pod. Best-effort and logged rather than
+// propagated: TearDownSession's contract is that tearing down something
+// already gone is a correct no-op, so a failure here means a transient
+// provisioner problem the next tick retries.
+//
+// It used to tear down two things — the worker pod and the session's e2e
+// sandbox. There is one pod now (docs/adr/0048 §6), and whatever it published
+// via expose() is removed by the provisioner alongside the Job.
+func (l *Loop) tearDown(ctx context.Context, id string) {
 	if err := l.provisioner.TearDownWorker(ctx, id); err != nil {
-		slog.Warn("sessions loop: worker teardown failed", "sessionId", id, "error", err)
-	}
-	if err := l.provisioner.TearDownE2e(ctx, id); err != nil {
-		slog.Warn("sessions loop: e2e teardown failed", "sessionId", id, "error", err)
+		slog.Warn("sessions loop: teardown failed", "sessionId", id, "error", err)
 	}
 }

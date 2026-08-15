@@ -172,13 +172,13 @@ func (c *Client) RequestService(ctx context.Context, kind string) (string, error
 	return resp.GetDsn(), nil
 }
 
-// No sandbox tool calls here at all any more (docs/adr/0045). Tool discovery
-// went first (docs/adr/0044 — a static embedded snapshot in mcpserver, because
-// discovery always lost the race against the pod becoming reachable), and now
-// the calls themselves: the sidecar dials its own task's sandbox over MCP,
-// from the ServiceEndpoint roster, so core is no longer in the path of a shell
-// command. What survives on this client is what core alone can do — the
-// transcript, the journal, questions, and commanding a sandbox into existence.
+// This client carries only what core alone can do: the transcript, the
+// journal, questions, and the two cluster-RBAC operations above.
+//
+// The sandbox tool-call relay left in two stages. docs/adr/0045 moved the
+// calls off this client so core was not in the path of a shell command, and
+// docs/adr/0048 §6 removed the sandbox itself — so there is no second pod to
+// dial, from a roster or otherwise, and the agent's tools are on its own pod.
 
 // ListFiles, GetFileUploadURL, GetFileDownloadURL, and DeleteFile back the
 // shared file space (docs/adr/0030) — the flat namespace isn't scoped to

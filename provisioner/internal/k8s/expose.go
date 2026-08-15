@@ -11,6 +11,26 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
+// basicAuthMiddleware is reused across every session instead of minting a
+// per-session Secret — the same LAN-admin credential already gating
+// pgweb/Alertmanager.
+//
+// It used to sit in ingressroute.go alongside a cluster-IP-whitelist
+// middleware that let worker pods reach each other's previews without a
+// password. That file is gone with the e2e pod (docs/adr/0048 §6), and so is
+// the whitelist: there is no second pod to let through.
+var basicAuthMiddleware = map[string]any{"name": "basic-admin-auth", "namespace": "default"}
+
+// toInterfaceMap converts a label map for an unstructured object, which is
+// map[string]any all the way down.
+func toInterfaceMap(m map[string]string) map[string]any {
+	out := make(map[string]any, len(m))
+	for k, v := range m {
+		out[k] = v
+	}
+	return out
+}
+
 // ExposeSession publishes one port from a session's pod at
 // https://<session>.<host>, and returns the URL.
 //

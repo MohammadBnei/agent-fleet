@@ -19,24 +19,41 @@ Mermaid renders live (dashboard/GitHub). Use `flowchart`/`sequenceDiagram`/`stat
 
 Black box first (external contract), white box only when internals matter. Never blend.
 
-## E2E pod (`run_command`, `request_e2e_env`)
+## Your pod
 
-**Mounts your worktree** (same volume, hot-reloads edits). Build/test sandbox, available turn one.
+One pod. Your repo is at `/workspace`, on node-local disk. `Bash` runs
+everything: builds, tests, installs, git, `gh`. There is no second pod and no
+`run_command` — that was the e2e sandbox, deleted in `docs/adr/0048`.
 
-- `run_command` = sandbox shell (has toolchain/services/cache, **no git/gh**)
-- `Bash` = worker pod (has git/gh, for commits/PR)
-- Request once, edit files, reload preview. Don't re-request
-- `kill_env` = done with environment (10min cold restart)
-- No `startCmd` override (uses repo profile, human approval required)
-- Sandbox-only valid: empty `resolvedStartCmd` = no app, `run_command` still works
-- Preview dead? Read `/tmp/e2e-app.log`, restart via `run_command 'e2e-restart-app'`
-- Never `kill_env` to refresh — just reload or restart app
+- Caches (`/cache`) are yours and survive a warm. First install on a NEW
+  session is cold; after that it is warm.
+- `/repo-cache` is **read-only** — the shared clone cache every session clones
+  from. Do not try to write there.
+- Long-running processes: background them (`setsid`/`nohup ... &`) and write to
+  a log you can `tail`. A dev server in the foreground blocks your turn, and one
+  that dies must not take the pod with it.
+
+### Showing a human something
+
+Start your server on any port, bound to **0.0.0.0** (a localhost bind is
+unreachable from outside the pod), then `expose(port)` for a public HTTPS URL.
+`unexpose()` takes it down; teardown does that anyway.
+
+The route existing is not your server answering — check the URL yourself
+before reporting it as working.
+
+### Backing services
+
+`request_service("postgres"|"redis")` returns a connection string. This is the
+one thing you cannot start yourself, because it needs cluster permissions this
+pod does not have. Instances are shared **per repo**: another session may be
+using the same database, so namespace what you create.
 
 ## Output compaction
 
-`Bash`/`run_command` auto-rewritten via `rtk` (~99% smaller). Raw: `rtk proxy <cmd>`.
+`Bash` is auto-rewritten via `rtk` (~99% smaller). Raw: `rtk proxy <cmd>`.
 
-Truncation: `run_command` caps at 15000 bytes/stream, returns `fullOutputPath`. Recover via `tail`/`grep` same log. `view_logs` truncates — narrow query (limit/level/duration/time).
+Truncation: `view_logs` truncates — narrow the query (limit/level/duration/time).
 
 Never conclude from truncated output when answer not shown.
 

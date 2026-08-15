@@ -38,66 +38,18 @@ type Server struct {
 	// tests that don't care about fleet-shared content).
 	fleetSharedRepoURL string
 	fleetSharedBranch  string
-	claudeHomeDir      string
 }
 
-func New(k8sc *k8s.Client, gitMgr *git.Manager, core EventReporter, e2eHost string, fleetSharedRepoURL, fleetSharedBranch, claudeHomeDir string) *Server {
+// claudeHomeDir is no longer a parameter: fleet-shared is seeded into each
+// session's OWN claude-home (git.Manager.ClaudeHomePath), not into one shared
+// directory every pod mounted, so there is no single path left to configure.
+func New(k8sc *k8s.Client, gitMgr *git.Manager, core EventReporter, e2eHost string, fleetSharedRepoURL, fleetSharedBranch string) *Server {
 	return &Server{
 		k8sc: k8sc, git: gitMgr, core: core, e2eHost: e2eHost,
-		fleetSharedRepoURL: fleetSharedRepoURL, fleetSharedBranch: fleetSharedBranch, claudeHomeDir: claudeHomeDir,
+		fleetSharedRepoURL: fleetSharedRepoURL, fleetSharedBranch: fleetSharedBranch,
 	}
 }
 
-// --- e2e sessions (unchanged behavior, k8s-backed instead of Postgres-backed) ---
-
-func (s *Server) KillE2ESession(ctx context.Context, req *agentfleetv1.KillE2ESessionRequest) (*agentfleetv1.KillE2ESessionResponse, error) {
-	_, exists, err := s.k8sc.GetPod(ctx, k8s.ResourceName(req.GetSessionId()))
-	if err != nil {
-		return nil, err
-	}
-	killed := false
-	if exists {
-		if err := s.k8sc.DeleteAll(ctx, req.GetSessionId()); err != nil {
-			return nil, err
-		}
-		slog.Info("grpcserver KillE2ESession", "sessionId", req.GetSessionId())
-		killed = true
-	}
-
-	var servicesTornDown []string
-	if req.GetAlsoTeardownServices() && req.GetRepo() != "" {
-		servicesTornDown, err = s.tearDownRepoSharedInstances(ctx, req.GetRepo())
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	return &agentfleetv1.KillE2ESessionResponse{Killed: killed, ServicesTornDown: servicesTornDown}, nil
-}
-
-// tearDownRepoSharedInstances deletes every shared service instance
-// (docs/adr/0034) belonging to repo — human-confirmed opt-in only (the
-// dashboard's "kill e2e" checkbox), since a shared instance is keyed by
-// repo, not task, and can be in use by other tasks against the same repo
-// (that task's own worker pod included).
-func (s *Server) tearDownRepoSharedInstances(ctx context.Context, repo string) ([]string, error) {
-	instances, err := s.k8sc.ListSharedInstances(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("list shared instances: %w", err)
-	}
-	var torn []string
-	for _, inst := range instances {
-		if inst.Repo != repo {
-			continue
-		}
-		if err := s.k8sc.DeleteSharedInstance(ctx, inst.Repo, inst.ServiceKey); err != nil {
-			return nil, fmt.Errorf("delete shared instance %s/%s: %w", inst.Repo, inst.ServiceKey, err)
-		}
-		slog.Info("grpcserver KillE2ESession: tore down shared instance", "repo", inst.Repo, "serviceKey", inst.ServiceKey)
-		torn = append(torn, inst.ServiceKey)
-	}
-	return torn, nil
-}
 
 
 // --- what replaced the sandbox (docs/adr/0048 §6) ---
@@ -238,23 +190,22 @@ func (s *Server) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWo
 // both kinds, and "nothing to tear down" is a correct, expected no-op, not
 // an error).
 func (s *Server) TearDownSession(ctx context.Context, req *agentfleetv1.TearDownSessionRequest) (*agentfleetv1.TearDownSessionResponse, error) {
-	switch req.GetKind() {
-	case agentfleetv1.SessionKind_SESSION_KIND_WORKER:
-		return s.tearDownWorker(ctx, req.GetSessionId())
-	case agentfleetv1.SessionKind_SESSION_KIND_E2E:
-		return s.tearDownE2e(ctx, req.GetSessionId())
-	default:
-		return nil, fmt.Errorf("TearDownSession: unspecified session kind")
-	}
+	// `kind` is no longer branched on. It distinguished a worker pod from an
+	// e2e sandbox, and there is no sandbox (docs/adr/0048 §6) — a session has
+	// exactly one pod. The field stays on the wire so a rolling deploy where
+	// one side is older still parses; it just selects nothing.
+	return s.tearDownWorker(ctx, req.GetSessionId())
 }
 
-// tearDownWorker no longer touches git state at all (reliability-findings.md
-// #2) — for any status including "done", not just failure paths. The old
-// unconditional branch -D here destroyed the only reference to a
-// never-pushed branch's commits whenever a terminal status was reached via
-// a git push failure. Worktree/branch cleanup now happens two other ways:
-// the periodic sweep (provisioner/internal/sweep, [gone]-tracked branches)
-// and manual dashboard deletion (ListWorktrees/DeleteWorktree, below).
+// tearDownWorker deletes the Job and nothing else. It deliberately does not
+// touch the session's disk: a stopped session must stay resumable, and the
+// only thing that reclaims its PVC and SDK state is the retention GC, through
+// SweepSession.
+//
+// It has never touched git state either (reliability-findings.md #2) — an
+// earlier version ran an unconditional `branch -D` here and destroyed the only
+// reference to a never-pushed branch's commits whenever teardown followed a
+// failed push. There is no branch for it to delete now in any case.
 func (s *Server) tearDownWorker(ctx context.Context, taskID string) (*agentfleetv1.TearDownSessionResponse, error) {
 	_, exists, err := s.k8sc.GetWorkerJobRepo(ctx, taskID)
 	if err != nil {
@@ -267,26 +218,15 @@ func (s *Server) tearDownWorker(ctx context.Context, taskID string) (*agentfleet
 		return nil, err
 	}
 	s.reportEvent(ctx, taskID, agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_TERMINATED, "", "")
+	// Whatever this session was publishing stops being published. Best-effort
+	// and unconditional: most sessions never call expose(), so "nothing to
+	// remove" is the common case, not a failure.
+	if err := s.k8sc.UnexposeSession(ctx, taskID); err != nil {
+		slog.Warn("grpcserver tearDownWorker: unexpose failed", "sessionId", taskID, "error", err)
+	}
 	slog.Info("grpcserver tearDownWorker", "sessionId", taskID)
 	return &agentfleetv1.TearDownSessionResponse{TornDown: true}, nil
 }
-
-func (s *Server) tearDownE2e(ctx context.Context, taskID string) (*agentfleetv1.TearDownSessionResponse, error) {
-	_, exists, err := s.k8sc.GetPod(ctx, k8s.ResourceName(taskID))
-	if err != nil {
-		return nil, err
-	}
-	if !exists {
-		return &agentfleetv1.TearDownSessionResponse{TornDown: false}, nil
-	}
-	if err := s.k8sc.DeleteAll(ctx, taskID); err != nil {
-		return nil, err
-	}
-	slog.Info("grpcserver tearDownE2e", "sessionId", taskID)
-	return &agentfleetv1.TearDownSessionResponse{TornDown: true}, nil
-}
-
-// --- worktree lifecycle (reliability-findings.md #2) ---
 
 // ListWorkerPods reports which sessions Kubernetes says have a live worker
 // Job. Core reconciles pod_phase against this every 60s — the safety net that
@@ -311,47 +251,6 @@ func (s *Server) ListWorkerPods(ctx context.Context, _ *agentfleetv1.ListWorkerP
 		})
 	}
 	return &agentfleetv1.ListWorkerPodsResponse{Pods: out}, nil
-}
-
-func (s *Server) ListWorktrees(ctx context.Context, _ *agentfleetv1.ListWorktreesRequest) (*agentfleetv1.ListWorktreesResponse, error) {
-	repos, err := s.git.ListClonedRepos()
-	if err != nil {
-		return nil, fmt.Errorf("list cloned repos: %w", err)
-	}
-	var out []*agentfleetv1.WorktreeInfo
-	for _, repo := range repos {
-		infos, err := s.git.ListWorktrees(ctx, repo)
-		if err != nil {
-			return nil, fmt.Errorf("list worktrees for %s: %w", repo, err)
-		}
-		for _, info := range infos {
-			out = append(out, &agentfleetv1.WorktreeInfo{
-				SessionId:     info.TaskID,
-				Repo:          info.Repo,
-				Branch:        info.Branch,
-				UpstreamTrack: info.UpstreamTrack,
-				MtimeUnix:     info.MtimeUnix,
-				Path:          info.Path,
-				DirtyFiles:    info.DirtyFiles,
-				SizeBytes:     info.SizeBytes,
-			})
-		}
-	}
-	// Non-fatal: the worktree list is the point of this call, and a statfs
-	// failure (an odd mount, a path that isn't there yet) shouldn't blank the
-	// whole page — the dashboard just omits the capacity meter when total is 0.
-	total, free, err := s.git.DiskUsage()
-	if err != nil {
-		slog.Warn("grpcserver ListWorktrees: disk usage unavailable", "error", err)
-	}
-	return &agentfleetv1.ListWorktreesResponse{Worktrees: out, PvcTotalBytes: total, PvcFreeBytes: free}, nil
-}
-
-func (s *Server) DeleteWorktree(ctx context.Context, req *agentfleetv1.DeleteWorktreeRequest) (*agentfleetv1.DeleteWorktreeResponse, error) {
-	if err := s.git.DeleteWorktree(ctx, req.GetRepo(), req.GetSessionId(), req.GetAlsoDeleteBranch()); err != nil {
-		return nil, err
-	}
-	return &agentfleetv1.DeleteWorktreeResponse{Deleted: true}, nil
 }
 
 func (s *Server) reportEvent(ctx context.Context, taskID string, kind agentfleetv1.SessionKind, phase agentfleetv1.PodPhase, podName, message string) {

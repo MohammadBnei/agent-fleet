@@ -80,12 +80,16 @@ export async function savePermissionMode(mode: string): Promise<void> {
   await postJSON("/permission-mode", { mode });
 }
 
-export async function stillHoldsLease(leaseId: string): Promise<boolean> {
-  const res = await fetch(`${base()}/still-holds-lease?leaseId=${encodeURIComponent(leaseId)}`);
-  if (!res.ok) throw new Error(`sidecar still-holds-lease failed: ${res.status}`);
-  const body = (await res.json()) as { holds: boolean };
-  return Boolean(body.holds);
-}
+// stillHoldsLease used to live here, alongside heartbeat() and setStatus().
+// All three are gone with the reclaim loop whose races they guarded
+// (docs/adr/0048), and the sidecar no longer serves any of their endpoints —
+// so leaving this exported would hand a future caller a function that 404s.
+//
+// The lease itself survives, and still does its one job: SaveAgentSessionID is
+// lease-scoped server-side, so a torn-down pod finishing its shutdown cannot
+// overwrite the resume identity of the pod that replaced it. Nothing needs to
+// ASK whether it still holds the lease — the write simply does nothing if it
+// doesn't.
 
 // pushMessage lets the wrapper post directly into the transcript — the
 // round-cap checkpoint text, the agent's raw assistant narration (today

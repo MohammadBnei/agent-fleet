@@ -323,8 +323,6 @@ export function TaskDetail({
             busy={busyKey !== null}
             busyKey={busyKey}
             run={run}
-            codeServerUrl={null}
-            isThotTask={false}
             onBypassClick={() => setBypassOpen(true)}
           />
         </div>

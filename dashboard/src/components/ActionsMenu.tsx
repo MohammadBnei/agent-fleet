@@ -41,8 +41,6 @@ export function ActionsMenu({
   busy,
   busyKey,
   run,
-  codeServerUrl,
-  isThotTask = false,
   sweptAt,
   archivedAt,
   currentMode,
@@ -64,10 +62,6 @@ export function ActionsMenu({
   // whole point being to tell the clicker their click registered.
   busyKey: string | null;
   run: (action: () => Promise<unknown>, key: string) => void;
-  codeServerUrl?: string | null;
-  // docs/adr/0037: a thot session has no e2e pod and no code-server, so
-  // those controls are hidden rather than shown-and-broken.
-  isThotTask?: boolean;
   // Set once the retention GC has reclaimed this session's working directory
   // (docs/adr/0048). Readable history, not resumable — so Warm is hidden
   // rather than shown and broken.
@@ -234,17 +228,10 @@ export function ActionsMenu({
           </button>
         </li>
       </ul>
-      {/* codeServerUrl, not previewUrl: this button said "Open code-server"
-          and opened the APP root — code-server is served at the /code prefix
-          (docs/adr/0038), so it had never once opened the IDE. The URL is
-          built by the provisioner and travels on the wire rather than being
-          re-derived here, which is how it drifted in the first place
-          (docs/adr/0044). */}
-      {!isThotTask && codeServerUrl && (
-        <a href={codeServerUrl} target="_blank" rel="noreferrer" className="btn btn-outline btn-xs">
-          Open code-server
-        </a>
-      )}
+      {/* The "Open code-server" link is gone with the e2e pod that served it
+          (docs/adr/0048 §6). code-server was an IDE surface on the sandbox,
+          reached at its /code prefix; a session's pod runs the agent and the
+          app, not an IDE. */}
       </div>
     </div>
   );

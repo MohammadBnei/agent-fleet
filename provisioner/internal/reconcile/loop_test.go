@@ -15,8 +15,6 @@ type fakeK8s struct {
 	deleted          []string
 	instances        []k8s.LiveSharedInstance
 	deletedInstances []string // "repo/serviceKey"
-	e2ePods          []k8s.LiveE2ePod
-	deletedAll       []string
 }
 
 func (f *fakeK8s) ListWorkerJobsByLabel(ctx context.Context) ([]k8s.LiveWorkerJob, error) {
@@ -31,13 +29,6 @@ func (f *fakeK8s) ListSharedInstances(ctx context.Context) ([]k8s.LiveSharedInst
 }
 func (f *fakeK8s) DeleteSharedInstance(ctx context.Context, repo, serviceKey string) error {
 	f.deletedInstances = append(f.deletedInstances, repo+"/"+serviceKey)
-	return nil
-}
-func (f *fakeK8s) ListPodsByLabel(ctx context.Context) ([]k8s.LiveE2ePod, error) {
-	return f.e2ePods, nil
-}
-func (f *fakeK8s) DeleteAll(ctx context.Context, taskID string) error {
-	f.deletedAll = append(f.deletedAll, taskID)
 	return nil
 }
 
@@ -57,7 +48,7 @@ func TestGcTerminalWorkerJobs_OnlyDeletesTerminalPhase(t *testing.T) {
 		{TaskID: "pending-1", JobName: "worker-4", Phase: "Pending"},
 	}}
 	reporter := &fakeEventReporter{}
-	l := New(kc, reporter, time.Hour, 24*time.Hour)
+	l := New(kc, reporter, time.Hour)
 
 	l.gcTerminalWorkerJobs(context.Background())
 
@@ -93,7 +84,7 @@ func TestGcTerminalWorkerJobs_ReportsBothTerminalPhases(t *testing.T) {
 		{TaskID: "live-1", JobName: "worker-4", Phase: "Running"},
 	}}
 	reporter := &fakeEventReporter{}
-	l := New(kc, reporter, time.Hour, 24*time.Hour)
+	l := New(kc, reporter, time.Hour)
 
 	l.gcTerminalWorkerJobs(context.Background())
 
@@ -127,7 +118,7 @@ func TestGcIdleSharedInstances_OnlyDeletesPastTimeout(t *testing.T) {
 		{Repo: "dream-analyst", ServiceKey: "redis", LastUsedAt: now.Add(-1 * time.Minute)},  // recent, kept
 		{Repo: "agent-fleet", ServiceKey: "postgres", LastUsedAt: time.Time{}},               // no annotation yet, kept
 	}}
-	l := New(kc, &fakeEventReporter{}, time.Hour, 24*time.Hour)
+	l := New(kc, &fakeEventReporter{}, time.Hour)
 
 	l.gcIdleSharedInstances(context.Background())
 
@@ -148,7 +139,7 @@ func TestGcIdleSharedInstances_Uniform(t *testing.T) {
 		{Repo: "dream-analyst", ServiceKey: "postgres", LastUsedAt: now.Add(-2 * time.Hour)},
 		{Repo: "agent-fleet", ServiceKey: "postgres", LastUsedAt: now.Add(-2 * time.Hour)},
 	}}
-	l := New(kc, &fakeEventReporter{}, time.Hour, 24*time.Hour)
+	l := New(kc, &fakeEventReporter{}, time.Hour)
 
 	l.gcIdleSharedInstances(context.Background())
 
@@ -163,7 +154,7 @@ func TestGcIdleSharedInstances_Uniform(t *testing.T) {
 // 10s against pods an agent is actively working in.
 func TestRun_StopsOnContextCancel(t *testing.T) {
 	kc := &fakeK8s{}
-	l := New(kc, &fakeEventReporter{}, time.Hour, 24*time.Hour)
+	l := New(kc, &fakeEventReporter{}, time.Hour)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
 	defer cancel()

@@ -181,9 +181,6 @@ func (s *Server) ArchiveSession(ctx context.Context, req *connect.Request[agentf
 	if _, err := s.e2e.TearDownSession(ctx, id, agentfleetv1.SessionKind_SESSION_KIND_WORKER); err != nil {
 		slog.Warn("dashboard ArchiveSession: worker teardown failed", "sessionId", id, "error", err)
 	}
-	if _, err := s.e2e.TearDownSession(ctx, id, agentfleetv1.SessionKind_SESSION_KIND_E2E); err != nil {
-		slog.Warn("dashboard ArchiveSession: e2e teardown failed", "sessionId", id, "error", err)
-	}
 	if err := s.proposals.DismissForSession(ctx, id); err != nil {
 		slog.Warn("dashboard ArchiveSession: proposal dismiss failed", "sessionId", id, "error", err)
 	}
@@ -654,12 +651,10 @@ func (s *Server) DeleteSession(ctx context.Context, req *connect.Request[agentfl
 		slog.Error("dashboard DeleteTask: worker teardown", "sessionId", sessionID, "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
-	if _, err := s.e2e.TearDownSession(ctx, sessionID, agentfleetv1.SessionKind_SESSION_KIND_E2E); err != nil {
-		slog.Error("dashboard DeleteTask: e2e teardown", "sessionId", sessionID, "error", err)
-		return nil, connect.NewError(connect.CodeInternal, err)
-	}
+	// A second teardown call for the session's e2e sandbox used to follow.
+	// There is no sandbox (docs/adr/0048 §6) — one pod, one teardown.
 	if err := s.sessions.Delete(ctx, sessionID); err != nil {
-		slog.Error("dashboard DeleteTask: soft delete", "sessionId", sessionID, "error", err)
+		slog.Error("dashboard DeleteSession", "sessionId", sessionID, "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	slog.Info("dashboard DeleteTask", "sessionId", sessionID)

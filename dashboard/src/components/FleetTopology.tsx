@@ -38,7 +38,9 @@ type Placed = CellNode & { x: number; y: number; w: number; h: number };
 // Positions every cell. Workers spread evenly across the full width, so a
 // fleet of one centres it rather than pinning it to the left edge.
 export function layout(nodes: CellNode[]): Placed[] {
-  const workers = nodes.filter((n) => n.type === "worker" || n.type === "e2e");
+  // "e2e" was a second node type here; core never emits it any more
+  // (docs/adr/0048 §6 — a session is one pod).
+  const workers = nodes.filter((n) => n.type === "worker");
   const step = VIEW_W / (workers.length + 1);
   let i = 0;
 
@@ -92,7 +94,7 @@ export function FleetTopology({ onSelectTask }: { onSelectTask: (id: string) => 
 
   const placed = layout(nodes);
   const byId = new Map(placed.map((p) => [p.id, p]));
-  const workers = placed.filter((p) => p.type === "worker" || p.type === "e2e");
+  const workers = placed.filter((p) => p.type === "worker");
   // Grow the canvas with the tiers rather than letting the bottom row clip.
   const viewH = TIER_Y.worker + CELL_H + 40;
 

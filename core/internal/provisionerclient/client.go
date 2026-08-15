@@ -65,15 +65,14 @@ func (c *Client) ListWorkerPods(ctx context.Context) (map[string]string, error) 
 	return out, nil
 }
 
-// TearDownWorker/TearDownE2e are named wrappers over TearDownSession so the
-// reconcile loop reads as intent rather than as an enum argument.
+// TearDownWorker is a named wrapper over TearDownSession so callers read as
+// intent rather than as an enum argument.
+//
+// Its TearDownE2e sibling is gone: with no sandbox (docs/adr/0048 §6) the
+// provisioner answers "nothing to tear down" for SESSION_KIND_E2E, so every
+// call was a round trip to be told nothing happened.
 func (c *Client) TearDownWorker(ctx context.Context, sessionID string) error {
 	_, err := c.TearDownSession(ctx, sessionID, agentfleetv1.SessionKind_SESSION_KIND_WORKER)
-	return err
-}
-
-func (c *Client) TearDownE2e(ctx context.Context, sessionID string) error {
-	_, err := c.TearDownSession(ctx, sessionID, agentfleetv1.SessionKind_SESSION_KIND_E2E)
 	return err
 }
 

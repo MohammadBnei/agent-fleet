@@ -158,8 +158,8 @@ func New(core *coreclient.Client) http.Handler {
 	), waitForSessionHandler(core))
 
 	s.AddTool(mcp.NewTool("view_logs",
-		mcp.WithDescription("View recent logs from fleet components or deployed apps. Use to debug worker, sidecar, or the deployed app during e2e tests. Supports duration-based queries (duration) or explicit ranges (start_time/end_time, RFC3339)."),
-		mcp.WithString("component", mcp.Required(), mcp.Description("Which component: worker|sidecar|core|provisioner|e2e|app")),
+		mcp.WithDescription("View recent logs from fleet components or deployed apps. Supports duration-based queries (duration) or explicit ranges (start_time/end_time, RFC3339). Your own session's logs are the \"worker\" component — including whatever your app writes to stdout, since it runs in this same pod."),
+		mcp.WithString("component", mcp.Required(), mcp.Description("Which component: worker|sidecar|core|provisioner|app")),
 		mcp.WithString("app_name", mcp.Description("For component=app, the deployed app's name — usually this task's own repo name. Repos are dashboard-managed (docs/adr/0028), so there is no fixed list.")),
 		mcp.WithString("namespace", mcp.Description("Kubernetes namespace (default: agent-fleet, use 'default' for deployed apps)")),
 		mcp.WithString("level", mcp.Description("Filter by level: debug|info|warn|error (default: all)")),

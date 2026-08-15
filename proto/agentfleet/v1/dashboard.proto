@@ -69,82 +69,14 @@ message StreamTranscriptRequest {
   int64 since_seq = 2;
 }
 
-message GetE2eStatusRequest {
-  string session_id = 1;
-}
-
-message GetE2eStatusResponse {
-  string status = 1;
-  string preview_url = 2;
-  // Fields 3-7 are pass-through from ProvisionerService.GetE2eSessionStatus
-  // (live pod truth — core holds no cluster RBAC and must not read pods);
-  // 8-11 are core's own, resolved from repo_profiles.
-  string start_cmd = 3;
-  string pod_phase = 4;
-  bool app_ready = 5;
-  int32 restarts = 6;
-  string started_at = 7; // RFC3339
-  string profile_name = 8;
-  repeated string tools = 9;
-  repeated string services = 10;
-  // True when the running pod's start_cmd differs from the profile's — i.e.
-  // a human-approved per-task override is in effect. Surfacing this is the
-  // point: a silent override is what caused the bug this card exists for.
-  bool start_cmd_overridden = 11;
-  // The /code route, not the app root — see provisioner.proto's field of the
-  // same name for why this travels rather than being rebuilt client-side.
-  string code_server_url = 12;
-}
-
-// --- e2e environment control (docs/adr/0044) ---
+// The e2e card's whole message set lived here: GetE2eStatus* (live pod phase,
+// preview URL and the resolved recipe), StartE2e*/RestartE2eApp* (starting the
+// app for a human, since only the agent could otherwise), and GetE2eAppLog*
+// (the app's stdout, the first thing to read when a preview 502'd).
 //
-// The dashboard could already Kill an e2e env but never start one: creating a
-// sandbox was reachable only by asking the agent to call request_e2e_env,
-// which is a strange thing to need when the sandbox is exactly what a human
-// wants in order to look at a broken preview themselves.
-
-message StartE2eRequest {
-  string session_id = 1;
-}
-
-message StartE2eResponse {
-  string status = 1;
-  string preview_url = 2;
-  // Echoed for the same reason request_e2e_env echoes it to the agent: the
-  // recipe that was actually used is the first thing anyone needs when the
-  // preview doesn't serve.
-  string resolved_start_cmd = 3;
-  string profile_name = 4;
-}
-
-// RestartE2eApp re-runs the profile's start command INSIDE the live pod, via
-// the e2e-restart-app helper on its PATH. Deliberately distinct from
-// stop+start: the pod, its warm dependency cache and the worktree all survive,
-// so this costs seconds where recreating the sandbox costs a 10+ minute cold
-// install. Conflating the two in one "restart" button is how a human ends up
-// paying that install to fix a dev server that just needed rebooting.
-message RestartE2eAppRequest {
-  string session_id = 1;
-}
-
-message RestartE2eAppResponse {
-  string output = 1;
-  int32 exit_code = 2;
-}
-
-// GetE2eAppLog reads /tmp/e2e-app.log out of the pod — the app's own stdout,
-// which is the first thing to look at when a preview 502s and the single
-// question the e2e card could never answer. Not Loki: this is readable while
-// the pod is alive regardless of retention, and it carries the explicit
-// "app command exited with status N" marker the entrypoint writes.
-message GetE2eAppLogRequest {
-  string session_id = 1;
-  int32 lines = 2; // default 200
-}
-
-message GetE2eAppLogResponse {
-  string log = 1;
-}
+// All of it is gone with the sandbox (docs/adr/0048 §6). The app runs in the
+// session's own pod, started by the agent with Bash, and what a human wants
+// from it — a URL — the agent produces with expose().
 
 message StopSessionRequest {
   string session_id = 1;
@@ -347,42 +279,13 @@ message DeleteSessionRequest {
 
 message DeleteSessionResponse {}
 
-// WorktreeView is provisioner.proto's WorktreeInfo left-joined against
-// `sessions` (reliability-findings.md #2) — live_state/session_error are
-// unset, not omitted, when the session row no longer exists, which is
-// exactly the orphaned-directory case this view exists to surface (an inner
-// join would hide it).
+// WorktreeView and ListWorktreesViewResponse backed the worktrees page: the
+// provisioner's directory listing left-joined against `sessions`, so an
+// orphaned directory could be spotted and deleted by hand.
 //
-// Fields 6 and 8 are reserved: task_status died with the status enum, and
-// pr_url with the column whose only writer never passed it.
-message WorktreeView {
-  reserved 6, 8;
-  reserved "task_status", "pr_url";
-
-  string session_id = 1;
-  string repo = 2;
-  string branch = 3;
-  string upstream_track = 4;
-  int64 mtime_unix = 5;
-  optional string session_error = 7;
-  string path = 9;
-  int32 dirty_files = 10;
-  int64 size_bytes = 11;
-  // Absent when no session row remains — the orphan signal.
-  //
-  // `optional` rather than a bare string, because "" is a REAL live state
-  // (sessions.LiveStateNone: a session with no pod attached, which is the
-  // resting state between messages). Overloading "" to also mean "no session
-  // row" made the two indistinguishable, so the orphan check could never fire
-  // and a merely-stopped session rendered as an orphan with no link back.
-  optional string live_state = 12;
-}
-
-message ListWorktreesViewResponse {
-  repeated WorktreeView worktrees = 1;
-  uint64 pvc_total_bytes = 2;
-  uint64 pvc_free_bytes = 3;
-}
+// There are no worktrees (docs/adr/0048 §5). A session's tree is its own PVC,
+// deleted with the session by the retention GC, so there is nothing to list
+// and nothing to orphan.
 
 // GetJournal is the read path reliability-findings.md #1/#7 both call out
 // as missing — knowledge_journal had no Get/List RPC anywhere, so even a

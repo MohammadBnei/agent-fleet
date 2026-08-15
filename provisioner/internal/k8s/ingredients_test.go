@@ -131,32 +131,6 @@ func TestBuildIngredients_TaskScopedServiceProducesNoInitContainer(t *testing.T)
 	}
 }
 
-func TestCreatePod_WithToolIngredients(t *testing.T) {
-	c := newTestClient()
-	ctx := context.Background()
-	task := TaskRef{ID: "abc-tools", Repo: "agent-fleet", StartCmd: "true", ToolKeys: []string{"golangci-lint"}}
-
-	if err := c.CreatePod(ctx, task); err != nil {
-		t.Fatalf("CreatePod: %v", err)
-	}
-	pod, err := c.Core.CoreV1().Pods("agent-fleet").Get(ctx, ResourceName(task.ID), metav1.GetOptions{})
-	if err != nil {
-		t.Fatalf("get pod: %v", err)
-	}
-	if len(pod.Spec.InitContainers) != 1 || pod.Spec.InitContainers[0].Name != "tool-golangci-lint" {
-		t.Fatalf("expected 1 tool init container, got %+v", pod.Spec.InitContainers)
-	}
-	foundToolsVol := false
-	for _, v := range pod.Spec.Volumes {
-		if v.Name == toolsVolumeName {
-			foundToolsVol = true
-		}
-	}
-	if !foundToolsVol {
-		t.Error("expected a shared tools volume on the pod")
-	}
-}
-
 func TestCreateWorkerPod_WithPodScopedService(t *testing.T) {
 	c := newTestClient()
 	ctx := context.Background()

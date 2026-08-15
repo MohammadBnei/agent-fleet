@@ -94,16 +94,12 @@ export function SessionPanel({
   busy,
   busyKey,
   run,
-  codeServerUrl,
-  isThotTask,
   onBypassClick,
 }: {
   task: Session;
   busy: boolean;
   busyKey: string | null;
   run: (action: () => Promise<unknown>, key: string) => void;
-  codeServerUrl?: string | null;
-  isThotTask: boolean;
   onBypassClick: () => void;
 }) {
   return (
@@ -119,8 +115,6 @@ export function SessionPanel({
         busy={busy}
         busyKey={busyKey}
         run={run}
-        codeServerUrl={codeServerUrl}
-        isThotTask={isThotTask}
         sweptAt={task.sweptAt}
         archivedAt={task.archivedAt}
         currentMode={task.permissionMode}

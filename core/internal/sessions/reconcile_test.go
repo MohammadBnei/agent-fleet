@@ -18,7 +18,6 @@ type fakeProvisioner struct {
 	listErr     error
 	sweepErr    error
 	tornWorkers []string
-	tornE2e     []string
 	swept       []string
 }
 
@@ -31,11 +30,6 @@ func (f *fakeProvisioner) ListWorkerPods(ctx context.Context) (map[string]string
 
 func (f *fakeProvisioner) TearDownWorker(ctx context.Context, id string) error {
 	f.tornWorkers = append(f.tornWorkers, id)
-	return nil
-}
-
-func (f *fakeProvisioner) TearDownE2e(ctx context.Context, id string) error {
-	f.tornE2e = append(f.tornE2e, id)
 	return nil
 }
 
@@ -82,7 +76,7 @@ func TestReconcilePodPhases_OrphanedRunningRowIsTerminated(t *testing.T) {
 	}
 
 	fake := &fakeProvisioner{livePods: map[string]string{alive: "Running"}}
-	loop := NewLoop(store, fake, time.Minute, time.Minute, time.Hour, 14*24*time.Hour)
+	loop := NewLoop(store, fake, time.Minute, time.Minute, time.Hour, 14*24*time.Hour, time.Minute)
 
 	loop.reconcilePodPhases(ctx)
 
@@ -113,11 +107,6 @@ func TestReconcilePodPhases_OrphanedRunningRowIsTerminated(t *testing.T) {
 	if a.PodPhase == nil || *a.PodPhase != "POD_PHASE_RUNNING" {
 		t.Fatalf("reconcile clobbered a session whose pod is genuinely up: %v", a.PodPhase)
 	}
-	// The sandbox outlives its worker only by accident; leaking one is what
-	// makes the NEXT sandbox sit Pending against a full node.
-	if len(fake.tornE2e) != 1 || fake.tornE2e[0] != orphan {
-		t.Errorf("expected exactly the orphan's e2e pod to be torn down, got %v", fake.tornE2e)
-	}
 }
 
 // The upward half of the same pass, which nothing else does.
@@ -140,7 +129,7 @@ func TestReconcilePodPhases_SyncsScheduledUpToRunning(t *testing.T) {
 	}
 
 	fake := &fakeProvisioner{livePods: map[string]string{id: "Running"}}
-	loop := NewLoop(store, fake, time.Minute, time.Minute, time.Hour, 14*24*time.Hour)
+	loop := NewLoop(store, fake, time.Minute, time.Minute, time.Hour, 14*24*time.Hour, time.Minute)
 	loop.reconcilePodPhases(ctx)
 
 	s, err := store.Get(ctx, id)
@@ -189,7 +178,7 @@ func TestReconcilePodPhases_ListFailureChangesNothing(t *testing.T) {
 	}
 
 	fake := &fakeProvisioner{listErr: errors.New("provisioner unreachable")}
-	loop := NewLoop(store, fake, time.Minute, time.Minute, time.Hour, 14*24*time.Hour)
+	loop := NewLoop(store, fake, time.Minute, time.Minute, time.Hour, 14*24*time.Hour, time.Minute)
 
 	loop.reconcilePodPhases(ctx)
 
@@ -200,7 +189,7 @@ func TestReconcilePodPhases_ListFailureChangesNothing(t *testing.T) {
 	if s.PodPhase == nil || *s.PodPhase != "POD_PHASE_RUNNING" {
 		t.Fatalf("a failed pod listing terminated a live session: phase=%v", s.PodPhase)
 	}
-	if len(fake.tornE2e)+len(fake.tornWorkers) != 0 {
+	if len(fake.tornWorkers) != 0 {
 		t.Error("a failed pod listing caused teardowns")
 	}
 }
@@ -227,7 +216,7 @@ func TestCollectExpired_FailedSweepDoesNotMarkSwept(t *testing.T) {
 	}
 
 	fake := &fakeProvisioner{sweepErr: errors.New("disk busy")}
-	loop := NewLoop(store, fake, time.Minute, time.Minute, time.Hour, 14*24*time.Hour)
+	loop := NewLoop(store, fake, time.Minute, time.Minute, time.Hour, 14*24*time.Hour, time.Minute)
 
 	loop.collectExpired(ctx)
 

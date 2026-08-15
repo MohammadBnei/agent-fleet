@@ -109,7 +109,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool) error {
 	// a wrongly-held concurrency slot is unnoticeable where "never" was the
 	// bug.
 	sessionLoop := sessions.NewLoop(sessionStore, provisioner,
-		cfg.StopGrace, cfg.StartupStall, cfg.IdleTimeout, cfg.SessionRetention)
+		cfg.StopGrace, cfg.StartupStall, cfg.IdleTimeout, cfg.SessionRetention, cfg.TurnStall)
 	go sessionLoop.Run(ctx, 60*time.Second)
 
 	// Scheduled audits create thot tasks (docs/adr/0037) — no separate

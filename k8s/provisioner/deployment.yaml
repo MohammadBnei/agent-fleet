@@ -7,10 +7,10 @@
 # gitops/bootstrap/provisioner-application.yaml) — only its repoURL/path
 # moved, not its shape.
 #
-# core (worker/sidecar/provisioner) images are pinned + auto-bumped by
-# .github/workflows/docker.yml's deploy job; e2e-runner stays a floating
-# :latest for v1, same accepted trade-off as actions-runner's
-# myoung34/github-runner:latest — it isn't built by this repo's own CI.
+# The worker/sidecar/provisioner images are pinned and auto-bumped by
+# .github/workflows/docker.yml's deploy job. The e2e-runner image that used to
+# float on :latest here is gone with the sandbox (docs/adr/0048 §6) — a session
+# runs one pod, on the worker image.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -42,8 +42,6 @@ spec:
         env:
         - name: NAMESPACE
           value: agent-fleet
-        - name: E2E_RUNNER_IMAGE
-          value: mohammaddocker/agent-fleet-e2e-runner:latest
         - name: E2E_HOST
           value: e2e.bnei.dev
         - name: PORT
@@ -60,7 +58,7 @@ spec:
           value: mohammaddocker/agent-fleet-sidecar:2.1.0
         - name: WORKSPACE_PVC
           value: agent-fleet-workspace
-        - name: WORKTREES_ROOT
+        - name: WORKSPACE_ROOT
           value: /workspace
         - name: CORE_GRPC_ADDR
           value: agent-fleet-core.agent-fleet.svc.cluster.local:9090
