@@ -1,5 +1,12 @@
 # Changelog
 
+# [3.5.0](https://github.com/MohammadBnei/agent-fleet/compare/3.4.1...3.5.0) (2026-08-15)
+
+
+### Features
+
+* **worker,provisioner:** per-repo worker images, and browsers on the shared PVC ([#172](https://github.com/MohammadBnei/agent-fleet/issues/172)) ([cf0afbf](https://github.com/MohammadBnei/agent-fleet/commit/cf0afbf8f62a121d356450108057c1d86c40bd2f)), closes [#174](https://github.com/MohammadBnei/agent-fleet/issues/174) [#174](https://github.com/MohammadBnei/agent-fleet/issues/174)
+
 ## [3.4.1](https://github.com/MohammadBnei/agent-fleet/compare/3.4.0...3.4.1) (2026-08-15)
 
 
