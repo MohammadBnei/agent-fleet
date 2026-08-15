@@ -528,6 +528,26 @@ test("abort before anything is answered ends the task as aborted", async () => {
   expect(interruptCalls).toBeGreaterThan(0);
 }, 10000);
 
+test("/clear never reaches the SDK: it clears the saved session id and ends the pod so the next warm starts fresh", async () => {
+  const promise = runSession();
+  await Bun.sleep(20);
+  // One real turn first, so the initial session id is captured and saved.
+  pushHuman("hello", "discussion");
+  await Bun.sleep(20);
+  expect(savedSessionIds.length).toBe(1);
+  expect(savedSessionIds[0]).not.toBe("");
+
+  // `/clear` must NOT be pushed to the SDK (that throws in streaming mode).
+  // It ends the session, and the LAST saved id is empty — next warm resumes
+  // nothing.
+  pushHuman("/clear", "discussion");
+  const result = await promise;
+
+  expect(result.aborted).toBe(true);
+  expect(interruptCalls).toBeGreaterThan(0);
+  expect(savedSessionIds.at(-1)).toBe("");
+}, 10000);
+
 // Every test that expects a round to HAPPEN has to push a message first.
 // The input queue is deliberately never seeded (docs/adr/0048): a session
 // with no message has no turn, which is what makes "optional first message"

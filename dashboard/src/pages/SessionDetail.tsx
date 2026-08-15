@@ -326,6 +326,7 @@ export function SessionDetail({
             busyKey={busyKey}
             run={run}
             onBypassClick={() => setBypassOpen(true)}
+            onRestart={() => sendDiscuss("/clear")}
           />
         </div>
       </div>
