@@ -2,8 +2,9 @@ import { useState } from "react";
 import { ActionButton } from "./ActionButton";
 import { client } from "../connectClient";
 import type { Session } from "../gen/agentfleet/v1/core_pb";
-import { parseQuestions, type ListSummary } from "../transcript";
+import { type ListSummary } from "../transcript";
 import { DiffLines } from "./DiffLines";
+import { QuestionCard } from "./QuestionCard";
 import { Markdown } from "./Markdown";
 import { summarizeToolInput } from "../transcript";
 
@@ -116,7 +117,6 @@ export function DecisionInline({
 }) {
   const { busy, pending, answered, error, send } = useDecision(reload);
   const [reason, setReason] = useState("");
-  const [selected, setSelected] = useState<string[]>([]);
   const stacked = layout === "stacked";
   const pad = stacked ? "px-3.5 pb-3.5" : "px-4 pb-4";
 
@@ -252,139 +252,34 @@ export function DecisionInline({
   }
 
   if (questionEntry) {
-    const questions = parseQuestions(questionEntry.text);
-    // Single-question only answerable from list. Multi-question needs full form in session.
-    const q = questions && questions.length === 1 ? questions[0] : null;
-
-    const toggleSelection = (label: string) => {
-      if (q?.multiSelect) {
-        setSelected(prev => prev.includes(label) ? prev.filter(l => l !== label) : [...prev, label]);
-      } else {
-        // Single-select: submit immediately
-        send(
-          "answer",
-          () =>
-            client.answerQuestion({
-              sessionId: session.id,
-              seq: questionEntry.seq,
-              answersJson: JSON.stringify({ answers: { [q!.question]: label } }),
-            }),
-          questionEntry.seq,
-        );
-      }
-    };
-
-    const submitAnswer = () => {
-      const answer = q?.multiSelect ? selected.join(", ") : selected[0];
+    // Reuse the session-detail QuestionCard so the list answers any batch
+    // (multi-question, free-text) identically — no bespoke single-question
+    // restriction, and the answer no longer costs a navigation.
+    const submit = (answers: Record<string, string>) =>
       send(
         "answer",
         () =>
           client.answerQuestion({
             sessionId: session.id,
             seq: questionEntry.seq,
-            answersJson: JSON.stringify({ answers: { [q!.question]: answer } }),
+            answersJson: JSON.stringify({ answers }),
           }),
         questionEntry.seq,
       );
-      setSelected([]);
-    };
 
-    if (!q) {
-      return (
-        <div className={`${pad} flex flex-col gap-2.5`}>
-          <div className="text-xs text-dim tracking-[0.05em]">
-            QUESTION · {questions?.length ?? 1} to answer
-          </div>
-          <OpenSession onOpenSession={onOpenSession} layout={layout} />
-        </div>
-      );
-    }
-
-    const options = q.multiSelect ? (
-      <>
-        {q.options.map((opt) => (
-          <label key={opt.label} className={`flex items-start gap-2 cursor-pointer ${stacked ? "w-full px-3.5 py-3 border border-acc-line" : "px-3.5 py-2"}`}>
-            <input
-              type="checkbox"
-              className="checkbox checkbox-sm mt-0.5"
-              checked={selected.includes(opt.label)}
-              onChange={() => toggleSelection(opt.label)}
-              disabled={busy}
-            />
-            <span className="text-base">
-              <span className="font-medium">{opt.label}</span>
-              {opt.description && <span className="text-dim2"> — {opt.description}</span>}
-            </span>
-          </label>
-        ))}
-      </>
-    ) : (
-      <>
-        {q.options.map((opt) => {
-          const isSelected = selected.includes(opt.label);
-          return (
-            <button
-              key={opt.label}
-              type="button"
-              disabled={busy}
-              title={opt.description}
-              onClick={() => toggleSelection(opt.label)}
-              className={`border cursor-pointer disabled:opacity-50 ${
-                stacked ? "w-full text-left px-3.5 py-3 text-base" : "px-3.5 py-2 text-sm"
-              } ${
-                isSelected
-                  ? "border-primary bg-primary/15 text-primary"
-                  : "border-acc-line hover:border-primary hover:text-primary"
-              }`}
-            >
-              {opt.label}
-            </button>
-          );
-        })}
-      </>
-    );
-
-    const footer = (
-      <div className={`flex gap-3.5 ${stacked ? "justify-center pt-1" : "items-center"}`}>
-        <button type="button" onClick={onOpenSession} className="text-xs text-dim hover:text-primary cursor-pointer py-1">
-          write a reply
-        </button>
-        {onAskLater && (
-          <button type="button" onClick={onAskLater} className="text-xs text-dim2 hover:text-dim cursor-pointer py-1">
-            ask me later
-          </button>
-        )}
-      </div>
-    );
-
-    return stacked ? (
-      <div className={`${pad} flex flex-col gap-3`}>
-        <div className="text-xs text-dim tracking-[0.05em]">QUESTION · 1 of 1</div>
-        <div className="text-base leading-relaxed">{q.question}</div>
+    return (
+      <div className={`${pad} flex flex-col gap-2.5`}>
+        <QuestionCard entry={questionEntry} answer={null} busy={busy} compact={stacked} onSubmit={submit} />
         {error && <div className="text-xs text-error">{error}</div>}
-        <div className="flex flex-col gap-2">{options}</div>
-        {q.multiSelect && (
-          <button
-            type="button"
-            disabled={busy || selected.length === 0}
-            onClick={submitAnswer}
-            className="w-full py-3 text-center text-base font-semibold bg-primary text-primary-content disabled:opacity-50"
-          >
-            submit answer
+        <div className={`flex gap-3.5 ${stacked ? "justify-center" : "items-center"}`}>
+          <button type="button" onClick={onOpenSession} className="text-xs text-dim hover:text-primary cursor-pointer py-1">
+            open session ▸
           </button>
-        )}
-        {footer}
-      </div>
-    ) : (
-      <div className={`${pad} flex gap-4.5 items-center`}>
-        <div className="flex-1 min-w-0">
-          <div className="text-xs text-dim tracking-[0.05em]">QUESTION · 1 of 1</div>
-          <div className="text-base leading-relaxed mt-1.5">{q.question}</div>
-          {error && <div className="text-xs text-error mt-1.5">{error}</div>}
-        </div>
-        <div className="w-[320px] flex-none flex flex-wrap gap-2 items-center">
-          {options}
-          {footer}
+          {onAskLater && (
+            <button type="button" onClick={onAskLater} className="text-xs text-dim2 hover:text-dim cursor-pointer py-1">
+              ask me later
+            </button>
+          )}
         </div>
       </div>
     );
