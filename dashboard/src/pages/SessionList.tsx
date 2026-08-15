@@ -1,9 +1,9 @@
+import { useMemo, useState } from "react";
 import type { Session } from "../gen/agentfleet/v1/core_pb";
 import { client } from "../connectClient";
 import { sessionLabel } from "../sessionLabel";
 import type { ListSummary } from "../transcript";
 import { TickBar, todoProgress } from "../components/TickBar";
-import { Collapse } from "../components/Collapse";
 import { DecisionInline } from "../components/DecisionInline";
 import { NotchCard } from "../components/NotchCard";
 
@@ -451,44 +451,128 @@ function WorkingRow({
   );
 }
 
-// The collapsed tail. A session in here needs nothing; it exists so the count is
-// honest and the row is still reachable, not to be read.
-function QuietGroup({
-  title,
-  sessions,
-  onSelect,
-}: {
-  title: string;
-  sessions: Session[];
-  onSelect: (id: string) => void;
-}) {
-  if (sessions.length === 0) return null;
+// One flat row in the quiet tail. A session here needs nothing; the row exists
+// so the count is honest and the session stays reachable, not to be read. Was
+// the inner markup of the old QuietGroup collapsibles, lifted out so the tail
+// can be one sorted/filtered list instead of four fixed accordions.
+function CompactRow({ session, onSelect }: { session: Session; onSelect: (id: string) => void }) {
+  const badge = sessionBadge(session);
   return (
-    <Collapse
-      summary={<span className="text-xs text-dim2">▸ {title} · {sessions.length}</span>}
-      summaryClassName="py-1"
-      contentClassName="pl-3 py-1 flex flex-col gap-1"
+    <button
+      type="button"
+      onClick={() => onSelect(session.id)}
+      className="flex items-center gap-2.5 text-left hover:text-primary cursor-pointer py-0.5"
     >
-      {sessions.map((t) => {
-        const badge = sessionBadge(t);
+      <span className="text-xs text-dim2 flex-none">#{session.id.slice(0, 6)}</span>
+      <span className="text-sm text-dim min-w-0 truncate flex-1">{sessionLabel(session)}</span>
+      <span className="text-2xs text-dim2 flex-none">{session.repo}</span>
+      {badge && (
+        <span className={`text-2xs px-1 border tracking-wide flex-none ${badge.className}`} title={badge.title}>
+          {badge.label}
+        </span>
+      )}
+    </button>
+  );
+}
+
+// The quiet tail's sort axes. Default `date` (most recently active first) is
+// what a human scanning "what happened" wants; the rest are for hunting a
+// specific session. proto Session has no createdAt, so date sorts on
+// lastActiveAt with a 0 fallback for a session that never became active.
+export type SortKey = "date" | "status" | "repo" | "title";
+
+// The one bucket label shown per quiet session — also the status-filter axis.
+function restStatus(t: Session): string {
+  if (t.archivedAt !== undefined) return "archived";
+  if (t.sweptAt !== undefined) return "swept";
+  if (t.liveState === "stalled") return "stalled";
+  return "idle";
+}
+
+function activeMs(t: Session): number {
+  return t.lastActiveAt ? new Date(t.lastActiveAt).getTime() : 0;
+}
+
+// Sort comparator for the quiet tail. Exported for sort.test.ts.
+export function compareSessions(a: Session, b: Session, sort: SortKey): number {
+  switch (sort) {
+    case "repo":
+      return a.repo.localeCompare(b.repo) || activeMs(b) - activeMs(a);
+    case "title":
+      return sessionLabel(a).localeCompare(sessionLabel(b));
+    case "status":
+      return restStatus(a).localeCompare(restStatus(b)) || activeMs(b) - activeMs(a);
+    default:
+      return activeMs(b) - activeMs(a);
+  }
+}
+
+const TERMINAL = new Set(["archived", "swept"]);
+
+// Sort + filter controls for the quiet tail. Native <select>s (accessible for
+// free) for sort + repo; chip toggles mirror MobileSessionList's status bar for
+// the status multi-filter and the hide-terminal toggle.
+function ControlBar({
+  sort,
+  setSort,
+  repoFilter,
+  setRepoFilter,
+  repos,
+  statuses,
+  statusFilter,
+  toggleStatus,
+  hideTerminal,
+  setHideTerminal,
+}: {
+  sort: SortKey;
+  setSort: (s: SortKey) => void;
+  repoFilter: string;
+  setRepoFilter: (r: string) => void;
+  repos: string[];
+  statuses: string[];
+  statusFilter: Set<string>;
+  toggleStatus: (s: string) => void;
+  hideTerminal: boolean;
+  setHideTerminal: (v: boolean) => void;
+}) {
+  const selectCls = "border border-line bg-transparent text-xs text-dim px-1.5 py-1 cursor-pointer";
+  return (
+    <div className="flex items-center gap-2 flex-wrap">
+      <select className={selectCls} value={sort} onChange={(e) => setSort(e.target.value as SortKey)} aria-label="sort sessions">
+        <option value="date">sort: recent</option>
+        <option value="status">sort: status</option>
+        <option value="repo">sort: repo</option>
+        <option value="title">sort: title</option>
+      </select>
+      <select className={selectCls} value={repoFilter} onChange={(e) => setRepoFilter(e.target.value)} aria-label="filter by repo">
+        <option value="">all repos</option>
+        {repos.map((r) => (
+          <option key={r} value={r}>{r}</option>
+        ))}
+      </select>
+      {statuses.map((s) => {
+        const on = statusFilter.size === 0 || statusFilter.has(s);
         return (
           <button
-            key={t.id}
+            key={s}
             type="button"
-            onClick={() => onSelect(t.id)}
-            className="flex items-center gap-2.5 text-left hover:text-primary cursor-pointer"
+            aria-pressed={statusFilter.has(s)}
+            onClick={() => toggleStatus(s)}
+            className={`px-2 py-1 text-2xs border flex-none ${on ? "border-primary text-primary" : "border-line text-dim2"}`}
           >
-            <span className="text-xs text-dim2 flex-none">#{t.id.slice(0, 6)}</span>
-            <span className="text-sm text-dim min-w-0 truncate flex-1">{sessionLabel(t)}</span>
-            {badge && (
-              <span className={`text-2xs px-1 border tracking-wide flex-none ${badge.className}`} title={badge.title}>
-                {badge.label}
-              </span>
-            )}
+            {s}
           </button>
         );
       })}
-    </Collapse>
+      <button
+        type="button"
+        aria-pressed={hideTerminal}
+        onClick={() => setHideTerminal(!hideTerminal)}
+        className={`px-2 py-1 text-2xs border flex-none ${hideTerminal ? "border-primary text-primary" : "border-line text-dim2"}`}
+      >
+        hide terminal
+      </button>
+    </div>
   );
 }
 
@@ -518,6 +602,33 @@ export function SessionList({
   // form factors. bucketSessions.test.ts pins the coverage of the destructure so
   // the next bucket added cannot be silently dropped the same way.
   const { needsYou, working, finished, stalled, quiet, archived, swept } = bucketSessions(sessions, needsYouIds);
+
+  // Quiet tail: one flat list over the four non-pinned buckets, sorted and
+  // filtered by the ControlBar. Pinned-active (needsYou/finished/working) stays
+  // above and is unaffected by any of this.
+  const [sort, setSort] = useState<SortKey>("date");
+  const [repoFilter, setRepoFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState<Set<string>>(new Set());
+  const [hideTerminal, setHideTerminal] = useState(false);
+
+  const rest = useMemo(() => [...stalled, ...quiet, ...archived, ...swept], [stalled, quiet, archived, swept]);
+  const repos = useMemo(() => [...new Set(sessions.map((t) => t.repo))].sort(), [sessions]);
+  const statuses = useMemo(() => [...new Set(rest.map(restStatus))].sort(), [rest]);
+  const toggleStatus = (s: string) =>
+    setStatusFilter((prev) => {
+      const next = new Set(prev);
+      if (next.has(s)) next.delete(s);
+      else next.add(s);
+      return next;
+    });
+
+  const visibleRest = useMemo(() => {
+    return rest
+      .filter((t) => (repoFilter ? t.repo === repoFilter : true))
+      .filter((t) => (statusFilter.size ? statusFilter.has(restStatus(t)) : true))
+      .filter((t) => (hideTerminal ? !TERMINAL.has(restStatus(t)) : true))
+      .sort((a, b) => compareSessions(a, b, sort));
+  }, [rest, repoFilter, statusFilter, hideTerminal, sort]);
 
   if (sessions.length === 0) {
     return <div className="p-5 text-base text-dim">No sessions.</div>;
@@ -576,17 +687,41 @@ export function SessionList({
       )}
 
       {/*
-        The collapsed tail. "proposed by audits" used to sit here fed by a
-        hardcoded empty array — a group that could never contain anything,
-        left over from when a proposal was a session row. Proposals are their own
-        table with their own view on the Audits page now (docs/adr/0048).
+        The quiet tail. Was four fixed collapsibles (stalled/idle/archived/
+        swept); now one flat sorted+filtered list, so a human hunting a specific
+        dormant session sorts by repo/title instead of guessing which accordion
+        it fell into. Pinned-active above is untouched by these controls.
+        "proposed by audits" used to sit here fed by a hardcoded empty array —
+        proposals are their own table with their own Audits view now
+        (docs/adr/0048).
       */}
-      <div className="flex flex-col gap-1 mt-3.5">
-        <QuietGroup title="stalled" sessions={stalled} onSelect={onSelect} />
-        <QuietGroup title="idle" sessions={quiet} onSelect={onSelect} />
-        <QuietGroup title="archived" sessions={archived} onSelect={onSelect} />
-        <QuietGroup title="swept · readable, not resumable" sessions={swept} onSelect={onSelect} />
-      </div>
+      {rest.length > 0 && (
+        <div className="flex flex-col gap-2 mt-4">
+          <div className="flex items-center gap-2.5">
+            <span className="text-xs tracking-[0.14em] text-dim2 whitespace-nowrap">QUIET</span>
+            <span className="flex-1 h-px bg-line2" />
+            <span className="text-xs text-dim2 whitespace-nowrap">{visibleRest.length} of {rest.length}</span>
+          </div>
+          <ControlBar
+            sort={sort}
+            setSort={setSort}
+            repoFilter={repoFilter}
+            setRepoFilter={setRepoFilter}
+            repos={repos}
+            statuses={statuses}
+            statusFilter={statusFilter}
+            toggleStatus={toggleStatus}
+            hideTerminal={hideTerminal}
+            setHideTerminal={setHideTerminal}
+          />
+          <div className="flex flex-col gap-0.5 pl-1 pt-1">
+            {visibleRest.map((t) => (
+              <CompactRow key={t.id} session={t} onSelect={onSelect} />
+            ))}
+            {visibleRest.length === 0 && <span className="text-xs text-dim2 py-1">nothing matches these filters</span>}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
