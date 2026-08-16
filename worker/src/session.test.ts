@@ -12,6 +12,7 @@ import { test, expect, mock, beforeEach, afterAll } from "bun:test";
 
 const pushedMessages: { seq: number; from: string; text: string; type?: string; replyTo?: number }[] = [];
 const savedSessionIds: string[] = [];
+const savedPermissionModes: string[] = [];
 let nextSeq = 1;
 
 // The human-message feed a real sidecar SSE stream would deliver — tests
@@ -40,7 +41,7 @@ mock.module("./sidecarClient.js", () => ({
     savedSessionIds.push(id);
   }),
   savePermissionMode: mock(async (mode: string) => {
-    // Mock implementation - just accept the call
+    savedPermissionModes.push(mode);
   }),
   getSession: mock(async () => ({ description: "test session", permissionMode: sessionPermissionMode, model: undefined })),
   streamHumanMessages: mock(async (onEntry: typeof humanMessageHandler, signal: AbortSignal) => {
@@ -223,6 +224,7 @@ beforeEach(() => {
   pushedMessages.length = 0;
   nextSeq = 1;
   savedSessionIds.length = 0;
+  savedPermissionModes.length = 0;
   humanMessageHandler = null;
   mockMessageText = "mock agent message";
   forceResult = null;
@@ -483,10 +485,41 @@ test("a REJECTED permission_mode switch does not allow the pending call", async 
   expect(pushedMessages.find((m) => m.type === "permission_response")).toBeUndefined();
   const told = pushedMessages.find((m) => m.type === "system" && m.text.includes("Could not switch to auto"));
   expect(told).toBeDefined();
+  // core wrote the column before this pod saw the entry, so a refused switch
+  // leaves the badge — and the next warm's launch mode — showing a mode the
+  // SDK rejected. The worker writes the live one back.
+  expect(savedPermissionModes).toContain("default");
 
   pushHuman("", "abort");
   await promise;
   await call;
+}, 10000);
+
+// A mode switch answers the ONE call it was aimed at. Several tool calls in
+// the same assistant turn park side by side, and a blanket sweep meant
+// approving a plan also approved whatever else was parked — a Bash nobody read.
+test("a permission_mode switch answers the plan, not every other parked call", async () => {
+  const promise = runSession();
+  await Bun.sleep(20);
+
+  let bash: { behavior: string } | null = null;
+  const bashCall = capturedCanUseTool!("Bash", { command: "rm -rf /tmp/x" }).then((r) => {
+    bash = r as { behavior: string };
+  });
+  const planCall = capturedCanUseTool!("ExitPlanMode", { plan: "do the thing" });
+  await Bun.sleep(20);
+
+  pushHuman("auto", "permission_mode");
+  const planResult = await planCall;
+
+  expect(planResult.behavior).toBe("allow");
+  expect(bash).toBeNull(); // still parked — a human has to answer it
+  const responses = pushedMessages.filter((m) => m.type === "permission_response");
+  expect(responses.length).toBe(1);
+
+  pushHuman("", "abort");
+  await promise;
+  await bashCall;
 }, 10000);
 
 // Also docs/adr/0052: bypassPermissions is fixed at launch by the SDK, and
@@ -509,6 +542,11 @@ test("switching into bypassPermissions ends the pod instead of pretending to swi
   expect(savedSessionIds).not.toContain("");
   const told = pushedMessages.find((m) => m.type === "system" && m.text.includes("re-warm"));
   expect(told).toBeDefined();
+  // Nothing writes an interrupt/abort entry on this path, so the denial has to
+  // be recorded or the card stays pending on a session whose pod is gone.
+  const recorded = pushedMessages.find((m) => m.type === "permission_response");
+  expect(recorded).toBeDefined();
+  expect(JSON.parse(recorded!.text).behavior).toBe("deny");
 
   await promise;
 }, 10000);

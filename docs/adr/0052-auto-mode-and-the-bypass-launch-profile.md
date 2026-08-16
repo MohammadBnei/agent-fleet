@@ -174,3 +174,29 @@ project-scope `allow`.
   need `/kind-local` or a live session before this is trusted in production.
   Everything above is a source read of the shipped binary, which is how the
   bug was found but is not the same as watching it work.
+
+## Review follow-ups (same PR)
+
+Four things the review of this change caught, all of the same family — a
+decision that looks made but isn't:
+
+- **A mode switch answers ONE parked call, not all of them.** The old sweep
+  allowed every pending `canUseTool` promise, which was fine when the CLI's
+  one-prompt-at-a-time shape was the only model. Several calls in one
+  assistant turn park side by side here, so approve+auto would also have
+  approved an unrelated `Bash` nobody read. ExitPlanMode wins when present,
+  else the oldest; everything else stays parked.
+- **A pod that ends itself records its denials.** `resolveAllPendingDeny`'s
+  `interrupt` flag meant both "stop the turn" and "an interrupt/abort entry
+  will resolve these on the dashboard". A bypass relaunch (and `/clear`,
+  which had the same latent bug) writes no such entry, so the cards would have
+  sat pending forever on a session whose pod was gone.
+- **A refused switch restores the column.** `core` persists
+  `sessions.permission_mode` before the worker ever sees the entry, so a mode
+  the SDK rejects still shows on the badge *and* becomes the next warm's
+  launch mode. The worker writes the live mode back — otherwise this ADR's own
+  "stop pretending it switched" fix would leak straight back in through the
+  column.
+- **The picker says when a change costs a re-warm.** From a bypass-launched
+  pod every mode change is a relaunch, and an unexplained pod teardown reads
+  as a crash.
