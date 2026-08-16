@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.5.4](https://github.com/MohammadBnei/agent-fleet/compare/3.5.3...3.5.4) (2026-08-16)
+
+
+### Bug Fixes
+
+* **worker:** bump agent SDK 0.1.77 -> 0.3.233 to survive background tasks ([#178](https://github.com/MohammadBnei/agent-fleet/issues/178)) ([00fefce](https://github.com/MohammadBnei/agent-fleet/commit/00fefce76449f7af24a77df84393cd7e1f9b6033))
+
 ## [3.5.3](https://github.com/MohammadBnei/agent-fleet/compare/3.5.2...3.5.3) (2026-08-16)
 
 
