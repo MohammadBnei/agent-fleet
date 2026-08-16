@@ -139,12 +139,31 @@ COPY worker ./worker
 # a NATIVE binary shipped as a per-platform optional dependency. Two resolve on
 # linux-x64 (glibc + musl, ~300 MB each) and only the glibc one can run on this
 # Debian base, so the musl copy is 300 MB of layer that can never execute.
-# `test -x` comes first, because an image missing the agent binary fails every
-# session at run time instead of failing this build once.
-RUN cd worker && bun install --production --frozen-lockfile \
-    && test -x node_modules/@anthropic-ai/claude-agent-sdk-linux-x64/claude \
-    && rm -rf node_modules/@anthropic-ai/claude-agent-sdk-linux-x64-musl \
-    && chmod +x entrypoint.sh && chown -R bun:bun /app
+#
+# The binary is RUN, not `test -x`'d: running it is what proves it can run —
+# the musl build is executable too, and fails only when something exec's it,
+# i.e. in every session rather than once here. Its `--version` also gives the
+# only cheap read of the SDK's bundled Claude Code, which is the version that
+# actually serves a session (the global CLI above is build-time only). Asserting
+# the two match is what makes the comment on CLAUDE_CODE_VERSION structural:
+# they are allowed to differ, they are not allowed to drift silently. A bump to
+# either one that leaves the other behind now fails the build with both numbers
+# in the message.
+#
+# linux-x64 is hardcoded because PLATFORMS in .github/workflows/docker.yml is
+# linux/amd64. Adding an arch there breaks this line — deliberately: the
+# alternative is an image whose agent binary is for the wrong architecture.
+RUN set -eu; \
+    cd worker; \
+    bun install --production --frozen-lockfile; \
+    sdk_cli="$(node_modules/@anthropic-ai/claude-agent-sdk-linux-x64/claude --version | cut -d' ' -f1)"; \
+    if [ "$sdk_cli" != "${CLAUDE_CODE_VERSION}" ]; then \
+        echo "SDK-bundled Claude Code is $sdk_cli but the global CLI is pinned to ${CLAUDE_CODE_VERSION}; bump one to match the other"; \
+        exit 1; \
+    fi; \
+    rm -rf node_modules/@anthropic-ai/claude-agent-sdk-linux-x64-musl; \
+    chmod +x entrypoint.sh; \
+    chown -R bun:bun /app
 
 WORKDIR /app/worker
 USER bun
