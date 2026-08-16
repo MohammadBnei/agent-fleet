@@ -1,6 +1,10 @@
 # ADR-0049 — A session loads the target repo's own project settings
 
-- **Status:** Accepted
+- **Status:** Accepted; the `permissions.ask` block's *placement* superseded by
+  [ADR-0052](0052-auto-mode-and-the-bypass-launch-profile.md) (same list, same
+  job, now `FLEET_ASK_RULES` in `worker/src/session.ts` so it can be omitted
+  for a `bypassPermissions` launch). The `settingSources: ["user", "project"]`
+  decision itself stands.
 - **Date:** 2026-08-15
 - **Resolves:** [ADR-0032](0032-fleet-shared-pvc-directory.md)'s open question
   ("Whether `settingSources` should ever include `"project"`")

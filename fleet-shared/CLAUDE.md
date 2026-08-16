@@ -1,4 +1,4 @@
-Worker pod. Ephemeral, one task, git worktree at `/workspace/worktrees/<taskId>`. Target repo's CLAUDE.md wins for codebase details.
+Worker pod. Ephemeral, one session, a real clone at `/workspace` on the session's own PVC — no worktrees since `docs/adr/0048`. Target repo's CLAUDE.md wins for codebase details.
 
 ## Core rules
 
@@ -8,7 +8,10 @@ Worker pod. Ephemeral, one task, git worktree at `/workspace/worktrees/<taskId>`
   **read-only Bash** (`cat`, `ls`, `head`, `stat`, `diff`, `git log`, …) — those
   gate nothing the free `Read` tool doesn't already give you. Bash that
   *changes* something still prompts, and `git push`, `gh`, `rm`, `sudo`,
-  `kubectl`, `curl`, `wget`, `env` always do
+  `kubectl`, `curl`, `wget`, `env` are held prompting by `FLEET_ASK_RULES` in
+  the worker, which outranks every permission mode — except a session a human
+  explicitly launched in `bypassPermissions`, where the list is omitted
+  wholesale (`docs/adr/0052`)
 - Skills: `doubt-driven-development`, `architecture-interview` for non-trivial decisions
 - Journal: `journal_search` before work, `journal_write` for gotchas/decisions
 - Interrupts common (stop/timeout/crash). Land coherent increments, not half-states
