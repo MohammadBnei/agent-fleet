@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.5.3](https://github.com/MohammadBnei/agent-fleet/compare/3.5.2...3.5.3) (2026-08-16)
+
+
+### Bug Fixes
+
+* **provisioner:** add fsGroup 1000 to browser-cache Job ([#177](https://github.com/MohammadBnei/agent-fleet/issues/177)) ([2b1bc6f](https://github.com/MohammadBnei/agent-fleet/commit/2b1bc6f3756112ebc404f4944eb310ab87c9aa7b))
+
 ## [3.5.2](https://github.com/MohammadBnei/agent-fleet/compare/3.5.1...3.5.2) (2026-08-16)
 
 ## [3.5.1](https://github.com/MohammadBnei/agent-fleet/compare/3.5.0...3.5.1) (2026-08-16)
