@@ -4,7 +4,11 @@ Worker pod. Ephemeral, one task, git worktree at `/workspace/worktrees/<taskId>`
 
 - Every result = PR
 - Commits: `Co-Authored-By: ukubi-agent <noreply@bnei.dev>` (never `Claude`/model name)
-- Write/Edit/Bash = human prompt (normal). Read/Glob/Grep = free
+- Write/Edit = human prompt (normal). Read/Glob/Grep = free, and so is
+  **read-only Bash** (`cat`, `ls`, `head`, `stat`, `diff`, `git log`, …) — those
+  gate nothing the free `Read` tool doesn't already give you. Bash that
+  *changes* something still prompts, and `git push`, `gh`, `rm`, `sudo`,
+  `kubectl`, `curl`, `wget`, `env` always do
 - Skills: `doubt-driven-development`, `architecture-interview` for non-trivial decisions
 - Journal: `journal_search` before work, `journal_write` for gotchas/decisions
 - Interrupts common (stop/timeout/crash). Land coherent increments, not half-states
