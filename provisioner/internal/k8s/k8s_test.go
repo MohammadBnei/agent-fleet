@@ -616,3 +616,59 @@ func TestCreateWorkerPod_RepoImageAppliesToTheWorkerContainerOnly(t *testing.T) 
 		})
 	}
 }
+
+// The worker image pins one exact Agent SDK version, and an env var it stopped
+// reading is invisible: nothing errors, nothing logs, and the pod spec still
+// reads like a tuned session. That is how USE_API_CLEAR_TOOL_USES,
+// API_MAX_INPUT_TOKENS and API_TARGET_INPUT_TOKENS survived the 0.1.77 ->
+// 0.3.233 bump as pure decoration — all three are plain strings in 0.1.77's
+// cli.js and absent from 0.3.233's native binary.
+//
+// This is a denylist rather than an exact-set assertion on purpose: adding an
+// env var should not need a test edit, but resurrecting one the pinned SDK
+// cannot read should fail. ADR-0046 still documents all four as live, so a
+// reader following the ADR is the likeliest way one comes back.
+//
+// It checks the whole worker container, not contextBudgetEnv(), because where
+// the var is set is not the point — whether the container gets it is.
+func TestCreateWorkerPod_DoesNotSetEnvVarsThePinnedSdkNoLongerReads(t *testing.T) {
+	// Verified absent from the pinned SDK's native binary by grepping the
+	// binary for each name (see contextBudgetEnv's comment for the method).
+	removedFromSdk := map[string]string{
+		"USE_API_CLEAR_TOOL_USES": "0.3.233 reads USE_API_CONTEXT_MANAGEMENT instead, and then ANDs it with a literal false",
+		"API_MAX_INPUT_TOKENS":    "no successor in 0.3.233",
+		"API_TARGET_INPUT_TOKENS": "no successor in 0.3.233",
+	}
+
+	c := newTestClient()
+	ctx := context.Background()
+
+	if err := c.CreateWorkerPod(ctx, WorkerPodSpec{
+		SessionID: "task-env", Repo: "dream-analyst", LeaseID: "lease-1",
+	}); err != nil {
+		t.Fatalf("CreateWorkerPod: %v", err)
+	}
+
+	job, err := c.Core.BatchV1().Jobs("agent-fleet").Get(ctx, WorkerResourceName("task-env"), metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("get job: %v", err)
+	}
+
+	for _, env := range job.Spec.Template.Spec.Containers[0].Env {
+		if why, dead := removedFromSdk[env.Name]; dead {
+			t.Errorf("worker container sets %s=%q, which the pinned Agent SDK does not read (%s) — delete it or replace it with the knob that works", env.Name, env.Value, why)
+		}
+	}
+
+	// Guards the guard: if the container stopped carrying the surviving knob,
+	// the loop above would pass by testing nothing.
+	var sawLiveKnob bool
+	for _, env := range job.Spec.Template.Spec.Containers[0].Env {
+		if env.Name == "MAX_MCP_OUTPUT_TOKENS" {
+			sawLiveKnob = true
+		}
+	}
+	if !sawLiveKnob {
+		t.Error("worker container has no MAX_MCP_OUTPUT_TOKENS — either contextBudgetEnv stopped being applied, or it is now dead too and this test needs revisiting")
+	}
+}

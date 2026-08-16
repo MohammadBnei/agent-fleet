@@ -682,14 +682,18 @@ export async function runSession(): Promise<SessionResult> {
         resolveAllPendingAllow();
         return;
       }
-      // `/clear` (and its CLI aliases) must NOT reach the SDK. In
-      // streaming-input mode the reader throws
-      //   "only prompt commands are supported in streaming mode"
-      // for any command whose type isn't "prompt", and `clear` is a `local`
-      // command (verified in the vendored cli.js: `name:"clear", …,
-      // supportsNonInteractive:false`). Pushing it as a user turn crashes
-      // the whole query. The SDK's Query control surface has no
-      // conversation-reset request either (runtimeTypes.d.ts) — the
+      // `/clear` (and its CLI aliases) must NOT reach the SDK.
+      //
+      // This used to claim that pushing it crashes the query with "only
+      // prompt commands are supported in streaming mode". That was wrong:
+      // the streaming-input reader tags EVERY incoming user message
+      // mode:"prompt" unconditionally, so no human message can trip that
+      // guard. What actually tripped it was a finished background task
+      // enqueueing a "task-notification" command — an SDK bug fixed in
+      // 0.3.x, which is why this worker is pinned there.
+      //
+      // The behavior below still stands on its own: the SDK's Query control
+      // surface has no conversation-reset request (runtimeTypes.d.ts) — the
       // interactive `/clear` only wipes the REPL's in-memory state, which is
       // unreachable from here. So the only "clear" streaming mode allows is
       // a *fresh session*: drop the saved resume id and end this pod. The
@@ -775,9 +779,8 @@ export async function runSession(): Promise<SessionResult> {
       await logSdkMessage("agent", msg as { type: string; [key: string]: unknown });
 
       if (msg.type === "assistant") {
-        const content = (msg.message as { content?: { type: string; [k: string]: unknown }[] })?.content ?? [];
-        for (const block of content) {
-          if (block.type === "text") finalText = block.text as string;
+        for (const block of msg.message.content ?? []) {
+          if (block.type === "text") finalText = block.text;
         }
       }
 
