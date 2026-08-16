@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { client } from "../connectClient";
 import type { CellNode, TopologyEdge } from "../gen/agentfleet/v1/dashboard_pb";
+import { imageTag } from "../imageTag";
 import { pollVisible } from "../pollVisible";
 import { InlineError } from "./InlineError";
 
@@ -74,6 +75,10 @@ export function FleetTopology({ onSelectSession }: { onSelectSession: (id: strin
   const [nodes, setNodes] = useState<CellNode[]>([]);
   const [edges, setEdges] = useState<TopologyEdge[]>([]);
   const [metricsError, setMetricsError] = useState("");
+  // What a NEW session would get, as opposed to a worker cell's own version,
+  // which is what that pod already got. They differ between a fleet upgrade
+  // and a session's next warm — which is when someone is asking.
+  const [defaults, setDefaults] = useState({ worker: "", sidecar: "" });
   const [error, setError] = useState<string | null>(null);
 
   useEffect(
@@ -85,6 +90,7 @@ export function FleetTopology({ onSelectSession }: { onSelectSession: (id: strin
             setNodes(r.nodes);
             setEdges(r.edges);
             setMetricsError(r.metricsError);
+            setDefaults({ worker: r.workerImage, sidecar: r.sidecarImage });
             setError(null);
           })
           .catch((e: unknown) => setError(String(e)));
@@ -113,7 +119,10 @@ export function FleetTopology({ onSelectSession }: { onSelectSession: (id: strin
 
       {/* overflow-x-auto, per the page-never-scrolls-sideways rule: the SVG
           scales to the container, but a wide fleet keeps its own scroller. */}
-      <div className="overflow-x-auto border border-line bg-base-200">
+      {/* shrink-0: the SVG keeps its aspect ratio from the viewBox, but as a
+          flex item it would otherwise shrink to make room for the lines below
+          and clip the worker row — the page scrolls instead. */}
+      <div className="shrink-0 overflow-x-auto border border-line bg-base-200">
         <svg
           viewBox={`0 0 ${VIEW_W} ${viewH}`}
           className="w-full h-auto min-w-[560px]"
@@ -185,6 +194,17 @@ export function FleetTopology({ onSelectSession }: { onSelectSession: (id: strin
                 <text x={20} y={14} className="fill-base-content text-[10px] font-medium">
                   {isHub ? p.type : truncate(p.repo || "worker", 18)}
                 </text>
+                {/* Hubs carry their build top-right, where there is room next
+                    to a one-word name. A worker cell is 150px wide and its
+                    name is a repo, so its version goes on the id line below
+                    instead of overlapping it. Blank when unknown — a
+                    provisioner core couldn't reach degrades this cell, not the
+                    graph. */}
+                {isHub && p.version && (
+                  <text x={p.w - 8} y={14} textAnchor="end" className="fill-dim2 text-[9px]">
+                    {truncate(p.version, 16)}
+                  </text>
+                )}
                 <text x={8} y={30} className="fill-dim2 text-[9px]">
                   {truncate(p.label, isHub ? 34 : 22)}
                 </text>
@@ -200,6 +220,7 @@ export function FleetTopology({ onSelectSession }: { onSelectSession: (id: strin
                   <>
                     <text x={8} y={46} className="fill-dim text-[9px]">
                       #{p.sessionId.slice(0, 6)}
+                      {p.version && ` · ${truncate(p.version, 14)}`}
                     </text>
                     <text x={8} y={58} className={`text-[9px] ${s.text} fill-current`}>
                       {p.status}
@@ -211,6 +232,16 @@ export function FleetTopology({ onSelectSession }: { onSelectSession: (id: strin
           })}
         </svg>
       </div>
+
+      {/* What the next session boots on. A worker cell shows what its own pod
+          got, which is not the same claim. */}
+      {(defaults.worker || defaults.sidecar) && (
+        <p className="text-xs text-dim2">
+          new sessions boot <span className="text-text2">worker {imageTag(defaults.worker)}</span>
+          {" · "}
+          <span className="text-text2">sidecar {imageTag(defaults.sidecar)}</span>
+        </p>
+      )}
 
       {workers.length === 0 && (
         <p className="text-xs text-dim2">

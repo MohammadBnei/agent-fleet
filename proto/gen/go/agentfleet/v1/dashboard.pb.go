@@ -3307,7 +3307,11 @@ type CellNode struct {
 	SessionId string `protobuf:"bytes,5,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
 	Repo      string `protobuf:"bytes,6,opt,name=repo,proto3" json:"repo,omitempty"`
 	// Human-facing one-liner (a task's description, a hub's role).
-	Label         string `protobuf:"bytes,7,opt,name=label,proto3" json:"label,omitempty"`
+	Label string `protobuf:"bytes,7,opt,name=label,proto3" json:"label,omitempty"`
+	// What build this cell is running: a compiled-in version for the two hubs,
+	// the worker image's tag for a session cell. Empty when unknown — the
+	// provisioner being unreachable must degrade this cell, not the graph.
+	Version       string `protobuf:"bytes,8,opt,name=version,proto3" json:"version,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3391,6 +3395,13 @@ func (x *CellNode) GetLabel() string {
 	return ""
 }
 
+func (x *CellNode) GetVersion() string {
+	if x != nil {
+		return x.Version
+	}
+	return ""
+}
+
 type TopologyEdge struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	From  string                 `protobuf:"bytes,1,opt,name=from,proto3" json:"from,omitempty"`
@@ -3459,7 +3470,14 @@ type GetFleetTopologyResponse struct {
 	// Non-fatal explanation when Prometheus was unreachable: the topology
 	// still renders from Postgres, just without rates. Silently returning
 	// zeros would read as "the fleet is idle".
-	MetricsError  string `protobuf:"bytes,3,opt,name=metrics_error,json=metricsError,proto3" json:"metrics_error,omitempty"`
+	MetricsError string `protobuf:"bytes,3,opt,name=metrics_error,json=metricsError,proto3" json:"metrics_error,omitempty"`
+	// What a *new* session would get, straight from the provisioner's config —
+	// as opposed to CellNode.version on a worker cell, which is what that
+	// already-running pod got. The two differ for the whole window between a
+	// fleet upgrade and a session's next warm, which is exactly when someone is
+	// asking.
+	WorkerImage   string `protobuf:"bytes,4,opt,name=worker_image,json=workerImage,proto3" json:"worker_image,omitempty"`
+	SidecarImage  string `protobuf:"bytes,5,opt,name=sidecar_image,json=sidecarImage,proto3" json:"sidecar_image,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3511,6 +3529,20 @@ func (x *GetFleetTopologyResponse) GetEdges() []*TopologyEdge {
 func (x *GetFleetTopologyResponse) GetMetricsError() string {
 	if x != nil {
 		return x.MetricsError
+	}
+	return ""
+}
+
+func (x *GetFleetTopologyResponse) GetWorkerImage() string {
+	if x != nil {
+		return x.WorkerImage
+	}
+	return ""
+}
+
+func (x *GetFleetTopologyResponse) GetSidecarImage() string {
+	if x != nil {
+		return x.SidecarImage
 	}
 	return ""
 }
@@ -3713,7 +3745,7 @@ const file_agentfleet_v1_dashboard_proto_rawDesc = "" +
 	"\x14QueryMetricsResponse\x12\x1f\n" +
 	"\vresult_json\x18\x01 \x01(\tR\n" +
 	"resultJson\"\x19\n" +
-	"\x17GetFleetTopologyRequest\"\x8b\x02\n" +
+	"\x17GetFleetTopologyRequest\"\xa5\x02\n" +
 	"\bCellNode\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04type\x18\x02 \x01(\tR\x04type\x12\x16\n" +
@@ -3722,18 +3754,21 @@ const file_agentfleet_v1_dashboard_proto_rawDesc = "" +
 	"\n" +
 	"session_id\x18\x05 \x01(\tR\tsessionId\x12\x12\n" +
 	"\x04repo\x18\x06 \x01(\tR\x04repo\x12\x14\n" +
-	"\x05label\x18\a \x01(\tR\x05label\x1a:\n" +
+	"\x05label\x18\a \x01(\tR\x05label\x12\x18\n" +
+	"\aversion\x18\b \x01(\tR\aversion\x1a:\n" +
 	"\fMetricsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\x01R\x05value:\x028\x01\"F\n" +
 	"\fTopologyEdge\x12\x12\n" +
 	"\x04from\x18\x01 \x01(\tR\x04from\x12\x0e\n" +
 	"\x02to\x18\x02 \x01(\tR\x02to\x12\x12\n" +
-	"\x04rate\x18\x03 \x01(\x01R\x04rate\"\xa1\x01\n" +
+	"\x04rate\x18\x03 \x01(\x01R\x04rate\"\xe9\x01\n" +
 	"\x18GetFleetTopologyResponse\x12-\n" +
 	"\x05nodes\x18\x01 \x03(\v2\x17.agentfleet.v1.CellNodeR\x05nodes\x121\n" +
 	"\x05edges\x18\x02 \x03(\v2\x1b.agentfleet.v1.TopologyEdgeR\x05edges\x12#\n" +
-	"\rmetrics_error\x18\x03 \x01(\tR\fmetricsError2\xfc\x1c\n" +
+	"\rmetrics_error\x18\x03 \x01(\tR\fmetricsError\x12!\n" +
+	"\fworker_image\x18\x04 \x01(\tR\vworkerImage\x12#\n" +
+	"\rsidecar_image\x18\x05 \x01(\tR\fsidecarImage2\xfc\x1c\n" +
 	"\x10DashboardService\x12W\n" +
 	"\fListSessions\x12\".agentfleet.v1.ListSessionsRequest\x1a#.agentfleet.v1.ListSessionsResponse\x12Q\n" +
 	"\n" +

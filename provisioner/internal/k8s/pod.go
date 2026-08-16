@@ -175,23 +175,34 @@ type WorkerPodSpec struct {
 	ExtraEnv    []corev1.EnvVar
 }
 
+// ResolveImages says which images a pod created with this `image` override
+// will actually run — the worker container's, and ONLY the worker
+// container's.
+//
+// The clone init container and the sidecar keep the fleet's own images.
+// Cloning and diff telemetry are fleet-owned behavior that needs git and a
+// specific binary at a specific path; a repo-supplied image is not required to
+// have either, and a repo that set `image` to something without git would
+// otherwise fail in the init container — before the agent ever starts, with an
+// error about the wrong thing entirely.
+//
+// CreateWorkerPod calls this itself rather than the caller passing the result
+// in, so what CreateWorkerPodResponse reports can never be an image the pod
+// spec didn't use.
+func (c *Client) ResolveImages(override string) (worker, sidecar string) {
+	worker = c.WorkerImage
+	if override != "" {
+		worker = override
+	}
+	return worker, c.SidecarImage
+}
+
 func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error {
 	taskID, repo := spec.SessionID, spec.Repo
 	leaseID, resumeSessionID, resumeFromSeq := spec.LeaseID, spec.ResumeID, spec.ResumeFromSeq
 	toolKeys, serviceIngredients, extraEnv := spec.ToolKeys, spec.ServiceRefs, spec.ExtraEnv
 
-	// The worker container's image, and ONLY the worker container's.
-	//
-	// The clone init container and the sidecar keep the fleet's own images
-	// below. Cloning and diff telemetry are fleet-owned behavior that needs
-	// git and a specific binary at a specific path; a repo-supplied image is
-	// not required to have either, and a repo that set `image` to something
-	// without git would otherwise fail in the init container — before the
-	// agent ever starts, with an error about the wrong thing entirely.
-	workerImage := c.WorkerImage
-	if spec.Image != "" {
-		workerImage = spec.Image
-	}
+	workerImage, _ := c.ResolveImages(spec.Image)
 
 	name := WorkerResourceName(taskID)
 	labels := WorkerLabels(taskID, repo)

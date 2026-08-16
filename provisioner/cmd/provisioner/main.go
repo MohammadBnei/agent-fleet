@@ -25,6 +25,14 @@ import (
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/reconcile"
 )
 
+// version is stamped at image build time via
+// `-ldflags "-X main.version=$VERSION"` (see provisioner/Dockerfile and
+// .github/workflows/docker.yml, which passes the same string it tags the image
+// with). "dev" for a plain local `go build` — there is no other source: the
+// binary is built from a partial context with no .git, so debug.ReadBuildInfo
+// has no VCS stamp to read.
+var version = "dev"
+
 func main() {
 	cfg := config.Load()
 
@@ -37,6 +45,7 @@ func main() {
 	if warning != "" {
 		slog.Warn(warning, "value", cfg.LogLevel)
 	}
+	slog.Info("provisioner starting", "version", version)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -112,7 +121,7 @@ func main() {
 	httpServer := &http.Server{Addr: ":" + cfg.Port, Handler: mux}
 
 	grpcSrv := grpc.NewServer(grpc.ChainUnaryInterceptor(grpcserver.AccessLogInterceptor, metrics.UnaryInterceptor))
-	agentfleetv1.RegisterProvisionerServiceServer(grpcSrv, grpcserver.New(k8sc, gitMgr, core, cfg.E2eHost, cfg.FleetSharedRepoURL, cfg.FleetSharedBranch))
+	agentfleetv1.RegisterProvisionerServiceServer(grpcSrv, grpcserver.New(k8sc, gitMgr, core, cfg.E2eHost, cfg.FleetSharedRepoURL, cfg.FleetSharedBranch, version))
 
 	reconcileInterval, _ := strconv.Atoi(cfg.ReconcileInterval)
 	sharedInstanceIdleTimeout, _ := strconv.Atoi(cfg.SharedInstanceIdleTimeoutMs)

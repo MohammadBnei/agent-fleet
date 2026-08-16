@@ -575,6 +575,29 @@ which proxies PromQL through `core` (Prometheus has no IngressRoute, so the
 browser cannot reach it directly) and renders the live topology from
 `sessions.pod_phase` — so `core` still holds zero cluster RBAC.
 
+### Which build is running
+
+`core` and `provisioner` carry their version compiled in
+(`-ldflags "-X main.version=$VERSION"`, with `docker.yml` passing the same
+string it tags the image with, so binary and tag cannot drift). `worker` and
+`sidecar` get no such stamp: their version *is* the image tag the provisioner
+puts in the pod spec, which is the truth actually deployed. The dashboard SPA
+is compiled into `core`'s binary, so its version is `core`'s.
+
+Two different questions, answered from two different places:
+
+- **What will a new session boot?** `ProvisionerService.GetVersion` — the
+  provisioner's own build plus its `WORKER_IMAGE`/`SIDECAR_IMAGE` defaults.
+  Process-local constants, no Kubernetes call, so the topology's 5s poll can
+  ask on every tick. Unreachable leaves the fields blank; it never empties the
+  graph, same posture as `metrics_error`.
+- **What is this session running?** `sessions.worker_image`/`sidecar_image`,
+  written from `CreateWorkerPodResponse` at dispatch and then left alone. A
+  session warmed before a fleet upgrade keeps running the older worker until
+  its next warm, so reading today's defaults for it would be wrong during
+  exactly the window someone is asking. Shown in the session panel on both
+  form factors, and on that session's topology cell.
+
 ## 6. Data model
 
 ```mermaid
@@ -597,6 +620,8 @@ erDiagram
         boolean activity_seen "real latch, reset on provision — a derived version never fires twice for a resumed session"
         timestamptz seen_at "what distinguishes idle from done"
         timestamptz stop_requested_at "when a human first asked to stop; the grace sweep force-kills off this"
+        text worker_image "NOT NULL DEFAULT '' — the image this session's pod actually got, recorded at dispatch"
+        text sidecar_image "NOT NULL DEFAULT '' — likewise; both stay true after the fleet is upgraded underneath the session"
         timestamptz swept_at "retention GC reclaimed the disk — readable, not resumable"
         timestamptz archived_at "the human is finished; the only terminal state a machine cannot compute"
         timestamptz created_at

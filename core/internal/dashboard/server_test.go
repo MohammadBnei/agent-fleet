@@ -46,7 +46,7 @@ func (r *recordingStore) LatestSeq(context.Context, string) (int64, error) {
 
 func TestServer_RespondToPermission(t *testing.T) {
 	store := &recordingStore{}
-	s := NewServer(nil, nil, store, nil, nil, nil, nil, nil, nil, 5, nil, nil, nil)
+	s := NewServer(nil, nil, store, nil, nil, nil, nil, nil, nil, 5, nil, nil, nil, "test")
 
 	resp, err := s.RespondToPermission(context.Background(), connect.NewRequest(&agentfleetv1.RespondToPermissionRequest{
 		SessionId: "task-1", Seq: 7, DecisionJson: `{"behavior":"allow"}`,
@@ -79,7 +79,7 @@ func TestServer_RespondToPermission(t *testing.T) {
 // and worktree machinery in docs/adr/0048, and the pointers outlived them.
 
 func TestServer_Discuss_EmptyText(t *testing.T) {
-	s := NewServer(nil, nil, &recordingStore{}, nil, nil, nil, nil, nil, nil, 5, nil, nil, nil)
+	s := NewServer(nil, nil, &recordingStore{}, nil, nil, nil, nil, nil, nil, 5, nil, nil, nil, "test")
 
 	req := connect.NewRequest(&agentfleetv1.PostMessageRequest{SessionId: "task-1", Text: ""})
 	if _, err := s.PostMessage(context.Background(), req); connect.CodeOf(err) != connect.CodeInvalidArgument {
@@ -89,7 +89,7 @@ func TestServer_Discuss_EmptyText(t *testing.T) {
 
 func TestServer_AnswerQuestion(t *testing.T) {
 	store := &recordingStore{}
-	s := NewServer(nil, nil, store, nil, nil, nil, nil, nil, nil, 5, nil, nil, nil)
+	s := NewServer(nil, nil, store, nil, nil, nil, nil, nil, nil, 5, nil, nil, nil, "test")
 
 	answersJSON := `{"answers":{"Which quality attribute wins?":"Latency"}}`
 	req := connect.NewRequest(&agentfleetv1.AnswerQuestionRequest{SessionId: "task-1", Seq: 3, AnswersJson: answersJSON})

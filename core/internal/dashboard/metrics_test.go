@@ -197,3 +197,24 @@ func TestAnnotateRatesFailureIsReported(t *testing.T) {
 		t.Fatal("annotateRates returned nil error when Prometheus was down")
 	}
 }
+
+// imageTag is what a topology cell shows for a worker pod. The registry-port
+// case is the one that matters: "reg:5000/worker" has a colon that is not a
+// tag separator, and reading it as one labels the cell "5000/worker" — wrong,
+// plausible-looking, and invisible in any environment whose registry has no
+// port (which is every environment this fleet runs in today).
+func TestImageTag(t *testing.T) {
+	tests := []struct{ ref, want string }{
+		{"mohammaddocker/agent-fleet-worker:3.5.4", "3.5.4"},
+		{"agent-fleet-worker:latest", "latest"},
+		{"reg:5000/agent-fleet-worker", "reg:5000/agent-fleet-worker"},
+		{"reg:5000/agent-fleet-worker:3.5.4", "3.5.4"},
+		{"agent-fleet-worker", "agent-fleet-worker"},
+		{"", ""},
+	}
+	for _, tt := range tests {
+		if got := imageTag(tt.ref); got != tt.want {
+			t.Errorf("imageTag(%q) = %q, want %q", tt.ref, got, tt.want)
+		}
+	}
+}

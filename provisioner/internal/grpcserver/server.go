@@ -38,15 +38,19 @@ type Server struct {
 	// tests that don't care about fleet-shared content).
 	fleetSharedRepoURL string
 	fleetSharedBranch  string
+	// version is this binary's build, compiled in via -ldflags (see
+	// cmd/provisioner/main.go). Reported by GetVersion, nothing else reads it.
+	version string
 }
 
 // claudeHomeDir is no longer a parameter: fleet-shared is seeded into each
 // session's OWN claude-home (git.Manager.ClaudeHomePath), not into one shared
 // directory every pod mounted, so there is no single path left to configure.
-func New(k8sc *k8s.Client, gitMgr *git.Manager, core EventReporter, e2eHost string, fleetSharedRepoURL, fleetSharedBranch string) *Server {
+func New(k8sc *k8s.Client, gitMgr *git.Manager, core EventReporter, e2eHost string, fleetSharedRepoURL, fleetSharedBranch, version string) *Server {
 	return &Server{
 		k8sc: k8sc, git: gitMgr, core: core, e2eHost: e2eHost,
 		fleetSharedRepoURL: fleetSharedRepoURL, fleetSharedBranch: fleetSharedBranch,
+		version: version,
 	}
 }
 
@@ -191,8 +195,16 @@ func (s *Server) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWo
 
 	podName := k8s.WorkerResourceName(req.GetSessionId())
 	s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_SCHEDULED, podName, "")
-	slog.Info("grpcserver CreateWorkerPod", "sessionId", req.GetSessionId(), "repo", req.GetRepo(), "podName", podName)
-	return &agentfleetv1.CreateWorkerPodResponse{PodName: podName}, nil
+	// Same resolution the pod spec just used, so core records the build this
+	// session is actually running rather than whatever the defaults become.
+	workerImage, sidecarImage := s.k8sc.ResolveImages(req.GetImage())
+	slog.Info("grpcserver CreateWorkerPod", "sessionId", req.GetSessionId(), "repo", req.GetRepo(), "podName", podName,
+		"workerImage", workerImage, "sidecarImage", sidecarImage)
+	return &agentfleetv1.CreateWorkerPodResponse{
+		PodName:      podName,
+		WorkerImage:  workerImage,
+		SidecarImage: sidecarImage,
+	}, nil
 }
 
 // TearDownSession is opportunistic by design (docs/adr/0020's Consequences
@@ -261,6 +273,18 @@ func (s *Server) ListWorkerPods(ctx context.Context, _ *agentfleetv1.ListWorkerP
 		})
 	}
 	return &agentfleetv1.ListWorkerPodsResponse{Pods: out}, nil
+}
+
+// GetVersion answers "what build is the provisioner, and what will it stamp
+// onto the next pod?". Process-local constants only — no Kubernetes call, so
+// the dashboard's 5s topology poll can ask on every tick.
+func (s *Server) GetVersion(_ context.Context, _ *agentfleetv1.GetVersionRequest) (*agentfleetv1.GetVersionResponse, error) {
+	worker, sidecar := s.k8sc.ResolveImages("")
+	return &agentfleetv1.GetVersionResponse{
+		Version:      s.version,
+		WorkerImage:  worker,
+		SidecarImage: sidecar,
+	}, nil
 }
 
 func (s *Server) reportEvent(ctx context.Context, taskID string, kind agentfleetv1.SessionKind, phase agentfleetv1.PodPhase, podName, message string) {

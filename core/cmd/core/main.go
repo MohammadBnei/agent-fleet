@@ -11,6 +11,17 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/db"
 )
 
+// version is stamped at image build time via
+// `-ldflags "-X main.version=$VERSION"` (see core/Dockerfile and
+// .github/workflows/docker.yml, which passes the same string it tags the image
+// with). "dev" for a plain local `go build` — there is no other source: the
+// binary is built from a partial context with no .git, so debug.ReadBuildInfo
+// has no VCS stamp to read.
+//
+// It covers the dashboard SPA too: that is compiled into this binary
+// (core/Dockerfile's spa stage → go:embed), so it has no version of its own.
+var version = "dev"
+
 func main() {
 	cfg := config.Load()
 
@@ -23,6 +34,7 @@ func main() {
 	if warning != "" {
 		slog.Warn(warning, "value", cfg.LogLevel)
 	}
+	slog.Info("core starting", "version", version)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -34,7 +46,7 @@ func main() {
 	}
 	defer pool.Close()
 
-	if err := run(ctx, cfg, pool); err != nil {
+	if err := run(ctx, cfg, pool, version); err != nil {
 		slog.Error("core exited with error", "error", err)
 		os.Exit(1)
 	}

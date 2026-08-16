@@ -12,6 +12,7 @@ function node(id: string, type: string): CellNode {
     sessionId: "",
     repo: "",
     label: "",
+    version: "",
   };
 }
 

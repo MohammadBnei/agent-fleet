@@ -90,6 +90,14 @@ type Session struct {
 	// answering one decision marked the session unblocked while others were
 	// still waiting, and it sat stalled with nobody notified.
 	PendingDecisions int `json:"pendingDecisions"`
+
+	// WorkerImage/SidecarImage are the images this session's pod actually got,
+	// written by SetPodImages from CreateWorkerPodResponse. Empty for a session
+	// that has never had a pod — and deliberately NOT refreshed from the
+	// provisioner's current defaults on read: a session warmed before a fleet
+	// upgrade is still running the older build until its next warm.
+	WorkerImage  string `json:"workerImage"`
+	SidecarImage string `json:"sidecarImage"`
 }
 
 // ErrAtCapacity is returned by ReserveSlot when the fleet already has
@@ -126,6 +134,7 @@ const selectCols = `
 	s.agent_session_id, s.model, s.permission_mode,
 	s.last_entry_type, s.last_entry_from, s.activity_seen, s.seen_at,
 	s.last_active_at, s.swept_at, s.archived_at,
+	s.worker_image, s.sidecar_image,
 	(SELECT count(*) FROM transcript q
 	   WHERE q.session_id = s.id
 	     AND q.type IN ('question', 'permission_request')
@@ -143,6 +152,7 @@ func scanSession(row pgx.Row) (*Session, error) {
 		&s.AgentSessionID, &s.Model, &s.PermissionMode,
 		&s.LastEntryType, &s.LastEntryFrom, &s.ActivitySeen, &s.SeenAt,
 		&s.LastActiveAt, &s.SweptAt, &s.ArchivedAt,
+		&s.WorkerImage, &s.SidecarImage,
 		&s.PendingDecisions,
 	)
 	if err != nil {
@@ -429,6 +439,23 @@ func (s *Store) SetPodPhase(ctx context.Context, id, phase, message string) erro
 	if err != nil {
 		slog.Error("sessions SetPodPhase", "sessionId", id, "phase", phase, "error", err)
 		return fmt.Errorf("set pod phase: %w", err)
+	}
+	return nil
+}
+
+// SetPodImages records the images the provisioner actually stamped onto this
+// session's pod, straight from CreateWorkerPodResponse.
+//
+// Not lease-scoped, unlike SaveAgentSessionID: this is written synchronously by
+// the same call that created the pod, before that pod can report anything, so
+// there is no losing writer to guard against.
+func (s *Store) SetPodImages(ctx context.Context, id, workerImage, sidecarImage string) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE sessions SET worker_image = $2, sidecar_image = $3, updated_at = now() WHERE id = $1
+	`, id, workerImage, sidecarImage)
+	if err != nil {
+		slog.Error("sessions SetPodImages", "sessionId", id, "error", err)
+		return fmt.Errorf("set pod images: %w", err)
 	}
 	return nil
 }

@@ -168,7 +168,20 @@ func ToolKeysFor(clusterAccess bool) []string {
 // It rides here rather than being looked up provisioner-side for the same
 // reason repoURL/baseBranch do: the provisioner holds no DB credentials
 // (docs/adr/0020 point 1), so anything it needs arrives at pod-creation time.
-func (c *Client) CreateWorkerPod(ctx context.Context, sessionID, repo, repoURL, baseBranch, description, leaseID, resumeAgentSessionID string, resumeFromSeq int64, toolKeys []string, image string) (podName string, err error) {
+//
+// The result is a struct rather than three bare strings: pod name and the two
+// image refs are all strings, and this repo has already shipped one silent
+// same-typed transposition (see CLAUDE.md's verification traps).
+type WorkerPod struct {
+	PodName string
+	// The images the pod spec actually got, after the repo's `image` override
+	// was resolved against the provisioner's defaults. Stored on the session
+	// row so the dashboard can report the build a session is running.
+	WorkerImage  string
+	SidecarImage string
+}
+
+func (c *Client) CreateWorkerPod(ctx context.Context, sessionID, repo, repoURL, baseBranch, description, leaseID, resumeAgentSessionID string, resumeFromSeq int64, toolKeys []string, image string) (WorkerPod, error) {
 	ctx, cancel := context.WithTimeout(ctx, sessionCallTimeout)
 	defer cancel()
 	resp, err := c.rpc.CreateWorkerPod(ctx, &agentfleetv1.CreateWorkerPodRequest{
@@ -184,9 +197,27 @@ func (c *Client) CreateWorkerPod(ctx context.Context, sessionID, repo, repoURL, 
 		Image:           image,
 	})
 	if err != nil {
-		return "", fmt.Errorf("CreateWorkerPod: %w", err)
+		return WorkerPod{}, fmt.Errorf("CreateWorkerPod: %w", err)
 	}
-	return resp.GetPodName(), nil
+	return WorkerPod{
+		PodName:      resp.GetPodName(),
+		WorkerImage:  resp.GetWorkerImage(),
+		SidecarImage: resp.GetSidecarImage(),
+	}, nil
+}
+
+// GetVersion reports the provisioner's build and the images it stamps onto new
+// pods. Cheap by construction on the provisioner side (process-local
+// constants, no Kubernetes call), which is why the dashboard's topology can
+// ask on every 5s poll instead of caching it and going stale across a deploy.
+func (c *Client) GetVersion(ctx context.Context) (version, workerImage, sidecarImage string, err error) {
+	ctx, cancel := context.WithTimeout(ctx, sessionCallTimeout)
+	defer cancel()
+	resp, err := c.rpc.GetVersion(ctx, &agentfleetv1.GetVersionRequest{})
+	if err != nil {
+		return "", "", "", fmt.Errorf("GetVersion: %w", err)
+	}
+	return resp.GetVersion(), resp.GetWorkerImage(), resp.GetSidecarImage(), nil
 }
 
 // TearDownSession commands the provisioner to tear down a worker or e2e

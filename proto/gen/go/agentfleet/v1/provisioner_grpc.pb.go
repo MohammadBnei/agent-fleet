@@ -22,6 +22,7 @@ const (
 	ProvisionerService_CreateWorkerPod_FullMethodName  = "/agentfleet.v1.ProvisionerService/CreateWorkerPod"
 	ProvisionerService_TearDownSession_FullMethodName  = "/agentfleet.v1.ProvisionerService/TearDownSession"
 	ProvisionerService_ListWorkerPods_FullMethodName   = "/agentfleet.v1.ProvisionerService/ListWorkerPods"
+	ProvisionerService_GetVersion_FullMethodName       = "/agentfleet.v1.ProvisionerService/GetVersion"
 	ProvisionerService_ExposeSession_FullMethodName    = "/agentfleet.v1.ProvisionerService/ExposeSession"
 	ProvisionerService_UnexposeSession_FullMethodName  = "/agentfleet.v1.ProvisionerService/UnexposeSession"
 	ProvisionerService_ProvisionService_FullMethodName = "/agentfleet.v1.ProvisionerService/ProvisionService"
@@ -36,6 +37,8 @@ type ProvisionerServiceClient interface {
 	TearDownSession(ctx context.Context, in *TearDownSessionRequest, opts ...grpc.CallOption) (*TearDownSessionResponse, error)
 	// The liveness reconcile source — see ListWorkerPodsRequest.
 	ListWorkerPods(ctx context.Context, in *ListWorkerPodsRequest, opts ...grpc.CallOption) (*ListWorkerPodsResponse, error)
+	// What build the provisioner is, and what it stamps onto new pods.
+	GetVersion(ctx context.Context, in *GetVersionRequest, opts ...grpc.CallOption) (*GetVersionResponse, error)
 	// What is left of the sandbox after docs/adr/0048 §6: the two capabilities
 	// that need cluster RBAC. Everything else the e2e pod did — running the
 	// app, running builds, running a browser — happens in the session pod
@@ -82,6 +85,16 @@ func (c *provisionerServiceClient) ListWorkerPods(ctx context.Context, in *ListW
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListWorkerPodsResponse)
 	err := c.cc.Invoke(ctx, ProvisionerService_ListWorkerPods_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *provisionerServiceClient) GetVersion(ctx context.Context, in *GetVersionRequest, opts ...grpc.CallOption) (*GetVersionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetVersionResponse)
+	err := c.cc.Invoke(ctx, ProvisionerService_GetVersion_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -136,6 +149,8 @@ type ProvisionerServiceServer interface {
 	TearDownSession(context.Context, *TearDownSessionRequest) (*TearDownSessionResponse, error)
 	// The liveness reconcile source — see ListWorkerPodsRequest.
 	ListWorkerPods(context.Context, *ListWorkerPodsRequest) (*ListWorkerPodsResponse, error)
+	// What build the provisioner is, and what it stamps onto new pods.
+	GetVersion(context.Context, *GetVersionRequest) (*GetVersionResponse, error)
 	// What is left of the sandbox after docs/adr/0048 §6: the two capabilities
 	// that need cluster RBAC. Everything else the e2e pod did — running the
 	// app, running builds, running a browser — happens in the session pod
@@ -166,6 +181,9 @@ func (UnimplementedProvisionerServiceServer) TearDownSession(context.Context, *T
 }
 func (UnimplementedProvisionerServiceServer) ListWorkerPods(context.Context, *ListWorkerPodsRequest) (*ListWorkerPodsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListWorkerPods not implemented")
+}
+func (UnimplementedProvisionerServiceServer) GetVersion(context.Context, *GetVersionRequest) (*GetVersionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetVersion not implemented")
 }
 func (UnimplementedProvisionerServiceServer) ExposeSession(context.Context, *ExposeSessionRequest) (*ExposeSessionResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ExposeSession not implemented")
@@ -250,6 +268,24 @@ func _ProvisionerService_ListWorkerPods_Handler(srv interface{}, ctx context.Con
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(ProvisionerServiceServer).ListWorkerPods(ctx, req.(*ListWorkerPodsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ProvisionerService_GetVersion_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetVersionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProvisionerServiceServer).GetVersion(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ProvisionerService_GetVersion_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProvisionerServiceServer).GetVersion(ctx, req.(*GetVersionRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -344,6 +380,10 @@ var ProvisionerService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListWorkerPods",
 			Handler:    _ProvisionerService_ListWorkerPods_Handler,
+		},
+		{
+			MethodName: "GetVersion",
+			Handler:    _ProvisionerService_GetVersion_Handler,
 		},
 		{
 			MethodName: "ExposeSession",

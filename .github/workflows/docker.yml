@@ -372,6 +372,12 @@ jobs:
           # as siblings alongside its own module directory.
           context: .
           file: ${{ matrix.component }}/Dockerfile
+          # core and provisioner compile this into `main.version` and report it
+          # to the dashboard; sidecar/executor ignore the ARG. Deliberately the
+          # same expression as the tag below — two sources would let the binary
+          # claim a version the image isn't.
+          build-args: |
+            VERSION=${{ steps.tag.outputs.value }}
           tags: >-
             ${{ env.DOCKERHUB_USERNAME }}/agent-fleet-${{ matrix.component }}:${{ steps.tag.outputs.value }},
             ${{ env.DOCKERHUB_USERNAME }}/agent-fleet-${{ matrix.component }}:latest

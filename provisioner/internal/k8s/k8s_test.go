@@ -613,6 +613,19 @@ func TestCreateWorkerPod_RepoImageAppliesToTheWorkerContainerOnly(t *testing.T) 
 			if got := byName["sidecar"]; got != c.SidecarImage {
 				t.Errorf("sidecar image = %q, want %q", got, c.SidecarImage)
 			}
+
+			// ResolveImages is what CreateWorkerPodResponse reports back to
+			// core, which stores it as "the build this session is running".
+			// If it ever disagrees with the pod spec above, the dashboard
+			// shows a version no pod is on — and nothing else would notice,
+			// because both halves are plausible strings.
+			gotWorker, gotSidecar := c.ResolveImages(tc.specImage)
+			if gotWorker != podSpec.Containers[0].Image {
+				t.Errorf("ResolveImages worker = %q, but the container runs %q", gotWorker, podSpec.Containers[0].Image)
+			}
+			if gotSidecar != byName["sidecar"] {
+				t.Errorf("ResolveImages sidecar = %q, but the container runs %q", gotSidecar, byName["sidecar"])
+			}
 		})
 	}
 }
