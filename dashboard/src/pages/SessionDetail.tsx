@@ -63,6 +63,7 @@ export function SessionDetail({
     run,
     sendDiscuss,
     respondToPermission,
+    approvePlanDecision,
     answerQuestion,
     clearActionError,
   } = useSessionDetail(sessionId);
@@ -213,6 +214,7 @@ export function SessionDetail({
               busyKey={busyKey}
               dockPendingDecision
               onRespond={respondToPermission}
+              onApprovePlan={approvePlanDecision}
               onAnswer={answerQuestion}
               onPlanFeedback={(text) => sendDiscuss(text)}
             />
@@ -245,6 +247,7 @@ export function SessionDetail({
           entries={entries}
           busyKey={busyKey}
           onRespond={respondToPermission}
+          onApprovePlan={approvePlanDecision}
           onAnswer={answerQuestion}
           onPlanFeedback={(text) => sendDiscuss(text)}
         />

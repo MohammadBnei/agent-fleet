@@ -191,3 +191,17 @@ func TestValidModels_AreRealModelIDs(t *testing.T) {
 		}
 	}
 }
+
+// The dashboard's plan-approval path sets "auto" (docs/adr/0052), and this
+// allowlist is the only thing between that request and the SDK — an omission
+// here surfaces as InvalidArgument on a button, not as a compile error.
+func TestValidPermissionModes_CoversEveryModeTheDashboardCanSend(t *testing.T) {
+	for _, mode := range []string{"default", "plan", "acceptEdits", "auto", "dontAsk", "bypassPermissions"} {
+		if !validPermissionModes[mode] {
+			t.Errorf("validPermissionModes[%q] = false, want true", mode)
+		}
+	}
+	if validPermissionModes["delegate"] {
+		t.Error(`validPermissionModes["delegate"] = true, want false (not a mode this build accepts)`)
+	}
+}

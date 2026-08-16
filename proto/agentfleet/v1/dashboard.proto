@@ -102,11 +102,13 @@ message InterruptResponse {}
 // Sets an arbitrary SDK permission mode on a running task (docs/adr/0027,
 // extended by the sessions redesign supersession of docs/adr/0021/0025 —
 // Approve is gone, this is now the only mode lever). `mode` must be one of
-// "default"|"plan"|"acceptEdits"|"bypassPermissions" (validated
-// server-side); "bypassPermissions" deliberately disables the canUseTool
-// prompt-and-wait gate for this task for the rest of the session — the
-// dashboard must get explicit, typed confirmation from the human before
-// sending that value. SetPermissionModeRequest/Response now live in
+// "default"|"plan"|"acceptEdits"|"auto"|"dontAsk"|"bypassPermissions"
+// (validated server-side); "auto" has a model classifier answer the ordinary
+// prompts (docs/adr/0052) and is what plan approval sets, while
+// "bypassPermissions" deliberately disables the canUseTool prompt-and-wait
+// gate entirely — the dashboard must get explicit, typed confirmation from
+// the human before sending that value, and the worker can only apply it at
+// startup, so the session's pod ends and re-warms into it. SetPermissionModeRequest/Response now live in
 // core.proto, shared with CoreService.SetPermissionMode (the sidecar's
 // self-report use case — see that file's comment on why the two callers
 // need different server-side behavior despite the shared message shapes).

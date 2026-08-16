@@ -12,6 +12,11 @@ const MODES = [
   { value: "default", label: "Default" },
   { value: "plan", label: "Plan" },
   { value: "acceptEdits", label: "Accept edits" },
+  // A model classifier answers the ordinary prompts (docs/adr/0052). Safe to
+  // call directly like the other three: it is reversible from this same menu,
+  // and the ask rules (git push/gh/rm/…) plus every requiresUserInteraction
+  // tool still reach a human, which is what separates it from bypass.
+  { value: "auto", label: "Auto" },
 ] as const;
 
 // The Kill/Interrupt/Kill-e2e/Mode/Open-code-server button row, shared

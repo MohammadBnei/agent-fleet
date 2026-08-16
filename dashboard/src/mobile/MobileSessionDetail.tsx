@@ -57,6 +57,7 @@ export function MobileSessionDetail({
     run,
     sendDiscuss,
     respondToPermission,
+    approvePlanDecision,
     answerQuestion,
     clearActionError,
   } = useSessionDetail(sessionId);
@@ -188,6 +189,7 @@ export function MobileSessionDetail({
           compact
           dockPendingDecision
           onRespond={respondToPermission}
+          onApprovePlan={approvePlanDecision}
           onAnswer={answerQuestion}
           onPlanFeedback={(text) => sendDiscuss(text)}
         />
@@ -215,6 +217,7 @@ export function MobileSessionDetail({
         busyKey={busyKey}
         compact
         onRespond={respondToPermission}
+        onApprovePlan={approvePlanDecision}
         onAnswer={answerQuestion}
         onPlanFeedback={(text) => sendDiscuss(text)}
       />

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Code, ConnectError } from "@connectrpc/connect";
 import { client, subscribeTranscript } from "./connectClient";
 import { withOptimistic } from "./transcript";
+import { approvePlan } from "./approvePlan";
 import type { Session } from "./gen/agentfleet/v1/core_pb";
 import { TranscriptEntryType, type TranscriptEntry } from "./gen/agentfleet/v1/transcript_pb";
 
@@ -169,6 +170,19 @@ export function useSessionDetail(sessionId: string) {
       `permission:${seq}`,
     );
 
+  // Approving a plan may also switch the session's permission mode, in that
+  // order (approvePlan.ts) — but it still resolves through decide(), so the
+  // optimistic PERMISSION_RESPONSE echo and the rollback-on-failure are the
+  // same as any other decision.
+  const approvePlanDecision = (seq: bigint, mode?: "auto") =>
+    decide(
+      seq,
+      TranscriptEntryType.PERMISSION_RESPONSE,
+      JSON.stringify({ behavior: "allow" }),
+      () => approvePlan(sessionId, seq, mode),
+      `permission:${seq}`,
+    );
+
   const answerQuestion = (seq: bigint, answers: Record<string, string>) =>
     decide(
       seq,
@@ -206,6 +220,7 @@ export function useSessionDetail(sessionId: string) {
     run,
     sendDiscuss,
     respondToPermission,
+    approvePlanDecision,
     answerQuestion,
     clearActionError: () => setActionError(null),
   };

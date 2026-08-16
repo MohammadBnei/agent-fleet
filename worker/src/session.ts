@@ -35,6 +35,33 @@ const RESUME_SESSION_ID = process.env.RESUME_SESSION_ID || undefined;
 // (a real regression, caught live against a kind cluster).
 const RESUME_FROM_SEQ = process.env.RESUME_FROM_SEQ ? Number(process.env.RESUME_FROM_SEQ) : 0;
 
+// The fleet's authority ceiling (docs/adr/0049), injected per-session rather
+// than shipped in fleet-shared/settings.json (docs/adr/0052).
+//
+// It has to be conditional, and a settings FILE cannot be: since SDK 0.3.233
+// the evaluator returns on an ask-rule match BEFORE the permission mode's own
+// allow short-circuit, so leaving these in user settings makes
+// bypassPermissions unable to `git push` or `gh pr create` — the fleet's only
+// deliverable. Passed through `settings` (the SDK's `--settings`, scope
+// "flagSettings", which the rule collector always includes alongside whatever
+// settingSources allows), so every non-bypass session keeps exactly the
+// counterweight adr/0049 specified: a flag/user-scope ask outranks a target
+// repo's project-scope allow.
+//
+// Adding to this list is the same decision as adding to allowedTools, in
+// reverse — and a broad prefix here silently swallows every narrower allow
+// beneath it (adr/0049's `curl` worked example).
+const FLEET_ASK_RULES = [
+  "Bash(git push:*)",
+  "Bash(gh:*)",
+  "Bash(rm:*)",
+  "Bash(sudo:*)",
+  "Bash(kubectl:*)",
+  "Bash(curl:*)",
+  "Bash(wget:*)",
+  "Bash(env:*)",
+];
+
 function sidecarMcpServer() {
   return { type: "http" as const, url: `http://${SIDECAR_MCP_ADDR}/mcp` };
 }
@@ -320,6 +347,13 @@ export async function runSession(): Promise<SessionResult> {
   // asking again.
   const session = await sidecar.getSession();
 
+  // The mode this pod BOOTS in, as opposed to whatever it is switched to
+  // later. Two things the SDK fixes at launch and never recomputes hang off
+  // it (docs/adr/0052): whether bypassPermissions is reachable at all, and
+  // whether FLEET_ASK_RULES below are in force. Crossing that boundary is a
+  // relaunch, not a control request — see the permission_mode handler.
+  const launchMode = (session.permissionMode ?? "default") as PermissionMode;
+
   let aborted = false;
   // Set by an "interrupt" entry (DashboardService.Interrupt) — stops only
   // the current turn via q.interrupt(), unlike "abort" which ends the
@@ -434,7 +468,11 @@ export async function runSession(): Promise<SessionResult> {
       // Use the task's permission mode from the database, falling back to
       // "default" if not set. This ensures the mode is restored on resume
       // instead of always resetting to "default".
-      permissionMode: (session.permissionMode ?? "default") as PermissionMode,
+      permissionMode: launchMode,
+      // See FLEET_ASK_RULES. Omitted entirely for a bypassPermissions launch —
+      // a human typed the literal word `bypass`, and an ask rule would outrank
+      // the mode they chose.
+      ...(launchMode === "bypassPermissions" ? {} : { settings: { permissions: { ask: FLEET_ASK_RULES } } }),
       // Write/Edit/Bash are deliberately never in this list — canUseTool
       // below is the live escalation path for all three (confirmed in
       // Phase 0's spike: allowedTools bypasses canUseTool entirely for
@@ -541,11 +579,12 @@ export async function runSession(): Promise<SessionResult> {
       // It also merges the target repo's .claude/settings.json
       // permissions.allow, and an allow rule removes canUseTool from the
       // path entirely (same authority as allowedTools above). What stops a
-      // repo self-approving its own `gh api` is the permissions.ask block in
-      // fleet-shared/settings.json: the SDK's evaluator resolves
-      // deny → ask → allow and returns on the first match, so a user-scope
-      // ask outranks a project-scope allow. Widening that block is the same
-      // decision as adding to allowedTools.
+      // repo self-approving its own `gh api` is FLEET_ASK_RULES, injected
+      // above through `settings` rather than shipped in fleet-shared's own
+      // settings.json (docs/adr/0052): the evaluator returns on the first
+      // matching ask rule, before any allow rule and before the permission
+      // mode's own short-circuit, so a flag-scope ask outranks a
+      // project-scope allow.
       //
       // Deliberately NOT "local": .claude/settings.local.json is gitignored,
       // so nothing about it is reviewable in the PR that lands it.
@@ -667,6 +706,34 @@ export async function runSession(): Promise<SessionResult> {
       // time out unanswered.
       if (entry.type === "permission_mode") {
         const mode = entry.text as PermissionMode;
+
+        // Crossing the bypassPermissions boundary is a RELAUNCH, not a
+        // control request (docs/adr/0052). Both directions:
+        //
+        //  - into bypass: since SDK 0.3.233 the set_permission_mode request is
+        //    refused outright unless the CLI was launched with the mode (or
+        //    --allow-dangerously-skip-permissions, which we deliberately do
+        //    not pass — it would also switch on the `plan &&
+        //    isBypassPermissionsModeAvailable` auto-allow for every planning
+        //    session, adr/0027's objection, still live in this build);
+        //  - out of bypass: FLEET_ASK_RULES are fixed at launch too, so a
+        //    session that merely left bypass would keep total authority with
+        //    nothing on screen saying so.
+        //
+        // core has already persisted the column, so the next warm boots in the
+        // chosen mode. Same teardown as `/clear` below, minus the
+        // saveSessionId("") — the conversation must survive the relaunch.
+        if ((mode === "bypassPermissions") !== (launchMode === "bypassPermissions")) {
+          aborted = true;
+          resolveAllPendingDeny(`Switching to ${mode} — this pod is ending, re-warm to continue.`, true);
+          await sidecar
+            .pushMessage("agent", `Permission mode ${mode} is saved, but it can only take effect at startup — re-warm this session to apply it.`, "system")
+            .catch(() => {});
+          await interruptSafely("permission mode relaunch");
+          abortController.abort();
+          return;
+        }
+
         // Caught, not bare-awaited: this is the only await in this callback
         // that could reject, and a rejection here does not just lose the mode
         // switch — it escapes onEntry, streamOnce rethrows, and nextSeq is
@@ -675,10 +742,24 @@ export async function runSession(): Promise<SessionResult> {
         // reply, permission response or Stop would ever be delivered and
         // anything already pending would block forever. Query.request()
         // rejects on any non-success control response, which an unrecognized
-        // mode string is.
-        await q
+        // mode string is — and which "auto" is whenever its own gates (remote
+        // circuit breaker, model allow-list) say no.
+        const failure = await q
           .setPermissionMode(mode)
-          .catch((err) => log("warn", "setPermissionMode failed", { taskId: SESSION_ID, mode, error: String(err) }));
+          .then(() => null)
+          .catch((err) => String(err));
+        if (failure !== null) {
+          // NOT resolveAllPendingAllow: the mode did not change, so allowing
+          // the parked call would be this wrapper approving a tool on a
+          // human's behalf on the strength of a request the SDK rejected. The
+          // old code did exactly that, which is what made a refused switch
+          // look like a working one.
+          log("warn", "setPermissionMode failed", { taskId: SESSION_ID, mode, error: failure });
+          await sidecar
+            .pushMessage("agent", `Could not switch to ${mode}: ${failure}`, "system")
+            .catch(() => {});
+          return;
+        }
         resolveAllPendingAllow();
         return;
       }

@@ -19,6 +19,7 @@ export function DecisionDock({
   busyKey,
   compact = false,
   onRespond,
+  onApprovePlan,
   onAnswer,
   onPlanFeedback,
 }: {
@@ -26,6 +27,10 @@ export function DecisionDock({
   busyKey: string | null;
   compact?: boolean;
   onRespond: (seq: bigint, decision: { behavior: "allow" | "deny"; message?: string }) => void;
+  // Plan approval is its own path, not an allow decision: it may also switch
+  // the session's permission mode, and the order of those two calls matters
+  // (approvePlan.ts).
+  onApprovePlan: (seq: bigint, mode?: "auto") => void;
   onAnswer: (seq: bigint, answers: Record<string, string>) => void;
   onPlanFeedback: (text: string) => void;
 }) {
@@ -47,7 +52,7 @@ export function DecisionDock({
             pending
             docked
             busy={busyKey === `permission:${permission.entry.seq}`}
-            onApprove={() => onRespond(permission.entry.seq, { behavior: "allow" })}
+            onApprove={(mode) => onApprovePlan(permission.entry.seq, mode)}
             onFeedback={onPlanFeedback}
             edgeClassName={edge}
           />

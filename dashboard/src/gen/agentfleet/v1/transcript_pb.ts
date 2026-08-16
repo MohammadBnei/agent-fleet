@@ -240,8 +240,8 @@ export enum TranscriptEntryType {
   /**
    * Human-authored, from the dashboard's permission-mode selector (see
    * docs/adr/0027) — `text` is the raw target mode string
-   * ("acceptEdits"|"dontAsk"|"bypassPermissions"), same convention APPROVE
-   * already uses for its `text:"approved"`.
+   * ("acceptEdits"|"auto"|"dontAsk"|"bypassPermissions"), same convention
+   * APPROVE already used for its `text:"approved"`.
    *
    * @generated from enum value: TRANSCRIPT_ENTRY_TYPE_PERMISSION_MODE = 11;
    */
