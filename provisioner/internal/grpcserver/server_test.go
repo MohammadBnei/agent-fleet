@@ -75,7 +75,7 @@ func newTestServer(t *testing.T) (*Server, *k8s.Client, *fakeEventReporter) {
 	k8sc := newFakeK8sClient()
 	gitMgr := git.NewManager(t.TempDir())
 	reporter := &fakeEventReporter{}
-	return New(k8sc, gitMgr, reporter, "e2e.bnei.dev", "", ""), k8sc, reporter
+	return New(k8sc, gitMgr, reporter, "e2e.bnei.dev", "", "", "test"), k8sc, reporter
 }
 
 func TestCreateWorkerPod_ClonesAndCreatesPod(t *testing.T) {
@@ -108,6 +108,67 @@ func TestCreateWorkerPod_ClonesAndCreatesPod(t *testing.T) {
 	}
 	if !sawScheduled {
 		t.Errorf("expected a SCHEDULED pod event to be reported, got %+v", reporter.events)
+	}
+}
+
+// A pod name alone told core nothing about what that pod is running, so the
+// console could not answer "which build is this session on?" — the reason
+// CreateWorkerPodResponse grew the two image refs. They must be the images the
+// spec actually got, including the repo's own override, not the fleet defaults
+// echoed back.
+func TestCreateWorkerPod_ReportsTheImagesThePodGot(t *testing.T) {
+	const repoImage = "registry.example.test/some-repo-toolchain:v9"
+
+	for _, tc := range []struct {
+		name       string
+		reqImage   string
+		wantWorker string
+	}{
+		{name: "repo override", reqImage: repoImage, wantWorker: repoImage},
+		{name: "fleet default", reqImage: "", wantWorker: "mohammaddocker/agent-fleet-worker:latest"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, _, _ := newTestServer(t)
+			origin := newTestOriginRepo(t)
+
+			resp, err := s.CreateWorkerPod(context.Background(), &agentfleetv1.CreateWorkerPodRequest{
+				SessionId: "task-img", Repo: "dream-analyst", RepoUrl: origin, BaseBranch: "main",
+				Image: tc.reqImage,
+			})
+			if err != nil {
+				t.Fatalf("CreateWorkerPod: %v", err)
+			}
+			if got := resp.GetWorkerImage(); got != tc.wantWorker {
+				t.Errorf("worker image = %q, want %q", got, tc.wantWorker)
+			}
+			// The sidecar is fleet-owned and a repo image must never reach it.
+			if got := resp.GetSidecarImage(); got != "mohammaddocker/agent-fleet-sidecar:latest" {
+				t.Errorf("sidecar image = %q, want the fleet's own", got)
+			}
+		})
+	}
+}
+
+// GetVersion is what the dashboard's topology poll asks on every tick, so it
+// must stay a pure read of process-local config — no Kubernetes call, nothing
+// that can fail.
+func TestGetVersion_ReportsTheBuildAndTheDefaultImages(t *testing.T) {
+	s, _, _ := newTestServer(t)
+
+	resp, err := s.GetVersion(context.Background(), &agentfleetv1.GetVersionRequest{})
+	if err != nil {
+		t.Fatalf("GetVersion: %v", err)
+	}
+	if resp.GetVersion() != "test" {
+		t.Errorf("version = %q, want the value New was constructed with", resp.GetVersion())
+	}
+	// The defaults, i.e. what a NEW session gets — never a repo override,
+	// which is per-session and has no meaning here.
+	if resp.GetWorkerImage() != "mohammaddocker/agent-fleet-worker:latest" {
+		t.Errorf("worker image = %q, want the fleet default", resp.GetWorkerImage())
+	}
+	if resp.GetSidecarImage() != "mohammaddocker/agent-fleet-sidecar:latest" {
+		t.Errorf("sidecar image = %q, want the fleet default", resp.GetSidecarImage())
 	}
 }
 
@@ -145,7 +206,7 @@ func TestCreateWorkerPod_SyncsFleetShared(t *testing.T) {
 	run("add", ".")
 	run("commit", "-m", "init")
 
-	s := New(k8sc, gitMgr, reporter, "e2e.bnei.dev", fleetSharedOrigin, "main")
+	s := New(k8sc, gitMgr, reporter, "e2e.bnei.dev", fleetSharedOrigin, "main", "test")
 	ctx := context.Background()
 	origin := newTestOriginRepo(t)
 

@@ -702,3 +702,50 @@ func TestUpdateMeta_LeavesOmittedFieldUnchanged(t *testing.T) {
 		t.Errorf("title clobbered by a description-only update, got %v", s.Title)
 	}
 }
+
+// A session's images are recorded at dispatch and then left alone: the point
+// of showing them is answering "which build is this session on?", and a
+// session warmed before a fleet upgrade is still on the older worker until its
+// next warm. Reading today's defaults instead would be right only outside the
+// window anyone asks in.
+//
+// Also guards the scan: both columns are NOT NULL DEFAULT '' and land in plain
+// Go strings, so a session that never had a pod must still read back — the
+// failure mode a nullable column would have is not one bad row, it is List
+// returning a single error and blanking the whole console.
+func TestSetPodImages_RoundTrips(t *testing.T) {
+	ctx := context.Background()
+	store := NewStore(dbtest.NewPool(t))
+
+	id := newSession(t, ctx, store)
+	fresh, err := store.Get(ctx, id)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if fresh.WorkerImage != "" || fresh.SidecarImage != "" {
+		t.Errorf("a session with no pod must report no images, got %q/%q", fresh.WorkerImage, fresh.SidecarImage)
+	}
+
+	if err := store.SetPodImages(ctx, id, "reg/worker:3.5.4", "reg/sidecar:3.5.4"); err != nil {
+		t.Fatalf("set pod images: %v", err)
+	}
+	got, err := store.Get(ctx, id)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.WorkerImage != "reg/worker:3.5.4" || got.SidecarImage != "reg/sidecar:3.5.4" {
+		t.Errorf("images = %q/%q, want the pair that was written", got.WorkerImage, got.SidecarImage)
+	}
+
+	// List shares selectCols with Get; a column added to one and forgotten in
+	// the other is exactly what that shared constant exists to prevent.
+	list, err := store.List(ctx, 50, "")
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	for _, s := range list {
+		if s.ID == id && s.WorkerImage != "reg/worker:3.5.4" {
+			t.Errorf("List dropped worker_image: got %q", s.WorkerImage)
+		}
+	}
+}

@@ -51,10 +51,13 @@ type Server struct {
 	loki    lokiclient.Querier
 	prom    promclient.Querier
 	audits  *scheduledaudits.Store
+	// version is core's own build, stamped in via -ldflags (cmd/core/main.go).
+	// It covers the dashboard SPA too — that is compiled into this binary.
+	version string
 }
 
-func NewServer(sessionStore *sessions.Store, proposalStore *proposals.Store, transcr transcript.Store, journalStore *journal.Store, repoStore *repos.Store, snippetStore *promptsnippets.Store, e2e *provisionerclient.Client, files filestore.Store, hub *Hub, maxLive int, loki lokiclient.Querier, prom promclient.Querier, auditStore *scheduledaudits.Store) *Server {
-	return &Server{sessions: sessionStore, proposals: proposalStore, transcr: transcr, journal: journalStore, repos: repoStore, snippets: snippetStore, e2e: e2e, files: files, hub: hub, maxLive: maxLive, loki: loki, prom: prom, audits: auditStore}
+func NewServer(sessionStore *sessions.Store, proposalStore *proposals.Store, transcr transcript.Store, journalStore *journal.Store, repoStore *repos.Store, snippetStore *promptsnippets.Store, e2e *provisionerclient.Client, files filestore.Store, hub *Hub, maxLive int, loki lokiclient.Querier, prom promclient.Querier, auditStore *scheduledaudits.Store, version string) *Server {
+	return &Server{sessions: sessionStore, proposals: proposalStore, transcr: transcr, journal: journalStore, repos: repoStore, snippets: snippetStore, e2e: e2e, files: files, hub: hub, maxLive: maxLive, loki: loki, prom: prom, audits: auditStore, version: version}
 }
 
 var _ agentfleetv1connect.DashboardServiceHandler = (*Server)(nil)
@@ -636,11 +639,17 @@ func (s *Server) WarmIfIdle(ctx context.Context, sessionID string) (podName stri
 	// row, which a concurrent "manage repos" edit could have straddled, so a
 	// pod could get one repo's privilege grant and another's image.
 	toolKeys := provisionerclient.ToolKeysFor(repoCfg.ClusterAccess)
-	podName, err = s.e2e.CreateWorkerPod(ctx, sessionID, t.Repo, repoCfg.URL, repoCfg.BaseBranch, t.Description, leaseID, resumeAgentSessionID, resumeFromSeq, toolKeys, repoCfg.Image)
+	pod, err := s.e2e.CreateWorkerPod(ctx, sessionID, t.Repo, repoCfg.URL, repoCfg.BaseBranch, t.Description, leaseID, resumeAgentSessionID, resumeFromSeq, toolKeys, repoCfg.Image)
 	if err != nil {
 		return "", connect.NewError(connect.CodeInternal, err)
 	}
-	return podName, nil
+	// Record the build this pod is on. Not fatal: the pod exists and the
+	// session is live either way, and failing the warm over a metadata write
+	// would trade a working session for a cosmetic one.
+	if err := s.sessions.SetPodImages(ctx, sessionID, pod.WorkerImage, pod.SidecarImage); err != nil {
+		slog.Warn("dashboard warm: recording pod images failed", "sessionId", sessionID, "error", err)
+	}
+	return pod.PodName, nil
 }
 
 // DeleteTask force-tears-down any live session for sessionID (both kinds —
@@ -951,7 +960,22 @@ func SessionToProto(t sessions.Session) *agentfleetv1.Session {
 		// the row it was computed from (docs/adr/0040). With `status` gone
 		// this is the only status there is.
 		LiveState: string(sessions.DeriveLiveState(&t, time.Now(), DefaultTurnStall)),
+		// Which build this session's pod is running. Optional on the wire, and
+		// left unset rather than sent as "" so the console can tell "no pod has
+		// ever run" from "a pod ran on an unnamed image".
+		WorkerImage:  optional(t.WorkerImage),
+		SidecarImage: optional(t.SidecarImage),
 	}
+}
+
+// optional turns a store column that is NOT NULL DEFAULT '' into the wire's
+// optional string: empty means "never set", which the UI renders as nothing
+// rather than as a blank field.
+func optional(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
 }
 
 func entryToProto(sessionID string, e transcript.Entry) *agentfleetv1.TranscriptEntry {

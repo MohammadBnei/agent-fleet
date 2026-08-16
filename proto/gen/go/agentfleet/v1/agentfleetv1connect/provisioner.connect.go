@@ -42,6 +42,9 @@ const (
 	// ProvisionerServiceListWorkerPodsProcedure is the fully-qualified name of the ProvisionerService's
 	// ListWorkerPods RPC.
 	ProvisionerServiceListWorkerPodsProcedure = "/agentfleet.v1.ProvisionerService/ListWorkerPods"
+	// ProvisionerServiceGetVersionProcedure is the fully-qualified name of the ProvisionerService's
+	// GetVersion RPC.
+	ProvisionerServiceGetVersionProcedure = "/agentfleet.v1.ProvisionerService/GetVersion"
 	// ProvisionerServiceExposeSessionProcedure is the fully-qualified name of the ProvisionerService's
 	// ExposeSession RPC.
 	ProvisionerServiceExposeSessionProcedure = "/agentfleet.v1.ProvisionerService/ExposeSession"
@@ -62,6 +65,8 @@ type ProvisionerServiceClient interface {
 	TearDownSession(context.Context, *connect.Request[v1.TearDownSessionRequest]) (*connect.Response[v1.TearDownSessionResponse], error)
 	// The liveness reconcile source — see ListWorkerPodsRequest.
 	ListWorkerPods(context.Context, *connect.Request[v1.ListWorkerPodsRequest]) (*connect.Response[v1.ListWorkerPodsResponse], error)
+	// What build the provisioner is, and what it stamps onto new pods.
+	GetVersion(context.Context, *connect.Request[v1.GetVersionRequest]) (*connect.Response[v1.GetVersionResponse], error)
 	// What is left of the sandbox after docs/adr/0048 §6: the two capabilities
 	// that need cluster RBAC. Everything else the e2e pod did — running the
 	// app, running builds, running a browser — happens in the session pod
@@ -105,6 +110,12 @@ func NewProvisionerServiceClient(httpClient connect.HTTPClient, baseURL string, 
 			connect.WithSchema(provisionerServiceMethods.ByName("ListWorkerPods")),
 			connect.WithClientOptions(opts...),
 		),
+		getVersion: connect.NewClient[v1.GetVersionRequest, v1.GetVersionResponse](
+			httpClient,
+			baseURL+ProvisionerServiceGetVersionProcedure,
+			connect.WithSchema(provisionerServiceMethods.ByName("GetVersion")),
+			connect.WithClientOptions(opts...),
+		),
 		exposeSession: connect.NewClient[v1.ExposeSessionRequest, v1.ExposeSessionResponse](
 			httpClient,
 			baseURL+ProvisionerServiceExposeSessionProcedure,
@@ -137,6 +148,7 @@ type provisionerServiceClient struct {
 	createWorkerPod  *connect.Client[v1.CreateWorkerPodRequest, v1.CreateWorkerPodResponse]
 	tearDownSession  *connect.Client[v1.TearDownSessionRequest, v1.TearDownSessionResponse]
 	listWorkerPods   *connect.Client[v1.ListWorkerPodsRequest, v1.ListWorkerPodsResponse]
+	getVersion       *connect.Client[v1.GetVersionRequest, v1.GetVersionResponse]
 	exposeSession    *connect.Client[v1.ExposeSessionRequest, v1.ExposeSessionResponse]
 	unexposeSession  *connect.Client[v1.UnexposeSessionRequest, v1.UnexposeSessionResponse]
 	provisionService *connect.Client[v1.ProvisionServiceRequest, v1.ProvisionServiceResponse]
@@ -156,6 +168,11 @@ func (c *provisionerServiceClient) TearDownSession(ctx context.Context, req *con
 // ListWorkerPods calls agentfleet.v1.ProvisionerService.ListWorkerPods.
 func (c *provisionerServiceClient) ListWorkerPods(ctx context.Context, req *connect.Request[v1.ListWorkerPodsRequest]) (*connect.Response[v1.ListWorkerPodsResponse], error) {
 	return c.listWorkerPods.CallUnary(ctx, req)
+}
+
+// GetVersion calls agentfleet.v1.ProvisionerService.GetVersion.
+func (c *provisionerServiceClient) GetVersion(ctx context.Context, req *connect.Request[v1.GetVersionRequest]) (*connect.Response[v1.GetVersionResponse], error) {
+	return c.getVersion.CallUnary(ctx, req)
 }
 
 // ExposeSession calls agentfleet.v1.ProvisionerService.ExposeSession.
@@ -184,6 +201,8 @@ type ProvisionerServiceHandler interface {
 	TearDownSession(context.Context, *connect.Request[v1.TearDownSessionRequest]) (*connect.Response[v1.TearDownSessionResponse], error)
 	// The liveness reconcile source — see ListWorkerPodsRequest.
 	ListWorkerPods(context.Context, *connect.Request[v1.ListWorkerPodsRequest]) (*connect.Response[v1.ListWorkerPodsResponse], error)
+	// What build the provisioner is, and what it stamps onto new pods.
+	GetVersion(context.Context, *connect.Request[v1.GetVersionRequest]) (*connect.Response[v1.GetVersionResponse], error)
 	// What is left of the sandbox after docs/adr/0048 §6: the two capabilities
 	// that need cluster RBAC. Everything else the e2e pod did — running the
 	// app, running builds, running a browser — happens in the session pod
@@ -223,6 +242,12 @@ func NewProvisionerServiceHandler(svc ProvisionerServiceHandler, opts ...connect
 		connect.WithSchema(provisionerServiceMethods.ByName("ListWorkerPods")),
 		connect.WithHandlerOptions(opts...),
 	)
+	provisionerServiceGetVersionHandler := connect.NewUnaryHandler(
+		ProvisionerServiceGetVersionProcedure,
+		svc.GetVersion,
+		connect.WithSchema(provisionerServiceMethods.ByName("GetVersion")),
+		connect.WithHandlerOptions(opts...),
+	)
 	provisionerServiceExposeSessionHandler := connect.NewUnaryHandler(
 		ProvisionerServiceExposeSessionProcedure,
 		svc.ExposeSession,
@@ -255,6 +280,8 @@ func NewProvisionerServiceHandler(svc ProvisionerServiceHandler, opts ...connect
 			provisionerServiceTearDownSessionHandler.ServeHTTP(w, r)
 		case ProvisionerServiceListWorkerPodsProcedure:
 			provisionerServiceListWorkerPodsHandler.ServeHTTP(w, r)
+		case ProvisionerServiceGetVersionProcedure:
+			provisionerServiceGetVersionHandler.ServeHTTP(w, r)
 		case ProvisionerServiceExposeSessionProcedure:
 			provisionerServiceExposeSessionHandler.ServeHTTP(w, r)
 		case ProvisionerServiceUnexposeSessionProcedure:
@@ -282,6 +309,10 @@ func (UnimplementedProvisionerServiceHandler) TearDownSession(context.Context, *
 
 func (UnimplementedProvisionerServiceHandler) ListWorkerPods(context.Context, *connect.Request[v1.ListWorkerPodsRequest]) (*connect.Response[v1.ListWorkerPodsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.ProvisionerService.ListWorkerPods is not implemented"))
+}
+
+func (UnimplementedProvisionerServiceHandler) GetVersion(context.Context, *connect.Request[v1.GetVersionRequest]) (*connect.Response[v1.GetVersionResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.ProvisionerService.GetVersion is not implemented"))
 }
 
 func (UnimplementedProvisionerServiceHandler) ExposeSession(context.Context, *connect.Request[v1.ExposeSessionRequest]) (*connect.Response[v1.ExposeSessionResponse], error) {

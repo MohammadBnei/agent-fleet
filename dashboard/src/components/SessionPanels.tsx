@@ -1,6 +1,7 @@
 
 import type { Session } from "../gen/agentfleet/v1/core_pb";
 import type { ToolCallSummary, TodoItem } from "../transcript";
+import { imageTag } from "../imageTag";
 import { TickBar, todoProgress } from "./TickBar";
 import { ActionsMenu } from "./ActionsMenu";
 
@@ -109,8 +110,13 @@ export function SessionPanel({
       <PanelHeading title="SESSION" />
       <div className="text-xs text-dim2 leading-[1.6] mb-2.5">
         mode <span className="text-text2">{session.permissionMode || "default"}</span>
-        
+
         {session.podPhase && ` · pod ${session.podPhase.replace("POD_PHASE_", "")}`}
+        {/* The build this session's pod is actually on — recorded at dispatch,
+            so it stays true after the fleet is upgraded underneath it. Absent
+            until the session has had a pod. */}
+        {session.workerImage && ` · worker ${imageTag(session.workerImage)}`}
+        {session.sidecarImage && ` · sidecar ${imageTag(session.sidecarImage)}`}
       </div>
       <ActionsMenu
         sessionId={session.id}

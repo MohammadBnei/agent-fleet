@@ -97,6 +97,33 @@ message CreateWorkerPodRequest {
 
 message CreateWorkerPodResponse {
   string pod_name = 1;
+  // The images the pod spec actually got, after `image` above was resolved
+  // against the provisioner's own WORKER_IMAGE/SIDECAR_IMAGE defaults. core
+  // stores these on the session row so the dashboard can say which build a
+  // session ran — which stays true after the fleet is upgraded underneath it,
+  // where reporting today's defaults would quietly lie.
+  string worker_image = 2;
+  string sidecar_image = 3;
+}
+
+// The provisioner's own build and the images it stamps onto new pods.
+//
+// Deliberately its own RPC rather than three more fields on
+// ListWorkerPodsResponse: the dashboard's topology polls every 5s, and
+// ListWorkerPods hits the Kubernetes API. This answer is process-local
+// constants, so it costs nothing to ask often.
+message GetVersionRequest {}
+
+message GetVersionResponse {
+  // The provisioner binary's version, compiled in via -ldflags at image build
+  // time (docker.yml passes the same string it tags the image with). "dev" for
+  // a local `go build`.
+  string version = 1;
+  // What a new session gets when its repo sets no `image` override.
+  string worker_image = 2;
+  // What every session's sidecar runs — no per-repo override exists, the
+  // sidecar is fleet-owned.
+  string sidecar_image = 3;
 }
 
 // core owns `sessions` and therefore decides when a session should tear
@@ -194,6 +221,8 @@ service ProvisionerService {
   rpc TearDownSession(TearDownSessionRequest) returns (TearDownSessionResponse);
   // The liveness reconcile source — see ListWorkerPodsRequest.
   rpc ListWorkerPods(ListWorkerPodsRequest) returns (ListWorkerPodsResponse);
+  // What build the provisioner is, and what it stamps onto new pods.
+  rpc GetVersion(GetVersionRequest) returns (GetVersionResponse);
 
   // What is left of the sandbox after docs/adr/0048 §6: the two capabilities
   // that need cluster RBAC. Everything else the e2e pod did — running the

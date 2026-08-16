@@ -643,6 +643,10 @@ message CellNode {
   string repo = 6;
   // Human-facing one-liner (a task's description, a hub's role).
   string label = 7;
+  // What build this cell is running: a compiled-in version for the two hubs,
+  // the worker image's tag for a session cell. Empty when unknown — the
+  // provisioner being unreachable must degrade this cell, not the graph.
+  string version = 8;
 }
 
 message TopologyEdge {
@@ -659,4 +663,12 @@ message GetFleetTopologyResponse {
   // still renders from Postgres, just without rates. Silently returning
   // zeros would read as "the fleet is idle".
   string metrics_error = 3;
+
+  // What a *new* session would get, straight from the provisioner's config —
+  // as opposed to CellNode.version on a worker cell, which is what that
+  // already-running pod got. The two differ for the whole window between a
+  // fleet upgrade and a session's next warm, which is exactly when someone is
+  // asking.
+  string worker_image = 4;
+  string sidecar_image = 5;
 }

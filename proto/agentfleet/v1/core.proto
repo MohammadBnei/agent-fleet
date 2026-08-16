@@ -239,6 +239,14 @@ message Session {
   // The human is finished with this session — the only terminal state,
   // because it is the only one a machine cannot compute.
   optional string archived_at = 21;
+
+  // Which images this session's pod actually ran, recorded from
+  // CreateWorkerPodResponse at dispatch. Not the provisioner's current
+  // defaults: a session warmed before a fleet upgrade keeps reporting the
+  // build it is running, which is the whole point of showing it. Empty for a
+  // session that has never had a pod.
+  optional string worker_image = 23;
+  optional string sidecar_image = 24;
 }
 
 // What one agent can see of another session. Deliberately not the full

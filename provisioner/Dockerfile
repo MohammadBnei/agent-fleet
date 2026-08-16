@@ -14,7 +14,10 @@ COPY provisioner ./provisioner
 # portable across a partial build context.
 RUN go work init ./proto/gen/go ./provisioner
 WORKDIR /app/provisioner
-RUN CGO_ENABLED=0 go build -o /out/provisioner ./cmd/provisioner
+# See core/Dockerfile: same string docker.yml tags the image with, so the
+# binary and the tag cannot drift.
+ARG VERSION=dev
+RUN CGO_ENABLED=0 go build -ldflags "-X main.version=${VERSION}" -o /out/provisioner ./cmd/provisioner
 
 # Not distroless: as of docs/adr/0019, the provisioner owns the shared
 # PVC's entire git lifecycle itself (clone/fetch/worktree add+remove,

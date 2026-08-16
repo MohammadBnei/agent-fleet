@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file agentfleet/v1/provisioner.proto.
  */
 export const file_agentfleet_v1_provisioner: GenFile = /*@__PURE__*/
-  fileDesc("Ch9hZ2VudGZsZWV0L3YxL3Byb3Zpc2lvbmVyLnByb3RvEg1hZ2VudGZsZWV0LnYxIokCChZDcmVhdGVXb3JrZXJQb2RSZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkSDAoEcmVwbxgCIAEoCRIQCghyZXBvX3VybBgDIAEoCRITCgtiYXNlX2JyYW5jaBgEIAEoCRITCgtkZXNjcmlwdGlvbhgFIAEoCRIQCghsZWFzZV9pZBgGIAEoCRIZChFyZXN1bWVfc2Vzc2lvbl9pZBgHIAEoCRIXCg9yZXN1bWVfZnJvbV9zZXEYCCABKAMSEQoJdG9vbF9rZXlzGAogAygJEg0KBWltYWdlGAwgASgJSgQICRAKSgQICxAMUghndWlkYW5jZVITc2VydmljZV9pbmdyZWRpZW50cyIrChdDcmVhdGVXb3JrZXJQb2RSZXNwb25zZRIQCghwb2RfbmFtZRgBIAEoCSJWChZUZWFyRG93blNlc3Npb25SZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkSKAoEa2luZBgCIAEoDjIaLmFnZW50ZmxlZXQudjEuU2Vzc2lvbktpbmQiLAoXVGVhckRvd25TZXNzaW9uUmVzcG9uc2USEQoJdG9ybl9kb3duGAEgASgIIhcKFUxpc3RXb3JrZXJQb2RzUmVxdWVzdCJECg1MaXZlV29ya2VyUG9kEhIKCnNlc3Npb25faWQYASABKAkSEAoIcG9kX25hbWUYAiABKAkSDQoFcGhhc2UYAyABKAkiRAoWTGlzdFdvcmtlclBvZHNSZXNwb25zZRIqCgRwb2RzGAEgAygLMhwuYWdlbnRmbGVldC52MS5MaXZlV29ya2VyUG9kIjgKFEV4cG9zZVNlc3Npb25SZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkSDAoEcG9ydBgCIAEoBSIkChVFeHBvc2VTZXNzaW9uUmVzcG9uc2USCwoDdXJsGAEgASgJIiwKFlVuZXhwb3NlU2Vzc2lvblJlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCSIZChdVbmV4cG9zZVNlc3Npb25SZXNwb25zZSJJChdQcm92aXNpb25TZXJ2aWNlUmVxdWVzdBISCgpzZXNzaW9uX2lkGAEgASgJEgwKBHJlcG8YAiABKAkSDAoEa2luZBgDIAEoCSInChhQcm92aXNpb25TZXJ2aWNlUmVzcG9uc2USCwoDZHNuGAEgASgJIikKE1N3ZWVwU2Vzc2lvblJlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCSIWChRTd2VlcFNlc3Npb25SZXNwb25zZSpcCgtTZXNzaW9uS2luZBIcChhTRVNTSU9OX0tJTkRfVU5TUEVDSUZJRUQQABIXChNTRVNTSU9OX0tJTkRfV09SS0VSEAEiBAgCEAIqEFNFU1NJT05fS0lORF9FMkUyswUKElByb3Zpc2lvbmVyU2VydmljZRJgCg9DcmVhdGVXb3JrZXJQb2QSJS5hZ2VudGZsZWV0LnYxLkNyZWF0ZVdvcmtlclBvZFJlcXVlc3QaJi5hZ2VudGZsZWV0LnYxLkNyZWF0ZVdvcmtlclBvZFJlc3BvbnNlEmAKD1RlYXJEb3duU2Vzc2lvbhIlLmFnZW50ZmxlZXQudjEuVGVhckRvd25TZXNzaW9uUmVxdWVzdBomLmFnZW50ZmxlZXQudjEuVGVhckRvd25TZXNzaW9uUmVzcG9uc2USXQoOTGlzdFdvcmtlclBvZHMSJC5hZ2VudGZsZWV0LnYxLkxpc3RXb3JrZXJQb2RzUmVxdWVzdBolLmFnZW50ZmxlZXQudjEuTGlzdFdvcmtlclBvZHNSZXNwb25zZRJaCg1FeHBvc2VTZXNzaW9uEiMuYWdlbnRmbGVldC52MS5FeHBvc2VTZXNzaW9uUmVxdWVzdBokLmFnZW50ZmxlZXQudjEuRXhwb3NlU2Vzc2lvblJlc3BvbnNlEmAKD1VuZXhwb3NlU2Vzc2lvbhIlLmFnZW50ZmxlZXQudjEuVW5leHBvc2VTZXNzaW9uUmVxdWVzdBomLmFnZW50ZmxlZXQudjEuVW5leHBvc2VTZXNzaW9uUmVzcG9uc2USYwoQUHJvdmlzaW9uU2VydmljZRImLmFnZW50ZmxlZXQudjEuUHJvdmlzaW9uU2VydmljZVJlcXVlc3QaJy5hZ2VudGZsZWV0LnYxLlByb3Zpc2lvblNlcnZpY2VSZXNwb25zZRJXCgxTd2VlcFNlc3Npb24SIi5hZ2VudGZsZWV0LnYxLlN3ZWVwU2Vzc2lvblJlcXVlc3QaIy5hZ2VudGZsZWV0LnYxLlN3ZWVwU2Vzc2lvblJlc3BvbnNlQk1aS2dpdGh1Yi5jb20vTW9oYW1tYWRCbmVpL2FnZW50LWZsZWV0L3Byb3RvL2dlbi9nby9hZ2VudGZsZWV0L3YxO2FnZW50ZmxlZXR2MWIGcHJvdG8z");
+  fileDesc("Ch9hZ2VudGZsZWV0L3YxL3Byb3Zpc2lvbmVyLnByb3RvEg1hZ2VudGZsZWV0LnYxIokCChZDcmVhdGVXb3JrZXJQb2RSZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkSDAoEcmVwbxgCIAEoCRIQCghyZXBvX3VybBgDIAEoCRITCgtiYXNlX2JyYW5jaBgEIAEoCRITCgtkZXNjcmlwdGlvbhgFIAEoCRIQCghsZWFzZV9pZBgGIAEoCRIZChFyZXN1bWVfc2Vzc2lvbl9pZBgHIAEoCRIXCg9yZXN1bWVfZnJvbV9zZXEYCCABKAMSEQoJdG9vbF9rZXlzGAogAygJEg0KBWltYWdlGAwgASgJSgQICRAKSgQICxAMUghndWlkYW5jZVITc2VydmljZV9pbmdyZWRpZW50cyJYChdDcmVhdGVXb3JrZXJQb2RSZXNwb25zZRIQCghwb2RfbmFtZRgBIAEoCRIUCgx3b3JrZXJfaW1hZ2UYAiABKAkSFQoNc2lkZWNhcl9pbWFnZRgDIAEoCSITChFHZXRWZXJzaW9uUmVxdWVzdCJSChJHZXRWZXJzaW9uUmVzcG9uc2USDwoHdmVyc2lvbhgBIAEoCRIUCgx3b3JrZXJfaW1hZ2UYAiABKAkSFQoNc2lkZWNhcl9pbWFnZRgDIAEoCSJWChZUZWFyRG93blNlc3Npb25SZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkSKAoEa2luZBgCIAEoDjIaLmFnZW50ZmxlZXQudjEuU2Vzc2lvbktpbmQiLAoXVGVhckRvd25TZXNzaW9uUmVzcG9uc2USEQoJdG9ybl9kb3duGAEgASgIIhcKFUxpc3RXb3JrZXJQb2RzUmVxdWVzdCJECg1MaXZlV29ya2VyUG9kEhIKCnNlc3Npb25faWQYASABKAkSEAoIcG9kX25hbWUYAiABKAkSDQoFcGhhc2UYAyABKAkiRAoWTGlzdFdvcmtlclBvZHNSZXNwb25zZRIqCgRwb2RzGAEgAygLMhwuYWdlbnRmbGVldC52MS5MaXZlV29ya2VyUG9kIjgKFEV4cG9zZVNlc3Npb25SZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkSDAoEcG9ydBgCIAEoBSIkChVFeHBvc2VTZXNzaW9uUmVzcG9uc2USCwoDdXJsGAEgASgJIiwKFlVuZXhwb3NlU2Vzc2lvblJlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCSIZChdVbmV4cG9zZVNlc3Npb25SZXNwb25zZSJJChdQcm92aXNpb25TZXJ2aWNlUmVxdWVzdBISCgpzZXNzaW9uX2lkGAEgASgJEgwKBHJlcG8YAiABKAkSDAoEa2luZBgDIAEoCSInChhQcm92aXNpb25TZXJ2aWNlUmVzcG9uc2USCwoDZHNuGAEgASgJIikKE1N3ZWVwU2Vzc2lvblJlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCSIWChRTd2VlcFNlc3Npb25SZXNwb25zZSpcCgtTZXNzaW9uS2luZBIcChhTRVNTSU9OX0tJTkRfVU5TUEVDSUZJRUQQABIXChNTRVNTSU9OX0tJTkRfV09SS0VSEAEiBAgCEAIqEFNFU1NJT05fS0lORF9FMkUyhgYKElByb3Zpc2lvbmVyU2VydmljZRJgCg9DcmVhdGVXb3JrZXJQb2QSJS5hZ2VudGZsZWV0LnYxLkNyZWF0ZVdvcmtlclBvZFJlcXVlc3QaJi5hZ2VudGZsZWV0LnYxLkNyZWF0ZVdvcmtlclBvZFJlc3BvbnNlEmAKD1RlYXJEb3duU2Vzc2lvbhIlLmFnZW50ZmxlZXQudjEuVGVhckRvd25TZXNzaW9uUmVxdWVzdBomLmFnZW50ZmxlZXQudjEuVGVhckRvd25TZXNzaW9uUmVzcG9uc2USXQoOTGlzdFdvcmtlclBvZHMSJC5hZ2VudGZsZWV0LnYxLkxpc3RXb3JrZXJQb2RzUmVxdWVzdBolLmFnZW50ZmxlZXQudjEuTGlzdFdvcmtlclBvZHNSZXNwb25zZRJRCgpHZXRWZXJzaW9uEiAuYWdlbnRmbGVldC52MS5HZXRWZXJzaW9uUmVxdWVzdBohLmFnZW50ZmxlZXQudjEuR2V0VmVyc2lvblJlc3BvbnNlEloKDUV4cG9zZVNlc3Npb24SIy5hZ2VudGZsZWV0LnYxLkV4cG9zZVNlc3Npb25SZXF1ZXN0GiQuYWdlbnRmbGVldC52MS5FeHBvc2VTZXNzaW9uUmVzcG9uc2USYAoPVW5leHBvc2VTZXNzaW9uEiUuYWdlbnRmbGVldC52MS5VbmV4cG9zZVNlc3Npb25SZXF1ZXN0GiYuYWdlbnRmbGVldC52MS5VbmV4cG9zZVNlc3Npb25SZXNwb25zZRJjChBQcm92aXNpb25TZXJ2aWNlEiYuYWdlbnRmbGVldC52MS5Qcm92aXNpb25TZXJ2aWNlUmVxdWVzdBonLmFnZW50ZmxlZXQudjEuUHJvdmlzaW9uU2VydmljZVJlc3BvbnNlElcKDFN3ZWVwU2Vzc2lvbhIiLmFnZW50ZmxlZXQudjEuU3dlZXBTZXNzaW9uUmVxdWVzdBojLmFnZW50ZmxlZXQudjEuU3dlZXBTZXNzaW9uUmVzcG9uc2VCTVpLZ2l0aHViLmNvbS9Nb2hhbW1hZEJuZWkvYWdlbnQtZmxlZXQvcHJvdG8vZ2VuL2dvL2FnZW50ZmxlZXQvdjE7YWdlbnRmbGVldHYxYgZwcm90bzM");
 
 /**
  * Fetches the repo's clone cache and creates the session's pod, synchronously,
@@ -130,6 +130,22 @@ export type CreateWorkerPodResponse = Message<"agentfleet.v1.CreateWorkerPodResp
    * @generated from field: string pod_name = 1;
    */
   podName: string;
+
+  /**
+   * The images the pod spec actually got, after `image` above was resolved
+   * against the provisioner's own WORKER_IMAGE/SIDECAR_IMAGE defaults. core
+   * stores these on the session row so the dashboard can say which build a
+   * session ran — which stays true after the fleet is upgraded underneath it,
+   * where reporting today's defaults would quietly lie.
+   *
+   * @generated from field: string worker_image = 2;
+   */
+  workerImage: string;
+
+  /**
+   * @generated from field: string sidecar_image = 3;
+   */
+  sidecarImage: string;
 };
 
 /**
@@ -138,6 +154,62 @@ export type CreateWorkerPodResponse = Message<"agentfleet.v1.CreateWorkerPodResp
  */
 export const CreateWorkerPodResponseSchema: GenMessage<CreateWorkerPodResponse> = /*@__PURE__*/
   messageDesc(file_agentfleet_v1_provisioner, 1);
+
+/**
+ * The provisioner's own build and the images it stamps onto new pods.
+ *
+ * Deliberately its own RPC rather than three more fields on
+ * ListWorkerPodsResponse: the dashboard's topology polls every 5s, and
+ * ListWorkerPods hits the Kubernetes API. This answer is process-local
+ * constants, so it costs nothing to ask often.
+ *
+ * @generated from message agentfleet.v1.GetVersionRequest
+ */
+export type GetVersionRequest = Message<"agentfleet.v1.GetVersionRequest"> & {
+};
+
+/**
+ * Describes the message agentfleet.v1.GetVersionRequest.
+ * Use `create(GetVersionRequestSchema)` to create a new message.
+ */
+export const GetVersionRequestSchema: GenMessage<GetVersionRequest> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_provisioner, 2);
+
+/**
+ * @generated from message agentfleet.v1.GetVersionResponse
+ */
+export type GetVersionResponse = Message<"agentfleet.v1.GetVersionResponse"> & {
+  /**
+   * The provisioner binary's version, compiled in via -ldflags at image build
+   * time (docker.yml passes the same string it tags the image with). "dev" for
+   * a local `go build`.
+   *
+   * @generated from field: string version = 1;
+   */
+  version: string;
+
+  /**
+   * What a new session gets when its repo sets no `image` override.
+   *
+   * @generated from field: string worker_image = 2;
+   */
+  workerImage: string;
+
+  /**
+   * What every session's sidecar runs — no per-repo override exists, the
+   * sidecar is fleet-owned.
+   *
+   * @generated from field: string sidecar_image = 3;
+   */
+  sidecarImage: string;
+};
+
+/**
+ * Describes the message agentfleet.v1.GetVersionResponse.
+ * Use `create(GetVersionResponseSchema)` to create a new message.
+ */
+export const GetVersionResponseSchema: GenMessage<GetVersionResponse> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_provisioner, 3);
 
 /**
  * core owns `sessions` and therefore decides when a session should tear
@@ -166,7 +238,7 @@ export type TearDownSessionRequest = Message<"agentfleet.v1.TearDownSessionReque
  * Use `create(TearDownSessionRequestSchema)` to create a new message.
  */
 export const TearDownSessionRequestSchema: GenMessage<TearDownSessionRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 2);
+  messageDesc(file_agentfleet_v1_provisioner, 4);
 
 /**
  * @generated from message agentfleet.v1.TearDownSessionResponse
@@ -185,7 +257,7 @@ export type TearDownSessionResponse = Message<"agentfleet.v1.TearDownSessionResp
  * Use `create(TearDownSessionResponseSchema)` to create a new message.
  */
 export const TearDownSessionResponseSchema: GenMessage<TearDownSessionResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 3);
+  messageDesc(file_agentfleet_v1_provisioner, 5);
 
 /**
  * Worktree/branch lifecycle (reliability-findings.md #2): a task's
@@ -222,7 +294,7 @@ export type ListWorkerPodsRequest = Message<"agentfleet.v1.ListWorkerPodsRequest
  * Use `create(ListWorkerPodsRequestSchema)` to create a new message.
  */
 export const ListWorkerPodsRequestSchema: GenMessage<ListWorkerPodsRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 4);
+  messageDesc(file_agentfleet_v1_provisioner, 6);
 
 /**
  * @generated from message agentfleet.v1.LiveWorkerPod
@@ -251,7 +323,7 @@ export type LiveWorkerPod = Message<"agentfleet.v1.LiveWorkerPod"> & {
  * Use `create(LiveWorkerPodSchema)` to create a new message.
  */
 export const LiveWorkerPodSchema: GenMessage<LiveWorkerPod> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 5);
+  messageDesc(file_agentfleet_v1_provisioner, 7);
 
 /**
  * @generated from message agentfleet.v1.ListWorkerPodsResponse
@@ -268,7 +340,7 @@ export type ListWorkerPodsResponse = Message<"agentfleet.v1.ListWorkerPodsRespon
  * Use `create(ListWorkerPodsResponseSchema)` to create a new message.
  */
 export const ListWorkerPodsResponseSchema: GenMessage<ListWorkerPodsResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 6);
+  messageDesc(file_agentfleet_v1_provisioner, 8);
 
 /**
  * Publishes a session's port at <session>.e2e.bnei.dev: a Service plus a
@@ -295,7 +367,7 @@ export type ExposeSessionRequest = Message<"agentfleet.v1.ExposeSessionRequest">
  * Use `create(ExposeSessionRequestSchema)` to create a new message.
  */
 export const ExposeSessionRequestSchema: GenMessage<ExposeSessionRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 7);
+  messageDesc(file_agentfleet_v1_provisioner, 9);
 
 /**
  * @generated from message agentfleet.v1.ExposeSessionResponse
@@ -312,7 +384,7 @@ export type ExposeSessionResponse = Message<"agentfleet.v1.ExposeSessionResponse
  * Use `create(ExposeSessionResponseSchema)` to create a new message.
  */
 export const ExposeSessionResponseSchema: GenMessage<ExposeSessionResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 8);
+  messageDesc(file_agentfleet_v1_provisioner, 10);
 
 /**
  * @generated from message agentfleet.v1.UnexposeSessionRequest
@@ -329,7 +401,7 @@ export type UnexposeSessionRequest = Message<"agentfleet.v1.UnexposeSessionReque
  * Use `create(UnexposeSessionRequestSchema)` to create a new message.
  */
 export const UnexposeSessionRequestSchema: GenMessage<UnexposeSessionRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 9);
+  messageDesc(file_agentfleet_v1_provisioner, 11);
 
 /**
  * @generated from message agentfleet.v1.UnexposeSessionResponse
@@ -342,7 +414,7 @@ export type UnexposeSessionResponse = Message<"agentfleet.v1.UnexposeSessionResp
  * Use `create(UnexposeSessionResponseSchema)` to create a new message.
  */
 export const UnexposeSessionResponseSchema: GenMessage<UnexposeSessionResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 10);
+  messageDesc(file_agentfleet_v1_provisioner, 12);
 
 /**
  * Provisions or reuses a shared backing service. Keyed by repo, not by
@@ -376,7 +448,7 @@ export type ProvisionServiceRequest = Message<"agentfleet.v1.ProvisionServiceReq
  * Use `create(ProvisionServiceRequestSchema)` to create a new message.
  */
 export const ProvisionServiceRequestSchema: GenMessage<ProvisionServiceRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 11);
+  messageDesc(file_agentfleet_v1_provisioner, 13);
 
 /**
  * @generated from message agentfleet.v1.ProvisionServiceResponse
@@ -393,7 +465,7 @@ export type ProvisionServiceResponse = Message<"agentfleet.v1.ProvisionServiceRe
  * Use `create(ProvisionServiceResponseSchema)` to create a new message.
  */
 export const ProvisionServiceResponseSchema: GenMessage<ProvisionServiceResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 12);
+  messageDesc(file_agentfleet_v1_provisioner, 14);
 
 /**
  * @generated from message agentfleet.v1.SweepSessionRequest
@@ -410,7 +482,7 @@ export type SweepSessionRequest = Message<"agentfleet.v1.SweepSessionRequest"> &
  * Use `create(SweepSessionRequestSchema)` to create a new message.
  */
 export const SweepSessionRequestSchema: GenMessage<SweepSessionRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 13);
+  messageDesc(file_agentfleet_v1_provisioner, 15);
 
 /**
  * @generated from message agentfleet.v1.SweepSessionResponse
@@ -423,7 +495,7 @@ export type SweepSessionResponse = Message<"agentfleet.v1.SweepSessionResponse">
  * Use `create(SweepSessionResponseSchema)` to create a new message.
  */
 export const SweepSessionResponseSchema: GenMessage<SweepSessionResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 14);
+  messageDesc(file_agentfleet_v1_provisioner, 16);
 
 /**
  * Which kind of pod an operation targets.
@@ -483,6 +555,16 @@ export const ProvisionerService: GenService<{
     methodKind: "unary";
     input: typeof ListWorkerPodsRequestSchema;
     output: typeof ListWorkerPodsResponseSchema;
+  },
+  /**
+   * What build the provisioner is, and what it stamps onto new pods.
+   *
+   * @generated from rpc agentfleet.v1.ProvisionerService.GetVersion
+   */
+  getVersion: {
+    methodKind: "unary";
+    input: typeof GetVersionRequestSchema;
+    output: typeof GetVersionResponseSchema;
   },
   /**
    * What is left of the sandbox after docs/adr/0048 §6: the two capabilities

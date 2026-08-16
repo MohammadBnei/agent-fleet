@@ -37,7 +37,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/webui"
 )
 
-func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool) error {
+func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version string) error {
 	store := transcript.NewPostgresStore(pool)
 	sessionStore := sessions.NewStore(pool)
 	journalStore := journal.NewStore(pool)
@@ -142,7 +142,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool) error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
 	mux.Handle("/metrics", promhttp.Handler())
-	dashboardSvc := dashboard.NewServer(sessionStore, proposalStore, activityStore, journalStore, repoStore, snippetStore, provisioner, files, hub, cfg.MaxInFlight, loki, prom, auditStore)
+	dashboardSvc := dashboard.NewServer(sessionStore, proposalStore, activityStore, journalStore, repoStore, snippetStore, provisioner, files, hub, cfg.MaxInFlight, loki, prom, auditStore, version)
 	// PromptSession warms an idle target through the dashboard server's own
 	// warmIfIdle rather than a second copy of it (docs/adr/0041) — that
 	// function carries the capacity cap and the proposed/pending gates that

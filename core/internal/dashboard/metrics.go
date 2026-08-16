@@ -107,23 +107,29 @@ func (s *Server) GetFleetTopology(ctx context.Context, _ *connect.Request[agentf
 		}
 	}
 
+	// Held by name rather than reached for by index further down: the version
+	// fill below has to land on this exact cell, and `nodes[1]` would follow
+	// the graph's shape instead of the cell's identity.
+	provisionerNode := &agentfleetv1.CellNode{
+		Id:     "provisioner",
+		Type:   "provisioner",
+		Status: "healthy",
+		Label:  "pods · worktrees",
+	}
+
 	nodes := []*agentfleetv1.CellNode{
 		{
-			Id:     "core",
-			Type:   "core",
-			Status: "healthy", // it answered this RPC
-			Label:  "dispatch · transcript · dashboard",
+			Id:      "core",
+			Type:    "core",
+			Status:  "healthy", // it answered this RPC
+			Label:   "dispatch · transcript · dashboard",
+			Version: s.version,
 			Metrics: map[string]float64{
 				"live_pods":         float64(len(live)),
 				"max_live_sessions": float64(s.maxLive),
 			},
 		},
-		{
-			Id:     "provisioner",
-			Type:   "provisioner",
-			Status: "healthy",
-			Label:  "pods · worktrees",
-		},
+		provisionerNode,
 	}
 
 	for _, t := range live {
@@ -134,6 +140,10 @@ func (s *Server) GetFleetTopology(ctx context.Context, _ *connect.Request[agentf
 			SessionId: t.ID,
 			Repo:      t.Repo,
 			Label:     t.Description,
+			// The image this pod actually got, not today's default — the two
+			// differ for the whole window between a fleet upgrade and this
+			// session's next warm.
+			Version: imageTag(t.WorkerImage),
 		})
 	}
 
@@ -144,11 +154,39 @@ func (s *Server) GetFleetTopology(ctx context.Context, _ *connect.Request[agentf
 	}
 
 	resp := &agentfleetv1.GetFleetTopologyResponse{Nodes: nodes, Edges: edges}
+
+	// The provisioner's own build, and what it would stamp onto a new pod.
+	// Best-effort in exactly the way rates are: a provisioner that cannot be
+	// reached leaves these blank, it does not empty the graph. The cells above
+	// come from Postgres and are still true.
+	if s.e2e != nil {
+		if v, worker, sidecar, err := s.e2e.GetVersion(ctx); err != nil {
+			slog.Warn("dashboard GetFleetTopology: provisioner version unavailable", "error", err)
+		} else {
+			provisionerNode.Version = v
+			resp.WorkerImage, resp.SidecarImage = worker, sidecar
+		}
+	}
+
 	if err := s.annotateRates(ctx, nodes, edges); err != nil {
 		slog.Warn("dashboard GetFleetTopology: metrics unavailable", "error", err)
 		resp.MetricsError = err.Error()
 	}
 	return connect.NewResponse(resp), nil
+}
+
+// imageTag reduces a full image ref to the part worth showing in a cell —
+// "…/agent-fleet-worker:3.5.4" → "3.5.4".
+//
+// The colon is only a tag separator when it comes after the last slash: a
+// registry may carry a port ("reg:5000/worker"), and treating that as a tag
+// would label every cell with a port number.
+func imageTag(ref string) string {
+	i := strings.LastIndex(ref, ":")
+	if i < 0 || i < strings.LastIndex(ref, "/") {
+		return ref
+	}
+	return ref[i+1:]
 }
 
 // cellStatus maps a task onto the four colours the topology view renders.
