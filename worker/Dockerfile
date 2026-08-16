@@ -134,7 +134,17 @@ COPY worker ./worker
 # shells out to. `^0.1.0` let that happen silently on any rebuild; the version
 # is now exact in package.json and the build fails loudly if the lockfile
 # disagrees rather than resolving something new.
-RUN cd worker && bun install --production --frozen-lockfile && chmod +x entrypoint.sh && chown -R bun:bun /app
+#
+# Since SDK 0.3.x the CLI is no longer a `cli.js` inside the SDK package: it is
+# a NATIVE binary shipped as a per-platform optional dependency. Two resolve on
+# linux-x64 (glibc + musl, ~300 MB each) and only the glibc one can run on this
+# Debian base, so the musl copy is 300 MB of layer that can never execute.
+# `test -x` comes first, because an image missing the agent binary fails every
+# session at run time instead of failing this build once.
+RUN cd worker && bun install --production --frozen-lockfile \
+    && test -x node_modules/@anthropic-ai/claude-agent-sdk-linux-x64/claude \
+    && rm -rf node_modules/@anthropic-ai/claude-agent-sdk-linux-x64-musl \
+    && chmod +x entrypoint.sh && chown -R bun:bun /app
 
 WORKDIR /app/worker
 USER bun
