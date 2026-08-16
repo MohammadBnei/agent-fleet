@@ -514,6 +514,13 @@ func TestEnsureBrowserCache_WritesWhatTheWorkersRead(t *testing.T) {
 	if ctr.VolumeMounts[0].ReadOnly {
 		t.Error("the cache job's own mount is read-only — it cannot populate anything")
 	}
+	// fsGroup, same as worker pods: without it the subPath stays root-owned
+	// 0755 on a real StorageClass and the script's `chmod -R o+rX /browsers`
+	// dies with "Operation not permitted" after the browsers download (live
+	// KubeJobFailed 2026-08-16).
+	if sc := job.Spec.Template.Spec.SecurityContext; sc == nil || sc.FSGroup == nil || *sc.FSGroup != 1000 {
+		t.Error("cache job needs fsGroup 1000, else its chmod on the root-owned subPath fails")
+	}
 	script := strings.Join(ctr.Command, "\n")
 	// BOTH installs, which is the entirety of docs/adr/0044: the two packages
 	// bundle different playwright-core versions and resolve different build
