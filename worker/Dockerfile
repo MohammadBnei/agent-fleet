@@ -16,7 +16,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends git curl ca-cer
     && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list \
     && apt-get update && apt-get install -y --no-install-recommends gh \
     && rm -rf /var/lib/apt/lists/*
-RUN bun install -g @anthropic-ai/claude-code
+# Pinned, like the SDK in worker/package.json — and for the same reason that
+# comment gives. This install was unpinned, so it re-resolved on every rebuild
+# while the SDK beside it was held exact, which defeated the pin: the image
+# carries TWO Claude Code versions (this global CLI, and the one bundled inside
+# @anthropic-ai/claude-agent-sdk), and only one of them was controlled.
+#
+# The global CLI is what the `claude plugin install` steps below run at BUILD
+# time. The SDK's bundled copy is what actually runs a session. They are
+# allowed to differ; they are not allowed to drift silently.
+ARG CLAUDE_CODE_VERSION=2.1.233
+RUN bun install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
 
 # The toolchain the session's builds and tests actually run on. This used to
 # live in a second pod that the fleet staged from a per-repo "recipe"; after
@@ -25,7 +35,7 @@ RUN bun install -g @anthropic-ai/claude-code
 #
 # Go is installed from upstream rather than apt: Debian slim's golang lags far
 # enough behind to fail on a modern go.mod's toolchain directive.
-ARG GO_VERSION=1.26.5
+ARG GO_VERSION=1.26.6
 RUN curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" | tar -xz -C /usr/local
 ENV PATH="/usr/local/go/bin:${PATH}"
 
@@ -47,6 +57,14 @@ ENV PATH="/usr/local/go/bin:${PATH}"
 # Verified by driving a real browser_navigate against a read-only mount, not
 # by checking that a file exists — docs/adr/0044's whole lesson.
 #
+# Both packages are PINNED, and that matters more now than it used to. The
+# browser builds live on the shared PVC (docs/adr/0051) and are installed by a
+# Job running this image, so the build numbers these two versions resolve are
+# what the cache holds. Unpinned, any rebuild could shift them and leave every
+# session pointed at a browser build that is no longer there. EnsureBrowserCache
+# recreates its Job when the image changes, so a deliberate bump repairs the
+# cache on the next provisioner start — but only because the bump is deliberate.
+#
 # docs/adr/0044's finding is intact and still load-bearing:
 # @playwright/mcp bundles a DIFFERENT playwright-core than `playwright` does,
 # so it resolves a different browser build number and refuses to start on the
@@ -55,7 +73,9 @@ ENV PATH="/usr/local/go/bin:${PATH}"
 # now the browser-cache Job's job (provisioner/internal/k8s/browsercache.go),
 # which runs both install commands against the shared PVC — the two halves
 # still have to stay together, they just live somewhere else.
-RUN bun install -g playwright @playwright/mcp \
+ARG PLAYWRIGHT_VERSION=1.62.1
+ARG PLAYWRIGHT_MCP_VERSION=0.0.79
+RUN bun install -g playwright@${PLAYWRIGHT_VERSION} @playwright/mcp@${PLAYWRIGHT_MCP_VERSION} \
     && bunx playwright install-deps chromium \
     # bun's global install does NOT put @playwright/mcp's own bin on PATH —
     # only `claude` and `playwright-core` end up in the global .bin, so the

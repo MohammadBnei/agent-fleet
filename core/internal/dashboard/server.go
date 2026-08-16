@@ -124,7 +124,7 @@ func (s *Server) CreateSession(ctx context.Context, req *connect.Request[agentfl
 	if model == "" {
 		model = os.Getenv("CLAUDE_MODEL")
 		if model == "" {
-			model = "claude-opus-4-8"
+			model = defaultModel
 		}
 	} else if !isValidModel(model) {
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("invalid model %q", model))
@@ -287,14 +287,35 @@ func proposalToProto(p proposals.Proposal) *agentfleetv1.Proposal {
 // really were: text the dashboard prefills into the composer, visible and
 // editable before it is sent. ListPromptSnippets still serves them.
 
+// defaultModel is what a session runs when neither the request nor CLAUDE_MODEL
+// names one. Kept in step with worker/src/session.ts's own fallback — the two
+// are independent defaults on either side of the pod boundary, and a session
+// created here carries its model in the row, so a disagreement shows up only
+// for sessions created before this default existed.
+const defaultModel = "claude-opus-5"
+
 // validModels is the allowlist of Claude models that can be selected per-task.
 // This prevents injection of arbitrary model names and ensures only supported
 // models are used.
+//
+// Checked on CreateSession only, and only when a model is explicitly supplied —
+// nothing re-validates a stored value on read. So an entry here is a claim that
+// the API will accept the string, and a wrong one fails at dispatch rather than
+// at selection.
+//
+// `claude-haiku-4-5-20250929` used to sit in this map and was never a real
+// model: 20250929 is Sonnet 4.5's date, pasted onto Haiku's name. Haiku is
+// 20251001. Picking Haiku in the dashboard passed this check and then failed
+// against the API, so the option had never worked. Aliases now, not dated
+// snapshots — an alias tracks its model and cannot rot this way.
 var validModels = map[string]bool{
-	"claude-opus-4-8":            true,
+	"claude-opus-5":    true,
+	"claude-opus-4-8":  true,
+	"claude-sonnet-5":  true,
+	"claude-haiku-4-5": true,
+	// Kept so sessions created on them stay re-selectable.
 	"claude-sonnet-4-5-20250929": true,
 	"claude-opus-4-5-20251101":   true,
-	"claude-haiku-4-5-20250929":  true,
 }
 
 func isValidModel(model string) bool {

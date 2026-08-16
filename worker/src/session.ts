@@ -11,7 +11,11 @@ import { rtkRewrite } from "./rtkHook.js";
 // Job goes Failed, and a human sees CRASHED with the error attached.
 
 const SESSION_ID = process.env.SESSION_ID ?? "";
-const MODEL = process.env.CLAUDE_MODEL ?? "claude-opus-4-8";
+// Kept in step with core/internal/dashboard/server.go's defaultModel. Only
+// reached when a session row carries no model of its own (pre-dating the
+// column, or created outside the dashboard) — a normal session's model comes
+// from the row, not from here.
+const MODEL = process.env.CLAUDE_MODEL ?? "claude-opus-5";
 const MAX_TURNS = process.env.MAX_TURNS ? Number(process.env.MAX_TURNS) : undefined;
 
 const SIDECAR_MCP_ADDR = process.env.SIDECAR_MCP_ADDR ?? "localhost:9090";
