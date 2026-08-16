@@ -1,5 +1,12 @@
 # Changelog
 
+# [3.7.0](https://github.com/MohammadBnei/agent-fleet/compare/3.6.0...3.7.0) (2026-08-16)
+
+
+### Features
+
+* auto mode on plan approval, and stop pretending bypass switched ([#180](https://github.com/MohammadBnei/agent-fleet/issues/180)) ([009f23e](https://github.com/MohammadBnei/agent-fleet/commit/009f23ec10ec4e5e24f6cedd9b16862a04a13030))
+
 # [3.6.0](https://github.com/MohammadBnei/agent-fleet/compare/3.5.4...3.6.0) (2026-08-16)
 
 
