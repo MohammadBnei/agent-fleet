@@ -1,5 +1,12 @@
 # Changelog
 
+# [3.6.0](https://github.com/MohammadBnei/agent-fleet/compare/3.5.4...3.6.0) (2026-08-16)
+
+
+### Features
+
+* **dashboard:** show which build core, provisioner and each session run ([#179](https://github.com/MohammadBnei/agent-fleet/issues/179)) ([77b3328](https://github.com/MohammadBnei/agent-fleet/commit/77b33283624be092a74e2fd56e6d82545057493f))
+
 ## [3.5.4](https://github.com/MohammadBnei/agent-fleet/compare/3.5.3...3.5.4) (2026-08-16)
 
 
