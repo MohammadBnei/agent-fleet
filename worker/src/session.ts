@@ -167,6 +167,31 @@ function relayFields(msg: { [key: string]: unknown }): Record<string, unknown> {
   return out;
 }
 
+// SDK 0.3.x progress frames: system subtypes the CLI re-emits many times
+// *inside one event*, each carrying a running counter rather than a thing
+// that happened. thinking_tokens is emitted per thinking delta (hundreds per
+// turn), task_progress per subagent poll, hook_progress per stdout chunk,
+// control_request_progress per retry, session_state_changed per idle/running
+// flip. Relaying them wrote a durable Postgres row apiece and drowned the
+// feed in near-identical entries.
+//
+// Every one of them has a terminal sibling that IS relayed and says the same
+// thing once: result / task_notification+task_started / hook_response /
+// api_retry. Same reasoning as the stream_event note at the bottom of
+// logSdkMessage — live-only spinner data does not belong in a durable
+// transcript.
+//
+// ponytail: a denylist, so a progress subtype the SDK adds next relays until
+// it is listed here. An allowlist would have the opposite failure (a real new
+// event silently dropped), which is the worse one.
+const EPHEMERAL_SYSTEM_SUBTYPES = new Set([
+  "thinking_tokens",
+  "task_progress",
+  "hook_progress",
+  "control_request_progress",
+  "session_state_changed",
+]);
+
 // Relays every SDK message, tagged by its own raw type, to the transcript
 // (reliability-findings.md #0: "relay everything, let the UI decide, no
 // pre-filtering" — before this, only assistant text blocks ever left this
@@ -182,6 +207,10 @@ function relayFields(msg: { [key: string]: unknown }): Record<string, unknown> {
 async function logSdkMessage(actor: string, msg: { type: string; [key: string]: unknown }): Promise<void> {
   const push = (text: string, type: string) =>
     sidecar.pushMessage(actor, text, type).catch((err) => log("warn", "pushMessage failed", { actor, type, error: String(err) }));
+
+  // Dropped before the log line too: a per-frame counter floods Loki for the
+  // same reason it floods the feed.
+  if (msg.type === "system" && typeof msg.subtype === "string" && EPHEMERAL_SYSTEM_SUBTYPES.has(msg.subtype)) return;
 
   if (msg.type === "system" && msg.subtype === "init") {
     log("info", `${actor} session started`, {
