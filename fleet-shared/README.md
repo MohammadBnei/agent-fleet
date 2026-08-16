@@ -57,7 +57,7 @@ the path entirely for the commands it matches, which is the same authority
 keeps `Write`/`Edit`/`Bash` out of `allowedTools`; a rule added here is the
 one other way to undo that, so add one the way you would add an entry there.
 
-## `permissions.ask` is what keeps a target repo from widening that
+## The `ask` counterweight lives in `worker/src/session.ts`, not here
 
 Since docs/adr/0049 a session also loads the **target repo's** own
 `.claude/settings.json` (`settingSources: ["user", "project"]`), which is how
@@ -66,22 +66,25 @@ it gets that repo's `CLAUDE.md` and `.claude/skills/`. That merges the repo's
 counterweight, any onboarded repo could ship `Bash(gh api:*)` in its own
 settings and approve its own outward-facing commands.
 
-The `ask` list is that counterweight. The SDK's evaluator (`Fw2` in the
-vendored `cli.js`) resolves **deny → ask → allow** and returns on the first
-match, so a rule here outranks a project-scope `allow` for the same command.
+That counterweight is `FLEET_ASK_RULES` in `worker/src/session.ts`, passed to
+`query()` through `settings` (scope `flagSettings`, always collected). It is
+the same list, doing the same job — `git push`, `gh`, `rm`, `sudo`, `kubectl`,
+`curl`, `wget`, `env` — and it is deliberately **not** a `permissions.ask`
+block in this file, because since SDK 0.3.233 the evaluator returns on an
+ask-rule match *before* the permission mode's own allow short-circuit. Shipped
+as a file it would apply to `bypassPermissions` too, leaving a session a human
+explicitly gave total authority unable to `git push` (docs/adr/0052).
+
 `ask` rather than `deny` because a human should still be able to approve a
 `git push` — every result is a PR, and approving it *is* the review.
 
-The list is exactly the "deliberately NOT allowed" bullets above, made
-enforceable rather than merely absent.
-
 **There is no specificity tiebreak, so `ask` beats a narrower `allow` too.**
 `Bash(curl http://127.0.0.1:*)` and `Bash(curl http://localhost:*)` used to be
-on the allow list; `Bash(curl:*)` in `ask` matches those commands first, which
-would have made the two allow entries dead text claiming a permission they no
-longer granted. They were removed instead. Localhost `curl` now prompts like
-any other — cheap, since builds and tests are what actually run in a loop, and
-`curl` is the one entry whose un-prompted form is a supply-chain path.
+on the allow list; `Bash(curl:*)` in the ask list matches those commands first,
+which would have made the two allow entries dead text claiming a permission
+they no longer granted. They were removed instead. Localhost `curl` prompts
+like any other — cheap, since builds and tests are what actually run in a loop,
+and `curl` is the one entry whose un-prompted form is a supply-chain path.
 
 A pair like that is the thing to check when adding to either list: a broad
 `ask` prefix silently swallows every narrower `allow` beneath it.

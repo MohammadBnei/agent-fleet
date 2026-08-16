@@ -35,6 +35,33 @@ const RESUME_SESSION_ID = process.env.RESUME_SESSION_ID || undefined;
 // (a real regression, caught live against a kind cluster).
 const RESUME_FROM_SEQ = process.env.RESUME_FROM_SEQ ? Number(process.env.RESUME_FROM_SEQ) : 0;
 
+// The fleet's authority ceiling (docs/adr/0049), injected per-session rather
+// than shipped in fleet-shared/settings.json (docs/adr/0052).
+//
+// It has to be conditional, and a settings FILE cannot be: since SDK 0.3.233
+// the evaluator returns on an ask-rule match BEFORE the permission mode's own
+// allow short-circuit, so leaving these in user settings makes
+// bypassPermissions unable to `git push` or `gh pr create` — the fleet's only
+// deliverable. Passed through `settings` (the SDK's `--settings`, scope
+// "flagSettings", which the rule collector always includes alongside whatever
+// settingSources allows), so every non-bypass session keeps exactly the
+// counterweight adr/0049 specified: a flag/user-scope ask outranks a target
+// repo's project-scope allow.
+//
+// Adding to this list is the same decision as adding to allowedTools, in
+// reverse — and a broad prefix here silently swallows every narrower allow
+// beneath it (adr/0049's `curl` worked example).
+const FLEET_ASK_RULES = [
+  "Bash(git push:*)",
+  "Bash(gh:*)",
+  "Bash(rm:*)",
+  "Bash(sudo:*)",
+  "Bash(kubectl:*)",
+  "Bash(curl:*)",
+  "Bash(wget:*)",
+  "Bash(env:*)",
+];
+
 function sidecarMcpServer() {
   return { type: "http" as const, url: `http://${SIDECAR_MCP_ADDR}/mcp` };
 }
@@ -320,6 +347,17 @@ export async function runSession(): Promise<SessionResult> {
   // asking again.
   const session = await sidecar.getSession();
 
+  // The mode this pod BOOTS in, as opposed to whatever it is switched to
+  // later. Two things the SDK fixes at launch and never recomputes hang off
+  // it (docs/adr/0052): whether bypassPermissions is reachable at all, and
+  // whether FLEET_ASK_RULES below are in force. Crossing that boundary is a
+  // relaunch, not a control request — see the permission_mode handler.
+  const launchMode = (session.permissionMode ?? "default") as PermissionMode;
+  // What the SDK is actually in right now, as opposed to what the column says
+  // — they diverge the moment a switch is refused, and the column is what the
+  // next warm launches in.
+  let currentMode: PermissionMode = launchMode;
+
   let aborted = false;
   // Set by an "interrupt" entry (DashboardService.Interrupt) — stops only
   // the current turn via q.interrupt(), unlike "abort" which ends the
@@ -342,7 +380,7 @@ export async function runSession(): Promise<SessionResult> {
   // ExitPlanMode-only gate used — ExitPlanMode is no longer special-cased,
   // it's just one more entry in this map (docs/adr supersession of
   // 0021/0025's Write/Edit-absent-from-allowedTools gate).
-  const pendingPermissions = new Map<number, { resolve: (result: PermissionResult) => void; input: Record<string, unknown> }>();
+  const pendingPermissions = new Map<number, { resolve: (result: PermissionResult) => void; input: Record<string, unknown>; tool: string }>();
 
   function resolvePending(seq: number, build: (input: Record<string, unknown>) => PermissionResult): boolean {
     const pending = pendingPermissions.get(seq);
@@ -377,25 +415,42 @@ export async function runSession(): Promise<SessionResult> {
       .catch((err) => log("warn", "recording auto-resolved permission failed", { taskId: SESSION_ID, seq, error: String(err) }));
   }
 
-  // A permission-mode switch (the dashboard's mode picker) pre-empts
-  // whatever's currently pending — mirrors Claude Code CLI's own
-  // ExitPlanMode prompt, where picking "yes, and don't ask again for
-  // edits" both answers the pending call and changes the mode in one move.
-  function resolveAllPendingAllow(): void {
-    for (const [seq, pending] of pendingPermissions) {
-      pending.resolve({ behavior: "allow", updatedInput: pending.input });
-      recordResolution(seq, { behavior: "allow", message: "Allowed by a permission-mode change." });
-    }
-    pendingPermissions.clear();
+  // A permission-mode switch pre-empts what it was answering — mirrors Claude
+  // Code CLI's own ExitPlanMode prompt, where picking "yes, and use auto mode"
+  // both answers the pending call and changes the mode in one move.
+  //
+  // Scoped to ONE call, not the whole map. The CLI shows one prompt at a time,
+  // so "the pending call" is unambiguous there; here several tool calls in the
+  // same assistant turn park side by side, and a blanket sweep meant approving
+  // a plan (docs/adr/0052's approve+auto) also silently approved whatever else
+  // happened to be parked — a Bash the human never read. ExitPlanMode wins
+  // when present because that is what the human was answering; otherwise the
+  // oldest pending call is the one the mode picker was aimed at. Anything else
+  // stays parked and still has to be answered.
+  function resolveOnePendingAllow(): void {
+    const entries = [...pendingPermissions].sort(([a], [b]) => a - b);
+    const target = entries.find(([, p]) => p.tool === "ExitPlanMode") ?? entries[0];
+    if (!target) return;
+    const [seq, pending] = target;
+    pendingPermissions.delete(seq);
+    pending.resolve({ behavior: "allow", updatedInput: pending.input });
+    recordResolution(seq, { behavior: "allow", message: "Allowed by a permission-mode change." });
   }
 
-  function resolveAllPendingDeny(message: string, interrupt = false): void {
+  // `interrupt` is BOTH the SDK's stop-this-turn flag and the "an interrupt/
+  // abort entry is being written, which every dashboard surface already reads
+  // as resolving whatever was pending" signal — they were the same event when
+  // this was written. A pod that ends itself (`/clear`, a bypass relaunch)
+  // writes no such entry, so it needs the turn stopped AND the resolutions
+  // recorded, or the plan card sits pending forever on a session whose pod is
+  // gone. `record` splits the two.
+  function resolveAllPendingDeny(message: string, interrupt = false, record = !interrupt): void {
     for (const [seq, pending] of pendingPermissions) {
       pending.resolve({ behavior: "deny", message, ...(interrupt ? { interrupt: true } : {}) });
       // An interrupt/abort already leaves its own entry, and the dashboard
       // reads that as resolving everything pending at that moment — writing
       // a second record for the same event would be redundant, not clearer.
-      if (!interrupt) recordResolution(seq, { behavior: "deny", message });
+      if (record) recordResolution(seq, { behavior: "deny", message });
     }
     pendingPermissions.clear();
   }
@@ -434,7 +489,11 @@ export async function runSession(): Promise<SessionResult> {
       // Use the task's permission mode from the database, falling back to
       // "default" if not set. This ensures the mode is restored on resume
       // instead of always resetting to "default".
-      permissionMode: (session.permissionMode ?? "default") as PermissionMode,
+      permissionMode: launchMode,
+      // See FLEET_ASK_RULES. Omitted entirely for a bypassPermissions launch —
+      // a human typed the literal word `bypass`, and an ask rule would outrank
+      // the mode they chose.
+      ...(launchMode === "bypassPermissions" ? {} : { settings: { permissions: { ask: FLEET_ASK_RULES } } }),
       // Write/Edit/Bash are deliberately never in this list — canUseTool
       // below is the live escalation path for all three (confirmed in
       // Phase 0's spike: allowedTools bypasses canUseTool entirely for
@@ -513,7 +572,7 @@ export async function runSession(): Promise<SessionResult> {
           return { behavior: "deny", message: "Could not reach the dashboard to request permission — try again." };
         }
         return new Promise<PermissionResult>((resolve) => {
-          pendingPermissions.set(seq, { resolve, input: effectiveInput });
+          pendingPermissions.set(seq, { resolve, input: effectiveInput, tool: toolName });
         });
       },
       mcpServers: {
@@ -541,11 +600,12 @@ export async function runSession(): Promise<SessionResult> {
       // It also merges the target repo's .claude/settings.json
       // permissions.allow, and an allow rule removes canUseTool from the
       // path entirely (same authority as allowedTools above). What stops a
-      // repo self-approving its own `gh api` is the permissions.ask block in
-      // fleet-shared/settings.json: the SDK's evaluator resolves
-      // deny → ask → allow and returns on the first match, so a user-scope
-      // ask outranks a project-scope allow. Widening that block is the same
-      // decision as adding to allowedTools.
+      // repo self-approving its own `gh api` is FLEET_ASK_RULES, injected
+      // above through `settings` rather than shipped in fleet-shared's own
+      // settings.json (docs/adr/0052): the evaluator returns on the first
+      // matching ask rule, before any allow rule and before the permission
+      // mode's own short-circuit, so a flag-scope ask outranks a
+      // project-scope allow.
       //
       // Deliberately NOT "local": .claude/settings.local.json is gitignored,
       // so nothing about it is reviewable in the PR that lands it.
@@ -663,10 +723,41 @@ export async function runSession(): Promise<SessionResult> {
       }
       // The dashboard's permission-mode selector (docs/adr/0027) — a mode
       // switch pre-empts whatever's currently pending (see
-      // resolveAllPendingAllow's own comment) rather than leaving it to
+      // resolveOnePendingAllow's own comment) rather than leaving it to
       // time out unanswered.
       if (entry.type === "permission_mode") {
         const mode = entry.text as PermissionMode;
+
+        // Crossing the bypassPermissions boundary is a RELAUNCH, not a
+        // control request (docs/adr/0052). Both directions:
+        //
+        //  - into bypass: since SDK 0.3.233 the set_permission_mode request is
+        //    refused outright unless the CLI was launched with the mode (or
+        //    --allow-dangerously-skip-permissions, which we deliberately do
+        //    not pass — it would also switch on the `plan &&
+        //    isBypassPermissionsModeAvailable` auto-allow for every planning
+        //    session, adr/0027's objection, still live in this build);
+        //  - out of bypass: FLEET_ASK_RULES are fixed at launch too, so a
+        //    session that merely left bypass would keep total authority with
+        //    nothing on screen saying so.
+        //
+        // core has already persisted the column, so the next warm boots in the
+        // chosen mode. Same teardown as `/clear` below, minus the
+        // saveSessionId("") — the conversation must survive the relaunch.
+        if ((mode === "bypassPermissions") !== (launchMode === "bypassPermissions")) {
+          aborted = true;
+          // record=true: nothing writes an interrupt/abort entry on this path,
+          // so without it every card parked right now stays "waiting for a
+          // human" on a session whose pod no longer exists.
+          resolveAllPendingDeny(`Switching to ${mode} — this pod is ending, re-warm to continue.`, true, true);
+          await sidecar
+            .pushMessage("agent", `Permission mode ${mode} is saved, but it can only take effect at startup — re-warm this session to apply it.`, "system")
+            .catch(() => {});
+          await interruptSafely("permission mode relaunch");
+          abortController.abort();
+          return;
+        }
+
         // Caught, not bare-awaited: this is the only await in this callback
         // that could reject, and a rejection here does not just lose the mode
         // switch — it escapes onEntry, streamOnce rethrows, and nextSeq is
@@ -675,11 +766,31 @@ export async function runSession(): Promise<SessionResult> {
         // reply, permission response or Stop would ever be delivered and
         // anything already pending would block forever. Query.request()
         // rejects on any non-success control response, which an unrecognized
-        // mode string is.
-        await q
+        // mode string is — and which "auto" is whenever its own gates (remote
+        // circuit breaker, model allow-list) say no.
+        const failure = await q
           .setPermissionMode(mode)
-          .catch((err) => log("warn", "setPermissionMode failed", { taskId: SESSION_ID, mode, error: String(err) }));
-        resolveAllPendingAllow();
+          .then(() => null)
+          .catch((err) => String(err));
+        if (failure !== null) {
+          // NOT resolveOnePendingAllow: the mode did not change, so allowing
+          // the parked call would be this wrapper approving a tool on a
+          // human's behalf on the strength of a request the SDK rejected. The
+          // old code did exactly that, which is what made a refused switch
+          // look like a working one.
+          log("warn", "setPermissionMode failed", { taskId: SESSION_ID, mode, error: failure });
+          await sidecar
+            .pushMessage("agent", `Could not switch to ${mode}: ${failure}`, "system")
+            .catch(() => {});
+          // core persisted the column before this pod ever saw the entry, so
+          // the picker is now showing a mode the SDK refused — and that column
+          // is what the next warm LAUNCHES in. Writing the live mode back is
+          // the only thing that keeps the badge and the next pod honest.
+          await sidecar.savePermissionMode(currentMode).catch((err) => log("warn", "restoring permission mode failed", { taskId: SESSION_ID, error: String(err) }));
+          return;
+        }
+        currentMode = mode;
+        resolveOnePendingAllow();
         return;
       }
       // `/clear` (and its CLI aliases) must NOT reach the SDK.
@@ -703,7 +814,9 @@ export async function runSession(): Promise<SessionResult> {
       // hang), but preceded by clearing the resume identity.
       if (/^\/(clear|reset|new)\s*$/.test(entry.text.trim())) {
         aborted = true;
-        resolveAllPendingDeny("Conversation cleared.", true);
+        // Same as the relaunch above: this pod ends itself without an
+        // interrupt/abort entry, so the resolutions have to be recorded.
+        resolveAllPendingDeny("Conversation cleared.", true, true);
         // Empty id => next warm passes resume: undefined => fresh session.
         await sidecar
           .saveSessionId("", session.model ?? MODEL)

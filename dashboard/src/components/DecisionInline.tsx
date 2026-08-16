@@ -7,6 +7,8 @@ import { DiffLines } from "./DiffLines";
 import { QuestionCard } from "./QuestionCard";
 import { Markdown } from "./Markdown";
 import { summarizeToolInput } from "../transcript";
+import { approvePlan } from "../approvePlan";
+import { ConfirmModal } from "./ConfirmModal";
 
 // The pending decision, answerable from the list.
 //
@@ -117,6 +119,7 @@ export function DecisionInline({
 }) {
   const { busy, pending, answered, error, send } = useDecision(reload);
   const [reason, setReason] = useState("");
+  const [autoConfirmOpen, setAutoConfirmOpen] = useState(false);
   const stacked = layout === "stacked";
   const pad = stacked ? "px-3.5 pb-3.5" : "px-4 pb-4";
 
@@ -187,14 +190,44 @@ export function DecisionInline({
             <Markdown text={plan} />
           </div>
           {error && <div className="text-xs text-error">{error}</div>}
-          <div className={`flex gap-2.5 ${stacked ? "" : "items-center"}`}>
-            <ActionButton busy={pending === "allow"} disabled={busy} className={primaryBtn} onClick={() => respond("allow")}>
-              approve plan
+          {/* Same menu the dock's PlanCard offers, so approving from the list
+              is not a lesser decision than approving from the session — auto
+              behind a confirm, plain approve beside it (docs/adr/0052). */}
+          <div className={`flex flex-wrap gap-2.5 ${stacked ? "" : "items-center"}`}>
+            <ActionButton
+              busy={pending === "allow"}
+              disabled={busy}
+              className={primaryBtn}
+              onClick={() => setAutoConfirmOpen(true)}
+            >
+              approve + auto
             </ActionButton>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() =>
+                send("allow", () => approvePlan(session.id, permission.entry.seq), permission.entry.seq)
+              }
+              className={secondaryBtn}
+            >
+              approve only
+            </button>
             <button type="button" onClick={onOpenSession} className={secondaryBtn}>
               read it first
             </button>
           </div>
+          <ConfirmModal
+            open={autoConfirmOpen}
+            title="Approve and switch to auto mode?"
+            message="A model classifier answers the ordinary permission prompts for the rest of this session. git push, gh, rm, sudo, kubectl, curl, wget and env still come to you, and so does the next plan."
+            confirmLabel="approve + auto"
+            danger={false}
+            onConfirm={() => {
+              setAutoConfirmOpen(false);
+              send("allow", () => approvePlan(session.id, permission.entry.seq, "auto"), permission.entry.seq);
+            }}
+            onCancel={() => setAutoConfirmOpen(false)}
+          />
         </div>
       );
     }

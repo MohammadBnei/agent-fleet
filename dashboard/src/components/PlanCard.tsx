@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { Markdown } from "./Markdown";
 import { ActionButton } from "./ActionButton";
+import { ConfirmModal } from "./ConfirmModal";
 
 type Annotation = { quote: string; comment: string };
 type SelectionPopover = { quote: string; x: number; y: number; editing: boolean };
@@ -58,7 +59,11 @@ export function PlanCard({
   // pre-fix legacy row with no matching response, where "approved" stays
   // the fallback.
   decision?: "allow" | "deny" | "interrupted";
-  onApprove: () => void;
+  // Approving is a mode transition plus an answer, mirroring the CLI's own
+  // ExitPlanMode menu ("Yes, and use auto mode" / "Yes, manually approve
+  // edits") — see approvePlan.ts for why the order matters. Undefined mode
+  // means approve and leave the session in whatever mode it is in.
+  onApprove: (mode?: "auto") => void;
   onFeedback: (text: string) => void;
   edgeClassName: string;
   allowAnnotate?: boolean;
@@ -69,6 +74,7 @@ export function PlanCard({
   const [selection, setSelection] = useState<SelectionPopover | null>(null);
   const [draft, setDraft] = useState("");
   const [isExpanded, setIsExpanded] = useState(false);
+  const [autoConfirmOpen, setAutoConfirmOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
 
   if (!pending) {
@@ -229,14 +235,28 @@ export function PlanCard({
           ))}
         </div>
       )}
-      <div className="flex items-center gap-2 mt-3">
+      {/* Same three choices the CLI's ExitPlanMode menu offers, same order:
+          "Yes, and use auto mode", "Yes, manually approve edits", "No, keep
+          planning". Auto is primary because it is the one that makes the
+          approved plan actually run without a human sitting on the dock —
+          behind a confirm, since it hands per-tool decisions to a
+          classifier. */}
+      <div className="flex flex-wrap items-center gap-2 mt-3">
         <ActionButton
           className="bg-primary text-primary-content px-6 py-2 text-base font-semibold disabled:opacity-50"
           busy={busy}
-          onClick={onApprove}
+          onClick={() => setAutoConfirmOpen(true)}
         >
-          approve
+          approve + auto mode
         </ActionButton>
+        <button
+          type="button"
+          className="border border-acc-line px-6 py-2 text-base hover:border-primary hover:text-primary disabled:opacity-50"
+          disabled={busy}
+          onClick={() => onApprove()}
+        >
+          approve, keep approving edits myself
+        </button>
         <button
           type="button"
           className="border border-acc-line px-6 py-2 text-base hover:border-error hover:text-error disabled:opacity-50"
@@ -246,6 +266,18 @@ export function PlanCard({
           request changes
         </button>
       </div>
+      <ConfirmModal
+        open={autoConfirmOpen}
+        title="Approve and switch to auto mode?"
+        message="A model classifier answers the ordinary permission prompts for the rest of this session. git push, gh, rm, sudo, kubectl, curl, wget and env still come to you, and so does the next plan."
+        confirmLabel="approve + auto"
+        danger={false}
+        onConfirm={() => {
+          setAutoConfirmOpen(false);
+          onApprove("auto");
+        }}
+        onCancel={() => setAutoConfirmOpen(false)}
+      />
       {feedbackOpen && (
         <div className="flex items-center gap-2 mt-2">
           <input

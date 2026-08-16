@@ -179,6 +179,19 @@ Any doc, code, comment, or memory that contradicts this file or an
   is a PR. There is no specificity tiebreak, so a broad `ask` prefix swallows
   every narrower `allow` beneath it. See
   [`adr/0049`](adr/0049-project-setting-source.md).
+- **`auto` is the mode plan approval switches to; `bypassPermissions` is a
+  launch profile, not a switch.** Since SDK 0.3.233 the evaluator returns on
+  an ask rule *before* the permission mode's own allow, and bypass
+  availability is computed once at launch — so a live switch into (or out of)
+  bypass ends the pod and re-warms into it, while every other mode, `auto`
+  included, still switches in place. A rejected switch is reported to the
+  human instead of being logged and silently treated as an allow. The
+  `permissions.ask` counterweight above moves into `worker/src/session.ts`'s
+  `FLEET_ASK_RULES` (injected through `settings`) so it can be omitted for the
+  one mode a human explicitly typed `bypass` for.
+  `allowDangerouslySkipPermissions` is still never passed: it would make plan
+  mode auto-allow every write from turn one. See
+  [`adr/0052`](adr/0052-auto-mode-and-the-bypass-launch-profile.md).
 
 ## 2. Forbidden patterns (quick check — full list + reasons in `adr/`)
 

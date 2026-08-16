@@ -12,6 +12,7 @@ import { test, expect, mock, beforeEach, afterAll } from "bun:test";
 
 const pushedMessages: { seq: number; from: string; text: string; type?: string; replyTo?: number }[] = [];
 const savedSessionIds: string[] = [];
+const savedPermissionModes: string[] = [];
 let nextSeq = 1;
 
 // The human-message feed a real sidecar SSE stream would deliver — tests
@@ -40,9 +41,9 @@ mock.module("./sidecarClient.js", () => ({
     savedSessionIds.push(id);
   }),
   savePermissionMode: mock(async (mode: string) => {
-    // Mock implementation - just accept the call
+    savedPermissionModes.push(mode);
   }),
-  getSession: mock(async () => ({ description: "test session", permissionMode: undefined, model: undefined })),
+  getSession: mock(async () => ({ description: "test session", permissionMode: sessionPermissionMode, model: undefined })),
   streamHumanMessages: mock(async (onEntry: typeof humanMessageHandler, signal: AbortSignal) => {
     humanMessageHandler = onEntry;
     // Resolves only when the caller aborts — mirrors the real SSE stream's
@@ -84,6 +85,11 @@ let capturedCanUseTool: ((toolName: string, input: unknown) => Promise<{ behavio
   null;
 let interruptCalls = 0;
 let setPermissionModeCalls: string[] = [];
+// Non-null makes the fake SDK reject the set_permission_mode control request,
+// which is what 0.3.233 really does for a mode its own gates refuse.
+let setPermissionModeError: string | null = null;
+// The mode the session ROW carries, i.e. what this pod launched in.
+let sessionPermissionMode: string | undefined = undefined;
 let queryOptions: Record<string, unknown> | null = null;
 // Every value the fake session's generator actually pulled off the
 // streamed prompt — lets a test assert a given piece of text really
@@ -199,6 +205,7 @@ mock.module("@anthropic-ai/claude-agent-sdk", () => ({
       }),
       setPermissionMode: mock(async (mode: string) => {
         setPermissionModeCalls.push(mode);
+        if (setPermissionModeError !== null) throw new Error(setPermissionModeError);
       }),
     });
   },
@@ -217,6 +224,7 @@ beforeEach(() => {
   pushedMessages.length = 0;
   nextSeq = 1;
   savedSessionIds.length = 0;
+  savedPermissionModes.length = 0;
   humanMessageHandler = null;
   mockMessageText = "mock agent message";
   forceResult = null;
@@ -225,6 +233,8 @@ beforeEach(() => {
   capturedCanUseTool = null;
   interruptCalls = 0;
   setPermissionModeCalls = [];
+  setPermissionModeError = null;
+  sessionPermissionMode = undefined;
   queryOptions = null;
   consumedInputs = [];
   extraMessages = [];
@@ -276,6 +286,10 @@ test("tool wiring: default mode, no Write/Edit in allowedTools, canUseTool prese
   // unreviewed.
   expect(queryOptions?.settingSources).toEqual(["user", "project"]);
   expect(queryOptions?.settingSources).not.toContain("local");
+  // docs/adr/0049's authority ceiling, injected per-session rather than shipped
+  // in fleet-shared/settings.json (docs/adr/0052) so it can be omitted for a
+  // bypassPermissions launch.
+  expect((queryOptions?.settings as { permissions?: { ask?: string[] } })?.permissions?.ask).toContain("Bash(gh:*)");
   expect(queryOptions?.plugins).toBeUndefined();
 }, 10000);
 
@@ -444,6 +458,114 @@ test("a permission_mode entry sets the SDK mode and resolves any pending permiss
   // the assertion could only ever pass — which is worse than deleting it.
 
   pushHuman("", "abort");
+  await promise;
+}, 10000);
+
+// docs/adr/0052. The old code swallowed a rejected switch into a log line and
+// then allowed everything pending anyway, so a refused mode change was
+// indistinguishable from a working one — the human saw the badge flip and the
+// parked call go through, and the very next tool call prompted again.
+test("a REJECTED permission_mode switch does not allow the pending call", async () => {
+  const promise = runSession();
+  await Bun.sleep(20);
+
+  setPermissionModeError = "Cannot set permission mode to auto: gate is not enabled";
+
+  let resolved: { behavior: string } | null = null;
+  const call = capturedCanUseTool!("Write", { file_path: "x" }).then((r) => {
+    resolved = r as { behavior: string };
+  });
+  await Bun.sleep(20);
+
+  pushHuman("auto", "permission_mode");
+  await Bun.sleep(20);
+
+  expect(setPermissionModeCalls).toContain("auto");
+  expect(resolved).toBeNull(); // still blocked — the mode never changed
+  expect(pushedMessages.find((m) => m.type === "permission_response")).toBeUndefined();
+  const told = pushedMessages.find((m) => m.type === "system" && m.text.includes("Could not switch to auto"));
+  expect(told).toBeDefined();
+  // core wrote the column before this pod saw the entry, so a refused switch
+  // leaves the badge — and the next warm's launch mode — showing a mode the
+  // SDK rejected. The worker writes the live one back.
+  expect(savedPermissionModes).toContain("default");
+
+  pushHuman("", "abort");
+  await promise;
+  await call;
+}, 10000);
+
+// A mode switch answers the ONE call it was aimed at. Several tool calls in
+// the same assistant turn park side by side, and a blanket sweep meant
+// approving a plan also approved whatever else was parked — a Bash nobody read.
+test("a permission_mode switch answers the plan, not every other parked call", async () => {
+  const promise = runSession();
+  await Bun.sleep(20);
+
+  let bash: { behavior: string } | null = null;
+  const bashCall = capturedCanUseTool!("Bash", { command: "rm -rf /tmp/x" }).then((r) => {
+    bash = r as { behavior: string };
+  });
+  const planCall = capturedCanUseTool!("ExitPlanMode", { plan: "do the thing" });
+  await Bun.sleep(20);
+
+  pushHuman("auto", "permission_mode");
+  const planResult = await planCall;
+
+  expect(planResult.behavior).toBe("allow");
+  expect(bash).toBeNull(); // still parked — a human has to answer it
+  const responses = pushedMessages.filter((m) => m.type === "permission_response");
+  expect(responses.length).toBe(1);
+
+  pushHuman("", "abort");
+  await promise;
+  await bashCall;
+}, 10000);
+
+// Also docs/adr/0052: bypassPermissions is fixed at launch by the SDK, and
+// FLEET_ASK_RULES are fixed at launch by us, so crossing that boundary is a
+// relaunch. The pod ends WITHOUT clearing the saved session id — the
+// conversation has to survive the re-warm (that is the one thing that
+// separates this from /clear).
+test("switching into bypassPermissions ends the pod instead of pretending to switch", async () => {
+  const promise = runSession();
+  await Bun.sleep(20);
+
+  const call = capturedCanUseTool!("Write", { file_path: "x" });
+  await Bun.sleep(20);
+
+  pushHuman("bypassPermissions", "permission_mode");
+  const result = await call;
+
+  expect(result.behavior).toBe("deny");
+  expect(setPermissionModeCalls).toEqual([]);
+  expect(savedSessionIds).not.toContain("");
+  const told = pushedMessages.find((m) => m.type === "system" && m.text.includes("re-warm"));
+  expect(told).toBeDefined();
+  // Nothing writes an interrupt/abort entry on this path, so the denial has to
+  // be recorded or the card stays pending on a session whose pod is gone.
+  const recorded = pushedMessages.find((m) => m.type === "permission_response");
+  expect(recorded).toBeDefined();
+  expect(JSON.parse(recorded!.text).behavior).toBe("deny");
+
+  await promise;
+}, 10000);
+
+test("a session LAUNCHED in bypassPermissions carries no ask rules and can leave the mode only by relaunching", async () => {
+  sessionPermissionMode = "bypassPermissions";
+  const promise = runSession();
+  await Bun.sleep(20);
+
+  expect(queryOptions?.permissionMode).toBe("bypassPermissions");
+  // The ask list would outrank the mode a human explicitly typed `bypass` for
+  // (SDK 0.3.233 returns on an ask-rule match before the mode's own allow).
+  expect(queryOptions?.settings).toBeUndefined();
+
+  pushHuman("default", "permission_mode");
+  await Bun.sleep(20);
+  expect(setPermissionModeCalls).toEqual([]);
+  expect(pushedMessages.find((m) => m.type === "system" && m.text.includes("re-warm"))).toBeDefined();
+
   await promise;
 }, 10000);
 
@@ -809,4 +931,14 @@ test("session init relays the full environment, not four of fourteen fields", as
 // is required, not optional, in a shared-process test run.
 afterAll(() => {
   mock.restore();
+});
+
+// The counterweight moved into session.ts's FLEET_ASK_RULES so it can be
+// omitted for a bypassPermissions launch (docs/adr/0052). Putting it back in
+// the settings file would re-break that silently — the rules would apply to
+// every mode again, and nothing else in the fleet would notice.
+test("fleet-shared/settings.json ships no permissions.ask block", async () => {
+  const settings = await Bun.file(new URL("../../fleet-shared/settings.json", import.meta.url)).json();
+  expect(settings.permissions.ask).toBeUndefined();
+  expect(settings.permissions.allow.length).toBeGreaterThan(0);
 });

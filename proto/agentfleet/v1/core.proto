@@ -208,7 +208,7 @@ message Session {
   optional string last_active_at = 13;
 
   // The session's current SDK permission mode ("default"|"plan"|
-  // "acceptEdits"|"bypassPermissions"|...), so the dashboard's mode picker
+  // "acceptEdits"|"auto"|"dontAsk"|"bypassPermissions"), so the mode picker
   // shows the real active mode instead of guessing. Restored on every warm.
   optional string permission_mode = 14;
 

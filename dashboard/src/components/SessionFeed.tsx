@@ -152,6 +152,7 @@ export function SessionFeed({
   // inline, so the feed must not also render it.
   dockPendingDecision = false,
   onRespond,
+  onApprovePlan,
   onAnswer,
   onPlanFeedback,
 }: {
@@ -162,6 +163,9 @@ export function SessionFeed({
   compact?: boolean;
   dockPendingDecision?: boolean;
   onRespond: (seq: bigint, decision: { behavior: "allow" | "deny"; message?: string }) => void;
+  // Plan approval carries an optional permission-mode switch, so it is its own
+  // path rather than an allow decision (approvePlan.ts).
+  onApprovePlan: (seq: bigint, mode?: "auto") => void;
   onAnswer: (seq: bigint, answers: Record<string, string>) => void;
   onPlanFeedback: (text: string) => void;
 }) {
@@ -253,7 +257,7 @@ export function SessionFeed({
               pending={isPending}
               busy={busyKey === permissionKey}
               decision={decisions.get(entry.seq)}
-              onApprove={() => respond({ behavior: "allow" })}
+              onApprove={(mode) => onApprovePlan(entry.seq, mode)}
               onFeedback={onPlanFeedback}
               edgeClassName={edge}
             />

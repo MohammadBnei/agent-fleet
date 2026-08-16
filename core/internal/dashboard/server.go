@@ -412,10 +412,14 @@ func (s *Server) Interrupt(ctx context.Context, req *connect.Request[agentfleetv
 // "default"/"plan" are now included — Approve (the old fixed plan->default
 // flip) is gone as of the sessions redesign, so these two are only
 // reachable through this one allowlisted lever.
+// "auto" is the SDK 0.3.233 mode where a model classifier answers the
+// ordinary prompts instead of a human (docs/adr/0052) — the dashboard's
+// plan-approval path sets it, so it has to be reachable through here.
 var validPermissionModes = map[string]bool{
 	"default":           true,
 	"plan":              true,
 	"acceptEdits":       true,
+	"auto":              true,
 	"dontAsk":           true,
 	"bypassPermissions": true,
 }

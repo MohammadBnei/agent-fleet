@@ -12,6 +12,13 @@ const MODES = [
   { value: "default", label: "Default" },
   { value: "plan", label: "Plan" },
   { value: "acceptEdits", label: "Accept edits" },
+  // A model classifier answers the ordinary prompts (docs/adr/0052). Safe to
+  // call directly like the other three: the ask rules (git push/gh/rm/…) and
+  // every requiresUserInteraction tool still reach a human, which is what
+  // separates it from bypass. Switching back out of it is a live control
+  // request like any other — unless the pod was LAUNCHED in bypass, where
+  // every mode change is a relaunch (hence the "(re-warms)" hint below).
+  { value: "auto", label: "Auto" },
 ] as const;
 
 // The Kill/Interrupt/Kill-e2e/Mode/Open-code-server button row, shared
@@ -231,6 +238,12 @@ export function ActionsMenu({
             >
               {m.value === currentMode ? "✓ " : ""}
               {m.label}
+              {/* Leaving bypass is a relaunch, not a switch (docs/adr/0052):
+                  the ask rules it drops are fixed at the pod's launch, so the
+                  worker ends the pod and the mode applies on the next warm.
+                  Saying so here is the difference between "my session
+                  restarted" and "my session crashed". */}
+              {currentMode === "bypassPermissions" && <span className="ml-1 opacity-60">(re-warms)</span>}
             </button>
           </li>
         ))}
