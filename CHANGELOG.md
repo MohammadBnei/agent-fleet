@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.5.1](https://github.com/MohammadBnei/agent-fleet/compare/3.5.0...3.5.1) (2026-08-16)
+
+
+### Bug Fixes
+
+* **fleet-shared:** stop prompting for read-only Bash, drop the dead MCP server ([#176](https://github.com/MohammadBnei/agent-fleet/issues/176)) ([b23b591](https://github.com/MohammadBnei/agent-fleet/commit/b23b5914d0db8af78f6d67d1460c42d8e61c34df))
+
 # [3.5.0](https://github.com/MohammadBnei/agent-fleet/compare/3.4.1...3.5.0) (2026-08-15)
 
 
