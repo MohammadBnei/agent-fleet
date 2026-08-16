@@ -2,6 +2,7 @@ package dashboard
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"connectrpc.com/connect"
@@ -139,6 +140,54 @@ func TestStringToProtoType(t *testing.T) {
 	for _, c := range cases {
 		if got := stringToProtoType(c.in); got != c.want {
 			t.Errorf("stringToProtoType(%q) = %v, want %v", c.in, got, c.want)
+		}
+	}
+}
+
+// TestValidModels_AreRealModelIDs guards an allowlist entry that was never a
+// real model: `claude-haiku-4-5-20250929` — 20250929 is Sonnet 4.5's release
+// date, pasted onto Haiku's name (Haiku 4.5 is 20251001).
+//
+// Nothing caught it because the allowlist is the only check, and it checks the
+// string against itself: picking Haiku in the dashboard passed validation and
+// then failed at the API, so the option had never worked in its entire life.
+// A test asserting "the allowlist contains what the allowlist contains" would
+// have passed too — the assertion has to be against the shape of a real ID.
+//
+// Dated snapshots are allowed (two legacy entries are still there), but a date
+// is exactly the part that can be silently wrong, so new entries should be
+// aliases.
+func TestValidModels_AreRealModelIDs(t *testing.T) {
+	// Snapshot dates that are known-good, so the check below can tell a real
+	// dated ID from a transplanted one.
+	knownDated := map[string]string{
+		"claude-sonnet-4-5": "20250929",
+		"claude-opus-4-5":   "20251101",
+		"claude-haiku-4-5":  "20251001",
+	}
+
+	if validModels["claude-haiku-4-5-20250929"] {
+		t.Error("claude-haiku-4-5-20250929 is back — that is Sonnet 4.5's date on Haiku's name; " +
+			"it passes this allowlist and then 404s at the API")
+	}
+	if !validModels[defaultModel] {
+		t.Errorf("defaultModel %q is not in validModels — the default would be rejected "+
+			"if a caller ever passed it explicitly", defaultModel)
+	}
+
+	for model := range validModels {
+		base, date, dated := strings.Cut(model, "-20")
+		if !dated {
+			continue // an alias — nothing to get wrong
+		}
+		want, known := knownDated[base]
+		if !known {
+			t.Errorf("%q is a dated snapshot of an unrecognized model %q — use an alias", model, base)
+			continue
+		}
+		if got := "20" + date; got != want {
+			t.Errorf("%q carries date %s, but %s was released %s — this is the "+
+				"transplanted-date bug", model, got, base, want)
 		}
 	}
 }
