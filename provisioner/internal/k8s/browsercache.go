@@ -33,13 +33,27 @@ const BrowserCacheJobName = "agent-fleet-browser-cache"
 // changes a build number repairs the cache on the next start instead of
 // silently serving a browser the new playwright-core will not launch.
 //
-// World-readable because the cache is written by this Job (root) and read by
-// every worker's `bun` user (uid 1000) through a read-only mount.
+// Both installers are the image's own pinned binaries, NOT `bunx`. `bunx
+// @playwright/mcp install-browser` resolved the package from npm at Job
+// runtime — "Resolving dependencies / Saved lockfile" in the live log — so the
+// cache got whatever build *latest* happened to want while every worker runs
+// the image's pinned @playwright/mcp. That is the exact build-number mismatch
+// this two-install script exists to prevent. The versions belong in
+// worker/Dockerfile and nowhere else; naming the binaries is what keeps them
+// there.
+//
+// World-readable so a worker image running as some other uid can still read the
+// cache. NOT `chmod -R o+rX /browsers`: the mount root is created by kubelet
+// and owned by root, this Job runs as uid 1000 (worker/Dockerfile ends
+// `USER bun`), and chmod on a directory you do not own is EPERM whatever group
+// fsGroup puts you in — two live KubeJobFailed alerts, 2026-08-16 and
+// 2026-08-17, both dying here *after* the full download. The root already has
+// o+rx from kubelet's own 0775, so only the contents ever needed it.
 const browserCacheScript = `set -eu
 export PLAYWRIGHT_BROWSERS_PATH=/browsers
-bunx playwright install chromium
-bunx @playwright/mcp install-browser chrome-for-testing
-chmod -R o+rX /browsers
+playwright install chromium
+playwright-mcp install-browser chrome-for-testing
+chmod -R o+rX /browsers/*
 echo "browser cache ready:"
 ls /browsers
 `
@@ -59,23 +73,38 @@ ls /browsers
 // worker image's node_modules — resolving them anywhere else is how the two
 // drift apart.
 //
-// An existing Job is left alone rather than recreated: Jobs are immutable in
-// the fields that matter here, and a completed one is the normal steady state.
-// It is deleted and recreated only when it references a different image, which
-// is exactly the case where the cache may need new builds.
+// A healthy existing Job is left alone rather than recreated: Jobs are
+// immutable in the fields that matter here, and a completed one is the normal
+// steady state. It is deleted and recreated when it references a different
+// image — exactly the case where the cache may need new builds — or when it
+// has failed.
+//
+// A failed one has to be retried, because nothing else will. This used to check
+// the image alone and never read .status, so a Job that exhausted its
+// BackoffLimit was indistinguishable from a healthy completed one: every
+// restart logged "already present for this image" and did nothing, leaving a
+// dead cache and a KubeJobFailed alert that only a WORKER_IMAGE bump or a
+// human `kubectl delete job` could clear (live, 2026-08-17). The cost is that a
+// provisioner crash-looping against a genuinely broken script re-downloads each
+// time; a permanently dead cache is worse.
 func (c *Client) EnsureBrowserCache(ctx context.Context) error {
 	jobs := c.Core.BatchV1().Jobs(c.Namespace)
 
 	existing, err := jobs.Get(ctx, BrowserCacheJobName, metav1.GetOptions{})
 	if err == nil {
-		if len(existing.Spec.Template.Spec.Containers) > 0 &&
-			existing.Spec.Template.Spec.Containers[0].Image == c.WorkerImage {
+		switch {
+		case len(existing.Spec.Template.Spec.Containers) == 0 ||
+			existing.Spec.Template.Spec.Containers[0].Image != c.WorkerImage:
+			slog.Info("browser cache job is for a different image, recreating",
+				"job", BrowserCacheJobName, "want", c.WorkerImage)
+		case jobFailed(existing):
+			slog.Warn("browser cache job failed, recreating",
+				"job", BrowserCacheJobName, "image", c.WorkerImage)
+		default:
 			slog.Info("browser cache job already present for this image",
 				"job", BrowserCacheJobName, "image", c.WorkerImage)
 			return nil
 		}
-		slog.Info("browser cache job is for a different image, recreating",
-			"job", BrowserCacheJobName, "want", c.WorkerImage)
 		policy := metav1.DeletePropagationBackground
 		if err := jobs.Delete(ctx, BrowserCacheJobName, metav1.DeleteOptions{PropagationPolicy: &policy}); err != nil && !errors.IsNotFound(err) {
 			return fmt.Errorf("delete stale browser cache job: %w", err)
@@ -145,4 +174,16 @@ func (c *Client) EnsureBrowserCache(ctx context.Context) error {
 	}
 	slog.Info("browser cache job created", "job", BrowserCacheJobName, "image", c.WorkerImage)
 	return nil
+}
+
+// jobFailed reports whether a Job has given up — BackoffLimitExceeded or
+// DeadlineExceeded both land here. Not the same as "has a failed pod": a Job
+// under its BackoffLimit is still retrying and must be left alone.
+func jobFailed(j *batchv1.Job) bool {
+	for _, cond := range j.Status.Conditions {
+		if cond.Type == batchv1.JobFailed && cond.Status == corev1.ConditionTrue {
+			return true
+		}
+	}
+	return false
 }

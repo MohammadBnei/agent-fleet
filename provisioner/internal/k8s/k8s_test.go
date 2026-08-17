@@ -514,14 +514,32 @@ func TestEnsureBrowserCache_WritesWhatTheWorkersRead(t *testing.T) {
 	if ctr.VolumeMounts[0].ReadOnly {
 		t.Error("the cache job's own mount is read-only — it cannot populate anything")
 	}
-	// fsGroup, same as worker pods: without it the subPath stays root-owned
-	// 0755 on a real StorageClass and the script's `chmod -R o+rX /browsers`
-	// dies with "Operation not permitted" after the browsers download (live
-	// KubeJobFailed 2026-08-16).
+	// fsGroup, same as worker pods: kubelet chgrps the subPath to gid 1000 and
+	// adds g+w, which is what lets this Job write to a root-owned mount root at
+	// all. It does NOT make the Job able to chmod that root — see the script
+	// assertions below, which is what the first version of this fix got wrong.
 	if sc := job.Spec.Template.Spec.SecurityContext; sc == nil || sc.FSGroup == nil || *sc.FSGroup != 1000 {
-		t.Error("cache job needs fsGroup 1000, else its chmod on the root-owned subPath fails")
+		t.Error("cache job needs fsGroup 1000, else it cannot write the root-owned subPath")
 	}
 	script := strings.Join(ctr.Command, "\n")
+	// The mount root is owned by root and this Job runs as uid 1000
+	// (worker/Dockerfile's `USER bun`), so chmod'ing it is EPERM no matter what
+	// fsGroup says — two live KubeJobFailed alerts (2026-08-16, 2026-08-17),
+	// both dying on this line after the full download had already succeeded.
+	// Only the contents need it; kubelet already gives the root o+rx.
+	if strings.Contains(script, "chmod -R o+rX /browsers\n") {
+		t.Error("cache job chmods the mount root, which it does not own: EPERM after a 300 MB download")
+	}
+	if !strings.Contains(script, "chmod -R o+rX /browsers/*") {
+		t.Error("cache job never makes the builds world-readable for the workers that mount them")
+	}
+	// No npm at Job runtime. `bunx @playwright/mcp install-browser` re-resolved
+	// the package from the registry, so the cache was filled by whatever build
+	// *latest* wanted while every session ran the version worker/Dockerfile
+	// pins — docs/adr/0044's mismatch, reintroduced by the installer itself.
+	if strings.Contains(script, "bunx") {
+		t.Error("cache job resolves its installers from npm at run time, not from the image's pinned ones")
+	}
 	// BOTH installs, which is the entirety of docs/adr/0044: the two packages
 	// bundle different playwright-core versions and resolve different build
 	// numbers, so one alone leaves the MCP server unable to launch.
@@ -551,6 +569,70 @@ func TestEnsureBrowserCache_WritesWhatTheWorkersRead(t *testing.T) {
 	}
 	if n != 1 {
 		t.Errorf("got %d browser cache jobs after two calls, want 1", n)
+	}
+}
+
+// TestEnsureBrowserCache_RecreatesAFailedJob guards the other half of the
+// 2026-08-17 incident: the crash was one bug, staying crashed was another.
+//
+// The check used to be image-only and never read .status, so a Job that had
+// exhausted its BackoffLimit looked exactly like a healthy completed one.
+// Every provisioner start logged "already present for this image" and did
+// nothing — the cache stayed dead and the KubeJobFailed alert stayed lit until
+// a human ran `kubectl delete job`. A fix that ships without this one still
+// needs that human.
+func TestEnsureBrowserCache_RecreatesAFailedJob(t *testing.T) {
+	c := newTestClient()
+	ctx := context.Background()
+
+	if err := c.EnsureBrowserCache(ctx); err != nil {
+		t.Fatalf("EnsureBrowserCache: %v", err)
+	}
+	jobs := c.Core.BatchV1().Jobs("agent-fleet")
+	job, err := jobs.Get(ctx, BrowserCacheJobName, metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+
+	// Same image, but it gave up. This is the shape a BackoffLimitExceeded Job
+	// actually has in the cluster.
+	job.Status.Conditions = []batchv1.JobCondition{{
+		Type:    batchv1.JobFailed,
+		Status:  corev1.ConditionTrue,
+		Reason:  "BackoffLimitExceeded",
+		Message: "Job has reached the specified backoff limit",
+	}}
+	job.Labels["marker"] = "stale"
+	if _, err := jobs.Update(ctx, job, metav1.UpdateOptions{}); err != nil {
+		t.Fatalf("seed failed job: %v", err)
+	}
+
+	if err := c.EnsureBrowserCache(ctx); err != nil {
+		t.Fatalf("EnsureBrowserCache over a failed job: %v", err)
+	}
+	got, err := jobs.Get(ctx, BrowserCacheJobName, metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("get after recreate: %v", err)
+	}
+	if got.Labels["marker"] == "stale" {
+		t.Error("failed browser cache job was left in place; it will never be retried")
+	}
+
+	// A Job that is merely still retrying (under its BackoffLimit, no Failed
+	// condition) must be left alone — recreating it restarts the download.
+	got.Labels["marker"] = "live"
+	if _, err := jobs.Update(ctx, got, metav1.UpdateOptions{}); err != nil {
+		t.Fatalf("mark live: %v", err)
+	}
+	if err := c.EnsureBrowserCache(ctx); err != nil {
+		t.Fatalf("third EnsureBrowserCache: %v", err)
+	}
+	again, err := jobs.Get(ctx, BrowserCacheJobName, metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("get after no-op: %v", err)
+	}
+	if again.Labels["marker"] != "live" {
+		t.Error("a running browser cache job was recreated; that restarts a 300 MB download")
 	}
 }
 

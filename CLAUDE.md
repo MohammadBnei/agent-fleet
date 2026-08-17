@@ -296,6 +296,24 @@ feature was written:
   The Job's own `TTLSecondsAfterFinished` existed for exactly this and had
   never once been allowed to run. **A GC that beats your telemetry to the
   corpse makes every crash look like a disappearance.**
+- **`fsGroup` does not change a file's owner, and the fake clientset never runs
+  the script it asserts on.** The browser-cache Job died on `chmod -R o+rX
+  /browsers` with "Operation not permitted" — after the full 300 MB download,
+  every time. The fix added `fsGroup: 1000`, which chgrps the subPath and adds
+  `g+w` but leaves it owned by root; the Job runs as uid 1000
+  (`worker/Dockerfile` ends `USER bun`), and chmod on a directory you do not own
+  is EPERM in any group. The same alert fired again the next day. Both the code
+  comment and the test comment asserted the Job ran "as root" — a premise
+  nothing had checked, and one `client-go`'s fake clientset structurally cannot
+  check, because it validates the manifest and never executes it. Worse, the Job
+  then stayed failed forever: `EnsureBrowserCache` compared images and never read
+  `.status`, so a `BackoffLimitExceeded` Job was indistinguishable from a healthy
+  completed one. **For a manifest whose payload is a shell script, the fake
+  clientset proves the shape and nothing about the behavior — read the pod's
+  actual log. And a component that reconciles a resource must look at whether it
+  failed, not only at whether it exists.** Guarded by the script assertions in
+  `TestEnsureBrowserCache_WritesWhatTheWorkersRead` and by
+  `TestEnsureBrowserCache_RecreatesAFailedJob`.
 
 ## Workflow rules
 
