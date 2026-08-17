@@ -16,3 +16,6 @@ local/kind/workspace-data/
 
 # Subagent git worktrees (Agent tool isolation) — never part of the repo
 .claude/worktrees/
+
+# Playwright MCP scratch output (screenshots, snapshots, console logs)
+.playwright-mcp/
