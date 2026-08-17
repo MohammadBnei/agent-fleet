@@ -811,7 +811,7 @@ type Session struct {
 	// activity yet.
 	LastActiveAt *string `protobuf:"bytes,13,opt,name=last_active_at,json=lastActiveAt,proto3,oneof" json:"last_active_at,omitempty"`
 	// The session's current SDK permission mode ("default"|"plan"|
-	// "acceptEdits"|"auto"|"dontAsk"|"bypassPermissions"), so the mode picker
+	// "acceptEdits"|"auto"|"dontAsk"), so the mode picker
 	// shows the real active mode instead of guessing. Restored on every warm.
 	PermissionMode *string `protobuf:"bytes,14,opt,name=permission_mode,json=permissionMode,proto3,oneof" json:"permission_mode,omitempty"`
 	// Session liveness (docs/adr/0040): "" (no live pod) | "working" |

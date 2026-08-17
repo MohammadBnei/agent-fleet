@@ -213,8 +213,8 @@ Any doc, code, comment, or memory that contradicts this file or an
 - **Inferring a permission decision from silence, round completion, or
   free-text sentiment.** `canUseTool` prompts live and blocks for a real,
   structured `RespondToPermission` reply (or an explicit
-  `SetPermissionMode` call, itself typed-confirmation gated for
-  `bypassPermissions`) — never inferred from anything else. `/approve` no
+  `SetPermissionMode` call, itself confirmation-gated for `auto`) — never
+  inferred from anything else. `/approve` no
   longer exists — see `adr/0005`, `adr/0027`, `adr/0029`.
 - **Reclaiming a session's directory on anything but archive or the
   retention timer.** Stop and idle-timeout tear down the pod and leave the

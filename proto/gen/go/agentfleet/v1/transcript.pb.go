@@ -50,7 +50,7 @@ const (
 	TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_RESULT    TranscriptEntryType = 10
 	// Human-authored, from the dashboard's permission-mode selector (see
 	// docs/adr/0027) — `text` is the raw target mode string
-	// ("acceptEdits"|"auto"|"dontAsk"|"bypassPermissions"), same convention
+	// ("acceptEdits"|"auto"|"dontAsk"), same convention
 	// APPROVE already used for its `text:"approved"`.
 	TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_PERMISSION_MODE TranscriptEntryType = 11
 	// Worker-authored, posted by canUseTool for any tool call the SDK's

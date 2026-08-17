@@ -442,7 +442,7 @@ export type Session = Message<"agentfleet.v1.Session"> & {
 
   /**
    * The session's current SDK permission mode ("default"|"plan"|
-   * "acceptEdits"|"auto"|"dontAsk"|"bypassPermissions"), so the mode picker
+   * "acceptEdits"|"auto"|"dontAsk"), so the mode picker
    * shows the real active mode instead of guessing. Restored on every warm.
    *
    * @generated from field: optional string permission_mode = 14;

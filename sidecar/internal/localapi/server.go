@@ -333,8 +333,8 @@ func protoTypeToString(t agentfleetv1.TranscriptEntryType) string {
 // taskHandler serves the worker its own session row at startup.
 //
 // It exists for one reason that matters: permission_mode must be RESTORED on
-// a warm, or every resume of a session a human put into acceptEdits/plan/
-// bypassPermissions silently reverts to "default".
+// a warm, or every resume of a session a human put into acceptEdits/plan/auto
+// silently reverts to "default".
 //
 // This handler previously returned `guidance: ""` and `baseBranch: "main"`
 // hardcoded — so the operator's chosen prompt snippets, resolved and stored
