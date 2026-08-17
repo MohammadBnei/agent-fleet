@@ -187,6 +187,16 @@ the rate limit deferred above. That is the trigger to revisit; until then the
 duplicated regex (worker + dashboard) is the accepted cost, marked `ponytail:`
 at both sites.
 
+**Known gap, accepted:** a peer message that arrives while the target is parked
+in `canUseTool` is queued in memory only. The agent cannot consume it until the
+human answers, and the next warm's cursor is `MAX(seq)+1`, so it is below that
+cursor and never replayed — if the pod is idle-swept or stopped first, the agent
+never sees it. The entry is still in the transcript, so a human can see it and
+re-relay; nothing is lost from the record. Narrow (the blocked-target refusal
+already covers everything but the warm-then-poll window) and strictly better than
+the alternative it replaced, which was letting the peer close the human's
+decision. The durable fix belongs in the resume cursor, not here.
+
 **Adjacent, not fixed here:** `SendMessage` validates neither `from` nor `type`,
 so an agent can post `from="human", type="abort"` into its own session and
 trigger the worker's human-authored abort path. `PromptSession` is not the hole —

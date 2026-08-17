@@ -456,8 +456,16 @@ test("a peer session's message becomes a turn that names the sender and prompt_a
   // as ordinary output and reached nobody).
   expect(turn).toContain("peer-abc123def");
   expect(turn).toContain("prompt_agent");
-  expect(turn).toMatch(/nothing you write here reaches it/i);
+  expect(turn).toMatch(/nothing you write as ordinary output reaches it/i);
   expect(turn).toMatch(/another agent in this fleet/i);
+  // Mechanism, not an imperative to reply: "answer this" fires on a message
+  // that already is an answer, and the relay-depth cap is inert (every hop
+  // hardcodes depth = 1), so a ping-pong burns a pod and a live slot per hop.
+  expect(turn).not.toMatch(/to answer|you must|please reply/i);
+  // All framing precedes the fenced body, so a peer cannot forge a trailing
+  // instruction that redirects the reply to a third session.
+  expect(turn!.indexOf("--- BEGIN PEER MESSAGE ---")).toBeGreaterThan(turn!.indexOf("prompt_agent"));
+  expect(turn!.trimEnd().endsWith("--- END PEER MESSAGE ---")).toBe(true);
   // The prefix is stripped, so the id appears once. Left in, the turn carries
   // the same session id twice from two places that can disagree.
   expect(turn).not.toContain("[from session");

@@ -150,7 +150,7 @@ func New(core *coreclient.Client) http.Handler {
 	), listSessionsHandler(core))
 
 	s.AddTool(mcp.NewTool("prompt_agent",
-		mcp.WithDescription("Send a message to another session, as yourself. It lands in that session's transcript attributed to you and warms its pod if idle. Use it to hand off work or ask a question of a session owning a different repo — not to chat; the target reads it the way it reads a human's, so be concrete. REFUSED if the target is 'blocked' (it is waiting on a human decision that is not yours to resolve), for your own session, and beyond a small relay depth so chains cannot loop. Follow with wait_for_agent to await a reply."),
+		mcp.WithDescription("Send a message to another session, as yourself. It lands in that session's transcript attributed to you and warms its pod if idle. Use it to hand off work or ask a question of a session owning a different repo — not to chat. The target reads it fenced and marked as coming from another agent, and it cannot answer you by writing ordinary output — only by calling prompt_agent back — so be concrete and say what you need from it. REFUSED if the target is 'blocked' (it is waiting on a human decision that is not yours to resolve), for your own session, and beyond a small relay depth so chains cannot loop. Follow with wait_for_agent to await a reply."),
 		mcp.WithString("sessionId", mcp.Required(), mcp.Description("Target session's task id, from list_sessions")),
 		mcp.WithString("text", mcp.Required()),
 	), promptSessionHandler(core))
