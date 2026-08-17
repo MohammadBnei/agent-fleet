@@ -1,43 +1,79 @@
 name: Build, Test and Deploy
 
-# Adapted from dream-analyst's docker.yml — same Docker Hub build/push shape
-# (the Trivy scan step is disabled below — SARIF output went nowhere), now
-# matrixed across this repo's images (worker, core, provisioner, sidecar)
-# instead of one, with a bun test run per Bun component ahead of the build,
-# plus a deploy job (below) that bumps k8s/**/*.yaml's pinned image tags on
-# every release so ArgoCD (core via a two-source Application, values pulled
-# straight from this repo; provisioner via its own standalone plain-manifest
-# Application, see k8s/provisioner/README.md) actually redeploys instead of
-# silently building an image nobody picks up.
+# Builds this repo's six images on ukubi-cluster's own build-runner LXC and
+# pushes them to the in-cluster Zot registry (infra-bootstrap ADR-0034),
+# instead of on a GitHub-hosted runner pushing to Docker Hub. Plus a deploy
+# job (below) that bumps k8s/**/*.yaml's pinned image tags on every release
+# so ArgoCD (core via a two-source Application, values pulled straight from
+# this repo; provisioner via its own standalone plain-manifest Application,
+# see k8s/provisioner/README.md) actually redeploys instead of silently
+# building an image nobody picks up.
 #
-# DOCKERHUB_USERNAME/DOCKERHUB_TOKEN live in Infisical (agent-fleet-nygh
-# project, per Mohammad's request to centralize CI secrets there instead of
-# duplicating them as native GitHub secrets) — pulled in via a read-only,
-# project-scoped Infisical service token. INFISICAL_TOKEN is the one
-# necessary native GitHub secret: bootstrapping trust into Infisical needs
-# some credential, and a repo secret is where every other workflow already
-# keeps that kind of thing.
+# Why the LAN: the old flow was GitHub runner -> build -> push to Docker Hub
+# -> three nodes pull back down a residential uplink. This repo's worker
+# image is the largest thing the cluster pulls (Claude Code, Playwright deps,
+# a Go toolchain) and the provisioner pulls it on every session warm. The
+# registry is LAN-only — `.lan` is a name Let's Encrypt cannot issue for, so
+# there is no public ingress — which means a GitHub-hosted runner could not
+# reach it even if we wanted one, and pushing layers *up* an asymmetric link
+# is the slow direction anyway.
+#
+# Why ONE build job instead of the previous three (worker / migration /
+# matrixed Go): a self-hosted runner executes one job at a time. Three jobs
+# with a four-leg matrix means six serial jobs, each re-checking-out and each
+# re-pulling golang:1.26 (~800MB over the WAN) because the previous job's
+# cleanup evicted it. One job, one checkout, one login, one shared image
+# cache. See the /build-runner-ops skill in infra-bootstrap.
+#
+# Registry credentials are native GitHub Actions secrets (REGISTRY_USERNAME /
+# REGISTRY_PASSWORD), NOT Infisical-at-job-time like this workflow used to do
+# for DOCKERHUB_*. That pattern cannot work on the build box: its sudoers
+# grants /usr/bin/buildah and nothing else, so the Infisical CLI's
+# `curl | sudo -E bash` + `sudo apt-get install` bootstrap hangs on a
+# password prompt — and it would re-add a WAN round-trip mid-build, which is
+# the thing this pipeline exists to remove. They are the plaintext
+# counterpart of Infisical's ZOT_HTPASSWD; rotate together
+# (infra-bootstrap docs/secrets.md).
 
 on:
+  # workflow_dispatch is the cutover's seeding path, and it stays afterwards
+  # as the way to measure the loop without cutting a release.
+  #
+  # The registry starts empty of this repo's images, so flipping k8s/*.yaml to
+  # registry.bnei.lan:5000 while the pinned tag is one only Docker Hub ever
+  # had gives an ImagePullBackOff. And flipping *nothing* is worse, not
+  # safer: the first release after this workflow lands pushes to Zot only,
+  # while deploy's `tag: "..."` sed still bumps a manifest whose repository
+  # says mohammaddocker — pinning core to a Docker Hub tag that was never
+  # pushed there. So: dispatch once to build the CURRENT version into Zot,
+  # confirm the tags exist, then flip the manifests as a no-op rollout of
+  # byte-identical content. Order matters; see the PR body.
+  workflow_dispatch:
   pull_request:
   push:
     tags:
       - '*'
 
 env:
-  PLATFORMS: linux/amd64
-  INFISICAL_PROJECT_ID: ae771c2c-5115-452a-8f1c-1e03fa0e2b9a
+  REGISTRY: registry.bnei.lan:5000
+  # The complete set, used verbatim on a release. Also what
+  # core/internal/buildguard's matrix_test greps for: every directory
+  # shipping a Dockerfile must appear in this file, or adding a component
+  # that never builds passes CI. Keep it complete.
+  COMPONENTS: core provisioner sidecar executor worker migration
 
 jobs:
-  # Precise CI on pull_request: only build/test the image(s) whose files
-  # actually changed in this PR — nothing is pushed on a PR anyway
-  # (`push: false` below), so this is pure CI-time cost, safe to skip.
-  # On a real release (push: tags), this filtering is bypassed entirely —
-  # every image always builds+pushes, full stop. A release tag has to
+  # Precise CI on pull_request: only build the image(s) whose files actually
+  # changed in this PR — nothing is pushed on a PR anyway, so this is pure
+  # CI-time cost, safe to skip. On a real release (push: tags) this filtering
+  # is bypassed entirely and $COMPONENTS is used as-is — a release tag has to
   # produce a complete, consistent set of images; skipping one because its
-  # dir "didn't change since this PR's diff" would leave deploy's
-  # k8s/*.yaml tag-bump pointing at a tag some image was never actually
-  # pushed under.
+  # dir "didn't change since this PR's diff" would leave deploy's k8s/*.yaml
+  # tag-bump pointing at a tag some image was never actually pushed under.
+  #
+  # Stays on ubuntu-latest deliberately: paths-filter needs no build tooling,
+  # and keeping it off the single serial build runner means it never queues
+  # behind an in-flight release.
   changes:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
@@ -48,10 +84,8 @@ jobs:
       contents: read
       pull-requests: read
     outputs:
-      worker: ${{ steps.filter.outputs.worker }}
-      migration: ${{ steps.filter.outputs.migration }}
       dashboard: ${{ steps.filter.outputs.dashboard }}
-      go-components: ${{ steps.components.outputs.result }}
+      components: ${{ steps.components.outputs.result }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v4
@@ -81,10 +115,14 @@ jobs:
               - 'sidecar/**'
             executor:
               - 'executor/**'
-      - name: Compute go-components matrix
+      - name: Compute the component list
         id: components
         uses: actions/github-script@v7
         with:
+          # Space-separated string, not JSON: the build job below consumes it
+          # as a shell word list, the same shape as $COMPONENTS. A matrix
+          # would gain nothing — the runner is serial either way.
+          result-encoding: string
           script: |
             const proto = ${{ steps.filter.outputs.proto }};
             // Not named `core` — actions/github-script already injects its
@@ -95,17 +133,25 @@ jobs:
             const provisioner = ${{ steps.filter.outputs.provisioner }};
             const sidecar = ${{ steps.filter.outputs.sidecar }};
             const executor = ${{ steps.filter.outputs.executor }};
+            // worker's and migration's own filters already include the dirs
+            // that force them to rebuild (proto/** and db/migrations/**), so
+            // they need no proto term here.
+            const worker = ${{ steps.filter.outputs.worker }};
+            const migration = ${{ steps.filter.outputs.migration }};
             const components = [];
             if (proto || coreChanged) components.push('core');
             if (proto || provisioner) components.push('provisioner');
             if (proto || sidecar) components.push('sidecar');
             if (proto || executor) components.push('executor');
-            return components;
+            if (worker) components.push('worker');
+            if (migration) components.push('migration');
+            return components.join(' ');
 
-  # The dashboard ships inside core's image rather than one of its own, so
-  # it has no leg in the bun matrix below (that matrix builds and pushes an
-  # image per component). core's Dockerfile already runs `bun run build`;
-  # this is the missing `bun test`, which otherwise never ran anywhere.
+  # The dashboard ships inside core's image rather than one of its own, so it
+  # has no leg in the build below (that builds an image per component).
+  # core's Dockerfile already runs `bun run build`; this is the missing
+  # `bun test`, which otherwise never ran anywhere. Stays on ubuntu-latest —
+  # it needs bun, not buildah, and it should not occupy the build runner.
   dashboard-test:
     needs: changes
     if: always() && (github.event_name == 'push' || needs.changes.outputs.dashboard == 'true')
@@ -128,283 +174,182 @@ jobs:
 
   build-push:
     needs: changes
-    if: always() && (github.event_name == 'push' || needs.changes.outputs.worker == 'true')
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false # one image's test/build failure shouldn't hide the other's status
-      matrix:
-        component: [worker]
+    # `!= 'pull_request'` rather than `== 'push'`: workflow_dispatch skips the
+    # `changes` job (it is PR-gated), so its components output is empty and an
+    # `== 'push'` test would silently skip the seeding run this cutover needs.
+    if: always() && (github.event_name != 'pull_request' || needs.changes.outputs.components != '')
+    # NOT `ukubi` — that label belongs to the in-cluster runner holding a
+    # ServiceAccount token with `create jobs` in vos/vos-dev (ADR-0022).
+    # Builds must not land there and cluster jobs must not land here.
+    runs-on: [self-hosted, ukubi-build]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+      # Not baked into the build-runner image: one apt-get was not worth its
+      # own pipeline. Short-circuits in practice, which matters —
+      # build-runner-configure.yml installs buildah, and the `sudo apt-get`
+      # fallback here CANNOT work (sudoers grants /usr/bin/buildah only). If
+      # this ever actually runs, it hangs.
+      - name: Ensure buildah
+        run: command -v buildah || (sudo apt-get update -qq && sudo apt-get install -y -qq buildah)
 
-      - name: Install dependencies
-        working-directory: ${{ matrix.component }}
-        run: bun install --frozen-lockfile
-
-      - name: Run tests
-        working-directory: ${{ matrix.component }}
-        # bun test exits 1 with zero matching files — harmless today (only
-        # worker/ has tests so far) but would hard-fail bot/'s matrix leg
-        # otherwise. Drop this guard once every component has at least one.
-        run: |
-          if ls -- *.test.ts src/*.test.ts 2>/dev/null | grep -q .; then
-            bun test
-          else
-            echo "no test files in ${{ matrix.component }}/ — skipping"
-          fi
-
-      - name: Install Infisical CLI
-        run: |
-          curl -1sLf 'https://artifacts-cli.infisical.com/setup.deb.sh' | sudo -E bash
-          sudo apt-get update && sudo apt-get install -y infisical
-
-      - name: Load secrets from Infisical
-        run: |
-          set -euo pipefail
-          # GitHub only auto-masks values that came from `secrets.*` in this
-          # workflow — anything pulled from an external system (Infisical)
-          # is invisible to that redaction engine until explicitly
-          # registered with `::add-mask::`. Skipping that step is what
-          # leaked DOCKERHUB_TOKEN in cleartext in a prior run (it showed up
-          # in the *next* step's "env:" group header). --format=dotenv
-          # (not dotenv-export, which prefixes "export " onto the key and
-          # broke $GITHUB_ENV parsing — that's also why the job failed).
-          while IFS='=' read -r key raw_value; do
-            [ -z "$key" ] && continue
-            value="${raw_value%\'}"
-            value="${value#\'}"
-            echo "::add-mask::$value"
-            echo "$key=$value" >> "$GITHUB_ENV"
-          done < <(infisical export --domain=https://infisical.bnei.dev/api --token="${{ secrets.INFISICAL_TOKEN }}" --projectId="$INFISICAL_PROJECT_ID" --env=dev --format=dotenv | grep -E '^DOCKERHUB_')
-
-      - name: Docker Login
-        uses: docker/login-action@v3
-        with:
-          username: ${{ env.DOCKERHUB_USERNAME }}
-          password: ${{ env.DOCKERHUB_TOKEN }}
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: package.json info
-        id: info
-        uses: jaywcjlove/github-action-package@v2.0.0
-
-      - name: Build and push
-        uses: docker/build-push-action@v6
-        with:
-          platforms: ${{ env.PLATFORMS }}
-          push: ${{ github.event_name == 'push' }}
-          # No `load:`. It existed to make the image visible to the local
-          # docker daemon for the Trivy step disabled just below, and it is
-          # not harmless: it exports every layer out of buildkit into the
-          # daemon on each build, for an image nothing on the runner then
-          # reads. Re-add it only alongside a step that actually consumes the
-          # local image.
-          context: .
-          file: ${{ matrix.component }}/Dockerfile
-          tags: >-
-            ${{ env.DOCKERHUB_USERNAME }}/agent-fleet-${{ matrix.component }}:${{ steps.info.outputs.version }},
-            ${{ env.DOCKERHUB_USERNAME }}/agent-fleet-${{ matrix.component }}:latest
-          cache-from: type=registry,ref=${{ env.DOCKERHUB_USERNAME }}/agent-fleet-${{ matrix.component }}:buildcache
-          cache-to: type=registry,ref=${{ env.DOCKERHUB_USERNAME }}/agent-fleet-${{ matrix.component }}:buildcache,mode=max
-
-      # Disabled — SARIF output was never consumed (no code scanning setup),
-      # so this ran on every build/PR without anyone acting on the results.
-      # - name: Scan Docker image
-      #   uses: aquasecurity/trivy-action@master
-      #   with:
-      #     image-ref: ${{ env.DOCKERHUB_USERNAME }}/agent-fleet-${{ matrix.component }}:${{ steps.info.outputs.version }}
-      #     format: 'sarif'
-      #     output: 'trivy-results-${{ matrix.component }}.sarif'
-      #     severity: 'CRITICAL,HIGH,MEDIUM'
-      #     vuln-type: 'os,library'
-      #     ignore-unfixed: true
-      #     cache-dir: ${{ github.workspace }}/.cache/trivy
-
-  # A plain Dockerfile with no package.json/go.mod of its own
-  # (docs/adr/0030) — just db/migrations/ COPY'd into the official
-  # migrate/migrate image.
-  #
-  # It DOES need a real version tag, unlike the e2e-runner image that used to
-  # sit above it on a deliberately floating :latest (deleted with the sandbox,
-  # docs/adr/0048 §6): the
-  # deploy job's blanket `tag: "..."` sed bumps k8s/core.yaml's
-  # hooks.migrate.image.tag to match every release, so the image under
-  # that exact tag must already be pushed by the time deploy runs (see its
-  # `needs:` below).
-  build-push-migration:
-    needs: changes
-    if: always() && (github.event_name == 'push' || needs.changes.outputs.migration == 'true')
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install Infisical CLI
-        run: |
-          curl -1sLf 'https://artifacts-cli.infisical.com/setup.deb.sh' | sudo -E bash
-          sudo apt-get update && sudo apt-get install -y infisical
-
-      - name: Load secrets from Infisical
-        run: |
-          set -euo pipefail
-          while IFS='=' read -r key raw_value; do
-            [ -z "$key" ] && continue
-            value="${raw_value%\'}"
-            value="${value#\'}"
-            echo "::add-mask::$value"
-            echo "$key=$value" >> "$GITHUB_ENV"
-          done < <(infisical export --domain=https://infisical.bnei.dev/api --token="${{ secrets.INFISICAL_TOKEN }}" --projectId="$INFISICAL_PROJECT_ID" --env=dev --format=dotenv | grep -E '^DOCKERHUB_')
-
-      - name: Docker Login
-        uses: docker/login-action@v3
-        with:
-          username: ${{ env.DOCKERHUB_USERNAME }}
-          password: ${{ env.DOCKERHUB_TOKEN }}
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      # No package.json here to read a version from — same PR-safe
-      # tag-computation pattern as the other plain-image builds.
-      - name: Compute image tag
+      # jq, not `node -p`: the build box has no Node runtime, and `node -p`
+      # did not fail the step when it was missing — the command substitution
+      # returned empty and the failure surfaced far downstream as
+      # `agent-fleet-core::  invalid reference format`. set -euo pipefail plus
+      # an explicit emptiness check so the next such gap fails where it
+      # happens. Also deliberately not jaywcjlove/github-action-package,
+      # which resolves from github.com at job time.
+      - name: Compute the image tag
         id: tag
         run: |
-          if [ "${{ github.event_name }}" = "push" ]; then
-            echo "value=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "value=pr-${{ github.event.pull_request.number }}" >> "$GITHUB_OUTPUT"
-          fi
+          set -euo pipefail
+          case "${{ github.event_name }}" in
+            pull_request)
+              # Never pushed, so the tag only has to be unique-ish and legible.
+              echo "value=pr-${{ github.event.pull_request.number }}" >> "$GITHUB_OUTPUT"
+              echo "push=false" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              version=$(jq -r '.version' package.json)
+              [ -n "$version" ] && [ "$version" != "null" ] || { echo "no .version in package.json"; exit 1; }
+              # One tag for all six images, which the old workflow did not
+              # have: worker read package.json while the Go/migration builds
+              # used github.ref_name. They agree on a release-it release (it
+              # bumps package.json, then tags), so the difference was
+              # invisible — until it wasn't. deploy below seds in
+              # GITHUB_REF_NAME, so a disagreement means it pins a tag some
+              # image was never pushed under. Fail here, where the cause is
+              # legible.
+              #
+              # Only checkable on a tag push: workflow_dispatch runs against a
+              # branch, where ref_name is "main" and there is nothing to
+              # agree with. deploy does not run on dispatch either (its `if`
+              # requires event_name == 'push'), so nothing gets pinned from a
+              # dispatch and the assert has nothing to protect.
+              if [ "${{ github.event_name }}" = "push" ] && [ "$version" != "${{ github.ref_name }}" ]; then
+                echo "::error::package.json version ($version) does not match the tag (${{ github.ref_name }}) — deploy would pin a tag no image carries"
+                exit 1
+              fi
+              echo "value=$version" >> "$GITHUB_OUTPUT"
+              echo "push=true" >> "$GITHUB_OUTPUT"
+              ;;
+          esac
+
+      - name: Registry login
+        # Only needed to push; base-image pulls are anonymous. --tls-verify=false
+        # because the registry is plain HTTP (no cert, since Let's Encrypt
+        # cannot issue for `.lan`); anonymous *reads* are open, which is how
+        # the nodes pull without credentials.
+        #
+        # Every buildah call goes through sudo, and they must all agree:
+        # rootless buildah in this unprivileged LXC only gets a single UID
+        # mapping (newuidmap is not permitted), so any image chowning to a
+        # second UID dies with "insufficient UIDs or GIDs available in user
+        # namespace". Mixing them also splits the auth file — login writes
+        # under /run/containers/<uid>/auth.json, so a rootless login is
+        # invisible to a rootful push.
+        if: steps.tag.outputs.push == 'true'
+        run: |
+          echo "${{ secrets.REGISTRY_PASSWORD }}" | sudo buildah login \
+            --tls-verify=false \
+            --username "${{ secrets.REGISTRY_USERNAME }}" \
+            --password-stdin "$REGISTRY"
 
       - name: Build and push
-        uses: docker/build-push-action@v6
-        with:
-          platforms: ${{ env.PLATFORMS }}
-          push: ${{ github.event_name == 'push' }}
-          context: .
-          file: migration/Dockerfile
-          tags: >-
-            ${{ env.DOCKERHUB_USERNAME }}/agent-fleet-migration:${{ steps.tag.outputs.value }},
-            ${{ env.DOCKERHUB_USERNAME }}/agent-fleet-migration:latest
-          cache-from: type=registry,ref=${{ env.DOCKERHUB_USERNAME }}/agent-fleet-migration:buildcache
-          cache-to: type=registry,ref=${{ env.DOCKERHUB_USERNAME }}/agent-fleet-migration:buildcache,mode=max
-
-  # Separate job rather than folding into build-push above: these are Go
-  # modules (no package.json, no bun install/test) — a go.yml workflow
-  # runs the real correctness gate (vet/test/lint/buf) on every push/PR;
-  # this job's job is just the Docker packaging step, same division of
-  # labor and same PR-safe tag computation as the other plain-image builds.
-  build-push-go:
-    needs: changes
-    # On push (release), always the full set — go-components is only
-    # computed on pull_request (see the changes job's own `if`), so
-    # fall back to the complete list explicitly here rather than reading
-    # an output that job never produced.
-    if: always() && (github.event_name == 'push' || needs.changes.outputs.go-components != '[]')
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        component: ${{ github.event_name == 'push' && fromJSON('["core","provisioner","sidecar","executor"]') || fromJSON(needs.changes.outputs.go-components) }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install Infisical CLI
-        run: |
-          curl -1sLf 'https://artifacts-cli.infisical.com/setup.deb.sh' | sudo -E bash
-          sudo apt-get update && sudo apt-get install -y infisical
-
-      - name: Load secrets from Infisical
+        id: build
+        env:
+          TAG: ${{ steps.tag.outputs.value }}
+          DO_PUSH: ${{ steps.tag.outputs.push }}
+          # Only ever non-empty on a pull_request: the `changes` job is
+          # PR-gated, and a skipped job's outputs are ''. So the shell's
+          # fallback to $COMPONENTS below is what gives a release (and a
+          # dispatch) the full set, with no event test needed here.
+          COMPONENT_LIST: ${{ needs.changes.outputs.components }}
         run: |
           set -euo pipefail
-          while IFS='=' read -r key raw_value; do
-            [ -z "$key" ] && continue
-            value="${raw_value%\'}"
-            value="${value#\'}"
-            echo "::add-mask::$value"
-            echo "$key=$value" >> "$GITHUB_ENV"
-          done < <(infisical export --domain=https://infisical.bnei.dev/api --token="${{ secrets.INFISICAL_TOKEN }}" --projectId="$INFISICAL_PROJECT_ID" --env=dev --format=dotenv | grep -E '^DOCKERHUB_')
+          list="${COMPONENT_LIST:-$COMPONENTS}"
+          echo "building: $list"
+          : > /tmp/timings.txt
+          total_start=$(date +%s)
+          for c in $list; do
+            start=$(date +%s)
+            # chroot isolation + vfs storage: the configuration proven on this
+            # box. Deliberately NOT --layers — with vfs every cached
+            # intermediate layer is a full copy, and six images (four
+            # golang:1.26 stages plus a multi-GB worker) on a 40GB disk shared
+            # with editable-blog's builds does not have room for it. The WAN
+            # win is the *base image* cache, which survives either way; Go
+            # recompiles are local CPU on 4 cores.
+            #
+            # Repo-root context for all six — every Dockerfile COPYs go.work /
+            # proto/gen/go / db/migrations as siblings of its own directory.
+            #
+            # VERSION is passed uniformly: core and provisioner compile it into
+            # main.version and report it to the dashboard; the rest ignore the
+            # ARG (buildah warns about an unconsumed build-arg, it does not
+            # fail). Deliberately the same value as the tag — two sources
+            # would let a binary claim a version its image isn't.
+            sudo buildah bud \
+              --isolation chroot \
+              --storage-driver vfs \
+              --format docker \
+              --build-arg "VERSION=$TAG" \
+              -f "$c/Dockerfile" \
+              -t "$REGISTRY/agent-fleet-$c:$TAG" \
+              -t "$REGISTRY/agent-fleet-$c:latest" \
+              .
+            build_end=$(date +%s)
+            if [ "$DO_PUSH" = "true" ]; then
+              for t in "$TAG" latest; do
+                sudo buildah push --tls-verify=false --storage-driver vfs \
+                  "$REGISTRY/agent-fleet-$c:$t"
+              done
+            fi
+            end=$(date +%s)
+            # Drop this component's own images as soon as they are pushed, so
+            # peak disk is one image rather than six. Named tags only — NOT
+            # `rmi --all`, which would evict the base-image cache this box
+            # shares with every other build repo. The weekly timer prunes
+            # what is genuinely dangling.
+            sudo buildah rmi --storage-driver vfs \
+              "$REGISTRY/agent-fleet-$c:$TAG" "$REGISTRY/agent-fleet-$c:latest" || true
+            printf '| %s | %s | %s |\n' "$c" "$((build_end - start))" "$((end - build_end))" >> /tmp/timings.txt
+          done
+          echo "total_seconds=$(( $(date +%s) - total_start ))" >> "$GITHUB_OUTPUT"
 
-      - name: Docker Login
-        uses: docker/login-action@v3
-        with:
-          username: ${{ env.DOCKERHUB_USERNAME }}
-          password: ${{ env.DOCKERHUB_TOKEN }}
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      # No package.json here to read a version from — same PR-safe
-      # tag-computation pattern as the other plain-image builds.
-      - name: Compute image tag
-        id: tag
+      # ADR-0034's verification V10 asks for a number, not an impression: a
+      # latency claim with no measurement cannot be falsified.
+      - name: Timing summary
+        if: always()
         run: |
-          if [ "${{ github.event_name }}" = "push" ]; then
-            echo "value=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "value=pr-${{ github.event.pull_request.number }}" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Build and push
-        uses: docker/build-push-action@v6
-        with:
-          platforms: ${{ env.PLATFORMS }}
-          push: ${{ github.event_name == 'push' }}
-          # No `load:` — see the worker build above.
-          # Repo-root context: each Dockerfile COPYs go.work + proto/gen/go
-          # as siblings alongside its own module directory.
-          context: .
-          file: ${{ matrix.component }}/Dockerfile
-          # core and provisioner compile this into `main.version` and report it
-          # to the dashboard; sidecar/executor ignore the ARG. Deliberately the
-          # same expression as the tag below — two sources would let the binary
-          # claim a version the image isn't.
-          build-args: |
-            VERSION=${{ steps.tag.outputs.value }}
-          tags: >-
-            ${{ env.DOCKERHUB_USERNAME }}/agent-fleet-${{ matrix.component }}:${{ steps.tag.outputs.value }},
-            ${{ env.DOCKERHUB_USERNAME }}/agent-fleet-${{ matrix.component }}:latest
-          cache-from: type=registry,ref=${{ env.DOCKERHUB_USERNAME }}/agent-fleet-${{ matrix.component }}:buildcache
-          cache-to: type=registry,ref=${{ env.DOCKERHUB_USERNAME }}/agent-fleet-${{ matrix.component }}:buildcache,mode=max
+          {
+            echo "### ukubi registry build"
+            echo ""
+            echo "| component | build (s) | push (s) |"
+            echo "|---|---|---|"
+            cat /tmp/timings.txt 2>/dev/null || echo "| (none) | | |"
+            echo ""
+            echo "**Total: ${{ steps.build.outputs.total_seconds }}s** — tag \`${{ steps.tag.outputs.value }}\`, pushed: \`${{ steps.tag.outputs.push }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
 
   deploy:
-    needs: [build-push, build-push-go, build-push-migration]
+    needs: build-push
     # always() + an explicit needs.*.result check, not just
     # `if: github.event_name == 'push'` — confirmed live on the v1.1.0
-    # release run: build-push and build-push-go both genuinely succeeded
-    # (images for 1.1.0 exist on Docker Hub), but deploy was still skipped
-    # with zero steps run. A job's implicit default condition is
-    # success()-on-needs, and something in this matrix + upstream-skipped-
-    # job (changes, gated to pull_request only) graph shape was tripping
-    # that default even though the direct needs were all green. always()
-    # bypasses the implicit check entirely, so the explicit result
-    # comparisons below are what actually guards against deploying a tag
-    # whose build genuinely failed. build-push-migration is included since
-    # k8s/core.yaml's hooks.migrate.image.tag gets bumped below just like
-    # image.tag — the migration image must already be pushed under that
-    # tag by the time this runs (docs/adr/0030).
+    # release run: the build jobs genuinely succeeded but deploy was still
+    # skipped with zero steps run. A job's implicit default condition is
+    # success()-on-needs, and something in the matrix + upstream-skipped-job
+    # graph shape was tripping that default even though the direct needs were
+    # all green. always() bypasses the implicit check entirely, so the
+    # explicit result comparison below is what actually guards against
+    # deploying a tag whose build failed.
     if: >-
       always() && github.event_name == 'push' &&
-      needs.build-push.result == 'success' &&
-      needs.build-push-go.result == 'success' &&
-      needs.build-push-migration.result == 'success'
+      needs.build-push.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -417,16 +362,29 @@ jobs:
 
       - name: Bump pinned image tags
         run: |
+          set -euo pipefail
           # Helm-values shape (k8s/core.yaml): image.tag / hooks.migrate.image.tag.
           # Blanket `tag: "..."` replace is safe here — every occurrence in
           # this file shape is genuinely an image tag, nothing else uses it.
           sed -i -E "s/^(\s*tag: \")[^\"]+(\")/\1${GITHUB_REF_NAME}\2/" k8s/*.yaml
 
-          # Plain-manifest shape (k8s/provisioner/deployment.yaml): image
-          # refs embed repo:tag as one combined string — only bump this
-          # repo's own built images (core/provisioner/worker/sidecar),
-          # never a deliberately floating :latest.
-          sed -i -E "s#(mohammaddocker/agent-fleet-(core|provisioner|worker|sidecar)):[^[:space:]\"]+#\1:${GITHUB_REF_NAME}#g" k8s/provisioner/*.yaml
+          # Plain-manifest shape (k8s/provisioner/deployment.yaml): image refs
+          # embed repo:tag as one combined string — only bump this repo's own
+          # built images, never a deliberately floating :latest. Note the
+          # literal :5000 in the registry host: the trailing :[^...]+ is what
+          # captures the tag, and getting that wrong makes the sed silently
+          # match nothing rather than fail.
+          sed -i -E "s#(registry\.bnei\.lan:5000/agent-fleet-(core|provisioner|worker|sidecar)):[^[:space:]\"]+#\1:${GITHUB_REF_NAME}#g" \
+            k8s/provisioner/*.yaml
+
+          # A no-op sed is the failure mode this guards: if neither expression
+          # matched, the manifests still name the previous release and ArgoCD
+          # redeploys nothing, with a green workflow. Confirm the tag actually
+          # appears where it should.
+          grep -q "registry.bnei.lan:5000/agent-fleet-provisioner:${GITHUB_REF_NAME}" k8s/provisioner/deployment.yaml || {
+            echo "::error::provisioner image tag was not bumped — check the sed pattern against the manifest's actual image prefix"
+            exit 1
+          }
 
       # Pushing with the default GITHUB_TOKEN (via actions/checkout's
       # auto-configured credential) deliberately does NOT trigger other

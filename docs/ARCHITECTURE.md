@@ -523,22 +523,39 @@ real `kind`-cluster smoke test did.
 
 ### Deploy pipeline
 
-1. Push a tag → `.github/workflows/docker.yml`'s `build-push` job builds
-   the `worker` image (Bun-based); `build-push-go` builds `core`/
-   `provisioner`/`sidecar` (Go, no `package.json` — tagged with the pushed
-   git tag directly). A separate `.github/workflows/go.yml` runs the real
+1. Push a tag → `.github/workflows/docker.yml`'s single `build-push` job
+   builds **all six images** (`core`, `provisioner`, `sidecar`, `executor`,
+   `worker`, `migration`) with `buildah` on ukubi-cluster's **`build-runner`
+   LXC** and pushes them to the in-cluster Zot registry at
+   `registry.bnei.lan:5000` (infra-bootstrap ADR-0034). Every image carries
+   one tag — `package.json`'s version, which the job asserts equals the git
+   tag, since `deploy` below pins `GITHUB_REF_NAME`.
+
+   One job rather than the old three (`build-push` / `build-push-go` /
+   `build-push-migration`) because a self-hosted runner executes one job at a
+   time: three jobs with a four-leg matrix meant six serial jobs, each
+   re-checking-out and each re-pulling `golang:1.26` over the WAN after the
+   previous one's cleanup evicted it. On a PR the paths-filter still narrows
+   the list and nothing is pushed. `workflow_dispatch` builds and pushes the
+   current `package.json` version without cutting a release.
+
+   A separate `.github/workflows/go.yml` runs the real
    correctness gate for the Go side on every push/PR: `go vet`,
    `golangci-lint`, `go test -race`, `-tags=integration` tests against a
    real Postgres service container, plus `buf lint`/`buf breaking`/a
    generate-drift check for `proto/`.
-2. `docker.yml`'s `deploy` job (needs all build jobs) `sed`-bumps every
+2. `docker.yml`'s `deploy` job (needs `build-push`) `sed`-bumps every
    `tag: "..."` in `k8s/core.yaml` (Helm-values shape) and every
    `image: repo:tag` in `k8s/provisioner/*.yaml` (plain-manifest shape,
-   scoped to `mohammaddocker/agent-fleet-{core,provisioner,worker,sidecar}`
-   — `e2e-runner`'s floating `:latest` is deliberately excluded) to the
+   scoped to
+   `registry.bnei.lan:5000/agent-fleet-{core,provisioner,worker,sidecar}` —
+   `executor`'s floating `:latest` is deliberately excluded) to the
    pushed tag, and commits straight to `main` (via the default
    `GITHUB_TOKEN`, deliberately not re-triggering `release.yml`'s
-   push-to-main trigger).
+   push-to-main trigger). It then `grep`s for the bumped provisioner tag and
+   fails if it isn't there: a sed whose pattern stops matching the manifest's
+   image prefix is a no-op, and a no-op here means ArgoCD redeploys nothing
+   while the workflow goes green.
 3. ArgoCD's Applications (`core` via a two-source chart Application,
    `provisioner` via its own standalone plain-manifest Application) pick up
    the new pinned tags and sync.
@@ -796,8 +813,8 @@ agent can read off the working tree it is already sitting in.
 | Var | Default | Notes |
 |---|---|---|
 | `NAMESPACE` | `agent-fleet` | where it creates/deletes Jobs, PVCs, Services and IngressRoutes |
-| `WORKER_IMAGE` | `mohammaddocker/agent-fleet-worker:latest` | pinned by the deploy job in practice |
-| `SIDECAR_IMAGE` | `mohammaddocker/agent-fleet-sidecar:latest` | pinned by the deploy job in practice |
+| `WORKER_IMAGE` | `registry.bnei.lan:5000/agent-fleet-worker:latest` | pinned by the deploy job in practice. `registry.bnei.lan:5000` is ukubi-cluster's own Zot registry (infra-bootstrap ADR-0034) — LAN-only plain HTTP, anonymous pull, so no `imagePullSecrets` |
+| `SIDECAR_IMAGE` | `registry.bnei.lan:5000/agent-fleet-sidecar:latest` | pinned by the deploy job in practice |
 | `WORKSPACE_PVC` | `agent-fleet-workspace` | the shared RWX volume: the clone cache and per-session `claude-home` |
 | `WORKSPACE_ROOT` | `/workspace` | where that volume is mounted inside the provisioner's own pod |
 | `SESSION_STORAGE_CLASS` | – | class for per-session working volumes. **Empty means the cluster default, which on ukubi-cluster is `longhorn` — not node-local.** Set it to a `WaitForFirstConsumer` local class to get the behaviour `adr/0048` §4 measured |

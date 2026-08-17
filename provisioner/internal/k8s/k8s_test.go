@@ -23,8 +23,8 @@ func newTestClient() *Client {
 		Core:                  fake.NewSimpleClientset(),
 		Dynamic:               dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme, listKinds),
 		Namespace:             "agent-fleet",
-		WorkerImage:           "mohammaddocker/agent-fleet-worker:latest",
-		SidecarImage:          "mohammaddocker/agent-fleet-sidecar:latest",
+		WorkerImage:           "registry.bnei.lan:5000/agent-fleet-worker:latest",
+		SidecarImage:          "registry.bnei.lan:5000/agent-fleet-sidecar:latest",
 		WorkspacePVC:          "agent-fleet-workspace",
 		PostgresImage:         "postgres:16-alpine",
 		RedisImage:            "redis:7-alpine",
@@ -663,7 +663,7 @@ func TestCreateWorkerPod_RepoImageAppliesToTheWorkerContainerOnly(t *testing.T) 
 		wantImage string
 	}{
 		{name: "repo sets an image", specImage: repoImage, wantImage: repoImage},
-		{name: "empty falls back to the fleet default", specImage: "", wantImage: "mohammaddocker/agent-fleet-worker:latest"},
+		{name: "empty falls back to the fleet default", specImage: "", wantImage: "registry.bnei.lan:5000/agent-fleet-worker:latest"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			c := newTestClient()

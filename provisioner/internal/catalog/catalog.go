@@ -51,7 +51,12 @@ var Tools = map[string]ToolDef{
 	// talks to are always built from the same commit; a drifting pair
 	// would fail at runtime with a confusing proto error.
 	"cluster-access": {
-		CopyImage: "mohammaddocker/agent-fleet-executor:latest",
+		// Floating :latest on purpose — see above. Zot's retention policy pins
+		// the `latest` tag explicitly for exactly this reason
+		// (infra-bootstrap gitops/platform/values/zot/values.yaml): a 5-tag
+		// retention that let `latest` age out would break every
+		// cluster-access session with no version bump to point at.
+		CopyImage: "registry.bnei.lan:5000/agent-fleet-executor:latest",
 		CopyCmd:   []string{"sh", "-c", "mkdir -p /opt/tools/bin && cp /usr/local/bin/kubectl-shim /opt/tools/bin/kubectl"},
 	},
 }
