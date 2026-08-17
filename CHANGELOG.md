@@ -1,5 +1,7 @@
 # Changelog
 
+## [3.7.1](https://github.com/MohammadBnei/agent-fleet/compare/3.7.0...3.7.1) (2026-08-17)
+
 # [3.7.0](https://github.com/MohammadBnei/agent-fleet/compare/3.6.0...3.7.0) (2026-08-16)
 
 
