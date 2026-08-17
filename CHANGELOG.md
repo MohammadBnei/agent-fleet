@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.8.2](https://github.com/MohammadBnei/agent-fleet/compare/3.8.1...3.8.2) (2026-08-17)
+
+
+### Bug Fixes
+
+* **provisioner,worker:** size the worker for builds, retry gh, keep failed Jobs ([#186](https://github.com/MohammadBnei/agent-fleet/issues/186)) ([c19957a](https://github.com/MohammadBnei/agent-fleet/commit/c19957a56be03df79a2da681413ec3ddcb60f6df))
+
 ## [3.8.1](https://github.com/MohammadBnei/agent-fleet/compare/3.8.0...3.8.1) (2026-08-17)
 
 
