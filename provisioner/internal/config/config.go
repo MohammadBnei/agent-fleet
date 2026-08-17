@@ -73,8 +73,15 @@ type Config struct {
 func Load() Config {
 	return Config{
 		Namespace:                   env("NAMESPACE", "agent-fleet"),
-		WorkerImage:                 env("WORKER_IMAGE", "mohammaddocker/agent-fleet-worker:latest"),
-		SidecarImage:                env("SIDECAR_IMAGE", "mohammaddocker/agent-fleet-sidecar:latest"),
+		// registry.bnei.lan:5000 is ukubi-cluster's in-cluster Zot registry
+		// (infra-bootstrap ADR-0034), which containerd is configured to trust
+		// over plain HTTP — `.lan` is a name Let's Encrypt cannot issue for,
+		// so there is no ingress and no certificate. Anonymous pull, so no
+		// imagePullSecrets. k8s/provisioner/deployment.yaml overrides both
+		// with the release-pinned tags; these :latest defaults only apply to
+		// a local/kind run.
+		WorkerImage:                 env("WORKER_IMAGE", "registry.bnei.lan:5000/agent-fleet-worker:latest"),
+		SidecarImage:                env("SIDECAR_IMAGE", "registry.bnei.lan:5000/agent-fleet-sidecar:latest"),
 		WorkspacePVC:                env("WORKSPACE_PVC", "agent-fleet-workspace"),
 		SessionStorageClass:         env("SESSION_STORAGE_CLASS", ""),
 		SessionNodeSelector:         env("SESSION_NODE_SELECTOR", ""),

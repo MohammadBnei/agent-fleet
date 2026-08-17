@@ -48,7 +48,21 @@ Any doc, code, comment, or memory that contradicts this file or an
 - **One repo, one version/CHANGELOG.** `release.yml` runs from the repo
   root, not per-package — the fleet ships as one unit even though
   `worker/`, `core/`, `provisioner/`, `sidecar/` are deployed as separate
-  images.
+  images. As of the Zot cutover this is enforced rather than assumed:
+  `docker.yml` tags all six images with `package.json`'s version and fails
+  the build if it disagrees with the git tag, because `deploy` pins
+  `GITHUB_REF_NAME` into the manifests. Previously `worker` read
+  `package.json` while the Go and migration builds used the ref name — the
+  same value on a release-it release, so the split was invisible.
+- **Images come from ukubi-cluster's own registry, built on its own
+  hardware.** `registry.bnei.lan:5000` (Zot, Garage-backed), built with
+  `buildah` on the `build-runner` LXC — never Docker Hub, never in-cluster
+  (buildah cannot extract layers without `CAP_SYS_ADMIN`). LAN-only plain
+  HTTP with anonymous pull, so no `imagePullSecrets` anywhere. The registry
+  keeps the **last 5 tags** per image plus `latest`; `executor`'s floating
+  `:latest` is depended on by `catalog.go` and by infra-bootstrap's thot
+  manifest, and is pinned in the retention policy for that reason. See
+  infra-bootstrap ADR-0034.
 - **Workflow discipline:** all changes via feature branch + PR, no direct
   push to `main`; secrets only via Infisical, fetched at run time, never
   committed.

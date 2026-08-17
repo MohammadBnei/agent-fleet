@@ -29,8 +29,8 @@ func newFakeK8sClient() *k8s.Client {
 		Core:         fake.NewSimpleClientset(),
 		Dynamic:      dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme, listKinds),
 		Namespace:    "agent-fleet",
-		WorkerImage:  "mohammaddocker/agent-fleet-worker:latest",
-		SidecarImage: "mohammaddocker/agent-fleet-sidecar:latest",
+		WorkerImage:  "registry.bnei.lan:5000/agent-fleet-worker:latest",
+		SidecarImage: "registry.bnei.lan:5000/agent-fleet-sidecar:latest",
 		WorkspacePVC: "agent-fleet-workspace",
 	}
 }
@@ -125,7 +125,7 @@ func TestCreateWorkerPod_ReportsTheImagesThePodGot(t *testing.T) {
 		wantWorker string
 	}{
 		{name: "repo override", reqImage: repoImage, wantWorker: repoImage},
-		{name: "fleet default", reqImage: "", wantWorker: "mohammaddocker/agent-fleet-worker:latest"},
+		{name: "fleet default", reqImage: "", wantWorker: "registry.bnei.lan:5000/agent-fleet-worker:latest"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s, _, _ := newTestServer(t)
@@ -142,7 +142,7 @@ func TestCreateWorkerPod_ReportsTheImagesThePodGot(t *testing.T) {
 				t.Errorf("worker image = %q, want %q", got, tc.wantWorker)
 			}
 			// The sidecar is fleet-owned and a repo image must never reach it.
-			if got := resp.GetSidecarImage(); got != "mohammaddocker/agent-fleet-sidecar:latest" {
+			if got := resp.GetSidecarImage(); got != "registry.bnei.lan:5000/agent-fleet-sidecar:latest" {
 				t.Errorf("sidecar image = %q, want the fleet's own", got)
 			}
 		})
@@ -164,10 +164,10 @@ func TestGetVersion_ReportsTheBuildAndTheDefaultImages(t *testing.T) {
 	}
 	// The defaults, i.e. what a NEW session gets — never a repo override,
 	// which is per-session and has no meaning here.
-	if resp.GetWorkerImage() != "mohammaddocker/agent-fleet-worker:latest" {
+	if resp.GetWorkerImage() != "registry.bnei.lan:5000/agent-fleet-worker:latest" {
 		t.Errorf("worker image = %q, want the fleet default", resp.GetWorkerImage())
 	}
-	if resp.GetSidecarImage() != "mohammaddocker/agent-fleet-sidecar:latest" {
+	if resp.GetSidecarImage() != "registry.bnei.lan:5000/agent-fleet-sidecar:latest" {
 		t.Errorf("sidecar image = %q, want the fleet default", resp.GetSidecarImage())
 	}
 }

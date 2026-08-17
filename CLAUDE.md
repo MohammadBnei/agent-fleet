@@ -51,7 +51,7 @@ sandbox, it is stale — check the code.**
 | Kubernetes client | `client-go` (`provisioner/` — the only fleet component with cluster RBAC) |
 | Database | `jackc/pgx/v5` (`core/` only — the fleet's **sole** `AGENTFLEET_DB_*` credential holder, `docs/adr/0020` point 1). `worker/`/`sidecar/`/`provisioner/` hold zero DB credentials |
 | Deploy | Docker (`worker/Dockerfile`, `core/Dockerfile`, `provisioner/Dockerfile`, `sidecar/Dockerfile`), `core` via a two-source ArgoCD Application (chart from `infra-bootstrap`, values from `k8s/core.yaml` here); `provisioner` as a standalone plain-manifest Application (`k8s/provisioner/` here, RBAC `common-app-chart` can't express) |
-| CI/CD | GitHub Actions: `docker.yml` (build/push/deploy), `go.yml` (Go vet/lint/test + buf lint/breaking/drift), `release.yml` (`release-it`, conventional-changelog) |
+| CI/CD | GitHub Actions: `docker.yml` (build/push/deploy), `go.yml` (Go vet/lint/test + buf lint/breaking/drift), `release.yml` (`release-it`, conventional-changelog). **Images build on ukubi-cluster's `build-runner` LXC with `buildah` and push to the in-cluster Zot registry `registry.bnei.lan:5000`, not Docker Hub** — one job looping all six components, since a self-hosted runner runs one job at a time (infra-bootstrap ADR-0034) |
 
 ## Directory map
 
@@ -183,17 +183,25 @@ feature was written:
   `bun run build` (`tsc -b && vite build`), and `tsc -b` enforces
   `noUnusedLocals`. An unused import passed the weaker check and broke
   the core image. **Verify with `bun run build`.**
-- **A PR build never pushes an image** (`push: false`). "The image built"
-  and "the image exists" are different claims — a manifest referencing a
-  tag only a PR built will `ImagePullBackOff`. Check the registry.
+- **A PR build never pushes an image.** "The image built" and "the image
+  exists" are different claims — a manifest referencing a tag only a PR built
+  will `ImagePullBackOff`. Check the registry itself:
+  `curl -s http://registry.bnei.lan:5000/v2/agent-fleet-worker/tags/list`
+  (anonymous read). And note that the registry keeps only the **last 5 tags**
+  per image plus `latest`, so "it was pushed once" is not "it is still there"
+  either — a rollback deeper than 5 releases needs a rebuild.
 - **`kubectl apply --dry-run=server` does not create a pod.** A Deployment
   naming a non-existent ServiceAccount validates perfectly and then never
   schedules. ArgoCD reporting `Synced` + `Degraded` together is the
   signature — look at pods, not sync status.
 - **Adding a component means wiring it into *every* CI path**, including
-  the hardcoded release matrix in `docker.yml` and the codegen install
-  steps in `go.yml`. Guarded by `core/internal/buildguard` — run with
-  `-count=1`, since those tests read files Go's cache cannot see.
+  `docker.yml`'s `COMPONENTS` env (the release list) *and* the `changes`
+  job's paths-filter + component script (the PR list — a component missing
+  only from there builds on releases and never on PRs), plus the codegen
+  install steps in `go.yml`. Guarded by `core/internal/buildguard` — run with
+  `-count=1`, since those tests read files Go's cache cannot see. Note what
+  that guard does and does not prove: it greps `docker.yml` for the directory
+  name, so listing a component in `COMPONENTS` alone satisfies it.
 - **Squash-merging a stacked PR auto-closes the PR above it** (its base
   branch is deleted, and GitHub refuses to reopen). Retarget dependent
   PRs to `main` *before* merging the one below.

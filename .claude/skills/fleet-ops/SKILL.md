@@ -102,14 +102,20 @@ dashboard's new-session dialog fleet-wide right away.
 
 ```
 git push origin <tag>              # any tag push triggers docker.yml
-  → build-push (matrix: worker): Bun image, push to Docker Hub, Trivy scan
-  → build-push-go (matrix: core, provisioner, sidecar, executor): Go images, same
-  → build-push-migration: the golang-migrate image that applies db/migrations/
-  → deploy (on push only, needs the build jobs):
+  → changes (ubuntu-latest, PR only): paths-filter -> the component list
+  → build-push (ONE job, on [self-hosted, ukubi-build] — the build-runner LXC):
+      loops core provisioner sidecar executor worker migration, and for each
+      runs `sudo buildah bud` then pushes <version> + latest to
+      registry.bnei.lan:5000 (ukubi's own Zot, infra-bootstrap ADR-0034).
+      One job, not one per image: the runner executes one job at a time, so a
+      matrix would serialize anyway and each leg's cleanup would evict the
+      shared golang:1.26 / oven/bun:1-slim cache. On a PR only the changed
+      components build, and nothing is pushed.
+  → deploy (on tag push only — NOT on workflow_dispatch, needs build-push):
       sed-bumps k8s/*.yaml's `tag: "..."` (Helm-values shape) and
       every `image: repo:tag` in k8s/provisioner/*.yaml (plain-manifest
-      shape, scoped to mohammaddocker/agent-fleet-{core,provisioner,
-      worker,sidecar}), commits to main
+      shape, scoped to registry.bnei.lan:5000/agent-fleet-{core,provisioner,
+      worker,sidecar}), then greps to prove the bump landed, commits to main
       (uses the default GITHUB_TOKEN — deliberately doesn't re-trigger release.yml)
   → ArgoCD: core (two-source Application, chart from infra-bootstrap +
       k8s/core.yaml here) and provisioner (standalone plain-manifest
@@ -121,7 +127,21 @@ git push origin <tag>              # any tag push triggers docker.yml
 from Conventional Commits. It does not build or deploy anything.
 
 Check current live tags: `grep 'tag:' k8s/core.yaml; grep 'image:'
-k8s/provisioner/deployment.yaml`. Check what's actually running:
+k8s/provisioner/deployment.yaml`. Check what actually reached the registry —
+a green build is not the same claim, and anonymous read means no auth:
+
+```bash
+curl -s http://registry.bnei.lan:5000/v2/_catalog
+curl -s http://registry.bnei.lan:5000/v2/agent-fleet-worker/tags/list
+```
+
+Retention keeps only the **last 5 tags per image** plus `latest`
+(infra-bootstrap `gitops/platform/values/zot/values.yaml`), so a rollback
+deeper than 5 releases needs the image rebuilt — `workflow_dispatch` after
+checking out the older tag. Runner/build/disk problems on the box itself go
+through infra-bootstrap's `/build-runner-ops`.
+
+Check what's actually running:
 `kubectl get pods -n agent-fleet -o wide` — expect `core` and
 `provisioner` Deployments, zero-or-more two-container
 `worker-<shortSessionId>` Pods (one per warm session — see
