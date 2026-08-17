@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.8.1](https://github.com/MohammadBnei/agent-fleet/compare/3.8.0...3.8.1) (2026-08-17)
+
+
+### Bug Fixes
+
+* **worker,dashboard:** deliver a peer session's message as a peer's ([#184](https://github.com/MohammadBnei/agent-fleet/issues/184)) ([2f7c433](https://github.com/MohammadBnei/agent-fleet/commit/2f7c43386a1f2fa856ae28b916c7cbe43da67ead))
+
 # [3.8.0](https://github.com/MohammadBnei/agent-fleet/compare/3.7.2...3.8.0) (2026-08-17)
 
 
