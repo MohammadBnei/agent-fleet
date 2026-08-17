@@ -270,6 +270,32 @@ feature was written:
   and a passing test suite are three ways of describing intent, not
   evidence.** Guarded by
   `TestCreateWorkerPod_RepoImageAppliesToTheWorkerContainerOnly`.
+- **Deleting a pod deletes its resource envelope, and the work moves without
+  it.** `bc5da8f` deliberately sized the e2e sandbox for building — 250m/512Mi
+  → 1000m/1Gi requests, 2Gi → 4Gi limits — on the finding that compiles and
+  installs do not fit the smaller one. Six days later `docs/adr/0048` §6
+  deleted that pod and moved every build into the worker's own `Bash`, and the
+  worker kept the numbers it had when it ran an agent and nothing else. Nothing
+  got heavier; the heavy work moved in. The failure is invisible because cgroup
+  v2 sets `memory.oom.group` on a container scope: crossing the limit does not
+  kill the greedy process, the kernel SIGKILLs **every** task in the container,
+  the agent and PID 1 included. So there is no failed tool call, no error line,
+  no `session failed` — the logs just stop mid-sentence and the Job goes
+  Failed. Prometheus won't show it either: the spike lives ~10s between 30s
+  scrapes and staleness-fill makes the series look flat. **When a capability
+  moves between pods, move its limits, its requests and its guard test with
+  it** — and to confirm an OOM, read the node's `dmesg`, not a dashboard.
+  Guarded by `TestCreateWorkerPod_WorkerResources` and
+  `TestCreateWorkerPod_ResourcesWithinLimitRange` (the LimitRange pin was
+  itself deleted along with the sandbox it guarded).
+- **A terminal Job deleted on sight takes the only evidence with it.** The
+  provisioner's reconcile pass deleted a Failed worker Job within ~60s — pod
+  died 19:24:14, `DeleteWorkerJob` 19:24:22 — so kube-state-metrics never
+  scraped a terminated state, `kube_pod_container_status_last_terminated_reason`
+  had no worker rows at all, and `kubectl describe` had nothing to describe.
+  The Job's own `TTLSecondsAfterFinished` existed for exactly this and had
+  never once been allowed to run. **A GC that beats your telemetry to the
+  corpse makes every crash look like a disappearance.**
 
 ## Workflow rules
 

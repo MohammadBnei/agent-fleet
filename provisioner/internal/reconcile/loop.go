@@ -4,11 +4,13 @@
 //
 // Two passes:
 //
-//   - gcTerminalWorkerJobs reports and reaps worker Jobs that reached a
-//     terminal phase. It is NOT just a fallback for a missed teardown: with
-//     tasks.status gone (docs/adr/0048) this pass IS the notification that a
-//     session finished, and a Succeeded Job reporting nothing would leave
-//     pod_phase at RUNNING forever — which is what the concurrency cap counts.
+//   - gcTerminalWorkerJobs reports worker Jobs that reached a terminal phase,
+//     and reaps the Succeeded ones. It is NOT just a fallback for a missed
+//     teardown: with tasks.status gone (docs/adr/0048) this pass IS the
+//     notification that a session finished, and a Succeeded Job reporting
+//     nothing would leave pod_phase at RUNNING forever — which is what the
+//     concurrency cap counts. A Failed Job is reported and then left for its
+//     own TTL, because deleting it deletes the only record of why it failed.
 //   - gcIdleSharedInstances reclaims shared Postgres/Redis instances that have
 //     sat unused past a timeout (docs/adr/0034).
 //
@@ -63,6 +65,14 @@ type Loop struct {
 	k8sc                      JobLister
 	core                      EventReporter
 	sharedInstanceIdleTimeout time.Duration
+	// reported is the set of sessions whose terminal phase has already been
+	// reported. Only Failed Jobs can land in it more than once: they are no
+	// longer deleted on sight (see gcTerminalWorkerJobs), so they stay listed
+	// for their whole TTL and would otherwise re-report every tick. In-memory
+	// on purpose — a provisioner restart re-reports once, which
+	// coreserver.ReportPodEvents already treats as a no-op against a session
+	// that is terminal.
+	reported map[string]struct{}
 }
 
 func New(k8sc JobLister, core EventReporter, sharedInstanceIdleTimeout time.Duration) *Loop {
@@ -70,6 +80,7 @@ func New(k8sc JobLister, core EventReporter, sharedInstanceIdleTimeout time.Dura
 		k8sc:                      k8sc,
 		core:                      core,
 		sharedInstanceIdleTimeout: sharedInstanceIdleTimeout,
+		reported:                  make(map[string]struct{}),
 	}
 }
 
@@ -79,10 +90,23 @@ func (l *Loop) gcTerminalWorkerJobs(ctx context.Context) {
 		slog.Error("reconcile: list worker jobs failed", "error", err)
 		return
 	}
+	live := make(map[string]struct{}, len(jobs))
+	for _, job := range jobs {
+		live[job.TaskID] = struct{}{}
+	}
+	for id := range l.reported {
+		if _, ok := live[id]; !ok {
+			delete(l.reported, id) // TTL controller reaped it; forget it
+		}
+	}
 	for _, job := range jobs {
 		if job.Phase != "Succeeded" && job.Phase != "Failed" {
 			continue
 		}
+		if _, done := l.reported[job.TaskID]; done {
+			continue
+		}
+		l.reported[job.TaskID] = struct{}{}
 		// Terminal-phase report (reliability-findings.md #1) — reported
 		// before GC-ing the Job. core's own coreserver.ReportPodEvents
 		// scopes MarkCrashed to a non-terminal task, so this is a safe
@@ -112,6 +136,21 @@ func (l *Loop) gcTerminalWorkerJobs(ctx context.Context) {
 			PodName:   job.JobName,
 			Message:   message,
 		})
+		// A Failed Job is reported but deliberately NOT deleted: it is the
+		// only surviving evidence of why the worker died, and deleting it
+		// here destroyed that evidence before anything could record it.
+		// Live, 2026-08-17: the pod died at 19:24:14 and this line deleted it
+		// at 19:24:22, so kube-state-metrics never scraped a terminated
+		// state, `kubectl describe` had nothing, and establishing that the
+		// cause was an OOMKill needed the node's dmesg. The Job's own
+		// TTLSecondsAfterFinished (k8s.workerJobTTLSeconds) reaps it instead
+		// — that field exists for exactly this and had simply never been
+		// allowed to run. A Succeeded Job carries no diagnosis worth keeping
+		// and is still deleted on sight.
+		if job.Phase == "Failed" {
+			slog.Info("reconcile: keeping failed worker job for its TTL", "sessionId", job.TaskID, "jobName", job.JobName)
+			continue
+		}
 		slog.Info("reconcile: gc'ing terminal worker job", "sessionId", job.TaskID, "jobName", job.JobName, "phase", job.Phase)
 		if err := l.k8sc.DeleteWorkerJob(ctx, job.TaskID); err != nil {
 			slog.Error("reconcile: delete worker job failed", "sessionId", job.TaskID, "error", err)

@@ -49,7 +49,14 @@ async function run(cmd: string[], cwd: string): Promise<string> {
 // `gh pr create`, run once unconditionally before the session starts rather
 // than lazily before a push: the agent runs those commands itself, whenever
 // it decides to.
-async function defaultConfigureGitAuth(): Promise<void> {
+//
+// `exec`/`sleep` are injected for the same reason sidecar/runSession are on
+// main() below — Bun's mock.module is process-global, so a test cannot mock
+// Bun.spawn here without leaking into session.test.ts.
+export async function defaultConfigureGitAuth(
+  exec: (cmd: string[], cwd: string) => Promise<string> = run,
+  sleep: (ms: number) => Promise<void> = Bun.sleep,
+): Promise<void> {
   if (!process.env.GH_TOKEN) return; // falls back to ambient git auth
   // The session directory was created by the provisioner's container (a
   // different UID — worker runs non-root, required for Claude Code's
@@ -57,11 +64,32 @@ async function defaultConfigureGitAuth(): Promise<void> {
   // (CVE-2022-24765 mitigation) refuses every command otherwise, "detected
   // dubious ownership", regardless of actual file permissions. Confirmed
   // live: file perms alone (provisioner's umask 0) were not sufficient.
-  await run(["git", "config", "--global", "--add", "safe.directory", WORKTREE_PATH], WORKTREE_PATH);
-  await run(["gh", "auth", "setup-git"], WORKTREE_PATH);
-  const login = await run(["gh", "api", "user", "--jq", ".login"], WORKTREE_PATH);
-  await run(["git", "config", "--global", "user.name", login], WORKTREE_PATH);
-  await run(["git", "config", "--global", "user.email", `${login}@users.noreply.github.com`], WORKTREE_PATH);
+  await exec(["git", "config", "--global", "--add", "safe.directory", WORKTREE_PATH], WORKTREE_PATH);
+  await exec(["gh", "auth", "setup-git"], WORKTREE_PATH);
+  // The only call in this function that leaves the pod — the other four are
+  // local config. It is also, therefore, the only one that can fail for a
+  // reason that will have cleared by the time anyone looks: GitHub answered
+  // 503 "No server is currently available to service your request" twice on
+  // 2026-08-17, one second into a session, and with BackoffLimit 0 that
+  // permanently burned the session over a blip. withRetry was deleted with
+  // the reclaim loop it fed (docs/adr/0048) and nothing replaced it here.
+  //
+  // Still throws once the attempts run out: a real auth failure — revoked
+  // token, wrong scopes — should stop the session at start, not an hour
+  // later at the agent's first `git commit`.
+  let login = "";
+  for (let attempt = 1; ; attempt++) {
+    try {
+      login = await exec(["gh", "api", "user", "--jq", ".login"], WORKTREE_PATH);
+      break;
+    } catch (err) {
+      if (attempt === 3) throw err;
+      log("warn", "gh api user failed, retrying", { sessionId: SESSION_ID, attempt, error: String(err) });
+      await sleep(attempt * 2000);
+    }
+  }
+  await exec(["git", "config", "--global", "user.name", login], WORKTREE_PATH);
+  await exec(["git", "config", "--global", "user.email", `${login}@users.noreply.github.com`], WORKTREE_PATH);
 }
 
 // sidecar/runSession/configureGitAuth default to the real implementations —
