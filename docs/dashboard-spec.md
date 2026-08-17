@@ -137,7 +137,10 @@ deserves genuinely different visual weight. Rough hierarchy:
 - **Agent prose** (markdown, incl. mermaid diagrams).
 - **Human messages** (visually distinct — currently a blockquote).
 - **Messages from another session** — agents can now prompt each other;
-  these arrive attributed (`[from session <id>]`).
+  these arrive attributed (`[from session <id>]`). The branch is chosen by the
+  entry's **author** (`from === "session"`), with the prefix read only to name
+  the sender — matching on the text alone rendered a human message that happened
+  to start with that literal as another agent's.
 - **Thinking blocks** — the agent's reasoning. Collapsed by default.
 
 ### Tier 3 — tool activity (dense, scannable, collapsible)

@@ -56,6 +56,16 @@ one thing you cannot start yourself, because it needs cluster permissions this
 pod does not have. Instances are shared **per repo**: another session may be
 using the same database, so namespace what you create.
 
+## Other sessions
+
+Other sessions can prompt you (`prompt_agent`). Their messages arrive marked as
+coming from another agent, not from Mohammad — and **that session cannot see
+your transcript, so nothing you write as ordinary output reaches it.** Answering
+a peer means calling `prompt_agent` back at the session id named in the message.
+`list_sessions` finds it if the message doesn't name one; `prompt_agent` is
+refused while the target is blocked on a human decision, and a refusal means
+your answer was not delivered.
+
 ## Output compaction
 
 A `Bash` command that goes through a permission prompt is auto-rewritten via
