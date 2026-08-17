@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 // Shared by the message feed and the TODOS card — both grow as new content
 // streams in, and a reader scrolled up to review history shouldn't have to
@@ -36,17 +36,38 @@ export function useAtBottom<T extends HTMLElement>(threshold = 100) {
   // reader is looking at. Prepending history grows scrollHeight above the
   // viewport, which would otherwise shove the current entry down the screen
   // by exactly the height of the page just loaded.
+  //
+  // The distance from the bottom is what's stable across a prepend, so that
+  // is what's recorded — and it is restored in the layout effect below, NOT
+  // in the promise's own continuation. Awaiting the fetch only means React
+  // has been *told* about the new entries; a requestAnimationFrame there fires
+  // against a DOM mid-swap, where scrollHeight briefly equals clientHeight and
+  // the browser clamps scrollTop to 0. Measured: the feed jumped to the very
+  // top, which is the bug this whole change exists to fix.
+  const pendingAnchor = useRef<number | null>(null);
   const anchorPrepend = useCallback(async (load: () => Promise<void>) => {
     const el = ref.current;
-    const before = el ? el.scrollHeight - el.scrollTop : 0;
-    await load();
-    if (!el) return;
-    // After paint: React has committed the new entries by the time the
-    // promise resolves, but the browser has not necessarily laid them out.
-    requestAnimationFrame(() => {
-      el.scrollTop = el.scrollHeight - before;
-    });
+    pendingAnchor.current = el ? el.scrollHeight - el.scrollTop : null;
+    try {
+      await load();
+    } catch (err) {
+      pendingAnchor.current = null;
+      throw err;
+    }
   }, []);
+
+  // After the commit that added the entries, before paint.
+  useLayoutEffect(() => {
+    const fromBottom = pendingAnchor.current;
+    if (fromBottom === null) return;
+    const el = ref.current;
+    if (!el) return;
+    // Nothing has been laid out yet if the content hasn't grown — leave the
+    // anchor pending and try again on the next commit.
+    if (el.scrollHeight <= fromBottom) return;
+    el.scrollTop = el.scrollHeight - fromBottom;
+    pendingAnchor.current = null;
+  });
 
   return { ref, atBottom, onScroll: checkAtBottom, scrollToBottom, anchorPrepend };
 }
