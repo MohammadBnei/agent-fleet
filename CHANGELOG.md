@@ -1,5 +1,12 @@
 # Changelog
 
+# [3.9.0](https://github.com/MohammadBnei/agent-fleet/compare/3.8.7...3.9.0) (2026-08-17)
+
+
+### Features
+
+* **k8s:** pull core, provisioner, worker and sidecar from Zot ([#192](https://github.com/MohammadBnei/agent-fleet/issues/192)) ([ab88dde](https://github.com/MohammadBnei/agent-fleet/commit/ab88dde123ea0d6603d518b166ed95453f92b2c9))
+
 ## [3.8.7](https://github.com/MohammadBnei/agent-fleet/compare/3.8.6...3.8.7) (2026-08-17)
 
 
