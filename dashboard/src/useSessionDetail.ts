@@ -6,6 +6,11 @@ import { approvePlan } from "./approvePlan";
 import type { Session } from "./gen/agentfleet/v1/core_pb";
 import { TranscriptEntryType, type TranscriptEntry } from "./gen/agentfleet/v1/transcript_pb";
 
+// One page of transcript history: what a session opens with, and what one
+// click of the feed's "load earlier" header adds. Well under the server's own
+// 1000 cap, which clamps anything larger anyway.
+const PAGE = 200;
+
 // Shared data-loading for a single session's session view — used by both the
 // desktop SessionDetail and the mobile MobileSessionDetail, which differ only in
 // layout, not in what they fetch/subscribe to.
@@ -48,12 +53,19 @@ export function useSessionDetail(sessionId: string) {
   // ran before it, so any load failure hung on "Loading…" forever.
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  // Older history is fetched a page at a time, backwards from the oldest
+  // entry currently held. hasOlder drives the feed's "load earlier" header;
+  // loadingOlder keeps a double-click from fetching the same page twice.
+  const [hasOlder, setHasOlder] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
 
   useEffect(() => {
     setSession(null);
     setEntries([]);
     setBranch(null);
     setWorktreePath(null);
+    setHasOlder(false);
+    setLoadingOlder(false);
     setLoadError(null);
     setActionError(null);
     pendingRef.current = null;
@@ -93,10 +105,17 @@ export function useSessionDetail(sessionId: string) {
 
     let unsubscribe = () => {};
     client
-      .getTranscript({ sessionId, sinceSeq: 0n })
+      // The newest page, not the whole transcript. `sinceSeq: 0n` asked for
+      // everything and got the server's 1000-entry cap applied to the OLDEST
+      // 1000 — so a long session opened on its own beginning, and the entries
+      // between #1001 and the stream's start were fetched by nothing, ever.
+      .getTranscript({ sessionId, limit: PAGE })
       .then((res) => {
         if (cancelled) return;
         setEntries(res.entries);
+        // A full page means there is probably more behind it. Off by at most
+        // one empty fetch when the transcript is an exact multiple of PAGE.
+        setHasOlder(res.entries.length >= PAGE);
         unsubscribe = subscribeTranscript(sessionId, res.nextSeq, (entry) => {
           setEntries((prev) => [...prev, entry]);
           if (pendingRef.current !== null && entry.from === "human" && entry.text === pendingRef.current) {
@@ -112,6 +131,28 @@ export function useSessionDetail(sessionId: string) {
       unsubscribe();
     };
   }, [sessionId]);
+
+  // Fetches the page of entries just before the oldest one held and prepends
+  // it. Resolves once state is set, so a caller can anchor the scroll
+  // position around the prepend (see useAtBottom's anchorPrepend).
+  async function loadOlder(): Promise<void> {
+    if (loadingOlder) return;
+    const oldest = entries[0]?.seq;
+    if (oldest === undefined || oldest <= 0n) {
+      setHasOlder(false);
+      return;
+    }
+    setLoadingOlder(true);
+    try {
+      const res = await client.getTranscript({ sessionId, beforeSeq: oldest, limit: PAGE });
+      setEntries((prev) => [...res.entries, ...prev]);
+      setHasOlder(res.entries.length >= PAGE);
+    } catch (err) {
+      setActionError((err as Error).message);
+    } finally {
+      setLoadingOlder(false);
+    }
+  }
 
   // Returns whether the call actually succeeded, so a caller holding
   // optimistic state knows whether to keep or roll it back. Callers that
@@ -217,6 +258,9 @@ export function useSessionDetail(sessionId: string) {
     loadError,
     actionError,
     pendingMessage,
+    hasOlder,
+    loadingOlder,
+    loadOlder,
     run,
     sendDiscuss,
     respondToPermission,

@@ -314,10 +314,25 @@ func (x *AppendTranscriptEntryRequest) GetIdempotencyKey() string {
 }
 
 type ReadTranscriptSinceRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
-	SinceSeq      int64                  `protobuf:"varint,2,opt,name=since_seq,json=sinceSeq,proto3" json:"since_seq,omitempty"`
-	TimeoutMs     int32                  `protobuf:"varint,3,opt,name=timeout_ms,json=timeoutMs,proto3" json:"timeout_ms,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	SessionId string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	SinceSeq  int64                  `protobuf:"varint,2,opt,name=since_seq,json=sinceSeq,proto3" json:"since_seq,omitempty"`
+	TimeoutMs int32                  `protobuf:"varint,3,opt,name=timeout_ms,json=timeoutMs,proto3" json:"timeout_ms,omitempty"`
+	// Page size. Unset means the server's own cap (1000). Clamped to it either
+	// way — this bounds the response, it can't widen it.
+	Limit *int32 `protobuf:"varint,4,opt,name=limit,proto3,oneof" json:"limit,omitempty"`
+	// Window selector, dashboard-side (DashboardService.GetTranscript only;
+	// the sidecar's cursor reads ignore it):
+	//
+	//	before_seq unset, limit unset -> entries from since_seq (unchanged)
+	//	before_seq unset, limit set   -> the NEWEST `limit` entries
+	//	before_seq set                -> the `limit` entries just before it
+	//
+	// A session detail view opens on the newest page and walks backwards, so
+	// "the whole transcript from seq 0" is no longer the only thing it can ask
+	// for — past 1000 entries that silently returned the oldest page and never
+	// fetched the rest.
+	BeforeSeq     *int64 `protobuf:"varint,5,opt,name=before_seq,json=beforeSeq,proto3,oneof" json:"before_seq,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -369,6 +384,20 @@ func (x *ReadTranscriptSinceRequest) GetSinceSeq() int64 {
 func (x *ReadTranscriptSinceRequest) GetTimeoutMs() int32 {
 	if x != nil {
 		return x.TimeoutMs
+	}
+	return 0
+}
+
+func (x *ReadTranscriptSinceRequest) GetLimit() int32 {
+	if x != nil && x.Limit != nil {
+		return *x.Limit
+	}
+	return 0
+}
+
+func (x *ReadTranscriptSinceRequest) GetBeforeSeq() int64 {
+	if x != nil && x.BeforeSeq != nil {
+		return *x.BeforeSeq
 	}
 	return 0
 }
@@ -447,13 +476,18 @@ const file_agentfleet_v1_transcript_proto_rawDesc = "" +
 	"\x04from\x18\x02 \x01(\tR\x04from\x12\x12\n" +
 	"\x04text\x18\x03 \x01(\tR\x04text\x126\n" +
 	"\x04type\x18\x04 \x01(\x0e2\".agentfleet.v1.TranscriptEntryTypeR\x04type\x12'\n" +
-	"\x0fidempotency_key\x18\x05 \x01(\tR\x0eidempotencyKey\"w\n" +
+	"\x0fidempotency_key\x18\x05 \x01(\tR\x0eidempotencyKey\"\xcf\x01\n" +
 	"\x1aReadTranscriptSinceRequest\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x1b\n" +
 	"\tsince_seq\x18\x02 \x01(\x03R\bsinceSeq\x12\x1d\n" +
 	"\n" +
-	"timeout_ms\x18\x03 \x01(\x05R\ttimeoutMs\"r\n" +
+	"timeout_ms\x18\x03 \x01(\x05R\ttimeoutMs\x12\x19\n" +
+	"\x05limit\x18\x04 \x01(\x05H\x00R\x05limit\x88\x01\x01\x12\"\n" +
+	"\n" +
+	"before_seq\x18\x05 \x01(\x03H\x01R\tbeforeSeq\x88\x01\x01B\b\n" +
+	"\x06_limitB\r\n" +
+	"\v_before_seq\"r\n" +
 	"\x1bReadTranscriptSinceResponse\x128\n" +
 	"\aentries\x18\x01 \x03(\v2\x1e.agentfleet.v1.TranscriptEntryR\aentries\x12\x19\n" +
 	"\bnext_seq\x18\x02 \x01(\x03R\anextSeq*\xc7\x04\n" +
@@ -513,6 +547,7 @@ func file_agentfleet_v1_transcript_proto_init() {
 		return
 	}
 	file_agentfleet_v1_transcript_proto_msgTypes[0].OneofWrappers = []any{}
+	file_agentfleet_v1_transcript_proto_msgTypes[2].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

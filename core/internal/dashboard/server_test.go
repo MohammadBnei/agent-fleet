@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/proto"
 
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 
@@ -203,5 +204,111 @@ func TestValidPermissionModes_CoversEveryModeTheDashboardCanSend(t *testing.T) {
 	}
 	if validPermissionModes["delegate"] {
 		t.Error(`validPermissionModes["delegate"] = true, want false (not a mode this build accepts)`)
+	}
+}
+
+// The transcript window is the fix for a silent truncation: GetTranscript
+// always read forward from since_seq with a hard cap of 1000, so a session
+// past 1000 entries handed the dashboard its OLDEST page and left everything
+// between there and the live stream's start unfetched by anything. The detail
+// view now opens on the newest page and walks backwards.
+func TestTranscriptWindow(t *testing.T) {
+	before := func(v int64) *int64 { return &v }
+	for _, tc := range []struct {
+		name      string
+		sinceSeq  int64
+		latestSeq int64
+		limit     int32
+		beforeSeq *int64
+		wantSince int64
+		wantLimit int
+	}{
+		// Neither field set: exactly what the sidecar's cursor reads have
+		// always done. Adding the window must not move this.
+		{"no limit, no before: unchanged forward read", 0, 0, 0, nil, 0, maxTranscriptPage},
+		{"cursor read keeps its since_seq", 4200, 0, 0, nil, 4200, maxTranscriptPage},
+
+		// The newest page: latestSeq is one past the highest seq.
+		{"newest page of a long transcript", 0, 5000, 200, nil, 4800, 200},
+		{"transcript shorter than a page starts at 0", 0, 12, 200, nil, 0, 200},
+		{"empty transcript", 0, 0, 200, nil, 0, 200},
+		// A caller that supplies both gets the tail of its own range, never
+		// entries below the cursor it already holds.
+		{"since_seq floors the newest page", 4900, 5000, 200, nil, 4900, 200},
+
+		// Walking backwards.
+		{"page before a seq", 0, 5000, 200, before(4800), 4600, 200},
+		{"page before the start clamps at 0", 0, 5000, 200, before(80), 0, 200},
+
+		// The cap is a ceiling on the response, not a value a client can raise.
+		{"oversized limit clamps to the cap", 0, 9000, 50_000, nil, 8000, maxTranscriptPage},
+		{"negative limit falls back to the cap", 0, 9000, -3, nil, 0, maxTranscriptPage},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			since, limit := transcriptWindow(tc.sinceSeq, tc.latestSeq, tc.limit, tc.beforeSeq)
+			if since != tc.wantSince || limit != tc.wantLimit {
+				t.Errorf("transcriptWindow(%d, %d, %d, %v) = (%d, %d), want (%d, %d)",
+					tc.sinceSeq, tc.latestSeq, tc.limit, tc.beforeSeq, since, limit, tc.wantSince, tc.wantLimit)
+			}
+		})
+	}
+}
+
+// denseStore serves a transcript of `total` entries with contiguous seqs,
+// the way Append actually assigns them.
+type denseStore struct {
+	recordingStore
+	total int64
+}
+
+func (d *denseStore) LatestSeq(context.Context, string) (int64, error) { return d.total, nil }
+
+func (d *denseStore) ReadSince(_ context.Context, _ string, sinceSeq int64, limit int) ([]transcript.Entry, int64, error) {
+	entries := []transcript.Entry{}
+	for seq := sinceSeq; seq < d.total && len(entries) < limit; seq++ {
+		entries = append(entries, transcript.Entry{Seq: seq, From: "agent", Text: "x"})
+	}
+	next := sinceSeq
+	if n := len(entries); n > 0 {
+		next = entries[n-1].Seq + 1
+	}
+	return entries, next, nil
+}
+
+func TestGetTranscript_OpensOnTheNewestPageAndWalksBack(t *testing.T) {
+	store := &denseStore{total: 1200}
+	s := NewServer(nil, nil, store, nil, nil, nil, nil, nil, nil, 5, nil, nil, nil, "test")
+
+	// The regression: with limit set, the newest entries come back — not
+	// seq 0..999.
+	resp, err := s.GetTranscript(context.Background(), connect.NewRequest(&agentfleetv1.ReadTranscriptSinceRequest{
+		SessionId: "s1", Limit: proto.Int32(200),
+	}))
+	if err != nil {
+		t.Fatalf("GetTranscript: %v", err)
+	}
+	got := resp.Msg.GetEntries()
+	if len(got) != 200 || got[0].GetSeq() != 1000 || got[199].GetSeq() != 1199 {
+		t.Fatalf("newest page = %d entries [%d..%d], want 200 [1000..1199]",
+			len(got), got[0].GetSeq(), got[len(got)-1].GetSeq())
+	}
+	// next_seq must still point past the newest entry, or the live stream
+	// would resubscribe into history it already has.
+	if resp.Msg.GetNextSeq() != 1200 {
+		t.Errorf("next_seq = %d, want 1200", resp.Msg.GetNextSeq())
+	}
+
+	// One click of "load earlier": the page immediately before what's held,
+	// and nothing at or past the boundary (which would duplicate on prepend).
+	older, err := s.GetTranscript(context.Background(), connect.NewRequest(&agentfleetv1.ReadTranscriptSinceRequest{
+		SessionId: "s1", Limit: proto.Int32(200), BeforeSeq: proto.Int64(1000),
+	}))
+	if err != nil {
+		t.Fatalf("GetTranscript(before): %v", err)
+	}
+	got = older.Msg.GetEntries()
+	if len(got) != 200 || got[0].GetSeq() != 800 || got[199].GetSeq() != 999 {
+		t.Fatalf("older page = %d entries [%d..%d], want 200 [800..999]",
+			len(got), got[0].GetSeq(), got[len(got)-1].GetSeq())
 	}
 }

@@ -325,12 +325,66 @@ func isValidModel(model string) bool {
 	return validModels[model]
 }
 
+// maxTranscriptPage bounds every GetTranscript response. It was the only
+// page size before the window selector existed, and a client asking for more
+// is clamped rather than refused.
+const maxTranscriptPage = 1000
+
+// transcriptWindow turns the request's (since_seq, limit, before_seq) into the
+// (sinceSeq, limit) pair ReadSince actually takes, given the session's current
+// latest seq (one past the highest, per Store.LatestSeq).
+//
+// It relies on seq being dense — Append assigns MAX(seq)+1 per session — so
+// "the newest N" is "everything from latest-N". Retention could in principle
+// punch holes, which is why the before_seq caller trims the result rather than
+// trusting the arithmetic.
+//
+// ponytail: dense-seq arithmetic over a real ORDER BY seq DESC LIMIT n query,
+// so this needs no new Store method and no fake to grow one. If retention ever
+// deletes enough mid-session rows for a short page to be noticeable, add
+// ReadBefore to the interface and delete this.
+func transcriptWindow(sinceSeq, latestSeq int64, limit int32, beforeSeq *int64) (int64, int) {
+	page := int(limit)
+	if page <= 0 || page > maxTranscriptPage {
+		page = maxTranscriptPage
+	}
+	switch {
+	case beforeSeq != nil:
+		return max(*beforeSeq-int64(page), 0), page
+	case limit > 0:
+		// Newest page. latestSeq is one past the highest, so this is exactly
+		// the last `page` entries of a dense transcript.
+		return max(latestSeq-int64(page), sinceSeq), page
+	default:
+		return sinceSeq, page
+	}
+}
+
 func (s *Server) GetTranscript(ctx context.Context, req *connect.Request[agentfleetv1.ReadTranscriptSinceRequest]) (*connect.Response[agentfleetv1.ReadTranscriptSinceResponse], error) {
 	sessionID := req.Msg.GetSessionId()
-	entries, next, err := s.transcr.ReadSince(ctx, sessionID, req.Msg.GetSinceSeq(), 1000)
+	var latest int64
+	if req.Msg.Limit != nil && req.Msg.BeforeSeq == nil {
+		var err error
+		if latest, err = s.transcr.LatestSeq(ctx, sessionID); err != nil {
+			slog.Error("dashboard GetTranscript latestSeq", "sessionId", sessionID, "error", err)
+			return nil, connect.NewError(connect.CodeInternal, err)
+		}
+	}
+	since, page := transcriptWindow(req.Msg.GetSinceSeq(), latest, req.Msg.GetLimit(), req.Msg.BeforeSeq)
+	entries, next, err := s.transcr.ReadSince(ctx, sessionID, since, page)
 	if err != nil {
 		slog.Error("dashboard GetTranscript", "sessionId", sessionID, "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	if b := req.Msg.BeforeSeq; b != nil {
+		// A gap in seq would let the page run past the window's own edge and
+		// hand the client entries it already has. Cheaper to trim than to
+		// assume density.
+		for len(entries) > 0 && entries[len(entries)-1].Seq >= *b {
+			entries = entries[:len(entries)-1]
+		}
+		// This is a backwards read: the live stream cursor must not follow it.
+		next = *b
 	}
 	out := make([]*agentfleetv1.TranscriptEntry, len(entries))
 	for i, e := range entries {

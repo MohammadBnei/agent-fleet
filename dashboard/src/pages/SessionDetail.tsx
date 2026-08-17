@@ -60,6 +60,9 @@ export function SessionDetail({
     loadError,
     actionError,
     pendingMessage,
+    hasOlder,
+    loadingOlder,
+    loadOlder,
     run,
     sendDiscuss,
     respondToPermission,
@@ -72,31 +75,37 @@ export function SessionDetail({
   // Key deliberately not renamed with the file: it is persisted in every
   // operator's browser, and renaming it silently resets their density choice.
   const [density, setDensity] = useLocalStorageState<Density>("taskDetail.density", "everything");
-  const { ref: feedRef, atBottom: feedAtBottom, onScroll: feedOnScroll, scrollToBottom: feedScrollToBottom } =
-    useAtBottom<HTMLDivElement>();
+  const {
+    ref: feedRef,
+    atBottom: feedAtBottom,
+    onScroll: feedOnScroll,
+    scrollToBottom: feedScrollToBottom,
+    anchorPrepend,
+  } = useAtBottom<HTMLDivElement>();
 
   // A new human entry (this tab's own send, or one relayed from Discord) always
   // jumps to the bottom — the reader clearly wants to see it. A new agent entry
   // follows too, but only if the reader was already at the bottom, otherwise
   // they're mid-scroll reading history and it'd yank the view; the button
   // pulses instead.
+  //
+  // Keyed on the newest entry's seq, not on entries.length: loading older
+  // history prepends, which grows the length without anything new having
+  // arrived — and autoscrolling then would drag the reader away from the very
+  // history they asked for.
   const [hasNewAiMessage, setHasNewAiMessage] = useState(false);
-  const prevEntriesLenRef = useRef<number | null>(null);
+  const prevLastSeqRef = useRef<bigint | null>(null);
   useEffect(() => {
-    if (prevEntriesLenRef.current === null) {
-      prevEntriesLenRef.current = entries.length;
-      return;
+    const latest = entries[entries.length - 1];
+    const prev = prevLastSeqRef.current;
+    prevLastSeqRef.current = latest?.seq ?? null;
+    if (prev === null || latest === undefined || latest.seq <= prev) return;
+    if (latest.from === "human" || feedAtBottom) {
+      feedScrollToBottom();
+      setHasNewAiMessage(false);
+    } else {
+      setHasNewAiMessage(true);
     }
-    if (entries.length > prevEntriesLenRef.current) {
-      const latest = entries[entries.length - 1];
-      if (latest.from === "human" || feedAtBottom) {
-        feedScrollToBottom();
-        setHasNewAiMessage(false);
-      } else {
-        setHasNewAiMessage(true);
-      }
-    }
-    prevEntriesLenRef.current = entries.length;
   }, [entries, feedAtBottom, feedScrollToBottom]);
 
   // Land on the latest message when a session is opened — *before* the first
@@ -212,6 +221,9 @@ export function SessionDetail({
               visibility={visibility}
               density={density}
               busyKey={busyKey}
+              hasOlder={hasOlder}
+              loadingOlder={loadingOlder}
+              onLoadOlder={() => anchorPrepend(loadOlder)}
               dockPendingDecision
               onRespond={respondToPermission}
               onApprovePlan={approvePlanDecision}
