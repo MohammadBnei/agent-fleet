@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.8.5](https://github.com/MohammadBnei/agent-fleet/compare/3.8.4...3.8.5) (2026-08-17)
+
+
+### Bug Fixes
+
+* the gate is canUseTool, not a rule list the SDK re-interprets ([#188](https://github.com/MohammadBnei/agent-fleet/issues/188)) ([f6c96b5](https://github.com/MohammadBnei/agent-fleet/commit/f6c96b5561272833545250f0565746259e0e0b5b))
+
 ## [3.8.4](https://github.com/MohammadBnei/agent-fleet/compare/3.8.3...3.8.4) (2026-08-17)
 
 ## [3.8.3](https://github.com/MohammadBnei/agent-fleet/compare/3.8.2...3.8.3) (2026-08-17)
