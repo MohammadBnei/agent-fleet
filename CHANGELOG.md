@@ -1,5 +1,14 @@
 # Changelog
 
+## [3.7.2](https://github.com/MohammadBnei/agent-fleet/compare/3.7.1...3.7.2) (2026-08-17)
+
+
+### Bug Fixes
+
+* **worker:** stop relaying SDK per-frame progress messages ([#182](https://github.com/MohammadBnei/agent-fleet/issues/182)) ([784de79](https://github.com/MohammadBnei/agent-fleet/commit/784de79bce83146eca974a6a0d011fd6af6fd9d5))
+
+## [3.7.1](https://github.com/MohammadBnei/agent-fleet/compare/3.7.0...3.7.1) (2026-08-17)
+
 # [3.7.0](https://github.com/MohammadBnei/agent-fleet/compare/3.6.0...3.7.0) (2026-08-16)
 
 

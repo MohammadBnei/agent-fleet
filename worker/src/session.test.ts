@@ -838,6 +838,29 @@ test("out-of-band SDK signals relay as system entries tagged with their sdk disc
   expect(bySdk.get("status")).not.toHaveProperty("session_id");
 });
 
+// SDK 0.3.233 added system subtypes that are re-emitted many times inside ONE
+// event — thinking_tokens per thinking delta, task_progress per subagent poll,
+// hook_progress per stdout chunk. Relaying them wrote a durable transcript row
+// per FRAME, which drowned the dashboard feed in near-identical entries. Their
+// terminal siblings (task_notification, hook_response, result) still relay.
+test("per-frame SDK progress messages never reach the transcript", async () => {
+  await relayOnce([
+    { type: "system", subtype: "thinking_tokens", estimated_tokens: 120, estimated_tokens_delta: 120 },
+    { type: "system", subtype: "thinking_tokens", estimated_tokens: 260, estimated_tokens_delta: 140 },
+    { type: "system", subtype: "task_progress", task_id: "t1", description: "searching", usage: { total_tokens: 900 } },
+    { type: "system", subtype: "hook_progress", hook_name: "rtk", hook_event: "PreToolUse", stdout: "chunk" },
+    { type: "system", subtype: "control_request_progress", request_id: "r1", status: "started" },
+    { type: "system", subtype: "session_state_changed", state: "running" },
+    { type: "system", subtype: "task_notification", task_id: "t1", status: "completed", summary: "done" },
+  ]);
+
+  const relayed = systemPayloads().map((p) => p.sdk);
+  for (const frame of ["thinking_tokens", "task_progress", "hook_progress", "control_request_progress", "session_state_changed"]) {
+    expect(relayed).not.toContain(frame);
+  }
+  expect(relayed).toContain("task_notification");
+});
+
 test("an SDK-level assistant error relays even though the turn has no content block for it", async () => {
   await relayOnce([{ type: "assistant", error: "rate_limit", message: { content: [] } }]);
 
