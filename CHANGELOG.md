@@ -1,5 +1,12 @@
 # Changelog
 
+# [3.8.0](https://github.com/MohammadBnei/agent-fleet/compare/3.7.2...3.8.0) (2026-08-17)
+
+
+### Features
+
+* **dashboard,core:** open the feed on the newest page, load older history in pages ([#183](https://github.com/MohammadBnei/agent-fleet/issues/183)) ([b5b5f2c](https://github.com/MohammadBnei/agent-fleet/commit/b5b5f2c7f1946bf57427ffdc5d7c0b00f48849e6)), closes [#180](https://github.com/MohammadBnei/agent-fleet/issues/180) [#1001](https://github.com/MohammadBnei/agent-fleet/issues/1001)
+
 ## [3.7.2](https://github.com/MohammadBnei/agent-fleet/compare/3.7.1...3.7.2) (2026-08-17)
 
 
