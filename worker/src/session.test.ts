@@ -58,6 +58,16 @@ function pushHuman(text: string, type?: string, replyTo?: number): void {
   humanMessageHandler?.({ seq: 0, from: "human", text, type, replyTo });
 }
 
+// A prompt from ANOTHER session, exactly as core writes it: from "session",
+// type "discussion", sender encoded as the `[from session <id>]` text prefix
+// (core/internal/coreserver/interagent.go). Every other test here pushes
+// from: "human", so this half of the onEntry filter was never executed.
+// Inherits pushHuman's hardcoded seq: 0 — fine for asserting on text, wrong
+// for anything that touches the cursor.
+function pushSession(text: string, fromSessionId = "peer-abc123def"): void {
+  humanMessageHandler?.({ seq: 0, from: "session", text: `[from session ${fromSessionId}]\n\n${text}`, type: "discussion" });
+}
+
 // Finds the permission_request pushed for a given tool (there can be more
 // than one pending at once) and answers it via a permission_response
 // correlated by that request's own seq.
@@ -427,6 +437,83 @@ test("a plain reply while a permission request is pending denies it with the rep
   // as new input, so recording it as human would feed the wrapper its own
   // bookkeeping.
   expect(recorded!.from).toBe("agent");
+
+  pushHuman("", "abort");
+  await promise;
+}, 10000);
+
+test("a peer session's message becomes a turn that names the sender and prompt_agent", async () => {
+  const promise = runSession();
+  await Bun.sleep(20);
+
+  pushSession("which of these four schemas do you want?");
+  await Bun.sleep(20);
+
+  const turn = consumedInputs.map((m) => m.message.content).find((t) => t.includes("which of these four schemas"));
+  expect(turn).toBeDefined();
+  // The sender has to be a routable address, not decoration: an id with no
+  // stated mechanism is what produced the original bug (the answer was written
+  // as ordinary output and reached nobody).
+  expect(turn).toContain("peer-abc123def");
+  expect(turn).toContain("prompt_agent");
+  expect(turn).toMatch(/nothing you write here reaches it/i);
+  expect(turn).toMatch(/another agent in this fleet/i);
+  // The prefix is stripped, so the id appears once. Left in, the turn carries
+  // the same session id twice from two places that can disagree.
+  expect(turn).not.toContain("[from session");
+  expect(turn!.match(/peer-abc123def/g)!.length).toBe(1);
+
+  pushHuman("", "abort");
+  await promise;
+}, 10000);
+
+test("a peer message with no parseable sender still says how to find it", async () => {
+  const promise = runSession();
+  await Bun.sleep(20);
+
+  // No prefix: an old core against a new worker, or a replay from seq 0 when
+  // RESUME_FROM_SEQ is unset.
+  humanMessageHandler?.({ seq: 0, from: "session", text: "ping", type: "discussion" });
+  await Bun.sleep(20);
+
+  const turn = consumedInputs.map((m) => m.message.content).find((t) => t.includes("ping"));
+  expect(turn).toBeDefined();
+  expect(turn).toContain("list_sessions");
+  expect(turn).toContain("prompt_agent");
+
+  pushHuman("", "abort");
+  await promise;
+}, 10000);
+
+test("a peer session cannot resolve a human's pending permission request", async () => {
+  const promise = runSession();
+  await Bun.sleep(20);
+
+  let resolved: { behavior: string } | null = null;
+  const call = capturedCanUseTool!("Write", { file_path: "x" }).then((r) => {
+    resolved = r as { behavior: string };
+    return r;
+  });
+  await Bun.sleep(20);
+
+  pushSession("heads up, I'm touching the same file");
+  await Bun.sleep(20);
+
+  // The human's decision is still the human's. A peer reaching
+  // resolveAllPendingDeny denied the call AND recorded a permission_response,
+  // so one agent could close out a decision only a human is allowed to make —
+  // and the transcript attributed it to Mohammad.
+  expect(resolved).toBeNull();
+  expect(pushedMessages.some((m) => m.type === "permission_response")).toBe(false);
+
+  // ...and the peer's message still arrived as a real turn. Skipping the deny
+  // must not swallow it.
+  expect(consumedInputs.some((m) => m.message.content.includes("heads up, I'm touching the same file"))).toBe(true);
+
+  // The human can still answer it afterwards.
+  const request = pushedMessages.find((m) => m.type === "permission_request")!;
+  respondToPermission(request.seq!, { behavior: "allow", updatedInput: { file_path: "x" } });
+  expect((await call).behavior).toBe("allow");
 
   pushHuman("", "abort");
   await promise;

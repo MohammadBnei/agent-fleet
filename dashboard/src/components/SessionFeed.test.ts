@@ -54,6 +54,62 @@ function renderedEntryViews(entries: TranscriptEntry[]): Rendered[] {
   return found;
 }
 
+// The cross-session branch renders raw JSX rather than a TranscriptEntryView,
+// so renderedEntryViews above cannot see it — flatten the tree to text instead.
+function renderedText(entries: TranscriptEntry[]): string {
+  const tree = SessionFeed({
+    entries,
+    visibility: feedVisibility("everything", false),
+    density: "everything",
+    busyKey: null,
+    onRespond: () => {},
+    onAnswer: () => {},
+    onPlanFeedback: () => {},
+  });
+
+  let text = "";
+  const walk = (node: unknown): void => {
+    if (Array.isArray(node)) return node.forEach(walk);
+    if (typeof node === "string" || typeof node === "number") {
+      text += String(node);
+      return;
+    }
+    if (!node || typeof node !== "object") return;
+    const el = node as { props?: Record<string, unknown> };
+    // TranscriptEntryView renders through a real component, so its own text
+    // never reaches this walk — that is what keeps the assertions below
+    // specific to the cross-session branch.
+    if (el.props?.text) text += String(el.props.text);
+    if (el.props?.children) walk(el.props.children);
+  };
+  walk(tree);
+  return text;
+}
+
+const peerEntry = (text: string) =>
+  ({ ...entry(TranscriptEntryType.DISCUSSION, text), from: "session" }) as TranscriptEntry;
+
+test("a peer session's message is attributed to its sender", () => {
+  expect(renderedText([peerEntry("[from session abcdef123456]\n\nwhich schema?")])).toContain("#abcdef");
+});
+
+test("a peer message with no prefix is still rendered as a peer message", () => {
+  const text = renderedText([peerEntry("which schema?")]);
+  expect(text).toContain("another session");
+  // Not "from #" — an empty id sliced to 6 chars is what the old truthiness
+  // check would have produced if it had reached this branch at all.
+  expect(text).not.toContain("#");
+});
+
+// The regex used to be tested against every entry's text and never against its
+// author, so a human writing that literal was rendered as another agent — the
+// one attribution in the feed a human cannot forge is exactly the one that was
+// forgeable.
+test("a human message that starts with the cross-session literal is not attributed to a session", () => {
+  const human = { ...entry(TranscriptEntryType.DISCUSSION, "[from session deadbeef]\n\nnot me"), from: "human" } as TranscriptEntry;
+  expect(renderedText([human])).not.toContain("#deadbe");
+});
+
 // The SDK re-emits system/init at the head of every turn in streaming-input
 // mode. Labelling each one "session started" put a false session boundary
 // between every prompt and its answer — three of them in one unbroken

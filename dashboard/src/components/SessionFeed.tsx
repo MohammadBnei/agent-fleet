@@ -492,13 +492,19 @@ export function SessionFeed({
     if (!visibility.narrative) continue;
     flush();
 
-    const cross = CROSS_SESSION.exec(entry.text);
-    if (cross) {
+    // Gated on the AUTHOR, not on the text: core is the only writer of
+    // from === "session", so matching the prefix alone rendered a HUMAN message
+    // that happened to start with the literal `[from session x]` as a
+    // cross-session prompt. `!== null` rather than truthiness — a session entry
+    // whose prefix is missing is still a peer message, not agent prose.
+    const peer = entry.from === "session" ? (CROSS_SESSION.exec(entry.text)?.[1] ?? "") : null;
+    if (peer !== null) {
       out.push(
         <div key={key} id={`entry-${key}`} className="flex gap-2.5 items-baseline">
           <span className="text-green-soft text-xs sm:text-sm flex-none">↘</span>
           <div className={`text-dim leading-[1.65] min-w-0 ${compact ? "text-xs" : "text-sm"}`}>
-            from <span className="text-text2">#{cross[1].slice(0, 6)}</span> — {entry.text.replace(CROSS_SESSION, "")}
+            from <span className="text-text2">{peer ? `#${peer.slice(0, 6)}` : "another session"}</span> —{" "}
+            {entry.text.replace(CROSS_SESSION, "")}
           </div>
         </div>,
       );

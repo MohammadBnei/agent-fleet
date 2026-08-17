@@ -62,6 +62,43 @@ const FLEET_ASK_RULES = [
   "Bash(env:*)",
 ];
 
+// A peer session's prompt arrives on the same feed as a human's and, until this
+// wrapper, was byte-identical to one. core encodes the sender as prose
+// (`[from session <id>]`, core/internal/coreserver/interagent.go) and nothing
+// downstream ever read entry.from, so the model saw display attribution rather
+// than a routable address, and nothing told it that its own output does not
+// reach the sender. Observed live: a session asked another one a set of
+// questions, the answer was written as ordinary output, and it reached nobody.
+//
+// ponytail: the sender is parsed back out of that prefix instead of being
+// carried as a real column on the transcript row — one regex duplicated here
+// and in the dashboard's SessionFeed, which rots silently if interagent.go
+// changes the prefix format. Upgrade path is a `from_session_id` column; the
+// trigger is a third consumer, or one that cannot parse text at all (per-sender
+// ACLs, a rate limit — both deferred in docs/adr/0041).
+const CROSS_SESSION = /^\[from session ([^\]]+)\]\s*/;
+
+// Deliberately states only mechanism, never obligation. The failure this fixes
+// was NOT silence — the session wrote a full, correct answer to its own output
+// — so an "answer only if it needs one" hedge would hand that same escape back.
+function peerTurn(text: string): string {
+  const match = CROSS_SESSION.exec(text);
+  // Strip the prefix: with the sender named in the instruction below, leaving it
+  // in the body puts the same id in the turn twice.
+  const body = match ? text.slice(match[0].length) : text;
+  const reply = match
+    ? `call prompt_agent with sessionId "${match[1]}"`
+    : "find the sender with list_sessions, then call prompt_agent";
+  return [
+    "The message below is from another agent in this fleet, not from Mohammad.",
+    "",
+    body,
+    "",
+    `That session cannot see this transcript: nothing you write here reaches it. To answer, ${reply}.`,
+    "If prompt_agent is refused because the target is blocked on a human decision, your answer has NOT been delivered — retry once it is unblocked.",
+  ].join("\n");
+}
+
 function sidecarMcpServer() {
   return { type: "http" as const, url: `http://${SIDECAR_MCP_ADDR}/mcp` };
 }
@@ -857,7 +894,16 @@ export async function runSession(): Promise<SessionResult> {
         abortController.abort();
         return;
       }
-      if (pendingPermissions.size > 0) {
+      // from === "human", not just "anything that got this far": a peer
+      // session's message used to land here too, and resolveAllPendingDeny
+      // records a permission_response — so one agent could terminate a HUMAN's
+      // outstanding permission decision and have it attributed to Mohammad.
+      // adr/0041's "refuse a blocked target" guard does not close that: core
+      // checks blocked-ness and appends either side of a warm plus this
+      // stream's own poll, so a permission raised in that window arrives with
+      // pendingPermissions non-empty. Skipping the branch swallows nothing —
+      // input.push below still delivers the peer's message as a real turn.
+      if (entry.from === "human" && pendingPermissions.size > 0) {
         // A plain reply while something's pending is feedback, not an
         // answer — deny every pending request with it (same as choosing
         // "No, keep planning" with guidance in Claude Code CLI's own
@@ -869,7 +915,7 @@ export async function runSession(): Promise<SessionResult> {
         // the only trace of his reply was buried once per pending call.
         resolveAllPendingDeny(`Mohammad replied (not an approval): ${entry.text}`);
       }
-      input.push(entry.text);
+      input.push(entry.from === "session" ? peerTurn(entry.text) : entry.text);
     }, humanMessagesAbort.signal, RESUME_FROM_SEQ)
     .catch((err) => log("error", "human message stream failed", { taskId: SESSION_ID, error: String(err) }));
 

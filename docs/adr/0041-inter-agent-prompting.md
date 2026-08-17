@@ -130,3 +130,65 @@ agent gets this without bookkeeping.
   volume; a session in a loop of its own making could prompt one target
   repeatedly. Left out deliberately — no observed need, and the wrong limit
   is worse than none — but it is the obvious next guard if it bites.
+
+## Amendment (2026-08-17): delivery, not just the row
+
+Writing the row is not delivering the message. This ADR's own
+"Prompts are authored `session`" section already records that lesson once —
+every test asserted the entry was written, which it was, and delivery was
+broken on the real cluster. The same gap survived one layer further in.
+
+**Observed:** a session used `prompt_agent` to ask another one a set of
+questions. The target wrote a long, correct answer — as ordinary assistant
+output — and it reached nobody. The caller waited on silence.
+
+The cause is that `core` encodes the sender as prose (`[from session <id>]`,
+`interagent.go`) and nothing downstream ever read `entry.from`. The receiving
+worker's `onEntry` filter admits `"session"` and then dispatches purely on
+`entry.type`, so a peer prompt reached `input.push(entry.text)` **byte-identically
+to a human message**. The model had no way to know its output does not reach the
+sender, and the id in the prefix reads as display attribution rather than a
+routable address.
+
+Three changes, all in the receiver:
+
+- **The worker wraps a peer turn.** The prefix is stripped and replaced by an
+  explicit statement of mechanism: this is another agent, that session cannot
+  see this transcript, and the way back is `prompt_agent` with this id —
+  including that a refusal (the `blocked`-target guard below) means the answer
+  was *not* delivered. Deliberately no "reply only if needed" hedge: the failure
+  was never silence, it was a full answer written to the wrong place.
+- **A peer can no longer resolve a human's permission.** The worker's
+  "a plain reply denies what's pending" sweep is now gated on `from === "human"`.
+  Guard row 2 of the table above — refuse a `blocked` target — does not close
+  this: the blocked-ness check and the append sit either side of a warm plus the
+  message stream's own poll, so a permission raised in that window arrived with
+  requests pending, and the sweep wrote a `permission_response` on a human's
+  behalf, attributed to Mohammad. That row bounds who may *send* to a blocked
+  session; it never bounded what a delivered message may *resolve*.
+- **`fleet-shared/CLAUDE.md` states the contract.** It is the only
+  always-in-context channel (`settingSources: ["user", "project"]`; the worker
+  sets no `systemPrompt`), and it said nothing about peer replies. The
+  per-message wrapper names *this* caller; the shared context is what makes the
+  mechanism known before any message arrives.
+
+The dashboard's cross-session branch is now chosen by the entry's author rather
+than by matching the prefix against arbitrary entry text, which also removes a
+false positive: a human message beginning with that literal rendered as another
+agent's.
+
+**The sender stays prose.** A real `transcript.from_session_id` column was
+designed and rejected on cost: it would have had exactly two consumers — the
+worker wrapper and the dashboard feed — and both already have the text, since
+the prefix has to be kept regardless for `wait_for_messages` (which returns
+`{from, text, type}` to an agent) and for new-core/old-worker rollout skew. The
+column's real payoff is a consumer that cannot parse text at all: the ACLs and
+the rate limit deferred above. That is the trigger to revisit; until then the
+duplicated regex (worker + dashboard) is the accepted cost, marked `ponytail:`
+at both sites.
+
+**Adjacent, not fixed here:** `SendMessage` validates neither `from` nor `type`,
+so an agent can post `from="human", type="abort"` into its own session and
+trigger the worker's human-authored abort path. `PromptSession` is not the hole —
+it injects the caller id server-side — but the property "these entry types come
+from a human" is not true fleet-wide, and no code should assume it.
