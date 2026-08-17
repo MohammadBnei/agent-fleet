@@ -128,11 +128,15 @@ func (c *Client) EnsureBrowserCache(ctx context.Context) error {
 				Spec: corev1.PodSpec{
 					RestartPolicy: corev1.RestartPolicyNever,
 					// Same fsGroup as worker pods (pod.go): kubelet chgrps the
-					// subPath to gid 1000 and sets g+w, so this Job's chmod on
-					// /browsers succeeds. Without it the subPath stays root-owned
-					// 0755 on a real StorageClass and `chmod -R o+rX /browsers`
-					// dies with "Operation not permitted" after the browsers are
-					// already downloaded (live, KubeJobFailed 2026-08-16).
+					// subPath to gid 1000 and adds g+w, which is what lets this
+					// Job write a mount root it does not own. Without it the
+					// subPath stays root-owned 0755 on a real StorageClass and
+					// nothing can be installed into it at all.
+					//
+					// It does NOT make the Job able to chmod that root — fsGroup
+					// changes the group, never the owner, and chmod needs
+					// ownership. Believing otherwise is what shipped the failed
+					// fix on 2026-08-16; see the script comment above.
 					SecurityContext: &corev1.PodSecurityContext{FSGroup: int64Ptr(1000)},
 					NodeSelector:    c.SessionNodeSelector,
 					Containers: []corev1.Container{{
