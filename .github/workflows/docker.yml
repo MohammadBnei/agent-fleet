@@ -56,6 +56,13 @@ on:
 
 env:
   REGISTRY: registry.bnei.lan:5000
+  # Plaintext on purpose: a username is not a secret, and holding it as one
+  # cost a release. `secrets.REGISTRY_USERNAME` was never set on this repo, so
+  # buildah got `--username ""` and failed the 3.8.6 tag build with "Must
+  # provide --username with --password-stdin" — a config value that existed in
+  # Infisical, was described in a commit message, and reached nothing. Only the
+  # password is a secret.
+  REGISTRY_USER: ci
   # The complete set, used verbatim on a release. Also what
   # core/internal/buildguard's matrix_test greps for: every directory
   # shipping a Dockerfile must appear in this file, or adding a component
@@ -256,7 +263,7 @@ jobs:
         run: |
           echo "${{ secrets.REGISTRY_PASSWORD }}" | sudo buildah login \
             --tls-verify=false \
-            --username "${{ secrets.REGISTRY_USERNAME }}" \
+            --username "$REGISTRY_USER" \
             --password-stdin "$REGISTRY"
 
       - name: Build and push

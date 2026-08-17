@@ -198,13 +198,24 @@ feature was written:
   exists" are different claims — a manifest referencing a tag only a PR built
   will `ImagePullBackOff`. Check the registry itself:
   `curl -s http://registry.bnei.lan:5000/v2/agent-fleet-worker/tags/list`
-  (anonymous read). And note that the registry keeps only the **last 5 tags**
+  (anonymous read). And note that the registry keeps only the **last 3 tags**
   per image plus `latest`, so "it was pushed once" is not "it is still there"
-  either — a rollback deeper than 5 releases needs a rebuild.
+  either — a rollback deeper than 3 releases needs a rebuild.
 - **`kubectl apply --dry-run=server` does not create a pod.** A Deployment
   naming a non-existent ServiceAccount validates perfectly and then never
   schedules. ArgoCD reporting `Synced` + `Degraded` together is the
   signature — look at pods, not sync status.
+- **An unset GitHub secret is the empty string, not an error.** `docker.yml`
+  read the registry username from `secrets.REGISTRY_USERNAME`, which was never
+  set on this repo — the value had been put in Infisical instead, and a commit
+  message asserted the workflow used a plaintext env. So `buildah login` got
+  `--username ""` and the v3.8.6 release died on "Must provide --username with
+  --password-stdin", 8 seconds in, *after* the tag existed. Nothing warns you:
+  `${{ secrets.X }}` for a missing X interpolates empty and the step runs. Same
+  family as the `repos.image` trap below — a value present at several layers
+  and reaching none of them. **A non-secret that CI needs belongs in `env:`
+  where its absence is a YAML-visible fact, not in `secrets:` where it is
+  indistinguishable from empty.**
 - **Adding a component means wiring it into *every* CI path**, including
   `docker.yml`'s `COMPONENTS` env (the release list) *and* the `changes`
   job's paths-filter + component script (the PR list — a component missing

@@ -59,7 +59,7 @@ Any doc, code, comment, or memory that contradicts this file or an
   `buildah` on the `build-runner` LXC — never Docker Hub, never in-cluster
   (buildah cannot extract layers without `CAP_SYS_ADMIN`). LAN-only plain
   HTTP with anonymous pull, so no `imagePullSecrets` anywhere. The registry
-  keeps the **last 5 tags** per image plus `latest`; `executor`'s floating
+  keeps the **last 3 tags** per image plus `latest`; `executor`'s floating
   `:latest` is depended on by `catalog.go` and by infra-bootstrap's thot
   manifest, and is pinned in the retention policy for that reason. See
   infra-bootstrap ADR-0034.
