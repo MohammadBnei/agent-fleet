@@ -135,9 +135,9 @@ curl -s http://registry.bnei.lan:5000/v2/_catalog
 curl -s http://registry.bnei.lan:5000/v2/agent-fleet-worker/tags/list
 ```
 
-Retention keeps only the **last 5 tags per image** plus `latest`
+Retention keeps only the **last 3 tags per image** plus `latest`
 (infra-bootstrap `gitops/platform/values/zot/values.yaml`), so a rollback
-deeper than 5 releases needs the image rebuilt — `workflow_dispatch` after
+deeper than 3 releases needs the image rebuilt — `workflow_dispatch` after
 checking out the older tag. Runner/build/disk problems on the box itself go
 through infra-bootstrap's `/build-runner-ops`.
 
