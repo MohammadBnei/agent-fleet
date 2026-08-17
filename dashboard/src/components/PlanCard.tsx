@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { Markdown } from "./Markdown";
 import { ActionButton } from "./ActionButton";
 import { ConfirmModal } from "./ConfirmModal";
+import { AUTO_MODE_WARNING } from "../approvePlan";
 
 type Annotation = { quote: string; comment: string };
 type SelectionPopover = { quote: string; x: number; y: number; editing: boolean };
@@ -269,7 +270,7 @@ export function PlanCard({
       <ConfirmModal
         open={autoConfirmOpen}
         title="Approve and switch to auto mode?"
-        message="A model classifier answers the ordinary permission prompts for the rest of this session. git push, gh, rm, sudo, kubectl, curl, wget and env still come to you, and so does the next plan."
+        message={AUTO_MODE_WARNING}
         confirmLabel="approve + auto"
         danger={false}
         onConfirm={() => {

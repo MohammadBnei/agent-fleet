@@ -181,19 +181,27 @@ Any doc, code, comment, or memory that contradicts this file or an
   is a PR. There is no specificity tiebreak, so a broad `ask` prefix swallows
   every narrower `allow` beneath it. See
   [`adr/0049`](adr/0049-project-setting-source.md).
-- **`auto` is the mode plan approval switches to; `bypassPermissions` is a
-  launch profile, not a switch.** Since SDK 0.3.233 the evaluator returns on
-  an ask rule *before* the permission mode's own allow, and bypass
-  availability is computed once at launch — so a live switch into (or out of)
-  bypass ends the pod and re-warms into it, while every other mode, `auto`
-  included, still switches in place. A rejected switch is reported to the
-  human instead of being logged and silently treated as an allow. The
-  `permissions.ask` counterweight above moves into `worker/src/session.ts`'s
-  `FLEET_ASK_RULES` (injected through `settings`) so it can be omitted for the
-  one mode a human explicitly typed `bypass` for.
+- **`auto` is the mode plan approval switches to**, and every mode switch is a
+  live control request. A rejected switch is reported to the human instead of
+  being logged and silently treated as an allow. The `permissions.ask`
+  counterweight above lives in `worker/src/session.ts`'s `FLEET_ASK_RULES`,
+  injected through the SDK's `settings` option.
   `allowDangerouslySkipPermissions` is still never passed: it would make plan
   mode auto-allow every write from turn one. See
   [`adr/0052`](adr/0052-auto-mode-and-the-bypass-launch-profile.md).
+- **The permission gate is `canUseTool`, not a rule list the SDK
+  re-interprets.** Two things are decided in the fleet's own process, above
+  whatever the evaluator does: the fleet's **own** tools
+  (`mcp__agent-fleet-sidecar__*`, `mcp__playwright__*`) are always allowed —
+  otherwise the agent needs permission before it can *ask* for permission,
+  which is what shipped — and in `auto` everything is allowed except a `Bash`
+  running `rm` or `sudo`. `allowedTools` still lists the MCP tools and is
+  still the fast path, but nothing depends on it: 0.3.233 asks for every
+  non-read-only MCP tool in `plan` mode, and again under an org-level
+  `effectiveMaxPermission` ceiling, both **above** the allow-rule lookup.
+  `bypassPermissions` is deleted — it bought only `rm`/`sudo` over `auto`, and
+  charged a launch profile for them. See
+  [`adr/0053`](adr/0053-the-gate-is-canusetool-not-a-rule-list.md).
 
 ## 2. Forbidden patterns (quick check — full list + reasons in `adr/`)
 
@@ -205,8 +213,8 @@ Any doc, code, comment, or memory that contradicts this file or an
 - **Inferring a permission decision from silence, round completion, or
   free-text sentiment.** `canUseTool` prompts live and blocks for a real,
   structured `RespondToPermission` reply (or an explicit
-  `SetPermissionMode` call, itself typed-confirmation gated for
-  `bypassPermissions`) — never inferred from anything else. `/approve` no
+  `SetPermissionMode` call, itself confirmation-gated for `auto`) — never
+  inferred from anything else. `/approve` no
   longer exists — see `adr/0005`, `adr/0027`, `adr/0029`.
 - **Reclaiming a session's directory on anything but archive or the
   retention timer.** Stop and idle-timeout tear down the pod and leave the

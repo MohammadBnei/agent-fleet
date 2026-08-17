@@ -59,7 +59,7 @@ export async function saveSessionId(sessionId: string, model: string): Promise<v
 //
 // It survives docs/adr/0048's cull of this API for exactly one reason:
 // permission_mode must be RESTORED on a warm. Without it, resuming a session
-// a human put into acceptEdits/plan/bypassPermissions silently reverts it to
+// a human put into acceptEdits/plan/auto silently reverts it to
 // "default" — and the only way to notice is to watch it start asking for
 // permission again.
 //

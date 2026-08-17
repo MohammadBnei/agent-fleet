@@ -9,9 +9,9 @@ Worker pod. Ephemeral, one session, a real clone at `/workspace` on the session'
   gate nothing the free `Read` tool doesn't already give you. Bash that
   *changes* something still prompts, and `git push`, `gh`, `rm`, `sudo`,
   `kubectl`, `curl`, `wget`, `env` are held prompting by `FLEET_ASK_RULES` in
-  the worker, which outranks every permission mode — except a session a human
-  explicitly launched in `bypassPermissions`, where the list is omitted
-  wholesale (`docs/adr/0052`)
+  the worker, which outranks every permission mode. In `auto` the worker
+  answers them for you — only `rm` and `sudo` still reach a human
+  (`docs/adr/0053`)
 - Skills: `doubt-driven-development`, `architecture-interview` for non-trivial decisions
 - Journal: `journal_search` before work, `journal_write` for gotchas/decisions
 - Interrupts common (stop/timeout/crash). Land coherent increments, not half-states

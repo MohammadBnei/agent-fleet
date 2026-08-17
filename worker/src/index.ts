@@ -59,8 +59,7 @@ export async function defaultConfigureGitAuth(
 ): Promise<void> {
   if (!process.env.GH_TOKEN) return; // falls back to ambient git auth
   // The session directory was created by the provisioner's container (a
-  // different UID — worker runs non-root, required for Claude Code's
-  // bypassPermissions mode). Git's ownership-mismatch guard
+  // different UID — worker runs non-root). Git's ownership-mismatch guard
   // (CVE-2022-24765 mitigation) refuses every command otherwise, "detected
   // dubious ownership", regardless of actual file permissions. Confirmed
   // live: file perms alone (provisioner's umask 0) were not sufficient.

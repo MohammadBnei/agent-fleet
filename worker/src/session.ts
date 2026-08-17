@@ -35,18 +35,17 @@ const RESUME_SESSION_ID = process.env.RESUME_SESSION_ID || undefined;
 // (a real regression, caught live against a kind cluster).
 const RESUME_FROM_SEQ = process.env.RESUME_FROM_SEQ ? Number(process.env.RESUME_FROM_SEQ) : 0;
 
-// The fleet's authority ceiling (docs/adr/0049), injected per-session rather
-// than shipped in fleet-shared/settings.json (docs/adr/0052).
+// The fleet's authority ceiling (docs/adr/0049), injected per-session through
+// the SDK's `settings` option rather than shipped in fleet-shared/settings.json
+// (docs/adr/0052) — scope "flagSettings", which the rule collector always
+// includes alongside whatever settingSources allows. That is what keeps
+// adr/0049's counterweight: a flag-scope ask outranks a target repo's own
+// project-scope allow.
 //
-// It has to be conditional, and a settings FILE cannot be: since SDK 0.3.233
-// the evaluator returns on an ask-rule match BEFORE the permission mode's own
-// allow short-circuit, so leaving these in user settings makes
-// bypassPermissions unable to `git push` or `gh pr create` — the fleet's only
-// deliverable. Passed through `settings` (the SDK's `--settings`, scope
-// "flagSettings", which the rule collector always includes alongside whatever
-// settingSources allows), so every non-bypass session keeps exactly the
-// counterweight adr/0049 specified: a flag/user-scope ask outranks a target
-// repo's project-scope allow.
+// Unconditional as of docs/adr/0053. It used to be omitted for a
+// bypassPermissions launch, because an ask rule outranks every mode and a
+// bypass session could not `git push`; that mode is gone, and what an ask rule
+// means is now decided in canUseTool below rather than by the SDK's evaluator.
 //
 // Adding to this list is the same decision as adding to allowedTools, in
 // reverse — and a broad prefix here silently swallows every narrower allow
@@ -61,6 +60,82 @@ const FLEET_ASK_RULES = [
   "Bash(wget:*)",
   "Bash(env:*)",
 ];
+
+// The fleet's own tools. Reaching one of these is never a question for a
+// human: AskUserQuestion and send_message ARE how the agent talks to one, so
+// prompting for them means needing permission before you can ask for
+// permission — which is what shipped, live, for both.
+//
+// allowedTools below still lists them, and that is still the fast path. This
+// is the backstop, and it is deliberately not the same mechanism: an allow
+// rule is the LAST thing SDK 0.3.233's evaluator checks, under at least two
+// gates the fleet does not control. Read out of the shipped binary:
+//
+//   - `if (mcpInfo && !isReadOnly(input) && passthrough && mode === "plan")`
+//     turns every non-read-only MCP tool into an ask, and the plan-mode
+//     decisionReason is returned above the allow-rule lookup. `isReadOnly` for
+//     an MCP tool is its `readOnlyHint` annotation, which mcp-go does not set,
+//     so this is every sidecar tool in every planning session;
+//   - `if (mcpInfo?.effectiveMaxPermission === "ask")` is an org-level ceiling
+//     on MCP tools, also above the allow rules, also unreachable from here.
+//
+// A rule in a list the SDK re-interprets is a request. This is the decision.
+const FLEET_OWN_TOOL = /^mcp__(agent-fleet-sidecar|playwright)__/;
+
+// …with one carve-out, and only in `plan`. The rationale above is "reaching a
+// human must not need a human", which covers the sidecar's talking, journal and
+// file-reading tools. These five act outside this session — another session's
+// pod, a Service and an IngressRoute, a shared file that is gone — and `plan`
+// mode means "do not act yet". The SDK's own plan-mode MCP gate used to stop
+// them, and that gate is exactly what FLEET_OWN_TOOL overrides, so without this
+// the short-circuit would quietly widen what a planning session can do.
+//
+// Names, not a prefix: forgetting to add a future tool here costs one prompt in
+// one mode, which is the safe direction to be wrong in.
+const PLAN_MODE_STILL_ASKS = new Set([
+  "mcp__agent-fleet-sidecar__prompt_agent",
+  "mcp__agent-fleet-sidecar__delete_shared_file",
+  "mcp__agent-fleet-sidecar__expose",
+  "mcp__agent-fleet-sidecar__unexpose",
+  "mcp__agent-fleet-sidecar__request_service",
+]);
+
+// What still stops a human in `auto` (docs/adr/0053). `auto` means auto:
+// everything else the SDK would have prompted for is allowed here without a
+// transcript entry, whether it got that far through an ask rule, a classifier
+// fallback or a plain passthrough.
+//
+// The leading class is what makes this worth anything: `rm` at the head of the
+// line is the case nobody writes. `bash -c "rm -rf /workspace"`, `sh -c 'rm
+// dist'` and `/bin/rm -rf x` are what an agent actually emits, so quotes and a
+// path separator count as boundaries too. Over-matching (`echo "rm is a
+// command"`) costs one prompt; under-matching costs the promise the confirm
+// modal makes.
+//
+// ponytail: still the command text, not a bash parse — `$RM -rf x` or an eval
+// slips through. The ceiling is that this is a convenience gate on a mode a
+// human explicitly chose, not a sandbox; the upgrade path is the SDK's own
+// tree-sitter-bash if that ever stops being true.
+const AUTO_MODE_STILL_ASKS_BASH = /(^|[\s;&|('"/])(sudo|rm)\s/;
+
+function autoModeStillAsksCommand(toolName: string, input: Record<string, unknown>): boolean {
+  return toolName === "Bash" && typeof input.command === "string" && AUTO_MODE_STILL_ASKS_BASH.test(input.command);
+}
+
+// ExitPlanMode is the other one canUseTool holds back, and it is not about
+// danger: a plan is the one thing whose whole value is a human reading it,
+// AUTO_MODE_WARNING promises "and so does the next plan", and the CLI's own
+// auto-mode menu is reached *through* this prompt. The SDK holds it above every
+// mode via requiresUserInteraction; allowing it here would be the fleet undoing
+// that.
+//
+// Deliberately NOT part of resolveOnePendingAllow's filter, which uses the
+// command check alone: there the human has just clicked something, and a plan
+// is what they were answering (docs/adr/0052's approve+auto). A parked `rm`
+// they never opened is the opposite case.
+function autoModeStillAsks(toolName: string, input: Record<string, unknown>): boolean {
+  return toolName === "ExitPlanMode" || autoModeStillAsksCommand(toolName, input);
+}
 
 // A peer session's prompt arrives on the same feed as a human's and, until this
 // wrapper, was byte-identical to one. core encodes the sender as prose
@@ -417,16 +492,15 @@ export async function runSession(): Promise<SessionResult> {
   // This is the whole reason GET /task survives docs/adr/0048's cull of the
   // sidecar's wrapper-facing API: permission_mode has to be RESTORED on a
   // warm. Without it, every resume of a session a human put into
-  // acceptEdits/plan/bypassPermissions would silently revert to "default",
+  // acceptEdits/plan/auto would silently revert to "default",
   // and the human would have no way to tell except by watching it start
   // asking again.
   const session = await sidecar.getSession();
 
-  // The mode this pod BOOTS in, as opposed to whatever it is switched to
-  // later. Two things the SDK fixes at launch and never recomputes hang off
-  // it (docs/adr/0052): whether bypassPermissions is reachable at all, and
-  // whether FLEET_ASK_RULES below are in force. Crossing that boundary is a
-  // relaunch, not a control request — see the permission_mode handler.
+  // The mode this pod BOOTS in — restored from the column so a warm resumes in
+  // the mode a human left the session in, rather than reverting to "default".
+  // Nothing else hangs off it any more (docs/adr/0053): every switch from here
+  // on is a live control request, so `currentMode` is what the gate reads.
   const launchMode = (session.permissionMode ?? "default") as PermissionMode;
   // What the SDK is actually in right now, as opposed to what the column says
   // — they diverge the moment a switch is refused, and the column is what the
@@ -502,8 +576,16 @@ export async function runSession(): Promise<SessionResult> {
   // when present because that is what the human was answering; otherwise the
   // oldest pending call is the one the mode picker was aimed at. Anything else
   // stays parked and still has to be answered.
-  function resolveOnePendingAllow(): void {
-    const entries = [...pendingPermissions].sort(([a], [b]) => a - b);
+  //
+  // And nothing the mode being switched TO would itself still ask about is
+  // eligible (docs/adr/0053). Picking `auto` from the list — without opening
+  // the session — shows a confirm reading "only rm and sudo still come to
+  // you"; if a parked `rm -rf` were the oldest call, that click would allow
+  // the one thing the human was just promised they would be asked about.
+  function resolveOnePendingAllow(mode: PermissionMode): void {
+    const entries = [...pendingPermissions]
+      .sort(([a], [b]) => a - b)
+      .filter(([, p]) => !(mode === "auto" && autoModeStillAsksCommand(p.tool, p.input)));
     const target = entries.find(([, p]) => p.tool === "ExitPlanMode") ?? entries[0];
     if (!target) return;
     const [seq, pending] = target;
@@ -515,7 +597,7 @@ export async function runSession(): Promise<SessionResult> {
   // `interrupt` is BOTH the SDK's stop-this-turn flag and the "an interrupt/
   // abort entry is being written, which every dashboard surface already reads
   // as resolving whatever was pending" signal — they were the same event when
-  // this was written. A pod that ends itself (`/clear`, a bypass relaunch)
+  // this was written. A pod that ends itself (`/clear`)
   // writes no such entry, so it needs the turn stopped AND the resolutions
   // recorded, or the plan card sits pending forever on a session whose pod is
   // gone. `record` splits the two.
@@ -565,10 +647,9 @@ export async function runSession(): Promise<SessionResult> {
       // "default" if not set. This ensures the mode is restored on resume
       // instead of always resetting to "default".
       permissionMode: launchMode,
-      // See FLEET_ASK_RULES. Omitted entirely for a bypassPermissions launch —
-      // a human typed the literal word `bypass`, and an ask rule would outrank
-      // the mode they chose.
-      ...(launchMode === "bypassPermissions" ? {} : { settings: { permissions: { ask: FLEET_ASK_RULES } } }),
+      // See FLEET_ASK_RULES — unconditional now that bypassPermissions is gone
+      // (docs/adr/0053).
+      settings: { permissions: { ask: FLEET_ASK_RULES } },
       // Write/Edit/Bash are deliberately never in this list — canUseTool
       // below is the live escalation path for all three (confirmed in
       // Phase 0's spike: allowedTools bypasses canUseTool entirely for
@@ -611,24 +692,31 @@ export async function runSession(): Promise<SessionResult> {
       // no way to actually deliver a chosen answer back. Removing it from
       // context forces the only question tool that's actually wired up.
       disallowedTools: ["AskUserQuestion"],
-      // No tool classification here at all — the SDK's own permission mode
-      // already decides when canUseTool gets invoked (bypassPermissions
-      // skips it entirely, acceptEdits skips it for file edits, plan blocks
-      // mutation without invoking it, default invokes it for anything not
-      // auto-safe). This callback's only job is "ask a human and block" —
-      // reproducing exactly what happens interactively in the CLI, not a
-      // second fleet-side gate on top of it (supersedes docs/adr/0021's
-      // Write/Edit-absent-from-allowedTools framing and adr/0025's
-      // approve-signal mechanism).
+      // Still no tool classification here — the SDK's own permission mode
+      // decides when canUseTool gets invoked (acceptEdits skips it for file
+      // edits, plan blocks mutation without invoking it, default invokes it
+      // for anything not auto-safe), and reproducing the CLI's live prompt is
+      // this callback's job (docs/adr/0029, superseding adr/0021's
+      // Write/Edit-absent-from-allowedTools framing).
+      //
+      // The two short-circuits at the top are not a classification of what is
+      // dangerous — they are the two answers the fleet has already made and
+      // will not re-ask a human for. Everything else still blocks.
       canUseTool: async (toolName, toolInput) => {
+        // See FLEET_OWN_TOOL and PLAN_MODE_STILL_ASKS. Ahead of the rtk
+        // rewrite because rtk only ever looks at `command`, which none of
+        // these carry.
+        if (FLEET_OWN_TOOL.test(toolName) && !(currentMode === "plan" && PLAN_MODE_STILL_ASKS.has(toolName))) {
+          return { behavior: "allow", updatedInput: toolInput };
+        }
         // The human is shown (and answers) the command the agent actually
         // wrote — what gets parked below, and so what every resolve path
         // hands back as updatedInput, is its rtk-compacted equivalent. Same
         // command, a fraction of the output. Doing it here rather than in a
         // PreToolUse hook is what keeps the gate: a hook can only rewrite a
         // call it also allows outright (see rtkHook.ts). Modes that skip
-        // canUseTool entirely (bypassPermissions/acceptEdits) skip the
-        // rewrite too — no gate to preserve there, just no rtk either.
+        // canUseTool entirely (acceptEdits, for file edits) skip the rewrite
+        // too — no gate to preserve there, just no rtk either.
         //
         // Ahead of the push, not between it and the pendingPermissions.set:
         // spawning rtk takes tens of milliseconds, and a decision that
@@ -637,6 +725,16 @@ export async function runSession(): Promise<SessionResult> {
         // answered. Nothing may await between asking and being ready for
         // the answer.
         const effectiveInput = await rtkRewrite(toolName, toolInput as Record<string, unknown>);
+        // See AUTO_MODE_STILL_ASKS. Below the rewrite, not above it: an
+        // auto-allowed command still runs through rtk, which is where most of
+        // the fleet's Bash output goes — `auto` should cost fewer clicks, not
+        // more tokens.
+        //
+        // currentMode, not launchMode: entering and leaving `auto` is a live
+        // control request, so this has to read what the session is in now.
+        if (currentMode === "auto" && !autoModeStillAsks(toolName, effectiveInput)) {
+          return { behavior: "allow", updatedInput: effectiveInput };
+        }
         const seq = await sidecar
           .pushMessage("agent", JSON.stringify({ tool: toolName, input: toolInput }), "permission_request")
           .catch((err) => {
@@ -803,36 +901,11 @@ export async function runSession(): Promise<SessionResult> {
       if (entry.type === "permission_mode") {
         const mode = entry.text as PermissionMode;
 
-        // Crossing the bypassPermissions boundary is a RELAUNCH, not a
-        // control request (docs/adr/0052). Both directions:
+        // Every mode switch is a live control request again (docs/adr/0053).
+        // adr/0052's bypass-boundary relaunch is gone with the mode that
+        // needed it — bypassPermissions was the only mode the SDK fixes at
+        // launch, and the only reason FLEET_ASK_RULES varied per pod.
         //
-        //  - into bypass: since SDK 0.3.233 the set_permission_mode request is
-        //    refused outright unless the CLI was launched with the mode (or
-        //    --allow-dangerously-skip-permissions, which we deliberately do
-        //    not pass — it would also switch on the `plan &&
-        //    isBypassPermissionsModeAvailable` auto-allow for every planning
-        //    session, adr/0027's objection, still live in this build);
-        //  - out of bypass: FLEET_ASK_RULES are fixed at launch too, so a
-        //    session that merely left bypass would keep total authority with
-        //    nothing on screen saying so.
-        //
-        // core has already persisted the column, so the next warm boots in the
-        // chosen mode. Same teardown as `/clear` below, minus the
-        // saveSessionId("") — the conversation must survive the relaunch.
-        if ((mode === "bypassPermissions") !== (launchMode === "bypassPermissions")) {
-          aborted = true;
-          // record=true: nothing writes an interrupt/abort entry on this path,
-          // so without it every card parked right now stays "waiting for a
-          // human" on a session whose pod no longer exists.
-          resolveAllPendingDeny(`Switching to ${mode} — this pod is ending, re-warm to continue.`, true, true);
-          await sidecar
-            .pushMessage("agent", `Permission mode ${mode} is saved, but it can only take effect at startup — re-warm this session to apply it.`, "system")
-            .catch(() => {});
-          await interruptSafely("permission mode relaunch");
-          abortController.abort();
-          return;
-        }
-
         // Caught, not bare-awaited: this is the only await in this callback
         // that could reject, and a rejection here does not just lose the mode
         // switch — it escapes onEntry, streamOnce rethrows, and nextSeq is
@@ -865,7 +938,7 @@ export async function runSession(): Promise<SessionResult> {
           return;
         }
         currentMode = mode;
-        resolveOnePendingAllow();
+        resolveOnePendingAllow(mode);
         return;
       }
       // `/clear` (and its CLI aliases) must NOT reach the SDK.
@@ -889,8 +962,10 @@ export async function runSession(): Promise<SessionResult> {
       // hang), but preceded by clearing the resume identity.
       if (/^\/(clear|reset|new)\s*$/.test(entry.text.trim())) {
         aborted = true;
-        // Same as the relaunch above: this pod ends itself without an
-        // interrupt/abort entry, so the resolutions have to be recorded.
+        // record=true: this pod ends itself without an interrupt/abort entry,
+        // and every dashboard surface reads one of those as resolving whatever
+        // was pending — so without the record, a card sits "waiting for a
+        // human" forever on a session whose pod is gone.
         resolveAllPendingDeny("Conversation cleared.", true, true);
         // Empty id => next warm passes resume: undefined => fresh session.
         await sidecar

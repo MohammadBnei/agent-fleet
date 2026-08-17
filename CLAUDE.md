@@ -66,7 +66,7 @@ sandbox, it is stale — check the code.**
 | `dashboard/` | React + Vite + TypeScript + Tailwind/DaisyUI SPA, talks to `core` via a generated ConnectRPC client, built into `core`'s binary — not deployed on its own. Rewritten as a console in `docs/adr/0042`: four full-width nav views (**sessions**, **audits**, **files**, **observability**) plus the session detail that replaces the list rather than sitting beside it; **observability** is a live fleet topology + PromQL explorer (`docs/adr/0047`); decisions answerable **from the list**; a five-tier feed with one three-way DENSITY control; one pinned `DecisionDock` on both form factors (`docs/adr/0043` — the desktop spine is gone; `DENSITY → decisions` is the zoom-out); two themes; and an installable PWA whose service worker deliberately caches **no** fleet state (a cached session list would have someone answering a resolved decision). URL state is `?view=`/`?session=`, with the pre-rename `?task=` still read. Desktop and mobile share `SessionFeed`/`SessionPanels`/`DecisionInline`/`DecisionDock`, plus `bucketSessions` and `sessionLabel` — put anything both surfaces need there, not in one of them. `MermaidDiagram` is `React.lazy`-loaded, deliberately: mermaid is the largest thing this app ships and almost nothing renders a diagram |
 | `worker/` | The Claude Code worker (TS/Bun; `src/session.ts`, renamed from `planning.ts`) — **single-shot**: one pod per warm, one continuous streaming-input session spanning planning+implementation (resumable via `RESUME_SESSION_ID`), then exits. Talks only to its own pod's `localhost` sidecar |
 | `executor/` | Go — thot-executor plus the `kubectl-shim` installed into a cluster-access session as `kubectl`. The fleet's **only** process holding cluster RBAC on behalf of an agent (`docs/adr/0037`), so a thot session stays an ordinary worker pod with zero Kubernetes credentials. Its identity comes from a ServiceAccount defined in `infra-bootstrap`'s gitops, never named by the provisioner |
-| `fleet-shared/` | The git-tracked source for every worker pod's shared Claude Code context — `settings.json`, `skills/`, `CLAUDE.md`. The provisioner clones it and `SyncFleetShared` lays it into each session's own `claude-home` (`docs/adr/0032`). It is the `"user"` half of `settingSources`; the `"project"` half is the target repo's own `CLAUDE.md`/`.claude/skills/`. What stops that repo's `permissions.allow` widening the fleet's authority is **not** in this directory any more: it is `FLEET_ASK_RULES` in `worker/src/session.ts`, injected per-session through the SDK's `settings` option and omitted only for a `bypassPermissions` launch (`docs/adr/0052`, moving `adr/0049`'s original `permissions.ask` block out of `settings.json`) |
+| `fleet-shared/` | The git-tracked source for every worker pod's shared Claude Code context — `settings.json`, `skills/`, `CLAUDE.md`. The provisioner clones it and `SyncFleetShared` lays it into each session's own `claude-home` (`docs/adr/0032`). It is the `"user"` half of `settingSources`; the `"project"` half is the target repo's own `CLAUDE.md`/`.claude/skills/`. What stops that repo's `permissions.allow` widening the fleet's authority is **not** in this directory any more: it is `FLEET_ASK_RULES` in `worker/src/session.ts`, injected per-session through the SDK's `settings` option (`docs/adr/0052`, moving `adr/0049`'s original `permissions.ask` block out of `settings.json`). What an ask *means* is decided in `canUseTool`, not by the rule: in `auto` the worker answers everything but `rm`/`sudo` itself (`docs/adr/0053`) |
 | `proto/` | buf-managed `.proto` schema: `CoreService`, `ProvisionerService`, `DashboardService` — shared by `core`/`provisioner` (Go codegen) and `worker`/`dashboard` (TS codegen) |
 | `db/migrations/` | Sole source of truth for the `sessions`/`proposals`/`transcript`/`repos`/`prompt_snippets`/`scheduled_audits`/`knowledge_journal` schema (`agentfleetdb`), applied via golang-migrate — see `docs/adr/0030` |
 | `local/kind/` | The disposable kind cluster the `/kind-local` skill stands up to exercise real pod dispatch without touching `ukubi-cluster` |
@@ -115,6 +115,17 @@ sandbox, it is stale — check the code.**
   or round completion. A permission decision is always a real, structured
   `RespondToPermission` (or `SetPermissionMode`) call. `/approve` no
   longer exists.
+- **The gate is `canUseTool`, not a rule list the SDK re-interprets**
+  (`docs/adr/0053`). Two answers are the fleet's own and never reach a
+  human: its **own** MCP tools (`mcp__agent-fleet-sidecar__*`,
+  `mcp__playwright__*`) are always allowed — otherwise the agent needs
+  permission before it can *ask* for permission, which is what shipped —
+  and in `auto` everything is allowed except a `Bash` running `rm`/`sudo`.
+  `allowedTools` still lists the MCP tools but nothing depends on it:
+  0.3.233 asks for every non-read-only MCP tool in `plan` mode, and again
+  under an org `effectiveMaxPermission` ceiling, both **above** the
+  allow-rule lookup. `bypassPermissions` is deleted — it bought only
+  `rm`/`sudo` over `auto` and charged a launch profile for them.
 - **There is no sandbox** (`docs/adr/0048` §6, superseding `docs/adr/0039`/
   `0044`/`0045` entirely). Builds, tests and installs run in the worker pod's
   own `Bash`, gated by `canUseTool` like everything else — `run_command`,

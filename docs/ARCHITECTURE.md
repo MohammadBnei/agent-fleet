@@ -25,8 +25,10 @@ Carried forward from
 [`adr/0029`](adr/0029-sessions-not-tasks-permission-prompt-not-approval-gate.md):
 a worker pod is ephemeral compute attached to a session on demand ("warm"),
 and `canUseTool` reproduces the Agent SDK's own CLI-parity permission tiers
-(`default`/`plan`/`acceptEdits`/`bypassPermissions`) via a live per-tool-call
-prompt, not a prospective Write/Edit block. `/approve` does not exist.
+(`default`/`plan`/`acceptEdits`/`auto`) via a live per-tool-call prompt, not a
+prospective Write/Edit block. `/approve` does not exist. Two answers are the
+fleet's own and never reach a human: its own MCP tools, and everything but
+`rm`/`sudo` in `auto` ([`adr/0053`](adr/0053-the-gate-is-canusetool-not-a-rule-list.md)).
 
 Where this disagrees with anything else, this file wins for
 topology/features — the reading order is `DECISIONS.md` → this file →
@@ -48,7 +50,7 @@ here written in the present tense about any of them is a bug in this file.
 | `worker/` | The Claude Code worker (TS/Bun — the only JS runtime left, sole host of `@anthropic-ai/claude-agent-sdk`'s `query()`; `src/session.ts`). **Single-shot**: the provisioner hands it one `SESSION_ID`/`TARGET_REPO`/`LEASE_ID`/`RESUME_SESSION_ID` via env, pointed at a `/workspace` an init container already cloned, with `CLAUDE_CONFIG_DIR` on its own per-session volume. Runs **one continuous `query()` in streaming-input mode**, starting in the SDK's `"default"` mode and resuming via `resume:` when `RESUME_SESSION_ID` is set. The input queue is deliberately NOT seeded: there is no fleet-composed prompt, so the human's first message IS the first turn, verbatim. Its image carries the toolchain the sandbox used to (bun, Go, git, gh, Playwright + a real browser), and Playwright runs in-pod on stdio as a second `mcpServers` entry rather than being proxied. Exits explicitly — a single-shot process that merely sets `process.exitCode` can hang forever with the right code and no exit. |
 | `proto/` | buf-managed `.proto` schema (lint + breaking-change CI + generate/drift check): `CoreService` (core's gRPC server — agent/wrapper/provisioner-facing), `ProvisionerService` (the provisioner's gRPC server, renamed from `E2eProvisionerService`), and `DashboardService` (ConnectRPC, dashboard ↔ core). Generates Go (`proto/gen/go`) and TS types (`worker/src/gen`, `dashboard/src/gen`, `ts-proto`). |
 | `db/migrations/` | Shared Postgres schema (`agentfleetdb`, Pigsty-managed) — sole source of truth, applied via golang-migrate by the dedicated `migration` image on a `PreSync` hook ([`adr/0030`](adr/0030-single-source-schema-via-golang-migrate.md)). Squashed to one `000001_init` pair by `adr/0048`: `sessions` (no status enum, no lease/retry/heartbeat columns), `proposals` (the human gate in front of machine-initiated runs, with a dedup key that re-arms on dismissal or archive), `transcript` (`ON DELETE CASCADE`, which is what let soft-delete die), `repos`, `prompt_snippets`, `scheduled_audits`, `knowledge_journal`. |
-| `dashboard/` | React + Vite + TypeScript + Tailwind/DaisyUI SPA — the fleet's **primary** surface, rewritten as a console in [`adr/0042`](adr/0042-console-rewrite.md). Four full-width nav views (**sessions**, **audits**, **files**, **observability**), plus the session detail that replaces the list rather than sitting beside it — the 320px sidebar is gone. The list *is* the fleet overview: a live census, and a blocked session's pending decision rendered **and answerable inline** (an `Edit` as a real diff with allow/deny) off the same per-active-session transcript fetch the todo bars already used — no extra RPC. URL state is `?view=`/`?session=`; the pre-rename `?task=` is still read so links shared before v3.0.0 keep resolving. The detail view is feed · **decision dock** · composer, beside a fixed 266px panel column ([`adr/0043`](adr/0043-one-decision-surface.md) deleted the decision-spine rail: a pending decision now renders in the pinned dock and *only* there, on both form factors, via the shared `DecisionDock`); the feed ranks the twelve entry kinds into five visually distinct tiers (`SessionFeed`), gated by one three-way DENSITY control whose third mode deliberately differs between desktop and mobile (`feedVisibility`). **Mobile is designed, not ported** (`Agent Fleet Console Mobile.dc.html`): persistent top bar + bottom tab bar, bucket filter chips, ~44px targets, the blocking decision **docked above the composer**, and the panels as a bottom sheet — sharing `SessionFeed`/`SessionPanels`/`DecisionInline`/`DecisionDock`, plus the `bucketSessions` partition and the `sessionLabel` fallback, with desktop so the two can't drift. Two themes (`herd` dark default, `herd-light`) from the design tokens, applied pre-paint from `index.html`. **Session creation** (`NewSessionDialog.tsx`): repo alone is enough, title and first message are both optional, and an optional message is sent as a real `PostMessage` after `CreateSession` returns — which is what boots the pod (§4 below). Prompt snippets prefill that message box client-side rather than being sent, since `snippet_ids` is a reserved proto field. Live transcript via a Connect server-streaming RPC; Warm/Interrupt/Kill/**Archive**, a mode picker showing `default`/`plan`/`acceptEdits`/`bypassPermissions` with the real active mode highlighted, `AskUserQuestion`/`PermissionCard`/`PlanCard` answer forms (`adr/0018`/`0029`), a Loki log drawer, and the **proposals** gate on the audits view — `ListProposals`/`OpenFromProposal`/`DismissProposal`, the human approval in front of every machine-initiated run. **observability** ([`adr/0047`](adr/0047-metrics-scoped-to-the-hubs.md)) is a live fleet topology plus a PromQL explorer: cells are the two hubs and one per live worker pod, coloured by status, and clicking one opens that session — the thing Grafana can't do, which is why the view is deliberately thin next to it and links to it. Hand-laid-out inline SVG, no `d3`/`cytoscape`: two fixed hubs and at most `MAX_LIVE_SESSIONS` cells is a bounded shape whose positions are a loop. Talks to `core` via a generated `@connectrpc/connect-web` client. Built into and served by `core`'s binary — not deployed on its own. |
+| `dashboard/` | React + Vite + TypeScript + Tailwind/DaisyUI SPA — the fleet's **primary** surface, rewritten as a console in [`adr/0042`](adr/0042-console-rewrite.md). Four full-width nav views (**sessions**, **audits**, **files**, **observability**), plus the session detail that replaces the list rather than sitting beside it — the 320px sidebar is gone. The list *is* the fleet overview: a live census, and a blocked session's pending decision rendered **and answerable inline** (an `Edit` as a real diff with allow/deny) off the same per-active-session transcript fetch the todo bars already used — no extra RPC. URL state is `?view=`/`?session=`; the pre-rename `?task=` is still read so links shared before v3.0.0 keep resolving. The detail view is feed · **decision dock** · composer, beside a fixed 266px panel column ([`adr/0043`](adr/0043-one-decision-surface.md) deleted the decision-spine rail: a pending decision now renders in the pinned dock and *only* there, on both form factors, via the shared `DecisionDock`); the feed ranks the twelve entry kinds into five visually distinct tiers (`SessionFeed`), gated by one three-way DENSITY control whose third mode deliberately differs between desktop and mobile (`feedVisibility`). **Mobile is designed, not ported** (`Agent Fleet Console Mobile.dc.html`): persistent top bar + bottom tab bar, bucket filter chips, ~44px targets, the blocking decision **docked above the composer**, and the panels as a bottom sheet — sharing `SessionFeed`/`SessionPanels`/`DecisionInline`/`DecisionDock`, plus the `bucketSessions` partition and the `sessionLabel` fallback, with desktop so the two can't drift. Two themes (`herd` dark default, `herd-light`) from the design tokens, applied pre-paint from `index.html`. **Session creation** (`NewSessionDialog.tsx`): repo alone is enough, title and first message are both optional, and an optional message is sent as a real `PostMessage` after `CreateSession` returns — which is what boots the pod (§4 below). Prompt snippets prefill that message box client-side rather than being sent, since `snippet_ids` is a reserved proto field. Live transcript via a Connect server-streaming RPC; Warm/Interrupt/Kill/**Archive**, a mode picker showing `default`/`plan`/`acceptEdits`/`auto` with the real active mode highlighted, `AskUserQuestion`/`PermissionCard`/`PlanCard` answer forms (`adr/0018`/`0029`), a Loki log drawer, and the **proposals** gate on the audits view — `ListProposals`/`OpenFromProposal`/`DismissProposal`, the human approval in front of every machine-initiated run. **observability** ([`adr/0047`](adr/0047-metrics-scoped-to-the-hubs.md)) is a live fleet topology plus a PromQL explorer: cells are the two hubs and one per live worker pod, coloured by status, and clicking one opens that session — the thing Grafana can't do, which is why the view is deliberately thin next to it and links to it. Hand-laid-out inline SVG, no `d3`/`cytoscape`: two fixed hubs and at most `MAX_LIVE_SESSIONS` cells is a bounded shape whose positions are a loop. Talks to `core` via a generated `@connectrpc/connect-web` client. Built into and served by `core`'s binary — not deployed on its own. |
 | `k8s/` | This repo's own deploy manifests: `core.yaml` (Helm values for `common-app-chart`, zero RBAC) and `provisioner/` (a standalone plain-manifest directory — `Deployment`/`Service`/`ServiceAccount`/`Role`/`InfisicalSecret`/`NetworkPolicy`/`PersistentVolumeClaim` — since it needs RBAC `common-app-chart` can't express). Both referenced from `infra-bootstrap`'s `gitops/` (see §9). |
 | `executor/` | Go — the only process in the fleet holding cluster RBAC ([`adr/0037`](adr/0037-thot-is-a-worker-task.md)). One RPC, `Exec(argv)`, run on behalf of pods that hold no credentials at all. Deployed from infra-bootstrap's `gitops/platform/thot/` as `thot-executor`, with the ClusterRole `adr/0032` reviewed. Reads are validated against a verb allowlist (nothing else checks them); mutations are a dumb pipe, because a human already approved that exact argv through `canUseTool`. |
 
@@ -166,8 +168,9 @@ review. Keeping them prompted is an active rule, not an omission — a target
 repo's own `permissions.allow` merges in alongside this one, so the outward-
 facing set is held down by `FLEET_ASK_RULES` in `worker/src/session.ts`
 (`docs/adr/0052`, moved there from this file by `adr/0049`'s original
-`permissions.ask` block). Those rules outrank every permission mode, and are
-omitted only for a session a human explicitly launched in `bypassPermissions`.
+`permissions.ask` block). Those rules outrank every permission mode, on every
+session. What an ask *means* is decided one layer down, in `canUseTool`: in
+`auto` it is answered there for everything but `rm`/`sudo` (`adr/0053`).
 
 What survives fleet-side is the two things needing cluster RBAC the session
 pod does not have, both routed agent → sidecar → `core` → `provisioner`:
@@ -211,9 +214,9 @@ permission tiers instead of a second, fleet-specific gate on top of them
 - **`canUseTool` does zero tool classification of its own.** The old
   `MUTATING_BASH_RE` heuristic and the hardcoded `Write`/`Edit` check are
   both deleted, not widened. The SDK's real `permissionMode`
-  (`'default' | 'plan' | 'acceptEdits' | 'auto' | 'bypassPermissions' |
-  'delegate' | 'dontAsk'`) already decides *when* `canUseTool` gets invoked —
-  `bypassPermissions` skips it entirely, `acceptEdits` skips it for file
+  (`'default' | 'plan' | 'acceptEdits' | 'auto' | 'delegate' | 'dontAsk'`)
+  already decides *when* `canUseTool` gets invoked —
+  `acceptEdits` skips it for file
   edits, `auto` (SDK 0.3.233) has a model classifier answer the ordinary
   prompts instead of a human, `plan` blocks mutation without invoking it,
   `default` invokes it
@@ -224,15 +227,20 @@ permission tiers instead of a second, fleet-specific gate on top of them
   generalizing `ExitPlanMode`'s own original ask-and-block-and-resolve
   pattern from one hardcoded case to a `Map<seq, resolver>` so parallel
   tool calls in one assistant turn each get their own correlated prompt.
+  Two exceptions, and they are answers rather than classifications
+  (`adr/0053`): the fleet's own MCP tools are allowed outright — otherwise the
+  agent needs permission before it can *ask* for permission, which is what
+  shipped — and in `auto` everything but a `Bash` running `rm`/`sudo` is too.
+  Neither can be expressed as a rule: 0.3.233 asks for every non-read-only MCP
+  tool in `plan` mode, and again under an org `effectiveMaxPermission` ceiling,
+  both above the allow-rule lookup.
 - **Sessions start in `"default"` mode**, not a forced `"plan"` gate —
   matches running `claude` locally with no flags. `plan` is still fully
   available, just as one selectable mode via the dashboard's mode picker
-  (`default`/`plan`/`acceptEdits`/`auto`/`bypassPermissions`, highlighting
+  (`default`/`plan`/`acceptEdits`/`auto`, highlighting
   the real active mode via the `sessions.permission_mode` column) rather than
-  a mandatory starting state. Every switch is live except one: the SDK gates
-  `bypassPermissions` on a value computed at launch and refuses to enter it
-  mid-session, so crossing that boundary in either direction ends the pod and
-  re-warms into the mode `core` has already persisted (`docs/adr/0052`). A
+  a mandatory starting state. Every switch is live — `bypassPermissions`, the
+  one mode the SDK fixed at launch, is deleted (`docs/adr/0053`). A
   refused switch is reported to the human and the column is written back to
   the live mode — never swallowed into a log line that leaves the badge
   claiming a mode the SDK is not in.
@@ -241,8 +249,7 @@ permission tiers instead of a second, fleet-specific gate on top of them
   stale-command pruning: `discordgo.ApplicationCommandCreate` only upserts
   by name, it never deregisters a dropped command on its own).
   `SetPermissionMode` (widened to accept `default`/`plan` alongside the
-  pre-existing `acceptEdits`/`bypassPermissions`, `adr/0027`, plus `auto`
-  in `adr/0052`) is the only mode lever now — including for plan approval,
+  pre-existing `acceptEdits`, `adr/0027`, plus `auto` in `adr/0052`) is the only mode lever now — including for plan approval,
   which is a `SetPermissionMode` followed by a `RespondToPermission` rather
   than a mode change of its own: the agent's next turn starts the moment
   `canUseTool` resolves, so a mode set after the response lands too late.
