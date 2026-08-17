@@ -16,10 +16,10 @@
 # DOES need RBAC.
 
 image:
-  repository: mohammaddocker/agent-fleet-core
+  repository: registry.bnei.lan:5000/agent-fleet-core
   # Pinned, bumped automatically by .github/workflows/docker.yml's deploy
   # job on every release tag.
-  tag: "3.8.5"
+  tag: "3.8.7"
 
 # extraPorts.grpc backs CORE_GRPC_PORT below — sidecar and provisioner both
 # dial agent-fleet-core.agent-fleet.svc.cluster.local:9090 for CoreService
@@ -174,8 +174,8 @@ hooks:
   migrate:
     type: PreSync
     image:
-      repository: mohammaddocker/agent-fleet-migration
-      tag: "3.8.5"
+      repository: registry.bnei.lan:5000/agent-fleet-migration
+      tag: "3.8.7"
     args:
       - "up"
 
