@@ -469,22 +469,24 @@ func (s *Server) Interrupt(ctx context.Context, req *connect.Request[agentfleetv
 // "auto" is the SDK 0.3.233 mode where a model classifier answers the
 // ordinary prompts instead of a human (docs/adr/0052) — the dashboard's
 // plan-approval path sets it, so it has to be reachable through here.
+// "bypassPermissions" is deliberately absent as of docs/adr/0053: "auto"
+// does the same job without a launch profile, and the worker answers
+// everything but `rm`/`sudo` in it. A stored row still carrying the old
+// value is migrated to "auto" by db/migrations/000004.
 var validPermissionModes = map[string]bool{
-	"default":           true,
-	"plan":              true,
-	"acceptEdits":       true,
-	"auto":              true,
-	"dontAsk":           true,
-	"bypassPermissions": true,
+	"default":     true,
+	"plan":        true,
+	"acceptEdits": true,
+	"auto":        true,
+	"dontAsk":     true,
 }
 
 // SetPermissionMode sets the running session's SDK permission mode
 // (docs/adr/0027, extended by the sessions redesign supersession of
 // docs/adr/0021/0025 — this is now the only mode lever, Approve is gone).
-// "bypassPermissions" deliberately disables the canUseTool prompt-and-wait
-// gate for the task's remaining session (see ADR-0027's SDK-source trace);
-// the dashboard is responsible for getting explicit, typed confirmation
-// from the human before ever sending that value here. Persists to
+// "auto" is the one that grants real authority — the worker allows
+// everything but `rm`/`sudo` in it without asking (docs/adr/0053) — so the
+// dashboard puts it behind a confirm. Persists to
 // tasks.permission_mode (durable "what mode is this session in right now"
 // for the dashboard's mode picker) in addition to the transcript append
 // that actually reaches the running worker.

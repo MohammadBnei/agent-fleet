@@ -5,7 +5,7 @@ import { Modal } from "./Modal";
 // dashboard (native dialogs can't be themed/tested, block the render
 // thread, and a stray click can fire them same as a plain button). Plain
 // Cancel/Confirm by default; passing confirmWord upgrades it to a typed
-// gate (mirrors BypassConfirmModal's require-typing pattern) for the rarer,
+// gate for the rarer,
 // more consequential actions — confirmWord's presence is what drives the
 // stricter UX, not a blanket rule. Callers hold their own "what am I
 // confirming" state and pass open/onConfirm/onCancel — see App.tsx's

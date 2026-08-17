@@ -1,5 +1,12 @@
 import { client } from "./connectClient";
 
+// What switching a session to `auto` actually grants (docs/adr/0053). One
+// string because two surfaces confirm it — the plan card's "approve + auto"
+// and the actions menu's mode picker — and a stale copy on either one would
+// be a human agreeing to the wrong thing.
+export const AUTO_MODE_WARNING =
+  "The agent stops asking for the rest of this session. Only rm and sudo still come to you — and so does the next plan.";
+
 // Plan approval, the way the CLI's own ExitPlanMode menu does it (docs/adr/
 // 0052): approving is a mode transition plus an answer, not just an answer.
 // The CLI offers "Yes, and use auto mode" / "Yes, manually approve edits" /

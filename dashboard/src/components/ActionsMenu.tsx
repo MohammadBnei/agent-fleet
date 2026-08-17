@@ -3,22 +3,19 @@ import { client } from "../connectClient";
 import { ActionButton } from "./ActionButton";
 import { isPodPhaseLive } from "../pages/SessionList";
 
-// The user-facing SDK modes worth a direct button — "delegate"/"dontAsk"
-// are SDK-internal/secondary, never surfaced here. "bypassPermissions" is
-// deliberately routed through onBypassClick's confirm modal, not called
-// directly like the other three, since it disables the canUseTool gate
-// outright for the rest of the session.
+// The user-facing SDK modes worth a button — "delegate"/"dontAsk" are
+// SDK-internal/secondary, never surfaced here, and "bypassPermissions" is
+// gone entirely (docs/adr/0053).
+//
+// `auto` is the one that grants authority: the worker allows everything but
+// rm/sudo in it without asking. So it is routed through onAutoClick's confirm
+// rather than fired straight off the menu, the way bypass used to be. Every
+// switch is live — nothing here costs a re-warm any more.
 const MODES = [
   { value: "default", label: "Default" },
   { value: "plan", label: "Plan" },
   { value: "acceptEdits", label: "Accept edits" },
-  // A model classifier answers the ordinary prompts (docs/adr/0052). Safe to
-  // call directly like the other three: the ask rules (git push/gh/rm/…) and
-  // every requiresUserInteraction tool still reach a human, which is what
-  // separates it from bypass. Switching back out of it is a live control
-  // request like any other — unless the pod was LAUNCHED in bypass, where
-  // every mode change is a relaunch (hence the "(re-warms)" hint below).
-  { value: "auto", label: "Auto" },
+  { value: "auto", label: "Auto", confirm: true },
 ] as const;
 
 // The Kill/Interrupt/Kill-e2e/Mode/Open-code-server button row, shared
@@ -52,7 +49,7 @@ export function ActionsMenu({
   archivedAt,
   currentMode,
   podPhase,
-  onBypassClick,
+  onAutoClick,
   hideToolsInFeed,
   onHideToolsInFeedChange,
   hideChangesInFeed,
@@ -85,7 +82,7 @@ export function ActionsMenu({
   // already read, just here to answer "is there a pod to talk to right
   // now" instead of "what does it look like in the list."
   podPhase?: string;
-  onBypassClick: () => void;
+  onAutoClick: () => void;
   hideToolsInFeed?: boolean;
   onHideToolsInFeedChange?: (value: boolean) => void;
   hideChangesInFeed?: boolean;
@@ -234,29 +231,17 @@ export function ActionsMenu({
               // what made this feel like the click was dropped.
               popoverTarget="popover-mode"
               popoverTargetAction="hide"
-              onClick={() => run(() => client.setPermissionMode({ sessionId, mode: m.value }), "action:mode")}
+              onClick={() =>
+                "confirm" in m && m.confirm
+                  ? onAutoClick()
+                  : run(() => client.setPermissionMode({ sessionId, mode: m.value }), "action:mode")
+              }
             >
               {m.value === currentMode ? "✓ " : ""}
               {m.label}
-              {/* Leaving bypass is a relaunch, not a switch (docs/adr/0052):
-                  the ask rules it drops are fixed at the pod's launch, so the
-                  worker ends the pod and the mode applies on the next warm.
-                  Saying so here is the difference between "my session
-                  restarted" and "my session crashed". */}
-              {currentMode === "bypassPermissions" && <span className="ml-1 opacity-60">(re-warms)</span>}
             </button>
           </li>
         ))}
-        <li>
-          <button
-            type="button"
-            className={currentMode === "bypassPermissions" ? "active text-error" : "text-error"}
-            onClick={onBypassClick}
-          >
-            {currentMode === "bypassPermissions" ? "✓ " : ""}
-            Bypass permissions
-          </button>
-        </li>
       </ul>
       {/* The "Open code-server" link is gone with the e2e pod that served it
           (docs/adr/0048 §6). code-server was an IDE surface on the sandbox,

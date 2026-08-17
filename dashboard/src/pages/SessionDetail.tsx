@@ -16,7 +16,8 @@ import { useAtBottom } from "../useAtBottom";
 import { useLocalStorageState } from "../useLocalStorageState";
 import { ErrorModal } from "../components/ErrorModal";
 import { Markdown } from "../components/Markdown";
-import { BypassConfirmModal } from "../components/BypassConfirmModal";
+import { ConfirmModal } from "../components/ConfirmModal";
+import { AUTO_MODE_WARNING } from "../approvePlan";
 import { Segmented } from "../components/Segmented";
 import { DecisionDock } from "../components/DecisionDock";
 import { SessionFeed } from "../components/SessionFeed";
@@ -71,7 +72,7 @@ export function SessionDetail({
     clearActionError,
   } = useSessionDetail(sessionId);
   const [message, setMessage] = useState("");
-  const [bypassOpen, setBypassOpen] = useState(false);
+  const [autoOpen, setAutoOpen] = useState(false);
   // Key deliberately not renamed with the file: it is persisted in every
   // operator's browser, and renaming it silently resets their density choice.
   const [density, setDensity] = useLocalStorageState<Density>("taskDetail.density", "everything");
@@ -266,12 +267,16 @@ export function SessionDetail({
 
         <div className="flex-none px-4.5 py-3 border-t border-line">
           <ErrorModal message={actionError} onClose={clearActionError} />
-          <BypassConfirmModal
-            open={bypassOpen}
-            onCancel={() => setBypassOpen(false)}
+          <ConfirmModal
+            title="Switch to auto mode?"
+            message={AUTO_MODE_WARNING}
+            confirmLabel="switch to auto"
+            danger={false}
+            open={autoOpen}
+            onCancel={() => setAutoOpen(false)}
             onConfirm={() => {
-              setBypassOpen(false);
-              run(() => client.setPermissionMode({ sessionId, mode: "bypassPermissions" }), "bypass");
+              setAutoOpen(false);
+              run(() => client.setPermissionMode({ sessionId, mode: "auto" }), "auto");
             }}
           />
 
@@ -324,7 +329,7 @@ export function SessionDetail({
                 ctx {Math.round(contextTokens / 1000)}k last turn
               </span>
             )}
-            <span className={session.permissionMode === "bypassPermissions" ? "text-warning" : undefined}>
+            <span className={session.permissionMode === "auto" ? "text-warning" : undefined}>
               ▸▸ {session.permissionMode || "default"} permissions
             </span>
           </div>
@@ -340,7 +345,7 @@ export function SessionDetail({
             busy={busyKey !== null}
             busyKey={busyKey}
             run={run}
-            onBypassClick={() => setBypassOpen(true)}
+            onAutoClick={() => setAutoOpen(true)}
             onRestart={() => sendDiscuss("/clear")}
           />
         </div>

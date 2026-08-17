@@ -70,10 +70,10 @@ That counterweight is `FLEET_ASK_RULES` in `worker/src/session.ts`, passed to
 `query()` through `settings` (scope `flagSettings`, always collected). It is
 the same list, doing the same job — `git push`, `gh`, `rm`, `sudo`, `kubectl`,
 `curl`, `wget`, `env` — and it is deliberately **not** a `permissions.ask`
-block in this file, because since SDK 0.3.233 the evaluator returns on an
-ask-rule match *before* the permission mode's own allow short-circuit. Shipped
-as a file it would apply to `bypassPermissions` too, leaving a session a human
-explicitly gave total authority unable to `git push` (docs/adr/0052).
+block in this file, because it must stay one list in one place. Injected
+per-session it is the list `canUseTool` also reasons about; shipped as a file
+it would be a second copy at a different scope, free to drift with nothing
+reporting the disagreement (docs/adr/0052, kept by docs/adr/0053).
 
 `ask` rather than `deny` because a human should still be able to approve a
 `git push` — every result is a PR, and approving it *is* the review.

@@ -16,7 +16,8 @@ import { sessionBadge } from "../pages/SessionList";
 import { ActionButton } from "../components/ActionButton";
 import { DecisionDock } from "../components/DecisionDock";
 import { ErrorModal } from "../components/ErrorModal";
-import { BypassConfirmModal } from "../components/BypassConfirmModal";
+import { ConfirmModal } from "../components/ConfirmModal";
+import { AUTO_MODE_WARNING } from "../approvePlan";
 import { Modal } from "../components/Modal";
 import { Segmented } from "../components/Segmented";
 import { SessionFeed } from "../components/SessionFeed";
@@ -66,7 +67,7 @@ export function MobileSessionDetail({
   } = useSessionDetail(sessionId);
   const [message, setMessage] = useState("");
   const [panelsOpen, setPanelsOpen] = useState(false);
-  const [bypassOpen, setBypassOpen] = useState(false);
+  const [autoOpen, setAutoOpen] = useState(false);
   // Same persisted key as the desktop view — see SessionDetail.tsx.
   const [density, setDensity] = useLocalStorageState<Density>("taskDetail.density", "everything");
   const { ref: feedRef, atBottom, onScroll, scrollToBottom, anchorPrepend } = useAtBottom<HTMLDivElement>();
@@ -208,12 +209,16 @@ export function MobileSessionDetail({
       </div>
 
       <ErrorModal message={actionError} onClose={clearActionError} />
-      <BypassConfirmModal
-        open={bypassOpen}
-        onCancel={() => setBypassOpen(false)}
+      <ConfirmModal
+        title="Switch to auto mode?"
+        message={AUTO_MODE_WARNING}
+        confirmLabel="switch to auto"
+        danger={false}
+        open={autoOpen}
+        onCancel={() => setAutoOpen(false)}
         onConfirm={() => {
-          setBypassOpen(false);
-          run(() => client.setPermissionMode({ sessionId, mode: "bypassPermissions" }), "bypass");
+          setAutoOpen(false);
+          run(() => client.setPermissionMode({ sessionId, mode: "auto" }), "auto");
         }}
       />
 
@@ -295,9 +300,9 @@ export function MobileSessionDetail({
             busy={busyKey !== null}
             busyKey={busyKey}
             run={run}
-            onBypassClick={() => {
+            onAutoClick={() => {
               setPanelsOpen(false);
-              setBypassOpen(true);
+              setAutoOpen(true);
             }}
             onRestart={() => {
               setPanelsOpen(false);

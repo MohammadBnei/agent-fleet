@@ -108,14 +108,14 @@ export function SessionPanel({
   busy,
   busyKey,
   run,
-  onBypassClick,
+  onAutoClick,
   onRestart,
 }: {
   session: Session;
   busy: boolean;
   busyKey: string | null;
   run: (action: () => Promise<unknown>, key: string) => void;
-  onBypassClick: () => void;
+  onAutoClick: () => void;
   onRestart?: () => void;
 }) {
   return (
@@ -143,7 +143,7 @@ export function SessionPanel({
         archivedAt={session.archivedAt}
         currentMode={session.permissionMode}
         podPhase={session.podPhase}
-        onBypassClick={onBypassClick}
+        onAutoClick={onAutoClick}
         onRestart={onRestart}
       />
     </div>

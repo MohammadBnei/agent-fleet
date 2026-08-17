@@ -297,8 +297,8 @@ test("tool wiring: default mode, no Write/Edit in allowedTools, canUseTool prese
   expect(queryOptions?.settingSources).toEqual(["user", "project"]);
   expect(queryOptions?.settingSources).not.toContain("local");
   // docs/adr/0049's authority ceiling, injected per-session rather than shipped
-  // in fleet-shared/settings.json (docs/adr/0052) so it can be omitted for a
-  // bypassPermissions launch.
+  // in fleet-shared/settings.json (docs/adr/0052), and unconditional as of
+  // docs/adr/0053 now that no mode is fixed at launch.
   expect((queryOptions?.settings as { permissions?: { ask?: string[] } })?.permissions?.ask).toContain("Bash(gh:*)");
   expect(queryOptions?.plugins).toBeUndefined();
 }, 10000);
@@ -617,50 +617,95 @@ test("a permission_mode switch answers the plan, not every other parked call", a
   await bashCall;
 }, 10000);
 
-// Also docs/adr/0052: bypassPermissions is fixed at launch by the SDK, and
-// FLEET_ASK_RULES are fixed at launch by us, so crossing that boundary is a
-// relaunch. The pod ends WITHOUT clearing the saved session id — the
-// conversation has to survive the re-warm (that is the one thing that
-// separates this from /clear).
-test("switching into bypassPermissions ends the pod instead of pretending to switch", async () => {
+// docs/adr/0053. The fleet's own MCP tools are how the agent reaches a human at
+// all, so prompting for them means needing permission before you can ask for
+// permission — which is what shipped, live, for AskUserQuestion and
+// send_message both. allowedTools is supposed to cover this and does not: SDK
+// 0.3.233 turns every non-read-only MCP tool into an ask in plan mode, above
+// the allow-rule lookup. Asserting on "no permission_request was pushed" rather
+// than just the return value, because the transcript entry is what a human sees.
+test("a fleet MCP tool is allowed without ever asking a human", async () => {
+  const promise = runSession();
+  await Bun.sleep(20);
+
+  const result = await capturedCanUseTool!("mcp__agent-fleet-sidecar__AskUserQuestion", {
+    questions: [{ question: "which one?" }],
+  });
+  expect(result.behavior).toBe("allow");
+  expect(findPermissionRequest("mcp__agent-fleet-sidecar__AskUserQuestion")).toBeUndefined();
+  expect(pushedMessages.filter((m) => m.type === "permission_request")).toEqual([]);
+
+  pushHuman("", "abort");
+  await promise;
+}, 10000);
+
+// docs/adr/0053: `auto` means auto. Everything the SDK would have prompted for
+// is answered here — including an ask-rule match like `gh`, which the SDK's own
+// auto-mode classifier deliberately falls back to a human on.
+test("auto mode allows without asking, except rm and sudo", async () => {
+  sessionPermissionMode = "auto";
+  const promise = runSession();
+  await Bun.sleep(20);
+
+  expect(queryOptions?.permissionMode).toBe("auto");
+  // Still injected in auto — the rules stay the fleet's ceiling over a target
+  // repo's own allow list; what changes is who answers them.
+  expect((queryOptions?.settings as { permissions?: { ask?: string[] } })?.permissions?.ask).toContain("Bash(rm:*)");
+
+  expect((await capturedCanUseTool!("Bash", { command: "gh pr create" })).behavior).toBe("allow");
+  expect((await capturedCanUseTool!("Write", { file_path: "x" })).behavior).toBe("allow");
+  expect(pushedMessages.filter((m) => m.type === "permission_request")).toEqual([]);
+
+  let resolved: { behavior: string } | null = null;
+  const dangerous = capturedCanUseTool!("Bash", { command: "rm -rf build" }).then((r) => {
+    resolved = r as { behavior: string };
+    return r;
+  });
+  await Bun.sleep(20);
+  expect(resolved).toBeNull();
+  expect(findPermissionRequest("Bash")).toBeDefined();
+
+  pushHuman("", "abort");
+  await promise;
+  await dangerous;
+}, 10000);
+
+// The command is matched anywhere in the line, not just at its head — a
+// `make build && sudo install` is the same decision as a bare `sudo install`.
+test("auto mode still asks for a destructive command hidden mid-line", async () => {
+  sessionPermissionMode = "auto";
+  const promise = runSession();
+  await Bun.sleep(20);
+
+  let resolved: unknown = null;
+  const call = capturedCanUseTool!("Bash", { command: "make build && sudo install" }).then((r) => (resolved = r));
+  await Bun.sleep(20);
+  expect(resolved).toBeNull();
+  expect(findPermissionRequest("Bash")).toBeDefined();
+
+  pushHuman("", "abort");
+  await promise;
+  await call;
+}, 10000);
+
+// Every mode switch is a live control request again — adr/0052's
+// bypass-boundary relaunch went with the mode that needed it (docs/adr/0053).
+test("switching to auto mid-session is a live control request, not a relaunch", async () => {
   const promise = runSession();
   await Bun.sleep(20);
 
   const call = capturedCanUseTool!("Write", { file_path: "x" });
-  await Bun.sleep(20);
-
-  pushHuman("bypassPermissions", "permission_mode");
+  pushHuman("auto", "permission_mode");
   const result = await call;
 
-  expect(result.behavior).toBe("deny");
-  expect(setPermissionModeCalls).toEqual([]);
-  expect(savedSessionIds).not.toContain("");
-  const told = pushedMessages.find((m) => m.type === "system" && m.text.includes("re-warm"));
-  expect(told).toBeDefined();
-  // Nothing writes an interrupt/abort entry on this path, so the denial has to
-  // be recorded or the card stays pending on a session whose pod is gone.
-  const recorded = pushedMessages.find((m) => m.type === "permission_response");
-  expect(recorded).toBeDefined();
-  expect(JSON.parse(recorded!.text).behavior).toBe("deny");
+  expect(result.behavior).toBe("allow");
+  expect(setPermissionModeCalls).toContain("auto");
+  expect(pushedMessages.find((m) => m.type === "system" && m.text.includes("re-warm"))).toBeUndefined();
 
-  await promise;
-}, 10000);
+  // And the gate reads the new mode from here on, without a new pod.
+  expect((await capturedCanUseTool!("Bash", { command: "go build ./..." })).behavior).toBe("allow");
 
-test("a session LAUNCHED in bypassPermissions carries no ask rules and can leave the mode only by relaunching", async () => {
-  sessionPermissionMode = "bypassPermissions";
-  const promise = runSession();
-  await Bun.sleep(20);
-
-  expect(queryOptions?.permissionMode).toBe("bypassPermissions");
-  // The ask list would outrank the mode a human explicitly typed `bypass` for
-  // (SDK 0.3.233 returns on an ask-rule match before the mode's own allow).
-  expect(queryOptions?.settings).toBeUndefined();
-
-  pushHuman("default", "permission_mode");
-  await Bun.sleep(20);
-  expect(setPermissionModeCalls).toEqual([]);
-  expect(pushedMessages.find((m) => m.type === "system" && m.text.includes("re-warm"))).toBeDefined();
-
+  pushHuman("", "abort");
   await promise;
 }, 10000);
 
@@ -1051,10 +1096,11 @@ afterAll(() => {
   mock.restore();
 });
 
-// The counterweight moved into session.ts's FLEET_ASK_RULES so it can be
-// omitted for a bypassPermissions launch (docs/adr/0052). Putting it back in
-// the settings file would re-break that silently — the rules would apply to
-// every mode again, and nothing else in the fleet would notice.
+// The counterweight lives in session.ts's FLEET_ASK_RULES and nowhere else
+// (docs/adr/0052, kept by 0053). A second copy in the settings file is the bad
+// kind of redundancy: it applies at a different scope, cannot be varied per
+// session, and diverges from the list canUseTool actually reasons about — with
+// nothing anywhere reporting the disagreement.
 test("fleet-shared/settings.json ships no permissions.ask block", async () => {
   const settings = await Bun.file(new URL("../../fleet-shared/settings.json", import.meta.url)).json();
   expect(settings.permissions.ask).toBeUndefined();

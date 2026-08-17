@@ -171,9 +171,9 @@ function WorkingCard({
         />
         <span className={`text-sm flex-none ${live ? "text-text2" : "text-dim2"}`}>#{session.id.slice(0, 6)}</span>
         <span className={`text-sm min-w-0 truncate ${live ? "" : "text-dim"}`}>{sessionLabel(session)}</span>
-        {session.permissionMode === "bypassPermissions" ? (
+        {session.permissionMode === "auto" ? (
           <span className="text-2xs text-warning border border-orange-line px-1.5 py-px ml-auto flex-none">
-            bypass
+            auto
           </span>
         ) : (
           todos.length > 0 && <span className="text-xs text-dim2 ml-auto flex-none">{todoProgress(todos)}</span>

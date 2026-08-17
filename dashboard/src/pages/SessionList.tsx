@@ -411,12 +411,12 @@ function WorkingRow({
           {sessionLabel(session)}
         </button>
         <span className="text-xs text-dim2 flex-none">{session.repo}</span>
-        {session.permissionMode === "bypassPermissions" && (
+        {session.permissionMode === "auto" && (
           <span
             className="text-xs text-warning border border-orange-line px-1.5 py-px flex-none"
-            title="every tool call runs without asking"
+            title="runs without asking — only rm and sudo still come to you"
           >
-            bypass
+            auto
           </span>
         )}
 

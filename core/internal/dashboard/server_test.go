@@ -197,13 +197,20 @@ func TestValidModels_AreRealModelIDs(t *testing.T) {
 // allowlist is the only thing between that request and the SDK — an omission
 // here surfaces as InvalidArgument on a button, not as a compile error.
 func TestValidPermissionModes_CoversEveryModeTheDashboardCanSend(t *testing.T) {
-	for _, mode := range []string{"default", "plan", "acceptEdits", "auto", "dontAsk", "bypassPermissions"} {
+	for _, mode := range []string{"default", "plan", "acceptEdits", "auto", "dontAsk"} {
 		if !validPermissionModes[mode] {
 			t.Errorf("validPermissionModes[%q] = false, want true", mode)
 		}
 	}
 	if validPermissionModes["delegate"] {
 		t.Error(`validPermissionModes["delegate"] = true, want false (not a mode this build accepts)`)
+	}
+	// Deleted by docs/adr/0053, and asserted rather than merely removed above:
+	// the dashboard no longer offers it, but this map is what a hand-made
+	// request hits, and the worker has no bypass launch profile left to honour
+	// one with. db/migrations/000004 rewrites any row still carrying it.
+	if validPermissionModes["bypassPermissions"] {
+		t.Error(`validPermissionModes["bypassPermissions"] = true, want false (docs/adr/0053 deleted the mode)`)
 	}
 }
 
