@@ -88,7 +88,20 @@ RUN bun install -g playwright@${PLAYWRIGHT_VERSION} @playwright/mcp@${PLAYWRIGHT
     # @playwright/mcp release: a version that does link it makes a bare `ln -s`
     # fail the build on "File exists". Overwriting is safe — same target.
     && ln -sf /root/.bun/install/global/node_modules/@playwright/mcp/cli.js /usr/local/bin/playwright-mcp \
-    && chmod +x /usr/local/bin/playwright-mcp
+    && chmod +x /usr/local/bin/playwright-mcp \
+    # Same treatment for `playwright` itself, and for a second consumer: the
+    # browser-cache Job (provisioner/internal/k8s/browsercache.go) runs BOTH
+    # installers, and it used to reach them via `bunx`. `bunx @playwright/mcp`
+    # re-resolved the package from npm at Job runtime, which pinning here cannot
+    # reach — so the cache held whatever build *latest* wanted while every
+    # session ran the version pinned above. Naming a binary on PATH is what
+    # makes these ARGs the single source of the build numbers.
+    && ln -sf /root/.bun/install/global/node_modules/playwright/cli.js /usr/local/bin/playwright \
+    && chmod +x /usr/local/bin/playwright \
+    # RUN, not `test -x` — a symlink to a file that cannot execute is still a
+    # symlink, and it fails in the Job rather than here. docs/adr/0044.
+    && playwright --version \
+    && playwright-mcp --version
 
 # rtk (Rust Token Killer) — same tool-output compression proxy Mohammad runs
 # locally (github.com/rtk-ai/rtk, Homebrew formula "rtk"). Static musl

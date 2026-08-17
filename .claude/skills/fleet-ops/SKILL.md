@@ -1,6 +1,6 @@
 ---
 name: fleet-ops
-description: Onboard a new target repo, walk the release/deploy pipeline, or inspect the live task queue for agent-fleet. Use when the user wants to add a new repo to the fleet, deploy a release, or check what tasks are running/stuck.
+description: Onboard a new target repo, walk the release/deploy pipeline, or inspect the live sessions for agent-fleet. Use when the user wants to add a new repo to the fleet, deploy a release, or check which sessions are running/stuck.
 user-invocable: true
 allowed-tools:
   - Read
@@ -14,10 +14,10 @@ allowed-tools:
 
 # /fleet-ops — operate the agent-fleet deployment
 
-Three recurring ops tasks. See `docs/ARCHITECTURE.md` for the full topology
-this assumes — as of `docs/adr/0019`–`0021` there's no per-repo Deployment
-or PVC anymore; the provisioner spawns a single-shot, two-container worker
-pod per task on demand.
+Three recurring ops jobs. See `docs/ARCHITECTURE.md` for the full topology
+this assumes — there's no per-repo Deployment or PVC; the provisioner spawns
+a single-shot, two-container worker pod per *warm* on demand, and a session
+with no message has no pod at all (`docs/adr/0048` §1).
 
 ## 1. Onboard a new target repo
 
@@ -27,12 +27,8 @@ the dashboard-editable `repos` table (`docs/adr/0028`), not Go source:
 1. **Dashboard → "manage repos"** — add an entry: name, git URL, base
    branch (only needs setting if the repo doesn't develop off `main` — see
    `vos-monolith`'s row, base branch `dev`). This writes straight to the
-   `repos` table (`core/internal/repos.Store`); `/task`'s Discord dropdown
-   refreshes live (`repos.Store`'s `OnChange` callback re-registers Discord
-   commands, `core/internal/discord/session.go`'s `RefreshCommands`) and
-   the dispatch loop reads the new row immediately (`core/internal/
-   dispatch/loop.go`'s `tick()` calls `repos.Store.Get` before
-   `CreateWorkerPod`) — no core restart needed either way. Direct SQL
+   `repos` table (`core/internal/repos.Store`), and the next session on that
+   repo reads the new row when it provisions — no core restart. Direct SQL
    (`INSERT INTO repos (name, url, base_branch) VALUES (...)`) works too if
    the dashboard isn't reachable.
 2. **Infisical** — confirm the target repo's bot GitHub account
@@ -40,79 +36,80 @@ the dashboard-editable `repos` table (`docs/adr/0028`), not Go source:
    push/PR) has collaborator access to open PRs there. The rest of the
    secrets (`CLAUDE_CODE_OAUTH_TOKEN`, `AGENTFLEET_DB_*`) are already
    shared across the `agent-fleet-nygh` Infisical project.
-3. **Give the repo an environment profile** in the dashboard's "manage
-   repo profiles" — its toolchain (go/bun/golangci-lint/buf), any services
-   it needs, and the app's start command if it will use the e2e preview.
-   Dashboard data, not code: the old `provisioner/internal/k8s/names.go`
-   `StartCmdFor` switch and `E2E_START_CMD_<REPO>` were deleted by
-   `docs/adr/0034`, so this needs no redeploy.
+3. **Decide the repo's image and cluster access** — the other two columns in
+   the same "manage repos" row (`ManageReposModal.tsx`):
 
-   Name the profile `e2e`, or set the repo's **e2e profile** field to
-   whichever profile the sandbox should use (`docs/adr/0044` —
-   `agent-fleet` points at its `lint` profile, for instance). Leaving both
-   unset is not fatal: the repo still gets a sandbox, just with the base
-   image's toolchain and no preview. `run_command` works either way.
+   - `image` — the container image this repo's sessions run. Blank means the
+     fleet's default worker image, which carries bun, Go, git, `gh` and the
+     Claude Code CLI (see `worker/Dockerfile` for the real list — it does
+     *not* include `golangci-lint` or `buf`). Set it only when the repo needs
+     a toolchain the default lacks. This one column replaced the old
+     `repo_profiles`/`repo_profile_tools` rows and their four toolchain
+     ingredients (`docs/adr/0048` §6): there is no sandbox pod any more, so
+     the agent builds and tests in its own pod's `Bash` and "which toolchain"
+     is just "which image".
+   - `cluster_access` — whether this repo's sessions get the `kubectl` shim
+     that RPCs to thot-executor (`docs/adr/0037`). A privilege grant, not a
+     toolchain; the pod still holds zero Kubernetes credentials either way.
+     Currently true for `infra-bootstrap` alone.
 
-   A profile with **no start command is a legitimate configuration** — it
-   means a build/test sandbox with no app and no preview URL, which is the
-   right shape for a repo whose sandbox exists to compile and test.
+   There is nothing else to configure. No profile, no start command, no e2e
+   preview, no `run_command` — `docs/adr/0048` §6 deleted all of it along
+   with the sandbox pod.
 
-### Refreshing the Playwright tool snapshot
+### Bumping the browser toolchain
 
-The browser tools the agent sees come from a committed snapshot,
-`sidecar/internal/mcpserver/playwright_tools.json`, not from runtime
-discovery (`docs/adr/0044` — discovery always lost the race against the pod
-becoming reachable). **Bumping `@playwright/mcp` in `e2e-runner/Dockerfile`
-means refreshing this file too**, or new tools stay invisible to every agent.
+The agent's browser tools come from `@playwright/mcp` running as a **stdio
+MCP server inside the worker container itself** (`worker/src/session.ts`'s
+`playwrightMcpServer()`), so there is no snapshot to refresh and no tool list
+to fetch — the SDK discovers them over the pipe it owns. The committed
+`sidecar/internal/mcpserver/playwright_tools.json` and the `e2e-runner`
+image that served it both died with `docs/adr/0048` §6.
 
-```bash
-docker build -f e2e-runner/Dockerfile -t e2e-runner:snap .
-docker run -d --name pw-snap --entrypoint bash -p 18931:8931 e2e-runner:snap \
-  -c 'bunx @playwright/mcp --host 0.0.0.0 --port 8931 --headless --allowed-hosts "*"'
-sleep 15
+What does need care is the pair of pinned versions in `worker/Dockerfile`:
 
-# initialize, keep the session id, then list
-SID=$(curl -s -o /dev/null -D - -X POST http://localhost:18931/mcp \
-  -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
-  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"snap","version":"1"}}}' \
-  | grep -i '^mcp-session-id:' | tr -d '\r' | awk '{print $2}')
-
-curl -s -X POST http://localhost:18931/mcp \
-  -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
-  -H "mcp-session-id: $SID" -d '{"jsonrpc":"2.0","method":"notifications/initialized"}' >/dev/null
-
-curl -s -X POST http://localhost:18931/mcp \
-  -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
-  -H "mcp-session-id: $SID" -d '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' \
-  | sed 's/^data: //' | grep '^{' \
-  | python3 -c 'import json,sys; json.dump(sorted(json.load(sys.stdin)["result"]["tools"], key=lambda t: t["name"]), open("sidecar/internal/mcpserver/playwright_tools.json","w"), indent=2, sort_keys=True)'
-
-docker rm -f pw-snap
-cd sidecar && go test ./internal/mcpserver/... -count=1   # pins shape + the run_command invariant
+```dockerfile
+ARG PLAYWRIGHT_VERSION=1.62.1
+ARG PLAYWRIGHT_MCP_VERSION=0.0.79
 ```
 
-`--allowed-hosts '*'` is not optional there or in the entrypoint: without it
-`@playwright/mcp` answers anything but its own bind address with
-`403 Access is only allowed at localhost:8931`.
+The browser **builds** live on the shared PVC, not in the image
+(`docs/adr/0051`), installed by the `agent-fleet-browser-cache` Job that
+`EnsureBrowserCache` fires on every provisioner start
+(`provisioner/internal/k8s/browsercache.go`). Bumping either ARG changes
+which build number the installers resolve; the Job is recreated whenever it
+references a different image, so a deliberate bump repairs the cache on the
+next provisioner start. It also recreates a Failed one, so a broken cache
+retries instead of sitting dead.
+
+Both versions must move together with care: `@playwright/mcp` bundles a
+*different* `playwright-core` than `playwright` does and resolves a different
+build number, which is why the Job runs both installers and why the server is
+launched with `--browser chromium` (`docs/adr/0044`). Browser automation was
+dead for the fleet's entire history behind that.
+
+**Verify a bump by driving a real `browser_navigate` from a session.** A
+populated `/browsers` and a launching MCP server are different claims — the
+mismatch fails at launch, never at `ls`.
 
 No `infra-bootstrap` edit needed (that repo only knows about `core`'s and
 `provisioner`'s own Applications, not individual target repos). Unlike the
 old code-review-gated flow, a dashboard-added repo is live immediately —
-weigh that before adding one on a whim, since it changes what `/task` will
-accept fleet-wide right away.
+weigh that before adding one on a whim, since it becomes selectable in the
+dashboard's new-session dialog fleet-wide right away.
 
 ## 2. Release / deploy walkthrough
 
 ```
 git push origin <tag>              # any tag push triggers docker.yml
   → build-push (matrix: worker): Bun image, push to Docker Hub, Trivy scan
-  → build-push-go (matrix: core, provisioner, sidecar): Go images, same
-  → deploy (on push only, needs both build jobs):
-      sed-bumps k8s/core.yaml's `tag: "..."` (Helm-values shape) and
+  → build-push-go (matrix: core, provisioner, sidecar, executor): Go images, same
+  → build-push-migration: the golang-migrate image that applies db/migrations/
+  → deploy (on push only, needs the build jobs):
+      sed-bumps k8s/*.yaml's `tag: "..."` (Helm-values shape) and
       every `image: repo:tag` in k8s/provisioner/*.yaml (plain-manifest
-      shape, scoped to the four mohammaddocker/agent-fleet-{core,
-      provisioner,worker,sidecar} images — e2e-runner's floating :latest
-      is deliberately excluded), commits to main
+      shape, scoped to mohammaddocker/agent-fleet-{core,provisioner,
+      worker,sidecar}), commits to main
       (uses the default GITHUB_TOKEN — deliberately doesn't re-trigger release.yml)
   → ArgoCD: core (two-source Application, chart from infra-bootstrap +
       k8s/core.yaml here) and provisioner (standalone plain-manifest
@@ -126,8 +123,10 @@ from Conventional Commits. It does not build or deploy anything.
 Check current live tags: `grep 'tag:' k8s/core.yaml; grep 'image:'
 k8s/provisioner/deployment.yaml`. Check what's actually running:
 `kubectl get pods -n agent-fleet -o wide` — expect `core` and
-`provisioner` Deployments plus zero-or-more `worker-<taskid>` Pods, one
-per in-flight task, each two-container (via `/k8s-ops` in
+`provisioner` Deployments, zero-or-more two-container
+`worker-<shortSessionId>` Pods (one per warm session — see
+`WorkerResourceName`/`shortID` in `provisioner/internal/k8s/names.go`), and
+a completed `agent-fleet-browser-cache` Job (via `/k8s-ops` in
 `infra-bootstrap` if you need cluster access set up).
 
 Never push a tag or edit `k8s/core.yaml`/`k8s/provisioner/*.yaml`'s
@@ -135,35 +134,53 @@ pinned versions without confirming — this redeploys the two persistent
 services and changes what image every *future* worker/sidecar pod spawns
 with (in-flight pods keep running their already-pinned image).
 
-## 3. Inspect the live task queue
+## 3. Inspect the live sessions
+
+There is **no queue** — no `tasks` table, no status enum, no lease renewal,
+no retry counter (`docs/adr/0048` §2). A session is the durable unit and a
+pod is ephemeral compute attached to it; what a session "is doing" is
+`pod_phase`, which core's 60s reconcile loop writes from what Kubernetes
+actually reports (`core/internal/sessions/reconcile.go`).
 
 ```sql
--- what's running/stuck right now
-SELECT id, repo, status, claimed_by, heartbeat_at, created_at, updated_at
-FROM tasks
-WHERE status NOT IN ('done', 'cancelled')
-ORDER BY created_at;
+-- what has a pod right now
+SELECT id, repo, pod_phase, permission_mode, last_entry_type, last_active_at
+FROM sessions
+WHERE archived_at IS NULL AND pod_phase IS NOT NULL
+ORDER BY last_active_at DESC NULLS LAST;
+
+-- the live count MAX_LIVE_SESSIONS is checked against. Keep this list in
+-- step with `livePhases` in core/internal/sessions/store.go, which is the
+-- real one. A session stuck non-terminal costs one permanent slot and
+-- nothing errors until the cap is hit — which is why the check for that
+-- class of bug is "run six sessions and open a seventh".
+SELECT count(*) FROM sessions
+WHERE archived_at IS NULL AND pod_phase IN (
+  'POD_PHASE_PROVISIONING', 'POD_PHASE_CREATED',
+  'POD_PHASE_SCHEDULED',    'POD_PHASE_RUNNING'
+);
 
 -- recent history for one repo
-SELECT id, status, pr_url, created_at, updated_at
-FROM tasks WHERE repo = '<repo>' ORDER BY created_at DESC LIMIT 20;
+SELECT id, title, pod_phase, last_error, created_at, updated_at
+FROM sessions WHERE repo = '<repo>' ORDER BY created_at DESC LIMIT 20;
 
--- what a task's worker/provisioner actually did
+-- what a session's worker/provisioner actually did
 SELECT event_type, payload, created_at
 FROM knowledge_journal
-WHERE payload->>'taskId' = '<taskId>'
+WHERE payload->>'sessionId' = '<sessionId>'
 ORDER BY created_at;
 
 -- currently configured repos (docs/adr/0028)
-SELECT name, url, base_branch FROM repos ORDER BY name;
+SELECT name, url, base_branch, image, cluster_access FROM repos ORDER BY name;
 ```
 
 Connect via the `AGENTFLEET_DB_*` credentials (Infisical, `agent-fleet-nygh`
 project) — `core` is the **only** component with these
 (`docs/adr/0020` point 1); `provisioner`/`sidecar`/`worker` hold none.
-`knowledge_journal` now also carries provisioner-reported pod-lifecycle
-events (`event_type` like `pod.created`/`pod.scheduled`/`pod.running`/
-`pod.crashed`/`pod.terminated`), pushed live over gRPC and journaled by
-`core`'s `ReportPodEvents` — useful for seeing whether a stuck task even
-got a pod at all. For diagnosing *why* a specific task is stuck rather
-than just listing state, use `/fleet-debug` instead.
+`knowledge_journal` also carries provisioner-reported pod-lifecycle events,
+pushed live over gRPC and journaled by `core`'s `ReportPodEvents` — useful
+for seeing whether a stuck session even got a pod at all. `event_type` is
+`"pod." + PodPhase.String()`, so the values are
+`pod.POD_PHASE_CREATED`/`_SCHEDULED`/`_RUNNING`/`_CRASHED`/`_TERMINATED` —
+the full enum name, not a lowercased one. For diagnosing *why* a specific
+session is stuck rather than just listing state, use `/fleet-debug` instead.
