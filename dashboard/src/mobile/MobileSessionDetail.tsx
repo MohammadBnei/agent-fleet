@@ -54,6 +54,9 @@ export function MobileSessionDetail({
     loadError,
     actionError,
     pendingMessage,
+    hasOlder,
+    loadingOlder,
+    loadOlder,
     run,
     sendDiscuss,
     respondToPermission,
@@ -66,19 +69,18 @@ export function MobileSessionDetail({
   const [bypassOpen, setBypassOpen] = useState(false);
   // Same persisted key as the desktop view — see SessionDetail.tsx.
   const [density, setDensity] = useLocalStorageState<Density>("taskDetail.density", "everything");
-  const { ref: feedRef, atBottom, onScroll, scrollToBottom } = useAtBottom<HTMLDivElement>();
+  const { ref: feedRef, atBottom, onScroll, scrollToBottom, anchorPrepend } = useAtBottom<HTMLDivElement>();
 
-  const prevLen = useRef<number | null>(null);
+  // Keyed on the newest seq rather than the count — a "load earlier" prepend
+  // grows the list without anything having arrived. Same reasoning as
+  // SessionDetail's copy.
+  const prevLastSeq = useRef<bigint | null>(null);
   useEffect(() => {
-    if (prevLen.current === null) {
-      prevLen.current = entries.length;
-      return;
-    }
-    if (entries.length > prevLen.current) {
-      const latest = entries[entries.length - 1];
-      if (latest.from === "human" || atBottom) scrollToBottom();
-    }
-    prevLen.current = entries.length;
+    const latest = entries[entries.length - 1];
+    const prev = prevLastSeq.current;
+    prevLastSeq.current = latest?.seq ?? null;
+    if (prev === null || latest === undefined || latest.seq <= prev) return;
+    if (latest.from === "human" || atBottom) scrollToBottom();
   }, [entries, atBottom, scrollToBottom]);
 
   // Before the first paint of this session's feed, not after — as a plain effect
@@ -186,6 +188,9 @@ export function MobileSessionDetail({
           visibility={visibility}
           density={density}
           busyKey={busyKey}
+          hasOlder={hasOlder}
+          loadingOlder={loadingOlder}
+          onLoadOlder={() => anchorPrepend(loadOlder)}
           compact
           dockPendingDecision
           onRespond={respondToPermission}

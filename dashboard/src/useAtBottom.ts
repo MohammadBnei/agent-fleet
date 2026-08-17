@@ -32,5 +32,21 @@ export function useAtBottom<T extends HTMLElement>(threshold = 100) {
     ref.current?.scrollTo({ top: ref.current.scrollHeight, behavior: "smooth" });
   }, []);
 
-  return { ref, atBottom, onScroll: checkAtBottom, scrollToBottom };
+  // Runs a load-older fetch with the scroll position pinned to whatever the
+  // reader is looking at. Prepending history grows scrollHeight above the
+  // viewport, which would otherwise shove the current entry down the screen
+  // by exactly the height of the page just loaded.
+  const anchorPrepend = useCallback(async (load: () => Promise<void>) => {
+    const el = ref.current;
+    const before = el ? el.scrollHeight - el.scrollTop : 0;
+    await load();
+    if (!el) return;
+    // After paint: React has committed the new entries by the time the
+    // promise resolves, but the browser has not necessarily laid them out.
+    requestAnimationFrame(() => {
+      el.scrollTop = el.scrollHeight - before;
+    });
+  }, []);
+
+  return { ref, atBottom, onScroll: checkAtBottom, scrollToBottom, anchorPrepend };
 }

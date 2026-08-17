@@ -6,7 +6,7 @@
 import { test, expect } from "bun:test";
 import { TranscriptEntryType, type TranscriptEntry } from "../gen/agentfleet/v1/transcript_pb";
 import { feedVisibility, type SdkResultSummary } from "../transcript";
-import { SessionFeed } from "./SessionFeed";
+import { LoadOlder, SessionFeed } from "./SessionFeed";
 import { TranscriptEntryView } from "./TranscriptEntryView";
 
 let nextSeq = 0n;
@@ -85,4 +85,40 @@ test("each turn's line is charged its own share, and a changed init resets the b
   // Third follows a real re-init, so the SDK's counters restarted with it.
   expect(results[2].result?.totalCostUsd).toBeCloseTo(0.2, 5);
   expect(results[2].result?.durationApiMs).toBe(5_000);
+});
+
+// The feed opens on the newest page, so the way back through history is the
+// header at its head. It renders only when the hook says there is more behind
+// what's held — a session whose whole transcript fits in one page must not
+// offer a fetch that returns nothing.
+test("the load-earlier header appears only when older history exists", () => {
+  const props = {
+    entries: [init("opus")],
+    visibility: feedVisibility("everything", false),
+    density: "everything" as const,
+    busyKey: null,
+    onRespond: () => {},
+    onApprovePlan: () => {},
+    onAnswer: () => {},
+    onPlanFeedback: () => {},
+  };
+
+  const hasLoadOlder = (tree: unknown): boolean => {
+    let found = false;
+    const walk = (node: unknown): void => {
+      if (Array.isArray(node)) return node.forEach(walk);
+      if (!node || typeof node !== "object") return;
+      const el = node as { type?: unknown; props?: Record<string, unknown> };
+      if (el.type === LoadOlder) found = true;
+      if (el.props?.children) walk(el.props.children);
+    };
+    walk(tree);
+    return found;
+  };
+
+  expect(hasLoadOlder(SessionFeed({ ...props, hasOlder: true, onLoadOlder: () => {} }))).toBe(true);
+  // No older history…
+  expect(hasLoadOlder(SessionFeed({ ...props, hasOlder: false, onLoadOlder: () => {} }))).toBe(false);
+  // …and no handler to fetch it with (a surface that doesn't paginate).
+  expect(hasLoadOlder(SessionFeed({ ...props, hasOlder: true }))).toBe(false);
 });

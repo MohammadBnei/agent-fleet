@@ -142,11 +142,35 @@ function ToolGroup({ pairs, compact }: { pairs: ToolCallPair[]; compact?: boolea
   );
 }
 
+// The head of the feed when older history exists. One click = one page,
+// deliberately: a session's transcript is unbounded, and an infinite scroll
+// that keeps fetching as you drag is how you end up holding all of it in
+// memory again — the thing loading the newest page first was meant to stop.
+export function LoadOlder({ loading, onLoad }: { loading: boolean; onLoad: () => void }) {
+  return (
+    <div className="flex items-center gap-2.5 mb-1.5">
+      <span className="text-2xs tracking-[0.1em] text-dim2 whitespace-nowrap">EARLIER</span>
+      <span className="flex-1 h-px bg-line3" />
+      <button
+        type="button"
+        onClick={onLoad}
+        disabled={loading}
+        className="text-2xs sm:text-xs text-dim hover:text-primary cursor-pointer whitespace-nowrap disabled:cursor-wait"
+      >
+        {loading ? "loading…" : "load earlier"}
+      </button>
+    </div>
+  );
+}
+
 export function SessionFeed({
   entries,
   visibility,
   density,
   busyKey,
+  hasOlder = false,
+  loadingOlder = false,
+  onLoadOlder,
   compact = false,
   // Mobile docks the pending decision above the composer instead of leaving it
   // inline, so the feed must not also render it.
@@ -160,6 +184,9 @@ export function SessionFeed({
   visibility: FeedVisibility;
   density: Density;
   busyKey: string | null;
+  hasOlder?: boolean;
+  loadingOlder?: boolean;
+  onLoadOlder?: () => void;
   compact?: boolean;
   dockPendingDecision?: boolean;
   onRespond: (seq: bigint, decision: { behavior: "allow" | "deny"; message?: string }) => void;
@@ -189,6 +216,9 @@ export function SessionFeed({
   }
 
   const out: React.ReactNode[] = [];
+  if (hasOlder && onLoadOlder) {
+    out.push(<LoadOlder key="load-older" loading={loadingOlder} onLoad={onLoadOlder} />);
+  }
   // Consecutive tool calls accumulate here and flush as one ToolGroup the
   // moment anything else appears, so the grouping follows the real
   // chronology rather than hoisting every call to one block at the end.

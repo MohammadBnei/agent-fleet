@@ -89,6 +89,19 @@ message ReadTranscriptSinceRequest {
   string session_id = 1;
   int64 since_seq = 2;
   int32 timeout_ms = 3;
+  // Page size. Unset means the server's own cap (1000). Clamped to it either
+  // way — this bounds the response, it can't widen it.
+  optional int32 limit = 4;
+  // Window selector, dashboard-side (DashboardService.GetTranscript only;
+  // the sidecar's cursor reads ignore it):
+  //   before_seq unset, limit unset -> entries from since_seq (unchanged)
+  //   before_seq unset, limit set   -> the NEWEST `limit` entries
+  //   before_seq set                -> the `limit` entries just before it
+  // A session detail view opens on the newest page and walks backwards, so
+  // "the whole transcript from seq 0" is no longer the only thing it can ask
+  // for — past 1000 entries that silently returned the oldest page and never
+  // fetched the rest.
+  optional int64 before_seq = 5;
 }
 
 message ReadTranscriptSinceResponse {

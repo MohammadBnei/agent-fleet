@@ -90,6 +90,19 @@ export function ChangesPanel({ branch, changes }: { branch: string | null; chang
 // card silently widened the mobile column to 437px on a 390px viewport — caught
 // by measuring rects in Playwright, invisible to tsc and to lint.
 
+// One `label  value` row of the SESSION panel. min-w-0 + truncate so a long
+// image tag shortens instead of widening the column (see the note above).
+function Fact({ label, value }: { label: string; value: string }) {
+  return (
+    <>
+      <dt className="text-dim2">{label}</dt>
+      <dd className="text-text2 min-w-0 truncate" title={value}>
+        {value}
+      </dd>
+    </>
+  );
+}
+
 export function SessionPanel({
   session,
   busy,
@@ -108,16 +121,19 @@ export function SessionPanel({
   return (
     <div>
       <PanelHeading title="SESSION" />
-      <div className="text-xs text-dim2 leading-[1.6] mb-2.5">
-        mode <span className="text-text2">{session.permissionMode || "default"}</span>
-
-        {session.podPhase && ` · pod ${session.podPhase.replace("POD_PHASE_", "")}`}
+      {/* Label/value rows rather than one ` · `-joined line: these are five
+          unrelated facts, and run together they read as a sentence nobody
+          finishes. The label stays dim, the value is what the eye lands on. */}
+      <dl className="text-xs leading-[1.6] mb-2.5 grid grid-cols-[auto_1fr] gap-x-2.5 gap-y-1 min-w-0">
+        <Fact label="model" value={session.model || "default"} />
+        <Fact label="mode" value={session.permissionMode || "default"} />
+        {session.podPhase && <Fact label="pod" value={session.podPhase.replace("POD_PHASE_", "").toLowerCase()} />}
         {/* The build this session's pod is actually on — recorded at dispatch,
             so it stays true after the fleet is upgraded underneath it. Absent
             until the session has had a pod. */}
-        {session.workerImage && ` · worker ${imageTag(session.workerImage)}`}
-        {session.sidecarImage && ` · sidecar ${imageTag(session.sidecarImage)}`}
-      </div>
+        {session.workerImage && <Fact label="worker" value={imageTag(session.workerImage)} />}
+        {session.sidecarImage && <Fact label="sidecar" value={imageTag(session.sidecarImage)} />}
+      </dl>
       <ActionsMenu
         sessionId={session.id}
         busy={busy}
