@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.8.7](https://github.com/MohammadBnei/agent-fleet/compare/3.8.6...3.8.7) (2026-08-17)
+
+
+### Bug Fixes
+
+* **ci:** take the registry username from env, not an unset secret ([#191](https://github.com/MohammadBnei/agent-fleet/issues/191)) ([c1970b6](https://github.com/MohammadBnei/agent-fleet/commit/c1970b648461abcce8605cc85041e0b909528c67))
+
 ## [3.8.6](https://github.com/MohammadBnei/agent-fleet/compare/3.8.5...3.8.6) (2026-08-17)
 
 ## [3.8.5](https://github.com/MohammadBnei/agent-fleet/compare/3.8.4...3.8.5) (2026-08-17)
