@@ -22,7 +22,18 @@ import (
 // it — reliability-findings.md #11: this replaces the reconcile loop's own
 // hand-rolled terminal-phase GC pass. Long enough to `kubectl logs` a
 // crashed worker, short enough not to accumulate.
-const workerJobTTLSeconds = 300
+//
+// 5 minutes turned out not to be long enough for the first half of that, and
+// it never even applied: the reconcile loop deleted a terminal Job within
+// ~60s (pod died 19:24:14, DeleteWorkerJob 19:24:22 on 2026-08-17), so the
+// pod was gone before kube-state-metrics ever scraped it. The fleet's own
+// record of *why* a worker died was therefore empty —
+// kube_pod_container_status_last_terminated_reason had no worker rows at all,
+// and reading the node's dmesg over SSH was the only way to establish an
+// OOMKill. The loop no longer deletes a Failed Job (see
+// reconcile.gcTerminalWorkerJobs); this is what reaps it instead, and 30
+// minutes is a window a human can actually act inside.
+const workerJobTTLSeconds = 1800
 
 // claudeConfigDir redirects the Agent SDK's session-state directory
 // (normally $HOME/.claude, which is a fresh container filesystem every
@@ -131,6 +142,20 @@ func contextBudgetEnv() []corev1.EnvVar {
 		{Name: "MAX_MCP_OUTPUT_TOKENS", Value: "10000"},
 	}
 }
+
+// workerMaxCPU/workerMaxMemory are the worker container's limits. They must
+// stay <= limitRange.max in k8s/core.yaml — that LimitRange is namespace-wide,
+// so exceeding it means the pod is rejected at admission and never exists,
+// rather than merely being throttled. Named constants so the test that pins
+// the two files together has something to assert on.
+//
+// These were e2eMaxCPU/e2eMaxMemory until docs/adr/0048 §6 deleted the pod
+// they sized, taking their guard test with them; the worker is what runs
+// builds now, so it is what the ceiling has to fit.
+const (
+	workerMaxCPU    = "4000m"
+	workerMaxMemory = "4Gi"
+)
 
 func int32Ptr(i int32) *int32 { return &i }
 func int64Ptr(i int64) *int64 { return &i }
@@ -450,14 +475,59 @@ func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error 
 				Image:        workerImage,
 				Env:          workerEnv,
 				VolumeMounts: workerMounts,
+				// This is the e2e sandbox's build envelope, moved here to
+				// follow the builds. 250m/512Mi req and 2000m/2Gi lim were
+				// the numbers from when this container ran a Claude Code
+				// session and nothing else; bc5da8f then deliberately raised
+				// the SANDBOX to 1000m/1Gi req and 4000m/4Gi lim, on the
+				// finding that compiles, test suites and dependency installs
+				// do not fit in the smaller envelope, and that the 250m
+				// request was the worse half of it — a request sets the CFS
+				// weight, so under any node contention the pod installed
+				// dependencies with a quarter core. Six days later
+				// docs/adr/0048 §6 deleted the sandbox and moved every build
+				// into this container's own Bash, and the sizing did not come
+				// with it. That is why the crash is new: nothing here got
+				// heavier, the heavy work moved in.
+				//
+				// The consequence is worse than slow, because cgroup v2 sets
+				// memory.oom.group on a container scope: crossing the limit
+				// does not kill the one greedy process, the kernel SIGKILLs
+				// EVERY task in the container at once, PID 1 included. So the
+				// symptom is not a failed Bash tool call, it is a worker whose
+				// logs stop mid-sentence with no error, no `session failed`
+				// line, and a Job that just goes Failed. Live, 2026-08-17:
+				//
+				//   Memory cgroup out of memory: Killed process 271432 (node)
+				//     anon-rss:1441180kB
+				//   Tasks in .../cri-containerd-<worker>.scope are going to be
+				//     killed due to memory.oom.group set
+				//   ... Killed process 188440 (bun)    <- the worker itself
+				//   ... Killed process 189018 (claude) <- the agent
+				//
+				// Measured RSS at that kill: vite's node 1454Mi, claude
+				// 427Mi, the Playwright MCP node 149Mi, all ten chrome
+				// processes 263Mi, worker bun 90Mi — ~2.4Gi against a 2Gi
+				// ceiling. The browser is 17% of that, so moving it to its own
+				// pod fixes nothing (a second OOM the same evening had no
+				// chrome resident at all, docs/adr/0051 rejects the split on
+				// its own grounds); the build is 60%, and the ceiling has to
+				// clear it.
+				//
+				// The 4000m/4Gi limits sit at exactly limitRange.max in
+				// k8s/core.yaml, inherited from when the sandbox was pinned
+				// there. A container limit ABOVE max is rejected at admission
+				// and the pod is never created at all — not throttled, not
+				// pending, absent. Change the two together;
+				// TestCreateWorkerPod_ResourcesWithinLimitRange pins them.
 				Resources: corev1.ResourceRequirements{
 					Requests: corev1.ResourceList{
-						corev1.ResourceCPU:    resource.MustParse("250m"),
-						corev1.ResourceMemory: resource.MustParse("512Mi"),
+						corev1.ResourceCPU:    resource.MustParse("1000m"),
+						corev1.ResourceMemory: resource.MustParse("1Gi"),
 					},
 					Limits: corev1.ResourceList{
-						corev1.ResourceCPU:    resource.MustParse("2000m"),
-						corev1.ResourceMemory: resource.MustParse("2Gi"),
+						corev1.ResourceCPU:    resource.MustParse(workerMaxCPU),
+						corev1.ResourceMemory: resource.MustParse(workerMaxMemory),
 					},
 				},
 			},

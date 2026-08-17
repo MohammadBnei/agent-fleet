@@ -40,7 +40,11 @@ func (f *fakeEventReporter) ReportEvent(ctx context.Context, event *agentfleetv1
 	f.events = append(f.events, event)
 }
 
-func TestGcTerminalWorkerJobs_OnlyDeletesTerminalPhase(t *testing.T) {
+// A Failed Job is reported but left alone — its own TTL reaps it. Deleting
+// it here is what made an OOMKilled worker undiagnosable: the pod vanished 8s
+// after dying, before kube-state-metrics ever scraped a terminated state, so
+// nothing in the fleet or in Prometheus recorded a cause.
+func TestGcTerminalWorkerJobs_DeletesSucceededButKeepsFailed(t *testing.T) {
 	kc := &fakeK8s{jobs: []k8s.LiveWorkerJob{
 		{TaskID: "running-1", JobName: "worker-1", Phase: "Running"},
 		{TaskID: "done-1", JobName: "worker-2", Phase: "Succeeded"},
@@ -52,12 +56,38 @@ func TestGcTerminalWorkerJobs_OnlyDeletesTerminalPhase(t *testing.T) {
 
 	l.gcTerminalWorkerJobs(context.Background())
 
-	if len(kc.deleted) != 2 {
-		t.Fatalf("expected exactly 2 terminal jobs deleted, got %v", kc.deleted)
+	if len(kc.deleted) != 1 || kc.deleted[0] != "done-1" {
+		t.Fatalf("expected only done-1 deleted, got %v", kc.deleted)
 	}
-	deleted := map[string]bool{kc.deleted[0]: true, kc.deleted[1]: true}
-	if !deleted["done-1"] || !deleted["failed-1"] {
-		t.Errorf("expected done-1 and failed-1 deleted, got %v", kc.deleted)
+	if len(reporter.events) != 2 {
+		t.Fatalf("expected both terminal jobs reported, got %d events", len(reporter.events))
+	}
+}
+
+// The flip side of keeping a Failed Job: it stays listed for its whole TTL,
+// so without a guard this pass would re-report it on every 60s tick for half
+// an hour.
+func TestGcTerminalWorkerJobs_ReportsAKeptFailedJobOnlyOnce(t *testing.T) {
+	kc := &fakeK8s{jobs: []k8s.LiveWorkerJob{
+		{TaskID: "failed-1", JobName: "worker-3", Phase: "Failed"},
+	}}
+	reporter := &fakeEventReporter{}
+	l := New(kc, reporter, time.Hour)
+
+	l.gcTerminalWorkerJobs(context.Background())
+	l.gcTerminalWorkerJobs(context.Background())
+	l.gcTerminalWorkerJobs(context.Background())
+
+	if len(reporter.events) != 1 {
+		t.Fatalf("expected 1 event across 3 passes, got %d", len(reporter.events))
+	}
+
+	// Once the TTL controller reaps it the entry is forgotten, so the set
+	// cannot grow without bound across a long-lived provisioner.
+	kc.jobs = nil
+	l.gcTerminalWorkerJobs(context.Background())
+	if len(l.reported) != 0 {
+		t.Errorf("expected reported set pruned once the job is gone, got %v", l.reported)
 	}
 }
 
