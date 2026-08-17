@@ -1,5 +1,7 @@
 # Changelog
 
+## [3.8.4](https://github.com/MohammadBnei/agent-fleet/compare/3.8.3...3.8.4) (2026-08-17)
+
 ## [3.8.3](https://github.com/MohammadBnei/agent-fleet/compare/3.8.2...3.8.3) (2026-08-17)
 
 
