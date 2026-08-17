@@ -72,19 +72,39 @@ rewrite and before any transcript entry is written. `allowedTools` keeps its
 entries; that is still the fast path when the SDK agrees. This is the backstop,
 and it is deliberately a *different mechanism* rather than a longer list.
 
+One carve-out, and only in `plan`: `PLAN_MODE_STILL_ASKS` — `prompt_agent`,
+`delete_shared_file`, `expose`, `unexpose`, `request_service`. The rationale
+above is "reaching a human must not need a human", which covers the talking,
+journal and file-reading tools; these five act *outside* the session, and the
+SDK's plan-mode MCP gate that used to stop them is exactly what this
+short-circuit overrides. Without it, the fix would quietly widen what a
+planning session can do. Names rather than a prefix, because forgetting to add
+a future tool costs one prompt in one mode — the safe direction to be wrong in.
+
 ### `auto` means auto: only `rm` and `sudo` still ask
 
 In `auto`, `canUseTool` allows everything except a `Bash` whose command matches
-`/(^|[\s;&|(])(sudo|rm)\s/`. Anything the SDK's own classifier allows never
-reaches the callback at all; anything that does — an ask-rule match, a
-classifier fallback, a passthrough — gets a deterministic fleet answer. Whether
-the classifier runs is therefore no longer load-bearing, which is the part
-ADR-0052 could not verify.
+`/(^|[\s;&|('"\/])(sudo|rm)\s/`, and `ExitPlanMode`. Anything the SDK's own
+classifier allows never reaches the callback at all; anything that does — an
+ask-rule match, a classifier fallback, a passthrough — gets a deterministic
+fleet answer. Whether the classifier runs is therefore no longer load-bearing,
+which is the part ADR-0052 could not verify.
 
-The match is on the command text, not a bash parse. `sudo` behind an `eval` or
-a variable slips through, and that is accepted: this is a convenience gate on a
-mode a human explicitly chose, not a sandbox. Marked `ponytail:` in the source
-with tree-sitter-bash as the upgrade path.
+The leading character class is what makes the match worth anything: `rm` at the
+head of a line is the case nobody writes. `bash -c "rm -rf /workspace"`, `sh -c
+'rm -rf dist'` and `/bin/rm -rf x` are what an agent actually emits, and the
+first version of this gate allowed all three — one minute after a confirm
+reading "only rm and sudo still come to you". Over-matching costs one prompt;
+under-matching costs the promise. It is still the command text and not a bash
+parse (`$RM -rf x` slips through), accepted and marked `ponytail:` in the
+source with tree-sitter-bash as the upgrade path.
+
+`ExitPlanMode` is held back for a different reason: not danger, but that a plan
+is the one thing whose whole value is a human reading it. ADR-0052's
+`resolveOnePendingAllow` sweep is deliberately **not** narrowed the same way —
+there a human has just clicked, and a plan is what they were answering
+(approve+auto). It is narrowed by the *command* check alone, so picking `auto`
+from the list cannot allow a parked `rm` the human never opened.
 
 ### `FLEET_ASK_RULES` becomes unconditional
 
@@ -119,7 +139,8 @@ boundary crossings, and vary the ask list per pod. Gone:
   `bypass` word is gone; a plain confirm gates it on both surfaces.
 - `plan` mode no longer prompts for `journal_write`, `set_session_meta`,
   `list_sessions` and the rest — which it did for every planning session the
-  fleet has ever run under 0.3.233.
+  fleet has ever run under 0.3.233. It still prompts for the five that act
+  outside the session.
 - `ExitPlanMode` still costs a click in every mode. Unchanged and still
   unfixable from here (`requiresUserInteraction` sits above everything the
   fleet can set); the auto transition is what makes that click worth something.
@@ -132,9 +153,12 @@ boundary crossings, and vary the ask list per pod. Gone:
 - `worker`: a fleet MCP tool resolves `allow` with **no `permission_request`
   pushed** (the transcript entry is what a human sees, so that is the
   assertion); `auto` allows `gh pr create` and `Write` silently, still parks
-  `rm -rf build` *and* `make build && sudo install`; switching to `auto`
-  mid-session is a live `setPermissionMode` with no re-warm message, and the
-  gate reads the new mode on the next call.
+  `rm -rf build`, `make build && sudo install`, `bash -c "rm -rf …"`, `sh -c
+  'rm …'`, `/bin/rm`, `ssh h "sudo …"` and `ExitPlanMode`; switching to `auto`
+  does not allow a parked `rm`; `plan` allows `send_message`/`journal_write`
+  but still parks `prompt_agent`; switching to `auto` mid-session is a live
+  `setPermissionMode` with no re-warm message, and the gate reads the new mode
+  on the next call.
 - `core`: `bypassPermissions` is absent from `validPermissionModes`.
 - `dashboard`: `bun run build`, not `tsc --noEmit` — deleting a component is
   exactly the change `noUnusedLocals` catches and the weaker check does not.

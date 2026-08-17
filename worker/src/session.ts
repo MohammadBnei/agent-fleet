@@ -82,19 +82,59 @@ const FLEET_ASK_RULES = [
 // A rule in a list the SDK re-interprets is a request. This is the decision.
 const FLEET_OWN_TOOL = /^mcp__(agent-fleet-sidecar|playwright)__/;
 
+// …with one carve-out, and only in `plan`. The rationale above is "reaching a
+// human must not need a human", which covers the sidecar's talking, journal and
+// file-reading tools. These five act outside this session — another session's
+// pod, a Service and an IngressRoute, a shared file that is gone — and `plan`
+// mode means "do not act yet". The SDK's own plan-mode MCP gate used to stop
+// them, and that gate is exactly what FLEET_OWN_TOOL overrides, so without this
+// the short-circuit would quietly widen what a planning session can do.
+//
+// Names, not a prefix: forgetting to add a future tool here costs one prompt in
+// one mode, which is the safe direction to be wrong in.
+const PLAN_MODE_STILL_ASKS = new Set([
+  "mcp__agent-fleet-sidecar__prompt_agent",
+  "mcp__agent-fleet-sidecar__delete_shared_file",
+  "mcp__agent-fleet-sidecar__expose",
+  "mcp__agent-fleet-sidecar__unexpose",
+  "mcp__agent-fleet-sidecar__request_service",
+]);
+
 // What still stops a human in `auto` (docs/adr/0053). `auto` means auto:
 // everything else the SDK would have prompted for is allowed here without a
 // transcript entry, whether it got that far through an ask rule, a classifier
 // fallback or a plain passthrough.
 //
-// ponytail: matches the command text, not a bash parse — `sudo` behind an eval
-// or a variable slips through. The ceiling is that this is a convenience gate
-// on a mode a human explicitly chose, not a sandbox; the upgrade path is the
-// SDK's own tree-sitter-bash if that ever stops being true.
-const AUTO_MODE_STILL_ASKS = /(^|[\s;&|(])(sudo|rm)\s/;
+// The leading class is what makes this worth anything: `rm` at the head of the
+// line is the case nobody writes. `bash -c "rm -rf /workspace"`, `sh -c 'rm
+// dist'` and `/bin/rm -rf x` are what an agent actually emits, so quotes and a
+// path separator count as boundaries too. Over-matching (`echo "rm is a
+// command"`) costs one prompt; under-matching costs the promise the confirm
+// modal makes.
+//
+// ponytail: still the command text, not a bash parse — `$RM -rf x` or an eval
+// slips through. The ceiling is that this is a convenience gate on a mode a
+// human explicitly chose, not a sandbox; the upgrade path is the SDK's own
+// tree-sitter-bash if that ever stops being true.
+const AUTO_MODE_STILL_ASKS_BASH = /(^|[\s;&|('"/])(sudo|rm)\s/;
 
+function autoModeStillAsksCommand(toolName: string, input: Record<string, unknown>): boolean {
+  return toolName === "Bash" && typeof input.command === "string" && AUTO_MODE_STILL_ASKS_BASH.test(input.command);
+}
+
+// ExitPlanMode is the other one canUseTool holds back, and it is not about
+// danger: a plan is the one thing whose whole value is a human reading it,
+// AUTO_MODE_WARNING promises "and so does the next plan", and the CLI's own
+// auto-mode menu is reached *through* this prompt. The SDK holds it above every
+// mode via requiresUserInteraction; allowing it here would be the fleet undoing
+// that.
+//
+// Deliberately NOT part of resolveOnePendingAllow's filter, which uses the
+// command check alone: there the human has just clicked something, and a plan
+// is what they were answering (docs/adr/0052's approve+auto). A parked `rm`
+// they never opened is the opposite case.
 function autoModeStillAsks(toolName: string, input: Record<string, unknown>): boolean {
-  return toolName === "Bash" && typeof input.command === "string" && AUTO_MODE_STILL_ASKS.test(input.command);
+  return toolName === "ExitPlanMode" || autoModeStillAsksCommand(toolName, input);
 }
 
 // A peer session's prompt arrives on the same feed as a human's and, until this
@@ -536,8 +576,16 @@ export async function runSession(): Promise<SessionResult> {
   // when present because that is what the human was answering; otherwise the
   // oldest pending call is the one the mode picker was aimed at. Anything else
   // stays parked and still has to be answered.
-  function resolveOnePendingAllow(): void {
-    const entries = [...pendingPermissions].sort(([a], [b]) => a - b);
+  //
+  // And nothing the mode being switched TO would itself still ask about is
+  // eligible (docs/adr/0053). Picking `auto` from the list — without opening
+  // the session — shows a confirm reading "only rm and sudo still come to
+  // you"; if a parked `rm -rf` were the oldest call, that click would allow
+  // the one thing the human was just promised they would be asked about.
+  function resolveOnePendingAllow(mode: PermissionMode): void {
+    const entries = [...pendingPermissions]
+      .sort(([a], [b]) => a - b)
+      .filter(([, p]) => !(mode === "auto" && autoModeStillAsksCommand(p.tool, p.input)));
     const target = entries.find(([, p]) => p.tool === "ExitPlanMode") ?? entries[0];
     if (!target) return;
     const [seq, pending] = target;
@@ -655,9 +703,10 @@ export async function runSession(): Promise<SessionResult> {
       // dangerous — they are the two answers the fleet has already made and
       // will not re-ask a human for. Everything else still blocks.
       canUseTool: async (toolName, toolInput) => {
-        // See FLEET_OWN_TOOL. Ahead of the rtk rewrite because rtk only ever
-        // looks at `command`, which none of these carry.
-        if (FLEET_OWN_TOOL.test(toolName)) {
+        // See FLEET_OWN_TOOL and PLAN_MODE_STILL_ASKS. Ahead of the rtk
+        // rewrite because rtk only ever looks at `command`, which none of
+        // these carry.
+        if (FLEET_OWN_TOOL.test(toolName) && !(currentMode === "plan" && PLAN_MODE_STILL_ASKS.has(toolName))) {
           return { behavior: "allow", updatedInput: toolInput };
         }
         // The human is shown (and answers) the command the agent actually
@@ -889,7 +938,7 @@ export async function runSession(): Promise<SessionResult> {
           return;
         }
         currentMode = mode;
-        resolveOnePendingAllow();
+        resolveOnePendingAllow(mode);
         return;
       }
       // `/clear` (and its CLI aliases) must NOT reach the SDK.
@@ -913,8 +962,10 @@ export async function runSession(): Promise<SessionResult> {
       // hang), but preceded by clearing the resume identity.
       if (/^\/(clear|reset|new)\s*$/.test(entry.text.trim())) {
         aborted = true;
-        // Same as the relaunch above: this pod ends itself without an
-        // interrupt/abort entry, so the resolutions have to be recorded.
+        // record=true: this pod ends itself without an interrupt/abort entry,
+        // and every dashboard surface reads one of those as resolving whatever
+        // was pending — so without the record, a card sits "waiting for a
+        // human" forever on a session whose pod is gone.
         resolveAllPendingDeny("Conversation cleared.", true, true);
         // Empty id => next warm passes resume: undefined => fresh session.
         await sidecar

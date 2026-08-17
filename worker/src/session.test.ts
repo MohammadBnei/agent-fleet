@@ -670,18 +670,90 @@ test("auto mode allows without asking, except rm and sudo", async () => {
   await dangerous;
 }, 10000);
 
-// The command is matched anywhere in the line, not just at its head — a
-// `make build && sudo install` is the same decision as a bare `sudo install`.
-test("auto mode still asks for a destructive command hidden mid-line", async () => {
+// `rm` at the head of the line is the case nobody writes. These are what an
+// agent actually emits, and every one of them was allowed by the first version
+// of this gate — one minute after a confirm reading "only rm and sudo still
+// come to you".
+test.each([
+  "make build && sudo install",
+  'bash -c "rm -rf /workspace/node_modules"',
+  "sh -c 'rm -rf dist'",
+  "/bin/rm -rf /workspace/x",
+  'ssh host "sudo reboot"',
+])("auto mode still asks for %p", async (command) => {
   sessionPermissionMode = "auto";
   const promise = runSession();
   await Bun.sleep(20);
 
   let resolved: unknown = null;
-  const call = capturedCanUseTool!("Bash", { command: "make build && sudo install" }).then((r) => (resolved = r));
+  const call = capturedCanUseTool!("Bash", { command }).then((r) => (resolved = r));
   await Bun.sleep(20);
   expect(resolved).toBeNull();
   expect(findPermissionRequest("Bash")).toBeDefined();
+
+  pushHuman("", "abort");
+  await promise;
+  await call;
+}, 10000);
+
+// A plan is the one thing whose whole value is a human reading it, and
+// AUTO_MODE_WARNING promises "and so does the next plan".
+test("auto mode still asks for ExitPlanMode", async () => {
+  sessionPermissionMode = "auto";
+  const promise = runSession();
+  await Bun.sleep(20);
+
+  let resolved: unknown = null;
+  const call = capturedCanUseTool!("ExitPlanMode", { plan: "do the thing" }).then((r) => (resolved = r));
+  await Bun.sleep(20);
+  expect(resolved).toBeNull();
+  expect(findPermissionRequest("ExitPlanMode")).toBeDefined();
+
+  pushHuman("", "abort");
+  await promise;
+  await call;
+}, 10000);
+
+// The mode switch pre-empts ONE parked call, and picking `auto` from the list
+// is a click whose confirm says rm and sudo still come to you. Allowing a
+// parked `rm` on that click would make the confirm a lie.
+test("switching to auto does not allow a parked call auto itself would still ask about", async () => {
+  const promise = runSession();
+  await Bun.sleep(20);
+
+  let resolved: unknown = null;
+  const call = capturedCanUseTool!("Bash", { command: "rm -rf /workspace/x" }).then((r) => (resolved = r));
+  await Bun.sleep(20);
+
+  pushHuman("auto", "permission_mode");
+  await Bun.sleep(20);
+  expect(setPermissionModeCalls).toContain("auto");
+  expect(resolved).toBeNull(); // still a human's call
+
+  pushHuman("", "abort");
+  await promise;
+  await call;
+}, 10000);
+
+// `plan` means "do not act yet", and the SDK's own plan-mode MCP gate is
+// exactly what the FLEET_OWN_TOOL short-circuit overrides — so the sidecar
+// tools that act OUTSIDE this session keep the gate there.
+test("plan mode still asks for a sidecar tool that acts outside this session", async () => {
+  sessionPermissionMode = "plan";
+  const promise = runSession();
+  await Bun.sleep(20);
+
+  // Talking to a human is never a question, in any mode — that is the bug.
+  expect((await capturedCanUseTool!("mcp__agent-fleet-sidecar__send_message", { text: "hi" })).behavior).toBe("allow");
+  expect((await capturedCanUseTool!("mcp__agent-fleet-sidecar__journal_write", { text: "note" })).behavior).toBe("allow");
+
+  let resolved: unknown = null;
+  const call = capturedCanUseTool!("mcp__agent-fleet-sidecar__prompt_agent", { sessionId: "other" }).then(
+    (r) => (resolved = r),
+  );
+  await Bun.sleep(20);
+  expect(resolved).toBeNull();
+  expect(findPermissionRequest("mcp__agent-fleet-sidecar__prompt_agent")).toBeDefined();
 
   pushHuman("", "abort");
   await promise;
