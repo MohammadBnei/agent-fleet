@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.8.3](https://github.com/MohammadBnei/agent-fleet/compare/3.8.2...3.8.3) (2026-08-17)
+
+
+### Bug Fixes
+
+* **provisioner:** the browser cache Job cannot chmod a mount root it does not own ([#185](https://github.com/MohammadBnei/agent-fleet/issues/185)) ([23e4fda](https://github.com/MohammadBnei/agent-fleet/commit/23e4fdab0e587dcfbc8eb924718c80ec5c72dd46))
+
 ## [3.8.2](https://github.com/MohammadBnei/agent-fleet/compare/3.8.1...3.8.2) (2026-08-17)
 
 
