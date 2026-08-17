@@ -13,3 +13,6 @@ local/kind/workspace-data/
 # Stray output of building e2e-runner/cmd/execmcp from the repo root
 # instead of its own module directory.
 /execmcp
+
+# Subagent git worktrees (Agent tool isolation) — never part of the repo
+.claude/worktrees/

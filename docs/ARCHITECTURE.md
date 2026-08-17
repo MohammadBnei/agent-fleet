@@ -162,7 +162,12 @@ un-prompted set has to be stated rather than implied: it is
 `permissions.allow` in `fleet-shared/settings.json`, the same file and syntax
 a CLI user edits. Builds and tests are on it; `git push`, `gh pr create` and
 anything outward-facing are deliberately not, because approving those IS the
-review.
+review. Keeping them prompted is an active rule, not an omission — a target
+repo's own `permissions.allow` merges in alongside this one, so the outward-
+facing set is held down by `FLEET_ASK_RULES` in `worker/src/session.ts`
+(`docs/adr/0052`, moved there from this file by `adr/0049`'s original
+`permissions.ask` block). Those rules outrank every permission mode, and are
+omitted only for a session a human explicitly launched in `bypassPermissions`.
 
 What survives fleet-side is the two things needing cluster RBAC the session
 pod does not have, both routed agent → sidecar → `core` → `provisioner`:
@@ -206,10 +211,12 @@ permission tiers instead of a second, fleet-specific gate on top of them
 - **`canUseTool` does zero tool classification of its own.** The old
   `MUTATING_BASH_RE` heuristic and the hardcoded `Write`/`Edit` check are
   both deleted, not widened. The SDK's real `permissionMode`
-  (`'default' | 'plan' | 'acceptEdits' | 'bypassPermissions' | 'delegate' |
-  'dontAsk'`) already decides *when* `canUseTool` gets invoked —
+  (`'default' | 'plan' | 'acceptEdits' | 'auto' | 'bypassPermissions' |
+  'delegate' | 'dontAsk'`) already decides *when* `canUseTool` gets invoked —
   `bypassPermissions` skips it entirely, `acceptEdits` skips it for file
-  edits, `plan` blocks mutation without invoking it, `default` invokes it
+  edits, `auto` (SDK 0.3.233) has a model classifier answer the ordinary
+  prompts instead of a human, `plan` blocks mutation without invoking it,
+  `default` invokes it
   for anything not auto-safe (`Read`/`Glob`/`Grep`/`WebSearch`/`WebFetch`
   stay in `allowedTools`, so the SDK never even calls the callback for
   those). `canUseTool`'s only remaining job: post a `permission_request`
@@ -220,16 +227,26 @@ permission tiers instead of a second, fleet-specific gate on top of them
 - **Sessions start in `"default"` mode**, not a forced `"plan"` gate —
   matches running `claude` locally with no flags. `plan` is still fully
   available, just as one selectable mode via the dashboard's mode picker
-  (`default`/`plan`/`acceptEdits`/`bypassPermissions`, highlighting the
-  real active mode via the `sessions.permission_mode` column) rather than a
-  mandatory starting state.
+  (`default`/`plan`/`acceptEdits`/`auto`/`bypassPermissions`, highlighting
+  the real active mode via the `sessions.permission_mode` column) rather than
+  a mandatory starting state. Every switch is live except one: the SDK gates
+  `bypassPermissions` on a value computed at launch and refuses to enter it
+  mid-session, so crossing that boundary in either direction ends the pod and
+  re-warms into the mode `core` has already persisted (`docs/adr/0052`). A
+  refused switch is reported to the human and the column is written back to
+  the live mode — never swallowed into a log line that leaves the badge
+  claiming a mode the SDK is not in.
 - **`Approve` no longer exists** — proto RPC, Go handler, Discord
   `/approve` command and handler are all deleted (including explicit
   stale-command pruning: `discordgo.ApplicationCommandCreate` only upserts
   by name, it never deregisters a dropped command on its own).
   `SetPermissionMode` (widened to accept `default`/`plan` alongside the
-  pre-existing `acceptEdits`/`bypassPermissions`, `adr/0027`) is the only
-  mode lever now; a new `RespondToPermission` RPC — `AnswerQuestion`'s
+  pre-existing `acceptEdits`/`bypassPermissions`, `adr/0027`, plus `auto`
+  in `adr/0052`) is the only mode lever now — including for plan approval,
+  which is a `SetPermissionMode` followed by a `RespondToPermission` rather
+  than a mode change of its own: the agent's next turn starts the moment
+  `canUseTool` resolves, so a mode set after the response lands too late.
+  A new `RespondToPermission` RPC — `AnswerQuestion`'s
   sibling, same `AppendReply`-by-seq shape — answers individual
   `canUseTool` prompts. `docs/adr/0005`'s "never inferred from silence or
   sentiment" rule is unchanged: a permission decision is still a real,

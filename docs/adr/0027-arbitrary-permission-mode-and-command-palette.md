@@ -1,6 +1,9 @@
 # ADR-0027: dashboard permission-mode selector (including `bypassPermissions`) and slash-command palette
 
-**Status:** Accepted
+**Status:** Accepted; the `allowDangerouslySkipPermissions` section superseded by
+[ADR-0052](0052-auto-mode-and-the-bypass-launch-profile.md), which also adds
+`auto` to the selector and makes `bypassPermissions` a launch profile rather
+than a live switch. The selector and palette themselves stand.
 **Date:** 2026-08-06
 
 ## Context

@@ -171,8 +171,10 @@ Any doc, code, comment, or memory that contradicts this file or an
   wins" line in `fleet-shared/CLAUDE.md` described a file the session was not
   loading). `"local"` stays out because `.claude/settings.local.json` is
   gitignored, so nothing about it is reviewable in the PR that lands it.
-  `"project"` also merges that repo's `permissions.allow`, which is why
-  `fleet-shared/settings.json` carries a `permissions.ask` block: the SDK
+  `"project"` also merges that repo's `permissions.allow`, which is why the
+  fleet carries an `ask` block of its own (in `fleet-shared/settings.json`
+  when this was decided, in `worker/src/session.ts`'s `FLEET_ASK_RULES` since
+  `adr/0052` — see the next bullet): the SDK
   resolves **deny → ask → allow** and returns on the first match, so a
   user-scope `ask` outranks a project-scope `allow`. `ask` rather than `deny`
   because a human must still be able to approve a `git push` — every result
