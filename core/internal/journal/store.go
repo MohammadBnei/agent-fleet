@@ -10,6 +10,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -54,11 +56,15 @@ type Entry struct {
 
 // List returns entries with id > sinceID, ascending (insertion order) —
 // same pull/cursor shape as transcript.Store.ReadSince (docs/adr/0013).
-// repo == "" matches every repo, not just entries whose own repo is
-// literally empty — provisioner-sourced pod-lifecycle events are written
-// with repo="" (ReportPodEvents has no per-repo context), so a caller
-// asking for one specific repo's history would otherwise never see them
-// mixed in with worker-sourced entries that do have a repo.
+// repo == "" matches every repo, and is the only way to read the whole
+// journal: the column is nullable and a caller naming one repo sees just
+// that repo's rows.
+//
+// It used to matter for a second reason — ReportPodEvents wrote pod-lifecycle
+// rows with repo="" because it had no per-repo context, so a repo-scoped read
+// silently omitted them. That writer is gone (nothing appends a repo-less row
+// today), but the matches-all branch stays: it is what Search's own optional
+// repo is built on.
 func (s *Store) List(ctx context.Context, repo string, sinceID int64, limit int) ([]Entry, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT id, COALESCE(repo, ''), actor, event_type, payload::text, created_at
@@ -88,23 +94,72 @@ func (s *Store) List(ctx context.Context, repo string, sinceID int64, limit int)
 	return entries, rows.Err()
 }
 
-// Search ranks entries by relevance to query via Postgres full-text search
+// SearchOpts is journal.Store.Search's parameter set. It is a struct rather
+// than positional params because Since/Until are two adjacent same-typed
+// values: CLAUDE.md's own trap list has a silent swap of exactly that shape
+// (SaveAgentSessionId passing the same string for two different string
+// fields, which compiled and broke every resume).
+type SearchOpts struct {
+	Repo  string    // "" matches every repo
+	Query string    // "" drops the full-text predicate entirely
+	Since time.Time // zero = unbounded; inclusive
+	Until time.Time // zero = unbounded; exclusive
+	Limit int
+}
+
+// Search returns journal entries newest-first.
+//
+// A non-empty Query ranks by relevance via Postgres full-text search
 // (to_tsvector/ts_rank against the same expression knowledge_journal_fts_idx
-// covers, db/migrations/000002_journal_fts.up.sql) — no embedding model or
-// vector store, backing the journal_search MCP tool (docs/adr/0032's
-// deferred "feed knowledge_journal back into a session" read path). Same
-// repo == "" matches-all semantics as List.
-func (s *Store) Search(ctx context.Context, repo, query string, limit int) ([]Entry, error) {
-	rows, err := s.pool.Query(ctx, `
+// covers, db/migrations/000001_init.up.sql) — no embedding model or vector
+// store. An empty Query drops the predicate and returns the window in plain
+// reverse-chronological order, which is the only way to ask "what happened
+// last week" about entries you have not read yet: relevance ranking surfaces
+// what matches your guess, not what happened. Same conditional-SQL shape as
+// sessions.Store.List. Same repo == "" matches-all semantics as List.
+//
+// Newest-first, not oldest-first (issue #198 asked for ascending): with a
+// LIMIT, ascending truncates a seven-day window to its oldest rows and drops
+// the recent ones the caller came for. Reverse client-side for narrative
+// order.
+func (s *Store) Search(ctx context.Context, o SearchOpts) ([]Entry, error) {
+	if o.Limit <= 0 {
+		o.Limit = 50
+	}
+	// args[0] is always repo; every other bind is appended as it applies, so
+	// the placeholder numbers follow len(args) rather than a fixed layout.
+	args := []any{o.Repo}
+	where := []string{`($1 = '' OR repo = $1)`}
+	// id DESC is a real tie-break, not decoration: ts_rank ties were
+	// previously returned in whatever order the plan happened to produce.
+	order := `created_at DESC, id DESC`
+
+	if o.Query != "" {
+		args = append(args, o.Query)
+		q := fmt.Sprintf("$%d", len(args))
+		where = append(where, `to_tsvector('english', event_type || ' ' || payload::text) @@ plainto_tsquery('english', `+q+`)`)
+		order = `ts_rank(to_tsvector('english', event_type || ' ' || payload::text), plainto_tsquery('english', ` + q + `)) DESC, ` + order
+	}
+	if !o.Since.IsZero() {
+		args = append(args, o.Since)
+		where = append(where, fmt.Sprintf(`created_at >= $%d`, len(args)))
+	}
+	if !o.Until.IsZero() {
+		args = append(args, o.Until)
+		where = append(where, fmt.Sprintf(`created_at < $%d`, len(args)))
+	}
+	args = append(args, o.Limit)
+
+	sql := `
 		SELECT id, COALESCE(repo, ''), actor, event_type, payload::text, created_at
 		FROM knowledge_journal
-		WHERE ($1 = '' OR repo = $1)
-		  AND to_tsvector('english', event_type || ' ' || payload::text) @@ plainto_tsquery('english', $2)
-		ORDER BY ts_rank(to_tsvector('english', event_type || ' ' || payload::text), plainto_tsquery('english', $2)) DESC
-		LIMIT $3
-	`, repo, query, limit)
+		WHERE ` + strings.Join(where, " AND ") + `
+		ORDER BY ` + order + `
+		LIMIT $` + strconv.Itoa(len(args))
+
+	rows, err := s.pool.Query(ctx, sql, args...)
 	if err != nil {
-		slog.Error("journal Search", "repo", repo, "query", query, "error", err)
+		slog.Error("journal Search", "repo", o.Repo, "query", o.Query, "error", err)
 		return nil, fmt.Errorf("search journal: %w", err)
 	}
 	defer rows.Close()

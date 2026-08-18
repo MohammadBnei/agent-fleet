@@ -234,9 +234,17 @@ func (c *Client) AppendJournal(ctx context.Context, repo, actor, eventType, payl
 	return nil
 }
 
-func (c *Client) SearchJournal(ctx context.Context, repo, query string, limit int32) ([]*agentfleetv1.JournalEntry, error) {
+// JournalSearch mirrors journal.SearchOpts on core's side — a struct, not
+// four positional strings, because Repo/Query/Since/Until are all string and
+// a swapped pair would compile fine and silently return the wrong window.
+type JournalSearch struct {
+	Repo, Query, Since, Until string
+	Limit                     int32
+}
+
+func (c *Client) SearchJournal(ctx context.Context, s JournalSearch) ([]*agentfleetv1.JournalEntry, error) {
 	resp, err := c.rpc.SearchJournal(ctx, &agentfleetv1.SearchJournalRequest{
-		Repo: repo, Query: query, Limit: limit,
+		Repo: s.Repo, Query: s.Query, Since: s.Since, Until: s.Until, Limit: s.Limit,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("SearchJournal: %w", err)

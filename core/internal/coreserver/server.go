@@ -12,7 +12,6 @@ package coreserver
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -421,12 +420,60 @@ func (s *Server) AppendJournal(ctx context.Context, req *agentfleetv1.AppendJour
 	return &agentfleetv1.AppendJournalResponse{}, nil
 }
 
+// maxJournalLimit caps SearchJournal. With repo and query both optional, an
+// unbounded read of the whole table is now expressible in one call; nothing
+// capped it before because every reachable call had to name a repo.
+const maxJournalLimit = 500
+
+// parseJournalBound accepts RFC3339 or a bare YYYY-MM-DD (midnight UTC), the
+// two shapes an agent actually types. "" means unbounded. The bool reports a
+// date-only value: a bare date names a whole day, not the instant it starts,
+// and only the caller knows whether that matters for the bound it is parsing.
+func parseJournalBound(field, v string) (time.Time, bool, error) {
+	if v == "" {
+		return time.Time{}, false, nil
+	}
+	if t, err := time.Parse(time.RFC3339, v); err == nil {
+		return t, false, nil
+	}
+	if t, err := time.Parse(time.DateOnly, v); err == nil {
+		return t, true, nil
+	}
+	return time.Time{}, false, fmt.Errorf("%s: %q is not RFC3339 or YYYY-MM-DD", field, v)
+}
+
 func (s *Server) SearchJournal(ctx context.Context, req *agentfleetv1.SearchJournalRequest) (*agentfleetv1.SearchJournalResponse, error) {
 	limit := int(req.GetLimit())
 	if limit <= 0 {
 		limit = 50
 	}
-	entries, err := s.journal.Search(ctx, req.GetRepo(), req.GetQuery(), limit)
+	if limit > maxJournalLimit {
+		limit = maxJournalLimit
+	}
+	since, _, err := parseJournalBound("since", req.GetSince())
+	if err != nil {
+		return nil, fmt.Errorf("SearchJournal: %w", err)
+	}
+	until, untilIsDateOnly, err := parseJournalBound("until", req.GetUntil())
+	if err != nil {
+		return nil, fmt.Errorf("SearchJournal: %w", err)
+	}
+	if untilIsDateOnly {
+		// until is an exclusive bound, but a bare YYYY-MM-DD names a whole
+		// day. "until=2026-08-18" has to mean "through the 18th", not "up to
+		// the instant the 18th began" — otherwise the literal seven-day
+		// window an agent writes, since=2026-08-11 until=2026-08-18, silently
+		// drops everything from today, which is the day it most wanted. A
+		// full RFC3339 until is left exactly as given: it named an instant.
+		until = until.AddDate(0, 0, 1)
+	}
+	entries, err := s.journal.Search(ctx, journal.SearchOpts{
+		Repo:  req.GetRepo(),
+		Query: req.GetQuery(),
+		Since: since,
+		Until: until,
+		Limit: limit,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("SearchJournal: %w", err)
 	}
@@ -553,19 +600,14 @@ func (s *Server) ReportPodEvents(stream agentfleetv1.CoreService_ReportPodEvents
 // can be tested directly — the alternative is standing up a bufconn stream to
 // assert a two-line state transition.
 func (s *Server) applyPodEvent(ctx context.Context, event *agentfleetv1.PodEvent) error {
-	payload, marshalErr := json.Marshal(map[string]any{
-		"sessionId": event.GetSessionId(),
-		"kind":      event.GetKind().String(),
-		"phase":     event.GetPhase().String(),
-		"podName":   event.GetPodName(),
-		"message":   event.GetMessage(),
-	})
-	if marshalErr != nil {
-		return fmt.Errorf("ReportPodEvents: marshal event: %w", marshalErr)
-	}
-	if err := s.journal.Append(ctx, "", "provisioner", "pod."+event.GetPhase().String(), string(payload)); err != nil {
-		return fmt.Errorf("ReportPodEvents: %w", err)
-	}
+	// No journal write here. Every pod phase transition used to append a
+	// pod.POD_PHASE_* row, ~80% of knowledge_journal, and nothing ever read
+	// one: the live value is sessions.pod_phase, written four lines down, and
+	// the history is in Loki. knowledge_journal is what a future session needs
+	// to know about a repo, not pod telemetry — a reader asking "what did
+	// sessions learn last week" had to page past four rows of noise for every
+	// row of signal. Do not add it back; put pod observability in Loki or
+	// Prometheus.
 
 	// Only worker pods have a session row to attach state to; e2e pods do not.
 	//
