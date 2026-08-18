@@ -92,6 +92,7 @@ jobs:
       pull-requests: read
     outputs:
       dashboard: ${{ steps.filter.outputs.dashboard }}
+      worker: ${{ steps.filter.outputs.worker }}
       components: ${{ steps.components.outputs.result }}
     steps:
       - uses: actions/checkout@v4
@@ -153,6 +154,33 @@ jobs:
             if (worker) components.push('worker');
             if (migration) components.push('migration');
             return components.join(' ');
+
+  # worker/'s bun:test suite. It had no CI leg at all until now — CLAUDE.md's
+  # Workflow rules claimed it ran "ahead of the Docker build", and neither
+  # docker.yml nor worker/Dockerfile ran it anywhere, so `bun test` executed
+  # only on whatever machine a human happened to type it on. Found while
+  # merging a PR that rewrote those very tests: CI was green and had not
+  # compiled them, let alone run them.
+  #
+  # Mirrors dashboard-test deliberately, including staying off the build
+  # runner: it needs bun, not buildah, and the self-hosted runner takes one
+  # job at a time.
+  worker-test:
+    needs: changes
+    if: always() && (github.event_name == 'push' || needs.changes.outputs.worker == 'true')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: Install dependencies
+        working-directory: worker
+        run: bun install --frozen-lockfile
+      - name: Typecheck
+        working-directory: worker
+        run: bun run typecheck
+      - name: Run tests
+        working-directory: worker
+        run: bun test
 
   # The dashboard ships inside core's image rather than one of its own, so it
   # has no leg in the build below (that builds an image per component).

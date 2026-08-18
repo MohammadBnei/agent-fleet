@@ -1,5 +1,21 @@
 # Changelog
 
+## [4.1.3](https://github.com/MohammadBnei/agent-fleet/compare/4.1.2...4.1.3) (2026-08-18)
+
+
+### Bug Fixes
+
+* **worker:** stop journaling session lifecycle, record crashes on the transcript ([#203](https://github.com/MohammadBnei/agent-fleet/issues/203)) ([fb3b625](https://github.com/MohammadBnei/agent-fleet/commit/fb3b625b58863c8672a1e10c3f0d963c8b8c4408)), closes [#198](https://github.com/MohammadBnei/agent-fleet/issues/198)
+
+## [4.1.2](https://github.com/MohammadBnei/agent-fleet/compare/4.1.1...4.1.2) (2026-08-18)
+
+
+### Bug Fixes
+
+* **worker:** stop session.test.ts reading its own environment ([#204](https://github.com/MohammadBnei/agent-fleet/issues/204)) ([50b8f4b](https://github.com/MohammadBnei/agent-fleet/commit/50b8f4bb86e989bb1201913fa64edf22c7405a62))
+
+## [4.1.1](https://github.com/MohammadBnei/agent-fleet/compare/4.1.0...4.1.1) (2026-08-18)
+
 # [4.1.0](https://github.com/MohammadBnei/agent-fleet/compare/4.0.2...4.1.0) (2026-08-18)
 
 
