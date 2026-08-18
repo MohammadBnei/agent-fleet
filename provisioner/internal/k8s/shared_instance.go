@@ -319,10 +319,21 @@ func (c *Client) touchLastUsedAt(ctx context.Context, name string) error {
 	// Heal an instance created before either fix. ensureSharedDeployment
 	// creates and never updates, so without this an existing Deployment
 	// keeps RollingUpdate forever — including the one found wedged on
-	// 2026-08-18. Only touched when unset, so an operator who deliberately
-	// sets something else is not fought over it.
-	if dep.Spec.Strategy.Type == "" {
+	// 2026-08-18.
+	//
+	// The condition is "not already Recreate", NOT "unset". An unset
+	// strategy is unobservable: the API server defaults it, so a Deployment
+	// created without one reads back as an explicit
+	// {RollingUpdate, maxSurge 25%, maxUnavailable 25%} — confirmed on the
+	// live object. A `Type == ""` check therefore never fires against a real
+	// cluster, and passes against the fake clientset, which does not default.
+	// That combination shipped once already.
+	//
+	// RollingUpdate's parameters must be cleared in the same write: the API
+	// rejects a spec carrying them alongside Recreate.
+	if dep.Spec.Strategy.Type != appsv1.RecreateDeploymentStrategyType {
 		dep.Spec.Strategy.Type = appsv1.RecreateDeploymentStrategyType
+		dep.Spec.Strategy.RollingUpdate = nil
 	}
 	// The old timestamp's home. Left behind it would keep the pod template
 	// differing from what ensureSharedDeployment now builds, so a later
