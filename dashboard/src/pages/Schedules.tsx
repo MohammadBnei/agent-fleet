@@ -362,7 +362,7 @@ export function Schedules({
         <h2 className="text-base font-semibold">Schedules</h2>
         {isDesktop && (
           <span className="text-xs text-dim2">
-            recurring checks · a run lands below as a <span className="text-primary">proposal</span> and waits for
+            cron, interval or one-shot · a run lands below as a <span className="text-primary">proposal</span> and waits for
             you to open it as a session
           </span>
         )}
@@ -461,7 +461,9 @@ export function Schedules({
               >
                 <StatusDot schedule={a} />
                 <div className="min-w-0">
-                  <div className="text-base truncate">{a.name}</div>
+                  <div className="text-base truncate">
+                    {a.name} <span className="text-xs text-dim2">{a.repo}</span>
+                  </div>
                   <div className="text-xs text-dim2 mt-0.5 truncate" title={a.prompt}>
                     {a.prompt.split("\n")[0]}
                   </div>
@@ -499,7 +501,9 @@ export function Schedules({
             >
               <div className="flex items-center gap-2">
                 <StatusDot schedule={a} />
-                <span className="text-sm min-w-0 truncate">{a.name}</span>
+                <span className="text-sm min-w-0 truncate">
+                  {a.name} <span className="text-xs text-dim2">{a.repo}</span>
+                </span>
                 <span className="text-xs text-dim2 ml-auto flex-none">
                   {a.enabled ? relative(a.nextRunAt) : "paused"}
                 </span>
