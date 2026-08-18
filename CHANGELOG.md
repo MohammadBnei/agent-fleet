@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.0.2](https://github.com/MohammadBnei/agent-fleet/compare/4.0.1...4.0.2) (2026-08-18)
+
+
+### Bug Fixes
+
+* **provisioner:** heal a defaulted RollingUpdate, not only an unset one ([#197](https://github.com/MohammadBnei/agent-fleet/issues/197)) ([bb553e4](https://github.com/MohammadBnei/agent-fleet/commit/bb553e41eab030a4831e979c7e3819eb6b19b15b))
+
 ## [4.0.1](https://github.com/MohammadBnei/agent-fleet/compare/4.0.0...4.0.1) (2026-08-18)
 
 
