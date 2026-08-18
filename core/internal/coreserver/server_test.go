@@ -217,3 +217,60 @@ func TestReserveSlot_ConcurrentCallersCannotExceedTheCap(t *testing.T) {
 			"which is exactly the 4-with-cap-2 failure CI caught before", len(won), cap)
 	}
 }
+
+// A pod phase transition must NOT write a journal row.
+//
+// Every one used to: ~80% of knowledge_journal was pod.POD_PHASE_* telemetry
+// with no reader anywhere — no dashboard view calls GetJournal, no session
+// ever searched for one — while the live value it duplicated was written by
+// the very same function two statements later, into sessions.pod_phase. The
+// cost was paid by the one caller that did want to read the journal: a
+// seven-day, all-repo query came back four parts noise to one part signal
+// (issue #198, docs/adr/0054).
+//
+// Re-adding the append would look harmless in review, so pin it here.
+func TestApplyPodEvent_WritesNoJournalRow(t *testing.T) {
+	ctx := context.Background()
+	pool := dbtest.NewPool(t)
+	store := sessions.NewStore(pool)
+	journalStore := journal.NewStore(pool)
+	srv := New(nil, store, journalStore, nil, nil, nil, nil)
+
+	id, err := store.Create(ctx, "agent-fleet", "", "journal noise guard", "")
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	for _, phase := range []agentfleetv1.PodPhase{
+		agentfleetv1.PodPhase_POD_PHASE_CREATED,
+		agentfleetv1.PodPhase_POD_PHASE_RUNNING,
+		agentfleetv1.PodPhase_POD_PHASE_TERMINATED,
+	} {
+		if err := srv.applyPodEvent(ctx, &agentfleetv1.PodEvent{
+			SessionId: id,
+			Kind:      agentfleetv1.SessionKind_SESSION_KIND_WORKER,
+			Phase:     phase,
+			PodName:   "worker-z",
+		}); err != nil {
+			t.Fatalf("applyPodEvent(%v): %v", phase, err)
+		}
+	}
+
+	entries, err := journalStore.List(ctx, "", 0, 100)
+	if err != nil {
+		t.Fatalf("list journal: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("pod events must not reach knowledge_journal, found %d rows (first: %s) — "+
+			"the journal is what a future session needs to know about a repo, not pod telemetry",
+			len(entries), entries[0].EventType)
+	}
+
+	// The state that replaced it is still written.
+	s, err := store.Get(ctx, id)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if s.PodPhase == nil || *s.PodPhase != "POD_PHASE_TERMINATED" {
+		t.Fatalf("pod_phase must still be recorded, got %v", s.PodPhase)
+	}
+}

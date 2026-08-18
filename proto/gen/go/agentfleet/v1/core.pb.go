@@ -1910,10 +1910,14 @@ func (x *JournalEntry) GetCreatedAt() string {
 // "feed knowledge_journal back into a session" read path) — Postgres
 // full-text search (to_tsvector/ts_rank), not a vector/embedding search.
 type SearchJournalRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Repo          string                 `protobuf:"bytes,1,opt,name=repo,proto3" json:"repo,omitempty"` // "" matches every repo
-	Query         string                 `protobuf:"bytes,2,opt,name=query,proto3" json:"query,omitempty"`
-	Limit         int32                  `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Repo  string                 `protobuf:"bytes,1,opt,name=repo,proto3" json:"repo,omitempty"`   // "" matches every repo
+	Query string                 `protobuf:"bytes,2,opt,name=query,proto3" json:"query,omitempty"` // "" drops the full-text predicate — plain chronological read
+	Limit int32                  `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
+	// Bounds on created_at, RFC3339 or YYYY-MM-DD; "" means unbounded.
+	// since is inclusive, until is exclusive.
+	Since         string `protobuf:"bytes,4,opt,name=since,proto3" json:"since,omitempty"`
+	Until         string `protobuf:"bytes,5,opt,name=until,proto3" json:"until,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1967,6 +1971,20 @@ func (x *SearchJournalRequest) GetLimit() int32 {
 		return x.Limit
 	}
 	return 0
+}
+
+func (x *SearchJournalRequest) GetSince() string {
+	if x != nil {
+		return x.Since
+	}
+	return ""
+}
+
+func (x *SearchJournalRequest) GetUntil() string {
+	if x != nil {
+		return x.Until
+	}
+	return ""
 }
 
 type SearchJournalResponse struct {
@@ -2811,11 +2829,13 @@ const file_agentfleet_v1_core_proto_rawDesc = "" +
 	"event_type\x18\x04 \x01(\tR\teventType\x12!\n" +
 	"\fpayload_json\x18\x05 \x01(\tR\vpayloadJson\x12\x1d\n" +
 	"\n" +
-	"created_at\x18\x06 \x01(\tR\tcreatedAt\"V\n" +
+	"created_at\x18\x06 \x01(\tR\tcreatedAt\"\x82\x01\n" +
 	"\x14SearchJournalRequest\x12\x12\n" +
 	"\x04repo\x18\x01 \x01(\tR\x04repo\x12\x14\n" +
 	"\x05query\x18\x02 \x01(\tR\x05query\x12\x14\n" +
-	"\x05limit\x18\x03 \x01(\x05R\x05limit\"N\n" +
+	"\x05limit\x18\x03 \x01(\x05R\x05limit\x12\x14\n" +
+	"\x05since\x18\x04 \x01(\tR\x05since\x12\x14\n" +
+	"\x05until\x18\x05 \x01(\tR\x05until\"N\n" +
 	"\x15SearchJournalResponse\x125\n" +
 	"\aentries\x18\x01 \x03(\v2\x1b.agentfleet.v1.JournalEntryR\aentries\"\x95\x01\n" +
 	"\x19SaveAgentSessionIdRequest\x12\x1d\n" +

@@ -130,10 +130,12 @@ func New(core *coreclient.Client) http.Handler {
 	), journalWriteHandler(core))
 
 	s.AddTool(mcp.NewTool("journal_search",
-		mcp.WithDescription("Search this repo's knowledge journal for past entries relevant to a query (Postgres full-text search, ranked by relevance). Use before starting non-trivial work on a repo to check for prior learnings."),
-		mcp.WithString("repo", mcp.Required()),
-		mcp.WithString("query", mcp.Required()),
-		mcp.WithNumber("limit"),
+		mcp.WithDescription("Search the fleet knowledge journal — what past sessions learned, decided, or left broken. Every argument is optional: omit repo to read every repo, omit query for a plain reverse-chronological read of the window (use this when you do not already know what you are looking for — relevance ranking only surfaces what matches your guess), and bound either with since/until. Use before starting non-trivial work on a repo to check for prior learnings."),
+		mcp.WithString("repo", mcp.Description("Repo to scope to; omit for every repo")),
+		mcp.WithString("query", mcp.Description("Full-text query; omit to read the window newest-first instead of by relevance")),
+		mcp.WithString("since", mcp.Description("Inclusive lower bound on entry time: RFC3339 or YYYY-MM-DD")),
+		mcp.WithString("until", mcp.Description("Exclusive upper bound on entry time: RFC3339 or YYYY-MM-DD")),
+		mcp.WithNumber("limit", mcp.Description("Max entries to return; default 20, capped at 500")),
 	), journalSearchHandler(core))
 
 	s.AddTool(mcp.NewTool("set_session_meta",
@@ -315,23 +317,38 @@ func setSessionMetaHandler(core *coreclient.Client) server.ToolHandlerFunc {
 	}
 }
 
-func journalSearchHandler(core *coreclient.Client) server.ToolHandlerFunc {
+// JournalSearcher is journal_search's slice of *coreclient.Client, same
+// narrow-interface-for-testability shape as LogViewer below.
+type JournalSearcher interface {
+	SearchJournal(ctx context.Context, s coreclient.JournalSearch) ([]*agentfleetv1.JournalEntry, error)
+}
+
+func journalSearchHandler(core JournalSearcher) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		repo := req.GetString("repo", "")
-		query := req.GetString("query", "")
-		if repo == "" || query == "" {
-			return mcp.NewToolResultError("repo and query are required"), nil
+		// Every param is optional. No args at all = the latest 20 entries
+		// across every repo, which is a useful default and the query the
+		// weekly-rundown case (issue #198) actually needs: relevance ranking
+		// cannot answer "what happened last week" about entries nobody has
+		// read yet.
+		s := coreclient.JournalSearch{
+			Repo:  req.GetString("repo", ""),
+			Query: req.GetString("query", ""),
+			Since: req.GetString("since", ""),
+			Until: req.GetString("until", ""),
+			Limit: int32(req.GetInt("limit", 20)),
 		}
-		limit := int32(req.GetInt("limit", 20))
-		slog.Info("mcp journal_search", "repo", repo, "query", query)
-		entries, err := core.SearchJournal(ctx, repo, query, limit)
+		slog.Info("mcp journal_search", "repo", s.Repo, "query", s.Query, "since", s.Since, "until", s.Until)
+		entries, err := core.SearchJournal(ctx, s)
 		if err != nil {
 			slog.Error("mcp journal_search", "error", err)
 			return mcp.NewToolResultError(err.Error()), nil
 		}
 		out := make([]map[string]any, 0, len(entries))
 		for _, e := range entries {
+			// repo is in the result now: with repo optional, an entry whose
+			// repo the caller cannot see is not usable.
 			out = append(out, map[string]any{
+				"id": e.GetId(), "repo": e.GetRepo(),
 				"actor": e.GetActor(), "eventType": e.GetEventType(),
 				"payloadJson": e.GetPayloadJson(), "createdAt": e.GetCreatedAt(),
 			})
