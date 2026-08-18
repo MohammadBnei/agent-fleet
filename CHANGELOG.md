@@ -1,5 +1,12 @@
 # Changelog
 
+# [4.2.0](https://github.com/MohammadBnei/agent-fleet/compare/4.1.4...4.2.0) (2026-08-18)
+
+
+### Features
+
+* **provisioner:** move e2e previews to first-level hostnames ([#207](https://github.com/MohammadBnei/agent-fleet/issues/207)) ([4d06a16](https://github.com/MohammadBnei/agent-fleet/commit/4d06a161f94ab50f41859d9e5787aaffa33123e4))
+
 ## [4.1.4](https://github.com/MohammadBnei/agent-fleet/compare/4.1.3...4.1.4) (2026-08-18)
 
 
