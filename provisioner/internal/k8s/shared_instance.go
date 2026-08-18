@@ -175,12 +175,39 @@ func (c *Client) ensureSharedDeployment(ctx context.Context, name string, labels
 	}
 
 	deployment := &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: c.Namespace, Labels: labels},
+		// last-used-at lives on the Deployment, never on the pod template.
+		// The pod template is the rollout trigger: any change to it mints a
+		// new pod-template-hash and a new ReplicaSet. An idle-GC timestamp
+		// touched on every single reuse is the last thing that belongs
+		// there — see touchLastUsedAt.
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        name,
+			Namespace:   c.Namespace,
+			Labels:      labels,
+			Annotations: map[string]string{LastUsedAtAnnotation: nowRFC3339()},
+		},
 		Spec: appsv1.DeploymentSpec{
 			Replicas: int32Ptr(1),
+			// Recreate, not the default RollingUpdate. The data volume below
+			// is ReadWriteOnce, so a rolling update cannot converge: the new
+			// pod cannot attach the PVC until the old one releases it, and
+			// the old one is not torn down until the new one is Ready. Found
+			// live on 2026-08-18 — svc-agent-fleet-postgres sat
+			// ContainerCreating for 5h16m while the previous ReplicaSet's pod
+			// held the volume on another node, with no error anywhere and no
+			// timeout to break the tie.
+			//
+			// This is the guard, not the fix. The fix is the annotation
+			// placement above: with the timestamp off the pod template there
+			// is no rollout on reuse at all, so nothing routine can wedge.
+			// Recreate only decides what happens on a *genuine* spec change
+			// (an image bump), and for a single-replica stateful service it
+			// is the only correct answer regardless — two postgres processes
+			// must never share one PGDATA, even briefly.
+			Strategy: appsv1.DeploymentStrategy{Type: appsv1.RecreateDeploymentStrategyType},
 			Selector: &metav1.LabelSelector{MatchLabels: labels},
 			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{Labels: labels, Annotations: map[string]string{LastUsedAtAnnotation: nowRFC3339()}},
+				ObjectMeta: metav1.ObjectMeta{Labels: labels},
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{container},
 					Volumes:    volumes,
@@ -272,16 +299,35 @@ func (c *Client) ensureSharedService(ctx context.Context, name string, labels ma
 // touchLastUsedAt marks this instance as used right now — the idle-GC
 // substrate (docs/adr/0034 §"Idle-timeout GC"). Called on every
 // EnsureSharedInstance, first-use and every reuse alike.
+//
+// It writes to the Deployment's own annotations, never to the pod
+// template's. Writing a per-use timestamp into the pod template made every
+// reuse a spec change, so every reuse started a rollout — which is how a
+// single-replica RWO service ended up with a permanently unconvergeable
+// rollout in front of it. A Deployment-level annotation is invisible to the
+// pod-template hash, so a touch restarts nothing.
 func (c *Client) touchLastUsedAt(ctx context.Context, name string) error {
 	deployments := c.Core.AppsV1().Deployments(c.Namespace)
 	dep, err := deployments.Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
 		return err
 	}
-	if dep.Spec.Template.Annotations == nil {
-		dep.Spec.Template.Annotations = map[string]string{}
+	if dep.Annotations == nil {
+		dep.Annotations = map[string]string{}
 	}
-	dep.Spec.Template.Annotations[LastUsedAtAnnotation] = nowRFC3339()
+	dep.Annotations[LastUsedAtAnnotation] = nowRFC3339()
+	// Heal an instance created before either fix. ensureSharedDeployment
+	// creates and never updates, so without this an existing Deployment
+	// keeps RollingUpdate forever — including the one found wedged on
+	// 2026-08-18. Only touched when unset, so an operator who deliberately
+	// sets something else is not fought over it.
+	if dep.Spec.Strategy.Type == "" {
+		dep.Spec.Strategy.Type = appsv1.RecreateDeploymentStrategyType
+	}
+	// The old timestamp's home. Left behind it would keep the pod template
+	// differing from what ensureSharedDeployment now builds, so a later
+	// genuine rollout would look like a template change twice over.
+	delete(dep.Spec.Template.Annotations, LastUsedAtAnnotation)
 	_, err = deployments.Update(ctx, dep, metav1.UpdateOptions{})
 	return err
 }
@@ -321,7 +367,16 @@ func (c *Client) ListSharedInstances(ctx context.Context) ([]LiveSharedInstance,
 			continue
 		}
 		var lastUsed time.Time
-		if raw := dep.Spec.Template.Annotations[LastUsedAtAnnotation]; raw != "" {
+		raw := dep.Annotations[LastUsedAtAnnotation]
+		if raw == "" {
+			// Instance created before the annotation moved off the pod
+			// template. Without this fallback it reads as the zero time,
+			// which the doc comment above defines as "don't GC yet" — so a
+			// pre-existing instance that is never used again would never be
+			// swept. The first touch migrates it.
+			raw = dep.Spec.Template.Annotations[LastUsedAtAnnotation]
+		}
+		if raw != "" {
 			if t, err := time.Parse(time.RFC3339, raw); err == nil {
 				lastUsed = t
 			}

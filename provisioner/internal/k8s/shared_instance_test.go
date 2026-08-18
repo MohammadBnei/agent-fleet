@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	appsv1 "k8s.io/api/apps/v1"
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -171,8 +173,114 @@ func TestTouchLastUsedAt_UpdatesAnnotation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get deployment: %v", err)
 	}
-	if dep.Spec.Template.Annotations[LastUsedAtAnnotation] == "" {
-		t.Error("expected last-used-at annotation to be set")
+	if dep.Annotations[LastUsedAtAnnotation] == "" {
+		t.Error("expected last-used-at annotation to be set on the Deployment")
+	}
+}
+
+// The pod template is the rollout trigger: anything written there mints a
+// new pod-template-hash and a new ReplicaSet. last-used-at is touched on
+// every single reuse of a shared instance, so putting it there made every
+// reuse a rollout — and a single-replica Deployment over a ReadWriteOnce
+// volume has no convergent rollout, which is how svc-agent-fleet-postgres
+// spent 5h16m in ContainerCreating on 2026-08-18.
+//
+// This is the assertion that actually prevents the incident. The Recreate
+// strategy below only decides what a genuine rollout does; this decides
+// whether a routine reuse starts one at all.
+func TestTouchLastUsedAt_DoesNotTouchThePodTemplate(t *testing.T) {
+	c := newTestClient()
+	ctx := context.Background()
+	name := SharedInstanceName("dream-analyst", "postgres")
+	labels := SharedInstanceLabels("dream-analyst", "postgres")
+
+	if err := c.ensureSharedDeployment(ctx, name, labels, catalog.Services["postgres"], c.PostgresImage, "postgres", "s3cr3t"); err != nil {
+		t.Fatalf("ensureSharedDeployment: %v", err)
+	}
+	deployments := c.Core.AppsV1().Deployments(c.Namespace)
+	before, err := deployments.Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("get deployment: %v", err)
+	}
+	templateBefore := before.Spec.Template.DeepCopy()
+
+	for i := 0; i < 3; i++ {
+		if err := c.touchLastUsedAt(ctx, name); err != nil {
+			t.Fatalf("touchLastUsedAt %d: %v", i, err)
+		}
+	}
+
+	after, err := deployments.Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("get deployment: %v", err)
+	}
+	if !apiequality.Semantic.DeepEqual(templateBefore, &after.Spec.Template) {
+		t.Errorf("pod template changed across reuse — every reuse would start a rollout.\nbefore: %+v\nafter:  %+v",
+			templateBefore, &after.Spec.Template)
+	}
+	if _, ok := after.Spec.Template.Annotations[LastUsedAtAnnotation]; ok {
+		t.Error("last-used-at is on the pod template; it belongs on the Deployment")
+	}
+}
+
+// ensureSharedDeployment creates and never updates, so an instance created
+// before this fix keeps RollingUpdate forever — including the one found
+// wedged live. touchLastUsedAt runs on every reuse and already writes the
+// Deployment, so it is where an existing instance gets healed.
+func TestTouchLastUsedAt_HealsAPreexistingInstance(t *testing.T) {
+	c := newTestClient()
+	ctx := context.Background()
+	name := SharedInstanceName("dream-analyst", "postgres")
+	labels := SharedInstanceLabels("dream-analyst", "postgres")
+	deployments := c.Core.AppsV1().Deployments(c.Namespace)
+
+	// An instance as the old code left it: no strategy (so RollingUpdate by
+	// default) and the timestamp on the pod template.
+	old := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: c.Namespace, Labels: labels},
+		Spec: appsv1.DeploymentSpec{
+			Replicas: int32Ptr(1),
+			Selector: &metav1.LabelSelector{MatchLabels: labels},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels:      labels,
+					Annotations: map[string]string{LastUsedAtAnnotation: "2026-08-18T05:00:00Z"},
+				},
+			},
+		},
+	}
+	if _, err := deployments.Create(ctx, old, metav1.CreateOptions{}); err != nil {
+		t.Fatalf("create legacy deployment: %v", err)
+	}
+
+	// The GC must still see the legacy instance before it is touched,
+	// otherwise a never-reused instance reads as the zero time — which the
+	// reconcile loop treats as "don't GC yet" — and leaks forever.
+	instances, err := c.ListSharedInstances(ctx)
+	if err != nil {
+		t.Fatalf("ListSharedInstances: %v", err)
+	}
+	if len(instances) != 1 || instances[0].LastUsedAt.IsZero() {
+		t.Fatalf("legacy pod-template timestamp not read back: %+v", instances)
+	}
+
+	if err := c.touchLastUsedAt(ctx, name); err != nil {
+		t.Fatalf("touchLastUsedAt: %v", err)
+	}
+
+	dep, err := deployments.Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("get deployment: %v", err)
+	}
+	if got := dep.Spec.Strategy.Type; got != appsv1.RecreateDeploymentStrategyType {
+		t.Errorf("strategy = %q, want %q — a pre-existing instance never gets healed otherwise",
+			got, appsv1.RecreateDeploymentStrategyType)
+	}
+	if dep.Annotations[LastUsedAtAnnotation] == "" {
+		t.Error("timestamp not migrated onto the Deployment")
+	}
+	if _, ok := dep.Spec.Template.Annotations[LastUsedAtAnnotation]; ok {
+		t.Error("stale timestamp left on the pod template")
 	}
 }
 
@@ -226,5 +334,44 @@ func TestEnsureSharedInstance_UnknownServiceKey(t *testing.T) {
 	c := newTestClient()
 	if _, _, _, err := c.EnsureSharedInstance(context.Background(), "dream-analyst", "not-a-real-service"); err == nil {
 		t.Fatal("expected error for unknown service key")
+	}
+}
+
+// A RollingUpdate against a ReadWriteOnce volume deadlocks forever: the new
+// pod waits for a volume the old pod will not release, and the old pod waits
+// for the new one to be Ready. Found live on 2026-08-18 with
+// svc-agent-fleet-postgres stuck ContainerCreating for 5h16m.
+//
+// Both services are asserted, not just postgres. Redis has no PVC today
+// (catalog.ServiceDef.NeedsPVC is false), but a single-replica stateful
+// service is the wrong shape for a rolling update either way, and coupling
+// the strategy to NeedsPVC would make this bug reappear the day redis gains
+// a volume.
+func TestEnsureSharedDeployment_UsesRecreateNotRollingUpdate(t *testing.T) {
+	ctx := context.Background()
+
+	for _, serviceKey := range []string{"postgres", "redis"} {
+		t.Run(serviceKey, func(t *testing.T) {
+			c := newTestClient()
+			name := SharedInstanceName("dream-analyst", serviceKey)
+			labels := SharedInstanceLabels("dream-analyst", serviceKey)
+			image := c.PostgresImage
+			if serviceKey == "redis" {
+				image = c.RedisImage
+			}
+
+			if err := c.ensureSharedDeployment(ctx, name, labels, catalog.Services[serviceKey], image, serviceKey, "s3cr3t"); err != nil {
+				t.Fatalf("ensureSharedDeployment: %v", err)
+			}
+
+			dep, err := c.Core.AppsV1().Deployments(c.Namespace).Get(ctx, name, metav1.GetOptions{})
+			if err != nil {
+				t.Fatalf("get deployment: %v", err)
+			}
+			if got := dep.Spec.Strategy.Type; got != appsv1.RecreateDeploymentStrategyType {
+				t.Errorf("strategy = %q, want %q — a rolling update against an RWO volume never converges",
+					got, appsv1.RecreateDeploymentStrategyType)
+			}
+		})
 	}
 }
