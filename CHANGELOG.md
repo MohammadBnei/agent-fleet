@@ -1,5 +1,75 @@
 # Changelog
 
+# [4.0.0](https://github.com/MohammadBnei/agent-fleet/compare/3.9.1...4.0.0) (2026-08-18)
+
+
+### Features
+
+* **schedules:** schedule work against any repo, on cron or once ([#194](https://github.com/MohammadBnei/agent-fleet/issues/194)) ([992804a](https://github.com/MohammadBnei/agent-fleet/commit/992804ad3795348f189d345a184c2c99fed0e24a)), closes [#189](https://github.com/MohammadBnei/agent-fleet/issues/189)
+
+
+### BREAKING CHANGES
+
+* **schedules:** the five *ScheduledAudit* dashboard RPCs and their eleven
+messages are renamed to *Schedule*. `buf breaking` reports exactly that
+rename and nothing else. The dashboard is the only client and ships inside
+core's own binary, so there is no external consumer to migrate; `?view=audits`
+still resolves.
+
+Co-Authored-By: ukubi-agent <noreply@bnei.dev>
+
+* fix(dashboard): show a schedule's repo in the list
+
+The repo is the new dimension — it was a constant until this branch — and the
+list rendered everything but it, so two schedules differing only by target
+looked identical.
+
+Co-Authored-By: ukubi-agent <noreply@bnei.dev>
+
+* fix(schedules): review findings — orphan pod on rollback, clock, dedup keys
+
+Eight findings from /code-review, in descending order of what they cost:
+
+- `rollbackOpen` deleted the session row with a bare SQL DELETE while a worker
+  pod was already running: on the append-failure path `WarmIfIdle` has
+  succeeded, so `CreateWorkerPod` has happened. That orphans the pod AND frees
+  a concurrency slot it still holds (ReserveSlot counts rows), which is how the
+  fleet ends up over MAX_LIVE_SESSIONS with nothing to see. Tears down first
+  now, the same order DeleteSession uses.
+- `dbtest`'s external-Postgres schema name appended its unique suffix last, and
+  Postgres truncates identifiers at 63 bytes — the longest test names collided
+  on a deterministic schema and the second run failed 42P06. Suffix first.
+- Migration 000004 gave the copied audits fresh ids, so `audit:<old>` became
+  `schedule:<new>` and a standing proposal stopped collapsing the next tick
+  into itself — duplicates at exactly the cutover. Ids are carried over and the
+  standing proposals' dedup keys are rewritten with them.
+- `Create`/`Update` computed next_run_at from `time.Now()`, breaking the
+  invariant `nextRun`'s own doc states and the loop already honours. Both go
+  through `firstRun`, which reads the database clock.
+- `ListDue` read `now()` in a separate statement from the rows: a schedule
+  falling due between the two came back listed but not-yet-due, took the
+  run-now branch, found no flag, and was skipped for a whole tick. One
+  statement now.
+- `ORDER BY next_run_at` + LIMIT starved run_now rows, whose cursor is by
+  definition in the future. `ORDER BY run_now DESC, next_run_at`.
+- `DeleteSchedule` had no empty-id guard, so an empty id surfaced a 22P02 as
+  CodeInternal. Matches its siblings now.
+- Restored a `''` a sed had turned into a typographic quote in an unrelated
+  comment.
+
+Co-Authored-By: ukubi-agent <noreply@bnei.dev>
+
+* fix(migrations): renumber schedules to 000005
+
+`main` took 000004 (drop_bypass_permission_mode) while this branch was open,
+and golang-migrate refuses two files at the same version — it fails at
+`migrate.New`, so every integration test in core died on source-open, not on
+anything to do with the schema itself.
+
+The deferred `DROP TABLE scheduled_audits` moves with it: 000006, not 000005.
+
+Co-Authored-By: ukubi-agent <noreply@bnei.dev>
+
 ## [3.9.1](https://github.com/MohammadBnei/agent-fleet/compare/3.9.0...3.9.1) (2026-08-18)
 
 
