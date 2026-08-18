@@ -317,6 +317,18 @@ func setSessionMetaHandler(core *coreclient.Client) server.ToolHandlerFunc {
 	}
 }
 
+// maxJournalBytes caps journal_search's result the way maxLogsBytes caps
+// view_logs (ADR-0046: cap every unbounded tool result at the source, and
+// never cap without returning a way to reach the rest).
+//
+// This tool needed no cap while repo and query were mandatory — the worst
+// case was one repo's matches for a term. Making both optional made "every
+// entry, every repo, a week wide" expressible in one call, and the first
+// live call of the widened tool returned 75 KB and blew the context budget
+// outright. The row cap (limit, max 500) does not bound bytes: an entry
+// carries an arbitrary payload_json.
+const maxJournalBytes = 15000
+
 // JournalSearcher is journal_search's slice of *coreclient.Client, same
 // narrow-interface-for-testability shape as LogViewer below.
 type JournalSearcher interface {
@@ -343,17 +355,41 @@ func journalSearchHandler(core JournalSearcher) server.ToolHandlerFunc {
 			slog.Error("mcp journal_search", "error", err)
 			return mcp.NewToolResultError(err.Error()), nil
 		}
+
+		// Trim whole entries rather than bytes: truncate() would cut mid-JSON
+		// and hand back something no caller can parse. Entries arrive
+		// newest-first, so dropping the tail keeps the recent end — the same
+		// reasoning that made the ordering newest-first in the first place.
 		out := make([]map[string]any, 0, len(entries))
+		size := 0
 		for _, e := range entries {
 			// repo is in the result now: with repo optional, an entry whose
 			// repo the caller cannot see is not usable.
-			out = append(out, map[string]any{
+			m := map[string]any{
 				"id": e.GetId(), "repo": e.GetRepo(),
 				"actor": e.GetActor(), "eventType": e.GetEventType(),
 				"payloadJson": e.GetPayloadJson(), "createdAt": e.GetCreatedAt(),
-			})
+			}
+			b, marshalErr := json.Marshal(m)
+			if marshalErr != nil {
+				continue
+			}
+			if len(out) > 0 && size+len(b) > maxJournalBytes {
+				break
+			}
+			size += len(b)
+			out = append(out, m)
 		}
-		body, _ := json.Marshal(map[string]any{"entries": out})
+
+		result := map[string]any{"entries": out}
+		if dropped := len(entries) - len(out); dropped > 0 {
+			// A cap without a stated way back leaves the agent working from
+			// partial data without knowing it — worse than a large context.
+			result["truncated"] = fmt.Sprintf(
+				"%d further entries matched and were dropped to fit ~%d bytes. Narrow the query rather than re-running it as-is: set `repo`, tighten `since`/`until`, add a `query`, or lower `limit`. Entries are newest-first, so what you have is the recent end of the match.",
+				dropped, maxJournalBytes)
+		}
+		body, _ := json.Marshal(result)
 		return mcp.NewToolResultText(string(body)), nil
 	}
 }

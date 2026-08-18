@@ -3,6 +3,7 @@ package mcpserver
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/mark3labs/mcp-go/mcp"
@@ -95,5 +96,62 @@ func TestJournalSearch_ResultCarriesRepoAndID(t *testing.T) {
 	}
 	if body.Entries[0]["id"] != float64(42) {
 		t.Errorf("entry must carry its id, got %v", body.Entries[0]["id"])
+	}
+}
+
+// The widened tool made "every entry, every repo, a week wide" expressible in
+// one call, and the first live call of it returned 75 KB and blew the context
+// budget outright — the row cap (limit, max 500) bounds rows, and an entry
+// carries an arbitrary payload_json. ADR-0046: cap at the source, and never
+// cap without saying how to reach the rest.
+func TestJournalSearch_CapsTheResultAndSaysSo(t *testing.T) {
+	big := make([]*agentfleetv1.JournalEntry, 200)
+	for i := range big {
+		big[i] = &agentfleetv1.JournalEntry{
+			Id: int64(i), Repo: "agent-fleet", Actor: "worker", EventType: "agent_note",
+			PayloadJson: `{"note":"` + strings.Repeat("x", 500) + `"}`,
+			CreatedAt:   "2026-08-17T10:00:00Z",
+		}
+	}
+	res := call(t, &mockJournalSearcher{entries: big}, map[string]any{})
+	text := res.Content[0].(mcp.TextContent).Text
+
+	if len(text) > maxJournalBytes*2 {
+		t.Errorf("result is %d bytes, expected roughly maxJournalBytes (%d)", len(text), maxJournalBytes)
+	}
+
+	// Still parseable. Cutting bytes mid-JSON would not be.
+	var body struct {
+		Entries   []map[string]any `json:"entries"`
+		Truncated string           `json:"truncated"`
+	}
+	if err := json.Unmarshal([]byte(text), &body); err != nil {
+		t.Fatalf("a capped result must still be valid JSON: %v", err)
+	}
+	if len(body.Entries) == 0 || len(body.Entries) == len(big) {
+		t.Fatalf("expected a trimmed-but-non-empty entry list, got %d of %d", len(body.Entries), len(big))
+	}
+	if body.Truncated == "" {
+		t.Fatal("silent truncation is the failure mode this guards — the result must say it was capped")
+	}
+	// Naming the way back is the actual contract (ADR-0046), not the cap.
+	for _, knob := range []string{"repo", "since", "query", "limit"} {
+		if !strings.Contains(body.Truncated, knob) {
+			t.Errorf("the notice should name %q as a way to narrow the query", knob)
+		}
+	}
+	// Newest-first means the kept end is the recent one.
+	if body.Entries[0]["id"] != float64(0) {
+		t.Errorf("trimming must drop the tail, not the head; first id = %v", body.Entries[0]["id"])
+	}
+}
+
+// An uncapped result must not grow a notice claiming it was capped.
+func TestJournalSearch_SmallResultIsNotMarkedTruncated(t *testing.T) {
+	res := call(t, &mockJournalSearcher{entries: []*agentfleetv1.JournalEntry{{
+		Id: 1, Repo: "agent-fleet", Actor: "worker", EventType: "agent_note", PayloadJson: `{"note":"x"}`,
+	}}}, map[string]any{})
+	if strings.Contains(res.Content[0].(mcp.TextContent).Text, "truncated") {
+		t.Error("a result that fits must not claim to be truncated")
 	}
 }
