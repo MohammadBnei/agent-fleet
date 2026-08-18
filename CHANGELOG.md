@@ -1,5 +1,12 @@
 # Changelog
 
+# [4.1.0](https://github.com/MohammadBnei/agent-fleet/compare/4.0.2...4.1.0) (2026-08-18)
+
+
+### Features
+
+* **journal:** widen journal_search, drop pod telemetry from the journal ([#199](https://github.com/MohammadBnei/agent-fleet/issues/199)) ([054b225](https://github.com/MohammadBnei/agent-fleet/commit/054b22565b546a70e29ce504a2a5fd0d2897b088)), closes [#198](https://github.com/MohammadBnei/agent-fleet/issues/198) [#198](https://github.com/MohammadBnei/agent-fleet/issues/198)
+
 ## [4.0.2](https://github.com/MohammadBnei/agent-fleet/compare/4.0.1...4.0.2) (2026-08-18)
 
 
