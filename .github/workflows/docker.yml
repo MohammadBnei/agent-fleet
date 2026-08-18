@@ -284,12 +284,18 @@ jobs:
           total_start=$(date +%s)
           for c in $list; do
             start=$(date +%s)
-            # chroot isolation + vfs storage: the configuration proven on this
-            # box. Deliberately NOT --layers — with vfs every cached
-            # intermediate layer is a full copy, and six images (four
-            # golang:1.26 stages plus a multi-GB worker) on a 40GB disk shared
-            # with editable-blog's builds does not have room for it. The WAN
-            # win is the *base image* cache, which survives either way; Go
+            # chroot isolation, and NO --storage-driver: the driver is pinned
+            # to overlay on the box itself (/etc/containers/storage.conf, set
+            # by build-runner-configure.yml) so builds and the prune timer
+            # cannot drift onto different stores. This used to force vfs,
+            # inherited from ADR-0034's abandoned in-cluster attempt where it
+            # was genuinely required; on a real-root LXC it was just slower
+            # and fatter. Measured across all six images: 340s -> 273s.
+            #
+            # Still deliberately NOT --layers. It would cache intermediate
+            # layers on a 40GB disk shared with editable-blog's builds, and
+            # the win it chases is already had: the expensive-over-WAN part is
+            # the base-image cache, which persists regardless, while Go
             # recompiles are local CPU on 4 cores.
             #
             # Repo-root context for all six — every Dockerfile COPYs go.work /
@@ -302,7 +308,6 @@ jobs:
             # would let a binary claim a version its image isn't.
             sudo buildah bud \
               --isolation chroot \
-              --storage-driver vfs \
               --format docker \
               --build-arg "VERSION=$TAG" \
               -f "$c/Dockerfile" \
@@ -312,7 +317,7 @@ jobs:
             build_end=$(date +%s)
             if [ "$DO_PUSH" = "true" ]; then
               for t in "$TAG" latest; do
-                sudo buildah push --tls-verify=false --storage-driver vfs \
+                sudo buildah push --tls-verify=false \
                   "$REGISTRY/agent-fleet-$c:$t"
               done
             fi
@@ -322,7 +327,7 @@ jobs:
             # `rmi --all`, which would evict the base-image cache this box
             # shares with every other build repo. The weekly timer prunes
             # what is genuinely dangling.
-            sudo buildah rmi --storage-driver vfs \
+            sudo buildah rmi \
               "$REGISTRY/agent-fleet-$c:$TAG" "$REGISTRY/agent-fleet-$c:latest" || true
             printf '| %s | %s | %s |\n' "$c" "$((build_end - start))" "$((end - build_end))" >> /tmp/timings.txt
           done
