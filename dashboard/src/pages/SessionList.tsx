@@ -692,7 +692,7 @@ export function SessionList({
         dormant session sorts by repo/title instead of guessing which accordion
         it fell into. Pinned-active above is untouched by these controls.
         "proposed by audits" used to sit here fed by a hardcoded empty array —
-        proposals are their own table with their own Audits view now
+        proposals are their own table with their own Schedules view now
         (docs/adr/0048).
       */}
       {rest.length > 0 && (

@@ -1,5 +1,5 @@
 // Package proposals owns the `proposals` table — machine-initiated
-// suggestions from the Alertmanager webhook and the audit scheduler.
+// suggestions from the Alertmanager webhook and the schedule loop.
 //
 // A separate table rather than a status on `sessions`, and that is the whole
 // point (docs/adr/0048): a proposal has no pod path at all. Under the old
@@ -27,8 +27,8 @@ import (
 type Proposal struct {
 	ID     string
 	Repo   string
-	Source string // "alert" | "audit"
-	// DedupKey is an Alertmanager fingerprint or "audit:<id>". See Create
+	Source string // "alert" | "audit" (legacy rows) | "schedule"
+	// DedupKey is an Alertmanager fingerprint or "schedule:<id>". See Create
 	// for the window it is unique over.
 	DedupKey  string
 	Title     string
@@ -56,7 +56,7 @@ func NewStore(pool *pgxpool.Pool) *Store {
 //
 // The dedup window is "not dismissed" — deliberately NOT "not yet opened".
 // Keying it on un-opened would free the key the moment a human opens the
-// proposal, so a 1-hour audit cadence whose session runs 3 hours would file
+// proposal, so an hourly cadence whose session runs 3 hours would file
 // three proposals for the same thing. Archiving a session dismisses its
 // proposal, and that is what re-arms the key.
 func (s *Store) Create(ctx context.Context, repo, source, dedupKey, title, body string) (id string, created bool, err error) {
@@ -171,7 +171,7 @@ func (s *Store) Dismiss(ctx context.Context, id string) error {
 }
 
 // DismissForSession re-arms the dedup key when a session is archived, so the
-// next audit tick or alert fire can propose the same work again. Without
+// next schedule tick or alert fire can propose the same work again. Without
 // this the key would stay held by a proposal whose session is long finished.
 func (s *Store) DismissForSession(ctx context.Context, sessionID string) error {
 	_, err := s.pool.Exec(ctx, `
@@ -182,5 +182,27 @@ func (s *Store) DismissForSession(ctx context.Context, sessionID string) error {
 		slog.Error("proposals DismissForSession", "sessionId", sessionID, "error", err)
 		return fmt.Errorf("dismiss proposals for session: %w", err)
 	}
+	return nil
+}
+
+// Unclaim reverses Open when the session it was opened into could not be made
+// usable — the fleet was at capacity, the repo is unknown, the first message
+// never landed. Without it, a failure after Open leaves the proposal consumed
+// (gone from ListOpen, and a second click gets ErrNotOpen), an orphan session
+// with no pod and an empty transcript, and the instruction lost: it lived in
+// the proposal body, which nothing else records.
+//
+// Scoped to the session that claimed it, so a rollback racing someone else's
+// successful open cannot steal their claim.
+func (s *Store) Unclaim(ctx context.Context, id, sessionID string) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE proposals SET session_id = NULL
+		WHERE id = $1 AND session_id = $2
+	`, id, sessionID)
+	if err != nil {
+		slog.Error("proposals Unclaim", "proposalId", id, "sessionId", sessionID, "error", err)
+		return fmt.Errorf("unclaim proposal: %w", err)
+	}
+	slog.Info("proposals Unclaim", "proposalId", id, "sessionId", sessionID)
 	return nil
 }

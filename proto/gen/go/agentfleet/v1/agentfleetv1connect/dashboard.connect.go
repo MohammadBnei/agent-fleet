@@ -135,21 +135,21 @@ const (
 	// DashboardServiceGetFleetTopologyProcedure is the fully-qualified name of the DashboardService's
 	// GetFleetTopology RPC.
 	DashboardServiceGetFleetTopologyProcedure = "/agentfleet.v1.DashboardService/GetFleetTopology"
-	// DashboardServiceListScheduledAuditsProcedure is the fully-qualified name of the
-	// DashboardService's ListScheduledAudits RPC.
-	DashboardServiceListScheduledAuditsProcedure = "/agentfleet.v1.DashboardService/ListScheduledAudits"
-	// DashboardServiceCreateScheduledAuditProcedure is the fully-qualified name of the
-	// DashboardService's CreateScheduledAudit RPC.
-	DashboardServiceCreateScheduledAuditProcedure = "/agentfleet.v1.DashboardService/CreateScheduledAudit"
-	// DashboardServiceUpdateScheduledAuditProcedure is the fully-qualified name of the
-	// DashboardService's UpdateScheduledAudit RPC.
-	DashboardServiceUpdateScheduledAuditProcedure = "/agentfleet.v1.DashboardService/UpdateScheduledAudit"
-	// DashboardServiceDeleteScheduledAuditProcedure is the fully-qualified name of the
-	// DashboardService's DeleteScheduledAudit RPC.
-	DashboardServiceDeleteScheduledAuditProcedure = "/agentfleet.v1.DashboardService/DeleteScheduledAudit"
-	// DashboardServiceRunScheduledAuditNowProcedure is the fully-qualified name of the
-	// DashboardService's RunScheduledAuditNow RPC.
-	DashboardServiceRunScheduledAuditNowProcedure = "/agentfleet.v1.DashboardService/RunScheduledAuditNow"
+	// DashboardServiceListSchedulesProcedure is the fully-qualified name of the DashboardService's
+	// ListSchedules RPC.
+	DashboardServiceListSchedulesProcedure = "/agentfleet.v1.DashboardService/ListSchedules"
+	// DashboardServiceCreateScheduleProcedure is the fully-qualified name of the DashboardService's
+	// CreateSchedule RPC.
+	DashboardServiceCreateScheduleProcedure = "/agentfleet.v1.DashboardService/CreateSchedule"
+	// DashboardServiceUpdateScheduleProcedure is the fully-qualified name of the DashboardService's
+	// UpdateSchedule RPC.
+	DashboardServiceUpdateScheduleProcedure = "/agentfleet.v1.DashboardService/UpdateSchedule"
+	// DashboardServiceDeleteScheduleProcedure is the fully-qualified name of the DashboardService's
+	// DeleteSchedule RPC.
+	DashboardServiceDeleteScheduleProcedure = "/agentfleet.v1.DashboardService/DeleteSchedule"
+	// DashboardServiceRunScheduleNowProcedure is the fully-qualified name of the DashboardService's
+	// RunScheduleNow RPC.
+	DashboardServiceRunScheduleNowProcedure = "/agentfleet.v1.DashboardService/RunScheduleNow"
 )
 
 // DashboardServiceClient is a client for the agentfleet.v1.DashboardService service.
@@ -232,12 +232,13 @@ type DashboardServiceClient interface {
 	QueryMetrics(context.Context, *connect.Request[v1.QueryMetricsRequest]) (*connect.Response[v1.QueryMetricsResponse], error)
 	GetFleetTopology(context.Context, *connect.Request[v1.GetFleetTopologyRequest]) (*connect.Response[v1.GetFleetTopologyResponse], error)
 	// Dashboard-editable schedules (docs/adr/0035) — same "edit it in the
-	// UI, no redeploy" shape ListRepos/CreateRepo established.
-	ListScheduledAudits(context.Context, *connect.Request[v1.ListScheduledAuditsRequest]) (*connect.Response[v1.ListScheduledAuditsResponse], error)
-	CreateScheduledAudit(context.Context, *connect.Request[v1.CreateScheduledAuditRequest]) (*connect.Response[v1.CreateScheduledAuditResponse], error)
-	UpdateScheduledAudit(context.Context, *connect.Request[v1.UpdateScheduledAuditRequest]) (*connect.Response[v1.UpdateScheduledAuditResponse], error)
-	DeleteScheduledAudit(context.Context, *connect.Request[v1.DeleteScheduledAuditRequest]) (*connect.Response[v1.DeleteScheduledAuditResponse], error)
-	RunScheduledAuditNow(context.Context, *connect.Request[v1.RunScheduledAuditNowRequest]) (*connect.Response[v1.RunScheduledAuditNowResponse], error)
+	// UI, no redeploy" shape ListRepos/CreateRepo established. Renamed from
+	// *ScheduledAudit* when the repo stopped being a hardcoded constant.
+	ListSchedules(context.Context, *connect.Request[v1.ListSchedulesRequest]) (*connect.Response[v1.ListSchedulesResponse], error)
+	CreateSchedule(context.Context, *connect.Request[v1.CreateScheduleRequest]) (*connect.Response[v1.CreateScheduleResponse], error)
+	UpdateSchedule(context.Context, *connect.Request[v1.UpdateScheduleRequest]) (*connect.Response[v1.UpdateScheduleResponse], error)
+	DeleteSchedule(context.Context, *connect.Request[v1.DeleteScheduleRequest]) (*connect.Response[v1.DeleteScheduleResponse], error)
+	RunScheduleNow(context.Context, *connect.Request[v1.RunScheduleNowRequest]) (*connect.Response[v1.RunScheduleNowResponse], error)
 }
 
 // NewDashboardServiceClient constructs a client for the agentfleet.v1.DashboardService service. By
@@ -455,34 +456,34 @@ func NewDashboardServiceClient(httpClient connect.HTTPClient, baseURL string, op
 			connect.WithSchema(dashboardServiceMethods.ByName("GetFleetTopology")),
 			connect.WithClientOptions(opts...),
 		),
-		listScheduledAudits: connect.NewClient[v1.ListScheduledAuditsRequest, v1.ListScheduledAuditsResponse](
+		listSchedules: connect.NewClient[v1.ListSchedulesRequest, v1.ListSchedulesResponse](
 			httpClient,
-			baseURL+DashboardServiceListScheduledAuditsProcedure,
-			connect.WithSchema(dashboardServiceMethods.ByName("ListScheduledAudits")),
+			baseURL+DashboardServiceListSchedulesProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("ListSchedules")),
 			connect.WithClientOptions(opts...),
 		),
-		createScheduledAudit: connect.NewClient[v1.CreateScheduledAuditRequest, v1.CreateScheduledAuditResponse](
+		createSchedule: connect.NewClient[v1.CreateScheduleRequest, v1.CreateScheduleResponse](
 			httpClient,
-			baseURL+DashboardServiceCreateScheduledAuditProcedure,
-			connect.WithSchema(dashboardServiceMethods.ByName("CreateScheduledAudit")),
+			baseURL+DashboardServiceCreateScheduleProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("CreateSchedule")),
 			connect.WithClientOptions(opts...),
 		),
-		updateScheduledAudit: connect.NewClient[v1.UpdateScheduledAuditRequest, v1.UpdateScheduledAuditResponse](
+		updateSchedule: connect.NewClient[v1.UpdateScheduleRequest, v1.UpdateScheduleResponse](
 			httpClient,
-			baseURL+DashboardServiceUpdateScheduledAuditProcedure,
-			connect.WithSchema(dashboardServiceMethods.ByName("UpdateScheduledAudit")),
+			baseURL+DashboardServiceUpdateScheduleProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("UpdateSchedule")),
 			connect.WithClientOptions(opts...),
 		),
-		deleteScheduledAudit: connect.NewClient[v1.DeleteScheduledAuditRequest, v1.DeleteScheduledAuditResponse](
+		deleteSchedule: connect.NewClient[v1.DeleteScheduleRequest, v1.DeleteScheduleResponse](
 			httpClient,
-			baseURL+DashboardServiceDeleteScheduledAuditProcedure,
-			connect.WithSchema(dashboardServiceMethods.ByName("DeleteScheduledAudit")),
+			baseURL+DashboardServiceDeleteScheduleProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("DeleteSchedule")),
 			connect.WithClientOptions(opts...),
 		),
-		runScheduledAuditNow: connect.NewClient[v1.RunScheduledAuditNowRequest, v1.RunScheduledAuditNowResponse](
+		runScheduleNow: connect.NewClient[v1.RunScheduleNowRequest, v1.RunScheduleNowResponse](
 			httpClient,
-			baseURL+DashboardServiceRunScheduledAuditNowProcedure,
-			connect.WithSchema(dashboardServiceMethods.ByName("RunScheduledAuditNow")),
+			baseURL+DashboardServiceRunScheduleNowProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("RunScheduleNow")),
 			connect.WithClientOptions(opts...),
 		),
 	}
@@ -490,45 +491,45 @@ func NewDashboardServiceClient(httpClient connect.HTTPClient, baseURL string, op
 
 // dashboardServiceClient implements DashboardServiceClient.
 type dashboardServiceClient struct {
-	listSessions         *connect.Client[v1.ListSessionsRequest, v1.ListSessionsResponse]
-	getSession           *connect.Client[v1.GetSessionRequest, v1.GetSessionResponse]
-	createSession        *connect.Client[v1.CreateSessionRequest, v1.CreateSessionResponse]
-	getTranscript        *connect.Client[v1.ReadTranscriptSinceRequest, v1.ReadTranscriptSinceResponse]
-	streamTranscript     *connect.Client[v1.StreamTranscriptRequest, v1.TranscriptEntry]
-	stopSession          *connect.Client[v1.StopSessionRequest, v1.StopSessionResponse]
-	interrupt            *connect.Client[v1.InterruptRequest, v1.InterruptResponse]
-	setPermissionMode    *connect.Client[v1.SetPermissionModeRequest, v1.SetPermissionModeResponse]
-	warmSession          *connect.Client[v1.WarmSessionRequest, v1.WarmSessionResponse]
-	markSeen             *connect.Client[v1.MarkSeenRequest, v1.MarkSeenResponse]
-	archiveSession       *connect.Client[v1.ArchiveSessionRequest, v1.ArchiveSessionResponse]
-	listProposals        *connect.Client[v1.ListProposalsRequest, v1.ListProposalsResponse]
-	openFromProposal     *connect.Client[v1.OpenFromProposalRequest, v1.OpenFromProposalResponse]
-	dismissProposal      *connect.Client[v1.DismissProposalRequest, v1.DismissProposalResponse]
-	answerQuestion       *connect.Client[v1.AnswerQuestionRequest, v1.AppendResponse]
-	respondToPermission  *connect.Client[v1.RespondToPermissionRequest, v1.AppendResponse]
-	postMessage          *connect.Client[v1.PostMessageRequest, v1.AppendResponse]
-	deleteSession        *connect.Client[v1.DeleteSessionRequest, v1.DeleteSessionResponse]
-	getJournal           *connect.Client[v1.GetJournalRequest, v1.GetJournalResponse]
-	listRepos            *connect.Client[v1.ListReposRequest, v1.ListReposResponse]
-	createRepo           *connect.Client[v1.CreateRepoRequest, v1.CreateRepoResponse]
-	updateRepo           *connect.Client[v1.UpdateRepoRequest, v1.UpdateRepoResponse]
-	deleteRepo           *connect.Client[v1.DeleteRepoRequest, v1.DeleteRepoResponse]
-	listPromptSnippets   *connect.Client[v1.ListPromptSnippetsRequest, v1.ListPromptSnippetsResponse]
-	createPromptSnippet  *connect.Client[v1.CreatePromptSnippetRequest, v1.CreatePromptSnippetResponse]
-	updatePromptSnippet  *connect.Client[v1.UpdatePromptSnippetRequest, v1.UpdatePromptSnippetResponse]
-	deletePromptSnippet  *connect.Client[v1.DeletePromptSnippetRequest, v1.DeletePromptSnippetResponse]
-	listFiles            *connect.Client[v1.ListFilesRequest, v1.ListFilesResponse]
-	getFileUploadUrl     *connect.Client[v1.GetFileUploadUrlRequest, v1.GetFileUploadUrlResponse]
-	getFileDownloadUrl   *connect.Client[v1.GetFileDownloadUrlRequest, v1.GetFileDownloadUrlResponse]
-	deleteFile           *connect.Client[v1.DeleteFileRequest, v1.DeleteFileResponse]
-	queryLogs            *connect.Client[v1.QueryLogsRequest, v1.QueryLogsResponse]
-	queryMetrics         *connect.Client[v1.QueryMetricsRequest, v1.QueryMetricsResponse]
-	getFleetTopology     *connect.Client[v1.GetFleetTopologyRequest, v1.GetFleetTopologyResponse]
-	listScheduledAudits  *connect.Client[v1.ListScheduledAuditsRequest, v1.ListScheduledAuditsResponse]
-	createScheduledAudit *connect.Client[v1.CreateScheduledAuditRequest, v1.CreateScheduledAuditResponse]
-	updateScheduledAudit *connect.Client[v1.UpdateScheduledAuditRequest, v1.UpdateScheduledAuditResponse]
-	deleteScheduledAudit *connect.Client[v1.DeleteScheduledAuditRequest, v1.DeleteScheduledAuditResponse]
-	runScheduledAuditNow *connect.Client[v1.RunScheduledAuditNowRequest, v1.RunScheduledAuditNowResponse]
+	listSessions        *connect.Client[v1.ListSessionsRequest, v1.ListSessionsResponse]
+	getSession          *connect.Client[v1.GetSessionRequest, v1.GetSessionResponse]
+	createSession       *connect.Client[v1.CreateSessionRequest, v1.CreateSessionResponse]
+	getTranscript       *connect.Client[v1.ReadTranscriptSinceRequest, v1.ReadTranscriptSinceResponse]
+	streamTranscript    *connect.Client[v1.StreamTranscriptRequest, v1.TranscriptEntry]
+	stopSession         *connect.Client[v1.StopSessionRequest, v1.StopSessionResponse]
+	interrupt           *connect.Client[v1.InterruptRequest, v1.InterruptResponse]
+	setPermissionMode   *connect.Client[v1.SetPermissionModeRequest, v1.SetPermissionModeResponse]
+	warmSession         *connect.Client[v1.WarmSessionRequest, v1.WarmSessionResponse]
+	markSeen            *connect.Client[v1.MarkSeenRequest, v1.MarkSeenResponse]
+	archiveSession      *connect.Client[v1.ArchiveSessionRequest, v1.ArchiveSessionResponse]
+	listProposals       *connect.Client[v1.ListProposalsRequest, v1.ListProposalsResponse]
+	openFromProposal    *connect.Client[v1.OpenFromProposalRequest, v1.OpenFromProposalResponse]
+	dismissProposal     *connect.Client[v1.DismissProposalRequest, v1.DismissProposalResponse]
+	answerQuestion      *connect.Client[v1.AnswerQuestionRequest, v1.AppendResponse]
+	respondToPermission *connect.Client[v1.RespondToPermissionRequest, v1.AppendResponse]
+	postMessage         *connect.Client[v1.PostMessageRequest, v1.AppendResponse]
+	deleteSession       *connect.Client[v1.DeleteSessionRequest, v1.DeleteSessionResponse]
+	getJournal          *connect.Client[v1.GetJournalRequest, v1.GetJournalResponse]
+	listRepos           *connect.Client[v1.ListReposRequest, v1.ListReposResponse]
+	createRepo          *connect.Client[v1.CreateRepoRequest, v1.CreateRepoResponse]
+	updateRepo          *connect.Client[v1.UpdateRepoRequest, v1.UpdateRepoResponse]
+	deleteRepo          *connect.Client[v1.DeleteRepoRequest, v1.DeleteRepoResponse]
+	listPromptSnippets  *connect.Client[v1.ListPromptSnippetsRequest, v1.ListPromptSnippetsResponse]
+	createPromptSnippet *connect.Client[v1.CreatePromptSnippetRequest, v1.CreatePromptSnippetResponse]
+	updatePromptSnippet *connect.Client[v1.UpdatePromptSnippetRequest, v1.UpdatePromptSnippetResponse]
+	deletePromptSnippet *connect.Client[v1.DeletePromptSnippetRequest, v1.DeletePromptSnippetResponse]
+	listFiles           *connect.Client[v1.ListFilesRequest, v1.ListFilesResponse]
+	getFileUploadUrl    *connect.Client[v1.GetFileUploadUrlRequest, v1.GetFileUploadUrlResponse]
+	getFileDownloadUrl  *connect.Client[v1.GetFileDownloadUrlRequest, v1.GetFileDownloadUrlResponse]
+	deleteFile          *connect.Client[v1.DeleteFileRequest, v1.DeleteFileResponse]
+	queryLogs           *connect.Client[v1.QueryLogsRequest, v1.QueryLogsResponse]
+	queryMetrics        *connect.Client[v1.QueryMetricsRequest, v1.QueryMetricsResponse]
+	getFleetTopology    *connect.Client[v1.GetFleetTopologyRequest, v1.GetFleetTopologyResponse]
+	listSchedules       *connect.Client[v1.ListSchedulesRequest, v1.ListSchedulesResponse]
+	createSchedule      *connect.Client[v1.CreateScheduleRequest, v1.CreateScheduleResponse]
+	updateSchedule      *connect.Client[v1.UpdateScheduleRequest, v1.UpdateScheduleResponse]
+	deleteSchedule      *connect.Client[v1.DeleteScheduleRequest, v1.DeleteScheduleResponse]
+	runScheduleNow      *connect.Client[v1.RunScheduleNowRequest, v1.RunScheduleNowResponse]
 }
 
 // ListSessions calls agentfleet.v1.DashboardService.ListSessions.
@@ -701,29 +702,29 @@ func (c *dashboardServiceClient) GetFleetTopology(ctx context.Context, req *conn
 	return c.getFleetTopology.CallUnary(ctx, req)
 }
 
-// ListScheduledAudits calls agentfleet.v1.DashboardService.ListScheduledAudits.
-func (c *dashboardServiceClient) ListScheduledAudits(ctx context.Context, req *connect.Request[v1.ListScheduledAuditsRequest]) (*connect.Response[v1.ListScheduledAuditsResponse], error) {
-	return c.listScheduledAudits.CallUnary(ctx, req)
+// ListSchedules calls agentfleet.v1.DashboardService.ListSchedules.
+func (c *dashboardServiceClient) ListSchedules(ctx context.Context, req *connect.Request[v1.ListSchedulesRequest]) (*connect.Response[v1.ListSchedulesResponse], error) {
+	return c.listSchedules.CallUnary(ctx, req)
 }
 
-// CreateScheduledAudit calls agentfleet.v1.DashboardService.CreateScheduledAudit.
-func (c *dashboardServiceClient) CreateScheduledAudit(ctx context.Context, req *connect.Request[v1.CreateScheduledAuditRequest]) (*connect.Response[v1.CreateScheduledAuditResponse], error) {
-	return c.createScheduledAudit.CallUnary(ctx, req)
+// CreateSchedule calls agentfleet.v1.DashboardService.CreateSchedule.
+func (c *dashboardServiceClient) CreateSchedule(ctx context.Context, req *connect.Request[v1.CreateScheduleRequest]) (*connect.Response[v1.CreateScheduleResponse], error) {
+	return c.createSchedule.CallUnary(ctx, req)
 }
 
-// UpdateScheduledAudit calls agentfleet.v1.DashboardService.UpdateScheduledAudit.
-func (c *dashboardServiceClient) UpdateScheduledAudit(ctx context.Context, req *connect.Request[v1.UpdateScheduledAuditRequest]) (*connect.Response[v1.UpdateScheduledAuditResponse], error) {
-	return c.updateScheduledAudit.CallUnary(ctx, req)
+// UpdateSchedule calls agentfleet.v1.DashboardService.UpdateSchedule.
+func (c *dashboardServiceClient) UpdateSchedule(ctx context.Context, req *connect.Request[v1.UpdateScheduleRequest]) (*connect.Response[v1.UpdateScheduleResponse], error) {
+	return c.updateSchedule.CallUnary(ctx, req)
 }
 
-// DeleteScheduledAudit calls agentfleet.v1.DashboardService.DeleteScheduledAudit.
-func (c *dashboardServiceClient) DeleteScheduledAudit(ctx context.Context, req *connect.Request[v1.DeleteScheduledAuditRequest]) (*connect.Response[v1.DeleteScheduledAuditResponse], error) {
-	return c.deleteScheduledAudit.CallUnary(ctx, req)
+// DeleteSchedule calls agentfleet.v1.DashboardService.DeleteSchedule.
+func (c *dashboardServiceClient) DeleteSchedule(ctx context.Context, req *connect.Request[v1.DeleteScheduleRequest]) (*connect.Response[v1.DeleteScheduleResponse], error) {
+	return c.deleteSchedule.CallUnary(ctx, req)
 }
 
-// RunScheduledAuditNow calls agentfleet.v1.DashboardService.RunScheduledAuditNow.
-func (c *dashboardServiceClient) RunScheduledAuditNow(ctx context.Context, req *connect.Request[v1.RunScheduledAuditNowRequest]) (*connect.Response[v1.RunScheduledAuditNowResponse], error) {
-	return c.runScheduledAuditNow.CallUnary(ctx, req)
+// RunScheduleNow calls agentfleet.v1.DashboardService.RunScheduleNow.
+func (c *dashboardServiceClient) RunScheduleNow(ctx context.Context, req *connect.Request[v1.RunScheduleNowRequest]) (*connect.Response[v1.RunScheduleNowResponse], error) {
+	return c.runScheduleNow.CallUnary(ctx, req)
 }
 
 // DashboardServiceHandler is an implementation of the agentfleet.v1.DashboardService service.
@@ -806,12 +807,13 @@ type DashboardServiceHandler interface {
 	QueryMetrics(context.Context, *connect.Request[v1.QueryMetricsRequest]) (*connect.Response[v1.QueryMetricsResponse], error)
 	GetFleetTopology(context.Context, *connect.Request[v1.GetFleetTopologyRequest]) (*connect.Response[v1.GetFleetTopologyResponse], error)
 	// Dashboard-editable schedules (docs/adr/0035) — same "edit it in the
-	// UI, no redeploy" shape ListRepos/CreateRepo established.
-	ListScheduledAudits(context.Context, *connect.Request[v1.ListScheduledAuditsRequest]) (*connect.Response[v1.ListScheduledAuditsResponse], error)
-	CreateScheduledAudit(context.Context, *connect.Request[v1.CreateScheduledAuditRequest]) (*connect.Response[v1.CreateScheduledAuditResponse], error)
-	UpdateScheduledAudit(context.Context, *connect.Request[v1.UpdateScheduledAuditRequest]) (*connect.Response[v1.UpdateScheduledAuditResponse], error)
-	DeleteScheduledAudit(context.Context, *connect.Request[v1.DeleteScheduledAuditRequest]) (*connect.Response[v1.DeleteScheduledAuditResponse], error)
-	RunScheduledAuditNow(context.Context, *connect.Request[v1.RunScheduledAuditNowRequest]) (*connect.Response[v1.RunScheduledAuditNowResponse], error)
+	// UI, no redeploy" shape ListRepos/CreateRepo established. Renamed from
+	// *ScheduledAudit* when the repo stopped being a hardcoded constant.
+	ListSchedules(context.Context, *connect.Request[v1.ListSchedulesRequest]) (*connect.Response[v1.ListSchedulesResponse], error)
+	CreateSchedule(context.Context, *connect.Request[v1.CreateScheduleRequest]) (*connect.Response[v1.CreateScheduleResponse], error)
+	UpdateSchedule(context.Context, *connect.Request[v1.UpdateScheduleRequest]) (*connect.Response[v1.UpdateScheduleResponse], error)
+	DeleteSchedule(context.Context, *connect.Request[v1.DeleteScheduleRequest]) (*connect.Response[v1.DeleteScheduleResponse], error)
+	RunScheduleNow(context.Context, *connect.Request[v1.RunScheduleNowRequest]) (*connect.Response[v1.RunScheduleNowResponse], error)
 }
 
 // NewDashboardServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -1025,34 +1027,34 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 		connect.WithSchema(dashboardServiceMethods.ByName("GetFleetTopology")),
 		connect.WithHandlerOptions(opts...),
 	)
-	dashboardServiceListScheduledAuditsHandler := connect.NewUnaryHandler(
-		DashboardServiceListScheduledAuditsProcedure,
-		svc.ListScheduledAudits,
-		connect.WithSchema(dashboardServiceMethods.ByName("ListScheduledAudits")),
+	dashboardServiceListSchedulesHandler := connect.NewUnaryHandler(
+		DashboardServiceListSchedulesProcedure,
+		svc.ListSchedules,
+		connect.WithSchema(dashboardServiceMethods.ByName("ListSchedules")),
 		connect.WithHandlerOptions(opts...),
 	)
-	dashboardServiceCreateScheduledAuditHandler := connect.NewUnaryHandler(
-		DashboardServiceCreateScheduledAuditProcedure,
-		svc.CreateScheduledAudit,
-		connect.WithSchema(dashboardServiceMethods.ByName("CreateScheduledAudit")),
+	dashboardServiceCreateScheduleHandler := connect.NewUnaryHandler(
+		DashboardServiceCreateScheduleProcedure,
+		svc.CreateSchedule,
+		connect.WithSchema(dashboardServiceMethods.ByName("CreateSchedule")),
 		connect.WithHandlerOptions(opts...),
 	)
-	dashboardServiceUpdateScheduledAuditHandler := connect.NewUnaryHandler(
-		DashboardServiceUpdateScheduledAuditProcedure,
-		svc.UpdateScheduledAudit,
-		connect.WithSchema(dashboardServiceMethods.ByName("UpdateScheduledAudit")),
+	dashboardServiceUpdateScheduleHandler := connect.NewUnaryHandler(
+		DashboardServiceUpdateScheduleProcedure,
+		svc.UpdateSchedule,
+		connect.WithSchema(dashboardServiceMethods.ByName("UpdateSchedule")),
 		connect.WithHandlerOptions(opts...),
 	)
-	dashboardServiceDeleteScheduledAuditHandler := connect.NewUnaryHandler(
-		DashboardServiceDeleteScheduledAuditProcedure,
-		svc.DeleteScheduledAudit,
-		connect.WithSchema(dashboardServiceMethods.ByName("DeleteScheduledAudit")),
+	dashboardServiceDeleteScheduleHandler := connect.NewUnaryHandler(
+		DashboardServiceDeleteScheduleProcedure,
+		svc.DeleteSchedule,
+		connect.WithSchema(dashboardServiceMethods.ByName("DeleteSchedule")),
 		connect.WithHandlerOptions(opts...),
 	)
-	dashboardServiceRunScheduledAuditNowHandler := connect.NewUnaryHandler(
-		DashboardServiceRunScheduledAuditNowProcedure,
-		svc.RunScheduledAuditNow,
-		connect.WithSchema(dashboardServiceMethods.ByName("RunScheduledAuditNow")),
+	dashboardServiceRunScheduleNowHandler := connect.NewUnaryHandler(
+		DashboardServiceRunScheduleNowProcedure,
+		svc.RunScheduleNow,
+		connect.WithSchema(dashboardServiceMethods.ByName("RunScheduleNow")),
 		connect.WithHandlerOptions(opts...),
 	)
 	return "/agentfleet.v1.DashboardService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1125,16 +1127,16 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 			dashboardServiceQueryMetricsHandler.ServeHTTP(w, r)
 		case DashboardServiceGetFleetTopologyProcedure:
 			dashboardServiceGetFleetTopologyHandler.ServeHTTP(w, r)
-		case DashboardServiceListScheduledAuditsProcedure:
-			dashboardServiceListScheduledAuditsHandler.ServeHTTP(w, r)
-		case DashboardServiceCreateScheduledAuditProcedure:
-			dashboardServiceCreateScheduledAuditHandler.ServeHTTP(w, r)
-		case DashboardServiceUpdateScheduledAuditProcedure:
-			dashboardServiceUpdateScheduledAuditHandler.ServeHTTP(w, r)
-		case DashboardServiceDeleteScheduledAuditProcedure:
-			dashboardServiceDeleteScheduledAuditHandler.ServeHTTP(w, r)
-		case DashboardServiceRunScheduledAuditNowProcedure:
-			dashboardServiceRunScheduledAuditNowHandler.ServeHTTP(w, r)
+		case DashboardServiceListSchedulesProcedure:
+			dashboardServiceListSchedulesHandler.ServeHTTP(w, r)
+		case DashboardServiceCreateScheduleProcedure:
+			dashboardServiceCreateScheduleHandler.ServeHTTP(w, r)
+		case DashboardServiceUpdateScheduleProcedure:
+			dashboardServiceUpdateScheduleHandler.ServeHTTP(w, r)
+		case DashboardServiceDeleteScheduleProcedure:
+			dashboardServiceDeleteScheduleHandler.ServeHTTP(w, r)
+		case DashboardServiceRunScheduleNowProcedure:
+			dashboardServiceRunScheduleNowHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -1280,22 +1282,22 @@ func (UnimplementedDashboardServiceHandler) GetFleetTopology(context.Context, *c
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.GetFleetTopology is not implemented"))
 }
 
-func (UnimplementedDashboardServiceHandler) ListScheduledAudits(context.Context, *connect.Request[v1.ListScheduledAuditsRequest]) (*connect.Response[v1.ListScheduledAuditsResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.ListScheduledAudits is not implemented"))
+func (UnimplementedDashboardServiceHandler) ListSchedules(context.Context, *connect.Request[v1.ListSchedulesRequest]) (*connect.Response[v1.ListSchedulesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.ListSchedules is not implemented"))
 }
 
-func (UnimplementedDashboardServiceHandler) CreateScheduledAudit(context.Context, *connect.Request[v1.CreateScheduledAuditRequest]) (*connect.Response[v1.CreateScheduledAuditResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.CreateScheduledAudit is not implemented"))
+func (UnimplementedDashboardServiceHandler) CreateSchedule(context.Context, *connect.Request[v1.CreateScheduleRequest]) (*connect.Response[v1.CreateScheduleResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.CreateSchedule is not implemented"))
 }
 
-func (UnimplementedDashboardServiceHandler) UpdateScheduledAudit(context.Context, *connect.Request[v1.UpdateScheduledAuditRequest]) (*connect.Response[v1.UpdateScheduledAuditResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.UpdateScheduledAudit is not implemented"))
+func (UnimplementedDashboardServiceHandler) UpdateSchedule(context.Context, *connect.Request[v1.UpdateScheduleRequest]) (*connect.Response[v1.UpdateScheduleResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.UpdateSchedule is not implemented"))
 }
 
-func (UnimplementedDashboardServiceHandler) DeleteScheduledAudit(context.Context, *connect.Request[v1.DeleteScheduledAuditRequest]) (*connect.Response[v1.DeleteScheduledAuditResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.DeleteScheduledAudit is not implemented"))
+func (UnimplementedDashboardServiceHandler) DeleteSchedule(context.Context, *connect.Request[v1.DeleteScheduleRequest]) (*connect.Response[v1.DeleteScheduleResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.DeleteSchedule is not implemented"))
 }
 
-func (UnimplementedDashboardServiceHandler) RunScheduledAuditNow(context.Context, *connect.Request[v1.RunScheduledAuditNowRequest]) (*connect.Response[v1.RunScheduledAuditNowResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.RunScheduledAuditNow is not implemented"))
+func (UnimplementedDashboardServiceHandler) RunScheduleNow(context.Context, *connect.Request[v1.RunScheduleNowRequest]) (*connect.Response[v1.RunScheduleNowResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.RunScheduleNow is not implemented"))
 }

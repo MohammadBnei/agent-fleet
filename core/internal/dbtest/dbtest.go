@@ -11,6 +11,7 @@ package dbtest
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"runtime"
 	"testing"
@@ -38,6 +39,11 @@ func migrationsURL() string {
 // db/migrations/ via golang-migrate, and returns a ready pgxpool.Pool.
 // Container and pool are torn down automatically via t.Cleanup.
 func NewPool(t *testing.T) *pgxpool.Pool {
+	t.Helper()
+	// No Docker socket (the fleet's own worker pods) — see externalPool.
+	if dsn := os.Getenv("AGENTFLEET_TEST_DSN"); dsn != "" {
+		return externalPool(t, dsn)
+	}
 	t.Helper()
 	ctx := context.Background()
 

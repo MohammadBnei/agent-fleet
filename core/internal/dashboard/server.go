@@ -28,7 +28,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/proposals"
 	"github.com/MohammadBnei/agent-fleet/core/internal/provisionerclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/repos"
-	"github.com/MohammadBnei/agent-fleet/core/internal/scheduledaudits"
+	"github.com/MohammadBnei/agent-fleet/core/internal/schedules"
 	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
 )
@@ -47,17 +47,17 @@ type Server struct {
 	// an agent, may exist at once. Enforced inside sessions.ReserveSlot under
 	// an advisory lock rather than checked here, because a read-then-act
 	// check is exactly what let CI observe 4 tasks claimed with a cap of 2.
-	maxLive int
-	loki    lokiclient.Querier
-	prom    promclient.Querier
-	audits  *scheduledaudits.Store
+	maxLive   int
+	loki      lokiclient.Querier
+	prom      promclient.Querier
+	schedules *schedules.Store
 	// version is core's own build, stamped in via -ldflags (cmd/core/main.go).
 	// It covers the dashboard SPA too — that is compiled into this binary.
 	version string
 }
 
-func NewServer(sessionStore *sessions.Store, proposalStore *proposals.Store, transcr transcript.Store, journalStore *journal.Store, repoStore *repos.Store, snippetStore *promptsnippets.Store, e2e *provisionerclient.Client, files filestore.Store, hub *Hub, maxLive int, loki lokiclient.Querier, prom promclient.Querier, auditStore *scheduledaudits.Store, version string) *Server {
-	return &Server{sessions: sessionStore, proposals: proposalStore, transcr: transcr, journal: journalStore, repos: repoStore, snippets: snippetStore, e2e: e2e, files: files, hub: hub, maxLive: maxLive, loki: loki, prom: prom, audits: auditStore, version: version}
+func NewServer(sessionStore *sessions.Store, proposalStore *proposals.Store, transcr transcript.Store, journalStore *journal.Store, repoStore *repos.Store, snippetStore *promptsnippets.Store, e2e *provisionerclient.Client, files filestore.Store, hub *Hub, maxLive int, loki lokiclient.Querier, prom promclient.Querier, scheduleStore *schedules.Store, version string) *Server {
+	return &Server{sessions: sessionStore, proposals: proposalStore, transcr: transcr, journal: journalStore, repos: repoStore, snippets: snippetStore, e2e: e2e, files: files, hub: hub, maxLive: maxLive, loki: loki, prom: prom, schedules: scheduleStore, version: version}
 }
 
 var _ agentfleetv1connect.DashboardServiceHandler = (*Server)(nil)
@@ -151,7 +151,7 @@ func (s *Server) CreateSession(ctx context.Context, req *connect.Request[agentfl
 // state in the fleet, because it is the only one a machine can compute.
 //
 // Tears down any live pod and dismisses the proposal that spawned it, if any:
-// that is what re-arms the dedup key so a still-firing alert or the next audit
+// that is what re-arms the dedup key so a still-firing alert or the next schedule
 // tick can propose the same work again.
 func (s *Server) ArchiveSession(ctx context.Context, req *connect.Request[agentfleetv1.ArchiveSessionRequest]) (*connect.Response[agentfleetv1.ArchiveSessionResponse], error) {
 	id := req.Msg.GetSessionId()
@@ -238,14 +238,21 @@ func (s *Server) OpenFromProposal(ctx context.Context, req *connect.Request[agen
 	// is computed from LatestSeq at provisioning time, so a message appended
 	// first lands below the new pod's cursor and is never delivered.
 	if _, err := s.WarmIfIdle(ctx, id); err != nil {
-		// The session and the proposal link both stand — a human can send the
-		// message by hand, or Warm it later. Rolling back here would discard
-		// the approval decision itself, which is the expensive part.
+		// Roll the whole thing back. The comment here used to say the session
+		// and the proposal link both stand, so a human could send the message
+		// by hand — that was wrong twice over: the proposal is already
+		// consumed at this point (gone from ListOpen, and a second click gets
+		// FailedPrecondition), and the instruction it carried lives only in
+		// its body, so the session left behind has no pod, no transcript and
+		// no record of what it was for. The likely trigger is the ordinary
+		// one, ErrAtCapacity.
 		slog.Error("dashboard OpenFromProposal: warm failed", "sessionId", id, "proposalId", p.ID, "error", err)
+		s.rollbackOpen(ctx, p.ID, id)
 		return nil, err
 	}
 	if _, err := s.transcr.Append(ctx, id, "human", p.Body, "discussion", uuid.NewString()); err != nil {
 		slog.Error("dashboard OpenFromProposal: append failed", "sessionId", id, "proposalId", p.ID, "error", err)
+		s.rollbackOpen(ctx, p.ID, id)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
@@ -255,6 +262,20 @@ func (s *Server) OpenFromProposal(ctx context.Context, req *connect.Request[agen
 	}
 	slog.Info("dashboard OpenFromProposal", "proposalId", p.ID, "sessionId", id, "repo", p.Repo)
 	return connect.NewResponse(&agentfleetv1.OpenFromProposalResponse{Session: SessionToProto(*sess)}), nil
+}
+
+// rollbackOpen undoes an OpenFromProposal that could not be completed: the
+// session goes away and the proposal returns to the open list, so the human
+// who clicked can click again once whatever failed is fixed. Best effort by
+// design — it runs on a path that is already failing, and a warning here is
+// more useful than masking the original error with the rollback's.
+func (s *Server) rollbackOpen(ctx context.Context, proposalID, sessionID string) {
+	if err := s.sessions.Delete(ctx, sessionID); err != nil {
+		slog.Warn("dashboard OpenFromProposal: rollback delete failed", "sessionId", sessionID, "error", err)
+	}
+	if err := s.proposals.Unclaim(ctx, proposalID, sessionID); err != nil {
+		slog.Warn("dashboard OpenFromProposal: rollback unclaim failed", "proposalId", proposalID, "error", err)
+	}
 }
 
 func (s *Server) DismissProposal(ctx context.Context, req *connect.Request[agentfleetv1.DismissProposalRequest]) (*connect.Response[agentfleetv1.DismissProposalResponse], error) {
@@ -1028,7 +1049,7 @@ func SessionToProto(t sessions.Session) *agentfleetv1.Session {
 	}
 }
 
-// optional turns a store column that is NOT NULL DEFAULT '' into the wire's
+// optional turns a store column that is NOT NULL DEFAULT ” into the wire's
 // optional string: empty means "never set", which the UI renders as nothing
 // rather than as a blank field.
 func optional(s string) *string {

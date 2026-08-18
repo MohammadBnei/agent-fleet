@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SessionList, ACTIVE_STATES } from "./pages/SessionList";
 import { SessionDetail } from "./pages/SessionDetail";
 import { Files } from "./pages/Files";
-import { Audits } from "./pages/Audits";
+import { Schedules } from "./pages/Schedules";
 import { Observability } from "./pages/Observability";
 import { NewSessionDialog } from "./components/NewSessionDialog";
 import { SettingsMenu } from "./components/SettingsMenu";
@@ -33,7 +33,7 @@ function readSessionIdFromUrl(): string | null {
   return p.get("session") ?? p.get("task");
 }
 
-export type View = "sessions" | "audits" | "files" | "observability";
+export type View = "sessions" | "schedules" | "files" | "observability";
 
 // The manifest's app shortcuts (icons/site.webmanifest) land here. Read once on
 // mount: they're an entry point, not persistent state, and the params are
@@ -43,17 +43,18 @@ function readShortcut(): { needsYouOnly: boolean; newSession: boolean } {
   const p = new URLSearchParams(window.location.search);
   return { needsYouOnly: p.get("filter") === "blocked", newSession: p.get("new") === "1" };
 }
-
 function readViewFromUrl(): View {
   const v = new URLSearchParams(window.location.search).get("view");
-  // "tasks" is the pre-rename name of this view and falls through to the
-  // default, which is the same place — listed so it reads as deliberate.
-  return v === "files" || v === "audits" || v === "observability" ? v : "sessions";
+  // "audits" is the pre-rename name of this view: a schedule was an audit
+  // until its repo stopped being a constant. "tasks" is the pre-rename name of
+  // the default one and falls through to it — listed so it reads as deliberate.
+  if (v === "audits") return "schedules";
+  return v === "files" || v === "schedules" || v === "observability" ? v : "sessions";
 }
 
 const NAV: readonly { value: View; label: string }[] = [
   { value: "sessions", label: "sessions" },
-  { value: "audits", label: "audits" },
+  { value: "schedules", label: "schedules" },
   { value: "files", label: "files" },
   { value: "observability", label: "observability" },
 ];
@@ -61,7 +62,7 @@ const NAV: readonly { value: View; label: string }[] = [
 // Mobile's bottom bar has less room; "trees" is the console mockup's own label.
 const MOBILE_NAV: readonly { value: View; label: string }[] = [
   { value: "sessions", label: "sessions" },
-  { value: "audits", label: "audits" },
+  { value: "schedules", label: "sched" },
   { value: "files", label: "files" },
   // Same shortening rule the "trees" label above follows — the bottom bar
   // now carries five cells and has no room for the full word.
@@ -480,8 +481,8 @@ export default function App() {
         */}
         {view === "files" ? (
           <Files />
-        ) : view === "audits" ? (
-          <Audits
+        ) : view === "schedules" ? (
+          <Schedules
             proposals={proposals}
             onSelectSession={selectSession}
             reloadSessions={() => {
