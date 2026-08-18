@@ -13,7 +13,7 @@
 -- still-running old core error every 60s in ClaimDue and 500 on
 -- ListScheduledAudits for the length of the rollout. It also keeps this
 -- release's rollback lossless: the old core finds its table intact. The drop
--- is 000005, in a later release.
+-- is 000006, in a later release.
 CREATE TABLE schedules (
   id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 

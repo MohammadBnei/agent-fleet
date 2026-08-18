@@ -19,7 +19,7 @@ type Runner interface {
 }
 
 // proposalSource is the `source` value schedules file under. It is a
-// CHECK-constrained enum on the proposals table (widened by migration 000004);
+// CHECK-constrained enum on the proposals table (widened by migration 000005);
 // a value outside it fails every insert, and tick() only records that in
 // last_status.
 const proposalSource = "schedule"
