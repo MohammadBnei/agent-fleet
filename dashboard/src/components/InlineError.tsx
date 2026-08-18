@@ -1,6 +1,6 @@
 // A page-level failure that must NOT trap the reader.
 //
-// Worktrees/Files/Audits used the shared ErrorModal for load failures, which
+// Worktrees/Files/Schedules used the shared ErrorModal for load failures, which
 // covers the screen — and now that the mobile tab bar is the only way out of a
 // view, an unreachable provisioner or object store meant the modal blocked every
 // route off the page. A load error is information, not a decision: it belongs on

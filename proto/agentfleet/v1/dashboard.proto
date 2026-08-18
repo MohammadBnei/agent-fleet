@@ -529,25 +529,29 @@ service DashboardService {
 
 
   // Dashboard-editable schedules (docs/adr/0035) — same "edit it in the
-  // UI, no redeploy" shape ListRepos/CreateRepo established.
-  rpc ListScheduledAudits(ListScheduledAuditsRequest) returns (ListScheduledAuditsResponse);
-  rpc CreateScheduledAudit(CreateScheduledAuditRequest) returns (CreateScheduledAuditResponse);
-  rpc UpdateScheduledAudit(UpdateScheduledAuditRequest) returns (UpdateScheduledAuditResponse);
-  rpc DeleteScheduledAudit(DeleteScheduledAuditRequest) returns (DeleteScheduledAuditResponse);
-  rpc RunScheduledAuditNow(RunScheduledAuditNowRequest) returns (RunScheduledAuditNowResponse);
+  // UI, no redeploy" shape ListRepos/CreateRepo established. Renamed from
+  // *ScheduledAudit* when the repo stopped being a hardcoded constant.
+  rpc ListSchedules(ListSchedulesRequest) returns (ListSchedulesResponse);
+  rpc CreateSchedule(CreateScheduleRequest) returns (CreateScheduleResponse);
+  rpc UpdateSchedule(UpdateScheduleRequest) returns (UpdateScheduleResponse);
+  rpc DeleteSchedule(DeleteScheduleRequest) returns (DeleteScheduleResponse);
+  rpc RunScheduleNow(RunScheduleNowRequest) returns (RunScheduleNowResponse);
 }
 
-// Brings an audit's next run forward to now rather than adding a second
-// dispatch path: it only moves next_run_at and nudges the existing loop, so
-// the run itself goes through exactly the same ClaimDue → CreateDeduped path
-// a scheduled one does (including landing as `proposed`, and including the
-// dedup that skips it while a previous run is still open).
-message RunScheduledAuditNowRequest {
+// Fires a schedule out of band rather than adding a second dispatch path: it
+// raises the run_now flag and nudges the existing loop, so the run itself goes
+// through exactly the same claim → file-proposal path a scheduled one does
+// (including the dedup that skips it while a previous run is still open).
+//
+// A flag, not `next_run_at = now()`: moving the cursor would swallow the next
+// cron occurrence, so pressing this on a Sunday would cost the schedule its
+// Monday run.
+message RunScheduleNowRequest {
   string id = 1;
 }
 
-message RunScheduledAuditNowResponse {
-  ScheduledAudit audit = 1;
+message RunScheduleNowResponse {
+  Schedule schedule = 1;
 }
 
 // RetryTaskRequest/Response used to live here — the only path back from
@@ -556,50 +560,75 @@ message RunScheduledAuditNowResponse {
 // retry counter and the terminal status itself: there is no dead state to
 // resurrect a session from, so retrying is just sending it another message.
 
-message ScheduledAudit {
+// Exactly one of cron / interval_seconds is set, or neither — in which case
+// the schedule is one-shot and fires once at run_at.
+//
+// Plain scalars rather than `optional`: proto3 optional moves a field into a
+// synthetic oneof, which is its own wire break, and both fields already have
+// an unambiguous unset value ("" and 0 — the column CHECK forbids an interval
+// below 60).
+message Schedule {
   string id = 1;
   string name = 2;
-  string prompt = 3;
-  int32 interval_seconds = 4;
-  bool enabled = 5;
-  string next_run_at = 6;
-  string last_run_at = 7;
-  string last_status = 8;
+  // Which repo the proposal (and so the session a human opens from it) targets.
+  // This was a Go constant until the schedules table existed.
+  string repo = 3;
+  string prompt = 4;
+  // Standard 5-field cron, optionally prefixed `CRON_TZ=Europe/Paris ` — which
+  // is why there is no separate timezone field.
+  string cron = 5;
+  int32 interval_seconds = 6;
+  bool enabled = 7;
+  string next_run_at = 8;
+  string last_run_at = 9;
+  string last_status = 10;
+  // A human's pending "run now", cleared when the loop picks it up.
+  bool run_now = 11;
 }
 
-message ListScheduledAuditsRequest {}
+message ListSchedulesRequest {}
 
-message ListScheduledAuditsResponse {
-  repeated ScheduledAudit audits = 1;
+message ListSchedulesResponse {
+  repeated Schedule schedules = 1;
 }
 
-message CreateScheduledAuditRequest {
+message CreateScheduleRequest {
   string name = 1;
-  string prompt = 2;
-  int32 interval_seconds = 3;
+  string repo = 2;
+  string prompt = 3;
+  string cron = 4;
+  int32 interval_seconds = 5;
+  // When both cron and interval_seconds are unset: the single moment this
+  // schedule fires, RFC3339. Without it on the wire a one-shot would inherit
+  // the column default and fire on the next tick regardless of what the human
+  // typed.
+  string run_at = 6;
 }
 
-message CreateScheduledAuditResponse {
-  ScheduledAudit audit = 1;
+message CreateScheduleResponse {
+  Schedule schedule = 1;
 }
 
-message UpdateScheduledAuditRequest {
+message UpdateScheduleRequest {
   string id = 1;
   string name = 2;
-  string prompt = 3;
-  int32 interval_seconds = 4;
-  bool enabled = 5;
+  string repo = 3;
+  string prompt = 4;
+  string cron = 5;
+  int32 interval_seconds = 6;
+  bool enabled = 7;
+  string run_at = 8;
 }
 
-message UpdateScheduledAuditResponse {
-  ScheduledAudit audit = 1;
+message UpdateScheduleResponse {
+  Schedule schedule = 1;
 }
 
-message DeleteScheduledAuditRequest {
+message DeleteScheduleRequest {
   string id = 1;
 }
 
-message DeleteScheduledAuditResponse {}
+message DeleteScheduleResponse {}
 
 
 

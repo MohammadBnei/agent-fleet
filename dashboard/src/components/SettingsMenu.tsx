@@ -10,7 +10,7 @@ const THEMES: readonly { value: Theme; label: string }[] = [
 ];
 
 // Neither console mockup gives the repo/prompt-snippet editors a home — the
-// header they show is full, and audits got promoted to its own view. Rather
+// header they show is full, and schedules got promoted to their own view. Rather
 // than drop two working features, both triggers live behind one ⚙, together
 // with the theme switch (which the mockups show as canvas chrome outside the
 // device frame, so it needs a real home too).

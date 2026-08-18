@@ -341,7 +341,7 @@ export function MobileSessionList({
         {/*
           "proposed by audits" was fed by a hardcoded empty array here too — a
           group that could never contain anything. Proposals are their own
-          table with their own view on the Audits page (docs/adr/0048).
+          table with their own view on the Schedules page (docs/adr/0048).
         */}
         {bucket === "all" && (
           <div className="flex flex-col mt-1">

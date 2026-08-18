@@ -19,45 +19,45 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	DashboardService_ListSessions_FullMethodName         = "/agentfleet.v1.DashboardService/ListSessions"
-	DashboardService_GetSession_FullMethodName           = "/agentfleet.v1.DashboardService/GetSession"
-	DashboardService_CreateSession_FullMethodName        = "/agentfleet.v1.DashboardService/CreateSession"
-	DashboardService_GetTranscript_FullMethodName        = "/agentfleet.v1.DashboardService/GetTranscript"
-	DashboardService_StreamTranscript_FullMethodName     = "/agentfleet.v1.DashboardService/StreamTranscript"
-	DashboardService_StopSession_FullMethodName          = "/agentfleet.v1.DashboardService/StopSession"
-	DashboardService_Interrupt_FullMethodName            = "/agentfleet.v1.DashboardService/Interrupt"
-	DashboardService_SetPermissionMode_FullMethodName    = "/agentfleet.v1.DashboardService/SetPermissionMode"
-	DashboardService_WarmSession_FullMethodName          = "/agentfleet.v1.DashboardService/WarmSession"
-	DashboardService_MarkSeen_FullMethodName             = "/agentfleet.v1.DashboardService/MarkSeen"
-	DashboardService_ArchiveSession_FullMethodName       = "/agentfleet.v1.DashboardService/ArchiveSession"
-	DashboardService_ListProposals_FullMethodName        = "/agentfleet.v1.DashboardService/ListProposals"
-	DashboardService_OpenFromProposal_FullMethodName     = "/agentfleet.v1.DashboardService/OpenFromProposal"
-	DashboardService_DismissProposal_FullMethodName      = "/agentfleet.v1.DashboardService/DismissProposal"
-	DashboardService_AnswerQuestion_FullMethodName       = "/agentfleet.v1.DashboardService/AnswerQuestion"
-	DashboardService_RespondToPermission_FullMethodName  = "/agentfleet.v1.DashboardService/RespondToPermission"
-	DashboardService_PostMessage_FullMethodName          = "/agentfleet.v1.DashboardService/PostMessage"
-	DashboardService_DeleteSession_FullMethodName        = "/agentfleet.v1.DashboardService/DeleteSession"
-	DashboardService_GetJournal_FullMethodName           = "/agentfleet.v1.DashboardService/GetJournal"
-	DashboardService_ListRepos_FullMethodName            = "/agentfleet.v1.DashboardService/ListRepos"
-	DashboardService_CreateRepo_FullMethodName           = "/agentfleet.v1.DashboardService/CreateRepo"
-	DashboardService_UpdateRepo_FullMethodName           = "/agentfleet.v1.DashboardService/UpdateRepo"
-	DashboardService_DeleteRepo_FullMethodName           = "/agentfleet.v1.DashboardService/DeleteRepo"
-	DashboardService_ListPromptSnippets_FullMethodName   = "/agentfleet.v1.DashboardService/ListPromptSnippets"
-	DashboardService_CreatePromptSnippet_FullMethodName  = "/agentfleet.v1.DashboardService/CreatePromptSnippet"
-	DashboardService_UpdatePromptSnippet_FullMethodName  = "/agentfleet.v1.DashboardService/UpdatePromptSnippet"
-	DashboardService_DeletePromptSnippet_FullMethodName  = "/agentfleet.v1.DashboardService/DeletePromptSnippet"
-	DashboardService_ListFiles_FullMethodName            = "/agentfleet.v1.DashboardService/ListFiles"
-	DashboardService_GetFileUploadUrl_FullMethodName     = "/agentfleet.v1.DashboardService/GetFileUploadUrl"
-	DashboardService_GetFileDownloadUrl_FullMethodName   = "/agentfleet.v1.DashboardService/GetFileDownloadUrl"
-	DashboardService_DeleteFile_FullMethodName           = "/agentfleet.v1.DashboardService/DeleteFile"
-	DashboardService_QueryLogs_FullMethodName            = "/agentfleet.v1.DashboardService/QueryLogs"
-	DashboardService_QueryMetrics_FullMethodName         = "/agentfleet.v1.DashboardService/QueryMetrics"
-	DashboardService_GetFleetTopology_FullMethodName     = "/agentfleet.v1.DashboardService/GetFleetTopology"
-	DashboardService_ListScheduledAudits_FullMethodName  = "/agentfleet.v1.DashboardService/ListScheduledAudits"
-	DashboardService_CreateScheduledAudit_FullMethodName = "/agentfleet.v1.DashboardService/CreateScheduledAudit"
-	DashboardService_UpdateScheduledAudit_FullMethodName = "/agentfleet.v1.DashboardService/UpdateScheduledAudit"
-	DashboardService_DeleteScheduledAudit_FullMethodName = "/agentfleet.v1.DashboardService/DeleteScheduledAudit"
-	DashboardService_RunScheduledAuditNow_FullMethodName = "/agentfleet.v1.DashboardService/RunScheduledAuditNow"
+	DashboardService_ListSessions_FullMethodName        = "/agentfleet.v1.DashboardService/ListSessions"
+	DashboardService_GetSession_FullMethodName          = "/agentfleet.v1.DashboardService/GetSession"
+	DashboardService_CreateSession_FullMethodName       = "/agentfleet.v1.DashboardService/CreateSession"
+	DashboardService_GetTranscript_FullMethodName       = "/agentfleet.v1.DashboardService/GetTranscript"
+	DashboardService_StreamTranscript_FullMethodName    = "/agentfleet.v1.DashboardService/StreamTranscript"
+	DashboardService_StopSession_FullMethodName         = "/agentfleet.v1.DashboardService/StopSession"
+	DashboardService_Interrupt_FullMethodName           = "/agentfleet.v1.DashboardService/Interrupt"
+	DashboardService_SetPermissionMode_FullMethodName   = "/agentfleet.v1.DashboardService/SetPermissionMode"
+	DashboardService_WarmSession_FullMethodName         = "/agentfleet.v1.DashboardService/WarmSession"
+	DashboardService_MarkSeen_FullMethodName            = "/agentfleet.v1.DashboardService/MarkSeen"
+	DashboardService_ArchiveSession_FullMethodName      = "/agentfleet.v1.DashboardService/ArchiveSession"
+	DashboardService_ListProposals_FullMethodName       = "/agentfleet.v1.DashboardService/ListProposals"
+	DashboardService_OpenFromProposal_FullMethodName    = "/agentfleet.v1.DashboardService/OpenFromProposal"
+	DashboardService_DismissProposal_FullMethodName     = "/agentfleet.v1.DashboardService/DismissProposal"
+	DashboardService_AnswerQuestion_FullMethodName      = "/agentfleet.v1.DashboardService/AnswerQuestion"
+	DashboardService_RespondToPermission_FullMethodName = "/agentfleet.v1.DashboardService/RespondToPermission"
+	DashboardService_PostMessage_FullMethodName         = "/agentfleet.v1.DashboardService/PostMessage"
+	DashboardService_DeleteSession_FullMethodName       = "/agentfleet.v1.DashboardService/DeleteSession"
+	DashboardService_GetJournal_FullMethodName          = "/agentfleet.v1.DashboardService/GetJournal"
+	DashboardService_ListRepos_FullMethodName           = "/agentfleet.v1.DashboardService/ListRepos"
+	DashboardService_CreateRepo_FullMethodName          = "/agentfleet.v1.DashboardService/CreateRepo"
+	DashboardService_UpdateRepo_FullMethodName          = "/agentfleet.v1.DashboardService/UpdateRepo"
+	DashboardService_DeleteRepo_FullMethodName          = "/agentfleet.v1.DashboardService/DeleteRepo"
+	DashboardService_ListPromptSnippets_FullMethodName  = "/agentfleet.v1.DashboardService/ListPromptSnippets"
+	DashboardService_CreatePromptSnippet_FullMethodName = "/agentfleet.v1.DashboardService/CreatePromptSnippet"
+	DashboardService_UpdatePromptSnippet_FullMethodName = "/agentfleet.v1.DashboardService/UpdatePromptSnippet"
+	DashboardService_DeletePromptSnippet_FullMethodName = "/agentfleet.v1.DashboardService/DeletePromptSnippet"
+	DashboardService_ListFiles_FullMethodName           = "/agentfleet.v1.DashboardService/ListFiles"
+	DashboardService_GetFileUploadUrl_FullMethodName    = "/agentfleet.v1.DashboardService/GetFileUploadUrl"
+	DashboardService_GetFileDownloadUrl_FullMethodName  = "/agentfleet.v1.DashboardService/GetFileDownloadUrl"
+	DashboardService_DeleteFile_FullMethodName          = "/agentfleet.v1.DashboardService/DeleteFile"
+	DashboardService_QueryLogs_FullMethodName           = "/agentfleet.v1.DashboardService/QueryLogs"
+	DashboardService_QueryMetrics_FullMethodName        = "/agentfleet.v1.DashboardService/QueryMetrics"
+	DashboardService_GetFleetTopology_FullMethodName    = "/agentfleet.v1.DashboardService/GetFleetTopology"
+	DashboardService_ListSchedules_FullMethodName       = "/agentfleet.v1.DashboardService/ListSchedules"
+	DashboardService_CreateSchedule_FullMethodName      = "/agentfleet.v1.DashboardService/CreateSchedule"
+	DashboardService_UpdateSchedule_FullMethodName      = "/agentfleet.v1.DashboardService/UpdateSchedule"
+	DashboardService_DeleteSchedule_FullMethodName      = "/agentfleet.v1.DashboardService/DeleteSchedule"
+	DashboardService_RunScheduleNow_FullMethodName      = "/agentfleet.v1.DashboardService/RunScheduleNow"
 )
 
 // DashboardServiceClient is the client API for DashboardService service.
@@ -142,12 +142,13 @@ type DashboardServiceClient interface {
 	QueryMetrics(ctx context.Context, in *QueryMetricsRequest, opts ...grpc.CallOption) (*QueryMetricsResponse, error)
 	GetFleetTopology(ctx context.Context, in *GetFleetTopologyRequest, opts ...grpc.CallOption) (*GetFleetTopologyResponse, error)
 	// Dashboard-editable schedules (docs/adr/0035) — same "edit it in the
-	// UI, no redeploy" shape ListRepos/CreateRepo established.
-	ListScheduledAudits(ctx context.Context, in *ListScheduledAuditsRequest, opts ...grpc.CallOption) (*ListScheduledAuditsResponse, error)
-	CreateScheduledAudit(ctx context.Context, in *CreateScheduledAuditRequest, opts ...grpc.CallOption) (*CreateScheduledAuditResponse, error)
-	UpdateScheduledAudit(ctx context.Context, in *UpdateScheduledAuditRequest, opts ...grpc.CallOption) (*UpdateScheduledAuditResponse, error)
-	DeleteScheduledAudit(ctx context.Context, in *DeleteScheduledAuditRequest, opts ...grpc.CallOption) (*DeleteScheduledAuditResponse, error)
-	RunScheduledAuditNow(ctx context.Context, in *RunScheduledAuditNowRequest, opts ...grpc.CallOption) (*RunScheduledAuditNowResponse, error)
+	// UI, no redeploy" shape ListRepos/CreateRepo established. Renamed from
+	// *ScheduledAudit* when the repo stopped being a hardcoded constant.
+	ListSchedules(ctx context.Context, in *ListSchedulesRequest, opts ...grpc.CallOption) (*ListSchedulesResponse, error)
+	CreateSchedule(ctx context.Context, in *CreateScheduleRequest, opts ...grpc.CallOption) (*CreateScheduleResponse, error)
+	UpdateSchedule(ctx context.Context, in *UpdateScheduleRequest, opts ...grpc.CallOption) (*UpdateScheduleResponse, error)
+	DeleteSchedule(ctx context.Context, in *DeleteScheduleRequest, opts ...grpc.CallOption) (*DeleteScheduleResponse, error)
+	RunScheduleNow(ctx context.Context, in *RunScheduleNowRequest, opts ...grpc.CallOption) (*RunScheduleNowResponse, error)
 }
 
 type dashboardServiceClient struct {
@@ -507,50 +508,50 @@ func (c *dashboardServiceClient) GetFleetTopology(ctx context.Context, in *GetFl
 	return out, nil
 }
 
-func (c *dashboardServiceClient) ListScheduledAudits(ctx context.Context, in *ListScheduledAuditsRequest, opts ...grpc.CallOption) (*ListScheduledAuditsResponse, error) {
+func (c *dashboardServiceClient) ListSchedules(ctx context.Context, in *ListSchedulesRequest, opts ...grpc.CallOption) (*ListSchedulesResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(ListScheduledAuditsResponse)
-	err := c.cc.Invoke(ctx, DashboardService_ListScheduledAudits_FullMethodName, in, out, cOpts...)
+	out := new(ListSchedulesResponse)
+	err := c.cc.Invoke(ctx, DashboardService_ListSchedules_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *dashboardServiceClient) CreateScheduledAudit(ctx context.Context, in *CreateScheduledAuditRequest, opts ...grpc.CallOption) (*CreateScheduledAuditResponse, error) {
+func (c *dashboardServiceClient) CreateSchedule(ctx context.Context, in *CreateScheduleRequest, opts ...grpc.CallOption) (*CreateScheduleResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(CreateScheduledAuditResponse)
-	err := c.cc.Invoke(ctx, DashboardService_CreateScheduledAudit_FullMethodName, in, out, cOpts...)
+	out := new(CreateScheduleResponse)
+	err := c.cc.Invoke(ctx, DashboardService_CreateSchedule_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *dashboardServiceClient) UpdateScheduledAudit(ctx context.Context, in *UpdateScheduledAuditRequest, opts ...grpc.CallOption) (*UpdateScheduledAuditResponse, error) {
+func (c *dashboardServiceClient) UpdateSchedule(ctx context.Context, in *UpdateScheduleRequest, opts ...grpc.CallOption) (*UpdateScheduleResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(UpdateScheduledAuditResponse)
-	err := c.cc.Invoke(ctx, DashboardService_UpdateScheduledAudit_FullMethodName, in, out, cOpts...)
+	out := new(UpdateScheduleResponse)
+	err := c.cc.Invoke(ctx, DashboardService_UpdateSchedule_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *dashboardServiceClient) DeleteScheduledAudit(ctx context.Context, in *DeleteScheduledAuditRequest, opts ...grpc.CallOption) (*DeleteScheduledAuditResponse, error) {
+func (c *dashboardServiceClient) DeleteSchedule(ctx context.Context, in *DeleteScheduleRequest, opts ...grpc.CallOption) (*DeleteScheduleResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(DeleteScheduledAuditResponse)
-	err := c.cc.Invoke(ctx, DashboardService_DeleteScheduledAudit_FullMethodName, in, out, cOpts...)
+	out := new(DeleteScheduleResponse)
+	err := c.cc.Invoke(ctx, DashboardService_DeleteSchedule_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *dashboardServiceClient) RunScheduledAuditNow(ctx context.Context, in *RunScheduledAuditNowRequest, opts ...grpc.CallOption) (*RunScheduledAuditNowResponse, error) {
+func (c *dashboardServiceClient) RunScheduleNow(ctx context.Context, in *RunScheduleNowRequest, opts ...grpc.CallOption) (*RunScheduleNowResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(RunScheduledAuditNowResponse)
-	err := c.cc.Invoke(ctx, DashboardService_RunScheduledAuditNow_FullMethodName, in, out, cOpts...)
+	out := new(RunScheduleNowResponse)
+	err := c.cc.Invoke(ctx, DashboardService_RunScheduleNow_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -639,12 +640,13 @@ type DashboardServiceServer interface {
 	QueryMetrics(context.Context, *QueryMetricsRequest) (*QueryMetricsResponse, error)
 	GetFleetTopology(context.Context, *GetFleetTopologyRequest) (*GetFleetTopologyResponse, error)
 	// Dashboard-editable schedules (docs/adr/0035) — same "edit it in the
-	// UI, no redeploy" shape ListRepos/CreateRepo established.
-	ListScheduledAudits(context.Context, *ListScheduledAuditsRequest) (*ListScheduledAuditsResponse, error)
-	CreateScheduledAudit(context.Context, *CreateScheduledAuditRequest) (*CreateScheduledAuditResponse, error)
-	UpdateScheduledAudit(context.Context, *UpdateScheduledAuditRequest) (*UpdateScheduledAuditResponse, error)
-	DeleteScheduledAudit(context.Context, *DeleteScheduledAuditRequest) (*DeleteScheduledAuditResponse, error)
-	RunScheduledAuditNow(context.Context, *RunScheduledAuditNowRequest) (*RunScheduledAuditNowResponse, error)
+	// UI, no redeploy" shape ListRepos/CreateRepo established. Renamed from
+	// *ScheduledAudit* when the repo stopped being a hardcoded constant.
+	ListSchedules(context.Context, *ListSchedulesRequest) (*ListSchedulesResponse, error)
+	CreateSchedule(context.Context, *CreateScheduleRequest) (*CreateScheduleResponse, error)
+	UpdateSchedule(context.Context, *UpdateScheduleRequest) (*UpdateScheduleResponse, error)
+	DeleteSchedule(context.Context, *DeleteScheduleRequest) (*DeleteScheduleResponse, error)
+	RunScheduleNow(context.Context, *RunScheduleNowRequest) (*RunScheduleNowResponse, error)
 	mustEmbedUnimplementedDashboardServiceServer()
 }
 
@@ -757,20 +759,20 @@ func (UnimplementedDashboardServiceServer) QueryMetrics(context.Context, *QueryM
 func (UnimplementedDashboardServiceServer) GetFleetTopology(context.Context, *GetFleetTopologyRequest) (*GetFleetTopologyResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetFleetTopology not implemented")
 }
-func (UnimplementedDashboardServiceServer) ListScheduledAudits(context.Context, *ListScheduledAuditsRequest) (*ListScheduledAuditsResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method ListScheduledAudits not implemented")
+func (UnimplementedDashboardServiceServer) ListSchedules(context.Context, *ListSchedulesRequest) (*ListSchedulesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListSchedules not implemented")
 }
-func (UnimplementedDashboardServiceServer) CreateScheduledAudit(context.Context, *CreateScheduledAuditRequest) (*CreateScheduledAuditResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method CreateScheduledAudit not implemented")
+func (UnimplementedDashboardServiceServer) CreateSchedule(context.Context, *CreateScheduleRequest) (*CreateScheduleResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CreateSchedule not implemented")
 }
-func (UnimplementedDashboardServiceServer) UpdateScheduledAudit(context.Context, *UpdateScheduledAuditRequest) (*UpdateScheduledAuditResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method UpdateScheduledAudit not implemented")
+func (UnimplementedDashboardServiceServer) UpdateSchedule(context.Context, *UpdateScheduleRequest) (*UpdateScheduleResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpdateSchedule not implemented")
 }
-func (UnimplementedDashboardServiceServer) DeleteScheduledAudit(context.Context, *DeleteScheduledAuditRequest) (*DeleteScheduledAuditResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method DeleteScheduledAudit not implemented")
+func (UnimplementedDashboardServiceServer) DeleteSchedule(context.Context, *DeleteScheduleRequest) (*DeleteScheduleResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteSchedule not implemented")
 }
-func (UnimplementedDashboardServiceServer) RunScheduledAuditNow(context.Context, *RunScheduledAuditNowRequest) (*RunScheduledAuditNowResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method RunScheduledAuditNow not implemented")
+func (UnimplementedDashboardServiceServer) RunScheduleNow(context.Context, *RunScheduleNowRequest) (*RunScheduleNowResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RunScheduleNow not implemented")
 }
 func (UnimplementedDashboardServiceServer) mustEmbedUnimplementedDashboardServiceServer() {}
 func (UnimplementedDashboardServiceServer) testEmbeddedByValue()                          {}
@@ -1398,92 +1400,92 @@ func _DashboardService_GetFleetTopology_Handler(srv interface{}, ctx context.Con
 	return interceptor(ctx, in, info, handler)
 }
 
-func _DashboardService_ListScheduledAudits_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ListScheduledAuditsRequest)
+func _DashboardService_ListSchedules_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListSchedulesRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(DashboardServiceServer).ListScheduledAudits(ctx, in)
+		return srv.(DashboardServiceServer).ListSchedules(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: DashboardService_ListScheduledAudits_FullMethodName,
+		FullMethod: DashboardService_ListSchedules_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(DashboardServiceServer).ListScheduledAudits(ctx, req.(*ListScheduledAuditsRequest))
+		return srv.(DashboardServiceServer).ListSchedules(ctx, req.(*ListSchedulesRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _DashboardService_CreateScheduledAudit_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(CreateScheduledAuditRequest)
+func _DashboardService_CreateSchedule_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateScheduleRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(DashboardServiceServer).CreateScheduledAudit(ctx, in)
+		return srv.(DashboardServiceServer).CreateSchedule(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: DashboardService_CreateScheduledAudit_FullMethodName,
+		FullMethod: DashboardService_CreateSchedule_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(DashboardServiceServer).CreateScheduledAudit(ctx, req.(*CreateScheduledAuditRequest))
+		return srv.(DashboardServiceServer).CreateSchedule(ctx, req.(*CreateScheduleRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _DashboardService_UpdateScheduledAudit_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(UpdateScheduledAuditRequest)
+func _DashboardService_UpdateSchedule_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateScheduleRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(DashboardServiceServer).UpdateScheduledAudit(ctx, in)
+		return srv.(DashboardServiceServer).UpdateSchedule(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: DashboardService_UpdateScheduledAudit_FullMethodName,
+		FullMethod: DashboardService_UpdateSchedule_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(DashboardServiceServer).UpdateScheduledAudit(ctx, req.(*UpdateScheduledAuditRequest))
+		return srv.(DashboardServiceServer).UpdateSchedule(ctx, req.(*UpdateScheduleRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _DashboardService_DeleteScheduledAudit_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(DeleteScheduledAuditRequest)
+func _DashboardService_DeleteSchedule_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteScheduleRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(DashboardServiceServer).DeleteScheduledAudit(ctx, in)
+		return srv.(DashboardServiceServer).DeleteSchedule(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: DashboardService_DeleteScheduledAudit_FullMethodName,
+		FullMethod: DashboardService_DeleteSchedule_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(DashboardServiceServer).DeleteScheduledAudit(ctx, req.(*DeleteScheduledAuditRequest))
+		return srv.(DashboardServiceServer).DeleteSchedule(ctx, req.(*DeleteScheduleRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _DashboardService_RunScheduledAuditNow_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(RunScheduledAuditNowRequest)
+func _DashboardService_RunScheduleNow_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RunScheduleNowRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(DashboardServiceServer).RunScheduledAuditNow(ctx, in)
+		return srv.(DashboardServiceServer).RunScheduleNow(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: DashboardService_RunScheduledAuditNow_FullMethodName,
+		FullMethod: DashboardService_RunScheduleNow_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(DashboardServiceServer).RunScheduledAuditNow(ctx, req.(*RunScheduledAuditNowRequest))
+		return srv.(DashboardServiceServer).RunScheduleNow(ctx, req.(*RunScheduleNowRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1628,24 +1630,24 @@ var DashboardService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _DashboardService_GetFleetTopology_Handler,
 		},
 		{
-			MethodName: "ListScheduledAudits",
-			Handler:    _DashboardService_ListScheduledAudits_Handler,
+			MethodName: "ListSchedules",
+			Handler:    _DashboardService_ListSchedules_Handler,
 		},
 		{
-			MethodName: "CreateScheduledAudit",
-			Handler:    _DashboardService_CreateScheduledAudit_Handler,
+			MethodName: "CreateSchedule",
+			Handler:    _DashboardService_CreateSchedule_Handler,
 		},
 		{
-			MethodName: "UpdateScheduledAudit",
-			Handler:    _DashboardService_UpdateScheduledAudit_Handler,
+			MethodName: "UpdateSchedule",
+			Handler:    _DashboardService_UpdateSchedule_Handler,
 		},
 		{
-			MethodName: "DeleteScheduledAudit",
-			Handler:    _DashboardService_DeleteScheduledAudit_Handler,
+			MethodName: "DeleteSchedule",
+			Handler:    _DashboardService_DeleteSchedule_Handler,
 		},
 		{
-			MethodName: "RunScheduledAuditNow",
-			Handler:    _DashboardService_RunScheduledAuditNow_Handler,
+			MethodName: "RunScheduleNow",
+			Handler:    _DashboardService_RunScheduleNow_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

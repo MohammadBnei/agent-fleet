@@ -17,7 +17,6 @@ import (
 	"github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1/agentfleetv1connect"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/alertwebhook"
-	"github.com/MohammadBnei/agent-fleet/core/internal/audits"
 	"github.com/MohammadBnei/agent-fleet/core/internal/config"
 	"github.com/MohammadBnei/agent-fleet/core/internal/coreserver"
 	"github.com/MohammadBnei/agent-fleet/core/internal/dashboard"
@@ -31,7 +30,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/proposals"
 	"github.com/MohammadBnei/agent-fleet/core/internal/provisionerclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/repos"
-	"github.com/MohammadBnei/agent-fleet/core/internal/scheduledaudits"
+	"github.com/MohammadBnei/agent-fleet/core/internal/schedules"
 	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
 	"github.com/MohammadBnei/agent-fleet/core/internal/webui"
@@ -44,7 +43,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	repoStore := repos.NewStore(pool)
 	proposalStore := proposals.NewStore(pool)
 	snippetStore := promptsnippets.NewStore(pool)
-	auditStore := scheduledaudits.NewStore(pool)
+	scheduleStore := schedules.NewStore(pool)
 	// Every consumer below except SetNudge (a *PostgresStore-only method,
 	// not part of the transcript.Store interface) goes through this
 	// activity-tracking wrapper instead of `store` directly — see its own
@@ -112,13 +111,13 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 		cfg.StopGrace, cfg.StartupStall, cfg.IdleTimeout, cfg.SessionRetention, cfg.TurnStall)
 	go sessionLoop.Run(ctx, 60*time.Second)
 
-	// Scheduled audits create thot tasks (docs/adr/0037) — no separate
+	// A schedule files a proposal, which a human opens — there is no separate
 	// service to reach, so the scheduler always runs.
-	auditLoop := audits.New(auditStore, proposalStore)
-	go auditLoop.Run(ctx, 60*time.Second)
-	// Same live-refresh wiring repos uses for Discord's /task choices: a
-	// dashboard edit takes effect now, not on the next tick.
-	auditStore.SetOnChange(auditLoop.Nudge)
+	scheduleLoop := schedules.NewLoop(scheduleStore, proposalStore)
+	go scheduleLoop.Run(ctx, 60*time.Second)
+	// Same live-refresh wiring repos uses: a dashboard edit takes effect now,
+	// not on the next tick.
+	scheduleStore.SetOnChange(scheduleLoop.Nudge)
 
 	// core's first gRPC server (docs/adr/0020's Context) — the provisioner
 	// pushes pod-lifecycle events here, and every worker pod's sidecar
@@ -142,7 +141,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
 	mux.Handle("/metrics", promhttp.Handler())
-	dashboardSvc := dashboard.NewServer(sessionStore, proposalStore, activityStore, journalStore, repoStore, snippetStore, provisioner, files, hub, cfg.MaxInFlight, loki, prom, auditStore, version)
+	dashboardSvc := dashboard.NewServer(sessionStore, proposalStore, activityStore, journalStore, repoStore, snippetStore, provisioner, files, hub, cfg.MaxInFlight, loki, prom, scheduleStore, version)
 	// PromptSession warms an idle target through the dashboard server's own
 	// warmIfIdle rather than a second copy of it (docs/adr/0041) — that
 	// function carries the capacity cap and the proposed/pending gates that

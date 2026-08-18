@@ -16,7 +16,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file agentfleet/v1/dashboard.proto.
  */
 export const file_agentfleet_v1_dashboard: GenFile = /*@__PURE__*/
-  fileDesc("Ch1hZ2VudGZsZWV0L3YxL2Rhc2hib2FyZC5wcm90bxINYWdlbnRmbGVldC52MSIzChNMaXN0U2Vzc2lvbnNSZXF1ZXN0Eg0KBWxpbWl0GAEgASgFEg0KBXF1ZXJ5GAIgASgJIkAKFExpc3RTZXNzaW9uc1Jlc3BvbnNlEigKCHNlc3Npb25zGAEgAygLMhYuYWdlbnRmbGVldC52MS5TZXNzaW9uIpQBChRDcmVhdGVTZXNzaW9uUmVxdWVzdBIMCgRyZXBvGAEgASgJEhMKC2Rlc2NyaXB0aW9uGAIgASgJEhIKBW1vZGVsGAQgASgJSACIAQESEgoFdGl0bGUYBiABKAlIAYgBAUIICgZfbW9kZWxCCAoGX3RpdGxlSgQIAxAESgQIBRAGUgtzbmlwcGV0X2lkc1IEa2luZCJAChVDcmVhdGVTZXNzaW9uUmVzcG9uc2USJwoHc2Vzc2lvbhgBIAEoCzIWLmFnZW50ZmxlZXQudjEuU2Vzc2lvbiJAChdTdHJlYW1UcmFuc2NyaXB0UmVxdWVzdBISCgpzZXNzaW9uX2lkGAEgASgJEhEKCXNpbmNlX3NlcRgCIAEoAyJIChJTdG9wU2Vzc2lvblJlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCRITCgZyZWFzb24YAiABKAlIAIgBAUIJCgdfcmVhc29uIhUKE1N0b3BTZXNzaW9uUmVzcG9uc2UiJgoQSW50ZXJydXB0UmVxdWVzdBISCgpzZXNzaW9uX2lkGAEgASgJIhMKEUludGVycnVwdFJlc3BvbnNlIiUKD01hcmtTZWVuUmVxdWVzdBISCgpzZXNzaW9uX2lkGAEgASgJIhIKEE1hcmtTZWVuUmVzcG9uc2UiKAoSV2FybVNlc3Npb25SZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkiNQoTV2FybVNlc3Npb25SZXNwb25zZRIQCghwb2RfbmFtZRgCIAEoCUoECAEQAlIGc3RhdHVzIo0BCghQcm9wb3NhbBIKCgJpZBgBIAEoCRIMCgRyZXBvGAIgASgJEg4KBnNvdXJjZRgDIAEoCRINCgV0aXRsZRgEIAEoCRIMCgRib2R5GAUgASgJEhIKCmNyZWF0ZWRfYXQYBiABKAkSFwoKc2Vzc2lvbl9pZBgHIAEoCUgAiAEBQg0KC19zZXNzaW9uX2lkIhYKFExpc3RQcm9wb3NhbHNSZXF1ZXN0IkMKFUxpc3RQcm9wb3NhbHNSZXNwb25zZRIqCglwcm9wb3NhbHMYASADKAsyFy5hZ2VudGZsZWV0LnYxLlByb3Bvc2FsIi4KF09wZW5Gcm9tUHJvcG9zYWxSZXF1ZXN0EhMKC3Byb3Bvc2FsX2lkGAEgASgJIkMKGE9wZW5Gcm9tUHJvcG9zYWxSZXNwb25zZRInCgdzZXNzaW9uGAEgASgLMhYuYWdlbnRmbGVldC52MS5TZXNzaW9uIi0KFkRpc21pc3NQcm9wb3NhbFJlcXVlc3QSEwoLcHJvcG9zYWxfaWQYASABKAkiGQoXRGlzbWlzc1Byb3Bvc2FsUmVzcG9uc2UiKwoVQXJjaGl2ZVNlc3Npb25SZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkiGAoWQXJjaGl2ZVNlc3Npb25SZXNwb25zZSJUChpSZXNwb25kVG9QZXJtaXNzaW9uUmVxdWVzdBISCgpzZXNzaW9uX2lkGAEgASgJEgsKA3NlcRgCIAEoAxIVCg1kZWNpc2lvbl9qc29uGAMgASgJIkQKDktpbGxFMmVSZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkSHgoWYWxzb190ZWFyZG93bl9zZXJ2aWNlcxgCIAEoCCI9Cg9LaWxsRTJlUmVzcG9uc2USDgoGa2lsbGVkGAEgASgIEhoKEnNlcnZpY2VzX3Rvcm5fZG93bhgCIAMoCSJOChVBbnN3ZXJRdWVzdGlvblJlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCRILCgNzZXEYAiABKAMSFAoMYW5zd2Vyc19qc29uGAMgASgJIjYKElBvc3RNZXNzYWdlUmVxdWVzdBISCgpzZXNzaW9uX2lkGAEgASgJEgwKBHRleHQYAiABKAkiKgoURGVsZXRlU2Vzc2lvblJlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCSIXChVEZWxldGVTZXNzaW9uUmVzcG9uc2UiQgoRR2V0Sm91cm5hbFJlcXVlc3QSDAoEcmVwbxgBIAEoCRIQCghzaW5jZV9pZBgCIAEoAxINCgVsaW1pdBgDIAEoBSJTChJHZXRKb3VybmFsUmVzcG9uc2USLAoHZW50cmllcxgBIAMoCzIbLmFnZW50ZmxlZXQudjEuSm91cm5hbEVudHJ5Eg8KB25leHRfaWQYAiABKAMicAoEUmVwbxIMCgRuYW1lGAEgASgJEgsKA3VybBgCIAEoCRITCgtiYXNlX2JyYW5jaBgDIAEoCRINCgVpbWFnZRgFIAEoCRIWCg5jbHVzdGVyX2FjY2VzcxgGIAEoCEoECAQQBVILZTJlX3Byb2ZpbGUiEgoQTGlzdFJlcG9zUmVxdWVzdCI3ChFMaXN0UmVwb3NSZXNwb25zZRIiCgVyZXBvcxgBIAMoCzITLmFnZW50ZmxlZXQudjEuUmVwbyJ9ChFDcmVhdGVSZXBvUmVxdWVzdBIMCgRuYW1lGAEgASgJEgsKA3VybBgCIAEoCRITCgtiYXNlX2JyYW5jaBgDIAEoCRINCgVpbWFnZRgFIAEoCRIWCg5jbHVzdGVyX2FjY2VzcxgGIAEoCEoECAQQBVILZTJlX3Byb2ZpbGUiNwoSQ3JlYXRlUmVwb1Jlc3BvbnNlEiEKBHJlcG8YASABKAsyEy5hZ2VudGZsZWV0LnYxLlJlcG8ifQoRVXBkYXRlUmVwb1JlcXVlc3QSDAoEbmFtZRgBIAEoCRILCgN1cmwYAiABKAkSEwoLYmFzZV9icmFuY2gYAyABKAkSDQoFaW1hZ2UYBSABKAkSFgoOY2x1c3Rlcl9hY2Nlc3MYBiABKAhKBAgEEAVSC2UyZV9wcm9maWxlIjcKElVwZGF0ZVJlcG9SZXNwb25zZRIhCgRyZXBvGAEgASgLMhMuYWdlbnRmbGVldC52MS5SZXBvIiEKEURlbGV0ZVJlcG9SZXF1ZXN0EgwKBG5hbWUYASABKAkiFAoSRGVsZXRlUmVwb1Jlc3BvbnNlIn0KDVByb21wdFNuaXBwZXQSCgoCaWQYASABKAkSDAoEbmFtZRgCIAEoCRIMCgR0ZXh0GAMgASgJEiYKGXN1Z2dlc3RlZF9wZXJtaXNzaW9uX21vZGUYBCABKAlIAIgBAUIcChpfc3VnZ2VzdGVkX3Blcm1pc3Npb25fbW9kZSIbChlMaXN0UHJvbXB0U25pcHBldHNSZXF1ZXN0IkwKGkxpc3RQcm9tcHRTbmlwcGV0c1Jlc3BvbnNlEi4KCHNuaXBwZXRzGAEgAygLMhwuYWdlbnRmbGVldC52MS5Qcm9tcHRTbmlwcGV0IjgKGkNyZWF0ZVByb21wdFNuaXBwZXRSZXF1ZXN0EgwKBG5hbWUYASABKAkSDAoEdGV4dBgCIAEoCSJMChtDcmVhdGVQcm9tcHRTbmlwcGV0UmVzcG9uc2USLQoHc25pcHBldBgBIAEoCzIcLmFnZW50ZmxlZXQudjEuUHJvbXB0U25pcHBldCJEChpVcGRhdGVQcm9tcHRTbmlwcGV0UmVxdWVzdBIKCgJpZBgBIAEoCRIMCgRuYW1lGAIgASgJEgwKBHRleHQYAyABKAkiTAobVXBkYXRlUHJvbXB0U25pcHBldFJlc3BvbnNlEi0KB3NuaXBwZXQYASABKAsyHC5hZ2VudGZsZWV0LnYxLlByb21wdFNuaXBwZXQiKAoaRGVsZXRlUHJvbXB0U25pcHBldFJlcXVlc3QSCgoCaWQYASABKAkiHQobRGVsZXRlUHJvbXB0U25pcHBldFJlc3BvbnNlIikKG1J1blNjaGVkdWxlZEF1ZGl0Tm93UmVxdWVzdBIKCgJpZBgBIAEoCSJMChxSdW5TY2hlZHVsZWRBdWRpdE5vd1Jlc3BvbnNlEiwKBWF1ZGl0GAEgASgLMh0uYWdlbnRmbGVldC52MS5TY2hlZHVsZWRBdWRpdCKkAQoOU2NoZWR1bGVkQXVkaXQSCgoCaWQYASABKAkSDAoEbmFtZRgCIAEoCRIOCgZwcm9tcHQYAyABKAkSGAoQaW50ZXJ2YWxfc2Vjb25kcxgEIAEoBRIPCgdlbmFibGVkGAUgASgIEhMKC25leHRfcnVuX2F0GAYgASgJEhMKC2xhc3RfcnVuX2F0GAcgASgJEhMKC2xhc3Rfc3RhdHVzGAggASgJIhwKGkxpc3RTY2hlZHVsZWRBdWRpdHNSZXF1ZXN0IkwKG0xpc3RTY2hlZHVsZWRBdWRpdHNSZXNwb25zZRItCgZhdWRpdHMYASADKAsyHS5hZ2VudGZsZWV0LnYxLlNjaGVkdWxlZEF1ZGl0IlUKG0NyZWF0ZVNjaGVkdWxlZEF1ZGl0UmVxdWVzdBIMCgRuYW1lGAEgASgJEg4KBnByb21wdBgCIAEoCRIYChBpbnRlcnZhbF9zZWNvbmRzGAMgASgFIkwKHENyZWF0ZVNjaGVkdWxlZEF1ZGl0UmVzcG9uc2USLAoFYXVkaXQYASABKAsyHS5hZ2VudGZsZWV0LnYxLlNjaGVkdWxlZEF1ZGl0InIKG1VwZGF0ZVNjaGVkdWxlZEF1ZGl0UmVxdWVzdBIKCgJpZBgBIAEoCRIMCgRuYW1lGAIgASgJEg4KBnByb21wdBgDIAEoCRIYChBpbnRlcnZhbF9zZWNvbmRzGAQgASgFEg8KB2VuYWJsZWQYBSABKAgiTAocVXBkYXRlU2NoZWR1bGVkQXVkaXRSZXNwb25zZRIsCgVhdWRpdBgBIAEoCzIdLmFnZW50ZmxlZXQudjEuU2NoZWR1bGVkQXVkaXQiKQobRGVsZXRlU2NoZWR1bGVkQXVkaXRSZXF1ZXN0EgoKAmlkGAEgASgJIh4KHERlbGV0ZVNjaGVkdWxlZEF1ZGl0UmVzcG9uc2UiWAoTUXVlcnlNZXRyaWNzUmVxdWVzdBINCgVxdWVyeRgBIAEoCRISCgpzdGFydF90aW1lGAIgASgJEhAKCGVuZF90aW1lGAMgASgJEgwKBHN0ZXAYBCABKAkiKwoUUXVlcnlNZXRyaWNzUmVzcG9uc2USEwoLcmVzdWx0X2pzb24YASABKAkiGQoXR2V0RmxlZXRUb3BvbG9neVJlcXVlc3Qi3QEKCENlbGxOb2RlEgoKAmlkGAEgASgJEgwKBHR5cGUYAiABKAkSDgoGc3RhdHVzGAMgASgJEjUKB21ldHJpY3MYBCADKAsyJC5hZ2VudGZsZWV0LnYxLkNlbGxOb2RlLk1ldHJpY3NFbnRyeRISCgpzZXNzaW9uX2lkGAUgASgJEgwKBHJlcG8YBiABKAkSDQoFbGFiZWwYByABKAkSDwoHdmVyc2lvbhgIIAEoCRouCgxNZXRyaWNzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgBOgI4ASI2CgxUb3BvbG9neUVkZ2USDAoEZnJvbRgBIAEoCRIKCgJ0bxgCIAEoCRIMCgRyYXRlGAMgASgBIrIBChhHZXRGbGVldFRvcG9sb2d5UmVzcG9uc2USJgoFbm9kZXMYASADKAsyFy5hZ2VudGZsZWV0LnYxLkNlbGxOb2RlEioKBWVkZ2VzGAIgAygLMhsuYWdlbnRmbGVldC52MS5Ub3BvbG9neUVkZ2USFQoNbWV0cmljc19lcnJvchgDIAEoCRIUCgx3b3JrZXJfaW1hZ2UYBCABKAkSFQoNc2lkZWNhcl9pbWFnZRgFIAEoCTL8HAoQRGFzaGJvYXJkU2VydmljZRJXCgxMaXN0U2Vzc2lvbnMSIi5hZ2VudGZsZWV0LnYxLkxpc3RTZXNzaW9uc1JlcXVlc3QaIy5hZ2VudGZsZWV0LnYxLkxpc3RTZXNzaW9uc1Jlc3BvbnNlElEKCkdldFNlc3Npb24SIC5hZ2VudGZsZWV0LnYxLkdldFNlc3Npb25SZXF1ZXN0GiEuYWdlbnRmbGVldC52MS5HZXRTZXNzaW9uUmVzcG9uc2USWgoNQ3JlYXRlU2Vzc2lvbhIjLmFnZW50ZmxlZXQudjEuQ3JlYXRlU2Vzc2lvblJlcXVlc3QaJC5hZ2VudGZsZWV0LnYxLkNyZWF0ZVNlc3Npb25SZXNwb25zZRJmCg1HZXRUcmFuc2NyaXB0EikuYWdlbnRmbGVldC52MS5SZWFkVHJhbnNjcmlwdFNpbmNlUmVxdWVzdBoqLmFnZW50ZmxlZXQudjEuUmVhZFRyYW5zY3JpcHRTaW5jZVJlc3BvbnNlElwKEFN0cmVhbVRyYW5zY3JpcHQSJi5hZ2VudGZsZWV0LnYxLlN0cmVhbVRyYW5zY3JpcHRSZXF1ZXN0Gh4uYWdlbnRmbGVldC52MS5UcmFuc2NyaXB0RW50cnkwARJUCgtTdG9wU2Vzc2lvbhIhLmFnZW50ZmxlZXQudjEuU3RvcFNlc3Npb25SZXF1ZXN0GiIuYWdlbnRmbGVldC52MS5TdG9wU2Vzc2lvblJlc3BvbnNlEk4KCUludGVycnVwdBIfLmFnZW50ZmxlZXQudjEuSW50ZXJydXB0UmVxdWVzdBogLmFnZW50ZmxlZXQudjEuSW50ZXJydXB0UmVzcG9uc2USZgoRU2V0UGVybWlzc2lvbk1vZGUSJy5hZ2VudGZsZWV0LnYxLlNldFBlcm1pc3Npb25Nb2RlUmVxdWVzdBooLmFnZW50ZmxlZXQudjEuU2V0UGVybWlzc2lvbk1vZGVSZXNwb25zZRJUCgtXYXJtU2Vzc2lvbhIhLmFnZW50ZmxlZXQudjEuV2FybVNlc3Npb25SZXF1ZXN0GiIuYWdlbnRmbGVldC52MS5XYXJtU2Vzc2lvblJlc3BvbnNlEksKCE1hcmtTZWVuEh4uYWdlbnRmbGVldC52MS5NYXJrU2VlblJlcXVlc3QaHy5hZ2VudGZsZWV0LnYxLk1hcmtTZWVuUmVzcG9uc2USXQoOQXJjaGl2ZVNlc3Npb24SJC5hZ2VudGZsZWV0LnYxLkFyY2hpdmVTZXNzaW9uUmVxdWVzdBolLmFnZW50ZmxlZXQudjEuQXJjaGl2ZVNlc3Npb25SZXNwb25zZRJaCg1MaXN0UHJvcG9zYWxzEiMuYWdlbnRmbGVldC52MS5MaXN0UHJvcG9zYWxzUmVxdWVzdBokLmFnZW50ZmxlZXQudjEuTGlzdFByb3Bvc2Fsc1Jlc3BvbnNlEmMKEE9wZW5Gcm9tUHJvcG9zYWwSJi5hZ2VudGZsZWV0LnYxLk9wZW5Gcm9tUHJvcG9zYWxSZXF1ZXN0GicuYWdlbnRmbGVldC52MS5PcGVuRnJvbVByb3Bvc2FsUmVzcG9uc2USYAoPRGlzbWlzc1Byb3Bvc2FsEiUuYWdlbnRmbGVldC52MS5EaXNtaXNzUHJvcG9zYWxSZXF1ZXN0GiYuYWdlbnRmbGVldC52MS5EaXNtaXNzUHJvcG9zYWxSZXNwb25zZRJVCg5BbnN3ZXJRdWVzdGlvbhIkLmFnZW50ZmxlZXQudjEuQW5zd2VyUXVlc3Rpb25SZXF1ZXN0Gh0uYWdlbnRmbGVldC52MS5BcHBlbmRSZXNwb25zZRJfChNSZXNwb25kVG9QZXJtaXNzaW9uEikuYWdlbnRmbGVldC52MS5SZXNwb25kVG9QZXJtaXNzaW9uUmVxdWVzdBodLmFnZW50ZmxlZXQudjEuQXBwZW5kUmVzcG9uc2USTwoLUG9zdE1lc3NhZ2USIS5hZ2VudGZsZWV0LnYxLlBvc3RNZXNzYWdlUmVxdWVzdBodLmFnZW50ZmxlZXQudjEuQXBwZW5kUmVzcG9uc2USWgoNRGVsZXRlU2Vzc2lvbhIjLmFnZW50ZmxlZXQudjEuRGVsZXRlU2Vzc2lvblJlcXVlc3QaJC5hZ2VudGZsZWV0LnYxLkRlbGV0ZVNlc3Npb25SZXNwb25zZRJRCgpHZXRKb3VybmFsEiAuYWdlbnRmbGVldC52MS5HZXRKb3VybmFsUmVxdWVzdBohLmFnZW50ZmxlZXQudjEuR2V0Sm91cm5hbFJlc3BvbnNlEk4KCUxpc3RSZXBvcxIfLmFnZW50ZmxlZXQudjEuTGlzdFJlcG9zUmVxdWVzdBogLmFnZW50ZmxlZXQudjEuTGlzdFJlcG9zUmVzcG9uc2USUQoKQ3JlYXRlUmVwbxIgLmFnZW50ZmxlZXQudjEuQ3JlYXRlUmVwb1JlcXVlc3QaIS5hZ2VudGZsZWV0LnYxLkNyZWF0ZVJlcG9SZXNwb25zZRJRCgpVcGRhdGVSZXBvEiAuYWdlbnRmbGVldC52MS5VcGRhdGVSZXBvUmVxdWVzdBohLmFnZW50ZmxlZXQudjEuVXBkYXRlUmVwb1Jlc3BvbnNlElEKCkRlbGV0ZVJlcG8SIC5hZ2VudGZsZWV0LnYxLkRlbGV0ZVJlcG9SZXF1ZXN0GiEuYWdlbnRmbGVldC52MS5EZWxldGVSZXBvUmVzcG9uc2USaQoSTGlzdFByb21wdFNuaXBwZXRzEiguYWdlbnRmbGVldC52MS5MaXN0UHJvbXB0U25pcHBldHNSZXF1ZXN0GikuYWdlbnRmbGVldC52MS5MaXN0UHJvbXB0U25pcHBldHNSZXNwb25zZRJsChNDcmVhdGVQcm9tcHRTbmlwcGV0EikuYWdlbnRmbGVldC52MS5DcmVhdGVQcm9tcHRTbmlwcGV0UmVxdWVzdBoqLmFnZW50ZmxlZXQudjEuQ3JlYXRlUHJvbXB0U25pcHBldFJlc3BvbnNlEmwKE1VwZGF0ZVByb21wdFNuaXBwZXQSKS5hZ2VudGZsZWV0LnYxLlVwZGF0ZVByb21wdFNuaXBwZXRSZXF1ZXN0GiouYWdlbnRmbGVldC52MS5VcGRhdGVQcm9tcHRTbmlwcGV0UmVzcG9uc2USbAoTRGVsZXRlUHJvbXB0U25pcHBldBIpLmFnZW50ZmxlZXQudjEuRGVsZXRlUHJvbXB0U25pcHBldFJlcXVlc3QaKi5hZ2VudGZsZWV0LnYxLkRlbGV0ZVByb21wdFNuaXBwZXRSZXNwb25zZRJOCglMaXN0RmlsZXMSHy5hZ2VudGZsZWV0LnYxLkxpc3RGaWxlc1JlcXVlc3QaIC5hZ2VudGZsZWV0LnYxLkxpc3RGaWxlc1Jlc3BvbnNlEmMKEEdldEZpbGVVcGxvYWRVcmwSJi5hZ2VudGZsZWV0LnYxLkdldEZpbGVVcGxvYWRVcmxSZXF1ZXN0GicuYWdlbnRmbGVldC52MS5HZXRGaWxlVXBsb2FkVXJsUmVzcG9uc2USaQoSR2V0RmlsZURvd25sb2FkVXJsEiguYWdlbnRmbGVldC52MS5HZXRGaWxlRG93bmxvYWRVcmxSZXF1ZXN0GikuYWdlbnRmbGVldC52MS5HZXRGaWxlRG93bmxvYWRVcmxSZXNwb25zZRJRCgpEZWxldGVGaWxlEiAuYWdlbnRmbGVldC52MS5EZWxldGVGaWxlUmVxdWVzdBohLmFnZW50ZmxlZXQudjEuRGVsZXRlRmlsZVJlc3BvbnNlEk4KCVF1ZXJ5TG9ncxIfLmFnZW50ZmxlZXQudjEuUXVlcnlMb2dzUmVxdWVzdBogLmFnZW50ZmxlZXQudjEuUXVlcnlMb2dzUmVzcG9uc2USVwoMUXVlcnlNZXRyaWNzEiIuYWdlbnRmbGVldC52MS5RdWVyeU1ldHJpY3NSZXF1ZXN0GiMuYWdlbnRmbGVldC52MS5RdWVyeU1ldHJpY3NSZXNwb25zZRJjChBHZXRGbGVldFRvcG9sb2d5EiYuYWdlbnRmbGVldC52MS5HZXRGbGVldFRvcG9sb2d5UmVxdWVzdBonLmFnZW50ZmxlZXQudjEuR2V0RmxlZXRUb3BvbG9neVJlc3BvbnNlEmwKE0xpc3RTY2hlZHVsZWRBdWRpdHMSKS5hZ2VudGZsZWV0LnYxLkxpc3RTY2hlZHVsZWRBdWRpdHNSZXF1ZXN0GiouYWdlbnRmbGVldC52MS5MaXN0U2NoZWR1bGVkQXVkaXRzUmVzcG9uc2USbwoUQ3JlYXRlU2NoZWR1bGVkQXVkaXQSKi5hZ2VudGZsZWV0LnYxLkNyZWF0ZVNjaGVkdWxlZEF1ZGl0UmVxdWVzdBorLmFnZW50ZmxlZXQudjEuQ3JlYXRlU2NoZWR1bGVkQXVkaXRSZXNwb25zZRJvChRVcGRhdGVTY2hlZHVsZWRBdWRpdBIqLmFnZW50ZmxlZXQudjEuVXBkYXRlU2NoZWR1bGVkQXVkaXRSZXF1ZXN0GisuYWdlbnRmbGVldC52MS5VcGRhdGVTY2hlZHVsZWRBdWRpdFJlc3BvbnNlEm8KFERlbGV0ZVNjaGVkdWxlZEF1ZGl0EiouYWdlbnRmbGVldC52MS5EZWxldGVTY2hlZHVsZWRBdWRpdFJlcXVlc3QaKy5hZ2VudGZsZWV0LnYxLkRlbGV0ZVNjaGVkdWxlZEF1ZGl0UmVzcG9uc2USbwoUUnVuU2NoZWR1bGVkQXVkaXROb3cSKi5hZ2VudGZsZWV0LnYxLlJ1blNjaGVkdWxlZEF1ZGl0Tm93UmVxdWVzdBorLmFnZW50ZmxlZXQudjEuUnVuU2NoZWR1bGVkQXVkaXROb3dSZXNwb25zZUJNWktnaXRodWIuY29tL01vaGFtbWFkQm5laS9hZ2VudC1mbGVldC9wcm90by9nZW4vZ28vYWdlbnRmbGVldC92MTthZ2VudGZsZWV0djFiBnByb3RvMw", [file_agentfleet_v1_transcript, file_agentfleet_v1_files, file_agentfleet_v1_core]);
+  fileDesc("Ch1hZ2VudGZsZWV0L3YxL2Rhc2hib2FyZC5wcm90bxINYWdlbnRmbGVldC52MSIzChNMaXN0U2Vzc2lvbnNSZXF1ZXN0Eg0KBWxpbWl0GAEgASgFEg0KBXF1ZXJ5GAIgASgJIkAKFExpc3RTZXNzaW9uc1Jlc3BvbnNlEigKCHNlc3Npb25zGAEgAygLMhYuYWdlbnRmbGVldC52MS5TZXNzaW9uIpQBChRDcmVhdGVTZXNzaW9uUmVxdWVzdBIMCgRyZXBvGAEgASgJEhMKC2Rlc2NyaXB0aW9uGAIgASgJEhIKBW1vZGVsGAQgASgJSACIAQESEgoFdGl0bGUYBiABKAlIAYgBAUIICgZfbW9kZWxCCAoGX3RpdGxlSgQIAxAESgQIBRAGUgtzbmlwcGV0X2lkc1IEa2luZCJAChVDcmVhdGVTZXNzaW9uUmVzcG9uc2USJwoHc2Vzc2lvbhgBIAEoCzIWLmFnZW50ZmxlZXQudjEuU2Vzc2lvbiJAChdTdHJlYW1UcmFuc2NyaXB0UmVxdWVzdBISCgpzZXNzaW9uX2lkGAEgASgJEhEKCXNpbmNlX3NlcRgCIAEoAyJIChJTdG9wU2Vzc2lvblJlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCRITCgZyZWFzb24YAiABKAlIAIgBAUIJCgdfcmVhc29uIhUKE1N0b3BTZXNzaW9uUmVzcG9uc2UiJgoQSW50ZXJydXB0UmVxdWVzdBISCgpzZXNzaW9uX2lkGAEgASgJIhMKEUludGVycnVwdFJlc3BvbnNlIiUKD01hcmtTZWVuUmVxdWVzdBISCgpzZXNzaW9uX2lkGAEgASgJIhIKEE1hcmtTZWVuUmVzcG9uc2UiKAoSV2FybVNlc3Npb25SZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkiNQoTV2FybVNlc3Npb25SZXNwb25zZRIQCghwb2RfbmFtZRgCIAEoCUoECAEQAlIGc3RhdHVzIo0BCghQcm9wb3NhbBIKCgJpZBgBIAEoCRIMCgRyZXBvGAIgASgJEg4KBnNvdXJjZRgDIAEoCRINCgV0aXRsZRgEIAEoCRIMCgRib2R5GAUgASgJEhIKCmNyZWF0ZWRfYXQYBiABKAkSFwoKc2Vzc2lvbl9pZBgHIAEoCUgAiAEBQg0KC19zZXNzaW9uX2lkIhYKFExpc3RQcm9wb3NhbHNSZXF1ZXN0IkMKFUxpc3RQcm9wb3NhbHNSZXNwb25zZRIqCglwcm9wb3NhbHMYASADKAsyFy5hZ2VudGZsZWV0LnYxLlByb3Bvc2FsIi4KF09wZW5Gcm9tUHJvcG9zYWxSZXF1ZXN0EhMKC3Byb3Bvc2FsX2lkGAEgASgJIkMKGE9wZW5Gcm9tUHJvcG9zYWxSZXNwb25zZRInCgdzZXNzaW9uGAEgASgLMhYuYWdlbnRmbGVldC52MS5TZXNzaW9uIi0KFkRpc21pc3NQcm9wb3NhbFJlcXVlc3QSEwoLcHJvcG9zYWxfaWQYASABKAkiGQoXRGlzbWlzc1Byb3Bvc2FsUmVzcG9uc2UiKwoVQXJjaGl2ZVNlc3Npb25SZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkiGAoWQXJjaGl2ZVNlc3Npb25SZXNwb25zZSJUChpSZXNwb25kVG9QZXJtaXNzaW9uUmVxdWVzdBISCgpzZXNzaW9uX2lkGAEgASgJEgsKA3NlcRgCIAEoAxIVCg1kZWNpc2lvbl9qc29uGAMgASgJIkQKDktpbGxFMmVSZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkSHgoWYWxzb190ZWFyZG93bl9zZXJ2aWNlcxgCIAEoCCI9Cg9LaWxsRTJlUmVzcG9uc2USDgoGa2lsbGVkGAEgASgIEhoKEnNlcnZpY2VzX3Rvcm5fZG93bhgCIAMoCSJOChVBbnN3ZXJRdWVzdGlvblJlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCRILCgNzZXEYAiABKAMSFAoMYW5zd2Vyc19qc29uGAMgASgJIjYKElBvc3RNZXNzYWdlUmVxdWVzdBISCgpzZXNzaW9uX2lkGAEgASgJEgwKBHRleHQYAiABKAkiKgoURGVsZXRlU2Vzc2lvblJlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCSIXChVEZWxldGVTZXNzaW9uUmVzcG9uc2UiQgoRR2V0Sm91cm5hbFJlcXVlc3QSDAoEcmVwbxgBIAEoCRIQCghzaW5jZV9pZBgCIAEoAxINCgVsaW1pdBgDIAEoBSJTChJHZXRKb3VybmFsUmVzcG9uc2USLAoHZW50cmllcxgBIAMoCzIbLmFnZW50ZmxlZXQudjEuSm91cm5hbEVudHJ5Eg8KB25leHRfaWQYAiABKAMicAoEUmVwbxIMCgRuYW1lGAEgASgJEgsKA3VybBgCIAEoCRITCgtiYXNlX2JyYW5jaBgDIAEoCRINCgVpbWFnZRgFIAEoCRIWCg5jbHVzdGVyX2FjY2VzcxgGIAEoCEoECAQQBVILZTJlX3Byb2ZpbGUiEgoQTGlzdFJlcG9zUmVxdWVzdCI3ChFMaXN0UmVwb3NSZXNwb25zZRIiCgVyZXBvcxgBIAMoCzITLmFnZW50ZmxlZXQudjEuUmVwbyJ9ChFDcmVhdGVSZXBvUmVxdWVzdBIMCgRuYW1lGAEgASgJEgsKA3VybBgCIAEoCRITCgtiYXNlX2JyYW5jaBgDIAEoCRINCgVpbWFnZRgFIAEoCRIWCg5jbHVzdGVyX2FjY2VzcxgGIAEoCEoECAQQBVILZTJlX3Byb2ZpbGUiNwoSQ3JlYXRlUmVwb1Jlc3BvbnNlEiEKBHJlcG8YASABKAsyEy5hZ2VudGZsZWV0LnYxLlJlcG8ifQoRVXBkYXRlUmVwb1JlcXVlc3QSDAoEbmFtZRgBIAEoCRILCgN1cmwYAiABKAkSEwoLYmFzZV9icmFuY2gYAyABKAkSDQoFaW1hZ2UYBSABKAkSFgoOY2x1c3Rlcl9hY2Nlc3MYBiABKAhKBAgEEAVSC2UyZV9wcm9maWxlIjcKElVwZGF0ZVJlcG9SZXNwb25zZRIhCgRyZXBvGAEgASgLMhMuYWdlbnRmbGVldC52MS5SZXBvIiEKEURlbGV0ZVJlcG9SZXF1ZXN0EgwKBG5hbWUYASABKAkiFAoSRGVsZXRlUmVwb1Jlc3BvbnNlIn0KDVByb21wdFNuaXBwZXQSCgoCaWQYASABKAkSDAoEbmFtZRgCIAEoCRIMCgR0ZXh0GAMgASgJEiYKGXN1Z2dlc3RlZF9wZXJtaXNzaW9uX21vZGUYBCABKAlIAIgBAUIcChpfc3VnZ2VzdGVkX3Blcm1pc3Npb25fbW9kZSIbChlMaXN0UHJvbXB0U25pcHBldHNSZXF1ZXN0IkwKGkxpc3RQcm9tcHRTbmlwcGV0c1Jlc3BvbnNlEi4KCHNuaXBwZXRzGAEgAygLMhwuYWdlbnRmbGVldC52MS5Qcm9tcHRTbmlwcGV0IjgKGkNyZWF0ZVByb21wdFNuaXBwZXRSZXF1ZXN0EgwKBG5hbWUYASABKAkSDAoEdGV4dBgCIAEoCSJMChtDcmVhdGVQcm9tcHRTbmlwcGV0UmVzcG9uc2USLQoHc25pcHBldBgBIAEoCzIcLmFnZW50ZmxlZXQudjEuUHJvbXB0U25pcHBldCJEChpVcGRhdGVQcm9tcHRTbmlwcGV0UmVxdWVzdBIKCgJpZBgBIAEoCRIMCgRuYW1lGAIgASgJEgwKBHRleHQYAyABKAkiTAobVXBkYXRlUHJvbXB0U25pcHBldFJlc3BvbnNlEi0KB3NuaXBwZXQYASABKAsyHC5hZ2VudGZsZWV0LnYxLlByb21wdFNuaXBwZXQiKAoaRGVsZXRlUHJvbXB0U25pcHBldFJlcXVlc3QSCgoCaWQYASABKAkiHQobRGVsZXRlUHJvbXB0U25pcHBldFJlc3BvbnNlIiMKFVJ1blNjaGVkdWxlTm93UmVxdWVzdBIKCgJpZBgBIAEoCSJDChZSdW5TY2hlZHVsZU5vd1Jlc3BvbnNlEikKCHNjaGVkdWxlGAEgASgLMhcuYWdlbnRmbGVldC52MS5TY2hlZHVsZSLLAQoIU2NoZWR1bGUSCgoCaWQYASABKAkSDAoEbmFtZRgCIAEoCRIMCgRyZXBvGAMgASgJEg4KBnByb21wdBgEIAEoCRIMCgRjcm9uGAUgASgJEhgKEGludGVydmFsX3NlY29uZHMYBiABKAUSDwoHZW5hYmxlZBgHIAEoCBITCgtuZXh0X3J1bl9hdBgIIAEoCRITCgtsYXN0X3J1bl9hdBgJIAEoCRITCgtsYXN0X3N0YXR1cxgKIAEoCRIPCgdydW5fbm93GAsgASgIIhYKFExpc3RTY2hlZHVsZXNSZXF1ZXN0IkMKFUxpc3RTY2hlZHVsZXNSZXNwb25zZRIqCglzY2hlZHVsZXMYASADKAsyFy5hZ2VudGZsZWV0LnYxLlNjaGVkdWxlInsKFUNyZWF0ZVNjaGVkdWxlUmVxdWVzdBIMCgRuYW1lGAEgASgJEgwKBHJlcG8YAiABKAkSDgoGcHJvbXB0GAMgASgJEgwKBGNyb24YBCABKAkSGAoQaW50ZXJ2YWxfc2Vjb25kcxgFIAEoBRIOCgZydW5fYXQYBiABKAkiQwoWQ3JlYXRlU2NoZWR1bGVSZXNwb25zZRIpCghzY2hlZHVsZRgBIAEoCzIXLmFnZW50ZmxlZXQudjEuU2NoZWR1bGUimAEKFVVwZGF0ZVNjaGVkdWxlUmVxdWVzdBIKCgJpZBgBIAEoCRIMCgRuYW1lGAIgASgJEgwKBHJlcG8YAyABKAkSDgoGcHJvbXB0GAQgASgJEgwKBGNyb24YBSABKAkSGAoQaW50ZXJ2YWxfc2Vjb25kcxgGIAEoBRIPCgdlbmFibGVkGAcgASgIEg4KBnJ1bl9hdBgIIAEoCSJDChZVcGRhdGVTY2hlZHVsZVJlc3BvbnNlEikKCHNjaGVkdWxlGAEgASgLMhcuYWdlbnRmbGVldC52MS5TY2hlZHVsZSIjChVEZWxldGVTY2hlZHVsZVJlcXVlc3QSCgoCaWQYASABKAkiGAoWRGVsZXRlU2NoZWR1bGVSZXNwb25zZSJYChNRdWVyeU1ldHJpY3NSZXF1ZXN0Eg0KBXF1ZXJ5GAEgASgJEhIKCnN0YXJ0X3RpbWUYAiABKAkSEAoIZW5kX3RpbWUYAyABKAkSDAoEc3RlcBgEIAEoCSIrChRRdWVyeU1ldHJpY3NSZXNwb25zZRITCgtyZXN1bHRfanNvbhgBIAEoCSIZChdHZXRGbGVldFRvcG9sb2d5UmVxdWVzdCLdAQoIQ2VsbE5vZGUSCgoCaWQYASABKAkSDAoEdHlwZRgCIAEoCRIOCgZzdGF0dXMYAyABKAkSNQoHbWV0cmljcxgEIAMoCzIkLmFnZW50ZmxlZXQudjEuQ2VsbE5vZGUuTWV0cmljc0VudHJ5EhIKCnNlc3Npb25faWQYBSABKAkSDAoEcmVwbxgGIAEoCRINCgVsYWJlbBgHIAEoCRIPCgd2ZXJzaW9uGAggASgJGi4KDE1ldHJpY3NFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAE6AjgBIjYKDFRvcG9sb2d5RWRnZRIMCgRmcm9tGAEgASgJEgoKAnRvGAIgASgJEgwKBHJhdGUYAyABKAEisgEKGEdldEZsZWV0VG9wb2xvZ3lSZXNwb25zZRImCgVub2RlcxgBIAMoCzIXLmFnZW50ZmxlZXQudjEuQ2VsbE5vZGUSKgoFZWRnZXMYAiADKAsyGy5hZ2VudGZsZWV0LnYxLlRvcG9sb2d5RWRnZRIVCg1tZXRyaWNzX2Vycm9yGAMgASgJEhQKDHdvcmtlcl9pbWFnZRgEIAEoCRIVCg1zaWRlY2FyX2ltYWdlGAUgASgJMqIcChBEYXNoYm9hcmRTZXJ2aWNlElcKDExpc3RTZXNzaW9ucxIiLmFnZW50ZmxlZXQudjEuTGlzdFNlc3Npb25zUmVxdWVzdBojLmFnZW50ZmxlZXQudjEuTGlzdFNlc3Npb25zUmVzcG9uc2USUQoKR2V0U2Vzc2lvbhIgLmFnZW50ZmxlZXQudjEuR2V0U2Vzc2lvblJlcXVlc3QaIS5hZ2VudGZsZWV0LnYxLkdldFNlc3Npb25SZXNwb25zZRJaCg1DcmVhdGVTZXNzaW9uEiMuYWdlbnRmbGVldC52MS5DcmVhdGVTZXNzaW9uUmVxdWVzdBokLmFnZW50ZmxlZXQudjEuQ3JlYXRlU2Vzc2lvblJlc3BvbnNlEmYKDUdldFRyYW5zY3JpcHQSKS5hZ2VudGZsZWV0LnYxLlJlYWRUcmFuc2NyaXB0U2luY2VSZXF1ZXN0GiouYWdlbnRmbGVldC52MS5SZWFkVHJhbnNjcmlwdFNpbmNlUmVzcG9uc2USXAoQU3RyZWFtVHJhbnNjcmlwdBImLmFnZW50ZmxlZXQudjEuU3RyZWFtVHJhbnNjcmlwdFJlcXVlc3QaHi5hZ2VudGZsZWV0LnYxLlRyYW5zY3JpcHRFbnRyeTABElQKC1N0b3BTZXNzaW9uEiEuYWdlbnRmbGVldC52MS5TdG9wU2Vzc2lvblJlcXVlc3QaIi5hZ2VudGZsZWV0LnYxLlN0b3BTZXNzaW9uUmVzcG9uc2USTgoJSW50ZXJydXB0Eh8uYWdlbnRmbGVldC52MS5JbnRlcnJ1cHRSZXF1ZXN0GiAuYWdlbnRmbGVldC52MS5JbnRlcnJ1cHRSZXNwb25zZRJmChFTZXRQZXJtaXNzaW9uTW9kZRInLmFnZW50ZmxlZXQudjEuU2V0UGVybWlzc2lvbk1vZGVSZXF1ZXN0GiguYWdlbnRmbGVldC52MS5TZXRQZXJtaXNzaW9uTW9kZVJlc3BvbnNlElQKC1dhcm1TZXNzaW9uEiEuYWdlbnRmbGVldC52MS5XYXJtU2Vzc2lvblJlcXVlc3QaIi5hZ2VudGZsZWV0LnYxLldhcm1TZXNzaW9uUmVzcG9uc2USSwoITWFya1NlZW4SHi5hZ2VudGZsZWV0LnYxLk1hcmtTZWVuUmVxdWVzdBofLmFnZW50ZmxlZXQudjEuTWFya1NlZW5SZXNwb25zZRJdCg5BcmNoaXZlU2Vzc2lvbhIkLmFnZW50ZmxlZXQudjEuQXJjaGl2ZVNlc3Npb25SZXF1ZXN0GiUuYWdlbnRmbGVldC52MS5BcmNoaXZlU2Vzc2lvblJlc3BvbnNlEloKDUxpc3RQcm9wb3NhbHMSIy5hZ2VudGZsZWV0LnYxLkxpc3RQcm9wb3NhbHNSZXF1ZXN0GiQuYWdlbnRmbGVldC52MS5MaXN0UHJvcG9zYWxzUmVzcG9uc2USYwoQT3BlbkZyb21Qcm9wb3NhbBImLmFnZW50ZmxlZXQudjEuT3BlbkZyb21Qcm9wb3NhbFJlcXVlc3QaJy5hZ2VudGZsZWV0LnYxLk9wZW5Gcm9tUHJvcG9zYWxSZXNwb25zZRJgCg9EaXNtaXNzUHJvcG9zYWwSJS5hZ2VudGZsZWV0LnYxLkRpc21pc3NQcm9wb3NhbFJlcXVlc3QaJi5hZ2VudGZsZWV0LnYxLkRpc21pc3NQcm9wb3NhbFJlc3BvbnNlElUKDkFuc3dlclF1ZXN0aW9uEiQuYWdlbnRmbGVldC52MS5BbnN3ZXJRdWVzdGlvblJlcXVlc3QaHS5hZ2VudGZsZWV0LnYxLkFwcGVuZFJlc3BvbnNlEl8KE1Jlc3BvbmRUb1Blcm1pc3Npb24SKS5hZ2VudGZsZWV0LnYxLlJlc3BvbmRUb1Blcm1pc3Npb25SZXF1ZXN0Gh0uYWdlbnRmbGVldC52MS5BcHBlbmRSZXNwb25zZRJPCgtQb3N0TWVzc2FnZRIhLmFnZW50ZmxlZXQudjEuUG9zdE1lc3NhZ2VSZXF1ZXN0Gh0uYWdlbnRmbGVldC52MS5BcHBlbmRSZXNwb25zZRJaCg1EZWxldGVTZXNzaW9uEiMuYWdlbnRmbGVldC52MS5EZWxldGVTZXNzaW9uUmVxdWVzdBokLmFnZW50ZmxlZXQudjEuRGVsZXRlU2Vzc2lvblJlc3BvbnNlElEKCkdldEpvdXJuYWwSIC5hZ2VudGZsZWV0LnYxLkdldEpvdXJuYWxSZXF1ZXN0GiEuYWdlbnRmbGVldC52MS5HZXRKb3VybmFsUmVzcG9uc2USTgoJTGlzdFJlcG9zEh8uYWdlbnRmbGVldC52MS5MaXN0UmVwb3NSZXF1ZXN0GiAuYWdlbnRmbGVldC52MS5MaXN0UmVwb3NSZXNwb25zZRJRCgpDcmVhdGVSZXBvEiAuYWdlbnRmbGVldC52MS5DcmVhdGVSZXBvUmVxdWVzdBohLmFnZW50ZmxlZXQudjEuQ3JlYXRlUmVwb1Jlc3BvbnNlElEKClVwZGF0ZVJlcG8SIC5hZ2VudGZsZWV0LnYxLlVwZGF0ZVJlcG9SZXF1ZXN0GiEuYWdlbnRmbGVldC52MS5VcGRhdGVSZXBvUmVzcG9uc2USUQoKRGVsZXRlUmVwbxIgLmFnZW50ZmxlZXQudjEuRGVsZXRlUmVwb1JlcXVlc3QaIS5hZ2VudGZsZWV0LnYxLkRlbGV0ZVJlcG9SZXNwb25zZRJpChJMaXN0UHJvbXB0U25pcHBldHMSKC5hZ2VudGZsZWV0LnYxLkxpc3RQcm9tcHRTbmlwcGV0c1JlcXVlc3QaKS5hZ2VudGZsZWV0LnYxLkxpc3RQcm9tcHRTbmlwcGV0c1Jlc3BvbnNlEmwKE0NyZWF0ZVByb21wdFNuaXBwZXQSKS5hZ2VudGZsZWV0LnYxLkNyZWF0ZVByb21wdFNuaXBwZXRSZXF1ZXN0GiouYWdlbnRmbGVldC52MS5DcmVhdGVQcm9tcHRTbmlwcGV0UmVzcG9uc2USbAoTVXBkYXRlUHJvbXB0U25pcHBldBIpLmFnZW50ZmxlZXQudjEuVXBkYXRlUHJvbXB0U25pcHBldFJlcXVlc3QaKi5hZ2VudGZsZWV0LnYxLlVwZGF0ZVByb21wdFNuaXBwZXRSZXNwb25zZRJsChNEZWxldGVQcm9tcHRTbmlwcGV0EikuYWdlbnRmbGVldC52MS5EZWxldGVQcm9tcHRTbmlwcGV0UmVxdWVzdBoqLmFnZW50ZmxlZXQudjEuRGVsZXRlUHJvbXB0U25pcHBldFJlc3BvbnNlEk4KCUxpc3RGaWxlcxIfLmFnZW50ZmxlZXQudjEuTGlzdEZpbGVzUmVxdWVzdBogLmFnZW50ZmxlZXQudjEuTGlzdEZpbGVzUmVzcG9uc2USYwoQR2V0RmlsZVVwbG9hZFVybBImLmFnZW50ZmxlZXQudjEuR2V0RmlsZVVwbG9hZFVybFJlcXVlc3QaJy5hZ2VudGZsZWV0LnYxLkdldEZpbGVVcGxvYWRVcmxSZXNwb25zZRJpChJHZXRGaWxlRG93bmxvYWRVcmwSKC5hZ2VudGZsZWV0LnYxLkdldEZpbGVEb3dubG9hZFVybFJlcXVlc3QaKS5hZ2VudGZsZWV0LnYxLkdldEZpbGVEb3dubG9hZFVybFJlc3BvbnNlElEKCkRlbGV0ZUZpbGUSIC5hZ2VudGZsZWV0LnYxLkRlbGV0ZUZpbGVSZXF1ZXN0GiEuYWdlbnRmbGVldC52MS5EZWxldGVGaWxlUmVzcG9uc2USTgoJUXVlcnlMb2dzEh8uYWdlbnRmbGVldC52MS5RdWVyeUxvZ3NSZXF1ZXN0GiAuYWdlbnRmbGVldC52MS5RdWVyeUxvZ3NSZXNwb25zZRJXCgxRdWVyeU1ldHJpY3MSIi5hZ2VudGZsZWV0LnYxLlF1ZXJ5TWV0cmljc1JlcXVlc3QaIy5hZ2VudGZsZWV0LnYxLlF1ZXJ5TWV0cmljc1Jlc3BvbnNlEmMKEEdldEZsZWV0VG9wb2xvZ3kSJi5hZ2VudGZsZWV0LnYxLkdldEZsZWV0VG9wb2xvZ3lSZXF1ZXN0GicuYWdlbnRmbGVldC52MS5HZXRGbGVldFRvcG9sb2d5UmVzcG9uc2USWgoNTGlzdFNjaGVkdWxlcxIjLmFnZW50ZmxlZXQudjEuTGlzdFNjaGVkdWxlc1JlcXVlc3QaJC5hZ2VudGZsZWV0LnYxLkxpc3RTY2hlZHVsZXNSZXNwb25zZRJdCg5DcmVhdGVTY2hlZHVsZRIkLmFnZW50ZmxlZXQudjEuQ3JlYXRlU2NoZWR1bGVSZXF1ZXN0GiUuYWdlbnRmbGVldC52MS5DcmVhdGVTY2hlZHVsZVJlc3BvbnNlEl0KDlVwZGF0ZVNjaGVkdWxlEiQuYWdlbnRmbGVldC52MS5VcGRhdGVTY2hlZHVsZVJlcXVlc3QaJS5hZ2VudGZsZWV0LnYxLlVwZGF0ZVNjaGVkdWxlUmVzcG9uc2USXQoORGVsZXRlU2NoZWR1bGUSJC5hZ2VudGZsZWV0LnYxLkRlbGV0ZVNjaGVkdWxlUmVxdWVzdBolLmFnZW50ZmxlZXQudjEuRGVsZXRlU2NoZWR1bGVSZXNwb25zZRJdCg5SdW5TY2hlZHVsZU5vdxIkLmFnZW50ZmxlZXQudjEuUnVuU2NoZWR1bGVOb3dSZXF1ZXN0GiUuYWdlbnRmbGVldC52MS5SdW5TY2hlZHVsZU5vd1Jlc3BvbnNlQk1aS2dpdGh1Yi5jb20vTW9oYW1tYWRCbmVpL2FnZW50LWZsZWV0L3Byb3RvL2dlbi9nby9hZ2VudGZsZWV0L3YxO2FnZW50ZmxlZXR2MWIGcHJvdG8z", [file_agentfleet_v1_transcript, file_agentfleet_v1_files, file_agentfleet_v1_core]);
 
 /**
  * @generated from message agentfleet.v1.ListSessionsRequest
@@ -1180,15 +1180,18 @@ export const DeletePromptSnippetResponseSchema: GenMessage<DeletePromptSnippetRe
   messageDesc(file_agentfleet_v1_dashboard, 48);
 
 /**
- * Brings an audit's next run forward to now rather than adding a second
- * dispatch path: it only moves next_run_at and nudges the existing loop, so
- * the run itself goes through exactly the same ClaimDue → CreateDeduped path
- * a scheduled one does (including landing as `proposed`, and including the
- * dedup that skips it while a previous run is still open).
+ * Fires a schedule out of band rather than adding a second dispatch path: it
+ * raises the run_now flag and nudges the existing loop, so the run itself goes
+ * through exactly the same claim → file-proposal path a scheduled one does
+ * (including the dedup that skips it while a previous run is still open).
  *
- * @generated from message agentfleet.v1.RunScheduledAuditNowRequest
+ * A flag, not `next_run_at = now()`: moving the cursor would swallow the next
+ * cron occurrence, so pressing this on a Sunday would cost the schedule its
+ * Monday run.
+ *
+ * @generated from message agentfleet.v1.RunScheduleNowRequest
  */
-export type RunScheduledAuditNowRequest = Message<"agentfleet.v1.RunScheduledAuditNowRequest"> & {
+export type RunScheduleNowRequest = Message<"agentfleet.v1.RunScheduleNowRequest"> & {
   /**
    * @generated from field: string id = 1;
    */
@@ -1196,33 +1199,41 @@ export type RunScheduledAuditNowRequest = Message<"agentfleet.v1.RunScheduledAud
 };
 
 /**
- * Describes the message agentfleet.v1.RunScheduledAuditNowRequest.
- * Use `create(RunScheduledAuditNowRequestSchema)` to create a new message.
+ * Describes the message agentfleet.v1.RunScheduleNowRequest.
+ * Use `create(RunScheduleNowRequestSchema)` to create a new message.
  */
-export const RunScheduledAuditNowRequestSchema: GenMessage<RunScheduledAuditNowRequest> = /*@__PURE__*/
+export const RunScheduleNowRequestSchema: GenMessage<RunScheduleNowRequest> = /*@__PURE__*/
   messageDesc(file_agentfleet_v1_dashboard, 49);
 
 /**
- * @generated from message agentfleet.v1.RunScheduledAuditNowResponse
+ * @generated from message agentfleet.v1.RunScheduleNowResponse
  */
-export type RunScheduledAuditNowResponse = Message<"agentfleet.v1.RunScheduledAuditNowResponse"> & {
+export type RunScheduleNowResponse = Message<"agentfleet.v1.RunScheduleNowResponse"> & {
   /**
-   * @generated from field: agentfleet.v1.ScheduledAudit audit = 1;
+   * @generated from field: agentfleet.v1.Schedule schedule = 1;
    */
-  audit?: ScheduledAudit | undefined;
+  schedule?: Schedule | undefined;
 };
 
 /**
- * Describes the message agentfleet.v1.RunScheduledAuditNowResponse.
- * Use `create(RunScheduledAuditNowResponseSchema)` to create a new message.
+ * Describes the message agentfleet.v1.RunScheduleNowResponse.
+ * Use `create(RunScheduleNowResponseSchema)` to create a new message.
  */
-export const RunScheduledAuditNowResponseSchema: GenMessage<RunScheduledAuditNowResponse> = /*@__PURE__*/
+export const RunScheduleNowResponseSchema: GenMessage<RunScheduleNowResponse> = /*@__PURE__*/
   messageDesc(file_agentfleet_v1_dashboard, 50);
 
 /**
- * @generated from message agentfleet.v1.ScheduledAudit
+ * Exactly one of cron / interval_seconds is set, or neither — in which case
+ * the schedule is one-shot and fires once at run_at.
+ *
+ * Plain scalars rather than `optional`: proto3 optional moves a field into a
+ * synthetic oneof, which is its own wire break, and both fields already have
+ * an unambiguous unset value ("" and 0 — the column CHECK forbids an interval
+ * below 60).
+ *
+ * @generated from message agentfleet.v1.Schedule
  */
-export type ScheduledAudit = Message<"agentfleet.v1.ScheduledAudit"> & {
+export type Schedule = Message<"agentfleet.v1.Schedule"> & {
   /**
    * @generated from field: string id = 1;
    */
@@ -1234,121 +1245,164 @@ export type ScheduledAudit = Message<"agentfleet.v1.ScheduledAudit"> & {
   name: string;
 
   /**
-   * @generated from field: string prompt = 3;
+   * Which repo the proposal (and so the session a human opens from it) targets.
+   * This was a Go constant until the schedules table existed.
+   *
+   * @generated from field: string repo = 3;
+   */
+  repo: string;
+
+  /**
+   * @generated from field: string prompt = 4;
    */
   prompt: string;
 
   /**
-   * @generated from field: int32 interval_seconds = 4;
+   * Standard 5-field cron, optionally prefixed `CRON_TZ=Europe/Paris ` — which
+   * is why there is no separate timezone field.
+   *
+   * @generated from field: string cron = 5;
+   */
+  cron: string;
+
+  /**
+   * @generated from field: int32 interval_seconds = 6;
    */
   intervalSeconds: number;
 
   /**
-   * @generated from field: bool enabled = 5;
+   * @generated from field: bool enabled = 7;
    */
   enabled: boolean;
 
   /**
-   * @generated from field: string next_run_at = 6;
+   * @generated from field: string next_run_at = 8;
    */
   nextRunAt: string;
 
   /**
-   * @generated from field: string last_run_at = 7;
+   * @generated from field: string last_run_at = 9;
    */
   lastRunAt: string;
 
   /**
-   * @generated from field: string last_status = 8;
+   * @generated from field: string last_status = 10;
    */
   lastStatus: string;
+
+  /**
+   * A human's pending "run now", cleared when the loop picks it up.
+   *
+   * @generated from field: bool run_now = 11;
+   */
+  runNow: boolean;
 };
 
 /**
- * Describes the message agentfleet.v1.ScheduledAudit.
- * Use `create(ScheduledAuditSchema)` to create a new message.
+ * Describes the message agentfleet.v1.Schedule.
+ * Use `create(ScheduleSchema)` to create a new message.
  */
-export const ScheduledAuditSchema: GenMessage<ScheduledAudit> = /*@__PURE__*/
+export const ScheduleSchema: GenMessage<Schedule> = /*@__PURE__*/
   messageDesc(file_agentfleet_v1_dashboard, 51);
 
 /**
- * @generated from message agentfleet.v1.ListScheduledAuditsRequest
+ * @generated from message agentfleet.v1.ListSchedulesRequest
  */
-export type ListScheduledAuditsRequest = Message<"agentfleet.v1.ListScheduledAuditsRequest"> & {
+export type ListSchedulesRequest = Message<"agentfleet.v1.ListSchedulesRequest"> & {
 };
 
 /**
- * Describes the message agentfleet.v1.ListScheduledAuditsRequest.
- * Use `create(ListScheduledAuditsRequestSchema)` to create a new message.
+ * Describes the message agentfleet.v1.ListSchedulesRequest.
+ * Use `create(ListSchedulesRequestSchema)` to create a new message.
  */
-export const ListScheduledAuditsRequestSchema: GenMessage<ListScheduledAuditsRequest> = /*@__PURE__*/
+export const ListSchedulesRequestSchema: GenMessage<ListSchedulesRequest> = /*@__PURE__*/
   messageDesc(file_agentfleet_v1_dashboard, 52);
 
 /**
- * @generated from message agentfleet.v1.ListScheduledAuditsResponse
+ * @generated from message agentfleet.v1.ListSchedulesResponse
  */
-export type ListScheduledAuditsResponse = Message<"agentfleet.v1.ListScheduledAuditsResponse"> & {
+export type ListSchedulesResponse = Message<"agentfleet.v1.ListSchedulesResponse"> & {
   /**
-   * @generated from field: repeated agentfleet.v1.ScheduledAudit audits = 1;
+   * @generated from field: repeated agentfleet.v1.Schedule schedules = 1;
    */
-  audits: ScheduledAudit[];
+  schedules: Schedule[];
 };
 
 /**
- * Describes the message agentfleet.v1.ListScheduledAuditsResponse.
- * Use `create(ListScheduledAuditsResponseSchema)` to create a new message.
+ * Describes the message agentfleet.v1.ListSchedulesResponse.
+ * Use `create(ListSchedulesResponseSchema)` to create a new message.
  */
-export const ListScheduledAuditsResponseSchema: GenMessage<ListScheduledAuditsResponse> = /*@__PURE__*/
+export const ListSchedulesResponseSchema: GenMessage<ListSchedulesResponse> = /*@__PURE__*/
   messageDesc(file_agentfleet_v1_dashboard, 53);
 
 /**
- * @generated from message agentfleet.v1.CreateScheduledAuditRequest
+ * @generated from message agentfleet.v1.CreateScheduleRequest
  */
-export type CreateScheduledAuditRequest = Message<"agentfleet.v1.CreateScheduledAuditRequest"> & {
+export type CreateScheduleRequest = Message<"agentfleet.v1.CreateScheduleRequest"> & {
   /**
    * @generated from field: string name = 1;
    */
   name: string;
 
   /**
-   * @generated from field: string prompt = 2;
+   * @generated from field: string repo = 2;
+   */
+  repo: string;
+
+  /**
+   * @generated from field: string prompt = 3;
    */
   prompt: string;
 
   /**
-   * @generated from field: int32 interval_seconds = 3;
+   * @generated from field: string cron = 4;
+   */
+  cron: string;
+
+  /**
+   * @generated from field: int32 interval_seconds = 5;
    */
   intervalSeconds: number;
+
+  /**
+   * When both cron and interval_seconds are unset: the single moment this
+   * schedule fires, RFC3339. Without it on the wire a one-shot would inherit
+   * the column default and fire on the next tick regardless of what the human
+   * typed.
+   *
+   * @generated from field: string run_at = 6;
+   */
+  runAt: string;
 };
 
 /**
- * Describes the message agentfleet.v1.CreateScheduledAuditRequest.
- * Use `create(CreateScheduledAuditRequestSchema)` to create a new message.
+ * Describes the message agentfleet.v1.CreateScheduleRequest.
+ * Use `create(CreateScheduleRequestSchema)` to create a new message.
  */
-export const CreateScheduledAuditRequestSchema: GenMessage<CreateScheduledAuditRequest> = /*@__PURE__*/
+export const CreateScheduleRequestSchema: GenMessage<CreateScheduleRequest> = /*@__PURE__*/
   messageDesc(file_agentfleet_v1_dashboard, 54);
 
 /**
- * @generated from message agentfleet.v1.CreateScheduledAuditResponse
+ * @generated from message agentfleet.v1.CreateScheduleResponse
  */
-export type CreateScheduledAuditResponse = Message<"agentfleet.v1.CreateScheduledAuditResponse"> & {
+export type CreateScheduleResponse = Message<"agentfleet.v1.CreateScheduleResponse"> & {
   /**
-   * @generated from field: agentfleet.v1.ScheduledAudit audit = 1;
+   * @generated from field: agentfleet.v1.Schedule schedule = 1;
    */
-  audit?: ScheduledAudit | undefined;
+  schedule?: Schedule | undefined;
 };
 
 /**
- * Describes the message agentfleet.v1.CreateScheduledAuditResponse.
- * Use `create(CreateScheduledAuditResponseSchema)` to create a new message.
+ * Describes the message agentfleet.v1.CreateScheduleResponse.
+ * Use `create(CreateScheduleResponseSchema)` to create a new message.
  */
-export const CreateScheduledAuditResponseSchema: GenMessage<CreateScheduledAuditResponse> = /*@__PURE__*/
+export const CreateScheduleResponseSchema: GenMessage<CreateScheduleResponse> = /*@__PURE__*/
   messageDesc(file_agentfleet_v1_dashboard, 55);
 
 /**
- * @generated from message agentfleet.v1.UpdateScheduledAuditRequest
+ * @generated from message agentfleet.v1.UpdateScheduleRequest
  */
-export type UpdateScheduledAuditRequest = Message<"agentfleet.v1.UpdateScheduledAuditRequest"> & {
+export type UpdateScheduleRequest = Message<"agentfleet.v1.UpdateScheduleRequest"> & {
   /**
    * @generated from field: string id = 1;
    */
@@ -1360,49 +1414,64 @@ export type UpdateScheduledAuditRequest = Message<"agentfleet.v1.UpdateScheduled
   name: string;
 
   /**
-   * @generated from field: string prompt = 3;
+   * @generated from field: string repo = 3;
+   */
+  repo: string;
+
+  /**
+   * @generated from field: string prompt = 4;
    */
   prompt: string;
 
   /**
-   * @generated from field: int32 interval_seconds = 4;
+   * @generated from field: string cron = 5;
+   */
+  cron: string;
+
+  /**
+   * @generated from field: int32 interval_seconds = 6;
    */
   intervalSeconds: number;
 
   /**
-   * @generated from field: bool enabled = 5;
+   * @generated from field: bool enabled = 7;
    */
   enabled: boolean;
+
+  /**
+   * @generated from field: string run_at = 8;
+   */
+  runAt: string;
 };
 
 /**
- * Describes the message agentfleet.v1.UpdateScheduledAuditRequest.
- * Use `create(UpdateScheduledAuditRequestSchema)` to create a new message.
+ * Describes the message agentfleet.v1.UpdateScheduleRequest.
+ * Use `create(UpdateScheduleRequestSchema)` to create a new message.
  */
-export const UpdateScheduledAuditRequestSchema: GenMessage<UpdateScheduledAuditRequest> = /*@__PURE__*/
+export const UpdateScheduleRequestSchema: GenMessage<UpdateScheduleRequest> = /*@__PURE__*/
   messageDesc(file_agentfleet_v1_dashboard, 56);
 
 /**
- * @generated from message agentfleet.v1.UpdateScheduledAuditResponse
+ * @generated from message agentfleet.v1.UpdateScheduleResponse
  */
-export type UpdateScheduledAuditResponse = Message<"agentfleet.v1.UpdateScheduledAuditResponse"> & {
+export type UpdateScheduleResponse = Message<"agentfleet.v1.UpdateScheduleResponse"> & {
   /**
-   * @generated from field: agentfleet.v1.ScheduledAudit audit = 1;
+   * @generated from field: agentfleet.v1.Schedule schedule = 1;
    */
-  audit?: ScheduledAudit | undefined;
+  schedule?: Schedule | undefined;
 };
 
 /**
- * Describes the message agentfleet.v1.UpdateScheduledAuditResponse.
- * Use `create(UpdateScheduledAuditResponseSchema)` to create a new message.
+ * Describes the message agentfleet.v1.UpdateScheduleResponse.
+ * Use `create(UpdateScheduleResponseSchema)` to create a new message.
  */
-export const UpdateScheduledAuditResponseSchema: GenMessage<UpdateScheduledAuditResponse> = /*@__PURE__*/
+export const UpdateScheduleResponseSchema: GenMessage<UpdateScheduleResponse> = /*@__PURE__*/
   messageDesc(file_agentfleet_v1_dashboard, 57);
 
 /**
- * @generated from message agentfleet.v1.DeleteScheduledAuditRequest
+ * @generated from message agentfleet.v1.DeleteScheduleRequest
  */
-export type DeleteScheduledAuditRequest = Message<"agentfleet.v1.DeleteScheduledAuditRequest"> & {
+export type DeleteScheduleRequest = Message<"agentfleet.v1.DeleteScheduleRequest"> & {
   /**
    * @generated from field: string id = 1;
    */
@@ -1410,23 +1479,23 @@ export type DeleteScheduledAuditRequest = Message<"agentfleet.v1.DeleteScheduled
 };
 
 /**
- * Describes the message agentfleet.v1.DeleteScheduledAuditRequest.
- * Use `create(DeleteScheduledAuditRequestSchema)` to create a new message.
+ * Describes the message agentfleet.v1.DeleteScheduleRequest.
+ * Use `create(DeleteScheduleRequestSchema)` to create a new message.
  */
-export const DeleteScheduledAuditRequestSchema: GenMessage<DeleteScheduledAuditRequest> = /*@__PURE__*/
+export const DeleteScheduleRequestSchema: GenMessage<DeleteScheduleRequest> = /*@__PURE__*/
   messageDesc(file_agentfleet_v1_dashboard, 58);
 
 /**
- * @generated from message agentfleet.v1.DeleteScheduledAuditResponse
+ * @generated from message agentfleet.v1.DeleteScheduleResponse
  */
-export type DeleteScheduledAuditResponse = Message<"agentfleet.v1.DeleteScheduledAuditResponse"> & {
+export type DeleteScheduleResponse = Message<"agentfleet.v1.DeleteScheduleResponse"> & {
 };
 
 /**
- * Describes the message agentfleet.v1.DeleteScheduledAuditResponse.
- * Use `create(DeleteScheduledAuditResponseSchema)` to create a new message.
+ * Describes the message agentfleet.v1.DeleteScheduleResponse.
+ * Use `create(DeleteScheduleResponseSchema)` to create a new message.
  */
-export const DeleteScheduledAuditResponseSchema: GenMessage<DeleteScheduledAuditResponse> = /*@__PURE__*/
+export const DeleteScheduleResponseSchema: GenMessage<DeleteScheduleResponse> = /*@__PURE__*/
   messageDesc(file_agentfleet_v1_dashboard, 59);
 
 /**
@@ -1988,46 +2057,47 @@ export const DashboardService: GenService<{
   },
   /**
    * Dashboard-editable schedules (docs/adr/0035) — same "edit it in the
-   * UI, no redeploy" shape ListRepos/CreateRepo established.
+   * UI, no redeploy" shape ListRepos/CreateRepo established. Renamed from
+   * *ScheduledAudit* when the repo stopped being a hardcoded constant.
    *
-   * @generated from rpc agentfleet.v1.DashboardService.ListScheduledAudits
+   * @generated from rpc agentfleet.v1.DashboardService.ListSchedules
    */
-  listScheduledAudits: {
+  listSchedules: {
     methodKind: "unary";
-    input: typeof ListScheduledAuditsRequestSchema;
-    output: typeof ListScheduledAuditsResponseSchema;
+    input: typeof ListSchedulesRequestSchema;
+    output: typeof ListSchedulesResponseSchema;
   },
   /**
-   * @generated from rpc agentfleet.v1.DashboardService.CreateScheduledAudit
+   * @generated from rpc agentfleet.v1.DashboardService.CreateSchedule
    */
-  createScheduledAudit: {
+  createSchedule: {
     methodKind: "unary";
-    input: typeof CreateScheduledAuditRequestSchema;
-    output: typeof CreateScheduledAuditResponseSchema;
+    input: typeof CreateScheduleRequestSchema;
+    output: typeof CreateScheduleResponseSchema;
   },
   /**
-   * @generated from rpc agentfleet.v1.DashboardService.UpdateScheduledAudit
+   * @generated from rpc agentfleet.v1.DashboardService.UpdateSchedule
    */
-  updateScheduledAudit: {
+  updateSchedule: {
     methodKind: "unary";
-    input: typeof UpdateScheduledAuditRequestSchema;
-    output: typeof UpdateScheduledAuditResponseSchema;
+    input: typeof UpdateScheduleRequestSchema;
+    output: typeof UpdateScheduleResponseSchema;
   },
   /**
-   * @generated from rpc agentfleet.v1.DashboardService.DeleteScheduledAudit
+   * @generated from rpc agentfleet.v1.DashboardService.DeleteSchedule
    */
-  deleteScheduledAudit: {
+  deleteSchedule: {
     methodKind: "unary";
-    input: typeof DeleteScheduledAuditRequestSchema;
-    output: typeof DeleteScheduledAuditResponseSchema;
+    input: typeof DeleteScheduleRequestSchema;
+    output: typeof DeleteScheduleResponseSchema;
   },
   /**
-   * @generated from rpc agentfleet.v1.DashboardService.RunScheduledAuditNow
+   * @generated from rpc agentfleet.v1.DashboardService.RunScheduleNow
    */
-  runScheduledAuditNow: {
+  runScheduleNow: {
     methodKind: "unary";
-    input: typeof RunScheduledAuditNowRequestSchema;
-    output: typeof RunScheduledAuditNowResponseSchema;
+    input: typeof RunScheduleNowRequestSchema;
+    output: typeof RunScheduleNowResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_agentfleet_v1_dashboard, 0);

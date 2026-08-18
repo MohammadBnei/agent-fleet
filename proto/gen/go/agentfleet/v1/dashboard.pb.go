@@ -2553,32 +2553,35 @@ func (*DeletePromptSnippetResponse) Descriptor() ([]byte, []int) {
 	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{48}
 }
 
-// Brings an audit's next run forward to now rather than adding a second
-// dispatch path: it only moves next_run_at and nudges the existing loop, so
-// the run itself goes through exactly the same ClaimDue → CreateDeduped path
-// a scheduled one does (including landing as `proposed`, and including the
-// dedup that skips it while a previous run is still open).
-type RunScheduledAuditNowRequest struct {
+// Fires a schedule out of band rather than adding a second dispatch path: it
+// raises the run_now flag and nudges the existing loop, so the run itself goes
+// through exactly the same claim → file-proposal path a scheduled one does
+// (including the dedup that skips it while a previous run is still open).
+//
+// A flag, not `next_run_at = now()`: moving the cursor would swallow the next
+// cron occurrence, so pressing this on a Sunday would cost the schedule its
+// Monday run.
+type RunScheduleNowRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *RunScheduledAuditNowRequest) Reset() {
-	*x = RunScheduledAuditNowRequest{}
+func (x *RunScheduleNowRequest) Reset() {
+	*x = RunScheduleNowRequest{}
 	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[49]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *RunScheduledAuditNowRequest) String() string {
+func (x *RunScheduleNowRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*RunScheduledAuditNowRequest) ProtoMessage() {}
+func (*RunScheduleNowRequest) ProtoMessage() {}
 
-func (x *RunScheduledAuditNowRequest) ProtoReflect() protoreflect.Message {
+func (x *RunScheduleNowRequest) ProtoReflect() protoreflect.Message {
 	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[49]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -2590,39 +2593,39 @@ func (x *RunScheduledAuditNowRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use RunScheduledAuditNowRequest.ProtoReflect.Descriptor instead.
-func (*RunScheduledAuditNowRequest) Descriptor() ([]byte, []int) {
+// Deprecated: Use RunScheduleNowRequest.ProtoReflect.Descriptor instead.
+func (*RunScheduleNowRequest) Descriptor() ([]byte, []int) {
 	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{49}
 }
 
-func (x *RunScheduledAuditNowRequest) GetId() string {
+func (x *RunScheduleNowRequest) GetId() string {
 	if x != nil {
 		return x.Id
 	}
 	return ""
 }
 
-type RunScheduledAuditNowResponse struct {
+type RunScheduleNowResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Audit         *ScheduledAudit        `protobuf:"bytes,1,opt,name=audit,proto3" json:"audit,omitempty"`
+	Schedule      *Schedule              `protobuf:"bytes,1,opt,name=schedule,proto3" json:"schedule,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *RunScheduledAuditNowResponse) Reset() {
-	*x = RunScheduledAuditNowResponse{}
+func (x *RunScheduleNowResponse) Reset() {
+	*x = RunScheduleNowResponse{}
 	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[50]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *RunScheduledAuditNowResponse) String() string {
+func (x *RunScheduleNowResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*RunScheduledAuditNowResponse) ProtoMessage() {}
+func (*RunScheduleNowResponse) ProtoMessage() {}
 
-func (x *RunScheduledAuditNowResponse) ProtoReflect() protoreflect.Message {
+func (x *RunScheduleNowResponse) ProtoReflect() protoreflect.Message {
 	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[50]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -2634,46 +2637,61 @@ func (x *RunScheduledAuditNowResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use RunScheduledAuditNowResponse.ProtoReflect.Descriptor instead.
-func (*RunScheduledAuditNowResponse) Descriptor() ([]byte, []int) {
+// Deprecated: Use RunScheduleNowResponse.ProtoReflect.Descriptor instead.
+func (*RunScheduleNowResponse) Descriptor() ([]byte, []int) {
 	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{50}
 }
 
-func (x *RunScheduledAuditNowResponse) GetAudit() *ScheduledAudit {
+func (x *RunScheduleNowResponse) GetSchedule() *Schedule {
 	if x != nil {
-		return x.Audit
+		return x.Schedule
 	}
 	return nil
 }
 
-type ScheduledAudit struct {
-	state           protoimpl.MessageState `protogen:"open.v1"`
-	Id              string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Name            string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	Prompt          string                 `protobuf:"bytes,3,opt,name=prompt,proto3" json:"prompt,omitempty"`
-	IntervalSeconds int32                  `protobuf:"varint,4,opt,name=interval_seconds,json=intervalSeconds,proto3" json:"interval_seconds,omitempty"`
-	Enabled         bool                   `protobuf:"varint,5,opt,name=enabled,proto3" json:"enabled,omitempty"`
-	NextRunAt       string                 `protobuf:"bytes,6,opt,name=next_run_at,json=nextRunAt,proto3" json:"next_run_at,omitempty"`
-	LastRunAt       string                 `protobuf:"bytes,7,opt,name=last_run_at,json=lastRunAt,proto3" json:"last_run_at,omitempty"`
-	LastStatus      string                 `protobuf:"bytes,8,opt,name=last_status,json=lastStatus,proto3" json:"last_status,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+// Exactly one of cron / interval_seconds is set, or neither — in which case
+// the schedule is one-shot and fires once at run_at.
+//
+// Plain scalars rather than `optional`: proto3 optional moves a field into a
+// synthetic oneof, which is its own wire break, and both fields already have
+// an unambiguous unset value ("" and 0 — the column CHECK forbids an interval
+// below 60).
+type Schedule struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Name  string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	// Which repo the proposal (and so the session a human opens from it) targets.
+	// This was a Go constant until the schedules table existed.
+	Repo   string `protobuf:"bytes,3,opt,name=repo,proto3" json:"repo,omitempty"`
+	Prompt string `protobuf:"bytes,4,opt,name=prompt,proto3" json:"prompt,omitempty"`
+	// Standard 5-field cron, optionally prefixed `CRON_TZ=Europe/Paris ` — which
+	// is why there is no separate timezone field.
+	Cron            string `protobuf:"bytes,5,opt,name=cron,proto3" json:"cron,omitempty"`
+	IntervalSeconds int32  `protobuf:"varint,6,opt,name=interval_seconds,json=intervalSeconds,proto3" json:"interval_seconds,omitempty"`
+	Enabled         bool   `protobuf:"varint,7,opt,name=enabled,proto3" json:"enabled,omitempty"`
+	NextRunAt       string `protobuf:"bytes,8,opt,name=next_run_at,json=nextRunAt,proto3" json:"next_run_at,omitempty"`
+	LastRunAt       string `protobuf:"bytes,9,opt,name=last_run_at,json=lastRunAt,proto3" json:"last_run_at,omitempty"`
+	LastStatus      string `protobuf:"bytes,10,opt,name=last_status,json=lastStatus,proto3" json:"last_status,omitempty"`
+	// A human's pending "run now", cleared when the loop picks it up.
+	RunNow        bool `protobuf:"varint,11,opt,name=run_now,json=runNow,proto3" json:"run_now,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
-func (x *ScheduledAudit) Reset() {
-	*x = ScheduledAudit{}
+func (x *Schedule) Reset() {
+	*x = Schedule{}
 	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[51]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *ScheduledAudit) String() string {
+func (x *Schedule) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*ScheduledAudit) ProtoMessage() {}
+func (*Schedule) ProtoMessage() {}
 
-func (x *ScheduledAudit) ProtoReflect() protoreflect.Message {
+func (x *Schedule) ProtoReflect() protoreflect.Message {
 	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[51]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -2685,87 +2703,108 @@ func (x *ScheduledAudit) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use ScheduledAudit.ProtoReflect.Descriptor instead.
-func (*ScheduledAudit) Descriptor() ([]byte, []int) {
+// Deprecated: Use Schedule.ProtoReflect.Descriptor instead.
+func (*Schedule) Descriptor() ([]byte, []int) {
 	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{51}
 }
 
-func (x *ScheduledAudit) GetId() string {
+func (x *Schedule) GetId() string {
 	if x != nil {
 		return x.Id
 	}
 	return ""
 }
 
-func (x *ScheduledAudit) GetName() string {
+func (x *Schedule) GetName() string {
 	if x != nil {
 		return x.Name
 	}
 	return ""
 }
 
-func (x *ScheduledAudit) GetPrompt() string {
+func (x *Schedule) GetRepo() string {
+	if x != nil {
+		return x.Repo
+	}
+	return ""
+}
+
+func (x *Schedule) GetPrompt() string {
 	if x != nil {
 		return x.Prompt
 	}
 	return ""
 }
 
-func (x *ScheduledAudit) GetIntervalSeconds() int32 {
+func (x *Schedule) GetCron() string {
+	if x != nil {
+		return x.Cron
+	}
+	return ""
+}
+
+func (x *Schedule) GetIntervalSeconds() int32 {
 	if x != nil {
 		return x.IntervalSeconds
 	}
 	return 0
 }
 
-func (x *ScheduledAudit) GetEnabled() bool {
+func (x *Schedule) GetEnabled() bool {
 	if x != nil {
 		return x.Enabled
 	}
 	return false
 }
 
-func (x *ScheduledAudit) GetNextRunAt() string {
+func (x *Schedule) GetNextRunAt() string {
 	if x != nil {
 		return x.NextRunAt
 	}
 	return ""
 }
 
-func (x *ScheduledAudit) GetLastRunAt() string {
+func (x *Schedule) GetLastRunAt() string {
 	if x != nil {
 		return x.LastRunAt
 	}
 	return ""
 }
 
-func (x *ScheduledAudit) GetLastStatus() string {
+func (x *Schedule) GetLastStatus() string {
 	if x != nil {
 		return x.LastStatus
 	}
 	return ""
 }
 
-type ListScheduledAuditsRequest struct {
+func (x *Schedule) GetRunNow() bool {
+	if x != nil {
+		return x.RunNow
+	}
+	return false
+}
+
+type ListSchedulesRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *ListScheduledAuditsRequest) Reset() {
-	*x = ListScheduledAuditsRequest{}
+func (x *ListSchedulesRequest) Reset() {
+	*x = ListSchedulesRequest{}
 	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[52]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *ListScheduledAuditsRequest) String() string {
+func (x *ListSchedulesRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*ListScheduledAuditsRequest) ProtoMessage() {}
+func (*ListSchedulesRequest) ProtoMessage() {}
 
-func (x *ListScheduledAuditsRequest) ProtoReflect() protoreflect.Message {
+func (x *ListSchedulesRequest) ProtoReflect() protoreflect.Message {
 	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[52]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -2777,32 +2816,32 @@ func (x *ListScheduledAuditsRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use ListScheduledAuditsRequest.ProtoReflect.Descriptor instead.
-func (*ListScheduledAuditsRequest) Descriptor() ([]byte, []int) {
+// Deprecated: Use ListSchedulesRequest.ProtoReflect.Descriptor instead.
+func (*ListSchedulesRequest) Descriptor() ([]byte, []int) {
 	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{52}
 }
 
-type ListScheduledAuditsResponse struct {
+type ListSchedulesResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Audits        []*ScheduledAudit      `protobuf:"bytes,1,rep,name=audits,proto3" json:"audits,omitempty"`
+	Schedules     []*Schedule            `protobuf:"bytes,1,rep,name=schedules,proto3" json:"schedules,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *ListScheduledAuditsResponse) Reset() {
-	*x = ListScheduledAuditsResponse{}
+func (x *ListSchedulesResponse) Reset() {
+	*x = ListSchedulesResponse{}
 	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[53]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *ListScheduledAuditsResponse) String() string {
+func (x *ListSchedulesResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*ListScheduledAuditsResponse) ProtoMessage() {}
+func (*ListSchedulesResponse) ProtoMessage() {}
 
-func (x *ListScheduledAuditsResponse) ProtoReflect() protoreflect.Message {
+func (x *ListSchedulesResponse) ProtoReflect() protoreflect.Message {
 	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[53]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -2814,41 +2853,48 @@ func (x *ListScheduledAuditsResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use ListScheduledAuditsResponse.ProtoReflect.Descriptor instead.
-func (*ListScheduledAuditsResponse) Descriptor() ([]byte, []int) {
+// Deprecated: Use ListSchedulesResponse.ProtoReflect.Descriptor instead.
+func (*ListSchedulesResponse) Descriptor() ([]byte, []int) {
 	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{53}
 }
 
-func (x *ListScheduledAuditsResponse) GetAudits() []*ScheduledAudit {
+func (x *ListSchedulesResponse) GetSchedules() []*Schedule {
 	if x != nil {
-		return x.Audits
+		return x.Schedules
 	}
 	return nil
 }
 
-type CreateScheduledAuditRequest struct {
+type CreateScheduleRequest struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
 	Name            string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Prompt          string                 `protobuf:"bytes,2,opt,name=prompt,proto3" json:"prompt,omitempty"`
-	IntervalSeconds int32                  `protobuf:"varint,3,opt,name=interval_seconds,json=intervalSeconds,proto3" json:"interval_seconds,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	Repo            string                 `protobuf:"bytes,2,opt,name=repo,proto3" json:"repo,omitempty"`
+	Prompt          string                 `protobuf:"bytes,3,opt,name=prompt,proto3" json:"prompt,omitempty"`
+	Cron            string                 `protobuf:"bytes,4,opt,name=cron,proto3" json:"cron,omitempty"`
+	IntervalSeconds int32                  `protobuf:"varint,5,opt,name=interval_seconds,json=intervalSeconds,proto3" json:"interval_seconds,omitempty"`
+	// When both cron and interval_seconds are unset: the single moment this
+	// schedule fires, RFC3339. Without it on the wire a one-shot would inherit
+	// the column default and fire on the next tick regardless of what the human
+	// typed.
+	RunAt         string `protobuf:"bytes,6,opt,name=run_at,json=runAt,proto3" json:"run_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
-func (x *CreateScheduledAuditRequest) Reset() {
-	*x = CreateScheduledAuditRequest{}
+func (x *CreateScheduleRequest) Reset() {
+	*x = CreateScheduleRequest{}
 	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[54]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *CreateScheduledAuditRequest) String() string {
+func (x *CreateScheduleRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*CreateScheduledAuditRequest) ProtoMessage() {}
+func (*CreateScheduleRequest) ProtoMessage() {}
 
-func (x *CreateScheduledAuditRequest) ProtoReflect() protoreflect.Message {
+func (x *CreateScheduleRequest) ProtoReflect() protoreflect.Message {
 	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[54]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -2860,53 +2906,74 @@ func (x *CreateScheduledAuditRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use CreateScheduledAuditRequest.ProtoReflect.Descriptor instead.
-func (*CreateScheduledAuditRequest) Descriptor() ([]byte, []int) {
+// Deprecated: Use CreateScheduleRequest.ProtoReflect.Descriptor instead.
+func (*CreateScheduleRequest) Descriptor() ([]byte, []int) {
 	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{54}
 }
 
-func (x *CreateScheduledAuditRequest) GetName() string {
+func (x *CreateScheduleRequest) GetName() string {
 	if x != nil {
 		return x.Name
 	}
 	return ""
 }
 
-func (x *CreateScheduledAuditRequest) GetPrompt() string {
+func (x *CreateScheduleRequest) GetRepo() string {
+	if x != nil {
+		return x.Repo
+	}
+	return ""
+}
+
+func (x *CreateScheduleRequest) GetPrompt() string {
 	if x != nil {
 		return x.Prompt
 	}
 	return ""
 }
 
-func (x *CreateScheduledAuditRequest) GetIntervalSeconds() int32 {
+func (x *CreateScheduleRequest) GetCron() string {
+	if x != nil {
+		return x.Cron
+	}
+	return ""
+}
+
+func (x *CreateScheduleRequest) GetIntervalSeconds() int32 {
 	if x != nil {
 		return x.IntervalSeconds
 	}
 	return 0
 }
 
-type CreateScheduledAuditResponse struct {
+func (x *CreateScheduleRequest) GetRunAt() string {
+	if x != nil {
+		return x.RunAt
+	}
+	return ""
+}
+
+type CreateScheduleResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Audit         *ScheduledAudit        `protobuf:"bytes,1,opt,name=audit,proto3" json:"audit,omitempty"`
+	Schedule      *Schedule              `protobuf:"bytes,1,opt,name=schedule,proto3" json:"schedule,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *CreateScheduledAuditResponse) Reset() {
-	*x = CreateScheduledAuditResponse{}
+func (x *CreateScheduleResponse) Reset() {
+	*x = CreateScheduleResponse{}
 	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[55]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *CreateScheduledAuditResponse) String() string {
+func (x *CreateScheduleResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*CreateScheduledAuditResponse) ProtoMessage() {}
+func (*CreateScheduleResponse) ProtoMessage() {}
 
-func (x *CreateScheduledAuditResponse) ProtoReflect() protoreflect.Message {
+func (x *CreateScheduleResponse) ProtoReflect() protoreflect.Message {
 	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[55]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -2918,43 +2985,46 @@ func (x *CreateScheduledAuditResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use CreateScheduledAuditResponse.ProtoReflect.Descriptor instead.
-func (*CreateScheduledAuditResponse) Descriptor() ([]byte, []int) {
+// Deprecated: Use CreateScheduleResponse.ProtoReflect.Descriptor instead.
+func (*CreateScheduleResponse) Descriptor() ([]byte, []int) {
 	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{55}
 }
 
-func (x *CreateScheduledAuditResponse) GetAudit() *ScheduledAudit {
+func (x *CreateScheduleResponse) GetSchedule() *Schedule {
 	if x != nil {
-		return x.Audit
+		return x.Schedule
 	}
 	return nil
 }
 
-type UpdateScheduledAuditRequest struct {
+type UpdateScheduleRequest struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
 	Id              string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	Name            string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	Prompt          string                 `protobuf:"bytes,3,opt,name=prompt,proto3" json:"prompt,omitempty"`
-	IntervalSeconds int32                  `protobuf:"varint,4,opt,name=interval_seconds,json=intervalSeconds,proto3" json:"interval_seconds,omitempty"`
-	Enabled         bool                   `protobuf:"varint,5,opt,name=enabled,proto3" json:"enabled,omitempty"`
+	Repo            string                 `protobuf:"bytes,3,opt,name=repo,proto3" json:"repo,omitempty"`
+	Prompt          string                 `protobuf:"bytes,4,opt,name=prompt,proto3" json:"prompt,omitempty"`
+	Cron            string                 `protobuf:"bytes,5,opt,name=cron,proto3" json:"cron,omitempty"`
+	IntervalSeconds int32                  `protobuf:"varint,6,opt,name=interval_seconds,json=intervalSeconds,proto3" json:"interval_seconds,omitempty"`
+	Enabled         bool                   `protobuf:"varint,7,opt,name=enabled,proto3" json:"enabled,omitempty"`
+	RunAt           string                 `protobuf:"bytes,8,opt,name=run_at,json=runAt,proto3" json:"run_at,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
 
-func (x *UpdateScheduledAuditRequest) Reset() {
-	*x = UpdateScheduledAuditRequest{}
+func (x *UpdateScheduleRequest) Reset() {
+	*x = UpdateScheduleRequest{}
 	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[56]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *UpdateScheduledAuditRequest) String() string {
+func (x *UpdateScheduleRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*UpdateScheduledAuditRequest) ProtoMessage() {}
+func (*UpdateScheduleRequest) ProtoMessage() {}
 
-func (x *UpdateScheduledAuditRequest) ProtoReflect() protoreflect.Message {
+func (x *UpdateScheduleRequest) ProtoReflect() protoreflect.Message {
 	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[56]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -2966,67 +3036,88 @@ func (x *UpdateScheduledAuditRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use UpdateScheduledAuditRequest.ProtoReflect.Descriptor instead.
-func (*UpdateScheduledAuditRequest) Descriptor() ([]byte, []int) {
+// Deprecated: Use UpdateScheduleRequest.ProtoReflect.Descriptor instead.
+func (*UpdateScheduleRequest) Descriptor() ([]byte, []int) {
 	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{56}
 }
 
-func (x *UpdateScheduledAuditRequest) GetId() string {
+func (x *UpdateScheduleRequest) GetId() string {
 	if x != nil {
 		return x.Id
 	}
 	return ""
 }
 
-func (x *UpdateScheduledAuditRequest) GetName() string {
+func (x *UpdateScheduleRequest) GetName() string {
 	if x != nil {
 		return x.Name
 	}
 	return ""
 }
 
-func (x *UpdateScheduledAuditRequest) GetPrompt() string {
+func (x *UpdateScheduleRequest) GetRepo() string {
+	if x != nil {
+		return x.Repo
+	}
+	return ""
+}
+
+func (x *UpdateScheduleRequest) GetPrompt() string {
 	if x != nil {
 		return x.Prompt
 	}
 	return ""
 }
 
-func (x *UpdateScheduledAuditRequest) GetIntervalSeconds() int32 {
+func (x *UpdateScheduleRequest) GetCron() string {
+	if x != nil {
+		return x.Cron
+	}
+	return ""
+}
+
+func (x *UpdateScheduleRequest) GetIntervalSeconds() int32 {
 	if x != nil {
 		return x.IntervalSeconds
 	}
 	return 0
 }
 
-func (x *UpdateScheduledAuditRequest) GetEnabled() bool {
+func (x *UpdateScheduleRequest) GetEnabled() bool {
 	if x != nil {
 		return x.Enabled
 	}
 	return false
 }
 
-type UpdateScheduledAuditResponse struct {
+func (x *UpdateScheduleRequest) GetRunAt() string {
+	if x != nil {
+		return x.RunAt
+	}
+	return ""
+}
+
+type UpdateScheduleResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Audit         *ScheduledAudit        `protobuf:"bytes,1,opt,name=audit,proto3" json:"audit,omitempty"`
+	Schedule      *Schedule              `protobuf:"bytes,1,opt,name=schedule,proto3" json:"schedule,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *UpdateScheduledAuditResponse) Reset() {
-	*x = UpdateScheduledAuditResponse{}
+func (x *UpdateScheduleResponse) Reset() {
+	*x = UpdateScheduleResponse{}
 	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[57]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *UpdateScheduledAuditResponse) String() string {
+func (x *UpdateScheduleResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*UpdateScheduledAuditResponse) ProtoMessage() {}
+func (*UpdateScheduleResponse) ProtoMessage() {}
 
-func (x *UpdateScheduledAuditResponse) ProtoReflect() protoreflect.Message {
+func (x *UpdateScheduleResponse) ProtoReflect() protoreflect.Message {
 	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[57]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -3038,39 +3129,39 @@ func (x *UpdateScheduledAuditResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use UpdateScheduledAuditResponse.ProtoReflect.Descriptor instead.
-func (*UpdateScheduledAuditResponse) Descriptor() ([]byte, []int) {
+// Deprecated: Use UpdateScheduleResponse.ProtoReflect.Descriptor instead.
+func (*UpdateScheduleResponse) Descriptor() ([]byte, []int) {
 	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{57}
 }
 
-func (x *UpdateScheduledAuditResponse) GetAudit() *ScheduledAudit {
+func (x *UpdateScheduleResponse) GetSchedule() *Schedule {
 	if x != nil {
-		return x.Audit
+		return x.Schedule
 	}
 	return nil
 }
 
-type DeleteScheduledAuditRequest struct {
+type DeleteScheduleRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *DeleteScheduledAuditRequest) Reset() {
-	*x = DeleteScheduledAuditRequest{}
+func (x *DeleteScheduleRequest) Reset() {
+	*x = DeleteScheduleRequest{}
 	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[58]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *DeleteScheduledAuditRequest) String() string {
+func (x *DeleteScheduleRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*DeleteScheduledAuditRequest) ProtoMessage() {}
+func (*DeleteScheduleRequest) ProtoMessage() {}
 
-func (x *DeleteScheduledAuditRequest) ProtoReflect() protoreflect.Message {
+func (x *DeleteScheduleRequest) ProtoReflect() protoreflect.Message {
 	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[58]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -3082,38 +3173,38 @@ func (x *DeleteScheduledAuditRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use DeleteScheduledAuditRequest.ProtoReflect.Descriptor instead.
-func (*DeleteScheduledAuditRequest) Descriptor() ([]byte, []int) {
+// Deprecated: Use DeleteScheduleRequest.ProtoReflect.Descriptor instead.
+func (*DeleteScheduleRequest) Descriptor() ([]byte, []int) {
 	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{58}
 }
 
-func (x *DeleteScheduledAuditRequest) GetId() string {
+func (x *DeleteScheduleRequest) GetId() string {
 	if x != nil {
 		return x.Id
 	}
 	return ""
 }
 
-type DeleteScheduledAuditResponse struct {
+type DeleteScheduleResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *DeleteScheduledAuditResponse) Reset() {
-	*x = DeleteScheduledAuditResponse{}
+func (x *DeleteScheduleResponse) Reset() {
+	*x = DeleteScheduleResponse{}
 	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[59]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *DeleteScheduledAuditResponse) String() string {
+func (x *DeleteScheduleResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*DeleteScheduledAuditResponse) ProtoMessage() {}
+func (*DeleteScheduleResponse) ProtoMessage() {}
 
-func (x *DeleteScheduledAuditResponse) ProtoReflect() protoreflect.Message {
+func (x *DeleteScheduleResponse) ProtoReflect() protoreflect.Message {
 	mi := &file_agentfleet_v1_dashboard_proto_msgTypes[59]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -3125,8 +3216,8 @@ func (x *DeleteScheduledAuditResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use DeleteScheduledAuditResponse.ProtoReflect.Descriptor instead.
-func (*DeleteScheduledAuditResponse) Descriptor() ([]byte, []int) {
+// Deprecated: Use DeleteScheduleResponse.ProtoReflect.Descriptor instead.
+func (*DeleteScheduleResponse) Descriptor() ([]byte, []int) {
 	return file_agentfleet_v1_dashboard_proto_rawDescGZIP(), []int{59}
 }
 
@@ -3701,41 +3792,51 @@ const file_agentfleet_v1_dashboard_proto_rawDesc = "" +
 	"\asnippet\x18\x01 \x01(\v2\x1c.agentfleet.v1.PromptSnippetR\asnippet\",\n" +
 	"\x1aDeletePromptSnippetRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"\x1d\n" +
-	"\x1bDeletePromptSnippetResponse\"-\n" +
-	"\x1bRunScheduledAuditNowRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"S\n" +
-	"\x1cRunScheduledAuditNowResponse\x123\n" +
-	"\x05audit\x18\x01 \x01(\v2\x1d.agentfleet.v1.ScheduledAuditR\x05audit\"\xf2\x01\n" +
-	"\x0eScheduledAudit\x12\x0e\n" +
+	"\x1bDeletePromptSnippetResponse\"'\n" +
+	"\x15RunScheduleNowRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"M\n" +
+	"\x16RunScheduleNowResponse\x123\n" +
+	"\bschedule\x18\x01 \x01(\v2\x17.agentfleet.v1.ScheduleR\bschedule\"\xad\x02\n" +
+	"\bSchedule\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name\x12\x16\n" +
-	"\x06prompt\x18\x03 \x01(\tR\x06prompt\x12)\n" +
-	"\x10interval_seconds\x18\x04 \x01(\x05R\x0fintervalSeconds\x12\x18\n" +
-	"\aenabled\x18\x05 \x01(\bR\aenabled\x12\x1e\n" +
-	"\vnext_run_at\x18\x06 \x01(\tR\tnextRunAt\x12\x1e\n" +
-	"\vlast_run_at\x18\a \x01(\tR\tlastRunAt\x12\x1f\n" +
-	"\vlast_status\x18\b \x01(\tR\n" +
-	"lastStatus\"\x1c\n" +
-	"\x1aListScheduledAuditsRequest\"T\n" +
-	"\x1bListScheduledAuditsResponse\x125\n" +
-	"\x06audits\x18\x01 \x03(\v2\x1d.agentfleet.v1.ScheduledAuditR\x06audits\"t\n" +
-	"\x1bCreateScheduledAuditRequest\x12\x12\n" +
-	"\x04name\x18\x01 \x01(\tR\x04name\x12\x16\n" +
-	"\x06prompt\x18\x02 \x01(\tR\x06prompt\x12)\n" +
-	"\x10interval_seconds\x18\x03 \x01(\x05R\x0fintervalSeconds\"S\n" +
-	"\x1cCreateScheduledAuditResponse\x123\n" +
-	"\x05audit\x18\x01 \x01(\v2\x1d.agentfleet.v1.ScheduledAuditR\x05audit\"\x9e\x01\n" +
-	"\x1bUpdateScheduledAuditRequest\x12\x0e\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x12\n" +
+	"\x04repo\x18\x03 \x01(\tR\x04repo\x12\x16\n" +
+	"\x06prompt\x18\x04 \x01(\tR\x06prompt\x12\x12\n" +
+	"\x04cron\x18\x05 \x01(\tR\x04cron\x12)\n" +
+	"\x10interval_seconds\x18\x06 \x01(\x05R\x0fintervalSeconds\x12\x18\n" +
+	"\aenabled\x18\a \x01(\bR\aenabled\x12\x1e\n" +
+	"\vnext_run_at\x18\b \x01(\tR\tnextRunAt\x12\x1e\n" +
+	"\vlast_run_at\x18\t \x01(\tR\tlastRunAt\x12\x1f\n" +
+	"\vlast_status\x18\n" +
+	" \x01(\tR\n" +
+	"lastStatus\x12\x17\n" +
+	"\arun_now\x18\v \x01(\bR\x06runNow\"\x16\n" +
+	"\x14ListSchedulesRequest\"N\n" +
+	"\x15ListSchedulesResponse\x125\n" +
+	"\tschedules\x18\x01 \x03(\v2\x17.agentfleet.v1.ScheduleR\tschedules\"\xad\x01\n" +
+	"\x15CreateScheduleRequest\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
+	"\x04repo\x18\x02 \x01(\tR\x04repo\x12\x16\n" +
+	"\x06prompt\x18\x03 \x01(\tR\x06prompt\x12\x12\n" +
+	"\x04cron\x18\x04 \x01(\tR\x04cron\x12)\n" +
+	"\x10interval_seconds\x18\x05 \x01(\x05R\x0fintervalSeconds\x12\x15\n" +
+	"\x06run_at\x18\x06 \x01(\tR\x05runAt\"M\n" +
+	"\x16CreateScheduleResponse\x123\n" +
+	"\bschedule\x18\x01 \x01(\v2\x17.agentfleet.v1.ScheduleR\bschedule\"\xd7\x01\n" +
+	"\x15UpdateScheduleRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name\x12\x16\n" +
-	"\x06prompt\x18\x03 \x01(\tR\x06prompt\x12)\n" +
-	"\x10interval_seconds\x18\x04 \x01(\x05R\x0fintervalSeconds\x12\x18\n" +
-	"\aenabled\x18\x05 \x01(\bR\aenabled\"S\n" +
-	"\x1cUpdateScheduledAuditResponse\x123\n" +
-	"\x05audit\x18\x01 \x01(\v2\x1d.agentfleet.v1.ScheduledAuditR\x05audit\"-\n" +
-	"\x1bDeleteScheduledAuditRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"\x1e\n" +
-	"\x1cDeleteScheduledAuditResponse\"y\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x12\n" +
+	"\x04repo\x18\x03 \x01(\tR\x04repo\x12\x16\n" +
+	"\x06prompt\x18\x04 \x01(\tR\x06prompt\x12\x12\n" +
+	"\x04cron\x18\x05 \x01(\tR\x04cron\x12)\n" +
+	"\x10interval_seconds\x18\x06 \x01(\x05R\x0fintervalSeconds\x12\x18\n" +
+	"\aenabled\x18\a \x01(\bR\aenabled\x12\x15\n" +
+	"\x06run_at\x18\b \x01(\tR\x05runAt\"M\n" +
+	"\x16UpdateScheduleResponse\x123\n" +
+	"\bschedule\x18\x01 \x01(\v2\x17.agentfleet.v1.ScheduleR\bschedule\"'\n" +
+	"\x15DeleteScheduleRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"\x18\n" +
+	"\x16DeleteScheduleResponse\"y\n" +
 	"\x13QueryMetricsRequest\x12\x14\n" +
 	"\x05query\x18\x01 \x01(\tR\x05query\x12\x1d\n" +
 	"\n" +
@@ -3768,7 +3869,7 @@ const file_agentfleet_v1_dashboard_proto_rawDesc = "" +
 	"\x05edges\x18\x02 \x03(\v2\x1b.agentfleet.v1.TopologyEdgeR\x05edges\x12#\n" +
 	"\rmetrics_error\x18\x03 \x01(\tR\fmetricsError\x12!\n" +
 	"\fworker_image\x18\x04 \x01(\tR\vworkerImage\x12#\n" +
-	"\rsidecar_image\x18\x05 \x01(\tR\fsidecarImage2\xfc\x1c\n" +
+	"\rsidecar_image\x18\x05 \x01(\tR\fsidecarImage2\xa2\x1c\n" +
 	"\x10DashboardService\x12W\n" +
 	"\fListSessions\x12\".agentfleet.v1.ListSessionsRequest\x1a#.agentfleet.v1.ListSessionsResponse\x12Q\n" +
 	"\n" +
@@ -3809,12 +3910,12 @@ const file_agentfleet_v1_dashboard_proto_rawDesc = "" +
 	"DeleteFile\x12 .agentfleet.v1.DeleteFileRequest\x1a!.agentfleet.v1.DeleteFileResponse\x12N\n" +
 	"\tQueryLogs\x12\x1f.agentfleet.v1.QueryLogsRequest\x1a .agentfleet.v1.QueryLogsResponse\x12W\n" +
 	"\fQueryMetrics\x12\".agentfleet.v1.QueryMetricsRequest\x1a#.agentfleet.v1.QueryMetricsResponse\x12c\n" +
-	"\x10GetFleetTopology\x12&.agentfleet.v1.GetFleetTopologyRequest\x1a'.agentfleet.v1.GetFleetTopologyResponse\x12l\n" +
-	"\x13ListScheduledAudits\x12).agentfleet.v1.ListScheduledAuditsRequest\x1a*.agentfleet.v1.ListScheduledAuditsResponse\x12o\n" +
-	"\x14CreateScheduledAudit\x12*.agentfleet.v1.CreateScheduledAuditRequest\x1a+.agentfleet.v1.CreateScheduledAuditResponse\x12o\n" +
-	"\x14UpdateScheduledAudit\x12*.agentfleet.v1.UpdateScheduledAuditRequest\x1a+.agentfleet.v1.UpdateScheduledAuditResponse\x12o\n" +
-	"\x14DeleteScheduledAudit\x12*.agentfleet.v1.DeleteScheduledAuditRequest\x1a+.agentfleet.v1.DeleteScheduledAuditResponse\x12o\n" +
-	"\x14RunScheduledAuditNow\x12*.agentfleet.v1.RunScheduledAuditNowRequest\x1a+.agentfleet.v1.RunScheduledAuditNowResponseBMZKgithub.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1;agentfleetv1b\x06proto3"
+	"\x10GetFleetTopology\x12&.agentfleet.v1.GetFleetTopologyRequest\x1a'.agentfleet.v1.GetFleetTopologyResponse\x12Z\n" +
+	"\rListSchedules\x12#.agentfleet.v1.ListSchedulesRequest\x1a$.agentfleet.v1.ListSchedulesResponse\x12]\n" +
+	"\x0eCreateSchedule\x12$.agentfleet.v1.CreateScheduleRequest\x1a%.agentfleet.v1.CreateScheduleResponse\x12]\n" +
+	"\x0eUpdateSchedule\x12$.agentfleet.v1.UpdateScheduleRequest\x1a%.agentfleet.v1.UpdateScheduleResponse\x12]\n" +
+	"\x0eDeleteSchedule\x12$.agentfleet.v1.DeleteScheduleRequest\x1a%.agentfleet.v1.DeleteScheduleResponse\x12]\n" +
+	"\x0eRunScheduleNow\x12$.agentfleet.v1.RunScheduleNowRequest\x1a%.agentfleet.v1.RunScheduleNowResponseBMZKgithub.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1;agentfleetv1b\x06proto3"
 
 var (
 	file_agentfleet_v1_dashboard_proto_rawDescOnce sync.Once
@@ -3830,93 +3931,93 @@ func file_agentfleet_v1_dashboard_proto_rawDescGZIP() []byte {
 
 var file_agentfleet_v1_dashboard_proto_msgTypes = make([]protoimpl.MessageInfo, 67)
 var file_agentfleet_v1_dashboard_proto_goTypes = []any{
-	(*ListSessionsRequest)(nil),          // 0: agentfleet.v1.ListSessionsRequest
-	(*ListSessionsResponse)(nil),         // 1: agentfleet.v1.ListSessionsResponse
-	(*CreateSessionRequest)(nil),         // 2: agentfleet.v1.CreateSessionRequest
-	(*CreateSessionResponse)(nil),        // 3: agentfleet.v1.CreateSessionResponse
-	(*StreamTranscriptRequest)(nil),      // 4: agentfleet.v1.StreamTranscriptRequest
-	(*StopSessionRequest)(nil),           // 5: agentfleet.v1.StopSessionRequest
-	(*StopSessionResponse)(nil),          // 6: agentfleet.v1.StopSessionResponse
-	(*InterruptRequest)(nil),             // 7: agentfleet.v1.InterruptRequest
-	(*InterruptResponse)(nil),            // 8: agentfleet.v1.InterruptResponse
-	(*MarkSeenRequest)(nil),              // 9: agentfleet.v1.MarkSeenRequest
-	(*MarkSeenResponse)(nil),             // 10: agentfleet.v1.MarkSeenResponse
-	(*WarmSessionRequest)(nil),           // 11: agentfleet.v1.WarmSessionRequest
-	(*WarmSessionResponse)(nil),          // 12: agentfleet.v1.WarmSessionResponse
-	(*Proposal)(nil),                     // 13: agentfleet.v1.Proposal
-	(*ListProposalsRequest)(nil),         // 14: agentfleet.v1.ListProposalsRequest
-	(*ListProposalsResponse)(nil),        // 15: agentfleet.v1.ListProposalsResponse
-	(*OpenFromProposalRequest)(nil),      // 16: agentfleet.v1.OpenFromProposalRequest
-	(*OpenFromProposalResponse)(nil),     // 17: agentfleet.v1.OpenFromProposalResponse
-	(*DismissProposalRequest)(nil),       // 18: agentfleet.v1.DismissProposalRequest
-	(*DismissProposalResponse)(nil),      // 19: agentfleet.v1.DismissProposalResponse
-	(*ArchiveSessionRequest)(nil),        // 20: agentfleet.v1.ArchiveSessionRequest
-	(*ArchiveSessionResponse)(nil),       // 21: agentfleet.v1.ArchiveSessionResponse
-	(*RespondToPermissionRequest)(nil),   // 22: agentfleet.v1.RespondToPermissionRequest
-	(*KillE2ERequest)(nil),               // 23: agentfleet.v1.KillE2eRequest
-	(*KillE2EResponse)(nil),              // 24: agentfleet.v1.KillE2eResponse
-	(*AnswerQuestionRequest)(nil),        // 25: agentfleet.v1.AnswerQuestionRequest
-	(*PostMessageRequest)(nil),           // 26: agentfleet.v1.PostMessageRequest
-	(*DeleteSessionRequest)(nil),         // 27: agentfleet.v1.DeleteSessionRequest
-	(*DeleteSessionResponse)(nil),        // 28: agentfleet.v1.DeleteSessionResponse
-	(*GetJournalRequest)(nil),            // 29: agentfleet.v1.GetJournalRequest
-	(*GetJournalResponse)(nil),           // 30: agentfleet.v1.GetJournalResponse
-	(*Repo)(nil),                         // 31: agentfleet.v1.Repo
-	(*ListReposRequest)(nil),             // 32: agentfleet.v1.ListReposRequest
-	(*ListReposResponse)(nil),            // 33: agentfleet.v1.ListReposResponse
-	(*CreateRepoRequest)(nil),            // 34: agentfleet.v1.CreateRepoRequest
-	(*CreateRepoResponse)(nil),           // 35: agentfleet.v1.CreateRepoResponse
-	(*UpdateRepoRequest)(nil),            // 36: agentfleet.v1.UpdateRepoRequest
-	(*UpdateRepoResponse)(nil),           // 37: agentfleet.v1.UpdateRepoResponse
-	(*DeleteRepoRequest)(nil),            // 38: agentfleet.v1.DeleteRepoRequest
-	(*DeleteRepoResponse)(nil),           // 39: agentfleet.v1.DeleteRepoResponse
-	(*PromptSnippet)(nil),                // 40: agentfleet.v1.PromptSnippet
-	(*ListPromptSnippetsRequest)(nil),    // 41: agentfleet.v1.ListPromptSnippetsRequest
-	(*ListPromptSnippetsResponse)(nil),   // 42: agentfleet.v1.ListPromptSnippetsResponse
-	(*CreatePromptSnippetRequest)(nil),   // 43: agentfleet.v1.CreatePromptSnippetRequest
-	(*CreatePromptSnippetResponse)(nil),  // 44: agentfleet.v1.CreatePromptSnippetResponse
-	(*UpdatePromptSnippetRequest)(nil),   // 45: agentfleet.v1.UpdatePromptSnippetRequest
-	(*UpdatePromptSnippetResponse)(nil),  // 46: agentfleet.v1.UpdatePromptSnippetResponse
-	(*DeletePromptSnippetRequest)(nil),   // 47: agentfleet.v1.DeletePromptSnippetRequest
-	(*DeletePromptSnippetResponse)(nil),  // 48: agentfleet.v1.DeletePromptSnippetResponse
-	(*RunScheduledAuditNowRequest)(nil),  // 49: agentfleet.v1.RunScheduledAuditNowRequest
-	(*RunScheduledAuditNowResponse)(nil), // 50: agentfleet.v1.RunScheduledAuditNowResponse
-	(*ScheduledAudit)(nil),               // 51: agentfleet.v1.ScheduledAudit
-	(*ListScheduledAuditsRequest)(nil),   // 52: agentfleet.v1.ListScheduledAuditsRequest
-	(*ListScheduledAuditsResponse)(nil),  // 53: agentfleet.v1.ListScheduledAuditsResponse
-	(*CreateScheduledAuditRequest)(nil),  // 54: agentfleet.v1.CreateScheduledAuditRequest
-	(*CreateScheduledAuditResponse)(nil), // 55: agentfleet.v1.CreateScheduledAuditResponse
-	(*UpdateScheduledAuditRequest)(nil),  // 56: agentfleet.v1.UpdateScheduledAuditRequest
-	(*UpdateScheduledAuditResponse)(nil), // 57: agentfleet.v1.UpdateScheduledAuditResponse
-	(*DeleteScheduledAuditRequest)(nil),  // 58: agentfleet.v1.DeleteScheduledAuditRequest
-	(*DeleteScheduledAuditResponse)(nil), // 59: agentfleet.v1.DeleteScheduledAuditResponse
-	(*QueryMetricsRequest)(nil),          // 60: agentfleet.v1.QueryMetricsRequest
-	(*QueryMetricsResponse)(nil),         // 61: agentfleet.v1.QueryMetricsResponse
-	(*GetFleetTopologyRequest)(nil),      // 62: agentfleet.v1.GetFleetTopologyRequest
-	(*CellNode)(nil),                     // 63: agentfleet.v1.CellNode
-	(*TopologyEdge)(nil),                 // 64: agentfleet.v1.TopologyEdge
-	(*GetFleetTopologyResponse)(nil),     // 65: agentfleet.v1.GetFleetTopologyResponse
-	nil,                                  // 66: agentfleet.v1.CellNode.MetricsEntry
-	(*Session)(nil),                      // 67: agentfleet.v1.Session
-	(*JournalEntry)(nil),                 // 68: agentfleet.v1.JournalEntry
-	(*GetSessionRequest)(nil),            // 69: agentfleet.v1.GetSessionRequest
-	(*ReadTranscriptSinceRequest)(nil),   // 70: agentfleet.v1.ReadTranscriptSinceRequest
-	(*SetPermissionModeRequest)(nil),     // 71: agentfleet.v1.SetPermissionModeRequest
-	(*ListFilesRequest)(nil),             // 72: agentfleet.v1.ListFilesRequest
-	(*GetFileUploadUrlRequest)(nil),      // 73: agentfleet.v1.GetFileUploadUrlRequest
-	(*GetFileDownloadUrlRequest)(nil),    // 74: agentfleet.v1.GetFileDownloadUrlRequest
-	(*DeleteFileRequest)(nil),            // 75: agentfleet.v1.DeleteFileRequest
-	(*QueryLogsRequest)(nil),             // 76: agentfleet.v1.QueryLogsRequest
-	(*GetSessionResponse)(nil),           // 77: agentfleet.v1.GetSessionResponse
-	(*ReadTranscriptSinceResponse)(nil),  // 78: agentfleet.v1.ReadTranscriptSinceResponse
-	(*TranscriptEntry)(nil),              // 79: agentfleet.v1.TranscriptEntry
-	(*SetPermissionModeResponse)(nil),    // 80: agentfleet.v1.SetPermissionModeResponse
-	(*AppendResponse)(nil),               // 81: agentfleet.v1.AppendResponse
-	(*ListFilesResponse)(nil),            // 82: agentfleet.v1.ListFilesResponse
-	(*GetFileUploadUrlResponse)(nil),     // 83: agentfleet.v1.GetFileUploadUrlResponse
-	(*GetFileDownloadUrlResponse)(nil),   // 84: agentfleet.v1.GetFileDownloadUrlResponse
-	(*DeleteFileResponse)(nil),           // 85: agentfleet.v1.DeleteFileResponse
-	(*QueryLogsResponse)(nil),            // 86: agentfleet.v1.QueryLogsResponse
+	(*ListSessionsRequest)(nil),         // 0: agentfleet.v1.ListSessionsRequest
+	(*ListSessionsResponse)(nil),        // 1: agentfleet.v1.ListSessionsResponse
+	(*CreateSessionRequest)(nil),        // 2: agentfleet.v1.CreateSessionRequest
+	(*CreateSessionResponse)(nil),       // 3: agentfleet.v1.CreateSessionResponse
+	(*StreamTranscriptRequest)(nil),     // 4: agentfleet.v1.StreamTranscriptRequest
+	(*StopSessionRequest)(nil),          // 5: agentfleet.v1.StopSessionRequest
+	(*StopSessionResponse)(nil),         // 6: agentfleet.v1.StopSessionResponse
+	(*InterruptRequest)(nil),            // 7: agentfleet.v1.InterruptRequest
+	(*InterruptResponse)(nil),           // 8: agentfleet.v1.InterruptResponse
+	(*MarkSeenRequest)(nil),             // 9: agentfleet.v1.MarkSeenRequest
+	(*MarkSeenResponse)(nil),            // 10: agentfleet.v1.MarkSeenResponse
+	(*WarmSessionRequest)(nil),          // 11: agentfleet.v1.WarmSessionRequest
+	(*WarmSessionResponse)(nil),         // 12: agentfleet.v1.WarmSessionResponse
+	(*Proposal)(nil),                    // 13: agentfleet.v1.Proposal
+	(*ListProposalsRequest)(nil),        // 14: agentfleet.v1.ListProposalsRequest
+	(*ListProposalsResponse)(nil),       // 15: agentfleet.v1.ListProposalsResponse
+	(*OpenFromProposalRequest)(nil),     // 16: agentfleet.v1.OpenFromProposalRequest
+	(*OpenFromProposalResponse)(nil),    // 17: agentfleet.v1.OpenFromProposalResponse
+	(*DismissProposalRequest)(nil),      // 18: agentfleet.v1.DismissProposalRequest
+	(*DismissProposalResponse)(nil),     // 19: agentfleet.v1.DismissProposalResponse
+	(*ArchiveSessionRequest)(nil),       // 20: agentfleet.v1.ArchiveSessionRequest
+	(*ArchiveSessionResponse)(nil),      // 21: agentfleet.v1.ArchiveSessionResponse
+	(*RespondToPermissionRequest)(nil),  // 22: agentfleet.v1.RespondToPermissionRequest
+	(*KillE2ERequest)(nil),              // 23: agentfleet.v1.KillE2eRequest
+	(*KillE2EResponse)(nil),             // 24: agentfleet.v1.KillE2eResponse
+	(*AnswerQuestionRequest)(nil),       // 25: agentfleet.v1.AnswerQuestionRequest
+	(*PostMessageRequest)(nil),          // 26: agentfleet.v1.PostMessageRequest
+	(*DeleteSessionRequest)(nil),        // 27: agentfleet.v1.DeleteSessionRequest
+	(*DeleteSessionResponse)(nil),       // 28: agentfleet.v1.DeleteSessionResponse
+	(*GetJournalRequest)(nil),           // 29: agentfleet.v1.GetJournalRequest
+	(*GetJournalResponse)(nil),          // 30: agentfleet.v1.GetJournalResponse
+	(*Repo)(nil),                        // 31: agentfleet.v1.Repo
+	(*ListReposRequest)(nil),            // 32: agentfleet.v1.ListReposRequest
+	(*ListReposResponse)(nil),           // 33: agentfleet.v1.ListReposResponse
+	(*CreateRepoRequest)(nil),           // 34: agentfleet.v1.CreateRepoRequest
+	(*CreateRepoResponse)(nil),          // 35: agentfleet.v1.CreateRepoResponse
+	(*UpdateRepoRequest)(nil),           // 36: agentfleet.v1.UpdateRepoRequest
+	(*UpdateRepoResponse)(nil),          // 37: agentfleet.v1.UpdateRepoResponse
+	(*DeleteRepoRequest)(nil),           // 38: agentfleet.v1.DeleteRepoRequest
+	(*DeleteRepoResponse)(nil),          // 39: agentfleet.v1.DeleteRepoResponse
+	(*PromptSnippet)(nil),               // 40: agentfleet.v1.PromptSnippet
+	(*ListPromptSnippetsRequest)(nil),   // 41: agentfleet.v1.ListPromptSnippetsRequest
+	(*ListPromptSnippetsResponse)(nil),  // 42: agentfleet.v1.ListPromptSnippetsResponse
+	(*CreatePromptSnippetRequest)(nil),  // 43: agentfleet.v1.CreatePromptSnippetRequest
+	(*CreatePromptSnippetResponse)(nil), // 44: agentfleet.v1.CreatePromptSnippetResponse
+	(*UpdatePromptSnippetRequest)(nil),  // 45: agentfleet.v1.UpdatePromptSnippetRequest
+	(*UpdatePromptSnippetResponse)(nil), // 46: agentfleet.v1.UpdatePromptSnippetResponse
+	(*DeletePromptSnippetRequest)(nil),  // 47: agentfleet.v1.DeletePromptSnippetRequest
+	(*DeletePromptSnippetResponse)(nil), // 48: agentfleet.v1.DeletePromptSnippetResponse
+	(*RunScheduleNowRequest)(nil),       // 49: agentfleet.v1.RunScheduleNowRequest
+	(*RunScheduleNowResponse)(nil),      // 50: agentfleet.v1.RunScheduleNowResponse
+	(*Schedule)(nil),                    // 51: agentfleet.v1.Schedule
+	(*ListSchedulesRequest)(nil),        // 52: agentfleet.v1.ListSchedulesRequest
+	(*ListSchedulesResponse)(nil),       // 53: agentfleet.v1.ListSchedulesResponse
+	(*CreateScheduleRequest)(nil),       // 54: agentfleet.v1.CreateScheduleRequest
+	(*CreateScheduleResponse)(nil),      // 55: agentfleet.v1.CreateScheduleResponse
+	(*UpdateScheduleRequest)(nil),       // 56: agentfleet.v1.UpdateScheduleRequest
+	(*UpdateScheduleResponse)(nil),      // 57: agentfleet.v1.UpdateScheduleResponse
+	(*DeleteScheduleRequest)(nil),       // 58: agentfleet.v1.DeleteScheduleRequest
+	(*DeleteScheduleResponse)(nil),      // 59: agentfleet.v1.DeleteScheduleResponse
+	(*QueryMetricsRequest)(nil),         // 60: agentfleet.v1.QueryMetricsRequest
+	(*QueryMetricsResponse)(nil),        // 61: agentfleet.v1.QueryMetricsResponse
+	(*GetFleetTopologyRequest)(nil),     // 62: agentfleet.v1.GetFleetTopologyRequest
+	(*CellNode)(nil),                    // 63: agentfleet.v1.CellNode
+	(*TopologyEdge)(nil),                // 64: agentfleet.v1.TopologyEdge
+	(*GetFleetTopologyResponse)(nil),    // 65: agentfleet.v1.GetFleetTopologyResponse
+	nil,                                 // 66: agentfleet.v1.CellNode.MetricsEntry
+	(*Session)(nil),                     // 67: agentfleet.v1.Session
+	(*JournalEntry)(nil),                // 68: agentfleet.v1.JournalEntry
+	(*GetSessionRequest)(nil),           // 69: agentfleet.v1.GetSessionRequest
+	(*ReadTranscriptSinceRequest)(nil),  // 70: agentfleet.v1.ReadTranscriptSinceRequest
+	(*SetPermissionModeRequest)(nil),    // 71: agentfleet.v1.SetPermissionModeRequest
+	(*ListFilesRequest)(nil),            // 72: agentfleet.v1.ListFilesRequest
+	(*GetFileUploadUrlRequest)(nil),     // 73: agentfleet.v1.GetFileUploadUrlRequest
+	(*GetFileDownloadUrlRequest)(nil),   // 74: agentfleet.v1.GetFileDownloadUrlRequest
+	(*DeleteFileRequest)(nil),           // 75: agentfleet.v1.DeleteFileRequest
+	(*QueryLogsRequest)(nil),            // 76: agentfleet.v1.QueryLogsRequest
+	(*GetSessionResponse)(nil),          // 77: agentfleet.v1.GetSessionResponse
+	(*ReadTranscriptSinceResponse)(nil), // 78: agentfleet.v1.ReadTranscriptSinceResponse
+	(*TranscriptEntry)(nil),             // 79: agentfleet.v1.TranscriptEntry
+	(*SetPermissionModeResponse)(nil),   // 80: agentfleet.v1.SetPermissionModeResponse
+	(*AppendResponse)(nil),              // 81: agentfleet.v1.AppendResponse
+	(*ListFilesResponse)(nil),           // 82: agentfleet.v1.ListFilesResponse
+	(*GetFileUploadUrlResponse)(nil),    // 83: agentfleet.v1.GetFileUploadUrlResponse
+	(*GetFileDownloadUrlResponse)(nil),  // 84: agentfleet.v1.GetFileDownloadUrlResponse
+	(*DeleteFileResponse)(nil),          // 85: agentfleet.v1.DeleteFileResponse
+	(*QueryLogsResponse)(nil),           // 86: agentfleet.v1.QueryLogsResponse
 }
 var file_agentfleet_v1_dashboard_proto_depIdxs = []int32{
 	67, // 0: agentfleet.v1.ListSessionsResponse.sessions:type_name -> agentfleet.v1.Session
@@ -3930,10 +4031,10 @@ var file_agentfleet_v1_dashboard_proto_depIdxs = []int32{
 	40, // 8: agentfleet.v1.ListPromptSnippetsResponse.snippets:type_name -> agentfleet.v1.PromptSnippet
 	40, // 9: agentfleet.v1.CreatePromptSnippetResponse.snippet:type_name -> agentfleet.v1.PromptSnippet
 	40, // 10: agentfleet.v1.UpdatePromptSnippetResponse.snippet:type_name -> agentfleet.v1.PromptSnippet
-	51, // 11: agentfleet.v1.RunScheduledAuditNowResponse.audit:type_name -> agentfleet.v1.ScheduledAudit
-	51, // 12: agentfleet.v1.ListScheduledAuditsResponse.audits:type_name -> agentfleet.v1.ScheduledAudit
-	51, // 13: agentfleet.v1.CreateScheduledAuditResponse.audit:type_name -> agentfleet.v1.ScheduledAudit
-	51, // 14: agentfleet.v1.UpdateScheduledAuditResponse.audit:type_name -> agentfleet.v1.ScheduledAudit
+	51, // 11: agentfleet.v1.RunScheduleNowResponse.schedule:type_name -> agentfleet.v1.Schedule
+	51, // 12: agentfleet.v1.ListSchedulesResponse.schedules:type_name -> agentfleet.v1.Schedule
+	51, // 13: agentfleet.v1.CreateScheduleResponse.schedule:type_name -> agentfleet.v1.Schedule
+	51, // 14: agentfleet.v1.UpdateScheduleResponse.schedule:type_name -> agentfleet.v1.Schedule
 	66, // 15: agentfleet.v1.CellNode.metrics:type_name -> agentfleet.v1.CellNode.MetricsEntry
 	63, // 16: agentfleet.v1.GetFleetTopologyResponse.nodes:type_name -> agentfleet.v1.CellNode
 	64, // 17: agentfleet.v1.GetFleetTopologyResponse.edges:type_name -> agentfleet.v1.TopologyEdge
@@ -3971,11 +4072,11 @@ var file_agentfleet_v1_dashboard_proto_depIdxs = []int32{
 	76, // 49: agentfleet.v1.DashboardService.QueryLogs:input_type -> agentfleet.v1.QueryLogsRequest
 	60, // 50: agentfleet.v1.DashboardService.QueryMetrics:input_type -> agentfleet.v1.QueryMetricsRequest
 	62, // 51: agentfleet.v1.DashboardService.GetFleetTopology:input_type -> agentfleet.v1.GetFleetTopologyRequest
-	52, // 52: agentfleet.v1.DashboardService.ListScheduledAudits:input_type -> agentfleet.v1.ListScheduledAuditsRequest
-	54, // 53: agentfleet.v1.DashboardService.CreateScheduledAudit:input_type -> agentfleet.v1.CreateScheduledAuditRequest
-	56, // 54: agentfleet.v1.DashboardService.UpdateScheduledAudit:input_type -> agentfleet.v1.UpdateScheduledAuditRequest
-	58, // 55: agentfleet.v1.DashboardService.DeleteScheduledAudit:input_type -> agentfleet.v1.DeleteScheduledAuditRequest
-	49, // 56: agentfleet.v1.DashboardService.RunScheduledAuditNow:input_type -> agentfleet.v1.RunScheduledAuditNowRequest
+	52, // 52: agentfleet.v1.DashboardService.ListSchedules:input_type -> agentfleet.v1.ListSchedulesRequest
+	54, // 53: agentfleet.v1.DashboardService.CreateSchedule:input_type -> agentfleet.v1.CreateScheduleRequest
+	56, // 54: agentfleet.v1.DashboardService.UpdateSchedule:input_type -> agentfleet.v1.UpdateScheduleRequest
+	58, // 55: agentfleet.v1.DashboardService.DeleteSchedule:input_type -> agentfleet.v1.DeleteScheduleRequest
+	49, // 56: agentfleet.v1.DashboardService.RunScheduleNow:input_type -> agentfleet.v1.RunScheduleNowRequest
 	1,  // 57: agentfleet.v1.DashboardService.ListSessions:output_type -> agentfleet.v1.ListSessionsResponse
 	77, // 58: agentfleet.v1.DashboardService.GetSession:output_type -> agentfleet.v1.GetSessionResponse
 	3,  // 59: agentfleet.v1.DashboardService.CreateSession:output_type -> agentfleet.v1.CreateSessionResponse
@@ -4010,11 +4111,11 @@ var file_agentfleet_v1_dashboard_proto_depIdxs = []int32{
 	86, // 88: agentfleet.v1.DashboardService.QueryLogs:output_type -> agentfleet.v1.QueryLogsResponse
 	61, // 89: agentfleet.v1.DashboardService.QueryMetrics:output_type -> agentfleet.v1.QueryMetricsResponse
 	65, // 90: agentfleet.v1.DashboardService.GetFleetTopology:output_type -> agentfleet.v1.GetFleetTopologyResponse
-	53, // 91: agentfleet.v1.DashboardService.ListScheduledAudits:output_type -> agentfleet.v1.ListScheduledAuditsResponse
-	55, // 92: agentfleet.v1.DashboardService.CreateScheduledAudit:output_type -> agentfleet.v1.CreateScheduledAuditResponse
-	57, // 93: agentfleet.v1.DashboardService.UpdateScheduledAudit:output_type -> agentfleet.v1.UpdateScheduledAuditResponse
-	59, // 94: agentfleet.v1.DashboardService.DeleteScheduledAudit:output_type -> agentfleet.v1.DeleteScheduledAuditResponse
-	50, // 95: agentfleet.v1.DashboardService.RunScheduledAuditNow:output_type -> agentfleet.v1.RunScheduledAuditNowResponse
+	53, // 91: agentfleet.v1.DashboardService.ListSchedules:output_type -> agentfleet.v1.ListSchedulesResponse
+	55, // 92: agentfleet.v1.DashboardService.CreateSchedule:output_type -> agentfleet.v1.CreateScheduleResponse
+	57, // 93: agentfleet.v1.DashboardService.UpdateSchedule:output_type -> agentfleet.v1.UpdateScheduleResponse
+	59, // 94: agentfleet.v1.DashboardService.DeleteSchedule:output_type -> agentfleet.v1.DeleteScheduleResponse
+	50, // 95: agentfleet.v1.DashboardService.RunScheduleNow:output_type -> agentfleet.v1.RunScheduleNowResponse
 	57, // [57:96] is the sub-list for method output_type
 	18, // [18:57] is the sub-list for method input_type
 	18, // [18:18] is the sub-list for extension type_name
