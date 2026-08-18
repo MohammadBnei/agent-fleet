@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.0.1](https://github.com/MohammadBnei/agent-fleet/compare/4.0.0...4.0.1) (2026-08-18)
+
+
+### Bug Fixes
+
+* **provisioner:** shared instances stop rolling on every reuse ([#196](https://github.com/MohammadBnei/agent-fleet/issues/196)) ([330e653](https://github.com/MohammadBnei/agent-fleet/commit/330e653173ff3dfb7437c870e006c79ff4281c1e))
+
 # [4.0.0](https://github.com/MohammadBnei/agent-fleet/compare/3.9.1...4.0.0) (2026-08-18)
 
 
