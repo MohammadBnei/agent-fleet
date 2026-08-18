@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.1.2](https://github.com/MohammadBnei/agent-fleet/compare/4.1.1...4.1.2) (2026-08-18)
+
+
+### Bug Fixes
+
+* **worker:** stop session.test.ts reading its own environment ([#204](https://github.com/MohammadBnei/agent-fleet/issues/204)) ([50b8f4b](https://github.com/MohammadBnei/agent-fleet/commit/50b8f4bb86e989bb1201913fa64edf22c7405a62))
+
 ## [4.1.1](https://github.com/MohammadBnei/agent-fleet/compare/4.1.0...4.1.1) (2026-08-18)
 
 # [4.1.0](https://github.com/MohammadBnei/agent-fleet/compare/4.0.2...4.1.0) (2026-08-18)
