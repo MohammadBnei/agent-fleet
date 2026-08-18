@@ -134,7 +134,7 @@ func New(core *coreclient.Client) http.Handler {
 		mcp.WithString("repo", mcp.Description("Repo to scope to; omit for every repo")),
 		mcp.WithString("query", mcp.Description("Full-text query; omit to read the window newest-first instead of by relevance")),
 		mcp.WithString("since", mcp.Description("Inclusive lower bound on entry time: RFC3339 or YYYY-MM-DD")),
-		mcp.WithString("until", mcp.Description("Exclusive upper bound on entry time: RFC3339 or YYYY-MM-DD")),
+		mcp.WithString("until", mcp.Description("Upper bound on entry time: RFC3339 or YYYY-MM-DD. A bare date covers that whole day; a full RFC3339 timestamp is an exclusive instant")),
 		mcp.WithNumber("limit", mcp.Description("Max entries to return; default 20, capped at 500")),
 	), journalSearchHandler(core))
 

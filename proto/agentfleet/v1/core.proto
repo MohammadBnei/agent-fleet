@@ -387,7 +387,9 @@ message SearchJournalRequest {
   string query = 2; // "" drops the full-text predicate — plain chronological read
   int32 limit = 3;
   // Bounds on created_at, RFC3339 or YYYY-MM-DD; "" means unbounded.
-  // since is inclusive, until is exclusive.
+  // since is inclusive; until is exclusive, EXCEPT that a bare YYYY-MM-DD
+  // until covers that whole day (a date names a day, not the instant it
+  // starts, so until=2026-08-18 includes the 18th).
   string since = 4;
   string until = 5;
 }

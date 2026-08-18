@@ -426,17 +426,20 @@ func (s *Server) AppendJournal(ctx context.Context, req *agentfleetv1.AppendJour
 const maxJournalLimit = 500
 
 // parseJournalBound accepts RFC3339 or a bare YYYY-MM-DD (midnight UTC), the
-// two shapes an agent actually types. "" means unbounded.
-func parseJournalBound(field, v string) (time.Time, error) {
+// two shapes an agent actually types. "" means unbounded. The bool reports a
+// date-only value: a bare date names a whole day, not the instant it starts,
+// and only the caller knows whether that matters for the bound it is parsing.
+func parseJournalBound(field, v string) (time.Time, bool, error) {
 	if v == "" {
-		return time.Time{}, nil
+		return time.Time{}, false, nil
 	}
-	for _, layout := range []string{time.RFC3339, time.DateOnly} {
-		if t, err := time.Parse(layout, v); err == nil {
-			return t, nil
-		}
+	if t, err := time.Parse(time.RFC3339, v); err == nil {
+		return t, false, nil
 	}
-	return time.Time{}, fmt.Errorf("%s: %q is not RFC3339 or YYYY-MM-DD", field, v)
+	if t, err := time.Parse(time.DateOnly, v); err == nil {
+		return t, true, nil
+	}
+	return time.Time{}, false, fmt.Errorf("%s: %q is not RFC3339 or YYYY-MM-DD", field, v)
 }
 
 func (s *Server) SearchJournal(ctx context.Context, req *agentfleetv1.SearchJournalRequest) (*agentfleetv1.SearchJournalResponse, error) {
@@ -447,13 +450,22 @@ func (s *Server) SearchJournal(ctx context.Context, req *agentfleetv1.SearchJour
 	if limit > maxJournalLimit {
 		limit = maxJournalLimit
 	}
-	since, err := parseJournalBound("since", req.GetSince())
+	since, _, err := parseJournalBound("since", req.GetSince())
 	if err != nil {
 		return nil, fmt.Errorf("SearchJournal: %w", err)
 	}
-	until, err := parseJournalBound("until", req.GetUntil())
+	until, untilIsDateOnly, err := parseJournalBound("until", req.GetUntil())
 	if err != nil {
 		return nil, fmt.Errorf("SearchJournal: %w", err)
+	}
+	if untilIsDateOnly {
+		// until is an exclusive bound, but a bare YYYY-MM-DD names a whole
+		// day. "until=2026-08-18" has to mean "through the 18th", not "up to
+		// the instant the 18th began" — otherwise the literal seven-day
+		// window an agent writes, since=2026-08-11 until=2026-08-18, silently
+		// drops everything from today, which is the day it most wanted. A
+		// full RFC3339 until is left exactly as given: it named an instant.
+		until = until.AddDate(0, 0, 1)
 	}
 	entries, err := s.journal.Search(ctx, journal.SearchOpts{
 		Repo:  req.GetRepo(),

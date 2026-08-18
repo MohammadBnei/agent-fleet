@@ -975,7 +975,9 @@ export type SearchJournalRequest = Message<"agentfleet.v1.SearchJournalRequest">
 
   /**
    * Bounds on created_at, RFC3339 or YYYY-MM-DD; "" means unbounded.
-   * since is inclusive, until is exclusive.
+   * since is inclusive; until is exclusive, EXCEPT that a bare YYYY-MM-DD
+   * until covers that whole day (a date names a day, not the instant it
+   * starts, so until=2026-08-18 includes the 18th).
    *
    * @generated from field: string since = 4;
    */

@@ -4,7 +4,9 @@ package coreserver
 
 import (
 	"context"
+	"strings"
 	"testing"
+	"time"
 
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 
@@ -226,7 +228,8 @@ func TestReserveSlot_ConcurrentCallersCannotExceedTheCap(t *testing.T) {
 // the very same function two statements later, into sessions.pod_phase. The
 // cost was paid by the one caller that did want to read the journal: a
 // seven-day, all-repo query came back four parts noise to one part signal
-// (issue #198, docs/adr/0054).
+// (issue #198; the ADR proposing this is in PR #199 and unnumbered until a
+// human lands it — do not cite a number that is not written yet).
 //
 // Re-adding the append would look harmless in review, so pin it here.
 func TestApplyPodEvent_WritesNoJournalRow(t *testing.T) {
@@ -272,5 +275,64 @@ func TestApplyPodEvent_WritesNoJournalRow(t *testing.T) {
 	}
 	if s.PodPhase == nil || *s.PodPhase != "POD_PHASE_TERMINATED" {
 		t.Fatalf("pod_phase must still be recorded, got %v", s.PodPhase)
+	}
+}
+
+// A bare YYYY-MM-DD until covers that whole day.
+//
+// until is an exclusive bound, which is right for an instant and wrong for a
+// date: "since=2026-08-11, until=2026-08-18" is the literal seven-day window
+// an agent writes, and read as a raw exclusive timestamp it drops every entry
+// from the 18th — the day the report most wanted. Silent, because a shorter
+// result set looks exactly like a quieter week. The first version of this
+// change had that bug, and its own test asserted the buggy window.
+func TestSearchJournal_DateOnlyUntilCoversThatWholeDay(t *testing.T) {
+	ctx := context.Background()
+	pool := dbtest.NewPool(t)
+	journalStore := journal.NewStore(pool)
+	srv := New(nil, sessions.NewStore(pool), journalStore, nil, nil, nil, nil)
+
+	// Midday on the 18th — inside the day, after its opening instant.
+	at := time.Date(2026, 8, 18, 12, 0, 0, 0, time.UTC)
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO knowledge_journal (repo, actor, event_type, payload, created_at)
+		VALUES ('agent-fleet', 'worker', 'agent_note', '{"note":"today"}', $1)`, at); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	resp, err := srv.SearchJournal(ctx, &agentfleetv1.SearchJournalRequest{
+		Since: "2026-08-11", Until: "2026-08-18",
+	})
+	if err != nil {
+		t.Fatalf("search: %v", err)
+	}
+	if len(resp.GetEntries()) != 1 {
+		t.Fatalf("a bare date until must include that day's entries, got %d", len(resp.GetEntries()))
+	}
+
+	// A full RFC3339 until named an instant, and is honoured as one.
+	resp, err = srv.SearchJournal(ctx, &agentfleetv1.SearchJournalRequest{
+		Since: "2026-08-11", Until: "2026-08-18T00:00:00Z",
+	})
+	if err != nil {
+		t.Fatalf("search: %v", err)
+	}
+	if len(resp.GetEntries()) != 0 {
+		t.Fatalf("an explicit RFC3339 until must stay exclusive, got %d entries", len(resp.GetEntries()))
+	}
+}
+
+// A bad bound is a named error, not a silently empty window.
+func TestSearchJournal_RejectsAnUnparseableBound(t *testing.T) {
+	ctx := context.Background()
+	pool := dbtest.NewPool(t)
+	srv := New(nil, sessions.NewStore(pool), journal.NewStore(pool), nil, nil, nil, nil)
+
+	_, err := srv.SearchJournal(ctx, &agentfleetv1.SearchJournalRequest{Since: "last tuesday"})
+	if err == nil {
+		t.Fatal("an unparseable since must error, not quietly read the whole table")
+	}
+	if !strings.Contains(err.Error(), "since") {
+		t.Errorf("the error must name the offending field, got %v", err)
 	}
 }

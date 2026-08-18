@@ -56,11 +56,15 @@ type Entry struct {
 
 // List returns entries with id > sinceID, ascending (insertion order) —
 // same pull/cursor shape as transcript.Store.ReadSince (docs/adr/0013).
-// repo == "" matches every repo, not just entries whose own repo is
-// literally empty — provisioner-sourced pod-lifecycle events are written
-// with repo="" (ReportPodEvents has no per-repo context), so a caller
-// asking for one specific repo's history would otherwise never see them
-// mixed in with worker-sourced entries that do have a repo.
+// repo == "" matches every repo, and is the only way to read the whole
+// journal: the column is nullable and a caller naming one repo sees just
+// that repo's rows.
+//
+// It used to matter for a second reason — ReportPodEvents wrote pod-lifecycle
+// rows with repo="" because it had no per-repo context, so a repo-scoped read
+// silently omitted them. That writer is gone (nothing appends a repo-less row
+// today), but the matches-all branch stays: it is what Search's own optional
+// repo is built on.
 func (s *Store) List(ctx context.Context, repo string, sinceID int64, limit int) ([]Entry, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT id, COALESCE(repo, ''), actor, event_type, payload::text, created_at

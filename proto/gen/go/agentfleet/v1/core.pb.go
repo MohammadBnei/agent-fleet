@@ -1915,7 +1915,9 @@ type SearchJournalRequest struct {
 	Query string                 `protobuf:"bytes,2,opt,name=query,proto3" json:"query,omitempty"` // "" drops the full-text predicate — plain chronological read
 	Limit int32                  `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
 	// Bounds on created_at, RFC3339 or YYYY-MM-DD; "" means unbounded.
-	// since is inclusive, until is exclusive.
+	// since is inclusive; until is exclusive, EXCEPT that a bare YYYY-MM-DD
+	// until covers that whole day (a date names a day, not the instant it
+	// starts, so until=2026-08-18 includes the 18th).
 	Since         string `protobuf:"bytes,4,opt,name=since,proto3" json:"since,omitempty"`
 	Until         string `protobuf:"bytes,5,opt,name=until,proto3" json:"until,omitempty"`
 	unknownFields protoimpl.UnknownFields
