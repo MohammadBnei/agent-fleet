@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.9.1](https://github.com/MohammadBnei/agent-fleet/compare/3.9.0...3.9.1) (2026-08-18)
+
+
+### Performance Improvements
+
+* **ci:** drop the vfs storage-driver flag, let the box decide ([#193](https://github.com/MohammadBnei/agent-fleet/issues/193)) ([f4161b7](https://github.com/MohammadBnei/agent-fleet/commit/f4161b7c686587d25b5ac183c8e0e12610ce2331))
+
 # [3.9.0](https://github.com/MohammadBnei/agent-fleet/compare/3.8.7...3.9.0) (2026-08-17)
 
 
