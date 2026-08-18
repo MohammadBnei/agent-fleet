@@ -62,9 +62,17 @@ CREATE INDEX idx_schedules_due ON schedules (next_run_at) WHERE enabled;
 
 -- Every existing audit keeps firing exactly as it did, against the repo the
 -- constant named.
-INSERT INTO schedules (name, repo, prompt, interval_seconds, enabled, next_run_at, last_run_at, last_status)
-  SELECT name, 'infra-bootstrap', prompt, interval_seconds, enabled, next_run_at, last_run_at, last_status
+-- Ids are carried over, not regenerated: the proposals dedup key embeds the
+-- schedule's id, and a new id means a standing proposal stops collapsing the
+-- next tick into itself — duplicates at exactly the cutover.
+INSERT INTO schedules (id, name, repo, prompt, interval_seconds, enabled, next_run_at, last_run_at, last_status)
+  SELECT id, name, 'infra-bootstrap', prompt, interval_seconds, enabled, next_run_at, last_run_at, last_status
   FROM scheduled_audits;
+
+-- And the standing proposals move with them, for the same reason: the key is
+-- `audit:<id>` and the loop now writes `schedule:<id>`.
+UPDATE proposals SET dedup_key = 'schedule:' || substring(dedup_key from 7)
+  WHERE dedup_key LIKE 'audit:%' AND dismissed_at IS NULL;
 
 -- proposals.source is a CHECK-constrained enum, so a schedule filing under a
 -- new source name would violate it on every fire — and loop.tick swallows that

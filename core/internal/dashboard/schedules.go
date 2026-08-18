@@ -75,6 +75,9 @@ func (s *Server) RunScheduleNow(ctx context.Context, req *connect.Request[agentf
 }
 
 func (s *Server) DeleteSchedule(ctx context.Context, req *connect.Request[agentfleetv1.DeleteScheduleRequest]) (*connect.Response[agentfleetv1.DeleteScheduleResponse], error) {
+	if req.Msg.GetId() == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("id is required"))
+	}
 	if err := s.schedules.Delete(ctx, req.Msg.GetId()); err != nil {
 		return nil, scheduleErr("DeleteSchedule", err)
 	}

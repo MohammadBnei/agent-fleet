@@ -111,15 +111,39 @@ func (s *Store) List(ctx context.Context) ([]Schedule, error) {
 	return collect(rows)
 }
 
+// dbNow reads the database's clock. Every next_run_at in this package is
+// computed from it, never from time.Now(): the due-check is SQL, so a cursor
+// written against a Go clock that is behind Postgres lands in the past and the
+// schedule is due again on the very next tick. ListDue gets the same value
+// with its rows; the write paths pay one extra round trip for it.
+func (s *Store) dbNow(ctx context.Context) (time.Time, error) {
+	var now time.Time
+	if err := s.pool.QueryRow(ctx, `SELECT now()`).Scan(&now); err != nil {
+		return time.Time{}, fmt.Errorf("read database clock: %w", err)
+	}
+	return now, nil
+}
+
+// firstRun resolves the cursor a Create/Update should write: the caller's
+// chosen moment for a one-shot, the cadence's next occurrence otherwise.
+func (s *Store) firstRun(ctx context.Context, in Schedule, runAt time.Time) (time.Time, error) {
+	if in.OneShot() {
+		return runAt, nil
+	}
+	now, err := s.dbNow(ctx)
+	if err != nil {
+		return time.Time{}, err
+	}
+	next, _, err := nextRun(in, now)
+	return next, err
+}
+
 // Create inserts a schedule. runAt is only meaningful for a one-shot (no cron,
 // no interval); the other two compute their own first run from now.
 func (s *Store) Create(ctx context.Context, in Schedule, runAt time.Time) (Schedule, error) {
-	next := runAt
-	if !in.OneShot() {
-		var err error
-		if next, _, err = nextRun(in, time.Now()); err != nil {
-			return Schedule{}, err
-		}
+	next, err := s.firstRun(ctx, in, runAt)
+	if err != nil {
+		return Schedule{}, err
 	}
 	sc, err := scan(s.pool.QueryRow(ctx, `
 		INSERT INTO schedules (name, repo, prompt, cron, interval_seconds, next_run_at)
@@ -146,12 +170,9 @@ func (s *Store) Create(ctx context.Context, in Schedule, runAt time.Time) (Sched
 // NULL for it, which the NOT NULL column rejects — every edit of a cron
 // schedule would error. Pause/resume routes through this same method.
 func (s *Store) Update(ctx context.Context, in Schedule, runAt time.Time) (Schedule, error) {
-	next := runAt
-	if !in.OneShot() {
-		var err error
-		if next, _, err = nextRun(in, time.Now()); err != nil {
-			return Schedule{}, err
-		}
+	next, err := s.firstRun(ctx, in, runAt)
+	if err != nil {
+		return Schedule{}, err
 	}
 	sc, err := scan(s.pool.QueryRow(ctx, `
 		UPDATE schedules
@@ -222,23 +243,44 @@ func (s *Store) Delete(ctx context.Context, id string) error {
 // is already past, leaving the row due on every tick — and two core replicas
 // would compute different cursors for the same schedule.
 //
-// ORDER BY matters with the LIMIT: without it, a schedule can be permanently
-// shadowed once more rows are due than the limit.
+// One statement, not a SELECT now() followed by a SELECT rows: a row that
+// falls due between the two reads would come back listed but not yet due by
+// the Go clock, take the run-now branch, find no flag, and be skipped for a
+// whole tick.
+//
+// ORDER BY run_now DESC first: a run_now row's next_run_at is by definition in
+// the future, so ordering by the cursor alone sorts every manual trigger last
+// and the LIMIT can starve it indefinitely.
 func (s *Store) ListDue(ctx context.Context, limit int) ([]Schedule, time.Time, error) {
-	var now time.Time
-	if err := s.pool.QueryRow(ctx, `SELECT now()`).Scan(&now); err != nil {
-		return nil, time.Time{}, fmt.Errorf("read database clock: %w", err)
-	}
 	rows, err := s.pool.Query(ctx, `
-		SELECT `+columns+` FROM schedules
+		SELECT now(), `+columns+` FROM schedules
 		WHERE (enabled AND next_run_at <= now()) OR run_now
-		ORDER BY next_run_at
+		ORDER BY run_now DESC, next_run_at
 		LIMIT $1`, limit)
 	if err != nil {
 		return nil, time.Time{}, fmt.Errorf("list due schedules: %w", err)
 	}
-	due, err := collect(rows)
-	return due, now, err
+	defer rows.Close()
+
+	var now time.Time
+	due := []Schedule{}
+	for rows.Next() {
+		var sc Schedule
+		if err := rows.Scan(&now, &sc.ID, &sc.Name, &sc.Repo, &sc.Prompt, &sc.Cron, &sc.IntervalSeconds,
+			&sc.RunNow, &sc.Enabled, &sc.NextRunAt, &sc.LastRunAt, &sc.LastStatus); err != nil {
+			return nil, time.Time{}, fmt.Errorf("scan due schedule: %w", err)
+		}
+		due = append(due, sc)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, time.Time{}, err
+	}
+	// No due rows means no clock came back with them, and the caller has
+	// nothing to compute anyway.
+	if now.IsZero() {
+		now = time.Now()
+	}
+	return due, now, nil
 }
 
 // Claim advances a schedule's cursor, returning false if this caller lost the

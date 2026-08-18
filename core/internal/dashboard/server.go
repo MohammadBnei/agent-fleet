@@ -270,6 +270,15 @@ func (s *Server) OpenFromProposal(ctx context.Context, req *connect.Request[agen
 // design — it runs on a path that is already failing, and a warning here is
 // more useful than masking the original error with the rollback's.
 func (s *Server) rollbackOpen(ctx context.Context, proposalID, sessionID string) {
+	// Tear the pod down BEFORE deleting the row, the same order DeleteSession
+	// uses. The append-failure path gets here with WarmIfIdle already
+	// succeeded, so a pod exists — and sessions.Delete is a bare SQL DELETE.
+	// Dropping the row first orphans that pod AND frees a concurrency slot it
+	// still occupies (ReserveSlot counts rows), which is how the fleet ends up
+	// over MAX_LIVE_SESSIONS with no way to see why.
+	if _, err := s.e2e.TearDownSession(ctx, sessionID, agentfleetv1.SessionKind_SESSION_KIND_WORKER); err != nil {
+		slog.Warn("dashboard OpenFromProposal: rollback teardown failed", "sessionId", sessionID, "error", err)
+	}
 	if err := s.sessions.Delete(ctx, sessionID); err != nil {
 		slog.Warn("dashboard OpenFromProposal: rollback delete failed", "sessionId", sessionID, "error", err)
 	}

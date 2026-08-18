@@ -33,7 +33,11 @@ func externalPool(t *testing.T, dsn string) *pgxpool.Pool {
 	t.Helper()
 	ctx := context.Background()
 
-	schema := "test_" + strings.Map(func(r rune) rune {
+	// Suffix FIRST, name second: Postgres truncates identifiers at 63 bytes, so
+	// appending the unique part lets the longest test names collide on a
+	// deterministic schema — and this hatch exists precisely because the
+	// instance is shared, where a collision is a hard 42P06 on the second run.
+	schema := "test_" + strconv.FormatInt(time.Now().UnixNano()%1e9, 36) + "_" + strings.Map(func(r rune) rune {
 		switch {
 		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
 			return r
@@ -42,7 +46,10 @@ func externalPool(t *testing.T, dsn string) *pgxpool.Pool {
 		default:
 			return '_'
 		}
-	}, t.Name()) + "_" + strconv.FormatInt(time.Now().UnixNano()%1e9, 36)
+	}, t.Name())
+	if len(schema) > 60 {
+		schema = schema[:60]
+	}
 
 	exec := func(sql string) error {
 		conn, err := pgx.Connect(ctx, dsn)
