@@ -221,6 +221,26 @@ mock.module("@anthropic-ai/claude-agent-sdk", () => ({
   },
 }));
 
+// session.ts snapshots its env at module load, deliberately (RESUME_SESSION_ID,
+// MODEL, MAX_TURNS and the rest are read once at :13-36). This file therefore
+// inherits whatever the process it runs in happens to export — and a worker pod
+// running a RESUMED session exports RESUME_SESSION_ID, so `bun test` from any
+// warmed session failed the tool-wiring case below with a real session id where
+// it asserted undefined. Nothing was wrong with the code; the test was reading
+// its environment. Clear the lot before the import so the module takes its
+// documented defaults wherever this runs.
+for (const key of [
+  "RESUME_SESSION_ID",
+  "RESUME_FROM_SEQ",
+  "SESSION_ID",
+  "CLAUDE_MODEL",
+  "MAX_TURNS",
+  "WORKTREE_PATH",
+  "SIDECAR_MCP_ADDR",
+]) {
+  delete process.env[key];
+}
+
 const { runSession } = await import("./session.js");
 
 beforeEach(() => {
