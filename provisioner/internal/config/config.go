@@ -86,7 +86,7 @@ func Load() Config {
 		SessionStorageClass:         env("SESSION_STORAGE_CLASS", ""),
 		SessionNodeSelector:         env("SESSION_NODE_SELECTOR", ""),
 		WorkspaceRoot:               env("WORKSPACE_ROOT", "/workspace"),
-		E2eHost:                     env("E2E_HOST", "e2e.bnei.dev"),
+		E2eHost:                     env("E2E_HOST", "bnei.dev"),
 		Port:                        env("PORT", "8080"),
 		GRPCPort:                    env("GRPC_PORT", "9090"),
 		CoreGRPCAddr:                env("CORE_GRPC_ADDR", "agent-fleet-core.agent-fleet.svc.cluster.local:9090"),
