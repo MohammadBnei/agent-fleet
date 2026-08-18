@@ -79,7 +79,7 @@ sequenceDiagram
     P->>SC: client-go creates the session's PVC, then a batch/v1.Job: clone → sidecar → worker
     C->>PG: Append the message to transcript — AFTER the warm, never before
     P-->>C: ReportPodEvents stream (created→scheduled→running→...→[fast-path Failed], adr/0024) [gRPC]
-    C->>PG: journal every pod event (knowledge_journal); pod_phase drives concurrency/idle/stop checks now, not status
+    C->>PG: SetPodPhase — pod_phase drives concurrency/idle/stop checks now, not status (no journal write, adr/0055)
 
     W->>Ag: query() streaming-input, permissionMode="default", resume: RESUME_SESSION_ID if set
     Ag->>SC: mcp tool call (local MCP, e.g. send_message)
@@ -390,10 +390,13 @@ permission tiers instead of a second, fleet-specific gate on top of them
   account (`gh api user --jq .login`), not hardcoded — both the
   provisioner (its own clone/fetch) and the worker (its own push/PR) do
   this independently, since the two processes don't share `$HOME`.
-- Append-only `knowledge_journal` — task lifecycle events, session
-  results, and provisioner pod-lifecycle events, all funneled through
-  `core`'s single Postgres connection, now readable via a typed
-  `GetJournal` RPC instead of direct-SQL-only (`adr/0024`).
+- Append-only `knowledge_journal` — session lifecycle events and what a
+  session learned, funneled through `core`'s single Postgres connection,
+  readable via a typed `GetJournal` RPC instead of direct-SQL-only
+  (`adr/0024`) and, for an agent, via `journal_search` with optional
+  repo/query and a `since`/`until` window (`adr/0055`). Not pod
+  telemetry: `ReportPodEvents` used to journal every phase transition,
+  ~80% of the table with no reader, and stopped (`adr/0055`).
 - **A session's disk is its own, and survives teardown.** The working tree and
   dependency caches live on a per-session `local-path` PVC, cloned into by an
   init container in the session's own pod; the SDK resume state is a per-session
@@ -763,10 +766,13 @@ approve, so a 1-hour audit cadence whose session runs 3 hours files three
 proposals for the same work. Archiving the session it produced is what re-arms
 it.
 
-`knowledge_journal` is append-only, written only by `core` (every writer —
-worker, sidecar, provisioner — goes through `CoreService.AppendJournal`/
-`ReportPodEvents`, since `core` is the fleet's sole Postgres-credential
-holder). `transcript` gives append-once-per-call ordering plus real dedup via
+`knowledge_journal` is append-only, written only by `core` — the worker and
+its sidecar go through `CoreService.AppendJournal`, since `core` is the
+fleet's sole Postgres-credential holder. `ReportPodEvents` is deliberately
+**not** on that list any more (`adr/0055`): it wrote one row per pod phase
+transition, ~80% of the table, that nothing ever read — the live value is
+`sessions.pod_phase`, written by the same handler, and the history is in
+Loki. `transcript` gives append-once-per-call ordering plus real dedup via
 the `(session_id, idempotency_key)` unique index, and `ON DELETE CASCADE` —
 that FK, together with `proposals`' `ON DELETE SET NULL`, is the entire reason
 `deleted_at`/soft-delete could die.

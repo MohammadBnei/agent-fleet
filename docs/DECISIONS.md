@@ -45,6 +45,15 @@ Any doc, code, comment, or memory that contradicts this file or an
   [`adr/0020`](adr/0020-hub-and-spoke-grpc-worker-sidecar.md) point 1) —
   every other component appends to it via a `CoreService` gRPC call, not a
   direct write.
+- **The journal holds agent knowledge, not pod telemetry**
+  ([`adr/0055`](adr/0055-the-journal-is-agent-knowledge-not-pod-telemetry.md)).
+  `ReportPodEvents` used to append one row per pod phase transition — ~80% of
+  the table, read by nothing, duplicating a `sessions.pod_phase` write in the
+  same handler with the history already in Loki. Durable observability goes to
+  Loki/Prometheus; `knowledge_journal` is what a future session on a repo needs
+  to know. Reading it is `journal_search(repo?, query?, since?, until?,
+  limit?)` — every argument optional, because "all repos, last seven days" is
+  the question it exists to answer.
 - **One repo, one version/CHANGELOG.** `release.yml` runs from the repo
   root, not per-package — the fleet ships as one unit even though
   `worker/`, `core/`, `provisioner/`, `sidecar/` are deployed as separate
