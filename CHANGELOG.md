@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.1.4](https://github.com/MohammadBnei/agent-fleet/compare/4.1.3...4.1.4) (2026-08-18)
+
+
+### Bug Fixes
+
+* **sidecar:** cap journal_search's result, and say so when it caps ([#202](https://github.com/MohammadBnei/agent-fleet/issues/202)) ([8a656dd](https://github.com/MohammadBnei/agent-fleet/commit/8a656ddfc7d5b48a0fb3576250935abdb5589e85)), closes [#198](https://github.com/MohammadBnei/agent-fleet/issues/198) [#199](https://github.com/MohammadBnei/agent-fleet/issues/199)
+
 ## [4.1.3](https://github.com/MohammadBnei/agent-fleet/compare/4.1.2...4.1.3) (2026-08-18)
 
 
