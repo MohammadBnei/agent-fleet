@@ -188,12 +188,56 @@ Four steps, cheapest first, to be taken only as far as the pain requires:
   ever needs offloading. It is a service, not shell access, so it does not fit
   "run the agent's arbitrary `Bash` somewhere else".
 
-### Noticed while surveying, not part of this decision
+### Noticed while surveying: the concurrency ceiling is the PVC pin
 
-Every fleet pod observed sits on `k8s-worker-01` (CPU requests 4063m of 5400m —
-room for roughly one more concurrent session) while `k8s-worker-02` has about
-2589m free. `SESSION_NODE_SELECTOR` is `agent-fleet.dev/session-node=true` and
-that label is on **both** workers, so the concentration is not the selector.
-Whatever the cause, spreading sessions would roughly double concurrency, and it
-has nothing to do with where the toolchain lives. Worth one read-only look
-before anyone concludes the cluster is out of room.
+Not part of this decision, and worth recording because the obvious explanation
+is wrong. Every session pod runs on `k8s-worker-01` — 25 of 25 session PVCs
+since 2026-08-15, none on `k8s-worker-02`. The first guess was a missing
+`agent-fleet.dev/session-node` label. It is not: both nodes carry it, neither
+is tainted or unschedulable, and the worker pod spec has that `nodeSelector`
+and nothing else — no affinity, no topology spread. The scheduler is choosing
+freely and choosing worker-01 every time.
+
+It chooses correctly. `k8s-worker-02` runs 51 pods to worker-01's 24 — it is
+where the platform baseline lives (ArgoCD, ente, infisical, the in-cluster
+runner, several CSI controllers). So worker-02's 2811m of requests is almost
+all permanent baseline, while worker-01's 4063m is ~2063m of baseline **plus
+two live sessions at 1000m each**. With no session running, worker-01 is
+genuinely the least-allocated node and `NodeResourcesFit` picks it. Image
+locality then closes the loop: worker-01 has the worker image cached, worker-02
+has only stale tags, so it never wins the tiebreak, so it never caches the
+image.
+
+The ceiling that actually bites is elsewhere. A `session-<id>` PVC is
+`local-path`, `ReadWriteOnce`, and pinned to its node **for life** by
+`volume.kubernetes.io/selected-node`. A warm reuses that PVC, so every warm of
+a session returns to the node it was pinned to on day one, permanently. All 25
+sessions are pinned to worker-01, which leaves ~3340m for sessions after
+baseline: **three concurrent sessions, hard.** The fourth warm goes `Pending`
+and stays `Pending` with 2589m free on worker-02, because its working tree is
+on worker-01's disk. No label and no scheduler tuning changes that.
+
+The levers, none of them applied and none of them free:
+
+- **Move session volumes off `local-path`.** They become schedulable anywhere
+  and warms spread. `0048` §4 chose node-local storage on a measured 107x
+  bandwidth and ~200x metadata win, so this trades exactly that away. The `nfs`
+  class (RWX, unreplicated, never backed up — infra ADR-0036) is arguably the
+  honest fit for a regenerable scratch tree, and is explicitly the class for
+  data of that kind.
+- **Rebalance the baseline rather than the sessions.** Moving one platform
+  workload off worker-02 makes it the least-allocated node and new sessions
+  start landing there by themselves, with no change to this repo at all.
+- **Delete an idle session's PVC**, which un-pins it. Crude, and it discards the
+  workspace.
+
+There is also a request/limit tension worth naming while it is visible: a
+session **requests** 1 CPU / 1 GiB but is **limited** to 4 / 4, so the scheduler
+packs against a number with no relationship to what a build actually consumes.
+Raising the limit — the change that looked like the answer at the start of this
+interview — does nothing for concurrency. Raising the request would make the
+packing honest and cut concurrency further. Neither is a fix for the OOM, for
+the reason this ADR exists.
+
+All of the above is requests and limits, never measured utilization:
+`kubectl top` is RBAC-denied to every identity that looked.
