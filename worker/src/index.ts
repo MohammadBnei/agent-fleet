@@ -102,10 +102,14 @@ export async function main(
   configureGitAuth: ConfigureGitAuth = defaultConfigureGitAuth,
 ): Promise<void> {
   log("info", "session starting", { sessionId: SESSION_ID, repo: TARGET_REPO });
-  await sidecar
-    .appendJournal(TARGET_REPO!, "worker", "session.started", { sessionId: SESSION_ID })
-    .catch((err) => log("warn", "appendJournal(session.started) failed", { sessionId: SESSION_ID, error: String(err) }));
 
+  // No session.started/stopped/failed journal write here any more (ADR-0055).
+  // knowledge_journal is what a future session on this repo needs to know,
+  // and lifecycle bookkeeping is not that: session.started carried nothing
+  // but its own sessionId (a fact sessions.created_at and pod_phase both
+  // already hold) and was 60% of the table even after the pod.* purge, while
+  // session.stopped's "summary" was the last assistant text block, already
+  // pushed to transcript verbatim as a discussion entry. Nothing read either.
   try {
     await configureGitAuth();
     // runSession returns only via a human-initiated Stop. There is no
@@ -114,20 +118,25 @@ export async function main(
     // explanation, or a dead end, and nothing here can tell those apart.
     const result = await runSession();
     log("info", "session ended", { sessionId: SESSION_ID, aborted: result.aborted });
-    await sidecar
-      .appendJournal(TARGET_REPO!, "worker", "session.stopped", { sessionId: SESSION_ID, summary: result.summary })
-      .catch((err) => log("warn", "appendJournal(session.stopped) failed", { sessionId: SESSION_ID, error: String(err) }));
   } catch (err) {
     // SDK abort errors (from interrupt) are expected and already handled in
     // session.ts. Only a genuinely unexpected error should fail the pod.
     const errStr = String(err);
     const isAbortError = errStr.includes("Request was aborted") || errStr.includes("AbortError");
     if (!isAbortError) {
+      // This one error string was the only session.* payload that existed
+      // nowhere else: it is thrown outside the SDK loop so transcript never
+      // saw it, pod_message gets the generic "worker job reached a terminal
+      // Failed phase", and Loki is retention-bound. So it moves to
+      // transcript rather than being dropped — which is also where a human
+      // looks, since the dashboard renders the transcript and has never
+      // rendered the journal at all. Same shape session.ts uses for an SDK
+      // assistant error: a JSON payload on a system entry.
       await sidecar
-        .appendJournal(TARGET_REPO!, "worker", "session.failed", { sessionId: SESSION_ID, error: errStr })
-        .catch((journalErr) => log("warn", "appendJournal(session.failed) failed", { sessionId: SESSION_ID, error: String(journalErr) }));
+        .pushMessage("worker", JSON.stringify({ sdk: "session_failed", error: errStr }), "system")
+        .catch((pushErr) => log("warn", "pushMessage(session_failed) failed", { sessionId: SESSION_ID, error: String(pushErr) }));
       log("error", "session failed", { sessionId: SESSION_ID, error: errStr });
-      // The non-zero exit is the point, independent of whether the journal
+      // The non-zero exit is the point, independent of whether the transcript
       // write above succeeded: it is what makes the Job phase Failed rather
       // than Succeeded, which is the one signal that survives even when
       // every sidecar call failed too. The provisioner reports both phases
