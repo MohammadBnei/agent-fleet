@@ -6,9 +6,10 @@ import (
 	"testing"
 
 	appsv1 "k8s.io/api/apps/v1"
-	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	corev1 "k8s.io/api/core/v1"
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/catalog"
 )
@@ -234,12 +235,28 @@ func TestTouchLastUsedAt_HealsAPreexistingInstance(t *testing.T) {
 	labels := SharedInstanceLabels("dream-analyst", "postgres")
 	deployments := c.Core.AppsV1().Deployments(c.Namespace)
 
-	// An instance as the old code left it: no strategy (so RollingUpdate by
-	// default) and the timestamp on the pod template.
+	// An instance as the old code left it, written the way a real API server
+	// hands it back — NOT with an empty strategy. The old code set no
+	// strategy, but the API server defaults it, so the object that actually
+	// exists carries an explicit RollingUpdate with both parameters. This is
+	// the live spec, copied from the wedged Deployment on 2026-08-18.
+	//
+	// The fake clientset does not default anything, so a fixture with an
+	// empty strategy tests a state that cannot occur — and lets a
+	// `Type == ""` heal condition pass here while never firing in
+	// production. That is exactly what shipped in the first version of this
+	// fix.
 	old := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: c.Namespace, Labels: labels},
 		Spec: appsv1.DeploymentSpec{
 			Replicas: int32Ptr(1),
+			Strategy: appsv1.DeploymentStrategy{
+				Type: appsv1.RollingUpdateDeploymentStrategyType,
+				RollingUpdate: &appsv1.RollingUpdateDeployment{
+					MaxSurge:       &intstr.IntOrString{Type: intstr.String, StrVal: "25%"},
+					MaxUnavailable: &intstr.IntOrString{Type: intstr.String, StrVal: "25%"},
+				},
+			},
 			Selector: &metav1.LabelSelector{MatchLabels: labels},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
@@ -275,6 +292,14 @@ func TestTouchLastUsedAt_HealsAPreexistingInstance(t *testing.T) {
 	if got := dep.Spec.Strategy.Type; got != appsv1.RecreateDeploymentStrategyType {
 		t.Errorf("strategy = %q, want %q — a pre-existing instance never gets healed otherwise",
 			got, appsv1.RecreateDeploymentStrategyType)
+	}
+	// The API rejects a spec carrying rollingUpdate parameters alongside
+	// Recreate, so leaving them behind makes the Update fail outright — and
+	// touchLastUsedAt's error is only logged as a warning, so the heal would
+	// fail silently on every reuse forever.
+	if dep.Spec.Strategy.RollingUpdate != nil {
+		t.Errorf("rollingUpdate params left alongside Recreate: %+v — the API rejects that spec",
+			dep.Spec.Strategy.RollingUpdate)
 	}
 	if dep.Annotations[LastUsedAtAnnotation] == "" {
 		t.Error("timestamp not migrated onto the Deployment")
