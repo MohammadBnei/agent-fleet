@@ -178,6 +178,24 @@ func (c *Client) ensureSharedDeployment(ctx context.Context, name string, labels
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: c.Namespace, Labels: labels},
 		Spec: appsv1.DeploymentSpec{
 			Replicas: int32Ptr(1),
+			// Recreate, not the default RollingUpdate. The data volume below
+			// is ReadWriteOnce, so a rolling update deadlocks permanently:
+			// the new pod cannot attach the PVC until the old one releases
+			// it, and the old one is not torn down until the new one is
+			// Ready. Found live on 2026-08-18 — svc-agent-fleet-postgres sat
+			// ContainerCreating for 5h16m on one node while the previous
+			// ReplicaSet's pod held the volume on another, with no error
+			// anywhere and no timeout to break the tie.
+			//
+			// Correct for a single-replica stateful service regardless: two
+			// postgres processes must never share one PGDATA, even briefly.
+			//
+			// Note this only fixes instances created from here on —
+			// ensureSharedDeployment creates and never updates (see the
+			// AlreadyExists branch below), so an already-wedged Deployment
+			// needs its strategy patched and its stuck ReplicaSet deleted by
+			// hand.
+			Strategy: appsv1.DeploymentStrategy{Type: appsv1.RecreateDeploymentStrategyType},
 			Selector: &metav1.LabelSelector{MatchLabels: labels},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{Labels: labels, Annotations: map[string]string{LastUsedAtAnnotation: nowRFC3339()}},

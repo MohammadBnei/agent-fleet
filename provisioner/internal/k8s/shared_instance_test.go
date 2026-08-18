@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -226,5 +227,44 @@ func TestEnsureSharedInstance_UnknownServiceKey(t *testing.T) {
 	c := newTestClient()
 	if _, _, _, err := c.EnsureSharedInstance(context.Background(), "dream-analyst", "not-a-real-service"); err == nil {
 		t.Fatal("expected error for unknown service key")
+	}
+}
+
+// A RollingUpdate against a ReadWriteOnce volume deadlocks forever: the new
+// pod waits for a volume the old pod will not release, and the old pod waits
+// for the new one to be Ready. Found live on 2026-08-18 with
+// svc-agent-fleet-postgres stuck ContainerCreating for 5h16m.
+//
+// Both services are asserted, not just postgres. Redis has no PVC today
+// (catalog.ServiceDef.NeedsPVC is false), but a single-replica stateful
+// service is the wrong shape for a rolling update either way, and coupling
+// the strategy to NeedsPVC would make this bug reappear the day redis gains
+// a volume.
+func TestEnsureSharedDeployment_UsesRecreateNotRollingUpdate(t *testing.T) {
+	ctx := context.Background()
+
+	for _, serviceKey := range []string{"postgres", "redis"} {
+		t.Run(serviceKey, func(t *testing.T) {
+			c := newTestClient()
+			name := SharedInstanceName("dream-analyst", serviceKey)
+			labels := SharedInstanceLabels("dream-analyst", serviceKey)
+			image := c.PostgresImage
+			if serviceKey == "redis" {
+				image = c.RedisImage
+			}
+
+			if err := c.ensureSharedDeployment(ctx, name, labels, catalog.Services[serviceKey], image, serviceKey, "s3cr3t"); err != nil {
+				t.Fatalf("ensureSharedDeployment: %v", err)
+			}
+
+			dep, err := c.Core.AppsV1().Deployments(c.Namespace).Get(ctx, name, metav1.GetOptions{})
+			if err != nil {
+				t.Fatalf("get deployment: %v", err)
+			}
+			if got := dep.Spec.Strategy.Type; got != appsv1.RecreateDeploymentStrategyType {
+				t.Errorf("strategy = %q, want %q — a rolling update against an RWO volume never converges",
+					got, appsv1.RecreateDeploymentStrategyType)
+			}
+		})
 	}
 }
