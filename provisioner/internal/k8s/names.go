@@ -72,11 +72,23 @@ func shortID(taskID string) string {
 // stripPrefix middleware and gave the app no way to learn its public base
 // path, so those apps 404'd even when the pod was perfectly healthy.
 //
-// host is the wildcard base domain (E2E_HOST, e.g. e2e.bnei.dev); shortID is
-// already DNS-safe (dashes stripped, truncated to 20), so it drops straight in
-// as a label. Covered by the single *.e2e.bnei.dev cert — see PreviewDomainFor.
+// host is the BASE domain (E2E_HOST, now bnei.dev — it used to be the deeper
+// e2e.bnei.dev). shortID is already DNS-safe (dashes stripped, truncated to
+// 20), and "-e2e" is appended to it rather than kept as its own DNS label.
+//
+// That single dash is load-bearing. Cloudflare's free Universal SSL covers the
+// apex plus exactly ONE wildcard level, so *.bnei.dev secures
+// abc123-e2e.bnei.dev but nothing secures abc123.e2e.bnei.dev — a proxied
+// request to the latter gets no certificate at all and the TLS handshake
+// fails before HTTP happens. That was confirmed in production on
+// 2026-08-18 against dev.api.voconsteroid.com, which failed exactly this way
+// while its one-label-shallower sibling served fine.
+//
+// Keeping previews first-level also means they are covered by the same
+// *.bnei.dev origin certificate as every other host, so no preview ever
+// triggers its own ACME order.
 func PreviewHostFor(host, taskID string) string {
-	return fmt.Sprintf("%s.%s", shortID(taskID), host)
+	return fmt.Sprintf("%s-e2e.%s", shortID(taskID), host)
 }
 
 // PreviewDomainFor is the wildcard every session's IngressRoute asks for. Every
@@ -85,6 +97,11 @@ func PreviewHostFor(host, taskID string) string {
 // hostname from the Host() rule and order a cert per session — Let's Encrypt
 // allows 50 per registered domain per 7 days, shared with every other
 // bnei.dev host, so that would exhaust issuance cluster-wide (docs/adr/0038).
+//
+// Unchanged by the first-level move: with E2E_HOST now the base domain, this
+// returns *.bnei.dev, which is the same wildcard Traefik's default TLSStore
+// holds. Previews therefore share the cluster-wide origin certificate rather
+// than owning one of their own.
 func PreviewDomainFor(host string) string {
 	return "*." + host
 }
