@@ -82,9 +82,42 @@ of signal.
      cannot attribute is not usable.
 2. **`applyPodEvent` no longer writes to `knowledge_journal`.** `SetPodPhase`
    is untouched.
-3. **The existing `pod.%` rows are deleted by a one-off manual `DELETE`, not a
-   migration.** They are cleanup of what a past mistake wrote, not a schema
-   change.
+3. **The worker no longer writes `session.started`/`stopped`/`failed`
+   either**, and the crash error moves to the transcript rather than being
+   dropped with them — see "Lifecycle is not knowledge" below.
+4. **The existing `pod.%` and `session.%` rows are deleted by a one-off manual
+   `DELETE`, not a migration.** They are cleanup of what a past mistake wrote,
+   not a schema change.
+
+### Lifecycle is not knowledge
+
+The first pass of this ADR removed `pod.*` and stopped there. Asked why
+`session.*` was any different, the honest answer was that it is not — those
+three event types are also each written in exactly one place and read by
+nothing. But they were not equally worthless, and the difference is the
+decision:
+
+- **`session.started` carried `{sessionId}` and nothing else** — a fact
+  `sessions.created_at` and `pod_phase` both already hold. It was 59 of the 98
+  rows left after the `pod.*` purge, so the journal was *still* 60% lifecycle
+  noise. Deleted.
+- **`session.stopped`'s "summary" is `result.summary`**, which is `finalText`
+  (`worker/src/session.ts:1102`) — the last assistant text block. Every
+  assistant text block was already pushed to `transcript` verbatim as a
+  `discussion` entry (`:408`). It is a copy of a row that already exists, and
+  "whatever the agent happened to say last" is as often a question as a
+  result. Deleted.
+- **`session.failed`'s error string existed nowhere else durable.** It is
+  thrown outside the SDK loop so `transcript` never saw it, `pod_message` gets
+  only the generic `"worker job reached a terminal Failed phase"`, and Loki is
+  retention-bound. So it **moves** rather than dying: the worker pushes
+  `{sdk:"session_failed", error}` as a `system` transcript entry, reusing the
+  shape `session.ts:402` already uses for an SDK assistant error.
+
+Putting it on the transcript is the better home regardless of this ADR: the
+dashboard renders the transcript and has never rendered the journal at all.
+An irreplaceable record is worth relocating; it is not worth deleting to make
+a rule tidier.
 
 ### Two details that are decisions, not implementation
 
@@ -134,11 +167,19 @@ the branch's own test had asserted the buggy window.
   `DELETE` is a human operation on a past mistake, deliberately not encoded as
   a fleet capability.
 - The manual `DELETE` is irreversible — those rows exist nowhere else.
-- Ordering must be run correctly: the `DELETE` only sticks once the new `core`
-  is live. An older `core` still serving `ReportPodEvents` refills the table
-  behind whoever ran it.
+- Ordering must be run correctly: each `DELETE` only sticks once the build
+  that stopped the corresponding write is live. An older `core` still journals
+  `pod.*`, and an older `worker` still journals `session.*`, refilling the
+  table behind whoever ran it.
+- **The journal is now only what a session chose to write** — `agent_note` via
+  `journal_write`, and nothing automatic. 98 rows became ~19. If that turns
+  out to be too little, the fix is asking a session to write a real closing
+  note, not reinstating a machine-generated one nothing read.
 - `limit` is now capped at 500, because an unbounded read of the whole table
-  became expressible in one call for the first time.
+  became expressible in one call for the first time. That cap bounds rows,
+  not bytes: the first live all-repo call returned 75 KB and blew the context
+  budget, so the MCP handler also caps the serialized result at
+  `maxJournalBytes` and says so when it trims (ADR-0046).
 - `Store.Search` and `coreclient.SearchJournal` take options structs.
   `Since`/`Until` are adjacent same-typed values — the exact shape of the
   `SaveAgentSessionId` swap in the repo's trap list, which compiled, linted and
@@ -165,9 +206,17 @@ read-path fix behind a security redesign helps nobody.
 - Live confirmation after the manual `DELETE`: the journal went from 468 rows
   to 96 — `session.started` 58, `agent_note` 19, `session.stopped` 12,
   `session.failed` 7 — and **zero** `pod.*`.
-- **Not claimed here:** `journal_search` exercised end-to-end from a worker
-  pod against the deployed build. The session that made this change ran a
-  pre-merge sidecar, so it could not call its own new tool. The outstanding
-  check is a no-`repo`, no-`query`, `since`-seven-days-ago call returning
-  entries from more than one repo and no `pod.*` rows. This repo's trap list
-  is explicit that a green suite has hidden a dead feature before.
+- End-to-end from a worker pod on the deployed `4.1.0`, which is the check
+  this repo's trap list insists on and which no unit test substitutes for: one
+  call, no `repo`, no `query`, `since` seven days back → **98 entries across
+  five repos**, newest-first, zero `pod.*`. Entries timestamped after the
+  `DELETE` confirm the deployed `core` had stopped writing them.
+- That same call is what found the missing byte cap. It is worth recording
+  that the feature's *first real use* surfaced a defect every green test had
+  missed, and that the defect was a direct consequence of this ADR's own
+  decision: relaxing a required parameter removed a bound nobody had noticed
+  it was enforcing.
+- **Not claimed here:** the `session.*` half exercised live. It ships with
+  the next worker image; the check is a session ending normally and adding no
+  journal row, and a crashed session's error appearing on the transcript
+  instead.
