@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.3.1](https://github.com/MohammadBnei/agent-fleet/compare/4.3.0...4.3.1) (2026-08-19)
+
+
+### Bug Fixes
+
+* **worker:** pin the ponytail/caveman plugin installs to tags ([#212](https://github.com/MohammadBnei/agent-fleet/issues/212)) ([9b27dfd](https://github.com/MohammadBnei/agent-fleet/commit/9b27dfd597f8ae61018ebc98cbb9b4f9ea85b00e)), closes [#211](https://github.com/MohammadBnei/agent-fleet/issues/211)
+
 # [4.3.0](https://github.com/MohammadBnei/agent-fleet/compare/4.2.0...4.3.0) (2026-08-19)
 
 
