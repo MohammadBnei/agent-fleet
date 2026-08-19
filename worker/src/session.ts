@@ -325,6 +325,44 @@ const EPHEMERAL_SYSTEM_SUBTYPES = new Set([
 // row itself is unfiltered either way (core/internal/transcript/relay.go's
 // own comment: only relayed_to_discord changes, dashboard renders the
 // full stream regardless).
+// The top-level `usage` is the MAIN model's roll-up, and the fleet routinely
+// runs several models in one session — subagents, and whatever background
+// model the SDK reaches for. Measured over 7 days: `usage.cache_read_input_tokens`
+// summed to 377.7M while `modelUsage` summed to 1.29B, so the top-level field
+// is a ~30% view. Anything alerting on token volume has to sum modelUsage or
+// it is watching a third of the fleet. Returns null when the SDK sends no
+// modelUsage, so the fields stay absent rather than reading as a real zero.
+type ModelUsage = Record<
+  string,
+  {
+    inputTokens?: number;
+    outputTokens?: number;
+    cacheReadInputTokens?: number;
+    cacheCreationInputTokens?: number;
+  }
+>;
+
+export function sumModelUsage(modelUsage: unknown): {
+  models: string[];
+  inputTokensAll: number;
+  outputTokensAll: number;
+  cacheReadInputTokensAll: number;
+  cacheCreationInputTokensAll: number;
+} | null {
+  if (!modelUsage || typeof modelUsage !== "object" || Array.isArray(modelUsage)) return null;
+  const entries = Object.entries(modelUsage as ModelUsage);
+  if (entries.length === 0) return null;
+  const total = { inputTokensAll: 0, outputTokensAll: 0, cacheReadInputTokensAll: 0, cacheCreationInputTokensAll: 0 };
+  for (const [, v] of entries) {
+    if (!v || typeof v !== "object") continue;
+    total.inputTokensAll += v.inputTokens ?? 0;
+    total.outputTokensAll += v.outputTokens ?? 0;
+    total.cacheReadInputTokensAll += v.cacheReadInputTokens ?? 0;
+    total.cacheCreationInputTokensAll += v.cacheCreationInputTokens ?? 0;
+  }
+  return { models: entries.map(([m]) => m).sort(), ...total };
+}
+
 async function logSdkMessage(actor: string, msg: { type: string; [key: string]: unknown }): Promise<void> {
   const push = (text: string, type: string) =>
     sidecar.pushMessage(actor, text, type).catch((err) => log("warn", "pushMessage failed", { actor, type, error: String(err) }));
@@ -447,8 +485,27 @@ async function logSdkMessage(actor: string, msg: { type: string; [key: string]: 
     // monotonically toward the compact threshold shows up here first
     // (ADR-0046). cacheReadInputTokens separates "context is large" from
     // "context is large AND being re-read uncached", which cost differently.
+    //
+    // cacheCreationInputTokens is the one that carries the money, and it was
+    // the one field missing here. A cache WRITE bills at 1.25x base where a
+    // read bills at 0.1x, so a session whose writes outnumber its reads costs
+    // an order of magnitude more than the same context read back warm — and
+    // the four fields are only comparable when all four are on one line. It
+    // has always been in Postgres (the full `usage` object goes to the
+    // transcript row below, alongside `modelUsage`); what did not exist was a
+    // LogQL series, so answering "where did the tokens go" meant a DB
+    // round-trip or, worse, solving for it as a residual of totalCostUsd
+    // against an assumed price table. Do not read these four as a complete
+    // cost model regardless: totalCostUsd spans every model the run touched,
+    // `usage` is the main model's roll-up, and only `modelUsage` on the
+    // transcript row splits them.
     const usage = msg.usage as
-      | { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number }
+      | {
+          input_tokens?: number;
+          output_tokens?: number;
+          cache_read_input_tokens?: number;
+          cache_creation_input_tokens?: number;
+        }
       | undefined;
     log("info", `${actor} result`, {
       subtype: msg.subtype,
@@ -457,6 +514,8 @@ async function logSdkMessage(actor: string, msg: { type: string; [key: string]: 
       inputTokens: usage?.input_tokens,
       outputTokens: usage?.output_tokens,
       cacheReadInputTokens: usage?.cache_read_input_tokens,
+      cacheCreationInputTokens: usage?.cache_creation_input_tokens,
+      ...(sumModelUsage(msg.modelUsage) ?? {}),
     });
     await push(
       JSON.stringify({

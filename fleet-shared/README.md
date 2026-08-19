@@ -51,6 +51,16 @@ What is deliberately NOT on it:
   both into a transcript the dashboard renders. Neither is needed: `Read` is
   free and unprompted, and covers every legitimate use of `cat`.
 
+  **This is accident-reduction, not a boundary, and must not be read as one.**
+  `cat` is the canonical way to print a file, so gating it removes the path an
+  agent stumbles into. It does not close the file: `head`, `tail`, `nl`,
+  `grep`, `rg`, `sort`, `uniq`, `cut`, `diff`, `jq` and `file` are all still
+  allow-listed and all read `/proc/self/environ` just as well, and the `Read`
+  tool is free by design. A Bash allow-rule matches a command prefix, not a
+  path, so no edit to this list can cover them all without gutting read-only
+  Bash entirely. The only real fix is for the worker not to hold long-lived
+  tokens in its environment at all — that is an ADR, not an allowlist entry.
+
 An allow-rule here is not a small convenience — it removes `canUseTool` from
 the path entirely for the commands it matches, which is the same authority
 `allowedTools` carries in `worker/src/session.ts`. That file deliberately

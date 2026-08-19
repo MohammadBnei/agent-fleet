@@ -49,7 +49,7 @@ func TestCreate_DedupHoldsWhileOpenAndAfterApproval(t *testing.T) {
 	// A human approves it. The key must STAY held — the work is now in
 	// progress, and proposing it again would be proposing something someone is
 	// already doing.
-	sessionID, err := sessionStore.Create(ctx, "agent-fleet", "t", "d", "")
+	sessionID, err := sessionStore.Create(ctx, sessions.CreateParams{Repo: "agent-fleet", Title: "t", Description: "d"})
 	if err != nil {
 		t.Fatalf("create session: %v", err)
 	}
@@ -101,7 +101,7 @@ func TestDismissForSession_ReArmsAfterTheWorkIsFinished(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	sessionID, err := sessionStore.Create(ctx, "agent-fleet", "t", "d", "")
+	sessionID, err := sessionStore.Create(ctx, sessions.CreateParams{Repo: "agent-fleet", Title: "t", Description: "d"})
 	if err != nil {
 		t.Fatalf("create session: %v", err)
 	}
@@ -136,7 +136,7 @@ func TestOpen_IsExactlyOnceUnderConcurrentClicks(t *testing.T) {
 	const clicks = 6
 	sessionIDs := make([]string, clicks)
 	for i := range sessionIDs {
-		sid, err := sessionStore.Create(ctx, "agent-fleet", "t", "d", "")
+		sid, err := sessionStore.Create(ctx, sessions.CreateParams{Repo: "agent-fleet", Title: "t", Description: "d"})
 		if err != nil {
 			t.Fatalf("create session: %v", err)
 		}
@@ -191,7 +191,7 @@ func TestOpen_CannotResurrectADismissedProposal(t *testing.T) {
 	if err := store.Dismiss(ctx, id); err != nil {
 		t.Fatalf("dismiss: %v", err)
 	}
-	sessionID, err := sessionStore.Create(ctx, "agent-fleet", "t", "d", "")
+	sessionID, err := sessionStore.Create(ctx, sessions.CreateParams{Repo: "agent-fleet", Title: "t", Description: "d"})
 	if err != nil {
 		t.Fatalf("create session: %v", err)
 	}
@@ -224,7 +224,7 @@ func TestListOpen_ShowsOnlyWhatIsStillUndecided(t *testing.T) {
 		t.Fatalf("create: %v", err)
 	}
 
-	sessionID, err := sessionStore.Create(ctx, "agent-fleet", "t", "d", "")
+	sessionID, err := sessionStore.Create(ctx, sessions.CreateParams{Repo: "agent-fleet", Title: "t", Description: "d"})
 	if err != nil {
 		t.Fatalf("create session: %v", err)
 	}
@@ -258,7 +258,7 @@ func TestDeletingASessionDetachesRatherThanDestroysItsProposal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	sessionID, err := sessionStore.Create(ctx, "agent-fleet", "t", "d", "")
+	sessionID, err := sessionStore.Create(ctx, sessions.CreateParams{Repo: "agent-fleet", Title: "t", Description: "d"})
 	if err != nil {
 		t.Fatalf("create session: %v", err)
 	}

@@ -22,11 +22,55 @@ import (
 
 func newSession(t *testing.T, ctx context.Context, s *Store) string {
 	t.Helper()
-	id, err := s.Create(ctx, "agent-fleet", "t", "d", "")
+	id, err := s.Create(ctx, CreateParams{Repo: "agent-fleet", Title: "t", Description: "d"})
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
 	return id
+}
+
+// A session's launch mode is chosen at creation (dashboard picker) and read
+// back by worker/src/session.ts as launchMode. Two things can silently break
+// that and neither is visible without a real database: the INSERT can drop
+// the column, and the NOT NULL DEFAULT 'default' constraint means passing a
+// bare NULL is a constraint violation rather than a fallback, which is why
+// Create wraps it in COALESCE.
+//
+// This is the shape of failure agent-fleet/docs/verification-traps.md calls
+// "a config value can exist at every layer and reach nothing" — a column, a
+// store round-trip, a proto field and a UI control that together did nothing,
+// for three minor versions. Assert the value in the row, not the call.
+func TestCreate_PersistsTheChosenPermissionMode(t *testing.T) {
+	ctx := context.Background()
+	s := NewStore(dbtest.NewPool(t))
+
+	for _, mode := range []string{"auto", "plan", "acceptEdits", "dontAsk", "default"} {
+		id, err := s.Create(ctx, CreateParams{Repo: "agent-fleet", Description: "d", PermissionMode: mode})
+		if err != nil {
+			t.Fatalf("create %q: %v", mode, err)
+		}
+		got, err := s.Get(ctx, id)
+		if err != nil {
+			t.Fatalf("get %q: %v", mode, err)
+		}
+		if got.PermissionMode == nil || *got.PermissionMode != mode {
+			t.Errorf("PermissionMode = %v, want %q", got.PermissionMode, mode)
+		}
+	}
+
+	// Empty means "whatever the column defaults to", which every caller
+	// predating the picker relies on — OpenFromProposal still passes nothing.
+	id, err := s.Create(ctx, CreateParams{Repo: "agent-fleet", Description: "d"})
+	if err != nil {
+		t.Fatalf("create with no mode: %v", err)
+	}
+	got, err := s.Get(ctx, id)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.PermissionMode == nil || *got.PermissionMode != "default" {
+		t.Errorf("unset PermissionMode stored %v, want the column default \"default\"", got.PermissionMode)
+	}
 }
 
 // Create makes a row and NOTHING else. This is the human gate, expressed

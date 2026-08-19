@@ -58,6 +58,18 @@ message CreateSessionRequest {
   string description = 2;
   optional string model = 4;
   optional string title = 6;
+  // The mode the session LAUNCHES in, chosen per session at creation rather
+  // than by changing what every session silently gets. Absent or empty keeps
+  // the column default ('default'). Validated server-side against the same
+  // allowlist SetPermissionMode uses — the value reaches a real SDK call via
+  // worker/src/session.ts's launchMode, so an unvalidated string here would
+  // hand the SDK an arbitrary mode.
+  //
+  // Picking "auto" is not a small convenience: canUseTool then answers
+  // everything except ExitPlanMode and a Bash running rm/sudo, so git push,
+  // gh, kubectl, curl, wget and env all stop reaching a human for that
+  // session. The UI has to say so where the choice is made.
+  optional string permission_mode = 7;
 }
 
 message CreateSessionResponse {

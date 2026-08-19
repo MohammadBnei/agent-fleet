@@ -35,7 +35,7 @@ func TestReportPodEvents_TerminatedFreesTheSlot(t *testing.T) {
 	store := sessions.NewStore(pool)
 	srv := New(nil, store, journal.NewStore(pool), nil, nil, nil, nil)
 
-	id, err := store.Create(ctx, "agent-fleet", "", "wedge guard", "")
+	id, err := store.Create(ctx, sessions.CreateParams{Repo: "agent-fleet", Title: "", Description: "wedge guard"})
 	if err != nil {
 		t.Fatalf("create session: %v", err)
 	}
@@ -81,7 +81,7 @@ func TestReportPodEvents_CrashedFreesSlotAndKeepsReason(t *testing.T) {
 	store := sessions.NewStore(pool)
 	srv := New(nil, store, journal.NewStore(pool), nil, nil, nil, nil)
 
-	id, err := store.Create(ctx, "agent-fleet", "", "crash guard", "")
+	id, err := store.Create(ctx, sessions.CreateParams{Repo: "agent-fleet", Title: "", Description: "crash guard"})
 	if err != nil {
 		t.Fatalf("create session: %v", err)
 	}
@@ -131,7 +131,7 @@ func TestSaveAgentSessionId_StoresTheAgentIdNotTheSessionId(t *testing.T) {
 	store := sessions.NewStore(pool)
 	srv := New(nil, store, journal.NewStore(pool), nil, nil, nil, nil)
 
-	id, err := store.Create(ctx, "agent-fleet", "", "resume identity", "")
+	id, err := store.Create(ctx, sessions.CreateParams{Repo: "agent-fleet", Title: "", Description: "resume identity"})
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -180,7 +180,7 @@ func TestReserveSlot_ConcurrentCallersCannotExceedTheCap(t *testing.T) {
 
 	ids := make([]string, attempts)
 	for i := range ids {
-		id, err := store.Create(ctx, "agent-fleet", "", "cap race", "")
+		id, err := store.Create(ctx, sessions.CreateParams{Repo: "agent-fleet", Title: "", Description: "cap race"})
 		if err != nil {
 			t.Fatalf("create: %v", err)
 		}
@@ -239,7 +239,7 @@ func TestApplyPodEvent_WritesNoJournalRow(t *testing.T) {
 	journalStore := journal.NewStore(pool)
 	srv := New(nil, store, journalStore, nil, nil, nil, nil)
 
-	id, err := store.Create(ctx, "agent-fleet", "", "journal noise guard", "")
+	id, err := store.Create(ctx, sessions.CreateParams{Repo: "agent-fleet", Title: "", Description: "journal noise guard"})
 	if err != nil {
 		t.Fatalf("create session: %v", err)
 	}

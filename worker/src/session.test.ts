@@ -241,7 +241,7 @@ for (const key of [
   delete process.env[key];
 }
 
-const { runSession } = await import("./session.js");
+const { runSession, sumModelUsage } = await import("./session.js");
 
 beforeEach(() => {
   // canUseTool runs the tool input through rtk before it asks (session.ts) —
@@ -1171,6 +1171,88 @@ test("result carries the full usage/duration/error payload, not just turns and c
   }
 });
 
+// The transcript row above carries the whole `usage` object, so a missing
+// field there is invisible; the LOG line is a hand-picked subset, which is
+// exactly where one goes missing unnoticed. cacheCreationInputTokens did:
+// writes bill at 1.25x base against reads at 0.1x, so it is the field that
+// carries the cost, and without it on the line "where did the tokens go" had
+// to be answered by solving for it as a residual of totalCostUsd against an
+// assumed price table. Assert all four together — the subset is only useful
+// if it stays complete.
+test("the result log line carries all four token fields, not three", async () => {
+  forceResult = {
+    subtype: "success",
+    num_turns: 3,
+    total_cost_usd: 0.42,
+    usage: {
+      input_tokens: 100,
+      output_tokens: 20,
+      cache_read_input_tokens: 3000,
+      cache_creation_input_tokens: 5000,
+    },
+    modelUsage: {
+      "claude-opus-5": { inputTokens: 90, outputTokens: 15, cacheReadInputTokens: 2500, cacheCreationInputTokens: 4000 },
+      "claude-haiku-4-5": { inputTokens: 10, outputTokens: 5, cacheReadInputTokens: 500, cacheCreationInputTokens: 1000 },
+    },
+  };
+
+  const lines: string[] = [];
+  const origLog = console.log;
+  console.log = (s: string) => lines.push(s);
+  try {
+    await relayOnce([]);
+  } finally {
+    console.log = origLog;
+  }
+
+  const resultLine = lines
+    .map((l) => JSON.parse(l) as Record<string, unknown>)
+    .find((l) => typeof l.msg === "string" && (l.msg as string).endsWith("result"));
+
+  expect(resultLine).toBeDefined();
+  expect(resultLine).toMatchObject({
+    inputTokens: 100,
+    outputTokens: 20,
+    cacheReadInputTokens: 3000,
+    cacheCreationInputTokens: 5000,
+    // and the modelUsage roll-up alongside it — the top-level usage above is
+    // only the main model, so these are the numbers that describe the run.
+    models: ["claude-haiku-4-5", "claude-opus-5"],
+    cacheReadInputTokensAll: 3000,
+    cacheCreationInputTokensAll: 5000,
+  });
+});
+
+test("sumModelUsage totals every model, and returns null rather than a fake zero", () => {
+  expect(
+    sumModelUsage({
+      b: { inputTokens: 1, outputTokens: 2, cacheReadInputTokens: 3, cacheCreationInputTokens: 4 },
+      a: { inputTokens: 10, outputTokens: 20, cacheReadInputTokens: 30, cacheCreationInputTokens: 40 },
+    }),
+  ).toEqual({
+    models: ["a", "b"],
+    inputTokensAll: 11,
+    outputTokensAll: 22,
+    cacheReadInputTokensAll: 33,
+    cacheCreationInputTokensAll: 44,
+  });
+
+  // A model entry missing a field contributes 0 for it, not NaN — one absent
+  // key must not blank the whole roll-up.
+  expect(sumModelUsage({ a: { outputTokens: 5 } })).toMatchObject({
+    inputTokensAll: 0,
+    outputTokensAll: 5,
+    cacheReadInputTokensAll: 0,
+  });
+
+  // Absent/!object/empty => null, so the log line omits the fields entirely.
+  // A 0 here would read in LogQL as "this run used no tokens", which is a
+  // different and wrong claim from "the SDK told us nothing".
+  for (const bad of [undefined, null, {}, [], "nope", 7]) {
+    expect(sumModelUsage(bad)).toBeNull();
+  }
+});
+
 test("session init relays the full environment, not four of fourteen fields", async () => {
   await relayOnce([]);
 
@@ -1197,4 +1279,20 @@ test("fleet-shared/settings.json ships no permissions.ask block", async () => {
   const settings = await Bun.file(new URL("../../fleet-shared/settings.json", import.meta.url)).json();
   expect(settings.permissions.ask).toBeUndefined();
   expect(settings.permissions.allow.length).toBeGreaterThan(0);
+});
+
+// `cat` is the canonical way to print a file, so an agent reaching for the
+// worker's own environment reaches for `cat /proc/self/environ` — which puts
+// GH_TOKEN and CLAUDE_CODE_OAUTH_TOKEN into a transcript the dashboard
+// renders. It was allow-listed for a while against fleet-shared/README.md's
+// own stated policy; this pins the two together so the next edit has to
+// disagree with a failing test rather than only with prose.
+//
+// Deliberately NOT extended to head/nl/grep/sort/cut/etc: they read the same
+// file just as well, and a Bash allow-rule matches a command prefix rather
+// than a path, so covering them all would mean deleting read-only Bash. This
+// reduces the accidental path; it is not a boundary. See the README.
+test("fleet-shared/settings.json does not allow-list cat", async () => {
+  const settings = await Bun.file(new URL("../../fleet-shared/settings.json", import.meta.url)).json();
+  expect(settings.permissions.allow).not.toContain("Bash(cat:*)");
 });

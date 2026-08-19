@@ -2,6 +2,7 @@ import type { CSSProperties } from "react";
 import { client } from "../connectClient";
 import { ActionButton } from "./ActionButton";
 import { isPodPhaseLive } from "../pages/SessionList";
+import { PERMISSION_MODES } from "../approvePlan";
 
 // The user-facing SDK modes worth a button — "delegate"/"dontAsk" are
 // SDK-internal/secondary, never surfaced here, and "bypassPermissions" is
@@ -11,12 +12,7 @@ import { isPodPhaseLive } from "../pages/SessionList";
 // rm/sudo in it without asking. So it is routed through onAutoClick's confirm
 // rather than fired straight off the menu, the way bypass used to be. Every
 // switch is live — nothing here costs a re-warm any more.
-const MODES = [
-  { value: "default", label: "Default" },
-  { value: "plan", label: "Plan" },
-  { value: "acceptEdits", label: "Accept edits" },
-  { value: "auto", label: "Auto", confirm: true },
-] as const;
+const MODES = PERMISSION_MODES;
 
 // The Kill/Interrupt/Kill-e2e/Mode/Open-code-server button row, shared
 // between desktop and mobile — both render it inside a Modal, opened from a

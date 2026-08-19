@@ -1,11 +1,30 @@
 import { client } from "./connectClient";
 
 // What switching a session to `auto` actually grants (docs/adr/0053). One
-// string because two surfaces confirm it — the plan card's "approve + auto"
-// and the actions menu's mode picker — and a stale copy on either one would
-// be a human agreeing to the wrong thing.
+// string because three surfaces confirm it — the plan card's "approve + auto",
+// the actions menu's mode picker, and the new-session dialog's launch-mode
+// picker — and a stale copy on any of them would be a human agreeing to the
+// wrong thing.
+//
+// It used to say "only rm and sudo still come to you", which is what the ADR
+// summary says and not what the code does. worker/src/session.ts's
+// autoModeStillAsks is `ExitPlanMode || rm/sudo`, and everything else in
+// FLEET_ASK_RULES — git push, gh, kubectl, curl, wget, env — is answered by
+// the worker in auto. Naming them matters: "every result is a PR, and
+// approving it is the review" stops being true the moment git push is
+// unattended, and env is what puts GH_TOKEN in a rendered transcript.
 export const AUTO_MODE_WARNING =
-  "The agent stops asking for the rest of this session. Only rm and sudo still come to you — and so does the next plan.";
+  "The agent stops asking for the rest of this session — including git push, gh, kubectl, curl, wget and env. Only rm and sudo still come to you, and so does the next plan.";
+
+// The launch/switch modes the dashboard offers, shared so the actions menu and
+// the new-session dialog cannot drift apart on what exists or what it is
+// called. `auto` carries confirm: it is the one that grants authority.
+export const PERMISSION_MODES = [
+  { value: "default", label: "Default" },
+  { value: "plan", label: "Plan" },
+  { value: "acceptEdits", label: "Accept edits" },
+  { value: "auto", label: "Auto", confirm: true },
+] as const;
 
 // Plan approval, the way the CLI's own ExitPlanMode menu does it (docs/adr/
 // 0052): approving is a mode transition plus an answer, not just an answer.

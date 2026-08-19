@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { client } from "../connectClient";
 import { Modal } from "./Modal";
 import type { PromptSnippet, Repo } from "../gen/agentfleet/v1/dashboard_pb";
+import { AUTO_MODE_WARNING, PERMISSION_MODES } from "../approvePlan";
 
 // The first line of the message, as a list label. `description`/`title` are
 // human-facing labels the agent never reads (db/migrations/000001_init.up.sql
@@ -33,6 +34,9 @@ export function NewSessionDialog({
   const [message, setMessage] = useState("");
   const [snippets, setSnippets] = useState<PromptSnippet[]>([]);
   const [snippetIds, setSnippetIds] = useState<string[]>([]);
+  // null = "follow whatever the selected snippets suggest". A real value means
+  // the human picked one, and an explicit pick outranks a suggestion.
+  const [modeChoice, setModeChoice] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // A session created by a submit whose message then failed to send (capacity
@@ -100,8 +104,18 @@ export function NewSessionDialog({
     setTitle("");
     setMessage("");
     setSnippetIds([]);
+    setModeChoice(null);
     createdIdRef.current = null;
   }
+
+  // A snippet may suggest a mode (prompt_snippets.suggested_permission_mode).
+  // It PRE-SELECTS the picker rather than being applied invisibly behind it:
+  // the human sees the mode they are about to launch in, and can override it.
+  // An explicit pick always wins over a suggestion.
+  const suggestedMode = snippets.find(
+    (s) => snippetIds.includes(s.id) && s.suggestedPermissionMode,
+  )?.suggestedPermissionMode;
+  const effectiveMode = modeChoice ?? suggestedMode ?? "default";
 
   // docs/adr/0048 §1: CreateSession writes a row and nothing else, and the
   // FIRST MESSAGE is what boots the pod. Sending an instruction as
@@ -122,20 +136,20 @@ export function NewSessionDialog({
     try {
       let sessionId = createdIdRef.current;
       if (!sessionId) {
-        const res = await client.createSession({ repo, title: title.trim() || labelFrom(text) });
+        const res = await client.createSession({
+          repo,
+          title: title.trim() || labelFrom(text),
+          // Carried on CreateSession itself rather than a setPermissionMode
+          // call afterwards. The worker reads session.permissionMode once at
+          // startup, and postMessage below is what provisions the pod, so the
+          // old two-call shape only worked because it happened to run in the
+          // right order. One call cannot be ordered wrongly.
+          permissionMode: effectiveMode,
+        });
         sessionId = res.session?.id ?? null;
         if (!sessionId) throw new Error("CreateSession returned no session");
         createdIdRef.current = sessionId;
       }
-
-      // Before postMessage, never after: postMessage is what provisions the
-      // pod, and the worker reads session.permissionMode once at startup
-      // (worker/src/session.ts:433). Setting it afterwards would reach a pod
-      // that has already chosen its mode.
-      const mode = snippets.find(
-        (s) => snippetIds.includes(s.id) && s.suggestedPermissionMode,
-      )?.suggestedPermissionMode;
-      if (mode) await client.setPermissionMode({ sessionId, mode });
 
       // PostMessage warms first and appends second — resumeFromSeq is computed
       // from LatestSeq at provisioning time, so an entry written before the pod
@@ -203,6 +217,29 @@ export function NewSessionDialog({
               className="textarea textarea-bordered textarea-sm"
               rows={6}
             />
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            <span>Launch mode</span>
+            <select
+              value={effectiveMode}
+              onChange={(e) => setModeChoice(e.target.value)}
+              className="select select-sm select-bordered"
+            >
+              {PERMISSION_MODES.map((m) => (
+                <option key={m.value} value={m.value}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+            {/* Stated here, not linked from here. This is the only moment the
+                human chooses this mode, and the actions menu's own confirm
+                (SessionActionsModal) never runs for a session that launches in
+                auto — so if the consequence is not on screen at this point, it
+                is nowhere. */}
+            {effectiveMode === "auto" && <span className="text-warning text-xs">{AUTO_MODE_WARNING}</span>}
+            {suggestedMode && modeChoice === null && (
+              <span className="text-dim text-xs">Suggested by the guidance you selected — change it if you want.</span>
+            )}
           </label>
           {snippets.length > 0 && (
             <fieldset className="flex flex-col gap-1 text-sm">

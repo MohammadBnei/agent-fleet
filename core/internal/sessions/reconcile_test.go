@@ -53,11 +53,11 @@ func TestReconcilePodPhases_OrphanedRunningRowIsTerminated(t *testing.T) {
 	store := NewStore(dbtest.NewPool(t))
 
 	// One session whose pod really is up, one whose terminal event was lost.
-	alive, err := store.Create(ctx, "agent-fleet", "", "alive", "")
+	alive, err := store.Create(ctx, CreateParams{Repo: "agent-fleet", Title: "", Description: "alive"})
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	orphan, err := store.Create(ctx, "agent-fleet", "", "orphan", "")
+	orphan, err := store.Create(ctx, CreateParams{Repo: "agent-fleet", Title: "", Description: "orphan"})
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -120,7 +120,7 @@ func TestReconcilePodPhases_SyncsScheduledUpToRunning(t *testing.T) {
 	ctx := context.Background()
 	store := NewStore(dbtest.NewPool(t))
 
-	id, err := store.Create(ctx, "agent-fleet", "", "phase sync", "")
+	id, err := store.Create(ctx, CreateParams{Repo: "agent-fleet", Title: "", Description: "phase sync"})
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -142,7 +142,7 @@ func TestReconcilePodPhases_SyncsScheduledUpToRunning(t *testing.T) {
 
 	// A Pending pod stays SCHEDULED: rewriting it every 60s is churn, and the
 	// two mean the same thing to everything that reads them.
-	pendingID, err := store.Create(ctx, "agent-fleet", "", "still pending", "")
+	pendingID, err := store.Create(ctx, CreateParams{Repo: "agent-fleet", Title: "", Description: "still pending"})
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -176,7 +176,7 @@ func TestReconcilePodPhases_DoesNotOrphanASessionMidProvision(t *testing.T) {
 
 	for _, phase := range []string{"POD_PHASE_PROVISIONING", "POD_PHASE_CREATED"} {
 		t.Run(phase, func(t *testing.T) {
-			id, err := store.Create(ctx, "agent-fleet", "", "warming", "")
+			id, err := store.Create(ctx, CreateParams{Repo: "agent-fleet", Title: "", Description: "warming"})
 			if err != nil {
 				t.Fatalf("create: %v", err)
 			}
@@ -212,7 +212,7 @@ func TestReconcilePodPhases_ListFailureChangesNothing(t *testing.T) {
 	ctx := context.Background()
 	store := NewStore(dbtest.NewPool(t))
 
-	id, err := store.Create(ctx, "agent-fleet", "", "live", "")
+	id, err := store.Create(ctx, CreateParams{Repo: "agent-fleet", Title: "", Description: "live"})
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -246,7 +246,7 @@ func TestCollectExpired_FailedSweepDoesNotMarkSwept(t *testing.T) {
 	pool := dbtest.NewPool(t)
 	store := NewStore(pool)
 
-	id, err := store.Create(ctx, "agent-fleet", "", "old", "")
+	id, err := store.Create(ctx, CreateParams{Repo: "agent-fleet", Title: "", Description: "old"})
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
