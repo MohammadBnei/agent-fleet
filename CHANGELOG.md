@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.6.2](https://github.com/MohammadBnei/agent-fleet/compare/4.6.1...4.6.2) (2026-08-19)
+
+
+### Bug Fixes
+
+* **core:** stop normalising the OIDC issuer, which crash-looped the console ([#219](https://github.com/MohammadBnei/agent-fleet/issues/219)) ([6e34dc3](https://github.com/MohammadBnei/agent-fleet/commit/6e34dc364cffcc8c88163a683e85b4154608387c)), closes [#189](https://github.com/MohammadBnei/agent-fleet/issues/189)
+
 ## [4.6.1](https://github.com/MohammadBnei/agent-fleet/compare/4.6.0...4.6.1) (2026-08-19)
 
 
