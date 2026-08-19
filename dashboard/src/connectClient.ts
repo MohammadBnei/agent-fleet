@@ -1,5 +1,5 @@
 import { createConnectTransport } from "@connectrpc/connect-web";
-import { createClient, type Interceptor } from "@connectrpc/connect";
+import { Code, ConnectError, createClient, type Interceptor } from "@connectrpc/connect";
 import { DashboardService } from "./gen/agentfleet/v1/dashboard_pb";
 import type { TranscriptEntry } from "./gen/agentfleet/v1/transcript_pb";
 
@@ -16,9 +16,34 @@ const csrfInterceptor: Interceptor = (next) => async (req) => {
   return next(req);
 };
 
+// core federates the console's login to authentik and refuses an
+// unauthenticated RPC with `unauthenticated` (infra-bootstrap ADR-0041).
+//
+// Without this, the session's 12h expiry is invisible and permanent: every
+// caller here either swallows the error or retries, and subscribeTranscript's
+// bare `catch {}` reconnects once a second, forever, against a gate that will
+// never open. The console keeps rendering from cache and simply stops updating
+// — an outage, not a login prompt. It would hit daily, mid-session.
+//
+// A redirect here, not a re-request: the server deliberately answers a fetch()
+// with 401 rather than a 302, because a 302 is followed transparently and would
+// hand authentik's HTML to a JSON parser — the shape that took ArgoCD's login
+// down (infra-bootstrap #189).
+const authInterceptor: Interceptor = (next) => async (req) => {
+  try {
+    return await next(req);
+  } catch (err) {
+    if (err instanceof ConnectError && err.code === Code.Unauthenticated) {
+      const returnTo = encodeURIComponent(window.location.pathname + window.location.search);
+      window.location.assign(`/auth/login?return_to=${returnTo}`);
+    }
+    throw err;
+  }
+};
+
 const transport = createConnectTransport({
   baseUrl: "/",
-  interceptors: [csrfInterceptor],
+  interceptors: [csrfInterceptor, authInterceptor],
 });
 
 export const client = createClient(DashboardService, transport);

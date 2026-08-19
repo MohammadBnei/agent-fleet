@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
@@ -17,6 +18,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1/agentfleetv1connect"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/alertwebhook"
+	"github.com/MohammadBnei/agent-fleet/core/internal/auth"
 	"github.com/MohammadBnei/agent-fleet/core/internal/config"
 	"github.com/MohammadBnei/agent-fleet/core/internal/coreserver"
 	"github.com/MohammadBnei/agent-fleet/core/internal/dashboard"
@@ -155,9 +157,47 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	if dc != nil {
 		coreSvc.SetNotifyBlockedFunc(dc.NotifyBlocked)
 	}
+	// The console federates to authentik (infra-bootstrap ADR-0041).
+	//
+	// FAILS CLOSED, unlike every other optional secret core reads. An unset
+	// ALERT_WEBHOOK_TOKEN disables a webhook; an unset OIDC config must not
+	// disable the gate, because the Infisical operator renders a stale or empty
+	// Secret often enough that core would then come up completely open and look
+	// perfectly healthy. Refusing to start is loud; serving unauthenticated is
+	// not. FLEET_AUTH_DISABLED=1 is the explicit local-stack opt-out, so "no
+	// auth" is always something someone wrote down.
+	var authInterceptors []connect.Interceptor
+	gate := func(h http.Handler) http.Handler { return h }
+	if cfg.AuthDisabled {
+		slog.Warn("FLEET_AUTH_DISABLED=1: the console is UNAUTHENTICATED. Local stacks only.")
+	} else {
+		oidcAuth, err := auth.New(ctx, auth.Config{
+			IssuerURL:    cfg.OIDCIssuerURL,
+			ClientID:     cfg.OIDCClientID,
+			ClientSecret: cfg.OIDCClientSecret,
+			PublicURL:    cfg.DashboardPublicURL,
+			SessionKeys:  cfg.SessionKeys,
+		})
+		if err != nil {
+			return fmt.Errorf("oidc setup (set FLEET_AUTH_DISABLED=1 for a local stack): %w", err)
+		}
+		mux.HandleFunc("/auth/login", oidcAuth.Login)
+		mux.HandleFunc("/auth/callback", oidcAuth.Callback)
+		mux.HandleFunc("/auth/logout", oidcAuth.Logout)
+		authInterceptors = append(authInterceptors, oidcAuth.ConnectInterceptor())
+		gate = oidcAuth.Gate
+	}
+	// CSRF stays alongside the session check and is not redundant: a cookie is
+	// attached by the browser to same-origin requests regardless of which page
+	// triggered them, and the fleet publishes agent-authored dev servers on
+	// same-site siblings of this host. The header plus never allowing CORS is
+	// what stops one of those forging a call; the session check is what stops
+	// an unauthenticated one.
+	interceptors := []connect.Interceptor{dashboard.NewCSRFInterceptor(), dashboard.NewAccessLogInterceptor(), metrics.NewConnectInterceptor()}
+	interceptors = append(interceptors, authInterceptors...)
 	dashboardPath, dashboardHandler := agentfleetv1connect.NewDashboardServiceHandler(
 		dashboardSvc,
-		connect.WithInterceptors(dashboard.NewCSRFInterceptor(), dashboard.NewAccessLogInterceptor(), metrics.NewConnectInterceptor()),
+		connect.WithInterceptors(interceptors...),
 	)
 	// docs/adr/0037: an alert becomes a thot session — but only after a human
 	// opens the proposal it files (docs/adr/0048). Registered even when the
@@ -177,7 +217,16 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	}))
 	mux.Handle(dashboardPath, dashboardHandler)
 	mux.Handle("/", webui.Handler())
-	httpServer := &http.Server{Addr: ":" + cfg.Port, Handler: mux}
+	// The gate wraps the WHOLE mux, with an explicit exempt list inside it,
+	// rather than wrapping webui.Handler() alone.
+	//
+	// Gating one handler makes every route added later public by default until
+	// someone remembers — the same shape as this repo's "wire it into EVERY CI
+	// path" trap, with a worse failure mode. This way a forgotten route fails
+	// closed. It also has to sit outside the SPA handler specifically, because
+	// that one serves index.html with a 200 for any unknown path, so a gate
+	// underneath it would return the app shell to an unauthenticated request.
+	httpServer := &http.Server{Addr: ":" + cfg.Port, Handler: gate(mux)}
 
 	errCh := make(chan error, 1)
 	go func() {

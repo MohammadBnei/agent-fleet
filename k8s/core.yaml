@@ -41,6 +41,26 @@ service:
 # here. middlewares: isn't part of that templated parameter set, so it has
 # to live here — reuses the same shared basic-admin-auth Middleware
 # already gating pgweb/Alertmanager (see docs/adr/0014).
+#
+# basic-admin-auth STAYS, now that core federates its own login to authentik
+# (infra-bootstrap ADR-0041). It is not redundant and it is not laziness:
+#
+#  1. It is the break-glass. ADR-0039 Decision 6 records that a LAN ClientIP()
+#     route bypasses a MIDDLEWARE but cannot bypass an application's own OIDC
+#     redirect — which is why Grafana and ArgoCD keep local admins. core has no
+#     local admin to keep, so without this an authentik outage means no console
+#     at all, on the surface where a blocked session's permission decision gets
+#     answered.
+#  2. Removing it here is a deploy hazard on its own. This file carries BOTH
+#     the middleware reference and image.tag, ArgoCD auto-syncs it from main
+#     (registry.yaml pins targetRevision: main with prune+selfHeal), and
+#     docker.yml bumps the tag in a SEPARATE, LATER commit. Dropping the
+#     middleware in the same change that adds the gate would serve the whole
+#     console unauthenticated, publicly, for the length of a six-component
+#     serial build.
+#
+# Retiring it is a separate change, after the OIDC image is confirmed live, and
+# spans three repos (pgweb and Alertmanager share this credential).
 ingress:
   enabled: true
   middlewares:
@@ -87,6 +107,48 @@ env:
   # channel — unset, they land in the normal trigger channel.
   - name: MAX_IN_FLIGHT_TASKS
     value: "5"
+  # The console federates its login to authentik (infra-bootstrap ADR-0041).
+  #
+  # DASHBOARD_PUBLIC_URL is not only the Discord deep-link base any more: the
+  # OIDC redirect URI is derived from it, and authentik registers redirect_uris
+  # with matching_mode `strict`. A mismatch here fails at the callback with a
+  # provider-side error, not at startup.
+  - name: DASHBOARD_PUBLIC_URL
+    value: "https://fleet.bnei.dev"
+  # authentik's issuer is PER APPLICATION — this is not a shared base URL, and
+  # the trailing slash matters. core runs OIDC discovery against it rather than
+  # hardcoding endpoint paths, deliberately: authentik's userinfo endpoint is
+  # NOT underneath its issuer, and building it by concatenation produces a
+  # doubled path that 404s with an HTML body. That is what took ArgoCD's login
+  # down on 2026-08-19 (infra-bootstrap #189).
+  - name: OIDC_ISSUER_URL
+    value: "https://authentik.bnei.dev/application/o/fleet/"
+  # From the `fleet-oidc` Secret, which infra-bootstrap's
+  # gitops/bootstrap/fleet-oidc-secret.yaml materialises into this namespace.
+  # A DIFFERENT Infisical project (infra-bootstrap-1-ge1) than the
+  # agent-fleet-nygh scope infisical.enabled below syncs, which is why these are
+  # explicit secretKeyRefs rather than arriving through that envFrom.
+  #
+  # Env vars bind at container start: rotating any of these needs a restart of
+  # this Deployment, not just a re-render of the Secret.
+  - name: OIDC_CLIENT_ID
+    valueFrom:
+      secretKeyRef:
+        name: fleet-oidc
+        key: client_id
+  - name: OIDC_CLIENT_SECRET
+    valueFrom:
+      secretKeyRef:
+        name: fleet-oidc
+        key: client_secret
+  # Signs core's own session cookie. Comma-separated: sign with the first,
+  # verify against any — prepend a new key, let the old one ride out live
+  # sessions, then drop it. Dropping a key ends every session signed only by it.
+  - name: FLEET_SESSION_KEYS
+    valueFrom:
+      secretKeyRef:
+        name: fleet-oidc
+        key: session_keys
 
 podLabels:
   app.kubernetes.io/part-of: agent-fleet

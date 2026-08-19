@@ -76,6 +76,26 @@ type Config struct {
 	// notification without a link rather than a broken one.
 	// Env: DASHBOARD_PUBLIC_URL.
 	DashboardPublicURL string
+	// OIDC federates the console's login to authentik (infra-bootstrap
+	// ADR-0041). The redirect URI is derived from DashboardPublicURL above and
+	// must match the provider's registered redirect_uris exactly — authentik's
+	// matching_mode is `strict`.
+	//
+	// Unlike every other optional secret here, an unset value must REFUSE TO
+	// SERVE rather than disable the gate. See run.go: the Infisical operator
+	// renders a stale or empty Secret often enough that "feature off when
+	// unset" would bring core up wide open and looking healthy.
+	OIDCIssuerURL    string
+	OIDCClientID     string
+	OIDCClientSecret string
+	// SessionKeys signs the browser session cookie. Comma-separated: sign with
+	// the first, verify against any — the whole rotation mechanism.
+	SessionKeys string
+	// AuthDisabled is the explicit local-stack opt-out (/dashboard-e2e,
+	// /kind-local). Explicit so that "no auth" is always something someone
+	// wrote down, never something that happened because a secret failed to
+	// render.
+	AuthDisabled bool
 	// SessionRetention is how long an untouched session keeps its disk — its
 	// working directory and per-session SDK state (docs/adr/0048). After
 	// this the retention GC reclaims both and marks the session swept:
@@ -132,6 +152,11 @@ func Load() Config {
 		TurnStall:             time.Duration(envInt("TURN_STALL_MS", 90*1000)) * time.Millisecond,
 		SessionRetention:      time.Duration(envInt("SESSION_RETENTION_MS", 3*24*60*60*1000)) * time.Millisecond,
 		DashboardPublicURL:    os.Getenv("DASHBOARD_PUBLIC_URL"),
+		OIDCIssuerURL:         os.Getenv("OIDC_ISSUER_URL"),
+		OIDCClientID:          os.Getenv("OIDC_CLIENT_ID"),
+		OIDCClientSecret:      os.Getenv("OIDC_CLIENT_SECRET"),
+		SessionKeys:           os.Getenv("FLEET_SESSION_KEYS"),
+		AuthDisabled:          os.Getenv("FLEET_AUTH_DISABLED") == "1",
 		GarageS3Endpoint:      env("GARAGE_S3_ENDPOINT", "https://s3.bnei.dev"),
 		GarageFilesBucket:     env("GARAGE_FILES_BUCKET", "agent-fleet-files"),
 		GarageFilesAccessKey:  os.Getenv("AGENTFLEET_FILES_S3_ACCESS_KEY"),
