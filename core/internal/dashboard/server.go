@@ -167,6 +167,13 @@ func (s *Server) ArchiveSession(ctx context.Context, req *connect.Request[agentf
 	if _, err := s.e2e.TearDownSession(ctx, id, agentfleetv1.SessionKind_SESSION_KIND_WORKER); err != nil {
 		slog.Warn("dashboard ArchiveSession: worker teardown failed", "sessionId", id, "error", err)
 	}
+	// Same revocation as sessions.Loop.tearDown: an archived session is never
+	// warmed again, so its lease would otherwise stay valid forever. This is
+	// the second of exactly two teardown paths — if a third appears, it needs
+	// this too.
+	if err := s.sessions.ClearLease(ctx, id); err != nil {
+		slog.Warn("dashboard ArchiveSession: clearing lease failed", "sessionId", id, "error", err)
+	}
 	if err := s.proposals.DismissForSession(ctx, id); err != nil {
 		slog.Warn("dashboard ArchiveSession: proposal dismiss failed", "sessionId", id, "error", err)
 	}

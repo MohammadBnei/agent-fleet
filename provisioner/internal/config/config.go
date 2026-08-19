@@ -38,6 +38,12 @@ type Config struct {
 	// point 3) — the provisioner is a gRPC client of core for this one
 	// call, on top of being core's gRPC server for everything else.
 	CoreGRPCAddr string
+	// CoreToken authenticates this provisioner to CoreService, which rejects
+	// unauthenticated callers. Arrives from the same whole-scope Infisical sync
+	// the other secrets here use (k8s/provisioner/infisicalsecret.yaml declares
+	// no key list and the Deployment consumes it with envFrom), so adding the
+	// key needs no manifest change.
+	CoreToken string
 	// Passed through to each worker pod's sidecar so ask_thot registers
 	// (docs/adr/0035). Empty leaves the tool unregistered — which is how
 	// the feature silently did nothing in production until this was wired.
@@ -72,7 +78,7 @@ type Config struct {
 
 func Load() Config {
 	return Config{
-		Namespace:                   env("NAMESPACE", "agent-fleet"),
+		Namespace: env("NAMESPACE", "agent-fleet"),
 		// registry.bnei.lan:5000 is ukubi-cluster's in-cluster Zot registry
 		// (infra-bootstrap ADR-0034), which containerd is configured to trust
 		// over plain HTTP — `.lan` is a name Let's Encrypt cannot issue for,
@@ -90,6 +96,7 @@ func Load() Config {
 		Port:                        env("PORT", "8080"),
 		GRPCPort:                    env("GRPC_PORT", "9090"),
 		CoreGRPCAddr:                env("CORE_GRPC_ADDR", "agent-fleet-core.agent-fleet.svc.cluster.local:9090"),
+		CoreToken:                   os.Getenv("FLEET_PROVISIONER_TOKEN"),
 		ThotAuthToken:               env("THOT_AUTH_TOKEN", ""),
 		ExecutorAddr:                env("EXECUTOR_ADDR", "thot-executor.thot.svc.cluster.local:9090"),
 		ReconcileInterval:           env("RECONCILE_INTERVAL_MS", "10000"),

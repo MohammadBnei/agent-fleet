@@ -851,6 +851,7 @@ running.
 | `WORKTREE_PATH` | `/workspace` | for the telemetry loop's `git diff`/`rev-parse` calls |
 | `MCP_PORT` | `9090` | agent-facing local MCP server |
 | `LOCAL_API_PORT` | `9091` | wrapper-facing plain HTTP/JSON API |
+| `LEASE_ID` | *(required)* | authenticates every `CoreService` call. The **sidecar** is what talks to core, so the worker's own copy of this authenticates nothing. Missing it, the sidecar refuses to start rather than making calls core will reject |
 
 ### `worker/` (per worker pod, injected by the provisioner at pod creation)
 
@@ -867,6 +868,21 @@ running.
 | `CLAUDE_MODEL` | `claude-opus-4-8` | |
 | `MAX_TURNS` | unbounded | opt-in cap |
 | `CLAUDE_CODE_OAUTH_TOKEN` | – | minted via `claude setup-token` |
+
+### `FLEET_PROVISIONER_TOKEN` (`core/` and `provisioner/`)
+
+The one shared secret in the fleet, and the exception that proves the rule.
+Every other `CoreService` caller authenticates with its session's own
+`lease_id`; the provisioner has none, because it exists before any pod does and
+`ReportPodEvents` reports on arbitrary sessions by nature — it is how core
+learns a pod exists at all.
+
+Both components already consume the whole `agent-fleet-nygh` scope via
+`envFrom`, so adding the key needs no manifest change on either side. Unset, it
+authenticates **nobody** (an empty token is not a wildcard) and both processes
+say so loudly at startup — necessary because `PERMISSION_DENIED` is not in
+either client's retry policy, so the symptom is pod events silently ceasing to
+reach core while every log stays green.
 
 All of the above flow through Infisical (project `agent-fleet-nygh`,
 env `dev`) — never committed, never in a manifest as plain text.

@@ -123,7 +123,24 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	// pushes pod-lifecycle events here, and every worker pod's sidecar
 	// reaches everything else (the old /mcp HTTP surface, and the direct-SQL
 	// calls worker/src/db.ts used to make) through this same service.
-	grpcServer := grpc.NewServer(grpc.ChainUnaryInterceptor(coreserver.AccessLogInterceptor, metrics.UnaryInterceptor))
+	// Every call carries the calling session's lease_id, and core checks it
+	// against the sessions table (docs/adr/0020 point 1 keeps that check here,
+	// where the DB credentials already are). Before this, 9090 authenticated
+	// nobody: any pod in the namespace could call it, and every method that
+	// names a session took that name from the request body on trust.
+	//
+	// The STREAM chain is not decoration. This server had only a unary chain,
+	// so a unary-only check would leave StreamHumanMessages — the live feed of
+	// everything a human types to a session — and ReportPodEvents wide open,
+	// while every test still passed.
+	if cfg.ProvisionerToken == "" {
+		slog.Warn("FLEET_PROVISIONER_TOKEN is unset: the provisioner cannot authenticate to CoreService, so pod events will be rejected")
+	}
+	auth := coreserver.NewAuthenticator(sessionStore, cfg.ProvisionerToken)
+	grpcServer := grpc.NewServer(
+		grpc.ChainUnaryInterceptor(coreserver.AccessLogInterceptor, metrics.UnaryInterceptor, auth.UnaryInterceptor),
+		grpc.ChainStreamInterceptor(auth.StreamInterceptor),
+	)
 	coreSvc := coreserver.New(activityStore, sessionStore, journalStore, repoStore, provisioner, files, loki)
 	agentfleetv1.RegisterCoreServiceServer(grpcServer, coreSvc)
 	grpcLis, err := net.Listen("tcp", ":"+cfg.GRPCPort)

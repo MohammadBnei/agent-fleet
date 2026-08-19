@@ -45,7 +45,16 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	core, err := coreclient.New(coreAddr, taskID)
+	// The session's lease authenticates every call to core. It is minted per
+	// warm by sessions.ReserveSlot and cleared at teardown, so it identifies
+	// this pod rather than just this session — CoreService rejects a stale one.
+	leaseID := os.Getenv("LEASE_ID")
+	if leaseID == "" {
+		slog.Error("LEASE_ID is required: without it every CoreService call is rejected")
+		os.Exit(1)
+	}
+
+	core, err := coreclient.New(coreAddr, taskID, leaseID)
 	if err != nil {
 		slog.Error("core client init failed", "error", err)
 		os.Exit(1)
