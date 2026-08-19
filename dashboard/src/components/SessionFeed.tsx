@@ -438,6 +438,10 @@ export function SessionFeed({
       // ("overloaded") and is not one of these, but a future task_* subtype
       // that carried one must not become an alarm bar per poll.
       if (sig && PANEL_OWNED_SIGNALS.has(sig.sdk)) continue;
+      // A subagent's own completion is the AGENTS panel's row; anything else's
+      // — overwhelmingly a backgrounded Bash — is news the feed has no other
+      // way to deliver.
+      if (sig?.sdk === "task_notification" && sig.tool_use_id && panelOwnedToolUseIds.has(sig.tool_use_id)) continue;
       // api_retry carries error:"overloaded" but is not an alarm: the SDK
       // retries up to ten times on its own and usually wins. An orange bar per
       // attempt would out-shout the auth failure this tier exists for. It gets

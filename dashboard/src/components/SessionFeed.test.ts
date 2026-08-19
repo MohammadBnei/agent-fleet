@@ -192,7 +192,6 @@ test("panel-owned and duplicate signals render nothing in the feed", () => {
     { sdk: "task_started", task_id: "t", tool_use_id: "toolu_1", prompt: "a very long subagent prompt" },
     { sdk: "task_progress", task_id: "t", tool_use_id: "toolu_1", last_tool_name: "Read" },
     { sdk: "task_updated", task_id: "t", patch: { status: "completed" } },
-    { sdk: "task_notification", task_id: "t", tool_use_id: "toolu_1", status: "completed" },
     { sdk: "background_tasks_changed", tasks: [{ task_id: "t" }] },
     { sdk: "commands_changed", commands: [{ name: "ponytail", description: "…" }] },
     { sdk: "hook_started", hook_name: "SessionStart:startup" },
@@ -256,4 +255,18 @@ test("a silenced tool_progress still reaches its tool row as elapsed time", () =
 
   expect(groups).toHaveLength(1);
   expect(groups[0].elapsedById.get("toolu_E")).toBe(90);
+});
+
+// task_notification is the only one of the four that carries a terminal
+// outcome, and most belong to a backgrounded Bash — whose tool_result returned
+// the instant it launched, so this is the ONLY thing that ever says the
+// command finished. Silencing it wholesale made that invisible.
+test("a subagent's task_notification is silenced but a background command's is not", () => {
+  const agentCall = entry(TranscriptEntryType.ASSISTANT, JSON.stringify({ id: "toolu_A", tool: "Agent", input: { subagent_type: "Explore" } }));
+  const forAgent = sig({ sdk: "task_notification", task_id: "t", tool_use_id: "toolu_A", status: "completed", summary: "agent done" });
+  expect(renderedEntryViews([agentCall, forAgent])).toHaveLength(0);
+
+  const bashCall = entry(TranscriptEntryType.ASSISTANT, JSON.stringify({ id: "toolu_B", tool: "Bash", input: { command: "sleep 45", run_in_background: true } }));
+  const forBash = sig({ sdk: "task_notification", task_id: "t", tool_use_id: "toolu_B", status: "completed", summary: "Background command completed (exit code 0)" });
+  expect(renderedEntryViews([bashCall, forBash])).toHaveLength(1);
 });

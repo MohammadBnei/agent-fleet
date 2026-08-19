@@ -189,6 +189,17 @@ function SignalView({ signal, compact }: { signal: SdkSignal; compact?: boolean 
         </LogLine>
       );
 
+    case "task_notification": {
+      // Only reaches here for a NON-subagent task — a backgrounded Bash, whose
+      // tool row went "ok" the moment it launched and has said nothing since.
+      const failed = signal.status !== undefined && signal.status !== "completed";
+      return (
+        <LogLine badge="background" badgeClass={failed ? "warning" : undefined} compact={compact}>
+          {signal.summary ?? signal.status}
+        </LogLine>
+      );
+    }
+
     case "vcs_state_changed":
       return (
         <LogLine badge={signal.kind ?? "git"} compact={compact}>

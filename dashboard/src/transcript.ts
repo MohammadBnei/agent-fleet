@@ -358,7 +358,13 @@ export const PANEL_OWNED_SIGNALS = new Set([
   "task_started",
   "task_progress",
   "task_updated",
-  "task_notification",
+  // task_notification is deliberately NOT here. It is the only one of the four
+  // that carries a terminal outcome, and most of them belong to a backgrounded
+  // Bash rather than a subagent — whose tool_result came back the instant it
+  // was launched, so this notification is the ONLY thing that ever says the
+  // command finished. Blanket-silencing it made a background command's
+  // completion invisible. SessionFeed drops just the ones whose tool_use_id is
+  // an Agent call, where the panel does own the outcome.
   // NOT rendered by the panel — silenced on its own merits. It re-lists every
   // running task on each change, and "task" here mostly means a backgrounded
   // Bash, whose own tool row is already in the feed. The lifecycle it carries
