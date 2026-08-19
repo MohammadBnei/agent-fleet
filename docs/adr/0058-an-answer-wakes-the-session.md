@@ -115,6 +115,34 @@ either way, so "we stopped waiting" and "the tool failed" are different claims,
 and reporting the second is what made an agent abandon the tool. Narrow on
 purpose: core being unreachable still surfaces as a real error.
 
+### 3b. A re-ask supersedes the question it replaces
+
+Decision 3 stops the retries. This makes them survivable if anything ever
+retries again, and it is the defect that actually made questions unanswerable.
+
+`reuseOrAppendQuestion` compared question text **byte-for-byte**, and the model
+regenerates that JSON on every call, so a re-ask differing by a word or an
+option order missed the reuse and appended. Measured live on session
+`b7753602`: two calls 72 seconds apart, three questions each, **both announced
+blocked** — `announceBlocked` fires only on a new append, so the reuse added for
+exactly this had never matched once.
+
+Accumulating is what kills the feature. `pending_decisions` counts every
+unanswered question, so a session gathering one row per retry can never be
+unblocked by answering: the human answers the card they see, the count stays
+above zero, and a fresh card replaces it. Reported as *"the question is dead — I
+can't even respond."*
+
+An agent can only ever be blocked on one `AskUserQuestion` at a time — its own
+tool call blocks synchronously, ADR-0018's founding assumption and still true —
+so an older unanswered question is by definition a dead retry, not a second
+thing being asked. A new question now closes the ones it replaces.
+
+Closed *before* the new row is appended, because the dashboard looks for a
+question with no **later** answer of any kind. Authored by `agent`, which keeps
+it out of both delivery paths: core's poll matches only `From == "human"`, and
+the worker's stream handler skips anything not from a human or a peer session.
+
 ### 4. The console fetches the newest transcript page, and gates decisions by kind
 
 The session list called `getTranscript({ sessionId, sinceSeq: 0n })` with no
@@ -177,6 +205,9 @@ first:
   exempting too little.
 - `TestAskUserQuestion_ACancelledWaitIsPendingNotAnError`, plus one asserting a
   genuine failure still errors and one pinning the wait under 60000.
+- `TestAskUserQuestion_ARewordedReAskSupersedesTheOldOne` — against the shipped
+  code it reports `pending questions = [0 1], want exactly [1]`, which is the
+  accumulation the operator was hitting.
 - `TestTranscriptWindow_ALimitedReadReturnsTheNewestEntries` seeds past the
   1000-entry cap, because a short transcript passes either way; a source guard
   pins the client's call shape, since that regresses by *deleting* an argument.
@@ -196,3 +227,11 @@ The first draft of this ADR proposed exempting all pending decisions from the
 idle sweep and rendering all stranded decisions read-only. A systemic review
 rejected both against ADR-0050 before any of it shipped. The reviewer also found
 decision 5, which none of the reported symptoms pointed at.
+
+Decision 3b was missed entirely on the first pass and found only because the
+operator pushed back — *"are you sure you found the root cause?"* — after the
+other four were already committed. The timeout error had been read as a
+nuisance; nobody traced what the retry it caused actually **did**. The evidence
+was three `discord: notified blocked` lines in a log already quoted in this ADR:
+that message fires only on a new append, so the retries had been visibly
+appending all along.
