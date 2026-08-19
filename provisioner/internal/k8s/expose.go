@@ -11,15 +11,37 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
-// basicAuthMiddleware is reused across every session instead of minting a
-// per-session Secret — the same LAN-admin credential already gating
-// pgweb/Alertmanager.
+// forwardAuthMiddleware gates every preview behind authentik
+// (infra-bootstrap ADR-0039's forwardAuth tier, provider declared in that
+// repo's gitops/bootstrap/authentik-blueprint-forwardauth.yaml).
 //
-// It used to sit in ingressroute.go alongside a cluster-IP-whitelist
-// middleware that let worker pods reach each other's previews without a
-// password. That file is gone with the e2e pod (docs/adr/0048 §6), and so is
-// the whitelist: there is no second pod to let through.
-var basicAuthMiddleware = map[string]any{"name": "basic-admin-auth", "namespace": "default"}
+// Replaces basic-admin-auth, the shared apr1/MD5 credential whose hash is in
+// k8s-cluster's git history. These hosts are public and serve whatever an agent
+// happened to start, so "one password everybody knows" was the weakest lock on
+// a door the fleet opens automatically.
+//
+// The provider runs in forward_domain mode with cookie_domain: bnei.dev
+// specifically so that ONE provider covers every host PreviewHostFor mints.
+// forward_single is keyed on a fixed external_host and cannot express a
+// hostname that does not exist until a session asks for it.
+//
+// In `default`, not this namespace: k8s/provisioner/role.yaml deliberately
+// grants no `middlewares` verbs, so the provisioner can only reference a
+// Middleware it does not manage. Do not add the verb to make a local copy.
+var forwardAuthMiddleware = map[string]any{"name": "authentik-forwardauth", "namespace": "default"}
+
+// authentikService is where the sign-in callback goes. `platform-` is the
+// ApplicationSet's release prefix and is not optional — a wrong hostname here
+// fails as a 500 on the callback, not as a config error at apply time.
+const (
+	authentikServiceName      = "platform-authentik-server"
+	authentikServiceNamespace = "authentik"
+	authentikServicePort      = 80
+	// outpostPathPrefix is where authentik's embedded outpost handles the
+	// sign-in callback. It lands on the PREVIEW host, not on
+	// authentik.bnei.dev, so every preview route has to carry it.
+	outpostPathPrefix = "/outpost.goauthentik.io/"
+)
 
 // toInterfaceMap converts a label map for an unstructured object, which is
 // map[string]any all the way down.
@@ -125,18 +147,44 @@ func (c *Client) ensureExposeRoute(ctx context.Context, sessionID, svcName strin
 				"certResolver": "le-dns",
 				"domains":      []any{map[string]any{"main": PreviewDomainFor(host)}},
 			},
+			// TWO rules, and the second is not optional.
+			//
+			// authentik's sign-in callback comes back to the PREVIEW host, not
+			// to authentik.bnei.dev, so each preview must route
+			// /outpost.goauthentik.io/ to the outpost itself. Without it the
+			// browser bounces between the app and the login forever — which
+			// reads as a broken auth flow rather than as a missing route, and
+			// is the single most likely way to lose an afternoon here.
+			//
+			// Explicit priorities rather than Traefik's rule-length default
+			// (infra-bootstrap ADR-0039 Decision 5): the outpost rule is
+			// strictly more specific and must win, and leaving that to an
+			// implicit tiebreak makes it depend on how long a hostname happens
+			// to be.
 			"routes": []any{
 				map[string]any{
-					"match": fmt.Sprintf("Host(`%s`)", PreviewHostFor(host, sessionID)),
-					"kind":  "Rule",
+					"match":    fmt.Sprintf("Host(`%s`) && PathPrefix(`%s`)", PreviewHostFor(host, sessionID), outpostPathPrefix),
+					"kind":     "Rule",
+					"priority": int64(20),
+					"services": []any{
+						map[string]any{
+							"name":      authentikServiceName,
+							"namespace": authentikServiceNamespace,
+							"port":      int64(authentikServicePort),
+						},
+					},
+					// NO middleware here, deliberately. Gating the callback
+					// path with the thing it is the callback FOR is its own
+					// redirect loop.
+				},
+				map[string]any{
+					"match":    fmt.Sprintf("Host(`%s`)", PreviewHostFor(host, sessionID)),
+					"kind":     "Rule",
+					"priority": int64(10),
 					"services": []any{
 						map[string]any{"name": svcName, "namespace": c.Namespace, "port": int64(port)},
 					},
-					// Basic auth only. The cluster-IP whitelist that used to
-					// sit in front of this existed so worker pods could reach
-					// each other's previews without a password; there is no
-					// second pod to let through any more.
-					"middlewares": []any{basicAuthMiddleware},
+					"middlewares": []any{forwardAuthMiddleware},
 				},
 			},
 		},

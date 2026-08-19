@@ -15,8 +15,12 @@
 # admin credentials (provisioner-generated, never AGENTFLEET_DB_*) and a
 # postgres shared instance's data volume — infrastructure the provisioner
 # itself creates and owns, distinct from the fleet-coordination-DB boundary
-# in docs/adr/0020 point 1, which is untouched. Preview-pod auth still
-# reuses the existing basic-admin-auth Middleware, unrelated to this grant.
+# in docs/adr/0020 point 1, which is untouched. Preview-pod auth REFERENCES a
+# Middleware in `default` (authentik-forwardauth since infra-bootstrap
+# ADR-0041, basic-admin-auth before it) that this Role deliberately cannot
+# manage — there are no `middlewares` verbs below, and adding them so the
+# provisioner could mint its own copy would put the fleet in charge of its own
+# auth gate. Referencing one it does not control is the point.
 #
 # The worker pods themselves never get any of this — this Role is the ONLY
 # RBAC surface in the whole fleet that can create/delete cluster resources
