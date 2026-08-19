@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.8.1](https://github.com/MohammadBnei/agent-fleet/compare/4.8.0...4.8.1) (2026-08-19)
+
+
+### Bug Fixes
+
+* **dashboard:** the quiet tail had no selection and no actions ([#224](https://github.com/MohammadBnei/agent-fleet/issues/224)) ([07ca2b8](https://github.com/MohammadBnei/agent-fleet/commit/07ca2b8e67f767c28c00da50b7677c5b509094b7))
+
 # [4.8.0](https://github.com/MohammadBnei/agent-fleet/compare/4.7.0...4.8.0) (2026-08-19)
 
 
