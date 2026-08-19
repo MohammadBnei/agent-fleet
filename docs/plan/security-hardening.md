@@ -8,6 +8,9 @@ this repo, and what still bites.
 
 Started 2026-08-18. One sentence why: cluster was open window.
 
+Cluster-side reference for the identity layer now lives in infra-bootstrap at
+`docs/runbook-authentik-identity.md`. This file stays fleet-facing.
+
 ---
 
 ## 1. Wall outside — DONE
@@ -192,22 +195,34 @@ was configured to fetch groups from authentik's userinfo endpoint because its
 `grpc.request.claims` log field showed no `groups` key. That field is a summary,
 not the token. The token had groups all along.
 
-Worse: the fix broke login for everyone. `authentik.bnei.dev` is proxied, pods
-resolve `*.bnei.dev` publicly, so an in-cluster call leaves the cluster and
-Cloudflare answers a non-browser user agent with error 1010. ArgoCD parsed the
-HTML as JSON and threw away every session.
+Worse: the fix broke login for everyone. ArgoCD builds the userinfo URL by
+appending its configured path to the **issuer**, and authentik's issuer is
+already per-application — so the request went to
+`/application/o/argocd/application/o/userinfo/`, a 404 whose body is an HTML
+page. ArgoCD parsed that as JSON and threw away every session.
 
 Three checks said the claim should exist. One output said it did not. Right move
 was to read the token. Wrong move, taken, was to route around it.
 
-**Anything in-cluster calling a `*.bnei.dev` name goes through Cloudflare.** Not
-obvious, because pods resolve those names publicly. Everything on that path must
-survive Browser Integrity Check. It happens to hold for the OIDC token exchange
-and for Grafana, which is why it stayed hidden. Prefer a claim already in the
-token, or an in-cluster Service address.
+**A probe is a report about the artefact, not the artefact.** The first fix for
+the outage blamed Cloudflare, on a probe that returned `error code: 1010`. Real,
+reproducible, irrelevant — Browser Integrity Check on that zone rejects only
+`Python-urllib`, which was the probe's own user agent. Every client that mattered
+passed straight through. Both candidate URLs had been probed with that same
+blocked agent, so both returned 1010 and the difference between them — the whole
+answer — was invisible.
 
-Applies to fleet directly: core calls out to `*.bnei.dev` names, and every one
-of those is on this path.
+Reproducing a failure with a different client than the one that failed proves
+nothing. Pin the real user agent, URL and headers, or the result describes your
+probe.
+
+The tell was there and ignored: the correct endpoint returns an empty body, and
+an empty body cannot produce `invalid character '<'`. The error named the
+mechanism from the start.
+
+**Full URL beats issuer-relative path.** Grafana survived the same misconfig
+because its `api_url` is a complete URL; ArgoCD's is a path appended to the
+issuer. When wiring an app, check which one it wants.
 
 **Do not write "fails closed" without making it fail.** The comment shipped with
 the broken config asserted a graceful drop to read-only. Real behaviour was a
