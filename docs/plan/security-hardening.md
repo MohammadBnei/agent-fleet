@@ -1,0 +1,327 @@
+# Security hardening — done and left
+
+> **Status, 2026-08-19 (same day, hours later): §4.1 is DONE, and it shipped
+> differently than proposed below.** This file is kept as written — the plan
+> and its reasoning are the useful record, including where the reasoning was
+> wrong. Read §4.1/§4.2 as history, not as a to-do.
+>
+> **The one substantive divergence.** §4.1 proposed forwardAuth for
+> `fleet.bnei.dev`. Rejected for that host, on a point this file comes within a
+> line of making itself: §4.3 already notes a worker pod can reach
+> `DashboardService` on the pod network, and **a Traefik middleware gates the
+> ingress and has no opinion about a caller that never reaches it**. forwardAuth
+> would have left #200 wide open while looking solved. So core terminates OIDC
+> itself (`adr/0056`), and `CoreService` — which authenticated *nobody* — is
+> gated by the session's own `lease_id` (`adr/0057`).
+>
+> §4.2's "no native OIDC in core" is therefore reversed. Its reasoning was
+> sound on its own terms; it answered *attribution*, and the real need was
+> *authorization*, which needs no user model. §4.3 stands unchanged —
+> `X-authentik-*` is still never read, for exactly the reason given here.
+>
+> The **previews** stay on forwardAuth exactly as designed below, including the
+> `/outpost.goauthentik.io/` route this file warned about, which was indeed the
+> trap it predicted.
+>
+> `basic-admin-auth` is now off the console entirely, so the §4.1 note that it
+> is the fleet's lock is no longer true. It still gates pgweb, Alertmanager and
+> Proxmox.
+>
+> **§5 held, twice, against the person implementing it.** "Ask whether the
+> consuming step ran, not whether your input was accepted" describes both
+> failures shipped that day: CI accepted two green PRs whose *merge* did not
+> compile, and every auth test accepted a signer, a gate and a cookie while
+> **none ever ran real OIDC discovery** — so a normalised issuer string
+> crash-looped core and took the console down ~15 minutes. A third for the list:
+> *"zero rejections in the logs"* proved nothing, because there were also zero
+> calls in the window.
+>
+> §4.4's cluster-side items are all still open. Current state lives in
+> `docs/ARCHITECTURE.md` §2b, `adr/0056`, `adr/0057`.
+
+Caveman notes. Short words. Fleet view of a cluster-wide job.
+
+Full record lives in infra-bootstrap: `docs/adr/0038`, `0039`, `0040`, and
+`docs/bootstrap-test-notes.md`. This file says what changed, what it means for
+this repo, and what still bites.
+
+Started 2026-08-18. One sentence why: cluster was open window.
+
+Cluster-side reference for the identity layer now lives in infra-bootstrap at
+`docs/runbook-authentik-identity.md`. This file stays fleet-facing.
+
+---
+
+## 1. Wall outside — DONE
+
+Was: DNS pointed straight at home IP. Anyone could reach Traefik. No filter.
+
+Now: Cloudflare sits in front. Apex and `*.bnei.dev` proxied.
+
+| Thing | State |
+|---|---|
+| Cloudflare proxy | on |
+| WAF geo rules | on |
+| TLS mode | Full (strict), both zones |
+| TLS floor | 1.2 |
+| Origin lock | Traefik `ipAllowList`: Cloudflare ranges + LAN + pod CIDR |
+| Rate limit + security headers | baked into `common-app-chart` baseline, every app |
+| Access logs | JSON, into Loki |
+| HTTP → HTTPS | redirect on |
+
+Cert engine had to move first. TLS-ALPN-01 dies behind a proxy — edge
+terminates 443, challenge never reaches Traefik. Fails silent, up to 90 days
+later. So `le` moved to DNS-01 over Cloudflare. Only then flip the cloud.
+Order matters. Wrong order = no error, then dead certs in three months.
+
+### Fleet is the hole
+
+`fleet.bnei.dev` stays **grey**. DNS-only. No proxy.
+
+Reason: ConnectRPC streaming. Cloudflare free plan sends HTTP 524 when origin
+says nothing for 100s. Long stream trips it. Dashboard breaks.
+
+Cost of grey:
+- origin IP public
+- no WAF
+- no geo rule
+- origin lock off (`k8s/core.yaml` — lock allowlists Cloudflare peers; on a
+  grey host peer is the real client, so lock would 403 everyone)
+- rate limit falls back to peer address, since `CF-Connecting-IP` never set
+
+So every wall above protects every host **except this one**. Fleet is the
+front door of the agency and the least covered.
+
+Fix: heartbeat frame under 100s in streaming handlers. Then go orange. Open.
+
+---
+
+## 2. Inside the cluster — DONE
+
+| Thing | Was | Now |
+|---|---|---|
+| Secrets in etcd | plaintext, all 3 CP nodes, every snapshot | `secretbox` encrypted |
+| API audit log | none | on, tailed by Alloy into Loki |
+| Node-to-node traffic | cleartext | Cilium WireGuard, 4 peers |
+
+etcd encryption is one-way. Once Secrets rewritten, dropping the flag makes
+them unreadable. Back up etcd before touching it. Do not "just revert".
+
+---
+
+## 3. Identity — PART DONE
+
+authentik runs. `authentik.bnei.dev`. Postgres on Pigsty, not a second
+in-cluster DB. Version 2026.8.0.
+
+All config is **blueprints**. Declarative. Secrets in git as templates,
+values from Infisical. Nothing clicked in the UI. Clicked config cannot be
+reviewed and does not survive a rebuild.
+
+| Tier | Apps | State |
+|---|---|---|
+| Native OIDC | Grafana | done, login works |
+| Native OIDC | ArgoCD | done 2026-08-19 |
+| Roles | `platform-admins` group, read by both | done 2026-08-19 |
+
+ArgoCD federation took two tries. First one shipped a userinfo call that took
+login down completely — see the lessons at the bottom. Groups come from the ID
+token, never from userinfo.
+| forwardAuth | fleet, previews, Alertmanager, pgweb, Proxmox | **open** |
+| Passkeys | Proxmox, ArgoCD, Infisical, Alertmanager | open |
+
+Admin is a group, not a per-app list. `platform-admins` lives in one
+blueprint; ArgoCD maps it to `role:admin`, Grafana to `Admin`. Add a person =
+one line in one file. Deliberately not authentik's own `authentik Admins`
+group: that would make "can administer the IdP" and "can administer the
+cluster" the same claim.
+
+Both role expressions fail CLOSED. Missing claim = lowest role, never admin.
+
+Local admin stays on for Grafana and ArgoCD. On purpose. A LAN break-glass
+route skips a Traefik middleware; it cannot skip an app's own OIDC redirect.
+ArgoCD also deploys authentik. Drop local admin, lock self out.
+
+---
+
+## 4. What is left, fleet first
+
+### 4.1 forwardAuth for fleet — infra #183, fleet #209
+
+Today `fleet.bnei.dev` is gated by **one shared basic-auth password**. `apr1`
+/ MD5. Same one on pgweb, Alertmanager, Proxmox. Hash is in `k8s-cluster` git
+history.
+
+Behind that door: agents with repo write access and, through thot, cluster
+RBAC. Weakest lock on the biggest room.
+
+Plan: authentik proxy provider, `forward_domain` mode, `cookie_domain:
+bnei.dev`. One provider covers `fleet.bnei.dev` **and** every
+`<id>-e2e.bnei.dev` preview. `forward_single` cannot — previews are minted at
+runtime by `provisioner/internal/k8s/expose.go`, so no host exists to name up
+front.
+
+Changes here:
+- `k8s/core.yaml` — swap `basic-admin-auth` for the forwardAuth middleware
+- `expose.go:22` — same swap in `basicAuthMiddleware`, plus a second route
+  rule: `PathPrefix('/outpost.goauthentik.io/')` → authentik. Sign-in
+  callback lands on the *preview* host. Miss it, get a redirect loop that
+  looks like broken auth, not a missing route.
+
+Safe because the ingress only exposes port 8080 — SPA plus
+`DashboardService`. Port 9090 (`CoreService`: sidecar, provisioner, wrapper)
+has no `IngressRoute`. `/webhook/alertmanager` is called by Prometheus and
+Grafana over the in-cluster Service URL. Checked both. No internal caller
+breaks.
+
+Traps found while scoping:
+- authentik's embedded outpost has `providers = []`. A proxy provider does
+  nothing until bound to an outpost.
+- That list is **replaced, not appended**. So the whole forwardAuth tier goes
+  in ONE blueprint file. One file per app, like the OIDC tier does it, means
+  each blueprint silently unbinds the last.
+- authentik Base URL: proxy providers build redirect URLs from it. Was listed
+  here as "must be set first" — WRONG. Read live, it is already set to
+  `https://authentik.bnei.dev`. The claim came from a stale `TODO` in
+  infra-bootstrap's authentik values that was true when written. Re-check
+  before the proxy providers go in and after the 2026.11 upgrade; not a
+  blocker.
+
+### 4.2 No native OIDC in core. On purpose.
+
+Tempting. Skip it.
+
+Fleet has no user model. No `users` table. Nothing keyed by identity. An OIDC
+relying party in core would mint an identity nothing reads. forwardAuth plus
+`X-authentik-*` headers gives the same attribution for none of the code.
+
+Revisit only if fleet must be reached without Traefik in front — a CLI, a
+mobile client.
+
+### 4.3 Identity headers wait on #200
+
+Outpost sets `X-authentik-username`, `-email`, `-groups`. Free attribution.
+Sessions and proposals have no author today.
+
+**Do not read them until #200 lands.** A worker pod can already POST to
+`DashboardService` on the pod network behind only the `X-Fleet-Dashboard`
+CSRF header. If core trusts an identity header, that pod can forge it. Hole
+stops being "wrong authorization", becomes "impersonation". Worse.
+
+Order: #200, then headers.
+
+### 4.4 Cluster-side, still open
+
+- default-deny NetworkPolicy per namespace, with carve-outs (CoreDNS,
+  Prometheus scrape, Traefik → backend, authentik → Pigsty)
+- PSA labels — every namespace runs `privileged` today
+- ArgoCD `AppProject` — every Application is `project: default`, which permits
+  any repo, any namespace, any cluster-scoped kind
+- security alert rules — 401/403 spikes, audit authn failures, RBAC changes
+- cert-expiry alert on `traefik_tls_certs_not_after` — this is the one control
+  that catches every silent renewal failure above
+- retire `basic-admin-auth` — spans three repos, must land in one go
+- rotate `kubeadm_certificate_key.creds` — in git history
+- five plaintext Pigsty DB passwords — rotation is circular, Infisical's own DB
+  is on the list
+
+---
+
+## 5. Lessons. Read before debugging.
+
+**Read the artefact, not a report about the artefact.** Cost an outage. ArgoCD
+was configured to fetch groups from authentik's userinfo endpoint because its
+`grpc.request.claims` log field showed no `groups` key. That field is a summary,
+not the token. The token had groups all along.
+
+Worse: the fix broke login for everyone. ArgoCD builds the userinfo URL by
+appending its configured path to the **issuer**, and authentik's issuer is
+already per-application — so the request went to
+`/application/o/argocd/application/o/userinfo/`, a 404 whose body is an HTML
+page. ArgoCD parsed that as JSON and threw away every session.
+
+Three checks said the claim should exist. One output said it did not. Right move
+was to read the token. Wrong move, taken, was to route around it.
+
+**A probe is a report about the artefact, not the artefact.** The first fix for
+the outage blamed Cloudflare, on a probe that returned `error code: 1010`. Real,
+reproducible, irrelevant — Browser Integrity Check on that zone rejects only
+`Python-urllib`, which was the probe's own user agent. Every client that mattered
+passed straight through. Both candidate URLs had been probed with that same
+blocked agent, so both returned 1010 and the difference between them — the whole
+answer — was invisible.
+
+Reproducing a failure with a different client than the one that failed proves
+nothing. Pin the real user agent, URL and headers, or the result describes your
+probe.
+
+The tell was there and ignored: the correct endpoint returns an empty body, and
+an empty body cannot produce `invalid character '<'`. The error named the
+mechanism from the start.
+
+**Full URL beats issuer-relative path.** Grafana survived the same misconfig
+because its `api_url` is a complete URL; ArgoCD's is a path appended to the
+issuer. When wiring an app, check which one it wants.
+
+**Do not write "fails closed" without making it fail.** The comment shipped with
+the broken config asserted a graceful drop to read-only. Real behaviour was a
+sign-out. Plausible, reassuring, untested, wrong.
+
+**Green is not proof.** Three separate times a step reported success while
+doing nothing:
+- Alloy loaded its audit-log component fine, aimed at the container path, not
+  the host path. `local.file_match` on a missing path is not an error.
+- authentik blueprint discovery was *enqueued* at worker boot and never ran.
+  Log said `Task enqueued`, never `Task started`. No error anywhere.
+- Infisical operator applied a CR whose template changed, and kept rendering
+  the old Secret forever.
+
+Ask "did the consuming step run", not "was my input accepted".
+
+**Restarts are the propagation chain.** Nothing here hot-reloads.
+
+```
+merge                      -> ArgoCD applies the CR
+restart infisical-operator -> only if the CR TEMPLATE changed
+restart authentik worker   -> discovery re-applies the blueprint
+restart the client app     -> only if ITS credentials changed (env vars)
+```
+
+Skip one, everything still looks healthy.
+
+**Env vars bind at container start.** Rotate a secret, the running process
+keeps the old one. Add `secrets.infisical.com/auto-reload: "true"`.
+
+**Do not delete a managed Secret to force a re-render.** `creationPolicy:
+Orphan` means the operator does not own it and will not recreate it. Watched
+one stay gone 105s. Operator restart was needed anyway. Deleting is strictly
+worse: same outcome, plus a window with a missing mount.
+
+**Do not `cat` a mounted blueprint or `kubectl get secret -o yaml`.** Both
+print live credentials. Leaked a Cloudflare token and a Grafana OIDC pair that
+way; both rotated. Read the manifest in git, or use a jsonpath scoped to
+`.metadata`.
+
+**Helm eats unknown keys.** A misplaced key is a no-op for a whole session.
+`helm template` and grep the rendered output. Same for YAML indentation — a
+list nested two spaces wrong parsed clean and rendered zero entries.
+
+**A stale TODO reads exactly like a live one.** The Base URL note above was
+true when written, went stale, and got copied into an issue and this file as
+current. Same failure as a green status: the marker outlived the condition.
+
+**A diagnostic that returns "nothing found" is worse than one that errors.** A
+schema probe read the wrong JSON key and reported that authentik had no proxy
+provider model at all. Plausible, specific, wrong. An exception would have been
+caught in seconds.
+
+**Restart AFTER the file is mounted, not on merge.** authentik reads its
+blueprint directory at boot and does not watch it; kubelet syncs a ConfigMap
+volume ~a minute behind the API object. Restarting the moment ArgoCD says
+Synced boots a pod before its file lands. The fix and the cause are the same
+action at different times. Try a second restart before any deeper theory.
+
+**Test the negative.** A rate-limit test that passes under budget proves
+nothing. An origin-lock test from the LAN either hairpins into the allowlist
+or dies on NAT. Neither proves the lock works. Test from off-LAN, expect the
+403.
