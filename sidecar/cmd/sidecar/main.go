@@ -40,6 +40,7 @@ func main() {
 	worktreePath := env("WORKTREE_PATH", "/workspace")
 	mcpPort := env("MCP_PORT", "9090")
 	localAPIPort := env("LOCAL_API_PORT", "9091")
+	healthPort := env("HEALTH_PORT", "9092")
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -69,8 +70,7 @@ func main() {
 	// direct-dial decision is not reversed — it is moot: there is no second pod
 	// to dial, so the sidecar's only outbound connection is the one to core
 	// that it always had.
-	mcpServer := &http.Server{Addr: ":" + mcpPort, Handler: withAccessLog("sidecar mcp", mcpserver.New(core))}
-	localAPIServer := &http.Server{Addr: ":" + localAPIPort, Handler: withAccessLog("sidecar local api", localapi.New(core))}
+	mcpServer, localAPIServer, healthServer := servers(core, mcpPort, localAPIPort, healthPort)
 
 	go func() {
 		slog.Info("sidecar mcp listening", "port", mcpPort)
@@ -84,12 +84,40 @@ func main() {
 			slog.Error("local api server exited", "error", err)
 		}
 	}()
+	go func() {
+		slog.Info("sidecar health listening", "port", healthPort)
+		if err := healthServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			slog.Error("health server exited", "error", err)
+		}
+	}()
 
 	<-ctx.Done()
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	_ = mcpServer.Shutdown(shutdownCtx)
 	_ = localAPIServer.Shutdown(shutdownCtx)
+	_ = healthServer.Shutdown(shutdownCtx)
+}
+
+// servers builds the sidecar's three listeners. Split out of main purely so
+// the bind addresses are assertable — the ":" that used to be on the first two
+// is the entire reason this function exists, and nothing else in the process
+// would have failed if it came back.
+//
+// mcp and local api bind 127.0.0.1. Every route on them acts under THIS
+// session's authority: post a message as it, change its permission mode, read
+// the live SSE feed of everything a human has typed to it. A ":" bind
+// published all of that on the pod IP, reachable by any pod in the namespace
+// — and the per-task NetworkPolicies that would have covered it were deleted
+// with the sandbox (docs/adr/0048 §6), so nothing else stood in the way. Both
+// package comments always said "localhost"; only the bind address disagreed.
+//
+// health is the one exception, and the reason /readyz lives on its own mux:
+// kubelet dials the StartupProbe at the pod IP. See k8s.SidecarHealthPort.
+func servers(core *coreclient.Client, mcpPort, localAPIPort, healthPort string) (mcp, localAPI, health *http.Server) {
+	return &http.Server{Addr: "127.0.0.1:" + mcpPort, Handler: withAccessLog("sidecar mcp", mcpserver.New(core))},
+		&http.Server{Addr: "127.0.0.1:" + localAPIPort, Handler: withAccessLog("sidecar local api", localapi.New(core))},
+		&http.Server{Addr: ":" + healthPort, Handler: withAccessLog("sidecar health", localapi.NewHealth(core))}
 }
 
 // withAccessLog logs one line per request (method, path, status, duration)

@@ -40,7 +40,6 @@ const sseKeepAliveInterval = 15 * time.Second
 
 func New(core *coreclient.Client) http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /readyz", readyzHandler(core))
 	mux.HandleFunc("POST /journal", journalHandler(core))
 	mux.HandleFunc("POST /session-id", sessionIDHandler(core))
 	mux.HandleFunc("POST /telemetry", telemetryHandler(core))
@@ -48,6 +47,20 @@ func New(core *coreclient.Client) http.Handler {
 	mux.HandleFunc("GET /human-messages", humanMessagesHandler(core))
 	mux.HandleFunc("GET /task", taskHandler(core))
 	mux.HandleFunc("POST /permission-mode", permissionModeHandler(core))
+	return mux
+}
+
+// NewHealth is the sidecar's only listener that binds beyond loopback, and it
+// serves exactly one route. kubelet dials a StartupProbe at the POD IP, so
+// /readyz cannot sit on the mux above once that one is bound to 127.0.0.1 —
+// the probe would fail its whole budget while the sidecar was fine.
+//
+// Keep it that way: every other route here acts under the session's authority,
+// and this one only answers "is core reachable yet", which is not worth
+// authenticating and not worth leaking anything else to reach.
+func NewHealth(core *coreclient.Client) http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /readyz", readyzHandler(core))
 	return mux
 }
 
