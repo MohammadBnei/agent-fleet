@@ -8,11 +8,21 @@
 // network is exactly that caller, and that is #200. A check here applies
 // regardless of network position.
 //
-// basic-admin-auth stays on the IngressRoute in front of this, and is not
-// redundant: it is the break-glass. A LAN route can bypass a middleware but
-// cannot bypass an application's own OIDC redirect, and core has no local admin
-// — so without it, an authentik outage means no console at all, on the surface
-// where a blocked session's permission decision gets answered.
+// This is now the ONLY gate on fleet.bnei.dev. basic-admin-auth fronted it for
+// a few hours and was removed once a real login was proven (ADR-0041's
+// amendment), so there is no second layer and no local admin behind this one.
+//
+// Two things follow, and both are load-bearing:
+//
+//   - Failing closed is not defensive styling here, it is the whole design. If
+//     this package cannot build a working gate it must refuse to serve, because
+//     the alternative on a host with no other lock is an open console. cmd/core
+//     enforces that; FLEET_AUTH_DISABLED=1 is the explicit local-stack opt-out.
+//   - An authentik outage — or Pigsty, or Patroni, which sit under it — means no
+//     console at all, on the surface where a blocked session's permission
+//     decision gets answered. Recovery is FLEET_AUTH_DISABLED plus a redeploy,
+//     or kubectl port-forward. That cost was accepted knowingly; it did not go
+//     away.
 package auth
 
 import (

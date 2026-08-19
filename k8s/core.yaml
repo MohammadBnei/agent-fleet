@@ -38,34 +38,40 @@ service:
 # is driven by infra-bootstrap's gitops/apps/registry.yaml entry (its
 # `hostname:` field is templated into a Helm `parameters` override that
 # always wins over a values-file setting of the same key), so it isn't set
-# here. middlewares: isn't part of that templated parameter set, so it has
-# to live here — reuses the same shared basic-admin-auth Middleware
-# already gating pgweb/Alertmanager (see docs/adr/0014).
+# here.
 #
-# basic-admin-auth STAYS, now that core federates its own login to authentik
-# (infra-bootstrap ADR-0041). It is not redundant and it is not laziness:
+# NO `middlewares:` any more. basic-admin-auth is gone from this host as of
+# infra-bootstrap ADR-0041's same-day amendment: core federates its own login to
+# authentik, and the operator chose one sign-on over two stacked gates.
 #
-#  1. It is the break-glass. ADR-0039 Decision 6 records that a LAN ClientIP()
-#     route bypasses a MIDDLEWARE but cannot bypass an application's own OIDC
-#     redirect — which is why Grafana and ArgoCD keep local admins. core has no
-#     local admin to keep, so without this an authentik outage means no console
-#     at all, on the surface where a blocked session's permission decision gets
-#     answered.
-#  2. Removing it here is a deploy hazard on its own. This file carries BOTH
-#     the middleware reference and image.tag, ArgoCD auto-syncs it from main
-#     (registry.yaml pins targetRevision: main with prune+selfHeal), and
-#     docker.yml bumps the tag in a SEPARATE, LATER commit. Dropping the
-#     middleware in the same change that adds the gate would serve the whole
-#     console unauthenticated, publicly, for the length of a six-component
-#     serial build.
+# It was kept briefly for two reasons, and it is worth knowing which one
+# expired and which one was simply overruled:
 #
-# Retiring it is a separate change, after the OIDC image is confirmed live, and
-# spans three repos (pgweb and Alertmanager share this credential).
+#  1. EXPIRED — the deploy hazard. This file carries BOTH the middleware ref and
+#     image.tag, ArgoCD auto-syncs it from main (registry.yaml pins
+#     targetRevision: main with prune+selfHeal), and docker.yml bumps the tag in
+#     a SEPARATE, LATER commit. Removing it in the same change that ADDED the
+#     gate would have served the console unauthenticated, publicly, for the
+#     length of a six-component serial build. The gate is live now, so this no
+#     longer applies.
+#  2. OVERRULED — the break-glass. ADR-0039 Decision 6 records that a LAN
+#     ClientIP() route bypasses a MIDDLEWARE but cannot bypass an application's
+#     own OIDC redirect, which is why Grafana and ArgoCD keep local admins. core
+#     has none. So an authentik (or Pigsty, or Patroni) outage now means no
+#     console at all, on the surface where a blocked session's permission
+#     decision gets answered. Recovery is FLEET_AUTH_DISABLED=1 plus a redeploy,
+#     or kubectl port-forward. This is a real cost that was accepted, not one
+#     that went away.
+#
+# Consequence worth re-reading before adding a route: this IngressRoute matches
+# on HOST with no path constraint, so every path core serves on 8080 is now
+# public unless the in-app gate refuses it. What the gate exempts —
+# /healthz, /auth/*, /webhook/alertmanager — is therefore internet-reachable.
+# The webhook keeps its own bearer token and refuses when it is unset; the other
+# two are inert. /metrics is deliberately NOT exempt. A new exempt path is a new
+# public endpoint.
 ingress:
   enabled: true
-  middlewares:
-    - name: basic-admin-auth
-      namespace: default
   # fleet.bnei.dev is still GREY (DNS-only) at Cloudflare, unlike every other
   # *.bnei.dev host, which went proxied on 2026-08-18 (infra-bootstrap
   # ADR-0038). The reason was that this host serves ConnectRPC streaming and
