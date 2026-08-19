@@ -1,5 +1,12 @@
 # Changelog
 
+# [4.6.0](https://github.com/MohammadBnei/agent-fleet/compare/4.5.0...4.6.0) (2026-08-19)
+
+
+### Features
+
+* **provisioner:** put the e2e previews behind authentik ([#217](https://github.com/MohammadBnei/agent-fleet/issues/217)) ([cf04f7f](https://github.com/MohammadBnei/agent-fleet/commit/cf04f7f4397e1e2a89a6bc56c4bcad2967a76bb9))
+
 # [4.5.0](https://github.com/MohammadBnei/agent-fleet/compare/4.4.0...4.5.0) (2026-08-19)
 
 
