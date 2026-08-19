@@ -24,6 +24,7 @@ import { DecisionDock } from "../components/DecisionDock";
 import { SessionFeed } from "../components/SessionFeed";
 import { TodosPanel, ChangesPanel, AgentsPanel, SessionPanel } from "../components/SessionPanels";
 import { FileDiffModal } from "../components/FileDiffModal";
+import { isPodPhaseLive } from "./SessionList";
 import { AgentDetailModal } from "../components/DetailModal";
 import type { SubagentRun } from "../transcript";
 import { asDisplayMarkdown } from "../transcript";
@@ -271,6 +272,8 @@ export function SessionDetail({
 
         <DecisionDock
           entries={entries}
+          podLive={isPodPhaseLive(session.podPhase)}
+          swept={session.sweptAt !== undefined}
           busyKey={busyKey}
           onRespond={respondToPermission}
           onApprovePlan={approvePlanDecision}

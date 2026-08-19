@@ -220,3 +220,81 @@ func TestAskUserQuestion_MatchesCorrectlyTaggedAnswer(t *testing.T) {
 		t.Fatalf("unexpected answers_json: %q", resp.GetAnswersJson())
 	}
 }
+
+// A re-ask whose text drifted must not leave the previous question pending.
+//
+// This is the failure that made questions unanswerable in production. Observed
+// live 2026-08-19 on session b7753602, from core's own logs:
+//
+//	21:46:03  AskUserQuestion (3 questions)   -> discord: notified blocked
+//	21:47:03  ERROR Canceled
+//	21:47:15  AskUserQuestion (3 questions)   -> discord: notified blocked
+//	21:48:15  ERROR Canceled
+//	21:48:27  AnswerQuestion                  (the human answered)
+//	21:49:37  discord: notified blocked       (again)
+//
+// announceBlocked only fires on a NEW append, so every retry was appending.
+// Reuse compares question text byte-for-byte and the model regenerates that
+// JSON each call, so it matched nothing. pending_decisions counts every
+// unanswered question, so the session gathered one per retry and answering the
+// visible card could never bring the count to zero — the human's report was
+// "the question is dead, I can't even respond."
+//
+// Superseding rather than accumulating holds docs/adr/0018's invariant: only
+// one AskUserQuestion is ever outstanding, because the agent's own tool call
+// blocks.
+func TestAskUserQuestion_ARewordedReAskSupersedesTheOldOne(t *testing.T) {
+	store := &fakeQAStore{}
+	s := New(store, nil, nil, nil, nil, nil, nil)
+	ctx := context.Background()
+
+	first := `{"questions":[{"header":"Storage","question":"which class?"}]}`
+	// One word different, as a regenerated payload realistically is.
+	second := `{"questions":[{"header":"Storage","question":"which storage class?"}]}`
+
+	firstSeq, reused, err := s.reuseOrAppendQuestion(ctx, "task-1", first)
+	if err != nil {
+		t.Fatalf("first: %v", err)
+	}
+	if reused {
+		t.Fatal("the first question of a session cannot be a reuse")
+	}
+
+	secondSeq, reused, err := s.reuseOrAppendQuestion(ctx, "task-1", second)
+	if err != nil {
+		t.Fatalf("second: %v", err)
+	}
+	if reused || secondSeq == firstSeq {
+		t.Fatalf("reworded re-ask reused seq %d — the human would answer text the agent is no longer asking", firstSeq)
+	}
+
+	// Exactly one question may be outstanding.
+	entries, _, err := store.ReadSince(ctx, "task-1", 0, 1000)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	answered := map[int64]bool{}
+	for _, e := range entries {
+		if e.Type == "answer" && e.ReplyTo != nil {
+			answered[*e.ReplyTo] = true
+		}
+	}
+	var pending []int64
+	for _, e := range entries {
+		if e.Type == "question" && !answered[e.Seq] {
+			pending = append(pending, e.Seq)
+		}
+	}
+	if len(pending) != 1 || pending[0] != secondSeq {
+		t.Errorf("pending questions = %v, want exactly [%d] — every extra one is a decision the human can never clear", pending, secondSeq)
+	}
+
+	// The supersede must not look like a human answering, or core's poll would
+	// hand it to the agent as the human's choice and the worker would replay it
+	// as an input turn.
+	for _, e := range entries {
+		if e.Type == "answer" && e.From == "human" {
+			t.Errorf("supersede was authored as human at seq %d — that resolves a human's decision on their behalf", e.Seq)
+		}
+	}
+}

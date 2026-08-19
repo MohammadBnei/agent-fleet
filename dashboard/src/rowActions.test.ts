@@ -20,6 +20,7 @@ const SRC = await Bun.file(new URL("./pages/SessionList.tsx", import.meta.url)).
 const MOBILE = await Bun.file(new URL("./mobile/MobileSessionList.tsx", import.meta.url)).text();
 const MOBILE_DETAIL = await Bun.file(new URL("./mobile/MobileSessionDetail.tsx", import.meta.url)).text();
 const PANELS = await Bun.file(new URL("./components/SessionPanels.tsx", import.meta.url)).text();
+const APP = await Bun.file(new URL("./App.tsx", import.meta.url)).text();
 
 // Slice out one `function Name(...)` block by finding the next top-level
 // `function ` after it — good enough for a flat module of components.
@@ -80,4 +81,27 @@ test("mobile's panels opener is not conditional", () => {
 
 test("panelsEmpty is gone entirely, not just unused here", () => {
   expect(PANELS).not.toContain("export function panelsEmpty");
+});
+
+
+// The session list must fetch the NEWEST transcript entries, never a forward
+// read from zero.
+//
+// core's transcriptWindow treats a missing limit as "read forward from
+// sinceSeq", so `getTranscript({ sessionId, sinceSeq: 0n })` returned the
+// OLDEST 1000 entries. Past that, this fetch could not see a pending decision
+// at all — while core, counting over the whole table, still reported the
+// session blocked. The console rendered a red blocked card with nothing in it,
+// and a NEW question was the most invisible thing of all, landing at the high
+// end of the transcript.
+//
+// Greps the source, so it proves the call shape and not the behaviour — the
+// server-side window is covered by TestTranscriptWindow_ALimitedReadReturnsTheNewestEntries.
+// It exists because this regresses by DELETING an argument, which reads like
+// simplification.
+test("the list's summary fetch asks for a bounded, newest-first page", () => {
+  const call = APP.slice(APP.indexOf(".getTranscript("), APP.indexOf(".getTranscript(") + 200);
+  expect(call, "getTranscript is gone from App.tsx — has the summary fetch moved?").toContain("getTranscript");
+  expect(call).toContain("limit");
+  expect(call).not.toContain("sinceSeq");
 });

@@ -320,6 +320,7 @@ export function MobileSessionList({
   sessions,
   summaries,
   needsYouIds,
+  answerableIds,
   onSelect,
   onDelete,
   onOpenLogs,
@@ -328,6 +329,7 @@ export function MobileSessionList({
   sessions: Session[];
   summaries: Map<string, ListSummary>;
   needsYouIds: Set<string>;
+  answerableIds: Set<string>;
   onSelect: (id: string) => void;
   onDelete: (id: string) => void;
   onOpenLogs: (id: string) => void;
@@ -353,7 +355,7 @@ export function MobileSessionList({
   // not rendered is a session that vanishes from this list. Mobile had dropped
   // `archived` and `swept` too, so a session a human had finished existed on
   // neither form factor.
-  const { needsYou, stuck, working, finished, quiet, archived, swept } = bucketSessions(sessions, needsYouIds);
+  const { needsYou, stuck, working, finished, quiet, archived, swept } = bucketSessions(sessions, needsYouIds, answerableIds);
   const visibleNeedsYou = needsYou.filter((t) => !deferred.has(t.id));
   // Same derivation and same axes as the desktop ControlBar, so the two lists
   // cannot disagree about what "filtered by repo" means. Status chips are still

@@ -799,6 +799,25 @@ export function hasPendingDecision(entries: TranscriptEntry[]): boolean {
   return findPendingPermissions(entries).length > 0 || findPendingQuestion(entries) !== null;
 }
 
+// Whether a pending decision can still be acted on, given the session's pod.
+//
+// docs/adr/0050, stated once for the UI: a QUESTION is durable and
+// pod-independent — its answer is a transcript row keyed by the question's own
+// seq, and AnswerQuestion warms a pod to deliver it — so it is answerable
+// whether or not a pod exists. A PERMISSION is bound to one live pod's
+// canUseTool promise; with the pod gone, allow/deny reaches nothing and the
+// buttons would be a lie.
+//
+// A swept session is the exception on both counts: the retention GC took its
+// working directory, WarmIfIdle refuses it, so nothing can be delivered.
+export function decisionAnswerable(
+  kind: "question" | "permission",
+  opts: { podLive: boolean; swept: boolean },
+): boolean {
+  if (opts.swept) return false;
+  return kind === "question" || opts.podLive;
+}
+
 export type Density = "everything" | "narrative" | "decisions";
 export type FeedVisibility = { narrative: boolean; tools: boolean; quiet: boolean };
 

@@ -793,3 +793,93 @@ func TestSetPodImages_RoundTrips(t *testing.T) {
 		}
 	}
 }
+
+// A permission's pod cannot be replaced; a question's can. The idle sweep has
+// to know the difference, and until now it knew neither.
+//
+// Reported live 2026-08-19: "a message said I had not responded to a question
+// in time, and now the pod is dead." Core's own log, on the operator's
+// editable-blog session, 30 minutes after it asked:
+//
+//	sessions loop: idle timeout, tearing down pod  after=1800000000000
+//
+// The first version of this fix exempted EVERY pending decision, and that was
+// wrong: docs/adr/0050 decided a question's pod is free to die precisely
+// because the answer is a durable row delivered to the next pod, and with
+// MAX_IN_FLIGHT_TASKS=5 one forgotten subsidiary question would have held 20%
+// of the fleet forever. A permission is the opposite — its allow/deny is bound
+// to one live pod's canUseTool promise, so reaping the pod destroys the turn
+// and the human's later click reaches nothing.
+func TestListIdleSessionIDs_APermissionHoldsThePodButAQuestionDoesNot(t *testing.T) {
+	ctx := context.Background()
+	pool := dbtest.NewPool(t)
+	store := NewStore(pool)
+
+	live := func(id string) {
+		if _, err := store.ReserveSlot(ctx, id, 5); err != nil {
+			t.Fatalf("reserve: %v", err)
+		}
+		if err := store.SetPodPhase(ctx, id, "POD_PHASE_RUNNING", ""); err != nil {
+			t.Fatalf("phase: %v", err)
+		}
+		if err := store.TouchActive(ctx, id, "agent", "assistant"); err != nil {
+			t.Fatalf("touch: %v", err)
+		}
+		if _, err := pool.Exec(ctx,
+			`UPDATE sessions SET last_active_at = now() - interval '2 hours' WHERE id = $1`, id); err != nil {
+			t.Fatalf("backdate: %v", err)
+		}
+	}
+	ask := func(id string, seq int64, kind string) {
+		if _, err := pool.Exec(ctx,
+			`INSERT INTO transcript (session_id, seq, "from", text, type, idempotency_key)
+			 VALUES ($1, $2, 'agent', '{}', $3, $4)`, id, seq, kind, kind+"-"+id); err != nil {
+			t.Fatalf("ask: %v", err)
+		}
+	}
+	answer := func(id string, seq, replyTo int64, kind string) {
+		if _, err := pool.Exec(ctx,
+			`INSERT INTO transcript (session_id, seq, "from", text, type, reply_to_seq, idempotency_key)
+			 VALUES ($1, $2, 'human', '{}', $3, $4, $5)`, id, seq, kind, replyTo, kind+"-a-"+id); err != nil {
+			t.Fatalf("answer: %v", err)
+		}
+	}
+
+	// Quiet for two hours with nothing outstanding — what the sweep is for.
+	quiet := newSession(t, ctx, store)
+	live(quiet)
+
+	// Quiet because it asked a question. Its pod is expendable: the answer is a
+	// durable row, and AnswerQuestion warms a fresh pod to deliver it.
+	asking := newSession(t, ctx, store)
+	live(asking)
+	ask(asking, 1, "question")
+
+	// Quiet because it is waiting on a permission. This pod must survive.
+	permitting := newSession(t, ctx, store)
+	live(permitting)
+	ask(permitting, 1, "permission_request")
+
+	// Answered two hours ago — nothing outstanding, so the clock applies again.
+	answered := newSession(t, ctx, store)
+	live(answered)
+	ask(answered, 1, "permission_request")
+	answer(answered, 2, 1, "permission_response")
+
+	ids, err := store.ListIdleSessionIDs(ctx, time.Hour)
+	if err != nil {
+		t.Fatalf("idle: %v", err)
+	}
+	if !contains(ids, quiet) {
+		t.Error("a genuinely idle session was not swept — the timeout still has to work")
+	}
+	if contains(ids, permitting) {
+		t.Error("swept a session waiting on an unanswered PERMISSION: the pod that owns the canUseTool promise is gone, so the human's allow/deny now reaches nothing")
+	}
+	if !contains(ids, asking) {
+		t.Error("held a pod for an unanswered QUESTION: adr/0050 frees it deliberately, and five of these would wedge the fleet")
+	}
+	if !contains(ids, answered) {
+		t.Error("a session whose permission was answered two hours ago is idle again and must sweep")
+	}
+}

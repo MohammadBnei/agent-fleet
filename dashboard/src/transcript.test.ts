@@ -18,6 +18,7 @@ import {
   resolvedPermissionDecisions,
   subagentRuns,
   fileEdits,
+  decisionAnswerable,
 } from "./transcript";
 
 let nextSeq = 0n;
@@ -439,4 +440,27 @@ test("fileEdits: matches a repo-relative telemetry path against an absolute file
 test("fileEdits: does not match a path that is only a string suffix", () => {
   const entries = [toolUse("e1", "Edit", { file_path: "/workspace/app/not-a.ts", old_string: "x", new_string: "y" })];
   expect(fileEdits(entries, "a.ts")).toEqual([]);
+});
+
+// The one rule this whole change set exists to state, in the one place the UI
+// reads it from. Inverting it is a live incident in either direction: dead
+// allow/deny buttons on one side, an unanswerable-looking question on the other.
+test("decisionAnswerable: a question outlives its pod, a permission does not", () => {
+  const live = { podLive: true, swept: false };
+  const dead = { podLive: false, swept: false };
+  const swept = { podLive: false, swept: true };
+
+  expect(decisionAnswerable("question", live)).toBe(true);
+  expect(decisionAnswerable("permission", live)).toBe(true);
+
+  // The asymmetry. A question's answer is a durable row and AnswerQuestion
+  // warms a pod to deliver it (docs/adr/0050); a permission's allow/deny is
+  // bound to the canUseTool promise of a pod that no longer exists.
+  expect(decisionAnswerable("question", dead)).toBe(true);
+  expect(decisionAnswerable("permission", dead)).toBe(false);
+
+  // Swept is the exception on both counts: WarmIfIdle refuses the session, so
+  // there is nothing to deliver an answer to.
+  expect(decisionAnswerable("question", swept)).toBe(false);
+  expect(decisionAnswerable("permission", swept)).toBe(false);
 });

@@ -1,5 +1,5 @@
 import type { TranscriptEntry } from "../gen/agentfleet/v1/transcript_pb";
-import { findPendingPermissions, findPendingQuestion, hasPendingDecision } from "../transcript";
+import { decisionAnswerable, findPendingPermissions, findPendingQuestion, hasPendingDecision } from "../transcript";
 import { PermissionCard } from "./PermissionCard";
 import { PlanCard } from "./PlanCard";
 import { QuestionCard } from "./QuestionCard";
@@ -17,6 +17,11 @@ import { QuestionCard } from "./QuestionCard";
 export function DecisionDock({
   entries,
   busyKey,
+  // The session's pod state, for the permission rule below. Optional so a
+  // caller with no session in hand still renders — it defaults to "live",
+  // which is the pre-existing behaviour.
+  podLive = true,
+  swept = false,
   compact = false,
   onRespond,
   onApprovePlan,
@@ -25,6 +30,8 @@ export function DecisionDock({
 }: {
   entries: TranscriptEntry[];
   busyKey: string | null;
+  podLive?: boolean;
+  swept?: boolean;
   compact?: boolean;
   onRespond: (seq: bigint, decision: { behavior: "allow" | "deny"; message?: string }) => void;
   // Plan approval is its own path, not an allow decision: it may also switch
@@ -41,6 +48,11 @@ export function DecisionDock({
   const permissions = findPendingPermissions(entries);
   const permission = permissions[0] ?? null;
   const question = permission ? null : findPendingQuestion(entries);
+  // Same rule as the list (see decisionAnswerable): a permission dies with the
+  // pod that raised it; a question does not. Offering allow/deny here on a dead
+  // pod is the detail view telling a different story from the list about the
+  // same session.
+  const permissionLive = decisionAnswerable("permission", { podLive, swept });
   const pad = compact ? "px-3.5 py-3" : "px-4.5 py-3.5";
   const edge = compact ? "-mx-3.5 px-3.5" : "-mx-4.5 px-4.5";
 
@@ -55,7 +67,17 @@ export function DecisionDock({
           PERMISSION 1 OF {permissions.length} · {permissions.length - 1} MORE AFTER THIS
         </div>
       )}
-      {permission &&
+      {permission && !permissionLive && (
+        <div className="flex flex-col gap-2">
+          <PermissionCard tool={permission.tool} input={permission.input} pending={false} busy onAllow={() => {}} onDeny={() => {}} edgeClassName={edge} />
+          <span className="text-xs text-warning">
+            {swept
+              ? "This session's working directory was reclaimed — the request can no longer be answered."
+              : "The pod that asked this is gone, so allow/deny would reach nothing. Warm the session to carry on."}
+          </span>
+        </div>
+      )}
+      {permission && permissionLive &&
         (permission.tool === "ExitPlanMode" ? (
           <PlanCard
             plan={(permission.input as { plan?: string } | undefined)?.plan ?? ""}

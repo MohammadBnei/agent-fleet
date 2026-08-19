@@ -587,8 +587,32 @@ func (s *Server) SetPermissionMode(ctx context.Context, req *connect.Request[age
 	return connect.NewResponse(&agentfleetv1.SetPermissionModeResponse{}), nil
 }
 
+// AnswerQuestion answers a pending QUESTION entry — and warms the session
+// first, for the same reason PostMessage does. See WarmIfIdle.
+//
+// This is what makes docs/adr/0050 true. That ADR decided a question outlives
+// its pod: the answer is delivered to the next pod on warm, replayed above
+// RESUME_FROM_SEQ like any other human entry. It never worked, because this
+// function appended without warming — and resumeFromSeq is LatestSeq
+// (MAX(seq)+1) read at provisioning time, so an answer written first sits
+// BELOW the cursor of the pod that comes later and is never read. The worker
+// has had the receiving branch the whole time (worker/src/session.ts, the
+// entry.type === "answer" case); nothing ever reached it.
+//
+// Two consequences worth knowing, both accepted:
+//   - Warming runs ReserveSlot, which stale-closes any pending
+//     permission_request on this session. Answering a question therefore
+//     auto-denies a permission left over from the dead pod. That permission
+//     was already unanswerable, but it is an auto-decision triggered by
+//     answering something else.
+//   - This RPC can now fail: ResourceExhausted at the live-pod cap,
+//     FailedPrecondition on a swept session. That is honest — the answer had
+//     nowhere to go in those cases either, it just failed silently before.
 func (s *Server) AnswerQuestion(ctx context.Context, req *connect.Request[agentfleetv1.AnswerQuestionRequest]) (*connect.Response[agentfleetv1.AppendResponse], error) {
 	sessionID := req.Msg.GetSessionId()
+	if _, err := s.WarmIfIdle(ctx, sessionID); err != nil {
+		return nil, err
+	}
 	seq, err := s.transcr.AppendReply(ctx, sessionID, "human", req.Msg.GetAnswersJson(), "answer", uuid.NewString(), req.Msg.GetSeq())
 	if err != nil {
 		slog.Error("dashboard AnswerQuestion", "sessionId", sessionID, "error", err)
@@ -602,6 +626,17 @@ func (s *Server) AnswerQuestion(ctx context.Context, req *connect.Request[agentf
 // AnswerQuestion, same AppendReply-by-seq shape, kept as a sibling RPC
 // rather than overloaded onto AnswerQuestion since the payload differs
 // (allow/deny/updatedInput JSON vs. free-form answers JSON).
+//
+// Deliberately does NOT warm, where AnswerQuestion above does. ReserveSlot
+// stale-closes unanswered permission_request rows on every warm, so warming
+// here would auto-deny the very request being answered, a millisecond before
+// recording the human's actual decision.
+//
+// That asymmetry is the whole of docs/adr/0050: a question is durable and
+// pod-independent, a permission is bound to one live pod's canUseTool promise.
+// If the pod is gone the allow/deny reaches nothing and this row is a
+// bookkeeping write — which is why the idle sweep now refuses to reap a
+// permission-pending pod in the first place (see ListIdleSessionIDs).
 func (s *Server) RespondToPermission(ctx context.Context, req *connect.Request[agentfleetv1.RespondToPermissionRequest]) (*connect.Response[agentfleetv1.AppendResponse], error) {
 	sessionID := req.Msg.GetSessionId()
 	seq, err := s.transcr.AppendReply(ctx, sessionID, "human", req.Msg.GetDecisionJson(), "permission_response", uuid.NewString(), req.Msg.GetSeq())
@@ -632,11 +667,9 @@ func (s *Server) PostMessage(ctx context.Context, req *connect.Request[agentflee
 	if text == "" {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("text is required"))
 	}
-	// Warm BEFORE appending, never after. resumeFromSeq is computed from
-	// LatestSeq at provisioning time, so a message appended first would land
-	// below the new pod's cursor and never be delivered — the pod would boot
-	// and sit there with nothing to do. This ordering is the whole mechanism
-	// by which a first message boots a session (docs/adr/0048).
+	// Warm BEFORE appending, never after — see WarmIfIdle. This ordering is
+	// also the whole mechanism by which a first message boots a session
+	// (docs/adr/0048).
 	if _, err := s.WarmIfIdle(ctx, sessionID); err != nil {
 		return nil, err
 	}
@@ -721,6 +754,31 @@ func (s *Server) WarmSession(ctx context.Context, req *connect.Request[agentflee
 //     so there is nothing here to guard. See OpenFromProposal.
 //
 // Archived sessions are refused by ReserveSlot itself.
+//
+// # Warm THEN append, never the reverse
+//
+// This is the fleet's most load-bearing ordering, and it lives here because it
+// is a property of the resumeFromSeq read below, not of any one caller.
+//
+// resumeFromSeq is LatestSeq — MAX(seq)+1 — read at provisioning time, and the
+// pod streams only entries at or above it. So an entry appended BEFORE this
+// function runs lands one below the new pod's cursor and is never delivered.
+// Not "delivered late": an entry appended to a cold session is undeliverable
+// forever, because the next warm's cursor will be above it too.
+//
+// Every caller that wants its append to reach the agent must call this first:
+// PostMessage, OpenFromProposal, PromptSession, AnswerQuestion. Each carries a
+// one-line reminder pointing here rather than repeating this.
+//
+// RespondToPermission is the deliberate exception and must NOT warm — see its
+// own comment.
+//
+// ponytail: the truncation above is the root of a bug class, not just a rule to
+// follow. A pod cannot ask "what was appended while I was gone", because nothing
+// records what the previous pod consumed — and resuming from the oldest
+// unanswered entry instead would re-deliver stale abort/interrupt rows. The
+// upgrade path is a cold_from_seq column set on append-while-cold and cleared on
+// warm; worth building the moment a third caller needs it.
 func (s *Server) WarmIfIdle(ctx context.Context, sessionID string) (podName string, err error) {
 	t, err := s.sessions.Get(ctx, sessionID)
 	if err != nil {

@@ -197,3 +197,25 @@ test("needsYou and stuck come back longest-waiting first", () => {
   expect(b.needsYou.map((t) => t.id)).toEqual(["ancient", "middle", "recent"]);
   expect(b.stuck.map((t) => t.id)).toEqual(["old-stall", "new-stall"]);
 });
+
+// A stranded QUESTION belongs in NEEDS YOU, not STUCK.
+//
+// Before AnswerQuestion warmed, a pod-dead session with a pending decision was
+// unanswerable whatever kind it was, so everything went to STUCK. Now the two
+// kinds differ: answering a question warms a fresh pod and the answer is
+// delivered there, so it is a live decision and belongs at the top. A stranded
+// permission still is not — its buttons reach a canUseTool promise that died
+// with the pod — so it stays in STUCK, visible but not actionable.
+test("a stranded question is needsYou; a stranded permission is stuck", () => {
+  const withQuestion = session("q", { liveState: "idle" });
+  const withPermission = session("p", { liveState: "idle" });
+
+  const b = bucketSessions(
+    [withQuestion, withPermission],
+    new Set(["q", "p"]), // both hold an unanswered decision
+    new Set(["q"]), // only this one's is a question
+  );
+
+  expect(b.needsYou.map((t) => t.id)).toEqual(["q"]);
+  expect(b.stuck.map((t) => t.id)).toEqual(["p"]);
+});

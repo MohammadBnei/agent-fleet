@@ -266,6 +266,50 @@ func (s *Server) reuseOrAppendQuestion(ctx context.Context, sessionID, questions
 			return e.Seq, true, nil
 		}
 	}
+
+	// Byte equality above is a best case, not a guarantee: the model
+	// regenerates the questions JSON on every call, so a re-ask that differs by
+	// a word, an option order or a space misses the reuse and lands here.
+	//
+	// Measured live 2026-08-19 on session b7753602: two calls 72s apart, three
+	// questions each, both announced blocked — i.e. both appended. The reuse
+	// added for exactly this never matched once.
+	//
+	// Accumulating is the part that kills the feature. pending_decisions counts
+	// EVERY unanswered question, so a session gathering one row per retry can
+	// never be unblocked by answering: the human answers the card they see, the
+	// count stays above zero, and a fresh card replaces it. Reported as "the
+	// question is dead — I can't even respond."
+	//
+	// So supersede rather than accumulate. An agent can only ever be blocked on
+	// one AskUserQuestion at a time — its own tool call blocks synchronously,
+	// which is docs/adr/0018's founding assumption and still true — so an
+	// older unanswered question is by definition a dead retry, not a second
+	// thing being asked.
+	//
+	// Closed BEFORE the new row is appended, because the dashboard's
+	// findPendingQuestion looks for a question with no LATER answer of any
+	// kind; closing afterwards would mark the new question answered too.
+	//
+	// Authored by "agent", which keeps it out of both delivery paths: core's
+	// poll matches only From == "human", and the worker's stream handler skips
+	// any entry that is not from a human or a peer session. It resolves the
+	// row for counting and for the console, and reaches no agent as an answer.
+	for _, e := range entries {
+		if e.Type != "question" || answered[e.Seq] {
+			continue
+		}
+		if _, serr := s.transcr.AppendReply(ctx, sessionID, "agent",
+			"superseded — the agent re-asked before this was answered",
+			"answer", uuid.NewString(), e.Seq); serr != nil {
+			// Not fatal: a failed supersede leaves an extra pending row, which
+			// is the old behaviour, not a new failure.
+			slog.Warn("coreserver: could not supersede stale question", "sessionId", sessionID, "seq", e.Seq, "error", serr)
+			continue
+		}
+		slog.Info("coreserver: superseded stale question", "sessionId", sessionID, "seq", e.Seq)
+	}
+
 	seq, err = s.transcr.Append(ctx, sessionID, "agent", questionsJSON, "question", uuid.NewString())
 	if err != nil {
 		return 0, false, err

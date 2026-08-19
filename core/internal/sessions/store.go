@@ -695,11 +695,40 @@ func (s *Store) ListStartupStalledIDs(ctx context.Context, startupStall time.Dur
 
 // ListIdleSessionIDs finds sessions with a live pod nobody is talking to.
 func (s *Store) ListIdleSessionIDs(ctx context.Context, idleTimeout time.Duration) ([]string, error) {
+	// A session holding an unanswered PERMISSION is not idle — and unlike a
+	// question, its pod cannot be replaced.
+	//
+	// The asymmetry is the one docs/adr/0050 turns on, and ReserveSlot states
+	// the same thing from the other side (see its stale-close below): a
+	// permission's allow/deny is bound to one live pod's canUseTool promise, so
+	// reaping that pod destroys the agent's whole turn and the human's later
+	// click lands in a row nothing will ever read. Holding a slot is the
+	// cheaper loss. A question is durable and pod-independent — its answer is a
+	// transcript row keyed by the question's own seq, delivered to whichever
+	// pod comes next — so its pod IS free to die, which is what 0050 decided
+	// and what AnswerQuestion's warm now makes true.
+	//
+	// So: permissions only. Excluding every pending decision would let one
+	// forgotten subsidiary question hold 20% of a five-pod fleet forever.
+	//
+	// Written out rather than sharing selectCols' pending_decisions fragment:
+	// that one is a count over both types, this is a filter over one, and
+	// gluing SQL strings together to save a duplicate NOT EXISTS is how a
+	// WHERE clause ends up applying to the wrong query.
 	return s.listIDs(ctx, `
-		SELECT id FROM sessions
-		WHERE pod_phase = ANY($2)
-		  AND last_active_at IS NOT NULL
-		  AND last_active_at < now() - $1::interval
+		SELECT id FROM sessions s
+		WHERE s.pod_phase = ANY($2)
+		  AND s.last_active_at IS NOT NULL
+		  AND s.last_active_at < now() - $1::interval
+		  AND NOT EXISTS (
+		    SELECT 1 FROM transcript q
+		     WHERE q.session_id = s.id
+		       AND q.type = 'permission_request'
+		       AND NOT EXISTS (
+		         SELECT 1 FROM transcript r
+		          WHERE r.session_id = q.session_id AND r.reply_to_seq = q.seq
+		       )
+		  )
 	`, idleTimeout, livePhases)
 }
 

@@ -267,6 +267,18 @@ Any doc, code, comment, or memory that contradicts this file or an
   `SetPermissionMode` call, itself confirmation-gated for `auto`) — never
   inferred from anything else. `/approve` no
   longer exists — see `adr/0005`, `adr/0027`, `adr/0029`.
+- **Appending to a session that has no live pod without warming first.** The
+  resume cursor is `MAX(seq)+1` read at provisioning time, so an entry written
+  to a cold session lands *below* the next pod's cursor and is undeliverable
+  forever — not delivered late. `PostMessage`, `OpenFromProposal`,
+  `PromptSession` and `AnswerQuestion` all warm first; `RespondToPermission` is
+  the one deliberate exception, because warming stale-closes the permission it
+  is answering. See `dashboard.WarmIfIdle`'s own comment and `adr/0058`.
+- **Reaping the pod of a session waiting on a PERMISSION.** A permission's
+  allow/deny is bound to that pod's live `canUseTool` promise; a question's
+  answer is a durable row any later pod can read. The idle sweep knows the
+  difference — see `adr/0050`, `adr/0058`. Exempting *questions* too is equally
+  wrong: one forgotten question would hold a fifth of the fleet.
 - **Reclaiming a session's directory on anything but archive or the
   retention timer.** Stop and idle-timeout tear down the pod and leave the
   tree — that is what makes a session resumable. The underlying lesson from
