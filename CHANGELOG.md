@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.6.1](https://github.com/MohammadBnei/agent-fleet/compare/4.6.0...4.6.1) (2026-08-19)
+
+
+### Bug Fixes
+
+* **core:** rename the grpcAuth variable that shadowed the auth package ([#218](https://github.com/MohammadBnei/agent-fleet/issues/218)) ([0d24642](https://github.com/MohammadBnei/agent-fleet/commit/0d246427360dfd138de575227175bb395dfc4371)), closes [#216](https://github.com/MohammadBnei/agent-fleet/issues/216) [#215](https://github.com/MohammadBnei/agent-fleet/issues/215)
+
 # [4.6.0](https://github.com/MohammadBnei/agent-fleet/compare/4.5.0...4.6.0) (2026-08-19)
 
 
