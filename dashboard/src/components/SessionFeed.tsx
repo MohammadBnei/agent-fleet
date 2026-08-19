@@ -26,7 +26,7 @@ import {
 import { Markdown } from "./Markdown";
 import { Collapse } from "./Collapse";
 import { TranscriptEntryView } from "./TranscriptEntryView";
-import { ToolCallDetail } from "./ToolCallItem";
+import { ToolCallDetailModal } from "./DetailModal";
 import { ToolCallLine } from "./ToolCallLine";
 import { PermissionCard } from "./PermissionCard";
 import { PlanCard } from "./PlanCard";
@@ -98,7 +98,12 @@ function ToolGroup({
   elapsedById: Map<string, number>;
 }) {
   const [collapsed, setCollapsed] = useState(false);
-  const [expanded, setExpanded] = useState<bigint | null>(null);
+  // A modal, not the inline expander this replaces. The expander opened the
+  // input and the full output *inside* the feed column — 266px of usable width
+  // beside the panels on desktop, 390px on a phone — so a Bash command wrapped
+  // to ribbons and a diff was unreadable at exactly the moment you wanted to
+  // read it. Same ToolCallDetail renderer, given room.
+  const [detail, setDetail] = useState<ToolCallPair | null>(null);
 
   return (
     <div>
@@ -122,12 +127,12 @@ function ToolGroup({
             const failed = pair.resultInfo?.isError === true;
             const inFlight = !pair.result;
             const elapsed = pair.callInfo.id ? elapsedById.get(pair.callInfo.id) : undefined;
-            const open = expanded === pair.call.seq;
+
             return (
               <div key={String(pair.call.seq)} className={i === pairs.length - 1 ? "" : "border-b border-line3"}>
                 <button
                   type="button"
-                  onClick={() => setExpanded(open ? null : pair.call.seq)}
+                  onClick={() => setDetail(pair)}
                   className={`w-full flex gap-2.5 items-center px-2.5 py-1.5 text-left cursor-pointer hover:bg-base-300/40 ${
                     failed ? "bg-orange-wash" : ""
                   }`}
@@ -166,16 +171,12 @@ function ToolGroup({
                         : "ok"}
                   </span>
                 </button>
-                {open && (
-                  <div className="px-2.5 py-2 border-t border-line3 bg-code">
-                    <ToolCallDetail pair={pair} />
-                  </div>
-                )}
               </div>
             );
           })}
         </div>
       )}
+      <ToolCallDetailModal pair={detail} onClose={() => setDetail(null)} />
     </div>
   );
 }
@@ -247,6 +248,9 @@ export function SessionFeed({
   // Agent); this is how their tool_result is dropped with it, since an
   // unpaired result would otherwise fall through as an orphan bubble.
   const panelOwnedToolUseIds = new Set<string>();
+  // Agent tool_use id -> subagent type, so a relayed subagent line can say WHICH
+  // agent wrote it rather than a generic "subagent".
+  const subagentNames = new Map<string, string>();
   // Elapsed seconds per originating tool call, from the tool_progress signals
   // the feed no longer renders on their own. Keyed by parent_tool_use_id: the
   // signal's own tool_use_id is synthetic and suffixed per emission, so it
@@ -257,6 +261,10 @@ export function SessionFeed({
       const info = parseSdkToolUse(e.text);
       if (info?.tool && info.id && PANEL_OWNED_TOOLS.has(info.tool)) {
         panelOwnedToolUseIds.add(info.id);
+        if (info.tool === "Agent") {
+          const t = (info.input as { subagent_type?: unknown } | undefined)?.subagent_type;
+          subagentNames.set(info.id, typeof t === "string" ? t : "subagent");
+        }
       }
       continue;
     }
@@ -476,6 +484,26 @@ export function SessionFeed({
         continue;
       }
       const info = parseSdkToolUse(entry.text);
+      // A subagent's own prose. Same tier as the main agent's narrative — it is
+      // the work happening — but it must never look like the session addressing
+      // you, so it gets a name and a rule down the side. Markdown-rendered:
+      // it is prose an agent wrote, and it has headings and code in it.
+      if (info?.kind === "subagent_text" && info.text) {
+        if (!visibility.narrative) continue;
+        flush();
+        const who = info.parentToolUseId ? subagentNames.get(info.parentToolUseId) : undefined;
+        out.push(
+          <div key={key} id={`entry-${key}`} className={compact ? "pl-4" : "pl-[18px]"}>
+            <div className="border-l-2 border-info/40 pl-3 min-w-0">
+              <div className="text-2xs tracking-[0.08em] text-info/80 mb-1">{who ?? "subagent"} says</div>
+              <div className={`leading-[1.7] min-w-0 text-dim ${compact ? "text-sm" : "text-base max-w-(--feed-measure)"}`}>
+                <Markdown text={info.text} />
+              </div>
+            </div>
+          </div>,
+        );
+        continue;
+      }
       // A thinking block is tier 2 (the agent's reasoning), collapsed by
       // default — it is not a tool call, so the tools toggle doesn't hide it.
       if (info?.kind === "thinking" && info.text) {

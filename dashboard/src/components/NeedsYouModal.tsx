@@ -63,28 +63,30 @@ export function NeedsYouModal({
             const queued = summary?.pendingPermissionCount ?? 0;
             return (
               <div key={s.id} className="border border-pink-line">
+                {/* Title first, id demoted to the meta line — same ordering as
+                    the list rows and the actions modal, so the thing you scan
+                    for is always in the same place. */}
                 <div className="flex items-baseline gap-2 px-3.5 pt-3 min-w-0">
-                  <span className="text-sm font-semibold flex-none">#{s.id.slice(0, 6)}</span>
                   <button
                     type="button"
                     onClick={() => onOpenSession(s.id)}
-                    className="text-sm min-w-0 truncate text-left hover:text-primary cursor-pointer"
+                    className="text-sm font-semibold min-w-0 truncate text-left hover:text-primary cursor-pointer flex-1"
                   >
                     {sessionLabel(s)}
                   </button>
-                  <span className="text-xs text-dim2 flex-none ml-auto">
+                  <span className="text-xs text-dim2 flex-none">
                     {s.repo}
                     {blockedFor ? ` · ${blockedFor}` : ""}
                     {queued > 1 ? ` · ${queued} decisions` : ""}
                   </span>
                 </div>
+                <div className="px-3.5 pt-0.5 text-2xs text-dim2">#{s.id.slice(0, 8)}</div>
                 {/* Same component the list row uses, so a plan still refuses to
                     be approved from a summary line and sends you into the
                     session instead (DecisionInline's own reasoning). */}
                 <DecisionInline
                   session={s}
                   summary={summary}
-                  onOpenSession={() => onOpenSession(s.id)}
                   reload={reload}
                 />
               </div>

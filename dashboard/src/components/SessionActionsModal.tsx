@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useBusyAction } from "../useBusyAction";
 import type { Session } from "../gen/agentfleet/v1/core_pb";
 import { client } from "../connectClient";
 import { Modal } from "./Modal";
@@ -34,37 +35,38 @@ export function SessionActionsModal({
   onDelete: (id: string) => void;
   reload: () => void;
 }) {
-  const [busyKey, setBusyKey] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [autoOpen, setAutoOpen] = useState(false);
+  const { busyKey, error, run: runAction, clearError } = useBusyAction();
 
-  // Same contract as useSessionDetail's run(): key the spinner to the button
-  // that was clicked, surface the failure inline, always clear busy. The list
-  // has no stream to reflect the change back, so every action ends in reload().
-  function run(action: () => Promise<unknown>, key: string) {
-    setBusyKey(key);
-    setError(null);
-    action()
-      .then(() => reload())
-      .catch((err: Error) => setError(err.message))
-      .finally(() => setBusyKey(null));
-  }
+  // The list has no transcript stream to reflect a change back, so every action
+  // that succeeds ends in a reload. Failures leave the list alone and surface
+  // inline — reloading on failure would repaint the row as if nothing happened.
+  const run = (action: () => Promise<unknown>, key: string) => {
+    void runAction(action, key).then((ok) => ok && reload());
+  };
 
   return (
     <>
       <Modal
         open={session !== null}
         onClose={() => {
-          setError(null);
+          clearError();
           onClose();
         }}
         boxClassName="max-w-md"
       >
         {session && (
           <div className="flex flex-col gap-3">
-            <div className="flex items-baseline gap-2 min-w-0">
-              <span className="text-sm font-semibold flex-none">#{session.id.slice(0, 6)}</span>
-              <span className="text-sm text-dim min-w-0 truncate">{sessionLabel(session)}</span>
+            {/* The list rows dropped the `#abc123` prefix — six hex characters
+                at the front of every row, unreadable and unsearchable, pushing
+                the title (the only part anyone scans for) to the right. This is
+                where it lives now, with room to be labelled and to show more of
+                itself. */}
+            <div className="flex flex-col gap-1 min-w-0">
+              <span className="text-sm font-semibold break-words">{sessionLabel(session)}</span>
+              <span className="text-2xs text-dim2 break-all">
+                {session.repo} · #{session.id.slice(0, 8)}
+              </span>
             </div>
             {error && <InlineError message={error} />}
             <ActionsMenu

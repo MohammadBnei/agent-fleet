@@ -22,9 +22,10 @@ import { AUTO_MODE_WARNING } from "../approvePlan";
 import { Modal } from "../components/Modal";
 import { Segmented } from "../components/Segmented";
 import { SessionFeed } from "../components/SessionFeed";
-import { TickBar, todoProgress } from "../components/TickBar";
-import { TodosPanel, ChangesPanel, AgentsPanel, SessionPanel, panelsEmpty } from "../components/SessionPanels";
+import { TodosPanel, ChangesPanel, AgentsPanel, SessionPanel } from "../components/SessionPanels";
 import { FileDiffModal } from "../components/FileDiffModal";
+import { AgentDetailModal } from "../components/DetailModal";
+import type { SubagentRun } from "../transcript";
 import { Composer } from "../components/Composer";
 
 // The phone session screen from Agent Fleet Console Mobile.dc.html.
@@ -69,9 +70,14 @@ export function MobileSessionDetail({
   } = useSessionDetail(sessionId);
   const [message, setMessage] = useState("");
   const [panelsOpen, setPanelsOpen] = useState(false);
+  // The title sheet: the full label, which the header can only ever truncate,
+  // plus the density control it used to compete with for the same row.
+  const [titleOpen, setTitleOpen] = useState(false);
   const [autoOpen, setAutoOpen] = useState(false);
   // The CHANGES row a human clicked, or null. See FileDiffModal.
   const [diffPath, setDiffPath] = useState<string | null>(null);
+  // The AGENTS row a human tapped, or null. See DetailModal.
+  const [agentDetail, setAgentDetail] = useState<SubagentRun | null>(null);
   // Same persisted key as the desktop view — see SessionDetail.tsx.
   const [density, setDensity] = useLocalStorageState<Density>("taskDetail.density", "everything");
   const { ref: feedRef, atBottom, onScroll, scrollToBottom, anchorPrepend } = useAtBottom<HTMLDivElement>();
@@ -146,57 +152,85 @@ export function MobileSessionDetail({
 
   return (
     <div className="flex-1 min-h-0 flex flex-col">
-      <div className="flex-none px-3.5 py-2.5 border-b border-line">
-        <div className="flex items-center gap-2.5">
-          <button type="button" onClick={onBack} aria-label="Back to sessions" className="text-base text-dim">
-            ←
-          </button>
-          <span className="text-base font-semibold min-w-0 truncate">
-            #{session.id.slice(0, 6)} {sessionLabel(session)}
-          </span>
-          {blocked ? (
-            <span className="ml-auto flex items-center gap-1.5 border border-pink-line bg-pink-chip px-2 py-0.5 flex-none">
-              <span className="w-[5px] h-[5px] rounded-full bg-error animate-fpulse" />
-              <span className="text-xs font-medium text-error">blocked</span>
+      {/* Three rows on a 390px screen, and the title lost every fight: it was
+          truncated to about two words by a status chip on its right and a
+          three-cell density control stealing the row below. Tapping the title
+          now opens both the full text and the density choice, which takes the
+          Segmented out of the header entirely and gives the remaining rows room
+          to breathe. */}
+      <div className="flex-none px-4 py-3.5 border-b border-line">
+        {/* No back arrow and no chevron. Back is the header's "herd" logo, which
+            is a real <a href="/"> — a full page load that resets the SPA to the
+            list — so the row does not need its own. onBack survives for the
+            load-error screen above, which has no header to fall back on. */}
+        <div className="flex items-center">
+          <button
+            type="button"
+            onClick={() => setTitleOpen(true)}
+            aria-label="Session title and feed density"
+            className="min-w-0 flex-1 text-left cursor-pointer"
+          >
+            {/* No id. It is a six-character hex string that means nothing to
+                read and was taking the front of every title; it lives in the
+                SESSION panel now, where the other facts are. */}
+            <span className="text-base font-semibold min-w-0 truncate block">
+              {sessionLabel(session)}
             </span>
-          ) : (
-            badge && (
-              <span className={`ml-auto flex-none text-2xs px-1 border tracking-wide ${badge.className}`}>
-                {badge.label}
-              </span>
-            )
-          )}
+          </button>
         </div>
 
-        <div className="flex items-center gap-2 mt-2">
-          <span className="text-2xs text-dim2 min-w-0 truncate">
+        {/* Repo, status and the panels opener share one line. The badge moved
+            off the title row so the title gets the full width, and the todo bar
+            that used to own a third row is gone from the header entirely — the
+            panels sheet already renders it in full, with the actual todo list
+            under it, so the header copy was a duplicate that cost a row. */}
+        <div className="flex items-center gap-2.5 mt-3">
+          {/* The repo sizes to its content rather than taking flex-1, capped so
+              a long repo·branch cannot crowd the rest out. That leaves the
+              middle free to grow, which is what centres the badge in the gap
+              between the repo and the panels button instead of parking it
+              against the button. */}
+          <span className="text-2xs text-dim2 min-w-0 truncate flex-none max-w-[55%]">
             {session.repo}
             {branch && ` · ${branch}`}
           </span>
-          <Segmented value={density} options={DENSITY} onChange={setDensity} size="sm" className="ml-auto flex-none" />
-        </div>
-
-        <div className="flex items-center gap-2 mt-2.5">
-          {todos.length > 0 ? (
-            <>
-              <TickBar todos={todos} blocked={blocked} className="flex-1" />
-              <span className="text-2xs text-dim2 flex-none">{todoProgress(todos)} todos</span>
-            </>
-          ) : (
-            <span className="text-2xs text-dim2 flex-1">no todos yet</span>
-          )}
-          {/* Hidden when all three conditional panels would render null —
-              the sheet would open on nothing but the SESSION facts, which the
-              header above already shows most of. */}
-          {!panelsEmpty(todos, changes, agents) && (
-            <button
-              type="button"
-              onClick={() => setPanelsOpen(true)}
-              className="text-2xs text-dim flex-none"
-            >
-              panels ▸
-            </button>
-          )}
+          <div className="flex-1 min-w-0 flex justify-center">
+            {blocked ? (
+              <span className="flex items-center gap-1.5 border border-pink-line bg-pink-chip px-2 py-0.5 flex-none">
+                <span className="w-[5px] h-[5px] rounded-full bg-error animate-fpulse" />
+                <span className="text-xs font-medium text-error">blocked</span>
+              </span>
+            ) : (
+              badge && (
+                <span className={`flex-none text-2xs px-1 border tracking-wide ${badge.className}`}>
+                  {badge.label}
+                </span>
+              )
+            )}
+          </div>
+          {/* ALWAYS rendered. This was briefly gated on the three conditional
+              panels all being empty, which was wrong twice over: the sheet also
+              carries the SESSION panel — model/mode/pod plus the entire
+              ActionsMenu and mobile's only Delete — so it is never actually
+              empty, and a session with no todos and no file changes lost every
+              action it had. Worse, the gate was computed from live state, so
+              the button appeared the moment the agent wrote a todo and vanished
+              again afterwards: a control that comes and goes while you watch. */}
+          <button
+            type="button"
+            onClick={() => setPanelsOpen(true)}
+            aria-label="Open panels"
+            title="Todos, changes, agents and session actions"
+            // A bordered box, not the bare "panels ▸" text it replaces: at
+            // text-2xs that label was a ~40x12px tap target on the busiest edge
+            // of the screen, next to the status badge. This is square and
+            // finger-sized, and the border is what makes it read as a control
+            // rather than a third piece of status text on a row that already
+            // has two.
+            className="flex-none flex items-center justify-center w-8 h-8 border border-line text-dim hover:text-base-content hover:border-acc-line cursor-pointer"
+          >
+            <span className="text-sm leading-none">▤</span>
+          </button>
         </div>
       </div>
 
@@ -231,6 +265,7 @@ export function MobileSessionDetail({
           the trap Modal.tsx:36 guards. Opening the diff closes the sheet
           (setPanelsOpen(false) below) so there is only ever one open. */}
       <FileDiffModal path={diffPath} entries={entries} onClose={() => setDiffPath(null)} />
+      <AgentDetailModal run={agentDetail} onClose={() => setAgentDetail(null)} />
       <ConfirmModal
         title="Switch to auto mode?"
         message={AUTO_MODE_WARNING}
@@ -298,6 +333,27 @@ export function MobileSessionDetail({
         </div>
       </div>
 
+      {/* What the header cannot show: the full title, untruncated, and the feed
+          density that used to eat a third of the row below it. */}
+      <Modal open={titleOpen} onClose={() => setTitleOpen(false)}>
+        <div className="flex flex-col gap-5">
+          <div className="flex flex-col gap-1.5">
+            <span className="text-2xs tracking-[0.12em] text-dim2">SESSION</span>
+            {/* break-words, not truncate — the entire point of this sheet is
+                that the header already truncated it. */}
+            <span className="text-base font-semibold break-words">{sessionLabel(session)}</span>
+            <span className="text-2xs text-dim2 break-all">
+              #{session.id.slice(0, 6)} · {session.repo}
+              {branch && ` · ${branch}`}
+            </span>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <span className="text-2xs tracking-[0.12em] text-dim2">DENSITY</span>
+            <Segmented value={density} options={DENSITY} onChange={setDensity} grow size="lg" />
+          </div>
+        </div>
+      </Modal>
+
       {/* Everything the desktop right column carries, as a bottom sheet. */}
       {/* max-h + an inner scroller, the pattern LogDrawer already uses. Without
           it the sheet relied on daisyUI's modal-box default and a long todo
@@ -315,7 +371,16 @@ export function MobileSessionDetail({
             setPanelsOpen(false);
             setDiffPath(path);
           }} />
-          <AgentsPanel runs={agents} />
+          <AgentsPanel
+            runs={agents}
+            onOpenAgent={(run) => {
+              // Close the sheet first: a <dialog> opened inside an open one
+              // is the nesting Modal.tsx guards, and the sheet is not worth
+              // keeping behind a detail you opened from it.
+              setPanelsOpen(false);
+              setAgentDetail(run);
+            }}
+          />
           <SessionPanel
             session={session}
             busy={busyKey !== null}

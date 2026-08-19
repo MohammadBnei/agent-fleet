@@ -24,6 +24,8 @@ import { DecisionDock } from "../components/DecisionDock";
 import { SessionFeed } from "../components/SessionFeed";
 import { TodosPanel, ChangesPanel, AgentsPanel, SessionPanel } from "../components/SessionPanels";
 import { FileDiffModal } from "../components/FileDiffModal";
+import { AgentDetailModal } from "../components/DetailModal";
+import type { SubagentRun } from "../transcript";
 import { asDisplayMarkdown } from "../transcript";
 import { Composer } from "../components/Composer";
 
@@ -45,12 +47,10 @@ const DENSITY: readonly { value: Density; label: string; title: string }[] = [
 export function SessionDetail({
   sessionId,
   sessions,
-  onBack,
   onClosed: _onClosed,
 }: {
   sessionId: string;
   sessions: Session[];
-  onBack: () => void;
   // Called when this session stops existing (dismissing a proposal soft-deletes
   // it), so the view doesn't sit on a row that is no longer there.
   onClosed?: () => void;
@@ -58,7 +58,6 @@ export function SessionDetail({
   const {
     session: fetchedSession,
     entries,
-    worktreePath,
     busyKey,
     loadError,
     actionError,
@@ -77,6 +76,8 @@ export function SessionDetail({
   const [autoOpen, setAutoOpen] = useState(false);
   // The CHANGES row a human clicked, or null. See FileDiffModal.
   const [diffPath, setDiffPath] = useState<string | null>(null);
+  // The AGENTS row a human tapped, or null. See DetailModal.
+  const [agentDetail, setAgentDetail] = useState<SubagentRun | null>(null);
   // Key deliberately not renamed with the file: it is persisted in every
   // operator's browser, and renaming it silently resets their density choice.
   const [density, setDensity] = useLocalStorageState<Density>("taskDetail.density", "everything");
@@ -190,12 +191,12 @@ export function SessionDetail({
     <div className="flex-1 min-h-0 flex">
       <div className="flex-1 min-w-0 flex flex-col border-r border-line">
         <div className="flex-none flex items-center gap-3 px-4.5 py-3 border-b border-line flex-wrap">
-          <button type="button" onClick={onBack} className="text-sm text-dim hover:text-primary cursor-pointer">
-            ← all sessions
-          </button>
-          <h2 className="text-lg font-semibold min-w-0 break-words">
-            #{session.id.slice(0, 6)} {sessionLabel(session)}
-          </h2>
+          {/* The "← all sessions" control is gone. Back is the header's "herd"
+              logo — a real <a href="/"> that resets the SPA to the list — so the
+              title row does not carry its own, and the title starts the row. */}
+          {/* No id — see the note in MobileSessionDetail. It is in the SESSION
+              panel with the other facts. */}
+          <h2 className="text-lg font-semibold min-w-0 break-words">{sessionLabel(session)}</h2>
           {blocked ? (
             <span className="flex items-center gap-1.5 border border-pink-line bg-pink-chip px-2 py-0.5 flex-none">
               <span className="w-1.5 h-1.5 rounded-full bg-error animate-fpulse" />
@@ -280,6 +281,7 @@ export function SessionDetail({
         <div className="flex-none px-4.5 py-3 border-t border-line">
           <ErrorModal message={actionError} onClose={clearActionError} />
           <FileDiffModal path={diffPath} entries={entries} onClose={() => setDiffPath(null)} />
+          <AgentDetailModal run={agentDetail} onClose={() => setAgentDetail(null)} />
           <ConfirmModal
             title="Switch to auto mode?"
             message={AUTO_MODE_WARNING}
@@ -316,9 +318,21 @@ export function SessionDetail({
             placeholder="message the agent — / for commands"
           />
 
+          {/* The permission mode used to sit here as well as in the SESSION
+              panel, where it is also a control rather than a restatement. What
+              this line is for is the thing nothing else answers from the
+              composer: which branch the agent is committing to.
+
+              worktreePath is gone with it. It was a second permanently-null
+              prop — the ListWorktrees lookup that filled it died with the
+              worktree model (docs/adr/0048 §5), and there is no per-session
+              path on the wire to replace it, so it could only ever render
+              nothing. `branch` had the same problem and did have a live source;
+              this one does not. */}
           <div className="flex gap-3.5 mt-2 text-xs text-dim2 flex-wrap">
-            {worktreePath && <span className="truncate max-w-[320px]" title={worktreePath}>{worktreePath}</span>}
-            {branch && <span>{branch}</span>}
+            <span className={branch ? "text-text2" : undefined} title="the branch the agent is working on">
+              ⑂ {branch ?? "no branch yet"}
+            </span>
             {result && (
               // Per-turn, not cumulative: the SDK reports usage per result and
               // nothing sums it, so labelling this a session total would be a
@@ -327,9 +341,6 @@ export function SessionDetail({
                 ctx {Math.round(contextTokens / 1000)}k last turn
               </span>
             )}
-            <span className={session.permissionMode === "auto" ? "text-warning" : undefined}>
-              ▸▸ {session.permissionMode || "default"} permissions
-            </span>
           </div>
         </div>
       </div>
@@ -337,7 +348,7 @@ export function SessionDetail({
       <div className="w-[266px] flex-none overflow-y-auto px-3.5 py-3.5 flex flex-col gap-4.5 min-w-0">
         <TodosPanel todos={todos} blocked={blocked} />
         <ChangesPanel branch={branch} changes={changes} onOpenFile={setDiffPath} />
-        <AgentsPanel runs={agents} />
+        <AgentsPanel runs={agents} onOpenAgent={setAgentDetail} />
         <div className="mt-auto">
           <SessionPanel
             session={session}

@@ -19,7 +19,8 @@ import { ActionsMenu } from "./ActionsMenu";
 // a column of headings asserting the absence of things nobody had asked about
 // yet, and on mobile a bottom sheet worth opening to read them. SESSION is the
 // exception: it carries the facts and the action bar, so it is never empty.
-// panelsEmpty() below is what lets mobile hide its opener on the same rule.
+// Mobile's "panels" opener is NOT gated on this: the sheet also carries the
+// SESSION panel, which holds every action a phone has, so it is never empty.
 
 function PanelHeading({ title, extra }: { title: string; extra?: React.ReactNode }) {
   return (
@@ -103,7 +104,7 @@ export function ChangesPanel({
 //
 // Tasks and subagents only. Skills and Bash stay in the feed where their tool
 // call already is — this panel exists to remove a duplicate, not to add one.
-export function AgentsPanel({ runs }: { runs: SubagentRun[] }) {
+export function AgentsPanel({ runs, onOpenAgent }: { runs: SubagentRun[]; onOpenAgent: (run: SubagentRun) => void }) {
   if (runs.length === 0) return null;
   const running = runs.filter((r) => r.status === "running").length;
   return (
@@ -118,7 +119,16 @@ export function AgentsPanel({ runs }: { runs: SubagentRun[] }) {
       />
       <div className="flex flex-col gap-1.5">
         {runs.map((r) => (
-          <div key={r.toolUseId} className="min-w-0">
+          // A button, not a div: the description and the returned summary are
+          // truncated here and the full text lived only in a `title` tooltip,
+          // which a touch screen has no way to show. The modal is how you read
+          // what the subagent actually said.
+          <button
+            key={r.toolUseId}
+            type="button"
+            onClick={() => onOpenAgent(r)}
+            className="min-w-0 text-left cursor-pointer hover:opacity-80"
+          >
             <div
               className={`text-sm leading-[1.5] truncate ${
                 r.status === "failed" ? "text-error" : r.status === "running" ? "text-base-content" : "text-dim2"
@@ -143,19 +153,11 @@ export function AgentsPanel({ runs }: { runs: SubagentRun[] }) {
                 {r.summary}
               </div>
             )}
-          </div>
+          </button>
         ))}
       </div>
     </div>
   );
-}
-
-// Whether the three conditional panels would all render null. Mobile hides the
-// "panels" opener on this rather than each caller re-deriving the same three
-// emptiness checks the panels already make internally — a button that opens an
-// empty sheet is worse than no button.
-export function panelsEmpty(todos: TodoItem[], changes: ToolCallSummary["files"] | null, runs: SubagentRun[]) {
-  return todos.length === 0 && (!changes || changes.length === 0) && runs.length === 0;
 }
 
 // min-w-0 on the root and on every shrinkable child is load-bearing: `truncate`
@@ -199,6 +201,9 @@ export function SessionPanel({
           unrelated facts, and run together they read as a sentence nobody
           finishes. The label stays dim, the value is what the eye lands on. */}
       <dl className="text-xs leading-[1.6] mb-2.5 grid grid-cols-[auto_1fr] gap-x-2.5 gap-y-1 min-w-0">
+        {/* First, because it identifies everything under it — and because the
+            title rows no longer carry it. */}
+        <Fact label="id" value={session.id.slice(0, 8)} />
         <Fact label="model" value={session.model || "default"} />
         <Fact label="mode" value={session.permissionMode || "default"} />
         {session.podPhase && <Fact label="pod" value={session.podPhase.replace("POD_PHASE_", "").toLowerCase()} />}

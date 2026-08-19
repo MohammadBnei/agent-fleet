@@ -81,12 +81,12 @@ function useMarkdownComponents(): Components {
           );
         if (lang) {
           return (
-            <pre className="bg-base-300/40 rounded-md p-2 overflow-x-auto font-mono text-xs my-2">
+            <pre className="bg-base-300/40 rounded-md px-3 py-2.5 overflow-x-auto font-mono text-xs my-2">
               <code>{text}</code>
             </pre>
           );
         }
-        return <code className="bg-base-content/10 rounded px-1 font-mono text-xs">{children}</code>;
+        return <code className="bg-base-content/10 rounded px-1.5 py-0.5 font-mono text-xs">{children}</code>;
       },
     }),
     [], // Empty deps - components object is stable
