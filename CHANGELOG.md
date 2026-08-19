@@ -1,5 +1,12 @@
 # Changelog
 
+# [4.4.0](https://github.com/MohammadBnei/agent-fleet/compare/4.3.3...4.4.0) (2026-08-19)
+
+
+### Features
+
+* **core:** authenticate CoreService with the session's own lease ([#215](https://github.com/MohammadBnei/agent-fleet/issues/215)) ([968e39a](https://github.com/MohammadBnei/agent-fleet/commit/968e39aa0478d33f5df729b689987266dd6a8fd2)), closes [#200](https://github.com/MohammadBnei/agent-fleet/issues/200)
+
 ## [4.3.3](https://github.com/MohammadBnei/agent-fleet/compare/4.3.2...4.3.3) (2026-08-19)
 
 
