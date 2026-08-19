@@ -133,7 +133,23 @@ func (s *Server) CreateSession(ctx context.Context, req *connect.Request[agentfl
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("invalid model %q", model))
 	}
 
-	id, err := s.sessions.Create(ctx, repo, req.Msg.GetTitle(), req.Msg.GetDescription(), model)
+	// Same allowlist SetPermissionMode uses, for the same reason: the value
+	// ends up in a real SDK call via worker/src/session.ts's launchMode, so an
+	// unvalidated string here would reach the SDK verbatim. Empty is allowed
+	// and means "keep the column default" — every caller before the dashboard
+	// could offer a choice relied on that.
+	mode := req.Msg.GetPermissionMode()
+	if mode != "" && !validPermissionModes[mode] {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("invalid permission mode %q", mode))
+	}
+
+	id, err := s.sessions.Create(ctx, sessions.CreateParams{
+		Repo:           repo,
+		Title:          req.Msg.GetTitle(),
+		Description:    req.Msg.GetDescription(),
+		Model:          model,
+		PermissionMode: mode,
+	})
 	if err != nil {
 		slog.Error("dashboard CreateSession", "repo", repo, "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
@@ -217,7 +233,9 @@ func (s *Server) OpenFromProposal(ctx context.Context, req *connect.Request[agen
 	// Title for both the label fields: the body is not a label, it is the
 	// instruction, and it goes out as the first message below. Putting it in
 	// `description` made the list render an entire alert payload as a row.
-	id, err := s.sessions.Create(ctx, p.Repo, p.Title, p.Title, "")
+	// No permission mode: a proposal-opened session takes the column default,
+	// same as every session did before CreateSession could carry a choice.
+	id, err := s.sessions.Create(ctx, sessions.CreateParams{Repo: p.Repo, Title: p.Title, Description: p.Title})
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}

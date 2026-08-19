@@ -173,25 +173,51 @@ func scanSession(row pgx.Row) (*Session, error) {
 // arrives — a pod booted with nothing to do would never emit a session id,
 // would be unresumable, and would be swept as stalled with nothing logged
 // to explain it.
-func (s *Store) Create(ctx context.Context, repo, title, description, model string) (string, error) {
+// CreateParams is a struct rather than positional arguments because every
+// field is a string: repo, title, description, model and permission mode are
+// five interchangeable values at a call site, and this repo has already
+// shipped one silent same-typed transposition (see
+// agent-fleet/docs/verification-traps.md — task_id/session_id compiled,
+// linted, passed every mocked test, and made every resume start a brand-new
+// conversation). repos.Create already takes a struct for the same reason.
+type CreateParams struct {
+	Repo        string
+	Title       string
+	Description string
+	Model       string
+	// PermissionMode is the mode the session LAUNCHES in. Empty keeps the
+	// column default ('default'), which is what every caller wanted before
+	// the dashboard could offer a choice. Validate against
+	// dashboard.validPermissionModes before calling: the value reaches a real
+	// SDK call by way of worker/src/session.ts's launchMode.
+	PermissionMode string
+}
+
+func (s *Store) Create(ctx context.Context, p CreateParams) (string, error) {
 	var id string
-	var titlePtr, modelPtr *string
-	if title != "" {
-		titlePtr = &title
+	var titlePtr, modelPtr, modePtr *string
+	if p.Title != "" {
+		titlePtr = &p.Title
 	}
-	if model != "" {
-		modelPtr = &model
+	if p.Model != "" {
+		modelPtr = &p.Model
 	}
+	if p.PermissionMode != "" {
+		modePtr = &p.PermissionMode
+	}
+	// COALESCE rather than a conditional INSERT: permission_mode is NOT NULL
+	// DEFAULT 'default', so passing NULL must fall back to that default
+	// rather than violate the constraint.
 	err := s.pool.QueryRow(ctx, `
-		INSERT INTO sessions (repo, title, description, model)
-		VALUES ($1, $2, $3, $4)
+		INSERT INTO sessions (repo, title, description, model, permission_mode)
+		VALUES ($1, $2, $3, $4, COALESCE($5, 'default'))
 		RETURNING id
-	`, repo, titlePtr, description, modelPtr).Scan(&id)
+	`, p.Repo, titlePtr, p.Description, modelPtr, modePtr).Scan(&id)
 	if err != nil {
-		slog.Error("sessions Create", "repo", repo, "error", err)
+		slog.Error("sessions Create", "repo", p.Repo, "error", err)
 		return "", fmt.Errorf("create session: %w", err)
 	}
-	slog.Info("sessions Create", "sessionId", id, "repo", repo)
+	slog.Info("sessions Create", "sessionId", id, "repo", p.Repo, "permissionMode", p.PermissionMode)
 	return id, nil
 }
 

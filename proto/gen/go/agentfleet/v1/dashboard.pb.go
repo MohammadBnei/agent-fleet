@@ -140,13 +140,25 @@ func (x *ListSessionsResponse) GetSessions() []*Session {
 // branched on; a thot session is distinguished by its repo carrying
 // cluster_access, which is the thing that is actually true about it.
 type CreateSessionRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Repo          string                 `protobuf:"bytes,1,opt,name=repo,proto3" json:"repo,omitempty"`
-	Description   string                 `protobuf:"bytes,2,opt,name=description,proto3" json:"description,omitempty"`
-	Model         *string                `protobuf:"bytes,4,opt,name=model,proto3,oneof" json:"model,omitempty"`
-	Title         *string                `protobuf:"bytes,6,opt,name=title,proto3,oneof" json:"title,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Repo        string                 `protobuf:"bytes,1,opt,name=repo,proto3" json:"repo,omitempty"`
+	Description string                 `protobuf:"bytes,2,opt,name=description,proto3" json:"description,omitempty"`
+	Model       *string                `protobuf:"bytes,4,opt,name=model,proto3,oneof" json:"model,omitempty"`
+	Title       *string                `protobuf:"bytes,6,opt,name=title,proto3,oneof" json:"title,omitempty"`
+	// The mode the session LAUNCHES in, chosen per session at creation rather
+	// than by changing what every session silently gets. Absent or empty keeps
+	// the column default ('default'). Validated server-side against the same
+	// allowlist SetPermissionMode uses — the value reaches a real SDK call via
+	// worker/src/session.ts's launchMode, so an unvalidated string here would
+	// hand the SDK an arbitrary mode.
+	//
+	// Picking "auto" is not a small convenience: canUseTool then answers
+	// everything except ExitPlanMode and a Bash running rm/sudo, so git push,
+	// gh, kubectl, curl, wget and env all stop reaching a human for that
+	// session. The UI has to say so where the choice is made.
+	PermissionMode *string `protobuf:"bytes,7,opt,name=permission_mode,json=permissionMode,proto3,oneof" json:"permission_mode,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *CreateSessionRequest) Reset() {
@@ -203,6 +215,13 @@ func (x *CreateSessionRequest) GetModel() string {
 func (x *CreateSessionRequest) GetTitle() string {
 	if x != nil && x.Title != nil {
 		return *x.Title
+	}
+	return ""
+}
+
+func (x *CreateSessionRequest) GetPermissionMode() string {
+	if x != nil && x.PermissionMode != nil {
+		return *x.PermissionMode
 	}
 	return ""
 }
@@ -3647,14 +3666,16 @@ const file_agentfleet_v1_dashboard_proto_rawDesc = "" +
 	"\x05limit\x18\x01 \x01(\x05R\x05limit\x12\x14\n" +
 	"\x05query\x18\x02 \x01(\tR\x05query\"J\n" +
 	"\x14ListSessionsResponse\x122\n" +
-	"\bsessions\x18\x01 \x03(\v2\x16.agentfleet.v1.SessionR\bsessions\"\xb5\x01\n" +
+	"\bsessions\x18\x01 \x03(\v2\x16.agentfleet.v1.SessionR\bsessions\"\xf7\x01\n" +
 	"\x14CreateSessionRequest\x12\x12\n" +
 	"\x04repo\x18\x01 \x01(\tR\x04repo\x12 \n" +
 	"\vdescription\x18\x02 \x01(\tR\vdescription\x12\x19\n" +
 	"\x05model\x18\x04 \x01(\tH\x00R\x05model\x88\x01\x01\x12\x19\n" +
-	"\x05title\x18\x06 \x01(\tH\x01R\x05title\x88\x01\x01B\b\n" +
+	"\x05title\x18\x06 \x01(\tH\x01R\x05title\x88\x01\x01\x12,\n" +
+	"\x0fpermission_mode\x18\a \x01(\tH\x02R\x0epermissionMode\x88\x01\x01B\b\n" +
 	"\x06_modelB\b\n" +
-	"\x06_titleJ\x04\b\x03\x10\x04J\x04\b\x05\x10\x06R\vsnippet_idsR\x04kind\"I\n" +
+	"\x06_titleB\x12\n" +
+	"\x10_permission_modeJ\x04\b\x03\x10\x04J\x04\b\x05\x10\x06R\vsnippet_idsR\x04kind\"I\n" +
 	"\x15CreateSessionResponse\x120\n" +
 	"\asession\x18\x01 \x01(\v2\x16.agentfleet.v1.SessionR\asession\"U\n" +
 	"\x17StreamTranscriptRequest\x12\x1d\n" +
