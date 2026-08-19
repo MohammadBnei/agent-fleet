@@ -77,6 +77,10 @@ const MOBILE_NAV: readonly { value: View; label: string }[] = [
 // detail view can share the same fetched list instead of polling again.
 const POLL_INTERVAL_MS = 5000;
 
+// Transcript entries fetched per session for the list summary — the newest
+// ones. Matches useSessionDetail's PAGE.
+const SUMMARY_PAGE = 200;
+
 export default function App() {
   // Matches Tailwind's `sm:`. Desktop and mobile detail views used to both
   // mount, CSS-hidden — each ran its own useSessionDetail, so two independent
@@ -162,6 +166,18 @@ export default function App() {
   // Straight off the already-polled list — core's activityTrackingStore
   // maintains awaiting_human on every permission_request/question append and
   // clears it on the matching resolution, so this needs no per-session fetch.
+  // Sessions holding an unanswered QUESTION, from the summaries above. A
+  // question survives its pod (docs/adr/0050) and answering one warms a fresh
+  // pod to receive the answer, so these stay answerable in the list whatever
+  // pod_phase says. A stranded PERMISSION does not — see bucketSessions.
+  const answerableIds = useMemo(
+    () =>
+      new Set(
+        [...summaries.entries()].filter(([, sum]) => sum.pendingQuestion !== null).map(([id]) => id),
+      ),
+    [summaries],
+  );
+
   const needsYouIds = useMemo(
     () => new Set(sessions.filter((t) => t.pendingDecisions > 0).map((t) => t.id)),
     [sessions],
@@ -175,16 +191,44 @@ export default function App() {
   // same 5s cadence as loadSessions. No new RPC: this fetch already existed for the
   // todo bars alone.
   useEffect(() => {
+    // Active sessions, PLUS any session still holding an unanswered decision
+    // whatever its pod is doing. A session whose pod died mid-question has no
+    // live state at all, so it fell out of this fetch — and with no summary the
+    // STUCK row had nothing to show, which is how a question could exist on the
+    // wire and be invisible in the console.
+    //
+    // Still bounded: active sessions are capped by the fleet's concurrency
+    // limit, and the extra ones are sliced, so a long tail of abandoned
+    // decisions cannot turn one poll into a hundred transcript fetches.
     const active = sessions.filter((t) => ACTIVE_STATES.has(t.liveState));
-    if (active.length === 0) {
+    const strandedCap = 10;
+    const stranded = sessions
+      .filter((t) => !ACTIVE_STATES.has(t.liveState) && t.pendingDecisions > 0 && t.archivedAt === undefined)
+      .slice(0, strandedCap);
+    const wanted = [...active, ...stranded];
+    if (wanted.length === 0) {
       setSummaries(new Map());
       return;
     }
     let cancelled = false;
     Promise.all(
-      active.map((t) =>
+      wanted.map((t) =>
         client
-          .getTranscript({ sessionId: t.id, sinceSeq: 0n })
+          // limit, so the window is the NEWEST entries. Without it,
+          // transcriptWindow reads FORWARD from sinceSeq 0 — the OLDEST 1000
+          // (core/internal/dashboard/server.go, and its own test pins that
+          // shape). Past a thousand entries this fetch could no longer see a
+          // pending decision at all, while the detail view still could,
+          // because that one has always passed a limit. So a long-running
+          // session's question was on the wire, counted by core, rendering a
+          // blocked card — with nothing inside it. Reported live 2026-08-19 as
+          // "I can't see questions now", and "new questions don't show either"
+          // is the same fact: a new question lands at the HIGH end, which is
+          // exactly the part this was never reading.
+          //
+          // 200 matches the detail view. A summary only needs the tail: the
+          // pending decision, the latest todos, the in-flight tool.
+          .getTranscript({ sessionId: t.id, limit: SUMMARY_PAGE })
           .then((res) => [t.id, listSummary(res.entries)] as const)
           .catch(() => null),
       ),
@@ -323,6 +367,7 @@ export default function App() {
 
 
   const shared = {
+    answerableIds,
     sessions: filteredSessions,
     summaries,
     needsYouIds,

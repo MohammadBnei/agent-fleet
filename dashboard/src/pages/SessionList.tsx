@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import type { Session } from "../gen/agentfleet/v1/core_pb";
 import { client } from "../connectClient";
 import { sessionLabel } from "../sessionLabel";
-import type { ListSummary } from "../transcript";
+import { parseQuestions, summarizeToolInput, type ListSummary } from "../transcript";
 import { TickBar, todoProgress } from "../components/TickBar";
 import { DecisionInline } from "../components/DecisionInline";
 import { SessionActionsModal } from "../components/SessionActionsModal";
@@ -28,7 +28,16 @@ export const ACTIVE_STATES = LIVE_STATES;
 // it. bucketSessions.test.ts guards exactly this, and it is why `quiet` is
 // defined as "everything not already claimed" rather than by its own
 // predicate.
-export function bucketSessions(sessions: Session[], needsYouIds: Set<string>) {
+// `answerableIds` are sessions holding an unanswered QUESTION — computed
+// client-side from the summaries App already fetches, because the wire carries
+// one `pendingDecisions` count and cannot tell the two kinds apart.
+//
+// The distinction is the one docs/adr/0050 turns on. A question is durable and
+// pod-independent: answering it warms a fresh pod and the answer is delivered
+// there, so it belongs in NEEDS YOU whether or not a pod exists right now. A
+// permission is bound to one live pod's canUseTool promise: with the pod gone
+// its buttons reach nothing, so it belongs in STUCK, shown but not answerable.
+export function bucketSessions(sessions: Session[], needsYouIds: Set<string>, answerableIds: Set<string> = new Set()) {
   const out = {
     needsYou: [] as Session[],
     stuck: [] as Session[],
@@ -69,15 +78,18 @@ export function bucketSessions(sessions: Session[], needsYouIds: Set<string>) {
     //    alone, so such a session sat at the top of the list under a header
     //    reading "0 waiting on you". It goes to `stuck` below instead: same
     //    visibility, and actions that can actually succeed.
-    if (t.archivedAt === undefined && t.liveState === "blocked") {
+    //    A dead pod holding an unanswered QUESTION belongs here too, and that
+    //    is new: since AnswerQuestion warms, its allow/answer form is live
+    //    again. Only a stranded PERMISSION drops through to `stuck` now.
+    if (t.archivedAt === undefined && (t.liveState === "blocked" || answerableIds.has(t.id))) {
       out.needsYou.push(t);
       continue;
     }
-    // 2. Burning wall-clock and asking nobody for anything: a stalled session,
-    //    or one whose pod died holding a decision. Both need a human to notice
-    //    and neither needs a human to *decide*, which is what separates this
-    //    from needsYou above. Above the fold, because the alternative was the
-    //    quiet tail — and on mobile, a collapsed accordion behind a chip.
+    // 2. Burning wall-clock with nothing a human can usefully answer: a
+    //    stalled session, or one whose pod died holding a PERMISSION — the
+    //    question case was claimed above, because that one IS answerable.
+    //    Above the fold, because the alternative was the quiet tail — and on
+    //    mobile, a collapsed accordion behind a chip.
     if (t.archivedAt === undefined && (t.liveState === "stalled" || needsYouIds.has(t.id))) {
       out.stuck.push(t);
       continue;
@@ -352,6 +364,7 @@ function NeedsYouCard({
 // back up, interrupting the turn it is wedged on, or reading why it stopped.
 function StuckRow({
   session,
+  summary,
   onActions,
   picked,
   onPick,
@@ -361,6 +374,7 @@ function StuckRow({
   reload,
 }: {
   session: Session;
+  summary?: ListSummary;
   onActions: () => void;
   picked: boolean;
   onPick: (shiftKey: boolean) => void;
@@ -371,9 +385,20 @@ function StuckRow({
 }) {
   const live = isPodPhaseLive(session.podPhase);
   const stuckFor = blockedForLabel(session);
+  // What it was asking when the pod went. Read-only on purpose: allow/deny
+  // would reach a pod that no longer exists. But hiding the question entirely
+  // meant a session could ask something, lose its pod, and leave the operator
+  // with no way to see what had been asked — reported live as "I can't see
+  // questions now".
+  const asked = summary?.pendingQuestion
+    ? (parseQuestions(summary.pendingQuestion.text)?.[0]?.question ?? "a question")
+    : summary?.pendingPermission
+      ? `${summary.pendingPermission.tool} · ${summarizeToolInput(summary.pendingPermission.input)}`
+      : null;
   return (
     <div className="relative group">
-      <div className="flex items-center gap-3 px-4 py-2.5 border border-orange-line bg-orange-bg pr-[70px] flex-wrap">
+      <div className="flex flex-col gap-1.5 px-4 py-2.5 border border-orange-line bg-orange-bg pr-[70px]">
+      <div className="flex items-center gap-3 flex-wrap">
         <span className="w-[7px] h-[7px] rounded-full flex-none bg-warning" />
         <button type="button" onClick={onSelect} className="text-base text-left hover:text-primary cursor-pointer min-w-0 break-words">
           {sessionLabel(session)}
@@ -407,6 +432,16 @@ function StuckRow({
         <button type="button" onClick={onOpenLogs} className="flex-none border border-acc-line px-3 py-1 text-sm hover:border-primary hover:text-primary">
           read log
         </button>
+      </div>
+      {asked && (
+        <div className="text-xs text-dim min-w-0">
+          <span className="text-dim2">unanswered · </span>
+          <span className="break-words">{asked}</span>
+          {!live && session.sweptAt === undefined && (
+            <span className="text-dim2"> — warm the session to answer it</span>
+          )}
+        </div>
+      )}
       </div>
       <RowSelect picked={picked} onPick={onPick} />
       <RowActionsButton onOpen={onActions} />
@@ -677,6 +712,7 @@ export function SessionList({
   sessions,
   summaries,
   needsYouIds,
+  answerableIds,
   onSelect,
   onDelete,
   onOpenLogs,
@@ -685,6 +721,7 @@ export function SessionList({
   sessions: Session[];
   summaries: Map<string, ListSummary>;
   needsYouIds: Set<string>;
+  answerableIds: Set<string>;
   onSelect: (id: string) => void;
   onDelete: (id: string) => void;
   onOpenLogs: (id: string) => void;
@@ -698,7 +735,7 @@ export function SessionList({
   // the only ones a human has explicitly finished — were invisible on both
   // form factors. bucketSessions.test.ts pins the coverage of the destructure so
   // the next bucket added cannot be silently dropped the same way.
-  const { needsYou, stuck, working, finished, quiet, archived, swept } = bucketSessions(sessions, needsYouIds);
+  const { needsYou, stuck, working, finished, quiet, archived, swept } = bucketSessions(sessions, needsYouIds, answerableIds);
   // Which row's "⋯" is open, or null. The Session itself, not an id: the modal
   // reads podPhase/permissionMode/sweptAt off it, and re-looking-it-up by id on
   // every poll is how it would end up rendering a stale one.
@@ -796,6 +833,7 @@ export function SessionList({
             <StuckRow
               key={t.id}
               session={t}
+              summary={summaries.get(t.id)}
               onActions={() => setActionsFor(t)}
               picked={selected.has(t.id)}
               onPick={pick(t.id)}

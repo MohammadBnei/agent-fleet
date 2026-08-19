@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { ActionButton } from "./ActionButton";
 import { client } from "../connectClient";
+import { decisionAnswerable } from "../transcript";
+import { isPodPhaseLive } from "../pages/SessionList";
 import type { Session } from "../gen/agentfleet/v1/core_pb";
 import { type ListSummary } from "../transcript";
 import { DiffLines } from "./DiffLines";
@@ -150,6 +152,22 @@ export function DecisionInline({
   }
 
   if (permission) {
+    // A permission belongs to the pod that raised it. If that pod is gone,
+    // show what was asked and say so — allow/deny would append a row the dead
+    // canUseTool promise will never read. Questions are unaffected: answering
+    // one warms a pod to receive it.
+    if (!decisionAnswerable("permission", { podLive: isPodPhaseLive(session.podPhase), swept: session.sweptAt !== undefined })) {
+      return (
+        <div className={`${pad} flex flex-col gap-2`}>
+          <PermissionBody tool={permission.tool} input={permission.input} />
+          <span className="text-xs text-warning">
+            {session.sweptAt !== undefined
+              ? "This session's working directory was reclaimed — the request can no longer be answered."
+              : "The pod that asked this is gone, so allow/deny would reach nothing. Warm the session to carry on."}
+          </span>
+        </div>
+      );
+    }
     const isPlan = permission.tool === "ExitPlanMode";
     const respond = (behavior: "allow" | "deny", message?: string) =>
       send(
