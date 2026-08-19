@@ -1,5 +1,12 @@
 # Changelog
 
+# [4.10.0](https://github.com/MohammadBnei/agent-fleet/compare/4.9.0...4.10.0) (2026-08-19)
+
+
+### Features
+
+* **dashboard:** decision surfaces, mobile console, and the shared parts underneath ([#225](https://github.com/MohammadBnei/agent-fleet/issues/225)) ([8bbe769](https://github.com/MohammadBnei/agent-fleet/commit/8bbe76918eb17fc4b380ef4acae512f8d69c551c))
+
 # [4.9.0](https://github.com/MohammadBnei/agent-fleet/compare/4.8.1...4.9.0) (2026-08-19)
 
 
