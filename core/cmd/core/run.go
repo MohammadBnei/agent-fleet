@@ -138,10 +138,17 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	if cfg.ProvisionerToken == "" {
 		slog.Warn("FLEET_PROVISIONER_TOKEN is unset: the provisioner cannot authenticate to CoreService, so pod events will be rejected")
 	}
-	auth := coreserver.NewAuthenticator(sessionStore, cfg.ProvisionerToken)
+	// grpcAuth, not `auth`: internal/auth is a PACKAGE imported by this file
+	// for the console's OIDC gate below, and a local variable of that name
+	// shadows it for the rest of the function. The two arrived in separate PRs
+	// that were each green on their own branch and had no textual conflict, so
+	// nothing failed until they were on main together — `auth.New` then
+	// resolved against this variable and the build broke at the release, not at
+	// either PR. Renaming the variable is the fix; do not rename the import.
+	grpcAuth := coreserver.NewAuthenticator(sessionStore, cfg.ProvisionerToken)
 	grpcServer := grpc.NewServer(
-		grpc.ChainUnaryInterceptor(coreserver.AccessLogInterceptor, metrics.UnaryInterceptor, auth.UnaryInterceptor),
-		grpc.ChainStreamInterceptor(auth.StreamInterceptor),
+		grpc.ChainUnaryInterceptor(coreserver.AccessLogInterceptor, metrics.UnaryInterceptor, grpcAuth.UnaryInterceptor),
+		grpc.ChainStreamInterceptor(grpcAuth.StreamInterceptor),
 	)
 	coreSvc := coreserver.New(activityStore, sessionStore, journalStore, repoStore, provisioner, files, loki)
 	agentfleetv1.RegisterCoreServiceServer(grpcServer, coreSvc)
