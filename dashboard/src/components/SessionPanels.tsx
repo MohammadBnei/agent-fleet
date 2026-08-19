@@ -1,6 +1,6 @@
 
 import type { Session } from "../gen/agentfleet/v1/core_pb";
-import type { ToolCallSummary, TodoItem } from "../transcript";
+import type { ToolCallSummary, TodoItem, SubagentRun } from "../transcript";
 import { imageTag } from "../imageTag";
 import { TickBar, todoProgress } from "./TickBar";
 import { ActionsMenu } from "./ActionsMenu";
@@ -76,6 +76,66 @@ export function ChangesPanel({ branch, changes }: { branch: string | null; chang
               </span>
               <span className="text-green-soft flex-none">+{c.added}</span>
               <span className={c.removed > 0 ? "text-minus flex-none" : "text-dim2 flex-none"}>−{c.removed}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// The subagents this session spawned. They used to be six kinds of raw JSON
+// blob stuttering through the feed — one task_started carrying the subagent's
+// entire prompt, then a task_progress per poll, a task_updated, a
+// task_notification, and a background_tasks_changed re-listing every running
+// task each time. All of that is one row here, and none of it is in the feed.
+//
+// Tasks and subagents only. Skills and Bash stay in the feed where their tool
+// call already is — this panel exists to remove a duplicate, not to add one.
+export function AgentsPanel({ runs }: { runs: SubagentRun[] }) {
+  const running = runs.filter((r) => r.status === "running").length;
+  return (
+    <div className="min-w-0">
+      <PanelHeading
+        title="AGENTS"
+        extra={
+          runs.length > 0 && (
+            <span className="text-xs text-dim2 ml-auto">
+              {running > 0 ? `${running} running` : `${runs.length} done`}
+            </span>
+          )
+        }
+      />
+      {runs.length === 0 ? (
+        <div className="text-xs text-dim2">no subagents yet</div>
+      ) : (
+        <div className="flex flex-col gap-1.5">
+          {runs.map((r) => (
+            <div key={r.toolUseId} className="min-w-0">
+              <div
+                className={`text-sm leading-[1.5] truncate ${
+                  r.status === "failed" ? "text-error" : r.status === "running" ? "text-base-content" : "text-dim2"
+                }`}
+                title={r.description || r.subagentType}
+              >
+                {r.status === "completed" ? "✓ " : r.status === "failed" ? "✗ " : "▸ "}
+                {r.subagentType}
+              </div>
+              {r.description && (
+                <div className="text-xs text-dim2 truncate" title={r.description}>
+                  {r.description}
+                </div>
+              )}
+              {/* What it came back with. The Agent call's own tool_result is
+                  filtered out of the feed along with the call, so this line is
+                  the only trace of the subagent's answer left in the console —
+                  collecting the summary and rendering nowhere left "what did
+                  it find" unanswerable. Full text in the tooltip. */}
+              {r.status !== "running" && r.summary && (
+                <div className="text-xs text-dim2 truncate" title={r.summary}>
+                  {r.summary}
+                </div>
+              )}
             </div>
           ))}
         </div>

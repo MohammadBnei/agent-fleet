@@ -1,5 +1,13 @@
 import { lazy, memo, Suspense, useMemo } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
+import remarkGfm from "remark-gfm";
+
+// Module-level, not an inline literal: a fresh array on every render
+// invalidates ReactMarkdown's internal cache for the same reason a fresh
+// components object does (see useMarkdownComponents below). GFM is what turns
+// on tables — the agent writes them constantly and stock CommonMark rendered
+// them as a wall of pipes — plus strikethrough, task lists and autolinks.
+const REMARK_PLUGINS = [remarkGfm];
 
 // Lazy, because mermaid is the single largest thing the dashboard ships and
 // almost nothing renders a diagram. Imported statically it put mermaid's core
@@ -42,6 +50,21 @@ function useMarkdownComponents(): Components {
       blockquote: (props) => (
         <blockquote className="border-l-2 border-primary/30 pl-2 italic text-primary" {...props} />
       ),
+      // A table is the one block element here that has its own intrinsic
+      // minimum width, so it gets the overflow-x-auto wrapper rather than
+      // being allowed to widen the feed column — the same min-w-0 trap
+      // SessionPanels.tsx documents, which silently pushed a mobile column
+      // to 437px on a 390px viewport. w-max keeps the table its natural
+      // width inside the scroller instead of squashing every column.
+      table: (props) => (
+        <div className="overflow-x-auto my-2">
+          <table className="w-max min-w-full border border-line3 text-xs" {...props} />
+        </div>
+      ),
+      th: (props) => (
+        <th className="border border-line3 px-2 py-1 text-left font-semibold text-dim2 align-top" {...props} />
+      ),
+      td: (props) => <td className="border border-line3 px-2 py-1 align-top" {...props} />,
       // Unwrapped so the `code` renderer below fully owns fenced-block markup
       // (needed for mermaid, which renders a <div>, not a <pre><code>).
       pre: ({ children }) => <>{children}</>,
@@ -75,5 +98,9 @@ function useMarkdownComponents(): Components {
 // message causes all previous Markdown components to re-parse their content.
 export const Markdown = memo(function Markdown({ text }: { text: string }) {
   const components = useMarkdownComponents();
-  return <ReactMarkdown components={components}>{text}</ReactMarkdown>;
+  return (
+    <ReactMarkdown components={components} remarkPlugins={REMARK_PLUGINS}>
+      {text}
+    </ReactMarkdown>
+  );
 });

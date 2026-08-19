@@ -16,6 +16,7 @@ import {
   withOptimistic,
   findPendingPermissions,
   resolvedPermissionDecisions,
+  subagentRuns,
 } from "./transcript";
 
 let nextSeq = 0n;
@@ -280,4 +281,128 @@ test("withOptimistic returns the original array when it has nothing to add", () 
   // Same reference, so React's own change detection sees no update.
   expect(withOptimistic(entries, [])).toBe(entries);
   expect(withOptimistic(entries, [optimisticResponse(request.seq, "allow")])).toBe(entries);
+});
+
+// --- subagents ----------------------------------------------------------------
+// The SDK scatters one subagent run across five messages and two different
+// correlation keys. These pin the joins, because the failure mode is silent:
+// a run that fails to correlate still renders, just as a second half-empty row.
+
+const agentCall = (id: string, subagentType: string, description: string) =>
+  entry(TranscriptEntryType.ASSISTANT, "agent", JSON.stringify({ id, tool: "Agent", input: { subagent_type: subagentType, description } }));
+
+const signal = (payload: Record<string, unknown>) =>
+  entry(TranscriptEntryType.SYSTEM, "agent", JSON.stringify(payload));
+
+test("subagentRuns joins an Agent call to its task_* stream", () => {
+  const runs = subagentRuns([
+    agentCall("toolu_1", "Explore", "Map dashboard feed rendering"),
+    signal({ sdk: "task_started", task_id: "t1", tool_use_id: "toolu_1", subagent_type: "Explore" }),
+  ]);
+  expect(runs).toHaveLength(1);
+  expect(runs[0]).toMatchObject({
+    toolUseId: "toolu_1",
+    subagentType: "Explore",
+    description: "Map dashboard feed rendering",
+    status: "running",
+  });
+});
+
+// task_updated is the only message carrying the terminal status, and the only
+// one that does NOT carry tool_use_id — so it resolves through the task_id
+// index task_started built. Without that index a finished run shows "running"
+// forever, which is the exact opposite of what the panel is for.
+test("task_updated resolves through task_id alone", () => {
+  const runs = subagentRuns([
+    agentCall("toolu_1", "Explore", "d"),
+    signal({ sdk: "task_started", task_id: "t1", tool_use_id: "toolu_1" }),
+    signal({ sdk: "task_updated", task_id: "t1", patch: { status: "completed", end_time: 1787127340563 } }),
+  ]);
+  expect(runs[0].status).toBe("completed");
+});
+
+// …but an interim patch is not a terminal one. task_updated fires on every
+// transition, and the tool_result promotion below only upgrades a run still
+// marked running, so reading "in_progress" as failed paints it red forever.
+test("an in-progress patch leaves the run running", () => {
+  const runs = subagentRuns([
+    agentCall("toolu_1", "Explore", "d"),
+    signal({ sdk: "task_started", task_id: "t1", tool_use_id: "toolu_1" }),
+    signal({ sdk: "task_updated", task_id: "t1", patch: { status: "in_progress" } }),
+  ]);
+  expect(runs[0].status).toBe("running");
+});
+
+test("a non-completed task status is a failure, not a completion", () => {
+  const runs = subagentRuns([
+    agentCall("toolu_1", "Explore", "d"),
+    signal({ sdk: "task_notification", task_id: "t1", tool_use_id: "toolu_1", status: "error", summary: "boom" }),
+  ]);
+  expect(runs[0]).toMatchObject({ status: "failed", summary: "boom" });
+});
+
+// "it returned" and "it worked" are different claims: the tool_result only
+// promotes a run that nothing else has judged.
+test("the Agent tool_result completes a still-running run but cannot un-fail one", () => {
+  const done = subagentRuns([
+    agentCall("toolu_1", "Explore", "d"),
+    entry(TranscriptEntryType.USER, "agent", JSON.stringify({ toolUseId: "toolu_1", content: "ok" })),
+  ]);
+  expect(done[0].status).toBe("completed");
+
+  const failed = subagentRuns([
+    agentCall("toolu_2", "Explore", "d"),
+    signal({ sdk: "task_updated", task_id: "t2", patch: { status: "error" } }),
+    signal({ sdk: "task_started", task_id: "t2", tool_use_id: "toolu_2" }),
+    entry(TranscriptEntryType.USER, "agent", JSON.stringify({ toolUseId: "toolu_2", content: "ok" })),
+  ]);
+  expect(failed[0].status).toBe("failed");
+});
+
+// An Agent call is rendered by the AGENTS panel, so the feed's tool rows must
+// not carry it too — same treatment TodoWrite has always had.
+test("panel-owned tools never become tool-call pairs", () => {
+  const pairs = buildToolCallPairs([
+    agentCall("toolu_1", "Explore", "d"),
+    entry(TranscriptEntryType.ASSISTANT, "agent", JSON.stringify({ id: "toolu_2", tool: "TodoWrite", input: { todos: [] } })),
+    entry(TranscriptEntryType.ASSISTANT, "agent", JSON.stringify({ id: "toolu_3", tool: "Bash", input: { command: "ls" } })),
+  ]);
+  expect(pairs.map((p) => p.callInfo.tool)).toEqual(["Bash"]);
+});
+
+// The SDK's tool_progress tool_use_id is synthetic and suffixed; the real id
+// is on parent_tool_use_id. Matching the former alone meant this lookup had
+// never once succeeded, and every in-flight row fell through to wall-clock.
+test("inFlightTool reads elapsed time from a heartbeat's parent_tool_use_id", () => {
+  const flight = inFlightTool([
+    entry(TranscriptEntryType.ASSISTANT, "agent", JSON.stringify({ id: "toolu_9", tool: "Bash", input: { command: "go test ./..." } })),
+    signal({ sdk: "tool_progress", tool_use_id: "toolu_9-heartbeat-0", parent_tool_use_id: "toolu_9", tool_name: "Bash", elapsed_time_seconds: 90 }),
+  ]);
+  expect(flight).toMatchObject({ tool: "Bash", elapsedSeconds: 90 });
+});
+
+// The SDK calls a backgrounded Bash a "task" too, and in production it is the
+// overwhelming majority: 162 of 186 task_started and 157 of 181
+// task_notification point at a Bash tool_use, not an Agent one. Seeding a run
+// from the signal put a bogus "agent" row with an empty description in the
+// panel for every background command — ~87% of the rows it would have shown.
+// Only an Agent tool_use we have actually seen makes a run.
+test("a backgrounded Bash's task signals never become a subagent row", () => {
+  const runs = subagentRuns([
+    entry(TranscriptEntryType.ASSISTANT, "agent", JSON.stringify({ id: "toolu_bash", tool: "Bash", input: { command: "sleep 45", run_in_background: true } })),
+    signal({ sdk: "task_started", task_id: "bw5d5o0s1", tool_use_id: "toolu_bash", description: "Wait briefly for explore agents" }),
+    signal({ sdk: "task_notification", task_id: "bw5d5o0s1", tool_use_id: "toolu_bash", status: "completed", summary: 'Background command "Wait briefly" completed (exit code 0)' }),
+  ]);
+  expect(runs).toEqual([]);
+});
+
+// A summary is the subagent's actual answer, and the Agent call's tool_result
+// is filtered out of the feed along with the call — so if the panel does not
+// carry it, "what did it find" has no surface left in the console.
+test("a completed run keeps the summary it came back with", () => {
+  const runs = subagentRuns([
+    agentCall("toolu_1", "Explore", "Map dashboard feed rendering"),
+    signal({ sdk: "task_notification", task_id: "t1", tool_use_id: "toolu_1", status: "completed", summary: "found it in SignalView" }),
+  ]);
+  expect(runs[0]).toMatchObject({ status: "completed", summary: "found it in SignalView" });
 });

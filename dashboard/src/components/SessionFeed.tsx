@@ -16,6 +16,8 @@ import {
   resolvedPermissionDecisions,
   resultDelta,
   summarizeToolInput,
+  PANEL_OWNED_SIGNALS,
+  PANEL_OWNED_TOOLS,
   type SdkResultSummary,
   type Density,
   type FeedVisibility,
@@ -49,6 +51,15 @@ import { QuestionCard } from "./QuestionCard";
 
 const CROSS_SESSION = /^\[from session ([^\]]+)\]\s*/;
 
+// `mcp__agent-fleet-sidecar__set_session_meta` → `set_session_meta`. The
+// server prefix is the same for every MCP tool in a session, so it is the one
+// part of the name that distinguishes nothing. Full name stays in the tooltip.
+export function shortTool(tool: string | undefined): string {
+  if (!tool) return "tool";
+  const idx = tool.lastIndexOf("__");
+  return idx === -1 ? tool : tool.slice(idx + 2);
+}
+
 function QuietRule({ label, detail }: { label: string; detail?: string | null }) {
   return (
     <div className="flex items-center gap-2.5">
@@ -74,7 +85,18 @@ function AlarmBar({ text, detail, compact }: { text: React.ReactNode; detail?: s
 // One run of consecutive tool calls. The mockups collapse them into a single
 // bordered block with a count and a collapse-all, which is what makes a
 // tool-heavy stretch scannable instead of a wall.
-function ToolGroup({ pairs, compact }: { pairs: ToolCallPair[]; compact?: boolean }) {
+function ToolGroup({
+  pairs,
+  compact,
+  elapsedById,
+}: {
+  pairs: ToolCallPair[];
+  compact?: boolean;
+  // Silencing the standalone tool_progress rows would otherwise throw away
+  // the one thing they were worth: how long a still-running call has been
+  // running. It belongs on the row, which is where someone looks for it.
+  elapsedById: Map<string, number>;
+}) {
   const [collapsed, setCollapsed] = useState(false);
   const [expanded, setExpanded] = useState<bigint | null>(null);
 
@@ -99,6 +121,7 @@ function ToolGroup({ pairs, compact }: { pairs: ToolCallPair[]; compact?: boolea
             const info = pair.callInfo;
             const failed = pair.resultInfo?.isError === true;
             const inFlight = !pair.result;
+            const elapsed = pair.callInfo.id ? elapsedById.get(pair.callInfo.id) : undefined;
             const open = expanded === pair.call.seq;
             return (
               <div key={String(pair.call.seq)} className={i === pairs.length - 1 ? "" : "border-b border-line3"}>
@@ -114,8 +137,19 @@ function ToolGroup({ pairs, compact }: { pairs: ToolCallPair[]; compact?: boolea
                       failed ? "bg-warning" : inFlight ? "bg-info animate-fpulse" : "bg-green-dot"
                     }`}
                   />
-                  <span className={`text-text2 flex-none ${compact ? "text-xs w-11" : "text-sm w-[70px]"}`}>
-                    {info.tool}
+                  {/* `truncate` is load-bearing, not cosmetic: it brings
+                      overflow-hidden. Without it a fixed-width flex item does
+                      not clip, so `mcp__playwright__browser_navigate` drew
+                      straight over the summary column beside it — two legible
+                      strings rendering as one illegible one. Widening the
+                      column was never the fix; the name does not fit at any
+                      width a sidebar can spare, which is what shortTool and
+                      the tooltip are for. */}
+                  <span
+                    className={`text-text2 flex-none truncate ${compact ? "text-xs w-11" : "text-sm w-[70px]"}`}
+                    title={info.tool}
+                  >
+                    {shortTool(info.tool)}
                   </span>
                   <span className={`text-dim flex-1 min-w-0 truncate ${compact ? "text-xs" : "text-sm"}`}>
                     {summarizeToolInput(info.input)}
@@ -125,7 +159,11 @@ function ToolGroup({ pairs, compact }: { pairs: ToolCallPair[]; compact?: boolea
                       failed ? "text-warning" : inFlight ? "text-info" : "text-dim2"
                     }`}
                   >
-                    {failed ? "failed" : inFlight ? "running" : "ok"}
+                    {failed
+                      ? "failed"
+                      : inFlight
+                        ? `running${elapsed ? ` · ${elapsed}s` : ""}`
+                        : "ok"}
                   </span>
                 </button>
                 {open && (
@@ -204,13 +242,29 @@ export function SessionFeed({
   const denyMessages = permissionDenyMessages(entries);
   const edge = compact ? "-mx-3.5 px-3.5" : "-mx-4.5 px-4.5";
 
-  // Build TodoWrite toolUseId set upfront to avoid O(n²) scan
-  const todoWriteToolUseIds = new Set<string>();
+  // Build the panel-owned toolUseId set upfront to avoid an O(n²) scan.
+  // buildToolCallPairs already drops the CALL side of these (TodoWrite,
+  // Agent); this is how their tool_result is dropped with it, since an
+  // unpaired result would otherwise fall through as an orphan bubble.
+  const panelOwnedToolUseIds = new Set<string>();
+  // Elapsed seconds per originating tool call, from the tool_progress signals
+  // the feed no longer renders on their own. Keyed by parent_tool_use_id: the
+  // signal's own tool_use_id is synthetic and suffixed per emission, so it
+  // matches no call. Last one wins — they only ever count up.
+  const elapsedById = new Map<string, number>();
   for (const e of entries) {
     if (e.type === TranscriptEntryType.ASSISTANT) {
       const info = parseSdkToolUse(e.text);
-      if (info?.tool === "TodoWrite" && info.id) {
-        todoWriteToolUseIds.add(info.id);
+      if (info?.tool && info.id && PANEL_OWNED_TOOLS.has(info.tool)) {
+        panelOwnedToolUseIds.add(info.id);
+      }
+      continue;
+    }
+    if (e.type === TranscriptEntryType.SYSTEM) {
+      const sig = parseSdkSignal(e.text);
+      const id = sig?.parent_tool_use_id ?? sig?.tool_use_id;
+      if (sig?.sdk === "tool_progress" && id && typeof sig.elapsed_time_seconds === "number") {
+        elapsedById.set(id, sig.elapsed_time_seconds);
       }
     }
   }
@@ -227,7 +281,7 @@ export function SessionFeed({
     if (run.length === 0) return;
     const group = run;
     run = [];
-    out.push(<ToolGroup key={`tools-${group[0].call.seq}`} pairs={group} compact={compact} />);
+    out.push(<ToolGroup key={`tools-${group[0].call.seq}`} pairs={group} compact={compact} elapsedById={elapsedById} />);
   };
 
   // Both of these track the *previous* occurrence of their entry kind as the
@@ -253,11 +307,11 @@ export function SessionFeed({
     if (entry.type === TranscriptEntryType.ANSWER) continue;
     if (entry.type === TranscriptEntryType.PERMISSION_RESPONSE) continue;
     if (entry.type === TranscriptEntryType.USER && consumedResults.has(entry.seq)) continue;
-    // TodoWrite results: the call is already filtered (transcript.ts L303), so
-    // its result isn't in consumedResults. Filter using precomputed set.
+    // Panel-owned results: the call is already filtered by buildToolCallPairs,
+    // so its result isn't in consumedResults. Filter using the precomputed set.
     if (entry.type === TranscriptEntryType.USER) {
       const result = parseSdkToolResult(entry.text);
-      if (result?.toolUseId && todoWriteToolUseIds.has(result.toolUseId)) {
+      if (result?.toolUseId && panelOwnedToolUseIds.has(result.toolUseId)) {
         continue;
       }
     }
@@ -379,7 +433,22 @@ export function SessionFeed({
       }
 
       const sig = parseSdkSignal(entry.text);
-      const isAlarm = Boolean(sig?.error) || (sig?.sdk === "auth_status" && sig.status !== "ok" && Boolean(sig?.status));
+      // Owned by a panel, or already said by the row next to it. Checked
+      // before the alarm test on purpose: api_retry carries an `error`
+      // ("overloaded") and is not one of these, but a future task_* subtype
+      // that carried one must not become an alarm bar per poll.
+      if (sig && PANEL_OWNED_SIGNALS.has(sig.sdk)) continue;
+      // A subagent's own completion is the AGENTS panel's row; anything else's
+      // — overwhelmingly a backgrounded Bash — is news the feed has no other
+      // way to deliver.
+      if (sig?.sdk === "task_notification" && sig.tool_use_id && panelOwnedToolUseIds.has(sig.tool_use_id)) continue;
+      // api_retry carries error:"overloaded" but is not an alarm: the SDK
+      // retries up to ten times on its own and usually wins. An orange bar per
+      // attempt would out-shout the auth failure this tier exists for. It gets
+      // a warning-toned log line in SignalView instead.
+      const isAlarm =
+        (Boolean(sig?.error) && sig?.sdk !== "api_retry") ||
+        (sig?.sdk === "auth_status" && sig.status !== "ok" && Boolean(sig?.status));
       if (isAlarm && sig) {
         flush();
         out.push(

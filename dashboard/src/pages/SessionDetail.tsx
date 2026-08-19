@@ -9,6 +9,7 @@ import {
   latestSlashCommands,
   latestToolCallSummary,
   latestTodos,
+  subagentRuns,
   type Density,
 } from "../transcript";
 import { useSessionDetail } from "../useSessionDetail";
@@ -21,7 +22,7 @@ import { AUTO_MODE_WARNING } from "../approvePlan";
 import { Segmented } from "../components/Segmented";
 import { DecisionDock } from "../components/DecisionDock";
 import { SessionFeed } from "../components/SessionFeed";
-import { TodosPanel, ChangesPanel, SessionPanel } from "../components/SessionPanels";
+import { TodosPanel, ChangesPanel, AgentsPanel, SessionPanel } from "../components/SessionPanels";
 import { asDisplayMarkdown } from "../transcript";
 
 // The console's desktop session view: feed · decision dock · composer, beside a
@@ -154,6 +155,7 @@ export function SessionDetail({
 
   const todos = latestTodos(entries) ?? [];
   const changes = latestToolCallSummary(entries)?.files ?? null;
+  const agents = subagentRuns(entries);
   const result = latestResultSummary(entries);
   const contextTokens =
     (result?.usage?.input_tokens ?? 0) +
@@ -339,6 +341,7 @@ export function SessionDetail({
       <div className="w-[266px] flex-none overflow-y-auto px-3.5 py-3.5 flex flex-col gap-4.5 min-w-0">
         <TodosPanel todos={todos} blocked={blocked} />
         <ChangesPanel branch={branch} changes={changes} />
+        <AgentsPanel runs={agents} />
         <div className="mt-auto">
           <SessionPanel
             session={session}
