@@ -447,8 +447,27 @@ async function logSdkMessage(actor: string, msg: { type: string; [key: string]: 
     // monotonically toward the compact threshold shows up here first
     // (ADR-0046). cacheReadInputTokens separates "context is large" from
     // "context is large AND being re-read uncached", which cost differently.
+    //
+    // cacheCreationInputTokens is the one that carries the money, and it was
+    // the one field missing here. A cache WRITE bills at 1.25x base where a
+    // read bills at 0.1x, so a session whose writes outnumber its reads costs
+    // an order of magnitude more than the same context read back warm — and
+    // the four fields are only comparable when all four are on one line. It
+    // has always been in Postgres (the full `usage` object goes to the
+    // transcript row below, alongside `modelUsage`); what did not exist was a
+    // LogQL series, so answering "where did the tokens go" meant a DB
+    // round-trip or, worse, solving for it as a residual of totalCostUsd
+    // against an assumed price table. Do not read these four as a complete
+    // cost model regardless: totalCostUsd spans every model the run touched,
+    // `usage` is the main model's roll-up, and only `modelUsage` on the
+    // transcript row splits them.
     const usage = msg.usage as
-      | { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number }
+      | {
+          input_tokens?: number;
+          output_tokens?: number;
+          cache_read_input_tokens?: number;
+          cache_creation_input_tokens?: number;
+        }
       | undefined;
     log("info", `${actor} result`, {
       subtype: msg.subtype,
@@ -457,6 +476,7 @@ async function logSdkMessage(actor: string, msg: { type: string; [key: string]: 
       inputTokens: usage?.input_tokens,
       outputTokens: usage?.output_tokens,
       cacheReadInputTokens: usage?.cache_read_input_tokens,
+      cacheCreationInputTokens: usage?.cache_creation_input_tokens,
     });
     await push(
       JSON.stringify({

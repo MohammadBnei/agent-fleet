@@ -1171,6 +1171,49 @@ test("result carries the full usage/duration/error payload, not just turns and c
   }
 });
 
+// The transcript row above carries the whole `usage` object, so a missing
+// field there is invisible; the LOG line is a hand-picked subset, which is
+// exactly where one goes missing unnoticed. cacheCreationInputTokens did:
+// writes bill at 1.25x base against reads at 0.1x, so it is the field that
+// carries the cost, and without it on the line "where did the tokens go" had
+// to be answered by solving for it as a residual of totalCostUsd against an
+// assumed price table. Assert all four together — the subset is only useful
+// if it stays complete.
+test("the result log line carries all four token fields, not three", async () => {
+  forceResult = {
+    subtype: "success",
+    num_turns: 3,
+    total_cost_usd: 0.42,
+    usage: {
+      input_tokens: 100,
+      output_tokens: 20,
+      cache_read_input_tokens: 3000,
+      cache_creation_input_tokens: 5000,
+    },
+  };
+
+  const lines: string[] = [];
+  const origLog = console.log;
+  console.log = (s: string) => lines.push(s);
+  try {
+    await relayOnce([]);
+  } finally {
+    console.log = origLog;
+  }
+
+  const resultLine = lines
+    .map((l) => JSON.parse(l) as Record<string, unknown>)
+    .find((l) => typeof l.msg === "string" && (l.msg as string).endsWith("result"));
+
+  expect(resultLine).toBeDefined();
+  expect(resultLine).toMatchObject({
+    inputTokens: 100,
+    outputTokens: 20,
+    cacheReadInputTokens: 3000,
+    cacheCreationInputTokens: 5000,
+  });
+});
+
 test("session init relays the full environment, not four of fourteen fields", async () => {
   await relayOnce([]);
 
