@@ -233,6 +233,29 @@ Any doc, code, comment, or memory that contradicts this file or an
 
 ## 2. Forbidden patterns (quick check — full list + reasons in `adr/`)
 
+- **Trusting an identity header the caller could have set.** `X-authentik-*`
+  arrives from a Traefik forwardAuth outpost and is perfectly good for a service
+  reachable *only* through Traefik. core is not one — a worker pod reaches it on
+  the pod network — so trusting one converts an authorization gap into an
+  impersonation gap, which is worse. core verifies its own ID token. See
+  `adr/0056`.
+- **Gating one route instead of the whole mux.** The console's IngressRoute
+  matches on host with no path constraint and there is no second lock in front
+  of it any more, so anything the in-app gate exempts is a public endpoint.
+  Gating a handler rather than the mux makes every route added later public by
+  default. See `adr/0056`.
+- **Authorizing a `CoreService` call by looking for a field named
+  `session_id`.** `PromptSession` carries `caller_session_id` *and*
+  `target_session_id`; `SaveAgentSessionId` carries `session_id` *and*
+  `agent_session_id`; `GetSession` calls it `id`. A generic rule is wrong on all
+  three, each time in the direction that grants authority. The table is
+  explicit and unlisted methods fail closed. See `adr/0057`.
+- **Letting an unset secret disable a gate.** Every other optional secret in
+  core degrades a feature; auth config must make the process refuse to start,
+  because the Infisical operator renders stale or empty Secrets often enough
+  that "off when unset" comes up wide open and healthy-looking.
+  `FLEET_AUTH_DISABLED=1` is the only way to run without a gate, and it is
+  explicit on purpose. See `adr/0056`.
 - **A session able to read or write another session's working tree.** One
   private directory per session, enforced by the **mount**, not by naming.
   This was violated for most of the fleet's history: the whole-PVC mount
