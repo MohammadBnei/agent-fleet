@@ -1,5 +1,12 @@
 # Changelog
 
+# [4.9.0](https://github.com/MohammadBnei/agent-fleet/compare/4.8.1...4.9.0) (2026-08-19)
+
+
+### Features
+
+* honest token instrumentation, worker python3/uv, launch-mode picker ([#223](https://github.com/MohammadBnei/agent-fleet/issues/223)) ([60f1c3d](https://github.com/MohammadBnei/agent-fleet/commit/60f1c3d9287f4ded48cd3d9bc50d3bd4dc43edfd))
+
 ## [4.8.1](https://github.com/MohammadBnei/agent-fleet/compare/4.8.0...4.8.1) (2026-08-19)
 
 
