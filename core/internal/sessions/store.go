@@ -487,6 +487,49 @@ func (s *Store) SaveAgentSessionID(ctx context.Context, id, agentSessionID, mode
 	return true, nil
 }
 
+// VerifyLease reports whether leaseID is the CURRENT lease of session id. It
+// is the authentication check behind every CoreService call (see
+// coreserver/auth.go): a worker pod holds its lease in an env var and presents
+// it, and core recomputes nothing — the database is the authority.
+//
+// A stale lease returns false, not an error. That is the point: ReserveSlot
+// mints a fresh lease_id on every warm, so a pod that was torn down and
+// replaced stops being able to act as its session the moment the new pod
+// starts, with no revocation list to maintain.
+//
+// ponytail: one indexed primary-key lookup per RPC, no cache. At this fleet's
+// size (MAX_LIVE_SESSIONS defaults to 5) that is not worth a cache and its
+// invalidation bug; add one if this ever shows up in the RPC durations
+// AccessLogInterceptor already logs.
+func (s *Store) VerifyLease(ctx context.Context, id, leaseID string) (bool, error) {
+	var ok bool
+	err := s.pool.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM sessions WHERE id = $1 AND lease_id::text = $2
+		)
+	`, id, leaseID).Scan(&ok)
+	if err != nil {
+		slog.Error("sessions VerifyLease", "sessionId", id, "error", err)
+		return false, fmt.Errorf("verify lease: %w", err)
+	}
+	return ok, nil
+}
+
+// ClearLease revokes a session's credential at teardown.
+//
+// Without it the lease stays valid until the NEXT warm rotates it, so a
+// deleted pod keeps a working credential for as long as the session then sits
+// idle — which is most of the time. Clearing here is what makes the lease a
+// revocable credential rather than merely a rotating one.
+func (s *Store) ClearLease(ctx context.Context, id string) error {
+	_, err := s.pool.Exec(ctx, `UPDATE sessions SET lease_id = NULL WHERE id = $1`, id)
+	if err != nil {
+		slog.Error("sessions ClearLease", "sessionId", id, "error", err)
+		return fmt.Errorf("clear lease: %w", err)
+	}
+	return nil
+}
+
 func (s *Store) SetPermissionMode(ctx context.Context, id, mode string) error {
 	_, err := s.pool.Exec(ctx,
 		`UPDATE sessions SET permission_mode = $2, updated_at = now() WHERE id = $1`, id, mode)

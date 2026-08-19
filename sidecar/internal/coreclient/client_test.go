@@ -8,7 +8,7 @@ import "testing"
 // looped every pod calling New at startup). This is the cheapest possible
 // guard against that recurring silently.
 func TestNew_ValidServiceConfig(t *testing.T) {
-	c, err := New("localhost:0", "task-1")
+	c, err := New("localhost:0", "task-1", "lease-1")
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}

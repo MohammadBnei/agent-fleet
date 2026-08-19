@@ -299,4 +299,15 @@ func (l *Loop) tearDown(ctx context.Context, id string) {
 	if err := l.provisioner.TearDownWorker(ctx, id); err != nil {
 		slog.Warn("sessions loop: teardown failed", "sessionId", id, "error", err)
 	}
+	// Revoke the pod's CoreService credential. ReserveSlot rotates lease_id on
+	// the NEXT warm, so without this a deleted pod keeps a working credential
+	// for as long as the session then sits idle — which is most of the time,
+	// and unbounded for a session nobody warms again. Clearing here is what
+	// makes the lease revocable rather than merely rotating.
+	//
+	// Ordered after the teardown and best-effort for the same reason the
+	// teardown is: the pod is going away regardless, and the next tick retries.
+	if err := l.sessions.ClearLease(ctx, id); err != nil {
+		slog.Warn("sessions loop: clearing lease failed", "sessionId", id, "error", err)
+	}
 }

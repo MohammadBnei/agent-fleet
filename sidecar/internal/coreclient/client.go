@@ -14,6 +14,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
 
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 )
@@ -45,10 +46,43 @@ const retryServiceConfig = `{
 	}]
 }`
 
-func New(addr, taskID string) (*Client, error) {
+// leaseCredentials attaches this session's identity to every outbound call.
+//
+// core checks the pair against the sessions table, so a pod can only act as
+// the session it was created for, and only while that lease is current — a
+// torn-down pod's lease is cleared, and the next warm mints a new one. Before
+// this, CoreService authenticated nobody and believed whichever session id was
+// in the request body.
+//
+// The lease is not a bearer token for the whole fleet: it is useless for any
+// session but this one, which is what makes leaking it through a pod's own env
+// an acceptable risk. The agent can already read every env var in its
+// container.
+func leaseCredentials(sessionID, leaseID string) grpc.DialOption {
+	return grpc.WithChainUnaryInterceptor(func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+		return invoker(withLease(ctx, sessionID, leaseID), method, req, reply, cc, opts...)
+	})
+}
+
+func leaseStreamCredentials(sessionID, leaseID string) grpc.DialOption {
+	return grpc.WithChainStreamInterceptor(func(ctx context.Context, desc *grpc.StreamDesc, cc *grpc.ClientConn, method string, streamer grpc.Streamer, opts ...grpc.CallOption) (grpc.ClientStream, error) {
+		return streamer(withLease(ctx, sessionID, leaseID), desc, cc, method, opts...)
+	})
+}
+
+func withLease(ctx context.Context, sessionID, leaseID string) context.Context {
+	return metadata.AppendToOutgoingContext(ctx,
+		"x-fleet-session-id", sessionID,
+		"x-fleet-lease-id", leaseID,
+	)
+}
+
+func New(addr, taskID, leaseID string) (*Client, error) {
 	conn, err := grpc.NewClient(addr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithDefaultServiceConfig(retryServiceConfig),
+		leaseCredentials(taskID, leaseID),
+		leaseStreamCredentials(taskID, leaseID),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("dial core: %w", err)

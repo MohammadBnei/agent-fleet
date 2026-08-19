@@ -24,7 +24,13 @@ type Config struct {
 	// Alert path (docs/adr/0037). An empty token disables the webhook
 	// rather than serving it unauthenticated — it creates tasks, and a
 	// thot task runs an agent with cluster access.
-	AlertWebhookToken  string
+	AlertWebhookToken string
+	// ProvisionerToken authenticates the provisioner to CoreService. It holds
+	// no session lease — it exists before any pod does — so it is the one
+	// caller that needs a shared secret rather than a per-session credential.
+	// From the same Infisical scope both components already consume whole, so
+	// adding the key needs no manifest change on either side.
+	ProvisionerToken   string
 	ThotDiscordChannel string
 	ThotRepo           string
 	LokiURL            string
@@ -120,6 +126,7 @@ func Load() Config {
 		DiscordBotToken:       os.Getenv("DISCORD_BOT_TOKEN"),
 		DiscordTriggerChannel: os.Getenv("DISCORD_TRIGGER_CHANNEL_ID"),
 		AlertWebhookToken:     os.Getenv("ALERT_WEBHOOK_TOKEN"),
+		ProvisionerToken:      os.Getenv("FLEET_PROVISIONER_TOKEN"),
 		ThotDiscordChannel:    os.Getenv("THOT_DISCORD_CHANNEL_ID"),
 		ThotRepo:              env("THOT_REPO", "infra-bootstrap"),
 		LokiURL:               env("LOKI_URL", "http://platform-loki.monitoring.svc.cluster.local:3100"),

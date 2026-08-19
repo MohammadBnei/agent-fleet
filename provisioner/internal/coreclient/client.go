@@ -14,6 +14,7 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
 
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 )
@@ -55,15 +56,40 @@ const retryServiceConfig = `{
 	}]
 }`
 
-func New(addr string) (*Client, error) {
+// New dials core. token authenticates the provisioner to CoreService, which
+// rejects an unauthenticated caller since the lease-auth change.
+//
+// The provisioner cannot use a session lease: it has none, and ReportPodEvents
+// reports on arbitrary sessions by nature — it is how core learns a pod exists
+// at all. So this is the one caller with a shared secret.
+//
+// Note what an unset token looks like: PERMISSION_DENIED is NOT in
+// retryServiceConfig's RetryableStatusCodes, so a misconfiguration here is not
+// retried — it is logged and dropped, and pod-lifecycle events simply stop
+// reaching core while every log stays green. Hence the loud warning at startup
+// rather than silence.
+func New(addr, token string) (*Client, error) {
 	conn, err := grpc.NewClient(addr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithDefaultServiceConfig(retryServiceConfig),
+		grpc.WithChainUnaryInterceptor(func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+			return invoker(withToken(ctx, token), method, req, reply, cc, opts...)
+		}),
+		grpc.WithChainStreamInterceptor(func(ctx context.Context, desc *grpc.StreamDesc, cc *grpc.ClientConn, method string, streamer grpc.Streamer, opts ...grpc.CallOption) (grpc.ClientStream, error) {
+			return streamer(withToken(ctx, token), desc, cc, method, opts...)
+		}),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("dial core: %w", err)
 	}
 	return &Client{conn: conn, rpc: agentfleetv1.NewCoreServiceClient(conn)}, nil
+}
+
+func withToken(ctx context.Context, token string) context.Context {
+	if token == "" {
+		return ctx
+	}
+	return metadata.AppendToOutgoingContext(ctx, "x-fleet-provisioner-token", token)
 }
 
 func (c *Client) Close() error {

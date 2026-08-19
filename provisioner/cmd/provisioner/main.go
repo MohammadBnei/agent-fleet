@@ -107,7 +107,14 @@ func main() {
 			"error", err)
 	}
 
-	core, err := coreclient.New(cfg.CoreGRPCAddr)
+	// An unset token is not a silent degradation: CoreService returns
+	// PERMISSION_DENIED, which coreclient's retry policy does NOT retry, so
+	// pod-lifecycle events would stop reaching core with nothing in the logs
+	// looking wrong. Say so at startup.
+	if cfg.CoreToken == "" {
+		slog.Warn("FLEET_PROVISIONER_TOKEN is unset: core will reject every pod event this provisioner reports")
+	}
+	core, err := coreclient.New(cfg.CoreGRPCAddr, cfg.CoreToken)
 	if err != nil {
 		slog.Error("core client init failed", "error", err)
 		os.Exit(1)

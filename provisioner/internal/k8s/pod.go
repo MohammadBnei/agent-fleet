@@ -381,6 +381,10 @@ func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error 
 					{Name: "MCP_PORT", Value: fmt.Sprint(SidecarMCPPort)},
 					{Name: "LOCAL_API_PORT", Value: fmt.Sprint(SidecarAPIPort)},
 					{Name: "HEALTH_PORT", Value: fmt.Sprint(SidecarHealthPort)},
+					// The sidecar, not the worker, is what talks to core, so
+					// the credential CoreService checks has to be here too —
+					// the worker's own copy authenticates nothing.
+					{Name: "LEASE_ID", Value: spec.LeaseID},
 					{Name: "WORKTREE_PATH", Value: sessionWorkdir},
 					{Name: "LOG_LEVEL", Value: c.LogLevel},
 					// Without this, the sidecar falls back to its own
