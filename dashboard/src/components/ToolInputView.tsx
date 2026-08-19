@@ -45,18 +45,18 @@ export function diffLines(before: string, after: string): Line[] {
 export function DiffView({ before, after }: { before: string; after: string }) {
   const lines = diffLines(before, after);
   return (
-    <div className="overflow-x-auto rounded-md bg-base-200/40">
+    <div className="overflow-x-auto rounded-md bg-base-200/40 py-2">
       <pre className="text-2xs leading-[1.5] font-mono min-w-full w-max">
         {lines.map((line, idx) => (
           <div
             key={idx}
-            className={
+            className={`px-3 ${
               line.kind === "add"
                 ? "bg-success/15 text-success"
                 : line.kind === "remove"
                   ? "bg-error/15 text-error"
                   : "text-dim"
-            }
+            }`}
           >
             <span className="select-none opacity-50">{line.kind === "add" ? "+" : line.kind === "remove" ? "-" : " "} </span>
             {line.text || " "}
@@ -106,7 +106,7 @@ export function ToolInputView({ tool, input }: { tool: string; input: unknown })
     return (
       <div className="flex flex-col gap-1.5">
         {str("description") && <div className="text-2xs text-dim">{str("description")}</div>}
-        <div className="overflow-x-auto rounded-md bg-base-200/40 p-2">
+        <div className="overflow-x-auto rounded-md bg-base-200/40 px-3 py-2.5">
           <pre className="text-xs font-mono text-base-content w-max min-w-full">{obj.command}</pre>
         </div>
         {obj.run_in_background === true && <Field label="mode" value="background" />}

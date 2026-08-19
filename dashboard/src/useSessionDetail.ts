@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useBusyAction } from "./useBusyAction";
 import { Code, ConnectError } from "@connectrpc/connect";
 import { client, subscribeTranscript } from "./connectClient";
 import { withOptimistic } from "./transcript";
@@ -33,7 +34,14 @@ export function useSessionDetail(sessionId: string) {
   // seq, or a fixed string for ActionsMenu's page-level actions, which
   // still disable together on purpose); "actions" callers still tie
   // themselves to busyKey !== null, not a specific key.
-  const [busyKey, setBusyKey] = useState<string | null>(null);
+  //
+  // busyKey, actionError and run() all come from useBusyAction — the same three
+  // things SessionActionsModal needs for a list row, and they were written out
+  // twice with different field names for the same state.
+  // setActionError is useBusyAction's useState setter and therefore stable, but
+  // the linter cannot see through the hook boundary — so it is listed in the
+  // reset effect's deps below rather than the rule being silenced.
+  const { busyKey, error: actionError, run, setError: setActionError } = useBusyAction();
   // Optimistic echo for a just-sent human message — client.postMessage() plus
   // the streamTranscript round trip to see it reflected back is enough
   // latency to feel laggy, so this shows the message immediately with a
@@ -50,12 +58,12 @@ export function useSessionDetail(sessionId: string) {
   // real entry supersedes it the moment it lands. See withOptimistic.
   const [optimistic, setOptimistic] = useState<TranscriptEntry[]>([]);
   // Two states, not one: loadError blocks rendering (nothing to show
-  // without a session), actionError is inline while the loaded view stays up.
+  // without a session), actionError (from useBusyAction) is inline while the
+  // loaded view stays up.
   // Collapsing these into one `error` state previously left the error
   // banner unreachable — an unconditional `if (!session) return <Loading/>`
   // ran before it, so any load failure hung on "Loading…" forever.
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
   // Older history is fetched a page at a time, backwards from the oldest
   // entry currently held. hasOlder drives the feed's "load earlier" header;
   // loadingOlder keeps a double-click from fetching the same page twice.
@@ -131,7 +139,7 @@ export function useSessionDetail(sessionId: string) {
       cancelled = true;
       unsubscribe();
     };
-  }, [sessionId]);
+  }, [sessionId, setActionError]);
 
   // Fetches the page of entries just before the oldest one held and prepends
   // it. Resolves once state is set, so a caller can anchor the scroll
@@ -155,22 +163,6 @@ export function useSessionDetail(sessionId: string) {
     }
   }
 
-  // Returns whether the call actually succeeded, so a caller holding
-  // optimistic state knows whether to keep or roll it back. Callers that
-  // don't care can keep ignoring it.
-  async function run(action: () => Promise<unknown>, key: string): Promise<boolean> {
-    setBusyKey(key);
-    setActionError(null);
-    try {
-      await action();
-      return true;
-    } catch (err) {
-      setActionError((err as Error).message);
-      return false;
-    } finally {
-      setBusyKey(null);
-    }
-  }
 
   // Both decisions go through here so the optimistic entry and the RPC can
   // never drift apart — a card showing "allowed" for a call that failed to
@@ -234,19 +226,16 @@ export function useSessionDetail(sessionId: string) {
       `question:${seq}`,
     );
 
+  // Through run() like everything else, with one extra job: roll back the
+  // optimistic echo when the post fails, so a message that never left does not
+  // sit in the feed looking sent.
   async function sendDiscuss(text: string) {
     pendingRef.current = text;
     setPendingMessage(text);
-    setBusyKey("discuss");
-    setActionError(null);
-    try {
-      await client.postMessage({ sessionId, text });
-    } catch (err) {
-      setActionError((err as Error).message);
+    const ok = await run(() => client.postMessage({ sessionId, text }), "discuss");
+    if (!ok) {
       pendingRef.current = null;
       setPendingMessage(null);
-    } finally {
-      setBusyKey(null);
     }
   }
 

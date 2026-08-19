@@ -5,8 +5,11 @@ import { sessionLabel } from "../sessionLabel";
 import type { ListSummary } from "../transcript";
 import { TickBar, todoProgress } from "../components/TickBar";
 import { DecisionInline } from "../components/DecisionInline";
-import { SessionActionsModal, RowActionsButton } from "../components/SessionActionsModal";
-import { useSelection, SelectBox, BatchBar } from "../components/BatchActions";
+import { SessionActionsModal } from "../components/SessionActionsModal";
+import { RowSelect, RowActionsButton } from "../components/RowControls";
+import { useSelection, BatchBar } from "../components/BatchActions";
+import { QuietControls } from "../components/QuietControls";
+import { useToggleSet } from "../useToggleSet";
 import { NotchCard } from "../components/NotchCard";
 
 // A session with a live pod. Replaces ACTIVE_STATUSES, which named the three
@@ -307,7 +310,7 @@ function NeedsYouCard({
   const isProposal = false;
 
   return (
-    <div className="relative">
+    <div className="relative group">
       <NotchCard
         label={
           isProposal
@@ -316,10 +319,8 @@ function NeedsYouCard({
         }
         tone="pink"
       >
-        <div className="flex items-center gap-3 px-4 pt-3.5 pb-2.5 flex-wrap">
-          <SelectBox checked={picked} onToggle={onPick} />
-        <span className="text-base font-semibold">#{session.id.slice(0, 6)}</span>
-          <button
+        <div className="flex items-center gap-3 px-4 pt-3.5 pb-3 flex-wrap">
+            <button
             type="button"
             onClick={onSelect}
             className="text-base text-left hover:text-primary cursor-pointer min-w-0 break-words"
@@ -335,8 +336,9 @@ function NeedsYouCard({
             </div>
           )}
         </div>
-        <DecisionInline session={session} summary={summary} onOpenSession={onSelect} reload={reload} />
+        <DecisionInline session={session} summary={summary} reload={reload} />
       </NotchCard>
+      <RowSelect picked={picked} onPick={onPick} />
       <RowActionsButton onOpen={onActions} />
       <DeleteButton onDelete={onDelete} />
     </div>
@@ -370,17 +372,15 @@ function StuckRow({
   const live = isPodPhaseLive(session.podPhase);
   const stuckFor = blockedForLabel(session);
   return (
-    <div className="relative">
-      <div className="flex items-center gap-3 px-4 py-2.5 border border-orange-line bg-orange-bg pr-14 flex-wrap">
+    <div className="relative group">
+      <div className="flex items-center gap-3 px-4 py-2.5 border border-orange-line bg-orange-bg pr-[70px] flex-wrap">
         <span className="w-[7px] h-[7px] rounded-full flex-none bg-warning" />
-        <SelectBox checked={picked} onToggle={onPick} />
-        <span className="text-base font-semibold">#{session.id.slice(0, 6)}</span>
         <button type="button" onClick={onSelect} className="text-base text-left hover:text-primary cursor-pointer min-w-0 break-words">
           {sessionLabel(session)}
         </button>
         <span className="text-xs text-dim2">{session.repo}</span>
         <span className="ml-auto text-sm text-warning min-w-0 truncate">
-          {live ? "stalled" : session.pendingDecisions > 0 ? "pod gone, decision unanswerable" : "stalled"}
+          {stuckLabel(session)}
           {stuckFor ? ` · ${stuckFor}` : ""}
         </span>
         {live ? (
@@ -408,6 +408,7 @@ function StuckRow({
           read log
         </button>
       </div>
+      <RowSelect picked={picked} onPick={onPick} />
       <RowActionsButton onOpen={onActions} />
       <DeleteButton onDelete={onDelete} />
     </div>
@@ -441,15 +442,13 @@ function FinishedRow({
   const failed = session.podPhase === "POD_PHASE_CRASHED";
   const pr = null as { label: string; className: string } | null;
   return (
-    <div className="relative">
+    <div className="relative group">
       <div
-        className={`flex items-center gap-3 px-4 py-2.5 border pr-14 flex-wrap ${
+        className={`flex items-center gap-3 px-4 py-2.5 border pr-[70px] flex-wrap ${
           failed ? "border-orange-line bg-orange-bg" : "border-green-line bg-green-bg"
         }`}
       >
         <span className={`w-[7px] h-[7px] rounded-full flex-none ${failed ? "bg-warning" : "bg-success"}`} />
-        <SelectBox checked={picked} onToggle={onPick} />
-        <span className="text-base font-semibold">#{session.id.slice(0, 6)}</span>
         <button type="button" onClick={onSelect} className="text-base text-left hover:text-primary cursor-pointer min-w-0 break-words">
           {sessionLabel(session)}
         </button>
@@ -483,6 +482,7 @@ function FinishedRow({
           archive
         </button>
       </div>
+      <RowSelect picked={picked} onPick={onPick} />
       <RowActionsButton onOpen={onActions} />
       <DeleteButton onDelete={onDelete} />
     </div>
@@ -518,15 +518,13 @@ function WorkingRow({
   const stale = staleBadge(session);
 
   return (
-    <div className={`relative ${last ? "" : "border-b border-line3"}`}>
-      <div className="flex items-center gap-3 px-4 py-2.5 pr-14">
+    <div className={`relative group ${last ? "" : "border-b border-line3"}`}>
+      <div className="flex items-center gap-3 px-4 py-2.5 pr-[70px]">
         <span
           className={`w-[7px] h-[7px] rounded-full flex-none ${
             stale ? "bg-error" : live ? "bg-info animate-fpulse" : "border border-dim2"
           }`}
         />
-        <SelectBox checked={picked} onToggle={onPick} />
-        <span className={`text-sm flex-none ${live ? "text-text2" : "text-dim2"}`}>#{session.id.slice(0, 6)}</span>
         <button
           type="button"
           onClick={onSelect}
@@ -570,6 +568,7 @@ function WorkingRow({
           </>
         )}
       </div>
+      <RowSelect picked={picked} onPick={onPick} />
       <RowActionsButton onOpen={onActions} />
       <DeleteButton onDelete={onDelete} />
     </div>
@@ -609,13 +608,11 @@ function CompactRow({
   const badge = sessionBadge(session);
   return (
     <div className="flex items-center gap-2.5 py-0.5 group">
-      <SelectBox checked={picked} onToggle={onPick} />
       <button
         type="button"
         onClick={() => onSelect(session.id)}
         className="flex items-center gap-2.5 text-left hover:text-primary cursor-pointer min-w-0 flex-1"
       >
-        <span className="text-xs text-dim2 flex-none">#{session.id.slice(0, 6)}</span>
         <span className="text-sm text-dim min-w-0 truncate flex-1">{sessionLabel(session)}</span>
         <span className="text-2xs text-dim2 flex-none">{session.repo}</span>
         {badge && (
@@ -626,15 +623,8 @@ function CompactRow({
       </button>
       {/* Inline, not the absolute corner overlay the taller cards use — this
           row is one line high, so there is no corner to park it in. */}
-      <button
-        type="button"
-        onClick={onActions}
-        title="Session actions"
-        aria-label="Session actions"
-        className="flex-none px-1.5 text-dim2 hover:text-primary text-xs cursor-pointer"
-      >
-        ⋯
-      </button>
+      <RowSelect picked={picked} onPick={onPick} inline />
+      <RowActionsButton onOpen={onActions} inline />
     </div>
   );
 }
@@ -682,72 +672,6 @@ export const TERMINAL = new Set(["archived", "swept"]);
 // the same reason.
 export { restStatus };
 
-// Sort + filter controls for the quiet tail. Native <select>s (accessible for
-// free) for sort + repo; chip toggles mirror MobileSessionList's status bar for
-// the status multi-filter and the hide-terminal toggle.
-function ControlBar({
-  sort,
-  setSort,
-  repoFilter,
-  setRepoFilter,
-  repos,
-  statuses,
-  statusFilter,
-  toggleStatus,
-  hideTerminal,
-  setHideTerminal,
-}: {
-  sort: SortKey;
-  setSort: (s: SortKey) => void;
-  repoFilter: string;
-  setRepoFilter: (r: string) => void;
-  repos: string[];
-  statuses: string[];
-  statusFilter: Set<string>;
-  toggleStatus: (s: string) => void;
-  hideTerminal: boolean;
-  setHideTerminal: (v: boolean) => void;
-}) {
-  const selectCls = "border border-line bg-transparent text-xs text-dim px-1.5 py-1 cursor-pointer";
-  return (
-    <div className="flex items-center gap-2 flex-wrap">
-      <select className={selectCls} value={sort} onChange={(e) => setSort(e.target.value as SortKey)} aria-label="sort sessions">
-        <option value="date">sort: recent</option>
-        <option value="status">sort: status</option>
-        <option value="repo">sort: repo</option>
-        <option value="title">sort: title</option>
-      </select>
-      <select className={selectCls} value={repoFilter} onChange={(e) => setRepoFilter(e.target.value)} aria-label="filter by repo">
-        <option value="">all repos</option>
-        {repos.map((r) => (
-          <option key={r} value={r}>{r}</option>
-        ))}
-      </select>
-      {statuses.map((s) => {
-        const on = statusFilter.size === 0 || statusFilter.has(s);
-        return (
-          <button
-            key={s}
-            type="button"
-            aria-pressed={statusFilter.has(s)}
-            onClick={() => toggleStatus(s)}
-            className={`px-2 py-1 text-2xs border flex-none ${on ? "border-primary text-primary" : "border-line text-dim2"}`}
-          >
-            {s}
-          </button>
-        );
-      })}
-      <button
-        type="button"
-        aria-pressed={hideTerminal}
-        onClick={() => setHideTerminal(!hideTerminal)}
-        className={`px-2 py-1 text-2xs border flex-none ${hideTerminal ? "border-primary text-primary" : "border-line text-dim2"}`}
-      >
-        hide terminal
-      </button>
-    </div>
-  );
-}
 
 export function SessionList({
   sessions,
@@ -785,28 +709,23 @@ export function SessionList({
   // filtered by the ControlBar. Pinned-active (needsYou/finished/working) stays
   // above and is unaffected by any of this.
   const [sort, setSort] = useState<SortKey>("date");
-  const [repoFilter, setRepoFilter] = useState("");
-  const [statusFilter, setStatusFilter] = useState<Set<string>>(new Set());
-  const [hideTerminal, setHideTerminal] = useState(false);
+  const { set: hiddenRepos, toggle: toggleRepo } = useToggleSet();
+  // What to SHOW, replacing the old statusFilter ("empty means all", a sentinel
+  // that read the same as "nothing selected") plus the separate hideTerminal
+  // boolean, which said the same thing again more coarsely. Seeded to the
+  // non-terminal statuses, which is what hideTerminal defaulted to expressing.
+  const { set: hidden, toggle: toggleStatus } = useToggleSet(TERMINAL);
 
   const rest = useMemo(() => [...quiet, ...archived, ...swept], [quiet, archived, swept]);
   const repos = useMemo(() => [...new Set(sessions.map((t) => t.repo))].sort(), [sessions]);
   const statuses = useMemo(() => [...new Set(rest.map(restStatus))].sort(), [rest]);
-  const toggleStatus = (s: string) =>
-    setStatusFilter((prev) => {
-      const next = new Set(prev);
-      if (next.has(s)) next.delete(s);
-      else next.add(s);
-      return next;
-    });
 
   const visibleRest = useMemo(() => {
     return rest
-      .filter((t) => (repoFilter ? t.repo === repoFilter : true))
-      .filter((t) => (statusFilter.size ? statusFilter.has(restStatus(t)) : true))
-      .filter((t) => (hideTerminal ? !TERMINAL.has(restStatus(t)) : true))
+      .filter((t) => !hiddenRepos.has(t.repo))
+      .filter((t) => !hidden.has(restStatus(t)))
       .sort((a, b) => compareSessions(a, b, sort));
-  }, [rest, repoFilter, statusFilter, hideTerminal, sort]);
+  }, [rest, hiddenRepos, hidden, sort]);
 
   // The four selectable sections, in the order they render — this is what a
   // shift-click range means, so it is built from the same arrays the body maps
@@ -926,17 +845,15 @@ export function SessionList({
             <span className="flex-1 h-px bg-line2" />
             <span className="text-xs text-dim2 whitespace-nowrap">{visibleRest.length} of {rest.length}</span>
           </div>
-          <ControlBar
+          <QuietControls
             sort={sort}
             setSort={setSort}
-            repoFilter={repoFilter}
-            setRepoFilter={setRepoFilter}
             repos={repos}
+            hiddenRepos={hiddenRepos}
+            toggleRepo={toggleRepo}
             statuses={statuses}
-            statusFilter={statusFilter}
+            hiddenStatuses={hidden}
             toggleStatus={toggleStatus}
-            hideTerminal={hideTerminal}
-            setHideTerminal={setHideTerminal}
           />
           <div className="flex flex-col gap-0.5 pl-1 pt-1">
             {visibleRest.map((t) => (
@@ -962,4 +879,12 @@ export function SessionList({
       />
     </div>
   );
+}
+
+// The one-line summary of why a session is in STUCK. Shared so the desktop row
+// and the phone card cannot describe the same state differently — they each
+// had their own copy of this ternary.
+export function stuckLabel(session: Session): string {
+  if (isPodPhaseLive(session.podPhase)) return "stalled";
+  return session.pendingDecisions > 0 ? "pod gone, decision unanswerable" : "stalled";
 }

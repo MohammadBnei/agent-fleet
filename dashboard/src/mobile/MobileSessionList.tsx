@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { Session } from "../gen/agentfleet/v1/core_pb";
 import { client } from "../connectClient";
 import { sessionLabel } from "../sessionLabel";
@@ -7,6 +7,7 @@ import {
   isPodPhaseLive,
   sessionBadge,
   blockedForLabel,
+  stuckLabel,
   SectionHeading,
   compareSessions,
   restStatus,
@@ -18,14 +19,23 @@ import { TickBar, todoProgress } from "../components/TickBar";
 import { NotchCard } from "../components/NotchCard";
 import { DecisionInline } from "../components/DecisionInline";
 import { SessionActionsModal } from "../components/SessionActionsModal";
+import { RowActionsButton } from "../components/RowControls";
+import { QuietControls } from "../components/QuietControls";
+import { useToggleSet } from "../useToggleSet";
 
 // The phone list screen from Agent Fleet Console Mobile.dc.html. Not a
 // narrowed copy of the desktop table: everything stacks, decisions are
-// answerable inline with ~44px targets, and a bucket chip row replaces the
-// desktop header's single filter box — this is the surface most likely used to
-// unblock a session away from a desk (docs/dashboard-spec.md §8 item 5).
+// answerable inline with ~44px targets — this is the surface most likely used
+// to unblock a session away from a desk (docs/dashboard-spec.md §8 item 5).
+//
+// The bucket chip row (needs you / stuck / working / done / all) is gone. It
+// filtered which sections rendered, but the sections are already labelled,
+// already ordered by urgency, and on a fleet of any realistic size they all fit
+// one scroll — so it hid things without shortening anything, and defaulted to
+// "needsYou", which meant a phone opened on an empty screen whenever nothing
+// was blocked. Same sections, same order, always rendered: identical to
+// desktop, which never had one.
 
-type Bucket = "needsYou" | "stuck" | "working" | "done" | "all";
 
 function relativeTime(iso?: string): string | null {
   if (!iso) return null;
@@ -37,22 +47,6 @@ function relativeTime(iso?: string): string | null {
   const hours = Math.floor(mins / 60);
   if (hours < 24) return `${hours}h ago`;
   return `${Math.floor(hours / 24)}d ago`;
-}
-
-// Mobile's "⋯". Not the desktop absolute-corner overlay: a 20px target parked
-// against a card edge is exactly the tap this form factor gets wrong, so it
-// sits inline in the header row at a real size.
-function ActionsDots({ onOpen }: { onOpen: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onOpen}
-      aria-label="Session actions"
-      className="flex-none -my-1 px-2 py-1 text-dim2 text-sm"
-    >
-      ⋯
-    </button>
-  );
 }
 
 function NeedsYouCard({
@@ -80,10 +74,9 @@ function NeedsYouCard({
     >
       <div className="px-3.5 pt-3.5">
         <div className="flex items-baseline gap-2">
-          <span className="text-sm font-semibold">#{session.id.slice(0, 6)}</span>
           <span className="text-xs text-dim2 min-w-0 truncate">{session.repo}</span>
           {todos.length > 0 && <TickBar todos={todos} blocked cell="w-[11px]" className="ml-auto flex-none" />}
-          <ActionsDots onOpen={onActions} />
+          <RowActionsButton onOpen={onActions} inline />
         </div>
         <button
           type="button"
@@ -97,7 +90,6 @@ function NeedsYouCard({
         session={session}
         summary={summary}
         layout="stacked"
-        onOpenSession={onSelect}
         reload={reload}
         onAskLater={onAskLater}
       />
@@ -124,9 +116,8 @@ function FinishedCard({
     <div className={`border px-3.5 py-3 ${failed ? "border-orange-line bg-orange-bg" : "border-green-line bg-green-bg"}`}>
       <div className="flex items-center gap-2">
         <span className={`w-1.5 h-1.5 rounded-full flex-none ${failed ? "bg-warning" : "bg-success"}`} />
-        <span className="text-sm font-semibold">#{session.id.slice(0, 6)}</span>
         {when && <span className="text-xs text-dim2 ml-auto flex-none">{when}</span>}
-        <ActionsDots onOpen={onActions} />
+        <RowActionsButton onOpen={onActions} inline />
       </div>
       <button
         type="button"
@@ -199,7 +190,6 @@ function WorkingCard({
           }`}
         />
         <button type="button" onClick={onSelect} className="flex items-center gap-2 min-w-0 flex-1 text-left">
-          <span className={`text-sm flex-none ${live ? "text-text2" : "text-dim2"}`}>#{session.id.slice(0, 6)}</span>
           <span className={`text-sm min-w-0 truncate ${live ? "" : "text-dim"}`}>{sessionLabel(session)}</span>
         </button>
         {session.permissionMode === "auto" ? (
@@ -209,7 +199,7 @@ function WorkingCard({
         ) : (
           todos.length > 0 && <span className="text-xs text-dim2 ml-auto flex-none">{todoProgress(todos)}</span>
         )}
-        <ActionsDots onOpen={onActions} />
+        <RowActionsButton onOpen={onActions} inline />
       </div>
       <div className="text-xs text-dim mt-1.5 truncate">
         {provisioning
@@ -259,11 +249,10 @@ function QuietRow({
         onClick={() => onSelect(session.id)}
         className="flex items-center gap-2 text-left min-w-0 flex-1"
       >
-        <span className="text-xs text-dim2 flex-none">#{session.id.slice(0, 6)}</span>
         <span className="text-sm text-dim min-w-0 truncate flex-1">{sessionLabel(session)}</span>
         {badge && <span className={`text-2xs px-1 border tracking-wide flex-none ${badge.className}`}>{badge.label}</span>}
       </button>
-      <ActionsDots onOpen={onActions} />
+      <RowActionsButton onOpen={onActions} inline />
     </div>
   );
 }
@@ -291,13 +280,12 @@ function StuckCard({
     <div className="border border-orange-line bg-orange-bg px-3 py-2.5 flex flex-col gap-2">
       <div className="flex items-baseline gap-2 min-w-0">
         <button type="button" onClick={() => onSelect(session.id)} className="flex items-baseline gap-2 text-left min-w-0 flex-1">
-          <span className="text-sm font-semibold flex-none">#{session.id.slice(0, 6)}</span>
           <span className="text-sm min-w-0 truncate flex-1">{sessionLabel(session)}</span>
         </button>
-        <ActionsDots onOpen={onActions} />
+        <RowActionsButton onOpen={onActions} inline />
       </div>
       <span className="text-2xs text-warning">
-        {live ? "stalled" : session.pendingDecisions > 0 ? "pod gone, decision unanswerable" : "stalled"}
+        {stuckLabel(session)}
         {stuckFor ? ` \u00b7 ${stuckFor}` : ""}
       </span>
       <div className="flex gap-2">
@@ -345,7 +333,6 @@ export function MobileSessionList({
   onOpenLogs: (id: string) => void;
   reload: () => void;
 }) {
-  const [bucket, setBucket] = useState<Bucket>("needsYou");
   // "ask me later" is per-session and deliberately not persisted: the agent is
   // still blocked, so the card must come back on the next visit.
   const [deferred, setDeferred] = useState<Set<string>>(new Set());
@@ -355,9 +342,12 @@ export function MobileSessionList({
   // comparator and the TERMINAL set are the desktop ones — those are the parts
   // that would drift.
   const [sort, setSort] = useState<SortKey>("date");
+  const { set: hiddenRepos, toggle: toggleRepo } = useToggleSet();
   // Which card's "⋯" is open. Same shape and reasoning as SessionList's.
   const [actionsFor, setActionsFor] = useState<Session | null>(null);
-  const [hideTerminal, setHideTerminal] = useState(true);
+  // Same model as desktop: a set of statuses to hide, seeded to the terminal
+  // ones. See StatusFilter.
+  const { set: hidden, toggle: toggleStatus } = useToggleSet(TERMINAL);
 
   // Same destructure as SessionList's, for the same reason: a bucket computed and
   // not rendered is a session that vanishes from this list. Mobile had dropped
@@ -365,49 +355,38 @@ export function MobileSessionList({
   // neither form factor.
   const { needsYou, stuck, working, finished, quiet, archived, swept } = bucketSessions(sessions, needsYouIds);
   const visibleNeedsYou = needsYou.filter((t) => !deferred.has(t.id));
-  const rest = [...quiet, ...archived, ...swept]
-    .filter((t) => !hideTerminal || !TERMINAL.has(restStatus(t)))
+  // Same derivation and same axes as the desktop ControlBar, so the two lists
+  // cannot disagree about what "filtered by repo" means. Status chips are still
+  // left off — four more toggles do not fit beside these two on a phone, and the
+  // header search already narrows by text.
+  const repos = useMemo(() => [...new Set(sessions.map((t) => t.repo))].sort(), [sessions]);
+  // From the unfiltered tail on purpose: derived from the visible rows, a status
+  // would vanish from the menu the moment you hid it, which is the same
+  // one-way-door as above one level down.
+  const restStatuses = useMemo(
+    () => [...new Set([...quiet, ...archived, ...swept].map(restStatus))].sort(),
+    [quiet, archived, swept],
+  );
+  // Two arrays, exactly as desktop has: `rest` is every quiet session and gates
+  // the section, `visibleRest` is what survives the filters and gates only the
+  // rows. Collapsing them into one — which this did — meant filtering
+  // everything out removed the section, and the section contains the filter
+  // controls, so unticking the last status hid the very selects needed to untick
+  // it back. A filter must never be able to hide itself.
+  const rest = [...quiet, ...archived, ...swept];
+  const visibleRest = rest
+    .filter((t) => !hiddenRepos.has(t.repo))
+    .filter((t) => !hidden.has(restStatus(t)))
     .sort((a, b) => compareSessions(a, b, sort));
 
-  const CHIPS: readonly { value: Bucket; label: string; count: number }[] = [
-    { value: "needsYou", label: "needs you", count: visibleNeedsYou.length },
-    { value: "stuck", label: "stuck", count: stuck.length },
-    { value: "working", label: "working", count: working.length },
-    { value: "done", label: "done", count: finished.length },
-    { value: "all", label: "all", count: sessions.length },
-  ];
 
-  const showNeedsYou = bucket === "needsYou" || bucket === "all";
-  const showStuck = bucket === "stuck" || bucket === "all";
-  const showFinished = bucket === "done" || bucket === "all";
-  const showWorking = bucket === "working" || bucket === "all";
 
   return (
     <div className="flex-1 min-h-0 flex flex-col">
-      <div className="flex-none flex gap-1.5 px-3.5 py-2 border-b border-line3 overflow-x-auto">
-        {CHIPS.map((c) => (
-          <button
-            key={c.value}
-            type="button"
-            aria-pressed={bucket === c.value}
-            onClick={() => setBucket(c.value)}
-            className={`px-2.5 py-1 text-xs whitespace-nowrap border flex-none ${
-              bucket === c.value
-                ? c.value === "needsYou"
-                  ? "border-pink-line bg-pink-chip text-error"
-                  : "border-primary text-primary"
-                : "border-line text-dim"
-            }`}
-          >
-            {c.label} {c.count}
-          </button>
-        ))}
-      </div>
-
       <div className="flex-1 min-h-0 overflow-y-auto px-3.5 pt-4 pb-5 flex flex-col gap-3.5">
         {sessions.length === 0 && <div className="text-base text-dim">No sessions.</div>}
 
-        {showNeedsYou &&
+        {
           visibleNeedsYou.map((t) => (
             <NeedsYouCard
               key={t.id}
@@ -420,7 +399,7 @@ export function MobileSessionList({
             />
           ))}
 
-        {showFinished && finished.length > 0 && (
+        {finished.length > 0 && (
           <>
             <SectionHeading title="DONE WHILE AWAY" tone="green" className="mt-0.5" />
             {finished.map((t) => (
@@ -436,7 +415,7 @@ export function MobileSessionList({
           </>
         )}
 
-        {showStuck && stuck.length > 0 && (
+        {stuck.length > 0 && (
           <>
             <SectionHeading title="STUCK" tone="pink" note="burning time, asking nobody" className="mt-0.5" />
             {stuck.map((t) => (
@@ -452,7 +431,7 @@ export function MobileSessionList({
           </>
         )}
 
-        {showWorking && working.length > 0 && (
+        {working.length > 0 && (
           <>
             <SectionHeading title="WORKING" className="mt-0.5" />
             <div className="border border-line2">
@@ -475,37 +454,32 @@ export function MobileSessionList({
           group that could never contain anything. Proposals are their own
           table with their own view on the Schedules page (docs/adr/0048).
         */}
-        {bucket === "all" && rest.length > 0 && (
+        {rest.length > 0 && (
           <div className="flex flex-col mt-1">
             <div className="flex items-center gap-2 mb-1">
               <span className="text-xs tracking-[0.14em] text-dim2 whitespace-nowrap">QUIET</span>
               <span className="flex-1 h-px bg-line2" />
-              <span className="text-xs text-dim2 whitespace-nowrap">{rest.length}</span>
+              <span className="text-xs text-dim2 whitespace-nowrap">
+                {visibleRest.length} of {rest.length}
+              </span>
             </div>
-            <div className="flex items-center gap-2 mb-1 flex-wrap">
-              <select
-                className="border border-line bg-transparent text-xs text-dim px-1.5 py-1"
-                value={sort}
-                onChange={(e) => setSort(e.target.value as SortKey)}
-                aria-label="sort sessions"
-              >
-                <option value="date">sort: recent</option>
-                <option value="status">sort: status</option>
-                <option value="repo">sort: repo</option>
-                <option value="title">sort: title</option>
-              </select>
-              <button
-                type="button"
-                aria-pressed={hideTerminal}
-                onClick={() => setHideTerminal(!hideTerminal)}
-                className={`px-2 py-1 text-xs border ${hideTerminal ? "border-primary text-primary" : "border-line text-dim"}`}
-              >
-                hide archived
-              </button>
-            </div>
-            {rest.map((t) => (
+            <QuietControls
+              sort={sort}
+              setSort={setSort}
+              repos={repos}
+              hiddenRepos={hiddenRepos}
+              toggleRepo={toggleRepo}
+              statuses={restStatuses}
+              hiddenStatuses={hidden}
+              toggleStatus={toggleStatus}
+              compact
+            />
+            {visibleRest.map((t) => (
               <QuietRow key={t.id} session={t} onSelect={onSelect} onActions={() => setActionsFor(t)} />
             ))}
+            {visibleRest.length === 0 && (
+              <span className="text-xs text-dim2 py-1">nothing matches these filters</span>
+            )}
           </div>
         )}
       </div>

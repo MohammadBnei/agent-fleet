@@ -9,6 +9,8 @@ import { Markdown } from "./Markdown";
 import { summarizeToolInput } from "../transcript";
 import { approvePlan } from "../approvePlan";
 import { ConfirmModal } from "./ConfirmModal";
+import { TextResponseModal } from "./TextResponseModal";
+import { PlanModal } from "./PlanModal";
 
 // The pending decision, answerable from the list.
 //
@@ -50,20 +52,6 @@ function useDecision(reload: () => void) {
   return { busy: pending !== null, pending, answered, error, send };
 }
 
-function OpenSession({ onOpenSession, layout }: { onOpenSession: () => void; layout: Layout }) {
-  return (
-    <button
-      type="button"
-      onClick={onOpenSession}
-      className={`text-xs text-dim hover:text-primary cursor-pointer ${
-        layout === "stacked" ? "text-center w-full py-1" : "text-left"
-      }`}
-    >
-      open session ▸
-    </button>
-  );
-}
-
 // Edit/Write render as a real diff; anything else shows its one-line summary.
 // A permission prompt whose content is unreadable trains people to approve
 // without looking, which is worse than no prompt at all.
@@ -99,7 +87,6 @@ function PermissionBody({ tool, input }: { tool: string; input: unknown }) {
 export function DecisionInline({
   session,
   summary,
-  onOpenSession,
   reload,
   layout = "wide",
   // Mobile lets you defer a question without answering it. Purely local: the
@@ -111,7 +98,6 @@ export function DecisionInline({
 }: {
   session: Session;
   summary?: ListSummary;
-  onOpenSession: () => void;
   reload: () => void;
   layout?: Layout;
   onAskLater?: () => void;
@@ -119,9 +105,16 @@ export function DecisionInline({
 }) {
   const { busy, pending, answered, error, send } = useDecision(reload);
   const [reason, setReason] = useState("");
+  // "deny" reveals the reason field; it is not shown up front. See `actions`.
+  const [denying, setDenying] = useState(false);
   const [autoConfirmOpen, setAutoConfirmOpen] = useState(false);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [planOpen, setPlanOpen] = useState(false);
   const stacked = layout === "stacked";
-  const pad = stacked ? "px-3.5 pb-3.5" : "px-4 pb-4";
+  // One padding value and one gap for every decision kind. They were px-4/pb-4
+  // with gaps of 12, 10 and 10 depending on which branch rendered, so three
+  // cards in a row sat on three different rhythms.
+  const pad = stacked ? "px-3.5 pt-1 pb-3.5" : "px-4 pt-1 pb-4";
 
   // Touch targets: the mobile mockup's allow/deny are ~44px tall, because this
   // is the surface most likely used to unblock a session away from a desk.
@@ -184,11 +177,20 @@ export function DecisionInline({
     if (isPlan) {
       const plan = (permission.input as { plan?: string } | undefined)?.plan ?? "";
       return (
-        <div className={`${pad} flex flex-col gap-2.5`}>
+        <div className={`${pad} flex flex-col gap-3`}>
           <div className="text-xs text-dim tracking-[0.05em]">PLAN · waiting for approval</div>
-          <div className={`text-sm text-text2 overflow-y-auto ${stacked ? "max-h-[40vh]" : "max-h-[30vh]"}`}>
+          {/* The preview is itself the way in — clicking the plan you are
+              trying to read is the gesture people try first. */}
+          <button
+            type="button"
+            onClick={() => setPlanOpen(true)}
+            title="Read the full plan"
+            className={`text-sm text-text2 overflow-y-auto text-left cursor-pointer ${
+              stacked ? "max-h-[40vh]" : "max-h-[30vh]"
+            }`}
+          >
             <Markdown text={plan} />
-          </div>
+          </button>
           {error && <div className="text-xs text-error">{error}</div>}
           {/* Same menu the dock's PlanCard offers, so approving from the list
               is not a lesser decision than approving from the session — auto
@@ -212,10 +214,50 @@ export function DecisionInline({
             >
               approve only
             </button>
-            <button type="button" onClick={onOpenSession} className={secondaryBtn}>
-              read it first
+            <button type="button" disabled={busy} onClick={() => setFeedbackOpen(true)} className={secondaryBtn}>
+              request changes
+            </button>
+            <button type="button" onClick={() => setPlanOpen(true)} className={secondaryBtn}>
+              read in full
             </button>
           </div>
+          <PlanModal
+            open={planOpen}
+            plan={plan}
+            busy={busy}
+            pending={pending}
+            onApproveAuto={() => {
+              setPlanOpen(false);
+              setAutoConfirmOpen(true);
+            }}
+            onApprove={() => {
+              setPlanOpen(false);
+              send("allow", () => approvePlan(session.id, permission.entry.seq), permission.entry.seq);
+            }}
+            onRequestChanges={() => {
+              // Closed first: the feedback dialog is a second <dialog>, and
+              // stacking it on this one is the nesting Modal.tsx guards.
+              setPlanOpen(false);
+              setFeedbackOpen(true);
+            }}
+            onClose={() => setPlanOpen(false)}
+          />
+          {/* The third answer to a plan, which the list did not offer: neither
+              approve nor walk away, but say what to change. Posted as an
+              ordinary message — the worker treats a human reply arriving while
+              a permission is pending as deny-with-feedback and re-arms the
+              plan, so this needs no separate RPC (see PlanCard, which takes the
+              same path from the session view). */}
+          <TextResponseModal
+            open={feedbackOpen}
+            title="REQUEST CHANGES"
+            context="Sent to the agent as a reply. It supersedes the plan and the agent revises it."
+            placeholder="What should change before this is approved?"
+            submitLabel="send"
+            busy={busy}
+            onSubmit={(text) => send("deny", () => client.postMessage({ sessionId: session.id, text }), permission.entry.seq)}
+            onClose={() => setFeedbackOpen(false)}
+          />
           <ConfirmModal
             open={autoConfirmOpen}
             title="Approve and switch to auto mode?"
@@ -232,54 +274,69 @@ export function DecisionInline({
       );
     }
 
+    // One row along the bottom, not a 320px column pinned beside the payload.
+    // That column reserved its full width whatever the decision needed, so a
+    // one-line Bash sat next to an empty third of the card, and the reason box
+    // occupied the same space whether or not anyone was going to deny.
+    //
+    // The reason field is now behind "deny": typing a reason is a thing you do
+    // *after* deciding to refuse, and rendering it up front asked every reader
+    // to skip a text input to reach the two buttons they actually wanted.
     const actions = (
-      <>
+      <div className="flex flex-col gap-2">
         {error && <div className="text-xs text-error">{error}</div>}
-        <div className="flex gap-2.5">
-          <ActionButton busy={pending === "allow"} disabled={busy} className={primaryBtn} onClick={() => respond("allow")}>
-            allow
-          </ActionButton>
-          <ActionButton
-            busy={pending === "deny"}
-            disabled={busy}
-            className={secondaryBtn}
-            onClick={() => {
-              respond("deny", reason.trim() || "denied");
-              setReason("");
-            }}
-          >
-            deny
-          </ActionButton>
-        </div>
-        <input
-          value={reason}
-          onChange={(e) => setReason(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && reason.trim()) {
-              respond("deny", reason);
-              setReason("");
-            }
-          }}
-          disabled={busy}
-          placeholder="reason (optional) — sent to the agent"
-          aria-label="denial reason"
-          className="border border-line px-2.5 py-[7px] text-xs bg-transparent outline-none focus:border-primary/60 placeholder:text-dim2 w-full"
-        />
-        <OpenSession onOpenSession={onOpenSession} layout={layout} />
-      </>
+        {denying ? (
+          <div className="flex items-center gap-2 flex-wrap">
+            <input
+              value={reason}
+              autoFocus
+              onChange={(e) => setReason(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  respond("deny", reason.trim() || "denied");
+                  setReason("");
+                  setDenying(false);
+                }
+                if (e.key === "Escape") setDenying(false);
+              }}
+              disabled={busy}
+              placeholder="why? — sent to the agent, or just press enter"
+              aria-label="denial reason"
+              className="border border-line px-2.5 py-[7px] text-xs bg-transparent outline-none focus:border-primary/60 placeholder:text-dim2 flex-1 min-w-0"
+            />
+            <ActionButton
+              busy={pending === "deny"}
+              disabled={busy}
+              className={secondaryBtn}
+              onClick={() => {
+                respond("deny", reason.trim() || "denied");
+                setReason("");
+                setDenying(false);
+              }}
+            >
+              send deny
+            </ActionButton>
+            <button type="button" onClick={() => setDenying(false)} className="text-xs text-dim2 hover:text-dim cursor-pointer">
+              cancel
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <ActionButton busy={pending === "allow"} disabled={busy} className={primaryBtn} onClick={() => respond("allow")}>
+              allow
+            </ActionButton>
+            <button type="button" disabled={busy} onClick={() => setDenying(true)} className={secondaryBtn}>
+              deny
+            </button>
+          </div>
+        )}
+      </div>
     );
 
-    return stacked ? (
+    return (
       <div className={`${pad} flex flex-col gap-3`}>
         <PermissionBody tool={permission.tool} input={permission.input} />
         {actions}
-      </div>
-    ) : (
-      <div className={`${pad} flex gap-4.5 items-start`}>
-        <div className="flex-1 min-w-0">
-          <PermissionBody tool={permission.tool} input={permission.input} />
-        </div>
-        <div className="w-[320px] flex-none flex flex-col gap-2.5">{actions}</div>
       </div>
     );
   }
@@ -301,13 +358,10 @@ export function DecisionInline({
       );
 
     return (
-      <div className={`${pad} flex flex-col gap-2.5`}>
-        <QuestionCard entry={questionEntry} answer={null} busy={busy} compact={stacked} onSubmit={submit} />
+      <div className={`${pad} flex flex-col gap-3`}>
+        <QuestionCard entry={questionEntry} answer={null} busy={busy} compact={stacked} embedded onSubmit={submit} />
         {error && <div className="text-xs text-error">{error}</div>}
         <div className={`flex gap-3.5 ${stacked ? "justify-center" : "items-center"}`}>
-          <button type="button" onClick={onOpenSession} className="text-xs text-dim hover:text-primary cursor-pointer py-1">
-            open session ▸
-          </button>
           {onAskLater && (
             <button type="button" onClick={onAskLater} className="text-xs text-dim2 hover:text-dim cursor-pointer py-1">
               ask me later
@@ -320,11 +374,12 @@ export function DecisionInline({
 
   // awaiting_human is set by core the moment a decision is appended, so this is
   // the brief window before this session's transcript fetch has caught up — or a
-  // decision shape the list can't render. Either way: say so and offer the door.
+  // decision shape the list can't render. Either way: say so. The card's title
+  // is the way into the session, here as on every other row — a second "open
+  // session" control under every decision was the same destination said twice.
   return (
     <div className={`${pad} flex flex-col gap-2`}>
       <div className="text-sm text-dim">A decision is waiting in this session.</div>
-      <OpenSession onOpenSession={onOpenSession} layout={layout} />
     </div>
   );
 }

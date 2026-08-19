@@ -44,7 +44,7 @@ export function DiffLines({
   const row = compact ? "px-[9px] py-[3px] text-xs" : "px-[11px] py-[3px] text-sm";
 
   return (
-    <div className="border border-line bg-code overflow-x-auto">
+    <div className="border border-line bg-code overflow-x-auto py-1.5">
       {hunk && <div className={`${row} text-dim2 whitespace-pre`}>{hunk}</div>}
       {shown.map((line, idx) => (
         <div

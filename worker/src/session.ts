@@ -442,8 +442,25 @@ async function logSdkMessage(actor: string, msg: { type: string; [key: string]: 
     const content = (msg.message as { content?: { type: string; [k: string]: unknown }[] })?.content ?? [];
     for (const block of content) {
       if (block.type === "text" && typeof block.text === "string" && block.text.trim()) {
-        log("info", `${actor} text`, { text: block.text });
-        await push(block.text, "discussion");
+        log("info", `${actor} text`, { text: block.text, parentToolUseId: msg.parent_tool_use_id ?? null });
+        // A SUBAGENT's prose arrives on this same branch — the SDK streams a
+        // spawned agent's assistant messages through the parent stream, and
+        // the only thing separating them from the main agent's is
+        // parent_tool_use_id on the message. Pushing them as plain
+        // "discussion" threw that away, so the feed rendered two different
+        // agents in one indistinguishable voice, and a subagent's running
+        // commentary read as the session talking to you.
+        //
+        // Relayed as an "assistant" entry with a `kind`, the shape thinking
+        // blocks already use, rather than as JSON under "discussion": that type
+        // is raw text on the wire and core's Discord allowlist forwards it, so
+        // changing its payload would have meant JSON in a Discord message.
+        const parent = typeof msg.parent_tool_use_id === "string" ? msg.parent_tool_use_id : null;
+        if (parent) {
+          await push(JSON.stringify({ kind: "subagent_text", parentToolUseId: parent, text: block.text }), "assistant");
+        } else {
+          await push(block.text, "discussion");
+        }
       }
       // Thinking carries its prose on `thinking`, not `text`, and shares
       // the "assistant" type with tool_use — `kind` keeps the two apart

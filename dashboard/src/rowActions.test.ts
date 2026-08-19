@@ -18,6 +18,8 @@ import { test, expect } from "bun:test";
 // core/internal/buildguard.
 const SRC = await Bun.file(new URL("./pages/SessionList.tsx", import.meta.url)).text();
 const MOBILE = await Bun.file(new URL("./mobile/MobileSessionList.tsx", import.meta.url)).text();
+const MOBILE_DETAIL = await Bun.file(new URL("./mobile/MobileSessionDetail.tsx", import.meta.url)).text();
+const PANELS = await Bun.file(new URL("./components/SessionPanels.tsx", import.meta.url)).text();
 
 // Slice out one `function Name(...)` block by finding the next top-level
 // `function ` after it — good enough for a flat module of components.
@@ -33,10 +35,13 @@ function componentBody(src: string, name: string): string {
 // rendered somewhere; this forces it to be actionable once it is.
 const DESKTOP_ROWS = ["NeedsYouCard", "StuckRow", "FinishedRow", "WorkingRow", "CompactRow"];
 
+// Both controls come from components/RowControls now; before that each row
+// hand-rolled its own placement, which is how the phone ended up with a 20px
+// tap target and the desktop with the checkbox in a different spot per row.
 test.each(DESKTOP_ROWS)("%s offers selection and actions", (name) => {
   const body = componentBody(SRC, name);
-  expect(body).toContain("SelectBox");
-  expect(body).toMatch(/RowActionsButton|onActions/);
+  expect(body).toContain("RowSelect");
+  expect(body).toContain("RowActionsButton");
 });
 
 // Mobile has no batch bar (no room, and bulk tidying is not a phone job), so
@@ -44,6 +49,35 @@ test.each(DESKTOP_ROWS)("%s offers selection and actions", (name) => {
 test.each(["NeedsYouCard", "FinishedCard", "WorkingCard", "StuckCard", "QuietRow"])(
   "mobile %s offers actions",
   (name) => {
-    expect(componentBody(MOBILE, name)).toContain("ActionsDots");
+    expect(componentBody(MOBILE, name)).toContain("RowActionsButton");
   },
 );
+
+
+// Mobile's only route to Interrupt/Kill/Warm/Archive/Mode/Delete is the
+// "panels" sheet, and the sheet always carries the SESSION panel — so the
+// opener must not be conditional on anything.
+//
+// It briefly was, gated on todos+changes+subagents all being empty. That took
+// every action away from a session with no file changes, and because the gate
+// read live state the button appeared when the agent wrote a todo and vanished
+// when it cleared. Reported as "the mobile view is broken, I don't have access
+// to the side panel" and then "oh, it went back".
+test("mobile's panels opener is not conditional", () => {
+  // Anchored on the CALL, not on the label. The first version of this keyed
+  // off the literal "panels ▸" string; the button later became an icon, that
+  // string survived only inside a code comment, and the test went on passing
+  // against 600 characters of prose. A guard anchored on something cosmetic
+  // stops guarding the moment the cosmetics change, and says nothing when it
+  // does.
+  const call = MOBILE_DETAIL.indexOf("setPanelsOpen(true)");
+  expect(call, "the panels opener is gone entirely").toBeGreaterThan(-1);
+  const opener = MOBILE_DETAIL.slice(Math.max(0, call - 700), call);
+  expect(opener).not.toContain("panelsEmpty");
+  // No && guard immediately wrapping the button either.
+  expect(opener).not.toMatch(/&&\s*\(\s*<button/);
+});
+
+test("panelsEmpty is gone entirely, not just unused here", () => {
+  expect(PANELS).not.toContain("export function panelsEmpty");
+});

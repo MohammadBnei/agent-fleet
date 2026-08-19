@@ -311,7 +311,17 @@ export function latestSystemInfo(entries: TranscriptEntry[]): SdkSystemInfo | nu
 // `kind: "thinking"` shares the ASSISTANT entry type with tool_use — the
 // SDK carries a thinking block's prose on `thinking`, not `text`, and the
 // worker tags it so this parser can tell the two apart.
-export type SdkToolUse = { id?: string; tool?: string; input?: unknown; kind?: string; text?: string };
+export type SdkToolUse = {
+  id?: string;
+  tool?: string;
+  input?: unknown;
+  kind?: string;
+  text?: string;
+  // Set only on kind:"subagent_text" — the Agent tool_use id whose subagent
+  // wrote this prose. It is the stream's sole subagent attribution; without it
+  // the feed renders two agents in one voice.
+  parentToolUseId?: string;
+};
 export function parseSdkToolUse(text: string): SdkToolUse | null {
   try {
     return JSON.parse(text) as SdkToolUse;
@@ -397,9 +407,16 @@ export function buildToolCallPairs(entries: TranscriptEntry[]): ToolCallPair[] {
   for (const entry of entries) {
     if (entry.type !== TranscriptEntryType.ASSISTANT) continue;
     const callInfo = parseSdkToolUse(entry.text) ?? {};
-    // A thinking block shares the ASSISTANT type with tool_use; it has no
-    // tool and renders as its own bubble, not as a call awaiting a result.
-    if (callInfo.kind === "thinking") continue;
+    // Anything with a `kind` shares the ASSISTANT type with tool_use but is not
+    // a call: a thinking block, or a subagent's relayed prose. It has no tool
+    // and renders as its own bubble, not as a call awaiting a result.
+    //
+    // This named "thinking" explicitly and so silently swallowed the second
+    // kind the moment one existed — the entry became a pair with no tool, the
+    // feed found it in pairsBySeq and filed it under tool activity, and the
+    // branch written to render it was never reached. Keyed on `kind` itself
+    // now, so a third kind does not repeat it.
+    if (callInfo.kind) continue;
     // A tool whose own panel renders it in full — showing it again as a
     // generic raw-JSON tool call would just be a worse duplicate of the
     // same data.
@@ -486,6 +503,12 @@ export type SubagentRun = {
   toolUseId: string;
   subagentType: string;
   description: string;
+  // The actual task the parent agent handed over — the Agent tool's `prompt`,
+  // not the three-word `description` beside it. It is one agent's instructions
+  // to another, written as markdown, and it was being collected nowhere: the
+  // panel showed the description and the console had no way to answer "what
+  // exactly did it ask for".
+  prompt?: string;
   status: "running" | "completed" | "failed";
   summary?: string;
 };
@@ -538,11 +561,12 @@ export function subagentRuns(entries: TranscriptEntry[]): SubagentRun[] {
     if (entry.type === TranscriptEntryType.ASSISTANT) {
       const info = parseSdkToolUse(entry.text);
       if (info?.tool !== "Agent" || !info.id) continue;
-      const input = (info.input ?? {}) as { subagent_type?: unknown; description?: unknown };
+      const input = (info.input ?? {}) as { subagent_type?: unknown; description?: unknown; prompt?: unknown };
       runs.set(info.id, {
         toolUseId: info.id,
         subagentType: typeof input.subagent_type === "string" ? input.subagent_type : "agent",
         description: typeof input.description === "string" ? input.description : "",
+        prompt: typeof input.prompt === "string" ? input.prompt : undefined,
         status: "running",
       });
       continue;

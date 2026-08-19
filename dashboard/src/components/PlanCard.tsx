@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { Markdown } from "./Markdown";
 import { ActionButton } from "./ActionButton";
 import { ConfirmModal } from "./ConfirmModal";
+import { PlanModal } from "./PlanModal";
 import { AUTO_MODE_WARNING } from "../approvePlan";
 
 type Annotation = { quote: string; comment: string };
@@ -76,6 +77,7 @@ export function PlanCard({
   const [draft, setDraft] = useState("");
   const [isExpanded, setIsExpanded] = useState(false);
   const [autoConfirmOpen, setAutoConfirmOpen] = useState(false);
+  const [readerOpen, setReaderOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
 
   if (!pending) {
@@ -266,7 +268,38 @@ export function PlanCard({
         >
           request changes
         </button>
+        {/* The dock is 45vh at most, above a composer, beside the panels — so a
+            plan of any length is read through a letterbox with its own approve
+            buttons pushed under the fold. Same reader the list uses. */}
+        <button
+          type="button"
+          className="ml-auto text-sm text-dim hover:text-primary cursor-pointer"
+          onClick={() => setReaderOpen(true)}
+        >
+          read in full ▸
+        </button>
       </div>
+      <PlanModal
+        open={readerOpen}
+        plan={plan}
+        busy={busy}
+        pending={busy ? "allow" : null}
+        onApproveAuto={() => {
+          setReaderOpen(false);
+          setAutoConfirmOpen(true);
+        }}
+        onApprove={() => {
+          setReaderOpen(false);
+          onApprove();
+        }}
+        onRequestChanges={() => {
+          // Close first, then open the card's own feedback panel — it is inline
+          // in the card, so leaving the reader up would bury it.
+          setReaderOpen(false);
+          setFeedbackOpen(true);
+        }}
+        onClose={() => setReaderOpen(false)}
+      />
       <ConfirmModal
         open={autoConfirmOpen}
         title="Approve and switch to auto mode?"
