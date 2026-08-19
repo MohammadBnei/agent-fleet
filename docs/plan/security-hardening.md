@@ -1,5 +1,44 @@
 # Security hardening — done and left
 
+> **Status, 2026-08-19 (same day, hours later): §4.1 is DONE, and it shipped
+> differently than proposed below.** This file is kept as written — the plan
+> and its reasoning are the useful record, including where the reasoning was
+> wrong. Read §4.1/§4.2 as history, not as a to-do.
+>
+> **The one substantive divergence.** §4.1 proposed forwardAuth for
+> `fleet.bnei.dev`. Rejected for that host, on a point this file comes within a
+> line of making itself: §4.3 already notes a worker pod can reach
+> `DashboardService` on the pod network, and **a Traefik middleware gates the
+> ingress and has no opinion about a caller that never reaches it**. forwardAuth
+> would have left #200 wide open while looking solved. So core terminates OIDC
+> itself (`adr/0056`), and `CoreService` — which authenticated *nobody* — is
+> gated by the session's own `lease_id` (`adr/0057`).
+>
+> §4.2's "no native OIDC in core" is therefore reversed. Its reasoning was
+> sound on its own terms; it answered *attribution*, and the real need was
+> *authorization*, which needs no user model. §4.3 stands unchanged —
+> `X-authentik-*` is still never read, for exactly the reason given here.
+>
+> The **previews** stay on forwardAuth exactly as designed below, including the
+> `/outpost.goauthentik.io/` route this file warned about, which was indeed the
+> trap it predicted.
+>
+> `basic-admin-auth` is now off the console entirely, so the §4.1 note that it
+> is the fleet's lock is no longer true. It still gates pgweb, Alertmanager and
+> Proxmox.
+>
+> **§5 held, twice, against the person implementing it.** "Ask whether the
+> consuming step ran, not whether your input was accepted" describes both
+> failures shipped that day: CI accepted two green PRs whose *merge* did not
+> compile, and every auth test accepted a signer, a gate and a cookie while
+> **none ever ran real OIDC discovery** — so a normalised issuer string
+> crash-looped core and took the console down ~15 minutes. A third for the list:
+> *"zero rejections in the logs"* proved nothing, because there were also zero
+> calls in the window.
+>
+> §4.4's cluster-side items are all still open. Current state lives in
+> `docs/ARCHITECTURE.md` §2b, `adr/0056`, `adr/0057`.
+
 Caveman notes. Short words. Fleet view of a cluster-wide job.
 
 Full record lives in infra-bootstrap: `docs/adr/0038`, `0039`, `0040`, and
