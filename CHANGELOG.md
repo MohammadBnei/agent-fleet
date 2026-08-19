@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.3.3](https://github.com/MohammadBnei/agent-fleet/compare/4.3.2...4.3.3) (2026-08-19)
+
+
+### Bug Fixes
+
+* **core:** end an idle transcript stream before Cloudflare would ([#214](https://github.com/MohammadBnei/agent-fleet/issues/214)) ([cc28c08](https://github.com/MohammadBnei/agent-fleet/commit/cc28c08460e33388bc3bc6c4dc47e27ef5b699fd))
+
 ## [4.3.2](https://github.com/MohammadBnei/agent-fleet/compare/4.3.1...4.3.2) (2026-08-19)
 
 
