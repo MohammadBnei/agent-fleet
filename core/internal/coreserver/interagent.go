@@ -120,23 +120,29 @@ func (s *Server) PromptSession(ctx context.Context, req *agentfleetv1.PromptSess
 	// target at all (found on a real cluster — the entry landed in the
 	// transcript and the running agent never saw it). "session" is
 	// deliverable and still unmistakably not the session's own voice.
-	// Warm BEFORE appending, never after.
+	// Warm BEFORE appending, never after — see dashboard.WarmIfIdle for why.
 	//
-	// A dispatch computes resumeFromSeq = LatestSeq, and the pod streams only
-	// entries at or above that cursor. An entry appended first therefore lands
-	// one BELOW the cursor of the pod that warming is about to create, and is
-	// never delivered — the session would sit there having been prompted, with
-	// nothing to show for it. PostMessage and OpenFromProposal carry this same
-	// ordering for the same reason.
+	// NOT best-effort, and the comment that said it was had the arithmetic
+	// backwards. It read: "a capacity rejection is not worth failing over,
+	// since the entry is durable either way and a later warm will pick it up
+	// from a cursor computed after it exists."
 	//
-	// Best-effort: a capacity rejection is not worth failing the delivery over,
-	// since the entry below is durable either way and a later warm will pick it
-	// up from a cursor computed after it exists.
+	// A cursor computed AFTER the entry is ABOVE it. resumeFromSeq is
+	// LatestSeq — MAX(seq)+1 — so an entry that already exists is exactly the
+	// thing a later warm skips. Durability was never the question: the row
+	// persisted fine and no pod ever read it. So a capacity rejection did not
+	// delay an inter-agent prompt, it dropped it permanently, while logging a
+	// warning that read like a retry was coming.
+	//
+	// Fail instead. The caller is an agent with a tool result to read; telling
+	// it the fleet is full is a fact it can act on, where an accepted prompt
+	// that reaches nobody is not.
 	var podName string
 	if s.warm != nil && !sessions.IsPodPhaseLive(t.PodPhase) {
 		var warmErr error
 		if podName, warmErr = s.warm(ctx, target); warmErr != nil {
 			slog.Warn("coreserver: PromptSession could not warm target", "callerTaskId", caller, "targetTaskId", target, "error", warmErr)
+			return nil, fmt.Errorf("target session %s has no pod and could not be warmed: %w", target, warmErr)
 		}
 	}
 

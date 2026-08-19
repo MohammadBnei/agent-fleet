@@ -88,27 +88,19 @@ func TestServer_Discuss_EmptyText(t *testing.T) {
 	}
 }
 
-func TestServer_AnswerQuestion(t *testing.T) {
-	store := &recordingStore{}
-	s := NewServer(nil, nil, store, nil, nil, nil, nil, nil, nil, 5, nil, nil, nil, "test")
-
-	answersJSON := `{"answers":{"Which quality attribute wins?":"Latency"}}`
-	req := connect.NewRequest(&agentfleetv1.AnswerQuestionRequest{SessionId: "task-1", Seq: 3, AnswersJson: answersJSON})
-	resp, err := s.AnswerQuestion(context.Background(), req)
-	if err != nil {
-		t.Fatalf("AnswerQuestion: %v", err)
-	}
-	if resp.Msg.GetSeq() < 0 {
-		t.Errorf("status = %d, want %q", resp.Msg.GetSeq(), "answered")
-	}
-	if store.lastTaskID != "task-1" || store.lastFrom != "human" || store.lastText != answersJSON || store.lastType != "answer" {
-		t.Errorf("AppendReply(%q, %q, %q, %q), want (task-1, human, %s, answer)",
-			store.lastTaskID, store.lastFrom, store.lastText, store.lastType, answersJSON)
-	}
-	if store.lastReplyTo != 3 {
-		t.Errorf("lastReplyTo = %d, want 3 (the question's own seq, reliability-findings.md #0's correlation)", store.lastReplyTo)
-	}
-}
+// AnswerQuestion no longer has a unit test here, and cannot: it warms before
+// appending now (see its comment), so it needs a real sessions store rather
+// than the nil-store server built above. Its coverage is
+// TestAnswerQuestion_WarmsFirstSoTheAnswerIsAboveTheResumeCursor, behind
+// -tags=integration, which asserts the same AppendReply fields AND the thing
+// that unit test could never see: that the answer lands at or above the new
+// pod's resume cursor.
+//
+// The reply-correlation guarantee they share — reply_to_seq carrying the
+// ORIGINATING request's own seq, which stops an answer matching the wrong
+// outstanding decision (reliability-findings.md #0) — stays covered at unit
+// speed by TestServer_RespondToPermission above, which deliberately does not
+// warm.
 
 // TestStringToProtoType covers the read-path mapping the dashboard's
 // GetTranscript/StreamTranscript rely on — "tool_call" was accepted by the

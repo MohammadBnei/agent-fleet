@@ -27,6 +27,9 @@ import (
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 
 	"github.com/MohammadBnei/agent-fleet/sidecar/internal/coreclient"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type AskUserQuestionOption struct {
@@ -43,8 +46,26 @@ type AskUserQuestionQuestion struct {
 
 type AskUserQuestionArgs struct {
 	Questions []AskUserQuestionQuestion `json:"questions" jsonschema_description:"1-4 questions to ask the human"`
-	TimeoutMs int                       `json:"timeoutMs,omitempty" jsonschema_description:"How long to block waiting for an answer before returning {\"status\":\"pending\"} (default 60000). Call the tool again with the same questions to keep waiting."`
 }
+
+// askQuestionWait is how long core holds the question open before returning
+// {"status":"pending"}. Deliberately NOT a tool argument.
+//
+// It was one, and the schema said "call the tool again with the same questions
+// to keep waiting" — directly contradicting the tool description twenty lines
+// up, and docs/adr/0050, which both say end your turn instead. An agent read
+// the field, asked for 120000 to wait longer, and the call died at exactly
+// 60000 with code=Canceled: the ceiling is DEFAULT_REQUEST_TIMEOUT_MSEC in the
+// agent's own MCP client, one hop away and invisible from here. The handler
+// surfaced that as a failed tool call, so the agent gave up on the tool and
+// pasted its four questions into the chat as prose (observed live 2026-08-19,
+// session 8e5b57c0).
+//
+// There is nothing an agent could know that would make one value better than
+// another — the only requirement is "comfortably under the transport
+// deadline" — so the knob is gone rather than clamped. 45s, not 60s: equalling
+// the client's own deadline races it.
+const askQuestionWaitMs int32 = 45_000
 
 // New builds the sidecar's local MCP HTTP handler. Every tool the agent will
 // ever see is registered here, at startup. Nothing is discovered at runtime
@@ -394,7 +415,14 @@ func journalSearchHandler(core JournalSearcher) server.ToolHandlerFunc {
 	}
 }
 
-func askUserQuestionHandler(core *coreclient.Client) func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+// QuestionAsker is the one call this handler needs, narrowed so the
+// cancelled-wait branch below is testable — same shape as JournalSearcher and
+// LogViewer above.
+type QuestionAsker interface {
+	AskUserQuestion(ctx context.Context, questionsJSON string, timeoutMs int32) (bool, string, int64, error)
+}
+
+func askUserQuestionHandler(core QuestionAsker) func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	return mcp.NewTypedToolHandler(func(ctx context.Context, _ mcp.CallToolRequest, args AskUserQuestionArgs) (*mcp.CallToolResult, error) {
 		if len(args.Questions) == 0 {
 			return mcp.NewToolResultError("at least one question is required"), nil
@@ -403,13 +431,19 @@ func askUserQuestionHandler(core *coreclient.Client) func(ctx context.Context, r
 		if err != nil {
 			return nil, fmt.Errorf("AskUserQuestion: marshal questions: %w", err)
 		}
-		timeoutMs := int32(args.TimeoutMs)
-		if timeoutMs <= 0 {
-			timeoutMs = 60000
-		}
 		slog.Info("mcp AskUserQuestion", "questions", len(args.Questions))
-		answered, answersJSON, _, err := core.AskUserQuestion(ctx, string(payload), timeoutMs)
+		answered, answersJSON, _, err := core.AskUserQuestion(ctx, string(payload), askQuestionWaitMs)
 		if err != nil {
+			// A cancelled or expired wait is the PENDING case, not a failure.
+			// The question row was appended before the poll began and is
+			// durable, so "we stopped waiting" and "the tool failed" are
+			// different claims — and reporting the second one is what made an
+			// agent abandon the tool. Narrow on purpose: core being
+			// unreachable must still surface as a real tool error.
+			if code := status.Code(err); code == codes.Canceled || code == codes.DeadlineExceeded {
+				slog.Info("mcp AskUserQuestion: wait ended, question still live", "code", code)
+				return mcp.NewToolResultText(pendingQuestionBody()), nil
+			}
 			slog.Error("mcp AskUserQuestion", "error", err)
 			return nil, fmt.Errorf("AskUserQuestion: %w", err)
 		}
@@ -423,12 +457,16 @@ func askUserQuestionHandler(core *coreclient.Client) func(ctx context.Context, r
 		// idle-teardown and warm. So the agent must END ITS TURN here, not
 		// re-invoke: re-invoking burns tokens polling for something that
 		// arrives on its own.
-		body, _ := json.Marshal(map[string]string{
-			"status": "pending",
-			"note":   "Question is live and durable. Do NOT call again — end your turn. The answer arrives as a message when the human replies, even after a restart.",
-		})
-		return mcp.NewToolResultText(string(body)), nil
+		return mcp.NewToolResultText(pendingQuestionBody()), nil
 	})
+}
+
+func pendingQuestionBody() string {
+	body, _ := json.Marshal(map[string]string{
+		"status": "pending",
+		"note":   "Question is live and durable. Do NOT call again — end your turn. The answer arrives as a message when the human replies, even after a restart.",
+	})
+	return string(body)
 }
 
 // exposeHandler publishes a port from this pod at a public HTTPS URL.
