@@ -1,5 +1,12 @@
 # Changelog
 
+# [4.3.0](https://github.com/MohammadBnei/agent-fleet/compare/4.2.0...4.3.0) (2026-08-19)
+
+
+### Features
+
+* **dashboard:** render markdown tables, move subagents to a panel, stop dumping raw signals ([#208](https://github.com/MohammadBnei/agent-fleet/issues/208)) ([2ff79c5](https://github.com/MohammadBnei/agent-fleet/commit/2ff79c5162f6fd053e6c6c4cf467b057e330ea3c)), closes [#182](https://github.com/MohammadBnei/agent-fleet/issues/182) [#182](https://github.com/MohammadBnei/agent-fleet/issues/182)
+
 # [4.2.0](https://github.com/MohammadBnei/agent-fleet/compare/4.1.4...4.2.0) (2026-08-18)
 
 
