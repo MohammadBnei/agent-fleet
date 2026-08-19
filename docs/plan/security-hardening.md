@@ -80,8 +80,17 @@ reviewed and does not survive a rebuild.
 |---|---|---|
 | Native OIDC | Grafana | done, login works |
 | Native OIDC | ArgoCD | done 2026-08-19 |
+| Roles | `platform-admins` group, read by both | done 2026-08-19 |
 | forwardAuth | fleet, previews, Alertmanager, pgweb, Proxmox | **open** |
 | Passkeys | Proxmox, ArgoCD, Infisical, Alertmanager | open |
+
+Admin is a group, not a per-app list. `platform-admins` lives in one
+blueprint; ArgoCD maps it to `role:admin`, Grafana to `Admin`. Add a person =
+one line in one file. Deliberately not authentik's own `authentik Admins`
+group: that would make "can administer the IdP" and "can administer the
+cluster" the same claim.
+
+Both role expressions fail CLOSED. Missing claim = lowest role, never admin.
 
 Local admin stays on for Grafana and ArgoCD. On purpose. A LAN break-glass
 route skips a Traefik middleware; it cannot skip an app's own OIDC redirect.
@@ -125,8 +134,12 @@ Traps found while scoping:
 - That list is **replaced, not appended**. So the whole forwardAuth tier goes
   in ONE blueprint file. One file per app, like the OIDC tier does it, means
   each blueprint silently unbinds the last.
-- authentik Base URL setting was parked as a 2026.11 problem. Proxy providers
-  build redirect URLs from it. Must be set first.
+- authentik Base URL: proxy providers build redirect URLs from it. Was listed
+  here as "must be set first" — WRONG. Read live, it is already set to
+  `https://authentik.bnei.dev`. The claim came from a stale `TODO` in
+  infra-bootstrap's authentik values that was true when written. Re-check
+  before the proxy providers go in and after the 2026.11 upgrade; not a
+  blocker.
 
 ### 4.2 No native OIDC in core. On purpose.
 
@@ -208,6 +221,21 @@ way; both rotated. Read the manifest in git, or use a jsonpath scoped to
 **Helm eats unknown keys.** A misplaced key is a no-op for a whole session.
 `helm template` and grep the rendered output. Same for YAML indentation — a
 list nested two spaces wrong parsed clean and rendered zero entries.
+
+**A stale TODO reads exactly like a live one.** The Base URL note above was
+true when written, went stale, and got copied into an issue and this file as
+current. Same failure as a green status: the marker outlived the condition.
+
+**A diagnostic that returns "nothing found" is worse than one that errors.** A
+schema probe read the wrong JSON key and reported that authentik had no proxy
+provider model at all. Plausible, specific, wrong. An exception would have been
+caught in seconds.
+
+**Restart AFTER the file is mounted, not on merge.** authentik reads its
+blueprint directory at boot and does not watch it; kubelet syncs a ConfigMap
+volume ~a minute behind the API object. Restarting the moment ArgoCD says
+Synced boots a pod before its file lands. The fix and the cause are the same
+action at different times. Try a second restart before any deeper theory.
 
 **Test the negative.** A rate-limit test that passes under budget proves
 nothing. An origin-lock test from the LAN either hairpins into the allowlist
