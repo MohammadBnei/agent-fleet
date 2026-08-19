@@ -33,7 +33,7 @@ spec:
       serviceAccountName: provisioner
       containers:
       - name: provisioner
-        image: registry.bnei.lan:5000/agent-fleet-provisioner:4.3.3
+        image: registry.bnei.lan:5000/agent-fleet-provisioner:4.4.0
         ports:
         - containerPort: 8080
           name: http
@@ -56,9 +56,9 @@ spec:
         # clones/worktrees onto, and where core's own gRPC server
         # (ReportPodEvents) lives.
         - name: WORKER_IMAGE
-          value: registry.bnei.lan:5000/agent-fleet-worker:4.3.3
+          value: registry.bnei.lan:5000/agent-fleet-worker:4.4.0
         - name: SIDECAR_IMAGE
-          value: registry.bnei.lan:5000/agent-fleet-sidecar:4.3.3
+          value: registry.bnei.lan:5000/agent-fleet-sidecar:4.4.0
         - name: WORKSPACE_PVC
           value: agent-fleet-workspace
         - name: WORKSPACE_ROOT
