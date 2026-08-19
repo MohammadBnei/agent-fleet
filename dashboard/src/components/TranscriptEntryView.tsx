@@ -450,7 +450,7 @@ export function TranscriptEntryView({
   }
 
   return (
-    <div className={compact ? undefined : "max-w-[760px]"}>
+    <div className={compact ? undefined : "max-w-(--feed-measure)"}>
       <div
         className={`${compact ? "text-sm" : "text-base"} leading-[1.7] ${entry.from === "human" ? "text-primary" : ""}`}
       >

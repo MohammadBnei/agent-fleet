@@ -23,7 +23,9 @@ import { Segmented } from "../components/Segmented";
 import { DecisionDock } from "../components/DecisionDock";
 import { SessionFeed } from "../components/SessionFeed";
 import { TodosPanel, ChangesPanel, AgentsPanel, SessionPanel } from "../components/SessionPanels";
+import { FileDiffModal } from "../components/FileDiffModal";
 import { asDisplayMarkdown } from "../transcript";
+import { Composer } from "../components/Composer";
 
 // The console's desktop session view: feed · decision dock · composer, beside a
 // fixed panel column. Full-width — the permanent 320px session-list sidebar is
@@ -56,7 +58,6 @@ export function SessionDetail({
   const {
     session: fetchedSession,
     entries,
-    branch,
     worktreePath,
     busyKey,
     loadError,
@@ -74,6 +75,8 @@ export function SessionDetail({
   } = useSessionDetail(sessionId);
   const [message, setMessage] = useState("");
   const [autoOpen, setAutoOpen] = useState(false);
+  // The CHANGES row a human clicked, or null. See FileDiffModal.
+  const [diffPath, setDiffPath] = useState<string | null>(null);
   // Key deliberately not renamed with the file: it is persisted in every
   // operator's browser, and renaming it silently resets their density choice.
   const [density, setDensity] = useLocalStorageState<Density>("taskDetail.density", "everything");
@@ -154,7 +157,14 @@ export function SessionDetail({
   const visibility = feedVisibility(density, false);
 
   const todos = latestTodos(entries) ?? [];
-  const changes = latestToolCallSummary(entries)?.files ?? null;
+  // One lookup for both: the sidecar pushes branch and files in the same
+  // telemetry snapshot. `branch` used to come from useSessionDetail, where it
+  // was permanently null — the ListWorktrees lookup that filled it died with
+  // the worktree model (docs/adr/0048 §5) while the real value was on the wire
+  // here the whole time, already rendered by ToolCallLine in the feed.
+  const toolSummary = latestToolCallSummary(entries);
+  const branch = toolSummary?.branch ?? null;
+  const changes = toolSummary?.files ?? null;
   const agents = subagentRuns(entries);
   const result = latestResultSummary(entries);
   const contextTokens =
@@ -269,6 +279,7 @@ export function SessionDetail({
 
         <div className="flex-none px-4.5 py-3 border-t border-line">
           <ErrorModal message={actionError} onClose={clearActionError} />
+          <FileDiffModal path={diffPath} entries={entries} onClose={() => setDiffPath(null)} />
           <ConfirmModal
             title="Switch to auto mode?"
             message={AUTO_MODE_WARNING}
@@ -297,28 +308,13 @@ export function SessionDetail({
             </div>
           )}
 
-          <div className="flex gap-3 items-center border border-line px-3 py-2.5 focus-within:border-primary/60">
-            <span className="text-primary text-base">❯</span>
-            <input
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") sendMessage();
-              }}
-              disabled={busyKey !== null}
-              placeholder="message the agent — / for commands"
-              aria-label="message the agent"
-              className="flex-1 min-w-0 bg-transparent outline-none text-base placeholder:text-dim2"
-            />
-            <button
-              type="button"
-              disabled={busyKey !== null || !message.trim()}
-              onClick={sendMessage}
-              className="text-xs text-dim2 hover:text-primary disabled:opacity-40 disabled:hover:text-dim2 cursor-pointer flex-none"
-            >
-              ⏎ send
-            </button>
-          </div>
+          <Composer
+            value={message}
+            onChange={setMessage}
+            onSend={sendMessage}
+            disabled={busyKey !== null}
+            placeholder="message the agent — / for commands"
+          />
 
           <div className="flex gap-3.5 mt-2 text-xs text-dim2 flex-wrap">
             {worktreePath && <span className="truncate max-w-[320px]" title={worktreePath}>{worktreePath}</span>}
@@ -340,7 +336,7 @@ export function SessionDetail({
 
       <div className="w-[266px] flex-none overflow-y-auto px-3.5 py-3.5 flex flex-col gap-4.5 min-w-0">
         <TodosPanel todos={todos} blocked={blocked} />
-        <ChangesPanel branch={branch} changes={changes} />
+        <ChangesPanel branch={branch} changes={changes} onOpenFile={setDiffPath} />
         <AgentsPanel runs={agents} />
         <div className="mt-auto">
           <SessionPanel

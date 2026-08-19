@@ -596,7 +596,7 @@ export function SessionFeed({
       <div key={key} id={`entry-${key}`} className="flex gap-2.5">
         <span className="w-1.5 h-1.5 rounded-full bg-warning mt-[7px] flex-none" />
         <div
-          className={`leading-[1.7] min-w-0 ${compact ? "text-sm" : "text-base max-w-[760px]"}`}
+          className={`leading-[1.7] min-w-0 ${compact ? "text-sm" : "text-base max-w-(--feed-measure)"}`}
           title={entryTime(entry) ?? undefined}
         >
           <Markdown text={asDisplayMarkdown(entry)} />

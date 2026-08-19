@@ -45,9 +45,9 @@ test("every session lands in exactly one bucket, whatever shape it is in", () =>
   const b = bucketSessions(all, new Set());
   const placements = [
     ...b.needsYou,
+    ...b.stuck,
     ...b.working,
     ...b.finished,
-    ...b.stalled,
     ...b.archived,
     ...b.swept,
     ...b.quiet,
@@ -71,7 +71,7 @@ test("the bucket set is exactly what SessionList renders", () => {
   const b = bucketSessions([], new Set());
 
   expect(Object.keys(b).sort()).toEqual(
-    ["archived", "finished", "needsYou", "quiet", "stalled", "swept", "working"].sort(),
+    ["archived", "finished", "needsYou", "quiet", "stuck", "swept", "working"].sort(),
   );
 });
 
@@ -146,11 +146,54 @@ test("a swept session is reported as swept so no Warm button is offered", () => 
   expect(b.swept.map((t) => t.id)).toEqual(["a"]);
 });
 
-// needsYouIds carries decisions the client knows about from the transcript
-// before the server-side count catches up on the next poll.
-test("needsYouIds alone is enough to pull a session into needsYou", () => {
+// The bug this replaces, and why the assertion inverted.
+//
+// needsYouIds is built from the raw pendingDecisions count, which the server
+// derives independently of liveState. So it admits a session whose pod is GONE
+// but whose decision was never resolved — and that session was being pinned to
+// the top of NEEDS YOU with allow/deny buttons wired to a pod that no longer
+// exists. Every click reached nothing. Meanwhile the header census counts
+// liveState alone, so the same session sat under a header reading "0 waiting on
+// you": the list and its own header disagreed by construction.
+//
+// It still needs to be visible — it is a session nobody is going to rescue by
+// accident — so it goes to `stuck`, where the offered actions (warm, read log)
+// are ones that can actually succeed.
+test("a pending decision with no live pod is stuck, not needsYou", () => {
   const b = bucketSessions([session("a", { liveState: "idle" })], new Set(["a"]));
 
-  expect(b.needsYou.map((t) => t.id)).toEqual(["a"]);
+  expect(b.needsYou).toHaveLength(0);
+  expect(b.stuck.map((t) => t.id)).toEqual(["a"]);
   expect(b.quiet).toHaveLength(0);
+});
+
+// A stalled session is burning wall-clock and asking nobody for anything. It
+// used to land in the quiet tail — and on mobile, inside a collapsed accordion
+// reachable only from the "all" chip.
+test("a stalled session is stuck, not quiet", () => {
+  const b = bucketSessions([session("a", { liveState: "stalled" })], new Set());
+
+  expect(b.stuck.map((t) => t.id)).toEqual(["a"]);
+  expect(b.quiet).toHaveLength(0);
+});
+
+// Order is the only triage signal a list gives away for free, and it encoded
+// nothing: the buckets were filled in whatever order the server returned, so a
+// card blocked for 40 minutes could sit below one blocked for 40 seconds.
+// Sorted inside bucketSessions so both form factors and the header's decisions
+// modal inherit one answer rather than three render sites each picking.
+test("needsYou and stuck come back longest-waiting first", () => {
+  const b = bucketSessions(
+    [
+      session("recent", { liveState: "blocked", lastActiveAt: "2026-08-19T12:00:00Z" }),
+      session("ancient", { liveState: "blocked", lastActiveAt: "2026-08-19T09:00:00Z" }),
+      session("middle", { liveState: "blocked", lastActiveAt: "2026-08-19T11:00:00Z" }),
+      session("old-stall", { liveState: "stalled", lastActiveAt: "2026-08-19T08:00:00Z" }),
+      session("new-stall", { liveState: "stalled", lastActiveAt: "2026-08-19T13:00:00Z" }),
+    ],
+    new Set(),
+  );
+
+  expect(b.needsYou.map((t) => t.id)).toEqual(["ancient", "middle", "recent"]);
+  expect(b.stuck.map((t) => t.id)).toEqual(["old-stall", "new-stall"]);
 });

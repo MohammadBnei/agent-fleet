@@ -38,13 +38,23 @@ export function DecisionDock({
 
   // A permission blocks the agent's own tool call, so it outranks a question
   // when both are somehow open.
-  const permission = findPendingPermissions(entries)[0] ?? null;
+  const permissions = findPendingPermissions(entries);
+  const permission = permissions[0] ?? null;
   const question = permission ? null : findPendingQuestion(entries);
   const pad = compact ? "px-3.5 py-3" : "px-4.5 py-3.5";
   const edge = compact ? "-mx-3.5 px-3.5" : "-mx-4.5 px-4.5";
 
   return (
     <div className={`flex-none border-t border-pink-line max-h-[45vh] overflow-y-auto ${pad}`}>
+      {/* Parallel tool calls each get their own permission, so several can be
+          open at once — and answering one swaps a different card into the same
+          pixels with nothing to say the queue moved. Without this line the
+          human cannot tell whether they just finished or are on a treadmill. */}
+      {permissions.length > 1 && (
+        <div className="text-2xs tracking-[0.1em] text-dim2 mb-2">
+          PERMISSION 1 OF {permissions.length} · {permissions.length - 1} MORE AFTER THIS
+        </div>
+      )}
       {permission &&
         (permission.tool === "ExitPlanMode" ? (
           <PlanCard

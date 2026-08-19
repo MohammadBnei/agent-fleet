@@ -17,12 +17,15 @@ const PAGE = 200;
 export function useSessionDetail(sessionId: string) {
   const [session, setSession] = useState<Session | null>(null);
   const [entries, setEntries] = useState<TranscriptEntry[]>([]);
-  // Both are permanently null: the ListWorktrees lookup that filled them is
-  // gone with the worktree model (docs/adr/0048 §5, and see the effect below).
-  // Kept as state, and rendered conditionally by both detail views, so
-  // restoring them is a matter of writing to them again rather than
-  // re-threading two values through both form factors.
-  const [branch, setBranch] = useState<string | null>(null);
+  // Permanently null: the ListWorktrees lookup that filled it is gone with the
+  // worktree model (docs/adr/0048 §5, and see the effect below). Kept as state,
+  // and rendered conditionally by both detail views, so restoring it is a
+  // matter of writing to it again rather than re-threading it through both
+  // form factors.
+  //
+  // `branch` used to sit here alongside it and was equally null — but unlike
+  // the worktree path it has a live source (the sidecar's telemetry snapshot,
+  // ToolCallSummary.branch), so both detail views now derive it there instead.
   const [worktreePath, setWorktreePath] = useState<string | null>(null);
   // Keyed, not a plain boolean — a click on one PermissionCard/PlanCard used
   // to disable every other pending card and the whole ActionsMenu at once.
@@ -62,7 +65,6 @@ export function useSessionDetail(sessionId: string) {
   useEffect(() => {
     setSession(null);
     setEntries([]);
-    setBranch(null);
     setWorktreePath(null);
     setHasOlder(false);
     setLoadingOlder(false);
@@ -83,15 +85,14 @@ export function useSessionDetail(sessionId: string) {
         if (cancelled) return;
         setSession(res.session ?? null);
         if (!res.session) return;
-        // The branch lookup is gone with ListWorktrees (docs/adr/0048 §5).
-        //
-        // It read the branch off a WorktreeView keyed by (repo, task_id),
-        // which worked because the FLEET named the branch: `agent/<taskId>`,
-        // a convention it owned. It no longer creates branches at all — the
+        // The worktree-path lookup is gone with ListWorktrees (docs/adr/0048
+        // §5). It read off a WorktreeView keyed by (repo, task_id), which
+        // worked because the FLEET named the branch: `agent/<taskId>`, a
+        // convention it owned. It no longer creates branches at all — the
         // agent runs `git checkout -b` for whatever it wants — so there is
-        // nothing to look up by session id, and guessing would be worse than
-        // showing nothing. `changes`, derived from the worker's own telemetry
-        // snapshots, is the honest source for what a session is touching.
+        // nothing to look up by session id. `changes` and `branch`, derived
+        // from the worker's own telemetry snapshots, are the honest source for
+        // what a session is touching.
       })
       .catch((err: ConnectError) => {
         if (cancelled) return;
@@ -252,7 +253,6 @@ export function useSessionDetail(sessionId: string) {
   return {
     session,
     entries: withOptimistic(entries, optimistic),
-    branch,
     worktreePath,
     busyKey,
     loadError,

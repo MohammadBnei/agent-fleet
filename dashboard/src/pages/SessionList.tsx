@@ -5,6 +5,8 @@ import { sessionLabel } from "../sessionLabel";
 import type { ListSummary } from "../transcript";
 import { TickBar, todoProgress } from "../components/TickBar";
 import { DecisionInline } from "../components/DecisionInline";
+import { SessionActionsModal, RowActionsButton } from "../components/SessionActionsModal";
+import { useSelection, SelectBox, BatchBar } from "../components/BatchActions";
 import { NotchCard } from "../components/NotchCard";
 
 // A session with a live pod. Replaces ACTIVE_STATUSES, which named the three
@@ -26,10 +28,10 @@ export const ACTIVE_STATES = LIVE_STATES;
 export function bucketSessions(sessions: Session[], needsYouIds: Set<string>) {
   const out = {
     needsYou: [] as Session[],
+    stuck: [] as Session[],
     archived: [] as Session[],
     swept: [] as Session[],
     finished: [] as Session[],
-    stalled: [] as Session[],
     working: [] as Session[],
     quiet: [] as Session[],
   };
@@ -56,26 +58,41 @@ export function bucketSessions(sessions: Session[], needsYouIds: Set<string>) {
     //    server derives "blocked" as live-AND-has-pending, so the count alone
     //    disagrees with it by construction for a session whose pod is gone:
     //    that one would pin itself to the top of the list forever, offering
-    //    allow/deny buttons that reach nothing. Live and pending always
-    //    derives to "blocked", so nothing is lost by dropping the count.
-    if (t.archivedAt === undefined && (t.liveState === "blocked" || needsYouIds.has(t.id))) {
+    //    allow/deny buttons that reach nothing.
+    //
+    //    That is not hypothetical — it is what `|| needsYouIds.has(t.id)` did
+    //    here for the whole of the console's life, three lines under a comment
+    //    describing the failure. The header census (App.tsx) counts liveState
+    //    alone, so such a session sat at the top of the list under a header
+    //    reading "0 waiting on you". It goes to `stuck` below instead: same
+    //    visibility, and actions that can actually succeed.
+    if (t.archivedAt === undefined && t.liveState === "blocked") {
       out.needsYou.push(t);
       continue;
     }
-    // 2. The human already said they were finished with this one. Their
+    // 2. Burning wall-clock and asking nobody for anything: a stalled session,
+    //    or one whose pod died holding a decision. Both need a human to notice
+    //    and neither needs a human to *decide*, which is what separates this
+    //    from needsYou above. Above the fold, because the alternative was the
+    //    quiet tail — and on mobile, a collapsed accordion behind a chip.
+    if (t.archivedAt === undefined && (t.liveState === "stalled" || needsYouIds.has(t.id))) {
+      out.stuck.push(t);
+      continue;
+    }
+    // 3. The human already said they were finished with this one. Their
     //    statement outranks anything computed about it.
     if (t.archivedAt !== undefined) {
       out.archived.push(t);
       continue;
     }
-    // 3. Disk reclaimed by the retention GC: readable, not resumable.
+    // 4. Disk reclaimed by the retention GC: readable, not resumable.
     //    Rendered without a Warm button — offering one would be an action
     //    that cannot succeed.
     if (t.sweptAt !== undefined) {
       out.swept.push(t);
       continue;
     }
-    // 4. Finished-while-you-were-away: `done` liveness means the session
+    // 5. Finished-while-you-were-away: `done` liveness means the session
     //    completed and nobody has opened it since — opening marks it seen,
     //    which is what turns this back into idle. A crashed pod is always
     //    news, and with no `failed` status left it is the only thing that
@@ -84,18 +101,24 @@ export function bucketSessions(sessions: Session[], needsYouIds: Set<string>) {
       out.finished.push(t);
       continue;
     }
-    if (t.liveState === "stalled") {
-      out.stalled.push(t);
-      continue;
-    }
     if (t.liveState === "working") {
       out.working.push(t);
       continue;
     }
-    // 5. Everything left: seen, idle, or dormant. The collapsed tail, and the
+    // 6. Everything left: seen, idle, or dormant. The collapsed tail, and the
     //    catch-all that guarantees nothing falls through.
     out.quiet.push(t);
   }
+
+  // Longest-waiting first, in the two buckets where waiting is the cost. The
+  // list arrived in server order and never sorted, so a card that had been
+  // blocked for 40 minutes could sit under one blocked for 40 seconds — order
+  // is the only triage signal a list gives away for free, and it encoded
+  // nothing. Sorted here, not at a render site, so both form factors and the
+  // header's decisions modal inherit one answer.
+  const oldestFirst = (a: Session, b: Session) => activeMs(a) - activeMs(b);
+  out.needsYou.sort(oldestFirst);
+  out.stuck.sort(oldestFirst);
 
   return out;
 }
@@ -259,12 +282,18 @@ function DeleteButton({ onDelete }: { onDelete: () => void }) {
 // point (docs/dashboard-spec.md §8 item 3).
 function NeedsYouCard({
   session,
+  onActions,
+  picked,
+  onPick,
   summary,
   onSelect,
   onDelete,
   reload,
 }: {
   session: Session;
+  onActions: () => void;
+  picked: boolean;
+  onPick: (shiftKey: boolean) => void;
   summary?: ListSummary;
   onSelect: () => void;
   onDelete: () => void;
@@ -272,16 +301,24 @@ function NeedsYouCard({
 }) {
   const todos = summary?.todos ?? [];
   const blockedFor = blockedForLabel(session);
+  // The card answers one decision; saying so when there are more is what stops
+  // "I answered it" from meaning "it is unblocked".
+  const queued = summary?.pendingPermissionCount ?? 0;
   const isProposal = false;
 
   return (
     <div className="relative">
       <NotchCard
-        label={isProposal ? "◉ PROPOSED — NEEDS APPROVAL" : `◉ BLOCKED${blockedFor ? ` · ${blockedFor}` : ""}`}
+        label={
+          isProposal
+            ? "◉ PROPOSED — NEEDS APPROVAL"
+            : `◉ BLOCKED${blockedFor ? ` · ${blockedFor}` : ""}${queued > 1 ? ` · ${queued} decisions` : ""}`
+        }
         tone="pink"
       >
         <div className="flex items-center gap-3 px-4 pt-3.5 pb-2.5 flex-wrap">
-          <span className="text-base font-semibold">#{session.id.slice(0, 6)}</span>
+          <SelectBox checked={picked} onToggle={onPick} />
+        <span className="text-base font-semibold">#{session.id.slice(0, 6)}</span>
           <button
             type="button"
             onClick={onSelect}
@@ -300,6 +337,78 @@ function NeedsYouCard({
         </div>
         <DecisionInline session={session} summary={summary} onOpenSession={onSelect} reload={reload} />
       </NotchCard>
+      <RowActionsButton onOpen={onActions} />
+      <DeleteButton onDelete={onDelete} />
+    </div>
+  );
+}
+
+// A session burning wall-clock and asking nobody for anything: stalled, or a
+// pod that died still holding a decision. Deliberately NOT allow/deny — the
+// second kind used to render exactly that in the NEEDS YOU section, and every
+// click reached a pod that no longer existed. What helps here is warming it
+// back up, interrupting the turn it is wedged on, or reading why it stopped.
+function StuckRow({
+  session,
+  onActions,
+  picked,
+  onPick,
+  onSelect,
+  onOpenLogs,
+  onDelete,
+  reload,
+}: {
+  session: Session;
+  onActions: () => void;
+  picked: boolean;
+  onPick: (shiftKey: boolean) => void;
+  onSelect: () => void;
+  onOpenLogs: () => void;
+  onDelete: () => void;
+  reload: () => void;
+}) {
+  const live = isPodPhaseLive(session.podPhase);
+  const stuckFor = blockedForLabel(session);
+  return (
+    <div className="relative">
+      <div className="flex items-center gap-3 px-4 py-2.5 border border-orange-line bg-orange-bg pr-8 flex-wrap">
+        <span className="w-[7px] h-[7px] rounded-full flex-none bg-warning" />
+        <SelectBox checked={picked} onToggle={onPick} />
+        <span className="text-base font-semibold">#{session.id.slice(0, 6)}</span>
+        <button type="button" onClick={onSelect} className="text-base text-left hover:text-primary cursor-pointer min-w-0 break-words">
+          {sessionLabel(session)}
+        </button>
+        <span className="text-xs text-dim2">{session.repo}</span>
+        <span className="ml-auto text-sm text-warning min-w-0 truncate">
+          {live ? "stalled" : session.pendingDecisions > 0 ? "pod gone, decision unanswerable" : "stalled"}
+          {stuckFor ? ` · ${stuckFor}` : ""}
+        </span>
+        {live ? (
+          <button
+            type="button"
+            onClick={() => void client.interrupt({ sessionId: session.id }).then(reload)}
+            className="flex-none border border-acc-line px-3 py-1 text-sm hover:border-primary hover:text-primary"
+          >
+            interrupt
+          </button>
+        ) : (
+          // Swept means the retention GC took the working directory: warming
+          // would bring up a pod with nothing to resume, so it is not offered.
+          session.sweptAt === undefined && (
+            <button
+              type="button"
+              onClick={() => void client.warmSession({ sessionId: session.id }).then(reload)}
+              className="flex-none border border-acc-line px-3 py-1 text-sm hover:border-primary hover:text-primary"
+            >
+              warm
+            </button>
+          )
+        )}
+        <button type="button" onClick={onOpenLogs} className="flex-none border border-acc-line px-3 py-1 text-sm hover:border-primary hover:text-primary">
+          read log
+        </button>
+      </div>
+      <RowActionsButton onOpen={onActions} />
       <DeleteButton onDelete={onDelete} />
     </div>
   );
@@ -312,12 +421,18 @@ function NeedsYouCard({
 // and retrying is just sending it another message.
 function FinishedRow({
   session,
+  onActions,
+  picked,
+  onPick,
   onSelect,
   onOpenLogs,
   onDelete,
   reload,
 }: {
   session: Session;
+  onActions: () => void;
+  picked: boolean;
+  onPick: (shiftKey: boolean) => void;
   onSelect: () => void;
   onOpenLogs: () => void;
   onDelete: () => void;
@@ -333,6 +448,7 @@ function FinishedRow({
         }`}
       >
         <span className={`w-[7px] h-[7px] rounded-full flex-none ${failed ? "bg-warning" : "bg-success"}`} />
+        <SelectBox checked={picked} onToggle={onPick} />
         <span className="text-base font-semibold">#{session.id.slice(0, 6)}</span>
         <button type="button" onClick={onSelect} className="text-base text-left hover:text-primary cursor-pointer min-w-0 break-words">
           {sessionLabel(session)}
@@ -367,6 +483,7 @@ function FinishedRow({
           archive
         </button>
       </div>
+      <RowActionsButton onOpen={onActions} />
       <DeleteButton onDelete={onDelete} />
     </div>
   );
@@ -377,12 +494,18 @@ function FinishedRow({
 // without opening the session.
 function WorkingRow({
   session,
+  onActions,
+  picked,
+  onPick,
   summary,
   last,
   onSelect,
   onDelete,
 }: {
   session: Session;
+  onActions: () => void;
+  picked: boolean;
+  onPick: (shiftKey: boolean) => void;
   summary?: ListSummary;
   last: boolean;
   onSelect: () => void;
@@ -402,6 +525,7 @@ function WorkingRow({
             stale ? "bg-error" : live ? "bg-info animate-fpulse" : "border border-dim2"
           }`}
         />
+        <SelectBox checked={picked} onToggle={onPick} />
         <span className={`text-sm flex-none ${live ? "text-text2" : "text-dim2"}`}>#{session.id.slice(0, 6)}</span>
         <button
           type="button"
@@ -446,6 +570,7 @@ function WorkingRow({
           </>
         )}
       </div>
+      <RowActionsButton onOpen={onActions} />
       <DeleteButton onDelete={onDelete} />
     </div>
   );
@@ -485,7 +610,9 @@ export type SortKey = "date" | "status" | "repo" | "title";
 function restStatus(t: Session): string {
   if (t.archivedAt !== undefined) return "archived";
   if (t.sweptAt !== undefined) return "swept";
-  if (t.liveState === "stalled") return "stalled";
+  // "stalled" is not an axis here any more — a stalled session is pinned in
+  // STUCK above, never in the quiet tail, so a filter chip for it would only
+  // ever match nothing.
   return "idle";
 }
 
@@ -507,7 +634,14 @@ export function compareSessions(a: Session, b: Session, sort: SortKey): number {
   }
 }
 
-const TERMINAL = new Set(["archived", "swept"]);
+// Archived and swept: the two states a human has already dealt with. Exported
+// so mobile's quiet tail hides the same set — the desktop toggle and a
+// hand-copied mobile one is exactly how the two lists drift.
+export const TERMINAL = new Set(["archived", "swept"]);
+
+// The one bucket label a quiet session shows. Exported alongside TERMINAL for
+// the same reason.
+export { restStatus };
 
 // Sort + filter controls for the quiet tail. Native <select>s (accessible for
 // free) for sort + repo; chip toggles mirror MobileSessionList's status bar for
@@ -601,7 +735,12 @@ export function SessionList({
   // the only ones a human has explicitly finished — were invisible on both
   // form factors. bucketSessions.test.ts pins the coverage of the destructure so
   // the next bucket added cannot be silently dropped the same way.
-  const { needsYou, working, finished, stalled, quiet, archived, swept } = bucketSessions(sessions, needsYouIds);
+  const { needsYou, stuck, working, finished, quiet, archived, swept } = bucketSessions(sessions, needsYouIds);
+  // Which row's "⋯" is open, or null. The Session itself, not an id: the modal
+  // reads podPhase/permissionMode/sweptAt off it, and re-looking-it-up by id on
+  // every poll is how it would end up rendering a stale one.
+  const [actionsFor, setActionsFor] = useState<Session | null>(null);
+  const { selected, toggle, clear } = useSelection();
 
   // Quiet tail: one flat list over the four non-pinned buckets, sorted and
   // filtered by the ControlBar. Pinned-active (needsYou/finished/working) stays
@@ -611,7 +750,7 @@ export function SessionList({
   const [statusFilter, setStatusFilter] = useState<Set<string>>(new Set());
   const [hideTerminal, setHideTerminal] = useState(false);
 
-  const rest = useMemo(() => [...stalled, ...quiet, ...archived, ...swept], [stalled, quiet, archived, swept]);
+  const rest = useMemo(() => [...quiet, ...archived, ...swept], [quiet, archived, swept]);
   const repos = useMemo(() => [...new Set(sessions.map((t) => t.repo))].sort(), [sessions]);
   const statuses = useMemo(() => [...new Set(rest.map(restStatus))].sort(), [rest]);
   const toggleStatus = (s: string) =>
@@ -630,12 +769,27 @@ export function SessionList({
       .sort((a, b) => compareSessions(a, b, sort));
   }, [rest, repoFilter, statusFilter, hideTerminal, sort]);
 
+  // The four selectable sections, in the order they render — this is what a
+  // shift-click range means, so it is built from the same arrays the body maps
+  // over rather than from `sessions` (which is server order, not render order).
+  // CompactRow is deliberately excluded: the quiet tail is where a human hunts
+  // one dormant session, not where they bulk-act.
+  const pickable = [...needsYou, ...finished, ...stuck, ...working];
+  const orderedIds = pickable.map((t) => t.id);
+  const pickedSessions = pickable.filter((t) => selected.has(t.id));
+  const pick = (id: string) => (shiftKey: boolean) => toggle(id, shiftKey, orderedIds);
+
   if (sessions.length === 0) {
     return <div className="p-5 text-base text-dim">No sessions.</div>;
   }
 
   return (
     <div className="flex-1 min-h-0 overflow-y-auto px-4.5 pt-5 pb-6 flex flex-col gap-3">
+      {/* Above everything, and only while something is selected — a permanently
+          docked bar for an empty selection is a row of disabled buttons that
+          teaches you to ignore that strip of the screen. */}
+      <BatchBar sessions={pickedSessions} onClear={clear} reload={reload} />
+
       {needsYou.length > 0 && (
         <>
           <SectionHeading title="NEEDS YOU" tone="pink" className="mb-0.5" />
@@ -643,6 +797,9 @@ export function SessionList({
             <NeedsYouCard
               key={t.id}
               session={t}
+              onActions={() => setActionsFor(t)}
+              picked={selected.has(t.id)}
+              onPick={pick(t.id)}
               summary={summaries.get(t.id)}
               onSelect={() => onSelect(t.id)}
               onDelete={() => onDelete(t.id)}
@@ -659,6 +816,28 @@ export function SessionList({
             <FinishedRow
               key={t.id}
               session={t}
+              onActions={() => setActionsFor(t)}
+              picked={selected.has(t.id)}
+              onPick={pick(t.id)}
+              onSelect={() => onSelect(t.id)}
+              onOpenLogs={() => onOpenLogs(t.id)}
+              onDelete={() => onDelete(t.id)}
+              reload={reload}
+            />
+          ))}
+        </>
+      )}
+
+      {stuck.length > 0 && (
+        <>
+          <SectionHeading title="STUCK" tone="pink" note="burning time, asking nobody" className="mt-4" />
+          {stuck.map((t) => (
+            <StuckRow
+              key={t.id}
+              session={t}
+              onActions={() => setActionsFor(t)}
+              picked={selected.has(t.id)}
+              onPick={pick(t.id)}
               onSelect={() => onSelect(t.id)}
               onOpenLogs={() => onOpenLogs(t.id)}
               onDelete={() => onDelete(t.id)}
@@ -676,6 +855,9 @@ export function SessionList({
               <WorkingRow
                 key={t.id}
                 session={t}
+                onActions={() => setActionsFor(t)}
+                picked={selected.has(t.id)}
+                onPick={pick(t.id)}
                 summary={summaries.get(t.id)}
                 last={i === working.length - 1}
                 onSelect={() => onSelect(t.id)}
@@ -722,6 +904,8 @@ export function SessionList({
           </div>
         </div>
       )}
+
+      <SessionActionsModal session={actionsFor} onClose={() => setActionsFor(null)} reload={reload} />
     </div>
   );
 }
