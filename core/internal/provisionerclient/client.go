@@ -171,7 +171,7 @@ func ToolKeysFor(clusterAccess bool) []string {
 //
 // The result is a struct rather than three bare strings: pod name and the two
 // image refs are all strings, and this repo has already shipped one silent
-// same-typed transposition (see CLAUDE.md's verification traps).
+// same-typed transposition (agent-fleet/docs/verification-traps.md).
 type WorkerPod struct {
 	PodName string
 	// The images the pod spec actually got, after the repo's `image` override
