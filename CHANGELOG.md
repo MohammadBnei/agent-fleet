@@ -1,5 +1,12 @@
 # Changelog
 
+# [4.8.0](https://github.com/MohammadBnei/agent-fleet/compare/4.7.0...4.8.0) (2026-08-19)
+
+
+### Features
+
+* **dashboard:** console UI pass — decisions modal, diff modal, batch actions ([#222](https://github.com/MohammadBnei/agent-fleet/issues/222)) ([4c60ab3](https://github.com/MohammadBnei/agent-fleet/commit/4c60ab3f19cbf8b5a107746b9ed2858895b1d67c))
+
 # [4.7.0](https://github.com/MohammadBnei/agent-fleet/compare/4.6.2...4.7.0) (2026-08-19)
 
 
