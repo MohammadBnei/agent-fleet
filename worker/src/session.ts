@@ -18,7 +18,7 @@ const SESSION_ID = process.env.SESSION_ID ?? "";
 const MODEL = process.env.CLAUDE_MODEL ?? "claude-opus-5";
 const MAX_TURNS = process.env.MAX_TURNS ? Number(process.env.MAX_TURNS) : undefined;
 
-const SIDECAR_MCP_ADDR = process.env.SIDECAR_MCP_ADDR ?? "localhost:9090";
+const SIDECAR_MCP_ADDR = process.env.SIDECAR_MCP_ADDR ?? "127.0.0.1:9090";
 const WORKTREE_PATH = process.env.WORKTREE_PATH ?? "/workspace";
 // Set by the provisioner (task.SessionID, via CreateWorkerPodRequest) when
 // this pod is warming an existing session rather than starting a fresh

@@ -19,7 +19,7 @@ import { log } from "./log.js";
 // that moment — this file's own tests set it per-test, after the module
 // may already be cached, so it has to be read live on every call.
 function base(): string {
-  return `http://${process.env.SIDECAR_API_ADDR ?? "localhost:9091"}`;
+  return `http://${process.env.SIDECAR_API_ADDR ?? "127.0.0.1:9091"}`;
 }
 
 async function postJSON<T>(path: string, body: unknown): Promise<T> {

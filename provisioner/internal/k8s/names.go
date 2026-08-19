@@ -13,11 +13,21 @@ const (
 
 	// SidecarMCPPort is agent-facing (local MCP server, the Agent SDK's
 	// mcpServers config), SidecarAPIPort is wrapper-facing (plain local
-	// HTTP/JSON, docs/adr/0020 point 5's two local surfaces).
+	// HTTP/JSON, docs/adr/0020 point 5's two local surfaces). Both bind
+	// 127.0.0.1 only: everything they expose acts under this session's
+	// authority, so a pod-IP bind let any pod in the namespace drive another
+	// session's sidecar — including reading its human-message SSE feed.
 	SidecarMCPPort = 9090
 	SidecarAPIPort = 9091
-	ComponentLabel = "agent-fleet.dev/component"
-	TaskIDLabel    = "agent-fleet.dev/task-id"
+	// SidecarHealthPort exists solely because kubelet dials a probe at the
+	// POD IP, never at 127.0.0.1. /readyz therefore cannot live on the
+	// agent-facing listener once that one is loopback-bound — the StartupProbe
+	// would fail for its full 120s budget and the pod would die, with the
+	// sidecar itself perfectly healthy. This listener serves /readyz and
+	// nothing else.
+	SidecarHealthPort = 9092
+	ComponentLabel    = "agent-fleet.dev/component"
+	TaskIDLabel       = "agent-fleet.dev/task-id"
 	// RepoLabel lets the provisioner recover which repo a session's pod
 	// belongs to from the pod itself — it holds no DB credentials to look it
 	// up any other way (docs/adr/0020 point 1), so Kubernetes has to carry it.

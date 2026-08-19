@@ -253,8 +253,12 @@ func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error 
 		{Name: "SESSION_ID", Value: taskID},
 		{Name: "TARGET_REPO", Value: repo},
 		{Name: "LEASE_ID", Value: leaseID},
-		{Name: "SIDECAR_MCP_ADDR", Value: fmt.Sprintf("localhost:%d", SidecarMCPPort)},
-		{Name: "SIDECAR_API_ADDR", Value: fmt.Sprintf("localhost:%d", SidecarAPIPort)},
+		// 127.0.0.1, not "localhost": the sidecar binds IPv4 loopback only, and
+		// "localhost" resolves to ::1 as well on a dual-stack image. Whether
+		// that works then depends on the client's happy-eyeballs behaviour
+		// rather than on anything in this repo.
+		{Name: "SIDECAR_MCP_ADDR", Value: fmt.Sprintf("127.0.0.1:%d", SidecarMCPPort)},
+		{Name: "SIDECAR_API_ADDR", Value: fmt.Sprintf("127.0.0.1:%d", SidecarAPIPort)},
 		// The worker's own git push/gh pr create needs auth
 		// independently of the provisioner's clone/fetch —
 		// separate containers, only /workspace is shared, not
@@ -376,6 +380,7 @@ func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error 
 					{Name: "TARGET_REPO", Value: repo},
 					{Name: "MCP_PORT", Value: fmt.Sprint(SidecarMCPPort)},
 					{Name: "LOCAL_API_PORT", Value: fmt.Sprint(SidecarAPIPort)},
+					{Name: "HEALTH_PORT", Value: fmt.Sprint(SidecarHealthPort)},
 					{Name: "WORKTREE_PATH", Value: sessionWorkdir},
 					{Name: "LOG_LEVEL", Value: c.LogLevel},
 					// Without this, the sidecar falls back to its own
@@ -410,9 +415,11 @@ func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error 
 					{Name: "GIT_CONFIG_KEY_0", Value: "safe.directory"},
 					{Name: "GIT_CONFIG_VALUE_0", Value: "*"},
 				},
+				// mcp and local-api are loopback-bound inside the container, so
+				// declaring them here buys nothing and reads as if they were
+				// reachable. Only the health listener actually binds the pod IP.
 				Ports: []corev1.ContainerPort{
-					{Name: "mcp", ContainerPort: SidecarMCPPort},
-					{Name: "local-api", ContainerPort: SidecarAPIPort},
+					{Name: "health", ContainerPort: SidecarHealthPort},
 				},
 				VolumeMounts: []corev1.VolumeMount{
 					// The session's working tree, for the telemetry loop's
@@ -459,9 +466,14 @@ func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error 
 				// not just a process-start race.
 				StartupProbe: &corev1.Probe{
 					ProbeHandler: corev1.ProbeHandler{
+						// SidecarHealthPort, NOT SidecarAPIPort: kubelet dials
+						// this at the pod IP, and the API listener is bound to
+						// 127.0.0.1. Pointing it at the API port fails every
+						// probe for the full 120s budget and then kills a pod
+						// whose sidecar is working fine.
 						HTTPGet: &corev1.HTTPGetAction{
 							Path: "/readyz",
-							Port: intstr.FromInt32(SidecarAPIPort),
+							Port: intstr.FromInt32(SidecarHealthPort),
 						},
 					},
 					PeriodSeconds:    2,
