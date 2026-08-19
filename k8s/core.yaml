@@ -46,11 +46,24 @@ ingress:
   middlewares:
     - name: basic-admin-auth
       namespace: default
-  # fleet.bnei.dev is deliberately GREY (DNS-only) at Cloudflare, unlike every
-  # other *.bnei.dev host, which went proxied on 2026-08-18 (infra-bootstrap
-  # ADR-0038). Reason: this host serves ConnectRPC streaming, and Cloudflare's
-  # free plan returns HTTP 524 when the origin sends nothing for 100 seconds.
-  # A long-lived stream trips that; proxying would break the dashboard.
+  # fleet.bnei.dev is still GREY (DNS-only) at Cloudflare, unlike every other
+  # *.bnei.dev host, which went proxied on 2026-08-18 (infra-bootstrap
+  # ADR-0038). The reason was that this host serves ConnectRPC streaming and
+  # Cloudflare's free plan returns HTTP 524 after 100 seconds of origin
+  # silence, which a long-lived stream trips.
+  #
+  # That cause is FIXED as of core's streamMaxAge (90s) — StreamTranscript now
+  # ends its own response before the edge would, and the dashboard resubscribes
+  # from its cursor, so nothing is lost. See core/internal/dashboard/server.go.
+  #
+  # What remains is the DNS record itself, which is a Cloudflare-side change,
+  # not a change here. Until it is flipped to proxied this host still gets no
+  # WAF, no geo rules, no origin lock and a public origin IP — so the two
+  # opt-outs below must stay exactly as they are.
+  #
+  # WHEN THE RECORD GOES ORANGE, both of these revert to the chart defaults, in
+  # a values-only change: leaving originLock disabled on a proxied host keeps
+  # the origin reachable directly, which is most of what proxying was for.
   #
   # Being grey means requests arrive at Traefik straight from the client, so
   # two of common-app-chart's baseline defaults — which assume Cloudflare is
