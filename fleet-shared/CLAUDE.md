@@ -5,8 +5,9 @@ Worker pod. Ephemeral, one session, a real clone at `/workspace` on the session'
 - Every result = PR
 - Commits: `Co-Authored-By: ukubi-agent <noreply@bnei.dev>` (never `Claude`/model name)
 - Write/Edit = human prompt (normal). Read/Glob/Grep = free, and so is
-  **read-only Bash** (`cat`, `ls`, `head`, `stat`, `diff`, `git log`, …) — those
-  gate nothing the free `Read` tool doesn't already give you. Bash that
+  **read-only Bash** (`ls`, `head`, `stat`, `diff`, `git log`, …) — those
+  gate nothing the free `Read` tool doesn't already give you. `cat` is
+  deliberately NOT on that list: use `Read`. Bash that
   *changes* something still prompts, and `git push`, `gh`, `rm`, `sudo`,
   `kubectl`, `curl`, `wget`, `env` are held prompting by `FLEET_ASK_RULES` in
   the worker, which outranks every permission mode. In `auto` the worker

@@ -1280,3 +1280,19 @@ test("fleet-shared/settings.json ships no permissions.ask block", async () => {
   expect(settings.permissions.ask).toBeUndefined();
   expect(settings.permissions.allow.length).toBeGreaterThan(0);
 });
+
+// `cat` is the canonical way to print a file, so an agent reaching for the
+// worker's own environment reaches for `cat /proc/self/environ` — which puts
+// GH_TOKEN and CLAUDE_CODE_OAUTH_TOKEN into a transcript the dashboard
+// renders. It was allow-listed for a while against fleet-shared/README.md's
+// own stated policy; this pins the two together so the next edit has to
+// disagree with a failing test rather than only with prose.
+//
+// Deliberately NOT extended to head/nl/grep/sort/cut/etc: they read the same
+// file just as well, and a Bash allow-rule matches a command prefix rather
+// than a path, so covering them all would mean deleting read-only Bash. This
+// reduces the accidental path; it is not a boundary. See the README.
+test("fleet-shared/settings.json does not allow-list cat", async () => {
+  const settings = await Bun.file(new URL("../../fleet-shared/settings.json", import.meta.url)).json();
+  expect(settings.permissions.allow).not.toContain("Bash(cat:*)");
+});
