@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.3.2](https://github.com/MohammadBnei/agent-fleet/compare/4.3.1...4.3.2) (2026-08-19)
+
+
+### Bug Fixes
+
+* **sidecar:** bind the agent-facing listeners to loopback, not the pod IP ([#213](https://github.com/MohammadBnei/agent-fleet/issues/213)) ([65727f0](https://github.com/MohammadBnei/agent-fleet/commit/65727f01befcac886e8af135ab18cdb2faf6e393))
+
 ## [4.3.1](https://github.com/MohammadBnei/agent-fleet/compare/4.3.0...4.3.1) (2026-08-19)
 
 
