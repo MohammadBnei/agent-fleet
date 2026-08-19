@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { client } from "../connectClient";
+import { queueFirstMessage } from "../useSessionDetail";
 import { Modal } from "./Modal";
 import type { PromptSnippet, Repo } from "../gen/agentfleet/v1/dashboard_pb";
 import { AUTO_MODE_WARNING, PERMISSION_MODES } from "../approvePlan";
@@ -39,10 +40,11 @@ export function NewSessionDialog({
   const [modeChoice, setModeChoice] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // A session created by a submit whose message then failed to send (capacity
-  // rejection is real at MAX_LIVE_SESSIONS). Retrying reuses it rather than
-  // leaving a trail of empty rows behind every failed attempt.
-  const createdIdRef = useRef<string | null>(null);
+  // createdIdRef is gone with the awaited postMessage it existed for: a submit
+  // that failed mid-send used to leave a created session behind, so a retry
+  // had to reuse it. Now the only awaited call is CreateSession itself — if
+  // that fails there is no row, and if it succeeds the dialog is already
+  // closed. A failed first message surfaces in the session it belongs to.
 
   // Fetched from the dashboard-editable repos table (docs/adr/0028), not a
   // hardcoded list — a repo added/removed via ManageReposModal shows up
@@ -105,7 +107,6 @@ export function NewSessionDialog({
     setMessage("");
     setSnippetIds([]);
     setModeChoice(null);
-    createdIdRef.current = null;
   }
 
   // A snippet may suggest a mode (prompt_snippets.suggested_permission_mode).
@@ -134,29 +135,30 @@ export function NewSessionDialog({
     setError(null);
     const text = message.trim();
     try {
-      let sessionId = createdIdRef.current;
-      if (!sessionId) {
-        const res = await client.createSession({
-          repo,
-          title: title.trim() || labelFrom(text),
-          // Carried on CreateSession itself rather than a setPermissionMode
-          // call afterwards. The worker reads session.permissionMode once at
-          // startup, and postMessage below is what provisions the pod, so the
-          // old two-call shape only worked because it happened to run in the
-          // right order. One call cannot be ordered wrongly.
-          permissionMode: effectiveMode,
-        });
-        sessionId = res.session?.id ?? null;
-        if (!sessionId) throw new Error("CreateSession returned no session");
-        createdIdRef.current = sessionId;
-      }
+      const res = await client.createSession({
+        repo,
+        title: title.trim() || labelFrom(text),
+        // Carried on CreateSession itself rather than a setPermissionMode call
+        // afterwards. The worker reads session.permissionMode once at startup,
+        // and the first message is what provisions the pod, so the old
+        // two-call shape only worked because it happened to run in the right
+        // order. One call cannot be ordered wrongly.
+        permissionMode: effectiveMode,
+      });
+      const sessionId = res.session?.id;
+      if (!sessionId) throw new Error("CreateSession returned no session");
 
-      // PostMessage warms first and appends second — resumeFromSeq is computed
-      // from LatestSeq at provisioning time, so an entry written before the pod
-      // exists lands below its cursor and is never delivered. That ordering
-      // lives in core (core/internal/dashboard/server.go:492-500); do not
-      // reproduce it here by calling warmSession first.
-      if (text) await client.postMessage({ sessionId, text });
+      // Handed to the detail view instead of awaited here. PostMessage IS the
+      // pod boot — clone, fleet-shared rsync onto a ~10MB/s RWX volume, PVC,
+      // Job — so awaiting it held this modal open for the whole of it while
+      // the session row had existed since the line above. The detail view
+      // renders the provisioning progress that nobody could see behind the
+      // modal ("PROVISIONING · cloning repo"), plus the message itself with a
+      // spinner, and surfaces a failure inline where the session is.
+      //
+      // The ordering that matters is untouched: PostMessage still warms before
+      // it appends, server-side (dashboard.Server.WarmIfIdle).
+      if (text) queueFirstMessage(sessionId, text);
 
       close();
       onCreated(sessionId);

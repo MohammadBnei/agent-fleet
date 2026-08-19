@@ -1,5 +1,24 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useBusyAction } from "./useBusyAction";
+
+// The first message of a brand-new session, handed over by NewSessionDialog so
+// the dialog can close the instant the session row exists.
+//
+// Module-level rather than a prop, and deleted before it is sent. Threading it
+// through App into two detail views would need a "did I already send this?"
+// ref, and a ref is not enough: StrictMode double-invokes effects, AND the
+// desktop/mobile switch unmounts one detail view to mount the other, which
+// resets any per-component guard. The server cannot dedupe either — Append
+// mints a fresh idempotency key per call (docs/adr/0013) — so a double send is
+// two real messages to the agent.
+//
+// Delete-before-send makes the second caller find nothing, whichever way it
+// arrived.
+const firstMessages = new Map<string, string>();
+
+export function queueFirstMessage(sessionId: string, text: string) {
+  if (text.trim()) firstMessages.set(sessionId, text);
+}
 import { Code, ConnectError } from "@connectrpc/connect";
 import { client, subscribeTranscript } from "./connectClient";
 import { withOptimistic } from "./transcript";
@@ -229,7 +248,7 @@ export function useSessionDetail(sessionId: string) {
   // Through run() like everything else, with one extra job: roll back the
   // optimistic echo when the post fails, so a message that never left does not
   // sit in the feed looking sent.
-  async function sendDiscuss(text: string) {
+  const sendDiscuss = useCallback(async (text: string) => {
     pendingRef.current = text;
     setPendingMessage(text);
     const ok = await run(() => client.postMessage({ sessionId, text }), "discuss");
@@ -237,7 +256,26 @@ export function useSessionDetail(sessionId: string) {
       pendingRef.current = null;
       setPendingMessage(null);
     }
-  }
+  }, [sessionId, run]);
+
+  // A brand-new session's first message, if NewSessionDialog left one here.
+  // Its own effect, not folded into the session load above, so it can depend
+  // on sendDiscuss honestly rather than silencing exhaustive-deps.
+  //
+  // The dialog hands the text over instead of awaiting postMessage, because
+  // postMessage IS the pod boot — clone, fleet-shared sync, PVC — and blocking
+  // a modal on it left a human watching a spinner for all of it. Routing
+  // through sendDiscuss gives the first message the same optimistic echo and
+  // the same inline error as every other message.
+  useEffect(() => {
+    const queued = firstMessages.get(sessionId);
+    if (queued === undefined) return;
+    // Delete BEFORE sending: StrictMode double-invokes effects, and the
+    // desktop/mobile switch remounts this hook entirely. Whichever call
+    // arrives second must find nothing.
+    firstMessages.delete(sessionId);
+    void sendDiscuss(queued);
+  }, [sessionId, sendDiscuss]);
 
   return {
     session,
