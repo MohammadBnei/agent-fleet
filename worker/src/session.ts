@@ -325,6 +325,44 @@ const EPHEMERAL_SYSTEM_SUBTYPES = new Set([
 // row itself is unfiltered either way (core/internal/transcript/relay.go's
 // own comment: only relayed_to_discord changes, dashboard renders the
 // full stream regardless).
+// The top-level `usage` is the MAIN model's roll-up, and the fleet routinely
+// runs several models in one session — subagents, and whatever background
+// model the SDK reaches for. Measured over 7 days: `usage.cache_read_input_tokens`
+// summed to 377.7M while `modelUsage` summed to 1.29B, so the top-level field
+// is a ~30% view. Anything alerting on token volume has to sum modelUsage or
+// it is watching a third of the fleet. Returns null when the SDK sends no
+// modelUsage, so the fields stay absent rather than reading as a real zero.
+type ModelUsage = Record<
+  string,
+  {
+    inputTokens?: number;
+    outputTokens?: number;
+    cacheReadInputTokens?: number;
+    cacheCreationInputTokens?: number;
+  }
+>;
+
+export function sumModelUsage(modelUsage: unknown): {
+  models: string[];
+  inputTokensAll: number;
+  outputTokensAll: number;
+  cacheReadInputTokensAll: number;
+  cacheCreationInputTokensAll: number;
+} | null {
+  if (!modelUsage || typeof modelUsage !== "object" || Array.isArray(modelUsage)) return null;
+  const entries = Object.entries(modelUsage as ModelUsage);
+  if (entries.length === 0) return null;
+  const total = { inputTokensAll: 0, outputTokensAll: 0, cacheReadInputTokensAll: 0, cacheCreationInputTokensAll: 0 };
+  for (const [, v] of entries) {
+    if (!v || typeof v !== "object") continue;
+    total.inputTokensAll += v.inputTokens ?? 0;
+    total.outputTokensAll += v.outputTokens ?? 0;
+    total.cacheReadInputTokensAll += v.cacheReadInputTokens ?? 0;
+    total.cacheCreationInputTokensAll += v.cacheCreationInputTokens ?? 0;
+  }
+  return { models: entries.map(([m]) => m).sort(), ...total };
+}
+
 async function logSdkMessage(actor: string, msg: { type: string; [key: string]: unknown }): Promise<void> {
   const push = (text: string, type: string) =>
     sidecar.pushMessage(actor, text, type).catch((err) => log("warn", "pushMessage failed", { actor, type, error: String(err) }));
@@ -477,6 +515,7 @@ async function logSdkMessage(actor: string, msg: { type: string; [key: string]: 
       outputTokens: usage?.output_tokens,
       cacheReadInputTokens: usage?.cache_read_input_tokens,
       cacheCreationInputTokens: usage?.cache_creation_input_tokens,
+      ...(sumModelUsage(msg.modelUsage) ?? {}),
     });
     await push(
       JSON.stringify({
