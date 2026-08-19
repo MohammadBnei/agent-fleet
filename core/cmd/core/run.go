@@ -208,6 +208,10 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 		mux.HandleFunc("/auth/login", oidcAuth.Login)
 		mux.HandleFunc("/auth/callback", oidcAuth.Callback)
 		mux.HandleFunc("/auth/logout", oidcAuth.Logout)
+		// Backs the console's own "signed in as" chrome. Registered only when
+		// the gate is on, so with FLEET_AUTH_DISABLED=1 it 404s and the SPA
+		// simply shows nothing — which is honest: there is no identity to show.
+		mux.HandleFunc("/auth/me", oidcAuth.Me)
 		authInterceptors = append(authInterceptors, oidcAuth.ConnectInterceptor())
 		gate = oidcAuth.Gate
 	}

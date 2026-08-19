@@ -3,6 +3,7 @@ import { ManageReposModal } from "./ManageReposModal";
 import { ManagePromptSnippetsModal } from "./ManagePromptSnippetsModal";
 import { Segmented } from "./Segmented";
 import type { Theme } from "../useTheme";
+import { useIdentity } from "../useIdentity";
 
 const THEMES: readonly { value: Theme; label: string }[] = [
   { value: "herd", label: "dark" },
@@ -49,6 +50,8 @@ export function SettingsMenu({
   theme: Theme;
   onThemeChange: (t: Theme) => void;
 }) {
+  const identity = useIdentity();
+
   return (
     <>
       <button
@@ -76,6 +79,37 @@ export function SettingsMenu({
             <ManageReposModal />
             <ManagePromptSnippetsModal />
           </div>
+          {/*
+            Nothing in the console said an identity was involved. With
+            basic-admin-auth gone, authentik is the only gate, and its redirect
+            is fast enough that the console looked exactly as it did when one
+            shared password let anyone in — which is how you end up unsure
+            whether SSO is actually on.
+
+            Absent when the gate is off (FLEET_AUTH_DISABLED=1) rather than
+            rendering an empty row: no identity is the honest display for a
+            local stack that has none.
+          */}
+          {identity?.email && (
+            <div className="flex flex-col gap-1.5 border-t border-line pt-3">
+              <span className="text-2xs tracking-[0.12em] text-dim2">SIGNED IN</span>
+              <span className="truncate text-xs text-base-content" title={identity.email}>
+                {identity.email}
+              </span>
+              {/*
+                A plain link, not a fetch: /auth/logout clears the cookie and
+                redirects, and letting the browser follow it is the whole
+                interaction. Full page load on purpose — the SPA's in-memory
+                state belongs to the session being ended.
+              */}
+              <a
+                href="/auth/logout"
+                className="text-2xs text-dim underline underline-offset-2 hover:text-base-content"
+              >
+                sign out
+              </a>
+            </div>
+          )}
         </div>
       </div>
     </>

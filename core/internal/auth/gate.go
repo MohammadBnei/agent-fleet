@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"strings"
 
@@ -94,6 +95,51 @@ func isDocumentRequest(r *http.Request) bool {
 
 func urlQueryEscape(s string) string {
 	return strings.ReplaceAll(strings.ReplaceAll(s, "&", "%26"), "?", "%3F")
+}
+
+// Me answers "who am I", for the console's own chrome.
+//
+// Deliberately a plain JSON handler rather than a DashboardService RPC. It is
+// read by one component to render one line; an RPC would mean a proto change,
+// codegen in two languages and a buf breaking-change check, for a payload with
+// no wire compatibility to protect.
+//
+// It sits under the /auth/ exempt prefix and therefore answers unauthenticated
+// callers too — that is required, not an oversight: a page cannot ask "am I
+// signed in" through a gate that refuses it for not being signed in. The
+// response says so explicitly instead of relying on a status code, because the
+// SPA's transport turns a 401 into a login redirect, and that would make simply
+// LOADING the page while signed out bounce you to authentik before anything
+// rendered.
+//
+// It returns the email and groups only. There is no user model behind this
+// (docs/adr — the fleet has no `users` table); it is the verified claim, not a
+// profile.
+func (o *OIDC) Me(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+
+	cookie, err := r.Cookie(SessionCookieName)
+	if err != nil {
+		_ = json.NewEncoder(w).Encode(meResponse{})
+		return
+	}
+	id, ok := o.signer.Verify(cookie.Value)
+	if !ok {
+		_ = json.NewEncoder(w).Encode(meResponse{})
+		return
+	}
+	_ = json.NewEncoder(w).Encode(meResponse{
+		Authenticated: true,
+		Email:         id.Email,
+		Groups:        id.Groups,
+	})
+}
+
+type meResponse struct {
+	Authenticated bool     `json:"authenticated"`
+	Email         string   `json:"email,omitempty"`
+	Groups        []string `json:"groups,omitempty"`
 }
 
 // ConnectInterceptor applies the same check to DashboardService.
