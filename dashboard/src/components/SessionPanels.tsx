@@ -126,13 +126,14 @@ export function AgentsPanel({ runs }: { runs: SubagentRun[] }) {
                   {r.description}
                 </div>
               )}
-              {/* Only while it is still working: once it has returned, its
-                  last tool and token count describe nothing anyone can act on. */}
-              {r.status === "running" && (
-                <div className="text-xs text-dim2 truncate">
-                  {[r.lastTool, r.toolUses && `${r.toolUses} calls`, r.tokens && `${Math.round(r.tokens / 100) / 10}k tokens`]
-                    .filter(Boolean)
-                    .join(" · ")}
+              {/* What it came back with. The Agent call's own tool_result is
+                  filtered out of the feed along with the call, so this line is
+                  the only trace of the subagent's answer left in the console —
+                  collecting the summary and rendering nowhere left "what did
+                  it find" unanswerable. Full text in the tooltip. */}
+              {r.status !== "running" && r.summary && (
+                <div className="text-xs text-dim2 truncate" title={r.summary}>
+                  {r.summary}
                 </div>
               )}
             </div>

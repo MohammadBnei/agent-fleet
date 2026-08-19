@@ -298,7 +298,6 @@ test("subagentRuns joins an Agent call to its task_* stream", () => {
   const runs = subagentRuns([
     agentCall("toolu_1", "Explore", "Map dashboard feed rendering"),
     signal({ sdk: "task_started", task_id: "t1", tool_use_id: "toolu_1", subagent_type: "Explore" }),
-    signal({ sdk: "task_progress", task_id: "t1", tool_use_id: "toolu_1", last_tool_name: "Read", usage: { total_tokens: 28635, tool_uses: 7 } }),
   ]);
   expect(runs).toHaveLength(1);
   expect(runs[0]).toMatchObject({
@@ -306,9 +305,6 @@ test("subagentRuns joins an Agent call to its task_* stream", () => {
     subagentType: "Explore",
     description: "Map dashboard feed rendering",
     status: "running",
-    lastTool: "Read",
-    tokens: 28635,
-    toolUses: 7,
   });
 });
 
@@ -323,6 +319,18 @@ test("task_updated resolves through task_id alone", () => {
     signal({ sdk: "task_updated", task_id: "t1", patch: { status: "completed", end_time: 1787127340563 } }),
   ]);
   expect(runs[0].status).toBe("completed");
+});
+
+// …but an interim patch is not a terminal one. task_updated fires on every
+// transition, and the tool_result promotion below only upgrades a run still
+// marked running, so reading "in_progress" as failed paints it red forever.
+test("an in-progress patch leaves the run running", () => {
+  const runs = subagentRuns([
+    agentCall("toolu_1", "Explore", "d"),
+    signal({ sdk: "task_started", task_id: "t1", tool_use_id: "toolu_1" }),
+    signal({ sdk: "task_updated", task_id: "t1", patch: { status: "in_progress" } }),
+  ]);
+  expect(runs[0].status).toBe("running");
 });
 
 test("a non-completed task status is a failure, not a completion", () => {
@@ -371,4 +379,30 @@ test("inFlightTool reads elapsed time from a heartbeat's parent_tool_use_id", ()
     signal({ sdk: "tool_progress", tool_use_id: "toolu_9-heartbeat-0", parent_tool_use_id: "toolu_9", tool_name: "Bash", elapsed_time_seconds: 90 }),
   ]);
   expect(flight).toMatchObject({ tool: "Bash", elapsedSeconds: 90 });
+});
+
+// The SDK calls a backgrounded Bash a "task" too, and in production it is the
+// overwhelming majority: 162 of 186 task_started and 157 of 181
+// task_notification point at a Bash tool_use, not an Agent one. Seeding a run
+// from the signal put a bogus "agent" row with an empty description in the
+// panel for every background command — ~87% of the rows it would have shown.
+// Only an Agent tool_use we have actually seen makes a run.
+test("a backgrounded Bash's task signals never become a subagent row", () => {
+  const runs = subagentRuns([
+    entry(TranscriptEntryType.ASSISTANT, "agent", JSON.stringify({ id: "toolu_bash", tool: "Bash", input: { command: "sleep 45", run_in_background: true } })),
+    signal({ sdk: "task_started", task_id: "bw5d5o0s1", tool_use_id: "toolu_bash", description: "Wait briefly for explore agents" }),
+    signal({ sdk: "task_notification", task_id: "bw5d5o0s1", tool_use_id: "toolu_bash", status: "completed", summary: 'Background command "Wait briefly" completed (exit code 0)' }),
+  ]);
+  expect(runs).toEqual([]);
+});
+
+// A summary is the subagent's actual answer, and the Agent call's tool_result
+// is filtered out of the feed along with the call — so if the panel does not
+// carry it, "what did it find" has no surface left in the console.
+test("a completed run keeps the summary it came back with", () => {
+  const runs = subagentRuns([
+    agentCall("toolu_1", "Explore", "Map dashboard feed rendering"),
+    signal({ sdk: "task_notification", task_id: "t1", tool_use_id: "toolu_1", status: "completed", summary: "found it in SignalView" }),
+  ]);
+  expect(runs[0]).toMatchObject({ status: "completed", summary: "found it in SignalView" });
 });

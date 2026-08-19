@@ -354,11 +354,15 @@ export const PANEL_OWNED_TOOLS = new Set(["TodoWrite", "Agent"]);
 // rather than vanish. Same trade-off, and the same direction, as the worker's
 // own EPHEMERAL_SYSTEM_SUBTYPES.
 export const PANEL_OWNED_SIGNALS = new Set([
-  // The AGENTS panel renders all four, correlated into one row per run.
+  // The AGENTS panel renders these four, correlated into one row per run.
   "task_started",
   "task_progress",
   "task_updated",
   "task_notification",
+  // NOT rendered by the panel — silenced on its own merits. It re-lists every
+  // running task on each change, and "task" here mostly means a backgrounded
+  // Bash, whose own tool row is already in the feed. The lifecycle it carries
+  // is the Bash call's lifecycle, which the row shows.
   "background_tasks_changed",
   // The whole slash-command/skill catalogue, descriptions included, re-dumped
   // on every change. SessionInitView already lists the skills and the composer
@@ -435,11 +439,15 @@ export type SubagentRun = {
   subagentType: string;
   description: string;
   status: "running" | "completed" | "failed";
-  lastTool?: string;
-  tokens?: number;
-  toolUses?: number;
   summary?: string;
 };
+// No lastTool/tokens/toolUses here on purpose. Only task_progress carries
+// them, and the worker drops task_progress before it is ever pushed
+// (EPHEMERAL_SYSTEM_SUBTYPES, #182) — it wrote a durable Postgres row per
+// subagent poll. Every task_progress row in production predates that fix and
+// none has been written since. A field the pipeline cannot fill is worse than
+// an absent one: it renders an empty line and reads as "this subagent is doing
+// nothing".
 
 // The four subtypes that describe a subagent, and the reason this is an
 // explicit list rather than "any signal with a tool_use_id": tool_progress and
@@ -448,6 +456,15 @@ export type SubagentRun = {
 // measuring the rendered panel, not by any unit test — the phantom rows are
 // structurally identical to real ones.
 const TASK_SIGNALS = new Set(["task_started", "task_progress", "task_updated", "task_notification"]);
+
+// Statuses that mean "still working". Anything else that isn't "completed" is
+// read as a failure (same direction as the signal denylist — an unrecognised
+// terminal status is likelier to be a real failure than a silent success),
+// but task_updated patches a task's fields on every transition, not only the
+// last one, so the in-progress ones need carving out explicitly: without this
+// one interim patch paints a healthy run red *permanently*, since the
+// tool_result promotion below only ever upgrades a run still marked running.
+const IN_PROGRESS_STATUSES = new Set(["pending", "queued", "started", "running", "in_progress"]);
 
 // Correlation, and why it needs two keys: task_started carries BOTH
 // `tool_use_id` (the Agent call) and `task_id` (the SDK's handle), but
@@ -498,19 +515,24 @@ export function subagentRuns(entries: TranscriptEntry[]): SubagentRun[] {
     const id = sig.tool_use_id ?? (sig.task_id ? byTaskId.get(sig.task_id) : undefined);
     if (!id) continue;
 
-    // A signal can arrive for a run whose Agent tool_use is below the loaded
-    // page — seed from the signal rather than dropping it.
-    const run =
-      runs.get(id) ??
-      ({ toolUseId: id, subagentType: "agent", description: "", status: "running" } as SubagentRun);
+    // An Agent tool_use we have actually seen, or nothing. A task_* signal is
+    // NOT evidence of a subagent: a backgrounded Bash is a "task" to the SDK
+    // too, and in production it is the overwhelming majority — 162 of 186
+    // task_started and 157 of 181 task_notification point at a Bash call, not
+    // an Agent one. Seeding a run from the signal (as this did) put a bogus
+    // "agent" row with an empty description in the panel for every background
+    // command, which is ~87% of the rows it would show. The cost is that a
+    // subagent whose Agent call sits below the loaded page is not listed —
+    // correct, and quiet, rather than confidently wrong.
+    const run = runs.get(id);
+    if (!run) continue;
     if (sig.subagent_type) run.subagentType = sig.subagent_type;
     if (sig.description) run.description = sig.description;
-    if (sig.last_tool_name) run.lastTool = sig.last_tool_name;
-    if (sig.usage?.total_tokens) run.tokens = sig.usage.total_tokens;
-    if (sig.usage?.tool_uses) run.toolUses = sig.usage.tool_uses;
     if (sig.summary) run.summary = sig.summary;
     const status = sig.patch?.status ?? (sig.sdk === "task_notification" ? sig.status : undefined);
-    if (status) run.status = status === "completed" ? "completed" : "failed";
+    if (status)
+      run.status =
+        status === "completed" ? "completed" : IN_PROGRESS_STATUSES.has(status) ? "running" : "failed";
     runs.set(id, run);
   }
 

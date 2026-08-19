@@ -341,7 +341,7 @@ export function SessionDetail({
       <div className="w-[266px] flex-none overflow-y-auto px-3.5 py-3.5 flex flex-col gap-4.5 min-w-0">
         <TodosPanel todos={todos} blocked={blocked} />
         <ChangesPanel branch={branch} changes={changes} />
-          <AgentsPanel runs={agents} />
+        <AgentsPanel runs={agents} />
         <div className="mt-auto">
           <SessionPanel
             session={session}
