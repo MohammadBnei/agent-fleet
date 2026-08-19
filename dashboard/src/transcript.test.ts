@@ -17,6 +17,7 @@ import {
   findPendingPermissions,
   resolvedPermissionDecisions,
   subagentRuns,
+  fileEdits,
 } from "./transcript";
 
 let nextSeq = 0n;
@@ -405,4 +406,37 @@ test("a completed run keeps the summary it came back with", () => {
     signal({ sdk: "task_notification", task_id: "t1", tool_use_id: "toolu_1", status: "completed", summary: "found it in SignalView" }),
   ]);
   expect(runs[0]).toMatchObject({ status: "completed", summary: "found it in SignalView" });
+});
+
+
+// The CHANGES panel's rows carry git's repo-relative path; the SDK's file_path
+// is absolute. Comparing them with === matched nothing, ever — and the failure
+// is silent, because "no edits" is also the legitimate answer for a file a
+// Bash command rewrote. So both halves get pinned here.
+test("fileEdits: matches a repo-relative telemetry path against an absolute file_path", () => {
+  const entries = [
+    toolUse("e1", "Write", { file_path: "/workspace/app/src/a.ts", content: "one\n" }),
+    toolUse("e2", "Bash", { command: "sed -i s/x/y/ src/b.ts" }),
+    toolUse("e3", "Edit", { file_path: "/workspace/app/src/a.ts", old_string: "one", new_string: "two" }),
+  ];
+
+  const found = fileEdits(entries, "src/a.ts");
+  expect(found.map((e) => e.tool)).toEqual(["Write", "Edit"]);
+
+  // Oldest first: a file touched five times was five decisions, and the modal
+  // renders them in the order they happened.
+  expect(found[0].seq < found[1].seq).toBe(true);
+
+  // An absolute path on both sides still matches.
+  expect(fileEdits(entries, "/workspace/app/src/a.ts")).toHaveLength(2);
+
+  // A file only a Bash command touched has no captured diff. This is the case
+  // the modal explains rather than rendering an empty box.
+  expect(fileEdits(entries, "src/b.ts")).toEqual([]);
+});
+
+// Suffix matching on a path boundary, not a bare endsWith.
+test("fileEdits: does not match a path that is only a string suffix", () => {
+  const entries = [toolUse("e1", "Edit", { file_path: "/workspace/app/not-a.ts", old_string: "x", new_string: "y" })];
+  expect(fileEdits(entries, "a.ts")).toEqual([]);
 });

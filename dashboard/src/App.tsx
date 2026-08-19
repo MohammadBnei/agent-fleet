@@ -6,6 +6,7 @@ import { Schedules } from "./pages/Schedules";
 import { Observability } from "./pages/Observability";
 import { NewSessionDialog } from "./components/NewSessionDialog";
 import { SettingsMenu } from "./components/SettingsMenu";
+import { NeedsYouModal } from "./components/NeedsYouModal";
 import { Segmented } from "./components/Segmented";
 import { MobileSessionList } from "./mobile/MobileSessionList";
 import { MobileSessionDetail } from "./mobile/MobileSessionDetail";
@@ -19,6 +20,7 @@ import { LogDrawer } from "./components/LogDrawer";
 import { useMediaQuery } from "./useMediaQuery";
 import { pollVisible } from "./pollVisible";
 import { useTheme } from "./useTheme";
+import { useFeedWidth } from "./useFeedWidth";
 
 // No router library (see docs/adr/0013's plan) — state mirrored to
 // ?view=/?session= so a session is still bookmarkable/shareable without pulling
@@ -82,6 +84,9 @@ export default function App() {
   // one was open. Gating the mount on the real viewport is what stops that.
   const isDesktop = useMediaQuery("(min-width: 640px)");
   const [theme, setTheme] = useTheme();
+  const [feedWidth, setFeedWidth] = useFeedWidth();
+  // The header badge opens this instead of navigating. See NeedsYouModal.
+  const [decisionsOpen, setDecisionsOpen] = useState(false);
   const [view, setView] = useState<View>(readViewFromUrl);
   const [selectedId, setSelectedId] = useState<string | null>(readSessionIdFromUrl);
   const [sessions, setSessions] = useState<Session[]>([]);
@@ -257,12 +262,32 @@ export default function App() {
 
   // The header's live census. `liveState` is server-derived (docs/adr/0040), so
   // every client agrees on what "working" means.
+  // The badge's own predicate, once. The modal renders exactly what the badge
+  // counted — deriving it twice is how a "3 waiting" button opens an empty box.
+  //
+  // Sorted longest-waiting first, matching bucketSessions' needsYou order. The
+  // modal does not go through bucketSessions, so it does NOT inherit that sort
+  // for free — it listed a 8m-old decision above a 53m-old one while the list
+  // two inches behind it showed the opposite, which is the kind of disagreement
+  // that makes a human stop trusting the ordering entirely.
+  const blockedSessions = useMemo(
+    () =>
+      sessions
+        .filter((t) => t.archivedAt === undefined && t.liveState === "blocked")
+        .sort(
+          (a, b) =>
+            (a.lastActiveAt ? new Date(a.lastActiveAt).getTime() : 0) -
+            (b.lastActiveAt ? new Date(b.lastActiveAt).getTime() : 0),
+        ),
+    [sessions],
+  );
+
   const counts = useMemo(() => {
     // Same rule the needsYou bucket uses, and for the same reason: the raw
     // pendingDecisions count counts sessions whose pod is gone (and archived
     // ones), so the badge would show work waiting on a human that no human
     // can act on. "blocked" is live-and-pending, already derived server-side.
-    const waiting = sessions.filter((t) => t.archivedAt === undefined && t.liveState === "blocked").length;
+    const waiting = blockedSessions.length;
     // `working` means the badge says WORKING, not "has a live pod".
     // ACTIVE_STATES is the pod-liveness set — it includes idle, unknown and
     // stalled — so counting it here reported "1 working · 0 idle" for a fleet
@@ -271,7 +296,7 @@ export default function App() {
     const working = sessions.filter((t) => t.liveState === "working").length;
     const done = sessions.filter((t) => t.liveState === "done").length;
     return { waiting, working, done, idle: Math.max(0, sessions.length - waiting - working - done) };
-  }, [sessions]);
+  }, [sessions, blockedSessions]);
 
   const repoCount = useMemo(
     () => new Set(sessions.filter(() => true).map((t) => t.repo)).size,
@@ -341,10 +366,13 @@ export default function App() {
             <div className="flex items-center gap-2 ml-auto">
               <button
                 type="button"
-                onClick={() => {
-                  selectView("sessions");
-                  setNeedsYouOnly(true);
-                }}
+                // Opens the decisions over whatever is on screen rather than
+                // navigating to the list. Answering one is a 5-second
+                // interruption; it should not cost the reader their place —
+                // and from inside a session detail the old handler was a no-op
+                // anyway, since selectView("sessions") keeps the open session.
+                onClick={() => setDecisionsOpen(true)}
+                title="Answer every pending decision without leaving this page"
                 className="flex items-center gap-2 cursor-pointer"
               >
                 <span className="w-[7px] h-[7px] rounded-full bg-error ring-glow animate-fpulse" />
@@ -390,7 +418,7 @@ export default function App() {
               selectSession(id);
             }}
           />
-          <SettingsMenu theme={theme} onThemeChange={setTheme} />
+          <SettingsMenu theme={theme} onThemeChange={setTheme} feedWidth={feedWidth} onFeedWidthChange={setFeedWidth} />
         </div>
       ) : (
         <div className="flex-none border-b border-line bg-base-200">
@@ -417,7 +445,7 @@ export default function App() {
             {counts.waiting > 0 && (
               <button
                 type="button"
-                onClick={() => selectView("sessions")}
+                onClick={() => setDecisionsOpen(true)}
                 className="ml-auto flex items-center gap-1.5 border border-pink-line bg-pink-chip px-2 py-[3px] cursor-pointer"
               >
                 <span className="w-1.5 h-1.5 rounded-full bg-error ring-glow animate-fpulse" />
@@ -443,7 +471,7 @@ export default function App() {
                 selectSession(id);
               }}
             />
-            <SettingsMenu theme={theme} onThemeChange={setTheme} />
+            <SettingsMenu theme={theme} onThemeChange={setTheme} feedWidth={feedWidth} onFeedWidthChange={setFeedWidth} />
           </div>
           {searchOpen && (
             <div className="px-3.5 pb-2.5">
@@ -468,6 +496,20 @@ export default function App() {
         onCancel={() => setPendingDeleteId(null)}
       />
       <LogDrawer sessionId={logSessionId} onClose={() => setLogSessionId(null)} />
+      <NeedsYouModal
+        open={decisionsOpen}
+        sessions={blockedSessions}
+        summaries={summaries}
+        onClose={() => setDecisionsOpen(false)}
+        onOpenSession={(id) => {
+          // Close first: a plan sends you into the session, and leaving this
+          // open behind the detail view means answering there and then finding
+          // a stale copy of the same decision still sitting on top.
+          setDecisionsOpen(false);
+          selectSession(id);
+        }}
+        reload={loadSessions}
+      />
 
       {/* min-w-0 alongside min-h-0: a flex item's min-width defaults to auto, so
           any descendant with a large min-content width (a long URL, a nowrap

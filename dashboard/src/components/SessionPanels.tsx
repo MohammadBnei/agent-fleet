@@ -5,7 +5,7 @@ import { imageTag } from "../imageTag";
 import { TickBar, todoProgress } from "./TickBar";
 import { ActionsMenu } from "./ActionsMenu";
 
-// TODOS / CHANGES / E2E PREVIEW / SESSION. Desktop puts these in a fixed 266px
+// TODOS / CHANGES / AGENTS / SESSION. Desktop puts these in a fixed 266px
 // right column, mobile behind "panels ▸" as a bottom sheet — one component so
 // the two can't drift, which is how mobile ended up a weaker port the first
 // time round.
@@ -13,6 +13,13 @@ import { ActionsMenu } from "./ActionsMenu";
 // The drag-resizable, collapsible, fit-height Panel machinery this replaces
 // (~120 lines and six localStorage keys) is gone: both mockups specify a fixed
 // column, and nothing in the panels needed the extra height a drag could buy.
+//
+// The first three render NOTHING when empty rather than a heading over a "no
+// todos yet" line. Three such placeholders is what a fresh session showed —
+// a column of headings asserting the absence of things nobody had asked about
+// yet, and on mobile a bottom sheet worth opening to read them. SESSION is the
+// exception: it carries the facts and the action bar, so it is never empty.
+// panelsEmpty() below is what lets mobile hide its opener on the same rule.
 
 function PanelHeading({ title, extra }: { title: string; extra?: React.ReactNode }) {
   return (
@@ -24,62 +31,66 @@ function PanelHeading({ title, extra }: { title: string; extra?: React.ReactNode
 }
 
 export function TodosPanel({ todos, blocked }: { todos: TodoItem[]; blocked: boolean }) {
+  if (todos.length === 0) return null;
   return (
     <div>
-      <PanelHeading
-        title="TODOS"
-        extra={todos.length > 0 && <span className="text-xs text-dim2 ml-auto">{todoProgress(todos)}</span>}
-      />
-      {todos.length === 0 ? (
-        <div className="text-xs text-dim2">no todos yet</div>
-      ) : (
-        <>
-          <TickBar todos={todos} blocked={blocked} className="mb-3" />
-          <div className="flex flex-col gap-1.5">
-            {todos.map((t, i) => (
-              <div
-                key={i}
-                className={`text-sm leading-[1.5] ${
-                  t.status === "in_progress" ? (blocked ? "text-error" : "text-base-content") : "text-dim2"
-                }`}
-              >
-                {t.status === "completed" ? "✓ " : t.status === "in_progress" ? "▸ " : "· "}
-                {t.status === "in_progress" ? t.activeForm : t.content}
-                {t.status === "in_progress" && blocked && (
-                  <>
-                    <br />
-                    <span className="text-pink-dim">blocked on you</span>
-                  </>
-                )}
-              </div>
-            ))}
+      <PanelHeading title="TODOS" extra={<span className="text-xs text-dim2 ml-auto">{todoProgress(todos)}</span>} />
+      <TickBar todos={todos} blocked={blocked} className="mb-3" />
+      <div className="flex flex-col gap-1.5">
+        {todos.map((t, i) => (
+          <div
+            key={i}
+            className={`text-sm leading-[1.5] ${
+              t.status === "in_progress" ? (blocked ? "text-error" : "text-base-content") : "text-dim2"
+            }`}
+          >
+            {t.status === "completed" ? "✓ " : t.status === "in_progress" ? "▸ " : "· "}
+            {t.status === "in_progress" ? t.activeForm : t.content}
+            {t.status === "in_progress" && blocked && (
+              <>
+                <br />
+                <span className="text-pink-dim">blocked on you</span>
+              </>
+            )}
           </div>
-        </>
-      )}
+        ))}
+      </div>
     </div>
   );
 }
 
-export function ChangesPanel({ branch, changes }: { branch: string | null; changes: ToolCallSummary["files"] | null }) {
+// Each row opens the file's diff (see FileDiffModal): the sidecar's numstat
+// telemetry gives a line count, and a line count is the one thing about a
+// change nobody actually wants to know on its own.
+export function ChangesPanel({
+  branch,
+  changes,
+  onOpenFile,
+}: {
+  branch: string | null;
+  changes: ToolCallSummary["files"] | null;
+  onOpenFile: (path: string) => void;
+}) {
+  if (!changes || changes.length === 0) return null;
   return (
     <div className="min-w-0">
       <PanelHeading title="CHANGES" />
       {branch && <div className="text-xs text-dim2 mb-2 truncate">{branch}</div>}
-      {!changes || changes.length === 0 ? (
-        <div className="text-xs text-dim2">no changes yet</div>
-      ) : (
-        <div className="flex flex-col gap-1.5">
-          {changes.map((c, i) => (
-            <div key={i} className="flex gap-2 text-sm min-w-0">
-              <span className="text-dim flex-1 min-w-0 truncate" title={c.path}>
-                {c.path}
-              </span>
-              <span className="text-green-soft flex-none">+{c.added}</span>
-              <span className={c.removed > 0 ? "text-minus flex-none" : "text-dim2 flex-none"}>−{c.removed}</span>
-            </div>
-          ))}
-        </div>
-      )}
+      <div className="flex flex-col gap-1.5">
+        {changes.map((c, i) => (
+          <button
+            key={i}
+            type="button"
+            onClick={() => onOpenFile(c.path)}
+            className="flex gap-2 text-sm min-w-0 text-left cursor-pointer hover:text-primary"
+            title={`${c.path} — open diff`}
+          >
+            <span className="text-dim flex-1 min-w-0 truncate">{c.path}</span>
+            <span className="text-green-soft flex-none">+{c.added}</span>
+            <span className={c.removed > 0 ? "text-minus flex-none" : "text-dim2 flex-none"}>−{c.removed}</span>
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
@@ -93,55 +104,58 @@ export function ChangesPanel({ branch, changes }: { branch: string | null; chang
 // Tasks and subagents only. Skills and Bash stay in the feed where their tool
 // call already is — this panel exists to remove a duplicate, not to add one.
 export function AgentsPanel({ runs }: { runs: SubagentRun[] }) {
+  if (runs.length === 0) return null;
   const running = runs.filter((r) => r.status === "running").length;
   return (
     <div className="min-w-0">
       <PanelHeading
         title="AGENTS"
         extra={
-          runs.length > 0 && (
-            <span className="text-xs text-dim2 ml-auto">
-              {running > 0 ? `${running} running` : `${runs.length} done`}
-            </span>
-          )
+          <span className="text-xs text-dim2 ml-auto">
+            {running > 0 ? `${running} running` : `${runs.length} done`}
+          </span>
         }
       />
-      {runs.length === 0 ? (
-        <div className="text-xs text-dim2">no subagents yet</div>
-      ) : (
-        <div className="flex flex-col gap-1.5">
-          {runs.map((r) => (
-            <div key={r.toolUseId} className="min-w-0">
-              <div
-                className={`text-sm leading-[1.5] truncate ${
-                  r.status === "failed" ? "text-error" : r.status === "running" ? "text-base-content" : "text-dim2"
-                }`}
-                title={r.description || r.subagentType}
-              >
-                {r.status === "completed" ? "✓ " : r.status === "failed" ? "✗ " : "▸ "}
-                {r.subagentType}
-              </div>
-              {r.description && (
-                <div className="text-xs text-dim2 truncate" title={r.description}>
-                  {r.description}
-                </div>
-              )}
-              {/* What it came back with. The Agent call's own tool_result is
-                  filtered out of the feed along with the call, so this line is
-                  the only trace of the subagent's answer left in the console —
-                  collecting the summary and rendering nowhere left "what did
-                  it find" unanswerable. Full text in the tooltip. */}
-              {r.status !== "running" && r.summary && (
-                <div className="text-xs text-dim2 truncate" title={r.summary}>
-                  {r.summary}
-                </div>
-              )}
+      <div className="flex flex-col gap-1.5">
+        {runs.map((r) => (
+          <div key={r.toolUseId} className="min-w-0">
+            <div
+              className={`text-sm leading-[1.5] truncate ${
+                r.status === "failed" ? "text-error" : r.status === "running" ? "text-base-content" : "text-dim2"
+              }`}
+              title={r.description || r.subagentType}
+            >
+              {r.status === "completed" ? "✓ " : r.status === "failed" ? "✗ " : "▸ "}
+              {r.subagentType}
             </div>
-          ))}
-        </div>
-      )}
+            {r.description && (
+              <div className="text-xs text-dim2 truncate" title={r.description}>
+                {r.description}
+              </div>
+            )}
+            {/* What it came back with. The Agent call's own tool_result is
+                filtered out of the feed along with the call, so this line is
+                the only trace of the subagent's answer left in the console —
+                collecting the summary and rendering nowhere left "what did
+                it find" unanswerable. Full text in the tooltip. */}
+            {r.status !== "running" && r.summary && (
+              <div className="text-xs text-dim2 truncate" title={r.summary}>
+                {r.summary}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
     </div>
   );
+}
+
+// Whether the three conditional panels would all render null. Mobile hides the
+// "panels" opener on this rather than each caller re-deriving the same three
+// emptiness checks the panels already make internally — a button that opens an
+// empty sheet is worse than no button.
+export function panelsEmpty(todos: TodoItem[], changes: ToolCallSummary["files"] | null, runs: SubagentRun[]) {
+  return todos.length === 0 && (!changes || changes.length === 0) && runs.length === 0;
 }
 
 // min-w-0 on the root and on every shrinkable child is load-bearing: `truncate`

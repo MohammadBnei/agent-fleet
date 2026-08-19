@@ -220,6 +220,12 @@
 }
 
 @layer base {
+  /* The feed's prose measure, overridden at runtime by useFeedWidth. Defined
+     here so first paint (before the effect runs) is capped rather than
+     unconstrained. */
+  :root {
+    --feed-measure: 760px;
+  }
   body {
     font-family: "IBM Plex Mono", ui-monospace, monospace;
     /* Deliberately no `-webkit-font-smoothing: antialiased` -- on macOS it

@@ -436,6 +436,48 @@ export function latestTodos(entries: TranscriptEntry[]): TodoItem[] | null {
   return null;
 }
 
+// Every Edit/Write the agent made to one file, oldest first — the CHANGES
+// panel's rows open this.
+//
+// The panel itself is fed by the sidecar's `git diff --numstat` telemetry
+// (sidecar/internal/telemetry/loop.go), which carries a path and two line
+// counts and no content at all; there is no GetDiff or ReadFile RPC anywhere
+// on DashboardService. So the diff comes from where the console already has
+// one: the tool inputs, which the SDK hands over with BOTH sides of the string
+// and which the feed already renders through ToolInputView.
+//
+// ponytail: a file changed by Bash (sed, mv, a codegen script) has no tool
+// input to diff, so it returns [] and the modal says so rather than showing an
+// empty box. The upgrade path if that bites is a GetFileDiff RPC running
+// `git diff -- <path>` in the sidecar, which is where ground truth actually is.
+const FILE_EDIT_TOOLS = new Set(["Edit", "Write", "NotebookEdit"]);
+export type FileEdit = { seq: bigint; tool: string; input: unknown };
+export function fileEdits(entries: TranscriptEntry[], path: string): FileEdit[] {
+  const out: FileEdit[] = [];
+  for (const e of entries) {
+    if (e.type !== TranscriptEntryType.ASSISTANT) continue;
+    const info = parseSdkToolUse(e.text);
+    if (!info?.tool || !FILE_EDIT_TOOLS.has(info.tool)) continue;
+    const filePath = (info.input as { file_path?: unknown } | undefined)?.file_path;
+    if (typeof filePath !== "string" || !samePath(filePath, path)) continue;
+    out.push({ seq: e.seq, tool: info.tool, input: info.input });
+  }
+  return out;
+}
+
+// The two sides name the same file differently and neither is wrong: numstat
+// prints repo-relative (`src/foo.ts`) because that is what git reports, and the
+// SDK's file_path is absolute (`/workspace/dream-analyst/src/foo.ts`) because
+// Claude Code requires absolute paths. Comparing them with === matches nothing,
+// ever — which reads exactly like "this file has no captured diff" and would
+// have made the whole modal look like a Bash-only edge case.
+//
+// Suffix on a path boundary, not a bare endsWith: `foo.ts` must not match
+// `not-foo.ts`. Either side may be the longer one, so check both directions.
+function samePath(a: string, b: string): boolean {
+  return a === b || a.endsWith(`/${b}`) || b.endsWith(`/${a}`);
+}
+
 // One subagent the main agent spawned, assembled from the five places the SDK
 // scatters it: the Agent tool_use (what was asked), its tool_result (that it
 // finished), and task_started / task_progress / task_updated /
@@ -697,6 +739,12 @@ export function inFlightTool(entries: TranscriptEntry[]): InFlightTool | null {
 export type ListSummary = {
   todos: TodoItem[];
   pendingPermission: PendingPermission | null;
+  // How many are pending in total, of which pendingPermission is the first.
+  // Rendering only the first was right; rendering it with no indication that
+  // four more are queued behind it was not — after answering, a different card
+  // appears in the same pixels, and from outside there is no way to tell
+  // "finished" from "three to go".
+  pendingPermissionCount: number;
   pendingQuestion: TranscriptEntry | null;
   inFlight: InFlightTool | null;
 };
@@ -706,12 +754,15 @@ export type ListSummary = {
 // actual decision in the list — rather than making the human open it to find
 // out what it wants — is the whole point, and it costs no extra RPC.
 //
-// Only the FIRST pending permission: the list card shows one decision, and a
-// session blocked on several still only needs the human to start somewhere.
+// Only the FIRST pending permission is rendered: the list card shows one
+// decision, and a session blocked on several still only needs the human to
+// start somewhere. The count comes along so the card can say so.
 export function listSummary(entries: TranscriptEntry[]): ListSummary {
+  const permissions = findPendingPermissions(entries);
   return {
     todos: latestTodos(entries) ?? [],
-    pendingPermission: findPendingPermissions(entries)[0] ?? null,
+    pendingPermission: permissions[0] ?? null,
+    pendingPermissionCount: permissions.length,
     pendingQuestion: findPendingQuestion(entries),
     inFlight: inFlightTool(entries),
   };

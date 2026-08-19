@@ -4,10 +4,20 @@ import { ManagePromptSnippetsModal } from "./ManagePromptSnippetsModal";
 import { Segmented } from "./Segmented";
 import type { Theme } from "../useTheme";
 import { useIdentity } from "../useIdentity";
+import type { FeedWidth } from "../useFeedWidth";
 
 const THEMES: readonly { value: Theme; label: string }[] = [
   { value: "herd", label: "dark" },
   { value: "herd-light", label: "light" },
+];
+
+// The feed's prose measure. 760 is the readability cap the console shipped
+// with; it also squeezed code blocks and diagrams that have no such limit, so
+// it's a choice now rather than a number. See useFeedWidth.
+const WIDTHS: readonly { value: FeedWidth; label: string }[] = [
+  { value: "760", label: "760" },
+  { value: "1100", label: "1100" },
+  { value: "full", label: "full" },
 ];
 
 // Neither console mockup gives the repo/prompt-snippet editors a home — the
@@ -46,9 +56,13 @@ const THEMES: readonly { value: Theme; label: string }[] = [
 export function SettingsMenu({
   theme,
   onThemeChange,
+  feedWidth,
+  onFeedWidthChange,
 }: {
   theme: Theme;
   onThemeChange: (t: Theme) => void;
+  feedWidth: FeedWidth;
+  onFeedWidthChange: (w: FeedWidth) => void;
 }) {
   const identity = useIdentity();
 
@@ -73,6 +87,10 @@ export function SettingsMenu({
           <div className="flex flex-col gap-1.5">
             <span className="text-2xs tracking-[0.12em] text-dim2">THEME</span>
             <Segmented value={theme} options={THEMES} onChange={onThemeChange} grow size="sm" />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <span className="text-2xs tracking-[0.12em] text-dim2">TEXT WIDTH</span>
+            <Segmented value={feedWidth} options={WIDTHS} onChange={onFeedWidthChange} grow size="sm" />
           </div>
           <div className="flex flex-col gap-1.5">
             <span className="text-2xs tracking-[0.12em] text-dim2">MANAGE</span>

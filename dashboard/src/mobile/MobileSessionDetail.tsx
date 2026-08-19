@@ -23,7 +23,9 @@ import { Modal } from "../components/Modal";
 import { Segmented } from "../components/Segmented";
 import { SessionFeed } from "../components/SessionFeed";
 import { TickBar, todoProgress } from "../components/TickBar";
-import { TodosPanel, ChangesPanel, AgentsPanel, SessionPanel } from "../components/SessionPanels";
+import { TodosPanel, ChangesPanel, AgentsPanel, SessionPanel, panelsEmpty } from "../components/SessionPanels";
+import { FileDiffModal } from "../components/FileDiffModal";
+import { Composer } from "../components/Composer";
 
 // The phone session screen from Agent Fleet Console Mobile.dc.html.
 //
@@ -51,7 +53,6 @@ export function MobileSessionDetail({
   const {
     session,
     entries,
-    branch,
     busyKey,
     loadError,
     actionError,
@@ -69,6 +70,8 @@ export function MobileSessionDetail({
   const [message, setMessage] = useState("");
   const [panelsOpen, setPanelsOpen] = useState(false);
   const [autoOpen, setAutoOpen] = useState(false);
+  // The CHANGES row a human clicked, or null. See FileDiffModal.
+  const [diffPath, setDiffPath] = useState<string | null>(null);
   // Same persisted key as the desktop view — see SessionDetail.tsx.
   const [density, setDensity] = useLocalStorageState<Density>("taskDetail.density", "everything");
   const { ref: feedRef, atBottom, onScroll, scrollToBottom, anchorPrepend } = useAtBottom<HTMLDivElement>();
@@ -118,7 +121,14 @@ export function MobileSessionDetail({
   const badge = sessionBadge(session);
   const visibility = feedVisibility(density, true);
   const todos = latestTodos(entries) ?? [];
-  const changes = latestToolCallSummary(entries)?.files ?? null;
+  // One lookup for both: the sidecar pushes branch and files in the same
+  // telemetry snapshot. `branch` used to come from useSessionDetail, where it
+  // was permanently null — the ListWorktrees lookup that filled it died with
+  // the worktree model (docs/adr/0048 §5) while the real value was on the wire
+  // here the whole time, already rendered by ToolCallLine in the feed.
+  const toolSummary = latestToolCallSummary(entries);
+  const branch = toolSummary?.branch ?? null;
+  const changes = toolSummary?.files ?? null;
   const agents = subagentRuns(entries);
 
   const docked = hasPendingDecision(entries);
@@ -175,13 +185,18 @@ export function MobileSessionDetail({
           ) : (
             <span className="text-2xs text-dim2 flex-1">no todos yet</span>
           )}
-          <button
-            type="button"
-            onClick={() => setPanelsOpen(true)}
-            className="text-2xs text-dim flex-none"
-          >
-            panels ▸
-          </button>
+          {/* Hidden when all three conditional panels would render null —
+              the sheet would open on nothing but the SESSION facts, which the
+              header above already shows most of. */}
+          {!panelsEmpty(todos, changes, agents) && (
+            <button
+              type="button"
+              onClick={() => setPanelsOpen(true)}
+              className="text-2xs text-dim flex-none"
+            >
+              panels ▸
+            </button>
+          )}
         </div>
       </div>
 
@@ -211,6 +226,11 @@ export function MobileSessionDetail({
       </div>
 
       <ErrorModal message={actionError} onClose={clearActionError} />
+      {/* A sibling of the panels sheet, not a child: the sheet is where the
+          CHANGES row is clicked, and a <dialog> nested inside an open one is
+          the trap Modal.tsx:36 guards. Opening the diff closes the sheet
+          (setPanelsOpen(false) below) so there is only ever one open. */}
+      <FileDiffModal path={diffPath} entries={entries} onClose={() => setDiffPath(null)} />
       <ConfirmModal
         title="Switch to auto mode?"
         message={AUTO_MODE_WARNING}
@@ -267,36 +287,34 @@ export function MobileSessionDetail({
         )}
 
         <div className="px-3.5 py-2.5">
-          <div className="flex gap-2.5 items-center border border-line bg-base-200 px-3 py-2.5 focus-within:border-primary/60">
-            <span className="text-primary text-base">❯</span>
-            <input
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") sendMessage();
-              }}
-              disabled={busyKey !== null}
-              placeholder="message the agent"
-              aria-label="message the agent"
-              className="flex-1 min-w-0 bg-transparent outline-none text-sm placeholder:text-dim2"
-            />
-            <button
-              type="button"
-              disabled={busyKey !== null || !message.trim()}
-              onClick={sendMessage}
-              className="text-xs text-dim2 disabled:opacity-40 flex-none"
-            >
-              send
-            </button>
-          </div>
+          <Composer
+            value={message}
+            onChange={setMessage}
+            onSend={sendMessage}
+            disabled={busyKey !== null}
+            placeholder="message the agent"
+            compact
+          />
         </div>
       </div>
 
       {/* Everything the desktop right column carries, as a bottom sheet. */}
-      <Modal open={panelsOpen} onClose={() => setPanelsOpen(false)}>
-        <div className="flex flex-col gap-5">
+      {/* max-h + an inner scroller, the pattern LogDrawer already uses. Without
+          it the sheet relied on daisyUI's modal-box default and a long todo
+          list plus a handful of subagents ran straight past the viewport with
+          nothing to grab. min-h-0 is load-bearing: a flex child will not scroll
+          without it, the same reason the desktop column's row needs it. */}
+      <Modal
+        open={panelsOpen}
+        onClose={() => setPanelsOpen(false)}
+        boxClassName="max-h-[85vh] overflow-hidden flex flex-col"
+      >
+        <div className="flex flex-col gap-5 overflow-y-auto min-h-0">
           <TodosPanel todos={todos} blocked={blocked} />
-          <ChangesPanel branch={branch} changes={changes} />
+          <ChangesPanel branch={branch} changes={changes} onOpenFile={(path) => {
+            setPanelsOpen(false);
+            setDiffPath(path);
+          }} />
           <AgentsPanel runs={agents} />
           <SessionPanel
             session={session}
