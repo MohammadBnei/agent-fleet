@@ -81,6 +81,10 @@ reviewed and does not survive a rebuild.
 | Native OIDC | Grafana | done, login works |
 | Native OIDC | ArgoCD | done 2026-08-19 |
 | Roles | `platform-admins` group, read by both | done 2026-08-19 |
+
+ArgoCD federation took two tries. First one shipped a userinfo call that took
+login down completely — see the lessons at the bottom. Groups come from the ID
+token, never from userinfo.
 | forwardAuth | fleet, previews, Alertmanager, pgweb, Proxmox | **open** |
 | Passkeys | Proxmox, ArgoCD, Infisical, Alertmanager | open |
 
@@ -182,6 +186,32 @@ Order: #200, then headers.
 ---
 
 ## 5. Lessons. Read before debugging.
+
+**Read the artefact, not a report about the artefact.** Cost an outage. ArgoCD
+was configured to fetch groups from authentik's userinfo endpoint because its
+`grpc.request.claims` log field showed no `groups` key. That field is a summary,
+not the token. The token had groups all along.
+
+Worse: the fix broke login for everyone. `authentik.bnei.dev` is proxied, pods
+resolve `*.bnei.dev` publicly, so an in-cluster call leaves the cluster and
+Cloudflare answers a non-browser user agent with error 1010. ArgoCD parsed the
+HTML as JSON and threw away every session.
+
+Three checks said the claim should exist. One output said it did not. Right move
+was to read the token. Wrong move, taken, was to route around it.
+
+**Anything in-cluster calling a `*.bnei.dev` name goes through Cloudflare.** Not
+obvious, because pods resolve those names publicly. Everything on that path must
+survive Browser Integrity Check. It happens to hold for the OIDC token exchange
+and for Grafana, which is why it stayed hidden. Prefer a claim already in the
+token, or an in-cluster Service address.
+
+Applies to fleet directly: core calls out to `*.bnei.dev` names, and every one
+of those is on this path.
+
+**Do not write "fails closed" without making it fail.** The comment shipped with
+the broken config asserted a graceful drop to read-only. Real behaviour was a
+sign-out. Plausible, reassuring, untested, wrong.
 
 **Green is not proof.** Three separate times a step reported success while
 doing nothing:
