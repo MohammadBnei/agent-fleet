@@ -125,9 +125,32 @@ RUN curl -fsSL https://github.com/rtk-ai/rtk/releases/download/${RTK_VERSION}/rt
 # PVC path Claude Code actually reads at runtime (docs/adr/0033). Perms
 # opened up (not just this dir — see the `worker` user creation below) so
 # the non-root `worker` user can still read it to do that copy.
-RUN claude plugin marketplace add DietrichGebert/ponytail \
-    && claude plugin install ponytail@ponytail
-RUN claude plugin marketplace add JuliusBrussee/caveman \
+#
+# PINNED to a tag, like RTK_VERSION above and for a sharper version of the same
+# reason: `marketplace add <owner>/<repo>` floats on upstream's default branch,
+# so an upstream commit breaks every build on every branch at once. That is not
+# hypothetical — issue #211, 2026-08-19: caveman's manifest gained
+# an `agents:` array of paths, and the CLI's plugin schema requires every
+# component path to start with "./", so `install` died on `agents: Invalid
+# input` and no image built until this pin landed. A CLAUDE_CODE_VERSION bump
+# would not have helped; the manifest is simply invalid.
+#
+# `marketplace add` takes no --ref, so the pin is a tag clone added as a
+# *directory* marketplace. The clones stay in the image on purpose: for a
+# directory source the CLI records installLocation as the path you handed it
+# rather than copying the repo into plugins/marketplaces/, so deleting them
+# would leave a dangling path in the known_marketplaces.json that
+# entrypoint.sh copies onto every session PVC. The marketplace name comes
+# from each repo's marketplace.json (not the directory), so the
+# `<plugin>@<marketplace>` ids below are unchanged — and they must keep
+# matching fleet-shared/settings.json's enabledPlugins.
+ARG PONYTAIL_VERSION=v4.9.0
+ARG CAVEMAN_VERSION=v2.1.0
+RUN git clone --depth 1 --branch ${PONYTAIL_VERSION} https://github.com/DietrichGebert/ponytail /opt/plugin-src/ponytail \
+    && git clone --depth 1 --branch ${CAVEMAN_VERSION} https://github.com/JuliusBrussee/caveman /opt/plugin-src/caveman \
+    && claude plugin marketplace add /opt/plugin-src/ponytail \
+    && claude plugin install ponytail@ponytail \
+    && claude plugin marketplace add /opt/plugin-src/caveman \
     && claude plugin install caveman@caveman
 
 # Claude Code refuses to run with permissionMode "bypassPermissions"
