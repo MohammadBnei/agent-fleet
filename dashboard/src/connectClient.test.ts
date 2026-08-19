@@ -94,6 +94,50 @@ describe("subscribeTranscript visibility handling", () => {
     unsubscribe();
   }, 10000);
 
+  // core ends StreamTranscript itself every streamMaxAge (90s) so Cloudflare
+  // never sees 100s of origin silence and 524s the connection — that timeout is
+  // the only reason fleet.bnei.dev is still DNS-only rather than proxied.
+  //
+  // The server-side change is three lines and ships no client change at all,
+  // which is only true because THIS loop treats a clean end exactly like a
+  // dropped one: it resubscribes from its own cursor. Pinned here because the
+  // whole design rests on it, and because `for await` completing normally is
+  // easy to mistake for "the subscription is over".
+  //
+  // If this ever stops holding, the answer is still not a keepalive frame on
+  // the stream: `seq` starts at 0 (Append assigns COALESCE(MAX(seq), -1) + 1),
+  // so there is no unused sentinel, and any tab running older JS across a
+  // deploy would take the sentinel as real and rewind its cursor.
+  test("resubscribes from the cursor when the server ends the stream cleanly", async () => {
+    // Ends after yielding — a clean return, not a throw. That is what a server
+    // hitting streamMaxAge looks like from here.
+    const cleanlyEnding = (req: { sessionId: string; sinceSeq: bigint }, opts: { signal: AbortSignal }) => {
+      calls.push({ sinceSeq: req.sinceSeq, signal: opts.signal });
+      const toYield = queued;
+      queued = [];
+      return (async function* () {
+        for (const entry of toYield) yield entry as TranscriptEntry;
+      })();
+    };
+
+    queued = [{ seq: 4n } as TranscriptEntry];
+    const seen: bigint[] = [];
+    const unsubscribe = subscribeTranscript("session-3", 0n, (entry) => seen.push(entry.seq), cleanlyEnding);
+
+    await tick();
+    expect(calls).toHaveLength(1);
+    expect(seen).toEqual([4n]);
+
+    // No abort, no error — the stream simply finished. The loop must come back.
+    await tick(1400);
+    expect(calls.length).toBeGreaterThanOrEqual(2);
+    // Resumed one past what was already delivered: no gap, and no replay of
+    // entries the feed has appended once already.
+    expect(calls[1].sinceSeq).toBe(5n);
+
+    unsubscribe();
+  }, 10000);
+
   test("unsubscribe aborts the live attempt and unregisters the listener", async () => {
     const unsubscribe = subscribeTranscript("session-2", 3n, () => {}, openStream);
     await tick();

@@ -423,13 +423,38 @@ func (s *Server) GetTranscript(ctx context.Context, req *connect.Request[agentfl
 	return connect.NewResponse(&agentfleetv1.ReadTranscriptSinceResponse{Entries: out, NextSeq: next}), nil
 }
 
+// streamMaxAge bounds how long StreamTranscript will hold a connection open
+// without sending anything. A var, not a const, so tests can shrink it.
+//
+// An idle session sends zero bytes for as long as nobody types — hours, if the
+// agent is thinking or blocked on a permission decision. Cloudflare's free plan
+// answers 100 seconds of origin silence with a 524, which is the sole reason
+// fleet.bnei.dev is DNS-only while every other *.bnei.dev host is proxied
+// (k8s/core.yaml, infra-bootstrap ADR-0038) — and being grey costs it the WAF,
+// the geo rules, the origin lock and a private origin IP.
+//
+// Ending the response is deliberately the whole mechanism. subscribeTranscript
+// resubscribes from its own cursor on a CLEAN end, not only on an error, so no
+// entry is skipped and nothing changes on the client. The alternative — a
+// keepalive frame on the stream — would need a sentinel value that every
+// present and future consumer of `stream TranscriptEntry` has to know to
+// ignore, and any tab still running older JS across the deploy would take the
+// sentinel as real, advance its cursor and replay the transcript.
+var streamMaxAge = 90 * time.Second
+
 func (s *Server) StreamTranscript(ctx context.Context, req *connect.Request[agentfleetv1.StreamTranscriptRequest], stream *connect.ServerStream[agentfleetv1.TranscriptEntry]) error {
 	ch, cancel := s.hub.Subscribe(req.Msg.GetSessionId(), req.Msg.GetSinceSeq())
 	defer cancel()
 
+	deadline := time.NewTimer(streamMaxAge)
+	defer deadline.Stop()
+
 	for {
 		select {
 		case <-ctx.Done():
+			return nil
+		case <-deadline.C:
+			// Not an error: the client reconnects from its cursor.
 			return nil
 		case e, ok := <-ch:
 			if !ok {
