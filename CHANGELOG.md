@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.10.1](https://github.com/MohammadBnei/agent-fleet/compare/4.10.0...4.10.1) (2026-08-19)
+
+
+### Bug Fixes
+
+* an answer wakes the session, and a permission's pod is not reaped ([#226](https://github.com/MohammadBnei/agent-fleet/issues/226)) ([8a2018b](https://github.com/MohammadBnei/agent-fleet/commit/8a2018b033ae096a8406080b34855964b5c24b66))
+
 # [4.10.0](https://github.com/MohammadBnei/agent-fleet/compare/4.9.0...4.10.0) (2026-08-19)
 
 
