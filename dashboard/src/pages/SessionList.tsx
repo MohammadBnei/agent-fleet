@@ -576,27 +576,66 @@ function WorkingRow({
   );
 }
 
-// One flat row in the quiet tail. A session here needs nothing; the row exists
-// so the count is honest and the session stays reachable, not to be read. Was
-// the inner markup of the old QuietGroup collapsibles, lifted out so the tail
-// can be one sorted/filtered list instead of four fixed accordions.
-function CompactRow({ session, onSelect }: { session: Session; onSelect: (id: string) => void }) {
+// One flat row in the quiet tail. Was the inner markup of the old QuietGroup
+// collapsibles, lifted out so the tail can be one sorted/filtered list instead
+// of four fixed accordions.
+//
+// It carries the same checkbox and ⋯ as every other row, and that is a
+// correction: the first version of this deliberately left both off, on the
+// reasoning that "the quiet tail is where a human hunts one dormant session,
+// not where they bulk-act". That was exactly backwards. A fleet at rest is ALL
+// quiet tail — needsYou/working/finished are transient and often empty — so
+// skipping this row meant a console with nothing selectable and nothing
+// actionable on it for most of its life, which is what shipped in v4.8.0.
+// Bulk-archiving a pile of dormant sessions is the single best use of a
+// multi-select, and it was the one row that could not do it.
+//
+// A <div>, not a <button>: the row's own tap target cannot wrap the checkbox
+// and the ⋯ (nested buttons are invalid HTML and swallow each other's clicks),
+// so the id+label is the target and the controls sit beside it.
+function CompactRow({
+  session,
+  onSelect,
+  onActions,
+  picked,
+  onPick,
+}: {
+  session: Session;
+  onSelect: (id: string) => void;
+  onActions: () => void;
+  picked: boolean;
+  onPick: (shiftKey: boolean) => void;
+}) {
   const badge = sessionBadge(session);
   return (
-    <button
-      type="button"
-      onClick={() => onSelect(session.id)}
-      className="flex items-center gap-2.5 text-left hover:text-primary cursor-pointer py-0.5"
-    >
-      <span className="text-xs text-dim2 flex-none">#{session.id.slice(0, 6)}</span>
-      <span className="text-sm text-dim min-w-0 truncate flex-1">{sessionLabel(session)}</span>
-      <span className="text-2xs text-dim2 flex-none">{session.repo}</span>
-      {badge && (
-        <span className={`text-2xs px-1 border tracking-wide flex-none ${badge.className}`} title={badge.title}>
-          {badge.label}
-        </span>
-      )}
-    </button>
+    <div className="flex items-center gap-2.5 py-0.5 group">
+      <SelectBox checked={picked} onToggle={onPick} />
+      <button
+        type="button"
+        onClick={() => onSelect(session.id)}
+        className="flex items-center gap-2.5 text-left hover:text-primary cursor-pointer min-w-0 flex-1"
+      >
+        <span className="text-xs text-dim2 flex-none">#{session.id.slice(0, 6)}</span>
+        <span className="text-sm text-dim min-w-0 truncate flex-1">{sessionLabel(session)}</span>
+        <span className="text-2xs text-dim2 flex-none">{session.repo}</span>
+        {badge && (
+          <span className={`text-2xs px-1 border tracking-wide flex-none ${badge.className}`} title={badge.title}>
+            {badge.label}
+          </span>
+        )}
+      </button>
+      {/* Inline, not the absolute corner overlay the taller cards use — this
+          row is one line high, so there is no corner to park it in. */}
+      <button
+        type="button"
+        onClick={onActions}
+        title="Session actions"
+        aria-label="Session actions"
+        className="flex-none px-1.5 text-dim2 hover:text-primary text-xs cursor-pointer"
+      >
+        ⋯
+      </button>
+    </div>
   );
 }
 
@@ -774,7 +813,10 @@ export function SessionList({
   // over rather than from `sessions` (which is server order, not render order).
   // CompactRow is deliberately excluded: the quiet tail is where a human hunts
   // one dormant session, not where they bulk-act.
-  const pickable = [...needsYou, ...finished, ...stuck, ...working];
+  // Render order, which is what a shift-click range means. visibleRest is
+  // included: the quiet tail is the bulk of a resting fleet, and leaving it out
+  // is what made the console look unchanged when nothing was active.
+  const pickable = [...needsYou, ...finished, ...stuck, ...working, ...visibleRest];
   const orderedIds = pickable.map((t) => t.id);
   const pickedSessions = pickable.filter((t) => selected.has(t.id));
   const pick = (id: string) => (shiftKey: boolean) => toggle(id, shiftKey, orderedIds);
@@ -898,14 +940,26 @@ export function SessionList({
           />
           <div className="flex flex-col gap-0.5 pl-1 pt-1">
             {visibleRest.map((t) => (
-              <CompactRow key={t.id} session={t} onSelect={onSelect} />
+              <CompactRow
+                key={t.id}
+                session={t}
+                onSelect={onSelect}
+                onActions={() => setActionsFor(t)}
+                picked={selected.has(t.id)}
+                onPick={pick(t.id)}
+              />
             ))}
             {visibleRest.length === 0 && <span className="text-xs text-dim2 py-1">nothing matches these filters</span>}
           </div>
         </div>
       )}
 
-      <SessionActionsModal session={actionsFor} onClose={() => setActionsFor(null)} reload={reload} />
+      <SessionActionsModal
+        session={actionsFor}
+        onClose={() => setActionsFor(null)}
+        onDelete={onDelete}
+        reload={reload}
+      />
     </div>
   );
 }

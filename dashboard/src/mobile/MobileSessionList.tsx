@@ -238,18 +238,33 @@ function WorkingCard({
 // which of them it had fallen into and clicking to check. Desktop had already
 // replaced them with one flat sorted list for exactly that reason; this is the
 // same list, using the same comparator, at phone width.
-function QuietRow({ session, onSelect }: { session: Session; onSelect: (id: string) => void }) {
+// Carries the ⋯ for the same reason CompactRow does: a fleet at rest is all
+// quiet tail, so a row without it is a row you cannot act on for most of the
+// console's life. No checkbox — batch actions are desktop-only, and a phone
+// has neither the width for a checkbox column nor the use case for bulk tidying.
+function QuietRow({
+  session,
+  onSelect,
+  onActions,
+}: {
+  session: Session;
+  onSelect: (id: string) => void;
+  onActions: () => void;
+}) {
   const badge = sessionBadge(session);
   return (
-    <button
-      type="button"
-      onClick={() => onSelect(session.id)}
-      className="flex items-center gap-2 text-left py-2 border-b border-line3"
-    >
-      <span className="text-xs text-dim2 flex-none">#{session.id.slice(0, 6)}</span>
-      <span className="text-sm text-dim min-w-0 truncate flex-1">{sessionLabel(session)}</span>
-      {badge && <span className={`text-2xs px-1 border tracking-wide flex-none ${badge.className}`}>{badge.label}</span>}
-    </button>
+    <div className="flex items-center gap-2 py-2 border-b border-line3">
+      <button
+        type="button"
+        onClick={() => onSelect(session.id)}
+        className="flex items-center gap-2 text-left min-w-0 flex-1"
+      >
+        <span className="text-xs text-dim2 flex-none">#{session.id.slice(0, 6)}</span>
+        <span className="text-sm text-dim min-w-0 truncate flex-1">{sessionLabel(session)}</span>
+        {badge && <span className={`text-2xs px-1 border tracking-wide flex-none ${badge.className}`}>{badge.label}</span>}
+      </button>
+      <ActionsDots onOpen={onActions} />
+    </div>
   );
 }
 
@@ -318,6 +333,7 @@ export function MobileSessionList({
   summaries,
   needsYouIds,
   onSelect,
+  onDelete,
   onOpenLogs,
   reload,
 }: {
@@ -488,13 +504,18 @@ export function MobileSessionList({
               </button>
             </div>
             {rest.map((t) => (
-              <QuietRow key={t.id} session={t} onSelect={onSelect} />
+              <QuietRow key={t.id} session={t} onSelect={onSelect} onActions={() => setActionsFor(t)} />
             ))}
           </div>
         )}
       </div>
 
-      <SessionActionsModal session={actionsFor} onClose={() => setActionsFor(null)} reload={reload} />
+      <SessionActionsModal
+        session={actionsFor}
+        onClose={() => setActionsFor(null)}
+        onDelete={onDelete}
+        reload={reload}
+      />
     </div>
   );
 }
