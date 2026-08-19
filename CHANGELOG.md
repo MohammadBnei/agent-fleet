@@ -1,5 +1,12 @@
 # Changelog
 
+# [4.5.0](https://github.com/MohammadBnei/agent-fleet/compare/4.4.0...4.5.0) (2026-08-19)
+
+
+### Features
+
+* **core:** federate the console's login to authentik ([#216](https://github.com/MohammadBnei/agent-fleet/issues/216)) ([1498c3c](https://github.com/MohammadBnei/agent-fleet/commit/1498c3ce2c1b790ce3155cf03bcbd70b4261e4af)), closes [#189](https://github.com/MohammadBnei/agent-fleet/issues/189)
+
 # [4.4.0](https://github.com/MohammadBnei/agent-fleet/compare/4.3.3...4.4.0) (2026-08-19)
 
 
