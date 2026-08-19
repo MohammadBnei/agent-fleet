@@ -1,5 +1,12 @@
 # Changelog
 
+# [4.7.0](https://github.com/MohammadBnei/agent-fleet/compare/4.6.2...4.7.0) (2026-08-19)
+
+
+### Features
+
+* **core:** drop basic-admin-auth from the console ([#220](https://github.com/MohammadBnei/agent-fleet/issues/220)) ([747ffab](https://github.com/MohammadBnei/agent-fleet/commit/747ffabb994fd0a62ecba138c90f74866150f1b6))
+
 ## [4.6.2](https://github.com/MohammadBnei/agent-fleet/compare/4.6.1...4.6.2) (2026-08-19)
 
 
