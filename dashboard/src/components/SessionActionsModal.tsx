@@ -21,11 +21,17 @@ import { sessionLabel } from "../sessionLabel";
 export function SessionActionsModal({
   session,
   onClose,
+  onDelete,
   reload,
 }: {
   // null = closed.
   session: Session | null;
   onClose: () => void;
+  // Routed up to App's own ConfirmModal rather than confirmed here — deleting
+  // destroys the transcript, and App already owns that gate for the ✕ overlay.
+  // The taller cards have that ✕; CompactRow does not, so for a quiet session
+  // this menu is the ONLY way to delete one.
+  onDelete: (id: string) => void;
   reload: () => void;
 }) {
   const [busyKey, setBusyKey] = useState<string | null>(null);
@@ -72,6 +78,22 @@ export function SessionActionsModal({
               podPhase={session.podPhase}
               onAutoClick={() => setAutoOpen(true)}
             />
+            <button
+              type="button"
+              disabled={busyKey !== null}
+              onClick={() => {
+                // Close first: App's ConfirmModal is a separate <dialog>, and
+                // stacking it on top of this one is the nesting Modal.tsx:36
+                // guards against. Closing also means the confirm is not sitting
+                // over a menu whose session it is about to delete.
+                const id = session.id;
+                onClose();
+                onDelete(id);
+              }}
+              className="self-start border border-pink-line text-error px-3 py-1 text-xs hover:bg-pink-chip disabled:opacity-40 cursor-pointer"
+            >
+              Delete session
+            </button>
           </div>
         )}
       </Modal>
