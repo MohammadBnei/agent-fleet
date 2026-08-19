@@ -264,8 +264,21 @@ export default function App() {
   // every client agrees on what "working" means.
   // The badge's own predicate, once. The modal renders exactly what the badge
   // counted — deriving it twice is how a "3 waiting" button opens an empty box.
+  //
+  // Sorted longest-waiting first, matching bucketSessions' needsYou order. The
+  // modal does not go through bucketSessions, so it does NOT inherit that sort
+  // for free — it listed a 8m-old decision above a 53m-old one while the list
+  // two inches behind it showed the opposite, which is the kind of disagreement
+  // that makes a human stop trusting the ordering entirely.
   const blockedSessions = useMemo(
-    () => sessions.filter((t) => t.archivedAt === undefined && t.liveState === "blocked"),
+    () =>
+      sessions
+        .filter((t) => t.archivedAt === undefined && t.liveState === "blocked")
+        .sort(
+          (a, b) =>
+            (a.lastActiveAt ? new Date(a.lastActiveAt).getTime() : 0) -
+            (b.lastActiveAt ? new Date(b.lastActiveAt).getTime() : 0),
+        ),
     [sessions],
   );
 

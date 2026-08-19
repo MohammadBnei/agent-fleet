@@ -35,6 +35,14 @@ export function NeedsYouModal({
   onOpenSession: (id: string) => void;
   reload: () => void;
 }) {
+  // Nothing at all while closed. Every other Modal in the app renders its
+  // children regardless, which is harmless for a form — but this one mirrors
+  // the whole blocked list, so a closed dialog kept a second live DecisionInline
+  // per blocked session in the DOM, each with its own state and its own
+  // allow/deny buttons, re-rendering on every 5s poll. Caught by Playwright
+  // resolving two elements for one session label with the dialog shut.
+  if (!open) return null;
+
   return (
     <Modal open={open} onClose={onClose} boxClassName="max-w-3xl max-h-[85vh] overflow-hidden flex flex-col">
       <div className="flex items-baseline gap-2 mb-3 flex-none">

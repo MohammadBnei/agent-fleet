@@ -371,7 +371,7 @@ function StuckRow({
   const stuckFor = blockedForLabel(session);
   return (
     <div className="relative">
-      <div className="flex items-center gap-3 px-4 py-2.5 border border-orange-line bg-orange-bg pr-8 flex-wrap">
+      <div className="flex items-center gap-3 px-4 py-2.5 border border-orange-line bg-orange-bg pr-14 flex-wrap">
         <span className="w-[7px] h-[7px] rounded-full flex-none bg-warning" />
         <SelectBox checked={picked} onToggle={onPick} />
         <span className="text-base font-semibold">#{session.id.slice(0, 6)}</span>
@@ -443,7 +443,7 @@ function FinishedRow({
   return (
     <div className="relative">
       <div
-        className={`flex items-center gap-3 px-4 py-2.5 border pr-8 flex-wrap ${
+        className={`flex items-center gap-3 px-4 py-2.5 border pr-14 flex-wrap ${
           failed ? "border-orange-line bg-orange-bg" : "border-green-line bg-green-bg"
         }`}
       >
@@ -519,7 +519,7 @@ function WorkingRow({
 
   return (
     <div className={`relative ${last ? "" : "border-b border-line3"}`}>
-      <div className="flex items-center gap-3 px-4 py-2.5 pr-8">
+      <div className="flex items-center gap-3 px-4 py-2.5 pr-14">
         <span
           className={`w-[7px] h-[7px] rounded-full flex-none ${
             stale ? "bg-error" : live ? "bg-info animate-fpulse" : "border border-dim2"
