@@ -6,6 +6,7 @@ import {
   latestSlashCommands,
   latestToolCallSummary,
   latestTodos,
+  subagentRuns,
   type Density,
   hasPendingDecision,
 } from "../transcript";
@@ -22,7 +23,7 @@ import { Modal } from "../components/Modal";
 import { Segmented } from "../components/Segmented";
 import { SessionFeed } from "../components/SessionFeed";
 import { TickBar, todoProgress } from "../components/TickBar";
-import { TodosPanel, ChangesPanel, SessionPanel } from "../components/SessionPanels";
+import { TodosPanel, ChangesPanel, AgentsPanel, SessionPanel } from "../components/SessionPanels";
 
 // The phone session screen from Agent Fleet Console Mobile.dc.html.
 //
@@ -118,6 +119,7 @@ export function MobileSessionDetail({
   const visibility = feedVisibility(density, true);
   const todos = latestTodos(entries) ?? [];
   const changes = latestToolCallSummary(entries)?.files ?? null;
+  const agents = subagentRuns(entries);
 
   const docked = hasPendingDecision(entries);
 
@@ -295,6 +297,7 @@ export function MobileSessionDetail({
         <div className="flex flex-col gap-5">
           <TodosPanel todos={todos} blocked={blocked} />
           <ChangesPanel branch={branch} changes={changes} />
+          <AgentsPanel runs={agents} />
           <SessionPanel
             session={session}
             busy={busyKey !== null}

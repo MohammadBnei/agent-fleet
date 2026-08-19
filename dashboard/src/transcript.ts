@@ -240,6 +240,29 @@ export type SdkSignal = {
   tool_use_id?: string;
   elapsed_time_seconds?: number;
   parent_tool_use_id?: string | null;
+  // The subagent family (task_started / task_progress / task_updated /
+  // task_notification). `tool_use_id` above is what correlates all four back
+  // to the originating Agent tool call; `task_id` is the SDK's own handle and
+  // is the ONLY key task_updated carries, hence the two-way index in
+  // subagentRuns below.
+  task_id?: string;
+  description?: string;
+  subagent_type?: string;
+  last_tool_name?: string;
+  summary?: string;
+  usage?: { total_tokens?: number; tool_uses?: number; duration_ms?: number };
+  patch?: { status?: string; end_time?: number };
+  // code_change_published / vcs_state_changed / api_retry / permission_denied.
+  url?: string;
+  repo?: string;
+  identifier?: string;
+  provider?: string;
+  branch?: string;
+  kind?: string;
+  attempt?: number;
+  max_retries?: number;
+  error_status?: number;
+  decision_reason?: string;
 };
 
 export function parseSdkSignal(text: string): SdkSignal | null {
@@ -314,6 +337,41 @@ export function parseSdkToolResult(text: string): SdkToolResult | null {
 // tool_result has arrived yet).
 export type ToolCallPair = { call: TranscriptEntry; callInfo: SdkToolUse; result: TranscriptEntry | null; resultInfo: SdkToolResult | null };
 
+// Tools whose activity a side panel renders in full, so the feed showing them
+// again as a generic row is a duplicate, not a summary. TodoWrite has had the
+// TODOS panel since the console rewrite; Agent (the subagent spawner — note
+// the SDK calls it "Agent", not "Task") now has the AGENTS panel, which also
+// owns the four task_* signals the same run emits.
+export const PANEL_OWNED_TOOLS = new Set(["TodoWrite", "Agent"]);
+
+// The SDK signal subtypes the feed must not render as their own row. Every one
+// of them is either owned by a panel or already said by a row next to it —
+// rendering them is what produced ~1100 raw JSON blocks stuttering through a
+// real session's feed.
+//
+// This is deliberately a denylist over SignalView's `default:` JSON dump, not
+// an allowlist: a subtype the SDK adds next must stay visible (even as JSON)
+// rather than vanish. Same trade-off, and the same direction, as the worker's
+// own EPHEMERAL_SYSTEM_SUBTYPES.
+export const PANEL_OWNED_SIGNALS = new Set([
+  // The AGENTS panel renders all four, correlated into one row per run.
+  "task_started",
+  "task_progress",
+  "task_updated",
+  "task_notification",
+  "background_tasks_changed",
+  // The whole slash-command/skill catalogue, descriptions included, re-dumped
+  // on every change. SessionInitView already lists the skills and the composer
+  // already autocompletes the commands.
+  "commands_changed",
+  // hook_response is the terminal sibling and renders; hook_started is the
+  // "about to" half of the same event.
+  "hook_started",
+  // Belongs to a tool call, and now reaches it (see inFlightTool): the row
+  // shows "running · 32s" instead of a detached line every 30 seconds.
+  "tool_progress",
+]);
+
 export function buildToolCallPairs(entries: TranscriptEntry[]): ToolCallPair[] {
   // One pass to index results by tool_use_id, then one pass over the calls.
   // This used to scan every entry per tool call — quadratic over a
@@ -332,10 +390,10 @@ export function buildToolCallPairs(entries: TranscriptEntry[]): ToolCallPair[] {
     // A thinking block shares the ASSISTANT type with tool_use; it has no
     // tool and renders as its own bubble, not as a call awaiting a result.
     if (callInfo.kind === "thinking") continue;
-    // TodoWrite has its own dedicated TODOS panel (latestTodos below) —
-    // showing it again as a generic raw-JSON tool call would just be a
-    // worse duplicate of the same data.
-    if (callInfo.tool === "TodoWrite") continue;
+    // A tool whose own panel renders it in full — showing it again as a
+    // generic raw-JSON tool call would just be a worse duplicate of the
+    // same data.
+    if (callInfo.tool && PANEL_OWNED_TOOLS.has(callInfo.tool)) continue;
     const found = callInfo.id ? resultsById.get(callInfo.id) : undefined;
     pairs.push({ call: entry, callInfo, result: found?.entry ?? null, resultInfo: found?.info ?? null });
   }
@@ -366,6 +424,101 @@ export function latestTodos(entries: TranscriptEntry[]): TodoItem[] | null {
     return Array.isArray(todos) ? (todos as TodoItem[]) : null;
   }
   return null;
+}
+
+// One subagent the main agent spawned, assembled from the five places the SDK
+// scatters it: the Agent tool_use (what was asked), its tool_result (that it
+// finished), and task_started / task_progress / task_updated /
+// task_notification (what it is doing, and how it ended).
+export type SubagentRun = {
+  toolUseId: string;
+  subagentType: string;
+  description: string;
+  status: "running" | "completed" | "failed";
+  lastTool?: string;
+  tokens?: number;
+  toolUses?: number;
+  summary?: string;
+};
+
+// The four subtypes that describe a subagent, and the reason this is an
+// explicit list rather than "any signal with a tool_use_id": tool_progress and
+// permission_denied both carry one too, and keying off that alone minted a
+// phantom "agent" row per Bash heartbeat and per denied tool. Caught by
+// measuring the rendered panel, not by any unit test — the phantom rows are
+// structurally identical to real ones.
+const TASK_SIGNALS = new Set(["task_started", "task_progress", "task_updated", "task_notification"]);
+
+// Correlation, and why it needs two keys: task_started carries BOTH
+// `tool_use_id` (the Agent call) and `task_id` (the SDK's handle), but
+// task_updated — the one message that reports the terminal status — carries
+// only `task_id`. So the walk builds a task_id → tool_use_id index from the
+// messages that have both, and resolves task_updated through it. A run whose
+// task_started never arrived still shows up from its Agent call alone.
+export function subagentRuns(entries: TranscriptEntry[]): SubagentRun[] {
+  const runs = new Map<string, SubagentRun>();
+  const byTaskId = new Map<string, string>();
+  const finishedCalls = new Set<string>();
+
+  // Index pass first, so the main walk never depends on task_started having
+  // been seen before the task_updated that needs it. Same cost, one less
+  // ordering assumption — and the SDK makes no promise about signal order.
+  for (const entry of entries) {
+    if (entry.type !== TranscriptEntryType.SYSTEM) continue;
+    const sig = parseSdkSignal(entry.text);
+    if (sig && TASK_SIGNALS.has(sig.sdk) && sig.task_id && sig.tool_use_id) byTaskId.set(sig.task_id, sig.tool_use_id);
+  }
+
+  for (const entry of entries) {
+    if (entry.type === TranscriptEntryType.ASSISTANT) {
+      const info = parseSdkToolUse(entry.text);
+      if (info?.tool !== "Agent" || !info.id) continue;
+      const input = (info.input ?? {}) as { subagent_type?: unknown; description?: unknown };
+      runs.set(info.id, {
+        toolUseId: info.id,
+        subagentType: typeof input.subagent_type === "string" ? input.subagent_type : "agent",
+        description: typeof input.description === "string" ? input.description : "",
+        status: "running",
+      });
+      continue;
+    }
+
+    // The Agent call's own tool_result: the subagent has returned, whatever
+    // the task_* stream did or didn't say.
+    if (entry.type === TranscriptEntryType.USER) {
+      const res = parseSdkToolResult(entry.text);
+      if (res?.toolUseId) finishedCalls.add(res.toolUseId);
+      continue;
+    }
+
+    if (entry.type !== TranscriptEntryType.SYSTEM) continue;
+    const sig = parseSdkSignal(entry.text);
+    if (!sig || !TASK_SIGNALS.has(sig.sdk)) continue;
+
+    const id = sig.tool_use_id ?? (sig.task_id ? byTaskId.get(sig.task_id) : undefined);
+    if (!id) continue;
+
+    // A signal can arrive for a run whose Agent tool_use is below the loaded
+    // page — seed from the signal rather than dropping it.
+    const run =
+      runs.get(id) ??
+      ({ toolUseId: id, subagentType: "agent", description: "", status: "running" } as SubagentRun);
+    if (sig.subagent_type) run.subagentType = sig.subagent_type;
+    if (sig.description) run.description = sig.description;
+    if (sig.last_tool_name) run.lastTool = sig.last_tool_name;
+    if (sig.usage?.total_tokens) run.tokens = sig.usage.total_tokens;
+    if (sig.usage?.tool_uses) run.toolUses = sig.usage.tool_uses;
+    if (sig.summary) run.summary = sig.summary;
+    const status = sig.patch?.status ?? (sig.sdk === "task_notification" ? sig.status : undefined);
+    if (status) run.status = status === "completed" ? "completed" : "failed";
+    runs.set(id, run);
+  }
+
+  // Only promote to completed from the tool_result — a run the task_* stream
+  // already called failed keeps that, since "it returned" and "it worked" are
+  // different claims.
+  for (const [id, run] of runs) if (run.status === "running" && finishedCalls.has(id)) run.status = "completed";
+  return [...runs.values()];
 }
 
 // Best-effort one-line preview for a collapsed tool-call header — common
@@ -493,7 +646,13 @@ export function inFlightTool(entries: TranscriptEntry[]): InFlightTool | null {
       const e = entries[j];
       if (e.type !== TranscriptEntryType.SYSTEM) continue;
       const sig = parseSdkSignal(e.text);
-      if (sig?.sdk === "tool_progress" && sig.tool_use_id && sig.tool_use_id === p.callInfo.id) {
+      // parent_tool_use_id FIRST, and it is the one that actually matches:
+      // the SDK's own tool_use_id on a progress signal is synthetic and
+      // suffixed ("toolu_X-heartbeat-0", "bash-progress-30"), so the
+      // originating call's id only ever appears on parent_tool_use_id. This
+      // matched on tool_use_id alone until now, i.e. never — every in-flight
+      // row silently fell through to the wall-clock fallback below.
+      if (sig?.sdk === "tool_progress" && p.callInfo.id && (sig.parent_tool_use_id ?? sig.tool_use_id) === p.callInfo.id) {
         elapsedSeconds = sig.elapsed_time_seconds ?? null;
         break;
       }

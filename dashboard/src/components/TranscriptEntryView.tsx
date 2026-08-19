@@ -170,6 +170,58 @@ function SignalView({ signal, compact }: { signal: SdkSignal; compact?: boolean 
       );
     }
 
+    // The four below all shipped as raw JSON dumps because SignalView had no
+    // case for them — a `provider: "github" / url: "https://…"` key/value
+    // block where one line would do. Each is a real answer to a question
+    // someone asks of this feed, which is exactly why the dump was worth
+    // replacing rather than silencing.
+    case "code_change_published":
+      return (
+        <LogLine badge="published" badgeClass="info" compact={compact}>
+          {signal.url ? (
+            <a className="text-primary underline" href={signal.url} target="_blank" rel="noreferrer">
+              {signal.identifier ? `#${signal.identifier}` : "link"}
+            </a>
+          ) : (
+            signal.identifier
+          )}
+          {signal.repo ? ` · ${signal.repo}` : ""}
+        </LogLine>
+      );
+
+    case "vcs_state_changed":
+      return (
+        <LogLine badge={signal.kind ?? "git"} compact={compact}>
+          {signal.branch}
+        </LogLine>
+      );
+
+    case "api_retry":
+      // Not an alarm (SessionFeed excludes it deliberately) — the SDK retries
+      // up to max_retries on its own. It is still the answer to "why did this
+      // go quiet for a minute", so it must not be silent either.
+      return (
+        <LogLine badge="api retry" badgeClass="warning" compact={compact}>
+          {[
+            signal.attempt && `${signal.attempt}/${signal.max_retries ?? "?"}`,
+            signal.error_status,
+            signal.error,
+          ]
+            .filter(Boolean)
+            .join(" · ")}
+        </LogLine>
+      );
+
+    case "permission_denied":
+      // A denial the fleet never asked a human about — canUseTool's auto-mode
+      // rules, or the classifier. Without this it was JSON, and "why did it
+      // stop doing that" had no readable answer anywhere.
+      return (
+        <LogLine badge={`${signal.tool_name ?? "tool"} denied`} badgeClass="warning" compact={compact}>
+          {signal.decision_reason ?? signal.status}
+        </LogLine>
+      );
+
     default:
       // A subtype the SDK added after this was written still relays (the
       // worker passes unknown ones through unmapped), so show it rather

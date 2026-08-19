@@ -6,7 +6,7 @@
 import { test, expect } from "bun:test";
 import { TranscriptEntryType, type TranscriptEntry } from "../gen/agentfleet/v1/transcript_pb";
 import { feedVisibility, type SdkResultSummary } from "../transcript";
-import { LoadOlder, SessionFeed } from "./SessionFeed";
+import { LoadOlder, SessionFeed, shortTool } from "./SessionFeed";
 import { TranscriptEntryView } from "./TranscriptEntryView";
 
 let nextSeq = 0n;
@@ -177,4 +177,83 @@ test("the load-earlier header appears only when older history exists", () => {
   expect(hasLoadOlder(SessionFeed({ ...props, hasOlder: false, onLoadOlder: () => {} }))).toBe(false);
   // …and no handler to fetch it with (a surface that doesn't paginate).
   expect(hasLoadOlder(SessionFeed({ ...props, hasOlder: true }))).toBe(false);
+});
+
+// --- the signal denylist ------------------------------------------------------
+// These twelve subtypes accounted for ~1100 raw JSON blocks across 15 real
+// sessions, because SignalView's default branch dumps anything it has no case
+// for. This list is the thing that rots as the SDK adds subtypes, so it gets a
+// test rather than a comment.
+
+const sig = (payload: Record<string, unknown>) => entry(TranscriptEntryType.SYSTEM, JSON.stringify(payload));
+
+test("panel-owned and duplicate signals render nothing in the feed", () => {
+  for (const payload of [
+    { sdk: "task_started", task_id: "t", tool_use_id: "toolu_1", prompt: "a very long subagent prompt" },
+    { sdk: "task_progress", task_id: "t", tool_use_id: "toolu_1", last_tool_name: "Read" },
+    { sdk: "task_updated", task_id: "t", patch: { status: "completed" } },
+    { sdk: "task_notification", task_id: "t", tool_use_id: "toolu_1", status: "completed" },
+    { sdk: "background_tasks_changed", tasks: [{ task_id: "t" }] },
+    { sdk: "commands_changed", commands: [{ name: "ponytail", description: "…" }] },
+    { sdk: "hook_started", hook_name: "SessionStart:startup" },
+    { sdk: "tool_progress", tool_use_id: "toolu_1-heartbeat-0", parent_tool_use_id: "toolu_1", elapsed_time_seconds: 30 },
+  ]) {
+    expect(renderedEntryViews([sig(payload)])).toHaveLength(0);
+  }
+});
+
+// api_retry carries error:"overloaded", which used to make it an alarm bar —
+// ten of those per stall out-shout the auth failure tier 5 exists for. It must
+// still render, though: it is the answer to "why has this gone quiet".
+test("api_retry renders as a log line, not an alarm bar", () => {
+  const views = renderedEntryViews([sig({ sdk: "api_retry", attempt: 1, max_retries: 10, error_status: 529, error: "overloaded" })]);
+  expect(views).toHaveLength(1);
+  expect(renderedText([sig({ sdk: "api_retry", attempt: 1, error: "overloaded" })])).not.toContain("!");
+});
+
+test("an unknown subtype still reaches the feed rather than being swallowed", () => {
+  expect(renderedEntryViews([sig({ sdk: "some_subtype_the_sdk_added_next", detail: 1 })])).toHaveLength(1);
+});
+
+// A fixed-width flex item does not clip without overflow-hidden, so
+// `mcp__playwright__browser_navigate` drew straight over the summary column
+// beside it. `truncate` supplies it; shortTool makes the visible text fit.
+test("shortTool drops the MCP server prefix and leaves plain tools alone", () => {
+  expect(shortTool("mcp__agent-fleet-sidecar__set_session_meta")).toBe("set_session_meta");
+  expect(shortTool("Bash")).toBe("Bash");
+  expect(shortTool(undefined)).toBe("tool");
+});
+
+// The elapsed seconds that used to arrive as a standalone tool_progress row
+// have to land ON the tool row now that the row is the only thing rendered.
+// Keyed by parent_tool_use_id — the signal's own tool_use_id is suffixed per
+// emission and matches no call, which is how the identical lookup in
+// inFlightTool stayed dead from the day it was written.
+test("a silenced tool_progress still reaches its tool row as elapsed time", () => {
+  const tree = SessionFeed({
+    entries: [
+      entry(TranscriptEntryType.ASSISTANT, JSON.stringify({ id: "toolu_E", tool: "Bash", input: { command: "go test ./..." } })),
+      sig({ sdk: "tool_progress", tool_use_id: "toolu_E-heartbeat-0", parent_tool_use_id: "toolu_E", tool_name: "Bash", elapsed_time_seconds: 90 }),
+    ],
+    visibility: feedVisibility("everything", false),
+    density: "everything",
+    busyKey: null,
+    onRespond: () => {},
+    onApprovePlan: () => {},
+    onAnswer: () => {},
+    onPlanFeedback: () => {},
+  });
+
+  const groups: { elapsedById: Map<string, number> }[] = [];
+  const walk = (node: unknown): void => {
+    if (Array.isArray(node)) return node.forEach(walk);
+    if (!node || typeof node !== "object") return;
+    const el = node as { type?: unknown; props?: Record<string, unknown> };
+    if (el.props?.elapsedById) groups.push(el.props as { elapsedById: Map<string, number> });
+    if (el.props?.children) walk(el.props.children);
+  };
+  walk(tree);
+
+  expect(groups).toHaveLength(1);
+  expect(groups[0].elapsedById.get("toolu_E")).toBe(90);
 });
