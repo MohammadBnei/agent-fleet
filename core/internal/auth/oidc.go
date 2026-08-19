@@ -61,7 +61,20 @@ func New(ctx context.Context, cfg Config) (*OIDC, error) {
 	if err != nil {
 		return nil, err
 	}
-	provider, err := oidc.NewProvider(ctx, strings.TrimSuffix(cfg.IssuerURL, "/"))
+	// Passed through EXACTLY as configured — no normalisation, and in
+	// particular no TrimSuffix. OIDC compares the issuer byte-for-byte against
+	// the `issuer` field of the discovery document, and authentik's is
+	// per-application WITH a trailing slash
+	// (https://authentik.bnei.dev/application/o/fleet/). Stripping it is not
+	// tidying, it is a mismatch:
+	//
+	//   issuer URL provided to client ("…/o/fleet") did not match the issuer
+	//   URL returned by provider ("…/o/fleet/")
+	//
+	// which crash-loops core, because this path fails closed on purpose. If a
+	// future issuer needs a different shape, change the CONFIG value; this line
+	// must keep handing over whatever it was given.
+	provider, err := oidc.NewProvider(ctx, cfg.IssuerURL)
 	if err != nil {
 		return nil, fmt.Errorf("oidc discovery against %s: %w", cfg.IssuerURL, err)
 	}
