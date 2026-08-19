@@ -11,7 +11,15 @@ FROM oven/bun:1-slim
 # ENOENT *synchronously* (Node emits an async 'error' event tree-kill handles),
 # so the CLI died mid-session with "Claude Code process exited with code 1" —
 # task 41b11fd4, 2026-08-11, hit while requesting an e2e env.
-RUN apt-get update && apt-get install -y --no-install-recommends git curl ca-certificates procps \
+# python3 is an agent utility here, not a target-repo toolchain: the agent
+# reaches for `python3 -c` constantly for JSON munging, arithmetic and one-off
+# scripts, the same way it reaches for git/curl/gh, and independently of what
+# the target repo is written in. That is why it belongs in the image rather
+# than in docs/adr/0054's per-repo tools directory, which is for the languages
+# a specific repo needs. fleet-shared/settings.json has meanwhile been
+# allow-listing `Bash(pytest:*)`, `Bash(python -m pytest:*)` and `Bash(uv run:*)`
+# against binaries that did not exist.
+RUN apt-get update && apt-get install -y --no-install-recommends git curl ca-certificates procps python3 \
     && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg -o /usr/share/keyrings/githubcli-archive-keyring.gpg \
     && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list \
     && apt-get update && apt-get install -y --no-install-recommends gh \
@@ -108,13 +116,31 @@ RUN bun install -g playwright@${PLAYWRIGHT_VERSION} @playwright/mcp@${PLAYWRIGHT
 # binary from GitHub releases, no Rust toolchain needed in this image.
 #
 # Pinned, not `releases/latest`: the tarball is the whole tool, and an
-# unpinned URL re-rolls it on every rebuild. Keep in step with
-# e2e-runner/Dockerfile, which installs it for the same reason. The hook
+# unpinned URL re-rolls it on every rebuild. (This used to say "keep in step
+# with e2e-runner/Dockerfile"; that directory went with the sandbox in
+# docs/adr/0048 §6 and this is now the only place rtk is installed.) The hook
 # that actually uses it lives in worker/src/rtkHook.ts — a settings.json
 # entry does nothing under the Agent SDK.
 ARG RTK_VERSION=v0.45.0
 RUN curl -fsSL https://github.com/rtk-ai/rtk/releases/download/${RTK_VERSION}/rtk-x86_64-unknown-linux-musl.tar.gz \
     | tar -xz -C /usr/local/bin rtk
+
+# uv — Python package/venv manager, installed for the same reason python3 is:
+# a target repo that needs it should not have to bake its own image, and
+# provisioner/internal/k8s/pod.go already exports UV_CACHE_DIR for it. Single
+# static binary, pinned and fetched exactly like rtk above; `uvx` ships in the
+# same tarball and is worth having for the same one-off-tool reason.
+#
+# Extracted into /usr/local/bin, which is ALREADY on the base PATH — nothing
+# here prepends to PATH. That is deliberate: the one PATH mutation in this
+# file is `/usr/local/go/bin` for Go, and putting a tools directory ahead of
+# the image's own toolchain is the bug that killed the go-toolchain ingredient
+# (docs/adr/0054).
+ARG UV_VERSION=0.12.5
+RUN curl -fsSL https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-x86_64-unknown-linux-musl.tar.gz \
+    | tar -xz -C /usr/local/bin --strip-components=1 \
+        uv-x86_64-unknown-linux-musl/uv uv-x86_64-unknown-linux-musl/uvx \
+    && python3 -VV && uv --version && uvx --version
 
 # ponytail + caveman plugins (lean-code / terse-output personas, match
 # Mohammad's own local Claude Code setup — github.com/DietrichGebert/ponytail,
