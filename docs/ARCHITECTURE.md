@@ -204,6 +204,55 @@ it. It was a real structural control, and worth remembering as one — but the
 thing it protected no longer exists, and a policy guarding nothing is a policy
 nobody maintains.
 
+## 2b. Who may call what (authentication)
+
+Two surfaces, two mechanisms, and they are not interchangeable — see
+`adr/0056` and `adr/0057`.
+
+| Surface | Port | Who | Credential |
+|---|---|---|---|
+| SPA + `DashboardService` | 8080 | a human in a browser | authentik OIDC → `__Host-fleet_session` cookie, signed by core |
+| `CoreService` | 9090 | a session's sidecar | that session's `lease_id`, verified against the `sessions` table |
+| `CoreService` | 9090 | the provisioner | `FLEET_PROVISIONER_TOKEN` (it holds no lease — it exists before any pod does) |
+| `<id>-e2e.bnei.dev` previews | — | a human in a browser | authentik **forwardAuth** at Traefik |
+
+**Why the console does not use forwardAuth**, which is the obvious answer and
+was the original plan (#209, infra ADR-0039): a middleware gates the *ingress*,
+and a worker pod POSTing to `agent-fleet-core.agent-fleet.svc.cluster.local:8080`
+never reaches it. That is #200. A check inside the process applies regardless of
+network position. The previews go the other way for the mirror reason — they
+route to a session's own dev-server pod, so there is no fleet code in the
+request path to terminate OIDC with, and their hostnames are minted at runtime
+so no per-host provider can be declared.
+
+**`fleet.bnei.dev` has exactly one lock.** `basic-admin-auth` was removed once a
+real login was proven (infra ADR-0041's amendment). The IngressRoute matches on
+host with **no path constraint**, so every path core serves on 8080 is public
+unless the in-app gate refuses it:
+
+| Path | Gated? |
+|---|---|
+| `/` (SPA), `/agentfleet.v1.DashboardService/*`, `/metrics` | yes |
+| `/healthz`, `/auth/*` | no — inert |
+| `/webhook/alertmanager` | no — its own bearer token, refuses when unset |
+
+**A new exempt path is a new public endpoint.** The gate wraps the whole mux
+with an explicit exempt list precisely so a forgotten route fails closed rather
+than defaulting open.
+
+**Failure behaviour.** Unset OIDC config makes core refuse to start, unlike
+every other optional secret it reads — the Infisical operator renders stale or
+empty Secrets often enough that "off when unset" would come up wide open and
+looking healthy. `FLEET_AUTH_DISABLED=1` is the explicit local-stack opt-out.
+The cost, accepted knowingly: core has no local admin, so an authentik → Pigsty
+→ Patroni outage means no console at all. Recovery is `FLEET_AUTH_DISABLED=1`
+plus a redeploy, or `kubectl port-forward`.
+
+**What is deliberately not done.** core never reads `X-authentik-*` headers: a
+pod-network caller can forge one, turning an authorization gap into an
+impersonation gap. And there is still no `users` table — `/auth/me` returns the
+verified claim (email, groups) for the console's own chrome, not a profile.
+
 ## 3. Permission model
 
 Supersedes the old "Planning-phase guardrails" — there's no fleet-imposed
@@ -814,6 +863,19 @@ agent can read off the working tree it is already sitting in.
 | `SESSION_RETENTION_MS` | `1209600000` (14d) | the retention GC: a session idle this long with no live pod has its PVC and SDK state reclaimed and `swept_at` written. The row and transcript survive — a swept session is readable history, just not resumable |
 | `TURN_STALL_MS` | – | how long a session may owe a human a response before `DeriveLiveState` reports `stalled` |
 
+#### Auth (`core/`, `adr/0056`)
+
+| Var | Default | Notes |
+|---|---|---|
+| `OIDC_ISSUER_URL` | *(required)* | authentik's issuer is **per application** and ends in a trailing slash. Passed to discovery **verbatim** — OIDC compares it byte-for-byte, so normalising it is a different issuer, and this path fails closed, so that is an outage rather than a bad login |
+| `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET` | *(required)* | from the `fleet-oidc` Secret, materialised into this namespace by infra-bootstrap's `gitops/bootstrap/fleet-oidc-secret.yaml` — a **different** Infisical project than the whole-scope `envFrom`, hence explicit `secretKeyRef`s |
+| `FLEET_SESSION_KEYS` | *(required)* | comma-separated. Sign with the **first**, verify against **any** — the entire rotation mechanism. Prepend a new key, let the old ride out live sessions, then drop it; dropping ends every session signed only by it |
+| `DASHBOARD_PUBLIC_URL` | – | now also the OIDC redirect base. authentik registers `redirect_uris` with `matching_mode: strict`, so a mismatch fails at the callback, not at startup |
+| `FLEET_AUTH_DISABLED` | unset | `1` disables the gate. Local stacks only, and explicit so "no auth" is never something that merely happened |
+
+All required unless `FLEET_AUTH_DISABLED=1`: **core refuses to start** without
+them rather than serving unauthenticated.
+
 ### `provisioner/`
 
 | Var | Default | Notes |
@@ -849,7 +911,7 @@ running.
 | `TARGET_REPO` | – | |
 | `CORE_GRPC_ADDR` | `agent-fleet-core.agent-fleet.svc.cluster.local:9090` | its one outbound gRPC connection |
 | `WORKTREE_PATH` | `/workspace` | for the telemetry loop's `git diff`/`rev-parse` calls |
-| `MCP_PORT` | `9090` | agent-facing local MCP server |
+| `MCP_PORT` | `9090` | agent-facing local MCP server, bound to **127.0.0.1** |
 | `LOCAL_API_PORT` | `9091` | wrapper-facing plain HTTP/JSON API |
 | `LEASE_ID` | *(required)* | authenticates every `CoreService` call. The **sidecar** is what talks to core, so the worker's own copy of this authenticates nothing. Missing it, the sidecar refuses to start rather than making calls core will reject |
 

@@ -44,6 +44,7 @@ sandbox, it is stale — check the code.**
 | Runtime (`worker/` only) | Bun (`oven/bun:1-slim`), TypeScript, no build step — Bun runs `.ts` sources directly. The sole remaining JS runtime in the fleet — it's the only process hosting the Agent SDK |
 | Worker agent runtime | `@anthropic-ai/claude-agent-sdk` `query()` in **streaming-input mode** (not `claude -p` headless, not the plain-string form) — one continuous session spans planning and implementation, starts in `"default"` permission mode (CLI parity), model `claude-opus-4-8` (see `docs/adr/0021`/`0029`) |
 | Runtime (`core/`, `provisioner/`, `sidecar/`) | Go, `go.work` workspace, `golangci-lint` |
+| Auth | **authentik OIDC, terminated inside `core`** (`docs/adr/0056`) — `go-oidc`/`oauth2`, state+nonce+PKCE, a `__Host-`prefixed signed cookie, a required `platform-admins` claim, and fail-closed startup. NOT a Traefik forwardAuth middleware: that gates the ingress and cannot see a pod-network caller, which was `#200`. `CoreService` (9090) authenticates separately, with the session's own `lease_id` (`docs/adr/0057`). The e2e previews DO use forwardAuth — no fleet code is in their request path |
 | Discord | `discordgo` (Go, in `core/`) — **outbound only**: it posts when a session needs a human and links to the dashboard. The slash commands, threads and relayed replies are gone (`docs/adr/0048`), because Discord has no authorization model and an interactive control there would let anyone in the channel approve a Bash on any session |
 | Coordination | Postgres `transcript` (renamed from `planning_transcript`) — pull/cursor reads via `core`'s gRPC `CoreService`, real idempotency-keyed dedup, not pub/sub (see `docs/adr/0013`/`0020`) |
 | MCP | `mark3labs/mcp-go` HTTP server (Go, `sidecar/` — one per worker pod, agent connects over `localhost`). Local only: the sandbox the sidecar used to dial is merged into the worker pod (`docs/adr/0048` §6), so nothing crosses a pod boundary over MCP any more |
@@ -146,6 +147,19 @@ sandbox, it is stale — check the code.**
   (`docs/adr/0042`). The feed's five tiers must stay visually distinct; a new
   entry kind belongs in a tier, not in a uniform grey log line. Anything both
   form factors show goes in the shared components, never one of them.
+- **The console's gate lives in `core`, not at the ingress** (`docs/adr/0056`).
+  `fleet.bnei.dev` has exactly one lock now — `basic-admin-auth` is gone — and
+  the IngressRoute matches on host with no path constraint, so **a new exempt
+  path is a new public endpoint**. Unset OIDC config makes core refuse to start;
+  `FLEET_AUTH_DISABLED=1` is the explicit local-stack opt-out.
+- **Nothing on `CoreService` is callable without the session's `lease_id`**
+  (`docs/adr/0057`), and authorization is an explicit per-method table — a
+  field-name rule is wrong on `PromptSession`, `SaveAgentSessionId` and
+  `GetSession`, each time in the direction that grants authority. A method in no
+  table fails closed.
+- **`X-authentik-*` headers are never read.** A pod-network caller can forge
+  one, which would turn an authorization gap into an impersonation one. core
+  verifies its own ID token instead.
 - Every result is a PR.
 - One PVC per session — never a shared writable repo checkout across
   concurrent sessions. The fleet does not create branches either: the agent
@@ -344,6 +358,45 @@ feature was written:
   failed, not only at whether it exists.** Guarded by the script assertions in
   `TestEnsureBrowserCache_WritesWhatTheWorkersRead` and by
   `TestEnsureBrowserCache_RecreatesAFailedJob`.
+
+- **`MERGEABLE` is not "compiles".** Two PRs added a package import named `auth`
+  and a local variable named `auth` to the same function. Each was green on its
+  own branch, neither branch contained the other's half, and there was **no
+  textual conflict** — so GitHub reported the second one mergeable, the squash
+  was clean, and the build broke only at the release, where the variable
+  shadowed the package. Git prompts a rebase when it sees overlapping *text*; a
+  semantic collision produces no signal at all. **After merging into a branch
+  that has moved, build the merge result, not the branch** — and treat "no
+  conflict" as saying nothing about whether the two halves agree. Cost here was
+  bounded only by pipeline shape: `build-push` failed, so `deploy` was skipped
+  and no image tag moved.
+- **An OIDC issuer is compared byte-for-byte, so normalising it is a change.**
+  `auth.New` passed the configured issuer through `strings.TrimSuffix(_, "/")`
+  as tidying; authentik's issuer ends in a slash, so discovery rejected it and
+  core crash-looped — **a 15-minute console outage**, because that path fails
+  closed on purpose and a config-shaped bug there is an outage rather than a
+  degraded login. `k8s/core.yaml`'s own comment said "the trailing slash
+  matters" one file away. Nothing caught it because **no test exercised real
+  discovery**: every auth test drove the signer, the gate and the cookie, and
+  the path from config value to provider was unobserved until it met authentik.
+  Guarded by `TestNew_PassesTheIssuerThroughUnchanged` and
+  `TestNew_DoesNotNormaliseTheIssuer`, against an httptest stub shaped like
+  authentik's — issuer with a trailing slash, `userinfo` deliberately **not**
+  under it.
+- **`fleet.bnei.dev` now has exactly one lock, and the IngressRoute matches on
+  host with no path constraint.** So every path core serves on 8080 is public
+  unless the in-app gate refuses it, and **a new exempt path is a new public
+  endpoint**. Currently exempt: `/healthz`, `/auth/*`, `/webhook/alertmanager`
+  (its own bearer token, refuses when unset). `/metrics` is deliberately not.
+  There is no basic-auth behind it any more and core has no local admin, so an
+  authentik/Pigsty/Patroni outage means no console — recovery is
+  `FLEET_AUTH_DISABLED=1` plus a redeploy, or `kubectl port-forward`.
+- **"Zero rejections in the logs" is not "the auth works" when there was no
+  traffic.** After deploying `CoreService` lease auth, core showed zero auth
+  failures — and also zero `CoreService` calls and zero worker pods in the same
+  window. The number measured absence of traffic. For anything gated, the check
+  is a call that *should* be refused actually being refused: from a worker pod,
+  `CoreService` with **another session's** valid lease.
 
 ## Workflow rules
 
