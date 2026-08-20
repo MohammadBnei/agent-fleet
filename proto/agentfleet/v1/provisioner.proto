@@ -277,4 +277,9 @@ message SyncRepoCacheResponse {
   // Measured in the provisioner around the git work, so it excludes the gRPC
   // hops from the dashboard.
   int64 duration_ms = 4;
+  // origin/HEAD is not where it was before the fetch. Distinguishes "nothing
+  // moved" from the two cases where commits_advanced is 0 but the cache did
+  // change: a force-push that rewound the branch, and any history rewrite
+  // where the new head is not a descendant of the old one.
+  bool head_changed = 5;
 }

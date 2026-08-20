@@ -371,13 +371,17 @@ func commitTo(t *testing.T, dir, name string) {
 	if err := os.WriteFile(filepath.Join(dir, name), []byte(name), 0o644); err != nil {
 		t.Fatalf("write %s: %v", name, err)
 	}
-	for _, args := range [][]string{{"add", name}, {"commit", "-m", name}} {
-		cmd := exec.Command("git", args...)
-		cmd.Dir = dir
-		cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@test.com", "GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@test.com")
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v: %s", args, err, out)
-		}
+	gitIn(t, dir, "add", name)
+	gitIn(t, dir, "commit", "-m", name)
+}
+
+func gitIn(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@test.com", "GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@test.com")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git %v: %v: %s", args, err, out)
 	}
 }
 
@@ -429,6 +433,25 @@ func TestSyncRepoCache_ReportsCloneThenHowFarItAdvanced(t *testing.T) {
 	}
 	if third.GetCommitsAdvanced() != 0 {
 		t.Errorf("nothing moved upstream, reported %d", third.GetCommitsAdvanced())
+	}
+	if third.GetHeadChanged() {
+		t.Error("nothing moved upstream, so head_changed must be false")
+	}
+
+	// A force-push that rewinds the branch moves origin/HEAD while advancing
+	// it by nothing, so the count alone cannot tell it apart from an unchanged
+	// cache — and reporting "already current" for it would be a lie about the
+	// one thing this button exists to answer.
+	gitIn(t, origin, "reset", "--hard", "HEAD~1")
+	fourth, err := s.SyncRepoCache(ctx, &agentfleetv1.SyncRepoCacheRequest{Repo: "dream-analyst", RepoUrl: origin})
+	if err != nil {
+		t.Fatalf("fourth SyncRepoCache: %v", err)
+	}
+	if fourth.GetCommitsAdvanced() != 0 {
+		t.Errorf("a rewind advances nothing, reported %d", fourth.GetCommitsAdvanced())
+	}
+	if !fourth.GetHeadChanged() {
+		t.Error("origin/HEAD was rewound — head_changed must say so")
 	}
 }
 

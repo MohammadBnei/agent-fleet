@@ -16,6 +16,7 @@ package git
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -38,10 +39,32 @@ type Manager struct {
 
 	mu    sync.Mutex
 	locks map[string]*sync.Mutex // per-repo, held only while cloning/fetching/adding a worktree for that repo
+	// cached[repo] is true once a clone or fetch for that repo has COMPLETED
+	// in this process — the question EnsureRepoCachedForSession has to answer
+	// while another goroutine holds the repo's lock.
+	//
+	// In memory rather than on disk on purpose: the filesystem cannot answer
+	// it. `git clone` creates .git early, so `rev-parse --is-inside-work-tree`
+	// reports a half-transferred cache as a usable one, and a session that
+	// `--shared` clones from that gets a broken repository. Empty after a
+	// restart, which only costs a wait.
+	cached map[string]bool
 }
 
 func NewManager(root string) *Manager {
-	return &Manager{root: root, locks: make(map[string]*sync.Mutex)}
+	return &Manager{root: root, locks: make(map[string]*sync.Mutex), cached: make(map[string]bool)}
+}
+
+func (m *Manager) markCached(repo string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.cached[repo] = true
+}
+
+func (m *Manager) isCached(repo string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.cached[repo]
 }
 
 // ConfigureAuth ports worker/src/git.ts's configureGitAuth — the
@@ -119,8 +142,12 @@ type SyncResult struct {
 	// origin/HEAD after the sync, or "" if it could not be resolved.
 	Head string
 	// Commits origin/HEAD moved by this fetch. 0 when Cloned, and 0 when Head
-	// is "" — absence of a number, not a claim that nothing moved.
+	// is "" — absence of a number, not a claim that nothing moved. Read
+	// Changed for that.
 	Advanced int
+	// origin/HEAD is not the commit it was before the fetch. A force-push that
+	// rewinds the branch changes it while advancing it by nothing.
+	Changed bool
 }
 
 // EnsureRepoCloned clones repoURL into <root>/repos/<repo> if missing, else
@@ -137,7 +164,42 @@ func (m *Manager) EnsureRepoCloned(ctx context.Context, repo, repoURL string) (S
 	lock := m.repoLock(repo)
 	lock.Lock()
 	defer lock.Unlock()
+	return m.ensureLocked(ctx, repo, repoURL)
+}
 
+// EnsureRepoCachedForSession is the pod-creation path's entry point, and it
+// differs from EnsureRepoCloned in one way: it will not wait behind another
+// goroutine's clone or fetch of the same repo once a usable cache exists.
+//
+// The lock is a plain sync.Mutex and cannot be waited on with a deadline, so
+// a CreateWorkerPod arriving during a dashboard-triggered sync used to block
+// for as long as that sync ran — up to provisionerclient.repoSyncTimeout,
+// five times core's own sessionCallTimeout. The wait outlived the caller's
+// context, so git then ran on a cancelled one and the session was reported
+// CRASHED. Nothing about that was visible as a lock problem.
+//
+// Skipping the fetch is safe because it was never load-bearing: the pod's
+// clone init container fetches its base branch from the REAL remote
+// (k8s/session_storage.go), so a cache one sync out of date costs a slightly
+// larger delta over the network and nothing else. The clone IS load-bearing —
+// with no cache there is nothing to `git clone --shared` from — so a cold
+// repo still waits however long it takes.
+func (m *Manager) EnsureRepoCachedForSession(ctx context.Context, repo, repoURL string) error {
+	lock := m.repoLock(repo)
+	if !lock.TryLock() {
+		if m.isCached(repo) {
+			slog.Info("git: repo cache busy, using it as-is", "repo", repo)
+			return nil
+		}
+		lock.Lock()
+	}
+	defer lock.Unlock()
+	_, err := m.ensureLocked(ctx, repo, repoURL)
+	return err
+}
+
+// ensureLocked is EnsureRepoCloned's body. Callers must hold the repo's lock.
+func (m *Manager) ensureLocked(ctx context.Context, repo, repoURL string) (SyncResult, error) {
 	path := m.repoPath(repo)
 	if _, err := m.run(ctx, path, "rev-parse", "--is-inside-work-tree"); err == nil {
 		before := m.originHead(ctx, path)
@@ -147,10 +209,12 @@ func (m *Manager) EnsureRepoCloned(ctx context.Context, repo, repoURL string) (S
 		after := m.originHead(ctx, path)
 		res := SyncResult{Head: after}
 		if before != "" && after != "" && before != after {
+			res.Changed = true
 			if out, err := m.run(ctx, path, "rev-list", "--count", before+".."+after); err == nil {
 				res.Advanced, _ = strconv.Atoi(out)
 			}
 		}
+		m.markCached(repo)
 		return res, m.disableAutoGC(ctx, path)
 	}
 
@@ -160,6 +224,7 @@ func (m *Manager) EnsureRepoCloned(ctx context.Context, repo, repoURL string) (S
 	if _, err := m.run(ctx, "", "clone", repoURL, path); err != nil {
 		return SyncResult{}, err
 	}
+	m.markCached(repo)
 	return SyncResult{Cloned: true, Head: m.originHead(ctx, path)}, m.disableAutoGC(ctx, path)
 }
 

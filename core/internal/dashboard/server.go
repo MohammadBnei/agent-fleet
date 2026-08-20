@@ -1011,6 +1011,7 @@ func (s *Server) SyncRepo(ctx context.Context, req *connect.Request[agentfleetv1
 		Cloned:          resp.GetCloned(),
 		Head:            resp.GetHead(),
 		CommitsAdvanced: resp.GetCommitsAdvanced(),
+		HeadChanged:     resp.GetHeadChanged(),
 		DurationMs:      resp.GetDurationMs(),
 	}), nil
 }

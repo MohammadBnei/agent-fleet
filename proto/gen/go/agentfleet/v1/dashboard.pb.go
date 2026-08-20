@@ -2201,7 +2201,10 @@ type SyncRepoResponse struct {
 	// absence of a number, not a claim that nothing moved.
 	CommitsAdvanced int32 `protobuf:"varint,3,opt,name=commits_advanced,json=commitsAdvanced,proto3" json:"commits_advanced,omitempty"`
 	// Time spent in the provisioner's git work, excluding the gRPC hops.
-	DurationMs    int64 `protobuf:"varint,4,opt,name=duration_ms,json=durationMs,proto3" json:"duration_ms,omitempty"`
+	DurationMs int64 `protobuf:"varint,4,opt,name=duration_ms,json=durationMs,proto3" json:"duration_ms,omitempty"`
+	// origin/HEAD moved, even where commits_advanced is 0 (a force-push rewind,
+	// or any rewrite whose new head is not a descendant of the old one).
+	HeadChanged   bool `protobuf:"varint,5,opt,name=head_changed,json=headChanged,proto3" json:"head_changed,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2262,6 +2265,13 @@ func (x *SyncRepoResponse) GetDurationMs() int64 {
 		return x.DurationMs
 	}
 	return 0
+}
+
+func (x *SyncRepoResponse) GetHeadChanged() bool {
+	if x != nil {
+		return x.HeadChanged
+	}
+	return false
 }
 
 // PromptSnippet is dashboard-editable, reusable guidance text (same
@@ -3919,13 +3929,14 @@ const file_agentfleet_v1_dashboard_proto_rawDesc = "" +
 	"\x04name\x18\x01 \x01(\tR\x04name\"\x14\n" +
 	"\x12DeleteRepoResponse\"%\n" +
 	"\x0fSyncRepoRequest\x12\x12\n" +
-	"\x04name\x18\x01 \x01(\tR\x04name\"\x8a\x01\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\"\xad\x01\n" +
 	"\x10SyncRepoResponse\x12\x16\n" +
 	"\x06cloned\x18\x01 \x01(\bR\x06cloned\x12\x12\n" +
 	"\x04head\x18\x02 \x01(\tR\x04head\x12)\n" +
 	"\x10commits_advanced\x18\x03 \x01(\x05R\x0fcommitsAdvanced\x12\x1f\n" +
 	"\vduration_ms\x18\x04 \x01(\x03R\n" +
-	"durationMs\"\xa6\x01\n" +
+	"durationMs\x12!\n" +
+	"\fhead_changed\x18\x05 \x01(\bR\vheadChanged\"\xa6\x01\n" +
 	"\rPromptSnippet\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x12\n" +

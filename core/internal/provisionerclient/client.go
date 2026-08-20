@@ -37,8 +37,16 @@ const sessionCallTimeout = 2 * time.Minute
 
 // repoSyncTimeout bounds SyncRepoCache, which cannot share the constant above:
 // that call IS a clone when the cache is cold, and a first clone of a large
-// repo blows two minutes on its own. Unlike CreateWorkerPod it blocks nothing
-// but the one dashboard request that asked for it.
+// repo blows two minutes on its own.
+//
+// Deliberately longer than sessionCallTimeout even though a CreateWorkerPod
+// for the same repo contends with it on the provisioner's per-repo lock. The
+// shorter this is, the likelier a clone is killed part-way, and a half-cloned
+// cache directory is unrecoverable: it is neither a repository nor empty, so
+// every later `git clone` into it fails with "destination path already exists
+// and is not an empty directory". Waiting is cheap; a poisoned cache is not.
+// git.EnsureRepoCachedForSession is what keeps the contending session from
+// paying for that wait.
 //
 // ponytail: a fixed synchronous ceiling. A repo big enough to blow ten minutes
 // wants a background job with a status column, not a bigger number here.

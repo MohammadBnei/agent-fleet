@@ -12,13 +12,22 @@ import type { Repo, SyncRepoResponse } from "../gen/agentfleet/v1/dashboard_pb";
 // What a finished sync says. The point of the button is answering "did that
 // do anything?", so a bare "done" would waste the whole round trip — the
 // provisioner already counted the commits and timed itself.
+//
+// "already current" is the one claim here that can be wrong, so it is the last
+// branch rather than the fallback. commitsAdvanced is 0 in two cases that are
+// not "nothing moved": no resolvable origin/HEAD to measure against (which is
+// every cache cloned before that symref was recorded, i.e. exactly the stale
+// ones someone is most likely to sync), and a force-push that rewound the
+// branch. Both are reported as movement of unknown size instead.
 function syncLabel(res: SyncRepoResponse): string {
   const secs = `${(Number(res.durationMs) / 1000).toFixed(1)}s`;
-  if (res.cloned) return `cloned · ${secs}`;
+  const head = res.head ? ` · ${res.head.slice(0, 7)}` : "";
+  if (res.cloned) return `cloned${head} · ${secs}`;
   if (res.commitsAdvanced > 0) {
-    const head = res.head ? ` · ${res.head.slice(0, 7)}` : "";
     return `+${res.commitsAdvanced} commit${res.commitsAdvanced === 1 ? "" : "s"}${head} · ${secs}`;
   }
+  if (res.headChanged) return `head moved${head} · ${secs}`;
+  if (!res.head) return `fetched, extent unknown · ${secs}`;
   return `already current · ${secs}`;
 }
 
@@ -27,13 +36,19 @@ function syncLabel(res: SyncRepoResponse): string {
 // the result of the three that worked.
 type SyncState = { text: string; failed: boolean };
 
-function RepoRow({ repo, onSaved, onRequestDelete, onError, onSync, syncing, sync }: {
+function RepoRow({ repo, onSaved, onRequestDelete, onError, onSync, syncing, busy, sync }: {
   repo: Repo;
   onSaved: () => void;
   onRequestDelete: (repo: Repo) => void;
   onError: (msg: string) => void;
   onSync: (repo: Repo) => void;
+  // This row is the one in flight (label only).
   syncing: boolean;
+  // Some row is in flight — possibly another one, mid "Sync all". Disabling
+  // only the in-flight row let a second click land, and its finally-clause
+  // cleared the shared indicator, re-enabling "Sync all" for a second
+  // concurrent loop over the same repos.
+  busy: boolean;
   sync: SyncState | undefined;
 }) {
   const [url, setUrl] = useState(repo.url);
@@ -102,7 +117,7 @@ function RepoRow({ repo, onSaved, onRequestDelete, onError, onSync, syncing, syn
       <button
         type="button"
         onClick={() => onSync(repo)}
-        disabled={syncing}
+        disabled={busy}
         title="Fetch this repo into the fleet's shared clone cache"
         className="btn btn-sm flex-none"
       >
@@ -249,6 +264,7 @@ export function ManageReposModal({ onChanged }: { onChanged?: () => void }) {
               onError={setError}
               onSync={syncOne}
               syncing={syncing === r.name}
+              busy={syncing !== null}
               sync={syncState[r.name]}
             />
           ))}

@@ -129,6 +129,7 @@ func (s *Server) SyncRepoCache(ctx context.Context, req *agentfleetv1.SyncRepoCa
 		Cloned:          res.Cloned,
 		Head:            res.Head,
 		CommitsAdvanced: int32(res.Advanced),
+		HeadChanged:     res.Changed,
 		DurationMs:      time.Since(started).Milliseconds(),
 	}, nil
 }
@@ -165,7 +166,7 @@ func (s *Server) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWo
 	// provisioner-internal detail, not states any other component branches
 	// on — see core.proto's own comment on the enum value.
 	s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_PROVISIONING, "", "cloning repo")
-	if _, err := s.git.EnsureRepoCloned(ctx, req.GetRepo(), req.GetRepoUrl()); err != nil {
+	if err := s.git.EnsureRepoCachedForSession(ctx, req.GetRepo(), req.GetRepoUrl()); err != nil {
 		s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_CRASHED, "", "clone/fetch failed: "+err.Error())
 		return nil, fmt.Errorf("ensure repo cloned: %w", err)
 	}

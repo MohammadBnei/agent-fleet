@@ -1110,7 +1110,12 @@ type SyncRepoCacheResponse struct {
 	CommitsAdvanced int32 `protobuf:"varint,3,opt,name=commits_advanced,json=commitsAdvanced,proto3" json:"commits_advanced,omitempty"`
 	// Measured in the provisioner around the git work, so it excludes the gRPC
 	// hops from the dashboard.
-	DurationMs    int64 `protobuf:"varint,4,opt,name=duration_ms,json=durationMs,proto3" json:"duration_ms,omitempty"`
+	DurationMs int64 `protobuf:"varint,4,opt,name=duration_ms,json=durationMs,proto3" json:"duration_ms,omitempty"`
+	// origin/HEAD is not where it was before the fetch. Distinguishes "nothing
+	// moved" from the two cases where commits_advanced is 0 but the cache did
+	// change: a force-push that rewound the branch, and any history rewrite
+	// where the new head is not a descendant of the old one.
+	HeadChanged   bool `protobuf:"varint,5,opt,name=head_changed,json=headChanged,proto3" json:"head_changed,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1171,6 +1176,13 @@ func (x *SyncRepoCacheResponse) GetDurationMs() int64 {
 		return x.DurationMs
 	}
 	return 0
+}
+
+func (x *SyncRepoCacheResponse) GetHeadChanged() bool {
+	if x != nil {
+		return x.HeadChanged
+	}
+	return false
 }
 
 var File_agentfleet_v1_provisioner_proto protoreflect.FileDescriptor
@@ -1239,13 +1251,14 @@ const file_agentfleet_v1_provisioner_proto_rawDesc = "" +
 	"\x14SweepSessionResponse\"E\n" +
 	"\x14SyncRepoCacheRequest\x12\x12\n" +
 	"\x04repo\x18\x01 \x01(\tR\x04repo\x12\x19\n" +
-	"\brepo_url\x18\x02 \x01(\tR\arepoUrl\"\x8f\x01\n" +
+	"\brepo_url\x18\x02 \x01(\tR\arepoUrl\"\xb2\x01\n" +
 	"\x15SyncRepoCacheResponse\x12\x16\n" +
 	"\x06cloned\x18\x01 \x01(\bR\x06cloned\x12\x12\n" +
 	"\x04head\x18\x02 \x01(\tR\x04head\x12)\n" +
 	"\x10commits_advanced\x18\x03 \x01(\x05R\x0fcommitsAdvanced\x12\x1f\n" +
 	"\vduration_ms\x18\x04 \x01(\x03R\n" +
-	"durationMs*\\\n" +
+	"durationMs\x12!\n" +
+	"\fhead_changed\x18\x05 \x01(\bR\vheadChanged*\\\n" +
 	"\vSessionKind\x12\x1c\n" +
 	"\x18SESSION_KIND_UNSPECIFIED\x10\x00\x12\x17\n" +
 	"\x13SESSION_KIND_WORKER\x10\x01\"\x04\b\x02\x10\x02*\x10SESSION_KIND_E2E2\xe2\x06\n" +

@@ -412,6 +412,9 @@ message SyncRepoResponse {
   int32 commits_advanced = 3;
   // Time spent in the provisioner's git work, excluding the gRPC hops.
   int64 duration_ms = 4;
+  // origin/HEAD moved, even where commits_advanced is 0 (a force-push rewind,
+  // or any rewrite whose new head is not a descendant of the old one).
+  bool head_changed = 5;
 }
 
 // RepoProfile and its four CRUD message pairs used to live here — the
