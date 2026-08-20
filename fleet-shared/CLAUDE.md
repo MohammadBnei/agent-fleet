@@ -112,6 +112,15 @@ context (`agent-fleet/docs/adr/0046`).
 wrong — but it is also not always a win: `bun install` and `npm ci` are two it
 does not compact today. Raw output on purpose: `rtk proxy <cmd>`.
 
+What it costs: a bare `go test ./...` is on the un-prompted allow list,
+`rtk go test ./...` is not. In `auto` that is invisible — the worker answers
+it. In `default` it is one permission prompt per command, which is the trade
+being made deliberately: a click a human sees, against a context window they
+don't (`agent-fleet/docs/adr/0046`). Both `rtk proxy` and `rtk run` prompt for
+the same reason, and that one is not a trade — they run their argument
+verbatim, so allow-listing either would let `rtk proxy rm -rf x` past the
+`rm`/`sudo` gate.
+
 Truncation: `view_logs` truncates — narrow the query (limit/level/duration/time).
 
 Never conclude from truncated output when answer not shown.

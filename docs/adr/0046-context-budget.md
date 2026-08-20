@@ -166,6 +166,13 @@ commands match no permission rule (the SDK's wrapper stripping knows `timeout`,
 `nice`, `nohup`, `xargs` — not `rtk`), so in `default` mode each one costs a
 prompt. No `Bash(rtk:*)` allow rule was added to fix that: it would let
 `rtk sudo …` skip `canUseTool` and route around `FLEET_ASK_RULES`, trading a
-token optimization for the `rm`/`sudo` gate. Measure with `rtk gain --history`
-in a worker pod and `inputTokens` per point 3; if the instruction does not take,
-the escalation is a skill, still in the agent layer.
+token optimization for the `rm`/`sudo` gate.
+
+`Bash(rtk proxy:*)` was on that allow list already and is removed here for the
+same reason — `rtk proxy <cmd>` runs its argument verbatim, so the rule was
+that bypass, live, since ADR-0009. An allow rule on any command that takes
+another command as its argument is a hole in every ask rule at once.
+
+Measure with `rtk gain --history` in a worker pod and `inputTokens` per point 3;
+if the instruction does not take, the escalation is a skill, still in the agent
+layer.
