@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.11.1](https://github.com/MohammadBnei/agent-fleet/compare/4.11.0...4.11.1) (2026-08-20)
+
+
+### Bug Fixes
+
+* **core:** serve /metrics on its own port so Prometheus can scrape it ([#232](https://github.com/MohammadBnei/agent-fleet/issues/232)) ([c231887](https://github.com/MohammadBnei/agent-fleet/commit/c231887c35f1cc99e10ebf4a4634943474149afe)), closes [#230](https://github.com/MohammadBnei/agent-fleet/issues/230) [#230](https://github.com/MohammadBnei/agent-fleet/issues/230)
+
 # [4.11.0](https://github.com/MohammadBnei/agent-fleet/compare/4.10.1...4.11.0) (2026-08-20)
 
 
