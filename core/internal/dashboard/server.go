@@ -966,6 +966,56 @@ func (s *Server) DeleteRepo(ctx context.Context, req *connect.Request[agentfleet
 	return connect.NewResponse(&agentfleetv1.DeleteRepoResponse{}), nil
 }
 
+// SyncRepo refreshes the provisioner's clone cache for one repo. Until this
+// existed, CreateWorkerPod was the only thing that ever advanced that cache,
+// so a newly added repo stayed uncloned until its first session paid for a
+// cold clone and an idle repo's cache just went stale.
+//
+// The URL is read from the repo row and never taken from the request — the
+// same rule WarmIfIdle follows, and the reason the request carries only a
+// name.
+//
+// "Sync all" is the dashboard looping this call over the list it already
+// holds. No batch RPC: a batch would have to invent a partial-failure shape
+// for something the caller can attribute for free.
+func (s *Server) SyncRepo(ctx context.Context, req *connect.Request[agentfleetv1.SyncRepoRequest]) (*connect.Response[agentfleetv1.SyncRepoResponse], error) {
+	name := req.Msg.GetName()
+	if name == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("name is required"))
+	}
+	r, err := s.repos.Get(ctx, name)
+	if err != nil {
+		slog.Error("dashboard SyncRepo lookup", "name", name, "error", err)
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	// repos.Store.Get reports "no such repo" as (nil, nil), not
+	// pgx.ErrNoRows — unlike Update/Delete right above, which do return the
+	// sentinel. Checking for the sentinel here compiles, passes every test
+	// with a repo that exists, and panics on the first typo'd name.
+	if r == nil {
+		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("unknown repo %q", name))
+	}
+	resp, err := s.e2e.SyncRepoCache(ctx, r.Name, r.URL)
+	if err != nil {
+		// err itself, not a generic replacement: git's own stderr is already
+		// inside it (provisioner/internal/git.Manager.run), and that line —
+		// "fatal: could not read Username", "Repository not found" — is the
+		// entire diagnostic the operator gets. Safe to surface here: repo URLs
+		// hold no credential (auth is gh's credential helper) and this surface
+		// is OIDC admin-only.
+		slog.Error("dashboard SyncRepo", "name", name, "error", err)
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	slog.Info("dashboard SyncRepo", "name", name, "cloned", resp.GetCloned(), "advanced", resp.GetCommitsAdvanced())
+	return connect.NewResponse(&agentfleetv1.SyncRepoResponse{
+		Cloned:          resp.GetCloned(),
+		Head:            resp.GetHead(),
+		CommitsAdvanced: resp.GetCommitsAdvanced(),
+		HeadChanged:     resp.GetHeadChanged(),
+		DurationMs:      resp.GetDurationMs(),
+	}), nil
+}
+
 func repoToProto(r repos.Repo) *agentfleetv1.Repo {
 	return &agentfleetv1.Repo{
 		Name:          r.Name,

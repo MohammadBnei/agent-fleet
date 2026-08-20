@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file agentfleet/v1/provisioner.proto.
  */
 export const file_agentfleet_v1_provisioner: GenFile = /*@__PURE__*/
-  fileDesc("Ch9hZ2VudGZsZWV0L3YxL3Byb3Zpc2lvbmVyLnByb3RvEg1hZ2VudGZsZWV0LnYxIokCChZDcmVhdGVXb3JrZXJQb2RSZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkSDAoEcmVwbxgCIAEoCRIQCghyZXBvX3VybBgDIAEoCRITCgtiYXNlX2JyYW5jaBgEIAEoCRITCgtkZXNjcmlwdGlvbhgFIAEoCRIQCghsZWFzZV9pZBgGIAEoCRIZChFyZXN1bWVfc2Vzc2lvbl9pZBgHIAEoCRIXCg9yZXN1bWVfZnJvbV9zZXEYCCABKAMSEQoJdG9vbF9rZXlzGAogAygJEg0KBWltYWdlGAwgASgJSgQICRAKSgQICxAMUghndWlkYW5jZVITc2VydmljZV9pbmdyZWRpZW50cyJYChdDcmVhdGVXb3JrZXJQb2RSZXNwb25zZRIQCghwb2RfbmFtZRgBIAEoCRIUCgx3b3JrZXJfaW1hZ2UYAiABKAkSFQoNc2lkZWNhcl9pbWFnZRgDIAEoCSITChFHZXRWZXJzaW9uUmVxdWVzdCJSChJHZXRWZXJzaW9uUmVzcG9uc2USDwoHdmVyc2lvbhgBIAEoCRIUCgx3b3JrZXJfaW1hZ2UYAiABKAkSFQoNc2lkZWNhcl9pbWFnZRgDIAEoCSJWChZUZWFyRG93blNlc3Npb25SZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkSKAoEa2luZBgCIAEoDjIaLmFnZW50ZmxlZXQudjEuU2Vzc2lvbktpbmQiLAoXVGVhckRvd25TZXNzaW9uUmVzcG9uc2USEQoJdG9ybl9kb3duGAEgASgIIhcKFUxpc3RXb3JrZXJQb2RzUmVxdWVzdCJECg1MaXZlV29ya2VyUG9kEhIKCnNlc3Npb25faWQYASABKAkSEAoIcG9kX25hbWUYAiABKAkSDQoFcGhhc2UYAyABKAkiRAoWTGlzdFdvcmtlclBvZHNSZXNwb25zZRIqCgRwb2RzGAEgAygLMhwuYWdlbnRmbGVldC52MS5MaXZlV29ya2VyUG9kIjgKFEV4cG9zZVNlc3Npb25SZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkSDAoEcG9ydBgCIAEoBSIkChVFeHBvc2VTZXNzaW9uUmVzcG9uc2USCwoDdXJsGAEgASgJIiwKFlVuZXhwb3NlU2Vzc2lvblJlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCSIZChdVbmV4cG9zZVNlc3Npb25SZXNwb25zZSJJChdQcm92aXNpb25TZXJ2aWNlUmVxdWVzdBISCgpzZXNzaW9uX2lkGAEgASgJEgwKBHJlcG8YAiABKAkSDAoEa2luZBgDIAEoCSInChhQcm92aXNpb25TZXJ2aWNlUmVzcG9uc2USCwoDZHNuGAEgASgJIikKE1N3ZWVwU2Vzc2lvblJlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCSIWChRTd2VlcFNlc3Npb25SZXNwb25zZSpcCgtTZXNzaW9uS2luZBIcChhTRVNTSU9OX0tJTkRfVU5TUEVDSUZJRUQQABIXChNTRVNTSU9OX0tJTkRfV09SS0VSEAEiBAgCEAIqEFNFU1NJT05fS0lORF9FMkUyhgYKElByb3Zpc2lvbmVyU2VydmljZRJgCg9DcmVhdGVXb3JrZXJQb2QSJS5hZ2VudGZsZWV0LnYxLkNyZWF0ZVdvcmtlclBvZFJlcXVlc3QaJi5hZ2VudGZsZWV0LnYxLkNyZWF0ZVdvcmtlclBvZFJlc3BvbnNlEmAKD1RlYXJEb3duU2Vzc2lvbhIlLmFnZW50ZmxlZXQudjEuVGVhckRvd25TZXNzaW9uUmVxdWVzdBomLmFnZW50ZmxlZXQudjEuVGVhckRvd25TZXNzaW9uUmVzcG9uc2USXQoOTGlzdFdvcmtlclBvZHMSJC5hZ2VudGZsZWV0LnYxLkxpc3RXb3JrZXJQb2RzUmVxdWVzdBolLmFnZW50ZmxlZXQudjEuTGlzdFdvcmtlclBvZHNSZXNwb25zZRJRCgpHZXRWZXJzaW9uEiAuYWdlbnRmbGVldC52MS5HZXRWZXJzaW9uUmVxdWVzdBohLmFnZW50ZmxlZXQudjEuR2V0VmVyc2lvblJlc3BvbnNlEloKDUV4cG9zZVNlc3Npb24SIy5hZ2VudGZsZWV0LnYxLkV4cG9zZVNlc3Npb25SZXF1ZXN0GiQuYWdlbnRmbGVldC52MS5FeHBvc2VTZXNzaW9uUmVzcG9uc2USYAoPVW5leHBvc2VTZXNzaW9uEiUuYWdlbnRmbGVldC52MS5VbmV4cG9zZVNlc3Npb25SZXF1ZXN0GiYuYWdlbnRmbGVldC52MS5VbmV4cG9zZVNlc3Npb25SZXNwb25zZRJjChBQcm92aXNpb25TZXJ2aWNlEiYuYWdlbnRmbGVldC52MS5Qcm92aXNpb25TZXJ2aWNlUmVxdWVzdBonLmFnZW50ZmxlZXQudjEuUHJvdmlzaW9uU2VydmljZVJlc3BvbnNlElcKDFN3ZWVwU2Vzc2lvbhIiLmFnZW50ZmxlZXQudjEuU3dlZXBTZXNzaW9uUmVxdWVzdBojLmFnZW50ZmxlZXQudjEuU3dlZXBTZXNzaW9uUmVzcG9uc2VCTVpLZ2l0aHViLmNvbS9Nb2hhbW1hZEJuZWkvYWdlbnQtZmxlZXQvcHJvdG8vZ2VuL2dvL2FnZW50ZmxlZXQvdjE7YWdlbnRmbGVldHYxYgZwcm90bzM");
+  fileDesc("Ch9hZ2VudGZsZWV0L3YxL3Byb3Zpc2lvbmVyLnByb3RvEg1hZ2VudGZsZWV0LnYxIokCChZDcmVhdGVXb3JrZXJQb2RSZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkSDAoEcmVwbxgCIAEoCRIQCghyZXBvX3VybBgDIAEoCRITCgtiYXNlX2JyYW5jaBgEIAEoCRITCgtkZXNjcmlwdGlvbhgFIAEoCRIQCghsZWFzZV9pZBgGIAEoCRIZChFyZXN1bWVfc2Vzc2lvbl9pZBgHIAEoCRIXCg9yZXN1bWVfZnJvbV9zZXEYCCABKAMSEQoJdG9vbF9rZXlzGAogAygJEg0KBWltYWdlGAwgASgJSgQICRAKSgQICxAMUghndWlkYW5jZVITc2VydmljZV9pbmdyZWRpZW50cyJYChdDcmVhdGVXb3JrZXJQb2RSZXNwb25zZRIQCghwb2RfbmFtZRgBIAEoCRIUCgx3b3JrZXJfaW1hZ2UYAiABKAkSFQoNc2lkZWNhcl9pbWFnZRgDIAEoCSITChFHZXRWZXJzaW9uUmVxdWVzdCJSChJHZXRWZXJzaW9uUmVzcG9uc2USDwoHdmVyc2lvbhgBIAEoCRIUCgx3b3JrZXJfaW1hZ2UYAiABKAkSFQoNc2lkZWNhcl9pbWFnZRgDIAEoCSJWChZUZWFyRG93blNlc3Npb25SZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkSKAoEa2luZBgCIAEoDjIaLmFnZW50ZmxlZXQudjEuU2Vzc2lvbktpbmQiLAoXVGVhckRvd25TZXNzaW9uUmVzcG9uc2USEQoJdG9ybl9kb3duGAEgASgIIhcKFUxpc3RXb3JrZXJQb2RzUmVxdWVzdCJECg1MaXZlV29ya2VyUG9kEhIKCnNlc3Npb25faWQYASABKAkSEAoIcG9kX25hbWUYAiABKAkSDQoFcGhhc2UYAyABKAkiRAoWTGlzdFdvcmtlclBvZHNSZXNwb25zZRIqCgRwb2RzGAEgAygLMhwuYWdlbnRmbGVldC52MS5MaXZlV29ya2VyUG9kIjgKFEV4cG9zZVNlc3Npb25SZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkSDAoEcG9ydBgCIAEoBSIkChVFeHBvc2VTZXNzaW9uUmVzcG9uc2USCwoDdXJsGAEgASgJIiwKFlVuZXhwb3NlU2Vzc2lvblJlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCSIZChdVbmV4cG9zZVNlc3Npb25SZXNwb25zZSJJChdQcm92aXNpb25TZXJ2aWNlUmVxdWVzdBISCgpzZXNzaW9uX2lkGAEgASgJEgwKBHJlcG8YAiABKAkSDAoEa2luZBgDIAEoCSInChhQcm92aXNpb25TZXJ2aWNlUmVzcG9uc2USCwoDZHNuGAEgASgJIikKE1N3ZWVwU2Vzc2lvblJlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCSIWChRTd2VlcFNlc3Npb25SZXNwb25zZSI2ChRTeW5jUmVwb0NhY2hlUmVxdWVzdBIMCgRyZXBvGAEgASgJEhAKCHJlcG9fdXJsGAIgASgJInoKFVN5bmNSZXBvQ2FjaGVSZXNwb25zZRIOCgZjbG9uZWQYASABKAgSDAoEaGVhZBgCIAEoCRIYChBjb21taXRzX2FkdmFuY2VkGAMgASgFEhMKC2R1cmF0aW9uX21zGAQgASgDEhQKDGhlYWRfY2hhbmdlZBgFIAEoCCpcCgtTZXNzaW9uS2luZBIcChhTRVNTSU9OX0tJTkRfVU5TUEVDSUZJRUQQABIXChNTRVNTSU9OX0tJTkRfV09SS0VSEAEiBAgCEAIqEFNFU1NJT05fS0lORF9FMkUy4gYKElByb3Zpc2lvbmVyU2VydmljZRJgCg9DcmVhdGVXb3JrZXJQb2QSJS5hZ2VudGZsZWV0LnYxLkNyZWF0ZVdvcmtlclBvZFJlcXVlc3QaJi5hZ2VudGZsZWV0LnYxLkNyZWF0ZVdvcmtlclBvZFJlc3BvbnNlEmAKD1RlYXJEb3duU2Vzc2lvbhIlLmFnZW50ZmxlZXQudjEuVGVhckRvd25TZXNzaW9uUmVxdWVzdBomLmFnZW50ZmxlZXQudjEuVGVhckRvd25TZXNzaW9uUmVzcG9uc2USXQoOTGlzdFdvcmtlclBvZHMSJC5hZ2VudGZsZWV0LnYxLkxpc3RXb3JrZXJQb2RzUmVxdWVzdBolLmFnZW50ZmxlZXQudjEuTGlzdFdvcmtlclBvZHNSZXNwb25zZRJRCgpHZXRWZXJzaW9uEiAuYWdlbnRmbGVldC52MS5HZXRWZXJzaW9uUmVxdWVzdBohLmFnZW50ZmxlZXQudjEuR2V0VmVyc2lvblJlc3BvbnNlEloKDUV4cG9zZVNlc3Npb24SIy5hZ2VudGZsZWV0LnYxLkV4cG9zZVNlc3Npb25SZXF1ZXN0GiQuYWdlbnRmbGVldC52MS5FeHBvc2VTZXNzaW9uUmVzcG9uc2USYAoPVW5leHBvc2VTZXNzaW9uEiUuYWdlbnRmbGVldC52MS5VbmV4cG9zZVNlc3Npb25SZXF1ZXN0GiYuYWdlbnRmbGVldC52MS5VbmV4cG9zZVNlc3Npb25SZXNwb25zZRJjChBQcm92aXNpb25TZXJ2aWNlEiYuYWdlbnRmbGVldC52MS5Qcm92aXNpb25TZXJ2aWNlUmVxdWVzdBonLmFnZW50ZmxlZXQudjEuUHJvdmlzaW9uU2VydmljZVJlc3BvbnNlEloKDVN5bmNSZXBvQ2FjaGUSIy5hZ2VudGZsZWV0LnYxLlN5bmNSZXBvQ2FjaGVSZXF1ZXN0GiQuYWdlbnRmbGVldC52MS5TeW5jUmVwb0NhY2hlUmVzcG9uc2USVwoMU3dlZXBTZXNzaW9uEiIuYWdlbnRmbGVldC52MS5Td2VlcFNlc3Npb25SZXF1ZXN0GiMuYWdlbnRmbGVldC52MS5Td2VlcFNlc3Npb25SZXNwb25zZUJNWktnaXRodWIuY29tL01vaGFtbWFkQm5laS9hZ2VudC1mbGVldC9wcm90by9nZW4vZ28vYWdlbnRmbGVldC92MTthZ2VudGZsZWV0djFiBnByb3RvMw");
 
 /**
  * Fetches the repo's clone cache and creates the session's pod, synchronously,
@@ -498,6 +498,88 @@ export const SweepSessionResponseSchema: GenMessage<SweepSessionResponse> = /*@_
   messageDesc(file_agentfleet_v1_provisioner, 16);
 
 /**
+ * @generated from message agentfleet.v1.SyncRepoCacheRequest
+ */
+export type SyncRepoCacheRequest = Message<"agentfleet.v1.SyncRepoCacheRequest"> & {
+  /**
+   * @generated from field: string repo = 1;
+   */
+  repo: string;
+
+  /**
+   * @generated from field: string repo_url = 2;
+   */
+  repoUrl: string;
+};
+
+/**
+ * Describes the message agentfleet.v1.SyncRepoCacheRequest.
+ * Use `create(SyncRepoCacheRequestSchema)` to create a new message.
+ */
+export const SyncRepoCacheRequestSchema: GenMessage<SyncRepoCacheRequest> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_provisioner, 17);
+
+/**
+ * No error field: gRPC already carries one, and git.Manager.run puts git's
+ * own stderr in it, so a credential or network failure arrives as
+ * "git fetch origin (in /workspace/repos/x): exit status 128: fatal: ...".
+ * A second error channel in the body would only be a way to report success
+ * while having failed.
+ *
+ * @generated from message agentfleet.v1.SyncRepoCacheResponse
+ */
+export type SyncRepoCacheResponse = Message<"agentfleet.v1.SyncRepoCacheResponse"> & {
+  /**
+   * The cache did not exist and this call was a full clone — `commits_advanced`
+   * has no meaning in that case.
+   *
+   * @generated from field: bool cloned = 1;
+   */
+  cloned: boolean;
+
+  /**
+   * origin/HEAD after the sync, or "" when the cache has no origin/HEAD
+   * symref to resolve. Never fatal — a statistic must not fail a good fetch.
+   *
+   * @generated from field: string head = 2;
+   */
+  head: string;
+
+  /**
+   * Commits origin/HEAD moved by this fetch. 0 for a clone, and 0 when `head`
+   * is "" — absence of a number, not a claim that nothing moved.
+   *
+   * @generated from field: int32 commits_advanced = 3;
+   */
+  commitsAdvanced: number;
+
+  /**
+   * Measured in the provisioner around the git work, so it excludes the gRPC
+   * hops from the dashboard.
+   *
+   * @generated from field: int64 duration_ms = 4;
+   */
+  durationMs: bigint;
+
+  /**
+   * origin/HEAD is not where it was before the fetch. Distinguishes "nothing
+   * moved" from the two cases where commits_advanced is 0 but the cache did
+   * change: a force-push that rewound the branch, and any history rewrite
+   * where the new head is not a descendant of the old one.
+   *
+   * @generated from field: bool head_changed = 5;
+   */
+  headChanged: boolean;
+};
+
+/**
+ * Describes the message agentfleet.v1.SyncRepoCacheResponse.
+ * Use `create(SyncRepoCacheResponseSchema)` to create a new message.
+ */
+export const SyncRepoCacheResponseSchema: GenMessage<SyncRepoCacheResponse> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_provisioner, 18);
+
+/**
  * Which kind of pod an operation targets.
  *
  * Value 2 was SESSION_KIND_E2E, the sandbox pod (docs/adr/0048 §6). Reserved
@@ -594,6 +676,22 @@ export const ProvisionerService: GenService<{
     methodKind: "unary";
     input: typeof ProvisionServiceRequestSchema;
     output: typeof ProvisionServiceResponseSchema;
+  },
+  /**
+   * Refreshes one repo's clone cache out-of-band from CreateWorkerPod, which
+   * was until now the only thing that ever advanced it. Human-triggered from
+   * the dashboard's "manage repos" UI.
+   *
+   * core resolves repo -> repo_url from the `repos` table before calling, so
+   * a repo name arriving over the wire can never point the cache at an
+   * arbitrary URL.
+   *
+   * @generated from rpc agentfleet.v1.ProvisionerService.SyncRepoCache
+   */
+  syncRepoCache: {
+    methodKind: "unary";
+    input: typeof SyncRepoCacheRequestSchema;
+    output: typeof SyncRepoCacheResponseSchema;
   },
   /**
    * Deletes a session's working-tree PVC. The other half of its disk (the

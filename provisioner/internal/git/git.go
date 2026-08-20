@@ -16,9 +16,11 @@ package git
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -37,10 +39,32 @@ type Manager struct {
 
 	mu    sync.Mutex
 	locks map[string]*sync.Mutex // per-repo, held only while cloning/fetching/adding a worktree for that repo
+	// cached[repo] is true once a clone or fetch for that repo has COMPLETED
+	// in this process — the question EnsureRepoCachedForSession has to answer
+	// while another goroutine holds the repo's lock.
+	//
+	// In memory rather than on disk on purpose: the filesystem cannot answer
+	// it. `git clone` creates .git early, so `rev-parse --is-inside-work-tree`
+	// reports a half-transferred cache as a usable one, and a session that
+	// `--shared` clones from that gets a broken repository. Empty after a
+	// restart, which only costs a wait.
+	cached map[string]bool
 }
 
 func NewManager(root string) *Manager {
-	return &Manager{root: root, locks: make(map[string]*sync.Mutex)}
+	return &Manager{root: root, locks: make(map[string]*sync.Mutex), cached: make(map[string]bool)}
+}
+
+func (m *Manager) markCached(repo string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.cached[repo] = true
+}
+
+func (m *Manager) isCached(repo string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.cached[repo]
 }
 
 // ConfigureAuth ports worker/src/git.ts's configureGitAuth — the
@@ -107,31 +131,114 @@ func (m *Manager) run(ctx context.Context, dir string, args ...string) (string, 
 	return strings.TrimSpace(string(out)), nil
 }
 
+// SyncResult describes what a call to EnsureRepoCloned actually did. It exists
+// for the dashboard's manual sync button (SyncRepoCache), which is a human
+// asking "did that do anything?" and deserves an answer better than "no error".
+//
+// Every field is best-effort by construction — see EnsureRepoCloned.
+type SyncResult struct {
+	// The cache did not exist and this call cloned it. Advanced is meaningless.
+	Cloned bool
+	// origin/HEAD after the sync, or "" if it could not be resolved.
+	Head string
+	// Commits origin/HEAD moved by this fetch. 0 when Cloned, and 0 when Head
+	// is "" — absence of a number, not a claim that nothing moved. Read
+	// Changed for that.
+	Advanced int
+	// origin/HEAD is not the commit it was before the fetch. A force-push that
+	// rewinds the branch changes it while advancing it by nothing.
+	Changed bool
+}
+
 // EnsureRepoCloned clones repoURL into <root>/repos/<repo> if missing, else
 // fetches. Serialized per-repo (Manager.repoLock) so two concurrent
 // CreateWorkerPod calls for the same never-before-seen repo can never race
 // a clone into the same not-yet-existing path — the data-race risk flagged
 // during ADR-0019's doubt-driven review.
-func (m *Manager) EnsureRepoCloned(ctx context.Context, repo, repoURL string) error {
+//
+// The SyncResult reads are deliberately error-discarding. A cache with no
+// origin/HEAD symref (every cache cloned before this existed is a candidate)
+// must still sync; failing a fetch that worked because a statistic about it
+// could not be computed would turn a reporting feature into an outage.
+func (m *Manager) EnsureRepoCloned(ctx context.Context, repo, repoURL string) (SyncResult, error) {
 	lock := m.repoLock(repo)
 	lock.Lock()
 	defer lock.Unlock()
+	return m.ensureLocked(ctx, repo, repoURL)
+}
 
+// EnsureRepoCachedForSession is the pod-creation path's entry point, and it
+// differs from EnsureRepoCloned in one way: it will not wait behind another
+// goroutine's clone or fetch of the same repo once a usable cache exists.
+//
+// The lock is a plain sync.Mutex and cannot be waited on with a deadline, so
+// a CreateWorkerPod arriving during a dashboard-triggered sync used to block
+// for as long as that sync ran — up to provisionerclient.repoSyncTimeout,
+// five times core's own sessionCallTimeout. The wait outlived the caller's
+// context, so git then ran on a cancelled one and the session was reported
+// CRASHED. Nothing about that was visible as a lock problem.
+//
+// Skipping the fetch is safe because it was never load-bearing: the pod's
+// clone init container fetches its base branch from the REAL remote
+// (k8s/session_storage.go), so a cache one sync out of date costs a slightly
+// larger delta over the network and nothing else. The clone IS load-bearing —
+// with no cache there is nothing to `git clone --shared` from — so a cold
+// repo still waits however long it takes.
+func (m *Manager) EnsureRepoCachedForSession(ctx context.Context, repo, repoURL string) error {
+	lock := m.repoLock(repo)
+	if !lock.TryLock() {
+		if m.isCached(repo) {
+			slog.Info("git: repo cache busy, using it as-is", "repo", repo)
+			return nil
+		}
+		lock.Lock()
+	}
+	defer lock.Unlock()
+	_, err := m.ensureLocked(ctx, repo, repoURL)
+	return err
+}
+
+// ensureLocked is EnsureRepoCloned's body. Callers must hold the repo's lock.
+func (m *Manager) ensureLocked(ctx context.Context, repo, repoURL string) (SyncResult, error) {
 	path := m.repoPath(repo)
 	if _, err := m.run(ctx, path, "rev-parse", "--is-inside-work-tree"); err == nil {
+		before := m.originHead(ctx, path)
 		if _, err := m.run(ctx, path, "fetch", "origin"); err != nil {
-			return err
+			return SyncResult{}, err
 		}
-		return m.disableAutoGC(ctx, path)
+		after := m.originHead(ctx, path)
+		res := SyncResult{Head: after}
+		if before != "" && after != "" && before != after {
+			res.Changed = true
+			if out, err := m.run(ctx, path, "rev-list", "--count", before+".."+after); err == nil {
+				res.Advanced, _ = strconv.Atoi(out)
+			}
+		}
+		m.markCached(repo)
+		return res, m.disableAutoGC(ctx, path)
 	}
 
 	if err := os.MkdirAll(path, 0o755); err != nil {
-		return fmt.Errorf("mkdir %s: %w", path, err)
+		return SyncResult{}, fmt.Errorf("mkdir %s: %w", path, err)
 	}
 	if _, err := m.run(ctx, "", "clone", repoURL, path); err != nil {
-		return err
+		return SyncResult{}, err
 	}
-	return m.disableAutoGC(ctx, path)
+	m.markCached(repo)
+	return SyncResult{Cloned: true, Head: m.originHead(ctx, path)}, m.disableAutoGC(ctx, path)
+}
+
+// originHead resolves the cache's origin/HEAD, or "" if it has none. `git
+// clone` writes the refs/remotes/origin/HEAD symref, but a fetch never
+// creates one, so a cache that lost it (or predates one) stays "" forever
+// rather than being repaired here — repairing it means a `remote set-head`
+// network round trip on a path whose only job is to be fast and idempotent.
+func (m *Manager) originHead(ctx context.Context, path string) string {
+	out, err := m.run(ctx, path, "rev-parse", "--verify", "--quiet", "origin/HEAD")
+	if err != nil {
+		return ""
+	}
+	return out
 }
 
 // disableAutoGC is the one sharp edge of the `--shared` clones the session

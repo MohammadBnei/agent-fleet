@@ -11,7 +11,10 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"time"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 
@@ -53,8 +56,6 @@ func New(k8sc *k8s.Client, gitMgr *git.Manager, core EventReporter, e2eHost stri
 		version: version,
 	}
 }
-
-
 
 // --- what replaced the sandbox (docs/adr/0048 §6) ---
 
@@ -100,6 +101,39 @@ func (s *Server) ProvisionService(ctx context.Context, req *agentfleetv1.Provisi
 	return &agentfleetv1.ProvisionServiceResponse{Dsn: dsn}, nil
 }
 
+// SyncRepoCache refreshes one repo's clone cache without creating a pod.
+//
+// Until this existed, CreateWorkerPod was the only thing that ever advanced
+// the cache, so a repo added to the `repos` table stayed uncloned until its
+// first session paid for a cold clone, and an idle repo's cache went stale
+// with nothing able to touch it.
+//
+// repo_url is trusted here because core resolved it from the `repos` table —
+// the same rule ProvisionService follows for repo. The provisioner has no
+// database to check it against.
+func (s *Server) SyncRepoCache(ctx context.Context, req *agentfleetv1.SyncRepoCacheRequest) (*agentfleetv1.SyncRepoCacheResponse, error) {
+	// repo is joined into a filesystem path (git.Manager.repoPath), so an
+	// empty one would name the whole cache directory rather than a repo.
+	if req.GetRepo() == "" || req.GetRepoUrl() == "" {
+		return nil, status.Error(codes.InvalidArgument, "repo and repo_url are required")
+	}
+	started := time.Now()
+	res, err := s.git.EnsureRepoCloned(ctx, req.GetRepo(), req.GetRepoUrl())
+	if err != nil {
+		// Returned verbatim: git.Manager.run already put git's own stderr in
+		// here, and that line is the entire diagnostic the operator gets.
+		return nil, fmt.Errorf("sync repo cache %q: %w", req.GetRepo(), err)
+	}
+	slog.Info("grpcserver SyncRepoCache", "repo", req.GetRepo(), "cloned", res.Cloned, "advanced", res.Advanced, "head", res.Head)
+	return &agentfleetv1.SyncRepoCacheResponse{
+		Cloned:          res.Cloned,
+		Head:            res.Head,
+		CommitsAdvanced: int32(res.Advanced),
+		HeadChanged:     res.Changed,
+		DurationMs:      time.Since(started).Milliseconds(),
+	}, nil
+}
+
 // SweepSession reclaims a session's disk — both halves, which live on
 // different volumes: the working-tree PVC and the SDK state directory.
 //
@@ -132,7 +166,7 @@ func (s *Server) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWo
 	// provisioner-internal detail, not states any other component branches
 	// on — see core.proto's own comment on the enum value.
 	s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_PROVISIONING, "", "cloning repo")
-	if err := s.git.EnsureRepoCloned(ctx, req.GetRepo(), req.GetRepoUrl()); err != nil {
+	if err := s.git.EnsureRepoCachedForSession(ctx, req.GetRepo(), req.GetRepoUrl()); err != nil {
 		s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_CRASHED, "", "clone/fetch failed: "+err.Error())
 		return nil, fmt.Errorf("ensure repo cloned: %w", err)
 	}

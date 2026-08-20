@@ -1040,6 +1040,151 @@ func (*SweepSessionResponse) Descriptor() ([]byte, []int) {
 	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{16}
 }
 
+type SyncRepoCacheRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Repo          string                 `protobuf:"bytes,1,opt,name=repo,proto3" json:"repo,omitempty"`
+	RepoUrl       string                 `protobuf:"bytes,2,opt,name=repo_url,json=repoUrl,proto3" json:"repo_url,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SyncRepoCacheRequest) Reset() {
+	*x = SyncRepoCacheRequest{}
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SyncRepoCacheRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SyncRepoCacheRequest) ProtoMessage() {}
+
+func (x *SyncRepoCacheRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SyncRepoCacheRequest.ProtoReflect.Descriptor instead.
+func (*SyncRepoCacheRequest) Descriptor() ([]byte, []int) {
+	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *SyncRepoCacheRequest) GetRepo() string {
+	if x != nil {
+		return x.Repo
+	}
+	return ""
+}
+
+func (x *SyncRepoCacheRequest) GetRepoUrl() string {
+	if x != nil {
+		return x.RepoUrl
+	}
+	return ""
+}
+
+// No error field: gRPC already carries one, and git.Manager.run puts git's
+// own stderr in it, so a credential or network failure arrives as
+// "git fetch origin (in /workspace/repos/x): exit status 128: fatal: ...".
+// A second error channel in the body would only be a way to report success
+// while having failed.
+type SyncRepoCacheResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The cache did not exist and this call was a full clone — `commits_advanced`
+	// has no meaning in that case.
+	Cloned bool `protobuf:"varint,1,opt,name=cloned,proto3" json:"cloned,omitempty"`
+	// origin/HEAD after the sync, or "" when the cache has no origin/HEAD
+	// symref to resolve. Never fatal — a statistic must not fail a good fetch.
+	Head string `protobuf:"bytes,2,opt,name=head,proto3" json:"head,omitempty"`
+	// Commits origin/HEAD moved by this fetch. 0 for a clone, and 0 when `head`
+	// is "" — absence of a number, not a claim that nothing moved.
+	CommitsAdvanced int32 `protobuf:"varint,3,opt,name=commits_advanced,json=commitsAdvanced,proto3" json:"commits_advanced,omitempty"`
+	// Measured in the provisioner around the git work, so it excludes the gRPC
+	// hops from the dashboard.
+	DurationMs int64 `protobuf:"varint,4,opt,name=duration_ms,json=durationMs,proto3" json:"duration_ms,omitempty"`
+	// origin/HEAD is not where it was before the fetch. Distinguishes "nothing
+	// moved" from the two cases where commits_advanced is 0 but the cache did
+	// change: a force-push that rewound the branch, and any history rewrite
+	// where the new head is not a descendant of the old one.
+	HeadChanged   bool `protobuf:"varint,5,opt,name=head_changed,json=headChanged,proto3" json:"head_changed,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SyncRepoCacheResponse) Reset() {
+	*x = SyncRepoCacheResponse{}
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SyncRepoCacheResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SyncRepoCacheResponse) ProtoMessage() {}
+
+func (x *SyncRepoCacheResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SyncRepoCacheResponse.ProtoReflect.Descriptor instead.
+func (*SyncRepoCacheResponse) Descriptor() ([]byte, []int) {
+	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *SyncRepoCacheResponse) GetCloned() bool {
+	if x != nil {
+		return x.Cloned
+	}
+	return false
+}
+
+func (x *SyncRepoCacheResponse) GetHead() string {
+	if x != nil {
+		return x.Head
+	}
+	return ""
+}
+
+func (x *SyncRepoCacheResponse) GetCommitsAdvanced() int32 {
+	if x != nil {
+		return x.CommitsAdvanced
+	}
+	return 0
+}
+
+func (x *SyncRepoCacheResponse) GetDurationMs() int64 {
+	if x != nil {
+		return x.DurationMs
+	}
+	return 0
+}
+
+func (x *SyncRepoCacheResponse) GetHeadChanged() bool {
+	if x != nil {
+		return x.HeadChanged
+	}
+	return false
+}
+
 var File_agentfleet_v1_provisioner_proto protoreflect.FileDescriptor
 
 const file_agentfleet_v1_provisioner_proto_rawDesc = "" +
@@ -1103,10 +1248,20 @@ const file_agentfleet_v1_provisioner_proto_rawDesc = "" +
 	"\x13SweepSessionRequest\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\"\x16\n" +
-	"\x14SweepSessionResponse*\\\n" +
+	"\x14SweepSessionResponse\"E\n" +
+	"\x14SyncRepoCacheRequest\x12\x12\n" +
+	"\x04repo\x18\x01 \x01(\tR\x04repo\x12\x19\n" +
+	"\brepo_url\x18\x02 \x01(\tR\arepoUrl\"\xb2\x01\n" +
+	"\x15SyncRepoCacheResponse\x12\x16\n" +
+	"\x06cloned\x18\x01 \x01(\bR\x06cloned\x12\x12\n" +
+	"\x04head\x18\x02 \x01(\tR\x04head\x12)\n" +
+	"\x10commits_advanced\x18\x03 \x01(\x05R\x0fcommitsAdvanced\x12\x1f\n" +
+	"\vduration_ms\x18\x04 \x01(\x03R\n" +
+	"durationMs\x12!\n" +
+	"\fhead_changed\x18\x05 \x01(\bR\vheadChanged*\\\n" +
 	"\vSessionKind\x12\x1c\n" +
 	"\x18SESSION_KIND_UNSPECIFIED\x10\x00\x12\x17\n" +
-	"\x13SESSION_KIND_WORKER\x10\x01\"\x04\b\x02\x10\x02*\x10SESSION_KIND_E2E2\x86\x06\n" +
+	"\x13SESSION_KIND_WORKER\x10\x01\"\x04\b\x02\x10\x02*\x10SESSION_KIND_E2E2\xe2\x06\n" +
 	"\x12ProvisionerService\x12`\n" +
 	"\x0fCreateWorkerPod\x12%.agentfleet.v1.CreateWorkerPodRequest\x1a&.agentfleet.v1.CreateWorkerPodResponse\x12`\n" +
 	"\x0fTearDownSession\x12%.agentfleet.v1.TearDownSessionRequest\x1a&.agentfleet.v1.TearDownSessionResponse\x12]\n" +
@@ -1115,7 +1270,8 @@ const file_agentfleet_v1_provisioner_proto_rawDesc = "" +
 	"GetVersion\x12 .agentfleet.v1.GetVersionRequest\x1a!.agentfleet.v1.GetVersionResponse\x12Z\n" +
 	"\rExposeSession\x12#.agentfleet.v1.ExposeSessionRequest\x1a$.agentfleet.v1.ExposeSessionResponse\x12`\n" +
 	"\x0fUnexposeSession\x12%.agentfleet.v1.UnexposeSessionRequest\x1a&.agentfleet.v1.UnexposeSessionResponse\x12c\n" +
-	"\x10ProvisionService\x12&.agentfleet.v1.ProvisionServiceRequest\x1a'.agentfleet.v1.ProvisionServiceResponse\x12W\n" +
+	"\x10ProvisionService\x12&.agentfleet.v1.ProvisionServiceRequest\x1a'.agentfleet.v1.ProvisionServiceResponse\x12Z\n" +
+	"\rSyncRepoCache\x12#.agentfleet.v1.SyncRepoCacheRequest\x1a$.agentfleet.v1.SyncRepoCacheResponse\x12W\n" +
 	"\fSweepSession\x12\".agentfleet.v1.SweepSessionRequest\x1a#.agentfleet.v1.SweepSessionResponseBMZKgithub.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1;agentfleetv1b\x06proto3"
 
 var (
@@ -1131,7 +1287,7 @@ func file_agentfleet_v1_provisioner_proto_rawDescGZIP() []byte {
 }
 
 var file_agentfleet_v1_provisioner_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_agentfleet_v1_provisioner_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
+var file_agentfleet_v1_provisioner_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
 var file_agentfleet_v1_provisioner_proto_goTypes = []any{
 	(SessionKind)(0),                 // 0: agentfleet.v1.SessionKind
 	(*CreateWorkerPodRequest)(nil),   // 1: agentfleet.v1.CreateWorkerPodRequest
@@ -1151,6 +1307,8 @@ var file_agentfleet_v1_provisioner_proto_goTypes = []any{
 	(*ProvisionServiceResponse)(nil), // 15: agentfleet.v1.ProvisionServiceResponse
 	(*SweepSessionRequest)(nil),      // 16: agentfleet.v1.SweepSessionRequest
 	(*SweepSessionResponse)(nil),     // 17: agentfleet.v1.SweepSessionResponse
+	(*SyncRepoCacheRequest)(nil),     // 18: agentfleet.v1.SyncRepoCacheRequest
+	(*SyncRepoCacheResponse)(nil),    // 19: agentfleet.v1.SyncRepoCacheResponse
 }
 var file_agentfleet_v1_provisioner_proto_depIdxs = []int32{
 	0,  // 0: agentfleet.v1.TearDownSessionRequest.kind:type_name -> agentfleet.v1.SessionKind
@@ -1162,17 +1320,19 @@ var file_agentfleet_v1_provisioner_proto_depIdxs = []int32{
 	10, // 6: agentfleet.v1.ProvisionerService.ExposeSession:input_type -> agentfleet.v1.ExposeSessionRequest
 	12, // 7: agentfleet.v1.ProvisionerService.UnexposeSession:input_type -> agentfleet.v1.UnexposeSessionRequest
 	14, // 8: agentfleet.v1.ProvisionerService.ProvisionService:input_type -> agentfleet.v1.ProvisionServiceRequest
-	16, // 9: agentfleet.v1.ProvisionerService.SweepSession:input_type -> agentfleet.v1.SweepSessionRequest
-	2,  // 10: agentfleet.v1.ProvisionerService.CreateWorkerPod:output_type -> agentfleet.v1.CreateWorkerPodResponse
-	6,  // 11: agentfleet.v1.ProvisionerService.TearDownSession:output_type -> agentfleet.v1.TearDownSessionResponse
-	9,  // 12: agentfleet.v1.ProvisionerService.ListWorkerPods:output_type -> agentfleet.v1.ListWorkerPodsResponse
-	4,  // 13: agentfleet.v1.ProvisionerService.GetVersion:output_type -> agentfleet.v1.GetVersionResponse
-	11, // 14: agentfleet.v1.ProvisionerService.ExposeSession:output_type -> agentfleet.v1.ExposeSessionResponse
-	13, // 15: agentfleet.v1.ProvisionerService.UnexposeSession:output_type -> agentfleet.v1.UnexposeSessionResponse
-	15, // 16: agentfleet.v1.ProvisionerService.ProvisionService:output_type -> agentfleet.v1.ProvisionServiceResponse
-	17, // 17: agentfleet.v1.ProvisionerService.SweepSession:output_type -> agentfleet.v1.SweepSessionResponse
-	10, // [10:18] is the sub-list for method output_type
-	2,  // [2:10] is the sub-list for method input_type
+	18, // 9: agentfleet.v1.ProvisionerService.SyncRepoCache:input_type -> agentfleet.v1.SyncRepoCacheRequest
+	16, // 10: agentfleet.v1.ProvisionerService.SweepSession:input_type -> agentfleet.v1.SweepSessionRequest
+	2,  // 11: agentfleet.v1.ProvisionerService.CreateWorkerPod:output_type -> agentfleet.v1.CreateWorkerPodResponse
+	6,  // 12: agentfleet.v1.ProvisionerService.TearDownSession:output_type -> agentfleet.v1.TearDownSessionResponse
+	9,  // 13: agentfleet.v1.ProvisionerService.ListWorkerPods:output_type -> agentfleet.v1.ListWorkerPodsResponse
+	4,  // 14: agentfleet.v1.ProvisionerService.GetVersion:output_type -> agentfleet.v1.GetVersionResponse
+	11, // 15: agentfleet.v1.ProvisionerService.ExposeSession:output_type -> agentfleet.v1.ExposeSessionResponse
+	13, // 16: agentfleet.v1.ProvisionerService.UnexposeSession:output_type -> agentfleet.v1.UnexposeSessionResponse
+	15, // 17: agentfleet.v1.ProvisionerService.ProvisionService:output_type -> agentfleet.v1.ProvisionServiceResponse
+	19, // 18: agentfleet.v1.ProvisionerService.SyncRepoCache:output_type -> agentfleet.v1.SyncRepoCacheResponse
+	17, // 19: agentfleet.v1.ProvisionerService.SweepSession:output_type -> agentfleet.v1.SweepSessionResponse
+	11, // [11:20] is the sub-list for method output_type
+	2,  // [2:11] is the sub-list for method input_type
 	2,  // [2:2] is the sub-list for extension type_name
 	2,  // [2:2] is the sub-list for extension extendee
 	0,  // [0:2] is the sub-list for field type_name
@@ -1189,7 +1349,7 @@ func file_agentfleet_v1_provisioner_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_agentfleet_v1_provisioner_proto_rawDesc), len(file_agentfleet_v1_provisioner_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   17,
+			NumMessages:   19,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
