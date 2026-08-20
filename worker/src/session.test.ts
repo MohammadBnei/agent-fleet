@@ -244,13 +244,6 @@ for (const key of [
 const { runSession, sumModelUsage } = await import("./session.js");
 
 beforeEach(() => {
-  // canUseTool runs the tool input through rtk before it asks (session.ts) —
-  // on a machine that actually has rtk installed that is a real subprocess,
-  // and the fixed sleeps below start racing it. These tests are about the
-  // gate, not the rewrite (rtkHook.test.ts covers that), so the rewrite is
-  // switched off. Set per test, not once at import: `bun test` shares one
-  // process, and rtkHook.test.ts needs it unset.
-  process.env.RTK_DISABLED = "1";
   pushedMessages.length = 0;
   nextSeq = 1;
   savedSessionIds.length = 0;
@@ -342,6 +335,51 @@ test("canUseTool posts a permission_request and blocks until a matching permissi
   respondToPermission(req!.seq, { behavior: "allow" });
   const result = await call;
   expect(result.behavior).toBe("allow");
+
+  pushHuman("", "abort");
+  await promise;
+}, 10000);
+
+// The property issue #229 restores. canUseTool used to run the command
+// through rtk between posting the permission_request and parking the
+// resolver, so the request carried `go test ./...` while the resolver handed
+// back `rtk go test ./...` — a human approved one command and a different one
+// executed. Asserted on both resolve paths, since the rewrite reached both.
+test("the command a human is shown is the command that executes", async () => {
+  const promise = runSession();
+  await Bun.sleep(20);
+
+  const command = "go test ./...";
+  const call = capturedCanUseTool!("Bash", { command });
+  await Bun.sleep(20);
+
+  const req = findPermissionRequest("Bash");
+  expect(JSON.parse(req!.text).input.command).toBe(command);
+
+  respondToPermission(req!.seq, { behavior: "allow" });
+  const result = await call;
+  expect(result.behavior).toBe("allow");
+  expect((result.updatedInput as { command: string }).command).toBe(command);
+
+  pushHuman("", "abort");
+  await promise;
+}, 10000);
+
+// The other resolve path: a mode switch to `auto` allows the oldest parked
+// call (resolveOnePendingAllow, docs/adr/0052) without a human reading it
+// again — so it must hand back the same input too.
+test("a permission-mode switch allows the command as written, not a rewritten one", async () => {
+  const promise = runSession();
+  await Bun.sleep(20);
+
+  const command = "golangci-lint run";
+  const call = capturedCanUseTool!("Bash", { command });
+  await Bun.sleep(20);
+
+  pushHuman("auto", "permission_mode");
+  const result = await call;
+  expect(result.behavior).toBe("allow");
+  expect((result.updatedInput as { command: string }).command).toBe(command);
 
   pushHuman("", "abort");
   await promise;

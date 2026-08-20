@@ -81,8 +81,7 @@
       "Bash(jq:*)",
       "Bash(echo:*)",
       "Bash(printf:*)",
-      "Bash(date:*)",
-      "Bash(rtk proxy:*)"
+      "Bash(date:*)"
     ]
   },
   "enabledPlugins": {

@@ -101,11 +101,25 @@ your answer was not delivered.
 
 ## Output compaction
 
-A `Bash` command that goes through a permission prompt is auto-rewritten via
-`rtk` (~99% smaller output). Commands on the un-prompted allow-list — builds,
-tests, installs — skip the prompt and so skip the rewrite too: prefix those
-with `rtk ` yourself when you expect a wall of output (`rtk go test ./...`).
-Raw, uncompacted: `rtk proxy <cmd>`.
+**Prefix every build, test and lint with `rtk `.** Not when you remember to —
+by default. `rtk go test ./...`, `rtk go build ./...`, `rtk cargo build`,
+`rtk golangci-lint run`, `rtk make test`, `rtk pytest -q`. Same command, same
+exit code, ~99% less output. Nothing rewrites it for you: the prefix is yours
+to type, and a command you run without it spends its full output on your
+context (`agent-fleet/docs/adr/0046`).
+
+`rtk` passes through anything it has no filter for, so the prefix is never
+wrong — but it is also not always a win: `bun install` and `npm ci` are two it
+does not compact today. Raw output on purpose: `rtk proxy <cmd>`.
+
+What it costs: a bare `go test ./...` is on the un-prompted allow list,
+`rtk go test ./...` is not. In `auto` that is invisible — the worker answers
+it. In `default` it is one permission prompt per command, which is the trade
+being made deliberately: a click a human sees, against a context window they
+don't (`agent-fleet/docs/adr/0046`). Both `rtk proxy` and `rtk run` prompt for
+the same reason, and that one is not a trade — they run their argument
+verbatim, so allow-listing either would let `rtk proxy rm -rf x` past the
+`rm`/`sudo` gate.
 
 Truncation: `view_logs` truncates — narrow the query (limit/level/duration/time).
 

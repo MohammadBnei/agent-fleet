@@ -1,6 +1,7 @@
 # ADR-0046 — The fleet's context budget: cap at the source, always with a way back
 
-- **Status:** Accepted
+- **Status:** Accepted (amended 2026-08-20, issue #229 — see the
+  amendment at the end)
 - **Date:** 2026-08-13
 - **Relates to:** [ADR-0039](0039-e2e-pod-is-the-worker-sandbox.md) (whose
   routing decision is the root cause), [ADR-0021](0021-continuous-streaming-session.md)
@@ -122,7 +123,56 @@ not prose (1.6KB across 24 tools), and that is structural.
   mostly load-bearing and the Playwright weight is structural. Recorded so the
   next person doesn't re-attempt it expecting a win.
 - Not addressed: resume still reloads the full prior transcript from the PVC
-  JSONL, and `Bash`'s rtk rewrite still lives in `canUseTool`, so it is skipped
-  in `bypassPermissions`/`acceptEdits` modes — `fleet-shared/CLAUDE.md`'s claim
-  that both `Bash` and `run_command` are always rewritten is inaccurate in
-  those modes. Both are separate decisions.
+  JSONL. A separate decision.
+
+## Amendment, 2026-08-20 (issue #229)
+
+The "Not addressed" bullet above used to also say the rtk rewrite was skipped
+in `bypassPermissions`/`acceptEdits` modes. Every clause of that has since
+rotted — `bypassPermissions` was deleted by
+[ADR-0053](0053-the-gate-is-canusetool-not-a-rule-list.md), `run_command` by
+[ADR-0048](0048-one-session-one-pod-one-shared-home.md) §6, and the
+`acceptEdits` half was true but vacuous, since a file edit carries no
+`command` for rtk to look at.
+
+Naming the wrong modes hid the real gap, which is that **point 1 never reached
+the fleet's largest output source.** `rtk` ran from `canUseTool`, and an allow
+rule in `fleet-shared/settings.json` removes `canUseTool` from the path
+entirely. Every command that fills a context window — `go test`, `go build`,
+`cargo build`, `golangci-lint`, `make test`, `pytest` — is on that list, so rtk
+never saw one. It fired only on short, human-gated commands whose output a
+human was reading anyway.
+
+The resolution was to move the cap to the agent layer, not to widen it in the
+runtime. `rtkRewrite` is deleted; `fleet-shared/CLAUDE.md` asks the agent to
+type the prefix by default. Two reasons for that direction rather than
+extending the runtime's coverage:
+
+1. It was a permission-model defect, not only a coverage one. `canUseTool`
+   posted the `permission_request` carrying the command the agent wrote, then
+   handed the SDK the rewritten one as `updatedInput`. The human approved one
+   command and a different one executed.
+2. Extending it needs a second gate. The SDK discards a `PreToolUse` hook's
+   `updatedInput` unless the hook also returns `permissionDecision: "allow"` —
+   which is exactly the rule-list-the-SDK-re-interprets that ADR-0053 deleted.
+
+Point 1's principle is unchanged and still correct: cap at the source, and never
+cap without returning a way to reach the rest. What this amendment records is
+that "the source" for `Bash` is the agent typing the command, and the runtime
+could not reach it from there without lying to the human about what it approved.
+
+Consequence to accept: rtk coverage narrows in the short term, and prefixed
+commands match no permission rule (the SDK's wrapper stripping knows `timeout`,
+`nice`, `nohup`, `xargs` — not `rtk`), so in `default` mode each one costs a
+prompt. No `Bash(rtk:*)` allow rule was added to fix that: it would let
+`rtk sudo …` skip `canUseTool` and route around `FLEET_ASK_RULES`, trading a
+token optimization for the `rm`/`sudo` gate.
+
+`Bash(rtk proxy:*)` was on that allow list already and is removed here for the
+same reason — `rtk proxy <cmd>` runs its argument verbatim, so the rule was
+that bypass, live, since ADR-0009. An allow rule on any command that takes
+another command as its argument is a hole in every ask rule at once.
+
+Measure with `rtk gain --history` in a worker pod and `inputTokens` per point 3;
+if the instruction does not take, the escalation is a skill, still in the agent
+layer.
