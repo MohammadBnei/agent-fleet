@@ -90,16 +90,7 @@ var Services = map[string]ServiceDef{
 	"redis":    {Port: 6379, NeedsPVC: false, EnvVarName: "REDIS_URL"},
 }
 
-// KnownToolKey and KnownServiceKey are the fail-loud membership checks used
-// before any Kubernetes object is built — an unknown key from a stale or
-// hand-edited repo_profiles row is caught here, not deep inside pod
-// construction.
-func KnownToolKey(key string) bool {
-	_, ok := Tools[key]
-	return ok
-}
-
-func KnownServiceKey(key string) bool {
-	_, ok := Services[key]
-	return ok
-}
+// Membership is checked at the point of use with a plain `def, ok := Tools[key]`
+// / `Services[key]` — an unknown key from a stale or hand-edited repo_profiles
+// row is caught before any Kubernetes object is built, not deep inside pod
+// construction. See k8s/ingredients.go and grpcserver/server.go.
