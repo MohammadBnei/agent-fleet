@@ -107,10 +107,16 @@ worker hook was registered in `worker/src/session.ts` instead. That hook is
 now gone too: it was scoped to the sandbox's `run_command`, which no longer
 exists, and it could not be repointed at `Bash` — the SDK discards a hook's
 `updatedInput` unless the hook also returns `permissionDecision: "allow"`,
-which for `Bash` would bypass the human gate. `rtk` now runs from
-`canUseTool` only, so it compacts prompted commands and not allow-listed ones
-(see `worker/src/rtkHook.ts`). Everything else here — `CLAUDE.md`, `skills/`,
-`enabledPlugins` — is discovered natively as described above.
+which for `Bash` would bypass the human gate.
+
+So nothing rewrites a command on the agent's behalf, in either layer. `rtk`
+briefly ran from `canUseTool` instead, which inverted its coverage (an allow
+rule below removes `canUseTool` from the path, so builds and tests — the whole
+point — were the one set it never reached) and, worse, meant the command the
+human approved was not the command that ran. Deleted in issue #229. The prefix
+is the agent's own to type, and `CLAUDE.md` above is where it is asked for.
+Everything else here — `CLAUDE.md`, `skills/`, `enabledPlugins` — is
+discovered natively as described above.
 
 `ponytail`/`caveman` marketplace plugins are baked into `worker/Dockerfile`
 at build time, then copied once (guarded, no runtime `plugin add`) from the

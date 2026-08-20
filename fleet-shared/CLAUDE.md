@@ -101,11 +101,16 @@ your answer was not delivered.
 
 ## Output compaction
 
-A `Bash` command that goes through a permission prompt is auto-rewritten via
-`rtk` (~99% smaller output). Commands on the un-prompted allow-list — builds,
-tests, installs — skip the prompt and so skip the rewrite too: prefix those
-with `rtk ` yourself when you expect a wall of output (`rtk go test ./...`).
-Raw, uncompacted: `rtk proxy <cmd>`.
+**Prefix every build, test and lint with `rtk `.** Not when you remember to —
+by default. `rtk go test ./...`, `rtk go build ./...`, `rtk cargo build`,
+`rtk golangci-lint run`, `rtk make test`, `rtk pytest -q`. Same command, same
+exit code, ~99% less output. Nothing rewrites it for you: the prefix is yours
+to type, and a command you run without it spends its full output on your
+context (`agent-fleet/docs/adr/0046`).
+
+`rtk` passes through anything it has no filter for, so the prefix is never
+wrong — but it is also not always a win: `bun install` and `npm ci` are two it
+does not compact today. Raw output on purpose: `rtk proxy <cmd>`.
 
 Truncation: `view_logs` truncates — narrow the query (limit/level/duration/time).
 

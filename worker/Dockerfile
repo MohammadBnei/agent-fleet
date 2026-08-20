@@ -118,9 +118,14 @@ RUN bun install -g playwright@${PLAYWRIGHT_VERSION} @playwright/mcp@${PLAYWRIGHT
 # Pinned, not `releases/latest`: the tarball is the whole tool, and an
 # unpinned URL re-rolls it on every rebuild. (This used to say "keep in step
 # with e2e-runner/Dockerfile"; that directory went with the sandbox in
-# docs/adr/0048 §6 and this is now the only place rtk is installed.) The hook
-# that actually uses it lives in worker/src/rtkHook.ts — a settings.json
-# entry does nothing under the Agent SDK.
+# docs/adr/0048 §6 and this is now the only place rtk is installed.)
+#
+# Nothing in worker/src calls it. The binary exists so that the AGENT can type
+# `rtk go test ./...`, which fleet-shared/CLAUDE.md asks it to do by default
+# (issue #229). It used to be invoked from canUseTool, which meant the command
+# a human approved was not the command that ran; that is deleted. A hook entry
+# in a settings.json would not work either — the Agent SDK does not run hooks
+# declared in settings files.
 ARG RTK_VERSION=v0.45.0
 RUN curl -fsSL https://github.com/rtk-ai/rtk/releases/download/${RTK_VERSION}/rtk-x86_64-unknown-linux-musl.tar.gz \
     | tar -xz -C /usr/local/bin rtk

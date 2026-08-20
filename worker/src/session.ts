@@ -1,7 +1,6 @@
 import { query, type SDKUserMessage, type PermissionResult, type PermissionMode } from "@anthropic-ai/claude-agent-sdk";
 import * as sidecar from "./sidecarClient.js";
 import { log } from "./log.js";
-import { rtkRewrite } from "./rtkHook.js";
 
 // TransientError used to be thrown when an SDK result looked like a
 // transient hiccup (0 turns, $0 cost), so the caller could leave the task
@@ -779,37 +778,25 @@ export async function runSession(): Promise<SessionResult> {
       // dangerous — they are the two answers the fleet has already made and
       // will not re-ask a human for. Everything else still blocks.
       canUseTool: async (toolName, toolInput) => {
-        // See FLEET_OWN_TOOL and PLAN_MODE_STILL_ASKS. Ahead of the rtk
-        // rewrite because rtk only ever looks at `command`, which none of
-        // these carry.
+        // See FLEET_OWN_TOOL and PLAN_MODE_STILL_ASKS.
         if (FLEET_OWN_TOOL.test(toolName) && !(currentMode === "plan" && PLAN_MODE_STILL_ASKS.has(toolName))) {
           return { behavior: "allow", updatedInput: toolInput };
         }
-        // The human is shown (and answers) the command the agent actually
-        // wrote — what gets parked below, and so what every resolve path
-        // hands back as updatedInput, is its rtk-compacted equivalent. Same
-        // command, a fraction of the output. Doing it here rather than in a
-        // PreToolUse hook is what keeps the gate: a hook can only rewrite a
-        // call it also allows outright (see rtkHook.ts). Modes that skip
-        // canUseTool entirely (acceptEdits, for file edits) skip the rewrite
-        // too — no gate to preserve there, just no rtk either.
+        // toolInput passes through untouched, and that is the whole point:
+        // what the permission_request below carries is what the resolver
+        // hands back as updatedInput, so the command a human reads is the
+        // command that runs. This used to sit between the two — an rtk
+        // rewrite that compacted the command's output after the request had
+        // already been posted with the original text (docs/adr/0046). It is
+        // gone (issue #229): rtk is a prefix the agent types when it wants
+        // one, which fleet-shared/CLAUDE.md asks it to do, and nothing in
+        // this process rewrites a call on the agent's behalf.
         //
-        // Ahead of the push, not between it and the pendingPermissions.set:
-        // spawning rtk takes tens of milliseconds, and a decision that
-        // arrives inside that window has no resolver to find, leaving the
-        // tool call blocked forever on a permission a human already
-        // answered. Nothing may await between asking and being ready for
-        // the answer.
-        const effectiveInput = await rtkRewrite(toolName, toolInput as Record<string, unknown>);
-        // See AUTO_MODE_STILL_ASKS. Below the rewrite, not above it: an
-        // auto-allowed command still runs through rtk, which is where most of
-        // the fleet's Bash output goes — `auto` should cost fewer clicks, not
-        // more tokens.
-        //
-        // currentMode, not launchMode: entering and leaving `auto` is a live
-        // control request, so this has to read what the session is in now.
-        if (currentMode === "auto" && !autoModeStillAsks(toolName, effectiveInput)) {
-          return { behavior: "allow", updatedInput: effectiveInput };
+        // See AUTO_MODE_STILL_ASKS. currentMode, not launchMode: entering and
+        // leaving `auto` is a live control request, so this has to read what
+        // the session is in now.
+        if (currentMode === "auto" && !autoModeStillAsks(toolName, toolInput as Record<string, unknown>)) {
+          return { behavior: "allow", updatedInput: toolInput };
         }
         const seq = await sidecar
           .pushMessage("agent", JSON.stringify({ tool: toolName, input: toolInput }), "permission_request")
@@ -821,7 +808,7 @@ export async function runSession(): Promise<SessionResult> {
           return { behavior: "deny", message: "Could not reach the dashboard to request permission — try again." };
         }
         return new Promise<PermissionResult>((resolve) => {
-          pendingPermissions.set(seq, { resolve, input: effectiveInput, tool: toolName });
+          pendingPermissions.set(seq, { resolve, input: toolInput as Record<string, unknown>, tool: toolName });
         });
       },
       mcpServers: {
