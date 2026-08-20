@@ -57,7 +57,10 @@ function RepoRow({ repo, onSaved, onRequestDelete, onError, onSync, syncing, syn
 
   return (
     <div className="py-1.5 border-b border-base-content/5 last:border-0">
-    <div className="flex items-center gap-2">
+    {/* Wraps rather than overflowing: this row already ran off the right edge
+        at phone width before it grew a Sync button, which put the buttons
+        somewhere no one could tap. */}
+    <div className="flex items-center gap-2 flex-wrap">
       <span className="text-sm font-medium w-28 truncate flex-none">{repo.name}</span>
       <input
         value={url}
@@ -222,7 +225,7 @@ export function ManageReposModal({ onChanged }: { onChanged?: () => void }) {
         manage repos
       </button>
 
-      <Modal open={dialogOpen} onClose={close} boxClassName="max-w-lg">
+      <Modal open={dialogOpen} onClose={close} boxClassName="max-w-3xl">
         <div className="flex items-center justify-between mb-3">
           <h3 className="font-semibold text-base">Manage repos</h3>
           <button

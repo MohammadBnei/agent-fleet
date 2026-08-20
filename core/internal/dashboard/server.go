@@ -985,11 +985,15 @@ func (s *Server) SyncRepo(ctx context.Context, req *connect.Request[agentfleetv1
 	}
 	r, err := s.repos.Get(ctx, name)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("unknown repo %q", name))
-		}
 		slog.Error("dashboard SyncRepo lookup", "name", name, "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	// repos.Store.Get reports "no such repo" as (nil, nil), not
+	// pgx.ErrNoRows — unlike Update/Delete right above, which do return the
+	// sentinel. Checking for the sentinel here compiles, passes every test
+	// with a repo that exists, and panics on the first typo'd name.
+	if r == nil {
+		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("unknown repo %q", name))
 	}
 	resp, err := s.e2e.SyncRepoCache(ctx, r.Name, r.URL)
 	if err != nil {
