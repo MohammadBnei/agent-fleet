@@ -33,7 +33,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends git curl ca-cer
 # The global CLI is what the `claude plugin install` steps below run at BUILD
 # time. The SDK's bundled copy is what actually runs a session. They are
 # allowed to differ; they are not allowed to drift silently.
-ARG CLAUDE_CODE_VERSION=2.1.233
+ARG CLAUDE_CODE_VERSION=2.1.237
 RUN bun install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
 
 # The toolchain the session's builds and tests actually run on. This used to
@@ -176,7 +176,7 @@ RUN curl -fsSL https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/u
 # `<plugin>@<marketplace>` ids below are unchanged — and they must keep
 # matching fleet-shared/settings.json's enabledPlugins.
 ARG PONYTAIL_VERSION=v4.9.0
-ARG CAVEMAN_VERSION=v2.1.0
+ARG CAVEMAN_VERSION=v2.2.0
 RUN git clone --depth 1 --branch ${PONYTAIL_VERSION} https://github.com/DietrichGebert/ponytail /opt/plugin-src/ponytail \
     && git clone --depth 1 --branch ${CAVEMAN_VERSION} https://github.com/JuliusBrussee/caveman /opt/plugin-src/caveman \
     && claude plugin marketplace add /opt/plugin-src/ponytail \
