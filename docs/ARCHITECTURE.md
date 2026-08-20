@@ -240,7 +240,7 @@ unless the in-app gate refuses it:
 with an explicit exempt list precisely so a forgotten route fails closed rather
 than defaulting open.
 
-`/metrics` is **not on 8080 at all** — it has its own listener on 9091, which no
+`/metrics` is **not on 8080 at all** — it has its own listener on 9093, which no
 IngressRoute reaches ([`adr/0059`](adr/0059-metrics-off-the-gated-port.md)). It
 used to sit on the gated mux, where the ServiceMonitor's cookieless scrape was
 refused with a 401 like any other anonymous caller and every core target went
@@ -647,7 +647,7 @@ long-lived components, each with a real Service:
 
 | Component | `/metrics` | Scraped by |
 |---|---|---|
-| `core` | `:9091` — its own listener, **not** the gated 8080 | ServiceMonitor in `k8s/core.yaml`'s `extraManifests`, on the named `metrics` port |
+| `core` | `:9093` — its own listener, **not** the gated 8080 | ServiceMonitor in `k8s/core.yaml`'s `extraManifests`, on the named `metrics` port |
 | `provisioner` | `:8080` | `k8s/provisioner/servicemonitor.yaml` |
 
 core's separate port is not tidiness: 8080 is wrapped in the console's OIDC gate
@@ -860,6 +860,7 @@ agent can read off the working tree it is already sitting in.
 |---|---|---|
 | `CORE_PORT` | `8080` | HTTP: `/healthz`, dashboard ConnectRPC API, static SPA |
 | `CORE_GRPC_PORT` | `9090` | `CoreService` — the provisioner's `ReportPodEvents` client and every worker pod's sidecar connect here |
+| `CORE_METRICS_PORT` | `9093` | `/metrics`, on its own ungated listener — **never** on `CORE_PORT`, which is internet-routed at every path (`adr/0059`). A failed bind here is fatal, so a value that collides with something else in the pod stops core rather than silently costing it telemetry. 9091/9092 are the sidecar's, hence 9093 |
 | `GARAGE_S3_ENDPOINT` | `https://s3.bnei.dev` | Must stay externally reachable, not `garage.bnei.lan` — presigned URLs sign the endpoint host in, and the dashboard's browser can't resolve a `.lan` name (`docs/adr/0030`) |
 | `GARAGE_FILES_BUCKET` | `agent-fleet-files` | The fleet-wide shared file space's one bucket |
 | `AGENTFLEET_FILES_S3_ACCESS_KEY` / `_SECRET` | – | `core`'s the sole holder — it only mints presigned PUT/GET URLs, never proxies bytes (`docs/adr/0030`) |

@@ -53,9 +53,15 @@ gated, for this reason.
 
 ## Decision
 
-**Serve `/metrics` on its own listener — `CORE_METRICS_PORT`, default 9091 —
+**Serve `/metrics` on its own listener — `CORE_METRICS_PORT`, default 9093 —
 exposed on the Service as `extraPorts.metrics`, and point the ServiceMonitor at
 that named port.**
+
+9093 and not the obvious 9091: the sidecar's local HTTP API binds 9091 in every
+worker pod and its health server binds 9092 (`provisioner/internal/k8s/names.go`),
+and `/dashboard-e2e`'s stub provisioner listens on 9091 too. core does not run in
+a worker pod, but the bind below is fatal, and a default that collides with a port
+this repo already spends is a trap laid for the next local stack.
 
 Nothing is exempted. `/metrics` stays gated on 8080 in the sense that matters: it
 is no longer served there at all, so an external caller gets the SPA's 404-shaped
@@ -98,7 +104,7 @@ matters belongs to the console's server.
 
 - **`/metrics` is no longer on 8080.** Anything that scraped it there — a
   `kubectl port-forward 8080` habit, a hand-written scrape config — must move to
-  9091. Nothing in this repo did except the ServiceMonitor.
+  9093. Nothing in this repo did except the ServiceMonitor.
 - **The named port is load-bearing.** The Operator resolves `port: metrics`
   against the rendered Service; if `extraPorts.metrics` were ever dropped from
   `k8s/core.yaml`, the ServiceMonitor selects nothing and produces no `up` series
@@ -107,7 +113,7 @@ matters belongs to the console's server.
 - **ADR-0056's rule is unchanged and still the one to read before adding a
   route:** a new exempt path is a new public endpoint. This ADR removes a
   candidate for exemption rather than granting one.
-- **ADR-0047's table moves**: core's `/metrics` is `:9091`, the provisioner's
+- **ADR-0047's table moves**: core's `/metrics` is `:9093`, the provisioner's
   stays `:8080`. The metrics themselves, their names and their labels are
   untouched.
 - The verification bar from ADR-0047 applies to this change too: a metric

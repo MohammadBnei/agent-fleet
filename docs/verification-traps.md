@@ -203,7 +203,7 @@ since the feature was written.
   the same file contradicted. So the ServiceMonitor's cookieless scrape got a 401
   like any anonymous browser, every core target went down, and the pod looked
   perfectly healthy throughout because it was: the console worked, only the
-  scrape was refused. The fix is a port with no ingress (9091), never a gate
+  scrape was refused. The fix is a port with no ingress (9093), never a gate
   exemption — exempting it would have unblocked Prometheus by publishing every
   target repo name and RPC method. `adr/0059`. Two checks follow from it: for a
   ServiceMonitor, a **named** port must be matched against a *rendered* Service

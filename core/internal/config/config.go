@@ -142,7 +142,7 @@ func Load() Config {
 	return Config{
 		Port:                  env("CORE_PORT", "8080"),
 		GRPCPort:              env("CORE_GRPC_PORT", "9090"),
-		MetricsPort:           env("CORE_METRICS_PORT", "9091"),
+		MetricsPort:           env("CORE_METRICS_PORT", "9093"),
 		LogLevel:              env("LOG_LEVEL", "info"),
 		DBHost:                env("AGENTFLEET_DB_HOST", "postgres.bnei.lan"),
 		DBPort:                envInt("AGENTFLEET_DB_PORT", 5432),

@@ -192,7 +192,7 @@ Any doc, code, comment, or memory that contradicts this file or an
   annotations are inert while looking like configuration. No metric carries
   a `session_id` label. See
   [`adr/0047`](adr/0047-metrics-scoped-to-the-hubs.md).
-- **core serves `/metrics` on its own port (9091), never on the gated 8080.**
+- **core serves `/metrics` on its own port (9093), never on the gated 8080.**
   The console's OIDC gate wraps the whole mux and cannot tell an in-cluster
   scrape from an anonymous browser, so `/metrics` on 8080 returned 401 to every
   ServiceMonitor scrape and took all of core's targets down. Adding it to the

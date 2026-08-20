@@ -33,7 +33,7 @@ func FromContext(ctx context.Context) (Identity, bool) {
 //   - /auth/ is the login itself.
 //
 // /metrics is deliberately ABSENT, and is no longer served on this mux at all —
-// core carries it on CORE_METRICS_PORT (9091), which no IngressRoute reaches
+// core carries it on CORE_METRICS_PORT (9093), which no IngressRoute reaches
 // (docs/adr/0059).
 //
 // An earlier version of this comment claimed the exemption was unnecessary

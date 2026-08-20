@@ -43,7 +43,7 @@ service:
     - name: grpc
       port: 9090
     - name: metrics
-      port: 9091
+      port: 9093
 
 # This app's first public-facing surface (the dashboard) — hostname itself
 # is driven by infra-bootstrap's gitops/apps/registry.yaml entry (its
@@ -82,7 +82,7 @@ service:
 # two are inert. A new exempt path is a new public endpoint.
 #
 # /metrics is NOT exempt and is not served on 8080 at all: core carries it on
-# 9091 (extraPorts.metrics above), which this route does not reach. Exempting it
+# 9093 (extraPorts.metrics above), which this route does not reach. Exempting it
 # was the obvious fix for #230's failing scrape and the wrong one — it would have
 # published every target repo name and RPC method. docs/adr/0059.
 ingress:
@@ -129,7 +129,7 @@ env:
   - name: CORE_GRPC_PORT
     value: "9090"
   - name: CORE_METRICS_PORT
-    value: "9091"
+    value: "9093"
   - name: LOKI_URL
     # platform.applicationset.yaml templates every platform release as
     # 'platform-{{.name}}' — the loki Service is platform-loki, not loki.
