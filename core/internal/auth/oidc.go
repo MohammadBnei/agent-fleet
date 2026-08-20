@@ -91,8 +91,6 @@ func New(ctx context.Context, cfg Config) (*OIDC, error) {
 	}, nil
 }
 
-func (o *OIDC) Signer() *Signer { return o.signer }
-
 // stateClaim is what the state cookie carries. `Return` is why it is a cookie
 // rather than only the `state` parameter: the parameter round-trips through
 // authentik and back through the user's browser, so it is attacker-influenced;

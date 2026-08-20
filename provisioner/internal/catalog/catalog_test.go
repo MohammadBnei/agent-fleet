@@ -19,10 +19,10 @@ func TestTools_EveryKeyIsStageable(t *testing.T) {
 		t.Fatalf("catalog.Tools has %d entries, want %d (%v)", len(Tools), len(wantToolKeys), wantToolKeys)
 	}
 	for _, key := range wantToolKeys {
-		if !KnownToolKey(key) {
+		def, ok := Tools[key]
+		if !ok {
 			t.Errorf("tool_key %q has no catalog.Tools entry", key)
 		}
-		def := Tools[key]
 		if def.CopyImage == "" {
 			t.Errorf("tool %q: CopyImage is empty", key)
 		}
@@ -38,7 +38,7 @@ func TestTools_EveryKeyIsStageable(t *testing.T) {
 // worker image's own Go.
 func TestTools_CarriesNoToolchain(t *testing.T) {
 	for _, key := range []string{"go-toolchain", "bun-toolchain", "golangci-lint", "buf"} {
-		if KnownToolKey(key) {
+		if _, ok := Tools[key]; ok {
 			t.Errorf("tool_key %q is back — a toolchain belongs in repos.image (docs/adr/0048 §6)", key)
 		}
 	}
@@ -49,7 +49,7 @@ func TestServices_EveryKeyIsResolvable(t *testing.T) {
 		t.Fatalf("catalog.Services has %d entries, want %d (%v)", len(Services), len(wantServiceKeys), wantServiceKeys)
 	}
 	for _, key := range wantServiceKeys {
-		if !KnownServiceKey(key) {
+		if _, ok := Services[key]; !ok {
 			t.Errorf("service_key %q has no catalog.Services entry", key)
 		}
 		if Services[key].Port == 0 {
@@ -76,17 +76,5 @@ func TestServices_EnvVarNamesMatchAppConventions(t *testing.T) {
 		if got := Services[key].EnvVarName; got != envVar {
 			t.Errorf("Services[%q].EnvVarName = %q, want %q", key, got, envVar)
 		}
-	}
-}
-
-func TestKnownToolKey_UnknownKey(t *testing.T) {
-	if KnownToolKey("not-a-real-tool") {
-		t.Error("KnownToolKey(unknown) = true, want false")
-	}
-}
-
-func TestKnownServiceKey_UnknownKey(t *testing.T) {
-	if KnownServiceKey("not-a-real-service") {
-		t.Error("KnownServiceKey(unknown) = true, want false")
 	}
 }
