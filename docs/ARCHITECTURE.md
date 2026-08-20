@@ -232,13 +232,20 @@ unless the in-app gate refuses it:
 
 | Path | Gated? |
 |---|---|
-| `/` (SPA), `/agentfleet.v1.DashboardService/*`, `/metrics` | yes |
+| `/` (SPA), `/agentfleet.v1.DashboardService/*` | yes |
 | `/healthz`, `/auth/*` | no — inert |
 | `/webhook/alertmanager` | no — its own bearer token, refuses when unset |
 
 **A new exempt path is a new public endpoint.** The gate wraps the whole mux
 with an explicit exempt list precisely so a forgotten route fails closed rather
 than defaulting open.
+
+`/metrics` is **not on 8080 at all** — it has its own listener on 9093, which no
+IngressRoute reaches ([`adr/0059`](adr/0059-metrics-off-the-gated-port.md)). It
+used to sit on the gated mux, where the ServiceMonitor's cookieless scrape was
+refused with a 401 like any other anonymous caller and every core target went
+down. Exempting it was the obvious fix and the wrong one: with no path constraint
+on the route, that publishes every target repo name and RPC method.
 
 **Failure behaviour.** Unset OIDC config makes core refuse to start, unlike
 every other optional secret it reads — the Infisical operator renders stale or
@@ -640,8 +647,14 @@ long-lived components, each with a real Service:
 
 | Component | `/metrics` | Scraped by |
 |---|---|---|
-| `core` | `:8080` (alongside `/healthz` and the dashboard) | ServiceMonitor in `k8s/core.yaml`'s `extraManifests` |
+| `core` | `:9093` — its own listener, **not** the gated 8080 | ServiceMonitor in `k8s/core.yaml`'s `extraManifests`, on the named `metrics` port |
 | `provisioner` | `:8080` | `k8s/provisioner/servicemonitor.yaml` |
+
+core's separate port is not tidiness: 8080 is wrapped in the console's OIDC gate
+and its IngressRoute matches on host with no path constraint, so `/metrics` there
+was refused for Prometheus and routable for the internet at once
+([`adr/0059`](adr/0059-metrics-off-the-gated-port.md)). The provisioner has no
+ingress in front of it and needs no such split.
 
 A ServiceMonitor, **not** `prometheus.io/scrape` annotations: this cluster
 runs kube-prometheus-stack (the Prometheus Operator) and `infra-bootstrap`'s
@@ -847,6 +860,7 @@ agent can read off the working tree it is already sitting in.
 |---|---|---|
 | `CORE_PORT` | `8080` | HTTP: `/healthz`, dashboard ConnectRPC API, static SPA |
 | `CORE_GRPC_PORT` | `9090` | `CoreService` — the provisioner's `ReportPodEvents` client and every worker pod's sidecar connect here |
+| `CORE_METRICS_PORT` | `9093` | `/metrics`, on its own ungated listener — **never** on `CORE_PORT`, which is internet-routed at every path (`adr/0059`). A failed bind here is fatal, so a value that collides with something else in the pod stops core rather than silently costing it telemetry. 9091/9092 are the sidecar's, hence 9093 |
 | `GARAGE_S3_ENDPOINT` | `https://s3.bnei.dev` | Must stay externally reachable, not `garage.bnei.lan` — presigned URLs sign the endpoint host in, and the dashboard's browser can't resolve a `.lan` name (`docs/adr/0030`) |
 | `GARAGE_FILES_BUCKET` | `agent-fleet-files` | The fleet-wide shared file space's one bucket |
 | `AGENTFLEET_FILES_S3_ACCESS_KEY` / `_SECRET` | – | `core`'s the sole holder — it only mints presigned PUT/GET URLs, never proxies bytes (`docs/adr/0030`) |

@@ -192,6 +192,17 @@ Any doc, code, comment, or memory that contradicts this file or an
   annotations are inert while looking like configuration. No metric carries
   a `session_id` label. See
   [`adr/0047`](adr/0047-metrics-scoped-to-the-hubs.md).
+- **core serves `/metrics` on its own port (9093), never on the gated 8080.**
+  The console's OIDC gate wraps the whole mux and cannot tell an in-cluster
+  scrape from an anonymous browser, so `/metrics` on 8080 returned 401 to every
+  ServiceMonitor scrape and took all of core's targets down. Adding it to the
+  gate's exempt list is the forbidden fix: that route matches on host with no
+  path constraint, so an exempt path is a public one, and this endpoint names
+  every target repo and every RPC method. A port with no IngressRoute needs
+  neither an exemption nor a scrape credential. The ServiceMonitor references
+  the **named** port, so `extraPorts.metrics` in `k8s/core.yaml` is load-bearing
+  — drop it and the scrape silently selects nothing. See
+  [`adr/0059`](adr/0059-metrics-off-the-gated-port.md).
 - **A session loads `settingSources: ["user", "project"]` — never
   `"local"`.** `"user"` is the provisioner-synced `fleet-shared/` context;
   `"project"` is the target repo's own `CLAUDE.md` and `.claude/skills/`,

@@ -1,6 +1,8 @@
 # ADR-0047 — Prometheus metrics scoped to the two hubs, scraped by ServiceMonitor
 
-- **Status:** Accepted
+- **Status:** Accepted — amended by [0059](0059-metrics-off-the-gated-port.md),
+  which moves core's `/metrics` off 8080 onto its own port. The metrics, their
+  names and their labels are untouched
 - **Date:** 2026-08-14
 - **Relates to:** [ADR-0020](0020-hub-and-spoke-grpc-worker-sidecar.md) (core's zero-RBAC rule,
   which shapes how the topology view gets its data),

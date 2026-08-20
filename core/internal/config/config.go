@@ -11,6 +11,11 @@ import (
 type Config struct {
 	Port     string
 	GRPCPort string
+	// MetricsPort carries /metrics on its OWN listener, deliberately not on
+	// Port. fleet.bnei.dev's IngressRoute matches on host with no path
+	// constraint, so everything Port serves is internet-routed and only the
+	// OIDC gate refuses it — see docs/adr/0059.
+	MetricsPort string
 	// LogLevel is one of debug/info/warn/error (case-insensitive), parsed
 	// via slog.Level.UnmarshalText in cmd/core/main.go.
 	LogLevel              string
@@ -137,6 +142,7 @@ func Load() Config {
 	return Config{
 		Port:                  env("CORE_PORT", "8080"),
 		GRPCPort:              env("CORE_GRPC_PORT", "9090"),
+		MetricsPort:           env("CORE_METRICS_PORT", "9093"),
 		LogLevel:              env("LOG_LEVEL", "info"),
 		DBHost:                env("AGENTFLEET_DB_HOST", "postgres.bnei.lan"),
 		DBPort:                envInt("AGENTFLEET_DB_PORT", 5432),

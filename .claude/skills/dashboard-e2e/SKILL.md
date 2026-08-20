@@ -217,5 +217,5 @@ Verify nothing's left before ending the session:
 
 ```bash
 docker ps --filter name=agent-fleet-e2e-pg   # expect empty (just the header row)
-lsof -i :8080 -i :5173 -i :9091              # expect empty
+lsof -i :8080 -i :5173 -i :9091 -i :9093    # expect empty (9093 = core's metrics listener)
 ```

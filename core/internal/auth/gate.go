@@ -32,10 +32,18 @@ func FromContext(ctx context.Context) (Identity, bool) {
 //     never carries a browser cookie.
 //   - /auth/ is the login itself.
 //
-// /metrics is deliberately ABSENT. It is scraped in-cluster by a ServiceMonitor
-// and has no IngressRoute, so it needs no exemption here — and an app-level
-// exception for a path that should not be externally reachable at all is the
-// wrong layer to fix it at.
+// /metrics is deliberately ABSENT, and is no longer served on this mux at all —
+// core carries it on CORE_METRICS_PORT (9093), which no IngressRoute reaches
+// (docs/adr/0059).
+//
+// An earlier version of this comment claimed the exemption was unnecessary
+// because /metrics "has no IngressRoute". That was false: the IngressRoute
+// matches on HOST with no path constraint, so every path served on CORE_PORT is
+// internet-routed and only this gate refuses it — and the ServiceMonitor,
+// arriving in-cluster with no cookie, was refused along with everyone else
+// (#230, every core target down). Exempting it here would have fixed the scrape
+// by publishing every target repo name and RPC method. Moving the listener makes
+// the original claim true instead of working around it.
 var exemptPrefixes = []string{
 	"/healthz",
 	"/webhook/alertmanager",
