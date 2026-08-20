@@ -1,5 +1,12 @@
 # Changelog
 
+# [4.11.0](https://github.com/MohammadBnei/agent-fleet/compare/4.10.1...4.11.0) (2026-08-20)
+
+
+### Features
+
+* **dashboard:** sync a repo's clone cache from manage repos ([#228](https://github.com/MohammadBnei/agent-fleet/issues/228)) ([048ee86](https://github.com/MohammadBnei/agent-fleet/commit/048ee8654e9d786e9305f624e6a412ac268ac90a))
+
 ## [4.10.1](https://github.com/MohammadBnei/agent-fleet/compare/4.10.0...4.10.1) (2026-08-19)
 
 
