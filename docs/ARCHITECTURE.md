@@ -232,13 +232,20 @@ unless the in-app gate refuses it:
 
 | Path | Gated? |
 |---|---|
-| `/` (SPA), `/agentfleet.v1.DashboardService/*`, `/metrics` | yes |
+| `/` (SPA), `/agentfleet.v1.DashboardService/*` | yes |
 | `/healthz`, `/auth/*` | no — inert |
 | `/webhook/alertmanager` | no — its own bearer token, refuses when unset |
 
 **A new exempt path is a new public endpoint.** The gate wraps the whole mux
 with an explicit exempt list precisely so a forgotten route fails closed rather
 than defaulting open.
+
+`/metrics` is **not on 8080 at all** — it has its own listener on 9091, which no
+IngressRoute reaches ([`adr/0059`](adr/0059-metrics-off-the-gated-port.md)). It
+used to sit on the gated mux, where the ServiceMonitor's cookieless scrape was
+refused with a 401 like any other anonymous caller and every core target went
+down. Exempting it was the obvious fix and the wrong one: with no path constraint
+on the route, that publishes every target repo name and RPC method.
 
 **Failure behaviour.** Unset OIDC config makes core refuse to start, unlike
 every other optional secret it reads — the Infisical operator renders stale or
@@ -640,8 +647,14 @@ long-lived components, each with a real Service:
 
 | Component | `/metrics` | Scraped by |
 |---|---|---|
-| `core` | `:8080` (alongside `/healthz` and the dashboard) | ServiceMonitor in `k8s/core.yaml`'s `extraManifests` |
+| `core` | `:9091` — its own listener, **not** the gated 8080 | ServiceMonitor in `k8s/core.yaml`'s `extraManifests`, on the named `metrics` port |
 | `provisioner` | `:8080` | `k8s/provisioner/servicemonitor.yaml` |
+
+core's separate port is not tidiness: 8080 is wrapped in the console's OIDC gate
+and its IngressRoute matches on host with no path constraint, so `/metrics` there
+was refused for Prometheus and routable for the internet at once
+([`adr/0059`](adr/0059-metrics-off-the-gated-port.md)). The provisioner has no
+ingress in front of it and needs no such split.
 
 A ServiceMonitor, **not** `prometheus.io/scrape` annotations: this cluster
 runs kube-prometheus-stack (the Prometheus Operator) and `infra-bootstrap`'s

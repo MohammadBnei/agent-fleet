@@ -1,6 +1,8 @@
 # ADR-0056 — The console's gate is OIDC inside core, not forwardAuth at the ingress
 
-- **Status:** Accepted
+- **Status:** Accepted — amended by [0059](0059-metrics-off-the-gated-port.md):
+  the gate refused the in-cluster Prometheus scrape too, so `/metrics` moved to a
+  port with no IngressRoute rather than into the exempt list
 - **Date:** 2026-08-19
 - **Related:** [#200](https://github.com/MohammadBnei/agent-fleet/issues/200)
   (a worker pod can call `DashboardService`), [#209](https://github.com/MohammadBnei/agent-fleet/issues/209)

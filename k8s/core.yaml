@@ -28,11 +28,22 @@ image:
 # ReportEvent/SetTaskStatus/AppendJournal call from those two components
 # fail with "rpc error: code = Unavailable desc = name resolver error:
 # produced zero addresses", confirmed live 2026-08-06).
+#
+# extraPorts.metrics backs CORE_METRICS_PORT and exists for one reason: the
+# IngressRoute below matches on HOST with no path constraint, so anything on
+# 8080 is internet-routed and only core's OIDC gate refuses it. /metrics is not
+# something to punch a hole in that gate for — it names every target repo and
+# every RPC method — but the ServiceMonitor arrives with no cookie and was being
+# refused along with everyone else (#230). A port with no IngressRoute in front
+# of it needs neither a gate exemption nor a scrape credential. See
+# docs/adr/0059.
 service:
   port: 8080 # /healthz, the dashboard's ConnectRPC API + static SPA
   extraPorts:
     - name: grpc
       port: 9090
+    - name: metrics
+      port: 9091
 
 # This app's first public-facing surface (the dashboard) — hostname itself
 # is driven by infra-bootstrap's gitops/apps/registry.yaml entry (its
@@ -68,8 +79,12 @@ service:
 # public unless the in-app gate refuses it. What the gate exempts —
 # /healthz, /auth/*, /webhook/alertmanager — is therefore internet-reachable.
 # The webhook keeps its own bearer token and refuses when it is unset; the other
-# two are inert. /metrics is deliberately NOT exempt. A new exempt path is a new
-# public endpoint.
+# two are inert. A new exempt path is a new public endpoint.
+#
+# /metrics is NOT exempt and is not served on 8080 at all: core carries it on
+# 9091 (extraPorts.metrics above), which this route does not reach. Exempting it
+# was the obvious fix for #230's failing scrape and the wrong one — it would have
+# published every target repo name and RPC method. docs/adr/0059.
 ingress:
   enabled: true
   # fleet.bnei.dev is still GREY (DNS-only) at Cloudflare, unlike every other
@@ -113,6 +128,8 @@ env:
     value: "8080"
   - name: CORE_GRPC_PORT
     value: "9090"
+  - name: CORE_METRICS_PORT
+    value: "9091"
   - name: LOKI_URL
     # platform.applicationset.yaml templates every platform release as
     # 'platform-{{.name}}' — the loki Service is platform-loki, not loki.
@@ -231,7 +248,11 @@ resources:
 #
 # The selector must match the labels common-app-chart puts on its Service
 # (_helpers.tpl "common-app-chart.selectorLabels" — both keys are the release
-# name), and `port: http` is the chart's own name for service.port above.
+# name), and `port: metrics` is the extraPorts entry above, NOT the chart's
+# `http` (8080). It scraped `http` until #230: that port is wrapped in core's
+# OIDC gate, which refused every cookieless scrape with a 401 and took all of
+# core's targets down. Named port, not a number — the Operator resolves the name
+# against the rendered Service, so a mismatch here is a scrape of nothing.
 #
 # Templated off .Release rather than hardcoded, matching how zot's own
 # extraManifests block writes its ConfigMap: extraManifests is `tpl`-rendered,
@@ -253,7 +274,7 @@ extraManifests:
           app.kubernetes.io/name: {{ .Release.Name }}
           app.kubernetes.io/instance: {{ .Release.Name }}
       endpoints:
-        - port: http
+        - port: metrics
           path: /metrics
           interval: 30s
 

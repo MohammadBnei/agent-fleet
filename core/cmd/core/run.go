@@ -164,9 +164,39 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	}()
 	defer grpcServer.GracefulStop()
 
+	// /metrics gets its OWN listener, and is deliberately absent from the mux
+	// below (docs/adr/0059).
+	//
+	// It used to live on cfg.Port, whose mux the OIDC gate wraps, and the gate's
+	// exempt list did not include it — so every ServiceMonitor scrape got a 401
+	// and core's targets went down (#230). The fix is NOT to exempt it: this
+	// host's IngressRoute matches on HOST with no path constraint, so an exempt
+	// path is a public one, and /metrics carries every target repo name
+	// (agentfleet_tasks_current{repo}) and every RPC method served. A port with
+	// no IngressRoute in front of it needs no exemption and no credential —
+	// which is what the old comment claimed was already true, and wasn't.
+	//
+	// A failed bind here is FATAL, not a warning. #230's actual damage was that
+	// core looked perfectly healthy — console up, gRPC up, no restarts — while
+	// producing no metrics at all, so the only signal was an alert about the
+	// alerting. A process that cannot serve its own telemetry should say so by
+	// dying, not by logging one line and carrying on.
+	errCh := make(chan error, 1)
+	metricsMux := http.NewServeMux()
+	metricsMux.Handle("/metrics", promhttp.Handler())
+	metricsServer := &http.Server{Addr: ":" + cfg.MetricsPort, Handler: metricsMux}
+	go func() {
+		slog.Info("core metrics listening", "port", cfg.MetricsPort)
+		if err := metricsServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			errCh <- fmt.Errorf("metrics server: %w", err)
+		}
+	}()
+	// Close, not Shutdown: a half-delivered scrape is worth nothing, and the
+	// drain that matters is httpServer.Shutdown's below.
+	defer func() { _ = metricsServer.Close() }()
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
-	mux.Handle("/metrics", promhttp.Handler())
 	dashboardSvc := dashboard.NewServer(sessionStore, proposalStore, activityStore, journalStore, repoStore, snippetStore, provisioner, files, hub, cfg.MaxInFlight, loki, prom, scheduleStore, version)
 	// PromptSession warms an idle target through the dashboard server's own
 	// warmIfIdle rather than a second copy of it (docs/adr/0041) — that
@@ -256,7 +286,6 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	// underneath it would return the app shell to an unauthenticated request.
 	httpServer := &http.Server{Addr: ":" + cfg.Port, Handler: gate(mux)}
 
-	errCh := make(chan error, 1)
 	go func() {
 		slog.Info("core listening", "port", cfg.Port)
 		if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {

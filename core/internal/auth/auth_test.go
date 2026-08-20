@@ -147,9 +147,11 @@ func TestGate_ExemptsOnlyWhatIsListed(t *testing.T) {
 			t.Errorf("%s must be reachable without a session", p)
 		}
 	}
-	// /metrics is deliberately NOT exempt: it is scraped in-cluster and has no
-	// IngressRoute, so exempting it here would be an app-level workaround for
-	// something that should not be externally routed in the first place.
+	// /metrics is deliberately NOT exempt. It is not served on this mux at all
+	// any more (docs/adr/0059 moved it to its own port), and it must stay gated
+	// here regardless: this host's IngressRoute matches on host with no path
+	// constraint, so exempting it would publish every target repo name and RPC
+	// method rather than merely unblocking the scrape (#230).
 	gatedCases := []string{"/", "/metrics", "/sessions/abc", "/agentfleet.v1.DashboardService/ListSessions", "/authsomething", "/some/new/route"}
 	for _, p := range gatedCases {
 		if exempt(p) {

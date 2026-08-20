@@ -196,7 +196,20 @@ since the feature was written.
   host with no path constraint.** So every path core serves on 8080 is public
   unless the in-app gate refuses it, and **a new exempt path is a new public
   endpoint**. Currently exempt: `/healthz`, `/auth/*`, `/webhook/alertmanager`
-  (its own bearer token, refuses when unset). `/metrics` is deliberately not.
+  (its own bearer token, refuses when unset).
+- **A gate that can't see the network the caller came from refuses your own
+  infrastructure too.** `/metrics` sat on the gated 8080 mux and was never
+  exempt, on the written assumption that it "has no IngressRoute" — an assumption
+  the same file contradicted. So the ServiceMonitor's cookieless scrape got a 401
+  like any anonymous browser, every core target went down, and the pod looked
+  perfectly healthy throughout because it was: the console worked, only the
+  scrape was refused. The fix is a port with no ingress (9091), never a gate
+  exemption — exempting it would have unblocked Prometheus by publishing every
+  target repo name and RPC method. `adr/0059`. Two checks follow from it: for a
+  ServiceMonitor, a **named** port must be matched against a *rendered* Service
+  or it selects nothing; and an endpoint scraped by something other than a
+  browser is verified by scraping it the way that thing does, not by opening it
+  in a tab with a session cookie attached.
   There is no basic-auth behind it any more and core has no local admin, so an
   authentik/Pigsty/Patroni outage means no console — recovery is
   `FLEET_AUTH_DISABLED=1` plus a redeploy, or `kubectl port-forward`.
