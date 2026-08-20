@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.11.2](https://github.com/MohammadBnei/agent-fleet/compare/4.11.1...4.11.2) (2026-08-20)
+
+
+### Bug Fixes
+
+* **worker:** delete the rtk rewrite from canUseTool ([#233](https://github.com/MohammadBnei/agent-fleet/issues/233)) ([fcc191b](https://github.com/MohammadBnei/agent-fleet/commit/fcc191b9b270a2eea119b9ee198252257a1f66a4)), closes [hi#output](https://github.com/hi/issues/output) [#229](https://github.com/MohammadBnei/agent-fleet/issues/229)
+
 ## [4.11.1](https://github.com/MohammadBnei/agent-fleet/compare/4.11.0...4.11.1) (2026-08-20)
 
 
