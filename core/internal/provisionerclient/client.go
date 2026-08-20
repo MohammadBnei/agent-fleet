@@ -35,6 +35,14 @@ type Client struct {
 // pod ever created, and every other pending task stuck behind it).
 const sessionCallTimeout = 2 * time.Minute
 
+// repoSyncTimeout bounds SyncRepoCache, which cannot share the constant above:
+// that call IS a clone when the cache is cold, and a first clone of a large
+// repo blows two minutes on its own. Unlike CreateWorkerPod it blocks nothing
+// but the one dashboard request that asked for it.
+//
+// ponytail: a fixed synchronous ceiling. A repo big enough to blow ten minutes
+// wants a background job with a status column, not a bigger number here.
+const repoSyncTimeout = 10 * time.Minute
 
 // New dials addr (in-cluster ClusterIP, no TLS needed — Cilium's own
 // network policy is the trust boundary here, same as every other
@@ -128,6 +136,26 @@ func (c *Client) ProvisionService(ctx context.Context, sessionID, repo, kind str
 		return "", fmt.Errorf("ProvisionService: %w", err)
 	}
 	return resp.GetDsn(), nil
+}
+
+// SyncRepoCache refreshes one repo's clone cache without creating a pod —
+// the dashboard's manual sync button (docs/adr/0028's repos table gained no
+// column for this; the button reports its own outcome).
+//
+// Returns the response message rather than unpacking it: every field is a
+// statistic headed straight for the operator's screen, and a second struct
+// in between would only be a place for them to drift.
+//
+// repo and repoURL must come from the `repos` row, not from the request that
+// triggered the sync — same rule as ProvisionService above.
+func (c *Client) SyncRepoCache(ctx context.Context, repo, repoURL string) (*agentfleetv1.SyncRepoCacheResponse, error) {
+	ctx, cancel := context.WithTimeout(ctx, repoSyncTimeout)
+	defer cancel()
+	resp, err := c.rpc.SyncRepoCache(ctx, &agentfleetv1.SyncRepoCacheRequest{Repo: repo, RepoUrl: repoURL})
+	if err != nil {
+		return nil, fmt.Errorf("SyncRepoCache: %w", err)
+	}
+	return resp, nil
 }
 
 // ToolKeysFor is the whole of what survives docs/adr/0034's ingredient
@@ -237,4 +265,3 @@ func (c *Client) TearDownSession(ctx context.Context, taskID string, kind agentf
 	}
 	return resp.GetTornDown(), nil
 }
-

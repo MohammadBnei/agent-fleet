@@ -388,6 +388,32 @@ message DeleteRepoRequest {
 
 message DeleteRepoResponse {}
 
+// Refreshes the provisioner's clone cache for one repo (ProvisionerService's
+// SyncRepoCache). Only the name travels: core looks the URL up in the `repos`
+// table, so the dashboard cannot aim the cache at an arbitrary remote.
+//
+// One repo per call. "Sync all" is the dashboard looping this over the list
+// it already has — a batch RPC would have to invent a partial-failure shape
+// for something the client can attribute for free.
+message SyncRepoRequest {
+  string name = 1;
+}
+
+// Mirrors ProvisionerService.SyncRepoCacheResponse. Failures are not in here:
+// they arrive as a Connect error carrying git's own stderr.
+message SyncRepoResponse {
+  // The cache did not exist and this call cloned it — commits_advanced is
+  // meaningless in that case.
+  bool cloned = 1;
+  // origin/HEAD after the sync, "" when the cache has no such symref.
+  string head = 2;
+  // How far origin/HEAD moved. 0 for a clone, and 0 when head is "" —
+  // absence of a number, not a claim that nothing moved.
+  int32 commits_advanced = 3;
+  // Time spent in the provisioner's git work, excluding the gRPC hops.
+  int64 duration_ms = 4;
+}
+
 // RepoProfile and its four CRUD message pairs used to live here — the
 // dashboard-editable environment recipe from docs/adr/0034, carrying a
 // start_cmd, a set of tool_keys and service ingredients.
@@ -513,6 +539,7 @@ service DashboardService {
   rpc CreateRepo(CreateRepoRequest) returns (CreateRepoResponse);
   rpc UpdateRepo(UpdateRepoRequest) returns (UpdateRepoResponse);
   rpc DeleteRepo(DeleteRepoRequest) returns (DeleteRepoResponse);
+  rpc SyncRepo(SyncRepoRequest) returns (SyncRepoResponse);
   rpc ListPromptSnippets(ListPromptSnippetsRequest) returns (ListPromptSnippetsResponse);
   rpc CreatePromptSnippet(CreatePromptSnippetRequest) returns (CreatePromptSnippetResponse);
   rpc UpdatePromptSnippet(UpdatePromptSnippetRequest) returns (UpdatePromptSnippetResponse);

@@ -54,6 +54,9 @@ const (
 	// ProvisionerServiceProvisionServiceProcedure is the fully-qualified name of the
 	// ProvisionerService's ProvisionService RPC.
 	ProvisionerServiceProvisionServiceProcedure = "/agentfleet.v1.ProvisionerService/ProvisionService"
+	// ProvisionerServiceSyncRepoCacheProcedure is the fully-qualified name of the ProvisionerService's
+	// SyncRepoCache RPC.
+	ProvisionerServiceSyncRepoCacheProcedure = "/agentfleet.v1.ProvisionerService/SyncRepoCache"
 	// ProvisionerServiceSweepSessionProcedure is the fully-qualified name of the ProvisionerService's
 	// SweepSession RPC.
 	ProvisionerServiceSweepSessionProcedure = "/agentfleet.v1.ProvisionerService/SweepSession"
@@ -74,6 +77,14 @@ type ProvisionerServiceClient interface {
 	ExposeSession(context.Context, *connect.Request[v1.ExposeSessionRequest]) (*connect.Response[v1.ExposeSessionResponse], error)
 	UnexposeSession(context.Context, *connect.Request[v1.UnexposeSessionRequest]) (*connect.Response[v1.UnexposeSessionResponse], error)
 	ProvisionService(context.Context, *connect.Request[v1.ProvisionServiceRequest]) (*connect.Response[v1.ProvisionServiceResponse], error)
+	// Refreshes one repo's clone cache out-of-band from CreateWorkerPod, which
+	// was until now the only thing that ever advanced it. Human-triggered from
+	// the dashboard's "manage repos" UI.
+	//
+	// core resolves repo -> repo_url from the `repos` table before calling, so
+	// a repo name arriving over the wire can never point the cache at an
+	// arbitrary URL.
+	SyncRepoCache(context.Context, *connect.Request[v1.SyncRepoCacheRequest]) (*connect.Response[v1.SyncRepoCacheResponse], error)
 	// Deletes a session's working-tree PVC. The other half of its disk (the
 	// SDK resume state) is a directory on the shared volume, removed in the
 	// same call — the two live on different volumes because they have
@@ -134,6 +145,12 @@ func NewProvisionerServiceClient(httpClient connect.HTTPClient, baseURL string, 
 			connect.WithSchema(provisionerServiceMethods.ByName("ProvisionService")),
 			connect.WithClientOptions(opts...),
 		),
+		syncRepoCache: connect.NewClient[v1.SyncRepoCacheRequest, v1.SyncRepoCacheResponse](
+			httpClient,
+			baseURL+ProvisionerServiceSyncRepoCacheProcedure,
+			connect.WithSchema(provisionerServiceMethods.ByName("SyncRepoCache")),
+			connect.WithClientOptions(opts...),
+		),
 		sweepSession: connect.NewClient[v1.SweepSessionRequest, v1.SweepSessionResponse](
 			httpClient,
 			baseURL+ProvisionerServiceSweepSessionProcedure,
@@ -152,6 +169,7 @@ type provisionerServiceClient struct {
 	exposeSession    *connect.Client[v1.ExposeSessionRequest, v1.ExposeSessionResponse]
 	unexposeSession  *connect.Client[v1.UnexposeSessionRequest, v1.UnexposeSessionResponse]
 	provisionService *connect.Client[v1.ProvisionServiceRequest, v1.ProvisionServiceResponse]
+	syncRepoCache    *connect.Client[v1.SyncRepoCacheRequest, v1.SyncRepoCacheResponse]
 	sweepSession     *connect.Client[v1.SweepSessionRequest, v1.SweepSessionResponse]
 }
 
@@ -190,6 +208,11 @@ func (c *provisionerServiceClient) ProvisionService(ctx context.Context, req *co
 	return c.provisionService.CallUnary(ctx, req)
 }
 
+// SyncRepoCache calls agentfleet.v1.ProvisionerService.SyncRepoCache.
+func (c *provisionerServiceClient) SyncRepoCache(ctx context.Context, req *connect.Request[v1.SyncRepoCacheRequest]) (*connect.Response[v1.SyncRepoCacheResponse], error) {
+	return c.syncRepoCache.CallUnary(ctx, req)
+}
+
 // SweepSession calls agentfleet.v1.ProvisionerService.SweepSession.
 func (c *provisionerServiceClient) SweepSession(ctx context.Context, req *connect.Request[v1.SweepSessionRequest]) (*connect.Response[v1.SweepSessionResponse], error) {
 	return c.sweepSession.CallUnary(ctx, req)
@@ -210,6 +233,14 @@ type ProvisionerServiceHandler interface {
 	ExposeSession(context.Context, *connect.Request[v1.ExposeSessionRequest]) (*connect.Response[v1.ExposeSessionResponse], error)
 	UnexposeSession(context.Context, *connect.Request[v1.UnexposeSessionRequest]) (*connect.Response[v1.UnexposeSessionResponse], error)
 	ProvisionService(context.Context, *connect.Request[v1.ProvisionServiceRequest]) (*connect.Response[v1.ProvisionServiceResponse], error)
+	// Refreshes one repo's clone cache out-of-band from CreateWorkerPod, which
+	// was until now the only thing that ever advanced it. Human-triggered from
+	// the dashboard's "manage repos" UI.
+	//
+	// core resolves repo -> repo_url from the `repos` table before calling, so
+	// a repo name arriving over the wire can never point the cache at an
+	// arbitrary URL.
+	SyncRepoCache(context.Context, *connect.Request[v1.SyncRepoCacheRequest]) (*connect.Response[v1.SyncRepoCacheResponse], error)
 	// Deletes a session's working-tree PVC. The other half of its disk (the
 	// SDK resume state) is a directory on the shared volume, removed in the
 	// same call — the two live on different volumes because they have
@@ -266,6 +297,12 @@ func NewProvisionerServiceHandler(svc ProvisionerServiceHandler, opts ...connect
 		connect.WithSchema(provisionerServiceMethods.ByName("ProvisionService")),
 		connect.WithHandlerOptions(opts...),
 	)
+	provisionerServiceSyncRepoCacheHandler := connect.NewUnaryHandler(
+		ProvisionerServiceSyncRepoCacheProcedure,
+		svc.SyncRepoCache,
+		connect.WithSchema(provisionerServiceMethods.ByName("SyncRepoCache")),
+		connect.WithHandlerOptions(opts...),
+	)
 	provisionerServiceSweepSessionHandler := connect.NewUnaryHandler(
 		ProvisionerServiceSweepSessionProcedure,
 		svc.SweepSession,
@@ -288,6 +325,8 @@ func NewProvisionerServiceHandler(svc ProvisionerServiceHandler, opts ...connect
 			provisionerServiceUnexposeSessionHandler.ServeHTTP(w, r)
 		case ProvisionerServiceProvisionServiceProcedure:
 			provisionerServiceProvisionServiceHandler.ServeHTTP(w, r)
+		case ProvisionerServiceSyncRepoCacheProcedure:
+			provisionerServiceSyncRepoCacheHandler.ServeHTTP(w, r)
 		case ProvisionerServiceSweepSessionProcedure:
 			provisionerServiceSweepSessionHandler.ServeHTTP(w, r)
 		default:
@@ -325,6 +364,10 @@ func (UnimplementedProvisionerServiceHandler) UnexposeSession(context.Context, *
 
 func (UnimplementedProvisionerServiceHandler) ProvisionService(context.Context, *connect.Request[v1.ProvisionServiceRequest]) (*connect.Response[v1.ProvisionServiceResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.ProvisionerService.ProvisionService is not implemented"))
+}
+
+func (UnimplementedProvisionerServiceHandler) SyncRepoCache(context.Context, *connect.Request[v1.SyncRepoCacheRequest]) (*connect.Response[v1.SyncRepoCacheResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.ProvisionerService.SyncRepoCache is not implemented"))
 }
 
 func (UnimplementedProvisionerServiceHandler) SweepSession(context.Context, *connect.Request[v1.SweepSessionRequest]) (*connect.Response[v1.SweepSessionResponse], error) {

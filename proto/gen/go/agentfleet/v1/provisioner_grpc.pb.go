@@ -26,6 +26,7 @@ const (
 	ProvisionerService_ExposeSession_FullMethodName    = "/agentfleet.v1.ProvisionerService/ExposeSession"
 	ProvisionerService_UnexposeSession_FullMethodName  = "/agentfleet.v1.ProvisionerService/UnexposeSession"
 	ProvisionerService_ProvisionService_FullMethodName = "/agentfleet.v1.ProvisionerService/ProvisionService"
+	ProvisionerService_SyncRepoCache_FullMethodName    = "/agentfleet.v1.ProvisionerService/SyncRepoCache"
 	ProvisionerService_SweepSession_FullMethodName     = "/agentfleet.v1.ProvisionerService/SweepSession"
 )
 
@@ -46,6 +47,14 @@ type ProvisionerServiceClient interface {
 	ExposeSession(ctx context.Context, in *ExposeSessionRequest, opts ...grpc.CallOption) (*ExposeSessionResponse, error)
 	UnexposeSession(ctx context.Context, in *UnexposeSessionRequest, opts ...grpc.CallOption) (*UnexposeSessionResponse, error)
 	ProvisionService(ctx context.Context, in *ProvisionServiceRequest, opts ...grpc.CallOption) (*ProvisionServiceResponse, error)
+	// Refreshes one repo's clone cache out-of-band from CreateWorkerPod, which
+	// was until now the only thing that ever advanced it. Human-triggered from
+	// the dashboard's "manage repos" UI.
+	//
+	// core resolves repo -> repo_url from the `repos` table before calling, so
+	// a repo name arriving over the wire can never point the cache at an
+	// arbitrary URL.
+	SyncRepoCache(ctx context.Context, in *SyncRepoCacheRequest, opts ...grpc.CallOption) (*SyncRepoCacheResponse, error)
 	// Deletes a session's working-tree PVC. The other half of its disk (the
 	// SDK resume state) is a directory on the shared volume, removed in the
 	// same call — the two live on different volumes because they have
@@ -131,6 +140,16 @@ func (c *provisionerServiceClient) ProvisionService(ctx context.Context, in *Pro
 	return out, nil
 }
 
+func (c *provisionerServiceClient) SyncRepoCache(ctx context.Context, in *SyncRepoCacheRequest, opts ...grpc.CallOption) (*SyncRepoCacheResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SyncRepoCacheResponse)
+	err := c.cc.Invoke(ctx, ProvisionerService_SyncRepoCache_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *provisionerServiceClient) SweepSession(ctx context.Context, in *SweepSessionRequest, opts ...grpc.CallOption) (*SweepSessionResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(SweepSessionResponse)
@@ -158,6 +177,14 @@ type ProvisionerServiceServer interface {
 	ExposeSession(context.Context, *ExposeSessionRequest) (*ExposeSessionResponse, error)
 	UnexposeSession(context.Context, *UnexposeSessionRequest) (*UnexposeSessionResponse, error)
 	ProvisionService(context.Context, *ProvisionServiceRequest) (*ProvisionServiceResponse, error)
+	// Refreshes one repo's clone cache out-of-band from CreateWorkerPod, which
+	// was until now the only thing that ever advanced it. Human-triggered from
+	// the dashboard's "manage repos" UI.
+	//
+	// core resolves repo -> repo_url from the `repos` table before calling, so
+	// a repo name arriving over the wire can never point the cache at an
+	// arbitrary URL.
+	SyncRepoCache(context.Context, *SyncRepoCacheRequest) (*SyncRepoCacheResponse, error)
 	// Deletes a session's working-tree PVC. The other half of its disk (the
 	// SDK resume state) is a directory on the shared volume, removed in the
 	// same call — the two live on different volumes because they have
@@ -193,6 +220,9 @@ func (UnimplementedProvisionerServiceServer) UnexposeSession(context.Context, *U
 }
 func (UnimplementedProvisionerServiceServer) ProvisionService(context.Context, *ProvisionServiceRequest) (*ProvisionServiceResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ProvisionService not implemented")
+}
+func (UnimplementedProvisionerServiceServer) SyncRepoCache(context.Context, *SyncRepoCacheRequest) (*SyncRepoCacheResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SyncRepoCache not implemented")
 }
 func (UnimplementedProvisionerServiceServer) SweepSession(context.Context, *SweepSessionRequest) (*SweepSessionResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SweepSession not implemented")
@@ -344,6 +374,24 @@ func _ProvisionerService_ProvisionService_Handler(srv interface{}, ctx context.C
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ProvisionerService_SyncRepoCache_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SyncRepoCacheRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProvisionerServiceServer).SyncRepoCache(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ProvisionerService_SyncRepoCache_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProvisionerServiceServer).SyncRepoCache(ctx, req.(*SyncRepoCacheRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _ProvisionerService_SweepSession_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(SweepSessionRequest)
 	if err := dec(in); err != nil {
@@ -396,6 +444,10 @@ var ProvisionerService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ProvisionService",
 			Handler:    _ProvisionerService_ProvisionService_Handler,
+		},
+		{
+			MethodName: "SyncRepoCache",
+			Handler:    _ProvisionerService_SyncRepoCache_Handler,
 		},
 		{
 			MethodName: "SweepSession",

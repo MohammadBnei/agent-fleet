@@ -1,13 +1,15 @@
 package grpcserver
 
 import (
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"context"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
@@ -358,5 +360,93 @@ func TestSweepSession_RemovesBothHalvesOfASessionsDisk(t *testing.T) {
 	// next pass, and by then one half may already be gone.
 	if _, err := s.SweepSession(ctx, &agentfleetv1.SweepSessionRequest{SessionId: "task-1"}); err != nil {
 		t.Fatalf("second SweepSession should be a no-op, got %v", err)
+	}
+}
+
+// commitTo adds one commit to a local git repo — used to move an origin
+// forward between syncs so the "how far did it advance" arithmetic has
+// something real to measure.
+func commitTo(t *testing.T, dir, name string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, name), []byte(name), 0o644); err != nil {
+		t.Fatalf("write %s: %v", name, err)
+	}
+	for _, args := range [][]string{{"add", name}, {"commit", "-m", name}} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@test.com", "GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@test.com")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+}
+
+// SyncRepoCache is the dashboard's manual cache refresh. Its whole value is
+// the answer it returns — a human clicking "Sync" is asking whether anything
+// moved — so this exercises both branches of EnsureRepoCloned and the
+// commit arithmetic, not just the absence of an error.
+func TestSyncRepoCache_ReportsCloneThenHowFarItAdvanced(t *testing.T) {
+	s, _, _ := newTestServer(t)
+	ctx := context.Background()
+	origin := newTestOriginRepo(t)
+
+	first, err := s.SyncRepoCache(ctx, &agentfleetv1.SyncRepoCacheRequest{Repo: "dream-analyst", RepoUrl: origin})
+	if err != nil {
+		t.Fatalf("first SyncRepoCache: %v", err)
+	}
+	if !first.GetCloned() {
+		t.Errorf("first sync of a cold cache should report cloned=true, got %+v", first)
+	}
+	if first.GetCommitsAdvanced() != 0 {
+		t.Errorf("a clone has nothing to have advanced past, got %d", first.GetCommitsAdvanced())
+	}
+	if first.GetHead() == "" {
+		t.Error("expected origin/HEAD to resolve after a clone")
+	}
+
+	commitTo(t, origin, "one.txt")
+	commitTo(t, origin, "two.txt")
+
+	second, err := s.SyncRepoCache(ctx, &agentfleetv1.SyncRepoCacheRequest{Repo: "dream-analyst", RepoUrl: origin})
+	if err != nil {
+		t.Fatalf("second SyncRepoCache: %v", err)
+	}
+	if second.GetCloned() {
+		t.Error("second sync found an existing cache and must fetch, not clone")
+	}
+	if second.GetCommitsAdvanced() != 2 {
+		t.Errorf("origin gained 2 commits, reported %d", second.GetCommitsAdvanced())
+	}
+	if second.GetHead() == first.GetHead() {
+		t.Error("expected origin/HEAD to have moved")
+	}
+
+	// The case the operator hits most: nothing changed upstream. It must say
+	// so rather than repeating the last non-zero count.
+	third, err := s.SyncRepoCache(ctx, &agentfleetv1.SyncRepoCacheRequest{Repo: "dream-analyst", RepoUrl: origin})
+	if err != nil {
+		t.Fatalf("third SyncRepoCache: %v", err)
+	}
+	if third.GetCommitsAdvanced() != 0 {
+		t.Errorf("nothing moved upstream, reported %d", third.GetCommitsAdvanced())
+	}
+}
+
+// repo is joined straight into a filesystem path, so an empty one names the
+// whole cache directory rather than a repo in it.
+func TestSyncRepoCache_RejectsEmptyArguments(t *testing.T) {
+	s, _, _ := newTestServer(t)
+	for _, tc := range []struct {
+		name string
+		req  *agentfleetv1.SyncRepoCacheRequest
+	}{
+		{"no repo", &agentfleetv1.SyncRepoCacheRequest{RepoUrl: "https://example.invalid/x.git"}},
+		{"no url", &agentfleetv1.SyncRepoCacheRequest{Repo: "dream-analyst"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := s.SyncRepoCache(context.Background(), tc.req); status.Code(err) != codes.InvalidArgument {
+				t.Errorf("want InvalidArgument, got %v", err)
+			}
+		})
 	}
 }

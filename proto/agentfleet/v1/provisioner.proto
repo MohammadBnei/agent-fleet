@@ -232,6 +232,15 @@ service ProvisionerService {
   rpc UnexposeSession(UnexposeSessionRequest) returns (UnexposeSessionResponse);
   rpc ProvisionService(ProvisionServiceRequest) returns (ProvisionServiceResponse);
 
+  // Refreshes one repo's clone cache out-of-band from CreateWorkerPod, which
+  // was until now the only thing that ever advanced it. Human-triggered from
+  // the dashboard's "manage repos" UI.
+  //
+  // core resolves repo -> repo_url from the `repos` table before calling, so
+  // a repo name arriving over the wire can never point the cache at an
+  // arbitrary URL.
+  rpc SyncRepoCache(SyncRepoCacheRequest) returns (SyncRepoCacheResponse);
+
   // Deletes a session's working-tree PVC. The other half of its disk (the
   // SDK resume state) is a directory on the shared volume, removed in the
   // same call — the two live on different volumes because they have
@@ -244,3 +253,28 @@ message SweepSessionRequest {
 }
 
 message SweepSessionResponse {}
+
+message SyncRepoCacheRequest {
+  string repo = 1;
+  string repo_url = 2;
+}
+
+// No error field: gRPC already carries one, and git.Manager.run puts git's
+// own stderr in it, so a credential or network failure arrives as
+// "git fetch origin (in /workspace/repos/x): exit status 128: fatal: ...".
+// A second error channel in the body would only be a way to report success
+// while having failed.
+message SyncRepoCacheResponse {
+  // The cache did not exist and this call was a full clone — `commits_advanced`
+  // has no meaning in that case.
+  bool cloned = 1;
+  // origin/HEAD after the sync, or "" when the cache has no origin/HEAD
+  // symref to resolve. Never fatal — a statistic must not fail a good fetch.
+  string head = 2;
+  // Commits origin/HEAD moved by this fetch. 0 for a clone, and 0 when `head`
+  // is "" — absence of a number, not a claim that nothing moved.
+  int32 commits_advanced = 3;
+  // Measured in the provisioner around the git work, so it excludes the gRPC
+  // hops from the dashboard.
+  int64 duration_ms = 4;
+}

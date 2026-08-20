@@ -102,6 +102,9 @@ const (
 	// DashboardServiceDeleteRepoProcedure is the fully-qualified name of the DashboardService's
 	// DeleteRepo RPC.
 	DashboardServiceDeleteRepoProcedure = "/agentfleet.v1.DashboardService/DeleteRepo"
+	// DashboardServiceSyncRepoProcedure is the fully-qualified name of the DashboardService's SyncRepo
+	// RPC.
+	DashboardServiceSyncRepoProcedure = "/agentfleet.v1.DashboardService/SyncRepo"
 	// DashboardServiceListPromptSnippetsProcedure is the fully-qualified name of the DashboardService's
 	// ListPromptSnippets RPC.
 	DashboardServiceListPromptSnippetsProcedure = "/agentfleet.v1.DashboardService/ListPromptSnippets"
@@ -209,6 +212,7 @@ type DashboardServiceClient interface {
 	CreateRepo(context.Context, *connect.Request[v1.CreateRepoRequest]) (*connect.Response[v1.CreateRepoResponse], error)
 	UpdateRepo(context.Context, *connect.Request[v1.UpdateRepoRequest]) (*connect.Response[v1.UpdateRepoResponse], error)
 	DeleteRepo(context.Context, *connect.Request[v1.DeleteRepoRequest]) (*connect.Response[v1.DeleteRepoResponse], error)
+	SyncRepo(context.Context, *connect.Request[v1.SyncRepoRequest]) (*connect.Response[v1.SyncRepoResponse], error)
 	ListPromptSnippets(context.Context, *connect.Request[v1.ListPromptSnippetsRequest]) (*connect.Response[v1.ListPromptSnippetsResponse], error)
 	CreatePromptSnippet(context.Context, *connect.Request[v1.CreatePromptSnippetRequest]) (*connect.Response[v1.CreatePromptSnippetResponse], error)
 	UpdatePromptSnippet(context.Context, *connect.Request[v1.UpdatePromptSnippetRequest]) (*connect.Response[v1.UpdatePromptSnippetResponse], error)
@@ -390,6 +394,12 @@ func NewDashboardServiceClient(httpClient connect.HTTPClient, baseURL string, op
 			connect.WithSchema(dashboardServiceMethods.ByName("DeleteRepo")),
 			connect.WithClientOptions(opts...),
 		),
+		syncRepo: connect.NewClient[v1.SyncRepoRequest, v1.SyncRepoResponse](
+			httpClient,
+			baseURL+DashboardServiceSyncRepoProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("SyncRepo")),
+			connect.WithClientOptions(opts...),
+		),
 		listPromptSnippets: connect.NewClient[v1.ListPromptSnippetsRequest, v1.ListPromptSnippetsResponse](
 			httpClient,
 			baseURL+DashboardServiceListPromptSnippetsProcedure,
@@ -514,6 +524,7 @@ type dashboardServiceClient struct {
 	createRepo          *connect.Client[v1.CreateRepoRequest, v1.CreateRepoResponse]
 	updateRepo          *connect.Client[v1.UpdateRepoRequest, v1.UpdateRepoResponse]
 	deleteRepo          *connect.Client[v1.DeleteRepoRequest, v1.DeleteRepoResponse]
+	syncRepo            *connect.Client[v1.SyncRepoRequest, v1.SyncRepoResponse]
 	listPromptSnippets  *connect.Client[v1.ListPromptSnippetsRequest, v1.ListPromptSnippetsResponse]
 	createPromptSnippet *connect.Client[v1.CreatePromptSnippetRequest, v1.CreatePromptSnippetResponse]
 	updatePromptSnippet *connect.Client[v1.UpdatePromptSnippetRequest, v1.UpdatePromptSnippetResponse]
@@ -645,6 +656,11 @@ func (c *dashboardServiceClient) UpdateRepo(ctx context.Context, req *connect.Re
 // DeleteRepo calls agentfleet.v1.DashboardService.DeleteRepo.
 func (c *dashboardServiceClient) DeleteRepo(ctx context.Context, req *connect.Request[v1.DeleteRepoRequest]) (*connect.Response[v1.DeleteRepoResponse], error) {
 	return c.deleteRepo.CallUnary(ctx, req)
+}
+
+// SyncRepo calls agentfleet.v1.DashboardService.SyncRepo.
+func (c *dashboardServiceClient) SyncRepo(ctx context.Context, req *connect.Request[v1.SyncRepoRequest]) (*connect.Response[v1.SyncRepoResponse], error) {
+	return c.syncRepo.CallUnary(ctx, req)
 }
 
 // ListPromptSnippets calls agentfleet.v1.DashboardService.ListPromptSnippets.
@@ -784,6 +800,7 @@ type DashboardServiceHandler interface {
 	CreateRepo(context.Context, *connect.Request[v1.CreateRepoRequest]) (*connect.Response[v1.CreateRepoResponse], error)
 	UpdateRepo(context.Context, *connect.Request[v1.UpdateRepoRequest]) (*connect.Response[v1.UpdateRepoResponse], error)
 	DeleteRepo(context.Context, *connect.Request[v1.DeleteRepoRequest]) (*connect.Response[v1.DeleteRepoResponse], error)
+	SyncRepo(context.Context, *connect.Request[v1.SyncRepoRequest]) (*connect.Response[v1.SyncRepoResponse], error)
 	ListPromptSnippets(context.Context, *connect.Request[v1.ListPromptSnippetsRequest]) (*connect.Response[v1.ListPromptSnippetsResponse], error)
 	CreatePromptSnippet(context.Context, *connect.Request[v1.CreatePromptSnippetRequest]) (*connect.Response[v1.CreatePromptSnippetResponse], error)
 	UpdatePromptSnippet(context.Context, *connect.Request[v1.UpdatePromptSnippetRequest]) (*connect.Response[v1.UpdatePromptSnippetResponse], error)
@@ -961,6 +978,12 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 		connect.WithSchema(dashboardServiceMethods.ByName("DeleteRepo")),
 		connect.WithHandlerOptions(opts...),
 	)
+	dashboardServiceSyncRepoHandler := connect.NewUnaryHandler(
+		DashboardServiceSyncRepoProcedure,
+		svc.SyncRepo,
+		connect.WithSchema(dashboardServiceMethods.ByName("SyncRepo")),
+		connect.WithHandlerOptions(opts...),
+	)
 	dashboardServiceListPromptSnippetsHandler := connect.NewUnaryHandler(
 		DashboardServiceListPromptSnippetsProcedure,
 		svc.ListPromptSnippets,
@@ -1105,6 +1128,8 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 			dashboardServiceUpdateRepoHandler.ServeHTTP(w, r)
 		case DashboardServiceDeleteRepoProcedure:
 			dashboardServiceDeleteRepoHandler.ServeHTTP(w, r)
+		case DashboardServiceSyncRepoProcedure:
+			dashboardServiceSyncRepoHandler.ServeHTTP(w, r)
 		case DashboardServiceListPromptSnippetsProcedure:
 			dashboardServiceListPromptSnippetsHandler.ServeHTTP(w, r)
 		case DashboardServiceCreatePromptSnippetProcedure:
@@ -1236,6 +1261,10 @@ func (UnimplementedDashboardServiceHandler) UpdateRepo(context.Context, *connect
 
 func (UnimplementedDashboardServiceHandler) DeleteRepo(context.Context, *connect.Request[v1.DeleteRepoRequest]) (*connect.Response[v1.DeleteRepoResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.DeleteRepo is not implemented"))
+}
+
+func (UnimplementedDashboardServiceHandler) SyncRepo(context.Context, *connect.Request[v1.SyncRepoRequest]) (*connect.Response[v1.SyncRepoResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.SyncRepo is not implemented"))
 }
 
 func (UnimplementedDashboardServiceHandler) ListPromptSnippets(context.Context, *connect.Request[v1.ListPromptSnippetsRequest]) (*connect.Response[v1.ListPromptSnippetsResponse], error) {

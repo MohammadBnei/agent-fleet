@@ -19,6 +19,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -107,31 +108,72 @@ func (m *Manager) run(ctx context.Context, dir string, args ...string) (string, 
 	return strings.TrimSpace(string(out)), nil
 }
 
+// SyncResult describes what a call to EnsureRepoCloned actually did. It exists
+// for the dashboard's manual sync button (SyncRepoCache), which is a human
+// asking "did that do anything?" and deserves an answer better than "no error".
+//
+// Every field is best-effort by construction — see EnsureRepoCloned.
+type SyncResult struct {
+	// The cache did not exist and this call cloned it. Advanced is meaningless.
+	Cloned bool
+	// origin/HEAD after the sync, or "" if it could not be resolved.
+	Head string
+	// Commits origin/HEAD moved by this fetch. 0 when Cloned, and 0 when Head
+	// is "" — absence of a number, not a claim that nothing moved.
+	Advanced int
+}
+
 // EnsureRepoCloned clones repoURL into <root>/repos/<repo> if missing, else
 // fetches. Serialized per-repo (Manager.repoLock) so two concurrent
 // CreateWorkerPod calls for the same never-before-seen repo can never race
 // a clone into the same not-yet-existing path — the data-race risk flagged
 // during ADR-0019's doubt-driven review.
-func (m *Manager) EnsureRepoCloned(ctx context.Context, repo, repoURL string) error {
+//
+// The SyncResult reads are deliberately error-discarding. A cache with no
+// origin/HEAD symref (every cache cloned before this existed is a candidate)
+// must still sync; failing a fetch that worked because a statistic about it
+// could not be computed would turn a reporting feature into an outage.
+func (m *Manager) EnsureRepoCloned(ctx context.Context, repo, repoURL string) (SyncResult, error) {
 	lock := m.repoLock(repo)
 	lock.Lock()
 	defer lock.Unlock()
 
 	path := m.repoPath(repo)
 	if _, err := m.run(ctx, path, "rev-parse", "--is-inside-work-tree"); err == nil {
+		before := m.originHead(ctx, path)
 		if _, err := m.run(ctx, path, "fetch", "origin"); err != nil {
-			return err
+			return SyncResult{}, err
 		}
-		return m.disableAutoGC(ctx, path)
+		after := m.originHead(ctx, path)
+		res := SyncResult{Head: after}
+		if before != "" && after != "" && before != after {
+			if out, err := m.run(ctx, path, "rev-list", "--count", before+".."+after); err == nil {
+				res.Advanced, _ = strconv.Atoi(out)
+			}
+		}
+		return res, m.disableAutoGC(ctx, path)
 	}
 
 	if err := os.MkdirAll(path, 0o755); err != nil {
-		return fmt.Errorf("mkdir %s: %w", path, err)
+		return SyncResult{}, fmt.Errorf("mkdir %s: %w", path, err)
 	}
 	if _, err := m.run(ctx, "", "clone", repoURL, path); err != nil {
-		return err
+		return SyncResult{}, err
 	}
-	return m.disableAutoGC(ctx, path)
+	return SyncResult{Cloned: true, Head: m.originHead(ctx, path)}, m.disableAutoGC(ctx, path)
+}
+
+// originHead resolves the cache's origin/HEAD, or "" if it has none. `git
+// clone` writes the refs/remotes/origin/HEAD symref, but a fetch never
+// creates one, so a cache that lost it (or predates one) stays "" forever
+// rather than being repaired here — repairing it means a `remote set-head`
+// network round trip on a path whose only job is to be fast and idempotent.
+func (m *Manager) originHead(ctx context.Context, path string) string {
+	out, err := m.run(ctx, path, "rev-parse", "--verify", "--quiet", "origin/HEAD")
+	if err != nil {
+		return ""
+	}
+	return out
 }
 
 // disableAutoGC is the one sharp edge of the `--shared` clones the session
