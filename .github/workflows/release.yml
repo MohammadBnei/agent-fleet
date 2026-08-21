@@ -15,6 +15,22 @@ on:
       - 'k8s/*'
       - 'package.json'
 
+# Concurrent releases: keep the newest, cancel the rest. The survivor releases
+# from main's tip, so it carries the cancelled runs' commits with it — one tag
+# covering the lot, rather than a queue of one-commit releases each rebuilding
+# an image the next one obsoletes.
+#
+# Without a group at all, two runs compute the same version from the same latest
+# tag, and the loser's push is rejected non-fast-forward after it has already
+# bumped package.json and made a local tag — that release is simply lost.
+#
+# Cancelling is only safe because the push is atomic: see git.pushArgs in
+# package.json. Everything before the push is local to the runner and dies with
+# it; the push itself is the one window where a kill could split branch from tag.
+concurrency:
+  group: release
+  cancel-in-progress: true
+
 jobs:
   release:
     runs-on: ubuntu-latest
