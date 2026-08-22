@@ -282,9 +282,16 @@ func TestReconcilePodPhases_HumanMessagesDoNotResetTheProvisioningGrace(t *testi
 		t.Fatalf("phase: %v", err)
 	}
 
-	loop := NewLoop(store, &fakeProvisioner{livePods: map[string]string{}}, time.Minute, 0, time.Hour, 14*24*time.Hour, time.Minute)
+	// A REAL grace, and a row whose Job has already been missing for longer
+	// than it. A zero stall would pass under the column-based implementation
+	// this test exists to forbid, which is the whole point of it.
+	loop := NewLoop(store, &fakeProvisioner{livePods: map[string]string{}}, time.Minute, time.Minute, time.Hour, 14*24*time.Hour, time.Minute)
+	loop.jobMissingSince[id] = time.Now().Add(-2 * time.Minute)
 
-	// The human gives up waiting and prods it, twice, between passes.
+	// The human gives up waiting and prods it, twice. Each append bumps
+	// last_active_at AND updated_at to now, so any grace read off a column is
+	// now younger than the stall and the row survives another pass — and the
+	// next click resets it again.
 	for i := 0; i < 2; i++ {
 		if err := store.TouchActive(ctx, id, "human", "message"); err != nil {
 			t.Fatalf("touch: %v", err)
