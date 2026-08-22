@@ -40,6 +40,22 @@ type Loop struct {
 	// turnStall is DeriveLiveState's threshold for `stalled`, needed here only
 	// to compute the gauge — the sweeps above all key off their own timeouts.
 	turnStall time.Duration
+
+	// jobMissingSince records, per session, when this loop FIRST saw a row
+	// claiming a pod that Kubernetes does not have. Only reconcilePodPhases
+	// touches it, and Run is a single sequential goroutine, so it needs no lock.
+	//
+	// It exists because no column answers "how long has this row been in this
+	// phase". last_active_at and updated_at are both bumped by TouchActive on
+	// every transcript append INCLUDING a human's message — and a human poking
+	// a session that will not start is the exact behaviour this guard has to
+	// survive. Timing it here instead is immune to that: the only thing that
+	// resets the clock is Kubernetes producing the pod.
+	//
+	// Rebuilt each pass, so a row that heals or falls out of the listing drops
+	// out on its own. Losing it on a core restart costs one more grace period
+	// before a stuck row is cleared, which is why it is not worth a column.
+	jobMissingSince map[string]time.Time
 }
 
 func NewLoop(store *Store, p Provisioner, stopGrace, startupStall, idleTimeout, retention, turnStall time.Duration) *Loop {
@@ -51,6 +67,8 @@ func NewLoop(store *Store, p Provisioner, stopGrace, startupStall, idleTimeout, 
 		idleTimeout:  idleTimeout,
 		retention:    retention,
 		turnStall:    turnStall,
+
+		jobMissingSince: map[string]time.Time{},
 	}
 }
 
@@ -127,32 +145,14 @@ func (l *Loop) reconcilePodPhases(ctx context.Context) {
 		return
 	}
 
+	now := time.Now()
+	stillMissing := make(map[string]time.Time)
+	defer func() { l.jobMissingSince = stillMissing }()
+
 	for _, s := range rows {
-		if !IsPodPhaseLive(s.PodPhase) {
-			continue
-		}
-		// PROVISIONING and CREATED mean the provisioner is still mid-call and
-		// has NOT created the Job yet — those phases are reported before the
-		// clone, the fleet-shared sync and the pod create, which take tens of
-		// seconds together. "Kubernetes has no Job" is therefore the expected
-		// answer for them, not evidence of an orphan.
-		//
-		// Without this the loop raced every warm it happened to tick during
-		// and wrote TERMINATED over a session whose pod was seconds from
-		// existing (observed live 2026-08-15, 3s after a warm). That write is
-		// not self-healing: TERMINATED is not a live phase, so the next pass
-		// skips the row at the check above and nothing ever corrects it. The
-		// session showed no pod while its agent was running.
-		//
-		// A session genuinely stuck in these phases is still caught, by
-		// enforceStartupStall — activity_seen stays false, which is exactly
-		// what that sweep looks for.
-		// PodPhase is non-nil here: IsPodPhaseLive above returns false for nil.
-		if *s.PodPhase == "POD_PHASE_PROVISIONING" || *s.PodPhase == "POD_PHASE_CREATED" {
-			continue
-		}
 		if k8sPhase, stillThere := live[s.ID]; stillThere {
-			// The pod exists. Reconcile UPWARDS too, not just downwards.
+			// The pod exists. Reconcile UPWARDS, and do it for EVERY row, not
+			// just the ones already at a live phase.
 			//
 			// Nothing else ever reports RUNNING: the provisioner reports
 			// SCHEDULED when it creates the Job and then only CRASHED or
@@ -161,6 +161,11 @@ func (l *Loop) reconcilePodPhases(ctx context.Context) {
 			// dashboard said "SCHEDULED" for a session that had been talking
 			// to a human for an hour. Kubernetes already tells us the real
 			// phase in the same call used to detect absence.
+			//
+			// Running it from a terminal phase too is what makes a wrong
+			// TERMINATED write recoverable: a row whose pod turned out to be
+			// real is repaired on the next pass instead of staying invisible
+			// forever. That is what makes the age gate below safe to have.
 			if want := podPhaseFromK8s(k8sPhase); want != "" && (s.PodPhase == nil || *s.PodPhase != want) {
 				if err := l.sessions.SetPodPhase(ctx, s.ID, want, ""); err != nil {
 					slog.Error("sessions loop: phase sync failed", "sessionId", s.ID, "error", err)
@@ -168,8 +173,46 @@ func (l *Loop) reconcilePodPhases(ctx context.Context) {
 			}
 			continue
 		}
+		if !IsPodPhaseLive(s.PodPhase) {
+			continue
+		}
+		// PROVISIONING and CREATED mean the provisioner is still mid-call and
+		// has NOT created the Job yet — those phases are reported before the
+		// clone, the fleet-shared sync and the pod create, which take tens of
+		// seconds together. "Kubernetes has no Job" is therefore the expected
+		// answer for them for a while, not immediate evidence of an orphan.
+		//
+		// Without any grace the loop raced every warm it happened to tick
+		// during and wrote TERMINATED over a session whose pod was seconds
+		// from existing (observed live 2026-08-15, 3s after a warm).
+		//
+		// But skipping them UNCONDITIONALLY, which is what shipped instead,
+		// meant nothing ever demoted a warm that failed before its Job
+		// existed. Such a row keeps a live phase forever: it holds one of the
+		// MAX_IN_FLIGHT_TASKS slots, WarmIfIdle refuses to restart it because
+		// the phase still reads live, and enforceStartupStall tears down a pod
+		// that is not there and logs the same warning every 60s — one session
+		// did that for 41h (observed live 2026-08-22).
+		//
+		// So gate on AGE, not on the phase alone — measured by jobMissingSince
+		// rather than by a column, for the reason given on that field. The
+		// bound is startupStall because that sweep already answers the same
+		// question: how long does a pod get before we give up on it.
+		//
+		// PodPhase is non-nil here: IsPodPhaseLive above returns false for nil.
+		if *s.PodPhase == "POD_PHASE_PROVISIONING" || *s.PodPhase == "POD_PHASE_CREATED" {
+			firstMissed, seenBefore := l.jobMissingSince[s.ID]
+			if !seenBefore {
+				firstMissed = now
+			}
+			if now.Sub(firstMissed) < l.startupStall {
+				stillMissing[s.ID] = firstMissed
+				continue
+			}
+		}
 		// The row claims a live pod; Kubernetes has none. The pod's own
-		// terminal event never arrived.
+		// terminal event never arrived, or it never got one because the pod
+		// was never created.
 		slog.Warn("sessions loop: reconciling orphaned pod_phase",
 			"sessionId", s.ID, "wasPhase", *s.PodPhase)
 		if err := l.sessions.SetPodPhase(ctx, s.ID, "POD_PHASE_TERMINATED",

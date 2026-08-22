@@ -86,6 +86,20 @@ since the feature was written.
   from a working session — the Job never reaches a terminal phase, `pod_phase`
   stays RUNNING, and the slot is never released. In a single-shot process,
   exit explicitly. Same failure class as the `Succeeded`-Job gap below.
+- **A guard against acting too early becomes a guard against ever acting.**
+  `reconcilePodPhases` skipped `POD_PHASE_PROVISIONING`/`POD_PHASE_CREATED`
+  unconditionally, because for those phases "Kubernetes has no Job" is the
+  normal answer for the first tens of seconds. It is also the permanent answer
+  for a warm that died before its Job existed, and nothing else demotes such a
+  row: it held a concurrency slot forever, `WarmIfIdle` refused to restart it
+  because the phase still read live, and the stall sweep tore down a pod that
+  was not there once a minute for 41h. **A skip that protects a transient
+  state needs a clock, not just a state test** — and the clock cannot be
+  `last_active_at` or `updated_at`, because `TouchActive` bumps both on every
+  transcript append including the human's, so retrying the thing that is stuck
+  pushes its own deadline out. Guarded by
+  `TestReconcilePodPhases_StuckProvisioningRowIsTerminatedOnceTheGraceIsUp`
+  and `TestReconcilePodPhases_HumanMessagesDoNotResetTheProvisioningGrace`.
 - **The fleet wedges silently after `MAX_LIVE_SESSIONS`, and only then.**
   Anything that leaves a finished session non-terminal — an unreported
   `Succeeded` Job, a pod that never exits, an archived row still counted —

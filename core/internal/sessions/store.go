@@ -352,7 +352,11 @@ func (s *Store) ReserveSlot(ctx context.Context, id string, maxLive int) (leaseI
 		    --
 		    -- A reservation that then fails to provision is not stuck: the
 		    -- reconcile loop finds a row claiming a pod with no Job and clears
-		    -- it within 60s. That is exactly what reconciliation is for.
+		    -- it once its Job has been missing for STARTUP_STALL_MS. That is
+		    -- exactly what reconciliation is for. The grace is not optional and
+		    -- the claim was false without it — this phase is written BEFORE
+		    -- the clone and the pod create, so "no Job" is the normal answer
+		    -- for the first tens of seconds.
 		    pod_phase = 'POD_PHASE_PROVISIONING',
 		    updated_at = now()
 		WHERE id = $1 AND archived_at IS NULL
