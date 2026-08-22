@@ -82,6 +82,17 @@ func (c *Client) ListWorkerJobsByLabel(ctx context.Context) ([]LiveWorkerJob, er
 		if taskID == "" {
 			continue
 		}
+		// A Job being deleted is not a live pod, and DeleteWorkerJob uses
+		// FOREGROUND propagation on purpose — the Job object stays listed,
+		// finalizer and all, until its Pod is gone. Core reconciles pod_phase
+		// against this answer, so reporting a dying Job as live makes it write
+		// RUNNING back over the TERMINATED the same teardown just reported.
+		// The row then holds a concurrency slot, and for as long as it does,
+		// WarmIfIdle no-ops on the live phase while PostMessage appends the
+		// human's message to a session with no pod to read it.
+		if job.DeletionTimestamp != nil {
+			continue
+		}
 		out = append(out, LiveWorkerJob{TaskID: taskID, JobName: job.Name, Phase: jobPhase(&job)})
 	}
 	return out, nil

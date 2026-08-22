@@ -306,6 +306,49 @@ func TestListWorkerJobsByLabel_SelectsWorkerJobs(t *testing.T) {
 	}
 }
 
+// A Job that is being deleted must not be reported as live.
+//
+// DeleteWorkerJob uses FOREGROUND propagation deliberately, so the Job object
+// survives — finalizer, deletionTimestamp and a Ready count that has not caught
+// up — until its Pod is gone. Core reconciles pod_phase against this listing,
+// so a dying Job reported as live makes it write RUNNING back over the
+// TERMINATED that the very same teardown reported: the row holds a concurrency
+// slot it no longer has a pod for, and while it does, WarmIfIdle no-ops on the
+// live phase and PostMessage appends the human's message to a session with
+// nothing running to read it.
+func TestListWorkerJobsByLabel_OmitsAJobThatIsBeingDeleted(t *testing.T) {
+	c := newTestClient()
+	ctx := context.Background()
+
+	if err := c.CreateWorkerPod(ctx, WorkerPodSpec{SessionID: "task-dying", Repo: "dream-analyst", LeaseID: "lease-1", ResumeID: "", ResumeFromSeq: 0, ToolKeys: nil, ServiceRefs: nil, ExtraEnv: nil}); err != nil {
+		t.Fatalf("CreateWorkerPod: %v", err)
+	}
+
+	// What foreground propagation leaves behind: still Ready, so jobPhase
+	// still says "Running", but on its way out.
+	jobs := c.Core.BatchV1().Jobs(c.Namespace)
+	job, err := jobs.Get(ctx, WorkerResourceName("task-dying"), metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("get job: %v", err)
+	}
+	now := metav1.Now()
+	job.DeletionTimestamp = &now
+	job.Finalizers = []string{"foregroundDeletion"}
+	ready := int32(1)
+	job.Status.Ready = &ready
+	if _, err := jobs.Update(ctx, job, metav1.UpdateOptions{}); err != nil {
+		t.Fatalf("update job: %v", err)
+	}
+
+	live, err := c.ListWorkerJobsByLabel(ctx)
+	if err != nil {
+		t.Fatalf("ListWorkerJobsByLabel: %v", err)
+	}
+	if len(live) != 0 {
+		t.Errorf("a Job with a deletionTimestamp was reported live: %+v", live)
+	}
+}
+
 func TestJobPhase_DerivedFromConditions(t *testing.T) {
 	ready := func(n int32) *int32 { return &n }
 	cases := []struct {
