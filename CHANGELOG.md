@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.11.6](https://github.com/MohammadBnei/agent-fleet/compare/4.11.5...4.11.6) (2026-08-22)
+
+
+### Bug Fixes
+
+* **core:** clear a pod phase wedged at PROVISIONING ([#236](https://github.com/MohammadBnei/agent-fleet/issues/236)) ([0266467](https://github.com/MohammadBnei/agent-fleet/commit/0266467002d9f01d7ebd3b21eba0185f1926815b))
+
 ## [4.11.5](https://github.com/MohammadBnei/agent-fleet/compare/4.11.4...4.11.5) (2026-08-21)
 
 ## [4.11.4](https://github.com/MohammadBnei/agent-fleet/compare/4.11.3...4.11.4) (2026-08-20)
