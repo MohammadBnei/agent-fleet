@@ -204,6 +204,179 @@ func TestReconcilePodPhases_DoesNotOrphanASessionMidProvision(t *testing.T) {
 	}
 }
 
+// The other half of the same gate, and the bug it shipped as.
+//
+// Skipping PROVISIONING/CREATED unconditionally meant a warm that died before
+// its Job existed left a row at a LIVE phase forever: it held one of the
+// MAX_IN_FLIGHT_TASKS slots, WarmIfIdle refused to restart it because the phase
+// still read live, and enforceStartupStall tore down a pod that was not there
+// and logged the same warning every 60s. Observed live 2026-08-22 on a session
+// that had been doing it for 41h.
+//
+// The pod does not exist YET and the pod is never coming are the same DB row —
+// only elapsed time tells them apart.
+func TestReconcilePodPhases_StuckProvisioningRowIsTerminatedOnceTheGraceIsUp(t *testing.T) {
+	ctx := context.Background()
+	store := NewStore(dbtest.NewPool(t))
+
+	for _, phase := range []string{"POD_PHASE_PROVISIONING", "POD_PHASE_CREATED"} {
+		t.Run(phase, func(t *testing.T) {
+			id, err := store.Create(ctx, CreateParams{Repo: "agent-fleet", Title: "", Description: "wedged"})
+			if err != nil {
+				t.Fatalf("create: %v", err)
+			}
+			if err := store.SetPodPhase(ctx, id, phase, "creating pod"); err != nil {
+				t.Fatalf("phase: %v", err)
+			}
+
+			before, err := store.CountLivePods(ctx)
+			if err != nil {
+				t.Fatalf("count: %v", err)
+			}
+
+			// startupStall of 0: every pass is already past the grace, which is
+			// what a row stuck for 41h looks like without the wait.
+			loop := NewLoop(store, &fakeProvisioner{livePods: map[string]string{}}, time.Minute, 0, time.Hour, 14*24*time.Hour, time.Minute)
+			loop.reconcilePodPhases(ctx)
+
+			s, err := store.Get(ctx, id)
+			if err != nil {
+				t.Fatalf("get: %v", err)
+			}
+			if s.PodPhase == nil || *s.PodPhase != "POD_PHASE_TERMINATED" {
+				t.Fatalf("a row wedged at %s past the grace was left alone — nothing else demotes it, "+
+					"so it holds a concurrency slot and blocks its own restart forever", phase)
+			}
+			if IsPodPhaseLive(s.PodPhase) {
+				t.Error("phase still reads live: WarmIfIdle returns early on any live phase, " +
+					"so the console's restart would still silently do nothing")
+			}
+
+			after, err := store.CountLivePods(ctx)
+			if err != nil {
+				t.Fatalf("count: %v", err)
+			}
+			if after != before-1 {
+				t.Errorf("leaked slot not reclaimed: live went %d -> %d", before, after)
+			}
+		})
+	}
+}
+
+// The grace is timed by the loop, not by a column, and this is why.
+//
+// last_active_at and updated_at are both bumped by TouchActive on EVERY
+// transcript append, a human's message included. A human who keeps clicking
+// restart on a session that will not start appends a message each time, so a
+// column-based grace is reset by the very behaviour it has to survive — the
+// row would never be old enough to clear.
+func TestReconcilePodPhases_HumanMessagesDoNotResetTheProvisioningGrace(t *testing.T) {
+	ctx := context.Background()
+	store := NewStore(dbtest.NewPool(t))
+
+	id, err := store.Create(ctx, CreateParams{Repo: "agent-fleet", Title: "", Description: "poked"})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if err := store.SetPodPhase(ctx, id, "POD_PHASE_PROVISIONING", "creating pod"); err != nil {
+		t.Fatalf("phase: %v", err)
+	}
+
+	loop := NewLoop(store, &fakeProvisioner{livePods: map[string]string{}}, time.Minute, 0, time.Hour, 14*24*time.Hour, time.Minute)
+
+	// The human gives up waiting and prods it, twice, between passes.
+	for i := 0; i < 2; i++ {
+		if err := store.TouchActive(ctx, id, "human", "message"); err != nil {
+			t.Fatalf("touch: %v", err)
+		}
+	}
+	loop.reconcilePodPhases(ctx)
+
+	s, err := store.Get(ctx, id)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if s.PodPhase == nil || *s.PodPhase != "POD_PHASE_TERMINATED" {
+		t.Fatalf("phase = %v, want TERMINATED — a human message pushed the grace out, "+
+			"which is exactly the loop a person hits when they retry a session that will not start", s.PodPhase)
+	}
+}
+
+// Fresh misses are remembered, not restarted, across passes.
+//
+// Without this the grace never elapses: each pass would see a first miss and
+// wait again, so a row that is genuinely never coming back is skipped forever
+// at whatever tick interval the loop runs.
+func TestReconcilePodPhases_ProvisioningGraceIsMeasuredAcrossPasses(t *testing.T) {
+	ctx := context.Background()
+	store := NewStore(dbtest.NewPool(t))
+
+	id, err := store.Create(ctx, CreateParams{Repo: "agent-fleet", Title: "", Description: "warming"})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if err := store.SetPodPhase(ctx, id, "POD_PHASE_PROVISIONING", "creating pod"); err != nil {
+		t.Fatalf("phase: %v", err)
+	}
+
+	fake := &fakeProvisioner{livePods: map[string]string{}}
+	loop := NewLoop(store, fake, time.Minute, time.Hour, time.Hour, 14*24*time.Hour, time.Minute)
+
+	loop.reconcilePodPhases(ctx)
+	first, ok := loop.jobMissingSince[id]
+	if !ok {
+		t.Fatal("a row whose Job is missing was not clocked, so its grace can never elapse")
+	}
+
+	loop.reconcilePodPhases(ctx)
+	second, ok := loop.jobMissingSince[id]
+	if !ok {
+		t.Fatal("the clock was dropped on the second pass — the grace would restart every tick")
+	}
+	if !second.Equal(first) {
+		t.Errorf("clock restarted: %v -> %v", first, second)
+	}
+
+	// The pod finally shows up. The clock must go, or a later stretch of
+	// missing-Job passes inherits an already-expired grace.
+	fake.livePods = map[string]string{id: "Running"}
+	loop.reconcilePodPhases(ctx)
+	if _, ok := loop.jobMissingSince[id]; ok {
+		t.Error("clock survived the pod appearing")
+	}
+}
+
+// The upward repair must work from a TERMINATED row too, and that is load-
+// bearing rather than cosmetic: it is what makes a wrong terminal write
+// recoverable, which is what makes the grace above safe to have at all. Before
+// it, a row demoted by mistake was skipped by every later pass (TERMINATED is
+// not a live phase) and the session showed no pod while its agent ran.
+func TestReconcilePodPhases_RepairsUpwardFromATerminalPhase(t *testing.T) {
+	ctx := context.Background()
+	store := NewStore(dbtest.NewPool(t))
+
+	id, err := store.Create(ctx, CreateParams{Repo: "agent-fleet", Title: "", Description: "wrongly buried"})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if err := store.SetPodPhase(ctx, id, "POD_PHASE_TERMINATED", "reconciled: no live worker Job"); err != nil {
+		t.Fatalf("phase: %v", err)
+	}
+
+	fake := &fakeProvisioner{livePods: map[string]string{id: "Running"}}
+	loop := NewLoop(store, fake, time.Minute, time.Minute, time.Hour, 14*24*time.Hour, time.Minute)
+	loop.reconcilePodPhases(ctx)
+
+	s, err := store.Get(ctx, id)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if s.PodPhase == nil || *s.PodPhase != "POD_PHASE_RUNNING" {
+		t.Fatalf("phase = %v, want RUNNING — Kubernetes says the pod is up, and a row that "+
+			"disagrees downward stays invisible forever unless this pass repairs it", s.PodPhase)
+	}
+}
+
 // If Kubernetes cannot be reached, the correct action is none. Treating an
 // unreadable pod list as "no pods exist" would terminate every live session in
 // the fleet on a transient provisioner outage — the loop would do far more
