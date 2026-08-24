@@ -285,7 +285,7 @@ export function SessionDetail({
 
         <div className="flex-none px-4.5 py-3 border-t border-line">
           <ErrorModal message={actionError} onClose={clearActionError} />
-          <FileDiffModal path={diffPath} entries={entries} onClose={() => setDiffPath(null)} />
+          <FileDiffModal sessionId={sessionId} path={diffPath} entries={entries} onClose={() => setDiffPath(null)} />
           <AgentDetailModal run={agentDetail} onClose={() => setAgentDetail(null)} />
           <ConfirmModal
             title="Switch to auto mode?"

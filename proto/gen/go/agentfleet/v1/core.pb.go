@@ -2147,9 +2147,20 @@ func (*SaveAgentSessionIdResponse) Descriptor() ([]byte, []int) {
 // (docs/adr/0020 point 5's second bullet). Persisted as a
 // TRANSCRIPT_ENTRY_TYPE_TOOL_CALL entry, never relayed to Discord.
 type PushToolTelemetryRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
-	SummaryJson   string                 `protobuf:"bytes,2,opt,name=summary_json,json=summaryJson,proto3" json:"summary_json,omitempty"`
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	SessionId   string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	SummaryJson string                 `protobuf:"bytes,2,opt,name=summary_json,json=summaryJson,proto3" json:"summary_json,omitempty"`
+	// Unified `git diff` output for the paths core asked for on a previous
+	// tick, as {"<path>": "<diff>"}. Answers wanted_paths below.
+	//
+	// NOT persisted. The summary above becomes a transcript row; this does
+	// not, and must not: latestToolCallSummary reads the newest TOOL_CALL
+	// entry to build the CHANGES panel, so a diff payload landing there
+	// empties the panel entirely. Core holds these in memory, which is also
+	// exactly what "readable while the pod is alive" means — the working
+	// tree is only reachable from inside the pod, so a diff has no meaning
+	// once it is gone.
+	FileDiffsJson string `protobuf:"bytes,3,opt,name=file_diffs_json,json=fileDiffsJson,proto3" json:"file_diffs_json,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2198,8 +2209,25 @@ func (x *PushToolTelemetryRequest) GetSummaryJson() string {
 	return ""
 }
 
+func (x *PushToolTelemetryRequest) GetFileDiffsJson() string {
+	if x != nil {
+		return x.FileDiffsJson
+	}
+	return ""
+}
+
+// The response is the one channel core has for asking the sidecar
+// anything. Nothing outside the pod can dial it: the session PVC is
+// ReadWriteOnce, the provisioner never mounts it, and core has no cluster
+// RBAC at all — so the sidecar is the sole window onto the working tree,
+// and this 5s call is the only time it is open. Answering here rather
+// than adding an inbound port keeps hub-and-spoke intact (docs/adr/0020
+// point 4) and adds no pod-network surface (docs/adr/0056).
 type PushToolTelemetryResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Repo-relative paths a human has opened in the console and is waiting
+	// on a diff for. Bounded by core; the sidecar answers on its next tick.
+	WantedPaths   []string `protobuf:"bytes,1,rep,name=wanted_paths,json=wantedPaths,proto3" json:"wanted_paths,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2232,6 +2260,13 @@ func (x *PushToolTelemetryResponse) ProtoReflect() protoreflect.Message {
 // Deprecated: Use PushToolTelemetryResponse.ProtoReflect.Descriptor instead.
 func (*PushToolTelemetryResponse) Descriptor() ([]byte, []int) {
 	return file_agentfleet_v1_core_proto_rawDescGZIP(), []int{34}
+}
+
+func (x *PushToolTelemetryResponse) GetWantedPaths() []string {
+	if x != nil {
+		return x.WantedPaths
+	}
+	return nil
 }
 
 // The mechanism that lets the sidecar deliver new human input to the
@@ -2846,12 +2881,14 @@ const file_agentfleet_v1_core_proto_rawDesc = "" +
 	"\x10agent_session_id\x18\x02 \x01(\tR\x0eagentSessionId\x12\x14\n" +
 	"\x05model\x18\x03 \x01(\tR\x05model\x12\x19\n" +
 	"\blease_id\x18\x04 \x01(\tR\aleaseId\"\x1c\n" +
-	"\x1aSaveAgentSessionIdResponse\"\\\n" +
+	"\x1aSaveAgentSessionIdResponse\"\x84\x01\n" +
 	"\x18PushToolTelemetryRequest\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12!\n" +
-	"\fsummary_json\x18\x02 \x01(\tR\vsummaryJson\"\x1b\n" +
-	"\x19PushToolTelemetryResponse\"X\n" +
+	"\fsummary_json\x18\x02 \x01(\tR\vsummaryJson\x12&\n" +
+	"\x0ffile_diffs_json\x18\x03 \x01(\tR\rfileDiffsJson\">\n" +
+	"\x19PushToolTelemetryResponse\x12!\n" +
+	"\fwanted_paths\x18\x01 \x03(\tR\vwantedPaths\"X\n" +
 	"\x1aStreamHumanMessagesRequest\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x1b\n" +

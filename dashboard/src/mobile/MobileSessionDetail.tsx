@@ -267,7 +267,7 @@ export function MobileSessionDetail({
           CHANGES row is clicked, and a <dialog> nested inside an open one is
           the trap Modal.tsx:36 guards. Opening the diff closes the sheet
           (setPanelsOpen(false) below) so there is only ever one open. */}
-      <FileDiffModal path={diffPath} entries={entries} onClose={() => setDiffPath(null)} />
+      <FileDiffModal sessionId={sessionId} path={diffPath} entries={entries} onClose={() => setDiffPath(null)} />
       <AgentDetailModal run={agentDetail} onClose={() => setAgentDetail(null)} />
       <ConfirmModal
         title="Switch to auto mode?"

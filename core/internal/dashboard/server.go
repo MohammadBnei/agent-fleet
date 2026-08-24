@@ -20,6 +20,7 @@ import (
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 	"github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1/agentfleetv1connect"
 
+	"github.com/MohammadBnei/agent-fleet/core/internal/filediff"
 	"github.com/MohammadBnei/agent-fleet/core/internal/filestore"
 	"github.com/MohammadBnei/agent-fleet/core/internal/journal"
 	"github.com/MohammadBnei/agent-fleet/core/internal/lokiclient"
@@ -54,6 +55,12 @@ type Server struct {
 	// version is core's own build, stamped in via -ldflags (cmd/core/main.go).
 	// It covers the dashboard SPA too — that is compiled into this binary.
 	version string
+
+	// fileDiffs is where GetFileDiff parks a request for the sidecar's next
+	// telemetry tick to pick up. nil disables the RPC (it answers NO_POD),
+	// which degrades the console to the captured-tool-input diff it has
+	// always had rather than breaking it.
+	fileDiffs *filediff.Store
 }
 
 func NewServer(sessionStore *sessions.Store, proposalStore *proposals.Store, transcr transcript.Store, journalStore *journal.Store, repoStore *repos.Store, snippetStore *promptsnippets.Store, e2e *provisionerclient.Client, files filestore.Store, hub *Hub, maxLive int, loki lokiclient.Querier, prom promclient.Querier, scheduleStore *schedules.Store, version string) *Server {
@@ -490,6 +497,66 @@ func (s *Server) StreamTranscript(ctx context.Context, req *connect.Request[agen
 			}
 		}
 	}
+}
+
+// SetFileDiffStore wires the shared parking lot in after construction, so
+// this server and coreserver hold the same one.
+func (s *Server) SetFileDiffStore(store *filediff.Store) { s.fileDiffs = store }
+
+// GetFileDiff answers "what actually changed in this file" for a file the
+// CHANGES panel listed but the console cannot reconstruct — anything a Bash
+// command wrote: sed, a formatter, a codegen script. The panel itself has
+// always been honest about those files, because it comes from the sidecar's
+// `git diff --numstat` rather than from captured tool inputs; opening one was
+// the half that was reconstructed, and it showed nothing.
+//
+// A poll, not a fetch. Core cannot dial the sidecar (internal/filediff's
+// package doc has the topology), so the first call arms the request and returns
+// PENDING; the sidecar carries it out on its next 5s tick and the answer is
+// READY on a later call. The console retries.
+func (s *Server) GetFileDiff(ctx context.Context, req *connect.Request[agentfleetv1.GetFileDiffRequest]) (*connect.Response[agentfleetv1.GetFileDiffResponse], error) {
+	sessionID, path := req.Msg.GetSessionId(), req.Msg.GetPath()
+	if sessionID == "" || path == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("session_id and path are required"))
+	}
+	reply := func(st agentfleetv1.GetFileDiffResponse_Status, diff string) *connect.Response[agentfleetv1.GetFileDiffResponse] {
+		return connect.NewResponse(&agentfleetv1.GetFileDiffResponse{Status: st, Diff: diff})
+	}
+	if s.fileDiffs == nil {
+		return reply(agentfleetv1.GetFileDiffResponse_STATUS_NO_POD, ""), nil
+	}
+
+	// Collect before checking the pod. An answer that arrived just before the
+	// pod went away is still a true diff of the tree that produced it, and
+	// losing it to a phase flip mid-poll is the one way this reads as broken
+	// rather than as "the session ended".
+	if diff, ok := s.fileDiffs.Take(sessionID, path); ok {
+		if diff == "" {
+			// git reported nothing: committed, reverted, or never tracked.
+			// Terminal, and distinct from PENDING so the console stops.
+			return reply(agentfleetv1.GetFileDiffResponse_STATUS_EMPTY, ""), nil
+		}
+		return reply(agentfleetv1.GetFileDiffResponse_STATUS_READY, diff), nil
+	}
+
+	t, err := s.sessions.Get(ctx, sessionID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, connect.NewError(connect.CodeNotFound, err)
+		}
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	// No pod, no working tree, and no amount of polling will produce one.
+	// Saying so is the whole point: the console's old copy claimed the change
+	// "did not go through an Edit or Write tool call", which is a guess, and
+	// on a torn-down session it was the wrong one.
+	if !sessions.IsPodPhaseLive(t.PodPhase) {
+		return reply(agentfleetv1.GetFileDiffResponse_STATUS_NO_POD, ""), nil
+	}
+	if !s.fileDiffs.Want(sessionID, path) {
+		return nil, connect.NewError(connect.CodeResourceExhausted, errors.New("too many diffs pending for this session"))
+	}
+	return reply(agentfleetv1.GetFileDiffResponse_STATUS_PENDING, ""), nil
 }
 
 // Kill and KillE2E below call the exact same store methods

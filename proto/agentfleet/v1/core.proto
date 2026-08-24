@@ -429,9 +429,31 @@ message SaveAgentSessionIdResponse {}
 message PushToolTelemetryRequest {
   string session_id = 1;
   string summary_json = 2;
+  // Unified `git diff` output for the paths core asked for on a previous
+  // tick, as {"<path>": "<diff>"}. Answers wanted_paths below.
+  //
+  // NOT persisted. The summary above becomes a transcript row; this does
+  // not, and must not: latestToolCallSummary reads the newest TOOL_CALL
+  // entry to build the CHANGES panel, so a diff payload landing there
+  // empties the panel entirely. Core holds these in memory, which is also
+  // exactly what "readable while the pod is alive" means — the working
+  // tree is only reachable from inside the pod, so a diff has no meaning
+  // once it is gone.
+  string file_diffs_json = 3;
 }
 
-message PushToolTelemetryResponse {}
+// The response is the one channel core has for asking the sidecar
+// anything. Nothing outside the pod can dial it: the session PVC is
+// ReadWriteOnce, the provisioner never mounts it, and core has no cluster
+// RBAC at all — so the sidecar is the sole window onto the working tree,
+// and this 5s call is the only time it is open. Answering here rather
+// than adding an inbound port keeps hub-and-spoke intact (docs/adr/0020
+// point 4) and adds no pod-network surface (docs/adr/0056).
+message PushToolTelemetryResponse {
+  // Repo-relative paths a human has opened in the console and is waiting
+  // on a diff for. Bounded by core; the sidecar answers on its next tick.
+  repeated string wanted_paths = 1;
+}
 
 // The mechanism that lets the sidecar deliver new human input to the
 // wrapper live, for streamInput() (docs/adr/0021 point 2) — a genuine

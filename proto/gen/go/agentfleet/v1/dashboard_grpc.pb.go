@@ -24,6 +24,7 @@ const (
 	DashboardService_CreateSession_FullMethodName       = "/agentfleet.v1.DashboardService/CreateSession"
 	DashboardService_GetTranscript_FullMethodName       = "/agentfleet.v1.DashboardService/GetTranscript"
 	DashboardService_StreamTranscript_FullMethodName    = "/agentfleet.v1.DashboardService/StreamTranscript"
+	DashboardService_GetFileDiff_FullMethodName         = "/agentfleet.v1.DashboardService/GetFileDiff"
 	DashboardService_StopSession_FullMethodName         = "/agentfleet.v1.DashboardService/StopSession"
 	DashboardService_Interrupt_FullMethodName           = "/agentfleet.v1.DashboardService/Interrupt"
 	DashboardService_SetPermissionMode_FullMethodName   = "/agentfleet.v1.DashboardService/SetPermissionMode"
@@ -80,6 +81,7 @@ type DashboardServiceClient interface {
 	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	StreamTranscript(ctx context.Context, in *StreamTranscriptRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[TranscriptEntry], error)
+	GetFileDiff(ctx context.Context, in *GetFileDiffRequest, opts ...grpc.CallOption) (*GetFileDiffResponse, error)
 	StopSession(ctx context.Context, in *StopSessionRequest, opts ...grpc.CallOption) (*StopSessionResponse, error)
 	Interrupt(ctx context.Context, in *InterruptRequest, opts ...grpc.CallOption) (*InterruptResponse, error)
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
@@ -219,6 +221,16 @@ func (c *dashboardServiceClient) StreamTranscript(ctx context.Context, in *Strea
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type DashboardService_StreamTranscriptClient = grpc.ServerStreamingClient[TranscriptEntry]
+
+func (c *dashboardServiceClient) GetFileDiff(ctx context.Context, in *GetFileDiffRequest, opts ...grpc.CallOption) (*GetFileDiffResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetFileDiffResponse)
+	err := c.cc.Invoke(ctx, DashboardService_GetFileDiff_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
 
 func (c *dashboardServiceClient) StopSession(ctx context.Context, in *StopSessionRequest, opts ...grpc.CallOption) (*StopSessionResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
@@ -589,6 +601,7 @@ type DashboardServiceServer interface {
 	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	StreamTranscript(*StreamTranscriptRequest, grpc.ServerStreamingServer[TranscriptEntry]) error
+	GetFileDiff(context.Context, *GetFileDiffRequest) (*GetFileDiffResponse, error)
 	StopSession(context.Context, *StopSessionRequest) (*StopSessionResponse, error)
 	Interrupt(context.Context, *InterruptRequest) (*InterruptResponse, error)
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
@@ -684,6 +697,9 @@ func (UnimplementedDashboardServiceServer) GetTranscript(context.Context, *ReadT
 }
 func (UnimplementedDashboardServiceServer) StreamTranscript(*StreamTranscriptRequest, grpc.ServerStreamingServer[TranscriptEntry]) error {
 	return status.Error(codes.Unimplemented, "method StreamTranscript not implemented")
+}
+func (UnimplementedDashboardServiceServer) GetFileDiff(context.Context, *GetFileDiffRequest) (*GetFileDiffResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetFileDiff not implemented")
 }
 func (UnimplementedDashboardServiceServer) StopSession(context.Context, *StopSessionRequest) (*StopSessionResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method StopSession not implemented")
@@ -893,6 +909,24 @@ func _DashboardService_StreamTranscript_Handler(srv interface{}, stream grpc.Ser
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type DashboardService_StreamTranscriptServer = grpc.ServerStreamingServer[TranscriptEntry]
+
+func _DashboardService_GetFileDiff_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetFileDiffRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DashboardServiceServer).GetFileDiff(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DashboardService_GetFileDiff_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DashboardServiceServer).GetFileDiff(ctx, req.(*GetFileDiffRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
 
 func _DashboardService_StopSession_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(StopSessionRequest)
@@ -1546,6 +1580,10 @@ var DashboardService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetTranscript",
 			Handler:    _DashboardService_GetTranscript_Handler,
+		},
+		{
+			MethodName: "GetFileDiff",
+			Handler:    _DashboardService_GetFileDiff_Handler,
 		},
 		{
 			MethodName: "StopSession",

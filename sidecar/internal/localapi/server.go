@@ -161,7 +161,11 @@ func telemetryHandler(core *coreclient.Client) http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, err)
 			return
 		}
-		if err := core.PushToolTelemetry(r.Context(), string(summaryJSON)); err != nil {
+		// Wanted diff paths are dropped here on purpose: this endpoint is the
+		// wrapper posting an arbitrary summary, and it is the telemetry loop —
+		// the thing that actually has a worktree and a schedule — that answers
+		// them. Nothing in worker/src calls this today.
+		if _, err := core.PushToolTelemetry(r.Context(), string(summaryJSON), ""); err != nil {
 			writeError(w, http.StatusBadGateway, err)
 			return
 		}

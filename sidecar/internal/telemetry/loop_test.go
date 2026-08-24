@@ -1,9 +1,11 @@
 package telemetry
 
 import (
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -77,5 +79,90 @@ func TestComputeSummary_ModifiedAndNewFile(t *testing.T) {
 	}
 	if b := byPath["b.txt"]; b.Added != 1 || b.Removed != 0 {
 		t.Errorf("expected b.txt +1/-0, got +%d/-%d", b.Added, b.Removed)
+	}
+}
+
+// --- diff exchange ------------------------------------------------------------
+// The half the console could never show: a file changed by something other than
+// an Edit/Write tool call has no captured tool input to replay, so the CHANGES
+// panel listed a line count and the modal showed nothing. These pin the git side
+// of the answer.
+
+func TestDiffsJSON_ChangeMadeOutsideAToolCall(t *testing.T) {
+	dir := newTestWorktree(t)
+	// sed, a formatter, a codegen script — the case with no tool input.
+	cmd := exec.Command("sed", "-i", "s/two/TWO/", "a.txt")
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("sed: %v: %s", err, out)
+	}
+
+	var diffs map[string]string
+	if err := json.Unmarshal([]byte(diffsJSON(dir, []string{"a.txt"})), &diffs); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	got := diffs["a.txt"]
+	if !strings.Contains(got, "-two") || !strings.Contains(got, "+TWO") {
+		t.Errorf("expected a unified diff of the sed edit, got %q", got)
+	}
+}
+
+// An unknown path must come back as an empty STRING, not as an absent key. The
+// console polls until it gets an answer, so an omission is an infinite spinner
+// where "git knows nothing about this file" is a complete answer.
+func TestDiffsJSON_UnknownPathAnswersEmptyRatherThanVanishing(t *testing.T) {
+	dir := newTestWorktree(t)
+	var diffs map[string]string
+	if err := json.Unmarshal([]byte(diffsJSON(dir, []string{"a.txt", "never-existed.txt"})), &diffs); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if _, ok := diffs["never-existed.txt"]; !ok {
+		t.Error("an unknown path must still get a key, or the console polls forever")
+	}
+	if diffs["never-existed.txt"] != "" {
+		t.Errorf("expected an empty diff, got %q", diffs["never-existed.txt"])
+	}
+	// A clean tracked file is the same shape of answer, not a missing one.
+	if got, ok := diffs["a.txt"]; !ok || got != "" {
+		t.Errorf("expected a clean file to answer empty, got %q (present=%v)", got, ok)
+	}
+}
+
+func TestDiffsJSON_NothingWantedSendsNothing(t *testing.T) {
+	if got := diffsJSON(newTestWorktree(t), nil); got != "" {
+		t.Errorf("expected no payload when core wants nothing, got %q", got)
+	}
+}
+
+// These paths come from core, which got them from a browser. git refuses most
+// of them on its own; this is the guard that survives someone later swapping
+// `git diff --` for something with a --no-index flag.
+func TestSafeRelPath(t *testing.T) {
+	for _, path := range []string{"src/foo.ts", "a.txt", "dir/sub/x.go"} {
+		if !safeRelPath(path) {
+			t.Errorf("%q should be accepted", path)
+		}
+	}
+	for _, path := range []string{"", "/etc/passwd", "../../etc/passwd", "src/../../x", "--output=/tmp/x"} {
+		if safeRelPath(path) {
+			t.Errorf("%q should be refused", path)
+		}
+	}
+}
+
+// Escapes are dropped, not passed through with an empty answer: an unsafe path
+// is a bug or an attack, and either way it is not a file the console asked
+// about.
+func TestDiffsJSON_SkipsUnsafePaths(t *testing.T) {
+	dir := newTestWorktree(t)
+	var diffs map[string]string
+	if err := json.Unmarshal([]byte(diffsJSON(dir, []string{"a.txt", "../../etc/passwd"})), &diffs); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if _, ok := diffs["../../etc/passwd"]; ok {
+		t.Error("an unsafe path must not reach git at all")
+	}
+	if len(diffs) != 1 {
+		t.Errorf("expected only the safe path, got %+v", diffs)
 	}
 }

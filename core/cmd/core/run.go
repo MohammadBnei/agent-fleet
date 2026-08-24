@@ -23,6 +23,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/coreserver"
 	"github.com/MohammadBnei/agent-fleet/core/internal/dashboard"
 	"github.com/MohammadBnei/agent-fleet/core/internal/discord"
+	"github.com/MohammadBnei/agent-fleet/core/internal/filediff"
 	"github.com/MohammadBnei/agent-fleet/core/internal/filestore"
 	"github.com/MohammadBnei/agent-fleet/core/internal/journal"
 	"github.com/MohammadBnei/agent-fleet/core/internal/lokiclient"
@@ -205,6 +206,13 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	// of pod dispatch is exactly the drift docs/adr/0020 point 2 exists to
 	// prevent.
 	coreSvc.SetWarmFunc(dashboardSvc.WarmIfIdle)
+	// One parking lot, both servers. The dashboard drops "diff this path" in;
+	// the sidecar's telemetry call — which lands on coreSvc, not here — is the
+	// only channel core has for asking a pod anything, so it is what carries
+	// the request out and the answer back.
+	fileDiffs := filediff.New()
+	dashboardSvc.SetFileDiffStore(fileDiffs)
+	coreSvc.SetFileDiffStore(fileDiffs)
 	// The fleet's only outbound "a session needs you" signal. Without this
 	// wire, a session blocked on a permission decision notifies nobody and
 	// is findable only by someone already watching the dashboard.

@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -33,13 +34,16 @@ type summary struct {
 
 // Run polls worktreePath every interval and pushes a diff-stat snapshot —
 // a naive line-count summary (git's own --numstat), good enough for a UI
-// stat, not a substitute for reviewing the actual diff.
+// stat, not a substitute for reviewing the actual diff. The response carries
+// back the paths a human has opened in the console and wants a real diff for;
+// those are computed and attached to the NEXT push.
 func Run(ctx context.Context, core *coreclient.Client, worktreePath string, interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	var lastBody string
+	var wanted []string
 	for {
-		lastBody = push(ctx, core, worktreePath, lastBody)
+		lastBody, wanted = push(ctx, core, worktreePath, lastBody, wanted)
 		select {
 		case <-ctx.Done():
 			return
@@ -48,34 +52,118 @@ func Run(ctx context.Context, core *coreclient.Client, worktreePath string, inte
 	}
 }
 
-// push skips re-sending a snapshot identical to lastBody — the diff sits
-// unchanged for many ticks in a row while the agent is mid-thought, and
-// without this the dashboard's feed renders one duplicate line per tick
-// (ToolCallLine has no render-side dedup, and core's Append is a pure
-// insert). Returns the body actually pushed (or lastBody unchanged) so the
-// caller can carry it into the next tick.
-func push(ctx context.Context, core *coreclient.Client, worktreePath, lastBody string) string {
+// push sends a snapshot identical to lastBody as an EMPTY summary rather than
+// re-sending it — the diff sits unchanged for many ticks while the agent is
+// mid-thought, and core appends a transcript row per non-empty summary
+// (ToolCallLine has no render-side dedup, and Append is a pure insert). The
+// call itself still happens on every tick, which is the change: it is the only
+// channel core has for asking this pod anything, so skipping it entirely — as
+// this did — meant a diff request could sit unanswered for as long as the agent
+// was quiet, which is exactly when a human is most likely to be reading.
+//
+// Returns the body actually represented (or lastBody unchanged) and the paths
+// core wants diffed next, both carried into the following tick.
+func push(ctx context.Context, core *coreclient.Client, worktreePath, lastBody string, wanted []string) (string, []string) {
 	s, err := computeSummary(worktreePath)
 	if err != nil {
 		slog.Warn("telemetry: compute diff summary failed", "error", err)
-		return lastBody
+		return lastBody, nil
 	}
-	if len(s.Files) == 0 {
-		return lastBody // nothing changed since the worktree was created — no point pushing an empty snapshot every tick
+
+	body := ""
+	if len(s.Files) > 0 {
+		marshalled, err := json.Marshal(s)
+		if err != nil {
+			slog.Warn("telemetry: marshal summary failed", "error", err)
+			return lastBody, nil
+		}
+		body = string(marshalled)
 	}
-	body, err := json.Marshal(s)
+
+	// What core actually gets: the summary only when it is new. Everything
+	// else on this call is the diff exchange.
+	summary := body
+	if summary == lastBody {
+		summary = ""
+	}
+
+	nextWanted, err := core.PushToolTelemetry(ctx, summary, diffsJSON(worktreePath, wanted))
 	if err != nil {
-		slog.Warn("telemetry: marshal summary failed", "error", err)
-		return lastBody
-	}
-	if string(body) == lastBody {
-		return lastBody
-	}
-	if err := core.PushToolTelemetry(ctx, string(body)); err != nil {
 		slog.Warn("telemetry: push failed", "error", err)
-		return lastBody
+		return lastBody, nil
+	}
+	if summary != "" {
+		lastBody = body
+	}
+	return lastBody, nextWanted
+}
+
+// maxDiffBytes caps one file's diff. Mirrors core/internal/filediff's own cap:
+// a generated file or a lockfile rewrite is precisely what gets clicked here,
+// and neither end should be the one that discovers a megabyte is on the wire.
+const maxDiffBytes = 256 * 1024
+
+// diffsJSON runs `git diff -- <path>` for each wanted path. An empty result is
+// kept and sent: it is a real answer (the file was committed, reverted, or was
+// never tracked) and it is what lets the console stop polling.
+func diffsJSON(worktreePath string, wanted []string) string {
+	if len(wanted) == 0 {
+		return ""
+	}
+	out := make(map[string]string, len(wanted))
+	for _, path := range wanted {
+		if !safeRelPath(path) {
+			// Not an error worth failing the tick over, but not a path this
+			// hands to git either.
+			slog.Warn("telemetry: refusing unsafe diff path", "path", path)
+			continue
+		}
+		// `--` is what stops a path that happens to match a ref being read as
+		// one. It is already positional here, but the separator is the part
+		// that makes that true rather than incidental.
+		diff, err := gitOutput(worktreePath, "diff", "--", path)
+		if err != nil {
+			// git exits non-zero for a path it does not know. Empty is the
+			// honest answer and ends the poll; an omission leaves the console
+			// waiting forever.
+			slog.Warn("telemetry: diff failed", "path", path, "error", err)
+			diff = ""
+		}
+		if len(diff) > maxDiffBytes {
+			diff = diff[:maxDiffBytes] + "\n… diff truncated\n"
+		}
+		out[path] = diff
+	}
+	if len(out) == 0 {
+		return ""
+	}
+	body, err := json.Marshal(out)
+	if err != nil {
+		slog.Warn("telemetry: marshal diffs failed", "error", err)
+		return ""
 	}
 	return string(body)
+}
+
+// safeRelPath keeps this loop from running git against anything but a file
+// inside the worktree. The paths come from core, which got them from a browser,
+// so they are attacker-shaped by default even though the only caller today is
+// the console's own CHANGES panel echoing back a path numstat produced.
+//
+// `git diff -- ../../etc/passwd` is refused by git itself ("outside repository"),
+// so this is defence in depth rather than the only guard — but the day someone
+// swaps this for `git show` or adds a --no-index flag, the guard is what is
+// left.
+func safeRelPath(path string) bool {
+	if path == "" || strings.HasPrefix(path, "/") || strings.HasPrefix(path, "-") {
+		return false
+	}
+	for _, part := range strings.Split(filepath.ToSlash(path), "/") {
+		if part == ".." {
+			return false
+		}
+	}
+	return true
 }
 
 func computeSummary(worktreePath string) (summary, error) {
