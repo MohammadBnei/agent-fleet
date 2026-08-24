@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.11.7](https://github.com/MohammadBnei/agent-fleet/compare/4.11.6...4.11.7) (2026-08-24)
+
+
+### Bug Fixes
+
+* **provisioner:** do not report a deleting Job as a live pod ([#237](https://github.com/MohammadBnei/agent-fleet/issues/237)) ([011786d](https://github.com/MohammadBnei/agent-fleet/commit/011786d98ca72b98d4c38ec55eadce488c7c8109))
+
 ## [4.11.6](https://github.com/MohammadBnei/agent-fleet/compare/4.11.5...4.11.6) (2026-08-22)
 
 
