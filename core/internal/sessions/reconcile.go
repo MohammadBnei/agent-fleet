@@ -205,8 +205,12 @@ func (l *Loop) reconcilePodPhases(ctx context.Context) {
 			if !seenBefore {
 				firstMissed = now
 			}
+			// Kept even when the grace HAS elapsed: if the terminal write
+			// below fails, the next pass must retry on the next tick rather
+			// than start the grace again. A row that is written drops out on
+			// its own — its phase is no longer one of these two.
+			stillMissing[s.ID] = firstMissed
 			if now.Sub(firstMissed) < l.startupStall {
-				stillMissing[s.ID] = firstMissed
 				continue
 			}
 		}
