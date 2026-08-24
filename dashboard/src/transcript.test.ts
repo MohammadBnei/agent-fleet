@@ -19,6 +19,7 @@ import {
   subagentRuns,
   fileEdits,
   decisionAnswerable,
+  backgroundTasks,
 } from "./transcript";
 
 let nextSeq = 0n;
@@ -463,4 +464,93 @@ test("decisionAnswerable: a question outlives its pod, a permission does not", (
   // there is nothing to deliver an answer to.
   expect(decisionAnswerable("question", swept)).toBe(false);
   expect(decisionAnswerable("permission", swept)).toBe(false);
+});
+
+// --- background tasks ---------------------------------------------------------
+// The trap this whole walk exists to avoid: a backgrounded Bash's tool_result
+// comes back the INSTANT it is launched. Any promotion-on-tool_result rule (the
+// one subagentRuns correctly uses) marks every background command finished at
+// t=0 — the exact opposite of what a live-monitoring panel is for.
+
+const bgCall = (id: string, command: string, description = "") =>
+  entry(
+    TranscriptEntryType.ASSISTANT,
+    "agent",
+    JSON.stringify({ id, tool: "Bash", input: { command, description, run_in_background: true } }),
+  );
+
+test("a backgrounded Bash is running until task_notification says otherwise", () => {
+  const launched = [
+    bgCall("toolu_bg", "bun install"),
+    // The launch acknowledgement. NOT the outcome.
+    entry(TranscriptEntryType.USER, "agent", JSON.stringify({ toolUseId: "toolu_bg", content: "started" })),
+    signal({ sdk: "task_started", task_id: "b1", tool_use_id: "toolu_bg", description: "Install deps" }),
+  ];
+  expect(backgroundTasks(launched)).toEqual([
+    { toolUseId: "toolu_bg", command: "bun install", description: "Install deps", status: "running" },
+  ]);
+
+  const done = backgroundTasks([
+    ...launched,
+    signal({ sdk: "task_notification", task_id: "b1", tool_use_id: "toolu_bg", status: "completed", summary: 'Background command "Install deps" completed (exit code 0)' }),
+  ]);
+  expect(done[0].status).toBe("completed");
+  expect(done[0].summary).toContain("exit code 0");
+});
+
+// A non-backgrounded Bash is the overwhelming majority of Bash calls and has a
+// feed row of its own. Seeding on tool name alone would put every `ls` in here.
+test("a foreground Bash never becomes a background row", () => {
+  expect(
+    backgroundTasks([
+      entry(TranscriptEntryType.ASSISTANT, "agent", JSON.stringify({ id: "toolu_fg", tool: "Bash", input: { command: "ls" } })),
+      signal({ sdk: "task_started", task_id: "f1", tool_use_id: "toolu_fg" }),
+    ]),
+  ).toEqual([]);
+});
+
+// The mirror of subagentRuns' own guard. At signal level a subagent and a
+// backgrounded Bash are indistinguishable, so each panel must require its own
+// tool_use — otherwise the two panels render each other's rows.
+test("a subagent's task stream never becomes a background row", () => {
+  expect(
+    backgroundTasks([
+      agentCall("toolu_agent", "Explore", "map the feed"),
+      signal({ sdk: "task_started", task_id: "a1", tool_use_id: "toolu_agent" }),
+      signal({ sdk: "task_notification", task_id: "a1", tool_use_id: "toolu_agent", status: "completed" }),
+    ]),
+  ).toEqual([]);
+});
+
+// task_updated is the only terminal signal carrying no tool_use_id, same as in
+// subagentRuns — it has to resolve through the task_id index.
+test("task_updated resolves a background task through task_id alone", () => {
+  const tasks = backgroundTasks([
+    bgCall("toolu_bg", "go test ./..."),
+    signal({ sdk: "task_started", task_id: "b2", tool_use_id: "toolu_bg" }),
+    signal({ sdk: "task_updated", task_id: "b2", patch: { status: "error" } }),
+  ]);
+  expect(tasks[0].status).toBe("failed");
+});
+
+// An in-progress patch must not paint a healthy run red — task_updated fires on
+// every transition, not only the last one.
+test("an in-progress patch leaves a background task running", () => {
+  const tasks = backgroundTasks([
+    bgCall("toolu_bg", "sleep 45"),
+    signal({ sdk: "task_started", task_id: "b3", tool_use_id: "toolu_bg" }),
+    signal({ sdk: "task_updated", task_id: "b3", patch: { status: "in_progress" } }),
+  ]);
+  expect(tasks[0].status).toBe("running");
+});
+
+// Running first: a live command buried under four finished ones is the row the
+// panel exists to show.
+test("running background tasks sort above finished ones", () => {
+  const tasks = backgroundTasks([
+    bgCall("toolu_a", "first"),
+    signal({ sdk: "task_notification", task_id: "ba", tool_use_id: "toolu_a", status: "completed" }),
+    bgCall("toolu_b", "second"),
+  ]);
+  expect(tasks.map((t) => t.command)).toEqual(["second", "first"]);
 });

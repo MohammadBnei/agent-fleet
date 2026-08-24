@@ -7,6 +7,7 @@ import {
   latestToolCallSummary,
   latestTodos,
   subagentRuns,
+  backgroundTasks,
   type Density,
   hasPendingDecision,
 } from "../transcript";
@@ -22,7 +23,7 @@ import { AUTO_MODE_WARNING } from "../approvePlan";
 import { Modal } from "../components/Modal";
 import { Segmented } from "../components/Segmented";
 import { SessionFeed } from "../components/SessionFeed";
-import { TodosPanel, ChangesPanel, AgentsPanel, SessionPanel } from "../components/SessionPanels";
+import { TodosPanel, ChangesPanel, AgentsPanel, BackgroundPanel, SessionPanel } from "../components/SessionPanels";
 import { FileDiffModal } from "../components/FileDiffModal";
 import { isPodPhaseLive } from "../pages/SessionList";
 import { AgentDetailModal } from "../components/DetailModal";
@@ -137,6 +138,7 @@ export function MobileSessionDetail({
   const branch = toolSummary?.branch ?? null;
   const changes = toolSummary?.files ?? null;
   const agents = subagentRuns(entries);
+  const background = backgroundTasks(entries);
 
   const docked = hasPendingDecision(entries);
 
@@ -384,6 +386,7 @@ export function MobileSessionDetail({
               setAgentDetail(run);
             }}
           />
+          <BackgroundPanel tasks={background} />
           <SessionPanel
             session={session}
             busy={busyKey !== null}

@@ -1,6 +1,6 @@
 
 import type { Session } from "../gen/agentfleet/v1/core_pb";
-import type { ToolCallSummary, TodoItem, SubagentRun } from "../transcript";
+import type { ToolCallSummary, TodoItem, SubagentRun, BackgroundTask } from "../transcript";
 import { imageTag } from "../imageTag";
 import { TickBar, todoProgress } from "./TickBar";
 import { ActionsMenu } from "./ActionsMenu";
@@ -225,6 +225,61 @@ export function SessionPanel({
         onAutoClick={onAutoClick}
         onRestart={onRestart}
       />
+    </div>
+  );
+}
+
+// Backgrounded Bash commands. Live monitoring: the point is knowing something
+// IS running, since a backgrounded `bun install` or test run is otherwise four
+// silent minutes — its own feed row appeared the instant it was LAUNCHED and
+// said nothing after.
+//
+// Deliberately not folded into AGENTS. That panel is subagents, and mixing the
+// two re-creates exactly the failure its comment documents: most task_* traffic
+// is a backgrounded Bash, so one shared list reads as "the session spawned
+// eleven agents" when it spawned one and ran ten commands.
+export function BackgroundPanel({ tasks }: { tasks: BackgroundTask[] }) {
+  if (tasks.length === 0) return null;
+  const running = tasks.filter((t) => t.status === "running").length;
+  return (
+    <div className="min-w-0">
+      <PanelHeading
+        title="BACKGROUND"
+        extra={
+          <span className={`text-xs ml-auto ${running > 0 ? "text-base-content" : "text-dim2"}`}>
+            {running > 0 ? `${running} running` : `${tasks.length} done`}
+          </span>
+        }
+      />
+      <div className="flex flex-col gap-1.5">
+        {tasks.map((t) => (
+          <div key={t.toolUseId} className="min-w-0">
+            {/* The command itself is the identity of a background task — a
+                description is the agent's optional gloss on it and is often
+                absent, so leading with it showed blank rows. font-mono because
+                this is a shell command and a proportional font makes flags and
+                paths hard to scan. */}
+            <div
+              className={`text-sm leading-[1.5] truncate font-mono ${
+                t.status === "failed" ? "text-error" : t.status === "running" ? "text-base-content" : "text-dim2"
+              }`}
+              title={t.command || t.description}
+            >
+              {t.status === "completed" ? "✓ " : t.status === "failed" ? "✗ " : "▸ "}
+              {t.command || t.description || t.toolUseId}
+            </div>
+            {/* The outcome line, and the reason this panel is worth having at
+                all once a task ends: a backgrounded Bash's tool_result is its
+                LAUNCH acknowledgement, so task_notification's summary (exit
+                code included) is the only place the result is ever stated. */}
+            {t.status !== "running" && t.summary && (
+              <div className="text-xs text-dim2 truncate" title={t.summary}>
+                {t.summary}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

@@ -615,6 +615,90 @@ export function subagentRuns(entries: TranscriptEntry[]): SubagentRun[] {
   return [...runs.values()];
 }
 
+// One backgrounded Bash command — the BACKGROUND panel's row.
+//
+// Why this is a separate walk from subagentRuns rather than a flag on it: the
+// two look identical on the wire (both are Agent-less `task_*` streams keyed by
+// tool_use_id) and behave oppositely. A subagent's Agent tool_result means it
+// finished; a backgrounded Bash's tool_result comes back the INSTANT it is
+// launched — it is the launch acknowledgement, not the outcome. Sharing the
+// promotion logic would mark every background command completed at t=0, which
+// is precisely the state this panel exists to contradict.
+export type BackgroundTask = {
+  toolUseId: string;
+  command: string;
+  description: string;
+  status: "running" | "completed" | "failed";
+  summary?: string;
+};
+
+// task_notification is the ONLY signal that says a background command ended
+// (see the note in PANEL_OWNED_SIGNALS explaining why it is not silenced).
+// task_updated carries a terminal status too but only for subagent runs; it is
+// resolved through the same task_id index anyway, so both are read.
+const BACKGROUND_SIGNALS = new Set(["task_started", "task_updated", "task_notification"]);
+
+// Live monitoring, not an audit log: rows are seeded ONLY from a Bash tool_use
+// carrying `run_in_background: true`. That flag is the agent's own declaration,
+// not an inference from signal traffic — the mistake subagentRuns documents at
+// length (a task_* signal is evidence of nothing on its own; seeding rows from
+// them minted a phantom row per denied tool and per Bash heartbeat).
+export function backgroundTasks(entries: TranscriptEntry[]): BackgroundTask[] {
+  const tasks = new Map<string, BackgroundTask>();
+  const byTaskId = new Map<string, string>();
+
+  // Index pass first, same reason as subagentRuns: task_updated carries only
+  // task_id, and the SDK promises nothing about signal order.
+  for (const entry of entries) {
+    if (entry.type !== TranscriptEntryType.SYSTEM) continue;
+    const sig = parseSdkSignal(entry.text);
+    if (sig && BACKGROUND_SIGNALS.has(sig.sdk) && sig.task_id && sig.tool_use_id)
+      byTaskId.set(sig.task_id, sig.tool_use_id);
+  }
+
+  for (const entry of entries) {
+    if (entry.type === TranscriptEntryType.ASSISTANT) {
+      const info = parseSdkToolUse(entry.text);
+      if (info?.tool !== "Bash" || !info.id) continue;
+      const input = (info.input ?? {}) as { command?: unknown; run_in_background?: unknown; description?: unknown };
+      if (input.run_in_background !== true) continue;
+      tasks.set(info.id, {
+        toolUseId: info.id,
+        command: typeof input.command === "string" ? input.command : "",
+        description: typeof input.description === "string" ? input.description : "",
+        status: "running",
+      });
+      continue;
+    }
+
+    if (entry.type !== TranscriptEntryType.SYSTEM) continue;
+    const sig = parseSdkSignal(entry.text);
+    if (!sig || !BACKGROUND_SIGNALS.has(sig.sdk)) continue;
+
+    const id = sig.tool_use_id ?? (sig.task_id ? byTaskId.get(sig.task_id) : undefined);
+    if (!id) continue;
+    const task = tasks.get(id);
+    // No seeding from a signal, ever. A task_* stream whose Bash call sits
+    // below the loaded transcript page is dropped rather than guessed at —
+    // and a SUBAGENT's task stream lands here too, since the two are
+    // indistinguishable at signal level. Requiring the Bash tool_use is what
+    // keeps the two panels from mirroring each other's rows.
+    if (!task) continue;
+    if (sig.description) task.description = sig.description;
+    if (sig.summary) task.summary = sig.summary;
+    const status = sig.patch?.status ?? (sig.sdk === "task_notification" ? sig.status : undefined);
+    if (status)
+      task.status = status === "completed" ? "completed" : IN_PROGRESS_STATUSES.has(status) ? "running" : "failed";
+    tasks.set(id, task);
+  }
+
+  // Running first — the panel is a "what is happening right now" surface, and
+  // a finished command scrolling above a live one buries the only row that
+  // still matters. Stable within each group (insertion = launch order).
+  const all = [...tasks.values()];
+  return [...all.filter((t) => t.status === "running"), ...all.filter((t) => t.status !== "running")];
+}
+
 // Best-effort one-line preview for a collapsed tool-call header — common
 // fields across the built-in tools (Read/Write/Edit/Bash/Grep/Glob), falling
 // back to compact JSON for anything else rather than showing nothing.
