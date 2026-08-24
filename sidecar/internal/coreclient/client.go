@@ -299,12 +299,24 @@ func (c *Client) SaveSessionID(ctx context.Context, sessionID, model, leaseID st
 // StillHoldsLease is gone with the reclaim that created the race it guarded
 // (docs/adr/0048). It had no production caller here either way.
 
-func (c *Client) PushToolTelemetry(ctx context.Context, summaryJSON string) error {
-	_, err := c.rpc.PushToolTelemetry(ctx, &agentfleetv1.PushToolTelemetryRequest{SessionId: c.taskID, SummaryJson: summaryJSON})
+// PushToolTelemetry pushes the diff-stat summary and, when core asked for them
+// on a previous tick, the unified diffs it wanted. Returns the paths core wants
+// diffed NEXT — this response is the only channel core has for asking the
+// sidecar anything at all, since nothing outside the pod can dial it.
+//
+// summaryJSON may be empty: the tick is unconditional so that a quiet session
+// still collects wanted paths, and core skips the transcript append in that
+// case rather than writing a row every 5 seconds.
+func (c *Client) PushToolTelemetry(ctx context.Context, summaryJSON, fileDiffsJSON string) ([]string, error) {
+	resp, err := c.rpc.PushToolTelemetry(ctx, &agentfleetv1.PushToolTelemetryRequest{
+		SessionId:     c.taskID,
+		SummaryJson:   summaryJSON,
+		FileDiffsJson: fileDiffsJSON,
+	})
 	if err != nil {
-		return fmt.Errorf("PushToolTelemetry: %w", err)
+		return nil, fmt.Errorf("PushToolTelemetry: %w", err)
 	}
-	return nil
+	return resp.GetWantedPaths(), nil
 }
 
 // StreamHumanMessages opens the live feed and calls onEntry for each new

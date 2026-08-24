@@ -84,6 +84,44 @@ message StreamTranscriptRequest {
   int64 since_seq = 2;
 }
 
+// The CHANGES panel lists a file the moment git reports it changed, whoever
+// changed it — the sidecar's `git diff --numstat` telemetry is ground truth,
+// not a reconstruction from tool inputs. Opening one of those rows was the
+// half that was reconstructed: the console replays the captured Edit/Write
+// tool input, so a file rewritten by `sed`, a formatter or a codegen script
+// listed a line count and then showed nothing.
+//
+// This asks the pod for the real thing. It is a poll, not a fetch, and
+// deliberately so: core cannot dial the sidecar (see PushToolTelemetryResponse
+// in core.proto for why), so the request rides back on the sidecar's own 5s
+// telemetry tick. First call arms the request and returns PENDING; the answer
+// is READY on a later call, typically within ~10s.
+message GetFileDiffRequest {
+  string session_id = 1;
+  // Repo-relative, exactly as the CHANGES panel received it from numstat.
+  string path = 2;
+}
+
+message GetFileDiffResponse {
+  enum Status {
+    STATUS_UNSPECIFIED = 0;
+    // Asked; the sidecar has not answered yet. Call again.
+    STATUS_PENDING = 1;
+    STATUS_READY = 2;
+    // No live pod, so no working tree to read. Terminal: a diff is only
+    // ever knowable while the session's pod is alive, which is why nothing
+    // here is persisted.
+    STATUS_NO_POD = 3;
+    // The pod answered and git reported nothing for this path — it was
+    // committed, reverted, or is untracked. Distinct from PENDING so the
+    // console can stop polling and say so.
+    STATUS_EMPTY = 4;
+  }
+  Status status = 1;
+  // Unified diff, set only when status is READY.
+  string diff = 2;
+}
+
 // The e2e card's whole message set lived here: GetE2eStatus* (live pod phase,
 // preview URL and the resolved recipe), StartE2e*/RestartE2eApp* (starting the
 // app for a human, since only the agent could otherwise), and GetE2eAppLog*
@@ -502,6 +540,7 @@ service DashboardService {
   // buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
   // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
   rpc StreamTranscript(StreamTranscriptRequest) returns (stream TranscriptEntry);
+  rpc GetFileDiff(GetFileDiffRequest) returns (GetFileDiffResponse);
   rpc StopSession(StopSessionRequest) returns (StopSessionResponse);
   rpc Interrupt(InterruptRequest) returns (InterruptResponse);
   // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE

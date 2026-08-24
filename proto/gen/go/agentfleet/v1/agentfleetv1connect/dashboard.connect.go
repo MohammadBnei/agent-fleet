@@ -48,6 +48,9 @@ const (
 	// DashboardServiceStreamTranscriptProcedure is the fully-qualified name of the DashboardService's
 	// StreamTranscript RPC.
 	DashboardServiceStreamTranscriptProcedure = "/agentfleet.v1.DashboardService/StreamTranscript"
+	// DashboardServiceGetFileDiffProcedure is the fully-qualified name of the DashboardService's
+	// GetFileDiff RPC.
+	DashboardServiceGetFileDiffProcedure = "/agentfleet.v1.DashboardService/GetFileDiff"
 	// DashboardServiceStopSessionProcedure is the fully-qualified name of the DashboardService's
 	// StopSession RPC.
 	DashboardServiceStopSessionProcedure = "/agentfleet.v1.DashboardService/StopSession"
@@ -172,6 +175,7 @@ type DashboardServiceClient interface {
 	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	StreamTranscript(context.Context, *connect.Request[v1.StreamTranscriptRequest]) (*connect.ServerStreamForClient[v1.TranscriptEntry], error)
+	GetFileDiff(context.Context, *connect.Request[v1.GetFileDiffRequest]) (*connect.Response[v1.GetFileDiffResponse], error)
 	StopSession(context.Context, *connect.Request[v1.StopSessionRequest]) (*connect.Response[v1.StopSessionResponse], error)
 	Interrupt(context.Context, *connect.Request[v1.InterruptRequest]) (*connect.Response[v1.InterruptResponse], error)
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
@@ -284,6 +288,12 @@ func NewDashboardServiceClient(httpClient connect.HTTPClient, baseURL string, op
 			httpClient,
 			baseURL+DashboardServiceStreamTranscriptProcedure,
 			connect.WithSchema(dashboardServiceMethods.ByName("StreamTranscript")),
+			connect.WithClientOptions(opts...),
+		),
+		getFileDiff: connect.NewClient[v1.GetFileDiffRequest, v1.GetFileDiffResponse](
+			httpClient,
+			baseURL+DashboardServiceGetFileDiffProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("GetFileDiff")),
 			connect.WithClientOptions(opts...),
 		),
 		stopSession: connect.NewClient[v1.StopSessionRequest, v1.StopSessionResponse](
@@ -506,6 +516,7 @@ type dashboardServiceClient struct {
 	createSession       *connect.Client[v1.CreateSessionRequest, v1.CreateSessionResponse]
 	getTranscript       *connect.Client[v1.ReadTranscriptSinceRequest, v1.ReadTranscriptSinceResponse]
 	streamTranscript    *connect.Client[v1.StreamTranscriptRequest, v1.TranscriptEntry]
+	getFileDiff         *connect.Client[v1.GetFileDiffRequest, v1.GetFileDiffResponse]
 	stopSession         *connect.Client[v1.StopSessionRequest, v1.StopSessionResponse]
 	interrupt           *connect.Client[v1.InterruptRequest, v1.InterruptResponse]
 	setPermissionMode   *connect.Client[v1.SetPermissionModeRequest, v1.SetPermissionModeResponse]
@@ -566,6 +577,11 @@ func (c *dashboardServiceClient) GetTranscript(ctx context.Context, req *connect
 // StreamTranscript calls agentfleet.v1.DashboardService.StreamTranscript.
 func (c *dashboardServiceClient) StreamTranscript(ctx context.Context, req *connect.Request[v1.StreamTranscriptRequest]) (*connect.ServerStreamForClient[v1.TranscriptEntry], error) {
 	return c.streamTranscript.CallServerStream(ctx, req)
+}
+
+// GetFileDiff calls agentfleet.v1.DashboardService.GetFileDiff.
+func (c *dashboardServiceClient) GetFileDiff(ctx context.Context, req *connect.Request[v1.GetFileDiffRequest]) (*connect.Response[v1.GetFileDiffResponse], error) {
+	return c.getFileDiff.CallUnary(ctx, req)
 }
 
 // StopSession calls agentfleet.v1.DashboardService.StopSession.
@@ -760,6 +776,7 @@ type DashboardServiceHandler interface {
 	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	StreamTranscript(context.Context, *connect.Request[v1.StreamTranscriptRequest], *connect.ServerStream[v1.TranscriptEntry]) error
+	GetFileDiff(context.Context, *connect.Request[v1.GetFileDiffRequest]) (*connect.Response[v1.GetFileDiffResponse], error)
 	StopSession(context.Context, *connect.Request[v1.StopSessionRequest]) (*connect.Response[v1.StopSessionResponse], error)
 	Interrupt(context.Context, *connect.Request[v1.InterruptRequest]) (*connect.Response[v1.InterruptResponse], error)
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
@@ -868,6 +885,12 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 		DashboardServiceStreamTranscriptProcedure,
 		svc.StreamTranscript,
 		connect.WithSchema(dashboardServiceMethods.ByName("StreamTranscript")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dashboardServiceGetFileDiffHandler := connect.NewUnaryHandler(
+		DashboardServiceGetFileDiffProcedure,
+		svc.GetFileDiff,
+		connect.WithSchema(dashboardServiceMethods.ByName("GetFileDiff")),
 		connect.WithHandlerOptions(opts...),
 	)
 	dashboardServiceStopSessionHandler := connect.NewUnaryHandler(
@@ -1092,6 +1115,8 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 			dashboardServiceGetTranscriptHandler.ServeHTTP(w, r)
 		case DashboardServiceStreamTranscriptProcedure:
 			dashboardServiceStreamTranscriptHandler.ServeHTTP(w, r)
+		case DashboardServiceGetFileDiffProcedure:
+			dashboardServiceGetFileDiffHandler.ServeHTTP(w, r)
 		case DashboardServiceStopSessionProcedure:
 			dashboardServiceStopSessionHandler.ServeHTTP(w, r)
 		case DashboardServiceInterruptProcedure:
@@ -1189,6 +1214,10 @@ func (UnimplementedDashboardServiceHandler) GetTranscript(context.Context, *conn
 
 func (UnimplementedDashboardServiceHandler) StreamTranscript(context.Context, *connect.Request[v1.StreamTranscriptRequest], *connect.ServerStream[v1.TranscriptEntry]) error {
 	return connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.StreamTranscript is not implemented"))
+}
+
+func (UnimplementedDashboardServiceHandler) GetFileDiff(context.Context, *connect.Request[v1.GetFileDiffRequest]) (*connect.Response[v1.GetFileDiffResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.GetFileDiff is not implemented"))
 }
 
 func (UnimplementedDashboardServiceHandler) StopSession(context.Context, *connect.Request[v1.StopSessionRequest]) (*connect.Response[v1.StopSessionResponse], error) {

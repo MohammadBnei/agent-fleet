@@ -270,3 +270,99 @@ test("a subagent's task_notification is silenced but a background command's is n
   const forBash = sig({ sdk: "task_notification", task_id: "t", tool_use_id: "toolu_B", status: "completed", summary: "Background command completed (exit code 0)" });
   expect(renderedEntryViews([bashCall, forBash])).toHaveLength(1);
 });
+
+// A tool_result whose tool_use is not in the loaded page. Reported from a live
+// session: it rendered its JSON envelope as agent prose, so a failed build's
+// stderr read like something the agent said.
+//
+// The cause was structural, not cosmetic — the two USER early-continues
+// (already-paired, panel-owned) were the only guards, so anything neither
+// caught fell all the way to the narrative tier. One guard now owns every
+// tool_result and none can fall past it.
+const orphanResult = () =>
+  entry(
+    TranscriptEntryType.USER,
+    JSON.stringify({
+      toolUseId: "toolu_call_is_off_this_page",
+      isError: true,
+      content: "Exit code 1\nmain.go:40:26: undefined: agentfleetv1.WorkerPod",
+    }),
+  );
+
+// Finds the props of whatever element carries a parsed tool_result. The row
+// renders through Collapse, and renderedText cannot see through a real
+// component (same limitation it already has for TranscriptEntryView), so the
+// rendered STRINGS are asserted in the Playwright spec instead — this pins the
+// routing decision, which is where the bug was.
+function orphanProps(entries: TranscriptEntry[]): { result?: { toolUseId?: string; isError?: boolean } }[] {
+  const tree = SessionFeed({
+    entries,
+    visibility: feedVisibility("everything", false),
+    density: "everything",
+    busyKey: null,
+    onRespond: () => {},
+    onAnswer: () => {},
+    onPlanFeedback: () => {},
+  });
+  const found: { result?: { toolUseId?: string; isError?: boolean } }[] = [];
+  const walk = (node: unknown): void => {
+    if (Array.isArray(node)) return node.forEach(walk);
+    if (!node || typeof node !== "object") return;
+    const el = node as { props?: Record<string, unknown> };
+    if (el.props && "result" in el.props) found.push(el.props as never);
+    if (el.props?.children) walk(el.props.children);
+  };
+  walk(tree);
+  return found;
+}
+
+test("an orphaned tool_result never renders as prose", () => {
+  // The envelope — the actual reported symptom. Nothing of it reaches the
+  // narrative tier, which is the only tier renderedText can see.
+  const text = renderedText([orphanResult()]);
+  expect(text).not.toContain("toolUseId");
+  expect(text).not.toContain("toolu_call_is_off_this_page");
+
+  // Not silently dropped either: the output is usually why someone scrolled
+  // back this far. It is routed to the tool-output renderer instead.
+  const props = orphanProps([orphanResult()]);
+  expect(props).toHaveLength(1);
+  expect(props[0].result?.toolUseId).toBe("toolu_call_is_off_this_page");
+  expect(props[0].result?.isError).toBe(true);
+});
+
+// It is tool activity, so it obeys the tool density gate — appearing in a view
+// that hides every other tool row would make it look like narrative again.
+test("an orphaned tool_result is hidden when tool rows are", () => {
+  const tree = SessionFeed({
+    entries: [orphanResult()],
+    visibility: { ...feedVisibility("everything", false), tools: false },
+    density: "decisions",
+    busyKey: null,
+    onRespond: () => {},
+    onAnswer: () => {},
+    onPlanFeedback: () => {},
+  });
+  let text = "";
+  const walk = (node: unknown): void => {
+    if (Array.isArray(node)) return node.forEach(walk);
+    if (typeof node === "string") text += node;
+    if (!node || typeof node !== "object") return;
+    const el = node as { props?: Record<string, unknown> };
+    if (el.props?.children) walk(el.props.children);
+  };
+  walk(tree);
+  expect(text).not.toContain("output of an earlier tool call");
+  expect(orphanProps([])).toHaveLength(0);
+});
+
+// A paired result must still be folded into its tool row, not doubled by the
+// new branch.
+test("a paired tool_result is not also rendered as an orphan", () => {
+  expect(
+    orphanProps([
+      entry(TranscriptEntryType.ASSISTANT, JSON.stringify({ id: "toolu_paired", tool: "Bash", input: { command: "go build ./..." } })),
+      entry(TranscriptEntryType.USER, JSON.stringify({ toolUseId: "toolu_paired", isError: false, content: "ok" })),
+    ]),
+  ).toHaveLength(0);
+});

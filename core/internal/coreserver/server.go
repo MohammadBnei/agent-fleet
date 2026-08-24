@@ -12,6 +12,7 @@ package coreserver
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -22,6 +23,7 @@ import (
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/dashboard"
+	"github.com/MohammadBnei/agent-fleet/core/internal/filediff"
 	"github.com/MohammadBnei/agent-fleet/core/internal/filestore"
 	"github.com/MohammadBnei/agent-fleet/core/internal/journal"
 	"github.com/MohammadBnei/agent-fleet/core/internal/lokiclient"
@@ -70,6 +72,13 @@ type Server struct {
 	// model; the notification is not part of that, and should not have gone
 	// with it. nil disables notification and nothing else.
 	notifyBlocked func(ctx context.Context, sessionID, repo, title, summary string) error
+
+	// fileDiffs is the parking lot the dashboard drops "diff this path" into
+	// and PushToolTelemetry below drains. nil disables the feature and
+	// nothing else: the console falls back to the captured-tool-input diff
+	// it has always had. Injected after construction like warm and
+	// notifyBlocked, because dashboard.Server is built later.
+	fileDiffs *filediff.Store
 }
 
 func New(transcr transcript.Store, sessionStore *sessions.Store, journalStore *journal.Store, repoStore *repos.Store, provisioner *provisionerclient.Client, files filestore.Store, loki lokiclient.Querier) *Server {
@@ -569,11 +578,39 @@ func (s *Server) SaveAgentSessionId(ctx context.Context, req *agentfleetv1.SaveA
 // (docs/adr/0020 point 5's second bullet) — never relayed to Discord
 // (internal/transcript/relay.go's relayPending skips this type).
 func (s *Server) PushToolTelemetry(ctx context.Context, req *agentfleetv1.PushToolTelemetryRequest) (*agentfleetv1.PushToolTelemetryResponse, error) {
-	if _, err := s.transcr.Append(ctx, req.GetSessionId(), "sidecar", req.GetSummaryJson(), "tool_call", uuid.NewString()); err != nil {
-		return nil, fmt.Errorf("PushToolTelemetry: %w", err)
+	// The summary may be empty now. The sidecar's tick became unconditional so
+	// that wanted_paths below still reaches it on a session where nothing has
+	// changed for a while; appending an empty summary in that case would write
+	// a transcript row every 5 seconds forever, and latestToolCallSummary reads
+	// the NEWEST tool_call entry — so it would also blank the CHANGES panel.
+	if req.GetSummaryJson() != "" {
+		if _, err := s.transcr.Append(ctx, req.GetSessionId(), "sidecar", req.GetSummaryJson(), "tool_call", uuid.NewString()); err != nil {
+			return nil, fmt.Errorf("PushToolTelemetry: %w", err)
+		}
 	}
-	return &agentfleetv1.PushToolTelemetryResponse{}, nil
+	if s.fileDiffs == nil {
+		return &agentfleetv1.PushToolTelemetryResponse{}, nil
+	}
+	// Diffs are NOT appended. They go to memory, deliberately — see the field
+	// comment and internal/filediff's package doc.
+	if raw := req.GetFileDiffsJson(); raw != "" {
+		var diffs map[string]string
+		if err := json.Unmarshal([]byte(raw), &diffs); err != nil {
+			// The telemetry summary above already landed; a malformed diff
+			// payload must not fail the call and cost the session its
+			// change stats too.
+			slog.Warn("PushToolTelemetry: bad file_diffs_json", "session", req.GetSessionId(), "error", err)
+		} else {
+			s.fileDiffs.Put(req.GetSessionId(), diffs)
+		}
+	}
+	return &agentfleetv1.PushToolTelemetryResponse{WantedPaths: s.fileDiffs.Wanted(req.GetSessionId())}, nil
 }
+
+// SetFileDiffStore wires the shared parking lot in after construction, so
+// coreserver and dashboard.Server hold the same one. Same pattern as
+// SetWarmFunc above and for the same reason.
+func (s *Server) SetFileDiffStore(store *filediff.Store) { s.fileDiffs = store }
 
 // StreamHumanMessages is the mechanism that lets the sidecar deliver new
 // human input to the wrapper live, for streamInput() (docs/adr/0021 point

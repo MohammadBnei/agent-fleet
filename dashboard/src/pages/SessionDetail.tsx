@@ -10,6 +10,7 @@ import {
   latestToolCallSummary,
   latestTodos,
   subagentRuns,
+  backgroundTasks,
   type Density,
 } from "../transcript";
 import { useSessionDetail } from "../useSessionDetail";
@@ -22,7 +23,7 @@ import { AUTO_MODE_WARNING } from "../approvePlan";
 import { Segmented } from "../components/Segmented";
 import { DecisionDock } from "../components/DecisionDock";
 import { SessionFeed } from "../components/SessionFeed";
-import { TodosPanel, ChangesPanel, AgentsPanel, SessionPanel } from "../components/SessionPanels";
+import { TodosPanel, ChangesPanel, AgentsPanel, BackgroundPanel, SessionPanel } from "../components/SessionPanels";
 import { FileDiffModal } from "../components/FileDiffModal";
 import { isPodPhaseLive } from "./SessionList";
 import { AgentDetailModal } from "../components/DetailModal";
@@ -168,6 +169,7 @@ export function SessionDetail({
   const branch = toolSummary?.branch ?? null;
   const changes = toolSummary?.files ?? null;
   const agents = subagentRuns(entries);
+  const background = backgroundTasks(entries);
   const result = latestResultSummary(entries);
   const contextTokens =
     (result?.usage?.input_tokens ?? 0) +
@@ -283,7 +285,7 @@ export function SessionDetail({
 
         <div className="flex-none px-4.5 py-3 border-t border-line">
           <ErrorModal message={actionError} onClose={clearActionError} />
-          <FileDiffModal path={diffPath} entries={entries} onClose={() => setDiffPath(null)} />
+          <FileDiffModal sessionId={sessionId} path={diffPath} entries={entries} onClose={() => setDiffPath(null)} />
           <AgentDetailModal run={agentDetail} onClose={() => setAgentDetail(null)} />
           <ConfirmModal
             title="Switch to auto mode?"
@@ -352,6 +354,7 @@ export function SessionDetail({
         <TodosPanel todos={todos} blocked={blocked} />
         <ChangesPanel branch={branch} changes={changes} onOpenFile={setDiffPath} />
         <AgentsPanel runs={agents} onOpenAgent={setAgentDetail} />
+        <BackgroundPanel tasks={background} />
         <div className="mt-auto">
           <SessionPanel
             session={session}
