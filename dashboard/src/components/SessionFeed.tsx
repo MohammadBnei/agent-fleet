@@ -10,6 +10,7 @@ import {
   parseSdkSignal,
   parseSdkSystemInfo,
   parseSdkToolResult,
+  type SdkToolResult,
   parseSdkToolUse,
   parseSdkResultSummary,
   permissionDenyMessages,
@@ -84,6 +85,42 @@ function AlarmBar({ text, detail, compact }: { text: React.ReactNode; detail?: s
 
 // One run of consecutive tool calls. The mockups collapse them into a single
 // bordered block with a count and a collapse-all, which is what makes a
+// A tool_result whose tool_use is not in the loaded transcript page. It has
+// always been possible — buildToolCallPairs' own comment names it — and until
+// now it fell all the way through to the tier-2 narrative branch, which
+// rendered the raw JSON envelope
+// ({"toolUseId":"toolu_…","isError":true,"content":"…"}) as a warning-dot
+// bubble. That tier is agent PROSE, so a failed build's stderr showed up
+// looking like something the agent said.
+//
+// Shown rather than skipped: the common way to get here is scrolling to the
+// top of a long session, where the call sits one entry above the page
+// boundary, and the output is often the error someone scrolled up to read.
+// Collapsed by default because without its command it is context-free.
+function OrphanToolResult({ result, compact }: { result: SdkToolResult; compact?: boolean }) {
+  const failed = result.isError === true;
+  // `content` is whatever the SDK block carried — a string for most tools, an
+  // array of content blocks for some. Only a string is prose; anything else
+  // gets JSON, which is honest here because it IS structured data, unlike in
+  // the prose tier where it was just wrong.
+  const text = typeof result.content === "string" ? result.content : JSON.stringify(result.content, null, 2);
+  return (
+    <Collapse
+      className={compact ? "" : "max-w-(--feed-measure)"}
+      summaryClassName="px-2.5 py-1.5"
+      summary={
+        <span className="flex gap-2 items-baseline min-w-0">
+          <span className={`flex-none ${failed ? "text-error" : "text-dim2"}`}>{failed ? "failed" : "ok"}</span>
+          <span className="text-dim2 flex-none">output of an earlier tool call</span>
+          <span className="text-dim truncate min-w-0">{text.split("\n")[0]}</span>
+        </span>
+      }
+    >
+      <pre className="whitespace-pre-wrap break-all text-2xs text-dim leading-[1.5]">{text}</pre>
+    </Collapse>
+  );
+}
+
 // tool-heavy stretch scannable instead of a wall.
 function ToolGroup({
   pairs,
@@ -315,11 +352,27 @@ export function SessionFeed({
     if (entry.type === TranscriptEntryType.ANSWER) continue;
     if (entry.type === TranscriptEntryType.PERMISSION_RESPONSE) continue;
     if (entry.type === TranscriptEntryType.USER && consumedResults.has(entry.seq)) continue;
-    // Panel-owned results: the call is already filtered by buildToolCallPairs,
-    // so its result isn't in consumedResults. Filter using the precomputed set.
+    // Every remaining USER entry that is a tool_result is handled HERE and
+    // never falls past this block. That is the point of the single guard: the
+    // two cases below used to be separate early-continues, and anything
+    // neither of them caught — an orphan whose call is off the loaded page —
+    // reached the narrative tier and rendered its JSON envelope as agent
+    // prose.
     if (entry.type === TranscriptEntryType.USER) {
       const result = parseSdkToolResult(entry.text);
-      if (result?.toolUseId && panelOwnedToolUseIds.has(result.toolUseId)) {
+      if (result?.toolUseId) {
+        // Panel-owned results: the call is already filtered by
+        // buildToolCallPairs, so its result isn't in consumedResults.
+        if (panelOwnedToolUseIds.has(result.toolUseId)) continue;
+        // Tool activity, so it obeys the same density gate as a tool call
+        // rather than appearing in a view that hides every other tool row.
+        if (!visibility.tools) continue;
+        flush();
+        out.push(
+          <div key={key} id={`entry-${key}`}>
+            <OrphanToolResult result={result} compact={compact} />
+          </div>,
+        );
         continue;
       }
     }
