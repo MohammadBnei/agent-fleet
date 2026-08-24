@@ -1,5 +1,12 @@
 # Changelog
 
+# [4.12.0](https://github.com/MohammadBnei/agent-fleet/compare/4.11.7...4.12.0) (2026-08-24)
+
+
+### Features
+
+* **console:** background task panel, real diffs for non-Write changes, orphan tool_result fix ([#238](https://github.com/MohammadBnei/agent-fleet/issues/238)) ([69516c7](https://github.com/MohammadBnei/agent-fleet/commit/69516c73f1169e87dded32447643fb41abec6bb6))
+
 ## [4.11.7](https://github.com/MohammadBnei/agent-fleet/compare/4.11.6...4.11.7) (2026-08-24)
 
 
