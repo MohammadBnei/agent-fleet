@@ -97,22 +97,26 @@ function useLiveDiff(sessionId: string, path: string | null, enabled: boolean): 
 // adjacent ones.
 export function unifiedToLines(diff: string): Line[] {
   const out: Line[] = [];
+  // The preamble filter applies ONLY before the first hunk header. Past that
+  // point every line is file content, and content routinely starts with the
+  // same characters: `-- ` opens a comment in SQL and Lua, so a deleted line
+  // from this repo's own db/migrations/*.sql was matched by the `--- ` rule
+  // and silently dropped — the diff rendered the addition and not the removal
+  // it replaced, which is worse than showing nothing.
+  let inBody = false;
   for (const raw of diff.split("\n")) {
-    if (
-      raw.startsWith("diff --git") ||
-      raw.startsWith("index ") ||
-      raw.startsWith("--- ") ||
-      raw.startsWith("+++ ") ||
-      raw.startsWith("new file mode") ||
-      raw.startsWith("deleted file mode") ||
-      raw.startsWith("similarity index") ||
-      raw.startsWith("rename ")
-    )
+    if (raw.startsWith("@@")) {
+      inBody = true;
+      out.push({ kind: "context", text: raw });
       continue;
-    if (raw.startsWith("@@")) out.push({ kind: "context", text: raw });
-    // Order matters: "+++"/"---" are filtered above, so a leading +/- here is
-    // a real changed line.
-    else if (raw.startsWith("+")) out.push({ kind: "add", text: raw.slice(1) });
+    }
+    if (!inBody) {
+      // Header region: `diff --git`, `index`, mode/rename lines, and the
+      // `---`/`+++` file pair. The modal header already names the file, and
+      // repeating it as three grey rows pushes the change below the fold.
+      continue;
+    }
+    if (raw.startsWith("+")) out.push({ kind: "add", text: raw.slice(1) });
     else if (raw.startsWith("-")) out.push({ kind: "remove", text: raw.slice(1) });
     else if (raw.startsWith(" ")) out.push({ kind: "context", text: raw.slice(1) });
     else if (raw.startsWith("\\")) continue; // "\ No newline at end of file"

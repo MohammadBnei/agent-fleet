@@ -118,10 +118,15 @@ func diffsJSON(worktreePath string, wanted []string) string {
 			slog.Warn("telemetry: refusing unsafe diff path", "path", path)
 			continue
 		}
-		// `--` is what stops a path that happens to match a ref being read as
-		// one. It is already positional here, but the separator is the part
-		// that makes that true rather than incidental.
-		diff, err := gitOutput(worktreePath, "diff", "--", path)
+		// Against HEAD, matching computeSummary's `git diff --numstat HEAD`
+		// exactly. A bare `git diff` compares against the INDEX, so anything
+		// the agent has staged is listed by the CHANGES panel and answers
+		// EMPTY here — and the console then tells the human the change "has
+		// since been committed or reverted", which is the opposite of true.
+		// The list and the diff have to be asking git the same question.
+		//
+		// `--` stops a path that happens to match a ref being read as one.
+		diff, err := gitOutput(worktreePath, "diff", "HEAD", "--", path)
 		if err != nil {
 			// git exits non-zero for a path it does not know. Empty is the
 			// honest answer and ends the poll; an omission leaves the console

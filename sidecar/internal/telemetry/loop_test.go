@@ -166,3 +166,38 @@ func TestDiffsJSON_SkipsUnsafePaths(t *testing.T) {
 		t.Errorf("expected only the safe path, got %+v", diffs)
 	}
 }
+
+// The list and the diff must ask git the same question. computeSummary uses
+// `git diff --numstat HEAD`, so a STAGED change is listed by the CHANGES
+// panel — and a bare `git diff` (against the index) reports nothing for it,
+// which the console renders as "committed or reverted". Any session where the
+// agent has run `git add` is in this state, so it is common rather than an
+// edge case.
+func TestDiffsJSON_StagedChangeIsStillADiff(t *testing.T) {
+	dir := newTestWorktree(t)
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("one\nTWO\nthree\n"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	add := exec.Command("git", "add", "a.txt")
+	add.Dir = dir
+	if out, err := add.CombinedOutput(); err != nil {
+		t.Fatalf("git add: %v: %s", err, out)
+	}
+
+	// Precondition: numstat lists it, so the panel offers a row to click.
+	s, err := computeSummary(dir)
+	if err != nil {
+		t.Fatalf("computeSummary: %v", err)
+	}
+	if len(s.Files) != 1 || s.Files[0].Path != "a.txt" {
+		t.Fatalf("expected numstat to list the staged file, got %+v", s.Files)
+	}
+
+	var diffs map[string]string
+	if err := json.Unmarshal([]byte(diffsJSON(dir, []string{"a.txt"})), &diffs); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if !strings.Contains(diffs["a.txt"], "+TWO") {
+		t.Errorf("a staged change must still produce a diff, got %q", diffs["a.txt"])
+	}
+}

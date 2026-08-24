@@ -60,3 +60,30 @@ test("the no-newline marker is dropped", () => {
 test("an empty diff yields no lines", () => {
   expect(unifiedToLines("")).toEqual([]);
 });
+
+// A deleted SQL/Lua comment starts with "-- ", which the `--- ` preamble rule
+// matched — so the removal vanished and the diff showed only the line that
+// replaced it. This repo's own db/migrations/*.sql is full of them.
+test("content that looks like the preamble is not swallowed", () => {
+  expect(
+    unifiedToLines(`diff --git a/m.sql b/m.sql
+--- a/m.sql
++++ b/m.sql
+@@ -1,2 +1,2 @@
+--- old comment
++-- new comment`),
+  ).toEqual([
+    { kind: "context", text: "@@ -1,2 +1,2 @@" },
+    { kind: "remove", text: "-- old comment" },
+    { kind: "add", text: "-- new comment" },
+  ]);
+});
+
+// The mirror: a +++ / --- pair appearing INSIDE a hunk is content too.
+test("a +++ line inside a hunk is content, not a header", () => {
+  expect(unifiedToLines("@@ -1 +1 @@\n++++ banner\n---- banner")).toEqual([
+    { kind: "context", text: "@@ -1 +1 @@" },
+    { kind: "add", text: "+++ banner" },
+    { kind: "remove", text: "--- banner" },
+  ]);
+});

@@ -1,6 +1,10 @@
 package filediff
 
-import "testing"
+import (
+	"strings"
+	"testing"
+	"unicode/utf8"
+)
 
 // The whole exchange in one test, because every step of it is a place the
 // console can end up polling forever if the state machine leaks.
@@ -100,5 +104,37 @@ func TestSessionsAreBounded(t *testing.T) {
 	}
 	if len(s.ready) > maxSessions {
 		t.Errorf("ready map grew to %d sessions", len(s.ready))
+	}
+}
+
+// A cut in the middle of a multi-byte rune produces a string that is not valid
+// UTF-8, and proto.Marshal REJECTS that outright — so GetFileDiff would fail
+// permanently for that one file instead of showing a shortened diff. The
+// sidecar caps at the same size first, so the cut that matters is this second
+// one, made on a string the sidecar's own truncation marker pushed back over.
+func TestTruncateCutsOnARuneBoundary(t *testing.T) {
+	// Land a 3-byte rune straddling the cap: fill to one byte short of it.
+	diff := strings.Repeat("a", MaxDiffBytes-1) + "€€€"
+	got := truncate(diff)
+	if !utf8.ValidString(got) {
+		t.Fatal("truncated diff must remain valid UTF-8 or proto.Marshal rejects it")
+	}
+	if !strings.HasSuffix(got, "… diff truncated\n") {
+		t.Errorf("expected the truncation marker, got tail %q", got[len(got)-20:])
+	}
+	// A diff at or under the cap is returned untouched, marker and all.
+	short := strings.Repeat("b", 10)
+	if truncate(short) != short {
+		t.Error("a diff under the cap must not be touched")
+	}
+}
+
+// Same thing through the real entry point, since Put is what callers use.
+func TestPutStoresValidUTF8(t *testing.T) {
+	st := New()
+	st.Put("sess", map[string]string{"big.sql": strings.Repeat("a", MaxDiffBytes-1) + "€€€"})
+	diff, _ := st.Take("sess", "big.sql")
+	if !utf8.ValidString(diff) {
+		t.Error("Put must store valid UTF-8")
 	}
 }

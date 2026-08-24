@@ -22,7 +22,10 @@
 // and it bounds memory without an eviction policy.
 package filediff
 
-import "sync"
+import (
+	"sync"
+	"unicode/utf8"
+)
 
 const (
 	// Wants outstanding per session. A human reads one file at a time; this
@@ -128,14 +131,33 @@ func (s *Store) Put(sessionID string, diffs map[string]string) {
 		s.ready[sessionID] = r
 	}
 	for path, diff := range diffs {
-		if len(diff) > MaxDiffBytes {
-			diff = diff[:MaxDiffBytes] + "\n… diff truncated\n"
-		}
+		diff = truncate(diff)
 		if _, exists := r[path]; !exists && len(r) >= maxReadyPerSession {
 			evictOne(r)
 		}
 		r[path] = diff
 	}
+}
+
+// truncate caps a diff at MaxDiffBytes on a RUNE boundary.
+//
+// A plain diff[:MaxDiffBytes] can cut a multi-byte rune in half, and the
+// resulting string is not valid UTF-8 — which proto.Marshal rejects outright
+// ("string field contains invalid UTF-8"), so GetFileDiff would fail
+// permanently for that one file rather than showing a shortened diff. The
+// sidecar caps at the same size before sending, so this second cut normally
+// does nothing; it fires when the sidecar's own truncation marker pushes the
+// string back over, and that is exactly the case where the boundary is not
+// where the first cut left it.
+func truncate(diff string) string {
+	if len(diff) <= MaxDiffBytes {
+		return diff
+	}
+	cut := MaxDiffBytes
+	for cut > 0 && !utf8.RuneStart(diff[cut]) {
+		cut--
+	}
+	return diff[:cut] + "\n… diff truncated\n"
 }
 
 // evictOne drops an arbitrary entry. Arbitrary is honest here: every caller is
