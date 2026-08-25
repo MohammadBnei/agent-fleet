@@ -575,8 +575,11 @@ func (s *Server) SaveAgentSessionId(ctx context.Context, req *agentfleetv1.SaveA
 
 // PushToolTelemetry persists the sidecar's independently-scheduled git
 // diff/branch/tool-call-summary telemetry as a TOOL_CALL transcript entry
-// (docs/adr/0020 point 5's second bullet) — never relayed to Discord
-// (internal/transcript/relay.go's relayPending skips this type).
+// (docs/adr/0020 point 5's second bullet) — never relayed to Discord.
+//
+// It used to say relayPending skipped this type. That file is gone
+// (docs/adr/0048): Discord is outbound-only now and relays nothing from the
+// transcript, so nothing here needs a per-type opt-out.
 func (s *Server) PushToolTelemetry(ctx context.Context, req *agentfleetv1.PushToolTelemetryRequest) (*agentfleetv1.PushToolTelemetryResponse, error) {
 	// The summary may be empty now. The sidecar's tick became unconditional so
 	// that wanted_paths below still reaches it on a session where nothing has
