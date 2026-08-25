@@ -19,7 +19,7 @@ image:
   repository: registry.bnei.lan:5000/agent-fleet-core
   # Pinned, bumped automatically by .github/workflows/docker.yml's deploy
   # job on every release tag.
-  tag: "4.11.7"
+  tag: "4.12.0"
 
 # extraPorts.grpc backs CORE_GRPC_PORT below — sidecar and provisioner both
 # dial agent-fleet-core.agent-fleet.svc.cluster.local:9090 for CoreService
@@ -299,7 +299,7 @@ hooks:
     type: PreSync
     image:
       repository: registry.bnei.lan:5000/agent-fleet-migration
-      tag: "4.11.7"
+      tag: "4.12.0"
     args:
       - "up"
 
