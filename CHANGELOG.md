@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.12.1](https://github.com/MohammadBnei/agent-fleet/compare/4.12.0...4.12.1) (2026-08-25)
+
+
+### Bug Fixes
+
+* **sidecar:** complete localapi's transcript type maps, and pin them by reflection ([#239](https://github.com/MohammadBnei/agent-fleet/issues/239)) ([71da9b2](https://github.com/MohammadBnei/agent-fleet/commit/71da9b2c93899ef39e4da57edb373d680e437069))
+
 # [4.12.0](https://github.com/MohammadBnei/agent-fleet/compare/4.11.7...4.12.0) (2026-08-24)
 
 
