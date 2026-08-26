@@ -40,7 +40,7 @@ type Notifier interface {
 // That matters most here specifically: this handler's repo is
 // infra-bootstrap, whose sessions carry cluster access (docs/adr/0037).
 type ProposalCreator interface {
-	Create(ctx context.Context, repo, source, dedupKey, title, body string) (string, bool, error)
+	Create(ctx context.Context, repo, source, dedupKey, title, body, payloadJSON string) (string, bool, error)
 }
 
 type Config struct {
@@ -71,8 +71,16 @@ func New(p ProposalCreator, discord Notifier, cfg Config) *Handler {
 // payload is the subset of Alertmanager's webhook body this needs. Its
 // schema is far larger; decoding only these fields means an Alertmanager
 // upgrade adding fields can't break parsing.
+//
+// The alerts stay as raw JSON alongside the decoded form, because decoding a
+// subset is exactly what used to lose the alert: describe() below flattens
+// three fields and four labels into text, and everything else — the other
+// labels, startsAt, generatorURL — was gone the moment this function
+// returned, unrecoverable afterwards since core holds no Alertmanager client.
+// The raw element is stored verbatim; the decode is only for the routing
+// decisions (firing? fingerprint? title?) this handler has to make.
 type payload struct {
-	Alerts []alert `json:"alerts"`
+	Alerts []json.RawMessage `json:"alerts"`
 }
 
 type alert struct {
@@ -110,7 +118,16 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	created, skipped := 0, 0
-	for _, a := range p.Alerts {
+	for _, raw := range p.Alerts {
+		var a alert
+		if err := json.Unmarshal(raw, &a); err != nil {
+			// One malformed alert must not discard the rest of the batch:
+			// Alertmanager groups alerts, so failing the whole request here
+			// would drop good alerts along with the bad one, and it retries
+			// the batch as a unit.
+			slog.Warn("alertwebhook: undecodable alert, skipping", "error", err)
+			continue
+		}
 		// Only firing. A resolved notification needs no investigation, and
 		// acting on one would double every alert's task count.
 		if a.Status != "firing" {
@@ -128,7 +145,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if name == "" {
 			name = "alert"
 		}
-		id, ok, err := h.proposals.Create(r.Context(), h.cfg.Repo, "alert", key, truncate(name, 120), describe(a))
+		id, ok, err := h.proposals.Create(r.Context(), h.cfg.Repo, "alert", key, truncate(name, 120), describe(a), string(raw))
 		if err != nil {
 			slog.Error("alertwebhook: create proposal", "fingerprint", key, "error", err)
 			continue

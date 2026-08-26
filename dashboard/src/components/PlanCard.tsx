@@ -177,6 +177,21 @@ export function PlanCard({
       <div className="flex items-center gap-2 mb-2.5">
         <span className="w-1.5 h-1.5 rounded-full bg-error animate-fpulse flex-none" />
         <span className="text-2xs tracking-[0.1em] text-error">◉ PLAN — NEEDS YOUR REVIEW</span>
+        {/* The dock is 45vh at most, above a composer, beside the panels — so a
+            plan of any length is read through a letterbox with its own approve
+            buttons pushed under the fold. Same reader the list uses.
+
+            In the header, not down with the actions: the body between them
+            scrolls (max-h-[50vh]), so the way OUT of the letterbox used to sit
+            below the letterbox — worst on a phone, where reaching it meant
+            scrolling the very plan you could not read. */}
+        <button
+          type="button"
+          className="ml-auto flex-none text-sm text-dim hover:text-primary cursor-pointer py-1"
+          onClick={() => setReaderOpen(true)}
+        >
+          read in full ▸
+        </button>
       </div>
       <div ref={wrapperRef} className="relative">
         <div
@@ -267,16 +282,6 @@ export function PlanCard({
           onClick={() => setFeedbackOpen((v) => !v)}
         >
           request changes
-        </button>
-        {/* The dock is 45vh at most, above a composer, beside the panels — so a
-            plan of any length is read through a letterbox with its own approve
-            buttons pushed under the fold. Same reader the list uses. */}
-        <button
-          type="button"
-          className="ml-auto text-sm text-dim hover:text-primary cursor-pointer"
-          onClick={() => setReaderOpen(true)}
-        >
-          read in full ▸
         </button>
       </div>
       <PlanModal

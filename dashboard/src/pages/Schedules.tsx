@@ -20,6 +20,93 @@ import { useMediaQuery } from "../useMediaQuery";
 
 const COLS = "grid-cols-[20px_1fr_150px_190px_110px_150px]";
 
+// What an alert actually said, on the card where it is decided.
+//
+// The card used to show `body` clamped to four lines. For an alert that body
+// is a flattening written for the agent — a fixed instruction paragraph, then
+// whichever of `summary`/`description` and four labels the rule happened to
+// set — so the clamp spent the whole preview on boilerplate, and a rule with
+// no summary annotation showed nothing about the alert at all. Approving from
+// that is approving blind, and this is the click that hands a cluster-access
+// agent a pod.
+//
+// `payload` is the raw Alertmanager alert, kept verbatim since migration
+// 000006. Everything here comes out of it; `body` moves into a <details>, still
+// reachable because it is what the agent will be sent.
+//
+// Nothing in here truncates, and nothing scrolls either. A scroll box inside a
+// list card just moves the clipping one level in — on a phone the labels and
+// the source-query link sat below its fold, invisible unless you knew to drag
+// inside it. A long alert makes a long card instead, which is the correct
+// trade for the one click that hands a cluster-access agent a pod.
+type AlertJSON = {
+  labels?: Record<string, string>;
+  annotations?: Record<string, string>;
+  generatorURL?: string;
+  startsAt?: string;
+};
+
+function AlertPayload({ payload, body }: { payload: string; body: string }) {
+  // A malformed or absent payload must not blank the card or throw in render:
+  // proposals filed before this column existed, and every schedule-filed
+  // proposal, carry "{}".
+  let alert: AlertJSON | null = null;
+  try {
+    const parsed: unknown = JSON.parse(payload || "{}");
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed) && Object.keys(parsed).length > 0) {
+      alert = parsed as AlertJSON;
+    }
+  } catch {
+    alert = null;
+  }
+
+  if (!alert) {
+    return body ? <div className="text-xs text-dim whitespace-pre-wrap break-words">{body}</div> : null;
+  }
+
+  const annotations = Object.entries(alert.annotations ?? {});
+  // summary and description first — they are the sentence a human reads to
+  // decide — then whatever else the rule set, in name order so two renders of
+  // the same alert do not reshuffle.
+  const rank = (k: string) => (k === "summary" ? 0 : k === "description" ? 1 : 2);
+  annotations.sort((a, b) => rank(a[0]) - rank(b[0]) || a[0].localeCompare(b[0]));
+  const labels = Object.entries(alert.labels ?? {}).sort((a, b) => a[0].localeCompare(b[0]));
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      {annotations.map(([k, v]) => (
+        <div key={k} className="text-xs text-text2 whitespace-pre-wrap break-words">
+          {k !== "summary" && <span className="text-dim2">{k}: </span>}
+          {v}
+        </div>
+      ))}
+      {labels.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {labels.map(([k, v]) => (
+            <span key={k} className="text-2xs text-dim2 border border-line px-1.5 py-0.5 break-all">
+              {k}={v}
+            </span>
+          ))}
+        </div>
+      )}
+      <div className="flex flex-wrap items-center gap-2.5 text-2xs text-dim2">
+        {alert.startsAt && <span>firing since {alert.startsAt}</span>}
+        {alert.generatorURL && (
+          <a href={alert.generatorURL} target="_blank" rel="noreferrer" className="text-primary hover:underline break-all">
+            source query ▸
+          </a>
+        )}
+      </div>
+      {body && (
+        <details className="text-xs text-dim">
+          <summary className="cursor-pointer text-dim2 py-1">what the agent will be sent</summary>
+          <div className="whitespace-pre-wrap break-words mt-1">{body}</div>
+        </details>
+      )}
+    </div>
+  );
+}
+
 function humanInterval(seconds: number): string {
   if (seconds % 86400 === 0) {
     const d = seconds / 86400;
@@ -396,7 +483,12 @@ export function Schedules({
             {proposals.map((p) => (
               <div key={p.id} className="flex flex-col gap-1">
                 <div className="flex items-center gap-2.5 flex-wrap">
-                  <span className="text-sm min-w-0 truncate flex-1">
+                  {/* break-words, not truncate: at phone width the buttons in
+                      this row wrap and leave the title ~90px, which turned
+                      "infra-bootstrap KubePodCrashLooping" into "infra-b…" —
+                      the alert's name, clipped, on the card where the alert is
+                      supposed to be readable. */}
+                  <span className="text-sm min-w-0 flex-1 break-words">
                     <span className="text-dim2">{p.repo}</span> {p.title}
                   </span>
                   <span className="flex-none text-xs text-dim2 border border-line px-1.5">{p.source}</span>
@@ -405,8 +497,9 @@ export function Schedules({
                     disabled={busy}
                     // THE human gate: the one call that can hand a
                     // cluster-access agent a pod. It creates the session and
-                    // sends the proposal body as its first message, so the
-                    // agent's instruction is the text shown here — no wrapper.
+                    // sends the proposal body as its first message, verbatim —
+                    // no wrapper. That body is the text under "what the agent
+                    // will be sent" below.
                     onClick={() =>
                       proposeAct(async () => {
                         const res = await client.openFromProposal({ proposalId: p.id });
@@ -429,9 +522,7 @@ export function Schedules({
                     dismiss
                   </button>
                 </div>
-                {p.body && (
-                  <div className="text-xs text-dim whitespace-pre-wrap break-words line-clamp-4">{p.body}</div>
-                )}
+                <AlertPayload payload={p.payload} body={p.body} />
               </div>
             ))}
           </div>

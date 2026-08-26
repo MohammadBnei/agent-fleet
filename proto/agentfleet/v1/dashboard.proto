@@ -210,6 +210,13 @@ message Proposal {
   string created_at = 6;
   // Set once a human opened it; the session it became.
   optional string session_id = 7;
+  // Raw JSON the proposal was filed from — an Alertmanager alert object for
+  // source "alert", "{}" otherwise. `body` is a lossy flattening of this
+  // written for the agent; the dashboard renders this so a human deciding
+  // whether to dispatch can see the actual alert instead of the boilerplate.
+  // A string, not google.protobuf.Struct: it is stored as JSONB and parsed
+  // once in the browser, so a structural encoding would buy nothing.
+  string payload = 8;
 }
 
 message ListProposalsRequest {}

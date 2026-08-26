@@ -336,6 +336,7 @@ func proposalToProto(p proposals.Proposal) *agentfleetv1.Proposal {
 		Source:    p.Source,
 		Title:     p.Title,
 		Body:      p.Body,
+		Payload:   p.Payload,
 		CreatedAt: p.CreatedAt.Format(time.RFC3339),
 	}
 	out.SessionId = p.SessionID

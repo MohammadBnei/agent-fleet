@@ -15,7 +15,10 @@ import (
 // agents. The dedup key collapses a tick that arrives while the previous run
 // is still standing.
 type Runner interface {
-	Create(ctx context.Context, repo, source, dedupKey, title, body string) (string, bool, error)
+	// The trailing payload argument is the raw document a proposal was filed
+	// from — an Alertmanager alert, for the webhook. A schedule has none, so
+	// this loop always passes "".
+	Create(ctx context.Context, repo, source, dedupKey, title, body, payloadJSON string) (string, bool, error)
 }
 
 // proposalSource is the `source` value schedules file under. It is a
@@ -126,7 +129,7 @@ func (l *Loop) fire(ctx context.Context, s Schedule, now time.Time) {
 	// tick after it finishes or is dismissed files a fresh one. Without this
 	// an un-opened schedule would accumulate one row per cadence forever.
 	proposalID, created, err := l.runner.Create(ctx, s.Repo, proposalSource, "schedule:"+s.ID,
-		"Scheduled: "+s.Name, s.Prompt)
+		"Scheduled: "+s.Name, s.Prompt, "")
 	status := "proposal " + proposalID
 	switch {
 	case err != nil:
