@@ -30,9 +30,9 @@ type Proposal struct {
 	Source string // "alert" | "audit" (legacy rows) | "schedule"
 	// DedupKey is an Alertmanager fingerprint or "schedule:<id>". See Create
 	// for the window it is unique over.
-	DedupKey  string
-	Title     string
-	Body      string
+	DedupKey string
+	Title    string
+	Body     string
 	// Payload is the raw JSON the proposal was filed from — an Alertmanager
 	// alert object for source "alert", "{}" for anything else. Body is a
 	// lossy flattening of it written for the agent to read; this is what the

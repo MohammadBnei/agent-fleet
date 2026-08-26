@@ -64,13 +64,20 @@ function AlertPayload({ payload, body }: { payload: string; body: string }) {
     return body ? <div className="text-xs text-dim whitespace-pre-wrap break-words">{body}</div> : null;
   }
 
-  const annotations = Object.entries(alert.annotations ?? {});
+  // Same reasoning as the typeof guards below: these maps are string->string
+  // in the Go decode, but nothing revalidates the JSONB column on the way out.
+  const strings = (v: unknown): [string, string][] =>
+    v && typeof v === "object" && !Array.isArray(v)
+      ? Object.entries(v).filter((e): e is [string, string] => typeof e[1] === "string")
+      : [];
+
+  const annotations = strings(alert.annotations);
   // summary and description first — they are the sentence a human reads to
   // decide — then whatever else the rule set, in name order so two renders of
   // the same alert do not reshuffle.
   const rank = (k: string) => (k === "summary" ? 0 : k === "description" ? 1 : 2);
   annotations.sort((a, b) => rank(a[0]) - rank(b[0]) || a[0].localeCompare(b[0]));
-  const labels = Object.entries(alert.labels ?? {}).sort((a, b) => a[0].localeCompare(b[0]));
+  const labels = strings(alert.labels).sort((a, b) => a[0].localeCompare(b[0]));
 
   return (
     <div className="flex flex-col gap-1.5">
@@ -89,9 +96,15 @@ function AlertPayload({ payload, body }: { payload: string; body: string }) {
           ))}
         </div>
       )}
+      {/* typeof-guarded, not just cast: `startsAt` and `generatorURL` are not
+          constrained anywhere on the way in — the Go decode only types
+          labels/annotations — so a non-string here would be rendered as a React
+          child, which throws. There is no ErrorBoundary in this app, so that
+          takes the whole tree down along with the dismiss button that would
+          have cleared the bad row. */}
       <div className="flex flex-wrap items-center gap-2.5 text-2xs text-dim2">
-        {alert.startsAt && <span>firing since {alert.startsAt}</span>}
-        {alert.generatorURL && (
+        {typeof alert.startsAt === "string" && <span>firing since {alert.startsAt}</span>}
+        {typeof alert.generatorURL === "string" && (
           <a href={alert.generatorURL} target="_blank" rel="noreferrer" className="text-primary hover:underline break-all">
             source query ▸
           </a>
