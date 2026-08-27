@@ -1,5 +1,12 @@
 # Changelog
 
+# [4.13.0](https://github.com/MohammadBnei/agent-fleet/compare/4.12.1...4.13.0) (2026-08-27)
+
+
+### Features
+
+* **console:** keep the raw alert payload and render it on the proposal card ([#240](https://github.com/MohammadBnei/agent-fleet/issues/240)) ([c859026](https://github.com/MohammadBnei/agent-fleet/commit/c8590264a71e900f0258be4b2af4179bdee09a35))
+
 ## [4.12.1](https://github.com/MohammadBnei/agent-fleet/compare/4.12.0...4.12.1) (2026-08-25)
 
 
