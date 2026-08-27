@@ -196,7 +196,19 @@ export function DecisionInline({
       const plan = (permission.input as { plan?: string } | undefined)?.plan ?? "";
       return (
         <div className={`${pad} flex flex-col gap-3`}>
-          <div className="text-xs text-dim tracking-[0.05em]">PLAN · waiting for approval</div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-dim tracking-[0.05em]">PLAN · waiting for approval</span>
+            {/* Top-right, not down with the actions: the preview between them
+                is its own scroll box (max-h-[40vh]), so the control for
+                reading the plan sat below the thing you were scrolling. */}
+            <button
+              type="button"
+              onClick={() => setPlanOpen(true)}
+              className="ml-auto flex-none text-xs text-dim hover:text-primary cursor-pointer py-1"
+            >
+              read in full ▸
+            </button>
+          </div>
           {/* The preview is itself the way in — clicking the plan you are
               trying to read is the gesture people try first. */}
           <button
@@ -234,9 +246,6 @@ export function DecisionInline({
             </button>
             <button type="button" disabled={busy} onClick={() => setFeedbackOpen(true)} className={secondaryBtn}>
               request changes
-            </button>
-            <button type="button" onClick={() => setPlanOpen(true)} className={secondaryBtn}>
-              read in full
             </button>
           </div>
           <PlanModal

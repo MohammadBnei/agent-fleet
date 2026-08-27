@@ -1,0 +1,14 @@
+-- Raw Alertmanager alert JSON for a proposal filed by the webhook.
+--
+-- Until now the handler flattened an alert into `body` through a hardcoded
+-- allowlist (alertname, summary, description, four labels) and dropped the
+-- rest on the floor. Nothing kept the payload, and core holds no Alertmanager
+-- client, so the detail could not be recovered afterwards — a rule with no
+-- `summary` annotation produced a proposal card showing only boilerplate.
+--
+-- NOT NULL DEFAULT '{}', mirroring knowledge_journal.payload: a nullable JSONB
+-- makes every reader either scan into a pointer or COALESCE, and one NULL row
+-- fails the whole query rather than that row.
+--
+-- Schedule-filed proposals leave it '{}' — they have no payload to keep.
+ALTER TABLE proposals ADD COLUMN payload JSONB NOT NULL DEFAULT '{}';

@@ -2,6 +2,7 @@ package alertwebhook
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -10,11 +11,15 @@ import (
 
 type fakeTasks struct {
 	calls    []string // dedup keys seen
+	payloads []string // raw alert JSON handed to Create, in call order
+	bodies   []string
 	existing map[string]bool
 }
 
-func (f *fakeTasks) Create(_ context.Context, _, source, dedupKey, _, _ string) (string, bool, error) {
+func (f *fakeTasks) Create(_ context.Context, _, source, dedupKey, _, body, payloadJSON string) (string, bool, error) {
 	f.calls = append(f.calls, source+":"+dedupKey)
+	f.payloads = append(f.payloads, payloadJSON)
+	f.bodies = append(f.bodies, body)
 	if f.existing[dedupKey] {
 		return "", false, nil
 	}
@@ -44,6 +49,10 @@ func post(t *testing.T, h *Handler, token, body string) *httptest.ResponseRecord
 }
 
 const firing = `{"alerts":[{"status":"firing","fingerprint":"abc123","labels":{"alertname":"EtcdDown","namespace":"kube-system"},"annotations":{"summary":"etcd is down"}}]}`
+
+// An alert carrying detail that describe()'s allowlist drops: a `container`
+// label, a non-summary annotation, and generatorURL.
+const firingRich = `{"alerts":[{"status":"firing","fingerprint":"rich1","startsAt":"2026-08-26T10:00:00Z","generatorURL":"https://prom.bnei.lan/graph?g0.expr=up==0","labels":{"alertname":"PodCrashLooping","container":"api","namespace":"prod"},"annotations":{"runbook_url":"https://runbook/pcl"}}]}`
 
 // This endpoint creates tasks, and a thot task runs an agent with cluster
 // access. An unauthenticated caller inside the cluster must not be able to
@@ -156,4 +165,60 @@ type failingDiscord struct{}
 
 func (failingDiscord) Notify(_ context.Context, _ string) error {
 	return http.ErrBodyNotAllowed
+}
+
+// The whole point of keeping the raw payload: describe() flattens an alert
+// through a hardcoded allowlist, so a rule whose annotations it does not know
+// about produced a proposal that showed the boilerplate and nothing else —
+// and the detail was unrecoverable, since core holds no Alertmanager client
+// to ask again.
+func TestStoresRawAlertPayload(t *testing.T) {
+	tasks := &fakeTasks{}
+	h := New(tasks, nil, Config{Token: "t", Repo: "infra-bootstrap"})
+
+	if rec := post(t, h, "t", firingRich); rec.Code != http.StatusOK {
+		t.Fatalf("got %d, want 200", rec.Code)
+	}
+	if len(tasks.payloads) != 1 {
+		t.Fatalf("expected one proposal, got %d", len(tasks.payloads))
+	}
+
+	var got struct {
+		Labels       map[string]string `json:"labels"`
+		Annotations  map[string]string `json:"annotations"`
+		StartsAt     string            `json:"startsAt"`
+		GeneratorURL string            `json:"generatorURL"`
+	}
+	if err := json.Unmarshal([]byte(tasks.payloads[0]), &got); err != nil {
+		t.Fatalf("payload is not valid JSON: %v (%q)", err, tasks.payloads[0])
+	}
+	// Each of these is dropped by describe(), which is why the flattened body
+	// cannot stand in for the payload.
+	if got.Labels["container"] != "api" {
+		t.Errorf("container label lost: %v", got.Labels)
+	}
+	if got.Annotations["runbook_url"] != "https://runbook/pcl" {
+		t.Errorf("non-summary annotation lost: %v", got.Annotations)
+	}
+	if got.GeneratorURL == "" || got.StartsAt == "" {
+		t.Errorf("generatorURL/startsAt lost: %+v", got)
+	}
+	if strings.Contains(tasks.bodies[0], "container") {
+		t.Errorf("body is still the flattened instruction, not the payload: %q", tasks.bodies[0])
+	}
+}
+
+// A batch is one HTTP request; one unparseable member must not take the good
+// alerts with it, because Alertmanager retries the batch as a unit.
+func TestMalformedAlertDoesNotDropTheBatch(t *testing.T) {
+	tasks := &fakeTasks{}
+	h := New(tasks, nil, Config{Token: "t", Repo: "infra-bootstrap"})
+
+	body := `{"alerts":[["not an object"],{"status":"firing","fingerprint":"ok1","labels":{"alertname":"Fine"}}]}`
+	if rec := post(t, h, "t", body); rec.Code != http.StatusOK {
+		t.Fatalf("got %d, want 200", rec.Code)
+	}
+	if len(tasks.calls) != 1 || tasks.calls[0] != "alert:ok1" {
+		t.Errorf("the well-formed alert should still be filed, got %v", tasks.calls)
+	}
 }

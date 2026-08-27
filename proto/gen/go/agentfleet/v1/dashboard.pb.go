@@ -876,7 +876,14 @@ type Proposal struct {
 	Body      string                 `protobuf:"bytes,5,opt,name=body,proto3" json:"body,omitempty"`
 	CreatedAt string                 `protobuf:"bytes,6,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	// Set once a human opened it; the session it became.
-	SessionId     *string `protobuf:"bytes,7,opt,name=session_id,json=sessionId,proto3,oneof" json:"session_id,omitempty"`
+	SessionId *string `protobuf:"bytes,7,opt,name=session_id,json=sessionId,proto3,oneof" json:"session_id,omitempty"`
+	// Raw JSON the proposal was filed from — an Alertmanager alert object for
+	// source "alert", "{}" otherwise. `body` is a lossy flattening of this
+	// written for the agent; the dashboard renders this so a human deciding
+	// whether to dispatch can see the actual alert instead of the boilerplate.
+	// A string, not google.protobuf.Struct: it is stored as JSONB and parsed
+	// once in the browser, so a structural encoding would buy nothing.
+	Payload       string `protobuf:"bytes,8,opt,name=payload,proto3" json:"payload,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -956,6 +963,13 @@ func (x *Proposal) GetCreatedAt() string {
 func (x *Proposal) GetSessionId() string {
 	if x != nil && x.SessionId != nil {
 		return *x.SessionId
+	}
+	return ""
+}
+
+func (x *Proposal) GetPayload() string {
+	if x != nil {
+		return x.Payload
 	}
 	return ""
 }
@@ -4030,7 +4044,7 @@ const file_agentfleet_v1_dashboard_proto_rawDesc = "" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\">\n" +
 	"\x13WarmSessionResponse\x12\x19\n" +
-	"\bpod_name\x18\x02 \x01(\tR\apodNameJ\x04\b\x01\x10\x02R\x06status\"\xc2\x01\n" +
+	"\bpod_name\x18\x02 \x01(\tR\apodNameJ\x04\b\x01\x10\x02R\x06status\"\xdc\x01\n" +
 	"\bProposal\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04repo\x18\x02 \x01(\tR\x04repo\x12\x16\n" +
@@ -4040,7 +4054,8 @@ const file_agentfleet_v1_dashboard_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\x06 \x01(\tR\tcreatedAt\x12\"\n" +
 	"\n" +
-	"session_id\x18\a \x01(\tH\x00R\tsessionId\x88\x01\x01B\r\n" +
+	"session_id\x18\a \x01(\tH\x00R\tsessionId\x88\x01\x01\x12\x18\n" +
+	"\apayload\x18\b \x01(\tR\apayloadB\r\n" +
 	"\v_session_id\"\x16\n" +
 	"\x14ListProposalsRequest\"N\n" +
 	"\x15ListProposalsResponse\x125\n" +

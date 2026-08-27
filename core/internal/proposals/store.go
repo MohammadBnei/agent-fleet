@@ -30,9 +30,14 @@ type Proposal struct {
 	Source string // "alert" | "audit" (legacy rows) | "schedule"
 	// DedupKey is an Alertmanager fingerprint or "schedule:<id>". See Create
 	// for the window it is unique over.
-	DedupKey  string
-	Title     string
-	Body      string
+	DedupKey string
+	Title    string
+	Body     string
+	// Payload is the raw JSON the proposal was filed from — an Alertmanager
+	// alert object for source "alert", "{}" for anything else. Body is a
+	// lossy flattening of it written for the agent to read; this is what the
+	// dashboard renders so a human can see the actual alert.
+	Payload   string
 	SessionID *string // set once a human opened it
 	CreatedAt time.Time
 }
@@ -59,17 +64,25 @@ func NewStore(pool *pgxpool.Pool) *Store {
 // proposal, so an hourly cadence whose session runs 3 hours would file
 // three proposals for the same thing. Archiving a session dismisses its
 // proposal, and that is what re-arms the key.
-func (s *Store) Create(ctx context.Context, repo, source, dedupKey, title, body string) (id string, created bool, err error) {
+// payloadJSON is the raw document the proposal came from, kept verbatim
+// because body is a lossy flattening of it and nothing else records the
+// original. Empty means "none" and is stored as an empty object, the same
+// normalisation journal.Store.Append does — the column is NOT NULL so that no
+// reader has to handle a nil.
+func (s *Store) Create(ctx context.Context, repo, source, dedupKey, title, body, payloadJSON string) (id string, created bool, err error) {
 	var keyPtr *string
 	if dedupKey != "" {
 		keyPtr = &dedupKey
 	}
+	if payloadJSON == "" {
+		payloadJSON = "{}"
+	}
 	err = s.pool.QueryRow(ctx, `
-		INSERT INTO proposals (repo, source, dedup_key, title, body)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO proposals (repo, source, dedup_key, title, body, payload)
+		VALUES ($1, $2, $3, $4, $5, $6)
 		ON CONFLICT DO NOTHING
 		RETURNING id
-	`, repo, source, keyPtr, title, body).Scan(&id)
+	`, repo, source, keyPtr, title, body, payloadJSON).Scan(&id)
 	if err == pgx.ErrNoRows {
 		// The partial unique index rejected it: one is already standing.
 		return "", false, nil
@@ -86,7 +99,7 @@ func (s *Store) Create(ctx context.Context, repo, source, dedupKey, title, body 
 // only ones a human can still act on.
 func (s *Store) ListOpen(ctx context.Context) ([]Proposal, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, repo, source, COALESCE(dedup_key, ''), title, body, session_id, created_at
+		SELECT id, repo, source, COALESCE(dedup_key, ''), title, body, payload::text, session_id, created_at
 		FROM proposals
 		WHERE session_id IS NULL AND dismissed_at IS NULL
 		ORDER BY created_at DESC
@@ -102,7 +115,7 @@ func (s *Store) ListOpen(ctx context.Context) ([]Proposal, error) {
 	out := []Proposal{}
 	for rows.Next() {
 		var p Proposal
-		if err := rows.Scan(&p.ID, &p.Repo, &p.Source, &p.DedupKey, &p.Title, &p.Body, &p.SessionID, &p.CreatedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.Repo, &p.Source, &p.DedupKey, &p.Title, &p.Body, &p.Payload, &p.SessionID, &p.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scan proposal: %w", err)
 		}
 		out = append(out, p)
@@ -114,9 +127,9 @@ func (s *Store) ListOpen(ctx context.Context) ([]Proposal, error) {
 func (s *Store) Get(ctx context.Context, id string) (*Proposal, error) {
 	var p Proposal
 	err := s.pool.QueryRow(ctx, `
-		SELECT id, repo, source, COALESCE(dedup_key, ''), title, body, session_id, created_at
+		SELECT id, repo, source, COALESCE(dedup_key, ''), title, body, payload::text, session_id, created_at
 		FROM proposals WHERE id = $1
-	`, id).Scan(&p.ID, &p.Repo, &p.Source, &p.DedupKey, &p.Title, &p.Body, &p.SessionID, &p.CreatedAt)
+	`, id).Scan(&p.ID, &p.Repo, &p.Source, &p.DedupKey, &p.Title, &p.Body, &p.Payload, &p.SessionID, &p.CreatedAt)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}

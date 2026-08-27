@@ -19,7 +19,7 @@ type stubRunner struct {
 	next  int
 }
 
-func (r *stubRunner) Create(_ context.Context, repo, source, dedupKey, title, body string) (string, bool, error) {
+func (r *stubRunner) Create(_ context.Context, repo, source, dedupKey, title, body, _ string) (string, bool, error) {
 	r.calls = append(r.calls, filed{repo, source, dedupKey, title, body})
 	r.next++
 	return "proposal-id", true, nil

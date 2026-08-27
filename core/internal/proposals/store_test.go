@@ -4,6 +4,7 @@ package proposals
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"sync"
 	"testing"
@@ -32,13 +33,13 @@ func newStore(t *testing.T) (*Store, *sessions.Store, context.Context) {
 func TestCreate_DedupHoldsWhileOpenAndAfterApproval(t *testing.T) {
 	store, sessionStore, ctx := newStore(t)
 
-	id, created, err := store.Create(ctx, "agent-fleet", "audit", "nightly-lint", "Lint is failing", "fix it")
+	id, created, err := store.Create(ctx, "agent-fleet", "audit", "nightly-lint", "Lint is failing", "fix it", "")
 	if err != nil || !created {
 		t.Fatalf("first create: created=%v err=%v", created, err)
 	}
 
 	// The audit ticks again while the proposal is still sitting there.
-	_, created, err = store.Create(ctx, "agent-fleet", "audit", "nightly-lint", "Lint is failing", "fix it")
+	_, created, err = store.Create(ctx, "agent-fleet", "audit", "nightly-lint", "Lint is failing", "fix it", "")
 	if err != nil {
 		t.Fatalf("second create: %v", err)
 	}
@@ -57,7 +58,7 @@ func TestCreate_DedupHoldsWhileOpenAndAfterApproval(t *testing.T) {
 		t.Fatalf("open: %v", err)
 	}
 
-	_, created, err = store.Create(ctx, "agent-fleet", "audit", "nightly-lint", "Lint is failing", "fix it")
+	_, created, err = store.Create(ctx, "agent-fleet", "audit", "nightly-lint", "Lint is failing", "fix it", "")
 	if err != nil {
 		t.Fatalf("third create: %v", err)
 	}
@@ -73,7 +74,7 @@ func TestCreate_DedupHoldsWhileOpenAndAfterApproval(t *testing.T) {
 func TestDismiss_ReArmsTheDedupKey(t *testing.T) {
 	store, _, ctx := newStore(t)
 
-	id, _, err := store.Create(ctx, "agent-fleet", "alert", "disk-full", "Disk full", "look into it")
+	id, _, err := store.Create(ctx, "agent-fleet", "alert", "disk-full", "Disk full", "look into it", "")
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -81,7 +82,7 @@ func TestDismiss_ReArmsTheDedupKey(t *testing.T) {
 		t.Fatalf("dismiss: %v", err)
 	}
 
-	_, created, err := store.Create(ctx, "agent-fleet", "alert", "disk-full", "Disk full", "look into it")
+	_, created, err := store.Create(ctx, "agent-fleet", "alert", "disk-full", "Disk full", "look into it", "")
 	if err != nil {
 		t.Fatalf("re-create: %v", err)
 	}
@@ -97,7 +98,7 @@ func TestDismiss_ReArmsTheDedupKey(t *testing.T) {
 func TestDismissForSession_ReArmsAfterTheWorkIsFinished(t *testing.T) {
 	store, sessionStore, ctx := newStore(t)
 
-	id, _, err := store.Create(ctx, "agent-fleet", "audit", "weekly-deps", "Deps stale", "bump them")
+	id, _, err := store.Create(ctx, "agent-fleet", "audit", "weekly-deps", "Deps stale", "bump them", "")
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -113,7 +114,7 @@ func TestDismissForSession_ReArmsAfterTheWorkIsFinished(t *testing.T) {
 		t.Fatalf("dismiss for session: %v", err)
 	}
 
-	_, created, err := store.Create(ctx, "agent-fleet", "audit", "weekly-deps", "Deps stale", "bump them")
+	_, created, err := store.Create(ctx, "agent-fleet", "audit", "weekly-deps", "Deps stale", "bump them", "")
 	if err != nil {
 		t.Fatalf("re-create: %v", err)
 	}
@@ -128,7 +129,7 @@ func TestDismissForSession_ReArmsAfterTheWorkIsFinished(t *testing.T) {
 func TestOpen_IsExactlyOnceUnderConcurrentClicks(t *testing.T) {
 	store, sessionStore, ctx := newStore(t)
 
-	id, _, err := store.Create(ctx, "agent-fleet", "alert", "flapping", "Service flapping", "investigate")
+	id, _, err := store.Create(ctx, "agent-fleet", "alert", "flapping", "Service flapping", "investigate", "")
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -184,7 +185,7 @@ func TestOpen_IsExactlyOnceUnderConcurrentClicks(t *testing.T) {
 func TestOpen_CannotResurrectADismissedProposal(t *testing.T) {
 	store, sessionStore, ctx := newStore(t)
 
-	id, _, err := store.Create(ctx, "agent-fleet", "alert", "k", "T", "B")
+	id, _, err := store.Create(ctx, "agent-fleet", "alert", "k", "T", "B", "")
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -211,15 +212,15 @@ func TestOpen_CannotResurrectADismissedProposal(t *testing.T) {
 func TestListOpen_ShowsOnlyWhatIsStillUndecided(t *testing.T) {
 	store, sessionStore, ctx := newStore(t)
 
-	open, _, err := store.Create(ctx, "agent-fleet", "audit", "a", "still open", "b")
+	open, _, err := store.Create(ctx, "agent-fleet", "audit", "a", "still open", "b", "")
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	approved, _, err := store.Create(ctx, "agent-fleet", "audit", "b", "approved", "b")
+	approved, _, err := store.Create(ctx, "agent-fleet", "audit", "b", "approved", "b", "")
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	dismissed, _, err := store.Create(ctx, "agent-fleet", "audit", "c", "dismissed", "b")
+	dismissed, _, err := store.Create(ctx, "agent-fleet", "audit", "c", "dismissed", "b", "")
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -254,7 +255,7 @@ func TestListOpen_ShowsOnlyWhatIsStillUndecided(t *testing.T) {
 func TestDeletingASessionDetachesRatherThanDestroysItsProposal(t *testing.T) {
 	store, sessionStore, ctx := newStore(t)
 
-	id, _, err := store.Create(ctx, "agent-fleet", "audit", "k", "T", "B")
+	id, _, err := store.Create(ctx, "agent-fleet", "audit", "k", "T", "B", "")
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -279,5 +280,63 @@ func TestDeletingASessionDetachesRatherThanDestroysItsProposal(t *testing.T) {
 	}
 	if p.SessionID != nil {
 		t.Errorf("proposal still points at a deleted session: %v", p.SessionID)
+	}
+}
+
+// The raw alert has to survive the round trip, because `body` is a lossy
+// flattening of it and nothing else keeps a copy — core has no Alertmanager
+// client to ask again. A JSONB column also normalises what it stores, so
+// asserting on the string is not enough: it has to still parse, with the keys
+// intact.
+func TestCreate_KeepsRawPayloadThroughListAndGet(t *testing.T) {
+	store, _, ctx := newStore(t)
+
+	raw := `{"labels":{"alertname":"PodCrashLooping","container":"api"},"annotations":{"runbook_url":"https://runbook/pcl"},"generatorURL":"https://prom/graph?g0.expr=up==0"}`
+	id, created, err := store.Create(ctx, "infra-bootstrap", "alert", "fp1", "PodCrashLooping", "flattened text", raw)
+	if err != nil || !created {
+		t.Fatalf("create: created=%v err=%v", created, err)
+	}
+
+	got, err := store.Get(ctx, id)
+	if err != nil || got == nil {
+		t.Fatalf("get: %v", err)
+	}
+	var decoded struct {
+		Labels       map[string]string `json:"labels"`
+		Annotations  map[string]string `json:"annotations"`
+		GeneratorURL string            `json:"generatorURL"`
+	}
+	if err := json.Unmarshal([]byte(got.Payload), &decoded); err != nil {
+		t.Fatalf("payload did not survive as JSON: %v (%q)", err, got.Payload)
+	}
+	if decoded.Labels["container"] != "api" || decoded.Annotations["runbook_url"] == "" || decoded.GeneratorURL == "" {
+		t.Errorf("payload lost fields: %+v", decoded)
+	}
+
+	list, err := store.ListOpen(ctx)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(list) != 1 || list[0].Payload != got.Payload {
+		t.Errorf("ListOpen must return the same payload Get does, got %d rows", len(list))
+	}
+}
+
+// A schedule files with no payload at all. The column is NOT NULL so that no
+// reader has to handle a nil — an empty object, not an empty string and not a
+// NULL that fails the whole query rather than the row.
+func TestCreate_EmptyPayloadStoredAsEmptyObject(t *testing.T) {
+	store, _, ctx := newStore(t)
+
+	id, _, err := store.Create(ctx, "agent-fleet", "schedule", "schedule:x", "Scheduled: x", "do the thing", "")
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	got, err := store.Get(ctx, id)
+	if err != nil || got == nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Payload != "{}" {
+		t.Errorf("empty payload should read back as {}, got %q", got.Payload)
 	}
 }
