@@ -179,7 +179,7 @@ Any doc, code, comment, or memory that contradicts this file or an
   installs cold in seconds rather than warm in minutes. Sessions are pinned
   to nodes big enough to hold a working tree (`SESSION_NODE_SELECTOR`), since
   `local-path` is a hostPath on the node's OS disk and its size request is
-  advisory — `SESSION_RETENTION_MS` is what actually bounds the disk. See
+  advisory — `SESSION_RETENTION` is what actually bounds the disk. See
   [`adr/0048`](adr/0048-one-session-one-pod-one-shared-home.md).
 - **Prometheus metrics come from `core` and the provisioner only; worker and
   sidecar telemetry stays in Loki.** Worker pods are single-shot Jobs that

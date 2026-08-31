@@ -33,7 +33,7 @@ const sessionWorkdir = "/workspace"
 //
 // Under `local-path` this number is ADVISORY — the provisioner hands out a
 // hostPath directory and nothing enforces the request, so this does not stop a
-// session filling the node. SESSION_RETENTION_MS is what actually bounds the
+// session filling the node. SESSION_RETENTION is what actually bounds the
 // disk; this is what a future non-hostPath class would honour, and what makes
 // the intent legible in `kubectl get pvc`.
 const sessionPVCSize = "10Gi"

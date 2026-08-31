@@ -143,6 +143,22 @@ env:
   # channel — unset, they land in the normal trigger channel.
   - name: MAX_IN_FLIGHT_TASKS
     value: "5"
+  # How long an untouched session keeps its disk before the retention GC
+  # reclaims it (core/internal/config/config.go). The sweep deletes the working
+  # tree and the SDK resume state and marks the session swept; the row and its
+  # full transcript survive. There is NO backup of either disk — session
+  # volumes are local-path, a node hostPath, outside Longhorn's daily job — so
+  # this window is the only thing standing between uncommitted work and gone.
+  #
+  # Set here rather than left to the compiled-in default so changing it is a
+  # gitops edit, not a release. Duration string, `d` accepted.
+  #
+  # Raising it trades node disk for recoverable work: the PVC size request is
+  # advisory and unenforced on local-path, and the two worker nodes have ~85
+  # and ~50 GiB allocatable. A full node disk breaks kubelet, not just the
+  # fleet — check `df -h` on the workers before going much past this.
+  - name: SESSION_RETENTION
+    value: "6d"
   # The console federates its login to authentik (infra-bootstrap ADR-0041).
   #
   # DASHBOARD_PUBLIC_URL is not only the Discord deep-link base any more: the
