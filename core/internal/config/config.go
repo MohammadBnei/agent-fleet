@@ -4,6 +4,7 @@ package config
 
 import (
 	"log/slog"
+	"math"
 	"os"
 	"strconv"
 	"strings"
@@ -208,16 +209,28 @@ func envInt(key string, fallback int) int {
 // core from starting: a typo here must not take the console down, and the
 // compiled default is always a safe window. That does mean a typo is only
 // visible in the log — grep for "invalid duration" after changing one.
+//
+// Zero and negative are REJECTED, not merely odd. These durations become a
+// Postgres interval in the retention and idle sweeps (sessions/store.go), and
+// `now() - interval '0s'` is now, while a negative interval is a cutoff in the
+// FUTURE — either one matches every session that exists. Verified against a
+// real Postgres: a row one minute old is swept by both. So "-6d", which
+// strconv.Atoi is perfectly happy to read, would reclaim the whole fleet's
+// disk on the next 60s tick instead of nothing. Falling back to the compiled
+// default is the only safe reading of a duration nobody meant.
 func envDuration(key string, fallback time.Duration) time.Duration {
 	v := os.Getenv(key)
 	if v == "" {
 		return fallback
 	}
-	if days, err := strconv.Atoi(strings.TrimSuffix(v, "d")); err == nil && strings.HasSuffix(v, "d") {
-		return time.Duration(days) * 24 * time.Hour
-	}
 	d, err := time.ParseDuration(v)
-	if err != nil {
+	if days, derr := strconv.Atoi(strings.TrimSuffix(v, "d")); derr == nil && strings.HasSuffix(v, "d") {
+		d, err = time.Duration(days)*24*time.Hour, nil
+		if int64(days) > math.MaxInt64/int64(24*time.Hour) {
+			d = 0 // the multiply above wrapped; fall through to the reject
+		}
+	}
+	if err != nil || d <= 0 {
 		slog.Warn("invalid duration, using default", "key", key, "value", v, "default", fallback)
 		return fallback
 	}
