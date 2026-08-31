@@ -874,7 +874,7 @@ agent can read off the working tree it is already sitting in.
 | `STOP_GRACE_MS` | `30000` | how long the session loop waits after a Stop request before force-tearing down a pod that hasn't gone terminal on its own |
 | `IDLE_TIMEOUT_MS` | `1800000` (30min) | a live pod with no real transcript activity this long is torn down. The session survives and stays resumable |
 | `STARTUP_STALL_MS` | `180000` (3min) | a pod that came up and never said anything is torn down (`adr/0040`), gated on `activity_seen` — which `ReserveSlot` resets per pod, so it cannot be derived from the transcript |
-| `SESSION_RETENTION_MS` | `1209600000` (14d) | the retention GC: a session idle this long with no live pod has its PVC and SDK state reclaimed and `swept_at` written. The row and transcript survive — a swept session is readable history, just not resumable |
+| `SESSION_RETENTION` | `6d` in `k8s/core.yaml`, `10d` compiled default | duration string, `d` unit accepted. The retention GC: a session idle this long with no live pod has its PVC and SDK state reclaimed and `swept_at` written. The row and transcript survive — a swept session is readable history, just not resumable |
 | `TURN_STALL_MS` | – | how long a session may owe a human a response before `DeriveLiveState` reports `stalled` |
 
 #### Auth (`core/`, `adr/0056`)

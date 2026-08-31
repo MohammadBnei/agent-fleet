@@ -3,8 +3,11 @@
 package config
 
 import (
+	"log/slog"
+	"math"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -115,18 +118,29 @@ type Config struct {
 	// Deliberately much longer than IdleTimeout, which only reclaims a POD.
 	// Losing a pod costs a warm-up; losing the directory costs whatever was
 	// never committed, so the two clocks are not the same kind of decision.
-	// Env: SESSION_RETENTION_MS, default 3 days.
+	// Env: SESSION_RETENTION, a duration string with a `d` unit ("6d"),
+	// default 10 days. Set in k8s/core.yaml so the window is a gitops edit
+	// rather than a release — the deployed value, not this one, is what the
+	// fleet actually runs on.
 	//
-	// Was 14 days, shortened once session volumes moved to `local-path`
-	// (docs/adr/0048 §4). That is a hostPath directory on the node's OS disk,
-	// where the PVC's size request is advisory and unenforced — and the two
-	// worker nodes have ~85 and ~50 GiB allocatable. Five concurrent sessions
-	// is fine; two weeks of un-swept ones is a full node disk, which breaks
+	// The disk pressure that shortened this to 3 days is real and has not
+	// gone away: session volumes are `local-path` (docs/adr/0048 §4), a
+	// hostPath on the node's OS disk where the PVC size request is advisory
+	// and unenforced, and the two worker nodes have ~85 and ~50 GiB
+	// allocatable. Enough un-swept sessions is a full node disk, which breaks
 	// kubelet rather than just the fleet.
 	//
-	// Three days is not a guess about how long work takes: git is the durable
-	// copy, and a tree nobody has touched in three days is not work in
-	// progress. The row and its transcript survive either way.
+	// The default is nonetheless the LONG end of the range, because the two
+	// failure directions are not symmetric. Too long costs disk on a node,
+	// which is visible in `df` and recoverable by lowering this value. Too
+	// short deletes a working tree that has no backup of any kind. So the
+	// value that applies when nobody has said otherwise — a fresh local
+	// stack, or a deployed value that failed to parse — errs toward keeping
+	// the disk, and the tighter production number is stated explicitly in
+	// k8s/core.yaml where somebody chose it against real capacity.
+	//
+	// None of this is a claim about how long work takes: git is the durable
+	// copy, and the row and its transcript survive the sweep either way.
 	SessionRetention time.Duration
 	// GarageS3Endpoint must be externally reachable, not the in-cluster
 	// garage.bnei.lan host — filestore.PresignUpload/PresignDownload sign
@@ -163,7 +177,7 @@ func Load() Config {
 		IdleTimeout:           time.Duration(envInt("IDLE_TIMEOUT_MS", 30*60*1000)) * time.Millisecond,
 		StartupStall:          time.Duration(envInt("STARTUP_STALL_MS", 3*60*1000)) * time.Millisecond,
 		TurnStall:             time.Duration(envInt("TURN_STALL_MS", 90*1000)) * time.Millisecond,
-		SessionRetention:      time.Duration(envInt("SESSION_RETENTION_MS", 3*24*60*60*1000)) * time.Millisecond,
+		SessionRetention:      envDuration("SESSION_RETENTION", 10*24*time.Hour),
 		DashboardPublicURL:    os.Getenv("DASHBOARD_PUBLIC_URL"),
 		OIDCIssuerURL:         os.Getenv("OIDC_ISSUER_URL"),
 		OIDCClientID:          os.Getenv("OIDC_CLIENT_ID"),
@@ -191,4 +205,43 @@ func envInt(key string, fallback int) int {
 		}
 	}
 	return fallback
+}
+
+// envDuration reads a Go duration string, extended with the `d` (day) unit
+// that time.ParseDuration lacks: "6d" is 144h. Retention is argued in days by
+// everyone who touches it, so it is configured in days — a window nobody can
+// read off the value is a window nobody reviews.
+//
+// Only a bare "<int>d" is special-cased. Everything else goes to
+// time.ParseDuration, so "144h" and "90s" work and "6d12h" is a warn plus the
+// fallback rather than a silent misparse. An unparseable value never stops
+// core from starting: a typo here must not take the console down, and the
+// compiled default is always a safe window. That does mean a typo is only
+// visible in the log — grep for "invalid duration" after changing one.
+//
+// Zero and negative are REJECTED, not merely odd. These durations become a
+// Postgres interval in the retention and idle sweeps (sessions/store.go), and
+// `now() - interval '0s'` is now, while a negative interval is a cutoff in the
+// FUTURE — either one matches every session that exists. Verified against a
+// real Postgres: a row one minute old is swept by both. So "-6d", which
+// strconv.Atoi is perfectly happy to read, would reclaim the whole fleet's
+// disk on the next 60s tick instead of nothing. Falling back to the compiled
+// default is the only safe reading of a duration nobody meant.
+func envDuration(key string, fallback time.Duration) time.Duration {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	d, err := time.ParseDuration(v)
+	if days, derr := strconv.Atoi(strings.TrimSuffix(v, "d")); derr == nil && strings.HasSuffix(v, "d") {
+		d, err = time.Duration(days)*24*time.Hour, nil
+		if int64(days) > math.MaxInt64/int64(24*time.Hour) {
+			d = 0 // the multiply above wrapped; fall through to the reject
+		}
+	}
+	if err != nil || d <= 0 {
+		slog.Warn("invalid duration, using default", "key", key, "value", v, "default", fallback)
+		return fallback
+	}
+	return d
 }
