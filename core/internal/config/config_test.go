@@ -17,7 +17,7 @@ import (
 //     session on the fleet at the next 60s tick.
 func TestEnvDuration(t *testing.T) {
 	const key = "TEST_ENV_DURATION"
-	fallback := 3 * 24 * time.Hour
+	fallback := 10 * 24 * time.Hour
 
 	cases := []struct {
 		name string
@@ -72,8 +72,8 @@ func TestEnvDuration(t *testing.T) {
 // leave behind with every other test still green.
 func TestLoadSessionRetention(t *testing.T) {
 	t.Run("default", func(t *testing.T) {
-		if got := Load().SessionRetention; got != 3*24*time.Hour {
-			t.Errorf("SessionRetention default = %v, want 72h", got)
+		if got := Load().SessionRetention; got != 10*24*time.Hour {
+			t.Errorf("SessionRetention default = %v, want 240h", got)
 		}
 	})
 
