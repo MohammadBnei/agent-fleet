@@ -37,6 +37,7 @@ const (
 	DashboardService_AnswerQuestion_FullMethodName      = "/agentfleet.v1.DashboardService/AnswerQuestion"
 	DashboardService_RespondToPermission_FullMethodName = "/agentfleet.v1.DashboardService/RespondToPermission"
 	DashboardService_PostMessage_FullMethodName         = "/agentfleet.v1.DashboardService/PostMessage"
+	DashboardService_Transcribe_FullMethodName          = "/agentfleet.v1.DashboardService/Transcribe"
 	DashboardService_DeleteSession_FullMethodName       = "/agentfleet.v1.DashboardService/DeleteSession"
 	DashboardService_GetJournal_FullMethodName          = "/agentfleet.v1.DashboardService/GetJournal"
 	DashboardService_ListRepos_FullMethodName           = "/agentfleet.v1.DashboardService/ListRepos"
@@ -107,6 +108,12 @@ type DashboardServiceClient interface {
 	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	PostMessage(ctx context.Context, in *PostMessageRequest, opts ...grpc.CallOption) (*AppendResponse, error)
+	// Proxies one chunk of a dictation to ukubi-stt. Chunked unary, NOT
+	// server-streaming: the browser cannot stream *up* under any transport gRPC
+	// offers, so audio arrives as discrete requests regardless — and each
+	// chunk's text comes back in that chunk's own response, so there is nothing
+	// for a server stream to push.
+	Transcribe(ctx context.Context, in *TranscribeRequest, opts ...grpc.CallOption) (*TranscribeResponse, error)
 	DeleteSession(ctx context.Context, in *DeleteSessionRequest, opts ...grpc.CallOption) (*DeleteSessionResponse, error)
 	// Reuses provisioner.proto's ListWorktreesRequest (identical shape,
 	// empty) and DeleteWorktreeRequest/Response (identical shape, no
@@ -346,6 +353,16 @@ func (c *dashboardServiceClient) PostMessage(ctx context.Context, in *PostMessag
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(AppendResponse)
 	err := c.cc.Invoke(ctx, DashboardService_PostMessage_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dashboardServiceClient) Transcribe(ctx context.Context, in *TranscribeRequest, opts ...grpc.CallOption) (*TranscribeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(TranscribeResponse)
+	err := c.cc.Invoke(ctx, DashboardService_Transcribe_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -627,6 +644,12 @@ type DashboardServiceServer interface {
 	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	PostMessage(context.Context, *PostMessageRequest) (*AppendResponse, error)
+	// Proxies one chunk of a dictation to ukubi-stt. Chunked unary, NOT
+	// server-streaming: the browser cannot stream *up* under any transport gRPC
+	// offers, so audio arrives as discrete requests regardless — and each
+	// chunk's text comes back in that chunk's own response, so there is nothing
+	// for a server stream to push.
+	Transcribe(context.Context, *TranscribeRequest) (*TranscribeResponse, error)
 	DeleteSession(context.Context, *DeleteSessionRequest) (*DeleteSessionResponse, error)
 	// Reuses provisioner.proto's ListWorktreesRequest (identical shape,
 	// empty) and DeleteWorktreeRequest/Response (identical shape, no
@@ -736,6 +759,9 @@ func (UnimplementedDashboardServiceServer) RespondToPermission(context.Context, 
 }
 func (UnimplementedDashboardServiceServer) PostMessage(context.Context, *PostMessageRequest) (*AppendResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method PostMessage not implemented")
+}
+func (UnimplementedDashboardServiceServer) Transcribe(context.Context, *TranscribeRequest) (*TranscribeResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Transcribe not implemented")
 }
 func (UnimplementedDashboardServiceServer) DeleteSession(context.Context, *DeleteSessionRequest) (*DeleteSessionResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeleteSession not implemented")
@@ -1140,6 +1166,24 @@ func _DashboardService_PostMessage_Handler(srv interface{}, ctx context.Context,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(DashboardServiceServer).PostMessage(ctx, req.(*PostMessageRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DashboardService_Transcribe_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(TranscribeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DashboardServiceServer).Transcribe(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DashboardService_Transcribe_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DashboardServiceServer).Transcribe(ctx, req.(*TranscribeRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1632,6 +1676,10 @@ var DashboardService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "PostMessage",
 			Handler:    _DashboardService_PostMessage_Handler,
+		},
+		{
+			MethodName: "Transcribe",
+			Handler:    _DashboardService_Transcribe_Handler,
 		},
 		{
 			MethodName: "DeleteSession",

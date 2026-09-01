@@ -1,0 +1,10 @@
+# Go only. The dashboard never speaks to ukubi-stt directly — it goes through
+# core — so generating TS here would produce types nobody imports.
+version: v2
+plugins:
+  - local: protoc-gen-go
+    out: proto/gen/go
+    opt: paths=source_relative
+  - local: protoc-gen-go-grpc
+    out: proto/gen/go
+    opt: paths=source_relative

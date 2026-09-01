@@ -4,6 +4,8 @@
 // this is one component rather than two copies: getting Enter-vs-Shift+Enter
 // right involves an IME guard that is easy to write once and easy to forget in
 // the second copy.
+import { MicButton } from "../audio/MicButton";
+
 export function Composer({
   value,
   onChange,
@@ -59,6 +61,13 @@ export function Composer({
           leading-[1.7] max-h-[5.1em] overflow-y-auto placeholder:text-dim2 ${
             compact ? "text-sm" : "text-base"
           }`}
+      />
+      {/* Appends to whatever is typed rather than replacing it — dictation is
+          another way to enter text, not a mode that takes the box over. */}
+      <MicButton
+        disabled={disabled}
+        compact={compact}
+        onText={(t) => onChange(value + t)}
       />
       <button
         type="button"

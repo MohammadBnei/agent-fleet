@@ -20,6 +20,7 @@ import (
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 	"github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1/agentfleetv1connect"
 
+	"github.com/MohammadBnei/agent-fleet/core/internal/auth"
 	"github.com/MohammadBnei/agent-fleet/core/internal/filediff"
 	"github.com/MohammadBnei/agent-fleet/core/internal/filestore"
 	"github.com/MohammadBnei/agent-fleet/core/internal/journal"
@@ -31,6 +32,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/repos"
 	"github.com/MohammadBnei/agent-fleet/core/internal/schedules"
 	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
+	"github.com/MohammadBnei/agent-fleet/core/internal/sttclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
 )
 
@@ -61,6 +63,13 @@ type Server struct {
 	// which degrades the console to the captured-tool-input diff it has
 	// always had rather than breaking it.
 	fileDiffs *filediff.Store
+
+	// stt proxies dictation to ukubi-stt. nil disables Transcribe (it answers
+	// Unavailable), which loses voice input and nothing else — same shape as
+	// fileDiffs above. The GPU node reboots for gaming by design
+	// (infra-bootstrap ADR-0044), so "STT is not there" is a normal state and
+	// must not be able to take the console with it.
+	stt *sttclient.Client
 }
 
 func NewServer(sessionStore *sessions.Store, proposalStore *proposals.Store, transcr transcript.Store, journalStore *journal.Store, repoStore *repos.Store, snippetStore *promptsnippets.Store, e2e *provisionerclient.Client, files filestore.Store, hub *Hub, maxLive int, loki lokiclient.Querier, prom promclient.Querier, scheduleStore *schedules.Store, version string) *Server {
@@ -504,6 +513,8 @@ func (s *Server) StreamTranscript(ctx context.Context, req *connect.Request[agen
 // this server and coreserver hold the same one.
 func (s *Server) SetFileDiffStore(store *filediff.Store) { s.fileDiffs = store }
 
+func (s *Server) SetSTTClient(c *sttclient.Client) { s.stt = c }
+
 // GetFileDiff answers "what actually changed in this file" for a file the
 // CHANGES panel listed but the console cannot reconstruct — anything a Bash
 // command wrote: sed, a formatter, a codegen script. The panel itself has
@@ -729,6 +740,49 @@ func (s *Server) RespondToPermission(ctx context.Context, req *connect.Request[a
 // explicitly, before the message is appended — so the pod that reads it
 // back off streamHumanMessages already exists. Silently does nothing
 // extra when a pod is already live (the common case).
+// Transcribe proxies one chunk of a dictation to ukubi-stt.
+//
+// The dashboard cannot call that service directly: core allows no CORS and its
+// session cookie is SameSite=Lax, so a cross-origin call carries no identity —
+// and handing the browser an STT bearer token to work around that would give
+// every dashboard user a credential for the GPU. Proxying keeps the token here.
+func (s *Server) Transcribe(ctx context.Context, req *connect.Request[agentfleetv1.TranscribeRequest]) (*connect.Response[agentfleetv1.TranscribeResponse], error) {
+	if s.stt == nil {
+		return nil, connect.NewError(connect.CodeUnavailable, errors.New("speech-to-text is not configured"))
+	}
+
+	streamID := req.Msg.GetStreamId()
+	if streamID == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("stream_id is required"))
+	}
+	audio := req.Msg.GetAudio()
+	// Empty audio is only meaningful as a close: it tells the service to flush
+	// the encoder's buffered tail and release the recognizer.
+	if len(audio) == 0 && !req.Msg.GetLast() {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("audio is required"))
+	}
+
+	// The identity half of the session id. An empty one would collapse every
+	// caller into one recognizer — and FLEET_AUTH_DISABLED makes that reachable
+	// rather than theoretical, so it is refused here instead of silently
+	// producing a shared stream.
+	identity, ok := auth.FromContext(ctx)
+	if !ok || identity.Email == "" {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("no identity on the request"))
+	}
+
+	text, err := s.stt.Transcribe(ctx, s.stt.SessionID(identity.Email, streamID), audio, req.Msg.GetLast(), req.Msg.GetLanguage())
+	if err != nil {
+		if sttclient.Unavailable(err) {
+			// The GPU is busy, or its node is down. Both are states ADR-0044
+			// accepts; neither is a bug in this console.
+			return nil, connect.NewError(connect.CodeUnavailable, fmt.Errorf("speech-to-text unavailable: %w", err))
+		}
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	return connect.NewResponse(&agentfleetv1.TranscribeResponse{Text: text}), nil
+}
+
 func (s *Server) PostMessage(ctx context.Context, req *connect.Request[agentfleetv1.PostMessageRequest]) (*connect.Response[agentfleetv1.AppendResponse], error) {
 	sessionID := req.Msg.GetSessionId()
 	text := req.Msg.GetText()
