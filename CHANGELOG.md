@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.14.2](https://github.com/MohammadBnei/agent-fleet/compare/4.14.1...4.14.2) (2026-09-01)
+
+
+### Bug Fixes
+
+* **stt:** warm the audio graph before the click, and show arming ([#244](https://github.com/MohammadBnei/agent-fleet/issues/244)) ([5fee38a](https://github.com/MohammadBnei/agent-fleet/commit/5fee38a800d5d05ad12bb9990d099365c1cdc598)), closes [ukubi-stt#15](https://github.com/ukubi-stt/issues/15)
+
 ## [4.14.1](https://github.com/MohammadBnei/agent-fleet/compare/4.14.0...4.14.1) (2026-09-01)
 
 
