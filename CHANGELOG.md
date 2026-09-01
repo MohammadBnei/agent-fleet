@@ -1,5 +1,13 @@
 # Changelog
 
+# 4.14.0 (2026-09-01)
+
+
+### Features
+
+* **core:** configure session retention as a duration string ([#241](https://github.com/MohammadBnei/agent-fleet/issues/241)) ([54d7649](https://github.com/MohammadBnei/agent-fleet/commit/54d764930397195acbbe246fabd83424f5c24330))
+* **stt:** dictate into the composer, proxied through core ([#242](https://github.com/MohammadBnei/agent-fleet/issues/242)) ([5fc4683](https://github.com/MohammadBnei/agent-fleet/commit/5fc46837fe72b9b028ea888981ded1b6dc2c3744))
+
 # [4.13.0](https://github.com/MohammadBnei/agent-fleet/compare/4.12.1...4.13.0) (2026-08-27)
 
 
