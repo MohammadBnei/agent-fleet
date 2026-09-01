@@ -573,6 +573,13 @@ service DashboardService {
   // buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
   // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
   rpc PostMessage(PostMessageRequest) returns (AppendResponse);
+
+  // Proxies one chunk of a dictation to ukubi-stt. Chunked unary, NOT
+  // server-streaming: the browser cannot stream *up* under any transport gRPC
+  // offers, so audio arrives as discrete requests regardless — and each
+  // chunk's text comes back in that chunk's own response, so there is nothing
+  // for a server stream to push.
+  rpc Transcribe(TranscribeRequest) returns (TranscribeResponse);
   rpc DeleteSession(DeleteSessionRequest) returns (DeleteSessionResponse);
   // Reuses provisioner.proto's ListWorktreesRequest (identical shape,
   // empty) and DeleteWorktreeRequest/Response (identical shape, no
@@ -790,4 +797,33 @@ message GetFleetTopologyResponse {
   // asking.
   string worker_image = 4;
   string sidecar_image = 5;
+}
+
+// One ~560ms slice of a dictation.
+message TranscribeRequest {
+  // Raw 16kHz mono little-endian s16 PCM. No container, no encoding field —
+  // the browser produces exactly this and anything else is rejected upstream
+  // rather than resampled.
+  bytes audio = 1;
+
+  // Identifies one DICTATION, not one fleet session: two tabs can dictate into
+  // the same conversation, and the recognizer behind this is swept after 120s
+  // idle. Core derives the real STT session id from this plus the
+  // authenticated identity — a browser-supplied id would let one user
+  // interleave audio into another's.
+  string stream_id = 2;
+
+  // Flushes the encoder's buffered tail and releases the recognizer. Valid
+  // with empty audio, which is how a recording that stops on an exact chunk
+  // boundary closes.
+  bool last = 3;
+
+  // BCP-47-ish hint, e.g. "en". Empty lets the model decide.
+  string language = 4;
+}
+
+message TranscribeResponse {
+  // Only the NEW text for this chunk. The model does not revise earlier
+  // output, so clients concatenate rather than replacing a tail.
+  string text = 1;
 }

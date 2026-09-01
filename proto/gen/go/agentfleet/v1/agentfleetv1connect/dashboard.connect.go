@@ -87,6 +87,9 @@ const (
 	// DashboardServicePostMessageProcedure is the fully-qualified name of the DashboardService's
 	// PostMessage RPC.
 	DashboardServicePostMessageProcedure = "/agentfleet.v1.DashboardService/PostMessage"
+	// DashboardServiceTranscribeProcedure is the fully-qualified name of the DashboardService's
+	// Transcribe RPC.
+	DashboardServiceTranscribeProcedure = "/agentfleet.v1.DashboardService/Transcribe"
 	// DashboardServiceDeleteSessionProcedure is the fully-qualified name of the DashboardService's
 	// DeleteSession RPC.
 	DashboardServiceDeleteSessionProcedure = "/agentfleet.v1.DashboardService/DeleteSession"
@@ -201,6 +204,12 @@ type DashboardServiceClient interface {
 	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	PostMessage(context.Context, *connect.Request[v1.PostMessageRequest]) (*connect.Response[v1.AppendResponse], error)
+	// Proxies one chunk of a dictation to ukubi-stt. Chunked unary, NOT
+	// server-streaming: the browser cannot stream *up* under any transport gRPC
+	// offers, so audio arrives as discrete requests regardless — and each
+	// chunk's text comes back in that chunk's own response, so there is nothing
+	// for a server stream to push.
+	Transcribe(context.Context, *connect.Request[v1.TranscribeRequest]) (*connect.Response[v1.TranscribeResponse], error)
 	DeleteSession(context.Context, *connect.Request[v1.DeleteSessionRequest]) (*connect.Response[v1.DeleteSessionResponse], error)
 	// Reuses provisioner.proto's ListWorktreesRequest (identical shape,
 	// empty) and DeleteWorktreeRequest/Response (identical shape, no
@@ -368,6 +377,12 @@ func NewDashboardServiceClient(httpClient connect.HTTPClient, baseURL string, op
 			connect.WithSchema(dashboardServiceMethods.ByName("PostMessage")),
 			connect.WithClientOptions(opts...),
 		),
+		transcribe: connect.NewClient[v1.TranscribeRequest, v1.TranscribeResponse](
+			httpClient,
+			baseURL+DashboardServiceTranscribeProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("Transcribe")),
+			connect.WithClientOptions(opts...),
+		),
 		deleteSession: connect.NewClient[v1.DeleteSessionRequest, v1.DeleteSessionResponse](
 			httpClient,
 			baseURL+DashboardServiceDeleteSessionProcedure,
@@ -529,6 +544,7 @@ type dashboardServiceClient struct {
 	answerQuestion      *connect.Client[v1.AnswerQuestionRequest, v1.AppendResponse]
 	respondToPermission *connect.Client[v1.RespondToPermissionRequest, v1.AppendResponse]
 	postMessage         *connect.Client[v1.PostMessageRequest, v1.AppendResponse]
+	transcribe          *connect.Client[v1.TranscribeRequest, v1.TranscribeResponse]
 	deleteSession       *connect.Client[v1.DeleteSessionRequest, v1.DeleteSessionResponse]
 	getJournal          *connect.Client[v1.GetJournalRequest, v1.GetJournalResponse]
 	listRepos           *connect.Client[v1.ListReposRequest, v1.ListReposResponse]
@@ -642,6 +658,11 @@ func (c *dashboardServiceClient) RespondToPermission(ctx context.Context, req *c
 // PostMessage calls agentfleet.v1.DashboardService.PostMessage.
 func (c *dashboardServiceClient) PostMessage(ctx context.Context, req *connect.Request[v1.PostMessageRequest]) (*connect.Response[v1.AppendResponse], error) {
 	return c.postMessage.CallUnary(ctx, req)
+}
+
+// Transcribe calls agentfleet.v1.DashboardService.Transcribe.
+func (c *dashboardServiceClient) Transcribe(ctx context.Context, req *connect.Request[v1.TranscribeRequest]) (*connect.Response[v1.TranscribeResponse], error) {
+	return c.transcribe.CallUnary(ctx, req)
 }
 
 // DeleteSession calls agentfleet.v1.DashboardService.DeleteSession.
@@ -802,6 +823,12 @@ type DashboardServiceHandler interface {
 	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	PostMessage(context.Context, *connect.Request[v1.PostMessageRequest]) (*connect.Response[v1.AppendResponse], error)
+	// Proxies one chunk of a dictation to ukubi-stt. Chunked unary, NOT
+	// server-streaming: the browser cannot stream *up* under any transport gRPC
+	// offers, so audio arrives as discrete requests regardless — and each
+	// chunk's text comes back in that chunk's own response, so there is nothing
+	// for a server stream to push.
+	Transcribe(context.Context, *connect.Request[v1.TranscribeRequest]) (*connect.Response[v1.TranscribeResponse], error)
 	DeleteSession(context.Context, *connect.Request[v1.DeleteSessionRequest]) (*connect.Response[v1.DeleteSessionResponse], error)
 	// Reuses provisioner.proto's ListWorktreesRequest (identical shape,
 	// empty) and DeleteWorktreeRequest/Response (identical shape, no
@@ -963,6 +990,12 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 		DashboardServicePostMessageProcedure,
 		svc.PostMessage,
 		connect.WithSchema(dashboardServiceMethods.ByName("PostMessage")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dashboardServiceTranscribeHandler := connect.NewUnaryHandler(
+		DashboardServiceTranscribeProcedure,
+		svc.Transcribe,
+		connect.WithSchema(dashboardServiceMethods.ByName("Transcribe")),
 		connect.WithHandlerOptions(opts...),
 	)
 	dashboardServiceDeleteSessionHandler := connect.NewUnaryHandler(
@@ -1141,6 +1174,8 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 			dashboardServiceRespondToPermissionHandler.ServeHTTP(w, r)
 		case DashboardServicePostMessageProcedure:
 			dashboardServicePostMessageHandler.ServeHTTP(w, r)
+		case DashboardServiceTranscribeProcedure:
+			dashboardServiceTranscribeHandler.ServeHTTP(w, r)
 		case DashboardServiceDeleteSessionProcedure:
 			dashboardServiceDeleteSessionHandler.ServeHTTP(w, r)
 		case DashboardServiceGetJournalProcedure:
@@ -1266,6 +1301,10 @@ func (UnimplementedDashboardServiceHandler) RespondToPermission(context.Context,
 
 func (UnimplementedDashboardServiceHandler) PostMessage(context.Context, *connect.Request[v1.PostMessageRequest]) (*connect.Response[v1.AppendResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.PostMessage is not implemented"))
+}
+
+func (UnimplementedDashboardServiceHandler) Transcribe(context.Context, *connect.Request[v1.TranscribeRequest]) (*connect.Response[v1.TranscribeResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.Transcribe is not implemented"))
 }
 
 func (UnimplementedDashboardServiceHandler) DeleteSession(context.Context, *connect.Request[v1.DeleteSessionRequest]) (*connect.Response[v1.DeleteSessionResponse], error) {

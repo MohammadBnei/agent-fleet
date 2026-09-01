@@ -48,6 +48,13 @@ type Config struct {
 	// gitops/platform/values/prometheus/values.yaml.
 	PrometheusURL       string
 	ProvisionerGRPCAddr string
+
+	// STTAddr / STTToken reach ukubi-stt, the GPU speech-to-text service
+	// (infra-bootstrap ADR-0044). Both empty disables dictation, which is a
+	// supported state: that service is single-replica on a node that reboots
+	// for gaming, so the console must work without it.
+	STTAddr  string
+	STTToken string
 	// MaxInFlight caps fleet-wide concurrent WARM PODS (docs/adr/0019: ~5,
 	// the actual human-followable ceiling, not a technical limit).
 	//
@@ -172,6 +179,8 @@ func Load() Config {
 		LokiURL:               env("LOKI_URL", "http://platform-loki.monitoring.svc.cluster.local:3100"),
 		PrometheusURL:         env("PROMETHEUS_URL", "http://platform-prometheus-kube-p-prometheus.monitoring.svc.cluster.local:9090"),
 		ProvisionerGRPCAddr:   env("PROVISIONER_GRPC_ADDR", "provisioner.agent-fleet.svc.cluster.local:9090"),
+		STTAddr:               env("STT_ADDR", "ukubi-stt.ukubi-stt.svc.cluster.local:9090"),
+		STTToken:              os.Getenv("STT_TOKEN_FLEET"),
 		MaxInFlight:           envInt("MAX_IN_FLIGHT_TASKS", 5),
 		StopGrace:             time.Duration(envInt("STOP_GRACE_MS", 30000)) * time.Millisecond,
 		IdleTimeout:           time.Duration(envInt("IDLE_TIMEOUT_MS", 30*60*1000)) * time.Millisecond,

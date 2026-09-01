@@ -35,6 +35,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/repos"
 	"github.com/MohammadBnei/agent-fleet/core/internal/schedules"
 	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
+	"github.com/MohammadBnei/agent-fleet/core/internal/sttclient"
 	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
 	"github.com/MohammadBnei/agent-fleet/core/internal/webui"
 )
@@ -211,6 +212,21 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	// only channel core has for asking a pod anything, so it is what carries
 	// the request out and the answer back.
 	fileDiffs := filediff.New()
+	// Dictation. Deliberately non-fatal: ukubi-stt is single-replica on a node
+	// that reboots for gaming (infra-bootstrap ADR-0044), so a console that
+	// refuses to start without it would trade a working feature for a broken
+	// deployment. No token configured is the same story — the RPC answers
+	// Unavailable and everything else works.
+	if cfg.STTToken == "" {
+		slog.Info("speech-to-text disabled: STT_TOKEN_FLEET is not set")
+	} else if stt, err := sttclient.New(cfg.STTAddr, cfg.STTToken); err != nil {
+		slog.Warn("speech-to-text disabled", "addr", cfg.STTAddr, "err", err)
+	} else {
+		defer stt.Close()
+		dashboardSvc.SetSTTClient(stt)
+		slog.Info("speech-to-text enabled", "addr", cfg.STTAddr)
+	}
+
 	dashboardSvc.SetFileDiffStore(fileDiffs)
 	coreSvc.SetFileDiffStore(fileDiffs)
 	// The fleet's only outbound "a session needs you" signal. Without this

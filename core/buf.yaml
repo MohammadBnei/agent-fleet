@@ -1,0 +1,9 @@
+# A SECOND buf module, separate from ../proto, holding only vendored schemas
+# that core speaks and the dashboard does not. See core/proto/stt/v1/stt.proto
+# for why keeping them apart matters.
+version: v2
+modules:
+  - path: proto
+lint:
+  use:
+    - STANDARD
