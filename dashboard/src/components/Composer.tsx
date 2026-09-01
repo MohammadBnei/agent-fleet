@@ -4,6 +4,8 @@
 // this is one component rather than two copies: getting Enter-vs-Shift+Enter
 // right involves an IME guard that is easy to write once and easy to forget in
 // the second copy.
+import type { Dispatch, SetStateAction } from "react";
+
 import { MicButton } from "../audio/MicButton";
 
 export function Composer({
@@ -15,7 +17,11 @@ export function Composer({
   compact,
 }: {
   value: string;
-  onChange: (v: string) => void;
+  // A setter, not a plain callback, specifically so dictation can append with
+  // a functional update. `onChange(value + t)` captured `value` from the render
+  // that started the recording, so every chunk appended to the same stale
+  // string and each one visibly overwrote the last.
+  onChange: Dispatch<SetStateAction<string>>;
   onSend: () => void;
   disabled: boolean;
   placeholder: string;
@@ -63,11 +69,14 @@ export function Composer({
           }`}
       />
       {/* Appends to whatever is typed rather than replacing it — dictation is
-          another way to enter text, not a mode that takes the box over. */}
+          another way to enter text, not a mode that takes the box over.
+          The functional update is load-bearing: chunks arrive every ~560ms from
+          an async loop that closed over this callback when recording started,
+          so reading `value` here reads it as it was then. */}
       <MicButton
         disabled={disabled}
         compact={compact}
-        onText={(t) => onChange(value + t)}
+        onText={(t) => onChange((prev) => prev + t)}
       />
       <button
         type="button"
