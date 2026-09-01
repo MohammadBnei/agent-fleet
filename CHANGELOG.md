@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.14.1](https://github.com/MohammadBnei/agent-fleet/compare/4.14.0...4.14.1) (2026-09-01)
+
+
+### Bug Fixes
+
+* **stt:** append dictated chunks instead of overwriting them ([#243](https://github.com/MohammadBnei/agent-fleet/issues/243)) ([f0f7e5f](https://github.com/MohammadBnei/agent-fleet/commit/f0f7e5f28cbfa0c6bd43295d865c2d4a06f3a866))
+
 # 4.14.0 (2026-09-01)
 
 
