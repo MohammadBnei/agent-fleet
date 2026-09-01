@@ -79,7 +79,8 @@ func (c *Client) Close() error {
 // to work at all — so there is no way to be half-configured.
 func (c *Client) SessionID(identity, streamID string) string {
 	mac := hmac.New(sha256.New, []byte(c.token))
-	fmt.Fprintf(mac, "%s:%s", identity, streamID)
+	// hash.Hash.Write never returns an error; errcheck wants that said out loud.
+	_, _ = fmt.Fprintf(mac, "%s:%s", identity, streamID)
 	return hex.EncodeToString(mac.Sum(nil))[:32]
 }
 

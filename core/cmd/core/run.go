@@ -222,7 +222,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	} else if stt, err := sttclient.New(cfg.STTAddr, cfg.STTToken); err != nil {
 		slog.Warn("speech-to-text disabled", "addr", cfg.STTAddr, "err", err)
 	} else {
-		defer stt.Close()
+		defer func() { _ = stt.Close() }()
 		dashboardSvc.SetSTTClient(stt)
 		slog.Info("speech-to-text enabled", "addr", cfg.STTAddr)
 	}
