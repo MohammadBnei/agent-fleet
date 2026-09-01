@@ -23,4 +23,11 @@ export function createDictation(opts: {
   onLevel?: (level: number) => void;
 }): Dictation;
 
+/**
+ * Builds the AudioContext and compiles the worklet ahead of the click. Touches
+ * no device, so it prompts for nothing and lights no recording indicator —
+ * call it on hover. Memoised; safe to call repeatedly.
+ */
+export function prewarm(): Promise<AudioContext>;
+
 export function toPCM16(samples: Float32Array): Uint8Array;
