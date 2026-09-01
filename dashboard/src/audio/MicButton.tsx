@@ -42,6 +42,27 @@ export function MicButton({
     };
   }, []);
 
+  // Ahead of the click, in two stages, because the gap between clicking and the
+  // graph actually running is speech the user has already said and nothing
+  // captured.
+  //
+  // On mount: pull the code-split chunk down. It holds no resources, so the
+  // only cost is a fetch that would otherwise be on the click path.
+  // On hover/press: build the context and compile the worklet too. Neither
+  // touches the microphone, so this prompts for nothing and lights no recording
+  // indicator — which is exactly why it can happen before the user commits.
+  const warm = useCallback(() => {
+    void import("./stt-capture.js")
+      .then((m) => m.prewarm())
+      .catch(() => {
+        // Warming is an optimisation; start() surfaces the real failure.
+      });
+  }, []);
+
+  useEffect(() => {
+    void import("./stt-capture.js").catch(() => {});
+  }, []);
+
   const stop = useCallback(async () => {
     if (!dictationRef.current || busy) return;
     setRecording(false);
@@ -58,6 +79,11 @@ export function MicButton({
 
   const start = useCallback(async () => {
     setError(null);
+    // Arming is visible: the button reads "…" and is disabled until audio is
+    // actually being captured. Even warmed, getUserMedia takes time, and a
+    // button that looks ready while the graph is still being built invites
+    // exactly the words that then go missing.
+    setBusy(true);
     streamIdRef.current = crypto.randomUUID?.() ?? String(Date.now());
     try {
       const { createDictation } = await import("./stt-capture.js");
@@ -89,6 +115,8 @@ export function MicButton({
     } catch (e) {
       setError(e instanceof Error ? e.message : "microphone unavailable");
       dictationRef.current = null;
+    } finally {
+      setBusy(false);
     }
   }, [onText, stop]);
 
@@ -98,6 +126,9 @@ export function MicButton({
       type="button"
       disabled={disabled || busy}
       onClick={() => void (recording ? stop() : start())}
+      onPointerEnter={warm}
+      onPointerDown={warm}
+      onFocus={warm}
       title={error ?? (recording ? "Stop dictating" : "Dictate")}
       className={`text-xs flex-none leading-[1.7] disabled:opacity-40 ${
         error ? "text-red-400" : recording ? "text-primary" : "text-dim2"
