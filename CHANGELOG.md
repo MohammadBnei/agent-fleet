@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.14.3](https://github.com/MohammadBnei/agent-fleet/compare/4.14.2...4.14.3) (2026-09-02)
+
+
+### Bug Fixes
+
+* **proposals:** re-arm a schedule's dedup key when its session is swept ([#245](https://github.com/MohammadBnei/agent-fleet/issues/245)) ([074b8f2](https://github.com/MohammadBnei/agent-fleet/commit/074b8f2dfbaf1a1c2920cd96c9eb53b33e548856))
+
 ## [4.14.2](https://github.com/MohammadBnei/agent-fleet/compare/4.14.1...4.14.2) (2026-09-01)
 
 
