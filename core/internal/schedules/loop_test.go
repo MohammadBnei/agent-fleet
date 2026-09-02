@@ -21,6 +21,9 @@ type stubRunner struct {
 	// the session StandingFor names when it does not.
 	deduped bool
 	holder  string
+	// dismissed records the keys a run-now cleared, so a test can tell the
+	// override apart from a Create that happened to succeed anyway.
+	dismissed []string
 }
 
 func (r *stubRunner) Create(_ context.Context, repo, source, dedupKey, title, body, _ string) (string, bool, error) {
@@ -34,6 +37,13 @@ func (r *stubRunner) Create(_ context.Context, repo, source, dedupKey, title, bo
 
 func (r *stubRunner) StandingFor(_ context.Context, _, _ string) (string, error) {
 	return r.holder, nil
+}
+
+func (r *stubRunner) DismissStanding(_ context.Context, _, dedupKey string) error {
+	r.dismissed = append(r.dismissed, dedupKey)
+	// A real dismiss frees the key, so the next Create files.
+	r.deduped = false
+	return nil
 }
 
 // The bug this whole change started from: the repo was a Go constant, so every
@@ -167,5 +177,65 @@ func TestSkippedTickOnAnUnopenedProposalKeepsTheGenericMessage(t *testing.T) {
 	}
 	if list[0].LastStatus != "skipped: previous run still open" {
 		t.Errorf("last_status = %q, want the generic skip message", list[0].LastStatus)
+	}
+}
+
+// A human pressing Run now must never be swallowed by the dedup key.
+//
+// The key exists to stop CADENCE ticks stacking up on a run in progress. It was
+// overruling the button too: Create returned created=false and the only trace
+// was a skip written into last_status, so the click looked like it did nothing
+// (observed live on "Weekly Rundown", 2026-09-02, whose next cron slot was six
+// days out).
+func TestRunNowClearsTheKeyAndFiles(t *testing.T) {
+	ctx := context.Background()
+	store := NewStore(dbtest.NewPool(t))
+	// deduped: a proposal is already standing, which is the whole problem.
+	runner := &stubRunner{deduped: true, holder: "0d1e2f30-0000-4000-8000-000000000009"}
+	loop := NewLoop(store, runner)
+
+	sc, err := store.Create(ctx, every(604800), time.Time{})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	// NOT backdated: next_run_at is a week out, so this tick is due only
+	// because a human asked.
+	if _, err := store.RunNow(ctx, sc.ID); err != nil {
+		t.Fatalf("run now: %v", err)
+	}
+	loop.tick(ctx)
+
+	if len(runner.dismissed) != 1 || runner.dismissed[0] != "schedule:"+sc.ID {
+		t.Fatalf("run-now did not clear the standing proposal: %+v", runner.dismissed)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("expected one proposal filed, got %d", len(runner.calls))
+	}
+	list, err := store.List(ctx)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if list[0].LastStatus != "proposal proposal-id" {
+		t.Errorf("last_status = %q, want a filed proposal — Run now was swallowed", list[0].LastStatus)
+	}
+}
+
+// The cadence half must keep its old behaviour: a tick that is merely due does
+// NOT clear the key, or a long run would collect one proposal per tick.
+func TestADueTickDoesNotClearTheKey(t *testing.T) {
+	ctx := context.Background()
+	store := NewStore(dbtest.NewPool(t))
+	runner := &stubRunner{deduped: true, holder: "0d1e2f30-0000-4000-8000-000000000009"}
+	loop := NewLoop(store, runner)
+
+	sc, err := store.Create(ctx, every(60), time.Time{})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	backdate(t, store, sc.ID)
+	loop.tick(ctx)
+
+	if len(runner.dismissed) != 0 {
+		t.Fatalf("a cadence tick cleared the dedup key: %+v", runner.dismissed)
 	}
 }
