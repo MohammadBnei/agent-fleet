@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.14.4](https://github.com/MohammadBnei/agent-fleet/compare/4.14.3...4.14.4) (2026-09-02)
+
+
+### Bug Fixes
+
+* **schedules:** never veto Run now, and let a cadence outlive a dead pod ([#246](https://github.com/MohammadBnei/agent-fleet/issues/246)) ([9806c49](https://github.com/MohammadBnei/agent-fleet/commit/9806c495d4fa0ab405387db3e64c42bf1e20165f))
+
 ## [4.14.3](https://github.com/MohammadBnei/agent-fleet/compare/4.14.2...4.14.3) (2026-09-02)
 
 
