@@ -123,7 +123,13 @@ func (s *Store) Create(ctx context.Context, repo, source, dedupKey, title, body,
 	}
 	// Rollback on every path that does not explicitly Commit. A committed tx
 	// makes this a no-op.
-	defer func() { _ = tx.Rollback(ctx) }()
+	//
+	// WithoutCancel, not ctx: the most likely reason we are unwinding is that
+	// ctx just died — core shutting down mid-tick, or an Alertmanager sender
+	// hanging up. Issuing ROLLBACK on a done context cannot be written, so pgx
+	// destroys the pooled connection instead of returning it, and an alert
+	// burst whose senders time out churns one connection per request.
+	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
 
 	if keyPtr != nil {
 		// Re-arm the key if the run its standing proposal opened has ended.
