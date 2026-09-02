@@ -140,7 +140,7 @@ func TestSkippedTickNamesTheHoldingSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
-	want := "skipped: waiting on session " + runner.holder
+	want := "skipped: session " + runner.holder
 	if list[0].LastStatus != want {
 		t.Errorf("last_status = %q, want %q", list[0].LastStatus, want)
 	}

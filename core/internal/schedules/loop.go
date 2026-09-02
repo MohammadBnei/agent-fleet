@@ -151,6 +151,10 @@ func (l *Loop) fire(ctx context.Context, s Schedule, now time.Time) {
 		// finished weeks ago and was never archived — and the second is a
 		// stall a human has to clear. Only the session id tells them apart,
 		// and the dashboard already opens on ?session=<id>.
+		//
+		// Kept short on purpose: the Schedules grid renders last_status in a
+		// truncating cell, so a longer prefix is paid for out of the one part
+		// that matters — the id at the end.
 		status = "skipped: previous run still open"
 		holder, herr := l.runner.StandingFor(ctx, s.Repo, dedupKey)
 		if herr != nil {
@@ -158,7 +162,7 @@ func (l *Loop) fire(ctx context.Context, s Schedule, now time.Time) {
 			// generic message below is still true — just less useful.
 			slog.Warn("schedules: standing proposal lookup failed", "schedule", s.Name, "error", herr)
 		} else if holder != "" {
-			status = "skipped: waiting on session " + holder
+			status = "skipped: session " + holder
 		}
 		slog.Info("schedules: previous run still open, skipping",
 			"schedule", s.Name, "waitingOnSession", holder)

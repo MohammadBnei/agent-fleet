@@ -347,9 +347,20 @@ function ScheduleForm({
   );
 }
 
+// Three states, not two. A schedule that files nothing every tick because the
+// previous run still holds its dedup key was rendering the same success green
+// as one that just ran — which is how a permanently-stalled schedule went
+// unnoticed. It is not an error either, though: a skip is legitimate while the
+// previous run is genuinely in flight, so it gets its own muted dot rather
+// than the error orange, and it deliberately does not wash the row.
 function StatusDot({ schedule }: { schedule: Schedule }) {
-  const failed = schedule.lastStatus.startsWith("error");
-  const cls = !schedule.enabled ? "border border-dim2" : failed ? "bg-warning" : "bg-success";
+  const cls = !schedule.enabled
+    ? "border border-dim2"
+    : schedule.lastStatus.startsWith("error")
+      ? "bg-warning"
+      : schedule.lastStatus.startsWith("skipped")
+        ? "bg-dim2"
+        : "bg-success";
   return <span className={`w-[7px] h-[7px] rounded-full flex-none ${cls}`} />;
 }
 function scheduleActions(
