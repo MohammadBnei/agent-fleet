@@ -61,9 +61,42 @@ func NewStore(pool *pgxpool.Pool) *Store {
 //
 // The dedup window is "not dismissed" — deliberately NOT "not yet opened".
 // Keying it on un-opened would free the key the moment a human opens the
-// proposal, so an hourly cadence whose session runs 3 hours would file
-// three proposals for the same thing. Archiving a session dismisses its
-// proposal, and that is what re-arms the key.
+// proposal, so an hourly cadence whose session runs 3 hours would file three
+// proposals for the same thing.
+//
+// What re-arms the key is therefore the run ENDING, and there are two ways:
+// a human archives the session (ArchiveSession -> DismissForSession), or the
+// retention GC sweeps it. The sweep is the one this reap adds. Without it a
+// swept session — no longer resumable, its disk gone — held its key forever,
+// and the schedule that filed it logged "previous run still open" on every
+// tick until someone noticed, which nothing prompted them to do.
+//
+// The predicate stops at archived/swept ON PURPOSE. Three richer signals look
+// like "the run finished" and are all wrong here:
+//
+//   - last_entry_type = 'result' is written only when the worker sees the
+//     SDK's own result message. An OOM-killed, evicted or node-lost pod never
+//     gets there, and a human Stop ends on 'interrupt' — so the most common
+//     bad endings would wedge exactly as before.
+//   - activity_seen is per-POD state, reset by ReserveSlot on every warm. Read
+//     as per-session state, a failed re-warm looks finished and re-arms a
+//     session that is mid-work with a full transcript.
+//   - pod_phase is not the run. The idle sweep reaps the pod after 30 minutes
+//     and the worker pod is explicitly paused between rounds, so every opened
+//     session sits at a non-live phase in steady state. Worse, the reconcile
+//     loop writes TERMINATED in a way it explicitly tolerates being wrong
+//     about ("repaired on the next pass") and the provisioner writes CRASHED
+//     for transient clone failures — keying on either turns a recoverable
+//     phase write into an irreversible dismissed_at.
+//
+// Archived and swept are the only two endings a machine can compute, which is
+// the same reason the sessions table carries no status column at all.
+//
+// A finished-but-unarchived run therefore still holds its key until the
+// retention sweep. That is accepted rather than inferred away: the schedule
+// loop names the holding session in last_status (see StandingFor), so it is a
+// visible one-click Archive instead of a silent stall.
+//
 // payloadJSON is the raw document the proposal came from, kept verbatim
 // because body is a lossy flattening of it and nothing else records the
 // original. Empty means "none" and is stored as an empty object, the same
@@ -77,7 +110,62 @@ func (s *Store) Create(ctx context.Context, repo, source, dedupKey, title, body,
 	if payloadJSON == "" {
 		payloadJSON = "{}"
 	}
-	err = s.pool.QueryRow(ctx, `
+
+	// One transaction around reap-then-insert. If the UPDATE committed and the
+	// INSERT then failed — context deadline, pool exhaustion, the
+	// proposals_source_check CHECK — the key would be freed with nothing filed,
+	// and the row would carry a dismissed_at for a reason that never happened,
+	// which also silently turns a later DismissForSession into a no-op.
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		slog.Error("proposals Create: begin", "repo", repo, "source", source, "error", err)
+		return "", false, fmt.Errorf("create proposal: %w", err)
+	}
+	// Rollback on every path that does not explicitly Commit. A committed tx
+	// makes this a no-op.
+	//
+	// WithoutCancel, not ctx: the most likely reason we are unwinding is that
+	// ctx just died — core shutting down mid-tick, or an Alertmanager sender
+	// hanging up. Issuing ROLLBACK on a done context cannot be written, so pgx
+	// destroys the pooled connection instead of returning it, and an alert
+	// burst whose senders time out churns one connection per request.
+	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
+
+	if keyPtr != nil {
+		// Re-arm the key if the run its standing proposal opened has ended.
+		//
+		// Written in positive form deliberately: `NOT EXISTS (... archived_at
+		// IS NULL ...)` reads as if it also covers a missing session row, which
+		// the ON DELETE SET NULL foreign key makes unreachable while session_id
+		// is non-NULL.
+		//
+		// session_id IS NOT NULL leaves two rows alone on purpose: an un-opened
+		// proposal, which is sitting in a human's inbox and holds its own key,
+		// and one detached by a session delete, which reappears in ListOpen for
+		// the same reason.
+		//
+		// This is the only place outside the sessions package that reads the
+		// sessions table. It is here because Create is the single choke point
+		// both proposal sources route through, which is what makes the fix
+		// self-healing for rows already stuck; and it reads two terminal-state
+		// columns, never the pod path this package deliberately cannot touch.
+		if _, err = tx.Exec(ctx, `
+			UPDATE proposals p SET dismissed_at = now()
+			WHERE p.repo = $1 AND p.dedup_key = $2
+			  AND p.dismissed_at IS NULL
+			  AND p.session_id IS NOT NULL
+			  AND EXISTS (
+			    SELECT 1 FROM sessions s
+			     WHERE s.id = p.session_id
+			       AND (s.archived_at IS NOT NULL OR s.swept_at IS NOT NULL)
+			  )
+		`, repo, dedupKey); err != nil {
+			slog.Error("proposals Create: reap", "repo", repo, "dedupKey", dedupKey, "error", err)
+			return "", false, fmt.Errorf("create proposal: reap standing: %w", err)
+		}
+	}
+
+	err = tx.QueryRow(ctx, `
 		INSERT INTO proposals (repo, source, dedup_key, title, body, payload)
 		VALUES ($1, $2, $3, $4, $5, $6)
 		ON CONFLICT DO NOTHING
@@ -85,14 +173,54 @@ func (s *Store) Create(ctx context.Context, repo, source, dedupKey, title, body,
 	`, repo, source, keyPtr, title, body, payloadJSON).Scan(&id)
 	if err == pgx.ErrNoRows {
 		// The partial unique index rejected it: one is already standing.
+		//
+		// Returning WITHOUT committing is deliberate. A conflict here means
+		// another transaction inserted a standing row for this key while we
+		// were running, so keeping our dismissal would retire the older
+		// proposal in favour of one we did not file.
 		return "", false, nil
 	}
 	if err != nil {
 		slog.Error("proposals Create", "repo", repo, "source", source, "error", err)
 		return "", false, fmt.Errorf("create proposal: %w", err)
 	}
+	if err = tx.Commit(ctx); err != nil {
+		slog.Error("proposals Create: commit", "repo", repo, "source", source, "error", err)
+		return "", false, fmt.Errorf("create proposal: commit: %w", err)
+	}
 	slog.Info("proposals Create", "proposalId", id, "repo", repo, "source", source)
 	return id, true, nil
+}
+
+// StandingFor returns the session id of the proposal currently holding
+// (repo, dedupKey), or "" when none stands or the one that does has not been
+// opened yet.
+//
+// It exists so a caller that got created=false can say WHICH session is
+// holding the key rather than only that something is. A schedule whose run
+// finished but was never archived is otherwise indistinguishable from one
+// mid-run, and that ambiguity is what let a permanently-stalled schedule sit
+// unnoticed behind a green status dot.
+func (s *Store) StandingFor(ctx context.Context, repo, dedupKey string) (string, error) {
+	if dedupKey == "" {
+		return "", nil
+	}
+	var sessionID *string
+	err := s.pool.QueryRow(ctx, `
+		SELECT session_id FROM proposals
+		WHERE repo = $1 AND dedup_key = $2 AND dismissed_at IS NULL
+	`, repo, dedupKey).Scan(&sessionID)
+	if err == pgx.ErrNoRows {
+		return "", nil
+	}
+	if err != nil {
+		slog.Error("proposals StandingFor", "repo", repo, "dedupKey", dedupKey, "error", err)
+		return "", fmt.Errorf("standing proposal for %q: %w", dedupKey, err)
+	}
+	if sessionID == nil {
+		return "", nil
+	}
+	return *sessionID, nil
 }
 
 // ListOpen returns proposals that are neither opened nor dismissed — the
