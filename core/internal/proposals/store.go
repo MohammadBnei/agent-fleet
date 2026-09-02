@@ -22,6 +22,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
 )
 
 type Proposal struct {
@@ -92,10 +94,33 @@ func NewStore(pool *pgxpool.Pool) *Store {
 // Archived and swept are the only two endings a machine can compute, which is
 // the same reason the sessions table carries no status column at all.
 //
-// A finished-but-unarchived run therefore still holds its key until the
-// retention sweep. That is accepted rather than inferred away: the schedule
-// loop names the holding session in last_status (see StandingFor), so it is a
-// visible one-click Archive instead of a silent stall.
+// SCHEDULES ARE THE ONE EXCEPTION, and only because of what a schedule's
+// proposal contains. Waiting for archived/swept means a weekly cadence can
+// lose a whole slot: retention is 6d and the cadence is 7d, so a run that
+// finished on Tuesday and that nobody archived still holds the key the
+// following Tuesday. Observed live on "Weekly Rundown", 2026-09-02.
+//
+// So for source='schedule' the key also re-arms once the holding session's pod
+// is gone. That is the same pod_phase signal rejected above, and it is safe
+// HERE for reasons that do not hold anywhere else:
+//
+//   - the body is regenerable. A schedule's prompt lives in schedules.prompt,
+//     so retiring its proposal loses nothing. An alert's body is the only
+//     record of the payload — core has no Alertmanager client to ask again —
+//     which is why alerts keep the strict rule.
+//   - the cadence is the authority for a recurring task. "It is Tuesday" is a
+//     better reason to run than "last Tuesday's pod is gone" is a reason not
+//     to.
+//   - nothing is destroyed and nothing is dispatched. Re-arming files a
+//     proposal; opening it is still a human click, so the cost of being wrong
+//     is one inbox row, not a second agent.
+//
+// pod_phase IS NOT NULL is load-bearing: a session that has never been warmed
+// has no phase, which is the window inside OpenFromProposal between the
+// committed Open and ReserveSlot's write. Without it, a Create landing there
+// retires a proposal a human just opened. A session being RE-warmed sits at a
+// terminal phase for that same window and can be re-armed under it — accepted,
+// since the cost is one duplicate inbox row.
 //
 // payloadJSON is the raw document the proposal came from, kept verbatim
 // because body is a lossy flattening of it and nothing else records the
@@ -157,9 +182,15 @@ func (s *Store) Create(ctx context.Context, repo, source, dedupKey, title, body,
 			  AND EXISTS (
 			    SELECT 1 FROM sessions s
 			     WHERE s.id = p.session_id
-			       AND (s.archived_at IS NOT NULL OR s.swept_at IS NOT NULL)
+			       AND (
+			         s.archived_at IS NOT NULL
+			         OR s.swept_at IS NOT NULL
+			         OR (p.source = 'schedule'
+			             AND s.pod_phase IS NOT NULL
+			             AND NOT (s.pod_phase = ANY($3)))
+			       )
 			  )
-		`, repo, dedupKey); err != nil {
+		`, repo, dedupKey, sessions.LivePhases()); err != nil {
 			slog.Error("proposals Create: reap", "repo", repo, "dedupKey", dedupKey, "error", err)
 			return "", false, fmt.Errorf("create proposal: reap standing: %w", err)
 		}
@@ -345,5 +376,35 @@ func (s *Store) Unclaim(ctx context.Context, id, sessionID string) error {
 		return fmt.Errorf("unclaim proposal: %w", err)
 	}
 	slog.Info("proposals Unclaim", "proposalId", id, "sessionId", sessionID)
+	return nil
+}
+
+// DismissStanding retires whatever proposal currently holds (repo, dedupKey),
+// whatever state its session is in.
+//
+// This is the "run it anyway" path, and it exists because a human pressing Run
+// now was being vetoed by the dedup key. That key is there to stop CADENCE
+// ticks stacking up on a run in progress; it was never meant to overrule a
+// person explicitly asking for a run, and doing so left Run now silently doing
+// nothing but writing a skip into last_status (observed live 2026-09-02).
+//
+// Unconditional on purpose, including an un-opened proposal: re-filing an
+// identical one costs nothing, and any narrower rule reintroduces a state
+// where the button does not work.
+func (s *Store) DismissStanding(ctx context.Context, repo, dedupKey string) error {
+	if dedupKey == "" {
+		return nil
+	}
+	tag, err := s.pool.Exec(ctx, `
+		UPDATE proposals SET dismissed_at = now()
+		WHERE repo = $1 AND dedup_key = $2 AND dismissed_at IS NULL
+	`, repo, dedupKey)
+	if err != nil {
+		slog.Error("proposals DismissStanding", "repo", repo, "dedupKey", dedupKey, "error", err)
+		return fmt.Errorf("dismiss standing proposal: %w", err)
+	}
+	if tag.RowsAffected() > 0 {
+		slog.Info("proposals DismissStanding", "repo", repo, "dedupKey", dedupKey)
+	}
 	return nil
 }

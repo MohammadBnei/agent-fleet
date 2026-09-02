@@ -24,6 +24,10 @@ type Runner interface {
 	// say which one rather than only that something is. "" when the standing
 	// proposal has not been opened yet.
 	StandingFor(ctx context.Context, repo, dedupKey string) (string, error)
+
+	// DismissStanding retires whatever proposal holds the key, so an explicit
+	// human "run now" is never vetoed by a dedup meant for cadence ticks.
+	DismissStanding(ctx context.Context, repo, dedupKey string) error
 }
 
 // proposalSource is the `source` value schedules file under. It is a
@@ -94,7 +98,11 @@ func (l *Loop) tick(ctx context.Context) {
 func (l *Loop) fire(ctx context.Context, s Schedule, now time.Time) {
 	// Claim BEFORE filing. The claim is the exactly-once gate; a lost race
 	// means another tick (or another core replica) is already filing this one.
-	if s.DueAt(now) {
+	// Captured before either claim: it is what separates a cadence tick from a
+	// human pressing the button, and the two get different dedup treatment
+	// below.
+	runNow := !s.DueAt(now)
+	if !runNow {
 		next, spent, err := nextRun(s, now)
 		if err != nil {
 			// A cron that cannot fire would otherwise leave the row due on
@@ -134,6 +142,19 @@ func (l *Loop) fire(ctx context.Context, s Schedule, now time.Time) {
 	// tick after it finishes or is dismissed files a fresh one. Without this
 	// an un-opened schedule would accumulate one row per cadence forever.
 	dedupKey := "schedule:" + s.ID
+	// A human asked for this run explicitly, so clear the key first. Without
+	// this the click was swallowed: Create returned created=false and the only
+	// trace was a skip in last_status, which is what Run now looks like when it
+	// silently does nothing (observed live on "Weekly Rundown", 2026-09-02).
+	//
+	// Best-effort: if it fails, the Create below still runs and at worst skips
+	// exactly as it does today, which is no worse than before.
+	if runNow {
+		if err := l.runner.DismissStanding(ctx, s.Repo, dedupKey); err != nil {
+			slog.Warn("schedules: could not clear the standing proposal for a run-now",
+				"schedule", s.Name, "error", err)
+		}
+	}
 	proposalID, created, err := l.runner.Create(ctx, s.Repo, proposalSource, dedupKey,
 		"Scheduled: "+s.Name, s.Prompt, "")
 	status := "proposal " + proposalID

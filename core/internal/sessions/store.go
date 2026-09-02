@@ -19,6 +19,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"slices"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -429,6 +430,17 @@ var livePhases = []string{
 	"POD_PHASE_CREATED",
 	"POD_PHASE_SCHEDULED",
 	"POD_PHASE_RUNNING",
+}
+
+// LivePhases exposes the same set to other packages, as a copy: the slice
+// backs ReserveSlot's concurrency cap and all four sweeps, and an exported var
+// would let any importer mutate it out from under them.
+//
+// The one caller outside this package is proposals.Create, which needs to know
+// whether a schedule's previous run still has a pod. It reads this rather than
+// re-spelling the enum so the two cannot drift.
+func LivePhases() []string {
+	return slices.Clone(livePhases)
 }
 
 // IsPodPhaseLive mirrors livePhases for callers holding a single value.
