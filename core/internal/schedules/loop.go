@@ -19,6 +19,11 @@ type Runner interface {
 	// from — an Alertmanager alert, for the webhook. A schedule has none, so
 	// this loop always passes "".
 	Create(ctx context.Context, repo, source, dedupKey, title, body, payloadJSON string) (string, bool, error)
+
+	// StandingFor names the session holding a dedup key, so a skipped tick can
+	// say which one rather than only that something is. "" when the standing
+	// proposal has not been opened yet.
+	StandingFor(ctx context.Context, repo, dedupKey string) (string, error)
 }
 
 // proposalSource is the `source` value schedules file under. It is a
@@ -128,7 +133,8 @@ func (l *Loop) fire(ctx context.Context, s Schedule, now time.Time) {
 	// un-opened proposal (or still running) collapses into it, and the next
 	// tick after it finishes or is dismissed files a fresh one. Without this
 	// an un-opened schedule would accumulate one row per cadence forever.
-	proposalID, created, err := l.runner.Create(ctx, s.Repo, proposalSource, "schedule:"+s.ID,
+	dedupKey := "schedule:" + s.ID
+	proposalID, created, err := l.runner.Create(ctx, s.Repo, proposalSource, dedupKey,
 		"Scheduled: "+s.Name, s.Prompt, "")
 	status := "proposal " + proposalID
 	switch {
@@ -139,8 +145,23 @@ func (l *Loop) fire(ctx context.Context, s Schedule, now time.Time) {
 		// Recording this honestly matters: claiming "proposal " for one we
 		// didn't create would make a permanently-stuck schedule look like it
 		// ran every cadence.
-		slog.Info("schedules: previous run still open, skipping", "schedule", s.Name)
+		//
+		// Naming the holder matters for the same reason. "previous run still
+		// open" is true both of a run genuinely in flight and of one that
+		// finished weeks ago and was never archived — and the second is a
+		// stall a human has to clear. Only the session id tells them apart,
+		// and the dashboard already opens on ?session=<id>.
 		status = "skipped: previous run still open"
+		holder, herr := l.runner.StandingFor(ctx, s.Repo, dedupKey)
+		if herr != nil {
+			// Not fatal: the skip itself is already decided, and the
+			// generic message below is still true — just less useful.
+			slog.Warn("schedules: standing proposal lookup failed", "schedule", s.Name, "error", herr)
+		} else if holder != "" {
+			status = "skipped: waiting on session " + holder
+		}
+		slog.Info("schedules: previous run still open, skipping",
+			"schedule", s.Name, "waitingOnSession", holder)
 	default:
 		slog.Info("schedules: filed proposal", "schedule", s.Name, "repo", s.Repo, "proposalId", proposalID)
 	}

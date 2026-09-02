@@ -340,3 +340,190 @@ func TestCreate_EmptyPayloadStoredAsEmptyObject(t *testing.T) {
 		t.Errorf("empty payload should read back as {}, got %q", got.Payload)
 	}
 }
+
+// openInto files a proposal and opens it into a fresh session, the shape every
+// re-arm case below starts from.
+func openInto(t *testing.T, store *Store, sessionStore *sessions.Store, ctx context.Context, key string) (string, string) {
+	t.Helper()
+	id, created, err := store.Create(ctx, "agent-fleet", "schedule", key, "T", "B", "")
+	if err != nil || !created {
+		t.Fatalf("create: created=%v err=%v", created, err)
+	}
+	sessionID, err := sessionStore.Create(ctx, sessions.CreateParams{Repo: "agent-fleet", Title: "t", Description: "d"})
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	if err := store.Open(ctx, id, sessionID); err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	return id, sessionID
+}
+
+func refile(t *testing.T, store *Store, ctx context.Context, key string) bool {
+	t.Helper()
+	_, created, err := store.Create(ctx, "agent-fleet", "schedule", key, "T", "B", "")
+	if err != nil {
+		t.Fatalf("refile: %v", err)
+	}
+	return created
+}
+
+// The bug this change exists for. The retention GC sweeps a session's disk and
+// marks it swept — it is no longer resumable — but nothing dismissed the
+// proposal that opened it, so the dedup key stayed held and the schedule
+// logged "previous run still open" on every 60s tick, forever, behind a green
+// status dot.
+func TestCreate_ReArmsOnceTheSessionIsSwept(t *testing.T) {
+	store, sessionStore, ctx := newStore(t)
+	_, sessionID := openInto(t, store, sessionStore, ctx, "schedule:swept")
+
+	if refile(t, store, ctx, "schedule:swept") {
+		t.Fatal("the key freed while the session was still resumable")
+	}
+	if err := sessionStore.MarkSwept(ctx, sessionID); err != nil {
+		t.Fatalf("mark swept: %v", err)
+	}
+	if !refile(t, store, ctx, "schedule:swept") {
+		t.Fatal("a swept session still held its dedup key — the schedule that filed it can never run again")
+	}
+}
+
+// ArchiveSession dismisses the proposal itself, but only best-effort: the call
+// is logged and not propagated, so an archive whose dismiss failed used to
+// wedge the key permanently with nothing to show for it.
+func TestCreate_ReArmsOnceTheSessionIsArchived(t *testing.T) {
+	store, sessionStore, ctx := newStore(t)
+	_, sessionID := openInto(t, store, sessionStore, ctx, "schedule:archived")
+
+	if err := sessionStore.Archive(ctx, sessionID); err != nil {
+		t.Fatalf("archive: %v", err)
+	}
+	if !refile(t, store, ctx, "schedule:archived") {
+		t.Fatal("an archived session still held its dedup key")
+	}
+}
+
+// The regression guard for this whole change.
+//
+// A session whose pod is gone and whose last transcript entry is a `result`
+// looks finished, and two separate drafts of the re-arm predicate keyed on
+// exactly that. Both were wrong: the pod is reaped by the idle sweep after 30
+// minutes and the worker is explicitly paused between rounds, so this is the
+// STEADY STATE of every opened session, not an ending. Re-arming here files a
+// duplicate proposal for work a human is still in the middle of — and for
+// infra-bootstrap that is a second openable cluster-access session.
+//
+// TestCreate_DedupHoldsWhileOpenAndAfterApproval cannot catch this: its
+// session is never warmed, so pod_phase stays NULL and it passes either way.
+func TestCreate_HoldsWhileTheSessionIsOnlyPodless(t *testing.T) {
+	store, sessionStore, ctx := newStore(t)
+	_, sessionID := openInto(t, store, sessionStore, ctx, "schedule:cold")
+
+	if _, err := sessionStore.ReserveSlot(ctx, sessionID, 5); err != nil {
+		t.Fatalf("reserve slot: %v", err)
+	}
+	if err := sessionStore.TouchActive(ctx, sessionID, "agent", "result"); err != nil {
+		t.Fatalf("touch active: %v", err)
+	}
+	if err := sessionStore.SetPodPhase(ctx, sessionID, "POD_PHASE_TERMINATED", "idle timeout"); err != nil {
+		t.Fatalf("set pod phase: %v", err)
+	}
+
+	if refile(t, store, ctx, "schedule:cold") {
+		t.Fatal("the key freed on pod death — a session paused between rounds is not a finished run, " +
+			"and this files a duplicate for work still in flight")
+	}
+}
+
+// A crashed pod never writes a `result` entry, so any predicate keyed on one
+// would wedge here exactly as the original bug did. It is not archived and not
+// swept, though, so the key legitimately stays held until one of those
+// happens — the schedule reports which session, rather than stalling silently.
+func TestCreate_HoldsAfterACrashButNamesTheHolder(t *testing.T) {
+	store, sessionStore, ctx := newStore(t)
+	_, sessionID := openInto(t, store, sessionStore, ctx, "schedule:crashed")
+
+	if _, err := sessionStore.ReserveSlot(ctx, sessionID, 5); err != nil {
+		t.Fatalf("reserve slot: %v", err)
+	}
+	if err := sessionStore.SetPodPhase(ctx, sessionID, "POD_PHASE_CRASHED", "OOMKilled"); err != nil {
+		t.Fatalf("set pod phase: %v", err)
+	}
+	if refile(t, store, ctx, "schedule:crashed") {
+		t.Fatal("the key freed on a crash")
+	}
+
+	holder, err := store.StandingFor(ctx, "agent-fleet", "schedule:crashed")
+	if err != nil {
+		t.Fatalf("standing for: %v", err)
+	}
+	if holder != sessionID {
+		t.Errorf("StandingFor = %q, want the holding session %q — a skipped tick that cannot name "+
+			"the holder is the silent stall this change exists to end", holder, sessionID)
+	}
+}
+
+// Deleting a session detaches its proposal rather than destroying it, so the
+// row returns to ListOpen still holding the key. That is deliberate and not a
+// wedge: it is visible in the inbox and a human can dismiss it. The reap must
+// leave it alone.
+func TestCreate_HoldsAfterTheSessionIsDeleted(t *testing.T) {
+	store, sessionStore, ctx := newStore(t)
+	_, sessionID := openInto(t, store, sessionStore, ctx, "schedule:deleted")
+
+	if err := sessionStore.Delete(ctx, sessionID); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if refile(t, store, ctx, "schedule:deleted") {
+		t.Fatal("the key freed on a session delete, so the detached proposal in the inbox and a fresh " +
+			"one now both stand for the same work")
+	}
+}
+
+// StandingFor is what turns "previous run still open" into something a human
+// can act on, so it must not name a session for a proposal nobody has opened.
+func TestStandingFor_IsEmptyForAnUnopenedProposal(t *testing.T) {
+	store, _, ctx := newStore(t)
+	if _, _, err := store.Create(ctx, "agent-fleet", "schedule", "schedule:unopened", "T", "B", ""); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	holder, err := store.StandingFor(ctx, "agent-fleet", "schedule:unopened")
+	if err != nil {
+		t.Fatalf("standing for: %v", err)
+	}
+	if holder != "" {
+		t.Errorf("StandingFor = %q for a proposal still sitting in the inbox, want \"\"", holder)
+	}
+}
+
+// The reap and the insert are one transaction. If the dismissal could commit
+// while the insert failed, the key would be freed with nothing filed — and the
+// dismissed row would carry a reason that never happened, which also turns a
+// later DismissForSession into a silent no-op.
+//
+// Forced through the proposals_source_check CHECK constraint, which is a real
+// failure this path can hit rather than an injected one.
+func TestCreate_ReapRollsBackWhenTheInsertFails(t *testing.T) {
+	store, sessionStore, ctx := newStore(t)
+	id, sessionID := openInto(t, store, sessionStore, ctx, "schedule:atomic")
+	if err := sessionStore.MarkSwept(ctx, sessionID); err != nil {
+		t.Fatalf("mark swept: %v", err)
+	}
+
+	// Same key, so the reap fires — but an invalid source, so the insert dies.
+	if _, _, err := store.Create(ctx, "agent-fleet", "not-a-valid-source", "schedule:atomic", "T", "B", ""); err == nil {
+		t.Fatal("an invalid source was accepted; this test no longer exercises a failing insert")
+	}
+
+	p, err := store.Get(ctx, id)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if p == nil {
+		t.Fatal("proposal vanished")
+	}
+	if err := store.Dismiss(ctx, id); err != nil {
+		t.Fatalf("the reap committed despite the insert failing, so the key was freed with nothing "+
+			"filed: %v", err)
+	}
+}
