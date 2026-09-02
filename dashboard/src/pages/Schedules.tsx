@@ -353,14 +353,15 @@ function ScheduleForm({
 // unnoticed. It is not an error either, though: a skip is legitimate while the
 // previous run is genuinely in flight, so it gets its own muted dot rather
 // than the error orange, and it deliberately does not wash the row.
+export function statusDotClass(lastStatus: string, enabled: boolean): string {
+  if (!enabled) return "border border-dim2";
+  if (lastStatus.startsWith("error")) return "bg-warning";
+  if (lastStatus.startsWith("skipped")) return "bg-dim2";
+  return "bg-success";
+}
+
 function StatusDot({ schedule }: { schedule: Schedule }) {
-  const cls = !schedule.enabled
-    ? "border border-dim2"
-    : schedule.lastStatus.startsWith("error")
-      ? "bg-warning"
-      : schedule.lastStatus.startsWith("skipped")
-        ? "bg-dim2"
-        : "bg-success";
+  const cls = statusDotClass(schedule.lastStatus, schedule.enabled);
   return <span className={`w-[7px] h-[7px] rounded-full flex-none ${cls}`} />;
 }
 function scheduleActions(
