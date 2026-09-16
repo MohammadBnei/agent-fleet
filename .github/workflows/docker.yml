@@ -63,6 +63,15 @@ env:
   # Infisical, was described in a commit message, and reached nothing. Only the
   # password is a secret.
   REGISTRY_USER: ci
+  # The registry password now comes from the shared platform-commons project over OIDC
+  # instead of a repo secret (infra-bootstrap ADR-0049) — one place to rotate it for every
+  # build repo. The identity is bound to a repository allowlist plus event_name
+  # push/workflow_dispatch; a `ref` binding cannot work for a tag-triggered build because
+  # Infisical matches claims exactly and tag refs cannot be enumerated.
+  INFISICAL_DOMAIN: https://infisical.bnei.dev
+  INFISICAL_PROJECT_SLUG: platform-commons-76pb
+  INFISICAL_ENV: dev
+  INFISICAL_IDENTITY_ID: 19807471-d73a-48d4-9e58-1dc34255ef77
   # The complete set, used verbatim on a release. Also what
   # core/internal/buildguard's matrix_test greps for: every directory
   # shipping a Dockerfile must appear in this file, or adding a component
@@ -217,9 +226,14 @@ jobs:
     # ServiceAccount token with `create jobs` in vos/vos-dev (ADR-0022).
     # Builds must not land there and cluster jobs must not land here.
     runs-on: [self-hosted, ukubi-build]
+    # Same reset rule as the `changes` job above: declaring any permissions zeroes the
+    # rest, so contents: read is explicit. id-token mints the OIDC token Infisical checks.
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -274,6 +288,34 @@ jobs:
               ;;
           esac
 
+      # Guarded with the same condition as the login below, and that guard is load-bearing:
+      # this job also runs on pull_request, while the machine identity is bound to
+      # event_name push/workflow_dispatch. Without the `if`, every PR build would fail here
+      # on a claim it is never going to satisfy — and it does not need the password anyway,
+      # because a PR build does not push.
+      #
+      # Fetches only REGISTRY_PASSWORD, not the whole environment.
+      - name: Read the registry password from Infisical
+        if: steps.tag.outputs.push == 'true'
+        uses: Infisical/secrets-action@v1.0.12
+        with:
+          method: oidc
+          identity-id: ${{ env.INFISICAL_IDENTITY_ID }}
+          oidc-audience: infisical.bnei.dev
+          domain: ${{ env.INFISICAL_DOMAIN }}
+          project-slug: ${{ env.INFISICAL_PROJECT_SLUG }}
+          env-slug: ${{ env.INFISICAL_ENV }}
+          secret-path: /
+          secret-name: REGISTRY_PASSWORD
+          export-type: env
+
+      # GitHub only auto-masks `secrets.*`, and this action's README does not document
+      # masking. An unmasked Infisical value leaked DOCKERHUB_TOKEN in cleartext in this
+      # repo once already.
+      - name: Mask the fetched password
+        if: steps.tag.outputs.push == 'true'
+        run: echo "::add-mask::$REGISTRY_PASSWORD"
+
       - name: Registry login
         # Only needed to push; base-image pulls are anonymous. --tls-verify=false
         # because the registry is plain HTTP (no cert, since Let's Encrypt
@@ -289,7 +331,9 @@ jobs:
         # invisible to a rootful push.
         if: steps.tag.outputs.push == 'true'
         run: |
-          echo "${{ secrets.REGISTRY_PASSWORD }}" | sudo buildah login \
+          set -euo pipefail
+          [ -n "${REGISTRY_PASSWORD:-}" ] || { echo "Infisical returned no REGISTRY_PASSWORD"; exit 1; }
+          printf '%s' "$REGISTRY_PASSWORD" | sudo buildah login \
             --tls-verify=false \
             --username "$REGISTRY_USER" \
             --password-stdin "$REGISTRY"
