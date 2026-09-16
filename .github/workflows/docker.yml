@@ -51,8 +51,32 @@ on:
   workflow_dispatch:
   pull_request:
   push:
-    tags:
+    branches:
+      - main
+    # Mirrors the old release.yml's filter. The release commit bumps package.json and
+    # CHANGELOG.md and deploy's commit touches k8s/ — all ignored here, and pushes made
+    # with the built-in GITHUB_TOKEN do not trigger workflows anyway, so the loop is
+    # closed twice over.
+    paths-ignore:
+      - '**.md'
+      - 'k8s/*'
+      - 'package.json'
+    tags-ignore:
       - '*'
+
+# Moved here from release.yml when the two collapsed into one run. Concurrent releases:
+# keep the newest, cancel the rest. The survivor releases from main's tip, so it carries
+# the cancelled runs' commits with it — one tag covering the lot, rather than a queue of
+# one-commit releases each rebuilding an image the next one obsoletes.
+#
+# Without a group at all, two runs compute the same version from the same latest tag, and
+# the loser's push is rejected non-fast-forward after it has already bumped package.json
+# and made a local tag — that release is simply lost.
+#
+# Cancelling is only safe because the push is atomic: see git.pushArgs in package.json.
+concurrency:
+  group: release
+  cancel-in-progress: true
 
 env:
   REGISTRY: registry.bnei.lan:5000
@@ -79,6 +103,60 @@ env:
   COMPONENTS: core provisioner sidecar executor worker migration
 
 jobs:
+  # Cuts the version and CHANGELOG, in the same run as the build that follows. This used to
+  # be release.yml, chained to the build by a tag push — which is the only reason this repo
+  # needed a PAT, since a tag pushed with the built-in GITHUB_TOKEN deliberately does not
+  # trigger workflows. Sequential jobs need no trigger.
+  #
+  # `push` only, not dispatch: workflow_dispatch stays the way to measure the build loop
+  # WITHOUT cutting a release, which is what it was added for.
+  release:
+    # Gates on the test legs, which previously gated nothing: build-push only ever needed
+    # `changes`, so a red worker-test never stopped a release or an image. always() because
+    # both tests hang off `changes`, which is skipped outside pull_request — 'skipped' has
+    # to pass here or no release would ever happen on a push.
+    needs: [worker-test, dashboard-test]
+    if: >-
+      always()
+      && github.event_name == 'push'
+      && needs.worker-test.result != 'failure'
+      && needs.dashboard-test.result != 'failure'
+    runs-on: ubuntu-latest
+    # contents: write so release-it can push the version commit and tag with the built-in
+    # token. release-it needs nothing beyond that here — github.release is false in its
+    # config, so it never touches the Releases API.
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: git config
+        run: |
+          git config user.name "${GITHUB_ACTOR}"
+          git config user.email "${GITHUB_ACTOR}@users.noreply.github.com"
+
+      - name: Run release-it
+        run: git update-index --refresh && git diff-index --quiet HEAD || git reset --hard && bun run release
+
+      - name: Read the released version
+        id: version
+        run: |
+          set -euo pipefail
+          v=$(jq -er .version package.json)
+          [ -n "$v" ] || { echo "no version in package.json"; exit 1; }
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
   # Precise CI on pull_request: only build the image(s) whose files actually
   # changed in this PR — nothing is pushed on a PR anyway, so this is pure
   # CI-time cost, safe to skip. On a real release (push: tags) this filtering
@@ -104,7 +182,7 @@ jobs:
       worker: ${{ steps.filter.outputs.worker }}
       components: ${{ steps.components.outputs.result }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dorny/paths-filter@v4
         id: filter
         with:
@@ -179,7 +257,7 @@ jobs:
     if: always() && (github.event_name == 'push' || needs.changes.outputs.worker == 'true')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: oven-sh/setup-bun@v2
       - name: Install dependencies
         working-directory: worker
@@ -201,7 +279,7 @@ jobs:
     if: always() && (github.event_name == 'push' || needs.changes.outputs.dashboard == 'true')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: oven-sh/setup-bun@v2
       - name: Install dependencies
         working-directory: dashboard
@@ -217,11 +295,18 @@ jobs:
         run: bun run build
 
   build-push:
-    needs: changes
+    needs: [changes, release]
     # `!= 'pull_request'` rather than `== 'push'`: workflow_dispatch skips the
     # `changes` job (it is PR-gated), so its components output is empty and an
     # `== 'push'` test would silently skip the seeding run this cutover needs.
-    if: always() && (github.event_name != 'pull_request' || needs.changes.outputs.components != '')
+    # `release` is skipped outside push and `changes` outside pull_request, so an implicit
+    # success()-on-needs would skip this job in both cases — hence always(). The explicit
+    # release.result test is what stops a failed release from being built: 'skipped' passes
+    # here, 'failure' does not.
+    if: >-
+      always()
+      && needs.release.result != 'failure'
+      && (github.event_name != 'pull_request' || needs.changes.outputs.components != '')
     # NOT `ukubi` — that label belongs to the in-cluster runner holding a
     # ServiceAccount token with `create jobs` in vos/vos-dev (ADR-0022).
     # Builds must not land there and cluster jobs must not land here.
@@ -235,6 +320,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
         with:
+          # The tag release-it just made on a release run; otherwise whatever triggered
+          # us (a PR head, or main on a dispatch). Checking out `main` on a release run
+          # would race the next push and could build a version never tagged.
+          ref: ${{ needs.release.outputs.version || github.ref }}
           fetch-depth: 0
 
       # Not baked into the build-runner image: one apt-get was not worth its
@@ -279,10 +368,11 @@ jobs:
               # agree with. deploy does not run on dispatch either (its `if`
               # requires event_name == 'push'), so nothing gets pinned from a
               # dispatch and the assert has nothing to protect.
-              if [ "${{ github.event_name }}" = "push" ] && [ "$version" != "${{ github.ref_name }}" ]; then
-                echo "::error::package.json version ($version) does not match the tag (${{ github.ref_name }}) — deploy would pin a tag no image carries"
-                exit 1
-              fi
+              # The assert that compared this against github.ref_name is gone, because the
+              # bug it guarded cannot happen now: the build read package.json while deploy
+              # sed-ed in the tag name, so the two could disagree and deploy would pin a
+              # tag no image carried. Both now come from the release job's one output. It
+              # would also fail every run, since on a branch push ref_name is "main".
               echo "value=$version" >> "$GITHUB_OUTPUT"
               echo "push=true" >> "$GITHUB_OUTPUT"
               ;;
@@ -421,7 +511,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   deploy:
-    needs: build-push
+    needs: [release, build-push]
     # always() + an explicit needs.*.result check, not just
     # `if: github.event_name == 'push'` — confirmed live on the v1.1.0
     # release run: the build jobs genuinely succeeded but deploy was still
@@ -433,13 +523,19 @@ jobs:
     # deploying a tag whose build failed.
     if: >-
       always() && github.event_name == 'push' &&
+      needs.release.result == 'success' &&
       needs.build-push.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    # One version for the whole run, from the release job. This was the tag name,
+    # which only worked because the workflow was tag-triggered; on a branch push that is
+    # "main", and this job would have sed-ed `tag: "main"` across every k8s/ manifest.
+    env:
+      VERSION: ${{ needs.release.outputs.version }}
     steps:
       - name: Checkout main
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: main
           fetch-depth: 0
@@ -450,7 +546,7 @@ jobs:
           # Helm-values shape (k8s/core.yaml): image.tag / hooks.migrate.image.tag.
           # Blanket `tag: "..."` replace is safe here — every occurrence in
           # this file shape is genuinely an image tag, nothing else uses it.
-          sed -i -E "s/^(\s*tag: \")[^\"]+(\")/\1${GITHUB_REF_NAME}\2/" k8s/*.yaml
+          sed -i -E "s/^(\s*tag: \")[^\"]+(\")/\1${VERSION}\2/" k8s/*.yaml
 
           # Plain-manifest shape (k8s/provisioner/deployment.yaml): image refs
           # embed repo:tag as one combined string — only bump this repo's own
@@ -458,14 +554,14 @@ jobs:
           # literal :5000 in the registry host: the trailing :[^...]+ is what
           # captures the tag, and getting that wrong makes the sed silently
           # match nothing rather than fail.
-          sed -i -E "s#(registry\.bnei\.lan:5000/agent-fleet-(core|provisioner|worker|sidecar)):[^[:space:]\"]+#\1:${GITHUB_REF_NAME}#g" \
+          sed -i -E "s#(registry\.bnei\.lan:5000/agent-fleet-(core|provisioner|worker|sidecar)):[^[:space:]\"]+#\1:${VERSION}#g" \
             k8s/provisioner/*.yaml
 
           # A no-op sed is the failure mode this guards: if neither expression
           # matched, the manifests still name the previous release and ArgoCD
           # redeploys nothing, with a green workflow. Confirm the tag actually
           # appears where it should.
-          grep -q "registry.bnei.lan:5000/agent-fleet-provisioner:${GITHUB_REF_NAME}" k8s/provisioner/deployment.yaml || {
+          grep -q "registry.bnei.lan:5000/agent-fleet-provisioner:${VERSION}" k8s/provisioner/deployment.yaml || {
             echo "::error::provisioner image tag was not bumped — check the sed pattern against the manifest's actual image prefix"
             exit 1
           }
@@ -484,5 +580,5 @@ jobs:
             echo "no tag changes to commit"
             exit 0
           fi
-          git commit -m "chore(deploy): bump image tag to ${GITHUB_REF_NAME}"
+          git commit -m "chore(deploy): bump image tag to ${VERSION}"
           git push origin HEAD:main
