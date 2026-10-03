@@ -59,6 +59,16 @@ A test in `worker/src/session.test.ts` pins these values.
   the way 0041's amendment fences `prompt_agent`, and not visible in the
   dashboard or Discord. Whether the worker relays an inbound native message into
   the transcript at all was not checked.
+- **No loop cap.** `prompt_agent` refuses a blocked target and caps relay depth
+  "so chains cannot loop" (`sidecar/internal/mcpserver/interagent.go`). The
+  native channel has neither, and with both ends unprompted nothing stops it.
+  Two pods can message each other indefinitely: each message starts a new turn,
+  so neither goes idle, the idle teardown never fires, and both hold slots of
+  the five-pod cap while spending the shared subscription. None of it reaches
+  the transcript, so the dashboard and Discord cannot show it. Accepted
+  deliberately (2026-10-03). If it bites, the cheapest fixes are a prompt on
+  `SendMessage` (drop it from `allowedTools`) or a per-turn count of inbound
+  native messages in the worker.
 - **It cannot answer a human's decision.** A pending permission resolves only on
   a structured `permission_response` read from the transcript, and a native
   message never reaches the transcript. A peer can still talk the agent into
