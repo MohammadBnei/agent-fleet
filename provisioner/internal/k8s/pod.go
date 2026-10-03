@@ -530,6 +530,21 @@ func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error 
 				// its own grounds); the build is 60%, and the ceiling has to
 				// clear it.
 				//
+				// The CPU REQUEST went back down to 100m on 2026-10-03, and
+				// the memory envelope did not move: OOM kills the container,
+				// CPU only slows it. 1000m reserved a core per session that
+				// one measured session never came near (peak 0.05 cores, 1m
+				// rate), and it fired KubeCPUOvercommit on the very first
+				// session: that rule sums cluster-wide requests against
+				// allocatable minus the largest node, 9.6 cores, with 9.05
+				// already requested at idle. 100m lets three sessions run
+				// before it fires. The cost is bc5da8f's finding — under
+				// node contention a build gets a small CFS share — and
+				// k8s/provisioner/image-prepull.yaml is what keeps that rare:
+				// with the worker image cached on both session nodes,
+				// sessions spread instead of all landing on the one that
+				// pulled it first.
+				//
 				// The 4000m/4Gi limits sit at exactly limitRange.max in
 				// k8s/core.yaml, inherited from when the sandbox was pinned
 				// there. A container limit ABOVE max is rejected at admission
@@ -538,7 +553,7 @@ func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error 
 				// TestCreateWorkerPod_ResourcesWithinLimitRange pins them.
 				Resources: corev1.ResourceRequirements{
 					Requests: corev1.ResourceList{
-						corev1.ResourceCPU:    resource.MustParse("1000m"),
+						corev1.ResourceCPU:    resource.MustParse("100m"),
 						corev1.ResourceMemory: resource.MustParse("1Gi"),
 					},
 					Limits: corev1.ResourceList{

@@ -110,7 +110,7 @@ func TestCreateWorkerPod_WorkerResources(t *testing.T) {
 		got  resource.Quantity
 		want string
 	}{
-		{"cpu request", worker.Resources.Requests[corev1.ResourceCPU], "1000m"},
+		{"cpu request", worker.Resources.Requests[corev1.ResourceCPU], "100m"},
 		{"memory request", worker.Resources.Requests[corev1.ResourceMemory], "1Gi"},
 		{"cpu limit", worker.Resources.Limits[corev1.ResourceCPU], workerMaxCPU},
 		{"memory limit", worker.Resources.Limits[corev1.ResourceMemory], workerMaxMemory},

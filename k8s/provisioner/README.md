@@ -41,6 +41,10 @@ holder and the only thing that ever calls this service — hub-and-spoke).
 - `pvc.yaml` — the one shared RWX workspace PVC (docs/adr/0019) holding
   repo clones, per-task git worktrees, Claude Code sessions, and
   skills/`CLAUDE.md`. Replaces the old per-repo worker PVCs entirely.
+- `image-prepull.yaml` — a DaemonSet on the session nodes that keeps the
+  current worker image cached on each, so the scheduler's image locality stops
+  sending every session to whichever node pulled it first. Its tag is bumped
+  with `WORKER_IMAGE`.
 - `service.yaml` — ClusterIP; `core`'s gRPC client reaches it at
   `provisioner.agent-fleet.svc.cluster.local:9090`.
 - `infisicalsecret.yaml` — sources `GH_TOKEN` from the `agent-fleet-nygh`
