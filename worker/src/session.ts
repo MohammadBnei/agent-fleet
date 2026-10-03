@@ -182,8 +182,46 @@ function peerTurn(text: string): string {
   ].join("\n");
 }
 
+// Appended to every delivered answer. After a resume the question itself may
+// no longer be in the conversation, and without a fixed instruction Claude
+// re-asks (k-k1 measured it, their ADR 0055 D4/D5). Worded to be harmless on
+// the double delivery the ponytail comment in runSession describes.
+export const ANSWER_NO_REASK =
+  "This is the human's answer to a question you asked earlier. Do not ask it again. If you already received and acted on this answer, ignore this message; otherwise continue the task using it.";
+
+// The dashboard writes an answer as {"answers": {"<question text>": "<label>"}}
+// (dashboard/src/components/QuestionCard.tsx), so the question text travels
+// with the answer and survives a pod restart without a lookup.
+export function formatAnswerTurn(text: string, replyTo?: number): string {
+  let body = text;
+  try {
+    const answers = (JSON.parse(text) as { answers?: unknown }).answers;
+    if (answers && typeof answers === "object" && !Array.isArray(answers)) {
+      const pairs = Object.entries(answers);
+      if (pairs.length > 0 && pairs.every(([, a]) => typeof a === "string")) {
+        body = pairs.map(([q, a]) => `Q: ${q}\nA: ${a}`).join("\n\n");
+      }
+    }
+  } catch {
+    // Not JSON: deliver the raw text rather than nothing.
+  }
+  return `Answer to your earlier question (seq ${replyTo ?? "?"}):\n${body}\n\n${ANSWER_NO_REASK}`;
+}
+
+// The sidecar's per-call ceiling, set here rather than left to the CLI's
+// default. Its blocking tools hold for 45s (blockingWaitMs in
+// sidecar/internal/mcpserver/server.go) because the agent's MCP client aborts a
+// request at 60s; docs/adr/0058 is that incident. Pinning the value keeps the
+// ceiling ours across CLI upgrades.
+//
+// The SDK documents this as a hard wall-clock limit per call on EVERY tool of
+// the server, so it must sit well above the 45s hold and never below the 60s
+// transport ceiling, or prompt_agent warming a pod, expose and view_logs start
+// failing at it.
+export const SIDECAR_MCP_TIMEOUT_MS = 90_000;
+
 function sidecarMcpServer() {
-  return { type: "http" as const, url: `http://${SIDECAR_MCP_ADDR}/mcp` };
+  return { type: "http" as const, url: `http://${SIDECAR_MCP_ADDR}/mcp`, timeout: SIDECAR_MCP_TIMEOUT_MS };
 }
 
 // Playwright, run by the SDK itself as a local stdio server in this pod
@@ -724,7 +762,21 @@ export async function runSession(): Promise<SessionResult> {
       permissionMode: launchMode,
       // See FLEET_ASK_RULES — unconditional now that bypassPermissions is gone
       // (docs/adr/0053).
-      settings: { permissions: { ask: FLEET_ASK_RULES } },
+      //
+      // crossSessionInbound: Claude Code's own cross-session channel is open
+      // on purpose (docs/adr/0060). Every fleet pod runs on the same OAuth
+      // account, so a peer is any session on that account — other pods AND
+      // Mohammad's own laptop sessions — and its message arrives around core,
+      // the transcript and lease auth. "accept" explicitly, rather than the
+      // CLI's unset default, which holds a message from a session in a
+      // different permission mode and nobody can approve it in a headless pod.
+      // remoteControlAtStartup stays off: that is phone/web control of the
+      // pod, a different channel nobody asked for.
+      settings: {
+        permissions: { ask: FLEET_ASK_RULES },
+        crossSessionInbound: "accept",
+        remoteControlAtStartup: false,
+      },
       // Write/Edit/Bash are deliberately never in this list — canUseTool
       // below is the live escalation path for all three (confirmed in
       // Phase 0's spike: allowedTools bypasses canUseTool entirely for
@@ -747,6 +799,9 @@ export async function runSession(): Promise<SessionResult> {
       // be added to.
       allowedTools: [
         "Read", "Glob", "Grep", "WebSearch", "WebFetch", "Task",
+        // Claude Code's native cross-session channel (docs/adr/0060). Listed so
+        // the agent uses it on its own, without a human prompt per message.
+        "SendMessage", "ListAgents",
         "mcp__agent-fleet-sidecar__*",
         // Playwright by the same wildcard rule. Every browser call would
         // otherwise prompt — including the read-only ones a human would never
@@ -904,7 +959,7 @@ export async function runSession(): Promise<SessionResult> {
       // redundant turn the agent has already acted on; dedup by replyTo if
       // it ever actually bites.
       if (entry.type === "answer") {
-        input.push(`Answer to your earlier question (seq ${entry.replyTo ?? "?"}): ${entry.text}`);
+        input.push(formatAnswerTurn(entry.text, entry.replyTo));
         return;
       }
       if (entry.type === "abort") {

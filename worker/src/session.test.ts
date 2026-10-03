@@ -241,7 +241,7 @@ for (const key of [
   delete process.env[key];
 }
 
-const { runSession, sumModelUsage } = await import("./session.js");
+const { runSession, sumModelUsage, formatAnswerTurn, ANSWER_NO_REASK, SIDECAR_MCP_TIMEOUT_MS } = await import("./session.js");
 
 beforeEach(() => {
   pushedMessages.length = 0;
@@ -298,6 +298,20 @@ test("tool wiring: default mode, no Write/Edit in allowedTools, canUseTool prese
   // question form; the native one falls through to the generic raw-JSON
   // PermissionCard with no way to deliver an answer.
   expect(queryOptions?.disallowedTools).toContain("AskUserQuestion");
+  // Claude Code's native cross-session channel is open on purpose
+  // (docs/adr/0060): usable without a prompt, and inbound delivered rather
+  // than held — a held message has no one to approve it in a headless pod.
+  expect(allowedTools).toContain("SendMessage");
+  expect(allowedTools).toContain("ListAgents");
+  expect(queryOptions?.disallowedTools).not.toContain("SendMessage");
+  expect(queryOptions?.disallowedTools).not.toContain("ListAgents");
+  expect((queryOptions?.settings as { crossSessionInbound?: string })?.crossSessionInbound).toBe("accept");
+  expect((queryOptions?.settings as { remoteControlAtStartup?: boolean })?.remoteControlAtStartup).toBe(false);
+  // The sidecar's ceiling is ours, and must stay above the transport's 60s
+  // or it hard-fails every sidecar tool (docs/adr/0058).
+  const sidecar = (queryOptions?.mcpServers as Record<string, { timeout?: number }>)["agent-fleet-sidecar"];
+  expect(sidecar.timeout).toBe(SIDECAR_MCP_TIMEOUT_MS);
+  expect(SIDECAR_MCP_TIMEOUT_MS).toBeGreaterThanOrEqual(60_000);
   expect(typeof queryOptions?.canUseTool).toBe("function");
   // The provisioner-synced fleet-shared skills/context (docs/adr/0032) are
   // discovered natively via settingSources, not an explicit plugins: entry
@@ -447,6 +461,42 @@ test("an answer-type human entry is never misread as a permission decision", asy
   pushHuman("", "abort");
   const result = await promise;
   expect(result.aborted).toBe(true);
+}, 10000);
+
+// After a resume the question may be gone from the conversation (k-k1's ADR
+// 0055 D4/D5), so the delivered turn must carry it, plus the fixed line that
+// stops Claude re-asking.
+test("formatAnswerTurn carries each question, its answer, and the no-re-ask line", () => {
+  const turn = formatAnswerTurn('{"answers":{"Which storage class?":"longhorn","Run migrations?":"yes"}}', 12);
+  expect(turn).toContain("seq 12");
+  expect(turn).toContain("Q: Which storage class?\nA: longhorn");
+  expect(turn).toContain("Q: Run migrations?\nA: yes");
+  expect(turn.endsWith(ANSWER_NO_REASK)).toBe(true);
+});
+
+test("formatAnswerTurn falls back to the raw text when the answer is not the dashboard's shape", () => {
+  for (const raw of ["just go with postgres", "null", '{"answers":["a"]}', '{"answers":{"q":{"nested":1}}}', '{"answers":{}}']) {
+    const turn = formatAnswerTurn(raw);
+    expect(turn).toContain(raw);
+    expect(turn).toContain("seq ?");
+    expect(turn.endsWith(ANSWER_NO_REASK)).toBe(true);
+  }
+});
+
+// The call site, not just the formatter: a delivered answer must reach the
+// SDK as the formatted turn.
+test("an answer entry reaches the SDK carrying the question text and the no-re-ask line", async () => {
+  const promise = runSession();
+  await Bun.sleep(20);
+  pushHuman('{"answers":{"Which storage class?":"longhorn"}}', "answer", 5);
+  await Bun.sleep(20);
+  const turn = consumedInputs.map((m) => m.message.content).find((t) => t.includes("Which storage class?"));
+  expect(turn).toBeDefined();
+  expect(turn).toContain("A: longhorn");
+  expect(turn).toContain(ANSWER_NO_REASK);
+
+  pushHuman("", "abort");
+  await promise;
 }, 10000);
 
 test("free text alone never resolves a pending permission request or triggers abort", async () => {

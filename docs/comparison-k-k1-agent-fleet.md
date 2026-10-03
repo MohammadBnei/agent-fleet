@@ -38,7 +38,7 @@ Their decision records are linked as *k1:NNNN*, ours as *af:NNNN*.
 | **When may the box stop** | By default a session stops after 1 h idle and a workspace after 2 h; tenants can change both ([main.go][k1-main]). Only a machine at work keeps a workspace up; waiting on a human never does ([k1:0055][k1-0055] D1) | A pod is torn down after 30 min idle; one that never speaks is reclaimed in 3 min ([af:0040][af-0040]). A pending permission keeps the pod; a pending question does not ([af:0058][af-0058]) |
 | **Delivery after the box is gone** | Unanswered questions and plans are carried over before folding and delivered as a new prompt; a pending permission is carried as a fact only ([k1:0055][k1-0055]) | A question is durable; its answer reaches the next pod as a new turn ([af:0050][af-0050], [af:0058][af-0058]). No equivalent for plans; a permission keeps its pod instead |
 | **Human ↔ agent** | Claude and Antigravity run in their terminal UI, read through hooks and answered with key sequences ([build/92][k1-92]); the other kinds run through structured drivers by default. Slack or Discord threads per session, with answer buttons ([k1:0020][k1-0020]) | The SDK's `canUseTool` holds a prompt until a human answers it in the dashboard ([af:0029][af-0029]); in `auto` mode only `rm`, `sudo` and plan approval still reach a human ([af:0053][af-0053]). Decisions are answerable from the session list ([af:0042][af-0042]); notifications are outbound only |
-| **Agent ↔ agent** | `send_to_peer_session` between a member's sessions; a session may steer only the sessions it started ([k1:0041][k1-0041], [k1:0073][k1-0073]) | `prompt_agent` / `wait_for_agent` through our hub ([af:0041][af-0041]), the caller identified by its session's lease ([af:0057][af-0057]) |
+| **Agent ↔ agent** | `send_to_peer_session` between a member's sessions; a session may steer only the sessions it started ([k1:0041][k1-0041], [k1:0073][k1-0073]) | `prompt_agent` / `wait_for_agent` through our hub ([af:0041][af-0041]), the caller identified by its session's lease ([af:0057][af-0057]); plus Claude Code's own `SendMessage` / `ListAgents`, open without a prompt and outside the hub ([af:0060][af-0060]) |
 | **Knowing when work is done** | A dispatch ledger and a reconciler: settled only after two ticks with idle evidence and no busy evidence; unknown stays unknown ([k1:0035][k1-0035]) | Liveness derived from the stored row on every read, including a `done` state ([af:0040][af-0040]), plus a 60 s reconcile of pod state against Kubernetes; no stored completion and no check that a PR was opened |
 | **Unattended work** | A scheduler wakes a stopped workspace and starts the run ([scheduler_wake.go][k1-sched]); a turn cut short by a usage limit resumes at reset | Alerts and schedules only file a *proposal*, which has no path to a pod until a human opens it ([af:0048][af-0048]). We require a human here because the fleet can act on the cluster it runs on |
 | **Usage** | One token ledger by feature, agent and model; calls that report no tokens are counted as unmeasured, never as zero ([k1:0029][k1-0029]) | Token counts as Loki log fields and on the transcript row; missing counts stay absent rather than zero. No ledger, no per-feature view ([af:0047][af-0047]) |
@@ -55,7 +55,9 @@ arrives later as `Answer to your earlier question (seq N): …`. Your carried pr
 two things ours does not. It repeats the question text, because the question itself has
 dropped out of the conversation. And it says, in fixed wording checked by a test, not to
 ask again and to continue with this answer ([session_carried.go][k1-carried],
-[test][k1-carried-test]). We are taking both.
+[test][k1-carried-test]). We took both: our delivered answer now repeats each question
+with its answer and ends with a fixed "do not ask again" line, checked by a test
+([af:0060][af-0060]).
 
 **A peer message must never answer a human's question.** Both projects enforce this. On
 your side, a prompt is refused while a question, plan or permission is pending
@@ -68,8 +70,11 @@ closed on 2026-10-03, after the commit this page describes; ours is still an acc
 gap. One more thing we learned from your 2026-08-31 addendum to [k1:0041][k1-0041]:
 Claude Code 2.1.251 re-enabled its native cross-session messaging despite the environment
 variables that had blocked it, and you now block it through launch settings, with a
-test. We do not block that channel at all, and have not checked whether our pinned SDK
-offers it. We will.
+test. When we checked, our workers already had both tools: the server-side flag was on
+for our account. We went the other way from you and opened the channel on purpose: both
+tools run without a prompt, and inbound messages are accepted ([af:0060][af-0060]). The
+trade-off is real. Every worker shares one account, so the channel reaches all of its
+sessions and bypasses our transcript and lease checks.
 
 **Pin the upstream, and say whether you tested it.** Your release watcher keeps "we saw
 a new version" separate from "it passed the contract". We pin, and our build refuses a
@@ -85,16 +90,18 @@ What we are taking from you:
   checked by a test.
 - Contract tests against the real upstream, with "seen" kept apart from "tested".
 - A ledger where unmeasured usage is visibly unmeasured, broken down by feature.
-- Blocking the native cross-session channel before it appears, not after.
+- Not taken: blocking Claude Code's native cross-session channel. We considered your
+  block and chose the opposite; our sessions use it on purpose ([af:0060][af-0060]).
 
 What might be useful to you, as questions:
 
 - Both projects found that a permission's yes/no can only reach the process that asked.
   You let the process go and carry the fact; we keep the pod. Which costs less in
   practice for you?
-- `wait_for_agent` parks one session until another becomes idle or blocked on a human,
-  computed from liveness rather than from an event ([af:0041][af-0041]). Would something
-  like it fit your fleet graph?
+- `wait_for_agent` checks, for up to 45 seconds, whether another session is idle or
+  blocked on a human, computed from liveness rather than from an event
+  ([af:0041][af-0041]). A reply itself arrives as a new message. Would something like it
+  fit your fleet graph?
 
 ## What we got wrong
 
@@ -104,8 +111,10 @@ What might be useful to you, as questions:
 - **Answers written but never delivered.** For a while, a human's answer was stored, the
   badge cleared and the dashboard looked right, but the next pod never received it. Four
   separate defects, none visible from outside ([af:0058][af-0058]).
-- **A stale tool description.** Our question tool still tells the agent it "blocks (up to
-  timeoutMs)", an argument we removed in [af:0058][af-0058].
+- **A stale tool description, and two tools the same fix missed.** Our question tool
+  told the agent it "blocks (up to timeoutMs)" for weeks after [af:0058][af-0058] removed
+  that argument. Fixing it turned up two more blocking tools that still took one, one of
+  them defaulting past the 60-second limit that 0058 was about ([af:0060][af-0060]).
 - **No real end-to-end check of delivery.** Our tests replace the SDK with a fake, so the
   path that failed above is still only covered by running it for real. We keep a list of
   the checks that passed while the system was broken:
@@ -150,3 +159,4 @@ email named the same thing from your side, and [k1:0045][k1-0045] (decision 31) 
 [af-0054]: ./adr/0054-the-toolchain-stays-in-the-pod.md
 [af-0057]: ./adr/0057-coreservice-authenticates-with-the-session-lease.md
 [af-0058]: ./adr/0058-an-answer-wakes-the-session.md
+[af-0060]: ./adr/0060-claude-codes-own-cross-session-channel-is-open.md

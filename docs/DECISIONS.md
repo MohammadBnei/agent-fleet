@@ -244,6 +244,10 @@ Any doc, code, comment, or memory that contradicts this file or an
 
 ## 2. Forbidden patterns (quick check — full list + reasons in `adr/`)
 
+- **A timeout argument on a blocking MCP tool.** The agent's MCP client aborts a
+  request at 60s, and an agent will ask for more. One fixed wait under that
+  ceiling, and "not yet" is an answer. See `adr/0058`, `adr/0060`.
+
 - **Trusting an identity header the caller could have set.** `X-authentik-*`
   arrives from a Traefik forwardAuth outpost and is perfectly good for a service
   reachable *only* through Traefik. core is not one — a worker pod reaches it on

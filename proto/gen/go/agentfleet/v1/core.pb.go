@@ -358,7 +358,8 @@ func (x *AppendResponse) GetSeq() int64 {
 
 // Appends a QUESTION entry and long-polls for a matching ANSWER up to
 // timeout_ms, returning it verbatim if one arrives. A timeout is not an
-// error — the caller re-invokes with the same questions to keep waiting.
+// error: the question stays live, the agent ends its turn, and the answer is
+// delivered later as a new message (docs/adr/0058).
 //
 // This one keeps a response body rather than sharing AppendResponse,
 // because it genuinely returns something the caller cannot compute: whether
@@ -367,7 +368,10 @@ type AskUserQuestionRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
 	QuestionsJson string                 `protobuf:"bytes,2,opt,name=questions_json,json=questionsJson,proto3" json:"questions_json,omitempty"`
-	TimeoutMs     int32                  `protobuf:"varint,3,opt,name=timeout_ms,json=timeoutMs,proto3" json:"timeout_ms,omitempty"` // default 60000, matching today's handler
+	// Fixed by the sidecar (blockingWaitMs, 45s), never chosen by the agent:
+	// the agent's MCP client aborts a request at 60s (docs/adr/0058). <=0 falls
+	// back to core's own default.
+	TimeoutMs     int32 `protobuf:"varint,3,opt,name=timeout_ms,json=timeoutMs,proto3" json:"timeout_ms,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1316,8 +1320,11 @@ type WaitForSessionStateRequest struct {
 	AfterSeq int64 `protobuf:"varint,4,opt,name=after_seq,json=afterSeq,proto3" json:"after_seq,omitempty"`
 	// Any of these ends the wait. Empty means the settled set
 	// (idle/done/blocked/stalled) — "it stopped needing to be waited on".
-	Until         []string `protobuf:"bytes,2,rep,name=until,proto3" json:"until,omitempty"`
-	TimeoutMs     int32    `protobuf:"varint,3,opt,name=timeout_ms,json=timeoutMs,proto3" json:"timeout_ms,omitempty"`
+	Until []string `protobuf:"bytes,2,rep,name=until,proto3" json:"until,omitempty"`
+	// Fixed by the sidecar (blockingWaitMs), not the agent (docs/adr/0060). <=0
+	// falls back to core's own two-minute default, which is above the agent's
+	// 60s MCP ceiling — so the sidecar must always send a value.
+	TimeoutMs     int32 `protobuf:"varint,3,opt,name=timeout_ms,json=timeoutMs,proto3" json:"timeout_ms,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }

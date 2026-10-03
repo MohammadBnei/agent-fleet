@@ -162,7 +162,8 @@ export const AppendResponseSchema: GenMessage<AppendResponse> = /*@__PURE__*/
 /**
  * Appends a QUESTION entry and long-polls for a matching ANSWER up to
  * timeout_ms, returning it verbatim if one arrives. A timeout is not an
- * error — the caller re-invokes with the same questions to keep waiting.
+ * error: the question stays live, the agent ends its turn, and the answer is
+ * delivered later as a new message (docs/adr/0058).
  *
  * This one keeps a response body rather than sharing AppendResponse,
  * because it genuinely returns something the caller cannot compute: whether
@@ -182,7 +183,9 @@ export type AskUserQuestionRequest = Message<"agentfleet.v1.AskUserQuestionReque
   questionsJson: string;
 
   /**
-   * default 60000, matching today's handler
+   * Fixed by the sidecar (blockingWaitMs, 45s), never chosen by the agent:
+   * the agent's MCP client aborts a request at 60s (docs/adr/0058). <=0 falls
+   * back to core's own default.
    *
    * @generated from field: int32 timeout_ms = 3;
    */
@@ -697,6 +700,10 @@ export type WaitForSessionStateRequest = Message<"agentfleet.v1.WaitForSessionSt
   until: string[];
 
   /**
+   * Fixed by the sidecar (blockingWaitMs), not the agent (docs/adr/0060). <=0
+   * falls back to core's own two-minute default, which is above the agent's
+   * 60s MCP ceiling — so the sidecar must always send a value.
+   *
    * @generated from field: int32 timeout_ms = 3;
    */
   timeoutMs: number;

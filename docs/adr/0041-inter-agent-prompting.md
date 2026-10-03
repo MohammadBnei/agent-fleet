@@ -202,3 +202,19 @@ so an agent can post `from="human", type="abort"` into its own session and
 trigger the worker's human-authored abort path. `PromptSession` is not the hole —
 it injects the caller id server-side — but the property "these entry types come
 from a human" is not true fleet-wide, and no code should assume it.
+
+## Amendment (2026-10-03): `wait_for_agent` no longer takes a timeout
+
+The section "`wait_for_agent` polls, and a timeout is an answer" above set a
+two-minute wait by design. That is above the 60s per-request ceiling of the
+agent's own MCP client, so a call with no arguments died at 60s: the incident
+[0058](0058-an-answer-wakes-the-session.md) §3 fixed for `AskUserQuestion`,
+which left this tool alone.
+
+`timeoutMs` is deleted. The wait is the same fixed 45s as every other blocking
+sidecar tool, and running out of time is still an answer, not an error. The tool
+is now a single check rather than a way to wait for a reply. A reply is
+`prompt_agent` from the target back to this session: it arrives as a new
+message and warms this session if it is idle, so the agent ends its turn instead
+of polling. `prompt_agent`'s description says so. See
+[0060](0060-claude-codes-own-cross-session-channel-is-open.md).
