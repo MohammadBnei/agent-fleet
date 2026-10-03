@@ -21,7 +21,7 @@ name: Build, Test and Deploy
 # Why ONE build job instead of the previous three (worker / migration /
 # matrixed Go): a self-hosted runner executes one job at a time. Three jobs
 # with a four-leg matrix means six serial jobs, each re-checking-out and each
-# re-pulling golang:1.26 (~800MB over the WAN) because the previous job's
+# re-pulling golang:1.27 (~800MB over the WAN) because the previous job's
 # cleanup evicted it. One job, one checkout, one login, one shared image
 # cache. See the /build-runner-ops skill in infra-bootstrap.
 #

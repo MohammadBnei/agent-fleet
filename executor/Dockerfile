@@ -1,6 +1,6 @@
 # Build context must be the agent-fleet/ repo root (not executor/):
 #   docker build -f executor/Dockerfile -t <tag> .
-FROM golang:1.26 AS build
+FROM golang:1.27 AS build
 WORKDIR /app
 COPY proto/gen/go ./proto/gen/go
 COPY executor ./executor

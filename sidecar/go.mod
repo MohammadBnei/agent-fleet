@@ -1,6 +1,6 @@
 module github.com/MohammadBnei/agent-fleet/sidecar
 
-go 1.26.5
+go 1.27.1
 
 require (
 	github.com/mark3labs/mcp-go v1.1.1

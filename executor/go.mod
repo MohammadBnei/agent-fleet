@@ -1,6 +1,6 @@
 module github.com/MohammadBnei/agent-fleet/executor
 
-go 1.26.5
+go 1.27.1
 
 require google.golang.org/grpc v1.84.0
 
