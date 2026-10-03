@@ -58,7 +58,9 @@ A test in `worker/src/session.test.ts` pins these values.
   the `transcript`, not checked against a lease (0057), not fenced as peer input
   the way 0041's amendment fences `prompt_agent`, and not visible in the
   dashboard or Discord. Whether the worker relays an inbound native message into
-  the transcript at all was not checked.
+  the transcript at all was not checked. If it does not, a pod being steered
+  this way looks idle in the dashboard while it works; check this before
+  relying on the dashboard to see what a pod is doing.
 - **No loop cap.** `prompt_agent` refuses a blocked target and caps relay depth
   "so chains cannot loop" (`sidecar/internal/mcpserver/interagent.go`). The
   native channel has neither, and with both ends unprompted nothing stops it.
