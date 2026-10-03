@@ -1,9 +1,9 @@
 go 1.26.5
 
 use (
+	./core
+	./executor
+	./proto/gen/go
 	./provisioner
 	./sidecar
-	./core
-	./proto/gen/go
-	./executor
 )
