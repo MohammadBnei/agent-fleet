@@ -1,0 +1,51 @@
+# Keeps the current worker image cached on every session node.
+#
+# Without it every session landed on k8s-worker-01: 28 of 28 session PVs there
+# on 2026-10-03, though k8s-worker-02 carries the same session-node label.
+# docs/adr/0054 found worker-01 was then the least-allocated node, with image
+# locality only reinforcing it. By 2026-10-03 that had flipped — at idle
+# worker-02 requested 2811m CPU / 21% memory against worker-01's 2963m / 35% —
+# and a new session still went to worker-01, the only node holding the current
+# 850 MB worker image. Caching it on both nodes takes ImageLocality out of the
+# choice and leaves it to resource fit. That spreads sessions only while the
+# two nodes' baselines stay close; it is not a spread constraint. Existing
+# sessions stay where they are: local-path pins each one to its node for life.
+#
+# The init container only exists to make the kubelet pull the image; it runs
+# `true` and exits. A running pod using the image also stops kubelet image GC
+# from evicting it between sessions. The tag is bumped by docker.yml's deploy
+# sed along with deployment.yaml's WORKER_IMAGE — the two must stay equal.
+#
+# Requests are explicit and tiny on purpose: unset, the namespace LimitRange
+# defaults each container to 100m, and this DaemonSet's whole point is to stop
+# adding to KubeCPUOvercommit's request sum.
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: worker-image-prepull
+  namespace: agent-fleet
+spec:
+  selector:
+    matchLabels:
+      app: worker-image-prepull
+  template:
+    metadata:
+      labels:
+        app: worker-image-prepull
+    spec:
+      nodeSelector:
+        agent-fleet.dev/session-node: "true"
+      automountServiceAccountToken: false
+      initContainers:
+      - name: worker
+        image: registry.bnei.lan:5000/agent-fleet-worker:4.14.5
+        command: ["true"]
+        resources:
+          requests: {cpu: 1m, memory: 8Mi}
+          limits: {cpu: 50m, memory: 32Mi}
+      containers:
+      - name: pause
+        image: registry.k8s.io/pause:3.10
+        resources:
+          requests: {cpu: 1m, memory: 8Mi}
+          limits: {cpu: 10m, memory: 16Mi}
