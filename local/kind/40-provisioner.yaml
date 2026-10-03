@@ -59,6 +59,9 @@ spec:
             # every worker pod hangs forever at sidecar /readyz.
             - name: CORE_GRPC_ADDR
               value: core.agent-fleet.svc.cluster.local:9090
+            # Must equal 30-core.yaml's (docs/adr/0057).
+            - name: FLEET_PROVISIONER_TOKEN
+              value: kind-local-provisioner-token
           envFrom:
             - secretRef:
                 name: agent-fleet-local-secrets
