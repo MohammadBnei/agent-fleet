@@ -33,7 +33,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends git curl ca-cer
 # The global CLI is what the `claude plugin install` steps below run at BUILD
 # time. The SDK's bundled copy is what actually runs a session. They are
 # allowed to differ; they are not allowed to drift silently.
-ARG CLAUDE_CODE_VERSION=2.1.237
+ARG CLAUDE_CODE_VERSION=2.1.288
 RUN bun install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
 
 # The toolchain the session's builds and tests actually run on. This used to
