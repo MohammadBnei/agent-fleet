@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.14.6](https://github.com/MohammadBnei/agent-fleet/compare/4.14.5...4.14.6) (2026-10-03)
+
+
+### Bug Fixes
+
+* **provisioner:** request 100m CPU per session and pre-pull the worker image ([#249](https://github.com/MohammadBnei/agent-fleet/issues/249)) ([47bc449](https://github.com/MohammadBnei/agent-fleet/commit/47bc449af6250b1db2adffce371a97b8df3413c5))
+
 ## [4.14.5](https://github.com/MohammadBnei/agent-fleet/compare/4.14.4...4.14.5) (2026-09-16)
 
 ## [4.14.4](https://github.com/MohammadBnei/agent-fleet/compare/4.14.3...4.14.4) (2026-09-02)
