@@ -14,9 +14,9 @@ on:
 
 env:
   BUF_VERSION: '1.72.0'
-  PROTOC_GEN_GO_VERSION: 'v1.36.11'
+  PROTOC_GEN_GO_VERSION: 'v1.36.12'
   PROTOC_GEN_GO_GRPC_VERSION: 'v1.6.2'
-  PROTOC_GEN_CONNECT_GO_VERSION: 'v1.20.0'
+  PROTOC_GEN_CONNECT_GO_VERSION: 'v1.21.0'
 
 jobs:
   # Precise CI: only run a module's vet/lint/test against what actually
