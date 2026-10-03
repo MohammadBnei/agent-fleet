@@ -138,6 +138,15 @@ jobs:
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
 
+      # release-it 21 and conventional-changelog 12 require Node
+      # ^22.22.2 || ^24.15.0 || >=26. `bun run release` still executes
+      # release-it under node (its bin has a node shebang), so the runner's
+      # default Node is what runs it — pin one that satisfies both.
+      - name: Set up Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: '24.15'
+
       - name: Install dependencies
         run: bun install
 
