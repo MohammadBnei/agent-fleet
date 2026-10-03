@@ -217,4 +217,4 @@ is now a single check rather than a way to wait for a reply. A reply is
 `prompt_agent` from the target back to this session: it arrives as a new
 message and warms this session if it is idle, so the agent ends its turn instead
 of polling. `prompt_agent`'s description says so. See
-[0060](0060-claude-codes-own-cross-session-channel-stays-closed.md).
+[0060](0060-claude-codes-own-cross-session-channel-is-open.md).

@@ -244,12 +244,6 @@ Any doc, code, comment, or memory that contradicts this file or an
 
 ## 2. Forbidden patterns (quick check — full list + reasons in `adr/`)
 
-- **Letting Claude Code's own `SendMessage`/`ListAgents` or inbound
-  cross-session delivery reach a worker.** Every fleet pod shares one OAuth
-  account, so the CLI treats them all as one user's sessions, and that channel
-  goes around the transcript, lease auth and the peer-cannot-resolve-a-decision
-  guard. Both tools stay in `disallowedTools`, and `crossSessionInbound` stays
-  `refuse`. Inter-session talk is `prompt_agent`. See `adr/0060`.
 - **A timeout argument on a blocking MCP tool.** The agent's MCP client aborts a
   request at 60s, and an agent will ask for more. One fixed wait under that
   ceiling, and "not yet" is an answer. See `adr/0058`, `adr/0060`.

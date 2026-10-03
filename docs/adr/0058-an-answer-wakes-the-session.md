@@ -245,4 +245,4 @@ renamed `blockingWaitMs`. The worker also sets the sidecar's per-call ceiling
 explicitly (90s) instead of relying on the CLI default. §3's attribution of the
 60s to `DEFAULT_REQUEST_TIMEOUT_MSEC` was not re-verified: that name does not
 survive minification in the native binary, and the mechanism does not change
-the fix. See [0060](0060-claude-codes-own-cross-session-channel-stays-closed.md).
+the fix. See [0060](0060-claude-codes-own-cross-session-channel-is-open.md).

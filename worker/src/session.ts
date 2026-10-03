@@ -763,15 +763,18 @@ export async function runSession(): Promise<SessionResult> {
       // See FLEET_ASK_RULES — unconditional now that bypassPermissions is gone
       // (docs/adr/0053).
       //
-      // crossSessionInbound / remoteControlAtStartup: Claude Code's own
-      // cross-session channel (docs/adr/0060). Every fleet pod runs on the same
-      // OAuth account, so to the CLI they are all "your other sessions" — a
-      // peer message would reach this session around core, the transcript and
-      // lease auth. Refused explicitly rather than left to the CLI's unset
-      // default, which auto-delivers between sessions in the same mode.
+      // crossSessionInbound: Claude Code's own cross-session channel is open
+      // on purpose (docs/adr/0060). Every fleet pod runs on the same OAuth
+      // account, so a peer is any session on that account — other pods AND
+      // Mohammad's own laptop sessions — and its message arrives around core,
+      // the transcript and lease auth. "accept" explicitly, rather than the
+      // CLI's unset default, which holds a message from a session in a
+      // different permission mode and nobody can approve it in a headless pod.
+      // remoteControlAtStartup stays off: that is phone/web control of the
+      // pod, a different channel nobody asked for.
       settings: {
         permissions: { ask: FLEET_ASK_RULES },
-        crossSessionInbound: "refuse",
+        crossSessionInbound: "accept",
         remoteControlAtStartup: false,
       },
       // Write/Edit/Bash are deliberately never in this list — canUseTool
@@ -796,6 +799,9 @@ export async function runSession(): Promise<SessionResult> {
       // be added to.
       allowedTools: [
         "Read", "Glob", "Grep", "WebSearch", "WebFetch", "Task",
+        // Claude Code's native cross-session channel (docs/adr/0060). Listed so
+        // the agent uses it on its own, without a human prompt per message.
+        "SendMessage", "ListAgents",
         "mcp__agent-fleet-sidecar__*",
         // Playwright by the same wildcard rule. Every browser call would
         // otherwise prompt — including the read-only ones a human would never
@@ -815,13 +821,7 @@ export async function runSession(): Promise<SessionResult> {
       // JSON + Allow/Deny) instead of the dashboard's QUESTION form, with
       // no way to actually deliver a chosen answer back. Removing it from
       // context forces the only question tool that's actually wired up.
-      //
-      // SendMessage / ListAgents are Claude Code's native agent-to-agent
-      // channel (docs/adr/0060), already live for the fleet's account behind a
-      // server-side flag. Inter-session talk here goes through prompt_agent
-      // (docs/adr/0041), which core records and gates.
-      // Cost: the agent also loses messaging its own Task subagents.
-      disallowedTools: ["AskUserQuestion", "SendMessage", "ListAgents"],
+      disallowedTools: ["AskUserQuestion"],
       // Still no tool classification here — the SDK's own permission mode
       // decides when canUseTool gets invoked (acceptEdits skips it for file
       // edits, plan blocks mutation without invoking it, default invokes it

@@ -71,8 +71,10 @@ gap. One more thing we learned from your 2026-08-31 addendum to [k1:0041][k1-004
 Claude Code 2.1.251 re-enabled its native cross-session messaging despite the environment
 variables that had blocked it, and you now block it through launch settings, with a
 test. When we checked, our workers already had both tools: the server-side flag was on
-for our account. We now disallow both and set `crossSessionInbound: "refuse"`, checked
-by a test and by a live worker's tool list ([af:0060][af-0060]).
+for our account. We went the other way from you and opened the channel on purpose: both
+tools run without a prompt, and inbound messages are accepted ([af:0060][af-0060]). The
+trade-off is real. Every worker shares one account, so the channel reaches all of its
+sessions and bypasses our transcript and lease checks.
 
 **Pin the upstream, and say whether you tested it.** Your release watcher keeps "we saw
 a new version" separate from "it passed the contract". We pin, and our build refuses a
@@ -156,4 +158,4 @@ email named the same thing from your side, and [k1:0045][k1-0045] (decision 31) 
 [af-0054]: ./adr/0054-the-toolchain-stays-in-the-pod.md
 [af-0057]: ./adr/0057-coreservice-authenticates-with-the-session-lease.md
 [af-0058]: ./adr/0058-an-answer-wakes-the-session.md
-[af-0060]: ./adr/0060-claude-codes-own-cross-session-channel-stays-closed.md
+[af-0060]: ./adr/0060-claude-codes-own-cross-session-channel-is-open.md

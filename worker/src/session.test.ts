@@ -298,11 +298,14 @@ test("tool wiring: default mode, no Write/Edit in allowedTools, canUseTool prese
   // question form; the native one falls through to the generic raw-JSON
   // PermissionCard with no way to deliver an answer.
   expect(queryOptions?.disallowedTools).toContain("AskUserQuestion");
-  // Claude Code's native cross-session channel (docs/adr/0060): server-side
-  // flagged, so absent today is not absent tomorrow. Both directions closed.
-  expect(queryOptions?.disallowedTools).toContain("SendMessage");
-  expect(queryOptions?.disallowedTools).toContain("ListAgents");
-  expect((queryOptions?.settings as { crossSessionInbound?: string })?.crossSessionInbound).toBe("refuse");
+  // Claude Code's native cross-session channel is open on purpose
+  // (docs/adr/0060): usable without a prompt, and inbound delivered rather
+  // than held — a held message has no one to approve it in a headless pod.
+  expect(allowedTools).toContain("SendMessage");
+  expect(allowedTools).toContain("ListAgents");
+  expect(queryOptions?.disallowedTools).not.toContain("SendMessage");
+  expect(queryOptions?.disallowedTools).not.toContain("ListAgents");
+  expect((queryOptions?.settings as { crossSessionInbound?: string })?.crossSessionInbound).toBe("accept");
   expect((queryOptions?.settings as { remoteControlAtStartup?: boolean })?.remoteControlAtStartup).toBe(false);
   // The sidecar's ceiling is ours, and must stay above the transport's 60s
   // or it hard-fails every sidecar tool (docs/adr/0058).
