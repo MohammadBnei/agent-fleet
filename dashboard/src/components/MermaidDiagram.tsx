@@ -1,7 +1,17 @@
 import { memo, useEffect, useId, useRef, useState } from "react";
 import mermaid from "mermaid";
 
-mermaid.initialize({ startOnLoad: false, theme: "dark" });
+// securityLevel "strict" is mermaid's default, stated so it can't drift: the
+// SVG below goes in via innerHTML, and diagrams come from agent output.
+// layout/look pin mermaid 11's dagre + classic rendering — 12 switched the
+// defaults to ELK (a separate chunk fetched on first render) and "neo".
+mermaid.initialize({
+  startOnLoad: false,
+  theme: "dark",
+  securityLevel: "strict",
+  layout: "dagre",
+  look: "classic",
+});
 
 // Renders a ```mermaid fence from Markdown.tsx as an actual diagram —
 // mermaid.render() is async and returns raw SVG markup, so this needs its
