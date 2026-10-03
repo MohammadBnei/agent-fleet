@@ -109,7 +109,7 @@ git push origin <tag>              # any tag push triggers docker.yml
       registry.bnei.lan:5000 (ukubi's own Zot, infra-bootstrap ADR-0034).
       One job, not one per image: the runner executes one job at a time, so a
       matrix would serialize anyway and each leg's cleanup would evict the
-      shared golang:1.26 / oven/bun:1-slim cache. On a PR only the changed
+      shared golang:1.27 / oven/bun:1-slim cache. On a PR only the changed
       components build, and nothing is pushed.
   → deploy (on tag push only — NOT on workflow_dispatch, needs build-push):
       sed-bumps k8s/*.yaml's `tag: "..."` (Helm-values shape) and

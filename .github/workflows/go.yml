@@ -239,14 +239,14 @@ jobs:
         uses: golangci/golangci-lint-action@v9
         with:
           working-directory: ${{ matrix.module }}
-          # Pinned, not `latest` — go.mod declares go 1.26.5 (this repo's
+          # Pinned, not `latest` — go.mod declares go 1.27.1 (this repo's
           # local toolchain), and golangci-lint refuses to analyze a
           # module targeting a newer Go than it was itself built with.
-          # v2.9.0+ is the first line built with go1.26; v2.12.2 matches
-          # what's verified working locally (`golangci-lint version`).
+          # v2.14.0 is built with go1.27.1 and matches what's verified
+          # working locally (`golangci-lint version`).
           # golangci-lint-action v7+ is required for golangci-lint v2.x
           # (v6 only supports v1.x).
-          version: v2.12.2
+          version: v2.14.0
 
       # -count=1 is load-bearing, not belt-and-braces. core/internal/buildguard's
       # tests read files OUTSIDE their module (.github/, proto/), which Go's

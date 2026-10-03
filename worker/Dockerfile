@@ -43,7 +43,7 @@ RUN bun install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
 #
 # Go is installed from upstream rather than apt: Debian slim's golang lags far
 # enough behind to fail on a modern go.mod's toolchain directive.
-ARG GO_VERSION=1.26.6
+ARG GO_VERSION=1.27.1
 RUN curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" | tar -xz -C /usr/local
 ENV PATH="/usr/local/go/bin:${PATH}"
 

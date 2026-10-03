@@ -7,7 +7,7 @@
 # small footprint. No git/gh needed here (unlike provisioner): the sidecar
 # only reads the already-prepared worktree to compute diff telemetry, it
 # never clones or pushes.
-FROM golang:1.26 AS build
+FROM golang:1.27 AS build
 WORKDIR /app
 COPY proto/gen/go ./proto/gen/go
 COPY sidecar ./sidecar

@@ -5,7 +5,7 @@
 # No schema embed needed here (unlike core) — the provisioner holds no
 # Postgres credentials at all (docs/adr/0020 point 1); Kubernetes itself is
 # the source of truth for pod/session state.
-FROM golang:1.26 AS build
+FROM golang:1.27 AS build
 WORKDIR /app
 COPY proto/gen/go ./proto/gen/go
 COPY provisioner ./provisioner

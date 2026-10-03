@@ -12,7 +12,7 @@ RUN bun install --frozen-lockfile
 COPY dashboard/ ./
 RUN bun run build
 
-FROM golang:1.26 AS build
+FROM golang:1.27 AS build
 WORKDIR /app
 COPY proto/gen/go ./proto/gen/go
 COPY core ./core
