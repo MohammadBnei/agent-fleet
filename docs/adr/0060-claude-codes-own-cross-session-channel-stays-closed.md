@@ -18,11 +18,14 @@ setting. All three are in the CLI the worker pins (2.1.237, SDK 0.3.237):
 `Settings.crossSessionInbound?: 'accept' | 'hold' | 'refuse'` is in `sdk.d.ts`,
 and both tool names are in the native binary.
 
-The tools sit behind a feature flag (`CLAUDE_CODE_HARBOR_KITE`, or the
-server-side GrowthBook flag `tengu_harbor_kite`), off by default. That is not a
-boundary we own. k-k1/agent-fleet hit the same thing: their ADR 0041 addendum
-(2026-08-31) records that an env-var block held until CLI 2.1.251, which then
-delivered a message anyway.
+**They were already live in our workers.** The binary gates them on
+`CLAUDE_CODE_HARBOR_KITE` or a server-side flag (`tengu_harbor_kite`). We
+assumed that flag was off. A worker started on 2026-10-03 from `main`, with the
+fleet's real token and **no** env flag, listed both `SendMessage` and
+`ListAgents` in its `system/init` tool list. So the server-side flag is on for
+this account, and every fleet session could already see them. k-k1 hit the
+same thing: their ADR 0041 addendum (2026-08-31) records an env-var block that
+held until CLI 2.1.251, which then delivered a message anyway.
 
 For this fleet it matters more than for most. Every worker pod runs on the
 same `CLAUDE_CODE_OAUTH_TOKEN`, so to the CLI every other fleet session is
@@ -40,8 +43,7 @@ would not stop it.
 ## Decision
 
 1. `SendMessage` and `ListAgents` are in the worker's `disallowedTools`, beside
-   the built-in `AskUserQuestion`. Removing them from context costs nothing
-   while the flag is off and closes the outbound side if it is turned on.
+   the built-in `AskUserQuestion`. That closes the outbound side.
 2. The per-session SDK `settings` carry `crossSessionInbound: "refuse"` and
    `remoteControlAtStartup: false`. An explicit value always wins over the
    CLI's mode-parity default, so inbound delivery is closed whatever the flag
@@ -59,11 +61,12 @@ A test in `worker/src/session.test.ts` pins all four values.
   Subagents still run and return their result; only follow-up messaging is
   lost. Accepted: nothing in the fleet uses it, and a channel around core is a
   worse problem than a missing convenience.
-- **Proof is partial until checked live.** The config test proves the options
-  are passed. Whether the CLI honours them is checked by starting a worker with
-  `CLAUDE_CODE_HARBOR_KITE=1`: the tools must appear without this change and be
-  absent with it. If the flag alone does not surface them, the live half is
-  recorded as unproven rather than proven.
+- **Checked live, not only in a unit test.** A harness ran the real worker,
+  sidecar and CLI 2.1.237 against a local core. In the `system/init` tool list:
+  `main` without the env flag had both tools (47 tools); `main` with
+  `CLAUDE_CODE_HARBOR_KITE=1` had both; this change with the flag had neither
+  (45 tools). The inbound `refuse` was not exercised live: that would mean
+  sending a real cross-session message. It is pinned by the config test.
 - **Re-check on every CLI bump.** New releases can rename the tools or add a
   setting (0.3.288 adds `isolatePeerMachines`). The SDK bump that follows this
   ADR re-runs the same check.

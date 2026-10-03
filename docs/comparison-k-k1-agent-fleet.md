@@ -70,8 +70,9 @@ closed on 2026-10-03, after the commit this page describes; ours is still an acc
 gap. One more thing we learned from your 2026-08-31 addendum to [k1:0041][k1-0041]:
 Claude Code 2.1.251 re-enabled its native cross-session messaging despite the environment
 variables that had blocked it, and you now block it through launch settings, with a
-test. Our pinned CLI does ship it, behind a server-side flag. We now disallow both tools
-and set `crossSessionInbound: "refuse"`, also checked by a test ([af:0060][af-0060]).
+test. When we checked, our workers already had both tools: the server-side flag was on
+for our account. We now disallow both and set `crossSessionInbound: "refuse"`, checked
+by a test and by a live worker's tool list ([af:0060][af-0060]).
 
 **Pin the upstream, and say whether you tested it.** Your release watcher keeps "we saw
 a new version" separate from "it passed the contract". We pin, and our build refuses a

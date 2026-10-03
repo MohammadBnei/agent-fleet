@@ -817,9 +817,9 @@ export async function runSession(): Promise<SessionResult> {
       // context forces the only question tool that's actually wired up.
       //
       // SendMessage / ListAgents are Claude Code's native agent-to-agent
-      // channel (docs/adr/0060). Feature-flagged off today, but the flag is
-      // server-side and k-k1 saw it switch on. Inter-session talk here goes
-      // through prompt_agent (docs/adr/0041), which core records and gates.
+      // channel (docs/adr/0060), already live for the fleet's account behind a
+      // server-side flag. Inter-session talk here goes through prompt_agent
+      // (docs/adr/0041), which core records and gates.
       // Cost: the agent also loses messaging its own Task subagents.
       disallowedTools: ["AskUserQuestion", "SendMessage", "ListAgents"],
       // Still no tool classification here — the SDK's own permission mode
