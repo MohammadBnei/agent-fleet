@@ -540,10 +540,11 @@ func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error 
 				// already requested at idle. 100m lets three sessions run
 				// before it fires. The cost is bc5da8f's finding — under
 				// node contention a build gets a small CFS share — and
-				// k8s/provisioner/image-prepull.yaml is what keeps that rare:
-				// with the worker image cached on both session nodes,
-				// sessions spread instead of all landing on the one that
-				// pulled it first.
+				// k8s/provisioner/image-prepull.yaml is meant to keep that
+				// rare: with the worker image cached on both session nodes,
+				// image locality no longer sends every new session to the
+				// node that pulled it first (see that file for when this
+				// does and does not spread them).
 				//
 				// The 4000m/4Gi limits sit at exactly limitRange.max in
 				// k8s/core.yaml, inherited from when the sandbox was pinned

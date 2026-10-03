@@ -1,11 +1,15 @@
 # Keeps the current worker image cached on every session node.
 #
 # Without it every session landed on k8s-worker-01: 28 of 28 session PVs there
-# on 2026-10-03, though k8s-worker-02 carries the same session-node label. The
-# scheduler's ImageLocality score favours the node already holding the 850 MB
-# worker image, the session that lands there keeps it warm, and local-path
-# then pins each session's resumes to that node for good. Caching the image on
-# both nodes takes ImageLocality out of the choice, so LeastAllocated decides.
+# on 2026-10-03, though k8s-worker-02 carries the same session-node label.
+# docs/adr/0054 found worker-01 was then the least-allocated node, with image
+# locality only reinforcing it. By 2026-10-03 that had flipped — at idle
+# worker-02 requested 2811m CPU / 21% memory against worker-01's 2963m / 35% —
+# and a new session still went to worker-01, the only node holding the current
+# 850 MB worker image. Caching it on both nodes takes ImageLocality out of the
+# choice and leaves it to resource fit. That spreads sessions only while the
+# two nodes' baselines stay close; it is not a spread constraint. Existing
+# sessions stay where they are: local-path pins each one to its node for life.
 #
 # The init container only exists to make the kubelet pull the image; it runs
 # `true` and exits. A running pod using the image also stops kubelet image GC
