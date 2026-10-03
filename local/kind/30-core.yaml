@@ -39,6 +39,17 @@ spec:
             # override needed.
             - name: MAX_IN_FLIGHT_TASKS
               value: "5"
+            # docs/adr/0056: core refuses to start without OIDC config, and
+            # this cluster has no authentik.
+            - name: FLEET_AUTH_DISABLED
+              value: "1"
+            # docs/adr/0057: the provisioner authenticates to CoreService with
+            # this shared value. Unset on both sides, core starts but rejects
+            # every pod event. Must equal 40-provisioner.yaml's. A local-only
+            # literal, not a credential: nothing outside this kind cluster
+            # accepts it.
+            - name: FLEET_PROVISIONER_TOKEN
+              value: kind-local-provisioner-token
             # DISCORD_BOT_TOKEN deliberately omitted — core/cmd/core/run.go
             # falls back to a noopNotifier, same as dashboard-e2e.
             # LOKI_URL deliberately omitted — no Loki in this local ground;
