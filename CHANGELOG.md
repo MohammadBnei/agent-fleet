@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.14.7](https://github.com/MohammadBnei/agent-fleet/compare/4.14.6...4.14.7) (2026-10-03)
+
+
+### Bug Fixes
+
+* close k-k1 comparison gaps (answer delivery, blocking waits, cross-session channel) ([#248](https://github.com/MohammadBnei/agent-fleet/issues/248)) ([38ce699](https://github.com/MohammadBnei/agent-fleet/commit/38ce699350b94dfab5fe862a3ba00cccf17aec0c))
+
 ## [4.14.6](https://github.com/MohammadBnei/agent-fleet/compare/4.14.5...4.14.6) (2026-10-03)
 
 
