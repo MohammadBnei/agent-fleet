@@ -1,5 +1,11 @@
 # Changelog
 
+## [4.14.8](https://github.com/MohammadBnei/agent-fleet/compare/4.14.7...4.14.8) (2026-10-03)
+
+### Bug Fixes
+
+* **kind-local:** let core start and accept the provisioner's events ([9fe45e5](https://github.com/MohammadBnei/agent-fleet/commit/9fe45e5ef0d1bd1fb30730ccecfde032d5d8f81b))
+
 ## [4.14.7](https://github.com/MohammadBnei/agent-fleet/compare/4.14.6...4.14.7) (2026-10-03)
 
 
