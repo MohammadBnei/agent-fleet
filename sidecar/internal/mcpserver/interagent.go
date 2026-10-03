@@ -10,6 +10,7 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 
+	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 	"github.com/MohammadBnei/agent-fleet/sidecar/internal/coreclient"
 )
 
@@ -94,7 +95,12 @@ func promptSessionHandler(core *coreclient.Client) server.ToolHandlerFunc {
 	}
 }
 
-func waitForSessionHandler(core *coreclient.Client) server.ToolHandlerFunc {
+// SessionWaiter is narrowed so the test can pin the wait sent to core.
+type SessionWaiter interface {
+	WaitForSessionState(ctx context.Context, targetTaskID string, until []string, timeoutMs int32, afterSeq int64) (*agentfleetv1.WaitForSessionStateResponse, error)
+}
+
+func waitForSessionHandler(core SessionWaiter) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		target := req.GetString("sessionId", "")
 		if target == "" {
@@ -104,12 +110,11 @@ func waitForSessionHandler(core *coreclient.Client) server.ToolHandlerFunc {
 		if raw := req.GetString("until", ""); raw != "" {
 			until = []string{raw}
 		}
-		timeoutMs := int32(req.GetInt("timeoutMs", 120000))
 		afterSeq := int64(req.GetInt("afterSeq", 0))
 		if afterSeq == 0 {
 			afterSeq = promptBaseline(target)
 		}
-		resp, err := core.WaitForSessionState(ctx, target, until, timeoutMs, afterSeq)
+		resp, err := core.WaitForSessionState(ctx, target, until, blockingWaitMs, afterSeq)
 		if err != nil {
 			slog.Error("mcp wait_for_agent", "targetSessionId", target, "error", err)
 			return mcp.NewToolResultError(err.Error()), nil

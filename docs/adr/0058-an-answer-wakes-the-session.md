@@ -235,3 +235,14 @@ nuisance; nobody traced what the retry it caused actually **did**. The evidence
 was three `discord: notified blocked` lines in a log already quoted in this ADR:
 that message fires only on a new append, so the retries had been visibly
 appending all along.
+
+## Amendment (2026-10-03): the other two blocking tools
+
+§3 removed `timeoutMs` from `AskUserQuestion` only. `wait_for_messages` and
+`wait_for_agent` kept it, and `wait_for_agent` defaulted to 120000, so the same
+60s failure needed no unusual input at all. Both now use the same fixed wait,
+renamed `blockingWaitMs`. The worker also sets the sidecar's per-call ceiling
+explicitly (90s) instead of relying on the CLI default. §3's attribution of the
+60s to `DEFAULT_REQUEST_TIMEOUT_MSEC` was not re-verified: that name does not
+survive minification in the native binary, and the mechanism does not change
+the fix. See [0060](0060-claude-codes-own-cross-session-channel-stays-closed.md).

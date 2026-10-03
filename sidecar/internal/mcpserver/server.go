@@ -48,24 +48,29 @@ type AskUserQuestionArgs struct {
 	Questions []AskUserQuestionQuestion `json:"questions" jsonschema_description:"1-4 questions to ask the human"`
 }
 
-// askQuestionWait is how long core holds the question open before returning
-// {"status":"pending"}. Deliberately NOT a tool argument.
+// blockingWaitMs is how long core holds any blocking tool call open —
+// AskUserQuestion, wait_for_messages, wait_for_agent — before returning what
+// it has. Deliberately NOT a tool argument on any of them.
 //
 // It was one, and the schema said "call the tool again with the same questions
 // to keep waiting" — directly contradicting the tool description twenty lines
 // up, and docs/adr/0050, which both say end your turn instead. An agent read
 // the field, asked for 120000 to wait longer, and the call died at exactly
-// 60000 with code=Canceled: the ceiling is DEFAULT_REQUEST_TIMEOUT_MSEC in the
-// agent's own MCP client, one hop away and invisible from here. The handler
-// surfaced that as a failed tool call, so the agent gave up on the tool and
-// pasted its four questions into the chat as prose (observed live 2026-08-19,
-// session 8e5b57c0).
+// 60000 with code=Canceled: the agent's own MCP client aborts each request at
+// 60s, one hop away and invisible from here. The handler surfaced that as a
+// failed tool call, so the agent gave up on the tool and pasted its four
+// questions into the chat as prose (observed live 2026-08-19, session
+// 8e5b57c0).
+//
+// wait_for_messages and wait_for_agent kept the knob after docs/adr/0058 and
+// had the same bug: wait_for_agent defaulted to 120000, so a plain call with
+// no arguments at all crossed the ceiling.
 //
 // There is nothing an agent could know that would make one value better than
 // another — the only requirement is "comfortably under the transport
 // deadline" — so the knob is gone rather than clamped. 45s, not 60s: equalling
 // the client's own deadline races it.
-const askQuestionWaitMs int32 = 45_000
+const blockingWaitMs int32 = 45_000
 
 // New builds the sidecar's local MCP HTTP handler. Every tool the agent will
 // ever see is registered here, at startup. Nothing is discovered at runtime
@@ -76,6 +81,12 @@ const askQuestionWaitMs int32 = 45_000
 // The e2e directDialer parameter is gone with the sandbox it dialed
 // (docs/adr/0048 §6) — this sidecar now talks only to core.
 func New(core *coreclient.Client) http.Handler {
+	return server.NewStreamableHTTPServer(newMCPServer(core))
+}
+
+// newMCPServer is New without the transport, so a test can read the tool
+// list the agent will see.
+func newMCPServer(core *coreclient.Client) *server.MCPServer {
 	s := server.NewMCPServer("agent-fleet-sidecar", "0.1.0", server.WithToolCapabilities(true))
 
 	s.AddTool(mcp.NewTool("send_message",
@@ -87,13 +98,12 @@ func New(core *coreclient.Client) http.Handler {
 	), sendMessageHandler(core))
 
 	s.AddTool(mcp.NewTool("wait_for_messages",
-		mcp.WithDescription("Block (up to timeoutMs) until transcript messages appear at or after sinceIndex. You almost never need this — human messages already arrive live as your next input, no polling required. sinceIndex is INCLUSIVE and NOT filtered by `from`, so a raw send_message index returns your own message back to you; always pass the previous response's nextIndex."),
+		mcp.WithDescription(fmt.Sprintf("Wait up to %ds for transcript messages at or after sinceIndex; returns an empty list if none arrive. You almost never need this — human messages already arrive live as your next input, no polling required. sinceIndex is INCLUSIVE and NOT filtered by `from`, so a raw send_message index returns your own message back to you; always pass the previous response's nextIndex.", blockingWaitMs/1000)),
 		mcp.WithNumber("sinceIndex"),
-		mcp.WithNumber("timeoutMs"),
 	), waitForMessagesHandler(core))
 
 	s.AddTool(mcp.NewTool("AskUserQuestion",
-		mcp.WithDescription("Ask the human one or more structured multiple-choice questions. Answered via the web dashboard. Blocks (up to timeoutMs) until answered. If it returns {\"status\":\"pending\"}, the question is still live and durable: DO NOT re-invoke in a loop — end your turn. The answer is delivered to you automatically as a new message when the human replies, even days later across a pod restart. See docs/adr/0018."),
+		mcp.WithDescription(fmt.Sprintf("Ask the human one or more structured multiple-choice questions. Answered via the web dashboard. Waits up to %ds for an answer. If it returns {\"status\":\"pending\"}, the question is still live and durable: DO NOT re-invoke in a loop — end your turn. The answer is delivered to you automatically as a new message when the human replies, even days later across a pod restart. See docs/adr/0018.", blockingWaitMs/1000)),
 		mcp.WithInputSchema[AskUserQuestionArgs](),
 	), askUserQuestionHandler(core))
 
@@ -173,16 +183,15 @@ func New(core *coreclient.Client) http.Handler {
 	), listSessionsHandler(core))
 
 	s.AddTool(mcp.NewTool("prompt_agent",
-		mcp.WithDescription("Send a message to another session, as yourself. It lands in that session's transcript attributed to you and warms its pod if idle. Use it to hand off work or ask a question of a session owning a different repo — not to chat. The target reads it fenced and marked as coming from another agent, and it cannot answer you by writing ordinary output — only by calling prompt_agent back — so be concrete and say what you need from it. REFUSED if the target is 'blocked' (it is waiting on a human decision that is not yours to resolve), for your own session, and beyond a small relay depth so chains cannot loop. Follow with wait_for_agent to await a reply."),
+		mcp.WithDescription("Send a message to another session, as yourself. It lands in that session's transcript attributed to you and warms its pod if idle. Use it to hand off work or ask a question of a session owning a different repo — not to chat. The target reads it fenced and marked as coming from another agent, and it cannot answer you by writing ordinary output — only by calling prompt_agent back — so be concrete and say what you need from it. REFUSED if the target is 'blocked' (it is waiting on a human decision that is not yours to resolve), for your own session, and beyond a small relay depth so chains cannot loop. To get a reply, end your turn: the target's prompt_agent back to you arrives as a new message and warms you if you are idle. Do not loop on wait_for_agent."),
 		mcp.WithString("sessionId", mcp.Required(), mcp.Description("Target session's task id, from list_sessions")),
 		mcp.WithString("text", mcp.Required()),
 	), promptSessionHandler(core))
 
 	s.AddTool(mcp.NewTool("wait_for_agent",
-		mcp.WithDescription("Block until another session reaches a liveness state, or the timeout expires. With no `until`, waits for it to settle (idle, done, blocked, stalled). `until: blocked` is the useful one after prompting — it returns when that session genuinely needs a human. A timeout is not an error: the response reports timedOut plus the state actually reached, and 'still working' is a legitimate answer to act on."),
+		mcp.WithDescription(fmt.Sprintf("Wait up to %ds for another session to reach a liveness state — a single check, not a way to wait for a reply (a reply arrives as a new message; end your turn for it). With no `until`, waits for it to settle (idle, done, blocked, stalled). `until: blocked` returns when that session genuinely needs a human. Running out of time is not an error: the response reports timedOut plus the state actually reached, and 'still working' is a legitimate answer to act on — do not re-invoke in a loop.", blockingWaitMs/1000)),
 		mcp.WithString("sessionId", mcp.Required()),
 		mcp.WithString("until", mcp.Description("working | blocked | idle | done | stalled | unknown. Omit to wait for any settled state.")),
-		mcp.WithNumber("timeoutMs", mcp.Description("Default 120000.")),
 		mcp.WithNumber("afterSeq", mcp.Description("Only count a settled state once the target produces activity newer than this transcript seq. Filled in automatically from your last prompt_agent to the same target, so normally omit it — without it, waiting right after prompting can return the state held BEFORE your message landed.")),
 	), waitForSessionHandler(core))
 
@@ -210,7 +219,7 @@ func New(core *coreclient.Client) http.Handler {
 	// snapshot existed — a tool the agent cannot see is a tool that does not
 	// exist, and the SDK handles a locally-configured MCP server's tool list
 	// itself.
-	return server.NewStreamableHTTPServer(s)
+	return s
 }
 
 // Per-result caps for the two tools here that can return arbitrarily much
@@ -269,12 +278,17 @@ func sendMessageHandler(core *coreclient.Client) server.ToolHandlerFunc {
 	}
 }
 
-func waitForMessagesHandler(core *coreclient.Client) server.ToolHandlerFunc {
+// MessageWaiter is narrowed for the same reason as QuestionAsker: the test
+// pins the wait it sends to core.
+type MessageWaiter interface {
+	WaitForMessages(ctx context.Context, sinceSeq int64, timeoutMs int32) ([]*agentfleetv1.TranscriptEntry, int64, error)
+}
+
+func waitForMessagesHandler(core MessageWaiter) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		sinceIndex := int64(req.GetInt("sinceIndex", 0))
-		timeoutMs := int32(req.GetInt("timeoutMs", 30000))
-		slog.Debug("mcp wait_for_messages", "sinceIndex", sinceIndex, "timeoutMs", timeoutMs)
-		entries, nextSeq, err := core.WaitForMessages(ctx, sinceIndex, timeoutMs)
+		slog.Debug("mcp wait_for_messages", "sinceIndex", sinceIndex)
+		entries, nextSeq, err := core.WaitForMessages(ctx, sinceIndex, blockingWaitMs)
 		if err != nil {
 			slog.Error("mcp wait_for_messages", "error", err)
 			return nil, fmt.Errorf("wait_for_messages: %w", err)
@@ -432,7 +446,7 @@ func askUserQuestionHandler(core QuestionAsker) func(ctx context.Context, req mc
 			return nil, fmt.Errorf("AskUserQuestion: marshal questions: %w", err)
 		}
 		slog.Info("mcp AskUserQuestion", "questions", len(args.Questions))
-		answered, answersJSON, _, err := core.AskUserQuestion(ctx, string(payload), askQuestionWaitMs)
+		answered, answersJSON, _, err := core.AskUserQuestion(ctx, string(payload), blockingWaitMs)
 		if err != nil {
 			// A cancelled or expired wait is the PENDING case, not a failure.
 			// The question row was appended before the poll began and is
@@ -450,7 +464,7 @@ func askUserQuestionHandler(core QuestionAsker) func(ctx context.Context, req mc
 		if answered {
 			return mcp.NewToolResultText(answersJSON), nil
 		}
-		// Not answered within timeoutMs. The question row is durable and the
+		// Not answered within blockingWaitMs. The question row is durable and the
 		// card stays live on the dashboard; the human's answer is delivered
 		// as a normal message when it lands (worker feeds the "answer" entry
 		// as a turn — see worker/src/session.ts), surviving a pod

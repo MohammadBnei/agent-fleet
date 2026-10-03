@@ -89,12 +89,12 @@ func TestAskUserQuestion_WaitIsFixedAndUnderTheTransportDeadline(t *testing.T) {
 	if _, err := ask(t, a); err != nil {
 		t.Fatalf("ask: %v", err)
 	}
-	if a.gotTimeoutMs != askQuestionWaitMs {
-		t.Errorf("core was asked to wait %dms, want the fixed %dms", a.gotTimeoutMs, askQuestionWaitMs)
+	if a.gotTimeoutMs != blockingWaitMs {
+		t.Errorf("core was asked to wait %dms, want the fixed %dms", a.gotTimeoutMs, blockingWaitMs)
 	}
-	// 60000 is DEFAULT_REQUEST_TIMEOUT_MSEC in the agent's MCP client. Equalling
-	// it races that deadline; exceeding it is the bug this replaced.
-	if askQuestionWaitMs >= 60_000 {
-		t.Errorf("wait %dms is not comfortably under the MCP client's 60000ms ceiling", askQuestionWaitMs)
+	// 60000 is where the agent's MCP client aborts a request. Equalling it
+	// races that deadline; exceeding it is the bug this replaced.
+	if blockingWaitMs >= 60_000 {
+		t.Errorf("wait %dms is not comfortably under the MCP client's 60000ms ceiling", blockingWaitMs)
 	}
 }

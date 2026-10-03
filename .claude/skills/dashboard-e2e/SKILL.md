@@ -108,7 +108,9 @@ STUB_PID=$!
 Same DB env vars as above, still exported in this shell.
 
 ```bash
-(cd core && PROVISIONER_GRPC_ADDR=127.0.0.1:9091 LOG_LEVEL=debug go run ./cmd/core) &
+# FLEET_AUTH_DISABLED=1: since docs/adr/0056 core refuses to start without OIDC
+# config, and this stack has no authentik.
+(cd core && FLEET_AUTH_DISABLED=1 PROVISIONER_GRPC_ADDR=127.0.0.1:9091 LOG_LEVEL=debug go run ./cmd/core) &
 CORE_PID=$!
 until curl -sf http://localhost:8080/healthz >/dev/null 2>&1; do sleep 0.5; done
 ```

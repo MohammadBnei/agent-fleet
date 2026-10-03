@@ -55,7 +55,9 @@ arrives later as `Answer to your earlier question (seq N): …`. Your carried pr
 two things ours does not. It repeats the question text, because the question itself has
 dropped out of the conversation. And it says, in fixed wording checked by a test, not to
 ask again and to continue with this answer ([session_carried.go][k1-carried],
-[test][k1-carried-test]). We are taking both.
+[test][k1-carried-test]). We took both: our delivered answer now repeats each question
+with its answer and ends with a fixed "do not ask again" line, checked by a test
+([af:0060][af-0060]).
 
 **A peer message must never answer a human's question.** Both projects enforce this. On
 your side, a prompt is refused while a question, plan or permission is pending
@@ -68,8 +70,8 @@ closed on 2026-10-03, after the commit this page describes; ours is still an acc
 gap. One more thing we learned from your 2026-08-31 addendum to [k1:0041][k1-0041]:
 Claude Code 2.1.251 re-enabled its native cross-session messaging despite the environment
 variables that had blocked it, and you now block it through launch settings, with a
-test. We do not block that channel at all, and have not checked whether our pinned SDK
-offers it. We will.
+test. Our pinned CLI does ship it, behind a server-side flag. We now disallow both tools
+and set `crossSessionInbound: "refuse"`, also checked by a test ([af:0060][af-0060]).
 
 **Pin the upstream, and say whether you tested it.** Your release watcher keeps "we saw
 a new version" separate from "it passed the contract". We pin, and our build refuses a
@@ -92,9 +94,10 @@ What might be useful to you, as questions:
 - Both projects found that a permission's yes/no can only reach the process that asked.
   You let the process go and carry the fact; we keep the pod. Which costs less in
   practice for you?
-- `wait_for_agent` parks one session until another becomes idle or blocked on a human,
-  computed from liveness rather than from an event ([af:0041][af-0041]). Would something
-  like it fit your fleet graph?
+- `wait_for_agent` checks, for up to 45 seconds, whether another session is idle or
+  blocked on a human, computed from liveness rather than from an event
+  ([af:0041][af-0041]). A reply itself arrives as a new message. Would something like it
+  fit your fleet graph?
 
 ## What we got wrong
 
@@ -104,8 +107,10 @@ What might be useful to you, as questions:
 - **Answers written but never delivered.** For a while, a human's answer was stored, the
   badge cleared and the dashboard looked right, but the next pod never received it. Four
   separate defects, none visible from outside ([af:0058][af-0058]).
-- **A stale tool description.** Our question tool still tells the agent it "blocks (up to
-  timeoutMs)", an argument we removed in [af:0058][af-0058].
+- **A stale tool description, and two tools the same fix missed.** Our question tool
+  told the agent it "blocks (up to timeoutMs)" for weeks after [af:0058][af-0058] removed
+  that argument. Fixing it turned up two more blocking tools that still took one, one of
+  them defaulting past the 60-second limit that 0058 was about ([af:0060][af-0060]).
 - **No real end-to-end check of delivery.** Our tests replace the SDK with a fake, so the
   path that failed above is still only covered by running it for real. We keep a list of
   the checks that passed while the system was broken:
@@ -150,3 +155,4 @@ email named the same thing from your side, and [k1:0045][k1-0045] (decision 31) 
 [af-0054]: ./adr/0054-the-toolchain-stays-in-the-pod.md
 [af-0057]: ./adr/0057-coreservice-authenticates-with-the-session-lease.md
 [af-0058]: ./adr/0058-an-answer-wakes-the-session.md
+[af-0060]: ./adr/0060-claude-codes-own-cross-session-channel-stays-closed.md
