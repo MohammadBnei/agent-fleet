@@ -70,7 +70,7 @@ either. No permission mode will ever stop the plan card from appearing.
 A model classifier answers the ordinary prompts. It is **not** launch-gated;
 `setPermissionMode("auto")` works mid-session. Its own gates are a remote
 config circuit breaker and a model allow-list excluding `claude-3-*`,
-opus-4-0/4-1/4-5, sonnet-4-0/4-5, haiku-4-5 — the fleet runs `claude-opus-4-8`.
+opus-4-0/4-1/4-5, sonnet-4-0/4-5, haiku-4-5 — the fleet runs `claude-opus-4-8`. (Since [0061](0061-sessions-launch-in-auto.md): `claude-opus-5-5`, and `auto` is the launch default.)
 
 It deliberately falls back to a human ask (telemetry:
 `tengu_auto_mode_fallback_to_ask`) for ask-rule matches, `requiresUserInteraction`
