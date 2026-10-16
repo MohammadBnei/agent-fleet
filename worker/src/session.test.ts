@@ -89,6 +89,9 @@ function respondToPermission(seq: number, decision: { behavior: "allow" | "deny"
 // the same Query object keeps accepting input after interrupt().
 let mockMessageText = "mock agent message";
 let forceResult: ({ subtype: string; num_turns: number; total_cost_usd: number } & Record<string, unknown>) | null = null;
+// Forces the fake init to report a mode other than the one launched in — the
+// SDK refusing "auto" at boot.
+let initPermissionMode: string | undefined = undefined;
 let crashOnRound: number | null = null;
 let includeToolResult = false;
 let capturedCanUseTool: ((toolName: string, input: unknown) => Promise<{ behavior: string; message?: string; updatedInput?: unknown }>) | null =
@@ -165,7 +168,7 @@ mock.module("@anthropic-ai/claude-agent-sdk", () => ({
             subtype: "init",
             session_id: sessionId,
             model: "claude-opus-4-8",
-            permissionMode: "default",
+            permissionMode: initPermissionMode ?? (queryOptions?.permissionMode as string | undefined) ?? "default",
             slash_commands: ["/compact"],
             skills: ["doubt-driven-development"],
             tools: ["Bash", "Read"],
@@ -257,6 +260,7 @@ beforeEach(() => {
   interruptCalls = 0;
   setPermissionModeCalls = [];
   setPermissionModeError = null;
+  initPermissionMode = undefined;
   sessionPermissionMode = undefined;
   queryOptions = null;
   consumedInputs = [];
@@ -692,6 +696,31 @@ test("a REJECTED permission_mode switch does not allow the pending call", async 
   // leaves the badge — and the next warm's launch mode — showing a mode the
   // SDK rejected. The worker writes the live one back.
   expect(savedPermissionModes).toContain("default");
+
+  pushHuman("", "abort");
+  await promise;
+  await call;
+}, 10000);
+
+// docs/adr/0061. Sessions launch in auto by default now, and the SDK can refuse
+// it at boot just as it refuses a mid-session switch. The gate must follow what
+// the SDK reports, not what the column asked for.
+test("auto REFUSED at launch: gate falls back to asking, column corrected", async () => {
+  sessionPermissionMode = "auto";
+  initPermissionMode = "default";
+  const promise = runSession();
+  await Bun.sleep(20);
+  pushHuman("start");
+  await Bun.sleep(50);
+
+  expect(savedPermissionModes).toContain("default");
+  let resolved: { behavior: string } | null = null;
+  const call = capturedCanUseTool!("Write", { file_path: "x" }).then((r) => {
+    resolved = r as { behavior: string };
+  });
+  await Bun.sleep(20);
+  expect(resolved).toBeNull(); // asked a human, not auto-allowed
+  expect(findPermissionRequest("Write")).toBeDefined();
 
   pushHuman("", "abort");
   await promise;

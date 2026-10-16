@@ -14,7 +14,8 @@ const SESSION_ID = process.env.SESSION_ID ?? "";
 // reached when a session row carries no model of its own (pre-dating the
 // column, or created outside the dashboard) — a normal session's model comes
 // from the row, not from here.
-const MODEL = process.env.CLAUDE_MODEL ?? "claude-opus-5";
+// `||` not `??`: the provisioner always sets CLAUDE_MODEL, empty when core has none.
+const MODEL = process.env.CLAUDE_MODEL || "claude-opus-5-5";
 const MAX_TURNS = process.env.MAX_TURNS ? Number(process.env.MAX_TURNS) : undefined;
 
 const SIDECAR_MCP_ADDR = process.env.SIDECAR_MCP_ADDR ?? "127.0.0.1:9090";
@@ -1165,6 +1166,18 @@ export async function runSession(): Promise<SessionResult> {
             .savePermissionMode("default")
             .catch((err) => log("warn", "savePermissionMode failed", { taskId: SESSION_ID, error: String(err) }));
         }
+      }
+      // The launch-time twin of the refused-switch write-back above: "auto"
+      // can be refused at boot too (model allow-list, circuit breaker), and
+      // since docs/adr/0061 most sessions launch in it. Without this the gate
+      // would read `currentMode` as "auto" and answer prompts the SDK never
+      // stopped asking — and the badge would say auto for a session that isn't.
+      if (msg.type === "system" && msg.subtype === "init" && msg.permissionMode && msg.permissionMode !== currentMode) {
+        log("warn", "SDK launched in a different permission mode", { taskId: SESSION_ID, requested: currentMode, got: msg.permissionMode });
+        currentMode = msg.permissionMode;
+        await sidecar
+          .savePermissionMode(currentMode)
+          .catch((err) => log("warn", "savePermissionMode failed", { taskId: SESSION_ID, error: String(err) }));
       }
       await logSdkMessage("agent", msg as { type: string; [key: string]: unknown });
 

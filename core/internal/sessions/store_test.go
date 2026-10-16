@@ -32,7 +32,7 @@ func newSession(t *testing.T, ctx context.Context, s *Store) string {
 // A session's launch mode is chosen at creation (dashboard picker) and read
 // back by worker/src/session.ts as launchMode. Two things can silently break
 // that and neither is visible without a real database: the INSERT can drop
-// the column, and the NOT NULL DEFAULT 'default' constraint means passing a
+// the column, and the NOT NULL DEFAULT 'auto' constraint means passing a
 // bare NULL is a constraint violation rather than a fallback, which is why
 // Create wraps it in COALESCE.
 //
@@ -58,8 +58,8 @@ func TestCreate_PersistsTheChosenPermissionMode(t *testing.T) {
 		}
 	}
 
-	// Empty means "whatever the column defaults to", which every caller
-	// predating the picker relies on — OpenFromProposal still passes nothing.
+	// Empty means "whatever the column defaults to" — 'auto' since
+	// docs/adr/0061. OpenFromProposal still passes nothing.
 	id, err := s.Create(ctx, CreateParams{Repo: "agent-fleet", Description: "d"})
 	if err != nil {
 		t.Fatalf("create with no mode: %v", err)
@@ -68,8 +68,8 @@ func TestCreate_PersistsTheChosenPermissionMode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
-	if got.PermissionMode == nil || *got.PermissionMode != "default" {
-		t.Errorf("unset PermissionMode stored %v, want the column default \"default\"", got.PermissionMode)
+	if got.PermissionMode == nil || *got.PermissionMode != "auto" {
+		t.Errorf("unset PermissionMode stored %v, want the column default \"auto\"", got.PermissionMode)
 	}
 }
 
@@ -92,8 +92,8 @@ func TestCreate_MakesARowWithNoPodAndNoLease(t *testing.T) {
 	if s.LeaseID != "" {
 		t.Errorf("a new session must hold no lease, got %q", s.LeaseID)
 	}
-	if s.PermissionMode == nil || *s.PermissionMode != "default" {
-		t.Errorf("sessions start in CLI-parity default mode, got %v", s.PermissionMode)
+	if s.PermissionMode == nil || *s.PermissionMode != "auto" {
+		t.Errorf("sessions start in auto mode (docs/adr/0061), got %v", s.PermissionMode)
 	}
 	live, err := store.CountLivePods(ctx)
 	if err != nil {

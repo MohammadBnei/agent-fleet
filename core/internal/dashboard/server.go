@@ -141,10 +141,7 @@ func (s *Server) CreateSession(ctx context.Context, req *connect.Request[agentfl
 
 	model := req.Msg.GetModel()
 	if model == "" {
-		model = os.Getenv("CLAUDE_MODEL")
-		if model == "" {
-			model = defaultModel
-		}
+		model = fallbackModel()
 	} else if !isValidModel(model) {
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("invalid model %q", model))
 	}
@@ -152,8 +149,7 @@ func (s *Server) CreateSession(ctx context.Context, req *connect.Request[agentfl
 	// Same allowlist SetPermissionMode uses, for the same reason: the value
 	// ends up in a real SDK call via worker/src/session.ts's launchMode, so an
 	// unvalidated string here would reach the SDK verbatim. Empty is allowed
-	// and means "keep the column default" — every caller before the dashboard
-	// could offer a choice relied on that.
+	// and means the column default — "auto" since docs/adr/0061.
 	mode := req.Msg.GetPermissionMode()
 	if mode != "" && !validPermissionModes[mode] {
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("invalid permission mode %q", mode))
@@ -250,8 +246,9 @@ func (s *Server) OpenFromProposal(ctx context.Context, req *connect.Request[agen
 	// instruction, and it goes out as the first message below. Putting it in
 	// `description` made the list render an entire alert payload as a row.
 	// No permission mode: a proposal-opened session takes the column default,
-	// same as every session did before CreateSession could carry a choice.
-	id, err := s.sessions.Create(ctx, sessions.CreateParams{Repo: p.Repo, Title: p.Title, Description: p.Title})
+	// "auto" (docs/adr/0061) — so this body runs unattended except `rm`/`sudo`.
+	// That was a deliberate call, ADR records the prompt-injection trade-off.
+	id, err := s.sessions.Create(ctx, sessions.CreateParams{Repo: p.Repo, Title: p.Title, Description: p.Title, Model: fallbackModel()})
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
@@ -363,11 +360,20 @@ func proposalToProto(p proposals.Proposal) *agentfleetv1.Proposal {
 // editable before it is sent. ListPromptSnippets still serves them.
 
 // defaultModel is what a session runs when neither the request nor CLAUDE_MODEL
-// names one. Kept in step with worker/src/session.ts's own fallback — the two
-// are independent defaults on either side of the pod boundary, and a session
-// created here carries its model in the row, so a disagreement shows up only
-// for sessions created before this default existed.
-const defaultModel = "claude-opus-5"
+// names one. worker/src/session.ts has its own fallback for a row with no
+// model; every path here writes one (fallbackModel), so that fallback only
+// serves rows created before this did.
+const defaultModel = "claude-opus-5-5"
+
+// fallbackModel is the model for a session whose creator named none. Shared by
+// CreateSession and OpenFromProposal — the proposal path used to store NULL and
+// leave the choice to the worker, which got whatever the CLI defaulted to.
+func fallbackModel() string {
+	if m := os.Getenv("CLAUDE_MODEL"); m != "" {
+		return m
+	}
+	return defaultModel
+}
 
 // validModels is the allowlist of Claude models that can be selected per-task.
 // This prevents injection of arbitrary model names and ensures only supported
@@ -384,6 +390,7 @@ const defaultModel = "claude-opus-5"
 // against the API, so the option had never worked. Aliases now, not dated
 // snapshots — an alias tracks its model and cannot rot this way.
 var validModels = map[string]bool{
+	"claude-opus-5-5":  true,
 	"claude-opus-5":    true,
 	"claude-opus-4-8":  true,
 	"claude-sonnet-5":  true,

@@ -84,7 +84,8 @@ type CoreServiceClient interface {
 	// DashboardService.GetTask uses, different caller (docs/adr/0029).
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	GetSession(ctx context.Context, in *GetSessionRequest, opts ...grpc.CallOption) (*GetSessionResponse, error)
-	// A worker pod persisting its own permission mode (initial "default" or a
+	// A worker pod persisting its own permission mode (initial "default", the
+	// mode the SDK actually launched in when it refused the requested one, or a
 	// change it made itself) — a plain column write, unlike
 	// DashboardService.SetPermissionMode which also notifies a *different*,
 	// already-running worker via the transcript.
@@ -414,7 +415,8 @@ type CoreServiceServer interface {
 	// DashboardService.GetTask uses, different caller (docs/adr/0029).
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	GetSession(context.Context, *GetSessionRequest) (*GetSessionResponse, error)
-	// A worker pod persisting its own permission mode (initial "default" or a
+	// A worker pod persisting its own permission mode (initial "default", the
+	// mode the SDK actually launched in when it refused the requested one, or a
 	// change it made itself) — a plain column write, unlike
 	// DashboardService.SetPermissionMode which also notifies a *different*,
 	// already-running worker via the transcript.
