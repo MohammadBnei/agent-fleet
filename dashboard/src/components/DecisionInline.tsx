@@ -13,6 +13,7 @@ import { approvePlan } from "../approvePlan";
 import { AutoModeConfirm } from "./AutoModeConfirm";
 import { TextResponseModal } from "./TextResponseModal";
 import { PlanModal } from "./PlanModal";
+import { InlineError } from "./InlineError";
 
 // The pending decision, answerable from the list.
 //
@@ -208,7 +209,7 @@ export function DecisionInline({
           >
             <Markdown text={plan} />
           </button>
-          {error && <div className="text-xs text-error">{error}</div>}
+          <InlineError message={error} />
           {/* Same menu the dock's PlanCard offers, so approving from the list
               is not a lesser decision than approving from the session — auto
               behind a confirm, plain approve beside it (docs/adr/0052). */}
@@ -295,7 +296,7 @@ export function DecisionInline({
     // to skip a text input to reach the two buttons they actually wanted.
     const actions = (
       <div className="flex flex-col gap-2">
-        {error && <div className="text-xs text-error">{error}</div>}
+        <InlineError message={error} />
         {denying ? (
           <div className="flex items-center gap-2 flex-wrap">
             <input
@@ -371,7 +372,7 @@ export function DecisionInline({
     return (
       <div className={`${pad} flex flex-col gap-3`}>
         <QuestionCard entry={questionEntry} answer={null} busy={busy} compact={stacked} embedded onSubmit={submit} />
-        {error && <div className="text-xs text-error">{error}</div>}
+        <InlineError message={error} />
         <div className={`flex gap-3.5 ${stacked ? "justify-center" : "items-center"}`}>
           {onAskLater && (
             <button type="button" onClick={onAskLater} className="text-xs text-dim2 hover:text-dim cursor-pointer py-1">

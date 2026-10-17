@@ -51,7 +51,13 @@ export function PermissionCard({
   edgeClassName: string;
 }) {
   const [reason, setReason] = useState("");
+  const [denying, setDenying] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
+  const sendDeny = () => {
+    onDeny(reason.trim() || "denied");
+    setReason("");
+    setDenying(false);
+  };
 
   if (!pending) {
     return (
@@ -91,39 +97,56 @@ export function PermissionCard({
       <div className="max-h-[30vh] overflow-y-auto">
         <ToolInputView tool={tool} input={input} />
       </div>
-      <div className="flex items-center gap-2.5 mt-3.5 flex-wrap">
-        <ActionButton
-          className="bg-primary text-primary-content px-6 py-2 text-base font-semibold disabled:opacity-50"
-          busy={busy}
-          onClick={onAllow}
-        >
-          allow
-        </ActionButton>
-        <ActionButton
-          className="border border-acc-line px-6 py-2 text-base hover:border-error hover:text-error disabled:opacity-50"
-          busy={busy}
-          onClick={() => {
-            onDeny(reason || "denied");
-            setReason("");
-          }}
-        >
-          deny
-        </ActionButton>
-        <input
-          value={reason}
-          onChange={(e) => setReason(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && reason.trim()) {
-              onDeny(reason);
-              setReason("");
-            }
-          }}
-          placeholder="reason (optional) — sent back to the agent"
-          aria-label="denial reason"
-          disabled={busy}
-          className="flex-1 min-w-[180px] bg-transparent border border-line px-3 py-2 text-sm outline-none focus:border-primary/60 placeholder:text-dim2"
-        />
-      </div>
+      {/* Same interaction as the list's DecisionInline: deny reveals the
+          reason, Enter sends it, an empty reason sends "denied". The dock used
+          to deny on one click with the reason field always up, so the same
+          permission was refused two different ways depending on where you
+          answered it. */}
+      {denying ? (
+        <div className="flex items-center gap-2.5 mt-3.5 flex-wrap">
+          <input
+            value={reason}
+            autoFocus
+            onChange={(e) => setReason(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") sendDeny();
+              if (e.key === "Escape") setDenying(false);
+            }}
+            placeholder="why? — sent to the agent, or just press enter"
+            aria-label="denial reason"
+            disabled={busy}
+            className="flex-1 min-w-[180px] bg-transparent border border-line px-3 py-2 text-sm outline-none focus:border-primary/60 placeholder:text-dim2"
+          />
+          <ActionButton
+            className="border border-acc-line px-6 py-2 text-base hover:border-error hover:text-error disabled:opacity-50"
+            busy={busy}
+            onClick={sendDeny}
+          >
+            send deny
+          </ActionButton>
+          <button type="button" onClick={() => setDenying(false)} className="text-xs text-dim2 hover:text-dim cursor-pointer">
+            cancel
+          </button>
+        </div>
+      ) : (
+        <div className="flex items-center gap-2.5 mt-3.5 flex-wrap">
+          <ActionButton
+            className="bg-primary text-primary-content px-6 py-2 text-base font-semibold disabled:opacity-50"
+            busy={busy}
+            onClick={onAllow}
+          >
+            allow
+          </ActionButton>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => setDenying(true)}
+            className="border border-acc-line px-6 py-2 text-base hover:border-error hover:text-error disabled:opacity-50 cursor-pointer"
+          >
+            deny
+          </button>
+        </div>
+      )}
     </div>
   );
 }
