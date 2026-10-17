@@ -9,7 +9,7 @@ import type { ButtonHTMLAttributes } from "react";
 // Two flags on purpose:
 // - `busy`: THIS button's own action is in flight. Shows the spinner.
 // - `disabled`: something else is in flight (the session actions disable as
-//   a group — Kill especially shouldn't be clickable while Warm resolves).
+//   a group — Stop especially shouldn't be clickable while Warm resolves).
 //
 // The spinner replaces the label *visually* rather than sitting beside it,
 // so the button doesn't resize mid-click and shift whatever is under the

@@ -1,10 +1,10 @@
-import { shortId } from "../sessionState";
 import { useEffect, useState } from "react";
 import { client } from "../connectClient";
 import type { CellNode, TopologyEdge } from "../gen/agentfleet/v1/dashboard_pb";
 import { imageTag } from "../imageTag";
 import { pollVisible } from "../pollVisible";
 import { InlineError } from "./InlineError";
+import { shortId } from "../sessionState";
 
 // The fleet drawn as cells: two long-lived hubs and one cell per live pod.
 //

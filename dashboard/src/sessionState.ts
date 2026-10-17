@@ -232,7 +232,7 @@ export function activityLabel(session: Session, inFlight: ListSummary["inFlight"
 
 // How long a session has been blocked — the notch label's "· 4m". This is the
 // product's real cost (a blocked session is stalled until a human clicks), so
-// it's stated on the card rather than left to be inferred from a heartbeat.
+// it's stated on the card.
 export function blockedForLabel(session: Session): string | null {
   return relativeTime(session.lastActiveAt, { bare: true });
 }

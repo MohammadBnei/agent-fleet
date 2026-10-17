@@ -1,4 +1,3 @@
-import { shortId } from "../sessionState";
 import { useState } from "react";
 import { TranscriptEntryType, type TranscriptEntry } from "../gen/agentfleet/v1/transcript_pb";
 import {
@@ -34,6 +33,7 @@ import { PermissionCard } from "./PermissionCard";
 import { PlanCard } from "./PlanCard";
 import { QuestionCard } from "./QuestionCard";
 import { parseToolCallSummary, shortTool } from "../transcript";
+import { shortId } from "../sessionState";
 
 // The feed, shared by both detail views.
 //

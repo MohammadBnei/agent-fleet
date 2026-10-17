@@ -1,4 +1,3 @@
-import { shortId } from "../sessionState";
 import { useState } from "react";
 import { useBusyAction } from "../useBusyAction";
 import type { Session } from "../gen/agentfleet/v1/core_pb";
@@ -8,6 +7,7 @@ import { InlineError } from "./InlineError";
 import { ActionsMenu } from "./ActionsMenu";
 import { AutoModeConfirm } from "./AutoModeConfirm";
 import { sessionLabel } from "../sessionLabel";
+import { shortId } from "../sessionState";
 
 // Interrupt / Stop / Warm / Archive / Mode, from a list row.
 //

@@ -1,8 +1,8 @@
-import { shortId } from "../sessionState";
 import { useEffect, useState } from "react";
 import { client } from "../connectClient";
 import type { LogEntry } from "../gen/agentfleet/v1/core_pb";
 import { Modal } from "./Modal";
+import { shortId } from "../sessionState";
 
 // "read log" on a failed session. DashboardService.QueryLogs has existed since
 // the Loki client landed and had no UI caller at all — the reason a session had

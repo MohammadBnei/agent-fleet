@@ -116,7 +116,7 @@ function AlertPayload({ payload, body }: { payload: string; body: string }) {
           takes the whole tree down along with the dismiss button that would
           have cleared the bad row. */}
       <div className="flex flex-wrap items-center gap-2.5 text-2xs text-dim2">
-        {typeof alert.startsAt === "string" && <span title={alert.startsAt}>firing {relativeTime(alert.startsAt, { bare: true }) ?? ""}</span>}
+        {typeof alert.startsAt === "string" && <span title={alert.startsAt}>firing since {relativeTime(alert.startsAt) ?? "just now"}</span>}
         {typeof alert.generatorURL === "string" && (
           <a href={alert.generatorURL} target="_blank" rel="noreferrer" className="text-primary hover:underline break-all">
             source query ▸
@@ -609,7 +609,7 @@ export function Schedules({
                     <span className="text-sm text-dim2">never</span>
                   )}
                 </div>
-                <div className="text-sm text-dim">{a.enabled ? relativeTime(a.nextRunAt) ?? "—" : "paused"}</div>
+                <div className="text-sm text-dim">{a.enabled ? relativeTime(a.nextRunAt, { future: true }) ?? "—" : "paused"}</div>
                 <div className="flex gap-1.5 justify-end flex-wrap">
                   {scheduleActions(a, act, () => setEditing(a), () => setPendingDelete(a), busy)}
                 </div>
@@ -630,7 +630,7 @@ export function Schedules({
                   {a.name} <span className="text-xs text-dim2">{a.repo}</span>
                 </span>
                 <span className="text-xs text-dim2 ml-auto flex-none">
-                  {a.enabled ? relativeTime(a.nextRunAt) ?? "—" : "paused"}
+                  {a.enabled ? relativeTime(a.nextRunAt, { future: true }) ?? "—" : "paused"}
                 </span>
               </div>
               <div className="text-xs text-dim mt-1.5 leading-[1.6]">

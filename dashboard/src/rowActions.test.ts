@@ -55,7 +55,7 @@ test.each(["NeedsYouCard", "FinishedCard", "WorkingCard", "StuckCard", "QuietRow
 );
 
 
-// Mobile's only route to Interrupt/Kill/Warm/Archive/Mode/Delete is the
+// Mobile's only route to Interrupt/Stop/Warm/Archive/Mode/Delete is the
 // "panels" sheet, and the sheet always carries the SESSION panel — so the
 // opener must not be conditional on anything.
 //
