@@ -95,7 +95,7 @@ export function ActionsMenu({
   liveState?: string;
 }) {
   const live = isPodPhaseLive(podPhase);
-  const turnRunning = liveState === undefined || ["working", "blocked", "stalled"].includes(liveState);
+  const turnRunning = !["done", "idle"].includes(liveState ?? "");
   return (
     <div className="flex flex-col gap-3">
       {(onHideToolsInFeedChange || onHideChangesInFeedChange) && (

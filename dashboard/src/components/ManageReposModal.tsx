@@ -157,7 +157,10 @@ export function ManageReposModal({ onChanged }: { onChanged?: () => void }) {
         setRepos(res.repos);
         setLoaded(true);
       })
-      .catch((err: Error) => setError(err.message));
+      .catch((err: Error) => {
+        setError(err.message);
+        setLoaded(true);
+      });
   }
   // "No repos configured yet." is a claim, so it waits for the first answer.
   const [loaded, setLoaded] = useState(false);

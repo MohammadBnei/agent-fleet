@@ -160,7 +160,10 @@ export default function App() {
         setSessionsLoaded(true);
       })
       .catch((err: Error) => {
-        if (++pollFailures.current >= 2) setSessionsError(err.message);
+        if (++pollFailures.current >= 2) {
+          setSessionsError(err.message);
+          setSessionsLoaded(true);
+        }
       });
   }, [debouncedFilter]);
 
@@ -294,6 +297,9 @@ export default function App() {
     // and clicking "sessions" while a session is open is the way back to the
     // list — it used to keep the session, so the already-highlighted tab did
     // nothing and the only way back was knowing the logo is a link.
+    // Nothing to undo: re-clicking the tab you are on pushed a duplicate
+    // history entry, and Back then appeared to do nothing.
+    if (next === view && selectedId === null) return;
     setSelectedId(null);
     pushUrl(next, null);
   }
@@ -359,7 +365,8 @@ export default function App() {
     // whose only live session was rendering an IDLE badge two lines below.
     // The header and the row have to agree; they are read together.
     const working = sessions.filter((t) => t.liveState === "working").length;
-    const done = sessions.filter((t) => t.liveState === "done").length;
+    const open = (t: Session) => t.archivedAt === undefined && t.sweptAt === undefined;
+    const done = sessions.filter((t) => open(t) && t.liveState === "done").length;
     // Idle is the QUIET tail's own default — not archived, not swept. It was
     // "everything else", so the header said 21 idle over a list showing 4.
     // A session with no pod has no liveState at all (""), and is the most
@@ -369,7 +376,7 @@ export default function App() {
       (t) =>
         t.archivedAt === undefined &&
         t.sweptAt === undefined &&
-        !["working", "done", "blocked", "stalled"].includes(t.liveState),
+        !["working", "done", "blocked"].includes(t.liveState),
     ).length;
     return { waiting, working, done, idle };
   }, [sessions, blockedSessions]);

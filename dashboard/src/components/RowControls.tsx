@@ -25,7 +25,7 @@ export function RowAction({
       busy={busyKey !== null}
       title={error ?? undefined}
       className={`${className} ${error ? "border-error! text-error" : ""}`}
-      onClick={() => void run(action, label).then((ok) => ok && reload())}
+      onClick={() => void run(action, label).then(reload)}
     >
       {error ? `${label} failed` : label}
     </ActionButton>

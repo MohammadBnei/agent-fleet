@@ -97,7 +97,10 @@ export function FleetTopology({ onSelectSession }: { onSelectSession: (id: strin
             setError(null);
             setLoaded(true);
           })
-          .catch((e: unknown) => setError(String(e)));
+          .catch((e: unknown) => {
+            setError(String(e));
+            setLoaded(true);
+          });
       }, 5000),
     [],
   );
