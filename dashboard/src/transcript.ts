@@ -152,6 +152,37 @@ export function withOptimistic(real: TranscriptEntry[], optimistic: TranscriptEn
   return kept.length === 0 ? real : [...real, ...kept];
 }
 
+// The tool_use ids of calls a human denied. The permission_request carries
+// only {tool, input} — no tool_use id — so each denied request is matched to
+// the nearest earlier tool_use with the same tool and the same input. Per
+// call, not per reason: matching an error's text against every reason typed
+// in the session labelled unrelated failures "denied" whenever their text
+// happened to equal one (a reason of "denied", say).
+export function deniedToolUseIds(entries: TranscriptEntry[]): Set<string> {
+  const decisions = resolvedPermissionDecisions(entries);
+  const out = new Set<string>();
+  for (let i = 0; i < entries.length; i++) {
+    const e = entries[i];
+    if (e.type !== TranscriptEntryType.PERMISSION_REQUEST || decisions.get(e.seq) !== "deny") continue;
+    let req: { tool?: unknown; input?: unknown };
+    try {
+      req = JSON.parse(e.text) as { tool?: unknown; input?: unknown };
+    } catch {
+      continue;
+    }
+    const input = JSON.stringify(req.input);
+    for (let j = i - 1; j >= 0; j--) {
+      if (entries[j].type !== TranscriptEntryType.ASSISTANT) continue;
+      const call = parseSdkToolUse(entries[j].text);
+      if (call?.id && call.tool === req.tool && !out.has(call.id) && JSON.stringify(call.input) === input) {
+        out.add(call.id);
+        break;
+      }
+    }
+  }
+  return out;
+}
+
 // The human's stated reason for a denial, keyed by the request's own seq.
 // Parsed alongside the decision above but kept separate so that Map's type
 // stays a plain outcome — only the collapsed card needs this.

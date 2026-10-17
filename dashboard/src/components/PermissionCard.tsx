@@ -110,7 +110,10 @@ export function PermissionCard({
             onChange={(e) => setReason(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter") sendDeny();
-              if (e.key === "Escape") setDenying(false);
+              if (e.key === "Escape") {
+                setReason("");
+                setDenying(false);
+              }
             }}
             placeholder="why? — sent to the agent, or just press enter"
             aria-label="denial reason"
@@ -124,7 +127,11 @@ export function PermissionCard({
           >
             send deny
           </ActionButton>
-          <button type="button" onClick={() => setDenying(false)} className="text-xs text-dim2 hover:text-dim cursor-pointer">
+          <button type="button" onClick={() => {
+              setReason("");
+              setDenying(false);
+            }}
+            className="text-xs text-dim2 hover:text-dim cursor-pointer">
             cancel
           </button>
         </div>

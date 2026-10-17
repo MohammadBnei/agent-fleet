@@ -105,7 +105,10 @@ export function DecisionInline({
   const { busy, pending, answered, error, send } = useDecision(reload);
   const [reason, setReason] = useState("");
   // "deny" reveals the reason field; it is not shown up front. See `actions`.
-  const [denying, setDenying] = useState(false);
+  // Which permission the reason field is open for. A seq, not a boolean: this
+  // row is reused when its session raises the next permission, and a boolean
+  // carried the open field (and its typed reason) over to a different call.
+  const [denyingSeq, setDenyingSeq] = useState<bigint | null>(null);
   const [autoConfirmOpen, setAutoConfirmOpen] = useState(false);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [planOpen, setPlanOpen] = useState(false);
@@ -297,7 +300,7 @@ export function DecisionInline({
     const actions = (
       <div className="flex flex-col gap-2">
         <InlineError message={error} />
-        {denying ? (
+        {denyingSeq === permission.entry.seq ? (
           <div className="flex items-center gap-2 flex-wrap">
             <input
               value={reason}
@@ -307,9 +310,12 @@ export function DecisionInline({
                 if (e.key === "Enter") {
                   respond("deny", reason.trim() || "denied");
                   setReason("");
-                  setDenying(false);
+                  setDenyingSeq(null);
                 }
-                if (e.key === "Escape") setDenying(false);
+                if (e.key === "Escape") {
+                  setReason("");
+                  setDenyingSeq(null);
+                }
               }}
               disabled={busy}
               placeholder="why? — sent to the agent, or just press enter"
@@ -323,12 +329,15 @@ export function DecisionInline({
               onClick={() => {
                 respond("deny", reason.trim() || "denied");
                 setReason("");
-                setDenying(false);
+                setDenyingSeq(null);
               }}
             >
               send deny
             </ActionButton>
-            <button type="button" onClick={() => setDenying(false)} className="text-xs text-dim2 hover:text-dim cursor-pointer">
+            <button type="button" onClick={() => {
+                setReason("");
+                setDenyingSeq(null);
+              }} className="text-xs text-dim2 hover:text-dim cursor-pointer">
               cancel
             </button>
           </div>
@@ -337,7 +346,7 @@ export function DecisionInline({
             <ActionButton busy={pending === "allow"} disabled={busy} className={primaryBtn} onClick={() => respond("allow")}>
               allow
             </ActionButton>
-            <button type="button" disabled={busy} onClick={() => setDenying(true)} className={secondaryBtn}>
+            <button type="button" disabled={busy} onClick={() => setDenyingSeq(permission.entry.seq)} className={secondaryBtn}>
               deny
             </button>
           </div>
