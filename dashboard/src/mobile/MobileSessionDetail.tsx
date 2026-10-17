@@ -12,14 +12,14 @@ import {
   hasPendingDecision,
 } from "../transcript";
 import { useSessionDetail } from "../useSessionDetail";
+import type { Session } from "../gen/agentfleet/v1/core_pb";
 import { useAtBottom } from "../useAtBottom";
 import { useLocalStorageState } from "../useLocalStorageState";
 import { sessionBadge } from "../pages/SessionList";
 import { ActionButton } from "../components/ActionButton";
 import { DecisionDock } from "../components/DecisionDock";
 import { ErrorModal } from "../components/ErrorModal";
-import { ConfirmModal } from "../components/ConfirmModal";
-import { AUTO_MODE_WARNING } from "../approvePlan";
+import { AutoModeConfirm } from "../components/AutoModeConfirm";
 import { Modal } from "../components/Modal";
 import { Segmented } from "../components/Segmented";
 import { SessionFeed } from "../components/SessionFeed";
@@ -46,10 +46,13 @@ const DENSITY: readonly { value: Density; label: string; title: string }[] = [
 
 export function MobileSessionDetail({
   sessionId,
+  sessions,
   onBack,
   onDelete,
 }: {
   sessionId: string;
+  // App's polled list, same as the desktop view takes — see useSessionDetail.
+  sessions: Session[];
   onBack: () => void;
   onDelete: () => void;
 }) {
@@ -69,7 +72,10 @@ export function MobileSessionDetail({
     approvePlanDecision,
     answerQuestion,
     clearActionError,
-  } = useSessionDetail(sessionId);
+  } = useSessionDetail(
+    sessionId,
+    sessions.find((t) => t.id === sessionId),
+  );
   const [message, setMessage] = useState("");
   const [panelsOpen, setPanelsOpen] = useState(false);
   // The title sheet: the full label, which the header can only ever truncate,
@@ -239,6 +245,7 @@ export function MobileSessionDetail({
 
       <div ref={feedRef} onScroll={onScroll} className="flex-1 min-h-0 overflow-y-auto px-3.5 py-3.5 flex flex-col gap-3.5">
         <SessionFeed
+          hasPendingMessage={pendingMessage !== null}
           entries={entries}
           visibility={visibility}
           density={density}
@@ -269,16 +276,12 @@ export function MobileSessionDetail({
           (setPanelsOpen(false) below) so there is only ever one open. */}
       <FileDiffModal sessionId={sessionId} path={diffPath} entries={entries} onClose={() => setDiffPath(null)} />
       <AgentDetailModal run={agentDetail} onClose={() => setAgentDetail(null)} />
-      <ConfirmModal
-        title="Switch to auto mode?"
-        message={AUTO_MODE_WARNING}
-        confirmLabel="switch to auto"
-        danger={false}
+      <AutoModeConfirm
         open={autoOpen}
         onCancel={() => setAutoOpen(false)}
         onConfirm={() => {
           setAutoOpen(false);
-          run(() => client.setPermissionMode({ sessionId, mode: "auto" }), "auto");
+          run(() => client.setPermissionMode({ sessionId, mode: "auto" }), "action:mode");
         }}
       />
 

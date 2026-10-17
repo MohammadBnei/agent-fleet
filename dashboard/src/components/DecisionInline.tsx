@@ -10,7 +10,7 @@ import { QuestionCard } from "./QuestionCard";
 import { Markdown } from "./Markdown";
 import { summarizeToolInput } from "../transcript";
 import { approvePlan } from "../approvePlan";
-import { ConfirmModal } from "./ConfirmModal";
+import { AutoModeConfirm } from "./AutoModeConfirm";
 import { TextResponseModal } from "./TextResponseModal";
 import { PlanModal } from "./PlanModal";
 
@@ -285,12 +285,9 @@ export function DecisionInline({
             onSubmit={(text) => send("deny", () => client.postMessage({ sessionId: session.id, text }), permission.entry.seq)}
             onClose={() => setFeedbackOpen(false)}
           />
-          <ConfirmModal
+          <AutoModeConfirm
             open={autoConfirmOpen}
-            title="Approve and switch to auto mode?"
-            message="A model classifier answers the ordinary permission prompts for the rest of this session. git push, gh, rm, sudo, kubectl, curl, wget and env still come to you, and so does the next plan."
-            confirmLabel="approve + auto"
-            danger={false}
+            approving
             onConfirm={() => {
               setAutoConfirmOpen(false);
               send("allow", () => approvePlan(session.id, permission.entry.seq, "auto"), permission.entry.seq);

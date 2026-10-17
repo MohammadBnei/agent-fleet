@@ -74,9 +74,17 @@ export function ManagePromptSnippetsModal({ onChanged }: { onChanged?: () => voi
   function load() {
     return client
       .listPromptSnippets({})
-      .then((res) => setSnippets(res.snippets))
-      .catch((err: Error) => setError(err.message));
+      .then((res) => {
+        setSnippets(res.snippets);
+        setLoaded(true);
+      })
+      .catch((err: Error) => {
+        setError(err.message);
+        setLoaded(true);
+      });
   }
+  // The empty-state line is a claim, so it waits for the first answer.
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     if (dialogOpen) load();
@@ -147,7 +155,9 @@ export function ManagePromptSnippetsModal({ onChanged }: { onChanged?: () => voi
           {snippets.map((s) => (
             <SnippetRow key={s.id} snippet={s} onSaved={refresh} onRequestDelete={setPendingDelete} onError={setError} />
           ))}
-          {snippets.length === 0 && <p className="text-sm text-dim py-2">No guidance snippets yet.</p>}
+          {snippets.length === 0 && (
+            <p className="text-sm text-dim py-2">{loaded ? "No guidance snippets yet." : "Loading…"}</p>
+          )}
         </div>
 
         <form onSubmit={handleCreate} className="flex flex-col gap-2 mt-3 pt-3 border-t border-base-content/10">

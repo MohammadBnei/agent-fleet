@@ -6,11 +6,12 @@ import { parseQuestions, summarizeToolInput, type ListSummary } from "../transcr
 import { TickBar, todoProgress } from "../components/TickBar";
 import { DecisionInline } from "../components/DecisionInline";
 import { SessionActionsModal } from "../components/SessionActionsModal";
-import { RowSelect, RowActionsButton } from "../components/RowControls";
+import { RowSelect, RowActionsButton, RowAction } from "../components/RowControls";
 import { useSelection, BatchBar } from "../components/BatchActions";
 import { QuietControls } from "../components/QuietControls";
 import { useToggleSet } from "../useToggleSet";
 import { NotchCard } from "../components/NotchCard";
+import { AUTO_MODE_WARNING } from "../approvePlan";
 
 // A session with a live pod. Replaces ACTIVE_STATUSES, which named the three
 // session statuses that meant "dispatched" — all gone with the enum
@@ -235,6 +236,29 @@ export function sessionBadge(session: Session): { label: string; className: stri
 // minutes stale, mirroring the reclaim threshold — but there is no heartbeat
 // and no reclaim now. The equivalent signal is CRASHED, written by the
 // reconcile loop when Kubernetes says the pod is gone (docs/adr/0048).
+// What a working row says it is doing. One function for both form factors:
+// the desktop row said "idle" for a session the mobile card called "working",
+// on the same data, from the same bucket.
+export function activityLabel(session: Session, inFlight: ListSummary["inFlight"]): string {
+  if (inFlight) {
+    const elapsed = inFlight.elapsedSeconds !== null ? ` · ${inFlight.elapsedSeconds}s` : "";
+    return `⟳ ${inFlight.tool.toLowerCase()} · ${inFlight.summary}${elapsed}`;
+  }
+  return session.liveState === "working" ? "working" : "idle";
+}
+
+// Neutral on purpose. Since docs/adr/0061 nearly every session launches in
+// auto, so a warning-coloured badge on every row stopped meaning anything —
+// and on mobile it took the slot the todo progress needed. The grant itself is
+// confirmed where it is made (AutoModeConfirm); the tooltip repeats it.
+export function AutoBadge({ className = "" }: { className?: string }) {
+  return (
+    <span className={`text-2xs text-dim2 border border-line px-1.5 py-px flex-none ${className}`} title={AUTO_MODE_WARNING}>
+      auto
+    </span>
+  );
+}
+
 function staleBadge(_: Session): { label: string; className: string; title?: string } | null {
   return null;
 }
@@ -409,24 +433,22 @@ function StuckRow({
           {stuckFor ? ` · ${stuckFor}` : ""}
         </span>
         {live ? (
-          <button
-            type="button"
-            onClick={() => void client.interrupt({ sessionId: session.id }).then(reload)}
+          <RowAction
+            label="interrupt"
+            action={() => client.interrupt({ sessionId: session.id })}
+            reload={reload}
             className="flex-none border border-acc-line px-3 py-1 text-sm hover:border-primary hover:text-primary"
-          >
-            interrupt
-          </button>
+          />
         ) : (
           // Swept means the retention GC took the working directory: warming
           // would bring up a pod with nothing to resume, so it is not offered.
           session.sweptAt === undefined && (
-            <button
-              type="button"
-              onClick={() => void client.warmSession({ sessionId: session.id }).then(reload)}
+            <RowAction
+              label="warm"
+              action={() => client.warmSession({ sessionId: session.id })}
+              reload={reload}
               className="flex-none border border-acc-line px-3 py-1 text-sm hover:border-primary hover:text-primary"
-            >
-              warm
-            </button>
+            />
           )
         )}
         <button type="button" onClick={onOpenLogs} className="flex-none border border-acc-line px-3 py-1 text-sm hover:border-primary hover:text-primary">
@@ -507,15 +529,12 @@ function FinishedRow({
           transcript, the sole record of a session that produced no PR.
           Archiving keeps the history and is the fleet's one terminal state.
         */}
-        <button
-          type="button"
-          onClick={() => {
-            void client.archiveSession({ sessionId: session.id }).then(reload);
-          }}
+        <RowAction
+          label="archive"
+          action={() => client.archiveSession({ sessionId: session.id })}
+          reload={reload}
           className="flex-none border border-acc-line px-3 py-1 text-sm hover:border-primary hover:text-primary"
-        >
-          archive
-        </button>
+        />
       </div>
       <RowSelect picked={picked} onPick={onPick} />
       <RowActionsButton onOpen={onActions} />
@@ -563,19 +582,12 @@ function WorkingRow({
         <button
           type="button"
           onClick={onSelect}
-          className={`text-base text-left hover:text-primary cursor-pointer min-w-0 truncate ${live ? "" : "text-dim"}`}
+          className={`text-base text-left hover:text-primary cursor-pointer min-w-0 max-w-[45%] shrink-0 truncate ${live ? "" : "text-dim"}`}
         >
           {sessionLabel(session)}
         </button>
         <span className="text-xs text-dim2 flex-none">{session.repo}</span>
-        {session.permissionMode === "auto" && (
-          <span
-            className="text-xs text-warning border border-orange-line px-1.5 py-px flex-none"
-            title="runs without asking — only rm and sudo still come to you"
-          >
-            auto
-          </span>
-        )}
+        {session.permissionMode === "auto" && <AutoBadge />}
 
         {provisioning ? (
           <>
@@ -587,15 +599,7 @@ function WorkingRow({
           </>
         ) : (
           <>
-            <span className="ml-auto text-sm text-dim min-w-0 truncate">
-              {inFlight
-                ? `⟳ ${inFlight.tool.toLowerCase()} · ${inFlight.summary}${
-                    inFlight.elapsedSeconds !== null ? ` · ${inFlight.elapsedSeconds}s` : ""
-                  }`
-                : stale
-                  ? stale.label.toLowerCase()
-                  : "idle"}
-            </span>
+            <span className="ml-auto text-sm text-dim min-w-0 truncate">{activityLabel(session, inFlight)}</span>
             <TickBar todos={todos} cell="w-4" className="flex-none" />
             <span className="text-xs text-dim2 w-6 text-right flex-none">
               {todos.length > 0 ? todoProgress(todos) : "—"}
@@ -717,6 +721,7 @@ export function SessionList({
   onDelete,
   onOpenLogs,
   reload,
+  loaded = true,
 }: {
   sessions: Session[];
   summaries: Map<string, ListSummary>;
@@ -726,6 +731,8 @@ export function SessionList({
   onDelete: (id: string) => void;
   onOpenLogs: (id: string) => void;
   reload: () => void;
+  // False until App's first poll answers: "No sessions." is a claim about the fleet.
+  loaded?: boolean;
 }) {
   // Every bucket bucketSessions returns must be rendered somewhere below.
   //
@@ -778,7 +785,7 @@ export function SessionList({
   const pick = (id: string) => (shiftKey: boolean) => toggle(id, shiftKey, orderedIds);
 
   if (sessions.length === 0) {
-    return <div className="p-5 text-base text-dim">No sessions.</div>;
+    return <div className="p-5 text-base text-dim">{loaded ? "No sessions." : "Loading…"}</div>;
   }
 
   return (

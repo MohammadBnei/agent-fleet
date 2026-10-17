@@ -80,6 +80,9 @@ export function FleetTopology({ onSelectSession }: { onSelectSession: (id: strin
   // and a session's next warm — which is when someone is asking.
   const [defaults, setDefaults] = useState({ worker: "", sidecar: "" });
   const [error, setError] = useState<string | null>(null);
+  // "No live worker pods" is a claim about the fleet, so it waits for the
+  // first answer — before that it flashed on every visit to this view.
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(
     () =>
@@ -92,8 +95,12 @@ export function FleetTopology({ onSelectSession }: { onSelectSession: (id: strin
             setMetricsError(r.metricsError);
             setDefaults({ worker: r.workerImage, sidecar: r.sidecarImage });
             setError(null);
+            setLoaded(true);
           })
-          .catch((e: unknown) => setError(String(e)));
+          .catch((e: unknown) => {
+            setError(String(e));
+            setLoaded(true);
+          });
       }, 5000),
     [],
   );
@@ -243,7 +250,7 @@ export function FleetTopology({ onSelectSession }: { onSelectSession: (id: strin
         </p>
       )}
 
-      {workers.length === 0 && (
+      {loaded && workers.length === 0 && (
         <p className="text-xs text-dim2">
           No live worker pods. Cells appear here as sessions get provisioned.
         </p>

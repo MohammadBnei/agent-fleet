@@ -22,6 +22,7 @@ export function queueFirstMessage(sessionId: string, text: string) {
 import { Code, ConnectError } from "@connectrpc/connect";
 import { client, subscribeTranscript } from "./connectClient";
 import { withOptimistic } from "./transcript";
+import { pollVisible } from "./pollVisible";
 import { approvePlan } from "./approvePlan";
 import type { Session } from "./gen/agentfleet/v1/core_pb";
 import { TranscriptEntryType, type TranscriptEntry } from "./gen/agentfleet/v1/transcript_pb";
@@ -31,10 +32,17 @@ import { TranscriptEntryType, type TranscriptEntry } from "./gen/agentfleet/v1/t
 // 1000 cap, which clamps anything larger anyway.
 const PAGE = 200;
 
+// Same cadence as App's list poll.
+const SESSION_POLL_MS = 5000;
+
 // Shared data-loading for a single session's session view — used by both the
 // desktop SessionDetail and the mobile MobileSessionDetail, which differ only in
 // layout, not in what they fetch/subscribe to.
-export function useSessionDetail(sessionId: string) {
+//
+// `listed` is App's polled copy of this session, when the list has it. The
+// one-shot getSession below used to be the ONLY copy on mobile, so pod phase,
+// mode and live state froze at whatever they were when the session opened.
+export function useSessionDetail(sessionId: string, listed?: Session) {
   const [session, setSession] = useState<Session | null>(null);
   const [entries, setEntries] = useState<TranscriptEntry[]>([]);
   // Permanently null: the ListWorktrees lookup that filled it is gone with the
@@ -267,6 +275,28 @@ export function useSessionDetail(sessionId: string) {
   // a modal on it left a human watching a spinner for all of it. Routing
   // through sendDiscuss gives the first message the same optimistic echo and
   // the same inline error as every other message.
+  // When the list does not carry this session (a search that excludes it, a
+  // deep link to one the list does not return), poll it here instead — the
+  // fallback copy was otherwise frozen at open. A failed refresh keeps the
+  // last good session on screen: one dropped poll must not swap a working
+  // view for an error banner. A real disappearance (delete) still surfaces,
+  // through the list and the transcript stream.
+  const hasListed = listed !== undefined;
+  useEffect(() => {
+    if (hasListed) return;
+    let cancelled = false;
+    const stop = pollVisible(() => {
+      client
+        .getSession({ id: sessionId })
+        .then((res) => !cancelled && res.session && setSession(res.session))
+        .catch(() => {});
+    }, SESSION_POLL_MS);
+    return () => {
+      cancelled = true;
+      stop();
+    };
+  }, [sessionId, hasListed]);
+
   useEffect(() => {
     const queued = firstMessages.get(sessionId);
     if (queued === undefined) return;
@@ -278,7 +308,9 @@ export function useSessionDetail(sessionId: string) {
   }, [sessionId, sendDiscuss]);
 
   return {
-    session,
+    // Prefer the list's copy, but only once the one-shot fetch has landed, so
+    // `session === null` still means "loading" to both views.
+    session: session && (listed ?? session),
     entries: withOptimistic(entries, optimistic),
     worktreePath,
     busyKey,

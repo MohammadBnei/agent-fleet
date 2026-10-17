@@ -51,6 +51,7 @@ export function ActionsMenu({
   hideChangesInFeed,
   onHideChangesInFeedChange,
   onRestart,
+  liveState,
 }: {
   sessionId: string;
   // Whether ANY action anywhere on the page is in flight, not just this
@@ -88,8 +89,13 @@ export function ActionsMenu({
   // commands), clears the saved resume id, and ends the pod; re-warming the
   // session then starts a fresh conversation. Only shown while live.
   onRestart?: () => void;
+  // Session.liveState. Interrupt stops the current turn, so it is offered only
+  // while there is one — on a finished-but-still-warm session it was a button
+  // that could do nothing.
+  liveState?: string;
 }) {
   const live = isPodPhaseLive(podPhase);
+  const turnRunning = !["done", "idle"].includes(liveState ?? "");
   return (
     <div className="flex flex-col gap-3">
       {(onHideToolsInFeedChange || onHideChangesInFeedChange) && (
@@ -121,14 +127,16 @@ export function ActionsMenu({
       <div className="flex items-center gap-2 flex-wrap">
       {live ? (
         <>
-          <ActionButton
-            className="btn btn-info btn-xs"
-            busy={busyKey === "action:interrupt"}
-            disabled={busy}
-            onClick={() => run(() => client.interrupt({ sessionId }), "action:interrupt")}
-          >
-            Interrupt
-          </ActionButton>
+          {turnRunning && (
+            <ActionButton
+              className="btn btn-info btn-xs"
+              busy={busyKey === "action:interrupt"}
+              disabled={busy}
+              onClick={() => run(() => client.interrupt({ sessionId }), "action:interrupt")}
+            >
+              Interrupt
+            </ActionButton>
+          )}
           <ActionButton
             className="btn btn-error btn-xs"
             busy={busyKey === "action:kill"}

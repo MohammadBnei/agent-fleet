@@ -153,9 +153,17 @@ export function ManageReposModal({ onChanged }: { onChanged?: () => void }) {
   function load() {
     return client
       .listRepos({})
-      .then((res) => setRepos(res.repos))
-      .catch((err: Error) => setError(err.message));
+      .then((res) => {
+        setRepos(res.repos);
+        setLoaded(true);
+      })
+      .catch((err: Error) => {
+        setError(err.message);
+        setLoaded(true);
+      });
   }
+  // "No repos configured yet." is a claim, so it waits for the first answer.
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     if (dialogOpen) load();
@@ -268,7 +276,7 @@ export function ManageReposModal({ onChanged }: { onChanged?: () => void }) {
               sync={syncState[r.name]}
             />
           ))}
-          {repos.length === 0 && <p className="text-sm text-dim py-2">No repos configured yet.</p>}
+          {repos.length === 0 && <p className="text-sm text-dim py-2">{loaded ? "No repos configured yet." : "Loading…"}</p>}
         </div>
 
         <form onSubmit={handleCreate} className="flex items-center gap-2 mt-3 pt-3 border-t border-base-content/10">

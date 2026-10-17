@@ -61,15 +61,20 @@ const NAV: readonly { value: View; label: string }[] = [
   { value: "observability", label: "observability" },
 ];
 
-// Mobile's bottom bar has less room; "trees" is the console mockup's own label.
+// Mobile's bottom bar has less room for full words.
 const MOBILE_NAV: readonly { value: View; label: string }[] = [
   { value: "sessions", label: "sessions" },
   { value: "schedules", label: "sched" },
   { value: "files", label: "files" },
-  // Same shortening rule the "trees" label above follows — the bottom bar
-  // now carries five cells and has no room for the full word.
   { value: "observability", label: "obs" },
 ];
+
+// Proposals are a human gate like any pending decision, but they live on the
+// schedules view, and nothing outside it said they existed — 24 alerts sat
+// waiting for approval behind a tab whose name promises cron jobs.
+function withProposalCount(nav: readonly { value: View; label: string }[], count: number) {
+  return count === 0 ? nav : nav.map((o) => (o.value === "schedules" ? { ...o, label: `${o.label} · ${count}` } : o));
+}
 
 // Plain polling, not a stream — a second live feed just for the list is
 // unjustified scope (docs/adr/0014); the detail view's StreamTranscript RPC is
@@ -94,6 +99,7 @@ export default function App() {
   const [view, setView] = useState<View>(readViewFromUrl);
   const [selectedId, setSelectedId] = useState<string | null>(readSessionIdFromUrl);
   const [sessions, setSessions] = useState<Session[]>([]);
+  const [sessionsLoaded, setSessionsLoaded] = useState(false);
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [sessionsError, setSessionsError] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
@@ -103,6 +109,18 @@ export default function App() {
   const [logSessionId, setLogSessionId] = useState<string | null>(null);
   const [shortcut] = useState(readShortcut);
   const [needsYouOnly, setNeedsYouOnly] = useState(shortcut.needsYouOnly);
+
+  // Every navigation pushes a history entry (pushUrl), so Back has to read it
+  // back. Without this the URL changed and the page did not — on a phone the
+  // system back gesture left the open session on screen under a list URL.
+  useEffect(() => {
+    const onPop = () => {
+      setView(readViewFromUrl());
+      setSelectedId(readSessionIdFromUrl());
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
 
   // Honour the shortcut, then scrub its params so a reload lands on the plain
   // console rather than silently re-filtering or reopening the form.
@@ -139,9 +157,13 @@ export default function App() {
       .then((res) => {
         pollFailures.current = 0;
         setSessions(res.sessions);
+        setSessionsLoaded(true);
       })
       .catch((err: Error) => {
-        if (++pollFailures.current >= 2) setSessionsError(err.message);
+        if (++pollFailures.current >= 2) {
+          setSessionsError(err.message);
+          setSessionsLoaded(true);
+        }
       });
   }, [debouncedFilter]);
 
@@ -270,11 +292,16 @@ export default function App() {
 
   function selectView(next: View) {
     setView(next);
-    // Leaving the sessions view drops the open session: the nav is between
-    // top-level places, and coming back to a stale ?session= would be surprising.
-    const keepSession = next === "sessions" ? selectedId : null;
-    if (next !== "sessions") setSelectedId(null);
-    pushUrl(next, keepSession);
+    // Every nav click lands on that view's top level. Leaving sessions drops
+    // the open session (coming back to a stale ?session= would be surprising),
+    // and clicking "sessions" while a session is open is the way back to the
+    // list — it used to keep the session, so the already-highlighted tab did
+    // nothing and the only way back was knowing the logo is a link.
+    // Nothing to undo: re-clicking the tab you are on pushed a duplicate
+    // history entry, and Back then appeared to do nothing.
+    if (next === view && selectedId === null) return;
+    setSelectedId(null);
+    pushUrl(next, null);
   }
 
   // Force-tears-down any live session then soft-deletes the session. Confirmation
@@ -338,14 +365,21 @@ export default function App() {
     // whose only live session was rendering an IDLE badge two lines below.
     // The header and the row have to agree; they are read together.
     const working = sessions.filter((t) => t.liveState === "working").length;
-    const done = sessions.filter((t) => t.liveState === "done").length;
-    return { waiting, working, done, idle: Math.max(0, sessions.length - waiting - working - done) };
+    const open = (t: Session) => t.archivedAt === undefined && t.sweptAt === undefined;
+    const done = sessions.filter((t) => open(t) && t.liveState === "done").length;
+    // Idle is the QUIET tail's own default — not archived, not swept. It was
+    // "everything else", so the header said 21 idle over a list showing 4.
+    // A session with no pod has no liveState at all (""), and is the most
+    // common idle session there is — so this excludes the active states
+    // rather than matching "idle".
+    const idle = sessions.filter(
+      (t) =>
+        t.archivedAt === undefined &&
+        t.sweptAt === undefined &&
+        !["working", "done", "blocked"].includes(t.liveState),
+    ).length;
+    return { waiting, working, done, idle };
   }, [sessions, blockedSessions]);
-
-  const repoCount = useMemo(
-    () => new Set(sessions.filter(() => true).map((t) => t.repo)).size,
-    [sessions],
-  );
 
   const filteredSessions = useMemo(() => {
     // needsYouOnly is the manifest's "Waiting on you" shortcut. Mobile already
@@ -375,6 +409,7 @@ export default function App() {
     onDelete: deleteSession,
     onOpenLogs: setLogSessionId,
     reload: loadSessions,
+    loaded: sessionsLoaded,
   };
 
   return (
@@ -402,10 +437,10 @@ export default function App() {
             </svg>
             herd
           </a>
-          <span className="text-xs text-dim2 whitespace-nowrap">
-            ukubi-cluster · {repoCount} repos
-          </span>
-          <Segmented value={view} options={NAV} onChange={selectView} className="ml-1" />
+          {/* No repo count: it was the distinct repos among the loaded (and
+              search-filtered) sessions, shown beside a picker listing more. */}
+          <span className="text-xs text-dim2 whitespace-nowrap">ukubi-cluster</span>
+          <Segmented value={view} options={withProposalCount(NAV, proposals.length)} onChange={selectView} className="ml-1" />
 
           {(counts.waiting > 0 || needsYouOnly) && (
             <div className="flex items-center gap-2 ml-auto">
@@ -440,7 +475,10 @@ export default function App() {
               )}
             </div>
           )}
-          <span className={`text-xs text-dim2 whitespace-nowrap ${counts.waiting > 0 ? "" : "ml-auto"}`}>
+          {/* The one header item allowed to give way: everything else is a
+              control, and at laptop widths "N waiting on you" pushed
+              "+ new session" off the right edge. */}
+          <span className={`text-xs text-dim2 whitespace-nowrap min-w-0 truncate ${counts.waiting > 0 ? "" : "ml-auto"}`}>
             {counts.working} working · {counts.done} done · {counts.idle} idle
           </span>
 
@@ -583,7 +621,7 @@ export default function App() {
           isDesktop ? (
             <SessionDetail sessionId={selectedId} sessions={sessions} onClosed={clearSelection} />
           ) : (
-            <MobileSessionDetail sessionId={selectedId} onBack={clearSelection} onDelete={() => deleteSession(selectedId)} />
+            <MobileSessionDetail sessionId={selectedId} sessions={sessions} onBack={clearSelection} onDelete={() => deleteSession(selectedId)} />
           )
         ) : isDesktop ? (
           <SessionList {...shared} />
@@ -595,7 +633,7 @@ export default function App() {
       {!isDesktop && (
         <Segmented
           value={view}
-          options={MOBILE_NAV}
+          options={withProposalCount(MOBILE_NAV, proposals.length)}
           onChange={selectView}
           grow
           size="lg"

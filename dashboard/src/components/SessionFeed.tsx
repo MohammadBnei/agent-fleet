@@ -52,14 +52,7 @@ import { QuestionCard } from "./QuestionCard";
 
 const CROSS_SESSION = /^\[from session ([^\]]+)\]\s*/;
 
-// `mcp__agent-fleet-sidecar__set_session_meta` → `set_session_meta`. The
-// server prefix is the same for every MCP tool in a session, so it is the one
-// part of the name that distinguishes nothing. Full name stays in the tooltip.
-export function shortTool(tool: string | undefined): string {
-  if (!tool) return "tool";
-  const idx = tool.lastIndexOf("__");
-  return idx === -1 ? tool : tool.slice(idx + 2);
-}
+import { parseToolCallSummary, shortTool } from "../transcript";
 
 function QuietRule({ label, detail }: { label: string; detail?: string | null }) {
   return (
@@ -255,7 +248,12 @@ export function SessionFeed({
   onApprovePlan,
   onAnswer,
   onPlanFeedback,
+  // A message the human just sent is on screen (the detail view's optimistic
+  // echo) but not yet an entry. "Nothing in this session yet." directly above
+  // it read as the send having been lost.
+  hasPendingMessage = false,
 }: {
+  hasPendingMessage?: boolean;
   entries: TranscriptEntry[];
   visibility: FeedVisibility;
   density: Density;
@@ -343,6 +341,11 @@ export function SessionFeed({
   // counters restart with it — that's why lastResult resets there.
   let lastInit: string | null = null;
   let lastResult: SdkResultSummary | null = null;
+  // The paths the last rendered "N files changed" rule covered. The sidecar
+  // pushes its snapshot every turn, so one edited file printed the same rule
+  // after every turn — six in a short session. A rule now marks a change in
+  // WHICH files are touched; the running line counts are the CHANGES panel's.
+  let lastChangedPaths: string | null = null;
 
   for (let idx = 0; idx < entries.length; idx++) {
     const entry = entries[idx];
@@ -591,6 +594,9 @@ export function SessionFeed({
     // the prose renderer, dumping the raw JSON payload into the conversation.
     if (entry.type === TranscriptEntryType.TOOL_CALL) {
       if (!visibility.quiet) continue;
+      const paths = (parseToolCallSummary(entry.text)?.files ?? []).map((f) => f.path).sort().join("\n");
+      if (paths === lastChangedPaths) continue;
+      lastChangedPaths = paths;
       flush();
       out.push(
         <div key={key}>
@@ -688,6 +694,7 @@ export function SessionFeed({
   flush();
 
   if (out.length === 0) {
+    if (hasPendingMessage) return null;
     return (
       <div className="text-sm text-dim2">
         {density === "everything"

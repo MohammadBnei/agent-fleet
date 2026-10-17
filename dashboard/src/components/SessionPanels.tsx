@@ -222,6 +222,7 @@ export function SessionPanel({
         archivedAt={session.archivedAt}
         currentMode={session.permissionMode}
         podPhase={session.podPhase}
+        liveState={session.liveState}
         onAutoClick={onAutoClick}
         onRestart={onRestart}
       />

@@ -12,6 +12,8 @@ import {
   compareSessions,
   restStatus,
   TERMINAL,
+  activityLabel,
+  AutoBadge,
   type SortKey,
 } from "../pages/SessionList";
 import type { ListSummary } from "../transcript";
@@ -19,7 +21,7 @@ import { TickBar, todoProgress } from "../components/TickBar";
 import { NotchCard } from "../components/NotchCard";
 import { DecisionInline } from "../components/DecisionInline";
 import { SessionActionsModal } from "../components/SessionActionsModal";
-import { RowActionsButton } from "../components/RowControls";
+import { RowActionsButton, RowAction } from "../components/RowControls";
 import { QuietControls } from "../components/QuietControls";
 import { useToggleSet } from "../useToggleSet";
 
@@ -144,15 +146,12 @@ function FinishedCard({
         </div>
       )}
       {/* Same action as the desktop row's — see SessionList.tsx's FinishedRow. */}
-      <button
-        type="button"
-        onClick={() => {
-          void client.archiveSession({ sessionId: session.id }).then(reload);
-        }}
+      <RowAction
+        label="archive"
+        action={() => client.archiveSession({ sessionId: session.id })}
+        reload={reload}
         className="border border-acc-line px-3 py-2 text-xs w-full mt-2"
-      >
-        archive
-      </button>
+      />
     </div>
   );
 }
@@ -192,27 +191,18 @@ function WorkingCard({
         <button type="button" onClick={onSelect} className="flex items-center gap-2 min-w-0 flex-1 text-left">
           <span className={`text-sm min-w-0 truncate ${live ? "" : "text-dim"}`}>{sessionLabel(session)}</span>
         </button>
-        {session.permissionMode === "auto" ? (
-          <span className="text-2xs text-warning border border-orange-line px-1.5 py-px ml-auto flex-none">
-            auto
+        {session.permissionMode === "auto" && <AutoBadge className="ml-auto" />}
+        {todos.length > 0 && (
+          <span className={`text-xs text-dim2 flex-none ${session.permissionMode === "auto" ? "" : "ml-auto"}`}>
+            {todoProgress(todos)}
           </span>
-        ) : (
-          todos.length > 0 && <span className="text-xs text-dim2 ml-auto flex-none">{todoProgress(todos)}</span>
         )}
         <RowActionsButton onOpen={onActions} inline />
       </div>
       <div className="text-xs text-dim mt-1.5 truncate">
         {provisioning
           ? `booting${session.podMessage ? ` · ${session.podMessage}` : ""}`
-          : inFlight
-            ? `⟳ ${inFlight.tool.toLowerCase()} · ${inFlight.summary}${
-                inFlight.elapsedSeconds !== null ? ` · ${inFlight.elapsedSeconds}s` : ""
-              }`
-            : stale
-              ? stale.label.toLowerCase()
-              : session.liveState === "working"
-                ? "working"
-                : "idle"}
+          : activityLabel(session, inFlight)}
       </div>
       {provisioning ? (
         <div className="h-[3px] bar-provisioning mt-1.5" />
@@ -290,22 +280,20 @@ function StuckCard({
       </span>
       <div className="flex gap-2">
         {live ? (
-          <button
-            type="button"
-            onClick={() => void client.interrupt({ sessionId: session.id }).then(reload)}
+          <RowAction
+            label="interrupt"
+            action={() => client.interrupt({ sessionId: session.id })}
+            reload={reload}
             className="flex-1 border border-acc-line py-2 text-sm"
-          >
-            interrupt
-          </button>
+          />
         ) : (
           session.sweptAt === undefined && (
-            <button
-              type="button"
-              onClick={() => void client.warmSession({ sessionId: session.id }).then(reload)}
+            <RowAction
+              label="warm"
+              action={() => client.warmSession({ sessionId: session.id })}
+              reload={reload}
               className="flex-1 border border-acc-line py-2 text-sm"
-            >
-              warm
-            </button>
+            />
           )
         )}
         <button type="button" onClick={() => onOpenLogs(session.id)} className="flex-1 border border-acc-line py-2 text-sm">
@@ -325,6 +313,7 @@ export function MobileSessionList({
   onDelete,
   onOpenLogs,
   reload,
+  loaded = true,
 }: {
   sessions: Session[];
   summaries: Map<string, ListSummary>;
@@ -334,6 +323,7 @@ export function MobileSessionList({
   onDelete: (id: string) => void;
   onOpenLogs: (id: string) => void;
   reload: () => void;
+  loaded?: boolean;
 }) {
   // "ask me later" is per-session and deliberately not persisted: the agent is
   // still blocked, so the card must come back on the next visit.
@@ -386,7 +376,7 @@ export function MobileSessionList({
   return (
     <div className="flex-1 min-h-0 flex flex-col">
       <div className="flex-1 min-h-0 overflow-y-auto px-3.5 pt-4 pb-5 flex flex-col gap-3.5">
-        {sessions.length === 0 && <div className="text-base text-dim">No sessions.</div>}
+        {sessions.length === 0 && <div className="text-base text-dim">{loaded ? "No sessions." : "Loading…"}</div>}
 
         {
           visibleNeedsYou.map((t) => (

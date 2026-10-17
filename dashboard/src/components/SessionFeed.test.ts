@@ -6,8 +6,10 @@
 import { test, expect } from "bun:test";
 import { TranscriptEntryType, type TranscriptEntry } from "../gen/agentfleet/v1/transcript_pb";
 import { feedVisibility, type SdkResultSummary } from "../transcript";
-import { LoadOlder, SessionFeed, shortTool } from "./SessionFeed";
+import { LoadOlder, SessionFeed } from "./SessionFeed";
+import { shortTool } from "../transcript";
 import { TranscriptEntryView } from "./TranscriptEntryView";
+import { ToolCallLine } from "./ToolCallLine";
 
 let nextSeq = 0n;
 function entry(type: TranscriptEntryType, text: string): TranscriptEntry {
@@ -221,6 +223,36 @@ test("shortTool drops the MCP server prefix and leaves plain tools alone", () =>
   expect(shortTool("mcp__agent-fleet-sidecar__set_session_meta")).toBe("set_session_meta");
   expect(shortTool("Bash")).toBe("Bash");
   expect(shortTool(undefined)).toBe("tool");
+});
+
+test("a files-changed rule renders once per change in which files are touched, not once per push", () => {
+  const push = (files: { path: string; added: number; removed: number }[]) =>
+    entry(TranscriptEntryType.TOOL_CALL, JSON.stringify({ branch: "main", files }));
+  const tree = SessionFeed({
+    entries: [
+      push([{ path: "a.ts", added: 1, removed: 0 }]),
+      push([{ path: "a.ts", added: 3, removed: 1 }]),
+      push([{ path: "a.ts", added: 2, removed: 0 }, { path: "b.ts", added: 1, removed: 0 }]),
+      push([{ path: "b.ts", added: 1, removed: 0 }, { path: "a.ts", added: 9, removed: 0 }]),
+    ],
+    visibility: feedVisibility("everything", false),
+    density: "everything",
+    busyKey: null,
+    onRespond: () => {},
+    onApprovePlan: () => {},
+    onAnswer: () => {},
+    onPlanFeedback: () => {},
+  });
+  let lines = 0;
+  const walk = (node: unknown): void => {
+    if (Array.isArray(node)) return node.forEach(walk);
+    if (!node || typeof node !== "object") return;
+    const el = node as { type?: unknown; props?: Record<string, unknown> };
+    if (el.type === ToolCallLine) lines++;
+    if (el.props?.children) walk(el.props.children);
+  };
+  walk(tree);
+  expect(lines).toBe(2);
 });
 
 // The elapsed seconds that used to arrive as a standalone tool_progress row
