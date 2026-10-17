@@ -105,13 +105,30 @@ function OrphanToolResult({ result, compact }: { result: SdkToolResult; compact?
 }
 
 // tool-heavy stretch scannable instead of a wall.
+// A tool_result's text, whether the SDK sent a string or content blocks.
+function resultText(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content
+      .map((c) => (c && typeof c === "object" && typeof (c as { text?: unknown }).text === "string" ? (c as { text: string }).text : ""))
+      .join("");
+  }
+  return "";
+}
+
 function ToolGroup({
   pairs,
   compact,
   elapsedById,
+  denyReasons,
 }: {
   pairs: ToolCallPair[];
   compact?: boolean;
+  // The reasons humans gave when denying a permission. A denied call comes back
+  // as an error tool_result whose text is that reason, and the row said
+  // "failed" — in warning orange — for a call that never ran because someone
+  // said no, right above the "denied" line that explained it.
+  denyReasons: Set<string>;
   // Silencing the standalone tool_progress rows would otherwise throw away
   // the one thing they were worth: how long a still-running call has been
   // running. It belongs on the row, which is where someone looks for it.
@@ -144,7 +161,9 @@ function ToolGroup({
         <div className="border border-line3">
           {pairs.map((pair, i) => {
             const info = pair.callInfo;
-            const failed = pair.resultInfo?.isError === true;
+            const errored = pair.resultInfo?.isError === true;
+            const denied = errored && denyReasons.has(resultText(pair.resultInfo?.content).trim());
+            const failed = errored && !denied;
             const inFlight = !pair.result;
             const elapsed = pair.callInfo.id ? elapsedById.get(pair.callInfo.id) : undefined;
 
@@ -159,7 +178,7 @@ function ToolGroup({
                 >
                   <span
                     className={`w-1.5 h-1.5 rounded-full flex-none ${
-                      failed ? "bg-warning" : inFlight ? "bg-info animate-fpulse" : "bg-green-dot"
+                      failed ? "bg-warning" : denied ? "bg-dim2" : inFlight ? "bg-info animate-fpulse" : "bg-green-dot"
                     }`}
                   />
                   {/* `truncate` is load-bearing, not cosmetic: it brings
@@ -186,7 +205,9 @@ function ToolGroup({
                   >
                     {failed
                       ? "failed"
-                      : inFlight
+                      : denied
+                        ? "denied"
+                        : inFlight
                         ? `running${elapsed ? ` · ${elapsed}s` : ""}`
                         : "ok"}
                   </span>
@@ -266,6 +287,7 @@ export function SessionFeed({
   const pendingSeqs = new Set(findPendingPermissions(entries).map((p) => p.entry.seq));
   const decisions = resolvedPermissionDecisions(entries);
   const denyMessages = permissionDenyMessages(entries);
+  const denyReasons = new Set([...denyMessages.values()].map((m) => m.trim()));
   const edge = compact ? "-mx-3.5 px-3.5" : "-mx-4.5 px-4.5";
 
   // Build the panel-owned toolUseId set upfront to avoid an O(n²) scan.
@@ -314,7 +336,7 @@ export function SessionFeed({
     if (run.length === 0) return;
     const group = run;
     run = [];
-    out.push(<ToolGroup key={`tools-${group[0].call.seq}`} pairs={group} compact={compact} elapsedById={elapsedById} />);
+    out.push(<ToolGroup key={`tools-${group[0].call.seq}`} pairs={group} compact={compact} elapsedById={elapsedById} denyReasons={denyReasons} />);
   };
 
   // Both of these track the *previous* occurrence of their entry kind as the

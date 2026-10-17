@@ -6,6 +6,7 @@ import {
   latestSlashCommands,
   latestTodos,
   latestToolCallSummary,
+  latestSystemInfo,
   subagentRuns,
 } from "./transcript";
 
@@ -75,6 +76,10 @@ export function sessionPanelData(entries: TranscriptEntry[]) {
     changes: toolSummary?.files ?? null,
     agents: subagentRuns(entries),
     background: backgroundTasks(entries),
+    // The model the SDK reported at init. The session row's model is null
+    // unless one was chosen explicitly, and the panel rendered that as
+    // "default" beside a feed line naming the model actually in use.
+    model: latestSystemInfo(entries)?.model ?? null,
   };
 }
 

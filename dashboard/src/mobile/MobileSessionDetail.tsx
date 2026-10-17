@@ -98,7 +98,7 @@ export function MobileSessionDetail({
   const blocked = session.liveState === "blocked";
   const badge = sessionBadge(session);
   const visibility = feedVisibility(density, true);
-  const { todos, branch, changes, agents, background } = sessionPanelData(entries);
+  const { todos, branch, changes, agents, background, model } = sessionPanelData(entries);
 
   const docked = hasPendingDecision(entries);
 
@@ -334,6 +334,7 @@ export function MobileSessionDetail({
           />
           <BackgroundPanel tasks={background} />
           <SessionPanel
+            model={model}
             session={session}
             busy={busyKey !== null}
             busyKey={busyKey}

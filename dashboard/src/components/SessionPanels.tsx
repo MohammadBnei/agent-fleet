@@ -187,8 +187,11 @@ export function SessionPanel({
   run,
   onAutoClick,
   onRestart,
+  model,
 }: {
   session: Session;
+  // From the session's init line — see sessionPanelData.
+  model?: string | null;
   busy: boolean;
   busyKey: string | null;
   run: (action: () => Promise<unknown>, key: string) => void;
@@ -205,7 +208,7 @@ export function SessionPanel({
         {/* First, because it identifies everything under it — and because the
             title rows no longer carry it. */}
         <Fact label="id" value={shortId(session.id)} />
-        <Fact label="model" value={session.model || "default"} />
+        <Fact label="model" value={session.model || model || "—"} />
         <Fact label="mode" value={session.permissionMode || "default"} />
         {session.podPhase && <Fact label="pod" value={session.podPhase.replace("POD_PHASE_", "").toLowerCase()} />}
         {/* The build this session's pod is actually on — recorded at dispatch,
