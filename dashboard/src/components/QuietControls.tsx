@@ -1,5 +1,5 @@
 import { MultiSelectFilter } from "./MultiSelectFilter";
-import type { SortKey } from "../pages/SessionList";
+import type { SortKey } from "../sessionState";
 
 // The quiet tail's controls, shared by both list views. They were two
 // hand-written rows: desktop's ControlBar and a mobile copy that had drifted to

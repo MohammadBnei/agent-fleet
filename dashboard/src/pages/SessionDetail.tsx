@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { client } from "../connectClient";
 import { sessionLabel } from "../sessionLabel";
 import type { Session } from "../gen/agentfleet/v1/core_pb";
-import { sessionBadge } from "./SessionList";
+import { sessionBadge } from "../sessionState";
 import {
   feedVisibility,
   latestResultSummary,
@@ -24,7 +24,7 @@ import { DecisionDock } from "../components/DecisionDock";
 import { SessionFeed } from "../components/SessionFeed";
 import { TodosPanel, ChangesPanel, AgentsPanel, BackgroundPanel, SessionPanel } from "../components/SessionPanels";
 import { FileDiffModal } from "../components/FileDiffModal";
-import { isPodPhaseLive } from "./SessionList";
+import { isPodPhaseLive } from "../sessionState";
 import { AgentDetailModal } from "../components/DetailModal";
 import type { SubagentRun } from "../transcript";
 import { asDisplayMarkdown } from "../transcript";

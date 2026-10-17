@@ -4,7 +4,7 @@ import type { ListSummary } from "../transcript";
 import { Modal } from "./Modal";
 import { DecisionInline } from "./DecisionInline";
 import { sessionLabel } from "../sessionLabel";
-import { blockedForLabel } from "../pages/SessionList";
+import { blockedForLabel } from "../sessionState";
 
 // Every pending decision, answerable without leaving where you are.
 //

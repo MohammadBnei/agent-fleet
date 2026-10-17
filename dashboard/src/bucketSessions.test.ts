@@ -1,6 +1,6 @@
 import { test, expect } from "bun:test";
 import type { Session } from "./gen/agentfleet/v1/core_pb";
-import { bucketSessions } from "./pages/SessionList";
+import { bucketSessions } from "./sessionState";
 
 // These tests used to be written against sessions.status ("proposed", "running",
 // "done") and a `shipped` bucket. All three are gone in docs/adr/0048: a

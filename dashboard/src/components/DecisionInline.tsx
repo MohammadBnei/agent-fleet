@@ -2,7 +2,7 @@ import { useState } from "react";
 import { ActionButton } from "./ActionButton";
 import { client } from "../connectClient";
 import { decisionAnswerable } from "../transcript";
-import { isPodPhaseLive } from "../pages/SessionList";
+import { isPodPhaseLive } from "../sessionState";
 import type { Session } from "../gen/agentfleet/v1/core_pb";
 import { type ListSummary } from "../transcript";
 import { DiffLines } from "./DiffLines";

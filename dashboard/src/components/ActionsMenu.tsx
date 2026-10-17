@@ -1,7 +1,7 @@
 import type { CSSProperties } from "react";
 import { client } from "../connectClient";
 import { ActionButton } from "./ActionButton";
-import { isPodPhaseLive } from "../pages/SessionList";
+import { isPodPhaseLive } from "../sessionState";
 import { PERMISSION_MODES } from "../approvePlan";
 
 // The user-facing SDK modes worth a button — "delegate"/"dontAsk" are

@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { sessionBadge } from "./pages/SessionList";
+import { sessionBadge } from "./sessionState";
 import type { Session } from "./gen/agentfleet/v1/core_pb";
 
 function session(over: Partial<Session>): Session {

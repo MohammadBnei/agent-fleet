@@ -2,20 +2,8 @@ import { useMemo, useState } from "react";
 import type { Session } from "../gen/agentfleet/v1/core_pb";
 import { client } from "../connectClient";
 import { sessionLabel } from "../sessionLabel";
-import {
-  bucketSessions,
-  isPodPhaseLive,
-  sessionBadge,
-  blockedForLabel,
-  stuckLabel,
-  SectionHeading,
-  compareSessions,
-  restStatus,
-  TERMINAL,
-  activityLabel,
-  AutoBadge,
-  type SortKey,
-} from "../pages/SessionList";
+import { SectionHeading, AutoBadge } from "../pages/SessionList";
+import { bucketSessions, isPodPhaseLive, sessionBadge, blockedForLabel, stuckLabel, compareSessions, restStatus, TERMINAL, activityLabel, notchLabel, type SortKey } from "../sessionState";
 import type { ListSummary } from "../transcript";
 import { TickBar, todoProgress } from "../components/TickBar";
 import { NotchCard } from "../components/NotchCard";
@@ -70,10 +58,7 @@ function NeedsYouCard({
   const blockedFor = blockedForLabel(session);
   const queued = summary?.pendingPermissionCount ?? 0;
   return (
-    <NotchCard
-      label={`◉ BLOCKED${blockedFor ? ` · ${blockedFor}` : ""}${queued > 1 ? ` · ${queued} decisions` : ""}`}
-      tone="pink"
-    >
+    <NotchCard label={notchLabel(blockedFor, queued)}>
       <div className="px-3.5 pt-3.5">
         <div className="flex items-baseline gap-2">
           <span className="text-xs text-dim2 min-w-0 truncate">{session.repo}</span>
@@ -131,8 +116,7 @@ function FinishedCard({
       {failed ? (
         <>
           <div className="text-xs text-warning mt-1.5 leading-[1.5] break-words">
-            {"crashed"}
-            {session.lastError ? ` · ${session.lastError}` : ""}
+            crashed{session.lastError ? ` · ${session.lastError}` : ""}
           </div>
           <div className="flex gap-2 mt-2.5">
             <button type="button" onClick={onOpenLogs} className="border border-acc-line px-3 py-2 text-xs flex-1">
@@ -140,11 +124,7 @@ function FinishedCard({
             </button>
           </div>
         </>
-      ) : (
-        <div className="text-xs text-dim mt-1.5">
-          {"no PR"}
-        </div>
-      )}
+      ) : null}
       {/* Same action as the desktop row's — see SessionList.tsx's FinishedRow. */}
       <RowAction
         label="archive"
@@ -173,7 +153,6 @@ function WorkingCard({
   const inFlight = summary?.inFlight ?? null;
   const provisioning = session.podPhase === "POD_PHASE_PROVISIONING";
   const live = isPodPhaseLive(session.podPhase) && !provisioning;
-  const stale = null as { label: string; className: string } | null;
 
   // A <div>, not a <button>: the card used to be one tap target end to end,
   // which makes the actions "⋯" a button inside a button — invalid HTML, and
@@ -184,9 +163,7 @@ function WorkingCard({
     <div className={`w-full text-left px-3.5 py-2.5 ${last ? "" : "border-b border-line3"}`}>
       <div className="flex items-center gap-2">
         <span
-          className={`w-1.5 h-1.5 rounded-full flex-none ${
-            stale ? "bg-error" : live ? "bg-info animate-fpulse" : "border border-dim2"
-          }`}
+          className={`w-1.5 h-1.5 rounded-full flex-none ${live ? "bg-info animate-fpulse" : "border border-dim2"}`}
         />
         <button type="button" onClick={onSelect} className="flex items-center gap-2 min-w-0 flex-1 text-left">
           <span className={`text-sm min-w-0 truncate ${live ? "" : "text-dim"}`}>{sessionLabel(session)}</span>

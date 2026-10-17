@@ -3,7 +3,7 @@ import type { Session } from "../gen/agentfleet/v1/core_pb";
 import { client } from "../connectClient";
 import { ConfirmModal } from "./ConfirmModal";
 import { InlineError } from "./InlineError";
-import { isPodPhaseLive } from "../pages/SessionList";
+import { isPodPhaseLive } from "../sessionState";
 
 // Multi-select over the list, so "archive these twelve" is one gesture rather
 // than twelve trips through the actions modal.

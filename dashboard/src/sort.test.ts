@@ -1,6 +1,6 @@
 import { test, expect } from "bun:test";
 import type { Session } from "./gen/agentfleet/v1/core_pb";
-import { compareSessions } from "./pages/SessionList";
+import { compareSessions } from "./sessionState";
 
 function session(id: string, over: Partial<Session> = {}): Session {
   return {

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { SessionList, ACTIVE_STATES } from "./pages/SessionList";
+import { SessionList } from "./pages/SessionList";
+import { LIVE_STATES } from "./sessionState";
 import { SessionDetail } from "./pages/SessionDetail";
 import { Files } from "./pages/Files";
 import { Schedules } from "./pages/Schedules";
@@ -206,7 +207,7 @@ export default function App() {
   // show beyond the Session row itself: the todo bar, the in-flight tool line, and
   // — the point of the rewrite — the actual pending decision, rendered inline so
   // a blocked session can be answered without opening it. Scoped to
-  // ACTIVE_STATES, so it's bounded by the fleet's concurrency cap of 5, on the
+  // LIVE_STATES, so it's bounded by the fleet's concurrency cap of 5, on the
   // same 5s cadence as loadSessions. No new RPC: this fetch already existed for the
   // todo bars alone.
   useEffect(() => {
@@ -219,10 +220,10 @@ export default function App() {
     // Still bounded: active sessions are capped by the fleet's concurrency
     // limit, and the extra ones are sliced, so a long tail of abandoned
     // decisions cannot turn one poll into a hundred transcript fetches.
-    const active = sessions.filter((t) => ACTIVE_STATES.has(t.liveState));
+    const active = sessions.filter((t) => LIVE_STATES.has(t.liveState));
     const strandedCap = 10;
     const stranded = sessions
-      .filter((t) => !ACTIVE_STATES.has(t.liveState) && t.pendingDecisions > 0 && t.archivedAt === undefined)
+      .filter((t) => !LIVE_STATES.has(t.liveState) && t.pendingDecisions > 0 && t.archivedAt === undefined)
       .slice(0, strandedCap);
     const wanted = [...active, ...stranded];
     if (wanted.length === 0) {
@@ -354,7 +355,7 @@ export default function App() {
     // can act on. "blocked" is live-and-pending, already derived server-side.
     const waiting = blockedSessions.length;
     // `working` means the badge says WORKING, not "has a live pod".
-    // ACTIVE_STATES is the pod-liveness set — it includes idle, unknown and
+    // LIVE_STATES is the pod-liveness set — it includes idle, unknown and
     // stalled — so counting it here reported "1 working · 0 idle" for a fleet
     // whose only live session was rendering an IDLE badge two lines below.
     // The header and the row have to agree; they are read together.
