@@ -362,8 +362,14 @@ export default function App() {
     const done = sessions.filter((t) => t.liveState === "done").length;
     // Idle is the QUIET tail's own default — not archived, not swept. It was
     // "everything else", so the header said 21 idle over a list showing 4.
+    // A session with no pod has no liveState at all (""), and is the most
+    // common idle session there is — so this excludes the active states
+    // rather than matching "idle".
     const idle = sessions.filter(
-      (t) => t.archivedAt === undefined && t.sweptAt === undefined && t.liveState === "idle",
+      (t) =>
+        t.archivedAt === undefined &&
+        t.sweptAt === undefined &&
+        !["working", "done", "blocked", "stalled"].includes(t.liveState),
     ).length;
     return { waiting, working, done, idle };
   }, [sessions, blockedSessions]);
