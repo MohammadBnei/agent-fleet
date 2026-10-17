@@ -78,7 +78,10 @@ export function ManagePromptSnippetsModal({ onChanged }: { onChanged?: () => voi
         setSnippets(res.snippets);
         setLoaded(true);
       })
-      .catch((err: Error) => setError(err.message));
+      .catch((err: Error) => {
+        setError(err.message);
+        setLoaded(true);
+      });
   }
   // The empty-state line is a claim, so it waits for the first answer.
   const [loaded, setLoaded] = useState(false);

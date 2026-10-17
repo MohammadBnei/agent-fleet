@@ -699,9 +699,6 @@ export function backgroundTasks(entries: TranscriptEntry[]): BackgroundTask[] {
   return [...all.filter((t) => t.status === "running"), ...all.filter((t) => t.status !== "running")];
 }
 
-// Best-effort one-line preview for a collapsed tool-call header — common
-// fields across the built-in tools (Read/Write/Edit/Bash/Grep/Glob), falling
-// back to compact JSON for anything else rather than showing nothing.
 // `mcp__agent-fleet-sidecar__set_session_meta` → `set_session_meta`. The
 // server prefix is the same for every MCP tool in a session, so it is the one
 // part of the name that distinguishes nothing. Full name stays in the tooltip.
@@ -711,15 +708,31 @@ export function shortTool(tool: string | undefined): string {
   return idx === -1 ? tool : tool.slice(idx + 2);
 }
 
+// The working row's one-line label for an in-flight call. Label only — never
+// what an approver reads: a permission card goes through summarizeToolInput,
+// whose JSON fallback shows the whole input. A question batch reads as its
+// first question; falling through to JSON put `{"questions":[{"question":…`
+// on the row and squeezed the session's title down to an ellipsis.
+export function toolLabel(input: unknown): string {
+  if (input && typeof input === "object") {
+    const obj = input as Record<string, unknown>;
+    const first = Array.isArray(obj.questions) ? (obj.questions[0] as { question?: unknown } | undefined) : undefined;
+    if (typeof first?.question === "string") return first.question;
+    for (const key of ["query", "prompt"]) {
+      const value = obj[key];
+      if (typeof value === "string") return value.split("\n")[0];
+    }
+  }
+  return summarizeToolInput(input);
+}
+
+// Best-effort one-line preview for a collapsed tool-call header — common
+// fields across the built-in tools (Read/Write/Edit/Bash/Grep/Glob), falling
+// back to compact JSON for anything else rather than showing nothing.
 export function summarizeToolInput(input: unknown): string {
   if (input && typeof input === "object") {
     const obj = input as Record<string, unknown>;
-    // A question batch summarises as its first question. Falling through to
-    // JSON.stringify put `{"questions":[{"question":…` on the list's working
-    // row, squeezing the session's own title down to an ellipsis.
-    const first = Array.isArray(obj.questions) ? (obj.questions[0] as { question?: unknown } | undefined) : undefined;
-    if (typeof first?.question === "string") return first.question;
-    for (const key of ["file_path", "command", "pattern", "path", "description", "url", "plan", "query", "prompt"]) {
+    for (const key of ["file_path", "command", "pattern", "path", "description", "url", "plan"]) {
       const value = obj[key];
       // First line only — matters for "plan" (multi-line markdown), harmless
       // for the single-line fields. Without this, ToolCallItem's shortValue
@@ -853,7 +866,7 @@ export function inFlightTool(entries: TranscriptEntry[]): InFlightTool | null {
       const started = new Date(p.call.createdAt).getTime();
       if (!Number.isNaN(started)) elapsedSeconds = Math.max(0, Math.round((Date.now() - started) / 1000));
     }
-    return { tool: shortTool(tool), summary: summarizeToolInput(p.callInfo.input), elapsedSeconds };
+    return { tool: shortTool(tool), summary: toolLabel(p.callInfo.input), elapsedSeconds };
   }
   return null;
 }

@@ -78,7 +78,7 @@ export function ActionsMenu({
   liveState?: string;
 }) {
   const live = isPodPhaseLive(podPhase);
-  const turnRunning = liveState === undefined || ["working", "blocked", "stalled"].includes(liveState);
+  const turnRunning = !["done", "idle"].includes(liveState ?? "");
   return (
     <div className="flex items-center gap-2 flex-wrap">
       {live ? (

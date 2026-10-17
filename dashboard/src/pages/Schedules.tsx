@@ -85,7 +85,7 @@ function AlertPayload({ payload, body }: { payload: string; body: string }) {
       {annotations.map(([k, v]) => (
         <div key={k} className="text-xs text-text2 whitespace-pre-wrap break-words">
           {k !== "summary" && <span className="text-dim2">{k}: </span>}
-          {/^https?:\/\//.test(v) ? (
+          {/^https?:\/\/\S+$/.test(v) ? (
             <a href={v} target="_blank" rel="noreferrer" className="text-primary hover:underline break-all">
               {v}
             </a>
@@ -638,7 +638,10 @@ export function Schedules({
                 <br />
                 <span className="text-dim2">{a.prompt.split("\n")[0]}</span>
               </div>
-              <div className={`text-xs mt-1.5 ${a.lastStatus.startsWith("error") ? "text-warning" : "text-text2"}`}>
+              <div
+                className={`text-xs mt-1.5 ${a.lastStatus.startsWith("error") ? "text-warning" : "text-text2"}`}
+                title={a.lastStatus}
+              >
                 {a.lastRunAt ? `last: ${relativeTime(a.lastRunAt) ?? "—"} · ${lastStatusLabel(a.lastStatus)}` : "never run"}
               </div>
               <div className="flex gap-2 mt-2.5 flex-wrap">
