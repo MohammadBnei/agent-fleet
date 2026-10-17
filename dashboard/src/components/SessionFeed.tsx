@@ -52,7 +52,7 @@ import { QuestionCard } from "./QuestionCard";
 
 const CROSS_SESSION = /^\[from session ([^\]]+)\]\s*/;
 
-import { shortTool } from "../transcript";
+import { parseToolCallSummary, shortTool } from "../transcript";
 
 function QuietRule({ label, detail }: { label: string; detail?: string | null }) {
   return (
@@ -341,6 +341,11 @@ export function SessionFeed({
   // counters restart with it — that's why lastResult resets there.
   let lastInit: string | null = null;
   let lastResult: SdkResultSummary | null = null;
+  // The paths the last rendered "N files changed" rule covered. The sidecar
+  // pushes its snapshot every turn, so one edited file printed the same rule
+  // after every turn — six in a short session. A rule now marks a change in
+  // WHICH files are touched; the running line counts are the CHANGES panel's.
+  let lastChangedPaths: string | null = null;
 
   for (let idx = 0; idx < entries.length; idx++) {
     const entry = entries[idx];
@@ -589,6 +594,9 @@ export function SessionFeed({
     // the prose renderer, dumping the raw JSON payload into the conversation.
     if (entry.type === TranscriptEntryType.TOOL_CALL) {
       if (!visibility.quiet) continue;
+      const paths = (parseToolCallSummary(entry.text)?.files ?? []).map((f) => f.path).sort().join("\n");
+      if (paths === lastChangedPaths) continue;
+      lastChangedPaths = paths;
       flush();
       out.push(
         <div key={key}>
