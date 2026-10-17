@@ -331,7 +331,7 @@ function ScheduleForm({
             <span className="text-xs text-dim2">fires once, then pauses itself</span>
           </div>
         )}
-        {error && <div className="text-sm text-error">{error}</div>}
+        <InlineError message={error} />
         <div className="flex gap-2.5 mt-1">
           <button
             type="button"

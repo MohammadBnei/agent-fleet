@@ -289,6 +289,38 @@ test("a silenced tool_progress still reaches its tool row as elapsed time", () =
   expect(groups[0].elapsedById.get("toolu_E")).toBe(90);
 });
 
+// The tool row is told which calls were denied, so it can say "denied"
+// instead of "failed" — matched per call, never by reason text.
+test("a tool row knows which of its calls a human denied", () => {
+  const request = entry(TranscriptEntryType.PERMISSION_REQUEST, JSON.stringify({ tool: "Bash", input: { command: "rm x" } }));
+  const response = { ...entry(TranscriptEntryType.PERMISSION_RESPONSE, JSON.stringify({ behavior: "deny", message: " not now " })), replyTo: request.seq } as TranscriptEntry;
+  const tree = SessionFeed({
+    entries: [
+      entry(TranscriptEntryType.ASSISTANT, JSON.stringify({ id: "toolu_D", tool: "Bash", input: { command: "rm x" } })),
+      request,
+      response,
+    ],
+    visibility: feedVisibility("everything", false),
+    density: "everything",
+    busyKey: null,
+    onRespond: () => {},
+    onApprovePlan: () => {},
+    onAnswer: () => {},
+    onPlanFeedback: () => {},
+  });
+  const denied: Set<string>[] = [];
+  const walk = (node: unknown): void => {
+    if (Array.isArray(node)) return node.forEach(walk);
+    if (!node || typeof node !== "object") return;
+    const el = node as { type?: unknown; props?: Record<string, unknown> };
+    if (el.props?.deniedIds) denied.push(el.props.deniedIds as Set<string>);
+    if (el.props?.children) walk(el.props.children);
+  };
+  walk(tree);
+  expect(denied.length).toBeGreaterThan(0);
+  expect(denied[0].has("toolu_D")).toBe(true);
+});
+
 // task_notification is the only one of the four that carries a terminal
 // outcome, and most belong to a backgrounded Bash — whose tool_result returned
 // the instant it launched, so this is the ONLY thing that ever says the

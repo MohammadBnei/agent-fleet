@@ -4,6 +4,7 @@ import { queueFirstMessage } from "../useSessionDetail";
 import { Modal } from "./Modal";
 import type { PromptSnippet, Repo } from "../gen/agentfleet/v1/dashboard_pb";
 import { AUTO_MODE_WARNING, PERMISSION_MODES } from "../approvePlan";
+import { InlineError } from "./InlineError";
 
 // The first line of the message, as a list label. `description`/`title` are
 // human-facing labels the agent never reads (db/migrations/000001_init.up.sql
@@ -260,7 +261,7 @@ export function NewSessionDialog({
               ))}
             </fieldset>
           )}
-          {error && <p className="text-error text-sm">{error}</p>}
+          <InlineError message={error} />
           <div className="modal-action">
             <button type="button" className="btn btn-sm" onClick={close}>
               Cancel

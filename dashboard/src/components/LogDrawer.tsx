@@ -3,6 +3,7 @@ import { client } from "../connectClient";
 import type { LogEntry } from "../gen/agentfleet/v1/core_pb";
 import { Modal } from "./Modal";
 import { shortId } from "../sessionState";
+import { InlineError } from "./InlineError";
 
 // "read log" on a failed session. DashboardService.QueryLogs has existed since
 // the Loki client landed and had no UI caller at all — the reason a session had
@@ -52,7 +53,7 @@ export function LogDrawer({ sessionId, onClose }: { sessionId: string | null; on
         Newest 200 lines from Loki for this session's pods.
       </p>
       {loading && <div className="text-sm text-dim">Loading…</div>}
-      {error && <div className="text-sm text-error">{error}</div>}
+      <InlineError message={error} />
       {!loading && !error && entries.length === 0 && (
         <div className="text-sm text-dim2">
           No log lines for this session — its pod may already be gone past Loki's retention.

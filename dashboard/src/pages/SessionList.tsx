@@ -6,7 +6,7 @@ import { parseQuestions, summarizeToolInput, type ListSummary } from "../transcr
 import { TickBar, todoProgress } from "../components/TickBar";
 import { DecisionInline } from "../components/DecisionInline";
 import { SessionActionsModal } from "../components/SessionActionsModal";
-import { RowSelect, RowActionsButton, RowAction } from "../components/RowControls";
+import { RowSelect, RowActionsButton, RowAction, StuckActions } from "../components/RowControls";
 import { useSelection, BatchBar } from "../components/BatchActions";
 import { QuietControls } from "../components/QuietControls";
 import { useToggleSet } from "../useToggleSet";
@@ -186,28 +186,13 @@ function StuckRow({
           {stuckLabel(session)}
           {stuckFor ? ` · ${stuckFor}` : ""}
         </span>
-        {live ? (
-          <RowAction
-            label="interrupt"
-            action={() => client.interrupt({ sessionId: session.id })}
-            reload={reload}
-            className="flex-none border border-acc-line px-3 py-1 text-sm hover:border-primary hover:text-primary"
-          />
-        ) : (
-          // Swept means the retention GC took the working directory: warming
-          // would bring up a pod with nothing to resume, so it is not offered.
-          session.sweptAt === undefined && (
-            <RowAction
-              label="warm"
-              action={() => client.warmSession({ sessionId: session.id })}
-              reload={reload}
-              className="flex-none border border-acc-line px-3 py-1 text-sm hover:border-primary hover:text-primary"
-            />
-          )
-        )}
-        <button type="button" onClick={onOpenLogs} className="flex-none border border-acc-line px-3 py-1 text-sm hover:border-primary hover:text-primary">
-          read log
-        </button>
+        <StuckActions
+          session={session}
+          live={live}
+          reload={reload}
+          onOpenLogs={onOpenLogs}
+          buttonClass="flex-none border border-acc-line px-3 py-1 text-sm hover:border-primary hover:text-primary"
+        />
       </div>
       {asked && (
         <div className="text-xs text-dim min-w-0">

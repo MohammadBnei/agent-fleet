@@ -20,7 +20,37 @@ import {
   fileEdits,
   decisionAnswerable,
   backgroundTasks,
+  deniedToolUseIds,
 } from "./transcript";
+
+test("deniedToolUseIds marks the denied call itself, not every call with the same reason", () => {
+  const call = (id: string, command: string) =>
+    entry(TranscriptEntryType.ASSISTANT, "agent", JSON.stringify({ id, tool: "Bash", input: { command } }));
+  const request = (command: string) =>
+    entry(TranscriptEntryType.PERMISSION_REQUEST, "agent", JSON.stringify({ tool: "Bash", input: { command } }));
+  const respond = (req: TranscriptEntry, behavior: "allow" | "deny") =>
+    ({ ...entry(TranscriptEntryType.PERMISSION_RESPONSE, "human", JSON.stringify({ behavior, message: "denied" })), replyTo: req.seq }) as TranscriptEntry;
+
+  const earlierSame = call("toolu_old", "rm a"); // an earlier, allowed run of the same command
+  const reqOld = request("rm a");
+  const denied = call("toolu_denied", "rm a");
+  const reqDenied = request("rm a");
+  const other = call("toolu_other", "rm b"); // different input, never denied
+  const reqOther = request("rm b");
+
+  const ids = deniedToolUseIds([
+    earlierSame,
+    reqOld,
+    respond(reqOld, "allow"),
+    denied,
+    reqDenied,
+    respond(reqDenied, "deny"),
+    other,
+    reqOther,
+    respond(reqOther, "allow"),
+  ]);
+  expect([...ids]).toEqual(["toolu_denied"]);
+});
 
 let nextSeq = 0n;
 function entry(type: TranscriptEntryType, from = "agent", text = ""): TranscriptEntry {

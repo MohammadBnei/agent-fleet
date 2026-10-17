@@ -90,6 +90,7 @@ export function DecisionDock({
           />
         ) : (
           <PermissionCard
+            key={String(permission.entry.seq)}
             tool={permission.tool}
             input={permission.input}
             pending

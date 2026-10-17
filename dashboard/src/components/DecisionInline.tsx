@@ -13,6 +13,7 @@ import { approvePlan } from "../approvePlan";
 import { AutoModeConfirm } from "./AutoModeConfirm";
 import { TextResponseModal } from "./TextResponseModal";
 import { PlanModal } from "./PlanModal";
+import { InlineError } from "./InlineError";
 
 // The pending decision, answerable from the list.
 //
@@ -104,7 +105,10 @@ export function DecisionInline({
   const { busy, pending, answered, error, send } = useDecision(reload);
   const [reason, setReason] = useState("");
   // "deny" reveals the reason field; it is not shown up front. See `actions`.
-  const [denying, setDenying] = useState(false);
+  // Which permission the reason field is open for. A seq, not a boolean: this
+  // row is reused when its session raises the next permission, and a boolean
+  // carried the open field (and its typed reason) over to a different call.
+  const [denyingSeq, setDenyingSeq] = useState<bigint | null>(null);
   const [autoConfirmOpen, setAutoConfirmOpen] = useState(false);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [planOpen, setPlanOpen] = useState(false);
@@ -208,7 +212,7 @@ export function DecisionInline({
           >
             <Markdown text={plan} />
           </button>
-          {error && <div className="text-xs text-error">{error}</div>}
+          <InlineError message={error} />
           {/* Same menu the dock's PlanCard offers, so approving from the list
               is not a lesser decision than approving from the session — auto
               behind a confirm, plain approve beside it (docs/adr/0052). */}
@@ -295,8 +299,8 @@ export function DecisionInline({
     // to skip a text input to reach the two buttons they actually wanted.
     const actions = (
       <div className="flex flex-col gap-2">
-        {error && <div className="text-xs text-error">{error}</div>}
-        {denying ? (
+        <InlineError message={error} />
+        {denyingSeq === permission.entry.seq ? (
           <div className="flex items-center gap-2 flex-wrap">
             <input
               value={reason}
@@ -306,9 +310,12 @@ export function DecisionInline({
                 if (e.key === "Enter") {
                   respond("deny", reason.trim() || "denied");
                   setReason("");
-                  setDenying(false);
+                  setDenyingSeq(null);
                 }
-                if (e.key === "Escape") setDenying(false);
+                if (e.key === "Escape") {
+                  setReason("");
+                  setDenyingSeq(null);
+                }
               }}
               disabled={busy}
               placeholder="why? — sent to the agent, or just press enter"
@@ -322,12 +329,15 @@ export function DecisionInline({
               onClick={() => {
                 respond("deny", reason.trim() || "denied");
                 setReason("");
-                setDenying(false);
+                setDenyingSeq(null);
               }}
             >
               send deny
             </ActionButton>
-            <button type="button" onClick={() => setDenying(false)} className="text-xs text-dim2 hover:text-dim cursor-pointer">
+            <button type="button" onClick={() => {
+                setReason("");
+                setDenyingSeq(null);
+              }} className="text-xs text-dim2 hover:text-dim cursor-pointer">
               cancel
             </button>
           </div>
@@ -336,7 +346,7 @@ export function DecisionInline({
             <ActionButton busy={pending === "allow"} disabled={busy} className={primaryBtn} onClick={() => respond("allow")}>
               allow
             </ActionButton>
-            <button type="button" disabled={busy} onClick={() => setDenying(true)} className={secondaryBtn}>
+            <button type="button" disabled={busy} onClick={() => setDenyingSeq(permission.entry.seq)} className={secondaryBtn}>
               deny
             </button>
           </div>
@@ -371,7 +381,7 @@ export function DecisionInline({
     return (
       <div className={`${pad} flex flex-col gap-3`}>
         <QuestionCard entry={questionEntry} answer={null} busy={busy} compact={stacked} embedded onSubmit={submit} />
-        {error && <div className="text-xs text-error">{error}</div>}
+        <InlineError message={error} />
         <div className={`flex gap-3.5 ${stacked ? "justify-center" : "items-center"}`}>
           {onAskLater && (
             <button type="button" onClick={onAskLater} className="text-xs text-dim2 hover:text-dim cursor-pointer py-1">

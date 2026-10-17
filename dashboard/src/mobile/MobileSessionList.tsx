@@ -10,7 +10,7 @@ import { TickBar, todoProgress } from "../components/TickBar";
 import { NotchCard } from "../components/NotchCard";
 import { DecisionInline } from "../components/DecisionInline";
 import { SessionActionsModal } from "../components/SessionActionsModal";
-import { RowActionsButton, RowAction } from "../components/RowControls";
+import { RowActionsButton, RowAction, StuckActions } from "../components/RowControls";
 import { QuietControls } from "../components/QuietControls";
 import { useToggleSet } from "../useToggleSet";
 
@@ -245,26 +245,13 @@ function StuckCard({
         {stuckFor ? ` \u00b7 ${stuckFor}` : ""}
       </span>
       <div className="flex gap-2">
-        {live ? (
-          <RowAction
-            label="interrupt"
-            action={() => client.interrupt({ sessionId: session.id })}
-            reload={reload}
-            className="flex-1 border border-acc-line py-2 text-sm"
-          />
-        ) : (
-          session.sweptAt === undefined && (
-            <RowAction
-              label="warm"
-              action={() => client.warmSession({ sessionId: session.id })}
-              reload={reload}
-              className="flex-1 border border-acc-line py-2 text-sm"
-            />
-          )
-        )}
-        <button type="button" onClick={() => onOpenLogs(session.id)} className="flex-1 border border-acc-line py-2 text-sm">
-          read log
-        </button>
+        <StuckActions
+          session={session}
+          live={live}
+          reload={reload}
+          onOpenLogs={() => onOpenLogs(session.id)}
+          buttonClass="flex-1 border border-acc-line py-2 text-sm"
+        />
       </div>
     </div>
   );

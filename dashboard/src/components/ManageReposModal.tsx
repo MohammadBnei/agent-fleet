@@ -3,6 +3,7 @@ import { client } from "../connectClient";
 import { Modal } from "./Modal";
 import { ConfirmModal } from "./ConfirmModal";
 import type { Repo, SyncRepoResponse } from "../gen/agentfleet/v1/dashboard_pb";
+import { InlineError } from "./InlineError";
 
 // Dashboard-editable target-repo config (docs/adr/0028) — replaces the old
 // hardcoded KNOWN_REPOS array here and the equally-hardcoded
@@ -312,7 +313,7 @@ export function ManageReposModal({ onChanged }: { onChanged?: () => void }) {
           </button>
         </form>
 
-        {error && <p className="text-error text-sm mt-2">{error}</p>}
+        <InlineError message={error} />
 
         <div className="modal-action">
           <button type="button" className="btn btn-sm" onClick={close}>

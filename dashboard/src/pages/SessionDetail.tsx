@@ -98,7 +98,7 @@ export function SessionDetail({
   const blocked = session.liveState === "blocked";
   const visibility = feedVisibility(density, false);
 
-  const { todos, branch, changes, agents, background } = sessionPanelData(entries);
+  const { todos, branch, changes, agents, background, model } = sessionPanelData(entries);
   const result = latestResultSummary(entries);
   const contextTokens =
     (result?.usage?.input_tokens ?? 0) +
@@ -263,6 +263,7 @@ export function SessionDetail({
         <BackgroundPanel tasks={background} />
         <div className="mt-auto">
           <SessionPanel
+            model={model}
             session={session}
             busy={busyKey !== null}
             busyKey={busyKey}

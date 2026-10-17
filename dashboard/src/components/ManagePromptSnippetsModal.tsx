@@ -3,6 +3,7 @@ import { client } from "../connectClient";
 import { Modal } from "./Modal";
 import { ConfirmModal } from "./ConfirmModal";
 import type { PromptSnippet } from "../gen/agentfleet/v1/dashboard_pb";
+import { InlineError } from "./InlineError";
 
 // Dashboard-editable, reusable guidance text an operator optionally
 // attaches to a session at creation time (see NewSessionDialog's snippet
@@ -185,7 +186,7 @@ export function ManagePromptSnippetsModal({ onChanged }: { onChanged?: () => voi
           </button>
         </form>
 
-        {error && <p className="text-error text-sm mt-2">{error}</p>}
+        <InlineError message={error} />
 
         <div className="modal-action">
           <button type="button" className="btn btn-sm" onClick={close}>
