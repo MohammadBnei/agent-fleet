@@ -1,5 +1,11 @@
 # Changelog
 
+## [4.15.1](https://github.com/MohammadBnei/agent-fleet/compare/4.15.0...4.15.1) (2026-10-17)
+
+### Bug Fixes
+
+* **dashboard:** live QA pass — safety copy, navigation, silent failures ([#254](https://github.com/MohammadBnei/agent-fleet/issues/254)) ([d5638a7](https://github.com/MohammadBnei/agent-fleet/commit/d5638a7db7d501069e2e387a56d41b282bafa9b0)), closes [#253](https://github.com/MohammadBnei/agent-fleet/issues/253)
+
 # [4.15.0](https://github.com/MohammadBnei/agent-fleet/compare/4.14.8...4.15.0) (2026-10-17)
 
 ### Features
