@@ -57,7 +57,7 @@ export function SessionDetail({
   onClosed?: () => void;
 }) {
   const {
-    session: fetchedSession,
+    session,
     entries,
     busyKey,
     loadError,
@@ -72,7 +72,10 @@ export function SessionDetail({
     approvePlanDecision,
     answerQuestion,
     clearActionError,
-  } = useSessionDetail(sessionId);
+  } = useSessionDetail(
+    sessionId,
+    sessions.find((t) => t.id === sessionId),
+  );
   const [message, setMessage] = useState("");
   const [autoOpen, setAutoOpen] = useState(false);
   // The CHANGES row a human clicked, or null. See FileDiffModal.
@@ -143,12 +146,9 @@ export function SessionDetail({
   }, [feedAtBottom]);
 
   if (loadError) return <div className="m-4 border border-pink-line bg-pink-bg px-4 py-3 text-base text-error">{loadError}</div>;
-  if (!fetchedSession) return <div className="p-4 text-base text-dim">Loading…</div>;
-
-  // `sessions` is App.tsx's already-polled (5s) list — preferring it keeps
-  // pod_phase/status live without a second poll loop just for this page; falls
-  // back to the one-shot fetch for the instant before the next tick includes it.
-  const session = sessions.find((t) => t.id === sessionId) ?? fetchedSession;
+  // `session` is App's polled list copy when the list has it, and
+  // useSessionDetail's own poll when it does not — live either way.
+  if (!session) return <div className="p-4 text-base text-dim">Loading…</div>;
 
   const badge = sessionBadge(session);
   // staleTag/heartbeat used to render "last beat 4m ago", reddened past the
@@ -233,6 +233,7 @@ export function SessionDetail({
             className="absolute inset-0 overflow-y-auto px-4.5 py-4.5 flex flex-col gap-4"
           >
             <SessionFeed
+              hasPendingMessage={pendingMessage !== null}
               entries={entries}
               visibility={visibility}
               density={density}

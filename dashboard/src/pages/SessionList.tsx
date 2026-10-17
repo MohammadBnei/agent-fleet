@@ -721,6 +721,7 @@ export function SessionList({
   onDelete,
   onOpenLogs,
   reload,
+  loaded = true,
 }: {
   sessions: Session[];
   summaries: Map<string, ListSummary>;
@@ -730,6 +731,8 @@ export function SessionList({
   onDelete: (id: string) => void;
   onOpenLogs: (id: string) => void;
   reload: () => void;
+  // False until App's first poll answers: "No sessions." is a claim about the fleet.
+  loaded?: boolean;
 }) {
   // Every bucket bucketSessions returns must be rendered somewhere below.
   //
@@ -782,7 +785,7 @@ export function SessionList({
   const pick = (id: string) => (shiftKey: boolean) => toggle(id, shiftKey, orderedIds);
 
   if (sessions.length === 0) {
-    return <div className="p-5 text-base text-dim">No sessions.</div>;
+    return <div className="p-5 text-base text-dim">{loaded ? "No sessions." : "Loading…"}</div>;
   }
 
   return (

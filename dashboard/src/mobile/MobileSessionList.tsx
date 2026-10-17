@@ -313,6 +313,7 @@ export function MobileSessionList({
   onDelete,
   onOpenLogs,
   reload,
+  loaded = true,
 }: {
   sessions: Session[];
   summaries: Map<string, ListSummary>;
@@ -322,6 +323,7 @@ export function MobileSessionList({
   onDelete: (id: string) => void;
   onOpenLogs: (id: string) => void;
   reload: () => void;
+  loaded?: boolean;
 }) {
   // "ask me later" is per-session and deliberately not persisted: the agent is
   // still blocked, so the card must come back on the next visit.
@@ -374,7 +376,7 @@ export function MobileSessionList({
   return (
     <div className="flex-1 min-h-0 flex flex-col">
       <div className="flex-1 min-h-0 overflow-y-auto px-3.5 pt-4 pb-5 flex flex-col gap-3.5">
-        {sessions.length === 0 && <div className="text-base text-dim">No sessions.</div>}
+        {sessions.length === 0 && <div className="text-base text-dim">{loaded ? "No sessions." : "Loading…"}</div>}
 
         {
           visibleNeedsYou.map((t) => (

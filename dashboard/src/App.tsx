@@ -61,15 +61,20 @@ const NAV: readonly { value: View; label: string }[] = [
   { value: "observability", label: "observability" },
 ];
 
-// Mobile's bottom bar has less room; "trees" is the console mockup's own label.
+// Mobile's bottom bar has less room for full words.
 const MOBILE_NAV: readonly { value: View; label: string }[] = [
   { value: "sessions", label: "sessions" },
   { value: "schedules", label: "sched" },
   { value: "files", label: "files" },
-  // Same shortening rule the "trees" label above follows — the bottom bar
-  // now carries five cells and has no room for the full word.
   { value: "observability", label: "obs" },
 ];
+
+// Proposals are a human gate like any pending decision, but they live on the
+// schedules view, and nothing outside it said they existed — 24 alerts sat
+// waiting for approval behind a tab whose name promises cron jobs.
+function withProposalCount(nav: readonly { value: View; label: string }[], count: number) {
+  return count === 0 ? nav : nav.map((o) => (o.value === "schedules" ? { ...o, label: `${o.label} · ${count}` } : o));
+}
 
 // Plain polling, not a stream — a second live feed just for the list is
 // unjustified scope (docs/adr/0014); the detail view's StreamTranscript RPC is
@@ -94,6 +99,7 @@ export default function App() {
   const [view, setView] = useState<View>(readViewFromUrl);
   const [selectedId, setSelectedId] = useState<string | null>(readSessionIdFromUrl);
   const [sessions, setSessions] = useState<Session[]>([]);
+  const [sessionsLoaded, setSessionsLoaded] = useState(false);
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [sessionsError, setSessionsError] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
@@ -151,6 +157,7 @@ export default function App() {
       .then((res) => {
         pollFailures.current = 0;
         setSessions(res.sessions);
+        setSessionsLoaded(true);
       })
       .catch((err: Error) => {
         if (++pollFailures.current >= 2) setSessionsError(err.message);
@@ -389,6 +396,7 @@ export default function App() {
     onDelete: deleteSession,
     onOpenLogs: setLogSessionId,
     reload: loadSessions,
+    loaded: sessionsLoaded,
   };
 
   return (
@@ -419,7 +427,7 @@ export default function App() {
           {/* No repo count: it was the distinct repos among the loaded (and
               search-filtered) sessions, shown beside a picker listing more. */}
           <span className="text-xs text-dim2 whitespace-nowrap">ukubi-cluster</span>
-          <Segmented value={view} options={NAV} onChange={selectView} className="ml-1" />
+          <Segmented value={view} options={withProposalCount(NAV, proposals.length)} onChange={selectView} className="ml-1" />
 
           {(counts.waiting > 0 || needsYouOnly) && (
             <div className="flex items-center gap-2 ml-auto">
@@ -600,7 +608,7 @@ export default function App() {
           isDesktop ? (
             <SessionDetail sessionId={selectedId} sessions={sessions} onClosed={clearSelection} />
           ) : (
-            <MobileSessionDetail sessionId={selectedId} onBack={clearSelection} onDelete={() => deleteSession(selectedId)} />
+            <MobileSessionDetail sessionId={selectedId} sessions={sessions} onBack={clearSelection} onDelete={() => deleteSession(selectedId)} />
           )
         ) : isDesktop ? (
           <SessionList {...shared} />
@@ -612,7 +620,7 @@ export default function App() {
       {!isDesktop && (
         <Segmented
           value={view}
-          options={MOBILE_NAV}
+          options={withProposalCount(MOBILE_NAV, proposals.length)}
           onChange={selectView}
           grow
           size="lg"

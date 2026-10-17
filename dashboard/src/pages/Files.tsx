@@ -220,6 +220,7 @@ export function Files() {
         </div>
       </button>
 
+      {loading && files.length === 0 && <div className="text-sm text-dim">Loading…</div>}
       {!loading && files.length === 0 && !error && (
         <div className="text-sm text-dim2">No files in the shared space yet.</div>
       )}

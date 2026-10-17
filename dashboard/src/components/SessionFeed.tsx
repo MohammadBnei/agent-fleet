@@ -248,7 +248,12 @@ export function SessionFeed({
   onApprovePlan,
   onAnswer,
   onPlanFeedback,
+  // A message the human just sent is on screen (the detail view's optimistic
+  // echo) but not yet an entry. "Nothing in this session yet." directly above
+  // it read as the send having been lost.
+  hasPendingMessage = false,
 }: {
+  hasPendingMessage?: boolean;
   entries: TranscriptEntry[];
   visibility: FeedVisibility;
   density: Density;
@@ -681,6 +686,7 @@ export function SessionFeed({
   flush();
 
   if (out.length === 0) {
+    if (hasPendingMessage) return null;
     return (
       <div className="text-sm text-dim2">
         {density === "everything"

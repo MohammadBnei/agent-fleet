@@ -114,7 +114,7 @@ func (s *Server) GetFleetTopology(ctx context.Context, _ *connect.Request[agentf
 		Id:     "provisioner",
 		Type:   "provisioner",
 		Status: "healthy",
-		Label:  "pods · worktrees",
+		Label:  "pods · session volumes",
 	}
 
 	nodes := []*agentfleetv1.CellNode{
@@ -122,7 +122,7 @@ func (s *Server) GetFleetTopology(ctx context.Context, _ *connect.Request[agentf
 			Id:      "core",
 			Type:    "core",
 			Status:  "healthy", // it answered this RPC
-			Label:   "dispatch · transcript · dashboard",
+			Label:   "sessions · transcript · dashboard",
 			Version: s.version,
 			Metrics: map[string]float64{
 				"live_pods":         float64(len(live)),

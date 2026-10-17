@@ -84,17 +84,29 @@ function AlertPayload({ payload, body }: { payload: string; body: string }) {
       {annotations.map(([k, v]) => (
         <div key={k} className="text-xs text-text2 whitespace-pre-wrap break-words">
           {k !== "summary" && <span className="text-dim2">{k}: </span>}
-          {v}
+          {/^https?:\/\//.test(v) ? (
+            <a href={v} target="_blank" rel="noreferrer" className="text-primary hover:underline break-all">
+              {v}
+            </a>
+          ) : (
+            v
+          )}
         </div>
       ))}
+      {/* Collapsed: a dozen label chips per alert made 24 proposals a 15,000-
+          character page, with the schedules themselves buried under it. The
+          sentence above is what a human decides on; the labels are evidence. */}
       {labels.length > 0 && (
-        <div className="flex flex-wrap gap-1">
-          {labels.map(([k, v]) => (
-            <span key={k} className="text-2xs text-dim2 border border-line px-1.5 py-0.5 break-all">
-              {k}={v}
-            </span>
-          ))}
-        </div>
+        <details className="text-2xs text-dim2">
+          <summary className="cursor-pointer py-0.5">{labels.length} labels</summary>
+          <div className="flex flex-wrap gap-1 mt-1">
+            {labels.map(([k, v]) => (
+              <span key={k} className="border border-line px-1.5 py-0.5 break-all">
+                {k}={v}
+              </span>
+            ))}
+          </div>
+        </details>
       )}
       {/* typeof-guarded, not just cast: `startsAt` and `generatorURL` are not
           constrained anywhere on the way in — the Go decode only types
@@ -103,7 +115,7 @@ function AlertPayload({ payload, body }: { payload: string; body: string }) {
           takes the whole tree down along with the dismiss button that would
           have cleared the bad row. */}
       <div className="flex flex-wrap items-center gap-2.5 text-2xs text-dim2">
-        {typeof alert.startsAt === "string" && <span>firing since {alert.startsAt}</span>}
+        {typeof alert.startsAt === "string" && <span title={alert.startsAt}>firing since {relative(alert.startsAt)}</span>}
         {typeof alert.generatorURL === "string" && (
           <a href={alert.generatorURL} target="_blank" rel="noreferrer" className="text-primary hover:underline break-all">
             source query ▸
@@ -141,6 +153,14 @@ function relative(iso: string): string {
   const mins = Math.round(abs / 60_000);
   const unit = mins < 60 ? `${mins}m` : mins < 1440 ? `${Math.round(mins / 60)}h` : `${Math.round(mins / 1440)}d`;
   return ms >= 0 ? `in ${unit}` : `${unit} ago`;
+}
+
+// The scheduler records a successful run as "proposal <uuid>". The id is
+// useful to nobody reading the table (it stays in the tooltip); what the cell
+// means is that the run produced a proposal.
+function lastStatusLabel(status: string): string {
+  if (!status) return "no status";
+  return status.startsWith("proposal ") ? "proposed" : status;
 }
 
 // Three cadences, so three branches — humanInterval alone would render a cron
@@ -506,14 +526,12 @@ export function Schedules({
           </div>
           <div className="flex flex-col gap-2.5 mt-2.5">
             {proposals.map((p) => (
-              <div key={p.id} className="flex flex-col gap-1">
+              <div key={p.id} className="flex flex-col gap-1 border-t border-line pt-2.5 first:border-t-0 first:pt-0">
                 <div className="flex items-center gap-2.5 flex-wrap">
-                  {/* break-words, not truncate: at phone width the buttons in
-                      this row wrap and leave the title ~90px, which turned
-                      "infra-bootstrap KubePodCrashLooping" into "infra-b…" —
-                      the alert's name, clipped, on the card where the alert is
-                      supposed to be readable. */}
-                  <span className="text-sm min-w-0 flex-1 break-words">
+                  {/* Its own line on a phone: at 390px the buttons beside it
+                      left the title a ~90px column, and break-words then
+                      broke the alert's name mid-word, one fragment per line. */}
+                  <span className="text-sm min-w-0 basis-full sm:basis-0 sm:flex-1 break-words">
                     <span className="text-dim2">{p.repo}</span> {p.title}
                   </span>
                   <span className="flex-none text-xs text-dim2 border border-line px-1.5">{p.source}</span>
@@ -593,7 +611,7 @@ export function Schedules({
                         className={`text-xs mt-0.5 truncate ${a.lastStatus.startsWith("error") ? "text-warning" : "text-dim2"}`}
                         title={a.lastStatus}
                       >
-                        {a.lastStatus || "no status"}
+                        {lastStatusLabel(a.lastStatus)}
                       </div>
                     </>
                   ) : (
@@ -630,7 +648,7 @@ export function Schedules({
                 <span className="text-dim2">{a.prompt.split("\n")[0]}</span>
               </div>
               <div className={`text-xs mt-1.5 ${a.lastStatus.startsWith("error") ? "text-warning" : "text-text2"}`}>
-                {a.lastRunAt ? `last: ${relative(a.lastRunAt)} · ${a.lastStatus || "no status"}` : "never run"}
+                {a.lastRunAt ? `last: ${relative(a.lastRunAt)} · ${lastStatusLabel(a.lastStatus)}` : "never run"}
               </div>
               <div className="flex gap-2 mt-2.5 flex-wrap">
                 {scheduleActions(a, act, () => setEditing(a), () => setPendingDelete(a), busy)}

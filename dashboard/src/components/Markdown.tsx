@@ -86,7 +86,9 @@ function useMarkdownComponents(): Components {
             </pre>
           );
         }
-        return <code className="bg-base-content/10 rounded px-1.5 py-0.5 font-mono text-xs">{children}</code>;
+        // wrap-anywhere: a long path in backticks is one unbreakable word, and
+        // on a phone it pushed the whole feed into horizontal scroll.
+        return <code className="bg-base-content/10 rounded px-1.5 py-0.5 font-mono text-xs wrap-anywhere">{children}</code>;
       },
     }),
     [], // Empty deps - components object is stable
