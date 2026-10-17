@@ -1,6 +1,8 @@
 import { SelectBox } from "./BatchActions";
 import { ActionButton } from "./ActionButton";
 import { useBusyAction } from "../useBusyAction";
+import { client } from "../connectClient";
+import type { Session } from "../gen/agentfleet/v1/core_pb";
 
 // A row's own one-click action (interrupt / warm / archive). These were six
 // `void client.x().then(reload)` calls: no spinner, and a rejection went
@@ -29,6 +31,49 @@ export function RowAction({
     >
       {error ? `${label} failed` : label}
     </ActionButton>
+  );
+}
+
+// A STUCK row's actions, on both form factors: interrupt a live turn, or warm
+// a session whose pod is gone — never a swept one, whose working directory the
+// retention GC took, so a warm would resume nothing — plus its log. The two
+// lists each wrote this out; only the button size differs.
+export function StuckActions({
+  session,
+  live,
+  reload,
+  onOpenLogs,
+  buttonClass,
+}: {
+  session: Session;
+  live: boolean;
+  reload: () => void;
+  onOpenLogs: () => void;
+  buttonClass: string;
+}) {
+  return (
+    <>
+      {live ? (
+        <RowAction
+          label="interrupt"
+          action={() => client.interrupt({ sessionId: session.id })}
+          reload={reload}
+          className={buttonClass}
+        />
+      ) : (
+        session.sweptAt === undefined && (
+          <RowAction
+            label="warm"
+            action={() => client.warmSession({ sessionId: session.id })}
+            reload={reload}
+            className={buttonClass}
+          />
+        )
+      )}
+      <button type="button" onClick={onOpenLogs} className={buttonClass}>
+        read log
+      </button>
+    </>
   );
 }
 
