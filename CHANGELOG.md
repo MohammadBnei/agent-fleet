@@ -1,5 +1,11 @@
 # Changelog
 
+# [4.15.0](https://github.com/MohammadBnei/agent-fleet/compare/4.14.8...4.15.0) (2026-10-17)
+
+### Features
+
+* Opus 5.5 default, auto launch mode, dependency upgrades ([#252](https://github.com/MohammadBnei/agent-fleet/issues/252)) ([198acd3](https://github.com/MohammadBnei/agent-fleet/commit/198acd3f81d55badaa940bfbb4665d9b4f80fab9))
+
 ## [4.14.8](https://github.com/MohammadBnei/agent-fleet/compare/4.14.7...4.14.8) (2026-10-03)
 
 ### Bug Fixes
