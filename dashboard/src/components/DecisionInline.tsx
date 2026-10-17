@@ -383,8 +383,8 @@ export function DecisionInline({
     );
   }
 
-  // awaiting_human is set by core the moment a decision is appended, so this is
-  // the brief window before this session's transcript fetch has caught up — or a
+  // Core counts a pending decision the moment it is appended, so this is the
+  // brief window before this session's transcript fetch has caught up — or a
   // decision shape the list can't render. Either way: say so. The card's title
   // is the way into the session, here as on every other row — a second "open
   // session" control under every decision was the same destination said twice.

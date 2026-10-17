@@ -32,6 +32,7 @@ import { ToolCallLine } from "./ToolCallLine";
 import { PermissionCard } from "./PermissionCard";
 import { PlanCard } from "./PlanCard";
 import { QuestionCard } from "./QuestionCard";
+import { parseToolCallSummary, shortTool } from "../transcript";
 
 // The feed, shared by both detail views.
 //
@@ -51,18 +52,6 @@ import { QuestionCard } from "./QuestionCard";
 // screen exists.
 
 const CROSS_SESSION = /^\[from session ([^\]]+)\]\s*/;
-
-import { parseToolCallSummary, shortTool } from "../transcript";
-
-function QuietRule({ label, detail }: { label: string; detail?: string | null }) {
-  return (
-    <div className="flex items-center gap-2.5">
-      <span className="text-2xs sm:text-xs text-dim2 whitespace-nowrap">{label}</span>
-      <span className="flex-1 h-px bg-line3" />
-      {detail && <span className="text-2xs sm:text-xs text-dim2 text-right">{detail}</span>}
-    </div>
-  );
-}
 
 function AlarmBar({ text, detail, compact }: { text: React.ReactNode; detail?: string | null; compact?: boolean }) {
   return (
@@ -707,4 +696,3 @@ export function SessionFeed({
   return <>{out}</>;
 }
 
-export { QuietRule };

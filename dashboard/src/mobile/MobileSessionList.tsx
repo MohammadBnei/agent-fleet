@@ -305,17 +305,14 @@ export function MobileSessionList({
   // "ask me later" is per-session and deliberately not persisted: the agent is
   // still blocked, so the card must come back on the next visit.
   const [deferred, setDeferred] = useState<Set<string>>(new Set());
-  // The quiet tail's two controls. Desktop's ControlBar has four; the repo
-  // select and the status chips do not fit a phone, and the header's search box
-  // already filters server-side, so they are deliberately not ported. The
-  // comparator and the TERMINAL set are the desktop ones — those are the parts
-  // that would drift.
+  // The quiet tail's controls — the same QuietControls, comparator and
+  // TERMINAL set as desktop, so the two lists cannot drift.
   const [sort, setSort] = useState<SortKey>("date");
   const { set: hiddenRepos, toggle: toggleRepo } = useToggleSet();
   // Which card's "⋯" is open. Same shape and reasoning as SessionList's.
   const [actionsFor, setActionsFor] = useState<Session | null>(null);
   // Same model as desktop: a set of statuses to hide, seeded to the terminal
-  // ones. See StatusFilter.
+  // ones.
   const { set: hidden, toggle: toggleStatus } = useToggleSet(TERMINAL);
 
   // Same destructure as SessionList's, for the same reason: a bucket computed and
@@ -324,10 +321,8 @@ export function MobileSessionList({
   // neither form factor.
   const { needsYou, stuck, working, finished, quiet, archived, swept } = bucketSessions(sessions, needsYouIds, answerableIds);
   const visibleNeedsYou = needsYou.filter((t) => !deferred.has(t.id));
-  // Same derivation and same axes as the desktop ControlBar, so the two lists
-  // cannot disagree about what "filtered by repo" means. Status chips are still
-  // left off — four more toggles do not fit beside these two on a phone, and the
-  // header search already narrows by text.
+  // Same derivation and same axes as desktop, so the two lists cannot disagree
+  // about what "filtered by repo" means.
   const repos = useMemo(() => [...new Set(sessions.map((t) => t.repo))].sort(), [sessions]);
   // From the unfiltered tail on purpose: derived from the visible rows, a status
   // would vanish from the menu the moment you hid it, which is the same
@@ -386,7 +381,7 @@ export function MobileSessionList({
 
         {stuck.length > 0 && (
           <>
-            <SectionHeading title="STUCK" tone="pink" note="burning time, asking nobody" className="mt-0.5" />
+            <SectionHeading title="STUCK" tone="orange" note="burning time, asking nobody" className="mt-0.5" />
             {stuck.map((t) => (
               <StuckCard
                 key={t.id}

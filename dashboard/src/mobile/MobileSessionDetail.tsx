@@ -32,11 +32,9 @@ import { Composer } from "../components/Composer";
 
 // The phone session screen from Agent Fleet Console Mobile.dc.html.
 //
-// The structural difference from desktop is the **decision dock**: when the
-// agent is waiting on a human, its request pins to the bottom above the
-// composer instead of sitting inline in the feed. On a phone an inline card
-// scrolls away, and this is the surface most likely used to unblock a session
-// away from a desk (docs/dashboard-spec.md §8 items 3 and 5).
+// Same data and the same DecisionDock as the desktop view (adr/0043); what
+// differs is layout — a title sheet carrying the density control, and the
+// panels in a bottom sheet instead of a right column.
 
 const DENSITY: readonly { value: Density; label: string; title: string }[] = [
   { value: "everything", label: "all", title: "everything" },

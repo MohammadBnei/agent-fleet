@@ -27,8 +27,7 @@ export function Modal({ open, onClose, children, boxClassName = "" }: ModalProps
       // bubble, but React's synthetic system replays it up the tree anyway —
       // so a Modal rendered inside another open Modal closed both at once,
       // and dismissing an inner drawer dropped the human two levels out.
-      // Confirmed in Playwright on the mobile panels sheet, whose bottom
-      // sheet contains the E2E Manage drawer.
+      // Confirmed in Playwright on the mobile panels sheet.
       //
       // ManageReposModal worked around this by rendering its confirm dialog
       // as a sibling of the modal that triggers it; with the guard here that

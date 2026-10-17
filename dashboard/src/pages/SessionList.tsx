@@ -46,11 +46,14 @@ export function SectionHeading({
   className = "",
 }: {
   title: string;
-  tone?: "pink" | "green" | "dim";
+  tone?: "pink" | "orange" | "green" | "dim";
   note?: string;
   className?: string;
 }) {
-  const color = tone === "pink" ? "text-error" : tone === "green" ? "text-success" : "text-dim2";
+  // orange: STUCK. Its rows are warning-orange, and a pink heading over them
+  // borrowed the NEEDS YOU colour for a section a human cannot answer.
+  const color =
+    tone === "pink" ? "text-error" : tone === "orange" ? "text-warning" : tone === "green" ? "text-success" : "text-dim2";
   return (
     <div className={`flex items-center gap-2.5 ${className}`}>
       <span className={`text-xs tracking-[0.14em] ${color} whitespace-nowrap`}>{title}</span>
@@ -522,7 +525,7 @@ export function SessionList({
 
       {finished.length > 0 && (
         <>
-          <SectionHeading title="FINISHED WHILE YOU WERE AWAY" tone="green" className="mt-4" />
+          <SectionHeading title="DONE WHILE AWAY" tone="green" className="mt-4" />
           {finished.map((t) => (
             <FinishedRow
               key={t.id}
@@ -541,7 +544,7 @@ export function SessionList({
 
       {stuck.length > 0 && (
         <>
-          <SectionHeading title="STUCK" tone="pink" note="burning time, asking nobody" className="mt-4" />
+          <SectionHeading title="STUCK" tone="orange" note="burning time, asking nobody" className="mt-4" />
           {stuck.map((t) => (
             <StuckRow
               key={t.id}

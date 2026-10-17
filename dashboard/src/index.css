@@ -102,7 +102,6 @@
   --dim: #9a94a9; /* 6.04 */
   --dim2: #89839a; /* 4.63 */
   --code: #100f16;
-  --acc-hi: #d3c3ff;
   --acc-line: #3d3550;
   --pink-line: #6b3c50;
   --pink-bg: #1a1520;
@@ -129,7 +128,6 @@
   --dim: #575261; /* 6.00 */
   --dim2: #615d6c; /* 4.61 */
   --code: #f3f0ea;
-  --acc-hi: #5540b5;
   --acc-line: #c8bcee;
   --pink-line: #e3b6c4;
   --pink-bg: #fdf2f5;
@@ -201,7 +199,6 @@
   --color-dim: var(--dim);
   --color-dim2: var(--dim2);
   --color-code: var(--code);
-  --color-acc-hi: var(--acc-hi);
   --color-acc-line: var(--acc-line);
   --color-pink-line: var(--pink-line);
   --color-pink-bg: var(--pink-bg);
@@ -239,12 +236,10 @@
     color: var(--color-base-content);
   }
   /* The mockups are mono throughout — headings are weight, not a second
-     family. `.font-display` survives as an alias so no component that used it
-     needs editing. */
+     family. */
   h1,
   h2,
-  h3,
-  .font-display {
+  h3 {
     font-weight: 600;
     letter-spacing: -0.01em;
   }
