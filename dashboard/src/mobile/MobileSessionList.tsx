@@ -12,6 +12,8 @@ import {
   compareSessions,
   restStatus,
   TERMINAL,
+  activityLabel,
+  AutoBadge,
   type SortKey,
 } from "../pages/SessionList";
 import type { ListSummary } from "../transcript";
@@ -192,27 +194,18 @@ function WorkingCard({
         <button type="button" onClick={onSelect} className="flex items-center gap-2 min-w-0 flex-1 text-left">
           <span className={`text-sm min-w-0 truncate ${live ? "" : "text-dim"}`}>{sessionLabel(session)}</span>
         </button>
-        {session.permissionMode === "auto" ? (
-          <span className="text-2xs text-warning border border-orange-line px-1.5 py-px ml-auto flex-none">
-            auto
+        {session.permissionMode === "auto" && <AutoBadge className="ml-auto" />}
+        {todos.length > 0 && (
+          <span className={`text-xs text-dim2 flex-none ${session.permissionMode === "auto" ? "" : "ml-auto"}`}>
+            {todoProgress(todos)}
           </span>
-        ) : (
-          todos.length > 0 && <span className="text-xs text-dim2 ml-auto flex-none">{todoProgress(todos)}</span>
         )}
         <RowActionsButton onOpen={onActions} inline />
       </div>
       <div className="text-xs text-dim mt-1.5 truncate">
         {provisioning
           ? `booting${session.podMessage ? ` · ${session.podMessage}` : ""}`
-          : inFlight
-            ? `⟳ ${inFlight.tool.toLowerCase()} · ${inFlight.summary}${
-                inFlight.elapsedSeconds !== null ? ` · ${inFlight.elapsedSeconds}s` : ""
-              }`
-            : stale
-              ? stale.label.toLowerCase()
-              : session.liveState === "working"
-                ? "working"
-                : "idle"}
+          : activityLabel(session, inFlight)}
       </div>
       {provisioning ? (
         <div className="h-[3px] bar-provisioning mt-1.5" />

@@ -52,14 +52,8 @@ import { QuestionCard } from "./QuestionCard";
 
 const CROSS_SESSION = /^\[from session ([^\]]+)\]\s*/;
 
-// `mcp__agent-fleet-sidecar__set_session_meta` → `set_session_meta`. The
-// server prefix is the same for every MCP tool in a session, so it is the one
-// part of the name that distinguishes nothing. Full name stays in the tooltip.
-export function shortTool(tool: string | undefined): string {
-  if (!tool) return "tool";
-  const idx = tool.lastIndexOf("__");
-  return idx === -1 ? tool : tool.slice(idx + 2);
-}
+import { shortTool } from "../transcript";
+export { shortTool };
 
 function QuietRule({ label, detail }: { label: string; detail?: string | null }) {
   return (

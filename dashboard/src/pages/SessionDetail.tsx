@@ -18,8 +18,7 @@ import { useAtBottom } from "../useAtBottom";
 import { useLocalStorageState } from "../useLocalStorageState";
 import { ErrorModal } from "../components/ErrorModal";
 import { Markdown } from "../components/Markdown";
-import { ConfirmModal } from "../components/ConfirmModal";
-import { AUTO_MODE_WARNING } from "../approvePlan";
+import { AutoModeConfirm } from "../components/AutoModeConfirm";
 import { Segmented } from "../components/Segmented";
 import { DecisionDock } from "../components/DecisionDock";
 import { SessionFeed } from "../components/SessionFeed";
@@ -287,11 +286,7 @@ export function SessionDetail({
           <ErrorModal message={actionError} onClose={clearActionError} />
           <FileDiffModal sessionId={sessionId} path={diffPath} entries={entries} onClose={() => setDiffPath(null)} />
           <AgentDetailModal run={agentDetail} onClose={() => setAgentDetail(null)} />
-          <ConfirmModal
-            title="Switch to auto mode?"
-            message={AUTO_MODE_WARNING}
-            confirmLabel="switch to auto"
-            danger={false}
+          <AutoModeConfirm
             open={autoOpen}
             onCancel={() => setAutoOpen(false)}
             onConfirm={() => {

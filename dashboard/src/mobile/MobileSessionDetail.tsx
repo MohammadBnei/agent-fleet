@@ -18,8 +18,7 @@ import { sessionBadge } from "../pages/SessionList";
 import { ActionButton } from "../components/ActionButton";
 import { DecisionDock } from "../components/DecisionDock";
 import { ErrorModal } from "../components/ErrorModal";
-import { ConfirmModal } from "../components/ConfirmModal";
-import { AUTO_MODE_WARNING } from "../approvePlan";
+import { AutoModeConfirm } from "../components/AutoModeConfirm";
 import { Modal } from "../components/Modal";
 import { Segmented } from "../components/Segmented";
 import { SessionFeed } from "../components/SessionFeed";
@@ -269,11 +268,7 @@ export function MobileSessionDetail({
           (setPanelsOpen(false) below) so there is only ever one open. */}
       <FileDiffModal sessionId={sessionId} path={diffPath} entries={entries} onClose={() => setDiffPath(null)} />
       <AgentDetailModal run={agentDetail} onClose={() => setAgentDetail(null)} />
-      <ConfirmModal
-        title="Switch to auto mode?"
-        message={AUTO_MODE_WARNING}
-        confirmLabel="switch to auto"
-        danger={false}
+      <AutoModeConfirm
         open={autoOpen}
         onCancel={() => setAutoOpen(false)}
         onConfirm={() => {

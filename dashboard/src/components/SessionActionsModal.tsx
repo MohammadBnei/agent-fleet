@@ -3,10 +3,9 @@ import { useBusyAction } from "../useBusyAction";
 import type { Session } from "../gen/agentfleet/v1/core_pb";
 import { client } from "../connectClient";
 import { Modal } from "./Modal";
-import { ConfirmModal } from "./ConfirmModal";
 import { InlineError } from "./InlineError";
 import { ActionsMenu } from "./ActionsMenu";
-import { AUTO_MODE_WARNING } from "../approvePlan";
+import { AutoModeConfirm } from "./AutoModeConfirm";
 import { sessionLabel } from "../sessionLabel";
 
 // Interrupt / Kill / Warm / Archive / Mode, from a list row.
@@ -104,11 +103,7 @@ export function SessionActionsModal({
           through a confirm rather than firing off the menu — the same routing
           SessionDetail gives it. Rendered outside so the nested-<dialog> close
           replay never applies, which is the trap Modal.tsx:36 documents. */}
-      <ConfirmModal
-        title="Switch to auto mode?"
-        message={AUTO_MODE_WARNING}
-        confirmLabel="switch to auto"
-        danger={false}
+      <AutoModeConfirm
         open={autoOpen}
         onCancel={() => setAutoOpen(false)}
         onConfirm={() => {

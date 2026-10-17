@@ -1,9 +1,8 @@
 import { useRef, useState } from "react";
 import { Markdown } from "./Markdown";
 import { ActionButton } from "./ActionButton";
-import { ConfirmModal } from "./ConfirmModal";
+import { AutoModeConfirm } from "./AutoModeConfirm";
 import { PlanModal } from "./PlanModal";
-import { AUTO_MODE_WARNING } from "../approvePlan";
 
 type Annotation = { quote: string; comment: string };
 type SelectionPopover = { quote: string; x: number; y: number; editing: boolean };
@@ -305,12 +304,9 @@ export function PlanCard({
         }}
         onClose={() => setReaderOpen(false)}
       />
-      <ConfirmModal
+      <AutoModeConfirm
         open={autoConfirmOpen}
-        title="Approve and switch to auto mode?"
-        message={AUTO_MODE_WARNING}
-        confirmLabel="approve + auto"
-        danger={false}
+        approving
         onConfirm={() => {
           setAutoConfirmOpen(false);
           onApprove("auto");

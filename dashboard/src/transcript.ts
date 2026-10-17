@@ -702,10 +702,24 @@ export function backgroundTasks(entries: TranscriptEntry[]): BackgroundTask[] {
 // Best-effort one-line preview for a collapsed tool-call header — common
 // fields across the built-in tools (Read/Write/Edit/Bash/Grep/Glob), falling
 // back to compact JSON for anything else rather than showing nothing.
+// `mcp__agent-fleet-sidecar__set_session_meta` → `set_session_meta`. The
+// server prefix is the same for every MCP tool in a session, so it is the one
+// part of the name that distinguishes nothing. Full name stays in the tooltip.
+export function shortTool(tool: string | undefined): string {
+  if (!tool) return "tool";
+  const idx = tool.lastIndexOf("__");
+  return idx === -1 ? tool : tool.slice(idx + 2);
+}
+
 export function summarizeToolInput(input: unknown): string {
   if (input && typeof input === "object") {
     const obj = input as Record<string, unknown>;
-    for (const key of ["file_path", "command", "pattern", "path", "description", "url", "plan"]) {
+    // A question batch summarises as its first question. Falling through to
+    // JSON.stringify put `{"questions":[{"question":…` on the list's working
+    // row, squeezing the session's own title down to an ellipsis.
+    const first = Array.isArray(obj.questions) ? (obj.questions[0] as { question?: unknown } | undefined) : undefined;
+    if (typeof first?.question === "string") return first.question;
+    for (const key of ["file_path", "command", "pattern", "path", "description", "url", "plan", "query", "prompt"]) {
       const value = obj[key];
       // First line only — matters for "plan" (multi-line markdown), harmless
       // for the single-line fields. Without this, ToolCallItem's shortValue
@@ -839,7 +853,7 @@ export function inFlightTool(entries: TranscriptEntry[]): InFlightTool | null {
       const started = new Date(p.call.createdAt).getTime();
       if (!Number.isNaN(started)) elapsedSeconds = Math.max(0, Math.round((Date.now() - started) / 1000));
     }
-    return { tool, summary: summarizeToolInput(p.callInfo.input), elapsedSeconds };
+    return { tool: shortTool(tool), summary: summarizeToolInput(p.callInfo.input), elapsedSeconds };
   }
   return null;
 }

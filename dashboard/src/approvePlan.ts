@@ -1,10 +1,10 @@
 import { client } from "./connectClient";
 
 // What switching a session to `auto` actually grants (docs/adr/0053). One
-// string because three surfaces confirm it — the plan card's "approve + auto",
-// the actions menu's mode picker, and the new-session dialog's launch-mode
-// picker — and a stale copy on any of them would be a human agreeing to the
-// wrong thing.
+// string, read by AutoModeConfirm (every switch and every plan approval into
+// auto) and the new-session dialog's launch-mode hint — a stale copy on any of
+// them is a human agreeing to the wrong thing, which is exactly what the list's
+// plan approval did while it carried its own.
 //
 // It used to say "only rm and sudo still come to you", which is what the ADR
 // summary says and not what the code does. worker/src/session.ts's
