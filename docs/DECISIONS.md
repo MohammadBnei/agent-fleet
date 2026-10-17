@@ -217,7 +217,9 @@ Any doc, code, comment, or memory that contradicts this file or an
   resolves **deny → ask → allow** and returns on the first match, so a
   user-scope `ask` outranks a project-scope `allow`. `ask` rather than `deny`
   because a human must still be able to approve a `git push` — every result
-  is a PR. There is no specificity tiebreak, so a broad `ask` prefix swallows
+  is a PR. (Since `adr/0061` sessions launch in `auto`, where the worker
+  answers this ask itself; a human approves the push only in another mode.)
+  There is no specificity tiebreak, so a broad `ask` prefix swallows
   every narrower `allow` beneath it. See
   [`adr/0049`](adr/0049-project-setting-source.md).
 - **`auto` is the mode plan approval switches to**, and every mode switch is a

@@ -33,7 +33,7 @@ is stale → check code.**
 | Layer | Tool |
 |---|---|
 | Runtime (`worker/` only) | Bun (`oven/bun:1-slim`), TS, no build step — Bun runs `.ts` direct. Only JS runtime left; only process hosting Agent SDK |
-| Worker agent runtime | `@anthropic-ai/claude-agent-sdk` `query()`, **streaming-input mode** (not `claude -p`, not plain-string). One session spans plan+impl. Starts `"default"` mode (CLI parity), model `claude-opus-4-8` (`adr/0021`/`0029`) |
+| Worker agent runtime | `@anthropic-ai/claude-agent-sdk` `query()`, **streaming-input mode** (not `claude -p`, not plain-string). One session spans plan+impl. Starts `"auto"` mode, model `claude-opus-5-5` (`adr/0021`/`0029`/`0061`) |
 | Runtime (`core/`, `provisioner/`, `sidecar/`) | Go, `go.work`, `golangci-lint` |
 | Auth | **authentik OIDC terminated inside `core`** (`adr/0056`) — `go-oidc`/`oauth2`, state+nonce+PKCE, `__Host-` signed cookie, required `platform-admins` claim, fail-closed startup. NOT Traefik forwardAuth: that gates ingress, can't see pod-network caller → `#200`. `CoreService` (9090) authenticates separately via session's `lease_id` (`adr/0057`). e2e previews DO use forwardAuth — no fleet code in their path |
 | Discord | `discordgo` (Go, `core/`) — **outbound only**. Posts when session needs human, links dashboard. Slash commands/threads/replies gone (`adr/0048`): Discord has no authz model → anyone in channel could approve a Bash |
@@ -93,7 +93,7 @@ Condensed. Full detail + rationale in `agent-fleet/docs/DECISIONS.md` + `docs/ad
   MCP crosses a pod boundary; provisioner speaks no MCP. gRPC remains the only
   inter-component protocol.
 - **No prospective Write/Edit gate — `canUseTool` reproduces the SDK's own live prompt**
-  (`adr/0029`, superseding `adr/0021`). Sessions start `"default"` (CLI parity); the SDK's
+  (`adr/0029`, superseding `adr/0021`). Sessions start `"auto"` (`adr/0061`; worker fallback stays `"default"`); the SDK's
   `permissionMode` decides when `canUseTool` fires; it asks a human and blocks. Never
   inferred from silence or round completion — a decision is always a real structured
   `RespondToPermission` or `SetPermissionMode`. `/approve` gone.

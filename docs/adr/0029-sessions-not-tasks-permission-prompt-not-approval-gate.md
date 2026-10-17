@@ -1,6 +1,6 @@
 # ADR-0029: Sessions replace tasks as the durable unit; canUseTool becomes a live permission prompt, not a prospective approval gate
 
-**Status:** Accepted
+**Status:** Accepted — launch mode amended by [ADR-0061](0061-sessions-launch-in-auto.md) (sessions now start in `auto`, not `"default"`)
 **Date:** 2026-08-07
 
 ## Context

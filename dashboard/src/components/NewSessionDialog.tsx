@@ -112,11 +112,12 @@ export function NewSessionDialog({
   // A snippet may suggest a mode (prompt_snippets.suggested_permission_mode).
   // It PRE-SELECTS the picker rather than being applied invisibly behind it:
   // the human sees the mode they are about to launch in, and can override it.
-  // An explicit pick always wins over a suggestion.
+  // An explicit pick always wins over a suggestion. With neither, "auto" — the
+  // fleet's launch default since docs/adr/0061, same as core's column default.
   const suggestedMode = snippets.find(
     (s) => snippetIds.includes(s.id) && s.suggestedPermissionMode,
   )?.suggestedPermissionMode;
-  const effectiveMode = modeChoice ?? suggestedMode ?? "default";
+  const effectiveMode = modeChoice ?? suggestedMode ?? "auto";
 
   // docs/adr/0048 §1: CreateSession writes a row and nothing else, and the
   // FIRST MESSAGE is what boots the pod. Sending an instruction as
@@ -233,11 +234,11 @@ export function NewSessionDialog({
                 </option>
               ))}
             </select>
-            {/* Stated here, not linked from here. This is the only moment the
-                human chooses this mode, and the actions menu's own confirm
+            {/* Stated here, not linked from here. Auto is the pre-selected
+                default (docs/adr/0061), so this is the only place the human
+                sees what that means — the actions menu's own confirm
                 (SessionActionsModal) never runs for a session that launches in
-                auto — so if the consequence is not on screen at this point, it
-                is nowhere. */}
+                auto. If the consequence is not on screen here, it is nowhere. */}
             {effectiveMode === "auto" && <span className="text-warning text-xs">{AUTO_MODE_WARNING}</span>}
             {suggestedMode && modeChoice === null && (
               <span className="text-dim text-xs">Suggested by the guidance you selected — change it if you want.</span>

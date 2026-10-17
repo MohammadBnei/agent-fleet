@@ -14,24 +14,24 @@
     "@bufbuild/protobuf": "^2.16.0",
     "@connectrpc/connect": "^2.2.0",
     "@connectrpc/connect-web": "^2.2.0",
-    "mermaid": "^12.1.0",
-    "react": "^19.3.0",
-    "react-dom": "^19.3.0",
+    "mermaid": "^12.2.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@bufbuild/protoc-gen-es": "^2.16.0",
     "@tailwindcss/vite": "^4.3.3",
-    "@types/bun": "^1.4.2",
-    "@types/node": "^24.19.1",
+    "@types/bun": "^1.4.3",
+    "@types/node": "^24.19.2",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
-    "@vitejs/plugin-react": "^6.1.1",
-    "daisyui": "^5.7.47",
-    "oxlint": "^1.86.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "daisyui": "^5.7.50",
+    "oxlint": "^1.88.0",
     "tailwindcss": "^4.3.3",
     "typescript": "~7.0.2",
-    "vite": "^8.3.2"
+    "vite": "^8.3.4"
   }
 }

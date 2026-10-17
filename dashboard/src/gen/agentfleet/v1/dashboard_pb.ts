@@ -106,9 +106,9 @@ export type CreateSessionRequest = Message<"agentfleet.v1.CreateSessionRequest">
   title?: string | undefined;
 
   /**
-   * The mode the session LAUNCHES in, chosen per session at creation rather
-   * than by changing what every session silently gets. Absent or empty keeps
-   * the column default ('default'). Validated server-side against the same
+   * The mode the session LAUNCHES in, chosen per session at creation. Absent
+   * or empty keeps the column default ('auto', docs/adr/0061). Validated
+   * server-side against the same
    * allowlist SetPermissionMode uses — the value reaches a real SDK call via
    * worker/src/session.ts's launchMode, so an unvalidated string here would
    * hand the SDK an arbitrary mode.

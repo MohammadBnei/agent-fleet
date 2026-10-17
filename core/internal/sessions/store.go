@@ -206,12 +206,13 @@ func (s *Store) Create(ctx context.Context, p CreateParams) (string, error) {
 	if p.PermissionMode != "" {
 		modePtr = &p.PermissionMode
 	}
-	// COALESCE rather than a conditional INSERT: permission_mode is NOT NULL
-	// DEFAULT 'default', so passing NULL must fall back to that default
-	// rather than violate the constraint.
+	// COALESCE rather than a conditional INSERT: permission_mode is NOT NULL,
+	// so passing NULL must fall back to a default rather than violate the
+	// constraint. 'auto' matches the column default (db/migrations/000007,
+	// docs/adr/0061).
 	err := s.pool.QueryRow(ctx, `
 		INSERT INTO sessions (repo, title, description, model, permission_mode)
-		VALUES ($1, $2, $3, $4, COALESCE($5, 'default'))
+		VALUES ($1, $2, $3, $4, COALESCE($5, 'auto'))
 		RETURNING id
 	`, p.Repo, titlePtr, p.Description, modelPtr, modePtr).Scan(&id)
 	if err != nil {
