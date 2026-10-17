@@ -48,13 +48,9 @@ const DENSITY: readonly { value: Density; label: string; title: string }[] = [
 export function SessionDetail({
   sessionId,
   sessions,
-  onClosed: _onClosed,
 }: {
   sessionId: string;
   sessions: Session[];
-  // Called when this session stops existing (dismissing a proposal soft-deletes
-  // it), so the view doesn't sit on a row that is no longer there.
-  onClosed?: () => void;
 }) {
   const {
     session,
@@ -322,14 +318,7 @@ export function SessionDetail({
           {/* The permission mode used to sit here as well as in the SESSION
               panel, where it is also a control rather than a restatement. What
               this line is for is the thing nothing else answers from the
-              composer: which branch the agent is committing to.
-
-              worktreePath is gone with it. It was a second permanently-null
-              prop — the ListWorktrees lookup that filled it died with the
-              worktree model (docs/adr/0048 §5), and there is no per-session
-              path on the wire to replace it, so it could only ever render
-              nothing. `branch` had the same problem and did have a live source;
-              this one does not. */}
+              composer: which branch the agent is committing to. */}
           <div className="flex gap-3.5 mt-2 text-xs text-dim2 flex-wrap">
             <span className={branch ? "text-text2" : undefined} title="the branch the agent is working on">
               ⑂ {branch ?? "no branch yet"}

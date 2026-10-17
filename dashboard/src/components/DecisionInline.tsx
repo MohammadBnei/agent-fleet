@@ -94,16 +94,12 @@ export function DecisionInline({
   // Mobile lets you defer a question without answering it. Purely local: the
   // agent stays blocked, this human just isn't dealing with it now.
   onAskLater,
-  // Dismissing a proposal soft-deletes the session, so a caller showing only that
-  // session (the detail view) has to let go of it rather than sit on a dead row.
-  onDismissed: _onDismissed,
 }: {
   session: Session;
   summary?: ListSummary;
   reload: () => void;
   layout?: Layout;
   onAskLater?: () => void;
-  onDismissed?: () => void;
 }) {
   const { busy, pending, answered, error, send } = useDecision(reload);
   const [reason, setReason] = useState("");
@@ -126,15 +122,6 @@ export function DecisionInline({
   const secondaryBtn = `text-center cursor-pointer border border-acc-line hover:border-error hover:text-error disabled:opacity-50 ${
     stacked ? "py-3 text-base flex-1" : "py-2 px-6 text-base"
   }`;
-
-  // A proposal has no transcript yet — the decision is whether to dispatch at
-  // all. Dismiss is a soft delete, which drops the row out of the alert dedup
-  // index, so a still-firing alert is proposed again next fire: "not now", not
-  // "never".
-  // The inline proposal-approval card is gone. A proposal is no longer a
-  // session with a status — it is a row in its own table with its own view
-  // (docs/adr/0048), so there is no proposed session for this component to
-  // render a decision for.
 
   const permission = summary?.pendingPermission ?? null;
   const questionEntry = summary?.pendingQuestion ?? null;

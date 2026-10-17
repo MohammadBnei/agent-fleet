@@ -613,7 +613,7 @@ export default function App() {
           <Observability onSelectSession={selectSession} />
         ) : selectedId ? (
           isDesktop ? (
-            <SessionDetail sessionId={selectedId} sessions={sessions} onClosed={clearSelection} />
+            <SessionDetail sessionId={selectedId} sessions={sessions} />
           ) : (
             <MobileSessionDetail sessionId={selectedId} sessions={sessions} onBack={clearSelection} onDelete={() => deleteSession(selectedId)} />
           )

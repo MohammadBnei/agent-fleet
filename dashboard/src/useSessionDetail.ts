@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useBusyAction } from "./useBusyAction";
+import { Code, ConnectError } from "@connectrpc/connect";
+import { client, subscribeTranscript } from "./connectClient";
+import { withOptimistic } from "./transcript";
+import { pollVisible } from "./pollVisible";
+import { approvePlan } from "./approvePlan";
+import type { Session } from "./gen/agentfleet/v1/core_pb";
+import { TranscriptEntryType, type TranscriptEntry } from "./gen/agentfleet/v1/transcript_pb";
 
 // The first message of a brand-new session, handed over by NewSessionDialog so
 // the dialog can close the instant the session row exists.
@@ -19,13 +26,6 @@ const firstMessages = new Map<string, string>();
 export function queueFirstMessage(sessionId: string, text: string) {
   if (text.trim()) firstMessages.set(sessionId, text);
 }
-import { Code, ConnectError } from "@connectrpc/connect";
-import { client, subscribeTranscript } from "./connectClient";
-import { withOptimistic } from "./transcript";
-import { pollVisible } from "./pollVisible";
-import { approvePlan } from "./approvePlan";
-import type { Session } from "./gen/agentfleet/v1/core_pb";
-import { TranscriptEntryType, type TranscriptEntry } from "./gen/agentfleet/v1/transcript_pb";
 
 // One page of transcript history: what a session opens with, and what one
 // click of the feed's "load earlier" header adds. Well under the server's own
@@ -45,16 +45,6 @@ const SESSION_POLL_MS = 5000;
 export function useSessionDetail(sessionId: string, listed?: Session) {
   const [session, setSession] = useState<Session | null>(null);
   const [entries, setEntries] = useState<TranscriptEntry[]>([]);
-  // Permanently null: the ListWorktrees lookup that filled it is gone with the
-  // worktree model (docs/adr/0048 §5, and see the effect below). Kept as state,
-  // and rendered conditionally by both detail views, so restoring it is a
-  // matter of writing to it again rather than re-threading it through both
-  // form factors.
-  //
-  // `branch` used to sit here alongside it and was equally null — but unlike
-  // the worktree path it has a live source (the sidecar's telemetry snapshot,
-  // ToolCallSummary.branch), so both detail views now derive it there instead.
-  const [worktreePath, setWorktreePath] = useState<string | null>(null);
   // Keyed, not a plain boolean — a click on one PermissionCard/PlanCard used
   // to disable every other pending card and the whole ActionsMenu at once.
   // Each caller passes its own key to run() (a permission/question's own
@@ -100,7 +90,6 @@ export function useSessionDetail(sessionId: string, listed?: Session) {
   useEffect(() => {
     setSession(null);
     setEntries([]);
-    setWorktreePath(null);
     setHasOlder(false);
     setLoadingOlder(false);
     setLoadError(null);
@@ -312,7 +301,6 @@ export function useSessionDetail(sessionId: string, listed?: Session) {
     // `session === null` still means "loading" to both views.
     session: session && (listed ?? session),
     entries: withOptimistic(entries, optimistic),
-    worktreePath,
     busyKey,
     loadError,
     actionError,

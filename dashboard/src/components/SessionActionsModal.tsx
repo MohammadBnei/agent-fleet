@@ -8,9 +8,9 @@ import { ActionsMenu } from "./ActionsMenu";
 import { AutoModeConfirm } from "./AutoModeConfirm";
 import { sessionLabel } from "../sessionLabel";
 
-// Interrupt / Kill / Warm / Archive / Mode, from a list row.
+// Interrupt / Stop / Warm / Archive / Mode, from a list row.
 //
-// ActionsMenu already did all of this and derives Warm-vs-Kill from podPhase
+// ActionsMenu already did all of this and derives Warm-vs-Stop from podPhase
 // itself — it was just mounted only from SessionPanels, i.e. only once you had
 // opened the session. Nothing new is built here: this is the `run`/`busyKey`
 // pair from useSessionDetail (the part ActionsMenu needs and a list does not
@@ -39,7 +39,7 @@ export function SessionActionsModal({
 
   // The list has no transcript stream to reflect a change back, so every action
   // that succeeds ends in a reload — and closes the menu: it used to stay up
-  // showing the same buttons after a Kill, so nothing said the click had
+  // showing the same buttons after a Stop, so nothing said the click had
   // landed. Failures leave both alone and surface inline — reloading on
   // failure would repaint the row as if nothing happened.
   const run = (action: () => Promise<unknown>, key: string) => {
@@ -119,21 +119,5 @@ export function SessionActionsModal({
         }}
       />
     </>
-  );
-}
-
-// The `⋯` that opens it. Sits beside DeleteButton in the same absolute corner,
-// so a row's two overlays do not each pick their own offset.
-export function RowActionsButton({ onOpen }: { onOpen: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onOpen}
-      title="Session actions"
-      aria-label="Session actions"
-      className="absolute top-1.5 right-7 w-5 h-5 flex items-center justify-center text-dim2 hover:text-primary text-xs"
-    >
-      ⋯
-    </button>
   );
 }
