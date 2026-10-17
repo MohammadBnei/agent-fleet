@@ -1,3 +1,4 @@
+import { relativeTime } from "./relativeTime";
 import type { Session } from "./gen/agentfleet/v1/core_pb";
 import { sessionLabel } from "./sessionLabel";
 import type { ListSummary } from "./transcript";
@@ -233,13 +234,7 @@ export function activityLabel(session: Session, inFlight: ListSummary["inFlight"
 // product's real cost (a blocked session is stalled until a human clicks), so
 // it's stated on the card rather than left to be inferred from a heartbeat.
 export function blockedForLabel(session: Session): string | null {
-  if (!session.lastActiveAt) return null;
-  const ms = Date.now() - new Date(session.lastActiveAt).getTime();
-  if (Number.isNaN(ms) || ms < 0) return null;
-  const minutes = Math.floor(ms / 60_000);
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes}m`;
-  return `${Math.floor(minutes / 60)}h`;
+  return relativeTime(session.lastActiveAt, { bare: true });
 }
 
 // The quiet tail's sort axes. Default `date` (most recently active first) is

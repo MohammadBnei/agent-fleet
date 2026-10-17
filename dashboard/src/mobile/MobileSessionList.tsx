@@ -1,3 +1,4 @@
+import { relativeTime } from "../relativeTime";
 import { useMemo, useState } from "react";
 import type { Session } from "../gen/agentfleet/v1/core_pb";
 import { client } from "../connectClient";
@@ -26,18 +27,6 @@ import { useToggleSet } from "../useToggleSet";
 // was blocked. Same sections, same order, always rendered: identical to
 // desktop, which never had one.
 
-
-function relativeTime(iso?: string): string | null {
-  if (!iso) return null;
-  const ms = Date.now() - new Date(iso).getTime();
-  if (Number.isNaN(ms) || ms < 0) return null;
-  const mins = Math.floor(ms / 60_000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.floor(hours / 24)}d ago`;
-}
 
 function NeedsYouCard({
   session,
