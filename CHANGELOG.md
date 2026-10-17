@@ -1,5 +1,11 @@
 # Changelog
 
+## [4.15.3](https://github.com/MohammadBnei/agent-fleet/compare/4.15.2...4.15.3) (2026-10-17)
+
+### Bug Fixes
+
+* **dashboard:** QA follow-ups — model, denied rows, one deny flow, one error style ([#256](https://github.com/MohammadBnei/agent-fleet/issues/256)) ([bfc677c](https://github.com/MohammadBnei/agent-fleet/commit/bfc677c52071249c28e6d1db465ffec06c4f82f2)), closes [#253](https://github.com/MohammadBnei/agent-fleet/issues/253)
+
 ## [4.15.2](https://github.com/MohammadBnei/agent-fleet/compare/4.15.1...4.15.2) (2026-10-17)
 
 ## [4.15.1](https://github.com/MohammadBnei/agent-fleet/compare/4.15.0...4.15.1) (2026-10-17)
