@@ -4,7 +4,7 @@ import type { ListSummary } from "../transcript";
 import { Modal } from "./Modal";
 import { DecisionInline } from "./DecisionInline";
 import { sessionLabel } from "../sessionLabel";
-import { blockedForLabel } from "../sessionState";
+import { blockedForLabel, shortId } from "../sessionState";
 
 // Every pending decision, answerable without leaving where you are.
 //
@@ -92,7 +92,7 @@ export function NeedsYouModal({
                     {queued > 1 ? ` · ${queued} decisions` : ""}
                   </span>
                 </div>
-                <div className="px-3.5 pt-0.5 text-2xs text-dim2">#{s.id.slice(0, 8)}</div>
+                <div className="px-3.5 pt-0.5 text-2xs text-dim2">#{shortId(s.id)}</div>
                 {/* Same component the list row uses: whatever the list can
                     answer, this answers the same way. */}
                 <DecisionInline

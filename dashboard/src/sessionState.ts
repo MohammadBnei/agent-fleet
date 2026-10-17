@@ -296,3 +296,10 @@ export function stuckLabel(session: Session): string {
 export function notchLabel(blockedFor: string | null, queued: number): string {
   return `◉ BLOCKED${blockedFor ? ` · ${blockedFor}` : ""}${queued > 1 ? ` · ${queued} decisions` : ""}`;
 }
+
+// A session's short id, as shown anywhere a human might read one aloud or
+// search for it. Eight characters everywhere — it was six in four places and
+// eight in three, so the same session showed two different ids.
+export function shortId(id: string | undefined): string {
+  return (id ?? "").slice(0, 8);
+}

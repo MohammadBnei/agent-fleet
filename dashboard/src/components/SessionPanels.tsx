@@ -1,4 +1,5 @@
 
+import { shortId } from "../sessionState";
 import type { Session } from "../gen/agentfleet/v1/core_pb";
 import type { ToolCallSummary, TodoItem, SubagentRun, BackgroundTask } from "../transcript";
 import { imageTag } from "../imageTag";
@@ -203,7 +204,7 @@ export function SessionPanel({
       <dl className="text-xs leading-[1.6] mb-2.5 grid grid-cols-[auto_1fr] gap-x-2.5 gap-y-1 min-w-0">
         {/* First, because it identifies everything under it — and because the
             title rows no longer carry it. */}
-        <Fact label="id" value={session.id.slice(0, 8)} />
+        <Fact label="id" value={shortId(session.id)} />
         <Fact label="model" value={session.model || "default"} />
         <Fact label="mode" value={session.permissionMode || "default"} />
         {session.podPhase && <Fact label="pod" value={session.podPhase.replace("POD_PHASE_", "").toLowerCase()} />}

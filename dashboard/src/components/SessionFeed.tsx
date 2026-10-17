@@ -1,3 +1,4 @@
+import { shortId } from "../sessionState";
 import { useState } from "react";
 import { TranscriptEntryType, type TranscriptEntry } from "../gen/agentfleet/v1/transcript_pb";
 import {
@@ -648,7 +649,7 @@ export function SessionFeed({
         <div key={key} id={`entry-${key}`} className="flex gap-2.5 items-baseline">
           <span className="text-green-soft text-xs sm:text-sm flex-none">↘</span>
           <div className={`text-dim leading-[1.65] min-w-0 ${compact ? "text-xs" : "text-sm"}`}>
-            from <span className="text-text2">{peer ? `#${peer.slice(0, 6)}` : "another session"}</span> —{" "}
+            from <span className="text-text2">{peer ? `#${shortId(peer)}` : "another session"}</span> —{" "}
             {entry.text.replace(CROSS_SESSION, "")}
           </div>
         </div>,

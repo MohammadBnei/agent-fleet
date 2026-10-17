@@ -1,3 +1,4 @@
+import { shortId } from "../sessionState";
 import { useState } from "react";
 import { useBusyAction } from "../useBusyAction";
 import type { Session } from "../gen/agentfleet/v1/core_pb";
@@ -70,7 +71,7 @@ export function SessionActionsModal({
             <div className="flex flex-col gap-1 min-w-0">
               <span className="text-sm font-semibold break-words">{sessionLabel(session)}</span>
               <span className="text-2xs text-dim2 break-all">
-                {session.repo} · #{session.id.slice(0, 8)}
+                {session.repo} · #{shortId(session.id)}
               </span>
             </div>
             {error && <InlineError message={error} />}

@@ -1,21 +1,16 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { client } from "../connectClient";
 import { sessionLabel } from "../sessionLabel";
 import {
   feedVisibility,
-  latestSlashCommands,
-  latestToolCallSummary,
-  latestTodos,
-  subagentRuns,
-  backgroundTasks,
   type Density,
   hasPendingDecision,
 } from "../transcript";
 import { useSessionDetail } from "../useSessionDetail";
 import type { Session } from "../gen/agentfleet/v1/core_pb";
-import { useAtBottom } from "../useAtBottom";
+import { useComposer, useFeedScroll, sessionPanelData } from "../useSessionView";
 import { useLocalStorageState } from "../useLocalStorageState";
-import { sessionBadge } from "../sessionState";
+import { sessionBadge, shortId } from "../sessionState";
 import { ActionButton } from "../components/ActionButton";
 import { DecisionDock } from "../components/DecisionDock";
 import { ErrorModal } from "../components/ErrorModal";
@@ -74,7 +69,7 @@ export function MobileSessionDetail({
     sessionId,
     sessions.find((t) => t.id === sessionId),
   );
-  const [message, setMessage] = useState("");
+  const { message, setMessage, slashCommands, sendMessage } = useComposer(entries, sendDiscuss);
   const [panelsOpen, setPanelsOpen] = useState(false);
   // The title sheet: the full label, which the header can only ever truncate,
   // plus the density control it used to compete with for the same row.
@@ -86,36 +81,7 @@ export function MobileSessionDetail({
   const [agentDetail, setAgentDetail] = useState<SubagentRun | null>(null);
   // Same persisted key as the desktop view — see SessionDetail.tsx.
   const [density, setDensity] = useLocalStorageState<Density>("taskDetail.density", "everything");
-  const { ref: feedRef, atBottom, onScroll, scrollToBottom, anchorPrepend } = useAtBottom<HTMLDivElement>();
-
-  // Keyed on the newest seq rather than the count — a "load earlier" prepend
-  // grows the list without anything having arrived. Same reasoning as
-  // SessionDetail's copy.
-  const prevLastSeq = useRef<bigint | null>(null);
-  useEffect(() => {
-    const latest = entries[entries.length - 1];
-    const prev = prevLastSeq.current;
-    prevLastSeq.current = latest?.seq ?? null;
-    if (prev === null || latest === undefined || latest.seq <= prev) return;
-    if (latest.from === "human" || atBottom) scrollToBottom();
-  }, [entries, atBottom, scrollToBottom]);
-
-  // Before the first paint of this session's feed, not after — as a plain effect
-  // it painted the top of the history and then visibly scrolled down. Same
-  // reasoning as SessionDetail's copy.
-  const scrolledFor = useRef<string | null>(null);
-  useLayoutEffect(() => {
-    if (entries.length === 0 || scrolledFor.current === sessionId) return;
-    scrolledFor.current = sessionId;
-    const el = feedRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [sessionId, entries, feedRef]);
-
-  // The optimistic echo renders before the server has the message; without
-  // this, a send only scrolled once the real entry came back over the stream.
-  useEffect(() => {
-    if (pendingMessage !== null) scrollToBottom();
-  }, [pendingMessage, scrollToBottom]);
+  const { ref: feedRef, onScroll, anchorPrepend } = useFeedScroll(sessionId, entries, pendingMessage);
 
   if (loadError) {
     return (
@@ -132,30 +98,9 @@ export function MobileSessionDetail({
   const blocked = session.liveState === "blocked";
   const badge = sessionBadge(session);
   const visibility = feedVisibility(density, true);
-  const todos = latestTodos(entries) ?? [];
-  // One lookup for both: the sidecar pushes branch and files in the same
-  // telemetry snapshot. `branch` used to come from useSessionDetail, where it
-  // was permanently null — the ListWorktrees lookup that filled it died with
-  // the worktree model (docs/adr/0048 §5) while the real value was on the wire
-  // here the whole time, already rendered by ToolCallLine in the feed.
-  const toolSummary = latestToolCallSummary(entries);
-  const branch = toolSummary?.branch ?? null;
-  const changes = toolSummary?.files ?? null;
-  const agents = subagentRuns(entries);
-  const background = backgroundTasks(entries);
+  const { todos, branch, changes, agents, background } = sessionPanelData(entries);
 
   const docked = hasPendingDecision(entries);
-
-  const slashCommands = message.startsWith("/")
-    ? (latestSlashCommands(entries) ?? []).filter((c) => c.toLowerCase().startsWith(message.slice(1).toLowerCase()))
-    : [];
-
-  function sendMessage() {
-    const text = message.trim();
-    if (!text) return;
-    setMessage("");
-    sendDiscuss(text);
-  }
 
   return (
     <div className="flex-1 min-h-0 flex flex-col">
@@ -349,7 +294,7 @@ export function MobileSessionDetail({
                 that the header already truncated it. */}
             <span className="text-base font-semibold break-words">{sessionLabel(session)}</span>
             <span className="text-2xs text-dim2 break-all">
-              #{session.id.slice(0, 6)} · {session.repo}
+              #{shortId(session.id)} · {session.repo}
               {branch && ` · ${branch}`}
             </span>
           </div>

@@ -1,3 +1,4 @@
+import { shortId } from "../sessionState";
 import { useEffect, useState } from "react";
 import { client } from "../connectClient";
 import type { CellNode, TopologyEdge } from "../gen/agentfleet/v1/dashboard_pb";
@@ -223,7 +224,7 @@ export function FleetTopology({ onSelectSession }: { onSelectSession: (id: strin
                 ) : (
                   <>
                     <text x={8} y={46} className="fill-dim text-[9px]">
-                      #{p.sessionId.slice(0, 6)}
+                      #{shortId(p.sessionId)}
                       {p.version && ` · ${truncate(p.version, 14)}`}
                     </text>
                     <text x={8} y={58} className={`text-[9px] ${s.text} fill-current`}>

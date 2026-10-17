@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { client } from "../connectClient";
 import { sessionLabel } from "../sessionLabel";
 import type { Session } from "../gen/agentfleet/v1/core_pb";
@@ -6,15 +6,10 @@ import { sessionBadge } from "../sessionState";
 import {
   feedVisibility,
   latestResultSummary,
-  latestSlashCommands,
-  latestToolCallSummary,
-  latestTodos,
-  subagentRuns,
-  backgroundTasks,
   type Density,
 } from "../transcript";
 import { useSessionDetail } from "../useSessionDetail";
-import { useAtBottom } from "../useAtBottom";
+import { useComposer, useFeedScroll, sessionPanelData } from "../useSessionView";
 import { useLocalStorageState } from "../useLocalStorageState";
 import { ErrorModal } from "../components/ErrorModal";
 import { Markdown } from "../components/Markdown";
@@ -72,7 +67,7 @@ export function SessionDetail({
     sessionId,
     sessions.find((t) => t.id === sessionId),
   );
-  const [message, setMessage] = useState("");
+  const { message, setMessage, slashCommands, sendMessage } = useComposer(entries, sendDiscuss);
   const [autoOpen, setAutoOpen] = useState(false);
   // The CHANGES row a human clicked, or null. See FileDiffModal.
   const [diffPath, setDiffPath] = useState<string | null>(null);
@@ -87,59 +82,8 @@ export function SessionDetail({
     onScroll: feedOnScroll,
     scrollToBottom: feedScrollToBottom,
     anchorPrepend,
-  } = useAtBottom<HTMLDivElement>();
-
-  // A new human entry (this tab's own send, or one relayed from Discord) always
-  // jumps to the bottom — the reader clearly wants to see it. A new agent entry
-  // follows too, but only if the reader was already at the bottom, otherwise
-  // they're mid-scroll reading history and it'd yank the view; the button
-  // pulses instead.
-  //
-  // Keyed on the newest entry's seq, not on entries.length: loading older
-  // history prepends, which grows the length without anything new having
-  // arrived — and autoscrolling then would drag the reader away from the very
-  // history they asked for.
-  const [hasNewAiMessage, setHasNewAiMessage] = useState(false);
-  const prevLastSeqRef = useRef<bigint | null>(null);
-  useEffect(() => {
-    const latest = entries[entries.length - 1];
-    const prev = prevLastSeqRef.current;
-    prevLastSeqRef.current = latest?.seq ?? null;
-    if (prev === null || latest === undefined || latest.seq <= prev) return;
-    if (latest.from === "human" || feedAtBottom) {
-      feedScrollToBottom();
-      setHasNewAiMessage(false);
-    } else {
-      setHasNewAiMessage(true);
-    }
-  }, [entries, feedAtBottom, feedScrollToBottom]);
-
-  // Land on the latest message when a session is opened — *before* the first
-  // paint of that session's feed, not after it. As a plain effect this ran
-  // post-paint, so opening a session showed the top of the history for a
-  // frame and then visibly scrolled down; useLayoutEffect means you simply
-  // arrive at the bottom. This component instance is reused across session
-  // switches (App.tsx doesn't key it by id), so track which session we've
-  // already jumped for instead of scrolling every render.
-  const scrolledForSessionRef = useRef<string | null>(null);
-  useLayoutEffect(() => {
-    if (entries.length === 0 || scrolledForSessionRef.current === sessionId) return;
-    scrolledForSessionRef.current = sessionId;
-    const el = feedRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [sessionId, entries, feedRef]);
-
-  // The optimistic echo of a just-sent message (useSessionDetail's
-  // pendingMessage) renders immediately but below the fold. Only the entries
-  // effect above scrolled, and that waits for the real entry to come back
-  // over the stream — so a send appeared to do nothing until the round trip
-  // finished, and then jumped.
-  useEffect(() => {
-    if (pendingMessage !== null) feedScrollToBottom();
-  }, [pendingMessage, feedScrollToBottom]);
-  useEffect(() => {
-    if (feedAtBottom) setHasNewAiMessage(false);
-  }, [feedAtBottom]);
+    hasNew: hasNewAiMessage,
+  } = useFeedScroll(sessionId, entries, pendingMessage);
 
   if (loadError) return <div className="m-4 border border-pink-line bg-pink-bg px-4 py-3 text-base text-error">{loadError}</div>;
   // `session` is App's polled list copy when the list has it, and
@@ -154,36 +98,12 @@ export function SessionDetail({
   const blocked = session.liveState === "blocked";
   const visibility = feedVisibility(density, false);
 
-  const todos = latestTodos(entries) ?? [];
-  // One lookup for both: the sidecar pushes branch and files in the same
-  // telemetry snapshot. `branch` used to come from useSessionDetail, where it
-  // was permanently null — the ListWorktrees lookup that filled it died with
-  // the worktree model (docs/adr/0048 §5) while the real value was on the wire
-  // here the whole time, already rendered by ToolCallLine in the feed.
-  const toolSummary = latestToolCallSummary(entries);
-  const branch = toolSummary?.branch ?? null;
-  const changes = toolSummary?.files ?? null;
-  const agents = subagentRuns(entries);
-  const background = backgroundTasks(entries);
+  const { todos, branch, changes, agents, background } = sessionPanelData(entries);
   const result = latestResultSummary(entries);
   const contextTokens =
     (result?.usage?.input_tokens ?? 0) +
     (result?.usage?.cache_read_input_tokens ?? 0) +
     (result?.usage?.cache_creation_input_tokens ?? 0);
-
-  // Lean name-only autocomplete (the SDK's init message carries no descriptions
-  // or argument hints at runtime, docs/adr/0027) — only while the draft looks
-  // like a command, filtered by what's typed so far.
-  const slashCommands = message.startsWith("/")
-    ? (latestSlashCommands(entries) ?? []).filter((c) => c.toLowerCase().startsWith(message.slice(1).toLowerCase()))
-    : [];
-
-  function sendMessage() {
-    const text = message.trim();
-    if (!text) return;
-    setMessage("");
-    sendDiscuss(text);
-  }
 
   return (
     <div className="flex-1 min-h-0 flex">
@@ -323,7 +243,8 @@ export function SessionDetail({
             <span className={branch ? "text-text2" : undefined} title="the branch the agent is working on">
               ⑂ {branch ?? "no branch yet"}
             </span>
-            {result && (
+            {/* contextTokens > 0: a result without usage rendered "ctx 0k". */}
+            {result && contextTokens > 0 && (
               // Per-turn, not cumulative: the SDK reports usage per result and
               // nothing sums it, so labelling this a session total would be a
               // lie. See docs/dashboard-spec.md — no cost/token rollup exists.
