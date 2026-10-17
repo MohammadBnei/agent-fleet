@@ -1,5 +1,7 @@
 # Changelog
 
+## [4.15.2](https://github.com/MohammadBnei/agent-fleet/compare/4.15.1...4.15.2) (2026-10-17)
+
 ## [4.15.1](https://github.com/MohammadBnei/agent-fleet/compare/4.15.0...4.15.1) (2026-10-17)
 
 ### Bug Fixes
