@@ -273,7 +273,7 @@ export function MobileSessionDetail({
         onCancel={() => setAutoOpen(false)}
         onConfirm={() => {
           setAutoOpen(false);
-          run(() => client.setPermissionMode({ sessionId, mode: "auto" }), "auto");
+          run(() => client.setPermissionMode({ sessionId, mode: "auto" }), "action:mode");
         }}
       />
 

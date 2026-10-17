@@ -21,7 +21,7 @@ import { TickBar, todoProgress } from "../components/TickBar";
 import { NotchCard } from "../components/NotchCard";
 import { DecisionInline } from "../components/DecisionInline";
 import { SessionActionsModal } from "../components/SessionActionsModal";
-import { RowActionsButton } from "../components/RowControls";
+import { RowActionsButton, RowAction } from "../components/RowControls";
 import { QuietControls } from "../components/QuietControls";
 import { useToggleSet } from "../useToggleSet";
 
@@ -146,15 +146,12 @@ function FinishedCard({
         </div>
       )}
       {/* Same action as the desktop row's — see SessionList.tsx's FinishedRow. */}
-      <button
-        type="button"
-        onClick={() => {
-          void client.archiveSession({ sessionId: session.id }).then(reload);
-        }}
+      <RowAction
+        label="archive"
+        action={() => client.archiveSession({ sessionId: session.id })}
+        reload={reload}
         className="border border-acc-line px-3 py-2 text-xs w-full mt-2"
-      >
-        archive
-      </button>
+      />
     </div>
   );
 }
@@ -283,22 +280,20 @@ function StuckCard({
       </span>
       <div className="flex gap-2">
         {live ? (
-          <button
-            type="button"
-            onClick={() => void client.interrupt({ sessionId: session.id }).then(reload)}
+          <RowAction
+            label="interrupt"
+            action={() => client.interrupt({ sessionId: session.id })}
+            reload={reload}
             className="flex-1 border border-acc-line py-2 text-sm"
-          >
-            interrupt
-          </button>
+          />
         ) : (
           session.sweptAt === undefined && (
-            <button
-              type="button"
-              onClick={() => void client.warmSession({ sessionId: session.id }).then(reload)}
+            <RowAction
+              label="warm"
+              action={() => client.warmSession({ sessionId: session.id })}
+              reload={reload}
               className="flex-1 border border-acc-line py-2 text-sm"
-            >
-              warm
-            </button>
+            />
           )
         )}
         <button type="button" onClick={() => onOpenLogs(session.id)} className="flex-1 border border-acc-line py-2 text-sm">

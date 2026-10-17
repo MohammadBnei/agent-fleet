@@ -6,7 +6,8 @@
 import { test, expect } from "bun:test";
 import { TranscriptEntryType, type TranscriptEntry } from "../gen/agentfleet/v1/transcript_pb";
 import { feedVisibility, type SdkResultSummary } from "../transcript";
-import { LoadOlder, SessionFeed, shortTool } from "./SessionFeed";
+import { LoadOlder, SessionFeed } from "./SessionFeed";
+import { shortTool } from "../transcript";
 import { TranscriptEntryView } from "./TranscriptEntryView";
 
 let nextSeq = 0n;

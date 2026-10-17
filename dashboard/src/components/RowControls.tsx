@@ -1,4 +1,36 @@
 import { SelectBox } from "./BatchActions";
+import { ActionButton } from "./ActionButton";
+import { useBusyAction } from "../useBusyAction";
+
+// A row's own one-click action (interrupt / warm / archive). These were six
+// `void client.x().then(reload)` calls: no spinner, and a rejection went
+// nowhere, so a warm that failed looked exactly like a warm still booting.
+// Now the button spins while the call is out, and a failure stays on the
+// button itself ("warm failed", the reason in its tooltip) — a row has no room
+// for an error box, and this keeps the failure next to the thing that failed.
+export function RowAction({
+  label,
+  action,
+  reload,
+  className,
+}: {
+  label: string;
+  action: () => Promise<unknown>;
+  reload: () => void;
+  className: string;
+}) {
+  const { busyKey, error, run } = useBusyAction();
+  return (
+    <ActionButton
+      busy={busyKey !== null}
+      title={error ?? undefined}
+      className={`${className} ${error ? "border-error! text-error" : ""}`}
+      onClick={() => void run(action, label).then((ok) => ok && reload())}
+    >
+      {error ? `${label} failed` : label}
+    </ActionButton>
+  );
+}
 
 // The two controls every session row carries. Both were written twice — once
 // as an absolutely-positioned overlay for the tall cards, once inline for the

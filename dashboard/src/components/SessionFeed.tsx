@@ -53,7 +53,6 @@ import { QuestionCard } from "./QuestionCard";
 const CROSS_SESSION = /^\[from session ([^\]]+)\]\s*/;
 
 import { shortTool } from "../transcript";
-export { shortTool };
 
 function QuietRule({ label, detail }: { label: string; detail?: string | null }) {
   return (

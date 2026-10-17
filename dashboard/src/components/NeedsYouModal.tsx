@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import type { Session } from "../gen/agentfleet/v1/core_pb";
 import type { ListSummary } from "../transcript";
 import { Modal } from "./Modal";
@@ -35,6 +36,17 @@ export function NeedsYouModal({
   onOpenSession: (id: string) => void;
   reload: () => void;
 }) {
+  // Answering the last decision closes the sheet. It used to stay up saying
+  // "Nothing waiting any more." — the job was done and the human still had to
+  // find the way out. Only on a drop to zero while open: opened on an already
+  // empty list (the decision resolved between the badge's poll and the click),
+  // it stays and says so.
+  const lastCount = useRef(sessions.length);
+  useEffect(() => {
+    if (open && lastCount.current > 0 && sessions.length === 0) onClose();
+    lastCount.current = sessions.length;
+  }, [open, sessions.length, onClose]);
+
   // Nothing at all while closed. Every other Modal in the app renders its
   // children regardless, which is harmless for a form — but this one mirrors
   // the whole blocked list, so a closed dialog kept a second live DecisionInline
@@ -81,9 +93,8 @@ export function NeedsYouModal({
                   </span>
                 </div>
                 <div className="px-3.5 pt-0.5 text-2xs text-dim2">#{s.id.slice(0, 8)}</div>
-                {/* Same component the list row uses, so a plan still refuses to
-                    be approved from a summary line and sends you into the
-                    session instead (DecisionInline's own reasoning). */}
+                {/* Same component the list row uses: whatever the list can
+                    answer, this answers the same way. */}
                 <DecisionInline
                   session={s}
                   summary={summary}

@@ -104,6 +104,18 @@ export default function App() {
   const [shortcut] = useState(readShortcut);
   const [needsYouOnly, setNeedsYouOnly] = useState(shortcut.needsYouOnly);
 
+  // Every navigation pushes a history entry (pushUrl), so Back has to read it
+  // back. Without this the URL changed and the page did not — on a phone the
+  // system back gesture left the open session on screen under a list URL.
+  useEffect(() => {
+    const onPop = () => {
+      setView(readViewFromUrl());
+      setSelectedId(readSessionIdFromUrl());
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+
   // Honour the shortcut, then scrub its params so a reload lands on the plain
   // console rather than silently re-filtering or reopening the form.
   useEffect(() => {
@@ -270,11 +282,13 @@ export default function App() {
 
   function selectView(next: View) {
     setView(next);
-    // Leaving the sessions view drops the open session: the nav is between
-    // top-level places, and coming back to a stale ?session= would be surprising.
-    const keepSession = next === "sessions" ? selectedId : null;
-    if (next !== "sessions") setSelectedId(null);
-    pushUrl(next, keepSession);
+    // Every nav click lands on that view's top level. Leaving sessions drops
+    // the open session (coming back to a stale ?session= would be surprising),
+    // and clicking "sessions" while a session is open is the way back to the
+    // list — it used to keep the session, so the already-highlighted tab did
+    // nothing and the only way back was knowing the logo is a link.
+    setSelectedId(null);
+    pushUrl(next, null);
   }
 
   // Force-tears-down any live session then soft-deletes the session. Confirmation
@@ -339,13 +353,13 @@ export default function App() {
     // The header and the row have to agree; they are read together.
     const working = sessions.filter((t) => t.liveState === "working").length;
     const done = sessions.filter((t) => t.liveState === "done").length;
-    return { waiting, working, done, idle: Math.max(0, sessions.length - waiting - working - done) };
+    // Idle is the QUIET tail's own default — not archived, not swept. It was
+    // "everything else", so the header said 21 idle over a list showing 4.
+    const idle = sessions.filter(
+      (t) => t.archivedAt === undefined && t.sweptAt === undefined && t.liveState === "idle",
+    ).length;
+    return { waiting, working, done, idle };
   }, [sessions, blockedSessions]);
-
-  const repoCount = useMemo(
-    () => new Set(sessions.filter(() => true).map((t) => t.repo)).size,
-    [sessions],
-  );
 
   const filteredSessions = useMemo(() => {
     // needsYouOnly is the manifest's "Waiting on you" shortcut. Mobile already
@@ -402,9 +416,9 @@ export default function App() {
             </svg>
             herd
           </a>
-          <span className="text-xs text-dim2 whitespace-nowrap">
-            ukubi-cluster · {repoCount} repos
-          </span>
+          {/* No repo count: it was the distinct repos among the loaded (and
+              search-filtered) sessions, shown beside a picker listing more. */}
+          <span className="text-xs text-dim2 whitespace-nowrap">ukubi-cluster</span>
           <Segmented value={view} options={NAV} onChange={selectView} className="ml-1" />
 
           {(counts.waiting > 0 || needsYouOnly) && (
@@ -440,7 +454,10 @@ export default function App() {
               )}
             </div>
           )}
-          <span className={`text-xs text-dim2 whitespace-nowrap ${counts.waiting > 0 ? "" : "ml-auto"}`}>
+          {/* The one header item allowed to give way: everything else is a
+              control, and at laptop widths "N waiting on you" pushed
+              "+ new session" off the right edge. */}
+          <span className={`text-xs text-dim2 whitespace-nowrap min-w-0 truncate ${counts.waiting > 0 ? "" : "ml-auto"}`}>
             {counts.working} working · {counts.done} done · {counts.idle} idle
           </span>
 

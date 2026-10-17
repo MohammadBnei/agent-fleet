@@ -6,7 +6,7 @@ import { parseQuestions, summarizeToolInput, type ListSummary } from "../transcr
 import { TickBar, todoProgress } from "../components/TickBar";
 import { DecisionInline } from "../components/DecisionInline";
 import { SessionActionsModal } from "../components/SessionActionsModal";
-import { RowSelect, RowActionsButton } from "../components/RowControls";
+import { RowSelect, RowActionsButton, RowAction } from "../components/RowControls";
 import { useSelection, BatchBar } from "../components/BatchActions";
 import { QuietControls } from "../components/QuietControls";
 import { useToggleSet } from "../useToggleSet";
@@ -433,24 +433,22 @@ function StuckRow({
           {stuckFor ? ` · ${stuckFor}` : ""}
         </span>
         {live ? (
-          <button
-            type="button"
-            onClick={() => void client.interrupt({ sessionId: session.id }).then(reload)}
+          <RowAction
+            label="interrupt"
+            action={() => client.interrupt({ sessionId: session.id })}
+            reload={reload}
             className="flex-none border border-acc-line px-3 py-1 text-sm hover:border-primary hover:text-primary"
-          >
-            interrupt
-          </button>
+          />
         ) : (
           // Swept means the retention GC took the working directory: warming
           // would bring up a pod with nothing to resume, so it is not offered.
           session.sweptAt === undefined && (
-            <button
-              type="button"
-              onClick={() => void client.warmSession({ sessionId: session.id }).then(reload)}
+            <RowAction
+              label="warm"
+              action={() => client.warmSession({ sessionId: session.id })}
+              reload={reload}
               className="flex-none border border-acc-line px-3 py-1 text-sm hover:border-primary hover:text-primary"
-            >
-              warm
-            </button>
+            />
           )
         )}
         <button type="button" onClick={onOpenLogs} className="flex-none border border-acc-line px-3 py-1 text-sm hover:border-primary hover:text-primary">
@@ -531,15 +529,12 @@ function FinishedRow({
           transcript, the sole record of a session that produced no PR.
           Archiving keeps the history and is the fleet's one terminal state.
         */}
-        <button
-          type="button"
-          onClick={() => {
-            void client.archiveSession({ sessionId: session.id }).then(reload);
-          }}
+        <RowAction
+          label="archive"
+          action={() => client.archiveSession({ sessionId: session.id })}
+          reload={reload}
           className="flex-none border border-acc-line px-3 py-1 text-sm hover:border-primary hover:text-primary"
-        >
-          archive
-        </button>
+        />
       </div>
       <RowSelect picked={picked} onPick={onPick} />
       <RowActionsButton onOpen={onActions} />
