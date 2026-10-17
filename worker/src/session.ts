@@ -615,7 +615,7 @@ export async function runSession(): Promise<SessionResult> {
   // the mode a human left the session in, rather than reverting to "default".
   // Nothing else hangs off it any more (docs/adr/0053): every switch from here
   // on is a live control request, so `currentMode` is what the gate reads.
-  const launchMode = (session.permissionMode ?? "default") as PermissionMode;
+  const launchMode = (session.permissionMode || "default") as PermissionMode;
   // What the SDK is actually in right now, as opposed to what the column says
   // — they diverge the moment a switch is refused, and the column is what the
   // next warm launches in.
@@ -1123,6 +1123,8 @@ export async function runSession(): Promise<SessionResult> {
     .catch((err) => log("error", "human message stream failed", { taskId: SESSION_ID, error: String(err) }));
 
   let sessionId = "";
+  // The SDK re-emits init every turn; only the first one says what launch got.
+  let launchChecked = false;
 
   async function driveQuery(): Promise<void> {
     for await (const msg of q) {
@@ -1172,12 +1174,15 @@ export async function runSession(): Promise<SessionResult> {
       // since docs/adr/0061 most sessions launch in it. Without this the gate
       // would read `currentMode` as "auto" and answer prompts the SDK never
       // stopped asking — and the badge would say auto for a session that isn't.
-      if (msg.type === "system" && msg.subtype === "init" && msg.permissionMode && msg.permissionMode !== currentMode) {
-        log("warn", "SDK launched in a different permission mode", { taskId: SESSION_ID, requested: currentMode, got: msg.permissionMode });
-        currentMode = msg.permissionMode;
-        await sidecar
-          .savePermissionMode(currentMode)
-          .catch((err) => log("warn", "savePermissionMode failed", { taskId: SESSION_ID, error: String(err) }));
+      if (msg.type === "system" && msg.subtype === "init" && !launchChecked) {
+        launchChecked = true;
+        if (msg.permissionMode && msg.permissionMode !== currentMode) {
+          log("warn", "SDK launched in a different permission mode", { taskId: SESSION_ID, requested: currentMode, got: msg.permissionMode });
+          currentMode = msg.permissionMode;
+          await sidecar
+            .savePermissionMode(currentMode)
+            .catch((err) => log("warn", "savePermissionMode failed", { taskId: SESSION_ID, error: String(err) }));
+        }
       }
       await logSdkMessage("agent", msg as { type: string; [key: string]: unknown });
 

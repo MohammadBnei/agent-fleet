@@ -727,6 +727,30 @@ test("auto REFUSED at launch: gate falls back to asking, column corrected", asyn
   await call;
 }, 10000);
 
+// The real SDK re-emits init every turn (seen live on 2.1.301). Only the first
+// is the launch verdict; a later one must not override the mode the gate holds.
+test("a later init does not override the launch mode", async () => {
+  sessionPermissionMode = "default";
+  extraMessages = [{ type: "system", subtype: "init", session_id: "x", permissionMode: "auto" }];
+  const promise = runSession();
+  await Bun.sleep(20);
+  pushHuman("start");
+  await Bun.sleep(50);
+
+  expect(savedPermissionModes).not.toContain("auto");
+  let resolved: { behavior: string } | null = null;
+  const call = capturedCanUseTool!("Write", { file_path: "x" }).then((r) => {
+    resolved = r as { behavior: string };
+  });
+  await Bun.sleep(20);
+  expect(resolved).toBeNull(); // still default: asked a human
+  expect(findPermissionRequest("Write")).toBeDefined();
+
+  pushHuman("", "abort");
+  await promise;
+  await call;
+}, 10000);
+
 // A mode switch answers the ONE call it was aimed at. Several tool calls in
 // the same assistant turn park side by side, and a blanket sweep meant
 // approving a plan also approved whatever else was parked — a Bash nobody read.
