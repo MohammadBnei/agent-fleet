@@ -32,6 +32,8 @@ import { ToolCallLine } from "./ToolCallLine";
 import { PermissionCard } from "./PermissionCard";
 import { PlanCard } from "./PlanCard";
 import { QuestionCard } from "./QuestionCard";
+import { parseToolCallSummary, shortTool } from "../transcript";
+import { shortId } from "../sessionState";
 
 // The feed, shared by both detail views.
 //
@@ -51,18 +53,6 @@ import { QuestionCard } from "./QuestionCard";
 // screen exists.
 
 const CROSS_SESSION = /^\[from session ([^\]]+)\]\s*/;
-
-import { parseToolCallSummary, shortTool } from "../transcript";
-
-function QuietRule({ label, detail }: { label: string; detail?: string | null }) {
-  return (
-    <div className="flex items-center gap-2.5">
-      <span className="text-2xs sm:text-xs text-dim2 whitespace-nowrap">{label}</span>
-      <span className="flex-1 h-px bg-line3" />
-      {detail && <span className="text-2xs sm:text-xs text-dim2 text-right">{detail}</span>}
-    </div>
-  );
-}
 
 function AlarmBar({ text, detail, compact }: { text: React.ReactNode; detail?: string | null; compact?: boolean }) {
   return (
@@ -659,7 +649,7 @@ export function SessionFeed({
         <div key={key} id={`entry-${key}`} className="flex gap-2.5 items-baseline">
           <span className="text-green-soft text-xs sm:text-sm flex-none">↘</span>
           <div className={`text-dim leading-[1.65] min-w-0 ${compact ? "text-xs" : "text-sm"}`}>
-            from <span className="text-text2">{peer ? `#${peer.slice(0, 6)}` : "another session"}</span> —{" "}
+            from <span className="text-text2">{peer ? `#${shortId(peer)}` : "another session"}</span> —{" "}
             {entry.text.replace(CROSS_SESSION, "")}
           </div>
         </div>,
@@ -707,4 +697,3 @@ export function SessionFeed({
   return <>{out}</>;
 }
 
-export { QuietRule };

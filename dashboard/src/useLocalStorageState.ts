@@ -1,7 +1,7 @@
 import { useCallback, useState } from "react";
 
-// Generic localStorage-backed state — used for the right panel's card order
-// and per-card heights so a reorganized dashboard survives a reload. Lazy
+// Generic localStorage-backed state for per-viewer preferences (theme, density,
+// feed width) so they survive a reload. Lazy
 // initializer reads once on mount (no flash of default layout); every set
 // writes through synchronously, cheap for the small values used here.
 export function useLocalStorageState<T>(key: string, initial: T) {

@@ -1,3 +1,4 @@
+import { relativeTime } from "../relativeTime";
 import { useCallback, useEffect, useState } from "react";
 import { client } from "../connectClient";
 import type { Schedule, Proposal, Repo } from "../gen/agentfleet/v1/dashboard_pb";
@@ -115,7 +116,7 @@ function AlertPayload({ payload, body }: { payload: string; body: string }) {
           takes the whole tree down along with the dismiss button that would
           have cleared the bad row. */}
       <div className="flex flex-wrap items-center gap-2.5 text-2xs text-dim2">
-        {typeof alert.startsAt === "string" && <span title={alert.startsAt}>firing since {relative(alert.startsAt)}</span>}
+        {typeof alert.startsAt === "string" && <span title={alert.startsAt}>firing since {relativeTime(alert.startsAt) ?? "just now"}</span>}
         {typeof alert.generatorURL === "string" && (
           <a href={alert.generatorURL} target="_blank" rel="noreferrer" className="text-primary hover:underline break-all">
             source query ▸
@@ -143,16 +144,6 @@ function humanInterval(seconds: number): string {
   }
   if (seconds % 60 === 0) return `every ${seconds / 60}m`;
   return `every ${seconds}s`;
-}
-
-function relative(iso: string): string {
-  if (!iso) return "—";
-  const ms = new Date(iso).getTime() - Date.now();
-  if (Number.isNaN(ms)) return "—";
-  const abs = Math.abs(ms);
-  const mins = Math.round(abs / 60_000);
-  const unit = mins < 60 ? `${mins}m` : mins < 1440 ? `${Math.round(mins / 60)}h` : `${Math.round(mins / 1440)}d`;
-  return ms >= 0 ? `in ${unit}` : `${unit} ago`;
 }
 
 // The scheduler records a successful run as "proposal <uuid>". The id is
@@ -606,7 +597,7 @@ export function Schedules({
                 <div className="min-w-0">
                   {a.lastRunAt ? (
                     <>
-                      <div className="text-sm text-text2">{relative(a.lastRunAt)}</div>
+                      <div className="text-sm text-text2">{relativeTime(a.lastRunAt) ?? "—"}</div>
                       <div
                         className={`text-xs mt-0.5 truncate ${a.lastStatus.startsWith("error") ? "text-warning" : "text-dim2"}`}
                         title={a.lastStatus}
@@ -618,7 +609,7 @@ export function Schedules({
                     <span className="text-sm text-dim2">never</span>
                   )}
                 </div>
-                <div className="text-sm text-dim">{a.enabled ? relative(a.nextRunAt) : "paused"}</div>
+                <div className="text-sm text-dim">{a.enabled ? relativeTime(a.nextRunAt, { future: true }) ?? "—" : "paused"}</div>
                 <div className="flex gap-1.5 justify-end flex-wrap">
                   {scheduleActions(a, act, () => setEditing(a), () => setPendingDelete(a), busy)}
                 </div>
@@ -639,7 +630,7 @@ export function Schedules({
                   {a.name} <span className="text-xs text-dim2">{a.repo}</span>
                 </span>
                 <span className="text-xs text-dim2 ml-auto flex-none">
-                  {a.enabled ? relative(a.nextRunAt) : "paused"}
+                  {a.enabled ? relativeTime(a.nextRunAt, { future: true }) ?? "—" : "paused"}
                 </span>
               </div>
               <div className="text-xs text-dim mt-1.5 leading-[1.6]">
@@ -651,7 +642,7 @@ export function Schedules({
                 className={`text-xs mt-1.5 ${a.lastStatus.startsWith("error") ? "text-warning" : "text-text2"}`}
                 title={a.lastStatus}
               >
-                {a.lastRunAt ? `last: ${relative(a.lastRunAt)} · ${lastStatusLabel(a.lastStatus)}` : "never run"}
+                {a.lastRunAt ? `last: ${relativeTime(a.lastRunAt) ?? "—"} · ${lastStatusLabel(a.lastStatus)}` : "never run"}
               </div>
               <div className="flex gap-2 mt-2.5 flex-wrap">
                 {scheduleActions(a, act, () => setEditing(a), () => setPendingDelete(a), busy)}

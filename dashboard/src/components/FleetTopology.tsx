@@ -4,6 +4,7 @@ import type { CellNode, TopologyEdge } from "../gen/agentfleet/v1/dashboard_pb";
 import { imageTag } from "../imageTag";
 import { pollVisible } from "../pollVisible";
 import { InlineError } from "./InlineError";
+import { shortId } from "../sessionState";
 
 // The fleet drawn as cells: two long-lived hubs and one cell per live pod.
 //
@@ -226,7 +227,7 @@ export function FleetTopology({ onSelectSession }: { onSelectSession: (id: strin
                 ) : (
                   <>
                     <text x={8} y={46} className="fill-dim text-[9px]">
-                      #{p.sessionId.slice(0, 6)}
+                      #{shortId(p.sessionId)}
                       {p.version && ` · ${truncate(p.version, 14)}`}
                     </text>
                     <text x={8} y={58} className={`text-[9px] ${s.text} fill-current`}>

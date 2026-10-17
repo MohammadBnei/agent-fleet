@@ -1,3 +1,4 @@
+import { relativeTime } from "../relativeTime";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { client } from "../connectClient";
 import type { FileMetadata } from "../gen/agentfleet/v1/files_pb";
@@ -16,19 +17,6 @@ import { useMediaQuery } from "../useMediaQuery";
 // faked.
 
 const COLS = "grid-cols-[24px_1fr_110px_170px_150px]";
-
-function relative(iso: string): string {
-  if (!iso) return "—";
-  const ms = Date.now() - new Date(iso).getTime();
-  if (Number.isNaN(ms)) return "—";
-  const mins = Math.round(ms / 60_000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.round(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.round(hours / 24);
-  return days === 1 ? "yesterday" : `${days}d ago`;
-}
 
 function RowActions({
   file,
@@ -252,7 +240,7 @@ export function Files() {
                   {f.key}
                 </div>
                 <div className="text-sm text-dim">{formatBytes(f.sizeBytes)}</div>
-                <div className="text-sm text-dim">{relative(f.lastModified)}</div>
+                <div className="text-sm text-dim">{relativeTime(f.lastModified) ?? "—"}</div>
                 <div className="flex gap-1.5 justify-end">
                   <RowActions file={f} onDeleted={load} onError={setError} />
                 </div>
@@ -269,7 +257,7 @@ export function Files() {
                 <span className="text-xs text-dim2 ml-auto flex-none">{formatBytes(f.sizeBytes)}</span>
               </div>
               <div className="flex items-center gap-2 mt-2">
-                <span className="text-xs text-dim2">{relative(f.lastModified)}</span>
+                <span className="text-xs text-dim2">{relativeTime(f.lastModified) ?? "—"}</span>
                 <div className="ml-auto flex gap-1.5">
                   <RowActions file={f} onDeleted={load} onError={setError} />
                 </div>

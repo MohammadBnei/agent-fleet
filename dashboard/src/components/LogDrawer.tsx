@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { client } from "../connectClient";
 import type { LogEntry } from "../gen/agentfleet/v1/core_pb";
 import { Modal } from "./Modal";
+import { shortId } from "../sessionState";
 
 // "read log" on a failed session. DashboardService.QueryLogs has existed since
 // the Loki client landed and had no UI caller at all — the reason a session had
@@ -46,7 +47,7 @@ export function LogDrawer({ sessionId, onClose }: { sessionId: string | null; on
 
   return (
     <Modal open={sessionId !== null} onClose={onClose} boxClassName="max-w-4xl">
-      <h3 className="text-base font-semibold mb-1">Logs · #{sessionId?.slice(0, 6)}</h3>
+      <h3 className="text-base font-semibold mb-1">Logs · #{shortId(sessionId ?? undefined)}</h3>
       <p className="text-xs text-dim2 mb-3">
         Newest 200 lines from Loki for this session's pods.
       </p>

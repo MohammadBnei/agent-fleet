@@ -51,6 +51,11 @@ export function ConfirmModal({
             type="text"
             value={typed}
             onChange={(e) => setTyped(e.target.value)}
+            // Typing the word and pressing Enter is the obvious gesture; it
+            // did nothing, and the confirm button had to be found by mouse.
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && confirmEnabled) onConfirm();
+            }}
             className="input input-sm input-bordered w-full mt-2"
             placeholder={confirmWord}
             autoFocus

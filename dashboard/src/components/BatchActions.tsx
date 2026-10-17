@@ -3,7 +3,7 @@ import type { Session } from "../gen/agentfleet/v1/core_pb";
 import { client } from "../connectClient";
 import { ConfirmModal } from "./ConfirmModal";
 import { InlineError } from "./InlineError";
-import { isPodPhaseLive } from "../pages/SessionList";
+import { isPodPhaseLive } from "../sessionState";
 
 // Multi-select over the list, so "archive these twelve" is one gesture rather
 // than twelve trips through the actions modal.
@@ -71,7 +71,9 @@ export function SelectBox({
   );
 }
 
-type Pending = { kind: "archive" | "kill" | "delete"; label: string } | null;
+const sessionsWord = (n: number) => `${n} ${n === 1 ? "session" : "sessions"}`;
+
+type Pending = { kind: "archive" | "stop" | "delete"; label: string } | null;
 
 export function BatchBar({
   sessions,
@@ -123,7 +125,7 @@ export function BatchBar({
           disabled={busy || archivable.length === 0}
           className={btn}
           title={archivable.length === 0 ? "all already archived" : undefined}
-          onClick={() => setPending({ kind: "archive", label: `Archive ${archivable.length} session(s)?` })}
+          onClick={() => setPending({ kind: "archive", label: `Archive ${sessionsWord(archivable.length)}?` })}
         >
           archive {archivable.length > 0 && archivable.length !== sessions.length ? archivable.length : ""}
         </button>
@@ -132,15 +134,15 @@ export function BatchBar({
           disabled={busy || live.length === 0}
           className={btn}
           title={live.length === 0 ? "none have a live pod" : undefined}
-          onClick={() => setPending({ kind: "kill", label: `Kill ${live.length} running session(s)?` })}
+          onClick={() => setPending({ kind: "stop", label: `Stop ${live.length} running ${live.length === 1 ? "pod" : "pods"}?` })}
         >
-          kill {live.length > 0 && live.length !== sessions.length ? live.length : ""}
+          stop {live.length > 0 && live.length !== sessions.length ? live.length : ""}
         </button>
         <button
           type="button"
           disabled={busy}
           className="border border-pink-line text-error px-3 py-1 text-sm hover:bg-pink-chip disabled:opacity-40"
-          onClick={() => setPending({ kind: "delete", label: `Delete ${sessions.length} session(s)?` })}
+          onClick={() => setPending({ kind: "delete", label: `Delete ${sessionsWord(sessions.length)}?` })}
         >
           delete
         </button>
@@ -152,14 +154,14 @@ export function BatchBar({
 
       {/* Delete destroys the transcript, so past one session it asks for the
           word — the same gate ManageReposModal uses. Archive is reversible and
-          Kill only ends a pod, so those get a plain confirm. */}
+          Stop only ends a pod, so those get a plain confirm. */}
       <ConfirmModal
         open={pending !== null}
         title={pending?.label ?? ""}
         message={
           pending?.kind === "delete"
             ? "This force-tears-down any live pod and deletes the session, including its transcript. There is no undo."
-            : pending?.kind === "kill"
+            : pending?.kind === "stop"
               ? "Ends the pod for each running session. The session itself stays and can be warmed again."
               : "Marks each session finished. Reversible — an archived session can still be warmed."
         }
@@ -173,7 +175,7 @@ export function BatchBar({
           if (!p) return;
           if (p.kind === "archive")
             void runBatch(archivable, "archived", (s) => client.archiveSession({ sessionId: s.id }));
-          else if (p.kind === "kill") void runBatch(live, "killed", (s) => client.stopSession({ sessionId: s.id }));
+          else if (p.kind === "stop") void runBatch(live, "stopped", (s) => client.stopSession({ sessionId: s.id }));
           else void runBatch(sessions, "deleted", (s) => client.deleteSession({ sessionId: s.id }));
         }}
       />

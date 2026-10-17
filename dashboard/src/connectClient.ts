@@ -4,7 +4,7 @@ import { DashboardService } from "./gen/agentfleet/v1/dashboard_pb";
 import type { TranscriptEntry } from "./gen/agentfleet/v1/transcript_pb";
 
 // Required on every call, unary and streaming alike (server-enforced too,
-// see fleet-core/internal/dashboard/interceptor.go) — BasicAuth credentials
+// see core/internal/dashboard/interceptor.go) — BasicAuth credentials
 // are auto-attached by browsers to same-origin requests regardless of
 // which page triggered them, so a required custom header (unsettable by a
 // plain form/img, and blocked by CORS for any cross-origin fetch that
