@@ -10,20 +10,26 @@ import (
 	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"sigs.k8s.io/yaml"
 )
 
-// TestNetworkPolicies_AdmitExactlyTheKnownCallers pins the ingress fences of
-// docs/adr/0069 §3 against the labels the callers actually carry. The labels
-// live in three places that never change together: WorkerLabels here,
-// k8s/provisioner/deployment.yaml, and the policies themselves (one in
-// k8s/provisioner/, one in k8s/core.yaml's extraManifests). A label rename in
-// any of them is a silent outage: every sidecar loses CoreService, or core
-// loses the provisioner, while every manifest still applies cleanly.
+// TestNetworkPolicies_AdmitExactlyTheKnownCallers checks the ingress fences of
+// docs/adr/0069 §3. It pins the in-repo labels, which live in places that
+// never change together: WorkerLabels and SharedInstanceLabels here,
+// k8s/provisioner/deployment.yaml, core's release name, and the policies
+// themselves. A rename in any of them is a silent outage: every sidecar loses
+// CoreService, or core loses the provisioner, while every manifest still
+// applies cleanly.
 //
-// This evaluates plain NetworkPolicy semantics, not Cilium. That Cilium
-// enforces them the same way (ClusterIP and pod IP, across namespaces) was
-// proved live in a scratch namespace before they shipped.
+// The external callers (Traefik, Prometheus, Alertmanager, Grafana) are
+// literals copied from live pods on 2026-10-18, so their cases only assert the
+// policy's shape, including the namespace-AND-pod peers. A relabel in
+// infra-bootstrap's charts cannot fail this test; §3 names the alerts that
+// catch it.
+//
+// This evaluates plain NetworkPolicy semantics, not Cilium, and refuses the
+// parts it does not model (ipBlock, endPort, named ports).
 //
 // Reads files outside the module, like TestCreateWorkerPod_ResourcesWithinLimitRange:
 // run with -count=1.
@@ -46,17 +52,29 @@ func TestNetworkPolicies_AdmitExactlyTheKnownCallers(t *testing.T) {
 	if err := yaml.Unmarshal(read("k8s/core.yaml"), &coreValues); err != nil {
 		t.Fatalf("parse k8s/core.yaml: %v", err)
 	}
-	// extraManifests is tpl-rendered by common-app-chart; this is the one
+	// extraManifests is tpl-rendered by common-app-chart; coreRelease is the one
 	// release it is deployed as (infra-bootstrap gitops/apps/registry.yaml).
-	release := strings.NewReplacer("{{ .Release.Name }}", "agent-fleet-core", "{{ .Release.Namespace }}", "agent-fleet")
+	const coreRelease, ns = "agent-fleet-core", "agent-fleet"
+	release := strings.NewReplacer("{{ .Release.Name }}", coreRelease, "{{ .Release.Namespace }}", ns)
 	var corePolicy *networkingv1.NetworkPolicy
 	for _, m := range coreValues.ExtraManifests {
-		var np networkingv1.NetworkPolicy
-		if err := yaml.Unmarshal([]byte(release.Replace(m)), &np); err != nil {
+		rendered := release.Replace(m)
+		var tm metav1.TypeMeta
+		if err := yaml.Unmarshal([]byte(rendered), &tm); err != nil {
 			t.Fatalf("parse k8s/core.yaml extraManifests entry: %v", err)
 		}
-		if np.Kind == "NetworkPolicy" {
-			corePolicy = &np
+		if tm.Kind != "NetworkPolicy" {
+			continue
+		}
+		if strings.Contains(rendered, "{{") {
+			t.Fatalf("k8s/core.yaml NetworkPolicy uses a template this test does not render:\n%s", rendered)
+		}
+		if corePolicy != nil {
+			t.Fatal("k8s/core.yaml extraManifests carries more than one NetworkPolicy; this test checks only one")
+		}
+		corePolicy = &networkingv1.NetworkPolicy{}
+		if err := yaml.Unmarshal([]byte(rendered), corePolicy); err != nil {
+			t.Fatalf("parse k8s/core.yaml NetworkPolicy: %v", err)
 		}
 	}
 	if corePolicy == nil {
@@ -77,12 +95,12 @@ func TestNetworkPolicies_AdmitExactlyTheKnownCallers(t *testing.T) {
 		labels map[string]string
 	}
 	// common-app-chart's selectorLabels: both keys are the release name.
-	core := pod{"agent-fleet", map[string]string{
-		"app.kubernetes.io/name": "agent-fleet-core", "app.kubernetes.io/instance": "agent-fleet-core",
+	core := pod{ns, map[string]string{
+		"app.kubernetes.io/name": coreRelease, "app.kubernetes.io/instance": coreRelease,
 	}}
-	provisioner := pod{"agent-fleet", provDeploy.Spec.Template.Labels}
-	worker := pod{"agent-fleet", WorkerLabels("t", "r")}
-	sharedInstance := pod{"agent-fleet", SharedInstanceLabels("r", "postgres")}
+	provisioner := pod{ns, provDeploy.Spec.Template.Labels}
+	worker := pod{ns, WorkerLabels("t", "r")}
+	sharedInstance := pod{ns, SharedInstanceLabels("r", "postgres")}
 	traefik := pod{"traefik", map[string]string{"app.kubernetes.io/name": "traefik"}}
 	prometheus := pod{"monitoring", map[string]string{"app.kubernetes.io/name": "prometheus"}}
 	alertmanager := pod{"monitoring", map[string]string{"app.kubernetes.io/name": "alertmanager"}}
@@ -92,6 +110,7 @@ func TestNetworkPolicies_AdmitExactlyTheKnownCallers(t *testing.T) {
 	// namespace-scoped, not label-only.
 	foreignWorker := pod{"dev-x", WorkerLabels("t", "r")}
 	foreignCore := pod{"dev-x", core.labels}
+	foreignPrometheus := pod{"dev-x", prometheus.labels}
 
 	admits := func(np *networkingv1.NetworkPolicy, target, from pod, port int) bool {
 		if target.ns != np.Namespace || !selects(t, &np.Spec.PodSelector, target.labels) {
@@ -100,6 +119,9 @@ func TestNetworkPolicies_AdmitExactlyTheKnownCallers(t *testing.T) {
 		for _, rule := range np.Spec.Ingress {
 			portOK := len(rule.Ports) == 0
 			for _, p := range rule.Ports {
+				if p.EndPort != nil || p.Port == nil || p.Port.Type != intstr.Int {
+					t.Fatalf("policy %s: port %v is a range, absent or named; this evaluator only models int ports", np.Name, p)
+				}
 				portOK = portOK || p.Port.IntValue() == port
 			}
 			if !portOK {
@@ -109,6 +131,9 @@ func TestNetworkPolicies_AdmitExactlyTheKnownCallers(t *testing.T) {
 				return true
 			}
 			for _, peer := range rule.From {
+				if peer.IPBlock != nil {
+					t.Fatalf("policy %s: ipBlock peer; this evaluator does not model it", np.Name)
+				}
 				nsOK := peer.NamespaceSelector == nil && from.ns == np.Namespace ||
 					peer.NamespaceSelector != nil && selects(t, peer.NamespaceSelector, map[string]string{"kubernetes.io/metadata.name": from.ns})
 				if nsOK && (peer.PodSelector == nil || selects(t, peer.PodSelector, from.labels)) {
@@ -138,6 +163,8 @@ func TestNetworkPolicies_AdmitExactlyTheKnownCallers(t *testing.T) {
 		{"traefik -> CoreService", corePolicy, core, traefik, 9090, false},
 		{"prometheus -> CoreService", corePolicy, core, prometheus, 9090, false},
 		{"other monitoring pod -> console port", corePolicy, core, lokiInMonitoring, 8080, false},
+		{"other monitoring pod -> core metrics", corePolicy, core, lokiInMonitoring, 9093, false},
+		{"foreign namespace, prometheus labels -> core metrics", corePolicy, core, foreignPrometheus, 9093, false},
 		{"foreign namespace, worker labels -> CoreService", corePolicy, core, foreignWorker, 9090, false},
 
 		{"core -> ProvisionerService", &provPolicy, provisioner, core, 9090, true},
@@ -145,6 +172,8 @@ func TestNetworkPolicies_AdmitExactlyTheKnownCallers(t *testing.T) {
 		{"worker -> ProvisionerService", &provPolicy, provisioner, worker, 9090, false},
 		{"worker -> provisioner metrics", &provPolicy, provisioner, worker, 8080, false},
 		{"prometheus -> ProvisionerService", &provPolicy, provisioner, prometheus, 9090, false},
+		{"other monitoring pod -> provisioner metrics", &provPolicy, provisioner, lokiInMonitoring, 8080, false},
+		{"foreign namespace, prometheus labels -> provisioner metrics", &provPolicy, provisioner, foreignPrometheus, 8080, false},
 		{"foreign namespace, core labels -> ProvisionerService", &provPolicy, provisioner, foreignCore, 9090, false},
 	} {
 		if got := admits(tc.np, tc.target, tc.from, tc.port); got != tc.want {

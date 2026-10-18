@@ -1,28 +1,8 @@
-# Ingress fence for the provisioner (docs/adr/0069 §3). Selecting the pod at
-# all makes it default-deny for ingress; the two rules below are everything
-# that legitimately connects to it, enumerated from live state on 2026-10-18:
-#
-#   :9090 ProvisionerService — core only (hub-and-spoke, docs/adr/0020). The
-#         bearer token (FLEET_CORE_PROVISIONER_TOKEN, adr/0069 §1) stays the
-#         authentication; this only shrinks who can try.
-#   :8080 /metrics           — Prometheus, via servicemonitor.yaml.
-#
-# Ingress only. Egress is untouched: the provisioner talks to the API server,
-# core and the executor, and an egress fence is a separate decision.
-#
-# Plain NetworkPolicy, not CiliumNetworkPolicy: under this cluster's Cilium
-# chaining mode a plain policy is enforced for traffic arriving by ClusterIP and
-# by pod IP, and a matching label in another namespace is refused (verified
-# live). Two residuals, both Cilium defaults: anything with the HOST identity
-# on the provisioner's own node is always admitted (that is what keeps kubelet
-# probes working; this pod has none today), and so is any hostNetwork pod on
-# that node. A remote node is refused.
-#
-# core's labels are common-app-chart's selectorLabels for the release
-# `agent-fleet-core`; the migrate hook's pod carries them too, which is
-# accepted (it is core's own image, and already holds the DB credentials).
-# provisioner/internal/k8s/networkpolicy_test.go pins these selectors against
-# the labels the callers really carry.
+# Ingress fence for the provisioner (docs/adr/0069 §3, which also records the
+# host-identity residual). Selecting the pod makes it default-deny for ingress;
+# each rule is a caller found live on 2026-10-18. Ingress only.
+# provisioner/internal/k8s/networkpolicy_test.go pins the in-repo labels; the
+# external callers' are only asserted (§3).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -37,6 +17,10 @@ spec:
   policyTypes:
   - Ingress
   ingress:
+  # :9090 ProvisionerService. core only (hub-and-spoke, docs/adr/0020); the
+  # bearer token (adr/0069 §1) stays the authentication. These are
+  # common-app-chart's selectorLabels for release agent-fleet-core; the
+  # migrate hook pod carries them too, accepted (core's own image and creds).
   - from:
     - podSelector:
         matchLabels:
@@ -45,6 +29,7 @@ spec:
     ports:
     - port: 9090
       protocol: TCP
+  # :8080 /metrics. Prometheus, via servicemonitor.yaml.
   - from:
     - namespaceSelector:
         matchLabels:

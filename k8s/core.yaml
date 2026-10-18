@@ -294,32 +294,11 @@ extraManifests:
         - port: metrics
           path: /metrics
           interval: 30s
-  # Ingress fence for core (docs/adr/0069 §3). Selecting the pod makes it
-  # default-deny for ingress; each rule is a caller enumerated from live state on
-  # 2026-10-18. A caller missing here is an outage that looks like the #230 one,
-  # so add the rule BEFORE pointing anything new at core:
-  #
-  #   :8080 console  — Traefik (the IngressRoute above), and the thot webhook.
-  #                    Alertmanager AND Grafana alerting both post
-  #                    /webhook/alertmanager straight to the ClusterIP, not
-  #                    through the ingress (infra-bootstrap
-  #                    gitops/platform/values/{prometheus,grafana}/values.yaml).
-  #                    Worker pods are deliberately NOT admitted: the in-app
-  #                    gate already refuses them (agent-fleet#200), and now the
-  #                    network does too.
-  #   :9090 CoreService — session sidecars (worker pods) and the provisioner.
-  #                    The lease and FLEET_PROVISIONER_TOKEN stay the auth.
-  #   :9093 /metrics — Prometheus (the ServiceMonitor above).
-  #
-  # Kubelet probes on :8080 need no rule: Cilium always admits the HOST identity
-  # of the pod's own node. The same default admits any hostNetwork pod on that
-  # node; a remote node is refused. Plain NetworkPolicy is enough here (enforced
-  # for ClusterIP and pod-IP traffic under the chaining mode, verified live).
-  # Egress is not fenced.
-  #
-  # The worker selector is provisioner/internal/k8s WorkerLabels, and the
-  # provisioner's is its pod template label; networkpolicy_test.go there pins
-  # both against this rule.
+  # Ingress fence for core (docs/adr/0069 §3, which also records the
+  # host-identity residual). Each rule is a caller found live on 2026-10-18;
+  # a caller missing here is a #230-style outage, so add its rule BEFORE
+  # pointing anything new at core. provisioner/internal/k8s/networkpolicy_test.go
+  # pins the in-repo labels; the external callers' are only asserted (§3).
   - |
     apiVersion: networking.k8s.io/v1
     kind: NetworkPolicy
@@ -336,6 +315,10 @@ extraManifests:
       policyTypes:
         - Ingress
       ingress:
+        # :8080 console. Traefik (the IngressRoute above); Alertmanager and
+        # Grafana post /webhook/alertmanager (alerts -> thot tasks) to the
+        # ClusterIP, not through the ingress. Worker pods are refused here
+        # too, not only by the in-app gate (agent-fleet#200).
         - from:
             - namespaceSelector:
                 matchLabels:
@@ -351,6 +334,8 @@ extraManifests:
           ports:
             - port: 8080
               protocol: TCP
+        # :9090 CoreService. Session sidecars (WorkerLabels) and the
+        # provisioner, this namespace only.
         - from:
             - podSelector:
                 matchLabels:
@@ -361,6 +346,7 @@ extraManifests:
           ports:
             - port: 9090
               protocol: TCP
+        # :9093 /metrics. Prometheus (the ServiceMonitor above).
         - from:
             - namespaceSelector:
                 matchLabels:
