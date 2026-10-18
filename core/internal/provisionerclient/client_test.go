@@ -3,6 +3,7 @@ package provisionerclient
 import (
 	"context"
 	"net"
+	"slices"
 	"testing"
 
 	"google.golang.org/grpc"
@@ -36,7 +37,7 @@ func TestClientSendsBearerToken(t *testing.T) {
 		{"s3cret", []string{"Bearer s3cret"}},
 		{"", nil}, // no header at all, not a bare "Bearer "
 	} {
-		if got := recordHeader(t, tc.token); len(got) != len(tc.want) || (len(got) == 1 && got[0] != tc.want[0]) {
+		if got := recordHeader(t, tc.token); !slices.Equal(got, tc.want) {
 			t.Errorf("token %q: authorization = %q, want %q", tc.token, got, tc.want)
 		}
 	}

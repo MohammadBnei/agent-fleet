@@ -13,11 +13,13 @@ import (
 	"context"
 	"crypto/subtle"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"google.golang.org/grpc"
@@ -58,6 +60,10 @@ func (s *server) Exec(ctx context.Context, req *agentfleetv1.ExecRequest) (*agen
 	}, nil
 }
 
+// minTokenLen is the shortest bearer accepted at boot. The live value is 64
+// characters.
+const minTokenLen = 32
+
 // newGRPCServer rejects anything without the shared bearer token, on unary
 // and stream calls alike. This process is the most privileged in the fleet, so
 // it never relies on network reachability alone (ADR-0035 flagged that
@@ -66,12 +72,18 @@ func (s *server) Exec(ctx context.Context, req *agentfleetv1.ExecRequest) (*agen
 // the hole ADR-0057 found in core. main and the tests both build the server
 // here, so the tested wiring is the shipped wiring.
 //
-// An empty token is an error, not an open mode (docs/adr/0069): it used to
-// pass every call with a warning, so an Infisical operator rendering an empty
-// Secret would have brought cluster RBAC up for anyone, looking healthy.
+// An empty, blank or short token is an error, not an open mode
+// (docs/adr/0069): it used to pass every call with a warning, so an Infisical
+// operator rendering an empty Secret would have brought cluster RBAC up for
+// anyone, looking healthy.
+//
+// ponytail: the bearer check is twinned in
+// provisioner/internal/grpcserver/auth.go (NewGRPCServer). They are separate
+// go.work modules with no shared package, so a fix to one must be made in the
+// other; factor it out if a third gRPC server needs it (ADR-0072).
 func newGRPCServer(token string) (*grpc.Server, error) {
-	if token == "" {
-		return nil, errors.New("THOT_AUTH_TOKEN is unset: refusing to serve ExecutorService unauthenticated")
+	if len(strings.TrimSpace(token)) < minTokenLen {
+		return nil, fmt.Errorf("THOT_AUTH_TOKEN is unset or shorter than %d bytes: refusing to serve ExecutorService", minTokenLen)
 	}
 	want := []byte("Bearer " + token)
 	check := func(ctx context.Context) error {

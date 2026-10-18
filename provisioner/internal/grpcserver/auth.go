@@ -3,8 +3,9 @@ package grpcserver
 import (
 	"context"
 	"crypto/subtle"
-	"errors"
+	"fmt"
 	"log/slog"
+	"strings"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -15,7 +16,11 @@ import (
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/metrics"
 )
 
-// NewServer is the provisioner's gRPC server, the one main serves and the
+// MinTokenLen is the shortest bearer accepted at boot. The live value is 32
+// random bytes, hex (64 characters).
+const MinTokenLen = 32
+
+// NewGRPCServer is the provisioner's gRPC server, the one main serves and the
 // tests exercise. It requires `authorization: Bearer
 // <FLEET_CORE_PROVISIONER_TOKEN>` on every ProvisionerService call
 // (docs/adr/0069). Before it, this port authenticated nobody: any pod that
@@ -23,17 +28,26 @@ import (
 // handed a DSN.
 //
 // The unary chain is access log, metrics, then the token check, so a rejected
-// call is still logged and counted. The check is method-agnostic: there is no
+// unary call is still logged and counted. The stream chain is the check alone:
+// there is no stream RPC to count yet, so a rejected stream call gets only the
+// warning line below. The check is method-agnostic: there is no
 // exempt list, so a method added later needs the token without anyone
 // remembering to say so. The stream half guards the first streaming RPC before
 // it exists, the hole ADR-0057 found in core.
 //
-// An empty token refuses to start rather than serving everyone. The Infisical
-// operator rendering an empty Secret is a known failure, and "off when unset"
-// would come up wide open and look healthy (the ADR-0056 reasoning).
-func NewServer(token string) (*grpc.Server, error) {
-	if token == "" {
-		return nil, errors.New("FLEET_CORE_PROVISIONER_TOKEN is unset: refusing to serve ProvisionerService unauthenticated")
+// A token shorter than MinTokenLen (after trimming whitespace) refuses to
+// start rather than serving everyone, or serving whoever guesses " ". The
+// Infisical operator rendering an empty Secret is a known failure, and "off
+// when unset" would come up wide open and look healthy (the ADR-0056
+// reasoning).
+//
+// ponytail: the bearer check is twinned in executor/cmd/executor/main.go
+// (newGRPCServer). They are separate go.work modules with no shared package,
+// so a fix to one must be made in the other; factor it out if a third gRPC
+// server needs it.
+func NewGRPCServer(token string) (*grpc.Server, error) {
+	if len(strings.TrimSpace(token)) < MinTokenLen {
+		return nil, fmt.Errorf("FLEET_CORE_PROVISIONER_TOKEN is unset or shorter than %d bytes: refusing to serve ProvisionerService", MinTokenLen)
 	}
 	want := []byte("Bearer " + token)
 	check := func(ctx context.Context, method string) error {

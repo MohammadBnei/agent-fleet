@@ -48,7 +48,7 @@ func main() {
 	// First, before any side effect: an unauthenticated ProvisionerService
 	// can create and expose pods for anyone on the pod network
 	// (docs/adr/0069), so no token means no provisioner.
-	grpcSrv, err := grpcserver.NewServer(cfg.CoreProvisionerToken)
+	grpcSrv, err := grpcserver.NewGRPCServer(cfg.CoreProvisionerToken)
 	if err != nil {
 		slog.Error("refusing to start", "error", err)
 		os.Exit(1)
