@@ -31,14 +31,19 @@ own environment could skip any button.
    agent.** The agent proposes a step; core writes an `approvals` row with
    the argv, the infra-bootstrap **commit SHA**, the working directory and
    the environment. The dashboard renders it as a DecisionDock button. The
-   approve RPC marks the row under the operator's OIDC identity.
+   approve RPC marks the row under the operator's OIDC `sub` — the hashed
+   user id, never the email, which can change.
 2. **The executor pulls the approved step; nothing pushes argv to it.** It
    authenticates to core with its own identity, fetches the step by id,
    clones that SHA itself, and runs it once. The row is single-use. A
    different argv, SHA, directory or environment is a different row. The
    agent holds no executor credential.
 3. **Credentials are minted per step.** HTTPS steps get an Agent Vault
-   `av_sess_` token scoped to the step. SSH steps (ansible over NetBird)
+   `av_sess_` token scoped to the step. Agent Vault path rules are a plain
+   prefix match with no segment boundary (`/o/repo*` also matches
+   `/o/repo-evil`), so a rule names `/o/r/*` and `/o/r.git/*`, never a bare
+   prefix. Revoking a token leaves an open tunnel usable for about two
+   minutes; the step's timeout must not rely on revocation. SSH steps (ansible over NetBird)
    get an authentik short-lived JWT in the `netbird-agent` pattern
    (infra-bootstrap ADR-0055) — Agent Vault cannot broker SSH.
 4. **Steps that cannot be scoped stay human.** The `boundClaims` PATCH on
