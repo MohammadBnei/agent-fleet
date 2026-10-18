@@ -38,6 +38,14 @@ export function AutoBadge({ className = "" }: { className?: string }) {
   );
 }
 
+// docs/adr/0062: the session runs a defined agent, pinned to one version.
+export function DefinitionBadge({ name, className = "" }: { name: string; className?: string }) {
+  return (
+    <span className={`text-2xs text-dim2 border border-line px-1.5 py-px flex-none ${className}`} title={`defined agent ${name}`}>
+      def:{name}
+    </span>
+  );
+}
 
 export function SectionHeading({
   title,
@@ -324,6 +332,7 @@ function WorkingRow({
           {sessionLabel(session)}
         </button>
         <span className="text-xs text-dim2 flex-none">{session.repo}</span>
+        {session.definitionName && <DefinitionBadge name={session.definitionName} />}
         {session.permissionMode === "auto" && <AutoBadge />}
 
         {provisioning ? (
