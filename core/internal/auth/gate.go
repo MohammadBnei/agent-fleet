@@ -69,6 +69,16 @@ func exempt(path string) bool {
 // receive authentik's HTML and try to parse it — the same class of failure that
 // took ArgoCD's login down (infra-bootstrap #189), where an HTML body reached a
 // JSON parser.
+//
+// An authenticated request without RequiredGroup gets a 403 — on EVERY
+// request, not only at login (docs/adr/0069): a cookie outlives the moment it
+// was minted, and the login check alone stops holding the day login admits
+// anyone else. 403, never a redirect: login would refuse them again and the
+// browser would loop.
+//
+// ponytail: one group for the whole mux. A service with a different audience
+// (AgentService) needs its path excluded from this check and authorized by its
+// own ConnectInterceptor(group) instead — add that when the service exists.
 func (o *OIDC) Gate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if exempt(r.URL.Path) {
@@ -78,6 +88,10 @@ func (o *OIDC) Gate(next http.Handler) http.Handler {
 		cookie, err := r.Cookie(SessionCookieName)
 		if err == nil {
 			if id, ok := o.signer.Verify(cookie.Value); ok {
+				if !id.InGroup(RequiredGroup) {
+					http.Error(w, "not authorized for this fleet", http.StatusForbidden)
+					return
+				}
 				next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), ctxKey{}, id)))
 				return
 			}
@@ -150,7 +164,10 @@ type meResponse struct {
 	Groups        []string `json:"groups,omitempty"`
 }
 
-// ConnectInterceptor applies the same check to DashboardService.
+// ConnectInterceptor applies the same check to a Connect service: a valid
+// session cookie (else Unauthenticated) carrying requiredGroup (else
+// PermissionDenied), on every call. The group is the caller's argument so each
+// service states its own audience; an empty group admits nobody.
 //
 // Registered as a Connect interceptor rather than left to Gate above because
 // this covers unary AND streaming identically — the existing CSRF interceptor
@@ -161,29 +178,39 @@ type meResponse struct {
 // X-Fleet-Dashboard. That request has no session cookie, so it now returns
 // unauthenticated regardless of which network it arrives from — which is the
 // property a Traefik middleware could not have provided.
-func (o *OIDC) ConnectInterceptor() connect.Interceptor {
-	return connectAuth{signer: o.signer}
+func (o *OIDC) ConnectInterceptor(requiredGroup string) connect.Interceptor {
+	return connectAuth{signer: o.signer, group: requiredGroup}
 }
 
-type connectAuth struct{ signer *Signer }
+type connectAuth struct {
+	signer *Signer
+	group  string
+}
 
-func (c connectAuth) identity(h http.Header) (Identity, bool) {
+func (c connectAuth) authorize(h http.Header) (Identity, error) {
 	// Reuse net/http's cookie parsing rather than splitting the header by
 	// hand; a request carries several cookies and the naive split gets the
 	// wrong one.
 	req := http.Request{Header: h}
 	cookie, err := req.Cookie(SessionCookieName)
 	if err != nil {
-		return Identity{}, false
+		return Identity{}, connect.NewError(connect.CodeUnauthenticated, errUnauthenticated)
 	}
-	return c.signer.Verify(cookie.Value)
+	id, ok := c.signer.Verify(cookie.Value)
+	if !ok {
+		return Identity{}, connect.NewError(connect.CodeUnauthenticated, errUnauthenticated)
+	}
+	if !id.InGroup(c.group) {
+		return Identity{}, connect.NewError(connect.CodePermissionDenied, errForbidden)
+	}
+	return id, nil
 }
 
 func (c connectAuth) WrapUnary(next connect.UnaryFunc) connect.UnaryFunc {
 	return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
-		id, ok := c.identity(req.Header())
-		if !ok {
-			return nil, connect.NewError(connect.CodeUnauthenticated, errUnauthenticated)
+		id, err := c.authorize(req.Header())
+		if err != nil {
+			return nil, err
 		}
 		return next(context.WithValue(ctx, ctxKey{}, id), req)
 	}
@@ -195,15 +222,18 @@ func (c connectAuth) WrapStreamingClient(next connect.StreamingClientFunc) conne
 
 func (c connectAuth) WrapStreamingHandler(next connect.StreamingHandlerFunc) connect.StreamingHandlerFunc {
 	return func(ctx context.Context, conn connect.StreamingHandlerConn) error {
-		id, ok := c.identity(conn.RequestHeader())
-		if !ok {
-			return connect.NewError(connect.CodeUnauthenticated, errUnauthenticated)
+		id, err := c.authorize(conn.RequestHeader())
+		if err != nil {
+			return err
 		}
 		return next(context.WithValue(ctx, ctxKey{}, id), conn)
 	}
 }
 
-var errUnauthenticated = &authError{"not signed in"}
+var (
+	errUnauthenticated = &authError{"not signed in"}
+	errForbidden       = &authError{"not authorized for this fleet"}
+)
 
 type authError struct{ msg string }
 

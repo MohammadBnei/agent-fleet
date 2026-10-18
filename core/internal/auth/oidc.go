@@ -20,6 +20,9 @@ import (
 // in infra-bootstrap's authentik-blueprint-groups.yaml — one place saying who
 // operates this cluster, deliberately NOT authentik's built-in admins group, so
 // that administering the IdP and operating the fleet stay separate powers.
+//
+// Checked at the callback AND on every request (Gate, ConnectInterceptor —
+// docs/adr/0069); the callback check alone trusts a cookie for its whole TTL.
 const RequiredGroup = "platform-admins"
 
 const (
@@ -194,7 +197,7 @@ func (o *OIDC) Callback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id := Identity{Email: claims.Email, Groups: claims.Groups}
+	id := Identity{Sub: idToken.Subject, Email: claims.Email, Groups: claims.Groups}
 	if !id.InGroup(RequiredGroup) {
 		// Logged with the groups actually received, because the likeliest
 		// cause is not an unauthorised person: it is the provider not emitting

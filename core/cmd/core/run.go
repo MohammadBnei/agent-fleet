@@ -269,7 +269,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 		// the gate is on, so with FLEET_AUTH_DISABLED=1 it 404s and the SPA
 		// simply shows nothing — which is honest: there is no identity to show.
 		mux.HandleFunc("/auth/me", oidcAuth.Me)
-		authInterceptors = append(authInterceptors, oidcAuth.ConnectInterceptor())
+		authInterceptors = append(authInterceptors, oidcAuth.ConnectInterceptor(auth.RequiredGroup))
 		gate = oidcAuth.Gate
 	}
 	// CSRF stays alongside the session check and is not redundant: a cookie is
