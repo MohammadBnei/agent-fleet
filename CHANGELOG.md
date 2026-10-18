@@ -1,5 +1,11 @@
 # Changelog
 
+# [4.17.0](https://github.com/MohammadBnei/agent-fleet/compare/4.16.0...4.17.0) (2026-10-18)
+
+### Features
+
+* **provisioner:** G0 component auth, part B: require a bearer token on ProvisionerService (ADR 0069) ([#261](https://github.com/MohammadBnei/agent-fleet/issues/261)) ([e8f1a17](https://github.com/MohammadBnei/agent-fleet/commit/e8f1a177f5cc5b4dbc80bc544d2a1d9faf5982a9))
+
 # [4.16.0](https://github.com/MohammadBnei/agent-fleet/compare/4.15.3...4.16.0) (2026-10-18)
 
 ### Features
