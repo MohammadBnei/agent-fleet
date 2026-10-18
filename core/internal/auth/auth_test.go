@@ -1,10 +1,13 @@
 package auth
 
 import (
+	"encoding/base64"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func mustSigner(t *testing.T, keys string) *Signer {
@@ -30,6 +33,21 @@ func TestSigner_RoundTrip(t *testing.T) {
 // Sign with the first, verify against any. That ordering IS the rotation
 // mechanism, so it needs a test that exercises a rotation rather than one that
 // only proves a signature works.
+// A cookie minted before Identity carried sub has no "s" key. It must still
+// verify — adding the field must not log everyone out — and decode to Sub "".
+func TestSigner_CookieWithoutSubStillVerifies(t *testing.T) {
+	s := mustSigner(t, "key-one")
+	b := base64.RawURLEncoding.EncodeToString(fmt.Appendf(nil,
+		`{"e":"me@bnei.dev","g":["platform-admins"],"x":%d}`, time.Now().Add(time.Hour).Unix()))
+	id, ok := s.Verify(b + "." + s.mac(s.keys[0], b))
+	if !ok || id.Email != "me@bnei.dev" || id.Sub != "" {
+		t.Fatalf("old-shape cookie: ok=%v id=%+v", ok, id)
+	}
+	if id, _ := s.Verify(s.Sign(Identity{Sub: "abc", Email: "me@bnei.dev"})); id.Sub != "abc" {
+		t.Errorf("Sub lost in round trip: %+v", id)
+	}
+}
+
 func TestSigner_RotationKeepsOldCookiesValidUntilTheKeyIsDropped(t *testing.T) {
 	old := mustSigner(t, "key-A")
 	cookie := old.Sign(Identity{Email: "me@bnei.dev", Groups: []string{RequiredGroup}})
@@ -158,6 +176,35 @@ func TestGate_ExemptsOnlyWhatIsListed(t *testing.T) {
 	for _, p := range gatedCases {
 		if exempt(p) {
 			t.Errorf("%s is exempt from the session gate but should not be", p)
+		}
+	}
+}
+
+// The exemption must agree with how ServeMux routes. /auth%2Fme decodes to
+// Path "/auth/me" but the mux matches the escaped path and sends it to the "/"
+// SPA fallback, so a gate matching Path served the 200 shell unauthenticated.
+func TestGate_EncodedSlashIsNotExempt(t *testing.T) {
+	o := &OIDC{signer: mustSigner(t, "key-one")}
+	mux := http.NewServeMux()
+	for _, p := range []string{"/healthz", "/webhook/alertmanager", "/auth/me", "/auth/callback"} {
+		mux.HandleFunc(p, func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	}
+	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	handler := o.Gate(mux)
+
+	for p, want := range map[string]int{
+		"/auth/me":                http.StatusOK, // positive control
+		"/auth%2Fme":              http.StatusUnauthorized,
+		"/auth%2Fcallback":        http.StatusUnauthorized,
+		"/webhook%2Falertmanager": http.StatusUnauthorized,
+		"/healthz%2F":             http.StatusUnauthorized,
+	} {
+		req := httptest.NewRequest(http.MethodGet, p, nil)
+		req.Header.Set("Sec-Fetch-Mode", "cors")
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != want {
+			t.Errorf("%s: got %d, want %d", p, rec.Code, want)
 		}
 	}
 }

@@ -16,10 +16,7 @@ import (
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
-// Per-request authorization (docs/adr/0069). Login checks the group too, but
-// once login widens beyond platform-admins a perfectly valid cookie will belong
-// to someone who must not reach DashboardService. Signature-valid is not
-// authorized. (Not revocation: the groups checked are the cookie's own.)
+// Per-request authorization (docs/adr/0069): signature-valid is not authorized.
 
 // Every DashboardService method, enumerated from the generated descriptor so a
 // method added later is covered without anyone remembering to list it.
@@ -28,7 +25,7 @@ func TestConnectInterceptor_NonAdminIsDeniedOnEveryDashboardMethod(t *testing.T)
 	o := &OIDC{signer: s}
 	path, h := agentfleetv1connect.NewDashboardServiceHandler(
 		agentfleetv1connect.UnimplementedDashboardServiceHandler{},
-		connect.WithInterceptors(o.ConnectInterceptor()),
+		connect.WithInterceptors(o.ConnectInterceptor(AdminOnly)),
 	)
 	mux := http.NewServeMux()
 	mux.Handle(path, h)
@@ -89,20 +86,24 @@ func TestConnectInterceptor_NonAdminIsDeniedOnEveryDashboardMethod(t *testing.T)
 	}
 }
 
-// A denial the interceptor makes must be visible: it carries the groups
-// received, so a renamed group reads as that rather than as silence.
-func TestConnectInterceptor_DenialIsLogged(t *testing.T) {
-	logs := captureLog(t)
+// The policy is the interceptor's, not a constant: it decides with the
+// procedure, and a missing one admits nobody — admin included.
+func TestConnectInterceptor_AppliesItsPolicy(t *testing.T) {
 	s := mustSigner(t, "key-one")
 	h := http.Header{}
-	h.Set("Cookie", SessionCookieName+"="+s.Sign(Identity{Email: "x@bnei.dev", Groups: []string{"opus-users"}}))
-	if _, err := (connectAuth{signer: s}).authorize(h, "/agentfleet.v1.DashboardService/ListSessions"); connect.CodeOf(err) != connect.CodePermissionDenied {
-		t.Fatalf("got %v, want permission_denied", err)
+	h.Set("Cookie", SessionCookieName+"="+s.Sign(Identity{Email: "me@bnei.dev", Groups: []string{RequiredGroup}}))
+	const proc = "/agentfleet.v1.AgentService/Start"
+
+	if _, err := (connectAuth{signer: s}).authorize(h, proc); connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Errorf("nil policy: got %v, want permission_denied", err)
 	}
-	for _, want := range []string{"refused request", "x@bnei.dev", "opus-users", "DashboardService/ListSessions", "platform-admins"} {
-		if !strings.Contains(logs.String(), want) {
-			t.Errorf("denial log lacks %q: %s", want, logs)
-		}
+	var seen string
+	onlyAgent := func(_ Identity, p string) bool { seen = p; return strings.HasPrefix(p, "/agentfleet.v1.AgentService/") }
+	if _, err := (connectAuth{signer: s, allow: onlyAgent}).authorize(h, proc); err != nil || seen != proc {
+		t.Errorf("custom policy: err %v, saw procedure %q", err, seen)
+	}
+	if _, err := (connectAuth{signer: s, allow: onlyAgent}).authorize(h, "/agentfleet.v1.DashboardService/ListSessions"); connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Errorf("custom policy refusing: got %v, want permission_denied", err)
 	}
 }
 

@@ -21,9 +21,7 @@ import (
 // operates this cluster, deliberately NOT authentik's built-in admins group, so
 // that administering the IdP and operating the fleet stay separate powers.
 //
-// Checked at the callback AND on every request (Gate, ConnectInterceptor —
-// docs/adr/0069). The per-request check guards against login WIDENING, not
-// group removal: the groups are the cookie's, frozen at login.
+// Checked at the callback AND on every request through AdminOnly (docs/adr/0069).
 const RequiredGroup = "platform-admins"
 
 const (
@@ -198,7 +196,15 @@ func (o *OIDC) Callback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id := Identity{Email: claims.Email, Groups: claims.Groups}
+	// OIDC makes sub mandatory and go-oidc does not check it. A session with
+	// no subject could never be told apart from an old cookie's empty Sub.
+	if idToken.Subject == "" {
+		slog.Warn("auth: rejected login, id token has no sub", "email", claims.Email)
+		http.Error(w, "login failed", http.StatusUnauthorized)
+		return
+	}
+
+	id := Identity{Sub: idToken.Subject, Email: claims.Email, Groups: claims.Groups}
 	if !id.InGroup(RequiredGroup) {
 		// Logged with the groups actually received, because the likeliest
 		// cause is not an unauthorised person: it is the provider not emitting

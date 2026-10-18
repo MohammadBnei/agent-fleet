@@ -10,8 +10,7 @@ import (
 // on the surface where permission prompts are answered). That includes the
 // gate's own 302/401/403 and the /auth/ pages — frame-ancestors governs only
 // who may embed the response, so it cannot interfere with the OIDC redirects.
-// It builds the FrameDeny(Gate(...)) order itself; run.go's wiring is not
-// exercised here.
+// run.go's own composition is covered by cmd/core's TestHTTPHandler_*.
 func TestFrameDeny_SetsHeadersOnEveryResponse(t *testing.T) {
 	s := mustSigner(t, "key-one")
 	o := &OIDC{signer: s}

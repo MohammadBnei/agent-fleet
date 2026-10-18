@@ -19,36 +19,22 @@ func FromContext(ctx context.Context) (Identity, bool) {
 	return id, ok
 }
 
-// exemptPaths are the ONLY paths reachable without a session, matched exactly.
-// A prefix match let /healthzX or /auth/anything through to the SPA fallback,
-// which answers any unknown path with the app shell and a 200.
+// exemptPaths are the ONLY paths reachable without a session, matched exactly
+// against the escaped path. A prefix match let /healthzX or /auth/anything
+// through to the SPA fallback, which answers any unknown path with a 200 shell.
 //
-// This is an allowlist, and the direction matters. Gating one handler and
-// leaving the rest open means every route added later is public until someone
-// remembers — the same shape as this repo's "a component must be wired into
-// EVERY CI path" trap, with a worse failure. Wrapping the whole mux makes a
-// forgotten route fail closed: visibly broken beats silently open.
+// An allowlist on purpose: wrapping the whole mux makes a forgotten route fail
+// closed — visibly broken beats silently open.
 //
 //   - /healthz is the kubelet probe.
 //   - /webhook/alertmanager has its own bearer token (ALERT_WEBHOOK_TOKEN) and
-//     is called in-cluster by Prometheus and Grafana over the Service URL, which
-//     never carries a browser cookie.
-//   - /auth/* is the login itself — the four routes run.go registers, not the
-//     prefix. The planned /embed/* (adr/0068) will be the first deliberate
-//     prefix entry.
+//     is called in-cluster over the Service URL, never with a browser cookie.
+//   - /auth/{login,callback,logout,me} are the four routes run.go registers.
+//     The planned /embed/* (adr/0068) will be the first deliberate prefix.
 //
-// /metrics is deliberately ABSENT, and is no longer served on this mux at all —
-// core carries it on CORE_METRICS_PORT (9093), which no IngressRoute reaches
-// (docs/adr/0059).
-//
-// An earlier version of this comment claimed the exemption was unnecessary
-// because /metrics "has no IngressRoute". That was false: the IngressRoute
-// matches on HOST with no path constraint, so every path served on CORE_PORT is
-// internet-routed and only this gate refuses it — and the ServiceMonitor,
-// arriving in-cluster with no cookie, was refused along with everyone else
-// (#230, every core target down). Exempting it here would have fixed the scrape
-// by publishing every target repo name and RPC method. Moving the listener makes
-// the original claim true instead of working around it.
+// /metrics is deliberately ABSENT and not served on this mux at all: it lives
+// on CORE_METRICS_PORT (9093), which no IngressRoute reaches. Exempting it here
+// would publish every target repo name and RPC method (#230, docs/adr/0059).
 var exemptPaths = map[string]bool{
 	"/healthz":              true,
 	"/webhook/alertmanager": true,
@@ -59,6 +45,14 @@ var exemptPaths = map[string]bool{
 }
 
 func exempt(path string) bool { return exemptPaths[path] }
+
+// Policy is the authorization rule a layer applies to an authenticated
+// identity. procedure is the Connect procedure, or the URL path at the Gate.
+type Policy func(id Identity, procedure string) bool
+
+// AdminOnly admits RequiredGroup members. It is the whole console's policy
+// today, at the Gate and on DashboardService.
+func AdminOnly(id Identity, _ string) bool { return id.InGroup(RequiredGroup) }
 
 // Gate wraps the whole mux. An unauthenticated request is redirected to the
 // login for a document navigation and refused for anything else.
@@ -71,42 +65,35 @@ func exempt(path string) bool { return exemptPaths[path] }
 // took ArgoCD's login down (infra-bootstrap #189), where an HTML body reached a
 // JSON parser.
 //
-// An authenticated request without RequiredGroup gets a 403 — on every
-// request, not only at login (docs/adr/0069). Today login mints cookies for
-// platform-admins only, so this re-reads a claim already checked; it starts
-// doing work the day login admits an audience group. It is NOT revocation:
-// groups are frozen into the cookie at login, so someone removed from
-// platform-admins keeps access until the 12h TTL ends or SESSION_KEYS rotates.
-// 403, never a redirect: login would refuse them again and the browser would
-// loop.
+// An authenticated identity AdminOnly refuses gets a 403 on every request
+// (docs/adr/0069; not revocation — see docs/verification-traps.md). 403, never
+// a redirect: login would refuse them again and the browser would loop.
 //
-// ponytail: one group for the whole mux, shared with ConnectInterceptor.
-// AgentService's audience is per definition and resolved from the request, so
-// no fixed group string fits it; it brings its own Gate exclusion and per-method
-// authz table (adr/0066) when it exists.
+// ponytail: one Policy for every gated path. A service with another audience
+// swaps AdminOnly here for a path-aware Policy — still authenticated here, not
+// exempted.
 func (o *OIDC) Gate(next http.Handler) http.Handler {
+	authz := connectAuth{signer: o.signer, allow: AdminOnly}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if exempt(r.URL.Path) {
+		// The ESCAPED path, because that is what ServeMux routes on:
+		// /auth%2Fme decodes to Path "/auth/me" but reaches the "/" SPA
+		// fallback, so matching Path would hand it the 200 shell unauthenticated.
+		if exempt(r.URL.EscapedPath()) {
 			next.ServeHTTP(w, r)
 			return
 		}
-		cookie, err := r.Cookie(SessionCookieName)
-		if err == nil {
-			if id, ok := o.signer.Verify(cookie.Value); ok {
-				if !id.InGroup(RequiredGroup) {
-					logForbidden(id, r.URL.Path)
-					http.Error(w, errForbidden.Error(), http.StatusForbidden)
-					return
-				}
-				next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), ctxKey{}, id)))
-				return
-			}
-		}
-		if isDocumentRequest(r) {
+		id, err := authz.authorize(r.Header, r.URL.Path)
+		switch {
+		case err == nil:
+			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), ctxKey{}, id)))
+		case connect.CodeOf(err) == connect.CodePermissionDenied:
+			logForbidden(id, r.URL.Path)
+			http.Error(w, errForbidden.Error(), http.StatusForbidden)
+		case isDocumentRequest(r):
 			http.Redirect(w, r, "/auth/login?return_to="+urlQueryEscape(r.URL.RequestURI()), http.StatusFound)
-			return
+		default:
+			http.Error(w, "unauthenticated", http.StatusUnauthorized)
 		}
-		http.Error(w, "unauthenticated", http.StatusUnauthorized)
 	})
 }
 
@@ -170,26 +157,31 @@ type meResponse struct {
 	Groups        []string `json:"groups,omitempty"`
 }
 
-// ConnectInterceptor applies the same check to DashboardService: a valid
-// session cookie (else Unauthenticated) carrying RequiredGroup (else
-// PermissionDenied), on every call. Behind the Gate it is the second layer, and
-// the one that still holds for a path the Gate is ever told to skip.
+// ConnectInterceptor applies allow to a Connect service: a valid session cookie
+// (else Unauthenticated) that allow admits (else PermissionDenied), on every
+// call, unary and streaming alike. A nil allow admits nobody. Behind the Gate
+// it is the second layer, and the one that still holds for a path the Gate is
+// ever told to skip.
 //
-// Registered as a Connect interceptor rather than left to Gate above because
-// this covers unary AND streaming identically — the existing CSRF interceptor
-// is the same shape for the same reason. Both run: the header stops a
-// cross-origin page forging a call, this stops an unauthenticated one.
-//
-// #200's actual demonstration was a curl from a worker pod carrying only
-// X-Fleet-Dashboard. That request has no session cookie, so it now returns
-// unauthenticated regardless of which network it arrives from — which is the
-// property a Traefik middleware could not have provided.
-func (o *OIDC) ConnectInterceptor() connect.Interceptor {
-	return connectAuth{signer: o.signer}
+// Both this and the CSRF interceptor run: the header stops a cross-origin page
+// forging a call, this stops an unauthenticated one. #200's demonstration — a
+// curl from a worker pod carrying only X-Fleet-Dashboard — has no cookie, so it
+// is refused from any network, which a Traefik middleware could not provide.
+func (o *OIDC) ConnectInterceptor(allow Policy) connect.Interceptor {
+	return connectAuth{signer: o.signer, allow: allow}
 }
 
-type connectAuth struct{ signer *Signer }
+// connectAuth is the one authorization decision, shared by the Gate and the
+// interceptor so the two transports cannot disagree.
+type connectAuth struct {
+	signer *Signer
+	allow  Policy
+}
 
+// authorize returns the identity even on PermissionDenied, so the caller can
+// log who was refused. It does not log: in production the Gate refuses first
+// and logs, and a call that ever reaches here unrefused-by-the-Gate is already
+// logged by the access-log interceptor ahead of this one.
 func (c connectAuth) authorize(h http.Header, procedure string) (Identity, error) {
 	// Reuse net/http's cookie parsing rather than splitting the header by
 	// hand; a request carries several cookies and the naive split gets the
@@ -203,9 +195,8 @@ func (c connectAuth) authorize(h http.Header, procedure string) (Identity, error
 	if !ok {
 		return Identity{}, connect.NewError(connect.CodeUnauthenticated, errUnauthenticated)
 	}
-	if !id.InGroup(RequiredGroup) {
-		logForbidden(id, procedure)
-		return Identity{}, connect.NewError(connect.CodePermissionDenied, errForbidden)
+	if c.allow == nil || !c.allow(id, procedure) {
+		return id, connect.NewError(connect.CodePermissionDenied, errForbidden)
 	}
 	return id, nil
 }
@@ -239,10 +230,10 @@ var (
 	errForbidden       = &authError{"not authorized for this fleet"}
 )
 
-// logForbidden makes a per-request denial visible. The Gate's 403 fires before
-// the Connect access-log and metrics interceptors, so without this a refused
-// caller leaves no trace; logged with the groups received, like the callback,
-// because a renamed group or a policy typo looks exactly like this.
+// logForbidden makes a Gate denial visible. The Gate's 403 fires before the
+// Connect access-log and metrics interceptors, so without this a refused caller
+// leaves no trace; logged with the groups received, like the callback, because
+// a renamed group or a policy typo looks exactly like this.
 func logForbidden(id Identity, path string) {
 	slog.Warn("auth: refused request, required group missing",
 		"email", id.Email, "groups", id.Groups, "path", path, "required", RequiredGroup)
