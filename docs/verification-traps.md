@@ -211,6 +211,17 @@ since the feature was written.
   unless the in-app gate refuses it, and **a new exempt path is a new public
   endpoint**. Currently exempt: `/healthz`, `/auth/*`, `/webhook/alertmanager`
   (its own bearer token, refuses when unset).
+- **A signature-valid session cookie is not authorization.** `platform-admins`
+  was once checked only at the OIDC callback, so a cookie stayed good for its
+  whole 12h TTL whoever it named. The gate (403) and `ConnectInterceptor`
+  (`PermissionDenied`) now re-check the group on every request (`adr/0069`); a
+  new Connect service must pass its own group to `ConnectInterceptor`, and a
+  non-admin 403 must never become a login redirect (login refuses them again →
+  loop). `TestConnectInterceptor_NonAdminIsDeniedOnEveryDashboardMethod`
+  enumerates methods from the descriptor, so a new RPC is covered by default.
+  Every response also carries `frame-ancestors 'none'` + `X-Frame-Options: DENY`
+  (`auth.FrameDeny`, outside the gate) — it governs embedding only, so it cannot
+  break the `/auth/` redirect flow; `/embed/*` will be its one exception.
 - **A gate that can't see the network the caller came from refuses your own
   infrastructure too.** `/metrics` sat on the gated 8080 mux and was never
   exempt, on the written assumption that it "has no IngressRoute" — an assumption
