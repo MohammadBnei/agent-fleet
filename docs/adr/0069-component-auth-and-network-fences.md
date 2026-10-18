@@ -61,8 +61,8 @@ on 2026-10-18:
 - The interceptor is method-agnostic: every method, including ones added
   later, needs the token. There is no exempt list to forget to extend. The
   test enumerates every `ProvisionerService` method from the generated
-  descriptor. An unregistered method never reaches an interceptor: grpc-go
-  answers it `Unimplemented` first, with no handler behind it.
+  descriptor. A rejected call is still access-logged and counted, and a
+  warning names its peer address, so a probe of the port can be attributed.
 - Core's `provisionerclient.New(addr, token)` attaches the header with
   `grpc.WithPerRPCCredentials`, so one value covers unary and stream calls,
   and sends no header at all when its token is empty.
@@ -70,9 +70,13 @@ on 2026-10-18:
   `x-fleet-provisioner-token` the reverse direction uses. Renaming that one
   would be its own two-sided rollout for no security gain, so it stays.
 - **A second shared secret, not a reuse of `FLEET_PROVISIONER_TOKEN`.** That
-  one authenticates the provisioner to core. Reusing it would let whichever
-  side leaks impersonate the other in both directions. Two keys cost one more
-  Infisical entry.
+  one authenticates the provisioner to core. Two keys mean a leaked header or
+  log line exposes one direction only, and each key rotates on its own. They
+  do **not** isolate the two sides from each other's compromise: both pods
+  sync the whole Infisical scope, and a symmetric secret has to be held by its
+  verifier as well as its sender, so either pod's env holds both keys. Only
+  per-direction asymmetric credentials (mTLS, signed tokens) would give that,
+  and this ADR does not claim it. Two keys cost one more Infisical entry.
 - **Wiring:** a new key, `FLEET_CORE_PROVISIONER_TOKEN`, in Infisical project
   `agent-fleet-nygh`, env `dev`. Core (`infisical.enabled` in `k8s/core.yaml`)
   and the provisioner (`k8s/provisioner/infisicalsecret.yaml` + `envFrom`) both
@@ -156,16 +160,33 @@ image-bump commit rolls both Applications together.
    the order that has no window. Shipped in one release instead, the
    provisioner goes first: both Applications (`agent-fleet-core`,
    `platform-provisioner`) auto-sync from the same image-bump commit, core
-   is slower (its PreSync migration hook runs first), and the provisioner
-   has no readiness probe, so the old provisioner pod goes as soon as the new
-   container starts. For that gap, tens of seconds, every core → provisioner
-   call is `Unauthenticated`, so messages fail to warm.
+   is slower (its PreSync migration hook runs first), and the new provisioner
+   is ready seconds after it starts. For that gap, tens of seconds, every
+   core → provisioner call is `Unauthenticated`, so messages fail to warm.
+   PR B is opened based on PR A's branch and retargeted to `main` before PR A
+   is squash-merged (a squash merge of A would otherwise close B). PR B merges
+   only once PR A's release run has finished and the core pod runs A's image
+   tag, checked on the pod, not inferred from the merge: `docker.yml`'s
+   release concurrency group cancels an in-flight release and releases from
+   `main`'s tip, so merging B early folds both into one release.
 4. **Never roll core back below PR A's release while the provisioner is on PR
    B or later.** That reopens the same failure with no end: every pod create,
    teardown, expose and DSN request fails until core moves forward again.
    Roll the provisioner back first, or both together.
-5. The executor floats on `:latest` (infra-bootstrap `gitops/platform/thot/`),
-   so it picks up §2 on its next restart. Its token is already present.
+5. The executor floats on `:latest` (infra-bootstrap `gitops/platform/thot/`)
+   and nothing restarts it on release. After PR A releases, the operator runs
+   `kubectl rollout restart deploy/thot-executor -n thot` and confirms the
+   running pod's image digest is the new `:latest`. Until then the cluster
+   runs the fail-open binary while CI is green. Its token is already present.
+6. **Live negative check after PR B** (and after step 5 for the executor):
+   from a throwaway pod in `agent-fleet` (once §3's fences are in, a foreign
+   namespace is refused before auth is reached), `grpcurl` to
+   `provisioner:9090` and `thot-executor.thot:9090` with no token and with a
+   wrong token answers `Unauthenticated`, and a real session warm still
+   succeeds. Zero rejections in the logs does not show the check works.
+7. The provisioner has a readiness probe on `/healthz`, which only answers
+   after the token check. A rollout with an empty or missing Secret stalls
+   with the old pod serving instead of replacing it with a crashlooping one.
 
 ## Consequences
 
@@ -173,9 +194,18 @@ image-bump commit rolls both Applications together.
   surface: a lease for `CoreService`, `FLEET_PROVISIONER_TOKEN` to impersonate
   the provisioner, `FLEET_CORE_PROVISIONER_TOKEN` to impersonate core, and
   `THOT_AUTH_TOKEN` for the executor.
-- Core holds `FLEET_CORE_PROVISIONER_TOKEN`, so core compromised still means
-  the provisioner is compromised. That is the hub-and-spoke shape (ADR-0020),
-  not a regression.
+- Each token sits in more workloads than its one legitimate sender. Core,
+  the provisioner and core's migrate PreSync hook Job (the chart gives hooks
+  the same `envFrom`) all sync the whole `agent-fleet-nygh`/`dev` scope, so
+  each holds `FLEET_PROVISIONER_TOKEN`, `FLEET_CORE_PROVISIONER_TOKEN` and
+  `THOT_AUTH_TOKEN` (a live read of key names and lengths by the 2026-10-18
+  review; the chart's hook template confirms the migrate `envFrom`).
+  `cluster_access` worker pods also get `THOT_AUTH_TOKEN`. So compromising
+  core, the provisioner or the migrate image yields every one of them,
+  `ExecutorService` included, which holds cluster RBAC. Accepted for G0: the
+  credentials stop a pod that holds none of them, which is the gap this ADR
+  closes. Narrowing it (per-component Infisical folders, the executor token in
+  the provisioner only) is a follow-up with ADR-0072.
 - Two more ways to fail at startup: provisioner and executor both exit on an
   empty token. That is intended. "Crashlooping, saying why" beats "running,
   open".
