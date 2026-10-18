@@ -250,10 +250,11 @@ down. Exempting it was the obvious fix and the wrong one: with no path constrain
 on the route, that publishes every target repo name and RPC method.
 
 **Who may even connect (network fences, [`adr/0069`](adr/0069-component-auth-and-network-fences.md) §3).**
-Ingress-only NetworkPolicies select core and the provisioner; nothing else in
-the namespace is selected, so worker pods and shared instances stay
-default-allow. The credentials above remain the authentication. The fences
-only cut down who can try.
+Ingress-only NetworkPolicies select core and the provisioner. Worker pods,
+shared instances and `expose-*` Services are not selected yet and stay
+reachable from any namespace; §3 defers them to the ADR-0064 work. The
+credentials above remain the authentication. The fences only cut down who can
+try.
 
 | Pod:port | Admitted from |
 |---|---|
@@ -266,9 +267,9 @@ only cut down who can try.
 core's policy is an `extraManifests` entry in `k8s/core.yaml`; the
 provisioner's is `k8s/provisioner/networkpolicy.yaml`. Each lives with the
 Application that owns its pod. `provisioner/internal/k8s/networkpolicy_test.go`
-pins both against the labels the callers really carry. Under Cilium a source
-with the host identity on the target's own node is always admitted. That is
-how kubelet probes pass, and it also admits hostNetwork pods on that node.
+pins the in-repo labels (worker, shared instance, provisioner, core's release
+name); the external callers' labels are only asserted. A `hostNetwork` pod on
+the target's node gets past every fence; §3 names who can create one today.
 
 **Failure behaviour.** Unset OIDC config makes core refuse to start, unlike
 every other optional secret it reads — the Infisical operator renders stale or

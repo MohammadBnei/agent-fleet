@@ -64,7 +64,7 @@ is stale → check code.**
 | `db/migrations/` | Sole source of truth for `sessions`/`proposals`/`transcript`/`repos`/`prompt_snippets`/`scheduled_audits`/`knowledge_journal` schema (`agentfleetdb`). golang-migrate (`adr/0030`) |
 | `local/kind/` | Disposable kind cluster `/kind-local` stands up to exercise real pod dispatch off `ukubi-cluster` |
 | `migration/` | Image applying `db/migrations/` (`FROM migrate/migrate`). Runs as `k8s/core.yaml` `hooks.migrate` PreSync job, not part of `core` |
-| `k8s/` | `core.yaml` (Helm values, `common-app-chart`) + `provisioner/` (plain manifests: Deployment/Service/SA/Role/InfisicalSecret/PVC). No NetworkPolicy exists in `agent-fleet` today; the old e2e-runner one went with the sandbox (`adr/0048` §6). `adr/0069` §3 adds new ones |
+| `k8s/` | `core.yaml` (Helm values, `common-app-chart`) + `provisioner/` (plain manifests: Deployment/Service/SA/Role/InfisicalSecret/PVC). `provisioner/networkpolicy.yaml` and a `core.yaml` `extraManifests` entry are the ingress fences for the provisioner and core (`adr/0069` §3); nothing else in `agent-fleet` is selected |
 
 ## Locked decisions
 
