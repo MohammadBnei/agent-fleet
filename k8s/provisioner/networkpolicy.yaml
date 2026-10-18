@@ -18,12 +18,9 @@ spec:
   - Ingress
   ingress:
   # :9090 ProvisionerService. core only (hub-and-spoke, docs/adr/0020); the
-  # bearer token (adr/0069 §1) stays the authentication. These are
-  # common-app-chart's selectorLabels for release agent-fleet-core; the
-  # migrate hook pod carries them too, accepted (core's own image and creds).
-  # The release name is infra-bootstrap's gitops/apps/registry.yaml entry,
-  # which no test here can read: rename that Application and change this
-  # literal in the same rollout, or core loses ProvisionerService.
+  # bearer token (adr/0069 §1) stays the authentication. common-app-chart's
+  # selectorLabels for core's release: renaming that Application means
+  # changing this literal in the same rollout (adr/0069 §3).
   - from:
     - podSelector:
         matchLabels:

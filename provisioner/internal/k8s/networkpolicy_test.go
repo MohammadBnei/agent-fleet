@@ -1,8 +1,6 @@
 package k8s
 
 import (
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -27,12 +25,9 @@ import (
 // policies to ingress only: an Egress policyType here would cut core and the
 // provisioner off from everything they call (egress is ADR-0064's).
 //
-// The external callers (Traefik, Prometheus, Alertmanager, Grafana) are
-// literals copied from live pods on 2026-10-18, and core's release name is
-// copied from infra-bootstrap's gitops/apps/registry.yaml, which this repo
-// cannot read. Their cases only assert the policy's shape, including the
-// namespace-AND-pod peers. A relabel in infra-bootstrap's charts, or a rename
-// of core's Application, cannot fail this test; §3 names what catches it.
+// The external callers' labels and core's release name are copied literals
+// (infra-bootstrap owns them), so their cases only assert the policy's shape;
+// §3 names what catches a relabel or rename.
 //
 // This evaluates plain NetworkPolicy semantics, not Cilium, and refuses the
 // parts it does not model (ipBlock, endPort, named ports, non-TCP).
@@ -40,18 +35,6 @@ import (
 // Reads files outside the module, like TestCreateWorkerPod_ResourcesWithinLimitRange:
 // run with -count=1.
 func TestNetworkPolicies_AdmitExactlyTheKnownCallers(t *testing.T) {
-	root, err := filepath.Abs(filepath.Join("..", "..", ".."))
-	if err != nil {
-		t.Fatalf("resolve repo root: %v", err)
-	}
-	read := func(rel string) []byte {
-		raw, err := os.ReadFile(filepath.Join(root, rel))
-		if err != nil {
-			t.Fatalf("read %s — this guard is worthless if it silently skips: %v", rel, err)
-		}
-		return raw
-	}
-
 	var coreValues struct {
 		ExtraManifests []string `json:"extraManifests"`
 		Service        struct {
@@ -62,9 +45,10 @@ func TestNetworkPolicies_AdmitExactlyTheKnownCallers(t *testing.T) {
 				TargetPort int    `json:"targetPort"`
 			} `json:"extraPorts"`
 		} `json:"service"`
-		Env []corev1.EnvVar `json:"env"`
+		Env       []corev1.EnvVar   `json:"env"`
+		PodLabels map[string]string `json:"podLabels"`
 	}
-	if err := yaml.Unmarshal(read("k8s/core.yaml"), &coreValues); err != nil {
+	if err := yaml.Unmarshal(repoFile(t, "k8s/core.yaml"), &coreValues); err != nil {
 		t.Fatalf("parse k8s/core.yaml: %v", err)
 	}
 	// extraManifests is tpl-rendered by common-app-chart; coreRelease is the one
@@ -97,11 +81,11 @@ func TestNetworkPolicies_AdmitExactlyTheKnownCallers(t *testing.T) {
 	}
 
 	var provPolicy networkingv1.NetworkPolicy
-	if err := yaml.Unmarshal(read("k8s/provisioner/networkpolicy.yaml"), &provPolicy); err != nil {
+	if err := yaml.Unmarshal(repoFile(t, "k8s/provisioner/networkpolicy.yaml"), &provPolicy); err != nil {
 		t.Fatalf("parse k8s/provisioner/networkpolicy.yaml: %v", err)
 	}
 	var provDeploy appsv1.Deployment
-	if err := yaml.Unmarshal(read("k8s/provisioner/deployment.yaml"), &provDeploy); err != nil {
+	if err := yaml.Unmarshal(repoFile(t, "k8s/provisioner/deployment.yaml"), &provDeploy); err != nil {
 		t.Fatalf("parse k8s/provisioner/deployment.yaml: %v", err)
 	}
 
@@ -148,10 +132,14 @@ func TestNetworkPolicies_AdmitExactlyTheKnownCallers(t *testing.T) {
 		ns     string
 		labels map[string]string
 	}
-	// common-app-chart's selectorLabels: both keys are the release name.
+	// common-app-chart's selectorLabels (both keys are the release name) plus
+	// core.yaml's podLabels, which the chart adds to the pod template.
 	core := pod{ns, map[string]string{
 		"app.kubernetes.io/name": coreRelease, "app.kubernetes.io/instance": coreRelease,
 	}}
+	for k, v := range coreValues.PodLabels {
+		core.labels[k] = v
+	}
 	provisioner := pod{ns, provDeploy.Spec.Template.Labels}
 	worker := pod{ns, WorkerLabels("t", "r")}
 	sharedInstance := pod{ns, SharedInstanceLabels("r", "postgres")}
@@ -165,6 +153,21 @@ func TestNetworkPolicies_AdmitExactlyTheKnownCallers(t *testing.T) {
 	foreignWorker := pod{"dev-x", WorkerLabels("t", "r")}
 	foreignCore := pod{"dev-x", core.labels}
 	foreignPrometheus := pod{"dev-x", prometheus.labels}
+
+	// Each policy selects its own pod and nothing else in the namespace.
+	// Selecting session pods or shared instances would default-deny them and
+	// break ExposeSession previews and session -> shared-instance traffic
+	// (§3 defers those), e.g. a podSelector "simplified" to part-of=agent-fleet.
+	for np, others := range map[*networkingv1.NetworkPolicy][]pod{
+		corePolicy:  {provisioner, worker, sharedInstance},
+		&provPolicy: {core, worker, sharedInstance},
+	} {
+		for _, o := range others {
+			if selects(t, &np.Spec.PodSelector, o.labels) {
+				t.Errorf("policy %s also selects %v; it must fence only its own pod", np.Name, o.labels)
+			}
+		}
+	}
 
 	admits := func(np *networkingv1.NetworkPolicy, target, from pod, port int) bool {
 		if target.ns != np.Namespace || !selects(t, &np.Spec.PodSelector, target.labels) {

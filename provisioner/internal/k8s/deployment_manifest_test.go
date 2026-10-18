@@ -1,7 +1,6 @@
 package k8s
 
 import (
-	"os"
 	"testing"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -12,10 +11,7 @@ import (
 // on /healthz, which answers after that check, keeps a rollout with a bad
 // Secret from deleting the working pod.
 func TestDeployment_HasReadinessProbe(t *testing.T) {
-	b, err := os.ReadFile("../../../k8s/provisioner/deployment.yaml")
-	if err != nil {
-		t.Fatal(err)
-	}
+	b := repoFile(t, "k8s/provisioner/deployment.yaml")
 	var d appsv1.Deployment
 	if err := yaml.Unmarshal(b, &d); err != nil {
 		t.Fatal(err)

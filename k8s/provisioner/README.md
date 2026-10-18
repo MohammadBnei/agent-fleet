@@ -48,9 +48,9 @@ holder and the only thing that ever calls this service — hub-and-spoke).
 - `service.yaml` — ClusterIP; `core`'s gRPC client reaches it at
   `provisioner.agent-fleet.svc.cluster.local:9090`.
 - `infisicalsecret.yaml` — syncs the whole `agent-fleet-nygh`/`dev` Infisical
-  scope, the same one `core` syncs (`k8s/core.yaml`). The provisioner reads
-  `GH_TOKEN` and `FLEET_CORE_PROVISIONER_TOKEN`, but its pod holds every key in
-  that scope, `AGENTFLEET_DB_*` and the other components' tokens included
+  scope, the same one core syncs: `GH_TOKEN`, both fleet tokens, and every
+  other key in it, `AGENTFLEET_DB_*` included, though the provisioner uses
+  none of the DB ones. A compromised provisioner holds all of them
   (`docs/adr/0069` Consequences).
 - `networkpolicy.yaml` — the provisioner's ingress fence (`docs/adr/0069`
   §3): `:9090` only from core, `:8080` only from Prometheus. The bearer token

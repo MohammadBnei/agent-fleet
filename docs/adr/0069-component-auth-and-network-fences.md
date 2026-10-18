@@ -132,8 +132,7 @@ ingress; what shipped is narrower, and the webhook does not.*
   `thot`) calling core is one: it needs a namespace-AND-pod peer
   (`thot` / `app=thot-executor`) on the port it uses, merged before the
   executor code that dials core. Without it the call times out rather than
-  erroring, and with Hubble metrics off nothing counts the drop (the
-  `k8s/core.yaml` comment says the same).
+  erroring, and with Hubble metrics off nothing counts the drop.
 - The `:8080` rule refuses a worker pod's *direct* connection, nothing more.
   Worker egress is open and `fleet.bnei.dev` is a public, unproxied route with
   no path constraint, so a worker going through it arrives as Traefik and is
@@ -181,7 +180,9 @@ ingress; what shipped is narrower, and the webhook does not.*
   `CORE_*_PORT`) and that both policies are ingress only. Core's release name
   lives in infra-bootstrap's `gitops/apps/registry.yaml`, which this repo
   cannot read: the test copies it, and the provisioner policy's literal must
-  change with it. The external callers'
+  change with it in the same rollout, or core loses `ProvisionerService`.
+  Core's migrate hook pod carries the same selectorLabels and is admitted
+  too, accepted (core's own image and credentials). The external callers'
   labels (Traefik, Prometheus, Alertmanager, Grafana, set by third-party
   charts in infra-bootstrap) are only asserted there; a relabel shows up as
   `TargetDown` for the core and provisioner ServiceMonitors and as

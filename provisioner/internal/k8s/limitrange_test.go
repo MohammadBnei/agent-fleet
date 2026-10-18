@@ -31,15 +31,7 @@ import (
 // Go's test cache cannot see — a cached PASS survives edits to the very file
 // being guarded. Run with -count=1.
 func TestCreateWorkerPod_ResourcesWithinLimitRange(t *testing.T) {
-	// provisioner/internal/k8s -> provisioner/internal -> provisioner -> repo root
-	root, err := filepath.Abs(filepath.Join("..", "..", ".."))
-	if err != nil {
-		t.Fatalf("resolve repo root: %v", err)
-	}
-	raw, err := os.ReadFile(filepath.Join(root, "k8s", "core.yaml"))
-	if err != nil {
-		t.Fatalf("read k8s/core.yaml — this guard is worthless if it silently skips: %v", err)
-	}
+	raw := repoFile(t, "k8s/core.yaml")
 
 	var values struct {
 		LimitRange struct {
@@ -120,4 +112,16 @@ func TestCreateWorkerPod_WorkerResources(t *testing.T) {
 			t.Errorf("worker %s = %s, want %s", tc.name, tc.got.String(), tc.want)
 		}
 	}
+}
+
+// repoFile reads rel from the repo root, outside this module. Go's test cache
+// cannot see such a file, so tests using it need -count=1.
+func repoFile(t *testing.T, rel string) []byte {
+	t.Helper()
+	// provisioner/internal/k8s -> provisioner/internal -> provisioner -> repo root
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", rel))
+	if err != nil {
+		t.Fatalf("read %s — this guard is worthless if it silently skips: %v", rel, err)
+	}
+	return raw
 }
