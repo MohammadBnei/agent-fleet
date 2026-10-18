@@ -1,5 +1,11 @@
 # Changelog
 
+# [4.19.0](https://github.com/MohammadBnei/agent-fleet/compare/4.18.0...4.19.0) (2026-10-18)
+
+### Features
+
+* **k8s:** ingress NetworkPolicies for core and the provisioner (ADR-0069 §3) ([#259](https://github.com/MohammadBnei/agent-fleet/issues/259)) ([e7e94f4](https://github.com/MohammadBnei/agent-fleet/commit/e7e94f4e7c5ebe7c414895cdb4e218324c0535b9))
+
 # [4.18.0](https://github.com/MohammadBnei/agent-fleet/compare/4.17.0...4.18.0) (2026-10-18)
 
 ### Features
