@@ -41,8 +41,9 @@ the log, retry and dead-lettering. This ADR is core's side of it.
 3. **Core consumes through one dispatcher.** A goroutine subscribes to the
    bridge and calls `AgentService.Open(definition, thread_key, message,
    interaction=ask, lifecycle=resident)` as the registered client
-   `definitions/clients/bridge.yaml`. The CloudEvent id is Open's idempotency
-   key, so a redelivery appends nothing. Open passes the permission mode
+   `definitions/clients/bridge.yaml`. The CloudEvent `source` + `id` (the id is
+   unique only per source) is Open's idempotency key, so a redelivery appends
+   nothing. Open passes the permission mode
    explicitly — the definition's `spec.mode.default`, never `auto` — so an
    event-opened session does not inherit the `'auto'` column default of
    [ADR-0061](0061-sessions-launch-in-auto.md). Proposals filed for
