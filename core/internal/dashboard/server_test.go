@@ -10,6 +10,7 @@ import (
 
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 
+	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
 )
 
@@ -47,7 +48,7 @@ func (r *recordingStore) LatestSeq(context.Context, string) (int64, error) {
 
 func TestServer_RespondToPermission(t *testing.T) {
 	store := &recordingStore{}
-	s := NewServer(nil, nil, store, nil, nil, nil, nil, nil, nil, 5, nil, nil, nil, "test")
+	s := NewServer(nil, nil, store, nil, nil, nil, nil, nil, nil, sessions.Caps{MaxLive: 5}, nil, nil, nil, "test")
 
 	resp, err := s.RespondToPermission(context.Background(), connect.NewRequest(&agentfleetv1.RespondToPermissionRequest{
 		SessionId: "task-1", Seq: 7, DecisionJson: `{"behavior":"allow"}`,
@@ -80,7 +81,7 @@ func TestServer_RespondToPermission(t *testing.T) {
 // and worktree machinery in docs/adr/0048, and the pointers outlived them.
 
 func TestServer_Discuss_EmptyText(t *testing.T) {
-	s := NewServer(nil, nil, &recordingStore{}, nil, nil, nil, nil, nil, nil, 5, nil, nil, nil, "test")
+	s := NewServer(nil, nil, &recordingStore{}, nil, nil, nil, nil, nil, nil, sessions.Caps{MaxLive: 5}, nil, nil, nil, "test")
 
 	req := connect.NewRequest(&agentfleetv1.PostMessageRequest{SessionId: "task-1", Text: ""})
 	if _, err := s.PostMessage(context.Background(), req); connect.CodeOf(err) != connect.CodeInvalidArgument {
@@ -276,7 +277,7 @@ func (d *denseStore) ReadSince(_ context.Context, _ string, sinceSeq int64, limi
 
 func TestGetTranscript_OpensOnTheNewestPageAndWalksBack(t *testing.T) {
 	store := &denseStore{total: 1200}
-	s := NewServer(nil, nil, store, nil, nil, nil, nil, nil, nil, 5, nil, nil, nil, "test")
+	s := NewServer(nil, nil, store, nil, nil, nil, nil, nil, nil, sessions.Caps{MaxLive: 5}, nil, nil, nil, "test")
 
 	// The regression: with limit set, the newest entries come back — not
 	// seq 0..999.

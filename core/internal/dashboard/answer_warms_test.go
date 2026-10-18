@@ -86,7 +86,7 @@ func TestAnswerQuestion_WarmsFirstSoTheAnswerIsAboveTheResumeCursor(t *testing.T
 
 	// Only the four collaborators this path touches; the rest of Server is
 	// unreachable from AnswerQuestion.
-	s := &Server{sessions: sessionStore, repos: repoStore, transcr: transcr, e2e: provClient, maxLive: 5}
+	s := &Server{sessions: sessionStore, repos: repoStore, transcr: transcr, e2e: provClient, caps: sessions.Caps{MaxLive: 5}}
 
 	if err := repoStore.Create(ctx, repos.Repo{Name: "editable-blog", URL: "https://example.invalid/x.git"}); err != nil {
 		t.Fatalf("repo: %v", err)
@@ -184,7 +184,7 @@ func TestTranscriptWindow_ALimitedReadReturnsTheNewestEntries(t *testing.T) {
 		t.Fatalf("question: %v", err)
 	}
 
-	s := &Server{sessions: sessionStore, repos: repoStore, transcr: transcr, maxLive: 5}
+	s := &Server{sessions: sessionStore, repos: repoStore, transcr: transcr, caps: sessions.Caps{MaxLive: 5}}
 
 	limited, err := s.GetTranscript(ctx, connect.NewRequest(&agentfleetv1.ReadTranscriptSinceRequest{
 		SessionId: id, SinceSeq: 0, Limit: proto.Int32(200),

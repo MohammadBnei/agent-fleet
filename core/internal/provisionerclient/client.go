@@ -278,6 +278,40 @@ func (c *Client) GetVersion(ctx context.Context) (version, workerImage, sidecarI
 	return resp.GetVersion(), resp.GetWorkerImage(), resp.GetSidecarImage(), nil
 }
 
+// DefinitionProfileSupported reports whether the provisioner applies the
+// definition pod profile (docs/adr/0064). core refuses to warm a definition
+// session otherwise (docs/adr/0062).
+//
+// ponytail: uncached, one extra unary RPC per definition warm (a warm is a
+// ~60s pod start). A cache would need invalidating on a provisioner rollout,
+// which is exactly when the answer changes.
+func (c *Client) DefinitionProfileSupported(ctx context.Context) (bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, sessionCallTimeout)
+	defer cancel()
+	resp, err := c.rpc.GetVersion(ctx, &agentfleetv1.GetVersionRequest{})
+	if err != nil {
+		return false, fmt.Errorf("GetVersion: %w", err)
+	}
+	return resp.GetDefinitionPodProfile(), nil
+}
+
+// ListDefinitionFiles returns definitions/ as the provisioner read it, keyed
+// by repo-relative path, and the commit it was read at (docs/adr/0062). An
+// error is never an empty listing: the provisioner fails closed.
+func (c *Client) ListDefinitionFiles(ctx context.Context) (map[string][]byte, string, error) {
+	ctx, cancel := context.WithTimeout(ctx, sessionCallTimeout)
+	defer cancel()
+	resp, err := c.rpc.ListDefinitionFiles(ctx, &agentfleetv1.ListDefinitionFilesRequest{})
+	if err != nil {
+		return nil, "", fmt.Errorf("ListDefinitionFiles: %w", err)
+	}
+	files := make(map[string][]byte, len(resp.GetFiles()))
+	for _, f := range resp.GetFiles() {
+		files[f.GetPath()] = f.GetContent()
+	}
+	return files, resp.GetSha(), nil
+}
+
 // TearDownSession commands the provisioner to tear down a worker or e2e
 // session — core owns `tasks` and decides when a session should end
 // (task reached done/failed/cancelled, or an explicit kill); the

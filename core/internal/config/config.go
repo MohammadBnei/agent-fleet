@@ -68,6 +68,10 @@ type Config struct {
 	// and a session that cannot get a slot is refused outright rather than
 	// left pending.
 	MaxInFlight int
+	// MaxDefinitionSessions is the defined-agents pool INSIDE MaxInFlight
+	// (docs/adr/0062). 0 (the default) means no definition session can warm;
+	// run refuses to start unless it is >= 0 and < MaxInFlight.
+	MaxDefinitionSessions int
 	// StopGrace is how long sessions.Loop waits after a Stop request before
 	// force-tearing down a worker pod that hasn't gone terminal on its own —
 	// long enough for a healthy pod to notice the cooperative abort message
@@ -188,6 +192,7 @@ func Load() Config {
 		STTAddr:               env("STT_ADDR", "ukubi-stt.ukubi-stt.svc.cluster.local:9090"),
 		STTToken:              os.Getenv("STT_TOKEN_FLEET"),
 		MaxInFlight:           envInt("MAX_IN_FLIGHT_TASKS", 5),
+		MaxDefinitionSessions: envInt("MAX_DEFINITION_SESSIONS", 0),
 		StopGrace:             time.Duration(envInt("STOP_GRACE_MS", 30000)) * time.Millisecond,
 		IdleTimeout:           time.Duration(envInt("IDLE_TIMEOUT_MS", 30*60*1000)) * time.Millisecond,
 		StartupStall:          time.Duration(envInt("STARTUP_STALL_MS", 3*60*1000)) * time.Millisecond,

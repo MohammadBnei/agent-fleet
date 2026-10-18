@@ -21,6 +21,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1/agentfleetv1connect"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/auth"
+	"github.com/MohammadBnei/agent-fleet/core/internal/definitions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/filediff"
 	"github.com/MohammadBnei/agent-fleet/core/internal/filestore"
 	"github.com/MohammadBnei/agent-fleet/core/internal/journal"
@@ -46,11 +47,12 @@ type Server struct {
 	e2e       *provisionerclient.Client
 	files     filestore.Store
 	hub       *Hub
-	// maxLive is the fleet's blast-radius bound: how many pods, each running
-	// an agent, may exist at once. Enforced inside sessions.ReserveSlot under
-	// an advisory lock rather than checked here, because a read-then-act
-	// check is exactly what let CI observe 4 tasks claimed with a cap of 2.
-	maxLive   int
+	// caps is the fleet's blast-radius bound: how many pods, each running an
+	// agent, may exist at once, and the definition pool inside it
+	// (docs/adr/0062). Enforced inside sessions.ReserveSlot under an advisory
+	// lock rather than checked here, because a read-then-act check is exactly
+	// what let CI observe 4 tasks claimed with a cap of 2.
+	caps      sessions.Caps
 	loki      lokiclient.Querier
 	prom      promclient.Querier
 	schedules *schedules.Store
@@ -70,10 +72,15 @@ type Server struct {
 	// (infra-bootstrap ADR-0044), so "STT is not there" is a normal state and
 	// must not be able to take the console with it.
 	stt *sttclient.Client
+
+	// definitions is the defined-agents registry (docs/adr/0062). nil makes
+	// every definition request answer Unavailable; repo sessions are
+	// unaffected.
+	definitions *definitions.Registry
 }
 
-func NewServer(sessionStore *sessions.Store, proposalStore *proposals.Store, transcr transcript.Store, journalStore *journal.Store, repoStore *repos.Store, snippetStore *promptsnippets.Store, e2e *provisionerclient.Client, files filestore.Store, hub *Hub, maxLive int, loki lokiclient.Querier, prom promclient.Querier, scheduleStore *schedules.Store, version string) *Server {
-	return &Server{sessions: sessionStore, proposals: proposalStore, transcr: transcr, journal: journalStore, repos: repoStore, snippets: snippetStore, e2e: e2e, files: files, hub: hub, maxLive: maxLive, loki: loki, prom: prom, schedules: scheduleStore, version: version}
+func NewServer(sessionStore *sessions.Store, proposalStore *proposals.Store, transcr transcript.Store, journalStore *journal.Store, repoStore *repos.Store, snippetStore *promptsnippets.Store, e2e *provisionerclient.Client, files filestore.Store, hub *Hub, caps sessions.Caps, loki lokiclient.Querier, prom promclient.Querier, scheduleStore *schedules.Store, version string) *Server {
+	return &Server{sessions: sessionStore, proposals: proposalStore, transcr: transcr, journal: journalStore, repos: repoStore, snippets: snippetStore, e2e: e2e, files: files, hub: hub, caps: caps, loki: loki, prom: prom, schedules: scheduleStore, version: version}
 }
 
 var _ agentfleetv1connect.DashboardServiceHandler = (*Server)(nil)
@@ -129,6 +136,9 @@ func (s *Server) GetSession(ctx context.Context, req *connect.Request[agentfleet
 // prefills them into the message composer, so their text reaches the model as
 // part of a message a human sent and can edit.
 func (s *Server) CreateSession(ctx context.Context, req *connect.Request[agentfleetv1.CreateSessionRequest]) (*connect.Response[agentfleetv1.CreateSessionResponse], error) {
+	if req.Msg.GetDefinition() != "" {
+		return s.createDefinitionSession(ctx, req.Msg)
+	}
 	repo := req.Msg.GetRepo()
 	repoCfg, err := s.repos.Get(ctx, repo)
 	if err != nil {
@@ -173,6 +183,81 @@ func (s *Server) CreateSession(ctx context.Context, req *connect.Request[agentfl
 	}
 	slog.Info("dashboard CreateSession", "sessionId", id, "repo", repo)
 	return connect.NewResponse(&agentfleetv1.CreateSessionResponse{Session: SessionToProto(*sess)}), nil
+}
+
+// createDefinitionSession pins a new session to a definition's current valid
+// version (docs/adr/0062). Repo, model and mode all come from the definition,
+// and the mode is written EXPLICITLY: the column default is 'auto'
+// (docs/adr/0061), which a definition session must never get.
+func (s *Server) createDefinitionSession(ctx context.Context, msg *agentfleetv1.CreateSessionRequest) (*connect.Response[agentfleetv1.CreateSessionResponse], error) {
+	name := msg.GetDefinition()
+	if msg.GetRepo() != "" || msg.GetModel() != "" || msg.GetPermissionMode() != "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("definition sessions take repo, model and mode from the definition"))
+	}
+	if s.definitions == nil {
+		return nil, connect.NewError(connect.CodeUnavailable, errors.New("defined agents are not configured"))
+	}
+	head, err := s.definitions.Resolve(name)
+	switch {
+	case errors.Is(err, definitions.ErrUnknown):
+		return nil, connect.NewError(connect.CodeNotFound, err)
+	case errors.Is(err, definitions.ErrInvalid):
+		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+	case err != nil:
+		return nil, connect.NewError(connect.CodeUnavailable, err)
+	}
+	eff := head.Effective
+	repo := eff.Workspace.Repo
+	repoCfg, err := s.repos.Get(ctx, repo)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	if repoCfg == nil {
+		return nil, connect.NewError(connect.CodeFailedPrecondition,
+			fmt.Errorf("definition %q targets repo %q, which is not onboarded (add it under manage repos)", name, repo))
+	}
+	if repoCfg.ClusterAccess {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("definition sessions never run on a cluster-access repo"))
+	}
+	id, err := s.sessions.Create(ctx, sessions.CreateParams{
+		Repo:           repo,
+		Title:          msg.GetTitle(),
+		Description:    msg.GetDescription(),
+		Model:          eff.Model.Default,
+		PermissionMode: eff.Mode.Default,
+		DefinitionName: head.Name,
+		DefinitionSHA:  head.SHA,
+	})
+	if err != nil {
+		slog.Error("dashboard CreateSession: definition", "definition", name, "error", err)
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	sess, err := s.sessions.Get(ctx, id)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	slog.Info("dashboard CreateSession", "sessionId", id, "repo", repo, "definition", name, "sha", head.SHA)
+	return connect.NewResponse(&agentfleetv1.CreateSessionResponse{Session: SessionToProto(*sess)}), nil
+}
+
+// ListDefinitions lists each present definition's current version
+// (docs/adr/0062). Admin-only through the same interceptor as every method.
+func (s *Server) ListDefinitions(_ context.Context, _ *connect.Request[agentfleetv1.ListDefinitionsRequest]) (*connect.Response[agentfleetv1.ListDefinitionsResponse], error) {
+	if s.definitions == nil {
+		return connect.NewResponse(&agentfleetv1.ListDefinitionsResponse{}), nil
+	}
+	heads, syncErrs := s.definitions.List()
+	out := &agentfleetv1.ListDefinitionsResponse{SyncErrors: syncErrs}
+	for _, h := range heads {
+		d := &agentfleetv1.AgentDefinition{Name: h.Name, Sha: h.SHA, Valid: h.SHA != "", Error: h.Err, NewerError: h.NewerErr}
+		if h.Effective != nil {
+			d.Repo, d.Model, d.PermissionMode = h.Effective.Workspace.Repo, h.Effective.Model.Default, h.Effective.Mode.Default
+			d.AudienceGroup = h.Effective.Audience.Group
+			d.SyncedAt = h.SyncedAt.UTC().Format(time.RFC3339)
+		}
+		out.Definitions = append(out.Definitions, d)
+	}
+	return connect.NewResponse(out), nil
 }
 
 // ArchiveSession marks a session finished by a human — the only terminal
@@ -522,6 +607,8 @@ func (s *Server) SetFileDiffStore(store *filediff.Store) { s.fileDiffs = store }
 
 func (s *Server) SetSTTClient(c *sttclient.Client) { s.stt = c }
 
+func (s *Server) SetDefinitions(r *definitions.Registry) { s.definitions = r }
+
 // GetFileDiff answers "what actually changed in this file" for a file the
 // CHANGES panel listed but the console cannot reconstruct — anything a Bash
 // command wrote: sed, a formatter, a codegen script. The panel itself has
@@ -661,6 +748,15 @@ func (s *Server) SetPermissionMode(ctx context.Context, req *connect.Request[age
 	mode := req.Msg.GetMode()
 	if !validPermissionModes[mode] {
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("invalid permission mode %q", mode))
+	}
+	// A definition only narrows, for admins too (docs/adr/0062): the console's
+	// auto button errors on a definition session.
+	if ok, err := s.sessions.PermissionModeAllowed(ctx, sessionID, mode); errors.Is(err, sessions.ErrNotFound) {
+		return nil, connect.NewError(connect.CodeNotFound, err)
+	} else if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	} else if !ok {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("mode %q is outside this definition's mode.allow", mode))
 	}
 	if _, err := s.transcr.Append(ctx, sessionID, "human", mode, "permission_mode", uuid.NewString()); err != nil {
 		slog.Error("dashboard SetPermissionMode", "sessionId", sessionID, "mode", mode, "error", err)
@@ -934,16 +1030,28 @@ func (s *Server) WarmIfIdle(ctx context.Context, sessionID string) (podName stri
 	if repoCfg == nil {
 		return "", connect.NewError(connect.CodeInternal, fmt.Errorf("unknown repo %q", t.Repo))
 	}
+	toolKeys := provisionerclient.ToolKeysFor(repoCfg.ClusterAccess)
+	if t.DefinitionName != nil {
+		if err := s.definitionWarmable(ctx, t, repoCfg.ClusterAccess); err != nil {
+			return "", err
+		}
+		toolKeys = nil
+	}
 
 	// The cap check and the lease mint happen together, under an advisory
 	// lock, inside ReserveSlot. Checking here and acting after would be the
 	// read-then-act race CI once observed as 4 tasks claimed with a cap of 2.
-	leaseID, err := s.sessions.ReserveSlot(ctx, sessionID, s.maxLive)
+	leaseID, err := s.sessions.ReserveSlot(ctx, sessionID, s.caps)
 	if err != nil {
 		switch {
+		case errors.Is(err, sessions.ErrAtCapacity) && err != sessions.ErrAtCapacity:
+			// A definition cap: the wrapped message names which one.
+			return "", connect.NewError(connect.CodeResourceExhausted, err)
 		case errors.Is(err, sessions.ErrAtCapacity):
 			return "", connect.NewError(connect.CodeResourceExhausted,
-				fmt.Errorf("fleet at capacity (%d live sessions) — stop one first", s.maxLive))
+				fmt.Errorf("fleet at capacity (%d live sessions) — stop one first", s.caps.MaxLive))
+		case errors.Is(err, sessions.ErrDefinitionInvalid):
+			return "", connect.NewError(connect.CodeFailedPrecondition, err)
 		case errors.Is(err, sessions.ErrNotFound):
 			return "", connect.NewError(connect.CodeFailedPrecondition, errors.New("session is archived"))
 		}
@@ -961,11 +1069,11 @@ func (s *Server) WarmIfIdle(ctx context.Context, sessionID string) (podName stri
 	if err != nil {
 		return "", connect.NewError(connect.CodeInternal, err)
 	}
-	// Both from repoCfg, which is the row already read above. This used to
-	// re-fetch the same repo through a toolKeysFor helper — two reads of one
-	// row, which a concurrent "manage repos" edit could have straddled, so a
-	// pod could get one repo's privilege grant and another's image.
-	toolKeys := provisionerclient.ToolKeysFor(repoCfg.ClusterAccess)
+	// toolKeys and the image both come from repoCfg, the row already read
+	// above. This used to re-fetch the same repo through a toolKeysFor helper
+	// — two reads of one row, which a concurrent "manage repos" edit could
+	// have straddled, so a pod could get one repo's privilege grant and
+	// another's image.
 	pod, err := s.e2e.CreateWorkerPod(ctx, sessionID, t.Repo, repoCfg.URL, repoCfg.BaseBranch, t.Description, leaseID, resumeAgentSessionID, resumeFromSeq, toolKeys, repoCfg.Image)
 	if err != nil {
 		return "", connect.NewError(connect.CodeInternal, err)
@@ -977,6 +1085,40 @@ func (s *Server) WarmIfIdle(ctx context.Context, sessionID string) (podName stri
 		slog.Warn("dashboard warm: recording pod images failed", "sessionId", sessionID, "error", err)
 	}
 	return pod.PodName, nil
+}
+
+// definitionWarmable refuses to warm a definition session unless its pinned
+// version is still the current one (docs/adr/0062's revocation rule), the
+// provisioner applies the definition pod profile (docs/adr/0064), and the
+// repo has not been flipped to cluster access since creation. All checked
+// BEFORE ReserveSlot, so a refusal leaves no lease and no phase.
+func (s *Server) definitionWarmable(ctx context.Context, t *sessions.Session, clusterAccess bool) error {
+	name, pinned := *t.DefinitionName, *t.DefinitionSHA
+	if s.definitions == nil {
+		return connect.NewError(connect.CodeUnavailable, errors.New("defined agents are not configured"))
+	}
+	head, err := s.definitions.Resolve(name)
+	switch {
+	case errors.Is(err, definitions.ErrUnknown):
+		return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("definition %q is no longer defined; start a new session", name))
+	case errors.Is(err, definitions.ErrInvalid):
+		return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("definition %q has no valid version: %w", name, err))
+	case err != nil:
+		return connect.NewError(connect.CodeUnavailable, err)
+	}
+	if head.SHA != pinned {
+		return connect.NewError(connect.CodeFailedPrecondition,
+			fmt.Errorf("definition %q changed since this session was created (pinned %.7s, current %.7s); start a new session", name, pinned, head.SHA))
+	}
+	ok, err := s.e2e.DefinitionProfileSupported(ctx)
+	if err != nil || !ok {
+		return connect.NewError(connect.CodeFailedPrecondition,
+			fmt.Errorf("provisioner does not apply the definition pod profile (docs/adr/0064); refusing to warm (%v)", err))
+	}
+	if clusterAccess {
+		return connect.NewError(connect.CodeFailedPrecondition, errors.New("definition sessions never run on a cluster-access repo"))
+	}
+	return nil
 }
 
 // DeleteTask force-tears-down any live session for sessionID (both kinds —
@@ -1340,8 +1482,10 @@ func SessionToProto(t sessions.Session) *agentfleetv1.Session {
 		// Which build this session's pod is running. Optional on the wire, and
 		// left unset rather than sent as "" so the console can tell "no pod has
 		// ever run" from "a pod ran on an unnamed image".
-		WorkerImage:  optional(t.WorkerImage),
-		SidecarImage: optional(t.SidecarImage),
+		WorkerImage:    optional(t.WorkerImage),
+		SidecarImage:   optional(t.SidecarImage),
+		DefinitionName: t.DefinitionName,
+		DefinitionSha:  t.DefinitionSHA,
 	}
 }
 
