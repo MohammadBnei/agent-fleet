@@ -269,8 +269,11 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 		// the gate is on, so with FLEET_AUTH_DISABLED=1 it 404s and the SPA
 		// simply shows nothing — which is honest: there is no identity to show.
 		mux.HandleFunc("/auth/me", oidcAuth.Me)
-		authInterceptors = append(authInterceptors, oidcAuth.ConnectInterceptor(auth.AdminOnly))
-		gate = oidcAuth.Gate
+		// One value for both layers today. A service with a wider audience
+		// widens the Gate's policy to the union and passes its own here.
+		policy := auth.AdminOnly
+		authInterceptors = append(authInterceptors, oidcAuth.ConnectInterceptor(policy))
+		gate = oidcAuth.Gate(policy)
 	}
 	// CSRF stays alongside the session check and is not redundant: a cookie is
 	// attached by the browser to same-origin requests regardless of which page

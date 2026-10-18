@@ -86,24 +86,50 @@ func TestConnectInterceptor_NonAdminIsDeniedOnEveryDashboardMethod(t *testing.T)
 	}
 }
 
-// The policy is the interceptor's, not a constant: it decides with the
-// procedure, and a missing one admits nobody — admin included.
-func TestConnectInterceptor_AppliesItsPolicy(t *testing.T) {
+// Each layer applies the policy it is given, end to end through the Gate: a
+// Gate widened to an audience group lets its member past, and the service's
+// own AdminOnly interceptor still refuses them. Both refusals read as
+// PermissionDenied, so reachedService tells the layers apart: a Gate that
+// ignored its argument would 403 the member before the service saw them.
+func TestGateAndInterceptor_ApplyTheirOwnPolicies(t *testing.T) {
 	s := mustSigner(t, "key-one")
-	h := http.Header{}
-	h.Set("Cookie", SessionCookieName+"="+s.Sign(Identity{Email: "me@bnei.dev", Groups: []string{RequiredGroup}}))
-	const proc = "/agentfleet.v1.AgentService/Start"
+	o := &OIDC{signer: s}
+	audience := func(id Identity) bool { return AdminOnly(id) || id.InGroup("opus-users") }
+	var reachedService bool
+	service := func(id Identity) bool { reachedService = true; return AdminOnly(id) }
+	path, h := agentfleetv1connect.NewDashboardServiceHandler(
+		agentfleetv1connect.UnimplementedDashboardServiceHandler{},
+		connect.WithInterceptors(o.ConnectInterceptor(service)),
+	)
+	mux := http.NewServeMux()
+	mux.Handle(path, h)
+	srv := httptest.NewServer(o.Gate(audience)(mux))
+	defer srv.Close()
 
-	if _, err := (connectAuth{signer: s}).authorize(h, proc); connect.CodeOf(err) != connect.CodePermissionDenied {
+	c := connect.NewClient[emptypb.Empty, emptypb.Empty](srv.Client(),
+		srv.URL+agentfleetv1connect.DashboardServiceListSessionsProcedure)
+	for _, tc := range []struct {
+		groups      []string
+		want        connect.Code
+		wantService bool
+	}{
+		{[]string{RequiredGroup}, connect.CodeUnimplemented, true},      // past both layers
+		{[]string{"opus-users"}, connect.CodePermissionDenied, true},    // past the Gate, refused by the service
+		{[]string{"someone-else"}, connect.CodePermissionDenied, false}, // the Gate's 403
+	} {
+		reachedService = false
+		req := connect.NewRequest(&emptypb.Empty{})
+		req.Header().Set("Cookie", SessionCookieName+"="+s.Sign(Identity{Email: "x@bnei.dev", Groups: tc.groups}))
+		if _, err := c.CallUnary(context.Background(), req); connect.CodeOf(err) != tc.want {
+			t.Errorf("groups %v: got %v, want %v", tc.groups, connect.CodeOf(err), tc.want)
+		}
+		if reachedService != tc.wantService {
+			t.Errorf("groups %v: reached the service's policy = %v, want %v", tc.groups, reachedService, tc.wantService)
+		}
+	}
+	// A nil policy admits nobody, admin included.
+	if _, err := (connectAuth{signer: s}).authorize(http.Header{"Cookie": {SessionCookieName + "=" + s.Sign(Identity{Groups: []string{RequiredGroup}})}}); connect.CodeOf(err) != connect.CodePermissionDenied {
 		t.Errorf("nil policy: got %v, want permission_denied", err)
-	}
-	var seen string
-	onlyAgent := func(_ Identity, p string) bool { seen = p; return strings.HasPrefix(p, "/agentfleet.v1.AgentService/") }
-	if _, err := (connectAuth{signer: s, allow: onlyAgent}).authorize(h, proc); err != nil || seen != proc {
-		t.Errorf("custom policy: err %v, saw procedure %q", err, seen)
-	}
-	if _, err := (connectAuth{signer: s, allow: onlyAgent}).authorize(h, "/agentfleet.v1.DashboardService/ListSessions"); connect.CodeOf(err) != connect.CodePermissionDenied {
-		t.Errorf("custom policy refusing: got %v, want permission_denied", err)
 	}
 }
 
@@ -122,7 +148,7 @@ func TestGate_RefusesAValidCookieWithoutTheGroup(t *testing.T) {
 	logs := captureLog(t)
 	s := mustSigner(t, "key-one")
 	o := &OIDC{signer: s}
-	handler := o.Gate(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := o.Gate(AdminOnly)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Errorf("non-admin reached %s", r.URL.Path)
 	}))
 	cookie := s.Sign(Identity{Email: "x@bnei.dev", Groups: []string{"opus-users"}})
@@ -147,7 +173,7 @@ func TestGate_RefusesAValidCookieWithoutTheGroup(t *testing.T) {
 
 	// Exempt paths stay reachable for the same caller — /auth/me in particular
 	// has to answer them, or the SPA cannot say who is signed in.
-	open := o.Gate(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
+	open := o.Gate(AdminOnly)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
 	for _, p := range []string{"/healthz", "/webhook/alertmanager", "/auth/me", "/auth/callback"} {
 		req := httptest.NewRequest(http.MethodGet, p, nil)
 		req.AddCookie(&http.Cookie{Name: SessionCookieName, Value: cookie})

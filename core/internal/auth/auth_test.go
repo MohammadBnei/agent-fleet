@@ -30,9 +30,6 @@ func TestSigner_RoundTrip(t *testing.T) {
 	}
 }
 
-// Sign with the first, verify against any. That ordering IS the rotation
-// mechanism, so it needs a test that exercises a rotation rather than one that
-// only proves a signature works.
 // A cookie minted before Identity carried sub has no "s" key. It must still
 // verify — adding the field must not log everyone out — and decode to Sub "".
 func TestSigner_CookieWithoutSubStillVerifies(t *testing.T) {
@@ -48,6 +45,9 @@ func TestSigner_CookieWithoutSubStillVerifies(t *testing.T) {
 	}
 }
 
+// Sign with the first, verify against any. That ordering IS the rotation
+// mechanism, so it needs a test that exercises a rotation rather than one that
+// only proves a signature works.
 func TestSigner_RotationKeepsOldCookiesValidUntilTheKeyIsDropped(t *testing.T) {
 	old := mustSigner(t, "key-A")
 	cookie := old.Sign(Identity{Email: "me@bnei.dev", Groups: []string{RequiredGroup}})
@@ -190,7 +190,7 @@ func TestGate_EncodedSlashIsNotExempt(t *testing.T) {
 		mux.HandleFunc(p, func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
 	}
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
-	handler := o.Gate(mux)
+	handler := o.Gate(AdminOnly)(mux)
 
 	for p, want := range map[string]int{
 		"/auth/me":                http.StatusOK, // positive control
@@ -211,7 +211,7 @@ func TestGate_EncodedSlashIsNotExempt(t *testing.T) {
 
 func TestGate_RedirectsDocumentsAndRefusesXHR(t *testing.T) {
 	o := &OIDC{signer: mustSigner(t, "key-one")}
-	handler := o.Gate(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	handler := o.Gate(AdminOnly)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
@@ -246,7 +246,7 @@ func TestGate_LetsAValidSessionThroughAndCarriesTheIdentity(t *testing.T) {
 	o := &OIDC{signer: s}
 
 	var seen string
-	handler := o.Gate(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := o.Gate(AdminOnly)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if id, ok := FromContext(r.Context()); ok {
 			seen = id.Email
 		}
@@ -271,7 +271,7 @@ func TestGate_LetsAValidSessionThroughAndCarriesTheIdentity(t *testing.T) {
 // it arrived from — the property a Traefik middleware structurally cannot give.
 func TestGate_RefusesTheWorkerPodBypassFrom200(t *testing.T) {
 	o := &OIDC{signer: mustSigner(t, "key-one")}
-	handler := o.Gate(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	handler := o.Gate(AdminOnly)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		t.Error("the #200 bypass reached the handler")
 		w.WriteHeader(http.StatusOK)
 	}))

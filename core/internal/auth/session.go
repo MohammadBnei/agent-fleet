@@ -60,11 +60,12 @@ const sessionTTL = 12 * time.Hour
 // fleet has no user model, and this is not one. It is the claim, carried far
 // enough to authorize a request and attribute an action.
 type Identity struct {
-	// Sub is the ID token's subject (docs/adr/0069 §5). Under the fleet
-	// provider's sub_mode: user_email it equals the email today; ownership
-	// keyed on it waits for hashed_user_id (plan P0 spike 8). Cookies minted
-	// before it existed verify with Sub == "": treat empty as unknown, never
-	// as an owner.
+	// Sub is the ID token's subject (docs/adr/0069 §5). NOT yet stable: the
+	// fleet provider's sub_mode: user_email makes it the email, which can
+	// change; ownership keyed on it waits for hashed_user_id. That switch must
+	// rotate SESSION_KEYS, or email-shaped Subs in live cookies outlive it.
+	// Cookies minted before Sub existed verify with Sub == "": treat empty as
+	// unknown, never as an owner.
 	Sub    string   `json:"s,omitempty"`
 	Email  string   `json:"e"`
 	Groups []string `json:"g"`

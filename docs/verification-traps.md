@@ -217,11 +217,12 @@ since the feature was written.
   (`adr/0069`), which matters once login admits an audience group — it guards
   against login *widening*. It is **not revocation**: the groups are frozen into
   the cookie at login, so someone removed from `platform-admins` keeps access
-  until the 12h TTL ends or `SESSION_KEYS` rotates (logging everyone out). Both
-  layers share one decision (`auth.Policy`, today `AdminOnly`); a service with
-  another audience swaps the Gate's policy for a path-aware one and passes its
-  own to `ConnectInterceptor` — never a gate exclusion, which would make it
-  public. A non-admin 403 must never become a login redirect (login refuses them
+  until the 12h TTL ends or `SESSION_KEYS` rotates (logging everyone out) — so
+  today, when login admits only `platform-admins`, real traffic shows **zero**
+  denials and that proves nothing. Each layer takes its own `auth.Policy`
+  (both `AdminOnly`, passed once in `run.go`): the Gate's must admit the
+  *union* of every service's audience, and each `ConnectInterceptor` narrows it
+  — never a gate exclusion, which would make the service public. A non-admin 403 must never become a login redirect (login refuses them
   again → loop). Gate denials log `auth: refused request` with the groups
   received. The exemption matches the **escaped** path, as ServeMux does —
   matching the decoded one let `/auth%2Fme` reach the SPA's 200 shell.

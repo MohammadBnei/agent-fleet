@@ -15,7 +15,7 @@ func TestFrameDeny_SetsHeadersOnEveryResponse(t *testing.T) {
 	s := mustSigner(t, "key-one")
 	o := &OIDC{signer: s}
 	nonAdmin := s.Sign(Identity{Email: "x@bnei.dev", Groups: []string{"opus-users"}})
-	handler := FrameDeny(o.Gate(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := FrameDeny(o.Gate(AdminOnly)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/auth/login" {
 			http.Redirect(w, r, "https://authentik.bnei.dev/application/o/authorize/", http.StatusFound)
 			return

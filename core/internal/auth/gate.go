@@ -47,12 +47,16 @@ var exemptPaths = map[string]bool{
 func exempt(path string) bool { return exemptPaths[path] }
 
 // Policy is the authorization rule a layer applies to an authenticated
-// identity. procedure is the Connect procedure, or the URL path at the Gate.
-type Policy func(id Identity, procedure string) bool
+// identity.
+//
+// ponytail: identity only. A per-definition decision needs the request, which
+// belongs in that service's handler; a path, if ever needed, must be the
+// ESCAPED one the exemption and ServeMux use, never r.URL.Path.
+type Policy func(Identity) bool
 
 // AdminOnly admits RequiredGroup members. It is the whole console's policy
 // today, at the Gate and on DashboardService.
-func AdminOnly(id Identity, _ string) bool { return id.InGroup(RequiredGroup) }
+func AdminOnly(id Identity) bool { return id.InGroup(RequiredGroup) }
 
 // Gate wraps the whole mux. An unauthenticated request is redirected to the
 // login for a document navigation and refused for anything else.
@@ -65,36 +69,39 @@ func AdminOnly(id Identity, _ string) bool { return id.InGroup(RequiredGroup) }
 // took ArgoCD's login down (infra-bootstrap #189), where an HTML body reached a
 // JSON parser.
 //
-// An authenticated identity AdminOnly refuses gets a 403 on every request
+// An authenticated identity allow refuses gets a 403 on every request
 // (docs/adr/0069; not revocation — see docs/verification-traps.md). 403, never
 // a redirect: login would refuse them again and the browser would loop.
 //
-// ponytail: one Policy for every gated path. A service with another audience
-// swaps AdminOnly here for a path-aware Policy — still authenticated here, not
-// exempted.
-func (o *OIDC) Gate(next http.Handler) http.Handler {
-	authz := connectAuth{signer: o.signer, allow: AdminOnly}
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// The ESCAPED path, because that is what ServeMux routes on:
-		// /auth%2Fme decodes to Path "/auth/me" but reaches the "/" SPA
-		// fallback, so matching Path would hand it the 200 shell unauthenticated.
-		if exempt(r.URL.EscapedPath()) {
-			next.ServeHTTP(w, r)
-			return
-		}
-		id, err := authz.authorize(r.Header, r.URL.Path)
-		switch {
-		case err == nil:
-			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), ctxKey{}, id)))
-		case connect.CodeOf(err) == connect.CodePermissionDenied:
-			logForbidden(id, r.URL.Path)
-			http.Error(w, errForbidden.Error(), http.StatusForbidden)
-		case isDocumentRequest(r):
-			http.Redirect(w, r, "/auth/login?return_to="+urlQueryEscape(r.URL.RequestURI()), http.StatusFound)
-		default:
-			http.Error(w, "unauthenticated", http.StatusUnauthorized)
-		}
-	})
+// allow is the coarse "may use this console at all" check, one value for every
+// gated path, so it must admit the UNION of every service's audience; each
+// Connect service's own ConnectInterceptor policy then narrows it. Today both
+// are AdminOnly, passed once from run.go.
+func (o *OIDC) Gate(allow Policy) func(http.Handler) http.Handler {
+	authz := connectAuth{signer: o.signer, allow: allow}
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// The ESCAPED path, because that is what ServeMux routes on:
+			// /auth%2Fme decodes to Path "/auth/me" but reaches the "/" SPA
+			// fallback, so matching Path would hand it the 200 shell unauthenticated.
+			if exempt(r.URL.EscapedPath()) {
+				next.ServeHTTP(w, r)
+				return
+			}
+			id, err := authz.authorize(r.Header)
+			switch {
+			case err == nil:
+				next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), ctxKey{}, id)))
+			case connect.CodeOf(err) == connect.CodePermissionDenied:
+				logForbidden(id, r.URL.EscapedPath())
+				http.Error(w, errForbidden.Error(), http.StatusForbidden)
+			case isDocumentRequest(r):
+				http.Redirect(w, r, "/auth/login?return_to="+urlQueryEscape(r.URL.RequestURI()), http.StatusFound)
+			default:
+				http.Error(w, "unauthenticated", http.StatusUnauthorized)
+			}
+		})
+	}
 }
 
 // isDocumentRequest distinguishes "a person typed/clicked this" from "the SPA
@@ -171,8 +178,8 @@ func (o *OIDC) ConnectInterceptor(allow Policy) connect.Interceptor {
 	return connectAuth{signer: o.signer, allow: allow}
 }
 
-// connectAuth is the one authorization decision, shared by the Gate and the
-// interceptor so the two transports cannot disagree.
+// connectAuth is the one authorization mechanism, shared by the Gate and the
+// interceptor. Each is handed its own Policy; run.go passes both.
 type connectAuth struct {
 	signer *Signer
 	allow  Policy
@@ -182,7 +189,7 @@ type connectAuth struct {
 // log who was refused. It does not log: in production the Gate refuses first
 // and logs, and a call that ever reaches here unrefused-by-the-Gate is already
 // logged by the access-log interceptor ahead of this one.
-func (c connectAuth) authorize(h http.Header, procedure string) (Identity, error) {
+func (c connectAuth) authorize(h http.Header) (Identity, error) {
 	// Reuse net/http's cookie parsing rather than splitting the header by
 	// hand; a request carries several cookies and the naive split gets the
 	// wrong one.
@@ -195,7 +202,7 @@ func (c connectAuth) authorize(h http.Header, procedure string) (Identity, error
 	if !ok {
 		return Identity{}, connect.NewError(connect.CodeUnauthenticated, errUnauthenticated)
 	}
-	if c.allow == nil || !c.allow(id, procedure) {
+	if c.allow == nil || !c.allow(id) {
 		return id, connect.NewError(connect.CodePermissionDenied, errForbidden)
 	}
 	return id, nil
@@ -203,7 +210,7 @@ func (c connectAuth) authorize(h http.Header, procedure string) (Identity, error
 
 func (c connectAuth) WrapUnary(next connect.UnaryFunc) connect.UnaryFunc {
 	return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
-		id, err := c.authorize(req.Header(), req.Spec().Procedure)
+		id, err := c.authorize(req.Header())
 		if err != nil {
 			return nil, err
 		}
@@ -217,7 +224,7 @@ func (c connectAuth) WrapStreamingClient(next connect.StreamingClientFunc) conne
 
 func (c connectAuth) WrapStreamingHandler(next connect.StreamingHandlerFunc) connect.StreamingHandlerFunc {
 	return func(ctx context.Context, conn connect.StreamingHandlerConn) error {
-		id, err := c.authorize(conn.RequestHeader(), conn.Spec().Procedure)
+		id, err := c.authorize(conn.RequestHeader())
 		if err != nil {
 			return err
 		}
@@ -234,9 +241,13 @@ var (
 // Connect access-log and metrics interceptors, so without this a refused caller
 // leaves no trace; logged with the groups received, like the callback, because
 // a renamed group or a policy typo looks exactly like this.
+//
+// ponytail: one line per refused request, unthrottled. No cookie the callback
+// mints can be refused today; dedupe per identity (or a denial counter) when
+// login admits a group the Gate refuses.
 func logForbidden(id Identity, path string) {
-	slog.Warn("auth: refused request, required group missing",
-		"email", id.Email, "groups", id.Groups, "path", path, "required", RequiredGroup)
+	slog.Warn("auth: refused request by policy",
+		"email", id.Email, "groups", id.Groups, "path", path)
 }
 
 type authError struct{ msg string }
