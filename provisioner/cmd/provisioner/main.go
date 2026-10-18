@@ -47,6 +47,15 @@ func main() {
 	}
 	slog.Info("provisioner starting", "version", version)
 
+	// First, before any side effect: an unauthenticated ProvisionerService
+	// can create and expose pods for anyone on the pod network
+	// (docs/adr/0069), so no token means no provisioner.
+	grpcAuth, err := grpcserver.NewAuth(cfg.AuthToken)
+	if err != nil {
+		slog.Error("refusing to start", "error", err)
+		os.Exit(1)
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -126,7 +135,10 @@ func main() {
 	mux.Handle("/metrics", promhttp.Handler())
 	httpServer := &http.Server{Addr: ":" + cfg.Port, Handler: mux}
 
-	grpcSrv := grpc.NewServer(grpc.ChainUnaryInterceptor(grpcserver.AccessLogInterceptor, metrics.UnaryInterceptor))
+	grpcSrv := grpc.NewServer(
+		grpc.ChainUnaryInterceptor(grpcserver.AccessLogInterceptor, metrics.UnaryInterceptor, grpcAuth.Unary),
+		grpc.ChainStreamInterceptor(grpcAuth.Stream),
+	)
 	agentfleetv1.RegisterProvisionerServiceServer(grpcSrv, grpcserver.New(k8sc, gitMgr, core, cfg.E2eHost, cfg.FleetSharedRepoURL, cfg.FleetSharedBranch, version))
 
 	reconcileInterval, _ := strconv.Atoi(cfg.ReconcileInterval)
