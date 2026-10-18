@@ -294,6 +294,83 @@ extraManifests:
         - port: metrics
           path: /metrics
           interval: 30s
+  # Ingress fence for core (docs/adr/0069 §3). Selecting the pod makes it
+  # default-deny for ingress; each rule is a caller enumerated from live state on
+  # 2026-10-18. A caller missing here is an outage that looks like the #230 one,
+  # so add the rule BEFORE pointing anything new at core:
+  #
+  #   :8080 console  — Traefik (the IngressRoute above), and the thot webhook.
+  #                    Alertmanager AND Grafana alerting both post
+  #                    /webhook/alertmanager straight to the ClusterIP, not
+  #                    through the ingress (infra-bootstrap
+  #                    gitops/platform/values/{prometheus,grafana}/values.yaml).
+  #                    Worker pods are deliberately NOT admitted: the in-app
+  #                    gate already refuses them (agent-fleet#200), and now the
+  #                    network does too.
+  #   :9090 CoreService — session sidecars (worker pods) and the provisioner.
+  #                    The lease and FLEET_PROVISIONER_TOKEN stay the auth.
+  #   :9093 /metrics — Prometheus (the ServiceMonitor above).
+  #
+  # Kubelet probes on :8080 need no rule: Cilium always admits the HOST identity
+  # of the pod's own node. The same default admits any hostNetwork pod on that
+  # node; a remote node is refused. Plain NetworkPolicy is enough here (enforced
+  # for ClusterIP and pod-IP traffic under the chaining mode, verified live).
+  # Egress is not fenced.
+  #
+  # The worker selector is provisioner/internal/k8s WorkerLabels, and the
+  # provisioner's is its pod template label; networkpolicy_test.go there pins
+  # both against this rule.
+  - |
+    apiVersion: networking.k8s.io/v1
+    kind: NetworkPolicy
+    metadata:
+      name: {{ .Release.Name }}-ingress
+      namespace: {{ .Release.Namespace }}
+      labels:
+        app.kubernetes.io/part-of: agent-fleet
+    spec:
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/name: {{ .Release.Name }}
+          app.kubernetes.io/instance: {{ .Release.Name }}
+      policyTypes:
+        - Ingress
+      ingress:
+        - from:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: traefik
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: monitoring
+              podSelector:
+                matchExpressions:
+                  - key: app.kubernetes.io/name
+                    operator: In
+                    values: [alertmanager, grafana]
+          ports:
+            - port: 8080
+              protocol: TCP
+        - from:
+            - podSelector:
+                matchLabels:
+                  agent-fleet.dev/component: worker
+            - podSelector:
+                matchLabels:
+                  app: provisioner
+          ports:
+            - port: 9090
+              protocol: TCP
+        - from:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: monitoring
+              podSelector:
+                matchLabels:
+                  app.kubernetes.io/name: prometheus
+          ports:
+            - port: 9093
+              protocol: TCP
 
 # Same Infisical project as before — DISCORD_BOT_TOKEN,
 # DISCORD_TRIGGER_CHANNEL_ID, AGENTFLEET_DB_HOST/PORT/NAME/USER/PASSWORD.
