@@ -22,7 +22,8 @@ import (
 // that administering the IdP and operating the fleet stay separate powers.
 //
 // Checked at the callback AND on every request (Gate, ConnectInterceptor —
-// docs/adr/0069); the callback check alone trusts a cookie for its whole TTL.
+// docs/adr/0069). The per-request check guards against login WIDENING, not
+// group removal: the groups are the cookie's, frozen at login.
 const RequiredGroup = "platform-admins"
 
 const (
@@ -197,7 +198,7 @@ func (o *OIDC) Callback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id := Identity{Sub: idToken.Subject, Email: claims.Email, Groups: claims.Groups}
+	id := Identity{Email: claims.Email, Groups: claims.Groups}
 	if !id.InGroup(RequiredGroup) {
 		// Logged with the groups actually received, because the likeliest
 		// cause is not an unauthorised person: it is the provider not emitting

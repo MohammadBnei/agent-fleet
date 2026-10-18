@@ -1,11 +1,12 @@
 package auth
 
 import (
+	"bytes"
 	"context"
-	"encoding/base64"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,10 +16,10 @@ import (
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
-// Per-request authorization (docs/adr/0069). Login checks the group too, but a
-// cookie outlives the moment it was minted, and once login widens beyond
-// platform-admins a perfectly valid cookie will belong to someone who must not
-// reach DashboardService. Signature-valid is not authorized.
+// Per-request authorization (docs/adr/0069). Login checks the group too, but
+// once login widens beyond platform-admins a perfectly valid cookie will belong
+// to someone who must not reach DashboardService. Signature-valid is not
+// authorized. (Not revocation: the groups checked are the cookie's own.)
 
 // Every DashboardService method, enumerated from the generated descriptor so a
 // method added later is covered without anyone remembering to list it.
@@ -27,7 +28,7 @@ func TestConnectInterceptor_NonAdminIsDeniedOnEveryDashboardMethod(t *testing.T)
 	o := &OIDC{signer: s}
 	path, h := agentfleetv1connect.NewDashboardServiceHandler(
 		agentfleetv1connect.UnimplementedDashboardServiceHandler{},
-		connect.WithInterceptors(o.ConnectInterceptor(RequiredGroup)),
+		connect.WithInterceptors(o.ConnectInterceptor()),
 	)
 	mux := http.NewServeMux()
 	mux.Handle(path, h)
@@ -88,28 +89,36 @@ func TestConnectInterceptor_NonAdminIsDeniedOnEveryDashboardMethod(t *testing.T)
 	}
 }
 
-// The seam for a later service with a different audience: the policy is the
-// interceptor's argument, not a constant inside it.
-func TestConnectInterceptor_GroupIsPerService(t *testing.T) {
+// A denial the interceptor makes must be visible: it carries the groups
+// received, so a renamed group reads as that rather than as silence.
+func TestConnectInterceptor_DenialIsLogged(t *testing.T) {
+	logs := captureLog(t)
 	s := mustSigner(t, "key-one")
-	c := connectAuth{signer: s, group: "opus-users"}
 	h := http.Header{}
-	h.Set("Cookie", SessionCookieName+"="+s.Sign(Identity{Groups: []string{"opus-users"}}))
-	if _, err := c.authorize(h); err != nil {
-		t.Errorf("member of the service's group refused: %v", err)
+	h.Set("Cookie", SessionCookieName+"="+s.Sign(Identity{Email: "x@bnei.dev", Groups: []string{"opus-users"}}))
+	if _, err := (connectAuth{signer: s}).authorize(h, "/agentfleet.v1.DashboardService/ListSessions"); connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("got %v, want permission_denied", err)
 	}
-	h.Set("Cookie", SessionCookieName+"="+s.Sign(Identity{Groups: []string{RequiredGroup}}))
-	if _, err := c.authorize(h); connect.CodeOf(err) != connect.CodePermissionDenied {
-		t.Errorf("platform-admins is not implied for another service's policy: got %v", err)
-	}
-	// An empty policy fails closed rather than meaning "anyone signed in".
-	empty := connectAuth{signer: s}
-	if _, err := empty.authorize(h); connect.CodeOf(err) != connect.CodePermissionDenied {
-		t.Errorf("empty group admitted a caller: %v", err)
+	for _, want := range []string{"refused request", "x@bnei.dev", "opus-users", "DashboardService/ListSessions", "platform-admins"} {
+		if !strings.Contains(logs.String(), want) {
+			t.Errorf("denial log lacks %q: %s", want, logs)
+		}
 	}
 }
 
+// captureLog points slog's default logger at a buffer for one test. Not safe
+// alongside t.Parallel, which this package does not use.
+func captureLog(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+	return &buf
+}
+
 func TestGate_RefusesAValidCookieWithoutTheGroup(t *testing.T) {
+	logs := captureLog(t)
 	s := mustSigner(t, "key-one")
 	o := &OIDC{signer: s}
 	handler := o.Gate(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -131,6 +140,9 @@ func TestGate_RefusesAValidCookieWithoutTheGroup(t *testing.T) {
 			}
 		}
 	}
+	if !strings.Contains(logs.String(), "refused request") || !strings.Contains(logs.String(), "path=/sessions/abc") {
+		t.Errorf("gate 403 left no log line: %s", logs)
+	}
 
 	// Exempt paths stay reachable for the same caller — /auth/me in particular
 	// has to answer them, or the SPA cannot say who is signed in.
@@ -143,22 +155,5 @@ func TestGate_RefusesAValidCookieWithoutTheGroup(t *testing.T) {
 		if rec.Code != http.StatusOK {
 			t.Errorf("exempt %s: got %d, want 200", p, rec.Code)
 		}
-	}
-}
-
-// Cookies minted before `sub` existed must keep working for their remaining
-// TTL — adding a field is not a reason to log everyone out.
-func TestSigner_CookieWithoutSubStillVerifies(t *testing.T) {
-	s := mustSigner(t, "key-one")
-	old := base64.RawURLEncoding.EncodeToString([]byte(
-		`{"e":"me@bnei.dev","g":["platform-admins"],"x":` + strconv.FormatInt(time.Now().Add(time.Hour).Unix(), 10) + `}`))
-	id, ok := s.Verify(old + "." + s.mac(s.keys[0], old))
-	if !ok || id.Sub != "" || !id.InGroup(RequiredGroup) {
-		t.Fatalf("pre-sub cookie: ok=%v id=%+v", ok, id)
-	}
-
-	id, ok = s.Verify(s.Sign(Identity{Sub: "abc123", Email: "me@bnei.dev"}))
-	if !ok || id.Sub != "abc123" {
-		t.Errorf("sub did not round-trip: %+v", id)
 	}
 }

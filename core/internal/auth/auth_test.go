@@ -141,7 +141,7 @@ func TestSafeReturnTo(t *testing.T) {
 // The gate is an allowlist, and a route that nobody exempted must fail closed.
 // Gating one handler instead would make every future route public by default.
 func TestGate_ExemptsOnlyWhatIsListed(t *testing.T) {
-	exemptCases := []string{"/healthz", "/webhook/alertmanager", "/auth/login", "/auth/callback"}
+	exemptCases := []string{"/healthz", "/webhook/alertmanager", "/auth/login", "/auth/callback", "/auth/logout", "/auth/me"}
 	for _, p := range exemptCases {
 		if !exempt(p) {
 			t.Errorf("%s must be reachable without a session", p)
@@ -152,7 +152,9 @@ func TestGate_ExemptsOnlyWhatIsListed(t *testing.T) {
 	// here regardless: this host's IngressRoute matches on host with no path
 	// constraint, so exempting it would publish every target repo name and RPC
 	// method rather than merely unblocking the scrape (#230).
-	gatedCases := []string{"/", "/metrics", "/sessions/abc", "/agentfleet.v1.DashboardService/ListSessions", "/authsomething", "/some/new/route"}
+	gatedCases := []string{"/", "/metrics", "/sessions/abc", "/agentfleet.v1.DashboardService/ListSessions", "/authsomething", "/some/new/route",
+		// Prefix matching once let these through to the SPA fallback's 200 shell.
+		"/healthzX", "/healthz/x", "/webhook/alertmanagerX", "/auth/", "/auth/nonexistent"}
 	for _, p := range gatedCases {
 		if exempt(p) {
 			t.Errorf("%s is exempt from the session gate but should not be", p)

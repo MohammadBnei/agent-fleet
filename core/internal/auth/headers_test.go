@@ -10,8 +10,12 @@ import (
 // on the surface where permission prompts are answered). That includes the
 // gate's own 302/401/403 and the /auth/ pages — frame-ancestors governs only
 // who may embed the response, so it cannot interfere with the OIDC redirects.
+// It builds the FrameDeny(Gate(...)) order itself; run.go's wiring is not
+// exercised here.
 func TestFrameDeny_SetsHeadersOnEveryResponse(t *testing.T) {
-	o := &OIDC{signer: mustSigner(t, "key-one")}
+	s := mustSigner(t, "key-one")
+	o := &OIDC{signer: s}
+	nonAdmin := s.Sign(Identity{Email: "x@bnei.dev", Groups: []string{"opus-users"}})
 	handler := FrameDeny(o.Gate(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/auth/login" {
 			http.Redirect(w, r, "https://authentik.bnei.dev/application/o/authorize/", http.StatusFound)
@@ -20,17 +24,21 @@ func TestFrameDeny_SetsHeadersOnEveryResponse(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})))
 	for _, tc := range []struct {
-		path, mode string
-		want       int
+		path, mode, cookie string
+		want               int
 	}{
-		{"/healthz", "", http.StatusOK},
-		{"/auth/login", "navigate", http.StatusFound},
-		{"/sessions/abc", "navigate", http.StatusFound}, // gate redirect to login
-		{"/agentfleet.v1.DashboardService/ListSessions", "cors", http.StatusUnauthorized},
+		{"/healthz", "", "", http.StatusOK},
+		{"/auth/login", "navigate", "", http.StatusFound},
+		{"/sessions/abc", "navigate", "", http.StatusFound}, // gate redirect to login
+		{"/agentfleet.v1.DashboardService/ListSessions", "cors", "", http.StatusUnauthorized},
+		{"/sessions/abc", "navigate", nonAdmin, http.StatusForbidden}, // gate refusal
 	} {
 		req := httptest.NewRequest(http.MethodGet, tc.path, nil)
 		if tc.mode != "" {
 			req.Header.Set("Sec-Fetch-Mode", tc.mode)
+		}
+		if tc.cookie != "" {
+			req.AddCookie(&http.Cookie{Name: SessionCookieName, Value: tc.cookie})
 		}
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, req)

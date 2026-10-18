@@ -209,16 +209,22 @@ since the feature was written.
 - **`fleet.bnei.dev` now has exactly one lock, and the IngressRoute matches on
   host with no path constraint.** So every path core serves on 8080 is public
   unless the in-app gate refuses it, and **a new exempt path is a new public
-  endpoint**. Currently exempt: `/healthz`, `/auth/*`, `/webhook/alertmanager`
+  endpoint**. Currently exempt (exact paths): `/healthz`, `/auth/{login,callback,logout,me}`, `/webhook/alertmanager`
   (its own bearer token, refuses when unset).
 - **A signature-valid session cookie is not authorization.** `platform-admins`
-  was once checked only at the OIDC callback, so a cookie stayed good for its
-  whole 12h TTL whoever it named. The gate (403) and `ConnectInterceptor`
-  (`PermissionDenied`) now re-check the group on every request (`adr/0069`); a
-  new Connect service must pass its own group to `ConnectInterceptor`, and a
-  non-admin 403 must never become a login redirect (login refuses them again →
-  loop). `TestConnectInterceptor_NonAdminIsDeniedOnEveryDashboardMethod`
-  enumerates methods from the descriptor, so a new RPC is covered by default.
+  was once checked only at the OIDC callback. The gate (403) and
+  `ConnectInterceptor` (`PermissionDenied`) now re-check it on every request
+  (`adr/0069`), which matters once login admits an audience group — it guards
+  against login *widening*. It is **not revocation**: the groups are frozen into
+  the cookie at login, so someone removed from `platform-admins` keeps access
+  until the 12h TTL ends or `SESSION_KEYS` rotates (logging everyone out). A
+  service with another audience needs **both** a gate exclusion and its own
+  per-request authorizer — the gate's 403 fires first. A non-admin 403 must
+  never become a login redirect (login refuses them again → loop). Denials log
+  `auth: refused request` with the groups received.
+  `TestConnectInterceptor_NonAdminIsDeniedOnEveryDashboardMethod` enumerates
+  methods from the descriptor, so a new RPC is covered by default. Exempt paths
+  match exactly — a prefix let `/healthzX` reach the SPA's 200 shell.
   Every response also carries `frame-ancestors 'none'` + `X-Frame-Options: DENY`
   (`auth.FrameDeny`, outside the gate) — it governs embedding only, so it cannot
   break the `/auth/` redirect flow; `/embed/*` will be its one exception.

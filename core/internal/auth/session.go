@@ -59,13 +59,7 @@ const sessionTTL = 12 * time.Hour
 // Identity is what a verified session asserts. Kept minimal on purpose — the
 // fleet has no user model, and this is not one. It is the claim, carried far
 // enough to authorize a request and attribute an action.
-//
-// Sub is the ID token's subject — the stable key ownership will hang off, where
-// an email can change. It is empty on cookies minted before it existed; those
-// still verify and ride out their TTL rather than logging everyone out, so code
-// that keys on Sub must treat "" as "unknown owner", never as a match.
 type Identity struct {
-	Sub    string   `json:"s,omitempty"`
 	Email  string   `json:"e"`
 	Groups []string `json:"g"`
 	Expiry int64    `json:"x"`
