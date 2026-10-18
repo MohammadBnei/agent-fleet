@@ -11,6 +11,7 @@ package main
 
 import (
 	"context"
+	"crypto/subtle"
 	"errors"
 	"log/slog"
 	"net"
@@ -57,25 +58,27 @@ func (s *server) Exec(ctx context.Context, req *agentfleetv1.ExecRequest) (*agen
 	}, nil
 }
 
-// authInterceptor rejects anything without the shared bearer token. This
-// process is the most privileged in the fleet, so unlike the provisioner
-// it does not rely on network reachability alone (ADR-0035 flagged that
-// precedent as not scaling to cluster-mutation power).
-func authInterceptor(token string) grpc.UnaryServerInterceptor {
-	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
-		if token == "" {
-			return handler(ctx, req)
-		}
-		md, ok := metadata.FromIncomingContext(ctx)
-		if !ok {
-			return nil, status.Error(codes.Unauthenticated, "missing metadata")
-		}
+// newAuthInterceptor rejects anything without the shared bearer token. This
+// process is the most privileged in the fleet, so it never relies on network
+// reachability alone (ADR-0035 flagged that precedent as not scaling to
+// cluster-mutation power).
+//
+// An empty token is an error, not an open mode (docs/adr/0069): it used to
+// pass every call with a warning, so an Infisical operator rendering an empty
+// Secret would have brought cluster RBAC up for anyone, looking healthy.
+func newAuthInterceptor(token string) (grpc.UnaryServerInterceptor, error) {
+	if token == "" {
+		return nil, errors.New("THOT_AUTH_TOKEN is unset: refusing to serve ExecutorService unauthenticated")
+	}
+	want := []byte("Bearer " + token)
+	return func(ctx context.Context, req any, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+		md, _ := metadata.FromIncomingContext(ctx)
 		vals := md.Get("authorization")
-		if len(vals) == 0 || vals[0] != "Bearer "+token {
+		if len(vals) != 1 || subtle.ConstantTimeCompare([]byte(vals[0]), want) != 1 {
 			return nil, status.Error(codes.Unauthenticated, "missing or invalid bearer token")
 		}
 		return handler(ctx, req)
-	}
+	}, nil
 }
 
 func main() {
@@ -83,15 +86,16 @@ func main() {
 
 	grpcPort := env("GRPC_PORT", "9090")
 	httpPort := env("HTTP_PORT", "8080")
-	token := os.Getenv("THOT_AUTH_TOKEN")
-	if token == "" {
-		slog.Warn("THOT_AUTH_TOKEN unset — ExecutorService is unauthenticated (dev only)")
+	auth, err := newAuthInterceptor(os.Getenv("THOT_AUTH_TOKEN"))
+	if err != nil {
+		slog.Error("refusing to start", "error", err)
+		os.Exit(1)
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	grpcServer := grpc.NewServer(grpc.UnaryInterceptor(authInterceptor(token)))
+	grpcServer := grpc.NewServer(grpc.UnaryInterceptor(auth))
 	agentfleetv1.RegisterExecutorServiceServer(grpcServer, &server{})
 	lis, err := net.Listen("tcp", ":"+grpcPort)
 	if err != nil {
