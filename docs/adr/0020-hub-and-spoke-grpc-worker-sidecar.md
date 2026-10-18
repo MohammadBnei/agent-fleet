@@ -76,6 +76,9 @@ reflects the corrected design, not the original proposal.
    local sidecar (MCP) → fleet-core (gRPC) → provisioner (gRPC) → e2e pod,
    including live Playwright tool-call proxying during an active e2e
    session.
+   *Amended by [ADR-0069](0069-component-auth-and-network-fences.md):
+   network reachability is no longer the only boundary. `ProvisionerService`
+   requires core's bearer token, `FLEET_CORE_PROVISIONER_TOKEN`.*
 
 5. **Every worker pod gets a small Go sidecar — a real second container**,
    not a second process sharing the main container. This costs nothing

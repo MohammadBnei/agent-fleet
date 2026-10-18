@@ -47,10 +47,10 @@ holder and the only thing that ever calls this service — hub-and-spoke).
   with `WORKER_IMAGE`.
 - `service.yaml` — ClusterIP; `core`'s gRPC client reaches it at
   `provisioner.agent-fleet.svc.cluster.local:9090`.
-- `infisicalsecret.yaml` — syncs the whole `agent-fleet-nygh`/`dev` Infisical scope
-  (`GH_TOKEN`, `FLEET_PROVISIONER_TOKEN`, `FLEET_CORE_PROVISIONER_TOKEN`, …)
-  (no DB credentials — those live in `core`'s own
-  `k8s/core.yaml` now).
+- `infisicalsecret.yaml` — syncs the whole `agent-fleet-nygh`/`dev` Infisical
+  scope: `GH_TOKEN`, `FLEET_PROVISIONER_TOKEN`, `FLEET_CORE_PROVISIONER_TOKEN`
+  and the rest, but no DB credentials, which live in `core`'s own
+  `k8s/core.yaml`.
 - No `NetworkPolicy`. The e2e-runner one this directory used to hold went
   with the sandbox (`docs/adr/0048` §6). `docs/adr/0069` §3 adds new ones. Until
   then the gRPC port is protected by the bearer token alone
