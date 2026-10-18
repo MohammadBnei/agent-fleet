@@ -163,7 +163,47 @@ if [ -d %[1]s/.git ]; then
   exit 0
 fi
 mkdir -p %[1]s
-git clone --shared /repo-cache/%[2]s %[1]s
+`+cloneTail(spec.Definition != nil), sessionWorkdir, spec.Repo, base, spec.RepoURL)
+
+	return corev1.Container{
+		Name:    "clone",
+		Image:   image,
+		Command: []string{"sh", "-c", script},
+		VolumeMounts: []corev1.VolumeMount{
+			{Name: "session", MountPath: sessionWorkdir, SubPath: "tree"},
+			repoCacheMount(spec),
+		},
+		Resources: corev1.ResourceRequirements{
+			Requests: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("100m"),
+				corev1.ResourceMemory: resource.MustParse("128Mi"),
+			},
+			Limits: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("1000m"),
+				corev1.ResourceMemory: resource.MustParse("1Gi"),
+			},
+		},
+	}
+}
+
+// cloneTail is the part of the clone script after `mkdir`, appended to
+// cloneInitContainer's format string, so its verbs are that call's: %[1]s workdir, %[2]s repo, %[3]s base, %[4]s URL.
+func cloneTail(definition bool) string {
+	if definition {
+		return `git clone --shared --no-checkout /repo-cache/%[2]s %[1]s
+cd %[1]s
+# docs/adr/0064: local transport only. This container holds no credential and
+# never contacts the remote. The base comes from the cache's REMOTE-TRACKING
+# ref, which the provisioner fetched with its own credentials
+# (git.Manager.EnsureRepoFetched, never skipped for a definition pod) just
+# before this pod was created; the cache's local branches are frozen at its
+# first clone.
+git fetch --no-tags origin refs/remotes/origin/%[3]s
+git checkout -B %[3]s FETCH_HEAD
+git remote set-url origin %[4]s
+`
+	}
+	return `git clone --shared /repo-cache/%[2]s %[1]s
 cd %[1]s
 # The clone's origin points at the local cache, which is useless to the agent:
 # it needs to fetch from and push to the real remote.
@@ -183,25 +223,5 @@ git remote set-url origin %[4]s
 # delta the cache is genuinely missing.
 git fetch origin %[3]s
 git checkout -B %[3]s FETCH_HEAD
-`, sessionWorkdir, spec.Repo, base, spec.RepoURL)
-
-	return corev1.Container{
-		Name:    "clone",
-		Image:   image,
-		Command: []string{"sh", "-c", script},
-		VolumeMounts: []corev1.VolumeMount{
-			{Name: "session", MountPath: sessionWorkdir, SubPath: "tree"},
-			{Name: "shared", MountPath: "/repo-cache", SubPath: "repos", ReadOnly: true},
-		},
-		Resources: corev1.ResourceRequirements{
-			Requests: corev1.ResourceList{
-				corev1.ResourceCPU:    resource.MustParse("100m"),
-				corev1.ResourceMemory: resource.MustParse("128Mi"),
-			},
-			Limits: corev1.ResourceList{
-				corev1.ResourceCPU:    resource.MustParse("1000m"),
-				corev1.ResourceMemory: resource.MustParse("1Gi"),
-			},
-		},
-	}
+`
 }

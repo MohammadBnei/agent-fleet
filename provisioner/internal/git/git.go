@@ -178,10 +178,11 @@ func (m *Manager) EnsureRepoCloned(ctx context.Context, repo, repoURL string) (S
 // context, so git then ran on a cancelled one and the session was reported
 // CRASHED. Nothing about that was visible as a lock problem.
 //
-// Skipping the fetch is safe because it was never load-bearing: the pod's
-// clone init container fetches its base branch from the REAL remote
-// (k8s/session_storage.go), so a cache one sync out of date costs a slightly
-// larger delta over the network and nothing else. The clone IS load-bearing —
+// Skipping the fetch is safe because it was never load-bearing FOR REPO
+// SESSIONS: the pod's clone init container fetches its base branch from the
+// REAL remote (k8s/session_storage.go), so a cache one sync out of date costs a
+// slightly larger delta over the network and nothing else. Definition pods do
+// not fetch from the remote and use EnsureRepoFetched instead. The clone IS load-bearing —
 // with no cache there is nothing to `git clone --shared` from — so a cold
 // repo still waits however long it takes.
 func (m *Manager) EnsureRepoCachedForSession(ctx context.Context, repo, repoURL string) error {
@@ -194,6 +195,32 @@ func (m *Manager) EnsureRepoCachedForSession(ctx context.Context, repo, repoURL 
 		lock.Lock()
 	}
 	defer lock.Unlock()
+	_, err := m.ensureLocked(ctx, repo, repoURL)
+	return err
+}
+
+// EnsureRepoFetched always fetches, waiting for the repo lock no longer than
+// ctx. A definition pod's clone reads the cache's origin/<base> and never
+// contacts the remote (docs/adr/0064), so a fetch skipped under a busy lock
+// would start the session on a stale base, or kill it (BackoffLimit 0) when the
+// base branch is newer than the cache's last fetch. The plain sync.Mutex
+// cannot be waited on with a deadline, so this polls TryLock, and a wait past
+// ctx returns before any git runs.
+//
+// ponytail: 200ms poll; a channel semaphore if the latency ever shows.
+func (m *Manager) EnsureRepoFetched(ctx context.Context, repo, repoURL string) error {
+	lock := m.repoLock(repo)
+	for !lock.TryLock() {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(200 * time.Millisecond):
+		}
+	}
+	defer lock.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	_, err := m.ensureLocked(ctx, repo, repoURL)
 	return err
 }
