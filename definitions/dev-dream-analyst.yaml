@@ -1,0 +1,10 @@
+# Admin-only verification vehicle (docs/adr/0062) on a repo kind-local seeds.
+apiVersion: fleet.bnei.dev/v1alpha1
+kind: AgentDefinition
+metadata: { name: dev-dream-analyst }
+spec:
+  extends: workspace-base
+  audience: { group: platform-admins }
+  workspace: { kind: repo, repo: dream-analyst }
+  git: { mode: pr, identity: { name: fleet-dev-agent, email: fleet-dev-agent@bnei.dev } }
+  owns: { repos: [dream-analyst] }

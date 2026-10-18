@@ -1,0 +1,12 @@
+# The event bridge's client registration (docs/adr/0062; infra-bootstrap
+# ADR-0060). A stub in P1: there is no client table and nothing reads tokenRef
+# until P4 enforces it at Open. tokenRef is an Infisical secret KEY, never a
+# value. `definitions` is empty, so this opens nothing until a definition lists
+# `bridge` in its invokers (two-sided agreement).
+apiVersion: fleet.bnei.dev/v1alpha1
+kind: AgentClient
+metadata: { name: bridge }
+spec:
+  tokenRef: FLEET_CLIENT_TOKEN_BRIDGE
+  actors: { allow: [MohammadBnei] } # GitHub logins (the event's actor_login)
+  definitions: []

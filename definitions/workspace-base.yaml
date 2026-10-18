@@ -1,0 +1,19 @@
+# Abstract base for workspace co-editors (docs/adr/0062). Never launchable and
+# never stored as a row; a child's top-level key REPLACES the value here
+# (nothing is deep-merged), so a child that sets `tools` drops this `deny`.
+apiVersion: fleet.bnei.dev/v1alpha1
+kind: AgentDefinition
+metadata: { name: workspace-base }
+spec:
+  abstract: true
+  model: { default: claude-opus-5, allow: [claude-opus-5, claude-sonnet-5] }
+  thinking: { default: medium }
+  mode: { default: default, allow: [default, plan] }
+  tools:
+    allow: [Read, Edit, Write, Glob, Grep]
+    deny: ["Edit(.git/**)", "Write(.git/**)", "Edit(.claude/**)", "Write(.claude/**)"]
+  sidecarTools: [AskUserQuestion, send_message, set_session_meta]
+  interaction: { allow: [ask] }
+  lifecycle: { allow: [resident] }
+  resources: { cpu: "1", memory: 2Gi }
+  limits: { maxTurns: 60, timeout: 30m, concurrency: 1, startupBudget: 3m }
