@@ -5,12 +5,12 @@
 - **Related:** infra-bootstrap ADR-0059 (`ukubi-bridge`, the bus itself),
   [ADR-0041](0041-inter-agent-prompting.md) (`prompt_agent`, which stays),
   [ADR-0048](0048-one-session-one-pod-one-shared-home.md) (§1 human gate, §2 no
-  queue), ADR-0061 (the gate amendment: a registered client may open a session),
+  queue), ADR-0062 (the gate amendment: a registered client may open a session),
   ADR-0072 (approval-gated executor), `core/internal/alertwebhook/handler.go`
 
 ## Context
 
-Defined agents (ADR-0061–0070) are dedicated to one app or one platform
+Defined agents (ADR-0062–0070 and 0073) are dedicated to one app or one platform
 component. To be useful they must hear about that thing without a human
 relaying it: a PR to review, an alert, a hand-off from another agent. And
 agents must be able to talk to each other asynchronously — one finishes a
@@ -42,7 +42,12 @@ the log, retry and dead-lettering. This ADR is core's side of it.
    bridge and calls `AgentService.Open(definition, thread_key, message,
    interaction=ask, lifecycle=resident)` as the registered client
    `definitions/clients/bridge.yaml`. The CloudEvent id is Open's idempotency
-   key, so a redelivery appends nothing.
+   key, so a redelivery appends nothing. Open passes the permission mode
+   explicitly — the definition's `spec.mode.default`, never `auto` — so an
+   event-opened session does not inherit the `'auto'` column default of
+   [ADR-0061](0061-sessions-launch-in-auto.md). Proposals filed for
+   untrusted or `actor=machine` events keep ADR-0061's behaviour once a
+   human opens them.
 4. **Routing.** The `owner` is the definition whose `spec.owns` (repos,
    components, subject globs, types) matches the event; until definitions
    exist, an `owner` column on the `repos` table (ADR-0028) does it.
@@ -50,11 +55,11 @@ the log, retry and dead-lettering. This ADR is core's side of it.
    for observer agents, such as an always-on Hermes-type agent.
 5. **Threads.** The CloudEvent `subject` is the thread key. A session is
    resident per thread: `sessions.thread_key` with a unique partial index on
-   `(definition_name, thread_key)` where not archived (ADR-0061's shape; no
+   `(definition_name, thread_key)` where not archived (ADR-0062's shape; no
    separate table, no status enum). The thread closes when the PR is merged
    or closed, or the alert resolves — the alert handler moves to thread
    semantics and stops discarding `resolved`.
-6. **The gate** (the ADR-0048 §1 amendment itself is ADR-0061's):
+6. **The gate** (the ADR-0048 §1 amendment itself is ADR-0062's):
    - A **new thread** opens a session only for a trusted actor — the
      operator, Renovate, the fleet's own agents, CI — with trust computed by
      the bridge from the PR author and head repo, never the webhook sender.
