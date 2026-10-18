@@ -48,11 +48,12 @@ export async function appendJournal(
   await postJSON("/journal", { repo, actor, eventType, payload });
 }
 
-// leaseId lets core reject this write if the pod has already been replaced
-// (docs/adr/0041) — tasks.session_id is what the next resume reads, so a
-// dead pod setting it would resume the wrong conversation.
+// Lease-checked by core (docs/adr/0041): the session id is what the next
+// resume reads, so a dead pod setting it would resume the wrong conversation.
+// The SIDECAR sends its own lease; the worker no longer reads LEASE_ID at all,
+// and a definition pod's worker has none (docs/adr/0064).
 export async function saveSessionId(sessionId: string, model: string): Promise<void> {
-  await postJSON("/session-id", { sessionId, model, leaseId: process.env.LEASE_ID ?? "" });
+  await postJSON("/session-id", { sessionId, model });
 }
 
 // getSession reads the session row fresh at startup.

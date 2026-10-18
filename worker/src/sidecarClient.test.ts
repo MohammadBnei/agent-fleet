@@ -33,7 +33,7 @@ const server = Bun.serve({
 });
 process.env.SIDECAR_API_ADDR = `127.0.0.1:${server.port}`;
 
-const { streamHumanMessages } = await import("./sidecarClient.js");
+const { streamHumanMessages, saveSessionId } = await import("./sidecarClient.js");
 
 function sseResponse(lines: string[]): Response {
   const body = lines.map((l) => `${l}\n\n`).join("");
@@ -172,3 +172,17 @@ test("stops reconnecting once aborted, even mid-backoff", async () => {
   await Bun.sleep(3000); // well past RECONNECT_DELAY_MS — no further attempts should happen
   expect(call).toBe(callsAtAbort);
 }, 10000);
+
+// docs/adr/0064: the sidecar sends its own lease; the worker sends none, so a
+// definition pod (no LEASE_ID in the worker) and a repo pod post the same body.
+test("saveSessionId sends no lease", async () => {
+  process.env.LEASE_ID = "should-not-be-read";
+  let body: unknown;
+  handler = async (req) => {
+    body = await req.json();
+    return Response.json({ ok: true });
+  };
+  await saveSessionId("sdk-1", "claude-opus-5");
+  expect(body).toEqual({ sessionId: "sdk-1", model: "claude-opus-5" });
+  delete process.env.LEASE_ID;
+});

@@ -91,7 +91,6 @@ func newMCPServer(core *coreclient.Client) *server.MCPServer {
 
 	s.AddTool(mcp.NewTool("send_message",
 		mcp.WithDescription("Append a message to this task's shared transcript (visible to the human via dashboard/Discord). The response's nextIndex is the sinceIndex for wait_for_messages."),
-		mcp.WithString("from", mcp.Required(), mcp.Description("'agent' | 'human'")),
 		mcp.WithString("text", mcp.Required()),
 		mcp.WithString("type", mcp.Description("'discussion' | 'approve' | 'abort'")),
 		mcp.WithString("idempotencyKey"),
@@ -256,12 +255,14 @@ func truncate(s string, max int, note string) string {
 // the cursor a caller should resume from.
 func sendMessageHandler(core *coreclient.Client) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		from := req.GetString("from", "")
+		// Always "agent": core refuses a pod authoring as anyone else, since
+		// the worker obeys "human" and "session" entries (docs/adr/0064).
+		const from = "agent"
 		text := req.GetString("text", "")
 		msgType := req.GetString("type", "")
 		idempotencyKey := req.GetString("idempotencyKey", "")
-		if from == "" || text == "" {
-			return mcp.NewToolResultError("from and text are required"), nil
+		if text == "" {
+			return mcp.NewToolResultError("text is required"), nil
 		}
 		slog.Info("mcp send_message", "from", from, "type", msgType)
 		seq, err := core.SendMessage(ctx, from, text, stringToProtoType(msgType), idempotencyKey)
