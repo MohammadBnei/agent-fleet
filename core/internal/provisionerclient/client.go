@@ -52,16 +52,38 @@ const sessionCallTimeout = 2 * time.Minute
 // wants a background job with a status column, not a bigger number here.
 const repoSyncTimeout = 10 * time.Minute
 
-// New dials addr (in-cluster ClusterIP, no TLS needed — Cilium's own
-// network policy is the trust boundary here, same as every other
-// in-cluster call in this fleet).
-func New(addr string) (*Client, error) {
-	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+// New dials addr (in-cluster ClusterIP, no TLS). token is
+// FLEET_CORE_PROVISIONER_TOKEN, sent as a bearer on every call: the
+// provisioner rejects a call without it and refuses to start without its own
+// copy (docs/adr/0069). Network reachability alone was the boundary before,
+// and it let any pod create pods.
+//
+// An empty token still dials and sends no header. Every call then fails
+// Unauthenticated, which is loud enough, and the console keeps working without
+// a provisioner.
+func New(addr, token string) (*Client, error) {
+	conn, err := grpc.NewClient(addr,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithPerRPCCredentials(bearer(token)),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("dial provisioner: %w", err)
 	}
 	return &Client{conn: conn, rpc: agentfleetv1.NewProvisionerServiceClient(conn)}, nil
 }
+
+// bearer is per-RPC credentials, so one value covers unary and stream calls.
+type bearer string
+
+func (b bearer) GetRequestMetadata(context.Context, ...string) (map[string]string, error) {
+	if b == "" {
+		return nil, nil
+	}
+	return map[string]string{"authorization": "Bearer " + string(b)}, nil
+}
+
+// RequireTransportSecurity is false: in-cluster ClusterIP, no TLS (see New).
+func (bearer) RequireTransportSecurity() bool { return false }
 
 func (c *Client) Close() error {
 	return c.conn.Close()

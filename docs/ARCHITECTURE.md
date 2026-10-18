@@ -51,7 +51,7 @@ here written in the present tense about any of them is a bug in this file.
 | `proto/` | buf-managed `.proto` schema (lint + breaking-change CI + generate/drift check): `CoreService` (core's gRPC server — agent/wrapper/provisioner-facing), `ProvisionerService` (the provisioner's gRPC server, renamed from `E2eProvisionerService`), and `DashboardService` (ConnectRPC, dashboard ↔ core). Generates Go (`proto/gen/go`) and TS types (`worker/src/gen`, `dashboard/src/gen`, `ts-proto`). |
 | `db/migrations/` | Shared Postgres schema (`agentfleetdb`, Pigsty-managed) — sole source of truth, applied via golang-migrate by the dedicated `migration` image on a `PreSync` hook ([`adr/0030`](adr/0030-single-source-schema-via-golang-migrate.md)). Squashed to one `000001_init` pair by `adr/0048`: `sessions` (no status enum, no lease/retry/heartbeat columns), `proposals` (the human gate in front of machine-initiated runs, with a dedup key that re-arms on dismissal or archive), `transcript` (`ON DELETE CASCADE`, which is what let soft-delete die), `repos`, `prompt_snippets`, `scheduled_audits`, `knowledge_journal`. |
 | `dashboard/` | React + Vite + TypeScript + Tailwind/DaisyUI SPA — the fleet's **primary** surface, rewritten as a console in [`adr/0042`](adr/0042-console-rewrite.md). Four full-width nav views (**sessions**, **audits**, **files**, **observability**), plus the session detail that replaces the list rather than sitting beside it — the 320px sidebar is gone. The list *is* the fleet overview: a live census, and a blocked session's pending decision rendered **and answerable inline** (an `Edit` as a real diff with allow/deny) off the same per-active-session transcript fetch the todo bars already used — no extra RPC. URL state is `?view=`/`?session=`; the pre-rename `?task=` is still read so links shared before v3.0.0 keep resolving. The detail view is feed · **decision dock** · composer, beside a fixed 266px panel column ([`adr/0043`](adr/0043-one-decision-surface.md) deleted the decision-spine rail: a pending decision now renders in the pinned dock and *only* there, on both form factors, via the shared `DecisionDock`); the feed ranks the twelve entry kinds into five visually distinct tiers (`SessionFeed`), gated by one three-way DENSITY control whose third mode deliberately differs between desktop and mobile (`feedVisibility`). **Mobile is designed, not ported** (`Agent Fleet Console Mobile.dc.html`): persistent top bar + bottom tab bar, bucket filter chips, ~44px targets, the blocking decision **docked above the composer**, and the panels as a bottom sheet — sharing `SessionFeed`/`SessionPanels`/`DecisionInline`/`DecisionDock`, plus the `bucketSessions` partition and the `sessionLabel` fallback, with desktop so the two can't drift. Two themes (`herd` dark default, `herd-light`) from the design tokens, applied pre-paint from `index.html`. **Session creation** (`NewSessionDialog.tsx`): repo alone is enough, title and first message are both optional, and an optional message is sent as a real `PostMessage` after `CreateSession` returns — which is what boots the pod (§4 below). Prompt snippets prefill that message box client-side rather than being sent, since `snippet_ids` is a reserved proto field. Live transcript via a Connect server-streaming RPC; Warm/Interrupt/Kill/**Archive**, a mode picker showing `default`/`plan`/`acceptEdits`/`auto` with the real active mode highlighted, `AskUserQuestion`/`PermissionCard`/`PlanCard` answer forms (`adr/0018`/`0029`), a Loki log drawer, and the **proposals** gate on the audits view — `ListProposals`/`OpenFromProposal`/`DismissProposal`, the human approval in front of every machine-initiated run. **observability** ([`adr/0047`](adr/0047-metrics-scoped-to-the-hubs.md)) is a live fleet topology plus a PromQL explorer: cells are the two hubs and one per live worker pod, coloured by status, and clicking one opens that session — the thing Grafana can't do, which is why the view is deliberately thin next to it and links to it. Hand-laid-out inline SVG, no `d3`/`cytoscape`: two fixed hubs and at most `MAX_LIVE_SESSIONS` cells is a bounded shape whose positions are a loop. Talks to `core` via a generated `@connectrpc/connect-web` client. Built into and served by `core`'s binary — not deployed on its own. |
-| `k8s/` | This repo's own deploy manifests: `core.yaml` (Helm values for `common-app-chart`, zero RBAC) and `provisioner/` (a standalone plain-manifest directory — `Deployment`/`Service`/`ServiceAccount`/`Role`/`InfisicalSecret`/`NetworkPolicy`/`PersistentVolumeClaim` — since it needs RBAC `common-app-chart` can't express). Both referenced from `infra-bootstrap`'s `gitops/` (see §9). |
+| `k8s/` | This repo's own deploy manifests: `core.yaml` (Helm values for `common-app-chart`, zero RBAC) and `provisioner/` (a standalone plain-manifest directory — `Deployment`/`Service`/`ServiceAccount`/`Role`/`InfisicalSecret`/`PersistentVolumeClaim` — since it needs RBAC `common-app-chart` can't express). Both referenced from `infra-bootstrap`'s `gitops/` (see §9). |
 | `executor/` | Go — the only process in the fleet holding cluster RBAC ([`adr/0037`](adr/0037-thot-is-a-worker-task.md)). One RPC, `Exec(argv)`, run on behalf of pods that hold no credentials at all. Deployed from infra-bootstrap's `gitops/platform/thot/` as `thot-executor`, with the ClusterRole `adr/0032` reviewed. Reads are validated against a verb allowlist (nothing else checks them); mutations are a dumb pipe, because a human already approved that exact argv through `canUseTool`. |
 
 ## 2. End-to-end flow
@@ -214,6 +214,8 @@ Two surfaces, two mechanisms, and they are not interchangeable — see
 | SPA + `DashboardService` | 8080 | a human in a browser | authentik OIDC → `__Host-fleet_session` cookie, signed by core |
 | `CoreService` | 9090 | a session's sidecar | that session's `lease_id`, verified against the `sessions` table |
 | `CoreService` | 9090 | the provisioner | `FLEET_PROVISIONER_TOKEN` (it holds no lease — it exists before any pod does) |
+| `ProvisionerService` | 9090 (provisioner) | core | `authorization: Bearer $FLEET_CORE_PROVISIONER_TOKEN`; the provisioner refuses to start without it (`adr/0069`) |
+| `ExecutorService` | 9090 (`thot-executor`) | a `cluster_access` session's kubectl shim | `authorization: Bearer $THOT_AUTH_TOKEN`; the executor refuses to start without it (`adr/0069`) |
 | `<id>-e2e.bnei.dev` previews | — | a human in a browser | authentik **forwardAuth** at Traefik |
 
 **Why the console does not use forwardAuth**, which is the obvious answer and
@@ -570,7 +572,7 @@ publicly routed). Its HTTP ingress is gated behind the shared
 **`provisioner` needs real RBAC**, so — unlike `core` — it is **not**
 deployed through `common-app-chart`. As of this redesign its manifests
 moved *into this repo* (`k8s/provisioner/`: `Deployment`, `Service`,
-`ServiceAccount`, namespaced `Role`, `InfisicalSecret`, `NetworkPolicy`,
+`ServiceAccount`, namespaced `Role`, `InfisicalSecret`,
 `PersistentVolumeClaim`), registered in `infra-bootstrap` as a standalone
 plain-manifest ArgoCD Application (`gitops/bootstrap/
 provisioner-application.yaml`) pointed at this repo instead of
@@ -959,6 +961,17 @@ authenticates **nobody** (an empty token is not a wildcard) and both processes
 say so loudly at startup — necessary because `PERMISSION_DENIED` is not in
 either client's retry policy, so the symptom is pod events silently ceasing to
 reach core while every log stays green.
+
+### `FLEET_CORE_PROVISIONER_TOKEN` (`core/` and `provisioner/`)
+
+The same shape in the other direction: core's credential to
+`ProvisionerService` (`adr/0069`). A separate key rather than a reuse of
+`FLEET_PROVISIONER_TOKEN`, so a leak of one side's copy cannot impersonate the
+other side. Same whole-scope `envFrom`, so no manifest change. Unlike its
+sibling, the **provisioner refuses to start** without it. Core only warns:
+the console keeps working, and every provisioner call fails `Unauthenticated`.
+Worker pods never receive it: the provisioner builds their env from an explicit
+list, not `envFrom`.
 
 All of the above flow through Infisical (project `agent-fleet-nygh`,
 env `dev`) — never committed, never in a manifest as plain text.

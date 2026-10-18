@@ -38,10 +38,14 @@ type Config struct {
 	// caller that needs a shared secret rather than a per-session credential.
 	// From the same Infisical scope both components already consume whole, so
 	// adding the key needs no manifest change on either side.
-	ProvisionerToken   string
-	ThotDiscordChannel string
-	ThotRepo           string
-	LokiURL            string
+	ProvisionerToken string
+	// CoreProvisionerToken is the reverse direction: core's bearer to
+	// ProvisionerService (docs/adr/0069). A separate key so that a leak of one
+	// side's copy cannot impersonate the other. Same whole-scope envFrom.
+	CoreProvisionerToken string
+	ThotDiscordChannel   string
+	ThotRepo             string
+	LokiURL              string
 	// PrometheusURL backs the dashboard's Observability page. The service
 	// name is the kube-prometheus-stack release's, which the chart mangles
 	// to 'kube-p' — not a typo. Confirmed live from infra-bootstrap's
@@ -174,6 +178,7 @@ func Load() Config {
 		DiscordTriggerChannel: os.Getenv("DISCORD_TRIGGER_CHANNEL_ID"),
 		AlertWebhookToken:     os.Getenv("ALERT_WEBHOOK_TOKEN"),
 		ProvisionerToken:      os.Getenv("FLEET_PROVISIONER_TOKEN"),
+		CoreProvisionerToken:  os.Getenv("FLEET_CORE_PROVISIONER_TOKEN"),
 		ThotDiscordChannel:    os.Getenv("THOT_DISCORD_CHANNEL_ID"),
 		ThotRepo:              env("THOT_REPO", "infra-bootstrap"),
 		LokiURL:               env("LOKI_URL", "http://platform-loki.monitoring.svc.cluster.local:3100"),

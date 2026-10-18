@@ -50,6 +50,11 @@ spec:
             # accepts it.
             - name: FLEET_PROVISIONER_TOKEN
               value: kind-local-provisioner-token
+            # docs/adr/0069: the other direction, core -> ProvisionerService.
+            # The provisioner refuses to start without its copy. Must equal
+            # 40-provisioner.yaml's. Local-only literal, like the one above.
+            - name: FLEET_CORE_PROVISIONER_TOKEN
+              value: kind-local-core-provisioner-token
             # DISCORD_BOT_TOKEN deliberately omitted — core/cmd/core/run.go
             # falls back to a noopNotifier, same as dashboard-e2e.
             # LOKI_URL deliberately omitted — no Loki in this local ground;
