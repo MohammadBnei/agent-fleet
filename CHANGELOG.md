@@ -1,5 +1,11 @@
 # Changelog
 
+# [4.16.0](https://github.com/MohammadBnei/agent-fleet/compare/4.15.3...4.16.0) (2026-10-18)
+
+### Features
+
+* **core,executor:** G0 component auth, part A: core bearer client and executor fail-closed (ADR 0069) ([#260](https://github.com/MohammadBnei/agent-fleet/issues/260)) ([a054b0f](https://github.com/MohammadBnei/agent-fleet/commit/a054b0f5994e98677322b27851c730ce9e8a4b01))
+
 ## [4.15.3](https://github.com/MohammadBnei/agent-fleet/compare/4.15.2...4.15.3) (2026-10-17)
 
 ### Bug Fixes
