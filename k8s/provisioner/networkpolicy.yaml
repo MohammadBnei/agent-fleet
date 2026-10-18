@@ -1,0 +1,42 @@
+# Ingress fence for the provisioner (docs/adr/0069 §3, which also records the
+# host-identity residual). Selecting the pod makes it default-deny for ingress;
+# each rule is a caller found live on 2026-10-18. Ingress only.
+# provisioner/internal/k8s/networkpolicy_test.go pins the in-repo labels; the
+# external callers' are only asserted (§3).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: provisioner-ingress
+  namespace: agent-fleet
+  labels:
+    app.kubernetes.io/part-of: agent-fleet
+spec:
+  podSelector:
+    matchLabels:
+      app: provisioner
+  policyTypes:
+  - Ingress
+  ingress:
+  # :9090 ProvisionerService. core only (hub-and-spoke, docs/adr/0020); the
+  # bearer token (adr/0069 §1) stays the authentication. common-app-chart's
+  # selectorLabels for core's release: renaming that Application means
+  # changing this literal in the same rollout (adr/0069 §3).
+  - from:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: agent-fleet-core
+          app.kubernetes.io/instance: agent-fleet-core
+    ports:
+    - port: 9090
+      protocol: TCP
+  # :8080 /metrics. Prometheus, via servicemonitor.yaml.
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: monitoring
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/name: prometheus
+    ports:
+    - port: 8080
+      protocol: TCP

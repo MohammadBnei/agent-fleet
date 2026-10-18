@@ -91,6 +91,10 @@ matters belongs to the console's server.
   Infisical secret, a k8s Secret the Operator can read, and a rotation story — for
   a problem a port number solves outright. The webhook needs a token because
   Alertmanager posts to it *through* the ingress; Prometheus does not.
+  *(Corrected by [0069](0069-component-auth-and-network-fences.md) §3:
+  Alertmanager and Grafana post to the ClusterIP, not through the ingress. The
+  token is still needed, because `:8080` is internet-routed whoever the caller
+  is.)*
 - **A Traefik path rule denying `/metrics` on this host** — lives in
   `infra-bootstrap`'s `common-app-chart`, which this repo does not own, and #230
   is explicit that no infra-side change is wanted. It also re-introduces exactly

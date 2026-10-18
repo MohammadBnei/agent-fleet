@@ -48,14 +48,17 @@ holder and the only thing that ever calls this service — hub-and-spoke).
 - `service.yaml` — ClusterIP; `core`'s gRPC client reaches it at
   `provisioner.agent-fleet.svc.cluster.local:9090`.
 - `infisicalsecret.yaml` — syncs the whole `agent-fleet-nygh`/`dev` Infisical
-  scope, the same one `core` syncs (`k8s/core.yaml`). The provisioner reads
-  `GH_TOKEN` and `FLEET_CORE_PROVISIONER_TOKEN`, but its pod holds every key in
-  that scope, `AGENTFLEET_DB_*` and the other components' tokens included
+  scope, the same one core syncs: `GH_TOKEN`, both fleet tokens, and every
+  other key in it, `AGENTFLEET_DB_*` included, though the provisioner uses
+  none of the DB ones. A compromised provisioner holds all of them
   (`docs/adr/0069` Consequences).
-- No `NetworkPolicy`. The e2e-runner one this directory used to hold went
-  with the sandbox (`docs/adr/0048` §6). `docs/adr/0069` §3 adds new ones. Until
-  then the gRPC port is protected by the bearer token alone
-  (`FLEET_CORE_PROVISIONER_TOKEN`, `docs/adr/0069` §1).
+- `networkpolicy.yaml` — the provisioner's ingress fence (`docs/adr/0069`
+  §3): `:9090` only from core, `:8080` only from Prometheus. The bearer token
+  (`FLEET_CORE_PROVISIONER_TOKEN`, §1) stays the authentication. The
+  e2e-runner policy that used to live here went with the sandbox
+  (`docs/adr/0048` §6). core's own fence is in `k8s/core.yaml`'s
+  `extraManifests`. Worker pods aren't selected by any policy and stay
+  default-allow.
 
 ## One-time human setup (not something this repo/ArgoCD can do)
 

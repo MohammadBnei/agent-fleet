@@ -109,27 +109,91 @@ on 2026-10-18:
 
 ### 3. NetworkPolicies in `agent-fleet` (later G0 PR)
 
-- Default-deny **ingress** for the namespace, then explicit allows:
-  - Traefik (`traefik` namespace) → core `:8080`. This also carries the
-    Alertmanager webhook, which posts through the ingress.
-  - Prometheus (`monitoring`) → core `:9093` and provisioner `:8080`
-    (`/metrics`).
-  - core → provisioner `:9090`.
-  - session pods (sidecars) and the provisioner → core `:9090`.
-  - Traefik → session pods (`agent-fleet.dev/component: worker`) on **any**
-    port. `ExposeSession` puts a Service in front of the session pod on a port
-    the agent picks, so the `<id>-e2e.bnei.dev` previews need this.
-  - session pods → shared-instance pods
-    (`agent-fleet.dev/component: shared-instance`, the Postgres/Redis
-    `ProvisionService` creates) on their service ports.
+*Amended 2026-10-18 by the PR that ships it. The first draft said default-deny
+for the whole namespace and had the Alertmanager webhook arrive through the
+ingress; what shipped is narrower, and the webhook does not.*
+
+- Ingress-only policies that **select core and the provisioner**, nothing
+  else. Selecting a pod makes it default-deny for ingress; the allows are
+  every caller found live on 2026-10-18:
+  - core `:8080`: the `traefik` namespace, plus Alertmanager and Grafana in
+    `monitoring`. Both post `/webhook/alertmanager` to the ClusterIP
+    `agent-fleet-core.agent-fleet.svc.cluster.local:8080`, not through the
+    ingress (infra-bootstrap `gitops/platform/values/{prometheus,grafana}/values.yaml`).
+    Dropping the `monitoring` rule is a #230-style outage.
+  - core `:9090`: session pods (`agent-fleet.dev/component: worker`) and the
+    provisioner, same namespace only.
+  - core `:9093` and provisioner `:8080` (`/metrics`): Prometheus.
+  - provisioner `:9090`: core.
 - No foreign namespace reaches the provisioner or core's `:9090`. The token
   (§1) and the lease (ADR-0057) stay the authentication. The policies only
   shrink who can try.
+- A new caller needs its rule first. ADR-0072's `thot-executor` (namespace
+  `thot`) calling core is one: it needs a namespace-AND-pod peer
+  (`thot` / `app=thot-executor`) on the port it uses, merged before the
+  executor code that dials core. Without it the call times out rather than
+  erroring, and with Hubble metrics off nothing counts the drop.
+- The `:8080` rule refuses a worker pod's *direct* connection, nothing more.
+  Worker egress is open and `fleet.bnei.dev` is a public, unproxied route with
+  no path constraint, so a worker going through it arrives as Traefik and is
+  admitted. Traefik also runs with `allowCrossNamespace=true`, so an
+  `IngressRoute` in any namespace can front core's Service. The OIDC gate and
+  `ALERT_WEBHOOK_TOKEN` stay the only boundary on `:8080`.
+- **Deferred: the rest of the namespace.** Session pods, shared instances
+  (`agent-fleet.dev/component: shared-instance`, Postgres/Redis with their
+  admin secrets) and the `expose-*` Services stay unselected, so any
+  namespace can still reach them. Fencing them needs Traefik → session pods on
+  any port (`ExposeSession` previews) and session pods → shared instances,
+  each proved live with a preview and a DSN. It goes with the session-pod
+  work of ADR-0064 (P3), not with G0, whose acceptance is the provisioner and
+  `:9090`.
+- Plain `NetworkPolicy`, not `CiliumNetworkPolicy`: under this cluster's
+  Cilium chaining mode it is enforced for traffic by ClusterIP and by pod IP,
+  and the same labels from another namespace are refused (proved live in a
+  scratch namespace before shipping).
+- **Residual: the host identity.** Under Cilium chaining a source with the
+  host identity on the target's own node is always admitted. That keeps
+  kubelet probes working, and it also admits any `hostNetwork` pod on that
+  node, past all three fences, including core's `:9093`, which has no
+  credential (ADR-0059 counts its `/metrics` as sensitive). No namespace
+  enforces Pod Security Admission `baseline`, so today that is anyone who can
+  create a pod with `nodeName` set to core's or the provisioner's node:
+  cluster-admins, ArgoCD, and the in-cluster actions-runner, which can
+  `create jobs.batch` in `vos` and `vos-dev` (infra-bootstrap ADR-0022;
+  checked with `kubectl auth can-i` on 2026-10-18). Closing it is PSA
+  `baseline` on the user-app namespaces, an infra-bootstrap change.
+  The host identity probably also covers NodePort and LoadBalancer traffic:
+  Cilium runs without kube-proxy replacement here, so kube-proxy (IPVS)
+  masquerades it to the node IP, and a backend on the receiving node sees
+  the host. A selectorless NodePort/LB Service plus a hand-written
+  EndpointSlice at core's or the provisioner's pod IP, in any namespace,
+  would then expose `:9090`/`:9093` to the LAN. **Not tested live**; inferred
+  from the spike's KPR and IPVS facts. Who can create those objects is
+  mostly the same population (cluster-admins, ArgoCD via app repos'
+  `extraManifests`). Closing it is restricting `services` of type
+  NodePort/LoadBalancer and `endpointslices`, or Cilium's BPF NodePort, which
+  keeps the source identity.
 - Egress is out of scope here. The session pod egress lock is ADR-0064.
-- Acceptance is live, not just rendered: a pod in a foreign namespace fails to
-  connect to both, and Traefik, Prometheus and the Alertmanager webhook keep
-  working, an exposed session preview still loads through Traefik, and a
-  session pod still reaches its shared Postgres and Redis.
+- The selectors are guarded two ways. `provisioner/internal/k8s/networkpolicy_test.go`
+  pins the in-repo labels and ports (`WorkerLabels`, `SharedInstanceLabels`,
+  the provisioner's pod template and containerPorts, core's service ports and
+  `CORE_*_PORT`) and that both policies are ingress only. Core's release name
+  lives in infra-bootstrap's `gitops/apps/registry.yaml`, which this repo
+  cannot read: the test copies it, and the provisioner policy's literal must
+  change with it in the same rollout, or core loses `ProvisionerService`.
+  Core's migrate hook pod carries the same selectorLabels and is admitted
+  too, accepted (core's own image and credentials). The external callers'
+  labels (Traefik, Prometheus, Alertmanager, Grafana, set by third-party
+  charts in infra-bootstrap) are only asserted there; a relabel shows up as
+  `TargetDown` for the core and provisioner ServiceMonitors and as
+  `AlertmanagerFailedToSendAlerts` for Alertmanager's webhook, both live
+  kube-prometheus-stack rules. Grafana's webhook has no such alert.
+- Acceptance is live, not just rendered: a pod in a foreign namespace
+  actually connects and fails, to both (not "no rejections in the logs"), and
+  Traefik, Prometheus and the Alertmanager webhook keep working. Grafana's
+  webhook has no alert, so it is checked by hand: send a test notification
+  from Grafana's agent-fleet contact point and confirm a proposal lands in
+  core.
 
 ### 4. Console CSP (later G0 PR)
 

@@ -294,6 +294,73 @@ extraManifests:
         - port: metrics
           path: /metrics
           interval: 30s
+  # Ingress fence for core (docs/adr/0069 §3, which also records the
+  # host-identity residual). Each rule is a caller found live on 2026-10-18;
+  # a caller missing here is a #230-style outage, so add its rule BEFORE
+  # pointing anything new at core. provisioner/internal/k8s/networkpolicy_test.go
+  # pins the in-repo labels; the external callers' are only asserted (§3).
+  - |
+    apiVersion: networking.k8s.io/v1
+    kind: NetworkPolicy
+    metadata:
+      name: {{ .Release.Name }}-ingress
+      namespace: {{ .Release.Namespace }}
+      labels:
+        app.kubernetes.io/part-of: agent-fleet
+    spec:
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/name: {{ .Release.Name }}
+          app.kubernetes.io/instance: {{ .Release.Name }}
+      policyTypes:
+        - Ingress
+      ingress:
+        # :8080 console. Traefik (the IngressRoute above); Alertmanager and
+        # Grafana post /webhook/alertmanager (alerts -> thot tasks) to the
+        # ClusterIP, not through the ingress. This refuses a worker pod's
+        # direct connection only: anything Traefik proxies (a worker going
+        # through fleet.bnei.dev included, or any namespace's IngressRoute,
+        # since allowCrossNamespace is on) arrives as Traefik. The in-app gate
+        # stays the only boundary on :8080; never relax it for "in-cluster
+        # only" paths on the strength of this rule.
+        - from:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: traefik
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: monitoring
+              podSelector:
+                matchExpressions:
+                  - key: app.kubernetes.io/name
+                    operator: In
+                    values: [alertmanager, grafana]
+          ports:
+            - port: 8080
+              protocol: TCP
+        # :9090 CoreService. Session sidecars (WorkerLabels) and the
+        # provisioner, this namespace only.
+        - from:
+            - podSelector:
+                matchLabels:
+                  agent-fleet.dev/component: worker
+            - podSelector:
+                matchLabels:
+                  app: provisioner
+          ports:
+            - port: 9090
+              protocol: TCP
+        # :9093 /metrics. Prometheus (the ServiceMonitor above).
+        - from:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: monitoring
+              podSelector:
+                matchLabels:
+                  app.kubernetes.io/name: prometheus
+          ports:
+            - port: 9093
+              protocol: TCP
 
 # Same Infisical project as before — DISCORD_BOT_TOKEN,
 # DISCORD_TRIGGER_CHANNEL_ID, AGENTFLEET_DB_HOST/PORT/NAME/USER/PASSWORD.
