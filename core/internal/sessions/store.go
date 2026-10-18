@@ -360,9 +360,7 @@ func (s *Store) ReserveSlot(ctx context.Context, id string, caps Caps) (leaseID 
 	}
 
 	// Definition sessions also draw from the definition pool and their own
-	// limits.concurrency (docs/adr/0062), counted under the same lock. Until
-	// docs/adr/0064's migration drops sessions_definition_no_lease, a
-	// definition session that passes these still fails at the lease write.
+	// limits.concurrency (docs/adr/0062), counted under the same lock.
 	var (
 		defName           *string
 		defValid          bool
@@ -403,7 +401,11 @@ func (s *Store) ReserveSlot(ctx context.Context, id string, caps Caps) (leaseID 
 
 	err = tx.QueryRow(ctx, `
 		UPDATE sessions
-		SET lease_id = gen_random_uuid(),
+		-- profile_lease_id is the same value: 000009's CHECK accepts a
+		-- definition session's lease only when it matches, and only a core
+		-- that sends the definition pod profile writes it (docs/adr/0064).
+		SET lease_id = v.lease,
+		    profile_lease_id = v.lease,
 		    last_active_at = now(),
 		    stop_requested_at = NULL,
 		    -- A fresh pod is about to be provisioned; nothing it says has
@@ -438,6 +440,7 @@ func (s *Store) ReserveSlot(ctx context.Context, id string, caps Caps) (leaseID 
 		    -- for the first tens of seconds.
 		    pod_phase = 'POD_PHASE_PROVISIONING',
 		    updated_at = now()
+		FROM (SELECT gen_random_uuid() AS lease) v
 		WHERE id = $1 AND archived_at IS NULL
 		RETURNING lease_id::text
 	`, id).Scan(&leaseID)
@@ -625,18 +628,22 @@ func (s *Store) SaveAgentSessionID(ctx context.Context, id, agentSessionID, mode
 // size (MAX_LIVE_SESSIONS defaults to 5) that is not worth a cache and its
 // invalidation bug; add one if this ever shows up in the RPC durations
 // AccessLogInterceptor already logs.
-func (s *Store) VerifyLease(ctx context.Context, id, leaseID string) (bool, error) {
-	var ok bool
-	err := s.pool.QueryRow(ctx, `
-		SELECT EXISTS (
-			SELECT 1 FROM sessions WHERE id = $1 AND lease_id::text = $2
-		)
-	`, id, leaseID).Scan(&ok)
+//
+// definition is the session's definition name ("" for a repo session), read in
+// the same lookup: it is what narrows a definition lease to its allowlist
+// (docs/adr/0064).
+func (s *Store) VerifyLease(ctx context.Context, id, leaseID string) (ok bool, definition string, err error) {
+	err = s.pool.QueryRow(ctx, `
+		SELECT COALESCE(definition_name, '') FROM sessions WHERE id = $1 AND lease_id::text = $2
+	`, id, leaseID).Scan(&definition)
+	if err == pgx.ErrNoRows {
+		return false, "", nil
+	}
 	if err != nil {
 		slog.Error("sessions VerifyLease", "sessionId", id, "error", err)
-		return false, fmt.Errorf("verify lease: %w", err)
+		return false, "", fmt.Errorf("verify lease: %w", err)
 	}
-	return ok, nil
+	return true, definition, nil
 }
 
 // ClearLease revokes a session's credential at teardown.

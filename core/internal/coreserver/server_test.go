@@ -369,10 +369,9 @@ func TestSetPermissionMode_DefinitionSessionOutsideAllowIsDenied(t *testing.T) {
 	}
 }
 
-// A pod cannot speak as the human (or another session) into a definition
-// session: the worker obeys those entries' permission_mode and
-// permission_response, which would bypass mode.allow and canUseTool.
-func TestSendMessage_DefinitionSessionCannotSendAsHuman(t *testing.T) {
+// docs/adr/0064: nobody prompts a definition session, whatever the caller;
+// agent-to-agent into one goes through the event bridge.
+func TestPromptSession_IntoADefinitionSessionIsRefused(t *testing.T) {
 	ctx := context.Background()
 	pool := dbtest.NewPool(t)
 	store := sessions.NewStore(pool)
@@ -385,21 +384,15 @@ func TestSendMessage_DefinitionSessionCannotSendAsHuman(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	repo, err := store.Create(ctx, sessions.CreateParams{Repo: "dream-analyst"})
+	caller, err := store.Create(ctx, sessions.CreateParams{Repo: "dream-analyst"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	mode := agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_PERMISSION_MODE
-	for _, from := range []string{"human", "session"} {
-		_, err := srv.SendMessage(ctx, &agentfleetv1.SendMessageRequest{SessionId: def, From: from, Text: "auto", Type: mode})
-		if status.Code(err) != codes.PermissionDenied {
-			t.Errorf("from %q: got %v, want PermissionDenied", from, err)
-		}
+	_, err = srv.PromptSession(ctx, &agentfleetv1.PromptSessionRequest{CallerSessionId: caller, TargetSessionId: def, Text: "hi"})
+	if status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("got %v, want PermissionDenied", err)
 	}
-	if _, err := srv.SendMessage(ctx, &agentfleetv1.SendMessageRequest{SessionId: def, From: "agent", Text: "hi"}); err != nil {
-		t.Errorf("the pod's own voice must still go through: %v", err)
-	}
-	if _, err := srv.SendMessage(ctx, &agentfleetv1.SendMessageRequest{SessionId: repo, From: "human", Text: "hi"}); err != nil {
-		t.Errorf("repo sessions are unchanged: %v", err)
+	if entries, _, err := transcript.NewPostgresStore(pool).ReadSince(ctx, def, 0, 10); err != nil || len(entries) != 0 {
+		t.Fatalf("a refused prompt reached the transcript: %v %v", entries, err)
 	}
 }

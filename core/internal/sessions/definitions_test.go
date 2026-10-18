@@ -35,36 +35,42 @@ func newDefinitionSession(t *testing.T, s *Store, name, sha string) string {
 	return id
 }
 
-// allowDefinitionLeases drops 000008's sessions_definition_no_lease, standing
-// in for docs/adr/0064's migration: the pool and concurrency checks below are
-// the code that slice turns on, and cannot be reached until the CHECK goes.
-func allowDefinitionLeases(t *testing.T, pool *pgxpool.Pool) {
-	t.Helper()
-	if _, err := pool.Exec(context.Background(), `ALTER TABLE sessions DROP CONSTRAINT sessions_definition_no_lease`); err != nil {
-		t.Fatal(err)
-	}
-}
-
-// The schema, not core's code, keeps a definition session from ever holding
-// a lease: an older core (rollout overlap, image rollback) has no definition
-// checks at all and would warm it as a repo session. This is the write its
-// ReserveSlot makes.
-func TestDefinitionSessionCannotHoldALease(t *testing.T) {
+// The schema, not core's code, keeps an older core from leasing a definition
+// session (docs/adr/0064): it knows nothing of definitions and would warm one as
+// a repo session. Its ReserveSlot mints a lease without profile_lease_id, which
+// is this write; this core's ReserveSlot writes both from one value.
+func TestDefinitionLeaseNeedsAProfileAwareCore(t *testing.T) {
 	ctx := context.Background()
 	pool := dbtest.NewPool(t)
 	store := NewStore(pool)
 	insertDefinition(t, pool, "a", "sha-a", 1)
 	def := newDefinitionSession(t, store, "a", "sha-a")
 	_, err := pool.Exec(ctx, `UPDATE sessions SET lease_id = gen_random_uuid(), pod_phase = 'Pending' WHERE id = $1`, def)
-	if err == nil || !strings.Contains(err.Error(), "sessions_definition_no_lease") {
-		t.Fatalf("want the CHECK to refuse a lease, got %v", err)
-	}
-	if _, err := store.ReserveSlot(ctx, def, Caps{MaxLive: 5, MaxDefinition: 4}); err == nil {
-		t.Fatal("ReserveSlot on a definition session must fail until docs/adr/0064")
+	if err == nil || !strings.Contains(err.Error(), "sessions_definition_profile_lease") {
+		t.Fatalf("want the CHECK to refuse an older core's lease, got %v", err)
 	}
 	assertUntouched(t, pool, def)
-	if _, err := store.ReserveSlot(ctx, newSession(t, ctx, store), Caps{MaxLive: 5, MaxDefinition: 4}); err != nil {
-		t.Fatalf("a repo session still reserves: %v", err)
+	lease, err := store.ReserveSlot(ctx, def, Caps{MaxLive: 5, MaxDefinition: 4})
+	if err != nil {
+		t.Fatalf("this core leases a definition session: %v", err)
+	}
+	if ok, name, err := store.VerifyLease(ctx, def, lease); err != nil || !ok || name != "a" {
+		t.Fatalf("VerifyLease = %v %q %v, want the definition's name", ok, name, err)
+	}
+	// A cleared lease, then an older core's mint: still refused, because the
+	// stale profile_lease_id does not match the new lease.
+	if err := store.ClearLease(ctx, def); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE sessions SET lease_id = gen_random_uuid() WHERE id = $1`, def); err == nil {
+		t.Fatal("an older core re-leased a definition session after a clear")
+	}
+	repo := newSession(t, ctx, store)
+	if _, err := pool.Exec(ctx, `UPDATE sessions SET lease_id = gen_random_uuid() WHERE id = $1`, repo); err != nil {
+		t.Fatalf("a repo session's lease is unconstrained: %v", err)
+	}
+	if ok, name, err := store.VerifyLease(ctx, repo, "not-a-lease"); err != nil || ok || name != "" {
+		t.Fatalf("a wrong lease: %v %q %v", ok, name, err)
 	}
 }
 
@@ -84,7 +90,6 @@ func TestReserveSlot_DefinitionPool(t *testing.T) {
 	ctx := context.Background()
 	pool := dbtest.NewPool(t)
 	store := NewStore(pool)
-	allowDefinitionLeases(t, pool)
 	insertDefinition(t, pool, "a", "sha-a", 5)
 	insertDefinition(t, pool, "b", "sha-b", 5)
 	caps := Caps{MaxLive: 5, MaxDefinition: 1}
@@ -111,7 +116,6 @@ func TestReserveSlot_DefinitionConcurrency(t *testing.T) {
 	ctx := context.Background()
 	pool := dbtest.NewPool(t)
 	store := NewStore(pool)
-	allowDefinitionLeases(t, pool)
 	insertDefinition(t, pool, "a", "sha-a", 1)
 	insertDefinition(t, pool, "b", "sha-b", 1)
 	caps := Caps{MaxLive: 5, MaxDefinition: 4}
@@ -224,7 +228,6 @@ func TestSaveAgentSessionID_DefinitionModelIsPinned(t *testing.T) {
 	ctx := context.Background()
 	pool := dbtest.NewPool(t)
 	store := NewStore(pool)
-	allowDefinitionLeases(t, pool)
 	insertDefinition(t, pool, "a", "sha-a", 1)
 	def, err := store.Create(ctx, CreateParams{Repo: "dream-analyst", Model: "claude-sonnet-5", PermissionMode: "default", DefinitionName: "a", DefinitionSHA: "sha-a"})
 	if err != nil {

@@ -16,16 +16,20 @@ import (
 // fakeLeases accepts exactly one (session, lease) pair, the way the sessions
 // table does: a lease is current for one session and nothing else.
 type fakeLeases struct {
-	session string
-	lease   string
-	err     error
+	session    string
+	lease      string
+	definition string
+	err        error
 }
 
-func (f fakeLeases) VerifyLease(_ context.Context, sessionID, leaseID string) (bool, error) {
+func (f fakeLeases) VerifyLease(_ context.Context, sessionID, leaseID string) (bool, string, error) {
 	if f.err != nil {
-		return false, f.err
+		return false, "", f.err
 	}
-	return sessionID == f.session && leaseID == f.lease, nil
+	if sessionID != f.session || leaseID != f.lease {
+		return false, "", nil
+	}
+	return true, f.definition, nil
 }
 
 func ctxWith(pairs ...string) context.Context {
@@ -74,7 +78,7 @@ func TestAuth_AcceptsItsOwnSession(t *testing.T) {
 
 	if err := callUnary(t, a, ctxWith(mdSessionID, "s1", mdLeaseID, "L1"),
 		"/agentfleet.v1.CoreService/SendMessage",
-		&agentfleetv1.SendMessageRequest{SessionId: "s1"}); err != nil {
+		&agentfleetv1.SendMessageRequest{SessionId: "s1", From: "agent"}); err != nil {
 		t.Errorf("a session calling with its own valid lease was rejected: %v", err)
 	}
 }
@@ -255,4 +259,134 @@ func (f fakeStream) RecvMsg(m any) error {
 		got.SessionId = f.msg.GetSessionId()
 	}
 	return nil
+}
+
+// requestFor builds a request that names s1 as the caller, for every method
+// in callerSessionOf, so a test can tell "auth let it through" from "auth
+// refused the binding".
+func requestFor(method string) any {
+	switch method {
+	case "/agentfleet.v1.CoreService/SendMessage":
+		return &agentfleetv1.SendMessageRequest{SessionId: "s1", From: "agent"}
+	case "/agentfleet.v1.CoreService/WaitForMessages":
+		return &agentfleetv1.ReadTranscriptSinceRequest{SessionId: "s1"}
+	case "/agentfleet.v1.CoreService/AskUserQuestion":
+		return &agentfleetv1.AskUserQuestionRequest{SessionId: "s1"}
+	case "/agentfleet.v1.CoreService/Expose":
+		return &agentfleetv1.ExposeRequest{SessionId: "s1"}
+	case "/agentfleet.v1.CoreService/Unexpose":
+		return &agentfleetv1.UnexposeRequest{SessionId: "s1"}
+	case "/agentfleet.v1.CoreService/RequestService":
+		return &agentfleetv1.RequestServiceRequest{SessionId: "s1"}
+	case "/agentfleet.v1.CoreService/GetSession":
+		return &agentfleetv1.GetSessionRequest{Id: "s1"}
+	case "/agentfleet.v1.CoreService/SetPermissionMode":
+		return &agentfleetv1.SetPermissionModeRequest{SessionId: "s1"}
+	case "/agentfleet.v1.CoreService/UpdateSessionMeta":
+		return &agentfleetv1.UpdateSessionMetaRequest{SessionId: "s1"}
+	case "/agentfleet.v1.CoreService/SaveAgentSessionId":
+		return &agentfleetv1.SaveAgentSessionIdRequest{SessionId: "s1"}
+	case "/agentfleet.v1.CoreService/PushToolTelemetry":
+		return &agentfleetv1.PushToolTelemetryRequest{SessionId: "s1"}
+	case "/agentfleet.v1.CoreService/StreamHumanMessages":
+		return &agentfleetv1.StreamHumanMessagesRequest{SessionId: "s1"}
+	case "/agentfleet.v1.CoreService/ListPeerSessions":
+		return &agentfleetv1.ListPeerSessionsRequest{CallerSessionId: "s1"}
+	case "/agentfleet.v1.CoreService/PromptSession":
+		return &agentfleetv1.PromptSessionRequest{CallerSessionId: "s1", TargetSessionId: "peer"}
+	}
+	return nil // unbound methods: the request names no caller
+}
+
+// definitionDenied is the other column of docs/adr/0064's table. Together with
+// definitionMethods and the provisioner-only methods it must cover the whole
+// service, so a new RPC forces the decision here instead of riding in on a
+// default.
+var definitionDenied = map[string]bool{
+	"/agentfleet.v1.CoreService/Expose":              true,
+	"/agentfleet.v1.CoreService/Unexpose":            true,
+	"/agentfleet.v1.CoreService/RequestService":      true,
+	"/agentfleet.v1.CoreService/AppendJournal":       true,
+	"/agentfleet.v1.CoreService/SearchJournal":       true,
+	"/agentfleet.v1.CoreService/ListFiles":           true,
+	"/agentfleet.v1.CoreService/GetFileUploadUrl":    true,
+	"/agentfleet.v1.CoreService/GetFileDownloadUrl":  true,
+	"/agentfleet.v1.CoreService/DeleteFile":          true,
+	"/agentfleet.v1.CoreService/ViewLogs":            true,
+	"/agentfleet.v1.CoreService/ListPeerSessions":    true,
+	"/agentfleet.v1.CoreService/PromptSession":       true,
+	"/agentfleet.v1.CoreService/WaitForSessionState": true,
+}
+
+func TestAuth_DefinitionLeaseOnlyReachesItsAllowlist(t *testing.T) {
+	def := NewAuthenticator(fakeLeases{session: "s1", lease: "L1", definition: "dev-dream-analyst"}, "provtoken")
+	repo := NewAuthenticator(fakeLeases{session: "s1", lease: "L1"}, "provtoken")
+	lease := ctxWith(mdSessionID, "s1", mdLeaseID, "L1")
+
+	for _, full := range coreMethods() {
+		n := 0
+		for _, table := range []map[string]bool{definitionMethods, definitionDenied, provisionerMethods} {
+			if table[full] {
+				n++
+			}
+		}
+		if n != 1 {
+			t.Errorf("%s is in %d of definitionMethods/definitionDenied/provisionerMethods, want exactly 1", full, n)
+			continue
+		}
+		if provisionerMethods[full] {
+			continue
+		}
+		req := requestFor(full)
+		err := callUnary(t, def, lease, full, req)
+		switch {
+		case definitionDenied[full] && codeOf(err) != codes.PermissionDenied:
+			t.Errorf("%s: a definition lease got %v, want PermissionDenied", full, err)
+		case definitionMethods[full] && err != nil:
+			t.Errorf("%s: a definition lease was refused: %v", full, err)
+		}
+		if err := callUnary(t, repo, lease, full, req); err != nil {
+			t.Errorf("%s: a repo-session lease is unchanged, got %v", full, err)
+		}
+	}
+	// The provisioner never reaches the table.
+	if err := callUnary(t, def, ctxWith(mdProvisionerToken, "provtoken"), "/agentfleet.v1.CoreService/Expose", &agentfleetv1.ExposeRequest{SessionId: "s1"}); err != nil {
+		t.Errorf("provisioner: %v", err)
+	}
+}
+
+// Every lease caller, definition or not, authors only as agent or worker: the
+// worker obeys "human" and "session" entries (permission_response,
+// permission_mode), so speaking as one is self-approval.
+func TestAuth_SessionsAuthorOnlyAsAgentOrWorker(t *testing.T) {
+	const method = "/agentfleet.v1.CoreService/SendMessage"
+	lease := ctxWith(mdSessionID, "s1", mdLeaseID, "L1")
+	for _, def := range []string{"", "dev-dream-analyst"} {
+		a := NewAuthenticator(fakeLeases{session: "s1", lease: "L1", definition: def}, "provtoken")
+		for _, from := range []string{"human", "session", ""} {
+			if err := callUnary(t, a, lease, method, &agentfleetv1.SendMessageRequest{SessionId: "s1", From: from}); codeOf(err) != codes.PermissionDenied {
+				t.Errorf("definition %q, from %q: got %v, want PermissionDenied", def, from, err)
+			}
+		}
+		for _, from := range []string{"agent", "worker"} {
+			if err := callUnary(t, a, lease, method, &agentfleetv1.SendMessageRequest{SessionId: "s1", From: from,
+				Type: agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_PERMISSION_RESPONSE}); err != nil {
+				t.Errorf("definition %q, from %q: %v", def, from, err)
+			}
+		}
+		if err := callUnary(t, a, ctxWith(mdProvisionerToken, "provtoken"), method, &agentfleetv1.SendMessageRequest{SessionId: "s1", From: "human"}); err != nil {
+			t.Errorf("the provisioner is unchanged: %v", err)
+		}
+	}
+}
+
+func coreMethods() []string {
+	var out []string
+	for _, m := range agentfleetv1.CoreService_ServiceDesc.Methods {
+		out = append(out, "/agentfleet.v1.CoreService/"+m.MethodName)
+	}
+	for _, st := range agentfleetv1.CoreService_ServiceDesc.Streams {
+		out = append(out, "/agentfleet.v1.CoreService/"+st.StreamName)
+	}
+	return out
 }
