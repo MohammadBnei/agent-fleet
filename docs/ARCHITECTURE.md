@@ -907,7 +907,7 @@ them rather than serving unauthenticated.
 | `GRPC_PORT` | `9090` | `ProvisionerService` |
 | `CORE_GRPC_ADDR` | `agent-fleet-core.agent-fleet.svc.cluster.local:9090` | where `ReportPodEvents` streams to |
 | `RECONCILE_INTERVAL_MS` | `10000` | terminal-Job GC + idle shared-instance GC poll (`internal/reconcile`) |
-| `FLEET_CORE_PROVISIONER_TOKEN` | *(required)* | the bearer core must present to `ProvisionerService`. Empty makes the provisioner **refuse to start** (`adr/0069`) |
+| `FLEET_CORE_PROVISIONER_TOKEN` | *(required)* | the bearer core must present to `ProvisionerService`. Empty, blank or under 32 bytes makes the provisioner **refuse to start** (`adr/0069`) |
 | `GH_TOKEN` | – | for the provisioner's own clone/fetch auth (`gh auth setup-git`), and forwarded verbatim into every worker pod's `worker` container env |
 
 No `AGENTFLEET_DB_*` here at all — see §6.

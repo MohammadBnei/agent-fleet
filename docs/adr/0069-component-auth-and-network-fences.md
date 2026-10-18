@@ -53,16 +53,21 @@ on 2026-10-18:
   The service has no streaming RPC today; the stream interceptor is there so
   the first one added is not silently open, which is exactly the hole
   ADR-0057 found in core.
-- **An empty token refuses to start.** `grpcserver.NewServer("")` returns an
-  error and the provisioner exits before it listens, the same fail-closed
+- **An empty token refuses to start**, and so does a blank one or one shorter
+  than 32 bytes (the live value is 64 hex characters).
+  `grpcserver.NewGRPCServer` returns an error and the provisioner exits before
+  it listens, the same fail-closed
   startup ADR-0056 chose for OIDC, for the same reason. `main` builds its
   server with that function, and so do the tests, so the tested interceptor
   chain is the shipped one.
 - The interceptor is method-agnostic: every method, including ones added
   later, needs the token. There is no exempt list to forget to extend. The
   test enumerates every `ProvisionerService` method from the generated
-  descriptor. A rejected call is still access-logged and counted, and a
-  warning names its peer address, so a probe of the port can be attributed.
+  descriptor. A rejected unary call is still access-logged and counted, and
+  every rejection logs a warning naming its peer address, so a probe of the
+  port can be attributed. A rejected stream call gets the warning only: the
+  stream chain has no access log or metrics yet, as there is no stream RPC to
+  count.
 - Core's `provisionerclient.New(addr, token)` attaches the header with
   `grpc.WithPerRPCCredentials`, so one value covers unary and stream calls,
   and sends no header at all when its token is empty.
@@ -90,8 +95,9 @@ on 2026-10-18:
 
 ### 2. The executor fails closed (PR A)
 
-- An empty `THOT_AUTH_TOKEN` makes `newGRPCServer` return an error and the
-  executor exits at startup.
+- An empty, blank or under-32-byte `THOT_AUTH_TOKEN` makes `newGRPCServer`
+  return an error and the executor exits at startup. The live value is 64
+  characters.
 - The check runs on unary **and** stream calls. `ExecutorService` has no stream
   RPC today; the stream half is there for the same reason as §1's. There is no "dev only" open mode any more. The
   kind harness does not run the executor, so nothing loses a workflow.
@@ -187,6 +193,9 @@ image-bump commit rolls both Applications together.
 7. The provisioner has a readiness probe on `/healthz`, which only answers
    after the token check. A rollout with an empty or missing Secret stalls
    with the old pod serving instead of replacing it with a crashlooping one.
+   The cost is that every rollout runs two reconcile loops for a probe period
+   or two. That is accepted: their GC deletes ignore `NotFound`, and a repeated
+   terminal report rewrites the same `sessions.pod_phase`.
 
 ## Consequences
 
@@ -194,20 +203,23 @@ image-bump commit rolls both Applications together.
   surface: a lease for `CoreService`, `FLEET_PROVISIONER_TOKEN` to impersonate
   the provisioner, `FLEET_CORE_PROVISIONER_TOKEN` to impersonate core, and
   `THOT_AUTH_TOKEN` for the executor.
-- Each token sits in more workloads than its one legitimate sender. Core,
-  the provisioner and core's migrate PreSync hook Job (the chart gives hooks
-  the same `envFrom`) all sync the whole `agent-fleet-nygh`/`dev` scope, so
-  each holds `FLEET_PROVISIONER_TOKEN`, `FLEET_CORE_PROVISIONER_TOKEN` and
-  `THOT_AUTH_TOKEN` (a live read of key names and lengths by the 2026-10-18
-  review; the chart's hook template confirms the migrate `envFrom`).
-  `cluster_access` worker pods also get `THOT_AUTH_TOKEN`. So compromising
-  core, the provisioner or the migrate image yields every one of them,
-  `ExecutorService` included, which holds cluster RBAC. Accepted for G0: the
-  credentials stop a pod that holds none of them, which is the gap this ADR
-  closes. Narrowing it (per-component Infisical folders, the executor token in
-  the provisioner only) is a follow-up with ADR-0072.
+- Every key in the `agent-fleet-nygh`/`dev` scope reaches core, the
+  provisioner and core's migrate PreSync hook Job (the chart gives hooks the
+  same `envFrom`): all three sync the scope whole. That is 25 keys in the live
+  `provisioner-infisical` (key names read 2026-10-18), among them all three
+  fleet tokens (`FLEET_PROVISIONER_TOKEN`, `FLEET_CORE_PROVISIONER_TOKEN`,
+  `THOT_AUTH_TOKEN`), the database credentials (`AGENTFLEET_DB_*`), the file
+  store's S3 keys, the registry and Docker Hub credentials, `GH_TOKEN`,
+  `CLAUDE_CODE_OAUTH_TOKEN` and `DISCORD_BOT_TOKEN`. `cluster_access` worker
+  pods also get `THOT_AUTH_TOKEN`. So compromising core, the provisioner or
+  the migrate image yields all of it, `ExecutorService` included, which holds
+  cluster RBAC. Accepted for G0: the tokens stop a pod that holds none of
+  them, which is the gap this ADR closes. Narrowing it (per-component
+  Infisical folders, so each pod gets only the keys it reads: the DB
+  credentials in core alone, the executor token in the provisioner only) is a
+  follow-up with ADR-0072.
 - Two more ways to fail at startup: provisioner and executor both exit on an
-  empty token. That is intended. "Crashlooping, saying why" beats "running,
+  empty, blank or short token. That is intended. "Crashlooping, saying why" beats "running,
   open".
 - Rotating `FLEET_CORE_PROVISIONER_TOKEN` needs both pods restarted. The
   `envFrom` is read at start, and the two sides disagree until both have
