@@ -249,6 +249,27 @@ refused with a 401 like any other anonymous caller and every core target went
 down. Exempting it was the obvious fix and the wrong one: with no path constraint
 on the route, that publishes every target repo name and RPC method.
 
+**Who may even connect (network fences, [`adr/0069`](adr/0069-component-auth-and-network-fences.md) §3).**
+Ingress-only NetworkPolicies select core and the provisioner; nothing else in
+the namespace is selected, so worker pods and shared instances stay
+default-allow. The credentials above remain the authentication. The fences
+only cut down who can try.
+
+| Pod:port | Admitted from |
+|---|---|
+| core `:8080` | `traefik` namespace; Alertmanager and Grafana in `monitoring` (both post `/webhook/alertmanager` to the ClusterIP directly, not through the ingress) |
+| core `:9090` | worker pods (`agent-fleet.dev/component=worker`) and the provisioner, same namespace only |
+| core `:9093` | Prometheus |
+| provisioner `:9090` | core |
+| provisioner `:8080` | Prometheus |
+
+core's policy is an `extraManifests` entry in `k8s/core.yaml`; the
+provisioner's is `k8s/provisioner/networkpolicy.yaml`. Each lives with the
+Application that owns its pod. `provisioner/internal/k8s/networkpolicy_test.go`
+pins both against the labels the callers really carry. Under Cilium a source
+with the host identity on the target's own node is always admitted. That is
+how kubelet probes pass, and it also admits hostNetwork pods on that node.
+
 **Failure behaviour.** Unset OIDC config makes core refuse to start, unlike
 every other optional secret it reads — the Infisical operator renders stale or
 empty Secrets often enough that "off when unset" would come up wide open and
