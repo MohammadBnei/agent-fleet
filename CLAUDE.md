@@ -59,6 +59,7 @@ is stale → check code.**
 | `dashboard/` | React + Vite + TS + Tailwind/DaisyUI SPA. ConnectRPC client, built into `core` binary — never deployed alone. Console rewrite (`adr/0042`): 4 full-width views (sessions, audits, files, observability) + detail replacing list; observability = live topology + PromQL explorer (`adr/0047`); decisions answerable **from the list**; 5-tier feed + one 3-way DENSITY control; one pinned `DecisionDock` both form factors (`adr/0043` — desktop spine gone, `DENSITY → decisions` is zoom-out); 2 themes. PWA SW caches **no** fleet state (cached session list → someone answers a resolved decision). URL state `?view=`/`?session=`; pre-rename `?task=` still read. Shared both form factors: `SessionFeed`/`SessionPanels`/`DecisionInline`/`DecisionDock`, `bucketSessions`, `sessionLabel` — put anything both need there. `MermaidDiagram` `React.lazy` deliberately: biggest thing shipped, almost nothing renders a diagram |
 | `worker/` | Claude Code worker (TS/Bun; `src/session.ts`, was `planning.ts`). **Single-shot**: one pod per warm, one streaming-input session spanning plan+impl (resumable via `RESUME_SESSION_ID`), then exits. Talks only to own pod's `localhost` sidecar |
 | `executor/` | Go. thot-executor + `kubectl-shim`, installed into a cluster-access session as `kubectl`. Fleet's **only** process holding cluster RBAC for an agent (`adr/0037`) → a thot session stays an ordinary worker pod with zero k8s creds. Identity from a ServiceAccount in `infra-bootstrap` gitops, never named by the provisioner |
+| `definitions/` | Defined agents (`adr/0062`): `<name>.yaml` (`AgentDefinition`) + `clients/<name>.yaml` (`AgentClient`). Validated in CI by `core/internal/definitions/repo_test.go`; read by the provisioner **at its release tag** (`FLEET_DEFINITIONS_REF` overrides) and synced by core into `agent_definitions` |
 | `fleet-shared/` | Git-tracked source of every worker pod's shared Claude Code context: `settings.json`, `skills/`, `CLAUDE.md`. Provisioner clones; `SyncFleetShared` lays it into each session's `claude-home` (`adr/0032`). `"user"` half of `settingSources`; `"project"` half = target repo's own `CLAUDE.md`/`.claude/skills/`. What stops that repo's `permissions.allow` widening fleet authority is **not here** — it is `FLEET_ASK_RULES` in `worker/src/session.ts`, injected per-session via SDK `settings` (`adr/0052`, moving `adr/0049`'s `permissions.ask` out of this file). What an ask *means* is decided in `canUseTool`, not the rule: in `auto`, worker answers all but `rm`/`sudo` (`adr/0053`) |
 | `proto/` | buf-managed schema: `CoreService`, `ProvisionerService`, `DashboardService`. Go codegen for core/provisioner; TS for worker/dashboard |
 | `db/migrations/` | Sole source of truth for `sessions`/`proposals`/`transcript`/`repos`/`prompt_snippets`/`scheduled_audits`/`knowledge_journal` schema (`agentfleetdb`). golang-migrate (`adr/0030`) |
@@ -108,7 +109,17 @@ Condensed. Full detail + rationale in `agent-fleet/docs/DECISIONS.md` + `docs/ad
   installs run in the worker pod's own `Bash`, gated by `canUseTool`. `run_command`,
   `request_e2e_env`, `kill_env` deleted. Three ADRs went into repairing a second pod whose
   whole purpose was letting **one tool** skip a prompt; the fix was deleting the pod.
+- **Defined agents: reviewed files, effective-spec ceiling, `(name, sha)` pin** (`adr/0062`).
+  A definition only narrows (no `auto`/`acceptEdits`/`bypassPermissions`); its session's
+  repo/model/mode come from the latest **valid** version and the mode is written
+  explicitly, never the `'auto'` default. Pinned sha ≠ current → warm refused. Pool
+  `MAX_DEFINITION_SESSIONS` sits **inside** `MAX_IN_FLIGHT_TASKS` (must be `<`, or core
+  won't start), checked in `ReserveSlot`. Warm refused unless the provisioner reports
+  `definition_pod_profile` (`adr/0064`). Insert+reserve in one tx is P4.
 - **Session with no message has no pod — that is the human gate** (`adr/0048` §1).
+  Amended by `adr/0062`: the provisioning message comes from an audience member, a
+  registered client, or an allowlisted actor's event via a registered client (P1:
+  platform-admins only, so unchanged in practice).
   `CreateSession` writes a row, nothing else; first message provisions. Ordering is
   **warm-then-append, never reverse**: `resumeFromSeq` = `LatestSeq` at dispatch, so a
   message appended before the pod exists lands below its cursor and is never
