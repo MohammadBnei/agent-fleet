@@ -58,27 +58,44 @@ func (s *server) Exec(ctx context.Context, req *agentfleetv1.ExecRequest) (*agen
 	}, nil
 }
 
-// newAuthInterceptor rejects anything without the shared bearer token. This
-// process is the most privileged in the fleet, so it never relies on network
-// reachability alone (ADR-0035 flagged that precedent as not scaling to
-// cluster-mutation power).
+// newGRPCServer rejects anything without the shared bearer token, on unary
+// and stream calls alike. This process is the most privileged in the fleet, so
+// it never relies on network reachability alone (ADR-0035 flagged that
+// precedent as not scaling to cluster-mutation power). ExecutorService has no
+// stream RPC today; the stream half means the first one is not silently open,
+// the hole ADR-0057 found in core. main and the tests both build the server
+// here, so the tested wiring is the shipped wiring.
 //
 // An empty token is an error, not an open mode (docs/adr/0069): it used to
 // pass every call with a warning, so an Infisical operator rendering an empty
 // Secret would have brought cluster RBAC up for anyone, looking healthy.
-func newAuthInterceptor(token string) (grpc.UnaryServerInterceptor, error) {
+func newGRPCServer(token string) (*grpc.Server, error) {
 	if token == "" {
 		return nil, errors.New("THOT_AUTH_TOKEN is unset: refusing to serve ExecutorService unauthenticated")
 	}
 	want := []byte("Bearer " + token)
-	return func(ctx context.Context, req any, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+	check := func(ctx context.Context) error {
 		md, _ := metadata.FromIncomingContext(ctx)
 		vals := md.Get("authorization")
 		if len(vals) != 1 || subtle.ConstantTimeCompare([]byte(vals[0]), want) != 1 {
-			return nil, status.Error(codes.Unauthenticated, "missing or invalid bearer token")
+			return status.Error(codes.Unauthenticated, "missing or invalid bearer token")
 		}
-		return handler(ctx, req)
-	}, nil
+		return nil
+	}
+	return grpc.NewServer(
+		grpc.UnaryInterceptor(func(ctx context.Context, req any, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+			if err := check(ctx); err != nil {
+				return nil, err
+			}
+			return handler(ctx, req)
+		}),
+		grpc.StreamInterceptor(func(srv any, ss grpc.ServerStream, _ *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+			if err := check(ss.Context()); err != nil {
+				return err
+			}
+			return handler(srv, ss)
+		}),
+	), nil
 }
 
 func main() {
@@ -86,7 +103,7 @@ func main() {
 
 	grpcPort := env("GRPC_PORT", "9090")
 	httpPort := env("HTTP_PORT", "8080")
-	auth, err := newAuthInterceptor(os.Getenv("THOT_AUTH_TOKEN"))
+	grpcServer, err := newGRPCServer(os.Getenv("THOT_AUTH_TOKEN"))
 	if err != nil {
 		slog.Error("refusing to start", "error", err)
 		os.Exit(1)
@@ -95,7 +112,6 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	grpcServer := grpc.NewServer(grpc.UnaryInterceptor(auth))
 	agentfleetv1.RegisterExecutorServiceServer(grpcServer, &server{})
 	lis, err := net.Listen("tcp", ":"+grpcPort)
 	if err != nil {
