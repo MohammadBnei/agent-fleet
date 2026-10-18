@@ -114,7 +114,7 @@ func TestReserveSlot_ResetsPerPodStateForTheNewPod(t *testing.T) {
 	id := newSession(t, ctx, store)
 
 	// Simulate a previous pod that was told to stop and had been heard from.
-	if _, err := store.ReserveSlot(ctx, id, 5); err != nil {
+	if _, err := store.ReserveSlot(ctx, id, Caps{MaxLive: 5}); err != nil {
 		t.Fatalf("first reserve: %v", err)
 	}
 	if err := store.TouchActive(ctx, id, "agent", "assistant"); err != nil {
@@ -140,7 +140,7 @@ func TestReserveSlot_ResetsPerPodStateForTheNewPod(t *testing.T) {
 	}
 
 	// Warm: a second pod for the same session.
-	lease2, err := store.ReserveSlot(ctx, id, 5)
+	lease2, err := store.ReserveSlot(ctx, id, Caps{MaxLive: 5})
 	if err != nil {
 		t.Fatalf("warm reserve: %v", err)
 	}
@@ -223,7 +223,7 @@ func TestReserveSlot_ResolvesDecisionsTheDeadPodLeftBehind(t *testing.T) {
 		t.Fatalf("fixture is wrong: want 2 unanswered decisions, got %d", before.PendingDecisions)
 	}
 
-	if _, err := store.ReserveSlot(ctx, id, 5); err != nil {
+	if _, err := store.ReserveSlot(ctx, id, Caps{MaxLive: 5}); err != nil {
 		t.Fatalf("reserve: %v", err)
 	}
 
@@ -279,7 +279,7 @@ func TestReserveSlot_CountsAgainstTheCapImmediately(t *testing.T) {
 	store := NewStore(pool)
 	id := newSession(t, ctx, store)
 
-	if _, err := store.ReserveSlot(ctx, id, 5); err != nil {
+	if _, err := store.ReserveSlot(ctx, id, Caps{MaxLive: 5}); err != nil {
 		t.Fatalf("reserve: %v", err)
 	}
 
@@ -302,7 +302,7 @@ func TestSaveAgentSessionID_StaleLeaseCannotClobberTheNewPod(t *testing.T) {
 	store := NewStore(dbtest.NewPool(t))
 	id := newSession(t, ctx, store)
 
-	oldLease, err := store.ReserveSlot(ctx, id, 5)
+	oldLease, err := store.ReserveSlot(ctx, id, Caps{MaxLive: 5})
 	if err != nil {
 		t.Fatalf("reserve 1: %v", err)
 	}
@@ -311,7 +311,7 @@ func TestSaveAgentSessionID_StaleLeaseCannotClobberTheNewPod(t *testing.T) {
 		t.Fatalf("first save: ok=%v err=%v", ok, err)
 	}
 
-	newLease, err := store.ReserveSlot(ctx, id, 5)
+	newLease, err := store.ReserveSlot(ctx, id, Caps{MaxLive: 5})
 	if err != nil {
 		t.Fatalf("reserve 2: %v", err)
 	}
@@ -345,7 +345,7 @@ func TestArchive_ReleasesTheSlotAndBlocksFurtherReservation(t *testing.T) {
 	store := NewStore(dbtest.NewPool(t))
 	id := newSession(t, ctx, store)
 
-	if _, err := store.ReserveSlot(ctx, id, 5); err != nil {
+	if _, err := store.ReserveSlot(ctx, id, Caps{MaxLive: 5}); err != nil {
 		t.Fatalf("reserve: %v", err)
 	}
 	if err := store.SetPodPhase(ctx, id, "POD_PHASE_RUNNING", ""); err != nil {
@@ -362,7 +362,7 @@ func TestArchive_ReleasesTheSlotAndBlocksFurtherReservation(t *testing.T) {
 	if live != 0 {
 		t.Errorf("an archived session still counts toward the cap (live=%d)", live)
 	}
-	if _, err := store.ReserveSlot(ctx, id, 5); err == nil {
+	if _, err := store.ReserveSlot(ctx, id, Caps{MaxLive: 5}); err == nil {
 		t.Error("an archived session was reservable — Warm must be impossible after archive")
 	}
 }
@@ -421,7 +421,7 @@ func TestSweepQueries_SelectOnlyTheSessionsTheyDescribe(t *testing.T) {
 
 	// Live, freshly active, never stopped — must appear in NO sweep.
 	healthy := newSession(t, ctx, store)
-	if _, err := store.ReserveSlot(ctx, healthy, 5); err != nil {
+	if _, err := store.ReserveSlot(ctx, healthy, Caps{MaxLive: 5}); err != nil {
 		t.Fatalf("reserve healthy: %v", err)
 	}
 	if err := store.SetPodPhase(ctx, healthy, "POD_PHASE_RUNNING", ""); err != nil {
@@ -439,7 +439,7 @@ func TestSweepQueries_SelectOnlyTheSessionsTheyDescribe(t *testing.T) {
 
 	// Live, stop requested well past grace.
 	stopped := newSession(t, ctx, store)
-	if _, err := store.ReserveSlot(ctx, stopped, 5); err != nil {
+	if _, err := store.ReserveSlot(ctx, stopped, Caps{MaxLive: 5}); err != nil {
 		t.Fatalf("reserve stopped: %v", err)
 	}
 	if err := store.SetPodPhase(ctx, stopped, "POD_PHASE_RUNNING", ""); err != nil {
@@ -451,7 +451,7 @@ func TestSweepQueries_SelectOnlyTheSessionsTheyDescribe(t *testing.T) {
 
 	// Live, active long ago — the idle case.
 	idle := newSession(t, ctx, store)
-	if _, err := store.ReserveSlot(ctx, idle, 5); err != nil {
+	if _, err := store.ReserveSlot(ctx, idle, Caps{MaxLive: 5}); err != nil {
 		t.Fatalf("reserve idle: %v", err)
 	}
 	if err := store.SetPodPhase(ctx, idle, "POD_PHASE_RUNNING", ""); err != nil {
@@ -527,7 +527,7 @@ func TestListStartupStalledIDs_AHumanMessageIsNotProofOfAPod(t *testing.T) {
 	// The real ordering: reserve (clears activity_seen), then the human's
 	// message lands. No pod ever speaks — it is ImagePullBackOff.
 	stalled := newSession(t, ctx, store)
-	if _, err := store.ReserveSlot(ctx, stalled, 5); err != nil {
+	if _, err := store.ReserveSlot(ctx, stalled, Caps{MaxLive: 5}); err != nil {
 		t.Fatalf("reserve: %v", err)
 	}
 	if err := store.SetPodPhase(ctx, stalled, "POD_PHASE_SCHEDULED", ""); err != nil {
@@ -550,7 +550,7 @@ func TestListStartupStalledIDs_AHumanMessageIsNotProofOfAPod(t *testing.T) {
 	// The other direction: once the pod speaks, a later human message must not
 	// un-see it. activity_seen is OR'd, never assigned.
 	spoke := newSession(t, ctx, store)
-	if _, err := store.ReserveSlot(ctx, spoke, 5); err != nil {
+	if _, err := store.ReserveSlot(ctx, spoke, Caps{MaxLive: 5}); err != nil {
 		t.Fatalf("reserve: %v", err)
 	}
 	if err := store.SetPodPhase(ctx, spoke, "POD_PHASE_RUNNING", ""); err != nil {
@@ -816,7 +816,7 @@ func TestListIdleSessionIDs_APermissionHoldsThePodButAQuestionDoesNot(t *testing
 	store := NewStore(pool)
 
 	live := func(id string) {
-		if _, err := store.ReserveSlot(ctx, id, 5); err != nil {
+		if _, err := store.ReserveSlot(ctx, id, Caps{MaxLive: 5}); err != nil {
 			t.Fatalf("reserve: %v", err)
 		}
 		if err := store.SetPodPhase(ctx, id, "POD_PHASE_RUNNING", ""); err != nil {

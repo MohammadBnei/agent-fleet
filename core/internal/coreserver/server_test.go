@@ -135,7 +135,7 @@ func TestSaveAgentSessionId_StoresTheAgentIdNotTheSessionId(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	lease, err := store.ReserveSlot(ctx, id, 5)
+	lease, err := store.ReserveSlot(ctx, id, sessions.Caps{MaxLive: 5})
 	if err != nil {
 		t.Fatalf("reserve: %v", err)
 	}
@@ -193,7 +193,7 @@ func TestReserveSlot_ConcurrentCallersCannotExceedTheCap(t *testing.T) {
 	for _, id := range ids {
 		go func(id string) {
 			<-start
-			if _, err := store.ReserveSlot(ctx, id, cap); err == nil {
+			if _, err := store.ReserveSlot(ctx, id, sessions.Caps{MaxLive: cap}); err == nil {
 				granted <- id
 			}
 		}(id)
