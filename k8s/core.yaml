@@ -76,8 +76,9 @@ service:
 #
 # Consequence worth re-reading before adding a route: this IngressRoute matches
 # on HOST with no path constraint, so every path core serves on 8080 is now
-# public unless the in-app gate refuses it. What the gate exempts —
-# /healthz, /auth/*, /webhook/alertmanager — is therefore internet-reachable.
+# public unless the in-app gate refuses it. What the gate exempts (exact paths) —
+# /healthz, /auth/{login,callback,logout,me}, /webhook/alertmanager — is
+# therefore internet-reachable.
 # The webhook keeps its own bearer token and refuses when it is unset; the other
 # two are inert. A new exempt path is a new public endpoint.
 #

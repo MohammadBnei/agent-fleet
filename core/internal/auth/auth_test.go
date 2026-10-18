@@ -1,10 +1,13 @@
 package auth
 
 import (
+	"encoding/base64"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func mustSigner(t *testing.T, keys string) *Signer {
@@ -24,6 +27,21 @@ func TestSigner_RoundTrip(t *testing.T) {
 	}
 	if id.Email != "me@bnei.dev" || !id.InGroup(RequiredGroup) {
 		t.Errorf("round trip lost the identity: %+v", id)
+	}
+}
+
+// A cookie minted before Identity carried sub has no "s" key. It must still
+// verify — adding the field must not log everyone out — and decode to Sub "".
+func TestSigner_CookieWithoutSubStillVerifies(t *testing.T) {
+	s := mustSigner(t, "key-one")
+	b := base64.RawURLEncoding.EncodeToString(fmt.Appendf(nil,
+		`{"e":"me@bnei.dev","g":["platform-admins"],"x":%d}`, time.Now().Add(time.Hour).Unix()))
+	id, ok := s.Verify(b + "." + s.mac(s.keys[0], b))
+	if !ok || id.Email != "me@bnei.dev" || id.Sub != "" {
+		t.Fatalf("old-shape cookie: ok=%v id=%+v", ok, id)
+	}
+	if id, _ := s.Verify(s.Sign(Identity{Sub: "abc", Email: "me@bnei.dev"})); id.Sub != "abc" {
+		t.Errorf("Sub lost in round trip: %+v", id)
 	}
 }
 
@@ -141,7 +159,7 @@ func TestSafeReturnTo(t *testing.T) {
 // The gate is an allowlist, and a route that nobody exempted must fail closed.
 // Gating one handler instead would make every future route public by default.
 func TestGate_ExemptsOnlyWhatIsListed(t *testing.T) {
-	exemptCases := []string{"/healthz", "/webhook/alertmanager", "/auth/login", "/auth/callback"}
+	exemptCases := []string{"/healthz", "/webhook/alertmanager", "/auth/login", "/auth/callback", "/auth/logout", "/auth/me"}
 	for _, p := range exemptCases {
 		if !exempt(p) {
 			t.Errorf("%s must be reachable without a session", p)
@@ -152,7 +170,9 @@ func TestGate_ExemptsOnlyWhatIsListed(t *testing.T) {
 	// here regardless: this host's IngressRoute matches on host with no path
 	// constraint, so exempting it would publish every target repo name and RPC
 	// method rather than merely unblocking the scrape (#230).
-	gatedCases := []string{"/", "/metrics", "/sessions/abc", "/agentfleet.v1.DashboardService/ListSessions", "/authsomething", "/some/new/route"}
+	gatedCases := []string{"/", "/metrics", "/sessions/abc", "/agentfleet.v1.DashboardService/ListSessions", "/authsomething", "/some/new/route",
+		// Prefix matching once let these through to the SPA fallback's 200 shell.
+		"/healthzX", "/healthz/x", "/webhook/alertmanagerX", "/auth/", "/auth/nonexistent"}
 	for _, p := range gatedCases {
 		if exempt(p) {
 			t.Errorf("%s is exempt from the session gate but should not be", p)
@@ -160,9 +180,38 @@ func TestGate_ExemptsOnlyWhatIsListed(t *testing.T) {
 	}
 }
 
+// The exemption must agree with how ServeMux routes. /auth%2Fme decodes to
+// Path "/auth/me" but the mux matches the escaped path and sends it to the "/"
+// SPA fallback, so a gate matching Path served the 200 shell unauthenticated.
+func TestGate_EncodedSlashIsNotExempt(t *testing.T) {
+	o := &OIDC{signer: mustSigner(t, "key-one")}
+	mux := http.NewServeMux()
+	for _, p := range []string{"/healthz", "/webhook/alertmanager", "/auth/me", "/auth/callback"} {
+		mux.HandleFunc(p, func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	}
+	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	handler := o.Gate(AdminOnly)(mux)
+
+	for p, want := range map[string]int{
+		"/auth/me":                http.StatusOK, // positive control
+		"/auth%2Fme":              http.StatusUnauthorized,
+		"/auth%2Fcallback":        http.StatusUnauthorized,
+		"/webhook%2Falertmanager": http.StatusUnauthorized,
+		"/healthz%2F":             http.StatusUnauthorized,
+	} {
+		req := httptest.NewRequest(http.MethodGet, p, nil)
+		req.Header.Set("Sec-Fetch-Mode", "cors")
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != want {
+			t.Errorf("%s: got %d, want %d", p, rec.Code, want)
+		}
+	}
+}
+
 func TestGate_RedirectsDocumentsAndRefusesXHR(t *testing.T) {
 	o := &OIDC{signer: mustSigner(t, "key-one")}
-	handler := o.Gate(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	handler := o.Gate(AdminOnly)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
@@ -197,7 +246,7 @@ func TestGate_LetsAValidSessionThroughAndCarriesTheIdentity(t *testing.T) {
 	o := &OIDC{signer: s}
 
 	var seen string
-	handler := o.Gate(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := o.Gate(AdminOnly)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if id, ok := FromContext(r.Context()); ok {
 			seen = id.Email
 		}
@@ -222,7 +271,7 @@ func TestGate_LetsAValidSessionThroughAndCarriesTheIdentity(t *testing.T) {
 // it arrived from — the property a Traefik middleware structurally cannot give.
 func TestGate_RefusesTheWorkerPodBypassFrom200(t *testing.T) {
 	o := &OIDC{signer: mustSigner(t, "key-one")}
-	handler := o.Gate(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	handler := o.Gate(AdminOnly)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		t.Error("the #200 bypass reached the handler")
 		w.WriteHeader(http.StatusOK)
 	}))

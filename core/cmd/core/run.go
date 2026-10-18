@@ -269,8 +269,11 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 		// the gate is on, so with FLEET_AUTH_DISABLED=1 it 404s and the SPA
 		// simply shows nothing — which is honest: there is no identity to show.
 		mux.HandleFunc("/auth/me", oidcAuth.Me)
-		authInterceptors = append(authInterceptors, oidcAuth.ConnectInterceptor())
-		gate = oidcAuth.Gate
+		// One value for both layers today. A service with a wider audience
+		// widens the Gate's policy to the union and passes its own here.
+		policy := auth.AdminOnly
+		authInterceptors = append(authInterceptors, oidcAuth.ConnectInterceptor(policy))
+		gate = oidcAuth.Gate(policy)
 	}
 	// CSRF stays alongside the session check and is not redundant: a cookie is
 	// attached by the browser to same-origin requests regardless of which page
@@ -311,7 +314,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	// closed. It also has to sit outside the SPA handler specifically, because
 	// that one serves index.html with a 200 for any unknown path, so a gate
 	// underneath it would return the app shell to an unauthenticated request.
-	httpServer := &http.Server{Addr: ":" + cfg.Port, Handler: gate(mux)}
+	httpServer := &http.Server{Addr: ":" + cfg.Port, Handler: httpHandler(mux, gate)}
 
 	go func() {
 		slog.Info("core listening", "port", cfg.Port)
@@ -328,4 +331,11 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	case err := <-errCh:
 		return err
 	}
+}
+
+// httpHandler is the outermost composition core serves. FrameDeny sits outside
+// the gate so the gate's own 302/401/403 carry it, and applies with
+// FLEET_AUTH_DISABLED=1 (identity gate) too (docs/adr/0069).
+func httpHandler(mux http.Handler, gate func(http.Handler) http.Handler) http.Handler {
+	return auth.FrameDeny(gate(mux))
 }

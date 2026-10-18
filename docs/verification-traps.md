@@ -209,8 +209,29 @@ since the feature was written.
 - **`fleet.bnei.dev` now has exactly one lock, and the IngressRoute matches on
   host with no path constraint.** So every path core serves on 8080 is public
   unless the in-app gate refuses it, and **a new exempt path is a new public
-  endpoint**. Currently exempt: `/healthz`, `/auth/*`, `/webhook/alertmanager`
+  endpoint**. Currently exempt (exact paths): `/healthz`, `/auth/{login,callback,logout,me}`, `/webhook/alertmanager`
   (its own bearer token, refuses when unset).
+- **A signature-valid session cookie is not authorization.** `platform-admins`
+  was once checked only at the OIDC callback. The gate (403) and
+  `ConnectInterceptor` (`PermissionDenied`) now re-check it on every request
+  (`adr/0069`), which matters once login admits an audience group — it guards
+  against login *widening*. It is **not revocation**: the groups are frozen into
+  the cookie at login, so someone removed from `platform-admins` keeps access
+  until the 12h TTL ends or `SESSION_KEYS` rotates (logging everyone out) — so
+  today, when login admits only `platform-admins`, real traffic shows **zero**
+  denials and that proves nothing. Each layer takes its own `auth.Policy`
+  (both `AdminOnly`, passed once in `run.go`): the Gate's must admit the
+  *union* of every service's audience, and each `ConnectInterceptor` narrows it
+  — never a gate exclusion, which would make the service public. A non-admin 403 must never become a login redirect (login refuses them
+  again → loop). Gate denials log `auth: refused request` with the groups
+  received. The exemption matches the **escaped** path, as ServeMux does —
+  matching the decoded one let `/auth%2Fme` reach the SPA's 200 shell.
+  `TestConnectInterceptor_NonAdminIsDeniedOnEveryDashboardMethod` enumerates
+  methods from the descriptor, so a new RPC is covered by default. Exempt paths
+  match exactly — a prefix let `/healthzX` reach the SPA's 200 shell.
+  Every response also carries `frame-ancestors 'none'` + `X-Frame-Options: DENY`
+  (`auth.FrameDeny`, outside the gate) — it governs embedding only, so it cannot
+  break the `/auth/` redirect flow; `/embed/*` will be its one exception.
 - **A gate that can't see the network the caller came from refuses your own
   infrastructure too.** `/metrics` sat on the gated 8080 mux and was never
   exempt, on the written assumption that it "has no IngressRoute" — an assumption

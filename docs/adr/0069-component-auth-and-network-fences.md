@@ -141,10 +141,17 @@ on 2026-10-18:
 
 ### 5. Per-request admin check (later G0 PR)
 
-- Every `DashboardService` call re-checks that the cookie's identity is still
-  in `platform-admins`. A failing check is `PermissionDenied`.
-- Cookie `Identity` gains `sub` so the check (and ADR-0066's audience checks)
-  key on a stable subject, not a display name.
+- Every `DashboardService` call re-checks that the cookie's identity is in
+  `platform-admins`. A failing check is `PermissionDenied`.
+- The groups come from the cookie, which was minted at login. So this check
+  guards against login being widened later (ADR-0066 lets audience groups
+  log in). It does **not** revoke an admin removed in authentik: they keep
+  access until the cookie expires (up to 12h). Revocation is an open item, a
+  shorter TTL or a refresh-time group re-read.
+- Cookie `Identity` gains `sub`, so the check and ADR-0066's audience checks
+  key on a stable subject, not a display name. The fleet provider's
+  `sub_mode` is `hashed_user_id` (infra-bootstrap#342, 2026-10-18), so `sub`
+  survives an email change. Earlier, `user_email` made it the address.
 - Test: a non-admin cookie gets `PermissionDenied` on every `DashboardService`
   method, enumerated from the proto descriptor so a new method cannot skip it.
 
