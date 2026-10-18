@@ -1012,10 +1012,16 @@ func (s *Server) WarmIfIdle(ctx context.Context, sessionID string) (podName stri
 	if repoCfg == nil {
 		return "", connect.NewError(connect.CodeInternal, fmt.Errorf("unknown repo %q", t.Repo))
 	}
+	// docs/adr/0064: a definition session gets its profile, the provisioner's
+	// default image (repos.image is ignored, so a worker image built before the
+	// profile can never run one) and no tool keys.
+	var profile *agentfleetv1.DefinitionPodProfile
+	image := repoCfg.Image
 	if t.DefinitionName != nil {
-		if err := s.definitionWarmable(ctx, t, repoCfg.ClusterAccess); err != nil {
+		if profile, err = s.definitionWarmable(ctx, t, repoCfg.ClusterAccess); err != nil {
 			return "", err
 		}
+		image = ""
 	}
 
 	// The cap check and the lease mint happen together, under an advisory
@@ -1052,7 +1058,7 @@ func (s *Server) WarmIfIdle(ctx context.Context, sessionID string) (podName stri
 	// row, which a concurrent "manage repos" edit could have straddled, so a
 	// pod could get one repo's privilege grant and another's image.
 	toolKeys := provisionerclient.ToolKeysFor(repoCfg.ClusterAccess)
-	pod, err := s.e2e.CreateWorkerPod(ctx, sessionID, t.Repo, repoCfg.URL, repoCfg.BaseBranch, t.Description, leaseID, resumeAgentSessionID, resumeFromSeq, toolKeys, repoCfg.Image)
+	pod, err := s.e2e.CreateWorkerPod(ctx, sessionID, t.Repo, repoCfg.URL, repoCfg.BaseBranch, t.Description, leaseID, resumeAgentSessionID, resumeFromSeq, toolKeys, image, profile)
 	if err != nil {
 		return "", connect.NewError(connect.CodeInternal, err)
 	}
@@ -1066,37 +1072,49 @@ func (s *Server) WarmIfIdle(ctx context.Context, sessionID string) (podName stri
 }
 
 // definitionWarmable refuses to warm a definition session unless its pinned
-// version is still the current one (docs/adr/0062's revocation rule) and the
-// repo has not been flipped to cluster access since creation; and, until
-// docs/adr/0064 lands, always. All checked BEFORE ReserveSlot, so a refusal
-// leaves no lease and no phase.
-func (s *Server) definitionWarmable(ctx context.Context, t *sessions.Session, clusterAccess bool) error {
+// version is still the current one (docs/adr/0062's revocation rule), the repo
+// has not been flipped to cluster access since creation, and the provisioner
+// applies the definition pod profile (docs/adr/0064): an older one would
+// ignore it and build the ordinary pod (GH_TOKEN and LEASE_ID in the worker,
+// the whole /repo-cache). All checked BEFORE ReserveSlot, so a refusal leaves
+// no lease and no phase. The profile is built from the current row, which by
+// the pin check IS the pinned version.
+func (s *Server) definitionWarmable(ctx context.Context, t *sessions.Session, clusterAccess bool) (*agentfleetv1.DefinitionPodProfile, error) {
 	name, pinned := *t.DefinitionName, *t.DefinitionSHA
 	if s.definitions == nil {
-		return connect.NewError(connect.CodeUnavailable, errors.New("defined agents are not configured"))
+		return nil, connect.NewError(connect.CodeUnavailable, errors.New("defined agents are not configured"))
 	}
 	head, err := s.definitions.Resolve(name)
 	switch {
 	case errors.Is(err, definitions.ErrUnknown):
-		return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("definition %q is no longer defined; start a new session", name))
+		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("definition %q is no longer defined; start a new session", name))
 	case errors.Is(err, definitions.ErrInvalid):
-		return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("definition %q has no valid version: %w", name, err))
+		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("definition %q has no valid version: %w", name, err))
 	case err != nil:
-		return connect.NewError(connect.CodeUnavailable, err)
+		return nil, connect.NewError(connect.CodeUnavailable, err)
 	}
 	if head.SHA != pinned {
-		return connect.NewError(connect.CodeFailedPrecondition,
+		return nil, connect.NewError(connect.CodeFailedPrecondition,
 			fmt.Errorf("definition %q changed since this session was created (pinned %.7s, current %.7s); start a new session", name, pinned, head.SHA))
 	}
 	if clusterAccess {
-		return connect.NewError(connect.CodeFailedPrecondition, errors.New("definition sessions never run on a cluster-access repo"))
+		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("definition sessions never run on a cluster-access repo"))
 	}
-	// Unconditional until ADR-0064's slice: no core here sends the profile
-	// in CreateWorkerPod, so any pod it got would have the ORDINARY one
-	// (GH_TOKEN and LEASE_ID in the worker, the whole /repo-cache). That
-	// slice replaces this with a check it can satisfy.
-	return connect.NewError(connect.CodeFailedPrecondition,
-		errors.New("definition sessions cannot warm yet: the definition pod profile (docs/adr/0064) is not implemented"))
+	supported, err := s.e2e.DefinitionProfileSupported(ctx)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeFailedPrecondition,
+			fmt.Errorf("cannot confirm the provisioner applies the definition pod profile (docs/adr/0064): %w", err))
+	}
+	if !supported {
+		return nil, connect.NewError(connect.CodeFailedPrecondition,
+			errors.New("provisioner does not apply the definition pod profile (docs/adr/0064); refusing to warm"))
+	}
+	if head.Effective == nil || head.Effective.Git == nil || head.Effective.Git.Identity == nil {
+		// The validator requires git.identity on every launchable spec.
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("definition %q has no git identity", name))
+	}
+	id := head.Effective.Git.Identity
+	return &agentfleetv1.DefinitionPodProfile{Name: name, GitAuthorName: id.Name, GitAuthorEmail: id.Email}, nil
 }
 
 // DeleteTask force-tears-down any live session for sessionID (both kinds —

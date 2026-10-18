@@ -30,7 +30,14 @@ type definitionsProvisioner struct {
 	mu      sync.Mutex
 	files   map[string][]byte
 	sha     string
+	profile bool // GetVersion's definition_pod_profile
 	creates []*agentfleetv1.CreateWorkerPodRequest
+}
+
+func (p *definitionsProvisioner) GetVersion(context.Context, *agentfleetv1.GetVersionRequest) (*agentfleetv1.GetVersionResponse, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return &agentfleetv1.GetVersionResponse{DefinitionPodProfile: p.profile}, nil
 }
 
 func (p *definitionsProvisioner) ListDefinitionFiles(context.Context, *agentfleetv1.ListDefinitionFilesRequest) (*agentfleetv1.ListDefinitionFilesResponse, error) {
@@ -227,15 +234,42 @@ func TestWarmIfIdle_Definition(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// This core never sends the definition pod profile, so it refuses every
-	// definition warm whatever the provisioner is: nothing ever warms with the
-	// ordinary profile (GH_TOKEN and LEASE_ID in the worker).
+	// A provisioner that does not say it applies the profile would ignore it
+	// and build the ordinary pod (GH_TOKEN and LEASE_ID in the worker), so the
+	// warm is refused before anything is reserved (docs/adr/0064).
 	if _, err := s.WarmIfIdle(ctx, sess.GetId()); code(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "definition pod profile") {
 		t.Fatalf("got %v", err)
 	}
 	assertNoLease(t, store, sess.GetId())
 	if prov.createCount() != 0 {
 		t.Fatal("no pod may be created")
+	}
+
+	// One that does gets the profile, built from the pinned version, with the
+	// provisioner's default image whatever repos.image says.
+	repo, err := s.repos.Get(ctx, "dream-analyst")
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo.Image = "registry.example/old-worker:1"
+	if err := s.repos.Update(ctx, *repo); err != nil {
+		t.Fatal(err)
+	}
+	prov.set(func(p *definitionsProvisioner) { p.profile = true })
+	if _, err := s.WarmIfIdle(ctx, sess.GetId()); err != nil {
+		t.Fatalf("warm: %v", err)
+	}
+	prov.mu.Lock()
+	got := prov.creates[0]
+	prov.mu.Unlock()
+	if d := got.GetDefinition(); d.GetName() != "dev-dream-analyst" || d.GetGitAuthorName() != "fleet-dev-agent" || d.GetGitAuthorEmail() != "fleet-dev-agent@bnei.dev" {
+		t.Errorf("profile = %v", d)
+	}
+	if got.GetImage() != "" || len(got.GetToolKeys()) != 0 {
+		t.Errorf("image %q tool keys %v: a definition pod takes the default image and no keys", got.GetImage(), got.GetToolKeys())
+	}
+	if got, err := store.Get(ctx, sess.GetId()); err != nil || got.LeaseID == "" {
+		t.Fatalf("the warm reserved no lease: %v %v", got, err)
 	}
 
 	// Revocation: a content change makes the old pin stop warming.
@@ -263,7 +297,7 @@ func TestWarmIfIdle_Definition(t *testing.T) {
 	if _, err := s.WarmIfIdle(ctx, other.GetId()); code(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "no longer defined") {
 		t.Fatalf("got %v", err)
 	}
-	if prov.createCount() != 0 {
-		t.Fatal("no pod may be created")
+	if prov.createCount() != 1 {
+		t.Fatal("a revoked pin may not create a pod")
 	}
 }

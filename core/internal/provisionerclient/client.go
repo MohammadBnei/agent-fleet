@@ -239,7 +239,9 @@ type WorkerPod struct {
 	SidecarImage string
 }
 
-func (c *Client) CreateWorkerPod(ctx context.Context, sessionID, repo, repoURL, baseBranch, description, leaseID, resumeAgentSessionID string, resumeFromSeq int64, toolKeys []string, image string) (WorkerPod, error) {
+// definition is nil for a repo session. For a definition session it switches
+// the pod to the definition profile (docs/adr/0064).
+func (c *Client) CreateWorkerPod(ctx context.Context, sessionID, repo, repoURL, baseBranch, description, leaseID, resumeAgentSessionID string, resumeFromSeq int64, toolKeys []string, image string, definition *agentfleetv1.DefinitionPodProfile) (WorkerPod, error) {
 	ctx, cancel := context.WithTimeout(ctx, sessionCallTimeout)
 	defer cancel()
 	resp, err := c.rpc.CreateWorkerPod(ctx, &agentfleetv1.CreateWorkerPodRequest{
@@ -253,6 +255,7 @@ func (c *Client) CreateWorkerPod(ctx context.Context, sessionID, repo, repoURL, 
 		ResumeFromSeq:   resumeFromSeq,
 		ToolKeys:        toolKeys,
 		Image:           image,
+		Definition:      definition,
 	})
 	if err != nil {
 		return WorkerPod{}, fmt.Errorf("CreateWorkerPod: %w", err)
@@ -276,6 +279,23 @@ func (c *Client) GetVersion(ctx context.Context) (version, workerImage, sidecarI
 		return "", "", "", fmt.Errorf("GetVersion: %w", err)
 	}
 	return resp.GetVersion(), resp.GetWorkerImage(), resp.GetSidecarImage(), nil
+}
+
+// DefinitionProfileSupported reports whether the provisioner applies
+// CreateWorkerPodRequest.definition (docs/adr/0064). An older one would ignore
+// the field and build the ordinary pod, so core asks before every definition
+// warm.
+//
+// ponytail: uncached, one cheap RPC per definition warm. A cache would need
+// invalidating on exactly the rollout that changes the answer.
+func (c *Client) DefinitionProfileSupported(ctx context.Context) (bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, sessionCallTimeout)
+	defer cancel()
+	resp, err := c.rpc.GetVersion(ctx, &agentfleetv1.GetVersionRequest{})
+	if err != nil {
+		return false, fmt.Errorf("GetVersion: %w", err)
+	}
+	return resp.GetDefinitionPodProfile(), nil
 }
 
 // ListDefinitionFiles returns definitions/ as the provisioner read it, keyed
