@@ -115,6 +115,19 @@ func TestReadDefinitions_TagReadsTheTaggedTree(t *testing.T) {
 	if err != nil || sha != next {
 		t.Fatalf("sha %q want %q err %v", sha, next, err)
 	}
+
+	// At its tag the clone is never refetched (core asks every 60s): with
+	// the origin gone, the same tag still reads; a branch has to fetch.
+	if err := os.Rename(origin, origin+"-gone"); err != nil {
+		t.Fatal(err)
+	}
+	files, sha, err = m.ReadDefinitions(context.Background(), origin, "4.20.0")
+	if err != nil || sha != next || string(files["definitions/d.yaml"]) != "d" {
+		t.Fatalf("at the tag with no origin: sha %q err %v", sha, err)
+	}
+	if _, _, err := m.ReadDefinitions(context.Background(), origin, "main"); err == nil {
+		t.Fatal("a branch ref must fetch, and the origin is gone")
+	}
 }
 
 // Fail closed: every one of these is an error, never an empty list.

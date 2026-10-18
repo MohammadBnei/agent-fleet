@@ -22,7 +22,7 @@ import (
 // these; every rule is judged on the EFFECTIVE spec, so a child cannot widen
 // what its parent was allowed.
 var (
-	KnownGroups = []string{"platform-admins", "shared-notes"}
+	knownGroups = []string{"platform-admins", "shared-notes"}
 	// ModelCeiling must stay a subset of the console's validModels
 	// (dashboard/ceiling_test.go), or a definition could name a model the
 	// console would refuse.
@@ -42,8 +42,15 @@ var (
 	// interpreter in disguise (`Bash(bash:*)`, `Bash(env:*)`). A guard
 	// against the obvious equivalents of unscoped Bash, not a sandbox: the
 	// reviewed PR and canUseTool are (docs/adr/0062 §7).
-	shellWrappers = []string{"sh", "bash", "zsh", "dash", "ksh", "fish", "env", "eval", "exec", "xargs", "sudo", "su",
-		"nohup", "timeout", "nice", "command", "busybox", "python", "python3", "node", "bun", "deno", "perl", "ruby"}
+	// Matched after trailing version digits are stripped (python3.12 →
+	// python, perl5 → perl).
+	shellWrappers = []string{"sh", "bash", "zsh", "dash", "ksh", "mksh", "ash", "csh", "tcsh", "fish", "pwsh",
+		"env", "eval", "exec", "builtin", "command", "time", "xargs", "sudo", "su", "doas", "nohup", "setsid",
+		"timeout", "nice", "stdbuf", "busybox", "python", "node", "bun", "deno", "perl", "ruby", "php", "lua"}
+	// commandRe: the command word is a plain name or path, so no
+	// `FOO=1 bash`, `"bash"`, `b\ash` or `$SHELL` spelling slips past the list.
+	commandRe = regexp.MustCompile(`^[A-Za-z0-9._/+-]+$`)
+	versionRe = regexp.MustCompile(`[0-9.]+$`)
 )
 
 const (
@@ -88,10 +95,6 @@ type parsed struct {
 	err  error
 }
 
-type cycleError string
-
-func (e cycleError) Error() string { return string(e) }
-
 // Load is pure: Registry.Sync and the CI test both call it. fileErrs holds
 // every error with no definition row to live on (a bad path, an abstract
 // definition's own error, a client error), so none of them is log-only.
@@ -104,7 +107,7 @@ func Load(files map[string][]byte) (results []Result, fileErrs []error) {
 
 	defs := map[string]*parsed{}
 	clients := map[string]string{} // name → path
-	clientFiles := map[string]ClientFile{}
+	clientFiles := map[string]clientFile{}
 	clientErrs := map[string]error{}
 	for _, p := range paths {
 		if strings.HasSuffix(p, ".md") {
@@ -116,10 +119,10 @@ func Load(files map[string][]byte) (results []Result, fileErrs []error) {
 		case isYAML && dir == "definitions/":
 			defs[stem] = parseDefinition(p, stem, files[p])
 		case isYAML && dir == "definitions/clients/":
-			var cf ClientFile
+			var cf clientFile
 			err := decodeStrict(files[p], &cf)
 			if err == nil {
-				err = checkHeader(cf.File, KindClient, stem)
+				err = checkHeader(cf.File, kindClient, stem)
 			}
 			clients[stem], clientFiles[stem], clientErrs[stem] = p, cf, err
 		default:
@@ -145,16 +148,11 @@ func Load(files map[string][]byte) (results []Result, fileErrs []error) {
 			chain = append(slices.Clone(chain), name)
 			if ext := p.spec.Extends; ext != "" {
 				if i := slices.Index(chain, ext); i >= 0 {
-					r.err = cycleError("extends cycle: " + strings.Join(append(chain[i:], ext), " → "))
+					r.err = errors.New("extends cycle: " + strings.Join(append(chain[i:], ext), " → "))
 				} else if defs[ext] == nil {
 					r.err = fmt.Errorf("extends unknown definition %q", ext)
 				} else if pr := resolve(ext, chain); pr.err != nil {
-					var ce cycleError
-					if errors.As(pr.err, &ce) {
-						r.err = ce
-					} else {
-						r.err = fmt.Errorf("parent %q: %w", ext, pr.err)
-					}
+					r.err = fmt.Errorf("parent %q: %w", ext, pr.err)
 				} else {
 					// Top-level key replace: nothing below this level is merged.
 					for k, v := range pr.merged {
@@ -171,7 +169,7 @@ func Load(files map[string][]byte) (results []Result, fileErrs []error) {
 				r.merged = merged
 				r.eff, r.err = toSpec(merged)
 				if r.err == nil {
-					r.err = Validate(name, r.eff)
+					r.err = validate(name, r.eff)
 				}
 			}
 		}
@@ -207,7 +205,7 @@ func Load(files map[string][]byte) (results []Result, fileErrs []error) {
 				}
 			}
 			if len(errs) > 0 {
-				res.Err, res.Effective = errors.Join(errs...), nil
+				res.Err = errors.Join(errs...)
 			}
 		}
 		if res.Err != nil {
@@ -238,12 +236,12 @@ func Load(files map[string][]byte) (results []Result, fileErrs []error) {
 
 func parseDefinition(p, stem string, b []byte) *parsed {
 	out := &parsed{path: p}
-	var df DefinitionFile
+	var df definitionFile
 	if err := decodeStrict(b, &df); err != nil {
 		out.err = err
 		return out
 	}
-	if err := checkHeader(df.File, KindDefinition, stem); err != nil {
+	if err := checkHeader(df.File, kindDefinition, stem); err != nil {
 		out.err = err
 		return out
 	}
@@ -288,8 +286,8 @@ func decodeStrict(b []byte, out any) error {
 
 func checkHeader(f File, kind, stem string) error {
 	var errs []error
-	if f.APIVersion != APIVersion {
-		errs = append(errs, fmt.Errorf("apiVersion %q: want %q", f.APIVersion, APIVersion))
+	if f.APIVersion != apiVersion {
+		errs = append(errs, fmt.Errorf("apiVersion %q: want %q", f.APIVersion, apiVersion))
 	}
 	if f.Kind != kind {
 		errs = append(errs, fmt.Errorf("kind %q: want %q in this directory", f.Kind, kind))
@@ -351,11 +349,11 @@ func validateClient(name string, s ClientSpec, defs map[string]*parsed, results 
 	return errors.Join(errs...)
 }
 
-// Validate checks one spec against the fleet ceiling. The registry re-runs it
+// validate checks one spec against the fleet ceiling. The registry re-runs it
 // on stored rows every sync, so a tightened ceiling revokes old versions.
 // Required fields apply only to a non-abstract spec; every other rule applies
 // to whatever is present.
-func Validate(name string, s *Spec) error {
+func validate(name string, s *Spec) error {
 	var errs []error
 	bad := func(format string, a ...any) { errs = append(errs, fmt.Errorf(format, a...)) }
 	need := func(present bool, field string) bool {
@@ -365,8 +363,8 @@ func Validate(name string, s *Spec) error {
 		return present
 	}
 
-	if need(s.Audience != nil, "audience") && !slices.Contains(KnownGroups, s.Audience.Group) {
-		bad("audience.group %q is not a known group %v", s.Audience.Group, KnownGroups)
+	if need(s.Audience != nil, "audience") && !slices.Contains(knownGroups, s.Audience.Group) {
+		bad("audience.group %q is not a known group %v", s.Audience.Group, knownGroups)
 	}
 	for _, inv := range s.Invokers {
 		if !nameRe.MatchString(inv) {
@@ -574,13 +572,20 @@ func checkList(errs *[]error, field string, allow, ceiling []string) {
 }
 
 // validBashSpecifier: a literal command, optionally ending in one ":*". Any
-// other * (`Bash(**)`, `Bash(*:*)`), a leading space (`Bash( *)`) or a shell
-// or interpreter prefix (also by path, `/bin/sh`) is unscoped Bash by another
-// name.
+// other * (`Bash(**)`, `Bash(*:*)`), a leading space (`Bash( *)`), a command
+// word that is not a plain name or path, a shell or interpreter prefix (also
+// by path, `/bin/sh`, or versioned, `python3.12`), or a bare `git` (whose
+// `-c` runs anything) is unscoped Bash by another name. A shape rule, not a
+// sandbox: `git push:*` still admits `--receive-pack` (docs/adr/0062 §7).
 func validBashSpecifier(spec string) bool {
 	cmd := strings.TrimSuffix(spec, ":*")
-	return cmd != "" && cmd == strings.TrimSpace(cmd) && !strings.Contains(cmd, "*") &&
-		!slices.Contains(shellWrappers, path.Base(strings.Fields(cmd)[0]))
+	if cmd == "" || cmd != strings.TrimSpace(cmd) || strings.Contains(cmd, "*") {
+		return false
+	}
+	fields := strings.Fields(cmd)
+	base := path.Base(fields[0])
+	return commandRe.MatchString(fields[0]) && !slices.Contains(shellWrappers, versionRe.ReplaceAllString(base, "")) &&
+		(base != "git" || len(fields) > 1 && !strings.HasPrefix(fields[1], "-"))
 }
 
 // shapeList: non-empty strings, no duplicates, none of the forbidden runes or

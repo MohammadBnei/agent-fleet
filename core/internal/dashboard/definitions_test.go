@@ -267,29 +267,3 @@ func TestWarmIfIdle_Definition(t *testing.T) {
 		t.Fatal("no pod may be created")
 	}
 }
-
-// The create and its capacity check are one transaction: a definition at its
-// limits.concurrency refuses the create and keeps no row.
-func TestCreateSession_DefinitionAtCapacityKeepsNoRow(t *testing.T) {
-	ctx := context.Background()
-	s, _, _, store := newDefinitionsServer(t)
-	first, err := createDef(s, "dev-dream-analyst", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Live by reservation (a warm is refused before ReserveSlot until ADR-0064).
-	if _, err := store.ReserveSlot(ctx, first.GetId(), s.caps); err != nil {
-		t.Fatal(err)
-	}
-	before, err := store.List(ctx, 100, "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := createDef(s, "dev-dream-analyst", nil); code(err) != connect.CodeResourceExhausted || !strings.Contains(err.Error(), "concurrency limit") {
-		t.Fatalf("got %v", err)
-	}
-	after, err := store.List(ctx, 100, "")
-	if err != nil || len(after) != len(before) {
-		t.Fatalf("a refused create kept a row: %d -> %d (%v)", len(before), len(after), err)
-	}
-}

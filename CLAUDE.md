@@ -114,9 +114,10 @@ Condensed. Full detail + rationale in `agent-fleet/docs/DECISIONS.md` + `docs/ad
   repo/model/mode come from the version at the synced commit (invalid HEAD = fail closed,
   never an older row) and the mode is written explicitly, never the `'auto'` default.
   Pinned sha ≠ current → warm refused. Pool `MAX_DEFINITION_SESSIONS` sits **inside**
-  `MAX_IN_FLIGHT_TASKS` (must be `<`, or core won't start), checked in the create's own
-  tx (refusal keeps no row) and again in `ReserveSlot`. Mode guard lives in
-  `sessions.Store.SetPermissionMode` (both callers). Every definition warm is refused
+  `MAX_IN_FLIGHT_TASKS` (must be `<`, or core won't start), checked in `ReserveSlot` only
+  (a create provisions nothing; the insert + reserve tx is P4's `Open`). Mode guard lives in
+  `sessions.Store.SetPermissionMode` (both callers), and `CoreService.SendMessage` refuses a
+  definition pod sending as `human`/`session` (the worker obeys those). Every definition warm is refused
   until `adr/0064` sends the profile. Sync rides `sessions.Loop`, no second scheduler.
 - **Session with no message has no pod — that is the human gate** (`adr/0048` §1).
   Amended by `adr/0062`: the provisioning message comes from an audience member, a

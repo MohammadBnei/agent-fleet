@@ -44,8 +44,11 @@ func TestRegistry_Sync(t *testing.T) {
 	lister := &fakeLister{}
 	r := NewRegistry(pool, lister)
 
-	if _, err := r.Resolve("good"); !errors.Is(err, ErrNotSynced) {
-		t.Fatalf("before the first sync: want ErrNotSynced, got %v", err)
+	if _, err := r.Resolve("good"); !errors.Is(err, errNotSynced) {
+		t.Fatalf("before the first sync: want errNotSynced, got %v", err)
+	}
+	if _, syncErrs := r.List(); len(syncErrs) != 1 || !strings.Contains(syncErrs[0], "not synced yet") {
+		t.Fatalf("an unsynced list must say so: %v", syncErrs)
 	}
 
 	good := childYAML("good", nil)
@@ -153,6 +156,9 @@ func TestRegistry_Sync(t *testing.T) {
 		if h, err := r.Resolve("good"); err != nil || h.SHA != "sha1" {
 			t.Fatalf("%+v %v", h, err)
 		}
+		if _, syncErrs := r.List(); !strings.Contains(strings.Join(syncErrs, "|"), "last sync failed, showing the last good one: provisioner down") {
+			t.Fatalf("a stale list must say so: %v", syncErrs)
+		}
 	})
 
 	// The same (name, sha) judged differently (a core rollout overlap): a
@@ -227,6 +233,43 @@ func TestRegistry_Sync(t *testing.T) {
 		}
 		if h, _ := r.Resolve("good"); h.SHA != "sha1" {
 			t.Fatalf("HEAD's row stays current: %+v", h)
+		}
+	})
+
+	// A newer core (rollout overlap, rollback) may store fields this one does
+	// not know. Revoking that row would make the newer core re-insert at its
+	// sha and strand every session pinned to it.
+	t.Run("a row this core cannot decode is left alone", func(t *testing.T) {
+		if _, err := pool.Exec(ctx, `
+			INSERT INTO agent_definitions (name, sha, spec, effective, valid)
+			SELECT 'good', 'sha9', spec, effective || '{"fromANewerCore": 1}', true
+			  FROM agent_definitions WHERE name = 'good' AND sha = 'sha1'`); err != nil {
+			t.Fatal(err)
+		}
+		if err := r.Sync(ctx); err != nil {
+			t.Fatal(err)
+		}
+		var valid bool
+		if err := pool.QueryRow(ctx, `SELECT valid FROM agent_definitions WHERE name='good' AND sha='sha9'`).Scan(&valid); err != nil || !valid {
+			t.Fatalf("a newer core's row was revoked: valid=%v err=%v", valid, err)
+		}
+	})
+
+	// A deleted definition's rows stay for their pinned sessions, and so
+	// must still answer to a tightened ceiling (SetPermissionMode reads valid).
+	t.Run("re-judge reaches names no longer in git", func(t *testing.T) {
+		if _, err := pool.Exec(ctx, `
+			INSERT INTO agent_definitions (name, sha, spec, effective, valid)
+			SELECT 'gone', 'g1', spec, jsonb_set(effective, '{mode}', '{"default":"auto","allow":["auto"]}'), true
+			  FROM agent_definitions WHERE name = 'good' AND sha = 'sha1'`); err != nil {
+			t.Fatal(err)
+		}
+		if err := r.Sync(ctx); err != nil {
+			t.Fatal(err)
+		}
+		var valid bool
+		if err := pool.QueryRow(ctx, `SELECT valid FROM agent_definitions WHERE name='gone'`).Scan(&valid); err != nil || valid {
+			t.Fatalf("want the unlisted row revoked: valid=%v err=%v", valid, err)
 		}
 	})
 }

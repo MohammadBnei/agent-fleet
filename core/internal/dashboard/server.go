@@ -74,8 +74,8 @@ type Server struct {
 	stt *sttclient.Client
 
 	// definitions is the defined-agents registry (docs/adr/0062). nil makes
-	// every definition request answer Unavailable; repo sessions are
-	// unaffected.
+	// definition creates and warms answer Unavailable and ListDefinitions an
+	// empty list carrying that as a sync error; repo sessions are unaffected.
 	definitions *definitions.Registry
 }
 
@@ -219,8 +219,9 @@ func (s *Server) createDefinitionSession(ctx context.Context, msg *agentfleetv1.
 	if repoCfg.ClusterAccess {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("definition sessions never run on a cluster-access repo"))
 	}
-	// Capacity is checked in the INSERT's transaction: a refusal keeps no row.
-	id, err := s.sessions.CreateDefinition(ctx, sessions.CreateParams{
+	// No capacity check here: a create provisions nothing (docs/adr/0048 §1),
+	// so ReserveSlot at warm is the one capacity gate (docs/adr/0062 §5).
+	id, err := s.sessions.Create(ctx, sessions.CreateParams{
 		Repo:           repo,
 		Title:          msg.GetTitle(),
 		Description:    msg.GetDescription(),
@@ -228,11 +229,8 @@ func (s *Server) createDefinitionSession(ctx context.Context, msg *agentfleetv1.
 		PermissionMode: eff.Mode.Default,
 		DefinitionName: head.Name,
 		DefinitionSHA:  head.SHA,
-	}, s.caps)
+	})
 	if err != nil {
-		if code, ok := capacityCode(err); ok {
-			return nil, connect.NewError(code, err)
-		}
 		slog.Error("dashboard CreateSession: definition", "definition", name, "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
@@ -248,7 +246,7 @@ func (s *Server) createDefinitionSession(ctx context.Context, msg *agentfleetv1.
 // (docs/adr/0062). Admin-only through the same interceptor as every method.
 func (s *Server) ListDefinitions(_ context.Context, _ *connect.Request[agentfleetv1.ListDefinitionsRequest]) (*connect.Response[agentfleetv1.ListDefinitionsResponse], error) {
 	if s.definitions == nil {
-		return connect.NewResponse(&agentfleetv1.ListDefinitionsResponse{}), nil
+		return connect.NewResponse(&agentfleetv1.ListDefinitionsResponse{SyncErrors: []string{"defined agents are not configured"}}), nil
 	}
 	heads, syncErrs := s.definitions.List()
 	out := &agentfleetv1.ListDefinitionsResponse{SyncErrors: syncErrs}
@@ -1034,12 +1032,10 @@ func (s *Server) WarmIfIdle(ctx context.Context, sessionID string) (podName stri
 	if repoCfg == nil {
 		return "", connect.NewError(connect.CodeInternal, fmt.Errorf("unknown repo %q", t.Repo))
 	}
-	toolKeys := provisionerclient.ToolKeysFor(repoCfg.ClusterAccess)
 	if t.DefinitionName != nil {
 		if err := s.definitionWarmable(ctx, t, repoCfg.ClusterAccess); err != nil {
 			return "", err
 		}
-		toolKeys = nil
 	}
 
 	// The cap check and the lease mint happen together, under an advisory
@@ -1068,11 +1064,11 @@ func (s *Server) WarmIfIdle(ctx context.Context, sessionID string) (podName stri
 	if err != nil {
 		return "", connect.NewError(connect.CodeInternal, err)
 	}
-	// toolKeys and the image both come from repoCfg, the row already read
-	// above. This used to re-fetch the same repo through a toolKeysFor helper
-	// — two reads of one row, which a concurrent "manage repos" edit could
-	// have straddled, so a pod could get one repo's privilege grant and
-	// another's image.
+	// Both from repoCfg, which is the row already read above. This used to
+	// re-fetch the same repo through a toolKeysFor helper — two reads of one
+	// row, which a concurrent "manage repos" edit could have straddled, so a
+	// pod could get one repo's privilege grant and another's image.
+	toolKeys := provisionerclient.ToolKeysFor(repoCfg.ClusterAccess)
 	pod, err := s.e2e.CreateWorkerPod(ctx, sessionID, t.Repo, repoCfg.URL, repoCfg.BaseBranch, t.Description, leaseID, resumeAgentSessionID, resumeFromSeq, toolKeys, repoCfg.Image)
 	if err != nil {
 		return "", connect.NewError(connect.CodeInternal, err)
@@ -1120,7 +1116,7 @@ func (s *Server) definitionWarmable(ctx context.Context, t *sessions.Session, cl
 		errors.New("definition sessions cannot warm yet: the definition pod profile (docs/adr/0064) is not implemented"))
 }
 
-// capacityCode maps ReserveSlot's and CreateDefinition's capacity refusals.
+// capacityCode maps ReserveSlot's capacity refusals.
 // Every ErrAtCapacity is wrapped with which cap was hit, so the message is
 // passed through as-is.
 func capacityCode(err error) (connect.Code, bool) {

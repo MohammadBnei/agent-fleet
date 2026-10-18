@@ -182,44 +182,30 @@ func TestSetPermissionMode_DefinitionGuard(t *testing.T) {
 	}
 }
 
-// Contract: the definition session's INSERT and its capacity check are one
-// transaction, so a refusal keeps no row.
-func TestCreateDefinition_CapacityRefusalKeepsNoRow(t *testing.T) {
+// The pod's SaveSessionId reports the model it ran on. For a definition
+// session that report must never move the pinned model.default, or the next
+// warm would launch in whatever the pod said.
+func TestSaveAgentSessionID_DefinitionModelIsPinned(t *testing.T) {
 	ctx := context.Background()
 	pool := dbtest.NewPool(t)
 	store := NewStore(pool)
 	insertDefinition(t, pool, "a", "sha-a", 1)
-	caps := Caps{MaxLive: 5, MaxDefinition: 4}
-	p := CreateParams{Repo: "dream-analyst", PermissionMode: "default", DefinitionName: "a", DefinitionSHA: "sha-a"}
-	count := func() (n int) {
-		if err := pool.QueryRow(ctx, `SELECT count(*) FROM sessions WHERE definition_name = 'a'`).Scan(&n); err != nil {
-			t.Fatal(err)
-		}
-		return n
-	}
-	first, err := store.CreateDefinition(ctx, p, caps)
+	def, err := store.Create(ctx, CreateParams{Repo: "dream-analyst", Model: "claude-sonnet-5", PermissionMode: "default", DefinitionName: "a", DefinitionSHA: "sha-a"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.ReserveSlot(ctx, first, caps); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := store.CreateDefinition(ctx, p, caps); !errors.Is(err, ErrAtCapacity) || !strings.Contains(err.Error(), "concurrency limit") {
-		t.Fatalf("got %v", err)
-	}
-	if _, err := store.CreateDefinition(ctx, p, Caps{MaxLive: 1, MaxDefinition: 0}); !errors.Is(err, ErrAtCapacity) {
-		t.Fatalf("fleet cap: got %v", err)
-	}
-	if n := count(); n != 1 {
-		t.Fatalf("refused creates kept rows: %d sessions, want 1", n)
-	}
-	if _, err := pool.Exec(ctx, `UPDATE agent_definitions SET valid = false, error = 'revoked'`); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := store.CreateDefinition(ctx, p, Caps{MaxLive: 5, MaxDefinition: 4}); !errors.Is(err, ErrDefinitionInvalid) {
-		t.Fatalf("revoked: got %v", err)
-	}
-	if n := count(); n != 1 {
-		t.Fatalf("refused create kept a row: %d", n)
+	repo := newSession(t, ctx, store)
+	for id, want := range map[string]string{def: "claude-sonnet-5", repo: "claude-opus-5-5"} {
+		lease, err := store.ReserveSlot(ctx, id, Caps{MaxLive: 5, MaxDefinition: 4})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.SaveAgentSessionID(ctx, id, "agent-1", "claude-opus-5-5", lease); err != nil {
+			t.Fatal(err)
+		}
+		got, err := store.Get(ctx, id)
+		if err != nil || got.Model == nil || *got.Model != want {
+			t.Errorf("%s: model %v, want %s (err %v)", id, got.Model, want, err)
+		}
 	}
 }

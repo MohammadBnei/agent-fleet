@@ -132,6 +132,24 @@ func (s *Server) SendMessage(ctx context.Context, req *agentfleetv1.SendMessageR
 	if req.GetSessionId() == "" || req.GetFrom() == "" || req.GetText() == "" {
 		return nil, fmt.Errorf("task_id, from, and text are required")
 	}
+	// Only DashboardService and PromptSession write from "human" or "session",
+	// both server-side; a pod sends "agent"/"worker". The worker obeys a
+	// "human"/"session" permission_mode, permission_response or abort, so a
+	// definition pod speaking as one would step outside mode.allow and approve
+	// its own tool calls (docs/adr/0062 §4). Looked up only for these two
+	// values, so the ordinary path pays nothing.
+	//
+	// ponytail: definition sessions only. A repo session's pod can still
+	// forge them (pre-existing, it already runs in auto, docs/adr/0061).
+	if f := req.GetFrom(); f == "human" || f == "session" {
+		sess, err := s.sessions.Get(ctx, req.GetSessionId())
+		if err != nil {
+			return nil, fmt.Errorf("SendMessage: %w", err)
+		}
+		if sess.DefinitionName != nil {
+			return nil, status.Errorf(codes.PermissionDenied, "a definition session's pod cannot send as %q", f)
+		}
+	}
 	// AppendReply only when the caller actually asked for correlation —
 	// same reason transcript keeps these as two methods rather than one
 	// that takes a meaningless zero.

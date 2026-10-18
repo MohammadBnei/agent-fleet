@@ -23,7 +23,7 @@ type Lister interface {
 var (
 	ErrUnknown   = errors.New("no such definition")
 	ErrInvalid   = errors.New("definition is invalid at HEAD")
-	ErrNotSynced = errors.New("definitions not synced yet")
+	errNotSynced = errors.New("definitions not synced yet")
 )
 
 // Head is one present definition's current state: the row of the content at
@@ -53,6 +53,9 @@ type Registry struct {
 	synced   bool
 	heads    map[string]Head
 	syncErrs []string
+	// lastErr is the last failed sync's error, cleared by a good one: the
+	// heads are then last-known-good, and List says so.
+	lastErr error
 }
 
 func NewRegistry(pool *pgxpool.Pool, lister Lister) *Registry {
@@ -61,11 +64,22 @@ func NewRegistry(pool *pgxpool.Pool, lister Lister) *Registry {
 
 const syncTimeout = 30 * time.Second
 
-// Sync lists, validates and stores every definition, then re-judges the
-// stored valid rows of each present name under this core's ceiling. On any
-// error the previous state is kept (last known good), so a provisioner blip
-// does not unpublish definitions.
+// Sync lists, validates and stores every definition, then re-judges every
+// stored valid row under this core's ceiling. On any error the previous state
+// is kept (last known good), so a provisioner blip does not unpublish
+// definitions, and List reports the failure.
+//
+// ponytail: no staleness bound. Heads stay last-known-good for as long as
+// syncs fail; fail closed after N minutes if a stale wider version matters.
 func (r *Registry) Sync(ctx context.Context) error {
+	err := r.sync(ctx)
+	r.mu.Lock()
+	r.lastErr = err
+	r.mu.Unlock()
+	return err
+}
+
+func (r *Registry) sync(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, syncTimeout)
 	defer cancel()
 
@@ -141,6 +155,33 @@ func (r *Registry) Sync(ctx context.Context) error {
 		}
 		heads[res.Name] = h
 	}
+	// Names no longer listed (deleted, or now abstract) keep their rows, and
+	// sessions keep their pins: re-judge those too, so a tightened ceiling
+	// also revokes a version nothing in git names any more.
+	var gone []string
+	rows, err := tx.Query(ctx, `SELECT DISTINCT name FROM agent_definitions WHERE valid`)
+	if err != nil {
+		return fmt.Errorf("definitions sync: names: %w", err)
+	}
+	for rows.Next() {
+		var n string
+		if err := rows.Scan(&n); err != nil {
+			rows.Close()
+			return err
+		}
+		if _, ok := heads[n]; !ok {
+			gone = append(gone, n)
+		}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, n := range gone {
+		if _, err := r.current(ctx, tx, n, ""); err != nil {
+			return err
+		}
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("definitions sync: commit: %w", err)
 	}
@@ -152,7 +193,8 @@ func (r *Registry) Sync(ctx context.Context) error {
 }
 
 // current re-judges name's valid rows under this core's ceiling and returns
-// headSHA's row as the head when it is (still) valid. A row that fails is
+// headSHA's row as the head when it is (still) valid ("" judges only). A row
+// that fails is
 // flipped invalid in place (effective kept), which is what makes a ceiling
 // tightened in a core upgrade revoke old versions, including the ones live
 // pods are pinned to (sessions.SetPermissionMode reads valid). Rows per name
@@ -161,12 +203,13 @@ func (r *Registry) Sync(ctx context.Context) error {
 // ponytail: re-judges the ceiling only. The client-agreement half of Load
 // (invokers) is not re-run on old rows; invokers is inert until P4.
 func (r *Registry) current(ctx context.Context, tx pgx.Tx, name, headSHA string) (Head, error) {
-	var head Head
-	if err := tx.QueryRow(ctx, `SELECT COALESCE(error, '') FROM agent_definitions WHERE name = $1 AND sha = $2`,
-		name, headSHA).Scan(&head.Err); err != nil {
-		return Head{}, fmt.Errorf("definitions sync: head %s: %w", name, err)
+	head := Head{Name: name}
+	if headSHA != "" {
+		if err := tx.QueryRow(ctx, `SELECT COALESCE(error, '') FROM agent_definitions WHERE name = $1 AND sha = $2`,
+			name, headSHA).Scan(&head.Err); err != nil {
+			return Head{}, fmt.Errorf("definitions sync: head %s: %w", name, err)
+		}
 	}
-	head.Name = name
 	rows, err := tx.Query(ctx, `
 		SELECT sha, effective, synced_at FROM agent_definitions
 		 WHERE name = $1 AND valid`, name)
@@ -195,10 +238,19 @@ func (r *Registry) current(ctx context.Context, tx pgx.Tx, name, headSHA string)
 		var s Spec
 		dec := json.NewDecoder(bytes.NewReader(x.eff))
 		dec.DisallowUnknownFields()
-		err := dec.Decode(&s)
-		if err == nil {
-			err = Validate(name, &s)
+		if err := dec.Decode(&s); err != nil {
+			// Only a core writes effective, so a row this core cannot decode
+			// was written by a NEWER one (a rollout overlap, a rollback). Not
+			// this core's to judge: never revoke it, or the newer core would
+			// re-insert at its sha and strand every session pinned to this one.
+			// It is still no head for THIS core.
+			slog.Warn("definitions: stored version not understood by this core, left as is", "name", name, "sha", x.sha, "error", err)
+			if x.sha == headSHA {
+				head.Err = "stored version not understood by this core: " + err.Error()
+			}
+			continue
 		}
+		err := validate(name, &s)
 		if err == nil {
 			if x.sha == headSHA {
 				head.SHA, head.Effective, head.SyncedAt = x.sha, &s, x.syncedAt
@@ -225,8 +277,10 @@ func nullJSON(b []byte) any {
 	return string(b)
 }
 
-// List returns every present definition's head, by name, and the last
-// sync's errors that have no row.
+// List returns every present definition's head, by name, and the sync
+// errors that have no row: the last good sync's file errors, plus "not synced
+// yet" or the last failed sync's error, so the console can tell an empty or
+// stale list from a real one.
 func (r *Registry) List() ([]Head, []string) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -235,17 +289,26 @@ func (r *Registry) List() ([]Head, []string) {
 		out = append(out, h)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
-	return out, append([]string(nil), r.syncErrs...)
+	errs := append([]string(nil), r.syncErrs...)
+	switch {
+	case !r.synced && r.lastErr != nil:
+		errs = append(errs, fmt.Sprintf("%v: %v", errNotSynced, r.lastErr))
+	case !r.synced:
+		errs = append(errs, errNotSynced.Error())
+	case r.lastErr != nil:
+		errs = append(errs, "last sync failed, showing the last good one: "+r.lastErr.Error())
+	}
+	return out, errs
 }
 
-// Resolve returns name's current version: ErrNotSynced before the first sync,
+// Resolve returns name's current version: errNotSynced before the first sync,
 // ErrUnknown when it is not in git, ErrInvalid (wrapped with HEAD's error)
 // when the content at HEAD is invalid.
 func (r *Registry) Resolve(name string) (Head, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	if !r.synced {
-		return Head{}, ErrNotSynced
+		return Head{}, errNotSynced
 	}
 	h, ok := r.heads[name]
 	if !ok {

@@ -4,12 +4,12 @@
 // (after `extends`) against a ceiling the fleet owns.
 package definitions
 
-// APIVersion is the only apiVersion a definition or client file may carry.
-const APIVersion = "fleet.bnei.dev/v1alpha1"
+// apiVersion is the only apiVersion a definition or client file may carry.
+const apiVersion = "fleet.bnei.dev/v1alpha1"
 
 const (
-	KindDefinition = "AgentDefinition"
-	KindClient     = "AgentClient"
+	kindDefinition = "AgentDefinition"
+	kindClient     = "AgentClient"
 )
 
 // File is the header every definitions/ file shares.
@@ -23,12 +23,12 @@ type Metadata struct {
 	Name string `yaml:"name" json:"name"`
 }
 
-type DefinitionFile struct {
+type definitionFile struct {
 	File `yaml:",inline"`
 	Spec Spec `yaml:"spec"`
 }
 
-type ClientFile struct {
+type clientFile struct {
 	File `yaml:",inline"`
 	Spec ClientSpec `yaml:"spec"`
 }

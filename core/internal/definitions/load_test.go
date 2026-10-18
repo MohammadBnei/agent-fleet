@@ -99,6 +99,15 @@ func TestLoad_ChildRules(t *testing.T) {
 		{"Bash env", map[string]string{"tools": `{ allow: ["Bash(env:*)"] }`}, "literal command prefix"},
 		{"Bash shell by path", map[string]string{"tools": `{ allow: ["Bash(/bin/sh:*)"] }`}, "literal command prefix"},
 		{"Bash exact command ok", map[string]string{"tools": `{ allow: ["Bash(git status)"] }`}, ""},
+		{"Bash env assignment", map[string]string{"tools": `{ allow: ["Bash(FOO=1 bash:*)"] }`}, "literal command prefix"},
+		{"Bash time wrapper", map[string]string{"tools": `{ allow: ["Bash(time bash:*)"] }`}, "literal command prefix"},
+		{"Bash builtin", map[string]string{"tools": `{ allow: ["Bash(builtin eval:*)"] }`}, "literal command prefix"},
+		{"Bash quoted shell", map[string]string{"tools": `{ allow: ["Bash(\"bash\":*)"] }`}, "literal command prefix"},
+		{"Bash tcsh", map[string]string{"tools": `{ allow: ["Bash(tcsh:*)"] }`}, "literal command prefix"},
+		{"Bash versioned interpreter", map[string]string{"tools": `{ allow: ["Bash(python3.12:*)"] }`}, "literal command prefix"},
+		{"Bash bare git", map[string]string{"tools": `{ allow: ["Bash(git:*)"] }`}, "literal command prefix"},
+		{"Bash git option first", map[string]string{"tools": `{ allow: ["Bash(git -c:*)"] }`}, "literal command prefix"},
+		{"Bash go subcommand ok", map[string]string{"tools": `{ allow: ["Bash(go test:*)"] }`}, ""},
 		// erasing a parent's bound: null and absence both fail
 		{"tools null", map[string]string{"tools": "~"}, "spec.tools: null is not allowed"},
 		{"interaction null", map[string]string{"interaction": "~"}, "spec.interaction: null"},
@@ -241,11 +250,16 @@ func TestLoad_ExtendsErrors(t *testing.T) {
 			"definitions/a.yaml": childYAML("a", map[string]string{"extends": "b"}),
 			"definitions/b.yaml": childYAML("b", map[string]string{"extends": "c"}),
 			"definitions/c.yaml": childYAML("c", map[string]string{"extends": "a"}),
+			"definitions/d.yaml": childYAML("d", map[string]string{"extends": "a"}),
 		})
 		for _, n := range []string{"a", "b", "c"} {
 			if !strings.Contains(errText(got[n].Err), "extends cycle") {
 				t.Fatalf("%s: %v", n, got[n].Err)
 			}
+		}
+		// d is not in the cycle, only extends a member: blamed as the parent's error.
+		if e := errText(got["d"].Err); !strings.HasPrefix(e, `parent "a": `) || !strings.Contains(e, "extends cycle") {
+			t.Fatalf("d: %v", e)
 		}
 	})
 	t.Run("parent error propagates", func(t *testing.T) {
@@ -379,13 +393,13 @@ func TestLoad_Clients(t *testing.T) {
 	}
 }
 
-// Validate is what the registry re-runs on stored rows; it must reject what
+// validate is what the registry re-runs on stored rows; it must reject what
 // Load rejects even when handed a Spec directly.
 func TestValidate_RejectsAutoOnAStoredSpec(t *testing.T) {
 	got, _ := load(t, map[string]string{"definitions/base.yaml": baseYAML, "definitions/c.yaml": childYAML("c", nil)})
 	s := *got["c"].Effective
 	s.Mode = &Mode{Default: "auto", Allow: []string{"auto"}}
-	if err := Validate("c", &s); err == nil || !strings.Contains(err.Error(), "skips canUseTool") {
+	if err := validate("c", &s); err == nil || !strings.Contains(err.Error(), "skips canUseTool") {
 		t.Fatalf("want auto rejected, got %v", err)
 	}
 }

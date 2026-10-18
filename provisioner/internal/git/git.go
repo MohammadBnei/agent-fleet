@@ -382,13 +382,13 @@ func (m *Manager) SyncFleetShared(ctx context.Context, repoURL, branch, claudeHo
 }
 
 // refreshClone makes path a provisioner-owned clone of repoURL at ref (a
-// branch or a tag): `clone --branch` when absent, else fetch + hard reset to
-// FETCH_HEAD. The caller holds path's lock.
+// branch or a tag): `clone --branch` when absent, else fetch (with any extra
+// fetchArgs) + hard reset to FETCH_HEAD. The caller holds path's lock.
 //
 // Hard reset, not just fetch: this working tree is provisioner-owned and
 // never written to by a worker, so there is no uncommitted work to protect —
 // and a plain fetch alone would not update the tree at all.
-func (m *Manager) refreshClone(ctx context.Context, path, repoURL, ref string) error {
+func (m *Manager) refreshClone(ctx context.Context, path, repoURL, ref string, fetchArgs ...string) error {
 	if _, err := m.run(ctx, path, "rev-parse", "--is-inside-work-tree"); err != nil {
 		if err := os.MkdirAll(path, 0o755); err != nil {
 			return fmt.Errorf("mkdir %s: %w", path, err)
@@ -398,7 +398,7 @@ func (m *Manager) refreshClone(ctx context.Context, path, repoURL, ref string) e
 		}
 		return nil
 	}
-	if _, err := m.run(ctx, path, "fetch", "origin", ref); err != nil {
+	if _, err := m.run(ctx, path, append(append([]string{"fetch"}, fetchArgs...), "origin", ref)...); err != nil {
 		return fmt.Errorf("fetch: %w", err)
 	}
 	if _, err := m.run(ctx, path, "reset", "--hard", "FETCH_HEAD"); err != nil {
@@ -436,12 +436,18 @@ func (m *Manager) ReadDefinitions(ctx context.Context, repoURL, ref string) (map
 	defer lock.Unlock()
 
 	path := filepath.Join(m.root, "definitions-src")
-	if err := m.refreshClone(ctx, path, repoURL, ref); err != nil {
-		return nil, "", fmt.Errorf("definitions clone at %q: %w", ref, err)
-	}
+	// A release tag never moves: once HEAD is at it there is nothing to fetch,
+	// so the steady state (core asks every 60s) makes no GitHub round-trip. A
+	// branch ref (kind, dev) has no local tag and always fetches. --tags keeps
+	// a fetched tag as a local ref, which this check needs.
 	sha, err := m.run(ctx, path, "rev-parse", "HEAD")
-	if err != nil {
-		return nil, "", err
+	if tag, tagErr := m.run(ctx, path, "rev-parse", "-q", "--verify", "refs/tags/"+ref+"^{commit}"); err != nil || tagErr != nil || tag != sha {
+		if err := m.refreshClone(ctx, path, repoURL, ref, "--tags"); err != nil {
+			return nil, "", fmt.Errorf("definitions clone at %q: %w", ref, err)
+		}
+		if sha, err = m.run(ctx, path, "rev-parse", "HEAD"); err != nil {
+			return nil, "", err
+		}
 	}
 	dir := filepath.Join(path, "definitions")
 	if fi, err := os.Lstat(dir); err != nil {

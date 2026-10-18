@@ -142,7 +142,21 @@ version's `mode.allow`, and only while that version is valid, for admins too:
 a definition only narrows. The guard is in `sessions.Store.SetPermissionMode`'s
 own statement, so the console (DashboardService) and the pod (CoreService,
 `PermissionDenied`) both go through it, and the console persists before it
-appends, so a refused mode never reaches the worker.
+appends, so a mode the console refuses never reaches the worker.
+
+That guard covers the **column**, not the live switch: the worker applies any
+transcript entry from `human` or `session` of type `permission_mode`,
+`permission_response`, `abort` and so on. Only DashboardService and
+PromptSession write those senders, server-side; a pod sends `agent`/`worker`.
+So `CoreService.SendMessage` refuses `from` `human` or `session` into a
+definition session (`PermissionDenied`), whichever pod path it came by (the
+sidecar's MCP `send_message` or its localhost `/message`). Otherwise a
+definition pod could switch itself out of `mode.allow` or approve its own tool
+calls. Repo sessions are unchanged: their pods can still send as `human`. That
+is pre-existing, and they launch in `auto` anyway (ADR-0061).
+
+The pod's `SaveSessionId` model report is ignored for a definition session, so
+the pinned `model.default` is the only model it launches in.
 
 `WarmIfIdle` refuses **every** definition warm in this slice, after the
 revocation checks and **before** `ReserveSlot`: this core never sends the
@@ -163,15 +177,18 @@ any write, so a refusal leaves no lease and no phase. Repo sessions never
 count against the pool, so a full pool still leaves admins
 `MAX_IN_FLIGHT_TASKS - MAX_DEFINITION_SESSIONS` slots.
 
-**The create and its capacity check are one transaction.** A definition
-`CreateSession` runs the same checks (fleet cap, pool, `limits.concurrency`,
-row still valid) under the same advisory lock right after its INSERT, and a
-refusal rolls the INSERT back: no row is kept. It does not *reserve* (no
-lease, no phase): ADR-0048 §1 still provisions on the first message, and a
-lease with no pod being created is a state the reconcile loop reads as a
-stalled start. The full insert + reserve is P4's `Open`/`Invoke`, which
-create and provision in one request; every capacity refusal wraps
-`ErrAtCapacity` with which cap was hit.
+**Deviation from the P1 build contract**, which said the session INSERT and
+the reservation are one transaction and a capacity refusal keeps no row: in P1
+the console create **does not check capacity at all**, and `ReserveSlot` at
+warm is the single gate. A create provisions nothing (ADR-0048 §1: provisioning
+waits for the first message). A capacity check with no reservation would be a
+snapshot, stale as soon as it ran: rows not yet warmed count against nothing.
+A reservation at create would be a lease with no pod being created, which the
+reconcile loop reads as a stalled start. So a definition session can be created
+while the pool is full; its warm is refused with `ResourceExhausted`, and the
+row stays, like a repo session's. The contract's single insert + reserve
+transaction belongs to P4's `Open`/`Invoke`, which create and provision in one
+request. Every capacity refusal wraps `ErrAtCapacity` with which cap was hit.
 
 ### 6. The gate amendment (shared with the event bridge)
 
@@ -186,27 +203,45 @@ so the de facto gate is unchanged until P4.
 
 ### 7. Enforced vs inert in P1
 
-P1 **validates** every rule above but **applies** only: `audience.group`
-(create is admin-only anyway), `workspace.repo`, `git.identity` (ADR-0064),
+P1 **validates** every rule above but **applies** only: `workspace.repo`, `git.identity` (ADR-0064),
 `model.default`, `mode.default` + `mode.allow` (SetPermissionMode),
 `limits.concurrency` (ReserveSlot), and `sidecarTools` only indirectly
 (ADR-0064's CoreService allowlist is a fixed table, not derived from it).
 
-**Inert in P1** (validated, reach nothing): `tools`, `sidecarTools` as a list,
+**Inert in P1** (validated, reach nothing): `audience.group` (validated and
+shown in the console, never compared with the caller: create is admin-only, so
+an admin can create an `opus-workspace` (`shared-notes`) session; P4 checks it),
+`tools`, `sidecarTools` as a list,
 `model.allow` beyond the default, `thinking`, `systemPrompt`, `skills`,
 `interaction`, `lifecycle`, `limits.maxTurns`/`timeout`/`startupBudget`,
 `resources`, `credentials`, `embed`, `invokers`, `owns`, `subscribes`. Each
 phase that applies one removes it from this list.
 
 `tools.allow` is a shape rule, not a sandbox. Bash entries must be a literal
-command prefix (`Bash(git add:*)`): any other `*`, a leading space, or a shell,
-exec wrapper or interpreter as the command (`sh`, `bash`, `env`, `xargs`,
-`python`, … also by path) is rejected as unscoped Bash by another name; a
-denylist cannot be complete (`Bash(go run:*)` still passes), so the reviewed PR
-is the real check. **P4 must decide `tools.allow` inside `canUseTool`, never
-pass it as the SDK's `allowedTools`**: the SDK documents `allowedTools` as
+command prefix (`Bash(git add:*)`). These are rejected as unscoped Bash by
+another name: any other `*`; a leading space; a command word that is not a
+plain name or path (`FOO=1 bash`, `"bash"`); a shell, exec wrapper or
+interpreter as the command (`sh`, `tcsh`, `env`, `time`, `builtin`, `xargs`,
+`python`, …), also by path and also versioned (`python3.12`); and a bare `git`
+or `git -…`, whose `-c` runs anything. A denylist cannot be complete
+(`Bash(go run:*)` still passes). And a `:*` prefix admits **every** argument:
+`Bash(git push:*)` matches `git push --receive-pack='sh -c …' ./x`, and
+`Bash(git pull --rebase:*)` matches `--upload-pack=…`. Both run local
+commands. `opus-workspace` keeps both rules, inert in P1, so the reviewed PR is
+the real check. **P4 must decide `tools.allow` inside `canUseTool`, never pass
+it as the SDK's `allowedTools`**: the SDK documents `allowedTools` as
 auto-allowed *without* `canUseTool`, which would break the gate (plan §3,
-Worker). Required on every non-abstract spec: `tools` with a non-empty
+Worker). For the same reason, P4 must not auto-approve a Bash rule on a prefix
+match without an argument check of its own: until it has one, a Bash match
+asks.
+
+**Workspace binding, for ADR-0064.** A definition names its repo by fleet name
+(`workspace.repo`), and URL, base branch and image come from the mutable
+`repos` row at warm. Whoever can edit "manage repos" could retarget a reviewed
+definition. P1 never warms, so nothing reads that row for a definition pod
+yet. The slice that builds the profile must bind URL and image to the pinned
+version (for example `workspace.url` in the spec, or a snapshot taken at
+create) and refuse a warm when they differ. Required on every non-abstract spec: `tools` with a non-empty
 `allow`, `interaction`, `lifecycle` (absence is no bound; nil `tools` would be
 the SDK's default tool set), and an explicit `null` spec value is a load error
 (it would erase the parent's bound in the top-level merge).
@@ -214,9 +249,23 @@ the SDK's default tool set), and an explicit `null` spec value is a load error
 ## Consequences
 
 - A definition change is a reviewed PR plus a release. That is the point.
-- **Rollback below this ADR:** `migrate down` drops the pinning, and older code
-  would warm definition rows as ordinary repo sessions (GH_TOKEN, any mode).
-  **Archive definition sessions before rolling core back.**
+- **Rollback below this ADR:** `migrate down` archives every definition
+  session before it drops the pin, because older code would otherwise warm
+  them as ordinary repo sessions (GH_TOKEN, any mode). Rolling only the core
+  image back with the schema left at 000008 is a known gap: the older binary
+  ignores the columns. The normal GitOps rollback also rolls the PreSync
+  `migration` image back, and an older migrate finds no file for the
+  database's version 8, so it fails the sync instead of starting the older
+  core. Do not bypass that by hand-editing core's tag alone.
+- **Version skew.** A core never revokes a stored row it cannot decode. Only a
+  core writes `effective`, so such a row came from a newer core (a rollout
+  overlap or a rollback), and revoking it would make the newer core insert at
+  its own sha and strand every session pinned to the old one. Each sync
+  re-judges every valid row, including names no longer in git.
+- **Sync failures** keep the last good heads indefinitely (no staleness bound).
+  `ListDefinitions` shows "not synced yet" or "last sync failed …" in
+  `sync_errors`, and the provisioner skips the GitHub fetch while its clone
+  already sits at the release tag.
 - `current` lives in core's memory (core is single-replica). After a restart,
   `CreateSession(definition)` answers `Unavailable` until the first sync, which
   runs immediately.

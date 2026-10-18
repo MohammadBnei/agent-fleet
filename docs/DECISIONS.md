@@ -249,7 +249,8 @@ Any doc, code, comment, or memory that contradicts this file or an
   must sit inside the fleet ceiling in `core/internal/definitions` (no `auto`,
   `acceptEdits` or `bypassPermissions`; exact same-site embed origins; anchored
   vault paths). The provisioner reads them **at its release tag**, not `main`,
-  so they ship with the core that judges them. A session pins `(name, sha)` and
+  so they ship with the core that judges them (a rollout overlap can still mix
+  versions: a core never revokes a stored row it cannot decode). A session pins `(name, sha)` and
   warms only while that is the version at the synced commit (an invalid HEAD
   fails closed, never falls back). Definition sessions draw
   from `MAX_DEFINITION_SESSIONS`, a pool **inside** the global cap. The gate

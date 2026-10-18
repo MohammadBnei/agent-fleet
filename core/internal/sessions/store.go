@@ -228,19 +228,6 @@ type CreateParams struct {
 }
 
 func (s *Store) Create(ctx context.Context, p CreateParams) (string, error) {
-	return s.create(ctx, p, nil)
-}
-
-// CreateDefinition creates a definition session and checks its capacity in
-// the SAME transaction (docs/adr/0062): the fleet cap, the definition pool
-// and the definition's limits.concurrency, as ReserveSlot will at warm time.
-// A refusal rolls the INSERT back, so no row is kept. Reserving (lease,
-// phase) still happens at warm: there is no pod to own a lease yet.
-func (s *Store) CreateDefinition(ctx context.Context, p CreateParams, caps Caps) (string, error) {
-	return s.create(ctx, p, &caps)
-}
-
-func (s *Store) create(ctx context.Context, p CreateParams, caps *Caps) (string, error) {
 	var id string
 	var titlePtr, modelPtr, modePtr *string
 	if p.Title != "" {
@@ -256,12 +243,7 @@ func (s *Store) create(ctx context.Context, p CreateParams, caps *Caps) (string,
 	// so passing NULL must fall back to a default rather than violate the
 	// constraint. 'auto' matches the column default (db/migrations/000007,
 	// docs/adr/0061).
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return "", fmt.Errorf("create session: %w", err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-	err = tx.QueryRow(ctx, `
+	err := s.pool.QueryRow(ctx, `
 		INSERT INTO sessions (repo, title, description, model, permission_mode, definition_name, definition_sha)
 		VALUES ($1, $2, $3, $4, COALESCE($5, 'auto'), NULLIF($6, ''), NULLIF($7, ''))
 		RETURNING id
@@ -269,14 +251,6 @@ func (s *Store) create(ctx context.Context, p CreateParams, caps *Caps) (string,
 	if err != nil {
 		slog.Error("sessions Create", "repo", p.Repo, "error", err)
 		return "", fmt.Errorf("create session: %w", err)
-	}
-	if caps != nil {
-		if _, err := checkCaps(ctx, tx, id, *caps); err != nil {
-			return "", err
-		}
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return "", fmt.Errorf("create session: commit: %w", err)
 	}
 	slog.Info("sessions Create", "sessionId", id, "repo", p.Repo, "permissionMode", p.PermissionMode, "definition", p.DefinitionName)
 	return id, nil
@@ -349,72 +323,6 @@ func (s *Store) List(ctx context.Context, limit int, query string) ([]Session, e
 	return out, rows.Err()
 }
 
-// checkCaps takes the cap lock and runs every capacity check for session id
-// inside tx, writing nothing: the fleet cap, and for a definition session the
-// definition pool and its limits.concurrency (docs/adr/0062). ReserveSlot
-// runs it before reserving; CreateDefinition right after its INSERT. Returns
-// the live count. Every capacity refusal wraps ErrAtCapacity with which cap.
-func checkCaps(ctx context.Context, tx pgx.Tx, id string, caps Caps) (int, error) {
-	// See capLockKey: without this, concurrent callers all read the same
-	// pre-commit count and all decide there is room.
-	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, capLockKey); err != nil {
-		return 0, fmt.Errorf("reserve slot: lock: %w", err)
-	}
-
-	var live int
-	if err := tx.QueryRow(ctx, `
-		SELECT count(*) FROM sessions
-		WHERE pod_phase = ANY($1) AND archived_at IS NULL
-	`, livePhases).Scan(&live); err != nil {
-		return 0, fmt.Errorf("reserve slot: count: %w", err)
-	}
-	if live >= caps.MaxLive {
-		return 0, fmt.Errorf("%w (%d live sessions) — stop one first", ErrAtCapacity, caps.MaxLive)
-	}
-
-	// Definition sessions also draw from the definition pool and their own
-	// limits.concurrency (docs/adr/0062), counted under the same lock.
-	var (
-		defName           *string
-		defValid          bool
-		concurrency       *int
-		poolLive, defLive int
-	)
-	err := tx.QueryRow(ctx, `
-		SELECT s.definition_name, COALESCE(d.valid, false),
-		       (d.effective->'limits'->>'concurrency')::int,
-		       (SELECT count(*) FROM sessions o WHERE o.pod_phase = ANY($2) AND o.archived_at IS NULL
-		                                          AND o.definition_name IS NOT NULL),
-		       (SELECT count(*) FROM sessions o WHERE o.pod_phase = ANY($2) AND o.archived_at IS NULL
-		                                          AND o.definition_name = s.definition_name)
-		  FROM sessions s
-		  LEFT JOIN agent_definitions d ON d.name = s.definition_name AND d.sha = s.definition_sha
-		 WHERE s.id = $1 AND s.archived_at IS NULL
-	`, id, livePhases).Scan(&defName, &defValid, &concurrency, &poolLive, &defLive)
-	if err == pgx.ErrNoRows {
-		return 0, ErrNotFound
-	}
-	if err != nil {
-		return 0, fmt.Errorf("reserve slot: definition: %w", err)
-	}
-	if defName != nil {
-		// The revocation path proper is WarmIfIdle's pinned==current check;
-		// this catches a re-judge landing between that check and this
-		// transaction, and keeps a NULL concurrency out of the comparison.
-		if !defValid || concurrency == nil {
-			return 0, ErrDefinitionInvalid
-		}
-		if poolLive >= caps.MaxDefinition {
-			return 0, fmt.Errorf("%w: definition pool full (%d/%d)", ErrAtCapacity, poolLive, caps.MaxDefinition)
-		}
-		if defLive >= *concurrency {
-			return 0, fmt.Errorf("%w: definition %q at its concurrency limit (%d)", ErrAtCapacity, *defName, *concurrency)
-		}
-	}
-
-	return live, nil
-}
-
 // ReserveSlot atomically checks the live-pod cap and mints a fresh lease,
 // returning the lease id the caller must pass to the provisioner.
 //
@@ -434,15 +342,66 @@ func (s *Store) ReserveSlot(ctx context.Context, id string, caps Caps) (leaseID 
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	live, err := checkCaps(ctx, tx, id, caps)
+	// See capLockKey: without this, concurrent callers all read the same
+	// pre-commit count and all decide there is room.
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, capLockKey); err != nil {
+		return "", fmt.Errorf("reserve slot: lock: %w", err)
+	}
+
+	var live int
+	if err := tx.QueryRow(ctx, `
+		SELECT count(*) FROM sessions
+		WHERE pod_phase = ANY($1) AND archived_at IS NULL
+	`, livePhases).Scan(&live); err != nil {
+		return "", fmt.Errorf("reserve slot: count: %w", err)
+	}
+	if live >= caps.MaxLive {
+		return "", fmt.Errorf("%w (%d live sessions) — stop one first", ErrAtCapacity, caps.MaxLive)
+	}
+
+	// Definition sessions also draw from the definition pool and their own
+	// limits.concurrency (docs/adr/0062), counted under the same lock.
+	var (
+		defName           *string
+		defValid          bool
+		concurrency       *int
+		poolLive, defLive int
+	)
+	err = tx.QueryRow(ctx, `
+		SELECT s.definition_name, COALESCE(d.valid, false),
+		       (d.effective->'limits'->>'concurrency')::int,
+		       (SELECT count(*) FROM sessions o WHERE o.pod_phase = ANY($2) AND o.archived_at IS NULL
+		                                          AND o.definition_name IS NOT NULL),
+		       (SELECT count(*) FROM sessions o WHERE o.pod_phase = ANY($2) AND o.archived_at IS NULL
+		                                          AND o.definition_name = s.definition_name)
+		  FROM sessions s
+		  LEFT JOIN agent_definitions d ON d.name = s.definition_name AND d.sha = s.definition_sha
+		 WHERE s.id = $1 AND s.archived_at IS NULL
+	`, id, livePhases).Scan(&defName, &defValid, &concurrency, &poolLive, &defLive)
+	if err == pgx.ErrNoRows {
+		return "", ErrNotFound
+	}
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("reserve slot: definition: %w", err)
+	}
+	if defName != nil {
+		// The revocation path proper is WarmIfIdle's pinned==current check;
+		// this catches a re-judge landing between that check and this
+		// transaction, and keeps a NULL concurrency out of the comparison.
+		if !defValid || concurrency == nil {
+			return "", ErrDefinitionInvalid
+		}
+		if poolLive >= caps.MaxDefinition {
+			return "", fmt.Errorf("%w: definition pool full (%d/%d)", ErrAtCapacity, poolLive, caps.MaxDefinition)
+		}
+		if defLive >= *concurrency {
+			return "", fmt.Errorf("%w: definition %q at its concurrency limit (%d)", ErrAtCapacity, *defName, *concurrency)
+		}
 	}
 
 	err = tx.QueryRow(ctx, `
 		UPDATE sessions
 		SET lease_id = gen_random_uuid(),
-
 		    last_active_at = now(),
 		    stop_requested_at = NULL,
 		    -- A fresh pod is about to be provisioned; nothing it says has
@@ -632,7 +591,11 @@ func (s *Store) SaveAgentSessionID(ctx context.Context, id, agentSessionID, mode
 	}
 	tag, err := s.pool.Exec(ctx, `
 		UPDATE sessions
-		SET agent_session_id = $2, model = COALESCE($3, model), updated_at = now()
+		SET agent_session_id = $2,
+		    -- A definition session's model is its pinned model.default
+		    -- (docs/adr/0062): what the pod reports never widens it.
+		    model = CASE WHEN definition_name IS NULL THEN COALESCE($3, model) ELSE model END,
+		    updated_at = now()
 		WHERE id = $1 AND lease_id::text = $4
 	`, id, agentSessionID, modelPtr, leaseID)
 	if err != nil {

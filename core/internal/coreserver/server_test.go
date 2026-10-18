@@ -16,6 +16,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/dbtest"
 	"github.com/MohammadBnei/agent-fleet/core/internal/journal"
 	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
+	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
 )
 
 // Real Postgres via core/internal/dbtest, which applies db/migrations/ —
@@ -365,5 +366,40 @@ func TestSetPermissionMode_DefinitionSessionOutsideAllowIsDenied(t *testing.T) {
 	}
 	if s, err := store.Get(ctx, id); err != nil || *s.PermissionMode != "plan" {
 		t.Fatalf("mode: %v %v", s, err)
+	}
+}
+
+// A pod cannot speak as the human (or another session) into a definition
+// session: the worker obeys those entries' permission_mode and
+// permission_response, which would bypass mode.allow and canUseTool.
+func TestSendMessage_DefinitionSessionCannotSendAsHuman(t *testing.T) {
+	ctx := context.Background()
+	pool := dbtest.NewPool(t)
+	store := sessions.NewStore(pool)
+	srv := New(transcript.NewPostgresStore(pool), store, journal.NewStore(pool), nil, nil, nil, nil)
+	if _, err := pool.Exec(ctx, `INSERT INTO agent_definitions (name, sha, spec, effective, valid)
+		VALUES ('a', 'sha-a', '{}', '{}', true)`); err != nil {
+		t.Fatal(err)
+	}
+	def, err := store.Create(ctx, sessions.CreateParams{Repo: "dream-analyst", PermissionMode: "default", DefinitionName: "a", DefinitionSHA: "sha-a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo, err := store.Create(ctx, sessions.CreateParams{Repo: "dream-analyst"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mode := agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_PERMISSION_MODE
+	for _, from := range []string{"human", "session"} {
+		_, err := srv.SendMessage(ctx, &agentfleetv1.SendMessageRequest{SessionId: def, From: from, Text: "auto", Type: mode})
+		if status.Code(err) != codes.PermissionDenied {
+			t.Errorf("from %q: got %v, want PermissionDenied", from, err)
+		}
+	}
+	if _, err := srv.SendMessage(ctx, &agentfleetv1.SendMessageRequest{SessionId: def, From: "agent", Text: "hi"}); err != nil {
+		t.Errorf("the pod's own voice must still go through: %v", err)
+	}
+	if _, err := srv.SendMessage(ctx, &agentfleetv1.SendMessageRequest{SessionId: repo, From: "human", Text: "hi"}); err != nil {
+		t.Errorf("repo sessions are unchanged: %v", err)
 	}
 }
