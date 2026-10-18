@@ -39,6 +39,16 @@ spec:
           name: http
         - containerPort: 9090
           name: grpc
+        # The provisioner exits at boot without FLEET_CORE_PROVISIONER_TOKEN
+        # (docs/adr/0069), and /healthz only answers after that check. Without
+        # this probe a bad Secret would replace the working pod with a
+        # crashlooping one; with it the rollout stalls on the old pod.
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: http
+          initialDelaySeconds: 2
+          periodSeconds: 10
         env:
         - name: NAMESPACE
           value: agent-fleet

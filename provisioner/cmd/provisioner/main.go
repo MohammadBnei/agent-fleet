@@ -20,7 +20,6 @@ import (
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/git"
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/grpcserver"
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/k8s"
-	"github.com/MohammadBnei/agent-fleet/provisioner/internal/metrics"
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/reconcile"
 )
 
@@ -49,7 +48,7 @@ func main() {
 	// First, before any side effect: an unauthenticated ProvisionerService
 	// can create and expose pods for anyone on the pod network
 	// (docs/adr/0069), so no token means no provisioner.
-	grpcSrv, err := grpcserver.NewServer(cfg.CoreProvisionerToken, grpcserver.AccessLogInterceptor, metrics.UnaryInterceptor)
+	grpcSrv, err := grpcserver.NewServer(cfg.CoreProvisionerToken)
 	if err != nil {
 		slog.Error("refusing to start", "error", err)
 		os.Exit(1)

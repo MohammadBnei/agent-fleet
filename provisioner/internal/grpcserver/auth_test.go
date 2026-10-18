@@ -1,10 +1,14 @@
 package grpcserver
 
 import (
+	"bytes"
 	"context"
+	"log/slog"
 	"net"
+	"strings"
 	"testing"
 
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -16,6 +20,8 @@ import (
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
+
+	"github.com/MohammadBnei/agent-fleet/provisioner/internal/metrics"
 )
 
 type versionOnly struct {
@@ -31,7 +37,7 @@ func (versionOnly) GetVersion(context.Context, *agentfleetv1.GetVersionRequest) 
 // builds (NewServer), over bufconn.
 func authConn(t *testing.T, token string) *grpc.ClientConn {
 	t.Helper()
-	srv, err := NewServer(token, AccessLogInterceptor)
+	srv, err := NewServer(token)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,19 +118,28 @@ func TestAuth_EveryMethodNeedsTheToken(t *testing.T) {
 	}
 }
 
-// An unregistered method never reaches a handler. grpc-go answers it
-// Unimplemented before any interceptor runs (no UnknownServiceHandler is set),
-// which is closed: there is nothing behind it to reach.
-func TestAuth_UnknownMethodFailsClosed(t *testing.T) {
+// A rejected call is still counted and logged with who made it: the chain
+// order in NewServer is what lets a probe of this port show up at all.
+func TestAuth_RejectedCallIsCountedAndAttributed(t *testing.T) {
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	rejected := metrics.GrpcRequestsTotal.WithLabelValues("/agentfleet.v1.ProvisionerService/GetVersion", codes.Unauthenticated.String())
+	before := testutil.ToFloat64(rejected)
+
 	conn := authConn(t, "right-token")
-	for _, md := range [][]string{nil, {"authorization", "Bearer right-token"}} {
-		ctx := context.Background()
-		if md != nil {
-			ctx = metadata.AppendToOutgoingContext(ctx, md...)
-		}
-		err := conn.Invoke(ctx, "/agentfleet.v1.ProvisionerService/NoSuchMethod", &emptypb.Empty{}, &emptypb.Empty{})
-		if status.Code(err) == codes.OK {
-			t.Errorf("unknown method with metadata %v answered OK", md)
-		}
+	_, err := agentfleetv1.NewProvisionerServiceClient(conn).GetVersion(context.Background(), &agentfleetv1.GetVersionRequest{})
+	if status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("code = %v, want Unauthenticated", status.Code(err))
+	}
+
+	if got := testutil.ToFloat64(rejected) - before; got != 1 {
+		t.Errorf("rejected call counted %v times, want 1", got)
+	}
+	logs := buf.String()
+	if !strings.Contains(logs, "rejected unauthenticated call") || strings.Contains(logs, "peer=unknown") || !strings.Contains(logs, "peer=") {
+		t.Errorf("rejection not logged with a peer address:\n%s", logs)
 	}
 }
