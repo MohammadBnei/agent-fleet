@@ -1,5 +1,11 @@
 # Changelog
 
+# [4.18.0](https://github.com/MohammadBnei/agent-fleet/compare/4.17.0...4.18.0) (2026-10-18)
+
+### Features
+
+* **auth:** per-request admin check, framing headers and exact exempt paths (G0 console-authz) ([#258](https://github.com/MohammadBnei/agent-fleet/issues/258)) ([79295f2](https://github.com/MohammadBnei/agent-fleet/commit/79295f20bb34e252bd3b2aed5a2b4178e3071e0a)), closes [#5](https://github.com/MohammadBnei/agent-fleet/issues/5)
+
 # [4.17.0](https://github.com/MohammadBnei/agent-fleet/compare/4.16.0...4.17.0) (2026-10-18)
 
 ### Features
