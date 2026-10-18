@@ -1,0 +1,325 @@
+{
+  "metadata": {
+    "name": "worker-task1",
+    "namespace": "agent-fleet",
+    "labels": {
+      "agent-fleet.dev/component": "worker",
+      "agent-fleet.dev/repo": "dream-analyst",
+      "agent-fleet.dev/task-id": "task-1",
+      "app.kubernetes.io/part-of": "agent-fleet"
+    }
+  },
+  "spec": {
+    "backoffLimit": 0,
+    "template": {
+      "metadata": {
+        "labels": {
+          "agent-fleet.dev/component": "worker",
+          "agent-fleet.dev/repo": "dream-analyst",
+          "agent-fleet.dev/task-id": "task-1",
+          "app.kubernetes.io/part-of": "agent-fleet"
+        }
+      },
+      "spec": {
+        "volumes": [
+          {
+            "name": "session",
+            "persistentVolumeClaim": {
+              "claimName": "session-task1"
+            }
+          },
+          {
+            "name": "shared",
+            "persistentVolumeClaim": {
+              "claimName": "agent-fleet-workspace"
+            }
+          }
+        ],
+        "initContainers": [
+          {
+            "name": "clone",
+            "image": "registry.bnei.lan:5000/agent-fleet-worker:latest",
+            "command": [
+              "sh",
+              "-c",
+              "set -eu\n# Git's ownership guard (CVE-2022-24765) refuses every command in a repository\n# whose directory belongs to another user. The PVC's mount point is created by\n# the kubelet as root and this container runs as the image's non-root user, so\n# without this the clone SUCCEEDS and the very next command fails with\n# \"detected dubious ownership\" — which is what happened the first time this\n# ran in kind. worker/src/index.ts already carries the same line for the same\n# reason; both containers need it because they do not share $HOME.\n#\n# The wildcard, not the two paths this used to list, because safe.directory is\n# an exact compare against the path git NAMES — and a local-transport clone\n# enters the cache as a bare gitdir, so the path it wants is\n# /repo-cache/\u003crepo\u003e/.git, not the directory above it. Listing the parent\n# looked right, matched nothing, and every session died on \"Could not read from\n# remote repository\" — the clone's report of a failure that was really the\n# ownership guard. The sidecar container next door already wildcards the same\n# way (pod.go's GIT_CONFIG_VALUE_0). This container runs as uid 1000 and\n# mounts only its own workspace plus the read-only cache; there is nothing else\n# here for a wildcard to over-trust.\ngit config --global --add safe.directory '*'\n\nif [ -d /workspace/.git ]; then\n  echo \"workspace already has a repository, leaving it alone\"\n  exit 0\nfi\nmkdir -p /workspace\ngit clone --shared /repo-cache/dream-analyst /workspace\ncd /workspace\n# The clone's origin points at the local cache, which is useless to the agent:\n# it needs to fetch from and push to the real remote.\ngit remote set-url origin https://github.com/o/dream-analyst.git\n\n# Then take the base branch from the REAL remote, not from the cache.\n#\n# EnsureRepoCloned only ever runs \"git fetch origin\" on the cache, which\n# advances its remote-tracking refs and leaves its LOCAL branches frozen at\n# whenever it was first cloned. \"git clone --shared\" copies the source's LOCAL\n# branches — so checking out from the cache alone starts every session on a\n# base that may be months stale, and a branch created after the cache existed\n# would not be found at all. Neither failure is visible: the agent gets a\n# perfectly valid repository and branches from the wrong commit.\n#\n# Objects still arrive through the alternates link, so this transfers only the\n# delta the cache is genuinely missing.\ngit fetch origin dev\ngit checkout -B dev FETCH_HEAD\n"
+            ],
+            "resources": {
+              "limits": {
+                "cpu": "1",
+                "memory": "1Gi"
+              },
+              "requests": {
+                "cpu": "100m",
+                "memory": "128Mi"
+              }
+            },
+            "volumeMounts": [
+              {
+                "name": "session",
+                "mountPath": "/workspace",
+                "subPath": "tree"
+              },
+              {
+                "name": "shared",
+                "readOnly": true,
+                "mountPath": "/repo-cache",
+                "subPath": "repos"
+              }
+            ]
+          },
+          {
+            "name": "sidecar",
+            "image": "registry.bnei.lan:5000/agent-fleet-sidecar:latest",
+            "ports": [
+              {
+                "name": "health",
+                "containerPort": 9092
+              }
+            ],
+            "env": [
+              {
+                "name": "SESSION_ID",
+                "value": "task-1"
+              },
+              {
+                "name": "TARGET_REPO",
+                "value": "dream-analyst"
+              },
+              {
+                "name": "MCP_PORT",
+                "value": "9090"
+              },
+              {
+                "name": "LOCAL_API_PORT",
+                "value": "9091"
+              },
+              {
+                "name": "HEALTH_PORT",
+                "value": "9092"
+              },
+              {
+                "name": "LEASE_ID",
+                "value": "lease-1"
+              },
+              {
+                "name": "WORKTREE_PATH",
+                "value": "/workspace"
+              },
+              {
+                "name": "LOG_LEVEL"
+              },
+              {
+                "name": "CORE_GRPC_ADDR"
+              },
+              {
+                "name": "GIT_CONFIG_COUNT",
+                "value": "1"
+              },
+              {
+                "name": "GIT_CONFIG_KEY_0",
+                "value": "safe.directory"
+              },
+              {
+                "name": "GIT_CONFIG_VALUE_0",
+                "value": "*"
+              }
+            ],
+            "resources": {
+              "limits": {
+                "cpu": "250m",
+                "memory": "256Mi"
+              },
+              "requests": {
+                "cpu": "50m",
+                "memory": "64Mi"
+              }
+            },
+            "restartPolicy": "Always",
+            "volumeMounts": [
+              {
+                "name": "session",
+                "mountPath": "/workspace",
+                "subPath": "tree"
+              },
+              {
+                "name": "shared",
+                "readOnly": true,
+                "mountPath": "/repo-cache",
+                "subPath": "repos"
+              }
+            ],
+            "startupProbe": {
+              "httpGet": {
+                "path": "/readyz",
+                "port": 9092
+              },
+              "periodSeconds": 2,
+              "failureThreshold": 60
+            }
+          }
+        ],
+        "containers": [
+          {
+            "name": "worker",
+            "image": "registry.bnei.lan:5000/agent-fleet-worker:latest",
+            "env": [
+              {
+                "name": "SESSION_ID",
+                "value": "task-1"
+              },
+              {
+                "name": "TARGET_REPO",
+                "value": "dream-analyst"
+              },
+              {
+                "name": "LEASE_ID",
+                "value": "lease-1"
+              },
+              {
+                "name": "SIDECAR_MCP_ADDR",
+                "value": "127.0.0.1:9090"
+              },
+              {
+                "name": "SIDECAR_API_ADDR",
+                "value": "127.0.0.1:9091"
+              },
+              {
+                "name": "GH_TOKEN",
+                "value": "gh-token"
+              },
+              {
+                "name": "CLAUDE_CODE_OAUTH_TOKEN",
+                "value": "oauth-token"
+              },
+              {
+                "name": "CLAUDE_MODEL",
+                "value": "model"
+              },
+              {
+                "name": "MAX_TURNS",
+                "value": "7"
+              },
+              {
+                "name": "WORKTREE_PATH",
+                "value": "/workspace"
+              },
+              {
+                "name": "CLAUDE_CONFIG_DIR",
+                "value": "/claude-home"
+              },
+              {
+                "name": "PLAYWRIGHT_BROWSERS_PATH",
+                "value": "/ms-playwright"
+              },
+              {
+                "name": "RESUME_SESSION_ID",
+                "value": "resume-1"
+              },
+              {
+                "name": "RESUME_FROM_SEQ",
+                "value": "42"
+              },
+              {
+                "name": "LOG_LEVEL"
+              },
+              {
+                "name": "CLAUDE_CODE_CONTAINER_ID",
+                "value": "task-1"
+              },
+              {
+                "name": "BUN_INSTALL_CACHE_DIR",
+                "value": "/cache/bun"
+              },
+              {
+                "name": "GOMODCACHE",
+                "value": "/cache/go/mod"
+              },
+              {
+                "name": "GOCACHE",
+                "value": "/cache/go/build"
+              },
+              {
+                "name": "npm_config_cache",
+                "value": "/cache/npm"
+              },
+              {
+                "name": "npm_config_store_dir",
+                "value": "/cache/pnpm"
+              },
+              {
+                "name": "YARN_CACHE_FOLDER",
+                "value": "/cache/yarn"
+              },
+              {
+                "name": "UV_CACHE_DIR",
+                "value": "/cache/uv"
+              },
+              {
+                "name": "PIP_CACHE_DIR",
+                "value": "/cache/pip"
+              },
+              {
+                "name": "CARGO_HOME",
+                "value": "/cache/cargo"
+              },
+              {
+                "name": "XDG_CACHE_HOME",
+                "value": "/cache/xdg"
+              },
+              {
+                "name": "MAX_MCP_OUTPUT_TOKENS",
+                "value": "10000"
+              }
+            ],
+            "resources": {
+              "limits": {
+                "cpu": "4",
+                "memory": "4Gi"
+              },
+              "requests": {
+                "cpu": "100m",
+                "memory": "1Gi"
+              }
+            },
+            "volumeMounts": [
+              {
+                "name": "session",
+                "mountPath": "/workspace",
+                "subPath": "tree"
+              },
+              {
+                "name": "session",
+                "mountPath": "/cache",
+                "subPath": "cache"
+              },
+              {
+                "name": "shared",
+                "readOnly": true,
+                "mountPath": "/repo-cache",
+                "subPath": "repos"
+              },
+              {
+                "name": "shared",
+                "mountPath": "/claude-home",
+                "subPath": "claude-home/task-1"
+              },
+              {
+                "name": "shared",
+                "readOnly": true,
+                "mountPath": "/ms-playwright",
+                "subPath": "browsers"
+              }
+            ]
+          }
+        ],
+        "restartPolicy": "Never",
+        "securityContext": {
+          "fsGroup": 1000
+        }
+      }
+    },
+    "ttlSecondsAfterFinished": 1800
+  },
+  "status": {}
+}
