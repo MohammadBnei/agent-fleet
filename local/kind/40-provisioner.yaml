@@ -62,6 +62,10 @@ spec:
             # Must equal 30-core.yaml's (docs/adr/0057).
             - name: FLEET_PROVISIONER_TOKEN
               value: kind-local-provisioner-token
+            # docs/adr/0069: what core must present to this provisioner. Without
+            # it the provisioner refuses to start. Must equal 30-core.yaml's.
+            - name: FLEET_CORE_PROVISIONER_TOKEN
+              value: kind-local-core-provisioner-token
           envFrom:
             - secretRef:
                 name: agent-fleet-local-secrets

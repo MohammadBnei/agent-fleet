@@ -44,6 +44,10 @@ type Config struct {
 	// no key list and the Deployment consumes it with envFrom), so adding the
 	// key needs no manifest change.
 	CoreToken string
+	// CoreProvisionerToken is what core must present to THIS process's
+	// ProvisionerService (docs/adr/0069), the reverse of CoreToken and a
+	// separate key. Empty refuses to start: see grpcserver.NewServer.
+	CoreProvisionerToken string
 	// Passed through to each worker pod's sidecar so ask_thot registers
 	// (docs/adr/0035). Empty leaves the tool unregistered — which is how
 	// the feature silently did nothing in production until this was wired.
@@ -97,6 +101,7 @@ func Load() Config {
 		GRPCPort:                    env("GRPC_PORT", "9090"),
 		CoreGRPCAddr:                env("CORE_GRPC_ADDR", "agent-fleet-core.agent-fleet.svc.cluster.local:9090"),
 		CoreToken:                   os.Getenv("FLEET_PROVISIONER_TOKEN"),
+		CoreProvisionerToken:        os.Getenv("FLEET_CORE_PROVISIONER_TOKEN"),
 		ThotAuthToken:               env("THOT_AUTH_TOKEN", ""),
 		ExecutorAddr:                env("EXECUTOR_ADDR", "thot-executor.thot.svc.cluster.local:9090"),
 		ReconcileInterval:           env("RECONCILE_INTERVAL_MS", "10000"),

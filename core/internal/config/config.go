@@ -40,8 +40,9 @@ type Config struct {
 	// adding the key needs no manifest change on either side.
 	ProvisionerToken string
 	// CoreProvisionerToken is the reverse direction: core's bearer to
-	// ProvisionerService (docs/adr/0069). A separate key so that a leak of one
-	// side's copy cannot impersonate the other. Same whole-scope envFrom.
+	// ProvisionerService (docs/adr/0069). A separate key so each direction
+	// rotates on its own and a leaked header exposes one direction only. It is
+	// not isolation: both pods sync the whole scope, so each holds both keys.
 	CoreProvisionerToken string
 	ThotDiscordChannel   string
 	ThotRepo             string

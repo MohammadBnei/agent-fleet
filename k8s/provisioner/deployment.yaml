@@ -39,6 +39,22 @@ spec:
           name: http
         - containerPort: 9090
           name: grpc
+        # The provisioner exits at boot without FLEET_CORE_PROVISIONER_TOKEN
+        # (docs/adr/0069), and /healthz only answers after that check. Without
+        # this probe a bad Secret would replace the working pod with a
+        # crashlooping one; with it the rollout stalls on the old pod.
+        # Accepted cost: the old pod now lives until the new one is ready, so
+        # two reconcile loops overlap for one probe period or two. Their
+        # writes are safe to double: Job and shared-instance GC ignore
+        # NotFound, and a repeated terminal report only rewrites the same
+        # sessions.pod_phase in core (every restart already re-reports Failed
+        # Jobs). EnsureBrowserCache runs once at boot, only in the new pod.
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: http
+          initialDelaySeconds: 2
+          periodSeconds: 10
         env:
         - name: NAMESPACE
           value: agent-fleet

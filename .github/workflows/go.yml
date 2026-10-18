@@ -54,8 +54,12 @@ jobs:
               - 'proto/**'
             core:
               - 'core/**'
+            # k8s/**: provisioner/internal/k8s tests read k8s/core.yaml and
+            # k8s/provisioner/*.yaml (LimitRange, readiness probe), so a
+            # manifest-only change must run them too.
             provisioner:
               - 'provisioner/**'
+              - 'k8s/**'
             sidecar:
               - 'sidecar/**'
             executor:

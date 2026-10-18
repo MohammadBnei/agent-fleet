@@ -907,6 +907,7 @@ them rather than serving unauthenticated.
 | `GRPC_PORT` | `9090` | `ProvisionerService` |
 | `CORE_GRPC_ADDR` | `agent-fleet-core.agent-fleet.svc.cluster.local:9090` | where `ReportPodEvents` streams to |
 | `RECONCILE_INTERVAL_MS` | `10000` | terminal-Job GC + idle shared-instance GC poll (`internal/reconcile`) |
+| `FLEET_CORE_PROVISIONER_TOKEN` | *(required)* | the bearer core must present to `ProvisionerService`. Empty, blank or under 32 bytes makes the provisioner **refuse to start** (`adr/0069`) |
 | `GH_TOKEN` | – | for the provisioner's own clone/fetch auth (`gh auth setup-git`), and forwarded verbatim into every worker pod's `worker` container env |
 
 No `AGENTFLEET_DB_*` here at all — see §6.
@@ -966,8 +967,10 @@ reach core while every log stays green.
 
 The same shape in the other direction: core's credential to
 `ProvisionerService` (`adr/0069`). A separate key rather than a reuse of
-`FLEET_PROVISIONER_TOKEN`, so a leak of one side's copy cannot impersonate the
-other side. Same whole-scope `envFrom`, so no manifest change. Unlike its
+`FLEET_PROVISIONER_TOKEN`, so each direction rotates on its own and a leaked
+header or log line exposes one direction only. Same whole-scope `envFrom`, so
+no manifest change, which also means both keys sit in both pods (and in core's
+migrate hook): the split is no protection if either pod leaks its env. Unlike its
 sibling, the **provisioner refuses to start** without it. Core only warns:
 the console keeps working, and every provisioner call fails `Unauthenticated`.
 Worker pods never receive it: the provisioner builds their env from an explicit
