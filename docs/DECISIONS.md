@@ -257,6 +257,17 @@ Any doc, code, comment, or memory that contradicts this file or an
   becomes: the provisioning message comes from an audience member, a registered
   client, or an allowlisted actor's event via a registered client (P1:
   platform-admins only). ADR 0062 lists which fields are enforced vs inert in P1.
+- **A definition session's pod is narrower than a repo session's**
+  ([`adr/0064`](adr/0064-definition-pod-profile.md)). The worker container holds
+  no `LEASE_ID` and no `GH_TOKEN`, sees only its repo's subPath of the clone
+  cache, gets its git identity from the definition's `git.identity`, and no
+  fleet-shared `settings.json`; the clone init container never contacts the
+  remote. `CLAUDE_CODE_OAUTH_TOKEN` stays until P3 (interim). A definition lease
+  may call only a fixed `CoreService` allowlist, nobody may `PromptSession` into
+  a definition session, and every lease caller authors `SendMessage` as
+  `agent`/`worker` only. Core warms one only against a provisioner that reports
+  `definition_pod_profile`, and the schema refuses a definition lease that an
+  older core minted (`sessions_definition_profile_lease`).
 
 ## 2. Forbidden patterns (quick check — full list + reasons in `adr/`)
 
@@ -328,7 +339,9 @@ Any doc, code, comment, or memory that contradicts this file or an
   outlives every child; pod lifetime belongs to `kill_env`, core's teardowns
   and the reconcile sweep — see `adr/0044`.
 - **Hardcoding git commit identity.** Always derived live from the
-  authenticated bot GitHub account — see `adr/0006`.
+  authenticated bot GitHub account — see `adr/0006`. The one exception is a
+  definition pod, whose identity is the reviewed definition file's
+  `git.identity` (config under review, not code) — see `adr/0064`.
 - **A declared-but-never-incremented metric.** A metric that renders as
   absent is indistinguishable from a broken feature, and shipping twenty of
   them is how the first attempt at the observability layer passed review.

@@ -116,9 +116,16 @@ Condensed. Full detail + rationale in `agent-fleet/docs/DECISIONS.md` + `docs/ad
   Pinned sha ≠ current → warm refused. Pool `MAX_DEFINITION_SESSIONS` sits **inside**
   `MAX_IN_FLIGHT_TASKS` (must be `<`, or core won't start), checked in `ReserveSlot` only
   (a create provisions nothing; the insert + reserve tx is P4's `Open`). Mode guard lives in
-  `sessions.Store.SetPermissionMode` (both callers), and `CoreService.SendMessage` refuses a
-  definition pod sending as `human`/`session` (the worker obeys those). Every definition warm is refused
-  until `adr/0064` sends the profile. Sync rides `sessions.Loop`, no second scheduler.
+  `sessions.Store.SetPermissionMode` (both callers). Sync rides `sessions.Loop`, no second
+  scheduler.
+- **A definition pod is narrower, and only a profile-aware core can lease one** (`adr/0064`).
+  No `LEASE_ID`/`GH_TOKEN` in its worker, its repo's subPath of the cache only, a clone that
+  never contacts the remote (`EnsureRepoFetched` is load-bearing), identity from the file's
+  `git.identity`, no fleet-shared sync, default image. `CLAUDE_CODE_OAUTH_TOKEN` stays until
+  P3 (**interim**); P1 definition sessions cannot push. Warm refused unless the provisioner's
+  `GetVersion` says `definition_pod_profile`. 000009's CHECK ties a definition lease to
+  `profile_lease_id`, so an older core can never lease one. A non-definition pod's Job is
+  byte-identical (golden test).
 - **Session with no message has no pod — that is the human gate** (`adr/0048` §1).
   Amended by `adr/0062`: the provisioning message comes from an audience member, a
   registered client, or an allowlisted actor's event via a registered client (P1:
@@ -140,7 +147,10 @@ Condensed. Full detail + rationale in `agent-fleet/docs/DECISIONS.md` + `docs/ad
 - **Nothing on `CoreService` is callable without the session's `lease_id`** (`adr/0057`).
   Authorization is an explicit per-method table — a field-name rule is wrong on
   `PromptSession`, `SaveAgentSessionId` and `GetSession`, each time in the direction that
-  grants authority. A method in no table fails closed.
+  grants authority. A method in no table fails closed. A **definition** lease additionally
+  passes only `definitionMethods` (`adr/0064`: no `Expose`, peers, journal, files, Loki), and
+  nobody can `PromptSession` into one. Every lease caller authors `SendMessage` as
+  `agent`/`worker` only: the worker obeys `human`/`session` entries.
 - **`X-authentik-*` headers never read.** Pod-network caller can forge one → authz gap
   becomes impersonation. core verifies its own ID token instead.
 - Every result = PR.
@@ -148,7 +158,8 @@ Condensed. Full detail + rationale in `agent-fleet/docs/DECISIONS.md` + `docs/ad
   Fleet creates no branches either: agent runs its own `git checkout -b` (`adr/0048` §5).
 - Git commit identity derived live from authenticated bot GitHub account (`gh api user`),
   never hardcoded. Done independently by provisioner (clone/fetch) and worker (push/PR) —
-  separate pods, no shared `$HOME`.
+  separate pods, no shared `$HOME`. Exception (`adr/0064`): a definition pod's identity is
+  the reviewed definition file's `git.identity`, passed as `GIT_AUTHOR_*`/`GIT_COMMITTER_*`.
 - Claude Code auths via subscription OAuth (`CLAUDE_CODE_OAUTH_TOKEN`), not a metered API
   key. No cost cap by design.
 - Secrets only via Infisical (project `agent-fleet-nygh`). Never committed.
@@ -164,7 +175,7 @@ go wrong, and a fragment that gets misread is worse than a few extra words.
 - Inferring a permission decision from silence.
 - Appending a message before the pod that must read it exists.
 - Sending a human's instruction as `description` — the agent never reads that column.
-- Hardcoded git commit identity.
+- Hardcoded git commit identity (a definition file's `git.identity` is reviewed config, not code: `adr/0064`).
 - Committing Discord, GitHub or Anthropic tokens.
 - A bespoke per-app Helm chart — reuse `infra-bootstrap/gitops/platform/common-app-chart`.
 - Any component other than `core` holding `AGENTFLEET_DB_*` credentials.
