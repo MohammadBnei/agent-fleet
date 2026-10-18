@@ -1,6 +1,6 @@
 # ADR-0061 — Sessions launch in `auto`, on Opus 5.5
 
-- **Status:** Accepted
+- **Status:** Accepted — definition sessions are an exception to the `auto` default: [ADR-0062](0062-defined-agents.md) writes their mode explicitly and forbids `auto`
 - **Date:** 2026-10-16
 - **Amends:** [ADR-0029](0029-sessions-not-tasks-permission-prompt-not-approval-gate.md)
   (sessions start in `"default"` for CLI parity),

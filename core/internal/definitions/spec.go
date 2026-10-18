@@ -36,7 +36,7 @@ type ClientFile struct {
 // Spec is one definition's spec. yaml and json tags are identical: the
 // `effective` jsonb column is json.Marshal(Spec), and SQL reads
 // `limits.concurrency` and `mode.allow` out of it (sessions.ReserveSlot,
-// sessions.PermissionModeAllowed).
+// sessions.SetPermissionMode).
 //
 // ponytail: no Agents / Output fields in P1. Strict decode rejects `agents:`
 // and `output:` as unknown keys; P4, their only consumer, adds them.

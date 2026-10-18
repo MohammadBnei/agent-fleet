@@ -349,13 +349,9 @@ type GetVersionResponse struct {
 	WorkerImage string `protobuf:"bytes,2,opt,name=worker_image,json=workerImage,proto3" json:"worker_image,omitempty"`
 	// What every session's sidecar runs — no per-repo override exists, the
 	// sidecar is fleet-owned.
-	SidecarImage string `protobuf:"bytes,3,opt,name=sidecar_image,json=sidecarImage,proto3" json:"sidecar_image,omitempty"`
-	// True once this provisioner applies the definition pod profile
-	// (docs/adr/0064). core refuses to warm a definition session against a
-	// provisioner that does not say so (docs/adr/0062).
-	DefinitionPodProfile bool `protobuf:"varint,4,opt,name=definition_pod_profile,json=definitionPodProfile,proto3" json:"definition_pod_profile,omitempty"`
-	unknownFields        protoimpl.UnknownFields
-	sizeCache            protoimpl.SizeCache
+	SidecarImage  string `protobuf:"bytes,3,opt,name=sidecar_image,json=sidecarImage,proto3" json:"sidecar_image,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *GetVersionResponse) Reset() {
@@ -407,13 +403,6 @@ func (x *GetVersionResponse) GetSidecarImage() string {
 		return x.SidecarImage
 	}
 	return ""
-}
-
-func (x *GetVersionResponse) GetDefinitionPodProfile() bool {
-	if x != nil {
-		return x.DefinitionPodProfile
-	}
-	return false
 }
 
 // docs/adr/0062. Reads every regular file under definitions/ from the
@@ -1367,12 +1356,11 @@ const file_agentfleet_v1_provisioner_proto_rawDesc = "" +
 	"\bpod_name\x18\x01 \x01(\tR\apodName\x12!\n" +
 	"\fworker_image\x18\x02 \x01(\tR\vworkerImage\x12#\n" +
 	"\rsidecar_image\x18\x03 \x01(\tR\fsidecarImage\"\x13\n" +
-	"\x11GetVersionRequest\"\xac\x01\n" +
+	"\x11GetVersionRequest\"v\n" +
 	"\x12GetVersionResponse\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\tR\aversion\x12!\n" +
 	"\fworker_image\x18\x02 \x01(\tR\vworkerImage\x12#\n" +
-	"\rsidecar_image\x18\x03 \x01(\tR\fsidecarImage\x124\n" +
-	"\x16definition_pod_profile\x18\x04 \x01(\bR\x14definitionPodProfile\"\x1c\n" +
+	"\rsidecar_image\x18\x03 \x01(\tR\fsidecarImage\"\x1c\n" +
 	"\x1aListDefinitionFilesRequest\">\n" +
 	"\x0eDefinitionFile\x12\x12\n" +
 	"\x04path\x18\x01 \x01(\tR\x04path\x12\x18\n" +

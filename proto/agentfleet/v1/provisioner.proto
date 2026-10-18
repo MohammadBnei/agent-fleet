@@ -124,10 +124,6 @@ message GetVersionResponse {
   // What every session's sidecar runs — no per-repo override exists, the
   // sidecar is fleet-owned.
   string sidecar_image = 3;
-  // True once this provisioner applies the definition pod profile
-  // (docs/adr/0064). core refuses to warm a definition session against a
-  // provisioner that does not say so (docs/adr/0062).
-  bool definition_pod_profile = 4;
 }
 
 // docs/adr/0062. Reads every regular file under definitions/ from the

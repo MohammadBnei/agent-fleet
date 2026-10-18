@@ -24,14 +24,12 @@ import (
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 )
 
-// definitionsProvisioner serves definitions/ and a configurable
-// definition_pod_profile answer, and records pod creates.
+// definitionsProvisioner serves definitions/ and records pod creates.
 type definitionsProvisioner struct {
 	agentfleetv1.UnimplementedProvisionerServiceServer
 	mu      sync.Mutex
 	files   map[string][]byte
 	sha     string
-	profile bool
 	creates []*agentfleetv1.CreateWorkerPodRequest
 }
 
@@ -43,12 +41,6 @@ func (p *definitionsProvisioner) ListDefinitionFiles(context.Context, *agentflee
 		out.Files = append(out.Files, &agentfleetv1.DefinitionFile{Path: path, Content: b})
 	}
 	return out, nil
-}
-
-func (p *definitionsProvisioner) GetVersion(context.Context, *agentfleetv1.GetVersionRequest) (*agentfleetv1.GetVersionResponse, error) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return &agentfleetv1.GetVersionResponse{Version: "test", DefinitionPodProfile: p.profile}, nil
 }
 
 func (p *definitionsProvisioner) CreateWorkerPod(_ context.Context, req *agentfleetv1.CreateWorkerPodRequest) (*agentfleetv1.CreateWorkerPodResponse, error) {
@@ -171,10 +163,14 @@ func TestCreateSession_Definition(t *testing.T) {
 		t.Fatalf("got mode %q model %q repo %q", sess.GetPermissionMode(), sess.GetModel(), sess.GetRepo())
 	}
 
-	// A definition only narrows, for admins too.
+	// A definition only narrows, for admins too, and a refusal appends
+	// nothing: the transcript entry is what reaches the running worker.
 	_, err = s.SetPermissionMode(context.Background(), connect.NewRequest(&agentfleetv1.SetPermissionModeRequest{SessionId: sess.GetId(), Mode: "auto"}))
 	if code(err) != connect.CodeInvalidArgument {
 		t.Fatalf("auto on a definition session: %v", err)
+	}
+	if entries, _, err := s.transcr.ReadSince(context.Background(), sess.GetId(), 0, 100); err != nil || len(entries) != 0 {
+		t.Fatalf("a refused mode reached the transcript: %v %v", entries, err)
 	}
 	if _, err := s.SetPermissionMode(context.Background(), connect.NewRequest(&agentfleetv1.SetPermissionModeRequest{SessionId: sess.GetId(), Mode: "plan"})); err != nil {
 		t.Fatalf("plan is in mode.allow: %v", err)
@@ -231,22 +227,15 @@ func TestWarmIfIdle_Definition(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// S1 alone: the provisioner does not apply the profile, so nothing warms
-	// with the ordinary one (GH_TOKEN and LEASE_ID in the worker).
+	// This core never sends the definition pod profile, so it refuses every
+	// definition warm whatever the provisioner is: nothing ever warms with the
+	// ordinary profile (GH_TOKEN and LEASE_ID in the worker).
 	if _, err := s.WarmIfIdle(ctx, sess.GetId()); code(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "definition pod profile") {
 		t.Fatalf("got %v", err)
 	}
 	assertNoLease(t, store, sess.GetId())
 	if prov.createCount() != 0 {
 		t.Fatal("no pod may be created")
-	}
-
-	prov.set(func(p *definitionsProvisioner) { p.profile = true })
-	if _, err := s.WarmIfIdle(ctx, sess.GetId()); err != nil {
-		t.Fatalf("pinned == current and the profile is applied: %v", err)
-	}
-	if prov.createCount() != 1 || len(prov.creates[0].GetToolKeys()) != 0 {
-		t.Fatalf("creates %d, tool keys %v", prov.createCount(), prov.creates)
 	}
 
 	// Revocation: a content change makes the old pin stop warming.
@@ -273,5 +262,34 @@ func TestWarmIfIdle_Definition(t *testing.T) {
 	}
 	if _, err := s.WarmIfIdle(ctx, other.GetId()); code(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "no longer defined") {
 		t.Fatalf("got %v", err)
+	}
+	if prov.createCount() != 0 {
+		t.Fatal("no pod may be created")
+	}
+}
+
+// The create and its capacity check are one transaction: a definition at its
+// limits.concurrency refuses the create and keeps no row.
+func TestCreateSession_DefinitionAtCapacityKeepsNoRow(t *testing.T) {
+	ctx := context.Background()
+	s, _, _, store := newDefinitionsServer(t)
+	first, err := createDef(s, "dev-dream-analyst", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Live by reservation (a warm is refused before ReserveSlot until ADR-0064).
+	if _, err := store.ReserveSlot(ctx, first.GetId(), s.caps); err != nil {
+		t.Fatal(err)
+	}
+	before, err := store.List(ctx, 100, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := createDef(s, "dev-dream-analyst", nil); code(err) != connect.CodeResourceExhausted || !strings.Contains(err.Error(), "concurrency limit") {
+		t.Fatalf("got %v", err)
+	}
+	after, err := store.List(ctx, 100, "")
+	if err != nil || len(after) != len(before) {
+		t.Fatalf("a refused create kept a row: %d -> %d (%v)", len(before), len(after), err)
 	}
 }

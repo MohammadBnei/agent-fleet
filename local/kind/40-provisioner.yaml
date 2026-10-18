@@ -49,8 +49,9 @@ spec:
             - name: WORKSPACE_ROOT
               value: /workspace
             # docs/adr/0062: a kind build is version "dev", which has no release
-            # tag to read definitions/ at. Point this at the branch under test
-            # (it must be pushed: the provisioner clones FLEET_SHARED_REPO_URL).
+            # tag to read definitions/ at. The kind-local skill overrides this
+            # with the branch under test right after apply (it must be pushed:
+            # the provisioner clones FLEET_SHARED_REPO_URL).
             - name: FLEET_DEFINITIONS_REF
               value: main
             # core's code default is "agent-fleet-core.agent-fleet.svc.

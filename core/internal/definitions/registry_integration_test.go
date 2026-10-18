@@ -117,7 +117,9 @@ func TestRegistry_Sync(t *testing.T) {
 		}
 	})
 
-	t.Run("latest valid: a typo keeps the previous version, a revert reuses its sha", func(t *testing.T) {
+	// An invalid HEAD never falls back to an older version: that version may
+	// be the wider one a narrowing edit (with a mistake in it) replaced.
+	t.Run("an invalid HEAD fails closed, a revert reuses its sha", func(t *testing.T) {
 		lister.set("sha4", map[string]string{
 			"definitions/base.yaml": baseYAML,
 			"definitions/good.yaml": childYAML("good", map[string]string{"mode": "{ default: plan, allow: [plan, auto] }"}),
@@ -125,9 +127,8 @@ func TestRegistry_Sync(t *testing.T) {
 		if err := r.Sync(ctx); err != nil {
 			t.Fatal(err)
 		}
-		h, err := r.Resolve("good")
-		if err != nil || h.SHA != "sha3" || !strings.Contains(h.NewerErr, "skips canUseTool") {
-			t.Fatalf("want sha3 with newer_error, got %+v %v", h, err)
+		if h, err := r.Resolve("good"); !errors.Is(err, ErrInvalid) || !strings.Contains(err.Error(), "skips canUseTool") {
+			t.Fatalf("want ErrInvalid, never the older sha3: %+v %v", h, err)
 		}
 		lister.set("sha5", map[string]string{
 			"definitions/base.yaml": baseYAML,
@@ -136,7 +137,7 @@ func TestRegistry_Sync(t *testing.T) {
 		if err := r.Sync(ctx); err != nil {
 			t.Fatal(err)
 		}
-		if h, _ := r.Resolve("good"); h.SHA != "sha1" || h.NewerErr != "" {
+		if h, err := r.Resolve("good"); err != nil || h.SHA != "sha1" {
 			t.Fatalf("a revert reuses the old row: %+v", h)
 		}
 		if n := rowCount(t, r, "good"); n != 3 {
@@ -148,6 +149,54 @@ func TestRegistry_Sync(t *testing.T) {
 		lister.err = errors.New("provisioner down")
 		if err := r.Sync(ctx); err == nil {
 			t.Fatal("want the error")
+		}
+		if h, err := r.Resolve("good"); err != nil || h.SHA != "sha1" {
+			t.Fatalf("%+v %v", h, err)
+		}
+	})
+
+	// The same (name, sha) judged differently (a core rollout overlap): a
+	// valid row's content, which sessions may pin, is never rewritten.
+	t.Run("a valid row at the same sha is only ever invalidated", func(t *testing.T) {
+		effOf := func() (bool, string) {
+			var valid bool
+			var allow string
+			if err := pool.QueryRow(ctx, `SELECT valid, effective->'mode'->>'allow' FROM agent_definitions WHERE name='good' AND sha='sha1'`).Scan(&valid, &allow); err != nil {
+				t.Fatal(err)
+			}
+			return valid, allow
+		}
+		_, before := effOf()
+		lister.set("sha1", map[string]string{
+			"definitions/base.yaml": baseYAML,
+			"definitions/good.yaml": childYAML("good", map[string]string{"mode": "{ default: default, allow: [default, dontAsk] }"}),
+		})
+		if err := r.Sync(ctx); err != nil {
+			t.Fatal(err)
+		}
+		if valid, allow := effOf(); !valid || allow != before {
+			t.Fatalf("valid content rewritten in place: valid=%v allow=%s, want %s", valid, allow, before)
+		}
+		lister.set("sha1", map[string]string{
+			"definitions/base.yaml": baseYAML,
+			"definitions/good.yaml": childYAML("good", map[string]string{"mode": "{ default: auto, allow: [auto] }"}),
+		})
+		if err := r.Sync(ctx); err != nil {
+			t.Fatal(err)
+		}
+		if valid, allow := effOf(); valid || allow != before {
+			t.Fatalf("want invalidated with effective kept: valid=%v allow=%s", valid, allow)
+		}
+		if _, err := r.Resolve("good"); !errors.Is(err, ErrInvalid) {
+			t.Fatalf("want ErrInvalid: %v", err)
+		}
+		// An invalid row is not launchable, so a valid judgement replaces it.
+		lister.set("sha1", map[string]string{
+			"definitions/base.yaml": baseYAML,
+			"definitions/good.yaml": good,
+		})
+		if err := r.Sync(ctx); err != nil {
+			t.Fatal(err)
 		}
 		if h, err := r.Resolve("good"); err != nil || h.SHA != "sha1" {
 			t.Fatalf("%+v %v", h, err)
@@ -177,7 +226,7 @@ func TestRegistry_Sync(t *testing.T) {
 			t.Fatalf("want the row flipped invalid: valid=%v err=%v", valid, msg)
 		}
 		if h, _ := r.Resolve("good"); h.SHA != "sha1" {
-			t.Fatalf("current falls back to the next valid row: %+v", h)
+			t.Fatalf("HEAD's row stays current: %+v", h)
 		}
 	})
 }

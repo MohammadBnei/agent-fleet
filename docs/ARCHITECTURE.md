@@ -758,7 +758,7 @@ erDiagram
         text worker_image "NOT NULL DEFAULT '' — the image this session's pod actually got, recorded at dispatch"
         text sidecar_image "NOT NULL DEFAULT '' — likewise; both stay true after the fleet is upgraded underneath the session"
         text definition_name "nullable — pinned defined agent, adr/0062; FK (definition_name, definition_sha) to agent_definitions, both or neither"
-        text definition_sha "nullable — the version pinned; warm refused once it is not the current valid one"
+        text definition_sha "nullable — the version pinned; warm refused once it is not the current one (the valid row at the synced commit)"
         timestamptz swept_at "retention GC reclaimed the disk — readable, not resumable"
         timestamptz archived_at "the human is finished; the only terminal state a machine cannot compute"
         timestamptz created_at

@@ -136,29 +136,90 @@ func TestCreate_DefinitionPinRoundTrips(t *testing.T) {
 	}
 }
 
-func TestPermissionModeAllowed(t *testing.T) {
+// The one mode guard both SetPermissionMode callers route through: the pinned
+// version's mode.allow, and only while that version is valid.
+func TestSetPermissionMode_DefinitionGuard(t *testing.T) {
 	ctx := context.Background()
 	pool := dbtest.NewPool(t)
 	store := NewStore(pool)
 	insertDefinition(t, pool, "a", "sha-a", 1)
 	def := newDefinitionSession(t, store, "a", "sha-a")
 	repo := newSession(t, ctx, store)
+	modeOf := func(id string) string {
+		got, err := store.Get(ctx, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return *got.PermissionMode
+	}
 	for _, tc := range []struct {
 		id, mode string
-		want     bool
+		allowed  bool
 	}{
-		{def, "default", true},
 		{def, "plan", true},
 		{def, "auto", false},
 		{def, "acceptEdits", false},
 		{repo, "auto", true},
 	} {
-		got, err := store.PermissionModeAllowed(ctx, tc.id, tc.mode)
-		if err != nil || got != tc.want {
-			t.Errorf("%s %s: got %v %v, want %v", tc.id, tc.mode, got, err, tc.want)
+		before := modeOf(tc.id)
+		err := store.SetPermissionMode(ctx, tc.id, tc.mode)
+		switch {
+		case tc.allowed && (err != nil || modeOf(tc.id) != tc.mode):
+			t.Errorf("%s: got %v, mode %s", tc.mode, err, modeOf(tc.id))
+		case !tc.allowed && (!errors.Is(err, ErrModeNotAllowed) || modeOf(tc.id) != before):
+			t.Errorf("%s: want ErrModeNotAllowed and no write, got %v, mode %s", tc.mode, err, modeOf(tc.id))
 		}
 	}
-	if _, err := store.PermissionModeAllowed(ctx, "00000000-0000-0000-0000-000000000000", "auto"); !errors.Is(err, ErrNotFound) {
+	// A revoked version authorizes nothing, not even a mode it listed.
+	if _, err := pool.Exec(ctx, `UPDATE agent_definitions SET valid = false, error = 'revoked'`); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetPermissionMode(ctx, def, "default"); !errors.Is(err, ErrModeNotAllowed) {
+		t.Fatalf("revoked row: got %v", err)
+	}
+	if err := store.SetPermissionMode(ctx, "00000000-0000-0000-0000-000000000000", "auto"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("got %v", err)
+	}
+}
+
+// Contract: the definition session's INSERT and its capacity check are one
+// transaction, so a refusal keeps no row.
+func TestCreateDefinition_CapacityRefusalKeepsNoRow(t *testing.T) {
+	ctx := context.Background()
+	pool := dbtest.NewPool(t)
+	store := NewStore(pool)
+	insertDefinition(t, pool, "a", "sha-a", 1)
+	caps := Caps{MaxLive: 5, MaxDefinition: 4}
+	p := CreateParams{Repo: "dream-analyst", PermissionMode: "default", DefinitionName: "a", DefinitionSHA: "sha-a"}
+	count := func() (n int) {
+		if err := pool.QueryRow(ctx, `SELECT count(*) FROM sessions WHERE definition_name = 'a'`).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	first, err := store.CreateDefinition(ctx, p, caps)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ReserveSlot(ctx, first, caps); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CreateDefinition(ctx, p, caps); !errors.Is(err, ErrAtCapacity) || !strings.Contains(err.Error(), "concurrency limit") {
+		t.Fatalf("got %v", err)
+	}
+	if _, err := store.CreateDefinition(ctx, p, Caps{MaxLive: 1, MaxDefinition: 0}); !errors.Is(err, ErrAtCapacity) {
+		t.Fatalf("fleet cap: got %v", err)
+	}
+	if n := count(); n != 1 {
+		t.Fatalf("refused creates kept rows: %d sessions, want 1", n)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE agent_definitions SET valid = false, error = 'revoked'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CreateDefinition(ctx, p, Caps{MaxLive: 5, MaxDefinition: 4}); !errors.Is(err, ErrDefinitionInvalid) {
+		t.Fatalf("revoked: got %v", err)
+	}
+	if n := count(); n != 1 {
+		t.Fatalf("refused create kept a row: %d", n)
 	}
 }

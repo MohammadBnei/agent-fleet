@@ -125,6 +125,14 @@ func TestReadDefinitions_FailsClosed(t *testing.T) {
 			t.Fatal("want an error")
 		}
 	})
+	t.Run("definitions is a file", func(t *testing.T) {
+		origin := newOriginRepo(t)
+		commitFile(t, origin, "definitions", "x")
+		_, _, err := NewManager(t.TempDir()).ReadDefinitions(context.Background(), origin, "main")
+		if err == nil || !strings.Contains(err.Error(), "is not a directory") || strings.Contains(err.Error(), "<nil>") {
+			t.Fatalf("want a not-a-directory error with no <nil>, got %v", err)
+		}
+	})
 	t.Run("symlink", func(t *testing.T) {
 		origin := newDefinitionsOrigin(t)
 		if err := os.Symlink("/etc/passwd", filepath.Join(origin, "definitions", "evil.yaml")); err != nil {

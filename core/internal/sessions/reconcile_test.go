@@ -467,3 +467,14 @@ func TestCollectExpired_FailedSweepDoesNotMarkSwept(t *testing.T) {
 		t.Errorf("expected one sweep of %s, got %v", id, fake.swept)
 	}
 }
+
+// The definitions sync rides this loop (docs/adr/0062): no second scheduler.
+func TestTick_RunsOnTickHook(t *testing.T) {
+	l := NewLoop(NewStore(dbtest.NewPool(t)), &fakeProvisioner{livePods: map[string]string{}}, time.Minute, time.Minute, time.Hour, 24*time.Hour, time.Minute)
+	ran := 0
+	l.SetOnTick(func(context.Context) { ran++ })
+	l.tick(context.Background())
+	if ran != 1 {
+		t.Fatalf("onTick ran %d times in one tick, want 1", ran)
+	}
+}

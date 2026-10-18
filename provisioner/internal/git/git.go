@@ -444,8 +444,10 @@ func (m *Manager) ReadDefinitions(ctx context.Context, repoURL, ref string) (map
 		return nil, "", err
 	}
 	dir := filepath.Join(path, "definitions")
-	if fi, err := os.Lstat(dir); err != nil || !fi.IsDir() {
-		return nil, "", fmt.Errorf("definitions/ is not a directory at %s (%.7s): %v", ref, sha, err)
+	if fi, err := os.Lstat(dir); err != nil {
+		return nil, "", fmt.Errorf("definitions/ at %s (%.7s): %w", ref, sha, err)
+	} else if !fi.IsDir() {
+		return nil, "", fmt.Errorf("definitions/ is not a directory at %s (%.7s)", ref, sha)
 	}
 	files := map[string][]byte{}
 	total := 0

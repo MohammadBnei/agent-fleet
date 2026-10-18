@@ -8,6 +8,9 @@ import (
 	"testing"
 	"time"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/dbtest"
@@ -334,5 +337,33 @@ func TestSearchJournal_RejectsAnUnparseableBound(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "since") {
 		t.Errorf("the error must name the offending field, got %v", err)
+	}
+}
+
+// The pod's own SetPermissionMode goes through the store's definition guard
+// (docs/adr/0062): a definition session cannot persist a mode outside its
+// mode.allow, so its next warm can never launch in it.
+func TestSetPermissionMode_DefinitionSessionOutsideAllowIsDenied(t *testing.T) {
+	ctx := context.Background()
+	pool := dbtest.NewPool(t)
+	store := sessions.NewStore(pool)
+	srv := New(nil, store, journal.NewStore(pool), nil, nil, nil, nil)
+	if _, err := pool.Exec(ctx, `INSERT INTO agent_definitions (name, sha, spec, effective, valid)
+		VALUES ('a', 'sha-a', '{}', '{"mode":{"default":"default","allow":["default","plan"]}}', true)`); err != nil {
+		t.Fatal(err)
+	}
+	id, err := store.Create(ctx, sessions.CreateParams{Repo: "dream-analyst", PermissionMode: "default", DefinitionName: "a", DefinitionSHA: "sha-a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = srv.SetPermissionMode(ctx, &agentfleetv1.SetPermissionModeRequest{SessionId: id, Mode: "acceptEdits"})
+	if status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("got %v, want PermissionDenied", err)
+	}
+	if _, err := srv.SetPermissionMode(ctx, &agentfleetv1.SetPermissionModeRequest{SessionId: id, Mode: "plan"}); err != nil {
+		t.Fatalf("plan is in mode.allow: %v", err)
+	}
+	if s, err := store.Get(ctx, id); err != nil || *s.PermissionMode != "plan" {
+		t.Fatalf("mode: %v %v", s, err)
 	}
 }

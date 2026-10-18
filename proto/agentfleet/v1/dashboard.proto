@@ -403,9 +403,9 @@ message ListDefinitionsRequest {}
 // One defined agent's current version (docs/adr/0062).
 message AgentDefinition {
   string name = 1;
-  // The latest VALID version: what a new session pins.
+  // The version at the synced commit when it is valid: what a new session
+  // pins. "" when it is invalid (the definition fails closed).
   string sha = 2;
-  // False only when the name has no valid version at all.
   bool valid = 3;
   // "" when valid.
   string error = 4;
@@ -416,8 +416,6 @@ message AgentDefinition {
   string audience_group = 8;
   // RFC3339.
   string synced_at = 9;
-  // Set when the checked-out version is invalid and `sha` is an older valid one.
-  string newer_error = 10;
 }
 
 message ListDefinitionsResponse {

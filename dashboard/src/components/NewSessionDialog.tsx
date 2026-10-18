@@ -226,10 +226,10 @@ export function NewSessionDialog({
                     key={d.name}
                     value={d.name}
                     disabled={!d.valid}
-                    title={d.valid ? d.newerError || undefined : d.error}
+                    title={d.valid ? undefined : d.error}
                   >
                     {d.valid
-                      ? `${d.name} · ${d.repo} · ${d.model} · ${d.permissionMode}${d.newerError ? " ⚠" : ""}`
+                      ? `${d.name} · ${d.repo} · ${d.model} · ${d.permissionMode}`
                       : `${d.name} · invalid`}
                   </option>
                 ))}

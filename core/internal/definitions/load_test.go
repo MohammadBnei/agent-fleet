@@ -16,6 +16,8 @@ spec:
   mode: { default: default, allow: [default, plan] }
   tools: { allow: [Read], deny: ["Edit(.git/**)"] }
   sidecarTools: [AskUserQuestion]
+  interaction: { allow: [ask] }
+  lifecycle: { allow: [resident] }
   limits: { maxTurns: 10, timeout: 30m, concurrency: 1, startupBudget: 3m }
 `
 
@@ -84,10 +86,25 @@ func TestLoad_ChildRules(t *testing.T) {
 		{"bypassPermissions by name", map[string]string{"mode": "{ default: default, allow: [bypassPermissions, default] }"}, `"bypassPermissions" skips canUseTool`},
 		{"mode default not allowed", map[string]string{"mode": "{ default: plan, allow: [default] }"}, "mode.default"},
 		{"tool outside ceiling", map[string]string{"tools": "{ allow: [WebFetch] }"}, "WebFetch"},
-		{"bare Bash", map[string]string{"tools": "{ allow: [Bash] }"}, "Bash needs a specifier"},
-		{"Bash star", map[string]string{"tools": `{ allow: ["Bash(*)"] }`}, "Bash needs a specifier"},
-		{"Bash colon star", map[string]string{"tools": `{ allow: ["Bash(:*)"] }`}, "Bash needs a specifier"},
+		{"bare Bash", map[string]string{"tools": "{ allow: [Bash] }"}, "literal command prefix"},
+		{"Bash star", map[string]string{"tools": `{ allow: ["Bash(*)"] }`}, "literal command prefix"},
+		{"Bash colon star", map[string]string{"tools": `{ allow: ["Bash(:*)"] }`}, "literal command prefix"},
 		{"Bash with prefix ok", map[string]string{"tools": `{ allow: ["Bash(git add:*)"] }`}, ""},
+		{"Bash double star", map[string]string{"tools": `{ allow: ["Bash(**)"] }`}, "literal command prefix"},
+		{"Bash star colon star", map[string]string{"tools": `{ allow: ["Bash(*:*)"] }`}, "literal command prefix"},
+		{"Bash leading space", map[string]string{"tools": `{ allow: ["Bash( *)"] }`}, "literal command prefix"},
+		{"Bash inner star", map[string]string{"tools": `{ allow: ["Bash(git * push:*)"] }`}, "literal command prefix"},
+		{"Bash shell", map[string]string{"tools": `{ allow: ["Bash(sh -c:*)"] }`}, "literal command prefix"},
+		{"Bash bash", map[string]string{"tools": `{ allow: ["Bash(bash:*)"] }`}, "literal command prefix"},
+		{"Bash env", map[string]string{"tools": `{ allow: ["Bash(env:*)"] }`}, "literal command prefix"},
+		{"Bash shell by path", map[string]string{"tools": `{ allow: ["Bash(/bin/sh:*)"] }`}, "literal command prefix"},
+		{"Bash exact command ok", map[string]string{"tools": `{ allow: ["Bash(git status)"] }`}, ""},
+		// erasing a parent's bound: null and absence both fail
+		{"tools null", map[string]string{"tools": "~"}, "spec.tools: null is not allowed"},
+		{"interaction null", map[string]string{"interaction": "~"}, "spec.interaction: null"},
+		{"lifecycle null", map[string]string{"lifecycle": "null"}, "spec.lifecycle: null"},
+		{"resources null", map[string]string{"resources": "~"}, "spec.resources: null"},
+		{"tools empty allow", map[string]string{"tools": "{ allow: [] }"}, "tools.allow must not be empty"},
 		{"sidecar tool outside ceiling", map[string]string{"sidecarTools": "[expose]"}, "expose"},
 		{"thinking ultra", map[string]string{"thinking": "{ default: ultra }"}, "thinking.default"},
 		{"thinking xhigh", map[string]string{"thinking": "{ default: xhigh }"}, ""},
@@ -395,5 +412,47 @@ func TestValidServicePath(t *testing.T) {
 				t.Errorf("%s %s: want rejected", host, p)
 			}
 		}
+	}
+}
+
+// A non-abstract spec with no tool, interaction or lifecycle bound has no
+// bound at all (nil tools = the SDK's default tool set), so absence fails.
+func TestLoad_RequiresBounds(t *testing.T) {
+	bare := strings.NewReplacer(
+		"  tools: { allow: [Read], deny: [\"Edit(.git/**)\"] }\n", "",
+		"  interaction: { allow: [ask] }\n", "",
+		"  lifecycle: { allow: [resident] }\n", "",
+	).Replace(baseYAML)
+	got, fileErrs := load(t, map[string]string{"definitions/base.yaml": bare, "definitions/c.yaml": childYAML("c", nil)})
+	if len(fileErrs) != 0 {
+		t.Fatalf("an abstract base may leave them out: %v", fileErrs)
+	}
+	msg := errText(got["c"].Err)
+	for _, want := range []string{"tools is required", "interaction is required", "lifecycle is required"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("want %q in %q", want, msg)
+		}
+	}
+}
+
+// The KEY-name checks exist to catch a pasted secret, so they never echo it.
+func TestLoad_SecretValuesNeverEchoed(t *testing.T) {
+	const leaked = "ghp_PASTEDtokenVALUE123"
+	got, fileErrs := load(t, map[string]string{
+		"definitions/base.yaml": baseYAML,
+		"definitions/c.yaml": childYAML("c", map[string]string{
+			"credentials": "{ vault: c, services: [{ host: api.anthropic.com, secret: " + leaked + " }] }",
+		}),
+		"definitions/clients/bridge.yaml": clientWith("", leaked, ""),
+	})
+	all := errText(got["c"].Err)
+	for _, e := range fileErrs {
+		all += "\n" + e.Error()
+	}
+	if !strings.Contains(all, "tokenRef") || !strings.Contains(all, "credentials.services") {
+		t.Fatalf("want both KEY-name errors, got %q", all)
+	}
+	if strings.Contains(all, leaked) {
+		t.Fatalf("a secret value was echoed: %q", all)
 	}
 }

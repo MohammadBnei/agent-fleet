@@ -1983,10 +1983,10 @@ func (*ListDefinitionsRequest) Descriptor() ([]byte, []int) {
 type AgentDefinition struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Name  string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	// The latest VALID version: what a new session pins.
-	Sha string `protobuf:"bytes,2,opt,name=sha,proto3" json:"sha,omitempty"`
-	// False only when the name has no valid version at all.
-	Valid bool `protobuf:"varint,3,opt,name=valid,proto3" json:"valid,omitempty"`
+	// The version at the synced commit when it is valid: what a new session
+	// pins. "" when it is invalid (the definition fails closed).
+	Sha   string `protobuf:"bytes,2,opt,name=sha,proto3" json:"sha,omitempty"`
+	Valid bool   `protobuf:"varint,3,opt,name=valid,proto3" json:"valid,omitempty"`
 	// "" when valid.
 	Error string `protobuf:"bytes,4,opt,name=error,proto3" json:"error,omitempty"`
 	// Effective workspace.repo, model.default and mode.default ("" when invalid).
@@ -1995,9 +1995,7 @@ type AgentDefinition struct {
 	PermissionMode string `protobuf:"bytes,7,opt,name=permission_mode,json=permissionMode,proto3" json:"permission_mode,omitempty"`
 	AudienceGroup  string `protobuf:"bytes,8,opt,name=audience_group,json=audienceGroup,proto3" json:"audience_group,omitempty"`
 	// RFC3339.
-	SyncedAt string `protobuf:"bytes,9,opt,name=synced_at,json=syncedAt,proto3" json:"synced_at,omitempty"`
-	// Set when the checked-out version is invalid and `sha` is an older valid one.
-	NewerError    string `protobuf:"bytes,10,opt,name=newer_error,json=newerError,proto3" json:"newer_error,omitempty"`
+	SyncedAt      string `protobuf:"bytes,9,opt,name=synced_at,json=syncedAt,proto3" json:"synced_at,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2091,13 +2089,6 @@ func (x *AgentDefinition) GetAudienceGroup() string {
 func (x *AgentDefinition) GetSyncedAt() string {
 	if x != nil {
 		return x.SyncedAt
-	}
-	return ""
-}
-
-func (x *AgentDefinition) GetNewerError() string {
-	if x != nil {
-		return x.NewerError
 	}
 	return ""
 }
@@ -4468,7 +4459,7 @@ const file_agentfleet_v1_dashboard_proto_rawDesc = "" +
 	"baseBranch\x12\x14\n" +
 	"\x05image\x18\x05 \x01(\tR\x05image\x12%\n" +
 	"\x0ecluster_access\x18\x06 \x01(\bR\rclusterAccessJ\x04\b\x04\x10\x05R\ve2e_profile\"\x18\n" +
-	"\x16ListDefinitionsRequest\"\x9b\x02\n" +
+	"\x16ListDefinitionsRequest\"\xfa\x01\n" +
 	"\x0fAgentDefinition\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x10\n" +
 	"\x03sha\x18\x02 \x01(\tR\x03sha\x12\x14\n" +
@@ -4478,10 +4469,7 @@ const file_agentfleet_v1_dashboard_proto_rawDesc = "" +
 	"\x05model\x18\x06 \x01(\tR\x05model\x12'\n" +
 	"\x0fpermission_mode\x18\a \x01(\tR\x0epermissionMode\x12%\n" +
 	"\x0eaudience_group\x18\b \x01(\tR\raudienceGroup\x12\x1b\n" +
-	"\tsynced_at\x18\t \x01(\tR\bsyncedAt\x12\x1f\n" +
-	"\vnewer_error\x18\n" +
-	" \x01(\tR\n" +
-	"newerError\"|\n" +
+	"\tsynced_at\x18\t \x01(\tR\bsyncedAt\"|\n" +
 	"\x17ListDefinitionsResponse\x12@\n" +
 	"\vdefinitions\x18\x01 \x03(\v2\x1e.agentfleet.v1.AgentDefinitionR\vdefinitions\x12\x1f\n" +
 	"\vsync_errors\x18\x02 \x03(\tR\n" +

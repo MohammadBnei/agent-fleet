@@ -13,12 +13,15 @@ package coreserver
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 
@@ -429,6 +432,10 @@ func (s *Server) GetSession(ctx context.Context, req *agentfleetv1.GetSessionReq
 // the caller *is* the session whose mode this is.
 func (s *Server) SetPermissionMode(ctx context.Context, req *agentfleetv1.SetPermissionModeRequest) (*agentfleetv1.SetPermissionModeResponse, error) {
 	if err := s.sessions.SetPermissionMode(ctx, req.GetSessionId(), req.GetMode()); err != nil {
+		// The store guards a definition session's mode.allow (docs/adr/0062).
+		if errors.Is(err, sessions.ErrModeNotAllowed) {
+			return nil, status.Error(codes.PermissionDenied, err.Error())
+		}
 		return nil, fmt.Errorf("SetPermissionMode: %w", err)
 	}
 	return &agentfleetv1.SetPermissionModeResponse{}, nil

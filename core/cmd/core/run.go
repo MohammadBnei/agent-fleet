@@ -129,6 +129,14 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	// bug.
 	sessionLoop := sessions.NewLoop(sessionStore, provisioner,
 		cfg.StopGrace, cfg.StartupStall, cfg.IdleTimeout, cfg.SessionRetention, cfg.TurnStall)
+	// Defined agents (docs/adr/0062) sync on the same pass, first run
+	// immediate. Its own timeout keeps a slow fetch inside the 60s interval.
+	defs := definitions.NewRegistry(pool, provisioner)
+	sessionLoop.SetOnTick(func(ctx context.Context) {
+		if err := defs.Sync(ctx); err != nil {
+			slog.Error("definitions: sync failed", "error", err)
+		}
+	})
 	go sessionLoop.Run(ctx, 60*time.Second)
 
 	// A schedule files a proposal, which a human opens — there is no separate
@@ -216,11 +224,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
 	dashboardSvc := dashboard.NewServer(sessionStore, proposalStore, activityStore, journalStore, repoStore, snippetStore, provisioner, files, hub, sessions.Caps{MaxLive: cfg.MaxInFlight, MaxDefinition: cfg.MaxDefinitionSessions}, loki, prom, scheduleStore, version)
-	// Defined agents (docs/adr/0062): synced from the provisioner in their own
-	// goroutine, so a slow fetch never slips sessions.Loop's serial tick.
-	defs := definitions.NewRegistry(pool, provisioner)
 	dashboardSvc.SetDefinitions(defs)
-	go defs.Run(ctx, 60*time.Second)
 	// PromptSession warms an idle target through the dashboard server's own
 	// warmIfIdle rather than a second copy of it (docs/adr/0041) — that
 	// function carries the capacity cap and the proposed/pending gates that

@@ -96,9 +96,9 @@ mkdir -p /tmp/agent-fleet-e2e-provisioner
 #   ListDefinitionFiles  return the repo's definitions/ files (path + bytes)
 #                        and any sha, e.g. "e2e" (docs/adr/0062). Without it
 #                        core never syncs and the new-session Definition
-#                        picker is empty. GetVersion stays Unimplemented, so
-#                        a definition session is created but never warms
-#                        (no definition_pod_profile), which is correct.
+#                        picker is empty. A definition session is created
+#                        but never warms until docs/adr/0064, which is
+#                        correct.
 # listening on 127.0.0.1:9091.
 #
 # go.mod: module e2estub, plus

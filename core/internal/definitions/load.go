@@ -38,6 +38,12 @@ var (
 	serviceHosts   = []string{"github.com", "api.github.com", "api.anthropic.com"}
 	interactions   = []string{"ask", "deny"}
 	lifecycles     = []string{"resident", "single-shot"}
+	// shellWrappers: a Bash prefix that is any of these is a whole shell or
+	// interpreter in disguise (`Bash(bash:*)`, `Bash(env:*)`). A guard
+	// against the obvious equivalents of unscoped Bash, not a sandbox: the
+	// reviewed PR and canUseTool are (docs/adr/0062 §7).
+	shellWrappers = []string{"sh", "bash", "zsh", "dash", "ksh", "fish", "env", "eval", "exec", "xargs", "sudo", "su",
+		"nohup", "timeout", "nice", "command", "busybox", "python", "python3", "node", "bun", "deno", "perl", "ruby"}
 )
 
 const (
@@ -69,7 +75,6 @@ var (
 // Result is one AgentDefinition file after load.
 type Result struct {
 	Name      string          // metadata.name; the file stem when undecodable
-	Path      string          // repo-relative file path
 	Own       json.RawMessage // the file's own spec as JSON; nil when undecodable
 	Effective *Spec           // nil when Err != nil
 	Abstract  bool
@@ -182,7 +187,7 @@ func Load(files map[string][]byte) (results []Result, fileErrs []error) {
 	for _, n := range names {
 		p := defs[n]
 		r := resolve(n, nil)
-		res := Result{Name: n, Path: p.path, Abstract: p.spec.Abstract, Effective: r.eff, Err: r.err}
+		res := Result{Name: n, Abstract: p.spec.Abstract, Effective: r.eff, Err: r.err}
 		if p.err == nil {
 			if b, err := json.Marshal(p.raw); err == nil {
 				res.Own = b
@@ -251,6 +256,15 @@ func parseDefinition(p, stem string, b []byte) *parsed {
 		out.err = err
 		return out
 	}
+	// An explicit null would DELETE the parent's value in the top-level
+	// merge (`tools: ~` dropping the parent's bound and its deny list), so a
+	// child could widen by erasing. Omit a key to inherit it.
+	for k, v := range node.Spec {
+		if v == nil {
+			out.err = fmt.Errorf("spec.%s: null is not allowed (omit the key to inherit the parent's)", k)
+			return out
+		}
+	}
 	out.spec, out.raw = df.Spec, node.Spec
 	return out
 }
@@ -304,7 +318,8 @@ func toSpec(merged map[string]any) (*Spec, error) {
 func validateClient(name string, s ClientSpec, defs map[string]*parsed, results []Result) error {
 	var errs []error
 	if !envKeyRe.MatchString(s.TokenRef) {
-		errs = append(errs, fmt.Errorf("tokenRef %q must be a secret KEY name (%s), never a value", s.TokenRef, envKeyRe))
+		// Never echo it: this check exists to catch a pasted value.
+		errs = append(errs, fmt.Errorf("tokenRef must be a secret KEY name matching %s, never a value (value not shown)", envKeyRe))
 	}
 	if len(s.Actors.Allow) == 0 {
 		errs = append(errs, errors.New("actors.allow must not be empty"))
@@ -388,7 +403,7 @@ func Validate(name string, s *Spec) error {
 			}
 			seen[svc.Host] = true
 			if !envKeyRe.MatchString(svc.Secret) {
-				bad("credentials.services[%s].secret %q must be a secret KEY name (%s)", svc.Host, svc.Secret, envKeyRe)
+				bad("credentials.services[%s].secret must be a secret KEY name matching %s (value not shown)", svc.Host, envKeyRe)
 			}
 			switch svc.Host {
 			case "api.anthropic.com":
@@ -446,13 +461,19 @@ func Validate(name string, s *Spec) error {
 	if s.SystemPrompt != nil && len(s.SystemPrompt.Append) > maxSystemPrompt {
 		bad("systemPrompt.append is %d bytes, over %d", len(s.SystemPrompt.Append), maxSystemPrompt)
 	}
+	seenSkill := map[string]bool{}
 	for _, sk := range s.Skills {
-		if !skillRe.MatchString(sk) {
-			bad("skills: %q must match %s", sk, skillRe)
+		if !skillRe.MatchString(sk) || seenSkill[sk] {
+			bad("skills: %q must match %s, once", sk, skillRe)
 		}
+		seenSkill[sk] = true
 	}
-	shapeList(&errs, "skills", s.Skills, "")
-	if s.Tools != nil {
+	// tools, interaction and lifecycle are required: an absent bound is no
+	// bound (nil tools would mean the SDK's whole default tool set).
+	if need(s.Tools != nil, "tools") {
+		if len(s.Tools.Allow) == 0 && !s.Abstract {
+			bad("tools.allow must not be empty")
+		}
 		for _, t := range s.Tools.Allow {
 			m := toolAllow.FindStringSubmatch(t)
 			switch {
@@ -460,8 +481,8 @@ func Validate(name string, s *Spec) error {
 				bad("tools.allow: %q is not Tool or Tool(specifier)", t)
 			case !slices.Contains(toolCeiling, m[1]):
 				bad("tools.allow: %q is not in the tool ceiling %v", t, toolCeiling)
-			case m[1] == "Bash" && (m[3] == "" || m[3] == "*" || m[3] == ":*"):
-				bad("tools.allow: %q: Bash needs a specifier, not a wildcard", t)
+			case m[1] == "Bash" && !validBashSpecifier(m[3]):
+				bad("tools.allow: %q: Bash needs a literal command prefix (`Bash(git add:*)`): no other *, no leading space, not a shell or interpreter", t)
 			}
 		}
 		for _, t := range s.Tools.Deny {
@@ -477,23 +498,11 @@ func Validate(name string, s *Spec) error {
 			}
 		}
 	}
-	for _, f := range []struct {
-		field   string
-		al      *AllowList
-		ceiling []string
-	}{{"interaction", s.Interaction, interactions}, {"lifecycle", s.Lifecycle, lifecycles}} {
-		field, al, ceiling := f.field, f.al, f.ceiling
-		if al == nil {
-			continue
-		}
-		if len(al.Allow) == 0 {
-			bad("%s.allow must not be empty", field)
-		}
-		for _, v := range al.Allow {
-			if !slices.Contains(ceiling, v) {
-				bad("%s.allow: %q is not in %v", field, v, ceiling)
-			}
-		}
+	if need(s.Interaction != nil, "interaction") {
+		checkList(&errs, "interaction", s.Interaction.Allow, interactions)
+	}
+	if need(s.Lifecycle != nil, "lifecycle") {
+		checkList(&errs, "lifecycle", s.Lifecycle.Allow, lifecycles)
 	}
 	if o := s.Owns; o != nil {
 		shapeList(&errs, "owns.repos", o.Repos, "")
@@ -551,6 +560,27 @@ func checkAllow(errs *[]error, field, def string, allow, ceiling, byName []strin
 	if !slices.Contains(allow, def) {
 		*errs = append(*errs, fmt.Errorf("%s.default %q is not in %s.allow", field, def, field))
 	}
+}
+
+func checkList(errs *[]error, field string, allow, ceiling []string) {
+	if len(allow) == 0 {
+		*errs = append(*errs, fmt.Errorf("%s.allow must not be empty", field))
+	}
+	for _, v := range allow {
+		if !slices.Contains(ceiling, v) {
+			*errs = append(*errs, fmt.Errorf("%s.allow: %q is not in %v", field, v, ceiling))
+		}
+	}
+}
+
+// validBashSpecifier: a literal command, optionally ending in one ":*". Any
+// other * (`Bash(**)`, `Bash(*:*)`), a leading space (`Bash( *)`) or a shell
+// or interpreter prefix (also by path, `/bin/sh`) is unscoped Bash by another
+// name.
+func validBashSpecifier(spec string) bool {
+	cmd := strings.TrimSuffix(spec, ":*")
+	return cmd != "" && cmd == strings.TrimSpace(cmd) && !strings.Contains(cmd, "*") &&
+		!slices.Contains(shellWrappers, path.Base(strings.Fields(cmd)[0]))
 }
 
 // shapeList: non-empty strings, no duplicates, none of the forbidden runes or

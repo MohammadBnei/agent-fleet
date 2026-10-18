@@ -73,15 +73,22 @@ a slow fetch never stalls `CreateWorkerPod`) and returns them with
 oversize file or a fetch failure is an error, never an empty list.
 
 The ref is `FLEET_DEFINITIONS_REF`, defaulting to the provisioner's own
-release tag (`version`, e.g. `4.19.0`). Not `main`: definitions on `main` would
+release tag (`version`, e.g. `4.19.0`). Not `main`, and not the fleet-shared
+clone at its HEAD: definitions on `main` would
 go live within a minute of a merge, judged by an older core whose strict decode
 does not know a new field, and a security-relevant change (audience, embed,
 credentials, actors) would skip the release gate. At the tag, definitions ship
 with the core that judges them, and the PR's CI ran that core. Cost: a
-definition-only change goes live at the next release. kind and dev set the
-override to a branch.
+definition-only change goes live at the next release, and a second clone and
+lock on the provisioner. kind and dev set the override to the branch under test
+(the `kind-local` skill does it after applying the manifest).
 
-### 3. `(name, sha)` rows, latest valid wins, revocation
+**Deviation from the P1 build contract**, which said to read the fleet-shared
+clone at its HEAD: that clone follows `FLEET_SHARED_BRANCH` (`main`) and its
+lock is taken blocking by `CreateWorkerPod`, so both the release-gate and the
+stall argument above apply. Recorded for the reviewer to accept or overturn.
+
+### 3. `(name, sha)` rows, HEAD's row is current, revocation
 
 Migration 000008 adds `agent_definitions(name, sha, spec, effective, valid,
 error, synced_at)`, PK `(name, sha)`, and nullable
@@ -89,11 +96,17 @@ error, synced_at)`, PK `(name, sha)`, and nullable
 (a composite FK is MATCH SIMPLE, so a half-NULL pair would skip it). Rows are
 never deleted: sessions pin them.
 
-Core syncs every 60s in its own goroutine (not inside `sessions.Loop`, whose
-serial tick a slow fetch would delay). For each non-abstract definition it
+Core syncs as the last step of `sessions.Loop`'s 60s pass (no second
+scheduler; the loop's ticker does not slip for a pass shorter than the
+interval, and the sync has its own 30s timeout). For each non-abstract definition it
 reuses any existing row with identical content (bumping `synced_at`), or
 inserts one at the current sha. So a pinned sha names the commit where that
 content first appeared, and every release commit does not mint a new row.
+The same `(name, sha)` judged differently (a core rollout overlap, an upgrade)
+never rewrites a **valid** row's content, which sessions may pin: it may only be
+flipped invalid, `effective` kept. An invalid row is replaced outright (it is
+not launchable; this is how an older core's strict-decode rejection of a newer
+field heals once the newer core syncs).
 Invalid definitions are **stored** with their error and logged
 (`definitions: invalid`); errors with no row (bad path, abstract parent,
 client) are logged and returned to the console as `sync_errors`. A failed
@@ -102,8 +115,10 @@ listing keeps the last-known-good state.
 Each sync **re-judges** every valid row of a present name under this core's
 ceiling and flips it to invalid in place when it no longer passes, so a ceiling
 tightening in a core upgrade revokes old rows. The current version of a name
-is its **latest valid** row. A merged typo leaves the previous valid version
-current (the console shows `newer_error`).
+is **the row of the content at the synced commit, if it is valid**, never an
+older one. An invalid HEAD fails closed (create and warm refused, the console
+shows the error): falling back to the previous valid row would let a narrowing
+edit that also carries a mistake resurrect the wider version it replaced.
 
 **Revocation rule.** A definition session warms only while its pinned sha is
 the current one. Deleting the file, merging a content change, or a core
@@ -122,13 +137,20 @@ version. `CreateSession` gains an optional `definition`; when set, `repo`,
 so the `'auto'` column default (ADR-0061) can never apply. A repo that is not
 onboarded is a clean `FailedPrecondition` at create time, not a validation
 error (the repo table is a runtime fact). A cluster-access repo is refused.
-`SetPermissionMode` on a definition session must stay within its
-`mode.allow`, for admins too: a definition only narrows.
+`SetPermissionMode` on a definition session must stay within its pinned
+version's `mode.allow`, and only while that version is valid, for admins too:
+a definition only narrows. The guard is in `sessions.Store.SetPermissionMode`'s
+own statement, so the console (DashboardService) and the pod (CoreService,
+`PermissionDenied`) both go through it, and the console persists before it
+appends, so a refused mode never reaches the worker.
 
-`WarmIfIdle` refuses a definition session unless the provisioner reports
-`GetVersion.definition_pod_profile` (ADR-0064). Until that slice lands, every
-definition warm is refused **before** `ReserveSlot`: definition sessions can
-be created and listed but never get a pod with the ordinary profile.
+`WarmIfIdle` refuses **every** definition warm in this slice, after the
+revocation checks and **before** `ReserveSlot`: this core never sends the
+profile in `CreateWorkerPod`, so a provisioner-side "supported" flag would be a
+promise it cannot keep (a newer provisioner saying yes would still build the
+ordinary profile: GH_TOKEN and LEASE_ID in the worker). ADR-0064 replaces the
+refusal with a check in the same change that sends the profile. Definition
+sessions can be created and listed, never warmed, until then.
 
 ### 5. Capacity: a pool inside the global cap
 
@@ -141,10 +163,15 @@ any write, so a refusal leaves no lease and no phase. Repo sessions never
 count against the pool, so a full pool still leaves admins
 `MAX_IN_FLIGHT_TASKS - MAX_DEFINITION_SESSIONS` slots.
 
-**Insert + reserve in one transaction is P4, not P1.** The plan's P4 row lists
-it, under the AgentService (`Open`/`Invoke`) that creates *and* provisions in
-one request. P1 console sessions keep ADR-0048 §1's row-only create; the first
-`PostMessage` warms through the transaction above.
+**The create and its capacity check are one transaction.** A definition
+`CreateSession` runs the same checks (fleet cap, pool, `limits.concurrency`,
+row still valid) under the same advisory lock right after its INSERT, and a
+refusal rolls the INSERT back: no row is kept. It does not *reserve* (no
+lease, no phase): ADR-0048 §1 still provisions on the first message, and a
+lease with no pod being created is a state the reconcile loop reads as a
+stalled start. The full insert + reserve is P4's `Open`/`Invoke`, which
+create and provision in one request; every capacity refusal wraps
+`ErrAtCapacity` with which cap was hit.
 
 ### 6. The gate amendment (shared with the event bridge)
 
@@ -169,9 +196,20 @@ P1 **validates** every rule above but **applies** only: `audience.group`
 `model.allow` beyond the default, `thinking`, `systemPrompt`, `skills`,
 `interaction`, `lifecycle`, `limits.maxTurns`/`timeout`/`startupBudget`,
 `resources`, `credentials`, `embed`, `invokers`, `owns`, `subscribes`. Each
-phase that applies one removes it from this list. `tools.allow` is a shape
-rule, not a sandbox (`Bash(go run:*)` passes): it is safe only because it never
-bypasses `canUseTool`.
+phase that applies one removes it from this list.
+
+`tools.allow` is a shape rule, not a sandbox. Bash entries must be a literal
+command prefix (`Bash(git add:*)`): any other `*`, a leading space, or a shell,
+exec wrapper or interpreter as the command (`sh`, `bash`, `env`, `xargs`,
+`python`, … also by path) is rejected as unscoped Bash by another name; a
+denylist cannot be complete (`Bash(go run:*)` still passes), so the reviewed PR
+is the real check. **P4 must decide `tools.allow` inside `canUseTool`, never
+pass it as the SDK's `allowedTools`**: the SDK documents `allowedTools` as
+auto-allowed *without* `canUseTool`, which would break the gate (plan §3,
+Worker). Required on every non-abstract spec: `tools` with a non-empty
+`allow`, `interaction`, `lifecycle` (absence is no bound; nil `tools` would be
+the SDK's default tool set), and an explicit `null` spec value is a load error
+(it would erase the parent's bound in the top-level merge).
 
 ## Consequences
 
