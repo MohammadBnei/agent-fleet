@@ -311,7 +311,10 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	// closed. It also has to sit outside the SPA handler specifically, because
 	// that one serves index.html with a 200 for any unknown path, so a gate
 	// underneath it would return the app shell to an unauthenticated request.
-	httpServer := &http.Server{Addr: ":" + cfg.Port, Handler: gate(mux)}
+	//
+	// FrameDeny sits outside the gate so the gate's own 302/401/403 carry it,
+	// and applies with FLEET_AUTH_DISABLED=1 too (docs/adr/0069).
+	httpServer := &http.Server{Addr: ":" + cfg.Port, Handler: auth.FrameDeny(gate(mux))}
 
 	go func() {
 		slog.Info("core listening", "port", cfg.Port)
