@@ -424,9 +424,8 @@ const (
 // CreateWorkerPod, which takes the fleet-shared lock blocking. Holding the lock
 // across fetch and read keeps the sha matched to the content.
 //
-// FAILS CLOSED: a missing directory, a symlink, an oversize file or a git
-// failure is an error, never an empty list. A symlink in particular could
-// otherwise read the provisioner's own filesystem.
+// FAILS CLOSED: a missing directory, a symlink, a submodule, an oversize file
+// or a git failure is an error, never an empty list.
 //
 // ponytail: a second full clone of the monorepo on the provisioner's disk;
 // `--depth 1` if disk ever matters.
@@ -449,40 +448,50 @@ func (m *Manager) ReadDefinitions(ctx context.Context, repoURL, ref string) (map
 			return nil, "", err
 		}
 	}
-	dir := filepath.Join(path, "definitions")
-	if fi, err := os.Lstat(dir); err != nil {
-		return nil, "", fmt.Errorf("definitions/ at %s (%.7s): %w", ref, sha, err)
-	} else if !fi.IsDir() {
-		return nil, "", fmt.Errorf("definitions/ is not a directory at %s (%.7s)", ref, sha)
+	// Read from the commit, never the working tree: the sha is the pin, so
+	// the content must be exactly that commit's, whatever the checkout on
+	// this PVC looks like (the steady state above never resets it).
+	ls, err := m.run(ctx, path, "ls-tree", "-r", "-l", "-z", sha, "--", "definitions")
+	if err != nil {
+		return nil, "", err
 	}
 	files := map[string][]byte{}
 	total := 0
-	err = filepath.WalkDir(dir, func(p string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return err
+	for _, entry := range strings.Split(ls, "\x00") {
+		meta, rel, ok := strings.Cut(entry, "\t")
+		if !ok {
+			continue
 		}
-		rel, err := filepath.Rel(path, p)
+		f := strings.Fields(meta) // mode type object size
+		switch {
+		case rel == "definitions":
+			return nil, "", fmt.Errorf("definitions/ is not a directory at %s (%.7s)", ref, sha)
+		case len(f) != 4 || (f[0] != "100644" && f[0] != "100755"):
+			return nil, "", fmt.Errorf("read definitions: %s is not a regular file", rel)
+		}
+		size, err := strconv.Atoi(f[3])
 		if err != nil {
-			return err
+			return nil, "", fmt.Errorf("read definitions: %s: size %q", rel, f[3])
 		}
-		if !d.Type().IsRegular() {
-			return fmt.Errorf("%s is not a regular file", rel)
+		if size > maxDefinitionFile {
+			return nil, "", fmt.Errorf("read definitions: %s is %d bytes, over %d", rel, size, maxDefinitionFile)
 		}
-		b, err := os.ReadFile(p)
+		if total += size; total > maxDefinitionTotal {
+			return nil, "", fmt.Errorf("read definitions: definitions/ is over %d bytes", maxDefinitionTotal)
+		}
+		// Not m.run: that trims, and this is file content.
+		start, args := time.Now(), []string{"cat-file", "blob", f[2]}
+		cmd := exec.CommandContext(ctx, "git", args...)
+		cmd.Dir = path
+		b, err := cmd.Output()
+		metrics.ObserveGit(args, start)
 		if err != nil {
-			return err
+			return nil, "", fmt.Errorf("read definitions: %s: %w", rel, err)
 		}
-		if len(b) > maxDefinitionFile {
-			return fmt.Errorf("%s is %d bytes, over %d", rel, len(b), maxDefinitionFile)
-		}
-		if total += len(b); total > maxDefinitionTotal {
-			return fmt.Errorf("definitions/ is over %d bytes", maxDefinitionTotal)
-		}
-		files[filepath.ToSlash(rel)] = b
-		return nil
-	})
-	if err != nil {
-		return nil, "", fmt.Errorf("read definitions: %w", err)
+		files[rel] = b
+	}
+	if len(files) == 0 {
+		return nil, "", fmt.Errorf("no definitions/ at %s (%.7s)", ref, sha)
 	}
 	return files, sha, nil
 }

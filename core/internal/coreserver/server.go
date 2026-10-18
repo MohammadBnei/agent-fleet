@@ -451,8 +451,15 @@ func (s *Server) GetSession(ctx context.Context, req *agentfleetv1.GetSessionReq
 func (s *Server) SetPermissionMode(ctx context.Context, req *agentfleetv1.SetPermissionModeRequest) (*agentfleetv1.SetPermissionModeResponse, error) {
 	if err := s.sessions.SetPermissionMode(ctx, req.GetSessionId(), req.GetMode()); err != nil {
 		// The store guards a definition session's mode.allow (docs/adr/0062).
-		if errors.Is(err, sessions.ErrModeNotAllowed) {
+		// PermissionDenied here, InvalidArgument on the console's
+		// SetPermissionMode: the caller is the pod, asking beyond its grant;
+		// the console's caller is an admin who picked a mode this session
+		// does not take.
+		switch {
+		case errors.Is(err, sessions.ErrModeNotAllowed):
 			return nil, status.Error(codes.PermissionDenied, err.Error())
+		case errors.Is(err, sessions.ErrDefinitionInvalid):
+			return nil, status.Error(codes.FailedPrecondition, err.Error())
 		}
 		return nil, fmt.Errorf("SetPermissionMode: %w", err)
 	}

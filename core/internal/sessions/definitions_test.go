@@ -35,6 +35,39 @@ func newDefinitionSession(t *testing.T, s *Store, name, sha string) string {
 	return id
 }
 
+// allowDefinitionLeases drops 000008's sessions_definition_no_lease, standing
+// in for docs/adr/0064's migration: the pool and concurrency checks below are
+// the code that slice turns on, and cannot be reached until the CHECK goes.
+func allowDefinitionLeases(t *testing.T, pool *pgxpool.Pool) {
+	t.Helper()
+	if _, err := pool.Exec(context.Background(), `ALTER TABLE sessions DROP CONSTRAINT sessions_definition_no_lease`); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// The schema, not core's code, keeps a definition session from ever holding
+// a lease: an older core (rollout overlap, image rollback) has no definition
+// checks at all and would warm it as a repo session. This is the write its
+// ReserveSlot makes.
+func TestDefinitionSessionCannotHoldALease(t *testing.T) {
+	ctx := context.Background()
+	pool := dbtest.NewPool(t)
+	store := NewStore(pool)
+	insertDefinition(t, pool, "a", "sha-a", 1)
+	def := newDefinitionSession(t, store, "a", "sha-a")
+	_, err := pool.Exec(ctx, `UPDATE sessions SET lease_id = gen_random_uuid(), pod_phase = 'Pending' WHERE id = $1`, def)
+	if err == nil || !strings.Contains(err.Error(), "sessions_definition_no_lease") {
+		t.Fatalf("want the CHECK to refuse a lease, got %v", err)
+	}
+	if _, err := store.ReserveSlot(ctx, def, Caps{MaxLive: 5, MaxDefinition: 4}); err == nil {
+		t.Fatal("ReserveSlot on a definition session must fail until docs/adr/0064")
+	}
+	assertUntouched(t, pool, def)
+	if _, err := store.ReserveSlot(ctx, newSession(t, ctx, store), Caps{MaxLive: 5, MaxDefinition: 4}); err != nil {
+		t.Fatalf("a repo session still reserves: %v", err)
+	}
+}
+
 // A refused reservation must leave no trace: no lease, no phase.
 func assertUntouched(t *testing.T, pool *pgxpool.Pool, id string) {
 	t.Helper()
@@ -51,6 +84,7 @@ func TestReserveSlot_DefinitionPool(t *testing.T) {
 	ctx := context.Background()
 	pool := dbtest.NewPool(t)
 	store := NewStore(pool)
+	allowDefinitionLeases(t, pool)
 	insertDefinition(t, pool, "a", "sha-a", 5)
 	insertDefinition(t, pool, "b", "sha-b", 5)
 	caps := Caps{MaxLive: 5, MaxDefinition: 1}
@@ -77,6 +111,7 @@ func TestReserveSlot_DefinitionConcurrency(t *testing.T) {
 	ctx := context.Background()
 	pool := dbtest.NewPool(t)
 	store := NewStore(pool)
+	allowDefinitionLeases(t, pool)
 	insertDefinition(t, pool, "a", "sha-a", 1)
 	insertDefinition(t, pool, "b", "sha-b", 1)
 	caps := Caps{MaxLive: 5, MaxDefinition: 4}
@@ -174,7 +209,7 @@ func TestSetPermissionMode_DefinitionGuard(t *testing.T) {
 	if _, err := pool.Exec(ctx, `UPDATE agent_definitions SET valid = false, error = 'revoked'`); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SetPermissionMode(ctx, def, "default"); !errors.Is(err, ErrModeNotAllowed) {
+	if err := store.SetPermissionMode(ctx, def, "default"); !errors.Is(err, ErrDefinitionInvalid) {
 		t.Fatalf("revoked row: got %v", err)
 	}
 	if err := store.SetPermissionMode(ctx, "00000000-0000-0000-0000-000000000000", "auto"); !errors.Is(err, ErrNotFound) {
@@ -189,6 +224,7 @@ func TestSaveAgentSessionID_DefinitionModelIsPinned(t *testing.T) {
 	ctx := context.Background()
 	pool := dbtest.NewPool(t)
 	store := NewStore(pool)
+	allowDefinitionLeases(t, pool)
 	insertDefinition(t, pool, "a", "sha-a", 1)
 	def, err := store.Create(ctx, CreateParams{Repo: "dream-analyst", Model: "claude-sonnet-5", PermissionMode: "default", DefinitionName: "a", DefinitionSHA: "sha-a"})
 	if err != nil {

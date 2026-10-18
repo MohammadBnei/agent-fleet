@@ -108,9 +108,12 @@ flipped invalid, `effective` kept. An invalid row is replaced outright (it is
 not launchable; this is how an older core's strict-decode rejection of a newer
 field heals once the newer core syncs).
 Invalid definitions are **stored** with their error and logged
-(`definitions: invalid`); errors with no row (bad path, abstract parent,
-client) are logged and returned to the console as `sync_errors`. A failed
-listing keeps the last-known-good state.
+(`definitions: invalid`) when their row is inserted, not every sync; errors
+with no row (bad path, abstract parent, client) are returned to the console as
+`sync_errors` and logged when that set changes. A NUL anywhere in a file is a
+load error, because Postgres `text`/`jsonb` cannot hold one and a failed upsert
+would roll back the whole sync. A failed listing keeps the last-known-good
+state for at most 5 minutes (see Consequences).
 
 Each sync **re-judges** every valid row of a present name under this core's
 ceiling and flips it to invalid in place when it no longer passes, so a ceiling
@@ -138,8 +141,9 @@ so the `'auto'` column default (ADR-0061) can never apply. A repo that is not
 onboarded is a clean `FailedPrecondition` at create time, not a validation
 error (the repo table is a runtime fact). A cluster-access repo is refused.
 `SetPermissionMode` on a definition session must stay within its pinned
-version's `mode.allow`, and only while that version is valid, for admins too:
-a definition only narrows. The guard is in `sessions.Store.SetPermissionMode`'s
+version's `mode.allow` (`ErrModeNotAllowed`), and only while that version is
+valid (`ErrDefinitionInvalid`, `FailedPrecondition`), for admins too: a
+definition only narrows. The guard is in `sessions.Store.SetPermissionMode`'s
 own statement, so the console (DashboardService) and the pod (CoreService,
 `PermissionDenied`) both go through it, and the console persists before it
 appends, so a mode the console refuses never reaches the worker.
@@ -164,7 +168,9 @@ profile in `CreateWorkerPod`, so a provisioner-side "supported" flag would be a
 promise it cannot keep (a newer provisioner saying yes would still build the
 ordinary profile: GH_TOKEN and LEASE_ID in the worker). ADR-0064 replaces the
 refusal with a check in the same change that sends the profile. Definition
-sessions can be created and listed, never warmed, until then.
+sessions can be created and listed, never warmed, until then. The schema
+backs the refusal for any core, older ones included: see Rollback in
+Consequences (`sessions_definition_no_lease`).
 
 ### 5. Capacity: a pool inside the global cap
 
@@ -217,17 +223,16 @@ an admin can create an `opus-workspace` (`shared-notes`) session; P4 checks it),
 `resources`, `credentials`, `embed`, `invokers`, `owns`, `subscribes`. Each
 phase that applies one removes it from this list.
 
-`tools.allow` is a shape rule, not a sandbox. Bash entries must be a literal
-command prefix (`Bash(git add:*)`). These are rejected as unscoped Bash by
-another name: any other `*`; a leading space; a command word that is not a
-plain name or path (`FOO=1 bash`, `"bash"`); a shell, exec wrapper or
-interpreter as the command (`sh`, `tcsh`, `env`, `time`, `builtin`, `xargs`,
-`python`, …), also by path and also versioned (`python3.12`); and a bare `git`
-or `git -…`, whose `-c` runs anything. A denylist cannot be complete
-(`Bash(go run:*)` still passes). And a `:*` prefix admits **every** argument:
-`Bash(git push:*)` matches `git push --receive-pack='sh -c …' ./x`, and
-`Bash(git pull --rebase:*)` matches `--upload-pack=…`. Both run local
-commands. `opus-workspace` keeps both rules, inert in P1, so the reviewed PR is
+`tools.allow` is a shape rule, a typo guard and not a sandbox. Bash entries
+must be a literal command prefix (`Bash(git add:*)`): no other `*` and no
+leading space, which are unscoped Bash by another name. Nothing judges the
+command word: `Bash(sh:*)`, `Bash(make:*)` and `Bash(./run.sh:*)` with `Write`
+all pass, and no denylist of shells, interpreters and exec-capable tools could
+be complete, so none is kept (one was tried in review and dropped: it read as a
+control while `go run`, `npx` and `find -exec` walked past it). And a `:*`
+prefix admits **every** argument: `Bash(git push:*)` matches
+`git push --receive-pack='sh -c …' ./x`, and `Bash(git pull --rebase:*)`
+matches `--upload-pack=…`. Both run local commands. `opus-workspace` keeps both rules, inert in P1, so the reviewed PR is
 the real check. **P4 must decide `tools.allow` inside `canUseTool`, never pass
 it as the SDK's `allowedTools`**: the SDK documents `allowedTools` as
 auto-allowed *without* `canUseTool`, which would break the gate (plan §3,
@@ -249,23 +254,34 @@ the SDK's default tool set), and an explicit `null` spec value is a load error
 ## Consequences
 
 - A definition change is a reviewed PR plus a release. That is the point.
-- **Rollback below this ADR:** `migrate down` archives every definition
-  session before it drops the pin, because older code would otherwise warm
-  them as ordinary repo sessions (GH_TOKEN, any mode). Rolling only the core
-  image back with the schema left at 000008 is a known gap: the older binary
-  ignores the columns. The normal GitOps rollback also rolls the PreSync
-  `migration` image back, and an older migrate finds no file for the
-  database's version 8, so it fails the sync instead of starting the older
-  core. Do not bypass that by hand-editing core's tag alone.
+- **Rollback below this ADR:** an older core knows nothing of definitions and
+  would warm a definition session as an ordinary repo session (GH_TOKEN, any
+  mode, no pool). The schema refuses that, not core's code: 000008's
+  `sessions_definition_no_lease` CHECK means no definition session can hold a
+  lease, so any core's `ReserveSlot` fails for one, during a rollout overlap
+  (core is a RollingUpdate) and after an image rollback that leaves the schema
+  at 000008. ADR-0064's migration drops the CHECK together with the code that
+  sends the profile, so a rollback below ADR-0064 needs that slice's own
+  answer. `migrate down` also archives every definition session before it
+  drops the pin.
 - **Version skew.** A core never revokes a stored row it cannot decode. Only a
   core writes `effective`, so such a row came from a newer core (a rollout
   overlap or a rollback), and revoking it would make the newer core insert at
   its own sha and strand every session pinned to the old one. Each sync
   re-judges every valid row, including names no longer in git.
-- **Sync failures** keep the last good heads indefinitely (no staleness bound).
-  `ListDefinitions` shows "not synced yet" or "last sync failed …" in
-  `sync_errors`, and the provisioner skips the GitHub fetch while its clone
-  already sits at the release tag.
+- **Sync failures** keep the last good heads for 5 minutes (five sync
+  intervals). Past that `Resolve` fails closed (`Unavailable` on create and
+  warm), so a narrowing or deletion that core cannot fetch is never covered by
+  the wider version it replaced for long; `ListDefinitions` still lists the
+  stale heads and says so in `sync_errors` (also "not synced yet" and
+  "last sync failed …"). The provisioner skips the GitHub fetch while its clone
+  already sits at the release tag, and reads the files from that commit's
+  objects, never the working tree, so the sha always names the content.
+- **Invokers are not re-judged on stored rows.** A sync re-runs the ceiling on
+  every valid row but not the two-sided client agreement, so a version stored
+  while client X listed it stays valid after X withdraws. Inert in P1. **P4's
+  `Open` must check the caller against the client registrations of the current
+  sync, never the pinned row's `effective.invokers`.**
 - `current` lives in core's memory (core is single-replica). After a restart,
   `CreateSession(definition)` answers `Unavailable` until the first sync, which
   runs immediately.

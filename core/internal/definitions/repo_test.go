@@ -4,7 +4,10 @@ import (
 	"io/fs"
 	"os"
 	"path"
+	"strconv"
 	"testing"
+
+	"go.yaml.in/yaml/v3"
 )
 
 // TestRepoDefinitions is the CI check (docs/adr/0062): the same validator core
@@ -52,5 +55,40 @@ func TestRepoDefinitions(t *testing.T) {
 		if !seen[want] {
 			t.Errorf("%s must be a valid, launchable definition", want)
 		}
+	}
+}
+
+// TestResourceCeilingIsTheLimitRange pins maxMilliCPU/maxMemoryMi to
+// limitRange.max in k8s/core.yaml, the namespace ceiling a definition pod is
+// admitted under. Above it the pod is rejected at admission and never
+// created. Reads a file outside the module: run with -count=1.
+func TestResourceCeilingIsTheLimitRange(t *testing.T) {
+	b, err := os.ReadFile("../../../k8s/core.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var values struct {
+		LimitRange struct {
+			Max struct{ CPU, Memory string } `yaml:"max"`
+		} `yaml:"limitRange"`
+	}
+	if err := yaml.Unmarshal(b, &values); err != nil {
+		t.Fatal(err)
+	}
+	max := values.LimitRange.Max
+	cpu, mem := cpuRe.FindStringSubmatch(max.CPU), memoryRe.FindStringSubmatch(max.Memory)
+	if cpu == nil || mem == nil {
+		t.Fatalf("limitRange.max %+v: want cores or millicores, and Mi or Gi", max)
+	}
+	milli, _ := strconv.Atoi(cpu[1])
+	if cpu[2] == "" {
+		milli *= 1000
+	}
+	mi, _ := strconv.Atoi(mem[1])
+	if mem[2] == "Gi" {
+		mi *= 1024
+	}
+	if milli != maxMilliCPU || mi != maxMemoryMi {
+		t.Errorf("definition ceiling %dm/%dMi, limitRange.max %s/%s: move them together", maxMilliCPU, maxMemoryMi, max.CPU, max.Memory)
 	}
 }

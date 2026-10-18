@@ -3,8 +3,10 @@
 package definitions
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"strings"
 	"testing"
 
@@ -272,4 +274,58 @@ func TestRegistry_Sync(t *testing.T) {
 			t.Fatalf("want the unlisted row revoked: valid=%v err=%v", valid, err)
 		}
 	})
+}
+
+// One bad file must cost one invalid row, never the whole sync: a NUL reaching
+// the upsert would roll back every definition's row, every 60s.
+func TestRegistry_SyncSurvivesANUL(t *testing.T) {
+	ctx := context.Background()
+	r := NewRegistry(dbtest.NewPool(t), &fakeLister{})
+	lister := r.lister.(*fakeLister)
+	lister.set("sha1", map[string]string{
+		"definitions/base.yaml": baseYAML,
+		"definitions/good.yaml": childYAML("good", nil),
+		"definitions/nul.yaml":  childYAML("nul", map[string]string{"systemPrompt": `{ append: "x\0y" }`}),
+		"definitions/key.yaml":  childYAML("key", map[string]string{"git": `{ mode: pr, identity: { name: a, email: a@b.c, "\0": 1 } }`}),
+	})
+	if err := r.Sync(ctx); err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	if _, err := r.Resolve("good"); err != nil {
+		t.Fatalf("good: %v", err)
+	}
+	for _, n := range []string{"nul", "key"} {
+		if _, err := r.Resolve(n); !errors.Is(err, ErrInvalid) || rowCount(t, r, n) != 1 {
+			t.Fatalf("%s: want one stored invalid row, got %v", n, err)
+		}
+	}
+}
+
+// A known, persisted state is logged once, not every 60s.
+func TestRegistry_LogsOnlyChanges(t *testing.T) {
+	ctx := context.Background()
+	r := NewRegistry(dbtest.NewPool(t), &fakeLister{})
+	r.lister.(*fakeLister).set("sha1", map[string]string{
+		"definitions/base.yaml": baseYAML,
+		"definitions/bad.yaml":  childYAML("bad", map[string]string{"mode": "{ default: auto, allow: [auto] }"}),
+		"definitions/oops.yml":  "x",
+	})
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn})))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	if err := r.Sync(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if out := buf.String(); !strings.Contains(out, "definitions: invalid") || !strings.Contains(out, "definitions: file error") {
+		t.Fatalf("first sync must log both: %s", out)
+	}
+	buf.Reset()
+	if err := r.Sync(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if buf.Len() != 0 {
+		t.Fatalf("an unchanged sync logged: %s", buf.String())
+	}
 }

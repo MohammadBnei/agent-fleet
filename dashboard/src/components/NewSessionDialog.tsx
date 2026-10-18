@@ -75,7 +75,9 @@ export function NewSessionDialog({
         setDefinitions(res.definitions);
         setSyncErrors(res.syncErrors);
       })
-      .catch((err: Error) => setError(err.message));
+      // Under the picker, not the dialog's error banner: a definitions
+      // outage must not mark repo-session creation as failing.
+      .catch((err: Error) => setSyncErrors([`definitions unavailable: ${err.message}`]));
   }, [dialogOpen]);
   const chosen = definitions.find((d) => d.name === definition);
 

@@ -136,20 +136,47 @@ func (s *Server) GetSession(ctx context.Context, req *connect.Request[agentfleet
 // prefills them into the message composer, so their text reaches the model as
 // part of a message a human sent and can edit.
 func (s *Server) CreateSession(ctx context.Context, req *connect.Request[agentfleetv1.CreateSessionRequest]) (*connect.Response[agentfleetv1.CreateSessionResponse], error) {
-	if req.Msg.GetDefinition() != "" {
-		return s.createDefinitionSession(ctx, req.Msg)
+	repo, model, mode := req.Msg.GetRepo(), req.Msg.GetModel(), req.Msg.GetPermissionMode()
+	// A definition session (docs/adr/0062) is pinned to the definition's
+	// current valid version, and repo, model and mode all come from it. The
+	// mode is written EXPLICITLY: the column default is 'auto'
+	// (docs/adr/0061), which a definition session must never get.
+	var head *definitions.Head
+	if name := req.Msg.GetDefinition(); name != "" {
+		if repo != "" || model != "" || mode != "" {
+			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("definition sessions take repo, model and mode from the definition"))
+		}
+		if s.definitions == nil {
+			return nil, connect.NewError(connect.CodeUnavailable, errors.New("defined agents are not configured"))
+		}
+		h, err := s.definitions.Resolve(name)
+		switch {
+		case errors.Is(err, definitions.ErrUnknown):
+			return nil, connect.NewError(connect.CodeNotFound, err)
+		case errors.Is(err, definitions.ErrInvalid):
+			return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+		case err != nil:
+			return nil, connect.NewError(connect.CodeUnavailable, err)
+		}
+		head = &h
+		repo, model, mode = h.Effective.Workspace.Repo, h.Effective.Model.Default, h.Effective.Mode.Default
 	}
-	repo := req.Msg.GetRepo()
+
 	repoCfg, err := s.repos.Get(ctx, repo)
 	if err != nil {
 		slog.Error("dashboard CreateSession: repo lookup", "repo", repo, "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
-	if repoCfg == nil {
+	switch {
+	case repoCfg == nil && head != nil:
+		return nil, connect.NewError(connect.CodeFailedPrecondition,
+			fmt.Errorf("definition %q targets repo %q, which is not onboarded (add it under manage repos)", head.Name, repo))
+	case repoCfg == nil:
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("unknown repo %q", repo))
+	case head != nil && repoCfg.ClusterAccess:
+		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("definition sessions never run on a cluster-access repo"))
 	}
 
-	model := req.Msg.GetModel()
 	if model == "" {
 		model = fallbackModel()
 	} else if !isValidModel(model) {
@@ -160,18 +187,24 @@ func (s *Server) CreateSession(ctx context.Context, req *connect.Request[agentfl
 	// ends up in a real SDK call via worker/src/session.ts's launchMode, so an
 	// unvalidated string here would reach the SDK verbatim. Empty is allowed
 	// and means the column default — "auto" since docs/adr/0061.
-	mode := req.Msg.GetPermissionMode()
 	if mode != "" && !validPermissionModes[mode] {
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("invalid permission mode %q", mode))
 	}
 
-	id, err := s.sessions.Create(ctx, sessions.CreateParams{
+	params := sessions.CreateParams{
 		Repo:           repo,
 		Title:          req.Msg.GetTitle(),
 		Description:    req.Msg.GetDescription(),
 		Model:          model,
 		PermissionMode: mode,
-	})
+	}
+	// No capacity check for either kind: a create provisions nothing
+	// (docs/adr/0048 §1), so ReserveSlot at warm is the one capacity gate
+	// (docs/adr/0062 §5).
+	if head != nil {
+		params.DefinitionName, params.DefinitionSHA = head.Name, head.SHA
+	}
+	id, err := s.sessions.Create(ctx, params)
 	if err != nil {
 		slog.Error("dashboard CreateSession", "repo", repo, "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
@@ -181,64 +214,7 @@ func (s *Server) CreateSession(ctx context.Context, req *connect.Request[agentfl
 		slog.Error("dashboard CreateSession", "sessionId", id, "error", err)
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
-	slog.Info("dashboard CreateSession", "sessionId", id, "repo", repo)
-	return connect.NewResponse(&agentfleetv1.CreateSessionResponse{Session: SessionToProto(*sess)}), nil
-}
-
-// createDefinitionSession pins a new session to a definition's current valid
-// version (docs/adr/0062). Repo, model and mode all come from the definition,
-// and the mode is written EXPLICITLY: the column default is 'auto'
-// (docs/adr/0061), which a definition session must never get.
-func (s *Server) createDefinitionSession(ctx context.Context, msg *agentfleetv1.CreateSessionRequest) (*connect.Response[agentfleetv1.CreateSessionResponse], error) {
-	name := msg.GetDefinition()
-	if msg.GetRepo() != "" || msg.GetModel() != "" || msg.GetPermissionMode() != "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("definition sessions take repo, model and mode from the definition"))
-	}
-	if s.definitions == nil {
-		return nil, connect.NewError(connect.CodeUnavailable, errors.New("defined agents are not configured"))
-	}
-	head, err := s.definitions.Resolve(name)
-	switch {
-	case errors.Is(err, definitions.ErrUnknown):
-		return nil, connect.NewError(connect.CodeNotFound, err)
-	case errors.Is(err, definitions.ErrInvalid):
-		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
-	case err != nil:
-		return nil, connect.NewError(connect.CodeUnavailable, err)
-	}
-	eff := head.Effective
-	repo := eff.Workspace.Repo
-	repoCfg, err := s.repos.Get(ctx, repo)
-	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
-	}
-	if repoCfg == nil {
-		return nil, connect.NewError(connect.CodeFailedPrecondition,
-			fmt.Errorf("definition %q targets repo %q, which is not onboarded (add it under manage repos)", name, repo))
-	}
-	if repoCfg.ClusterAccess {
-		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("definition sessions never run on a cluster-access repo"))
-	}
-	// No capacity check here: a create provisions nothing (docs/adr/0048 §1),
-	// so ReserveSlot at warm is the one capacity gate (docs/adr/0062 §5).
-	id, err := s.sessions.Create(ctx, sessions.CreateParams{
-		Repo:           repo,
-		Title:          msg.GetTitle(),
-		Description:    msg.GetDescription(),
-		Model:          eff.Model.Default,
-		PermissionMode: eff.Mode.Default,
-		DefinitionName: head.Name,
-		DefinitionSHA:  head.SHA,
-	})
-	if err != nil {
-		slog.Error("dashboard CreateSession: definition", "definition", name, "error", err)
-		return nil, connect.NewError(connect.CodeInternal, err)
-	}
-	sess, err := s.sessions.Get(ctx, id)
-	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
-	}
-	slog.Info("dashboard CreateSession", "sessionId", id, "repo", repo, "definition", name, "sha", head.SHA)
+	slog.Info("dashboard CreateSession", "sessionId", id, "repo", repo, "definition", params.DefinitionName, "sha", params.DefinitionSHA)
 	return connect.NewResponse(&agentfleetv1.CreateSessionResponse{Session: SessionToProto(*sess)}), nil
 }
 
@@ -757,7 +733,11 @@ func (s *Server) SetPermissionMode(ctx context.Context, req *connect.Request[age
 	if err := s.sessions.SetPermissionMode(ctx, sessionID, mode); err != nil {
 		switch {
 		case errors.Is(err, sessions.ErrModeNotAllowed):
+			// InvalidArgument, where the pod's CoreService call gets
+			// PermissionDenied: see coreserver's SetPermissionMode.
 			return nil, connect.NewError(connect.CodeInvalidArgument, err)
+		case errors.Is(err, sessions.ErrDefinitionInvalid):
+			return nil, connect.NewError(connect.CodeFailedPrecondition, err)
 		case errors.Is(err, sessions.ErrNotFound):
 			return nil, connect.NewError(connect.CodeNotFound, err)
 		}
@@ -1043,10 +1023,13 @@ func (s *Server) WarmIfIdle(ctx context.Context, sessionID string) (podName stri
 	// read-then-act race CI once observed as 4 tasks claimed with a cap of 2.
 	leaseID, err := s.sessions.ReserveSlot(ctx, sessionID, s.caps)
 	if err != nil {
-		if code, ok := capacityCode(err); ok {
-			return "", connect.NewError(code, err)
-		}
+		// Every ErrAtCapacity is wrapped with which cap was hit, so the
+		// message is passed through as-is.
 		switch {
+		case errors.Is(err, sessions.ErrAtCapacity):
+			return "", connect.NewError(connect.CodeResourceExhausted, err)
+		case errors.Is(err, sessions.ErrDefinitionInvalid):
+			return "", connect.NewError(connect.CodeFailedPrecondition, err)
 		case errors.Is(err, sessions.ErrNotFound):
 			return "", connect.NewError(connect.CodeFailedPrecondition, errors.New("session is archived"))
 		}
@@ -1114,19 +1097,6 @@ func (s *Server) definitionWarmable(ctx context.Context, t *sessions.Session, cl
 	// slice replaces this with a check it can satisfy.
 	return connect.NewError(connect.CodeFailedPrecondition,
 		errors.New("definition sessions cannot warm yet: the definition pod profile (docs/adr/0064) is not implemented"))
-}
-
-// capacityCode maps ReserveSlot's capacity refusals.
-// Every ErrAtCapacity is wrapped with which cap was hit, so the message is
-// passed through as-is.
-func capacityCode(err error) (connect.Code, bool) {
-	switch {
-	case errors.Is(err, sessions.ErrAtCapacity):
-		return connect.CodeResourceExhausted, true
-	case errors.Is(err, sessions.ErrDefinitionInvalid):
-		return connect.CodeFailedPrecondition, true
-	}
-	return 0, false
 }
 
 // DeleteTask force-tears-down any live session for sessionID (both kinds —

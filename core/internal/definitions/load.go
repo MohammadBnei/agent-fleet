@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -38,25 +39,12 @@ var (
 	serviceHosts   = []string{"github.com", "api.github.com", "api.anthropic.com"}
 	interactions   = []string{"ask", "deny"}
 	lifecycles     = []string{"resident", "single-shot"}
-	// shellWrappers: a Bash prefix that is any of these is a whole shell or
-	// interpreter in disguise (`Bash(bash:*)`, `Bash(env:*)`). A guard
-	// against the obvious equivalents of unscoped Bash, not a sandbox: the
-	// reviewed PR and canUseTool are (docs/adr/0062 §7).
-	// Matched after trailing version digits are stripped (python3.12 →
-	// python, perl5 → perl).
-	shellWrappers = []string{"sh", "bash", "zsh", "dash", "ksh", "mksh", "ash", "csh", "tcsh", "fish", "pwsh",
-		"env", "eval", "exec", "builtin", "command", "time", "xargs", "sudo", "su", "doas", "nohup", "setsid",
-		"timeout", "nice", "stdbuf", "busybox", "python", "node", "bun", "deno", "perl", "ruby", "php", "lua"}
-	// commandRe: the command word is a plain name or path, so no
-	// `FOO=1 bash`, `"bash"`, `b\ash` or `$SHELL` spelling slips past the list.
-	commandRe = regexp.MustCompile(`^[A-Za-z0-9._/+-]+$`)
-	versionRe = regexp.MustCompile(`[0-9.]+$`)
 )
 
 const (
 	maxSystemPrompt  = 16 << 10
-	maxMilliCPU      = 4000 // = workerMaxCPU (provisioner/internal/k8s/pod.go)
-	maxMemoryMi      = 4096 // = workerMaxMemory
+	maxMilliCPU      = 4000 // = limitRange.max in k8s/core.yaml (repo_test.go)
+	maxMemoryMi      = 4096
 	maxTurns         = 500
 	maxTimeout       = 12 * time.Hour
 	maxStartupBudget = 15 * time.Minute
@@ -111,6 +99,12 @@ func Load(files map[string][]byte) (results []Result, fileErrs []error) {
 	clientErrs := map[string]error{}
 	for _, p := range paths {
 		if strings.HasSuffix(p, ".md") {
+			continue
+		}
+		// A git path may be any bytes; a name column (and a proto string)
+		// may not, and one bad name would fail the whole sync.
+		if !utf8.ValidString(p) {
+			fileErrs = append(fileErrs, fmt.Errorf("%q: not a definition path (not UTF-8)", p))
 			continue
 		}
 		dir, base := path.Split(p)
@@ -236,6 +230,16 @@ func Load(files map[string][]byte) (results []Result, fileErrs []error) {
 
 func parseDefinition(p, stem string, b []byte) *parsed {
 	out := &parsed{path: p}
+	// Postgres text and jsonb cannot hold U+0000, and yaml.v3 errors echo
+	// keys and values verbatim. A NUL would fail the row's upsert and with it
+	// the whole sync transaction, so it is refused here, as an ordinary
+	// invalid definition that CI also catches. Checked before the typed
+	// decode so no error below can carry one.
+	var doc any
+	if yaml.Unmarshal(b, &doc) == nil && hasNUL(doc) {
+		out.err = errors.New(`a NUL character (\0) is not allowed anywhere in a definition`)
+		return out
+	}
 	var df definitionFile
 	if err := decodeStrict(b, &df); err != nil {
 		out.err = err
@@ -265,6 +269,29 @@ func parseDefinition(p, stem string, b []byte) *parsed {
 	}
 	out.spec, out.raw = df.Spec, node.Spec
 	return out
+}
+
+// hasNUL reports a NUL in any key or string of a decoded YAML value.
+func hasNUL(v any) bool {
+	switch v := v.(type) {
+	case string:
+		return strings.ContainsRune(v, 0)
+	case []any:
+		return slices.ContainsFunc(v, hasNUL)
+	case map[string]any:
+		for k, x := range v {
+			if hasNUL(k) || hasNUL(x) {
+				return true
+			}
+		}
+	case map[any]any:
+		for k, x := range v {
+			if hasNUL(k) || hasNUL(x) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // decodeStrict rejects an unknown key at any depth and a second document.
@@ -480,7 +507,7 @@ func validate(name string, s *Spec) error {
 			case !slices.Contains(toolCeiling, m[1]):
 				bad("tools.allow: %q is not in the tool ceiling %v", t, toolCeiling)
 			case m[1] == "Bash" && !validBashSpecifier(m[3]):
-				bad("tools.allow: %q: Bash needs a literal command prefix (`Bash(git add:*)`): no other *, no leading space, not a shell or interpreter", t)
+				bad("tools.allow: %q: Bash needs a literal command prefix (`Bash(git add:*)`): no other *, no leading space", t)
 			}
 		}
 		for _, t := range s.Tools.Deny {
@@ -572,20 +599,17 @@ func checkList(errs *[]error, field string, allow, ceiling []string) {
 }
 
 // validBashSpecifier: a literal command, optionally ending in one ":*". Any
-// other * (`Bash(**)`, `Bash(*:*)`), a leading space (`Bash( *)`), a command
-// word that is not a plain name or path, a shell or interpreter prefix (also
-// by path, `/bin/sh`, or versioned, `python3.12`), or a bare `git` (whose
-// `-c` runs anything) is unscoped Bash by another name. A shape rule, not a
-// sandbox: `git push:*` still admits `--receive-pack` (docs/adr/0062 §7).
+// other * (`Bash(**)`, `Bash(*:*)`) or a leading space (`Bash( *)`) is
+// unscoped Bash by another name.
+//
+// ponytail: shape only, a typo guard and not a sandbox. `Bash(sh:*)`,
+// `Bash(make:*)` and `Bash(git push:*)` (`--receive-pack`) all pass, and no
+// denylist of command words could be complete. The gate is canUseTool, which
+// asks on every Bash match until P4's sidecar allowlist and argument check
+// exist (docs/adr/0062 §7).
 func validBashSpecifier(spec string) bool {
 	cmd := strings.TrimSuffix(spec, ":*")
-	if cmd == "" || cmd != strings.TrimSpace(cmd) || strings.Contains(cmd, "*") {
-		return false
-	}
-	fields := strings.Fields(cmd)
-	base := path.Base(fields[0])
-	return commandRe.MatchString(fields[0]) && !slices.Contains(shellWrappers, versionRe.ReplaceAllString(base, "")) &&
-		(base != "git" || len(fields) > 1 && !strings.HasPrefix(fields[1], "-"))
+	return cmd != "" && cmd == strings.TrimSpace(cmd) && !strings.Contains(cmd, "*")
 }
 
 // shapeList: non-empty strings, no duplicates, none of the forbidden runes or

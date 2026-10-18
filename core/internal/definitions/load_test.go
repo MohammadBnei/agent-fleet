@@ -94,20 +94,7 @@ func TestLoad_ChildRules(t *testing.T) {
 		{"Bash star colon star", map[string]string{"tools": `{ allow: ["Bash(*:*)"] }`}, "literal command prefix"},
 		{"Bash leading space", map[string]string{"tools": `{ allow: ["Bash( *)"] }`}, "literal command prefix"},
 		{"Bash inner star", map[string]string{"tools": `{ allow: ["Bash(git * push:*)"] }`}, "literal command prefix"},
-		{"Bash shell", map[string]string{"tools": `{ allow: ["Bash(sh -c:*)"] }`}, "literal command prefix"},
-		{"Bash bash", map[string]string{"tools": `{ allow: ["Bash(bash:*)"] }`}, "literal command prefix"},
-		{"Bash env", map[string]string{"tools": `{ allow: ["Bash(env:*)"] }`}, "literal command prefix"},
-		{"Bash shell by path", map[string]string{"tools": `{ allow: ["Bash(/bin/sh:*)"] }`}, "literal command prefix"},
 		{"Bash exact command ok", map[string]string{"tools": `{ allow: ["Bash(git status)"] }`}, ""},
-		{"Bash env assignment", map[string]string{"tools": `{ allow: ["Bash(FOO=1 bash:*)"] }`}, "literal command prefix"},
-		{"Bash time wrapper", map[string]string{"tools": `{ allow: ["Bash(time bash:*)"] }`}, "literal command prefix"},
-		{"Bash builtin", map[string]string{"tools": `{ allow: ["Bash(builtin eval:*)"] }`}, "literal command prefix"},
-		{"Bash quoted shell", map[string]string{"tools": `{ allow: ["Bash(\"bash\":*)"] }`}, "literal command prefix"},
-		{"Bash tcsh", map[string]string{"tools": `{ allow: ["Bash(tcsh:*)"] }`}, "literal command prefix"},
-		{"Bash versioned interpreter", map[string]string{"tools": `{ allow: ["Bash(python3.12:*)"] }`}, "literal command prefix"},
-		{"Bash bare git", map[string]string{"tools": `{ allow: ["Bash(git:*)"] }`}, "literal command prefix"},
-		{"Bash git option first", map[string]string{"tools": `{ allow: ["Bash(git -c:*)"] }`}, "literal command prefix"},
-		{"Bash go subcommand ok", map[string]string{"tools": `{ allow: ["Bash(go test:*)"] }`}, ""},
 		// erasing a parent's bound: null and absence both fail
 		{"tools null", map[string]string{"tools": "~"}, "spec.tools: null is not allowed"},
 		{"interaction null", map[string]string{"interaction": "~"}, "spec.interaction: null"},
@@ -171,6 +158,12 @@ func TestLoad_ChildRules(t *testing.T) {
 		{"lifecycle outside ceiling", map[string]string{"lifecycle": "{ allow: [forever] }"}, "lifecycle"},
 		{"agents key unknown", map[string]string{"agents": "[x]"}, "field agents not found"},
 		{"output key unknown", map[string]string{"output": "{ x: y }"}, "field output not found"},
+		// NUL: Postgres text/jsonb cannot store it, so it must be an invalid
+		// row, not a failed sync transaction.
+		{"NUL in a value", map[string]string{"systemPrompt": `{ append: "x\0y" }`}, "NUL"},
+		{"NUL in a deny entry", map[string]string{"tools": `{ allow: [Read], deny: ["Edit(\x00)"] }`}, "NUL"},
+		{"NUL in a key", map[string]string{"git": `{ mode: pr, identity: { name: a, email: a@b.c, "\u0000": 1 } }`}, "NUL"},
+		{"NUL echoed by a type error", map[string]string{"limits": `{ maxTurns: "\0", timeout: 1h, concurrency: 1, startupBudget: 3m }`}, "NUL"},
 		{"nested unknown key", map[string]string{"git": "{ mode: pr, identity: { name: a, email: a@b.c, foo: 1 } }"}, "field foo not found"},
 	}
 	for _, tc := range cases {
@@ -320,9 +313,10 @@ func TestLoad_Paths(t *testing.T) {
 		"definitions/clients/README.md": "so are these",
 		"definitions/typo.yml":          "x",
 		"definitions/nested/x.yaml":     "x",
+		"definitions/\xff.yaml":         "x", // git allows it; a TEXT name column does not
 	})
-	if len(fileErrs) != 2 {
-		t.Fatalf("want 2 path errors (.yml and nested), got %v", fileErrs)
+	if len(fileErrs) != 3 {
+		t.Fatalf("want 3 path errors (.yml, nested, not UTF-8), got %v", fileErrs)
 	}
 }
 

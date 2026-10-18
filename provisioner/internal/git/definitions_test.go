@@ -130,6 +130,33 @@ func TestReadDefinitions_TagReadsTheTaggedTree(t *testing.T) {
 	}
 }
 
+// The returned content is the commit's, never the checkout's: at its tag the
+// clone is not refreshed, so an edited or added file on the PVC would
+// otherwise be pinned under the tagged sha.
+func TestReadDefinitions_ReadsTheCommitNotTheWorkingTree(t *testing.T) {
+	root := t.TempDir()
+	m := NewManager(root)
+	origin := newDefinitionsOrigin(t)
+	gitIn(t, origin, "tag", "4.19.0")
+	if _, _, err := m.ReadDefinitions(context.Background(), origin, "4.19.0"); err != nil {
+		t.Fatal(err)
+	}
+	src := filepath.Join(root, "definitions-src", "definitions")
+	if err := os.WriteFile(filepath.Join(src, "a.yaml"), []byte("tampered"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(src, "planted.yaml"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	files, _, err := m.ReadDefinitions(context.Background(), origin, "4.19.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(files["definitions/a.yaml"]) != "a" || len(files) != 2 {
+		t.Fatalf("read the working tree: %v", files)
+	}
+}
+
 // Fail closed: every one of these is an error, never an empty list.
 func TestReadDefinitions_FailsClosed(t *testing.T) {
 	t.Run("no definitions directory", func(t *testing.T) {

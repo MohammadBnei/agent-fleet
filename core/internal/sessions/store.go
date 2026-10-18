@@ -130,7 +130,7 @@ var ErrAtCapacity = fmt.Errorf("fleet is at its live-session cap")
 var ErrNotFound = fmt.Errorf("session not found")
 
 // ErrModeNotAllowed: SetPermissionMode on a definition session with a mode
-// outside its pinned version's mode.allow, or a version no longer valid.
+// outside its pinned version's mode.allow.
 var ErrModeNotAllowed = errors.New("mode is outside this definition's mode.allow")
 
 // ErrDefinitionInvalid: the session is pinned to a definition row that is no
@@ -360,7 +360,9 @@ func (s *Store) ReserveSlot(ctx context.Context, id string, caps Caps) (leaseID 
 	}
 
 	// Definition sessions also draw from the definition pool and their own
-	// limits.concurrency (docs/adr/0062), counted under the same lock.
+	// limits.concurrency (docs/adr/0062), counted under the same lock. Until
+	// docs/adr/0064's migration drops sessions_definition_no_lease, a
+	// definition session that passes these still fails at the lease write.
 	var (
 		defName           *string
 		defValid          bool
@@ -657,13 +659,15 @@ func (s *Store) ClearLease(ctx context.Context, id string) error {
 // (docs/adr/0062): checked in the same statement, so both callers (the
 // console's DashboardService and the pod's CoreService) go through one guard,
 // and a definition only narrows, for admins too. ErrModeNotAllowed when it is
-// outside; ErrNotFound for an unknown session.
+// outside, ErrDefinitionInvalid when the pinned version was revoked,
+// ErrNotFound for an unknown session.
 func (s *Store) SetPermissionMode(ctx context.Context, id, mode string) error {
-	var allowed bool
+	var allowed, revoked bool
 	err := s.pool.QueryRow(ctx, `
 		WITH t AS (
 		  SELECT s.id, s.definition_name IS NULL
-		         OR COALESCE(d.valid AND d.effective->'mode'->'allow' ? $2, false) AS allowed
+		         OR COALESCE(d.valid AND d.effective->'mode'->'allow' ? $2, false) AS allowed,
+		         COALESCE(NOT d.valid, false) AS revoked
 		    FROM sessions s
 		    LEFT JOIN agent_definitions d ON d.name = s.definition_name AND d.sha = s.definition_sha
 		   WHERE s.id = $1
@@ -671,13 +675,15 @@ func (s *Store) SetPermissionMode(ctx context.Context, id, mode string) error {
 		  UPDATE sessions SET permission_mode = $2, updated_at = now()
 		    FROM t WHERE sessions.id = t.id AND t.allowed
 		)
-		SELECT allowed FROM t`, id, mode).Scan(&allowed)
+		SELECT allowed, revoked FROM t`, id, mode).Scan(&allowed, &revoked)
 	switch {
 	case err == pgx.ErrNoRows:
 		return ErrNotFound
 	case err != nil:
 		slog.Error("sessions SetPermissionMode", "sessionId", id, "error", err)
 		return fmt.Errorf("set permission mode: %w", err)
+	case revoked:
+		return ErrDefinitionInvalid
 	case !allowed:
 		return fmt.Errorf("%w: %q", ErrModeNotAllowed, mode)
 	}

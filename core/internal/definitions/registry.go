@@ -7,7 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -24,7 +26,13 @@ var (
 	ErrUnknown   = errors.New("no such definition")
 	ErrInvalid   = errors.New("definition is invalid at HEAD")
 	errNotSynced = errors.New("definitions not synced yet")
+	errStale     = errors.New("definitions are stale")
 )
+
+// staleAfter bounds last-known-good: past it Resolve fails closed, so a
+// narrowing or deletion that core cannot fetch is never papered over by the
+// wider version it replaced for longer than this. Five sync intervals.
+const staleAfter = 5 * time.Minute
 
 // Head is one present definition's current state: the row of the content at
 // the listed commit when that row is valid (what a new session pins), or its
@@ -55,7 +63,8 @@ type Registry struct {
 	syncErrs []string
 	// lastErr is the last failed sync's error, cleared by a good one: the
 	// heads are then last-known-good, and List says so.
-	lastErr error
+	lastErr  error
+	lastGood time.Time
 }
 
 func NewRegistry(pool *pgxpool.Pool, lister Lister) *Registry {
@@ -67,10 +76,8 @@ const syncTimeout = 30 * time.Second
 // Sync lists, validates and stores every definition, then re-judges every
 // stored valid row under this core's ceiling. On any error the previous state
 // is kept (last known good), so a provisioner blip does not unpublish
-// definitions, and List reports the failure.
-//
-// ponytail: no staleness bound. Heads stay last-known-good for as long as
-// syncs fail; fail closed after N minutes if a stale wider version matters.
+// definitions, and List reports the failure. Past staleAfter, Resolve fails
+// closed.
 func (r *Registry) Sync(ctx context.Context) error {
 	err := r.sync(ctx)
 	r.mu.Lock()
@@ -90,8 +97,18 @@ func (r *Registry) sync(ctx context.Context) error {
 	results, fileErrs := Load(files)
 	syncErrs := make([]string, 0, len(fileErrs))
 	for _, e := range fileErrs {
-		slog.Error("definitions: file error", "sha", sha, "error", e)
 		syncErrs = append(syncErrs, e.Error())
+	}
+	// Logged when the set changes, not every 60s: the console shows them,
+	// and a known, persisted state at error level every minute buries real
+	// errors.
+	r.mu.RLock()
+	changed := !slices.Equal(syncErrs, r.syncErrs)
+	r.mu.RUnlock()
+	if changed {
+		for _, e := range fileErrs {
+			slog.Error("definitions: file error", "sha", sha, "error", e)
+		}
 	}
 
 	tx, err := r.pool.Begin(ctx)
@@ -108,8 +125,9 @@ func (r *Registry) sync(ctx context.Context) error {
 		var effective []byte
 		var errText *string
 		if res.Err != nil {
-			slog.Warn("definitions: invalid", "name", res.Name, "sha", sha, "error", res.Err)
-			msg := res.Err.Error()
+			// Load refuses a NUL in the file; this covers one in an error
+			// string, which TEXT cannot hold either.
+			msg := strings.ReplaceAll(res.Err.Error(), "\x00", `\0`)
 			errText = &msg
 		} else if effective, err = json.Marshal(res.Effective); err != nil {
 			return fmt.Errorf("definitions sync: marshal %s: %w", res.Name, err)
@@ -136,6 +154,10 @@ func (r *Registry) sync(ctx context.Context) error {
 			                       ORDER BY synced_at DESC, sha LIMIT 1)
 			RETURNING sha`, res.Name, nullJSON(res.Own), nullJSON(effective), res.Err == nil, errText).Scan(&rowSHA)
 		if errors.Is(err, pgx.ErrNoRows) {
+			// New content, or a new judgement of it: the one time it is logged.
+			if res.Err != nil {
+				slog.Warn("definitions: invalid", "name", res.Name, "sha", sha, "error", res.Err)
+			}
 			err = tx.QueryRow(ctx, `
 				INSERT INTO agent_definitions (name, sha, spec, effective, valid, error)
 				VALUES ($1, $2, $3::jsonb, $4::jsonb, $5, $6)
@@ -187,7 +209,7 @@ func (r *Registry) sync(ctx context.Context) error {
 	}
 
 	r.mu.Lock()
-	r.synced, r.heads, r.syncErrs = true, heads, syncErrs
+	r.synced, r.heads, r.syncErrs, r.lastGood = true, heads, syncErrs, time.Now()
 	r.mu.Unlock()
 	return nil
 }
@@ -244,7 +266,8 @@ func (r *Registry) current(ctx context.Context, tx pgx.Tx, name, headSHA string)
 			// this core's to judge: never revoke it, or the newer core would
 			// re-insert at its sha and strand every session pinned to this one.
 			// It is still no head for THIS core.
-			slog.Warn("definitions: stored version not understood by this core, left as is", "name", name, "sha", x.sha, "error", err)
+			// Debug: it is seen every sync until the newer core is back.
+			slog.Debug("definitions: stored version not understood by this core, left as is", "name", name, "sha", x.sha, "error", err)
 			if x.sha == headSHA {
 				head.Err = "stored version not understood by this core: " + err.Error()
 			}
@@ -295,6 +318,8 @@ func (r *Registry) List() ([]Head, []string) {
 		errs = append(errs, fmt.Sprintf("%v: %v", errNotSynced, r.lastErr))
 	case !r.synced:
 		errs = append(errs, errNotSynced.Error())
+	case time.Since(r.lastGood) > staleAfter:
+		errs = append(errs, fmt.Sprintf("%v: no good sync for over %s, so no definition session can be created: %v", errStale, staleAfter, r.lastErr))
 	case r.lastErr != nil:
 		errs = append(errs, "last sync failed, showing the last good one: "+r.lastErr.Error())
 	}
@@ -302,13 +327,17 @@ func (r *Registry) List() ([]Head, []string) {
 }
 
 // Resolve returns name's current version: errNotSynced before the first sync,
-// ErrUnknown when it is not in git, ErrInvalid (wrapped with HEAD's error)
-// when the content at HEAD is invalid.
+// errStale when the last good sync is older than staleAfter, ErrUnknown when
+// it is not in git, ErrInvalid (wrapped with HEAD's error) when the content at
+// HEAD is invalid.
 func (r *Registry) Resolve(name string) (Head, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	if !r.synced {
 		return Head{}, errNotSynced
+	}
+	if age := time.Since(r.lastGood); age > staleAfter {
+		return Head{}, fmt.Errorf("%w: no good sync for %s: %v", errStale, age.Round(time.Second), r.lastErr)
 	}
 	h, ok := r.heads[name]
 	if !ok {
