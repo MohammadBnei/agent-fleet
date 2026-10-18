@@ -55,7 +55,10 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	// backstop's activity signal.
 	activityStore := newActivityTrackingStore(store, sessionStore)
 
-	provisioner, err := provisionerclient.New(cfg.ProvisionerGRPCAddr)
+	if cfg.CoreProvisionerToken == "" {
+		slog.Warn("FLEET_CORE_PROVISIONER_TOKEN is unset: the provisioner will reject every call core makes (docs/adr/0069)")
+	}
+	provisioner, err := provisionerclient.New(cfg.ProvisionerGRPCAddr, cfg.CoreProvisionerToken)
 	if err != nil {
 		return err
 	}

@@ -74,7 +74,7 @@ func TestAnswerQuestion_WarmsFirstSoTheAnswerIsAboveTheResumeCursor(t *testing.T
 	go func() { _ = gs.Serve(lis) }()
 	t.Cleanup(gs.Stop)
 
-	provClient, err := provisionerclient.New(lis.Addr().String())
+	provClient, err := provisionerclient.New(lis.Addr().String(), "")
 	if err != nil {
 		t.Fatalf("provisioner client: %v", err)
 	}

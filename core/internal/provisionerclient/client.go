@@ -14,6 +14,7 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
 
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 )
@@ -52,11 +53,25 @@ const sessionCallTimeout = 2 * time.Minute
 // wants a background job with a status column, not a bigger number here.
 const repoSyncTimeout = 10 * time.Minute
 
-// New dials addr (in-cluster ClusterIP, no TLS needed — Cilium's own
-// network policy is the trust boundary here, same as every other
-// in-cluster call in this fleet).
-func New(addr string) (*Client, error) {
-	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+// New dials addr (in-cluster ClusterIP, no TLS). token is
+// FLEET_CORE_PROVISIONER_TOKEN, sent as a bearer on every call: the
+// provisioner rejects a call without it and refuses to start without its own
+// copy (docs/adr/0069). Network reachability alone was the boundary before,
+// and it let any pod create pods.
+//
+// An empty token still dials. Every call then fails Unauthenticated, which is
+// loud enough, and the console keeps working without a provisioner.
+func New(addr, token string) (*Client, error) {
+	bearer := "Bearer " + token
+	conn, err := grpc.NewClient(addr,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithChainUnaryInterceptor(func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+			return invoker(metadata.AppendToOutgoingContext(ctx, "authorization", bearer), method, req, reply, cc, opts...)
+		}),
+		grpc.WithChainStreamInterceptor(func(ctx context.Context, desc *grpc.StreamDesc, cc *grpc.ClientConn, method string, streamer grpc.Streamer, opts ...grpc.CallOption) (grpc.ClientStream, error) {
+			return streamer(metadata.AppendToOutgoingContext(ctx, "authorization", bearer), desc, cc, method, opts...)
+		}),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("dial provisioner: %w", err)
 	}
