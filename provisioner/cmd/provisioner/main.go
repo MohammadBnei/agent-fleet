@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"google.golang.org/grpc"
 
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 
@@ -50,7 +49,7 @@ func main() {
 	// First, before any side effect: an unauthenticated ProvisionerService
 	// can create and expose pods for anyone on the pod network
 	// (docs/adr/0069), so no token means no provisioner.
-	grpcAuth, err := grpcserver.NewAuth(cfg.AuthToken)
+	grpcSrv, err := grpcserver.NewServer(cfg.CoreProvisionerToken, grpcserver.AccessLogInterceptor, metrics.UnaryInterceptor)
 	if err != nil {
 		slog.Error("refusing to start", "error", err)
 		os.Exit(1)
@@ -135,10 +134,6 @@ func main() {
 	mux.Handle("/metrics", promhttp.Handler())
 	httpServer := &http.Server{Addr: ":" + cfg.Port, Handler: mux}
 
-	grpcSrv := grpc.NewServer(
-		grpc.ChainUnaryInterceptor(grpcserver.AccessLogInterceptor, metrics.UnaryInterceptor, grpcAuth.Unary),
-		grpc.ChainStreamInterceptor(grpcAuth.Stream),
-	)
 	agentfleetv1.RegisterProvisionerServiceServer(grpcSrv, grpcserver.New(k8sc, gitMgr, core, cfg.E2eHost, cfg.FleetSharedRepoURL, cfg.FleetSharedBranch, version))
 
 	reconcileInterval, _ := strconv.Atoi(cfg.ReconcileInterval)

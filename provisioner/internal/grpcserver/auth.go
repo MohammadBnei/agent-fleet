@@ -23,14 +23,23 @@ type Auth struct {
 	want []byte
 }
 
-// NewAuth refuses an empty token rather than serving everyone. The Infisical
+// NewServer is the provisioner's gRPC server: unary runs first (access log,
+// metrics, so a rejected call is still logged and counted), then the token
+// check on every unary and stream call. main and the tests both build it here,
+// so the wiring the tests exercise is the wiring that ships.
+//
+// An empty token refuses to start rather than serving everyone. The Infisical
 // operator rendering an empty Secret is a known failure, and "off when unset"
 // would come up wide open and look healthy (the ADR-0056 reasoning).
-func NewAuth(token string) (*Auth, error) {
+func NewServer(token string, unary ...grpc.UnaryServerInterceptor) (*grpc.Server, error) {
 	if token == "" {
 		return nil, errors.New("FLEET_CORE_PROVISIONER_TOKEN is unset: refusing to serve ProvisionerService unauthenticated")
 	}
-	return &Auth{want: []byte("Bearer " + token)}, nil
+	a := &Auth{want: []byte("Bearer " + token)}
+	return grpc.NewServer(
+		grpc.ChainUnaryInterceptor(append(unary, a.Unary)...),
+		grpc.ChainStreamInterceptor(a.Stream),
+	), nil
 }
 
 func (a *Auth) Unary(ctx context.Context, req any, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {

@@ -13,6 +13,7 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
+	"google.golang.org/protobuf/types/known/emptypb"
 
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 )
@@ -26,16 +27,15 @@ func (versionOnly) GetVersion(context.Context, *agentfleetv1.GetVersionRequest) 
 }
 
 // authConn serves ProvisionerService (unary) and grpc.health (Watch is a
-// server stream, which ProvisionerService has none of yet) behind the auth
-// interceptors, over bufconn.
+// server stream, which ProvisionerService has none of yet) on the server main
+// builds (NewServer), over bufconn.
 func authConn(t *testing.T, token string) *grpc.ClientConn {
 	t.Helper()
-	a, err := NewAuth(token)
+	srv, err := NewServer(token, AccessLogInterceptor)
 	if err != nil {
 		t.Fatal(err)
 	}
 	lis := bufconn.Listen(1024 * 1024)
-	srv := grpc.NewServer(grpc.ChainUnaryInterceptor(a.Unary), grpc.ChainStreamInterceptor(a.Stream))
 	agentfleetv1.RegisterProvisionerServiceServer(srv, versionOnly{})
 	healthpb.RegisterHealthServer(srv, health.NewServer())
 	go func() { _ = srv.Serve(lis) }()
@@ -51,8 +51,8 @@ func authConn(t *testing.T, token string) *grpc.ClientConn {
 }
 
 func TestAuth_EmptyTokenRefusesToStart(t *testing.T) {
-	if _, err := NewAuth(""); err == nil {
-		t.Fatal("NewAuth(\"\") succeeded; an empty token must refuse to start, not serve everyone")
+	if _, err := NewServer(""); err == nil {
+		t.Fatal("NewServer(\"\") succeeded; an empty token must refuse to start, not serve everyone")
 	}
 }
 
@@ -91,5 +91,40 @@ func TestAuth_Matrix(t *testing.T) {
 				t.Errorf("stream: code = %v, want %v (err %v)", got, tc.want, err)
 			}
 		})
+	}
+}
+
+// Every ProvisionerService method, enumerated from the generated descriptor so
+// a method added later is covered without editing this test, must answer
+// Unauthenticated without the token. versionOnly leaves all but GetVersion
+// Unimplemented, so a method that skipped the check would answer that instead.
+func TestAuth_EveryMethodNeedsTheToken(t *testing.T) {
+	conn := authConn(t, "right-token")
+	sd := agentfleetv1.ProvisionerService_ServiceDesc
+	for _, m := range sd.Methods {
+		err := conn.Invoke(context.Background(), "/"+sd.ServiceName+"/"+m.MethodName, &emptypb.Empty{}, &emptypb.Empty{})
+		if got := status.Code(err); got != codes.Unauthenticated {
+			t.Errorf("%s: code = %v, want Unauthenticated", m.MethodName, got)
+		}
+	}
+	if len(sd.Streams) != 0 {
+		t.Errorf("ProvisionerService grew a stream RPC: extend this test to call it without a token")
+	}
+}
+
+// An unregistered method never reaches a handler. grpc-go answers it
+// Unimplemented before any interceptor runs (no UnknownServiceHandler is set),
+// which is closed: there is nothing behind it to reach.
+func TestAuth_UnknownMethodFailsClosed(t *testing.T) {
+	conn := authConn(t, "right-token")
+	for _, md := range [][]string{nil, {"authorization", "Bearer right-token"}} {
+		ctx := context.Background()
+		if md != nil {
+			ctx = metadata.AppendToOutgoingContext(ctx, md...)
+		}
+		err := conn.Invoke(ctx, "/agentfleet.v1.ProvisionerService/NoSuchMethod", &emptypb.Empty{}, &emptypb.Empty{})
+		if status.Code(err) == codes.OK {
+			t.Errorf("unknown method with metadata %v answered OK", md)
+		}
 	}
 }
