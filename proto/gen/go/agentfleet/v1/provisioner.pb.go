@@ -127,7 +127,10 @@ type CreateWorkerPodRequest struct {
 	// Applies to the worker container ONLY. The clone init container and the
 	// sidecar stay on the fleet's own images: cloning is fleet-owned behavior
 	// that needs git, and a repo-supplied image is not required to have it.
-	Image         string `protobuf:"bytes,12,opt,name=image,proto3" json:"image,omitempty"`
+	Image string `protobuf:"bytes,12,opt,name=image,proto3" json:"image,omitempty"`
+	// docs/adr/0064. Set only for a definition session; its presence switches
+	// the pod to the definition profile. Absent, the pod is exactly as before.
+	Definition    *DefinitionPodProfile `protobuf:"bytes,13,opt,name=definition,proto3" json:"definition,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -232,6 +235,77 @@ func (x *CreateWorkerPodRequest) GetImage() string {
 	return ""
 }
 
+func (x *CreateWorkerPodRequest) GetDefinition() *DefinitionPodProfile {
+	if x != nil {
+		return x.Definition
+	}
+	return nil
+}
+
+// docs/adr/0064: what a definition session's pod needs beyond the ordinary
+// request. Built by core from the pinned definition version.
+type DefinitionPodProfile struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The definition's name: also the fleet.bnei.dev/definition label value.
+	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// git.identity, as GIT_AUTHOR_*/GIT_COMMITTER_* in the worker container.
+	GitAuthorName  string `protobuf:"bytes,2,opt,name=git_author_name,json=gitAuthorName,proto3" json:"git_author_name,omitempty"`
+	GitAuthorEmail string `protobuf:"bytes,3,opt,name=git_author_email,json=gitAuthorEmail,proto3" json:"git_author_email,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *DefinitionPodProfile) Reset() {
+	*x = DefinitionPodProfile{}
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DefinitionPodProfile) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DefinitionPodProfile) ProtoMessage() {}
+
+func (x *DefinitionPodProfile) ProtoReflect() protoreflect.Message {
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DefinitionPodProfile.ProtoReflect.Descriptor instead.
+func (*DefinitionPodProfile) Descriptor() ([]byte, []int) {
+	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *DefinitionPodProfile) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *DefinitionPodProfile) GetGitAuthorName() string {
+	if x != nil {
+		return x.GitAuthorName
+	}
+	return ""
+}
+
+func (x *DefinitionPodProfile) GetGitAuthorEmail() string {
+	if x != nil {
+		return x.GitAuthorEmail
+	}
+	return ""
+}
+
 type CreateWorkerPodResponse struct {
 	state   protoimpl.MessageState `protogen:"open.v1"`
 	PodName string                 `protobuf:"bytes,1,opt,name=pod_name,json=podName,proto3" json:"pod_name,omitempty"`
@@ -248,7 +322,7 @@ type CreateWorkerPodResponse struct {
 
 func (x *CreateWorkerPodResponse) Reset() {
 	*x = CreateWorkerPodResponse{}
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[1]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -260,7 +334,7 @@ func (x *CreateWorkerPodResponse) String() string {
 func (*CreateWorkerPodResponse) ProtoMessage() {}
 
 func (x *CreateWorkerPodResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[1]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -273,7 +347,7 @@ func (x *CreateWorkerPodResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateWorkerPodResponse.ProtoReflect.Descriptor instead.
 func (*CreateWorkerPodResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{1}
+	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *CreateWorkerPodResponse) GetPodName() string {
@@ -311,7 +385,7 @@ type GetVersionRequest struct {
 
 func (x *GetVersionRequest) Reset() {
 	*x = GetVersionRequest{}
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[2]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -323,7 +397,7 @@ func (x *GetVersionRequest) String() string {
 func (*GetVersionRequest) ProtoMessage() {}
 
 func (x *GetVersionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[2]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -336,7 +410,7 @@ func (x *GetVersionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetVersionRequest.ProtoReflect.Descriptor instead.
 func (*GetVersionRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{2}
+	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{3}
 }
 
 type GetVersionResponse struct {
@@ -349,14 +423,18 @@ type GetVersionResponse struct {
 	WorkerImage string `protobuf:"bytes,2,opt,name=worker_image,json=workerImage,proto3" json:"worker_image,omitempty"`
 	// What every session's sidecar runs — no per-repo override exists, the
 	// sidecar is fleet-owned.
-	SidecarImage  string `protobuf:"bytes,3,opt,name=sidecar_image,json=sidecarImage,proto3" json:"sidecar_image,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	SidecarImage string `protobuf:"bytes,3,opt,name=sidecar_image,json=sidecarImage,proto3" json:"sidecar_image,omitempty"`
+	// True once this provisioner applies DefinitionPodProfile (docs/adr/0064).
+	// core refuses to warm a definition session against one that does not say
+	// so: an older provisioner would ignore the field and build the ordinary pod.
+	DefinitionPodProfile bool `protobuf:"varint,4,opt,name=definition_pod_profile,json=definitionPodProfile,proto3" json:"definition_pod_profile,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *GetVersionResponse) Reset() {
 	*x = GetVersionResponse{}
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[3]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -368,7 +446,7 @@ func (x *GetVersionResponse) String() string {
 func (*GetVersionResponse) ProtoMessage() {}
 
 func (x *GetVersionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[3]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -381,7 +459,7 @@ func (x *GetVersionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetVersionResponse.ProtoReflect.Descriptor instead.
 func (*GetVersionResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{3}
+	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *GetVersionResponse) GetVersion() string {
@@ -405,6 +483,13 @@ func (x *GetVersionResponse) GetSidecarImage() string {
 	return ""
 }
 
+func (x *GetVersionResponse) GetDefinitionPodProfile() bool {
+	if x != nil {
+		return x.DefinitionPodProfile
+	}
+	return false
+}
+
 // docs/adr/0062. Reads every regular file under definitions/ from the
 // provisioner's own definitions clone (FLEET_DEFINITIONS_REF, default = this
 // provisioner's release tag), after refreshing it. FAILS CLOSED: any read or
@@ -418,7 +503,7 @@ type ListDefinitionFilesRequest struct {
 
 func (x *ListDefinitionFilesRequest) Reset() {
 	*x = ListDefinitionFilesRequest{}
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[4]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -430,7 +515,7 @@ func (x *ListDefinitionFilesRequest) String() string {
 func (*ListDefinitionFilesRequest) ProtoMessage() {}
 
 func (x *ListDefinitionFilesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[4]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -443,7 +528,7 @@ func (x *ListDefinitionFilesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListDefinitionFilesRequest.ProtoReflect.Descriptor instead.
 func (*ListDefinitionFilesRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{4}
+	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{5}
 }
 
 type DefinitionFile struct {
@@ -457,7 +542,7 @@ type DefinitionFile struct {
 
 func (x *DefinitionFile) Reset() {
 	*x = DefinitionFile{}
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[5]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -469,7 +554,7 @@ func (x *DefinitionFile) String() string {
 func (*DefinitionFile) ProtoMessage() {}
 
 func (x *DefinitionFile) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[5]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -482,7 +567,7 @@ func (x *DefinitionFile) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DefinitionFile.ProtoReflect.Descriptor instead.
 func (*DefinitionFile) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{5}
+	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *DefinitionFile) GetPath() string {
@@ -510,7 +595,7 @@ type ListDefinitionFilesResponse struct {
 
 func (x *ListDefinitionFilesResponse) Reset() {
 	*x = ListDefinitionFilesResponse{}
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[6]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -522,7 +607,7 @@ func (x *ListDefinitionFilesResponse) String() string {
 func (*ListDefinitionFilesResponse) ProtoMessage() {}
 
 func (x *ListDefinitionFilesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[6]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -535,7 +620,7 @@ func (x *ListDefinitionFilesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListDefinitionFilesResponse.ProtoReflect.Descriptor instead.
 func (*ListDefinitionFilesResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{6}
+	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *ListDefinitionFilesResponse) GetFiles() []*DefinitionFile {
@@ -568,7 +653,7 @@ type TearDownSessionRequest struct {
 
 func (x *TearDownSessionRequest) Reset() {
 	*x = TearDownSessionRequest{}
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[7]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -580,7 +665,7 @@ func (x *TearDownSessionRequest) String() string {
 func (*TearDownSessionRequest) ProtoMessage() {}
 
 func (x *TearDownSessionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[7]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -593,7 +678,7 @@ func (x *TearDownSessionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TearDownSessionRequest.ProtoReflect.Descriptor instead.
 func (*TearDownSessionRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{7}
+	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *TearDownSessionRequest) GetSessionId() string {
@@ -619,7 +704,7 @@ type TearDownSessionResponse struct {
 
 func (x *TearDownSessionResponse) Reset() {
 	*x = TearDownSessionResponse{}
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[8]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -631,7 +716,7 @@ func (x *TearDownSessionResponse) String() string {
 func (*TearDownSessionResponse) ProtoMessage() {}
 
 func (x *TearDownSessionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[8]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -644,7 +729,7 @@ func (x *TearDownSessionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TearDownSessionResponse.ProtoReflect.Descriptor instead.
 func (*TearDownSessionResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{8}
+	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *TearDownSessionResponse) GetTornDown() bool {
@@ -685,7 +770,7 @@ type ListWorkerPodsRequest struct {
 
 func (x *ListWorkerPodsRequest) Reset() {
 	*x = ListWorkerPodsRequest{}
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[9]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -697,7 +782,7 @@ func (x *ListWorkerPodsRequest) String() string {
 func (*ListWorkerPodsRequest) ProtoMessage() {}
 
 func (x *ListWorkerPodsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[9]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -710,7 +795,7 @@ func (x *ListWorkerPodsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListWorkerPodsRequest.ProtoReflect.Descriptor instead.
 func (*ListWorkerPodsRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{9}
+	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{10}
 }
 
 type LiveWorkerPod struct {
@@ -725,7 +810,7 @@ type LiveWorkerPod struct {
 
 func (x *LiveWorkerPod) Reset() {
 	*x = LiveWorkerPod{}
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[10]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -737,7 +822,7 @@ func (x *LiveWorkerPod) String() string {
 func (*LiveWorkerPod) ProtoMessage() {}
 
 func (x *LiveWorkerPod) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[10]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -750,7 +835,7 @@ func (x *LiveWorkerPod) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LiveWorkerPod.ProtoReflect.Descriptor instead.
 func (*LiveWorkerPod) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{10}
+	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *LiveWorkerPod) GetSessionId() string {
@@ -783,7 +868,7 @@ type ListWorkerPodsResponse struct {
 
 func (x *ListWorkerPodsResponse) Reset() {
 	*x = ListWorkerPodsResponse{}
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[11]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -795,7 +880,7 @@ func (x *ListWorkerPodsResponse) String() string {
 func (*ListWorkerPodsResponse) ProtoMessage() {}
 
 func (x *ListWorkerPodsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[11]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -808,7 +893,7 @@ func (x *ListWorkerPodsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListWorkerPodsResponse.ProtoReflect.Descriptor instead.
 func (*ListWorkerPodsResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{11}
+	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *ListWorkerPodsResponse) GetPods() []*LiveWorkerPod {
@@ -832,7 +917,7 @@ type ExposeSessionRequest struct {
 
 func (x *ExposeSessionRequest) Reset() {
 	*x = ExposeSessionRequest{}
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[12]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -844,7 +929,7 @@ func (x *ExposeSessionRequest) String() string {
 func (*ExposeSessionRequest) ProtoMessage() {}
 
 func (x *ExposeSessionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[12]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -857,7 +942,7 @@ func (x *ExposeSessionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExposeSessionRequest.ProtoReflect.Descriptor instead.
 func (*ExposeSessionRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{12}
+	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *ExposeSessionRequest) GetSessionId() string {
@@ -883,7 +968,7 @@ type ExposeSessionResponse struct {
 
 func (x *ExposeSessionResponse) Reset() {
 	*x = ExposeSessionResponse{}
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[13]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -895,7 +980,7 @@ func (x *ExposeSessionResponse) String() string {
 func (*ExposeSessionResponse) ProtoMessage() {}
 
 func (x *ExposeSessionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[13]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -908,7 +993,7 @@ func (x *ExposeSessionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExposeSessionResponse.ProtoReflect.Descriptor instead.
 func (*ExposeSessionResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{13}
+	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *ExposeSessionResponse) GetUrl() string {
@@ -927,7 +1012,7 @@ type UnexposeSessionRequest struct {
 
 func (x *UnexposeSessionRequest) Reset() {
 	*x = UnexposeSessionRequest{}
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[14]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -939,7 +1024,7 @@ func (x *UnexposeSessionRequest) String() string {
 func (*UnexposeSessionRequest) ProtoMessage() {}
 
 func (x *UnexposeSessionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[14]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -952,7 +1037,7 @@ func (x *UnexposeSessionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UnexposeSessionRequest.ProtoReflect.Descriptor instead.
 func (*UnexposeSessionRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{14}
+	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *UnexposeSessionRequest) GetSessionId() string {
@@ -970,7 +1055,7 @@ type UnexposeSessionResponse struct {
 
 func (x *UnexposeSessionResponse) Reset() {
 	*x = UnexposeSessionResponse{}
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[15]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -982,7 +1067,7 @@ func (x *UnexposeSessionResponse) String() string {
 func (*UnexposeSessionResponse) ProtoMessage() {}
 
 func (x *UnexposeSessionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[15]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -995,7 +1080,7 @@ func (x *UnexposeSessionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UnexposeSessionResponse.ProtoReflect.Descriptor instead.
 func (*UnexposeSessionResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{15}
+	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{16}
 }
 
 // Provisions or reuses a shared backing service. Keyed by repo, not by
@@ -1014,7 +1099,7 @@ type ProvisionServiceRequest struct {
 
 func (x *ProvisionServiceRequest) Reset() {
 	*x = ProvisionServiceRequest{}
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[16]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1026,7 +1111,7 @@ func (x *ProvisionServiceRequest) String() string {
 func (*ProvisionServiceRequest) ProtoMessage() {}
 
 func (x *ProvisionServiceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[16]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1039,7 +1124,7 @@ func (x *ProvisionServiceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProvisionServiceRequest.ProtoReflect.Descriptor instead.
 func (*ProvisionServiceRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{16}
+	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *ProvisionServiceRequest) GetSessionId() string {
@@ -1072,7 +1157,7 @@ type ProvisionServiceResponse struct {
 
 func (x *ProvisionServiceResponse) Reset() {
 	*x = ProvisionServiceResponse{}
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[17]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1084,7 +1169,7 @@ func (x *ProvisionServiceResponse) String() string {
 func (*ProvisionServiceResponse) ProtoMessage() {}
 
 func (x *ProvisionServiceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[17]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1097,7 +1182,7 @@ func (x *ProvisionServiceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProvisionServiceResponse.ProtoReflect.Descriptor instead.
 func (*ProvisionServiceResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{17}
+	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *ProvisionServiceResponse) GetDsn() string {
@@ -1116,7 +1201,7 @@ type SweepSessionRequest struct {
 
 func (x *SweepSessionRequest) Reset() {
 	*x = SweepSessionRequest{}
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[18]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1128,7 +1213,7 @@ func (x *SweepSessionRequest) String() string {
 func (*SweepSessionRequest) ProtoMessage() {}
 
 func (x *SweepSessionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[18]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1141,7 +1226,7 @@ func (x *SweepSessionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SweepSessionRequest.ProtoReflect.Descriptor instead.
 func (*SweepSessionRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{18}
+	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *SweepSessionRequest) GetSessionId() string {
@@ -1159,7 +1244,7 @@ type SweepSessionResponse struct {
 
 func (x *SweepSessionResponse) Reset() {
 	*x = SweepSessionResponse{}
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[19]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1171,7 +1256,7 @@ func (x *SweepSessionResponse) String() string {
 func (*SweepSessionResponse) ProtoMessage() {}
 
 func (x *SweepSessionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[19]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1184,7 +1269,7 @@ func (x *SweepSessionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SweepSessionResponse.ProtoReflect.Descriptor instead.
 func (*SweepSessionResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{19}
+	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{20}
 }
 
 type SyncRepoCacheRequest struct {
@@ -1197,7 +1282,7 @@ type SyncRepoCacheRequest struct {
 
 func (x *SyncRepoCacheRequest) Reset() {
 	*x = SyncRepoCacheRequest{}
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[20]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1209,7 +1294,7 @@ func (x *SyncRepoCacheRequest) String() string {
 func (*SyncRepoCacheRequest) ProtoMessage() {}
 
 func (x *SyncRepoCacheRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[20]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1222,7 +1307,7 @@ func (x *SyncRepoCacheRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SyncRepoCacheRequest.ProtoReflect.Descriptor instead.
 func (*SyncRepoCacheRequest) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{20}
+	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *SyncRepoCacheRequest) GetRepo() string {
@@ -1269,7 +1354,7 @@ type SyncRepoCacheResponse struct {
 
 func (x *SyncRepoCacheResponse) Reset() {
 	*x = SyncRepoCacheResponse{}
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[21]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1281,7 +1366,7 @@ func (x *SyncRepoCacheResponse) String() string {
 func (*SyncRepoCacheResponse) ProtoMessage() {}
 
 func (x *SyncRepoCacheResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[21]
+	mi := &file_agentfleet_v1_provisioner_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1294,7 +1379,7 @@ func (x *SyncRepoCacheResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SyncRepoCacheResponse.ProtoReflect.Descriptor instead.
 func (*SyncRepoCacheResponse) Descriptor() ([]byte, []int) {
-	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{21}
+	return file_agentfleet_v1_provisioner_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *SyncRepoCacheResponse) GetCloned() bool {
@@ -1336,7 +1421,7 @@ var File_agentfleet_v1_provisioner_proto protoreflect.FileDescriptor
 
 const file_agentfleet_v1_provisioner_proto_rawDesc = "" +
 	"\n" +
-	"\x1fagentfleet/v1/provisioner.proto\x12\ragentfleet.v1\"\xf6\x02\n" +
+	"\x1fagentfleet/v1/provisioner.proto\x12\ragentfleet.v1\"\xbb\x03\n" +
 	"\x16CreateWorkerPodRequest\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x12\n" +
@@ -1350,17 +1435,25 @@ const file_agentfleet_v1_provisioner_proto_rawDesc = "" +
 	"\x0fresume_from_seq\x18\b \x01(\x03R\rresumeFromSeq\x12\x1b\n" +
 	"\ttool_keys\x18\n" +
 	" \x03(\tR\btoolKeys\x12\x14\n" +
-	"\x05image\x18\f \x01(\tR\x05imageJ\x04\b\t\x10\n" +
+	"\x05image\x18\f \x01(\tR\x05image\x12C\n" +
+	"\n" +
+	"definition\x18\r \x01(\v2#.agentfleet.v1.DefinitionPodProfileR\n" +
+	"definitionJ\x04\b\t\x10\n" +
 	"J\x04\b\v\x10\fR\bguidanceR\x13service_ingredients\"|\n" +
+	"\x14DefinitionPodProfile\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12&\n" +
+	"\x0fgit_author_name\x18\x02 \x01(\tR\rgitAuthorName\x12(\n" +
+	"\x10git_author_email\x18\x03 \x01(\tR\x0egitAuthorEmail\"|\n" +
 	"\x17CreateWorkerPodResponse\x12\x19\n" +
 	"\bpod_name\x18\x01 \x01(\tR\apodName\x12!\n" +
 	"\fworker_image\x18\x02 \x01(\tR\vworkerImage\x12#\n" +
 	"\rsidecar_image\x18\x03 \x01(\tR\fsidecarImage\"\x13\n" +
-	"\x11GetVersionRequest\"v\n" +
+	"\x11GetVersionRequest\"\xac\x01\n" +
 	"\x12GetVersionResponse\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\tR\aversion\x12!\n" +
 	"\fworker_image\x18\x02 \x01(\tR\vworkerImage\x12#\n" +
-	"\rsidecar_image\x18\x03 \x01(\tR\fsidecarImage\"\x1c\n" +
+	"\rsidecar_image\x18\x03 \x01(\tR\fsidecarImage\x124\n" +
+	"\x16definition_pod_profile\x18\x04 \x01(\bR\x14definitionPodProfile\"\x1c\n" +
 	"\x1aListDefinitionFilesRequest\">\n" +
 	"\x0eDefinitionFile\x12\x12\n" +
 	"\x04path\x18\x01 \x01(\tR\x04path\x12\x18\n" +
@@ -1442,61 +1535,63 @@ func file_agentfleet_v1_provisioner_proto_rawDescGZIP() []byte {
 }
 
 var file_agentfleet_v1_provisioner_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_agentfleet_v1_provisioner_proto_msgTypes = make([]protoimpl.MessageInfo, 22)
+var file_agentfleet_v1_provisioner_proto_msgTypes = make([]protoimpl.MessageInfo, 23)
 var file_agentfleet_v1_provisioner_proto_goTypes = []any{
 	(SessionKind)(0),                    // 0: agentfleet.v1.SessionKind
 	(*CreateWorkerPodRequest)(nil),      // 1: agentfleet.v1.CreateWorkerPodRequest
-	(*CreateWorkerPodResponse)(nil),     // 2: agentfleet.v1.CreateWorkerPodResponse
-	(*GetVersionRequest)(nil),           // 3: agentfleet.v1.GetVersionRequest
-	(*GetVersionResponse)(nil),          // 4: agentfleet.v1.GetVersionResponse
-	(*ListDefinitionFilesRequest)(nil),  // 5: agentfleet.v1.ListDefinitionFilesRequest
-	(*DefinitionFile)(nil),              // 6: agentfleet.v1.DefinitionFile
-	(*ListDefinitionFilesResponse)(nil), // 7: agentfleet.v1.ListDefinitionFilesResponse
-	(*TearDownSessionRequest)(nil),      // 8: agentfleet.v1.TearDownSessionRequest
-	(*TearDownSessionResponse)(nil),     // 9: agentfleet.v1.TearDownSessionResponse
-	(*ListWorkerPodsRequest)(nil),       // 10: agentfleet.v1.ListWorkerPodsRequest
-	(*LiveWorkerPod)(nil),               // 11: agentfleet.v1.LiveWorkerPod
-	(*ListWorkerPodsResponse)(nil),      // 12: agentfleet.v1.ListWorkerPodsResponse
-	(*ExposeSessionRequest)(nil),        // 13: agentfleet.v1.ExposeSessionRequest
-	(*ExposeSessionResponse)(nil),       // 14: agentfleet.v1.ExposeSessionResponse
-	(*UnexposeSessionRequest)(nil),      // 15: agentfleet.v1.UnexposeSessionRequest
-	(*UnexposeSessionResponse)(nil),     // 16: agentfleet.v1.UnexposeSessionResponse
-	(*ProvisionServiceRequest)(nil),     // 17: agentfleet.v1.ProvisionServiceRequest
-	(*ProvisionServiceResponse)(nil),    // 18: agentfleet.v1.ProvisionServiceResponse
-	(*SweepSessionRequest)(nil),         // 19: agentfleet.v1.SweepSessionRequest
-	(*SweepSessionResponse)(nil),        // 20: agentfleet.v1.SweepSessionResponse
-	(*SyncRepoCacheRequest)(nil),        // 21: agentfleet.v1.SyncRepoCacheRequest
-	(*SyncRepoCacheResponse)(nil),       // 22: agentfleet.v1.SyncRepoCacheResponse
+	(*DefinitionPodProfile)(nil),        // 2: agentfleet.v1.DefinitionPodProfile
+	(*CreateWorkerPodResponse)(nil),     // 3: agentfleet.v1.CreateWorkerPodResponse
+	(*GetVersionRequest)(nil),           // 4: agentfleet.v1.GetVersionRequest
+	(*GetVersionResponse)(nil),          // 5: agentfleet.v1.GetVersionResponse
+	(*ListDefinitionFilesRequest)(nil),  // 6: agentfleet.v1.ListDefinitionFilesRequest
+	(*DefinitionFile)(nil),              // 7: agentfleet.v1.DefinitionFile
+	(*ListDefinitionFilesResponse)(nil), // 8: agentfleet.v1.ListDefinitionFilesResponse
+	(*TearDownSessionRequest)(nil),      // 9: agentfleet.v1.TearDownSessionRequest
+	(*TearDownSessionResponse)(nil),     // 10: agentfleet.v1.TearDownSessionResponse
+	(*ListWorkerPodsRequest)(nil),       // 11: agentfleet.v1.ListWorkerPodsRequest
+	(*LiveWorkerPod)(nil),               // 12: agentfleet.v1.LiveWorkerPod
+	(*ListWorkerPodsResponse)(nil),      // 13: agentfleet.v1.ListWorkerPodsResponse
+	(*ExposeSessionRequest)(nil),        // 14: agentfleet.v1.ExposeSessionRequest
+	(*ExposeSessionResponse)(nil),       // 15: agentfleet.v1.ExposeSessionResponse
+	(*UnexposeSessionRequest)(nil),      // 16: agentfleet.v1.UnexposeSessionRequest
+	(*UnexposeSessionResponse)(nil),     // 17: agentfleet.v1.UnexposeSessionResponse
+	(*ProvisionServiceRequest)(nil),     // 18: agentfleet.v1.ProvisionServiceRequest
+	(*ProvisionServiceResponse)(nil),    // 19: agentfleet.v1.ProvisionServiceResponse
+	(*SweepSessionRequest)(nil),         // 20: agentfleet.v1.SweepSessionRequest
+	(*SweepSessionResponse)(nil),        // 21: agentfleet.v1.SweepSessionResponse
+	(*SyncRepoCacheRequest)(nil),        // 22: agentfleet.v1.SyncRepoCacheRequest
+	(*SyncRepoCacheResponse)(nil),       // 23: agentfleet.v1.SyncRepoCacheResponse
 }
 var file_agentfleet_v1_provisioner_proto_depIdxs = []int32{
-	6,  // 0: agentfleet.v1.ListDefinitionFilesResponse.files:type_name -> agentfleet.v1.DefinitionFile
-	0,  // 1: agentfleet.v1.TearDownSessionRequest.kind:type_name -> agentfleet.v1.SessionKind
-	11, // 2: agentfleet.v1.ListWorkerPodsResponse.pods:type_name -> agentfleet.v1.LiveWorkerPod
-	1,  // 3: agentfleet.v1.ProvisionerService.CreateWorkerPod:input_type -> agentfleet.v1.CreateWorkerPodRequest
-	8,  // 4: agentfleet.v1.ProvisionerService.TearDownSession:input_type -> agentfleet.v1.TearDownSessionRequest
-	10, // 5: agentfleet.v1.ProvisionerService.ListWorkerPods:input_type -> agentfleet.v1.ListWorkerPodsRequest
-	3,  // 6: agentfleet.v1.ProvisionerService.GetVersion:input_type -> agentfleet.v1.GetVersionRequest
-	13, // 7: agentfleet.v1.ProvisionerService.ExposeSession:input_type -> agentfleet.v1.ExposeSessionRequest
-	15, // 8: agentfleet.v1.ProvisionerService.UnexposeSession:input_type -> agentfleet.v1.UnexposeSessionRequest
-	17, // 9: agentfleet.v1.ProvisionerService.ProvisionService:input_type -> agentfleet.v1.ProvisionServiceRequest
-	21, // 10: agentfleet.v1.ProvisionerService.SyncRepoCache:input_type -> agentfleet.v1.SyncRepoCacheRequest
-	19, // 11: agentfleet.v1.ProvisionerService.SweepSession:input_type -> agentfleet.v1.SweepSessionRequest
-	5,  // 12: agentfleet.v1.ProvisionerService.ListDefinitionFiles:input_type -> agentfleet.v1.ListDefinitionFilesRequest
-	2,  // 13: agentfleet.v1.ProvisionerService.CreateWorkerPod:output_type -> agentfleet.v1.CreateWorkerPodResponse
-	9,  // 14: agentfleet.v1.ProvisionerService.TearDownSession:output_type -> agentfleet.v1.TearDownSessionResponse
-	12, // 15: agentfleet.v1.ProvisionerService.ListWorkerPods:output_type -> agentfleet.v1.ListWorkerPodsResponse
-	4,  // 16: agentfleet.v1.ProvisionerService.GetVersion:output_type -> agentfleet.v1.GetVersionResponse
-	14, // 17: agentfleet.v1.ProvisionerService.ExposeSession:output_type -> agentfleet.v1.ExposeSessionResponse
-	16, // 18: agentfleet.v1.ProvisionerService.UnexposeSession:output_type -> agentfleet.v1.UnexposeSessionResponse
-	18, // 19: agentfleet.v1.ProvisionerService.ProvisionService:output_type -> agentfleet.v1.ProvisionServiceResponse
-	22, // 20: agentfleet.v1.ProvisionerService.SyncRepoCache:output_type -> agentfleet.v1.SyncRepoCacheResponse
-	20, // 21: agentfleet.v1.ProvisionerService.SweepSession:output_type -> agentfleet.v1.SweepSessionResponse
-	7,  // 22: agentfleet.v1.ProvisionerService.ListDefinitionFiles:output_type -> agentfleet.v1.ListDefinitionFilesResponse
-	13, // [13:23] is the sub-list for method output_type
-	3,  // [3:13] is the sub-list for method input_type
-	3,  // [3:3] is the sub-list for extension type_name
-	3,  // [3:3] is the sub-list for extension extendee
-	0,  // [0:3] is the sub-list for field type_name
+	2,  // 0: agentfleet.v1.CreateWorkerPodRequest.definition:type_name -> agentfleet.v1.DefinitionPodProfile
+	7,  // 1: agentfleet.v1.ListDefinitionFilesResponse.files:type_name -> agentfleet.v1.DefinitionFile
+	0,  // 2: agentfleet.v1.TearDownSessionRequest.kind:type_name -> agentfleet.v1.SessionKind
+	12, // 3: agentfleet.v1.ListWorkerPodsResponse.pods:type_name -> agentfleet.v1.LiveWorkerPod
+	1,  // 4: agentfleet.v1.ProvisionerService.CreateWorkerPod:input_type -> agentfleet.v1.CreateWorkerPodRequest
+	9,  // 5: agentfleet.v1.ProvisionerService.TearDownSession:input_type -> agentfleet.v1.TearDownSessionRequest
+	11, // 6: agentfleet.v1.ProvisionerService.ListWorkerPods:input_type -> agentfleet.v1.ListWorkerPodsRequest
+	4,  // 7: agentfleet.v1.ProvisionerService.GetVersion:input_type -> agentfleet.v1.GetVersionRequest
+	14, // 8: agentfleet.v1.ProvisionerService.ExposeSession:input_type -> agentfleet.v1.ExposeSessionRequest
+	16, // 9: agentfleet.v1.ProvisionerService.UnexposeSession:input_type -> agentfleet.v1.UnexposeSessionRequest
+	18, // 10: agentfleet.v1.ProvisionerService.ProvisionService:input_type -> agentfleet.v1.ProvisionServiceRequest
+	22, // 11: agentfleet.v1.ProvisionerService.SyncRepoCache:input_type -> agentfleet.v1.SyncRepoCacheRequest
+	20, // 12: agentfleet.v1.ProvisionerService.SweepSession:input_type -> agentfleet.v1.SweepSessionRequest
+	6,  // 13: agentfleet.v1.ProvisionerService.ListDefinitionFiles:input_type -> agentfleet.v1.ListDefinitionFilesRequest
+	3,  // 14: agentfleet.v1.ProvisionerService.CreateWorkerPod:output_type -> agentfleet.v1.CreateWorkerPodResponse
+	10, // 15: agentfleet.v1.ProvisionerService.TearDownSession:output_type -> agentfleet.v1.TearDownSessionResponse
+	13, // 16: agentfleet.v1.ProvisionerService.ListWorkerPods:output_type -> agentfleet.v1.ListWorkerPodsResponse
+	5,  // 17: agentfleet.v1.ProvisionerService.GetVersion:output_type -> agentfleet.v1.GetVersionResponse
+	15, // 18: agentfleet.v1.ProvisionerService.ExposeSession:output_type -> agentfleet.v1.ExposeSessionResponse
+	17, // 19: agentfleet.v1.ProvisionerService.UnexposeSession:output_type -> agentfleet.v1.UnexposeSessionResponse
+	19, // 20: agentfleet.v1.ProvisionerService.ProvisionService:output_type -> agentfleet.v1.ProvisionServiceResponse
+	23, // 21: agentfleet.v1.ProvisionerService.SyncRepoCache:output_type -> agentfleet.v1.SyncRepoCacheResponse
+	21, // 22: agentfleet.v1.ProvisionerService.SweepSession:output_type -> agentfleet.v1.SweepSessionResponse
+	8,  // 23: agentfleet.v1.ProvisionerService.ListDefinitionFiles:output_type -> agentfleet.v1.ListDefinitionFilesResponse
+	14, // [14:24] is the sub-list for method output_type
+	4,  // [4:14] is the sub-list for method input_type
+	4,  // [4:4] is the sub-list for extension type_name
+	4,  // [4:4] is the sub-list for extension extendee
+	0,  // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_agentfleet_v1_provisioner_proto_init() }
@@ -1510,7 +1605,7 @@ func file_agentfleet_v1_provisioner_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_agentfleet_v1_provisioner_proto_rawDesc), len(file_agentfleet_v1_provisioner_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   22,
+			NumMessages:   23,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

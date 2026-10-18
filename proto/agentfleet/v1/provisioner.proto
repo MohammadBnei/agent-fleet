@@ -93,6 +93,19 @@ message CreateWorkerPodRequest {
   // sidecar stay on the fleet's own images: cloning is fleet-owned behavior
   // that needs git, and a repo-supplied image is not required to have it.
   string image = 12;
+  // docs/adr/0064. Set only for a definition session; its presence switches
+  // the pod to the definition profile. Absent, the pod is exactly as before.
+  DefinitionPodProfile definition = 13;
+}
+
+// docs/adr/0064: what a definition session's pod needs beyond the ordinary
+// request. Built by core from the pinned definition version.
+message DefinitionPodProfile {
+  // The definition's name: also the fleet.bnei.dev/definition label value.
+  string name = 1;
+  // git.identity, as GIT_AUTHOR_*/GIT_COMMITTER_* in the worker container.
+  string git_author_name = 2;
+  string git_author_email = 3;
 }
 
 message CreateWorkerPodResponse {
@@ -124,6 +137,10 @@ message GetVersionResponse {
   // What every session's sidecar runs — no per-repo override exists, the
   // sidecar is fleet-owned.
   string sidecar_image = 3;
+  // True once this provisioner applies DefinitionPodProfile (docs/adr/0064).
+  // core refuses to warm a definition session against one that does not say
+  // so: an older provisioner would ignore the field and build the ordinary pod.
+  bool definition_pod_profile = 4;
 }
 
 // docs/adr/0062. Reads every regular file under definitions/ from the
