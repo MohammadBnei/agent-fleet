@@ -21,6 +21,9 @@ spec:
   # bearer token (adr/0069 §1) stays the authentication. These are
   # common-app-chart's selectorLabels for release agent-fleet-core; the
   # migrate hook pod carries them too, accepted (core's own image and creds).
+  # The release name is infra-bootstrap's gitops/apps/registry.yaml entry,
+  # which no test here can read: rename that Application and change this
+  # literal in the same rollout, or core loses ProvisionerService.
   - from:
     - podSelector:
         matchLabels:

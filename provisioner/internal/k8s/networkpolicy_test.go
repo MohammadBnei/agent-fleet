@@ -3,10 +3,12 @@ package k8s
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
 	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -15,21 +17,25 @@ import (
 )
 
 // TestNetworkPolicies_AdmitExactlyTheKnownCallers checks the ingress fences of
-// docs/adr/0069 §3. It pins the in-repo labels, which live in places that
-// never change together: WorkerLabels and SharedInstanceLabels here,
-// k8s/provisioner/deployment.yaml, core's release name, and the policies
-// themselves. A rename in any of them is a silent outage: every sidecar loses
-// CoreService, or core loses the provisioner, while every manifest still
-// applies cleanly.
+// docs/adr/0069 §3. It pins the in-repo labels and ports, which live in places
+// that never change together: WorkerLabels and SharedInstanceLabels here,
+// k8s/provisioner/deployment.yaml (labels, containerPorts, PORT/GRPC_PORT),
+// k8s/core.yaml's service ports and CORE_*_PORT env, and the policies
+// themselves. A rename or renumber in any of them is a silent outage: every
+// sidecar loses CoreService, core loses the provisioner, or Prometheus loses a
+// target, while every manifest still applies cleanly. It also pins both
+// policies to ingress only: an Egress policyType here would cut core and the
+// provisioner off from everything they call (egress is ADR-0064's).
 //
 // The external callers (Traefik, Prometheus, Alertmanager, Grafana) are
-// literals copied from live pods on 2026-10-18, so their cases only assert the
-// policy's shape, including the namespace-AND-pod peers. A relabel in
-// infra-bootstrap's charts cannot fail this test; §3 names the alerts that
-// catch it.
+// literals copied from live pods on 2026-10-18, and core's release name is
+// copied from infra-bootstrap's gitops/apps/registry.yaml, which this repo
+// cannot read. Their cases only assert the policy's shape, including the
+// namespace-AND-pod peers. A relabel in infra-bootstrap's charts, or a rename
+// of core's Application, cannot fail this test; §3 names what catches it.
 //
 // This evaluates plain NetworkPolicy semantics, not Cilium, and refuses the
-// parts it does not model (ipBlock, endPort, named ports).
+// parts it does not model (ipBlock, endPort, named ports, non-TCP).
 //
 // Reads files outside the module, like TestCreateWorkerPod_ResourcesWithinLimitRange:
 // run with -count=1.
@@ -48,6 +54,15 @@ func TestNetworkPolicies_AdmitExactlyTheKnownCallers(t *testing.T) {
 
 	var coreValues struct {
 		ExtraManifests []string `json:"extraManifests"`
+		Service        struct {
+			Port       int `json:"port"`
+			ExtraPorts []struct {
+				Name       string `json:"name"`
+				Port       int    `json:"port"`
+				TargetPort int    `json:"targetPort"`
+			} `json:"extraPorts"`
+		} `json:"service"`
+		Env []corev1.EnvVar `json:"env"`
 	}
 	if err := yaml.Unmarshal(read("k8s/core.yaml"), &coreValues); err != nil {
 		t.Fatalf("parse k8s/core.yaml: %v", err)
@@ -90,6 +105,45 @@ func TestNetworkPolicies_AdmitExactlyTheKnownCallers(t *testing.T) {
 		t.Fatalf("parse k8s/provisioner/deployment.yaml: %v", err)
 	}
 
+	// The ports each pod really listens on, cross-checked against every place
+	// that names them, so a renumber that misses the policy fails here.
+	envOf := func(env []corev1.EnvVar, name string) string {
+		for _, e := range env {
+			if e.Name == name {
+				return e.Value
+			}
+		}
+		return ""
+	}
+	corePorts := map[string]int{"http": coreValues.Service.Port}
+	for _, p := range coreValues.Service.ExtraPorts {
+		corePorts[p.Name] = p.Port
+		if p.TargetPort != 0 {
+			corePorts[p.Name] = p.TargetPort
+		}
+	}
+	for name, env := range map[string]string{"http": "CORE_PORT", "grpc": "CORE_GRPC_PORT", "metrics": "CORE_METRICS_PORT"} {
+		if got := envOf(coreValues.Env, env); got == "" || got != strconv.Itoa(corePorts[name]) {
+			t.Fatalf("k8s/core.yaml: %s=%q but the %q service port targets %d", env, got, name, corePorts[name])
+		}
+	}
+	provC := provDeploy.Spec.Template.Spec.Containers[0]
+	provPorts := map[string]int{}
+	for _, p := range provC.Ports {
+		provPorts[p.Name] = int(p.ContainerPort)
+	}
+	for name, env := range map[string]string{"http": "PORT", "grpc": "GRPC_PORT"} {
+		if got := envOf(provC.Env, env); got == "" || got != strconv.Itoa(provPorts[name]) {
+			t.Fatalf("k8s/provisioner/deployment.yaml: %s=%q but containerPort %q is %d", env, got, name, provPorts[name])
+		}
+	}
+
+	for _, np := range []*networkingv1.NetworkPolicy{corePolicy, &provPolicy} {
+		if len(np.Spec.PolicyTypes) != 1 || np.Spec.PolicyTypes[0] != networkingv1.PolicyTypeIngress || len(np.Spec.Egress) != 0 {
+			t.Fatalf("policy %s: policyTypes %v, %d egress rules; these fences are ingress only (egress is ADR-0064's)", np.Name, np.Spec.PolicyTypes, len(np.Spec.Egress))
+		}
+	}
+
 	type pod struct {
 		ns     string
 		labels map[string]string
@@ -119,8 +173,8 @@ func TestNetworkPolicies_AdmitExactlyTheKnownCallers(t *testing.T) {
 		for _, rule := range np.Spec.Ingress {
 			portOK := len(rule.Ports) == 0
 			for _, p := range rule.Ports {
-				if p.EndPort != nil || p.Port == nil || p.Port.Type != intstr.Int {
-					t.Fatalf("policy %s: port %v is a range, absent or named; this evaluator only models int ports", np.Name, p)
+				if p.EndPort != nil || p.Port == nil || p.Port.Type != intstr.Int || p.Protocol != nil && *p.Protocol != corev1.ProtocolTCP {
+					t.Fatalf("policy %s: port %v is a range, absent, named or not TCP; this evaluator only models int TCP ports", np.Name, p)
 				}
 				portOK = portOK || p.Port.IntValue() == port
 			}
@@ -151,30 +205,30 @@ func TestNetworkPolicies_AdmitExactlyTheKnownCallers(t *testing.T) {
 		port         int
 		want         bool
 	}{
-		{"sidecar -> CoreService", corePolicy, core, worker, 9090, true},
-		{"provisioner -> CoreService", corePolicy, core, provisioner, 9090, true},
-		{"traefik -> console", corePolicy, core, traefik, 8080, true},
-		{"alertmanager -> /webhook/alertmanager", corePolicy, core, alertmanager, 8080, true},
-		{"grafana -> /webhook/alertmanager", corePolicy, core, grafana, 8080, true},
-		{"prometheus -> core metrics", corePolicy, core, prometheus, 9093, true},
-		{"worker -> console port (agent-fleet#200)", corePolicy, core, worker, 8080, false},
-		{"worker -> core metrics", corePolicy, core, worker, 9093, false},
-		{"shared instance -> CoreService", corePolicy, core, sharedInstance, 9090, false},
-		{"traefik -> CoreService", corePolicy, core, traefik, 9090, false},
-		{"prometheus -> CoreService", corePolicy, core, prometheus, 9090, false},
-		{"other monitoring pod -> console port", corePolicy, core, lokiInMonitoring, 8080, false},
-		{"other monitoring pod -> core metrics", corePolicy, core, lokiInMonitoring, 9093, false},
-		{"foreign namespace, prometheus labels -> core metrics", corePolicy, core, foreignPrometheus, 9093, false},
-		{"foreign namespace, worker labels -> CoreService", corePolicy, core, foreignWorker, 9090, false},
+		{"sidecar -> CoreService", corePolicy, core, worker, corePorts["grpc"], true},
+		{"provisioner -> CoreService", corePolicy, core, provisioner, corePorts["grpc"], true},
+		{"traefik -> console", corePolicy, core, traefik, corePorts["http"], true},
+		{"alertmanager -> /webhook/alertmanager", corePolicy, core, alertmanager, corePorts["http"], true},
+		{"grafana -> /webhook/alertmanager", corePolicy, core, grafana, corePorts["http"], true},
+		{"prometheus -> core metrics", corePolicy, core, prometheus, corePorts["metrics"], true},
+		{"worker -> console port, direct (via Traefik it is admitted; the gate is the boundary)", corePolicy, core, worker, corePorts["http"], false},
+		{"worker -> core metrics", corePolicy, core, worker, corePorts["metrics"], false},
+		{"shared instance -> CoreService", corePolicy, core, sharedInstance, corePorts["grpc"], false},
+		{"traefik -> CoreService", corePolicy, core, traefik, corePorts["grpc"], false},
+		{"prometheus -> CoreService", corePolicy, core, prometheus, corePorts["grpc"], false},
+		{"other monitoring pod -> console port", corePolicy, core, lokiInMonitoring, corePorts["http"], false},
+		{"other monitoring pod -> core metrics", corePolicy, core, lokiInMonitoring, corePorts["metrics"], false},
+		{"foreign namespace, prometheus labels -> core metrics", corePolicy, core, foreignPrometheus, corePorts["metrics"], false},
+		{"foreign namespace, worker labels -> CoreService", corePolicy, core, foreignWorker, corePorts["grpc"], false},
 
-		{"core -> ProvisionerService", &provPolicy, provisioner, core, 9090, true},
-		{"prometheus -> provisioner metrics", &provPolicy, provisioner, prometheus, 8080, true},
-		{"worker -> ProvisionerService", &provPolicy, provisioner, worker, 9090, false},
-		{"worker -> provisioner metrics", &provPolicy, provisioner, worker, 8080, false},
-		{"prometheus -> ProvisionerService", &provPolicy, provisioner, prometheus, 9090, false},
-		{"other monitoring pod -> provisioner metrics", &provPolicy, provisioner, lokiInMonitoring, 8080, false},
-		{"foreign namespace, prometheus labels -> provisioner metrics", &provPolicy, provisioner, foreignPrometheus, 8080, false},
-		{"foreign namespace, core labels -> ProvisionerService", &provPolicy, provisioner, foreignCore, 9090, false},
+		{"core -> ProvisionerService", &provPolicy, provisioner, core, provPorts["grpc"], true},
+		{"prometheus -> provisioner metrics", &provPolicy, provisioner, prometheus, provPorts["http"], true},
+		{"worker -> ProvisionerService", &provPolicy, provisioner, worker, provPorts["grpc"], false},
+		{"worker -> provisioner metrics", &provPolicy, provisioner, worker, provPorts["http"], false},
+		{"prometheus -> ProvisionerService", &provPolicy, provisioner, prometheus, provPorts["grpc"], false},
+		{"other monitoring pod -> provisioner metrics", &provPolicy, provisioner, lokiInMonitoring, provPorts["http"], false},
+		{"foreign namespace, prometheus labels -> provisioner metrics", &provPolicy, provisioner, foreignPrometheus, provPorts["http"], false},
+		{"foreign namespace, core labels -> ProvisionerService", &provPolicy, provisioner, foreignCore, provPorts["grpc"], false},
 	} {
 		if got := admits(tc.np, tc.target, tc.from, tc.port); got != tc.want {
 			t.Errorf("%s (:%d): admitted=%v, want %v", tc.name, tc.port, got, tc.want)

@@ -317,8 +317,12 @@ extraManifests:
       ingress:
         # :8080 console. Traefik (the IngressRoute above); Alertmanager and
         # Grafana post /webhook/alertmanager (alerts -> thot tasks) to the
-        # ClusterIP, not through the ingress. Worker pods are refused here
-        # too, not only by the in-app gate (agent-fleet#200).
+        # ClusterIP, not through the ingress. This refuses a worker pod's
+        # direct connection only: anything Traefik proxies (a worker going
+        # through fleet.bnei.dev included, or any namespace's IngressRoute,
+        # since allowCrossNamespace is on) arrives as Traefik. The in-app gate
+        # stays the only boundary on :8080; never relax it for "in-cluster
+        # only" paths on the strength of this rule.
         - from:
             - namespaceSelector:
                 matchLabels:
