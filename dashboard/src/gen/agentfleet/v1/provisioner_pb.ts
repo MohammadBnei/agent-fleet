@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file agentfleet/v1/provisioner.proto.
  */
 export const file_agentfleet_v1_provisioner: GenFile = /*@__PURE__*/
-  fileDesc("Ch9hZ2VudGZsZWV0L3YxL3Byb3Zpc2lvbmVyLnByb3RvEg1hZ2VudGZsZWV0LnYxIokCChZDcmVhdGVXb3JrZXJQb2RSZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkSDAoEcmVwbxgCIAEoCRIQCghyZXBvX3VybBgDIAEoCRITCgtiYXNlX2JyYW5jaBgEIAEoCRITCgtkZXNjcmlwdGlvbhgFIAEoCRIQCghsZWFzZV9pZBgGIAEoCRIZChFyZXN1bWVfc2Vzc2lvbl9pZBgHIAEoCRIXCg9yZXN1bWVfZnJvbV9zZXEYCCABKAMSEQoJdG9vbF9rZXlzGAogAygJEg0KBWltYWdlGAwgASgJSgQICRAKSgQICxAMUghndWlkYW5jZVITc2VydmljZV9pbmdyZWRpZW50cyJYChdDcmVhdGVXb3JrZXJQb2RSZXNwb25zZRIQCghwb2RfbmFtZRgBIAEoCRIUCgx3b3JrZXJfaW1hZ2UYAiABKAkSFQoNc2lkZWNhcl9pbWFnZRgDIAEoCSITChFHZXRWZXJzaW9uUmVxdWVzdCJSChJHZXRWZXJzaW9uUmVzcG9uc2USDwoHdmVyc2lvbhgBIAEoCRIUCgx3b3JrZXJfaW1hZ2UYAiABKAkSFQoNc2lkZWNhcl9pbWFnZRgDIAEoCSJWChZUZWFyRG93blNlc3Npb25SZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkSKAoEa2luZBgCIAEoDjIaLmFnZW50ZmxlZXQudjEuU2Vzc2lvbktpbmQiLAoXVGVhckRvd25TZXNzaW9uUmVzcG9uc2USEQoJdG9ybl9kb3duGAEgASgIIhcKFUxpc3RXb3JrZXJQb2RzUmVxdWVzdCJECg1MaXZlV29ya2VyUG9kEhIKCnNlc3Npb25faWQYASABKAkSEAoIcG9kX25hbWUYAiABKAkSDQoFcGhhc2UYAyABKAkiRAoWTGlzdFdvcmtlclBvZHNSZXNwb25zZRIqCgRwb2RzGAEgAygLMhwuYWdlbnRmbGVldC52MS5MaXZlV29ya2VyUG9kIjgKFEV4cG9zZVNlc3Npb25SZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkSDAoEcG9ydBgCIAEoBSIkChVFeHBvc2VTZXNzaW9uUmVzcG9uc2USCwoDdXJsGAEgASgJIiwKFlVuZXhwb3NlU2Vzc2lvblJlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCSIZChdVbmV4cG9zZVNlc3Npb25SZXNwb25zZSJJChdQcm92aXNpb25TZXJ2aWNlUmVxdWVzdBISCgpzZXNzaW9uX2lkGAEgASgJEgwKBHJlcG8YAiABKAkSDAoEa2luZBgDIAEoCSInChhQcm92aXNpb25TZXJ2aWNlUmVzcG9uc2USCwoDZHNuGAEgASgJIikKE1N3ZWVwU2Vzc2lvblJlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCSIWChRTd2VlcFNlc3Npb25SZXNwb25zZSI2ChRTeW5jUmVwb0NhY2hlUmVxdWVzdBIMCgRyZXBvGAEgASgJEhAKCHJlcG9fdXJsGAIgASgJInoKFVN5bmNSZXBvQ2FjaGVSZXNwb25zZRIOCgZjbG9uZWQYASABKAgSDAoEaGVhZBgCIAEoCRIYChBjb21taXRzX2FkdmFuY2VkGAMgASgFEhMKC2R1cmF0aW9uX21zGAQgASgDEhQKDGhlYWRfY2hhbmdlZBgFIAEoCCpcCgtTZXNzaW9uS2luZBIcChhTRVNTSU9OX0tJTkRfVU5TUEVDSUZJRUQQABIXChNTRVNTSU9OX0tJTkRfV09SS0VSEAEiBAgCEAIqEFNFU1NJT05fS0lORF9FMkUy4gYKElByb3Zpc2lvbmVyU2VydmljZRJgCg9DcmVhdGVXb3JrZXJQb2QSJS5hZ2VudGZsZWV0LnYxLkNyZWF0ZVdvcmtlclBvZFJlcXVlc3QaJi5hZ2VudGZsZWV0LnYxLkNyZWF0ZVdvcmtlclBvZFJlc3BvbnNlEmAKD1RlYXJEb3duU2Vzc2lvbhIlLmFnZW50ZmxlZXQudjEuVGVhckRvd25TZXNzaW9uUmVxdWVzdBomLmFnZW50ZmxlZXQudjEuVGVhckRvd25TZXNzaW9uUmVzcG9uc2USXQoOTGlzdFdvcmtlclBvZHMSJC5hZ2VudGZsZWV0LnYxLkxpc3RXb3JrZXJQb2RzUmVxdWVzdBolLmFnZW50ZmxlZXQudjEuTGlzdFdvcmtlclBvZHNSZXNwb25zZRJRCgpHZXRWZXJzaW9uEiAuYWdlbnRmbGVldC52MS5HZXRWZXJzaW9uUmVxdWVzdBohLmFnZW50ZmxlZXQudjEuR2V0VmVyc2lvblJlc3BvbnNlEloKDUV4cG9zZVNlc3Npb24SIy5hZ2VudGZsZWV0LnYxLkV4cG9zZVNlc3Npb25SZXF1ZXN0GiQuYWdlbnRmbGVldC52MS5FeHBvc2VTZXNzaW9uUmVzcG9uc2USYAoPVW5leHBvc2VTZXNzaW9uEiUuYWdlbnRmbGVldC52MS5VbmV4cG9zZVNlc3Npb25SZXF1ZXN0GiYuYWdlbnRmbGVldC52MS5VbmV4cG9zZVNlc3Npb25SZXNwb25zZRJjChBQcm92aXNpb25TZXJ2aWNlEiYuYWdlbnRmbGVldC52MS5Qcm92aXNpb25TZXJ2aWNlUmVxdWVzdBonLmFnZW50ZmxlZXQudjEuUHJvdmlzaW9uU2VydmljZVJlc3BvbnNlEloKDVN5bmNSZXBvQ2FjaGUSIy5hZ2VudGZsZWV0LnYxLlN5bmNSZXBvQ2FjaGVSZXF1ZXN0GiQuYWdlbnRmbGVldC52MS5TeW5jUmVwb0NhY2hlUmVzcG9uc2USVwoMU3dlZXBTZXNzaW9uEiIuYWdlbnRmbGVldC52MS5Td2VlcFNlc3Npb25SZXF1ZXN0GiMuYWdlbnRmbGVldC52MS5Td2VlcFNlc3Npb25SZXNwb25zZUJNWktnaXRodWIuY29tL01vaGFtbWFkQm5laS9hZ2VudC1mbGVldC9wcm90by9nZW4vZ28vYWdlbnRmbGVldC92MTthZ2VudGZsZWV0djFiBnByb3RvMw");
+  fileDesc("Ch9hZ2VudGZsZWV0L3YxL3Byb3Zpc2lvbmVyLnByb3RvEg1hZ2VudGZsZWV0LnYxIokCChZDcmVhdGVXb3JrZXJQb2RSZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkSDAoEcmVwbxgCIAEoCRIQCghyZXBvX3VybBgDIAEoCRITCgtiYXNlX2JyYW5jaBgEIAEoCRITCgtkZXNjcmlwdGlvbhgFIAEoCRIQCghsZWFzZV9pZBgGIAEoCRIZChFyZXN1bWVfc2Vzc2lvbl9pZBgHIAEoCRIXCg9yZXN1bWVfZnJvbV9zZXEYCCABKAMSEQoJdG9vbF9rZXlzGAogAygJEg0KBWltYWdlGAwgASgJSgQICRAKSgQICxAMUghndWlkYW5jZVITc2VydmljZV9pbmdyZWRpZW50cyJYChdDcmVhdGVXb3JrZXJQb2RSZXNwb25zZRIQCghwb2RfbmFtZRgBIAEoCRIUCgx3b3JrZXJfaW1hZ2UYAiABKAkSFQoNc2lkZWNhcl9pbWFnZRgDIAEoCSITChFHZXRWZXJzaW9uUmVxdWVzdCJyChJHZXRWZXJzaW9uUmVzcG9uc2USDwoHdmVyc2lvbhgBIAEoCRIUCgx3b3JrZXJfaW1hZ2UYAiABKAkSFQoNc2lkZWNhcl9pbWFnZRgDIAEoCRIeChZkZWZpbml0aW9uX3BvZF9wcm9maWxlGAQgASgIIhwKGkxpc3REZWZpbml0aW9uRmlsZXNSZXF1ZXN0Ii8KDkRlZmluaXRpb25GaWxlEgwKBHBhdGgYASABKAkSDwoHY29udGVudBgCIAEoDCJYChtMaXN0RGVmaW5pdGlvbkZpbGVzUmVzcG9uc2USLAoFZmlsZXMYASADKAsyHS5hZ2VudGZsZWV0LnYxLkRlZmluaXRpb25GaWxlEgsKA3NoYRgCIAEoCSJWChZUZWFyRG93blNlc3Npb25SZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkSKAoEa2luZBgCIAEoDjIaLmFnZW50ZmxlZXQudjEuU2Vzc2lvbktpbmQiLAoXVGVhckRvd25TZXNzaW9uUmVzcG9uc2USEQoJdG9ybl9kb3duGAEgASgIIhcKFUxpc3RXb3JrZXJQb2RzUmVxdWVzdCJECg1MaXZlV29ya2VyUG9kEhIKCnNlc3Npb25faWQYASABKAkSEAoIcG9kX25hbWUYAiABKAkSDQoFcGhhc2UYAyABKAkiRAoWTGlzdFdvcmtlclBvZHNSZXNwb25zZRIqCgRwb2RzGAEgAygLMhwuYWdlbnRmbGVldC52MS5MaXZlV29ya2VyUG9kIjgKFEV4cG9zZVNlc3Npb25SZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkSDAoEcG9ydBgCIAEoBSIkChVFeHBvc2VTZXNzaW9uUmVzcG9uc2USCwoDdXJsGAEgASgJIiwKFlVuZXhwb3NlU2Vzc2lvblJlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCSIZChdVbmV4cG9zZVNlc3Npb25SZXNwb25zZSJJChdQcm92aXNpb25TZXJ2aWNlUmVxdWVzdBISCgpzZXNzaW9uX2lkGAEgASgJEgwKBHJlcG8YAiABKAkSDAoEa2luZBgDIAEoCSInChhQcm92aXNpb25TZXJ2aWNlUmVzcG9uc2USCwoDZHNuGAEgASgJIikKE1N3ZWVwU2Vzc2lvblJlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCSIWChRTd2VlcFNlc3Npb25SZXNwb25zZSI2ChRTeW5jUmVwb0NhY2hlUmVxdWVzdBIMCgRyZXBvGAEgASgJEhAKCHJlcG9fdXJsGAIgASgJInoKFVN5bmNSZXBvQ2FjaGVSZXNwb25zZRIOCgZjbG9uZWQYASABKAgSDAoEaGVhZBgCIAEoCRIYChBjb21taXRzX2FkdmFuY2VkGAMgASgFEhMKC2R1cmF0aW9uX21zGAQgASgDEhQKDGhlYWRfY2hhbmdlZBgFIAEoCCpcCgtTZXNzaW9uS2luZBIcChhTRVNTSU9OX0tJTkRfVU5TUEVDSUZJRUQQABIXChNTRVNTSU9OX0tJTkRfV09SS0VSEAEiBAgCEAIqEFNFU1NJT05fS0lORF9FMkUy0AcKElByb3Zpc2lvbmVyU2VydmljZRJgCg9DcmVhdGVXb3JrZXJQb2QSJS5hZ2VudGZsZWV0LnYxLkNyZWF0ZVdvcmtlclBvZFJlcXVlc3QaJi5hZ2VudGZsZWV0LnYxLkNyZWF0ZVdvcmtlclBvZFJlc3BvbnNlEmAKD1RlYXJEb3duU2Vzc2lvbhIlLmFnZW50ZmxlZXQudjEuVGVhckRvd25TZXNzaW9uUmVxdWVzdBomLmFnZW50ZmxlZXQudjEuVGVhckRvd25TZXNzaW9uUmVzcG9uc2USXQoOTGlzdFdvcmtlclBvZHMSJC5hZ2VudGZsZWV0LnYxLkxpc3RXb3JrZXJQb2RzUmVxdWVzdBolLmFnZW50ZmxlZXQudjEuTGlzdFdvcmtlclBvZHNSZXNwb25zZRJRCgpHZXRWZXJzaW9uEiAuYWdlbnRmbGVldC52MS5HZXRWZXJzaW9uUmVxdWVzdBohLmFnZW50ZmxlZXQudjEuR2V0VmVyc2lvblJlc3BvbnNlEloKDUV4cG9zZVNlc3Npb24SIy5hZ2VudGZsZWV0LnYxLkV4cG9zZVNlc3Npb25SZXF1ZXN0GiQuYWdlbnRmbGVldC52MS5FeHBvc2VTZXNzaW9uUmVzcG9uc2USYAoPVW5leHBvc2VTZXNzaW9uEiUuYWdlbnRmbGVldC52MS5VbmV4cG9zZVNlc3Npb25SZXF1ZXN0GiYuYWdlbnRmbGVldC52MS5VbmV4cG9zZVNlc3Npb25SZXNwb25zZRJjChBQcm92aXNpb25TZXJ2aWNlEiYuYWdlbnRmbGVldC52MS5Qcm92aXNpb25TZXJ2aWNlUmVxdWVzdBonLmFnZW50ZmxlZXQudjEuUHJvdmlzaW9uU2VydmljZVJlc3BvbnNlEloKDVN5bmNSZXBvQ2FjaGUSIy5hZ2VudGZsZWV0LnYxLlN5bmNSZXBvQ2FjaGVSZXF1ZXN0GiQuYWdlbnRmbGVldC52MS5TeW5jUmVwb0NhY2hlUmVzcG9uc2USVwoMU3dlZXBTZXNzaW9uEiIuYWdlbnRmbGVldC52MS5Td2VlcFNlc3Npb25SZXF1ZXN0GiMuYWdlbnRmbGVldC52MS5Td2VlcFNlc3Npb25SZXNwb25zZRJsChNMaXN0RGVmaW5pdGlvbkZpbGVzEikuYWdlbnRmbGVldC52MS5MaXN0RGVmaW5pdGlvbkZpbGVzUmVxdWVzdBoqLmFnZW50ZmxlZXQudjEuTGlzdERlZmluaXRpb25GaWxlc1Jlc3BvbnNlQk1aS2dpdGh1Yi5jb20vTW9oYW1tYWRCbmVpL2FnZW50LWZsZWV0L3Byb3RvL2dlbi9nby9hZ2VudGZsZWV0L3YxO2FnZW50ZmxlZXR2MWIGcHJvdG8z");
 
 /**
  * Fetches the repo's clone cache and creates the session's pod, synchronously,
@@ -202,6 +202,15 @@ export type GetVersionResponse = Message<"agentfleet.v1.GetVersionResponse"> & {
    * @generated from field: string sidecar_image = 3;
    */
   sidecarImage: string;
+
+  /**
+   * True once this provisioner applies the definition pod profile
+   * (docs/adr/0064). core refuses to warm a definition session against a
+   * provisioner that does not say so (docs/adr/0062).
+   *
+   * @generated from field: bool definition_pod_profile = 4;
+   */
+  definitionPodProfile: boolean;
 };
 
 /**
@@ -210,6 +219,73 @@ export type GetVersionResponse = Message<"agentfleet.v1.GetVersionResponse"> & {
  */
 export const GetVersionResponseSchema: GenMessage<GetVersionResponse> = /*@__PURE__*/
   messageDesc(file_agentfleet_v1_provisioner, 3);
+
+/**
+ * docs/adr/0062. Reads every regular file under definitions/ from the
+ * provisioner's own definitions clone (FLEET_DEFINITIONS_REF, default = this
+ * provisioner's release tag), after refreshing it. FAILS CLOSED: any read or
+ * refresh failure is an error, never an empty list. An empty list means the
+ * directory exists and is empty.
+ *
+ * @generated from message agentfleet.v1.ListDefinitionFilesRequest
+ */
+export type ListDefinitionFilesRequest = Message<"agentfleet.v1.ListDefinitionFilesRequest"> & {
+};
+
+/**
+ * Describes the message agentfleet.v1.ListDefinitionFilesRequest.
+ * Use `create(ListDefinitionFilesRequestSchema)` to create a new message.
+ */
+export const ListDefinitionFilesRequestSchema: GenMessage<ListDefinitionFilesRequest> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_provisioner, 4);
+
+/**
+ * @generated from message agentfleet.v1.DefinitionFile
+ */
+export type DefinitionFile = Message<"agentfleet.v1.DefinitionFile"> & {
+  /**
+   * Repo-relative, e.g. "definitions/opus-workspace.yaml".
+   *
+   * @generated from field: string path = 1;
+   */
+  path: string;
+
+  /**
+   * @generated from field: bytes content = 2;
+   */
+  content: Uint8Array;
+};
+
+/**
+ * Describes the message agentfleet.v1.DefinitionFile.
+ * Use `create(DefinitionFileSchema)` to create a new message.
+ */
+export const DefinitionFileSchema: GenMessage<DefinitionFile> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_provisioner, 5);
+
+/**
+ * @generated from message agentfleet.v1.ListDefinitionFilesResponse
+ */
+export type ListDefinitionFilesResponse = Message<"agentfleet.v1.ListDefinitionFilesResponse"> & {
+  /**
+   * @generated from field: repeated agentfleet.v1.DefinitionFile files = 1;
+   */
+  files: DefinitionFile[];
+
+  /**
+   * `git rev-parse HEAD` of the clone the files were read at.
+   *
+   * @generated from field: string sha = 2;
+   */
+  sha: string;
+};
+
+/**
+ * Describes the message agentfleet.v1.ListDefinitionFilesResponse.
+ * Use `create(ListDefinitionFilesResponseSchema)` to create a new message.
+ */
+export const ListDefinitionFilesResponseSchema: GenMessage<ListDefinitionFilesResponse> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_provisioner, 6);
 
 /**
  * core owns `sessions` and therefore decides when a session should tear
@@ -238,7 +314,7 @@ export type TearDownSessionRequest = Message<"agentfleet.v1.TearDownSessionReque
  * Use `create(TearDownSessionRequestSchema)` to create a new message.
  */
 export const TearDownSessionRequestSchema: GenMessage<TearDownSessionRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 4);
+  messageDesc(file_agentfleet_v1_provisioner, 7);
 
 /**
  * @generated from message agentfleet.v1.TearDownSessionResponse
@@ -257,7 +333,7 @@ export type TearDownSessionResponse = Message<"agentfleet.v1.TearDownSessionResp
  * Use `create(TearDownSessionResponseSchema)` to create a new message.
  */
 export const TearDownSessionResponseSchema: GenMessage<TearDownSessionResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 5);
+  messageDesc(file_agentfleet_v1_provisioner, 8);
 
 /**
  * Worktree/branch lifecycle (reliability-findings.md #2): a task's
@@ -294,7 +370,7 @@ export type ListWorkerPodsRequest = Message<"agentfleet.v1.ListWorkerPodsRequest
  * Use `create(ListWorkerPodsRequestSchema)` to create a new message.
  */
 export const ListWorkerPodsRequestSchema: GenMessage<ListWorkerPodsRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 6);
+  messageDesc(file_agentfleet_v1_provisioner, 9);
 
 /**
  * @generated from message agentfleet.v1.LiveWorkerPod
@@ -323,7 +399,7 @@ export type LiveWorkerPod = Message<"agentfleet.v1.LiveWorkerPod"> & {
  * Use `create(LiveWorkerPodSchema)` to create a new message.
  */
 export const LiveWorkerPodSchema: GenMessage<LiveWorkerPod> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 7);
+  messageDesc(file_agentfleet_v1_provisioner, 10);
 
 /**
  * @generated from message agentfleet.v1.ListWorkerPodsResponse
@@ -340,7 +416,7 @@ export type ListWorkerPodsResponse = Message<"agentfleet.v1.ListWorkerPodsRespon
  * Use `create(ListWorkerPodsResponseSchema)` to create a new message.
  */
 export const ListWorkerPodsResponseSchema: GenMessage<ListWorkerPodsResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 8);
+  messageDesc(file_agentfleet_v1_provisioner, 11);
 
 /**
  * Publishes a session's port at <session>.e2e.bnei.dev: a Service plus a
@@ -367,7 +443,7 @@ export type ExposeSessionRequest = Message<"agentfleet.v1.ExposeSessionRequest">
  * Use `create(ExposeSessionRequestSchema)` to create a new message.
  */
 export const ExposeSessionRequestSchema: GenMessage<ExposeSessionRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 9);
+  messageDesc(file_agentfleet_v1_provisioner, 12);
 
 /**
  * @generated from message agentfleet.v1.ExposeSessionResponse
@@ -384,7 +460,7 @@ export type ExposeSessionResponse = Message<"agentfleet.v1.ExposeSessionResponse
  * Use `create(ExposeSessionResponseSchema)` to create a new message.
  */
 export const ExposeSessionResponseSchema: GenMessage<ExposeSessionResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 10);
+  messageDesc(file_agentfleet_v1_provisioner, 13);
 
 /**
  * @generated from message agentfleet.v1.UnexposeSessionRequest
@@ -401,7 +477,7 @@ export type UnexposeSessionRequest = Message<"agentfleet.v1.UnexposeSessionReque
  * Use `create(UnexposeSessionRequestSchema)` to create a new message.
  */
 export const UnexposeSessionRequestSchema: GenMessage<UnexposeSessionRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 11);
+  messageDesc(file_agentfleet_v1_provisioner, 14);
 
 /**
  * @generated from message agentfleet.v1.UnexposeSessionResponse
@@ -414,7 +490,7 @@ export type UnexposeSessionResponse = Message<"agentfleet.v1.UnexposeSessionResp
  * Use `create(UnexposeSessionResponseSchema)` to create a new message.
  */
 export const UnexposeSessionResponseSchema: GenMessage<UnexposeSessionResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 12);
+  messageDesc(file_agentfleet_v1_provisioner, 15);
 
 /**
  * Provisions or reuses a shared backing service. Keyed by repo, not by
@@ -448,7 +524,7 @@ export type ProvisionServiceRequest = Message<"agentfleet.v1.ProvisionServiceReq
  * Use `create(ProvisionServiceRequestSchema)` to create a new message.
  */
 export const ProvisionServiceRequestSchema: GenMessage<ProvisionServiceRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 13);
+  messageDesc(file_agentfleet_v1_provisioner, 16);
 
 /**
  * @generated from message agentfleet.v1.ProvisionServiceResponse
@@ -465,7 +541,7 @@ export type ProvisionServiceResponse = Message<"agentfleet.v1.ProvisionServiceRe
  * Use `create(ProvisionServiceResponseSchema)` to create a new message.
  */
 export const ProvisionServiceResponseSchema: GenMessage<ProvisionServiceResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 14);
+  messageDesc(file_agentfleet_v1_provisioner, 17);
 
 /**
  * @generated from message agentfleet.v1.SweepSessionRequest
@@ -482,7 +558,7 @@ export type SweepSessionRequest = Message<"agentfleet.v1.SweepSessionRequest"> &
  * Use `create(SweepSessionRequestSchema)` to create a new message.
  */
 export const SweepSessionRequestSchema: GenMessage<SweepSessionRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 15);
+  messageDesc(file_agentfleet_v1_provisioner, 18);
 
 /**
  * @generated from message agentfleet.v1.SweepSessionResponse
@@ -495,7 +571,7 @@ export type SweepSessionResponse = Message<"agentfleet.v1.SweepSessionResponse">
  * Use `create(SweepSessionResponseSchema)` to create a new message.
  */
 export const SweepSessionResponseSchema: GenMessage<SweepSessionResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 16);
+  messageDesc(file_agentfleet_v1_provisioner, 19);
 
 /**
  * @generated from message agentfleet.v1.SyncRepoCacheRequest
@@ -517,7 +593,7 @@ export type SyncRepoCacheRequest = Message<"agentfleet.v1.SyncRepoCacheRequest">
  * Use `create(SyncRepoCacheRequestSchema)` to create a new message.
  */
 export const SyncRepoCacheRequestSchema: GenMessage<SyncRepoCacheRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 17);
+  messageDesc(file_agentfleet_v1_provisioner, 20);
 
 /**
  * No error field: gRPC already carries one, and git.Manager.run puts git's
@@ -577,7 +653,7 @@ export type SyncRepoCacheResponse = Message<"agentfleet.v1.SyncRepoCacheResponse
  * Use `create(SyncRepoCacheResponseSchema)` to create a new message.
  */
 export const SyncRepoCacheResponseSchema: GenMessage<SyncRepoCacheResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 18);
+  messageDesc(file_agentfleet_v1_provisioner, 21);
 
 /**
  * Which kind of pod an operation targets.
@@ -705,6 +781,17 @@ export const ProvisionerService: GenService<{
     methodKind: "unary";
     input: typeof SweepSessionRequestSchema;
     output: typeof SweepSessionResponseSchema;
+  },
+  /**
+   * core's definitions sync source (docs/adr/0062). Named *Files* because
+   * DashboardService already has ListDefinitions in this package.
+   *
+   * @generated from rpc agentfleet.v1.ProvisionerService.ListDefinitionFiles
+   */
+  listDefinitionFiles: {
+    methodKind: "unary";
+    input: typeof ListDefinitionFilesRequestSchema;
+    output: typeof ListDefinitionFilesResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_agentfleet_v1_provisioner, 0);

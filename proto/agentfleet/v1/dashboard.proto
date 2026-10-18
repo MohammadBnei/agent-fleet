@@ -70,6 +70,11 @@ message CreateSessionRequest {
   // gh, kubectl, curl, wget and env all stop reaching a human for that
   // session. The UI has to say so where the choice is made.
   optional string permission_mode = 7;
+  // A definition name (docs/adr/0062). When set, repo, model and
+  // permission_mode must be empty: they come from the definition's current
+  // valid version, and the mode is written explicitly, so the 'auto' column
+  // default never applies to a definition session.
+  optional string definition = 8;
 }
 
 message CreateSessionResponse {
@@ -393,6 +398,35 @@ message Repo {
   bool cluster_access = 6;
 }
 
+message ListDefinitionsRequest {}
+
+// One defined agent's current version (docs/adr/0062).
+message AgentDefinition {
+  string name = 1;
+  // The latest VALID version: what a new session pins.
+  string sha = 2;
+  // False only when the name has no valid version at all.
+  bool valid = 3;
+  // "" when valid.
+  string error = 4;
+  // Effective workspace.repo, model.default and mode.default ("" when invalid).
+  string repo = 5;
+  string model = 6;
+  string permission_mode = 7;
+  string audience_group = 8;
+  // RFC3339.
+  string synced_at = 9;
+  // Set when the checked-out version is invalid and `sha` is an older valid one.
+  string newer_error = 10;
+}
+
+message ListDefinitionsResponse {
+  repeated AgentDefinition definitions = 1;
+  // The last sync's errors that have no row: bad paths, abstract parents,
+  // clients.
+  repeated string sync_errors = 2;
+}
+
 message ListReposRequest {}
 
 message ListReposResponse {
@@ -591,6 +625,8 @@ service DashboardService {
   // buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
   // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
   rpc GetJournal(GetJournalRequest) returns (GetJournalResponse);
+  // Defined agents (docs/adr/0062). Admin-only like every method here.
+  rpc ListDefinitions(ListDefinitionsRequest) returns (ListDefinitionsResponse);
   rpc ListRepos(ListReposRequest) returns (ListReposResponse);
   rpc CreateRepo(CreateRepoRequest) returns (CreateRepoResponse);
   rpc UpdateRepo(UpdateRepoRequest) returns (UpdateRepoResponse);

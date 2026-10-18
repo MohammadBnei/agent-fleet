@@ -42,9 +42,17 @@ type Server struct {
 	fleetSharedRepoURL string
 	fleetSharedBranch  string
 	// version is this binary's build, compiled in via -ldflags (see
-	// cmd/provisioner/main.go). Reported by GetVersion, nothing else reads it.
+	// cmd/provisioner/main.go). Reported by GetVersion, and the default ref
+	// ListDefinitionFiles reads definitions at.
 	version string
+	// definitionsRef is FLEET_DEFINITIONS_REF: overrides version as the ref
+	// definitions are read at (kind and dev point it at a branch).
+	definitionsRef string
 }
+
+// SetDefinitionsRef sets FLEET_DEFINITIONS_REF (docs/adr/0062). A setter
+// rather than an eighth positional string on New, which already takes six.
+func (s *Server) SetDefinitionsRef(ref string) { s.definitionsRef = ref }
 
 // claudeHomeDir is no longer a parameter: fleet-shared is seeded into each
 // session's OWN claude-home (git.Manager.ClaudeHomePath), not into one shared
@@ -319,6 +327,33 @@ func (s *Server) GetVersion(_ context.Context, _ *agentfleetv1.GetVersionRequest
 		WorkerImage:  worker,
 		SidecarImage: sidecar,
 	}, nil
+}
+
+// ListDefinitionFiles is core's definitions sync source (docs/adr/0062). The
+// ref defaults to this provisioner's own release tag, so definitions ship with
+// the core release that judges them instead of going live on merge to main.
+// Fails closed: no source, no ref or any read error is an error.
+func (s *Server) ListDefinitionFiles(ctx context.Context, _ *agentfleetv1.ListDefinitionFilesRequest) (*agentfleetv1.ListDefinitionFilesResponse, error) {
+	if s.fleetSharedRepoURL == "" {
+		return nil, status.Error(codes.FailedPrecondition, "FLEET_SHARED_REPO_URL is unset: no definitions source")
+	}
+	ref := s.definitionsRef
+	if ref == "" {
+		if s.version == "dev" || s.version == "" {
+			return nil, status.Error(codes.FailedPrecondition, "a dev build has no release tag to read definitions at: set FLEET_DEFINITIONS_REF")
+		}
+		ref = s.version
+	}
+	files, sha, err := s.git.ReadDefinitions(ctx, s.fleetSharedRepoURL, ref)
+	if err != nil {
+		// git.Manager.run puts git's own stderr in here: the whole diagnostic.
+		return nil, status.Error(codes.Unavailable, err.Error())
+	}
+	out := &agentfleetv1.ListDefinitionFilesResponse{Sha: sha}
+	for p, b := range files {
+		out.Files = append(out.Files, &agentfleetv1.DefinitionFile{Path: p, Content: b})
+	}
+	return out, nil
 }
 
 func (s *Server) reportEvent(ctx context.Context, taskID string, kind agentfleetv1.SessionKind, phase agentfleetv1.PodPhase, podName, message string) {

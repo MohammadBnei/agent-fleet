@@ -40,6 +40,7 @@ const (
 	DashboardService_Transcribe_FullMethodName          = "/agentfleet.v1.DashboardService/Transcribe"
 	DashboardService_DeleteSession_FullMethodName       = "/agentfleet.v1.DashboardService/DeleteSession"
 	DashboardService_GetJournal_FullMethodName          = "/agentfleet.v1.DashboardService/GetJournal"
+	DashboardService_ListDefinitions_FullMethodName     = "/agentfleet.v1.DashboardService/ListDefinitions"
 	DashboardService_ListRepos_FullMethodName           = "/agentfleet.v1.DashboardService/ListRepos"
 	DashboardService_CreateRepo_FullMethodName          = "/agentfleet.v1.DashboardService/CreateRepo"
 	DashboardService_UpdateRepo_FullMethodName          = "/agentfleet.v1.DashboardService/UpdateRepo"
@@ -125,6 +126,8 @@ type DashboardServiceClient interface {
 	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	GetJournal(ctx context.Context, in *GetJournalRequest, opts ...grpc.CallOption) (*GetJournalResponse, error)
+	// Defined agents (docs/adr/0062). Admin-only like every method here.
+	ListDefinitions(ctx context.Context, in *ListDefinitionsRequest, opts ...grpc.CallOption) (*ListDefinitionsResponse, error)
 	ListRepos(ctx context.Context, in *ListReposRequest, opts ...grpc.CallOption) (*ListReposResponse, error)
 	CreateRepo(ctx context.Context, in *CreateRepoRequest, opts ...grpc.CallOption) (*CreateRepoResponse, error)
 	UpdateRepo(ctx context.Context, in *UpdateRepoRequest, opts ...grpc.CallOption) (*UpdateRepoResponse, error)
@@ -383,6 +386,16 @@ func (c *dashboardServiceClient) GetJournal(ctx context.Context, in *GetJournalR
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetJournalResponse)
 	err := c.cc.Invoke(ctx, DashboardService_GetJournal_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dashboardServiceClient) ListDefinitions(ctx context.Context, in *ListDefinitionsRequest, opts ...grpc.CallOption) (*ListDefinitionsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListDefinitionsResponse)
+	err := c.cc.Invoke(ctx, DashboardService_ListDefinitions_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -661,6 +674,8 @@ type DashboardServiceServer interface {
 	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	GetJournal(context.Context, *GetJournalRequest) (*GetJournalResponse, error)
+	// Defined agents (docs/adr/0062). Admin-only like every method here.
+	ListDefinitions(context.Context, *ListDefinitionsRequest) (*ListDefinitionsResponse, error)
 	ListRepos(context.Context, *ListReposRequest) (*ListReposResponse, error)
 	CreateRepo(context.Context, *CreateRepoRequest) (*CreateRepoResponse, error)
 	UpdateRepo(context.Context, *UpdateRepoRequest) (*UpdateRepoResponse, error)
@@ -768,6 +783,9 @@ func (UnimplementedDashboardServiceServer) DeleteSession(context.Context, *Delet
 }
 func (UnimplementedDashboardServiceServer) GetJournal(context.Context, *GetJournalRequest) (*GetJournalResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetJournal not implemented")
+}
+func (UnimplementedDashboardServiceServer) ListDefinitions(context.Context, *ListDefinitionsRequest) (*ListDefinitionsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListDefinitions not implemented")
 }
 func (UnimplementedDashboardServiceServer) ListRepos(context.Context, *ListReposRequest) (*ListReposResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListRepos not implemented")
@@ -1220,6 +1238,24 @@ func _DashboardService_GetJournal_Handler(srv interface{}, ctx context.Context, 
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(DashboardServiceServer).GetJournal(ctx, req.(*GetJournalRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DashboardService_ListDefinitions_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListDefinitionsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DashboardServiceServer).ListDefinitions(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DashboardService_ListDefinitions_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DashboardServiceServer).ListDefinitions(ctx, req.(*ListDefinitionsRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1688,6 +1724,10 @@ var DashboardService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetJournal",
 			Handler:    _DashboardService_GetJournal_Handler,
+		},
+		{
+			MethodName: "ListDefinitions",
+			Handler:    _DashboardService_ListDefinitions_Handler,
 		},
 		{
 			MethodName: "ListRepos",

@@ -48,6 +48,11 @@ spec:
               value: agent-fleet-workspace
             - name: WORKSPACE_ROOT
               value: /workspace
+            # docs/adr/0062: a kind build is version "dev", which has no release
+            # tag to read definitions/ at. Point this at the branch under test
+            # (it must be pushed: the provisioner clones FLEET_SHARED_REPO_URL).
+            - name: FLEET_DEFINITIONS_REF
+              value: main
             # core's code default is "agent-fleet-core.agent-fleet.svc.
             # cluster.local:9090" — correct for prod, where core goes
             # through common-app-chart and gets release-name-prefixed, but
