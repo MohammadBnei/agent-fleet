@@ -2,7 +2,7 @@
 
 - **Status:** Accepted, not built
 - **Date:** 2026-10-18
-- **Related:** ADR-0071 (events, threads, taint), infra-bootstrap ADR-0059
+- **Related:** ADR-0071 (events, threads, taint), infra-bootstrap ADR-0060
   (`ukubi-bridge`), infra-bootstrap ADR-0055 (`netbird-agent` short-lived JWT),
   infra-bootstrap ADR-0034 (one build runner per build repo),
   [ADR-0035](0035-thot-cluster-agent.md) / [ADR-0037](0037-thot-is-a-worker-task.md)
@@ -11,7 +11,7 @@
 
 ## Context
 
-The first event-driven flow (infra-bootstrap ADR-0059) ends with a
+The first event-driven flow (infra-bootstrap ADR-0060) ends with a
 zot/buildah agent onboarding a new build repo: registry keys, a build-runner
 instance, CI identity claims. Some of those steps are human-only today: a
 person runs `ansible-playbook` against real hosts, writes to Infisical, and

@@ -2,7 +2,7 @@
 
 - **Status:** Accepted, not built
 - **Date:** 2026-10-18
-- **Related:** infra-bootstrap ADR-0059 (`ukubi-bridge`, the bus itself),
+- **Related:** infra-bootstrap ADR-0060 (`ukubi-bridge`, the bus itself),
   [ADR-0041](0041-inter-agent-prompting.md) (`prompt_agent`, which stays),
   [ADR-0048](0048-one-session-one-pod-one-shared-home.md) (§1 human gate, §2 no
   queue), ADR-0062 (the gate amendment: a registered client may open a session),
@@ -22,7 +22,7 @@ becomes a *proposal* and a human opens it. `prompt_agent` (ADR-0041) is
 synchronous, session-to-session, refused into definition sessions, and
 carries a caller-supplied depth.
 
-infra-bootstrap ADR-0059 introduces `ukubi-bridge`, a Postgres-backed
+infra-bootstrap ADR-0060 introduces `ukubi-bridge`, a Postgres-backed
 CloudEvents bus that owns ingestion (GitHub App, Alertmanager, Grafana),
 the log, retry and dead-lettering. This ADR is core's side of it.
 
