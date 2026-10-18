@@ -14,7 +14,6 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/metadata"
 
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 )
@@ -59,24 +58,32 @@ const repoSyncTimeout = 10 * time.Minute
 // copy (docs/adr/0069). Network reachability alone was the boundary before,
 // and it let any pod create pods.
 //
-// An empty token still dials. Every call then fails Unauthenticated, which is
-// loud enough, and the console keeps working without a provisioner.
+// An empty token still dials and sends no header. Every call then fails
+// Unauthenticated, which is loud enough, and the console keeps working without
+// a provisioner.
 func New(addr, token string) (*Client, error) {
-	bearer := "Bearer " + token
 	conn, err := grpc.NewClient(addr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithChainUnaryInterceptor(func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
-			return invoker(metadata.AppendToOutgoingContext(ctx, "authorization", bearer), method, req, reply, cc, opts...)
-		}),
-		grpc.WithChainStreamInterceptor(func(ctx context.Context, desc *grpc.StreamDesc, cc *grpc.ClientConn, method string, streamer grpc.Streamer, opts ...grpc.CallOption) (grpc.ClientStream, error) {
-			return streamer(metadata.AppendToOutgoingContext(ctx, "authorization", bearer), desc, cc, method, opts...)
-		}),
+		grpc.WithPerRPCCredentials(bearer(token)),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("dial provisioner: %w", err)
 	}
 	return &Client{conn: conn, rpc: agentfleetv1.NewProvisionerServiceClient(conn)}, nil
 }
+
+// bearer is per-RPC credentials, so one value covers unary and stream calls.
+type bearer string
+
+func (b bearer) GetRequestMetadata(context.Context, ...string) (map[string]string, error) {
+	if b == "" {
+		return nil, nil
+	}
+	return map[string]string{"authorization": "Bearer " + string(b)}, nil
+}
+
+// RequireTransportSecurity is false: in-cluster ClusterIP, no TLS (see New).
+func (bearer) RequireTransportSecurity() bool { return false }
 
 func (c *Client) Close() error {
 	return c.conn.Close()
