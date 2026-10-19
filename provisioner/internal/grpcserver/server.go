@@ -17,6 +17,7 @@ import (
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"k8s.io/apimachinery/pkg/util/wait"
 
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 
@@ -263,6 +264,13 @@ func (s *Server) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWo
 	// made a shared instance the fleet's problem to mint, size and tear down
 	// on behalf of sessions that often never touched it (docs/adr/0048 §6).
 
+	// The Job name is per session, and reconcile keeps a Failed Job for its
+	// TTL, so a re-warm after a crash would die on AlreadyExists.
+	if err := s.replaceTerminalWorkerJob(ctx, req.GetSessionId()); err != nil {
+		s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_CRASHED, "", "previous pod cleanup failed: "+err.Error())
+		return nil, fmt.Errorf("replace terminal worker job: %w", err)
+	}
+
 	// docs/adr/0065: the vault matches the pinned spec, the CA is published,
 	// and this pod's token is minted, all before the pod exists. Any failure
 	// (a missing secret, no vault, no agent token, no egress lock) refuses the
@@ -425,6 +433,31 @@ func (s *Server) TearDownSession(ctx context.Context, req *agentfleetv1.TearDown
 	// exactly one pod. The field stays on the wire so a rolling deploy where
 	// one side is older still parses; it just selects nothing.
 	return s.tearDownWorker(ctx, req.GetSessionId())
+}
+
+// replaceTerminalWorkerJob deletes the session's finished Job, and waits for
+// its name to free, so a warm can reuse it. A live Job is left alone (the
+// create then refuses it). docs/adr/0065: a definition Job's token is revoked
+// first and must land, since the kept pod's env holds it; before this warm's
+// mint, so a same-millisecond label can never be the new token's.
+func (s *Server) replaceTerminalWorkerJob(ctx context.Context, taskID string) error {
+	job, exists, err := s.k8sc.GetWorkerJob(ctx, taskID)
+	if err != nil || !exists || !job.Terminal() {
+		return err
+	}
+	if job.Definition != "" && job.VaultLabel != "" {
+		if err := s.vault.Revoke(ctx, job.Definition, job.VaultLabel); err != nil {
+			return err
+		}
+	}
+	if err := s.k8sc.DeleteWorkerJob(ctx, taskID); err != nil {
+		return err
+	}
+	// Foreground deletion keeps the Job until its pod is gone.
+	return wait.PollUntilContextTimeout(ctx, 500*time.Millisecond, 30*time.Second, true, func(ctx context.Context) (bool, error) {
+		_, exists, err := s.k8sc.GetWorkerJob(ctx, taskID)
+		return !exists, err
+	})
 }
 
 // tearDownWorker deletes the Job and nothing else. It deliberately does not

@@ -12,6 +12,8 @@ import (
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	batchv1 "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/fake"
@@ -184,6 +186,75 @@ func TestTearDownSession_RevokesBeforeDelete(t *testing.T) {
 	}
 	if calls := f.Calls(); len(calls) != 0 {
 		t.Errorf("a repo session's teardown called the vault: %v", calls)
+	}
+}
+
+// failJob marks a session's Job the way a crashed worker leaves it: Failed,
+// and kept by reconcile for its TTL.
+func failJob(t *testing.T, k8sc *k8s.Client, id string) {
+	t.Helper()
+	jobs := k8sc.Core.BatchV1().Jobs("agent-fleet")
+	job, err := jobs.Get(context.Background(), k8s.WorkerResourceName(id), metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	job.Status.Conditions = []batchv1.JobCondition{{Type: batchv1.JobFailed, Status: corev1.ConditionTrue}}
+	if _, err := jobs.UpdateStatus(context.Background(), job, metav1.UpdateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A crashed session's Job is kept for its TTL under the session's own Job
+// name, so a re-warm used to die on AlreadyExists. Now a terminal Job is
+// replaced: its token revoked before its delete, then the new pod created. A
+// live Job is still refused.
+func TestCreateWorkerPod_RewarmReplacesTerminalJob(t *testing.T) {
+	s, k8sc, _ := newTestServer(t)
+	f := withVault(t, s, map[string]string{"CLAUDE_CODE_OAUTH_TOKEN": "oauth"})
+	ctx := context.Background()
+	req := defRequest(t, "def-1", profile("dev-x"))
+	if _, err := s.CreateWorkerPod(ctx, req); err != nil {
+		t.Fatal(err)
+	}
+	old, _, _ := k8sc.GetWorkerJob(ctx, "def-1")
+
+	// Live: refused, the running pod and its token untouched.
+	if _, err := s.CreateWorkerPod(ctx, req); err == nil {
+		t.Fatal("a re-warm over a live Job succeeded")
+	}
+	if v, _ := f.Get("dev-x"); len(v.Sessions) != 1 || v.Sessions[0].Label != old.VaultLabel {
+		t.Fatalf("live pod's token not kept alone: %+v", v.Sessions)
+	}
+
+	failJob(t, k8sc, "def-1")
+	oldLiveAtDelete := true
+	k8sc.Core.(*fake.Clientset).PrependReactor("delete", "jobs", func(k8stesting.Action) (bool, runtime.Object, error) {
+		v, _ := f.Get("dev-x")
+		oldLiveAtDelete = slices.ContainsFunc(v.Sessions, func(s vaulttest.Session) bool { return s.Label == old.VaultLabel })
+		return false, nil, nil
+	})
+	if _, err := s.CreateWorkerPod(ctx, req); err != nil {
+		t.Fatalf("re-warm after a crash: %v", err)
+	}
+	if oldLiveAtDelete {
+		t.Error("the kept Job's token was still live at its delete")
+	}
+	if j, exists, _ := k8sc.GetWorkerJob(ctx, "def-1"); !exists || j.Terminal() || j.VaultLabel == old.VaultLabel {
+		t.Errorf("new Job %+v exists=%v, want a fresh live one", j, exists)
+	}
+
+	// A repo session's kept Job is replaced the same way, without the vault.
+	repo := &agentfleetv1.CreateWorkerPodRequest{SessionId: "repo-1", Repo: "repo-1", RepoUrl: newTestOriginRepo(t), BaseBranch: "main"}
+	if _, err := s.CreateWorkerPod(ctx, repo); err != nil {
+		t.Fatal(err)
+	}
+	failJob(t, k8sc, "repo-1")
+	f.ResetLog()
+	if _, err := s.CreateWorkerPod(ctx, repo); err != nil {
+		t.Fatalf("repo re-warm after a crash: %v", err)
+	}
+	if calls := f.Calls(); len(calls) != 0 {
+		t.Errorf("a repo session's re-warm called the vault: %v", calls)
 	}
 }
 

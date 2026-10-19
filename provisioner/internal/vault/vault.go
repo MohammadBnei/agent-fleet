@@ -340,7 +340,7 @@ func (c *Client) reconcile(ctx context.Context, s Spec, widened *bool) error {
 		if slices.ContainsFunc(desired, func(d service) bool {
 			return !slices.ContainsFunc(current.Services, func(c service) bool { return c.Host == d.Host && c.Auth == d.Auth })
 		}) {
-			if err := c.revokeWhere(ctx, s.Name, func(string) bool { return true }); err != nil {
+			if _, err := c.revokeWhere(ctx, s.Name, func(string) bool { return true }); err != nil {
 				return fmt.Errorf("vault %s: widening, so revoking its sessions first: %w", s.Name, err)
 			}
 			*widened = true
@@ -463,10 +463,15 @@ func (c *Client) Mint(ctx context.Context, vault, label string, ttl time.Duratio
 func (c *Client) Revoke(ctx context.Context, vault, label string) error {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), revokeBudget)
 	defer cancel()
-	return c.revokeWhere(ctx, vault, func(l string) bool { return l == label })
+	n, err := c.revokeWhere(ctx, vault, func(l string) bool { return l == label })
+	if err == nil {
+		slog.Info("vault: revoked", "vault", vault, "label", label, "revoked", n)
+	}
+	return err
 }
 
-func (c *Client) revokeWhere(ctx context.Context, vault string, match func(label string) bool) error {
+// revokeWhere returns how many sessions it deleted.
+func (c *Client) revokeWhere(ctx context.Context, vault string, match func(label string) bool) (int, error) {
 	var list struct {
 		Sessions []struct {
 			ID    string `json:"id"`
@@ -476,21 +481,24 @@ func (c *Client) revokeWhere(ctx context.Context, vault string, match func(label
 	q := "?vault=" + url.QueryEscape(vault)
 	err := c.do(ctx, http.MethodGet, "/v1/sessions"+q, nil, &list)
 	if isStatus(err, http.StatusNotFound) {
-		return nil
+		return 0, nil
 	}
 	if err != nil {
-		return fmt.Errorf("vault %s: list sessions: %w", vault, err)
+		return 0, fmt.Errorf("vault %s: list sessions: %w", vault, err)
 	}
 	var errs []error
+	n := 0
 	for _, s := range list.Sessions {
 		if !match(s.Label) {
 			continue
 		}
 		if err := c.do(ctx, http.MethodDelete, "/v1/sessions/"+url.PathEscape(s.ID)+q, nil, nil); err != nil && !isStatus(err, http.StatusNotFound) {
 			errs = append(errs, fmt.Errorf("vault %s: revoke %s: %w", vault, s.Label, err))
+		} else {
+			n++
 		}
 	}
-	return errors.Join(errs...)
+	return n, errors.Join(errs...)
 }
 
 // CA is the vault's MITM root certificate (public).

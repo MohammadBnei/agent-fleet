@@ -168,6 +168,7 @@ cancel; the TTL bounds a miss.
 | Archive, Delete, rollback, stop-grace, startup-stall, idle | `TearDownSession` → `Revoke(definition, label)` from the Job, before the Job delete |
 | Stop, worker crash, lifetime cap | `gcTerminalWorkerJobs`, `Revoke(definition, label)` before its `ReportEvent`, retried every tick until it lands while the Job is listed (a kept Failed Job holds the token in its pod env) |
 | Job already gone at teardown | revoked when it went terminal, else TTL |
+| re-warm over a kept terminal Job (same per-session name) | `CreateWorkerPod` → `Revoke(definition, label)` from the old Job (must land, or the warm fails), then its delete, then the new mint |
 | provisioner dies mid-warm, revoke times out | TTL |
 | open keep-alive tunnel after a revoke | ~2 min vault `IdleTimeout` (accepted) |
 | definition narrowed / invalid / deleted | next `ReconcileVaults` (≤60s): narrowed or emptied, live tokens kept |
