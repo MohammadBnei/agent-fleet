@@ -243,7 +243,7 @@ func (r orderReporter) ReportEvent(_ context.Context, e *agentfleetv1.PodEvent) 
 
 // docs/adr/0065: a terminal definition Job's own token (exact label) is
 // revoked before the report that could trigger a re-warm, a repo Job never
-// calls the vault, and a limits.timeout end is TERMINATED (an idle co-editor,
+// calls the vault, and a lifetime-cap end is TERMINATED (an idle co-editor,
 // not a failing one) and reaped like a Succeeded Job.
 func TestGcTerminalWorkerJobs_RevokesFirstAndTimeoutIsTerminated(t *testing.T) {
 	kc := &fakeK8s{jobs: []k8s.LiveWorkerJob{
@@ -254,7 +254,7 @@ func TestGcTerminalWorkerJobs_RevokesFirstAndTimeoutIsTerminated(t *testing.T) {
 	o := &order{}
 	l := New(kc, orderReporter{o}, o, time.Hour)
 	l.gcTerminalWorkerJobs(context.Background())
-	want := []string{"revoke dev-x timed-out.1", "report timed-out POD_PHASE_TERMINATED limits.timeout reached", "report repo-done POD_PHASE_TERMINATED worker job reached a terminal Succeeded phase"}
+	want := []string{"revoke dev-x timed-out.1", "report timed-out POD_PHASE_TERMINATED pod lifetime cap reached", "report repo-done POD_PHASE_TERMINATED worker job reached a terminal Succeeded phase"}
 	if !slices.Equal(o.log, want) {
 		t.Errorf("log %q, want %q", o.log, want)
 	}

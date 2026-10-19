@@ -294,7 +294,8 @@ func (l *Loop) enforceStartupStall(ctx context.Context) {
 
 // enforceIdleTimeout reclaims a live pod nobody is talking to. The session
 // itself survives — its directory and SDK state are untouched, so warming it
-// again resumes exactly where it left off.
+// again resumes exactly where it left off. A definition session idles out at
+// its own limits.timeout instead of l.idleTimeout (docs/adr/0065).
 func (l *Loop) enforceIdleTimeout(ctx context.Context) {
 	ids, err := l.sessions.ListIdleSessionIDs(ctx, l.idleTimeout)
 	if err != nil {
@@ -302,7 +303,7 @@ func (l *Loop) enforceIdleTimeout(ctx context.Context) {
 		return
 	}
 	for _, id := range ids {
-		slog.Info("sessions loop: idle timeout, tearing down pod", "sessionId", id, "after", l.idleTimeout)
+		slog.Info("sessions loop: idle timeout, tearing down pod", "sessionId", id, "default", l.idleTimeout)
 		l.tearDown(ctx, id)
 	}
 }

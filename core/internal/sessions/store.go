@@ -834,7 +834,9 @@ func (s *Store) ListStartupStalledIDs(ctx context.Context, startupStall time.Dur
 	`, startupStall, livePhases)
 }
 
-// ListIdleSessionIDs finds sessions with a live pod nobody is talking to.
+// ListIdleSessionIDs finds sessions with a live pod nobody is talking to:
+// idle past idleTimeout, or for a definition session past its pinned
+// version's limits.timeout (docs/adr/0065).
 func (s *Store) ListIdleSessionIDs(ctx context.Context, idleTimeout time.Duration) ([]string, error) {
 	// A session holding an unanswered PERMISSION is not idle — and unlike a
 	// question, its pod cannot be replaced.
@@ -856,11 +858,19 @@ func (s *Store) ListIdleSessionIDs(ctx context.Context, idleTimeout time.Duratio
 	// that one is a count over both types, this is a filter over one, and
 	// gluing SQL strings together to save a duplicate NOT EXISTS is how a
 	// WHERE clause ends up applying to the wrong query.
-	return s.listIDs(ctx, `
-		SELECT id FROM sessions s
-		WHERE s.pod_phase = ANY($2)
+	//
+	// limits.timeout is a Go duration string, compared here rather than cast
+	// in SQL: one string Postgres cannot read as an interval would fail the
+	// whole sweep, fleet-wide. One that does not parse falls back to
+	// idleTimeout. Live pods are bounded by MaxLive, so scanning them all is
+	// cheap.
+	rows, err := s.pool.Query(ctx, `
+		SELECT s.id, EXTRACT(EPOCH FROM now() - s.last_active_at)::float8,
+		       d.effective->'limits'->>'timeout'
+		  FROM sessions s
+		  LEFT JOIN agent_definitions d ON d.name = s.definition_name AND d.sha = s.definition_sha
+		WHERE s.pod_phase = ANY($1)
 		  AND s.last_active_at IS NOT NULL
-		  AND s.last_active_at < now() - $1::interval
 		  AND NOT EXISTS (
 		    SELECT 1 FROM transcript q
 		     WHERE q.session_id = s.id
@@ -870,7 +880,32 @@ func (s *Store) ListIdleSessionIDs(ctx context.Context, idleTimeout time.Duratio
 		          WHERE r.session_id = q.session_id AND r.reply_to_seq = q.seq
 		       )
 		  )
-	`, idleTimeout, livePhases)
+	`, livePhases)
+	if err != nil {
+		return nil, fmt.Errorf("list idle sessions: %w", err)
+	}
+	defer rows.Close()
+	ids := []string{}
+	for rows.Next() {
+		var (
+			id      string
+			idleSec float64
+			timeout *string
+		)
+		if err := rows.Scan(&id, &idleSec, &timeout); err != nil {
+			return nil, fmt.Errorf("scan idle session: %w", err)
+		}
+		limit := idleTimeout
+		if timeout != nil {
+			if d, err := time.ParseDuration(*timeout); err == nil && d > 0 {
+				limit = d
+			}
+		}
+		if time.Duration(idleSec*float64(time.Second)) > limit {
+			ids = append(ids, id)
+		}
+	}
+	return ids, rows.Err()
 }
 
 // ListRetentionExpired finds sessions whose disk the GC should reclaim:

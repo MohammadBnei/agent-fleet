@@ -130,8 +130,8 @@ Condensed. Full detail + rationale in `agent-fleet/docs/DECISIONS.md` + `docs/ad
   Infisical project `agent-vault` `/agent-vault`, mounted, never in core) and reconciles each valid
   definition's vault from git (core pushes key names via `ReconcileVaults` every sync; removed
   services and absent vaults are emptied; `unmatched_host_policy=deny`), inline again at warm.
-  One `av_sess_` per warm (TTL `max(300, limits.timeout)`+60s), revoked on every teardown path;
-  `limits.timeout` = `activeDeadlineSeconds`. Worker gets placeholder
+  One `av_sess_` per warm (TTL 12h lifetime cap +60s = `activeDeadlineSeconds`+60s), revoked on every
+  teardown path; `limits.timeout` is the session's idle timeout (core's idle sweep). Worker gets placeholder
   `CLAUDE_CODE_OAUTH_TOKEN`/`GH_TOKEN`, proxy + CA env, `ndots:1`; a `CiliumNetworkPolicy`
   (`k8s/provisioner/definition-egress.yaml`) allows only the vault proxy, core :9090 and DNS for
   both. A warm is refused without `vault_token_applied`, and `repos.url` must be the one GitHub

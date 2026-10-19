@@ -65,7 +65,8 @@ func jobCount(t *testing.T, k8sc *k8s.Client) int {
 }
 
 // docs/adr/0065: a warm mints one token, after the vault matches the spec, and
-// says so; the token outlives the pod's deadline by 60s.
+// says so; the pod's deadline is the fixed 12h cap whatever limits.timeout
+// says, and the token outlives it by 60s.
 func TestCreateWorkerPod_DefinitionMintsVaultToken(t *testing.T) {
 	s, k8sc, _ := newTestServer(t)
 	f := withVault(t, s, map[string]string{"CLAUDE_CODE_OAUTH_TOKEN": "oauth", "GH_DEV_NOTES": "pat"})
@@ -81,8 +82,8 @@ func TestCreateWorkerPod_DefinitionMintsVaultToken(t *testing.T) {
 		t.Fatalf("vault %+v", v)
 	}
 	sess := v.Sessions[0]
-	if sess.TTL != 1860 || !strings.HasPrefix(sess.Label, "def-1.") {
-		t.Errorf("session %+v, want ttl 1860 and label def-1.<ms>", sess)
+	if sess.TTL != 43260 || !strings.HasPrefix(sess.Label, "def-1.") {
+		t.Errorf("session %+v, want ttl 43260 and label def-1.<ms>", sess)
 	}
 	job, err := k8sc.Core.BatchV1().Jobs("agent-fleet").Get(context.Background(), k8s.WorkerResourceName("def-1"), metav1.GetOptions{})
 	if err != nil {
@@ -97,21 +98,21 @@ func TestCreateWorkerPod_DefinitionMintsVaultToken(t *testing.T) {
 	if proxy != "http://"+sess.Token+":dev-notes@agent-vault.agent-vault.svc.cluster.local:14322" {
 		t.Errorf("HTTPS_PROXY %q does not carry the minted token", proxy)
 	}
-	if d := job.Spec.ActiveDeadlineSeconds; d == nil || *d != 1800 {
-		t.Errorf("deadline %v", d)
+	if d := job.Spec.ActiveDeadlineSeconds; d == nil || *d != 43200 {
+		t.Errorf("deadline %v, want the 12h cap, not limits.timeout (1800)", d)
 	}
 	if cm, err := k8sc.Core.CoreV1().ConfigMaps("agent-fleet").Get(context.Background(), k8s.VaultCAConfigMap, metav1.GetOptions{}); err != nil || cm.Data["ca.pem"] != vaulttest.CA {
 		t.Errorf("CA configmap: %v", err)
 	}
 
-	// The deadline floor: a 60s timeout still gets the vault's 300s minimum.
+	// limits.timeout no longer reaches the pod: a 60s one gets the same cap.
 	p := profile("dev-short")
 	p.TimeoutSeconds = 60
 	if _, err := s.CreateWorkerPod(context.Background(), defRequest(t, "def-2", p)); err != nil {
 		t.Fatal(err)
 	}
-	if v, _ := f.Get("dev-short"); v.Sessions[0].TTL != 360 {
-		t.Errorf("ttl %d, want 300+60", v.Sessions[0].TTL)
+	if v, _ := f.Get("dev-short"); v.Sessions[0].TTL != 43260 {
+		t.Errorf("ttl %d, want 12h+60", v.Sessions[0].TTL)
 	}
 }
 

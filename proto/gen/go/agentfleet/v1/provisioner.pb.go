@@ -256,9 +256,9 @@ type DefinitionPodProfile struct {
 	// the services the provisioner reconciles into it before minting this pod's
 	// token.
 	Vault *VaultSpec `protobuf:"bytes,4,opt,name=vault,proto3" json:"vault,omitempty"`
-	// limits.timeout in seconds: the pod's lifetime (docs/adr/0065). Job
-	// activeDeadlineSeconds = max(300, this); the token's TTL = that + 60s, so
-	// the token always outlives the pod.
+	// limits.timeout in seconds. Unread since limits.timeout became core's idle
+	// timeout (docs/adr/0065, amended); still sent because an older provisioner
+	// refuses a profile without it. The pod's lifetime is a fixed cap.
 	TimeoutSeconds int64 `protobuf:"varint,5,opt,name=timeout_seconds,json=timeoutSeconds,proto3" json:"timeout_seconds,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
