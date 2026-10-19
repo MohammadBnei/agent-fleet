@@ -1,5 +1,11 @@
 # Changelog
 
+# [4.21.0](https://github.com/MohammadBnei/agent-fleet/compare/4.20.0...4.21.0) (2026-10-19)
+
+### Features
+
+* **definitions:** definition pod profile — warm definition sessions (ADR 0064) ([#263](https://github.com/MohammadBnei/agent-fleet/issues/263)) ([17f3980](https://github.com/MohammadBnei/agent-fleet/commit/17f3980375091f2091fd763cb2b7b9a456609dc4))
+
 # [4.20.0](https://github.com/MohammadBnei/agent-fleet/compare/4.19.0...4.20.0) (2026-10-19)
 
 ### Features
