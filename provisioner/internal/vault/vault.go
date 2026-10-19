@@ -90,6 +90,7 @@ type auth struct {
 // (docs/adr/0065 §2, 2026-10-19): github.com's info/refs?service=
 // git-receive-pack answered 200 to Basic and 401 to Bearer with the same
 // valid token, and git ls-remote went through a v0.40.0 vault with this shape.
+// TestReconcile_CreatesVaultServicesPolicyCredentials pins the shape.
 func gitAuth(key string) auth {
 	return auth{Type: "basic", Username: gitUsernameKey, Password: key}
 }
@@ -210,15 +211,20 @@ func (c *Client) readSecret(key string) (string, error) {
 	return strings.TrimSpace(string(b)), nil
 }
 
-func (c *Client) vaultLock(name string) *sync.Mutex {
+// Lock takes vault name's lock and returns its unlock. Every Reconcile runs
+// under it, and so does whatever must not interleave with a widening: a warm
+// holds it across reconcile, mint and Job create, a widening across revoke-all,
+// PUT and ending the definition's pods (docs/adr/0065 §3). Not re-entrant.
+func (c *Client) Lock(name string) (unlock func()) {
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	l, ok := c.locks[name]
 	if !ok {
 		l = &sync.Mutex{}
 		c.locks[name] = l
 	}
-	return l
+	c.mu.Unlock()
+	l.Lock()
+	return l.Unlock
 }
 
 // Reconcile makes vault s.Name match s: services (a PUT replaces the set, so
@@ -232,13 +238,13 @@ func (c *Client) vaultLock(name string) *sync.Mutex {
 // set first revokes every session on the vault, so a pod minted under the
 // narrower spec (an older pin) loses access instead of gaining it
 // (docs/adr/0065 §3); widened reports it, so the caller ends those pods.
+// Widened compares (host, auth) pairs, not service names: render names by
+// position, so dropping or reordering a path is a narrowing. The caller holds
+// Lock(s.Name).
 func (c *Client) Reconcile(ctx context.Context, s Spec) (widened bool, err error) {
 	if err := checkSpec(s); err != nil {
 		return false, err
 	}
-	l := c.vaultLock(s.Name)
-	l.Lock()
-	defer l.Unlock()
 	err = c.reconcile(ctx, s, &widened)
 	return widened, err
 }
@@ -331,7 +337,9 @@ func (c *Client) reconcile(ctx context.Context, s Spec, widened *bool) error {
 
 	sort.Slice(current.Services, func(i, j int) bool { return current.Services[i].Name < current.Services[j].Name })
 	if !slices.Equal(current.Services, desired) {
-		if slices.ContainsFunc(desired, func(d service) bool { return !slices.Contains(current.Services, d) }) {
+		if slices.ContainsFunc(desired, func(d service) bool {
+			return !slices.ContainsFunc(current.Services, func(c service) bool { return c.Host == d.Host && c.Auth == d.Auth })
+		}) {
 			if err := c.revokeWhere(ctx, s.Name, func(string) bool { return true }); err != nil {
 				return fmt.Errorf("vault %s: widening, so revoking its sessions first: %w", s.Name, err)
 			}
@@ -424,7 +432,9 @@ func (c *Client) Prune(ctx context.Context, keep map[string]bool) error {
 		if keep[n] || strings.HasPrefix(n, "executor-") || !vaultNameRe.MatchString(n) {
 			continue
 		}
+		unlock := c.Lock(n)
 		_, err := c.Reconcile(ctx, Spec{Name: n}) // an empty set never widens
+		unlock()
 		errs = append(errs, err)
 	}
 	return errors.Join(errs...)

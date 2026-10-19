@@ -252,24 +252,27 @@ func repoCacheMount(spec WorkerPodSpec) corev1.VolumeMount {
 }
 
 // definitionWorkerEnv narrows the worker's env for a definition pod
-// (docs/adr/0064): no LEASE_ID (the sidecar holds the lease and is the only
-// thing that talks to core) and no GH_TOKEN (push credentials arrive through
-// the vault in P3). The identity comes from the reviewed definition file, so
-// the worker's `gh api user` lookup is skipped (defaultConfigureGitAuth returns
-// early without GH_TOKEN), and safe.directory=/workspace is set through
-// GIT_CONFIG_* (the sidecar's mechanism, not its '*' value), since that early
-// return skips the line that wrote it. FLEET_DEFINITION tells the worker to
-// close Claude Code's own cross-session channel (docs/adr/0060), which never
-// touches core and so is not bounded by the definition allowlist.
+// (docs/adr/0064, docs/adr/0065). No LEASE_ID: the sidecar holds the lease and
+// is the only thing that talks to core. No real credential:
+// CLAUDE_CODE_OAUTH_TOKEN and GH_TOKEN are placeholders the vault overwrites
+// on the wire. The identity comes from the reviewed definition file, and the
+// worker skips its gh auth setup (`gh api user`, gh auth setup-git and the
+// safe.directory line) because FLEET_DEFINITION is set, NOT because GH_TOKEN is
+// empty: it is not, and a `gh api user` with the placeholder matches no vault
+// rule, so every definition session would fail at start. safe.directory=
+// /workspace comes through GIT_CONFIG_* instead (the sidecar's mechanism, not
+// its '*' value). FLEET_DEFINITION also closes Claude Code's own cross-session
+// channel (docs/adr/0060), which never touches core and so is not bounded by
+// the definition allowlist.
 //
-// docs/adr/0065: no real credential either. CLAUDE_CODE_OAUTH_TOKEN and
-// GH_TOKEN are placeholders the vault overwrites on the wire; the proxy, its
-// CA and NO_PROXY (loopback for the sidecar, core, the vault API) are set
-// here: both cases of HTTPS_PROXY (curl prefers lowercase), NODE_USE_ENV_PROXY
-// (Node's own fetch ignores the proxy vars without it), and the CA in every
-// variable a client in the worker image reads. No HTTP_PROXY: the vault's
-// plain http:// path injects too, so a plain-http request goes direct and the
-// egress lock drops it (docs/adr/0065 accepted risks).
+// The proxy, its CA and NO_PROXY (loopback for the sidecar, core, the vault
+// API) are set here: both cases of HTTPS_PROXY (curl prefers lowercase),
+// NODE_USE_ENV_PROXY (Node's own fetch ignores the proxy vars without it), and
+// the CA in every variable a client in the worker image reads. No HTTP_PROXY:
+// the vault's plain http:// path injects too, so a plain-http request goes
+// direct and the egress lock drops it. No .cluster.local in NO_PROXY: such a
+// request goes to the proxy, which denies private ranges, and the egress lock
+// would drop it direct anyway (docs/adr/0065 §4, both departures recorded).
 func definitionWorkerEnv(env []corev1.EnvVar, d DefinitionProfile, coreHost string) []corev1.EnvVar {
 	out := make([]corev1.EnvVar, 0, len(env)+24)
 	for _, e := range env {
@@ -808,6 +811,20 @@ func ignoreAlreadyExists(err error) error {
 		return nil
 	}
 	return err
+}
+
+// EgressLockName is k8s/provisioner/definition-egress.yaml's CNP.
+const EgressLockName = "definition-egress-lock"
+
+// EgressLockPresent refuses a definition warm while the egress lock is absent
+// (a failed sync, a delete before selfHeal, a cluster without Cilium): the
+// pod would otherwise get its token with open egress. Presence only: that
+// Cilium enforces it was verified live (spike 1), not here.
+func (c *Client) EgressLockPresent(ctx context.Context) error {
+	if _, err := c.Dynamic.Resource(CNPGVR).Namespace(c.Namespace).Get(ctx, EgressLockName, metav1.GetOptions{}); err != nil {
+		return fmt.Errorf("egress lock %s/%s: %w", c.Namespace, EgressLockName, err)
+	}
+	return nil
 }
 
 // EnsureVaultCA upserts the vault's MITM root into VaultCAConfigMap, writing

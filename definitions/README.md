@@ -24,7 +24,14 @@ Onboarding a push definition (example: `dev-notes`):
 1. Infra-bootstrap's Agent Vault is deployed and bootstrapped
    (`gitops/scripts/agent-vault-bootstrap.sh`).
 2. Create a fine-grained PAT scoped to the one repo (contents read/write) and
-   store it: `infisical secrets set --projectId=ae771c2c-5115-452a-8f1c-1e03fa0e2b9a --env=dev --path=/agent-vault GH_DEV_NOTES=<pat>`.
+   store it without putting it on argv or in shell history: in the Infisical
+   UI, or with infisical's `@file` input from a private temp file:
+
+   ```sh
+   f=$(mktemp) && read -rs pat && printf %s "$pat" >"$f" && unset pat &&
+     infisical secrets set --projectId=ae771c2c-5115-452a-8f1c-1e03fa0e2b9a \
+       --env=dev --path=/agent-vault "GH_DEV_NOTES=@$f"; rm -f "$f"
+   ```
 3. A private repo also needs the provisioner's bot (`argocd-ukubi-bot`) as a
    read collaborator: the clone cache fetches with the bot's token, not the vault.
 4. Onboard the repo in the console (manage repos → add), with the URL **exactly**

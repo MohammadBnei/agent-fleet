@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -258,23 +257,13 @@ func TestReconcile_RefusesUnexpandedReference(t *testing.T) {
 	}
 }
 
-func TestReconcile_ConcurrentSameVault(t *testing.T) {
+// A 409 on create (another replica made it first) is success. The per-vault
+// lock is the server's to hold: grpcserver's TestCreateWorkerPod_WarmHoldsVaultLock.
+func TestReconcile_CreateConflictIsSuccess(t *testing.T) {
 	c, f, _ := setup(t, notesSecrets)
 	f.Configure(func(f *vaulttest.Server) { f.ConflictOnCreate = true })
-	var wg sync.WaitGroup
-	errs := make([]error, 2)
-	for i := range 2 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			_, errs[i] = c.Reconcile(context.Background(), notesSpec())
-		}()
-	}
-	wg.Wait()
-	for _, err := range errs {
-		if err != nil {
-			t.Error(err)
-		}
+	if _, err := c.Reconcile(context.Background(), notesSpec()); err != nil {
+		t.Fatal(err)
 	}
 	if n := f.Names(); len(n) != 1 {
 		t.Errorf("vaults %v", n)
@@ -391,18 +380,41 @@ func TestReconcile_WideningRevokesSessions(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.AddSession("dev-notes", "old-pin.1")
-	if _, err := c.Reconcile(ctx, notesSpec()); err != nil {
-		t.Fatal(err)
+	f.ResetLog()
+	if widened, err := c.Reconcile(ctx, notesSpec()); err != nil || !widened {
+		t.Fatalf("widened=%v err=%v", widened, err)
 	}
 	if v, _ := f.Get("dev-notes"); len(v.Sessions) != 0 {
 		t.Errorf("a widening kept %d sessions", len(v.Sessions))
 	}
-	f.AddSession("dev-notes", "new-pin.1")
-	if _, err := c.Reconcile(ctx, narrow); err != nil {
-		t.Fatal(err)
+	// The revoke lands before the wider services: no old token sees them.
+	calls := f.Calls()
+	del := slices.IndexFunc(calls, func(l string) bool { return strings.HasPrefix(l, "DELETE /v1/sessions/") })
+	put := slices.Index(calls, "PUT /v1/vaults/dev-notes/services")
+	if del < 0 || put < 0 || del > put {
+		t.Errorf("revoke at %d, PUT at %d, want revoke first: %v", del, put, calls)
 	}
-	if v, _ := f.Get("dev-notes"); len(v.Sessions) != 1 {
-		t.Errorf("a narrowing revoked sessions: %+v", v.Sessions)
+
+	// Narrowings keep sessions, including dropping or reordering a path,
+	// which renumbers the positional service names.
+	for _, s := range []vault.Spec{
+		{Name: "dev-notes", Services: []vault.Service{
+			{Host: "github.com", Paths: []string{"/MohammadBnei/notes.git/*", "/MohammadBnei/notes/*"}, Secret: "GH_DEV_NOTES"},
+			notesSpec().Services[1], notesSpec().Services[2],
+		}},
+		{Name: "dev-notes", Services: []vault.Service{
+			{Host: "github.com", Paths: []string{"/MohammadBnei/notes.git/*"}, Secret: "GH_DEV_NOTES"},
+			notesSpec().Services[1], notesSpec().Services[2],
+		}},
+		narrow,
+	} {
+		f.AddSession("dev-notes", "new-pin.1")
+		if widened, err := c.Reconcile(ctx, s); err != nil || widened {
+			t.Fatalf("%+v: widened=%v err=%v", s.Services, widened, err)
+		}
+		if v, _ := f.Get("dev-notes"); len(v.Sessions) == 0 {
+			t.Errorf("a narrowing revoked sessions: %+v", s.Services)
+		}
 	}
 }
 

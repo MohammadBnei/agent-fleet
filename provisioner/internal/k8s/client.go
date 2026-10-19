@@ -15,6 +15,8 @@ import (
 
 var (
 	ingressRouteGVR = schema.GroupVersionResource{Group: "traefik.io", Version: "v1alpha1", Resource: "ingressroutes"}
+	// CNPGVR is Cilium's CiliumNetworkPolicy (docs/adr/0065 §5).
+	CNPGVR = schema.GroupVersionResource{Group: "cilium.io", Version: "v2", Resource: "ciliumnetworkpolicies"}
 )
 
 type Client struct {
@@ -76,11 +78,11 @@ func New(namespace string, cfg Images) (*Client, error) {
 	}
 	return &Client{
 		Core: core, Dynamic: dyn, Namespace: namespace,
-		WorkerImage: cfg.WorkerImage,
+		WorkerImage:  cfg.WorkerImage,
 		SidecarImage: cfg.SidecarImage, WorkspacePVC: cfg.WorkspacePVC,
 		SessionStorageClass: cfg.SessionStorageClass,
 		SessionNodeSelector: cfg.SessionNodeSelector,
-		LogLevel: cfg.LogLevel, CoreGRPCAddr: cfg.CoreGRPCAddr,
+		LogLevel:            cfg.LogLevel, CoreGRPCAddr: cfg.CoreGRPCAddr,
 		ThotAuthToken: cfg.ThotAuthToken,
 		ExecutorAddr:  cfg.ExecutorAddr,
 		PostgresImage: cfg.PostgresImage, RedisImage: cfg.RedisImage,

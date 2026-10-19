@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -239,5 +240,68 @@ func TestReconcileVaults_WideningEndsLivePods(t *testing.T) {
 		if _, exists, err := k8sc.GetWorkerJob(ctx, id); err != nil || exists != want {
 			t.Errorf("%s: exists=%v err=%v, want exists=%v", id, exists, err, want)
 		}
+	}
+}
+
+// lockHeld reports whether someone holds vault name's lock: a Lock attempt
+// that does not get it within 100ms. The attempt then waits it out.
+func lockHeld(s *Server, name string) bool {
+	got := make(chan struct{})
+	go func() {
+		s.vault.Lock(name)()
+		close(got)
+	}()
+	select {
+	case <-got:
+		return false
+	case <-time.After(100 * time.Millisecond):
+		return true
+	}
+}
+
+// docs/adr/0065 §3: a warm holds the vault's lock through its Job create and a
+// widening holds it through ending the definition's Jobs, so a widening can
+// neither land between a warm's reconcile and its mint (a pod on an old pin
+// with a wider token) nor list Jobs before a revoked warm's pod exists.
+func TestVaultLock_SpansWarmAndWidening(t *testing.T) {
+	s, k8sc, _ := newTestServer(t)
+	withVault(t, s, map[string]string{"CLAUDE_CODE_OAUTH_TOKEN": "oauth", "GH_DEV_NOTES": "pat"})
+	ctx := context.Background()
+	var atCreate, atDelete bool
+	k8sc.Core.(*fake.Clientset).PrependReactor("create", "jobs", func(k8stesting.Action) (bool, runtime.Object, error) {
+		atCreate = lockHeld(s, "dev-notes")
+		return false, nil, nil
+	})
+	k8sc.Core.(*fake.Clientset).PrependReactor("delete", "jobs", func(k8stesting.Action) (bool, runtime.Object, error) {
+		atDelete = lockHeld(s, "dev-notes")
+		return false, nil, nil
+	})
+	if _, err := s.CreateWorkerPod(ctx, defRequest(t, "def-1", profile("dev-notes"))); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ReconcileVaults(ctx, &agentfleetv1.ReconcileVaultsRequest{Vaults: []*agentfleetv1.VaultSpec{notesProfile().Vault}}); err != nil {
+		t.Fatal(err)
+	}
+	if !atCreate || !atDelete {
+		t.Errorf("vault lock held at Job create=%v, at widening's Job delete=%v; want both", atCreate, atDelete)
+	}
+}
+
+// docs/adr/0065 §5: no egress lock, no token and no pod.
+func TestCreateWorkerPod_DefinitionRefusedWithoutEgressLock(t *testing.T) {
+	s, k8sc, _ := newTestServer(t)
+	f := withVault(t, s, map[string]string{"CLAUDE_CODE_OAUTH_TOKEN": "oauth"})
+	if err := k8sc.Dynamic.Resource(k8s.CNPGVR).Namespace("agent-fleet").Delete(context.Background(), k8s.EgressLockName, metav1.DeleteOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := s.CreateWorkerPod(context.Background(), defRequest(t, "def-1", profile("dev-x")))
+	if status.Code(err) != codes.FailedPrecondition || !strings.Contains(err.Error(), k8s.EgressLockName) {
+		t.Fatalf("got %v", err)
+	}
+	if n := jobCount(t, k8sc); n != 0 {
+		t.Errorf("%d jobs", n)
+	}
+	if v, _ := f.Get("dev-x"); len(v.Sessions) != 0 {
+		t.Error("a token was minted without an egress lock")
 	}
 }

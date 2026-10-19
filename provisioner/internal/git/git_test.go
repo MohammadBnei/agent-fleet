@@ -216,7 +216,7 @@ func TestEnsureRepoFetched_RefusesACacheFromAnotherOrigin(t *testing.T) {
 	if err := m.EnsureRepoFetched(ctx, "r", a+".git"); err != nil {
 		t.Errorf("a trailing .git is the same repo: %v", err)
 	}
-	if err := m.EnsureRepoFetched(ctx, "r", b); err == nil || !strings.Contains(err.Error(), "re-clone") {
+	if err := m.EnsureRepoFetched(ctx, "r", b); err == nil || !strings.Contains(err.Error(), "re-clone") || !strings.Contains(err.Error(), m.repoPath("r")) {
 		t.Errorf("a cache cloned from another URL was accepted: %v", err)
 	}
 }

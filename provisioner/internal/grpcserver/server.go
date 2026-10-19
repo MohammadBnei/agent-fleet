@@ -263,8 +263,12 @@ func (s *Server) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWo
 
 	// docs/adr/0065: the vault matches the pinned spec, the CA is published,
 	// and this pod's token is minted, all before the pod exists. Any failure
-	// (a missing secret, no vault, no agent token) refuses the warm here.
+	// (a missing secret, no vault, no agent token, no egress lock) refuses the
+	// warm here. The vault's lock is held through the Job create, so a
+	// widening runs wholly before this warm (whose reconcile then sees it) or
+	// wholly after (its revoke-all and Job delete then reach this pod).
 	if definition != nil {
+		defer s.vault.Lock(definition.Name)()
 		s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_PROVISIONING, "", "minting vault token")
 		token, l, deadline, err := s.mintDefinitionToken(ctx, req.GetSessionId(), req.GetDefinition())
 		if err != nil {
@@ -318,8 +322,12 @@ func (s *Server) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWo
 // CA and mints this pod's token. The pod's deadline is max(MinTTL, timeout); the
 // token lives 60s longer (activeDeadlineSeconds counts from the Job's
 // startTime, set at create: ms of skew).
+// The caller holds the vault's lock.
 func (s *Server) mintDefinitionToken(ctx context.Context, sessionID string, d *agentfleetv1.DefinitionPodProfile) (token, label string, deadline int64, err error) {
-	if err := s.reconcileVault(ctx, d.GetVault()); err != nil {
+	if err := s.k8sc.EgressLockPresent(ctx); err != nil {
+		return "", "", 0, status.Error(codes.FailedPrecondition, err.Error())
+	}
+	if err := s.reconcileVaultLocked(ctx, d.GetVault()); err != nil {
 		return "", "", 0, status.Error(codes.FailedPrecondition, "vault: "+err.Error())
 	}
 	pem, err := s.vault.CA(ctx)
@@ -343,7 +351,14 @@ func (s *Server) mintDefinitionToken(ctx context.Context, sessionID string, d *a
 // otherwise sit on a dead token (407) until limits.timeout, and core's
 // WarmIfIdle never re-warms a live phase. Gone, core's pod-phase reconcile
 // marks them TERMINATED (<=60s) and the next message re-warms at the new spec.
+// All under the vault's lock, which a warm holds through its Job create, so
+// the listing sees every pod minted before the revoke and none after.
 func (s *Server) reconcileVault(ctx context.Context, v *agentfleetv1.VaultSpec) error {
+	defer s.vault.Lock(v.GetName())()
+	return s.reconcileVaultLocked(ctx, v)
+}
+
+func (s *Server) reconcileVaultLocked(ctx context.Context, v *agentfleetv1.VaultSpec) error {
 	widened, err := s.vault.Reconcile(ctx, vaultSpec(v))
 	if !widened {
 		return err
@@ -353,7 +368,7 @@ func (s *Server) reconcileVault(ctx context.Context, v *agentfleetv1.VaultSpec) 
 		return errors.Join(err, fmt.Errorf("vault %s widened, listing its pods to end them: %w", v.GetName(), lerr))
 	}
 	for _, j := range jobs {
-		if j.Definition != v.GetName() || j.Phase == "Succeeded" || j.Phase == "Failed" || j.Phase == "DeadlineExceeded" {
+		if j.Definition != v.GetName() || j.Terminal() {
 			continue
 		}
 		slog.Info("grpcserver: vault widened, ending a pod on its revoked token", "vault", v.GetName(), "sessionId", j.TaskID)

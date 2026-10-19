@@ -261,7 +261,7 @@ func TestDefinitionEgressCNP_Pins(t *testing.T) {
 	type port struct{ Port, Protocol string }
 	var cnp struct {
 		Kind     string
-		Metadata struct{ Namespace string }
+		Metadata struct{ Name, Namespace string }
 		Spec     map[string]any
 	}
 	if err := yaml.Unmarshal(repoFile(t, "k8s/provisioner/definition-egress.yaml"), &cnp); err != nil {
@@ -295,8 +295,8 @@ func TestDefinitionEgressCNP_Pins(t *testing.T) {
 	if err := yaml.UnmarshalStrict(b, &spec); err != nil {
 		t.Fatalf("definition-egress.yaml has a field this test does not model: %v", err)
 	}
-	if cnp.Kind != "CiliumNetworkPolicy" || cnp.Metadata.Namespace != "agent-fleet" {
-		t.Fatalf("kind %q namespace %q", cnp.Kind, cnp.Metadata.Namespace)
+	if cnp.Kind != "CiliumNetworkPolicy" || cnp.Metadata.Namespace != "agent-fleet" || cnp.Metadata.Name != EgressLockName {
+		t.Fatalf("kind %q namespace %q name %q (EgressLockPresent checks %q)", cnp.Kind, cnp.Metadata.Namespace, cnp.Metadata.Name, EgressLockName)
 	}
 	if e := spec.EndpointSelector.MatchExpressions; len(e) != 1 || e[0].Key != DefinitionLabel || e[0].Operator != "Exists" {
 		t.Errorf("selector %+v, want %s Exists", e, DefinitionLabel)

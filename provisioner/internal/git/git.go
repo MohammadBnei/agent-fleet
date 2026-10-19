@@ -236,7 +236,7 @@ func (m *Manager) EnsureRepoFetched(ctx context.Context, repo, repoURL string) e
 	// somewhere else first. No cache yet: the clone below uses repoURL.
 	if origin, err := m.run(ctx, m.repoPath(repo), "config", "--get", "remote.origin.url"); err == nil &&
 		strings.TrimSuffix(origin, ".git") != strings.TrimSuffix(repoURL, ".git") {
-		return fmt.Errorf("cache %s: origin %q does not match repos.url %q; re-clone the cache", repo, origin, repoURL)
+		return fmt.Errorf("cache %s: origin %q does not match repos.url %q; delete %s on the provisioner's workspace PVC and the next warm re-clones from repos.url (the console's sync only fetches)", repo, origin, repoURL, m.repoPath(repo))
 	}
 	_, err := m.ensureLocked(ctx, repo, repoURL)
 	return err

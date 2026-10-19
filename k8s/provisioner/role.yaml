@@ -60,6 +60,12 @@ rules:
   resources: ["configmaps"]
   resourceNames: ["agent-vault-ca"]
   verbs: ["get", "update"]
+# docs/adr/0065 §5: a definition warm is refused unless the egress lock
+# exists. Read-only, that one object: ArgoCD owns it, never the provisioner.
+- apiGroups: ["cilium.io"]
+  resources: ["ciliumnetworkpolicies"]
+  resourceNames: ["definition-egress-lock"]
+  verbs: ["get"]
 - apiGroups: ["batch"]
   resources: ["jobs"]
   verbs: ["create", "get", "list", "watch", "delete"]

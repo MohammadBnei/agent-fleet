@@ -25,8 +25,8 @@ func deleteOpts() metav1.DeleteOptions { return metav1.DeleteOptions{} }
 type LiveWorkerJob struct {
 	TaskID  string
 	JobName string
-	// Phase mirrors the terminal-phase strings reconcile.gcTerminalWorkerJobs
-	// compares against ("Succeeded"/"Failed"/"DeadlineExceeded") — derived from the
+	// Phase is one of jobPhase's strings (Terminal: "Succeeded"/"Failed"/
+	// "DeadlineExceeded") — derived from the
 	// Job's own status.conditions (jobPhase, below) rather than a Pod's
 	// status.phase, but kept as the same plain string so that comparison
 	// (and reconcile's own tests) didn't need to change shape.
@@ -35,6 +35,11 @@ type LiveWorkerJob struct {
 	// (docs/adr/0065): its vault, and its token's exact session label.
 	Definition string
 	VaultLabel string
+}
+
+// Terminal is every phase jobPhase reports for a finished Job.
+func (j LiveWorkerJob) Terminal() bool {
+	return j.Phase == "Succeeded" || j.Phase == "Failed" || j.Phase == "DeadlineExceeded"
 }
 
 func liveJob(job *batchv1.Job) LiveWorkerJob {

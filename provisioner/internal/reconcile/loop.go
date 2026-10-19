@@ -79,6 +79,10 @@ type Loop struct {
 	// coreserver.ReportPodEvents already treats as a no-op against a session
 	// that is terminal.
 	reported map[string]struct{}
+	// revoked is the set of terminal definition Jobs whose token is revoked.
+	// Its own set, retried every tick: a kept Failed Job carries the token in
+	// its pod env until its TTL, so one failed revoke must not be the last.
+	revoked map[string]struct{}
 }
 
 func New(k8sc JobLister, core EventReporter, vault Revoker, sharedInstanceIdleTimeout time.Duration) *Loop {
@@ -88,6 +92,7 @@ func New(k8sc JobLister, core EventReporter, vault Revoker, sharedInstanceIdleTi
 		vault:                     vault,
 		sharedInstanceIdleTimeout: sharedInstanceIdleTimeout,
 		reported:                  make(map[string]struct{}),
+		revoked:                   make(map[string]struct{}),
 	}
 }
 
@@ -104,24 +109,28 @@ func (l *Loop) gcTerminalWorkerJobs(ctx context.Context) {
 	for id := range l.reported {
 		if _, ok := live[id]; !ok {
 			delete(l.reported, id) // TTL controller reaped it; forget it
+			delete(l.revoked, id)
 		}
 	}
 	for _, job := range jobs {
-		if job.Phase != "Succeeded" && job.Phase != "Failed" && job.Phase != "DeadlineExceeded" {
+		if !job.Terminal() {
 			continue
+		}
+		// docs/adr/0065: a definition Job's token dies before the report.
+		// Exactly its own label, so a re-warm's new token is never hit, even
+		// on a re-sighting after a provisioner restart. 3s budget, retried
+		// next tick while the Job is listed.
+		if _, done := l.revoked[job.TaskID]; !done && job.Definition != "" && job.VaultLabel != "" {
+			if err := l.vault.Revoke(ctx, job.Definition, job.VaultLabel); err != nil {
+				slog.Warn("reconcile: vault revoke failed, retried next tick", "sessionId", job.TaskID, "error", err)
+			} else {
+				l.revoked[job.TaskID] = struct{}{}
+			}
 		}
 		if _, done := l.reported[job.TaskID]; done {
 			continue
 		}
 		l.reported[job.TaskID] = struct{}{}
-		// docs/adr/0065: a definition Job's token dies before the report.
-		// Exactly its own label, so a re-warm's new token is never hit, even
-		// on a re-sighting after a provisioner restart. Best-effort, 3s budget.
-		if job.Definition != "" && job.VaultLabel != "" {
-			if err := l.vault.Revoke(ctx, job.Definition, job.VaultLabel); err != nil {
-				slog.Warn("reconcile: vault revoke failed, the token's TTL bounds it", "sessionId", job.TaskID, "error", err)
-			}
-		}
 		// Terminal-phase report (reliability-findings.md #1) — reported
 		// before GC-ing the Job. core's own coreserver.ReportPodEvents
 		// scopes MarkCrashed to a non-terminal task, so this is a safe

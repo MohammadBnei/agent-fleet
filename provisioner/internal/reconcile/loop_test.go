@@ -2,6 +2,7 @@ package reconcile
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"testing"
 	"time"
@@ -202,12 +203,36 @@ func TestRun_StopsOnContextCancel(t *testing.T) {
 	}
 }
 
-// order records revokes and reports in one sequence.
-type order struct{ log []string }
+// order records revokes and reports in one sequence; the first fail revokes
+// error.
+type order struct {
+	log  []string
+	fail int
+}
 
 func (o *order) Revoke(_ context.Context, vault, label string) error {
 	o.log = append(o.log, "revoke "+vault+" "+label)
+	if o.fail > 0 {
+		o.fail--
+		return errors.New("vault down")
+	}
 	return nil
+}
+
+// A kept Failed definition Job holds its token in its pod env: a failed
+// revoke is retried each tick until it lands, then never again; the report
+// still goes out once.
+func TestGcTerminalWorkerJobs_RetriesFailedRevoke(t *testing.T) {
+	kc := &fakeK8s{jobs: []k8s.LiveWorkerJob{{TaskID: "def-1", JobName: "worker-1", Phase: "Failed", Definition: "dev-x", VaultLabel: "def-1.1"}}}
+	o := &order{fail: 1}
+	l := New(kc, orderReporter{o}, o, time.Hour)
+	for range 3 {
+		l.gcTerminalWorkerJobs(context.Background())
+	}
+	want := []string{"revoke dev-x def-1.1", "report def-1 POD_PHASE_CRASHED worker job reached a terminal Failed phase", "revoke dev-x def-1.1"}
+	if !slices.Equal(o.log, want) {
+		t.Errorf("log %q, want %q", o.log, want)
+	}
 }
 
 type orderReporter struct{ o *order }

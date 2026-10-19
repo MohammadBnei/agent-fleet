@@ -165,7 +165,7 @@ cancel; the TTL bounds a miss.
 | Reconcile / CA / mint fails | nothing was minted |
 | core refuses the answer (`vault_token_applied` absent, or an error) | `refuseDefinitionPod` → `TearDownSession` |
 | Archive, Delete, rollback, stop-grace, startup-stall, idle | `TearDownSession` → `Revoke(definition, label)` from the Job, before the Job delete |
-| Stop, worker crash, `limits.timeout` | `gcTerminalWorkerJobs`, `Revoke(definition, label)` before its `ReportEvent` |
+| Stop, worker crash, `limits.timeout` | `gcTerminalWorkerJobs`, `Revoke(definition, label)` before its `ReportEvent`, retried every tick until it lands while the Job is listed (a kept Failed Job holds the token in its pod env) |
 | Job already gone at teardown | revoked when it went terminal, else TTL |
 | provisioner dies mid-warm, revoke times out | TTL |
 | open keep-alive tunnel after a revoke | ~2 min vault `IdleTimeout` (accepted) |
@@ -181,13 +181,30 @@ skew): the pod always dies before its token. A Job failed with reason
 like a Succeeded one, so a timed-out co-editor shows idle, not failing, and the
 next message re-warms and resumes. It can end a turn in flight (accepted).
 
+**One lock per vault orders warms against widenings.** A warm holds the
+vault's lock from its reconcile through the mint to the Job create; a widening
+reconcile holds it through revoke-all, the `PUT` and deleting the definition's
+live Jobs. So a widening lands wholly before a warm (whose own reconcile then
+sees the wide vault) or wholly after (its revoke and Job delete then reach that
+pod): never a pod on an older, narrower pin holding a token on the wider vault,
+nor a pod created after the listing on a token already revoked. Cost: warms
+of one definition, and the core tick's reconcile of it, run one at a time (a
+warm is seconds). Widening is judged on (host, auth) pairs, not service names:
+names are positional (`github-0`, ...), so dropping or reordering a path is a
+narrowing and keeps live tokens. `TestVaultLock_SpansWarmAndWidening` and
+`TestReconcile_WideningRevokesSessions` (revoke before `PUT`) pin both.
+
 ### 4. The pod holds placeholders
 
 Definition worker env: `CLAUDE_CODE_OAUTH_TOKEN` and `GH_TOKEN` =
 `fleet-vault-placeholder`; `HTTPS_PROXY`/`https_proxy` =
 `http://<av_sess_>:<vault>@agent-vault.agent-vault.svc.cluster.local:14322`,
 and deliberately **no** `HTTP_PROXY` (the vault injects on plain http too: a
-plain-http request goes direct and the egress lock drops it);
+plain-http request goes direct and the egress lock drops it), and no
+`.cluster.local` in `NO_PROXY` (such a request goes to the proxy, whose
+egress denies private ranges, and would be dropped direct anyway). Both depart
+from the P3 contract's env list (which named `HTTP_PROXY` and `cluster.local`)
+on purpose: each keeps a request on the path with two refusals instead of one;
 `NODE_USE_ENV_PROXY=1` (Node's built-in fetch ignores the proxy vars without
 it; Bun and Claude Code honour them anyway, spike 2);
 `NO_PROXY`/`no_proxy` = loopback (the sidecar), core and the vault API;
@@ -231,6 +248,10 @@ LAN, vault API, node ports (`:9090`, `:10250`), Prometheus or other core ports.
 The matchName list also closes DNS tunnelling. A test pins the selector to
 `k8s.DefinitionLabel`, core's labels to the provisioner's ingress policy, and
 the names to the config defaults (both FQDNs, absolute first under `ndots:1`).
+A warm checks the CNP exists (`get` on that one name, Role) before it mints and
+refuses with `FailedPrecondition` otherwise: a failed sync, a delete before
+selfHeal or a cluster without Cilium would else give the pod its token with
+open egress. Presence, not enforcement: that was verified live (spike 1).
 
 What breaks in a definition pod, deliberately: `WebFetch` and any HTTP outside
 the vault's rules (403 `no_match`); `npm`/`bun`/`pip`/`go`/`cargo` installs;
