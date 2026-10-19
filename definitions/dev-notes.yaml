@@ -1,0 +1,24 @@
+# Mohammad's notes space: SilverBullet at notes.bnei.dev pulls
+# MohammadBnei/notes (infra-bootstrap ADR-0058). docs/adr/0065's push-mode
+# vehicle: it pushes to main through the vault, and nowhere else. Not
+# launchable until an admin onboards repo `notes` (url exactly
+# https://github.com/MohammadBnei/notes.git) and GH_DEV_NOTES exists in
+# agent-fleet-nygh /agent-vault: the warm says which is missing.
+apiVersion: fleet.bnei.dev/v1alpha1
+kind: AgentDefinition
+metadata: { name: dev-notes }
+spec:
+  extends: workspace-base
+  audience: { group: platform-admins }
+  credentials:
+    vault: dev-notes
+    services:
+      - { host: github.com, paths: ["/MohammadBnei/notes/*", "/MohammadBnei/notes.git/*"], secret: GH_DEV_NOTES }
+      - { host: api.anthropic.com, secret: CLAUDE_CODE_OAUTH_TOKEN }
+  workspace: { kind: repo, repo: notes }
+  git: { mode: push, branch: main, identity: { name: fleet-notes-agent, email: fleet-notes-agent@bnei.dev } }
+  tools:
+    allow: [Read, Edit, Write, Glob, Grep, "Bash(git status:*)", "Bash(git diff:*)", "Bash(git log:*)",
+            "Bash(git add:*)", "Bash(git commit:*)", "Bash(git pull --rebase:*)", "Bash(git push:*)"]
+    deny: ["Edit(.git/**)", "Write(.git/**)", "Edit(.claude/**)", "Write(.claude/**)", "Edit(_plug/**)", "Write(_plug/**)"]
+  owns: { repos: [notes] }

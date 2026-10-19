@@ -29,6 +29,7 @@ const (
 	ProvisionerService_SyncRepoCache_FullMethodName       = "/agentfleet.v1.ProvisionerService/SyncRepoCache"
 	ProvisionerService_SweepSession_FullMethodName        = "/agentfleet.v1.ProvisionerService/SweepSession"
 	ProvisionerService_ListDefinitionFiles_FullMethodName = "/agentfleet.v1.ProvisionerService/ListDefinitionFiles"
+	ProvisionerService_ReconcileVaults_FullMethodName     = "/agentfleet.v1.ProvisionerService/ReconcileVaults"
 )
 
 // ProvisionerServiceClient is the client API for ProvisionerService service.
@@ -64,6 +65,10 @@ type ProvisionerServiceClient interface {
 	// core's definitions sync source (docs/adr/0062). Named *Files* because
 	// DashboardService already has ListDefinitions in this package.
 	ListDefinitionFiles(ctx context.Context, in *ListDefinitionFilesRequest, opts ...grpc.CallOption) (*ListDefinitionFilesResponse, error)
+	// core's definitions sync pushes every valid definition's vault after each
+	// good sync (docs/adr/0065); core commands, the provisioner executes, and
+	// credential values exist only on the provisioner's side.
+	ReconcileVaults(ctx context.Context, in *ReconcileVaultsRequest, opts ...grpc.CallOption) (*ReconcileVaultsResponse, error)
 }
 
 type provisionerServiceClient struct {
@@ -174,6 +179,16 @@ func (c *provisionerServiceClient) ListDefinitionFiles(ctx context.Context, in *
 	return out, nil
 }
 
+func (c *provisionerServiceClient) ReconcileVaults(ctx context.Context, in *ReconcileVaultsRequest, opts ...grpc.CallOption) (*ReconcileVaultsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReconcileVaultsResponse)
+	err := c.cc.Invoke(ctx, ProvisionerService_ReconcileVaults_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ProvisionerServiceServer is the server API for ProvisionerService service.
 // All implementations must embed UnimplementedProvisionerServiceServer
 // for forward compatibility.
@@ -207,6 +222,10 @@ type ProvisionerServiceServer interface {
 	// core's definitions sync source (docs/adr/0062). Named *Files* because
 	// DashboardService already has ListDefinitions in this package.
 	ListDefinitionFiles(context.Context, *ListDefinitionFilesRequest) (*ListDefinitionFilesResponse, error)
+	// core's definitions sync pushes every valid definition's vault after each
+	// good sync (docs/adr/0065); core commands, the provisioner executes, and
+	// credential values exist only on the provisioner's side.
+	ReconcileVaults(context.Context, *ReconcileVaultsRequest) (*ReconcileVaultsResponse, error)
 	mustEmbedUnimplementedProvisionerServiceServer()
 }
 
@@ -246,6 +265,9 @@ func (UnimplementedProvisionerServiceServer) SweepSession(context.Context, *Swee
 }
 func (UnimplementedProvisionerServiceServer) ListDefinitionFiles(context.Context, *ListDefinitionFilesRequest) (*ListDefinitionFilesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListDefinitionFiles not implemented")
+}
+func (UnimplementedProvisionerServiceServer) ReconcileVaults(context.Context, *ReconcileVaultsRequest) (*ReconcileVaultsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ReconcileVaults not implemented")
 }
 func (UnimplementedProvisionerServiceServer) mustEmbedUnimplementedProvisionerServiceServer() {}
 func (UnimplementedProvisionerServiceServer) testEmbeddedByValue()                            {}
@@ -448,6 +470,24 @@ func _ProvisionerService_ListDefinitionFiles_Handler(srv interface{}, ctx contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ProvisionerService_ReconcileVaults_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReconcileVaultsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProvisionerServiceServer).ReconcileVaults(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ProvisionerService_ReconcileVaults_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProvisionerServiceServer).ReconcileVaults(ctx, req.(*ReconcileVaultsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ProvisionerService_ServiceDesc is the grpc.ServiceDesc for ProvisionerService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -494,6 +534,10 @@ var ProvisionerService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListDefinitionFiles",
 			Handler:    _ProvisionerService_ListDefinitionFiles_Handler,
+		},
+		{
+			MethodName: "ReconcileVaults",
+			Handler:    _ProvisionerService_ReconcileVaults_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

@@ -40,7 +40,8 @@ func TestCreateWorkerPod_DefinitionProfile(t *testing.T) {
 		t.Fatal(err)
 	}
 	commitTo(t, fleetShared, "fleet-shared/settings.json")
-	s := New(k8sc, git.NewManager(root), &fakeEventReporter{}, "e2e.bnei.dev", fleetShared, "main", "test")
+	s := New(k8sc, git.NewManager(root), &fakeEventReporter{}, nil, "e2e.bnei.dev", fleetShared, "main", "test")
+	withVault(t, s, map[string]string{"CLAUDE_CODE_OAUTH_TOKEN": "oauth"})
 	origin := newTestOriginRepo(t)
 
 	// A repo session first: it clones the cache and gets fleet-shared.
@@ -76,7 +77,7 @@ func TestCreateWorkerPod_DefinitionProfile(t *testing.T) {
 	go func() {
 		resp, err := s.CreateWorkerPod(ctx, &agentfleetv1.CreateWorkerPodRequest{
 			SessionId: "def-1", Repo: "dream-analyst", RepoUrl: origin, BaseBranch: "main",
-			Definition: &agentfleetv1.DefinitionPodProfile{Name: "dev-dream-analyst", GitAuthorName: "a", GitAuthorEmail: "a@bnei.dev"},
+			Definition: profile("dev-dream-analyst"),
 		})
 		done <- result{resp, err}
 	}()
@@ -120,15 +121,16 @@ func TestCreateWorkerPod_DefinitionProfile(t *testing.T) {
 
 func TestCreateWorkerPod_RejectsAnIncompleteProfile(t *testing.T) {
 	s, k8sc, _ := newTestServer(t)
-	ok := func() *agentfleetv1.DefinitionPodProfile {
-		return &agentfleetv1.DefinitionPodProfile{Name: "d", GitAuthorName: "a", GitAuthorEmail: "a@bnei.dev"}
-	}
+	ok := func() *agentfleetv1.DefinitionPodProfile { return profile("ddd") }
 	for name, mut := range map[string]func(*agentfleetv1.CreateWorkerPodRequest){
-		"no name":   func(r *agentfleetv1.CreateWorkerPodRequest) { r.Definition.Name = "" },
-		"no author": func(r *agentfleetv1.CreateWorkerPodRequest) { r.Definition.GitAuthorName = "" },
-		"no email":  func(r *agentfleetv1.CreateWorkerPodRequest) { r.Definition.GitAuthorEmail = "" },
-		"tool keys": func(r *agentfleetv1.CreateWorkerPodRequest) { r.ToolKeys = []string{"cluster-access"} },
-		"image":     func(r *agentfleetv1.CreateWorkerPodRequest) { r.Image = "registry.bnei.lan:5000/old-worker:1" },
+		"no vault":      func(r *agentfleetv1.CreateWorkerPodRequest) { r.Definition.Vault = nil },
+		"another vault": func(r *agentfleetv1.CreateWorkerPodRequest) { r.Definition.Vault.Name = "dev-notes" },
+		"no timeout":    func(r *agentfleetv1.CreateWorkerPodRequest) { r.Definition.TimeoutSeconds = 0 },
+		"no name":       func(r *agentfleetv1.CreateWorkerPodRequest) { r.Definition.Name = "" },
+		"no author":     func(r *agentfleetv1.CreateWorkerPodRequest) { r.Definition.GitAuthorName = "" },
+		"no email":      func(r *agentfleetv1.CreateWorkerPodRequest) { r.Definition.GitAuthorEmail = "" },
+		"tool keys":     func(r *agentfleetv1.CreateWorkerPodRequest) { r.ToolKeys = []string{"cluster-access"} },
+		"image":         func(r *agentfleetv1.CreateWorkerPodRequest) { r.Image = "registry.bnei.lan:5000/old-worker:1" },
 	} {
 		req := &agentfleetv1.CreateWorkerPodRequest{SessionId: "s", Repo: "r", RepoUrl: "/nonexistent", Definition: ok()}
 		mut(req)

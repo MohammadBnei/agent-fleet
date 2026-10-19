@@ -1,7 +1,8 @@
 # ADR-0064 — Definition pod profile
 
-- **Status:** Accepted (P1 part). P3 extends it with the Agent Vault and the
-  egress lock (plan §5, P3 row); those are not built here.
+- **Status:** Accepted (P1 part). Amended by [ADR-0065](0065-agent-vault-and-the-definition-egress-lock.md)
+  (P3): the INTERIM model token is a vault placeholder, push mode pushes, the
+  egress lock and the URL binding are built.
 - **Date:** 2026-10-19
 - **Related:** [ADR-0062](0062-defined-agents.md) (defined agents; this replaces
   its unconditional warm refusal), [ADR-0020](0020-hub-and-spoke-grpc-worker-sidecar.md)

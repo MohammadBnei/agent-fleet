@@ -1,7 +1,9 @@
 # The Opus Tech workspace co-editor (docs/adr/0062). Its repo is not onboarded
 # yet, so CreateSession answers FailedPrecondition "not onboarded" until an
 # admin adds `opus-workspace` under manage repos. `invokers` stays empty until
-# an opus-ci client exists; `credentials` and `embed` are inert until P3/P4.
+# an opus-ci client exists; `embed` is inert until P4. Its credentials'
+# secrets (GH_OPUS_WORKSPACE, ANTHROPIC_OPUS) do not exist until P6: the vault
+# reconcile logs them missing and a warm is refused naming them.
 apiVersion: fleet.bnei.dev/v1alpha1
 kind: AgentDefinition
 metadata: { name: opus-workspace }

@@ -329,3 +329,32 @@ func TestRegistry_LogsOnlyChanges(t *testing.T) {
 		t.Fatalf("an unchanged sync logged: %s", buf.String())
 	}
 }
+
+// docs/adr/0065: Vaults is every valid HEAD's credentials and nothing else. An
+// invalid-at-HEAD or deleted definition is absent, so the provisioner's prune
+// empties its vault.
+func TestRegistry_Vaults(t *testing.T) {
+	ctx := context.Background()
+	lister := &fakeLister{}
+	r := NewRegistry(dbtest.NewPool(t), lister)
+	lister.set("sha1", map[string]string{
+		"definitions/base.yaml": baseYAML,
+		"definitions/good.yaml": childYAML("good", nil),
+		"definitions/bad.yaml":  childYAML("bad", map[string]string{"mode": "{ default: auto, allow: [auto] }"}),
+	})
+	if err := r.Sync(ctx); err != nil {
+		t.Fatal(err)
+	}
+	v := r.Vaults()
+	if len(v) != 1 || v[0].GetName() != "good" || len(v[0].GetServices()) != 1 ||
+		v[0].GetServices()[0].GetHost() != "api.anthropic.com" || v[0].GetServices()[0].GetSecret() != "CLAUDE_CODE_OAUTH_TOKEN" {
+		t.Fatalf("vaults %v, want good's only", v)
+	}
+	lister.set("sha2", map[string]string{"definitions/base.yaml": baseYAML})
+	if err := r.Sync(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if v := r.Vaults(); len(v) != 0 {
+		t.Fatalf("a deleted definition kept its vault: %v", v)
+	}
+}

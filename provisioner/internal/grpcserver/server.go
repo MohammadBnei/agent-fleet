@@ -9,8 +9,10 @@ package grpcserver
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"time"
 
 	"google.golang.org/grpc/codes"
@@ -21,6 +23,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/catalog"
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/git"
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/k8s"
+	"github.com/MohammadBnei/agent-fleet/provisioner/internal/vault"
 )
 
 // EventReporter is the narrow slice of coreclient.Client this server
@@ -48,6 +51,9 @@ type Server struct {
 	// definitionsRef is FLEET_DEFINITIONS_REF: overrides version as the ref
 	// definitions are read at (kind and dev point it at a branch).
 	definitionsRef string
+	// vault is the Agent Vault client (docs/adr/0065); it fails closed on its
+	// own without an agent token. Repo sessions never call it.
+	vault *vault.Client
 }
 
 // SetDefinitionsRef sets FLEET_DEFINITIONS_REF (docs/adr/0062). A setter
@@ -57,9 +63,9 @@ func (s *Server) SetDefinitionsRef(ref string) { s.definitionsRef = ref }
 // claudeHomeDir is no longer a parameter: fleet-shared is seeded into each
 // session's OWN claude-home (git.Manager.ClaudeHomePath), not into one shared
 // directory every pod mounted, so there is no single path left to configure.
-func New(k8sc *k8s.Client, gitMgr *git.Manager, core EventReporter, e2eHost string, fleetSharedRepoURL, fleetSharedBranch, version string) *Server {
+func New(k8sc *k8s.Client, gitMgr *git.Manager, core EventReporter, vc *vault.Client, e2eHost string, fleetSharedRepoURL, fleetSharedBranch, version string) *Server {
 	return &Server{
-		k8sc: k8sc, git: gitMgr, core: core, e2eHost: e2eHost,
+		k8sc: k8sc, git: gitMgr, core: core, vault: vc, e2eHost: e2eHost,
 		fleetSharedRepoURL: fleetSharedRepoURL, fleetSharedBranch: fleetSharedBranch,
 		version: version,
 	}
@@ -180,6 +186,10 @@ func (s *Server) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWo
 		if req.GetImage() != "" {
 			return nil, status.Error(codes.InvalidArgument, "a definition session runs the default worker image only")
 		}
+		// docs/adr/0065: an older core sends neither, and its warm fails here.
+		if d.GetVault() == nil || d.GetVault().GetName() != d.GetName() || d.GetTimeoutSeconds() <= 0 {
+			return nil, status.Error(codes.InvalidArgument, "definition profile needs its own vault and a timeout (docs/adr/0065)")
+		}
 		definition = &k8s.DefinitionProfile{Name: d.GetName(), GitAuthorName: d.GetGitAuthorName(), GitAuthorEmail: d.GetGitAuthorEmail()}
 	}
 	// A definition pod's clone reads the cache's origin/<base> and never
@@ -251,6 +261,23 @@ func (s *Server) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWo
 	// made a shared instance the fleet's problem to mint, size and tear down
 	// on behalf of sessions that often never touched it (docs/adr/0048 §6).
 
+	// docs/adr/0065: the vault matches the pinned spec, the CA is published,
+	// and this pod's token is minted, all before the pod exists. Any failure
+	// (a missing secret, no vault, no agent token, no egress lock) refuses the
+	// warm here. The vault's lock is held through the Job create, so a
+	// widening runs wholly before this warm (whose reconcile then sees it) or
+	// wholly after (its revoke-all and Job delete then reach this pod).
+	if definition != nil {
+		defer s.vault.Lock(definition.Name)()
+		s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_PROVISIONING, "", "minting vault token")
+		token, l, deadline, err := s.mintDefinitionToken(ctx, req.GetSessionId(), req.GetDefinition())
+		if err != nil {
+			s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_CRASHED, "", status.Convert(err).Message())
+			return nil, err
+		}
+		definition.ProxyURL, definition.DeadlineSeconds, definition.VaultLabel = s.vault.ProxyURL(token, definition.Name), deadline, l
+	}
+
 	s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_PROVISIONING, "", "creating pod")
 	if err := s.k8sc.CreateWorkerPod(ctx, k8s.WorkerPodSpec{
 		SessionID:     req.GetSessionId(),
@@ -266,6 +293,11 @@ func (s *Server) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWo
 		ExtraEnv:      nil,
 		Definition:    definition,
 	}); err != nil {
+		if definition != nil {
+			if rerr := s.vault.Revoke(ctx, definition.Name, definition.VaultLabel); rerr != nil {
+				slog.Warn("grpcserver CreateWorkerPod: revoking the token of a pod never created (its TTL bounds it)", "sessionId", req.GetSessionId(), "error", rerr)
+			}
+		}
 		s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_CRASHED, "", "pod create failed: "+err.Error())
 		return nil, fmt.Errorf("create worker pod: %w", err)
 	}
@@ -282,7 +314,97 @@ func (s *Server) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWo
 		WorkerImage:              workerImage,
 		SidecarImage:             sidecarImage,
 		DefinitionProfileApplied: definition != nil,
+		VaultTokenApplied:        definition != nil,
 	}, nil
+}
+
+// mintDefinitionToken reconciles the definition's vault, publishes the vault
+// CA and mints this pod's token. The pod's deadline is max(MinTTL, timeout); the
+// token lives 60s longer (activeDeadlineSeconds counts from the Job's
+// startTime, set at create: ms of skew).
+// The caller holds the vault's lock.
+func (s *Server) mintDefinitionToken(ctx context.Context, sessionID string, d *agentfleetv1.DefinitionPodProfile) (token, label string, deadline int64, err error) {
+	if err := s.k8sc.EgressLockPresent(ctx); err != nil {
+		return "", "", 0, status.Error(codes.FailedPrecondition, err.Error())
+	}
+	if err := s.reconcileVaultLocked(ctx, d.GetVault()); err != nil {
+		return "", "", 0, status.Error(codes.FailedPrecondition, "vault: "+err.Error())
+	}
+	pem, err := s.vault.CA(ctx)
+	if err == nil {
+		err = s.k8sc.EnsureVaultCA(ctx, pem)
+	}
+	if err != nil {
+		return "", "", 0, status.Error(codes.Unavailable, "vault CA: "+err.Error())
+	}
+	deadline = max(int64(vault.MinTTL.Seconds()), d.GetTimeoutSeconds())
+	label = sessionID + "." + strconv.FormatInt(time.Now().UnixMilli(), 10)
+	token, err = s.vault.Mint(ctx, d.GetName(), label, time.Duration(deadline+60)*time.Second)
+	if err != nil {
+		return "", "", 0, status.Error(codes.Unavailable, err.Error())
+	}
+	return token, label, deadline, nil
+}
+
+// reconcileVault reconciles one vault. After a widening has revoked every
+// session on it, the definition's live Jobs are deleted: their pods would
+// otherwise sit on a dead token (407) until limits.timeout, and core's
+// WarmIfIdle never re-warms a live phase. Gone, core's pod-phase reconcile
+// marks them TERMINATED (<=60s) and the next message re-warms at the new spec.
+// All under the vault's lock, which a warm holds through its Job create, so
+// the listing sees every pod minted before the revoke and none after.
+func (s *Server) reconcileVault(ctx context.Context, v *agentfleetv1.VaultSpec) error {
+	defer s.vault.Lock(v.GetName())()
+	return s.reconcileVaultLocked(ctx, v)
+}
+
+func (s *Server) reconcileVaultLocked(ctx context.Context, v *agentfleetv1.VaultSpec) error {
+	widened, err := s.vault.Reconcile(ctx, vaultSpec(v))
+	if !widened {
+		return err
+	}
+	jobs, lerr := s.k8sc.ListWorkerJobsByLabel(ctx)
+	if lerr != nil {
+		return errors.Join(err, fmt.Errorf("vault %s widened, listing its pods to end them: %w", v.GetName(), lerr))
+	}
+	for _, j := range jobs {
+		if j.Definition != v.GetName() || j.Terminal() {
+			continue
+		}
+		slog.Info("grpcserver: vault widened, ending a pod on its revoked token", "vault", v.GetName(), "sessionId", j.TaskID)
+		if derr := s.k8sc.DeleteWorkerJob(ctx, j.TaskID); derr != nil {
+			err = errors.Join(err, derr)
+		}
+	}
+	return err
+}
+
+func vaultSpec(v *agentfleetv1.VaultSpec) vault.Spec {
+	out := vault.Spec{Name: v.GetName()}
+	for _, svc := range v.GetServices() {
+		out.Services = append(out.Services, vault.Service{Host: svc.GetHost(), Paths: svc.GetPaths(), Secret: svc.GetSecret()})
+	}
+	return out
+}
+
+// ReconcileVaults makes every listed vault match its spec and empties every
+// other vault this provisioner administers (docs/adr/0065 §2): the request is
+// core's full desired set. Errors are per vault, never a value.
+func (s *Server) ReconcileVaults(ctx context.Context, req *agentfleetv1.ReconcileVaultsRequest) (*agentfleetv1.ReconcileVaultsResponse, error) {
+	out := &agentfleetv1.ReconcileVaultsResponse{}
+	keep := map[string]bool{}
+	for _, v := range req.GetVaults() {
+		keep[v.GetName()] = true
+		res := &agentfleetv1.VaultResult{Name: v.GetName()}
+		if err := s.reconcileVault(ctx, v); err != nil {
+			res.Error = err.Error()
+		}
+		out.Results = append(out.Results, res)
+	}
+	if err := s.vault.Prune(ctx, keep); err != nil {
+		out.PruneError = err.Error()
+	}
+	return out, nil
 }
 
 // TearDownSession is opportunistic by design (docs/adr/0020's Consequences
@@ -307,12 +429,22 @@ func (s *Server) TearDownSession(ctx context.Context, req *agentfleetv1.TearDown
 // reference to a never-pushed branch's commits whenever teardown followed a
 // failed push. There is no branch for it to delete now in any case.
 func (s *Server) tearDownWorker(ctx context.Context, taskID string) (*agentfleetv1.TearDownSessionResponse, error) {
-	_, exists, err := s.k8sc.GetWorkerJobRepo(ctx, taskID)
+	job, exists, err := s.k8sc.GetWorkerJob(ctx, taskID)
 	if err != nil {
 		return nil, err
 	}
 	if !exists {
 		return &agentfleetv1.TearDownSessionResponse{TornDown: false}, nil
+	}
+	// docs/adr/0065: a definition pod's token dies before the pod, exactly
+	// that token (the label is on the Job). Best-effort (own 3s budget): its
+	// TTL bounds a miss, and a Job already gone was revoked when it went
+	// terminal (reconcile) or never got one. A repo session never calls the
+	// vault.
+	if job.Definition != "" && job.VaultLabel != "" {
+		if err := s.vault.Revoke(ctx, job.Definition, job.VaultLabel); err != nil {
+			slog.Warn("grpcserver tearDownWorker: vault revoke failed, the token's TTL bounds it", "sessionId", taskID, "error", err)
+		}
 	}
 	if err := s.k8sc.DeleteWorkerJob(ctx, taskID); err != nil {
 		return nil, err

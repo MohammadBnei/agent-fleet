@@ -61,9 +61,15 @@ type EventReporter interface {
 	ReportEvent(ctx context.Context, event *agentfleetv1.PodEvent)
 }
 
+// Revoker is vault.Client's Revoke (docs/adr/0065).
+type Revoker interface {
+	Revoke(ctx context.Context, vault, label string) error
+}
+
 type Loop struct {
 	k8sc                      JobLister
 	core                      EventReporter
+	vault                     Revoker
 	sharedInstanceIdleTimeout time.Duration
 	// reported is the set of sessions whose terminal phase has already been
 	// reported. Only Failed Jobs can land in it more than once: they are no
@@ -73,14 +79,20 @@ type Loop struct {
 	// coreserver.ReportPodEvents already treats as a no-op against a session
 	// that is terminal.
 	reported map[string]struct{}
+	// revoked is the set of terminal definition Jobs whose token is revoked.
+	// Its own set, retried every tick: a kept Failed Job carries the token in
+	// its pod env until its TTL, so one failed revoke must not be the last.
+	revoked map[string]struct{}
 }
 
-func New(k8sc JobLister, core EventReporter, sharedInstanceIdleTimeout time.Duration) *Loop {
+func New(k8sc JobLister, core EventReporter, vault Revoker, sharedInstanceIdleTimeout time.Duration) *Loop {
 	return &Loop{
 		k8sc:                      k8sc,
 		core:                      core,
+		vault:                     vault,
 		sharedInstanceIdleTimeout: sharedInstanceIdleTimeout,
 		reported:                  make(map[string]struct{}),
+		revoked:                   make(map[string]struct{}),
 	}
 }
 
@@ -97,11 +109,23 @@ func (l *Loop) gcTerminalWorkerJobs(ctx context.Context) {
 	for id := range l.reported {
 		if _, ok := live[id]; !ok {
 			delete(l.reported, id) // TTL controller reaped it; forget it
+			delete(l.revoked, id)
 		}
 	}
 	for _, job := range jobs {
-		if job.Phase != "Succeeded" && job.Phase != "Failed" {
+		if !job.Terminal() {
 			continue
+		}
+		// docs/adr/0065: a definition Job's token dies before the report.
+		// Exactly its own label, so a re-warm's new token is never hit, even
+		// on a re-sighting after a provisioner restart. 3s budget, retried
+		// next tick while the Job is listed.
+		if _, done := l.revoked[job.TaskID]; !done && job.Definition != "" && job.VaultLabel != "" {
+			if err := l.vault.Revoke(ctx, job.Definition, job.VaultLabel); err != nil {
+				slog.Warn("reconcile: vault revoke failed, retried next tick", "sessionId", job.TaskID, "error", err)
+			} else {
+				l.revoked[job.TaskID] = struct{}{}
+			}
 		}
 		if _, done := l.reported[job.TaskID]; done {
 			continue
@@ -125,9 +149,15 @@ func (l *Loop) gcTerminalWorkerJobs(ctx context.Context) {
 		// successful sessions and staying invisible until the sixth.
 		phase := agentfleetv1.PodPhase_POD_PHASE_TERMINATED
 		message := "worker job reached a terminal Succeeded phase"
-		if job.Phase == "Failed" {
+		switch job.Phase {
+		case "Failed":
 			phase = agentfleetv1.PodPhase_POD_PHASE_CRASHED
 			message = "worker job reached a terminal Failed phase"
+		case "DeadlineExceeded":
+			// A definition pod's limits.timeout: a planned end, so it reads as
+			// idle and the next message re-warms and resumes. Reaped like a
+			// Succeeded Job below: there is no diagnosis to keep.
+			message = "limits.timeout reached"
 		}
 		l.core.ReportEvent(ctx, &agentfleetv1.PodEvent{
 			SessionId: job.TaskID,

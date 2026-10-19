@@ -217,8 +217,8 @@ Any doc, code, comment, or memory that contradicts this file or an
   resolves **deny → ask → allow** and returns on the first match, so a
   user-scope `ask` outranks a project-scope `allow`. `ask` rather than `deny`
   because a human must still be able to approve a `git push` — every result
-  is a PR (except P1 definition sessions, which cannot push until P3:
-  `adr/0064`). (Since `adr/0061` sessions launch in `auto`, where the worker
+  is a PR (except definition sessions: `git.mode: push` pushes to its
+  branch, pr mode holds no push credential, `adr/0065`). (Since `adr/0061` sessions launch in `auto`, where the worker
   answers this ask itself; a human approves the push only in another mode.)
   There is no specificity tiebreak, so a broad `ask` prefix swallows
   every narrower `allow` beneath it. See
@@ -265,7 +265,12 @@ Any doc, code, comment, or memory that contradicts this file or an
   fleet-shared `settings.json`; the clone init container never contacts the
   remote. It runs only the default worker image, which refuses Claude Code's own
   cross-session channel there (`FLEET_DEFINITION`, amending `adr/0060`).
-  `CLAUDE_CODE_OAUTH_TOKEN` stays until P3 (interim). P1 does not bound its tool
+  After [`adr/0065`](adr/0065-agent-vault-and-the-definition-egress-lock.md) it
+  holds no real secret: placeholders, a per-warm Agent Vault token in its
+  proxy URL, the vault CA, and a `CiliumNetworkPolicy` allowing only the vault
+  proxy, core's `CoreService` and DNS for both. The provisioner, the vault's
+  only client, reconciles each definition's vault from git and mints and
+  revokes the tokens; core sends key names, never values. P1 does not bound its tool
   surface: the worker's `allowedTools` and the target repo's project allow rules
   still skip `canUseTool` until P4. A definition lease may call only a fixed
   `CoreService` allowlist, nobody may `PromptSession` into a definition session,

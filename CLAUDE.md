@@ -122,9 +122,20 @@ Condensed. Full detail + rationale in `agent-fleet/docs/DECISIONS.md` + `docs/ad
   No `LEASE_ID`/`GH_TOKEN` in its worker, its repo's subPath of the cache only, a clone that
   never contacts the remote (`EnsureRepoFetched` is load-bearing), identity from the file's
   `git.identity`, no fleet-shared sync, default image only, and `FLEET_DEFINITION` makes the
-  worker refuse Claude Code's own cross-session channel (`adr/0060` amended). `CLAUDE_CODE_OAUTH_TOKEN`
-  stays until P3 (**interim**); P1 definition sessions cannot push. P1 does **not** bound the
-  tool surface: `allowedTools` and the repo's project allow rules still skip `canUseTool` (P4).
+  worker refuse Claude Code's own cross-session channel (`adr/0060` amended). P1 does **not**
+  bound the tool surface: `allowedTools` and the repo's project allow rules still skip
+  `canUseTool` (P4).
+- **A definition pod holds no real secret** (`adr/0065`). Credentials live in Agent Vault
+  (infra-bootstrap ADR-0061); the **provisioner is its only client** (member agent token in
+  `agent-fleet-nygh` `/agent-vault`, mounted, never in core) and reconciles each valid
+  definition's vault from git (core pushes key names via `ReconcileVaults` every sync; removed
+  services and absent vaults are emptied; `unmatched_host_policy=deny`), inline again at warm.
+  One `av_sess_` per warm (TTL `max(300, limits.timeout)`+60s), revoked on every teardown path;
+  `limits.timeout` = `activeDeadlineSeconds`. Worker gets placeholder
+  `CLAUDE_CODE_OAUTH_TOKEN`/`GH_TOKEN`, proxy + CA env, `ndots:1`; a `CiliumNetworkPolicy`
+  (`k8s/provisioner/definition-egress.yaml`) allows only the vault proxy, core :9090 and DNS for
+  both. A warm is refused without `vault_token_applied`, and `repos.url` must be the one GitHub
+  repo the credentials name. `git.mode: push` pushes; pr mode holds no push credential.
   A warm is torn down unless the create answers `definition_profile_applied` (older
   provisioner or rollout overlap). A definition lease lives in `profile_lease_id`, never
   `lease_id`, so an older core can neither mint nor verify one, and it counts only while
@@ -157,7 +168,8 @@ Condensed. Full detail + rationale in `agent-fleet/docs/DECISIONS.md` + `docs/ad
   `agent`/`worker` only: the worker obeys `human`/`session` entries.
 - **`X-authentik-*` headers never read.** Pod-network caller can forge one → authz gap
   becomes impersonation. core verifies its own ID token instead.
-- Every result = PR. Exception: P1 definition sessions cannot push until P3 (`adr/0064`).
+- Every result = PR. Exceptions (`adr/0065`): a definition in `git.mode: push` pushes to its
+  `git.branch`; one in pr mode holds no push credential (PRs through the tool surface in P4).
 - One PVC per session — never a shared writable checkout across concurrent sessions.
   Fleet creates no branches either: agent runs its own `git checkout -b` (`adr/0048` §5).
 - Git commit identity derived live from authenticated bot GitHub account (`gh api user`),

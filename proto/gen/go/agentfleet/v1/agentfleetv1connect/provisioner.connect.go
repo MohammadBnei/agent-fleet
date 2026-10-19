@@ -63,6 +63,9 @@ const (
 	// ProvisionerServiceListDefinitionFilesProcedure is the fully-qualified name of the
 	// ProvisionerService's ListDefinitionFiles RPC.
 	ProvisionerServiceListDefinitionFilesProcedure = "/agentfleet.v1.ProvisionerService/ListDefinitionFiles"
+	// ProvisionerServiceReconcileVaultsProcedure is the fully-qualified name of the
+	// ProvisionerService's ReconcileVaults RPC.
+	ProvisionerServiceReconcileVaultsProcedure = "/agentfleet.v1.ProvisionerService/ReconcileVaults"
 )
 
 // ProvisionerServiceClient is a client for the agentfleet.v1.ProvisionerService service.
@@ -96,6 +99,10 @@ type ProvisionerServiceClient interface {
 	// core's definitions sync source (docs/adr/0062). Named *Files* because
 	// DashboardService already has ListDefinitions in this package.
 	ListDefinitionFiles(context.Context, *connect.Request[v1.ListDefinitionFilesRequest]) (*connect.Response[v1.ListDefinitionFilesResponse], error)
+	// core's definitions sync pushes every valid definition's vault after each
+	// good sync (docs/adr/0065); core commands, the provisioner executes, and
+	// credential values exist only on the provisioner's side.
+	ReconcileVaults(context.Context, *connect.Request[v1.ReconcileVaultsRequest]) (*connect.Response[v1.ReconcileVaultsResponse], error)
 }
 
 // NewProvisionerServiceClient constructs a client for the agentfleet.v1.ProvisionerService service.
@@ -169,6 +176,12 @@ func NewProvisionerServiceClient(httpClient connect.HTTPClient, baseURL string, 
 			connect.WithSchema(provisionerServiceMethods.ByName("ListDefinitionFiles")),
 			connect.WithClientOptions(opts...),
 		),
+		reconcileVaults: connect.NewClient[v1.ReconcileVaultsRequest, v1.ReconcileVaultsResponse](
+			httpClient,
+			baseURL+ProvisionerServiceReconcileVaultsProcedure,
+			connect.WithSchema(provisionerServiceMethods.ByName("ReconcileVaults")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -184,6 +197,7 @@ type provisionerServiceClient struct {
 	syncRepoCache       *connect.Client[v1.SyncRepoCacheRequest, v1.SyncRepoCacheResponse]
 	sweepSession        *connect.Client[v1.SweepSessionRequest, v1.SweepSessionResponse]
 	listDefinitionFiles *connect.Client[v1.ListDefinitionFilesRequest, v1.ListDefinitionFilesResponse]
+	reconcileVaults     *connect.Client[v1.ReconcileVaultsRequest, v1.ReconcileVaultsResponse]
 }
 
 // CreateWorkerPod calls agentfleet.v1.ProvisionerService.CreateWorkerPod.
@@ -236,6 +250,11 @@ func (c *provisionerServiceClient) ListDefinitionFiles(ctx context.Context, req 
 	return c.listDefinitionFiles.CallUnary(ctx, req)
 }
 
+// ReconcileVaults calls agentfleet.v1.ProvisionerService.ReconcileVaults.
+func (c *provisionerServiceClient) ReconcileVaults(ctx context.Context, req *connect.Request[v1.ReconcileVaultsRequest]) (*connect.Response[v1.ReconcileVaultsResponse], error) {
+	return c.reconcileVaults.CallUnary(ctx, req)
+}
+
 // ProvisionerServiceHandler is an implementation of the agentfleet.v1.ProvisionerService service.
 type ProvisionerServiceHandler interface {
 	CreateWorkerPod(context.Context, *connect.Request[v1.CreateWorkerPodRequest]) (*connect.Response[v1.CreateWorkerPodResponse], error)
@@ -267,6 +286,10 @@ type ProvisionerServiceHandler interface {
 	// core's definitions sync source (docs/adr/0062). Named *Files* because
 	// DashboardService already has ListDefinitions in this package.
 	ListDefinitionFiles(context.Context, *connect.Request[v1.ListDefinitionFilesRequest]) (*connect.Response[v1.ListDefinitionFilesResponse], error)
+	// core's definitions sync pushes every valid definition's vault after each
+	// good sync (docs/adr/0065); core commands, the provisioner executes, and
+	// credential values exist only on the provisioner's side.
+	ReconcileVaults(context.Context, *connect.Request[v1.ReconcileVaultsRequest]) (*connect.Response[v1.ReconcileVaultsResponse], error)
 }
 
 // NewProvisionerServiceHandler builds an HTTP handler from the service implementation. It returns
@@ -336,6 +359,12 @@ func NewProvisionerServiceHandler(svc ProvisionerServiceHandler, opts ...connect
 		connect.WithSchema(provisionerServiceMethods.ByName("ListDefinitionFiles")),
 		connect.WithHandlerOptions(opts...),
 	)
+	provisionerServiceReconcileVaultsHandler := connect.NewUnaryHandler(
+		ProvisionerServiceReconcileVaultsProcedure,
+		svc.ReconcileVaults,
+		connect.WithSchema(provisionerServiceMethods.ByName("ReconcileVaults")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/agentfleet.v1.ProvisionerService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case ProvisionerServiceCreateWorkerPodProcedure:
@@ -358,6 +387,8 @@ func NewProvisionerServiceHandler(svc ProvisionerServiceHandler, opts ...connect
 			provisionerServiceSweepSessionHandler.ServeHTTP(w, r)
 		case ProvisionerServiceListDefinitionFilesProcedure:
 			provisionerServiceListDefinitionFilesHandler.ServeHTTP(w, r)
+		case ProvisionerServiceReconcileVaultsProcedure:
+			provisionerServiceReconcileVaultsHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -405,4 +436,8 @@ func (UnimplementedProvisionerServiceHandler) SweepSession(context.Context, *con
 
 func (UnimplementedProvisionerServiceHandler) ListDefinitionFiles(context.Context, *connect.Request[v1.ListDefinitionFilesRequest]) (*connect.Response[v1.ListDefinitionFilesResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.ProvisionerService.ListDefinitionFiles is not implemented"))
+}
+
+func (UnimplementedProvisionerServiceHandler) ReconcileVaults(context.Context, *connect.Request[v1.ReconcileVaultsRequest]) (*connect.Response[v1.ReconcileVaultsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.ProvisionerService.ReconcileVaults is not implemented"))
 }

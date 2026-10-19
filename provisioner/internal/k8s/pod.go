@@ -4,8 +4,11 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net"
+	"net/url"
 	"os"
 	"strconv"
+	"strings"
 
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -13,6 +16,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/client-go/util/retry"
 
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/metrics"
 )
@@ -159,6 +163,8 @@ const (
 
 func int32Ptr(i int32) *int32 { return &i }
 func int64Ptr(i int64) *int64 { return &i }
+func strPtr(s string) *string { return &s }
+func boolPtr(b bool) *bool    { return &b }
 
 // CreatePod and its e2e-preview machinery used to fill most of this file:
 // a bare long-running Pod, its Service, its IngressRoute, its stripPrefix
@@ -209,7 +215,31 @@ type DefinitionProfile struct {
 	Name           string
 	GitAuthorName  string
 	GitAuthorEmail string
+	// ProxyURL is HTTPS_PROXY, carrying this pod's vault session token: the
+	// only credential in the pod, and one that reaches only its vault's rules
+	// (docs/adr/0065). Empty refuses the pod.
+	ProxyURL string
+	// DeadlineSeconds is the Job's activeDeadlineSeconds: limits.timeout,
+	// floored at 300. The token outlives it by 60s.
+	DeadlineSeconds int64
+	// VaultLabel is the token's vault session label, kept on the Job
+	// (VaultLabelAnnotation) so every revoke path deletes exactly this
+	// pod's token. Not a secret.
+	VaultLabel string
 }
+
+// VaultLabelAnnotation carries DefinitionProfile.VaultLabel on the Job.
+const VaultLabelAnnotation = "fleet.bnei.dev/vault-label"
+
+// VaultPlaceholder stands in for every model and GitHub credential in a
+// definition pod: the vault overwrites the whole Authorization header.
+const VaultPlaceholder = "fleet-vault-placeholder"
+
+// VaultCAConfigMap holds the vault's MITM root (key ca.pem), written by the
+// provisioner (EnsureVaultCA) so the worker fetches nothing.
+const VaultCAConfigMap = "agent-vault-ca"
+
+const vaultCADir = "/etc/agent-vault"
 
 // repoCacheMount is the read-only clone-cache mount every container gets. A
 // definition pod sees only its own repo, at the same absolute path, so the
@@ -222,26 +252,55 @@ func repoCacheMount(spec WorkerPodSpec) corev1.VolumeMount {
 }
 
 // definitionWorkerEnv narrows the worker's env for a definition pod
-// (docs/adr/0064): no LEASE_ID (the sidecar holds the lease and is the only
-// thing that talks to core) and no GH_TOKEN (push credentials arrive through
-// the vault in P3). The identity comes from the reviewed definition file, so
-// the worker's `gh api user` lookup is skipped (defaultConfigureGitAuth returns
-// early without GH_TOKEN), and safe.directory=/workspace is set through
-// GIT_CONFIG_* (the sidecar's mechanism, not its '*' value), since that early
-// return skips the line that wrote it. FLEET_DEFINITION tells the worker to
-// close Claude Code's own cross-session channel (docs/adr/0060), which never
-// touches core and so is not bounded by the definition allowlist.
+// (docs/adr/0064, docs/adr/0065). No LEASE_ID: the sidecar holds the lease and
+// is the only thing that talks to core. No real credential:
+// CLAUDE_CODE_OAUTH_TOKEN and GH_TOKEN are placeholders the vault overwrites
+// on the wire. The identity comes from the reviewed definition file, and the
+// worker skips its gh auth setup (`gh api user`, gh auth setup-git and the
+// safe.directory line) because FLEET_DEFINITION is set, NOT because GH_TOKEN is
+// empty: it is not, and a `gh api user` with the placeholder matches no vault
+// rule, so every definition session would fail at start. safe.directory=
+// /workspace comes through GIT_CONFIG_* instead (the sidecar's mechanism, not
+// its '*' value). FLEET_DEFINITION also closes Claude Code's own cross-session
+// channel (docs/adr/0060), which never touches core and so is not bounded by
+// the definition allowlist.
 //
-// CLAUDE_CODE_OAUTH_TOKEN stays: INTERIM until P3 moves the model credential
-// to the vault.
-func definitionWorkerEnv(env []corev1.EnvVar, d DefinitionProfile) []corev1.EnvVar {
-	out := make([]corev1.EnvVar, 0, len(env)+8)
+// The proxy, its CA and NO_PROXY (loopback for the sidecar, core, the vault
+// API) are set here: both cases of HTTPS_PROXY (curl prefers lowercase),
+// NODE_USE_ENV_PROXY (Node's own fetch ignores the proxy vars without it), and
+// the CA in every variable a client in the worker image reads. No HTTP_PROXY:
+// the vault's plain http:// path injects too, so a plain-http request goes
+// direct and the egress lock drops it. No .cluster.local in NO_PROXY: such a
+// request goes to the proxy, which denies private ranges, and the egress lock
+// would drop it direct anyway (docs/adr/0065 §4, both departures recorded).
+func definitionWorkerEnv(env []corev1.EnvVar, d DefinitionProfile, coreHost string) []corev1.EnvVar {
+	out := make([]corev1.EnvVar, 0, len(env)+24)
 	for _, e := range env {
-		if e.Name != "LEASE_ID" && e.Name != "GH_TOKEN" {
+		if e.Name != "LEASE_ID" && e.Name != "GH_TOKEN" && e.Name != "CLAUDE_CODE_OAUTH_TOKEN" {
 			out = append(out, e)
 		}
 	}
+	noProxy := []string{"127.0.0.1", "localhost"}
+	if coreHost != "" {
+		noProxy = append(noProxy, coreHost)
+	}
+	if u, err := url.Parse(d.ProxyURL); err == nil && u.Hostname() != "" {
+		noProxy = append(noProxy, u.Hostname())
+	}
+	np := strings.Join(noProxy, ",")
+	for _, k := range []string{"HTTPS_PROXY", "https_proxy"} {
+		out = append(out, corev1.EnvVar{Name: k, Value: d.ProxyURL})
+	}
+	out = append(out, corev1.EnvVar{Name: "NO_PROXY", Value: np}, corev1.EnvVar{Name: "no_proxy", Value: np}, corev1.EnvVar{Name: "NODE_USE_ENV_PROXY", Value: "1"})
+	for _, k := range []string{"SSL_CERT_FILE", "REQUESTS_CA_BUNDLE", "NODE_EXTRA_CA_CERTS", "GIT_SSL_CAINFO", "CURL_CA_BUNDLE"} {
+		out = append(out, corev1.EnvVar{Name: k, Value: vaultCADir + "/ca.pem"})
+	}
 	return append(out,
+		corev1.EnvVar{Name: "CLAUDE_CODE_OAUTH_TOKEN", Value: VaultPlaceholder},
+		corev1.EnvVar{Name: "GH_TOKEN", Value: VaultPlaceholder},
+		corev1.EnvVar{Name: "GIT_TERMINAL_PROMPT", Value: "0"},
+		// Telemetry and update checks the vault would deny anyway.
+		corev1.EnvVar{Name: "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", Value: "1"},
 		corev1.EnvVar{Name: "FLEET_DEFINITION", Value: d.Name},
 		corev1.EnvVar{Name: "GIT_AUTHOR_NAME", Value: d.GitAuthorName},
 		corev1.EnvVar{Name: "GIT_COMMITTER_NAME", Value: d.GitAuthorName},
@@ -285,6 +344,9 @@ func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error 
 	name := WorkerResourceName(taskID)
 	labels := WorkerLabels(taskID, repo)
 	if spec.Definition != nil {
+		if spec.Definition.ProxyURL == "" || spec.Definition.DeadlineSeconds <= 0 {
+			return fmt.Errorf("definition pod %s: no vault token or deadline (docs/adr/0065)", taskID)
+		}
 		labels[DefinitionLabel] = spec.Definition.Name
 	}
 
@@ -352,7 +414,8 @@ func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error 
 		{Name: "CLAUDE_CODE_CONTAINER_ID", Value: taskID},
 	}
 	if spec.Definition != nil {
-		workerEnv = definitionWorkerEnv(workerEnv, *spec.Definition)
+		coreHost, _, _ := net.SplitHostPort(c.CoreGRPCAddr)
+		workerEnv = definitionWorkerEnv(workerEnv, *spec.Definition, coreHost)
 	}
 	workerEnv = append(workerEnv, cacheEnv()...)
 	workerEnv = append(workerEnv, contextBudgetEnv()...)
@@ -654,6 +717,25 @@ func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error 
 			},
 		},
 	}
+	if d := spec.Definition; d != nil {
+		// docs/adr/0065: limits.timeout is the pod's lifetime, and its token's
+		// TTL is longer, so the pod never runs on a dead token.
+		job.Spec.ActiveDeadlineSeconds = int64Ptr(d.DeadlineSeconds)
+		job.Annotations = map[string]string{VaultLabelAnnotation: d.VaultLabel}
+		ps := &job.Spec.Template.Spec
+		// No API-server token (the namespace's default SA would mount one,
+		// readable by the agent's Read tool) and no Service env vars.
+		ps.AutomountServiceAccountToken = boolPtr(false)
+		ps.EnableServiceLinks = boolPtr(false)
+		// REFUSED from the egress lock's DNS allowlist + musl's search
+		// expansion under ndots:5 stops resolution (spike 1 (b)).
+		ps.DNSConfig = &corev1.PodDNSConfig{Options: []corev1.PodDNSConfigOption{{Name: "ndots", Value: strPtr("1")}}}
+		// Not optional (the API default): the pod never starts without the CA.
+		ps.Volumes = append(ps.Volumes, corev1.Volume{Name: "agent-vault-ca", VolumeSource: corev1.VolumeSource{
+			ConfigMap: &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: VaultCAConfigMap}},
+		}})
+		ps.Containers[0].VolumeMounts = append(ps.Containers[0].VolumeMounts, corev1.VolumeMount{Name: "agent-vault-ca", MountPath: vaultCADir, ReadOnly: true})
+	}
 
 	_, err = c.Core.BatchV1().Jobs(c.Namespace).Create(ctx, job, metav1.CreateOptions{})
 	if err != nil {
@@ -684,20 +766,20 @@ func (c *Client) DeleteWorkerJob(ctx context.Context, taskID string) error {
 	return nil
 }
 
-// GetWorkerJobRepo recovers which repo a worker job belongs to from its
-// own RepoLabel — the only way to know, since the provisioner holds no DB
-// credentials to look it up any other way (docs/adr/0020 point 1). Needed
-// by TearDownSession to remove the right worktree.
-func (c *Client) GetWorkerJobRepo(ctx context.Context, taskID string) (repo string, exists bool, err error) {
-	job, err := c.Core.BatchV1().Jobs(c.Namespace).Get(ctx, WorkerResourceName(taskID), metav1.GetOptions{})
+// GetWorkerJob reads a session's worker Job from its own labels and
+// annotations, the only record the provisioner has (it holds no DB
+// credentials, docs/adr/0020 point 1). TearDownSession uses it for existence
+// and the vault token to revoke (docs/adr/0065).
+func (c *Client) GetWorkerJob(ctx context.Context, taskID string) (job LiveWorkerJob, exists bool, err error) {
+	j, err := c.Core.BatchV1().Jobs(c.Namespace).Get(ctx, WorkerResourceName(taskID), metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
-		return "", false, nil
+		return LiveWorkerJob{}, false, nil
 	}
 	if err != nil {
-		slog.Error("k8s GetWorkerJobRepo", "sessionId", taskID, "error", err)
-		return "", false, err
+		slog.Error("k8s GetWorkerJob", "sessionId", taskID, "error", err)
+		return LiveWorkerJob{}, false, err
 	}
-	return job.Labels[RepoLabel], true, nil
+	return liveJob(j), true, nil
 }
 
 func resourcePtr(qty string) *resource.Quantity {
@@ -728,5 +810,49 @@ func ignoreAlreadyExists(err error) error {
 	if apierrors.IsAlreadyExists(err) {
 		return nil
 	}
+	return err
+}
+
+// EgressLockName is k8s/provisioner/definition-egress.yaml's CNP.
+const EgressLockName = "definition-egress-lock"
+
+// EgressLockPresent refuses a definition warm while the egress lock is absent
+// (a failed sync, a delete before selfHeal, a cluster without Cilium): the
+// pod would otherwise get its token with open egress. Presence only: that
+// Cilium enforces it was verified live (spike 1), not here.
+func (c *Client) EgressLockPresent(ctx context.Context) error {
+	if _, err := c.Dynamic.Resource(CNPGVR).Namespace(c.Namespace).Get(ctx, EgressLockName, metav1.GetOptions{}); err != nil {
+		return fmt.Errorf("egress lock %s/%s: %w", c.Namespace, EgressLockName, err)
+	}
+	return nil
+}
+
+// EnsureVaultCA upserts the vault's MITM root into VaultCAConfigMap, writing
+// only when it changed (docs/adr/0065 §4). Concurrent warms race the create
+// (AlreadyExists) or the update (Conflict): the loser re-reads and compares.
+func (c *Client) EnsureVaultCA(ctx context.Context, pem []byte) error {
+	return retry.OnError(retry.DefaultRetry, func(err error) bool {
+		return apierrors.IsAlreadyExists(err) || apierrors.IsConflict(err)
+	}, func() error { return c.ensureVaultCA(ctx, pem) })
+}
+
+func (c *Client) ensureVaultCA(ctx context.Context, pem []byte) error {
+	cms := c.Core.CoreV1().ConfigMaps(c.Namespace)
+	cm, err := cms.Get(ctx, VaultCAConfigMap, metav1.GetOptions{})
+	if apierrors.IsNotFound(err) {
+		_, err = cms.Create(ctx, &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{Name: VaultCAConfigMap, Namespace: c.Namespace, Labels: map[string]string{"app.kubernetes.io/part-of": "agent-fleet"}},
+			Data:       map[string]string{"ca.pem": string(pem)},
+		}, metav1.CreateOptions{})
+		return err
+	}
+	if err != nil {
+		return err
+	}
+	if cm.Data["ca.pem"] == string(pem) {
+		return nil
+	}
+	cm.Data = map[string]string{"ca.pem": string(pem)}
+	_, err = cms.Update(ctx, cm, metav1.UpdateOptions{})
 	return err
 }

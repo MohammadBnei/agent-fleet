@@ -1,0 +1,54 @@
+# Egress lock for definition pods (docs/adr/0065 §5). They reach the vault's
+# MITM proxy, core's CoreService (the sidecar) and DNS for those two names:
+# nothing else (no internet, no LAN, no node ports, no vault API, no other core
+# port). Spike 1: toEndpoints+toPorts is judged on the backend identity after
+# Cilium's per-packet ClusterIP DNAT, so it matches Service traffic under
+# chaining mode. DNS is host identity (nodelocaldns 169.254.25.10) and gets an
+# L7 matchName allowlist, which also closes DNS tunnelling; no other host-entity
+# rule, so the node's :9090/:10250 stay closed. Pods use ndots:1 (pod.go), or
+# musl's search-expanded first query is REFUSED and stops resolution.
+# Ingress is untouched. provisioner/internal/k8s/networkpolicy_test.go pins the
+# selector, core's labels, the ports and the names.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: definition-egress-lock
+  namespace: agent-fleet
+  labels:
+    app.kubernetes.io/part-of: agent-fleet
+spec:
+  endpointSelector:
+    matchExpressions:
+    - key: fleet.bnei.dev/definition
+      operator: Exists
+  egress:
+  # Agent Vault's MITM proxy (infra-bootstrap ADR-0061); never its API :14321.
+  - toEndpoints:
+    - matchLabels:
+        k8s:io.kubernetes.pod.namespace: agent-vault
+        app.kubernetes.io/name: agent-vault
+    toPorts:
+    - ports:
+      - port: "14322"
+        protocol: TCP
+  # CoreService, the sidecar's only connection. Not 8080 (console) or 9093.
+  - toEndpoints:
+    - matchLabels:
+        app.kubernetes.io/name: agent-fleet-core
+        app.kubernetes.io/instance: agent-fleet-core
+    toPorts:
+    - ports:
+      - port: "9090"
+        protocol: TCP
+  - toEntities:
+    - host
+    toPorts:
+    - ports:
+      - port: "53"
+        protocol: UDP
+      - port: "53"
+        protocol: TCP
+      rules:
+        dns:
+        - matchName: agent-vault.agent-vault.svc.cluster.local
+        - matchName: agent-fleet-core.agent-fleet.svc.cluster.local

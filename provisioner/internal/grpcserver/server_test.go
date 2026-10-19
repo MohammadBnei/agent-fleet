@@ -11,6 +11,7 @@ import (
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
@@ -22,15 +23,20 @@ import (
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/k8s"
 )
 
+// newFakeK8sClient has the definition egress lock in place (docs/adr/0065 §5).
 func newFakeK8sClient() *k8s.Client {
 	scheme := runtime.NewScheme()
 	ingressRouteGVR := schema.GroupVersionResource{Group: "traefik.io", Version: "v1alpha1", Resource: "ingressroutes"}
 	listKinds := map[schema.GroupVersionResource]string{
 		ingressRouteGVR: "IngressRouteList",
 	}
+	lock := &unstructured.Unstructured{Object: map[string]any{
+		"apiVersion": "cilium.io/v2", "kind": "CiliumNetworkPolicy",
+		"metadata": map[string]any{"name": k8s.EgressLockName, "namespace": "agent-fleet"},
+	}}
 	return &k8s.Client{
 		Core:         fake.NewSimpleClientset(),
-		Dynamic:      dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme, listKinds),
+		Dynamic:      dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme, listKinds, lock),
 		Namespace:    "agent-fleet",
 		WorkerImage:  "registry.bnei.lan:5000/agent-fleet-worker:latest",
 		SidecarImage: "registry.bnei.lan:5000/agent-fleet-sidecar:latest",
@@ -78,7 +84,7 @@ func newTestServer(t *testing.T) (*Server, *k8s.Client, *fakeEventReporter) {
 	k8sc := newFakeK8sClient()
 	gitMgr := git.NewManager(t.TempDir())
 	reporter := &fakeEventReporter{}
-	return New(k8sc, gitMgr, reporter, "e2e.bnei.dev", "", "", "test"), k8sc, reporter
+	return New(k8sc, gitMgr, reporter, nil, "e2e.bnei.dev", "", "", "test"), k8sc, reporter
 }
 
 func TestCreateWorkerPod_ClonesAndCreatesPod(t *testing.T) {
@@ -97,9 +103,9 @@ func TestCreateWorkerPod_ClonesAndCreatesPod(t *testing.T) {
 	}
 
 	// Worker sessions are batch/v1.Jobs now (reliability-findings.md #11),
-	// not bare Pods — GetWorkerJobRepo is the existence check that actually
+	// not bare Pods — GetWorkerJob is the existence check that actually
 	// applies here.
-	if _, exists, err := k8sc.GetWorkerJobRepo(ctx, "task-1"); err != nil || !exists {
+	if _, exists, err := k8sc.GetWorkerJob(ctx, "task-1"); err != nil || !exists {
 		t.Fatalf("expected the worker job to exist: exists=%v err=%v", exists, err)
 	}
 
@@ -209,7 +215,7 @@ func TestCreateWorkerPod_SyncsFleetShared(t *testing.T) {
 	run("add", ".")
 	run("commit", "-m", "init")
 
-	s := New(k8sc, gitMgr, reporter, "e2e.bnei.dev", fleetSharedOrigin, "main", "test")
+	s := New(k8sc, gitMgr, reporter, nil, "e2e.bnei.dev", fleetSharedOrigin, "main", "test")
 	ctx := context.Background()
 	origin := newTestOriginRepo(t)
 
@@ -311,7 +317,7 @@ func TestTearDownSession_Worker_RemovesJobButKeepsWorktree(t *testing.T) {
 	if !resp.GetTornDown() {
 		t.Errorf("expected torn_down=true")
 	}
-	if _, exists, err := k8sc.GetWorkerJobRepo(ctx, "task-1"); err != nil || exists {
+	if _, exists, err := k8sc.GetWorkerJob(ctx, "task-1"); err != nil || exists {
 		t.Fatalf("expected the worker job to be deleted: exists=%v err=%v", exists, err)
 	}
 
@@ -498,7 +504,7 @@ func newDefinitionsOriginRepo(t *testing.T) string {
 func TestListDefinitionFiles(t *testing.T) {
 	ctx := context.Background()
 	newServer := func(url, version string) *Server {
-		return New(newFakeK8sClient(), git.NewManager(t.TempDir()), &fakeEventReporter{}, "e2e.bnei.dev", url, "main", version)
+		return New(newFakeK8sClient(), git.NewManager(t.TempDir()), &fakeEventReporter{}, nil, "e2e.bnei.dev", url, "main", version)
 	}
 	origin := newDefinitionsOriginRepo(t)
 

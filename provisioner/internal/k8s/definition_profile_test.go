@@ -10,22 +10,31 @@ import (
 
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
 )
 
 func definitionSpec() WorkerPodSpec {
 	return WorkerPodSpec{
 		SessionID: "task-1", Repo: "dream-analyst", RepoURL: "https://github.com/o/dream-analyst.git", BaseBranch: "main",
-		LeaseID:    "lease-1",
-		Definition: &DefinitionProfile{Name: "dev-dream-analyst", GitAuthorName: "fleet-dev-agent", GitAuthorEmail: "fleet-dev-agent@bnei.dev"},
+		LeaseID: "lease-1",
+		Definition: &DefinitionProfile{Name: "dev-dream-analyst", GitAuthorName: "fleet-dev-agent", GitAuthorEmail: "fleet-dev-agent@bnei.dev",
+			ProxyURL: testProxyURL, DeadlineSeconds: 1800},
 	}
 }
+
+const testProxyURL = "http://av_sess_x:dev-dream-analyst@agent-vault.agent-vault.svc.cluster.local:14322"
 
 func createJob(t *testing.T, spec WorkerPodSpec) *batchv1.Job {
 	t.Helper()
 	t.Setenv("GH_TOKEN", "gh-token")
 	t.Setenv("CLAUDE_CODE_OAUTH_TOKEN", "oauth-token")
 	c := newTestClient()
+	c.CoreGRPCAddr = "agent-fleet-core.agent-fleet.svc.cluster.local:9090"
 	ctx := context.Background()
 	if err := c.CreateWorkerPod(ctx, spec); err != nil {
 		t.Fatalf("CreateWorkerPod: %v", err)
@@ -50,19 +59,18 @@ func container(t *testing.T, job *batchv1.Job, name string) corev1.Container {
 }
 
 // docs/adr/0064: what a definition pod's worker must not hold, and what it
-// must (the interim model credential is asserted on purpose, so P3 has to
-// flip this line consciously when the vault takes it over).
+// must. docs/adr/0065 flipped the model credential to a placeholder: the vault
+// injects the real one on the wire.
 func TestCreateWorkerPod_DefinitionProfile(t *testing.T) {
 	job := createJob(t, definitionSpec())
 
 	worker := container(t, job, "worker")
-	for _, absent := range []string{"LEASE_ID", "GH_TOKEN"} {
-		if _, ok := findEnv(worker.Env, absent); ok {
-			t.Errorf("definition worker has %s", absent)
-		}
+	if _, ok := findEnv(worker.Env, "LEASE_ID"); ok {
+		t.Error("definition worker has LEASE_ID")
 	}
 	for name, want := range map[string]string{
-		"CLAUDE_CODE_OAUTH_TOKEN": "oauth-token",       // INTERIM until P3 (docs/adr/0064)
+		"CLAUDE_CODE_OAUTH_TOKEN": VaultPlaceholder, // docs/adr/0065: the vault overwrites Authorization
+		"GH_TOKEN":                VaultPlaceholder,
 		"FLEET_DEFINITION":        "dev-dream-analyst", // the worker closes the native cross-session channel
 		"GIT_AUTHOR_NAME":         "fleet-dev-agent",
 		"GIT_COMMITTER_NAME":      "fleet-dev-agent",
@@ -94,6 +102,210 @@ func TestCreateWorkerPod_DefinitionProfile(t *testing.T) {
 
 	if job.Labels[DefinitionLabel] != "dev-dream-analyst" || job.Spec.Template.Labels[DefinitionLabel] != "dev-dream-analyst" {
 		t.Errorf("definition label: job %v, pod %v", job.Labels, job.Spec.Template.Labels)
+	}
+}
+
+// docs/adr/0065: after P3 no container of a definition pod, init containers
+// included, holds a real secret. Sentinels stand in for every credential the
+// provisioner's own environment carries. Deliberately excluded: the pod's two
+// per-session credentials, its av_sess_ (the worker's HTTPS_PROXY) and the
+// sidecar's LEASE_ID (CoreService, ADR-0057), both minted for this pod.
+func TestDefinitionPod_NoRealSecret(t *testing.T) {
+	sentinels := map[string]string{
+		"GH_TOKEN": "sentinel-gh", "CLAUDE_CODE_OAUTH_TOKEN": "sentinel-oauth", "THOT_AUTH_TOKEN": "sentinel-thot",
+		"FLEET_PROVISIONER_TOKEN": "sentinel-prov", "FLEET_CORE_PROVISIONER_TOKEN": "sentinel-core-prov",
+		"AGENTFLEET_DB_PASSWORD": "sentinel-db", "AGENT_VAULT_TOKEN": "sentinel-av",
+	}
+	for k, v := range sentinels {
+		t.Setenv(k, v)
+	}
+	c := newTestClient()
+	c.ThotAuthToken = "sentinel-thot"
+	if err := c.CreateWorkerPod(context.Background(), definitionSpec()); err != nil {
+		t.Fatal(err)
+	}
+	job, err := c.Core.BatchV1().Jobs("agent-fleet").Get(context.Background(), WorkerResourceName("task-1"), metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ps := job.Spec.Template.Spec
+	for _, ctr := range append(append([]corev1.Container{}, ps.InitContainers...), ps.Containers...) {
+		for _, e := range ctr.Env {
+			for _, v := range sentinels {
+				if strings.Contains(e.Value, v) {
+					t.Errorf("%s %s carries a real secret", ctr.Name, e.Name)
+				}
+			}
+			if e.ValueFrom != nil {
+				t.Errorf("%s %s reads from a Secret/ConfigMap ref", ctr.Name, e.Name)
+			}
+		}
+		if len(ctr.EnvFrom) > 0 {
+			t.Errorf("%s has envFrom", ctr.Name)
+		}
+	}
+	for _, v := range ps.Volumes {
+		if v.Secret != nil {
+			t.Errorf("volume %s mounts a Secret", v.Name)
+		}
+	}
+	// The ServiceAccount token is admission-mounted, so the template is the
+	// only place to see it refused.
+	if a := ps.AutomountServiceAccountToken; a == nil || *a {
+		t.Error("the pod would mount an API-server token")
+	}
+	if l := ps.EnableServiceLinks; l == nil || *l {
+		t.Error("Service env vars would leak topology")
+	}
+}
+
+// docs/adr/0065 §4: HTTPS_PROXY (both cases) on the worker only and no
+// HTTP_PROXY (the vault injects on plain http too), NODE_USE_ENV_PROXY, the
+// caller's NO_PROXY, the CA in five variables and mounted from the CA ConfigMap.
+func TestDefinitionPod_ProxyAndCAEnv(t *testing.T) {
+	job := createJob(t, definitionSpec())
+	worker := container(t, job, "worker")
+	for _, k := range []string{"HTTPS_PROXY", "https_proxy"} {
+		if got, _ := findEnv(worker.Env, k); got != testProxyURL {
+			t.Errorf("worker %s = %q", k, got)
+		}
+	}
+	for _, k := range []string{"HTTP_PROXY", "http_proxy"} {
+		if _, ok := findEnv(worker.Env, k); ok {
+			t.Errorf("worker has %s: plain http would reach the vault and get a credential", k)
+		}
+	}
+	if got, _ := findEnv(worker.Env, "NODE_USE_ENV_PROXY"); got != "1" {
+		t.Errorf("worker NODE_USE_ENV_PROXY = %q", got)
+	}
+	for _, k := range []string{"NO_PROXY", "no_proxy"} {
+		if got, _ := findEnv(worker.Env, k); got != "127.0.0.1,localhost,agent-fleet-core.agent-fleet.svc.cluster.local,agent-vault.agent-vault.svc.cluster.local" {
+			t.Errorf("worker %s = %q", k, got)
+		}
+	}
+	for _, k := range []string{"SSL_CERT_FILE", "REQUESTS_CA_BUNDLE", "NODE_EXTRA_CA_CERTS", "GIT_SSL_CAINFO", "CURL_CA_BUNDLE"} {
+		if got, _ := findEnv(worker.Env, k); got != "/etc/agent-vault/ca.pem" {
+			t.Errorf("worker %s = %q", k, got)
+		}
+	}
+	for k, want := range map[string]string{"GIT_TERMINAL_PROMPT": "0", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"} {
+		if got, _ := findEnv(worker.Env, k); got != want {
+			t.Errorf("worker %s = %q", k, got)
+		}
+	}
+	var mounted bool
+	for _, m := range worker.VolumeMounts {
+		mounted = mounted || (m.MountPath == "/etc/agent-vault" && m.ReadOnly)
+	}
+	var vol *corev1.Volume
+	for i, v := range job.Spec.Template.Spec.Volumes {
+		if v.ConfigMap != nil && v.ConfigMap.Name == VaultCAConfigMap {
+			vol = &job.Spec.Template.Spec.Volumes[i]
+		}
+	}
+	if !mounted || vol == nil || (vol.ConfigMap.Optional != nil && *vol.ConfigMap.Optional) {
+		t.Errorf("CA not mounted read-only from a required %s ConfigMap", VaultCAConfigMap)
+	}
+	for _, name := range []string{"sidecar", "clone"} {
+		for _, e := range container(t, job, name).Env {
+			if strings.HasSuffix(strings.ToUpper(e.Name), "_PROXY") {
+				t.Errorf("%s has %s: grpc-go honours it and the sidecar dials core directly", name, e.Name)
+			}
+		}
+	}
+}
+
+func TestDefinitionPod_DNSAndDeadline(t *testing.T) {
+	job := createJob(t, definitionSpec())
+	ps := job.Spec.Template.Spec
+	if ps.DNSConfig == nil || len(ps.DNSConfig.Options) != 1 || ps.DNSConfig.Options[0].Name != "ndots" || *ps.DNSConfig.Options[0].Value != "1" {
+		t.Errorf("dnsConfig %+v, want ndots:1", ps.DNSConfig)
+	}
+	if d := job.Spec.ActiveDeadlineSeconds; d == nil || *d != 1800 {
+		t.Errorf("activeDeadlineSeconds %v, want 1800", d)
+	}
+	if job.Spec.Template.Labels[DefinitionLabel] != "dev-dream-analyst" {
+		t.Error("no definition label: the egress lock selects on it")
+	}
+	// A repo pod gets neither.
+	c := newTestClient()
+	if err := c.CreateWorkerPod(context.Background(), WorkerPodSpec{SessionID: "r", Repo: "x"}); err != nil {
+		t.Fatal(err)
+	}
+	repo, _ := c.Core.BatchV1().Jobs("agent-fleet").Get(context.Background(), WorkerResourceName("r"), metav1.GetOptions{})
+	if repo.Spec.ActiveDeadlineSeconds != nil || repo.Spec.Template.Spec.DNSConfig != nil {
+		t.Error("a repo pod got the definition's deadline or dnsConfig")
+	}
+	// No proxy URL = no vault token: never a definition pod.
+	spec := definitionSpec()
+	spec.Definition.ProxyURL = ""
+	if err := c.CreateWorkerPod(context.Background(), spec); err == nil {
+		t.Error("a definition pod without a vault token was built")
+	}
+}
+
+func TestJobPhase_DeadlineExceeded(t *testing.T) {
+	for reason, want := range map[string]string{"DeadlineExceeded": "DeadlineExceeded", "BackoffLimitExceeded": "Failed"} {
+		job := &batchv1.Job{Status: batchv1.JobStatus{Conditions: []batchv1.JobCondition{{Type: batchv1.JobFailed, Status: "True", Reason: reason}}}}
+		if got := jobPhase(job); got != want {
+			t.Errorf("%s: %q, want %q", reason, got, want)
+		}
+	}
+}
+
+func TestEnsureVaultCA_UpsertOnlyOnChange(t *testing.T) {
+	c := newTestClient()
+	ctx := context.Background()
+	for _, pem := range []string{"a", "a", "b"} {
+		if err := c.EnsureVaultCA(ctx, []byte(pem)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cm, err := c.Core.CoreV1().ConfigMaps("agent-fleet").Get(ctx, VaultCAConfigMap, metav1.GetOptions{})
+	if err != nil || cm.Data["ca.pem"] != "b" {
+		t.Fatalf("%v %v", cm, err)
+	}
+	var writes int
+	for _, a := range c.Core.(*fake.Clientset).Actions() {
+		if a.GetResource().Resource == "configmaps" && (a.GetVerb() == "create" || a.GetVerb() == "update") {
+			writes++
+		}
+	}
+	if writes != 2 {
+		t.Errorf("%d writes, want create + one update", writes)
+	}
+}
+
+// Two first warms race: the loser's create gets AlreadyExists, a stale update
+// gets Conflict. Both re-read and succeed instead of refusing the warm.
+func TestEnsureVaultCA_ConcurrentWarms(t *testing.T) {
+	c := newTestClient()
+	cs := c.Core.(*fake.Clientset)
+	ctx := context.Background()
+	gr := schema.GroupResource{Resource: "configmaps"}
+	created, conflicted := false, false
+	cs.PrependReactor("create", "configmaps", func(a k8stesting.Action) (bool, runtime.Object, error) {
+		if created {
+			return false, nil, nil
+		}
+		created = true
+		_ = cs.Tracker().Add(a.(k8stesting.CreateAction).GetObject()) // the other warm won
+		return true, nil, apierrors.NewAlreadyExists(gr, VaultCAConfigMap)
+	})
+	cs.PrependReactor("update", "configmaps", func(k8stesting.Action) (bool, runtime.Object, error) {
+		if conflicted {
+			return false, nil, nil
+		}
+		conflicted = true
+		return true, nil, apierrors.NewConflict(gr, VaultCAConfigMap, nil)
+	})
+	for _, pem := range []string{"a", "b"} {
+		if err := c.EnsureVaultCA(ctx, []byte(pem)); err != nil {
+			t.Fatalf("%s: %v", pem, err)
+		}
+	}
+	if cm, err := cs.CoreV1().ConfigMaps("agent-fleet").Get(ctx, VaultCAConfigMap, metav1.GetOptions{}); err != nil || cm.Data["ca.pem"] != "b" {
+		t.Fatalf("%v %v", cm, err)
 	}
 }
 

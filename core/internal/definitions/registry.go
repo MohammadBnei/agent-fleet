@@ -15,6 +15,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 )
 
 // Lister is the provisioner's ListDefinitionFiles (provisionerclient.Client).
@@ -347,4 +349,31 @@ func (r *Registry) Resolve(name string) (Head, error) {
 		return Head{}, fmt.Errorf("%w: %s", ErrInvalid, h.Err)
 	}
 	return h, nil
+}
+
+// Vaults is every valid HEAD definition's vault after the last good sync
+// (docs/adr/0065): the full desired set core pushes with ReconcileVaults. An
+// invalid-at-HEAD or deleted definition is simply absent, and the
+// provisioner's prune empties absent vaults: the same fail-closed rule as
+// Resolve. Key names only; values live on the provisioner's side.
+func (r *Registry) Vaults() []*agentfleetv1.VaultSpec {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := []*agentfleetv1.VaultSpec{}
+	for _, h := range r.heads {
+		if h.Effective != nil && h.Effective.Credentials != nil {
+			out = append(out, VaultSpec(h.Effective.Credentials))
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].GetName() < out[j].GetName() })
+	return out
+}
+
+// VaultSpec is a definition's credentials on the provisioner wire.
+func VaultSpec(c *Credentials) *agentfleetv1.VaultSpec {
+	v := &agentfleetv1.VaultSpec{Name: c.Vault}
+	for _, s := range c.Services {
+		v.Services = append(v.Services, &agentfleetv1.VaultService{Host: s.Host, Paths: s.Paths, Secret: s.Secret})
+	}
+	return v
 }

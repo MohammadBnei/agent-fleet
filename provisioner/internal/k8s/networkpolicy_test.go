@@ -1,6 +1,8 @@
 package k8s
 
 import (
+	"maps"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -12,6 +14,8 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"sigs.k8s.io/yaml"
+
+	"github.com/MohammadBnei/agent-fleet/provisioner/internal/config"
 )
 
 // TestNetworkPolicies_AdmitExactlyTheKnownCallers checks the ingress fences of
@@ -246,4 +250,101 @@ func selects(t *testing.T, sel *metav1.LabelSelector, l map[string]string) bool 
 		t.Fatalf("invalid label selector %v: %v", sel, err)
 	}
 	return s.Matches(labels.Set(l))
+}
+
+// TestDefinitionEgressCNP_Pins pins k8s/provisioner/definition-egress.yaml
+// (docs/adr/0065 §5) to the code it must agree with: the selector to
+// DefinitionLabel, core's labels to the provisioner's ingress policy, the ports
+// and DNS names to the config defaults the pods actually dial. Shape only:
+// Cilium's semantics were verified live (spike 1), not here.
+func TestDefinitionEgressCNP_Pins(t *testing.T) {
+	type port struct{ Port, Protocol string }
+	var cnp struct {
+		Kind     string
+		Metadata struct{ Name, Namespace string }
+		Spec     map[string]any
+	}
+	if err := yaml.Unmarshal(repoFile(t, "k8s/provisioner/definition-egress.yaml"), &cnp); err != nil {
+		t.Fatal(err)
+	}
+	var spec struct {
+		EndpointSelector struct {
+			MatchExpressions []struct{ Key, Operator string }
+		} `json:"endpointSelector"`
+		Egress []struct {
+			ToEndpoints []struct {
+				MatchLabels map[string]string `json:"matchLabels"`
+			} `json:"toEndpoints"`
+			ToEntities []string `json:"toEntities"`
+			ToPorts    []struct {
+				Ports []port
+				Rules *struct {
+					DNS []struct {
+						MatchName string `json:"matchName"`
+					} `json:"dns"`
+				}
+			} `json:"toPorts"`
+		}
+	}
+	for k := range cnp.Spec {
+		if k != "endpointSelector" && k != "egress" {
+			t.Errorf("spec.%s: the lock is egress only", k)
+		}
+	}
+	b, _ := yaml.Marshal(cnp.Spec)
+	if err := yaml.UnmarshalStrict(b, &spec); err != nil {
+		t.Fatalf("definition-egress.yaml has a field this test does not model: %v", err)
+	}
+	if cnp.Kind != "CiliumNetworkPolicy" || cnp.Metadata.Namespace != "agent-fleet" || cnp.Metadata.Name != EgressLockName {
+		t.Fatalf("kind %q namespace %q name %q (EgressLockPresent checks %q)", cnp.Kind, cnp.Metadata.Namespace, cnp.Metadata.Name, EgressLockName)
+	}
+	if e := spec.EndpointSelector.MatchExpressions; len(e) != 1 || e[0].Key != DefinitionLabel || e[0].Operator != "Exists" {
+		t.Errorf("selector %+v, want %s Exists", e, DefinitionLabel)
+	}
+	if len(spec.Egress) != 3 {
+		t.Fatalf("%d egress rules, want vault, core, DNS", len(spec.Egress))
+	}
+
+	var provPolicy networkingv1.NetworkPolicy
+	if err := yaml.Unmarshal(repoFile(t, "k8s/provisioner/networkpolicy.yaml"), &provPolicy); err != nil {
+		t.Fatal(err)
+	}
+	coreLabels := provPolicy.Spec.Ingress[0].From[0].PodSelector.MatchLabels
+	hostPort := func(addr string) (string, string) {
+		i := strings.LastIndex(addr, ":")
+		return addr[:i], addr[i+1:]
+	}
+	coreHost, corePort := hostPort(config.DefaultCoreGRPCAddr)
+	vaultHost, vaultPort := hostPort(config.DefaultAgentVaultProxy)
+
+	vaultRule, coreRule, dnsRule := spec.Egress[0], spec.Egress[1], spec.Egress[2]
+	wantVault := map[string]string{"k8s:io.kubernetes.pod.namespace": "agent-vault", "app.kubernetes.io/name": "agent-vault"}
+	if len(vaultRule.ToEndpoints) != 1 || !maps.Equal(vaultRule.ToEndpoints[0].MatchLabels, wantVault) || len(vaultRule.ToEntities) > 0 {
+		t.Errorf("vault rule %+v", vaultRule)
+	}
+	if len(vaultRule.ToPorts) != 1 || !slices.Equal(vaultRule.ToPorts[0].Ports, []port{{vaultPort, "TCP"}}) {
+		t.Errorf("vault ports %+v, want only the proxy %s", vaultRule.ToPorts, vaultPort)
+	}
+	if len(coreRule.ToEndpoints) != 1 || !maps.Equal(coreRule.ToEndpoints[0].MatchLabels, coreLabels) || len(coreRule.ToEntities) > 0 {
+		t.Errorf("core rule %+v, want the labels of k8s/provisioner/networkpolicy.yaml %v", coreRule, coreLabels)
+	}
+	if len(coreRule.ToPorts) != 1 || !slices.Equal(coreRule.ToPorts[0].Ports, []port{{corePort, "TCP"}}) {
+		t.Errorf("core ports %+v, want only CoreService %s", coreRule.ToPorts, corePort)
+	}
+	if len(dnsRule.ToEndpoints) > 0 || !slices.Equal(dnsRule.ToEntities, []string{"host"}) || len(dnsRule.ToPorts) != 1 ||
+		!slices.Equal(dnsRule.ToPorts[0].Ports, []port{{"53", "UDP"}, {"53", "TCP"}}) || dnsRule.ToPorts[0].Rules == nil {
+		t.Fatalf("dns rule %+v, want host :53 with an L7 dns rule and nothing else", dnsRule)
+	}
+	var names []string
+	for _, d := range dnsRule.ToPorts[0].Rules.DNS {
+		names = append(names, d.MatchName)
+	}
+	if !slices.Equal(names, []string{vaultHost, coreHost}) {
+		t.Errorf("dns matchNames %v, want [%s %s]", names, vaultHost, coreHost)
+	}
+	for _, n := range names {
+		if strings.Count(n, ".") < 4 {
+			t.Errorf("%s must be the full cluster FQDN: absolute first under ndots:1", n)
+		}
+	}
 }

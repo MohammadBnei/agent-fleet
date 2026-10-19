@@ -51,7 +51,7 @@ func TestRepoDefinitions(t *testing.T) {
 		}
 		seen[r.Name] = !r.Abstract && r.Err == nil
 	}
-	for _, want := range []string{"opus-workspace", "dev-dream-analyst"} {
+	for _, want := range []string{"opus-workspace", "dev-dream-analyst", "dev-notes"} {
 		if !seen[want] {
 			t.Errorf("%s must be a valid, launchable definition", want)
 		}

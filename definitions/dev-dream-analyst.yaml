@@ -5,6 +5,11 @@ metadata: { name: dev-dream-analyst }
 spec:
   extends: workspace-base
   audience: { group: platform-admins }
+  # pr mode: the model credential only, so it still cannot push (docs/adr/0065).
+  credentials:
+    vault: dev-dream-analyst
+    services:
+      - { host: api.anthropic.com, secret: CLAUDE_CODE_OAUTH_TOKEN }
   workspace: { kind: repo, repo: dream-analyst }
   git: { mode: pr, identity: { name: fleet-dev-agent, email: fleet-dev-agent@bnei.dev } }
   owns: { repos: [dream-analyst] }

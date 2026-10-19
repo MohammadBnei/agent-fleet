@@ -220,9 +220,10 @@ shown in the console, never compared with the caller: create is admin-only, so
 an admin can create an `opus-workspace` (`shared-notes`) session; P4 checks it),
 `tools`, `sidecarTools` as a list,
 `model.allow` beyond the default, `thinking`, `systemPrompt`, `skills`,
-`interaction`, `lifecycle`, `limits.maxTurns`/`timeout`/`startupBudget`,
-`resources`, `credentials`, `embed`, `invokers`, `owns`, `subscribes`. Each
-phase that applies one removes it from this list.
+`interaction`, `lifecycle`, `limits.maxTurns`/`startupBudget`,
+`resources`, `embed`, `invokers`, `owns`, `subscribes`. Each
+phase that applies one removes it from this list. P3 applied `credentials` and
+`limits.timeout` (the definition pod's lifetime): [ADR-0065](0065-agent-vault-and-the-definition-egress-lock.md).
 
 `tools.allow` is a shape rule, a typo guard and not a sandbox. Bash entries
 must be a literal command prefix (`Bash(git add:*)`): no other `*` and no

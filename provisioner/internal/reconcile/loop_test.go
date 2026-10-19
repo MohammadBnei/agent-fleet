@@ -2,6 +2,8 @@ package reconcile
 
 import (
 	"context"
+	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -52,7 +54,7 @@ func TestGcTerminalWorkerJobs_DeletesSucceededButKeepsFailed(t *testing.T) {
 		{TaskID: "pending-1", JobName: "worker-4", Phase: "Pending"},
 	}}
 	reporter := &fakeEventReporter{}
-	l := New(kc, reporter, time.Hour)
+	l := New(kc, reporter, nil, time.Hour)
 
 	l.gcTerminalWorkerJobs(context.Background())
 
@@ -72,7 +74,7 @@ func TestGcTerminalWorkerJobs_ReportsAKeptFailedJobOnlyOnce(t *testing.T) {
 		{TaskID: "failed-1", JobName: "worker-3", Phase: "Failed"},
 	}}
 	reporter := &fakeEventReporter{}
-	l := New(kc, reporter, time.Hour)
+	l := New(kc, reporter, nil, time.Hour)
 
 	l.gcTerminalWorkerJobs(context.Background())
 	l.gcTerminalWorkerJobs(context.Background())
@@ -114,7 +116,7 @@ func TestGcTerminalWorkerJobs_ReportsBothTerminalPhases(t *testing.T) {
 		{TaskID: "live-1", JobName: "worker-4", Phase: "Running"},
 	}}
 	reporter := &fakeEventReporter{}
-	l := New(kc, reporter, time.Hour)
+	l := New(kc, reporter, nil, time.Hour)
 
 	l.gcTerminalWorkerJobs(context.Background())
 
@@ -148,7 +150,7 @@ func TestGcIdleSharedInstances_OnlyDeletesPastTimeout(t *testing.T) {
 		{Repo: "dream-analyst", ServiceKey: "redis", LastUsedAt: now.Add(-1 * time.Minute)},  // recent, kept
 		{Repo: "agent-fleet", ServiceKey: "postgres", LastUsedAt: time.Time{}},               // no annotation yet, kept
 	}}
-	l := New(kc, &fakeEventReporter{}, time.Hour)
+	l := New(kc, &fakeEventReporter{}, nil, time.Hour)
 
 	l.gcIdleSharedInstances(context.Background())
 
@@ -169,7 +171,7 @@ func TestGcIdleSharedInstances_Uniform(t *testing.T) {
 		{Repo: "dream-analyst", ServiceKey: "postgres", LastUsedAt: now.Add(-2 * time.Hour)},
 		{Repo: "agent-fleet", ServiceKey: "postgres", LastUsedAt: now.Add(-2 * time.Hour)},
 	}}
-	l := New(kc, &fakeEventReporter{}, time.Hour)
+	l := New(kc, &fakeEventReporter{}, nil, time.Hour)
 
 	l.gcIdleSharedInstances(context.Background())
 
@@ -184,7 +186,7 @@ func TestGcIdleSharedInstances_Uniform(t *testing.T) {
 // 10s against pods an agent is actively working in.
 func TestRun_StopsOnContextCancel(t *testing.T) {
 	kc := &fakeK8s{}
-	l := New(kc, &fakeEventReporter{}, time.Hour)
+	l := New(kc, &fakeEventReporter{}, nil, time.Hour)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
 	defer cancel()
@@ -198,5 +200,65 @@ func TestRun_StopsOnContextCancel(t *testing.T) {
 	case <-done:
 	case <-time.After(200 * time.Millisecond):
 		t.Fatal("Run did not return after context cancellation")
+	}
+}
+
+// order records revokes and reports in one sequence; the first fail revokes
+// error.
+type order struct {
+	log  []string
+	fail int
+}
+
+func (o *order) Revoke(_ context.Context, vault, label string) error {
+	o.log = append(o.log, "revoke "+vault+" "+label)
+	if o.fail > 0 {
+		o.fail--
+		return errors.New("vault down")
+	}
+	return nil
+}
+
+// A kept Failed definition Job holds its token in its pod env: a failed
+// revoke is retried each tick until it lands, then never again; the report
+// still goes out once.
+func TestGcTerminalWorkerJobs_RetriesFailedRevoke(t *testing.T) {
+	kc := &fakeK8s{jobs: []k8s.LiveWorkerJob{{TaskID: "def-1", JobName: "worker-1", Phase: "Failed", Definition: "dev-x", VaultLabel: "def-1.1"}}}
+	o := &order{fail: 1}
+	l := New(kc, orderReporter{o}, o, time.Hour)
+	for range 3 {
+		l.gcTerminalWorkerJobs(context.Background())
+	}
+	want := []string{"revoke dev-x def-1.1", "report def-1 POD_PHASE_CRASHED worker job reached a terminal Failed phase", "revoke dev-x def-1.1"}
+	if !slices.Equal(o.log, want) {
+		t.Errorf("log %q, want %q", o.log, want)
+	}
+}
+
+type orderReporter struct{ o *order }
+
+func (r orderReporter) ReportEvent(_ context.Context, e *agentfleetv1.PodEvent) {
+	r.o.log = append(r.o.log, "report "+e.GetSessionId()+" "+e.GetPhase().String()+" "+e.GetMessage())
+}
+
+// docs/adr/0065: a terminal definition Job's own token (exact label) is
+// revoked before the report that could trigger a re-warm, a repo Job never
+// calls the vault, and a limits.timeout end is TERMINATED (an idle co-editor,
+// not a failing one) and reaped like a Succeeded Job.
+func TestGcTerminalWorkerJobs_RevokesFirstAndTimeoutIsTerminated(t *testing.T) {
+	kc := &fakeK8s{jobs: []k8s.LiveWorkerJob{
+		{TaskID: "running-1", JobName: "worker-1", Phase: "Running"},
+		{TaskID: "timed-out", JobName: "worker-2", Phase: "DeadlineExceeded", Definition: "dev-x", VaultLabel: "timed-out.1"},
+		{TaskID: "repo-done", JobName: "worker-3", Phase: "Succeeded"},
+	}}
+	o := &order{}
+	l := New(kc, orderReporter{o}, o, time.Hour)
+	l.gcTerminalWorkerJobs(context.Background())
+	want := []string{"revoke dev-x timed-out.1", "report timed-out POD_PHASE_TERMINATED limits.timeout reached", "report repo-done POD_PHASE_TERMINATED worker job reached a terminal Succeeded phase"}
+	if !slices.Equal(o.log, want) {
+		t.Errorf("log %q, want %q", o.log, want)
+	}
+	if len(kc.deleted) != 2 || kc.deleted[0] != "timed-out" {
+		t.Errorf("deleted %v", kc.deleted)
 	}
 }

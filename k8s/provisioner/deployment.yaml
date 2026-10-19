@@ -116,6 +116,11 @@ spec:
         volumeMounts:
         - name: workspace
           mountPath: /workspace
+        # docs/adr/0065: the Agent Vault agent token and credential values,
+        # one file per key, read per call (vault.Client). Read-only.
+        - name: agent-vault
+          mountPath: /var/run/agent-vault
+          readOnly: true
         resources:
           requests:
             cpu: 100m
@@ -127,3 +132,9 @@ spec:
       - name: workspace
         persistentVolumeClaim:
           claimName: agent-fleet-workspace
+      # optional: the provisioner starts before the vault bootstrap ran; every
+      # definition warm then fails closed naming the bootstrap script.
+      - name: agent-vault
+        secret:
+          secretName: provisioner-agent-vault
+          optional: true

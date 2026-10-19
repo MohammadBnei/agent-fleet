@@ -16,6 +16,8 @@ import (
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 	"github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1/agentfleetv1connect"
@@ -1019,7 +1021,7 @@ func (s *Server) WarmIfIdle(ctx context.Context, sessionID string) (podName stri
 	var profile *agentfleetv1.DefinitionPodProfile
 	image := repoCfg.Image
 	if t.DefinitionName != nil {
-		if profile, err = s.definitionWarmable(ctx, t, repoCfg.ClusterAccess); err != nil {
+		if profile, err = s.definitionWarmable(ctx, t, repoCfg); err != nil {
 			return "", err
 		}
 		image = ""
@@ -1064,14 +1066,23 @@ func (s *Server) WarmIfIdle(ctx context.Context, sessionID string) (podName stri
 	case err != nil && profile != nil:
 		// docs/adr/0064: an error can come after the Job exists (the call's
 		// timeout, or an older replica dying mid-call), and an older replica's
-		// Job is the ORDINARY pod. Unconfirmed is refused.
-		return "", s.refuseDefinitionPod(ctx, sessionID, connect.CodeInternal, fmt.Sprintf("definition pod create failed (%v)", err))
+		// Job is the ORDINARY pod. Unconfirmed is refused. The provisioner's
+		// code passes through, so a vault refusal (docs/adr/0065: a missing
+		// secret, by key name) reads as FailedPrecondition, not Internal.
+		code := connect.CodeInternal
+		if c := status.Code(err); c != codes.Unknown && c != codes.OK {
+			code = connect.Code(c)
+		}
+		return "", s.refuseDefinitionPod(ctx, sessionID, code, fmt.Sprintf("definition pod create failed (%v)", err))
 	case err != nil:
 		return "", connect.NewError(connect.CodeInternal, err)
 	case profile != nil && !pod.DefinitionProfileApplied:
 		// The create reached a provisioner that dropped the profile (an older
 		// one, or an older replica in a rollout overlap): the ORDINARY pod.
 		return "", s.refuseDefinitionPod(ctx, sessionID, connect.CodeFailedPrecondition, "provisioner did not apply the definition pod profile")
+	case profile != nil && !pod.VaultTokenApplied:
+		// docs/adr/0065: a P1 provisioner built a pod holding real credentials.
+		return "", s.refuseDefinitionPod(ctx, sessionID, connect.CodeFailedPrecondition, "provisioner did not mint a vault token")
 	}
 	// Record the build this pod is on. Not fatal: the pod exists and the
 	// session is live either way, and failing the warm over a metadata write
@@ -1117,7 +1128,7 @@ func (s *Server) refuseDefinitionPod(ctx context.Context, sessionID string, code
 // the create's own answer in WarmIfIdle, the only answer that comes from the
 // replica that built the pod. The profile is built from the current row, which by
 // the pin check IS the pinned version.
-func (s *Server) definitionWarmable(ctx context.Context, t *sessions.Session, clusterAccess bool) (*agentfleetv1.DefinitionPodProfile, error) {
+func (s *Server) definitionWarmable(ctx context.Context, t *sessions.Session, repoCfg *repos.Repo) (*agentfleetv1.DefinitionPodProfile, error) {
 	name, pinned := *t.DefinitionName, *t.DefinitionSHA
 	if s.definitions == nil {
 		return nil, connect.NewError(connect.CodeUnavailable, errors.New("defined agents are not configured"))
@@ -1135,15 +1146,30 @@ func (s *Server) definitionWarmable(ctx context.Context, t *sessions.Session, cl
 		return nil, connect.NewError(connect.CodeFailedPrecondition,
 			fmt.Errorf("definition %q changed since this session was created (pinned %.7s, current %.7s); start a new session", name, pinned, head.SHA))
 	}
-	if clusterAccess {
+	if repoCfg.ClusterAccess {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("definition sessions never run on a cluster-access repo"))
 	}
-	if head.Effective == nil || head.Effective.Git == nil || head.Effective.Git.Identity == nil {
-		// The validator requires git.identity on every launchable spec.
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("definition %q has no git identity", name))
+	eff := head.Effective
+	if eff == nil || eff.Git == nil || eff.Git.Identity == nil || eff.Credentials == nil || eff.Limits == nil {
+		// The validator requires all three on every launchable spec.
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("definition %q has no git identity, credentials or limits", name))
 	}
-	id := head.Effective.Git.Identity
-	return &agentfleetv1.DefinitionPodProfile{Name: name, GitAuthorName: id.Name, GitAuthorEmail: id.Email}, nil
+	// docs/adr/0065 §6: before a pod gets a push credential, the repo it clones
+	// from and pushes to is the one its credentials name. Exact and
+	// case-sensitive, like the vault's own prefix match.
+	if r := definitions.GitHubRepo(eff.Credentials); r != "" && repoCfg.URL != "https://github.com/"+r && repoCfg.URL != "https://github.com/"+r+".git" {
+		return nil, connect.NewError(connect.CodeFailedPrecondition,
+			fmt.Errorf("repo %s url %q does not match definition %q's credentials (https://github.com/%s.git)", repoCfg.Name, repoCfg.URL, name, r))
+	}
+	timeout, err := time.ParseDuration(eff.Limits.Timeout)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("definition %q limits.timeout: %w", name, err))
+	}
+	id := eff.Git.Identity
+	return &agentfleetv1.DefinitionPodProfile{
+		Name: name, GitAuthorName: id.Name, GitAuthorEmail: id.Email,
+		Vault: definitions.VaultSpec(eff.Credentials), TimeoutSeconds: int64(timeout.Seconds()),
+	}, nil
 }
 
 // DeleteTask force-tears-down any live session for sessionID (both kinds —
