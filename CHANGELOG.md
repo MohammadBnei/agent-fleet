@@ -1,5 +1,11 @@
 # Changelog
 
+# [4.20.0](https://github.com/MohammadBnei/agent-fleet/compare/4.19.0...4.20.0) (2026-10-19)
+
+### Features
+
+* **definitions:** defined agents P1 — definition files, registry, pinned console sessions (ADR 0062) ([#262](https://github.com/MohammadBnei/agent-fleet/issues/262)) ([8d8b509](https://github.com/MohammadBnei/agent-fleet/commit/8d8b509fd53182ce325b06600ce8383538101b16))
+
 # [4.19.0](https://github.com/MohammadBnei/agent-fleet/compare/4.18.0...4.19.0) (2026-10-18)
 
 ### Features
