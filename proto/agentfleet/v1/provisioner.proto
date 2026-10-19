@@ -165,6 +165,8 @@ message ReconcileVaultsRequest {
 
 message ReconcileVaultsResponse {
   repeated VaultResult results = 1;
+  // "" = every vault absent from the request was emptied. Never a value.
+  string prune_error = 2;
 }
 
 message VaultResult {

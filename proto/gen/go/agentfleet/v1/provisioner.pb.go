@@ -585,8 +585,10 @@ func (x *ReconcileVaultsRequest) GetVaults() []*VaultSpec {
 }
 
 type ReconcileVaultsResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Results       []*VaultResult         `protobuf:"bytes,1,rep,name=results,proto3" json:"results,omitempty"`
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Results []*VaultResult         `protobuf:"bytes,1,rep,name=results,proto3" json:"results,omitempty"`
+	// "" = every vault absent from the request was emptied. Never a value.
+	PruneError    string `protobuf:"bytes,2,opt,name=prune_error,json=pruneError,proto3" json:"prune_error,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -626,6 +628,13 @@ func (x *ReconcileVaultsResponse) GetResults() []*VaultResult {
 		return x.Results
 	}
 	return nil
+}
+
+func (x *ReconcileVaultsResponse) GetPruneError() string {
+	if x != nil {
+		return x.PruneError
+	}
+	return ""
 }
 
 type VaultResult struct {
@@ -1759,9 +1768,11 @@ const file_agentfleet_v1_provisioner_proto_rawDesc = "" +
 	"\x1adefinition_profile_applied\x18\x04 \x01(\bR\x18definitionProfileApplied\x12.\n" +
 	"\x13vault_token_applied\x18\x05 \x01(\bR\x11vaultTokenApplied\"J\n" +
 	"\x16ReconcileVaultsRequest\x120\n" +
-	"\x06vaults\x18\x01 \x03(\v2\x18.agentfleet.v1.VaultSpecR\x06vaults\"O\n" +
+	"\x06vaults\x18\x01 \x03(\v2\x18.agentfleet.v1.VaultSpecR\x06vaults\"p\n" +
 	"\x17ReconcileVaultsResponse\x124\n" +
-	"\aresults\x18\x01 \x03(\v2\x1a.agentfleet.v1.VaultResultR\aresults\"7\n" +
+	"\aresults\x18\x01 \x03(\v2\x1a.agentfleet.v1.VaultResultR\aresults\x12\x1f\n" +
+	"\vprune_error\x18\x02 \x01(\tR\n" +
+	"pruneError\"7\n" +
 	"\vVaultResult\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
 	"\x05error\x18\x02 \x01(\tR\x05error\"\x13\n" +

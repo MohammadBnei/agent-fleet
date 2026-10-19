@@ -146,7 +146,7 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 			slog.Error("definitions: sync failed", "error", err)
 			return
 		}
-		results, err := provisioner.ReconcileVaults(ctx, defs.Vaults())
+		resp, err := provisioner.ReconcileVaults(ctx, defs.Vaults())
 		if status.Code(err) == codes.Unimplemented {
 			slog.Debug("definitions: provisioner predates ReconcileVaults (docs/adr/0065)")
 			return
@@ -155,10 +155,13 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 		if err != nil {
 			msgs = append(msgs, err.Error())
 		}
-		for _, r := range results {
+		for _, r := range resp.GetResults() {
 			if r.GetError() != "" {
 				msgs = append(msgs, r.GetName()+": "+r.GetError())
 			}
+		}
+		if e := resp.GetPruneError(); e != "" {
+			msgs = append(msgs, "prune: "+e)
 		}
 		if joined := strings.Join(msgs, "; "); joined != vaultErrs {
 			vaultErrs = joined

@@ -279,14 +279,14 @@ func (c *Client) CreateWorkerPod(ctx context.Context, sessionID, repo, repoURL, 
 // ReconcileVaults pushes every valid definition's vault, the full set, to the
 // provisioner (docs/adr/0065), which makes each match and empties the rest.
 // Key names only: credential values never leave the provisioner.
-func (c *Client) ReconcileVaults(ctx context.Context, vaults []*agentfleetv1.VaultSpec) ([]*agentfleetv1.VaultResult, error) {
+func (c *Client) ReconcileVaults(ctx context.Context, vaults []*agentfleetv1.VaultSpec) (*agentfleetv1.ReconcileVaultsResponse, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	resp, err := c.rpc.ReconcileVaults(ctx, &agentfleetv1.ReconcileVaultsRequest{Vaults: vaults})
 	if err != nil {
 		return nil, fmt.Errorf("ReconcileVaults: %w", err)
 	}
-	return resp.GetResults(), nil
+	return resp, nil
 }
 
 // GetVersion reports the provisioner's build and the images it stamps onto new
