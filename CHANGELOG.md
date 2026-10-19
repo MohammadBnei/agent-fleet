@@ -1,5 +1,11 @@
 # Changelog
 
+## [4.23.2](https://github.com/MohammadBnei/agent-fleet/compare/4.23.1...4.23.2) (2026-10-19)
+
+### Bug Fixes
+
+* **worker:** Claude Code 2.1.303 (Agent SDK 0.3.303), 2.1.301 SIGILLs on Zen 2 ([#267](https://github.com/MohammadBnei/agent-fleet/issues/267)) ([c7cf25e](https://github.com/MohammadBnei/agent-fleet/commit/c7cf25e188c146c3396aca8a4e9a3e1cf2e6d90c))
+
 ## [4.23.1](https://github.com/MohammadBnei/agent-fleet/compare/4.23.0...4.23.1) (2026-10-19)
 
 ### Bug Fixes
