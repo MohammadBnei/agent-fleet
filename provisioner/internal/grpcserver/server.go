@@ -231,7 +231,14 @@ func (s *Server) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWo
 	// Never for a definition pod (docs/adr/0064): fleet-shared's settings.json
 	// pre-approves arbitrary-exec Bash (`go run`, `bun x`, ...) that would never
 	// reach canUseTool. It gets the image's baked plugins until P2's genome.
-	if s.fleetSharedRepoURL != "" && definition == nil {
+	// Fatal, not best-effort: a copy an older replica left behind is removed,
+	// or no pod is built.
+	if definition != nil {
+		if err := s.git.RemoveFleetShared(req.GetSessionId()); err != nil {
+			s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_CRASHED, "", "claude-home setup failed: "+err.Error())
+			return nil, fmt.Errorf("remove fleet-shared: %w", err)
+		}
+	} else if s.fleetSharedRepoURL != "" {
 		s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_PROVISIONING, "", "syncing fleet-shared skills")
 		if err := s.git.SyncFleetShared(ctx, s.fleetSharedRepoURL, s.fleetSharedBranch, s.git.ClaudeHomePath(req.GetSessionId())); err != nil {
 			slog.Warn("grpcserver: fleet-shared sync failed, continuing with a possibly-stale copy", "sessionId", req.GetSessionId(), "error", err)
@@ -355,8 +362,6 @@ func (s *Server) GetVersion(_ context.Context, _ *agentfleetv1.GetVersionRequest
 		Version:      s.version,
 		WorkerImage:  worker,
 		SidecarImage: sidecar,
-		// This build applies CreateWorkerPodRequest.definition (docs/adr/0064).
-		DefinitionPodProfile: true,
 	}, nil
 }
 

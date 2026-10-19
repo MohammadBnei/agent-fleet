@@ -767,7 +767,7 @@ erDiagram
         text sidecar_image "NOT NULL DEFAULT '' — likewise; both stay true after the fleet is upgraded underneath the session"
         text definition_name "nullable — pinned defined agent, adr/0062; FK (definition_name, definition_sha) to agent_definitions, both or neither"
         text definition_sha "nullable — the version pinned; warm refused once it is not the current one (the valid row at the synced commit)"
-        uuid profile_lease_id "adr/0064 — a definition session's lease, never lease_id (CHECK sessions_definition_no_lease), so an older core can neither mint nor verify one"
+        uuid profile_lease_id "adr/0064 — a definition session's lease, never lease_id (CHECKs sessions_definition_no_lease, sessions_profile_lease_definition_only), so an older core can neither mint nor verify one; valid only while pod_phase is live"
         timestamptz swept_at "retention GC reclaimed the disk — readable, not resumable"
         timestamptz archived_at "the human is finished; the only terminal state a machine cannot compute"
         timestamptz created_at
@@ -987,7 +987,7 @@ running.
 | Var | Default | Notes |
 |---|---|---|
 | `SESSION_ID`, `TARGET_REPO` | *(required)* | |
-| `LEASE_ID` | set | still set on repo-session pods (their Job is pinned byte-identical), absent on definition pods (`adr/0064`). The sidecar sends its own lease on `SaveAgentSessionId` and ignores the worker's, which the worker still sends for one release (a worker newer than its sidecar). Minted per pod by `ReserveSlot`, not by a claim — nothing claims anything (`adr/0048` §2). It is what `StillHoldsLease` checks before a push, so a torn-down pod still shutting down cannot overwrite its replacement's resume identity |
+| `LEASE_ID` | set | still set on repo-session pods (their Job is pinned byte-identical), absent on definition pods (`adr/0064`). The sidecar sends its own lease on `SaveAgentSessionId` and ignores the worker's, which the worker still sends for one release (a worker newer than its sidecar). Minted per pod by `ReserveSlot`, not by a claim — nothing claims anything (`adr/0048` §2). |
 | `SIDECAR_MCP_ADDR` | `localhost:9090` | the Agent SDK session's `mcpServers` config points here |
 | `SIDECAR_API_ADDR` | `localhost:9091` | the wrapper's own control-flow calls |
 | `WORKTREE_PATH` | `/workspace` | Kept its name through `adr/0048`; it is a plain clone on the session's own PVC now, not a linked worktree |

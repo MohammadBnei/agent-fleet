@@ -88,7 +88,8 @@ type CreateWorkerPodRequest struct {
 	RepoUrl    string                 `protobuf:"bytes,3,opt,name=repo_url,json=repoUrl,proto3" json:"repo_url,omitempty"`
 	BaseBranch string                 `protobuf:"bytes,4,opt,name=base_branch,json=baseBranch,proto3" json:"base_branch,omitempty"`
 	// description and lease_id are handed straight through to the worker
-	// pod's env — the worker no longer fetches its own session row at all
+	// pod's env (for a definition pod, lease_id goes to the sidecar only,
+	// docs/adr/0064) — the worker no longer fetches its own session row at all
 	// (docs/adr/0020 point 1: it holds no DB credentials, direct or
 	// otherwise), so whatever it needs has to arrive at pod creation time.
 	Description string `protobuf:"bytes,5,opt,name=description,proto3" json:"description,omitempty"`
@@ -318,9 +319,9 @@ type CreateWorkerPodResponse struct {
 	SidecarImage string `protobuf:"bytes,3,opt,name=sidecar_image,json=sidecarImage,proto3" json:"sidecar_image,omitempty"`
 	// docs/adr/0064: true only when this pod got CreateWorkerPodRequest.definition.
 	// An older provisioner drops the request field and builds the ordinary pod
-	// without saying so; core's GetVersion pre-check cannot see which replica
-	// serves the create (rollout overlap), so core tears down a definition warm
-	// whose answer lacks this.
+	// without saying so, so core tears down a definition warm whose answer lacks
+	// this. It is the only check: it is the one answer from the replica that
+	// served the create (a rollout overlap can split two RPCs across replicas).
 	DefinitionProfileApplied bool `protobuf:"varint,4,opt,name=definition_profile_applied,json=definitionProfileApplied,proto3" json:"definition_profile_applied,omitempty"`
 	unknownFields            protoimpl.UnknownFields
 	sizeCache                protoimpl.SizeCache
@@ -436,13 +437,9 @@ type GetVersionResponse struct {
 	WorkerImage string `protobuf:"bytes,2,opt,name=worker_image,json=workerImage,proto3" json:"worker_image,omitempty"`
 	// What every session's sidecar runs — no per-repo override exists, the
 	// sidecar is fleet-owned.
-	SidecarImage string `protobuf:"bytes,3,opt,name=sidecar_image,json=sidecarImage,proto3" json:"sidecar_image,omitempty"`
-	// True once this provisioner applies DefinitionPodProfile (docs/adr/0064).
-	// core refuses to warm a definition session against one that does not say
-	// so: an older provisioner would ignore the field and build the ordinary pod.
-	DefinitionPodProfile bool `protobuf:"varint,4,opt,name=definition_pod_profile,json=definitionPodProfile,proto3" json:"definition_pod_profile,omitempty"`
-	unknownFields        protoimpl.UnknownFields
-	sizeCache            protoimpl.SizeCache
+	SidecarImage  string `protobuf:"bytes,3,opt,name=sidecar_image,json=sidecarImage,proto3" json:"sidecar_image,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *GetVersionResponse) Reset() {
@@ -494,13 +491,6 @@ func (x *GetVersionResponse) GetSidecarImage() string {
 		return x.SidecarImage
 	}
 	return ""
-}
-
-func (x *GetVersionResponse) GetDefinitionPodProfile() bool {
-	if x != nil {
-		return x.DefinitionPodProfile
-	}
-	return false
 }
 
 // docs/adr/0062. Reads every regular file under definitions/ from the
@@ -1462,12 +1452,11 @@ const file_agentfleet_v1_provisioner_proto_rawDesc = "" +
 	"\fworker_image\x18\x02 \x01(\tR\vworkerImage\x12#\n" +
 	"\rsidecar_image\x18\x03 \x01(\tR\fsidecarImage\x12<\n" +
 	"\x1adefinition_profile_applied\x18\x04 \x01(\bR\x18definitionProfileApplied\"\x13\n" +
-	"\x11GetVersionRequest\"\xac\x01\n" +
+	"\x11GetVersionRequest\"v\n" +
 	"\x12GetVersionResponse\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\tR\aversion\x12!\n" +
 	"\fworker_image\x18\x02 \x01(\tR\vworkerImage\x12#\n" +
-	"\rsidecar_image\x18\x03 \x01(\tR\fsidecarImage\x124\n" +
-	"\x16definition_pod_profile\x18\x04 \x01(\bR\x14definitionPodProfile\"\x1c\n" +
+	"\rsidecar_image\x18\x03 \x01(\tR\fsidecarImage\"\x1c\n" +
 	"\x1aListDefinitionFilesRequest\">\n" +
 	"\x0eDefinitionFile\x12\x12\n" +
 	"\x04path\x18\x01 \x01(\tR\x04path\x12\x18\n" +

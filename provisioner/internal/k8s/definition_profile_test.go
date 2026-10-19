@@ -180,4 +180,25 @@ func TestDefinitionCloneScript_RunsAgainstTheCacheOnly(t *testing.T) {
 			run() // a warm re-runs it: the existing tree is left alone
 		})
 	}
+
+	// A failure after the clone's first step leaves no .git behind, so the
+	// next warm fails again rather than accepting a half-built repository.
+	spec := definitionSpec()
+	spec.BaseBranch = "missing"
+	script := container(t, createJob(t, spec), "clone").Command[2]
+	ws := filepath.Join(t.TempDir(), "workspace")
+	script = strings.ReplaceAll(script, "/repo-cache", filepath.Join(root, "repo-cache"))
+	script = strings.ReplaceAll(script, sessionWorkdir, ws)
+	home := t.TempDir()
+	for i := range 2 {
+		cmd := exec.Command("sh", "-c", script)
+		cmd.Env = append(os.Environ(), "HOME="+home, "GIT_CONFIG_GLOBAL="+filepath.Join(home, ".gitconfig"), "GIT_CONFIG_NOSYSTEM=1",
+			"GIT_ALLOW_PROTOCOL=file")
+		if out, err := cmd.CombinedOutput(); err == nil {
+			t.Fatalf("run %d: a missing base succeeded: %s", i, out)
+		}
+		if _, err := os.Stat(filepath.Join(ws, ".git")); !os.IsNotExist(err) {
+			t.Fatalf("run %d: a failed clone left .git behind: %v", i, err)
+		}
+	}
 }

@@ -61,7 +61,7 @@ func recordHeader(t *testing.T, token string) []string {
 	}
 	defer func() { _ = c.Close() }()
 
-	if _, _, _, _, err := c.GetVersion(context.Background()); err != nil {
+	if _, _, _, err := c.GetVersion(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	return <-rec.got

@@ -26,14 +26,6 @@ func revParse(t *testing.T, dir, ref string) string {
 	return strings.TrimSpace(string(out))
 }
 
-func TestGetVersion_SaysItAppliesTheDefinitionProfile(t *testing.T) {
-	s, _, _ := newTestServer(t)
-	resp, err := s.GetVersion(context.Background(), &agentfleetv1.GetVersionRequest{})
-	if err != nil || !resp.GetDefinitionPodProfile() {
-		t.Fatalf("definition_pod_profile = %v, %v", resp.GetDefinitionPodProfile(), err)
-	}
-}
-
 // docs/adr/0064: a definition pod gets the profile, a fetched cache (its clone
 // never contacts the remote) and no fleet-shared settings.json (which
 // pre-approves arbitrary-exec Bash past canUseTool).
@@ -58,6 +50,18 @@ func TestCreateWorkerPod_DefinitionProfile(t *testing.T) {
 		t.Fatalf("fixture: the repo session must get fleet-shared: %v", err)
 	}
 	commitTo(t, origin, "new.txt")
+	// What an older replica's unconditional sync left in def-1's claude-home
+	// (a rollout overlap): it must be gone before the pod exists. projects/
+	// is resume state and stays.
+	defHome := filepath.Join(root, "claude-home", "def-1")
+	for _, p := range []string{"settings.json", "CLAUDE.md", "skills/x/SKILL.md", "projects/p/s.jsonl"} {
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(defHome, p)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(defHome, p), []byte("{}"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
 
 	resp, err := s.CreateWorkerPod(ctx, &agentfleetv1.CreateWorkerPodRequest{
 		SessionId: "def-1", Repo: "dream-analyst", RepoUrl: origin, BaseBranch: "main",
@@ -75,8 +79,13 @@ func TestCreateWorkerPod_DefinitionProfile(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(root, "claude-home", "def-1")); err != nil {
 		t.Errorf("claude-home still set up: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(root, "claude-home", "def-1", "settings.json")); !os.IsNotExist(err) {
-		t.Errorf("a definition pod got fleet-shared settings.json: %v", err)
+	for _, name := range []string{"settings.json", "CLAUDE.md", "skills"} {
+		if _, err := os.Stat(filepath.Join(defHome, name)); !os.IsNotExist(err) {
+			t.Errorf("a definition pod got fleet-shared %s: %v", name, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(defHome, "projects", "p", "s.jsonl")); err != nil {
+		t.Errorf("resume state removed: %v", err)
 	}
 	job, err := k8sc.Core.BatchV1().Jobs("agent-fleet").Get(ctx, k8s.WorkerResourceName("def-1"), metav1.GetOptions{})
 	if err != nil {

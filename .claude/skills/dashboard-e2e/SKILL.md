@@ -97,10 +97,9 @@ mkdir -p /tmp/agent-fleet-e2e-provisioner
 #                        and any sha, e.g. "e2e" (docs/adr/0062). Without it
 #                        core never syncs and the new-session Definition
 #                        picker is empty. A definition session is created
-#                        but its warm is refused: the stub does not implement
-#                        GetVersion, so it never reports
-#                        definition_pod_profile (docs/adr/0064), which is
-#                        correct for a stub that builds no pod.
+#                        but its warm is torn down: the stub's create never
+#                        sets definition_profile_applied (docs/adr/0064),
+#                        which is correct for a stub that builds no pod.
 # listening on 127.0.0.1:9091.
 #
 # go.mod: module e2estub, plus

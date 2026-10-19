@@ -66,6 +66,20 @@ func TestDefinitionLeaseIsInvisibleToAnOlderCore(t *testing.T) {
 	if ok, err := store.SaveAgentSessionID(ctx, def, "sdk-1", "", lease); err != nil || !ok {
 		t.Fatalf("SaveAgentSessionID with the definition lease: %v %v", ok, err)
 	}
+	// An older core cannot revoke one either: its teardown's ClearLease nulls
+	// lease_id only. The TERMINATED the provisioner reports still revokes it.
+	if _, err := pool.Exec(ctx, `UPDATE sessions SET lease_id = NULL, pod_phase = 'POD_PHASE_TERMINATED' WHERE id = $1`, def); err != nil {
+		t.Fatal(err)
+	}
+	if ok, _, err := store.VerifyLease(ctx, def, lease); err != nil || ok {
+		t.Fatalf("a definition lease outlived its pod: %v %v", ok, err)
+	}
+	if ok, err := store.SaveAgentSessionID(ctx, def, "sdk-2", "", lease); err != nil || ok {
+		t.Fatalf("SaveAgentSessionID with a dead pod's definition lease: %v %v", ok, err)
+	}
+	if lease, err = store.ReserveSlot(ctx, def, Caps{MaxLive: 5, MaxDefinition: 4}); err != nil {
+		t.Fatal(err)
+	}
 	if err := store.ClearLease(ctx, def); err != nil {
 		t.Fatal(err)
 	}
@@ -79,6 +93,11 @@ func TestDefinitionLeaseIsInvisibleToAnOlderCore(t *testing.T) {
 	}
 	if ok, name, err := store.VerifyLease(ctx, repo, repoLease); err != nil || !ok || name != "" {
 		t.Fatalf("a repo lease: %v %q %v", ok, name, err)
+	}
+	// A repo session never holds a definition lease: it would verify with no
+	// allowlist applied.
+	if _, err := pool.Exec(ctx, `UPDATE sessions SET profile_lease_id = gen_random_uuid() WHERE id = $1`, repo); err == nil || !strings.Contains(err.Error(), "sessions_profile_lease_definition_only") {
+		t.Fatalf("want the CHECK to refuse a repo session's definition lease, got %v", err)
 	}
 	if ok, _, err := store.VerifyLease(ctx, repo, "not-a-lease"); err != nil || ok {
 		t.Fatalf("a wrong lease: %v %v", ok, err)

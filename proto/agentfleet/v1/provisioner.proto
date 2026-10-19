@@ -49,7 +49,8 @@ message CreateWorkerPodRequest {
   string repo_url = 3;
   string base_branch = 4;
   // description and lease_id are handed straight through to the worker
-  // pod's env — the worker no longer fetches its own session row at all
+  // pod's env (for a definition pod, lease_id goes to the sidecar only,
+  // docs/adr/0064) — the worker no longer fetches its own session row at all
   // (docs/adr/0020 point 1: it holds no DB credentials, direct or
   // otherwise), so whatever it needs has to arrive at pod creation time.
   string description = 5;
@@ -119,9 +120,9 @@ message CreateWorkerPodResponse {
   string sidecar_image = 3;
   // docs/adr/0064: true only when this pod got CreateWorkerPodRequest.definition.
   // An older provisioner drops the request field and builds the ordinary pod
-  // without saying so; core's GetVersion pre-check cannot see which replica
-  // serves the create (rollout overlap), so core tears down a definition warm
-  // whose answer lacks this.
+  // without saying so, so core tears down a definition warm whose answer lacks
+  // this. It is the only check: it is the one answer from the replica that
+  // served the create (a rollout overlap can split two RPCs across replicas).
   bool definition_profile_applied = 4;
 }
 
@@ -143,10 +144,6 @@ message GetVersionResponse {
   // What every session's sidecar runs — no per-repo override exists, the
   // sidecar is fleet-owned.
   string sidecar_image = 3;
-  // True once this provisioner applies DefinitionPodProfile (docs/adr/0064).
-  // core refuses to warm a definition session against one that does not say
-  // so: an older provisioner would ignore the field and build the ordinary pod.
-  bool definition_pod_profile = 4;
 }
 
 // docs/adr/0062. Reads every regular file under definitions/ from the

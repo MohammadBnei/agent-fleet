@@ -1065,14 +1065,18 @@ func (s *Server) WarmIfIdle(ctx context.Context, sessionID string) (podName stri
 	}
 	if profile != nil && !pod.DefinitionProfileApplied {
 		// docs/adr/0064: the create reached a provisioner that dropped the
-		// profile (a rollout overlap the GetVersion check above cannot see),
-		// so this is the ORDINARY pod. Revoke its lease first, then remove it.
+		// profile (an older one, or an older replica in a rollout overlap), so
+		// this is the ORDINARY pod. Revoke its lease first, then remove it.
 		msg := "provisioner did not apply the definition pod profile (docs/adr/0064); the pod was torn down"
 		if err := s.sessions.ClearLease(ctx, sessionID); err != nil {
 			slog.Error("dashboard warm: revoking an unprofiled definition pod's lease", "sessionId", sessionID, "error", err)
 		}
 		if _, err := s.e2e.TearDownSession(ctx, sessionID, agentfleetv1.SessionKind_SESSION_KIND_WORKER); err != nil {
+			// The phase stays live, so the startup-stall sweep retries the
+			// teardown (the pod can report no activity: its lease is gone).
+			// CRASHED here would hide a pod that is still running.
 			slog.Error("dashboard warm: tearing down an unprofiled definition pod", "sessionId", sessionID, "error", err)
+			return "", connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("provisioner did not apply the definition pod profile (docs/adr/0064), and its teardown failed: %w", err))
 		}
 		if err := s.sessions.SetPodPhase(ctx, sessionID, agentfleetv1.PodPhase_POD_PHASE_CRASHED.String(), msg); err != nil {
 			slog.Error("dashboard warm: recording the refused definition pod", "sessionId", sessionID, "error", err)
@@ -1090,11 +1094,11 @@ func (s *Server) WarmIfIdle(ctx context.Context, sessionID string) (podName stri
 
 // definitionWarmable refuses to warm a definition session unless its pinned
 // version is still the current one (docs/adr/0062's revocation rule), the repo
-// has not been flipped to cluster access since creation, and the provisioner
-// applies the definition pod profile (docs/adr/0064): an older one would
-// ignore it and build the ordinary pod (GH_TOKEN and LEASE_ID in the worker,
-// the whole /repo-cache). All checked BEFORE ReserveSlot, so a refusal leaves
-// no lease and no phase. The profile is built from the current row, which by
+// has not been flipped to cluster access since creation. All checked BEFORE
+// ReserveSlot, so a refusal leaves no lease and no phase. Whether the
+// provisioner applied the definition pod profile (docs/adr/0064) is checked on
+// the create's own answer in WarmIfIdle, the only answer that comes from the
+// replica that built the pod. The profile is built from the current row, which by
 // the pin check IS the pinned version.
 func (s *Server) definitionWarmable(ctx context.Context, t *sessions.Session, clusterAccess bool) (*agentfleetv1.DefinitionPodProfile, error) {
 	name, pinned := *t.DefinitionName, *t.DefinitionSHA
@@ -1116,18 +1120,6 @@ func (s *Server) definitionWarmable(ctx context.Context, t *sessions.Session, cl
 	}
 	if clusterAccess {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("definition sessions never run on a cluster-access repo"))
-	}
-	// The cheap early refusal, before ReserveSlot. It cannot see which
-	// provisioner replica serves the create, so WarmIfIdle also checks the
-	// create's own answer.
-	_, _, _, supported, err := s.e2e.GetVersion(ctx)
-	if err != nil {
-		return nil, connect.NewError(connect.CodeFailedPrecondition,
-			fmt.Errorf("cannot confirm the provisioner applies the definition pod profile (docs/adr/0064): %w", err))
-	}
-	if !supported {
-		return nil, connect.NewError(connect.CodeFailedPrecondition,
-			errors.New("provisioner does not apply the definition pod profile (docs/adr/0064); refusing to warm"))
 	}
 	if head.Effective == nil || head.Effective.Git == nil || head.Effective.Git.Identity == nil {
 		// The validator requires git.identity on every launchable spec.

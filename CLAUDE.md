@@ -125,10 +125,11 @@ Condensed. Full detail + rationale in `agent-fleet/docs/DECISIONS.md` + `docs/ad
   worker refuse Claude Code's own cross-session channel (`adr/0060` amended). `CLAUDE_CODE_OAUTH_TOKEN`
   stays until P3 (**interim**); P1 definition sessions cannot push. P1 does **not** bound the
   tool surface: `allowedTools` and the repo's project allow rules still skip `canUseTool` (P4).
-  Warm refused unless `GetVersion` says `definition_pod_profile`, and torn down unless the
-  create answers `definition_profile_applied` (rollout overlap). A definition lease lives in
-  `profile_lease_id`, never `lease_id`, so an older core can neither mint nor verify one. A
-  non-definition pod's Job is byte-identical (golden test).
+  A warm is torn down unless the create answers `definition_profile_applied` (older
+  provisioner or rollout overlap). A definition lease lives in `profile_lease_id`, never
+  `lease_id`, so an older core can neither mint nor verify one, and it counts only while
+  `pod_phase` is live, since an older core's teardown cannot clear it. A non-definition pod's
+  Job is byte-identical (golden test).
 - **Session with no message has no pod — that is the human gate** (`adr/0048` §1).
   Amended by `adr/0062`: the provisioning message comes from an audience member, a
   registered client, or an allowlisted actor's event via a registered client (P1:

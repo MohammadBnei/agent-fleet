@@ -347,6 +347,21 @@ func (m *Manager) DeleteSessionDir(sessionID string) error {
 	return nil
 }
 
+// RemoveFleetShared deletes fleetSharedNames from a session's claude-home,
+// leaving projects/ (its resume state) alone. For a definition pod
+// (docs/adr/0064): an older provisioner replica serving one of its creates in
+// a rollout overlap ran the sync unconditionally, and that settings.json
+// pre-approves arbitrary-exec Bash past canUseTool for the session's life.
+// plugins/ goes too; the worker entrypoint re-seeds the image's own.
+func (m *Manager) RemoveFleetShared(sessionID string) error {
+	for _, name := range fleetSharedNames {
+		if err := os.RemoveAll(filepath.Join(m.ClaudeHomePath(sessionID), name)); err != nil {
+			return fmt.Errorf("remove fleet-shared %s for %s: %w", name, sessionID, err)
+		}
+	}
+	return nil
+}
+
 // fleetSharedSentinel keys the repoLock used to serialize SyncFleetShared
 // calls — not a real repo name, so it can never collide with one.
 const fleetSharedSentinel = "_fleet-shared"

@@ -25,6 +25,6 @@ ALTER TABLE sessions
   -- this one (it refuses first), and not an older one that knows nothing of
   -- definitions (a rollout overlap, an image rollback with the schema left
   -- here), which would warm it as a repo session (GH_TOKEN, any mode, no
-  -- pool). docs/adr/0064's migration drops this with the code that sends the
-  -- definition pod profile.
+  -- pool). Kept by docs/adr/0064: its 000009 gives definition sessions their
+  -- own profile_lease_id column, which only a profile-aware core mints.
   ADD CONSTRAINT sessions_definition_no_lease CHECK (definition_name IS NULL OR lease_id IS NULL);

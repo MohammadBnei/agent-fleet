@@ -39,27 +39,29 @@ an empty name or identity, with tool keys, or with an image override, is
 `InvalidArgument`.
 
 An older provisioner ignores the field and builds the ordinary pod, so core
-checks twice:
+checks **the create's own answer**, the only one that comes from the replica
+that built the pod (the provisioner Deployment rolls with the default
+RollingUpdate, so in a rollout or rollback two RPCs can reach different
+replicas). `CreateWorkerPodResponse.definition_profile_applied` is set only by a
+provisioner that applied the profile. A definition warm whose answer lacks it
+got the ordinary pod: core clears the lease first (the pod's credential is dead
+before it can use it), tears the pod down, records `CRASHED` with the reason,
+and returns `FailedPrecondition`. If the teardown fails, core leaves the phase
+live instead of writing `CRASHED`, so the startup-stall sweep retries it (the
+pod can report no activity without a lease). A later warm retries. This is the
+check ADR-0062 §4 said this slice would put in place of its refusal.
 
-- **Before `ReserveSlot`**, the cheap early refusal:
-  `GetVersionResponse.definition_pod_profile = true` says a provisioner applies
-  it. Core asks on every definition warm (uncached: a cache would need
-  invalidation on exactly the rollout that changes the answer) and refuses with
-  `FailedPrecondition` when the answer is no or the call fails. That is the
-  check ADR-0062 §4 said this slice would put in place of its refusal.
-- **On the create's own answer.** `GetVersion` and `CreateWorkerPod` are two
-  RPCs, and the provisioner Deployment rolls with the default RollingUpdate, so
-  during a rollout or rollback the two can reach different replicas.
-  `CreateWorkerPodResponse.definition_profile_applied` is set only by a
-  provisioner that applied the profile. A definition warm whose answer lacks it
-  got the ordinary pod: core clears the lease first (the pod's credential is
-  dead before it can use it), tears the pod down, records `CRASHED` with the
-  reason, and returns `FailedPrecondition`. A later warm retries.
+No `GetVersion` capability pre-check. It was built and removed in review: it
+cannot see which replica serves the create, so it could never replace the check
+above, and all it saved was one short-lived ordinary pod on a fully-old
+provisioner, whose lease is revoked before it can stream a message.
 
-  Residual, accepted: the older replica also ran its fleet-shared sync into the
-  session's claude-home before the pod existed, and a later profile-aware warm
-  does not scrub it. That needs a create straddling a provisioner rollout, and
-  P2's read-only genome mount replaces that directory's role.
+The older replica also ran its fleet-shared sync into the session's claude-home
+before the pod existed, and claude-home is kept across teardowns (it is resume
+state). So a definition create removes `fleetSharedNames` (`settings.json`,
+`CLAUDE.md`, `skills/`, `plugins/`; the worker entrypoint re-seeds the image's
+plugins) from claude-home before building the pod, and fails rather than build
+one if it cannot. `projects/` is left alone.
 
 ### 2. What a definition pod gets
 
@@ -73,7 +75,7 @@ checks twice:
 | worker git identity | `gh api user` at runtime | `GIT_AUTHOR_*`/`GIT_COMMITTER_*` from `git.identity`, plus `GIT_CONFIG_*` `safe.directory=/workspace` |
 | repo cache, all three containers | `/repo-cache` ← subPath `repos` | `/repo-cache/<repo>` ← subPath `repos/<repo>`, read-only |
 | clone init container | `clone --shared`, then `fetch origin <base>` from the real remote | local transport only (below) |
-| fleet-shared sync into claude-home | yes | **no** |
+| fleet-shared sync into claude-home | yes | **no**, and any copy is removed (§1) |
 | worker image | `repos.image` or the default | always the provisioner's default (core sends `""`, the provisioner refuses an override) |
 
 The cache keeps its absolute path, so `.git/objects/info/alternates`
@@ -87,7 +89,10 @@ its own and ignores a body `leaseId`. The worker still sends `LEASE_ID` (or
 `""`) for one release: a worker image newer than its sidecar (a `repos.image`
 floating on `latest` before the provisioner rolls `SIDECAR_IMAGE`) talks to a
 sidecar that still forwards the body's, and without it resume identity is
-silently lost. Repo pods keep the env var because the golden pins them.
+silently lost. This is a deliberate one-release deviation from the P1 plan,
+which said to drop the field from the worker now and called "new worker, old
+sidecar" unreachable: `repos.image` overrides the worker only, so it is
+reachable. Repo pods keep the env var because the golden pins them.
 
 The sidecar is the only container **given** the lease, which is not the same as
 the only one that can reach it: its telemetry loop runs `git diff` in the
@@ -208,7 +213,16 @@ definition session only. This core's `VerifyLease`, `SaveAgentSessionID` and
 the reconcile revocation) clears both. An older core matches only `lease_id`,
 so a definition pod's lease authenticates nothing there: it fails closed, it is
 not honored without the allowlist. The down migration drops the column, which
-revokes live definition pods' leases.
+revokes live definition pods' leases. A second CHECK,
+`sessions_profile_lease_definition_only`, is the other direction: a repo
+session never holds a `profile_lease_id`, which would verify with no allowlist.
+
+An older core cannot **revoke** a definition lease either: its `ClearLease`
+nulls `lease_id` only. So `VerifyLease` and `SaveAgentSessionID` accept
+`profile_lease_id` only while `pod_phase` is live. Whichever core tears the pod
+down, the provisioner reports `TERMINATED` (or reconcile writes it for a lost
+event), and that revokes it. A repo lease keeps ADR-0057's rule (valid until
+cleared or rotated).
 
 ### 4. CoreService: a per-session allowlist for definition leases
 
@@ -262,9 +276,8 @@ and removed.
 
 ### 5. Core's warm, for a definition session
 
-After ADR-0062's checks (pinned == current, not cluster-access) and before
-`ReserveSlot`: the provisioner must report `definition_pod_profile`. Then
-`CreateWorkerPod` gets the profile built from the current row's
+After ADR-0062's checks (pinned == current, not cluster-access) and
+`ReserveSlot`, `CreateWorkerPod` gets the profile built from the current row's
 `git.identity`, image `""`, and no tool keys, and its answer must carry
 `definition_profile_applied` (§1).
 
@@ -288,8 +301,9 @@ After ADR-0062's checks (pinned == current, not cluster-access) and before
 - Rollback below this ADR: run the down migration (it revokes live definition
   pods' leases). An image-only core rollback is covered by §3: the older core
   neither mints nor verifies a definition lease, so live definition pods lose
-  CoreService instead of getting an unbounded one. A provisioner rollback is
-  covered by §1's two checks, with the fleet-shared residual recorded there.
+  CoreService instead of getting an unbounded one, and the pod phase revokes
+  what its `ClearLease` misses. A provisioner rollback is covered by §1's
+  check on the create's answer and its claude-home scrub.
 - **P1 does not bound the tool surface** (§2, "No fleet-shared sync"): the
   worker's `allowedTools` and the target repo's project allow rules still skip
   `canUseTool`. P4.

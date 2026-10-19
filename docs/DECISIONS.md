@@ -269,10 +269,11 @@ Any doc, code, comment, or memory that contradicts this file or an
   still skip `canUseTool` until P4. A definition lease may call only a fixed
   `CoreService` allowlist, nobody may `PromptSession` into a definition session,
   and every lease caller authors `SendMessage` as `agent`/`worker` only. Core
-  warms one only against a provisioner that reports `definition_pod_profile` and
-  tears it down if the create does not confirm `definition_profile_applied`. A
-  definition lease lives in `profile_lease_id`, never in `lease_id`, so an older
-  core can neither mint (000008's `sessions_definition_no_lease`) nor verify one.
+  tears a definition warm down if the create does not confirm
+  `definition_profile_applied`. A definition lease lives in `profile_lease_id`,
+  never in `lease_id`, so an older core can neither mint (000008's
+  `sessions_definition_no_lease`) nor verify one; it counts only while
+  `pod_phase` is live, because an older core's teardown cannot clear it.
 
 ## 2. Forbidden patterns (quick check — full list + reasons in `adr/`)
 

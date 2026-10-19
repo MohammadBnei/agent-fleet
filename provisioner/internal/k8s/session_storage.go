@@ -163,7 +163,7 @@ if [ -d %[1]s/.git ]; then
   exit 0
 fi
 mkdir -p %[1]s
-`+cloneTail(spec.Definition != nil), sessionWorkdir, spec.Repo, base, spec.RepoURL)
+`, sessionWorkdir) + cloneTail(spec, base)
 
 	return corev1.Container{
 		Name:    "clone",
@@ -186,25 +186,9 @@ mkdir -p %[1]s
 	}
 }
 
-// cloneTail is the part of the clone script after `mkdir`, appended to
-// cloneInitContainer's format string, so its verbs are that call's: %[1]s workdir, %[2]s repo, %[3]s base, %[4]s URL.
-func cloneTail(definition bool) string {
-	if definition {
-		return `git clone --shared --no-checkout /repo-cache/%[2]s %[1]s
-cd %[1]s
-# docs/adr/0064: local transport only. This container holds no credential and
-# never contacts the remote: the fetch names the cache's PATH, not "origin", so
-# no reordering can turn it into a remote fetch. It copies the cache's
-# REMOTE-TRACKING refs, which the provisioner fetched with its own credentials
-# (git.Manager.EnsureRepoFetched, never skipped for a definition pod) just
-# before this pod was created, over the ones clone --shared made from the
-# cache's local branches (frozen at its first clone), so origin/* is current.
-git fetch --no-tags /repo-cache/%[2]s '+refs/remotes/origin/*:refs/remotes/origin/*'
-git checkout -B %[3]s origin/%[3]s
-git remote set-url origin %[4]s
-`
-	}
-	return `git clone --shared /repo-cache/%[2]s %[1]s
+// cloneTail is the part of the clone script after `mkdir`.
+func cloneTail(spec WorkerPodSpec, base string) string {
+	format := `git clone --shared /repo-cache/%[2]s %[1]s
 cd %[1]s
 # The clone's origin points at the local cache, which is useless to the agent:
 # it needs to fetch from and push to the real remote.
@@ -225,4 +209,24 @@ git remote set-url origin %[4]s
 git fetch origin %[3]s
 git checkout -B %[3]s FETCH_HEAD
 `
+	if spec.Definition != nil {
+		format = `# All or nothing: the guard above accepts any .git, so a clone that fails
+# after its first step must not leave one behind for the next warm.
+trap 'rm -rf %[1]s/.git' EXIT
+git clone --shared --no-checkout /repo-cache/%[2]s %[1]s
+cd %[1]s
+# docs/adr/0064: local transport only. This container holds no credential and
+# never contacts the remote: the fetch names the cache's PATH, not "origin", so
+# no reordering can turn it into a remote fetch. It copies the cache's
+# REMOTE-TRACKING refs, which the provisioner fetched with its own credentials
+# (git.Manager.EnsureRepoFetched, never skipped for a definition pod) just
+# before this pod was created, over the ones clone --shared made from the
+# cache's local branches (frozen at its first clone), so origin/* is current.
+git fetch --no-tags /repo-cache/%[2]s '+refs/remotes/origin/*:refs/remotes/origin/*'
+git checkout -B %[3]s origin/%[3]s
+git remote set-url origin %[4]s
+trap - EXIT
+`
+	}
+	return fmt.Sprintf(format, sessionWorkdir, spec.Repo, base, spec.RepoURL)
 }

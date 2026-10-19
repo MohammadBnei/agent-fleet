@@ -276,18 +276,14 @@ func (c *Client) CreateWorkerPod(ctx context.Context, sessionID, repo, repoURL, 
 // pods. Cheap by construction on the provisioner side (process-local
 // constants, no Kubernetes call), which is why the dashboard's topology can
 // ask on every 5s poll instead of caching it and going stale across a deploy.
-//
-// definitionProfile says it applies CreateWorkerPodRequest.definition
-// (docs/adr/0064); core asks before every definition warm, uncached, since a
-// cache would need invalidating on exactly the rollout that changes the answer.
-func (c *Client) GetVersion(ctx context.Context) (version, workerImage, sidecarImage string, definitionProfile bool, err error) {
+func (c *Client) GetVersion(ctx context.Context) (version, workerImage, sidecarImage string, err error) {
 	ctx, cancel := context.WithTimeout(ctx, sessionCallTimeout)
 	defer cancel()
 	resp, err := c.rpc.GetVersion(ctx, &agentfleetv1.GetVersionRequest{})
 	if err != nil {
-		return "", "", "", false, fmt.Errorf("GetVersion: %w", err)
+		return "", "", "", fmt.Errorf("GetVersion: %w", err)
 	}
-	return resp.GetVersion(), resp.GetWorkerImage(), resp.GetSidecarImage(), resp.GetDefinitionPodProfile(), nil
+	return resp.GetVersion(), resp.GetWorkerImage(), resp.GetSidecarImage(), nil
 }
 
 // ListDefinitionFiles returns definitions/ as the provisioner read it, keyed
