@@ -1,6 +1,6 @@
 # ADR-0048 — One session, one pod, one shared home
 
-- **Status:** Accepted
+- **Status:** Accepted — §1 (the gate) amended by [ADR-0062](0062-defined-agents.md)
 - **Date:** 2026-08-14
 - **Supersedes:**
   - [ADR-0016](0016-task-crash-recovery-and-retry.md) — entirely. The

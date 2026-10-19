@@ -126,6 +126,25 @@ message GetVersionResponse {
   string sidecar_image = 3;
 }
 
+// docs/adr/0062. Reads every regular file under definitions/ from the
+// provisioner's own definitions clone (FLEET_DEFINITIONS_REF, default = this
+// provisioner's release tag), after refreshing it. FAILS CLOSED: any read or
+// refresh failure is an error, never an empty list. An empty list means the
+// directory exists and is empty.
+message ListDefinitionFilesRequest {}
+
+message DefinitionFile {
+  // Repo-relative, e.g. "definitions/opus-workspace.yaml".
+  string path = 1;
+  bytes content = 2;
+}
+
+message ListDefinitionFilesResponse {
+  repeated DefinitionFile files = 1;
+  // `git rev-parse HEAD` of the clone the files were read at.
+  string sha = 2;
+}
+
 // core owns `sessions` and therefore decides when a session should tear
 // down (task reached done/failed/cancelled, or an explicit kill) —
 // the provisioner no longer polls/joins against `the deleted status column` itself
@@ -246,6 +265,10 @@ service ProvisionerService {
   // same call — the two live on different volumes because they have
   // different access patterns, not because anything wants them apart.
   rpc SweepSession(SweepSessionRequest) returns (SweepSessionResponse);
+
+  // core's definitions sync source (docs/adr/0062). Named *Files* because
+  // DashboardService already has ListDefinitions in this package.
+  rpc ListDefinitionFiles(ListDefinitionFilesRequest) returns (ListDefinitionFilesResponse);
 }
 
 message SweepSessionRequest {

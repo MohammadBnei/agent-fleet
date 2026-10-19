@@ -3,7 +3,7 @@ import { useMemo, useState } from "react";
 import type { Session } from "../gen/agentfleet/v1/core_pb";
 import { client } from "../connectClient";
 import { sessionLabel } from "../sessionLabel";
-import { SectionHeading, AutoBadge } from "../pages/SessionList";
+import { SectionHeading, AutoBadge, DefinitionBadge } from "../pages/SessionList";
 import { bucketSessions, isPodPhaseLive, sessionBadge, blockedForLabel, stuckLabel, compareSessions, restStatus, TERMINAL, activityLabel, notchLabel, type SortKey } from "../sessionState";
 import type { ListSummary } from "../transcript";
 import { TickBar, todoProgress } from "../components/TickBar";
@@ -51,6 +51,7 @@ function NeedsYouCard({
       <div className="px-3.5 pt-3.5">
         <div className="flex items-baseline gap-2">
           <span className="text-xs text-dim2 min-w-0 truncate">{session.repo}</span>
+          {session.definitionName && <DefinitionBadge name={session.definitionName} />}
           {todos.length > 0 && <TickBar todos={todos} blocked cell="w-[11px]" className="ml-auto flex-none" />}
           <RowActionsButton onOpen={onActions} inline />
         </div>
@@ -157,6 +158,7 @@ function WorkingCard({
         <button type="button" onClick={onSelect} className="flex items-center gap-2 min-w-0 flex-1 text-left">
           <span className={`text-sm min-w-0 truncate ${live ? "" : "text-dim"}`}>{sessionLabel(session)}</span>
         </button>
+        {session.definitionName && <DefinitionBadge name={session.definitionName} />}
         {session.permissionMode === "auto" && <AutoBadge className="ml-auto" />}
         {todos.length > 0 && (
           <span className={`text-xs text-dim2 flex-none ${session.permissionMode === "auto" ? "" : "ml-auto"}`}>
@@ -207,6 +209,7 @@ function QuietRow({
       >
         <span className="text-sm text-dim min-w-0 truncate flex-1">{sessionLabel(session)}</span>
         {badge && <span className={`text-2xs px-1 border tracking-wide flex-none ${badge.className}`}>{badge.label}</span>}
+        {session.definitionName && <DefinitionBadge name={session.definitionName} />}
       </button>
       <RowActionsButton onOpen={onActions} inline />
     </div>

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { client } from "../connectClient";
 import { queueFirstMessage } from "../useSessionDetail";
 import { Modal } from "./Modal";
-import type { PromptSnippet, Repo } from "../gen/agentfleet/v1/dashboard_pb";
+import type { AgentDefinition, PromptSnippet, Repo } from "../gen/agentfleet/v1/dashboard_pb";
 import { AUTO_MODE_WARNING, PERMISSION_MODES } from "../approvePlan";
 import { InlineError } from "./InlineError";
 
@@ -32,6 +32,11 @@ export function NewSessionDialog({
   const [dialogOpen, setDialogOpen] = useState(autoOpen);
   const [repos, setRepos] = useState<Repo[]>([]);
   const [repo, setRepo] = useState("");
+  // docs/adr/0062: a defined agent fixes repo, model and mode itself, so
+  // choosing one hides those controls rather than letting them disagree.
+  const [definitions, setDefinitions] = useState<AgentDefinition[]>([]);
+  const [syncErrors, setSyncErrors] = useState<string[]>([]);
+  const [definition, setDefinition] = useState("");
   const [title, setTitle] = useState("");
   const [message, setMessage] = useState("");
   const [snippets, setSnippets] = useState<PromptSnippet[]>([]);
@@ -61,6 +66,20 @@ export function NewSessionDialog({
       })
       .catch((err: Error) => setError(err.message));
   }, [dialogOpen]);
+
+  useEffect(() => {
+    if (!dialogOpen) return;
+    client
+      .listDefinitions({})
+      .then((res) => {
+        setDefinitions(res.definitions);
+        setSyncErrors(res.syncErrors);
+      })
+      // Under the picker, not the dialog's error banner: a definitions
+      // outage must not mark repo-session creation as failing.
+      .catch((err: Error) => setSyncErrors([`definitions unavailable: ${err.message}`]));
+  }, [dialogOpen]);
+  const chosen = definitions.find((d) => d.name === definition);
 
   // Same dashboard-editable, no-redeploy pattern as repos above. Snippets are
   // no longer sent to the server — `snippet_ids` is a reserved field
@@ -108,6 +127,7 @@ export function NewSessionDialog({
     setMessage("");
     setSnippetIds([]);
     setModeChoice(null);
+    setDefinition("");
   }
 
   // A snippet may suggest a mode (prompt_snippets.suggested_permission_mode).
@@ -132,21 +152,26 @@ export function NewSessionDialog({
   // a message, so nothing machine-initiated produces a pod).
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!repo) return;
+    if (!repo && !definition) return;
     setSubmitting(true);
     setError(null);
     const text = message.trim();
     try {
-      const res = await client.createSession({
-        repo,
-        title: title.trim() || labelFrom(text),
-        // Carried on CreateSession itself rather than a setPermissionMode call
-        // afterwards. The worker reads session.permissionMode once at startup,
-        // and the first message is what provisions the pod, so the old
-        // two-call shape only worked because it happened to run in the right
-        // order. One call cannot be ordered wrongly.
-        permissionMode: effectiveMode,
-      });
+      const res = await client.createSession(
+        definition
+          ? // Repo, model and mode come from the definition; core refuses them here.
+            { definition, title: title.trim() || labelFrom(text) }
+          : {
+              repo,
+              title: title.trim() || labelFrom(text),
+              // Carried on CreateSession itself rather than a setPermissionMode call
+              // afterwards. The worker reads session.permissionMode once at startup,
+              // and the first message is what provisions the pod, so the old
+              // two-call shape only worked because it happened to run in the right
+              // order. One call cannot be ordered wrongly.
+              permissionMode: effectiveMode,
+            },
+      );
       const sessionId = res.session?.id;
       if (!sessionId) throw new Error("CreateSession returned no session");
 
@@ -189,20 +214,58 @@ export function NewSessionDialog({
       <Modal open={dialogOpen} onClose={close}>
         <h3 className="font-semibold text-base mb-3">New session</h3>
         <form onSubmit={handleSubmit} className="flex flex-col gap-3">
-          <label className="flex flex-col gap-1 text-sm">
-            Repo
-            <select
-              value={repo}
-              onChange={(e) => setRepo(e.target.value)}
-              className="select select-bordered select-sm"
-            >
-              {repos.map((r) => (
-                <option key={r.name} value={r.name}>
-                  {r.clusterAccess ? `${r.name} · cluster access` : r.name}
-                </option>
-              ))}
-            </select>
-          </label>
+          {(definitions.length > 0 || syncErrors.length > 0) && (
+            <label className="flex flex-col gap-1 text-sm">
+              Definition
+              <select
+                value={definition}
+                onChange={(e) => setDefinition(e.target.value)}
+                className="select select-bordered select-sm"
+              >
+                <option value="">— none (repo session) —</option>
+                {definitions.map((d) => (
+                  <option
+                    key={d.name}
+                    value={d.name}
+                    disabled={!d.valid}
+                    title={d.valid ? undefined : d.error}
+                  >
+                    {d.valid
+                      ? `${d.name} · ${d.repo} · ${d.model} · ${d.permissionMode}`
+                      : `${d.name} · invalid`}
+                  </option>
+                ))}
+              </select>
+              {chosen && (
+                <span className="text-dim text-xs">
+                  Runs {chosen.repo} as {chosen.permissionMode} on {chosen.model} — {chosen.name}@{chosen.sha.slice(0, 7)}
+                </span>
+              )}
+              {syncErrors.length > 0 && (
+                <ul className="text-dim2 text-xs list-disc pl-4">
+                  {syncErrors.map((e) => (
+                    <li key={e}>{e}</li>
+                  ))}
+                </ul>
+              )}
+            </label>
+          )}
+          {!definition && (
+            <label className="flex flex-col gap-1 text-sm">
+              Repo
+              <select
+                value={repo}
+                onChange={(e) => setRepo(e.target.value)}
+                className="select select-bordered select-sm"
+              >
+                {repos.map((r) => (
+                  <option key={r.name} value={r.name}>
+                    {r.clusterAccess ? `${r.name} · cluster access` : r.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <label className="flex flex-col gap-1 text-sm">
             Title (optional)
             <input
@@ -222,29 +285,31 @@ export function NewSessionDialog({
               rows={6}
             />
           </label>
-          <label className="flex flex-col gap-1 text-sm">
-            <span>Launch mode</span>
-            <select
-              value={effectiveMode}
-              onChange={(e) => setModeChoice(e.target.value)}
-              className="select select-sm select-bordered"
-            >
-              {PERMISSION_MODES.map((m) => (
-                <option key={m.value} value={m.value}>
-                  {m.label}
-                </option>
-              ))}
-            </select>
-            {/* Stated here, not linked from here. Auto is the pre-selected
-                default (docs/adr/0061), so this is the only place the human
-                sees what that means — the actions menu's own confirm
-                (SessionActionsModal) never runs for a session that launches in
-                auto. If the consequence is not on screen here, it is nowhere. */}
-            {effectiveMode === "auto" && <span className="text-warning text-xs">{AUTO_MODE_WARNING}</span>}
-            {suggestedMode && modeChoice === null && (
-              <span className="text-dim text-xs">Suggested by the guidance you selected — change it if you want.</span>
-            )}
-          </label>
+          {!definition && (
+            <label className="flex flex-col gap-1 text-sm">
+              <span>Launch mode</span>
+              <select
+                value={effectiveMode}
+                onChange={(e) => setModeChoice(e.target.value)}
+                className="select select-sm select-bordered"
+              >
+                {PERMISSION_MODES.map((m) => (
+                  <option key={m.value} value={m.value}>
+                    {m.label}
+                  </option>
+                ))}
+              </select>
+              {/* Stated here, not linked from here. Auto is the pre-selected
+                  default (docs/adr/0061), so this is the only place the human
+                  sees what that means — the actions menu's own confirm
+                  (SessionActionsModal) never runs for a session that launches in
+                  auto. If the consequence is not on screen here, it is nowhere. */}
+              {effectiveMode === "auto" && <span className="text-warning text-xs">{AUTO_MODE_WARNING}</span>}
+              {suggestedMode && modeChoice === null && (
+                <span className="text-dim text-xs">Suggested by the guidance you selected — change it if you want.</span>
+              )}
+            </label>
+          )}
           {snippets.length > 0 && (
             <fieldset className="flex flex-col gap-1 text-sm">
               <legend className="mb-1">Guidance (optional)</legend>
@@ -266,7 +331,7 @@ export function NewSessionDialog({
             <button type="button" className="btn btn-sm" onClick={close}>
               Cancel
             </button>
-            <button type="submit" disabled={submitting || !repo} className="btn btn-sm btn-primary">
+            <button type="submit" disabled={submitting || (!repo && !definition)} className="btn btn-sm btn-primary">
               {submitting ? "Creating…" : message.trim() ? "Create & send" : "Create"}
             </button>
           </div>

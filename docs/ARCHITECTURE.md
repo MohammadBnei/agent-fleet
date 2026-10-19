@@ -757,6 +757,8 @@ erDiagram
         timestamptz stop_requested_at "when a human first asked to stop; the grace sweep force-kills off this"
         text worker_image "NOT NULL DEFAULT '' — the image this session's pod actually got, recorded at dispatch"
         text sidecar_image "NOT NULL DEFAULT '' — likewise; both stay true after the fleet is upgraded underneath the session"
+        text definition_name "nullable — pinned defined agent, adr/0062; FK (definition_name, definition_sha) to agent_definitions, both or neither"
+        text definition_sha "nullable — the version pinned; warm refused once it is not the current one (the valid row at the synced commit)"
         timestamptz swept_at "retention GC reclaimed the disk — readable, not resumable"
         timestamptz archived_at "the human is finished; the only terminal state a machine cannot compute"
         timestamptz created_at
@@ -793,6 +795,15 @@ erDiagram
         timestamptz created_at
         timestamptz updated_at
     }
+    agent_definitions {
+        text name PK "adr/0062 — one row per (name, sha where this content first appeared); never deleted"
+        text sha PK
+        jsonb spec "the file's own spec; NULL when the YAML did not decode"
+        jsonb effective "resolved after extends; NULL when invalid at load, kept when a re-judge revokes"
+        boolean valid "CHECK valid = (error IS NULL)"
+        text error
+        timestamptz synced_at
+    }
     prompt_snippets {
         uuid id PK
         text name UK
@@ -823,6 +834,7 @@ erDiagram
     }
     sessions ||--o{ transcript : "session_id, ON DELETE CASCADE"
     sessions ||--o| proposals : "session_id, ON DELETE SET NULL"
+    agent_definitions ||--o{ sessions : "(definition_name, definition_sha), nullable pin"
 ```
 
 `knowledge_journal` is deliberately **not** FK'd to `sessions`: it outlives
@@ -899,6 +911,7 @@ agent can read off the working tree it is already sitting in.
 | `LOKI_URL` | `http://loki.monitoring.svc.cluster.local:3100` | log/introspection queries |
 | `PROMETHEUS_URL` | `http://platform-prometheus-kube-p-prometheus.monitoring.svc.cluster.local:9090` | backs the dashboard's Observability page (`adr/0047`). `core` proxies PromQL because Prometheus has no IngressRoute — a browser can't reach it. Empty disables the page's queries without affecting anything else |
 | `PROVISIONER_GRPC_ADDR` | `provisioner.agent-fleet.svc.cluster.local:9090` | `ProvisionerService` client target |
+| `MAX_DEFINITION_SESSIONS` | `0` | defined-agent pool **inside** `MAX_IN_FLIGHT_TASKS` (`adr/0062`), checked in `ReserveSlot` with each definition's `limits.concurrency`. Must be `>= 0` and `<` the cap or core refuses to start. 0 = no definition session can warm. `k8s/core.yaml` sets `2` |
 | `MAX_IN_FLIGHT_TASKS` | `5` | max LIVE PODS fleet-wide, enforced in `ReserveSlot` against a live `pod_phase` count under a Postgres advisory lock. Not a queue depth — nothing queues; a session that cannot get a slot is refused |
 | `STOP_GRACE_MS` | `30000` | how long the session loop waits after a Stop request before force-tearing down a pod that hasn't gone terminal on its own |
 | `IDLE_TIMEOUT_MS` | `1800000` (30min) | a live pod with no real transcript activity this long is torn down. The session survives and stays resumable |
@@ -933,6 +946,7 @@ them rather than serving unauthenticated.
 | `PORT` | `8080` | HTTP (currently unused beyond health, kept for parity) |
 | `GRPC_PORT` | `9090` | `ProvisionerService` |
 | `CORE_GRPC_ADDR` | `agent-fleet-core.agent-fleet.svc.cluster.local:9090` | where `ReportPodEvents` streams to |
+| `FLEET_DEFINITIONS_REF` | – | ref `ListDefinitionFiles` reads `definitions/` at from `FLEET_SHARED_REPO_URL` (`adr/0062`). **Empty = this build's release tag**, so definitions ship with the core that judges them; a `dev` build without it answers `FailedPrecondition`. kind sets a branch. Own clone at `<root>/definitions-src`, own lock; fails closed |
 | `RECONCILE_INTERVAL_MS` | `10000` | terminal-Job GC + idle shared-instance GC poll (`internal/reconcile`) |
 | `FLEET_CORE_PROVISIONER_TOKEN` | *(required)* | the bearer core must present to `ProvisionerService`. Empty, blank or under 32 bytes makes the provisioner **refuse to start** (`adr/0069`) |
 | `GH_TOKEN` | – | for the provisioner's own clone/fetch auth (`gh auth setup-git`), and forwarded verbatim into every worker pod's `worker` container env |

@@ -17,6 +17,7 @@ package sessions
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"slices"
@@ -99,6 +100,24 @@ type Session struct {
 	// upgrade is still running the older build until its next warm.
 	WorkerImage  string `json:"workerImage"`
 	SidecarImage string `json:"sidecarImage"`
+
+	// DefinitionName/DefinitionSHA pin a session created from a defined agent
+	// to that version (docs/adr/0062). Both nil for a repo session. Pointers:
+	// the columns are nullable, and a NULL scanned into a string fails the row.
+	DefinitionName *string `json:"definitionName,omitempty"`
+	DefinitionSHA  *string `json:"definitionSha,omitempty"`
+}
+
+// Caps is the pair of ceilings ReserveSlot enforces. A struct, not two ints:
+// two adjacent same-typed arguments are exactly the transposition trap
+// docs/verification-traps.md records.
+type Caps struct {
+	// MaxLive is the fleet's live-pod cap (MAX_IN_FLIGHT_TASKS).
+	MaxLive int
+	// MaxDefinition is the definition pool INSIDE MaxLive
+	// (MAX_DEFINITION_SESSIONS, docs/adr/0062). Repo sessions never count
+	// against it, so a full pool still leaves MaxLive-MaxDefinition slots.
+	MaxDefinition int
 }
 
 // ErrAtCapacity is returned by ReserveSlot when the fleet already has
@@ -109,6 +128,14 @@ var ErrAtCapacity = fmt.Errorf("fleet is at its live-session cap")
 // ErrNotFound distinguishes "no such session" from a database failure, so
 // callers can map it to NotFound rather than Internal.
 var ErrNotFound = fmt.Errorf("session not found")
+
+// ErrModeNotAllowed: SetPermissionMode on a definition session with a mode
+// outside its pinned version's mode.allow.
+var ErrModeNotAllowed = errors.New("mode is outside this definition's mode.allow")
+
+// ErrDefinitionInvalid: the session is pinned to a definition row that is no
+// longer valid (a re-judge flipped it, docs/adr/0062).
+var ErrDefinitionInvalid = errors.New("this session's definition version is no longer valid")
 
 type Store struct {
 	pool *pgxpool.Pool
@@ -136,6 +163,7 @@ const selectCols = `
 	s.last_entry_type, s.last_entry_from, s.activity_seen, s.seen_at,
 	s.last_active_at, s.swept_at, s.archived_at,
 	s.worker_image, s.sidecar_image,
+	s.definition_name, s.definition_sha,
 	(SELECT count(*) FROM transcript q
 	   WHERE q.session_id = s.id
 	     AND q.type IN ('question', 'permission_request')
@@ -154,6 +182,7 @@ func scanSession(row pgx.Row) (*Session, error) {
 		&s.LastEntryType, &s.LastEntryFrom, &s.ActivitySeen, &s.SeenAt,
 		&s.LastActiveAt, &s.SweptAt, &s.ArchivedAt,
 		&s.WorkerImage, &s.SidecarImage,
+		&s.DefinitionName, &s.DefinitionSHA,
 		&s.PendingDecisions,
 	)
 	if err != nil {
@@ -192,6 +221,10 @@ type CreateParams struct {
 	// dashboard.validPermissionModes before calling: the value reaches a real
 	// SDK call by way of worker/src/session.ts's launchMode.
 	PermissionMode string
+	// DefinitionName/DefinitionSHA pin the session to a definition version
+	// (docs/adr/0062). Both or neither; empty writes NULL.
+	DefinitionName string
+	DefinitionSHA  string
 }
 
 func (s *Store) Create(ctx context.Context, p CreateParams) (string, error) {
@@ -211,15 +244,15 @@ func (s *Store) Create(ctx context.Context, p CreateParams) (string, error) {
 	// constraint. 'auto' matches the column default (db/migrations/000007,
 	// docs/adr/0061).
 	err := s.pool.QueryRow(ctx, `
-		INSERT INTO sessions (repo, title, description, model, permission_mode)
-		VALUES ($1, $2, $3, $4, COALESCE($5, 'auto'))
+		INSERT INTO sessions (repo, title, description, model, permission_mode, definition_name, definition_sha)
+		VALUES ($1, $2, $3, $4, COALESCE($5, 'auto'), NULLIF($6, ''), NULLIF($7, ''))
 		RETURNING id
-	`, p.Repo, titlePtr, p.Description, modelPtr, modePtr).Scan(&id)
+	`, p.Repo, titlePtr, p.Description, modelPtr, modePtr, p.DefinitionName, p.DefinitionSHA).Scan(&id)
 	if err != nil {
 		slog.Error("sessions Create", "repo", p.Repo, "error", err)
 		return "", fmt.Errorf("create session: %w", err)
 	}
-	slog.Info("sessions Create", "sessionId", id, "repo", p.Repo, "permissionMode", p.PermissionMode)
+	slog.Info("sessions Create", "sessionId", id, "repo", p.Repo, "permissionMode", p.PermissionMode, "definition", p.DefinitionName)
 	return id, nil
 }
 
@@ -298,9 +331,11 @@ func (s *Store) List(ctx context.Context, limit int, query string) ([]Session, e
 // query was really doing survive here: bounding concurrency, and resetting
 // the per-pod state so a sweep cannot act on the previous pod's history.
 //
-// Returns ErrAtCapacity when the fleet is full, and ErrNotFound for an
-// unknown or archived session.
-func (s *Store) ReserveSlot(ctx context.Context, id string, maxLive int) (leaseID string, err error) {
+// Returns ErrAtCapacity when the fleet is full (wrapped with which cap for a
+// definition session), ErrDefinitionInvalid for a session pinned to a revoked
+// definition row, and ErrNotFound for an unknown or archived session. Every
+// check runs before any write, so a refusal leaves no lease and no phase.
+func (s *Store) ReserveSlot(ctx context.Context, id string, caps Caps) (leaseID string, err error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return "", fmt.Errorf("reserve slot: %w", err)
@@ -320,8 +355,50 @@ func (s *Store) ReserveSlot(ctx context.Context, id string, maxLive int) (leaseI
 	`, livePhases).Scan(&live); err != nil {
 		return "", fmt.Errorf("reserve slot: count: %w", err)
 	}
-	if live >= maxLive {
-		return "", ErrAtCapacity
+	if live >= caps.MaxLive {
+		return "", fmt.Errorf("%w (%d live sessions) — stop one first", ErrAtCapacity, caps.MaxLive)
+	}
+
+	// Definition sessions also draw from the definition pool and their own
+	// limits.concurrency (docs/adr/0062), counted under the same lock. Until
+	// docs/adr/0064's migration drops sessions_definition_no_lease, a
+	// definition session that passes these still fails at the lease write.
+	var (
+		defName           *string
+		defValid          bool
+		concurrency       *int
+		poolLive, defLive int
+	)
+	err = tx.QueryRow(ctx, `
+		SELECT s.definition_name, COALESCE(d.valid, false),
+		       (d.effective->'limits'->>'concurrency')::int,
+		       (SELECT count(*) FROM sessions o WHERE o.pod_phase = ANY($2) AND o.archived_at IS NULL
+		                                          AND o.definition_name IS NOT NULL),
+		       (SELECT count(*) FROM sessions o WHERE o.pod_phase = ANY($2) AND o.archived_at IS NULL
+		                                          AND o.definition_name = s.definition_name)
+		  FROM sessions s
+		  LEFT JOIN agent_definitions d ON d.name = s.definition_name AND d.sha = s.definition_sha
+		 WHERE s.id = $1 AND s.archived_at IS NULL
+	`, id, livePhases).Scan(&defName, &defValid, &concurrency, &poolLive, &defLive)
+	if err == pgx.ErrNoRows {
+		return "", ErrNotFound
+	}
+	if err != nil {
+		return "", fmt.Errorf("reserve slot: definition: %w", err)
+	}
+	if defName != nil {
+		// The revocation path proper is WarmIfIdle's pinned==current check;
+		// this catches a re-judge landing between that check and this
+		// transaction, and keeps a NULL concurrency out of the comparison.
+		if !defValid || concurrency == nil {
+			return "", ErrDefinitionInvalid
+		}
+		if poolLive >= caps.MaxDefinition {
+			return "", fmt.Errorf("%w: definition pool full (%d/%d)", ErrAtCapacity, poolLive, caps.MaxDefinition)
+		}
+		if defLive >= *concurrency {
+			return "", fmt.Errorf("%w: definition %q at its concurrency limit (%d)", ErrAtCapacity, *defName, *concurrency)
+		}
 	}
 
 	err = tx.QueryRow(ctx, `
@@ -419,7 +496,7 @@ func (s *Store) ReserveSlot(ctx context.Context, id string, maxLive int) (leaseI
 	if err := tx.Commit(ctx); err != nil {
 		return "", fmt.Errorf("reserve slot: commit: %w", err)
 	}
-	slog.Info("sessions ReserveSlot", "sessionId", id, "live", live+1, "cap", maxLive)
+	slog.Info("sessions ReserveSlot", "sessionId", id, "live", live+1, "cap", caps.MaxLive)
 	return leaseID, nil
 }
 
@@ -516,7 +593,11 @@ func (s *Store) SaveAgentSessionID(ctx context.Context, id, agentSessionID, mode
 	}
 	tag, err := s.pool.Exec(ctx, `
 		UPDATE sessions
-		SET agent_session_id = $2, model = COALESCE($3, model), updated_at = now()
+		SET agent_session_id = $2,
+		    -- A definition session's model is its pinned model.default
+		    -- (docs/adr/0062): what the pod reports never widens it.
+		    model = CASE WHEN definition_name IS NULL THEN COALESCE($3, model) ELSE model END,
+		    updated_at = now()
 		WHERE id = $1 AND lease_id::text = $4
 	`, id, agentSessionID, modelPtr, leaseID)
 	if err != nil {
@@ -573,12 +654,38 @@ func (s *Store) ClearLease(ctx context.Context, id string) error {
 	return nil
 }
 
+// SetPermissionMode persists a session's mode. For a definition session the
+// mode must be in its pinned, still-valid version's mode.allow
+// (docs/adr/0062): checked in the same statement, so both callers (the
+// console's DashboardService and the pod's CoreService) go through one guard,
+// and a definition only narrows, for admins too. ErrModeNotAllowed when it is
+// outside, ErrDefinitionInvalid when the pinned version was revoked,
+// ErrNotFound for an unknown session.
 func (s *Store) SetPermissionMode(ctx context.Context, id, mode string) error {
-	_, err := s.pool.Exec(ctx,
-		`UPDATE sessions SET permission_mode = $2, updated_at = now() WHERE id = $1`, id, mode)
-	if err != nil {
+	var allowed, revoked bool
+	err := s.pool.QueryRow(ctx, `
+		WITH t AS (
+		  SELECT s.id, s.definition_name IS NULL
+		         OR COALESCE(d.valid AND d.effective->'mode'->'allow' ? $2, false) AS allowed,
+		         COALESCE(NOT d.valid, false) AS revoked
+		    FROM sessions s
+		    LEFT JOIN agent_definitions d ON d.name = s.definition_name AND d.sha = s.definition_sha
+		   WHERE s.id = $1
+		), u AS (
+		  UPDATE sessions SET permission_mode = $2, updated_at = now()
+		    FROM t WHERE sessions.id = t.id AND t.allowed
+		)
+		SELECT allowed, revoked FROM t`, id, mode).Scan(&allowed, &revoked)
+	switch {
+	case err == pgx.ErrNoRows:
+		return ErrNotFound
+	case err != nil:
 		slog.Error("sessions SetPermissionMode", "sessionId", id, "error", err)
 		return fmt.Errorf("set permission mode: %w", err)
+	case revoked:
+		return ErrDefinitionInvalid
+	case !allowed:
+		return fmt.Errorf("%w: %q", ErrModeNotAllowed, mode)
 	}
 	return nil
 }

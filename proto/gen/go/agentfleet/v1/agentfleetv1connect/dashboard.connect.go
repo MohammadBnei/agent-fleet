@@ -96,6 +96,9 @@ const (
 	// DashboardServiceGetJournalProcedure is the fully-qualified name of the DashboardService's
 	// GetJournal RPC.
 	DashboardServiceGetJournalProcedure = "/agentfleet.v1.DashboardService/GetJournal"
+	// DashboardServiceListDefinitionsProcedure is the fully-qualified name of the DashboardService's
+	// ListDefinitions RPC.
+	DashboardServiceListDefinitionsProcedure = "/agentfleet.v1.DashboardService/ListDefinitions"
 	// DashboardServiceListReposProcedure is the fully-qualified name of the DashboardService's
 	// ListRepos RPC.
 	DashboardServiceListReposProcedure = "/agentfleet.v1.DashboardService/ListRepos"
@@ -221,6 +224,8 @@ type DashboardServiceClient interface {
 	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	GetJournal(context.Context, *connect.Request[v1.GetJournalRequest]) (*connect.Response[v1.GetJournalResponse], error)
+	// Defined agents (docs/adr/0062). Admin-only like every method here.
+	ListDefinitions(context.Context, *connect.Request[v1.ListDefinitionsRequest]) (*connect.Response[v1.ListDefinitionsResponse], error)
 	ListRepos(context.Context, *connect.Request[v1.ListReposRequest]) (*connect.Response[v1.ListReposResponse], error)
 	CreateRepo(context.Context, *connect.Request[v1.CreateRepoRequest]) (*connect.Response[v1.CreateRepoResponse], error)
 	UpdateRepo(context.Context, *connect.Request[v1.UpdateRepoRequest]) (*connect.Response[v1.UpdateRepoResponse], error)
@@ -395,6 +400,12 @@ func NewDashboardServiceClient(httpClient connect.HTTPClient, baseURL string, op
 			connect.WithSchema(dashboardServiceMethods.ByName("GetJournal")),
 			connect.WithClientOptions(opts...),
 		),
+		listDefinitions: connect.NewClient[v1.ListDefinitionsRequest, v1.ListDefinitionsResponse](
+			httpClient,
+			baseURL+DashboardServiceListDefinitionsProcedure,
+			connect.WithSchema(dashboardServiceMethods.ByName("ListDefinitions")),
+			connect.WithClientOptions(opts...),
+		),
 		listRepos: connect.NewClient[v1.ListReposRequest, v1.ListReposResponse](
 			httpClient,
 			baseURL+DashboardServiceListReposProcedure,
@@ -547,6 +558,7 @@ type dashboardServiceClient struct {
 	transcribe          *connect.Client[v1.TranscribeRequest, v1.TranscribeResponse]
 	deleteSession       *connect.Client[v1.DeleteSessionRequest, v1.DeleteSessionResponse]
 	getJournal          *connect.Client[v1.GetJournalRequest, v1.GetJournalResponse]
+	listDefinitions     *connect.Client[v1.ListDefinitionsRequest, v1.ListDefinitionsResponse]
 	listRepos           *connect.Client[v1.ListReposRequest, v1.ListReposResponse]
 	createRepo          *connect.Client[v1.CreateRepoRequest, v1.CreateRepoResponse]
 	updateRepo          *connect.Client[v1.UpdateRepoRequest, v1.UpdateRepoResponse]
@@ -673,6 +685,11 @@ func (c *dashboardServiceClient) DeleteSession(ctx context.Context, req *connect
 // GetJournal calls agentfleet.v1.DashboardService.GetJournal.
 func (c *dashboardServiceClient) GetJournal(ctx context.Context, req *connect.Request[v1.GetJournalRequest]) (*connect.Response[v1.GetJournalResponse], error) {
 	return c.getJournal.CallUnary(ctx, req)
+}
+
+// ListDefinitions calls agentfleet.v1.DashboardService.ListDefinitions.
+func (c *dashboardServiceClient) ListDefinitions(ctx context.Context, req *connect.Request[v1.ListDefinitionsRequest]) (*connect.Response[v1.ListDefinitionsResponse], error) {
+	return c.listDefinitions.CallUnary(ctx, req)
 }
 
 // ListRepos calls agentfleet.v1.DashboardService.ListRepos.
@@ -840,6 +857,8 @@ type DashboardServiceHandler interface {
 	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	GetJournal(context.Context, *connect.Request[v1.GetJournalRequest]) (*connect.Response[v1.GetJournalResponse], error)
+	// Defined agents (docs/adr/0062). Admin-only like every method here.
+	ListDefinitions(context.Context, *connect.Request[v1.ListDefinitionsRequest]) (*connect.Response[v1.ListDefinitionsResponse], error)
 	ListRepos(context.Context, *connect.Request[v1.ListReposRequest]) (*connect.Response[v1.ListReposResponse], error)
 	CreateRepo(context.Context, *connect.Request[v1.CreateRepoRequest]) (*connect.Response[v1.CreateRepoResponse], error)
 	UpdateRepo(context.Context, *connect.Request[v1.UpdateRepoRequest]) (*connect.Response[v1.UpdateRepoResponse], error)
@@ -1008,6 +1027,12 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 		DashboardServiceGetJournalProcedure,
 		svc.GetJournal,
 		connect.WithSchema(dashboardServiceMethods.ByName("GetJournal")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dashboardServiceListDefinitionsHandler := connect.NewUnaryHandler(
+		DashboardServiceListDefinitionsProcedure,
+		svc.ListDefinitions,
+		connect.WithSchema(dashboardServiceMethods.ByName("ListDefinitions")),
 		connect.WithHandlerOptions(opts...),
 	)
 	dashboardServiceListReposHandler := connect.NewUnaryHandler(
@@ -1180,6 +1205,8 @@ func NewDashboardServiceHandler(svc DashboardServiceHandler, opts ...connect.Han
 			dashboardServiceDeleteSessionHandler.ServeHTTP(w, r)
 		case DashboardServiceGetJournalProcedure:
 			dashboardServiceGetJournalHandler.ServeHTTP(w, r)
+		case DashboardServiceListDefinitionsProcedure:
+			dashboardServiceListDefinitionsHandler.ServeHTTP(w, r)
 		case DashboardServiceListReposProcedure:
 			dashboardServiceListReposHandler.ServeHTTP(w, r)
 		case DashboardServiceCreateRepoProcedure:
@@ -1313,6 +1340,10 @@ func (UnimplementedDashboardServiceHandler) DeleteSession(context.Context, *conn
 
 func (UnimplementedDashboardServiceHandler) GetJournal(context.Context, *connect.Request[v1.GetJournalRequest]) (*connect.Response[v1.GetJournalResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.GetJournal is not implemented"))
+}
+
+func (UnimplementedDashboardServiceHandler) ListDefinitions(context.Context, *connect.Request[v1.ListDefinitionsRequest]) (*connect.Response[v1.ListDefinitionsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.DashboardService.ListDefinitions is not implemented"))
 }
 
 func (UnimplementedDashboardServiceHandler) ListRepos(context.Context, *connect.Request[v1.ListReposRequest]) (*connect.Response[v1.ListReposResponse], error) {

@@ -46,7 +46,7 @@ func TestOpenFromProposal_StoresDefaultModelAndAutoMode(t *testing.T) {
 	propStore := proposals.NewStore(pool)
 	s := &Server{
 		sessions: sessionStore, repos: repoStore, proposals: propStore,
-		transcr: transcript.NewPostgresStore(pool), e2e: provClient, maxLive: 5,
+		transcr: transcript.NewPostgresStore(pool), e2e: provClient, caps: sessions.Caps{MaxLive: 5},
 	}
 
 	if err := repoStore.Create(ctx, repos.Repo{Name: "editable-blog", URL: "https://example.invalid/x.git"}); err != nil {

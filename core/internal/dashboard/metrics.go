@@ -126,7 +126,7 @@ func (s *Server) GetFleetTopology(ctx context.Context, _ *connect.Request[agentf
 			Version: s.version,
 			Metrics: map[string]float64{
 				"live_pods":         float64(len(live)),
-				"max_live_sessions": float64(s.maxLive),
+				"max_live_sessions": float64(s.caps.MaxLive),
 			},
 		},
 		provisionerNode,

@@ -89,10 +89,16 @@ something that can run in-cluster.
 ```bash
 mkdir -p /tmp/agent-fleet-e2e-provisioner
 # main.go: embed agentfleetv1.UnimplementedProvisionerServiceServer and
-# implement three methods —
-#   CreateWorkerPod   record sessionID -> a fake pod name, return it
-#   TearDownSession   forget it
-#   ListWorkerPods    return every recorded pod with Phase "Running"
+# implement four methods —
+#   CreateWorkerPod      record sessionID -> a fake pod name, return it
+#   TearDownSession      forget it
+#   ListWorkerPods       return every recorded pod with Phase "Running"
+#   ListDefinitionFiles  return the repo's definitions/ files (path + bytes)
+#                        and any sha, e.g. "e2e" (docs/adr/0062). Without it
+#                        core never syncs and the new-session Definition
+#                        picker is empty. A definition session is created
+#                        but never warms until docs/adr/0064, which is
+#                        correct.
 # listening on 127.0.0.1:9091.
 #
 # go.mod: module e2estub, plus

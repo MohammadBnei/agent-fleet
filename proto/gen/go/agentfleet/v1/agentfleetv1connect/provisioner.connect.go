@@ -60,6 +60,9 @@ const (
 	// ProvisionerServiceSweepSessionProcedure is the fully-qualified name of the ProvisionerService's
 	// SweepSession RPC.
 	ProvisionerServiceSweepSessionProcedure = "/agentfleet.v1.ProvisionerService/SweepSession"
+	// ProvisionerServiceListDefinitionFilesProcedure is the fully-qualified name of the
+	// ProvisionerService's ListDefinitionFiles RPC.
+	ProvisionerServiceListDefinitionFilesProcedure = "/agentfleet.v1.ProvisionerService/ListDefinitionFiles"
 )
 
 // ProvisionerServiceClient is a client for the agentfleet.v1.ProvisionerService service.
@@ -90,6 +93,9 @@ type ProvisionerServiceClient interface {
 	// same call — the two live on different volumes because they have
 	// different access patterns, not because anything wants them apart.
 	SweepSession(context.Context, *connect.Request[v1.SweepSessionRequest]) (*connect.Response[v1.SweepSessionResponse], error)
+	// core's definitions sync source (docs/adr/0062). Named *Files* because
+	// DashboardService already has ListDefinitions in this package.
+	ListDefinitionFiles(context.Context, *connect.Request[v1.ListDefinitionFilesRequest]) (*connect.Response[v1.ListDefinitionFilesResponse], error)
 }
 
 // NewProvisionerServiceClient constructs a client for the agentfleet.v1.ProvisionerService service.
@@ -157,20 +163,27 @@ func NewProvisionerServiceClient(httpClient connect.HTTPClient, baseURL string, 
 			connect.WithSchema(provisionerServiceMethods.ByName("SweepSession")),
 			connect.WithClientOptions(opts...),
 		),
+		listDefinitionFiles: connect.NewClient[v1.ListDefinitionFilesRequest, v1.ListDefinitionFilesResponse](
+			httpClient,
+			baseURL+ProvisionerServiceListDefinitionFilesProcedure,
+			connect.WithSchema(provisionerServiceMethods.ByName("ListDefinitionFiles")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // provisionerServiceClient implements ProvisionerServiceClient.
 type provisionerServiceClient struct {
-	createWorkerPod  *connect.Client[v1.CreateWorkerPodRequest, v1.CreateWorkerPodResponse]
-	tearDownSession  *connect.Client[v1.TearDownSessionRequest, v1.TearDownSessionResponse]
-	listWorkerPods   *connect.Client[v1.ListWorkerPodsRequest, v1.ListWorkerPodsResponse]
-	getVersion       *connect.Client[v1.GetVersionRequest, v1.GetVersionResponse]
-	exposeSession    *connect.Client[v1.ExposeSessionRequest, v1.ExposeSessionResponse]
-	unexposeSession  *connect.Client[v1.UnexposeSessionRequest, v1.UnexposeSessionResponse]
-	provisionService *connect.Client[v1.ProvisionServiceRequest, v1.ProvisionServiceResponse]
-	syncRepoCache    *connect.Client[v1.SyncRepoCacheRequest, v1.SyncRepoCacheResponse]
-	sweepSession     *connect.Client[v1.SweepSessionRequest, v1.SweepSessionResponse]
+	createWorkerPod     *connect.Client[v1.CreateWorkerPodRequest, v1.CreateWorkerPodResponse]
+	tearDownSession     *connect.Client[v1.TearDownSessionRequest, v1.TearDownSessionResponse]
+	listWorkerPods      *connect.Client[v1.ListWorkerPodsRequest, v1.ListWorkerPodsResponse]
+	getVersion          *connect.Client[v1.GetVersionRequest, v1.GetVersionResponse]
+	exposeSession       *connect.Client[v1.ExposeSessionRequest, v1.ExposeSessionResponse]
+	unexposeSession     *connect.Client[v1.UnexposeSessionRequest, v1.UnexposeSessionResponse]
+	provisionService    *connect.Client[v1.ProvisionServiceRequest, v1.ProvisionServiceResponse]
+	syncRepoCache       *connect.Client[v1.SyncRepoCacheRequest, v1.SyncRepoCacheResponse]
+	sweepSession        *connect.Client[v1.SweepSessionRequest, v1.SweepSessionResponse]
+	listDefinitionFiles *connect.Client[v1.ListDefinitionFilesRequest, v1.ListDefinitionFilesResponse]
 }
 
 // CreateWorkerPod calls agentfleet.v1.ProvisionerService.CreateWorkerPod.
@@ -218,6 +231,11 @@ func (c *provisionerServiceClient) SweepSession(ctx context.Context, req *connec
 	return c.sweepSession.CallUnary(ctx, req)
 }
 
+// ListDefinitionFiles calls agentfleet.v1.ProvisionerService.ListDefinitionFiles.
+func (c *provisionerServiceClient) ListDefinitionFiles(ctx context.Context, req *connect.Request[v1.ListDefinitionFilesRequest]) (*connect.Response[v1.ListDefinitionFilesResponse], error) {
+	return c.listDefinitionFiles.CallUnary(ctx, req)
+}
+
 // ProvisionerServiceHandler is an implementation of the agentfleet.v1.ProvisionerService service.
 type ProvisionerServiceHandler interface {
 	CreateWorkerPod(context.Context, *connect.Request[v1.CreateWorkerPodRequest]) (*connect.Response[v1.CreateWorkerPodResponse], error)
@@ -246,6 +264,9 @@ type ProvisionerServiceHandler interface {
 	// same call — the two live on different volumes because they have
 	// different access patterns, not because anything wants them apart.
 	SweepSession(context.Context, *connect.Request[v1.SweepSessionRequest]) (*connect.Response[v1.SweepSessionResponse], error)
+	// core's definitions sync source (docs/adr/0062). Named *Files* because
+	// DashboardService already has ListDefinitions in this package.
+	ListDefinitionFiles(context.Context, *connect.Request[v1.ListDefinitionFilesRequest]) (*connect.Response[v1.ListDefinitionFilesResponse], error)
 }
 
 // NewProvisionerServiceHandler builds an HTTP handler from the service implementation. It returns
@@ -309,6 +330,12 @@ func NewProvisionerServiceHandler(svc ProvisionerServiceHandler, opts ...connect
 		connect.WithSchema(provisionerServiceMethods.ByName("SweepSession")),
 		connect.WithHandlerOptions(opts...),
 	)
+	provisionerServiceListDefinitionFilesHandler := connect.NewUnaryHandler(
+		ProvisionerServiceListDefinitionFilesProcedure,
+		svc.ListDefinitionFiles,
+		connect.WithSchema(provisionerServiceMethods.ByName("ListDefinitionFiles")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/agentfleet.v1.ProvisionerService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case ProvisionerServiceCreateWorkerPodProcedure:
@@ -329,6 +356,8 @@ func NewProvisionerServiceHandler(svc ProvisionerServiceHandler, opts ...connect
 			provisionerServiceSyncRepoCacheHandler.ServeHTTP(w, r)
 		case ProvisionerServiceSweepSessionProcedure:
 			provisionerServiceSweepSessionHandler.ServeHTTP(w, r)
+		case ProvisionerServiceListDefinitionFilesProcedure:
+			provisionerServiceListDefinitionFilesHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -372,4 +401,8 @@ func (UnimplementedProvisionerServiceHandler) SyncRepoCache(context.Context, *co
 
 func (UnimplementedProvisionerServiceHandler) SweepSession(context.Context, *connect.Request[v1.SweepSessionRequest]) (*connect.Response[v1.SweepSessionResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.ProvisionerService.SweepSession is not implemented"))
+}
+
+func (UnimplementedProvisionerServiceHandler) ListDefinitionFiles(context.Context, *connect.Request[v1.ListDefinitionFilesRequest]) (*connect.Response[v1.ListDefinitionFilesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentfleet.v1.ProvisionerService.ListDefinitionFiles is not implemented"))
 }

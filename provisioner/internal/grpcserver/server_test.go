@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"google.golang.org/grpc/codes"
@@ -472,4 +473,64 @@ func TestSyncRepoCache_RejectsEmptyArguments(t *testing.T) {
 			}
 		})
 	}
+}
+
+func newDefinitionsOriginRepo(t *testing.T) string {
+	t.Helper()
+	dir := newTestOriginRepo(t)
+	if err := os.MkdirAll(filepath.Join(dir, "definitions"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "definitions", "a.yaml"), []byte("a"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"add", "."}, {"commit", "-m", "defs"}, {"branch", "defs-branch"}, {"tag", "4.19.0"}} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@test.com", "GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@test.com")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	return dir
+}
+
+func TestListDefinitionFiles(t *testing.T) {
+	ctx := context.Background()
+	newServer := func(url, version string) *Server {
+		return New(newFakeK8sClient(), git.NewManager(t.TempDir()), &fakeEventReporter{}, "e2e.bnei.dev", url, "main", version)
+	}
+	origin := newDefinitionsOriginRepo(t)
+
+	t.Run("no source", func(t *testing.T) {
+		_, err := newServer("", "4.19.0").ListDefinitionFiles(ctx, &agentfleetv1.ListDefinitionFilesRequest{})
+		if status.Code(err) != codes.FailedPrecondition {
+			t.Fatalf("got %v", err)
+		}
+	})
+	t.Run("dev build without an override", func(t *testing.T) {
+		_, err := newServer(origin, "dev").ListDefinitionFiles(ctx, &agentfleetv1.ListDefinitionFilesRequest{})
+		if status.Code(err) != codes.FailedPrecondition || !strings.Contains(err.Error(), "FLEET_DEFINITIONS_REF") {
+			t.Fatalf("got %v", err)
+		}
+	})
+	t.Run("release tag by default", func(t *testing.T) {
+		resp, err := newServer(origin, "4.19.0").ListDefinitionFiles(ctx, &agentfleetv1.ListDefinitionFilesRequest{})
+		if err != nil || len(resp.GetFiles()) != 1 || resp.GetFiles()[0].GetPath() != "definitions/a.yaml" || resp.GetSha() == "" {
+			t.Fatalf("resp %v err %v", resp, err)
+		}
+	})
+	t.Run("override wins over the version", func(t *testing.T) {
+		s := newServer(origin, "9.9.9") // no such tag: only the override can succeed
+		s.SetDefinitionsRef("defs-branch")
+		if _, err := s.ListDefinitionFiles(ctx, &agentfleetv1.ListDefinitionFilesRequest{}); err != nil {
+			t.Fatal(err)
+		}
+	})
+	t.Run("read failure is Unavailable, never an empty list", func(t *testing.T) {
+		_, err := newServer(origin, "9.9.9").ListDefinitionFiles(ctx, &agentfleetv1.ListDefinitionFilesRequest{})
+		if status.Code(err) != codes.Unavailable {
+			t.Fatalf("got %v", err)
+		}
+	})
 }

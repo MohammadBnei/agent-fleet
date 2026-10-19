@@ -13,12 +13,15 @@ package coreserver
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 
@@ -128,6 +131,24 @@ func (s *Server) announceBlocked(ctx context.Context, sessionID, summary string)
 func (s *Server) SendMessage(ctx context.Context, req *agentfleetv1.SendMessageRequest) (*agentfleetv1.AppendResponse, error) {
 	if req.GetSessionId() == "" || req.GetFrom() == "" || req.GetText() == "" {
 		return nil, fmt.Errorf("task_id, from, and text are required")
+	}
+	// Only DashboardService and PromptSession write from "human" or "session",
+	// both server-side; a pod sends "agent"/"worker". The worker obeys a
+	// "human"/"session" permission_mode, permission_response or abort, so a
+	// definition pod speaking as one would step outside mode.allow and approve
+	// its own tool calls (docs/adr/0062 §4). Looked up only for these two
+	// values, so the ordinary path pays nothing.
+	//
+	// ponytail: definition sessions only. A repo session's pod can still
+	// forge them (pre-existing, it already runs in auto, docs/adr/0061).
+	if f := req.GetFrom(); f == "human" || f == "session" {
+		sess, err := s.sessions.Get(ctx, req.GetSessionId())
+		if err != nil {
+			return nil, fmt.Errorf("SendMessage: %w", err)
+		}
+		if sess.DefinitionName != nil {
+			return nil, status.Errorf(codes.PermissionDenied, "a definition session's pod cannot send as %q", f)
+		}
 	}
 	// AppendReply only when the caller actually asked for correlation —
 	// same reason transcript keeps these as two methods rather than one
@@ -429,6 +450,17 @@ func (s *Server) GetSession(ctx context.Context, req *agentfleetv1.GetSessionReq
 // the caller *is* the session whose mode this is.
 func (s *Server) SetPermissionMode(ctx context.Context, req *agentfleetv1.SetPermissionModeRequest) (*agentfleetv1.SetPermissionModeResponse, error) {
 	if err := s.sessions.SetPermissionMode(ctx, req.GetSessionId(), req.GetMode()); err != nil {
+		// The store guards a definition session's mode.allow (docs/adr/0062).
+		// PermissionDenied here, InvalidArgument on the console's
+		// SetPermissionMode: the caller is the pod, asking beyond its grant;
+		// the console's caller is an admin who picked a mode this session
+		// does not take.
+		switch {
+		case errors.Is(err, sessions.ErrModeNotAllowed):
+			return nil, status.Error(codes.PermissionDenied, err.Error())
+		case errors.Is(err, sessions.ErrDefinitionInvalid):
+			return nil, status.Error(codes.FailedPrecondition, err.Error())
+		}
 		return nil, fmt.Errorf("SetPermissionMode: %w", err)
 	}
 	return &agentfleetv1.SetPermissionModeResponse{}, nil

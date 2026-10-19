@@ -56,7 +56,15 @@ type Loop struct {
 	// out on its own. Losing it on a core restart costs one more grace period
 	// before a stuck row is cleared, which is why it is not worth a column.
 	jobMissingSince map[string]time.Time
+
+	// onTick runs last in every tick (SetOnTick). Run's ticker does not slip
+	// for a tick shorter than the interval, so a slow hook delays nothing.
+	onTick func(context.Context)
 }
+
+// SetOnTick adds one more step to the loop's periodic pass, after the
+// sessions sweeps: the definitions sync (docs/adr/0062). Call before Run.
+func (l *Loop) SetOnTick(f func(context.Context)) { l.onTick = f }
 
 func NewLoop(store *Store, p Provisioner, stopGrace, startupStall, idleTimeout, retention, turnStall time.Duration) *Loop {
 	return &Loop{
@@ -100,6 +108,9 @@ func (l *Loop) tick(ctx context.Context) {
 	l.enforceIdleTimeout(ctx)
 	l.collectExpired(ctx)
 	l.publishLiveStateGauge(ctx)
+	if l.onTick != nil {
+		l.onTick(ctx)
+	}
 }
 
 // publishLiveStateGauge is the one fleet fact neither Loki nor

@@ -22,6 +22,7 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/config"
 	"github.com/MohammadBnei/agent-fleet/core/internal/coreserver"
 	"github.com/MohammadBnei/agent-fleet/core/internal/dashboard"
+	"github.com/MohammadBnei/agent-fleet/core/internal/definitions"
 	"github.com/MohammadBnei/agent-fleet/core/internal/discord"
 	"github.com/MohammadBnei/agent-fleet/core/internal/filediff"
 	"github.com/MohammadBnei/agent-fleet/core/internal/filestore"
@@ -40,7 +41,19 @@ import (
 	"github.com/MohammadBnei/agent-fleet/core/internal/webui"
 )
 
+// checkCapacity: the definition pool sits INSIDE the global cap so admins are
+// never locked out by defined agents (docs/adr/0062).
+func checkCapacity(maxInFlight, maxDef int) error {
+	if maxDef < 0 || maxDef >= maxInFlight {
+		return fmt.Errorf("MAX_DEFINITION_SESSIONS (%d) must be >= 0 and < MAX_IN_FLIGHT_TASKS (%d): definition sessions draw from a pool inside the global cap so admins are never locked out", maxDef, maxInFlight)
+	}
+	return nil
+}
+
 func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version string) error {
+	if err := checkCapacity(cfg.MaxInFlight, cfg.MaxDefinitionSessions); err != nil {
+		return err
+	}
 	store := transcript.NewPostgresStore(pool)
 	sessionStore := sessions.NewStore(pool)
 	journalStore := journal.NewStore(pool)
@@ -116,6 +129,14 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	// bug.
 	sessionLoop := sessions.NewLoop(sessionStore, provisioner,
 		cfg.StopGrace, cfg.StartupStall, cfg.IdleTimeout, cfg.SessionRetention, cfg.TurnStall)
+	// Defined agents (docs/adr/0062) sync on the same pass, first run
+	// immediate. Its own timeout keeps a slow fetch inside the 60s interval.
+	defs := definitions.NewRegistry(pool, provisioner)
+	sessionLoop.SetOnTick(func(ctx context.Context) {
+		if err := defs.Sync(ctx); err != nil {
+			slog.Error("definitions: sync failed", "error", err)
+		}
+	})
 	go sessionLoop.Run(ctx, 60*time.Second)
 
 	// A schedule files a proposal, which a human opens — there is no separate
@@ -202,7 +223,8 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
-	dashboardSvc := dashboard.NewServer(sessionStore, proposalStore, activityStore, journalStore, repoStore, snippetStore, provisioner, files, hub, cfg.MaxInFlight, loki, prom, scheduleStore, version)
+	dashboardSvc := dashboard.NewServer(sessionStore, proposalStore, activityStore, journalStore, repoStore, snippetStore, provisioner, files, hub, sessions.Caps{MaxLive: cfg.MaxInFlight, MaxDefinition: cfg.MaxDefinitionSessions}, loki, prom, scheduleStore, version)
+	dashboardSvc.SetDefinitions(defs)
 	// PromptSession warms an idle target through the dashboard server's own
 	// warmIfIdle rather than a second copy of it (docs/adr/0041) — that
 	// function carries the capacity cap and the proposed/pending gates that

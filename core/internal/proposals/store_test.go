@@ -374,7 +374,7 @@ func refile(t *testing.T, store *Store, ctx context.Context, source, key string)
 // row is one production can actually produce.
 func killPod(t *testing.T, sessionStore *sessions.Store, ctx context.Context, sessionID, phase string) {
 	t.Helper()
-	if _, err := sessionStore.ReserveSlot(ctx, sessionID, 5); err != nil {
+	if _, err := sessionStore.ReserveSlot(ctx, sessionID, sessions.Caps{MaxLive: 5}); err != nil {
 		t.Fatalf("reserve slot: %v", err)
 	}
 	if err := sessionStore.SetPodPhase(ctx, sessionID, phase, "test"); err != nil {
@@ -502,7 +502,7 @@ func TestDismissStanding_LetsAnExplicitRunGoThrough(t *testing.T) {
 	// The hardest case for this: a session with a LIVE pod, which every other
 	// rule here deliberately refuses to re-arm.
 	_, sessionID := openInto(t, store, sessionStore, ctx, "schedule", "schedule:runnow")
-	if _, err := sessionStore.ReserveSlot(ctx, sessionID, 5); err != nil {
+	if _, err := sessionStore.ReserveSlot(ctx, sessionID, sessions.Caps{MaxLive: 5}); err != nil {
 		t.Fatalf("reserve slot: %v", err)
 	}
 	if refile(t, store, ctx, "schedule", "schedule:runnow") {

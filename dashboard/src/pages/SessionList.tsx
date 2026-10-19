@@ -38,6 +38,14 @@ export function AutoBadge({ className = "" }: { className?: string }) {
   );
 }
 
+// docs/adr/0062: the session runs a defined agent, pinned to one version.
+export function DefinitionBadge({ name }: { name: string }) {
+  return (
+    <span className="text-2xs text-dim2 border border-line px-1.5 py-px flex-none" title={`defined agent ${name}`}>
+      def:{name}
+    </span>
+  );
+}
 
 export function SectionHeading({
   title,
@@ -118,6 +126,7 @@ function NeedsYouCard({
             {sessionLabel(session)}
           </button>
           <span className="text-xs text-dim2">{session.repo}</span>
+          {session.definitionName && <DefinitionBadge name={session.definitionName} />}
           
           {todos.length > 0 && (
             <div className="ml-auto flex items-center gap-2">
@@ -182,6 +191,7 @@ function StuckRow({
           {sessionLabel(session)}
         </button>
         <span className="text-xs text-dim2">{session.repo}</span>
+        {session.definitionName && <DefinitionBadge name={session.definitionName} />}
         <span className="ml-auto text-sm text-warning min-w-0 truncate">
           {stuckLabel(session)}
           {stuckFor ? ` · ${stuckFor}` : ""}
@@ -248,6 +258,7 @@ function FinishedRow({
           {sessionLabel(session)}
         </button>
         <span className="text-xs text-dim2">{session.repo}</span>
+        {session.definitionName && <DefinitionBadge name={session.definitionName} />}
         {/* No "no PR" on the other branch: the fleet does not track PRs (the
             column went with adr/0048), so it said "no PR" on every row,
             including the ones that opened one. */}
@@ -324,6 +335,7 @@ function WorkingRow({
           {sessionLabel(session)}
         </button>
         <span className="text-xs text-dim2 flex-none">{session.repo}</span>
+        {session.definitionName && <DefinitionBadge name={session.definitionName} />}
         {session.permissionMode === "auto" && <AutoBadge />}
 
         {provisioning ? (
@@ -391,6 +403,7 @@ function CompactRow({
       >
         <span className="text-sm text-dim min-w-0 truncate flex-1">{sessionLabel(session)}</span>
         <span className="text-2xs text-dim2 flex-none">{session.repo}</span>
+        {session.definitionName && <DefinitionBadge name={session.definitionName} />}
         {badge && (
           <span className={`text-2xs px-1 border tracking-wide flex-none ${badge.className}`} title={badge.title}>
             {badge.label}

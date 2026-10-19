@@ -133,7 +133,9 @@ func main() {
 	mux.Handle("/metrics", promhttp.Handler())
 	httpServer := &http.Server{Addr: ":" + cfg.Port, Handler: mux}
 
-	agentfleetv1.RegisterProvisionerServiceServer(grpcSrv, grpcserver.New(k8sc, gitMgr, core, cfg.E2eHost, cfg.FleetSharedRepoURL, cfg.FleetSharedBranch, version))
+	provSvc := grpcserver.New(k8sc, gitMgr, core, cfg.E2eHost, cfg.FleetSharedRepoURL, cfg.FleetSharedBranch, version)
+	provSvc.SetDefinitionsRef(cfg.FleetDefinitionsRef)
+	agentfleetv1.RegisterProvisionerServiceServer(grpcSrv, provSvc)
 
 	reconcileInterval, _ := strconv.Atoi(cfg.ReconcileInterval)
 	sharedInstanceIdleTimeout, _ := strconv.Atoi(cfg.SharedInstanceIdleTimeoutMs)

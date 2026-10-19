@@ -1,0 +1,28 @@
+# The Opus Tech workspace co-editor (docs/adr/0062). Its repo is not onboarded
+# yet, so CreateSession answers FailedPrecondition "not onboarded" until an
+# admin adds `opus-workspace` under manage repos. `invokers` stays empty until
+# an opus-ci client exists; `credentials` and `embed` are inert until P3/P4.
+apiVersion: fleet.bnei.dev/v1alpha1
+kind: AgentDefinition
+metadata: { name: opus-workspace }
+spec:
+  extends: workspace-base
+  audience: { group: shared-notes }
+  embed: { origins: ["https://opus.bnei.dev"] }
+  credentials:
+    vault: opus-workspace
+    services:
+      - { host: github.com, paths: ["/opus-tech-hq/workspace/*", "/opus-tech-hq/workspace.git/*"], secret: GH_OPUS_WORKSPACE }
+      - { host: api.github.com, paths: ["/repos/opus-tech-hq/workspace/*"], secret: GH_OPUS_WORKSPACE }
+      - { host: api.anthropic.com, secret: ANTHROPIC_OPUS }
+  workspace: { kind: repo, repo: opus-workspace }
+  git: { mode: push, branch: main, identity: { name: opus-agent, email: opus-agent@bnei.dev } }
+  systemPrompt: { append: "You co-edit the Opus Tech workspace (a SilverBullet space). Keep pages small and linked." }
+  skills: [doubt-driven-development]
+  tools:
+    allow: [Read, Edit, Write, Glob, Grep, "Bash(git add:*)", "Bash(git commit:*)", "Bash(git pull --rebase:*)", "Bash(git push:*)"]
+    deny: ["Edit(.git/**)", "Write(.git/**)", "Edit(.claude/**)", "Write(.claude/**)", "Write(_plug/**)"]
+  interaction: { allow: [ask, deny] }
+  lifecycle: { allow: [resident, single-shot] }
+  owns: { repos: [opus-workspace], components: [], subjects: [], types: [] }
+  limits: { maxTurns: 60, timeout: 30m, concurrency: 2, startupBudget: 3m }

@@ -39,6 +39,10 @@ spec:
             # override needed.
             - name: MAX_IN_FLIGHT_TASKS
               value: "5"
+            # docs/adr/0062: the definition pool inside the cap above. Must be
+            # < MAX_IN_FLIGHT_TASKS or core refuses to start.
+            - name: MAX_DEFINITION_SESSIONS
+              value: "2"
             # docs/adr/0056: core refuses to start without OIDC config, and
             # this cluster has no authentik.
             - name: FLEET_AUTH_DISABLED

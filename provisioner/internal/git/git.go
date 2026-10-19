@@ -349,24 +349,8 @@ func (m *Manager) SyncFleetShared(ctx context.Context, repoURL, branch, claudeHo
 	defer lock.Unlock()
 
 	path := filepath.Join(m.root, "fleet-shared")
-	if _, err := m.run(ctx, path, "rev-parse", "--is-inside-work-tree"); err != nil {
-		if err := os.MkdirAll(path, 0o755); err != nil {
-			return fmt.Errorf("mkdir %s: %w", path, err)
-		}
-		if _, err := m.run(ctx, "", "clone", "--branch", branch, repoURL, path); err != nil {
-			return fmt.Errorf("clone fleet-shared: %w", err)
-		}
-	} else {
-		// Hard reset, not just fetch: this working tree is provisioner-owned
-		// and never written to by a worker, so there's no uncommitted-work
-		// concern the way CreateWorktree's reuse-not-wipe logic has to guard
-		// against — and a plain fetch alone wouldn't update the tree at all.
-		if _, err := m.run(ctx, path, "fetch", "origin", branch); err != nil {
-			return fmt.Errorf("fetch fleet-shared: %w", err)
-		}
-		if _, err := m.run(ctx, path, "reset", "--hard", "origin/"+branch); err != nil {
-			return fmt.Errorf("reset fleet-shared: %w", err)
-		}
+	if err := m.refreshClone(ctx, path, repoURL, branch); err != nil {
+		return fmt.Errorf("fleet-shared: %w", err)
 	}
 
 	// 0o777, matching EnsureClaudeHome — this runs first on a kind-local or
@@ -395,4 +379,119 @@ func (m *Manager) SyncFleetShared(ctx context.Context, repoURL, branch, claudeHo
 		}
 	}
 	return nil
+}
+
+// refreshClone makes path a provisioner-owned clone of repoURL at ref (a
+// branch or a tag): `clone --branch` when absent, else fetch (with any extra
+// fetchArgs) + hard reset to FETCH_HEAD. The caller holds path's lock.
+//
+// Hard reset, not just fetch: this working tree is provisioner-owned and
+// never written to by a worker, so there is no uncommitted work to protect —
+// and a plain fetch alone would not update the tree at all.
+func (m *Manager) refreshClone(ctx context.Context, path, repoURL, ref string, fetchArgs ...string) error {
+	if _, err := m.run(ctx, path, "rev-parse", "--is-inside-work-tree"); err != nil {
+		if err := os.MkdirAll(path, 0o755); err != nil {
+			return fmt.Errorf("mkdir %s: %w", path, err)
+		}
+		if _, err := m.run(ctx, "", "clone", "--branch", ref, repoURL, path); err != nil {
+			return fmt.Errorf("clone: %w", err)
+		}
+		return nil
+	}
+	if _, err := m.run(ctx, path, append(append([]string{"fetch"}, fetchArgs...), "origin", ref)...); err != nil {
+		return fmt.Errorf("fetch: %w", err)
+	}
+	if _, err := m.run(ctx, path, "reset", "--hard", "FETCH_HEAD"); err != nil {
+		return fmt.Errorf("reset: %w", err)
+	}
+	return nil
+}
+
+// definitionsSentinel keys ReadDefinitions' own lock, never fleet-shared's.
+const definitionsSentinel = "_definitions"
+
+// Size bounds on ListDefinitionFiles (gRPC's default limit is 4 MiB).
+const (
+	maxDefinitionFile  = 64 << 10
+	maxDefinitionTotal = 1 << 20
+)
+
+// ReadDefinitions refreshes <root>/definitions-src to ref and returns every
+// regular file under its definitions/ (keys relative to the clone root) and
+// the commit they were read at (docs/adr/0062).
+//
+// Its own clone and its own lock: a slow GitHub fetch here never stalls
+// CreateWorkerPod, which takes the fleet-shared lock blocking. Holding the lock
+// across fetch and read keeps the sha matched to the content.
+//
+// FAILS CLOSED: a missing directory, a symlink, a submodule, an oversize file
+// or a git failure is an error, never an empty list.
+//
+// ponytail: a second full clone of the monorepo on the provisioner's disk;
+// `--depth 1` if disk ever matters.
+func (m *Manager) ReadDefinitions(ctx context.Context, repoURL, ref string) (map[string][]byte, string, error) {
+	lock := m.repoLock(definitionsSentinel)
+	lock.Lock()
+	defer lock.Unlock()
+
+	path := filepath.Join(m.root, "definitions-src")
+	// A release tag never moves: once HEAD is at it there is nothing to fetch,
+	// so the steady state (core asks every 60s) makes no GitHub round-trip. A
+	// branch ref (kind, dev) has no local tag and always fetches. --tags keeps
+	// a fetched tag as a local ref, which this check needs.
+	sha, err := m.run(ctx, path, "rev-parse", "HEAD")
+	if tag, tagErr := m.run(ctx, path, "rev-parse", "-q", "--verify", "refs/tags/"+ref+"^{commit}"); err != nil || tagErr != nil || tag != sha {
+		if err := m.refreshClone(ctx, path, repoURL, ref, "--tags"); err != nil {
+			return nil, "", fmt.Errorf("definitions clone at %q: %w", ref, err)
+		}
+		if sha, err = m.run(ctx, path, "rev-parse", "HEAD"); err != nil {
+			return nil, "", err
+		}
+	}
+	// Read from the commit, never the working tree: the sha is the pin, so
+	// the content must be exactly that commit's, whatever the checkout on
+	// this PVC looks like (the steady state above never resets it).
+	ls, err := m.run(ctx, path, "ls-tree", "-r", "-l", "-z", sha, "--", "definitions")
+	if err != nil {
+		return nil, "", err
+	}
+	files := map[string][]byte{}
+	total := 0
+	for _, entry := range strings.Split(ls, "\x00") {
+		meta, rel, ok := strings.Cut(entry, "\t")
+		if !ok {
+			continue
+		}
+		f := strings.Fields(meta) // mode type object size
+		switch {
+		case rel == "definitions":
+			return nil, "", fmt.Errorf("definitions/ is not a directory at %s (%.7s)", ref, sha)
+		case len(f) != 4 || (f[0] != "100644" && f[0] != "100755"):
+			return nil, "", fmt.Errorf("read definitions: %s is not a regular file", rel)
+		}
+		size, err := strconv.Atoi(f[3])
+		if err != nil {
+			return nil, "", fmt.Errorf("read definitions: %s: size %q", rel, f[3])
+		}
+		if size > maxDefinitionFile {
+			return nil, "", fmt.Errorf("read definitions: %s is %d bytes, over %d", rel, size, maxDefinitionFile)
+		}
+		if total += size; total > maxDefinitionTotal {
+			return nil, "", fmt.Errorf("read definitions: definitions/ is over %d bytes", maxDefinitionTotal)
+		}
+		// Not m.run: that trims, and this is file content.
+		start, args := time.Now(), []string{"cat-file", "blob", f[2]}
+		cmd := exec.CommandContext(ctx, "git", args...)
+		cmd.Dir = path
+		b, err := cmd.Output()
+		metrics.ObserveGit(args, start)
+		if err != nil {
+			return nil, "", fmt.Errorf("read definitions: %s: %w", rel, err)
+		}
+		files[rel] = b
+	}
+	if len(files) == 0 {
+		return nil, "", fmt.Errorf("no definitions/ at %s (%.7s)", ref, sha)
+	}
+	return files, sha, nil
 }

@@ -243,6 +243,20 @@ Any doc, code, comment, or memory that contradicts this file or an
   `bypassPermissions` is deleted — it bought only `rm`/`sudo` over `auto`, and
   charged a launch profile for them. See
   [`adr/0053`](adr/0053-the-gate-is-canusetool-not-a-rule-list.md).
+- **Defined agents are reviewed files, judged on their effective spec**
+  ([`adr/0062`](adr/0062-defined-agents.md)). `definitions/<name>.yaml` is
+  strict-decoded, `extends` replaces whole top-level keys, and the resolved spec
+  must sit inside the fleet ceiling in `core/internal/definitions` (no `auto`,
+  `acceptEdits` or `bypassPermissions`; exact same-site embed origins; anchored
+  vault paths). The provisioner reads them **at its release tag**, not `main`,
+  so they ship with the core that judges them (a rollout overlap can still mix
+  versions: a core never revokes a stored row it cannot decode). A session pins `(name, sha)` and
+  warms only while that is the version at the synced commit (an invalid HEAD
+  fails closed, never falls back). Definition sessions draw
+  from `MAX_DEFINITION_SESSIONS`, a pool **inside** the global cap. The gate
+  becomes: the provisioning message comes from an audience member, a registered
+  client, or an allowlisted actor's event via a registered client (P1:
+  platform-admins only). ADR 0062 lists which fields are enforced vs inert in P1.
 
 ## 2. Forbidden patterns (quick check — full list + reasons in `adr/`)
 

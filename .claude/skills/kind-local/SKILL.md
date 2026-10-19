@@ -154,6 +154,9 @@ kubectl wait --for=condition=available deploy/core -n agent-fleet --timeout=60s
 
 ```bash
 kubectl apply -f local/kind/40-provisioner.yaml
+# docs/adr/0062: a kind build has no release tag, so definitions/ is read at
+# FLEET_DEFINITIONS_REF. Follow the branch under test (it must be pushed).
+kubectl set env deploy/provisioner -n agent-fleet FLEET_DEFINITIONS_REF="$(git rev-parse --abbrev-ref HEAD)"
 kubectl wait --for=condition=available deploy/provisioner -n agent-fleet --timeout=60s
 
 # git.Manager.ConfigureAuth runs `gh auth setup-git` at startup — check this

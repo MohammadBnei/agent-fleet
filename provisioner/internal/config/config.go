@@ -62,6 +62,10 @@ type Config struct {
 	// into every worker pod's CLAUDE_CONFIG_DIR.
 	FleetSharedRepoURL string
 	FleetSharedBranch  string
+	// FleetDefinitionsRef is the ref definitions/ is read at from
+	// FleetSharedRepoURL (docs/adr/0062). Empty = this build's release tag;
+	// kind and dev set a branch.
+	FleetDefinitionsRef string
 	// PostgresImage/RedisImage back the "postgres"/"redis" service
 	// ingredients' shared instances (docs/adr/0034) — operationally
 	// configurable (version/security-patch bumps) unlike a tool
@@ -108,6 +112,7 @@ func Load() Config {
 		LogLevel:                    env("LOG_LEVEL", "info"),
 		FleetSharedRepoURL:          env("FLEET_SHARED_REPO_URL", "https://github.com/MohammadBnei/agent-fleet.git"),
 		FleetSharedBranch:           env("FLEET_SHARED_BRANCH", "main"),
+		FleetDefinitionsRef:         env("FLEET_DEFINITIONS_REF", ""),
 		PostgresImage:               env("POSTGRES_IMAGE", "postgres:16-alpine"),
 		RedisImage:                  env("REDIS_IMAGE", "redis:7-alpine"),
 		SharedInstancePVCSize:       env("SHARED_INSTANCE_PVC_SIZE", "2Gi"),

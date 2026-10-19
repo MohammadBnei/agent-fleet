@@ -8,11 +8,15 @@ import (
 	"testing"
 	"time"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/dbtest"
 	"github.com/MohammadBnei/agent-fleet/core/internal/journal"
 	"github.com/MohammadBnei/agent-fleet/core/internal/sessions"
+	"github.com/MohammadBnei/agent-fleet/core/internal/transcript"
 )
 
 // Real Postgres via core/internal/dbtest, which applies db/migrations/ —
@@ -135,7 +139,7 @@ func TestSaveAgentSessionId_StoresTheAgentIdNotTheSessionId(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	lease, err := store.ReserveSlot(ctx, id, 5)
+	lease, err := store.ReserveSlot(ctx, id, sessions.Caps{MaxLive: 5})
 	if err != nil {
 		t.Fatalf("reserve: %v", err)
 	}
@@ -193,7 +197,7 @@ func TestReserveSlot_ConcurrentCallersCannotExceedTheCap(t *testing.T) {
 	for _, id := range ids {
 		go func(id string) {
 			<-start
-			if _, err := store.ReserveSlot(ctx, id, cap); err == nil {
+			if _, err := store.ReserveSlot(ctx, id, sessions.Caps{MaxLive: cap}); err == nil {
 				granted <- id
 			}
 		}(id)
@@ -334,5 +338,68 @@ func TestSearchJournal_RejectsAnUnparseableBound(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "since") {
 		t.Errorf("the error must name the offending field, got %v", err)
+	}
+}
+
+// The pod's own SetPermissionMode goes through the store's definition guard
+// (docs/adr/0062): a definition session cannot persist a mode outside its
+// mode.allow, so its next warm can never launch in it.
+func TestSetPermissionMode_DefinitionSessionOutsideAllowIsDenied(t *testing.T) {
+	ctx := context.Background()
+	pool := dbtest.NewPool(t)
+	store := sessions.NewStore(pool)
+	srv := New(nil, store, journal.NewStore(pool), nil, nil, nil, nil)
+	if _, err := pool.Exec(ctx, `INSERT INTO agent_definitions (name, sha, spec, effective, valid)
+		VALUES ('a', 'sha-a', '{}', '{"mode":{"default":"default","allow":["default","plan"]}}', true)`); err != nil {
+		t.Fatal(err)
+	}
+	id, err := store.Create(ctx, sessions.CreateParams{Repo: "dream-analyst", PermissionMode: "default", DefinitionName: "a", DefinitionSHA: "sha-a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = srv.SetPermissionMode(ctx, &agentfleetv1.SetPermissionModeRequest{SessionId: id, Mode: "acceptEdits"})
+	if status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("got %v, want PermissionDenied", err)
+	}
+	if _, err := srv.SetPermissionMode(ctx, &agentfleetv1.SetPermissionModeRequest{SessionId: id, Mode: "plan"}); err != nil {
+		t.Fatalf("plan is in mode.allow: %v", err)
+	}
+	if s, err := store.Get(ctx, id); err != nil || *s.PermissionMode != "plan" {
+		t.Fatalf("mode: %v %v", s, err)
+	}
+}
+
+// A pod cannot speak as the human (or another session) into a definition
+// session: the worker obeys those entries' permission_mode and
+// permission_response, which would bypass mode.allow and canUseTool.
+func TestSendMessage_DefinitionSessionCannotSendAsHuman(t *testing.T) {
+	ctx := context.Background()
+	pool := dbtest.NewPool(t)
+	store := sessions.NewStore(pool)
+	srv := New(transcript.NewPostgresStore(pool), store, journal.NewStore(pool), nil, nil, nil, nil)
+	if _, err := pool.Exec(ctx, `INSERT INTO agent_definitions (name, sha, spec, effective, valid)
+		VALUES ('a', 'sha-a', '{}', '{}', true)`); err != nil {
+		t.Fatal(err)
+	}
+	def, err := store.Create(ctx, sessions.CreateParams{Repo: "dream-analyst", PermissionMode: "default", DefinitionName: "a", DefinitionSHA: "sha-a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo, err := store.Create(ctx, sessions.CreateParams{Repo: "dream-analyst"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mode := agentfleetv1.TranscriptEntryType_TRANSCRIPT_ENTRY_TYPE_PERMISSION_MODE
+	for _, from := range []string{"human", "session"} {
+		_, err := srv.SendMessage(ctx, &agentfleetv1.SendMessageRequest{SessionId: def, From: from, Text: "auto", Type: mode})
+		if status.Code(err) != codes.PermissionDenied {
+			t.Errorf("from %q: got %v, want PermissionDenied", from, err)
+		}
+	}
+	if _, err := srv.SendMessage(ctx, &agentfleetv1.SendMessageRequest{SessionId: def, From: "agent", Text: "hi"}); err != nil {
+		t.Errorf("the pod's own voice must still go through: %v", err)
+	}
+	if _, err := srv.SendMessage(ctx, &agentfleetv1.SendMessageRequest{SessionId: repo, From: "human", Text: "hi"}); err != nil {
+		t.Errorf("repo sessions are unchanged: %v", err)
 	}
 }

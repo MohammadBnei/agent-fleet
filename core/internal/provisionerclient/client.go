@@ -278,6 +278,23 @@ func (c *Client) GetVersion(ctx context.Context) (version, workerImage, sidecarI
 	return resp.GetVersion(), resp.GetWorkerImage(), resp.GetSidecarImage(), nil
 }
 
+// ListDefinitionFiles returns definitions/ as the provisioner read it, keyed
+// by repo-relative path, and the commit it was read at (docs/adr/0062). An
+// error is never an empty listing: the provisioner fails closed.
+func (c *Client) ListDefinitionFiles(ctx context.Context) (map[string][]byte, string, error) {
+	ctx, cancel := context.WithTimeout(ctx, sessionCallTimeout)
+	defer cancel()
+	resp, err := c.rpc.ListDefinitionFiles(ctx, &agentfleetv1.ListDefinitionFilesRequest{})
+	if err != nil {
+		return nil, "", fmt.Errorf("ListDefinitionFiles: %w", err)
+	}
+	files := make(map[string][]byte, len(resp.GetFiles()))
+	for _, f := range resp.GetFiles() {
+		files[f.GetPath()] = f.GetContent()
+	}
+	return files, resp.GetSha(), nil
+}
+
 // TearDownSession commands the provisioner to tear down a worker or e2e
 // session — core owns `tasks` and decides when a session should end
 // (task reached done/failed/cancelled, or an explicit kill); the

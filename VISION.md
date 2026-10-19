@@ -46,11 +46,11 @@ detail; this is only the mapping.
 
 | Principle | Mechanism here | State |
 |---|---|---|
-| 4 · Propose, never author *(initiation)* | Machine-created work lands in `proposals`, a separate table with no path to a pod. Sessions are created only through the OIDC-gated dashboard API, so nothing self-initiated can run until a human opens the proposal (`OpenFromProposal`, `adr/0048`). Once a session exists, another session may prompt and warm it (`prompt_agent`, `adr/0041`) | **Real — structural** |
+| 4 · Propose, never author *(initiation)* | Machine-created work lands in `proposals`, a separate table with no path to a pod. Sessions are created only through the OIDC-gated dashboard API, so nothing self-initiated can run until a human opens the proposal (`OpenFromProposal`, `adr/0048`). Once a session exists, another session may prompt and warm it (`prompt_agent`, `adr/0041`). Amended by `adr/0062`: the provisioning message comes from an audience member, a registered client, or an allowlisted actor's event delivered via a registered client — in P1 only platform-admins create sessions, so the de facto gate is unchanged | **Real — structural** |
 | 3 · The gap is the work | Scheduled cluster checks and firing alerts become deduped proposals against `infra-bootstrap`, so a durable fix is an ordinary PR (`adr/0035`, `adr/0037`) | **Real** |
 | 6 · Apoptosis over degradation | Single-shot pods, `RestartPolicy: Never`, crash-fast path (`adr/0024`) | **Real** |
 | 7 · Structural before asked | `buildguard`, the LimitRange↔pod-spec pin, migrations as the single schema source (`adr/0030`) | **Real** |
-| 8 · Reversibility | Nothing merges itself; one volume per session, never shared writable (`adr/0048`). A PR is the intended result, but no code checks that one was opened | **Partial** |
+| 8 · Reversibility | Nothing merges itself; one volume per session, never shared writable (`adr/0048`). A PR is the intended result, but no code checks that one was opened. A defined agent with `git.mode: push` (`adr/0062`) will be the declared exception, decided by the planned Headless ADR; schema only in P1 | **Partial** |
 | 9 · It remembers | `knowledge_journal` + `journal_search` (`adr/0033`) | **Real** |
 | 2 · Declared intent is truth | The docs are canonical and alerts feed the audit loop, but nothing yet diffs *declared intent* against reality — `mission-drift` lives in the parent and is report-only | **Partial** |
 | 5 · Staged, checkpointed repair | Per-session volumes and PRs give the shape; nothing enforces that an *interrupted* run leaves a valid state, and interruption is the common case | **Partial** |

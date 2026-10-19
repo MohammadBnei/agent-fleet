@@ -54,6 +54,9 @@ jobs:
               - 'proto/**'
             core:
               - 'core/**'
+              # core/internal/definitions/repo_test.go validates this
+              # directory (docs/adr/0062), so a definitions-only PR runs it.
+              - 'definitions/**'
             # k8s/**: provisioner/internal/k8s tests read k8s/core.yaml and
             # k8s/provisioner/*.yaml (LimitRange, readiness probe, NetworkPolicy
             # labels), so a

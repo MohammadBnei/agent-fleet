@@ -251,6 +251,10 @@ message Session {
   // session that has never had a pod.
   optional string worker_image = 23;
   optional string sidecar_image = 24;
+  // docs/adr/0062: set when the session was created from a definition,
+  // pinned to that version. Both or neither.
+  optional string definition_name = 25;
+  optional string definition_sha = 26;
 }
 
 // What one agent can see of another session. Deliberately not the full

@@ -848,10 +848,14 @@ type Session struct {
 	// defaults: a session warmed before a fleet upgrade keeps reporting the
 	// build it is running, which is the whole point of showing it. Empty for a
 	// session that has never had a pod.
-	WorkerImage   *string `protobuf:"bytes,23,opt,name=worker_image,json=workerImage,proto3,oneof" json:"worker_image,omitempty"`
-	SidecarImage  *string `protobuf:"bytes,24,opt,name=sidecar_image,json=sidecarImage,proto3,oneof" json:"sidecar_image,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	WorkerImage  *string `protobuf:"bytes,23,opt,name=worker_image,json=workerImage,proto3,oneof" json:"worker_image,omitempty"`
+	SidecarImage *string `protobuf:"bytes,24,opt,name=sidecar_image,json=sidecarImage,proto3,oneof" json:"sidecar_image,omitempty"`
+	// docs/adr/0062: set when the session was created from a definition,
+	// pinned to that version. Both or neither.
+	DefinitionName *string `protobuf:"bytes,25,opt,name=definition_name,json=definitionName,proto3,oneof" json:"definition_name,omitempty"`
+	DefinitionSha  *string `protobuf:"bytes,26,opt,name=definition_sha,json=definitionSha,proto3,oneof" json:"definition_sha,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *Session) Reset() {
@@ -999,6 +1003,20 @@ func (x *Session) GetWorkerImage() string {
 func (x *Session) GetSidecarImage() string {
 	if x != nil && x.SidecarImage != nil {
 		return *x.SidecarImage
+	}
+	return ""
+}
+
+func (x *Session) GetDefinitionName() string {
+	if x != nil && x.DefinitionName != nil {
+		return *x.DefinitionName
+	}
+	return ""
+}
+
+func (x *Session) GetDefinitionSha() string {
+	if x != nil && x.DefinitionSha != nil {
+		return *x.DefinitionSha
 	}
 	return ""
 }
@@ -2770,7 +2788,7 @@ const file_agentfleet_v1_core_proto_rawDesc = "" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x12\n" +
 	"\x04kind\x18\x02 \x01(\tR\x04kind\"*\n" +
 	"\x16RequestServiceResponse\x12\x10\n" +
-	"\x03dsn\x18\x01 \x01(\tR\x03dsn\"\x90\a\n" +
+	"\x03dsn\x18\x01 \x01(\tR\x03dsn\"\x91\b\n" +
 	"\aSession\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04repo\x18\x02 \x01(\tR\x04repo\x12 \n" +
@@ -2793,7 +2811,9 @@ const file_agentfleet_v1_core_proto_rawDesc = "" +
 	"archivedAt\x88\x01\x01\x12&\n" +
 	"\fworker_image\x18\x17 \x01(\tH\n" +
 	"R\vworkerImage\x88\x01\x01\x12(\n" +
-	"\rsidecar_image\x18\x18 \x01(\tH\vR\fsidecarImage\x88\x01\x01B\b\n" +
+	"\rsidecar_image\x18\x18 \x01(\tH\vR\fsidecarImage\x88\x01\x01\x12,\n" +
+	"\x0fdefinition_name\x18\x19 \x01(\tH\fR\x0edefinitionName\x88\x01\x01\x12*\n" +
+	"\x0edefinition_sha\x18\x1a \x01(\tH\rR\rdefinitionSha\x88\x01\x01B\b\n" +
 	"\x06_titleB\f\n" +
 	"\n" +
 	"_pod_phaseB\x0e\n" +
@@ -2806,7 +2826,9 @@ const file_agentfleet_v1_core_proto_rawDesc = "" +
 	"\t_swept_atB\x0e\n" +
 	"\f_archived_atB\x0f\n" +
 	"\r_worker_imageB\x10\n" +
-	"\x0e_sidecar_imageJ\x04\b\x04\x10\x05J\x04\b\x06\x10\aJ\x04\b\t\x10\n" +
+	"\x0e_sidecar_imageB\x12\n" +
+	"\x10_definition_nameB\x11\n" +
+	"\x0f_definition_shaJ\x04\b\x04\x10\x05J\x04\b\x06\x10\aJ\x04\b\t\x10\n" +
 	"J\x04\b\n" +
 	"\x10\vJ\x04\b\x0f\x10\x10J\x04\b\x10\x10\x11J\x04\b\x05\x10\x06R\x06statusR\x06pr_urlR\fheartbeat_atR\vretry_countR\x0eawaiting_humanR\x04kindR\tthread_id\"\x9c\x01\n" +
 	"\x0eSessionSummary\x12\x1d\n" +
