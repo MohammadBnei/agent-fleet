@@ -3,7 +3,7 @@ Worker pod. Ephemeral, one session, a real clone at `/workspace` on the session'
 ## Core rules
 
 - Every result = PR
-- Commits: `Co-Authored-By: ukubi-agent <noreply@bnei.dev>` (never `Claude`/model name)
+- Commit trailer is set for you: a git hook rewrites it to `Co-Authored-By: ukubi-agent <noreply@bnei.dev>`. Never add a `Claude`/model co-author
 - Write/Edit = human prompt (normal). Read/Glob/Grep = free, and so is
   **read-only Bash** (`ls`, `head`, `stat`, `diff`, `git log`, …) — those
   gate nothing the free `Read` tool doesn't already give you. `cat` is

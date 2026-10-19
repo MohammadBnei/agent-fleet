@@ -244,6 +244,7 @@ for (const key of [
   delete process.env[key];
 }
 
+const { FLEET_TRAILER } = await import("./gitHooks.js");
 const { runSession, sumModelUsage, formatAnswerTurn, ANSWER_NO_REASK, SIDECAR_MCP_TIMEOUT_MS } = await import("./session.js");
 
 beforeEach(() => {
@@ -286,6 +287,7 @@ test("definition pod: native cross-session channel refused, SendMessage/ListAgen
   }
   const allowedTools = queryOptions?.allowedTools as string[];
   expect((queryOptions?.settings as { crossSessionInbound?: string })?.crossSessionInbound).toBe("refuse");
+  expect((queryOptions?.settings as { attribution?: unknown })?.attribution).toEqual({ commit: "", pr: "", sessionUrl: false });
   expect(allowedTools).not.toContain("SendMessage");
   expect(allowedTools).not.toContain("ListAgents");
   expect(queryOptions?.disallowedTools).toEqual(["AskUserQuestion", "SendMessage", "ListAgents"]);
@@ -332,6 +334,10 @@ test("tool wiring: default mode, no Write/Edit in allowedTools, canUseTool prese
   expect(queryOptions?.disallowedTools).not.toContain("ListAgents");
   expect((queryOptions?.settings as { crossSessionInbound?: string })?.crossSessionInbound).toBe("accept");
   expect((queryOptions?.settings as { remoteControlAtStartup?: boolean })?.remoteControlAtStartup).toBe(false);
+  expect((queryOptions?.settings as { attribution?: unknown })?.attribution).toEqual({ commit: FLEET_TRAILER, pr: "", sessionUrl: false });
+  const env = queryOptions?.env as Record<string, string>;
+  const n = Number(env.GIT_CONFIG_COUNT) - 1;
+  expect(env[`GIT_CONFIG_KEY_${n}`]).toBe("core.hooksPath");
   // The sidecar's ceiling is ours, and must stay above the transport's 60s
   // or it hard-fails every sidecar tool (docs/adr/0058).
   const sidecar = (queryOptions?.mcpServers as Record<string, { timeout?: number }>)["agent-fleet-sidecar"];
