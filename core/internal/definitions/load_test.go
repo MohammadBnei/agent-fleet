@@ -140,7 +140,7 @@ func TestLoad_ChildRules(t *testing.T) {
 		{"owns empty string", map[string]string{"owns": `{ repos: [""] }`}, "owns.repos"},
 		{"owns duplicate", map[string]string{"owns": "{ repos: [a, a] }"}, "owns.repos"},
 		{"owns non-string", map[string]string{"owns": "{ repos: [{ a: b }] }"}, "cannot unmarshal"},
-		{"subscribes glob ok", map[string]string{"subscribes": `{ types: [github.push], subjects: ["github/opus-tech-hq/*", "x?"] }`}, ""},
+		{"subscribes glob ok", map[string]string{"subscribes": `{ types: [dev.bnei.github.pull_request], subjects: ["github/opus-tech-hq/*", "x?"] }`}, ""},
 		{"subscribes bad glob", map[string]string{"subscribes": `{ subjects: ["github/[ab]"] }`}, "subscribes.subjects"},
 		{"subscribes type glob", map[string]string{"subscribes": `{ types: ["github.*"] }`}, "subscribes.types"},
 		{"subscribes duplicate", map[string]string{"subscribes": "{ types: [a, a] }"}, "subscribes.types"},
