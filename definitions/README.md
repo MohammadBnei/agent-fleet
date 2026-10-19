@@ -24,7 +24,8 @@ Onboarding a push definition (example: `dev-notes`):
 1. Infra-bootstrap's Agent Vault is deployed and bootstrapped
    (`gitops/scripts/agent-vault-bootstrap.sh`).
 2. Create a fine-grained PAT scoped to the one repo (contents read/write) and
-   store it without putting it on argv or in shell history: in the Infisical
+   store it (`dev-notes` is the exception: it uses a copy of the bot's broad
+   `GH_TOKEN`, an accepted risk in ADR 0065) without putting it on argv or in shell history: in the Infisical
    UI, or with infisical's `@file` input from a private temp file:
 
    ```sh

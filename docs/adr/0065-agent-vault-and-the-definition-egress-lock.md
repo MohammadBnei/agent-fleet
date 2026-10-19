@@ -73,8 +73,9 @@ upper-snaked (`dev-notes` → `GH_DEV_NOTES`, `vault.GitHubKey`), and
 `vault.name == definition name`. A buggy or compromised core cannot point a
 credential at another host, give one vault another definition's PAT, or send
 the model token to GitHub. What core can still choose is which repo of the
-PAT's owner a vault's paths name; the fine-grained PAT (scoped to its one repo
-by GitHub) bounds that. Upgrade: the provisioner parses the definitions from
+token's owner a vault's paths name; for `dev-notes` nothing on GitHub's side
+bounds that, because `GH_DEV_NOTES` is the bot's broad token (accepted risk,
+see Consequences). Upgrade: the provisioner parses the definitions from
 its own git read at the pinned ref and treats core's spec as a selector only.
 
 ### 2. Reconcile: the vault matches git
@@ -140,7 +141,7 @@ repo on github.com is 403 `no_match`; `api.github.com/repos/<o>/<r>/commits` is
 was reached directly (NO_PROXY honoured by the native binary under the full
 proxy env); `http://` on port 80 to a matched host is 403 `no_match`. The
 GitHub token was a stand-in (the operator's `gh` OAuth token, repo scope),
-not the fine-grained `GH_DEV_NOTES`. Not done: an actual `git push`
+not `GH_DEV_NOTES` (the bot token). Not done: an actual `git push`
 (receive-pack POST) and its time against the vault's 60s `ReadTimeout`
 (rollout step 6). Note `/repos/<o>/<r>` itself (`gh repo view`) is outside
 `/repos/<o>/<r>/*` and gets 403.
@@ -320,10 +321,18 @@ needs a `github.com` service; all of a definition's GitHub paths name one
   path, or an executor-style broker.
 - The URL binding at the vault is a path **prefix** match on the decoded,
   uncleaned path (spike 3): `/<o>/notes/../../<other>/info/refs` matched the
-  notes rule and got the credential. It does not reach another repo only
-  because github.com does not resolve dot-segments (404) and because the PAT is
-  scoped to the one repo. So `GH_<VAULT>` must be a fine-grained PAT on exactly
-  that repo, never a classic or multi-repo token (rollout step 2 is a gate).
+  notes rule and got the credential. It does not reach another repo because
+  github.com does not resolve dot-segments. Checked 2026-10-19 with the bot
+  token on `info/refs?service=git-receive-pack` and `api.github.com/repos/...`:
+  `..`, `%2e%2e`, `%2E%2E`, `..%2f`, `//..` and `notes.git/../..` all return
+  404, while the plain other-repo path returns 200.
+- **`GH_DEV_NOTES` is the provisioner bot's broad token, not a fine-grained
+  PAT** (operator decision, 2026-10-19). So for `dev-notes` the vault's path
+  rules plus GitHub's refusal of dot-segments are the only repo boundary. A bug
+  in either, or an `api.github.com` rule wider than `/repos/<o>/<r>/*`, exposes
+  every repo the bot can write. The token also sits in the vault's store, so a
+  vault compromise yields the broad token. Upgrade: a fine-grained PAT on the
+  one repo in place of the copy. Opus (P6) still requires a fine-grained PAT.
 - The `av_sess_` is plaintext env (`HTTPS_PROXY` and its twin) in the Job and
   Pod spec: it sits in etcd, shows in `kubectl get -o yaml`/`describe`, and the
   agent can read `/proc/self/environ` with `Read`, so it can land in a
@@ -349,9 +358,10 @@ needs a `github.com` service; all of a definition's GitHub paths name one
 
 1. Merge infra-bootstrap's ADR-0061 PR; ArgoCD syncs `agent-vault`. Run
    `gitops/scripts/agent-vault-bootstrap.sh` there once.
-2. **Gate:** create a fine-grained PAT whose repository access is only
-   `MohammadBnei/notes` (contents read/write); never a classic or multi-repo
-   token (accepted risks: the vault's prefix match leans on it). Then `infisical secrets set --projectId=ae771c2c-5115-452a-8f1c-1e03fa0e2b9a --env=dev --path=/agent-vault GH_DEV_NOTES=…`.
+2. Store `GH_DEV_NOTES` in Infisical `agent-fleet-nygh`, env `dev`, path
+   `/agent-vault`. For `dev-notes` it is a copy of the bot's `GH_TOKEN`, done
+   2026-10-19 (accepted risk, see Consequences). A fine-grained PAT on the one
+   repo is the stricter option and is required for Opus (P6).
 3. Give the provisioner's bot read access to the private notes repo (the cache
    fetch uses the bot, not the vault).
 4. Onboard repo `notes` in the console: url `https://github.com/MohammadBnei/notes.git`
@@ -360,7 +370,7 @@ needs a `github.com` service; all of a definition's GitHub paths name one
 6. **First push check:** from the first dev-notes session (or a `dev-*` pod
    behind the vault), one small commit pushed with the real `GH_DEV_NOTES`.
    Fetch, auth shape (Basic) and the receive-pack advertisement are already
-   checked (§2); this proves the POST and the fine-grained PAT. Note the push
+   checked (§2); this proves the POST. Note the push
    time against the vault's 60s `ReadTimeout`.
 
 ## Consequences
