@@ -391,7 +391,7 @@ func missingErr(vault string, missing []string) error {
 	if len(missing) == 0 {
 		return nil
 	}
-	return fmt.Errorf("vault %s: secret %s not set in agent-fleet-nygh /agent-vault", vault, strings.Join(missing, ", "))
+	return fmt.Errorf("vault %s: secret %s not set in Infisical agent-vault /agent-vault", vault, strings.Join(missing, ", "))
 }
 
 func sortedKeys(m map[string]string) []string {

@@ -127,7 +127,7 @@ Condensed. Full detail + rationale in `agent-fleet/docs/DECISIONS.md` + `docs/ad
   `canUseTool` (P4).
 - **A definition pod holds no real secret** (`adr/0065`). Credentials live in Agent Vault
   (infra-bootstrap ADR-0061); the **provisioner is its only client** (member agent token in
-  `agent-fleet-nygh` `/agent-vault`, mounted, never in core) and reconciles each valid
+  Infisical project `agent-vault` `/agent-vault`, mounted, never in core) and reconciles each valid
   definition's vault from git (core pushes key names via `ReconcileVaults` every sync; removed
   services and absent vaults are emptied; `unmatched_host_policy=deny`), inline again at warm.
   One `av_sess_` per warm (TTL `max(300, limits.timeout)`+60s), revoked on every teardown path;
