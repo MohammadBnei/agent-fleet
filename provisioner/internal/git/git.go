@@ -15,7 +15,9 @@ package git
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -111,6 +113,14 @@ func (m *Manager) repoLock(repo string) *sync.Mutex {
 	return l
 }
 
+// LockRepo holds repo's cache lock until the returned func runs: what a
+// concurrent sync looks like to a pod create. For tests in other packages.
+func (m *Manager) LockRepo(repo string) (unlock func()) {
+	l := m.repoLock(repo)
+	l.Lock()
+	return l.Unlock
+}
+
 func (m *Manager) repoPath(repo string) string {
 	return filepath.Join(m.root, "repos", repo)
 }
@@ -178,10 +188,11 @@ func (m *Manager) EnsureRepoCloned(ctx context.Context, repo, repoURL string) (S
 // context, so git then ran on a cancelled one and the session was reported
 // CRASHED. Nothing about that was visible as a lock problem.
 //
-// Skipping the fetch is safe because it was never load-bearing: the pod's
-// clone init container fetches its base branch from the REAL remote
-// (k8s/session_storage.go), so a cache one sync out of date costs a slightly
-// larger delta over the network and nothing else. The clone IS load-bearing —
+// Skipping the fetch is safe because it was never load-bearing FOR REPO
+// SESSIONS: the pod's clone init container fetches its base branch from the
+// REAL remote (k8s/session_storage.go), so a cache one sync out of date costs a
+// slightly larger delta over the network and nothing else. Definition pods do
+// not fetch from the remote and use EnsureRepoFetched instead. The clone IS load-bearing —
 // with no cache there is nothing to `git clone --shared` from — so a cold
 // repo still waits however long it takes.
 func (m *Manager) EnsureRepoCachedForSession(ctx context.Context, repo, repoURL string) error {
@@ -194,6 +205,32 @@ func (m *Manager) EnsureRepoCachedForSession(ctx context.Context, repo, repoURL 
 		lock.Lock()
 	}
 	defer lock.Unlock()
+	_, err := m.ensureLocked(ctx, repo, repoURL)
+	return err
+}
+
+// EnsureRepoFetched always fetches, waiting for the repo lock no longer than
+// ctx. A definition pod's clone reads the cache's origin/<base> and never
+// contacts the remote (docs/adr/0064), so a fetch skipped under a busy lock
+// would start the session on a stale base, or kill it (BackoffLimit 0) when the
+// base branch is newer than the cache's last fetch. The plain sync.Mutex
+// cannot be waited on with a deadline, so this polls TryLock, and a wait past
+// ctx returns before any git runs.
+//
+// ponytail: 200ms poll; a channel semaphore if the latency ever shows.
+func (m *Manager) EnsureRepoFetched(ctx context.Context, repo, repoURL string) error {
+	lock := m.repoLock(repo)
+	for !lock.TryLock() {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(200 * time.Millisecond):
+		}
+	}
+	defer lock.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	_, err := m.ensureLocked(ctx, repo, repoURL)
 	return err
 }
@@ -316,6 +353,36 @@ func (m *Manager) EnsureClaudeHome(sessionID string) error {
 func (m *Manager) DeleteSessionDir(sessionID string) error {
 	if err := os.RemoveAll(m.ClaudeHomePath(sessionID)); err != nil {
 		return fmt.Errorf("remove claude home for %s: %w", sessionID, err)
+	}
+	return nil
+}
+
+// RemoveFleetShared deletes fleetSharedNames from a session's claude-home,
+// leaving projects/ (its resume state) alone. For a definition pod
+// (docs/adr/0064): an older provisioner replica serving one of its creates in
+// a rollout overlap ran the sync unconditionally, and that settings.json
+// pre-approves arbitrary-exec Bash past canUseTool for the session's life.
+//
+// Only when a sync left something behind. The entrypoint writes plugins/ (the
+// image's own copy, once per claude-home) and none of the other names, so
+// without them plugins/ is the image's and stays: removing it would re-run
+// that cp -r, the dominant cold-start cost (plan §5c spike 7), on every warm.
+// After a sync plugins/ goes too, and the entrypoint re-seeds the image's.
+func (m *Manager) RemoveFleetShared(sessionID string) error {
+	home := m.ClaudeHomePath(sessionID)
+	synced := false
+	for _, name := range fleetSharedNames {
+		if _, err := os.Lstat(filepath.Join(home, name)); name != "plugins" && !errors.Is(err, fs.ErrNotExist) {
+			synced = true
+		}
+	}
+	if !synced {
+		return nil
+	}
+	for _, name := range fleetSharedNames {
+		if err := os.RemoveAll(filepath.Join(home, name)); err != nil {
+			return fmt.Errorf("remove fleet-shared %s for %s: %w", name, sessionID, err)
+		}
 	}
 	return nil
 }

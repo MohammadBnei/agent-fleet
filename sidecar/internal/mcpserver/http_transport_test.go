@@ -118,13 +118,13 @@ func TestHTTP_LoopbackClientListsAndCallsTools(t *testing.T) {
 	// result carrying the handler's message, not a transport or JSON-RPC error.
 	resp, call := postRPC(t, srv.URL, "", sid, map[string]any{
 		"jsonrpc": "2.0", "id": 3, "method": "tools/call",
-		"params": map[string]any{"name": "send_message", "arguments": map[string]any{"from": "agent"}},
+		"params": map[string]any{"name": "send_message", "arguments": map[string]any{}},
 	})
 	if resp.StatusCode != http.StatusOK || call["error"] != nil {
 		t.Fatalf("tools/call: HTTP %d, error %v", resp.StatusCode, call["error"])
 	}
 	res, _ := call["result"].(map[string]any)
-	if isErr, _ := res["isError"].(bool); !isErr || !strings.Contains(fmt.Sprint(res["content"]), "from and text are required") {
+	if isErr, _ := res["isError"].(bool); !isErr || !strings.Contains(fmt.Sprint(res["content"]), "text is required") {
 		t.Fatalf("tools/call did not come back from send_message's handler: %v", res)
 	}
 }

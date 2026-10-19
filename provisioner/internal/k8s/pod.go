@@ -198,6 +198,59 @@ type WorkerPodSpec struct {
 	Image       string
 	ServiceRefs []ServiceIngredientRef
 	ExtraEnv    []corev1.EnvVar
+	// Definition switches the pod to the definition profile (docs/adr/0064).
+	// nil leaves the pod exactly as it was: TestCreateWorkerPod_RepoSessionGolden.
+	Definition *DefinitionProfile
+}
+
+// DefinitionProfile is what a definition session's pod needs beyond the
+// ordinary spec, built by core from the pinned definition version.
+type DefinitionProfile struct {
+	Name           string
+	GitAuthorName  string
+	GitAuthorEmail string
+}
+
+// repoCacheMount is the read-only clone-cache mount every container gets. A
+// definition pod sees only its own repo, at the same absolute path, so the
+// --shared clone's alternates (/repo-cache/<repo>/.git/objects) still resolve.
+func repoCacheMount(spec WorkerPodSpec) corev1.VolumeMount {
+	if spec.Definition != nil {
+		return corev1.VolumeMount{Name: "shared", MountPath: "/repo-cache/" + spec.Repo, SubPath: "repos/" + spec.Repo, ReadOnly: true}
+	}
+	return corev1.VolumeMount{Name: "shared", MountPath: "/repo-cache", SubPath: "repos", ReadOnly: true}
+}
+
+// definitionWorkerEnv narrows the worker's env for a definition pod
+// (docs/adr/0064): no LEASE_ID (the sidecar holds the lease and is the only
+// thing that talks to core) and no GH_TOKEN (push credentials arrive through
+// the vault in P3). The identity comes from the reviewed definition file, so
+// the worker's `gh api user` lookup is skipped (defaultConfigureGitAuth returns
+// early without GH_TOKEN), and safe.directory=/workspace is set through
+// GIT_CONFIG_* (the sidecar's mechanism, not its '*' value), since that early
+// return skips the line that wrote it. FLEET_DEFINITION tells the worker to
+// close Claude Code's own cross-session channel (docs/adr/0060), which never
+// touches core and so is not bounded by the definition allowlist.
+//
+// CLAUDE_CODE_OAUTH_TOKEN stays: INTERIM until P3 moves the model credential
+// to the vault.
+func definitionWorkerEnv(env []corev1.EnvVar, d DefinitionProfile) []corev1.EnvVar {
+	out := make([]corev1.EnvVar, 0, len(env)+8)
+	for _, e := range env {
+		if e.Name != "LEASE_ID" && e.Name != "GH_TOKEN" {
+			out = append(out, e)
+		}
+	}
+	return append(out,
+		corev1.EnvVar{Name: "FLEET_DEFINITION", Value: d.Name},
+		corev1.EnvVar{Name: "GIT_AUTHOR_NAME", Value: d.GitAuthorName},
+		corev1.EnvVar{Name: "GIT_COMMITTER_NAME", Value: d.GitAuthorName},
+		corev1.EnvVar{Name: "GIT_AUTHOR_EMAIL", Value: d.GitAuthorEmail},
+		corev1.EnvVar{Name: "GIT_COMMITTER_EMAIL", Value: d.GitAuthorEmail},
+		corev1.EnvVar{Name: "GIT_CONFIG_COUNT", Value: "1"},
+		corev1.EnvVar{Name: "GIT_CONFIG_KEY_0", Value: "safe.directory"},
+		corev1.EnvVar{Name: "GIT_CONFIG_VALUE_0", Value: sessionWorkdir},
+	)
 }
 
 // ResolveImages says which images a pod created with this `image` override
@@ -231,6 +284,9 @@ func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error 
 
 	name := WorkerResourceName(taskID)
 	labels := WorkerLabels(taskID, repo)
+	if spec.Definition != nil {
+		labels[DefinitionLabel] = spec.Definition.Name
+	}
 
 	// The session's own working volume, created before the Job so the Job can
 	// reference it. local-path + WaitForFirstConsumer, and the pinning is the
@@ -295,6 +351,9 @@ func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error 
 		// it identifiable in a log.
 		{Name: "CLAUDE_CODE_CONTAINER_ID", Value: taskID},
 	}
+	if spec.Definition != nil {
+		workerEnv = definitionWorkerEnv(workerEnv, *spec.Definition)
+	}
 	workerEnv = append(workerEnv, cacheEnv()...)
 	workerEnv = append(workerEnv, contextBudgetEnv()...)
 	workerEnv = append(workerEnv, ingredientEnv...)
@@ -317,7 +376,7 @@ func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error 
 		// volume's latency does not matter — and read-only is a real boundary
 		// for the first time: a session cannot corrupt the cache every other
 		// session clones from.
-		{Name: "shared", MountPath: "/repo-cache", SubPath: "repos", ReadOnly: true},
+		repoCacheMount(spec),
 		// SDK resume state. On replicated storage because losing it loses the
 		// ability to resume the conversation at all, which is the one thing
 		// here that git is not already a backup of.
@@ -445,7 +504,7 @@ func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error 
 					// read the HEAD tree and the telemetry loop reports
 					// nothing for every session. Seeing the files is not the
 					// same as being able to run git on them.
-					{Name: "shared", MountPath: "/repo-cache", SubPath: "repos", ReadOnly: true},
+					repoCacheMount(spec),
 				},
 				Resources: corev1.ResourceRequirements{
 					Requests: corev1.ResourceList{

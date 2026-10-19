@@ -34,8 +34,10 @@ const (
 )
 
 // LeaseVerifier is the one thing the interceptors need from the session store.
+// definition is the session's definition name, "" for a repo session, read in
+// the same lookup (docs/adr/0064).
 type LeaseVerifier interface {
-	VerifyLease(ctx context.Context, sessionID, leaseID string) (bool, error)
+	VerifyLease(ctx context.Context, sessionID, leaseID string) (ok bool, definition string, err error)
 }
 
 // callerSessionOf reports which field of a request identifies the CALLER's own
@@ -127,6 +129,28 @@ var unboundMethods = map[string]bool{
 	"/agentfleet.v1.CoreService/DeleteFile":          true,
 }
 
+// definitionMethods are all a DEFINITION session's lease may call
+// (docs/adr/0064): what its worker and sidecar legitimately need, and nothing
+// that publishes a URL, provisions infra, reads or writes fleet-wide state
+// (journal, files, Loki) or reaches a peer. A method not listed is denied, so
+// a new RPC is closed to definitions until someone decides otherwise.
+// SetPermissionMode is bounded by the definition's mode.allow in
+// sessions.Store.SetPermissionMode itself.
+//
+// ponytail: a fixed table. P4 derives it from the definition's sidecarTools
+// (tool -> method); until then every definition gets the same set.
+var definitionMethods = map[string]bool{
+	"/agentfleet.v1.CoreService/SendMessage":         true,
+	"/agentfleet.v1.CoreService/WaitForMessages":     true,
+	"/agentfleet.v1.CoreService/StreamHumanMessages": true,
+	"/agentfleet.v1.CoreService/AskUserQuestion":     true,
+	"/agentfleet.v1.CoreService/GetSession":          true,
+	"/agentfleet.v1.CoreService/SetPermissionMode":   true,
+	"/agentfleet.v1.CoreService/UpdateSessionMeta":   true,
+	"/agentfleet.v1.CoreService/SaveAgentSessionId":  true,
+	"/agentfleet.v1.CoreService/PushToolTelemetry":   true,
+}
+
 // provisionerMethods are callable only by the provisioner. ReportPodEvents
 // reports on arbitrary sessions by its nature — it is how core learns a pod
 // exists — so it cannot be lease-bound, and a session must not be able to
@@ -140,6 +164,8 @@ var (
 	errBadLease       = status.Error(codes.PermissionDenied, "lease does not match session")
 	errWrongSession   = status.Error(codes.PermissionDenied, "lease is for a different session")
 	errNotProvisioner = status.Error(codes.PermissionDenied, "provisioner credential required")
+	errDefinition     = status.Error(codes.PermissionDenied, "method not allowed for definition sessions (docs/adr/0064)")
+	errAuthor         = status.Error(codes.PermissionDenied, "sessions may only author as agent or worker")
 )
 
 // Authenticator verifies the credential on every CoreService call.
@@ -155,38 +181,44 @@ func NewAuthenticator(leases LeaseVerifier, provisionerToken string) *Authentica
 	return &Authenticator{leases: leases, provisionerToken: provisionerToken}
 }
 
-// authenticate establishes WHO is calling. It returns the caller's session id,
-// or "" for the provisioner.
-func (a *Authenticator) authenticate(ctx context.Context, method string) (sessionID string, err error) {
+// caller is WHO is calling: a session ("" for the provisioner) and, for a
+// definition session, its definition's name.
+type caller struct {
+	session    string
+	definition string
+}
+
+// authenticate establishes who is calling.
+func (a *Authenticator) authenticate(ctx context.Context, method string) (caller, error) {
 	md, _ := metadata.FromIncomingContext(ctx)
 
 	if provisionerMethods[method] {
 		if !a.checkProvisioner(md) {
-			return "", errNotProvisioner
+			return caller{}, errNotProvisioner
 		}
-		return "", nil
+		return caller{}, nil
 	}
 	// The provisioner is also allowed to call ordinary methods; it is a
 	// trusted component, not a session.
 	if a.checkProvisioner(md) {
-		return "", nil
+		return caller{}, nil
 	}
 
 	sid := first(md, mdSessionID)
 	lease := first(md, mdLeaseID)
 	if sid == "" || lease == "" {
-		return "", errNoCredential
+		return caller{}, errNoCredential
 	}
-	ok, err := a.leases.VerifyLease(ctx, sid, lease)
+	ok, definition, err := a.leases.VerifyLease(ctx, sid, lease)
 	if err != nil {
 		// Deliberately not Unauthenticated: a database blip is not a rejected
 		// credential, and the caller should retry rather than give up.
-		return "", status.Error(codes.Unavailable, "cannot verify lease")
+		return caller{}, status.Error(codes.Unavailable, "cannot verify lease")
 	}
 	if !ok {
-		return "", errBadLease
+		return caller{}, errBadLease
 	}
-	return sid, nil
+	return caller{session: sid, definition: definition}, nil
 }
 
 func (a *Authenticator) checkProvisioner(md metadata.MD) bool {
@@ -197,11 +229,38 @@ func (a *Authenticator) checkProvisioner(md metadata.MD) bool {
 	return got != "" && subtle.ConstantTimeCompare([]byte(got), []byte(a.provisionerToken)) == 1
 }
 
-// authorize checks the request does not act on somebody else's session.
-func authorize(method, callerSession string, req any) error {
-	if callerSession == "" {
+// authorize checks the request does not act on somebody else's session, that a
+// definition session stays inside definitionMethods, and that a session writes
+// to its transcript only in its own voice.
+func authorize(method string, c caller, req any) error {
+	if c.session == "" {
 		return nil // the provisioner
 	}
+	if err := bind(method, c.session, req); err != nil {
+		return err
+	}
+	if c.definition != "" && !definitionMethods[method] {
+		slog.Warn("coreserver refused a definition session's call", "method", method, "session", c.session, "definition", c.definition)
+		return errDefinition
+	}
+	// Every pod writer authors as "agent" or "worker". "human" is written only
+	// by DashboardService and "session" only by core's own PromptSession, and
+	// the worker obeys both (a permission_response approves its pending tool
+	// call, a permission_mode switches it, up to auto), so a session speaking
+	// as either through the sidecar's localhost /message could approve itself
+	// (docs/adr/0064). Fleet-wide: repo sessions included.
+	if m, ok := req.(*agentfleetv1.SendMessageRequest); ok {
+		if f := m.GetFrom(); f != "agent" && f != "worker" {
+			slog.Warn("coreserver refused a session authoring as someone else", "session", c.session, "from", f)
+			return errAuthor
+		}
+	}
+	return nil
+}
+
+// bind is ADR-0057's rule: a bound method must name the caller's own session,
+// an unbound one is a recorded decision, anything else fails closed.
+func bind(method, callerSession string, req any) error {
 	extract, bound := callerSessionOf[method]
 	if bound {
 		if claimed := extract(req); claimed != callerSession {
@@ -224,11 +283,11 @@ func authorize(method, callerSession string, req any) error {
 
 // UnaryInterceptor authenticates the caller and binds it to its own session.
 func (a *Authenticator) UnaryInterceptor(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
-	caller, err := a.authenticate(ctx, info.FullMethod)
+	c, err := a.authenticate(ctx, info.FullMethod)
 	if err != nil {
 		return nil, err
 	}
-	if err := authorize(info.FullMethod, caller, req); err != nil {
+	if err := authorize(info.FullMethod, c, req); err != nil {
 		return nil, err
 	}
 	return handler(ctx, req)
@@ -242,17 +301,17 @@ func (a *Authenticator) UnaryInterceptor(ctx context.Context, req any, info *grp
 // The request message of a server-stream arrives after the interceptor runs,
 // so authorization is applied in RecvMsg rather than here.
 func (a *Authenticator) StreamInterceptor(srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-	caller, err := a.authenticate(ss.Context(), info.FullMethod)
+	c, err := a.authenticate(ss.Context(), info.FullMethod)
 	if err != nil {
 		return err
 	}
-	return handler(srv, &authorizedStream{ServerStream: ss, method: info.FullMethod, caller: caller})
+	return handler(srv, &authorizedStream{ServerStream: ss, method: info.FullMethod, caller: c})
 }
 
 type authorizedStream struct {
 	grpc.ServerStream
 	method string
-	caller string
+	caller caller
 }
 
 func (s *authorizedStream) RecvMsg(m any) error {

@@ -23,7 +23,11 @@ type Client struct {
 	conn   *grpc.ClientConn
 	rpc    agentfleetv1.CoreServiceClient
 	taskID string
-	ready  atomic.Bool
+	// leaseID is this pod's lease. SaveSessionID sends it in the body as
+	// well as the metadata: the worker no longer holds a copy
+	// (docs/adr/0064).
+	leaseID string
+	ready   atomic.Bool
 }
 
 // retryServiceConfig bounds-retries transient "produced zero addresses"
@@ -88,9 +92,10 @@ func New(addr, taskID, leaseID string) (*Client, error) {
 		return nil, fmt.Errorf("dial core: %w", err)
 	}
 	return &Client{
-		conn:   conn,
-		rpc:    agentfleetv1.NewCoreServiceClient(conn),
-		taskID: taskID,
+		conn:    conn,
+		rpc:     agentfleetv1.NewCoreServiceClient(conn),
+		taskID:  taskID,
+		leaseID: leaseID,
 	}, nil
 }
 
@@ -286,9 +291,9 @@ func (c *Client) SearchJournal(ctx context.Context, s JournalSearch) ([]*agentfl
 	return resp.GetEntries(), nil
 }
 
-func (c *Client) SaveSessionID(ctx context.Context, sessionID, model, leaseID string) error {
+func (c *Client) SaveSessionID(ctx context.Context, sessionID, model string) error {
 	_, err := c.rpc.SaveAgentSessionId(ctx, &agentfleetv1.SaveAgentSessionIdRequest{
-		SessionId: c.taskID, AgentSessionId: sessionID, Model: model, LeaseId: leaseID,
+		SessionId: c.taskID, AgentSessionId: sessionID, Model: model, LeaseId: c.leaseID,
 	})
 	if err != nil {
 		return fmt.Errorf("SaveSessionId: %w", err)

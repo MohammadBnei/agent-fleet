@@ -6,6 +6,9 @@ import (
 	"log/slog"
 	"time"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/dashboard"
@@ -94,6 +97,11 @@ func (s *Server) PromptSession(ctx context.Context, req *agentfleetv1.PromptSess
 	t, state, err := s.liveStateOf(ctx, target)
 	if err != nil {
 		return nil, err
+	}
+	// From any caller, the provisioner's token included: agent-to-agent into a
+	// definition goes through the event bridge (docs/adr/0064), never here.
+	if t.DefinitionName != nil {
+		return nil, status.Error(codes.PermissionDenied, "definition sessions are not promptable; use the event bridge")
 	}
 	// A blocked session is waiting on a *human* — a permission prompt or a
 	// question. Delivering an agent's message here would push a turn into a

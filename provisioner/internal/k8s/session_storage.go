@@ -137,7 +137,7 @@ func cloneInitContainer(image string, spec WorkerPodSpec) corev1.Container {
 	if base == "" {
 		base = "main"
 	}
-	script := fmt.Sprintf(`set -eu
+	script := `set -eu
 # Git's ownership guard (CVE-2022-24765) refuses every command in a repository
 # whose directory belongs to another user. The PVC's mount point is created by
 # the kubelet as root and this container runs as the image's non-root user, so
@@ -158,7 +158,32 @@ func cloneInitContainer(image string, spec WorkerPodSpec) corev1.Container {
 # here for a wildcard to over-trust.
 git config --global --add safe.directory '*'
 
-if [ -d %[1]s/.git ]; then
+` + cloneTail(spec, base)
+
+	return corev1.Container{
+		Name:    "clone",
+		Image:   image,
+		Command: []string{"sh", "-c", script},
+		VolumeMounts: []corev1.VolumeMount{
+			{Name: "session", MountPath: sessionWorkdir, SubPath: "tree"},
+			repoCacheMount(spec),
+		},
+		Resources: corev1.ResourceRequirements{
+			Requests: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("100m"),
+				corev1.ResourceMemory: resource.MustParse("128Mi"),
+			},
+			Limits: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("1000m"),
+				corev1.ResourceMemory: resource.MustParse("1Gi"),
+			},
+		},
+	}
+}
+
+// cloneTail is the part of the clone script from its workspace guard on.
+func cloneTail(spec WorkerPodSpec, base string) string {
+	format := `if [ -d %[1]s/.git ]; then
   echo "workspace already has a repository, leaving it alone"
   exit 0
 fi
@@ -183,25 +208,32 @@ git remote set-url origin %[4]s
 # delta the cache is genuinely missing.
 git fetch origin %[3]s
 git checkout -B %[3]s FETCH_HEAD
-`, sessionWorkdir, spec.Repo, base, spec.RepoURL)
-
-	return corev1.Container{
-		Name:    "clone",
-		Image:   image,
-		Command: []string{"sh", "-c", script},
-		VolumeMounts: []corev1.VolumeMount{
-			{Name: "session", MountPath: sessionWorkdir, SubPath: "tree"},
-			{Name: "shared", MountPath: "/repo-cache", SubPath: "repos", ReadOnly: true},
-		},
-		Resources: corev1.ResourceRequirements{
-			Requests: corev1.ResourceList{
-				corev1.ResourceCPU:    resource.MustParse("100m"),
-				corev1.ResourceMemory: resource.MustParse("128Mi"),
-			},
-			Limits: corev1.ResourceList{
-				corev1.ResourceCPU:    resource.MustParse("1000m"),
-				corev1.ResourceMemory: resource.MustParse("1Gi"),
-			},
-		},
+`
+	if spec.Definition != nil {
+		format = `# The marker is the script's last step, so only a finished clone has it. A
+# clone killed mid-way (OOM, eviction, SIGKILL: no trap would run) left a
+# partial tree the agent never ran on, since the worker starts only after
+# this container succeeds: wipe it and clone again.
+if [ -f %[1]s/.git/fleet-clone-done ]; then
+  echo "workspace already has a repository, leaving it alone"
+  exit 0
+fi
+mkdir -p %[1]s
+find %[1]s -mindepth 1 -delete
+git clone --shared --no-checkout /repo-cache/%[2]s %[1]s
+cd %[1]s
+# docs/adr/0064: local transport only. This container holds no credential and
+# never contacts the remote: the fetch names the cache's PATH, not "origin", so
+# no reordering can turn it into a remote fetch. It copies the cache's
+# REMOTE-TRACKING refs, which the provisioner fetched with its own credentials
+# (git.Manager.EnsureRepoFetched, never skipped for a definition pod) just
+# before this pod was created, over the ones clone --shared made from the
+# cache's local branches (frozen at its first clone), so origin/* is current.
+git fetch --no-tags /repo-cache/%[2]s '+refs/remotes/origin/*:refs/remotes/origin/*'
+git checkout -B %[3]s origin/%[3]s
+git remote set-url origin %[4]s
+touch .git/fleet-clone-done
+`
 	}
+	return fmt.Sprintf(format, sessionWorkdir, spec.Repo, base, spec.RepoURL)
 }

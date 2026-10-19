@@ -217,7 +217,8 @@ Any doc, code, comment, or memory that contradicts this file or an
   resolves **deny → ask → allow** and returns on the first match, so a
   user-scope `ask` outranks a project-scope `allow`. `ask` rather than `deny`
   because a human must still be able to approve a `git push` — every result
-  is a PR. (Since `adr/0061` sessions launch in `auto`, where the worker
+  is a PR (except P1 definition sessions, which cannot push until P3:
+  `adr/0064`). (Since `adr/0061` sessions launch in `auto`, where the worker
   answers this ask itself; a human approves the push only in another mode.)
   There is no specificity tiebreak, so a broad `ask` prefix swallows
   every narrower `allow` beneath it. See
@@ -257,6 +258,23 @@ Any doc, code, comment, or memory that contradicts this file or an
   becomes: the provisioning message comes from an audience member, a registered
   client, or an allowlisted actor's event via a registered client (P1:
   platform-admins only). ADR 0062 lists which fields are enforced vs inert in P1.
+- **A definition session's pod is narrower than a repo session's**
+  ([`adr/0064`](adr/0064-definition-pod-profile.md)). The worker container holds
+  no `LEASE_ID` and no `GH_TOKEN`, sees only its repo's subPath of the clone
+  cache, gets its git identity from the definition's `git.identity`, and no
+  fleet-shared `settings.json`; the clone init container never contacts the
+  remote. It runs only the default worker image, which refuses Claude Code's own
+  cross-session channel there (`FLEET_DEFINITION`, amending `adr/0060`).
+  `CLAUDE_CODE_OAUTH_TOKEN` stays until P3 (interim). P1 does not bound its tool
+  surface: the worker's `allowedTools` and the target repo's project allow rules
+  still skip `canUseTool` until P4. A definition lease may call only a fixed
+  `CoreService` allowlist, nobody may `PromptSession` into a definition session,
+  and every lease caller authors `SendMessage` as `agent`/`worker` only. Core
+  tears a definition warm down if the create does not confirm
+  `definition_profile_applied`. A definition lease lives in `profile_lease_id`,
+  never in `lease_id`, so an older core can neither mint (000008's
+  `sessions_definition_no_lease`) nor verify one; it counts only while
+  `pod_phase` is live, because an older core's teardown cannot clear it.
 
 ## 2. Forbidden patterns (quick check — full list + reasons in `adr/`)
 
@@ -328,7 +346,9 @@ Any doc, code, comment, or memory that contradicts this file or an
   outlives every child; pod lifetime belongs to `kill_env`, core's teardowns
   and the reconcile sweep — see `adr/0044`.
 - **Hardcoding git commit identity.** Always derived live from the
-  authenticated bot GitHub account — see `adr/0006`.
+  authenticated bot GitHub account — see `adr/0006`. The one exception is a
+  definition pod, whose identity is the reviewed definition file's
+  `git.identity` (config under review, not code) — see `adr/0064`.
 - **A declared-but-never-incremented metric.** A metric that renders as
   absent is indistinguishable from a broken feature, and shipping twenty of
   them is how the first attempt at the observability layer passed review.

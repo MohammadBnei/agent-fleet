@@ -31,7 +31,10 @@ const (
 	// RepoLabel lets the provisioner recover which repo a session's pod
 	// belongs to from the pod itself — it holds no DB credentials to look it
 	// up any other way (docs/adr/0020 point 1), so Kubernetes has to carry it.
-	RepoLabel               = "agent-fleet.dev/repo"
+	RepoLabel = "agent-fleet.dev/repo"
+	// DefinitionLabel marks a definition session's pod with its definition's
+	// name (docs/adr/0064). P3's vault ingress policy selects on it.
+	DefinitionLabel         = "fleet.bnei.dev/definition"
 	ComponentWorker         = "worker"
 	ComponentSharedInstance = "shared-instance"
 	// ServiceKeyLabel/LastUsedAtAnnotation are the shared-instance idle-GC

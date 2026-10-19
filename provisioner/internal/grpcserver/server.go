@@ -165,6 +165,29 @@ func (s *Server) SweepSession(ctx context.Context, req *agentfleetv1.SweepSessio
 // --- worker pods (new, docs/adr/0019/0020) ---
 
 func (s *Server) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWorkerPodRequest) (*agentfleetv1.CreateWorkerPodResponse, error) {
+	// docs/adr/0064: a profile switches the pod to the definition profile.
+	// Checked before anything is reported or touched.
+	var definition *k8s.DefinitionProfile
+	if d := req.GetDefinition(); d != nil {
+		if d.GetName() == "" || d.GetGitAuthorName() == "" || d.GetGitAuthorEmail() == "" {
+			return nil, status.Error(codes.InvalidArgument, "definition profile needs a name and a git identity")
+		}
+		if len(req.GetToolKeys()) > 0 {
+			return nil, status.Error(codes.InvalidArgument, "a definition session never gets tool keys")
+		}
+		// The definition's worker-side hardening (FLEET_DEFINITION) needs this
+		// release's worker, so only the provisioner's default image runs one.
+		if req.GetImage() != "" {
+			return nil, status.Error(codes.InvalidArgument, "a definition session runs the default worker image only")
+		}
+		definition = &k8s.DefinitionProfile{Name: d.GetName(), GitAuthorName: d.GetGitAuthorName(), GitAuthorEmail: d.GetGitAuthorEmail()}
+	}
+	// A definition pod's clone reads the cache's origin/<base> and never
+	// contacts the remote, so its fetch is load-bearing and never skipped.
+	ensureCache := s.git.EnsureRepoCachedForSession
+	if definition != nil {
+		ensureCache = s.git.EnsureRepoFetched
+	}
 	// Reported immediately, before any git/k8s work starts — otherwise a
 	// claimed task with a hung or merely slow provisioning step is
 	// indistinguishable from one the provisioner never received at all
@@ -174,7 +197,7 @@ func (s *Server) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWo
 	// provisioner-internal detail, not states any other component branches
 	// on — see core.proto's own comment on the enum value.
 	s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_PROVISIONING, "", "cloning repo")
-	if err := s.git.EnsureRepoCachedForSession(ctx, req.GetRepo(), req.GetRepoUrl()); err != nil {
+	if err := ensureCache(ctx, req.GetRepo(), req.GetRepoUrl()); err != nil {
 		s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_CRASHED, "", "clone/fetch failed: "+err.Error())
 		return nil, fmt.Errorf("ensure repo cloned: %w", err)
 	}
@@ -204,7 +227,18 @@ func (s *Server) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWo
 	// skills/ under other sessions mid-turn, with no lock. Here it is written
 	// once, before the pod exists, and nothing touches it again while the
 	// session is live.
-	if s.fleetSharedRepoURL != "" {
+	//
+	// Never for a definition pod (docs/adr/0064): fleet-shared's settings.json
+	// pre-approves arbitrary-exec Bash (`go run`, `bun x`, ...) that would never
+	// reach canUseTool. It gets the image's baked plugins until P2's genome.
+	// Fatal, not best-effort: a copy an older replica left behind is removed,
+	// or no pod is built.
+	if definition != nil {
+		if err := s.git.RemoveFleetShared(req.GetSessionId()); err != nil {
+			s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_CRASHED, "", "claude-home setup failed: "+err.Error())
+			return nil, fmt.Errorf("remove fleet-shared: %w", err)
+		}
+	} else if s.fleetSharedRepoURL != "" {
 		s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_PROVISIONING, "", "syncing fleet-shared skills")
 		if err := s.git.SyncFleetShared(ctx, s.fleetSharedRepoURL, s.fleetSharedBranch, s.git.ClaudeHomePath(req.GetSessionId())); err != nil {
 			slog.Warn("grpcserver: fleet-shared sync failed, continuing with a possibly-stale copy", "sessionId", req.GetSessionId(), "error", err)
@@ -230,6 +264,7 @@ func (s *Server) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWo
 		Image:         req.GetImage(),
 		ServiceRefs:   nil,
 		ExtraEnv:      nil,
+		Definition:    definition,
 	}); err != nil {
 		s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_CRASHED, "", "pod create failed: "+err.Error())
 		return nil, fmt.Errorf("create worker pod: %w", err)
@@ -243,9 +278,10 @@ func (s *Server) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWo
 	slog.Info("grpcserver CreateWorkerPod", "sessionId", req.GetSessionId(), "repo", req.GetRepo(), "podName", podName,
 		"workerImage", workerImage, "sidecarImage", sidecarImage)
 	return &agentfleetv1.CreateWorkerPodResponse{
-		PodName:      podName,
-		WorkerImage:  workerImage,
-		SidecarImage: sidecarImage,
+		PodName:                  podName,
+		WorkerImage:              workerImage,
+		SidecarImage:             sidecarImage,
+		DefinitionProfileApplied: definition != nil,
 	}, nil
 }
 

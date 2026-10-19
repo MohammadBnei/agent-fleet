@@ -49,7 +49,8 @@ message CreateWorkerPodRequest {
   string repo_url = 3;
   string base_branch = 4;
   // description and lease_id are handed straight through to the worker
-  // pod's env — the worker no longer fetches its own session row at all
+  // pod's env (for a definition pod, lease_id goes to the sidecar only,
+  // docs/adr/0064) — the worker no longer fetches its own session row at all
   // (docs/adr/0020 point 1: it holds no DB credentials, direct or
   // otherwise), so whatever it needs has to arrive at pod creation time.
   string description = 5;
@@ -93,6 +94,19 @@ message CreateWorkerPodRequest {
   // sidecar stay on the fleet's own images: cloning is fleet-owned behavior
   // that needs git, and a repo-supplied image is not required to have it.
   string image = 12;
+  // docs/adr/0064. Set only for a definition session; its presence switches
+  // the pod to the definition profile. Absent, the pod is exactly as before.
+  DefinitionPodProfile definition = 13;
+}
+
+// docs/adr/0064: what a definition session's pod needs beyond the ordinary
+// request. Built by core from the pinned definition version.
+message DefinitionPodProfile {
+  // The definition's name: also the fleet.bnei.dev/definition label value.
+  string name = 1;
+  // git.identity, as GIT_AUTHOR_*/GIT_COMMITTER_* in the worker container.
+  string git_author_name = 2;
+  string git_author_email = 3;
 }
 
 message CreateWorkerPodResponse {
@@ -104,6 +118,12 @@ message CreateWorkerPodResponse {
   // where reporting today's defaults would quietly lie.
   string worker_image = 2;
   string sidecar_image = 3;
+  // docs/adr/0064: true only when this pod got CreateWorkerPodRequest.definition.
+  // An older provisioner drops the request field and builds the ordinary pod
+  // without saying so, so core tears down a definition warm whose answer lacks
+  // this. It is the only check: it is the one answer from the replica that
+  // served the create (a rollout overlap can split two RPCs across replicas).
+  bool definition_profile_applied = 4;
 }
 
 // The provisioner's own build and the images it stamps onto new pods.

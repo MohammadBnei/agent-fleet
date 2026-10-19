@@ -98,3 +98,106 @@ func TestEnsureRepoCachedForSession_WaitsWhenThereIsNoCacheYet(t *testing.T) {
 		t.Fatalf("expected the cache to have been cloned: %v", err)
 	}
 }
+
+func commitIn(t *testing.T, dir string) string {
+	t.Helper()
+	for _, args := range [][]string{{"commit", "--allow-empty", "-m", "next"}, {"rev-parse", "HEAD"}} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=t@t.io", "GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=t@t.io")
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+		if args[0] == "rev-parse" {
+			return string(out[:len(out)-1])
+		}
+	}
+	return ""
+}
+
+// A definition pod clones from the cache's origin/<base> and never contacts
+// the remote (docs/adr/0064), so the cache fetch is load-bearing: unlike
+// EnsureRepoCachedForSession, EnsureRepoFetched waits out a busy lock and
+// then fetches, bounded by ctx.
+func TestEnsureRepoFetched_WaitsForTheLockThenFetches(t *testing.T) {
+	m := NewManager(t.TempDir())
+	ctx := context.Background()
+	origin := newOriginRepo(t)
+	if _, err := m.EnsureRepoCloned(ctx, "r", origin); err != nil {
+		t.Fatal(err)
+	}
+	tip := commitIn(t, origin)
+
+	lock := m.repoLock("r")
+	lock.Lock()
+	done := make(chan error, 1)
+	go func() { done <- m.EnsureRepoFetched(ctx, "r", origin) }()
+	select {
+	case err := <-done:
+		t.Fatalf("returned while the lock was held: %v", err)
+	case <-time.After(300 * time.Millisecond):
+	}
+	lock.Unlock()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if got := m.originHead(ctx, m.repoPath("r")); got != tip {
+		t.Fatalf("origin/HEAD %s, want the remote's new tip %s", got, tip)
+	}
+
+	lock.Lock()
+	defer lock.Unlock()
+	short, cancel := context.WithTimeout(ctx, 300*time.Millisecond)
+	defer cancel()
+	commitIn(t, origin)
+	if err := m.EnsureRepoFetched(short, "r", origin); err != context.DeadlineExceeded {
+		t.Fatalf("got %v, want the ctx error", err)
+	}
+	if got := m.originHead(ctx, m.repoPath("r")); got != tip {
+		t.Fatal("no git may run past the deadline")
+	}
+}
+
+// docs/adr/0064: the scrub runs on every definition warm, but plugins/ alone is
+// the image's copy from the entrypoint's last boot. Removing it would re-run
+// that cp -r every warm, so it goes only when a sync left settings.json & co.
+func TestRemoveFleetShared_KeepsTheImagePluginsWithoutASync(t *testing.T) {
+	m := NewManager(t.TempDir())
+	home := m.ClaudeHomePath("s")
+	write := func(p string) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(home, p)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(home, p), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	exists := func(p string) bool {
+		_, err := os.Stat(filepath.Join(home, p))
+		return err == nil
+	}
+	write("plugins/p/plugin.json")
+	write("projects/p/s.jsonl")
+	if err := m.RemoveFleetShared("s"); err != nil {
+		t.Fatal(err)
+	}
+	if !exists("plugins/p/plugin.json") {
+		t.Fatal("no sync happened, yet the image's plugins/ was removed")
+	}
+
+	write("settings.json")
+	write("skills/x/SKILL.md")
+	if err := m.RemoveFleetShared("s"); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []string{"settings.json", "skills", "plugins"} {
+		if exists(p) {
+			t.Errorf("%s survived the scrub of a synced claude-home", p)
+		}
+	}
+	if !exists("projects/p/s.jsonl") {
+		t.Error("resume state removed")
+	}
+}

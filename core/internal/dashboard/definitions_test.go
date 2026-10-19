@@ -27,10 +27,19 @@ import (
 // definitionsProvisioner serves definitions/ and records pod creates.
 type definitionsProvisioner struct {
 	agentfleetv1.UnimplementedProvisionerServiceServer
-	mu      sync.Mutex
-	files   map[string][]byte
-	sha     string
-	creates []*agentfleetv1.CreateWorkerPodRequest
+	mu    sync.Mutex
+	files map[string][]byte
+	sha   string
+	// dropsProfile is an older provisioner serving the create: it ignores the
+	// request's profile and does not confirm it (docs/adr/0064).
+	dropsProfile bool
+	// createErr fails the create AFTER recording it: the Job may exist.
+	createErr error
+	// onCreate runs inside the create (a caller going away mid-call).
+	onCreate    func()
+	teardownErr error
+	creates     []*agentfleetv1.CreateWorkerPodRequest
+	teardowns   []string
 }
 
 func (p *definitionsProvisioner) ListDefinitionFiles(context.Context, *agentfleetv1.ListDefinitionFilesRequest) (*agentfleetv1.ListDefinitionFilesResponse, error) {
@@ -47,7 +56,20 @@ func (p *definitionsProvisioner) CreateWorkerPod(_ context.Context, req *agentfl
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.creates = append(p.creates, req)
-	return &agentfleetv1.CreateWorkerPodResponse{PodName: "worker-test"}, nil
+	if p.onCreate != nil {
+		p.onCreate()
+	}
+	if p.createErr != nil {
+		return nil, p.createErr
+	}
+	return &agentfleetv1.CreateWorkerPodResponse{PodName: "worker-test", DefinitionProfileApplied: req.GetDefinition() != nil && !p.dropsProfile}, nil
+}
+
+func (p *definitionsProvisioner) TearDownSession(_ context.Context, req *agentfleetv1.TearDownSessionRequest) (*agentfleetv1.TearDownSessionResponse, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.teardowns = append(p.teardowns, req.GetSessionId())
+	return &agentfleetv1.TearDownSessionResponse{}, p.teardownErr
 }
 
 func (p *definitionsProvisioner) set(f func(*definitionsProvisioner)) {
@@ -219,6 +241,56 @@ func assertNoLease(t *testing.T, store *sessions.Store, id string) {
 	}
 }
 
+// leaseValid reports whether the lease the i-th create carried still
+// authenticates (a definition lease lives in profile_lease_id, never read back).
+func leaseValid(t *testing.T, store *sessions.Store, prov *definitionsProvisioner, i int) bool {
+	t.Helper()
+	prov.mu.Lock()
+	req := prov.creates[i]
+	prov.mu.Unlock()
+	ok, _, err := store.VerifyLease(context.Background(), req.GetSessionId(), req.GetLeaseId())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return ok
+}
+
+// docs/adr/0064: a definition create that errors may still have built the
+// ordinary pod (the call's timeout after the Job exists, an older replica dying
+// mid-call), and a caller that went away must not stop the revocation.
+func TestWarmIfIdle_DefinitionUnconfirmedCreateFailsClosed(t *testing.T) {
+	s, prov, _, store := newDefinitionsServer(t)
+	sess, err := createDef(s, "dev-dream-analyst", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, c := range []struct {
+		name string
+		set  func(p *definitionsProvisioner, cancel func())
+	}{
+		{"create error", func(p *definitionsProvisioner, _ func()) { p.createErr = errors.New("replica went away") }},
+		{"caller gone", func(p *definitionsProvisioner, cancel func()) {
+			p.createErr, p.dropsProfile, p.onCreate = nil, true, cancel
+		}},
+	} {
+		ctx, cancel := context.WithCancel(context.Background())
+		prov.set(func(p *definitionsProvisioner) { c.set(p, cancel) })
+		if _, err := s.WarmIfIdle(ctx, sess.GetId()); err == nil {
+			t.Fatalf("%s: an unconfirmed definition pod warmed", c.name)
+		}
+		cancel()
+		if got, err := store.Get(context.Background(), sess.GetId()); err != nil || sessions.IsPodPhaseLive(got.PodPhase) || leaseValid(t, store, prov, i) {
+			t.Fatalf("%s: kept its lease or a live phase: %+v %v", c.name, got, err)
+		}
+		prov.mu.Lock()
+		torn := len(prov.teardowns)
+		prov.mu.Unlock()
+		if torn != i+1 {
+			t.Fatalf("%s: %d teardowns, want the possibly-built pod removed", c.name, torn)
+		}
+	}
+}
+
 func TestWarmIfIdle_Definition(t *testing.T) {
 	ctx := context.Background()
 	s, prov, reg, store := newDefinitionsServer(t)
@@ -227,15 +299,59 @@ func TestWarmIfIdle_Definition(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// This core never sends the definition pod profile, so it refuses every
-	// definition warm whatever the provisioner is: nothing ever warms with the
-	// ordinary profile (GH_TOKEN and LEASE_ID in the worker).
-	if _, err := s.WarmIfIdle(ctx, sess.GetId()); code(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "definition pod profile") {
-		t.Fatalf("got %v", err)
+	// The profile is built from the pinned version, with the provisioner's
+	// default image whatever repos.image says.
+	repo, err := s.repos.Get(ctx, "dream-analyst")
+	if err != nil {
+		t.Fatal(err)
 	}
-	assertNoLease(t, store, sess.GetId())
-	if prov.createCount() != 0 {
-		t.Fatal("no pod may be created")
+	repo.Image = "registry.example/old-worker:1"
+	if err := s.repos.Update(ctx, *repo); err != nil {
+		t.Fatal(err)
+	}
+	// The create lands on an older provisioner (or an older replica in a
+	// rollout overlap): it built the ordinary pod, so core revokes and removes
+	// it. If the removal fails, the phase stays live so the startup-stall
+	// sweep retries it: CRASHED would hide a pod that is still running.
+	prov.set(func(p *definitionsProvisioner) { p.dropsProfile, p.teardownErr = true, errors.New("k8s down") })
+	if _, err := s.WarmIfIdle(ctx, sess.GetId()); code(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "teardown failed") {
+		t.Fatalf("an unprofiled pod whose teardown failed: got %v", err)
+	}
+	if got, err := store.Get(ctx, sess.GetId()); err != nil || !sessions.IsPodPhaseLive(got.PodPhase) || leaseValid(t, store, prov, 0) {
+		t.Fatalf("want no lease and a live phase for the sweep to retry: %+v %v", got, err)
+	}
+	if err := store.SetPodPhase(ctx, sess.GetId(), agentfleetv1.PodPhase_POD_PHASE_TERMINATED.String(), ""); err != nil {
+		t.Fatal(err) // the sweep's teardown
+	}
+	prov.set(func(p *definitionsProvisioner) { p.teardownErr = nil })
+	if _, err := s.WarmIfIdle(ctx, sess.GetId()); code(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "did not apply the definition pod profile") {
+		t.Fatalf("an unconfirmed profile: got %v", err)
+	}
+	if got, err := store.Get(ctx, sess.GetId()); err != nil || sessions.IsPodPhaseLive(got.PodPhase) || leaseValid(t, store, prov, 1) {
+		t.Fatalf("an unprofiled pod kept its lease or a live phase: %+v %v", got, err)
+	}
+	prov.mu.Lock()
+	torn := append([]string(nil), prov.teardowns...)
+	prov.mu.Unlock()
+	if len(torn) != 2 || torn[1] != sess.GetId() {
+		t.Fatalf("teardowns = %v, want the unprofiled pod removed", torn)
+	}
+
+	prov.set(func(p *definitionsProvisioner) { p.dropsProfile = false })
+	if _, err := s.WarmIfIdle(ctx, sess.GetId()); err != nil {
+		t.Fatalf("warm: %v", err)
+	}
+	prov.mu.Lock()
+	got := prov.creates[2]
+	prov.mu.Unlock()
+	if d := got.GetDefinition(); d.GetName() != "dev-dream-analyst" || d.GetGitAuthorName() != "fleet-dev-agent" || d.GetGitAuthorEmail() != "fleet-dev-agent@bnei.dev" {
+		t.Errorf("profile = %v", d)
+	}
+	if got.GetImage() != "" || len(got.GetToolKeys()) != 0 {
+		t.Errorf("image %q tool keys %v: a definition pod takes the default image and no keys", got.GetImage(), got.GetToolKeys())
+	}
+	if !leaseValid(t, store, prov, 2) {
+		t.Fatal("the warm reserved no lease")
 	}
 
 	// Revocation: a content change makes the old pin stop warming.
@@ -263,7 +379,7 @@ func TestWarmIfIdle_Definition(t *testing.T) {
 	if _, err := s.WarmIfIdle(ctx, other.GetId()); code(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "no longer defined") {
 		t.Fatalf("got %v", err)
 	}
-	if prov.createCount() != 0 {
-		t.Fatal("no pod may be created")
+	if prov.createCount() != 3 {
+		t.Fatal("a revoked pin may not create a pod")
 	}
 }

@@ -237,9 +237,15 @@ type WorkerPod struct {
 	// row so the dashboard can report the build a session is running.
 	WorkerImage  string
 	SidecarImage string
+	// DefinitionProfileApplied is the provisioner's confirmation that this pod
+	// got the definition profile (docs/adr/0064). An older provisioner never
+	// sets it.
+	DefinitionProfileApplied bool
 }
 
-func (c *Client) CreateWorkerPod(ctx context.Context, sessionID, repo, repoURL, baseBranch, description, leaseID, resumeAgentSessionID string, resumeFromSeq int64, toolKeys []string, image string) (WorkerPod, error) {
+// definition is nil for a repo session. For a definition session it switches
+// the pod to the definition profile (docs/adr/0064).
+func (c *Client) CreateWorkerPod(ctx context.Context, sessionID, repo, repoURL, baseBranch, description, leaseID, resumeAgentSessionID string, resumeFromSeq int64, toolKeys []string, image string, definition *agentfleetv1.DefinitionPodProfile) (WorkerPod, error) {
 	ctx, cancel := context.WithTimeout(ctx, sessionCallTimeout)
 	defer cancel()
 	resp, err := c.rpc.CreateWorkerPod(ctx, &agentfleetv1.CreateWorkerPodRequest{
@@ -253,14 +259,16 @@ func (c *Client) CreateWorkerPod(ctx context.Context, sessionID, repo, repoURL, 
 		ResumeFromSeq:   resumeFromSeq,
 		ToolKeys:        toolKeys,
 		Image:           image,
+		Definition:      definition,
 	})
 	if err != nil {
 		return WorkerPod{}, fmt.Errorf("CreateWorkerPod: %w", err)
 	}
 	return WorkerPod{
-		PodName:      resp.GetPodName(),
-		WorkerImage:  resp.GetWorkerImage(),
-		SidecarImage: resp.GetSidecarImage(),
+		PodName:                  resp.GetPodName(),
+		WorkerImage:              resp.GetWorkerImage(),
+		SidecarImage:             resp.GetSidecarImage(),
+		DefinitionProfileApplied: resp.GetDefinitionProfileApplied(),
 	}, nil
 }
 

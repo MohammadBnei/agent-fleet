@@ -61,7 +61,8 @@ type Session struct {
 	// LeaseID is minted per pod. Teardown is not synchronous and the
 	// workspace is shared, so a torn-down pod still finishing its shutdown
 	// must not be able to overwrite the resume identity of the pod that
-	// replaced it. See SaveAgentSessionID.
+	// replaced it. See SaveAgentSessionID. lease_id only: a definition
+	// session's lease (profile_lease_id, docs/adr/0064) is never read back.
 	LeaseID string `json:"-"`
 
 	// AgentSessionID is the Agent SDK's own session id, for `resume:`. Named
@@ -360,9 +361,7 @@ func (s *Store) ReserveSlot(ctx context.Context, id string, caps Caps) (leaseID 
 	}
 
 	// Definition sessions also draw from the definition pool and their own
-	// limits.concurrency (docs/adr/0062), counted under the same lock. Until
-	// docs/adr/0064's migration drops sessions_definition_no_lease, a
-	// definition session that passes these still fails at the lease write.
+	// limits.concurrency (docs/adr/0062), counted under the same lock.
 	var (
 		defName           *string
 		defValid          bool
@@ -403,7 +402,10 @@ func (s *Store) ReserveSlot(ctx context.Context, id string, caps Caps) (leaseID 
 
 	err = tx.QueryRow(ctx, `
 		UPDATE sessions
-		SET lease_id = gen_random_uuid(),
+		-- A definition session's lease goes in profile_lease_id, never
+		-- lease_id, which every older core verifies (docs/adr/0064, 000009).
+		SET lease_id = CASE WHEN definition_name IS NULL THEN v.lease END,
+		    profile_lease_id = CASE WHEN definition_name IS NOT NULL THEN v.lease END,
 		    last_active_at = now(),
 		    stop_requested_at = NULL,
 		    -- A fresh pod is about to be provisioned; nothing it says has
@@ -438,8 +440,9 @@ func (s *Store) ReserveSlot(ctx context.Context, id string, caps Caps) (leaseID 
 		    -- for the first tens of seconds.
 		    pod_phase = 'POD_PHASE_PROVISIONING',
 		    updated_at = now()
+		FROM (SELECT gen_random_uuid() AS lease) v
 		WHERE id = $1 AND archived_at IS NULL
-		RETURNING lease_id::text
+		RETURNING v.lease::text
 	`, id).Scan(&leaseID)
 	if err == pgx.ErrNoRows {
 		return "", ErrNotFound
@@ -593,13 +596,12 @@ func (s *Store) SaveAgentSessionID(ctx context.Context, id, agentSessionID, mode
 	}
 	tag, err := s.pool.Exec(ctx, `
 		UPDATE sessions
-		SET agent_session_id = $2,
+		SET agent_session_id = $4,
 		    -- A definition session's model is its pinned model.default
 		    -- (docs/adr/0062): what the pod reports never widens it.
-		    model = CASE WHEN definition_name IS NULL THEN COALESCE($3, model) ELSE model END,
+		    model = CASE WHEN definition_name IS NULL THEN COALESCE($5, model) ELSE model END,
 		    updated_at = now()
-		WHERE id = $1 AND lease_id::text = $4
-	`, id, agentSessionID, modelPtr, leaseID)
+		WHERE id = $1 AND `+leaseMatch, id, leaseID, livePhases, agentSessionID, modelPtr)
 	if err != nil {
 		slog.Error("sessions SaveAgentSessionID", "sessionId", id, "error", err)
 		return false, fmt.Errorf("save agent session id: %w", err)
@@ -625,18 +627,33 @@ func (s *Store) SaveAgentSessionID(ctx context.Context, id, agentSessionID, mode
 // size (MAX_LIVE_SESSIONS defaults to 5) that is not worth a cache and its
 // invalidation bug; add one if this ever shows up in the RPC durations
 // AccessLogInterceptor already logs.
-func (s *Store) VerifyLease(ctx context.Context, id, leaseID string) (bool, error) {
-	var ok bool
-	err := s.pool.QueryRow(ctx, `
-		SELECT EXISTS (
-			SELECT 1 FROM sessions WHERE id = $1 AND lease_id::text = $2
-		)
-	`, id, leaseID).Scan(&ok)
+//
+// definition is the session's definition name ("" for a repo session), read in
+// the same lookup: it is what narrows a definition lease to its allowlist
+// (docs/adr/0064).
+//
+// A definition lease (profile_lease_id) counts only while the row says a pod
+// is live. An older core (image rollback, rollout overlap) tears a definition
+// pod down with a ClearLease that nulls lease_id alone, so profile_lease_id
+// outlives the pod; the phase that core writes still revokes it. A repo lease
+// keeps 0057's rule: valid until cleared or rotated.
+//
+// leaseMatch is that rule, shared with SaveAgentSessionID so the two cannot
+// drift: $2 is the lease, $3 livePhases.
+const leaseMatch = `(lease_id::text = $2 OR (profile_lease_id::text = $2 AND pod_phase = ANY($3)))`
+
+func (s *Store) VerifyLease(ctx context.Context, id, leaseID string) (ok bool, definition string, err error) {
+	err = s.pool.QueryRow(ctx, `
+		SELECT COALESCE(definition_name, '') FROM sessions
+		WHERE id = $1 AND `+leaseMatch, id, leaseID, livePhases).Scan(&definition)
+	if err == pgx.ErrNoRows {
+		return false, "", nil
+	}
 	if err != nil {
 		slog.Error("sessions VerifyLease", "sessionId", id, "error", err)
-		return false, fmt.Errorf("verify lease: %w", err)
+		return false, "", fmt.Errorf("verify lease: %w", err)
 	}
-	return ok, nil
+	return true, definition, nil
 }
 
 // ClearLease revokes a session's credential at teardown.
@@ -646,7 +663,7 @@ func (s *Store) VerifyLease(ctx context.Context, id, leaseID string) (bool, erro
 // idle — which is most of the time. Clearing here is what makes the lease a
 // revocable credential rather than merely a rotating one.
 func (s *Store) ClearLease(ctx context.Context, id string) error {
-	_, err := s.pool.Exec(ctx, `UPDATE sessions SET lease_id = NULL WHERE id = $1`, id)
+	_, err := s.pool.Exec(ctx, `UPDATE sessions SET lease_id = NULL, profile_lease_id = NULL WHERE id = $1`, id)
 	if err != nil {
 		slog.Error("sessions ClearLease", "sessionId", id, "error", err)
 		return fmt.Errorf("clear lease: %w", err)

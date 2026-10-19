@@ -1012,10 +1012,17 @@ func (s *Server) WarmIfIdle(ctx context.Context, sessionID string) (podName stri
 	if repoCfg == nil {
 		return "", connect.NewError(connect.CodeInternal, fmt.Errorf("unknown repo %q", t.Repo))
 	}
+	// docs/adr/0064: a definition session gets its profile, the provisioner's
+	// default image and no tool keys. repos.image is ignored: the profile's
+	// worker-side hardening (FLEET_DEFINITION) needs this release's worker, and
+	// an override is not guaranteed to be one.
+	var profile *agentfleetv1.DefinitionPodProfile
+	image := repoCfg.Image
 	if t.DefinitionName != nil {
-		if err := s.definitionWarmable(ctx, t, repoCfg.ClusterAccess); err != nil {
+		if profile, err = s.definitionWarmable(ctx, t, repoCfg.ClusterAccess); err != nil {
 			return "", err
 		}
+		image = ""
 	}
 
 	// The cap check and the lease mint happen together, under an advisory
@@ -1052,9 +1059,19 @@ func (s *Server) WarmIfIdle(ctx context.Context, sessionID string) (podName stri
 	// row, which a concurrent "manage repos" edit could have straddled, so a
 	// pod could get one repo's privilege grant and another's image.
 	toolKeys := provisionerclient.ToolKeysFor(repoCfg.ClusterAccess)
-	pod, err := s.e2e.CreateWorkerPod(ctx, sessionID, t.Repo, repoCfg.URL, repoCfg.BaseBranch, t.Description, leaseID, resumeAgentSessionID, resumeFromSeq, toolKeys, repoCfg.Image)
-	if err != nil {
+	pod, err := s.e2e.CreateWorkerPod(ctx, sessionID, t.Repo, repoCfg.URL, repoCfg.BaseBranch, t.Description, leaseID, resumeAgentSessionID, resumeFromSeq, toolKeys, image, profile)
+	switch {
+	case err != nil && profile != nil:
+		// docs/adr/0064: an error can come after the Job exists (the call's
+		// timeout, or an older replica dying mid-call), and an older replica's
+		// Job is the ORDINARY pod. Unconfirmed is refused.
+		return "", s.refuseDefinitionPod(ctx, sessionID, connect.CodeInternal, fmt.Sprintf("definition pod create failed (%v)", err))
+	case err != nil:
 		return "", connect.NewError(connect.CodeInternal, err)
+	case profile != nil && !pod.DefinitionProfileApplied:
+		// The create reached a provisioner that dropped the profile (an older
+		// one, or an older replica in a rollout overlap): the ORDINARY pod.
+		return "", s.refuseDefinitionPod(ctx, sessionID, connect.CodeFailedPrecondition, "provisioner did not apply the definition pod profile")
 	}
 	// Record the build this pod is on. Not fatal: the pod exists and the
 	// session is live either way, and failing the warm over a metadata write
@@ -1065,38 +1082,68 @@ func (s *Server) WarmIfIdle(ctx context.Context, sessionID string) (podName stri
 	return pod.PodName, nil
 }
 
+// refuseDefinitionPod revokes and removes whatever a definition warm may have
+// built without a confirmed profile (docs/adr/0064): its lease first, then the
+// pod. Tearing down nothing is a no-op. Off the caller's cancellation: a
+// dropped browser request must not leave an ordinary pod holding a live lease.
+func (s *Server) refuseDefinitionPod(ctx context.Context, sessionID string, code connect.Code, why string) error {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Minute)
+	defer cancel()
+	msg := why + " (docs/adr/0064); the pod was torn down"
+	clearErr := s.sessions.ClearLease(ctx, sessionID)
+	if clearErr != nil {
+		slog.Error("dashboard warm: revoking an unconfirmed definition pod's lease", "sessionId", sessionID, "error", clearErr)
+	}
+	if _, err := s.e2e.TearDownSession(ctx, sessionID, agentfleetv1.SessionKind_SESSION_KIND_WORKER); err != nil {
+		// The phase stays live: CRASHED would hide a pod that may still run,
+		// and reconcile bumps it back while the Job exists anyway. With the
+		// lease cleared the pod can report no activity, so the startup-stall
+		// sweep retries the teardown. With both failed nothing does: logged.
+		slog.Error("dashboard warm: tearing down an unconfirmed definition pod", "sessionId", sessionID, "error", err, "leaseRevoked", clearErr == nil)
+		return connect.NewError(code, fmt.Errorf("%s (docs/adr/0064), and its teardown failed: %w", why, errors.Join(err, clearErr)))
+	}
+	// Gone: the phase gate revokes a lease ClearLease missed.
+	if err := s.sessions.SetPodPhase(ctx, sessionID, agentfleetv1.PodPhase_POD_PHASE_CRASHED.String(), msg); err != nil {
+		slog.Error("dashboard warm: recording the refused definition pod", "sessionId", sessionID, "error", err)
+	}
+	return connect.NewError(code, errors.New(msg))
+}
+
 // definitionWarmable refuses to warm a definition session unless its pinned
-// version is still the current one (docs/adr/0062's revocation rule) and the
-// repo has not been flipped to cluster access since creation; and, until
-// docs/adr/0064 lands, always. All checked BEFORE ReserveSlot, so a refusal
-// leaves no lease and no phase.
-func (s *Server) definitionWarmable(ctx context.Context, t *sessions.Session, clusterAccess bool) error {
+// version is still the current one (docs/adr/0062's revocation rule), the repo
+// has not been flipped to cluster access since creation. All checked BEFORE
+// ReserveSlot, so a refusal leaves no lease and no phase. Whether the
+// provisioner applied the definition pod profile (docs/adr/0064) is checked on
+// the create's own answer in WarmIfIdle, the only answer that comes from the
+// replica that built the pod. The profile is built from the current row, which by
+// the pin check IS the pinned version.
+func (s *Server) definitionWarmable(ctx context.Context, t *sessions.Session, clusterAccess bool) (*agentfleetv1.DefinitionPodProfile, error) {
 	name, pinned := *t.DefinitionName, *t.DefinitionSHA
 	if s.definitions == nil {
-		return connect.NewError(connect.CodeUnavailable, errors.New("defined agents are not configured"))
+		return nil, connect.NewError(connect.CodeUnavailable, errors.New("defined agents are not configured"))
 	}
 	head, err := s.definitions.Resolve(name)
 	switch {
 	case errors.Is(err, definitions.ErrUnknown):
-		return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("definition %q is no longer defined; start a new session", name))
+		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("definition %q is no longer defined; start a new session", name))
 	case errors.Is(err, definitions.ErrInvalid):
-		return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("definition %q has no valid version: %w", name, err))
+		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("definition %q has no valid version: %w", name, err))
 	case err != nil:
-		return connect.NewError(connect.CodeUnavailable, err)
+		return nil, connect.NewError(connect.CodeUnavailable, err)
 	}
 	if head.SHA != pinned {
-		return connect.NewError(connect.CodeFailedPrecondition,
+		return nil, connect.NewError(connect.CodeFailedPrecondition,
 			fmt.Errorf("definition %q changed since this session was created (pinned %.7s, current %.7s); start a new session", name, pinned, head.SHA))
 	}
 	if clusterAccess {
-		return connect.NewError(connect.CodeFailedPrecondition, errors.New("definition sessions never run on a cluster-access repo"))
+		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("definition sessions never run on a cluster-access repo"))
 	}
-	// Unconditional until ADR-0064's slice: no core here sends the profile
-	// in CreateWorkerPod, so any pod it got would have the ORDINARY one
-	// (GH_TOKEN and LEASE_ID in the worker, the whole /repo-cache). That
-	// slice replaces this with a check it can satisfy.
-	return connect.NewError(connect.CodeFailedPrecondition,
-		errors.New("definition sessions cannot warm yet: the definition pod profile (docs/adr/0064) is not implemented"))
+	if head.Effective == nil || head.Effective.Git == nil || head.Effective.Git.Identity == nil {
+		// The validator requires git.identity on every launchable spec.
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("definition %q has no git identity", name))
+	}
+	id := head.Effective.Git.Identity
+	return &agentfleetv1.DefinitionPodProfile{Name: name, GitAuthorName: id.Name, GitAuthorEmail: id.Email}, nil
 }
 
 // DeleteTask force-tears-down any live session for sessionID (both kinds —
