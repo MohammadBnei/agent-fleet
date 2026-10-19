@@ -107,6 +107,30 @@ message DefinitionPodProfile {
   // git.identity, as GIT_AUTHOR_*/GIT_COMMITTER_* in the worker container.
   string git_author_name = 2;
   string git_author_email = 3;
+  // docs/adr/0065: the definition's vault (name == the definition's name) and
+  // the services the provisioner reconciles into it before minting this pod's
+  // token.
+  VaultSpec vault = 4;
+  // limits.timeout in seconds: the pod's lifetime (docs/adr/0065). Job
+  // activeDeadlineSeconds = max(300, this); the token's TTL = that + 60s, so
+  // the token always outlives the pod.
+  int64 timeout_seconds = 5;
+}
+
+// A vault's desired state, from a definition's validated effective spec
+// (docs/adr/0065). `secret` is an Infisical KEY name: values never travel on
+// this wire, the provisioner reads them from its own mounted Secret.
+message VaultSpec {
+  string name = 1;
+  repeated VaultService services = 2;
+}
+
+message VaultService {
+  // github.com | api.github.com | api.anthropic.com
+  string host = 1;
+  // Validator-shaped path globs; empty for api.anthropic.com.
+  repeated string paths = 2;
+  string secret = 3;
 }
 
 message CreateWorkerPodResponse {
@@ -124,6 +148,29 @@ message CreateWorkerPodResponse {
   // this. It is the only check: it is the one answer from the replica that
   // served the create (a rollout overlap can split two RPCs across replicas).
   bool definition_profile_applied = 4;
+  // docs/adr/0065: true only from a provisioner that minted this pod's vault
+  // token and built it with placeholders instead of real credentials. A
+  // definition warm whose answer lacks it got a P1 (pre-vault) pod: core
+  // refuses it like a missing definition_profile_applied.
+  bool vault_token_applied = 5;
+}
+
+// docs/adr/0065. Every valid definition's vault after core's last good
+// definitions sync: the FULL desired set. The provisioner makes each vault
+// match and empties every vault it administers that is absent (except the
+// reserved `executor-` prefix), so no `gone` list is needed.
+message ReconcileVaultsRequest {
+  repeated VaultSpec vaults = 1;
+}
+
+message ReconcileVaultsResponse {
+  repeated VaultResult results = 1;
+}
+
+message VaultResult {
+  string name = 1;
+  // "" = the vault matches its spec. Names a missing key, never a value.
+  string error = 2;
 }
 
 // The provisioner's own build and the images it stamps onto new pods.
@@ -289,6 +336,11 @@ service ProvisionerService {
   // core's definitions sync source (docs/adr/0062). Named *Files* because
   // DashboardService already has ListDefinitions in this package.
   rpc ListDefinitionFiles(ListDefinitionFilesRequest) returns (ListDefinitionFilesResponse);
+
+  // core's definitions sync pushes every valid definition's vault after each
+  // good sync (docs/adr/0065); core commands, the provisioner executes, and
+  // credential values exist only on the provisioner's side.
+  rpc ReconcileVaults(ReconcileVaultsRequest) returns (ReconcileVaultsResponse);
 }
 
 message SweepSessionRequest {

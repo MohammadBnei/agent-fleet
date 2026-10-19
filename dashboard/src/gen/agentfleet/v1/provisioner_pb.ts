@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file agentfleet/v1/provisioner.proto.
  */
 export const file_agentfleet_v1_provisioner: GenFile = /*@__PURE__*/
-  fileDesc("Ch9hZ2VudGZsZWV0L3YxL3Byb3Zpc2lvbmVyLnByb3RvEg1hZ2VudGZsZWV0LnYxIsICChZDcmVhdGVXb3JrZXJQb2RSZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkSDAoEcmVwbxgCIAEoCRIQCghyZXBvX3VybBgDIAEoCRITCgtiYXNlX2JyYW5jaBgEIAEoCRITCgtkZXNjcmlwdGlvbhgFIAEoCRIQCghsZWFzZV9pZBgGIAEoCRIZChFyZXN1bWVfc2Vzc2lvbl9pZBgHIAEoCRIXCg9yZXN1bWVfZnJvbV9zZXEYCCABKAMSEQoJdG9vbF9rZXlzGAogAygJEg0KBWltYWdlGAwgASgJEjcKCmRlZmluaXRpb24YDSABKAsyIy5hZ2VudGZsZWV0LnYxLkRlZmluaXRpb25Qb2RQcm9maWxlSgQICRAKSgQICxAMUghndWlkYW5jZVITc2VydmljZV9pbmdyZWRpZW50cyJXChREZWZpbml0aW9uUG9kUHJvZmlsZRIMCgRuYW1lGAEgASgJEhcKD2dpdF9hdXRob3JfbmFtZRgCIAEoCRIYChBnaXRfYXV0aG9yX2VtYWlsGAMgASgJInwKF0NyZWF0ZVdvcmtlclBvZFJlc3BvbnNlEhAKCHBvZF9uYW1lGAEgASgJEhQKDHdvcmtlcl9pbWFnZRgCIAEoCRIVCg1zaWRlY2FyX2ltYWdlGAMgASgJEiIKGmRlZmluaXRpb25fcHJvZmlsZV9hcHBsaWVkGAQgASgIIhMKEUdldFZlcnNpb25SZXF1ZXN0IlIKEkdldFZlcnNpb25SZXNwb25zZRIPCgd2ZXJzaW9uGAEgASgJEhQKDHdvcmtlcl9pbWFnZRgCIAEoCRIVCg1zaWRlY2FyX2ltYWdlGAMgASgJIhwKGkxpc3REZWZpbml0aW9uRmlsZXNSZXF1ZXN0Ii8KDkRlZmluaXRpb25GaWxlEgwKBHBhdGgYASABKAkSDwoHY29udGVudBgCIAEoDCJYChtMaXN0RGVmaW5pdGlvbkZpbGVzUmVzcG9uc2USLAoFZmlsZXMYASADKAsyHS5hZ2VudGZsZWV0LnYxLkRlZmluaXRpb25GaWxlEgsKA3NoYRgCIAEoCSJWChZUZWFyRG93blNlc3Npb25SZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkSKAoEa2luZBgCIAEoDjIaLmFnZW50ZmxlZXQudjEuU2Vzc2lvbktpbmQiLAoXVGVhckRvd25TZXNzaW9uUmVzcG9uc2USEQoJdG9ybl9kb3duGAEgASgIIhcKFUxpc3RXb3JrZXJQb2RzUmVxdWVzdCJECg1MaXZlV29ya2VyUG9kEhIKCnNlc3Npb25faWQYASABKAkSEAoIcG9kX25hbWUYAiABKAkSDQoFcGhhc2UYAyABKAkiRAoWTGlzdFdvcmtlclBvZHNSZXNwb25zZRIqCgRwb2RzGAEgAygLMhwuYWdlbnRmbGVldC52MS5MaXZlV29ya2VyUG9kIjgKFEV4cG9zZVNlc3Npb25SZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkSDAoEcG9ydBgCIAEoBSIkChVFeHBvc2VTZXNzaW9uUmVzcG9uc2USCwoDdXJsGAEgASgJIiwKFlVuZXhwb3NlU2Vzc2lvblJlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCSIZChdVbmV4cG9zZVNlc3Npb25SZXNwb25zZSJJChdQcm92aXNpb25TZXJ2aWNlUmVxdWVzdBISCgpzZXNzaW9uX2lkGAEgASgJEgwKBHJlcG8YAiABKAkSDAoEa2luZBgDIAEoCSInChhQcm92aXNpb25TZXJ2aWNlUmVzcG9uc2USCwoDZHNuGAEgASgJIikKE1N3ZWVwU2Vzc2lvblJlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCSIWChRTd2VlcFNlc3Npb25SZXNwb25zZSI2ChRTeW5jUmVwb0NhY2hlUmVxdWVzdBIMCgRyZXBvGAEgASgJEhAKCHJlcG9fdXJsGAIgASgJInoKFVN5bmNSZXBvQ2FjaGVSZXNwb25zZRIOCgZjbG9uZWQYASABKAgSDAoEaGVhZBgCIAEoCRIYChBjb21taXRzX2FkdmFuY2VkGAMgASgFEhMKC2R1cmF0aW9uX21zGAQgASgDEhQKDGhlYWRfY2hhbmdlZBgFIAEoCCpcCgtTZXNzaW9uS2luZBIcChhTRVNTSU9OX0tJTkRfVU5TUEVDSUZJRUQQABIXChNTRVNTSU9OX0tJTkRfV09SS0VSEAEiBAgCEAIqEFNFU1NJT05fS0lORF9FMkUy0AcKElByb3Zpc2lvbmVyU2VydmljZRJgCg9DcmVhdGVXb3JrZXJQb2QSJS5hZ2VudGZsZWV0LnYxLkNyZWF0ZVdvcmtlclBvZFJlcXVlc3QaJi5hZ2VudGZsZWV0LnYxLkNyZWF0ZVdvcmtlclBvZFJlc3BvbnNlEmAKD1RlYXJEb3duU2Vzc2lvbhIlLmFnZW50ZmxlZXQudjEuVGVhckRvd25TZXNzaW9uUmVxdWVzdBomLmFnZW50ZmxlZXQudjEuVGVhckRvd25TZXNzaW9uUmVzcG9uc2USXQoOTGlzdFdvcmtlclBvZHMSJC5hZ2VudGZsZWV0LnYxLkxpc3RXb3JrZXJQb2RzUmVxdWVzdBolLmFnZW50ZmxlZXQudjEuTGlzdFdvcmtlclBvZHNSZXNwb25zZRJRCgpHZXRWZXJzaW9uEiAuYWdlbnRmbGVldC52MS5HZXRWZXJzaW9uUmVxdWVzdBohLmFnZW50ZmxlZXQudjEuR2V0VmVyc2lvblJlc3BvbnNlEloKDUV4cG9zZVNlc3Npb24SIy5hZ2VudGZsZWV0LnYxLkV4cG9zZVNlc3Npb25SZXF1ZXN0GiQuYWdlbnRmbGVldC52MS5FeHBvc2VTZXNzaW9uUmVzcG9uc2USYAoPVW5leHBvc2VTZXNzaW9uEiUuYWdlbnRmbGVldC52MS5VbmV4cG9zZVNlc3Npb25SZXF1ZXN0GiYuYWdlbnRmbGVldC52MS5VbmV4cG9zZVNlc3Npb25SZXNwb25zZRJjChBQcm92aXNpb25TZXJ2aWNlEiYuYWdlbnRmbGVldC52MS5Qcm92aXNpb25TZXJ2aWNlUmVxdWVzdBonLmFnZW50ZmxlZXQudjEuUHJvdmlzaW9uU2VydmljZVJlc3BvbnNlEloKDVN5bmNSZXBvQ2FjaGUSIy5hZ2VudGZsZWV0LnYxLlN5bmNSZXBvQ2FjaGVSZXF1ZXN0GiQuYWdlbnRmbGVldC52MS5TeW5jUmVwb0NhY2hlUmVzcG9uc2USVwoMU3dlZXBTZXNzaW9uEiIuYWdlbnRmbGVldC52MS5Td2VlcFNlc3Npb25SZXF1ZXN0GiMuYWdlbnRmbGVldC52MS5Td2VlcFNlc3Npb25SZXNwb25zZRJsChNMaXN0RGVmaW5pdGlvbkZpbGVzEikuYWdlbnRmbGVldC52MS5MaXN0RGVmaW5pdGlvbkZpbGVzUmVxdWVzdBoqLmFnZW50ZmxlZXQudjEuTGlzdERlZmluaXRpb25GaWxlc1Jlc3BvbnNlQk1aS2dpdGh1Yi5jb20vTW9oYW1tYWRCbmVpL2FnZW50LWZsZWV0L3Byb3RvL2dlbi9nby9hZ2VudGZsZWV0L3YxO2FnZW50ZmxlZXR2MWIGcHJvdG8z");
+  fileDesc("Ch9hZ2VudGZsZWV0L3YxL3Byb3Zpc2lvbmVyLnByb3RvEg1hZ2VudGZsZWV0LnYxIsICChZDcmVhdGVXb3JrZXJQb2RSZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkSDAoEcmVwbxgCIAEoCRIQCghyZXBvX3VybBgDIAEoCRITCgtiYXNlX2JyYW5jaBgEIAEoCRITCgtkZXNjcmlwdGlvbhgFIAEoCRIQCghsZWFzZV9pZBgGIAEoCRIZChFyZXN1bWVfc2Vzc2lvbl9pZBgHIAEoCRIXCg9yZXN1bWVfZnJvbV9zZXEYCCABKAMSEQoJdG9vbF9rZXlzGAogAygJEg0KBWltYWdlGAwgASgJEjcKCmRlZmluaXRpb24YDSABKAsyIy5hZ2VudGZsZWV0LnYxLkRlZmluaXRpb25Qb2RQcm9maWxlSgQICRAKSgQICxAMUghndWlkYW5jZVITc2VydmljZV9pbmdyZWRpZW50cyKZAQoURGVmaW5pdGlvblBvZFByb2ZpbGUSDAoEbmFtZRgBIAEoCRIXCg9naXRfYXV0aG9yX25hbWUYAiABKAkSGAoQZ2l0X2F1dGhvcl9lbWFpbBgDIAEoCRInCgV2YXVsdBgEIAEoCzIYLmFnZW50ZmxlZXQudjEuVmF1bHRTcGVjEhcKD3RpbWVvdXRfc2Vjb25kcxgFIAEoAyJICglWYXVsdFNwZWMSDAoEbmFtZRgBIAEoCRItCghzZXJ2aWNlcxgCIAMoCzIbLmFnZW50ZmxlZXQudjEuVmF1bHRTZXJ2aWNlIjsKDFZhdWx0U2VydmljZRIMCgRob3N0GAEgASgJEg0KBXBhdGhzGAIgAygJEg4KBnNlY3JldBgDIAEoCSKZAQoXQ3JlYXRlV29ya2VyUG9kUmVzcG9uc2USEAoIcG9kX25hbWUYASABKAkSFAoMd29ya2VyX2ltYWdlGAIgASgJEhUKDXNpZGVjYXJfaW1hZ2UYAyABKAkSIgoaZGVmaW5pdGlvbl9wcm9maWxlX2FwcGxpZWQYBCABKAgSGwoTdmF1bHRfdG9rZW5fYXBwbGllZBgFIAEoCCJCChZSZWNvbmNpbGVWYXVsdHNSZXF1ZXN0EigKBnZhdWx0cxgBIAMoCzIYLmFnZW50ZmxlZXQudjEuVmF1bHRTcGVjIkYKF1JlY29uY2lsZVZhdWx0c1Jlc3BvbnNlEisKB3Jlc3VsdHMYASADKAsyGi5hZ2VudGZsZWV0LnYxLlZhdWx0UmVzdWx0IioKC1ZhdWx0UmVzdWx0EgwKBG5hbWUYASABKAkSDQoFZXJyb3IYAiABKAkiEwoRR2V0VmVyc2lvblJlcXVlc3QiUgoSR2V0VmVyc2lvblJlc3BvbnNlEg8KB3ZlcnNpb24YASABKAkSFAoMd29ya2VyX2ltYWdlGAIgASgJEhUKDXNpZGVjYXJfaW1hZ2UYAyABKAkiHAoaTGlzdERlZmluaXRpb25GaWxlc1JlcXVlc3QiLwoORGVmaW5pdGlvbkZpbGUSDAoEcGF0aBgBIAEoCRIPCgdjb250ZW50GAIgASgMIlgKG0xpc3REZWZpbml0aW9uRmlsZXNSZXNwb25zZRIsCgVmaWxlcxgBIAMoCzIdLmFnZW50ZmxlZXQudjEuRGVmaW5pdGlvbkZpbGUSCwoDc2hhGAIgASgJIlYKFlRlYXJEb3duU2Vzc2lvblJlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCRIoCgRraW5kGAIgASgOMhouYWdlbnRmbGVldC52MS5TZXNzaW9uS2luZCIsChdUZWFyRG93blNlc3Npb25SZXNwb25zZRIRCgl0b3JuX2Rvd24YASABKAgiFwoVTGlzdFdvcmtlclBvZHNSZXF1ZXN0IkQKDUxpdmVXb3JrZXJQb2QSEgoKc2Vzc2lvbl9pZBgBIAEoCRIQCghwb2RfbmFtZRgCIAEoCRINCgVwaGFzZRgDIAEoCSJEChZMaXN0V29ya2VyUG9kc1Jlc3BvbnNlEioKBHBvZHMYASADKAsyHC5hZ2VudGZsZWV0LnYxLkxpdmVXb3JrZXJQb2QiOAoURXhwb3NlU2Vzc2lvblJlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCRIMCgRwb3J0GAIgASgFIiQKFUV4cG9zZVNlc3Npb25SZXNwb25zZRILCgN1cmwYASABKAkiLAoWVW5leHBvc2VTZXNzaW9uUmVxdWVzdBISCgpzZXNzaW9uX2lkGAEgASgJIhkKF1VuZXhwb3NlU2Vzc2lvblJlc3BvbnNlIkkKF1Byb3Zpc2lvblNlcnZpY2VSZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkSDAoEcmVwbxgCIAEoCRIMCgRraW5kGAMgASgJIicKGFByb3Zpc2lvblNlcnZpY2VSZXNwb25zZRILCgNkc24YASABKAkiKQoTU3dlZXBTZXNzaW9uUmVxdWVzdBISCgpzZXNzaW9uX2lkGAEgASgJIhYKFFN3ZWVwU2Vzc2lvblJlc3BvbnNlIjYKFFN5bmNSZXBvQ2FjaGVSZXF1ZXN0EgwKBHJlcG8YASABKAkSEAoIcmVwb191cmwYAiABKAkiegoVU3luY1JlcG9DYWNoZVJlc3BvbnNlEg4KBmNsb25lZBgBIAEoCBIMCgRoZWFkGAIgASgJEhgKEGNvbW1pdHNfYWR2YW5jZWQYAyABKAUSEwoLZHVyYXRpb25fbXMYBCABKAMSFAoMaGVhZF9jaGFuZ2VkGAUgASgIKlwKC1Nlc3Npb25LaW5kEhwKGFNFU1NJT05fS0lORF9VTlNQRUNJRklFRBAAEhcKE1NFU1NJT05fS0lORF9XT1JLRVIQASIECAIQAioQU0VTU0lPTl9LSU5EX0UyRTKyCAoSUHJvdmlzaW9uZXJTZXJ2aWNlEmAKD0NyZWF0ZVdvcmtlclBvZBIlLmFnZW50ZmxlZXQudjEuQ3JlYXRlV29ya2VyUG9kUmVxdWVzdBomLmFnZW50ZmxlZXQudjEuQ3JlYXRlV29ya2VyUG9kUmVzcG9uc2USYAoPVGVhckRvd25TZXNzaW9uEiUuYWdlbnRmbGVldC52MS5UZWFyRG93blNlc3Npb25SZXF1ZXN0GiYuYWdlbnRmbGVldC52MS5UZWFyRG93blNlc3Npb25SZXNwb25zZRJdCg5MaXN0V29ya2VyUG9kcxIkLmFnZW50ZmxlZXQudjEuTGlzdFdvcmtlclBvZHNSZXF1ZXN0GiUuYWdlbnRmbGVldC52MS5MaXN0V29ya2VyUG9kc1Jlc3BvbnNlElEKCkdldFZlcnNpb24SIC5hZ2VudGZsZWV0LnYxLkdldFZlcnNpb25SZXF1ZXN0GiEuYWdlbnRmbGVldC52MS5HZXRWZXJzaW9uUmVzcG9uc2USWgoNRXhwb3NlU2Vzc2lvbhIjLmFnZW50ZmxlZXQudjEuRXhwb3NlU2Vzc2lvblJlcXVlc3QaJC5hZ2VudGZsZWV0LnYxLkV4cG9zZVNlc3Npb25SZXNwb25zZRJgCg9VbmV4cG9zZVNlc3Npb24SJS5hZ2VudGZsZWV0LnYxLlVuZXhwb3NlU2Vzc2lvblJlcXVlc3QaJi5hZ2VudGZsZWV0LnYxLlVuZXhwb3NlU2Vzc2lvblJlc3BvbnNlEmMKEFByb3Zpc2lvblNlcnZpY2USJi5hZ2VudGZsZWV0LnYxLlByb3Zpc2lvblNlcnZpY2VSZXF1ZXN0GicuYWdlbnRmbGVldC52MS5Qcm92aXNpb25TZXJ2aWNlUmVzcG9uc2USWgoNU3luY1JlcG9DYWNoZRIjLmFnZW50ZmxlZXQudjEuU3luY1JlcG9DYWNoZVJlcXVlc3QaJC5hZ2VudGZsZWV0LnYxLlN5bmNSZXBvQ2FjaGVSZXNwb25zZRJXCgxTd2VlcFNlc3Npb24SIi5hZ2VudGZsZWV0LnYxLlN3ZWVwU2Vzc2lvblJlcXVlc3QaIy5hZ2VudGZsZWV0LnYxLlN3ZWVwU2Vzc2lvblJlc3BvbnNlEmwKE0xpc3REZWZpbml0aW9uRmlsZXMSKS5hZ2VudGZsZWV0LnYxLkxpc3REZWZpbml0aW9uRmlsZXNSZXF1ZXN0GiouYWdlbnRmbGVldC52MS5MaXN0RGVmaW5pdGlvbkZpbGVzUmVzcG9uc2USYAoPUmVjb25jaWxlVmF1bHRzEiUuYWdlbnRmbGVldC52MS5SZWNvbmNpbGVWYXVsdHNSZXF1ZXN0GiYuYWdlbnRmbGVldC52MS5SZWNvbmNpbGVWYXVsdHNSZXNwb25zZUJNWktnaXRodWIuY29tL01vaGFtbWFkQm5laS9hZ2VudC1mbGVldC9wcm90by9nZW4vZ28vYWdlbnRmbGVldC92MTthZ2VudGZsZWV0djFiBnByb3RvMw");
 
 /**
  * Fetches the repo's clone cache and creates the session's pod, synchronously,
@@ -156,6 +156,24 @@ export type DefinitionPodProfile = Message<"agentfleet.v1.DefinitionPodProfile">
    * @generated from field: string git_author_email = 3;
    */
   gitAuthorEmail: string;
+
+  /**
+   * docs/adr/0065: the definition's vault (name == the definition's name) and
+   * the services the provisioner reconciles into it before minting this pod's
+   * token.
+   *
+   * @generated from field: agentfleet.v1.VaultSpec vault = 4;
+   */
+  vault?: VaultSpec | undefined;
+
+  /**
+   * limits.timeout in seconds: the pod's lifetime (docs/adr/0065). Job
+   * activeDeadlineSeconds = max(300, this); the token's TTL = that + 60s, so
+   * the token always outlives the pod.
+   *
+   * @generated from field: int64 timeout_seconds = 5;
+   */
+  timeoutSeconds: bigint;
 };
 
 /**
@@ -164,6 +182,63 @@ export type DefinitionPodProfile = Message<"agentfleet.v1.DefinitionPodProfile">
  */
 export const DefinitionPodProfileSchema: GenMessage<DefinitionPodProfile> = /*@__PURE__*/
   messageDesc(file_agentfleet_v1_provisioner, 1);
+
+/**
+ * A vault's desired state, from a definition's validated effective spec
+ * (docs/adr/0065). `secret` is an Infisical KEY name: values never travel on
+ * this wire, the provisioner reads them from its own mounted Secret.
+ *
+ * @generated from message agentfleet.v1.VaultSpec
+ */
+export type VaultSpec = Message<"agentfleet.v1.VaultSpec"> & {
+  /**
+   * @generated from field: string name = 1;
+   */
+  name: string;
+
+  /**
+   * @generated from field: repeated agentfleet.v1.VaultService services = 2;
+   */
+  services: VaultService[];
+};
+
+/**
+ * Describes the message agentfleet.v1.VaultSpec.
+ * Use `create(VaultSpecSchema)` to create a new message.
+ */
+export const VaultSpecSchema: GenMessage<VaultSpec> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_provisioner, 2);
+
+/**
+ * @generated from message agentfleet.v1.VaultService
+ */
+export type VaultService = Message<"agentfleet.v1.VaultService"> & {
+  /**
+   * github.com | api.github.com | api.anthropic.com
+   *
+   * @generated from field: string host = 1;
+   */
+  host: string;
+
+  /**
+   * Validator-shaped path globs; empty for api.anthropic.com.
+   *
+   * @generated from field: repeated string paths = 2;
+   */
+  paths: string[];
+
+  /**
+   * @generated from field: string secret = 3;
+   */
+  secret: string;
+};
+
+/**
+ * Describes the message agentfleet.v1.VaultService.
+ * Use `create(VaultServiceSchema)` to create a new message.
+ */
+export const VaultServiceSchema: GenMessage<VaultService> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_provisioner, 3);
 
 /**
  * @generated from message agentfleet.v1.CreateWorkerPodResponse
@@ -200,6 +275,16 @@ export type CreateWorkerPodResponse = Message<"agentfleet.v1.CreateWorkerPodResp
    * @generated from field: bool definition_profile_applied = 4;
    */
   definitionProfileApplied: boolean;
+
+  /**
+   * docs/adr/0065: true only from a provisioner that minted this pod's vault
+   * token and built it with placeholders instead of real credentials. A
+   * definition warm whose answer lacks it got a P1 (pre-vault) pod: core
+   * refuses it like a missing definition_profile_applied.
+   *
+   * @generated from field: bool vault_token_applied = 5;
+   */
+  vaultTokenApplied: boolean;
 };
 
 /**
@@ -207,7 +292,70 @@ export type CreateWorkerPodResponse = Message<"agentfleet.v1.CreateWorkerPodResp
  * Use `create(CreateWorkerPodResponseSchema)` to create a new message.
  */
 export const CreateWorkerPodResponseSchema: GenMessage<CreateWorkerPodResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 2);
+  messageDesc(file_agentfleet_v1_provisioner, 4);
+
+/**
+ * docs/adr/0065. Every valid definition's vault after core's last good
+ * definitions sync: the FULL desired set. The provisioner makes each vault
+ * match and empties every vault it administers that is absent (except the
+ * reserved `executor-` prefix), so no `gone` list is needed.
+ *
+ * @generated from message agentfleet.v1.ReconcileVaultsRequest
+ */
+export type ReconcileVaultsRequest = Message<"agentfleet.v1.ReconcileVaultsRequest"> & {
+  /**
+   * @generated from field: repeated agentfleet.v1.VaultSpec vaults = 1;
+   */
+  vaults: VaultSpec[];
+};
+
+/**
+ * Describes the message agentfleet.v1.ReconcileVaultsRequest.
+ * Use `create(ReconcileVaultsRequestSchema)` to create a new message.
+ */
+export const ReconcileVaultsRequestSchema: GenMessage<ReconcileVaultsRequest> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_provisioner, 5);
+
+/**
+ * @generated from message agentfleet.v1.ReconcileVaultsResponse
+ */
+export type ReconcileVaultsResponse = Message<"agentfleet.v1.ReconcileVaultsResponse"> & {
+  /**
+   * @generated from field: repeated agentfleet.v1.VaultResult results = 1;
+   */
+  results: VaultResult[];
+};
+
+/**
+ * Describes the message agentfleet.v1.ReconcileVaultsResponse.
+ * Use `create(ReconcileVaultsResponseSchema)` to create a new message.
+ */
+export const ReconcileVaultsResponseSchema: GenMessage<ReconcileVaultsResponse> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_provisioner, 6);
+
+/**
+ * @generated from message agentfleet.v1.VaultResult
+ */
+export type VaultResult = Message<"agentfleet.v1.VaultResult"> & {
+  /**
+   * @generated from field: string name = 1;
+   */
+  name: string;
+
+  /**
+   * "" = the vault matches its spec. Names a missing key, never a value.
+   *
+   * @generated from field: string error = 2;
+   */
+  error: string;
+};
+
+/**
+ * Describes the message agentfleet.v1.VaultResult.
+ * Use `create(VaultResultSchema)` to create a new message.
+ */
+export const VaultResultSchema: GenMessage<VaultResult> = /*@__PURE__*/
+  messageDesc(file_agentfleet_v1_provisioner, 7);
 
 /**
  * The provisioner's own build and the images it stamps onto new pods.
@@ -227,7 +375,7 @@ export type GetVersionRequest = Message<"agentfleet.v1.GetVersionRequest"> & {
  * Use `create(GetVersionRequestSchema)` to create a new message.
  */
 export const GetVersionRequestSchema: GenMessage<GetVersionRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 3);
+  messageDesc(file_agentfleet_v1_provisioner, 8);
 
 /**
  * @generated from message agentfleet.v1.GetVersionResponse
@@ -263,7 +411,7 @@ export type GetVersionResponse = Message<"agentfleet.v1.GetVersionResponse"> & {
  * Use `create(GetVersionResponseSchema)` to create a new message.
  */
 export const GetVersionResponseSchema: GenMessage<GetVersionResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 4);
+  messageDesc(file_agentfleet_v1_provisioner, 9);
 
 /**
  * docs/adr/0062. Reads every regular file under definitions/ from the
@@ -282,7 +430,7 @@ export type ListDefinitionFilesRequest = Message<"agentfleet.v1.ListDefinitionFi
  * Use `create(ListDefinitionFilesRequestSchema)` to create a new message.
  */
 export const ListDefinitionFilesRequestSchema: GenMessage<ListDefinitionFilesRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 5);
+  messageDesc(file_agentfleet_v1_provisioner, 10);
 
 /**
  * @generated from message agentfleet.v1.DefinitionFile
@@ -306,7 +454,7 @@ export type DefinitionFile = Message<"agentfleet.v1.DefinitionFile"> & {
  * Use `create(DefinitionFileSchema)` to create a new message.
  */
 export const DefinitionFileSchema: GenMessage<DefinitionFile> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 6);
+  messageDesc(file_agentfleet_v1_provisioner, 11);
 
 /**
  * @generated from message agentfleet.v1.ListDefinitionFilesResponse
@@ -330,7 +478,7 @@ export type ListDefinitionFilesResponse = Message<"agentfleet.v1.ListDefinitionF
  * Use `create(ListDefinitionFilesResponseSchema)` to create a new message.
  */
 export const ListDefinitionFilesResponseSchema: GenMessage<ListDefinitionFilesResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 7);
+  messageDesc(file_agentfleet_v1_provisioner, 12);
 
 /**
  * core owns `sessions` and therefore decides when a session should tear
@@ -359,7 +507,7 @@ export type TearDownSessionRequest = Message<"agentfleet.v1.TearDownSessionReque
  * Use `create(TearDownSessionRequestSchema)` to create a new message.
  */
 export const TearDownSessionRequestSchema: GenMessage<TearDownSessionRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 8);
+  messageDesc(file_agentfleet_v1_provisioner, 13);
 
 /**
  * @generated from message agentfleet.v1.TearDownSessionResponse
@@ -378,7 +526,7 @@ export type TearDownSessionResponse = Message<"agentfleet.v1.TearDownSessionResp
  * Use `create(TearDownSessionResponseSchema)` to create a new message.
  */
 export const TearDownSessionResponseSchema: GenMessage<TearDownSessionResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 9);
+  messageDesc(file_agentfleet_v1_provisioner, 14);
 
 /**
  * Worktree/branch lifecycle (reliability-findings.md #2): a task's
@@ -415,7 +563,7 @@ export type ListWorkerPodsRequest = Message<"agentfleet.v1.ListWorkerPodsRequest
  * Use `create(ListWorkerPodsRequestSchema)` to create a new message.
  */
 export const ListWorkerPodsRequestSchema: GenMessage<ListWorkerPodsRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 10);
+  messageDesc(file_agentfleet_v1_provisioner, 15);
 
 /**
  * @generated from message agentfleet.v1.LiveWorkerPod
@@ -444,7 +592,7 @@ export type LiveWorkerPod = Message<"agentfleet.v1.LiveWorkerPod"> & {
  * Use `create(LiveWorkerPodSchema)` to create a new message.
  */
 export const LiveWorkerPodSchema: GenMessage<LiveWorkerPod> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 11);
+  messageDesc(file_agentfleet_v1_provisioner, 16);
 
 /**
  * @generated from message agentfleet.v1.ListWorkerPodsResponse
@@ -461,7 +609,7 @@ export type ListWorkerPodsResponse = Message<"agentfleet.v1.ListWorkerPodsRespon
  * Use `create(ListWorkerPodsResponseSchema)` to create a new message.
  */
 export const ListWorkerPodsResponseSchema: GenMessage<ListWorkerPodsResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 12);
+  messageDesc(file_agentfleet_v1_provisioner, 17);
 
 /**
  * Publishes a session's port at <session>.e2e.bnei.dev: a Service plus a
@@ -488,7 +636,7 @@ export type ExposeSessionRequest = Message<"agentfleet.v1.ExposeSessionRequest">
  * Use `create(ExposeSessionRequestSchema)` to create a new message.
  */
 export const ExposeSessionRequestSchema: GenMessage<ExposeSessionRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 13);
+  messageDesc(file_agentfleet_v1_provisioner, 18);
 
 /**
  * @generated from message agentfleet.v1.ExposeSessionResponse
@@ -505,7 +653,7 @@ export type ExposeSessionResponse = Message<"agentfleet.v1.ExposeSessionResponse
  * Use `create(ExposeSessionResponseSchema)` to create a new message.
  */
 export const ExposeSessionResponseSchema: GenMessage<ExposeSessionResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 14);
+  messageDesc(file_agentfleet_v1_provisioner, 19);
 
 /**
  * @generated from message agentfleet.v1.UnexposeSessionRequest
@@ -522,7 +670,7 @@ export type UnexposeSessionRequest = Message<"agentfleet.v1.UnexposeSessionReque
  * Use `create(UnexposeSessionRequestSchema)` to create a new message.
  */
 export const UnexposeSessionRequestSchema: GenMessage<UnexposeSessionRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 15);
+  messageDesc(file_agentfleet_v1_provisioner, 20);
 
 /**
  * @generated from message agentfleet.v1.UnexposeSessionResponse
@@ -535,7 +683,7 @@ export type UnexposeSessionResponse = Message<"agentfleet.v1.UnexposeSessionResp
  * Use `create(UnexposeSessionResponseSchema)` to create a new message.
  */
 export const UnexposeSessionResponseSchema: GenMessage<UnexposeSessionResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 16);
+  messageDesc(file_agentfleet_v1_provisioner, 21);
 
 /**
  * Provisions or reuses a shared backing service. Keyed by repo, not by
@@ -569,7 +717,7 @@ export type ProvisionServiceRequest = Message<"agentfleet.v1.ProvisionServiceReq
  * Use `create(ProvisionServiceRequestSchema)` to create a new message.
  */
 export const ProvisionServiceRequestSchema: GenMessage<ProvisionServiceRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 17);
+  messageDesc(file_agentfleet_v1_provisioner, 22);
 
 /**
  * @generated from message agentfleet.v1.ProvisionServiceResponse
@@ -586,7 +734,7 @@ export type ProvisionServiceResponse = Message<"agentfleet.v1.ProvisionServiceRe
  * Use `create(ProvisionServiceResponseSchema)` to create a new message.
  */
 export const ProvisionServiceResponseSchema: GenMessage<ProvisionServiceResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 18);
+  messageDesc(file_agentfleet_v1_provisioner, 23);
 
 /**
  * @generated from message agentfleet.v1.SweepSessionRequest
@@ -603,7 +751,7 @@ export type SweepSessionRequest = Message<"agentfleet.v1.SweepSessionRequest"> &
  * Use `create(SweepSessionRequestSchema)` to create a new message.
  */
 export const SweepSessionRequestSchema: GenMessage<SweepSessionRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 19);
+  messageDesc(file_agentfleet_v1_provisioner, 24);
 
 /**
  * @generated from message agentfleet.v1.SweepSessionResponse
@@ -616,7 +764,7 @@ export type SweepSessionResponse = Message<"agentfleet.v1.SweepSessionResponse">
  * Use `create(SweepSessionResponseSchema)` to create a new message.
  */
 export const SweepSessionResponseSchema: GenMessage<SweepSessionResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 20);
+  messageDesc(file_agentfleet_v1_provisioner, 25);
 
 /**
  * @generated from message agentfleet.v1.SyncRepoCacheRequest
@@ -638,7 +786,7 @@ export type SyncRepoCacheRequest = Message<"agentfleet.v1.SyncRepoCacheRequest">
  * Use `create(SyncRepoCacheRequestSchema)` to create a new message.
  */
 export const SyncRepoCacheRequestSchema: GenMessage<SyncRepoCacheRequest> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 21);
+  messageDesc(file_agentfleet_v1_provisioner, 26);
 
 /**
  * No error field: gRPC already carries one, and git.Manager.run puts git's
@@ -698,7 +846,7 @@ export type SyncRepoCacheResponse = Message<"agentfleet.v1.SyncRepoCacheResponse
  * Use `create(SyncRepoCacheResponseSchema)` to create a new message.
  */
 export const SyncRepoCacheResponseSchema: GenMessage<SyncRepoCacheResponse> = /*@__PURE__*/
-  messageDesc(file_agentfleet_v1_provisioner, 22);
+  messageDesc(file_agentfleet_v1_provisioner, 27);
 
 /**
  * Which kind of pod an operation targets.
@@ -837,6 +985,18 @@ export const ProvisionerService: GenService<{
     methodKind: "unary";
     input: typeof ListDefinitionFilesRequestSchema;
     output: typeof ListDefinitionFilesResponseSchema;
+  },
+  /**
+   * core's definitions sync pushes every valid definition's vault after each
+   * good sync (docs/adr/0065); core commands, the provisioner executes, and
+   * credential values exist only on the provisioner's side.
+   *
+   * @generated from rpc agentfleet.v1.ProvisionerService.ReconcileVaults
+   */
+  reconcileVaults: {
+    methodKind: "unary";
+    input: typeof ReconcileVaultsRequestSchema;
+    output: typeof ReconcileVaultsResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_agentfleet_v1_provisioner, 0);
