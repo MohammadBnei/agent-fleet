@@ -1,5 +1,11 @@
 # Changelog
 
+# [4.22.0](https://github.com/MohammadBnei/agent-fleet/compare/4.21.0...4.22.0) (2026-10-19)
+
+### Features
+
+* definition credentials via Agent Vault, egress lock (P3, ADR 0065) ([#264](https://github.com/MohammadBnei/agent-fleet/issues/264)) ([6a29d86](https://github.com/MohammadBnei/agent-fleet/commit/6a29d86479d7076cb20b878bc0c8448c11d4b448))
+
 # [4.21.0](https://github.com/MohammadBnei/agent-fleet/compare/4.20.0...4.21.0) (2026-10-19)
 
 ### Features
