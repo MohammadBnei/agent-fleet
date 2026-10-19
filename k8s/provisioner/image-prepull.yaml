@@ -38,7 +38,7 @@ spec:
       automountServiceAccountToken: false
       initContainers:
       - name: worker
-        image: registry.bnei.lan:5000/agent-fleet-worker:4.23.2
+        image: registry.bnei.lan:5000/agent-fleet-worker:4.23.3
         command: ["true"]
         resources:
           requests: {cpu: 1m, memory: 8Mi}
