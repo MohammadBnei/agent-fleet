@@ -175,6 +175,11 @@ func (s *Server) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWo
 		if len(req.GetToolKeys()) > 0 {
 			return nil, status.Error(codes.InvalidArgument, "a definition session never gets tool keys")
 		}
+		// The definition's worker-side hardening (FLEET_DEFINITION) needs this
+		// release's worker, so only the provisioner's default image runs one.
+		if req.GetImage() != "" {
+			return nil, status.Error(codes.InvalidArgument, "a definition session runs the default worker image only")
+		}
 		definition = &k8s.DefinitionProfile{Name: d.GetName(), GitAuthorName: d.GetGitAuthorName(), GitAuthorEmail: d.GetGitAuthorEmail()}
 	}
 	// A definition pod's clone reads the cache's origin/<base> and never
@@ -266,9 +271,10 @@ func (s *Server) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWo
 	slog.Info("grpcserver CreateWorkerPod", "sessionId", req.GetSessionId(), "repo", req.GetRepo(), "podName", podName,
 		"workerImage", workerImage, "sidecarImage", sidecarImage)
 	return &agentfleetv1.CreateWorkerPodResponse{
-		PodName:      podName,
-		WorkerImage:  workerImage,
-		SidecarImage: sidecarImage,
+		PodName:                  podName,
+		WorkerImage:              workerImage,
+		SidecarImage:             sidecarImage,
+		DefinitionProfileApplied: definition != nil,
 	}, nil
 }
 

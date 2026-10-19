@@ -314,10 +314,16 @@ type CreateWorkerPodResponse struct {
 	// stores these on the session row so the dashboard can say which build a
 	// session ran — which stays true after the fleet is upgraded underneath it,
 	// where reporting today's defaults would quietly lie.
-	WorkerImage   string `protobuf:"bytes,2,opt,name=worker_image,json=workerImage,proto3" json:"worker_image,omitempty"`
-	SidecarImage  string `protobuf:"bytes,3,opt,name=sidecar_image,json=sidecarImage,proto3" json:"sidecar_image,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	WorkerImage  string `protobuf:"bytes,2,opt,name=worker_image,json=workerImage,proto3" json:"worker_image,omitempty"`
+	SidecarImage string `protobuf:"bytes,3,opt,name=sidecar_image,json=sidecarImage,proto3" json:"sidecar_image,omitempty"`
+	// docs/adr/0064: true only when this pod got CreateWorkerPodRequest.definition.
+	// An older provisioner drops the request field and builds the ordinary pod
+	// without saying so; core's GetVersion pre-check cannot see which replica
+	// serves the create (rollout overlap), so core tears down a definition warm
+	// whose answer lacks this.
+	DefinitionProfileApplied bool `protobuf:"varint,4,opt,name=definition_profile_applied,json=definitionProfileApplied,proto3" json:"definition_profile_applied,omitempty"`
+	unknownFields            protoimpl.UnknownFields
+	sizeCache                protoimpl.SizeCache
 }
 
 func (x *CreateWorkerPodResponse) Reset() {
@@ -369,6 +375,13 @@ func (x *CreateWorkerPodResponse) GetSidecarImage() string {
 		return x.SidecarImage
 	}
 	return ""
+}
+
+func (x *CreateWorkerPodResponse) GetDefinitionProfileApplied() bool {
+	if x != nil {
+		return x.DefinitionProfileApplied
+	}
+	return false
 }
 
 // The provisioner's own build and the images it stamps onto new pods.
@@ -1443,11 +1456,12 @@ const file_agentfleet_v1_provisioner_proto_rawDesc = "" +
 	"\x14DefinitionPodProfile\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12&\n" +
 	"\x0fgit_author_name\x18\x02 \x01(\tR\rgitAuthorName\x12(\n" +
-	"\x10git_author_email\x18\x03 \x01(\tR\x0egitAuthorEmail\"|\n" +
+	"\x10git_author_email\x18\x03 \x01(\tR\x0egitAuthorEmail\"\xba\x01\n" +
 	"\x17CreateWorkerPodResponse\x12\x19\n" +
 	"\bpod_name\x18\x01 \x01(\tR\apodName\x12!\n" +
 	"\fworker_image\x18\x02 \x01(\tR\vworkerImage\x12#\n" +
-	"\rsidecar_image\x18\x03 \x01(\tR\fsidecarImage\"\x13\n" +
+	"\rsidecar_image\x18\x03 \x01(\tR\fsidecarImage\x12<\n" +
+	"\x1adefinition_profile_applied\x18\x04 \x01(\bR\x18definitionProfileApplied\"\x13\n" +
 	"\x11GetVersionRequest\"\xac\x01\n" +
 	"\x12GetVersionResponse\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\tR\aversion\x12!\n" +

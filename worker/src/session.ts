@@ -737,6 +737,15 @@ export async function runSession(): Promise<SessionResult> {
   // first would land below this pod's cursor and never arrive — the pod
   // would boot, find nothing to do, and be swept as stalled.
 
+  // docs/adr/0064: a definition pod closes Claude Code's own cross-session
+  // channel (docs/adr/0060, comment below). It reaches every session on the
+  // shared OAuth account around core, the transcript and the lease, in both
+  // directions, so core's definition allowlist (no PromptSession, no peers)
+  // would bound nothing there. The provisioner sets FLEET_DEFINITION on a
+  // definition pod only; read per call so a test can set it.
+  const definitionPod = Boolean(process.env.FLEET_DEFINITION);
+  const peerTools = ["SendMessage", "ListAgents"];
+
   const abortController = new AbortController();
   const q = query({
     prompt: input.stream(),
@@ -775,7 +784,7 @@ export async function runSession(): Promise<SessionResult> {
       // pod, a different channel nobody asked for.
       settings: {
         permissions: { ask: FLEET_ASK_RULES },
-        crossSessionInbound: "accept",
+        crossSessionInbound: definitionPod ? "refuse" : "accept",
         remoteControlAtStartup: false,
       },
       // Write/Edit/Bash are deliberately never in this list — canUseTool
@@ -802,7 +811,8 @@ export async function runSession(): Promise<SessionResult> {
         "Read", "Glob", "Grep", "WebSearch", "WebFetch", "Task",
         // Claude Code's native cross-session channel (docs/adr/0060). Listed so
         // the agent uses it on its own, without a human prompt per message.
-        "SendMessage", "ListAgents",
+        // Not for a definition pod, which disallows them below.
+        ...(definitionPod ? [] : peerTools),
         "mcp__agent-fleet-sidecar__*",
         // Playwright by the same wildcard rule. Every browser call would
         // otherwise prompt — including the read-only ones a human would never
@@ -822,7 +832,7 @@ export async function runSession(): Promise<SessionResult> {
       // JSON + Allow/Deny) instead of the dashboard's QUESTION form, with
       // no way to actually deliver a chosen answer back. Removing it from
       // context forces the only question tool that's actually wired up.
-      disallowedTools: ["AskUserQuestion"],
+      disallowedTools: ["AskUserQuestion", ...(definitionPod ? peerTools : [])],
       // Still no tool classification here — the SDK's own permission mode
       // decides when canUseTool gets invoked (acceptEdits skips it for file
       // edits, plan blocks mutation without invoking it, default invokes it

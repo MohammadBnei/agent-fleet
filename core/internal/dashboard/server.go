@@ -1013,8 +1013,9 @@ func (s *Server) WarmIfIdle(ctx context.Context, sessionID string) (podName stri
 		return "", connect.NewError(connect.CodeInternal, fmt.Errorf("unknown repo %q", t.Repo))
 	}
 	// docs/adr/0064: a definition session gets its profile, the provisioner's
-	// default image (repos.image is ignored, so a worker image built before the
-	// profile can never run one) and no tool keys.
+	// default image and no tool keys. repos.image is ignored: the profile's
+	// worker-side hardening (FLEET_DEFINITION) needs this release's worker, and
+	// an override is not guaranteed to be one.
 	var profile *agentfleetv1.DefinitionPodProfile
 	image := repoCfg.Image
 	if t.DefinitionName != nil {
@@ -1062,6 +1063,22 @@ func (s *Server) WarmIfIdle(ctx context.Context, sessionID string) (podName stri
 	if err != nil {
 		return "", connect.NewError(connect.CodeInternal, err)
 	}
+	if profile != nil && !pod.DefinitionProfileApplied {
+		// docs/adr/0064: the create reached a provisioner that dropped the
+		// profile (a rollout overlap the GetVersion check above cannot see),
+		// so this is the ORDINARY pod. Revoke its lease first, then remove it.
+		msg := "provisioner did not apply the definition pod profile (docs/adr/0064); the pod was torn down"
+		if err := s.sessions.ClearLease(ctx, sessionID); err != nil {
+			slog.Error("dashboard warm: revoking an unprofiled definition pod's lease", "sessionId", sessionID, "error", err)
+		}
+		if _, err := s.e2e.TearDownSession(ctx, sessionID, agentfleetv1.SessionKind_SESSION_KIND_WORKER); err != nil {
+			slog.Error("dashboard warm: tearing down an unprofiled definition pod", "sessionId", sessionID, "error", err)
+		}
+		if err := s.sessions.SetPodPhase(ctx, sessionID, agentfleetv1.PodPhase_POD_PHASE_CRASHED.String(), msg); err != nil {
+			slog.Error("dashboard warm: recording the refused definition pod", "sessionId", sessionID, "error", err)
+		}
+		return "", connect.NewError(connect.CodeFailedPrecondition, errors.New(msg))
+	}
 	// Record the build this pod is on. Not fatal: the pod exists and the
 	// session is live either way, and failing the warm over a metadata write
 	// would trade a working session for a cosmetic one.
@@ -1100,7 +1117,10 @@ func (s *Server) definitionWarmable(ctx context.Context, t *sessions.Session, cl
 	if clusterAccess {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("definition sessions never run on a cluster-access repo"))
 	}
-	supported, err := s.e2e.DefinitionProfileSupported(ctx)
+	// The cheap early refusal, before ReserveSlot. It cannot see which
+	// provisioner replica serves the create, so WarmIfIdle also checks the
+	// create's own answer.
+	_, _, _, supported, err := s.e2e.GetVersion(ctx)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeFailedPrecondition,
 			fmt.Errorf("cannot confirm the provisioner applies the definition pod profile (docs/adr/0064): %w", err))

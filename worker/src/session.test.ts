@@ -271,6 +271,27 @@ beforeEach(() => {
 // comes from env and its instruction from the transcript, so there is no task
 // object to construct (docs/adr/0048).
 
+// docs/adr/0064: a definition pod (FLEET_DEFINITION, set by the provisioner's
+// definition profile) closes the native cross-session channel both ways: it
+// never touches core, so core's definition allowlist cannot bound it.
+test("definition pod: native cross-session channel refused, SendMessage/ListAgents disallowed", async () => {
+  process.env.FLEET_DEFINITION = "dev-dream-analyst";
+  try {
+    const promise = runSession();
+    await Bun.sleep(20);
+    pushHuman("stop", "abort");
+    await promise;
+  } finally {
+    delete process.env.FLEET_DEFINITION;
+  }
+  const allowedTools = queryOptions?.allowedTools as string[];
+  expect((queryOptions?.settings as { crossSessionInbound?: string })?.crossSessionInbound).toBe("refuse");
+  expect(allowedTools).not.toContain("SendMessage");
+  expect(allowedTools).not.toContain("ListAgents");
+  expect(queryOptions?.disallowedTools).toEqual(["AskUserQuestion", "SendMessage", "ListAgents"]);
+  expect(allowedTools).toContain("mcp__agent-fleet-sidecar__*");
+});
+
 test("tool wiring: default mode, no Write/Edit in allowedTools, canUseTool present, settingSources user+project", async () => {
   const promise = runSession();
   await Bun.sleep(20);

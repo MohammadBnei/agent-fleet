@@ -31,7 +31,11 @@ type definitionsProvisioner struct {
 	files   map[string][]byte
 	sha     string
 	profile bool // GetVersion's definition_pod_profile
-	creates []*agentfleetv1.CreateWorkerPodRequest
+	// dropsProfile is an older replica serving the create: it ignores the
+	// request's profile and does not confirm it (docs/adr/0064).
+	dropsProfile bool
+	creates      []*agentfleetv1.CreateWorkerPodRequest
+	teardowns    []string
 }
 
 func (p *definitionsProvisioner) GetVersion(context.Context, *agentfleetv1.GetVersionRequest) (*agentfleetv1.GetVersionResponse, error) {
@@ -54,7 +58,14 @@ func (p *definitionsProvisioner) CreateWorkerPod(_ context.Context, req *agentfl
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.creates = append(p.creates, req)
-	return &agentfleetv1.CreateWorkerPodResponse{PodName: "worker-test"}, nil
+	return &agentfleetv1.CreateWorkerPodResponse{PodName: "worker-test", DefinitionProfileApplied: req.GetDefinition() != nil && !p.dropsProfile}, nil
+}
+
+func (p *definitionsProvisioner) TearDownSession(_ context.Context, req *agentfleetv1.TearDownSessionRequest) (*agentfleetv1.TearDownSessionResponse, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.teardowns = append(p.teardowns, req.GetSessionId())
+	return &agentfleetv1.TearDownSessionResponse{}, nil
 }
 
 func (p *definitionsProvisioner) set(f func(*definitionsProvisioner)) {
@@ -255,12 +266,28 @@ func TestWarmIfIdle_Definition(t *testing.T) {
 	if err := s.repos.Update(ctx, *repo); err != nil {
 		t.Fatal(err)
 	}
-	prov.set(func(p *definitionsProvisioner) { p.profile = true })
+	// GetVersion says yes but the create lands on an older replica (rollout
+	// overlap): it built the ordinary pod, so core revokes and removes it.
+	prov.set(func(p *definitionsProvisioner) { p.profile, p.dropsProfile = true, true })
+	if _, err := s.WarmIfIdle(ctx, sess.GetId()); code(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "did not apply the definition pod profile") {
+		t.Fatalf("an unconfirmed profile: got %v", err)
+	}
+	if got, err := store.Get(ctx, sess.GetId()); err != nil || got.LeaseID != "" || sessions.IsPodPhaseLive(got.PodPhase) {
+		t.Fatalf("an unprofiled pod kept its lease or a live phase: %+v %v", got, err)
+	}
+	prov.mu.Lock()
+	torn := append([]string(nil), prov.teardowns...)
+	prov.mu.Unlock()
+	if len(torn) != 1 || torn[0] != sess.GetId() {
+		t.Fatalf("teardowns = %v, want the unprofiled pod removed", torn)
+	}
+
+	prov.set(func(p *definitionsProvisioner) { p.dropsProfile = false })
 	if _, err := s.WarmIfIdle(ctx, sess.GetId()); err != nil {
 		t.Fatalf("warm: %v", err)
 	}
 	prov.mu.Lock()
-	got := prov.creates[0]
+	got := prov.creates[1]
 	prov.mu.Unlock()
 	if d := got.GetDefinition(); d.GetName() != "dev-dream-analyst" || d.GetGitAuthorName() != "fleet-dev-agent" || d.GetGitAuthorEmail() != "fleet-dev-agent@bnei.dev" {
 		t.Errorf("profile = %v", d)
@@ -297,7 +324,7 @@ func TestWarmIfIdle_Definition(t *testing.T) {
 	if _, err := s.WarmIfIdle(ctx, other.GetId()); code(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "no longer defined") {
 		t.Fatalf("got %v", err)
 	}
-	if prov.createCount() != 1 {
+	if prov.createCount() != 2 {
 		t.Fatal("a revoked pin may not create a pod")
 	}
 }

@@ -160,7 +160,7 @@ func (s *Server) GetFleetTopology(ctx context.Context, _ *connect.Request[agentf
 	// reached leaves these blank, it does not empty the graph. The cells above
 	// come from Postgres and are still true.
 	if s.e2e != nil {
-		if v, worker, sidecar, err := s.e2e.GetVersion(ctx); err != nil {
+		if v, worker, sidecar, _, err := s.e2e.GetVersion(ctx); err != nil {
 			slog.Warn("dashboard GetFleetTopology: provisioner version unavailable", "error", err)
 		} else {
 			provisionerNode.Version = v

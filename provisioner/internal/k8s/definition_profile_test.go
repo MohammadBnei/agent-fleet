@@ -63,6 +63,7 @@ func TestCreateWorkerPod_DefinitionProfile(t *testing.T) {
 	}
 	for name, want := range map[string]string{
 		"CLAUDE_CODE_OAUTH_TOKEN": "oauth-token", // INTERIM until P3 (docs/adr/0064)
+		"FLEET_DEFINITION":        "dev-dream-analyst", // the worker closes the native cross-session channel
 		"GIT_AUTHOR_NAME":         "fleet-dev-agent",
 		"GIT_COMMITTER_NAME":      "fleet-dev-agent",
 		"GIT_AUTHOR_EMAIL":        "fleet-dev-agent@bnei.dev",
@@ -93,14 +94,6 @@ func TestCreateWorkerPod_DefinitionProfile(t *testing.T) {
 
 	if job.Labels[DefinitionLabel] != "dev-dream-analyst" || job.Spec.Template.Labels[DefinitionLabel] != "dev-dream-analyst" {
 		t.Errorf("definition label: job %v, pod %v", job.Labels, job.Spec.Template.Labels)
-	}
-}
-
-func TestCreateWorkerPod_DefinitionProfileRefusesToolKeys(t *testing.T) {
-	spec := definitionSpec()
-	spec.ToolKeys = []string{"cluster-access"}
-	if err := newTestClient().CreateWorkerPod(context.Background(), spec); err == nil {
-		t.Fatal("a definition pod never gets cluster access")
 	}
 }
 
@@ -165,6 +158,16 @@ func TestDefinitionCloneScript_RunsAgainstTheCacheOnly(t *testing.T) {
 			run()
 			if got, want := gitT(t, ws, "rev-parse", "HEAD"), gitT(t, cache, "rev-parse", "origin/"+base); got != want {
 				t.Errorf("HEAD %s, want the cache's origin/%s %s", got, base, want)
+			}
+			// origin/* is the cache's remote-tracking view, not its frozen
+			// local branches: no phantom "ahead N" on a clean checkout.
+			for _, b := range []string{"main", "feat"} {
+				if got, want := gitT(t, ws, "rev-parse", "origin/"+b), gitT(t, cache, "rev-parse", "origin/"+b); got != want {
+					t.Errorf("workspace origin/%s %s, want the cache's %s", b, got, want)
+				}
+			}
+			if got := gitT(t, ws, "rev-list", "--count", "origin/"+base+"..HEAD"); got != "0" {
+				t.Errorf("HEAD is %s ahead of origin/%s on a fresh clone", got, base)
 			}
 			if got := gitT(t, ws, "rev-parse", "--abbrev-ref", "HEAD"); got != base {
 				t.Errorf("branch %q, want %q", got, base)

@@ -193,13 +193,14 @@ func cloneTail(definition bool) string {
 		return `git clone --shared --no-checkout /repo-cache/%[2]s %[1]s
 cd %[1]s
 # docs/adr/0064: local transport only. This container holds no credential and
-# never contacts the remote. The base comes from the cache's REMOTE-TRACKING
-# ref, which the provisioner fetched with its own credentials
+# never contacts the remote: the fetch names the cache's PATH, not "origin", so
+# no reordering can turn it into a remote fetch. It copies the cache's
+# REMOTE-TRACKING refs, which the provisioner fetched with its own credentials
 # (git.Manager.EnsureRepoFetched, never skipped for a definition pod) just
-# before this pod was created; the cache's local branches are frozen at its
-# first clone.
-git fetch --no-tags origin refs/remotes/origin/%[3]s
-git checkout -B %[3]s FETCH_HEAD
+# before this pod was created, over the ones clone --shared made from the
+# cache's local branches (frozen at its first clone), so origin/* is current.
+git fetch --no-tags /repo-cache/%[2]s '+refs/remotes/origin/*:refs/remotes/origin/*'
+git checkout -B %[3]s origin/%[3]s
 git remote set-url origin %[4]s
 `
 	}

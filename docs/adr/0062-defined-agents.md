@@ -247,8 +247,9 @@ asks.
 definition. P1 never warms, so nothing reads that row for a definition pod
 yet. The slice that builds the profile must bind URL and image to the pinned
 version (for example `workspace.url` in the spec, or a snapshot taken at
-create) and refuse a warm when they differ. *(ADR-0064 §2 binds the image and records
-why the URL reaches nothing in P1; P3 must bind it.)* Required on every non-abstract spec: `tools` with a non-empty
+create) and refuse a warm when they differ. *(ADR-0064 §2 binds the image to the release's default
+worker, not to a per-session snapshot, and leaves the URL unbound in P1 (it decides
+a cold cache's content, admin-only config); P3 must bind it.)* Required on every non-abstract spec: `tools` with a non-empty
 `allow`, `interaction`, `lifecycle` (absence is no bound; nil `tools` would be
 the SDK's default tool set), and an explicit `null` spec value is a load error
 (it would erase the parent's bound in the top-level merge).

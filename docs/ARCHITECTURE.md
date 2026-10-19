@@ -582,7 +582,9 @@ sidecar, and the worker:
   `LEASE_ID` and `GH_TOKEN` from this container, mounts only
   `/repo-cache/<repo>` (subPath `repos/<repo>`) in all three containers, clones
   from the cache's `origin/<base>` with no remote contact, skips the
-  fleet-shared sync, and carries the `fleet.bnei.dev/definition` label.
+  fleet-shared sync, sets `FLEET_DEFINITION` (the worker then refuses Claude
+  Code's own cross-session channel), and carries the `fleet.bnei.dev/definition`
+  label.
 - Mounts are `subPath`-scoped, which is real isolation for the first time. It
   used to be impossible: a linked worktree's `.git` is an absolute-path gitlink
   back to `repos/<repo>/.git/worktrees/<taskId>`, so scoping the mount severed
@@ -765,7 +767,7 @@ erDiagram
         text sidecar_image "NOT NULL DEFAULT '' — likewise; both stay true after the fleet is upgraded underneath the session"
         text definition_name "nullable — pinned defined agent, adr/0062; FK (definition_name, definition_sha) to agent_definitions, both or neither"
         text definition_sha "nullable — the version pinned; warm refused once it is not the current one (the valid row at the synced commit)"
-        uuid profile_lease_id "adr/0064 — the lease a profile-aware ReserveSlot minted; CHECK: a definition session's lease_id equals it, so an older core cannot lease one"
+        uuid profile_lease_id "adr/0064 — a definition session's lease, never lease_id (CHECK sessions_definition_no_lease), so an older core can neither mint nor verify one"
         timestamptz swept_at "retention GC reclaimed the disk — readable, not resumable"
         timestamptz archived_at "the human is finished; the only terminal state a machine cannot compute"
         timestamptz created_at
@@ -985,7 +987,7 @@ running.
 | Var | Default | Notes |
 |---|---|---|
 | `SESSION_ID`, `TARGET_REPO` | *(required)* | |
-| `LEASE_ID` | set, unread | still set on repo-session pods (their Job is pinned byte-identical), absent on definition pods (`adr/0064`). The worker no longer reads it: the sidecar sends its own lease on `SaveAgentSessionId`. Minted per pod by `ReserveSlot`, not by a claim — nothing claims anything (`adr/0048` §2). It is what `StillHoldsLease` checks before a push, so a torn-down pod still shutting down cannot overwrite its replacement's resume identity |
+| `LEASE_ID` | set | still set on repo-session pods (their Job is pinned byte-identical), absent on definition pods (`adr/0064`). The sidecar sends its own lease on `SaveAgentSessionId` and ignores the worker's, which the worker still sends for one release (a worker newer than its sidecar). Minted per pod by `ReserveSlot`, not by a claim — nothing claims anything (`adr/0048` §2). It is what `StillHoldsLease` checks before a push, so a torn-down pod still shutting down cannot overwrite its replacement's resume identity |
 | `SIDECAR_MCP_ADDR` | `localhost:9090` | the Agent SDK session's `mcpServers` config points here |
 | `SIDECAR_API_ADDR` | `localhost:9091` | the wrapper's own control-flow calls |
 | `WORKTREE_PATH` | `/workspace` | Kept its name through `adr/0048`; it is a plain clone on the session's own PVC now, not a linked worktree |

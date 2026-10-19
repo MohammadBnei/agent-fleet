@@ -226,19 +226,23 @@ func repoCacheMount(spec WorkerPodSpec) corev1.VolumeMount {
 // thing that talks to core) and no GH_TOKEN (push credentials arrive through
 // the vault in P3). The identity comes from the reviewed definition file, so
 // the worker's `gh api user` lookup is skipped (defaultConfigureGitAuth returns
-// early without GH_TOKEN), and safe.directory is set the way the sidecar sets
-// it, since that early return skips the line that wrote it.
+// early without GH_TOKEN), and safe.directory=/workspace is set through
+// GIT_CONFIG_* (the sidecar's mechanism, not its '*' value), since that early
+// return skips the line that wrote it. FLEET_DEFINITION tells the worker to
+// close Claude Code's own cross-session channel (docs/adr/0060), which never
+// touches core and so is not bounded by the definition allowlist.
 //
 // CLAUDE_CODE_OAUTH_TOKEN stays: INTERIM until P3 moves the model credential
 // to the vault.
 func definitionWorkerEnv(env []corev1.EnvVar, d DefinitionProfile) []corev1.EnvVar {
-	out := make([]corev1.EnvVar, 0, len(env)+7)
+	out := make([]corev1.EnvVar, 0, len(env)+8)
 	for _, e := range env {
 		if e.Name != "LEASE_ID" && e.Name != "GH_TOKEN" {
 			out = append(out, e)
 		}
 	}
 	return append(out,
+		corev1.EnvVar{Name: "FLEET_DEFINITION", Value: d.Name},
 		corev1.EnvVar{Name: "GIT_AUTHOR_NAME", Value: d.GitAuthorName},
 		corev1.EnvVar{Name: "GIT_COMMITTER_NAME", Value: d.GitAuthorName},
 		corev1.EnvVar{Name: "GIT_AUTHOR_EMAIL", Value: d.GitAuthorEmail},
@@ -281,9 +285,6 @@ func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error 
 	name := WorkerResourceName(taskID)
 	labels := WorkerLabels(taskID, repo)
 	if spec.Definition != nil {
-		if len(toolKeys) > 0 {
-			return fmt.Errorf("definition pod %q: tool keys are never granted to a definition session", spec.Definition.Name)
-		}
 		labels[DefinitionLabel] = spec.Definition.Name
 	}
 

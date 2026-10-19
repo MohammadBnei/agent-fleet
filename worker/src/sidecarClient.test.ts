@@ -173,16 +173,22 @@ test("stops reconnecting once aborted, even mid-backoff", async () => {
   expect(call).toBe(callsAtAbort);
 }, 10000);
 
-// docs/adr/0064: the sidecar sends its own lease; the worker sends none, so a
-// definition pod (no LEASE_ID in the worker) and a repo pod post the same body.
-test("saveSessionId sends no lease", async () => {
-  process.env.LEASE_ID = "should-not-be-read";
-  let body: unknown;
+// docs/adr/0064: the new sidecar sends its own lease, but the worker keeps
+// sending LEASE_ID for one release, so a worker newer than its sidecar (which
+// still forwards the body's) does not lose resume identity. A definition pod
+// has no LEASE_ID and sends "".
+test("saveSessionId still sends LEASE_ID, or empty without one", async () => {
+  const bodies: unknown[] = [];
   handler = async (req) => {
-    body = await req.json();
+    bodies.push(await req.json());
     return Response.json({ ok: true });
   };
+  process.env.LEASE_ID = "lease-1";
   await saveSessionId("sdk-1", "claude-opus-5");
-  expect(body).toEqual({ sessionId: "sdk-1", model: "claude-opus-5" });
   delete process.env.LEASE_ID;
+  await saveSessionId("sdk-2", "claude-opus-5");
+  expect(bodies).toEqual([
+    { sessionId: "sdk-1", model: "claude-opus-5", leaseId: "lease-1" },
+    { sessionId: "sdk-2", model: "claude-opus-5", leaseId: "" },
+  ]);
 });

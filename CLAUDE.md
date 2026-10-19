@@ -121,11 +121,14 @@ Condensed. Full detail + rationale in `agent-fleet/docs/DECISIONS.md` + `docs/ad
 - **A definition pod is narrower, and only a profile-aware core can lease one** (`adr/0064`).
   No `LEASE_ID`/`GH_TOKEN` in its worker, its repo's subPath of the cache only, a clone that
   never contacts the remote (`EnsureRepoFetched` is load-bearing), identity from the file's
-  `git.identity`, no fleet-shared sync, default image. `CLAUDE_CODE_OAUTH_TOKEN` stays until
-  P3 (**interim**); P1 definition sessions cannot push. Warm refused unless the provisioner's
-  `GetVersion` says `definition_pod_profile`. 000009's CHECK ties a definition lease to
-  `profile_lease_id`, so an older core can never lease one. A non-definition pod's Job is
-  byte-identical (golden test).
+  `git.identity`, no fleet-shared sync, default image only, and `FLEET_DEFINITION` makes the
+  worker refuse Claude Code's own cross-session channel (`adr/0060` amended). `CLAUDE_CODE_OAUTH_TOKEN`
+  stays until P3 (**interim**); P1 definition sessions cannot push. P1 does **not** bound the
+  tool surface: `allowedTools` and the repo's project allow rules still skip `canUseTool` (P4).
+  Warm refused unless `GetVersion` says `definition_pod_profile`, and torn down unless the
+  create answers `definition_profile_applied` (rollout overlap). A definition lease lives in
+  `profile_lease_id`, never `lease_id`, so an older core can neither mint nor verify one. A
+  non-definition pod's Job is byte-identical (golden test).
 - **Session with no message has no pod — that is the human gate** (`adr/0048` §1).
   Amended by `adr/0062`: the provisioning message comes from an audience member, a
   registered client, or an allowlisted actor's event via a registered client (P1:

@@ -9,6 +9,7 @@
   [ADR-0048](0048-one-session-one-pod-one-shared-home.md) §4 (amended: the
   repo-cache mount), [ADR-0057](0057-coreservice-authenticates-with-the-session-lease.md)
   (a second, per-session table on top of its per-method one),
+  [ADR-0060](0060-claude-codes-own-cross-session-channel-is-open.md) (amended: closed for definition pods),
   [ADR-0006](0006-git-identity-from-bot-account.md) (amended for definition pods: identity from
   the reviewed file, not `gh api user`), [ADR-0069](0069-component-auth-and-network-fences.md).
 
@@ -34,39 +35,68 @@ only, from the pinned row (which `WarmIfIdle` has just checked is the current
 one). Its presence switches the pod to the definition profile. Absent, the Job
 is **byte-identical** to before: `TestCreateWorkerPod_RepoSessionGolden` pins
 the whole manifest, generated from the code before this change. A profile with
-an empty name or identity, or with tool keys, is `InvalidArgument`.
+an empty name or identity, with tool keys, or with an image override, is
+`InvalidArgument`.
 
-`GetVersionResponse.definition_pod_profile = true` says a provisioner applies
-it. Core asks on every definition warm (uncached: a cache would need
-invalidation on exactly the rollout that changes the answer) and refuses with
-`FailedPrecondition` before `ReserveSlot` when the answer is no or the call
-fails. That is the check ADR-0062 §4 said this slice would put in place of its
-refusal: an older provisioner would ignore the field and build the ordinary pod.
+An older provisioner ignores the field and builds the ordinary pod, so core
+checks twice:
+
+- **Before `ReserveSlot`**, the cheap early refusal:
+  `GetVersionResponse.definition_pod_profile = true` says a provisioner applies
+  it. Core asks on every definition warm (uncached: a cache would need
+  invalidation on exactly the rollout that changes the answer) and refuses with
+  `FailedPrecondition` when the answer is no or the call fails. That is the
+  check ADR-0062 §4 said this slice would put in place of its refusal.
+- **On the create's own answer.** `GetVersion` and `CreateWorkerPod` are two
+  RPCs, and the provisioner Deployment rolls with the default RollingUpdate, so
+  during a rollout or rollback the two can reach different replicas.
+  `CreateWorkerPodResponse.definition_profile_applied` is set only by a
+  provisioner that applied the profile. A definition warm whose answer lacks it
+  got the ordinary pod: core clears the lease first (the pod's credential is
+  dead before it can use it), tears the pod down, records `CRASHED` with the
+  reason, and returns `FailedPrecondition`. A later warm retries.
+
+  Residual, accepted: the older replica also ran its fleet-shared sync into the
+  session's claude-home before the pod existed, and a later profile-aware warm
+  does not scrub it. That needs a create straddling a provisioner rollout, and
+  P2's read-only genome mount replaces that directory's role.
 
 ### 2. What a definition pod gets
 
 | | Repo session (unchanged) | Definition session |
 |---|---|---|
 | Job + pod labels | `WorkerLabels` | + `fleet.bnei.dev/definition: <name>` (P3's vault policy selects on it) |
-| worker `LEASE_ID` | present | **absent**: the sidecar is the only holder |
+| worker `LEASE_ID` | present | **absent**: only the sidecar is given it (below) |
 | worker `GH_TOKEN` | present | **absent** |
 | worker `CLAUDE_CODE_OAUTH_TOKEN` | present | **present, INTERIM** (below) |
+| worker `FLEET_DEFINITION` | absent | `<name>`: the worker closes Claude Code's cross-session channel (below) |
 | worker git identity | `gh api user` at runtime | `GIT_AUTHOR_*`/`GIT_COMMITTER_*` from `git.identity`, plus `GIT_CONFIG_*` `safe.directory=/workspace` |
 | repo cache, all three containers | `/repo-cache` ← subPath `repos` | `/repo-cache/<repo>` ← subPath `repos/<repo>`, read-only |
 | clone init container | `clone --shared`, then `fetch origin <base>` from the real remote | local transport only (below) |
 | fleet-shared sync into claude-home | yes | **no** |
-| worker image | `repos.image` or the default | always the provisioner's default (core sends `""`) |
+| worker image | `repos.image` or the default | always the provisioner's default (core sends `""`, the provisioner refuses an override) |
 
 The cache keeps its absolute path, so `.git/objects/info/alternates`
 (`/repo-cache/<repo>/.git/objects`) resolves in every container. Only the one
 repo is visible.
 
-**The lease lives in the sidecar only, for every pod.** The worker read
+**The worker no longer needs the lease, for every pod.** The worker read
 `LEASE_ID` for one thing: the body of the sidecar's `POST /session-id`. The
 sidecar already holds the lease it authenticates with, so it now always sends
-its own and ignores a body `leaseId` (an older worker that still sends one
-keeps working; an unknown JSON key is ignored). The worker no longer reads
-`LEASE_ID`. Repo pods keep the env var because the golden pins them.
+its own and ignores a body `leaseId`. The worker still sends `LEASE_ID` (or
+`""`) for one release: a worker image newer than its sidecar (a `repos.image`
+floating on `latest` before the provisioner rolls `SIDECAR_IMAGE`) talks to a
+sidecar that still forwards the body's, and without it resume identity is
+silently lost. Repo pods keep the env var because the golden pins them.
+
+The sidecar is the only container **given** the lease, which is not the same as
+the only one that can reach it: its telemetry loop runs `git diff` in the
+worker-writable `/workspace` with `safe.directory=*`, so repo-local git config
+(`core.fsmonitor`, `diff.external`, a clean filter) can run code in the sidecar
+and read `LEASE_ID`. The bound on a recovered lease is core's per-lease table
+(§4), not the container split: the raw lease reaches exactly what the sidecar's
+does. Before P4 leans on the sidecar's own tool shaping as a bound, its git must
+stop honoring repo config (or read a `GIT_DIR` it owns).
 
 **Identity needs no worker change.** `defaultConfigureGitAuth` already returns
 at its first line when `GH_TOKEN` is unset, so `gh api user` (which would fail
@@ -79,13 +109,16 @@ early return skips (the sidecar's existing trick).
 ```sh
 git clone --shared --no-checkout /repo-cache/<repo> /workspace
 cd /workspace
-git fetch --no-tags origin refs/remotes/origin/<base>
-git checkout -B <base> FETCH_HEAD
+git fetch --no-tags /repo-cache/<repo> '+refs/remotes/origin/*:refs/remotes/origin/*'
+git checkout -B <base> origin/<base>
 git remote set-url origin <repoURL>
 ```
 
-The base is the cache's **remote-tracking** ref, not its local branch, which
-stays frozen at the cache's first clone. That makes the cache fetch
+The fetch names the cache's path, not `origin`, so no reordering of these lines
+can turn it into a remote fetch. It copies the cache's **remote-tracking** refs
+over the workspace's `origin/*`, which `clone --shared` made from the cache's
+local branches (frozen at its first clone): the base and every `origin/*` the
+agent diffs against are current, with no phantom "ahead N". That makes the cache fetch
 load-bearing, so a definition pod calls `git.Manager.EnsureRepoFetched`: it
 always fetches, waiting for the repo lock no longer than the request's context
 (a `TryLock` poll, since the lock is a plain mutex), where
@@ -94,12 +127,33 @@ the deadline is a clean error before any pod exists. The script is tested by
 running it against real git fixtures (a remote that advanced and gained a
 branch after the cache's clone), not by string assertions.
 
-**No fleet-shared sync.** Without its `settings.json`, every tool call in a
-definition pod goes through `canUseTool`. Cost: no fleet `CLAUDE.md`, skills or
-synced plugins until P2's genome. The entrypoint still copies the image's baked
+**No fleet-shared sync.** Its `settings.json` pre-approves arbitrary-exec
+`Bash` fleet-wide, and those pre-approvals are gone from definition pods. That
+is all: P1 definition pods still run the worker's default tool surface. The
+worker's `allowedTools` (`Read`, `Glob`, `Grep`, `WebSearch`, `WebFetch`,
+`Task`, `mcp__agent-fleet-sidecar__*`, `mcp__playwright__*`) skip `canUseTool`,
+and `settingSources: ["user", "project"]` still merges the target repo's own
+`.claude/settings.json` allow rules (reviewed config in a `repos` repo, the same
+trust as a repo session). The definition's `tools.allow`/`deny` are not applied
+in P1; only `mode` and `model` are bounded. P4's `AgentSpec` plumbing
+(`settingSources: ["user"]` plus `additionalDirectories` for the repo
+`CLAUDE.md`, plan §5c spike 4, and `tools.allow` decided inside `canUseTool`)
+makes the definition's tool surface the pod's. Cost: no fleet `CLAUDE.md`,
+skills or synced plugins until P2's genome. The entrypoint still copies the image's baked
 plugins (`worker/entrypoint.sh`), so nothing crash-loops; `EnsureClaudeHome`
 still runs. That `cp -r` onto RWX claude-home is the dominant cold-start cost
 (spike 7) and is left for P2's read-only genome mount.
+
+**Claude Code's own cross-session channel is closed (amends ADR-0060).** Every
+pod passes `crossSessionInbound: "accept"` and lists `SendMessage`/`ListAgents`
+in `allowedTools`, and every pod shares one OAuth account. That channel reaches
+every session on the account (other pods, laptop sessions) around core, the
+transcript and the lease, so §4's "no peers, not promptable" would bound nothing
+there. `FLEET_DEFINITION` (set only by this profile) makes the worker pass
+`crossSessionInbound: "refuse"`, drop `SendMessage`/`ListAgents` from
+`allowedTools` and add them to `disallowedTools`. It is a flag, not P4's
+`AgentSpec`. It needs this release's worker, which is why the image is bound
+(below).
 
 **INTERIM: `CLAUDE_CODE_OAUTH_TOKEN` stays in definition pods in P1.** The
 model credential moves to the Agent Vault in P3. In P1 only platform-admins
@@ -113,28 +167,48 @@ credential for the real `origin`. They read, edit and commit locally, as
 verification vehicles until P3's vault. "Every result = PR" is not met by them
 in P1; the kind QA asserts that `git push` fails.
 
-**Workspace binding (ADR-0062 §7).** The image is bound: core sends `""`, so a
-worker image built before this change (still reading `LEASE_ID`/`GH_TOKEN`,
-older `sidecarClient`) can never run a definition pod. The URL is not snapshot,
-on purpose: in P1 it reaches nothing a definition pod can use. The cache's
-content comes from the `origin` it was first cloned from (`ensureLocked` only
-ever runs `fetch origin`, it never re-points it), and a repointed `repos.url`
-only changes the pod's push remote, for which the pod holds no credential.
-`repos` stays admin-only config. **P3 must bind it** before the pod gets a push
+**Workspace binding (ADR-0062 §7), partly.** The image is bound to the
+release, not snapshot per session: core sends `""` and the provisioner refuses
+an override for a definition pod, so it always runs the provisioner's own
+default worker. The reason is the worker-side hardening above:
+`FLEET_DEFINITION` does nothing in a worker built before it, and a `repos.image`
+override (a repo toolchain image, possibly floating or pinned old) is not
+guaranteed to be this release's worker. Cost: a definition on a repo with its
+own toolchain image runs on the default image. ADR-0062 §7's literal ask (snapshot
+at create, refuse a warm when it differs) is not done: the default image moves
+with every provisioner rollout, so a resumed definition session may run a newer
+worker than it was created on.
+
+The URL is not snapshot either. It does decide content on a **cold** cache:
+`ensureLocked` runs `git clone <repos.url>` when the cache does not exist, and
+only `fetch origin` after (it never re-points a warm cache). So a repointed
+`repos.url` decides the code a definition session runs when that repo's cache is
+first created, and changes the pod's push remote, for which the pod holds no
+credential in P1. `repos` is admin-only config, as `repos.url` already decides
+the code of every repo session. **P3 must bind it** before the pod gets a push
 credential: the vault's per-definition `credentials.services` paths are what
 make a repointed URL unpushable.
 
-### 3. Schema: a lease only a profile-aware core mints
+### 3. Schema: a lease no older core can mint or verify
 
-000008's `sessions_definition_no_lease` (no definition session may hold a
-lease) is replaced by migration 000009's `sessions_definition_profile_lease`:
-a definition session's `lease_id` must equal its `profile_lease_id`, which only
-this core's `ReserveSlot` writes, from the same `gen_random_uuid()`. Any older
-core (an image rollback with the schema left at 000009, a RollingUpdate
-overlap) mints a lease without it, the CHECK refuses the write, and its
-`ReserveSlot` fails for a definition session: the guarantee ADR-0062 got from
-the schema survives this slice. The down migration clears definition sessions'
-leases (revoking their pods' credential) and restores the 000008 CHECK.
+An older core knows nothing of definitions. It would warm a definition session
+as a repo session (`GH_TOKEN` and `LEASE_ID` in the worker, the whole cache, any
+mode), and it authenticates a lease against `lease_id` with no definition
+allowlist, no `from` check and no `mode.allow` bound. Both have to be closed in
+the schema, because an image rollback with the schema left at 000009, or a
+RollingUpdate overlap (the migration runs PreSync), puts one in front of a live
+definition pod.
+
+So a definition session's lease never lives in `lease_id`. 000008's
+`sessions_definition_no_lease` CHECK stays: no definition session holds a
+`lease_id`, so an older core's `ReserveSlot` fails for one. Migration 000009
+adds `profile_lease_id`, which only this core's `ReserveSlot` writes, for a
+definition session only. This core's `VerifyLease`, `SaveAgentSessionID` and
+`Get` read `COALESCE(lease_id, profile_lease_id)`; `ClearLease` (teardown and
+the reconcile revocation) clears both. An older core matches only `lease_id`,
+so a definition pod's lease authenticates nothing there: it fails closed, it is
+not honored without the allowlist. The down migration drops the column, which
+revokes live definition pods' leases.
 
 ### 4. CoreService: a per-session allowlist for definition leases
 
@@ -191,7 +265,8 @@ and removed.
 After ADR-0062's checks (pinned == current, not cluster-access) and before
 `ReserveSlot`: the provisioner must report `definition_pod_profile`. Then
 `CreateWorkerPod` gets the profile built from the current row's
-`git.identity`, image `""`, and no tool keys.
+`git.identity`, image `""`, and no tool keys, and its answer must carry
+`definition_profile_applied` (§1).
 
 ## Consequences
 
@@ -208,5 +283,13 @@ After ADR-0062's checks (pinned == current, not cluster-access) and before
 - The `SendMessage` from-check changes behavior for every session; only writes
   no legitimate pod caller makes are refused.
 - Egress is still open in P1; the lock is P3 (plan §5).
+- Amends ADR-0060 for definition pods: the native cross-session channel is
+  refused inbound and its tools are disallowed (§2).
 - Rollback below this ADR: run the down migration (it revokes live definition
-  pods' leases). An image-only rollback is covered by §3.
+  pods' leases). An image-only core rollback is covered by §3: the older core
+  neither mints nor verifies a definition lease, so live definition pods lose
+  CoreService instead of getting an unbounded one. A provisioner rollback is
+  covered by §1's two checks, with the fleet-shared residual recorded there.
+- **P1 does not bound the tool surface** (§2, "No fleet-shared sync"): the
+  worker's `allowedTools` and the target repo's project allow rules still skip
+  `canUseTool`. P4.

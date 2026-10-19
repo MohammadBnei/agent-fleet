@@ -35,18 +35,19 @@ func newDefinitionSession(t *testing.T, s *Store, name, sha string) string {
 	return id
 }
 
-// The schema, not core's code, keeps an older core from leasing a definition
-// session (docs/adr/0064): it knows nothing of definitions and would warm one as
-// a repo session. Its ReserveSlot mints a lease without profile_lease_id, which
-// is this write; this core's ReserveSlot writes both from one value.
-func TestDefinitionLeaseNeedsAProfileAwareCore(t *testing.T) {
+// An older core knows nothing of definitions (docs/adr/0064). It must neither
+// MINT a definition session's lease (it would warm one as a repo session) nor
+// VERIFY one (it applies no definition allowlist). It reads and writes only
+// lease_id; this core keeps a definition lease in profile_lease_id.
+func TestDefinitionLeaseIsInvisibleToAnOlderCore(t *testing.T) {
 	ctx := context.Background()
 	pool := dbtest.NewPool(t)
 	store := NewStore(pool)
 	insertDefinition(t, pool, "a", "sha-a", 1)
 	def := newDefinitionSession(t, store, "a", "sha-a")
+	// An older core's ReserveSlot write.
 	_, err := pool.Exec(ctx, `UPDATE sessions SET lease_id = gen_random_uuid(), pod_phase = 'Pending' WHERE id = $1`, def)
-	if err == nil || !strings.Contains(err.Error(), "sessions_definition_profile_lease") {
+	if err == nil || !strings.Contains(err.Error(), "sessions_definition_no_lease") {
 		t.Fatalf("want the CHECK to refuse an older core's lease, got %v", err)
 	}
 	assertUntouched(t, pool, def)
@@ -57,20 +58,30 @@ func TestDefinitionLeaseNeedsAProfileAwareCore(t *testing.T) {
 	if ok, name, err := store.VerifyLease(ctx, def, lease); err != nil || !ok || name != "a" {
 		t.Fatalf("VerifyLease = %v %q %v, want the definition's name", ok, name, err)
 	}
-	// A cleared lease, then an older core's mint: still refused, because the
-	// stale profile_lease_id does not match the new lease.
+	// An older core's VerifyLease query.
+	var older bool
+	if err := pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM sessions WHERE id = $1 AND lease_id::text = $2)`, def, lease).Scan(&older); err != nil || older {
+		t.Fatalf("an older core verifies a definition lease: %v %v", older, err)
+	}
+	if ok, err := store.SaveAgentSessionID(ctx, def, "sdk-1", "", lease); err != nil || !ok {
+		t.Fatalf("SaveAgentSessionID with the definition lease: %v %v", ok, err)
+	}
 	if err := store.ClearLease(ctx, def); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pool.Exec(ctx, `UPDATE sessions SET lease_id = gen_random_uuid() WHERE id = $1`, def); err == nil {
-		t.Fatal("an older core re-leased a definition session after a clear")
+	if ok, _, err := store.VerifyLease(ctx, def, lease); err != nil || ok {
+		t.Fatalf("a cleared definition lease still verifies: %v %v", ok, err)
 	}
 	repo := newSession(t, ctx, store)
-	if _, err := pool.Exec(ctx, `UPDATE sessions SET lease_id = gen_random_uuid() WHERE id = $1`, repo); err != nil {
-		t.Fatalf("a repo session's lease is unconstrained: %v", err)
+	repoLease, err := store.ReserveSlot(ctx, repo, Caps{MaxLive: 5, MaxDefinition: 4})
+	if err != nil {
+		t.Fatal(err)
 	}
-	if ok, name, err := store.VerifyLease(ctx, repo, "not-a-lease"); err != nil || ok || name != "" {
-		t.Fatalf("a wrong lease: %v %q %v", ok, name, err)
+	if ok, name, err := store.VerifyLease(ctx, repo, repoLease); err != nil || !ok || name != "" {
+		t.Fatalf("a repo lease: %v %q %v", ok, name, err)
+	}
+	if ok, _, err := store.VerifyLease(ctx, repo, "not-a-lease"); err != nil || ok {
+		t.Fatalf("a wrong lease: %v %v", ok, err)
 	}
 }
 

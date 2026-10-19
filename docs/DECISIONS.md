@@ -262,12 +262,17 @@ Any doc, code, comment, or memory that contradicts this file or an
   no `LEASE_ID` and no `GH_TOKEN`, sees only its repo's subPath of the clone
   cache, gets its git identity from the definition's `git.identity`, and no
   fleet-shared `settings.json`; the clone init container never contacts the
-  remote. `CLAUDE_CODE_OAUTH_TOKEN` stays until P3 (interim). A definition lease
-  may call only a fixed `CoreService` allowlist, nobody may `PromptSession` into
-  a definition session, and every lease caller authors `SendMessage` as
-  `agent`/`worker` only. Core warms one only against a provisioner that reports
-  `definition_pod_profile`, and the schema refuses a definition lease that an
-  older core minted (`sessions_definition_profile_lease`).
+  remote. It runs only the default worker image, which refuses Claude Code's own
+  cross-session channel there (`FLEET_DEFINITION`, amending `adr/0060`).
+  `CLAUDE_CODE_OAUTH_TOKEN` stays until P3 (interim). P1 does not bound its tool
+  surface: the worker's `allowedTools` and the target repo's project allow rules
+  still skip `canUseTool` until P4. A definition lease may call only a fixed
+  `CoreService` allowlist, nobody may `PromptSession` into a definition session,
+  and every lease caller authors `SendMessage` as `agent`/`worker` only. Core
+  warms one only against a provisioner that reports `definition_pod_profile` and
+  tears it down if the create does not confirm `definition_profile_applied`. A
+  definition lease lives in `profile_lease_id`, never in `lease_id`, so an older
+  core can neither mint (000008's `sessions_definition_no_lease`) nor verify one.
 
 ## 2. Forbidden patterns (quick check — full list + reasons in `adr/`)
 

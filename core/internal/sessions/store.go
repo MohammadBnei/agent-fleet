@@ -158,7 +158,7 @@ func NewStore(pool *pgxpool.Pool) *Store {
 // the console. Title stays a pointer; it is optional on the wire too.
 const selectCols = `
 	s.id, s.repo, s.title, COALESCE(s.description, ''),
-	s.pod_phase, s.pod_message, s.last_error, s.lease_id,
+	s.pod_phase, s.pod_message, s.last_error, COALESCE(s.lease_id, s.profile_lease_id),
 	s.agent_session_id, s.model, s.permission_mode,
 	s.last_entry_type, s.last_entry_from, s.activity_seen, s.seen_at,
 	s.last_active_at, s.swept_at, s.archived_at,
@@ -401,11 +401,10 @@ func (s *Store) ReserveSlot(ctx context.Context, id string, caps Caps) (leaseID 
 
 	err = tx.QueryRow(ctx, `
 		UPDATE sessions
-		-- profile_lease_id is the same value: 000009's CHECK accepts a
-		-- definition session's lease only when it matches, and only a core
-		-- that sends the definition pod profile writes it (docs/adr/0064).
-		SET lease_id = v.lease,
-		    profile_lease_id = v.lease,
+		-- A definition session's lease goes in profile_lease_id, never
+		-- lease_id, which every older core verifies (docs/adr/0064, 000009).
+		SET lease_id = CASE WHEN definition_name IS NULL THEN v.lease END,
+		    profile_lease_id = CASE WHEN definition_name IS NOT NULL THEN v.lease END,
 		    last_active_at = now(),
 		    stop_requested_at = NULL,
 		    -- A fresh pod is about to be provisioned; nothing it says has
@@ -442,7 +441,7 @@ func (s *Store) ReserveSlot(ctx context.Context, id string, caps Caps) (leaseID 
 		    updated_at = now()
 		FROM (SELECT gen_random_uuid() AS lease) v
 		WHERE id = $1 AND archived_at IS NULL
-		RETURNING lease_id::text
+		RETURNING v.lease::text
 	`, id).Scan(&leaseID)
 	if err == pgx.ErrNoRows {
 		return "", ErrNotFound
@@ -601,7 +600,7 @@ func (s *Store) SaveAgentSessionID(ctx context.Context, id, agentSessionID, mode
 		    -- (docs/adr/0062): what the pod reports never widens it.
 		    model = CASE WHEN definition_name IS NULL THEN COALESCE($3, model) ELSE model END,
 		    updated_at = now()
-		WHERE id = $1 AND lease_id::text = $4
+		WHERE id = $1 AND COALESCE(lease_id, profile_lease_id)::text = $4
 	`, id, agentSessionID, modelPtr, leaseID)
 	if err != nil {
 		slog.Error("sessions SaveAgentSessionID", "sessionId", id, "error", err)
@@ -634,7 +633,8 @@ func (s *Store) SaveAgentSessionID(ctx context.Context, id, agentSessionID, mode
 // (docs/adr/0064).
 func (s *Store) VerifyLease(ctx context.Context, id, leaseID string) (ok bool, definition string, err error) {
 	err = s.pool.QueryRow(ctx, `
-		SELECT COALESCE(definition_name, '') FROM sessions WHERE id = $1 AND lease_id::text = $2
+		SELECT COALESCE(definition_name, '') FROM sessions
+		WHERE id = $1 AND COALESCE(lease_id, profile_lease_id)::text = $2
 	`, id, leaseID).Scan(&definition)
 	if err == pgx.ErrNoRows {
 		return false, "", nil
@@ -653,7 +653,7 @@ func (s *Store) VerifyLease(ctx context.Context, id, leaseID string) (ok bool, d
 // idle — which is most of the time. Clearing here is what makes the lease a
 // revocable credential rather than merely a rotating one.
 func (s *Store) ClearLease(ctx context.Context, id string) error {
-	_, err := s.pool.Exec(ctx, `UPDATE sessions SET lease_id = NULL WHERE id = $1`, id)
+	_, err := s.pool.Exec(ctx, `UPDATE sessions SET lease_id = NULL, profile_lease_id = NULL WHERE id = $1`, id)
 	if err != nil {
 		slog.Error("sessions ClearLease", "sessionId", id, "error", err)
 		return fmt.Errorf("clear lease: %w", err)

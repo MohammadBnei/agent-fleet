@@ -51,19 +51,23 @@ func TestCreateWorkerPod_DefinitionProfile(t *testing.T) {
 	origin := newTestOriginRepo(t)
 
 	// A repo session first: it clones the cache and gets fleet-shared.
-	if _, err := s.CreateWorkerPod(ctx, &agentfleetv1.CreateWorkerPodRequest{SessionId: "repo-1", Repo: "dream-analyst", RepoUrl: origin, BaseBranch: "main"}); err != nil {
-		t.Fatal(err)
+	if resp, err := s.CreateWorkerPod(ctx, &agentfleetv1.CreateWorkerPodRequest{SessionId: "repo-1", Repo: "dream-analyst", RepoUrl: origin, BaseBranch: "main"}); err != nil || resp.GetDefinitionProfileApplied() {
+		t.Fatalf("repo session: applied=%v err=%v", resp.GetDefinitionProfileApplied(), err)
 	}
 	if _, err := os.Stat(filepath.Join(root, "claude-home", "repo-1", "settings.json")); err != nil {
 		t.Fatalf("fixture: the repo session must get fleet-shared: %v", err)
 	}
 	commitTo(t, origin, "new.txt")
 
-	if _, err := s.CreateWorkerPod(ctx, &agentfleetv1.CreateWorkerPodRequest{
+	resp, err := s.CreateWorkerPod(ctx, &agentfleetv1.CreateWorkerPodRequest{
 		SessionId: "def-1", Repo: "dream-analyst", RepoUrl: origin, BaseBranch: "main",
 		Definition: &agentfleetv1.DefinitionPodProfile{Name: "dev-dream-analyst", GitAuthorName: "a", GitAuthorEmail: "a@bnei.dev"},
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatal(err)
+	}
+	if !resp.GetDefinitionProfileApplied() {
+		t.Error("the response must confirm the profile: core tears down a definition warm without it")
 	}
 	if got, want := revParse(t, filepath.Join(root, "repos", "dream-analyst"), "origin/main"), revParse(t, origin, "HEAD"); got != want {
 		t.Errorf("cache origin/main %s, want the remote's tip %s: the definition clone reads it", got, want)
@@ -93,6 +97,7 @@ func TestCreateWorkerPod_RejectsAnIncompleteProfile(t *testing.T) {
 		"no author": func(r *agentfleetv1.CreateWorkerPodRequest) { r.Definition.GitAuthorName = "" },
 		"no email":  func(r *agentfleetv1.CreateWorkerPodRequest) { r.Definition.GitAuthorEmail = "" },
 		"tool keys": func(r *agentfleetv1.CreateWorkerPodRequest) { r.ToolKeys = []string{"cluster-access"} },
+		"image":     func(r *agentfleetv1.CreateWorkerPodRequest) { r.Image = "registry.bnei.lan:5000/old-worker:1" },
 	} {
 		req := &agentfleetv1.CreateWorkerPodRequest{SessionId: "s", Repo: "r", RepoUrl: "/nonexistent", Definition: ok()}
 		mut(req)
