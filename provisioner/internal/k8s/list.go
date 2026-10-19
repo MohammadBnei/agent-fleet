@@ -55,6 +55,11 @@ func jobPhase(job *batchv1.Job) string {
 		case batchv1.JobComplete:
 			return "Succeeded"
 		case batchv1.JobFailed:
+			// docs/adr/0065: a definition pod's limits.timeout is a planned
+			// end, not a crash.
+			if cond.Reason == batchv1.JobReasonDeadlineExceeded {
+				return "DeadlineExceeded"
+			}
 			return "Failed"
 		}
 	}

@@ -60,6 +60,15 @@ holder and the only thing that ever calls this service — hub-and-spoke).
   `extraManifests`. Worker pods aren't selected by any policy and stay
   default-allow.
 
+- `infisicalsecret-agent-vault.yaml` — syncs `agent-fleet-nygh` folder
+  `/agent-vault` only into Secret `provisioner-agent-vault`, mounted read-only
+  at `/var/run/agent-vault`: the Agent Vault agent token and the credential
+  values definitions name (`docs/adr/0065` §1). Core never syncs it.
+- `definition-egress.yaml` — a `CiliumNetworkPolicy` on pods labelled
+  `fleet.bnei.dev/definition`: egress only to the vault proxy `:14322`, core
+  `:9090` and DNS for those two names (`docs/adr/0065` §5). Every other worker
+  pod stays default-allow.
+
 ## One-time human setup (not something this repo/ArgoCD can do)
 
 1. **Already done** — a `*.e2e.bnei.dev` wildcard A record points at the

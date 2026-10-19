@@ -1,0 +1,555 @@
+// Package vault is the provisioner's Agent Vault client (docs/adr/0065). It
+// holds the fleet's only vault credential, a member-role agent token, and
+// reads every credential value from the provisioner's own mounted Secret:
+// core sends key names, never values.
+package vault
+
+import (
+	"bytes"
+	"context"
+	"crypto/sha256"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"log/slog"
+	"net/http"
+	"net/url"
+	"os"
+	"path/filepath"
+	"regexp"
+	"slices"
+	"sort"
+	"strings"
+	"sync"
+	"time"
+
+	corev1 "k8s.io/api/core/v1"
+)
+
+// TokenKey is the agent token's file in SecretsDir.
+const TokenKey = "AGENT_VAULT_TOKEN"
+
+// gitUsernameKey holds "x-access-token" for basic git auth. FLEET_VAULT_ is
+// the provisioner's own prefix: a definition may never name one.
+const gitUsernameKey = "FLEET_VAULT_GIT_USERNAME"
+
+// gitBearer picks the github.com git auth shape. Basic x-access-token:<PAT> is
+// git's documented HTTPS-PAT convention; Bearer for git smart-HTTP is unproven
+// (spike 3). One line to flip once a real PAT has been tried both ways.
+const gitBearer = false
+
+// revokeBudget bounds every revoke: best-effort, the token's TTL bounds a miss.
+const revokeBudget = 3 * time.Second
+
+// minTTL is the vault's floor on a session token's TTL.
+const minTTL = 300 * time.Second
+
+type Client struct {
+	API        string // http://agent-vault.agent-vault.svc.cluster.local:14321
+	Proxy      string // agent-vault.agent-vault.svc.cluster.local:14322
+	SecretsDir string // the mounted Secret: AGENT_VAULT_TOKEN + credential values
+	HTTP       *http.Client
+
+	mu    sync.Mutex
+	set   map[string]map[string][32]byte // vault -> key -> sha256 of the value last written
+	locks map[string]*sync.Mutex
+}
+
+func New(api, proxy, secretsDir string) *Client {
+	return &Client{
+		API: strings.TrimSuffix(api, "/"), Proxy: proxy, SecretsDir: secretsDir,
+		HTTP: &http.Client{Timeout: 10 * time.Second},
+		set:  map[string]map[string][32]byte{}, locks: map[string]*sync.Mutex{},
+	}
+}
+
+// Spec is one vault's desired state (a definition's credentials).
+type Spec struct {
+	Name     string
+	Services []Service
+}
+
+type Service struct {
+	Host   string
+	Paths  []string
+	Secret string
+}
+
+// service and auth are Agent Vault's wire shapes (broker.Service, v0.40.0:
+// host is "host/path" joined, credential fields are KEY names).
+type service struct {
+	Name string `json:"name"`
+	Host string `json:"host"`
+	Auth auth   `json:"auth"`
+}
+
+type auth struct {
+	Type     string `json:"type"`
+	Token    string `json:"token,omitempty"`
+	Username string `json:"username,omitempty"`
+	Password string `json:"password,omitempty"`
+}
+
+func gitAuth(key string, bearer bool) auth {
+	if bearer {
+		return auth{Type: "bearer", Token: key}
+	}
+	return auth{Type: "basic", Username: gitUsernameKey, Password: key}
+}
+
+// The trust boundary: core's spec is re-checked here, so a buggy or
+// compromised core cannot point a credential at another host. Ported from
+// core/internal/definitions (separate module): anchored, exactly one trailing
+// "/*", no "." / ".." segment (the vault matches by prefix, unnormalised).
+var (
+	vaultNameRe = regexp.MustCompile(`^[a-z0-9-]{3,64}$`)
+	keyRe       = regexp.MustCompile(`^[A-Z][A-Z0-9_]*$`)
+	githubPath  = regexp.MustCompile(`^/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(\.git)?/\*$`)
+	apiPath     = regexp.MustCompile(`^/repos/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/\*$`)
+	referenceRe = regexp.MustCompile(`^\$\{.*\}$`)
+)
+
+func checkSpec(s Spec) error {
+	if !vaultNameRe.MatchString(s.Name) {
+		return fmt.Errorf("vault name %q is not a vault slug", s.Name)
+	}
+	for _, svc := range s.Services {
+		if !keyRe.MatchString(svc.Secret) || strings.HasPrefix(svc.Secret, "AGENT_VAULT_") || strings.HasPrefix(svc.Secret, "FLEET_VAULT_") {
+			return fmt.Errorf("vault %s: secret %q is not a definition credential key", s.Name, svc.Secret)
+		}
+		re := githubPath
+		switch svc.Host {
+		case "api.anthropic.com":
+			if len(svc.Paths) > 0 {
+				return fmt.Errorf("vault %s: api.anthropic.com takes no paths", s.Name)
+			}
+			continue
+		case "api.github.com":
+			re = apiPath
+		case "github.com":
+		default:
+			return fmt.Errorf("vault %s: host %q is not allowed", s.Name, svc.Host)
+		}
+		if len(svc.Paths) == 0 {
+			return fmt.Errorf("vault %s: %s needs a path", s.Name, svc.Host)
+		}
+		for _, p := range svc.Paths {
+			if !re.MatchString(p) || slices.Contains(strings.Split(p, "/"), ".") || slices.Contains(strings.Split(p, "/"), "..") {
+				return fmt.Errorf("vault %s: path %q on %s is not an exact repo glob", s.Name, p, svc.Host)
+			}
+		}
+	}
+	return nil
+}
+
+// render turns a spec into the vault's services and the credential keys they
+// use. The username key is the provisioner's own.
+func render(s Spec) []service {
+	var out []service
+	for _, svc := range s.Services {
+		switch svc.Host {
+		case "api.anthropic.com":
+			out = append(out, service{Name: "anthropic", Host: svc.Host, Auth: auth{Type: "bearer", Token: svc.Secret}})
+		case "github.com":
+			for i, p := range svc.Paths {
+				out = append(out, service{Name: fmt.Sprintf("github-%d", i), Host: svc.Host + p, Auth: gitAuth(svc.Secret, gitBearer)})
+			}
+		case "api.github.com":
+			for i, p := range svc.Paths {
+				out = append(out, service{Name: fmt.Sprintf("github-api-%d", i), Host: svc.Host + p, Auth: auth{Type: "bearer", Token: svc.Secret}})
+			}
+		}
+	}
+	return out
+}
+
+func (a auth) keys() []string {
+	var out []string
+	for _, k := range []string{a.Token, a.Username, a.Password} {
+		if k != "" {
+			out = append(out, k)
+		}
+	}
+	return out
+}
+
+// readSecret returns a credential value from the mounted Secret, "" if absent
+// or empty. Errors name the key only.
+func (c *Client) readSecret(key string) (string, error) {
+	b, err := os.ReadFile(filepath.Join(c.SecretsDir, key))
+	if errors.Is(err, os.ErrNotExist) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("read secret %s: %w", key, errors.Unwrap(err))
+	}
+	return strings.TrimSpace(string(b)), nil
+}
+
+func (c *Client) vaultLock(name string) *sync.Mutex {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	l, ok := c.locks[name]
+	if !ok {
+		l = &sync.Mutex{}
+		c.locks[name] = l
+	}
+	return l
+}
+
+// Reconcile makes vault s.Name match s: services (a PUT replaces the set, so
+// a service removed from git is removed), credentials, and
+// unmatched_host_policy=deny. A service whose secret is missing is dropped
+// (fail closed) and the call errors naming the key. Unchanged inputs cost
+// three GETs and no write.
+func (c *Client) Reconcile(ctx context.Context, s Spec) error {
+	if err := checkSpec(s); err != nil {
+		return err
+	}
+	l := c.vaultLock(s.Name)
+	l.Lock()
+	defer l.Unlock()
+
+	values := map[string]string{gitUsernameKey: "x-access-token"}
+	var missing []string
+	var desired []service
+	for _, svc := range render(s) {
+		ok := true
+		for _, k := range svc.Auth.keys() {
+			if _, seen := values[k]; seen {
+				continue
+			}
+			v, err := c.readSecret(k)
+			if err != nil {
+				return fmt.Errorf("vault %s: %w", s.Name, err)
+			}
+			if referenceRe.MatchString(v) {
+				return fmt.Errorf("vault %s: secret %s holds an unexpanded Infisical reference", s.Name, k)
+			}
+			if v == "" {
+				ok = false
+				if !slices.Contains(missing, k) {
+					missing = append(missing, k)
+				}
+				continue
+			}
+			values[k] = v
+		}
+		if ok {
+			desired = append(desired, svc)
+		}
+	}
+	want := map[string]string{}
+	for _, svc := range desired {
+		for _, k := range svc.Auth.keys() {
+			want[k] = values[k]
+		}
+	}
+	sort.Slice(desired, func(i, j int) bool { return desired[i].Name < desired[j].Name })
+
+	var current struct {
+		Services []service `json:"services"`
+	}
+	err := c.do(ctx, http.MethodGet, "/v1/vaults/"+s.Name+"/services", nil, &current)
+	switch {
+	case isStatus(err, http.StatusNotFound) && len(desired) == 0:
+		return missingErr(s.Name, missing)
+	case isStatus(err, http.StatusNotFound):
+		if err := c.do(ctx, http.MethodPost, "/v1/vaults", map[string]string{"name": s.Name}, nil); err != nil && !isStatus(err, http.StatusConflict) {
+			return fmt.Errorf("vault %s: create: %w", s.Name, err)
+		}
+	case err != nil:
+		return fmt.Errorf("vault %s: services: %w", s.Name, err)
+	}
+
+	var listed struct {
+		Keys []string `json:"keys"`
+	}
+	if err := c.do(ctx, http.MethodGet, "/v1/credentials?vault="+url.QueryEscape(s.Name), nil, &listed); err != nil {
+		return fmt.Errorf("vault %s: credentials: %w", s.Name, err)
+	}
+	c.mu.Lock()
+	memo := c.set[s.Name]
+	if memo == nil {
+		memo = map[string][32]byte{}
+		c.set[s.Name] = memo
+	}
+	changed := map[string]string{}
+	for k, v := range want {
+		if sum := sha256.Sum256([]byte(v)); !slices.Contains(listed.Keys, k) || memo[k] != sum {
+			changed[k] = v
+		}
+	}
+	c.mu.Unlock()
+	if len(changed) > 0 {
+		if err := c.do(ctx, http.MethodPost, "/v1/credentials", map[string]any{"vault": s.Name, "credentials": changed}, nil); err != nil {
+			return fmt.Errorf("vault %s: set credentials: %w", s.Name, err)
+		}
+		c.mu.Lock()
+		for k, v := range changed {
+			memo[k] = sha256.Sum256([]byte(v))
+		}
+		c.mu.Unlock()
+		slog.Info("vault: credentials set", "vault", s.Name, "keys", sortedKeys(changed))
+	}
+
+	sort.Slice(current.Services, func(i, j int) bool { return current.Services[i].Name < current.Services[j].Name })
+	if !slices.Equal(current.Services, desired) {
+		if desired == nil {
+			desired = []service{}
+		}
+		if err := c.do(ctx, http.MethodPut, "/v1/vaults/"+s.Name+"/services", map[string]any{"services": desired}, nil); err != nil {
+			return fmt.Errorf("vault %s: set services: %w", s.Name, err)
+		}
+		slog.Info("vault: services set", "vault", s.Name, "count", len(desired))
+	}
+
+	var settings struct {
+		Policy string `json:"unmatched_host_policy"`
+	}
+	if err := c.do(ctx, http.MethodGet, "/v1/vaults/"+s.Name+"/settings", nil, &settings); err != nil {
+		return fmt.Errorf("vault %s: settings: %w", s.Name, err)
+	}
+	if settings.Policy != "deny" {
+		if err := c.do(ctx, http.MethodPatch, "/v1/vaults/"+s.Name+"/settings", map[string]string{"unmatched_host_policy": "deny"}, nil); err != nil {
+			return fmt.Errorf("vault %s: deny policy: %w", s.Name, err)
+		}
+	}
+
+	// After the PUT, so no service still names a deleted key.
+	var stale []string
+	for _, k := range listed.Keys {
+		if _, ok := want[k]; !ok {
+			stale = append(stale, k)
+		}
+	}
+	if len(stale) > 0 {
+		if err := c.do(ctx, http.MethodDelete, "/v1/credentials", map[string]any{"vault": s.Name, "keys": stale}, nil); err != nil {
+			return fmt.Errorf("vault %s: delete credentials: %w", s.Name, err)
+		}
+		c.mu.Lock()
+		for _, k := range stale {
+			delete(memo, k)
+		}
+		c.mu.Unlock()
+		slog.Info("vault: credentials removed", "vault", s.Name, "keys", stale)
+	}
+	return missingErr(s.Name, missing)
+}
+
+func missingErr(vault string, missing []string) error {
+	if len(missing) == 0 {
+		return nil
+	}
+	return fmt.Errorf("vault %s: secret %s not set in agent-fleet-nygh /agent-vault", vault, strings.Join(missing, ", "))
+}
+
+func sortedKeys(m map[string]string) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func (c *Client) vaultNames(ctx context.Context) ([]string, error) {
+	var list struct {
+		Vaults []struct {
+			Name string `json:"name"`
+		} `json:"vaults"`
+	}
+	if err := c.do(ctx, http.MethodGet, "/v1/vaults", nil, &list); err != nil {
+		return nil, fmt.Errorf("list vaults: %w", err)
+	}
+	out := make([]string, 0, len(list.Vaults))
+	for _, v := range list.Vaults {
+		out = append(out, v.Name)
+	}
+	return out, nil
+}
+
+// Prune empties every vault this agent administers that is not in keep and
+// not "executor-"-prefixed (reserved for the bridge executor, ADR 0072). The
+// vault itself stays: harmless, and cheap to re-fill. Only for the FULL set.
+func (c *Client) Prune(ctx context.Context, keep map[string]bool) error {
+	names, err := c.vaultNames(ctx)
+	if err != nil {
+		return err
+	}
+	var errs []error
+	for _, n := range names {
+		if keep[n] || strings.HasPrefix(n, "executor-") || !vaultNameRe.MatchString(n) {
+			continue
+		}
+		errs = append(errs, c.Reconcile(ctx, Spec{Name: n}))
+	}
+	return errors.Join(errs...)
+}
+
+// Mint issues a proxy-role session token on vault, labelled label, for at
+// least the vault's 300s floor. Generic: the bridge executor reuses it.
+func (c *Client) Mint(ctx context.Context, vault, label string, ttl time.Duration) (string, error) {
+	ttl = max(ttl, minTTL)
+	var out struct {
+		Token string `json:"token"`
+	}
+	if err := c.do(ctx, http.MethodPost, "/v1/sessions", map[string]any{"vault": vault, "ttl_seconds": int(ttl.Seconds()), "label": label}, &out); err != nil {
+		return "", fmt.Errorf("vault %s: mint: %w", vault, err)
+	}
+	if out.Token == "" {
+		return "", fmt.Errorf("vault %s: mint returned no token", vault)
+	}
+	return out.Token, nil
+}
+
+// Revoke deletes every session on vault whose label starts with label (the
+// mint response has no id, so: list, then delete). A missing vault is nothing
+// to revoke. Own budget, off the caller's cancellation.
+func (c *Client) Revoke(ctx context.Context, vault, label string) error {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), revokeBudget)
+	defer cancel()
+	return c.revoke(ctx, vault, label)
+}
+
+func (c *Client) revoke(ctx context.Context, vault, label string) error {
+	var list struct {
+		Sessions []struct {
+			ID    string `json:"id"`
+			Label string `json:"label"`
+		} `json:"sessions"`
+	}
+	q := "?vault=" + url.QueryEscape(vault)
+	err := c.do(ctx, http.MethodGet, "/v1/sessions"+q, nil, &list)
+	if isStatus(err, http.StatusNotFound) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("vault %s: list sessions: %w", vault, err)
+	}
+	var errs []error
+	for _, s := range list.Sessions {
+		if !strings.HasPrefix(s.Label, label) {
+			continue
+		}
+		if err := c.do(ctx, http.MethodDelete, "/v1/sessions/"+url.PathEscape(s.ID)+q, nil, nil); err != nil && !isStatus(err, http.StatusNotFound) {
+			errs = append(errs, fmt.Errorf("vault %s: revoke %s: %w", vault, s.Label, err))
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// RevokeSession revokes every token minted for a fleet session (label
+// "<sessionID>.") in every vault this agent administers. Needs no Job
+// annotation, so it works with the Job already gone.
+func (c *Client) RevokeSession(ctx context.Context, sessionID string) error {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), revokeBudget)
+	defer cancel()
+	names, err := c.vaultNames(ctx)
+	if err != nil {
+		return err
+	}
+	var errs []error
+	for _, n := range names {
+		errs = append(errs, c.revoke(ctx, n, sessionID+"."))
+	}
+	return errors.Join(errs...)
+}
+
+// CA is the vault's MITM root certificate (public).
+func (c *Client) CA(ctx context.Context) ([]byte, error) {
+	var buf bytes.Buffer
+	if err := c.do(ctx, http.MethodGet, "/v1/mitm/ca.pem", nil, &buf); err != nil {
+		return nil, fmt.Errorf("vault CA: %w", err)
+	}
+	return buf.Bytes(), nil
+}
+
+// ProxyURL is a definition pod's HTTPS_PROXY.
+func (c *Client) ProxyURL(token, vault string) string {
+	return "http://" + url.UserPassword(token, vault).String() + "@" + c.Proxy
+}
+
+// ProxyEnv is THE caller-facing proxy env shape: both cases of the proxy vars
+// (curl prefers lowercase), the caller's own NO_PROXY list, and the vault CA
+// in every variable a client in the worker image reads.
+func ProxyEnv(proxyURL, caPath string, noProxy []string) []corev1.EnvVar {
+	np := strings.Join(noProxy, ",")
+	var out []corev1.EnvVar
+	for _, k := range []string{"HTTPS_PROXY", "HTTP_PROXY", "https_proxy", "http_proxy"} {
+		out = append(out, corev1.EnvVar{Name: k, Value: proxyURL})
+	}
+	out = append(out, corev1.EnvVar{Name: "NO_PROXY", Value: np}, corev1.EnvVar{Name: "no_proxy", Value: np})
+	for _, k := range []string{"SSL_CERT_FILE", "REQUESTS_CA_BUNDLE", "NODE_EXTRA_CA_CERTS", "GIT_SSL_CAINFO", "CURL_CA_BUNDLE"} {
+		out = append(out, corev1.EnvVar{Name: k, Value: caPath})
+	}
+	return out
+}
+
+type statusError struct {
+	Status int
+	Msg    string
+}
+
+func (e *statusError) Error() string { return fmt.Sprintf("%d %s", e.Status, e.Msg) }
+
+func isStatus(err error, code int) bool {
+	var se *statusError
+	return errors.As(err, &se) && se.Status == code
+}
+
+// do sends one API call with the agent token, read per call (kubelet
+// refreshes the mounted Secret, so a rotation needs no restart). out is JSON,
+// or raw bytes into a *bytes.Buffer. Errors carry the status and the vault's
+// own `error` text, never a request body.
+func (c *Client) do(ctx context.Context, method, path string, in, out any) error {
+	token, err := c.readSecret(TokenKey)
+	if err != nil {
+		return err
+	}
+	if token == "" {
+		return errors.New("vault: " + TokenKey + " is not set (run gitops/scripts/agent-vault-bootstrap.sh in infra-bootstrap)")
+	}
+	var body io.Reader
+	if in != nil {
+		b, err := json.Marshal(in)
+		if err != nil {
+			return err
+		}
+		body = bytes.NewReader(b)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, c.API+path, body)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	if in != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	b, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode/100 != 2 {
+		var e struct {
+			Error string `json:"error"`
+		}
+		_ = json.Unmarshal(b, &e)
+		return &statusError{Status: resp.StatusCode, Msg: e.Error}
+	}
+	switch o := out.(type) {
+	case nil:
+		return nil
+	case *bytes.Buffer:
+		o.Write(b)
+		return nil
+	default:
+		return json.Unmarshal(b, out)
+	}
+}

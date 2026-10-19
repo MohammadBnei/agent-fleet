@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net"
+	"net/url"
 	"os"
 	"strconv"
 
@@ -15,6 +17,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/metrics"
+	"github.com/MohammadBnei/agent-fleet/provisioner/internal/vault"
 )
 
 // workerJobTTLSeconds is how long a finished worker Job (and the pod it
@@ -159,6 +162,8 @@ const (
 
 func int32Ptr(i int32) *int32 { return &i }
 func int64Ptr(i int64) *int64 { return &i }
+func strPtr(s string) *string { return &s }
+func boolPtr(b bool) *bool    { return &b }
 
 // CreatePod and its e2e-preview machinery used to fill most of this file:
 // a bare long-running Pod, its Service, its IngressRoute, its stripPrefix
@@ -209,7 +214,24 @@ type DefinitionProfile struct {
 	Name           string
 	GitAuthorName  string
 	GitAuthorEmail string
+	// ProxyURL is HTTPS_PROXY, carrying this pod's vault session token: the
+	// only credential in the pod, and one that reaches only its vault's rules
+	// (docs/adr/0065). Empty refuses the pod.
+	ProxyURL string
+	// DeadlineSeconds is the Job's activeDeadlineSeconds: limits.timeout,
+	// floored at 300. The token outlives it by 60s.
+	DeadlineSeconds int64
 }
+
+// VaultPlaceholder stands in for every model and GitHub credential in a
+// definition pod: the vault overwrites the whole Authorization header.
+const VaultPlaceholder = "fleet-vault-placeholder"
+
+// VaultCAConfigMap holds the vault's MITM root (key ca.pem), written by the
+// provisioner (EnsureVaultCA) so the worker fetches nothing.
+const VaultCAConfigMap = "agent-vault-ca"
+
+const vaultCADir = "/etc/agent-vault"
 
 // repoCacheMount is the read-only clone-cache mount every container gets. A
 // definition pod sees only its own repo, at the same absolute path, so the
@@ -232,16 +254,31 @@ func repoCacheMount(spec WorkerPodSpec) corev1.VolumeMount {
 // close Claude Code's own cross-session channel (docs/adr/0060), which never
 // touches core and so is not bounded by the definition allowlist.
 //
-// CLAUDE_CODE_OAUTH_TOKEN stays: INTERIM until P3 moves the model credential
-// to the vault.
-func definitionWorkerEnv(env []corev1.EnvVar, d DefinitionProfile) []corev1.EnvVar {
-	out := make([]corev1.EnvVar, 0, len(env)+8)
+// docs/adr/0065: no real credential either. CLAUDE_CODE_OAUTH_TOKEN and
+// GH_TOKEN are placeholders the vault overwrites on the wire; the proxy, its
+// CA and NO_PROXY (loopback for the sidecar, core, the vault API) come from
+// vault.ProxyEnv.
+func definitionWorkerEnv(env []corev1.EnvVar, d DefinitionProfile, coreHost string) []corev1.EnvVar {
+	out := make([]corev1.EnvVar, 0, len(env)+24)
 	for _, e := range env {
-		if e.Name != "LEASE_ID" && e.Name != "GH_TOKEN" {
+		if e.Name != "LEASE_ID" && e.Name != "GH_TOKEN" && e.Name != "CLAUDE_CODE_OAUTH_TOKEN" {
 			out = append(out, e)
 		}
 	}
+	noProxy := []string{"127.0.0.1", "localhost"}
+	if coreHost != "" {
+		noProxy = append(noProxy, coreHost)
+	}
+	if u, err := url.Parse(d.ProxyURL); err == nil && u.Hostname() != "" {
+		noProxy = append(noProxy, u.Hostname())
+	}
+	out = append(out, vault.ProxyEnv(d.ProxyURL, vaultCADir+"/ca.pem", noProxy)...)
 	return append(out,
+		corev1.EnvVar{Name: "CLAUDE_CODE_OAUTH_TOKEN", Value: VaultPlaceholder},
+		corev1.EnvVar{Name: "GH_TOKEN", Value: VaultPlaceholder},
+		corev1.EnvVar{Name: "GIT_TERMINAL_PROMPT", Value: "0"},
+		// Telemetry and update checks the vault would deny anyway.
+		corev1.EnvVar{Name: "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", Value: "1"},
 		corev1.EnvVar{Name: "FLEET_DEFINITION", Value: d.Name},
 		corev1.EnvVar{Name: "GIT_AUTHOR_NAME", Value: d.GitAuthorName},
 		corev1.EnvVar{Name: "GIT_COMMITTER_NAME", Value: d.GitAuthorName},
@@ -285,6 +322,9 @@ func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error 
 	name := WorkerResourceName(taskID)
 	labels := WorkerLabels(taskID, repo)
 	if spec.Definition != nil {
+		if spec.Definition.ProxyURL == "" || spec.Definition.DeadlineSeconds <= 0 {
+			return fmt.Errorf("definition pod %s: no vault token or deadline (docs/adr/0065)", taskID)
+		}
 		labels[DefinitionLabel] = spec.Definition.Name
 	}
 
@@ -352,7 +392,8 @@ func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error 
 		{Name: "CLAUDE_CODE_CONTAINER_ID", Value: taskID},
 	}
 	if spec.Definition != nil {
-		workerEnv = definitionWorkerEnv(workerEnv, *spec.Definition)
+		coreHost, _, _ := net.SplitHostPort(c.CoreGRPCAddr)
+		workerEnv = definitionWorkerEnv(workerEnv, *spec.Definition, coreHost)
 	}
 	workerEnv = append(workerEnv, cacheEnv()...)
 	workerEnv = append(workerEnv, contextBudgetEnv()...)
@@ -654,6 +695,20 @@ func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error 
 			},
 		},
 	}
+	if d := spec.Definition; d != nil {
+		// docs/adr/0065: limits.timeout is the pod's lifetime, and its token's
+		// TTL is longer, so the pod never runs on a dead token.
+		job.Spec.ActiveDeadlineSeconds = int64Ptr(d.DeadlineSeconds)
+		ps := &job.Spec.Template.Spec
+		// REFUSED from the egress lock's DNS allowlist + musl's search
+		// expansion under ndots:5 stops resolution (spike 1 (b)).
+		ps.DNSConfig = &corev1.PodDNSConfig{Options: []corev1.PodDNSConfigOption{{Name: "ndots", Value: strPtr("1")}}}
+		// optional: false: the pod never starts without the vault CA.
+		ps.Volumes = append(ps.Volumes, corev1.Volume{Name: "agent-vault-ca", VolumeSource: corev1.VolumeSource{
+			ConfigMap: &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: VaultCAConfigMap}, Optional: boolPtr(false)},
+		}})
+		ps.Containers[0].VolumeMounts = append(ps.Containers[0].VolumeMounts, corev1.VolumeMount{Name: "agent-vault-ca", MountPath: vaultCADir, ReadOnly: true})
+	}
 
 	_, err = c.Core.BatchV1().Jobs(c.Namespace).Create(ctx, job, metav1.CreateOptions{})
 	if err != nil {
@@ -728,5 +783,28 @@ func ignoreAlreadyExists(err error) error {
 	if apierrors.IsAlreadyExists(err) {
 		return nil
 	}
+	return err
+}
+
+// EnsureVaultCA upserts the vault's MITM root into VaultCAConfigMap, writing
+// only when it changed (docs/adr/0065 §4).
+func (c *Client) EnsureVaultCA(ctx context.Context, pem []byte) error {
+	cms := c.Core.CoreV1().ConfigMaps(c.Namespace)
+	cm, err := cms.Get(ctx, VaultCAConfigMap, metav1.GetOptions{})
+	if apierrors.IsNotFound(err) {
+		_, err = cms.Create(ctx, &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{Name: VaultCAConfigMap, Namespace: c.Namespace, Labels: map[string]string{"app.kubernetes.io/part-of": "agent-fleet"}},
+			Data:       map[string]string{"ca.pem": string(pem)},
+		}, metav1.CreateOptions{})
+		return err
+	}
+	if err != nil {
+		return err
+	}
+	if cm.Data["ca.pem"] == string(pem) {
+		return nil
+	}
+	cm.Data = map[string]string{"ca.pem": string(pem)}
+	_, err = cms.Update(ctx, cm, metav1.UpdateOptions{})
 	return err
 }

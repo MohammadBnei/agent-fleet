@@ -1,0 +1,411 @@
+package vault_test
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"log/slog"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/MohammadBnei/agent-fleet/provisioner/internal/vault"
+	"github.com/MohammadBnei/agent-fleet/provisioner/internal/vault/vaulttest"
+)
+
+// setup returns a client on a fake vault with the agent token and the given
+// secret files in its secrets dir.
+func setup(t *testing.T, secrets map[string]string) (*vault.Client, *vaulttest.Server, string) {
+	t.Helper()
+	f := vaulttest.New(t)
+	dir := t.TempDir()
+	writeSecrets(t, dir, map[string]string{"AGENT_VAULT_TOKEN": vaulttest.Token})
+	writeSecrets(t, dir, secrets)
+	return vault.New(f.URL, "agent-vault.agent-vault.svc.cluster.local:14322", dir), f, dir
+}
+
+func writeSecrets(t *testing.T, dir string, m map[string]string) {
+	t.Helper()
+	for k, v := range m {
+		if err := os.WriteFile(filepath.Join(dir, k), []byte(v), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func notesSpec() vault.Spec {
+	return vault.Spec{Name: "dev-notes", Services: []vault.Service{
+		{Host: "github.com", Paths: []string{"/MohammadBnei/notes/*", "/MohammadBnei/notes.git/*"}, Secret: "GH_DEV_NOTES"},
+		{Host: "api.github.com", Paths: []string{"/repos/MohammadBnei/notes/*"}, Secret: "GH_DEV_NOTES"},
+		{Host: "api.anthropic.com", Secret: "CLAUDE_CODE_OAUTH_TOKEN"},
+	}}
+}
+
+var notesSecrets = map[string]string{"GH_DEV_NOTES": "ghp-sentinel-value", "CLAUDE_CODE_OAUTH_TOKEN": "oauth-sentinel-value"}
+
+type svc struct {
+	Name string `json:"name"`
+	Host string `json:"host"`
+	Auth struct {
+		Type     string `json:"type"`
+		Token    string `json:"token,omitempty"`
+		Username string `json:"username,omitempty"`
+		Password string `json:"password,omitempty"`
+	} `json:"auth"`
+}
+
+func services(t *testing.T, f *vaulttest.Server, name string) []svc {
+	t.Helper()
+	v, ok := f.Get(name)
+	if !ok {
+		t.Fatalf("no vault %s", name)
+	}
+	var out []svc
+	if err := json.Unmarshal(v.Services, &out); err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+func TestReconcile_CreatesVaultServicesPolicyCredentials(t *testing.T) {
+	c, f, _ := setup(t, notesSecrets)
+	if err := c.Reconcile(context.Background(), notesSpec()); err != nil {
+		t.Fatal(err)
+	}
+	v, _ := f.Get("dev-notes")
+	if v.Policy != "deny" {
+		t.Errorf("policy %q", v.Policy)
+	}
+	want := map[string]string{"GH_DEV_NOTES": "ghp-sentinel-value", "CLAUDE_CODE_OAUTH_TOKEN": "oauth-sentinel-value", "FLEET_VAULT_GIT_USERNAME": "x-access-token"}
+	if len(v.Creds) != len(want) {
+		t.Errorf("%d creds, want %d", len(v.Creds), len(want))
+	}
+	for k, x := range want {
+		if v.Creds[k] != x {
+			t.Errorf("cred %s not set to its file's value", k)
+		}
+	}
+	got := map[string]svc{}
+	for _, s := range services(t, f, "dev-notes") {
+		got[s.Host] = s
+	}
+	for host, want := range map[string]string{
+		"api.anthropic.com":                         "bearer/CLAUDE_CODE_OAUTH_TOKEN",
+		"github.com/MohammadBnei/notes/*":           "basic/FLEET_VAULT_GIT_USERNAME/GH_DEV_NOTES",
+		"github.com/MohammadBnei/notes.git/*":       "basic/FLEET_VAULT_GIT_USERNAME/GH_DEV_NOTES",
+		"api.github.com/repos/MohammadBnei/notes/*": "bearer/GH_DEV_NOTES",
+	} {
+		s, ok := got[host]
+		if !ok {
+			t.Errorf("no service for %s (got %v)", host, got)
+			continue
+		}
+		var shape string
+		if s.Auth.Type == "bearer" {
+			shape = "bearer/" + s.Auth.Token
+		} else {
+			shape = s.Auth.Type + "/" + s.Auth.Username + "/" + s.Auth.Password
+		}
+		if shape != want {
+			t.Errorf("%s auth %s, want %s", host, shape, want)
+		}
+	}
+	if len(got) != 4 {
+		t.Errorf("%d services, want 4", len(got))
+	}
+}
+
+func TestReconcile_Idempotent(t *testing.T) {
+	c, f, _ := setup(t, notesSecrets)
+	ctx := context.Background()
+	if err := c.Reconcile(ctx, notesSpec()); err != nil {
+		t.Fatal(err)
+	}
+	f.ResetLog()
+	if err := c.Reconcile(ctx, notesSpec()); err != nil {
+		t.Fatal(err)
+	}
+	if w := f.Writes(); len(w) != 0 {
+		t.Errorf("an unchanged reconcile wrote: %v", w)
+	}
+	if calls := f.Calls(); len(calls) != 3 {
+		t.Errorf("an unchanged reconcile made %d calls, want 3 GETs: %v", len(calls), calls)
+	}
+}
+
+func TestReconcile_RotatedValueRewritten(t *testing.T) {
+	c, f, dir := setup(t, notesSecrets)
+	ctx := context.Background()
+	if err := c.Reconcile(ctx, notesSpec()); err != nil {
+		t.Fatal(err)
+	}
+	writeSecrets(t, dir, map[string]string{"GH_DEV_NOTES": "rotated"})
+	f.ResetLog()
+	if err := c.Reconcile(ctx, notesSpec()); err != nil {
+		t.Fatal(err)
+	}
+	if w := f.Writes(); len(w) != 1 || w[0] != "POST /v1/credentials" {
+		t.Errorf("writes %v, want one credentials POST", w)
+	}
+	if v, _ := f.Get("dev-notes"); v.Creds["GH_DEV_NOTES"] != "rotated" {
+		t.Error("rotated value not written")
+	}
+}
+
+func TestReconcile_RemovesServicesNotInGit(t *testing.T) {
+	c, f, _ := setup(t, notesSecrets)
+	ctx := context.Background()
+	if err := c.Reconcile(ctx, notesSpec()); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Reconcile(ctx, vault.Spec{Name: "dev-notes", Services: notesSpec().Services[2:]}); err != nil {
+		t.Fatal(err)
+	}
+	if s := services(t, f, "dev-notes"); len(s) != 1 || s[0].Host != "api.anthropic.com" {
+		t.Errorf("services %v, want anthropic only", s)
+	}
+	if v, _ := f.Get("dev-notes"); len(v.Creds) != 1 || v.Creds["CLAUDE_CODE_OAUTH_TOKEN"] == "" {
+		t.Errorf("creds not narrowed: %d left", len(v.Creds))
+	}
+	if err := c.Reconcile(ctx, vault.Spec{Name: "dev-notes"}); err != nil {
+		t.Fatal(err)
+	}
+	if s := services(t, f, "dev-notes"); len(s) != 0 {
+		t.Errorf("empty spec left services %v", s)
+	}
+	if v, _ := f.Get("dev-notes"); len(v.Creds) != 0 {
+		t.Errorf("empty spec left %d creds", len(v.Creds))
+	}
+}
+
+func TestReconcile_EmptySpecAbsentVault_NoOp(t *testing.T) {
+	c, f, _ := setup(t, nil)
+	if err := c.Reconcile(context.Background(), vault.Spec{Name: "gone-one"}); err != nil {
+		t.Fatal(err)
+	}
+	if w := f.Writes(); len(w) != 0 {
+		t.Errorf("writes %v", w)
+	}
+}
+
+func TestReconcile_MissingSecret_FailsClosed(t *testing.T) {
+	var logs bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	c, f, _ := setup(t, map[string]string{"CLAUDE_CODE_OAUTH_TOKEN": "oauth-sentinel-value"})
+	err := c.Reconcile(context.Background(), notesSpec())
+	if err == nil || !strings.Contains(err.Error(), "GH_DEV_NOTES") || !strings.Contains(err.Error(), "/agent-vault") {
+		t.Fatalf("got %v, want an error naming GH_DEV_NOTES", err)
+	}
+	for _, s := range services(t, f, "dev-notes") {
+		if s.Host != "api.anthropic.com" {
+			t.Errorf("a service with a missing secret was kept: %s", s.Host)
+		}
+	}
+	if strings.Contains(err.Error(), "sentinel") || strings.Contains(logs.String(), "sentinel") {
+		t.Error("a credential value reached an error or a log line")
+	}
+}
+
+func TestReconcile_RefusesOffListHostOrPath(t *testing.T) {
+	for name, spec := range map[string]vault.Spec{
+		"host":           {Name: "dev-notes", Services: []vault.Service{{Host: "attacker.example", Secret: "CLAUDE_CODE_OAUTH_TOKEN"}}},
+		"dot segment":    {Name: "dev-notes", Services: []vault.Service{{Host: "github.com", Paths: []string{"/MohammadBnei/../x/*"}, Secret: "GH_DEV_NOTES"}}},
+		"glob":           {Name: "dev-notes", Services: []vault.Service{{Host: "github.com", Paths: []string{"/MohammadBnei/notes*"}, Secret: "GH_DEV_NOTES"}}},
+		"anthropic path": {Name: "dev-notes", Services: []vault.Service{{Host: "api.anthropic.com", Paths: []string{"/v1/*"}, Secret: "CLAUDE_CODE_OAUTH_TOKEN"}}},
+		"api path":       {Name: "dev-notes", Services: []vault.Service{{Host: "api.github.com", Paths: []string{"/user/*"}, Secret: "GH_DEV_NOTES"}}},
+		"vault name":     {Name: "Bad_Name", Services: notesSpec().Services},
+		"agent token":    {Name: "dev-notes", Services: []vault.Service{{Host: "api.anthropic.com", Secret: "AGENT_VAULT_TOKEN"}}},
+		"own key":        {Name: "dev-notes", Services: []vault.Service{{Host: "api.anthropic.com", Secret: "FLEET_VAULT_GIT_USERNAME"}}},
+		"key shape":      {Name: "dev-notes", Services: []vault.Service{{Host: "api.anthropic.com", Secret: "../etc/passwd"}}},
+	} {
+		c, f, _ := setup(t, notesSecrets)
+		if err := c.Reconcile(context.Background(), spec); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+		if w := f.Writes(); len(w) != 0 {
+			t.Errorf("%s: wrote %v before refusing", name, w)
+		}
+	}
+}
+
+func TestReconcile_RefusesUnexpandedReference(t *testing.T) {
+	c, f, _ := setup(t, map[string]string{"CLAUDE_CODE_OAUTH_TOKEN": "${dev.CLAUDE_CODE_OAUTH_TOKEN}"})
+	err := c.Reconcile(context.Background(), vault.Spec{Name: "dev-x", Services: []vault.Service{{Host: "api.anthropic.com", Secret: "CLAUDE_CODE_OAUTH_TOKEN"}}})
+	if err == nil || !strings.Contains(err.Error(), "CLAUDE_CODE_OAUTH_TOKEN") || !strings.Contains(err.Error(), "unexpanded") {
+		t.Fatalf("got %v", err)
+	}
+	if w := f.Writes(); len(w) != 0 {
+		t.Errorf("wrote %v", w)
+	}
+}
+
+func TestReconcile_ConcurrentSameVault(t *testing.T) {
+	c, f, _ := setup(t, notesSecrets)
+	f.Configure(func(f *vaulttest.Server) { f.ConflictOnCreate = true })
+	var wg sync.WaitGroup
+	errs := make([]error, 2)
+	for i := range 2 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			errs[i] = c.Reconcile(context.Background(), notesSpec())
+		}()
+	}
+	wg.Wait()
+	for _, err := range errs {
+		if err != nil {
+			t.Error(err)
+		}
+	}
+	if n := f.Names(); len(n) != 1 {
+		t.Errorf("vaults %v", n)
+	}
+}
+
+func TestClient_MissingAgentToken(t *testing.T) {
+	f := vaulttest.New(t)
+	c := vault.New(f.URL, "x:14322", t.TempDir())
+	err := c.Reconcile(context.Background(), notesSpec())
+	if err == nil || !strings.Contains(err.Error(), "agent-vault-bootstrap.sh") {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestPrune_EmptiesAbsentKeepsExecutor(t *testing.T) {
+	c, f, _ := setup(t, notesSecrets)
+	ctx := context.Background()
+	for _, n := range []string{"keep-me", "drop-me", "executor-x"} {
+		s := notesSpec()
+		s.Name = n
+		if err := c.Reconcile(ctx, s); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := c.Prune(ctx, map[string]bool{"keep-me": true}); err != nil {
+		t.Fatal(err)
+	}
+	for n, want := range map[string]int{"keep-me": 4, "drop-me": 0, "executor-x": 4} {
+		if got := len(services(t, f, n)); got != want {
+			t.Errorf("%s: %d services, want %d", n, got, want)
+		}
+		if v, _ := f.Get(n); (len(v.Creds) == 0) != (want == 0) {
+			t.Errorf("%s: %d creds", n, len(v.Creds))
+		}
+	}
+}
+
+func TestMint_TTLFloor(t *testing.T) {
+	c, f, _ := setup(t, notesSecrets)
+	ctx := context.Background()
+	if err := c.Reconcile(ctx, notesSpec()); err != nil {
+		t.Fatal(err)
+	}
+	tok, err := c.Mint(ctx, "dev-notes", "sess-1.123", 60*time.Second)
+	if err != nil || !strings.HasPrefix(tok, "av_sess_") {
+		t.Fatalf("mint: %q %v", tok, err)
+	}
+	if v, _ := f.Get("dev-notes"); len(v.Sessions) != 1 || v.Sessions[0].TTL != 300 || v.Sessions[0].Label != "sess-1.123" {
+		t.Errorf("sessions %+v, want one with ttl 300 and the label", v.Sessions)
+	}
+	if _, err := c.Mint(ctx, "dev-notes", "sess-1.124", 1860*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if v, _ := f.Get("dev-notes"); v.Sessions[1].TTL != 1860 {
+		t.Errorf("ttl %d, want 1860", v.Sessions[1].TTL)
+	}
+	if _, err := c.Mint(ctx, "nope", "x", time.Hour); err == nil || !strings.Contains(err.Error(), "404") {
+		t.Errorf("mint on a missing vault: %v", err)
+	}
+}
+
+func TestRevoke_ListThenDeleteByLabel(t *testing.T) {
+	c, f, _ := setup(t, nil)
+	f.AddSession("v1", "sess-1.1")
+	f.AddSession("v1", "sess-2.1")
+	if err := c.Revoke(context.Background(), "v1", "sess-1.1"); err != nil {
+		t.Fatal(err)
+	}
+	v, _ := f.Get("v1")
+	if len(v.Sessions) != 1 || v.Sessions[0].Label != "sess-2.1" {
+		t.Errorf("sessions %+v", v.Sessions)
+	}
+	if !slices.Contains(f.Calls(), "DELETE /v1/sessions/s1?vault=v1") {
+		t.Errorf("no vault-scoped DELETE: %v", f.Calls())
+	}
+	if err := c.Revoke(context.Background(), "absent", "x"); err != nil {
+		t.Errorf("a missing vault is nothing to revoke: %v", err)
+	}
+}
+
+func TestRevokeSession_PrefixAcrossVaults(t *testing.T) {
+	c, f, _ := setup(t, nil)
+	f.AddSession("v1", "S.1")
+	f.AddSession("v2", "S.2")
+	f.AddSession("v2", "T.1")
+	f.AddSession("v2", "SX.1") // another session whose id merely starts with S
+	if err := c.RevokeSession(context.Background(), "S"); err != nil {
+		t.Fatal(err)
+	}
+	v1, _ := f.Get("v1")
+	v2, _ := f.Get("v2")
+	if len(v1.Sessions) != 0 || len(v2.Sessions) != 2 {
+		t.Errorf("v1 %+v v2 %+v", v1.Sessions, v2.Sessions)
+	}
+
+	f.Configure(func(f *vaulttest.Server) { f.Delay = 5 * time.Second })
+	start := time.Now()
+	if err := c.RevokeSession(context.Background(), "T"); err == nil {
+		t.Error("a slow vault returned no error")
+	}
+	if d := time.Since(start); d > 4*time.Second {
+		t.Errorf("revoke took %s, want its own ~3s budget", d)
+	}
+}
+
+func TestCA(t *testing.T) {
+	c, _, _ := setup(t, nil)
+	pem, err := c.CA(context.Background())
+	if err != nil || string(pem) != vaulttest.CA {
+		t.Fatalf("%q %v", pem, err)
+	}
+}
+
+func TestProxyEnv_Shape(t *testing.T) {
+	c, _, _ := setup(t, nil)
+	u := c.ProxyURL("av_sess_1", "dev-notes")
+	if u != "http://av_sess_1:dev-notes@agent-vault.agent-vault.svc.cluster.local:14322" {
+		t.Errorf("proxy url %q", u)
+	}
+	env := map[string]string{}
+	for _, e := range vault.ProxyEnv(u, "/etc/agent-vault/ca.pem", []string{"127.0.0.1", "localhost"}) {
+		if _, dup := env[e.Name]; dup {
+			t.Errorf("duplicate %s", e.Name)
+		}
+		env[e.Name] = e.Value
+	}
+	for _, k := range []string{"HTTPS_PROXY", "HTTP_PROXY", "https_proxy", "http_proxy"} {
+		if env[k] != u {
+			t.Errorf("%s = %q", k, env[k])
+		}
+	}
+	for _, k := range []string{"NO_PROXY", "no_proxy"} {
+		if env[k] != "127.0.0.1,localhost" {
+			t.Errorf("%s = %q", k, env[k])
+		}
+	}
+	for _, k := range []string{"SSL_CERT_FILE", "REQUESTS_CA_BUNDLE", "NODE_EXTRA_CA_CERTS", "GIT_SSL_CAINFO", "CURL_CA_BUNDLE"} {
+		if env[k] != "/etc/agent-vault/ca.pem" {
+			t.Errorf("%s = %q", k, env[k])
+		}
+	}
+	if len(env) != 11 {
+		t.Errorf("%d vars: %v", len(env), env)
+	}
+}

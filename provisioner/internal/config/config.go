@@ -5,6 +5,13 @@ import (
 	"strings"
 )
 
+// Defaults the egress lock (k8s/provisioner/definition-egress.yaml) pins:
+// definition pods may dial exactly these two hosts (docs/adr/0065 §5).
+const (
+	DefaultCoreGRPCAddr    = "agent-fleet-core.agent-fleet.svc.cluster.local:9090"
+	DefaultAgentVaultProxy = "agent-vault.agent-vault.svc.cluster.local:14322"
+)
+
 type Config struct {
 	Namespace    string
 	WorkerImage  string
@@ -82,6 +89,12 @@ type Config struct {
 	// — reconcile.Loop compares this against a last-used-at annotation
 	// instead (docs/adr/0034).
 	SharedInstanceIdleTimeoutMs string
+	// AgentVault* locate infra-bootstrap's Agent Vault (docs/adr/0065): its API
+	// (provisioner only), its MITM proxy (definition pods), and the mounted
+	// Secret holding the agent token and the credential values.
+	AgentVaultAPI        string
+	AgentVaultProxy      string
+	AgentVaultSecretsDir string
 }
 
 func Load() Config {
@@ -103,7 +116,7 @@ func Load() Config {
 		E2eHost:                     env("E2E_HOST", "bnei.dev"),
 		Port:                        env("PORT", "8080"),
 		GRPCPort:                    env("GRPC_PORT", "9090"),
-		CoreGRPCAddr:                env("CORE_GRPC_ADDR", "agent-fleet-core.agent-fleet.svc.cluster.local:9090"),
+		CoreGRPCAddr:                env("CORE_GRPC_ADDR", DefaultCoreGRPCAddr),
 		CoreToken:                   os.Getenv("FLEET_PROVISIONER_TOKEN"),
 		CoreProvisionerToken:        os.Getenv("FLEET_CORE_PROVISIONER_TOKEN"),
 		ThotAuthToken:               env("THOT_AUTH_TOKEN", ""),
@@ -117,6 +130,9 @@ func Load() Config {
 		RedisImage:                  env("REDIS_IMAGE", "redis:7-alpine"),
 		SharedInstancePVCSize:       env("SHARED_INSTANCE_PVC_SIZE", "2Gi"),
 		SharedInstanceIdleTimeoutMs: env("SHARED_INSTANCE_IDLE_TIMEOUT_MS", "43200000"), // 12h
+		AgentVaultAPI:               env("AGENT_VAULT_API_ADDR", "http://agent-vault.agent-vault.svc.cluster.local:14321"),
+		AgentVaultProxy:             env("AGENT_VAULT_PROXY_ADDR", DefaultAgentVaultProxy),
+		AgentVaultSecretsDir:        env("AGENT_VAULT_SECRETS_DIR", "/var/run/agent-vault"),
 	}
 }
 

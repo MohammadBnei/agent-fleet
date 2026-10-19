@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -199,5 +200,23 @@ func TestRemoveFleetShared_KeepsTheImagePluginsWithoutASync(t *testing.T) {
 	}
 	if !exists("projects/p/s.jsonl") {
 		t.Error("resume state removed")
+	}
+}
+
+// docs/adr/0065 §6: a definition's cache must have been cloned from the repo
+// URL the warm names. ensureLocked never re-points a warm cache, so a
+// repos.url repointed A -> B -> A would otherwise leave a cache cloned from B.
+func TestEnsureRepoFetched_RefusesACacheFromAnotherOrigin(t *testing.T) {
+	m := NewManager(t.TempDir())
+	ctx := context.Background()
+	a, b := newOriginRepo(t), newOriginRepo(t)
+	if err := m.EnsureRepoFetched(ctx, "r", a); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.EnsureRepoFetched(ctx, "r", a+".git"); err != nil {
+		t.Errorf("a trailing .git is the same repo: %v", err)
+	}
+	if err := m.EnsureRepoFetched(ctx, "r", b); err == nil || !strings.Contains(err.Error(), "re-clone") {
+		t.Errorf("a cache cloned from another URL was accepted: %v", err)
 	}
 }

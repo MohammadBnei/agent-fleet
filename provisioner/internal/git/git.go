@@ -231,6 +231,13 @@ func (m *Manager) EnsureRepoFetched(ctx context.Context, repo, repoURL string) e
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	// docs/adr/0065 §6: the URL a definition clones from is bound to repos.url.
+	// ensureLocked never re-points a warm cache, so check it did not come from
+	// somewhere else first. No cache yet: the clone below uses repoURL.
+	if origin, err := m.run(ctx, m.repoPath(repo), "config", "--get", "remote.origin.url"); err == nil &&
+		strings.TrimSuffix(origin, ".git") != strings.TrimSuffix(repoURL, ".git") {
+		return fmt.Errorf("cache %s: origin %q does not match repos.url %q; re-clone the cache", repo, origin, repoURL)
+	}
 	_, err := m.ensureLocked(ctx, repo, repoURL)
 	return err
 }
