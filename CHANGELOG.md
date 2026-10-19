@@ -1,5 +1,11 @@
 # Changelog
 
+# [4.23.0](https://github.com/MohammadBnei/agent-fleet/compare/4.22.0...4.23.0) (2026-10-19)
+
+### Features
+
+* **provisioner:** read /agent-vault from the dedicated Infisical project (ADR 0065) ([#265](https://github.com/MohammadBnei/agent-fleet/issues/265)) ([5c5fb83](https://github.com/MohammadBnei/agent-fleet/commit/5c5fb83393d8dd8fb8fa150d478eed4fb77e613e))
+
 # [4.22.0](https://github.com/MohammadBnei/agent-fleet/compare/4.21.0...4.22.0) (2026-10-19)
 
 ### Features
