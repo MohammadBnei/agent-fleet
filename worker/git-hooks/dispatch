@@ -1,0 +1,44 @@
+#!/bin/sh
+# core.hooksPath for every git the agent runs (worker/src/session.ts,
+# gitHooksEnv). Every client hook name is a symlink to this file.
+#
+# commit-msg: Claude Code adds its own "Co-Authored-By: Claude" trailer unless
+# told not to, and text alone did not stop it. Here the message is rewritten
+# whatever the model wrote: every co-author, "Generated with Claude" and
+# Claude-Session line goes, and a repo session's commit gets exactly
+# FLEET_TRAILER back. A definition pod (FLEET_DEFINITION set) gets none.
+#
+# Only the hooks a repo commonly uses are linked here: reference-transaction
+# and friends fire on every ref update and nobody sets them.
+#
+# Then the repo's own hook of the same name runs, so overriding core.hooksPath
+# does not silently disable a repo's husky or .git/hooks.
+set -e
+name=$(basename "$0")
+
+if [ "$name" = commit-msg ]; then
+  msg=$1
+  tmp="$msg.fleet"
+  awk '{ l = tolower($0) }
+    l ~ /^[[:space:]]*co-authored-by:/ { next }
+    l ~ /^[[:space:]]*claude-session:/ { next }
+    l ~ /generated with \[?claude/ { next }
+    { print }' "$msg" >"$tmp"
+  mv "$tmp" "$msg"
+  if [ -z "$FLEET_DEFINITION" ]; then
+    git interpret-trailers --in-place --trailer "Co-Authored-By: ukubi-agent <noreply@bnei.dev>" "$msg"
+  fi
+fi
+
+# The repo's hook dir, ignoring the core.hooksPath that pointed git here:
+# --local reads only .git/config (husky sets it there), and the common dir's
+# hooks/ is git's default.
+own=$(git config --local --get core.hooksPath 2>/dev/null || true)
+if [ -n "$own" ]; then
+  case $own in /*) ;; *) own="$(git rev-parse --show-toplevel)/$own" ;; esac
+else
+  own="$(git rev-parse --git-common-dir 2>/dev/null)/hooks" || exit 0
+fi
+if [ -x "$own/$name" ] && [ "$own" != "$(dirname "$0")" ]; then
+  exec "$own/$name" "$@"
+fi

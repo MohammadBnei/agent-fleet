@@ -1,6 +1,7 @@
 import { query, type SDKUserMessage, type PermissionResult, type PermissionMode } from "@anthropic-ai/claude-agent-sdk";
 import * as sidecar from "./sidecarClient.js";
 import { log } from "./log.js";
+import { FLEET_TRAILER, gitHooksEnv } from "./gitHooks.js";
 
 // TransientError used to be thrown when an SDK result looked like a
 // transient hiccup (0 turns, $0 cost), so the caller could leave the task
@@ -782,11 +783,19 @@ export async function runSession(): Promise<SessionResult> {
       // different permission mode and nobody can approve it in a headless pod.
       // remoteControlAtStartup stays off: that is phone/web control of the
       // pod, a different channel nobody asked for.
+      //
+      // attribution: Claude Code otherwise tells the model to add its own
+      // "Co-Authored-By: Claude" trailer, and that instruction beat the rule
+      // text in a space's CLAUDE.md (a dev-notes commit, 2026-10-19). Flag
+      // scope, so a repo's settings cannot undo it. It only steers the model;
+      // FLEET_GIT_HOOKS below is what enforces the trailer.
       settings: {
         permissions: { ask: FLEET_ASK_RULES },
         crossSessionInbound: definitionPod ? "refuse" : "accept",
         remoteControlAtStartup: false,
+        attribution: { commit: definitionPod ? "" : FLEET_TRAILER, pr: "", sessionUrl: false },
       },
+      env: { ...process.env, ...gitHooksEnv(process.env) },
       // Write/Edit/Bash are deliberately never in this list — canUseTool
       // below is the live escalation path for all three (confirmed in
       // Phase 0's spike: allowedTools bypasses canUseTool entirely for
