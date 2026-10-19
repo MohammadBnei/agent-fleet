@@ -186,9 +186,11 @@ func (s *Server) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWo
 		if req.GetImage() != "" {
 			return nil, status.Error(codes.InvalidArgument, "a definition session runs the default worker image only")
 		}
-		// docs/adr/0065: an older core sends neither, and its warm fails here.
-		if d.GetVault() == nil || d.GetVault().GetName() != d.GetName() || d.GetTimeoutSeconds() <= 0 {
-			return nil, status.Error(codes.InvalidArgument, "definition profile needs its own vault and a timeout (docs/adr/0065)")
+		// docs/adr/0065: an older core sends no vault, and its warm fails here.
+		// timeout_seconds is no longer read: limits.timeout is core's idle
+		// timeout, and the pod's lifetime is definitionPodLifetime.
+		if d.GetVault() == nil || d.GetVault().GetName() != d.GetName() {
+			return nil, status.Error(codes.InvalidArgument, "definition profile needs its own vault (docs/adr/0065)")
 		}
 		definition = &k8s.DefinitionProfile{Name: d.GetName(), GitAuthorName: d.GetGitAuthorName(), GitAuthorEmail: d.GetGitAuthorEmail()}
 	}
@@ -318,9 +320,15 @@ func (s *Server) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWo
 	}, nil
 }
 
+// definitionPodLifetime caps a definition pod's wall-clock life, so its vault
+// token always expires. Not limits.timeout, which is core's idle timeout for
+// the session: a pod in active use lives until this cap, then the next message
+// re-warms with a fresh token.
+const definitionPodLifetime = 12 * time.Hour
+
 // mintDefinitionToken reconciles the definition's vault, publishes the vault
-// CA and mints this pod's token. The pod's deadline is max(MinTTL, timeout); the
-// token lives 60s longer (activeDeadlineSeconds counts from the Job's
+// CA and mints this pod's token. The pod's deadline is definitionPodLifetime;
+// the token lives 60s longer (activeDeadlineSeconds counts from the Job's
 // startTime, set at create: ms of skew).
 // The caller holds the vault's lock.
 func (s *Server) mintDefinitionToken(ctx context.Context, sessionID string, d *agentfleetv1.DefinitionPodProfile) (token, label string, deadline int64, err error) {
@@ -337,7 +345,7 @@ func (s *Server) mintDefinitionToken(ctx context.Context, sessionID string, d *a
 	if err != nil {
 		return "", "", 0, status.Error(codes.Unavailable, "vault CA: "+err.Error())
 	}
-	deadline = max(int64(vault.MinTTL.Seconds()), d.GetTimeoutSeconds())
+	deadline = int64(definitionPodLifetime.Seconds())
 	label = sessionID + "." + strconv.FormatInt(time.Now().UnixMilli(), 10)
 	token, err = s.vault.Mint(ctx, d.GetName(), label, time.Duration(deadline+60)*time.Second)
 	if err != nil {
@@ -348,7 +356,7 @@ func (s *Server) mintDefinitionToken(ctx context.Context, sessionID string, d *a
 
 // reconcileVault reconciles one vault. After a widening has revoked every
 // session on it, the definition's live Jobs are deleted: their pods would
-// otherwise sit on a dead token (407) until limits.timeout, and core's
+// otherwise sit on a dead token (407) until their lifetime cap, and core's
 // WarmIfIdle never re-warms a live phase. Gone, core's pod-phase reconcile
 // marks them TERMINATED (<=60s) and the next message re-warms at the new spec.
 // All under the vault's lock, which a warm holds through its Job create, so

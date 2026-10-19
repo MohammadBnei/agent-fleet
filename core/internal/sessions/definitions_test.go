@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -275,6 +276,48 @@ func TestSaveAgentSessionID_DefinitionModelIsPinned(t *testing.T) {
 		got, err := store.Get(ctx, id)
 		if err != nil || got.Model == nil || *got.Model != want {
 			t.Errorf("%s: model %v, want %s (err %v)", id, got.Model, want, err)
+		}
+	}
+}
+
+// docs/adr/0065: a definition session idles out at its own limits.timeout,
+// shorter or longer than the global idle timeout; a repo session still at the
+// global one.
+func TestListIdleSessionIDs_ADefinitionIdlesAtItsOwnTimeout(t *testing.T) {
+	ctx := context.Background()
+	pool := dbtest.NewPool(t)
+	store := NewStore(pool)
+	for name, timeout := range map[string]string{"short": "10m", "long": "2h"} {
+		eff := fmt.Sprintf(`{"limits":{"concurrency":4,"timeout":%q},"mode":{"default":"default","allow":["default"]}}`, timeout)
+		if _, err := pool.Exec(ctx,
+			`INSERT INTO agent_definitions (name, sha, spec, effective, valid) VALUES ($1, $1, '{}', $2::jsonb, true)`,
+			name, eff); err != nil {
+			t.Fatal(err)
+		}
+	}
+	idleFor := func(id string, ago string) string {
+		if _, err := store.ReserveSlot(ctx, id, Caps{MaxLive: 10, MaxDefinition: 10}); err != nil {
+			t.Fatalf("reserve: %v", err)
+		}
+		if _, err := pool.Exec(ctx,
+			`UPDATE sessions SET pod_phase = 'POD_PHASE_RUNNING', last_active_at = now() - $2::interval WHERE id = $1`, id, ago); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	shortIdle := idleFor(newDefinitionSession(t, store, "short", "short"), "20 minutes")
+	longIdle := idleFor(newDefinitionSession(t, store, "long", "long"), "90 minutes")
+	longGone := idleFor(newDefinitionSession(t, store, "long", "long"), "3 hours")
+	repoIdle := idleFor(newSession(t, ctx, store), "90 minutes")
+	repoFresh := idleFor(newSession(t, ctx, store), "20 minutes")
+
+	ids, err := store.ListIdleSessionIDs(ctx, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for id, want := range map[string]bool{shortIdle: true, longIdle: false, longGone: true, repoIdle: true, repoFresh: false} {
+		if contains(ids, id) != want {
+			t.Errorf("session %s idle = %v, want %v (got %v)", id, !want, want, ids)
 		}
 	}
 }

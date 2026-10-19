@@ -154,10 +154,10 @@ func (l *Loop) gcTerminalWorkerJobs(ctx context.Context) {
 			phase = agentfleetv1.PodPhase_POD_PHASE_CRASHED
 			message = "worker job reached a terminal Failed phase"
 		case "DeadlineExceeded":
-			// A definition pod's limits.timeout: a planned end, so it reads as
+			// A definition pod's lifetime cap: a planned end, so it reads as
 			// idle and the next message re-warms and resumes. Reaped like a
 			// Succeeded Job below: there is no diagnosis to keep.
-			message = "limits.timeout reached"
+			message = "pod lifetime cap reached"
 		}
 		l.core.ReportEvent(ctx, &agentfleetv1.PodEvent{
 			SessionId: job.TaskID,

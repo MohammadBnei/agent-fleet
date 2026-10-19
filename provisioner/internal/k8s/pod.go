@@ -219,8 +219,8 @@ type DefinitionProfile struct {
 	// only credential in the pod, and one that reaches only its vault's rules
 	// (docs/adr/0065). Empty refuses the pod.
 	ProxyURL string
-	// DeadlineSeconds is the Job's activeDeadlineSeconds: limits.timeout,
-	// floored at 300. The token outlives it by 60s.
+	// DeadlineSeconds is the Job's activeDeadlineSeconds: the fixed lifetime
+	// cap (grpcserver's definitionPodLifetime). The token outlives it by 60s.
 	DeadlineSeconds int64
 	// VaultLabel is the token's vault session label, kept on the Job
 	// (VaultLabelAnnotation) so every revoke path deletes exactly this
@@ -718,8 +718,8 @@ func (c *Client) CreateWorkerPod(ctx context.Context, spec WorkerPodSpec) error 
 		},
 	}
 	if d := spec.Definition; d != nil {
-		// docs/adr/0065: limits.timeout is the pod's lifetime, and its token's
-		// TTL is longer, so the pod never runs on a dead token.
+		// docs/adr/0065: a fixed lifetime cap, and its token's TTL is longer,
+		// so the pod never runs on a dead token.
 		job.Spec.ActiveDeadlineSeconds = int64Ptr(d.DeadlineSeconds)
 		job.Annotations = map[string]string{VaultLabelAnnotation: d.VaultLabel}
 		ps := &job.Spec.Template.Spec

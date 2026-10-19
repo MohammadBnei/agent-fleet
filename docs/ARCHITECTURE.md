@@ -593,7 +593,8 @@ sidecar, and the worker:
   infra-bootstrap ADR-0061) with a per-warm session token minted by the
   provisioner, which injects the real credentials per host/path; the vault CA
   comes from ConfigMap `agent-vault-ca`; `ndots:1`; Job
-  `activeDeadlineSeconds` = `limits.timeout` (floor 300s).
+  `activeDeadlineSeconds` = a fixed 12h lifetime cap. `limits.timeout` is the
+  session's idle timeout, applied by core's idle sweep.
 - Mounts are `subPath`-scoped, which is real isolation for the first time. It
   used to be impossible: a linked worktree's `.git` is an absolute-path gitlink
   back to `repos/<repo>/.git/worktrees/<taskId>`, so scoping the mount severed

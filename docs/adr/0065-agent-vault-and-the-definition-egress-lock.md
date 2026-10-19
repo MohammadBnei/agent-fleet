@@ -6,7 +6,7 @@
   model token, "cannot push" for `git.mode: push`, the open-egress consequence
   and the URL-binding deferral all close here),
   [ADR-0062](0062-defined-agents.md) §7 (amended: `limits.timeout` is no longer
-  inert), [ADR-0057](0057-coreservice-authenticates-with-the-session-lease.md)
+  inert; it is the session's idle timeout, amended 2026-10-19), [ADR-0057](0057-coreservice-authenticates-with-the-session-lease.md)
   (the provisioner also holds the vault agent token; core holds none),
   [ADR-0004](0004-subscription-oauth-not-metered-api.md) (still the
   subscription OAuth token, now injected by the vault instead of held by the
@@ -94,8 +94,8 @@ A **widened** service set (any service not already there) first revokes every
 session on the vault: vaults are per definition, not per pinned version, so
 without it a release that adds a push service would hand it, within 60s, to
 live pods warmed under the older pr-mode pin. The provisioner then deletes that
-definition's live Jobs: on a dead token every proxied call gets 407 until
-`limits.timeout`, and core's `WarmIfIdle` never re-warms a live phase. Gone,
+definition's live Jobs: on a dead token every proxied call gets 407 until the
+pod's lifetime cap, and core's `WarmIfIdle` never re-warms a live phase. Gone,
 core's pod-phase reconcile marks them TERMINATED (≤60s) and the next message
 re-warms at the new pin. A narrowing keeps them. Core runs `ReconcileVaults`
 off the sessions loop (its own goroutine, a tick still running skips the next),
@@ -166,21 +166,28 @@ cancel; the TTL bounds a miss.
 | Reconcile / CA / mint fails | nothing was minted |
 | core refuses the answer (`vault_token_applied` absent, or an error) | `refuseDefinitionPod` → `TearDownSession` |
 | Archive, Delete, rollback, stop-grace, startup-stall, idle | `TearDownSession` → `Revoke(definition, label)` from the Job, before the Job delete |
-| Stop, worker crash, `limits.timeout` | `gcTerminalWorkerJobs`, `Revoke(definition, label)` before its `ReportEvent`, retried every tick until it lands while the Job is listed (a kept Failed Job holds the token in its pod env) |
+| Stop, worker crash, lifetime cap | `gcTerminalWorkerJobs`, `Revoke(definition, label)` before its `ReportEvent`, retried every tick until it lands while the Job is listed (a kept Failed Job holds the token in its pod env) |
 | Job already gone at teardown | revoked when it went terminal, else TTL |
 | provisioner dies mid-warm, revoke times out | TTL |
 | open keep-alive tunnel after a revoke | ~2 min vault `IdleTimeout` (accepted) |
 | definition narrowed / invalid / deleted | next `ReconcileVaults` (≤60s): narrowed or emptied, live tokens kept |
 | definition widened (or a missing secret restored) | that reconcile revokes every session on the vault before the `PUT`, then deletes the definition's live Jobs |
 
-**`limits.timeout` is now a definition pod's wall-clock lifetime** (removed from
-ADR-0062 §7's inert list). Job `activeDeadlineSeconds = max(300, timeout)`;
-token TTL = that + 60s (the vault refuses under 300s; `activeDeadlineSeconds`
-counts from the Job's `startTime`, set at create, so the slack covers ms of
-skew): the pod always dies before its token. A Job failed with reason
-`DeadlineExceeded` reports **TERMINATED** "limits.timeout reached" and is deleted
-like a Succeeded one, so a timed-out co-editor shows idle, not failing, and the
-next message re-warms and resumes. It can end a turn in flight (accepted).
+**`limits.timeout` is a definition session's idle timeout** (removed from
+ADR-0062 §7's inert list). *Amended 2026-10-19:* it first shipped (4.22.0) as
+the pod's wall-clock lifetime, which is wrong: a timeout is "no interaction for
+this long". Core's idle sweep (`ListIdleSessionIDs`) uses the pinned version's
+`limits.timeout` in place of the global `IDLE_TIMEOUT_MS` for a definition
+session; a repo session keeps the global one. Separately, a definition pod has
+a fixed **12h lifetime cap** (provisioner `definitionPodLifetime`), so its token
+always expires: Job `activeDeadlineSeconds = 12h`; token TTL = that + 60s
+(`activeDeadlineSeconds` counts from the Job's `startTime`, set at create, so
+the slack covers ms of skew): the pod always dies before its token. A Job
+failed with reason `DeadlineExceeded` reports **TERMINATED** "pod lifetime cap
+reached" and is deleted like a Succeeded one, so it shows idle, not failing,
+and the next message re-warms with a fresh token and resumes. The cap can end
+a turn in flight (accepted). `DefinitionPodProfile.timeout_seconds` is still
+sent (an older provisioner requires it) but no longer read.
 
 **One lock per vault orders warms against widenings.** A warm holds the
 vault's lock from its reconcile through the mint to the Job create; a widening
@@ -337,7 +344,7 @@ needs a `github.com` service; all of a definition's GitHub paths name one
   Pod spec: it sits in etcd, shows in `kubectl get -o yaml`/`describe`, and the
   agent can read `/proc/self/environ` with `Read`, so it can land in a
   transcript in core's DB. Bounded by its vault's rules and its TTL (up to
-  `limits.timeout` + 60s, ≤12h+60s). Upgrade: deny `Read(/proc/**)` in the
+  the 12h lifetime cap + 60s). Upgrade: deny `Read(/proc/**)` in the
   definition tool deny list, or a shorter TTL re-minted on re-warm.
 - A widening ends every live pod of the definition mid-turn (revoked, Job
   deleted); the next message re-warms and resumes.
@@ -348,7 +355,7 @@ needs a `github.com` service; all of a definition's GitHub paths name one
   rollout step 6).
 - The vault API is plain HTTP inside the cluster, fenced by ADR-0061's
   NetworkPolicy; credential values cross it on set.
-- `limits.timeout` can end a turn in flight.
+- The 12h lifetime cap can end a turn in flight.
 - An invalid HEAD empties the vault of live pods pinned to an older valid sha.
 - No branch binding (force-push to `git.branch` or another branch of the repo).
 - Agent Vault is a research-preview upstream: pinned by digest; the fallback is

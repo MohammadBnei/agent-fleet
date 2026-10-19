@@ -167,9 +167,9 @@ export type DefinitionPodProfile = Message<"agentfleet.v1.DefinitionPodProfile">
   vault?: VaultSpec | undefined;
 
   /**
-   * limits.timeout in seconds: the pod's lifetime (docs/adr/0065). Job
-   * activeDeadlineSeconds = max(300, this); the token's TTL = that + 60s, so
-   * the token always outlives the pod.
+   * limits.timeout in seconds. Unread since limits.timeout became core's idle
+   * timeout (docs/adr/0065, amended); still sent because an older provisioner
+   * refuses a profile without it. The pod's lifetime is a fixed cap.
    *
    * @generated from field: int64 timeout_seconds = 5;
    */

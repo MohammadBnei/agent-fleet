@@ -125,7 +125,6 @@ func TestCreateWorkerPod_RejectsAnIncompleteProfile(t *testing.T) {
 	for name, mut := range map[string]func(*agentfleetv1.CreateWorkerPodRequest){
 		"no vault":      func(r *agentfleetv1.CreateWorkerPodRequest) { r.Definition.Vault = nil },
 		"another vault": func(r *agentfleetv1.CreateWorkerPodRequest) { r.Definition.Vault.Name = "dev-notes" },
-		"no timeout":    func(r *agentfleetv1.CreateWorkerPodRequest) { r.Definition.TimeoutSeconds = 0 },
 		"no name":       func(r *agentfleetv1.CreateWorkerPodRequest) { r.Definition.Name = "" },
 		"no author":     func(r *agentfleetv1.CreateWorkerPodRequest) { r.Definition.GitAuthorName = "" },
 		"no email":      func(r *agentfleetv1.CreateWorkerPodRequest) { r.Definition.GitAuthorEmail = "" },
