@@ -3,7 +3,7 @@
 # vehicle: it pushes to main through the vault, and nowhere else. Not
 # launchable until an admin onboards repo `notes` (url exactly
 # https://github.com/MohammadBnei/notes.git) and GH_DEV_NOTES exists in
-# agent-fleet-nygh /agent-vault: the warm says which is missing.
+# Infisical agent-vault /agent-vault: the warm says which is missing.
 apiVersion: fleet.bnei.dev/v1alpha1
 kind: AgentDefinition
 metadata: { name: dev-notes }

@@ -12,7 +12,7 @@ for kind and dev).
 ## Credentials and onboarding (`docs/adr/0065`)
 
 Every launchable definition names its vault and services in `credentials`; the
-`secret` fields are **key names** in Infisical `agent-fleet-nygh` folder
+`secret` fields are **key names** in Infisical project `agent-vault` folder
 `/agent-vault`, which only the provisioner syncs. A missing key fails closed:
 the vault reconcile logs it and a warm is refused naming it. A `github.com` /
 `api.github.com` service's key is always `GH_` + the vault name upper-snaked
@@ -30,7 +30,7 @@ Onboarding a push definition (example: `dev-notes`):
 
    ```sh
    f=$(mktemp) && read -rs pat && printf %s "$pat" >"$f" && unset pat &&
-     infisical secrets set --projectId=ae771c2c-5115-452a-8f1c-1e03fa0e2b9a \
+     infisical secrets set --projectId=60735f70-38af-46f3-8049-4fc91aabeb68 \
        --env=dev --path=/agent-vault "GH_DEV_NOTES=@$f"; rm -f "$f"
    ```
 3. A private repo also needs the provisioner's bot (`argocd-ukubi-bot`) as a

@@ -34,7 +34,7 @@ proxy, core's `CoreService` and DNS for those two names.
 ### 1. The provisioner is the vault's only client, and holds its only credential
 
 The provisioner gets a member-role Agent Vault agent token (`av_agt_`, no
-expiry) in `agent-fleet-nygh` folder `/agent-vault`, minted by infra-bootstrap's
+expiry) in Infisical project `agent-vault` folder `/agent-vault`, minted by infra-bootstrap's
 `gitops/scripts/agent-vault-bootstrap.sh` (ADR-0061). A new InfisicalSecret
 (`k8s/provisioner/infisicalsecret-agent-vault.yaml`) syncs that folder only into
 Secret `provisioner-agent-vault`, mounted read-only at `/var/run/agent-vault`
@@ -305,11 +305,13 @@ needs a `github.com` service; all of a definition's GitHub paths name one
 
 ## Accepted risks
 
-- Infisical folders are sync configuration, not isolation: the shared
-  universal-auth identity can read `/agent-vault`, including `AGENT_VAULT_TOKEN`,
-  which can reveal every credential of every vault the provisioner administers
-  (ADR-0049 class). Upgrade: a dedicated project and identity for the
-  provisioner and the vault (needs a UI-created identity).
+- `/agent-vault` lives in the dedicated project `agent-vault`, read by its own
+  identity `agent-vault-operator` (infra-bootstrap ADR-0061 Decision 6, moved
+  2026-10-19 from `agent-fleet-nygh`). Residual: its credentials Secret
+  `infisical/agent-vault-universal-auth` can be named by any InfisicalSecret CR,
+  and that one identity also reads the vault server's folder. That reaches
+  `AGENT_VAULT_TOKEN`, which can reveal every credential of every vault the
+  provisioner administers.
 - A leaked `av_sess_` works from another definition pod (same CNP) until its TTL.
 - The vault injects on its plain `http://` forward path for a matching
   host:port. The `:443` pin makes port 80 a 403, but `http://api.anthropic.com:443/…`
@@ -358,7 +360,7 @@ needs a `github.com` service; all of a definition's GitHub paths name one
 
 1. Merge infra-bootstrap's ADR-0061 PR; ArgoCD syncs `agent-vault`. Run
    `gitops/scripts/agent-vault-bootstrap.sh` there once.
-2. Store `GH_DEV_NOTES` in Infisical `agent-fleet-nygh`, env `dev`, path
+2. Store `GH_DEV_NOTES` in Infisical project `agent-vault`, env `dev`, path
    `/agent-vault`. For `dev-notes` it is a copy of the bot's `GH_TOKEN`, done
    2026-10-19 (accepted risk, see Consequences). A fine-grained PAT on the one
    repo is the stricter option and is required for Opus (P6).
