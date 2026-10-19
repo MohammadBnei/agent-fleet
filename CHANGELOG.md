@@ -1,5 +1,11 @@
 # Changelog
 
+## [4.23.1](https://github.com/MohammadBnei/agent-fleet/compare/4.23.0...4.23.1) (2026-10-19)
+
+### Bug Fixes
+
+* **definitions:** limits.timeout is the session's idle timeout, not the pod's lifetime ([#266](https://github.com/MohammadBnei/agent-fleet/issues/266)) ([2e57637](https://github.com/MohammadBnei/agent-fleet/commit/2e5763722743b475ce3df353dd73ee94f8c936d4))
+
 # [4.23.0](https://github.com/MohammadBnei/agent-fleet/compare/4.22.0...4.23.0) (2026-10-19)
 
 ### Features
