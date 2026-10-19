@@ -252,7 +252,10 @@ on the route, that publishes every target repo name and RPC method.
 **Who may even connect (network fences, [`adr/0069`](adr/0069-component-auth-and-network-fences.md) §3).**
 Ingress-only NetworkPolicies select core and the provisioner. Worker pods,
 shared instances and `expose-*` Services are not selected yet and stay
-reachable from any namespace; §3 defers them to the ADR-0064 work. The
+reachable from any namespace; §3 defers them to the ADR-0064 work. Definition
+pods have an **egress** lock instead (`k8s/provisioner/definition-egress.yaml`,
+[`adr/0065`](adr/0065-agent-vault-and-the-definition-egress-lock.md) §5): the
+Agent Vault proxy `:14322`, core `:9090` and DNS for those two names only. The
 credentials above remain the authentication. The fences only cut down who can
 try.
 
@@ -475,8 +478,9 @@ permission tiers instead of a second, fleet-specific gate on top of them
   account (`gh api user --jq .login`), not hardcoded — both the
   provisioner (its own clone/fetch) and the worker (its own push/PR) do
   this independently, since the two processes don't share `$HOME`. A
-  definition pod (`adr/0064`) is the exception: no `GH_TOKEN`, identity from
-  the definition's `git.identity` as `GIT_AUTHOR_*`/`GIT_COMMITTER_*` env.
+  definition pod (`adr/0064`) is the exception: a placeholder `GH_TOKEN`
+  (`adr/0065`), identity from the definition's `git.identity` as
+  `GIT_AUTHOR_*`/`GIT_COMMITTER_*` env.
 - Append-only `knowledge_journal` — session lifecycle events and what a
   session learned, funneled through `core`'s single Postgres connection,
   readable via a typed `GetJournal` RPC instead of direct-SQL-only
@@ -584,7 +588,12 @@ sidecar, and the worker:
   from the cache's `origin/<base>` with no remote contact, skips the
   fleet-shared sync, sets `FLEET_DEFINITION` (the worker then refuses Claude
   Code's own cross-session channel), and carries the `fleet.bnei.dev/definition`
-  label.
+  label. Since `adr/0065` its `CLAUDE_CODE_OAUTH_TOKEN`/`GH_TOKEN` are
+  placeholders: `HTTPS_PROXY` points at Agent Vault (`agent-vault.agent-vault`,
+  infra-bootstrap ADR-0061) with a per-warm session token minted by the
+  provisioner, which injects the real credentials per host/path; the vault CA
+  comes from ConfigMap `agent-vault-ca`; `ndots:1`; Job
+  `activeDeadlineSeconds` = `limits.timeout` (floor 300s).
 - Mounts are `subPath`-scoped, which is real isolation for the first time. It
   used to be impossible: a linked worktree's `.git` is an absolute-path gitlink
   back to `repos/<repo>/.git/worktrees/<taskId>`, so scoping the mount severed
@@ -997,7 +1006,8 @@ running.
 | `GH_TOKEN` | – | the worker's *own* `git push`/`gh pr create` auth — separate from the provisioner's, since the two are different pods that don't share `$HOME` |
 | `CLAUDE_MODEL` | `claude-opus-5-5` | Empty means core's `defaultModel` (`docs/adr/0061`) |
 | `MAX_TURNS` | unbounded | opt-in cap |
-| `CLAUDE_CODE_OAUTH_TOKEN` | – | minted via `claude setup-token` |
+| `CLAUDE_CODE_OAUTH_TOKEN` | – | minted via `claude setup-token`. In a definition pod both it and `GH_TOKEN` are `fleet-vault-placeholder`: Agent Vault injects the real values on the wire (`adr/0065`) |
+| `HTTPS_PROXY`/`HTTP_PROXY` (+ lowercase), `NO_PROXY`, `SSL_CERT_FILE`, `NODE_EXTRA_CA_CERTS`, `GIT_SSL_CAINFO`, `CURL_CA_BUNDLE`, `REQUESTS_CA_BUNDLE` | definition pods only | the per-warm vault token in the proxy URL; the vault CA at `/etc/agent-vault/ca.pem` (`adr/0065` §4) |
 
 ### `FLEET_PROVISIONER_TOKEN` (`core/` and `provisioner/`)
 
