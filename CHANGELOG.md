@@ -1,5 +1,11 @@
 # Changelog
 
+## [4.23.3](https://github.com/MohammadBnei/agent-fleet/compare/4.23.2...4.23.3) (2026-10-19)
+
+### Bug Fixes
+
+* **provisioner:** re-warm replaces a kept terminal Job; log revoke success ([#268](https://github.com/MohammadBnei/agent-fleet/issues/268)) ([3041a27](https://github.com/MohammadBnei/agent-fleet/commit/3041a27dbdcc97274c52df1d04da49badc84c16e))
+
 ## [4.23.2](https://github.com/MohammadBnei/agent-fleet/compare/4.23.1...4.23.2) (2026-10-19)
 
 ### Bug Fixes
