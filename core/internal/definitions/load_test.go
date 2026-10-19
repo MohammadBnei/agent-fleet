@@ -30,6 +30,8 @@ func childYAML(name string, kv map[string]string) string {
 		"audience":  "{ group: platform-admins }",
 		"workspace": "{ kind: repo, repo: dream-analyst }",
 		"git":       "{ mode: pr, identity: { name: a, email: a@b.c } }",
+		// docs/adr/0065: the model credential is the vault's.
+		"credentials": "{ vault: " + name + ", services: [{ host: api.anthropic.com, secret: CLAUDE_CODE_OAUTH_TOKEN }] }",
 	}
 	for k, v := range kv {
 		spec[k] = v
@@ -74,6 +76,7 @@ func errText(err error) string {
 // the child's error. Every rule is judged on the EFFECTIVE spec, so a widening
 // in a child of a valid parent must still fail.
 func TestLoad_ChildRules(t *testing.T) {
+	const push = "{ mode: push, branch: main, identity: { name: a, email: a@b.c } }"
 	cases := []struct {
 		name string
 		kv   map[string]string
@@ -135,7 +138,17 @@ func TestLoad_ChildRules(t *testing.T) {
 		{"lowercase secret", map[string]string{"credentials": "{ vault: valid-child, services: [{ host: api.anthropic.com, secret: abc }] }"}, "secret"},
 		{"anthropic with paths", map[string]string{"credentials": `{ vault: valid-child, services: [{ host: api.anthropic.com, paths: ["/v1/*"], secret: A }] }`}, "no paths"},
 		{"github without paths", map[string]string{"credentials": "{ vault: valid-child, services: [{ host: github.com, secret: A }] }"}, "at least one path"},
-		{"credentials ok", map[string]string{"credentials": `{ vault: valid-child, services: [{ host: github.com, paths: ["/o/r/*", "/o/r.git/*"], secret: A }, { host: api.github.com, paths: ["/repos/o/r/*"], secret: A }, { host: api.anthropic.com, secret: B }] }`}, ""},
+		{"credentials ok", map[string]string{"git": push, "credentials": `{ vault: valid-child, services: [{ host: github.com, paths: ["/o/r/*", "/o/r.git/*"], secret: A }, { host: api.github.com, paths: ["/repos/o/r/*"], secret: A }, { host: api.anthropic.com, secret: B }] }`}, ""},
+		// docs/adr/0065
+		{"no credentials", map[string]string{"credentials": ""}, "credentials is required"},
+		{"no anthropic", map[string]string{"git": push, "credentials": `{ vault: valid-child, services: [{ host: github.com, paths: ["/o/r/*"], secret: A }] }`}, "api.anthropic.com service"},
+		{"agent token key", map[string]string{"credentials": "{ vault: valid-child, services: [{ host: api.anthropic.com, secret: AGENT_VAULT_TOKEN }] }"}, "provisioner's own"},
+		{"provisioner key", map[string]string{"credentials": "{ vault: valid-child, services: [{ host: api.anthropic.com, secret: FLEET_VAULT_GIT_USERNAME }] }"}, "provisioner's own"},
+		{"github in pr mode", map[string]string{"credentials": `{ vault: valid-child, services: [{ host: github.com, paths: ["/o/r/*"], secret: A }, { host: api.anthropic.com, secret: B }] }`}, "git.mode push"},
+		{"api.github in pr mode", map[string]string{"credentials": `{ vault: valid-child, services: [{ host: api.github.com, paths: ["/repos/o/r/*"], secret: A }, { host: api.anthropic.com, secret: B }] }`}, "git.mode push"},
+		{"push without github", map[string]string{"git": push}, "git.mode push needs a github.com"},
+		{"two repos", map[string]string{"git": push, "credentials": `{ vault: valid-child, services: [{ host: github.com, paths: ["/o/r/*", "/o/x.git/*"], secret: A }, { host: api.anthropic.com, secret: B }] }`}, "one <owner>/<repo>"},
+		{"api on another repo", map[string]string{"git": push, "credentials": `{ vault: valid-child, services: [{ host: github.com, paths: ["/o/r/*"], secret: A }, { host: api.github.com, paths: ["/repos/o/x/*"], secret: A }, { host: api.anthropic.com, secret: B }] }`}, "one <owner>/<repo>"},
 		// owns / subscribes: shape only
 		{"owns empty string", map[string]string{"owns": `{ repos: [""] }`}, "owns.repos"},
 		{"owns duplicate", map[string]string{"owns": "{ repos: [a, a] }"}, "owns.repos"},
@@ -196,12 +209,12 @@ func TestLoad_ChildRules(t *testing.T) {
 func TestLoad_ExtendsTopLevelReplace(t *testing.T) {
 	got, _ := load(t, map[string]string{
 		"definitions/base.yaml": baseYAML,
-		"definitions/c.yaml": childYAML("c", map[string]string{
+		"definitions/cee.yaml": childYAML("cee", map[string]string{
 			"tools": "{ allow: [Read, Grep] }",
 			"mode":  "{ default: plan, allow: [plan] }",
 		}),
 	})
-	r := got["c"]
+	r := got["cee"]
 	if r.Err != nil {
 		t.Fatal(r.Err)
 	}
@@ -227,25 +240,25 @@ func TestLoad_ExtendsTopLevelReplace(t *testing.T) {
 
 func TestLoad_ExtendsErrors(t *testing.T) {
 	t.Run("unknown parent", func(t *testing.T) {
-		got, _ := load(t, map[string]string{"definitions/c.yaml": childYAML("c", map[string]string{"extends": "nope"})})
-		if !strings.Contains(errText(got["c"].Err), `extends unknown definition "nope"`) {
-			t.Fatal(got["c"].Err)
+		got, _ := load(t, map[string]string{"definitions/cee.yaml": childYAML("cee", map[string]string{"extends": "nope"})})
+		if !strings.Contains(errText(got["cee"].Err), `extends unknown definition "nope"`) {
+			t.Fatal(got["cee"].Err)
 		}
 	})
 	t.Run("self cycle", func(t *testing.T) {
-		got, _ := load(t, map[string]string{"definitions/c.yaml": childYAML("c", map[string]string{"extends": "c"})})
-		if !strings.Contains(errText(got["c"].Err), "extends cycle: c → c") {
-			t.Fatal(got["c"].Err)
+		got, _ := load(t, map[string]string{"definitions/cee.yaml": childYAML("cee", map[string]string{"extends": "cee"})})
+		if !strings.Contains(errText(got["cee"].Err), "extends cycle: cee → cee") {
+			t.Fatal(got["cee"].Err)
 		}
 	})
 	t.Run("three cycle", func(t *testing.T) {
 		got, _ := load(t, map[string]string{
-			"definitions/a.yaml": childYAML("a", map[string]string{"extends": "b"}),
-			"definitions/b.yaml": childYAML("b", map[string]string{"extends": "c"}),
-			"definitions/c.yaml": childYAML("c", map[string]string{"extends": "a"}),
-			"definitions/d.yaml": childYAML("d", map[string]string{"extends": "a"}),
+			"definitions/a.yaml":   childYAML("a", map[string]string{"extends": "b"}),
+			"definitions/b.yaml":   childYAML("b", map[string]string{"extends": "cee"}),
+			"definitions/cee.yaml": childYAML("cee", map[string]string{"extends": "a"}),
+			"definitions/d.yaml":   childYAML("d", map[string]string{"extends": "a"}),
 		})
-		for _, n := range []string{"a", "b", "c"} {
+		for _, n := range []string{"a", "b", "cee"} {
 			if !strings.Contains(errText(got[n].Err), "extends cycle") {
 				t.Fatalf("%s: %v", n, got[n].Err)
 			}
@@ -259,10 +272,10 @@ func TestLoad_ExtendsErrors(t *testing.T) {
 		bad := strings.Replace(baseYAML, "allow: [default, plan]", "allow: [default, auto]", 1)
 		got, fileErrs := load(t, map[string]string{
 			"definitions/base.yaml": bad,
-			"definitions/c.yaml":    childYAML("c", nil),
+			"definitions/cee.yaml":  childYAML("cee", nil),
 		})
-		if !strings.Contains(errText(got["c"].Err), `parent "base"`) {
-			t.Fatal(got["c"].Err)
+		if !strings.Contains(errText(got["cee"].Err), `parent "base"`) {
+			t.Fatal(got["cee"].Err)
 		}
 		if len(fileErrs) != 1 || !strings.Contains(fileErrs[0].Error(), "definitions/base.yaml") {
 			t.Fatalf("an abstract definition's error has no row, so it must be a file error: %v", fileErrs)
@@ -277,16 +290,16 @@ func TestLoad_ExtendsErrors(t *testing.T) {
 }
 
 func TestLoad_FileStrictness(t *testing.T) {
-	valid := childYAML("c", nil)
+	valid := childYAML("cee", nil)
 	cases := []struct {
 		name, path, body, want string
 	}{
-		{"unknown top-level key", "definitions/c.yaml", valid + "extra: 1\n", "field extra not found"},
-		{"unknown spec key", "definitions/c.yaml", strings.Replace(valid, "spec:\n", "spec:\n  colour: red\n", 1), "field colour not found"},
-		{"two documents", "definitions/c.yaml", valid + "---\n" + valid, "one YAML document"},
-		{"wrong apiVersion", "definitions/c.yaml", strings.Replace(valid, "v1alpha1", "v1", 1), "apiVersion"},
-		{"wrong kind", "definitions/c.yaml", strings.Replace(valid, "AgentDefinition", "AgentClient", 1), "kind"},
-		{"name not stem", "definitions/d.yaml", valid, `metadata.name "c" must equal the file stem "d"`},
+		{"unknown top-level key", "definitions/cee.yaml", valid + "extra: 1\n", "field extra not found"},
+		{"unknown spec key", "definitions/cee.yaml", strings.Replace(valid, "spec:\n", "spec:\n  colour: red\n", 1), "field colour not found"},
+		{"two documents", "definitions/cee.yaml", valid + "---\n" + valid, "one YAML document"},
+		{"wrong apiVersion", "definitions/cee.yaml", strings.Replace(valid, "v1alpha1", "v1", 1), "apiVersion"},
+		{"wrong kind", "definitions/cee.yaml", strings.Replace(valid, "AgentDefinition", "AgentClient", 1), "kind"},
+		{"name not stem", "definitions/d.yaml", valid, `metadata.name "cee" must equal the file stem "d"`},
 		{"bad name", "definitions/C_1.yaml", strings.Replace(valid, "name: c }", "name: C_1 }", 1), "metadata.name"},
 	}
 	for _, tc := range cases {
@@ -341,28 +354,28 @@ func clientWith(defs, tokenRef, actors string) string {
 }
 
 func TestLoad_Clients(t *testing.T) {
-	invoked := childYAML("c", map[string]string{"invokers": "[bridge]"})
+	invoked := childYAML("cee", map[string]string{"invokers": "[bridge]"})
 	cases := []struct {
 		name         string
 		client, def  string
 		wantFile     string // substring in fileErrs
 		wantDefError string // substring in c's error
 	}{
-		{"agreement", clientWith("c", "", ""), invoked, "", ""},
-		{"empty stub", clientWith("", "", ""), childYAML("c", nil), "", ""},
-		{"invoker missing", clientWith("c", "", ""), childYAML("c", nil), `does not list client "bridge" in invokers`, ""},
+		{"agreement", clientWith("cee", "", ""), invoked, "", ""},
+		{"empty stub", clientWith("", "", ""), childYAML("cee", nil), "", ""},
+		{"invoker missing", clientWith("cee", "", ""), childYAML("cee", nil), `does not list client "bridge" in invokers`, ""},
 		{"client does not list it back", clientWith("", "", ""), invoked, "", `client "bridge" does not list it`},
-		{"unknown client", clientWith("", "", ""), childYAML("c", map[string]string{"invokers": "[ci]"}), "", `unknown client "ci"`},
-		{"unknown definition", clientWith("c, ghost", "", ""), invoked, `unknown definition "ghost"`, ""},
-		{"bad tokenRef", clientWith("c", "secret-value", ""), invoked, "tokenRef", ""},
-		{"empty actors", clientWith("c", "", "[]"), invoked, "actors.allow", ""},
-		{"bad actor", clientWith("c", "", "[not a login]"), invoked, "actors.allow", ""},
+		{"unknown client", clientWith("", "", ""), childYAML("cee", map[string]string{"invokers": "[ci]"}), "", `unknown client "ci"`},
+		{"unknown definition", clientWith("cee, ghost", "", ""), invoked, `unknown definition "ghost"`, ""},
+		{"bad tokenRef", clientWith("cee", "secret-value", ""), invoked, "tokenRef", ""},
+		{"empty actors", clientWith("cee", "", "[]"), invoked, "actors.allow", ""},
+		{"bad actor", clientWith("cee", "", "[not a login]"), invoked, "actors.allow", ""},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			got, fileErrs := load(t, map[string]string{
 				"definitions/base.yaml":           baseYAML,
-				"definitions/c.yaml":              tc.def,
+				"definitions/cee.yaml":            tc.def,
 				"definitions/clients/bridge.yaml": tc.client,
 			})
 			var fe []string
@@ -376,7 +389,7 @@ func TestLoad_Clients(t *testing.T) {
 			if !strings.Contains(joined, tc.wantFile) {
 				t.Fatalf("want %q in file errors %q", tc.wantFile, joined)
 			}
-			msg := errText(got["c"].Err)
+			msg := errText(got["cee"].Err)
 			if tc.wantDefError == "" && msg != "" {
 				t.Fatalf("unexpected definition error: %s", msg)
 			}
@@ -390,10 +403,10 @@ func TestLoad_Clients(t *testing.T) {
 // validate is what the registry re-runs on stored rows; it must reject what
 // Load rejects even when handed a Spec directly.
 func TestValidate_RejectsAutoOnAStoredSpec(t *testing.T) {
-	got, _ := load(t, map[string]string{"definitions/base.yaml": baseYAML, "definitions/c.yaml": childYAML("c", nil)})
-	s := *got["c"].Effective
+	got, _ := load(t, map[string]string{"definitions/base.yaml": baseYAML, "definitions/cee.yaml": childYAML("cee", nil)})
+	s := *got["cee"].Effective
 	s.Mode = &Mode{Default: "auto", Allow: []string{"auto"}}
-	if err := validate("c", &s); err == nil || !strings.Contains(err.Error(), "skips canUseTool") {
+	if err := validate("cee", &s); err == nil || !strings.Contains(err.Error(), "skips canUseTool") {
 		t.Fatalf("want auto rejected, got %v", err)
 	}
 }
@@ -431,11 +444,11 @@ func TestLoad_RequiresBounds(t *testing.T) {
 		"  interaction: { allow: [ask] }\n", "",
 		"  lifecycle: { allow: [resident] }\n", "",
 	).Replace(baseYAML)
-	got, fileErrs := load(t, map[string]string{"definitions/base.yaml": bare, "definitions/c.yaml": childYAML("c", nil)})
+	got, fileErrs := load(t, map[string]string{"definitions/base.yaml": bare, "definitions/cee.yaml": childYAML("cee", nil)})
 	if len(fileErrs) != 0 {
 		t.Fatalf("an abstract base may leave them out: %v", fileErrs)
 	}
-	msg := errText(got["c"].Err)
+	msg := errText(got["cee"].Err)
 	for _, want := range []string{"tools is required", "interaction is required", "lifecycle is required"} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("want %q in %q", want, msg)
@@ -448,12 +461,12 @@ func TestLoad_SecretValuesNeverEchoed(t *testing.T) {
 	const leaked = "ghp_PASTEDtokenVALUE123"
 	got, fileErrs := load(t, map[string]string{
 		"definitions/base.yaml": baseYAML,
-		"definitions/c.yaml": childYAML("c", map[string]string{
-			"credentials": "{ vault: c, services: [{ host: api.anthropic.com, secret: " + leaked + " }] }",
+		"definitions/cee.yaml": childYAML("cee", map[string]string{
+			"credentials": "{ vault: cee, services: [{ host: api.anthropic.com, secret: " + leaked + " }] }",
 		}),
 		"definitions/clients/bridge.yaml": clientWith("", leaked, ""),
 	})
-	all := errText(got["c"].Err)
+	all := errText(got["cee"].Err)
 	for _, e := range fileErrs {
 		all += "\n" + e.Error()
 	}
@@ -462,5 +475,37 @@ func TestLoad_SecretValuesNeverEchoed(t *testing.T) {
 	}
 	if strings.Contains(all, leaked) {
 		t.Fatalf("a secret value was echoed: %q", all)
+	}
+}
+
+// docs/adr/0065: vault slug minimum and the executor's reserved prefix, which
+// the provisioner's prune never empties.
+func TestLoad_VaultNames(t *testing.T) {
+	got, _ := load(t, map[string]string{
+		"definitions/base.yaml":       baseYAML,
+		"definitions/ab.yaml":         childYAML("ab", nil),
+		"definitions/executor-x.yaml": childYAML("executor-x", nil),
+	})
+	if msg := errText(got["ab"].Err); !strings.Contains(msg, "at least 3") {
+		t.Errorf("ab: %q", msg)
+	}
+	if msg := errText(got["executor-x"].Err); !strings.Contains(msg, "reserved") {
+		t.Errorf("executor-x: %q", msg)
+	}
+}
+
+func TestGitHubRepo(t *testing.T) {
+	for _, tc := range []struct {
+		c    *Credentials
+		want string
+	}{
+		{nil, ""},
+		{&Credentials{Services: []Service{{Host: "api.anthropic.com"}}}, ""},
+		{&Credentials{Services: []Service{{Host: "github.com", Paths: []string{"/MohammadBnei/notes/*", "/MohammadBnei/notes.git/*"}}}}, "MohammadBnei/notes"},
+		{&Credentials{Services: []Service{{Host: "api.github.com", Paths: []string{"/repos/o/r/*"}}}}, "o/r"},
+	} {
+		if got := GitHubRepo(tc.c); got != tc.want {
+			t.Errorf("%+v: %q, want %q", tc.c, got, tc.want)
+		}
 	}
 }

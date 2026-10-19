@@ -7,12 +7,15 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	"connectrpc.com/connect"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	agentfleetv1 "github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1"
 	"github.com/MohammadBnei/agent-fleet/proto/gen/go/agentfleet/v1/agentfleetv1connect"
@@ -132,9 +135,38 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	// Defined agents (docs/adr/0062) sync on the same pass, first run
 	// immediate. Its own timeout keeps a slow fetch inside the 60s interval.
 	defs := definitions.NewRegistry(pool, provisioner)
+	// After each GOOD sync, the full set of valid definitions' vaults goes to
+	// the provisioner, which makes the vaults match git (docs/adr/0065 §2).
+	// Core commands, the provisioner executes; core sends key names, never
+	// values. Errors are logged when they change, like the registry's file
+	// errors: a missing secret is a standing state, not news every minute.
+	var vaultErrs string
 	sessionLoop.SetOnTick(func(ctx context.Context) {
 		if err := defs.Sync(ctx); err != nil {
 			slog.Error("definitions: sync failed", "error", err)
+			return
+		}
+		results, err := provisioner.ReconcileVaults(ctx, defs.Vaults())
+		if status.Code(err) == codes.Unimplemented {
+			slog.Debug("definitions: provisioner predates ReconcileVaults (docs/adr/0065)")
+			return
+		}
+		var msgs []string
+		if err != nil {
+			msgs = append(msgs, err.Error())
+		}
+		for _, r := range results {
+			if r.GetError() != "" {
+				msgs = append(msgs, r.GetName()+": "+r.GetError())
+			}
+		}
+		if joined := strings.Join(msgs, "; "); joined != vaultErrs {
+			vaultErrs = joined
+			if joined != "" {
+				slog.Error("definitions: vault reconcile", "errors", joined)
+			} else {
+				slog.Info("definitions: vaults match their definitions")
+			}
 		}
 	})
 	go sessionLoop.Run(ctx, 60*time.Second)

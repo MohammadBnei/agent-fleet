@@ -14,6 +14,8 @@ import (
 
 	"connectrpc.com/connect"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/MohammadBnei/agent-fleet/core/internal/dbtest"
 	"github.com/MohammadBnei/agent-fleet/core/internal/definitions"
@@ -33,6 +35,9 @@ type definitionsProvisioner struct {
 	// dropsProfile is an older provisioner serving the create: it ignores the
 	// request's profile and does not confirm it (docs/adr/0064).
 	dropsProfile bool
+	// noVaultToken is a P1 provisioner: it applies the profile but mints no
+	// vault token (docs/adr/0065).
+	noVaultToken bool
 	// createErr fails the create AFTER recording it: the Job may exist.
 	createErr error
 	// onCreate runs inside the create (a caller going away mid-call).
@@ -62,7 +67,8 @@ func (p *definitionsProvisioner) CreateWorkerPod(_ context.Context, req *agentfl
 	if p.createErr != nil {
 		return nil, p.createErr
 	}
-	return &agentfleetv1.CreateWorkerPodResponse{PodName: "worker-test", DefinitionProfileApplied: req.GetDefinition() != nil && !p.dropsProfile}, nil
+	applied := req.GetDefinition() != nil && !p.dropsProfile
+	return &agentfleetv1.CreateWorkerPodResponse{PodName: "worker-test", DefinitionProfileApplied: applied, VaultTokenApplied: applied && !p.noVaultToken}, nil
 }
 
 func (p *definitionsProvisioner) TearDownSession(_ context.Context, req *agentfleetv1.TearDownSessionRequest) (*agentfleetv1.TearDownSessionResponse, error) {
@@ -347,6 +353,11 @@ func TestWarmIfIdle_Definition(t *testing.T) {
 	if d := got.GetDefinition(); d.GetName() != "dev-dream-analyst" || d.GetGitAuthorName() != "fleet-dev-agent" || d.GetGitAuthorEmail() != "fleet-dev-agent@bnei.dev" {
 		t.Errorf("profile = %v", d)
 	}
+	// docs/adr/0065: the vault spec (key names only) and limits.timeout.
+	if d := got.GetDefinition(); d.GetTimeoutSeconds() != 1800 || d.GetVault().GetName() != "dev-dream-analyst" ||
+		len(d.GetVault().GetServices()) != 1 || d.GetVault().GetServices()[0].GetSecret() != "CLAUDE_CODE_OAUTH_TOKEN" {
+		t.Errorf("profile vault/timeout = %v", d)
+	}
 	if got.GetImage() != "" || len(got.GetToolKeys()) != 0 {
 		t.Errorf("image %q tool keys %v: a definition pod takes the default image and no keys", got.GetImage(), got.GetToolKeys())
 	}
@@ -381,5 +392,87 @@ func TestWarmIfIdle_Definition(t *testing.T) {
 	}
 	if prov.createCount() != 3 {
 		t.Fatal("a revoked pin may not create a pod")
+	}
+}
+
+// docs/adr/0065: a P1 provisioner (profile applied, no vault token) built a pod
+// holding the real model token, so it is refused like an unprofiled one; and a
+// vault refusal reaches the console with the provisioner's code and the
+// missing key's name.
+func TestWarmIfIdle_DefinitionNeedsAVaultToken(t *testing.T) {
+	ctx := context.Background()
+	s, prov, _, store := newDefinitionsServer(t)
+	sess, err := createDef(s, "dev-dream-analyst", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prov.set(func(p *definitionsProvisioner) { p.noVaultToken = true })
+	if _, err := s.WarmIfIdle(ctx, sess.GetId()); code(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "vault token") {
+		t.Fatalf("a pod without a vault token: got %v", err)
+	}
+	if got, err := store.Get(ctx, sess.GetId()); err != nil || sessions.IsPodPhaseLive(got.PodPhase) || leaseValid(t, store, prov, 0) {
+		t.Fatalf("kept its lease or a live phase: %+v %v", got, err)
+	}
+	prov.set(func(p *definitionsProvisioner) {
+		p.noVaultToken = false
+		p.createErr = status.Error(codes.FailedPrecondition, "vault: vault dev-dream-analyst: secret CLAUDE_CODE_OAUTH_TOKEN not set in agent-fleet-nygh /agent-vault")
+	})
+	if _, err := s.WarmIfIdle(ctx, sess.GetId()); code(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "CLAUDE_CODE_OAUTH_TOKEN not set") {
+		t.Fatalf("a vault refusal: got %v", err)
+	}
+}
+
+// docs/adr/0065 §6: a push definition warms only on the one repo URL its
+// credentials name, refused before any lease exists.
+func TestWarmIfIdle_DefinitionURLBinding(t *testing.T) {
+	ctx := context.Background()
+	s, prov, reg, store := newDefinitionsServer(t)
+	prov.set(func(p *definitionsProvisioner) {
+		p.files["definitions/dev-pusher.yaml"] = []byte(`apiVersion: fleet.bnei.dev/v1alpha1
+kind: AgentDefinition
+metadata: { name: dev-pusher }
+spec:
+  extends: workspace-base
+  audience: { group: platform-admins }
+  credentials:
+    vault: dev-pusher
+    services:
+      - { host: github.com, paths: ["/MohammadBnei/dream-analyst/*", "/MohammadBnei/dream-analyst.git/*"], secret: GH_X }
+      - { host: api.anthropic.com, secret: CLAUDE_CODE_OAUTH_TOKEN }
+  workspace: { kind: repo, repo: dream-analyst }
+  git: { mode: push, branch: main, identity: { name: p, email: p@bnei.dev } }
+`)
+	})
+	if err := reg.Sync(ctx); err != nil {
+		t.Fatal(err)
+	}
+	sess, err := createDef(s, "dev-pusher", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo, err := s.repos.Get(ctx, "dream-analyst")
+	if err != nil {
+		t.Fatal(err)
+	}
+	seeded := repo.URL // https://github.com/MohammadBnei/dream-analyst.git
+	for _, url := range []string{"https://github.com/MohammadBnei/dream-analyst-evil.git", "https://github.com/mohammadbnei/dream-analyst.git", "https://github.com/MohammadBnei/dream-analyst/x.git"} {
+		repo.URL = url
+		if err := s.repos.Update(ctx, *repo); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.WarmIfIdle(ctx, sess.GetId()); code(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "does not match") {
+			t.Fatalf("%s: got %v", url, err)
+		}
+		if prov.createCount() != 0 {
+			t.Fatalf("%s: a pod was created", url)
+		}
+		assertNoLease(t, store, sess.GetId())
+	}
+	repo.URL = seeded
+	if err := s.repos.Update(ctx, *repo); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.WarmIfIdle(ctx, sess.GetId()); err != nil {
+		t.Fatalf("the bound URL: %v", err)
 	}
 }

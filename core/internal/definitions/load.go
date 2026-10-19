@@ -415,6 +415,14 @@ func validate(name string, s *Spec) error {
 		if c.Vault != name {
 			bad("credentials.vault %q must equal metadata.name %q", c.Vault, name)
 		}
+		// docs/adr/0065: the vault's own slug minimum, and the bridge
+		// executor's reserved prefix (the provisioner's prune skips it).
+		if len(c.Vault) < 3 {
+			bad("credentials.vault %q must be at least 3 characters (a vault name)", c.Vault)
+		}
+		if strings.HasPrefix(c.Vault, "executor-") {
+			bad("credentials.vault %q: the executor- prefix is reserved for the event bridge's executor", c.Vault)
+		}
 		if len(c.Services) == 0 {
 			bad("credentials.services must not be empty")
 		}
@@ -429,6 +437,8 @@ func validate(name string, s *Spec) error {
 			seen[svc.Host] = true
 			if !envKeyRe.MatchString(svc.Secret) {
 				bad("credentials.services[%s].secret must be a secret KEY name matching %s (value not shown)", svc.Host, envKeyRe)
+			} else if strings.HasPrefix(svc.Secret, "AGENT_VAULT_") || strings.HasPrefix(svc.Secret, "FLEET_VAULT_") {
+				bad("credentials.services[%s].secret %q is the provisioner's own key, never a definition's", svc.Host, svc.Secret)
 			}
 			switch svc.Host {
 			case "api.anthropic.com":
@@ -444,6 +454,32 @@ func validate(name string, s *Spec) error {
 						bad("credentials.services[%s].paths: %q must be exactly /<owner>/<repo>/* or /<owner>/<repo>.git/* (api.github.com: /repos/<owner>/<repo>/*)", svc.Host, p)
 					}
 				}
+			}
+		}
+	}
+	// docs/adr/0065: after P3 a definition pod's model credential is the
+	// vault's, a push credential exists only in push mode, and every GitHub
+	// path names the one repo the warm binds repos.url to.
+	if !s.Abstract {
+		if need(s.Credentials != nil, "credentials") && !slices.ContainsFunc(s.Credentials.Services, func(x Service) bool { return x.Host == "api.anthropic.com" }) {
+			bad("credentials need an api.anthropic.com service: a definition pod's model credential is the vault's")
+		}
+		var gh, git bool
+		if s.Credentials != nil {
+			for _, x := range s.Credentials.Services {
+				gh = gh || x.Host == "github.com" || x.Host == "api.github.com"
+				git = git || x.Host == "github.com"
+			}
+			if len(repoSet(s.Credentials)) > 1 {
+				bad("credentials: every github.com / api.github.com path must name one <owner>/<repo>")
+			}
+		}
+		if s.Git != nil {
+			if gh && s.Git.Mode != "push" {
+				bad("credentials: github.com / api.github.com services need git.mode push (a pr-mode pod holds no push credential)")
+			}
+			if s.Git.Mode == "push" && !git {
+				bad("git.mode push needs a github.com credentials service")
 			}
 		}
 	}
@@ -646,4 +682,33 @@ func validServicePath(host, p string) bool {
 		}
 	}
 	return true
+}
+
+// repoSet is every "<owner>/<repo>" a spec's well-shaped GitHub paths name.
+func repoSet(c *Credentials) map[string]bool {
+	out := map[string]bool{}
+	if c == nil {
+		return out
+	}
+	for _, svc := range c.Services {
+		for _, p := range svc.Paths {
+			if !validServicePath(svc.Host, p) {
+				continue
+			}
+			seg := strings.Split(strings.TrimPrefix(p, "/repos"), "/") // "", owner, repo[.git], "*"
+			if svc.Host == "github.com" || svc.Host == "api.github.com" {
+				out[seg[1]+"/"+strings.TrimSuffix(seg[2], ".git")] = true
+			}
+		}
+	}
+	return out
+}
+
+// GitHubRepo is the one "<owner>/<repo>" a valid spec's GitHub credentials
+// name, "" when it has none (docs/adr/0065 §6: the warm binds repos.url to it).
+func GitHubRepo(c *Credentials) string {
+	for r := range repoSet(c) {
+		return r
+	}
+	return ""
 }
