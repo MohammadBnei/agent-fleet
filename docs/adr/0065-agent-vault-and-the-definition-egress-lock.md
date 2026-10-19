@@ -62,7 +62,8 @@ matching `^\$\{.*\}$` is refused as an unexpanded Infisical reference. Errors
 name the key, never the value.
 
 `provisioner/internal/vault` is one client, no interface. It does not trust
-core's spec: before any write it re-checks the vault slug, the host allowlist
+core's spec: before any write it re-checks the vault slug (never `executor-`,
+the bridge executor's reserved prefix), the host allowlist
 (`github.com`, `api.github.com`, `api.anthropic.com`), the path shape (the
 validator's `githubPath`/`apiPath` regexes and dot-segment rule, ported),
 "`api.anthropic.com` takes no paths", one `<owner>/<repo>` per vault, and the
@@ -82,15 +83,22 @@ Desired state is every valid HEAD definition's `credentials`. Core pushes the
 full set with `ProvisionerService.ReconcileVaults` after every successful
 definitions sync (60s), and the provisioner, for each vault: creates it if
 absent (409 = success), sets each credential whose value is new or changed
-(sha256 memo, so an unchanged tick writes nothing), `PUT`s the service set only
+(an in-process sha256 memo, so an unchanged tick writes nothing; the memo is
+empty after a provisioner restart, so the first reconcile rewrites every
+credential, and a value changed in the vault itself, a restored PVC or a UI
+edit, is not detected until then), `PUT`s the service set only
 when it differs (a `PUT` replaces, so a service removed from git is removed),
 sets `unmatched_host_policy=deny`, then deletes credentials no service uses.
 A **widened** service set (any service not already there) first revokes every
 session on the vault: vaults are per definition, not per pinned version, so
 without it a release that adds a push service would hand it, within 60s, to
-live pods warmed under the older pr-mode pin. Those pods lose all access
-instead (every proxied call gets 407; a later warm runs at the new pin); a
-narrowing keeps them.
+live pods warmed under the older pr-mode pin. The provisioner then deletes that
+definition's live Jobs: on a dead token every proxied call gets 407 until
+`limits.timeout`, and core's `WarmIfIdle` never re-warms a live phase. Gone,
+core's pod-phase reconcile marks them TERMINATED (≤60s) and the next message
+re-warms at the new pin. A narrowing keeps them. Core runs `ReconcileVaults`
+off the sessions loop (its own goroutine, a tick still running skips the next),
+so a hung vault never delays the ordinary-session sweeps.
 Then it **prunes**: every vault it administers that is absent from the request
 gets an empty service set and no credentials (vault kept; prefix `executor-` is
 reserved for the event bridge's executor, ADR 0072, and skipped). An invalid or
@@ -108,15 +116,34 @@ definition being warmed (never prune there), so a warm never depends on
 in-memory state, and a missing secret refuses the warm with its name, before any
 pod exists. A per-vault mutex serialises the periodic and the inline call.
 
-Rendering: `api.anthropic.com` → one `bearer` service (Claude Code's
-`Authorization: Bearer <placeholder>` is overwritten whole). `github.com` paths →
-one service per path, `basic` with username key `FLEET_VAULT_GIT_USERNAME`
-(= `x-access-token`, set by the provisioner) and password = the definition's key:
-git's documented HTTPS-PAT convention. **Unverified end to end:** no real PAT
-has fetched or pushed through the vault yet (rollout step 6 is that check;
-Bearer is the fallback if Basic fails). Because the vault injects on the first
-request, git never sees a 401 and asks no credential helper.
-`api.github.com` paths → one `bearer` service per path.
+Rendering: every host is pinned to `:443` (`api.anthropic.com:443`,
+`github.com:443/<o>/<r>/*`): a service without a port matches every port, and
+the vault's plain `http://` forward path injects too, so an unpinned
+`http://github.com/...` would carry the PAT in cleartext. `api.anthropic.com` →
+one `bearer` service (Claude Code's `Authorization: Bearer <placeholder>` is
+overwritten whole). `github.com` paths → one service per path, `basic` with
+username key `FLEET_VAULT_GIT_USERNAME` (= `x-access-token`, set by the
+provisioner) and password = the definition's key. Basic was picked by a wire
+check, not by convention: with one valid token, github.com's
+`info/refs?service=git-receive-pack` on a private repo answered **200 to Basic
+and 401 to Bearer**. Because the vault injects on the first request, git never
+sees a 401 and asks no credential helper. `api.github.com` paths → one
+`bearer` service per path.
+
+**Checked end to end (2026-10-19)**, a local v0.40.0 container (same digest)
+reconciled by this client, the exact `definitionWorkerEnv` rows, the worker
+image with Claude Code 2.1.301 (amd64): `git ls-remote` of the private
+`MohammadBnei/notes` exits 0; its receive-pack advertisement is 200; another
+repo on github.com is 403 `no_match`; `api.github.com/repos/<o>/<r>/commits` is
+200; one real `claude -p` with the real setup-token injected answers (no error,
+`/v1/messages` 200 in the vault log), and an HTTP MCP server on `127.0.0.1`
+was reached directly (NO_PROXY honoured by the native binary under the full
+proxy env); `http://` on port 80 to a matched host is 403 `no_match`. The
+GitHub token was a stand-in (the operator's `gh` OAuth token, repo scope),
+not the fine-grained `GH_DEV_NOTES`. Not done: an actual `git push`
+(receive-pack POST) and its time against the vault's 60s `ReadTimeout`
+(rollout step 6). Note `/repos/<o>/<r>` itself (`gh repo view`) is outside
+`/repos/<o>/<r>/*` and gets 403.
 
 ### 3. One token per warm, revoked on every path
 
@@ -143,7 +170,7 @@ cancel; the TTL bounds a miss.
 | provisioner dies mid-warm, revoke times out | TTL |
 | open keep-alive tunnel after a revoke | ~2 min vault `IdleTimeout` (accepted) |
 | definition narrowed / invalid / deleted | next `ReconcileVaults` (≤60s): narrowed or emptied, live tokens kept |
-| definition widened (or a missing secret restored) | that reconcile revokes every session on the vault before the `PUT` |
+| definition widened (or a missing secret restored) | that reconcile revokes every session on the vault before the `PUT`, then deletes the definition's live Jobs |
 
 **`limits.timeout` is now a definition pod's wall-clock lifetime** (removed from
 ADR-0062 §7's inert list). Job `activeDeadlineSeconds = max(300, timeout)`;
@@ -157,8 +184,12 @@ next message re-warms and resumes. It can end a turn in flight (accepted).
 ### 4. The pod holds placeholders
 
 Definition worker env: `CLAUDE_CODE_OAUTH_TOKEN` and `GH_TOKEN` =
-`fleet-vault-placeholder`; `HTTPS_PROXY`/`HTTP_PROXY` and lowercase twins =
-`http://<av_sess_>:<vault>@agent-vault.agent-vault.svc.cluster.local:14322`;
+`fleet-vault-placeholder`; `HTTPS_PROXY`/`https_proxy` =
+`http://<av_sess_>:<vault>@agent-vault.agent-vault.svc.cluster.local:14322`,
+and deliberately **no** `HTTP_PROXY` (the vault injects on plain http too: a
+plain-http request goes direct and the egress lock drops it);
+`NODE_USE_ENV_PROXY=1` (Node's built-in fetch ignores the proxy vars without
+it; Bun and Claude Code honour them anyway, spike 2);
 `NO_PROXY`/`no_proxy` = loopback (the sidecar), core and the vault API;
 `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE`, `NODE_EXTRA_CA_CERTS`, `GIT_SSL_CAINFO`,
 `CURL_CA_BUNDLE` = `/etc/agent-vault/ca.pem`; `GIT_TERMINAL_PROMPT=0`;
@@ -179,7 +210,9 @@ After P3 no container of a definition pod, init containers included, holds a
 real secret: `TestDefinitionPod_NoRealSecret` asserts it with sentinel values in
 the provisioner's environment, plus both pod-level flags above (the SA token is
 admission-mounted, so the template is the only place a test can see it). The
-one credential the pod does hold is its own `av_sess_` (accepted risks). A repo pod's Job is byte-identical
+pod does hold two per-session credentials, both minted for it: the worker's
+`av_sess_` (accepted risks) and the sidecar's `LEASE_ID` (the CoreService
+credential, ADR-0057); the test excludes both by name. A repo pod's Job is byte-identical
 (`TestCreateWorkerPod_RepoSessionGolden`).
 
 `CreateWorkerPodResponse.vault_token_applied` is set only by a provisioner that
@@ -256,16 +289,30 @@ needs a `github.com` service; all of a definition's GitHub paths name one
   (ADR-0049 class). Upgrade: a dedicated project and identity for the
   provisioner and the vault (needs a UI-created identity).
 - A leaked `av_sess_` works from another definition pod (same CNP) until its TTL.
-- The `av_sess_` is plaintext env (`HTTPS_PROXY` and three twins) in the Job and
+- The vault injects on its plain `http://` forward path for a matching
+  host:port. The `:443` pin makes port 80 a 403, but `http://api.anthropic.com:443/…`
+  sent explicitly through the proxy still matches, and the vault sends the real
+  credential in cleartext to the upstream's TLS port (checked with a dummy
+  value: injected, upstream 400). Nothing in the pod does that by default (no
+  `HTTP_PROXY`, https remotes, `curl` is an ask rule); it needs a command a
+  human approves. Upgrade: an upstream option to refuse injection on the forward
+  path, or an executor-style broker.
+- The URL binding at the vault is a path **prefix** match on the decoded,
+  uncleaned path (spike 3): `/<o>/notes/../../<other>/info/refs` matched the
+  notes rule and got the credential. It does not reach another repo only
+  because github.com does not resolve dot-segments (404) and because the PAT is
+  scoped to the one repo. So `GH_<VAULT>` must be a fine-grained PAT on exactly
+  that repo, never a classic or multi-repo token (rollout step 2 is a gate).
+- The `av_sess_` is plaintext env (`HTTPS_PROXY` and its twin) in the Job and
   Pod spec: it sits in etcd, shows in `kubectl get -o yaml`/`describe`, and the
   agent can read `/proc/self/environ` with `Read`, so it can land in a
   transcript in core's DB. Bounded by its vault's rules and its TTL (up to
   `limits.timeout` + 60s, ≤12h+60s). Upgrade: deny `Read(/proc/**)` in the
   definition tool deny list, or a shorter TTL re-minted on re-warm.
-- A widening revokes every live pod of the definition: they lose the vault
-  mid-turn (407) until torn down and re-warmed.
-- Push for `git.mode: push` (Basic `x-access-token`) is unverified until
-  rollout step 6 runs.
+- A widening ends every live pod of the definition mid-turn (revoked, Job
+  deleted); the next message re-warms and resumes.
+- No real push has crossed the vault: fetch and the receive-pack
+  advertisement have (§2), the push POST is rollout step 6.
 - ~2 min of a revoked token on an open tunnel; the vault's 60s per-request
   `ReadTimeout` caps a single push upload (notes pushes are small; unmeasured,
   rollout step 6).
@@ -281,17 +328,18 @@ needs a `github.com` service; all of a definition's GitHub paths name one
 
 1. Merge infra-bootstrap's ADR-0061 PR; ArgoCD syncs `agent-vault`. Run
    `gitops/scripts/agent-vault-bootstrap.sh` there once.
-2. Create the fine-grained PAT (only `MohammadBnei/notes`, contents read/write)
-   and `infisical secrets set --projectId=ae771c2c-5115-452a-8f1c-1e03fa0e2b9a --env=dev --path=/agent-vault GH_DEV_NOTES=…`.
+2. **Gate:** create a fine-grained PAT whose repository access is only
+   `MohammadBnei/notes` (contents read/write); never a classic or multi-repo
+   token (accepted risks: the vault's prefix match leans on it). Then `infisical secrets set --projectId=ae771c2c-5115-452a-8f1c-1e03fa0e2b9a --env=dev --path=/agent-vault GH_DEV_NOTES=…`.
 3. Give the provisioner's bot read access to the private notes repo (the cache
    fetch uses the bot, not the vault).
 4. Onboard repo `notes` in the console: url `https://github.com/MohammadBnei/notes.git`
    exactly (§6), base branch `main`, no image, cluster access off.
 5. Merge this; the release brings definitions at the new tag.
-6. **First push check (unverified until done):** from a `dev-*` pod behind the
-   vault, `git ls-remote https://github.com/MohammadBnei/notes.git` then one
-   small commit pushed to a scratch branch, with Basic. If GitHub refuses
-   Basic, switch `gitAuth` to `bearer` (one function) and repeat. Note the push
+6. **First push check:** from the first dev-notes session (or a `dev-*` pod
+   behind the vault), one small commit pushed with the real `GH_DEV_NOTES`.
+   Fetch, auth shape (Basic) and the receive-pack advertisement are already
+   checked (§2); this proves the POST and the fine-grained PAT. Note the push
    time against the vault's 60s `ReadTimeout`.
 
 ## Consequences

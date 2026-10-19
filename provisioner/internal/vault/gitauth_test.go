@@ -2,10 +2,11 @@ package vault
 
 import "testing"
 
-// The github.com git auth must pass the vault's own field rules
-// (broker.Auth.Validate, v0.40.0): basic needs a username, optional password,
-// every value a credential KEY name.
-func TestGithubAuthShape(t *testing.T) {
+// Pins the wire result of docs/adr/0065 §2's check (2026-10-19): github.com's
+// git endpoint answered 200 to Basic x-access-token:<token> and 401 to Bearer
+// <same token>, and git ls-remote of a private repo went through a v0.40.0
+// vault with this shape. Switching to bearer breaks git, not this literal.
+func TestGitAuthIsBasicXAccessToken(t *testing.T) {
 	if a := gitAuth("GH_DEV_NOTES"); a != (auth{Type: "basic", Username: gitUsernameKey, Password: "GH_DEV_NOTES"}) {
 		t.Errorf("%+v", a)
 	}

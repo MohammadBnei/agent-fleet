@@ -10,8 +10,12 @@ import (
 
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
 )
 
 func definitionSpec() WorkerPodSpec {
@@ -103,7 +107,9 @@ func TestCreateWorkerPod_DefinitionProfile(t *testing.T) {
 
 // docs/adr/0065: after P3 no container of a definition pod, init containers
 // included, holds a real secret. Sentinels stand in for every credential the
-// provisioner's own environment carries.
+// provisioner's own environment carries. Deliberately excluded: the pod's two
+// per-session credentials, its av_sess_ (the worker's HTTPS_PROXY) and the
+// sidecar's LEASE_ID (CoreService, ADR-0057), both minted for this pod.
 func TestDefinitionPod_NoRealSecret(t *testing.T) {
 	sentinels := map[string]string{
 		"GH_TOKEN": "sentinel-gh", "CLAUDE_CODE_OAUTH_TOKEN": "sentinel-oauth", "THOT_AUTH_TOKEN": "sentinel-thot",
@@ -153,15 +159,24 @@ func TestDefinitionPod_NoRealSecret(t *testing.T) {
 	}
 }
 
-// docs/adr/0065 §4: proxy vars (both cases) on the worker only, the caller's
-// NO_PROXY, the CA in five variables and mounted from the CA ConfigMap.
+// docs/adr/0065 §4: HTTPS_PROXY (both cases) on the worker only and no
+// HTTP_PROXY (the vault injects on plain http too), NODE_USE_ENV_PROXY, the
+// caller's NO_PROXY, the CA in five variables and mounted from the CA ConfigMap.
 func TestDefinitionPod_ProxyAndCAEnv(t *testing.T) {
 	job := createJob(t, definitionSpec())
 	worker := container(t, job, "worker")
-	for _, k := range []string{"HTTPS_PROXY", "HTTP_PROXY", "https_proxy", "http_proxy"} {
+	for _, k := range []string{"HTTPS_PROXY", "https_proxy"} {
 		if got, _ := findEnv(worker.Env, k); got != testProxyURL {
 			t.Errorf("worker %s = %q", k, got)
 		}
+	}
+	for _, k := range []string{"HTTP_PROXY", "http_proxy"} {
+		if _, ok := findEnv(worker.Env, k); ok {
+			t.Errorf("worker has %s: plain http would reach the vault and get a credential", k)
+		}
+	}
+	if got, _ := findEnv(worker.Env, "NODE_USE_ENV_PROXY"); got != "1" {
+		t.Errorf("worker NODE_USE_ENV_PROXY = %q", got)
 	}
 	for _, k := range []string{"NO_PROXY", "no_proxy"} {
 		if got, _ := findEnv(worker.Env, k); got != "127.0.0.1,localhost,agent-fleet-core.agent-fleet.svc.cluster.local,agent-vault.agent-vault.svc.cluster.local" {
@@ -258,6 +273,39 @@ func TestEnsureVaultCA_UpsertOnlyOnChange(t *testing.T) {
 	}
 	if writes != 2 {
 		t.Errorf("%d writes, want create + one update", writes)
+	}
+}
+
+// Two first warms race: the loser's create gets AlreadyExists, a stale update
+// gets Conflict. Both re-read and succeed instead of refusing the warm.
+func TestEnsureVaultCA_ConcurrentWarms(t *testing.T) {
+	c := newTestClient()
+	cs := c.Core.(*fake.Clientset)
+	ctx := context.Background()
+	gr := schema.GroupResource{Resource: "configmaps"}
+	created, conflicted := false, false
+	cs.PrependReactor("create", "configmaps", func(a k8stesting.Action) (bool, runtime.Object, error) {
+		if created {
+			return false, nil, nil
+		}
+		created = true
+		_ = cs.Tracker().Add(a.(k8stesting.CreateAction).GetObject()) // the other warm won
+		return true, nil, apierrors.NewAlreadyExists(gr, VaultCAConfigMap)
+	})
+	cs.PrependReactor("update", "configmaps", func(k8stesting.Action) (bool, runtime.Object, error) {
+		if conflicted {
+			return false, nil, nil
+		}
+		conflicted = true
+		return true, nil, apierrors.NewConflict(gr, VaultCAConfigMap, nil)
+	})
+	for _, pem := range []string{"a", "b"} {
+		if err := c.EnsureVaultCA(ctx, []byte(pem)); err != nil {
+			t.Fatalf("%s: %v", pem, err)
+		}
+	}
+	if cm, err := cs.CoreV1().ConfigMaps("agent-fleet").Get(ctx, VaultCAConfigMap, metav1.GetOptions{}); err != nil || cm.Data["ca.pem"] != "b" {
+		t.Fatalf("%v %v", cm, err)
 	}
 }
 

@@ -9,6 +9,7 @@ package grpcserver
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strconv"
@@ -50,15 +51,10 @@ type Server struct {
 	// definitionsRef is FLEET_DEFINITIONS_REF: overrides version as the ref
 	// definitions are read at (kind and dev point it at a branch).
 	definitionsRef string
-	// vault is the Agent Vault client (docs/adr/0065), always wired by main;
-	// it fails closed on its own without an agent token. Repo sessions never
-	// call it.
+	// vault is the Agent Vault client (docs/adr/0065); it fails closed on its
+	// own without an agent token. Repo sessions never call it.
 	vault *vault.Client
 }
-
-// SetVault wires the Agent Vault client (docs/adr/0065), same setter shape as
-// SetDefinitionsRef.
-func (s *Server) SetVault(v *vault.Client) { s.vault = v }
 
 // SetDefinitionsRef sets FLEET_DEFINITIONS_REF (docs/adr/0062). A setter
 // rather than an eighth positional string on New, which already takes six.
@@ -67,9 +63,9 @@ func (s *Server) SetDefinitionsRef(ref string) { s.definitionsRef = ref }
 // claudeHomeDir is no longer a parameter: fleet-shared is seeded into each
 // session's OWN claude-home (git.Manager.ClaudeHomePath), not into one shared
 // directory every pod mounted, so there is no single path left to configure.
-func New(k8sc *k8s.Client, gitMgr *git.Manager, core EventReporter, e2eHost string, fleetSharedRepoURL, fleetSharedBranch, version string) *Server {
+func New(k8sc *k8s.Client, gitMgr *git.Manager, core EventReporter, vc *vault.Client, e2eHost string, fleetSharedRepoURL, fleetSharedBranch, version string) *Server {
 	return &Server{
-		k8sc: k8sc, git: gitMgr, core: core, e2eHost: e2eHost,
+		k8sc: k8sc, git: gitMgr, core: core, vault: vc, e2eHost: e2eHost,
 		fleetSharedRepoURL: fleetSharedRepoURL, fleetSharedBranch: fleetSharedBranch,
 		version: version,
 	}
@@ -268,7 +264,6 @@ func (s *Server) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWo
 	// docs/adr/0065: the vault matches the pinned spec, the CA is published,
 	// and this pod's token is minted, all before the pod exists. Any failure
 	// (a missing secret, no vault, no agent token) refuses the warm here.
-	var label string
 	if definition != nil {
 		s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_PROVISIONING, "", "minting vault token")
 		token, l, deadline, err := s.mintDefinitionToken(ctx, req.GetSessionId(), req.GetDefinition())
@@ -276,7 +271,7 @@ func (s *Server) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWo
 			s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_CRASHED, "", status.Convert(err).Message())
 			return nil, err
 		}
-		label, definition.ProxyURL, definition.DeadlineSeconds, definition.VaultLabel = l, s.vault.ProxyURL(token, definition.Name), deadline, l
+		definition.ProxyURL, definition.DeadlineSeconds, definition.VaultLabel = s.vault.ProxyURL(token, definition.Name), deadline, l
 	}
 
 	s.reportEvent(ctx, req.GetSessionId(), agentfleetv1.SessionKind_SESSION_KIND_WORKER, agentfleetv1.PodPhase_POD_PHASE_PROVISIONING, "", "creating pod")
@@ -295,7 +290,7 @@ func (s *Server) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWo
 		Definition:    definition,
 	}); err != nil {
 		if definition != nil {
-			if rerr := s.vault.Revoke(ctx, definition.Name, label); rerr != nil {
+			if rerr := s.vault.Revoke(ctx, definition.Name, definition.VaultLabel); rerr != nil {
 				slog.Warn("grpcserver CreateWorkerPod: revoking the token of a pod never created (its TTL bounds it)", "sessionId", req.GetSessionId(), "error", rerr)
 			}
 		}
@@ -324,7 +319,7 @@ func (s *Server) CreateWorkerPod(ctx context.Context, req *agentfleetv1.CreateWo
 // token lives 60s longer (activeDeadlineSeconds counts from the Job's
 // startTime, set at create: ms of skew).
 func (s *Server) mintDefinitionToken(ctx context.Context, sessionID string, d *agentfleetv1.DefinitionPodProfile) (token, label string, deadline int64, err error) {
-	if err := s.vault.Reconcile(ctx, vaultSpec(d.GetVault())); err != nil {
+	if err := s.reconcileVault(ctx, d.GetVault()); err != nil {
 		return "", "", 0, status.Error(codes.FailedPrecondition, "vault: "+err.Error())
 	}
 	pem, err := s.vault.CA(ctx)
@@ -341,6 +336,32 @@ func (s *Server) mintDefinitionToken(ctx context.Context, sessionID string, d *a
 		return "", "", 0, status.Error(codes.Unavailable, err.Error())
 	}
 	return token, label, deadline, nil
+}
+
+// reconcileVault reconciles one vault. After a widening has revoked every
+// session on it, the definition's live Jobs are deleted: their pods would
+// otherwise sit on a dead token (407) until limits.timeout, and core's
+// WarmIfIdle never re-warms a live phase. Gone, core's pod-phase reconcile
+// marks them TERMINATED (<=60s) and the next message re-warms at the new spec.
+func (s *Server) reconcileVault(ctx context.Context, v *agentfleetv1.VaultSpec) error {
+	widened, err := s.vault.Reconcile(ctx, vaultSpec(v))
+	if !widened {
+		return err
+	}
+	jobs, lerr := s.k8sc.ListWorkerJobsByLabel(ctx)
+	if lerr != nil {
+		return errors.Join(err, fmt.Errorf("vault %s widened, listing its pods to end them: %w", v.GetName(), lerr))
+	}
+	for _, j := range jobs {
+		if j.Definition != v.GetName() || j.Phase == "Succeeded" || j.Phase == "Failed" || j.Phase == "DeadlineExceeded" {
+			continue
+		}
+		slog.Info("grpcserver: vault widened, ending a pod on its revoked token", "vault", v.GetName(), "sessionId", j.TaskID)
+		if derr := s.k8sc.DeleteWorkerJob(ctx, j.TaskID); derr != nil {
+			err = errors.Join(err, derr)
+		}
+	}
+	return err
 }
 
 func vaultSpec(v *agentfleetv1.VaultSpec) vault.Spec {
@@ -360,7 +381,7 @@ func (s *Server) ReconcileVaults(ctx context.Context, req *agentfleetv1.Reconcil
 	for _, v := range req.GetVaults() {
 		keep[v.GetName()] = true
 		res := &agentfleetv1.VaultResult{Name: v.GetName()}
-		if err := s.vault.Reconcile(ctx, vaultSpec(v)); err != nil {
+		if err := s.reconcileVault(ctx, v); err != nil {
 			res.Error = err.Error()
 		}
 		out.Results = append(out.Results, res)

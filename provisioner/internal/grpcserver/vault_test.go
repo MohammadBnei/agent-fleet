@@ -33,7 +33,7 @@ func withVault(t *testing.T, s *Server, secrets map[string]string) *vaulttest.Se
 			t.Fatal(err)
 		}
 	}
-	s.SetVault(vault.New(f.URL, "agent-vault.agent-vault.svc.cluster.local:14322", dir))
+	s.vault = vault.New(f.URL, "agent-vault.agent-vault.svc.cluster.local:14322", dir)
 	return f
 }
 
@@ -211,5 +211,33 @@ func TestReconcileVaults_ResultsAndPrune(t *testing.T) {
 	}
 	if !slices.Contains(f.Names(), "dev-x") {
 		t.Error("dev-x not created")
+	}
+}
+
+// docs/adr/0065 §3: a widening revokes every token on the vault, so the
+// definition's live pods are ended (core re-warms them at the new spec); another
+// definition's pod is untouched.
+func TestReconcileVaults_WideningEndsLivePods(t *testing.T) {
+	s, k8sc, _ := newTestServer(t)
+	withVault(t, s, map[string]string{"CLAUDE_CODE_OAUTH_TOKEN": "oauth", "GH_DEV_NOTES": "pat"})
+	ctx := context.Background()
+	for id, p := range map[string]*agentfleetv1.DefinitionPodProfile{"def-1": profile("dev-notes"), "def-2": profile("dev-x")} {
+		if _, err := s.CreateWorkerPod(ctx, defRequest(t, id, p)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	resp, err := s.ReconcileVaults(ctx, &agentfleetv1.ReconcileVaultsRequest{Vaults: []*agentfleetv1.VaultSpec{notesProfile().Vault, profile("dev-x").Vault}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range resp.GetResults() {
+		if r.GetError() != "" {
+			t.Errorf("%s: %s", r.GetName(), r.GetError())
+		}
+	}
+	for id, want := range map[string]bool{"def-1": false, "def-2": true} {
+		if _, exists, err := k8sc.GetWorkerJob(ctx, id); err != nil || exists != want {
+			t.Errorf("%s: exists=%v err=%v, want exists=%v", id, exists, err, want)
+		}
 	}
 }

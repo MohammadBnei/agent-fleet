@@ -150,6 +150,7 @@ func TestLoad_ChildRules(t *testing.T) {
 		{"api.github in pr mode", map[string]string{"credentials": `{ vault: valid-child, services: [{ host: api.github.com, paths: ["/repos/o/r/*"], secret: A }, { host: api.anthropic.com, secret: B }] }`}, "git.mode push"},
 		{"push without github", map[string]string{"git": push}, "git.mode push needs a github.com"},
 		{"two repos", map[string]string{"git": push, "credentials": `{ vault: valid-child, services: [{ host: github.com, paths: ["/o/r/*", "/o/x.git/*"], secret: A }, { host: api.anthropic.com, secret: B }] }`}, "one <owner>/<repo>"},
+		{"two repos-owners", map[string]string{"git": push, "credentials": `{ vault: valid-child, services: [{ host: github.com, paths: ["/reposx/y/*", "/reposz/y/*"], secret: A }, { host: api.anthropic.com, secret: B }] }`}, "one <owner>/<repo>"},
 		{"api on another repo", map[string]string{"git": push, "credentials": `{ vault: valid-child, services: [{ host: github.com, paths: ["/o/r/*"], secret: A }, { host: api.github.com, paths: ["/repos/o/x/*"], secret: A }, { host: api.anthropic.com, secret: B }] }`}, "one <owner>/<repo>"},
 		// owns / subscribes: shape only
 		{"owns empty string", map[string]string{"owns": `{ repos: [""] }`}, "owns.repos"},
@@ -505,6 +506,7 @@ func TestGitHubRepo(t *testing.T) {
 		{&Credentials{Services: []Service{{Host: "api.anthropic.com"}}}, ""},
 		{&Credentials{Services: []Service{{Host: "github.com", Paths: []string{"/MohammadBnei/notes/*", "/MohammadBnei/notes.git/*"}}}}, "MohammadBnei/notes"},
 		{&Credentials{Services: []Service{{Host: "api.github.com", Paths: []string{"/repos/o/r/*"}}}}, "o/r"},
+		{&Credentials{Services: []Service{{Host: "github.com", Paths: []string{"/reposlab/notes/*", "/reposlab/notes.git/*"}}}}, "reposlab/notes"},
 	} {
 		if got := GitHubRepo(tc.c); got != tc.want {
 			t.Errorf("%+v: %q, want %q", tc.c, got, tc.want)

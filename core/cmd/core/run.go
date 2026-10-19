@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"connectrpc.com/connect"
@@ -138,39 +139,23 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 	// After each GOOD sync, the full set of valid definitions' vaults goes to
 	// the provisioner, which makes the vaults match git (docs/adr/0065 §2).
 	// Core commands, the provisioner executes; core sends key names, never
-	// values. Errors are logged when they change, like the registry's file
-	// errors: a missing secret is a standing state, not news every minute.
+	// values. Off the sessions loop: a hung vault (30s client budget) must not
+	// delay the ordinary-session sweeps, and a tick still running skips the next.
 	var vaultErrs string
+	var vaultBusy atomic.Bool
 	sessionLoop.SetOnTick(func(ctx context.Context) {
 		if err := defs.Sync(ctx); err != nil {
 			slog.Error("definitions: sync failed", "error", err)
 			return
 		}
-		resp, err := provisioner.ReconcileVaults(ctx, defs.Vaults())
-		if status.Code(err) == codes.Unimplemented {
-			slog.Debug("definitions: provisioner predates ReconcileVaults (docs/adr/0065)")
+		if !vaultBusy.CompareAndSwap(false, true) {
 			return
 		}
-		var msgs []string
-		if err != nil {
-			msgs = append(msgs, err.Error())
-		}
-		for _, r := range resp.GetResults() {
-			if r.GetError() != "" {
-				msgs = append(msgs, r.GetName()+": "+r.GetError())
-			}
-		}
-		if e := resp.GetPruneError(); e != "" {
-			msgs = append(msgs, "prune: "+e)
-		}
-		if joined := strings.Join(msgs, "; "); joined != vaultErrs {
-			vaultErrs = joined
-			if joined != "" {
-				slog.Error("definitions: vault reconcile", "errors", joined)
-			} else {
-				slog.Info("definitions: vaults match their definitions")
-			}
-		}
+		vaults := defs.Vaults()
+		go func() {
+			defer vaultBusy.Store(false)
+			vaultErrs = reconcileVaults(ctx, provisioner, vaults, vaultErrs)
+		}()
 	})
 	go sessionLoop.Run(ctx, 60*time.Second)
 
@@ -395,4 +380,42 @@ func run(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, version str
 // FLEET_AUTH_DISABLED=1 (identity gate) too (docs/adr/0069).
 func httpHandler(mux http.Handler, gate func(http.Handler) http.Handler) http.Handler {
 	return auth.FrameDeny(gate(mux))
+}
+
+// vaultReconciler is provisionerclient.Client's ReconcileVaults.
+type vaultReconciler interface {
+	ReconcileVaults(ctx context.Context, vaults []*agentfleetv1.VaultSpec) (*agentfleetv1.ReconcileVaultsResponse, error)
+}
+
+// reconcileVaults pushes the vault set and returns the joined error state,
+// logged only when it differs from prev, like the registry's file errors: a
+// missing secret is a standing state, not news every minute. An older
+// provisioner (Unimplemented) is a debug line and leaves the state as it was.
+func reconcileVaults(ctx context.Context, p vaultReconciler, vaults []*agentfleetv1.VaultSpec, prev string) string {
+	resp, err := p.ReconcileVaults(ctx, vaults)
+	if status.Code(err) == codes.Unimplemented {
+		slog.Debug("definitions: provisioner predates ReconcileVaults (docs/adr/0065)")
+		return prev
+	}
+	var msgs []string
+	if err != nil {
+		msgs = append(msgs, err.Error())
+	}
+	for _, r := range resp.GetResults() {
+		if r.GetError() != "" {
+			msgs = append(msgs, r.GetName()+": "+r.GetError())
+		}
+	}
+	if e := resp.GetPruneError(); e != "" {
+		msgs = append(msgs, "prune: "+e)
+	}
+	joined := strings.Join(msgs, "; ")
+	switch {
+	case joined == prev:
+	case joined != "":
+		slog.Error("definitions: vault reconcile", "errors", joined)
+	default:
+		slog.Info("definitions: vaults match their definitions")
+	}
+	return joined
 }

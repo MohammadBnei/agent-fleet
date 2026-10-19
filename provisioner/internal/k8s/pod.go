@@ -16,6 +16,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/client-go/util/retry"
 
 	"github.com/MohammadBnei/agent-fleet/provisioner/internal/metrics"
 )
@@ -264,8 +265,11 @@ func repoCacheMount(spec WorkerPodSpec) corev1.VolumeMount {
 // docs/adr/0065: no real credential either. CLAUDE_CODE_OAUTH_TOKEN and
 // GH_TOKEN are placeholders the vault overwrites on the wire; the proxy, its
 // CA and NO_PROXY (loopback for the sidecar, core, the vault API) are set
-// here: both cases of the proxy vars (curl prefers lowercase), and the CA in
-// every variable a client in the worker image reads.
+// here: both cases of HTTPS_PROXY (curl prefers lowercase), NODE_USE_ENV_PROXY
+// (Node's own fetch ignores the proxy vars without it), and the CA in every
+// variable a client in the worker image reads. No HTTP_PROXY: the vault's
+// plain http:// path injects too, so a plain-http request goes direct and the
+// egress lock drops it (docs/adr/0065 accepted risks).
 func definitionWorkerEnv(env []corev1.EnvVar, d DefinitionProfile, coreHost string) []corev1.EnvVar {
 	out := make([]corev1.EnvVar, 0, len(env)+24)
 	for _, e := range env {
@@ -281,10 +285,10 @@ func definitionWorkerEnv(env []corev1.EnvVar, d DefinitionProfile, coreHost stri
 		noProxy = append(noProxy, u.Hostname())
 	}
 	np := strings.Join(noProxy, ",")
-	for _, k := range []string{"HTTPS_PROXY", "HTTP_PROXY", "https_proxy", "http_proxy"} {
+	for _, k := range []string{"HTTPS_PROXY", "https_proxy"} {
 		out = append(out, corev1.EnvVar{Name: k, Value: d.ProxyURL})
 	}
-	out = append(out, corev1.EnvVar{Name: "NO_PROXY", Value: np}, corev1.EnvVar{Name: "no_proxy", Value: np})
+	out = append(out, corev1.EnvVar{Name: "NO_PROXY", Value: np}, corev1.EnvVar{Name: "no_proxy", Value: np}, corev1.EnvVar{Name: "NODE_USE_ENV_PROXY", Value: "1"})
 	for _, k := range []string{"SSL_CERT_FILE", "REQUESTS_CA_BUNDLE", "NODE_EXTRA_CA_CERTS", "GIT_SSL_CAINFO", "CURL_CA_BUNDLE"} {
 		out = append(out, corev1.EnvVar{Name: k, Value: vaultCADir + "/ca.pem"})
 	}
@@ -807,8 +811,15 @@ func ignoreAlreadyExists(err error) error {
 }
 
 // EnsureVaultCA upserts the vault's MITM root into VaultCAConfigMap, writing
-// only when it changed (docs/adr/0065 §4).
+// only when it changed (docs/adr/0065 §4). Concurrent warms race the create
+// (AlreadyExists) or the update (Conflict): the loser re-reads and compares.
 func (c *Client) EnsureVaultCA(ctx context.Context, pem []byte) error {
+	return retry.OnError(retry.DefaultRetry, func(err error) bool {
+		return apierrors.IsAlreadyExists(err) || apierrors.IsConflict(err)
+	}, func() error { return c.ensureVaultCA(ctx, pem) })
+}
+
+func (c *Client) ensureVaultCA(ctx context.Context, pem []byte) error {
 	cms := c.Core.CoreV1().ConfigMaps(c.Namespace)
 	cm, err := cms.Get(ctx, VaultCAConfigMap, metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {

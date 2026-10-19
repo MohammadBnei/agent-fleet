@@ -1007,7 +1007,7 @@ running.
 | `CLAUDE_MODEL` | `claude-opus-5-5` | Empty means core's `defaultModel` (`docs/adr/0061`) |
 | `MAX_TURNS` | unbounded | opt-in cap |
 | `CLAUDE_CODE_OAUTH_TOKEN` | – | minted via `claude setup-token`. In a definition pod both it and `GH_TOKEN` are `fleet-vault-placeholder`: Agent Vault injects the real values on the wire (`adr/0065`) |
-| `HTTPS_PROXY`/`HTTP_PROXY` (+ lowercase), `NO_PROXY`, `SSL_CERT_FILE`, `NODE_EXTRA_CA_CERTS`, `GIT_SSL_CAINFO`, `CURL_CA_BUNDLE`, `REQUESTS_CA_BUNDLE` | definition pods only | the per-warm vault token in the proxy URL; the vault CA at `/etc/agent-vault/ca.pem` (`adr/0065` §4) |
+| `HTTPS_PROXY` (+ lowercase, no `HTTP_PROXY`), `NO_PROXY`, `NODE_USE_ENV_PROXY`, `SSL_CERT_FILE`, `NODE_EXTRA_CA_CERTS`, `GIT_SSL_CAINFO`, `CURL_CA_BUNDLE`, `REQUESTS_CA_BUNDLE` | definition pods only | the per-warm vault token in the proxy URL; the vault CA at `/etc/agent-vault/ca.pem` (`adr/0065` §4) |
 
 ### `FLEET_PROVISIONER_TOKEN` (`core/` and `provisioner/`)
 

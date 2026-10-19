@@ -34,12 +34,12 @@ func TestLive_ReconcileIdempotent(t *testing.T) {
 	rec := &recorder{next: http.DefaultTransport}
 	c.HTTP.Transport = rec
 	ctx := context.Background()
-	if err := c.Reconcile(ctx, notesSpec()); err != nil {
+	if _, err := c.Reconcile(ctx, notesSpec()); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = c.Reconcile(ctx, vault.Spec{Name: "dev-notes"}) })
+	t.Cleanup(func() { _, _ = c.Reconcile(ctx, vault.Spec{Name: "dev-notes"}) })
 	rec.reset()
-	if err := c.Reconcile(ctx, notesSpec()); err != nil {
+	if _, err := c.Reconcile(ctx, notesSpec()); err != nil {
 		t.Fatal(err)
 	}
 	if w := rec.writes(); len(w) != 0 {

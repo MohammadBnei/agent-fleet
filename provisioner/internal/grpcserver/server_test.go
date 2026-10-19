@@ -78,7 +78,7 @@ func newTestServer(t *testing.T) (*Server, *k8s.Client, *fakeEventReporter) {
 	k8sc := newFakeK8sClient()
 	gitMgr := git.NewManager(t.TempDir())
 	reporter := &fakeEventReporter{}
-	return New(k8sc, gitMgr, reporter, "e2e.bnei.dev", "", "", "test"), k8sc, reporter
+	return New(k8sc, gitMgr, reporter, nil, "e2e.bnei.dev", "", "", "test"), k8sc, reporter
 }
 
 func TestCreateWorkerPod_ClonesAndCreatesPod(t *testing.T) {
@@ -209,7 +209,7 @@ func TestCreateWorkerPod_SyncsFleetShared(t *testing.T) {
 	run("add", ".")
 	run("commit", "-m", "init")
 
-	s := New(k8sc, gitMgr, reporter, "e2e.bnei.dev", fleetSharedOrigin, "main", "test")
+	s := New(k8sc, gitMgr, reporter, nil, "e2e.bnei.dev", fleetSharedOrigin, "main", "test")
 	ctx := context.Background()
 	origin := newTestOriginRepo(t)
 
@@ -498,7 +498,7 @@ func newDefinitionsOriginRepo(t *testing.T) string {
 func TestListDefinitionFiles(t *testing.T) {
 	ctx := context.Background()
 	newServer := func(url, version string) *Server {
-		return New(newFakeK8sClient(), git.NewManager(t.TempDir()), &fakeEventReporter{}, "e2e.bnei.dev", url, "main", version)
+		return New(newFakeK8sClient(), git.NewManager(t.TempDir()), &fakeEventReporter{}, nil, "e2e.bnei.dev", url, "main", version)
 	}
 	origin := newDefinitionsOriginRepo(t)
 

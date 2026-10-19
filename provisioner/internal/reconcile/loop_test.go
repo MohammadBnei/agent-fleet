@@ -53,7 +53,7 @@ func TestGcTerminalWorkerJobs_DeletesSucceededButKeepsFailed(t *testing.T) {
 		{TaskID: "pending-1", JobName: "worker-4", Phase: "Pending"},
 	}}
 	reporter := &fakeEventReporter{}
-	l := New(kc, reporter, time.Hour)
+	l := New(kc, reporter, nil, time.Hour)
 
 	l.gcTerminalWorkerJobs(context.Background())
 
@@ -73,7 +73,7 @@ func TestGcTerminalWorkerJobs_ReportsAKeptFailedJobOnlyOnce(t *testing.T) {
 		{TaskID: "failed-1", JobName: "worker-3", Phase: "Failed"},
 	}}
 	reporter := &fakeEventReporter{}
-	l := New(kc, reporter, time.Hour)
+	l := New(kc, reporter, nil, time.Hour)
 
 	l.gcTerminalWorkerJobs(context.Background())
 	l.gcTerminalWorkerJobs(context.Background())
@@ -115,7 +115,7 @@ func TestGcTerminalWorkerJobs_ReportsBothTerminalPhases(t *testing.T) {
 		{TaskID: "live-1", JobName: "worker-4", Phase: "Running"},
 	}}
 	reporter := &fakeEventReporter{}
-	l := New(kc, reporter, time.Hour)
+	l := New(kc, reporter, nil, time.Hour)
 
 	l.gcTerminalWorkerJobs(context.Background())
 
@@ -149,7 +149,7 @@ func TestGcIdleSharedInstances_OnlyDeletesPastTimeout(t *testing.T) {
 		{Repo: "dream-analyst", ServiceKey: "redis", LastUsedAt: now.Add(-1 * time.Minute)},  // recent, kept
 		{Repo: "agent-fleet", ServiceKey: "postgres", LastUsedAt: time.Time{}},               // no annotation yet, kept
 	}}
-	l := New(kc, &fakeEventReporter{}, time.Hour)
+	l := New(kc, &fakeEventReporter{}, nil, time.Hour)
 
 	l.gcIdleSharedInstances(context.Background())
 
@@ -170,7 +170,7 @@ func TestGcIdleSharedInstances_Uniform(t *testing.T) {
 		{Repo: "dream-analyst", ServiceKey: "postgres", LastUsedAt: now.Add(-2 * time.Hour)},
 		{Repo: "agent-fleet", ServiceKey: "postgres", LastUsedAt: now.Add(-2 * time.Hour)},
 	}}
-	l := New(kc, &fakeEventReporter{}, time.Hour)
+	l := New(kc, &fakeEventReporter{}, nil, time.Hour)
 
 	l.gcIdleSharedInstances(context.Background())
 
@@ -185,7 +185,7 @@ func TestGcIdleSharedInstances_Uniform(t *testing.T) {
 // 10s against pods an agent is actively working in.
 func TestRun_StopsOnContextCancel(t *testing.T) {
 	kc := &fakeK8s{}
-	l := New(kc, &fakeEventReporter{}, time.Hour)
+	l := New(kc, &fakeEventReporter{}, nil, time.Hour)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
 	defer cancel()
@@ -227,8 +227,7 @@ func TestGcTerminalWorkerJobs_RevokesFirstAndTimeoutIsTerminated(t *testing.T) {
 		{TaskID: "repo-done", JobName: "worker-3", Phase: "Succeeded"},
 	}}
 	o := &order{}
-	l := New(kc, orderReporter{o}, time.Hour)
-	l.SetVault(o)
+	l := New(kc, orderReporter{o}, o, time.Hour)
 	l.gcTerminalWorkerJobs(context.Background())
 	want := []string{"revoke dev-x timed-out.1", "report timed-out POD_PHASE_TERMINATED limits.timeout reached", "report repo-done POD_PHASE_TERMINATED worker job reached a terminal Succeeded phase"}
 	if !slices.Equal(o.log, want) {

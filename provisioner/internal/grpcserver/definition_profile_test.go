@@ -40,7 +40,7 @@ func TestCreateWorkerPod_DefinitionProfile(t *testing.T) {
 		t.Fatal(err)
 	}
 	commitTo(t, fleetShared, "fleet-shared/settings.json")
-	s := New(k8sc, git.NewManager(root), &fakeEventReporter{}, "e2e.bnei.dev", fleetShared, "main", "test")
+	s := New(k8sc, git.NewManager(root), &fakeEventReporter{}, nil, "e2e.bnei.dev", fleetShared, "main", "test")
 	withVault(t, s, map[string]string{"CLAUDE_CODE_OAUTH_TOKEN": "oauth"})
 	origin := newTestOriginRepo(t)
 

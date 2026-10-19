@@ -134,19 +134,17 @@ func main() {
 	mux.Handle("/metrics", promhttp.Handler())
 	httpServer := &http.Server{Addr: ":" + cfg.Port, Handler: mux}
 
-	provSvc := grpcserver.New(k8sc, gitMgr, core, cfg.E2eHost, cfg.FleetSharedRepoURL, cfg.FleetSharedBranch, version)
-	provSvc.SetDefinitionsRef(cfg.FleetDefinitionsRef)
 	// docs/adr/0065: the fleet's only Agent Vault client. Nothing is checked at
 	// boot: before infra-bootstrap's agent-vault-bootstrap.sh has run, every
 	// definition warm and reconcile fails closed with that script's name.
 	vc := vault.New(cfg.AgentVaultAPI, cfg.AgentVaultProxy, cfg.AgentVaultSecretsDir)
-	provSvc.SetVault(vc)
+	provSvc := grpcserver.New(k8sc, gitMgr, core, vc, cfg.E2eHost, cfg.FleetSharedRepoURL, cfg.FleetSharedBranch, version)
+	provSvc.SetDefinitionsRef(cfg.FleetDefinitionsRef)
 	agentfleetv1.RegisterProvisionerServiceServer(grpcSrv, provSvc)
 
 	reconcileInterval, _ := strconv.Atoi(cfg.ReconcileInterval)
 	sharedInstanceIdleTimeout, _ := strconv.Atoi(cfg.SharedInstanceIdleTimeoutMs)
-	loop := reconcile.New(k8sc, core, time.Duration(sharedInstanceIdleTimeout)*time.Millisecond)
-	loop.SetVault(vc)
+	loop := reconcile.New(k8sc, core, vc, time.Duration(sharedInstanceIdleTimeout)*time.Millisecond)
 	go loop.Run(ctx, time.Duration(reconcileInterval)*time.Millisecond)
 
 	// The branch/worktree sweep loop is gone (docs/adr/0048 §5). It deleted

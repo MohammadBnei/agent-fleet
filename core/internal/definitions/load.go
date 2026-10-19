@@ -704,10 +704,15 @@ func repoSet(c *Credentials) map[string]bool {
 			if !validServicePath(svc.Host, p) {
 				continue
 			}
-			seg := strings.Split(strings.TrimPrefix(p, "/repos"), "/") // "", owner, repo[.git], "*"
-			if svc.Host == "github.com" || svc.Host == "api.github.com" {
-				out[seg[1]+"/"+strings.TrimSuffix(seg[2], ".git")] = true
+			seg := strings.Split(p, "/") // "", owner, repo[.git], "*"
+			switch svc.Host {
+			case "api.github.com":
+				seg = seg[1:] // "", "repos", owner, repo, "*"
+			case "github.com":
+			default:
+				continue
 			}
+			out[seg[1]+"/"+strings.TrimSuffix(seg[2], ".git")] = true
 		}
 	}
 	return out

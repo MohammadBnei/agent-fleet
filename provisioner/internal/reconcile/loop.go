@@ -81,17 +81,15 @@ type Loop struct {
 	reported map[string]struct{}
 }
 
-func New(k8sc JobLister, core EventReporter, sharedInstanceIdleTimeout time.Duration) *Loop {
+func New(k8sc JobLister, core EventReporter, vault Revoker, sharedInstanceIdleTimeout time.Duration) *Loop {
 	return &Loop{
 		k8sc:                      k8sc,
 		core:                      core,
+		vault:                     vault,
 		sharedInstanceIdleTimeout: sharedInstanceIdleTimeout,
 		reported:                  make(map[string]struct{}),
 	}
 }
-
-// SetVault makes the pass revoke a finished session's vault tokens.
-func (l *Loop) SetVault(v Revoker) { l.vault = v }
 
 func (l *Loop) gcTerminalWorkerJobs(ctx context.Context) {
 	jobs, err := l.k8sc.ListWorkerJobsByLabel(ctx)

@@ -86,9 +86,10 @@ type auth struct {
 	Password string `json:"password,omitempty"`
 }
 
-// gitAuth is basic x-access-token:<PAT>, git's documented HTTPS-PAT
-// convention. UNVERIFIED end to end: no real push has crossed the vault yet
-// (docs/adr/0065 rollout step 6 is that check; Bearer is the fallback).
+// gitAuth is basic x-access-token:<PAT>. Picked by a wire check
+// (docs/adr/0065 §2, 2026-10-19): github.com's info/refs?service=
+// git-receive-pack answered 200 to Basic and 401 to Bearer with the same
+// valid token, and git ls-remote went through a v0.40.0 vault with this shape.
 func gitAuth(key string) auth {
 	return auth{Type: "basic", Username: gitUsernameKey, Password: key}
 }
@@ -115,8 +116,8 @@ func GitHubKey(vault string) string {
 }
 
 func checkSpec(s Spec) error {
-	if !vaultNameRe.MatchString(s.Name) {
-		return fmt.Errorf("vault name %q is not a vault slug", s.Name)
+	if !vaultNameRe.MatchString(s.Name) || strings.HasPrefix(s.Name, "executor-") {
+		return fmt.Errorf("vault name %q is not a definition vault slug", s.Name)
 	}
 	repos := map[string]bool{}
 	for _, svc := range s.Services {
@@ -150,8 +151,10 @@ func checkSpec(s Spec) error {
 			if !re.MatchString(p) || slices.Contains(seg, ".") || slices.Contains(seg, "..") {
 				return fmt.Errorf("vault %s: path %q on %s is not an exact repo glob", s.Name, p, svc.Host)
 			}
-			seg = strings.Split(strings.TrimPrefix(p, "/repos"), "/") // "", owner, repo[.git], "*"
-			repos[seg[1]+"/"+strings.TrimSuffix(seg[2], ".git")] = true
+			if svc.Host == "api.github.com" {
+				seg = seg[1:] // "", "repos", owner, repo, "*"
+			}
+			repos[seg[1]+"/"+strings.TrimSuffix(seg[2], ".git")] = true // "", owner, repo[.git], "*"
 		}
 	}
 	if len(repos) > 1 {
@@ -161,20 +164,23 @@ func checkSpec(s Spec) error {
 }
 
 // render turns a spec into the vault's services and the credential keys they
-// use. The username key is the provisioner's own.
+// use. The username key is the provisioner's own. Every host is pinned to
+// :443: a service without a port matches any port, and the vault's plain
+// http:// forward path injects too, so http://github.com/... would carry the
+// PAT in cleartext (docs/adr/0065 accepted risks).
 func render(s Spec) []service {
 	var out []service
 	for _, svc := range s.Services {
 		switch svc.Host {
 		case "api.anthropic.com":
-			out = append(out, service{Name: "anthropic", Host: svc.Host, Auth: auth{Type: "bearer", Token: svc.Secret}})
+			out = append(out, service{Name: "anthropic", Host: svc.Host + ":443", Auth: auth{Type: "bearer", Token: svc.Secret}})
 		case "github.com":
 			for i, p := range svc.Paths {
-				out = append(out, service{Name: fmt.Sprintf("github-%d", i), Host: svc.Host + p, Auth: gitAuth(svc.Secret)})
+				out = append(out, service{Name: fmt.Sprintf("github-%d", i), Host: svc.Host + ":443" + p, Auth: gitAuth(svc.Secret)})
 			}
 		case "api.github.com":
 			for i, p := range svc.Paths {
-				out = append(out, service{Name: fmt.Sprintf("github-api-%d", i), Host: svc.Host + p, Auth: auth{Type: "bearer", Token: svc.Secret}})
+				out = append(out, service{Name: fmt.Sprintf("github-api-%d", i), Host: svc.Host + ":443" + p, Auth: auth{Type: "bearer", Token: svc.Secret}})
 			}
 		}
 	}
@@ -220,17 +226,24 @@ func (c *Client) vaultLock(name string) *sync.Mutex {
 // unmatched_host_policy=deny. A service whose secret is missing is dropped
 // (fail closed) and the call errors naming the key. Unchanged inputs cost
 // three GETs and no write (checked against a real v0.40.0:
-// vault_live_test.go). A WIDENED service set first revokes every session on
-// the vault, so a pod minted under the narrower spec (an older pin) loses
-// access instead of gaining it (docs/adr/0065 §3).
-func (c *Client) Reconcile(ctx context.Context, s Spec) error {
+// vault_live_test.go). A credential is rewritten when its Infisical value
+// changes or after a provisioner restart (the memo is in-process); a value
+// changed in the vault itself is not detected until then. A WIDENED service
+// set first revokes every session on the vault, so a pod minted under the
+// narrower spec (an older pin) loses access instead of gaining it
+// (docs/adr/0065 §3); widened reports it, so the caller ends those pods.
+func (c *Client) Reconcile(ctx context.Context, s Spec) (widened bool, err error) {
 	if err := checkSpec(s); err != nil {
-		return err
+		return false, err
 	}
 	l := c.vaultLock(s.Name)
 	l.Lock()
 	defer l.Unlock()
+	err = c.reconcile(ctx, s, &widened)
+	return widened, err
+}
 
+func (c *Client) reconcile(ctx context.Context, s Spec, widened *bool) error {
 	values := map[string]string{gitUsernameKey: "x-access-token"}
 	var missing []string
 	var desired []service
@@ -322,6 +335,7 @@ func (c *Client) Reconcile(ctx context.Context, s Spec) error {
 			if err := c.revokeWhere(ctx, s.Name, func(string) bool { return true }); err != nil {
 				return fmt.Errorf("vault %s: widening, so revoking its sessions first: %w", s.Name, err)
 			}
+			*widened = true
 		}
 		if desired == nil {
 			desired = []service{}
@@ -410,7 +424,8 @@ func (c *Client) Prune(ctx context.Context, keep map[string]bool) error {
 		if keep[n] || strings.HasPrefix(n, "executor-") || !vaultNameRe.MatchString(n) {
 			continue
 		}
-		errs = append(errs, c.Reconcile(ctx, Spec{Name: n}))
+		_, err := c.Reconcile(ctx, Spec{Name: n}) // an empty set never widens
+		errs = append(errs, err)
 	}
 	return errors.Join(errs...)
 }
