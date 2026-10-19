@@ -1,5 +1,11 @@
 # Changelog
 
+# [4.24.0](https://github.com/MohammadBnei/agent-fleet/compare/4.23.3...4.24.0) (2026-10-19)
+
+### Features
+
+* **worker:** enforce commit attribution with a git hook ([#269](https://github.com/MohammadBnei/agent-fleet/issues/269)) ([86ccfbb](https://github.com/MohammadBnei/agent-fleet/commit/86ccfbb90119693267aaa1157de74a4ef8706f89))
+
 ## [4.23.3](https://github.com/MohammadBnei/agent-fleet/compare/4.23.2...4.23.3) (2026-10-19)
 
 ### Bug Fixes
