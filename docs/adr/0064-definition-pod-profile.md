@@ -44,11 +44,17 @@ that built the pod (the provisioner Deployment rolls with the default
 RollingUpdate, so in a rollout or rollback two RPCs can reach different
 replicas). `CreateWorkerPodResponse.definition_profile_applied` is set only by a
 provisioner that applied the profile. A definition warm whose answer lacks it
-got the ordinary pod: core clears the lease first (the pod's credential is dead
+got the ordinary pod, and so may one whose create **errored** (the call's
+timeout landing after the Job exists, an older replica dying mid-call): core
+treats both alike. It clears the lease first (the pod's credential is dead
 before it can use it), tears the pod down, records `CRASHED` with the reason,
-and returns `FailedPrecondition`. If the teardown fails, core leaves the phase
-live instead of writing `CRASHED`, so the startup-stall sweep retries it (the
-pod can report no activity without a lease). A later warm retries. This is the
+and returns the error. These writes run on a context the caller's cancellation
+cannot reach, so a dropped browser request cannot stop them. If the teardown
+fails, core leaves the phase live instead of writing `CRASHED`, so the
+startup-stall sweep retries it (the pod can report no activity without a
+lease). If the lease clear failed too, nothing retries: logged, and accepted
+(the database and the provisioner both failing in the same second). A later
+warm retries. This is the
 check ADR-0062 §4 said this slice would put in place of its refusal.
 
 No `GetVersion` capability pre-check. It was built and removed in review: it
@@ -61,7 +67,10 @@ before the pod existed, and claude-home is kept across teardowns (it is resume
 state). So a definition create removes `fleetSharedNames` (`settings.json`,
 `CLAUDE.md`, `skills/`, `plugins/`; the worker entrypoint re-seeds the image's
 plugins) from claude-home before building the pod, and fails rather than build
-one if it cannot. `projects/` is left alone.
+one if it cannot. `projects/` is left alone. Only when a sync left something:
+the entrypoint writes `plugins/` and none of the other names, so `plugins/`
+alone is the image's own copy and stays. Removing it every warm would re-run
+the entrypoint's `cp -r` (§2) on every warm instead of once per claude-home.
 
 ### 2. What a definition pod gets
 
@@ -117,7 +126,14 @@ cd /workspace
 git fetch --no-tags /repo-cache/<repo> '+refs/remotes/origin/*:refs/remotes/origin/*'
 git checkout -B <base> origin/<base>
 git remote set-url origin <repoURL>
+touch .git/fleet-clone-done
 ```
+
+The marker is the last step, so only a finished clone has it, and the
+workspace guard requires it (a repo session's guard accepts any `.git`). A clone
+killed part-way (the init container's OOM limit, eviction, SIGKILL: no `trap`
+runs) leaves a partial tree the agent never ran on, because the worker starts
+only after this container succeeds, so the next warm wipes it and clones again.
 
 The fetch names the cache's path, not `origin`, so no reordering of these lines
 can turn it into a remote fetch. It copies the cache's **remote-tracking** refs
@@ -208,11 +224,21 @@ So a definition session's lease never lives in `lease_id`. 000008's
 `sessions_definition_no_lease` CHECK stays: no definition session holds a
 `lease_id`, so an older core's `ReserveSlot` fails for one. Migration 000009
 adds `profile_lease_id`, which only this core's `ReserveSlot` writes, for a
-definition session only. This core's `VerifyLease`, `SaveAgentSessionID` and
-`Get` read `COALESCE(lease_id, profile_lease_id)`; `ClearLease` (teardown and
+definition session only. This core's `VerifyLease` and `SaveAgentSessionID`
+match either column (one shared predicate, `leaseMatch`); `ClearLease` (teardown and
 the reconcile revocation) clears both. An older core matches only `lease_id`,
 so a definition pod's lease authenticates nothing there: it fails closed, it is
-not honored without the allowlist. The down migration drops the column, which
+not honored without the allowlist.
+
+**Recorded gap: an older core still lets peers prompt a definition session.**
+The non-promptable rule (§4) lives in this core's `PromptSession` handler. In a
+core RollingUpdate overlap, a repo session's lease is still valid on an older
+replica, whose `PromptSession` appends a `from='session'` entry into the
+definition session's transcript, and the definition pod (verified by a new
+replica) streams it. Bounded by the overlap window and by what a prompt can
+do: the definition pod's own allowlist and `mode.allow` still apply. Not
+closed in P1; a trigger refusing `from='session'` rows for a definition session
+would close it for every core version. The down migration drops the column, which
 revokes live definition pods' leases. A second CHECK,
 `sessions_profile_lease_definition_only`, is the other direction: a repo
 session never holds a `profile_lease_id`, which would verify with no allowlist.
@@ -304,6 +330,11 @@ After ADR-0062's checks (pinned == current, not cluster-access) and
   CoreService instead of getting an unbounded one, and the pod phase revokes
   what its `ClearLease` misses. A provisioner rollback is covered by §1's
   check on the create's answer and its claude-home scrub.
+- Amends the locked invariant "every result = PR" (CLAUDE.md, DECISIONS.md):
+  P1 definition sessions cannot push, so their results stay local commits until
+  P3 gives them a push credential.
+- Amends ADR-0062 §4, which kept repo sessions' `from: human` as pre-existing:
+  every lease caller now authors `SendMessage` as `agent`/`worker` (§4).
 - **P1 does not bound the tool surface** (§2, "No fleet-shared sync"): the
   worker's `allowedTools` and the target repo's project allow rules still skip
   `canUseTool`. P4.

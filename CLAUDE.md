@@ -157,7 +157,7 @@ Condensed. Full detail + rationale in `agent-fleet/docs/DECISIONS.md` + `docs/ad
   `agent`/`worker` only: the worker obeys `human`/`session` entries.
 - **`X-authentik-*` headers never read.** Pod-network caller can forge one → authz gap
   becomes impersonation. core verifies its own ID token instead.
-- Every result = PR.
+- Every result = PR. Exception: P1 definition sessions cannot push until P3 (`adr/0064`).
 - One PVC per session — never a shared writable checkout across concurrent sessions.
   Fleet creates no branches either: agent runs its own `git checkout -b` (`adr/0048` §5).
 - Git commit identity derived live from authenticated bot GitHub account (`gh api user`),

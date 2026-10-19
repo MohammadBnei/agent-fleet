@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -63,10 +64,31 @@ func TestCreateWorkerPod_DefinitionProfile(t *testing.T) {
 		}
 	}
 
-	resp, err := s.CreateWorkerPod(ctx, &agentfleetv1.CreateWorkerPodRequest{
-		SessionId: "def-1", Repo: "dream-analyst", RepoUrl: origin, BaseBranch: "main",
-		Definition: &agentfleetv1.DefinitionPodProfile{Name: "dev-dream-analyst", GitAuthorName: "a", GitAuthorEmail: "a@bnei.dev"},
-	})
+	// A busy cache (a concurrent sync holds its lock): a repo session's create
+	// would skip the fetch and return at once; a definition's must wait and
+	// fetch, since its clone never contacts the remote.
+	unlock := s.git.LockRepo("dream-analyst")
+	type result struct {
+		resp *agentfleetv1.CreateWorkerPodResponse
+		err  error
+	}
+	done := make(chan result, 1)
+	go func() {
+		resp, err := s.CreateWorkerPod(ctx, &agentfleetv1.CreateWorkerPodRequest{
+			SessionId: "def-1", Repo: "dream-analyst", RepoUrl: origin, BaseBranch: "main",
+			Definition: &agentfleetv1.DefinitionPodProfile{Name: "dev-dream-analyst", GitAuthorName: "a", GitAuthorEmail: "a@bnei.dev"},
+		})
+		done <- result{resp, err}
+	}()
+	select {
+	case r := <-done:
+		unlock()
+		t.Fatalf("the definition create skipped the busy cache's fetch: %v", r.err)
+	case <-time.After(300 * time.Millisecond):
+	}
+	unlock()
+	r := <-done
+	resp, err := r.resp, r.err
 	if err != nil {
 		t.Fatal(err)
 	}

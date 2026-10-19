@@ -62,7 +62,7 @@ func TestCreateWorkerPod_DefinitionProfile(t *testing.T) {
 		}
 	}
 	for name, want := range map[string]string{
-		"CLAUDE_CODE_OAUTH_TOKEN": "oauth-token", // INTERIM until P3 (docs/adr/0064)
+		"CLAUDE_CODE_OAUTH_TOKEN": "oauth-token",       // INTERIM until P3 (docs/adr/0064)
 		"FLEET_DEFINITION":        "dev-dream-analyst", // the worker closes the native cross-session channel
 		"GIT_AUTHOR_NAME":         "fleet-dev-agent",
 		"GIT_COMMITTER_NAME":      "fleet-dev-agent",
@@ -140,18 +140,9 @@ func TestDefinitionCloneScript_RunsAgainstTheCacheOnly(t *testing.T) {
 		t.Run(base, func(t *testing.T) {
 			spec := definitionSpec()
 			spec.BaseBranch = base
-			script := container(t, createJob(t, spec), "clone").Command[2]
 			ws := filepath.Join(t.TempDir(), "workspace")
-			script = strings.ReplaceAll(script, "/repo-cache", filepath.Join(root, "repo-cache"))
-			script = strings.ReplaceAll(script, sessionWorkdir, ws)
-			home := t.TempDir()
 			run := func() {
-				cmd := exec.Command("sh", "-c", script)
-				// The script writes global config; keep it in the temp dir. And
-				// no network: a remote contact would hit the real GitHub URL.
-				cmd.Env = append(os.Environ(), "HOME="+home, "GIT_CONFIG_GLOBAL="+filepath.Join(home, ".gitconfig"), "GIT_CONFIG_NOSYSTEM=1",
-					"GIT_ALLOW_PROTOCOL=file")
-				if out, err := cmd.CombinedOutput(); err != nil {
+				if out, err := runCloneScript(t, root, spec, ws); err != nil {
 					t.Fatalf("clone script: %v: %s", err, out)
 				}
 			}
@@ -177,28 +168,59 @@ func TestDefinitionCloneScript_RunsAgainstTheCacheOnly(t *testing.T) {
 			}
 			gitT(t, ws, "status")
 			gitT(t, ws, "log", "-1")
-			run() // a warm re-runs it: the existing tree is left alone
+			// A warm re-runs it: the finished tree, work included, is left alone.
+			if err := os.WriteFile(filepath.Join(ws, "work.txt"), []byte("x"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			run()
+			if _, err := os.Stat(filepath.Join(ws, "work.txt")); err != nil {
+				t.Fatalf("a warm touched a finished workspace: %v", err)
+			}
 		})
 	}
 
-	// A failure after the clone's first step leaves no .git behind, so the
-	// next warm fails again rather than accepting a half-built repository.
+	// A clone that died part-way is never accepted, and the next warm starts
+	// over. A run that failed (a missing base) or was killed (OOM, eviction,
+	// SIGKILL: no trap runs) leaves a .git with no checkout, or checked-out
+	// files, and no marker.
 	spec := definitionSpec()
 	spec.BaseBranch = "missing"
-	script := container(t, createJob(t, spec), "clone").Command[2]
 	ws := filepath.Join(t.TempDir(), "workspace")
+	for i := range 2 {
+		if out, err := runCloneScript(t, root, spec, ws); err == nil {
+			t.Fatalf("run %d: a missing base succeeded: %s", i, out)
+		}
+	}
+	killed := filepath.Join(t.TempDir(), "workspace")
+	gitT(t, root, "clone", "--no-checkout", cache, killed)
+	if err := os.WriteFile(filepath.Join(killed, "half-written"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	spec.BaseBranch = "main"
+	for _, w := range []string{ws, killed} {
+		if out, err := runCloneScript(t, root, spec, w); err != nil {
+			t.Fatalf("%s: a warm after a partial clone: %v: %s", w, err, out)
+		}
+		if got, want := gitT(t, w, "rev-parse", "HEAD"), gitT(t, cache, "rev-parse", "origin/main"); got != want {
+			t.Errorf("%s: HEAD %s, want %s", w, got, want)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(killed, "half-written")); !os.IsNotExist(err) {
+		t.Errorf("the partial tree was not wiped: %v", err)
+	}
+}
+
+// runCloneScript runs spec's definition clone script against root's cache,
+// into ws. The script writes global config, kept in a temp HOME, and gets no
+// network: a remote contact would hit the real GitHub URL.
+func runCloneScript(t *testing.T, root string, spec WorkerPodSpec, ws string) ([]byte, error) {
+	t.Helper()
+	script := container(t, createJob(t, spec), "clone").Command[2]
 	script = strings.ReplaceAll(script, "/repo-cache", filepath.Join(root, "repo-cache"))
 	script = strings.ReplaceAll(script, sessionWorkdir, ws)
 	home := t.TempDir()
-	for i := range 2 {
-		cmd := exec.Command("sh", "-c", script)
-		cmd.Env = append(os.Environ(), "HOME="+home, "GIT_CONFIG_GLOBAL="+filepath.Join(home, ".gitconfig"), "GIT_CONFIG_NOSYSTEM=1",
-			"GIT_ALLOW_PROTOCOL=file")
-		if out, err := cmd.CombinedOutput(); err == nil {
-			t.Fatalf("run %d: a missing base succeeded: %s", i, out)
-		}
-		if _, err := os.Stat(filepath.Join(ws, ".git")); !os.IsNotExist(err) {
-			t.Fatalf("run %d: a failed clone left .git behind: %v", i, err)
-		}
-	}
+	cmd := exec.Command("sh", "-c", script)
+	cmd.Env = append(os.Environ(), "HOME="+home, "GIT_CONFIG_GLOBAL="+filepath.Join(home, ".gitconfig"), "GIT_CONFIG_NOSYSTEM=1",
+		"GIT_ALLOW_PROTOCOL=file")
+	return cmd.CombinedOutput()
 }

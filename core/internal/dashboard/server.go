@@ -1060,28 +1060,18 @@ func (s *Server) WarmIfIdle(ctx context.Context, sessionID string) (podName stri
 	// pod could get one repo's privilege grant and another's image.
 	toolKeys := provisionerclient.ToolKeysFor(repoCfg.ClusterAccess)
 	pod, err := s.e2e.CreateWorkerPod(ctx, sessionID, t.Repo, repoCfg.URL, repoCfg.BaseBranch, t.Description, leaseID, resumeAgentSessionID, resumeFromSeq, toolKeys, image, profile)
-	if err != nil {
+	switch {
+	case err != nil && profile != nil:
+		// docs/adr/0064: an error can come after the Job exists (the call's
+		// timeout, or an older replica dying mid-call), and an older replica's
+		// Job is the ORDINARY pod. Unconfirmed is refused.
+		return "", s.refuseDefinitionPod(ctx, sessionID, connect.CodeInternal, fmt.Sprintf("definition pod create failed (%v)", err))
+	case err != nil:
 		return "", connect.NewError(connect.CodeInternal, err)
-	}
-	if profile != nil && !pod.DefinitionProfileApplied {
-		// docs/adr/0064: the create reached a provisioner that dropped the
-		// profile (an older one, or an older replica in a rollout overlap), so
-		// this is the ORDINARY pod. Revoke its lease first, then remove it.
-		msg := "provisioner did not apply the definition pod profile (docs/adr/0064); the pod was torn down"
-		if err := s.sessions.ClearLease(ctx, sessionID); err != nil {
-			slog.Error("dashboard warm: revoking an unprofiled definition pod's lease", "sessionId", sessionID, "error", err)
-		}
-		if _, err := s.e2e.TearDownSession(ctx, sessionID, agentfleetv1.SessionKind_SESSION_KIND_WORKER); err != nil {
-			// The phase stays live, so the startup-stall sweep retries the
-			// teardown (the pod can report no activity: its lease is gone).
-			// CRASHED here would hide a pod that is still running.
-			slog.Error("dashboard warm: tearing down an unprofiled definition pod", "sessionId", sessionID, "error", err)
-			return "", connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("provisioner did not apply the definition pod profile (docs/adr/0064), and its teardown failed: %w", err))
-		}
-		if err := s.sessions.SetPodPhase(ctx, sessionID, agentfleetv1.PodPhase_POD_PHASE_CRASHED.String(), msg); err != nil {
-			slog.Error("dashboard warm: recording the refused definition pod", "sessionId", sessionID, "error", err)
-		}
-		return "", connect.NewError(connect.CodeFailedPrecondition, errors.New(msg))
+	case profile != nil && !pod.DefinitionProfileApplied:
+		// The create reached a provisioner that dropped the profile (an older
+		// one, or an older replica in a rollout overlap): the ORDINARY pod.
+		return "", s.refuseDefinitionPod(ctx, sessionID, connect.CodeFailedPrecondition, "provisioner did not apply the definition pod profile")
 	}
 	// Record the build this pod is on. Not fatal: the pod exists and the
 	// session is live either way, and failing the warm over a metadata write
@@ -1090,6 +1080,33 @@ func (s *Server) WarmIfIdle(ctx context.Context, sessionID string) (podName stri
 		slog.Warn("dashboard warm: recording pod images failed", "sessionId", sessionID, "error", err)
 	}
 	return pod.PodName, nil
+}
+
+// refuseDefinitionPod revokes and removes whatever a definition warm may have
+// built without a confirmed profile (docs/adr/0064): its lease first, then the
+// pod. Tearing down nothing is a no-op. Off the caller's cancellation: a
+// dropped browser request must not leave an ordinary pod holding a live lease.
+func (s *Server) refuseDefinitionPod(ctx context.Context, sessionID string, code connect.Code, why string) error {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Minute)
+	defer cancel()
+	msg := why + " (docs/adr/0064); the pod was torn down"
+	clearErr := s.sessions.ClearLease(ctx, sessionID)
+	if clearErr != nil {
+		slog.Error("dashboard warm: revoking an unconfirmed definition pod's lease", "sessionId", sessionID, "error", clearErr)
+	}
+	if _, err := s.e2e.TearDownSession(ctx, sessionID, agentfleetv1.SessionKind_SESSION_KIND_WORKER); err != nil {
+		// The phase stays live: CRASHED would hide a pod that may still run,
+		// and reconcile bumps it back while the Job exists anyway. With the
+		// lease cleared the pod can report no activity, so the startup-stall
+		// sweep retries the teardown. With both failed nothing does: logged.
+		slog.Error("dashboard warm: tearing down an unconfirmed definition pod", "sessionId", sessionID, "error", err, "leaseRevoked", clearErr == nil)
+		return connect.NewError(code, fmt.Errorf("%s (docs/adr/0064), and its teardown failed: %w", why, errors.Join(err, clearErr)))
+	}
+	// Gone: the phase gate revokes a lease ClearLease missed.
+	if err := s.sessions.SetPodPhase(ctx, sessionID, agentfleetv1.PodPhase_POD_PHASE_CRASHED.String(), msg); err != nil {
+		slog.Error("dashboard warm: recording the refused definition pod", "sessionId", sessionID, "error", err)
+	}
+	return connect.NewError(code, errors.New(msg))
 }
 
 // definitionWarmable refuses to warm a definition session unless its pinned

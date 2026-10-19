@@ -158,3 +158,46 @@ func TestEnsureRepoFetched_WaitsForTheLockThenFetches(t *testing.T) {
 		t.Fatal("no git may run past the deadline")
 	}
 }
+
+// docs/adr/0064: the scrub runs on every definition warm, but plugins/ alone is
+// the image's copy from the entrypoint's last boot. Removing it would re-run
+// that cp -r every warm, so it goes only when a sync left settings.json & co.
+func TestRemoveFleetShared_KeepsTheImagePluginsWithoutASync(t *testing.T) {
+	m := NewManager(t.TempDir())
+	home := m.ClaudeHomePath("s")
+	write := func(p string) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(home, p)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(home, p), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	exists := func(p string) bool {
+		_, err := os.Stat(filepath.Join(home, p))
+		return err == nil
+	}
+	write("plugins/p/plugin.json")
+	write("projects/p/s.jsonl")
+	if err := m.RemoveFleetShared("s"); err != nil {
+		t.Fatal(err)
+	}
+	if !exists("plugins/p/plugin.json") {
+		t.Fatal("no sync happened, yet the image's plugins/ was removed")
+	}
+
+	write("settings.json")
+	write("skills/x/SKILL.md")
+	if err := m.RemoveFleetShared("s"); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []string{"settings.json", "skills", "plugins"} {
+		if exists(p) {
+			t.Errorf("%s survived the scrub of a synced claude-home", p)
+		}
+	}
+	if !exists("projects/p/s.jsonl") {
+		t.Error("resume state removed")
+	}
+}

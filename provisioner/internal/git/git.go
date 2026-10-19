@@ -15,7 +15,9 @@ package git
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -109,6 +111,14 @@ func (m *Manager) repoLock(repo string) *sync.Mutex {
 		m.locks[repo] = l
 	}
 	return l
+}
+
+// LockRepo holds repo's cache lock until the returned func runs: what a
+// concurrent sync looks like to a pod create. For tests in other packages.
+func (m *Manager) LockRepo(repo string) (unlock func()) {
+	l := m.repoLock(repo)
+	l.Lock()
+	return l.Unlock
 }
 
 func (m *Manager) repoPath(repo string) string {
@@ -352,10 +362,25 @@ func (m *Manager) DeleteSessionDir(sessionID string) error {
 // (docs/adr/0064): an older provisioner replica serving one of its creates in
 // a rollout overlap ran the sync unconditionally, and that settings.json
 // pre-approves arbitrary-exec Bash past canUseTool for the session's life.
-// plugins/ goes too; the worker entrypoint re-seeds the image's own.
+//
+// Only when a sync left something behind. The entrypoint writes plugins/ (the
+// image's own copy, once per claude-home) and none of the other names, so
+// without them plugins/ is the image's and stays: removing it would re-run
+// that cp -r, the dominant cold-start cost (plan §5c spike 7), on every warm.
+// After a sync plugins/ goes too, and the entrypoint re-seeds the image's.
 func (m *Manager) RemoveFleetShared(sessionID string) error {
+	home := m.ClaudeHomePath(sessionID)
+	synced := false
 	for _, name := range fleetSharedNames {
-		if err := os.RemoveAll(filepath.Join(m.ClaudeHomePath(sessionID), name)); err != nil {
+		if _, err := os.Lstat(filepath.Join(home, name)); name != "plugins" && !errors.Is(err, fs.ErrNotExist) {
+			synced = true
+		}
+	}
+	if !synced {
+		return nil
+	}
+	for _, name := range fleetSharedNames {
+		if err := os.RemoveAll(filepath.Join(home, name)); err != nil {
 			return fmt.Errorf("remove fleet-shared %s for %s: %w", name, sessionID, err)
 		}
 	}
